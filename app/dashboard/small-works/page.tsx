@@ -5,6 +5,7 @@ import { useAuthStore } from '@/lib/stores/authStore'
 import { useProjectStore } from '@/lib/stores/projectStore'
 import Link from 'next/link'
 import { format } from 'date-fns'
+import { JobType } from '@/types'
 
 export default function SmallWorksPage() {
   const { user, organization } = useAuthStore()
@@ -18,7 +19,7 @@ export default function SmallWorksPage() {
   }, [organization, loadProjects])
 
   // Filter for small works (jobType === 'smallWork')
-  const smallWorks = projects.filter(p => p.jobType === 'smallWork' || p.jobType === 'smallWorks')
+  const smallWorks = projects.filter(p => p.jobType === JobType.SMALL_WORK)
 
   const filteredSmallWorks = smallWorks.filter(p => {
     if (filter === 'all') return true
