@@ -6,12 +6,13 @@ import { useProjectStore } from '@/lib/stores/projectStore'
 import { useEffect } from 'react'
 import { format } from 'date-fns'
 import Link from 'next/link'
+import { JobType } from '@/types'
 
 export default function SmallWorkDetailPage() {
   const params = useParams()
   const { organization } = useAuthStore()
   const { projects, loadProjects } = useProjectStore()
-  const work = projects.find(p => p.id === params.id && (p.jobType === 'smallWork' || p.jobType === 'smallWorks'))
+  const work = projects.find(p => p.id === params.id && p.jobType === JobType.SMALL_WORK)
 
   useEffect(() => {
     if (organization?.id) {
