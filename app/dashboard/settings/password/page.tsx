@@ -22,3 +22,7 @@ export default function ChangePasswordPage() {
     </div>
   )
 }
+
+
+
+

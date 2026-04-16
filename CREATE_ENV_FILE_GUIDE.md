@@ -209,3 +209,7 @@ Once `.env.local` is created:
 4. Done! ✅
 
 **The file is ready!** Now you can run `npm run dev` to start your app! 🚀
+
+
+
+

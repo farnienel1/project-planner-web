@@ -126,3 +126,7 @@ export default function SmallWorkDetailPage() {
     </div>
   )
 }
+
+
+
+

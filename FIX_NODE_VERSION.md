@@ -169,3 +169,7 @@ node --version
 8. ✅ Run `npm run dev`
 
 **The key is closing and reopening Terminal after installing Node.js!**
+
+
+
+
