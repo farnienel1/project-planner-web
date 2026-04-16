@@ -26,3 +26,7 @@ export const db: Firestore = getFirestore(app);
 export const storage: FirebaseStorage = getStorage(app);
 
 export default app;
+
+
+
+

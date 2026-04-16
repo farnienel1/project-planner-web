@@ -144,3 +144,7 @@ export default function OperativesPage() {
     </div>
   )
 }
+
+
+
+

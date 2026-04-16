@@ -187,3 +187,7 @@ NEXT_PUBLIC_FIREBASE_APP_ID = 1:980527300983:web:project-planner
 - Professional, beautiful web app!
 
 **Ready to deploy?** Follow the steps above! 🎉
+
+
+
+

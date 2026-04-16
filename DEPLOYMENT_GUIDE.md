@@ -352,3 +352,7 @@ git add . && git commit -m "Updated feature" && git push
 - **Next.js issues:** Check [Next.js docs](https://nextjs.org/docs)
 
 Your web app is now ready to deploy! 🚀
+
+
+
+

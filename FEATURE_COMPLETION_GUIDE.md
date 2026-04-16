@@ -400,3 +400,7 @@ if (!user?.permissions?.projects) {
 ---
 
 The foundation is ready! Now build out each feature following the patterns above. 🚀
+
+
+
+
