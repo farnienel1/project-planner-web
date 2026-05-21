@@ -34,7 +34,7 @@ export default function DashboardLayout({
     return null
   }
 
-  const navItems = getDashboardQuickActions(user)
+  const navItems = getDashboardQuickActions(user, organization)
 
   return (
     <div className="min-h-screen bg-slate-50">

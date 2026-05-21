@@ -44,7 +44,7 @@ export default function DashboardPage() {
 
   const activeProjects = projects.filter(p => p.isLive).length
   const activeOperatives = operatives.filter(o => o.isActive).length
-  const quickActions = getDashboardQuickActions(user).filter((item) => item.id !== 'dashboard_home')
+  const quickActions = getDashboardQuickActions(user, organization).filter((item) => item.id !== 'dashboard_home')
 
   return (
     <div>
