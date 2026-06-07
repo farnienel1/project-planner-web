@@ -1,32 +1,43 @@
 'use client'
 
+import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import Link from 'next/link'
+import { useAuthStore } from '@/lib/stores/authStore'
+import { useProjectStore } from '@/lib/stores/projectStore'
+import { ProjectForm } from '@/components/projects/ProjectForm'
+import { FormBackLink } from '@/components/forms/FormShell'
+import { LoadingSpinner, PageHeader } from '@/components/dashboard/PageShell'
+import type { Project } from '@/types'
 
 export default function EditProjectPage() {
   const params = useParams()
   const router = useRouter()
+  const { organization } = useAuthStore()
+  const { getProject } = useProjectStore()
+  const [project, setProject] = useState<Project | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    if (!organization?.id || !params.id) return
+    getProject(organization.id, String(params.id), 'projects').then((p) => {
+      setProject(p)
+      setLoading(false)
+    })
+  }, [organization, params.id, getProject])
+
+  if (loading) return <LoadingSpinner />
+  if (!project) return <p className="text-slate-600">Project not found.</p>
 
   return (
-    <div>
-      <div className="mb-6">
-        <Link href={`/dashboard/projects/${params.id}`} className="text-blue-600 hover:underline flex items-center space-x-2 mb-4">
-          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-          </svg>
-          <span>Back to Project</span>
-        </Link>
-        <h1 className="text-3xl font-bold text-gray-900">Edit Project</h1>
-      </div>
-
-      <div className="bg-white rounded-lg shadow p-8 text-center">
-        <p className="text-gray-600">Project edit form coming soon...</p>
-        <p className="text-sm text-gray-500 mt-2">This feature will allow you to edit project details.</p>
-      </div>
+    <div className="space-y-6">
+      <FormBackLink href={`/dashboard/projects/${project.id}`} label="Back to project" />
+      <PageHeader title="Edit project" description={`Job #${project.jobNumber}`} />
+      <ProjectForm
+        initial={project}
+        collection="projects"
+        backHref={`/dashboard/projects/${project.id}`}
+        onSaved={() => router.push(`/dashboard/projects/${project.id}`)}
+      />
     </div>
   )
 }
-
-
-
-

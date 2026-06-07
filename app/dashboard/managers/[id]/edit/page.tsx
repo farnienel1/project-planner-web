@@ -1,31 +1,33 @@
 'use client'
 
-import { useParams } from 'next/navigation'
-import Link from 'next/link'
+import { useEffect, useState } from 'react'
+import { useParams, useRouter } from 'next/navigation'
+import { useAuthStore } from '@/lib/stores/authStore'
+import { useOperativeStore } from '@/lib/stores/operativeStore'
+import { ManagerForm } from '@/components/managers/ManagerForm'
+import { FormBackLink } from '@/components/forms/FormShell'
+import { LoadingSpinner, PageHeader } from '@/components/dashboard/PageShell'
+import type { Manager } from '@/types'
 
 export default function EditManagerPage() {
   const params = useParams()
+  const router = useRouter()
+  const { organization } = useAuthStore()
+  const { getManager } = useOperativeStore()
+  const [manager, setManager] = useState<Manager | null>(null)
+
+  useEffect(() => {
+    if (!organization?.id || !params.id) return
+    getManager(organization.id, String(params.id)).then(setManager)
+  }, [organization, params.id, getManager])
+
+  if (!manager) return <LoadingSpinner />
 
   return (
-    <div>
-      <div className="mb-6">
-        <Link href={`/dashboard/managers/${params.id}`} className="text-blue-600 hover:underline flex items-center space-x-2 mb-4">
-          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-          </svg>
-          <span>Back to Manager</span>
-        </Link>
-        <h1 className="text-3xl font-bold text-gray-900">Edit Manager</h1>
-      </div>
-
-      <div className="bg-white rounded-lg shadow p-8 text-center">
-        <p className="text-gray-600">Manager edit form coming soon...</p>
-        <p className="text-sm text-gray-500 mt-2">This feature will allow you to edit manager details.</p>
-      </div>
+    <div className="space-y-6">
+      <FormBackLink href={`/dashboard/managers/${manager.id}`} label="Back to manager" />
+      <PageHeader title="Edit manager" description={`${manager.firstName} ${manager.lastName}`} />
+      <ManagerForm initial={manager} backHref={`/dashboard/managers/${manager.id}`} onSaved={() => router.push(`/dashboard/managers/${manager.id}`)} />
     </div>
   )
 }
-
-
-
-
