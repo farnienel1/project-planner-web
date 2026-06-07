@@ -1,176 +1,204 @@
 'use client'
 
 import { create } from 'zustand'
-import { 
-  collection, 
-  getDocs, 
-  addDoc, 
-  updateDoc, 
-  deleteDoc, 
+import {
+  collection,
+  getDocs,
+  getDoc,
+  setDoc,
+  deleteDoc,
   doc,
-  query,
-  where,
-  Timestamp
+  Timestamp,
+  addDoc,
 } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
 import type { Project, Client } from '@/types'
-import { JobType } from '@/types'
+import {
+  buildProjectFirestorePayload,
+  projectCollectionName,
+  type ProjectSaveInput,
+} from '@/lib/firebase/projectPayload'
+import { parseFirestoreDate, parseNumber, parseOptionalString, parseString, newUuid } from '@/lib/firebase/firestoreUtils'
+
+function parseClient(data: unknown): Client {
+  const c = (data || {}) as Record<string, unknown>
+  return {
+    id: parseString(c.id),
+    name: parseString(c.name),
+    email: parseOptionalString(c.email),
+    phone: parseOptionalString(c.phone),
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  }
+}
+
+export function mapProjectDoc(docId: string, data: Record<string, unknown>, organizationId: string): Project {
+  const managerIds = Array.isArray(data.managerIds)
+    ? (data.managerIds as string[]).filter((id) => typeof id === 'string')
+    : data.managerId
+      ? [parseString(data.managerId)]
+      : []
+
+  return {
+    id: docId,
+    jobNumber: parseString(data.jobNumber),
+    siteName: parseString(data.siteName),
+    addressLine1: parseString(data.addressLine1),
+    addressLine2: parseOptionalString(data.addressLine2),
+    townCity: parseString(data.townCity),
+    postcode: parseString(data.postcode),
+    client: parseClient(data.client),
+    startDate: parseFirestoreDate(data.startDate) || new Date(),
+    endDate: parseFirestoreDate(data.endDate) || new Date(),
+    jobType: parseString(data.jobType, 'CAT A'),
+    customJobType: parseOptionalString(data.customJobType),
+    manager: {
+      name: parseString(data.manager, 'Project Manager'),
+      email: '',
+    },
+    managerId: parseOptionalString(data.managerId) || managerIds[0],
+    managerIds,
+    isLive: data.isLive !== false,
+    description: parseOptionalString(data.description),
+    notes: parseOptionalString(data.notes),
+    latitude: parseNumber(data.latitude),
+    longitude: parseNumber(data.longitude),
+    usesMapPinForLocation: data.usesMapPinForLocation === true,
+    hiddenManagerUserIds: Array.isArray(data.hiddenManagerUserIds)
+      ? (data.hiddenManagerUserIds as string[]).filter((id) => typeof id === 'string')
+      : [],
+    hiddenOperativeUserIds: Array.isArray(data.hiddenOperativeUserIds)
+      ? (data.hiddenOperativeUserIds as string[]).filter((id) => typeof id === 'string')
+      : [],
+    status: parseOptionalString(data.status),
+    organizationId,
+    createdAt: parseFirestoreDate(data.createdAt) || new Date(),
+    updatedAt: parseFirestoreDate(data.updatedAt) || new Date(),
+  }
+}
 
 interface ProjectState {
   projects: Project[]
+  smallWorks: Project[]
   clients: Client[]
   loading: boolean
   error: string | null
-  loadProjects: (organizationId: string) => Promise<void>
+  loadProjects: (organizationId: string, includeInactive?: boolean) => Promise<void>
+  loadSmallWorks: (organizationId: string) => Promise<void>
   loadClients: (organizationId: string) => Promise<void>
-  createProject: (project: Omit<Project, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>
-  updateProject: (id: string, updates: Partial<Project>) => Promise<void>
-  deleteProject: (id: string, organizationId: string) => Promise<void>
-  createClient: (client: Omit<Client, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>
+  getProject: (organizationId: string, projectId: string, collection?: 'projects' | 'smallWorks') => Promise<Project | null>
+  saveProject: (input: ProjectSaveInput, collection?: 'projects' | 'smallWorks') => Promise<string>
+  deleteProject: (id: string, organizationId: string, collection?: 'projects' | 'smallWorks') => Promise<void>
+  createClient: (client: Omit<Client, 'id' | 'createdAt' | 'updatedAt'>) => Promise<Client>
 }
 
 export const useProjectStore = create<ProjectState>((set, get) => ({
   projects: [],
+  smallWorks: [],
   clients: [],
   loading: false,
   error: null,
-  
-  loadProjects: async (organizationId: string) => {
+
+  loadProjects: async (organizationId, includeInactive = false) => {
     set({ loading: true, error: null })
     try {
-      const projectsRef = collection(db, 'organizations', organizationId, 'projects')
-      const snapshot = await getDocs(projectsRef)
-      const projects = snapshot.docs.map(doc => {
-        const data = doc.data()
-        return {
-          id: doc.id,
-          jobNumber: data.jobNumber || '',
-          siteName: data.siteName || '',
-          addressLine1: data.addressLine1 || '',
-          addressLine2: data.addressLine2,
-          townCity: data.townCity || '',
-          postcode: data.postcode || '',
-          client: data.client || { id: '', name: '', createdAt: new Date(), updatedAt: new Date() },
-          startDate: data.startDate?.toDate() || new Date(),
-          endDate: data.endDate?.toDate() || new Date(),
-          jobType: (data.jobType as JobType) || JobType.PROJECT,
-          customJobType: data.customJobType,
-          manager: data.manager || { name: '', email: '' },
-          managerId: data.managerId,
-          isLive: data.isLive !== false,
-          description: data.description,
-          notes: data.notes,
-          organizationId: organizationId,
-          createdAt: data.createdAt?.toDate() || new Date(),
-          updatedAt: data.updatedAt?.toDate() || new Date(),
-        } as Project
-      }).filter(p => p.isLive)
+      const snapshot = await getDocs(collection(db, 'organizations', organizationId, 'projects'))
+      let projects = snapshot.docs.map((entry) =>
+        mapProjectDoc(entry.id, entry.data() as Record<string, unknown>, organizationId)
+      )
+      if (!includeInactive) projects = projects.filter((p) => p.isLive)
       set({ projects, loading: false })
-    } catch (error: any) {
-      set({ error: error.message, loading: false })
+    } catch (error: unknown) {
+      set({ error: error instanceof Error ? error.message : 'Failed to load projects', loading: false })
     }
   },
-  
-  loadClients: async (organizationId: string) => {
+
+  loadSmallWorks: async (organizationId) => {
+    set({ loading: true, error: null })
     try {
-      const clientsRef = collection(db, 'organizations', organizationId, 'clients')
-      const snapshot = await getDocs(clientsRef)
-      const clients = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-        createdAt: doc.data().createdAt?.toDate() || new Date(),
-        updatedAt: doc.data().updatedAt?.toDate() || new Date(),
-      })) as Client[]
+      const snapshot = await getDocs(collection(db, 'organizations', organizationId, 'smallWorks'))
+      const smallWorks = snapshot.docs.map((entry) =>
+        mapProjectDoc(entry.id, entry.data() as Record<string, unknown>, organizationId)
+      )
+      set({ smallWorks, loading: false })
+    } catch (error: unknown) {
+      set({ error: error instanceof Error ? error.message : 'Failed to load small works', loading: false })
+    }
+  },
+
+  loadClients: async (organizationId) => {
+    try {
+      const snapshot = await getDocs(collection(db, 'organizations', organizationId, 'clients'))
+      const clients = snapshot.docs.map((entry) => {
+        const data = entry.data()
+        return {
+          id: entry.id,
+          name: parseString(data.name),
+          contactPerson: parseOptionalString(data.contactPerson),
+          email: parseOptionalString(data.email),
+          phone: parseOptionalString(data.phone),
+          address: parseOptionalString(data.address),
+          organizationId,
+          createdAt: parseFirestoreDate(data.createdAt) || new Date(),
+          updatedAt: parseFirestoreDate(data.updatedAt) || new Date(),
+        } satisfies Client
+      })
       set({ clients })
-    } catch (error: any) {
-      set({ error: error.message })
+    } catch (error: unknown) {
+      set({ error: error instanceof Error ? error.message : 'Failed to load clients' })
     }
   },
-  
-  createProject: async (projectData) => {
-    const { projects } = get()
-    const organizationId = projectData.organizationId || ''
-    
-    try {
-      const projectRef = collection(db, 'organizations', organizationId, 'projects')
-      const newProject = {
-        ...projectData,
-        startDate: Timestamp.fromDate(new Date(projectData.startDate)),
-        endDate: Timestamp.fromDate(new Date(projectData.endDate)),
-        createdAt: Timestamp.now(),
-        updatedAt: Timestamp.now(),
-      }
-      const docRef = await addDoc(projectRef, newProject)
-      set({ 
-        projects: [...projects, { ...projectData, id: docRef.id, createdAt: new Date(), updatedAt: new Date() } as Project]
-      })
-    } catch (error: any) {
-      set({ error: error.message })
-      throw error
+
+  getProject: async (organizationId, projectId, collectionName = 'projects') => {
+    const snap = await getDoc(doc(db, 'organizations', organizationId, collectionName, projectId))
+    if (!snap.exists()) return null
+    return mapProjectDoc(snap.id, snap.data() as Record<string, unknown>, organizationId)
+  },
+
+  saveProject: async (input, collectionOverride) => {
+    const collectionName = collectionOverride || projectCollectionName(input.jobType)
+    const id = input.id || newUuid()
+    const payload = buildProjectFirestorePayload({ ...input, id })
+    await setDoc(doc(db, 'organizations', input.organizationId, collectionName, id), payload)
+    const saved = mapProjectDoc(id, payload as Record<string, unknown>, input.organizationId)
+    if (collectionName === 'smallWorks') {
+      const { smallWorks } = get()
+      set({ smallWorks: [...smallWorks.filter((p) => p.id !== id), saved] })
+    } else {
+      const { projects } = get()
+      set({ projects: [...projects.filter((p) => p.id !== id), saved] })
+    }
+    return id
+  },
+
+  deleteProject: async (id, organizationId, collectionName = 'projects') => {
+    await deleteDoc(doc(db, 'organizations', organizationId, collectionName, id))
+    if (collectionName === 'smallWorks') {
+      set({ smallWorks: get().smallWorks.filter((p) => p.id !== id) })
+    } else {
+      set({ projects: get().projects.filter((p) => p.id !== id) })
     }
   },
-  
-  updateProject: async (id, updates) => {
-    const { projects, clients } = get()
-    const project = projects.find(p => p.id === id)
-    if (!project) return
-    
-    const organizationId = project.client.organizationId || ''
-    
-    try {
-      const projectRef = doc(db, 'organizations', organizationId, 'projects', id)
-      await updateDoc(projectRef, {
-        ...updates,
-        updatedAt: Timestamp.now(),
-      })
-      set({ 
-        projects: projects.map(p => 
-          p.id === id ? { ...p, ...updates, updatedAt: new Date() } : p
-        )
-      })
-    } catch (error: any) {
-      set({ error: error.message })
-      throw error
-    }
-  },
-  
-  deleteProject: async (id, organizationId) => {
-    const { projects } = get()
-    try {
-      const projectRef = doc(db, 'organizations', organizationId, 'projects', id)
-      await deleteDoc(projectRef)
-      set({ projects: projects.filter(p => p.id !== id) })
-    } catch (error: any) {
-      set({ error: error.message })
-      throw error
-    }
-  },
-  
+
   createClient: async (clientData) => {
-    const { clients } = get()
     const organizationId = clientData.organizationId || ''
-    
-    try {
-      const clientsRef = collection(db, 'organizations', organizationId, 'clients')
-      const newClient = {
-        name: clientData.name,
-        email: clientData.email || '',
-        phone: clientData.phone || '',
-        address: clientData.address || '',
-        createdAt: Timestamp.now(),
-        updatedAt: Timestamp.now(),
-      }
-      const docRef = await addDoc(clientsRef, newClient)
-      set({ 
-        clients: [...clients, { ...clientData, id: docRef.id, createdAt: new Date(), updatedAt: new Date() } as Client]
-      })
-    } catch (error: any) {
-      set({ error: error.message })
-      throw error
+    const newClient = {
+      name: clientData.name,
+      contactPerson: clientData.contactPerson || '',
+      email: clientData.email || '',
+      phone: clientData.phone || '',
+      address: clientData.address || '',
+      createdAt: Timestamp.now(),
+      updatedAt: Timestamp.now(),
     }
+    const docRef = await addDoc(collection(db, 'organizations', organizationId, 'clients'), newClient)
+    const client: Client = {
+      ...clientData,
+      id: docRef.id,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }
+    set({ clients: [...get().clients, client] })
+    return client
   },
 }))
-
-
-
-

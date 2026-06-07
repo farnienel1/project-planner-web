@@ -1,28 +1,17 @@
 'use client'
 
-import Link from 'next/link'
+import { useRouter } from 'next/navigation'
+import { FormBackLink } from '@/components/forms/FormShell'
+import { PageHeader } from '@/components/dashboard/PageShell'
+import { ManagerForm } from '@/components/managers/ManagerForm'
 
 export default function NewManagerPage() {
+  const router = useRouter()
   return (
-    <div>
-      <div className="mb-6">
-        <Link href="/dashboard/managers" className="text-blue-600 hover:underline flex items-center space-x-2 mb-4">
-          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-          </svg>
-          <span>Back to Managers</span>
-        </Link>
-        <h1 className="text-3xl font-bold text-gray-900">Add New Manager</h1>
-      </div>
-
-      <div className="bg-white rounded-lg shadow p-8 text-center">
-        <p className="text-gray-600">Manager creation form coming soon...</p>
-        <p className="text-sm text-gray-500 mt-2">This feature will allow you to add new managers.</p>
-      </div>
+    <div className="space-y-6">
+      <FormBackLink href="/dashboard/managers" label="Back to managers" />
+      <PageHeader title="Add manager" description="Create manager profile in Firebase organizations/{orgId}/managers" />
+      <ManagerForm backHref="/dashboard/managers" onSaved={(id) => router.push(`/dashboard/managers/${id}`)} />
     </div>
   )
 }
-
-
-
-

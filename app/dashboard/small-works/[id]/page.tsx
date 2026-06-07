@@ -1,132 +1,77 @@
 'use client'
 
+import { useEffect, useMemo, useState } from 'react'
 import { useParams } from 'next/navigation'
+import Link from 'next/link'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useProjectStore } from '@/lib/stores/projectStore'
-import { useEffect } from 'react'
-import { format } from 'date-fns'
-import Link from 'next/link'
-import { JobType } from '@/types'
+import { useTaskStore } from '@/lib/stores/taskStore'
+import { ProjectHub } from '@/components/projects/ProjectHub'
+import { LoadingSpinner } from '@/components/dashboard/PageShell'
+import type { Project } from '@/types'
 
 export default function SmallWorkDetailPage() {
   const params = useParams()
   const { organization } = useAuthStore()
-  const { projects, loadProjects } = useProjectStore()
-  const work = projects.find(p => p.id === params.id && p.jobType === JobType.SMALL_WORK)
+  const { getProject } = useProjectStore()
+  const { tasks, loadTasks } = useTaskStore()
+  const [work, setWork] = useState<Project | null>(null)
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    if (organization?.id) {
-      loadProjects(organization.id)
-    }
-  }, [organization, loadProjects])
+    if (!organization?.id || !params.id) return
+    getProject(organization.id, String(params.id), 'smallWorks').then((p) => {
+      setWork(p)
+      setLoading(false)
+    })
+    loadTasks(organization.id)
+  }, [organization, params.id, getProject, loadTasks])
 
+  const openTaskCount = useMemo(
+    () => tasks.filter(t => t.projectId === String(params.id) && t.status !== 'Completed').length,
+    [tasks, params.id]
+  )
+
+  if (loading) return <LoadingSpinner />
   if (!work) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-center">
-          <p className="text-gray-500">Small work not found</p>
-          <Link href="/dashboard/small-works" className="text-blue-600 hover:underline mt-2 inline-block">
-            Back to Small Works
-          </Link>
-        </div>
+      <div className="space-y-4">
+        <Link href="/dashboard/small-works" className="inline-flex items-center gap-1.5 text-sm font-medium text-amber-600 hover:underline">
+          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+          </svg>
+          Back to small works
+        </Link>
+        <p className="text-slate-600">Small work not found.</p>
       </div>
     )
   }
 
+  const basePath = `/dashboard/small-works/${work.id}`
+
   return (
-    <div>
-      <div className="mb-6">
-        <Link href="/dashboard/small-works" className="text-blue-600 hover:underline flex items-center space-x-2 mb-4">
-          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <div className="space-y-4">
+      <div className="flex items-center justify-between gap-3">
+        <Link
+          href="/dashboard/small-works"
+          className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 shadow-sm hover:bg-slate-50 transition-colors"
+        >
+          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
           </svg>
-          <span>Back to Small Works</span>
+          Small works
         </Link>
-        
-        <div className="flex justify-between items-start">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">{work.siteName}</h1>
-            <p className="text-gray-600 mt-1">Job #{work.jobNumber}</p>
-          </div>
-          <Link
-            href={`/dashboard/small-works/${work.id}/edit`}
-            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
-          >
-            Edit Small Work
-          </Link>
-        </div>
+        <Link
+          href={`${basePath}/edit`}
+          className="inline-flex items-center gap-1.5 rounded-xl bg-amber-500 px-3 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-amber-600 transition-colors"
+        >
+          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+          </svg>
+          Edit
+        </Link>
       </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 space-y-6">
-          <div className="bg-white rounded-lg shadow p-6">
-            <h2 className="text-xl font-semibold text-gray-900 mb-4">Details</h2>
-            <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div>
-                <dt className="text-sm font-medium text-gray-500">Site Name</dt>
-                <dd className="mt-1 text-sm text-gray-900">{work.siteName}</dd>
-              </div>
-              <div>
-                <dt className="text-sm font-medium text-gray-500">Job Number</dt>
-                <dd className="mt-1 text-sm text-gray-900">{work.jobNumber}</dd>
-              </div>
-              <div className="sm:col-span-2">
-                <dt className="text-sm font-medium text-gray-500">Address</dt>
-                <dd className="mt-1 text-sm text-gray-900">
-                  {work.addressLine1}
-                  {work.addressLine2 && `, ${work.addressLine2}`}
-                  <br />
-                  {work.townCity}, {work.postcode}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-sm font-medium text-gray-500">Start Date</dt>
-                <dd className="mt-1 text-sm text-gray-900">{format(new Date(work.startDate), 'MMMM d, yyyy')}</dd>
-              </div>
-              <div>
-                <dt className="text-sm font-medium text-gray-500">End Date</dt>
-                <dd className="mt-1 text-sm text-gray-900">{format(new Date(work.endDate), 'MMMM d, yyyy')}</dd>
-              </div>
-              {work.description && (
-                <div className="sm:col-span-2">
-                  <dt className="text-sm font-medium text-gray-500">Description</dt>
-                  <dd className="mt-1 text-sm text-gray-900">{work.description}</dd>
-                </div>
-              )}
-            </dl>
-          </div>
-
-          {work.notes && (
-            <div className="bg-white rounded-lg shadow p-6">
-              <h2 className="text-xl font-semibold text-gray-900 mb-4">Notes</h2>
-              <p className="text-gray-700 whitespace-pre-wrap">{work.notes}</p>
-            </div>
-          )}
-        </div>
-
-        <div className="space-y-6">
-          <div className="bg-white rounded-lg shadow p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Status</h3>
-            <span className={`inline-block px-3 py-1 rounded-full text-sm font-medium ${
-              work.isLive ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
-            }`}>
-              {work.isLive ? 'Active' : 'Inactive'}
-            </span>
-          </div>
-
-          <div className="bg-white rounded-lg shadow p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Client</h3>
-            <p className="text-gray-900">{work.client.name}</p>
-            {work.client.email && (
-              <p className="text-sm text-gray-600 mt-1">{work.client.email}</p>
-            )}
-          </div>
-        </div>
-      </div>
+      <ProjectHub project={work} basePath={basePath} taskCount={openTaskCount} />
     </div>
   )
 }
-
-
-
-
