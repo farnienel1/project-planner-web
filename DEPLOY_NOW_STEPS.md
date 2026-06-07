@@ -103,7 +103,7 @@ git push -u origin main
 
    ```
    NEXT_PUBLIC_FIREBASE_APP_ID
-   Value: 1:980527300983:web:project-planner
+   Value: 1:980527300983:web:89bd0c7a69881d1b1be172
    ```
 
 3. **After adding all variables:**
