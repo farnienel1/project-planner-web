@@ -13,6 +13,7 @@ import {
   Timestamp
 } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
+import { sanitizeForFirestore } from '@/lib/firebase/firestoreUtils'
 import type { Booking } from '@/types'
 
 interface BookingState {
@@ -65,13 +66,20 @@ export const useBookingStore = create<BookingState>((set, get) => ({
     
     try {
       const bookingsRef = collection(db, 'organizations', organizationId, 'bookings')
-      const newBooking = {
-        ...bookingData,
+      const payload: Record<string, unknown> = {
+        operativeId: bookingData.operativeId,
+        projectId: bookingData.projectId,
         date: Timestamp.fromDate(new Date(bookingData.date)),
+        timeSlot: bookingData.timeSlot,
+        bookedBy: bookingData.bookedBy,
+        notes: bookingData.notes ?? '',
+        status: bookingData.status || 'confirmed',
         createdAt: Timestamp.now(),
         updatedAt: Timestamp.now(),
       }
-      const docRef = await addDoc(bookingsRef, newBooking)
+      if (bookingData.workStartTime) payload.workStartTime = bookingData.workStartTime
+      if (bookingData.workEndTime) payload.workEndTime = bookingData.workEndTime
+      const docRef = await addDoc(bookingsRef, payload)
       set({ 
         bookings: [...bookings, { ...bookingData, id: docRef.id, createdAt: new Date(), updatedAt: new Date() } as Booking]
       })
@@ -90,13 +98,11 @@ export const useBookingStore = create<BookingState>((set, get) => ({
     
     try {
       const bookingRef = doc(db, 'organizations', organizationId, 'bookings', id)
-      const updateData: any = {
+      const updateData: Record<string, unknown> = sanitizeForFirestore({
         ...updates,
         updatedAt: Timestamp.now(),
-      }
-      if (updates.date) {
-        updateData.date = Timestamp.fromDate(new Date(updates.date))
-      }
+        ...(updates.date ? { date: Timestamp.fromDate(new Date(updates.date)) } : {}),
+      }) as Record<string, unknown>
       await updateDoc(bookingRef, updateData)
       set({ 
         bookings: bookings.map(b => 

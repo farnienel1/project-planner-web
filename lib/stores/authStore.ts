@@ -13,6 +13,7 @@ import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore'
 import { auth, db } from '@/lib/firebase/config'
 import type { User, Organization } from '@/types'
 import { UserRole } from '@/types'
+import { parseUserPermissions } from '@/lib/navigation/menuPermissions'
 import { withSeededNavigationLabels } from '@/lib/navigation/sharedUiLabels'
 
 interface AuthState {
@@ -37,6 +38,7 @@ export const useAuthStore = create<AuthState>((set, get) => {
         const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid))
         if (userDoc.exists()) {
           const userData = userDoc.data()
+          const isSuperAdmin = userData.isSuperAdmin === true
           const user: User = {
             id: firebaseUser.uid,
             email: userData.email || firebaseUser.email || '',
@@ -46,15 +48,9 @@ export const useAuthStore = create<AuthState>((set, get) => {
             role: (userData.role as UserRole) || UserRole.BASIC,
             isActive: userData.isActive !== false,
             passwordSet: userData.passwordSet !== false,
-            isSuperAdmin: userData.isSuperAdmin === true,
-            permissions: {
-              adminAccess: userData.adminAccess === true || userData.isSuperAdmin === true,
-              operatives: userData.operatives === true || userData.isSuperAdmin === true,
-              skills: userData.skills === true || userData.isSuperAdmin === true,
-              qualifications: userData.qualifications === true || userData.isSuperAdmin === true,
-              projects: userData.projects === true || userData.isSuperAdmin === true,
-              smallWorks: userData.smallWorks === true || userData.isSuperAdmin === true,
-            },
+            isSuperAdmin,
+            permissions: parseUserPermissions(userData, isSuperAdmin),
+            annualLeaveEnabled: userData.annualLeaveEnabled !== false,
             policyAccepted: userData.policyAccepted === true,
             policyAcceptedAt: userData.policyAcceptedAt?.toDate(),
             createdAt: userData.createdAt?.toDate() || new Date(),
@@ -71,6 +67,7 @@ export const useAuthStore = create<AuthState>((set, get) => {
               organization = {
                 id: orgDoc.id,
                 name: orgData.name || '',
+                companyLogoURL: orgData.companyLogoURL || undefined,
                 members: orgData.members || {},
                 settings: seededLabels.settings,
                 createdAt: orgData.createdAt?.toDate() || new Date(),
@@ -149,12 +146,20 @@ export const useAuthStore = create<AuthState>((set, get) => {
           isActive: true,
           passwordSet: true,
           isSuperAdmin: true,
-          adminAccess: true,
-          operatives: true,
-          skills: true,
-          qualifications: true,
-          projects: true,
-          smallWorks: true,
+          permissions: {
+            adminAccess: true,
+            manager: true,
+            operatives: true,
+            skills: true,
+            qualifications: true,
+            materials: true,
+            projects: true,
+            smallWorks: true,
+            operativeMode: false,
+            siteAudit: true,
+            subContractors: true,
+            wholesalersOrderHistory: true,
+          },
           policyAccepted: false,
           createdAt: new Date(),
           updatedAt: new Date(),

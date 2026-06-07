@@ -1,31 +1,33 @@
 'use client'
 
-import { useParams } from 'next/navigation'
-import Link from 'next/link'
+import { useEffect, useState } from 'react'
+import { useParams, useRouter } from 'next/navigation'
+import { useAuthStore } from '@/lib/stores/authStore'
+import { useProjectStore } from '@/lib/stores/projectStore'
+import { ProjectForm } from '@/components/projects/ProjectForm'
+import { FormBackLink } from '@/components/forms/FormShell'
+import { LoadingSpinner, PageHeader } from '@/components/dashboard/PageShell'
+import type { Project } from '@/types'
 
 export default function EditSmallWorkPage() {
   const params = useParams()
+  const router = useRouter()
+  const { organization } = useAuthStore()
+  const { getProject } = useProjectStore()
+  const [work, setWork] = useState<Project | null>(null)
+
+  useEffect(() => {
+    if (!organization?.id || !params.id) return
+    getProject(organization.id, String(params.id), 'smallWorks').then(setWork)
+  }, [organization, params.id, getProject])
+
+  if (!work) return <LoadingSpinner />
 
   return (
-    <div>
-      <div className="mb-6">
-        <Link href={`/dashboard/small-works/${params.id}`} className="text-blue-600 hover:underline flex items-center space-x-2 mb-4">
-          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-          </svg>
-          <span>Back to Small Work</span>
-        </Link>
-        <h1 className="text-3xl font-bold text-gray-900">Edit Small Work</h1>
-      </div>
-
-      <div className="bg-white rounded-lg shadow p-8 text-center">
-        <p className="text-gray-600">Small work edit form coming soon...</p>
-        <p className="text-sm text-gray-500 mt-2">This feature will allow you to edit small work details.</p>
-      </div>
+    <div className="space-y-6">
+      <FormBackLink href={`/dashboard/small-works/${work.id}`} label="Back to small work" />
+      <PageHeader title="Edit small work" description={`Job #${work.jobNumber}`} />
+      <ProjectForm initial={work} collection="smallWorks" backHref={`/dashboard/small-works/${work.id}`} onSaved={() => router.push(`/dashboard/small-works/${work.id}`)} />
     </div>
   )
 }
-
-
-
-

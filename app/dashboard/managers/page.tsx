@@ -1,101 +1,153 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import Link from 'next/link'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
-import Link from 'next/link'
+import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
+import {
+  emptyRosterTitle,
+  filterUsersBySearch,
+  getManagerUsers,
+  matchesRosterSegment,
+  rosterStatusLabel,
+  type ManagerFilterField,
+  type RosterSegment,
+} from '@/lib/staff/userRosterUtils'
+import { RosterStatusBadge, StaffRosterFilters } from '@/components/staff/StaffRosterFilters'
+import { ClickableRosterRow } from '@/components/staff/ClickableRosterRow'
+
+const FILTER_OPTIONS: { value: ManagerFilterField; label: string }[] = [
+  { value: 'firstName', label: 'First name' },
+  { value: 'surname', label: 'Surname' },
+  { value: 'email', label: 'Email' },
+  { value: 'mobileNumber', label: 'Mobile number' },
+]
+
+function normalizeEmail(email: string): string {
+  return email.trim().toLowerCase()
+}
 
 export default function ManagersPage() {
   const { organization } = useAuthStore()
-  const { managers, loading, loadManagers } = useOperativeStore()
+  const { managers, loading: managersLoading, loadManagers } = useOperativeStore()
+  const { users, loading: usersLoading, loadUsers } = useOrgUserStore()
+  const [segment, setSegment] = useState<RosterSegment>('active')
+  const [search, setSearch] = useState('')
+  const [filterField, setFilterField] = useState<ManagerFilterField>('firstName')
 
   useEffect(() => {
     if (organization?.id) {
+      loadUsers(organization.id)
       loadManagers(organization.id)
     }
-  }, [organization, loadManagers])
+  }, [organization, loadUsers, loadManagers])
+
+  const allManagerUsers = useMemo(() => getManagerUsers(users), [users])
+
+  const filteredRows = useMemo(() => {
+    const bySegment = allManagerUsers.filter((user) => matchesRosterSegment(user, segment))
+    return filterUsersBySearch(bySegment, search, filterField)
+  }, [allManagerUsers, segment, search, filterField])
+
+  const loading = usersLoading || managersLoading
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      <div className="flex h-64 items-center justify-center">
+        <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-blue-600" />
       </div>
     )
   }
 
+  const emptyTitle = emptyRosterTitle(segment, 'managers', allManagerUsers.length > 0)
+
   return (
-    <div>
-      <div className="mb-8">
-        <div className="flex justify-between items-center mb-6">
+    <div className="space-y-6">
+      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-6">
+        <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">Managers</h1>
-            <p className="text-gray-600 mt-1">Manage your project managers</p>
+            <h1 className="text-3xl font-bold text-slate-900">Managers</h1>
+            <p className="mt-1 text-slate-600">Manage manager accounts — same roster as iOS ManagersView</p>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600">
+            {allManagerUsers.filter((user) => matchesRosterSegment(user, 'active')).length} active ·{' '}
+            {allManagerUsers.length} total
           </div>
           <Link
             href="/dashboard/managers/new"
-            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2"
+            className="flex items-center space-x-2 rounded-lg bg-blue-600 px-4 py-2 text-white transition-colors hover:bg-blue-700"
           >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
             </svg>
             <span>New Manager</span>
           </Link>
         </div>
+
+        <StaffRosterFilters
+          segment={segment}
+          onSegmentChange={setSegment}
+          search={search}
+          onSearchChange={setSearch}
+          filterField={filterField}
+          onFilterFieldChange={setFilterField}
+          filterOptions={FILTER_OPTIONS}
+          searchPlaceholder="Search managers…"
+        />
       </div>
 
-      {managers.length === 0 ? (
-        <div className="bg-white rounded-lg shadow p-12 text-center">
-          <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-          </svg>
-          <h3 className="mt-4 text-lg font-medium text-gray-900">No managers found</h3>
-          <p className="mt-2 text-gray-500">Get started by adding your first manager.</p>
-          <Link
-            href="/dashboard/managers/new"
-            className="mt-6 inline-block bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
-          >
-            Add Manager
-          </Link>
+      {filteredRows.length === 0 ? (
+        <div className="rounded-2xl border border-slate-200 bg-white p-12 text-center shadow-sm">
+          <h3 className="text-lg font-medium capitalize text-slate-900">{emptyTitle}</h3>
+          <p className="mt-2 text-slate-500">Try another tab or clear your search filter.</p>
         </div>
       ) : (
-        <div className="bg-white rounded-lg shadow overflow-hidden">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
+        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <table className="min-w-full divide-y divide-slate-200">
+            <thead className="bg-slate-50">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Phone</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Department</th>
-                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">Name</th>
+                <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">Email</th>
+                <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">Phone</th>
+                <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">Role</th>
+                <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">Status</th>
+                <th className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-slate-500" aria-hidden>
+                  <span className="sr-only">Open profile</span>
+                </th>
               </tr>
             </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {managers.map((manager) => (
-                <tr key={manager.id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm font-medium text-gray-900">
-                      {manager.firstName} {manager.lastName}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm text-gray-500">{manager.email}</div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm text-gray-500">{manager.phone || manager.mobile || '-'}</div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm text-gray-500">{manager.department || '-'}</div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                    <Link
-                      href={`/dashboard/managers/${manager.id}`}
-                      className="text-blue-600 hover:text-blue-900"
-                    >
-                      View
-                    </Link>
-                  </td>
-                </tr>
-              ))}
+            <tbody className="divide-y divide-slate-200 bg-white">
+              {filteredRows.map((user) => {
+                const managerRecord = managers.find(
+                  (manager) => normalizeEmail(manager.email) === normalizeEmail(user.email)
+                )
+                const role = user.permissions.adminAccess || user.isSuperAdmin ? 'Admin' : 'Manager'
+                const status = rosterStatusLabel(user)
+
+                return (
+                  <ClickableRosterRow key={user.id} href={`/dashboard/users/${user.id}?from=managers`}>
+                    <td className="whitespace-nowrap px-6 py-4">
+                      <span className="text-sm font-medium text-slate-900">
+                        {user.firstName} {user.surname}
+                      </span>
+                    </td>
+                    <td className="whitespace-nowrap px-6 py-4 text-sm text-slate-500">{user.email}</td>
+                    <td className="whitespace-nowrap px-6 py-4 text-sm text-slate-500">
+                      {user.mobileNumber || managerRecord?.phone || managerRecord?.mobile || '—'}
+                    </td>
+                    <td className="whitespace-nowrap px-6 py-4 text-sm text-slate-500">{role}</td>
+                    <td className="whitespace-nowrap px-6 py-4">
+                      <RosterStatusBadge status={status} />
+                    </td>
+                    <td className="whitespace-nowrap px-6 py-4 text-right text-slate-300">
+                      <svg className="ml-auto h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                      </svg>
+                    </td>
+                  </ClickableRosterRow>
+                )
+              })}
             </tbody>
           </table>
         </div>
@@ -103,7 +155,3 @@ export default function ManagersPage() {
     </div>
   )
 }
-
-
-
-
