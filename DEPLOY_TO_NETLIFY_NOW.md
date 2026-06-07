@@ -62,7 +62,7 @@ git push -u origin main
    NEXT_PUBLIC_FIREBASE_PROJECT_ID = project-planner-f986c
    NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET = project-planner-f986c.appspot.com
    NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID = 980527300983
-   NEXT_PUBLIC_FIREBASE_APP_ID = 1:980527300983:web:project-planner
+   NEXT_PUBLIC_FIREBASE_APP_ID = 1:980527300983:web:89bd0c7a69881d1b1be172
    ```
 
 3. Click **"Redeploy"** after adding variables
