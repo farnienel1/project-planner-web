@@ -9,11 +9,12 @@ import {
   createUserWithEmailAndPassword,
   sendPasswordResetEmail,
 } from 'firebase/auth'
-import { doc, getDoc, setDoc } from 'firebase/firestore'
+import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore'
 import { auth, db } from '@/lib/firebase/config'
 import type { User, Organization } from '@/types'
 import { UserRole } from '@/types'
 import { parseUserPermissions } from '@/lib/navigation/menuPermissions'
+import { withSeededNavigationLabels } from '@/lib/navigation/sharedUiLabels'
 
 interface AuthState {
   user: User | null
@@ -62,14 +63,27 @@ export const useAuthStore = create<AuthState>((set, get) => {
             const orgDoc = await getDoc(doc(db, 'organizations', user.organizationId))
             if (orgDoc.exists()) {
               const orgData = orgDoc.data()
+              const seededLabels = withSeededNavigationLabels(orgData.settings || {})
               organization = {
                 id: orgDoc.id,
                 name: orgData.name || '',
                 companyLogoURL: orgData.companyLogoURL || undefined,
                 members: orgData.members || {},
-                settings: orgData.settings || {},
+                settings: seededLabels.settings,
                 createdAt: orgData.createdAt?.toDate() || new Date(),
                 updatedAt: orgData.updatedAt?.toDate() || new Date(),
+              }
+
+              if (seededLabels.changed && (user.isSuperAdmin || user.permissions.adminAccess)) {
+                try {
+                  await updateDoc(doc(db, 'organizations', user.organizationId), {
+                    'settings.uiLabels.navigationLabels': seededLabels.navigationLabels,
+                    updatedAt: new Date(),
+                  })
+                } catch (seedError) {
+                  // Non-blocking: label seeding should never block login.
+                  console.warn('Navigation label seeding skipped:', seedError)
+                }
               }
             }
           }
