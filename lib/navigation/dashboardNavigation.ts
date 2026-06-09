@@ -17,6 +17,8 @@ import {
   canViewMyQualifications,
   canViewOperatives,
   canViewProjects,
+  canViewDailyOverview,
+  canViewMySchedule,
   canViewSchedule,
   canViewSiteAudit,
   canViewSiteMap,
@@ -102,13 +104,43 @@ const ALL_NAV_ITEMS: DashboardNavItem[] = [
     section: 'navigate',
   },
   {
-    id: 'dashboard_schedule',
-    href: '/dashboard/schedule',
-    label: 'Schedule',
-    subtitle: 'Bookings and timelines',
-    navigationLabelKey: 'dashboard_schedule',
+    id: 'dashboard_daily_overview',
+    href: '/dashboard/daily-overview',
+    label: 'Daily overview',
+    subtitle: 'All bookings across the organisation',
+    navigationLabelKey: 'dashboard_daily_overview',
     iconPath: 'M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z',
+    tileClasses: 'bg-sky-50 text-sky-700',
+    section: 'navigate',
+  },
+  {
+    id: 'dashboard_schedule',
+    href: '/dashboard/my-schedule',
+    label: 'My Schedule',
+    subtitle: 'Your personal bookings and assignments',
+    navigationLabelKey: 'dashboard_schedule',
+    iconPath: 'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z',
     tileClasses: 'bg-blue-50 text-blue-700',
+    section: 'navigate',
+  },
+  {
+    id: 'dashboard_warnings',
+    href: '/dashboard/warnings',
+    label: 'Warnings',
+    subtitle: 'Booking clashes and alerts',
+    navigationLabelKey: 'dashboard_warnings',
+    iconPath: 'M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z',
+    tileClasses: 'bg-amber-50 text-amber-700',
+    section: 'navigate',
+  },
+  {
+    id: 'dashboard_tasks',
+    href: '/dashboard/tasks',
+    label: 'Tasks',
+    subtitle: 'All tasks and leave approvals',
+    navigationLabelKey: 'dashboard_tasks',
+    iconPath: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4',
+    tileClasses: 'bg-indigo-50 text-indigo-700',
     section: 'navigate',
   },
   {
@@ -286,8 +318,14 @@ function canSeeNavItem(item: DashboardNavItem, user: User): boolean {
       return canViewOperatives(user)
     case 'dashboard_managers':
       return canViewManagers(user)
+    case 'dashboard_daily_overview':
+      return canViewDailyOverview(user)
     case 'dashboard_schedule':
-      return canViewSchedule(user)
+      return canViewMySchedule(user)
+    case 'dashboard_warnings':
+      return canViewDailyOverview(user)
+    case 'dashboard_tasks':
+      return true
     case 'dashboard_annual_leave':
       return isAnnualLeaveFeatureEnabled(user)
     case 'dashboard_site_map':

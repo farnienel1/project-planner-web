@@ -1,109 +1,27 @@
 'use client'
 
 import { useEffect } from 'react'
-import { useAuthStore } from '@/lib/stores/authStore'
-import { useBookingStore } from '@/lib/stores/bookingStore'
-import { format } from 'date-fns'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { Suspense } from 'react'
+import { LoadingSpinner } from '@/components/dashboard/PageShell'
 
-export default function SchedulePage() {
-  const { organization } = useAuthStore()
-  const { bookings, loading, loadBookings } = useBookingStore()
+function ScheduleLegacyRedirect() {
+  const router = useRouter()
+  const searchParams = useSearchParams()
 
   useEffect(() => {
-    if (organization?.id) {
-      loadBookings(organization.id)
-    }
-  }, [organization, loadBookings])
+    const query = searchParams.toString()
+    router.replace(query ? `/dashboard/daily-overview?${query}` : '/dashboard/daily-overview')
+  }, [router, searchParams])
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-      </div>
-    )
-  }
-
-  // Group bookings by date
-  const bookingsByDate = bookings.reduce((acc, booking) => {
-    const bookingDate = booking.date instanceof Date ? booking.date : new Date(booking.date)
-    const dateKey = format(bookingDate, 'yyyy-MM-dd')
-    if (!acc[dateKey]) acc[dateKey] = []
-    acc[dateKey].push(booking)
-    return acc
-  }, {} as Record<string, typeof bookings>)
-
-  const sortedDates = Object.keys(bookingsByDate).sort()
-  const confirmedCount = bookings.filter((b) => `${b.status}`.toLowerCase() === 'confirmed').length
-
-  return (
-    <div className="space-y-6">
-      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-6">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <h1 className="text-3xl font-bold text-slate-900">Schedule</h1>
-            <p className="mt-1 text-slate-600">View and manage bookings</p>
-          </div>
-          <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600">
-            {confirmedCount} confirmed of {bookings.length}
-          </div>
-        </div>
-      </div>
-
-      {bookings.length === 0 ? (
-        <div className="rounded-2xl border border-slate-200 bg-white p-12 text-center shadow-sm">
-          <svg className="mx-auto h-12 w-12 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-          </svg>
-          <h3 className="mt-4 text-lg font-medium text-slate-900">No bookings found</h3>
-          <p className="mt-2 text-slate-500">Bookings will appear here once operatives are scheduled.</p>
-        </div>
-      ) : (
-        <div className="space-y-6">
-          {sortedDates.map((dateKey) => {
-            const dateBookings = bookingsByDate[dateKey]
-            const firstBookingDate = dateBookings[0]?.date instanceof Date ? dateBookings[0].date : new Date(dateBookings[0]?.date)
-            const dateLabel = Number.isNaN(firstBookingDate?.getTime())
-              ? dateKey
-              : format(firstBookingDate, 'EEEE, MMMM d, yyyy')
-            
-            return (
-              <div key={dateKey} className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-                <h2 className="mb-4 text-xl font-semibold text-slate-900">
-                  {dateLabel}
-                </h2>
-                <div className="space-y-3">
-                  {dateBookings.map((booking) => {
-                    const timeSlot = typeof booking.timeSlot === 'string' ? booking.timeSlot : booking.timeSlot
-                    const status = typeof booking.status === 'string' ? booking.status : booking.status
-                    return (
-                      <div key={booking.id} className="rounded-lg border border-slate-200 p-4 hover:bg-slate-50">
-                        <div className="flex justify-between items-start">
-                          <div>
-                            <p className="font-medium text-slate-900">Operative ID: {booking.operativeId || 'N/A'}</p>
-                            <p className="mt-1 text-sm text-slate-600">Project ID: {booking.projectId || 'N/A'}</p>
-                            <p className="text-sm text-slate-600">Time: {timeSlot || 'Unknown'}</p>
-                          </div>
-                          <span className={`px-2 py-1 rounded text-xs font-medium ${
-                            status === 'confirmed' ? 'bg-green-100 text-green-800' :
-                            status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
-                            'bg-gray-100 text-gray-800'
-                          }`}>
-                            {status}
-                          </span>
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
-            )
-          })}
-        </div>
-      )}
-    </div>
-  )
+  return <LoadingSpinner label="Redirecting…" />
 }
 
-
-
-
+/** Legacy route — daily overview was previously at /dashboard/schedule. */
+export default function ScheduleRedirectPage() {
+  return (
+    <Suspense fallback={<LoadingSpinner label="Redirecting…" />}>
+      <ScheduleLegacyRedirect />
+    </Suspense>
+  )
+}

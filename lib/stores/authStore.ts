@@ -10,6 +10,7 @@ import {
   sendPasswordResetEmail,
 } from 'firebase/auth'
 import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore'
+import { seedOrgDefaultDashboard } from '@/lib/dashboard/dashboardLayoutStorage'
 import { auth, db } from '@/lib/firebase/config'
 import type { User, Organization } from '@/types'
 import { UserRole } from '@/types'
@@ -135,6 +136,8 @@ export const useAuthStore = create<AuthState>((set, get) => {
           createdAt: new Date(),
           updatedAt: new Date(),
         })
+
+        await seedOrgDefaultDashboard(orgId)
         
         // Create user document
         await setDoc(doc(db, 'users', result.user.uid), {

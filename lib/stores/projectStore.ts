@@ -61,6 +61,7 @@ export function mapProjectDoc(docId: string, data: Record<string, unknown>, orga
     isLive: data.isLive !== false,
     description: parseOptionalString(data.description),
     notes: parseOptionalString(data.notes),
+    siteAddress: parseOptionalString(data.siteAddress),
     latitude: parseNumber(data.latitude),
     longitude: parseNumber(data.longitude),
     usesMapPinForLocation: data.usesMapPinForLocation === true,

@@ -279,6 +279,8 @@ export function ScheduleOperativeForm({
           onConfirmBooking={proceedWithBooking}
           canConfirmBooking={selectedOperatives.size > 0 && slotsList.length > 0 && clashReviewOperativeIds.size === 0}
           saving={saving}
+          viewer={user}
+          operatives={activeOperatives}
         />
       )}
 

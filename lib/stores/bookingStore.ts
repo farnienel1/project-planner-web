@@ -50,8 +50,11 @@ export const useBookingStore = create<BookingState>((set, get) => ({
           bookedBy: data.bookedBy || '',
           notes: data.notes || '',
           status: data.status || 'confirmed',
+          workStartTime: data.workStartTime || undefined,
+          workEndTime: data.workEndTime || undefined,
           createdAt: data.createdAt?.toDate() || new Date(),
           updatedAt: data.updatedAt?.toDate() || new Date(),
+          organizationId,
         } as Booking
       })
       set({ bookings, loading: false })
