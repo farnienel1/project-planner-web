@@ -110,8 +110,18 @@ export function canViewHelp(user: User | null): boolean {
 }
 
 export function canViewSchedule(user: User | null): boolean {
+  return canViewDailyOverview(user)
+}
+
+/** Org-wide daily booking overview (managers/admins with permission). */
+export function canViewDailyOverview(user: User | null): boolean {
   if (!user || isOperativeMode(user)) return false
-  return true
+  return user.permissions.dailyOverview !== false
+}
+
+/** Personal schedule for the signed-in user (all roles, mirrors iOS My Schedule). */
+export function canViewMySchedule(user: User | null): boolean {
+  return Boolean(user)
 }
 
 export function parseUserPermissions(

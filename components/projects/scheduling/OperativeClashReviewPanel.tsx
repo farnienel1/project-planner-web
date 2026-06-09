@@ -1,7 +1,9 @@
 'use client'
 
+import Link from 'next/link'
 import { formatClashSummary, type OperativeBookingClash } from '@/lib/scheduling/bookingClashUtils'
-import type { Operative } from '@/types'
+import { buildScheduleUrlForExistingClash } from '@/lib/navigation/scheduleNavigation'
+import type { Operative, User } from '@/types'
 
 export function OperativeClashReviewPanel({
   clashesByOperative,
@@ -11,6 +13,8 @@ export function OperativeClashReviewPanel({
   onConfirmBooking,
   canConfirmBooking,
   saving,
+  viewer,
+  operatives,
 }: {
   clashesByOperative: Array<{ operative: Operative; clashes: OperativeBookingClash[] }>
   onApprove: (operativeId: string) => void
@@ -19,6 +23,8 @@ export function OperativeClashReviewPanel({
   onConfirmBooking: () => void
   canConfirmBooking: boolean
   saving?: boolean
+  viewer: User | null
+  operatives: Operative[]
 }) {
   return (
     <div className="rounded-2xl border border-amber-300 bg-white p-4 shadow-sm">
@@ -31,7 +37,13 @@ export function OperativeClashReviewPanel({
       </p>
 
       <div className="space-y-3">
-        {clashesByOperative.map(({ operative, clashes }) => (
+        {clashesByOperative.map(({ operative, clashes }) => {
+          const primaryClash = clashes[0]
+          const scheduleHref = primaryClash
+            ? buildScheduleUrlForExistingClash(primaryClash, viewer, operatives)
+            : '/dashboard/daily-overview'
+
+          return (
           <div
             key={operative.id}
             className="flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3"
@@ -39,12 +51,13 @@ export function OperativeClashReviewPanel({
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-600 text-xs font-bold text-white">
               {(operative.firstName?.[0] || operative.lastName?.[0] || 'O').toUpperCase()}
             </div>
-            <div className="min-w-0 flex-1">
+            <Link href={scheduleHref} className="min-w-0 flex-1 transition hover:opacity-90">
               <p className="text-sm font-semibold text-slate-900">
                 {operative.firstName} {operative.lastName}
               </p>
               <p className="mt-1 text-xs text-slate-600">{formatClashSummary(clashes)}</p>
-            </div>
+              <p className="mt-1 text-xs font-semibold text-blue-600">View in schedule →</p>
+            </Link>
             <div className="flex shrink-0 items-center gap-2">
               <button
                 type="button"
@@ -64,7 +77,8 @@ export function OperativeClashReviewPanel({
               </button>
             </div>
           </div>
-        ))}
+          )
+        })}
       </div>
 
       <div className="mt-4 grid gap-2 sm:grid-cols-2">

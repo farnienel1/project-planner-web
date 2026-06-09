@@ -24,6 +24,8 @@ export interface Project {
   notes?: string;
   latitude?: number;
   longitude?: number;
+  /** Legacy single-line address from Firestore when structured fields are missing. */
+  siteAddress?: string;
   status?: 'active' | 'upcoming' | 'completed' | string;
   createdAt: Date;
   updatedAt: Date;
@@ -94,6 +96,10 @@ export interface Booking {
   createdAt: Date;
   updatedAt: Date;
   organizationId?: string;
+  /** Card title for manager site / office bookings (iOS managerSiteBookings). */
+  displayTitle?: string;
+  /** `manager` = organizations/{orgId}/managerSiteBookings; default operative bookings. */
+  source?: 'operative' | 'manager';
 }
 
 export interface Qualification {
@@ -237,6 +243,8 @@ export interface HolidayBooking {
   timeSlot: HolidayTimeSlot;
   approvedByUserId?: string;
   approvedAt?: Date;
+  cancellationRequestedAt?: Date;
+  cancellationRequestedByUserId?: string;
   createdAt: Date;
   updatedAt: Date;
 }
