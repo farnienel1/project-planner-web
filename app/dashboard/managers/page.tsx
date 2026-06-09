@@ -14,6 +14,8 @@ import {
   type ManagerFilterField,
   type RosterSegment,
 } from '@/lib/staff/userRosterUtils'
+import { PLACEHOLDER_MANAGER_EXPLANATION } from '@/lib/staff/managerRosterUtils'
+import { hasAdminAccess } from '@/lib/navigation/menuPermissions'
 import { RosterStatusBadge, StaffRosterFilters } from '@/components/staff/StaffRosterFilters'
 import { ClickableRosterRow } from '@/components/staff/ClickableRosterRow'
 
@@ -29,12 +31,20 @@ function normalizeEmail(email: string): string {
 }
 
 export default function ManagersPage() {
-  const { organization } = useAuthStore()
-  const { managers, loading: managersLoading, loadManagers } = useOperativeStore()
+  const { organization, user } = useAuthStore()
+  const {
+    managers,
+    placeholderManagerCount,
+    loading: managersLoading,
+    loadManagers,
+    cleanupLegacyPlaceholderManagers,
+  } = useOperativeStore()
   const { users, loading: usersLoading, loadUsers } = useOrgUserStore()
   const [segment, setSegment] = useState<RosterSegment>('active')
   const [search, setSearch] = useState('')
   const [filterField, setFilterField] = useState<ManagerFilterField>('firstName')
+  const [cleaning, setCleaning] = useState(false)
+  const [cleanupMessage, setCleanupMessage] = useState<string | null>(null)
 
   useEffect(() => {
     if (organization?.id) {
@@ -96,6 +106,41 @@ export default function ManagersPage() {
           searchPlaceholder="Search managers…"
         />
       </div>
+
+      {hasAdminAccess(user) && placeholderManagerCount > 0 && (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-950">
+          <p className="font-semibold">
+            {placeholderManagerCount} legacy placeholder manager record
+            {placeholderManagerCount === 1 ? '' : 's'} in Firestore
+          </p>
+          <p className="mt-2 text-xs leading-relaxed text-amber-900">{PLACEHOLDER_MANAGER_EXPLANATION}</p>
+          <button
+            type="button"
+            disabled={cleaning || !organization?.id}
+            onClick={async () => {
+              if (!organization?.id) return
+              if (
+                !window.confirm(
+                  `Remove ${placeholderManagerCount} placeholder manager record${placeholderManagerCount === 1 ? '' : 's'} from Firestore? This cannot be undone.`
+                )
+              ) {
+                return
+              }
+              setCleaning(true)
+              try {
+                const removed = await cleanupLegacyPlaceholderManagers(organization.id)
+                setCleanupMessage(`Removed ${removed} placeholder manager record${removed === 1 ? '' : 's'}.`)
+              } finally {
+                setCleaning(false)
+              }
+            }}
+            className="mt-3 rounded-lg bg-amber-700 px-3 py-2 text-xs font-semibold text-white hover:bg-amber-800 disabled:opacity-60"
+          >
+            {cleaning ? 'Removing…' : 'Remove placeholder managers from Firestore'}
+          </button>
+          {cleanupMessage && <p className="mt-2 text-xs font-medium text-emerald-800">{cleanupMessage}</p>}
+        </div>
+      )}
 
       {filteredRows.length === 0 ? (
         <div className="rounded-2xl border border-slate-200 bg-white p-12 text-center shadow-sm">

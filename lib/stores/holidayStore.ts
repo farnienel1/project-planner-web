@@ -23,7 +23,7 @@ function parseHolidayTimeSlot(value: unknown): HolidayTimeSlot {
   return raw === 'AM' || raw === 'PM' || raw === 'FULL DAY' ? raw : 'FULL DAY'
 }
 
-function mapHolidayBooking(docId: string, data: Record<string, unknown>, orgId: string): HolidayBooking | null {
+export function mapHolidayBooking(docId: string, data: Record<string, unknown>, orgId: string): HolidayBooking | null {
   const startDate = parseFirestoreDate(data.startDate)
   const endDate = parseFirestoreDate(data.endDate)
   if (!startDate || !endDate) return null
@@ -39,6 +39,8 @@ function mapHolidayBooking(docId: string, data: Record<string, unknown>, orgId: 
     timeSlot: parseHolidayTimeSlot(data.timeSlot),
     approvedByUserId: parseOptionalString(data.approvedByUserId),
     approvedAt: parseFirestoreDate(data.approvedAt),
+    cancellationRequestedAt: parseFirestoreDate(data.cancellationRequestedAt),
+    cancellationRequestedByUserId: parseOptionalString(data.cancellationRequestedByUserId),
     createdAt: parseFirestoreDate(data.createdAt) || new Date(),
     updatedAt: parseFirestoreDate(data.updatedAt) || new Date(),
   }
@@ -56,6 +58,10 @@ function holidayPayload(booking: HolidayBooking) {
     timeSlot: booking.timeSlot,
     approvedByUserId: booking.approvedByUserId || null,
     approvedAt: booking.approvedAt ? Timestamp.fromDate(booking.approvedAt) : null,
+    cancellationRequestedAt: booking.cancellationRequestedAt
+      ? Timestamp.fromDate(booking.cancellationRequestedAt)
+      : null,
+    cancellationRequestedByUserId: booking.cancellationRequestedByUserId || null,
     createdAt: Timestamp.fromDate(booking.createdAt),
     updatedAt: Timestamp.fromDate(booking.updatedAt),
   }
@@ -68,6 +74,14 @@ interface HolidayState {
   loadBookings: (organizationId: string) => Promise<void>
   saveBooking: (organizationId: string, booking: HolidayBooking) => Promise<void>
   deleteBooking: (organizationId: string, id: string) => Promise<void>
+  requestCancellation: (organizationId: string, booking: HolidayBooking, userId: string) => Promise<void>
+}
+
+export function isPendingHolidayRequest(booking: HolidayBooking): boolean {
+  return (
+    (booking.status === 'pending' || booking.cancellationRequestedAt != null) &&
+    (booking.operativeId != null || booking.userId != null)
+  )
 }
 
 export const useHolidayStore = create<HolidayState>((set, get) => ({
@@ -105,6 +119,16 @@ export const useHolidayStore = create<HolidayState>((set, get) => ({
   deleteBooking: async (organizationId, id) => {
     await deleteDoc(doc(db, 'organizations', organizationId, 'holidayBookings', id))
     set({ bookings: get().bookings.filter((b) => b.id !== id) })
+  },
+
+  requestCancellation: async (organizationId, booking, userId) => {
+    const updated: HolidayBooking = {
+      ...booking,
+      cancellationRequestedAt: new Date(),
+      cancellationRequestedByUserId: userId,
+      updatedAt: new Date(),
+    }
+    await get().saveBooking(organizationId, updated)
   },
 }))
 

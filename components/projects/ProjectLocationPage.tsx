@@ -1,15 +1,21 @@
 'use client'
 
 import Link from 'next/link'
+import { openMapsForProject, formatSiteAddress } from '@/lib/maps/siteAddress'
+import { SetSitePinButton } from '@/components/site-map/SetSitePinButton'
 import type { Project } from '@/types'
 
-export function ProjectLocationPage({ project, hubPath }: { project: Project; hubPath: string }) {
-  const address = [project.addressLine1, project.addressLine2, project.townCity, project.postcode]
-    .filter(Boolean)
-    .join(', ')
-
-  const mapsQuery = encodeURIComponent(address || project.siteName)
-  const googleMapsUrl = `https://www.google.com/maps/search/?api=1&query=${mapsQuery}`
+export function ProjectLocationPage({
+  project,
+  hubPath,
+  collection = 'projects',
+}: {
+  project: Project
+  hubPath: string
+  collection?: 'projects' | 'smallWorks'
+}) {
+  const address = formatSiteAddress(project)
+  const googleMapsUrl = openMapsForProject(project)
   const hasCoords = project.latitude != null && project.longitude != null
 
   return (
@@ -28,23 +34,29 @@ export function ProjectLocationPage({ project, hubPath }: { project: Project; hu
         </div>
         {hasCoords && (
           <div className="px-5 py-4">
-            <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">Coordinates</p>
+            <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">Map pin</p>
             <p className="mt-2 text-sm font-mono text-slate-700">
               {project.latitude?.toFixed(5)}, {project.longitude?.toFixed(5)}
             </p>
+            {project.usesMapPinForLocation && (
+              <p className="mt-1 text-xs text-emerald-700">Exact pin saved for site map</p>
+            )}
           </div>
         )}
       </div>
 
       <div className="flex flex-wrap gap-3">
-        <a
-          href={googleMapsUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-700"
-        >
-          Open in Google Maps
-        </a>
+        <SetSitePinButton project={project} collection={collection} label="Set pin on map" className="px-4 py-2.5 text-sm" />
+        {googleMapsUrl && (
+          <a
+            href={googleMapsUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-700"
+          >
+            Open in Google Maps
+          </a>
+        )}
         <Link
           href="/dashboard/site-map"
           className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"

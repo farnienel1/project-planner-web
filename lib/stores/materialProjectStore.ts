@@ -85,6 +85,7 @@ interface MaterialProjectState {
   loading: boolean
   error: string | null
   loadProjectMaterials: (organizationId: string, projectId: string) => Promise<void>
+  loadAllMaterials: (organizationId: string) => Promise<void>
   loadSendRecords: (organizationId: string, projectId?: string) => Promise<void>
   saveMaterialLine: (organizationId: string, line: SaveMaterialLineInput) => Promise<void>
   saveSendRecord: (organizationId: string, record: MaterialSendRecord) => Promise<void>
@@ -103,6 +104,20 @@ export const useMaterialProjectStore = create<MaterialProjectState>((set, get) =
       const materials = snapshot.docs
         .map((entry) => mapMaterialLine(entry.id, entry.data() as Record<string, unknown>))
         .filter((m) => m.projectId === projectId)
+      set({ materials, loading: false })
+    } catch (error: unknown) {
+      set({ error: error instanceof Error ? error.message : 'Failed to load materials', loading: false })
+      throw error
+    }
+  },
+
+  loadAllMaterials: async (organizationId) => {
+    set({ loading: true, error: null })
+    try {
+      const snapshot = await getDocs(collection(db, 'organizations', organizationId, 'materials'))
+      const materials = snapshot.docs.map((entry) =>
+        mapMaterialLine(entry.id, entry.data() as Record<string, unknown>)
+      )
       set({ materials, loading: false })
     } catch (error: unknown) {
       set({ error: error instanceof Error ? error.message : 'Failed to load materials', loading: false })

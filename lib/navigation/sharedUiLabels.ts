@@ -5,7 +5,10 @@ export const DEFAULT_NAVIGATION_LABELS: Record<string, string> = {
   dashboard_small_works: 'Small works',
   dashboard_operatives: 'Operatives',
   dashboard_managers: 'Managers',
-  dashboard_schedule: 'Schedule',
+  dashboard_schedule: 'My Schedule',
+  dashboard_daily_overview: 'Daily overview',
+  dashboard_warnings: 'Warnings',
+  dashboard_tasks: 'Tasks',
   dashboard_annual_leave: 'Annual leave',
   dashboard_site_map: 'Site map',
   dashboard_site_audit: 'Site audit',
@@ -26,11 +29,21 @@ export const DEFAULT_NAVIGATION_LABELS: Record<string, string> = {
 
 type OrganizationSettings = Record<string, any> | undefined
 
+/** Renamed nav labels — always use these on web (overrides legacy org "Schedule" in Firestore). */
+const FORCED_NAVIGATION_LABELS: Record<string, string> = {
+  dashboard_schedule: 'My Schedule',
+  dashboard_daily_overview: 'Daily overview',
+}
+
 export function getNavigationLabel(
   settings: OrganizationSettings,
   key: string,
   fallback: string
 ): string {
+  if (FORCED_NAVIGATION_LABELS[key]) {
+    return FORCED_NAVIGATION_LABELS[key]
+  }
+
   const value = settings?.uiLabels?.navigationLabels?.[key]
   if (typeof value === 'string' && value.trim().length > 0) {
     return value.trim()

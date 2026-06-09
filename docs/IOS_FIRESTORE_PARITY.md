@@ -92,6 +92,25 @@ Terminal and agents can still read iOS via **absolute paths** (as in this doc). 
 | `users` | Profile, permissions, `organizationId` |
 | `organizations` | Org doc + `settings` embedded / subdocs |
 | `invitations` | Pending invites |
+| `platformConfig` | Global templates e.g. `webDashboard` default layout |
+
+---
+
+## Schedule routes (web ↔ iOS)
+
+| Screen | iOS | Web route | Firestore |
+|--------|-----|-----------|-----------|
+| My Schedule | `MyScheduleView` | `/dashboard/my-schedule` | `bookings` (linked operative) + `managerSiteBookings` (current user) |
+| Daily overview | `DailyOverviewView` | `/dashboard/daily-overview` | `managerSiteBookings` + operative roster (web daily overview still simplified) |
+
+**Same Firebase project:** localhost and TestFlight use the same Firestore when env points at the same `projectId`. TestFlight is only iOS distribution — not a separate database.
+
+**Deploy rules** (from the iOS app folder — `firebase.json` lives next to `firestore.rules`):
+
+```bash
+cd "/Users/farnienel/Desktop/Project Planner/Project Planner"
+firebase deploy --only firestore:rules
+```
 
 ---
 
@@ -106,7 +125,10 @@ Path prefix: `organizations/{organizationId}/`
 | `smallWorks` | Small works |
 | `operatives` | Operatives |
 | `managers` | Managers |
-| `bookings` | Schedule, timesheets, site map pins |
+| `bookings` | Operative schedule, timesheets, site map pins |
+| `managerSiteBookings` | Admin/manager self-bookings (office, WFH, site) — **My Schedule** on iOS |
+| `acceptedBookingClashes` | Dismissed booking clash pairs (web warnings) |
+| `dashboardLayouts` | Legacy per-user web dashboard layout under org |
 | `holidayBookings` | Annual leave / holiday |
 | `skills` | Skills catalogue |
 | `qualifications` | Qualification types |
