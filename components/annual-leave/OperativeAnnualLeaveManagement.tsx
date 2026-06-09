@@ -11,6 +11,7 @@ import {
   hasAdminAccess,
   canAccessOperativeAnnualLeaveDirectory,
 } from '@/lib/navigation/menuPermissions'
+import { isPendingHolidayRequest } from '@/lib/stores/holidayStore'
 import {
   buildAnnualLeavePeople,
   resolvePersonName,
@@ -19,6 +20,7 @@ import {
   type AnnualLeavePerson,
   type AnnualLeavePersonSort,
 } from '@/lib/annualLeave/annualLeavePerson'
+import { isCancellationRequest } from '@/lib/annualLeave/holidayApprovalUtils'
 import type { HolidayBooking } from '@/types'
 import { OperativeAnnualLeaveCalendar } from './OperativeAnnualLeaveCalendar'
 
@@ -72,7 +74,7 @@ function BookingListRow({
 
 export function OperativeAnnualLeaveManagement() {
   const { user, organization } = useAuthStore()
-  const { bookings, saveBooking } = useHolidayStore()
+  const { bookings, saveBooking, deleteBooking } = useHolidayStore()
   const { operatives } = useOperativeStore()
   const { users } = useOrgUserStore()
 
@@ -113,7 +115,7 @@ export function OperativeAnnualLeaveManagement() {
   const approvedBookings = useMemo(
     () =>
       teamBookings
-        .filter((b) => b.status === 'approved')
+        .filter((b) => b.status === 'approved' && !isCancellationRequest(b))
         .sort((a, b) => b.startDate.getTime() - a.startDate.getTime()),
     [teamBookings]
   )
@@ -121,13 +123,26 @@ export function OperativeAnnualLeaveManagement() {
   const pendingRequests = useMemo(
     () =>
       teamBookings
-        .filter((b) => b.status === 'pending')
+        .filter((b) => isPendingHolidayRequest(b))
         .sort((a, b) => b.startDate.getTime() - a.startDate.getTime()),
     [teamBookings]
   )
 
   const updateStatus = async (booking: HolidayBooking, status: 'approved' | 'rejected') => {
     if (!organization?.id || !user) return
+    if (status === 'approved' && isCancellationRequest(booking)) {
+      await deleteBooking(organization.id, booking.id)
+      return
+    }
+    if (status === 'rejected' && isCancellationRequest(booking)) {
+      await saveBooking(organization.id, {
+        ...booking,
+        cancellationRequestedAt: undefined,
+        cancellationRequestedByUserId: undefined,
+        updatedAt: new Date(),
+      })
+      return
+    }
     await saveBooking(organization.id, {
       ...booking,
       status,

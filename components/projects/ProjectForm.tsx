@@ -9,6 +9,9 @@ import { DEFAULT_JOB_TYPES } from '@/types'
 import type { ProjectSaveInput } from '@/lib/firebase/projectPayload'
 import { FormActions, FormInput, FormLabel, FormSelect, FormTextarea } from '@/components/forms/FormShell'
 import { ErrorBanner } from '@/components/dashboard/PageShell'
+import { SitePinPickerSheet } from '@/components/site-map/SitePinPickerSheet'
+import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
+import { getManagerUsers } from '@/lib/staff/userRosterUtils'
 
 type ProjectFormProps = {
   initial?: Project | null
@@ -20,9 +23,11 @@ type ProjectFormProps = {
 export function ProjectForm({ initial, collection = 'projects', backHref, onSaved }: ProjectFormProps) {
   const { organization } = useAuthStore()
   const { clients, loadClients, saveProject, createClient } = useProjectStore()
-  const { managers, loadManagers } = useOperativeStore()
+  const { managers, placeholderManagerCount, loadManagers } = useOperativeStore()
+  const { users, loadUsers } = useOrgUserStore()
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [pinPickerOpen, setPinPickerOpen] = useState(false)
   const [newClientName, setNewClientName] = useState('')
 
   const [form, setForm] = useState({
@@ -49,8 +54,11 @@ export function ProjectForm({ initial, collection = 'projects', backHref, onSave
     if (organization?.id) {
       loadClients(organization.id)
       loadManagers(organization.id)
+      loadUsers(organization.id)
     }
-  }, [organization, loadClients, loadManagers])
+  }, [organization, loadClients, loadManagers, loadUsers])
+
+  const managerUsers = getManagerUsers(users)
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
@@ -177,6 +185,17 @@ export function ProjectForm({ initial, collection = 'projects', backHref, onSave
               </option>
             ))}
           </select>
+          {managers.length === 0 && managerUsers.length > 0 && (
+            <p className="mt-2 text-xs text-amber-700">
+              No manager roster records found. Add managers from the Managers page, then return here.
+            </p>
+          )}
+          {placeholderManagerCount > 0 && (
+            <p className="mt-2 text-xs text-slate-500">
+              {placeholderManagerCount} legacy placeholder manager record
+              {placeholderManagerCount === 1 ? '' : 's'} hidden from this list (same as iOS).
+            </p>
+          )}
           <p className="mt-1 text-xs text-slate-500">Hold Cmd/Ctrl to select multiple</p>
         </div>
       </div>
@@ -206,15 +225,52 @@ export function ProjectForm({ initial, collection = 'projects', backHref, onSave
           <FormLabel required>End date</FormLabel>
           <FormInput type="date" value={form.endDate} onChange={(e) => setForm({ ...form, endDate: e.target.value })} required />
         </div>
-        <div>
-          <FormLabel>Latitude (optional)</FormLabel>
-          <FormInput value={form.latitude} onChange={(e) => setForm({ ...form, latitude: e.target.value })} />
-        </div>
-        <div>
-          <FormLabel>Longitude (optional)</FormLabel>
-          <FormInput value={form.longitude} onChange={(e) => setForm({ ...form, longitude: e.target.value })} />
+        <div className="md:col-span-2">
+          <FormLabel>Site location pin</FormLabel>
+          <div className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+            <button
+              type="button"
+              onClick={() => setPinPickerOpen(true)}
+              className="inline-flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-100"
+            >
+              Set pin on map
+            </button>
+            {form.latitude && form.longitude ? (
+              <p className="text-xs font-mono text-slate-600">
+                Pin: {Number(form.latitude).toFixed(5)}, {Number(form.longitude).toFixed(5)}
+              </p>
+            ) : (
+              <p className="text-xs text-slate-500">No pin set — use the map for an exact location.</p>
+            )}
+          </div>
         </div>
       </div>
+
+      <SitePinPickerSheet
+        open={pinPickerOpen}
+        siteName={form.siteName || 'New project'}
+        jobNumber={form.jobNumber}
+        initial={{
+          addressLine1: form.addressLine1,
+          addressLine2: form.addressLine2,
+          townCity: form.townCity,
+          postcode: form.postcode,
+          latitude: form.latitude ? Number(form.latitude) : undefined,
+          longitude: form.longitude ? Number(form.longitude) : undefined,
+        }}
+        onClose={() => setPinPickerOpen(false)}
+        onSave={(payload) => {
+          setForm((current) => ({
+            ...current,
+            addressLine1: payload.addressLine1,
+            addressLine2: payload.addressLine2 || '',
+            townCity: payload.townCity,
+            postcode: payload.postcode,
+            latitude: String(payload.latitude),
+            longitude: String(payload.longitude),
+          }))
+        }}
+      />
 
       <div>
         <FormLabel>Description</FormLabel>

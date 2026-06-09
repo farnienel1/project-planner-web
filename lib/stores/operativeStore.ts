@@ -13,10 +13,12 @@ import {
 import { newUuid } from '@/lib/firebase/firestoreUtils'
 import { db } from '@/lib/firebase/config'
 import type { Operative, Manager, Skill, Qualification } from '@/types'
+import { filterRealManagers, isPlaceholderManager } from '@/lib/staff/managerRosterUtils'
 
 interface OperativeState {
   operatives: Operative[]
   managers: Manager[]
+  placeholderManagerCount: number
   skills: Skill[]
   qualifications: Qualification[]
   loading: boolean
@@ -31,11 +33,13 @@ interface OperativeState {
   saveManager: (organizationId: string, manager: Manager) => Promise<string>
   deleteOperative: (id: string, organizationId: string) => Promise<void>
   deleteManager: (id: string, organizationId: string) => Promise<void>
+  cleanupLegacyPlaceholderManagers: (organizationId: string) => Promise<number>
 }
 
 export const useOperativeStore = create<OperativeState>((set, get) => ({
   operatives: [],
   managers: [],
+  placeholderManagerCount: 0,
   skills: [],
   qualifications: [],
   loading: false,
@@ -89,7 +93,7 @@ export const useOperativeStore = create<OperativeState>((set, get) => ({
     try {
       const managersRef = collection(db, 'organizations', organizationId, 'managers')
       const snapshot = await getDocs(managersRef)
-      const managers = snapshot.docs.map(doc => {
+      const allManagers = snapshot.docs.map(doc => {
         const data = doc.data()
         return {
           id: doc.id,
@@ -105,7 +109,10 @@ export const useOperativeStore = create<OperativeState>((set, get) => ({
           updatedAt: data.updatedAt?.toDate() || new Date(),
         } as Manager
       })
-      set({ managers })
+      set({
+        managers: filterRealManagers(allManagers),
+        placeholderManagerCount: allManagers.filter(isPlaceholderManager).length,
+      })
     } catch (error: any) {
       set({ error: error.message })
     }
@@ -258,6 +265,29 @@ export const useOperativeStore = create<OperativeState>((set, get) => ({
   deleteManager: async (id, organizationId) => {
     await deleteDoc(doc(db, 'organizations', organizationId, 'managers', id))
     set({ managers: get().managers.filter((m) => m.id !== id) })
+  },
+
+  cleanupLegacyPlaceholderManagers: async (organizationId) => {
+    const snapshot = await getDocs(collection(db, 'organizations', organizationId, 'managers'))
+    const placeholderIds = snapshot.docs
+      .map((entry) => {
+        const data = entry.data()
+        const manager = {
+          id: entry.id,
+          firstName: String(data.firstName || ''),
+          lastName: String(data.lastName || ''),
+          email: String(data.email || ''),
+        } as Manager
+        return isPlaceholderManager(manager) ? entry.id : null
+      })
+      .filter((id): id is string => Boolean(id))
+
+    for (const id of placeholderIds) {
+      await deleteDoc(doc(db, 'organizations', organizationId, 'managers', id))
+    }
+
+    await get().loadManagers(organizationId)
+    return placeholderIds.length
   },
 }))
 

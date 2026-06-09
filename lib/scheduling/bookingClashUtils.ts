@@ -21,6 +21,8 @@ export interface OperativeBookingClashWarning {
   date: Date
   bookingAId: string
   bookingBId: string
+  projectAId: string
+  projectBId: string
   projectALabel: string
   projectBLabel: string
   message: string
@@ -230,6 +232,8 @@ export function computeOperativeBookingClashWarnings(
           date: startOfDay(new Date(a.date)),
           bookingAId: a.id,
           bookingBId: b.id,
+          projectAId: a.projectId,
+          projectBId: b.projectId,
           projectALabel,
           projectBLabel,
           message: `${operativeName} has overlapping bookings (${projectALabel} & ${projectBLabel}).`,
