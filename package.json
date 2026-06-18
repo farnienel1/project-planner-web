@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "netlify:env": "npx netlify-cli env:import .env.local",
+    "netlify:deploy": "npx netlify-cli deploy --build --prod"
   },
   "dependencies": {
     "@headlessui/react": "^1.7.17",
