@@ -293,7 +293,7 @@ export function OrgSetupWizard() {
                   <div className="h-10 w-10 animate-spin rounded-full border-b-2 border-blue-600" />
                 </div>
               ) : (
-                <div className="grid gap-4 lg:grid-cols-3">
+                <div className="grid gap-4 sm:grid-cols-2">
                   {plans.map((plan) => {
                     const selected = plan.key === planKey
                     return (
