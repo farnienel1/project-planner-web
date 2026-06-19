@@ -87,6 +87,9 @@ export default function Home() {
             <a href="#features" className="hidden text-sm font-medium text-slate-600 hover:text-slate-900 sm:block">Features</a>
             <a href="#download" className="hidden text-sm font-medium text-slate-600 hover:text-slate-900 sm:block">Download</a>
             <a href="mailto:support@projectplanner.app" className="hidden text-sm font-medium text-slate-600 hover:text-slate-900 sm:block">Support</a>
+            <Link href="/setup" className="hidden rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-white sm:inline-flex">
+              Set up organisation
+            </Link>
             <Link href="/login" className="rounded-full bg-[#0b1220] px-4 py-2 text-sm font-semibold text-white transition hover:-translate-y-0.5">
               Sign In
             </Link>
@@ -113,11 +116,14 @@ export default function Home() {
             </p>
 
             <div className="mt-8 flex flex-wrap gap-3">
-              <Link href="/login" className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-6 py-3 text-sm font-semibold text-white shadow-[0_18px_50px_rgba(37,99,235,0.35)] transition hover:bg-blue-700">
+              <Link href="/setup" className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-6 py-3 text-sm font-semibold text-white shadow-[0_18px_50px_rgba(37,99,235,0.35)] transition hover:bg-blue-700">
                 <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6" />
                 </svg>
-                Sign In to Web App
+                Set up organisation
+              </Link>
+              <Link href="/login" className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-6 py-3 text-sm font-semibold text-slate-900 shadow-sm transition hover:-translate-y-0.5">
+                Sign in
               </Link>
               <a href="#download" className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-6 py-3 text-sm font-semibold text-slate-900 shadow-sm transition hover:-translate-y-0.5">
                 <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
