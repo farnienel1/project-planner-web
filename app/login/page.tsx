@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/lib/stores/authStore'
 import Link from 'next/link'
+import { ProjectPlannerLogo } from '@/components/ui/ProjectPlannerLogo'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -26,14 +27,19 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen bg-[#f4f6f9] px-5 py-10">
+      <div className="mx-auto mb-6 w-full max-w-[1160px]">
+        <ProjectPlannerLogo href="/" size="lg" />
+      </div>
+
       <div className="mx-auto grid w-full max-w-[1160px] overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-[0_2px_30px_rgba(15,23,42,0.08)] lg:grid-cols-2">
         <section className="hidden bg-slate-900 px-10 py-12 text-white lg:flex lg:flex-col">
-          <div className="mb-8 flex items-center gap-3">
-            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-600 text-sm font-bold">PP</span>
-            <div>
-              <p className="text-sm font-semibold">Project Planner</p>
-              <p className="text-xs text-slate-300">iOS parity web portal</p>
-            </div>
+          <div className="mb-8">
+            <ProjectPlannerLogo
+              href="/"
+              size="lg"
+              variant="dark"
+              subtitle="iOS parity web portal"
+            />
           </div>
           <h1 className="text-4xl font-extrabold leading-tight">Welcome back</h1>
           <p className="mt-4 max-w-md text-sm text-slate-300">
