@@ -104,6 +104,13 @@ export default function LoginPage() {
             >
               {loading ? 'Signing in...' : 'Sign in'}
             </button>
+
+            <p className="text-center text-sm text-slate-600">
+              New organisation?{' '}
+              <Link href="/setup" className="font-semibold text-blue-600 hover:text-blue-700">
+                Set up on desktop
+              </Link>
+            </p>
           </form>
         </section>
       </div>
