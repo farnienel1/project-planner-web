@@ -2,7 +2,7 @@ import Link from 'next/link'
 
 type ProjectPlannerLogoProps = {
   href?: string
-  size?: 'sm' | 'md' | 'lg'
+  size?: 'sm' | 'md' | 'lg' | 'xl'
   subtitle?: string
   variant?: 'light' | 'dark'
   className?: string
@@ -12,21 +12,24 @@ const ICON_SIZES = {
   sm: 'h-9 w-9',
   md: 'h-10 w-10',
   lg: 'h-11 w-11',
+  xl: 'h-14 w-14',
 } as const
 
 const SVG_SIZES = {
   sm: 'h-5 w-5',
   md: 'h-5 w-5',
   lg: 'h-6 w-6',
+  xl: 'h-7 w-7',
 } as const
 
 const TITLE_SIZES = {
   sm: 'text-sm',
   md: 'text-base',
   lg: 'text-xl',
+  xl: 'text-2xl',
 } as const
 
-function LogoMark({ size }: { size: 'sm' | 'md' | 'lg' }) {
+function LogoMark({ size }: { size: 'sm' | 'md' | 'lg' | 'xl' }) {
   return (
     <span
       className={`grid shrink-0 place-items-center rounded-xl bg-gradient-to-br from-blue-600 to-blue-700 text-white shadow-lg shadow-blue-500/30 ${ICON_SIZES[size]}`}
