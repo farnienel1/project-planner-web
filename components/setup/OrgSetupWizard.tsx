@@ -115,7 +115,7 @@ export function OrgSetupWizard() {
   function validatePlanStep(): string | null {
     if (!selectedPlan) return 'Please choose a subscription plan.'
     if (!selectedPlan.configured) {
-      return `The ${selectedPlan.name} plan is not configured yet. Add the Stripe price ID to your environment.`
+      return 'Stripe is not configured yet. Add STRIPE_PRICE_ID to your .env.local file.'
     }
     return null
   }
@@ -330,7 +330,7 @@ export function OrgSetupWizard() {
                         </ul>
                         {!plan.configured && (
                           <p className="mt-4 text-xs font-medium text-amber-700">
-                            Stripe price ID not configured for this tier yet.
+                            Add STRIPE_PRICE_ID to .env.local to enable checkout.
                           </p>
                         )}
                       </button>
