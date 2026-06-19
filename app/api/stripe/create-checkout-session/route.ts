@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAppBaseUrl, getStripe } from '@/lib/stripe/stripe'
-import { getSubscriptionPlan, requireStripePriceId } from '@/lib/stripe/plans'
+import { getResolvedSubscriptionPlan } from '@/lib/stripe/enrichPlansFromStripe'
 
 export const runtime = 'nodejs'
 
@@ -23,16 +23,22 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const priceId = requireStripePriceId()
-    const plan = getSubscriptionPlan(planKey)
-    const quantity = plan?.checkoutQuantity ?? 1
+    const plan = await getResolvedSubscriptionPlan(planKey)
+    if (!plan?.priceId) {
+      return NextResponse.json(
+        { error: 'Selected plan is not available. Check STRIPE_PRICE_ID and your Stripe product pricing.' },
+        { status: 400 }
+      )
+    }
+
     const stripe = getStripe()
     const baseUrl = getAppBaseUrl()
+    const quantity = plan.checkoutQuantity ?? 1
 
     const session = await stripe.checkout.sessions.create({
       mode: 'subscription',
       customer_email: email,
-      line_items: [{ price: priceId, quantity }],
+      line_items: [{ price: plan.priceId, quantity }],
       allow_promotion_codes: true,
       metadata: {
         organizationId,

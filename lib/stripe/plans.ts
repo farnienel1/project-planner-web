@@ -100,6 +100,8 @@ export function getSubscriptionPlan(planKey: string): SubscriptionPlan | undefin
   return getSubscriptionPlans().find((plan) => plan.key === planKey)
 }
 
-export function requireSubscriptionPlanPriceId(_planKey: string): string {
+export function requireSubscriptionPlanPriceId(planKey: string): string {
+  const plan = getSubscriptionPlan(planKey)
+  if (plan?.priceId) return plan.priceId
   return requireStripePriceId()
 }
