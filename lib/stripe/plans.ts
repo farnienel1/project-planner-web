@@ -8,8 +8,12 @@ export type SubscriptionPlan = {
   interval: 'month' | 'year'
   features: string[]
   priceId: string | undefined
+  /** Quantity sent to Stripe Checkout for tiered prices (defaults to 1). */
+  checkoutQuantity?: number
   recommended?: boolean
 }
+
+export const PLAN_KEYS: SubscriptionPlanKey[] = ['starter', 'team', 'professional', 'enterprise']
 
 const PLAN_DEFINITIONS: Omit<SubscriptionPlan, 'priceId'>[] = [
   {
@@ -18,6 +22,7 @@ const PLAN_DEFINITIONS: Omit<SubscriptionPlan, 'priceId'>[] = [
     description: 'For solo operators and very small teams.',
     priceLabel: '—',
     interval: 'month',
+    checkoutQuantity: 1,
     features: [
       'Core project management',
       'Projects & small works',
@@ -31,6 +36,7 @@ const PLAN_DEFINITIONS: Omit<SubscriptionPlan, 'priceId'>[] = [
     description: 'For small teams starting to scale.',
     priceLabel: '—',
     interval: 'month',
+    checkoutQuantity: 2,
     features: [
       'More operatives & managers',
       'Everything in Starter',
@@ -44,6 +50,7 @@ const PLAN_DEFINITIONS: Omit<SubscriptionPlan, 'priceId'>[] = [
     description: 'For growing contractors who need the full toolkit.',
     priceLabel: '—',
     interval: 'month',
+    checkoutQuantity: 3,
     recommended: true,
     features: [
       'Larger operative roster',
@@ -58,6 +65,7 @@ const PLAN_DEFINITIONS: Omit<SubscriptionPlan, 'priceId'>[] = [
     description: 'For larger organisations with advanced needs.',
     priceLabel: '—',
     interval: 'month',
+    checkoutQuantity: 4,
     features: [
       'Highest limits',
       'Everything in Professional',
@@ -67,17 +75,24 @@ const PLAN_DEFINITIONS: Omit<SubscriptionPlan, 'priceId'>[] = [
   },
 ]
 
-export const PRICE_ENV_KEYS: Record<SubscriptionPlanKey, string> = {
-  starter: 'STRIPE_PRICE_STARTER',
-  team: 'STRIPE_PRICE_TEAM',
-  professional: 'STRIPE_PRICE_PROFESSIONAL',
-  enterprise: 'STRIPE_PRICE_ENTERPRISE',
+/** Single Stripe price used for all subscription tiers. */
+export function getStripePriceId(): string | undefined {
+  return process.env.STRIPE_PRICE_ID?.trim() || undefined
+}
+
+export function requireStripePriceId(): string {
+  const priceId = getStripePriceId()
+  if (!priceId) {
+    throw new Error('STRIPE_PRICE_ID is not configured. Add it to your .env.local file.')
+  }
+  return priceId
 }
 
 export function getSubscriptionPlans(): SubscriptionPlan[] {
+  const priceId = getStripePriceId()
   return PLAN_DEFINITIONS.map((plan) => ({
     ...plan,
-    priceId: process.env[PRICE_ENV_KEYS[plan.key]]?.trim() || undefined,
+    priceId,
   }))
 }
 
@@ -85,13 +100,6 @@ export function getSubscriptionPlan(planKey: string): SubscriptionPlan | undefin
   return getSubscriptionPlans().find((plan) => plan.key === planKey)
 }
 
-export function requireSubscriptionPlanPriceId(planKey: string): string {
-  const plan = getSubscriptionPlan(planKey)
-  if (!plan?.priceId) {
-    const envKey = PRICE_ENV_KEYS[planKey as SubscriptionPlanKey] ?? 'STRIPE_PRICE_*'
-    throw new Error(
-      `Stripe price ID is not configured for plan "${planKey}". Add ${envKey} to your .env.local file.`
-    )
-  }
-  return plan.priceId
+export function requireSubscriptionPlanPriceId(_planKey: string): string {
+  return requireStripePriceId()
 }

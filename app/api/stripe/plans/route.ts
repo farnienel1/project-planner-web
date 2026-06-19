@@ -1,11 +1,11 @@
 import { NextResponse } from 'next/server'
-import { enrichPlansWithStripeDetails } from '@/lib/stripe/enrichPlansFromStripe'
-import { getSubscriptionPlans } from '@/lib/stripe/plans'
+import { isStripePriceConfigured, loadSubscriptionPlans } from '@/lib/stripe/enrichPlansFromStripe'
 
 export const runtime = 'nodejs'
 
 export async function GET() {
-  const plans = await enrichPlansWithStripeDetails(getSubscriptionPlans())
+  const plans = await loadSubscriptionPlans()
+  const configured = isStripePriceConfigured()
 
   return NextResponse.json({
     plans: plans.map((plan) => ({
@@ -16,7 +16,7 @@ export async function GET() {
       interval: plan.interval,
       features: plan.features,
       recommended: plan.recommended ?? false,
-      configured: Boolean(plan.priceId),
+      configured,
     })),
   })
 }

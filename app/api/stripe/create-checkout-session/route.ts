@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAppBaseUrl, getStripe } from '@/lib/stripe/stripe'
-import { requireSubscriptionPlanPriceId } from '@/lib/stripe/plans'
+import { getSubscriptionPlan, requireStripePriceId } from '@/lib/stripe/plans'
 
 export const runtime = 'nodejs'
 
@@ -23,14 +23,16 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const priceId = requireSubscriptionPlanPriceId(planKey)
+    const priceId = requireStripePriceId()
+    const plan = getSubscriptionPlan(planKey)
+    const quantity = plan?.checkoutQuantity ?? 1
     const stripe = getStripe()
     const baseUrl = getAppBaseUrl()
 
     const session = await stripe.checkout.sessions.create({
       mode: 'subscription',
       customer_email: email,
-      line_items: [{ price: priceId, quantity: 1 }],
+      line_items: [{ price: priceId, quantity }],
       allow_promotion_codes: true,
       metadata: {
         organizationId,
