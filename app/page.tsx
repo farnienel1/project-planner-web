@@ -4,6 +4,7 @@ import { useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/lib/stores/authStore'
+import { ProjectPlannerLogo } from '@/components/ui/ProjectPlannerLogo'
 
 export default function Home() {
   const router = useRouter()

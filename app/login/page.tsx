@@ -27,16 +27,12 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen bg-[#f4f6f9] px-5 py-10">
-      <div className="mx-auto mb-6 w-full max-w-[1160px]">
-        <ProjectPlannerLogo href="/" size="lg" />
-      </div>
-
       <div className="mx-auto grid w-full max-w-[1160px] overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-[0_2px_30px_rgba(15,23,42,0.08)] lg:grid-cols-2">
         <section className="hidden bg-slate-900 px-10 py-12 text-white lg:flex lg:flex-col">
           <div className="mb-8">
             <ProjectPlannerLogo
               href="/"
-              size="lg"
+              size="xl"
               variant="dark"
               subtitle="iOS parity web portal"
             />
@@ -55,6 +51,10 @@ export default function LoginPage() {
         </section>
 
         <section className="px-7 py-10 sm:px-12">
+          <div className="mb-6 lg:hidden">
+            <ProjectPlannerLogo href="/" size="lg" />
+          </div>
+
           <h2 className="text-3xl font-extrabold text-slate-900">Sign in to Project Planner</h2>
           <p className="mt-2 text-sm text-slate-500">Access your organization dashboard and schedules.</p>
 
