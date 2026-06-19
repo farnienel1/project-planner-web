@@ -4,6 +4,7 @@ import { useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/lib/stores/authStore'
+import { ProjectPlannerLogo } from '@/components/ui/ProjectPlannerLogo'
 
 export default function Home() {
   const router = useRouter()
@@ -74,19 +75,15 @@ export default function Home() {
     <div className="min-h-screen bg-[#f6f8fb] text-[#0b1220]">
       <header className="sticky top-0 z-50 border-b border-slate-200/70 bg-white/80 backdrop-blur">
         <div className="mx-auto flex h-[68px] w-full max-w-[1160px] items-center justify-between px-6">
-          <Link href="/" className="flex items-center gap-3 font-extrabold tracking-tight">
-            <span className="grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br from-blue-600 to-blue-700 text-white shadow-lg shadow-blue-500/30">
-              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-              </svg>
-            </span>
-            Project Planner
-          </Link>
+          <ProjectPlannerLogo href="/" size="sm" />
 
           <nav className="flex items-center gap-8">
             <a href="#features" className="hidden text-sm font-medium text-slate-600 hover:text-slate-900 sm:block">Features</a>
             <a href="#download" className="hidden text-sm font-medium text-slate-600 hover:text-slate-900 sm:block">Download</a>
             <a href="mailto:support@projectplanner.app" className="hidden text-sm font-medium text-slate-600 hover:text-slate-900 sm:block">Support</a>
+            <Link href="/setup" className="hidden rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-white sm:inline-flex">
+              Set up organisation
+            </Link>
             <Link href="/login" className="rounded-full bg-[#0b1220] px-4 py-2 text-sm font-semibold text-white transition hover:-translate-y-0.5">
               Sign In
             </Link>
@@ -113,11 +110,14 @@ export default function Home() {
             </p>
 
             <div className="mt-8 flex flex-wrap gap-3">
-              <Link href="/login" className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-6 py-3 text-sm font-semibold text-white shadow-[0_18px_50px_rgba(37,99,235,0.35)] transition hover:bg-blue-700">
+              <Link href="/setup" className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-6 py-3 text-sm font-semibold text-white shadow-[0_18px_50px_rgba(37,99,235,0.35)] transition hover:bg-blue-700">
                 <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6" />
                 </svg>
-                Sign In to Web App
+                Set up organisation
+              </Link>
+              <Link href="/login" className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-6 py-3 text-sm font-semibold text-slate-900 shadow-sm transition hover:-translate-y-0.5">
+                Sign in
               </Link>
               <a href="#download" className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-6 py-3 text-sm font-semibold text-slate-900 shadow-sm transition hover:-translate-y-0.5">
                 <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>

@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/lib/stores/authStore'
 import Link from 'next/link'
+import { ProjectPlannerLogo } from '@/components/ui/ProjectPlannerLogo'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -28,12 +29,13 @@ export default function LoginPage() {
     <div className="min-h-screen bg-[#f4f6f9] px-5 py-10">
       <div className="mx-auto grid w-full max-w-[1160px] overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-[0_2px_30px_rgba(15,23,42,0.08)] lg:grid-cols-2">
         <section className="hidden bg-slate-900 px-10 py-12 text-white lg:flex lg:flex-col">
-          <div className="mb-8 flex items-center gap-3">
-            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-600 text-sm font-bold">PP</span>
-            <div>
-              <p className="text-sm font-semibold">Project Planner</p>
-              <p className="text-xs text-slate-300">iOS parity web portal</p>
-            </div>
+          <div className="mb-8">
+            <ProjectPlannerLogo
+              href="/"
+              size="xl"
+              variant="dark"
+              subtitle="iOS parity web portal"
+            />
           </div>
           <h1 className="text-4xl font-extrabold leading-tight">Welcome back</h1>
           <p className="mt-4 max-w-md text-sm text-slate-300">
@@ -49,6 +51,10 @@ export default function LoginPage() {
         </section>
 
         <section className="px-7 py-10 sm:px-12">
+          <div className="mb-6 lg:hidden">
+            <ProjectPlannerLogo href="/" size="lg" />
+          </div>
+
           <h2 className="text-3xl font-extrabold text-slate-900">Sign in to Project Planner</h2>
           <p className="mt-2 text-sm text-slate-500">Access your organization dashboard and schedules.</p>
 
@@ -104,6 +110,13 @@ export default function LoginPage() {
             >
               {loading ? 'Signing in...' : 'Sign in'}
             </button>
+
+            <p className="text-center text-sm text-slate-600">
+              New organisation?{' '}
+              <Link href="/setup" className="font-semibold text-blue-600 hover:text-blue-700">
+                Set up on desktop
+              </Link>
+            </p>
           </form>
         </section>
       </div>
