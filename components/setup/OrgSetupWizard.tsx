@@ -1,11 +1,9 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { FormInput, FormLabel } from '@/components/forms/FormShell'
-import { activateOrganizationSubscription } from '@/lib/orgSetup/activateSubscription'
-import { createPendingOrganization } from '@/lib/orgSetup/createOrganization'
 import type { SubscriptionPlanKey } from '@/lib/stripe/plans'
 import { SetupExplainer } from '@/components/setup/SetupExplainer'
 import { GuidedOrgSetup, createEmptyGuidedSetupData, type GuidedSetupData } from '@/components/setup/GuidedOrgSetup'
@@ -36,7 +34,8 @@ function StepIndicator({ current }: { current: WizardStep }) {
   const currentIndex = STEPS.findIndex((step) => step.id === current)
 
   return (
-    <ol className="flex flex-wrap gap-2">
+    <div className="-mx-1 overflow-x-auto px-1 pb-1">
+      <ol className="flex min-w-max flex-wrap gap-2">
       {STEPS.map((step, index) => {
         const isComplete = index < currentIndex
         const isCurrent = step.id === current
@@ -55,12 +54,14 @@ function StepIndicator({ current }: { current: WizardStep }) {
           </li>
         )
       })}
-    </ol>
+      </ol>
+    </div>
   )
 }
 
 export function OrgSetupWizard() {
   const router = useRouter()
+  const wizardTopRef = useRef<HTMLDivElement>(null)
   const [step, setStep] = useState<WizardStep>('account')
   const [plans, setPlans] = useState<PlanOption[]>([])
   const [loadingPlans, setLoadingPlans] = useState(true)
@@ -115,6 +116,17 @@ export function OrgSetupWizard() {
     [plans]
   )
 
+  function goToStep(next: WizardStep) {
+    setStep(next)
+    window.requestAnimationFrame(() => {
+      wizardTopRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    })
+  }
+
+  useEffect(() => {
+    wizardTopRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }, [step])
+
   function validateAccountStep(): string | null {
     if (!firstName.trim() || !surname.trim()) return 'Please enter your first and last name.'
     if (!email.trim()) return 'Please enter your email address.'
@@ -144,7 +156,7 @@ export function OrgSetupWizard() {
         setError(validationError)
         return
       }
-      setStep('organization')
+      goToStep('organization')
       return
     }
     if (step === 'organization') {
@@ -153,7 +165,7 @@ export function OrgSetupWizard() {
         setError(validationError)
         return
       }
-      setStep('explore')
+      goToStep('explore')
       return
     }
     if (step === 'plan') {
@@ -162,18 +174,19 @@ export function OrgSetupWizard() {
         setError(validationError)
         return
       }
-      setStep('review')
+      goToStep('review')
     }
   }
 
   function goBack() {
     setError('')
-    if (step === 'organization') setStep('account')
-    if (step === 'plan') setStep('guided')
-    if (step === 'review') setStep('plan')
+    if (step === 'organization') goToStep('account')
+    if (step === 'plan') goToStep('guided')
+    if (step === 'review') goToStep('plan')
   }
 
   async function createOrganizationRecord() {
+    const { createPendingOrganization } = await import('@/lib/orgSetup/createOrganization')
     return createPendingOrganization({
       email: email.trim(),
       password,
@@ -203,6 +216,7 @@ export function OrgSetupWizard() {
     setSubmitting(true)
     try {
       const { organizationId } = await createOrganizationRecord()
+      const { activateOrganizationSubscription } = await import('@/lib/orgSetup/activateSubscription')
 
       // NOTE: guidedData currently lives in local component state only.
       // When persisting post-payment, write each entity to Firestore here using organizationId.
@@ -281,7 +295,7 @@ export function OrgSetupWizard() {
 
   return (
     <div className="min-h-screen bg-[#f4f6f9] px-5 py-10">
-      <div className="mx-auto w-full max-w-[920px]">
+      <div ref={wizardTopRef} className="mx-auto w-full max-w-[920px]">
         <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
           <div>
             <Link href="/" className="text-sm font-semibold text-blue-600 hover:text-blue-700">
@@ -360,8 +374,8 @@ export function OrgSetupWizard() {
               <SetupExplainer
                 organizationName={organizationName.trim()}
                 firstName={firstName.trim()}
-                onBack={() => setStep('organization')}
-                onContinue={() => setStep('guided')}
+                onBack={() => goToStep('organization')}
+                onContinue={() => goToStep('guided')}
               />
             </div>
           )}
@@ -374,8 +388,8 @@ export function OrgSetupWizard() {
                 stepIndex={guidedStepIndex}
                 onStepIndexChange={setGuidedStepIndex}
                 organizationName={organizationName.trim()}
-                onExitToExplainer={() => setStep('explore')}
-                onComplete={() => setStep('plan')}
+                onExitToExplainer={() => goToStep('explore')}
+                onComplete={() => goToStep('plan')}
               />
             </div>
           )}
