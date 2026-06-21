@@ -2,11 +2,15 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { FormInput, FormLabel } from '@/components/forms/FormShell'
+import { activateOrganizationSubscription } from '@/lib/orgSetup/activateSubscription'
 import { createPendingOrganization } from '@/lib/orgSetup/createOrganization'
 import type { SubscriptionPlanKey } from '@/lib/stripe/plans'
+import { SetupExplainer } from '@/components/setup/SetupExplainer'
+import { GuidedOrgSetup, createEmptyGuidedSetupData, type GuidedSetupData } from '@/components/setup/GuidedOrgSetup'
 
-type WizardStep = 'account' | 'organization' | 'plan' | 'review'
+type WizardStep = 'account' | 'organization' | 'explore' | 'guided' | 'plan' | 'review'
 
 type PlanOption = {
   key: SubscriptionPlanKey
@@ -22,6 +26,8 @@ type PlanOption = {
 const STEPS: { id: WizardStep; label: string }[] = [
   { id: 'account', label: 'Your account' },
   { id: 'organization', label: 'Organisation' },
+  { id: 'explore', label: "What's next" },
+  { id: 'guided', label: 'Guided setup' },
   { id: 'plan', label: 'Choose plan' },
   { id: 'review', label: 'Review & pay' },
 ]
@@ -41,8 +47,8 @@ function StepIndicator({ current }: { current: WizardStep }) {
               isCurrent
                 ? 'bg-blue-600 text-white'
                 : isComplete
-                  ? 'bg-emerald-50 text-emerald-700'
-                  : 'bg-slate-100 text-slate-500'
+                ? 'bg-emerald-50 text-emerald-700'
+                : 'bg-slate-100 text-slate-500'
             }`}
           >
             {index + 1}. {step.label}
@@ -54,6 +60,7 @@ function StepIndicator({ current }: { current: WizardStep }) {
 }
 
 export function OrgSetupWizard() {
+  const router = useRouter()
   const [step, setStep] = useState<WizardStep>('account')
   const [plans, setPlans] = useState<PlanOption[]>([])
   const [loadingPlans, setLoadingPlans] = useState(true)
@@ -68,6 +75,10 @@ export function OrgSetupWizard() {
   const [organizationName, setOrganizationName] = useState('')
   const [planKey, setPlanKey] = useState<SubscriptionPlanKey>('professional')
   const [policyAccepted, setPolicyAccepted] = useState(false)
+
+  // Guided team & data setup — collected locally for now (see handoff note below).
+  const [guidedData, setGuidedData] = useState<GuidedSetupData>(createEmptyGuidedSetupData())
+  const [guidedStepIndex, setGuidedStepIndex] = useState(0)
 
   useEffect(() => {
     let cancelled = false
@@ -99,6 +110,11 @@ export function OrgSetupWizard() {
     [plans, planKey]
   )
 
+  const stripeConfigured = useMemo(
+    () => plans.some((plan) => plan.configured),
+    [plans]
+  )
+
   function validateAccountStep(): string | null {
     if (!firstName.trim() || !surname.trim()) return 'Please enter your first and last name.'
     if (!email.trim()) return 'Please enter your email address.'
@@ -112,9 +128,9 @@ export function OrgSetupWizard() {
     return null
   }
 
-  function validatePlanStep(): string | null {
+  function validatePlanStep(requireStripe = false): string | null {
     if (!selectedPlan) return 'Please choose a subscription plan.'
-    if (!selectedPlan.configured) {
+    if (requireStripe && !selectedPlan.configured) {
       return 'Stripe is not configured yet. Add STRIPE_PRICE_ID to your .env.local file.'
     }
     return null
@@ -137,11 +153,11 @@ export function OrgSetupWizard() {
         setError(validationError)
         return
       }
-      setStep('plan')
+      setStep('explore')
       return
     }
     if (step === 'plan') {
-      const validationError = validatePlanStep()
+      const validationError = validatePlanStep(false)
       if (validationError) {
         setError(validationError)
         return
@@ -153,15 +169,28 @@ export function OrgSetupWizard() {
   function goBack() {
     setError('')
     if (step === 'organization') setStep('account')
-    if (step === 'plan') setStep('organization')
+    if (step === 'plan') setStep('guided')
     if (step === 'review') setStep('plan')
   }
 
-  async function handleCheckout() {
+  async function createOrganizationRecord() {
+    return createPendingOrganization({
+      email: email.trim(),
+      password,
+      firstName: firstName.trim(),
+      surname: surname.trim(),
+      organizationName: organizationName.trim(),
+      planKey,
+      policyAccepted,
+    })
+  }
+
+  /** Test path: create org + activate without Stripe (guided setup runs before paywall). */
+  async function handleTestActivation() {
     setError('')
     const accountError = validateAccountStep()
     const orgError = validateOrganizationStep()
-    const planError = validatePlanStep()
+    const planError = validatePlanStep(false)
     if (accountError || orgError || planError) {
       setError(accountError || orgError || planError || 'Please complete all steps.')
       return
@@ -173,15 +202,52 @@ export function OrgSetupWizard() {
 
     setSubmitting(true)
     try {
-      const { userId, organizationId } = await createPendingOrganization({
-        email: email.trim(),
-        password,
-        firstName: firstName.trim(),
-        surname: surname.trim(),
-        organizationName: organizationName.trim(),
+      const { organizationId } = await createOrganizationRecord()
+
+      // NOTE: guidedData currently lives in local component state only.
+      // When persisting post-payment, write each entity to Firestore here using organizationId.
+
+      await activateOrganizationSubscription(organizationId, {
+        status: 'active',
         planKey,
-        policyAccepted,
+        activatedAt: new Date(),
       })
+      router.push('/dashboard')
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Setup failed'
+      if (message.includes('email-already-in-use')) {
+        setError('An account with this email already exists. Sign in instead, or use a different email.')
+      } else {
+        setError(message)
+      }
+      setSubmitting(false)
+    }
+  }
+
+  async function handleCheckout() {
+    setError('')
+    const accountError = validateAccountStep()
+    const orgError = validateOrganizationStep()
+    const planError = validatePlanStep(true)
+    if (accountError || orgError || planError) {
+      setError(accountError || orgError || planError || 'Please complete all steps.')
+      return
+    }
+    if (!policyAccepted) {
+      setError('Please accept the terms and privacy policy to continue.')
+      return
+    }
+
+    setSubmitting(true)
+    try {
+      const { userId, organizationId } = await createOrganizationRecord()
+
+      // NOTE: guidedData currently lives in local component state only.
+      // Once this step moves behind the paywall (post-payment, first login),
+      // this is the point where each guided-setup entity should be written to
+      // Firestore under organizations/{organizationId}/... using organizationId
+      // returned above — manager + operative via the same invite path as
+      // InviteUserForm, project via ProjectForm's save path, and so on.
 
       const checkoutResponse = await fetch('/api/stripe/create-checkout-session', {
         method: 'POST',
@@ -211,6 +277,8 @@ export function OrgSetupWizard() {
     }
   }
 
+  const showGenericNav = step !== 'explore' && step !== 'guided'
+
   return (
     <div className="min-h-screen bg-[#f4f6f9] px-5 py-10">
       <div className="mx-auto w-full max-w-[920px]">
@@ -221,8 +289,9 @@ export function OrgSetupWizard() {
             </Link>
             <h1 className="mt-3 text-3xl font-extrabold text-slate-900">Set up your organisation</h1>
             <p className="mt-2 max-w-2xl text-sm text-slate-600">
-              Create your admin account, name your company, and choose a subscription. We recommend completing
-              this on desktop — it mirrors the iOS onboarding flow and includes secure Stripe billing.
+              Create your admin account, name your company, and walk through guided team &amp; data setup before
+              choosing a subscription. For now, setup runs <strong>before</strong> payment so you can test the
+              full flow without Stripe.
             </p>
           </div>
           <Link href="/login" className="text-sm font-semibold text-slate-600 hover:text-slate-900">
@@ -280,9 +349,34 @@ export function OrgSetupWizard() {
                 />
               </div>
               <p className="rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-600">
-                This becomes your workspace name in Project Planner. You can invite managers and operatives after
-                setup from the web app or iOS app.
+                This becomes your workspace name in Project Planner. Next, we&apos;ll show you what comes next, then
+                get your first team members and project set up together.
               </p>
+            </div>
+          )}
+
+          {step === 'explore' && (
+            <div className="mt-8">
+              <SetupExplainer
+                organizationName={organizationName.trim()}
+                firstName={firstName.trim()}
+                onBack={() => setStep('organization')}
+                onContinue={() => setStep('guided')}
+              />
+            </div>
+          )}
+
+          {step === 'guided' && (
+            <div className="mt-8">
+              <GuidedOrgSetup
+                data={guidedData}
+                onChange={setGuidedData}
+                stepIndex={guidedStepIndex}
+                onStepIndexChange={setGuidedStepIndex}
+                organizationName={organizationName.trim()}
+                onExitToExplainer={() => setStep('explore')}
+                onComplete={() => setStep('plan')}
+              />
             </div>
           )}
 
@@ -369,6 +463,36 @@ export function OrgSetupWizard() {
                 </dl>
               </div>
 
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                <h3 className="text-sm font-bold uppercase tracking-wide text-slate-500">Team &amp; data you set up</h3>
+                <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
+                  <div>
+                    <dt className="text-slate-500">Manager</dt>
+                    <dd className="font-semibold text-slate-900">
+                      {guidedData.manager.firstName} {guidedData.manager.surname}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-slate-500">Operative</dt>
+                    <dd className="font-semibold text-slate-900">
+                      {guidedData.operative.firstName} {guidedData.operative.surname}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-slate-500">Project</dt>
+                    <dd className="font-semibold text-slate-900">{guidedData.project.siteName}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-slate-500">Client</dt>
+                    <dd className="font-semibold text-slate-900">{guidedData.client.name}</dd>
+                  </div>
+                </dl>
+                <p className="mt-3 text-xs text-slate-500">
+                  Plus a sub contractor, wholesaler, skill, qualification and job type — all ready to activate the
+                  moment payment succeeds.
+                </p>
+              </div>
+
               <label className="flex items-start gap-3 rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-700">
                 <input
                   type="checkbox"
@@ -389,44 +513,65 @@ export function OrgSetupWizard() {
                 </span>
               </label>
 
-              <div className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900">
-                You&apos;ll be redirected to Stripe to enter payment details securely. Your organisation is created
-                first, then activated once payment succeeds.
-              </div>
+              {stripeConfigured ? (
+                <div className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+                  You&apos;ll be redirected to Stripe to enter payment details securely. Your organisation is
+                  created first, then activated once payment succeeds.
+                </div>
+              ) : (
+                <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                  Stripe is not configured in this environment. Use &ldquo;Activate without payment
+                  (testing)&rdquo; below to skip the paywall and go straight to your dashboard.
+                </div>
+              )}
             </div>
           )}
 
-          <div className="mt-8 flex flex-wrap gap-3">
-            {step !== 'account' && (
-              <button
-                type="button"
-                onClick={goBack}
-                disabled={submitting}
-                className="rounded-xl border border-slate-300 px-5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-              >
-                Back
-              </button>
-            )}
+          {showGenericNav && (
+            <div className="mt-8 flex flex-wrap gap-3">
+              {step !== 'account' && (
+                <button
+                  type="button"
+                  onClick={goBack}
+                  disabled={submitting}
+                  className="rounded-xl border border-slate-300 px-5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                >
+                  Back
+                </button>
+              )}
 
-            {step !== 'review' ? (
-              <button
-                type="button"
-                onClick={goNext}
-                className="rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-700"
-              >
-                Continue
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={() => void handleCheckout()}
-                disabled={submitting}
-                className="rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {submitting ? 'Preparing checkout…' : 'Continue to Stripe payment'}
-              </button>
-            )}
-          </div>
+              {step !== 'review' ? (
+                <button
+                  type="button"
+                  onClick={goNext}
+                  className="rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-700"
+                >
+                  Continue
+                </button>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => void handleTestActivation()}
+                    disabled={submitting}
+                    className="rounded-xl border border-emerald-600 bg-emerald-50 px-5 py-2.5 text-sm font-semibold text-emerald-800 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {submitting ? 'Activating…' : 'Activate without payment (testing)'}
+                  </button>
+                  {stripeConfigured && (
+                    <button
+                      type="button"
+                      onClick={() => void handleCheckout()}
+                      disabled={submitting}
+                      className="rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {submitting ? 'Preparing checkout…' : 'Continue to Stripe payment'}
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
+          )}
         </div>
 
         <p className="mt-6 text-center text-xs text-slate-500">
