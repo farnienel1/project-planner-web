@@ -168,7 +168,7 @@ export function OrganisationDetailsStep({
           <SetupStepHeader
             eyebrow="Branding"
             title="Company logo"
-            description="JPEG, PNG or PDF up to 10 MB. After upload, crop to a square for the app header and exported documents."
+            description="JPEG, PNG or PDF up to 10 MB. Optionally crop to trim edges — any shape is fine."
           />
           <SetupCard>
             <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center">

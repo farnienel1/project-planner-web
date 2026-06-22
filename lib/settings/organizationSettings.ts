@@ -8,13 +8,16 @@ export type WeekendPayrollSettings = {
   definedWindowStart?: string
   definedWindowEnd?: string
   countsAsStandardHours?: number
+  /** Multiplier for hours outside the defined window on this day (iOS parity). */
+  outsideWindowMultiplier?: number
   /** Sunday only — mirror Saturday settings when enabled. */
   sameAsSaturday?: boolean
 }
 
+/** Day-of-month payment run window (iOS stores as startDate/endDate numbers 1–31). */
 export type PaymentRunDateRange = {
-  startDate: string
-  endDate: string
+  startDay: number
+  endDay: number
 }
 
 export type OrgPayrollTimePolicy = {
@@ -82,6 +85,7 @@ const DEFAULT_WEEKEND: WeekendPayrollSettings = {
   definedWindowStart: '07:30',
   definedWindowEnd: '16:00',
   countsAsStandardHours: 8,
+  outsideWindowMultiplier: 1.5,
   sameAsSaturday: false,
 }
 
@@ -103,8 +107,8 @@ export const DEFAULT_PAYROLL_POLICY: OrgPayrollTimePolicy = {
 }
 
 export const DEFAULT_PAYMENT_RUN_DATE_RANGES: PaymentRunDateRange[] = [
-  { startDate: '', endDate: '' },
-  { startDate: '', endDate: '' },
+  { startDay: 1, endDay: 15 },
+  { startDay: 16, endDay: 31 },
 ]
 
 export const DEFAULT_ANNUAL_LEAVE: OrgAnnualLeaveDefaults = {
@@ -150,6 +154,9 @@ function parseWeekend(data: Record<string, unknown> | undefined, fallback: Weeke
     definedWindowStart: String(data.definedWindowStart ?? fallback.definedWindowStart ?? '07:30'),
     definedWindowEnd: String(data.definedWindowEnd ?? fallback.definedWindowEnd ?? '16:00'),
     countsAsStandardHours: Number(data.countsAsStandardHours ?? fallback.countsAsStandardHours ?? 8),
+    outsideWindowMultiplier: Number(
+      data.outsideWindowMultiplier ?? fallback.outsideWindowMultiplier ?? 1.5
+    ),
     sameAsSaturday: data.sameAsSaturday === true,
   }
 }
@@ -192,8 +199,15 @@ function weekendToFirestore(weekend: WeekendPayrollSettings): Record<string, unk
     definedWindowStart: weekend.definedWindowStart ?? '07:30',
     definedWindowEnd: weekend.definedWindowEnd ?? '16:00',
     countsAsStandardHours: weekend.countsAsStandardHours ?? 8,
+    outsideWindowMultiplier: weekend.outsideWindowMultiplier ?? 1.5,
     sameAsSaturday: weekend.sameAsSaturday === true,
   }
+}
+
+function parseDayOfMonth(value: unknown): number {
+  const n = Number(value)
+  if (Number.isInteger(n) && n >= 1 && n <= 31) return n
+  return 0
 }
 
 function parsePaymentRunDateRanges(data: Record<string, unknown> | undefined): PaymentRunDateRange[] {
@@ -203,13 +217,12 @@ function parsePaymentRunDateRanges(data: Record<string, unknown> | undefined): P
   }
   const ranges = raw.slice(0, 2).map((entry) => {
     const row = entry as Record<string, unknown>
-    return {
-      startDate: String(row.startDate ?? ''),
-      endDate: String(row.endDate ?? ''),
-    }
+    const startDay = parseDayOfMonth(row.startDate ?? row.startDay)
+    const endDay = parseDayOfMonth(row.endDate ?? row.endDay)
+    return { startDay, endDay }
   })
   while (ranges.length < 2) {
-    ranges.push({ startDate: '', endDate: '' })
+    ranges.push({ startDay: 0, endDay: 0 })
   }
   return ranges
 }
@@ -257,7 +270,9 @@ export function parseInvoicing(data: Record<string, unknown> | undefined): OrgIn
   const paymentDateMode =
     data.paymentDateMode === 'specific_dates' ? 'specific_dates' : 'recurring_date'
   const paymentDates = Array.isArray(data.paymentDates)
-    ? (data.paymentDates as unknown[]).map((d) => String(d))
+    ? (data.paymentDates as unknown[])
+        .map((d) => String(parseDayOfMonth(d) || Number(d) || ''))
+        .filter(Boolean)
     : []
 
   return {
@@ -276,8 +291,11 @@ export function invoicingToFirestore(settings: OrgInvoicingSettings): Record<str
   return {
     paymentRunMode: settings.paymentRunMode,
     paymentDateMode: settings.paymentDateMode,
-    paymentRunDateRanges: settings.paymentRunDateRanges,
-    paymentDates: settings.paymentDates,
+    paymentRunDateRanges: settings.paymentRunDateRanges.map((range) => ({
+      startDate: range.startDay,
+      endDate: range.endDay,
+    })),
+    paymentDates: settings.paymentDates.map((d) => Number(d)),
     noteToUsers: settings.noteToUsers,
     recurringPaymentRunSummary: `In arrears: ${capitalizeDay(settings.recurringRunStartDay)} to ${capitalizeDay(settings.recurringRunEndDay)} (of the previous week)`,
     recurringRunStartDay: settings.recurringRunStartDay,

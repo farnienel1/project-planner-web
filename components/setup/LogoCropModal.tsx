@@ -3,8 +3,10 @@
 import { useCallback, useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 
-const OUTPUT_SIZE = 512
-const MAX_DISPLAY_WIDTH = 360
+const MAX_OUTPUT_EDGE = 1024
+const MAX_DISPLAY_WIDTH = 400
+
+type CropRect = { x: number; y: number; w: number; h: number }
 
 type LogoCropModalProps = {
   file: File
@@ -47,14 +49,14 @@ export function LogoCropModal({ file, onCancel, onConfirm }: LogoCropModalProps)
   const [imageSrc, setImageSrc] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [crop, setCrop] = useState({ x: 0, y: 0, size: 200 })
+  const [crop, setCrop] = useState<CropRect>({ x: 0, y: 0, w: 200, h: 120 })
   const [natural, setNatural] = useState({ w: 0, h: 0 })
   const [display, setDisplay] = useState({ w: 0, h: 0 })
   const [drag, setDrag] = useState<{
     mode: 'move' | 'resize'
     startX: number
     startY: number
-    startCrop: { x: number; y: number; size: number }
+    startCrop: CropRect
   } | null>(null)
 
   useEffect(() => {
@@ -62,11 +64,13 @@ export function LogoCropModal({ file, onCancel, onConfirm }: LogoCropModalProps)
   }, [])
 
   const initCrop = useCallback((imgW: number, imgH: number, dispW: number, dispH: number) => {
-    const size = Math.min(dispW, dispH) * 0.75
+    const w = dispW * 0.85
+    const h = dispH * 0.55
     setCrop({
-      x: (dispW - size) / 2,
-      y: (dispH - size) / 2,
-      size,
+      x: (dispW - w) / 2,
+      y: (dispH - h) / 2,
+      w,
+      h,
     })
     setNatural({ w: imgW, h: imgH })
     setDisplay({ w: dispW, h: dispH })
@@ -108,12 +112,13 @@ export function LogoCropModal({ file, onCancel, onConfirm }: LogoCropModalProps)
     img.src = imageSrc
   }, [imageSrc, initCrop])
 
-  function clampCrop(next: { x: number; y: number; size: number }) {
-    const minSize = 48
-    const size = Math.max(minSize, Math.min(next.size, display.w, display.h))
-    const x = Math.max(0, Math.min(next.x, display.w - size))
-    const y = Math.max(0, Math.min(next.y, display.h - size))
-    return { x, y, size }
+  function clampCrop(next: CropRect): CropRect {
+    const minSize = 32
+    const w = Math.max(minSize, Math.min(next.w, display.w))
+    const h = Math.max(minSize, Math.min(next.h, display.h))
+    const x = Math.max(0, Math.min(next.x, display.w - w))
+    const y = Math.max(0, Math.min(next.y, display.h - h))
+    return { x, y, w, h }
   }
 
   function onPointerDown(e: React.PointerEvent, mode: 'move' | 'resize') {
@@ -139,10 +144,15 @@ export function LogoCropModal({ file, onCancel, onConfirm }: LogoCropModalProps)
       setCrop(
         clampCrop({
           ...drag.startCrop,
-          size: drag.startCrop.size + Math.max(dx, dy),
+          w: drag.startCrop.w + dx,
+          h: drag.startCrop.h + dy,
         })
       )
     }
+  }
+
+  function handleUseOriginal() {
+    onConfirm(file)
   }
 
   function handleConfirm() {
@@ -151,17 +161,23 @@ export function LogoCropModal({ file, onCancel, onConfirm }: LogoCropModalProps)
     const scaleY = natural.h / display.h
     const sx = crop.x * scaleX
     const sy = crop.y * scaleY
-    const sSize = crop.size * Math.max(scaleX, scaleY)
+    const sw = crop.w * scaleX
+    const sh = crop.h * scaleY
+
+    const maxEdge = Math.max(sw, sh)
+    const outputScale = maxEdge > MAX_OUTPUT_EDGE ? MAX_OUTPUT_EDGE / maxEdge : 1
+    const outW = Math.max(1, Math.round(sw * outputScale))
+    const outH = Math.max(1, Math.round(sh * outputScale))
 
     const canvas = document.createElement('canvas')
-    canvas.width = OUTPUT_SIZE
-    canvas.height = OUTPUT_SIZE
+    canvas.width = outW
+    canvas.height = outH
     const ctx = canvas.getContext('2d')
     if (!ctx) return
 
     const img = new Image()
     img.onload = () => {
-      ctx.drawImage(img, sx, sy, sSize, sSize, 0, 0, OUTPUT_SIZE, OUTPUT_SIZE)
+      ctx.drawImage(img, sx, sy, sw, sh, 0, 0, outW, outH)
       canvas.toBlob(
         (blob) => {
           if (!blob) return
@@ -179,10 +195,11 @@ export function LogoCropModal({ file, onCancel, onConfirm }: LogoCropModalProps)
 
   return createPortal(
     <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
-      <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl">
-        <h3 className="text-lg font-bold text-slate-900">Crop organisation logo</h3>
+      <div className="w-full max-w-lg rounded-2xl bg-white p-5 shadow-2xl">
+        <h3 className="text-lg font-bold text-slate-900">Adjust organisation logo</h3>
         <p className="mt-1 text-sm text-slate-500">
-          Drag the square to frame your logo. It will appear square in the app header and on exported documents.
+          Optionally drag the frame to crop unwanted areas. Any shape is fine — use the full image or trim edges as you
+          prefer.
         </p>
 
         {loading && (
@@ -212,7 +229,7 @@ export function LogoCropModal({ file, onCancel, onConfirm }: LogoCropModalProps)
             />
             <div
               className="absolute border-2 border-white bg-transparent shadow-[0_0_0_9999px_rgba(0,0,0,0.45)]"
-              style={{ left: crop.x, top: crop.y, width: crop.size, height: crop.size }}
+              style={{ left: crop.x, top: crop.y, width: crop.w, height: crop.h }}
             >
               <div
                 className="absolute -bottom-2 -right-2 z-10 h-5 w-5 cursor-se-resize rounded-full border-2 border-white bg-blue-600"
@@ -226,7 +243,7 @@ export function LogoCropModal({ file, onCancel, onConfirm }: LogoCropModalProps)
           </div>
         )}
 
-        <div className="mt-6 flex gap-3">
+        <div className="mt-6 flex flex-wrap gap-3">
           <button
             type="button"
             onClick={onCancel}
@@ -236,11 +253,19 @@ export function LogoCropModal({ file, onCancel, onConfirm }: LogoCropModalProps)
           </button>
           <button
             type="button"
+            onClick={handleUseOriginal}
+            disabled={loading || !!error}
+            className="flex-1 rounded-xl border border-slate-200 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+          >
+            Use full image
+          </button>
+          <button
+            type="button"
             onClick={handleConfirm}
             disabled={loading || !!error || !imageSrc || display.w === 0}
             className="flex-1 rounded-xl bg-blue-600 py-2.5 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-50"
           >
-            Use logo
+            Use cropped area
           </button>
         </div>
       </div>

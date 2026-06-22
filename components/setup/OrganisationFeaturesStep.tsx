@@ -14,6 +14,7 @@ import { PaymentRunsSetupSection } from '@/components/setup/PaymentRunsSetupSect
 import { ScheduleOptionsSetupSection } from '@/components/setup/ScheduleOptionsSetupSection'
 import { WarningsSetupSection } from '@/components/setup/WarningsSetupSection'
 import { WorkingHoursSetupSection } from '@/components/setup/WorkingHoursSetupSection'
+import { validateInvoicingSettings } from '@/lib/settings/invoicingValidation'
 import { formatCutoffTime, parseCutoffTime } from '@/lib/settings/notificationPreferences'
 import type { OrganisationFeaturesSetup } from '@/lib/orgSetup/orgSetupSettings'
 
@@ -83,6 +84,13 @@ export function OrganisationFeaturesStep({
 
   function goNext() {
     setError('')
+    if (subStep === 'payment-runs') {
+      const invoicingError = validateInvoicingSettings(value.invoicing)
+      if (invoicingError) {
+        setError(invoicingError)
+        return
+      }
+    }
     if (isLast) {
       onComplete()
       return

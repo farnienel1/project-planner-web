@@ -194,6 +194,8 @@ function WeekendSection({
                   definedWindowEnd: effective.definedWindowEnd ?? policy.standardDayEnd,
                   countsAsStandardHours:
                     effective.countsAsStandardHours ?? policy.standardPaidHours,
+                  outsideWindowMultiplier:
+                    effective.outsideWindowMultiplier ?? policy.weekdayOutsideStandardMultiplier,
                 })
               }
               options={[
@@ -238,10 +240,25 @@ function WeekendSection({
                       className="w-16 rounded-xl border border-slate-200 bg-white px-2 py-1.5 text-center text-sm font-bold text-blue-600 outline-none"
                     />
                   </div>
-                  <p className="mt-2 text-xs text-slate-400">
-                    Hours outside this window on {dayLabel} are paid at ×
-                    {policy.weekdayOutsideStandardMultiplier.toFixed(1)}.
-                  </p>
+                  <div className="mt-3 flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                    <div>
+                      <p className="text-sm font-medium text-slate-700">Outside window × multiplier</p>
+                      <p className="text-xs text-slate-500">Hours outside the defined window on {dayLabel}</p>
+                    </div>
+                    <input
+                      type="number"
+                      step={0.5}
+                      min={1}
+                      max={3}
+                      value={effective.outsideWindowMultiplier ?? policy.weekdayOutsideStandardMultiplier}
+                      onChange={(e) =>
+                        patchWeekend({
+                          outsideWindowMultiplier: parseFloat(e.target.value) || 1,
+                        })
+                      }
+                      className="w-16 rounded-xl border border-slate-200 bg-white px-2 py-1.5 text-center text-sm font-bold text-blue-600 outline-none"
+                    />
+                  </div>
                 </div>
               </div>
             ) : (
