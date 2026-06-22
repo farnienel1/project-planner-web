@@ -39,3 +39,9 @@ export function healthSafetyFilePath(
   const timestamp = Date.now()
   return `organizations/${organizationId}/healthSafety/${projectId}/${category}/${uid}_${timestamp}_${sanitizeFileName(fileName)}`
 }
+
+export function companyLogoPath(organizationId: string, fileName: string): string {
+  const uid = auth.currentUser?.uid || 'web'
+  const timestamp = Date.now()
+  return `organizations/${organizationId}/branding/company_logo/${uid}_${timestamp}_${sanitizeFileName(fileName)}`
+}

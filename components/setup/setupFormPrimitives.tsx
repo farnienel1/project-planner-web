@@ -1,0 +1,131 @@
+'use client'
+
+import type { ReactNode } from 'react'
+
+export function SetupSectionLabel({ children }: { children: ReactNode }) {
+  return (
+    <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">{children}</p>
+  )
+}
+
+export function SetupCard({ children }: { children: ReactNode }) {
+  return (
+    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm divide-y divide-slate-100">
+      {children}
+    </div>
+  )
+}
+
+export function SetupNote({ children, tone = 'blue' }: { children: ReactNode; tone?: 'blue' | 'amber' | 'emerald' }) {
+  const tones = {
+    blue: 'border-blue-100 bg-blue-50 text-blue-900',
+    amber: 'border-amber-100 bg-amber-50 text-amber-900',
+    emerald: 'border-emerald-100 bg-emerald-50 text-emerald-900',
+  }
+  return (
+    <div className={`rounded-xl border px-4 py-3 text-sm leading-relaxed ${tones[tone]}`}>
+      {children}
+    </div>
+  )
+}
+
+export function SetupToggle({
+  label,
+  description,
+  checked,
+  onChange,
+}: {
+  label: string
+  description?: string
+  checked: boolean
+  onChange: (value: boolean) => void
+}) {
+  return (
+    <div className="flex items-start justify-between gap-4 px-4 py-3.5">
+      <div>
+        <p className="text-sm font-semibold text-slate-900">{label}</p>
+        {description && <p className="mt-0.5 text-xs text-slate-500">{description}</p>}
+      </div>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        onClick={() => onChange(!checked)}
+        className={`relative inline-flex h-7 w-12 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${
+          checked ? 'bg-blue-600' : 'bg-slate-200'
+        }`}
+      >
+        <span
+          className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow transition ${
+            checked ? 'translate-x-5' : 'translate-x-0.5'
+          } mt-0.5`}
+        />
+      </button>
+    </div>
+  )
+}
+
+export function SetupStepHeader({
+  eyebrow,
+  title,
+  description,
+}: {
+  eyebrow: string
+  title: string
+  description: string
+}) {
+  return (
+    <div className="mb-6">
+      <p className="text-xs font-bold uppercase tracking-widest text-slate-400">{eyebrow}</p>
+      <h2 className="mt-2 text-2xl font-extrabold text-slate-900">{title}</h2>
+      <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-600">{description}</p>
+    </div>
+  )
+}
+
+export function SetupStepNav({
+  onBack,
+  onNext,
+  nextLabel = 'Continue',
+  disabled,
+}: {
+  onBack: () => void
+  onNext: () => void
+  nextLabel?: string
+  disabled?: boolean
+}) {
+  return (
+    <div className="mt-8 flex flex-wrap gap-3 border-t border-slate-100 pt-6">
+      <button
+        type="button"
+        onClick={onBack}
+        className="rounded-xl border border-slate-300 px-5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+      >
+        Back
+      </button>
+      <button
+        type="button"
+        onClick={onNext}
+        disabled={disabled}
+        className="rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        {nextLabel}
+      </button>
+    </div>
+  )
+}
+
+export const MONTHS = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+]
