@@ -189,5 +189,5 @@ export async function getResolvedSubscriptionPlan(
 }
 
 export function isStripePriceConfigured(): boolean {
-  return Boolean(getStripePriceId())
+  return Boolean(getStripePriceId()?.trim() && process.env.STRIPE_SECRET_KEY?.trim())
 }

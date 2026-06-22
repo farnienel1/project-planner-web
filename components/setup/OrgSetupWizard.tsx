@@ -5,6 +5,8 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { FormInput, FormLabel } from '@/components/forms/FormShell'
 import type { SubscriptionPlanKey } from '@/lib/stripe/plans'
+import { getSubscriptionPlanDisplayOptions } from '@/lib/stripe/plans'
+import { getFirebaseConfigError } from '@/lib/firebase/env'
 import { SetupExplainer } from '@/components/setup/SetupExplainer'
 import { OrganisationDetailsStep } from '@/components/setup/OrganisationDetailsStep'
 import { OrganisationFeaturesStep } from '@/components/setup/OrganisationFeaturesStep'
@@ -24,16 +26,7 @@ type WizardStep =
   | 'plan'
   | 'review'
 
-type PlanOption = {
-  key: SubscriptionPlanKey
-  name: string
-  description: string
-  priceLabel: string
-  interval: 'month' | 'year'
-  features: string[]
-  recommended: boolean
-  configured: boolean
-}
+type PlanOption = ReturnType<typeof getSubscriptionPlanDisplayOptions>[number]
 
 const STEPS: { id: WizardStep; label: string }[] = [
   { id: 'account', label: 'Your Account' },
@@ -79,8 +72,9 @@ export function OrgSetupWizard() {
   const router = useRouter()
   const wizardTopRef = useRef<HTMLDivElement>(null)
   const [step, setStep] = useState<WizardStep>('account')
-  const [plans, setPlans] = useState<PlanOption[]>([])
+  const [plans, setPlans] = useState<PlanOption[]>(() => getSubscriptionPlanDisplayOptions(false))
   const [loadingPlans, setLoadingPlans] = useState(true)
+  const firebaseConfigError = getFirebaseConfigError()
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
 
@@ -105,13 +99,29 @@ export function OrgSetupWizard() {
     async function loadPlans() {
       try {
         const response = await fetch('/api/stripe/plans')
-        const data = await response.json()
+        const data = (await response.json()) as {
+          plans?: PlanOption[]
+          error?: string
+        }
         if (!cancelled) {
-          setPlans(data.plans ?? [])
+          if (response.ok && Array.isArray(data.plans) && data.plans.length > 0) {
+            setPlans(data.plans)
+          } else {
+            setPlans(getSubscriptionPlanDisplayOptions(false))
+            if (!response.ok || data.error) {
+              setError(
+                data.error ||
+                  'Could not load live Stripe prices. Showing default plans — add STRIPE_SECRET_KEY and STRIPE_PRICE_ID to .env.local for checkout.'
+              )
+            }
+          }
         }
       } catch {
         if (!cancelled) {
-          setError('Could not load subscription plans. Check your Stripe environment variables.')
+          setPlans(getSubscriptionPlanDisplayOptions(false))
+          setError(
+            'Could not reach the plans API. Showing default plans — check that npm run dev is running from the project folder.'
+          )
         }
       } finally {
         if (!cancelled) {
@@ -162,7 +172,7 @@ export function OrgSetupWizard() {
   function validatePlanStep(requireStripe = false): string | null {
     if (!selectedPlan) return 'Please choose a subscription plan.'
     if (requireStripe && !selectedPlan.configured) {
-      return 'Stripe is not configured yet. Add STRIPE_PRICE_ID to your .env.local file.'
+      return 'Stripe is not configured yet. Add STRIPE_SECRET_KEY and STRIPE_PRICE_ID to your .env.local file, then restart the dev server.'
     }
     return null
   }
@@ -255,6 +265,11 @@ export function OrgSetupWizard() {
       const message = err instanceof Error ? err.message : 'Setup failed'
       if (message.includes('email-already-in-use')) {
         setError('An account with this email already exists. Sign in instead, or use a different email.')
+      } else if (message.includes('api-key-not-valid') || message.includes('auth/')) {
+        setError(
+          getFirebaseConfigError() ||
+            'Firebase authentication failed. Check NEXT_PUBLIC_FIREBASE_* values in .env.local and restart npm run dev.'
+        )
       } else {
         setError(message)
       }
@@ -308,6 +323,11 @@ export function OrgSetupWizard() {
       const message = err instanceof Error ? err.message : 'Setup failed'
       if (message.includes('email-already-in-use')) {
         setError('An account with this email already exists. Sign in instead, or use a different email.')
+      } else if (message.includes('api-key-not-valid') || message.includes('auth/')) {
+        setError(
+          getFirebaseConfigError() ||
+            'Firebase authentication failed. Check NEXT_PUBLIC_FIREBASE_* values in .env.local and restart npm run dev.'
+        )
       } else {
         setError(message)
       }
@@ -343,6 +363,13 @@ export function OrgSetupWizard() {
 
         <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_2px_30px_rgba(15,23,42,0.08)] sm:p-8">
           <StepIndicator current={step} />
+
+          {firebaseConfigError && (
+            <div className="mt-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+              <p className="font-semibold">Environment setup required</p>
+              <p className="mt-1">{firebaseConfigError}</p>
+            </div>
+          )}
 
           {error && (
             <div className="mt-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
@@ -498,7 +525,7 @@ export function OrgSetupWizard() {
                         </ul>
                         {!plan.configured && (
                           <p className="mt-4 text-xs font-medium text-amber-700">
-                            Add STRIPE_PRICE_ID to .env.local to enable checkout.
+                            Add STRIPE_SECRET_KEY and STRIPE_PRICE_ID to .env.local to enable checkout.
                           </p>
                         )}
                       </button>
