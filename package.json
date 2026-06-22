@@ -4,6 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:webpack": "next dev --webpack",
+    "dev:clean": "sh scripts/clean-dev.sh",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
