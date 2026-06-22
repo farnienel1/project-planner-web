@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { activateOrganizationSubscription } from '@/lib/orgSetup/activateSubscription'
+import { persistGuidedSetupDraftIfNeeded } from '@/lib/orgSetup/persistGuidedSetup'
+import { getFirebaseAuth } from '@/lib/firebase/ensureFirebase'
 
 type VerifiedSession = {
   organizationId: string
@@ -53,6 +55,11 @@ export default function SetupSuccessClient() {
           currentPeriodEnd: data.currentPeriodEnd ? new Date(data.currentPeriodEnd) : undefined,
           activatedAt: new Date(),
         })
+
+        const adminUserId = getFirebaseAuth().currentUser?.uid
+        if (adminUserId) {
+          await persistGuidedSetupDraftIfNeeded(data.organizationId, adminUserId)
+        }
 
         if (!cancelled) {
           setStatus('success')
