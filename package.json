@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
+    "verify-env": "node scripts/verify-env.mjs",
     "netlify:env": "npx netlify-cli env:import .env.local",
     "netlify:deploy": "npx netlify-cli deploy --build --prod"
   },
