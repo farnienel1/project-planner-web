@@ -271,6 +271,7 @@ export function OrgSetupWizard() {
 
       await persistGuidedSetup({
         organizationId,
+        organizationName: organizationName.trim(),
         adminUserId: userId,
         guidedData,
       })
@@ -308,6 +309,7 @@ export function OrgSetupWizard() {
       await saveGuidedSetupDraft(organizationId, guidedData)
       await persistGuidedSetup({
         organizationId,
+        organizationName: organizationName.trim(),
         adminUserId: userId,
         guidedData,
       })

@@ -82,7 +82,23 @@ export function InviteUserForm() {
         assignedManagerUserId: form.assignedManagerUserId || undefined,
         dayRate: form.dayRate ? Number(form.dayRate) : undefined,
       })
-      setSuccess(`User invited. Invitation ID: ${result.invitationId}. They can set a password using the invite email from iOS/Resend.`)
+      try {
+        const { requestInviteSetupEmail } = await import('@/lib/invites/requestSetupEmail')
+        await requestInviteSetupEmail({
+          invitationId: result.invitationId,
+          organizationName: organization.name,
+          firstName: form.firstName,
+          role: accountType === 'operative' ? 'operative' : 'manager',
+          to: form.email,
+        })
+        setSuccess(
+          `Invitation sent to ${form.email.trim()}. They will receive an email to set their password.`
+        )
+      } catch (emailError) {
+        setSuccess(
+          `User invited but email could not be sent (${emailError instanceof Error ? emailError.message : 'unknown error'}). Add RESEND_API_KEY to .env.local.`
+        )
+      }
       setTimeout(() => router.push('/dashboard/settings/users'), 2000)
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to invite user')

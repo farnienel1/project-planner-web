@@ -244,10 +244,9 @@ export function TeamOnboardingPrompt() {
             </ul>
           </div>
 
-          <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-            <strong>Invite emails:</strong> Web setup creates their account as{' '}
-            <em>Pending</em> in Firestore. Password emails are sent via the iOS invite / Resend flow — not
-            automatically from this web app yet.
+          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+            <strong>Invite emails:</strong> Manager and operative receive a Resend email with a{' '}
+            <em>Set up password</em> link. They can then sign in on web or the iOS app.
           </div>
 
           {error && (
