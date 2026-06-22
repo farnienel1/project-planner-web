@@ -128,7 +128,8 @@ export function weekendHoursLabel(settings: WeekendPayrollSettings, weekdayMulti
   const start = settings.definedWindowStart ?? '07:30'
   const end = settings.definedWindowEnd ?? '16:00'
   const hours = settings.countsAsStandardHours ?? 8
-  return `${formatTime12h(start)} – ${formatTime12h(end)} · ${hours}h standard · outside ×${weekdayMultiplier.toFixed(1)}`
+  const outside = settings.outsideWindowMultiplier ?? weekdayMultiplier
+  return `${formatTime12h(start)} – ${formatTime12h(end)} · ${hours}h standard · outside ×${outside.toFixed(1)}`
 }
 
 export function defaultDefinedWeekendSettings(policy: OrgPayrollTimePolicy): WeekendPayrollSettings {
@@ -138,6 +139,7 @@ export function defaultDefinedWeekendSettings(policy: OrgPayrollTimePolicy): Wee
     definedWindowStart: policy.standardDayStart,
     definedWindowEnd: policy.standardDayEnd,
     countsAsStandardHours: policy.standardPaidHours,
+    outsideWindowMultiplier: 1.5,
     sameAsSaturday: false,
   }
 }

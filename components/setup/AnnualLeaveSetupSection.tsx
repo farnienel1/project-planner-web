@@ -132,10 +132,10 @@ export function AnnualLeaveSetupSection({
       </SetupCard>
 
       <SetupWarningNote>
-        These settings apply to any new users that are added. You can manually adjust individual allowances on each
-        user&apos;s profile after. An example would be, where some user&apos;s recieve more annual leave than others,
-        so you can set your standard organisation, with any custom agreements defined on that user&apos;s profile in
-        the web app or ios/android app.
+        These settings apply to any new users that are added to your organisation. You can manually adjust individual
+        allowances on each user&apos;s profile after. An example would be, where some user&apos;s recieve more annual
+        leave than others, so you can set your standard annual leave terms, with any custom agreements defined on that
+        user&apos;s profile in the web app or ios/android app after this setup.
       </SetupWarningNote>
     </div>
   )

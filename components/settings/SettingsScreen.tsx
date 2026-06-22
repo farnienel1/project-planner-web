@@ -1007,6 +1007,7 @@ function WarningsPanel({ onBack }: { onBack: () => void }) {
         <div className="flex items-center justify-between">
           <div>
             <p className="text-sm font-semibold text-slate-900">Clashes</p>
+            <p className="text-xs text-slate-400 mt-0.5">Includes all days — weekend clashes are covered when this is on.</p>
           </div>
           <Toggle checked={clashes} onChange={setClashes} />
         </div>
@@ -1014,7 +1015,7 @@ function WarningsPanel({ onBack }: { onBack: () => void }) {
         <div className="flex items-center justify-between">
           <div>
             <p className="text-sm font-semibold text-slate-900">Include weekends for unbooked labour detection</p>
-            <p className="text-xs text-slate-400 mt-0.5">Only affects unbooked labour warnings.</p>
+            <p className="text-xs text-slate-400 mt-0.5">Any labour that is not booked in over the weekend will trigger a warning. We do not recomend this setting is turned on, unless you organisation works 7 Days a week regularily or offers a 24/7 service.</p>
           </div>
           <Toggle checked={weekends} onChange={setWeekends} />
         </div>

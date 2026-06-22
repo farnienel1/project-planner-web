@@ -171,14 +171,14 @@ export function WarningsSetupSection({ value, onChange }: WarningsSetupSectionPr
           <SetupSectionLabel>Warning types</SetupSectionLabel>
           <SetupToggle
             label="Detect scheduling clashes"
-            description="Alert when an operative is double-booked on the same day."
+            description="Alerts when an operative is double-booked — includes weekends when clashes occur on Saturday or Sunday."
             checked={value.detectClashes}
             onChange={(detectClashes) => patch({ detectClashes })}
           />
           <div className="h-px bg-slate-100" />
           <SetupToggle
             label="Include weekends for unbooked labour detection"
-            description="Only affects unbooked labour warnings."
+            description="Any labour that is not booked in over the weekend will trigger a warning. We do not recomend this setting is turned on, unless you organisation works 7 Days a week regularily or offers a 24/7 service."
             checked={value.includeWeekendsForUnbookedLabour}
             onChange={(includeWeekendsForUnbookedLabour) =>
               patch({ includeWeekendsForUnbookedLabour })
