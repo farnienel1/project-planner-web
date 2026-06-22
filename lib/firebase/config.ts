@@ -2,6 +2,7 @@ import { initializeApp, getApps, FirebaseApp } from 'firebase/app';
 import { getAuth, Auth } from 'firebase/auth';
 import { getFirestore, Firestore } from 'firebase/firestore';
 import { getStorage, FirebaseStorage } from 'firebase/storage';
+import { isFirebaseConfigured } from './env';
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -12,18 +13,20 @@ const firebaseConfig = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
 };
 
-// Initialize Firebase
-let app: FirebaseApp;
-if (getApps().length === 0) {
-  app = initializeApp(firebaseConfig);
-} else {
-  app = getApps()[0];
+function initFirebaseApp(): FirebaseApp | null {
+  if (!isFirebaseConfigured()) return null;
+  if (getApps().length === 0) {
+    return initializeApp(firebaseConfig);
+  }
+  return getApps()[0] ?? null;
 }
 
-// Initialize services
-export const auth: Auth = getAuth(app);
-export const db: Firestore = getFirestore(app);
-export const storage: FirebaseStorage = getStorage(app);
+const app = initFirebaseApp();
+
+// Initialize services only when Firebase env vars are present (avoids SSR crashes).
+export const auth: Auth = app ? getAuth(app) : (null as unknown as Auth);
+export const db: Firestore = app ? getFirestore(app) : (null as unknown as Firestore);
+export const storage: FirebaseStorage = app ? getStorage(app) : (null as unknown as FirebaseStorage);
 
 export default app;
 
