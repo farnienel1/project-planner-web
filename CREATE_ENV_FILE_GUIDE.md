@@ -1,6 +1,16 @@
 # How to Create .env.local File
 
-## Quick Answer
+## ⚠️ Common mistake: `.env.local.rtf`
+
+If you created the file in **TextEdit** with **Rich Text** format, macOS saves it as `.env.local.rtf`.
+Next.js **only reads plain `.env.local`** — your keys will be ignored and you will see:
+
+- `Firebase: Error (auth/api-key-not-valid...)`
+- Stripe plans missing or checkout failing
+
+**Fix:** Delete `.env.local.rtf`, then create a **plain text** `.env.local` using Terminal (Method 1 below) or VS Code.
+
+---
 
 The `.env.local` file stores your Firebase configuration. Here are 3 easy ways to create it.
 

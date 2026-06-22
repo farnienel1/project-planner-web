@@ -96,6 +96,22 @@ export function getSubscriptionPlans(): SubscriptionPlan[] {
   }))
 }
 
+export type SubscriptionPlanDisplay = SubscriptionPlan & {
+  configured: boolean
+  recommended: boolean
+}
+
+/** Static plan cards for the setup wizard (works even when /api/stripe/plans fails). */
+export function getSubscriptionPlanDisplayOptions(
+  configured = false
+): SubscriptionPlanDisplay[] {
+  return getSubscriptionPlans().map((plan) => ({
+    ...plan,
+    configured,
+    recommended: plan.recommended ?? false,
+  }))
+}
+
 export function getSubscriptionPlan(planKey: string): SubscriptionPlan | undefined {
   return getSubscriptionPlans().find((plan) => plan.key === planKey)
 }
