@@ -7,7 +7,7 @@ import {
   SetupSectionLabel,
   SetupToggle,
 } from '@/components/setup/setupFormPrimitives'
-import { DEFAULT_WARNING_DETECTION, type OrgWarningDetectionSettings } from '@/lib/settings/organizationSettings'
+import type { OrgWarningDetectionSettings } from '@/lib/settings/organizationSettings'
 
 const SEVERITY_GUIDE = [
   {
@@ -44,13 +44,27 @@ const SEVERITY_GUIDE = [
   },
 ] as const
 
+type LookAheadUiMode = 'week' | 'days' | 'invoicing'
+
+function toUiMode(mode: OrgWarningDetectionSettings['clashLookaheadMode']): LookAheadUiMode {
+  if (mode === 'numberOfDays') return 'days'
+  if (mode === 'endOfInvoicingPeriod') return 'invoicing'
+  return 'week'
+}
+
+function fromUiMode(mode: LookAheadUiMode): OrgWarningDetectionSettings['clashLookaheadMode'] {
+  if (mode === 'days') return 'numberOfDays'
+  if (mode === 'invoicing') return 'endOfInvoicingPeriod'
+  return 'endOfWorkingWeek'
+}
+
 type WarningsSetupSectionProps = {
   value: OrgWarningDetectionSettings
   onChange: (value: OrgWarningDetectionSettings) => void
 }
 
 export function WarningsSetupSection({ value, onChange }: WarningsSetupSectionProps) {
-  const lookAheadMode = value.clashLookaheadMode === 'numberOfDays' ? 'days' : 'week'
+  const lookAheadMode = toUiMode(value.clashLookaheadMode)
 
   function patch(partial: Partial<OrgWarningDetectionSettings>) {
     onChange({ ...value, ...partial })
@@ -60,8 +74,8 @@ export function WarningsSetupSection({ value, onChange }: WarningsSetupSectionPr
     <div className="space-y-4">
       <SetupNote tone="emerald">
         <strong>Why Warnings matter:</strong> Project Planner continuously scans your schedule for booking clashes,
-        unbooked labour and material list issues. Catching these early prevents double-bookings on site and helps you
-        spot when operatives are free — saving costly mis-allocation.
+        unbooked labour and material list issues. Set your payment run first, then choose how far ahead warnings should
+        be calculated.
       </SetupNote>
 
       <SetupCard>
@@ -82,14 +96,12 @@ export function WarningsSetupSection({ value, onChange }: WarningsSetupSectionPr
                 <FormSelect
                   value={lookAheadMode}
                   onChange={(e) =>
-                    patch({
-                      clashLookaheadMode:
-                        e.target.value === 'days' ? 'numberOfDays' : 'endOfWorkingWeek',
-                    })
+                    patch({ clashLookaheadMode: fromUiMode(e.target.value as LookAheadUiMode) })
                   }
-                  className="w-auto border-none bg-transparent text-right text-sm font-semibold text-blue-600"
+                  className="max-w-[12rem] border-none bg-transparent text-right text-sm font-semibold text-blue-600"
                 >
                   <option value="week">End of the working week</option>
+                  <option value="invoicing">End of invoicing period</option>
                   <option value="days">Set number of days</option>
                 </FormSelect>
               </div>
@@ -110,14 +122,20 @@ export function WarningsSetupSection({ value, onChange }: WarningsSetupSectionPr
                     </button>
                     <button
                       type="button"
-                      onClick={() =>
-                        patch({ clashLookaheadDays: value.clashLookaheadDays + 1 })
-                      }
+                      onClick={() => patch({ clashLookaheadDays: value.clashLookaheadDays + 1 })}
                       className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 bg-white font-bold text-slate-700 hover:bg-slate-50"
                     >
                       +
                     </button>
                   </div>
+                </div>
+              )}
+              {lookAheadMode === 'invoicing' && (
+                <div className="border-t border-slate-100 px-4 py-3">
+                  <p className="text-xs leading-relaxed text-slate-500">
+                    Warnings are calculated up to the end of your current payment run / invoicing period — using the
+                    payment run settings you configured on the previous step.
+                  </p>
                 </div>
               )}
             </div>
@@ -135,7 +153,9 @@ export function WarningsSetupSection({ value, onChange }: WarningsSetupSectionPr
           <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 opacity-75">
             <div>
               <p className="text-sm font-semibold text-slate-900">Excluded users</p>
-              <p className="text-xs text-slate-400">No users to exclude yet — add your team in the next step.</p>
+              <p className="text-xs text-slate-400">
+                Once you have added some users, you can select any you would like to exclude from the warnings function.
+              </p>
             </div>
             <span className="rounded-full bg-slate-200 px-2.5 py-0.5 text-xs font-bold text-slate-500">0</span>
           </div>

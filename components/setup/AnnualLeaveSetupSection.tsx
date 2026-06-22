@@ -2,13 +2,17 @@
 
 import { FormInput, FormLabel, FormSelect } from '@/components/forms/FormShell'
 import {
+  BANK_HOLIDAY_REGIONS,
+  bankHolidayRegionLabel,
+} from '@/lib/settings/bankHolidayRegions'
+import {
   MONTHS,
   SetupCard,
   SetupNote,
   SetupSectionLabel,
   SetupToggle,
+  SetupWarningNote,
 } from '@/components/setup/setupFormPrimitives'
-import { COUNTRY_OPTIONS } from '@/lib/orgSetup/orgSetupSettings'
 import type { OrgAnnualLeaveDefaults } from '@/lib/settings/organizationSettings'
 
 type AnnualLeaveSetupSectionProps = {
@@ -22,7 +26,6 @@ type AnnualLeaveSetupSectionProps = {
 export function AnnualLeaveSetupSection({
   value,
   countryCode,
-  countryLabel,
   onChange,
   onRegionChange,
 }: AnnualLeaveSetupSectionProps) {
@@ -105,33 +108,35 @@ export function AnnualLeaveSetupSection({
           <SetupSectionLabel>Bank holiday region</SetupSectionLabel>
           <p className="text-xs leading-relaxed text-slate-500">
             Bank holidays shown in annual leave and scheduling follow the region you select. This should match where
-            your organisation is based.
+            your organisation is based — including England &amp; Wales, Scotland and Northern Ireland.
           </p>
           <FormLabel required>Region</FormLabel>
           <FormSelect
             value={countryCode}
             onChange={(e) => {
-              const option = COUNTRY_OPTIONS.find((c) => c.code === e.target.value)
-              onRegionChange(e.target.value, option?.label ?? e.target.value)
+              onRegionChange(e.target.value, bankHolidayRegionLabel(e.target.value))
             }}
           >
-            {COUNTRY_OPTIONS.map((country) => (
-              <option key={country.code} value={country.code}>
-                {country.label}
+            {BANK_HOLIDAY_REGIONS.map((region) => (
+              <option key={region.code} value={region.code}>
+                {region.label}
               </option>
             ))}
           </FormSelect>
           <p className="text-xs text-slate-400">
-            Currently set to <strong className="font-semibold text-slate-600">{countryLabel}</strong>. Changing this
-            also updates your organisation region in Organisation Details.
+            Currently set to{' '}
+            <strong className="font-semibold text-slate-600">{bankHolidayRegionLabel(countryCode)}</strong>. This
+            syncs with your organisation region and is shared with the iOS app.
           </p>
         </div>
       </SetupCard>
 
-      <SetupNote tone="blue">
-        These settings apply only when adding new manager/operative users. You can adjust individual allowances on each
-        person&apos;s profile at any time.
-      </SetupNote>
+      <SetupWarningNote>
+        These settings apply to any new users that are added. You can manually adjust individual allowances on each
+        user&apos;s profile after. An example would be, where some user&apos;s recieve more annual leave than others,
+        so you can set your standard organisation, with any custom agreements defined on that user&apos;s profile in
+        the web app or ios/android app.
+      </SetupWarningNote>
     </div>
   )
 }

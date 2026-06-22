@@ -4,6 +4,17 @@ import { db } from '@/lib/firebase/config'
 export type WeekendPayrollSettings = {
   allHoursAtMultiplierMode: boolean
   allHoursMultiplier: number
+  /** Hours inside the defined window count at standard rate (iOS parity). */
+  definedWindowStart?: string
+  definedWindowEnd?: string
+  countsAsStandardHours?: number
+  /** Sunday only — mirror Saturday settings when enabled. */
+  sameAsSaturday?: boolean
+}
+
+export type PaymentRunDateRange = {
+  startDate: string
+  endDate: string
 }
 
 export type OrgPayrollTimePolicy = {
@@ -39,6 +50,8 @@ export type OrgInvoicingSettings = {
   recurringRunStartDay: string
   recurringRunEndDay: string
   recurringPaymentDay: string
+  paymentRunDateRanges: PaymentRunDateRange[]
+  paymentDates: string[]
   noteToUsers: string
 }
 
@@ -64,8 +77,17 @@ export type OrganizationDetails = {
 }
 
 const DEFAULT_WEEKEND: WeekendPayrollSettings = {
-  allHoursAtMultiplierMode: true,
+  allHoursAtMultiplierMode: false,
   allHoursMultiplier: 2,
+  definedWindowStart: '07:30',
+  definedWindowEnd: '16:00',
+  countsAsStandardHours: 8,
+  sameAsSaturday: false,
+}
+
+const DEFAULT_SUNDAY: WeekendPayrollSettings = {
+  ...DEFAULT_WEEKEND,
+  sameAsSaturday: true,
 }
 
 export const DEFAULT_PAYROLL_POLICY: OrgPayrollTimePolicy = {
@@ -77,8 +99,13 @@ export const DEFAULT_PAYROLL_POLICY: OrgPayrollTimePolicy = {
   breakWindowEnd: '12:30',
   weekdayOutsideStandardMultiplier: 1.5,
   saturday: { ...DEFAULT_WEEKEND },
-  sunday: { ...DEFAULT_WEEKEND },
+  sunday: { ...DEFAULT_SUNDAY },
 }
+
+export const DEFAULT_PAYMENT_RUN_DATE_RANGES: PaymentRunDateRange[] = [
+  { startDate: '', endDate: '' },
+  { startDate: '', endDate: '' },
+]
 
 export const DEFAULT_ANNUAL_LEAVE: OrgAnnualLeaveDefaults = {
   daysPerYear: 25,
@@ -101,6 +128,8 @@ export const DEFAULT_INVOICING: OrgInvoicingSettings = {
   recurringRunStartDay: 'monday',
   recurringRunEndDay: 'sunday',
   recurringPaymentDay: 'friday',
+  paymentRunDateRanges: DEFAULT_PAYMENT_RUN_DATE_RANGES.map((r) => ({ ...r })),
+  paymentDates: [],
   noteToUsers:
     "If your timesheet displays 0 against your rate, then your day/hourly rate hasn't been set by your line manager",
 }
@@ -114,15 +143,19 @@ export const DEFAULT_MY_SCHEDULE: MyScheduleOptions = {
 }
 
 function parseWeekend(data: Record<string, unknown> | undefined, fallback: WeekendPayrollSettings): WeekendPayrollSettings {
-  if (!data) return fallback
+  if (!data) return { ...fallback }
   return {
-    allHoursAtMultiplierMode: data.allHoursAtMultiplierMode !== false,
+    allHoursAtMultiplierMode: data.allHoursAtMultiplierMode === true,
     allHoursMultiplier: Number(data.allHoursMultiplier ?? fallback.allHoursMultiplier),
+    definedWindowStart: String(data.definedWindowStart ?? fallback.definedWindowStart ?? '07:30'),
+    definedWindowEnd: String(data.definedWindowEnd ?? fallback.definedWindowEnd ?? '16:00'),
+    countsAsStandardHours: Number(data.countsAsStandardHours ?? fallback.countsAsStandardHours ?? 8),
+    sameAsSaturday: data.sameAsSaturday === true,
   }
 }
 
 export function parsePayrollPolicy(data: Record<string, unknown> | undefined): OrgPayrollTimePolicy {
-  if (!data) return { ...DEFAULT_PAYROLL_POLICY, saturday: { ...DEFAULT_WEEKEND }, sunday: { ...DEFAULT_WEEKEND } }
+  if (!data) return { ...DEFAULT_PAYROLL_POLICY, saturday: { ...DEFAULT_WEEKEND }, sunday: { ...DEFAULT_SUNDAY } }
   return {
     standardDayStart: String(data.standardDayStart ?? DEFAULT_PAYROLL_POLICY.standardDayStart),
     standardDayEnd: String(data.standardDayEnd ?? DEFAULT_PAYROLL_POLICY.standardDayEnd),
@@ -134,7 +167,7 @@ export function parsePayrollPolicy(data: Record<string, unknown> | undefined): O
       data.weekdayOutsideStandardMultiplier ?? DEFAULT_PAYROLL_POLICY.weekdayOutsideStandardMultiplier
     ),
     saturday: parseWeekend(data.saturday as Record<string, unknown> | undefined, DEFAULT_WEEKEND),
-    sunday: parseWeekend(data.sunday as Record<string, unknown> | undefined, DEFAULT_WEEKEND),
+    sunday: parseWeekend(data.sunday as Record<string, unknown> | undefined, DEFAULT_SUNDAY),
   }
 }
 
@@ -147,15 +180,38 @@ export function payrollPolicyToFirestore(policy: OrgPayrollTimePolicy): Record<s
     breakWindowStart: policy.breakWindowStart,
     breakWindowEnd: policy.breakWindowEnd,
     weekdayOutsideStandardMultiplier: policy.weekdayOutsideStandardMultiplier,
-    saturday: {
-      allHoursAtMultiplierMode: policy.saturday.allHoursAtMultiplierMode,
-      allHoursMultiplier: policy.saturday.allHoursMultiplier,
-    },
-    sunday: {
-      allHoursAtMultiplierMode: policy.sunday.allHoursAtMultiplierMode,
-      allHoursMultiplier: policy.sunday.allHoursMultiplier,
-    },
+    saturday: weekendToFirestore(policy.saturday),
+    sunday: weekendToFirestore(policy.sunday),
   }
+}
+
+function weekendToFirestore(weekend: WeekendPayrollSettings): Record<string, unknown> {
+  return {
+    allHoursAtMultiplierMode: weekend.allHoursAtMultiplierMode,
+    allHoursMultiplier: weekend.allHoursMultiplier,
+    definedWindowStart: weekend.definedWindowStart ?? '07:30',
+    definedWindowEnd: weekend.definedWindowEnd ?? '16:00',
+    countsAsStandardHours: weekend.countsAsStandardHours ?? 8,
+    sameAsSaturday: weekend.sameAsSaturday === true,
+  }
+}
+
+function parsePaymentRunDateRanges(data: Record<string, unknown> | undefined): PaymentRunDateRange[] {
+  const raw = data?.paymentRunDateRanges
+  if (!Array.isArray(raw) || raw.length === 0) {
+    return DEFAULT_PAYMENT_RUN_DATE_RANGES.map((r) => ({ ...r }))
+  }
+  const ranges = raw.slice(0, 2).map((entry) => {
+    const row = entry as Record<string, unknown>
+    return {
+      startDate: String(row.startDate ?? ''),
+      endDate: String(row.endDate ?? ''),
+    }
+  })
+  while (ranges.length < 2) {
+    ranges.push({ startDate: '', endDate: '' })
+  }
+  return ranges
 }
 
 export function parseAnnualLeaveDefaults(data: Record<string, unknown> | undefined): OrgAnnualLeaveDefaults {
@@ -200,12 +256,18 @@ export function parseInvoicing(data: Record<string, unknown> | undefined): OrgIn
     data.paymentRunMode === 'date_ranges' ? 'date_ranges' : 'recurring_timeframe'
   const paymentDateMode =
     data.paymentDateMode === 'specific_dates' ? 'specific_dates' : 'recurring_date'
+  const paymentDates = Array.isArray(data.paymentDates)
+    ? (data.paymentDates as unknown[]).map((d) => String(d))
+    : []
+
   return {
     paymentRunMode,
     paymentDateMode,
     recurringRunStartDay: String(data.recurringRunStartDay ?? DEFAULT_INVOICING.recurringRunStartDay),
     recurringRunEndDay: String(data.recurringRunEndDay ?? DEFAULT_INVOICING.recurringRunEndDay),
     recurringPaymentDay: String(data.recurringPaymentDay ?? DEFAULT_INVOICING.recurringPaymentDay),
+    paymentRunDateRanges: parsePaymentRunDateRanges(data),
+    paymentDates,
     noteToUsers: String(data.noteToUsers ?? DEFAULT_INVOICING.noteToUsers),
   }
 }
@@ -214,8 +276,8 @@ export function invoicingToFirestore(settings: OrgInvoicingSettings): Record<str
   return {
     paymentRunMode: settings.paymentRunMode,
     paymentDateMode: settings.paymentDateMode,
-    paymentRunDateRanges: [],
-    paymentDates: [],
+    paymentRunDateRanges: settings.paymentRunDateRanges,
+    paymentDates: settings.paymentDates,
     noteToUsers: settings.noteToUsers,
     recurringPaymentRunSummary: `In arrears: ${capitalizeDay(settings.recurringRunStartDay)} to ${capitalizeDay(settings.recurringRunEndDay)} (of the previous week)`,
     recurringRunStartDay: settings.recurringRunStartDay,

@@ -1035,6 +1035,8 @@ function PaymentRunsPanel({ onBack }: { onBack: () => void }) {
   const [paymentDateMode, setPaymentDateMode] = useState<'specific_dates' | 'recurring_date'>(DEFAULT_INVOICING.paymentDateMode)
   const [recurringDay, setRecurringDay] = useState(DEFAULT_INVOICING.recurringPaymentDay)
   const [noteToUser, setNoteToUser] = useState(DEFAULT_INVOICING.noteToUsers)
+  const [paymentRunDateRanges, setPaymentRunDateRanges] = useState(DEFAULT_INVOICING.paymentRunDateRanges)
+  const [paymentDates, setPaymentDates] = useState<string[]>(DEFAULT_INVOICING.paymentDates)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
 
@@ -1049,6 +1051,8 @@ function PaymentRunsPanel({ onBack }: { onBack: () => void }) {
       setPaymentDateMode(inv.paymentDateMode)
       setRecurringDay(inv.recurringPaymentDay)
       setNoteToUser(inv.noteToUsers)
+      setPaymentRunDateRanges(inv.paymentRunDateRanges)
+      setPaymentDates(inv.paymentDates)
     })
   }, [organization?.id])
 
@@ -1062,6 +1066,8 @@ function PaymentRunsPanel({ onBack }: { onBack: () => void }) {
         recurringRunStartDay: startDay,
         recurringRunEndDay: endDay,
         recurringPaymentDay: recurringDay,
+        paymentRunDateRanges,
+        paymentDates,
         noteToUsers: noteToUser,
       }
       await saveInvoicingSettings(organization.id, settings)
