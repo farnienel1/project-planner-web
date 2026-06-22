@@ -14,6 +14,7 @@ import { newUuid } from '@/lib/firebase/firestoreUtils'
 import { permissionsForAccountType } from '@/lib/orgSetup/accountPermissions'
 import { inviteUserCore } from '@/lib/orgSetup/inviteUserCore'
 import type { TeamOnboardingState } from '@/lib/orgSetup/teamOnboarding'
+import { requestInviteSetupEmail } from '@/lib/invites/requestSetupEmail'
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
@@ -26,8 +27,23 @@ function parseDayRate(value: string): number | undefined {
   return Number.isFinite(n) && n > 0 ? n : undefined
 }
 
+async function trySendInviteEmail(params: {
+  invitationId: string
+  organizationName: string
+  firstName: string
+  role: 'manager' | 'operative'
+  to: string
+}) {
+  try {
+    await requestInviteSetupEmail(params)
+  } catch (error) {
+    console.warn('[guided-setup] Invite email not sent:', error)
+  }
+}
+
 export type PersistGuidedSetupInput = {
   organizationId: string
+  organizationName: string
   adminUserId: string
   guidedData: GuidedSetupData
 }
@@ -42,7 +58,7 @@ export async function persistGuidedSetup(
   input: PersistGuidedSetupInput
 ): Promise<PersistGuidedSetupResult> {
   const db = getFirebaseDb()
-  const { organizationId, adminUserId, guidedData } = input
+  const { organizationId, organizationName, adminUserId, guidedData } = input
   const now = new Date()
 
   let managerUserId: string | undefined
@@ -68,6 +84,14 @@ export async function persistGuidedSetup(
     })
     managerUserId = invited.userId
 
+    await trySendInviteEmail({
+      invitationId: invited.invitationId,
+      organizationName,
+      firstName: manager.firstName,
+      role: 'manager',
+      to: manager.email.trim(),
+    })
+
     managerRosterId = newUuid()
     await setDoc(doc(db, 'organizations', organizationId, 'managers', managerRosterId), {
       id: managerRosterId,
@@ -88,6 +112,7 @@ export async function persistGuidedSetup(
 
   const operative = guidedData.operative
   if (
+    !guidedData.operativeSkipped &&
     operative.firstName.trim() &&
     operative.surname.trim() &&
     EMAIL_PATTERN.test(operative.email.trim())
@@ -106,6 +131,14 @@ export async function persistGuidedSetup(
       invitedBy: adminUserId,
     })
     operativeUserId = invited.userId
+
+    await trySendInviteEmail({
+      invitationId: invited.invitationId,
+      organizationName,
+      firstName: operative.firstName,
+      role: 'operative',
+      to: operative.email.trim(),
+    })
 
     const operativeRosterId = newUuid()
     const dayRate = parseDayRate(operative.dayRate) ?? 0
@@ -230,6 +263,9 @@ export async function persistGuidedSetup(
   if (!managerUserId && !operativeUserId) {
     teamOnboarding.status = 'complete'
   }
+  if (managerUserId && !operativeUserId) {
+    teamOnboarding.status = 'pending_manager'
+  }
 
   await updateDoc(doc(db, 'organizations', organizationId), {
     teamOnboarding,
@@ -265,7 +301,12 @@ export async function persistGuidedSetupDraftIfNeeded(
   const draft = data.guidedSetupDraft as GuidedSetupData | undefined
   if (!draft) return null
 
-  const result = await persistGuidedSetup({ organizationId, adminUserId, guidedData: draft })
+  const result = await persistGuidedSetup({
+    organizationId,
+    organizationName: String(data.name || 'Your organisation'),
+    adminUserId,
+    guidedData: draft,
+  })
   await updateDoc(doc(db, 'organizations', organizationId), {
     guidedSetupDraft: null,
     updatedAt: Timestamp.now(),

@@ -9,6 +9,7 @@ import { FormInput, FormLabel, FormSelect } from '@/components/forms/FormShell'
 /* ----------------------------------------------------------------------- */
 
 export type GuidedSetupData = {
+  operativeSkipped?: boolean
   manager: {
     firstName: string
     surname: string
@@ -69,6 +70,7 @@ export type GuidedSetupData = {
 
 export function createEmptyGuidedSetupData(): GuidedSetupData {
   return {
+    operativeSkipped: false,
     manager: { firstName: '', surname: '', email: '', mobile: '', dayRate: '' },
     operative: { firstName: '', surname: '', email: '', mobile: '', employmentType: 'PAYE', dayRate: '' },
     project: { jobNumber: '', siteName: '', jobType: 'CAT A', startDate: '', endDate: '', clientName: '' },
@@ -349,11 +351,15 @@ function StepHeader({
 function StepNav({
   onBack,
   onNext,
+  onSkip,
+  skipLabel,
   nextLabel = 'Continue',
   disabled,
 }: {
   onBack: () => void
   onNext: () => void
+  onSkip?: () => void
+  skipLabel?: string
   nextLabel?: string
   disabled?: boolean
 }) {
@@ -366,6 +372,15 @@ function StepNav({
       >
         Back
       </button>
+      {onSkip && skipLabel && (
+        <button
+          type="button"
+          onClick={onSkip}
+          className="rounded-xl border border-slate-300 px-5 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50"
+        >
+          {skipLabel}
+        </button>
+      )}
       <button
         type="button"
         onClick={onNext}
@@ -406,7 +421,10 @@ export function GuidedOrgSetup({
   const isRecap = stepIndex >= STEP_META.length
   const meta = !isRecap ? STEP_META[stepIndex] : null
 
-  function update<K extends keyof GuidedSetupData>(key: K, patch: Partial<GuidedSetupData[K]>) {
+  function update<K extends Exclude<keyof GuidedSetupData, 'operativeSkipped'>>(
+    key: K,
+    patch: Partial<GuidedSetupData[K]>
+  ) {
     onChange({ ...data, [key]: { ...data[key], ...patch } })
   }
 
@@ -478,6 +496,23 @@ export function GuidedOrgSetup({
       onChange({ ...data, client: { ...data.client, name: data.project.clientName } })
     }
 
+    onStepIndexChange(stepIndex + 1)
+  }
+
+  function skipOperativeStep() {
+    setTouched(false)
+    onChange({
+      ...data,
+      operativeSkipped: true,
+      operative: {
+        firstName: '',
+        surname: '',
+        email: '',
+        mobile: '',
+        employmentType: 'PAYE',
+        dayRate: '',
+      },
+    })
     onStepIndexChange(stepIndex + 1)
   }
 
@@ -813,7 +848,14 @@ export function GuidedOrgSetup({
         <p className="mt-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{validationError}</p>
       )}
 
-      <StepNav onBack={goBack} onNext={goNext} disabled={touched && !canAdvance} nextLabel={stepIndex === STEP_META.length - 1 ? 'Review setup' : 'Continue'} />
+      <StepNav
+        onBack={goBack}
+        onNext={goNext}
+        onSkip={meta?.key === 'operative' ? skipOperativeStep : undefined}
+        skipLabel={meta?.key === 'operative' ? 'Skip for now' : undefined}
+        disabled={touched && !canAdvance}
+        nextLabel={stepIndex === STEP_META.length - 1 ? 'Review setup' : 'Continue'}
+      />
     </div>
   )
 }
@@ -863,7 +905,16 @@ function RecapStep({
 
       <div className="grid gap-3 sm:grid-cols-2">
         <RecapRow icon="manager" label="Manager" value={`${data.manager.firstName} ${data.manager.surname}`.trim() || '—'} accent="bg-blue-50 text-blue-600" />
-        <RecapRow icon="operative" label="Operative" value={`${data.operative.firstName} ${data.operative.surname}`.trim() || '—'} accent="bg-sky-50 text-sky-600" />
+        <RecapRow
+          icon="operative"
+          label="Operative"
+          value={
+            data.operativeSkipped
+              ? 'Skipped — add later'
+              : `${data.operative.firstName} ${data.operative.surname}`.trim() || '—'
+          }
+          accent="bg-sky-50 text-sky-600"
+        />
         <RecapRow icon="project" label="Project" value={data.project.siteName || '—'} accent="bg-indigo-50 text-indigo-600" />
         <RecapRow icon="client" label="Client" value={data.client.name || '—'} accent="bg-emerald-50 text-emerald-600" />
         <RecapRow icon="subcontractor" label="Sub contractor" value={data.subcontractor.name || '—'} accent="bg-violet-50 text-violet-600" />
