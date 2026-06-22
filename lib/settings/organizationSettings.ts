@@ -102,7 +102,7 @@ export const DEFAULT_INVOICING: OrgInvoicingSettings = {
   recurringRunEndDay: 'sunday',
   recurringPaymentDay: 'friday',
   noteToUsers:
-    "If your timesheet displays 0 GBP then your day/hourly rate hasn't been set by your line manager.",
+    "If your timesheet displays 0 against your rate, then your day/hourly rate hasn't been set by your line manager",
 }
 
 export const DEFAULT_MY_SCHEDULE: MyScheduleOptions = {

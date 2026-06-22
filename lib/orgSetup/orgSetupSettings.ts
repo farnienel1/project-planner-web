@@ -142,11 +142,25 @@ export function orgSetupSettingsToFirestoreFields(
 }
 
 export function validateLogoFile(file: File): string | null {
-  const isJpeg =
-    file.type === 'image/jpeg' ||
-    file.type === 'image/jpg' ||
-    /\.jpe?g$/i.test(file.name)
-  if (!isJpeg) return 'Logo must be a JPEG image (.jpg or .jpeg).'
+  const name = file.name.toLowerCase()
+  const type = (file.type || '').toLowerCase()
+  const isImage =
+    type.startsWith('image/') ||
+    /\.(jpe?g|png)$/i.test(name)
+  const isPdf = type === 'application/pdf' || name.endsWith('.pdf')
+  if (!isImage && !isPdf) {
+    return 'Logo must be a JPEG, PNG or PDF file.'
+  }
   if (file.size > LOGO_MAX_BYTES) return 'Logo must be 10 MB or smaller.'
   return null
+}
+
+export function isLogoCropCandidate(file: File): boolean {
+  const name = file.name.toLowerCase()
+  const type = (file.type || '').toLowerCase()
+  return (
+    type.startsWith('image/') ||
+    type === 'application/pdf' ||
+    /\.(jpe?g|png|pdf)$/i.test(name)
+  )
 }

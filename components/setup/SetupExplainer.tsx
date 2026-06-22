@@ -90,7 +90,7 @@ export function SetupExplainer({ organizationName, firstName, onBack, onContinue
               {firstName ? `Welcome, ${firstName}` : 'Welcome'}
             </p>
             <h2 className="mt-1 text-2xl font-extrabold sm:text-3xl">
-              Here&apos;s what Project Planner will be supporting {displayName}
+              Here&apos;s what Project Planner will be supporting {displayName} with
             </h2>
             <p className="mt-2 max-w-xl text-sm text-blue-50">
               Nothing on this page changes any settings — it&apos;s a quick look at what you&apos;ll
