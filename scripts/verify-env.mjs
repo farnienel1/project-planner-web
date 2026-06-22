@@ -60,12 +60,20 @@ const required = [
   'NEXT_PUBLIC_FIREBASE_APP_ID',
 ]
 
+const stripeOptional = ['STRIPE_SECRET_KEY', 'STRIPE_PRICE_ID']
+
 let ok = true
 for (const key of required) {
   const value = vars[key]
   const valid = Boolean(value && value !== 'undefined' && !value.includes('PASTE_'))
   console.log(`${valid ? '✅' : '❌'} ${key} = ${mask(value)}`)
   if (!valid) ok = false
+}
+
+for (const key of stripeOptional) {
+  const value = vars[key]
+  const valid = Boolean(value && value.trim())
+  console.log(`${valid ? '✅' : '⚠️ '} ${key} = ${mask(value)}${valid ? '' : ' (needed for live Stripe prices)'}`)
 }
 
 console.log('')

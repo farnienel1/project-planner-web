@@ -1,14 +1,16 @@
 import { NextResponse } from 'next/server'
-import { isStripePriceConfigured, loadSubscriptionPlans } from '@/lib/stripe/enrichPlansFromStripe'
+import { isStripePriceConfigured, loadSubscriptionPlansWithStatus } from '@/lib/stripe/enrichPlansFromStripe'
 
 export const runtime = 'nodejs'
 
 export async function GET() {
   try {
-    const plans = await loadSubscriptionPlans()
+    const { plans, pricingLoaded, pricingError } = await loadSubscriptionPlansWithStatus()
     const configured = isStripePriceConfigured()
 
     return NextResponse.json({
+      pricingLoaded,
+      pricingError,
       plans: plans.map((plan) => ({
         key: plan.key,
         name: plan.name,

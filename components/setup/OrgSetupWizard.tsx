@@ -7,6 +7,7 @@ import { FormInput, FormLabel } from '@/components/forms/FormShell'
 import type { SubscriptionPlanKey } from '@/lib/stripe/plans'
 import { getSubscriptionPlanDisplayOptions } from '@/lib/stripe/plans'
 import { getFirebaseConfigError } from '@/lib/firebase/env'
+import { formatSetupError } from '@/lib/orgSetup/formatSetupError'
 import { SetupExplainer } from '@/components/setup/SetupExplainer'
 import { OrganisationDetailsStep } from '@/components/setup/OrganisationDetailsStep'
 import { OrganisationFeaturesStep } from '@/components/setup/OrganisationFeaturesStep'
@@ -74,6 +75,8 @@ export function OrgSetupWizard() {
   const [step, setStep] = useState<WizardStep>('account')
   const [plans, setPlans] = useState<PlanOption[]>(() => getSubscriptionPlanDisplayOptions(false))
   const [loadingPlans, setLoadingPlans] = useState(true)
+  const [pricingLoaded, setPricingLoaded] = useState(false)
+  const [pricingMessage, setPricingMessage] = useState<string | null>(null)
   const firebaseConfigError = getFirebaseConfigError()
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
@@ -97,30 +100,41 @@ export function OrgSetupWizard() {
   useEffect(() => {
     let cancelled = false
     async function loadPlans() {
+      setLoadingPlans(true)
       try {
         const response = await fetch('/api/stripe/plans')
         const data = (await response.json()) as {
           plans?: PlanOption[]
           error?: string
+          pricingLoaded?: boolean
+          pricingError?: string
         }
         if (!cancelled) {
           if (response.ok && Array.isArray(data.plans) && data.plans.length > 0) {
             setPlans(data.plans)
+            setPricingLoaded(Boolean(data.pricingLoaded))
+            setPricingMessage(
+              data.pricingLoaded
+                ? null
+                : data.pricingError ||
+                    'Live Stripe prices not loaded — add STRIPE_SECRET_KEY to .env.local and restart npm run dev.'
+            )
           } else {
             setPlans(getSubscriptionPlanDisplayOptions(false))
-            if (!response.ok || data.error) {
-              setError(
+            setPricingLoaded(false)
+            setPricingMessage(
+              data.pricingError ||
                 data.error ||
-                  'Could not load live Stripe prices. Showing default plans — add STRIPE_SECRET_KEY and STRIPE_PRICE_ID to .env.local for checkout.'
-              )
-            }
+                'Could not load live Stripe prices. Showing default plans.'
+            )
           }
         }
       } catch {
         if (!cancelled) {
           setPlans(getSubscriptionPlanDisplayOptions(false))
-          setError(
-            'Could not reach the plans API. Showing default plans — check that npm run dev is running from the project folder.'
+          setPricingLoaded(false)
+          setPricingMessage(
+            'Could not reach the plans API. Check that npm run dev is running from the project folder.'
           )
         }
       } finally {
@@ -129,11 +143,13 @@ export function OrgSetupWizard() {
         }
       }
     }
-    void loadPlans()
+    if (step === 'plan' || step === 'review') {
+      void loadPlans()
+    }
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [step])
 
   const selectedPlan = useMemo(
     () => plans.find((plan) => plan.key === planKey),
@@ -262,17 +278,7 @@ export function OrgSetupWizard() {
       })
       router.push('/dashboard')
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Setup failed'
-      if (message.includes('email-already-in-use')) {
-        setError('An account with this email already exists. Sign in instead, or use a different email.')
-      } else if (message.includes('api-key-not-valid') || message.includes('auth/')) {
-        setError(
-          getFirebaseConfigError() ||
-            'Firebase authentication failed. Check NEXT_PUBLIC_FIREBASE_* values in .env.local and restart npm run dev.'
-        )
-      } else {
-        setError(message)
-      }
+      setError(formatSetupError(err))
       setSubmitting(false)
     }
   }
@@ -320,17 +326,7 @@ export function OrgSetupWizard() {
 
       window.location.href = checkoutData.url
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Setup failed'
-      if (message.includes('email-already-in-use')) {
-        setError('An account with this email already exists. Sign in instead, or use a different email.')
-      } else if (message.includes('api-key-not-valid') || message.includes('auth/')) {
-        setError(
-          getFirebaseConfigError() ||
-            'Firebase authentication failed. Check NEXT_PUBLIC_FIREBASE_* values in .env.local and restart npm run dev.'
-        )
-      } else {
-        setError(message)
-      }
+      setError(formatSetupError(err))
       setSubmitting(false)
     }
   }
@@ -483,6 +479,11 @@ export function OrgSetupWizard() {
 
           {step === 'plan' && (
             <div className="mt-8">
+              {!loadingPlans && pricingMessage && !pricingLoaded && (
+                <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                  {pricingMessage}
+                </div>
+              )}
               {loadingPlans ? (
                 <div className="flex justify-center py-10">
                   <div className="h-10 w-10 animate-spin rounded-full border-b-2 border-blue-600" />

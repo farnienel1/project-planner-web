@@ -1,8 +1,9 @@
 import { createUserWithEmailAndPassword } from 'firebase/auth'
 import { doc, setDoc, updateDoc } from 'firebase/firestore'
 import { seedOrgDefaultDashboard } from '@/lib/dashboard/dashboardLayoutStorage'
+import { sanitizeForFirestore } from '@/lib/firebase/firestoreUtils'
 import { companyLogoPath, uploadFile } from '@/lib/firebase/storageUtils'
-import { auth, db } from '@/lib/firebase/config'
+import { getFirebaseAuth, getFirebaseDb } from '@/lib/firebase/ensureFirebase'
 import {
   orgSetupSettingsToFirestoreFields,
   type OrgSetupSettings,
@@ -28,6 +29,8 @@ export type CreateOrganizationResult = {
 export async function createPendingOrganization(
   input: CreateOrganizationInput
 ): Promise<CreateOrganizationResult> {
+  const auth = getFirebaseAuth()
+  const db = getFirebaseDb()
   const result = await createUserWithEmailAndPassword(auth, input.email, input.password)
   const userId = result.user.uid
   const organizationId = crypto.randomUUID()
@@ -42,19 +45,22 @@ export async function createPendingOrganization(
     creatorUserId?: string
   }
 
-  await setDoc(doc(db, 'organizations', organizationId), {
-    name: input.organizationName,
-    members: { [userId]: 'admin' },
-    settings: nestedSettings,
-    subscription: {
-      status: 'pending',
-      planKey: input.planKey,
+  await setDoc(
+    doc(db, 'organizations', organizationId),
+    sanitizeForFirestore({
+      name: input.organizationName,
+      members: { [userId]: 'admin' },
+      settings: nestedSettings,
+      subscription: {
+        status: 'pending',
+        planKey: input.planKey,
+        createdAt: now,
+      },
       createdAt: now,
-    },
-    createdAt: now,
-    updatedAt: now,
-    ...topLevelSetupFields,
-  })
+      updatedAt: now,
+      ...topLevelSetupFields,
+    })
+  )
 
   const logoFile = input.orgSetupSettings?.identity.logoFile
   if (logoFile) {
@@ -72,44 +78,47 @@ export async function createPendingOrganization(
 
   const annualLeaveDefaults = input.orgSetupSettings?.features.annualLeaveDefaults
 
-  await setDoc(doc(db, 'users', userId), {
-    email: input.email,
-    firstName: input.firstName,
-    surname: input.surname,
-    organizationId,
-    role: 'admin',
-    isActive: true,
-    passwordSet: true,
-    isSuperAdmin: true,
-    permissions: {
-      adminAccess: true,
-      manager: true,
-      operatives: true,
-      skills: true,
-      qualifications: true,
-      materials: true,
-      projects: true,
-      smallWorks: true,
-      operativeMode: false,
-      siteAudit: true,
-      subContractors: true,
-      wholesalersOrderHistory: true,
-    },
-    policyAccepted: input.policyAccepted,
-    policyAcceptedAt: input.policyAccepted ? now : null,
-    ...(annualLeaveDefaults
-      ? {
-          annualLeaveEnabled: true,
-          annualLeaveDaysPerYear: annualLeaveDefaults.daysPerYear,
-          annualLeaveYearStartMonth: annualLeaveDefaults.startMonth,
-          annualLeaveYearEndMonth: annualLeaveDefaults.endMonth,
-          annualLeaveCarriesOver: annualLeaveDefaults.carriesOver,
-        }
-      : {}),
-    ...(notificationPreferences ? { notificationPreferences } : {}),
-    createdAt: now,
-    updatedAt: now,
-  })
+  await setDoc(
+    doc(db, 'users', userId),
+    sanitizeForFirestore({
+      email: input.email,
+      firstName: input.firstName,
+      surname: input.surname,
+      organizationId,
+      role: 'admin',
+      isActive: true,
+      passwordSet: true,
+      isSuperAdmin: true,
+      permissions: {
+        adminAccess: true,
+        manager: true,
+        operatives: true,
+        skills: true,
+        qualifications: true,
+        materials: true,
+        projects: true,
+        smallWorks: true,
+        operativeMode: false,
+        siteAudit: true,
+        subContractors: true,
+        wholesalersOrderHistory: true,
+      },
+      policyAccepted: input.policyAccepted,
+      policyAcceptedAt: input.policyAccepted ? now : null,
+      ...(annualLeaveDefaults
+        ? {
+            annualLeaveEnabled: true,
+            annualLeaveDaysPerYear: annualLeaveDefaults.daysPerYear,
+            annualLeaveYearStartMonth: annualLeaveDefaults.startMonth,
+            annualLeaveYearEndMonth: annualLeaveDefaults.endMonth,
+            annualLeaveCarriesOver: annualLeaveDefaults.carriesOver,
+          }
+        : {}),
+      ...(notificationPreferences ? { notificationPreferences } : {}),
+      createdAt: now,
+      updatedAt: now,
+    })
+  )
 
   return { userId, organizationId }
 }
