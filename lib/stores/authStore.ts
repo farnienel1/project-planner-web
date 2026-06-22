@@ -18,6 +18,7 @@ import type { User, Organization } from '@/types'
 import { UserRole } from '@/types'
 import { parseUserPermissions } from '@/lib/navigation/menuPermissions'
 import { withSeededNavigationLabels } from '@/lib/navigation/sharedUiLabels'
+import { parseTeamOnboarding } from '@/lib/orgSetup/teamOnboarding'
 
 interface AuthState {
   user: User | null
@@ -74,6 +75,7 @@ export const useAuthStore = create<AuthState>((set, get) => {
                 companyLogoURL: orgData.companyLogoURL || undefined,
                 members: orgData.members || {},
                 settings: seededLabels.settings,
+                teamOnboarding: parseTeamOnboarding(orgData.teamOnboarding) || undefined,
                 createdAt: orgData.createdAt?.toDate() || new Date(),
                 updatedAt: orgData.updatedAt?.toDate() || new Date(),
               }

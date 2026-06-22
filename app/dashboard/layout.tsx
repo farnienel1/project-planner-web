@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect } from 'react'
+import { TeamOnboardingPrompt } from '@/components/onboarding/TeamOnboardingPrompt'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/lib/stores/authStore'
 import Link from 'next/link'
@@ -94,6 +95,7 @@ export default function DashboardLayout({
 
   return (
     <div className="min-h-screen bg-[#f4f6f9]">
+      <TeamOnboardingPrompt />
       <div className="flex min-h-screen">
         <aside className="sticky top-0 flex h-screen w-[260px] shrink-0 flex-col border-r border-slate-200 bg-white">
           <div className="flex items-center gap-3 border-b border-slate-100 px-5 py-5">

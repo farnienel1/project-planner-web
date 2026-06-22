@@ -114,6 +114,7 @@ export function buildInvitedUserPayload(params: {
   dayRate?: number
   tradeTypePreset?: string
   tradeTypeCustom?: string
+  employmentType?: 'paye' | 'selfEmployed'
 }): Record<string, unknown> {
   const { permissions } = params
   let role: UserRole = UserRole.BASIC
@@ -131,7 +132,7 @@ export function buildInvitedUserPayload(params: {
     passwordSet: false,
     isSuperAdmin: false,
     policyAccepted: false,
-    employmentType: 'selfEmployed',
+    employmentType: params.employmentType || 'selfEmployed',
     createdAt: Timestamp.now(),
     updatedAt: Timestamp.now(),
     permissions: permissionsToFirestoreMap(permissions),

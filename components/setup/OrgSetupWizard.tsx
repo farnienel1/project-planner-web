@@ -8,6 +8,7 @@ import type { SubscriptionPlanKey } from '@/lib/stripe/plans'
 import { getSubscriptionPlanDisplayOptions } from '@/lib/stripe/plans'
 import { getFirebaseConfigError } from '@/lib/firebase/env'
 import { formatSetupError } from '@/lib/orgSetup/formatSetupError'
+import { persistGuidedSetup, saveGuidedSetupDraft } from '@/lib/orgSetup/persistGuidedSetup'
 import { SetupExplainer } from '@/components/setup/SetupExplainer'
 import { OrganisationDetailsStep } from '@/components/setup/OrganisationDetailsStep'
 import { OrganisationFeaturesStep } from '@/components/setup/OrganisationFeaturesStep'
@@ -265,11 +266,14 @@ export function OrgSetupWizard() {
 
     setSubmitting(true)
     try {
-      const { organizationId } = await createOrganizationRecord()
+      const { userId, organizationId } = await createOrganizationRecord()
       const { activateOrganizationSubscription } = await import('@/lib/orgSetup/activateSubscription')
 
-      // NOTE: guidedData currently lives in local component state only.
-      // When persisting post-payment, write each entity to Firestore here using organizationId.
+      await persistGuidedSetup({
+        organizationId,
+        adminUserId: userId,
+        guidedData,
+      })
 
       await activateOrganizationSubscription(organizationId, {
         status: 'active',
@@ -301,12 +305,12 @@ export function OrgSetupWizard() {
     try {
       const { userId, organizationId } = await createOrganizationRecord()
 
-      // NOTE: guidedData currently lives in local component state only.
-      // Once this step moves behind the paywall (post-payment, first login),
-      // this is the point where each guided-setup entity should be written to
-      // Firestore under organizations/{organizationId}/... using organizationId
-      // returned above — manager + operative via the same invite path as
-      // InviteUserForm, project via ProjectForm's save path, and so on.
+      await saveGuidedSetupDraft(organizationId, guidedData)
+      await persistGuidedSetup({
+        organizationId,
+        adminUserId: userId,
+        guidedData,
+      })
 
       const checkoutResponse = await fetch('/api/stripe/create-checkout-session', {
         method: 'POST',

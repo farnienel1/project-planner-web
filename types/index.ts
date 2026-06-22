@@ -281,6 +281,7 @@ export interface Organization {
   companyLogoURL?: string;
   members: Record<string, string>;
   settings: Record<string, any>;
+  teamOnboarding?: import('@/lib/orgSetup/teamOnboarding').TeamOnboardingState;
   createdAt: Date;
   updatedAt: Date;
 }
