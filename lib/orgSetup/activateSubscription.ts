@@ -1,5 +1,5 @@
 import { doc, updateDoc } from 'firebase/firestore'
-import { db } from '@/lib/firebase/config'
+import { getFirebaseDb } from '@/lib/firebase/ensureFirebase'
 
 export type OrganizationSubscription = {
   status: 'active' | 'pending' | 'canceled' | 'past_due'
@@ -15,6 +15,7 @@ export async function activateOrganizationSubscription(
   organizationId: string,
   subscription: OrganizationSubscription
 ): Promise<void> {
+  const db = getFirebaseDb()
   await updateDoc(doc(db, 'organizations', organizationId), {
     subscription: {
       ...subscription,

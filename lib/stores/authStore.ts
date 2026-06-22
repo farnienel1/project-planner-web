@@ -11,7 +11,9 @@ import {
 } from 'firebase/auth'
 import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore'
 import { seedOrgDefaultDashboard } from '@/lib/dashboard/dashboardLayoutStorage'
-import { auth, db } from '@/lib/firebase/config'
+import { getFirebaseAuth, getFirebaseDb } from '@/lib/firebase/ensureFirebase'
+import { isFirebaseConfigured } from '@/lib/firebase/env'
+import { loadUserDocumentWithRetry } from '@/lib/firebase/loadUserDocument'
 import type { User, Organization } from '@/types'
 import { UserRole } from '@/types'
 import { parseUserPermissions } from '@/lib/navigation/menuPermissions'
@@ -32,13 +34,14 @@ interface AuthState {
 
 export const useAuthStore = create<AuthState>((set, get) => {
   // Initialize auth state listener
-  if (typeof window !== 'undefined') {
-    onAuthStateChanged(auth, async (firebaseUser) => {
+  if (typeof window !== 'undefined' && isFirebaseConfigured()) {
+    onAuthStateChanged(getFirebaseAuth(), async (firebaseUser) => {
       if (firebaseUser) {
-        // Load user data from Firestore
-        const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid))
-        if (userDoc.exists()) {
+        try {
+          const userDoc = await loadUserDocumentWithRetry(firebaseUser.uid)
+          if (userDoc.exists()) {
           const userData = userDoc.data()
+          const db = getFirebaseDb()
           const isSuperAdmin = userData.isSuperAdmin === true
           const user: User = {
             id: firebaseUser.uid,
@@ -89,14 +92,31 @@ export const useAuthStore = create<AuthState>((set, get) => {
             }
           }
           
-          set({ 
-            user, 
+          set({
+            user,
             firebaseUser,
             organization,
-            loading: false 
+            loading: false,
           })
         } else {
-          set({ user: null, firebaseUser: null, organization: null, loading: false })
+          set({
+            user: null,
+            firebaseUser,
+            organization: null,
+            loading: false,
+            error:
+              'Your account was created but the user profile is not in Firestore yet. Refresh the page or contact support.',
+          })
+        }
+        } catch (authLoadError) {
+          console.error('Failed to load user profile:', authLoadError)
+          set({
+            user: null,
+            firebaseUser,
+            organization: null,
+            loading: false,
+            error: 'Could not load your user profile from Firestore.',
+          })
         }
       } else {
         set({ user: null, firebaseUser: null, organization: null, loading: false })
@@ -114,7 +134,7 @@ export const useAuthStore = create<AuthState>((set, get) => {
     signIn: async (email: string, password: string) => {
       try {
         set({ loading: true, error: null })
-        await signInWithEmailAndPassword(auth, email, password)
+        await signInWithEmailAndPassword(getFirebaseAuth(), email, password)
         set({ loading: false })
       } catch (error: any) {
         set({ loading: false, error: error.message })
@@ -125,6 +145,8 @@ export const useAuthStore = create<AuthState>((set, get) => {
     signUp: async (email: string, password: string, organizationName: string) => {
       try {
         set({ loading: true, error: null })
+        const auth = getFirebaseAuth()
+        const db = getFirebaseDb()
         const result = await createUserWithEmailAndPassword(auth, email, password)
         
         // Create organization
@@ -177,7 +199,7 @@ export const useAuthStore = create<AuthState>((set, get) => {
     
     signOut: async () => {
       try {
-        await firebaseSignOut(auth)
+        await firebaseSignOut(getFirebaseAuth())
         set({ user: null, firebaseUser: null, organization: null })
       } catch (error: any) {
         set({ error: error.message })
@@ -188,7 +210,7 @@ export const useAuthStore = create<AuthState>((set, get) => {
     resetPassword: async (email: string) => {
       try {
         set({ loading: true, error: null })
-        await sendPasswordResetEmail(auth, email)
+        await sendPasswordResetEmail(getFirebaseAuth(), email)
         set({ loading: false })
       } catch (error: any) {
         set({ loading: false, error: error.message })
