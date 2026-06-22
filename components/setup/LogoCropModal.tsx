@@ -14,8 +14,9 @@ type LogoCropModalProps = {
   onConfirm: (croppedFile: File) => void
 }
 
-async function loadPdfJs(): Promise<typeof import('pdfjs-dist')> {
-  const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs')
+async function loadPdfJs() {
+  // Use the package main build path (works across pdfjs-dist 4.x installs).
+  const pdfjs = await import('pdfjs-dist/build/pdf.mjs' as 'pdfjs-dist')
   pdfjs.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.mjs`
   return pdfjs
 }
