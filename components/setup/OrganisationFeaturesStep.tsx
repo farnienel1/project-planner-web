@@ -29,9 +29,9 @@ const FEATURE_STEPS: { id: FeatureSubStep; label: string }[] = [
   { id: 'working-hours', label: 'Working hours' },
   { id: 'annual-leave', label: 'Annual leave' },
   { id: 'schedule', label: 'Schedule options' },
+  { id: 'payment-runs', label: 'Payment runs' },
   { id: 'warnings', label: 'Warnings' },
   { id: 'material-cutoff', label: 'Material cut-off' },
-  { id: 'payment-runs', label: 'Payment runs' },
 ]
 
 type OrganisationFeaturesStepProps = {

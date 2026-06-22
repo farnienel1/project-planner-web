@@ -1,8 +1,10 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 
 const OUTPUT_SIZE = 512
+const MAX_DISPLAY_WIDTH = 360
 
 type LogoCropModalProps = {
   file: File
@@ -41,16 +43,34 @@ async function fileToImageSource(file: File): Promise<{ src: string; revoke?: ()
 }
 
 export function LogoCropModal({ file, onCancel, onConfirm }: LogoCropModalProps) {
-  const containerRef = useRef<HTMLDivElement>(null)
+  const [mounted, setMounted] = useState(false)
   const [imageSrc, setImageSrc] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [crop, setCrop] = useState({ x: 0, y: 0, size: 200 })
   const [natural, setNatural] = useState({ w: 0, h: 0 })
   const [display, setDisplay] = useState({ w: 0, h: 0 })
-  const dragRef = useRef<{ mode: 'move' | 'resize'; startX: number; startY: number; startCrop: typeof crop } | null>(
-    null
-  )
+  const [drag, setDrag] = useState<{
+    mode: 'move' | 'resize'
+    startX: number
+    startY: number
+    startCrop: { x: number; y: number; size: number }
+  } | null>(null)
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
+  const initCrop = useCallback((imgW: number, imgH: number, dispW: number, dispH: number) => {
+    const size = Math.min(dispW, dispH) * 0.75
+    setCrop({
+      x: (dispW - size) / 2,
+      y: (dispH - size) / 2,
+      size,
+    })
+    setNatural({ w: imgW, h: imgH })
+    setDisplay({ w: dispW, h: dispH })
+  }, [])
 
   useEffect(() => {
     let revoke: (() => void) | undefined
@@ -75,31 +95,20 @@ export function LogoCropModal({ file, onCancel, onConfirm }: LogoCropModalProps)
     }
   }, [file])
 
-  const initCrop = useCallback((imgW: number, imgH: number, dispW: number, dispH: number) => {
-    const size = Math.min(dispW, dispH) * 0.75
-    setCrop({
-      x: (dispW - size) / 2,
-      y: (dispH - size) / 2,
-      size,
-    })
-    setNatural({ w: imgW, h: imgH })
-    setDisplay({ w: dispW, h: dispH })
-  }, [])
-
   useEffect(() => {
-    if (!imageSrc || !containerRef.current) return
+    if (!imageSrc) return
     const img = new Image()
     img.onload = () => {
-      const maxW = containerRef.current?.clientWidth ?? 360
-      const scale = Math.min(1, maxW / img.width)
-      const dispW = img.width * scale
-      const dispH = img.height * scale
+      const scale = Math.min(1, MAX_DISPLAY_WIDTH / img.width)
+      const dispW = Math.max(1, Math.round(img.width * scale))
+      const dispH = Math.max(1, Math.round(img.height * scale))
       initCrop(img.width, img.height, dispW, dispH)
     }
+    img.onerror = () => setError('Could not load image preview.')
     img.src = imageSrc
   }, [imageSrc, initCrop])
 
-  function clampCrop(next: typeof crop): typeof crop {
+  function clampCrop(next: { x: number; y: number; size: number }) {
     const minSize = 48
     const size = Math.max(minSize, Math.min(next.size, display.w, display.h))
     const x = Math.max(0, Math.min(next.x, display.w - size))
@@ -109,12 +118,12 @@ export function LogoCropModal({ file, onCancel, onConfirm }: LogoCropModalProps)
 
   function onPointerDown(e: React.PointerEvent, mode: 'move' | 'resize') {
     e.preventDefault()
-    dragRef.current = { mode, startX: e.clientX, startY: e.clientY, startCrop: { ...crop } }
-    ;(e.target as HTMLElement).setPointerCapture(e.pointerId)
+    e.stopPropagation()
+    setDrag({ mode, startX: e.clientX, startY: e.clientY, startCrop: { ...crop } })
+    ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
   }
 
   function onPointerMove(e: React.PointerEvent) {
-    const drag = dragRef.current
     if (!drag) return
     const dx = e.clientX - drag.startX
     const dy = e.clientY - drag.startY
@@ -136,12 +145,8 @@ export function LogoCropModal({ file, onCancel, onConfirm }: LogoCropModalProps)
     }
   }
 
-  function onPointerUp() {
-    dragRef.current = null
-  }
-
   function handleConfirm() {
-    if (!imageSrc || !natural.w) return
+    if (!imageSrc || !natural.w || !display.w) return
     const scaleX = natural.w / display.w
     const scaleY = natural.h / display.h
     const sx = crop.x * scaleX
@@ -161,8 +166,7 @@ export function LogoCropModal({ file, onCancel, onConfirm }: LogoCropModalProps)
         (blob) => {
           if (!blob) return
           const baseName = file.name.replace(/\.[^.]+$/, '') || 'company-logo'
-          const cropped = new File([blob], `${baseName}-logo.png`, { type: 'image/png' })
-          onConfirm(cropped)
+          onConfirm(new File([blob], `${baseName}-logo.png`, { type: 'image/png' }))
         },
         'image/png',
         0.92
@@ -171,8 +175,10 @@ export function LogoCropModal({ file, onCancel, onConfirm }: LogoCropModalProps)
     img.src = imageSrc
   }
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+  if (!mounted) return null
+
+  return createPortal(
+    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
       <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl">
         <h3 className="text-lg font-bold text-slate-900">Crop organisation logo</h3>
         <p className="mt-1 text-sm text-slate-500">
@@ -191,12 +197,11 @@ export function LogoCropModal({ file, onCancel, onConfirm }: LogoCropModalProps)
 
         {!loading && imageSrc && display.w > 0 && (
           <div
-            ref={containerRef}
             className="relative mx-auto mt-5 overflow-hidden rounded-xl bg-slate-900"
             style={{ width: display.w, height: display.h }}
             onPointerMove={onPointerMove}
-            onPointerUp={onPointerUp}
-            onPointerLeave={onPointerUp}
+            onPointerUp={() => setDrag(null)}
+            onPointerLeave={() => setDrag(null)}
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
@@ -205,16 +210,18 @@ export function LogoCropModal({ file, onCancel, onConfirm }: LogoCropModalProps)
               className="block h-full w-full object-contain"
               draggable={false}
             />
-            <div className="pointer-events-none absolute inset-0 bg-black/45" />
             <div
-              className="absolute border-2 border-white shadow-[0_0_0_9999px_rgba(0,0,0,0.45)]"
+              className="absolute border-2 border-white bg-transparent shadow-[0_0_0_9999px_rgba(0,0,0,0.45)]"
               style={{ left: crop.x, top: crop.y, width: crop.size, height: crop.size }}
             >
               <div
-                className="absolute -bottom-2 -right-2 h-5 w-5 cursor-se-resize rounded-full border-2 border-white bg-blue-600"
+                className="absolute -bottom-2 -right-2 z-10 h-5 w-5 cursor-se-resize rounded-full border-2 border-white bg-blue-600"
                 onPointerDown={(e) => onPointerDown(e, 'resize')}
               />
-              <div className="absolute inset-0 cursor-move" onPointerDown={(e) => onPointerDown(e, 'move')} />
+              <div
+                className="absolute inset-0 z-0 cursor-move"
+                onPointerDown={(e) => onPointerDown(e, 'move')}
+              />
             </div>
           </div>
         )}
@@ -230,13 +237,14 @@ export function LogoCropModal({ file, onCancel, onConfirm }: LogoCropModalProps)
           <button
             type="button"
             onClick={handleConfirm}
-            disabled={loading || !!error || !imageSrc}
+            disabled={loading || !!error || !imageSrc || display.w === 0}
             className="flex-1 rounded-xl bg-blue-600 py-2.5 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-50"
           >
             Use logo
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }

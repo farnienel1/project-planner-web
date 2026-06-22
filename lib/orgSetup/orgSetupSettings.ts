@@ -3,6 +3,7 @@ import {
   DEFAULT_INVOICING,
   DEFAULT_MY_SCHEDULE,
   DEFAULT_PAYROLL_POLICY,
+  DEFAULT_PAYMENT_RUN_DATE_RANGES,
   DEFAULT_WARNING_DETECTION,
   invoicingToFirestore,
   myScheduleOptionsToFirestore,
@@ -14,6 +15,7 @@ import {
   type OrgPayrollTimePolicy,
   type OrgWarningDetectionSettings,
 } from '@/lib/settings/organizationSettings'
+import { BANK_HOLIDAY_REGIONS, bankHolidayRegionLabel } from '@/lib/settings/bankHolidayRegions'
 import type { NotificationPreferences } from '@/lib/settings/notificationPreferences'
 
 export type OrgOfficeAddress = {
@@ -56,12 +58,9 @@ export const CURRENCY_OPTIONS = [
   { code: 'AUD', label: 'AUD — Australian Dollar (A$)' },
 ] as const
 
-export const COUNTRY_OPTIONS = [
-  { code: 'GB', label: 'United Kingdom' },
-  { code: 'IE', label: 'Ireland' },
-  { code: 'US', label: 'United States' },
-  { code: 'AU', label: 'Australia' },
-] as const
+export const COUNTRY_OPTIONS = BANK_HOLIDAY_REGIONS
+
+export { bankHolidayRegionLabel }
 
 export const LOGO_MAX_BYTES = 10 * 1024 * 1024
 
@@ -102,7 +101,11 @@ export function createDefaultFeaturesSetup(): OrganisationFeaturesSetup {
       materialCutOffOnSaturday: false,
       materialCutOffOnSunday: false,
     },
-    invoicing: { ...DEFAULT_INVOICING },
+    invoicing: {
+      ...DEFAULT_INVOICING,
+      paymentRunDateRanges: DEFAULT_PAYMENT_RUN_DATE_RANGES.map((r) => ({ ...r })),
+      paymentDates: [],
+    },
   }
 }
 

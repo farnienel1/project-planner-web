@@ -15,6 +15,7 @@ import {
   isOperativeMode,
 } from '@/lib/navigation/menuPermissions'
 import { getDayKindForBookings, getBookingForDay } from '@/lib/annualLeave/dayStatus'
+import { computeCarriedForwardDays } from '@/lib/annualLeave/carryOver'
 import type { HolidayBooking, HolidayTimeSlot, User } from '@/types'
 import { ErrorBanner } from '@/components/dashboard/PageShell'
 import { AnnualLeaveLegend, LeaveDayCalendar } from './LeaveDayCalendar'
@@ -76,10 +77,11 @@ function LeaveSummaryCard({
   leaveYearStart: Date
   leaveYearEnd: Date
 }) {
-  const remaining = Math.max(0, allowance - taken - pending)
-  const takenPercent = allowance > 0 ? Math.min(100, (taken / allowance) * 100) : 0
+  const remaining = Math.max(0, allowance + (carriedForward ?? 0) - taken - pending)
+  const totalAllowance = allowance + (carriedForward ?? 0)
+  const takenPercent = totalAllowance > 0 ? Math.min(100, (taken / totalAllowance) * 100) : 0
   const pendingPercent =
-    allowance > 0 ? Math.min(100 - takenPercent, (pending / allowance) * 100) : 0
+    totalAllowance > 0 ? Math.min(100 - takenPercent, (pending / totalAllowance) * 100) : 0
 
   return (
     <div className="rounded-2xl border border-slate-200 bg-amber-50/60 p-4 shadow-sm">
@@ -95,7 +97,7 @@ function LeaveSummaryCard({
         </div>
         <div className="text-right">
           <p className="text-[11px] text-slate-500">Allowance</p>
-          <p className="text-xl font-bold text-blue-600">{allowance}</p>
+          <p className="text-xl font-bold text-blue-600">{totalAllowance}</p>
         </div>
       </div>
 
@@ -298,6 +300,13 @@ function ManagerView({
   const myPending = myBookings.filter((b) => b.status === 'pending')
   const taken = totalDayCount(myApproved)
   const pending = totalDayCount(myPending)
+  const carriedForward = computeCarriedForwardDays({
+    carriesOver: user?.annualLeaveCarriesOver === true,
+    allowance,
+    startMonth: user?.annualLeaveYearStartMonth ?? 1,
+    endMonth: user?.annualLeaveYearEndMonth ?? 12,
+    bookings: myBookings,
+  })
 
   const editBooking =
     editDay != null ? getBookingForDay(editDay, myBookings, 'approved') : null
@@ -403,6 +412,7 @@ function ManagerView({
         allowance={allowance}
         taken={taken}
         pending={pending}
+        carriedForward={carriedForward}
         leaveYearStart={leaveYear.start}
         leaveYearEnd={leaveYear.end}
       />
@@ -588,6 +598,13 @@ function OperativeView({
   const myPending = myBookings.filter((b) => b.status === 'pending')
   const taken = totalDayCount(myApproved)
   const pending = totalDayCount(myPending)
+  const carriedForward = computeCarriedForwardDays({
+    carriesOver: user?.annualLeaveCarriesOver === true,
+    allowance,
+    startMonth: user?.annualLeaveYearStartMonth ?? 1,
+    endMonth: user?.annualLeaveYearEndMonth ?? 12,
+    bookings: myBookings,
+  })
 
   const toggleDay = (day: Date) => {
     const kind = getDayKindForBookings(day, myBookings)
@@ -675,6 +692,7 @@ function OperativeView({
         allowance={allowance}
         taken={taken}
         pending={pending}
+        carriedForward={carriedForward}
         leaveYearStart={leaveYear.start}
         leaveYearEnd={leaveYear.end}
       />

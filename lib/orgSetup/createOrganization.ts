@@ -59,7 +59,7 @@ export async function createPendingOrganization(
   const logoFile = input.orgSetupSettings?.identity.logoFile
   if (logoFile) {
     const storagePath = companyLogoPath(organizationId, logoFile.name)
-    const companyLogoURL = await uploadFile(storagePath, logoFile, 'image/jpeg')
+    const companyLogoURL = await uploadFile(storagePath, logoFile, logoFile.type || 'image/png')
     await updateDoc(doc(db, 'organizations', organizationId), {
       companyLogoURL,
       updatedAt: now,
@@ -69,6 +69,8 @@ export async function createPendingOrganization(
   await seedOrgDefaultDashboard(organizationId)
 
   const notificationPreferences = input.orgSetupSettings?.features.notificationPreferences
+
+  const annualLeaveDefaults = input.orgSetupSettings?.features.annualLeaveDefaults
 
   await setDoc(doc(db, 'users', userId), {
     email: input.email,
@@ -95,6 +97,15 @@ export async function createPendingOrganization(
     },
     policyAccepted: input.policyAccepted,
     policyAcceptedAt: input.policyAccepted ? now : null,
+    ...(annualLeaveDefaults
+      ? {
+          annualLeaveEnabled: true,
+          annualLeaveDaysPerYear: annualLeaveDefaults.daysPerYear,
+          annualLeaveYearStartMonth: annualLeaveDefaults.startMonth,
+          annualLeaveYearEndMonth: annualLeaveDefaults.endMonth,
+          annualLeaveCarriesOver: annualLeaveDefaults.carriesOver,
+        }
+      : {}),
     ...(notificationPreferences ? { notificationPreferences } : {}),
     createdAt: now,
     updatedAt: now,

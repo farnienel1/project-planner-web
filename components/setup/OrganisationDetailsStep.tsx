@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { FormInput, FormLabel, FormSelect } from '@/components/forms/FormShell'
 import { LogoCropModal } from '@/components/setup/LogoCropModal'
 import {
@@ -12,7 +12,7 @@ import {
 import {
   COUNTRY_OPTIONS,
   CURRENCY_OPTIONS,
-  isLogoCropCandidate,
+  bankHolidayRegionLabel,
   validateLogoFile,
   type OrganisationIdentitySetup,
 } from '@/lib/orgSetup/orgSetupSettings'
@@ -34,10 +34,12 @@ export function OrganisationDetailsStep({
 }: OrganisationDetailsStepProps) {
   const [error, setError] = useState('')
   const [pendingLogoFile, setPendingLogoFile] = useState<File | null>(null)
-  const logoPreview = useMemo(
-    () => (value.logoFile ? URL.createObjectURL(value.logoFile) : value.companyLogoURL ?? null),
-    [value.logoFile, value.companyLogoURL]
-  )
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const logoPreview = useMemo(() => {
+    if (!value.logoFile) return value.companyLogoURL ?? null
+    return URL.createObjectURL(value.logoFile)
+  }, [value.logoFile, value.companyLogoURL])
 
   function patch(partial: Partial<OrganisationIdentitySetup>) {
     onChange({ ...value, ...partial })
@@ -49,6 +51,7 @@ export function OrganisationDetailsStep({
 
   function handleLogoSelected(file: File | null) {
     setError('')
+    if (fileInputRef.current) fileInputRef.current.value = ''
     if (!file) {
       patch({ logoFile: null })
       return
@@ -58,11 +61,7 @@ export function OrganisationDetailsStep({
       setError(validationError)
       return
     }
-    if (isLogoCropCandidate(file)) {
-      setPendingLogoFile(file)
-      return
-    }
-    patch({ logoFile: file })
+    setPendingLogoFile(file)
   }
 
   function validate(): string | null {
@@ -95,12 +94,10 @@ export function OrganisationDetailsStep({
       />
 
       <div className="space-y-6">
-        <div>
-          <SetupNote tone="blue">
-            These details mirror <strong>Settings → Organisation → Identity</strong>. You can change
-            them any time after sign-up — nothing here is permanent.
-          </SetupNote>
-        </div>
+        <SetupNote tone="blue">
+          These details mirror <strong>Settings → Organisation → Identity</strong>. You can change
+          them any time after sign-up — nothing here is permanent.
+        </SetupNote>
 
         <div>
           <SetupStepHeader
@@ -151,10 +148,9 @@ export function OrganisationDetailsStep({
               <FormSelect
                 value={value.countryCode}
                 onChange={(e) => {
-                  const option = COUNTRY_OPTIONS.find((c) => c.code === e.target.value)
                   patch({
                     countryCode: e.target.value,
-                    countryLabel: option?.label ?? e.target.value,
+                    countryLabel: bankHolidayRegionLabel(e.target.value),
                   })
                 }}
               >
@@ -190,6 +186,7 @@ export function OrganisationDetailsStep({
                 <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700">
                   Upload logo
                   <input
+                    ref={fileInputRef}
                     type="file"
                     accept="image/jpeg,image/jpg,image/png,image/pjpeg,application/pdf,.jpg,.jpeg,.png,.pdf"
                     className="hidden"
