@@ -8,12 +8,20 @@ type SettingsPreviewItem = {
   description: string
 }
 
-const SETTINGS_PREVIEW: SettingsPreviewItem[] = [
+const ORGANISATION_DETAILS_PREVIEW: SettingsPreviewItem[] = [
   {
     icon: 'building',
-    title: 'Company details',
-    description: 'Your name, logo, address and currency — shown on reports and the iOS app header.',
+    title: 'Organisation details',
+    description: 'Company office, region and currency — shown on reports and the iOS app header.',
   },
+  {
+    icon: 'building',
+    title: 'Company logo',
+    description: 'Your branding in the app header and on exported documents.',
+  },
+]
+
+const FEATURES_PREVIEW: SettingsPreviewItem[] = [
   {
     icon: 'clock',
     title: 'Working hours & overtime',
@@ -25,23 +33,30 @@ const SETTINGS_PREVIEW: SettingsPreviewItem[] = [
     description: 'Days per year, carry-over rules, and the region your bank holidays follow.',
   },
   {
+    icon: 'calendar',
+    title: 'Schedule options',
+    description: 'Office, working from home, site survey and custom My Schedule items.',
+  },
+  {
     icon: 'alert',
     title: 'Warnings',
-    description: 'Detection windows, excluded users and severity levels for scheduling conflicts.',
+    description: 'Clash detection and labour mis-allocation alerts — tailored to how you run jobs.',
+  },
+  {
+    icon: 'creditcard',
+    title: 'Material order cut-off',
+    description: 'Daily manager notifications so material lists are ordered on time.',
   },
   {
     icon: 'creditcard',
     title: 'Payment runs & timesheets',
     description: 'How often you pay, recurring date ranges, and how timesheets roll up.',
   },
-  {
-    icon: 'shield',
-    title: 'Roles & permissions',
-    description: 'Fine-grained access for admins, managers and operatives across every module.',
-  },
 ]
 
 const GUIDED_PREVIEW: { icon: IconName; title: string }[] = [
+  { icon: 'building', title: 'Organisation details' },
+  { icon: 'shield', title: 'Project Planner features & functions' },
   { icon: 'manager', title: 'Add your first manager' },
   { icon: 'operative', title: 'Add your first operative' },
   { icon: 'project', title: 'Create your first project' },
@@ -61,6 +76,8 @@ type SetupExplainerProps = {
 }
 
 export function SetupExplainer({ organizationName, firstName, onBack, onContinue }: SetupExplainerProps) {
+  const displayName = organizationName.trim() || 'your organisation'
+
   return (
     <div>
       <div className="overflow-hidden rounded-2xl bg-gradient-to-br from-blue-600 via-blue-600 to-sky-500 p-7 text-white sm:p-9">
@@ -73,23 +90,25 @@ export function SetupExplainer({ organizationName, firstName, onBack, onContinue
               {firstName ? `Welcome, ${firstName}` : 'Welcome'}
             </p>
             <h2 className="mt-1 text-2xl font-extrabold sm:text-3xl">
-              {organizationName ? `Here's what ${organizationName} gets next` : "Here's what your organisation gets next"}
+              Here&apos;s what Project Planner will be supporting {displayName}
             </h2>
             <p className="mt-2 max-w-xl text-sm text-blue-50">
-              Nothing on this page changes any settings — it's just a quick look at what you&rsquo;ll be in control of,
-              and the handful of things we&rsquo;ll set up together right after this.
+              Nothing on this page changes any settings — it&apos;s a quick look at what you&apos;ll
+              configure, and the team &amp; data we&apos;ll set up together right after this.
             </p>
           </div>
         </div>
       </div>
 
       <div className="mt-9">
-        <h3 className="text-sm font-bold uppercase tracking-widest text-slate-400">What you&rsquo;ll be in control of</h3>
+        <h3 className="text-sm font-bold uppercase tracking-widest text-slate-400">
+          Organisation details
+        </h3>
         <p className="mt-1 text-sm text-slate-600">
-          Every one of these lives in Settings once you&rsquo;re in — you can fine-tune them any time.
+          Office, region, logo and currency — the identity of your workspace.
         </p>
-        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {SETTINGS_PREVIEW.map((item) => (
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          {ORGANISATION_DETAILS_PREVIEW.map((item) => (
             <div key={item.title} className="rounded-2xl border border-slate-200 bg-white p-4">
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100">
                 <Icon name={item.icon} className="h-5 w-5 text-slate-600" />
@@ -102,9 +121,34 @@ export function SetupExplainer({ organizationName, firstName, onBack, onContinue
       </div>
 
       <div className="mt-9">
-        <h3 className="text-sm font-bold uppercase tracking-widest text-slate-400">Let&rsquo;s get your team &amp; data ready</h3>
+        <h3 className="text-sm font-bold uppercase tracking-widest text-slate-400">
+          Project Planner features &amp; functions
+        </h3>
+        <p className="mt-1 text-sm leading-relaxed text-slate-600">
+          These are all settings that can be tailored to the way your organisation runs — payment
+          runs, annual leave for those on the books, and more in-depth settings such as{' '}
+          <strong className="font-semibold text-slate-800">Warnings</strong>: a clever feature built
+          into Project Planner to help with booking clashes and labour mis-allocation.
+        </p>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {FEATURES_PREVIEW.map((item) => (
+            <div key={item.title} className="rounded-2xl border border-slate-200 bg-white p-4">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100">
+                <Icon name={item.icon} className="h-5 w-5 text-slate-600" />
+              </div>
+              <p className="mt-3 text-sm font-bold text-slate-900">{item.title}</p>
+              <p className="mt-1 text-xs leading-relaxed text-slate-500">{item.description}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="mt-9">
+        <h3 className="text-sm font-bold uppercase tracking-widest text-slate-400">
+          Then we&apos;ll get your team &amp; data ready
+        </h3>
         <p className="mt-1 text-sm text-slate-600">
-          Nine quick steps, right after this page. We&rsquo;ll explain each one as we go — no guesswork.
+          Eleven quick steps after this page. We&apos;ll explain each one as we go.
         </p>
         <ol className="mt-4 space-y-2">
           {GUIDED_PREVIEW.map((item, index) => (

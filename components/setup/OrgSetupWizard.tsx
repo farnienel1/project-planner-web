@@ -6,9 +6,23 @@ import { useRouter } from 'next/navigation'
 import { FormInput, FormLabel } from '@/components/forms/FormShell'
 import type { SubscriptionPlanKey } from '@/lib/stripe/plans'
 import { SetupExplainer } from '@/components/setup/SetupExplainer'
+import { OrganisationDetailsStep } from '@/components/setup/OrganisationDetailsStep'
+import { OrganisationFeaturesStep } from '@/components/setup/OrganisationFeaturesStep'
 import { GuidedOrgSetup, createEmptyGuidedSetupData, type GuidedSetupData } from '@/components/setup/GuidedOrgSetup'
+import {
+  createDefaultOrgSetupSettings,
+  type OrgSetupSettings,
+} from '@/lib/orgSetup/orgSetupSettings'
 
-type WizardStep = 'account' | 'organization' | 'explore' | 'guided' | 'plan' | 'review'
+type WizardStep =
+  | 'account'
+  | 'organization'
+  | 'explore'
+  | 'org-details'
+  | 'org-features'
+  | 'guided'
+  | 'plan'
+  | 'review'
 
 type PlanOption = {
   key: SubscriptionPlanKey
@@ -25,7 +39,9 @@ const STEPS: { id: WizardStep; label: string }[] = [
   { id: 'account', label: 'Your account' },
   { id: 'organization', label: 'Organisation' },
   { id: 'explore', label: "What's next" },
-  { id: 'guided', label: 'Guided setup' },
+  { id: 'org-details', label: 'Org details' },
+  { id: 'org-features', label: 'Features' },
+  { id: 'guided', label: 'Team & data' },
   { id: 'plan', label: 'Choose plan' },
   { id: 'review', label: 'Review & pay' },
 ]
@@ -77,7 +93,10 @@ export function OrgSetupWizard() {
   const [planKey, setPlanKey] = useState<SubscriptionPlanKey>('professional')
   const [policyAccepted, setPolicyAccepted] = useState(false)
 
-  // Guided team & data setup — collected locally for now (see handoff note below).
+  const [orgSetupSettings, setOrgSetupSettings] = useState<OrgSetupSettings>(createDefaultOrgSetupSettings())
+  const [featuresStepIndex, setFeaturesStepIndex] = useState(0)
+
+  // Guided team & data setup — team entities written after activation (see handoff note).
   const [guidedData, setGuidedData] = useState<GuidedSetupData>(createEmptyGuidedSetupData())
   const [guidedStepIndex, setGuidedStepIndex] = useState(0)
 
@@ -185,6 +204,10 @@ export function OrgSetupWizard() {
     if (step === 'review') goToStep('plan')
   }
 
+  function patchOrgSetup(patch: Partial<OrgSetupSettings>) {
+    setOrgSetupSettings((prev) => ({ ...prev, ...patch }))
+  }
+
   async function createOrganizationRecord() {
     const { createPendingOrganization } = await import('@/lib/orgSetup/createOrganization')
     return createPendingOrganization({
@@ -195,6 +218,7 @@ export function OrgSetupWizard() {
       organizationName: organizationName.trim(),
       planKey,
       policyAccepted,
+      orgSetupSettings,
     })
   }
 
@@ -291,7 +315,11 @@ export function OrgSetupWizard() {
     }
   }
 
-  const showGenericNav = step !== 'explore' && step !== 'guided'
+  const showGenericNav =
+    step !== 'explore' &&
+    step !== 'org-details' &&
+    step !== 'org-features' &&
+    step !== 'guided'
 
   return (
     <div className="min-h-screen bg-[#f4f6f9] px-5 py-10">
@@ -375,7 +403,32 @@ export function OrgSetupWizard() {
                 organizationName={organizationName.trim()}
                 firstName={firstName.trim()}
                 onBack={() => goToStep('organization')}
-                onContinue={() => goToStep('guided')}
+                onContinue={() => goToStep('org-details')}
+              />
+            </div>
+          )}
+
+          {step === 'org-details' && (
+            <div className="mt-8">
+              <OrganisationDetailsStep
+                organizationName={organizationName.trim()}
+                value={orgSetupSettings.identity}
+                onChange={(identity) => patchOrgSetup({ identity })}
+                onBack={() => goToStep('explore')}
+                onContinue={() => goToStep('org-features')}
+              />
+            </div>
+          )}
+
+          {step === 'org-features' && (
+            <div className="mt-8">
+              <OrganisationFeaturesStep
+                value={orgSetupSettings.features}
+                onChange={(features) => patchOrgSetup({ features })}
+                stepIndex={featuresStepIndex}
+                onStepIndexChange={setFeaturesStepIndex}
+                onBack={() => goToStep('org-details')}
+                onComplete={() => goToStep('guided')}
               />
             </div>
           )}
@@ -388,7 +441,7 @@ export function OrgSetupWizard() {
                 stepIndex={guidedStepIndex}
                 onStepIndexChange={setGuidedStepIndex}
                 organizationName={organizationName.trim()}
-                onExitToExplainer={() => goToStep('explore')}
+                onExitToExplainer={() => goToStep('org-features')}
                 onComplete={() => goToStep('plan')}
               />
             </div>
@@ -475,6 +528,43 @@ export function OrgSetupWizard() {
                     </dd>
                   </div>
                 </dl>
+              </div>
+
+              <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5">
+                <h3 className="text-sm font-bold uppercase tracking-wide text-emerald-700">
+                  Organisation settings configured
+                </h3>
+                <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
+                  <div>
+                    <dt className="text-emerald-800/70">Office</dt>
+                    <dd className="font-semibold text-emerald-950">
+                      {orgSetupSettings.identity.officeAddress.addressLine1},{' '}
+                      {orgSetupSettings.identity.officeAddress.town}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-emerald-800/70">Region &amp; currency</dt>
+                    <dd className="font-semibold text-emerald-950">
+                      {orgSetupSettings.identity.countryLabel} · {orgSetupSettings.identity.currency}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-emerald-800/70">Logo</dt>
+                    <dd className="font-semibold text-emerald-950">
+                      {orgSetupSettings.identity.logoFile ? 'Ready to upload' : 'Not added'}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-emerald-800/70">Working hours</dt>
+                    <dd className="font-semibold text-emerald-950">
+                      {orgSetupSettings.features.payrollTimePolicy.standardDayStart}–
+                      {orgSetupSettings.features.payrollTimePolicy.standardDayEnd}
+                    </dd>
+                  </div>
+                </dl>
+                <p className="mt-3 text-xs text-emerald-800">
+                  All settings sync to your organisation in Settings — no need to re-enter after sign-in.
+                </p>
               </div>
 
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
