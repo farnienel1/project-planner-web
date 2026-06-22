@@ -36,14 +36,14 @@ type PlanOption = {
 }
 
 const STEPS: { id: WizardStep; label: string }[] = [
-  { id: 'account', label: 'Your account' },
+  { id: 'account', label: 'Your Account' },
   { id: 'organization', label: 'Organisation' },
-  { id: 'explore', label: "What's next" },
-  { id: 'org-details', label: 'Org details' },
-  { id: 'org-features', label: 'Features' },
-  { id: 'guided', label: 'Team & data' },
-  { id: 'plan', label: 'Choose plan' },
-  { id: 'review', label: 'Review & pay' },
+  { id: 'explore', label: "What's Next" },
+  { id: 'org-details', label: 'Organisation Details' },
+  { id: 'org-features', label: 'Features & Functions' },
+  { id: 'guided', label: 'Team & Data' },
+  { id: 'plan', label: 'Choose Plan' },
+  { id: 'review', label: 'Review & Pay' },
 ]
 
 function StepIndicator({ current }: { current: WizardStep }) {
@@ -58,7 +58,7 @@ function StepIndicator({ current }: { current: WizardStep }) {
         return (
           <li
             key={step.id}
-            className={`rounded-full px-3 py-1 text-xs font-semibold ${
+            className={`whitespace-nowrap rounded-full px-4 py-1.5 text-xs font-semibold sm:text-sm ${
               isCurrent
                 ? 'bg-blue-600 text-white'
                 : isComplete
@@ -424,7 +424,14 @@ export function OrgSetupWizard() {
             <div className="mt-8">
               <OrganisationFeaturesStep
                 value={orgSetupSettings.features}
+                countryCode={orgSetupSettings.identity.countryCode}
+                countryLabel={orgSetupSettings.identity.countryLabel}
                 onChange={(features) => patchOrgSetup({ features })}
+                onRegionChange={(countryCode, countryLabel) =>
+                  patchOrgSetup({
+                    identity: { ...orgSetupSettings.identity, countryCode, countryLabel },
+                  })
+                }
                 stepIndex={featuresStepIndex}
                 onStepIndexChange={setFeaturesStepIndex}
                 onBack={() => goToStep('org-details')}

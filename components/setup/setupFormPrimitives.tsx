@@ -65,6 +65,66 @@ export function SetupToggle({
   )
 }
 
+export function SetupSegmentedControl<T extends string>({
+  value,
+  onChange,
+  options,
+}: {
+  value: T
+  onChange: (value: T) => void
+  options: { value: T; label: string }[]
+}) {
+  return (
+    <div className="flex gap-1 rounded-xl border border-slate-200 bg-slate-100 p-1">
+      {options.map((opt) => (
+        <button
+          key={opt.value}
+          type="button"
+          onClick={() => onChange(opt.value)}
+          className={`flex-1 rounded-lg px-2 py-2 text-xs font-semibold transition-all ${
+            value === opt.value ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+          }`}
+        >
+          {opt.label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+export function SetupRadioCard({
+  checked,
+  onChange,
+  label,
+  description,
+}: {
+  checked: boolean
+  onChange: () => void
+  label: string
+  description?: string
+}) {
+  return (
+    <label
+      className={`flex cursor-pointer items-start gap-3 rounded-xl border-2 px-4 py-3 transition-all ${
+        checked ? 'border-blue-500 bg-blue-50' : 'border-slate-200 bg-white hover:bg-slate-50'
+      }`}
+    >
+      <span
+        className={`mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full border-2 ${
+          checked ? 'border-blue-600 bg-blue-600' : 'border-slate-300'
+        }`}
+      >
+        {checked && <span className="h-2.5 w-2.5 rounded-full bg-white" />}
+      </span>
+      <span className="min-w-0">
+        <span className="block text-sm font-medium text-slate-900">{label}</span>
+        {description && <span className="mt-0.5 block text-xs text-slate-500">{description}</span>}
+      </span>
+      <input type="radio" className="sr-only" checked={checked} onChange={onChange} />
+    </label>
+  )
+}
+
 export function SetupStepHeader({
   eyebrow,
   title,

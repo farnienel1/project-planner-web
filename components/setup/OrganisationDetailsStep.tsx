@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import { FormInput, FormLabel, FormSelect } from '@/components/forms/FormShell'
+import { LogoCropModal } from '@/components/setup/LogoCropModal'
 import {
   SetupCard,
   SetupNote,
@@ -11,6 +12,7 @@ import {
 import {
   COUNTRY_OPTIONS,
   CURRENCY_OPTIONS,
+  isLogoCropCandidate,
   validateLogoFile,
   type OrganisationIdentitySetup,
 } from '@/lib/orgSetup/orgSetupSettings'
@@ -31,6 +33,7 @@ export function OrganisationDetailsStep({
   onContinue,
 }: OrganisationDetailsStepProps) {
   const [error, setError] = useState('')
+  const [pendingLogoFile, setPendingLogoFile] = useState<File | null>(null)
   const logoPreview = useMemo(
     () => (value.logoFile ? URL.createObjectURL(value.logoFile) : value.companyLogoURL ?? null),
     [value.logoFile, value.companyLogoURL]
@@ -44,7 +47,7 @@ export function OrganisationDetailsStep({
     onChange({ ...value, officeAddress: { ...value.officeAddress, ...partial } })
   }
 
-  function handleLogoChange(file: File | null) {
+  function handleLogoSelected(file: File | null) {
     setError('')
     if (!file) {
       patch({ logoFile: null })
@@ -53,6 +56,10 @@ export function OrganisationDetailsStep({
     const validationError = validateLogoFile(file)
     if (validationError) {
       setError(validationError)
+      return
+    }
+    if (isLogoCropCandidate(file)) {
+      setPendingLogoFile(file)
       return
     }
     patch({ logoFile: file })
@@ -165,14 +172,14 @@ export function OrganisationDetailsStep({
           <SetupStepHeader
             eyebrow="Branding"
             title="Company logo"
-            description="JPEG only, up to 10 MB. Shown in the app header and on exported documents."
+            description="JPEG, PNG or PDF up to 10 MB. After upload, crop to a square for the app header and exported documents."
           />
           <SetupCard>
             <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center">
               <div className="flex h-24 w-24 flex-shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-slate-200 bg-slate-50">
                 {logoPreview ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={logoPreview} alt="Logo preview" className="h-full w-full object-contain" />
+                  <img src={logoPreview} alt="Logo preview" className="h-full w-full object-cover" />
                 ) : (
                   <span className="text-2xl font-bold text-slate-300">
                     {displayName.slice(0, 2).toUpperCase()}
@@ -184,21 +191,23 @@ export function OrganisationDetailsStep({
                   Upload logo
                   <input
                     type="file"
-                    accept="image/jpeg,.jpg,.jpeg"
+                    accept="image/jpeg,image/jpg,image/png,image/pjpeg,application/pdf,.jpg,.jpeg,.png,.pdf"
                     className="hidden"
-                    onChange={(e) => handleLogoChange(e.target.files?.[0] ?? null)}
+                    onChange={(e) => handleLogoSelected(e.target.files?.[0] ?? null)}
                   />
                 </label>
                 {value.logoFile && (
                   <button
                     type="button"
-                    onClick={() => handleLogoChange(null)}
+                    onClick={() => handleLogoSelected(null)}
                     className="block text-sm font-semibold text-slate-500 hover:text-slate-700"
                   >
                     Remove logo
                   </button>
                 )}
-                <p className="text-xs text-slate-500">Optional — you can add this later in Settings.</p>
+                <p className="text-xs text-slate-500">
+                  Optional — you can add or change this later in Settings. PDF files use the first page for cropping.
+                </p>
               </div>
             </div>
           </SetupCard>
@@ -225,6 +234,17 @@ export function OrganisationDetailsStep({
         <p className="mt-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
           {error}
         </p>
+      )}
+
+      {pendingLogoFile && (
+        <LogoCropModal
+          file={pendingLogoFile}
+          onCancel={() => setPendingLogoFile(null)}
+          onConfirm={(croppedFile) => {
+            patch({ logoFile: croppedFile })
+            setPendingLogoFile(null)
+          }}
+        />
       )}
 
       <SetupStepNav onBack={onBack} onNext={handleContinue} nextLabel="Continue to features & functions" />
