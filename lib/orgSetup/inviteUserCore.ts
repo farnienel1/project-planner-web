@@ -1,12 +1,17 @@
-import { collection, doc, getDocs, query, setDoc, Timestamp, where } from 'firebase/firestore'
+import { collection, doc, getDoc, getDocs, query, setDoc, Timestamp, where } from 'firebase/firestore'
 import { getFirebaseDb } from '@/lib/firebase/ensureFirebase'
 import { buildInvitedUserPayload, permissionsToFirestoreMap } from '@/lib/firebase/userPayload'
 import { newUuid } from '@/lib/firebase/firestoreUtils'
+import {
+  addExistingUserToOrganization,
+  findExistingAuthUserByEmail,
+} from '@/lib/orgMembership/membershipService'
 import type { UserPermissions } from '@/types'
 
 export type InviteUserCoreInput = {
   email: string
   organizationId: string
+  organizationName?: string
   firstName: string
   surname: string
   mobileNumber?: string
@@ -17,21 +22,56 @@ export type InviteUserCoreInput = {
   invitedBy: string
 }
 
-export async function inviteUserCore(
-  input: InviteUserCoreInput
-): Promise<{ invitationId: string; userId: string }> {
+export type InviteUserCoreResult = {
+  invitationId: string
+  userId: string
+  inviteType: 'new_user' | 'existing_user_org_add'
+}
+
+function roleFromPermissions(permissions: UserPermissions): string {
+  if (permissions.adminAccess) return 'admin'
+  if (permissions.manager && !permissions.operativeMode) return 'manager'
+  return 'operative'
+}
+
+export async function inviteUserCore(input: InviteUserCoreInput): Promise<InviteUserCoreResult> {
   const db = getFirebaseDb()
   const emailLower = input.email.toLowerCase().trim()
 
-  const existing = await getDocs(
+  const existingInOrg = await getDocs(
     query(
       collection(db, 'users'),
       where('email', '==', emailLower),
       where('organizationId', '==', input.organizationId)
     )
   )
-  if (!existing.empty) {
-    throw new Error(`A user with email ${emailLower} already exists in this organization.`)
+  if (!existingInOrg.empty) {
+    throw new Error(`A user with email ${emailLower} already exists in this organisation.`)
+  }
+
+  const orgEmailSnap = await getDoc(
+    doc(db, 'organizations', input.organizationId, 'userEmails', emailLower)
+  )
+  if (orgEmailSnap.exists()) {
+    throw new Error(`A user with email ${emailLower} already exists in this organisation.`)
+  }
+
+  const existingAuthUser = await findExistingAuthUserByEmail(emailLower)
+  if (existingAuthUser && existingAuthUser.organizationId !== input.organizationId) {
+    const role = roleFromPermissions(input.permissions)
+    const { invitationId } = await addExistingUserToOrganization({
+      authUserId: existingAuthUser.userId,
+      organizationId: input.organizationId,
+      organizationName: input.organizationName || 'Organisation',
+      role,
+      permissions: input.permissions,
+      invitedBy: input.invitedBy,
+    })
+    return {
+      invitationId,
+      userId: existingAuthUser.userId,
+      inviteType: 'existing_user_org_add',
+    }
   }
 
   const invitationId = newUuid()
@@ -45,6 +85,7 @@ export async function inviteUserCore(
     surname: input.surname.trim(),
     employmentType: input.employmentType || 'selfEmployed',
     permissions: permissionsToFirestoreMap(input.permissions),
+    inviteType: 'new_user',
     createdAt: Timestamp.now(),
     isUsed: false,
   }
@@ -75,5 +116,5 @@ export async function inviteUserCore(
   )
   await setDoc(doc(db, 'organizations', input.organizationId, 'userEmails', emailLower), { userId })
 
-  return { invitationId, userId }
+  return { invitationId, userId, inviteType: 'new_user' }
 }

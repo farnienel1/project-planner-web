@@ -8,6 +8,7 @@ import { inviteUserCore, type InviteUserCoreInput } from '@/lib/orgSetup/inviteU
 export type InviteUserInput = {
   email: string
   organizationId: string
+  organizationName?: string
   firstName: string
   surname: string
   mobileNumber?: string
@@ -21,7 +22,7 @@ export type InviteUserInput = {
 interface InviteState {
   saving: boolean
   error: string | null
-  inviteUser: (input: InviteUserInput) => Promise<{ invitationId: string; userId: string }>
+  inviteUser: (input: InviteUserInput) => Promise<{ invitationId: string; userId: string; inviteType: 'new_user' | 'existing_user_org_add' }>
 }
 
 export const useInviteStore = create<InviteState>(() => ({

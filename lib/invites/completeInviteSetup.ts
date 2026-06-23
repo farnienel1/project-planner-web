@@ -92,6 +92,9 @@ async function migrateInvitedUserRecord(params: {
   if (params.existingUserId !== params.authUid) {
     await deleteDoc(oldRef)
   }
+
+  const { ensurePrimaryOrgMembership } = await import('@/lib/orgMembership/membershipService')
+  await ensurePrimaryOrgMembership(params.authUid, params.organizationId, String(nextUser.role || 'member'))
 }
 
 export async function completeInvitationPasswordSetup(params: {

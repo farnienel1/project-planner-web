@@ -80,6 +80,17 @@ export const useAuthStore = create<AuthState>((set, get) => {
                 updatedAt: orgData.updatedAt?.toDate() || new Date(),
               }
 
+              try {
+                const { ensurePrimaryOrgMembership } = await import('@/lib/orgMembership/membershipService')
+                await ensurePrimaryOrgMembership(
+                  firebaseUser.uid,
+                  user.organizationId,
+                  String(orgData.members?.[firebaseUser.uid] || user.role || 'member')
+                )
+              } catch (membershipError) {
+                console.warn('Org membership seed skipped:', membershipError)
+              }
+
               if (seededLabels.changed && (user.isSuperAdmin || user.permissions.adminAccess)) {
                 try {
                   await updateDoc(doc(db, 'organizations', user.organizationId), {
