@@ -11,35 +11,8 @@ import type { GuidedSetupData } from '@/components/setup/GuidedOrgSetup'
 import { getFirebaseDb } from '@/lib/firebase/ensureFirebase'
 import { buildProjectFirestorePayload } from '@/lib/firebase/projectPayload'
 import { newUuid } from '@/lib/firebase/firestoreUtils'
-import { permissionsForAccountType } from '@/lib/orgSetup/accountPermissions'
-import { inviteUserCore } from '@/lib/orgSetup/inviteUserCore'
 import type { TeamOnboardingState } from '@/lib/orgSetup/teamOnboarding'
-import { requestInviteSetupEmail } from '@/lib/invites/requestSetupEmail'
-
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-
-function mapEmploymentType(value: GuidedSetupData['operative']['employmentType']): 'paye' | 'selfEmployed' {
-  return value === 'PAYE' ? 'paye' : 'selfEmployed'
-}
-
-function parseDayRate(value: string): number | undefined {
-  const n = Number(value)
-  return Number.isFinite(n) && n > 0 ? n : undefined
-}
-
-async function trySendInviteEmail(params: {
-  invitationId: string
-  organizationName: string
-  firstName: string
-  role: 'manager' | 'operative'
-  to: string
-}) {
-  try {
-    await requestInviteSetupEmail(params)
-  } catch (error) {
-    console.warn('[guided-setup] Invite email not sent:', error)
-  }
-}
+import type { Subcontractor, SubcontractorContact, Wholesaler, WholesalerContact } from '@/types'
 
 export type PersistGuidedSetupInput = {
   organizationId: string
@@ -49,167 +22,206 @@ export type PersistGuidedSetupInput = {
 }
 
 export type PersistGuidedSetupResult = {
-  managerUserId?: string
-  operativeUserId?: string
   teamOnboarding: TeamOnboardingState
+}
+
+function normalizeName(value: string): string {
+  return value.trim().toLowerCase()
+}
+
+async function createClientRecord(
+  organizationId: string,
+  params: { name: string; email?: string; phone?: string }
+): Promise<{ id: string; name: string; email?: string; phone?: string }> {
+  const db = getFirebaseDb()
+  const name = params.name.trim()
+  const clientRef = await addDoc(collection(db, 'organizations', organizationId, 'clients'), {
+    name,
+    email: params.email?.trim() || '',
+    phone: params.phone?.trim() || '',
+    contactPerson: '',
+    address: '',
+    createdAt: Timestamp.now(),
+    updatedAt: Timestamp.now(),
+  })
+  return {
+    id: clientRef.id,
+    name,
+    email: params.email?.trim() || undefined,
+    phone: params.phone?.trim() || undefined,
+  }
+}
+
+function buildWholesalerFromGuided(
+  guided: GuidedSetupData['wholesaler'],
+  now: Date
+): Wholesaler | null {
+  if (!guided.name.trim()) return null
+  const contactId = newUuid()
+  const contacts: WholesalerContact[] = []
+  if (guided.contactName.trim() && guided.contactEmail.trim()) {
+    contacts.push({
+      id: contactId,
+      name: guided.contactName.trim(),
+      email: guided.contactEmail.trim(),
+      isPrimary: true,
+      createdAt: now,
+    })
+  }
+  return {
+    id: newUuid(),
+    name: guided.name.trim(),
+    address: guided.address.trim() || undefined,
+    trade: guided.trade.trim() || undefined,
+    accountNumber: guided.accountNumber.trim() || undefined,
+    primaryContactId: contacts[0]?.id,
+    contacts,
+    createdAt: now,
+    updatedAt: now,
+  }
+}
+
+function buildSubcontractorFromGuided(
+  guided: GuidedSetupData['subcontractor'],
+  now: Date
+): Subcontractor | null {
+  if (!guided.name.trim() || !guided.tradeType.trim()) return null
+  const contacts: SubcontractorContact[] = []
+  if (guided.contactName.trim()) {
+    contacts.push({
+      id: newUuid(),
+      name: guided.contactName.trim(),
+      email: guided.contactEmail.trim() || '',
+      contactNumber: guided.contactNumber.trim() || '',
+      position: 'Installer',
+      createdAt: now,
+    })
+  }
+  return {
+    id: newUuid(),
+    name: guided.name.trim(),
+    subcontractorType: guided.tradeType.trim(),
+    website: guided.website.trim() || undefined,
+    address: guided.address.trim() || undefined,
+    contacts,
+    createdAt: now,
+    updatedAt: now,
+  }
+}
+
+function wholesalerPayload(wholesaler: Wholesaler) {
+  return {
+    id: wholesaler.id,
+    name: wholesaler.name.trim(),
+    address: wholesaler.address?.trim() || null,
+    trade: wholesaler.trade?.trim() || null,
+    accountNumber: wholesaler.accountNumber?.trim() || null,
+    primaryContactId: wholesaler.primaryContactId || null,
+    contacts: wholesaler.contacts.map((contact) => ({
+      id: contact.id,
+      name: contact.name.trim(),
+      email: contact.email.trim(),
+      isPrimary: contact.isPrimary,
+      createdAt: Timestamp.fromDate(contact.createdAt),
+    })),
+    createdAt: Timestamp.fromDate(wholesaler.createdAt),
+    updatedAt: Timestamp.fromDate(wholesaler.updatedAt),
+  }
+}
+
+function subcontractorPayload(subcontractor: Subcontractor) {
+  return {
+    id: subcontractor.id,
+    name: subcontractor.name.trim(),
+    subcontractorType: subcontractor.subcontractorType.trim(),
+    website: subcontractor.website?.trim() || null,
+    address: subcontractor.address?.trim() || null,
+    contacts: subcontractor.contacts.map((contact) => ({
+      id: contact.id,
+      name: contact.name.trim(),
+      email: contact.email.trim(),
+      contactNumber: contact.contactNumber.trim(),
+      position: contact.position,
+      createdAt: Timestamp.fromDate(contact.createdAt),
+    })),
+    createdAt: Timestamp.fromDate(subcontractor.createdAt),
+    updatedAt: Timestamp.fromDate(subcontractor.updatedAt),
+  }
 }
 
 export async function persistGuidedSetup(
   input: PersistGuidedSetupInput
 ): Promise<PersistGuidedSetupResult> {
   const db = getFirebaseDb()
-  const { organizationId, organizationName, adminUserId, guidedData } = input
+  const { organizationId, adminUserId, guidedData } = input
   const now = new Date()
 
-  let managerUserId: string | undefined
-  let managerRosterId: string | undefined
-  let operativeUserId: string | undefined
+  const project = guidedData.project
+  const projectClientName = project.clientName.trim()
+  const clientStepName = guidedData.client.name.trim()
 
-  const manager = guidedData.manager
   if (
-    manager.firstName.trim() &&
-    manager.surname.trim() &&
-    EMAIL_PATTERN.test(manager.email.trim())
+    !project.jobNumber.trim() ||
+    !project.siteName.trim() ||
+    !project.startDate ||
+    !project.endDate ||
+    !projectClientName
   ) {
-    const invited = await inviteUserCore({
-      email: manager.email,
-      organizationId,
-      firstName: manager.firstName,
-      surname: manager.surname,
-      mobileNumber: manager.mobile,
-      permissions: permissionsForAccountType('manager'),
-      assignedManagerUserId: adminUserId,
-      dayRate: parseDayRate(manager.dayRate),
-      invitedBy: adminUserId,
-    })
-    managerUserId = invited.userId
+    throw new Error('Project setup is incomplete. Job number, site name, dates and client name are required.')
+  }
 
-    await trySendInviteEmail({
-      invitationId: invited.invitationId,
-      organizationName,
-      firstName: manager.firstName,
-      role: 'manager',
-      to: manager.email.trim(),
-    })
+  let projectClient: { id: string; name: string; email?: string; phone?: string }
 
-    managerRosterId = newUuid()
-    await setDoc(doc(db, 'organizations', organizationId, 'managers', managerRosterId), {
-      id: managerRosterId,
-      firstName: manager.firstName.trim(),
-      lastName: manager.surname.trim(),
-      email: manager.email.trim().toLowerCase(),
-      mobileNumber: manager.mobile.trim() || '',
-      department: '',
-      isActive: true,
-      notes: '',
-      tradeTypePreset: '',
-      tradeTypeCustom: '',
-      organizationId,
-      createdAt: Timestamp.fromDate(now),
-      updatedAt: Timestamp.now(),
+  const namesDiffer =
+    clientStepName &&
+    projectClientName &&
+    normalizeName(clientStepName) !== normalizeName(projectClientName)
+
+  if (namesDiffer) {
+    const fromProject = await createClientRecord(organizationId, {
+      name: projectClientName,
+    })
+    await createClientRecord(organizationId, {
+      name: clientStepName,
+      email: guidedData.client.email,
+      phone: guidedData.client.phone,
+    })
+    projectClient = fromProject
+  } else {
+    const resolvedName = clientStepName || projectClientName
+    projectClient = await createClientRecord(organizationId, {
+      name: resolvedName,
+      email: guidedData.client.email,
+      phone: guidedData.client.phone,
     })
   }
 
-  const operative = guidedData.operative
-  if (
-    !guidedData.operativeSkipped &&
-    operative.firstName.trim() &&
-    operative.surname.trim() &&
-    EMAIL_PATTERN.test(operative.email.trim())
-  ) {
-    const lineManagerId = managerUserId || adminUserId
-    const invited = await inviteUserCore({
-      email: operative.email,
-      organizationId,
-      firstName: operative.firstName,
-      surname: operative.surname,
-      mobileNumber: operative.mobile,
-      permissions: permissionsForAccountType('operative'),
-      assignedManagerUserId: lineManagerId,
-      dayRate: parseDayRate(operative.dayRate),
-      employmentType: mapEmploymentType(operative.employmentType),
-      invitedBy: adminUserId,
-    })
-    operativeUserId = invited.userId
-
-    await trySendInviteEmail({
-      invitationId: invited.invitationId,
-      organizationName,
-      firstName: operative.firstName,
-      role: 'operative',
-      to: operative.email.trim(),
-    })
-
-    const operativeRosterId = newUuid()
-    const dayRate = parseDayRate(operative.dayRate) ?? 0
-    await setDoc(doc(db, 'organizations', organizationId, 'operatives', operativeRosterId), {
-      id: operativeRosterId,
-      firstName: operative.firstName.trim(),
-      lastName: operative.surname.trim(),
-      name: `${operative.firstName} ${operative.surname}`.trim(),
-      email: operative.email.trim().toLowerCase(),
-      phone: operative.mobile.trim() || '',
-      startDate: Timestamp.fromDate(now),
-      skills: guidedData.skill.name.trim() ? [guidedData.skill.name.trim()] : [],
-      qualifications: guidedData.qualification.name.trim()
-        ? [guidedData.qualification.name.trim()]
-        : [],
-      isActive: true,
-      hourlyRate: dayRate,
-      dayRate,
-      currencySymbol: '£',
-      notes: '',
-      tradeTypePreset: '',
-      tradeTypeCustom: '',
-      organizationId,
-      createdAt: Timestamp.fromDate(now),
-      updatedAt: Timestamp.now(),
-    })
+  const projectId = newUuid()
+  const clientForProject = {
+    id: projectClient.id,
+    name: projectClient.name,
+    email: projectClient.email,
+    phone: projectClient.phone,
+    organizationId,
+    createdAt: now,
+    updatedAt: now,
   }
-
-  if (guidedData.client.name.trim()) {
-    const clientRef = await addDoc(collection(db, 'organizations', organizationId, 'clients'), {
-      name: guidedData.client.name.trim(),
-      email: guidedData.client.email.trim() || '',
-      phone: guidedData.client.phone.trim() || '',
-      contactPerson: '',
-      address: '',
-      createdAt: Timestamp.now(),
-      updatedAt: Timestamp.now(),
-    })
-
-    const project = guidedData.project
-    if (project.jobNumber.trim() && project.siteName.trim() && project.startDate && project.endDate) {
-      const projectId = newUuid()
-      const client = {
-        id: clientRef.id,
-        name: guidedData.client.name.trim(),
-        email: guidedData.client.email.trim() || undefined,
-        phone: guidedData.client.phone.trim() || undefined,
-        organizationId,
-        createdAt: now,
-        updatedAt: now,
-      }
-      const payload = buildProjectFirestorePayload({
-        id: projectId,
-        organizationId,
-        jobNumber: project.jobNumber,
-        siteName: project.siteName,
-        addressLine1: '',
-        townCity: '',
-        postcode: '',
-        client,
-        startDate: new Date(project.startDate),
-        endDate: new Date(project.endDate),
-        jobType: project.jobType || 'CAT A',
-        managerId: managerRosterId,
-        managerIds: managerRosterId ? [managerRosterId] : undefined,
-        isLive: true,
-      })
-      const collectionName = project.jobType === 'Small Works' ? 'smallWorks' : 'projects'
-      await setDoc(doc(db, 'organizations', organizationId, collectionName, projectId), payload)
-    }
-  }
+  const payload = buildProjectFirestorePayload({
+    id: projectId,
+    organizationId,
+    jobNumber: project.jobNumber,
+    siteName: project.siteName,
+    addressLine1: '',
+    townCity: '',
+    postcode: '',
+    client: clientForProject,
+    startDate: new Date(project.startDate),
+    endDate: new Date(project.endDate),
+    jobType: project.jobType || 'CAT A',
+    isLive: true,
+  })
+  const collectionName = project.jobType === 'Small Works' ? 'smallWorks' : 'projects'
+  await setDoc(doc(db, 'organizations', organizationId, collectionName, projectId), payload)
 
   if (guidedData.skill.name.trim() && guidedData.skill.trade.trim()) {
     const skillId = newUuid()
@@ -231,40 +243,40 @@ export async function persistGuidedSetup(
     })
   }
 
-  if (guidedData.jobType.name.trim()) {
-    const settingsRef = doc(db, 'organizations', organizationId, 'settings', 'jobTypes')
-    const existing = await getDoc(settingsRef)
-    const current = existing.exists()
-      ? (existing.data().jobTypes as string[] | undefined) ?? []
-      : []
-    const nextName = guidedData.jobType.name.trim()
-    if (!current.includes(nextName)) {
-      await setDoc(
-        settingsRef,
-        { jobTypes: [...current, nextName], updatedAt: Timestamp.now() },
-        { merge: true }
-      )
-    }
+  const settingsRef = doc(db, 'organizations', organizationId, 'settings', 'jobTypes')
+  const existing = await getDoc(settingsRef)
+  const current = existing.exists()
+    ? (existing.data().jobTypes as string[] | undefined) ?? []
+    : []
+  const jobTypeNames = new Set(current)
+  const customJobType = guidedData.jobType.name.trim()
+  if (customJobType) jobTypeNames.add(customJobType)
+  if (project.jobType.trim()) jobTypeNames.add(project.jobType.trim())
+  await setDoc(
+    settingsRef,
+    { jobTypes: Array.from(jobTypeNames), updatedAt: Timestamp.now() },
+    { merge: true }
+  )
+
+  const wholesaler = buildWholesalerFromGuided(guidedData.wholesaler, now)
+  if (wholesaler) {
+    await setDoc(
+      doc(db, 'organizations', organizationId, 'wholesalers', wholesaler.id),
+      wholesalerPayload(wholesaler)
+    )
+  }
+
+  const subcontractor = buildSubcontractorFromGuided(guidedData.subcontractor, now)
+  if (subcontractor) {
+    await setDoc(
+      doc(db, 'organizations', organizationId, 'subcontractors', subcontractor.id),
+      subcontractorPayload(subcontractor)
+    )
   }
 
   const teamOnboarding: TeamOnboardingState = {
-    status: managerUserId ? 'pending_manager' : operativeUserId ? 'pending_operative' : 'complete',
-    managerUserId,
-    operativeUserId,
-    managerName: managerUserId ? `${manager.firstName} ${manager.surname}`.trim() : undefined,
-    operativeName: operativeUserId ? `${operative.firstName} ${operative.surname}`.trim() : undefined,
-    managerPermissionsConfigured: false,
-    operativePermissionsConfigured: false,
-  }
-
-  if (!managerUserId && operativeUserId) {
-    teamOnboarding.status = 'pending_operative'
-  }
-  if (!managerUserId && !operativeUserId) {
-    teamOnboarding.status = 'complete'
-  }
-  if (managerUserId && !operativeUserId) {
-    teamOnboarding.status = 'pending_manager'
+    status: 'pending_add_users',
+    addUsersGuideShown: false,
   }
 
   await updateDoc(doc(db, 'organizations', organizationId), {
@@ -273,7 +285,10 @@ export async function persistGuidedSetup(
     updatedAt: Timestamp.now(),
   })
 
-  return { managerUserId, operativeUserId, teamOnboarding }
+  const { ensurePrimaryOrgMembership } = await import('@/lib/orgMembership/membershipService')
+  await ensurePrimaryOrgMembership(adminUserId, organizationId, 'admin')
+
+  return { teamOnboarding }
 }
 
 export async function saveGuidedSetupDraft(

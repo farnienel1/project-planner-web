@@ -75,6 +75,7 @@ export function InviteUserForm() {
       const result = await inviteUser({
         email: form.email,
         organizationId: organization.id,
+        organizationName: organization.name,
         firstName: form.firstName,
         surname: form.surname,
         mobileNumber: form.mobileNumber,
@@ -82,22 +83,43 @@ export function InviteUserForm() {
         assignedManagerUserId: form.assignedManagerUserId || undefined,
         dayRate: form.dayRate ? Number(form.dayRate) : undefined,
       })
-      try {
-        const { requestInviteSetupEmail } = await import('@/lib/invites/requestSetupEmail')
-        await requestInviteSetupEmail({
-          invitationId: result.invitationId,
-          organizationName: organization.name,
-          firstName: form.firstName,
-          role: accountType === 'operative' ? 'operative' : 'manager',
-          to: form.email,
-        })
-        setSuccess(
-          `Invitation sent to ${form.email.trim()}. They will receive an email to set their password.`
-        )
-      } catch (emailError) {
-        setSuccess(
-          `User invited but email could not be sent (${emailError instanceof Error ? emailError.message : 'unknown error'}). Add RESEND_API_KEY to .env.local.`
-        )
+      if (result.inviteType === 'existing_user_org_add') {
+        try {
+          await fetch('/api/invites/send-org-addition-email', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              organizationName: organization.name,
+              firstName: form.firstName,
+              to: form.email,
+            }),
+          })
+          setSuccess(
+            `${form.email.trim()} already has a Project Planner account. They will receive an email and can accept the invitation from Change organisation — no new password needed.`
+          )
+        } catch (emailError) {
+          setSuccess(
+            `User linked to ${organization.name}, but notification email could not be sent (${emailError instanceof Error ? emailError.message : 'unknown error'}).`
+          )
+        }
+      } else {
+        try {
+          const { requestInviteSetupEmail } = await import('@/lib/invites/requestSetupEmail')
+          await requestInviteSetupEmail({
+            invitationId: result.invitationId,
+            organizationName: organization.name,
+            firstName: form.firstName,
+            role: accountType === 'operative' ? 'operative' : 'manager',
+            to: form.email,
+          })
+          setSuccess(
+            `Invitation sent to ${form.email.trim()}. They will receive an email to set their password.`
+          )
+        } catch (emailError) {
+          setSuccess(
+            `User invited but email could not be sent (${emailError instanceof Error ? emailError.message : 'unknown error'}). Add RESEND_API_KEY to .env.local.`
+          )
+        }
       }
       setTimeout(() => router.push('/dashboard/settings/users'), 2000)
     } catch (err: unknown) {

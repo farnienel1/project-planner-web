@@ -84,6 +84,7 @@ export function OrgSetupWizard() {
 
   const [firstName, setFirstName] = useState('')
   const [surname, setSurname] = useState('')
+  const [mobileNumber, setMobileNumber] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -242,6 +243,7 @@ export function OrgSetupWizard() {
       password,
       firstName: firstName.trim(),
       surname: surname.trim(),
+      mobileNumber: mobileNumber.trim(),
       organizationName: organizationName.trim(),
       planKey,
       policyAccepted,
@@ -307,12 +309,6 @@ export function OrgSetupWizard() {
       const { userId, organizationId } = await createOrganizationRecord()
 
       await saveGuidedSetupDraft(organizationId, guidedData)
-      await persistGuidedSetup({
-        organizationId,
-        organizationName: organizationName.trim(),
-        adminUserId: userId,
-        guidedData,
-      })
 
       const checkoutResponse = await fetch('/api/stripe/create-checkout-session', {
         method: 'POST',
@@ -392,6 +388,10 @@ export function OrgSetupWizard() {
               <div className="sm:col-span-2">
                 <FormLabel required>Work email</FormLabel>
                 <FormInput type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" />
+              </div>
+              <div className="sm:col-span-2">
+                <FormLabel>Mobile number</FormLabel>
+                <FormInput value={mobileNumber} onChange={(e) => setMobileNumber(e.target.value)} autoComplete="tel" />
               </div>
               <div>
                 <FormLabel required>Password</FormLabel>
@@ -612,29 +612,25 @@ export function OrgSetupWizard() {
                 <h3 className="text-sm font-bold uppercase tracking-wide text-slate-500">Team &amp; data you set up</h3>
                 <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
                   <div>
-                    <dt className="text-slate-500">Manager</dt>
-                    <dd className="font-semibold text-slate-900">
-                      {guidedData.manager.firstName} {guidedData.manager.surname}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-slate-500">Operative</dt>
-                    <dd className="font-semibold text-slate-900">
-                      {guidedData.operative.firstName} {guidedData.operative.surname}
-                    </dd>
+                    <dt className="text-slate-500">Team</dt>
+                    <dd className="font-semibold text-slate-900">Add managers &amp; operatives after sign-in</dd>
                   </div>
                   <div>
                     <dt className="text-slate-500">Project</dt>
-                    <dd className="font-semibold text-slate-900">{guidedData.project.siteName}</dd>
+                    <dd className="font-semibold text-slate-900">{guidedData.project.siteName || '—'}</dd>
                   </div>
                   <div>
                     <dt className="text-slate-500">Client</dt>
-                    <dd className="font-semibold text-slate-900">{guidedData.client.name}</dd>
+                    <dd className="font-semibold text-slate-900">{guidedData.client.name || guidedData.project.clientName || '—'}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-slate-500">Job type</dt>
+                    <dd className="font-semibold text-slate-900">{guidedData.jobType.name || guidedData.project.jobType || '—'}</dd>
                   </div>
                 </dl>
                 <p className="mt-3 text-xs text-slate-500">
-                  Plus a sub contractor, wholesaler, skill, qualification and job type — all ready to activate the
-                  moment payment succeeds.
+                  Plus a sub contractor, wholesaler, skill and qualification — all ready to activate the moment payment
+                  succeeds.
                 </p>
               </div>
 

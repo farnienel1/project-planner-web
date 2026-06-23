@@ -15,6 +15,7 @@ export type CreateOrganizationInput = {
   password: string
   firstName: string
   surname: string
+  mobileNumber?: string
   organizationName: string
   planKey: SubscriptionPlanKey
   policyAccepted: boolean
@@ -84,6 +85,7 @@ export async function createPendingOrganization(
       email: input.email,
       firstName: input.firstName,
       surname: input.surname,
+      ...(input.mobileNumber?.trim() ? { mobileNumber: input.mobileNumber.trim() } : {}),
       organizationId,
       role: 'admin',
       isActive: true,
@@ -119,6 +121,9 @@ export async function createPendingOrganization(
       updatedAt: now,
     })
   )
+
+  const { ensurePrimaryOrgMembership } = await import('@/lib/orgMembership/membershipService')
+  await ensurePrimaryOrgMembership(userId, organizationId, 'admin')
 
   return { userId, organizationId }
 }

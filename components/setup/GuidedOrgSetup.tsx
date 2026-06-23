@@ -9,15 +9,16 @@ import { FormInput, FormLabel, FormSelect } from '@/components/forms/FormShell'
 /* ----------------------------------------------------------------------- */
 
 export type GuidedSetupData = {
+  /** @deprecated Manager/operative are added post-login via Manage Users */
   operativeSkipped?: boolean
-  manager: {
+  manager?: {
     firstName: string
     surname: string
     email: string
     mobile: string
     dayRate: string
   }
-  operative: {
+  operative?: {
     firstName: string
     surname: string
     email: string
@@ -70,9 +71,6 @@ export type GuidedSetupData = {
 
 export function createEmptyGuidedSetupData(): GuidedSetupData {
   return {
-    operativeSkipped: false,
-    manager: { firstName: '', surname: '', email: '', mobile: '', dayRate: '' },
-    operative: { firstName: '', surname: '', email: '', mobile: '', employmentType: 'PAYE', dayRate: '' },
     project: { jobNumber: '', siteName: '', jobType: 'CAT A', startDate: '', endDate: '', clientName: '' },
     client: { name: '', email: '', phone: '' },
     subcontractor: { name: '', tradeType: '', website: '', address: '', contactName: '', contactEmail: '', contactNumber: '' },
@@ -318,6 +316,56 @@ function NoteBox({ children }: { children: React.ReactNode }) {
   )
 }
 
+function UsersSetupNote() {
+  return (
+    <NoteBox>
+      Once you are signed into the web app, you will be guided to the <strong>Manage Users</strong> page. In here,
+      you will be able to set up all users for your organisation. Admin, manager and operative levels are available.
+    </NoteBox>
+  )
+}
+
+function InfographicCard({
+  icon,
+  title,
+  description,
+  items,
+  accent,
+}: {
+  icon: IconName
+  title: string
+  description: string
+  items: { icon: IconName; label: string; detail: string }[]
+  accent: { tile: string; ring: string; text: string }
+}) {
+  return (
+    <div className={`rounded-2xl border border-slate-200 bg-white p-6 ring-1 ${accent.ring}`}>
+      <div className="flex items-start gap-4">
+        <div className={`flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl ${accent.tile}`}>
+          <Icon name={icon} className={`h-8 w-8 ${accent.text}`} />
+        </div>
+        <div>
+          <h3 className="text-xl font-extrabold text-slate-900">{title}</h3>
+          <p className="mt-2 text-sm leading-relaxed text-slate-600">{description}</p>
+        </div>
+      </div>
+      <div className="mt-6 grid gap-3 sm:grid-cols-2">
+        {items.map((item) => (
+          <div key={item.label} className="flex gap-3 rounded-xl bg-slate-50 px-4 py-3">
+            <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${accent.tile}`}>
+              <Icon name={item.icon} className={`h-5 w-5 ${accent.text}`} />
+            </div>
+            <div>
+              <p className="text-sm font-bold text-slate-900">{item.label}</p>
+              <p className="mt-0.5 text-xs text-slate-600">{item.detail}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 function StepHeader({
   meta,
   index,
@@ -430,23 +478,16 @@ export function GuidedOrgSetup({
 
   function validate(): string | null {
     switch (meta?.key) {
-      case 'manager': {
-        const m = data.manager
-        if (!m.firstName.trim() || !m.surname.trim()) return "Enter the manager's first and last name."
-        if (!EMAIL_PATTERN.test(m.email.trim())) return 'Enter a valid email address.'
+      case 'manager':
+      case 'operative':
         return null
-      }
-      case 'operative': {
-        const o = data.operative
-        if (!o.firstName.trim() || !o.surname.trim()) return "Enter the operative's first and last name."
-        if (!EMAIL_PATTERN.test(o.email.trim())) return 'Enter a valid email address.'
-        return null
-      }
       case 'project': {
         const p = data.project
         if (!p.jobNumber.trim() || !p.siteName.trim()) return 'Job number and site name are required.'
+        if (!p.jobType.trim()) return 'Select a job type.'
         if (!p.startDate || !p.endDate) return 'Start and end dates are required.'
         if (!p.clientName.trim()) return "Enter a client name — you'll add their full details next."
+        if (p.endDate < p.startDate) return 'End date must be on or after the start date.'
         return null
       }
       case 'client': {
@@ -491,28 +532,17 @@ export function GuidedOrgSetup({
     if (validate() !== null) return
     setTouched(false)
 
-    // Quietly carry the project's quick-add client name into the Client step.
-    if (meta?.key === 'project' && !data.client.name.trim()) {
-      onChange({ ...data, client: { ...data.client, name: data.project.clientName } })
+    // Carry the project's client name into the Client step when advancing.
+    if (meta?.key === 'project') {
+      onChange({
+        ...data,
+        client: {
+          ...data.client,
+          name: data.client.name.trim() || data.project.clientName,
+        },
+      })
     }
 
-    onStepIndexChange(stepIndex + 1)
-  }
-
-  function skipOperativeStep() {
-    setTouched(false)
-    onChange({
-      ...data,
-      operativeSkipped: true,
-      operative: {
-        firstName: '',
-        surname: '',
-        email: '',
-        mobile: '',
-        employmentType: 'PAYE',
-        dayRate: '',
-      },
-    })
     onStepIndexChange(stepIndex + 1)
   }
 
@@ -536,34 +566,23 @@ export function GuidedOrgSetup({
           <StepHeader
             meta={meta}
             index={stepIndex}
-            title="Add your first manager"
-            description="Managers oversee projects, approve timesheets and annual leave, and keep schedules on track. They can also be given access to settings like users, skills and qualifications."
+            title="Manager users"
+            description="Managers are a step down from admin — still with lots of access, but focused on running projects and teams rather than billing or org-wide settings."
           />
-          <NoteBox>
-            When setting up this user, try choose a person who will be a manager of your first project. That way, on
-            the next step, you can assign them to it straight away.
-          </NoteBox>
-          <div className="mt-6 grid gap-5 sm:grid-cols-2">
-            <div>
-              <FormLabel required>First name</FormLabel>
-              <FormInput value={data.manager.firstName} onChange={(e) => update('manager', { firstName: e.target.value })} />
-            </div>
-            <div>
-              <FormLabel required>Last name</FormLabel>
-              <FormInput value={data.manager.surname} onChange={(e) => update('manager', { surname: e.target.value })} />
-            </div>
-            <div className="sm:col-span-2">
-              <FormLabel required>Email address</FormLabel>
-              <FormInput type="email" value={data.manager.email} onChange={(e) => update('manager', { email: e.target.value })} />
-            </div>
-            <div>
-              <FormLabel>Mobile number</FormLabel>
-              <FormInput value={data.manager.mobile} onChange={(e) => update('manager', { mobile: e.target.value })} />
-            </div>
-            <div>
-              <FormLabel>Day rate (optional)</FormLabel>
-              <FormInput type="number" step="0.01" placeholder="e.g. 250" value={data.manager.dayRate} onChange={(e) => update('manager', { dayRate: e.target.value })} />
-            </div>
+          <div className="mt-6 space-y-5">
+            <UsersSetupNote />
+            <InfographicCard
+              icon="manager"
+              title="What is a manager?"
+              description="Think of a manager as a lighter version of an admin. They can run day-to-day operations — scheduling people, approving timesheets, managing projects and small works — without needing full control of billing or every setting."
+              accent={{ tile: 'bg-blue-50', ring: 'ring-blue-100', text: 'text-blue-600' }}
+              items={[
+                { icon: 'calendar', label: 'Schedules & bookings', detail: 'Book operatives and subcontractors onto jobs' },
+                { icon: 'project', label: 'Projects & small works', detail: 'Create and manage live jobs on site' },
+                { icon: 'clock', label: 'Timesheets & leave', detail: 'Review and approve team time off and hours' },
+                { icon: 'shield', label: 'Flexible permissions', detail: 'Grant extra access to skills, materials or reports per person' },
+              ]}
+            />
           </div>
         </>
       )}
@@ -573,59 +592,24 @@ export function GuidedOrgSetup({
           <StepHeader
             meta={meta}
             index={stepIndex}
-            title="Add your first operative"
-            description="Operatives are your tradespeople on the tools. They get a focused view — their schedule, the projects they're booked on, and their own annual leave — without access to admin settings, other staff, or company financials."
+            title="Operative users"
+            description="Operative mode is ideal for people who just need to see their own work — nothing more, nothing less."
           />
-          <NoteBox>
-            This restricted access matters on site: operatives see exactly what they need for the day&rsquo;s work,
-            nothing more, which keeps schedules and project details tidy and reduces accidental changes.
-          </NoteBox>
-          <div className="mt-6 grid gap-5 sm:grid-cols-2">
-            <div>
-              <FormLabel required>First name</FormLabel>
-              <FormInput value={data.operative.firstName} onChange={(e) => update('operative', { firstName: e.target.value })} />
-            </div>
-            <div>
-              <FormLabel required>Last name</FormLabel>
-              <FormInput value={data.operative.surname} onChange={(e) => update('operative', { surname: e.target.value })} />
-            </div>
-            <div className="sm:col-span-2">
-              <FormLabel required>Email address</FormLabel>
-              <FormInput type="email" value={data.operative.email} onChange={(e) => update('operative', { email: e.target.value })} />
-            </div>
-            <div>
-              <FormLabel>Mobile number</FormLabel>
-              <FormInput value={data.operative.mobile} onChange={(e) => update('operative', { mobile: e.target.value })} />
-            </div>
-            <div>
-              <FormLabel>Employment type</FormLabel>
-              <div className="flex gap-2">
-                {(['PAYE', 'Self-Employed'] as const).map((opt) => (
-                  <button
-                    key={opt}
-                    type="button"
-                    onClick={() => update('operative', { employmentType: opt })}
-                    className={`flex-1 rounded-lg border px-3 py-2 text-sm font-semibold transition ${
-                      data.operative.employmentType === opt
-                        ? 'border-sky-500 bg-sky-50 text-sky-700'
-                        : 'border-slate-300 text-slate-600 hover:bg-slate-50'
-                    }`}
-                  >
-                    {opt}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div>
-              <FormLabel>Day rate (optional)</FormLabel>
-              <FormInput type="number" step="0.01" placeholder="e.g. 200" value={data.operative.dayRate} onChange={(e) => update('operative', { dayRate: e.target.value })} />
-            </div>
+          <div className="mt-6 space-y-5">
+            <UsersSetupNote />
+            <InfographicCard
+              icon="operative"
+              title="What is an operative?"
+              description="Operative mode gives field staff a focused view of their own schedule, assigned tasks, timesheets and snag lists — without access to other people's data, company finances or admin settings."
+              accent={{ tile: 'bg-sky-50', ring: 'ring-sky-100', text: 'text-sky-600' }}
+              items={[
+                { icon: 'calendar', label: 'My schedule', detail: 'See where they are booked, day by day' },
+                { icon: 'check', label: 'Assigned tasks', detail: 'View and complete tasks on their projects' },
+                { icon: 'clock', label: 'Timesheets', detail: 'Log hours against the jobs they worked on' },
+                { icon: 'alert', label: 'Snag lists', detail: 'Raise and track snags on site from their phone' },
+              ]}
+            />
           </div>
-          {data.manager.firstName && (
-            <p className="mt-5 inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-600">
-              Reports to {data.manager.firstName} {data.manager.surname}
-            </p>
-          )}
         </>
       )}
 
@@ -635,7 +619,7 @@ export function GuidedOrgSetup({
             meta={meta}
             index={stepIndex}
             title="Create your first project"
-            description="Projects are the core of Project Planner — schedule, tasks, timesheets, site audits and warnings all live inside one. Assign the manager you just added so they're ready to run it from day one."
+            description="Projects are the core of Project Planner — schedule, tasks, timesheets, site audits and warnings all live inside one. All fields on this page are required."
           />
           <div className="mt-6 grid gap-5 sm:grid-cols-2">
             <div>
@@ -647,7 +631,7 @@ export function GuidedOrgSetup({
               <FormInput placeholder="e.g. The Arena, Enfield" value={data.project.siteName} onChange={(e) => update('project', { siteName: e.target.value })} />
             </div>
             <div>
-              <FormLabel>Job type</FormLabel>
+              <FormLabel required>Job type</FormLabel>
               <FormSelect value={data.project.jobType} onChange={(e) => update('project', { jobType: e.target.value })}>
                 {PROJECT_JOB_TYPES.map((t) => (
                   <option key={t} value={t}>{t}</option>
@@ -672,11 +656,6 @@ export function GuidedOrgSetup({
               <FormInput type="date" value={data.project.endDate} onChange={(e) => update('project', { endDate: e.target.value })} />
             </div>
           </div>
-          {data.manager.firstName && (
-            <p className="mt-5 inline-flex items-center gap-2 rounded-full bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-700">
-              Managed by {data.manager.firstName} {data.manager.surname}
-            </p>
-          )}
         </>
       )}
 
@@ -686,7 +665,7 @@ export function GuidedOrgSetup({
             meta={meta}
             index={stepIndex}
             title="Add this client's details"
-            description="Clients are linked to your projects and small works, so every job is tied to who you're delivering it for — and it's ready to drop onto invoices and reports."
+            description="We've pre-filled the client name from your project. Update it here if needed — if you change the name, both clients will be saved so nothing is lost."
           />
           <div className="mt-6 grid gap-5 sm:grid-cols-2">
             <div className="sm:col-span-2">
@@ -851,8 +830,6 @@ export function GuidedOrgSetup({
       <StepNav
         onBack={goBack}
         onNext={goNext}
-        onSkip={meta?.key === 'operative' ? skipOperativeStep : undefined}
-        skipLabel={meta?.key === 'operative' ? 'Skip for now' : undefined}
         disabled={touched && !canAdvance}
         nextLabel={stepIndex === STEP_META.length - 1 ? 'Review setup' : 'Continue'}
       />
@@ -904,17 +881,8 @@ function RecapStep({
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2">
-        <RecapRow icon="manager" label="Manager" value={`${data.manager.firstName} ${data.manager.surname}`.trim() || '—'} accent="bg-blue-50 text-blue-600" />
-        <RecapRow
-          icon="operative"
-          label="Operative"
-          value={
-            data.operativeSkipped
-              ? 'Skipped — add later'
-              : `${data.operative.firstName} ${data.operative.surname}`.trim() || '—'
-          }
-          accent="bg-sky-50 text-sky-600"
-        />
+        <RecapRow icon="manager" label="Managers" value="Add via Manage Users after sign-in" accent="bg-blue-50 text-blue-600" />
+        <RecapRow icon="operative" label="Operatives" value="Add via Manage Users after sign-in" accent="bg-sky-50 text-sky-600" />
         <RecapRow icon="project" label="Project" value={data.project.siteName || '—'} accent="bg-indigo-50 text-indigo-600" />
         <RecapRow icon="client" label="Client" value={data.client.name || '—'} accent="bg-emerald-50 text-emerald-600" />
         <RecapRow icon="subcontractor" label="Sub contractor" value={data.subcontractor.name || '—'} accent="bg-violet-50 text-violet-600" />
