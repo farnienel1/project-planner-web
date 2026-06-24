@@ -1,7 +1,6 @@
 'use client'
 
 import { useEffect, useMemo, Suspense, useCallback, useState } from 'react'
-import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useBookingStore } from '@/lib/stores/bookingStore'
@@ -127,31 +126,16 @@ function MySchedulePageContent() {
     user.firstName ||
     'You'
 
-  if (!linkedOperative && personalBookings.length === 0) {
+  // Operatives must be linked to a roster profile. Admins/managers always get the full week
+  // calendar (office, WFH, site bookings) even when the current week has no entries yet.
+  if (isOperativeMode(user) && !linkedOperative) {
     return (
-      <div className="rounded-2xl border border-dashed border-slate-300 bg-white py-16 px-6 text-center">
+      <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-16 text-center">
         <h1 className="text-2xl font-bold text-slate-900">My Schedule</h1>
-        <p className="mt-2 text-sm text-slate-500 max-w-lg mx-auto">
-          {isOperativeMode(user)
-            ? 'Your account is not linked to an operative profile yet. Ask your line manager to link your email to an operative.'
-            : 'No bookings are assigned to you yet. Book operatives on projects from Daily overview, or open Projects to manage sites you lead.'}
+        <p className="mx-auto mt-2 max-w-lg text-sm text-slate-500">
+          Your account is not linked to an operative profile yet. Ask your line manager to link your email to an
+          operative.
         </p>
-        {!isOperativeMode(user) && (
-          <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
-            <Link
-              href="/dashboard/daily-overview"
-              className="inline-flex rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
-            >
-              Open daily overview
-            </Link>
-            <Link
-              href="/dashboard/projects"
-              className="inline-flex rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-            >
-              View projects
-            </Link>
-          </div>
-        )}
       </div>
     )
   }
