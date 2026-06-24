@@ -6,6 +6,7 @@ import { useAuthStore } from '@/lib/stores/authStore'
 import { useProjectStore } from '@/lib/stores/projectStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
 import { useBookingStore } from '@/lib/stores/bookingStore'
+import { useManagerScheduleStore } from '@/lib/stores/managerScheduleStore'
 import { useMaterialProjectStore } from '@/lib/stores/materialProjectStore'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { useHolidayStore } from '@/lib/stores/holidayStore'
@@ -13,6 +14,7 @@ import { computeOperativeBookingClashWarnings } from '@/lib/scheduling/bookingCl
 import { mergeProjectsAndSmallWorks } from '@/lib/projects/workStatus'
 import { getActiveOperativesForScheduling } from '@/lib/operatives/operativeRosterUtils'
 import { computeMissedMaterialOrderWarnings } from '@/lib/warnings/materialOrderWarnings'
+import { computeManagerBookingClashWarnings } from '@/lib/warnings/managerClashWarnings'
 import {
   computeUnbookedLabourWarnings,
   filterWarningsByLookahead,
@@ -38,6 +40,7 @@ export default function WarningsPage() {
   const { operatives, loadOperatives } = useOperativeStore()
   const { users, loadUsers } = useOrgUserStore()
   const { bookings, loadBookings, deleteBooking, loading: bookingsLoading } = useBookingStore()
+  const { managerSiteBookings, loadManagerSiteBookings, loading: managerLoading } = useManagerScheduleStore()
   const { materials, sendRecords, loadAllMaterials, loadSendRecords, loading: materialsLoading } =
     useMaterialProjectStore()
   const { bookings: holidayBookings, loadBookings: loadHolidayBookings } = useHolidayStore()
@@ -55,6 +58,7 @@ export default function WarningsPage() {
       loadOperatives(organization.id)
       loadUsers(organization.id)
       loadBookings(organization.id)
+      loadManagerSiteBookings(organization.id)
       loadAllMaterials(organization.id)
       loadSendRecords(organization.id)
       loadHolidayBookings(organization.id)
@@ -68,6 +72,7 @@ export default function WarningsPage() {
     loadOperatives,
     loadUsers,
     loadBookings,
+    loadManagerSiteBookings,
     loadAllMaterials,
     loadSendRecords,
     loadHolidayBookings,
@@ -91,6 +96,12 @@ export default function WarningsPage() {
     )
     return filterWarningsByLookahead(filtered, warningDetection, invoicing)
   }, [bookings, rosterOperatives, mergedWorks, acceptedClashes, warningDetection, invoicing])
+
+  const managerClashWarnings = useMemo(() => {
+    if (!warningDetection.detectClashes) return []
+    const all = computeManagerBookingClashWarnings(managerSiteBookings, users, mergedWorks)
+    return filterWarningsByLookahead(all, warningDetection, invoicing)
+  }, [managerSiteBookings, users, mergedWorks, warningDetection, invoicing])
 
   const unbookedWarnings = useMemo(
     () =>
@@ -134,9 +145,10 @@ export default function WarningsPage() {
     <WarningsScreen
       organizationName={organization?.name || 'your organisation'}
       clashWarnings={clashWarnings}
+      managerClashWarnings={managerClashWarnings}
       unbookedWarnings={unbookedWarnings}
       materialWarnings={materialWarnings}
-      loading={bookingsLoading || materialsLoading}
+      loading={bookingsLoading || materialsLoading || managerLoading}
       user={user}
       operatives={rosterOperatives}
       smallWorkIds={smallWorkIds}

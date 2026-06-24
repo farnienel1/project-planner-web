@@ -18,6 +18,7 @@ import {
   canViewOperatives,
   canViewProjects,
   canViewDailyOverview,
+  canViewWeeklyReports,
   canViewMySchedule,
   canViewSchedule,
   canViewSiteAudit,
@@ -111,6 +112,16 @@ const ALL_NAV_ITEMS: DashboardNavItem[] = [
     navigationLabelKey: 'dashboard_daily_overview',
     iconPath: 'M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z',
     tileClasses: 'bg-sky-50 text-sky-700',
+    section: 'navigate',
+  },
+  {
+    id: 'dashboard_weekly_report',
+    href: '/dashboard/weekly-report',
+    label: 'Weekly report',
+    subtitle: 'Week summary, clashes, and labour coverage',
+    navigationLabelKey: 'dashboard_weekly_report',
+    iconPath: 'M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z',
+    tileClasses: 'bg-indigo-50 text-indigo-700',
     section: 'navigate',
   },
   {
@@ -330,6 +341,8 @@ function canSeeNavItem(item: DashboardNavItem, user: User): boolean {
       return canViewManagers(user)
     case 'dashboard_daily_overview':
       return canViewDailyOverview(user)
+    case 'dashboard_weekly_report':
+      return canViewWeeklyReports(user)
     case 'dashboard_schedule':
       return canViewMySchedule(user)
     case 'dashboard_warnings':

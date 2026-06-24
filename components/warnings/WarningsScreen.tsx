@@ -7,6 +7,7 @@ import { isToday } from 'date-fns/isToday'
 import { isTomorrow } from 'date-fns/isTomorrow'
 import { isPast } from 'date-fns/isPast'
 import type { OperativeBookingClashWarning } from '@/lib/scheduling/bookingClashUtils'
+import type { ManagerBookingClashWarning } from '@/lib/warnings/managerClashWarnings'
 import type { MissedMaterialOrderWarning } from '@/lib/warnings/materialOrderWarnings'
 import type { UnbookedLabourWarning } from '@/lib/warnings/unbookedLabourWarnings'
 import {
@@ -246,11 +247,46 @@ function UnbookedLabourCard({ warning }: { warning: UnbookedLabourWarning }) {
   )
 }
 
+function ManagerClashCard({ warning }: { warning: ManagerBookingClashWarning }) {
+  const urgency = urgencyLevel(warning.date)
+  const styles = URGENCY_STYLES[urgency]
+
+  return (
+    <div className={`overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm border-l-4 ${styles.border}`}>
+      <div className="flex w-full items-start gap-4 px-5 py-4">
+        <Avatar name={warning.personName} />
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm font-semibold text-slate-900">{warning.personName}</span>
+            <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${styles.badge}`}>
+              <span className={`h-1.5 w-1.5 rounded-full ${styles.dot}`} />
+              {formatDateLabel(warning.date)}
+            </span>
+            <span className="rounded-full bg-violet-50 px-2 py-0.5 text-[10px] font-semibold uppercase text-violet-700">
+              Manager overlap
+            </span>
+          </div>
+          <p className="mt-2 text-xs leading-relaxed text-slate-500">{warning.message}</p>
+        </div>
+      </div>
+      <div className="border-t border-slate-100 bg-slate-50 px-5 py-3">
+        <Link
+          href="/dashboard/daily-overview"
+          className="inline-flex shrink-0 items-center whitespace-nowrap rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-blue-700"
+        >
+          Open daily overview
+        </Link>
+      </div>
+    </div>
+  )
+}
+
 type FilterType = 'all' | 'today' | 'upcoming' | 'past' | 'clashes' | 'materials' | 'unbooked'
 
 export function WarningsScreen({
   organizationName,
   clashWarnings,
+  managerClashWarnings,
   unbookedWarnings,
   materialWarnings,
   loading,
@@ -262,6 +298,7 @@ export function WarningsScreen({
 }: {
   organizationName: string
   clashWarnings: OperativeBookingClashWarning[]
+  managerClashWarnings: ManagerBookingClashWarning[]
   unbookedWarnings: UnbookedLabourWarning[]
   materialWarnings: MissedMaterialOrderWarning[]
   loading?: boolean
@@ -275,10 +312,31 @@ export function WarningsScreen({
   const [search, setSearch] = useState('')
   const [busyId, setBusyId] = useState<string | null>(null)
 
-  const totalCount = clashWarnings.length + unbookedWarnings.length + materialWarnings.length
-  const todayClashCount = clashWarnings.filter((w) => isToday(w.date)).length
+  const totalCount =
+    clashWarnings.length + managerClashWarnings.length + unbookedWarnings.length + materialWarnings.length
+  const todayClashCount =
+    clashWarnings.filter((w) => isToday(w.date)).length +
+    managerClashWarnings.filter((w) => isToday(w.date)).length
   const todayUnbookedCount = unbookedWarnings.filter((w) => isToday(w.date)).length
   const todayMaterialCount = materialWarnings.length
+
+  const filteredManagerClashes = useMemo(() => {
+    let list = [...managerClashWarnings]
+    if (filter === 'today') list = list.filter((w) => isToday(w.date))
+    else if (filter === 'upcoming') list = list.filter((w) => !isPast(w.date) || isToday(w.date))
+    else if (filter === 'past') list = list.filter((w) => isPast(w.date) && !isToday(w.date))
+    else if (filter === 'materials' || filter === 'unbooked') return []
+    if (search.trim()) {
+      const q = search.toLowerCase()
+      list = list.filter(
+        (w) =>
+          w.personName.toLowerCase().includes(q) ||
+          w.locationALabel.toLowerCase().includes(q) ||
+          w.locationBLabel.toLowerCase().includes(q)
+      )
+    }
+    return list.sort((a, b) => a.date.getTime() - b.date.getTime())
+  }, [managerClashWarnings, filter, search])
 
   const filteredClashes = useMemo(() => {
     let list = [...clashWarnings]
@@ -377,7 +435,7 @@ export function WarningsScreen({
             )}
           </div>
           <p className="mt-1 text-sm text-slate-500">
-            Booking clashes, unbooked labour, and missed material orders for {organizationName}.
+            Booking clashes, manager overlaps, unbooked labour, and missed material orders for {organizationName}.
           </p>
         </div>
         <Link href="/dashboard/my-schedule" className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
@@ -449,6 +507,15 @@ export function WarningsScreen({
         </section>
       )}
 
+      {showClashes && filteredManagerClashes.length > 0 && (
+        <section className="space-y-3">
+          <h2 className="text-sm font-semibold text-slate-900">Manager / admin overlaps</h2>
+          {filteredManagerClashes.map((warning) => (
+            <ManagerClashCard key={warning.id} warning={warning} />
+          ))}
+        </section>
+      )}
+
       {showClashes && filteredClashes.length > 0 && (
         <section className="space-y-3">
           <h2 className="text-sm font-semibold text-slate-900">Booking clashes</h2>
@@ -465,7 +532,11 @@ export function WarningsScreen({
         </section>
       )}
 
-      {totalCount > 0 && filteredClashes.length === 0 && filteredUnbooked.length === 0 && filteredMaterials.length === 0 && (
+      {totalCount > 0 &&
+        filteredClashes.length === 0 &&
+        filteredManagerClashes.length === 0 &&
+        filteredUnbooked.length === 0 &&
+        filteredMaterials.length === 0 && (
         <p className="text-sm text-slate-500">No results match your filters.</p>
       )}
     </div>

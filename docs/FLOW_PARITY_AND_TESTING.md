@@ -59,14 +59,14 @@ Booking created (project schedule / My Schedule)
 | Manager/admin on project | Same | Same picker (`managerSiteBookings`) | ✅ Save works |
 | Manager self-book | `MyScheduleView` | `/dashboard/my-schedule` | ✅ |
 | Subcontractor booking | Sub schedule | `…/schedule/subcontractors` | ⚠️ No clash detection |
-| **Daily overview** | `DailyOverviewView` | `/dashboard/daily-overview` | 🔴 **Operative `bookings` only** — managers missing |
-| **Weekly report** | Weekly report view | — | 🔴 **Not built** (`weeklyReports` permission unused) |
+| **Daily overview** | `DailyOverviewView` | `/dashboard/daily-overview` | ✅ Operative + manager bookings |
+| **Weekly report** | Weekly report view | `/dashboard/weekly-report` | ✅ Week summary screen |
 | Warnings — operative clashes | Warnings | `/dashboard/warnings` | ✅ |
 | Warnings — unbooked labour | Warnings | `/dashboard/warnings` | ✅ |
-| Warnings — manager overlaps | Warnings / weekly | — | 🔴 Not on web warnings |
-| **Timesheets** | `InvoicingView` | `/dashboard/timesheets` | 🔴 Read-only hours from `bookings` only |
-| Timesheet sign-off | `timesheet_{userId}_{week}` | — | 🔴 Not implemented |
-| Invoice after approval | InvoicingView | — | 🔴 Not implemented |
+| Warnings — manager overlaps | Warnings / weekly | `/dashboard/warnings` | ✅ |
+| **Timesheets** | `InvoicingView` | `/dashboard/timesheets` | ✅ Sign-off, approval, invoice HTML |
+| Timesheet sign-off | `timesheet_{userId}_{week}` | `/dashboard/timesheets` | ✅ Firestore settings doc |
+| Invoice after approval | InvoicingView | `/dashboard/timesheets` | ✅ Generate invoice download |
 | My Schedule read-only | MyScheduleView | `/dashboard/my-schedule` | ⚠️ Manager rows not editable |
 | Project week overview | — | Project schedule hub | ✅ Ops + managers + subs |
 

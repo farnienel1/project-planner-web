@@ -129,6 +129,13 @@ export function canViewDailyOverview(user: User | null): boolean {
   return user.permissions.dailyOverview !== false
 }
 
+/** Weekly report — admins by default, or explicit weeklyReports permission. */
+export function canViewWeeklyReports(user: User | null): boolean {
+  if (!user || isOperativeMode(user)) return false
+  if (hasAdminAccess(user)) return true
+  return user.permissions.weeklyReports === true
+}
+
 /** Personal schedule for the signed-in user (all roles, mirrors iOS My Schedule). */
 export function canViewMySchedule(user: User | null): boolean {
   return Boolean(user)
