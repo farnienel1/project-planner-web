@@ -223,11 +223,38 @@ service cloud.firestore {
   // WHO CAN CREATE USERS:
   // ✅ Super Admin (isSuperAdmin == true)
   // ✅ Admins (adminAccess == true OR role == 'admin')
-  // ❌ Managers (manager == true) - CANNOT create users
-  // ❌ Operatives (operativeMode == true) - CANNOT create users
-  // 
-  // This ensures only super admins and admins can create other users.
-  // Managers and operatives can only create their own accounts (self-creation via website signup).
+  // ✅ Managers with operatives permission — operative accounts only (operativeMode == true)
+  // ❌ Managers without operatives permission — cannot create users
+  // ❌ Operatives (operativeMode == true) — CANNOT create users
+  //
+  // Managers and operatives can create their own accounts during website signup (self-creation path).
+  function isManagerWithOperativesAccess() {
+    return request.auth != null &&
+           exists(/databases/(default)/documents/users/$(request.auth.uid)) &&
+           !('operativeMode' in get(/databases/(default)/documents/users/$(request.auth.uid)).data &&
+             truthyBool(get(/databases/(default)/documents/users/$(request.auth.uid)).data.operativeMode)) &&
+           ('manager' in get(/databases/(default)/documents/users/$(request.auth.uid)).data &&
+             truthyBool(get(/databases/(default)/documents/users/$(request.auth.uid)).data.manager)) &&
+           ('operatives' in get(/databases/(default)/documents/users/$(request.auth.uid)).data &&
+             truthyBool(get(/databases/(default)/documents/users/$(request.auth.uid)).data.operatives));
+  }
+
+  function managerCanCreateOperativeUser() {
+    return isManagerWithOperativesAccess() &&
+           'organizationId' in request.resource.data &&
+           'organizationId' in get(/databases/(default)/documents/users/$(request.auth.uid)).data &&
+           orgIdsMatch(
+             get(/databases/(default)/documents/users/$(request.auth.uid)).data.organizationId,
+             request.resource.data.organizationId
+           ) &&
+           (
+             ('operativeMode' in request.resource.data && truthyBool(request.resource.data.operativeMode)) ||
+             ('role' in request.resource.data && request.resource.data.role == 'operative')
+           ) &&
+           !('adminAccess' in request.resource.data && truthyBool(request.resource.data.adminAccess)) &&
+           !('isSuperAdmin' in request.resource.data && truthyBool(request.resource.data.isSuperAdmin));
+  }
+
   function isAdminOrSuperAdmin() {
     return request.auth != null && 
            exists(/databases/(default)/documents/users/$(request.auth.uid)) &&
@@ -340,7 +367,9 @@ service cloud.firestore {
           ('role' in get(/databases/(default)/documents/users/$(request.auth.uid)).data &&
            get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'admin'))) ||
         // Path 3: Web org setup bootstrap (org exists, caller is admin in members map, writing own profile)
-        isOrgBootstrapAdminProfileCreate(userId)
+        isOrgBootstrapAdminProfileCreate(userId) ||
+        // Path 4: Manager with operatives permission inviting a new operative
+        managerCanCreateOperativeUser()
       );
       
       // Allow update if:
@@ -427,7 +456,8 @@ service cloud.firestore {
         allow create, update: if request.auth != null && (
           isAdminOrSuperAdmin() ||
           isOrgAdminViaMembersMap(organizationId) ||
-          request.resource.data.userId == request.auth.uid
+          request.resource.data.userId == request.auth.uid ||
+          (isManagerWithOperativesAccess() && userOrgIdMatchesPath(organizationId))
         );
         allow delete: if request.auth != null && (isAdminOrSuperAdmin() || isOrgAdminViaMembersMap(organizationId));
       }

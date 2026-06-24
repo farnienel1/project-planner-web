@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
@@ -14,7 +15,7 @@ import {
   type RosterSegment,
 } from '@/lib/staff/userRosterUtils'
 import { PLACEHOLDER_MANAGER_EXPLANATION } from '@/lib/staff/managerRosterUtils'
-import { hasAdminAccess } from '@/lib/navigation/menuPermissions'
+import { hasAdminAccess, canViewManagers } from '@/lib/navigation/menuPermissions'
 import { RosterStatusBadge, StaffRosterFilters } from '@/components/staff/StaffRosterFilters'
 import { ClickableRosterRow } from '@/components/staff/ClickableRosterRow'
 
@@ -30,6 +31,7 @@ function normalizeEmail(email: string): string {
 }
 
 export default function ManagersPage() {
+  const router = useRouter()
   const { organization, user } = useAuthStore()
   const {
     managers,
@@ -44,6 +46,14 @@ export default function ManagersPage() {
   const [filterField, setFilterField] = useState<ManagerFilterField>('firstName')
   const [cleaning, setCleaning] = useState(false)
   const [cleanupMessage, setCleanupMessage] = useState<string | null>(null)
+
+  const canView = canViewManagers(user)
+
+  useEffect(() => {
+    if (user && !canView) {
+      router.replace('/dashboard')
+    }
+  }, [user, canView, router])
 
   useEffect(() => {
     if (organization?.id) {
@@ -60,6 +70,14 @@ export default function ManagersPage() {
   }, [allManagerUsers, segment, search, filterField])
 
   const loading = usersLoading || managersLoading
+
+  if (!user || !canView) {
+    return (
+      <div className="flex h-64 items-center justify-center">
+        <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-blue-600" />
+      </div>
+    )
+  }
 
   if (loading) {
     return (

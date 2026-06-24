@@ -1,9 +1,12 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
+import { canInviteOperatives, canViewOperatives } from '@/lib/navigation/menuPermissions'
 import { findOperativeForUser } from '@/lib/operatives/operativeRosterUtils'
 import { resolveOperativeSkillLabels } from '@/lib/staff/skillDisplayUtils'
 import {
@@ -25,12 +28,22 @@ const FILTER_OPTIONS: { value: OperativeFilterField; label: string }[] = [
 ]
 
 export default function OperativesPage() {
-  const { organization } = useAuthStore()
+  const router = useRouter()
+  const { organization, user } = useAuthStore()
   const { operatives, skills, loading: operativesLoading, loadOperatives, loadSkills } = useOperativeStore()
   const { users, loading: usersLoading, loadUsers } = useOrgUserStore()
   const [segment, setSegment] = useState<RosterSegment>('active')
   const [search, setSearch] = useState('')
   const [filterField, setFilterField] = useState<OperativeFilterField>('firstName')
+
+  const canView = canViewOperatives(user)
+  const canAddOperative = canInviteOperatives(user)
+
+  useEffect(() => {
+    if (user && !canView) {
+      router.replace('/dashboard')
+    }
+  }, [user, canView, router])
 
   useEffect(() => {
     if (organization?.id) {
@@ -48,6 +61,14 @@ export default function OperativesPage() {
   }, [allOperativeUsers, segment, search, filterField])
 
   const loading = operativesLoading || usersLoading
+
+  if (!user || !canView) {
+    return (
+      <div className="flex h-64 items-center justify-center">
+        <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-blue-600" />
+      </div>
+    )
+  }
 
   if (loading) {
     return (
@@ -71,6 +92,17 @@ export default function OperativesPage() {
             {allOperativeUsers.filter((user) => matchesRosterSegment(user, 'active')).length} active ·{' '}
             {allOperativeUsers.length} total
           </div>
+          {canAddOperative && (
+            <Link
+              href="/dashboard/settings/users/new"
+              className="flex items-center space-x-2 rounded-lg bg-blue-600 px-4 py-2 text-white transition-colors hover:bg-blue-700"
+            >
+              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              <span>Add operative</span>
+            </Link>
+          )}
         </div>
 
         <StaffRosterFilters
