@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import {
@@ -9,37 +9,78 @@ import {
   saveWarningDetection,
   type OrgWarningDetectionSettings,
 } from '@/lib/settings/organizationSettings'
-import {
-  warningLookAheadFromUiMode,
-  warningLookAheadToUiMode,
-  type WarningLookAheadUiMode,
-} from '@/lib/settings/warningDetectionUi'
-import { getOperativeModeUsers } from '@/lib/staff/userRosterUtils'
 import { personDisplayName } from '@/lib/settings/orgHubUtils'
 import {
   PanelHeader,
+  SectionLabel,
   SettingsCard,
-  SettingsRow,
   Toggle,
-  Select,
   SaveButton,
   SuccessBanner,
   ErrorBanner,
 } from '@/components/settings/primitives'
 
+function ModeOption({
+  selected,
+  label,
+  description,
+  onClick,
+}: {
+  selected: boolean
+  label: string
+  description: string
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex w-full items-start gap-3 rounded-xl border p-3.5 text-left transition ${
+        selected ? 'border-blue-500 bg-blue-50' : 'border-slate-200 bg-white hover:bg-slate-50'
+      }`}
+    >
+      <span
+        className={`mt-0.5 flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full border-2 ${
+          selected ? 'border-blue-600' : 'border-slate-300'
+        }`}
+      >
+        {selected && <span className="h-2 w-2 rounded-full bg-blue-600" />}
+      </span>
+      <span>
+        <span className={`block text-sm font-semibold ${selected ? 'text-blue-700' : 'text-slate-900'}`}>{label}</span>
+        <span className="mt-0.5 block text-xs text-slate-500">{description}</span>
+      </span>
+    </button>
+  )
+}
+
+function SeverityRow({ title, description, tone }: { title: string; description: string; tone: 'red' | 'amber' | 'blue' }) {
+  const map = {
+    red: { dot: 'bg-red-500', bg: 'bg-red-50 border-red-200', title: 'text-red-700', text: 'text-red-600' },
+    amber: { dot: 'bg-amber-500', bg: 'bg-amber-50 border-amber-200', title: 'text-amber-700', text: 'text-amber-600' },
+    blue: { dot: 'bg-blue-500', bg: 'bg-blue-50 border-blue-200', title: 'text-blue-700', text: 'text-blue-600' },
+  }[tone]
+  return (
+    <div className={`flex items-start gap-2.5 rounded-xl border p-3 ${map.bg}`}>
+      <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${map.dot}`} />
+      <div>
+        <div className={`text-xs font-bold ${map.title}`}>{title}</div>
+        <div className={`mt-0.5 text-xs ${map.text}`}>{description}</div>
+      </div>
+    </div>
+  )
+}
+
 export function WarningsPanel({ onBack }: { onBack: () => void }) {
   const { organization } = useAuthStore()
   const { users, loadUsers } = useOrgUserStore()
 
-  const [lookAheadMode, setLookAheadMode] = useState<WarningLookAheadUiMode>('week')
-  const [daysAhead, setDaysAhead] = useState(DEFAULT_WARNING_DETECTION.clashLookaheadDays)
-  const [clashes, setClashes] = useState(true)
-  const [weekends, setWeekends] = useState(false)
-  const [excludedUserIds, setExcludedUserIds] = useState<string[]>([])
-  const [excludePickerOpen, setExcludePickerOpen] = useState(false)
+  const [draft, setDraft] = useState<OrgWarningDetectionSettings>(DEFAULT_WARNING_DETECTION)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState('')
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const [search, setSearch] = useState('')
 
   useEffect(() => {
     if (organization?.id) loadUsers(organization.id)
@@ -47,182 +88,280 @@ export function WarningsPanel({ onBack }: { onBack: () => void }) {
 
   useEffect(() => {
     if (!organization?.id) return
-    loadOrganizationDetails(organization.id).then((details) => {
-      if (!details) return
-      const warnings = details.warningDetection
-      setLookAheadMode(warningLookAheadToUiMode(warnings.clashLookaheadMode))
-      setDaysAhead(warnings.clashLookaheadDays)
-      setClashes(warnings.detectClashes)
-      setWeekends(warnings.includeWeekendsForUnbookedLabour)
-      setExcludedUserIds(warnings.excludedUserIdsFromUnbookedWarnings ?? [])
-    })
+    loadOrganizationDetails(organization.id)
+      .then((details) => {
+        if (details?.warningDetection) setDraft(details.warningDetection)
+      })
+      .catch(() => {})
   }, [organization?.id])
 
-  const operativeUsers = useMemo(() => getOperativeModeUsers(users), [users])
-
-  const toggleExcludedUser = (userId: string) => {
-    setExcludedUserIds((current) =>
-      current.includes(userId) ? current.filter((id) => id !== userId) : [...current, userId]
-    )
+  function patch(partial: Partial<OrgWarningDetectionSettings>) {
+    setDraft((current) => ({ ...current, ...partial }))
   }
 
-  const save = async () => {
+  const excluded = draft.excludedUserIdsFromUnbookedWarnings ?? []
+  const activeUsers = users.filter((u) => u.isActive)
+  const filtered = (() => {
+    const q = search.trim().toLowerCase()
+    const sorted = [...activeUsers].sort((a, b) => personDisplayName(a).localeCompare(personDisplayName(b)))
+    if (!q) return sorted
+    return sorted.filter(
+      (u) => personDisplayName(u).toLowerCase().includes(q) || (u.email ?? '').toLowerCase().includes(q)
+    )
+  })()
+
+  function toggleExcluded(id: string) {
+    patch({
+      excludedUserIdsFromUnbookedWarnings: excluded.includes(id)
+        ? excluded.filter((entry) => entry !== id)
+        : [...excluded, id],
+    })
+  }
+
+  async function save() {
     if (!organization?.id) return
     setSaving(true)
     setError('')
     try {
-      const settings: OrgWarningDetectionSettings = {
-        detectClashes: clashes,
-        clashLookaheadMode: warningLookAheadFromUiMode(lookAheadMode),
-        clashLookaheadDays: daysAhead,
-        includeWeekendsForUnbookedLabour: weekends,
-        excludedUserIdsFromUnbookedWarnings: excludedUserIds,
-      }
-      await saveWarningDetection(organization.id, settings)
+      await saveWarningDetection(organization.id, draft)
       setSaved(true)
       window.setTimeout(() => setSaved(false), 3000)
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : 'Failed to save warning settings')
+      setError(saveError instanceof Error ? saveError.message : 'Could not save warning settings.')
     } finally {
       setSaving(false)
     }
   }
 
+  const mode = draft.clashLookaheadMode
+  const days = draft.clashLookaheadDays
+
   return (
-    <div className="mx-auto max-w-2xl space-y-5 pb-12">
+    <div className="mx-auto max-w-2xl pb-12">
       <PanelHeader title="Warnings" onBack={onBack} />
 
-      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm space-y-4">
-        <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">Warning detection</p>
-        <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-          <p className="text-xs text-slate-500 leading-relaxed">
-            How far ahead should clashes, missed bookings and material lists be detected. It is set to End of the
-            working week by default.
-          </p>
+      {error && (
+        <div className="mt-4">
+          <ErrorBanner message={error} />
         </div>
+      )}
+      {saved && (
+        <div className="mt-4">
+          <SuccessBanner message="Warning settings saved" />
+        </div>
+      )}
 
-        <div>
-          <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-2">Detection period</p>
-          <SettingsCard>
-            <div className="flex items-center justify-between px-4 py-3">
-              <span className="text-sm font-medium text-slate-900">Look ahead</span>
-              <Select
-                value={lookAheadMode}
-                onChange={(event) => setLookAheadMode(event.target.value as WarningLookAheadUiMode)}
-                className="w-auto max-w-[12rem] border-none bg-transparent text-right text-sm font-semibold text-blue-600 outline-none py-0"
-              >
-                <option value="week">End of the working week</option>
-                <option value="invoicing">End of invoicing period</option>
-                <option value="days">Set number of days</option>
-              </Select>
-            </div>
-            {lookAheadMode === 'days' && (
-              <div className="flex items-center justify-between px-4 py-3 border-t border-slate-100">
-                <span className="text-sm text-slate-700">Days ahead: {daysAhead}</span>
-                <div className="flex items-center gap-2">
+      <p className="mt-4 px-1 text-sm text-slate-500">
+        Control how and when your team is alerted to scheduling issues.
+      </p>
+
+      <SectionLabel label="Detection period" />
+      <SettingsCard>
+        <div className="space-y-3 p-4">
+          <p className="text-xs text-slate-500">
+            How far ahead Project Planner scans for clashes, unbooked labour, and material cut-off dates. Warnings
+            refresh automatically each day.
+          </p>
+          <ModeOption
+            selected={mode === 'numberOfDays'}
+            label="Set number of days"
+            description="Scan a fixed number of days from today — you control the window."
+            onClick={() => patch({ clashLookaheadMode: 'numberOfDays' })}
+          />
+          <ModeOption
+            selected={mode === 'endOfInvoicingPeriod'}
+            label="End of invoicing period"
+            description="Scan through the end of your current billing period. Adjusts automatically each period."
+            onClick={() => patch({ clashLookaheadMode: 'endOfInvoicingPeriod' })}
+          />
+          <ModeOption
+            selected={mode === 'endOfWorkingWeek'}
+            label="End of working week"
+            description="Scan through Friday of the current working week. Resets each Monday."
+            onClick={() => patch({ clashLookaheadMode: 'endOfWorkingWeek' })}
+          />
+
+          {mode === 'numberOfDays' && (
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3.5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-sm font-semibold text-slate-900">Days ahead</div>
+                  <div className="text-xs text-slate-500">Minimum 1 · Maximum 365</div>
+                </div>
+                <div className="flex items-center gap-1.5">
                   <button
                     type="button"
-                    onClick={() => setDaysAhead(Math.max(1, daysAhead - 1))}
-                    className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 bg-white font-bold text-slate-700 hover:bg-slate-50"
+                    onClick={() => patch({ clashLookaheadDays: Math.max(1, days - 1) })}
+                    className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                    aria-label="Decrease days"
                   >
                     −
                   </button>
+                  <span className="w-10 text-center text-lg font-bold text-slate-900">{days}</span>
                   <button
                     type="button"
-                    onClick={() => setDaysAhead(daysAhead + 1)}
-                    className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 bg-white font-bold text-slate-700 hover:bg-slate-50"
+                    onClick={() => patch({ clashLookaheadDays: Math.min(365, days + 1) })}
+                    className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                    aria-label="Increase days"
                   >
                     +
                   </button>
                 </div>
               </div>
-            )}
-            {lookAheadMode === 'invoicing' && (
-              <div className="border-t border-slate-100 px-4 py-3">
-                <p className="text-xs leading-relaxed text-slate-500">
-                  Warnings are calculated up to the end of your current payment run / invoicing period — using the
-                  payment run settings under Payment Runs and Timesheets.
-                </p>
+            </div>
+          )}
+
+          {mode === 'endOfInvoicingPeriod' && (
+            <div className="flex items-start gap-2.5 rounded-xl border border-blue-200 bg-blue-50 p-3 text-xs text-blue-700">
+              Warnings will scan through the end of your current invoicing period. This window resets automatically when
+              the new period begins.
+            </div>
+          )}
+
+          {mode === 'endOfWorkingWeek' && (
+            <div className="flex items-start gap-2.5 rounded-xl border border-blue-200 bg-blue-50 p-3 text-xs text-blue-700">
+              Warnings will scan through Friday of the current working week, resetting each Monday.
+            </div>
+          )}
+        </div>
+      </SettingsCard>
+
+      <SectionLabel label="Excluded users" />
+      <SettingsCard>
+        <div className="space-y-3 p-4">
+          <p className="text-xs text-slate-500">
+            Some staff (e.g. PAYE employees) don&apos;t need to appear in unbooked labour warnings. Users added here are
+            silently skipped by the warnings engine.
+          </p>
+
+          <button
+            type="button"
+            onClick={() => setPickerOpen((open) => !open)}
+            className="flex w-full items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-3 text-sm font-medium text-slate-900 hover:bg-slate-100"
+          >
+            <span>Manage excluded users</span>
+            <span className="flex items-center gap-2">
+              {excluded.length > 0 && (
+                <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-bold text-blue-700">
+                  {excluded.length}
+                </span>
+              )}
+              <svg
+                className={`h-4 w-4 text-slate-400 transition-transform ${pickerOpen ? 'rotate-90' : ''}`}
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2.5}
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
+              </svg>
+            </span>
+          </button>
+
+          {pickerOpen && (
+            <div className="rounded-xl border border-slate-200">
+              <div className="border-b border-slate-100 p-2">
+                <input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search users…"
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
               </div>
-            )}
-          </SettingsCard>
-          <p className="mt-2 text-xs text-slate-400">
-            Applies to clashes, unbooked labour, and material cut-off checks. Changing the look-ahead updates warnings
-            after you save.
+              {filtered.length === 0 ? (
+                <p className="p-4 text-sm text-slate-500">No active users to exclude.</p>
+              ) : (
+                <ul className="max-h-72 overflow-y-auto">
+                  {filtered.map((u) => {
+                    const isOn = excluded.includes(u.id)
+                    return (
+                      <li key={u.id}>
+                        <button
+                          type="button"
+                          onClick={() => toggleExcluded(u.id)}
+                          className="flex w-full items-center justify-between px-3.5 py-2.5 text-left hover:bg-slate-50"
+                        >
+                          <span className="min-w-0">
+                            <span className="block truncate text-sm text-slate-900">{personDisplayName(u)}</span>
+                            <span className="block truncate text-xs text-slate-500">{u.email}</span>
+                          </span>
+                          {isOn ? (
+                            <span className="text-xs font-semibold text-emerald-600">Excluded</span>
+                          ) : (
+                            <span className="h-5 w-5 shrink-0 rounded-full border-2 border-slate-300" />
+                          )}
+                        </button>
+                      </li>
+                    )
+                  })}
+                </ul>
+              )}
+            </div>
+          )}
+
+          <p className="text-xs text-slate-400">
+            Only exclude users who are permanently not bookable (e.g. office-based PAYE staff). For operatives working
+            elsewhere temporarily, use the inactive flag in Manage Users instead.
           </p>
         </div>
-      </div>
+      </SettingsCard>
 
-      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm space-y-3">
-        <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">Exclude users from the warnings</p>
-        <SettingsCard>
-          <SettingsRow
-            icon="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"
-            iconBg="bg-slate-100"
-            iconColor="text-slate-500"
-            label="Excluded users"
-            value={String(excludedUserIds.length)}
-            chevron
-            onClick={() => setExcludePickerOpen((open) => !open)}
+      <SectionLabel label="Warning types" />
+      <SettingsCard>
+        <div className="divide-y divide-slate-100">
+          <div className="flex items-start justify-between gap-4 p-4">
+            <div>
+              <div className="text-sm font-semibold text-slate-900">Booking clashes</div>
+              <p className="mt-1 text-xs text-slate-500">
+                Flags when an operative is double-booked on the same date across two or more projects. Clashes are always
+                treated as high-urgency.
+              </p>
+            </div>
+            <Toggle checked={draft.detectClashes} onChange={(value) => patch({ detectClashes: value })} />
+          </div>
+          <div className="flex items-start justify-between gap-4 p-4">
+            <div>
+              <div className="text-sm font-semibold text-slate-900">Include weekends in unbooked labour</div>
+              <p className="mt-1 text-xs text-slate-500">
+                Includes Saturday and Sunday when checking whether operatives are booked for every day in the window.
+                Enable only if operatives regularly work weekends.
+              </p>
+              <p className="mt-1 text-xs italic text-slate-400">
+                Does not affect clash detection — clashes follow your working week unless a weekend booking exists.
+              </p>
+            </div>
+            <Toggle
+              checked={draft.includeWeekendsForUnbookedLabour}
+              onChange={(value) => patch({ includeWeekendsForUnbookedLabour: value })}
+            />
+          </div>
+        </div>
+      </SettingsCard>
+
+      <SectionLabel label="Warning severity guide" />
+      <SettingsCard>
+        <div className="space-y-2.5 p-4">
+          <SeverityRow
+            tone="red"
+            title="High"
+            description="Operative clashes and unbooked labour — directly affect project delivery and must be resolved promptly."
           />
-        </SettingsCard>
-        {excludePickerOpen && (
-          <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-2 max-h-64 overflow-y-auto">
-            {operativeUsers.length === 0 ? (
-              <p className="text-xs text-slate-500 px-1 py-2">No operative users found yet.</p>
-            ) : (
-              operativeUsers.map((operativeUser) => {
-                const checked = excludedUserIds.includes(operativeUser.id)
-                return (
-                  <label
-                    key={operativeUser.id}
-                    className="flex items-center gap-3 rounded-lg bg-white px-3 py-2 text-sm hover:bg-slate-50 cursor-pointer"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={() => toggleExcludedUser(operativeUser.id)}
-                      className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                    />
-                    <span className="flex-1 text-slate-800">{personDisplayName(operativeUser)}</span>
-                    <span className="text-xs text-slate-400">{operativeUser.email}</span>
-                  </label>
-                )
-              })
-            )}
-          </div>
-        )}
-        <p className="text-xs text-slate-400 leading-relaxed">
-          Use this feature to remove certain users such as PAYE staff from the warnings page so they will not show up when
-          not booked in.
-        </p>
-      </div>
-
-      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm space-y-3">
-        <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">Clashes</p>
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm font-semibold text-slate-900">Clashes</p>
-            <p className="text-xs text-slate-400 mt-0.5">Includes all days — weekend clashes are covered when this is on.</p>
-          </div>
-          <Toggle checked={clashes} onChange={setClashes} />
+          <SeverityRow
+            tone="amber"
+            title="Medium"
+            description="Manager and admin overlaps — flagged for the weekly report but less time-critical."
+          />
+          <SeverityRow
+            tone="blue"
+            title="Low"
+            description="Materials not ordered by the required cut-off date — useful reminders that won't block site work immediately."
+          />
         </div>
-        <div className="h-px bg-slate-100" />
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm font-semibold text-slate-900">Include weekends for unbooked labour detection</p>
-            <p className="text-xs text-slate-400 mt-0.5">
-              Any labour that is not booked in over the weekend will trigger a warning. We do not recomend this setting
-              is turned on, unless you organisation works 7 Days a week regularily or offers a 24/7 service.
-            </p>
-          </div>
-          <Toggle checked={weekends} onChange={setWeekends} />
-        </div>
-      </div>
+      </SettingsCard>
 
-      {error && <ErrorBanner message={error} />}
-      {saved && <SuccessBanner message="Settings saved. Warnings have been updated." />}
-      <SaveButton saving={saving} saved={saved} onClick={save} />
+      <div className="mt-6">
+        <SaveButton saving={saving} saved={saved} onClick={save} />
+      </div>
     </div>
   )
 }
