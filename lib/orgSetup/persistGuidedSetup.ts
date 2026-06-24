@@ -237,7 +237,7 @@ export async function persistGuidedSetup(
     const qualificationId = newUuid()
     await setDoc(doc(db, 'organizations', organizationId, 'qualifications', qualificationId), {
       name: guidedData.qualification.name.trim(),
-      hasEndDate: guidedData.qualification.hasEndDate,
+      hasEndDate: false,
       createdAt: Timestamp.now(),
       updatedAt: Timestamp.now(),
     })

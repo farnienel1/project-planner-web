@@ -1,4 +1,4 @@
-import { createUserWithEmailAndPassword } from 'firebase/auth'
+import { createUserWithEmailAndPassword, sendEmailVerification } from 'firebase/auth'
 import { doc, setDoc, updateDoc } from 'firebase/firestore'
 import { seedOrgDefaultDashboard } from '@/lib/dashboard/dashboardLayoutStorage'
 import { sanitizeForFirestore } from '@/lib/firebase/firestoreUtils'
@@ -36,6 +36,12 @@ export async function createPendingOrganization(
   const userId = result.user.uid
   const organizationId = crypto.randomUUID()
   const now = new Date()
+
+  try {
+    await sendEmailVerification(result.user)
+  } catch (verifyError) {
+    console.warn('[org-setup] Verification email not sent:', verifyError)
+  }
 
   const setupFields = input.orgSetupSettings
     ? orgSetupSettingsToFirestoreFields(input.orgSetupSettings, userId)
