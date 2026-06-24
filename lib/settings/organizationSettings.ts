@@ -416,3 +416,12 @@ export function formatScheduleOptionsSubtitle(options: MyScheduleOptions): strin
     Number(options.showOffice) + Number(options.showWorkingFromHome) + Number(options.showSiteSurvey) + options.customItems.length
   return `${count} location option${count === 1 ? '' : 's'} in My Schedule`
 }
+
+export function formatInvoicingSubtitle(invoicing: OrgInvoicingSettings): string {
+  if (invoicing.paymentRunMode === 'recurring_timeframe') {
+    return `Recurring: ${capitalizeDay(invoicing.recurringRunStartDay)}–${capitalizeDay(invoicing.recurringRunEndDay)}`
+  }
+  const count = invoicing.paymentRunDateRanges.length
+  if (count === 0) return 'Payment runs & timesheet periods'
+  return `${count} custom payment run period${count === 1 ? '' : 's'}`
+}

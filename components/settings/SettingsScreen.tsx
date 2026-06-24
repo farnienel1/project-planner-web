@@ -13,8 +13,6 @@ import {
   DEFAULT_PAYROLL_POLICY,
   DEFAULT_WARNING_DETECTION,
   formatAnnualLeaveSubtitle,
-  formatPayrollSubtitle,
-  formatScheduleOptionsSubtitle,
   loadOrganizationDetails,
   saveAnnualLeaveDefaults,
   saveInvoicingSettings,
@@ -23,21 +21,15 @@ import {
   saveWarningDetection,
   capitalizeDay,
   WEEKDAY_OPTIONS,
-  type OrganizationDetails,
   type OrgAnnualLeaveDefaults,
   type OrgInvoicingSettings,
   type OrgPayrollTimePolicy,
   type OrgWarningDetectionSettings,
 } from '@/lib/settings/organizationSettings'
 import {
-  formatCutoffTime,
   loadNotificationPreferences,
-  parseCutoffTime,
   saveNotificationPreferences,
 } from '@/lib/settings/notificationPreferences'
-import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
-import { getManagerUsers, getOperativeModeUsers } from '@/lib/staff/userRosterUtils'
-import { pluralize } from '@/lib/utils/pluralize'
 import {
   Toggle,
   SectionLabel,
@@ -52,6 +44,7 @@ import {
   Textarea,
   PanelHeader,
 } from '@/components/settings/primitives'
+import { OrganisationHubPanel, type OrganisationHubDestination } from '@/components/settings/panels/OrganisationHubPanel'
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 const DAYS = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday']
@@ -274,225 +267,6 @@ function NotificationsPanel({ onBack }: { onBack: () => void }) {
 
       {saved && <SuccessBanner message="Notifications saved." />}
       <SaveButton saving={false} saved={saved} onClick={save} />
-    </div>
-  )
-}
-
-// ─── Organisation Panel ───────────────────────────────────────────────────────
-function OrganisationPanel({ onBack, onNavigate }: { onBack: () => void; onNavigate: (p: Panel) => void }) {
-  const { user, organization } = useAuthStore()
-  const { users, loadUsers } = useOrgUserStore()
-  const [orgDetails, setOrgDetails] = useState<OrganizationDetails | null>(null)
-  const [matCutoffEnabled, setMatCutoffEnabled] = useState(true)
-  const [matCutoffTime, setMatCutoffTime] = useState('16:00')
-  const [matSaturday, setMatSaturday] = useState(false)
-  const [matSunday, setMatSunday] = useState(false)
-  const [saving, setSaving] = useState(false)
-  const [saved, setSaved] = useState(false)
-
-  useEffect(() => {
-    if (!organization?.id) return
-    loadOrganizationDetails(organization.id).then(setOrgDetails)
-    loadUsers(organization.id)
-  }, [organization?.id, loadUsers])
-
-  useEffect(() => {
-    if (!user?.id) return
-    void loadNotificationPreferences(user.id).then((prefs) => {
-      setMatCutoffEnabled(prefs.materialOrderCutOff)
-      setMatCutoffTime(formatCutoffTime(prefs.materialCutOffHour, prefs.materialCutOffMinute))
-      setMatSaturday(prefs.materialCutOffOnSaturday)
-      setMatSunday(prefs.materialCutOffOnSunday)
-    })
-  }, [user?.id])
-
-  const saveScheduling = async () => {
-    if (!user?.id) return
-    setSaving(true)
-    try {
-      const { hour, minute } = parseCutoffTime(matCutoffTime)
-      await saveNotificationPreferences(user.id, {
-        materialOrderCutOff: matCutoffEnabled,
-        materialCutOffHour: hour,
-        materialCutOffMinute: minute,
-        materialCutOffOnSaturday: matSaturday,
-        materialCutOffOnSunday: matSunday,
-      })
-      setSaved(true)
-      setTimeout(() => setSaved(false), 3000)
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const payrollSubtitle = orgDetails
-    ? formatPayrollSubtitle(orgDetails.payrollTimePolicy)
-    : formatPayrollSubtitle(DEFAULT_PAYROLL_POLICY)
-  const leaveSubtitle = orgDetails
-    ? formatAnnualLeaveSubtitle(orgDetails.annualLeaveDefaults, MONTHS)
-    : formatAnnualLeaveSubtitle(DEFAULT_ANNUAL_LEAVE, MONTHS)
-  const scheduleSubtitle = orgDetails
-    ? formatScheduleOptionsSubtitle(orgDetails.myScheduleOptions)
-    : 'Office, WFH, Site Survey'
-
-  const adminCount = users.filter((entry) => entry.isSuperAdmin || entry.permissions.adminAccess).length
-  const managerCount = getManagerUsers(users).filter((entry) => !entry.permissions.adminAccess && !entry.isSuperAdmin).length
-  const operativeCount = getOperativeModeUsers(users).length
-  const rolesSubtitle = `${pluralize(adminCount, 'admin')} · ${pluralize(managerCount, 'manager')} · ${pluralize(operativeCount, 'op', 'ops')}`
-
-  return (
-    <div className="space-y-5">
-      <PanelHeader title="Organisation" onBack={onBack} />
-
-      {/* Org hero */}
-      <div className="rounded-2xl bg-gradient-to-br from-blue-600 to-blue-800 p-5 text-white shadow-lg">
-        <div className="flex items-center gap-3 mb-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-white/20 text-lg font-bold">
-            {organization?.name?.split(' ').map((w: string) => w[0]).join('').slice(0,2).toUpperCase()}
-          </div>
-          <div>
-            <p className="text-base font-bold">{organization?.name}</p>
-            <p className="text-xs text-blue-200">{orgDetails?.countryCode || 'United Kingdom'} · Company</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2 rounded-xl bg-white/15 px-3 py-2">
-          <div className="flex h-7 w-7 items-center justify-center rounded-full bg-blue-500 text-xs font-bold">
-            {user?.firstName?.[0]}
-            {user?.surname?.[0]}
-          </div>
-          <div className="flex-1">
-            <p className="text-[11px] font-bold uppercase tracking-wide text-blue-200">Organisation admin</p>
-            <p className="text-sm font-semibold">
-              {user?.firstName} {user?.surname} · you
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {/* Identity */}
-      <SectionLabel label="Identity" />
-      <SettingsCard>
-        <SettingsRow
-          icon="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"
-          iconBg="bg-slate-100" iconColor="text-slate-600"
-          label="Company details"
-          description="Name, logo, address"
-          chevron
-        />
-        <SettingsRow
-          icon="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064"
-          iconBg="bg-amber-50" iconColor="text-amber-600"
-          label="Currency & region" value="GBP · United Kingdom" chevron
-        />
-      </SettingsCard>
-
-      {/* Defaults for new operatives */}
-      <SectionLabel label="Defaults for new operatives" />
-      <SettingsCard>
-        <SettingsRow
-          icon="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
-          iconBg="bg-indigo-50" iconColor="text-indigo-600"
-          label="Working hours & overtime"
-          description={payrollSubtitle}
-          chevron
-          onClick={() => onNavigate('working-hours')}
-        />
-        <SettingsRow
-          icon="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
-          iconBg="bg-pink-50" iconColor="text-pink-600"
-          label="Annual leave"
-          description={leaveSubtitle}
-          chevron
-          onClick={() => onNavigate('annual-leave-defaults')}
-        />
-      </SettingsCard>
-
-      {/* Booking & Scheduling */}
-      <SectionLabel label="Booking & scheduling" />
-      <SettingsCard>
-        <SettingsRow
-          icon="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
-          iconBg="bg-purple-50" iconColor="text-purple-600"
-          label="Schedule options"
-          description={scheduleSubtitle}
-          chevron
-          onClick={() => onNavigate('schedule-options')}
-        />
-        <SettingsRow
-          icon="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
-          iconBg="bg-red-50" iconColor="text-red-600"
-          label="Warnings" description="Change and alter warning defaults" chevron
-          onClick={() => onNavigate('warnings')}
-        />
-
-        {/* Material cut-off inline toggles */}
-        <div className="flex items-center justify-between gap-3 px-4 py-3.5">
-          <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-amber-50">
-              <svg className="h-5 w-5 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" /></svg>
-            </div>
-            <div>
-              <p className="text-sm font-semibold text-slate-900">Material cut-off notification to all managers</p>
-              <p className="text-xs text-slate-500">Daily at {matCutoffTime}</p>
-            </div>
-          </div>
-          <Toggle checked={matCutoffEnabled} onChange={setMatCutoffEnabled} />
-        </div>
-
-        <div className="flex items-center justify-between px-4 py-3">
-          <span className="text-sm font-medium text-slate-700">Material cut-off time</span>
-          <input
-            type="time"
-            value={matCutoffTime}
-            onChange={(e) => setMatCutoffTime(e.target.value)}
-            className="text-sm font-semibold text-blue-600 border-none outline-none bg-transparent"
-          />
-        </div>
-        <div className="flex items-center justify-between px-4 py-3">
-          <span className="text-sm font-medium text-slate-700">Material cut-off email on Saturday</span>
-          <Toggle checked={matSaturday} onChange={setMatSaturday} />
-        </div>
-        <div className="flex items-center justify-between px-4 py-3">
-          <span className="text-sm font-medium text-slate-700">Material cut-off email on Sunday</span>
-          <Toggle checked={matSunday} onChange={setMatSunday} />
-        </div>
-      </SettingsCard>
-
-      {/* Payment runs */}
-      <SectionLabel label="Payment runs and timesheets" />
-      <SettingsCard>
-        <SettingsRow
-          icon="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-          iconBg="bg-blue-50" iconColor="text-blue-600"
-          label="Payment Runs and Timesheets" description="Recurring: Monday-Sunday" chevron
-          onClick={() => onNavigate('payment-runs')}
-        />
-      </SettingsCard>
-
-      {/* Team */}
-      <SectionLabel label="Team" />
-      <SettingsCard>
-        <SettingsRow
-          icon="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"
-          iconBg="bg-emerald-50" iconColor="text-emerald-600"
-          label="Roles & permissions" description={rolesSubtitle} chevron
-          onClick={() => onNavigate('roles')}
-        />
-      </SettingsCard>
-
-      {/* Danger zone */}
-      <SectionLabel label="Danger zone" />
-      <SettingsCard>
-        <SettingsRow
-          icon="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-          iconBg="bg-red-50" iconColor="text-red-600"
-          label="Delete organisation" description="Permanent · cannot be undone" chevron danger
-          onClick={() => window.confirm('Are you absolutely sure? This cannot be undone.') && alert('Contact support to delete your organisation.')}
-        />
-      </SettingsCard>
-
-      {saved && <SuccessBanner message="Scheduling settings saved." />}
-      <SaveButton saving={saving} saved={saved} onClick={saveScheduling} />
     </div>
   )
 }
@@ -1144,7 +918,14 @@ export default function SettingsScreen({ initialPanel = 'main' }: { initialPanel
   if (panel === 'profile') return <div className="max-w-xl mx-auto pb-10"><ProfilePanel onBack={() => setPanel('main')} /></div>
   if (panel === 'password') return <div className="max-w-xl mx-auto pb-10"><PasswordPanel onBack={() => setPanel('main')} /></div>
   if (panel === 'notifications') return <div className="max-w-xl mx-auto pb-10"><NotificationsPanel onBack={() => setPanel('main')} /></div>
-  if (panel === 'organisation') return <div className="max-w-xl mx-auto pb-10"><OrganisationPanel onBack={() => setPanel('main')} onNavigate={setPanel} /></div>
+  if (panel === 'organisation') {
+    return (
+      <OrganisationHubPanel
+        onBack={() => setPanel('main')}
+        onNavigate={(destination: OrganisationHubDestination) => setPanel(destination)}
+      />
+    )
+  }
   if (panel === 'working-hours') return <div className="max-w-xl mx-auto pb-10"><WorkingHoursPanel onBack={() => setPanel('organisation')} /></div>
   if (panel === 'annual-leave-defaults') return <div className="max-w-xl mx-auto pb-10"><AnnualLeaveDefaultsPanel onBack={() => setPanel('organisation')} /></div>
   if (panel === 'schedule-options') return <div className="max-w-xl mx-auto pb-10"><ScheduleOptionsPanel onBack={() => setPanel('organisation')} /></div>
