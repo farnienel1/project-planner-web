@@ -35,6 +35,9 @@ import {
   parseCutoffTime,
   saveNotificationPreferences,
 } from '@/lib/settings/notificationPreferences'
+import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
+import { getManagerUsers, getOperativeModeUsers } from '@/lib/staff/userRosterUtils'
+import { pluralize } from '@/lib/utils/pluralize'
 
 // ─── Shared primitives ────────────────────────────────────────────────────────
 function Toggle({ checked, onChange, disabled }: { checked: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
@@ -390,6 +393,7 @@ function NotificationsPanel({ onBack }: { onBack: () => void }) {
 // ─── Organisation Panel ───────────────────────────────────────────────────────
 function OrganisationPanel({ onBack, onNavigate }: { onBack: () => void; onNavigate: (p: Panel) => void }) {
   const { user, organization } = useAuthStore()
+  const { users, loadUsers } = useOrgUserStore()
   const [orgDetails, setOrgDetails] = useState<OrganizationDetails | null>(null)
   const [matCutoffEnabled, setMatCutoffEnabled] = useState(true)
   const [matCutoffTime, setMatCutoffTime] = useState('16:00')
@@ -401,7 +405,8 @@ function OrganisationPanel({ onBack, onNavigate }: { onBack: () => void; onNavig
   useEffect(() => {
     if (!organization?.id) return
     loadOrganizationDetails(organization.id).then(setOrgDetails)
-  }, [organization?.id])
+    loadUsers(organization.id)
+  }, [organization?.id, loadUsers])
 
   useEffect(() => {
     if (!user?.id) return
@@ -441,6 +446,11 @@ function OrganisationPanel({ onBack, onNavigate }: { onBack: () => void; onNavig
   const scheduleSubtitle = orgDetails
     ? formatScheduleOptionsSubtitle(orgDetails.myScheduleOptions)
     : 'Office, WFH, Site Survey'
+
+  const adminCount = users.filter((entry) => entry.isSuperAdmin || entry.permissions.adminAccess).length
+  const managerCount = getManagerUsers(users).filter((entry) => !entry.permissions.adminAccess && !entry.isSuperAdmin).length
+  const operativeCount = getOperativeModeUsers(users).length
+  const rolesSubtitle = `${pluralize(adminCount, 'admin')} · ${pluralize(managerCount, 'manager')} · ${pluralize(operativeCount, 'op', 'ops')}`
 
   return (
     <div className="space-y-5">
@@ -577,7 +587,7 @@ function OrganisationPanel({ onBack, onNavigate }: { onBack: () => void; onNavig
         <SettingsRow
           icon="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"
           iconBg="bg-emerald-50" iconColor="text-emerald-600"
-          label="Roles & permissions" description="1 admin · 1 managers · 1 ops" chevron
+          label="Roles & permissions" description={rolesSubtitle} chevron
           onClick={() => onNavigate('roles')}
         />
       </SettingsCard>
@@ -615,6 +625,26 @@ function WorkingHoursPanel({ onBack }: { onBack: () => void }) {
   const [sunMultiplier, setSunMultiplier] = useState(2)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [error, setError] = useState('')
+
+  const parseClock = (value: string): number => {
+    const [hours, minutes] = value.split(':').map(Number)
+    return hours * 60 + minutes
+  }
+
+  const validateWorkingHours = (): string | null => {
+    const dayStart = parseClock(startTime)
+    const dayEnd = parseClock(endTime)
+    const breakFrom = parseClock(breakStart)
+    const breakTo = parseClock(breakEnd)
+
+    if (dayStart >= dayEnd) return 'Start time must be before end time.'
+    if (breakFrom >= breakTo) return 'Break start must be before break end.'
+    if (breakFrom < dayStart || breakTo > dayEnd) {
+      return 'Break window must fall within the working day.'
+    }
+    return null
+  }
 
   useEffect(() => {
     if (!organization?.id) return
@@ -637,7 +667,14 @@ function WorkingHoursPanel({ onBack }: { onBack: () => void }) {
 
   const save = async () => {
     if (!organization?.id) return
+    const validationError = validateWorkingHours()
+    if (validationError) {
+      setError(validationError)
+      setSaved(false)
+      return
+    }
     setSaving(true)
+    setError('')
     try {
       const policy: OrgPayrollTimePolicy = {
         standardDayStart: startTime,
@@ -733,6 +770,7 @@ function WorkingHoursPanel({ onBack }: { onBack: () => void }) {
         </div>
       </div>
 
+      {error && <ErrorBanner message={error} />}
       {saved && <SuccessBanner message="Working hours saved." />}
       <SaveButton saving={saving} saved={saved} onClick={save} />
     </div>

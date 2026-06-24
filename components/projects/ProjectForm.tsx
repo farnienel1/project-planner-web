@@ -1,6 +1,6 @@
 'use client'
 
-import { FormEvent, useEffect, useState } from 'react'
+import { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useProjectStore } from '@/lib/stores/projectStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
@@ -11,7 +11,7 @@ import { FormActions, FormInput, FormLabel, FormSelect, FormTextarea } from '@/c
 import { ErrorBanner } from '@/components/dashboard/PageShell'
 import { SitePinPickerSheet } from '@/components/site-map/SitePinPickerSheet'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
-import { getManagerUsers } from '@/lib/staff/userRosterUtils'
+import { getManagerUsers, matchesRosterSegment } from '@/lib/staff/userRosterUtils'
 
 type ProjectFormProps = {
   initial?: Project | null
@@ -20,15 +20,31 @@ type ProjectFormProps = {
   onSaved: (id: string) => void
 }
 
+type ManagerOption = {
+  id: string
+  label: string
+  userId?: string
+}
+
+function normalizeEmail(email: string): string {
+  return email.trim().toLowerCase()
+}
+
+function userManagerOptionId(userId: string): string {
+  return `user:${userId}`
+}
+
 export function ProjectForm({ initial, collection = 'projects', backHref, onSaved }: ProjectFormProps) {
   const { organization } = useAuthStore()
   const { clients, loadClients, saveProject, createClient } = useProjectStore()
-  const { managers, placeholderManagerCount, loadManagers } = useOperativeStore()
+  const { managers, placeholderManagerCount, loadManagers, saveManager } = useOperativeStore()
   const { users, loadUsers } = useOrgUserStore()
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [managerFieldError, setManagerFieldError] = useState(false)
   const [pinPickerOpen, setPinPickerOpen] = useState(false)
   const [newClientName, setNewClientName] = useState('')
+  const managersFieldRef = useRef<HTMLDivElement>(null)
 
   const [form, setForm] = useState({
     jobNumber: initial?.jobNumber || '',
@@ -58,18 +74,91 @@ export function ProjectForm({ initial, collection = 'projects', backHref, onSave
     }
   }, [organization, loadClients, loadManagers, loadUsers])
 
-  const managerUsers = getManagerUsers(users)
+  const managerUsers = useMemo(() => getManagerUsers(users), [users])
+
+  const managerOptions = useMemo(() => {
+    const options: ManagerOption[] = []
+    const seenEmails = new Set<string>()
+
+    for (const manager of managers) {
+      const email = normalizeEmail(manager.email)
+      if (email) seenEmails.add(email)
+      options.push({
+        id: manager.id,
+        label: `${manager.firstName} ${manager.lastName}`.trim() || manager.email,
+      })
+    }
+
+    for (const managerUser of managerUsers) {
+      if (!matchesRosterSegment(managerUser, 'active')) continue
+      const email = normalizeEmail(managerUser.email)
+      if (email && seenEmails.has(email)) continue
+      options.push({
+        id: userManagerOptionId(managerUser.id),
+        label: `${managerUser.firstName} ${managerUser.surname}`.trim() || managerUser.email,
+        userId: managerUser.id,
+      })
+    }
+
+    return options.sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base' }))
+  }, [managers, managerUsers])
+
+  const scrollToFirstError = () => {
+    managersFieldRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }
+
+  const resolveManagerIds = async (): Promise<string[]> => {
+    if (!organization?.id) return []
+    const resolved: string[] = []
+
+    for (const selectedId of form.managerIds) {
+      if (!selectedId.startsWith('user:')) {
+        resolved.push(selectedId)
+        continue
+      }
+
+      const userId = selectedId.slice('user:'.length)
+      const managerUser = managerUsers.find((entry) => entry.id === userId)
+      if (!managerUser) continue
+
+      const email = normalizeEmail(managerUser.email)
+      const existing = managers.find((entry) => normalizeEmail(entry.email) === email)
+      if (existing) {
+        resolved.push(existing.id)
+        continue
+      }
+
+      const rosterId = await saveManager(organization.id, {
+        id: '',
+        firstName: managerUser.firstName,
+        lastName: managerUser.surname,
+        email: managerUser.email,
+        phone: managerUser.mobileNumber,
+        isActive: true,
+        organizationId: organization.id,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      })
+      resolved.push(rosterId)
+    }
+
+    return resolved
+  }
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
     if (!organization?.id) return
     setError(null)
+    setManagerFieldError(false)
+
     if (!form.jobNumber.trim() || !form.siteName.trim() || !form.clientId || !form.startDate || !form.endDate) {
       setError('Job number, site name, client, and dates are required.')
       return
     }
     if (form.managerIds.length === 0) {
       setError('Select at least one manager.')
+      setManagerFieldError(true)
+      scrollToFirstError()
       return
     }
     const client = clients.find((c) => c.id === form.clientId)
@@ -80,6 +169,18 @@ export function ProjectForm({ initial, collection = 'projects', backHref, onSave
 
     setSaving(true)
     try {
+      const resolvedManagerIds = await resolveManagerIds()
+      if (resolvedManagerIds.length === 0) {
+        setError('Select at least one manager.')
+        setManagerFieldError(true)
+        scrollToFirstError()
+        return
+      }
+
+      const primaryManagerId = resolvedManagerIds[0]
+      const primaryManager = managers.find((m) => m.id === primaryManagerId)
+      const primaryUser = managerUsers.find((u) => userManagerOptionId(u.id) === form.managerIds[0])
+
       const input: ProjectSaveInput = {
         id: initial?.id || '',
         organizationId: organization.id,
@@ -94,11 +195,13 @@ export function ProjectForm({ initial, collection = 'projects', backHref, onSave
         endDate: new Date(form.endDate),
         jobType: form.jobType,
         customJobType: form.customJobType,
-        managerId: form.managerIds[0],
-        managerIds: form.managerIds,
-        managerLegacy: managers.find((m) => m.id === form.managerIds[0])?.firstName
-          ? `${managers.find((m) => m.id === form.managerIds[0])!.firstName} ${managers.find((m) => m.id === form.managerIds[0])!.lastName}`
-          : 'Project Manager',
+        managerId: primaryManagerId,
+        managerIds: resolvedManagerIds,
+        managerLegacy: primaryManager
+          ? `${primaryManager.firstName} ${primaryManager.lastName}`.trim()
+          : primaryUser
+            ? `${primaryUser.firstName} ${primaryUser.surname}`.trim()
+            : 'Project Manager',
         isLive: form.isLive,
         description: form.description,
         notes: form.notes,
@@ -124,7 +227,7 @@ export function ProjectForm({ initial, collection = 'projects', backHref, onSave
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+    <form onSubmit={handleSubmit} noValidate className="space-y-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
       {error && <ErrorBanner message={error} />}
 
       <div className="grid gap-4 md:grid-cols-2">
@@ -166,28 +269,38 @@ export function ProjectForm({ initial, collection = 'projects', backHref, onSave
             </button>
           </div>
         </div>
-        <div>
+        <div ref={managersFieldRef}>
           <FormLabel required>Managers</FormLabel>
           <select
             multiple
             value={form.managerIds}
-            onChange={(e) =>
+            onChange={(e) => {
+              setManagerFieldError(false)
               setForm({
                 ...form,
                 managerIds: Array.from(e.target.selectedOptions, (o) => o.value),
               })
-            }
-            className="h-28 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            }}
+            className={`h-28 w-full rounded-lg border px-3 py-2 text-sm ${
+              managerFieldError ? 'border-red-400 bg-red-50 ring-2 ring-red-200' : 'border-slate-300'
+            }`}
+            aria-invalid={managerFieldError}
+            aria-describedby={managerFieldError ? 'managers-error' : undefined}
           >
-            {managers.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.firstName} {m.lastName}
+            {managerOptions.map((option) => (
+              <option key={option.id} value={option.id}>
+                {option.label}
               </option>
             ))}
           </select>
-          {managers.length === 0 && managerUsers.length > 0 && (
+          {managerFieldError && (
+            <p id="managers-error" className="mt-2 text-xs font-semibold text-red-700">
+              Select at least one manager before creating this project.
+            </p>
+          )}
+          {managerOptions.length === 0 && (
             <p className="mt-2 text-xs text-amber-700">
-              No manager roster records found. Add managers from the Managers page, then return here.
+              No managers found. Invite managers from Manage users, then return here.
             </p>
           )}
           {placeholderManagerCount > 0 && (

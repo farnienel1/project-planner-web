@@ -1,4 +1,5 @@
 import { OrgSetupWizard } from '@/components/setup/OrgSetupWizard'
+import { SetupAuthGuard } from '@/components/setup/SetupAuthGuard'
 
 export const metadata = {
   title: 'Set up organisation | Project Planner',
@@ -6,5 +7,9 @@ export const metadata = {
 }
 
 export default function SetupPage() {
-  return <OrgSetupWizard />
+  return (
+    <SetupAuthGuard>
+      <OrgSetupWizard />
+    </SetupAuthGuard>
+  )
 }

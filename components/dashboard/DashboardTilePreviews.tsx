@@ -4,7 +4,7 @@ import type { TileId } from '@/lib/stores/dashboardStore'
 import { getTileMeta } from '@/lib/dashboard/tileCatalogue'
 import { setDashboardTileDrag, type HeroTileDrop } from '@/lib/dashboard/dashboardDrag'
 import { DashboardHero } from '@/components/dashboard/DashboardHero'
-import { resolveHeroMetricPreviews } from '@/lib/dashboard/heroMetrics'
+import { MAX_HERO_METRICS, resolveHeroMetricPreviews } from '@/lib/dashboard/heroMetrics'
 
 function Shell({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -426,6 +426,9 @@ export function DashboardEditorPreview({
       </div>
 
       <div className="space-y-3">
+        <p className="text-xs text-slate-500">
+          Drag eligible tiles from the grid below into the blue section (max {MAX_HERO_METRICS} single metrics).
+        </p>
         <DashboardHero
           userName={userName}
           organizationName={organizationName}

@@ -226,11 +226,6 @@ export function DashboardHero({
           <p className="text-xs font-medium uppercase tracking-wider text-blue-200">{dateLabel}</p>
           <h1 className="mt-1 text-3xl font-bold tracking-tight">Hi, {userName}</h1>
           <p className="mt-1 text-sm text-blue-100">Project planning overview for {organizationName}.</p>
-          {editable && (
-            <p className="mt-2 text-xs text-blue-200">
-              Drag eligible tiles from the grid below into the blue section (max {MAX_HERO_METRICS} single metrics).
-            </p>
-          )}
         </div>
       </div>
 

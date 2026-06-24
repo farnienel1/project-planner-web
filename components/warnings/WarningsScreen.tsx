@@ -320,10 +320,10 @@ export function WarningsScreen({
       </div>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <StatCard value={totalCount} label="Total warnings" color="text-red-600" icon={<span className="text-red-500">!</span>} />
+        <StatCard value={totalCount} label="Total warnings" color={totalCount > 0 ? 'text-red-600' : 'text-slate-900'} icon={<span className={totalCount > 0 ? 'text-red-500' : 'text-slate-400'}>!</span>} />
         <StatCard value={todayClashCount} label="Clashes today" color={todayClashCount > 0 ? 'text-red-600' : 'text-slate-900'} icon={<span>⏱</span>} />
         <StatCard value={todayMaterialCount} label="Materials today" color={todayMaterialCount > 0 ? 'text-violet-600' : 'text-slate-900'} icon={<span>📦</span>} />
-        <StatCard value={clashWarnings.length} label="Booking clashes" color="text-amber-600" icon={<span>⇄</span>} />
+        <StatCard value={clashWarnings.length} label="Booking clashes" color={clashWarnings.length > 0 ? 'text-amber-600' : 'text-slate-900'} icon={<span>⇄</span>} />
       </div>
 
       <div className="flex flex-wrap items-center gap-3">

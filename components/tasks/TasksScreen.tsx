@@ -304,10 +304,10 @@ export function TasksScreen() {
     activeRing: string
   }[] = [
     { key: 'todo', label: 'To do', count: stats.todo, color: 'text-slate-700', activeRing: 'ring-slate-400' },
-    { key: 'inProgress', label: 'In progress', count: stats.inProgress, color: 'text-blue-700', activeRing: 'ring-blue-400' },
-    { key: 'overdue', label: 'Overdue', count: stats.overdue, color: 'text-red-700', activeRing: 'ring-red-400' },
-    { key: 'completed', label: 'Completed', count: stats.completed, color: 'text-green-700', activeRing: 'ring-green-400' },
-    { key: 'approvals', label: 'Approvals', count: stats.approvals, color: 'text-amber-700', activeRing: 'ring-amber-400' },
+    { key: 'inProgress', label: 'In progress', count: stats.inProgress, color: stats.inProgress > 0 ? 'text-blue-700' : 'text-slate-500', activeRing: 'ring-blue-400' },
+    { key: 'overdue', label: 'Overdue', count: stats.overdue, color: stats.overdue > 0 ? 'text-red-700' : 'text-slate-500', activeRing: 'ring-red-400' },
+    { key: 'completed', label: 'Completed', count: stats.completed, color: stats.completed > 0 ? 'text-green-700' : 'text-slate-500', activeRing: 'ring-green-400' },
+    { key: 'approvals', label: 'Approvals', count: stats.approvals, color: stats.approvals > 0 ? 'text-amber-700' : 'text-slate-500', activeRing: 'ring-amber-400' },
   ]
 
   const scrollToApprovals = () => {
@@ -401,6 +401,19 @@ export function TasksScreen() {
                       ? 'No overdue tasks.'
                       : 'No tasks match this filter.'}
             </p>
+            {tasks.length === 0 && (
+              <p className="mt-3 text-sm text-slate-500">
+                Tasks are created from a project&apos;s hub in the iOS app or web project detail page.
+              </p>
+            )}
+            {tasks.length === 0 && (
+              <Link
+                href="/dashboard/projects"
+                className="mt-4 inline-flex rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+              >
+                Go to projects
+              </Link>
+            )}
           </div>
         ) : (
           <div className="space-y-4">

@@ -47,12 +47,12 @@ export function canViewSiteAudit(user: User | null): boolean {
 export function canAccessTimesheets(user: User | null): boolean {
   if (!user) return false
   if (isOperativeMode(user)) return true
-  return user.permissions.manager === true || hasAdminAccess(user)
+  return user.permissions.manager === true || hasAdminAccess(user) || user.permissions.projects === true
 }
 
 export function canManageSkills(user: User | null): boolean {
   if (!user || isOperativeMode(user)) return false
-  return hasAdminAccess(user) || user.permissions.skills === true
+  return hasAdminAccess(user) || user.permissions.skills === true || user.permissions.manager === true
 }
 
 export function canManageQualifications(user: User | null): boolean {

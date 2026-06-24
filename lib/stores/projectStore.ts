@@ -91,6 +91,12 @@ interface ProjectState {
   saveProject: (input: ProjectSaveInput, collection?: 'projects' | 'smallWorks') => Promise<string>
   deleteProject: (id: string, organizationId: string, collection?: 'projects' | 'smallWorks') => Promise<void>
   createClient: (client: Omit<Client, 'id' | 'createdAt' | 'updatedAt'>) => Promise<Client>
+  updateClient: (
+    organizationId: string,
+    clientId: string,
+    updates: Partial<Pick<Client, 'name' | 'email' | 'phone' | 'contactPerson' | 'address'>>
+  ) => Promise<Client>
+  deleteClient: (organizationId: string, clientId: string) => Promise<void>
 }
 
 export const useProjectStore = create<ProjectState>((set, get) => ({
@@ -201,5 +207,37 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     }
     set({ clients: [...get().clients, client] })
     return client
+  },
+
+  updateClient: async (organizationId, clientId, updates) => {
+    const existing = get().clients.find((c) => c.id === clientId)
+    if (!existing) throw new Error('Client not found')
+
+    const payload: Record<string, unknown> = {
+      name: updates.name?.trim() ?? existing.name,
+      email: updates.email?.trim() ?? existing.email ?? '',
+      phone: updates.phone?.trim() ?? existing.phone ?? '',
+      contactPerson: updates.contactPerson?.trim() ?? existing.contactPerson ?? '',
+      address: updates.address?.trim() ?? existing.address ?? '',
+      updatedAt: Timestamp.now(),
+    }
+
+    await setDoc(doc(db, 'organizations', organizationId, 'clients', clientId), payload, { merge: true })
+
+    const updated: Client = {
+      ...existing,
+      ...updates,
+      name: String(payload.name),
+      email: payload.email ? String(payload.email) : undefined,
+      phone: payload.phone ? String(payload.phone) : undefined,
+      updatedAt: new Date(),
+    }
+    set({ clients: get().clients.map((c) => (c.id === clientId ? updated : c)) })
+    return updated
+  },
+
+  deleteClient: async (organizationId, clientId) => {
+    await deleteDoc(doc(db, 'organizations', organizationId, 'clients', clientId))
+    set({ clients: get().clients.filter((c) => c.id !== clientId) })
   },
 }))

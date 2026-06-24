@@ -93,7 +93,7 @@ export default function MaterialsPage() {
       <PageHeader
         title="Material catalogue"
         description="Organisation materials library — synced with iOS via Firebase."
-        meta={`${items.length} materials · organizations/{orgId}/materialCatalogue`}
+        meta={`${items.length} materials · organizations/${organization?.id || '…'}/materialCatalogue`}
       />
 
       {error && <ErrorBanner message={error} />}
