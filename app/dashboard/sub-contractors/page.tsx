@@ -88,7 +88,7 @@ export default function SubContractorsPage() {
       <PageHeader
         title="Sub contractors"
         description="Subcontractor firms and operatives — matches iOS SubcontractorsView."
-        meta={`${subcontractors.length} firms · organizations/{orgId}/subcontractors`}
+        meta={`${subcontractors.length} firms · organizations/${organization?.id || '…'}/subcontractors`}
       />
 
       {error && <ErrorBanner message={error} />}

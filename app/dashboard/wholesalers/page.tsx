@@ -70,7 +70,7 @@ export default function WholesalersPage() {
       <PageHeader
         title="Wholesalers"
         description="Supplier directory with contacts — matches iOS WholesalersView."
-        meta={`${wholesalers.length} wholesalers · ${totalContacts} contacts · organizations/{orgId}/wholesalers`}
+        meta={`${wholesalers.length} wholesalers · ${totalContacts} contacts · organizations/${organization?.id || '…'}/wholesalers`}
       />
 
       {error && <ErrorBanner message={error} />}

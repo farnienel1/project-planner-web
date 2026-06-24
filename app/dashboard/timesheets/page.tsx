@@ -78,10 +78,10 @@ export default function TimesheetsPage() {
         />
       </div>
 
-      {user && (
+      {user && organization?.id && (
         <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
-          Signed in as <strong>{user.firstName || user.email}</strong>. Timesheet sign-off state is stored per user/week in{' '}
-          <code className="rounded bg-blue-100 px-1">organizations/&#123;orgId&#125;/settings/timesheet_&#123;userId&#125;_&#123;week&#125;</code> on iOS.
+          Signed in as <strong>{user.firstName || user.email}</strong>. Timesheet sign-off for this week is synced with the iOS app
+          when managers approve hours.
         </div>
       )}
 

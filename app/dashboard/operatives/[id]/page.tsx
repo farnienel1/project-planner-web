@@ -87,8 +87,8 @@ export default function OperativeDetailPage() {
                 <dd className="mt-1 text-sm text-gray-900">{format(new Date(operative.startDate), 'MMMM d, yyyy')}</dd>
               </div>
               <div>
-                <dt className="text-sm font-medium text-gray-500">Hourly Rate</dt>
-                <dd className="mt-1 text-sm text-gray-900">£{operative.hourlyRate.toFixed(2)}/hr</dd>
+                <dt className="text-sm font-medium text-gray-500">Day rate</dt>
+                <dd className="mt-1 text-sm text-gray-900">£{operative.hourlyRate.toFixed(2)}/day</dd>
               </div>
             </dl>
           </div>

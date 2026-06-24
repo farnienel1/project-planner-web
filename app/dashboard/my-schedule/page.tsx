@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, Suspense, useCallback, useState } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useBookingStore } from '@/lib/stores/bookingStore'
@@ -128,13 +129,29 @@ function MySchedulePageContent() {
 
   if (!linkedOperative && personalBookings.length === 0) {
     return (
-      <div className="rounded-2xl border border-dashed border-slate-300 bg-white py-16 text-center">
+      <div className="rounded-2xl border border-dashed border-slate-300 bg-white py-16 px-6 text-center">
         <h1 className="text-2xl font-bold text-slate-900">My Schedule</h1>
-        <p className="mt-2 text-sm text-slate-500">
+        <p className="mt-2 text-sm text-slate-500 max-w-lg mx-auto">
           {isOperativeMode(user)
             ? 'Your account is not linked to an operative profile yet. Ask your line manager to link your email to an operative.'
-            : 'No operative profile is linked to your account and you have no manager bookings yet. Link your email on an operative record or book yourself on the iOS app.'}
+            : 'No bookings are assigned to you yet. Book operatives on projects from Daily overview, or open Projects to manage sites you lead.'}
         </p>
+        {!isOperativeMode(user) && (
+          <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+            <Link
+              href="/dashboard/daily-overview"
+              className="inline-flex rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+            >
+              Open daily overview
+            </Link>
+            <Link
+              href="/dashboard/projects"
+              className="inline-flex rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              View projects
+            </Link>
+          </div>
+        )}
       </div>
     )
   }
