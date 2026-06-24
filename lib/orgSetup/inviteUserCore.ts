@@ -18,7 +18,10 @@ export type InviteUserCoreInput = {
   permissions: UserPermissions
   assignedManagerUserId?: string
   dayRate?: number
+  tradeTypePreset?: string
+  tradeTypeCustom?: string
   employmentType?: 'paye' | 'selfEmployed'
+  timesheetsEnabled?: boolean
   invitedBy: string
 }
 
@@ -94,8 +97,13 @@ export async function inviteUserCore(input: InviteUserCoreInput): Promise<Invite
   if ((input.permissions.operativeMode || input.permissions.manager) && input.assignedManagerUserId) {
     invitationData.assignedManagerUserId = input.assignedManagerUserId
   }
-  if (input.permissions.operativeMode && input.dayRate != null) {
+  if ((input.permissions.operativeMode || input.permissions.manager) && input.dayRate != null) {
     invitationData.dayRate = input.dayRate
+  }
+  if (input.tradeTypePreset?.trim()) invitationData.tradeTypePreset = input.tradeTypePreset.trim()
+  if (input.tradeTypeCustom?.trim()) invitationData.tradeTypeCustom = input.tradeTypeCustom.trim()
+  if (input.permissions.manager || input.permissions.operativeMode) {
+    invitationData.timesheetsEnabled = input.timesheetsEnabled === true
   }
 
   await setDoc(doc(db, 'invitations', invitationId), invitationData)
@@ -111,7 +119,10 @@ export async function inviteUserCore(input: InviteUserCoreInput): Promise<Invite
       mobileNumber: input.mobileNumber,
       assignedManagerUserId: input.assignedManagerUserId,
       dayRate: input.dayRate,
+      tradeTypePreset: input.tradeTypePreset,
+      tradeTypeCustom: input.tradeTypeCustom,
       employmentType: input.employmentType,
+      timesheetsEnabled: input.timesheetsEnabled,
     })
   )
   await setDoc(doc(db, 'organizations', input.organizationId, 'userEmails', emailLower), { userId })
