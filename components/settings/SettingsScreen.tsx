@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useEffect, useState, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { updatePassword, EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth'
 import { doc, Timestamp, updateDoc } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
@@ -38,132 +38,20 @@ import {
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { getManagerUsers, getOperativeModeUsers } from '@/lib/staff/userRosterUtils'
 import { pluralize } from '@/lib/utils/pluralize'
-
-// ─── Shared primitives ────────────────────────────────────────────────────────
-function Toggle({ checked, onChange, disabled }: { checked: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      disabled={disabled}
-      onClick={() => !disabled && onChange(!checked)}
-      className={`relative inline-flex h-[28px] w-[50px] flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:cursor-not-allowed ${checked ? 'bg-blue-500' : 'bg-slate-200'}`}
-    >
-      <span className={`pointer-events-none inline-block h-[22px] w-[22px] transform rounded-full bg-white shadow-[0_2px_4px_rgba(0,0,0,0.25)] ring-0 transition-transform duration-200 ${checked ? 'translate-x-[22px]' : 'translate-x-[1px]'}`} />
-    </button>
-  )
-}
-
-function SectionLabel({ label }: { label: string }) {
-  return <p className="px-1 text-[11px] font-bold uppercase tracking-widest text-slate-400">{label}</p>
-}
-
-function SettingsCard({ children }: { children: ReactNode }) {
-  return <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm divide-y divide-slate-100">{children}</div>
-}
-
-function SettingsRow({
-  icon, iconBg = 'bg-slate-100', iconColor = 'text-slate-600',
-  label, description, value, chevron, badge, danger, onClick, children,
-}: {
-  icon: string; iconBg?: string; iconColor?: string; label: string;
-  description?: string; value?: string; chevron?: boolean; badge?: string;
-  danger?: boolean; onClick?: () => void; children?: ReactNode;
-}) {
-  const inner = (
-    <div className={`flex items-center gap-3 px-4 py-3.5 ${onClick ? 'cursor-pointer hover:bg-slate-50 transition-colors' : ''} ${danger ? 'hover:bg-red-50' : ''}`}>
-      <div className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl ${iconBg}`}>
-        <svg className={`h-5 w-5 ${iconColor}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d={icon} />
-        </svg>
-      </div>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 flex-wrap">
-          <p className={`text-sm font-semibold ${danger ? 'text-red-600' : 'text-slate-900'}`}>{label}</p>
-          {badge && <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-bold text-blue-700">{badge}</span>}
-        </div>
-        {description && <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">{description}</p>}
-      </div>
-      {value && <span className="text-sm font-semibold text-blue-600 flex-shrink-0">{value}</span>}
-      {children}
-      {chevron && (
-        <svg className="h-4 w-4 text-slate-300 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-        </svg>
-      )}
-    </div>
-  )
-  return onClick ? <button type="button" className="w-full text-left" onClick={onClick}>{inner}</button> : <div>{inner}</div>
-}
-
-function SaveButton({ saving, saved, onClick }: { saving: boolean; saved: boolean; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={saving}
-      className={`w-full rounded-2xl py-3.5 text-sm font-bold transition-all ${saved ? 'bg-emerald-500 text-white' : 'bg-blue-600 text-white hover:bg-blue-700'} disabled:opacity-50`}
-    >
-      {saving ? 'Saving…' : saved ? '✓ Saved' : 'Save'}
-    </button>
-  )
-}
-
-function SuccessBanner({ message }: { message: string }) {
-  return (
-    <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800">
-      ✓ {message}
-    </div>
-  )
-}
-
-function ErrorBanner({ message }: { message: string }) {
-  return (
-    <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-800">
-      {message}
-    </div>
-  )
-}
-
-function FormField({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
-  return (
-    <div className="space-y-1.5">
-      <label className="text-xs font-bold uppercase tracking-wide text-slate-500">{label}</label>
-      {children}
-      {hint && <p className="text-xs text-slate-400 leading-relaxed">{hint}</p>}
-    </div>
-  )
-}
-
-function Input(props: InputHTMLAttributes<HTMLInputElement>) {
-  return (
-    <input
-      {...props}
-      className={`w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-blue-400 focus:bg-white focus:ring-2 focus:ring-blue-100 ${props.className || ''}`}
-    />
-  )
-}
-
-function Select({ children, ...props }: SelectHTMLAttributes<HTMLSelectElement>) {
-  return (
-    <select
-      {...props}
-      className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
-    >
-      {children}
-    </select>
-  )
-}
-
-function Textarea({ ...props }: TextareaHTMLAttributes<HTMLTextAreaElement>) {
-  return (
-    <textarea
-      {...props}
-      className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100 resize-none"
-    />
-  )
-}
+import {
+  Toggle,
+  SectionLabel,
+  SettingsCard,
+  SettingsRow,
+  SaveButton,
+  SuccessBanner,
+  ErrorBanner,
+  FormField,
+  Input,
+  Select,
+  Textarea,
+  PanelHeader,
+} from '@/components/settings/primitives'
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 const DAYS = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday']
@@ -1242,19 +1130,6 @@ function RolesPanel({ onBack }: { onBack: () => void }) {
         <p className="text-sm font-semibold text-slate-700">Change roles on user profiles</p>
         <p className="text-xs text-slate-400 mt-1">Use Manage users to assign admin, manager, or operative access.</p>
       </div>
-    </div>
-  )
-}
-
-// ─── Panel header ─────────────────────────────────────────────────────────────
-function PanelHeader({ title, onBack, rightAction }: { title: string; onBack: () => void; rightAction?: ReactNode }) {
-  return (
-    <div className="flex items-center justify-between gap-3">
-      <button type="button" onClick={onBack} className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white shadow-sm hover:bg-slate-50">
-        <svg className="h-4 w-4 text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7"/></svg>
-      </button>
-      <h2 className="text-base font-bold text-slate-900">{title}</h2>
-      {rightAction || <div className="w-9" />}
     </div>
   )
 }
