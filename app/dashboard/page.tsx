@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { useAuthStore } from '@/lib/stores/authStore'
@@ -15,6 +15,15 @@ import { getPendingHolidayApprovalsForUser } from '@/lib/annualLeave/holidayAppr
 import { useMaterialProjectStore } from '@/lib/stores/materialProjectStore'
 import { computeOperativeBookingClashWarnings } from '@/lib/scheduling/bookingClashUtils'
 import { computeMissedMaterialOrderWarnings } from '@/lib/warnings/materialOrderWarnings'
+import {
+  computeUnbookedLabourWarnings,
+  filterWarningsByLookahead,
+} from '@/lib/warnings/unbookedLabourWarnings'
+import {
+  DEFAULT_WARNING_DETECTION,
+  loadOrganizationDetails,
+  type OrganizationDetails,
+} from '@/lib/settings/organizationSettings'
 import { countActiveOperativeUsers, getActiveOperativesForScheduling } from '@/lib/operatives/operativeRosterUtils'
 import { mergeProjectsAndSmallWorks } from '@/lib/projects/workStatus'
 import { getDashboardQuickActions } from '@/lib/navigation/dashboardQuickActions'
@@ -53,6 +62,7 @@ export default function DashboardPage() {
   const { tasks, loadTasks } = useTaskStore()
   const { bookings: holidayBookings, loadBookings: loadHolidayBookings } = useHolidayStore()
   const { layout, heroMetrics, loadLayout } = useDashboardStore()
+  const [orgDetails, setOrgDetails] = useState<OrganizationDetails | null>(null)
 
   useEffect(() => {
     if (!loading && !user) router.push('/login')
@@ -71,6 +81,7 @@ export default function DashboardPage() {
       loadHolidayBookings(organization.id)
       loadTasks(organization.id)
       loadAudits(organization.id)
+      loadOrganizationDetails(organization.id).then(setOrgDetails).catch(() => setOrgDetails(null))
     }
   }, [
     organization,
@@ -100,9 +111,26 @@ export default function DashboardPage() {
     [projects, smallWorks]
   )
 
-  const bookingClashWarnings = useMemo(
-    () => computeOperativeBookingClashWarnings(bookings, rosterOperatives, mergedWorks),
-    [bookings, rosterOperatives, mergedWorks]
+  const warningDetection = orgDetails?.warningDetection ?? DEFAULT_WARNING_DETECTION
+  const invoicing = orgDetails?.invoicing
+
+  const bookingClashWarnings = useMemo(() => {
+    if (!warningDetection.detectClashes) return []
+    const all = computeOperativeBookingClashWarnings(bookings, rosterOperatives, mergedWorks)
+    return filterWarningsByLookahead(all, warningDetection, invoicing)
+  }, [bookings, rosterOperatives, mergedWorks, warningDetection, invoicing])
+
+  const unbookedLabourWarnings = useMemo(
+    () =>
+      computeUnbookedLabourWarnings({
+        bookings,
+        operatives,
+        users,
+        holidays: holidayBookings,
+        warningDetection,
+        invoicing,
+      }),
+    [bookings, operatives, users, holidayBookings, warningDetection, invoicing]
   )
 
   const materialOrderWarnings = useMemo(
@@ -110,7 +138,8 @@ export default function DashboardPage() {
     [materials, sendRecords, mergedWorks]
   )
 
-  const totalWarningCount = bookingClashWarnings.length + materialOrderWarnings.length
+  const totalWarningCount =
+    bookingClashWarnings.length + unbookedLabourWarnings.length + materialOrderWarnings.length
 
   const pendingLeaveApprovals = useMemo(
     () => getPendingHolidayApprovalsForUser(holidayBookings, user, users, operatives),

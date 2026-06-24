@@ -42,6 +42,7 @@ import {
 } from '@/components/settings/primitives'
 
 export type OrganisationHubDestination =
+  | 'company-details'
   | 'working-hours'
   | 'annual-leave-defaults'
   | 'schedule-options'
@@ -210,7 +211,9 @@ export function OrganisationHubPanel({
           iconBg="bg-[#185FA5]/10"
           iconColor="text-[#185FA5]"
           label="Company details"
-          description="Name, logo, and address — edit during org setup for now"
+          description="Name, logo, office address, currency and region"
+          chevron
+          onClick={() => onNavigate('company-details')}
         />
         <SettingsRow
           icon={ICON.globe}

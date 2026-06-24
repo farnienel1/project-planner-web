@@ -8,6 +8,7 @@ import { isTomorrow } from 'date-fns/isTomorrow'
 import { isPast } from 'date-fns/isPast'
 import type { OperativeBookingClashWarning } from '@/lib/scheduling/bookingClashUtils'
 import type { MissedMaterialOrderWarning } from '@/lib/warnings/materialOrderWarnings'
+import type { UnbookedLabourWarning } from '@/lib/warnings/unbookedLabourWarnings'
 import {
   projectSchedulePath,
   projectMaterialsPath,
@@ -211,11 +212,46 @@ function MaterialWarningCard({
   )
 }
 
-type FilterType = 'all' | 'today' | 'upcoming' | 'past' | 'clashes' | 'materials'
+function UnbookedLabourCard({ warning }: { warning: UnbookedLabourWarning }) {
+  const urgency = urgencyLevel(warning.date)
+  const styles = URGENCY_STYLES[urgency]
+
+  return (
+    <div className={`overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm border-l-4 ${styles.border}`}>
+      <div className="flex w-full items-start gap-4 px-5 py-4">
+        <Avatar name={warning.operativeName} />
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm font-semibold text-slate-900">{warning.operativeName}</span>
+            <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${styles.badge}`}>
+              <span className={`h-1.5 w-1.5 rounded-full ${styles.dot}`} />
+              {formatDateLabel(warning.date)}
+            </span>
+            <span className="rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-semibold uppercase text-red-700">
+              Unbooked labour
+            </span>
+          </div>
+          <p className="mt-2 text-xs leading-relaxed text-slate-500">{warning.message}</p>
+        </div>
+      </div>
+      <div className="border-t border-slate-100 bg-slate-50 px-5 py-3">
+        <Link
+          href="/dashboard/schedule"
+          className="inline-flex shrink-0 items-center whitespace-nowrap rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-blue-700"
+        >
+          Open schedule
+        </Link>
+      </div>
+    </div>
+  )
+}
+
+type FilterType = 'all' | 'today' | 'upcoming' | 'past' | 'clashes' | 'materials' | 'unbooked'
 
 export function WarningsScreen({
   organizationName,
   clashWarnings,
+  unbookedWarnings,
   materialWarnings,
   loading,
   user: _user,
@@ -226,6 +262,7 @@ export function WarningsScreen({
 }: {
   organizationName: string
   clashWarnings: OperativeBookingClashWarning[]
+  unbookedWarnings: UnbookedLabourWarning[]
   materialWarnings: MissedMaterialOrderWarning[]
   loading?: boolean
   user: User | null
@@ -238,8 +275,9 @@ export function WarningsScreen({
   const [search, setSearch] = useState('')
   const [busyId, setBusyId] = useState<string | null>(null)
 
-  const totalCount = clashWarnings.length + materialWarnings.length
+  const totalCount = clashWarnings.length + unbookedWarnings.length + materialWarnings.length
   const todayClashCount = clashWarnings.filter((w) => isToday(w.date)).length
+  const todayUnbookedCount = unbookedWarnings.filter((w) => isToday(w.date)).length
   const todayMaterialCount = materialWarnings.length
 
   const filteredClashes = useMemo(() => {
@@ -259,8 +297,35 @@ export function WarningsScreen({
     return list.sort((a, b) => a.date.getTime() - b.date.getTime())
   }, [clashWarnings, filter, search])
 
+  const filteredUnbooked = useMemo(() => {
+    if (filter === 'materials' || filter === 'clashes') return []
+    if (filter === 'unbooked') {
+      let list = [...unbookedWarnings]
+      if (search.trim()) {
+        const q = search.toLowerCase()
+        list = list.filter((w) => w.operativeName.toLowerCase().includes(q))
+      }
+      return list
+    }
+    if (filter === 'today') {
+      return unbookedWarnings.filter((w) => isToday(w.date))
+    }
+    if (filter === 'upcoming') {
+      return unbookedWarnings.filter((w) => !isPast(w.date) || isToday(w.date))
+    }
+    if (filter === 'past') {
+      return unbookedWarnings.filter((w) => isPast(w.date) && !isToday(w.date))
+    }
+    let list = [...unbookedWarnings]
+    if (search.trim()) {
+      const q = search.toLowerCase()
+      list = list.filter((w) => w.operativeName.toLowerCase().includes(q))
+    }
+    return list
+  }, [unbookedWarnings, filter, search])
+
   const filteredMaterials = useMemo(() => {
-    if (filter === 'past' || filter === 'upcoming' || filter === 'clashes') return []
+    if (filter === 'past' || filter === 'upcoming' || filter === 'clashes' || filter === 'unbooked') return []
     if (filter === 'materials') return materialWarnings
     if (search.trim()) {
       const q = search.toLowerCase()
@@ -269,8 +334,9 @@ export function WarningsScreen({
     return materialWarnings
   }, [materialWarnings, filter, search])
 
-  const showClashes = filter !== 'materials'
-  const showMaterials = filter !== 'clashes' && filter !== 'past' && filter !== 'upcoming'
+  const showClashes = filter !== 'materials' && filter !== 'unbooked'
+  const showUnbooked = filter !== 'materials' && filter !== 'clashes'
+  const showMaterials = filter !== 'clashes' && filter !== 'past' && filter !== 'upcoming' && filter !== 'unbooked'
 
   const handleAccept = async (clash: OperativeBookingClashWarning) => {
     setBusyId(clash.id)
@@ -311,7 +377,7 @@ export function WarningsScreen({
             )}
           </div>
           <p className="mt-1 text-sm text-slate-500">
-            Booking clashes and missed material orders for {organizationName}.
+            Booking clashes, unbooked labour, and missed material orders for {organizationName}.
           </p>
         </div>
         <Link href="/dashboard/my-schedule" className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
@@ -319,11 +385,12 @@ export function WarningsScreen({
         </Link>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
         <StatCard value={totalCount} label="Total warnings" color={totalCount > 0 ? 'text-red-600' : 'text-slate-900'} icon={<span className={totalCount > 0 ? 'text-red-500' : 'text-slate-400'}>!</span>} />
         <StatCard value={todayClashCount} label="Clashes today" color={todayClashCount > 0 ? 'text-red-600' : 'text-slate-900'} icon={<span>⏱</span>} />
+        <StatCard value={todayUnbookedCount} label="Unbooked today" color={todayUnbookedCount > 0 ? 'text-red-600' : 'text-slate-900'} icon={<span>👷</span>} />
         <StatCard value={todayMaterialCount} label="Materials today" color={todayMaterialCount > 0 ? 'text-violet-600' : 'text-slate-900'} icon={<span>📦</span>} />
-        <StatCard value={clashWarnings.length} label="Booking clashes" color={clashWarnings.length > 0 ? 'text-amber-600' : 'text-slate-900'} icon={<span>⇄</span>} />
+        <StatCard value={unbookedWarnings.length} label="Unbooked labour" color={unbookedWarnings.length > 0 ? 'text-red-600' : 'text-slate-900'} icon={<span>📅</span>} />
       </div>
 
       <div className="flex flex-wrap items-center gap-3">
@@ -341,6 +408,7 @@ export function WarningsScreen({
               { value: 'all', label: 'All' },
               { value: 'today', label: 'Today' },
               { value: 'clashes', label: 'Clashes' },
+              { value: 'unbooked', label: 'Unbooked' },
               { value: 'materials', label: 'Materials' },
             ] as { value: FilterType; label: string }[]
           ).map((f) => (
@@ -372,6 +440,15 @@ export function WarningsScreen({
         </section>
       )}
 
+      {showUnbooked && filteredUnbooked.length > 0 && (
+        <section className="space-y-3">
+          <h2 className="text-sm font-semibold text-slate-900">Unbooked labour</h2>
+          {filteredUnbooked.map((warning) => (
+            <UnbookedLabourCard key={warning.id} warning={warning} />
+          ))}
+        </section>
+      )}
+
       {showClashes && filteredClashes.length > 0 && (
         <section className="space-y-3">
           <h2 className="text-sm font-semibold text-slate-900">Booking clashes</h2>
@@ -388,7 +465,7 @@ export function WarningsScreen({
         </section>
       )}
 
-      {totalCount > 0 && filteredClashes.length === 0 && filteredMaterials.length === 0 && (
+      {totalCount > 0 && filteredClashes.length === 0 && filteredUnbooked.length === 0 && filteredMaterials.length === 0 && (
         <p className="text-sm text-slate-500">No results match your filters.</p>
       )}
     </div>

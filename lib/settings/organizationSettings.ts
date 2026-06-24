@@ -70,8 +70,16 @@ export type OrganizationDetails = {
   id: string
   name: string
   countryCode?: string
+  currency?: string
   creatorUserId?: string
   companyLogoURL?: string
+  officeAddress?: {
+    addressLine1?: string
+    addressLine2?: string
+    town?: string
+    county?: string
+    postcode?: string
+  }
   payrollTimePolicy: OrgPayrollTimePolicy
   annualLeaveDefaults: OrgAnnualLeaveDefaults
   warningDetection: OrgWarningDetectionSettings
@@ -341,8 +349,10 @@ export async function loadOrganizationDetails(organizationId: string): Promise<O
     id: snap.id,
     name: String(data.name ?? ''),
     countryCode: data.countryCode as string | undefined,
+    currency: data.currency as string | undefined,
     creatorUserId: data.creatorUserId as string | undefined,
     companyLogoURL: data.companyLogoURL as string | undefined,
+    officeAddress: data.officeAddress as OrganizationDetails['officeAddress'],
     payrollTimePolicy: parsePayrollPolicy(data.payrollTimePolicy as Record<string, unknown> | undefined),
     annualLeaveDefaults: parseAnnualLeaveDefaults(data.annualLeaveDefaults as Record<string, unknown> | undefined),
     warningDetection: parseWarningDetection(data.warningDetection as Record<string, unknown> | undefined),
