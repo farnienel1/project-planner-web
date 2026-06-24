@@ -34,15 +34,15 @@ firebase deploy --only firestore:rules
 
 `firebase.json` in this repo points at `firestore.rules`.
 
-## What the rules allow
+## What changed vs your previous rules
 
-| Action | Who |
-|--------|-----|
-| Create `organizations/{id}` | Signed-in user who adds themselves to `members` |
-| Create/update `users/{authUid}` | Same user, or org admin inviting others |
-| Read/write org subcollections | Org members (projects, clients, skills, etc.) |
-| `users/{uid}/orgMemberships` | User + org admins (multi-org) |
-| Read `platformConfig` | Any signed-in user |
+Three small additions for **web org setup** and **multi-org** — everything else is your existing iOS rules:
+
+1. **`isOrgBootstrapAdminProfileCreate`** + **Path 3** on `users` create — lets the org creator write `users/{authUid}` right after creating the org (before a `users` doc exists for admin checks).
+2. **`users/{userId}/orgMemberships/{membershipOrgId}`** — required for Change organisation and cross-org invites.
+3. **`isOrgAdminViaMembersMap`** — org admin checks via `members` map (works during bootstrap before profile exists); used on `userEmails` and org `update`.
+
+Path 1 self-creation now also requires `request.auth.uid == userId` and case-insensitive email match.
 
 ## After publishing rules
 

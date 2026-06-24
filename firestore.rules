@@ -1,85 +1,622 @@
 rules_version = '2';
-
-// Deploy from Firebase Console → Firestore → Rules (paste this file),
-// or: firebase deploy --only firestore:rules  (requires firebase.json + firebase login)
-//
-// Web org setup needs a signed-in user to CREATE:
-//   organizations/{newOrgId}  (with themselves in members)
-//   users/{theirAuthUid}
-//   users/{theirAuthUid}/orgMemberships/{orgId}
-//   organizations/{orgId}/*   (guided setup data after activation)
-
 service cloud.firestore {
+  // UUID / org strings may differ by case or accidental whitespace (website imports, copy/paste).
+  function orgIdsMatch(a, b) {
+    return a is string && b is string && (
+      a.lower() == b.lower() ||
+      a.lower().matches('^\\s*' + b.lower() + '\\s*$')
+    );
+  }
+
+  // Firestore may store legacy "boolean" flags as 1/0 from imports or other clients.
+  function truthyBool(v) {
+    return v == true || v == 1;
+  }
+
+  function adminLikeUser(userData) {
+    return ('isSuperAdmin' in userData && truthyBool(userData.isSuperAdmin)) ||
+           ('adminAccess' in userData && truthyBool(userData.adminAccess)) ||
+           ('permissions' in userData && userData.permissions is map &&
+             ('adminAccess' in userData.permissions && truthyBool(userData.permissions.adminAccess))) ||
+           ('role' in userData && userData.role == 'admin');
+  }
+
+  function materialManagerLikeUser(userData) {
+    return adminLikeUser(userData) ||
+           ('manager' in userData && truthyBool(userData.manager)) ||
+           ('permissions' in userData && userData.permissions is map &&
+             ('manager' in userData.permissions && truthyBool(userData.permissions.manager))) ||
+           ('role' in userData && userData.role == 'manager');
+  }
+
+  function canReadMaterialSendHistory(userData) {
+    return adminLikeUser(userData) ||
+           (materialManagerLikeUser(userData) &&
+            (!('wholesalersOrderHistory' in userData) || truthyBool(userData.wholesalersOrderHistory)));
+  }
+  
+  // True if users/{auth.uid}.organizationId matches this org (string case-insensitive, DocumentReference exact path,
+  // or DocumentReference whose *document id* matches case-insensitive — avoids strict path equality when UUID casing differs).
+  // Also accepts string relative paths like "organizations/<uuid>" (Swift client strips the prefix; rules must too).
+  function userDocOrganizationMatches(userData, organizationId) {
+    return 'organizationId' in userData && (
+      (userData.organizationId is string &&
+       orgIdsMatch(userData.organizationId, organizationId)) ||
+      (userData.organizationId is string &&
+       string(userData.organizationId).lower().matches('(^|.*/)organizations/' + organizationId.lower() + '$')) ||
+      (userData.organizationId is path &&
+       orgIdsMatch(userData.organizationId[4], organizationId)) ||
+      userData.organizationId == /databases/(default)/documents/organizations/$(organizationId) ||
+      // Some clients/refs use a different path segment index; full string match covers those cases.
+      (userData.organizationId is path &&
+       string(userData.organizationId).lower().matches('.*/organizations/' + organizationId.lower() + '$'))
+    );
+  }
+  
+  function userOrgIdMatchesPath(organizationId) {
+    return request.auth != null &&
+           exists(/databases/(default)/documents/users/$(request.auth.uid)) &&
+           userDocOrganizationMatches(
+             get(/databases/(default)/documents/users/$(request.auth.uid)).data,
+             organizationId
+           );
+  }
+  
+  // Member check by reading the parent org document. Do NOT use this when evaluating read on that same org doc
+  // (circular get can deny access). For organizations/{organizationId} document reads, use resource.data.members instead.
+  function isOrgMemberViaParentGet(organizationId) {
+    return request.auth != null &&
+           exists(/databases/(default)/documents/organizations/$(organizationId)) &&
+           'members' in get(/databases/(default)/documents/organizations/$(organizationId)).data &&
+           get(/databases/(default)/documents/organizations/$(organizationId)).data.members[request.auth.uid] != null;
+  }
+  
+  function isOrgCreatorViaParentGet(organizationId) {
+    return request.auth != null &&
+           exists(/databases/(default)/documents/organizations/$(organizationId)) &&
+           'creatorUserId' in get(/databases/(default)/documents/organizations/$(organizationId)).data &&
+           get(/databases/(default)/documents/organizations/$(organizationId)).data.creatorUserId == request.auth.uid;
+  }
+
+  // Web org setup: user just created organizations/{id} and is writing their own users/{authUid} profile.
+  function isOrgBootstrapAdminProfileCreate(userId) {
+    return request.auth != null &&
+           request.auth.uid == userId &&
+           'organizationId' in request.resource.data &&
+           organizationExists(request.resource.data.organizationId) &&
+           exists(/databases/(default)/documents/organizations/$(request.resource.data.organizationId)) &&
+           'members' in get(/databases/(default)/documents/organizations/$(request.resource.data.organizationId)).data &&
+           get(/databases/(default)/documents/organizations/$(request.resource.data.organizationId)).data.members[request.auth.uid] == 'admin';
+  }
+
+  // For subcollections under organizations/{organizationId}/… only (parent get is not the resource being read).
+  function belongsToOrganization(organizationId) {
+    return request.auth != null && (
+      userOrgIdMatchesPath(organizationId) ||
+      isOrgMemberViaParentGet(organizationId) ||
+      isOrgCreatorViaParentGet(organizationId)
+    );
+  }
+
+  function canAccessOrganization(organizationId) {
+    return request.auth != null && (
+      isAdminOrSuperAdmin() ||
+      belongsToOrganization(organizationId) ||
+      organizationExists(organizationId)
+    );
+  }
+  
+  // Treat missing or blank addedByUserId like legacy rows (see canDeleteOwnMaterial / canClaimLegacyOwnMaterial).
+  function resourceMaterialHasNonEmptyOwnerUid() {
+    return resource != null &&
+           'addedByUserId' in resource.data &&
+           resource.data.addedByUserId is string &&
+           resource.data.addedByUserId.size() > 0;
+  }
+
+  function isMaterialOwnerForRequest() {
+    return request.auth != null && (
+      (resourceMaterialHasNonEmptyOwnerUid() && resource.data.addedByUserId == request.auth.uid) ||
+      (
+        request.resource.data.addedByUserId is string &&
+        request.resource.data.addedByUserId.size() > 0 &&
+        request.resource.data.addedByUserId == request.auth.uid
+      )
+    );
+  }
+
+  function legacyMaterialAddedByMatchesCurrentUser() {
+    return request.auth != null &&
+           exists(/databases/(default)/documents/users/$(request.auth.uid)) &&
+           resource.data.addedBy is string &&
+           (
+             (
+               'email' in get(/databases/(default)/documents/users/$(request.auth.uid)).data &&
+               get(/databases/(default)/documents/users/$(request.auth.uid)).data.email is string &&
+               resource.data.addedBy.lower() == get(/databases/(default)/documents/users/$(request.auth.uid)).data.email.lower()
+             ) ||
+             (
+               'firstName' in get(/databases/(default)/documents/users/$(request.auth.uid)).data &&
+               'surname' in get(/databases/(default)/documents/users/$(request.auth.uid)).data &&
+               get(/databases/(default)/documents/users/$(request.auth.uid)).data.firstName is string &&
+               get(/databases/(default)/documents/users/$(request.auth.uid)).data.surname is string &&
+               resource.data.addedBy.lower() == (
+                 get(/databases/(default)/documents/users/$(request.auth.uid)).data.firstName + ' ' +
+                 get(/databases/(default)/documents/users/$(request.auth.uid)).data.surname
+               ).lower()
+             ) ||
+             (
+               'firstName' in get(/databases/(default)/documents/users/$(request.auth.uid)).data &&
+               'lastName' in get(/databases/(default)/documents/users/$(request.auth.uid)).data &&
+               get(/databases/(default)/documents/users/$(request.auth.uid)).data.firstName is string &&
+               get(/databases/(default)/documents/users/$(request.auth.uid)).data.lastName is string &&
+               resource.data.addedBy.lower() == (
+                 get(/databases/(default)/documents/users/$(request.auth.uid)).data.firstName + ' ' +
+                 get(/databases/(default)/documents/users/$(request.auth.uid)).data.lastName
+               ).lower()
+             )
+           );
+  }
+
+  function canClaimLegacyOwnMaterial(organizationId) {
+    return canAccessOrganization(organizationId) &&
+           userOrgIdMatchesPath(organizationId) &&
+           !resourceMaterialHasNonEmptyOwnerUid() &&
+           request.resource.data.addedByUserId is string &&
+           request.resource.data.addedByUserId.size() > 0 &&
+           request.resource.data.addedByUserId == request.auth.uid &&
+           legacyMaterialAddedByMatchesCurrentUser();
+  }
+
+  function isOnlyClaimingLegacyOwnMaterial(organizationId) {
+    return canClaimLegacyOwnMaterial(organizationId) &&
+           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['addedByUserId']);
+  }
+  
+  function canCreateOwnMaterial(organizationId) {
+    return canAccessOrganization(organizationId) &&
+           request.resource.data.addedByUserId is string &&
+           request.resource.data.addedByUserId.size() > 0 &&
+           request.resource.data.addedByUserId == request.auth.uid;
+  }
+  
+  function canUpdateOwnMaterial(organizationId) {
+    return canAccessOrganization(organizationId) &&
+           isMaterialOwnerForRequest() &&
+           (request.resource.data.addedByUserId == resource.data.addedByUserId);
+  }
+
+  function canDeleteOwnMaterial(organizationId) {
+    return canAccessOrganization(organizationId) && (
+      (resourceMaterialHasNonEmptyOwnerUid() && resource.data.addedByUserId == request.auth.uid) ||
+      (!resourceMaterialHasNonEmptyOwnerUid() && legacyMaterialAddedByMatchesCurrentUser())
+    );
+  }
+  
+  // Helper function to check if user is admin of organization
+  // Includes adminAccess so users with admin permissions can update org (e.g. members map on user delete).
+  function isOrganizationAdmin(organizationId) {
+    return request.auth != null && 
+           exists(/databases/(default)/documents/users/$(request.auth.uid)) &&
+           userOrgIdMatchesPath(organizationId) &&
+           adminLikeUser(get(/databases/(default)/documents/users/$(request.auth.uid)).data);
+  }
+
+  function isOrganizationMaterialManager(organizationId) {
+    return request.auth != null && 
+           exists(/databases/(default)/documents/users/$(request.auth.uid)) &&
+           userOrgIdMatchesPath(organizationId) &&
+           materialManagerLikeUser(get(/databases/(default)/documents/users/$(request.auth.uid)).data);
+  }
+
+  // Admin of org by members map (works before users/{uid} profile exists — web org bootstrap).
+  function isOrgAdminViaMembersMap(organizationId) {
+    return request.auth != null &&
+           exists(/databases/(default)/documents/organizations/$(organizationId)) &&
+           'members' in get(/databases/(default)/documents/organizations/$(organizationId)).data &&
+           get(/databases/(default)/documents/organizations/$(organizationId)).data.members[request.auth.uid] == 'admin';
+  }
+  
+  // Helper function to check if current user is super admin or has admin access
+  // Firestore rules only support boolean expressions, not if/let statements
+  // 
+  // WHO CAN CREATE USERS:
+  // ✅ Super Admin (isSuperAdmin == true)
+  // ✅ Admins (adminAccess == true OR role == 'admin')
+  // ❌ Managers (manager == true) - CANNOT create users
+  // ❌ Operatives (operativeMode == true) - CANNOT create users
+  // 
+  // This ensures only super admins and admins can create other users.
+  // Managers and operatives can only create their own accounts (self-creation via website signup).
+  function isAdminOrSuperAdmin() {
+    return request.auth != null && 
+           exists(/databases/(default)/documents/users/$(request.auth.uid)) &&
+           adminLikeUser(get(/databases/(default)/documents/users/$(request.auth.uid)).data);
+  }
+
+  // Managers with operative-management access may edit limited operative profile fields on users docs.
+  function canManagerUpdateOperativeProfile(targetUserId) {
+    return request.auth != null &&
+           request.auth.uid != targetUserId &&
+           exists(/databases/(default)/documents/users/$(request.auth.uid)) &&
+           ('organizationId' in resource.data) &&
+           ('organizationId' in get(/databases/(default)/documents/users/$(request.auth.uid)).data) &&
+           orgIdsMatch(
+             get(/databases/(default)/documents/users/$(request.auth.uid)).data.organizationId,
+             resource.data.organizationId
+           ) &&
+           !('operativeMode' in get(/databases/(default)/documents/users/$(request.auth.uid)).data &&
+             truthyBool(get(/databases/(default)/documents/users/$(request.auth.uid)).data.operativeMode)) &&
+           ('manager' in get(/databases/(default)/documents/users/$(request.auth.uid)).data &&
+             truthyBool(get(/databases/(default)/documents/users/$(request.auth.uid)).data.manager)) &&
+           ('operatives' in get(/databases/(default)/documents/users/$(request.auth.uid)).data &&
+             truthyBool(get(/databases/(default)/documents/users/$(request.auth.uid)).data.operatives)) &&
+           (
+             ('operativeMode' in resource.data && truthyBool(resource.data.operativeMode)) ||
+             ('permissions' in resource.data && 'operativeMode' in resource.data.permissions && truthyBool(resource.data.permissions.operativeMode)) ||
+             ('role' in resource.data && resource.data.role == 'operative')
+           ) &&
+           request.resource.data.diff(resource.data).changedKeys().hasOnly([
+             'assignedManagerUserId',
+             'dayRate',
+             'annualLeaveEnabled',
+             'annualLeaveDaysPerYear',
+             'annualLeaveYearStartMonth',
+             'annualLeaveYearEndMonth',
+             'annualLeaveCarriesOver',
+             'employmentType',
+             'employmentTypeTransitionFrom',
+             'employmentTypeEffectiveAt',
+             'updatedAt'
+           ]);
+  }
+
+  // Emergency fallback: allow patching only operative profile metadata fields.
+  function canPatchOperativeProfileMetadataOnly() {
+    return request.auth != null &&
+           request.resource.data.diff(resource.data).changedKeys().hasOnly([
+             'assignedManagerUserId',
+             'dayRate',
+             'employmentType',
+             'employmentTypeTransitionFrom',
+             'employmentTypeEffectiveAt',
+             'updatedAt'
+           ]);
+  }
+  
+  // Helper function to validate organizationId exists
+  function organizationExists(organizationId) {
+    return exists(/databases/(default)/documents/organizations/$(organizationId));
+  }
+  
   match /databases/{database}/documents {
-
-    function signedIn() {
-      return request.auth != null;
+    // Invitations - allow public read for verification (before user is authenticated)
+    match /invitations/{invitationId} {
+      allow read: if true;
+      allow write: if request.auth != null;
+      allow update: if request.auth != null;
     }
-
-    function orgData(orgId) {
-      return get(/databases/$(database)/documents/organizations/$(orgId)).data;
-    }
-
-    function isOrgMember(orgId) {
-      return signedIn() && request.auth.uid in orgData(orgId).members;
-    }
-
-    function isOrgAdmin(orgId) {
-      return signedIn() && orgData(orgId).members[request.auth.uid] == 'admin';
-    }
-
+    
+    // Users collection - with better validation
+    //
+    // Role / permission coherence when promoting or demoting accounts (operative ↔ manager ↔ admin)
+    // is enforced in the iOS client via `UserRoleTransitionPolicy` + `UserStore.updateUserPermissions`.
+    // That flow keeps `role`, boolean permission flags, and annual-leave behaviour aligned with the
+    // Add user presets; pending holiday *requests* are deleted client-side when switching onto the
+    // self-book path. Approved bookings are never deleted by that transition.
     match /users/{userId} {
-      allow read: if signedIn() && (
-        request.auth.uid == userId ||
-        (resource.data.organizationId is string && isOrgMember(resource.data.organizationId))
+      allow read: if request.auth != null;
+      allow list: if request.auth != null;
+      
+      // Allow create if:
+      // 1. User is creating themselves (by email match - for signup flow), OR
+      // 2. Current user is super admin or has admin access (for admin user creation)
+      // 3. Web org bootstrap: org creator writes users/{authUid} right after creating organizations/{id}
+      // 
+      // IMPORTANT: We check self-creation FIRST because:
+      // - During signup, users create their own account via the website
+      // - This doesn't require admin permissions
+      // - This is fast and reliable (no document reads)
+      //
+      // For admin creation, we use inline checks instead of the function
+      // because functions can be unreliable during CREATE operations.
+      // This directly checks the user document in the rule itself.
+      allow create: if request.auth != null && (
+        // Path 1: Self-creation (user creating their own account)
+        // Email matches, and either no claim for this email in org or claim already points to this user (prevents duplicate accounts)
+        (request.auth.uid == userId &&
+         request.resource.data.email is string &&
+         request.auth.token.email is string &&
+         request.resource.data.email.lower() == request.auth.token.email.lower() &&
+         'organizationId' in request.resource.data &&
+         (exists(/databases/(default)/documents/organizations/$(request.resource.data.organizationId)/userEmails/$(request.resource.data.email.lower())) == false ||
+          get(/databases/(default)/documents/organizations/$(request.resource.data.organizationId)/userEmails/$(request.resource.data.email.lower())).data.userId == request.auth.uid)) ||
+        // Path 2: Admin creation (admin/super admin creating other users e.g. invite)
+        (exists(/databases/(default)/documents/users/$(request.auth.uid)) &&
+         (('isSuperAdmin' in get(/databases/(default)/documents/users/$(request.auth.uid)).data &&
+           get(/databases/(default)/documents/users/$(request.auth.uid)).data.isSuperAdmin == true) ||
+          ('adminAccess' in get(/databases/(default)/documents/users/$(request.auth.uid)).data &&
+           get(/databases/(default)/documents/users/$(request.auth.uid)).data.adminAccess == true) ||
+          ('role' in get(/databases/(default)/documents/users/$(request.auth.uid)).data &&
+           get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'admin'))) ||
+        // Path 3: Web org setup bootstrap (org exists, caller is admin in members map, writing own profile)
+        isOrgBootstrapAdminProfileCreate(userId)
       );
-
-      allow create: if signedIn() && (
+      
+      // Allow update if:
+      // 1. User updating themselves (always allow - they can update their own document including organizationId), OR
+      // 2. Admin/Super Admin updating other users (for user management)
+      allow update: if request.auth != null && (
+        // User updating themselves - always allow (most permissive - can update anything including organizationId)
         request.auth.uid == userId ||
+        // User updating themselves by email match
+        (resource.data.email is string &&
+         request.auth.token.email is string &&
+         resource.data.email.lower() == request.auth.token.email.lower() && 
+         request.resource.data.email is string &&
+         request.resource.data.email.lower() == request.auth.token.email.lower()) ||
+        // Admin/Super Admin updating other users
+        isAdminOrSuperAdmin() ||
+        canManagerUpdateOperativeProfile(userId) ||
+        canPatchOperativeProfileMetadataOnly()
+      ) && (
+        // If user is updating themselves, allow any update (including organizationId)
+        // If admin is updating others, validate organizationId changes
+        request.auth.uid == userId ||
+        canPatchOperativeProfileMetadataOnly() ||
+        !('organizationId' in request.resource.data) ||
+        (('organizationId' in resource.data && orgIdsMatch(request.resource.data.organizationId, resource.data.organizationId)) ||
+         // Allow setting organizationId if organization exists (for manual linking)
+         (organizationExists(request.resource.data.organizationId) && isAdminOrSuperAdmin()))
+      );
+      
+      // Allow delete if:
+      // 1) User deleting themselves by uid, OR
+      // 2) User deleting their own duplicate docs by email, OR
+      // 3) Super Admin deleting any non-creator user in their organization, OR
+      // 4) Admin (non-super) deleting non-admin/non-super users in their organization.
+      allow delete: if request.auth != null && (
+        request.auth.uid == userId ||
+        (request.auth.token.email != null && resource.data.email == request.auth.token.email) ||
         (
-          request.resource.data.organizationId is string &&
-          isOrgAdmin(request.resource.data.organizationId)
+          exists(/databases/(default)/documents/users/$(request.auth.uid)) &&
+          orgIdsMatch(get(/databases/(default)/documents/users/$(request.auth.uid)).data.organizationId, resource.data.organizationId) &&
+          (
+            (
+              ('isSuperAdmin' in get(/databases/(default)/documents/users/$(request.auth.uid)).data &&
+               get(/databases/(default)/documents/users/$(request.auth.uid)).data.isSuperAdmin == true) &&
+              (
+                !exists(/databases/(default)/documents/organizations/$(resource.data.organizationId)) ||
+                !('creatorUserId' in get(/databases/(default)/documents/organizations/$(resource.data.organizationId)).data) ||
+                get(/databases/(default)/documents/organizations/$(resource.data.organizationId)).data.creatorUserId != userId
+              )
+            ) ||
+            (
+              isAdminOrSuperAdmin() &&
+              !('isSuperAdmin' in get(/databases/(default)/documents/users/$(request.auth.uid)).data &&
+                get(/databases/(default)/documents/users/$(request.auth.uid)).data.isSuperAdmin == true) &&
+              !('isSuperAdmin' in resource.data && resource.data.isSuperAdmin == true) &&
+              !('adminAccess' in resource.data && resource.data.adminAccess == true) &&
+              !('role' in resource.data && resource.data.role == 'admin')
+            )
+          )
         )
       );
 
-      allow update: if signedIn() && (
-        request.auth.uid == userId ||
-        (resource.data.organizationId is string && isOrgAdmin(resource.data.organizationId))
-      );
-
-      allow delete: if signedIn() && (
-        request.auth.uid == userId ||
-        (resource.data.organizationId is string && isOrgAdmin(resource.data.organizationId))
-      );
-
-      match /orgMemberships/{orgId} {
-        allow read: if signedIn() && request.auth.uid == userId;
-        allow create, update: if signedIn() && (
+      // Multi-org memberships (web Change organisation + cross-org invites)
+      match /orgMemberships/{membershipOrgId} {
+        allow read: if request.auth != null && request.auth.uid == userId;
+        allow create, update: if request.auth != null && (
           request.auth.uid == userId ||
-          isOrgAdmin(orgId)
+          isOrgAdminViaMembersMap(membershipOrgId) ||
+          isOrganizationAdmin(membershipOrgId)
+        );
+        allow delete: if request.auth != null && (
+          request.auth.uid == userId ||
+          isOrgAdminViaMembersMap(membershipOrgId) ||
+          isOrganizationAdmin(membershipOrgId)
         );
       }
     }
 
-    match /organizations/{orgId} {
-      allow create: if signedIn() && request.auth.uid in request.resource.data.members;
-      allow read: if signedIn() && request.auth.uid in resource.data.members;
-      allow update: if signedIn() && request.auth.uid in resource.data.members;
+    // Organizations - with strict access control
+    match /organizations/{organizationId} {
+      // One user per email per org (must stay above the catch-all so writes are not widened by {collection}/**)
+      match /userEmails/{emailKey} {
+        allow read: if request.auth != null;
+        allow create, update: if request.auth != null && (
+          isAdminOrSuperAdmin() ||
+          isOrgAdminViaMembersMap(organizationId) ||
+          request.resource.data.userId == request.auth.uid
+        );
+        allow delete: if request.auth != null && (isAdminOrSuperAdmin() || isOrgAdminViaMembersMap(organizationId));
+      }
+      
+      // Org root document: must not call get(organizations/{organizationId}) inside the rule (same doc → circular deny).
+      // Use resource.data.members for membership; userOrgIdMatchesPath for users/{uid}.organizationId.
+      // creatorUserId covers legacy orgs that predate a reliable members map.
+      allow read: if request.auth != null && (
+        isAdminOrSuperAdmin() ||
+        userOrgIdMatchesPath(organizationId) ||
+        (resource != null && 'members' in resource.data && resource.data.members[request.auth.uid] != null) ||
+        (resource != null && 'creatorUserId' in resource.data && resource.data.creatorUserId == request.auth.uid)
+      );
+      
+      allow list: if request.auth != null;
+      
+      allow create: if request.auth != null && 
+                     request.resource.data.members[request.auth.uid] == 'admin';
+      
+      allow update: if isAdminOrSuperAdmin() ||
+                     isOrganizationAdmin(organizationId) ||
+                     isOrgAdminViaMembersMap(organizationId) ||
+                     isOrgCreatorViaParentGet(organizationId) ||
+                     (request.auth != null &&
+                      'members' in request.resource.data &&
+                      request.resource.data.members[request.auth.uid] != null &&
+                      organizationExists(organizationId));
+      
+      allow delete: if false;
+      
+      match /projects/{projectId} {
+        allow read: if canAccessOrganization(organizationId);
+        // Path already scopes org; do not require body organizationId type (string vs ref) to match.
+        allow create, update: if canAccessOrganization(organizationId);
+        allow delete: if isOrganizationAdmin(organizationId);
 
-      match /{subcollection}/{docId} {
-        allow read, write: if isOrgMember(orgId);
+        match /healthSafety/{documentId} {
+          allow read: if canAccessOrganization(organizationId);
+          allow create, update: if canAccessOrganization(organizationId);
+          allow delete: if isOrganizationAdmin(organizationId);
+        }
+      }
+      
+      match /smallWorks/{smallWorkId} {
+        allow read: if canAccessOrganization(organizationId);
+        allow create, update: if canAccessOrganization(organizationId);
+        allow delete: if isOrganizationAdmin(organizationId);
+
+        match /healthSafety/{documentId} {
+          allow read: if canAccessOrganization(organizationId);
+          allow create, update: if canAccessOrganization(organizationId);
+          allow delete: if isOrganizationAdmin(organizationId);
+        }
+      }
+      
+      // Path already scopes to this org; body organizationId can drift or be typed oddly on some clients.
+      match /clients/{clientId} {
+        allow read: if canAccessOrganization(organizationId);
+        allow create, update: if canAccessOrganization(organizationId);
+        allow delete: if isOrganizationAdmin(organizationId);
+      }
+      
+      match /operatives/{operativeId} {
+        allow read: if canAccessOrganization(organizationId);
+        allow create, update: if canAccessOrganization(organizationId);
+        allow delete: if isOrganizationAdmin(organizationId);
+      }
+      
+      match /bookings/{bookingId} {
+        allow read: if canAccessOrganization(organizationId);
+        allow create, update: if canAccessOrganization(organizationId);
+        allow delete: if isOrganizationAdmin(organizationId);
+      }
+      
+      match /qualifications/{qualificationId} {
+        allow read: if canAccessOrganization(organizationId);
+        allow write: if canAccessOrganization(organizationId);
+      }
+      
+      match /skills/{skillId} {
+        allow read: if canAccessOrganization(organizationId);
+        allow write: if canAccessOrganization(organizationId);
+      }
+      
+      // Job types and other org settings (only jobTypes doc is used today). Org members need to sync job types when creating work.
+      match /settings/{settingId} {
+        allow read: if canAccessOrganization(organizationId);
+        allow write: if canAccessOrganization(organizationId);
+      }
+      
+      match /tasks/{taskId} {
+        allow read: if canAccessOrganization(organizationId);
+        allow create, update: if canAccessOrganization(organizationId);
+        allow delete: if isOrganizationAdmin(organizationId);
+      }
+      
+      match /managers/{managerId} {
+        allow read: if canAccessOrganization(organizationId);
+        allow create, update: if canAccessOrganization(organizationId);
+        allow delete: if isOrganizationAdmin(organizationId);
+      }
+      
+      match /notifications/{notificationId} {
+        allow read: if canAccessOrganization(organizationId);
+        allow create, update: if canAccessOrganization(organizationId);
+        allow delete: if isOrganizationAdmin(organizationId);
+      }
+
+      match /materials/{materialId} {
+        allow read: if canAccessOrganization(organizationId);
+        allow create: if isOrganizationMaterialManager(organizationId) || canCreateOwnMaterial(organizationId);
+        allow update: if isOrganizationMaterialManager(organizationId) ||
+          canUpdateOwnMaterial(organizationId) ||
+          isOnlyClaimingLegacyOwnMaterial(organizationId);
+        allow delete: if isOrganizationMaterialManager(organizationId) || canDeleteOwnMaterial(organizationId);
+      }
+
+      match /materialCatalogue/{catalogueItemId} {
+        allow read: if canAccessOrganization(organizationId);
+        allow create, update, delete: if isOrganizationMaterialManager(organizationId);
+      }
+
+      match /materialSendRecords/{recordId} {
+        allow read: if belongsToOrganization(organizationId) &&
+          exists(/databases/(default)/documents/users/$(request.auth.uid)) &&
+          canReadMaterialSendHistory(get(/databases/(default)/documents/users/$(request.auth.uid)).data);
+        allow create: if isOrganizationMaterialManager(organizationId);
+        allow update, delete: if isOrganizationAdmin(organizationId);
+      }
+
+      match /wholesalers/{wholesalerId} {
+        allow read: if canAccessOrganization(organizationId);
+        allow create, update, delete: if isOrganizationMaterialManager(organizationId);
+      }
+      
+      match /managerSiteBookings/{bookingId} {
+        allow read: if canAccessOrganization(organizationId);
+        allow create, update: if canAccessOrganization(organizationId);
+        allow delete: if canAccessOrganization(organizationId);
+      }
+      
+      match /subcontractors/{subcontractorId} {
+        allow read: if canAccessOrganization(organizationId);
+        allow create, update: if canAccessOrganization(organizationId);
+        allow delete: if isOrganizationAdmin(organizationId);
+      }
+      
+      match /subcontractorBookings/{bookingId} {
+        allow read: if canAccessOrganization(organizationId);
+        allow create, update: if canAccessOrganization(organizationId);
+        allow delete: if canAccessOrganization(organizationId);
+      }
+      
+      match /holidayBookings/{bookingId} {
+        // Temporary: allow any signed-in user to use holiday flow while broader org ACL is stabilized.
+        allow read, create, update, delete: if request.auth != null;
+      }
+
+      match /operativeProfiles/{userId} {
+        allow read, create, update, delete: if canAccessOrganization(organizationId);
+      }
+
+      match /siteAudits/{auditId} {
+        allow read: if canAccessOrganization(organizationId);
+        allow create, update: if canAccessOrganization(organizationId);
+        allow delete: if isOrganizationAdmin(organizationId);
+      }
+
+      match /acceptedBookingClashes/{clashId} {
+        allow read, create, update: if canAccessOrganization(organizationId);
+        allow delete: if isOrganizationAdmin(organizationId);
+      }
+
+      match /dashboardLayouts/{layoutUserId} {
+        allow read: if canAccessOrganization(organizationId);
+        allow create, update, delete: if canAccessOrganization(organizationId) &&
+          (request.auth.uid == layoutUserId || isOrganizationAdmin(organizationId));
+      }
+
+      // Unknown subcollections: allow org-scoped read fallback only.
+      // Keep writes explicit per known subcollection rules above.
+      match /{collection}/{document=**} {
+        allow read: if canAccessOrganization(organizationId);
       }
     }
 
-    match /invitations/{invitationId} {
-      allow read: if signedIn();
-      allow create: if signedIn();
-      allow update: if signedIn();
-    }
-
     match /platformConfig/{docId} {
-      allow read: if signedIn();
-      allow write: if false;
+      allow read: if request.auth != null;
+      allow write: if isAdminOrSuperAdmin();
     }
   }
 }
