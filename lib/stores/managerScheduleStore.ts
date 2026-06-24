@@ -1,15 +1,31 @@
 'use client'
 
 import { create } from 'zustand'
-import { collection, getDocs } from 'firebase/firestore'
+import { addDoc, collection, deleteDoc, doc, getDocs, Timestamp } from 'firebase/firestore'
+import { startOfDay } from 'date-fns'
 import { db } from '@/lib/firebase/config'
+import { sanitizeForFirestore } from '@/lib/firebase/firestoreUtils'
 import type { ManagerLocationType, ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
+
+export type SaveManagerSiteBookingInput = {
+  userId: string
+  date: Date
+  timeSlot: string
+  locationType: ManagerLocationType
+  locationId?: string
+  customLocationName?: string
+  workStartTime?: string
+  workEndTime?: string
+  isBreakRemoved?: boolean
+}
 
 interface ManagerScheduleState {
   managerSiteBookings: ManagerSiteBooking[]
   loading: boolean
   error: string | null
   loadManagerSiteBookings: (organizationId: string) => Promise<void>
+  saveManagerSiteBooking: (organizationId: string, booking: SaveManagerSiteBookingInput) => Promise<void>
+  deleteManagerSiteBooking: (organizationId: string, bookingId: string) => Promise<void>
 }
 
 function parseLocationType(value: unknown): ManagerLocationType {
@@ -27,7 +43,7 @@ function parseLocationType(value: unknown): ManagerLocationType {
   return 'project'
 }
 
-export const useManagerScheduleStore = create<ManagerScheduleState>((set) => ({
+export const useManagerScheduleStore = create<ManagerScheduleState>((set, get) => ({
   managerSiteBookings: [],
   loading: false,
   error: null,
@@ -70,5 +86,29 @@ export const useManagerScheduleStore = create<ManagerScheduleState>((set) => ({
       const message = error instanceof Error ? error.message : 'Failed to load manager schedule'
       set({ error: message, loading: false })
     }
+  },
+
+  saveManagerSiteBooking: async (organizationId: string, booking: SaveManagerSiteBookingInput) => {
+    const payload = sanitizeForFirestore({
+      userId: booking.userId,
+      date: Timestamp.fromDate(startOfDay(booking.date)),
+      timeSlot: booking.timeSlot,
+      locationType: booking.locationType,
+      locationId: booking.locationId ?? null,
+      customLocationName: booking.customLocationName ?? null,
+      workStartTime: booking.workStartTime ?? null,
+      workEndTime: booking.workEndTime ?? null,
+      isBreakRemoved: booking.isBreakRemoved === true,
+      createdAt: Timestamp.now(),
+      updatedAt: Timestamp.now(),
+    })
+
+    await addDoc(collection(db, 'organizations', organizationId, 'managerSiteBookings'), payload)
+    await get().loadManagerSiteBookings(organizationId)
+  },
+
+  deleteManagerSiteBooking: async (organizationId: string, bookingId: string) => {
+    await deleteDoc(doc(db, 'organizations', organizationId, 'managerSiteBookings', bookingId))
+    await get().loadManagerSiteBookings(organizationId)
   },
 }))

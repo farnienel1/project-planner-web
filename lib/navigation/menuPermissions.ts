@@ -124,6 +124,16 @@ export function canViewMySchedule(user: User | null): boolean {
   return Boolean(user)
 }
 
+/**
+ * iOS My Schedule self-booking mode: admins/super-admins and managers with
+ * timesheets enabled can book office / WFH / projects via managerSiteBookings.
+ */
+export function canSelfBookMySchedule(user: User | null): boolean {
+  if (!user || isOperativeMode(user)) return false
+  if (hasAdminAccess(user)) return true
+  return user.permissions.manager === true && user.timesheetsEnabled === true
+}
+
 export function parseUserPermissions(
   userData: Record<string, unknown>,
   isSuperAdmin: boolean

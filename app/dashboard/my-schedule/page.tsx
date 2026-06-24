@@ -8,11 +8,12 @@ import { useManagerScheduleStore } from '@/lib/stores/managerScheduleStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
 import { useProjectStore } from '@/lib/stores/projectStore'
 import { findOperativeForUser, getActiveOperativesForScheduling } from '@/lib/operatives/operativeRosterUtils'
-import { isOperativeMode } from '@/lib/navigation/menuPermissions'
+import { canSelfBookMySchedule, isOperativeMode } from '@/lib/navigation/menuPermissions'
 import { managerSiteBookingToScheduleBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import { loadOrganizationDetails } from '@/lib/settings/organizationSettings'
 import { DEFAULT_PAYROLL_POLICY, type OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
-import { ScheduleScreen } from '@/components/schedule/ScheduleScreen'
+import { MyScheduleSelfBookingScreen } from '@/components/schedule/MyScheduleSelfBookingScreen'
+import { MyScheduleReadOnlyScreen } from '@/components/schedule/MyScheduleReadOnlyScreen'
 import { LoadingSpinner } from '@/components/dashboard/PageShell'
 import type { Booking } from '@/types'
 
@@ -29,15 +30,15 @@ function MySchedulePageContent() {
   const { projects, smallWorks, loadProjects, loadSmallWorks } = useProjectStore()
   const [payrollPolicy, setPayrollPolicy] = useState<OrgPayrollTimePolicy>(DEFAULT_PAYROLL_POLICY)
 
+  const selfBooking = canSelfBookMySchedule(user)
+
   useEffect(() => {
     if (!organization?.id) return
     loadOrganizationDetails(organization.id)
       .then((details) => {
         if (details?.payrollTimePolicy) setPayrollPolicy(details.payrollTimePolicy)
       })
-      .catch(() => {
-        // Keep default policy when org details are unavailable.
-      })
+      .catch(() => {})
   }, [organization?.id])
 
   useEffect(() => {
@@ -45,15 +46,17 @@ function MySchedulePageContent() {
   }, [loading, user, router])
 
   useEffect(() => {
-    if (organization?.id) {
+    if (!organization?.id) return
+    loadManagerSiteBookings(organization.id)
+    if (!selfBooking) {
       loadBookings(organization.id)
-      loadManagerSiteBookings(organization.id)
       loadOperatives(organization.id)
-      loadProjects(organization.id, true)
-      loadSmallWorks(organization.id)
     }
+    loadProjects(organization.id, true)
+    loadSmallWorks(organization.id)
   }, [
     organization?.id,
+    selfBooking,
     loadBookings,
     loadManagerSiteBookings,
     loadOperatives,
@@ -119,15 +122,13 @@ function MySchedulePageContent() {
     [deleteBooking, organization?.id]
   )
 
-  if (loading || !user) return null
+  if (loading || !user || !organization?.id) return null
 
   const displayName =
     (linkedOperative && operativesById.get(linkedOperative.id)) ||
     user.firstName ||
     'You'
 
-  // Operatives must be linked to a roster profile. Admins/managers always get the full week
-  // calendar (office, WFH, site bookings) even when the current week has no entries yet.
   if (isOperativeMode(user) && !linkedOperative) {
     return (
       <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-16 text-center">
@@ -140,11 +141,21 @@ function MySchedulePageContent() {
     )
   }
 
+  if (selfBooking) {
+    return (
+      <MyScheduleSelfBookingScreen
+        userId={user.id}
+        organizationId={organization.id}
+        organizationName={organization.name || 'your organisation'}
+        payrollPolicy={payrollPolicy}
+      />
+    )
+  }
+
   return (
-    <ScheduleScreen
-      variant="personal"
-      organizationName={organization?.name || 'your organisation'}
-      organizationId={organization?.id}
+    <MyScheduleReadOnlyScreen
+      organizationName={organization.name || 'your organisation'}
+      organizationId={organization.id}
       bookings={personalBookings}
       operativesById={operativesById}
       projectsById={projectsById}
