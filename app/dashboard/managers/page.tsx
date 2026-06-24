@@ -1,7 +1,6 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import Link from 'next/link'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
@@ -84,15 +83,6 @@ export default function ManagersPage() {
             {allManagerUsers.filter((user) => matchesRosterSegment(user, 'active')).length} active ·{' '}
             {allManagerUsers.length} total
           </div>
-          <Link
-            href="/dashboard/managers/new"
-            className="flex items-center space-x-2 rounded-lg bg-blue-600 px-4 py-2 text-white transition-colors hover:bg-blue-700"
-          >
-            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-            <span>New Manager</span>
-          </Link>
         </div>
 
         <StaffRosterFilters

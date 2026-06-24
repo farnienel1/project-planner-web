@@ -72,7 +72,7 @@ export const MANAGER_PERMISSION_TOGGLES: PermissionToggleDef[] = [
   },
   {
     key: 'annualLeaveSelfBook',
-    title: 'Annual leave',
+    title: 'Annual Leave Management',
     description: 'Can book their own annual leave. If off, this manager requests leave for approval.',
   },
   {
@@ -84,5 +84,10 @@ export const MANAGER_PERMISSION_TOGGLES: PermissionToggleDef[] = [
     key: 'siteAudit',
     title: 'Site audit',
     description: 'Can view and submit site audits.',
+  },
+  {
+    key: 'wholesalersOrderHistory',
+    title: 'Wholesalers (Order & Quote History)',
+    description: 'Can view wholesaler order and quote history.',
   },
 ]

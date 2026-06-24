@@ -183,7 +183,7 @@ export function AddUserScreen() {
 
   const adminPermissionDefs = useMemo(() => MANAGER_PERMISSION_TOGGLES, [])
 
-  const showSetup = accountType === 'manager' || accountType === 'operative'
+  const showSetup = true
   const showPermissions = accountType !== 'admin'
   const showAdminPermissions = accountType === 'admin'
 
@@ -505,7 +505,15 @@ export function AddUserScreen() {
 
       {showSetup && (
         <>
-          <SectionLabel label={accountType === 'operative' ? 'Operative setup' : 'Manager setup'} />
+          <SectionLabel
+            label={
+              accountType === 'operative'
+                ? 'Operative setup'
+                : accountType === 'admin'
+                  ? 'Administrator setup'
+                  : 'Manager setup'
+            }
+          />
           <SettingsCard>
             <div className="space-y-4 p-4">
               <FormField label="Line manager" hint="“No line manager” is a valid choice — same as iOS.">
