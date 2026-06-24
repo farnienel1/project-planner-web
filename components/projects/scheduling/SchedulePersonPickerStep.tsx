@@ -8,18 +8,31 @@ import {
   type SchedulablePersonKind,
 } from '@/lib/scheduling/scheduleRosterUtils'
 import type { DraftBookingPerson } from '@/lib/scheduling/draftProjectBooking'
+import {
+  SchedulePersonDayRows,
+  SchedulePersonPickerRow,
+} from '@/components/projects/scheduling/SchedulePersonDayRows'
+import type { ScheduleDateSlot } from '@/lib/scheduling/scheduleUtils'
 import type { Operative, User } from '@/types'
 
 export function SchedulePersonPickerStep({
   operatives,
   users,
   draftPeople,
+  slots,
+  selectedPersonId,
+  activePerson,
   onSelectPerson,
+  onActivePersonChange,
 }: {
   operatives: Operative[]
   users: User[]
   draftPeople: DraftBookingPerson[]
+  slots: ScheduleDateSlot[]
+  selectedPersonId: string | null
+  activePerson: DraftBookingPerson | null
   onSelectPerson: (person: SchedulablePerson) => void
+  onActivePersonChange: (person: DraftBookingPerson) => void
 }) {
   const [search, setSearch] = useState('')
   const [kindFilter, setKindFilter] = useState<'all' | SchedulablePersonKind>('all')
@@ -38,7 +51,7 @@ export function SchedulePersonPickerStep({
       <div>
         <p className="text-sm font-semibold text-slate-900">Add operative or manager</p>
         <p className="mt-1 text-sm text-slate-600">
-          Choose someone to book on the selected dates. Clashes are checked per day next.
+          Tap someone to select them. Their days and any clashes appear below.
         </p>
       </div>
 
@@ -67,34 +80,42 @@ export function SchedulePersonPickerStep({
         ))}
       </div>
 
-      <div className="max-h-[28rem] space-y-2 overflow-y-auto rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+      <div className="space-y-2">
         {filteredPeople.length === 0 ? (
-          <p className="py-6 text-center text-sm text-slate-500">No people match your search.</p>
+          <div className="rounded-2xl border border-slate-200 bg-white p-6 text-center shadow-sm">
+            <p className="text-sm text-slate-500">No people match your search.</p>
+          </div>
         ) : (
-          filteredPeople.map((person) => (
-            <button
-              key={person.id}
-              type="button"
-              onClick={() => onSelectPerson(person)}
-              className="flex w-full items-center gap-3 rounded-xl border border-slate-200 px-3 py-3 text-left hover:bg-blue-50"
-            >
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-600 text-xs font-bold text-white">
-                {person.name
-                  .split(' ')
-                  .map((part) => part[0] || '')
-                  .join('')
-                  .slice(0, 2)
-                  .toUpperCase()}
-              </span>
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-semibold text-slate-900">{person.name}</p>
-                {person.email && <p className="truncate text-xs text-slate-500">{person.email}</p>}
+          filteredPeople.map((person) => {
+            const selected = selectedPersonId === person.id
+            return (
+              <div key={person.id} className="space-y-2">
+                <SchedulePersonPickerRow
+                  person={person}
+                  selected={selected}
+                  badge={person.badge}
+                  onSelect={() => onSelectPerson(person)}
+                />
+
+                {selected && activePerson && (
+                  <div className="ml-2 space-y-2 border-l-2 border-blue-200 pl-3">
+                    <p className="text-xs font-medium text-slate-500">
+                      {activePerson.dayStates &&
+                      Object.values(activePerson.dayStates).some((s) => s === 'clash_pending')
+                        ? 'Resolve clashes for each day, then add to booking.'
+                        : 'All days clear — add to booking when ready.'}
+                    </p>
+                    <SchedulePersonDayRows
+                      person={activePerson}
+                      slots={slots}
+                      onPersonChange={onActivePersonChange}
+                      compact
+                    />
+                  </div>
+                )}
               </div>
-              <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600">
-                {person.badge}
-              </span>
-            </button>
-          ))
+            )
+          })
         )}
       </div>
     </div>
