@@ -285,6 +285,7 @@ service cloud.firestore {
            ) &&
            request.resource.data.diff(resource.data).changedKeys().hasOnly([
              'assignedManagerUserId',
+             'assignedManagerUserIds',
              'dayRate',
              'annualLeaveEnabled',
              'annualLeaveDaysPerYear',
@@ -303,6 +304,7 @@ service cloud.firestore {
     return request.auth != null &&
            request.resource.data.diff(resource.data).changedKeys().hasOnly([
              'assignedManagerUserId',
+             'assignedManagerUserIds',
              'dayRate',
              'employmentType',
              'employmentTypeTransitionFrom',

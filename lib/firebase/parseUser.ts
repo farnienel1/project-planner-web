@@ -21,7 +21,14 @@ export function parseOrgUser(docId: string, data: Record<string, unknown>): User
     isSuperAdmin,
     mobileNumber: parseOptionalString(data.mobileNumber),
     permissions: parseUserPermissions(data, isSuperAdmin),
-    assignedManagerUserId: parseOptionalString(data.assignedManagerUserId),
+    assignedManagerUserIds: Array.isArray(data.assignedManagerUserIds)
+      ? data.assignedManagerUserIds.filter((id): id is string => typeof id === 'string' && id.trim().length > 0)
+      : undefined,
+    assignedManagerUserId:
+      parseOptionalString(data.assignedManagerUserId) ??
+      (Array.isArray(data.assignedManagerUserIds) && typeof data.assignedManagerUserIds[0] === 'string'
+        ? data.assignedManagerUserIds[0]
+        : undefined),
     dayRate: typeof data.dayRate === 'number' ? data.dayRate : undefined,
     hourlyRate: typeof data.hourlyRate === 'number' ? data.hourlyRate : undefined,
     tradeTypePreset: parseOptionalString(data.tradeTypePreset),
