@@ -8,7 +8,7 @@ type SendBody = {
   invitationId?: string
   organizationName?: string
   firstName?: string
-  role?: 'manager' | 'operative'
+  role?: 'manager' | 'operative' | 'admin'
   to?: string
 }
 

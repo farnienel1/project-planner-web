@@ -3,7 +3,7 @@ export async function requestInviteSetupEmail(params: {
   invitationId: string
   organizationName: string
   firstName: string
-  role: 'manager' | 'operative'
+  role: 'manager' | 'operative' | 'admin'
   to: string
 }): Promise<void> {
   const response = await fetch('/api/invites/send-setup-email', {

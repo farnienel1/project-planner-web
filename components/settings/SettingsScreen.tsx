@@ -6,7 +6,7 @@ import { updatePassword, EmailAuthProvider, reauthenticateWithCredential } from 
 import { doc, Timestamp, updateDoc } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
 import { useAuthStore } from '@/lib/stores/authStore'
-import { hasAdminAccess } from '@/lib/navigation/menuPermissions'
+import { canAccessOrganisationSettingsHub, hasAdminAccess } from '@/lib/navigation/menuPermissions'
 import {
   loadNotificationPreferences,
   saveNotificationPreferences,
@@ -47,6 +47,21 @@ type Panel =
   | 'warnings'
   | 'payment-runs'
   | 'roles'
+
+const ORGANISATION_HUB_PANELS: Panel[] = [
+  'organisation',
+  'company-details',
+  'working-hours',
+  'annual-leave-defaults',
+  'schedule-options',
+  'warnings',
+  'payment-runs',
+  'roles',
+]
+
+function isOrganisationHubPanel(panel: Panel): boolean {
+  return ORGANISATION_HUB_PANELS.includes(panel)
+}
 
 // ─── Profile Panel ────────────────────────────────────────────────────────────
 function ProfilePanel({ onBack }: { onBack: () => void }) {
@@ -285,14 +300,23 @@ function RolesPanel({ onBack }: { onBack: () => void }) {
 // ─── Main Settings Page ───────────────────────────────────────────────────────
 export default function SettingsScreen({ initialPanel = 'main' }: { initialPanel?: Panel }) {
   const { user, organization, signOut } = useAuthStore()
-  const [panel, setPanel] = useState<Panel>(initialPanel)
+  const canAccessOrgHub = canAccessOrganisationSettingsHub(user)
+  const safeInitialPanel =
+    !canAccessOrgHub && isOrganisationHubPanel(initialPanel) ? 'main' : initialPanel
+  const [panel, setPanel] = useState<Panel>(safeInitialPanel)
   const isAdmin = hasAdminAccess(user)
   const initials = `${user?.firstName?.[0] || ''}${user?.surname?.[0] || ''}`.toUpperCase()
+
+  useEffect(() => {
+    if (!canAccessOrgHub && isOrganisationHubPanel(panel)) {
+      setPanel('main')
+    }
+  }, [canAccessOrgHub, panel])
 
   if (panel === 'profile') return <div className="max-w-xl mx-auto pb-10"><ProfilePanel onBack={() => setPanel('main')} /></div>
   if (panel === 'password') return <div className="max-w-xl mx-auto pb-10"><PasswordPanel onBack={() => setPanel('main')} /></div>
   if (panel === 'notifications') return <div className="max-w-xl mx-auto pb-10"><NotificationsPanel onBack={() => setPanel('main')} /></div>
-  if (panel === 'organisation') {
+  if (panel === 'organisation' && canAccessOrgHub) {
     return (
       <OrganisationHubPanel
         onBack={() => setPanel('main')}
@@ -300,13 +324,13 @@ export default function SettingsScreen({ initialPanel = 'main' }: { initialPanel
       />
     )
   }
-  if (panel === 'company-details') return <CompanyDetailsPanel onBack={() => setPanel('organisation')} />
-  if (panel === 'working-hours') return <WorkingHoursPanel onBack={() => setPanel('organisation')} />
-  if (panel === 'annual-leave-defaults') return <AnnualLeaveDefaultsPanel onBack={() => setPanel('organisation')} />
-  if (panel === 'schedule-options') return <ScheduleOptionsPanel onBack={() => setPanel('organisation')} />
-  if (panel === 'warnings') return <WarningsPanel onBack={() => setPanel('organisation')} />
-  if (panel === 'payment-runs') return <PaymentRunsPanel onBack={() => setPanel('organisation')} />
-  if (panel === 'roles') return <RolesPanel onBack={() => setPanel('organisation')} />
+  if (panel === 'company-details' && canAccessOrgHub) return <CompanyDetailsPanel onBack={() => setPanel('organisation')} />
+  if (panel === 'working-hours' && canAccessOrgHub) return <WorkingHoursPanel onBack={() => setPanel('organisation')} />
+  if (panel === 'annual-leave-defaults' && canAccessOrgHub) return <AnnualLeaveDefaultsPanel onBack={() => setPanel('organisation')} />
+  if (panel === 'schedule-options' && canAccessOrgHub) return <ScheduleOptionsPanel onBack={() => setPanel('organisation')} />
+  if (panel === 'warnings' && canAccessOrgHub) return <WarningsPanel onBack={() => setPanel('organisation')} />
+  if (panel === 'payment-runs' && canAccessOrgHub) return <PaymentRunsPanel onBack={() => setPanel('organisation')} />
+  if (panel === 'roles' && canAccessOrgHub) return <RolesPanel onBack={() => setPanel('organisation')} />
 
   return (
     <div className="max-w-xl mx-auto space-y-5 pb-10">
@@ -335,8 +359,8 @@ export default function SettingsScreen({ initialPanel = 'main' }: { initialPanel
         <SettingsRow icon="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" iconBg="bg-red-50" iconColor="text-red-500" label="My notifications" description="What you get pinged about" chevron onClick={() => setPanel('notifications')} />
       </SettingsCard>
 
-      {/* Company-wide (admin only) */}
-      {isAdmin && (
+      {/* Company-wide (admin only — managers and operatives never see this hub) */}
+      {canAccessOrgHub && (
         <>
           <SectionLabel label="Company-wide" />
           <button
