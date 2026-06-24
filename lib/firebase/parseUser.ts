@@ -39,6 +39,9 @@ export function parseOrgUser(docId: string, data: Record<string, unknown>): User
     annualLeaveYearEndMonth:
       typeof data.annualLeaveYearEndMonth === 'number' ? data.annualLeaveYearEndMonth : undefined,
     annualLeaveCarriesOver: data.annualLeaveCarriesOver === true,
+    timesheetsEnabled: data.timesheetsEnabled === true,
+    vatNumber: parseOptionalString(data.vatNumber),
+    utrNumber: parseOptionalString(data.utrNumber),
     policyAccepted: data.policyAccepted === true,
     policyAcceptedAt: parseFirestoreDate(data.policyAcceptedAt),
     createdAt: parseFirestoreDate(data.createdAt) || new Date(),

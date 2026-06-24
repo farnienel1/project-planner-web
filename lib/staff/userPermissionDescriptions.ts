@@ -18,6 +18,11 @@ export const OPERATIVE_PERMISSION_TOGGLES: PermissionToggleDef[] = [
     title: 'Site audit',
     description: 'Can view and submit site audits.',
   },
+  {
+    key: 'wholesalersOrderHistory',
+    title: 'Wholesalers (order & quote history)',
+    description: 'Can view wholesaler order and quote history.',
+  },
 ]
 
 export const MANAGER_PERMISSION_TOGGLES: PermissionToggleDef[] = [

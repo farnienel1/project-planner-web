@@ -147,6 +147,9 @@ export interface User {
   annualLeaveYearStartMonth?: number;
   annualLeaveYearEndMonth?: number;
   annualLeaveCarriesOver?: boolean;
+  timesheetsEnabled?: boolean;
+  vatNumber?: string;
+  utrNumber?: string;
   policyAccepted: boolean;
   policyAcceptedAt?: Date;
   createdAt: Date;

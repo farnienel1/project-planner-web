@@ -90,6 +90,14 @@ export function buildSaveUserPayload(user: User): Record<string, unknown> {
   if (user.annualLeaveYearStartMonth != null) payload.annualLeaveYearStartMonth = user.annualLeaveYearStartMonth
   if (user.annualLeaveYearEndMonth != null) payload.annualLeaveYearEndMonth = user.annualLeaveYearEndMonth
 
+  if (user.permissions.operativeMode || user.permissions.manager) {
+    payload.timesheetsEnabled = user.timesheetsEnabled === true
+    const vat = user.vatNumber?.trim()
+    payload.vatNumber = vat ? vat : deleteField()
+    const utr = user.utrNumber?.trim()
+    payload.utrNumber = utr ? utr : deleteField()
+  }
+
   if (user.employmentTypeTransitionFrom) {
     payload.employmentTypeTransitionFrom = user.employmentTypeTransitionFrom
   }

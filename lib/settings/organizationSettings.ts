@@ -375,6 +375,16 @@ export async function saveAnnualLeaveDefaults(organizationId: string, defaults: 
   })
 }
 
+export async function saveOrganizationBankHolidayRegion(
+  organizationId: string,
+  countryCode: string
+): Promise<void> {
+  await updateDoc(doc(db, 'organizations', organizationId), {
+    countryCode: countryCode.toUpperCase(),
+    updatedAt: Timestamp.now(),
+  })
+}
+
 export async function saveWarningDetection(organizationId: string, settings: OrgWarningDetectionSettings): Promise<void> {
   await updateDoc(doc(db, 'organizations', organizationId), {
     warningDetection: warningDetectionToFirestore(settings),

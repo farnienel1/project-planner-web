@@ -29,6 +29,7 @@ import {
   personDisplayName,
 } from '@/lib/settings/orgHubUtils'
 import { getManagerUsers, getOperativeModeUsers } from '@/lib/staff/userRosterUtils'
+import { bankHolidayRegionLabel } from '@/lib/settings/bankHolidayRegions'
 import { pluralize } from '@/lib/utils/pluralize'
 import {
   PanelHeader,
@@ -125,9 +126,12 @@ export function OrganisationHubPanel({
   const hoursSubtitle = details
     ? formatPayrollSubtitle(details.payrollTimePolicy)
     : formatPayrollSubtitle(DEFAULT_PAYROLL_POLICY)
-  const leaveSubtitle = details
-    ? formatAnnualLeaveSubtitle(details.annualLeaveDefaults, ORG_HUB_MONTHS)
-    : formatAnnualLeaveSubtitle(DEFAULT_ANNUAL_LEAVE, ORG_HUB_MONTHS)
+  const leaveSubtitle = useMemo(() => {
+    const defaults = details?.annualLeaveDefaults ?? DEFAULT_ANNUAL_LEAVE
+    const base = formatAnnualLeaveSubtitle(defaults, ORG_HUB_MONTHS)
+    const region = bankHolidayRegionLabel(details?.countryCode ?? 'GB')
+    return `${base} · ${region}`
+  }, [details])
   const scheduleSubtitle = details
     ? formatScheduleOptionsSubtitle(details.myScheduleOptions)
     : formatScheduleOptionsSubtitle({
