@@ -94,7 +94,8 @@ async function migrateInvitedUserRecord(params: {
   }
 
   const { ensurePrimaryOrgMembership } = await import('@/lib/orgMembership/membershipService')
-  await ensurePrimaryOrgMembership(params.authUid, params.organizationId, String(nextUser.role || 'member'))
+  const role = typeof userData.role === 'string' ? userData.role : 'member'
+  await ensurePrimaryOrgMembership(params.authUid, params.organizationId, role)
 }
 
 export async function completeInvitationPasswordSetup(params: {

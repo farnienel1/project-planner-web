@@ -63,8 +63,8 @@ export default function SetupSuccessClient() {
 
         if (!cancelled) {
           setStatus('success')
-          setMessage('Your organisation is active. Redirecting to your dashboard…')
-          window.setTimeout(() => router.push('/dashboard'), 1800)
+          setMessage('Payment confirmed. One more step — verify your email to enter the app.')
+          window.setTimeout(() => router.push('/setup/verify-email'), 1200)
         }
       } catch (error) {
         if (!cancelled) {

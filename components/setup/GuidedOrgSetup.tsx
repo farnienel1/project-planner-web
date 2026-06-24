@@ -280,7 +280,7 @@ type StepMeta = {
 }
 
 const STEP_META: StepMeta[] = [
-  { key: 'manager', icon: 'manager', label: 'Manager', accent: { tile: 'bg-blue-50', ring: 'ring-blue-100', text: 'text-blue-600', bar: 'bg-blue-600' } },
+  { key: 'manager', icon: 'manager', label: 'Managers', accent: { tile: 'bg-blue-50', ring: 'ring-blue-100', text: 'text-blue-600', bar: 'bg-blue-600' } },
   { key: 'operative', icon: 'operative', label: 'Operative', accent: { tile: 'bg-sky-50', ring: 'ring-sky-100', text: 'text-sky-600', bar: 'bg-sky-500' } },
   { key: 'project', icon: 'project', label: 'Project', accent: { tile: 'bg-indigo-50', ring: 'ring-indigo-100', text: 'text-indigo-600', bar: 'bg-indigo-600' } },
   { key: 'client', icon: 'client', label: 'Client', accent: { tile: 'bg-emerald-50', ring: 'ring-emerald-100', text: 'text-emerald-600', bar: 'bg-emerald-600' } },
@@ -566,7 +566,7 @@ export function GuidedOrgSetup({
           <StepHeader
             meta={meta}
             index={stepIndex}
-            title="Manager users"
+            title="Managers"
             description="Managers are a step down from admin — still with lots of access, but focused on running projects and teams rather than billing or org-wide settings."
           />
           <div className="mt-6 space-y-5">
@@ -628,7 +628,7 @@ export function GuidedOrgSetup({
             </div>
             <div>
               <FormLabel required>Site name</FormLabel>
-              <FormInput placeholder="e.g. The Arena, Enfield" value={data.project.siteName} onChange={(e) => update('project', { siteName: e.target.value })} />
+              <FormInput placeholder="e.g. 17 Upper Halliford" value={data.project.siteName} onChange={(e) => update('project', { siteName: e.target.value })} />
             </div>
             <div>
               <FormLabel required>Job type</FormLabel>
@@ -641,7 +641,7 @@ export function GuidedOrgSetup({
             <div>
               <FormLabel required>Client name</FormLabel>
               <FormInput
-                placeholder="e.g. RED Construction"
+                placeholder="e.g. ABC Contractors"
                 value={data.project.clientName}
                 onChange={(e) => update('project', { clientName: e.target.value })}
               />
@@ -785,22 +785,13 @@ export function GuidedOrgSetup({
             meta={meta}
             index={stepIndex}
             title="Add a qualification"
-            description="Qualifications track certifications against operative profiles — things like SMSTS, SSSTS or NVQ levels — with optional expiry tracking so renewals never get missed."
+            description="Qualifications track certifications against operative profiles — things like SMSTS, SSSTS or NVQ levels."
           />
           <div className="mt-6 grid gap-5 sm:grid-cols-2">
             <div className="sm:col-span-2">
               <FormLabel required>Qualification name</FormLabel>
               <FormInput placeholder="e.g. SMSTS" value={data.qualification.name} onChange={(e) => update('qualification', { name: e.target.value })} />
             </div>
-            <label className="flex items-center gap-2 text-sm text-slate-700 sm:col-span-2">
-              <input
-                type="checkbox"
-                checked={data.qualification.hasEndDate}
-                onChange={(e) => update('qualification', { hasEndDate: e.target.checked })}
-                className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-              />
-              This qualification has an expiry date
-            </label>
           </div>
         </>
       )}

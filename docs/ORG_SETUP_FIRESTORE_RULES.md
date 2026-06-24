@@ -1,6 +1,6 @@
 # Firestore rules — org setup & super admin
 
-These notes describe the access model the web app expects during **first-time org setup** and day-to-day use. Deploy matching rules in your Firebase console (rules live with the iOS project).
+These notes describe the access model the web app expects. **Deploy the rules** from `firestore.rules` in this repo — see `DEPLOY_FIRESTORE_RULES.md`.
 
 ## Super admin (org creator)
 
