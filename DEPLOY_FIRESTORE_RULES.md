@@ -26,8 +26,15 @@ The app code is correct — **your Firebase project rules** need updating. Rules
 
 ```bash
 cd ~/project-planner-web
+git pull   # includes .firebaserc with project-planner-f986c
 npm install -g firebase-tools   # if needed
 firebase login
+firebase deploy --only firestore:rules
+```
+
+If you see **“No currently active project”**, either pull latest (`.firebaserc` sets the default) or run once:
+
+```bash
 firebase use project-planner-f986c
 firebase deploy --only firestore:rules
 ```
