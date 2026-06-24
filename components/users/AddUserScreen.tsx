@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { useInviteStore } from '@/lib/stores/inviteStore'
-import { canManageUsers, getAddUserLabel } from '@/lib/navigation/menuPermissions'
+import { canInviteOperatives, canManageOperativesOnly, canManageUsers, getAddUserLabel } from '@/lib/navigation/menuPermissions'
 import { permissionsForAccountType } from '@/lib/orgSetup/accountPermissions'
 import { DEFAULT_ANNUAL_LEAVE } from '@/lib/settings/organizationSettings'
 import { STAFF_TRADE_TYPES } from '@/lib/staff/staffTradeTypes'
@@ -122,9 +122,14 @@ export function AddUserScreen() {
   const { inviteUser } = useInviteStore()
 
   const canInviteAdmins = canManageUsers(user)
-  const pageTitle = getAddUserLabel(user)
+  const operativeInviteOnly = canManageOperativesOnly(user)
+  const canAccess = canInviteOperatives(user)
+  const pageTitle = operativeInviteOnly ? 'Add operative' : getAddUserLabel(user)
+  const backHref = operativeInviteOnly ? '/dashboard/operatives' : '/dashboard/settings/users'
 
-  const [accountType, setAccountType] = useState<AccountType>(canInviteAdmins ? 'manager' : 'operative')
+  const [accountType, setAccountType] = useState<AccountType>(
+    canInviteAdmins ? 'manager' : 'operative'
+  )
   const [permissions, setPermissions] = useState<UserPermissions>(() => permissionsForAccountType('manager'))
   const [form, setForm] = useState({
     firstName: '',
@@ -206,7 +211,12 @@ export function AddUserScreen() {
     return permissions[key] === true
   }
 
-  const invitePermissions = accountType === 'admin' ? permissionsForAccountType('admin') : permissions
+  const invitePermissions =
+    operativeInviteOnly || accountType === 'operative'
+      ? permissionsForAccountType('operative')
+      : accountType === 'admin'
+        ? permissionsForAccountType('admin')
+        : permissions
 
   const handleSubmit = async (e?: FormEvent) => {
     e?.preventDefault()
@@ -281,7 +291,7 @@ export function AddUserScreen() {
             invitationId: result.invitationId,
             organizationName: organization.name,
             firstName,
-            role: accountType === 'operative' ? 'operative' : accountType === 'admin' ? 'admin' : 'manager',
+            role: operativeInviteOnly || accountType === 'operative' ? 'operative' : accountType === 'admin' ? 'admin' : 'manager',
             to: email,
           })
           setSuccess(`Invitation sent to ${email}. They will receive an email to set their password.`)
@@ -293,7 +303,7 @@ export function AddUserScreen() {
       }
 
       setSaved(true)
-      window.setTimeout(() => router.push('/dashboard/settings/users'), 2200)
+      window.setTimeout(() => router.push(backHref), 2200)
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to invite user')
     } finally {
@@ -303,7 +313,7 @@ export function AddUserScreen() {
 
   if (!user) return null
 
-  if (!canManageUsers(user) && !user.permissions.manager) {
+  if (!canAccess) {
     return (
       <div className="mx-auto max-w-2xl rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-16 text-center">
         <p className="text-slate-600">You do not have permission to invite users.</p>
@@ -313,11 +323,12 @@ export function AddUserScreen() {
 
   return (
     <form onSubmit={handleSubmit} className="mx-auto max-w-2xl pb-16">
-      <PanelHeader title={pageTitle} onBack={() => router.push('/dashboard/settings/users')} />
+      <PanelHeader title={pageTitle} onBack={() => router.push(backHref)} />
 
       <p className="mt-2 text-sm text-slate-500">
-        Invite someone to your organisation. They&apos;ll receive an email to set up their account — same flow as the
-        iOS app.
+        {operativeInviteOnly
+          ? 'Invite a new operative to your organisation. They will receive an email to set up their account.'
+          : 'Invite someone to your organisation. They&apos;ll receive an email to set up their account — same flow as the iOS app.'}
       </p>
 
       {error && (
@@ -331,47 +342,60 @@ export function AddUserScreen() {
         </div>
       )}
 
-      <SectionLabel label="Account type" />
-      <div className="space-y-2">
-        {availableAccountTypes.map((type) => {
-          const selected = accountType === type.id
-          return (
-            <button
-              key={type.id}
-              type="button"
-              onClick={() => selectAccountType(type.id)}
-              className={`w-full rounded-2xl border bg-white p-4 text-left transition ${
-                selected
-                  ? `ring-2 ${type.ringCls} shadow-sm`
-                  : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50/50'
-              }`}
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-sm font-bold text-slate-900">{type.title}</span>
-                    <span className={`rounded-md px-2 py-0.5 text-[11px] font-semibold ${type.badgeCls}`}>
-                      {type.badge}
-                    </span>
-                  </div>
-                  <p className="mt-1.5 text-xs leading-relaxed text-slate-500">{type.description}</p>
-                </div>
-                <span
-                  className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 ${
-                    selected ? 'border-blue-600 bg-blue-600' : 'border-slate-300 bg-white'
+      {!operativeInviteOnly && (
+        <>
+          <SectionLabel label="Account type" />
+          <div className="space-y-2">
+            {availableAccountTypes.map((type) => {
+              const selected = accountType === type.id
+              return (
+                <button
+                  key={type.id}
+                  type="button"
+                  onClick={() => selectAccountType(type.id)}
+                  className={`w-full rounded-2xl border bg-white p-4 text-left transition ${
+                    selected
+                      ? `ring-2 ${type.ringCls} shadow-sm`
+                      : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50/50'
                   }`}
                 >
-                  {selected && (
-                    <svg className="h-3 w-3 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                    </svg>
-                  )}
-                </span>
-              </div>
-            </button>
-          )
-        })}
-      </div>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-sm font-bold text-slate-900">{type.title}</span>
+                        <span className={`rounded-md px-2 py-0.5 text-[11px] font-semibold ${type.badgeCls}`}>
+                          {type.badge}
+                        </span>
+                      </div>
+                      <p className="mt-1.5 text-xs leading-relaxed text-slate-500">{type.description}</p>
+                    </div>
+                    <span
+                      className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 ${
+                        selected ? 'border-blue-600 bg-blue-600' : 'border-slate-300 bg-white'
+                      }`}
+                    >
+                      {selected && (
+                        <svg className="h-3 w-3 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                        </svg>
+                      )}
+                    </span>
+                  </div>
+                </button>
+              )
+            })}
+          </div>
+        </>
+      )}
+
+      {operativeInviteOnly && (
+        <SettingsCard>
+          <div className="p-4 text-sm text-slate-600">
+            You are inviting an <strong className="font-semibold text-slate-800">operative</strong>. New operatives
+            appear in your Operatives roster once they accept the invitation.
+          </div>
+        </SettingsCard>
+      )}
 
       <SectionLabel label="Identity" />
       <SettingsCard>

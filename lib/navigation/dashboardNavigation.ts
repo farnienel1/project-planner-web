@@ -360,7 +360,7 @@ function canSeeNavItem(item: DashboardNavItem, user: User): boolean {
       return canManageSubcontractors(user)
     case 'dashboard_add_user':
     case 'dashboard_manage_users':
-      return canManageUsers(user) || canManageOperativesOnly(user)
+      return canManageUsers(user)
     case 'dashboard_help':
       return canViewHelp(user)
     default:

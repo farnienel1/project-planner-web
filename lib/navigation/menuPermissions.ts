@@ -99,6 +99,11 @@ export function canManageOperativesOnly(user: User | null): boolean {
   return user.permissions.manager === true && user.permissions.operatives === true
 }
 
+/** Admins (any role) or managers with Operatives permission (operative invites only). */
+export function canInviteOperatives(user: User | null): boolean {
+  return canManageUsers(user) || canManageOperativesOnly(user)
+}
+
 /** Admins and managers with operative management can open team annual leave. */
 export function canAccessOperativeAnnualLeaveDirectory(user: User | null): boolean {
   if (!user || isOperativeMode(user)) return false
@@ -107,7 +112,7 @@ export function canAccessOperativeAnnualLeaveDirectory(user: User | null): boole
 }
 
 export function canAccessTeamSection(user: User | null): boolean {
-  return canManageUsers(user) || canManageOperativesOnly(user)
+  return canManageUsers(user)
 }
 
 export function canViewHelp(user: User | null): boolean {
