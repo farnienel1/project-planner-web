@@ -7,6 +7,7 @@ import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { useInviteStore } from '@/lib/stores/inviteStore'
 import { canManageUsers, getAddUserLabel } from '@/lib/navigation/menuPermissions'
 import { permissionsForAccountType } from '@/lib/orgSetup/accountPermissions'
+import { DEFAULT_ANNUAL_LEAVE } from '@/lib/settings/organizationSettings'
 import { STAFF_TRADE_TYPES } from '@/lib/staff/staffTradeTypes'
 import { getManagerUsers } from '@/lib/staff/userRosterUtils'
 import {
@@ -88,10 +89,12 @@ function PermToggleRow({
   def,
   checked,
   onChange,
+  disabled = false,
 }: {
   def: PermissionToggleDef
   checked: boolean
   onChange: (v: boolean) => void
+  disabled?: boolean
 }) {
   const chip = PERM_CHIP[def.key] ?? { bg: 'bg-slate-100', fg: 'text-slate-600' }
   return (
@@ -107,7 +110,7 @@ function PermToggleRow({
           <p className="mt-0.5 text-xs leading-relaxed text-slate-500">{def.description}</p>
         </div>
       </div>
-      <Toggle checked={checked} onChange={onChange} />
+      <Toggle checked={checked} onChange={onChange} disabled={disabled} />
     </div>
   )
 }
@@ -134,8 +137,12 @@ export function AddUserScreen() {
     tradeTypeCustom: '',
     employmentType: 'selfEmployed' as 'paye' | 'selfEmployed',
     timesheetsEnabled: false,
+    vatNumber: '',
+    utrNumber: '',
+    annualLeaveEnabled: true,
+    annualLeaveDaysPerYear: String(DEFAULT_ANNUAL_LEAVE.daysPerYear),
   })
-  const [annualLeaveHint, setAnnualLeaveHint] = useState<string | null>(null)
+  const [annualLeaveDefaults, setAnnualLeaveDefaults] = useState(DEFAULT_ANNUAL_LEAVE)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -149,11 +156,12 @@ export function AddUserScreen() {
     if (!organization?.id) return
     loadOrganizationDetails(organization.id)
       .then((details) => {
-        const defaults = details?.annualLeaveDefaults
-        if (!defaults) return
-        setAnnualLeaveHint(
-          `${defaults.daysPerYear} days per year · leave year ${defaults.startMonth}/${defaults.endMonth}`
-        )
+        const defaults = details?.annualLeaveDefaults ?? DEFAULT_ANNUAL_LEAVE
+        setAnnualLeaveDefaults(defaults)
+        setForm((prev) => ({
+          ...prev,
+          annualLeaveDaysPerYear: String(defaults.daysPerYear),
+        }))
       })
       .catch(() => {})
   }, [organization?.id])
@@ -170,12 +178,14 @@ export function AddUserScreen() {
 
   const permissionDefs = useMemo(() => {
     if (accountType === 'operative') return OPERATIVE_PERMISSION_TOGGLES
-    if (accountType === 'manager') return MANAGER_PERMISSION_TOGGLES.filter((def) => def.key !== 'adminAccess')
-    return []
+    return MANAGER_PERMISSION_TOGGLES.filter((def) => def.key !== 'adminAccess')
   }, [accountType])
+
+  const adminPermissionDefs = useMemo(() => MANAGER_PERMISSION_TOGGLES, [])
 
   const showSetup = accountType === 'manager' || accountType === 'operative'
   const showPermissions = accountType !== 'admin'
+  const showAdminPermissions = accountType === 'admin'
 
   function selectAccountType(next: AccountType) {
     setAccountType(next)
@@ -191,9 +201,12 @@ export function AddUserScreen() {
   }
 
   function permissionChecked(key: keyof UserPermissions): boolean {
+    if (accountType === 'admin') return true
     if (key === 'dailyOverview') return permissions.dailyOverview !== false
     return permissions[key] === true
   }
+
+  const invitePermissions = accountType === 'admin' ? permissionsForAccountType('admin') : permissions
 
   const handleSubmit = async (e?: FormEvent) => {
     e?.preventDefault()
@@ -225,13 +238,21 @@ export function AddUserScreen() {
         firstName,
         surname,
         mobileNumber: form.mobileNumber.trim() || undefined,
-        permissions,
+        permissions: invitePermissions,
         assignedManagerUserId: form.assignedManagerUserId || undefined,
         dayRate: form.dayRate ? Number(form.dayRate) : undefined,
         tradeTypePreset: form.tradeTypePreset || undefined,
         tradeTypeCustom: form.tradeTypePreset === 'Other' ? form.tradeTypeCustom.trim() || undefined : undefined,
         employmentType: form.employmentType,
         timesheetsEnabled: showSetup ? form.timesheetsEnabled : undefined,
+        vatNumber: form.vatNumber.trim() || undefined,
+        utrNumber: form.utrNumber.trim() || undefined,
+        annualLeaveEnabled: form.annualLeaveEnabled,
+        annualLeaveDaysPerYear: form.annualLeaveEnabled
+          ? Number(form.annualLeaveDaysPerYear) || annualLeaveDefaults.daysPerYear
+          : undefined,
+        annualLeaveYearStartMonth: form.annualLeaveEnabled ? annualLeaveDefaults.startMonth : undefined,
+        annualLeaveYearEndMonth: form.annualLeaveEnabled ? annualLeaveDefaults.endMonth : undefined,
       })
 
       if (result.inviteType === 'existing_user_org_add') {
@@ -260,7 +281,7 @@ export function AddUserScreen() {
             invitationId: result.invitationId,
             organizationName: organization.name,
             firstName,
-            role: accountType === 'operative' ? 'operative' : 'manager',
+            role: accountType === 'operative' ? 'operative' : accountType === 'admin' ? 'admin' : 'manager',
             to: email,
           })
           setSuccess(`Invitation sent to ${email}. They will receive an email to set their password.`)
@@ -391,12 +412,25 @@ export function AddUserScreen() {
         </div>
       </SettingsCard>
 
-      {accountType === 'admin' && (
+      {showAdminPermissions && (
         <>
-          <SectionLabel label="Administrator access" />
+          <SectionLabel label="Administrator permissions" />
           <SettingsCard>
-            <div className="p-4 text-sm text-slate-600">
-              Administrators receive full access to organisation settings, user management, and all manager permissions.
+            <div className="border-b border-slate-100 px-4 py-3 text-sm text-slate-600">
+              All permissions are enabled for administrators. The only capability managers do not have is{' '}
+              <strong className="font-semibold text-slate-800">Organisation settings</strong> in Settings — that hub is
+              visible to administrators only and is hidden from managers and operatives.
+            </div>
+            <div className="divide-y divide-slate-100">
+              {adminPermissionDefs.map((def) => (
+                <PermToggleRow
+                  key={def.key}
+                  def={def}
+                  checked={permissionChecked(def.key)}
+                  onChange={() => {}}
+                  disabled
+                />
+              ))}
             </div>
           </SettingsCard>
         </>
@@ -419,6 +453,55 @@ export function AddUserScreen() {
           </SettingsCard>
         </>
       )}
+
+      <SectionLabel label="Tax details" />
+      <SettingsCard>
+        <div className="grid grid-cols-1 gap-4 p-4 sm:grid-cols-2">
+          <FormField label="VAT number" hint="Optional. Same as iOS invite setup.">
+            <Input
+              value={form.vatNumber}
+              onChange={(e) => setForm({ ...form, vatNumber: e.target.value })}
+            />
+          </FormField>
+          <FormField label="UTR number" hint="Optional. Same as iOS invite setup.">
+            <Input
+              value={form.utrNumber}
+              onChange={(e) => setForm({ ...form, utrNumber: e.target.value })}
+            />
+          </FormField>
+        </div>
+      </SettingsCard>
+
+      <SectionLabel label="Annual leave" />
+      <SettingsCard>
+        <div className="space-y-4 p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <div className="text-sm font-semibold text-slate-900">Annual leave enabled</div>
+              <p className="mt-0.5 text-xs text-slate-500">
+                Turn off for self-employed staff who do not use paid annual leave.
+              </p>
+            </div>
+            <Toggle
+              checked={form.annualLeaveEnabled}
+              onChange={(checked) => setForm({ ...form, annualLeaveEnabled: checked })}
+            />
+          </div>
+          {form.annualLeaveEnabled && (
+            <FormField
+              label="Days per year"
+              hint={`Organisation default is ${annualLeaveDefaults.daysPerYear} days (leave year ${annualLeaveDefaults.startMonth} → ${annualLeaveDefaults.endMonth}).`}
+            >
+              <Input
+                type="number"
+                min="0"
+                value={form.annualLeaveDaysPerYear}
+                onChange={(e) => setForm({ ...form, annualLeaveDaysPerYear: e.target.value })}
+              />
+            </FormField>
+          )}
+        </div>
+      </SettingsCard>
 
       {showSetup && (
         <>
@@ -509,13 +592,6 @@ export function AddUserScreen() {
               </div>
             </div>
           </SettingsCard>
-
-          {annualLeaveHint && (
-            <p className="mt-2 px-1 text-xs text-slate-500">
-              Organisation default annual leave ({annualLeaveHint}) applies to new {accountType === 'operative' ? 'operatives' : 'managers'}.
-              Adjust per person after they join.
-            </p>
-          )}
         </>
       )}
 

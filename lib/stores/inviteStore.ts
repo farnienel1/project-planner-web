@@ -19,6 +19,12 @@ export type InviteUserInput = {
   tradeTypeCustom?: string
   employmentType?: 'paye' | 'selfEmployed'
   timesheetsEnabled?: boolean
+  vatNumber?: string
+  utrNumber?: string
+  annualLeaveEnabled?: boolean
+  annualLeaveDaysPerYear?: number
+  annualLeaveYearStartMonth?: number
+  annualLeaveYearEndMonth?: number
 }
 
 interface InviteState {

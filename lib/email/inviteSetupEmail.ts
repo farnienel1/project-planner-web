@@ -5,12 +5,13 @@ export type InviteSetupEmailParams = {
   firstName: string
   organizationName: string
   invitationId: string
-  role: 'manager' | 'operative'
+  role: 'manager' | 'operative' | 'admin'
 }
 
 export function buildInviteSetupEmailHtml(params: InviteSetupEmailParams): string {
   const setupUrl = `${getAppBaseUrl()}/setup-password?invitation=${encodeURIComponent(params.invitationId)}`
-  const roleLabel = params.role === 'manager' ? 'manager' : 'operative'
+  const roleLabel =
+    params.role === 'admin' ? 'administrator' : params.role === 'manager' ? 'manager' : 'operative'
   const appStoreUrl = 'https://apps.apple.com/app/project-planner'
 
   return `

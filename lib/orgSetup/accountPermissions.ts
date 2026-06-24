@@ -20,21 +20,34 @@ export function defaultPermissionsBase(): UserPermissions {
   }
 }
 
+/** All manager permission flags enabled — used when inviting administrators. */
+export function permissionsForAdminInvite(): UserPermissions {
+  return {
+    adminAccess: true,
+    manager: true,
+    operatives: true,
+    skills: true,
+    qualifications: true,
+    materials: true,
+    projects: true,
+    smallWorks: true,
+    operativeMode: false,
+    siteAudit: true,
+    subContractors: true,
+    wholesalersOrderHistory: true,
+    annualLeaveSelfBook: true,
+    weeklyReports: true,
+    dailyOverview: true,
+  }
+}
+
 export function permissionsForAccountType(
   accountType: 'operative' | 'manager' | 'admin'
 ): UserPermissions {
   const base = defaultPermissionsBase()
 
   if (accountType === 'admin') {
-    return {
-      ...base,
-      adminAccess: true,
-      manager: true,
-      operatives: true,
-      skills: true,
-      qualifications: true,
-      subContractors: true,
-    }
+    return permissionsForAdminInvite()
   }
 
   if (accountType === 'manager') {
@@ -48,5 +61,11 @@ export function permissionsForAccountType(
     }
   }
 
-  return { ...base, operativeMode: true, materials: true, siteAudit: true }
+  return {
+    ...base,
+    operativeMode: true,
+    materials: true,
+    siteAudit: true,
+    wholesalersOrderHistory: false,
+  }
 }

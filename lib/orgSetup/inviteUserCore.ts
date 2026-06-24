@@ -22,6 +22,12 @@ export type InviteUserCoreInput = {
   tradeTypeCustom?: string
   employmentType?: 'paye' | 'selfEmployed'
   timesheetsEnabled?: boolean
+  vatNumber?: string
+  utrNumber?: string
+  annualLeaveEnabled?: boolean
+  annualLeaveDaysPerYear?: number
+  annualLeaveYearStartMonth?: number
+  annualLeaveYearEndMonth?: number
   invitedBy: string
 }
 
@@ -105,6 +111,16 @@ export async function inviteUserCore(input: InviteUserCoreInput): Promise<Invite
   if (input.permissions.manager || input.permissions.operativeMode) {
     invitationData.timesheetsEnabled = input.timesheetsEnabled === true
   }
+  if (input.vatNumber?.trim()) invitationData.vatNumber = input.vatNumber.trim()
+  if (input.utrNumber?.trim()) invitationData.utrNumber = input.utrNumber.trim()
+  if (input.annualLeaveEnabled != null) invitationData.annualLeaveEnabled = input.annualLeaveEnabled
+  if (input.annualLeaveDaysPerYear != null) invitationData.annualLeaveDaysPerYear = input.annualLeaveDaysPerYear
+  if (input.annualLeaveYearStartMonth != null) {
+    invitationData.annualLeaveYearStartMonth = input.annualLeaveYearStartMonth
+  }
+  if (input.annualLeaveYearEndMonth != null) {
+    invitationData.annualLeaveYearEndMonth = input.annualLeaveYearEndMonth
+  }
 
   await setDoc(doc(db, 'invitations', invitationId), invitationData)
   await setDoc(
@@ -123,6 +139,12 @@ export async function inviteUserCore(input: InviteUserCoreInput): Promise<Invite
       tradeTypeCustom: input.tradeTypeCustom,
       employmentType: input.employmentType,
       timesheetsEnabled: input.timesheetsEnabled,
+      vatNumber: input.vatNumber,
+      utrNumber: input.utrNumber,
+      annualLeaveEnabled: input.annualLeaveEnabled,
+      annualLeaveDaysPerYear: input.annualLeaveDaysPerYear,
+      annualLeaveYearStartMonth: input.annualLeaveYearStartMonth,
+      annualLeaveYearEndMonth: input.annualLeaveYearEndMonth,
     })
   )
   await setDoc(doc(db, 'organizations', input.organizationId, 'userEmails', emailLower), { userId })

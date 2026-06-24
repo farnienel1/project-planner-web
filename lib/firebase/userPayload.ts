@@ -124,6 +124,12 @@ export function buildInvitedUserPayload(params: {
   tradeTypeCustom?: string
   employmentType?: 'paye' | 'selfEmployed'
   timesheetsEnabled?: boolean
+  vatNumber?: string
+  utrNumber?: string
+  annualLeaveEnabled?: boolean
+  annualLeaveDaysPerYear?: number
+  annualLeaveYearStartMonth?: number
+  annualLeaveYearEndMonth?: number
 }): Record<string, unknown> {
   const { permissions } = params
   let role: UserRole = UserRole.BASIC
@@ -159,6 +165,22 @@ export function buildInvitedUserPayload(params: {
   if (params.tradeTypeCustom?.trim()) payload.tradeTypeCustom = params.tradeTypeCustom.trim()
   if (params.permissions.manager || params.permissions.operativeMode) {
     payload.timesheetsEnabled = params.timesheetsEnabled === true
+  }
+
+  if (params.vatNumber?.trim()) payload.vatNumber = params.vatNumber.trim()
+  if (params.utrNumber?.trim()) payload.utrNumber = params.utrNumber.trim()
+
+  if (params.annualLeaveEnabled != null) {
+    payload.annualLeaveEnabled = params.annualLeaveEnabled !== false
+  }
+  if (params.annualLeaveDaysPerYear != null) {
+    payload.annualLeaveDaysPerYear = params.annualLeaveDaysPerYear
+  }
+  if (params.annualLeaveYearStartMonth != null) {
+    payload.annualLeaveYearStartMonth = params.annualLeaveYearStartMonth
+  }
+  if (params.annualLeaveYearEndMonth != null) {
+    payload.annualLeaveYearEndMonth = params.annualLeaveYearEndMonth
   }
 
   return payload

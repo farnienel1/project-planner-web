@@ -9,6 +9,11 @@ export function hasAdminAccess(user: User | null): boolean {
   return user.isSuperAdmin || user.permissions.adminAccess || user.role === 'admin'
 }
 
+/** Organisation settings hub (hours, leave defaults, payment runs, etc.) — administrators only. */
+export function canAccessOrganisationSettingsHub(user: User | null): boolean {
+  return hasAdminAccess(user)
+}
+
 export function canViewProjects(user: User | null): boolean {
   if (!user) return false
   return true
@@ -164,7 +169,7 @@ export function parseUserPermissions(
       operativeMode: true,
       siteAudit: readFlag('siteAudit') !== false,
       subContractors: readFlag('subContractors') === true,
-      wholesalersOrderHistory: readFlag('wholesalersOrderHistory') !== false,
+      wholesalersOrderHistory: readFlag('wholesalersOrderHistory') === true,
       annualLeaveSelfBook: readFlag('annualLeaveSelfBook') === true,
       weeklyReports: readFlag('weeklyReports') === true,
       dailyOverview: readFlag('dailyOverview') !== false,
