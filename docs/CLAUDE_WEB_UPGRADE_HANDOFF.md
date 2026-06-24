@@ -99,21 +99,18 @@ import { FormLabel, FormInput, FormSelect, FormTextarea, FormActions, FormBackLi
 import { PageHeader, LoadingSpinner, EmptyState, ErrorBanner, SearchField } from '@/components/dashboard/PageShell'
 ```
 
-#### Settings UI — **inline in** `components/settings/SettingsScreen.tsx`
+#### Settings UI — `components/settings/primitives/` (canonical — extracted from SettingsScreen)
 
-These are defined locally (not exported yet — **extract to `components/settings/primitives/` when porting new panels**):
+Import from:
 
-| Component | Purpose |
-|-----------|---------|
-| `Toggle` | iOS-style switch (`role="switch"`) |
-| `SettingsCard` | White card with `divide-y` rows |
-| `SettingsRow` | Icon + label + description + chevron/value |
-| `SectionLabel` | Uppercase section heading |
-| `PanelHeader` | Back + title for sub-panels |
-| `SaveButton` | Full-width save with "✓ Saved" state |
-| `SuccessBanner` / `ErrorBanner` | Feedback |
-| `FormField` | Label + children + hint |
-| `Input` / `Select` / `Textarea` | Rounded-xl settings-styled inputs |
+```tsx
+import {
+  Toggle, SectionLabel, SettingsCard, SettingsRow, SaveButton,
+  SuccessBanner, ErrorBanner, FormField, Input, Select, Textarea, PanelHeader,
+} from '@/components/settings/primitives'
+```
+
+`SettingsScreen.tsx` already imports from here. New panels should too.
 
 #### User profile sections — `components/users/ProfileSection.tsx`
 
