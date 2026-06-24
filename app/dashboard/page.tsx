@@ -69,22 +69,36 @@ export default function DashboardPage() {
   }, [user, loading, router])
 
   useEffect(() => {
-    if (organization?.id) {
-      loadProjects(organization.id, true)
-      loadSmallWorks(organization.id)
-      loadClients(organization.id)
-      loadOperatives(organization.id)
-      loadUsers(organization.id)
-      loadBookings(organization.id)
-      loadAllMaterials(organization.id)
-      loadSendRecords(organization.id)
-      loadHolidayBookings(organization.id)
-      loadTasks(organization.id)
-      loadAudits(organization.id)
-      loadOrganizationDetails(organization.id).then(setOrgDetails).catch(() => setOrgDetails(null))
+    const orgId = organization?.id
+    if (!orgId) return
+
+    // Critical path — hero, tasks, schedule tiles
+    loadProjects(orgId, true)
+    loadSmallWorks(orgId)
+    loadOperatives(orgId)
+    loadUsers(orgId)
+    loadBookings(orgId)
+    loadTasks(orgId)
+
+    // Defer heavier collections so the dashboard shell paints first
+    const defer = () => {
+      loadClients(orgId)
+      loadAllMaterials(orgId)
+      loadSendRecords(orgId)
+      loadHolidayBookings(orgId)
+      loadAudits(orgId)
+      loadOrganizationDetails(orgId).then(setOrgDetails).catch(() => setOrgDetails(null))
     }
+
+    if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+      const idleId = window.requestIdleCallback(defer, { timeout: 2000 })
+      return () => window.cancelIdleCallback(idleId)
+    }
+
+    const timeoutId = setTimeout(defer, 120)
+    return () => clearTimeout(timeoutId)
   }, [
-    organization,
+    organization?.id,
     loadProjects,
     loadSmallWorks,
     loadClients,

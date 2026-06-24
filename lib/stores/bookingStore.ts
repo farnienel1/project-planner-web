@@ -14,13 +14,16 @@ import {
 } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
 import { sanitizeForFirestore } from '@/lib/firebase/firestoreUtils'
+import { runOrgLoad } from '@/lib/stores/orgLoadCache'
 import type { Booking } from '@/types'
+
+const LOAD_KEY = 'bookingStore:bookings'
 
 interface BookingState {
   bookings: Booking[]
   loading: boolean
   error: string | null
-  loadBookings: (organizationId: string) => Promise<void>
+  loadBookings: (organizationId: string, options?: { force?: boolean }) => Promise<void>
   createBooking: (booking: Omit<Booking, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>
   updateBooking: (id: string, updates: Partial<Booking>) => Promise<void>
   deleteBooking: (id: string, organizationId: string) => Promise<void>
@@ -34,33 +37,43 @@ export const useBookingStore = create<BookingState>((set, get) => ({
   loading: false,
   error: null,
   
-  loadBookings: async (organizationId: string) => {
-    set({ loading: true, error: null })
-    try {
-      const bookingsRef = collection(db, 'organizations', organizationId, 'bookings')
-      const snapshot = await getDocs(bookingsRef)
-      const bookings = snapshot.docs.map(doc => {
-        const data = doc.data()
-        return {
-          id: doc.id,
-          operativeId: data.operativeId || '',
-          projectId: data.projectId || '',
-          date: data.date?.toDate() || new Date(),
-          timeSlot: data.timeSlot || '',
-          bookedBy: data.bookedBy || '',
-          notes: data.notes || '',
-          status: data.status || 'confirmed',
-          workStartTime: data.workStartTime || undefined,
-          workEndTime: data.workEndTime || undefined,
-          createdAt: data.createdAt?.toDate() || new Date(),
-          updatedAt: data.updatedAt?.toDate() || new Date(),
-          organizationId,
-        } as Booking
-      })
-      set({ bookings, loading: false })
-    } catch (error: any) {
-      set({ error: error.message, loading: false })
-    }
+  loadBookings: async (organizationId: string, options?: { force?: boolean }) => {
+    await runOrgLoad(
+      LOAD_KEY,
+      organizationId,
+      async () => {
+        set({ loading: true, error: null })
+        try {
+          const bookingsRef = collection(db, 'organizations', organizationId, 'bookings')
+          const snapshot = await getDocs(bookingsRef)
+          const bookings = snapshot.docs.map((doc) => {
+            const data = doc.data()
+            return {
+              id: doc.id,
+              operativeId: data.operativeId || '',
+              projectId: data.projectId || '',
+              date: data.date?.toDate() || new Date(),
+              timeSlot: data.timeSlot || '',
+              bookedBy: data.bookedBy || '',
+              notes: data.notes || '',
+              status: data.status || 'confirmed',
+              workStartTime: data.workStartTime || undefined,
+              workEndTime: data.workEndTime || undefined,
+              createdAt: data.createdAt?.toDate() || new Date(),
+              updatedAt: data.updatedAt?.toDate() || new Date(),
+              organizationId,
+            } as Booking
+          })
+          set({ bookings, loading: false })
+        } catch (error: unknown) {
+          set({
+            error: error instanceof Error ? error.message : 'Failed to load bookings',
+            loading: false,
+          })
+        }
+      },
+      options
+    )
   },
   
   createBooking: async (bookingData) => {
@@ -83,8 +96,8 @@ export const useBookingStore = create<BookingState>((set, get) => ({
       if (bookingData.workStartTime) payload.workStartTime = bookingData.workStartTime
       if (bookingData.workEndTime) payload.workEndTime = bookingData.workEndTime
       const docRef = await addDoc(bookingsRef, payload)
-      set({ 
-        bookings: [...bookings, { ...bookingData, id: docRef.id, createdAt: new Date(), updatedAt: new Date() } as Booking]
+      set({
+        bookings: [...bookings, { ...bookingData, id: docRef.id, createdAt: new Date(), updatedAt: new Date() } as Booking],
       })
     } catch (error: any) {
       set({ error: error.message })

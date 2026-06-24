@@ -14,6 +14,9 @@ import { newUuid } from '@/lib/firebase/firestoreUtils'
 import { db } from '@/lib/firebase/config'
 import type { Operative, Manager, Skill, Qualification } from '@/types'
 import { filterRealManagers, isPlaceholderManager } from '@/lib/staff/managerRosterUtils'
+import { runOrgLoad } from '@/lib/stores/orgLoadCache'
+
+const OPERATIVES_KEY = 'operativeStore:operatives'
 
 interface OperativeState {
   operatives: Operative[]
@@ -23,7 +26,7 @@ interface OperativeState {
   qualifications: Qualification[]
   loading: boolean
   error: string | null
-  loadOperatives: (organizationId: string) => Promise<void>
+  loadOperatives: (organizationId: string, options?: { force?: boolean }) => Promise<void>
   loadManagers: (organizationId: string) => Promise<void>
   loadSkills: (organizationId: string) => Promise<void>
   loadQualifications: (organizationId: string) => Promise<void>
@@ -45,12 +48,16 @@ export const useOperativeStore = create<OperativeState>((set, get) => ({
   loading: false,
   error: null,
   
-  loadOperatives: async (organizationId: string) => {
-    set({ loading: true, error: null })
-    try {
-      const operativesRef = collection(db, 'organizations', organizationId, 'operatives')
-      const snapshot = await getDocs(operativesRef)
-      const operatives = snapshot.docs.map(doc => {
+  loadOperatives: async (organizationId: string, options?: { force?: boolean }) => {
+    await runOrgLoad(
+      OPERATIVES_KEY,
+      organizationId,
+      async () => {
+        set({ loading: true, error: null })
+        try {
+          const operativesRef = collection(db, 'organizations', organizationId, 'operatives')
+          const snapshot = await getDocs(operativesRef)
+          const operatives = snapshot.docs.map((doc) => {
         const data = doc.data()
         const qualificationExpiryDates: Record<string, Date> = {}
         if (data.qualificationExpiryDates && typeof data.qualificationExpiryDates === 'object') {
@@ -82,11 +89,17 @@ export const useOperativeStore = create<OperativeState>((set, get) => ({
           createdAt: data.createdAt?.toDate() || new Date(),
           updatedAt: data.updatedAt?.toDate() || new Date(),
         } as Operative
-      })
-      set({ operatives, loading: false })
-    } catch (error: any) {
-      set({ error: error.message, loading: false })
-    }
+          })
+          set({ operatives, loading: false })
+        } catch (error: unknown) {
+          set({
+            error: error instanceof Error ? error.message : 'Failed to load operatives',
+            loading: false,
+          })
+        }
+      },
+      options
+    )
   },
   
   loadManagers: async (organizationId: string) => {

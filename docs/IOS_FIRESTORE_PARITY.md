@@ -164,6 +164,8 @@ Examples from `FirebaseBackend.swift`:
 
 ## Web gaps to close (by priority)
 
+See also **`docs/FLOW_PARITY_AND_TESTING.md`** for the full booking → daily overview → weekly report → timesheets chain and how to link the iOS repo for agent parity passes.
+
 1. Fix collection names on catalog pages (see `lib/firebase/orgCollections.ts`).
 2. Job types: read/write `settings/jobTypes` document, not a subcollection.
 3. Site map: map view from `projects` + `bookings` (like `OrgSitesMapView.swift`).

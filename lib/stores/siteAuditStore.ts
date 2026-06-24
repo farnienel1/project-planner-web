@@ -6,6 +6,7 @@ import { db } from '@/lib/firebase/config'
 import type { SiteAudit, SiteAuditItem, User } from '@/types'
 import { parseOrgUser } from '@/lib/firebase/parseUser'
 import { dedupeUsersByEmail } from '@/lib/staff/userRosterUtils'
+import { runOrgLoad } from '@/lib/stores/orgLoadCache'
 import { newUuid, parseFirestoreDate, parseOptionalString, parseString, parseUuid } from '@/lib/firebase/firestoreUtils'
 
 function parseAuditItems(rows: unknown): SiteAuditItem[] {
@@ -147,7 +148,7 @@ interface OrgUserState {
   users: User[]
   loading: boolean
   error: string | null
-  loadUsers: (organizationId: string) => Promise<void>
+  loadUsers: (organizationId: string, options?: { force?: boolean }) => Promise<void>
 }
 
 export const useOrgUserStore = create<OrgUserState>((set) => ({
@@ -155,22 +156,32 @@ export const useOrgUserStore = create<OrgUserState>((set) => ({
   loading: false,
   error: null,
 
-  loadUsers: async (organizationId) => {
-    set({ loading: true, error: null })
-    try {
-      const usersRef = query(collection(db, 'users'), where('organizationId', '==', organizationId))
-      const snapshot = await getDocs(usersRef)
-      const users = dedupeUsersByEmail(
-        snapshot.docs
-          .map((entry) => mapOrgUser(entry.id, entry.data() as Record<string, unknown>))
-          .filter((user): user is User => user !== null)
-      ).sort((a, b) => {
-        if (a.isSuperAdmin !== b.isSuperAdmin) return a.isSuperAdmin ? -1 : 1
-        return a.email.localeCompare(b.email)
-      })
-      set({ users, loading: false })
-    } catch (error: unknown) {
-      set({ error: error instanceof Error ? error.message : 'Failed to load users', loading: false })
-    }
+  loadUsers: async (organizationId, options?: { force?: boolean }) => {
+    await runOrgLoad(
+      'orgUserStore:users',
+      organizationId,
+      async () => {
+        set({ loading: true, error: null })
+        try {
+          const usersRef = query(collection(db, 'users'), where('organizationId', '==', organizationId))
+          const snapshot = await getDocs(usersRef)
+          const users = dedupeUsersByEmail(
+            snapshot.docs
+              .map((entry) => mapOrgUser(entry.id, entry.data() as Record<string, unknown>))
+              .filter((user): user is User => user !== null)
+          ).sort((a, b) => {
+            if (a.isSuperAdmin !== b.isSuperAdmin) return a.isSuperAdmin ? -1 : 1
+            return a.email.localeCompare(b.email)
+          })
+          set({ users, loading: false })
+        } catch (error: unknown) {
+          set({
+            error: error instanceof Error ? error.message : 'Failed to load users',
+            loading: false,
+          })
+        }
+      },
+      options
+    )
   },
 }))
