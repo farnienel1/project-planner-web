@@ -151,15 +151,6 @@ export function EditUserProfile({
     e.preventDefault()
     if (!target || !organization?.id || !canEdit) return
 
-    if (
-      (target.permissions.operativeMode || target.permissions.manager) &&
-      !target.permissions.adminAccess &&
-      !target.assignedManagerUserId
-    ) {
-      setError('Line manager is required for operatives and managers.')
-      return
-    }
-
     setSaving(true)
     setError(null)
     setSuccess(null)
@@ -403,18 +394,21 @@ export function EditUserProfile({
           <div className="space-y-4 px-5 py-4">
             {(target.permissions.operativeMode || target.permissions.manager) && (
               <div>
-                <FormLabel required>Line manager</FormLabel>
+                <FormLabel>Line manager</FormLabel>
                 <FormSelect
                   value={target.assignedManagerUserId || ''}
                   onChange={(e) => setTarget({ ...target, assignedManagerUserId: e.target.value })}
                 >
-                  <option value="">Select manager</option>
+                  <option value="">No line manager</option>
                   {managers.map((manager) => (
                     <option key={manager.id} value={manager.id}>
                       {manager.firstName} {manager.surname} ({manager.email})
                     </option>
                   ))}
                 </FormSelect>
+                <p className="mt-1.5 text-xs text-slate-400">
+                  Same as iOS — leave as &quot;No line manager&quot; if not applicable.
+                </p>
               </div>
             )}
 
