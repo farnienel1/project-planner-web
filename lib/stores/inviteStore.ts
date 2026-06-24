@@ -14,6 +14,7 @@ export type InviteUserInput = {
   mobileNumber?: string
   permissions: UserPermissions
   assignedManagerUserId?: string
+  assignedManagerUserIds?: string[]
   dayRate?: number
   tradeTypePreset?: string
   tradeTypeCustom?: string

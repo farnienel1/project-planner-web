@@ -1,6 +1,6 @@
 import { collection, doc, getDoc, getDocs, query, setDoc, Timestamp, where } from 'firebase/firestore'
 import { getFirebaseDb } from '@/lib/firebase/ensureFirebase'
-import { buildInvitedUserPayload, permissionsToFirestoreMap } from '@/lib/firebase/userPayload'
+import { buildInvitedUserPayload, normalizeLineManagerIds, permissionsToFirestoreMap } from '@/lib/firebase/userPayload'
 import { newUuid } from '@/lib/firebase/firestoreUtils'
 import {
   addExistingUserToOrganization,
@@ -17,6 +17,7 @@ export type InviteUserCoreInput = {
   mobileNumber?: string
   permissions: UserPermissions
   assignedManagerUserId?: string
+  assignedManagerUserIds?: string[]
   dayRate?: number
   tradeTypePreset?: string
   tradeTypeCustom?: string
@@ -100,8 +101,13 @@ export async function inviteUserCore(input: InviteUserCoreInput): Promise<Invite
   }
 
   if (input.mobileNumber?.trim()) invitationData.mobileNumber = input.mobileNumber.trim()
-  if ((input.permissions.operativeMode || input.permissions.manager) && input.assignedManagerUserId) {
-    invitationData.assignedManagerUserId = input.assignedManagerUserId
+  const lineManagerIds = normalizeLineManagerIds(
+    input.assignedManagerUserIds,
+    input.assignedManagerUserId
+  )
+  if ((input.permissions.operativeMode || input.permissions.manager) && lineManagerIds.length > 0) {
+    invitationData.assignedManagerUserIds = lineManagerIds
+    invitationData.assignedManagerUserId = lineManagerIds[0]
   }
   if ((input.permissions.operativeMode || input.permissions.manager) && input.dayRate != null) {
     invitationData.dayRate = input.dayRate
@@ -134,6 +140,7 @@ export async function inviteUserCore(input: InviteUserCoreInput): Promise<Invite
       permissions: input.permissions,
       mobileNumber: input.mobileNumber,
       assignedManagerUserId: input.assignedManagerUserId,
+      assignedManagerUserIds: input.assignedManagerUserIds,
       dayRate: input.dayRate,
       tradeTypePreset: input.tradeTypePreset,
       tradeTypeCustom: input.tradeTypeCustom,

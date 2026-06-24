@@ -22,6 +22,28 @@ export function permissionsToFirestoreMap(permissions: UserPermissions): Record<
   }
 }
 
+export function normalizeLineManagerIds(ids?: string[], legacyId?: string): string[] {
+  const fromArray = (ids ?? []).map((id) => id.trim()).filter(Boolean)
+  if (fromArray.length > 0) return fromArray
+  const single = legacyId?.trim()
+  return single ? [single] : []
+}
+
+export function applyLineManagerFields(
+  payload: Record<string, unknown>,
+  ids?: string[],
+  legacyId?: string
+): void {
+  const list = normalizeLineManagerIds(ids, legacyId)
+  if (list.length === 0) {
+    payload.assignedManagerUserId = deleteField()
+    payload.assignedManagerUserIds = deleteField()
+    return
+  }
+  payload.assignedManagerUserIds = list
+  payload.assignedManagerUserId = list[0]
+}
+
 function resolveRole(user: User): UserRole {
   if (user.permissions.operativeMode) return UserRole.OPERATIVE
   if (user.permissions.adminAccess) return UserRole.ADMIN
@@ -67,8 +89,11 @@ export function buildSaveUserPayload(user: User): Record<string, unknown> {
   payload.mobileNumber = mobile ? mobile : deleteField()
 
   if (user.permissions.operativeMode || user.permissions.manager) {
-    const managerId = user.assignedManagerUserId?.trim()
-    payload.assignedManagerUserId = managerId ? managerId : deleteField()
+    applyLineManagerFields(
+      payload,
+      user.assignedManagerUserIds,
+      user.assignedManagerUserId
+    )
 
     const dayRate = user.dayRate
     const hourlyRate = user.hourlyRate
@@ -119,6 +144,7 @@ export function buildInvitedUserPayload(params: {
   permissions: UserPermissions
   mobileNumber?: string
   assignedManagerUserId?: string
+  assignedManagerUserIds?: string[]
   dayRate?: number
   tradeTypePreset?: string
   tradeTypeCustom?: string
@@ -155,8 +181,8 @@ export function buildInvitedUserPayload(params: {
   }
 
   if (params.mobileNumber?.trim()) payload.mobileNumber = params.mobileNumber.trim()
-  if ((permissions.operativeMode || permissions.manager) && params.assignedManagerUserId) {
-    payload.assignedManagerUserId = params.assignedManagerUserId
+  if (permissions.operativeMode || permissions.manager) {
+    applyLineManagerFields(payload, params.assignedManagerUserIds, params.assignedManagerUserId)
   }
   if ((permissions.operativeMode || permissions.manager) && params.dayRate != null) {
     payload.dayRate = params.dayRate

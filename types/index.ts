@@ -133,6 +133,7 @@ export interface User {
   mobileNumber?: string;
   permissions: UserPermissions;
   assignedManagerUserId?: string;
+  assignedManagerUserIds?: string[];
   dayRate?: number;
   hourlyRate?: number;
   tradeTypePreset?: string;

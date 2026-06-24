@@ -1,6 +1,6 @@
 'use client'
 
-import { FormEvent, useEffect, useMemo, useState } from 'react'
+import { FormEvent, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
@@ -17,8 +17,8 @@ import {
 } from '@/lib/staff/userPermissionDescriptions'
 import { loadOrganizationDetails } from '@/lib/settings/organizationSettings'
 import type { UserPermissions } from '@/types'
+import { LineManagerMultiSelect } from '@/components/users/LineManagerMultiSelect'
 import {
-  PanelHeader,
   SectionLabel,
   SettingsCard,
   Toggle,
@@ -29,6 +29,15 @@ import {
   SuccessBanner,
   ErrorBanner,
 } from '@/components/settings/primitives'
+
+function FormSection({ label, children }: { label?: string; children: ReactNode }) {
+  return (
+    <section className="space-y-3">
+      {label ? <SectionLabel label={label} /> : null}
+      {children}
+    </section>
+  )
+}
 
 type AccountType = 'admin' | 'manager' | 'operative'
 
@@ -136,7 +145,7 @@ export function AddUserScreen() {
     surname: '',
     email: '',
     mobileNumber: '',
-    assignedManagerUserId: '',
+    assignedManagerUserIds: [] as string[],
     dayRate: '',
     tradeTypePreset: '',
     tradeTypeCustom: '',
@@ -207,16 +216,16 @@ export function AddUserScreen() {
 
   function permissionChecked(key: keyof UserPermissions): boolean {
     if (accountType === 'admin') return true
-    if (key === 'dailyOverview') return permissions.dailyOverview !== false
     return permissions[key] === true
   }
 
-  const invitePermissions =
-    operativeInviteOnly || accountType === 'operative'
-      ? permissionsForAccountType('operative')
-      : accountType === 'admin'
-        ? permissionsForAccountType('admin')
-        : permissions
+  const invitePermissions = useMemo(() => {
+    if (accountType === 'admin') return permissionsForAccountType('admin')
+    if (operativeInviteOnly || accountType === 'operative') {
+      return { ...permissions, operativeMode: true, manager: false, adminAccess: false }
+    }
+    return { ...permissions, manager: true, operativeMode: false, adminAccess: false }
+  }, [accountType, operativeInviteOnly, permissions])
 
   const handleSubmit = async (e?: FormEvent) => {
     e?.preventDefault()
@@ -249,7 +258,9 @@ export function AddUserScreen() {
         surname,
         mobileNumber: form.mobileNumber.trim() || undefined,
         permissions: invitePermissions,
-        assignedManagerUserId: form.assignedManagerUserId || undefined,
+        assignedManagerUserId: form.assignedManagerUserIds[0],
+        assignedManagerUserIds:
+          form.assignedManagerUserIds.length > 0 ? form.assignedManagerUserIds : undefined,
         dayRate: form.dayRate ? Number(form.dayRate) : undefined,
         tradeTypePreset: form.tradeTypePreset || undefined,
         tradeTypeCustom: form.tradeTypePreset === 'Other' ? form.tradeTypeCustom.trim() || undefined : undefined,
@@ -322,29 +333,22 @@ export function AddUserScreen() {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="mx-auto max-w-2xl pb-16">
-      <PanelHeader title={pageTitle} onBack={() => router.push(backHref)} />
+    <form onSubmit={handleSubmit} className="mx-auto max-w-2xl space-y-8 pb-16">
+      <div className="space-y-3">
+        <PanelHeader title={pageTitle} onBack={() => router.push(backHref)} />
 
-      <p className="mt-2 text-sm text-slate-500">
-        {operativeInviteOnly
-          ? 'Invite a new operative to your organisation. They will receive an email to set up their account.'
-          : 'Invite someone to your organisation. They&apos;ll receive an email to set up their account — same flow as the iOS app.'}
-      </p>
+        <p className="text-sm text-slate-500">
+          {operativeInviteOnly
+            ? 'Invite a new operative to your organisation. They will receive an email to set up their account.'
+            : 'Invite someone to your organisation. They&apos;ll receive an email to set up their account — same flow as the iOS app.'}
+        </p>
 
-      {error && (
-        <div className="mt-4">
-          <ErrorBanner message={error} />
-        </div>
-      )}
-      {success && (
-        <div className="mt-4">
-          <SuccessBanner message={success} />
-        </div>
-      )}
+        {error && <ErrorBanner message={error} />}
+        {success && <SuccessBanner message={success} />}
+      </div>
 
       {!operativeInviteOnly && (
-        <>
-          <SectionLabel label="Account type" />
+        <FormSection label="Account type">
           <div className="space-y-2">
             {availableAccountTypes.map((type) => {
               const selected = accountType === type.id
@@ -385,20 +389,22 @@ export function AddUserScreen() {
               )
             })}
           </div>
-        </>
+        </FormSection>
       )}
 
       {operativeInviteOnly && (
-        <SettingsCard>
-          <div className="p-4 text-sm text-slate-600">
-            You are inviting an <strong className="font-semibold text-slate-800">operative</strong>. New operatives
-            appear in your Operatives roster once they accept the invitation.
-          </div>
-        </SettingsCard>
+        <FormSection>
+          <SettingsCard>
+            <div className="p-4 text-sm text-slate-600">
+              You are inviting an <strong className="font-semibold text-slate-800">operative</strong>. New operatives
+              appear in your Operatives roster once they accept the invitation.
+            </div>
+          </SettingsCard>
+        </FormSection>
       )}
 
-      <SectionLabel label="Identity" />
-      <SettingsCard>
+      <FormSection label="Identity">
+        <SettingsCard>
         <div className="grid grid-cols-1 gap-4 p-4 sm:grid-cols-2">
           <FormField label="First name" hint="Required">
             <Input
@@ -435,10 +441,10 @@ export function AddUserScreen() {
           </FormField>
         </div>
       </SettingsCard>
+      </FormSection>
 
       {showAdminPermissions && (
-        <>
-          <SectionLabel label="Administrator permissions" />
+        <FormSection label="Administrator permissions">
           <SettingsCard>
             <div className="border-b border-slate-100 px-4 py-3 text-sm text-slate-600">
               All permissions are enabled for administrators. The only capability managers do not have is{' '}
@@ -457,13 +463,15 @@ export function AddUserScreen() {
               ))}
             </div>
           </SettingsCard>
-        </>
+        </FormSection>
       )}
 
       {showPermissions && permissionDefs.length > 0 && (
-        <>
-          <SectionLabel label={`${accountType === 'operative' ? 'Operative' : 'Manager'} permissions`} />
+        <FormSection label={`${accountType === 'operative' ? 'Operative' : 'Manager'} permissions`}>
           <SettingsCard>
+            <div className="border-b border-slate-100 px-4 py-3 text-sm text-slate-600">
+              All permissions start turned off — switch on only what this person needs.
+            </div>
             <div className="divide-y divide-slate-100">
               {permissionDefs.map((def) => (
                 <PermToggleRow
@@ -475,11 +483,11 @@ export function AddUserScreen() {
               ))}
             </div>
           </SettingsCard>
-        </>
+        </FormSection>
       )}
 
-      <SectionLabel label="Tax details" />
-      <SettingsCard>
+      <FormSection label="Tax details">
+        <SettingsCard>
         <div className="grid grid-cols-1 gap-4 p-4 sm:grid-cols-2">
           <FormField label="VAT number" hint="Optional. Same as iOS invite setup.">
             <Input
@@ -495,9 +503,10 @@ export function AddUserScreen() {
           </FormField>
         </div>
       </SettingsCard>
+      </FormSection>
 
-      <SectionLabel label="Annual leave" />
-      <SettingsCard>
+      <FormSection label="Annual leave">
+        <SettingsCard>
         <div className="space-y-4 p-4">
           <div className="flex items-start justify-between gap-3">
             <div>
@@ -526,10 +535,11 @@ export function AddUserScreen() {
           )}
         </div>
       </SettingsCard>
+      </FormSection>
 
       {showSetup && (
         <>
-          <SectionLabel
+          <FormSection
             label={
               accountType === 'operative'
                 ? 'Operative setup'
@@ -537,22 +547,19 @@ export function AddUserScreen() {
                   ? 'Administrator setup'
                   : 'Manager setup'
             }
-          />
-          <SettingsCard>
-            <div className="space-y-4 p-4">
-              <FormField label="Line manager" hint="“No line manager” is a valid choice — same as iOS.">
-                <Select
-                  value={form.assignedManagerUserId}
-                  onChange={(e) => setForm({ ...form, assignedManagerUserId: e.target.value })}
+          >
+            <SettingsCard>
+              <div className="space-y-4 p-4">
+                <FormField
+                  label="Line managers"
+                  hint="Optional. Select one or more line managers — same as iOS. Leave empty if not applicable."
                 >
-                  <option value="">No line manager</option>
-                  {lineManagers.map((manager) => (
-                    <option key={manager.id} value={manager.id}>
-                      {manager.firstName} {manager.surname} ({manager.email})
-                    </option>
-                  ))}
-                </Select>
-              </FormField>
+                  <LineManagerMultiSelect
+                    managers={lineManagers}
+                    selectedIds={form.assignedManagerUserIds}
+                    onChange={(assignedManagerUserIds) => setForm({ ...form, assignedManagerUserIds })}
+                  />
+                </FormField>
 
               <FormField label="Day rate" hint="Optional. Payroll uses either a day rate or hourly rate, not both.">
                 <div className="relative">
@@ -593,12 +600,13 @@ export function AddUserScreen() {
                   </FormField>
                 )}
               </div>
-            </div>
-          </SettingsCard>
+              </div>
+            </SettingsCard>
+          </FormSection>
 
-          <SectionLabel label="Employment & timesheets" />
-          <SettingsCard>
-            <div className="space-y-4 p-4">
+          <FormSection label="Employment & timesheets">
+            <SettingsCard>
+              <div className="space-y-4 p-4">
               <FormField label="Employment type">
                 <Select
                   value={form.employmentType}
@@ -622,12 +630,13 @@ export function AddUserScreen() {
                   onChange={(checked) => setForm({ ...form, timesheetsEnabled: checked })}
                 />
               </div>
-            </div>
-          </SettingsCard>
+              </div>
+            </SettingsCard>
+          </FormSection>
         </>
       )}
 
-      <div className="mt-8">
+      <div className="space-y-3 pt-2">
         <SaveButton saving={saving} saved={saved} onClick={() => handleSubmit()} />
         <p className="mt-3 text-center text-xs text-slate-400">
           Creates invitation, user profile and organisation email mapping in Firebase — iOS compatible.

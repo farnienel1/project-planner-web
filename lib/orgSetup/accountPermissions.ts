@@ -20,6 +20,46 @@ export function defaultPermissionsBase(): UserPermissions {
   }
 }
 
+export function permissionsForManagerInvite(): UserPermissions {
+  return {
+    adminAccess: false,
+    manager: true,
+    operatives: false,
+    skills: false,
+    qualifications: false,
+    materials: false,
+    projects: false,
+    smallWorks: false,
+    operativeMode: false,
+    siteAudit: false,
+    subContractors: false,
+    wholesalersOrderHistory: false,
+    annualLeaveSelfBook: false,
+    weeklyReports: false,
+    dailyOverview: false,
+  }
+}
+
+export function permissionsForOperativeInvite(): UserPermissions {
+  return {
+    adminAccess: false,
+    manager: false,
+    operatives: false,
+    skills: false,
+    qualifications: false,
+    materials: false,
+    projects: false,
+    smallWorks: false,
+    operativeMode: true,
+    siteAudit: false,
+    subContractors: false,
+    wholesalersOrderHistory: false,
+    annualLeaveSelfBook: false,
+    weeklyReports: false,
+    dailyOverview: false,
+  }
+}
+
 /** All manager permission flags enabled — used when inviting administrators. */
 export function permissionsForAdminInvite(): UserPermissions {
   return {
@@ -44,28 +84,13 @@ export function permissionsForAdminInvite(): UserPermissions {
 export function permissionsForAccountType(
   accountType: 'operative' | 'manager' | 'admin'
 ): UserPermissions {
-  const base = defaultPermissionsBase()
-
   if (accountType === 'admin') {
     return permissionsForAdminInvite()
   }
 
   if (accountType === 'manager') {
-    return {
-      ...base,
-      manager: true,
-      operatives: true,
-      skills: true,
-      qualifications: true,
-      subContractors: true,
-    }
+    return permissionsForManagerInvite()
   }
 
-  return {
-    ...base,
-    operativeMode: true,
-    materials: true,
-    siteAudit: true,
-    wholesalersOrderHistory: false,
-  }
+  return permissionsForOperativeInvite()
 }
