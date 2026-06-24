@@ -366,26 +366,32 @@ function DaySection({
       </div>
 
       <div className="space-y-2">
-        {bookings.map((b) => (
-          <BookingCard
-            key={b.id}
-            booking={b}
-            operativeName={
-              b.operativeId
-                ? operativesById.get(b.operativeId) || `Operative ${b.operativeId.slice(0, 6)}`
-                : selfDisplayName || 'You'
-            }
-            projectName={
-              b.displayTitle ||
-              projectsById.get(b.projectId) ||
-              (b.projectId ? `Project ${b.projectId.slice(0, 6)}` : 'Booking')
-            }
-            isHighlighted={highlightBookingId === b.id}
-            canEdit={canEditBookings && b.source !== 'manager'}
-            onSave={onSaveBooking ? (updates) => onSaveBooking(b.id, updates) : undefined}
-            onDelete={onDeleteBooking ? () => onDeleteBooking(b.id) : undefined}
-          />
-        ))}
+        {bookings.length === 0 ? (
+          <p className="rounded-xl border border-dashed border-slate-200 bg-slate-50/60 px-4 py-3 text-xs text-slate-400">
+            No bookings scheduled
+          </p>
+        ) : (
+          bookings.map((b) => (
+            <BookingCard
+              key={b.id}
+              booking={b}
+              operativeName={
+                b.operativeId
+                  ? operativesById.get(b.operativeId) || `Operative ${b.operativeId.slice(0, 6)}`
+                  : selfDisplayName || 'You'
+              }
+              projectName={
+                b.displayTitle ||
+                projectsById.get(b.projectId) ||
+                (b.projectId ? `Project ${b.projectId.slice(0, 6)}` : 'Booking')
+              }
+              isHighlighted={highlightBookingId === b.id}
+              canEdit={canEditBookings && b.source !== 'manager'}
+              onSave={onSaveBooking ? (updates) => onSaveBooking(b.id, updates) : undefined}
+              onDelete={onDeleteBooking ? () => onDeleteBooking(b.id) : undefined}
+            />
+          ))
+        )}
       </div>
     </div>
   )
@@ -505,23 +511,17 @@ export function ScheduleScreen({
     return map
   }, [filteredBookings])
 
-  const sortedDates = useMemo(() => {
+  const weekDays = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart])
+
+  const overviewDates = useMemo(() => {
     const dates = Array.from(bookingsByDate.keys())
       .map((k) => new Date(k))
       .sort((a, b) => a.getTime() - b.getTime())
 
-    if (isPersonal) {
-      const weekEnd = endOfWeek(weekStart, { weekStartsOn: 1 })
-      return dates.filter((d) => {
-        const day = startOfDay(d)
-        return day >= startOfDay(weekStart) && day <= weekEnd
-      })
-    }
-
     return dates.filter((d) => showPast || !isPast(startOfDay(d)) || isToday(d))
-  }, [bookingsByDate, showPast, isPersonal, weekStart])
+  }, [bookingsByDate, showPast])
 
-  const weekDays = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart])
+  const datesToRender = isPersonal ? weekDays : overviewDates
 
   const confirmedCount = scopedBookings.filter((b) => bookingStatus(String(b.status)) === 'confirmed').length
   const tentativeCount = scopedBookings.filter((b) => bookingStatus(String(b.status)) === 'tentative').length
@@ -710,20 +710,14 @@ export function ScheduleScreen({
       </div>
       )}
 
-      {sortedDates.length === 0 ? (
+      {datesToRender.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-slate-300 bg-white py-16 text-center">
-          <p className="text-sm font-semibold text-slate-700">
-            {isPersonal ? 'No bookings this week' : 'No bookings found'}
-          </p>
-          <p className="mt-1 text-xs text-slate-400">
-            {isPersonal
-              ? 'Use the week arrows above to view another week, or book time on the iOS app.'
-              : 'Try adjusting filters or selecting another week.'}
-          </p>
+          <p className="text-sm font-semibold text-slate-700">No bookings found</p>
+          <p className="mt-1 text-xs text-slate-400">Try adjusting filters or selecting another week.</p>
         </div>
       ) : (
         <div className="space-y-8">
-          {sortedDates.map((date) => {
+          {datesToRender.map((date) => {
             const key = startOfDay(date).toISOString()
             const dayBookings = bookingsByDate.get(key) || []
             return (
