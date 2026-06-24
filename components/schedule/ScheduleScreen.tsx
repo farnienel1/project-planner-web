@@ -297,6 +297,7 @@ function DaySection({
   date,
   bookings,
   operativesById,
+  peopleById,
   projectsById,
   selectedDate,
   highlightBookingId,
@@ -308,6 +309,7 @@ function DaySection({
   date: Date
   bookings: Booking[]
   operativesById: Map<string, string>
+  peopleById?: Map<string, string>
   projectsById: Map<string, string>
   selectedDate: Date | null
   highlightBookingId: string | null
@@ -376,9 +378,11 @@ function DaySection({
               key={b.id}
               booking={b}
               operativeName={
-                b.operativeId
-                  ? operativesById.get(b.operativeId) || `Operative ${b.operativeId.slice(0, 6)}`
-                  : selfDisplayName || 'You'
+                b.source === 'manager' && b.bookedBy
+                  ? peopleById?.get(b.bookedBy) || 'Manager'
+                  : b.operativeId
+                    ? operativesById.get(b.operativeId) || `Operative ${b.operativeId.slice(0, 6)}`
+                    : selfDisplayName || 'You'
               }
               projectName={
                 b.displayTitle ||
@@ -423,6 +427,7 @@ export function ScheduleScreen({
   organizationId,
   bookings,
   operativesById,
+  peopleById,
   projectsById,
   loading,
   focusDate,
@@ -439,6 +444,7 @@ export function ScheduleScreen({
   organizationId?: string
   bookings: Booking[]
   operativesById: Map<string, string>
+  peopleById?: Map<string, string>
   projectsById: Map<string, string>
   loading?: boolean
   focusDate?: Date | null
@@ -726,6 +732,7 @@ export function ScheduleScreen({
                 date={date}
                 bookings={dayBookings}
                 operativesById={operativesById}
+                peopleById={peopleById}
                 projectsById={projectsById}
                 selectedDate={selectedDate}
                 highlightBookingId={highlightBookingId ?? null}
