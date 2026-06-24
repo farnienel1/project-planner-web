@@ -1,6 +1,6 @@
 'use client'
 
-import { FormEvent, useEffect, useState } from 'react'
+import { FormEvent, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
@@ -9,6 +9,7 @@ import { canManageUsers } from '@/lib/navigation/menuPermissions'
 import type { UserPermissions } from '@/types'
 import { FormActions, FormInput, FormLabel, FormSelect } from '@/components/forms/FormShell'
 import { ErrorBanner } from '@/components/dashboard/PageShell'
+import { getManagerUsers } from '@/lib/staff/userRosterUtils'
 
 const defaultPermissions = (): UserPermissions => ({
   adminAccess: false,
@@ -47,7 +48,10 @@ export function InviteUserForm() {
     if (organization?.id) loadUsers(organization.id)
   }, [organization, loadUsers])
 
-  const managers = users.filter((u) => u.permissions.manager && !u.permissions.operativeMode && u.isActive)
+  const lineManagers = useMemo(
+    () => getManagerUsers(users).filter((entry) => entry.isActive),
+    [users]
+  )
 
   const buildPermissions = (): UserPermissions => {
     const base = defaultPermissions()
@@ -64,10 +68,6 @@ export function InviteUserForm() {
     e.preventDefault()
     if (!organization?.id || !user) return
     const permissions = buildPermissions()
-    if ((permissions.operativeMode || permissions.manager) && !form.assignedManagerUserId && accountType !== 'admin') {
-      setError('Line manager is required for managers and operatives.')
-      return
-    }
     setSaving(true)
     setError(null)
     setSuccess(null)
@@ -155,13 +155,16 @@ export function InviteUserForm() {
         {accountType !== 'admin' && (
           <>
             <div>
-              <FormLabel required>Line manager</FormLabel>
-              <FormSelect value={form.assignedManagerUserId} onChange={(e) => setForm({ ...form, assignedManagerUserId: e.target.value })} required>
-                <option value="">Select manager</option>
-                {managers.map((m) => (
+              <FormLabel>Line manager</FormLabel>
+              <FormSelect value={form.assignedManagerUserId} onChange={(e) => setForm({ ...form, assignedManagerUserId: e.target.value })}>
+                <option value="">No line manager</option>
+                {lineManagers.map((m) => (
                   <option key={m.id} value={m.id}>{m.firstName} {m.surname} ({m.email})</option>
                 ))}
               </FormSelect>
+              <p className="mt-1.5 text-xs text-slate-400">
+                Same as iOS — leave as &quot;No line manager&quot; if not applicable.
+              </p>
             </div>
             {(accountType === 'operative' || accountType === 'manager') && (
               <div>
