@@ -6,8 +6,13 @@ import {
   DEFAULT_ANNUAL_LEAVE,
   loadOrganizationDetails,
   saveAnnualLeaveDefaults,
+  saveOrganizationBankHolidayRegion,
   type OrgAnnualLeaveDefaults,
 } from '@/lib/settings/organizationSettings'
+import {
+  BANK_HOLIDAY_REGIONS,
+  bankHolidayRegionLabel,
+} from '@/lib/settings/bankHolidayRegions'
 import {
   PanelHeader,
   SectionLabel,
@@ -30,6 +35,7 @@ export function AnnualLeaveDefaultsPanel({ onBack }: { onBack: () => void }) {
   const [startMonth, setStartMonth] = useState(DEFAULT_ANNUAL_LEAVE.startMonth)
   const [endMonth, setEndMonth] = useState(DEFAULT_ANNUAL_LEAVE.endMonth)
   const [carriesOver, setCarriesOver] = useState(DEFAULT_ANNUAL_LEAVE.carriesOver)
+  const [bankHolidayRegion, setBankHolidayRegion] = useState('GB')
 
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -46,6 +52,7 @@ export function AnnualLeaveDefaultsPanel({ onBack }: { onBack: () => void }) {
         setStartMonth(defaults.startMonth)
         setEndMonth(defaults.endMonth)
         setCarriesOver(defaults.carriesOver)
+        setBankHolidayRegion((details.countryCode ?? 'GB').toUpperCase())
       })
       .catch(() => {})
   }, [organization?.id])
@@ -68,6 +75,7 @@ export function AnnualLeaveDefaultsPanel({ onBack }: { onBack: () => void }) {
         carriesOver,
       }
       await saveAnnualLeaveDefaults(organization.id, defaults)
+      await saveOrganizationBankHolidayRegion(organization.id, bankHolidayRegion)
       setSaved(true)
       window.setTimeout(() => setSaved(false), 3000)
     } catch (saveError) {
@@ -137,6 +145,29 @@ export function AnnualLeaveDefaultsPanel({ onBack }: { onBack: () => void }) {
             </div>
             <Toggle checked={carriesOver} onChange={setCarriesOver} />
           </div>
+        </div>
+      </SettingsCard>
+
+      <SectionLabel label="Bank holiday region" />
+      <SettingsCard>
+        <div className="space-y-3 p-4">
+          <p className="text-xs leading-relaxed text-slate-500">
+            Bank holidays shown in annual leave and scheduling follow the region you select. This should match where your
+            organisation is based — including England &amp; Wales, Scotland and Northern Ireland.
+          </p>
+          <FormField label="Region" hint="Syncs with the iOS app and applies organisation-wide.">
+            <Select value={bankHolidayRegion} onChange={(e) => setBankHolidayRegion(e.target.value)}>
+              {BANK_HOLIDAY_REGIONS.map((region) => (
+                <option key={region.code} value={region.code}>
+                  {region.label}
+                </option>
+              ))}
+            </Select>
+          </FormField>
+          <p className="text-xs text-slate-400">
+            Currently set to{' '}
+            <strong className="font-semibold text-slate-600">{bankHolidayRegionLabel(bankHolidayRegion)}</strong>.
+          </p>
         </div>
       </SettingsCard>
 
