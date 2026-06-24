@@ -11,10 +11,11 @@ export default function SmallWorkScheduleOperativesPage() {
       {(work) => (
         <div className="space-y-6">
           <FormBackLink href={`/dashboard/small-works/${work.id}/schedule`} label="Back to scheduling" />
-          <PageHeader title="Schedule booking" description="Operatives & managers" />
+          <PageHeader title="Schedule booking" description="Pick dates first, then add operatives or managers" />
           <ScheduleOperativeForm
             project={work}
             scheduleBasePath={`/dashboard/small-works/${work.id}/schedule`}
+            managerLocationType="small_work"
           />
         </div>
       )}
