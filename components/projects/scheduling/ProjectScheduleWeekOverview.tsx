@@ -293,7 +293,7 @@ export function ProjectScheduleWeekOverview({
                           href={`${scheduleBasePath}/operatives`}
                           className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-blue-600 hover:underline"
                         >
-                          + Add booking
+                          + Schedule operatives or managers
                         </Link>
                       </div>
                     ) : (
