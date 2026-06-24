@@ -4,8 +4,10 @@ import Link from 'next/link'
 import { addDays, endOfWeek, format, isSameDay, isToday as dateFnsIsToday, startOfWeek } from 'date-fns'
 import { useEffect, useMemo, useState } from 'react'
 import { useBookingStore } from '@/lib/stores/bookingStore'
+import { useManagerScheduleStore } from '@/lib/stores/managerScheduleStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
 import { useSubcontractorStore } from '@/lib/stores/subcontractorStore'
+import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { weekDaysFrom } from '@/lib/scheduling/scheduleUtils'
 import type { Project } from '@/types'
 import { collection, getDocs } from 'firebase/firestore'
@@ -43,9 +45,30 @@ function Avatar({ name, size = 'sm' }: { name: string; size?: 'sm' | 'md' }) {
 }
 
 function formatSlot(slot: string): string {
-  // Converts stored slot values to readable time ranges
-  if (!slot || slot === 'FULL DAY' || slot === 'Full Day') return 'FULL DAY'
+  if (!slot || slot === 'FULL DAY' || slot === 'FULL_DAY' || slot === 'Full Day') {
+    return 'FULL DAY'
+  }
   return slot
+}
+
+function estimateHours(slotStr: string): number {
+  let hours = 8
+  const match = slotStr.match(/(\d{2}):(\d{2})[–-](\d{2}):(\d{2})/)
+  if (match) {
+    const start = parseInt(match[1]) * 60 + parseInt(match[2])
+    const end = parseInt(match[3]) * 60 + parseInt(match[4])
+    hours = Math.round(((end - start) / 60) * 10) / 10
+  }
+  return hours
+}
+
+type DayRow = {
+  id: string
+  name: string
+  slot: string
+  hours: number
+  roleLabel: string
+  roleTone: 'operative' | 'manager' | 'subcontractor'
 }
 
 function OTBadge({ hours }: { hours: number }) {
@@ -68,7 +91,9 @@ export function ProjectScheduleWeekOverview({
   scheduleBasePath: string
 }) {
   const { bookings, loadBookings } = useBookingStore()
+  const { managerSiteBookings, loadManagerSiteBookings } = useManagerScheduleStore()
   const { operatives, loadOperatives } = useOperativeStore()
+  const { users, loadUsers } = useOrgUserStore()
   const { subcontractors, loadSubcontractors } = useSubcontractorStore()
   const [weekStart, setWeekStart] = useState(startOfWeek(new Date(), { weekStartsOn: 1 }))
   const [subBookings, setSubBookings] = useState<SubBooking[]>([])
@@ -80,9 +105,11 @@ export function ProjectScheduleWeekOverview({
   })
   useEffect(() => {
     loadBookings(organizationId)
+    loadManagerSiteBookings(organizationId)
     loadOperatives(organizationId)
+    loadUsers(organizationId)
     loadSubcontractors(organizationId)
-  }, [organizationId, loadBookings, loadOperatives, loadSubcontractors])
+  }, [organizationId, loadBookings, loadManagerSiteBookings, loadOperatives, loadUsers, loadSubcontractors])
 
   useEffect(() => {
     const load = async () => {
@@ -112,14 +139,26 @@ export function ProjectScheduleWeekOverview({
     [bookings, project.id]
   )
 
+  const projectManagerBookings = useMemo(
+    () =>
+      managerSiteBookings.filter(
+        (b) =>
+          b.locationId === project.id &&
+          (b.locationType === 'project' || b.locationType === 'small_work')
+      ),
+    [managerSiteBookings, project.id]
+  )
+
   const weekCounts = useMemo(() => {
-    let ops = 0, subs = 0
+    let staff = 0
+    let subs = 0
     for (const day of weekDays) {
-      ops += projectBookings.filter((b) => isSameDay(new Date(b.date), day)).length
+      staff += projectBookings.filter((b) => isSameDay(new Date(b.date), day)).length
+      staff += projectManagerBookings.filter((b) => isSameDay(new Date(b.date), day)).length
       subs += subBookings.filter((b) => isSameDay(new Date(b.date), day)).length
     }
-    return { ops, subs }
-  }, [weekDays, projectBookings, subBookings])
+    return { staff, subs }
+  }, [weekDays, projectBookings, projectManagerBookings, subBookings])
 
   return (
     <div className="space-y-4">
@@ -155,7 +194,7 @@ export function ProjectScheduleWeekOverview({
             Week of {format(weekStart, 'd MMM yyyy')}
           </p>
           <p className="text-xs text-slate-500">
-            {weekCounts.ops} op{weekCounts.ops !== 1 ? 's' : ''} · {weekCounts.subs} sub{weekCounts.subs !== 1 ? 's' : ''}
+            {weekCounts.staff} booked · {weekCounts.subs} sub{weekCounts.subs !== 1 ? 's' : ''}
           </p>
         </div>
         <button
@@ -201,24 +240,41 @@ export function ProjectScheduleWeekOverview({
             const isExpanded = expandedDay === dayKey
             const isTodayDay = dateFnsIsToday(day)
 
-            const opRows = projectBookings
+            const opRows: DayRow[] = projectBookings
               .filter((b) => isSameDay(new Date(b.date), day))
               .map((b) => {
                 const op = operatives.find((o) => o.id === b.operativeId)
                 const name = op ? `${op.firstName} ${op.lastName}`.trim() : 'Operative'
-                // Estimate hours from timeSlot string
-                const slotStr = String(b.timeSlot || 'FULL DAY')
-                let hours = 8
-                const match = slotStr.match(/(\d{2}):(\d{2})[–-](\d{2}):(\d{2})/)
-                if (match) {
-                  const start = parseInt(match[1]) * 60 + parseInt(match[2])
-                  const end = parseInt(match[3]) * 60 + parseInt(match[4])
-                  hours = Math.round((end - start) / 60 * 10) / 10
+                const slotStr = formatSlot(String(b.timeSlot || 'FULL DAY'))
+                return {
+                  id: b.id,
+                  name,
+                  slot: slotStr,
+                  hours: estimateHours(slotStr),
+                  roleLabel: 'Op',
+                  roleTone: 'operative',
                 }
-                return { id: b.id, name, slot: slotStr, hours, kind: 'operative' as const }
               })
 
-            const subRows = subBookings
+            const managerRows: DayRow[] = projectManagerBookings
+              .filter((b) => isSameDay(new Date(b.date), day))
+              .map((b) => {
+                const manager = users.find((u) => u.id === b.userId)
+                const name = manager ? `${manager.firstName} ${manager.surname}`.trim() : 'Manager'
+                const slotStr = formatSlot(String(b.timeSlot || 'FULL DAY'))
+                const roleLabel =
+                  manager?.permissions.adminAccess || manager?.isSuperAdmin ? 'Admin' : 'Mgr'
+                return {
+                  id: b.id,
+                  name,
+                  slot: slotStr,
+                  hours: estimateHours(slotStr),
+                  roleLabel,
+                  roleTone: 'manager',
+                }
+              })
+
+            const subRows: DayRow[] = subBookings
               .filter((b) => isSameDay(new Date(b.date), day))
               .map((b) => {
                 const sub = subcontractors.find((s) => s.id === b.subcontractorId)
@@ -227,11 +283,12 @@ export function ProjectScheduleWeekOverview({
                   name: sub?.name || 'Sub contractor',
                   slot: formatSlot(b.timeSlot),
                   hours: 8,
-                  kind: 'subcontractor' as const,
+                  roleLabel: 'Sub',
+                  roleTone: 'subcontractor',
                 }
               })
 
-            const rows = [...opRows, ...subRows]
+            const rows = [...opRows, ...managerRows, ...subRows]
             const bookedCount = rows.length
 
             return (
@@ -313,11 +370,13 @@ export function ProjectScheduleWeekOverview({
                                 {row.hours}h
                               </span>
                               <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                                row.kind === 'subcontractor'
+                                row.roleTone === 'subcontractor'
                                   ? 'bg-violet-100 text-violet-700'
-                                  : 'bg-emerald-100 text-emerald-700'
+                                  : row.roleTone === 'manager'
+                                    ? 'bg-blue-100 text-blue-700'
+                                    : 'bg-emerald-100 text-emerald-700'
                               }`}>
-                                {row.kind === 'subcontractor' ? 'Sub' : 'Op'}
+                                {row.roleLabel}
                               </span>
                             </div>
                           </div>

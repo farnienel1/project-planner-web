@@ -16,11 +16,12 @@ export type DraftBookingPerson = {
   kind: SchedulablePersonKind
   name: string
   email: string
+  badge: string
   dayStates: Record<string, DayBookingState>
   clashByDay: Record<string, OperativeBookingClash[]>
 }
 
-export type WizardStep = 'dates' | 'pick-person' | 'resolve-person' | 'review'
+export type WizardStep = 'dates' | 'pick-person' | 'review'
 
 function projectLabel(projectId: string, projects: Project[]): string {
   const project = projects.find((p) => p.id === projectId)
@@ -134,6 +135,7 @@ export function buildDraftPersonDayStates({
     kind: person.kind,
     name: person.name,
     email: person.email,
+    badge: person.badge,
     dayStates,
     clashByDay,
   }

@@ -108,7 +108,7 @@ export function ScheduleBookingReviewStep({
                       )}
                     </div>
                     <p className="text-xs text-slate-500">
-                      {person.kind === 'manager' ? 'Manager' : 'Operative'} · {bookableDays.length} day
+                      {person.badge} · {bookableDays.length} day
                       {bookableDays.length !== 1 ? 's' : ''}
                     </p>
                     <div className="mt-2 flex flex-wrap gap-1.5">

@@ -31,13 +31,11 @@ import { ErrorBanner } from '@/components/dashboard/PageShell'
 import { ScheduleBookingReviewStep } from '@/components/projects/scheduling/ScheduleBookingReviewStep'
 import { ScheduleDatesStep } from '@/components/projects/scheduling/ScheduleDatesStep'
 import { SchedulePersonPickerStep } from '@/components/projects/scheduling/SchedulePersonPickerStep'
-import { SchedulePersonResolveStep } from '@/components/projects/scheduling/SchedulePersonResolveStep'
 import type { Project } from '@/types'
 
 const STEP_LABELS: Record<WizardStep, string> = {
   dates: 'Dates',
   'pick-person': 'Add person',
-  'resolve-person': 'Resolve clashes',
   review: 'Review',
 }
 
@@ -64,6 +62,7 @@ export function ScheduleOperativeForm({
   const [quickDays, setQuickDays] = useState<number | null>(null)
   const [dateSlots, setDateSlots] = useState<Map<string, ScheduleDateSlot>>(new Map())
   const [draftPeople, setDraftPeople] = useState<DraftBookingPerson[]>([])
+  const [selectedPersonId, setSelectedPersonId] = useState<string | null>(null)
   const [activePerson, setActivePerson] = useState<DraftBookingPerson | null>(null)
   const [expandedReviewPersonId, setExpandedReviewPersonId] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
@@ -116,36 +115,41 @@ export function ScheduleOperativeForm({
     })
   }
 
+  const rebuildDraftPerson = (draft: DraftBookingPerson, slots: ScheduleDateSlot[]): DraftBookingPerson => {
+    const person: SchedulablePerson = {
+      id: draft.personId,
+      kind: draft.kind,
+      name: draft.name,
+      email: draft.email,
+      badge: draft.badge,
+    }
+    return buildDraftPersonDayStates({
+      person,
+      slots,
+      bookings,
+      managerSiteBookings,
+      operatives,
+      projects: allProjects,
+      currentProjectId: project.id,
+    })
+  }
+
   const rebuildDraftPeopleForNewSlots = (slots: ScheduleDateSlot[]) => {
-    if (draftPeople.length === 0) return
-    setDraftPeople((prev) =>
-      prev
-        .map((draft) => {
-          const person: SchedulablePerson = {
-            id: draft.personId,
-            kind: draft.kind,
-            name: draft.name,
-            email: draft.email,
-            badge: draft.kind === 'manager' ? 'Manager' : 'Operative',
-          }
-          return buildDraftPersonDayStates({
-            person,
-            slots,
-            bookings,
-            managerSiteBookings,
-            operatives,
-            projects: allProjects,
-            currentProjectId: project.id,
-          })
-        })
-        .filter(personHasBookableDays)
-    )
+    if (draftPeople.length > 0) {
+      setDraftPeople((prev) =>
+        prev.map((draft) => rebuildDraftPerson(draft, slots)).filter(personHasBookableDays)
+      )
+    }
+    if (activePerson) {
+      setActivePerson(rebuildDraftPerson(activePerson, slots))
+    }
   }
 
   useEffect(() => {
     if (slotsList.length === 0) {
       setDraftPeople([])
       setActivePerson(null)
+      setSelectedPersonId(null)
       if (step !== 'dates') setStep('dates')
       return
     }
@@ -155,6 +159,13 @@ export function ScheduleOperativeForm({
 
   const handleSelectPerson = (person: SchedulablePerson) => {
     setError(null)
+
+    if (selectedPersonId === person.id) {
+      setSelectedPersonId(null)
+      setActivePerson(null)
+      return
+    }
+
     const draft = buildDraftPersonDayStates({
       person,
       slots: slotsList,
@@ -165,40 +176,22 @@ export function ScheduleOperativeForm({
       currentProjectId: project.id,
     })
 
-    if (!personHasBookableDays(draft) && personHasPendingClashes(draft)) {
-      setActivePerson(draft)
-      setStep('resolve-person')
-      return
-    }
-
-    if (!personHasBookableDays(draft)) {
-      setError('This person has no available days on the selected dates.')
-      return
-    }
-
-    if (personHasPendingClashes(draft)) {
-      setActivePerson(draft)
-      setStep('resolve-person')
-      return
-    }
-
-    setDraftPeople((prev) => [...prev.filter((p) => p.personId !== draft.personId), draft])
-    setStep('review')
+    setSelectedPersonId(person.id)
+    setActivePerson(draft)
   }
 
-  const handleActivePersonResolved = () => {
+  const handleAddActivePerson = () => {
     if (!activePerson) return
     if (personHasPendingClashes(activePerson)) {
-      setError('Resolve every clash before continuing.')
+      setError('Resolve every clash before adding this person.')
       return
     }
     if (!personHasBookableDays(activePerson)) {
-      setError('No days left for this person. Pick someone else or change dates.')
-      setActivePerson(null)
-      setStep('pick-person')
+      setError('No days left for this person. Change dates or pick someone else.')
       return
     }
     setDraftPeople((prev) => [...prev.filter((p) => p.personId !== activePerson.personId), activePerson])
+    setSelectedPersonId(null)
     setActivePerson(null)
     setError(null)
     setStep('review')
@@ -264,12 +257,14 @@ export function ScheduleOperativeForm({
 
   const goToDates = () => {
     setActivePerson(null)
+    setSelectedPersonId(null)
     setError(null)
     setStep('dates')
   }
 
   const goToPickPerson = () => {
     setActivePerson(null)
+    setSelectedPersonId(null)
     setError(null)
     setStep('pick-person')
   }
@@ -285,11 +280,11 @@ export function ScheduleOperativeForm({
       return
     }
     if (step === 'pick-person') {
+      if (activePerson) {
+        handleAddActivePerson()
+        return
+      }
       setStep(draftPeople.length > 0 ? 'review' : 'dates')
-      return
-    }
-    if (step === 'resolve-person') {
-      handleActivePersonResolved()
       return
     }
     void confirmBooking()
@@ -298,27 +293,31 @@ export function ScheduleOperativeForm({
   const primaryLabel = () => {
     if (saving) return 'Booking…'
     if (step === 'dates') return draftPeople.length > 0 ? 'Continue to review' : 'Add operative or manager'
-    if (step === 'pick-person') return draftPeople.length > 0 ? 'Back to review' : 'Back to dates'
-    if (step === 'resolve-person') return 'Add to booking'
+    if (step === 'pick-person') {
+      if (activePerson) return 'Add to booking'
+      return draftPeople.length > 0 ? 'Back to review' : 'Back to dates'
+    }
     return 'Confirm booking'
   }
 
   const primaryEnabled = () => {
     if (saving) return false
     if (step === 'dates') return slotsList.length > 0
-    if (step === 'resolve-person') {
-      return activePerson ? !personHasPendingClashes(activePerson) && personHasBookableDays(activePerson) : false
+    if (step === 'pick-person') {
+      if (activePerson) {
+        return !personHasPendingClashes(activePerson) && personHasBookableDays(activePerson)
+      }
+      return true
     }
     if (step === 'review') return canConfirm
     return true
   }
 
   const showBack =
-    step === 'pick-person' || step === 'resolve-person' || (step === 'review' && draftPeople.length > 0)
+    step === 'pick-person' || (step === 'review' && draftPeople.length > 0)
 
   const backAction = () => {
     if (step === 'pick-person') goToDates()
-    else if (step === 'resolve-person') goToPickPerson()
     else if (step === 'review') goToDates()
   }
 
@@ -333,12 +332,11 @@ export function ScheduleOperativeForm({
       </div>
 
       <div className="flex flex-wrap gap-2">
-        {(['dates', 'pick-person', 'resolve-person', 'review'] as WizardStep[]).map((wizardStep) => {
+        {(['dates', 'pick-person', 'review'] as WizardStep[]).map((wizardStep) => {
           const active = step === wizardStep
           const reached =
             wizardStep === 'dates' ||
             (wizardStep === 'pick-person' && slotsList.length > 0) ||
-            (wizardStep === 'resolve-person' && activePerson !== null) ||
             (wizardStep === 'review' && draftPeople.length > 0)
           return (
             <span
@@ -375,15 +373,11 @@ export function ScheduleOperativeForm({
           operatives={operatives}
           users={users}
           draftPeople={draftPeople}
-          onSelectPerson={handleSelectPerson}
-        />
-      )}
-
-      {step === 'resolve-person' && activePerson && (
-        <SchedulePersonResolveStep
-          person={activePerson}
           slots={slotsList}
-          onPersonChange={setActivePerson}
+          selectedPersonId={selectedPersonId}
+          activePerson={activePerson}
+          onSelectPerson={handleSelectPerson}
+          onActivePersonChange={setActivePerson}
         />
       )}
 
