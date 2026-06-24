@@ -18,6 +18,7 @@ import {
   projectCollectionName,
   type ProjectSaveInput,
 } from '@/lib/firebase/projectPayload'
+import { runOrgLoad } from '@/lib/stores/orgLoadCache'
 import { parseFirestoreDate, parseNumber, parseOptionalString, parseString, newUuid } from '@/lib/firebase/firestoreUtils'
 
 function parseClient(data: unknown): Client {
@@ -84,9 +85,9 @@ interface ProjectState {
   clients: Client[]
   loading: boolean
   error: string | null
-  loadProjects: (organizationId: string, includeInactive?: boolean) => Promise<void>
-  loadSmallWorks: (organizationId: string) => Promise<void>
-  loadClients: (organizationId: string) => Promise<void>
+  loadProjects: (organizationId: string, includeInactive?: boolean, options?: { force?: boolean }) => Promise<void>
+  loadSmallWorks: (organizationId: string, options?: { force?: boolean }) => Promise<void>
+  loadClients: (organizationId: string, options?: { force?: boolean }) => Promise<void>
   getProject: (organizationId: string, projectId: string, collection?: 'projects' | 'smallWorks') => Promise<Project | null>
   saveProject: (input: ProjectSaveInput, collection?: 'projects' | 'smallWorks') => Promise<string>
   deleteProject: (id: string, organizationId: string, collection?: 'projects' | 'smallWorks') => Promise<void>
@@ -106,54 +107,82 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   loading: false,
   error: null,
 
-  loadProjects: async (organizationId, includeInactive = false) => {
-    set({ loading: true, error: null })
-    try {
-      const snapshot = await getDocs(collection(db, 'organizations', organizationId, 'projects'))
-      let projects = snapshot.docs.map((entry) =>
-        mapProjectDoc(entry.id, entry.data() as Record<string, unknown>, organizationId)
-      )
-      if (!includeInactive) projects = projects.filter((p) => p.isLive)
-      set({ projects, loading: false })
-    } catch (error: unknown) {
-      set({ error: error instanceof Error ? error.message : 'Failed to load projects', loading: false })
-    }
+  loadProjects: async (organizationId, includeInactive = false, options?: { force?: boolean }) => {
+    const cacheKey = `projectStore:projects:${includeInactive ? 'all' : 'live'}`
+    await runOrgLoad(
+      cacheKey,
+      organizationId,
+      async () => {
+        set({ loading: true, error: null })
+        try {
+          const snapshot = await getDocs(collection(db, 'organizations', organizationId, 'projects'))
+          let projects = snapshot.docs.map((entry) =>
+            mapProjectDoc(entry.id, entry.data() as Record<string, unknown>, organizationId)
+          )
+          if (!includeInactive) projects = projects.filter((p) => p.isLive)
+          set({ projects, loading: false })
+        } catch (error: unknown) {
+          set({
+            error: error instanceof Error ? error.message : 'Failed to load projects',
+            loading: false,
+          })
+        }
+      },
+      options
+    )
   },
 
-  loadSmallWorks: async (organizationId) => {
-    set({ loading: true, error: null })
-    try {
-      const snapshot = await getDocs(collection(db, 'organizations', organizationId, 'smallWorks'))
-      const smallWorks = snapshot.docs.map((entry) =>
-        mapProjectDoc(entry.id, entry.data() as Record<string, unknown>, organizationId)
-      )
-      set({ smallWorks, loading: false })
-    } catch (error: unknown) {
-      set({ error: error instanceof Error ? error.message : 'Failed to load small works', loading: false })
-    }
+  loadSmallWorks: async (organizationId, options?: { force?: boolean }) => {
+    await runOrgLoad(
+      'projectStore:smallWorks',
+      organizationId,
+      async () => {
+        set({ loading: true, error: null })
+        try {
+          const snapshot = await getDocs(collection(db, 'organizations', organizationId, 'smallWorks'))
+          const smallWorks = snapshot.docs.map((entry) =>
+            mapProjectDoc(entry.id, entry.data() as Record<string, unknown>, organizationId)
+          )
+          set({ smallWorks, loading: false })
+        } catch (error: unknown) {
+          set({
+            error: error instanceof Error ? error.message : 'Failed to load small works',
+            loading: false,
+          })
+        }
+      },
+      options
+    )
   },
 
-  loadClients: async (organizationId) => {
-    try {
-      const snapshot = await getDocs(collection(db, 'organizations', organizationId, 'clients'))
-      const clients = snapshot.docs.map((entry) => {
-        const data = entry.data()
-        return {
-          id: entry.id,
-          name: parseString(data.name),
-          contactPerson: parseOptionalString(data.contactPerson),
-          email: parseOptionalString(data.email),
-          phone: parseOptionalString(data.phone),
-          address: parseOptionalString(data.address),
-          organizationId,
-          createdAt: parseFirestoreDate(data.createdAt) || new Date(),
-          updatedAt: parseFirestoreDate(data.updatedAt) || new Date(),
-        } satisfies Client
-      })
-      set({ clients })
-    } catch (error: unknown) {
-      set({ error: error instanceof Error ? error.message : 'Failed to load clients' })
-    }
+  loadClients: async (organizationId, options?: { force?: boolean }) => {
+    await runOrgLoad(
+      'projectStore:clients',
+      organizationId,
+      async () => {
+        try {
+          const snapshot = await getDocs(collection(db, 'organizations', organizationId, 'clients'))
+          const clients = snapshot.docs.map((entry) => {
+            const data = entry.data()
+            return {
+              id: entry.id,
+              name: parseString(data.name),
+              contactPerson: parseOptionalString(data.contactPerson),
+              email: parseOptionalString(data.email),
+              phone: parseOptionalString(data.phone),
+              address: parseOptionalString(data.address),
+              organizationId,
+              createdAt: parseFirestoreDate(data.createdAt) || new Date(),
+              updatedAt: parseFirestoreDate(data.updatedAt) || new Date(),
+            } satisfies Client
+          })
+          set({ clients })
+        } catch (error: unknown) {
+          set({ error: error instanceof Error ? error.message : 'Failed to load clients' })
+        }
+      },
+      options
+    )
   },
 
   getProject: async (organizationId, projectId, collectionName = 'projects') => {
