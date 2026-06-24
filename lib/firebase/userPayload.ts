@@ -123,6 +123,7 @@ export function buildInvitedUserPayload(params: {
   tradeTypePreset?: string
   tradeTypeCustom?: string
   employmentType?: 'paye' | 'selfEmployed'
+  timesheetsEnabled?: boolean
 }): Record<string, unknown> {
   const { permissions } = params
   let role: UserRole = UserRole.BASIC
@@ -156,6 +157,9 @@ export function buildInvitedUserPayload(params: {
   }
   if (params.tradeTypePreset?.trim()) payload.tradeTypePreset = params.tradeTypePreset.trim()
   if (params.tradeTypeCustom?.trim()) payload.tradeTypeCustom = params.tradeTypeCustom.trim()
+  if (params.permissions.manager || params.permissions.operativeMode) {
+    payload.timesheetsEnabled = params.timesheetsEnabled === true
+  }
 
   return payload
 }
