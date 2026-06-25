@@ -143,7 +143,7 @@ Path prefix: `organizations/{organizationId}/`
 | `settings` | Subdocs e.g. `jobTypes` |
 | `operativeProfiles` | Operative ↔ user linkage |
 | `userEmails` | Email → userId map |
-| `healthSafety` | H&S uploads (Storage paths) |
+| `healthSafety` | Per-project H&S at `projects/{id}/healthSafety/data` (+ `platformConfig/toolboxTalkLibrary`) |
 
 ### Settings subdocuments
 

@@ -8,8 +8,8 @@ import type {
   HSToolboxTalk,
 } from '@/types'
 
-function parseTalk(row: Record<string, unknown>): HSToolboxTalk | null {
-  const id = parseString(row.id)
+export function parseTalk(row: Record<string, unknown>): HSToolboxTalk | null {
+  const id = parseString(row.id) || parseOptionalString(row.referenceCode) || parseOptionalString(row.ref)
   const title = parseString(row.title)
   if (!id || !title) return null
   const trades = Array.isArray(row.trades)
@@ -17,6 +17,7 @@ function parseTalk(row: Record<string, unknown>): HSToolboxTalk | null {
     : []
   return {
     id,
+    referenceCode: parseOptionalString(row.referenceCode) || parseOptionalString(row.ref) || undefined,
     title,
     category: parseString(row.category, 'general'),
     isGeneral: row.isGeneral === true || trades.length === 0,

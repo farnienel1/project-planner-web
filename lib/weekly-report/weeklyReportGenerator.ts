@@ -1,5 +1,6 @@
 import { format } from 'date-fns'
 import { formatReportPeriodLabel } from '@/lib/weekly-report/invoicingPeriodUtils'
+import { formatCurrency, formatDays } from '@/lib/weekly-report/weeklyReportPayroll'
 import type { WeeklyReportData } from '@/lib/weekly-report/weeklyReportData'
 
 function escapeHtml(value: string): string {
@@ -10,232 +11,202 @@ function escapeHtml(value: string): string {
     .replace(/"/g, '&quot;')
 }
 
-function renderDaySchedule(data: WeeklyReportData): string {
-  const groups = data.dayGroups.filter((group) => group.bookings.length > 0)
-  if (groups.length === 0) {
-    return '<p class="empty">No bookings in this period.</p>'
+function renderTable(headers: string[], rows: string[][], emptyMessage: string): string {
+  if (rows.length === 0) {
+    return `<p class="empty">${escapeHtml(emptyMessage)}</p>`
   }
-
-  return groups
-    .map(
-      (group) => `
-      <section class="day-block">
-        <h3>${escapeHtml(group.label)}</h3>
-        <table>
-          <thead>
-            <tr>
-              <th>Person</th>
-              <th>Project / location</th>
-              <th>Time</th>
-              <th>Type</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${group.bookings
-              .map(
-                (booking) => `
-              <tr>
-                <td>${escapeHtml(booking.personName)}</td>
-                <td>${escapeHtml(booking.projectLabel)}</td>
-                <td>${escapeHtml(booking.timeRange || booking.timeSlot)}</td>
-                <td>${booking.personKind === 'manager' ? 'Manager' : 'Operative'}</td>
-              </tr>`
-              )
-              .join('')}
-          </tbody>
-        </table>
-      </section>`
-    )
-    .join('')
-}
-
-function renderWarnings(data: WeeklyReportData): string {
-  const sections: string[] = []
-
-  if (data.operativeClashes.length > 0) {
-    sections.push(`
-      <h3>Operative booking clashes</h3>
-      <ul>
-        ${data.operativeClashes.map((warning) => `<li>${escapeHtml(warning.message)}</li>`).join('')}
-      </ul>`)
-  }
-
-  if (data.managerClashes.length > 0) {
-    sections.push(`
-      <h3>Manager / admin overlaps</h3>
-      <ul>
-        ${data.managerClashes.map((warning) => `<li>${escapeHtml(warning.message)}</li>`).join('')}
-      </ul>`)
-  }
-
-  if (data.unbookedWarnings.length > 0) {
-    sections.push(`
-      <h3>Unbooked labour</h3>
-      <ul>
-        ${data.unbookedWarnings.map((warning) => `<li>${escapeHtml(warning.message)}</li>`).join('')}
-      </ul>`)
-  }
-
-  if (sections.length === 0) {
-    return '<p class="empty">No warnings for this period.</p>'
-  }
-
-  return sections.join('')
+  return `
+    <table>
+      <thead>
+        <tr>${headers.map((header) => `<th>${escapeHtml(header)}</th>`).join('')}</tr>
+      </thead>
+      <tbody>
+        ${rows
+          .map((row) => `<tr>${row.map((cell) => `<td>${cell}</td>`).join('')}</tr>`)
+          .join('')}
+      </tbody>
+    </table>`
 }
 
 export function buildWeeklyReportHtml(data: WeeklyReportData): string {
-  const periodLabel = formatReportPeriodLabel(data.period.start, data.period.end)
-  const generatedLabel = format(data.generatedAt, "d MMMM yyyy 'at' HH:mm")
-  const logo = data.companyLogoURL
-    ? `<img src="${escapeHtml(data.companyLogoURL)}" alt="" class="logo" />`
-    : ''
+  const periodLabel = formatReportPeriodLabel(data.reportPeriod.start, data.reportPeriod.end)
+  const generatedLabel = format(data.generatedAt, "d MMM yyyy 'at' HH:mm")
+
+  const warningRows =
+    data.warnings.length === 0
+      ? [['No warnings in period', '', '', '', '', '', '']]
+      : data.warnings.map((warning) => [
+          escapeHtml(warning.status),
+          escapeHtml(warning.priority),
+          escapeHtml(warning.type),
+          escapeHtml(warning.date),
+          escapeHtml(warning.description),
+          escapeHtml(warning.detail),
+          escapeHtml(warning.forPerson),
+        ])
+
+  const projectSections = data.projectGroups
+    .map((group) => {
+      const rows = group.rows.map((row) => [
+        escapeHtml(group.projectName),
+        escapeHtml(group.jobNumber),
+        escapeHtml(row.person),
+        escapeHtml(row.trade),
+        escapeHtml(row.role),
+        formatDays(row.days),
+      ])
+      rows.push(['', '', '', '', '<strong>Project Total</strong>', `<strong>${formatDays(group.projectTotal)}</strong>`])
+      return renderTable(
+        ['Project', 'Job No.', 'Person', 'Trade', 'Role', 'Days'],
+        rows,
+        ''
+      )
+    })
+    .join('')
+
+  const subRows =
+    data.subContractorRows.length === 0
+      ? [['—', '—', '—', '—', '—', '—']]
+      : data.subContractorRows.map((row) => [
+          escapeHtml(row.projectName),
+          escapeHtml(row.jobNumber),
+          escapeHtml(row.subContractor),
+          escapeHtml(row.type),
+          escapeHtml(row.time),
+          formatDays(row.days),
+        ])
+
+  const leaveRows =
+    data.annualLeaveRows.length === 0
+      ? []
+      : [
+          ...data.annualLeaveRows.map((row) => [
+            escapeHtml(row.person),
+            escapeHtml(row.role),
+            formatDays(row.days),
+            escapeHtml(row.type),
+          ]),
+          ['', '', `<strong>${formatDays(data.annualLeaveTotal)}</strong>`, '<strong>Annual Leave Total</strong>'],
+        ]
+
+  const managerRows =
+    data.managerScheduleRows.length === 0
+      ? []
+      : [
+          ...data.managerScheduleRows.map((row) => [
+            escapeHtml(row.person),
+            escapeHtml(row.role),
+            escapeHtml(row.location),
+            escapeHtml(row.time),
+            formatDays(row.days),
+          ]),
+          ['', '', '', '<strong>Total</strong>', `<strong>${formatDays(data.managerScheduleTotal)}</strong>`],
+        ]
+
+  const payRows: string[][] = []
+  for (const person of data.paySummary) {
+    for (const line of person.lines) {
+      payRows.push([
+        escapeHtml(person.person),
+        escapeHtml(person.role),
+        escapeHtml(line.rateType),
+        formatDays(line.days),
+        formatCurrency(line.rate),
+        formatCurrency(line.pay),
+      ])
+    }
+    payRows.push([
+      `<strong>${escapeHtml(person.person)} total</strong>`,
+      '',
+      '',
+      '',
+      '',
+      `<strong>${formatCurrency(person.personTotal)}</strong>`,
+    ])
+  }
+  payRows.push(['', '', '', '', '<strong>Grand Total</strong>', `<strong>${formatCurrency(data.grandTotal)}</strong>`])
 
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Weekly report — ${escapeHtml(data.organizationName)}</title>
+  <title>Weekly Report — ${escapeHtml(data.organizationName)}</title>
   <style>
-    @page { margin: 18mm; }
-    * { box-sizing: border-box; }
+    @page { margin: 14mm; }
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-      color: #0f172a;
+      color: #111827;
       margin: 0;
-      padding: 32px;
-      line-height: 1.45;
-      background: #fff;
+      padding: 28px;
+      font-size: 11px;
+      line-height: 1.35;
     }
-    .header {
-      display: flex;
-      align-items: flex-start;
-      justify-content: space-between;
-      gap: 24px;
-      border-bottom: 2px solid #e2e8f0;
-      padding-bottom: 20px;
-      margin-bottom: 24px;
-    }
-    .logo { max-height: 56px; max-width: 180px; object-fit: contain; }
-    h1 { font-size: 28px; margin: 0 0 6px; }
-    .subtitle { color: #64748b; font-size: 14px; margin: 0; }
-    .meta { text-align: right; font-size: 13px; color: #64748b; }
-    .stats {
-      display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 12px;
-      margin-bottom: 28px;
-    }
-    .stat {
-      border: 1px solid #e2e8f0;
-      border-radius: 12px;
-      padding: 14px;
-      background: #f8fafc;
-    }
-    .stat strong { display: block; font-size: 22px; color: #1d4ed8; }
-    .stat span { font-size: 12px; color: #64748b; }
+    .brand { font-size: 10px; font-weight: 700; letter-spacing: 0.18em; color: #64748b; }
+    .org { font-size: 18px; font-weight: 700; margin: 4px 0 2px; }
+    .title { font-size: 14px; font-weight: 700; letter-spacing: 0.08em; margin-bottom: 10px; }
+    .meta { margin-bottom: 18px; color: #334155; }
+    .meta strong { color: #0f172a; }
     h2 {
-      font-size: 16px;
-      text-transform: uppercase;
-      letter-spacing: 0.04em;
-      color: #475569;
-      margin: 28px 0 12px;
+      font-size: 12px;
+      margin: 22px 0 8px;
+      padding-bottom: 4px;
+      border-bottom: 1px solid #e2e8f0;
     }
-    h3 { font-size: 15px; margin: 18px 0 8px; }
     table { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
     th, td {
-      border-bottom: 1px solid #e2e8f0;
-      padding: 8px 6px;
+      border: 1px solid #dbe3ee;
+      padding: 6px 7px;
       text-align: left;
-      font-size: 12px;
       vertical-align: top;
     }
-    th { background: #f8fafc; color: #475569; font-weight: 600; }
-    ul { margin: 0; padding-left: 18px; }
-    li { margin-bottom: 6px; font-size: 12px; }
-    .empty { color: #94a3b8; font-size: 13px; }
-    .summary-grid {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 16px;
-      margin-bottom: 8px;
-    }
-    .summary-card {
-      border: 1px solid #e2e8f0;
-      border-radius: 12px;
-      padding: 12px;
-    }
-    .summary-card h4 { margin: 0 0 8px; font-size: 13px; }
-    .summary-card p { margin: 0 0 4px; font-size: 12px; color: #334155; }
-    @media print {
-      body { padding: 0; }
-      .day-block { break-inside: avoid; }
-    }
+    th { background: #f8fafc; font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; color: #475569; }
+    .empty { color: #94a3b8; font-style: italic; }
+    .footer { margin-top: 24px; font-size: 10px; color: #64748b; }
+    @media print { body { padding: 0; } }
   </style>
 </head>
 <body>
-  <header class="header">
-    <div>
-      ${logo}
-      <h1>Weekly report</h1>
-      <p class="subtitle">${escapeHtml(data.organizationName)}</p>
-    </div>
-    <div class="meta">
-      <div><strong>Period</strong><br />${escapeHtml(periodLabel)}</div>
-      <div style="margin-top: 10px;"><strong>Generated</strong><br />${escapeHtml(generatedLabel)}</div>
-    </div>
-  </header>
-
-  <section class="stats">
-    <div class="stat"><strong>${data.stats.totalBookings}</strong><span>Total bookings</span></div>
-    <div class="stat"><strong>${data.stats.peopleBooked}</strong><span>People booked</span></div>
-    <div class="stat"><strong>${data.stats.projectsUsed}</strong><span>Projects used</span></div>
-    <div class="stat"><strong>${data.stats.operativeClashes + data.stats.managerOverlaps + data.stats.unbookedLabour}</strong><span>Warnings</span></div>
-  </section>
-
-  <h2>Schedule by day</h2>
-  ${renderDaySchedule(data)}
-
-  <h2>People summary</h2>
-  <div class="summary-grid">
-    ${data.people.length === 0
-      ? '<p class="empty">No people booked in this period.</p>'
-      : data.people
-          .map(
-            (person) => `
-        <div class="summary-card">
-          <h4>${escapeHtml(person.name)} <span style="color:#64748b;font-weight:normal;">(${person.kind === 'manager' ? 'Manager' : 'Operative'})</span></h4>
-          <p>${person.bookingCount} booking${person.bookingCount === 1 ? '' : 's'}</p>
-          <p>${escapeHtml(person.projectLabels.slice(0, 4).join(' · '))}${person.projectLabels.length > 4 ? '…' : ''}</p>
-        </div>`
-          )
-          .join('')}
+  <div class="brand">PROJECTPLANNER</div>
+  <div class="org">${escapeHtml(data.organizationName)}</div>
+  <div class="title">WEEKLY REPORT</div>
+  <div class="meta">
+    <div><strong>Period:</strong> ${escapeHtml(periodLabel)}</div>
+    <div><strong>Invoicing period</strong> ${escapeHtml(data.invoicingPeriodLabel)}</div>
+    <div><strong>Generated:</strong> ${escapeHtml(generatedLabel)}</div>
   </div>
 
-  <h2>Projects</h2>
-  ${
-    data.projects.length === 0
-      ? '<p class="empty">No project activity in this period.</p>'
-      : `<table>
-      <thead>
-        <tr><th>Project</th><th>Bookings</th><th>People</th></tr>
-      </thead>
-      <tbody>
-        ${data.projects
-          .map(
-            (project) => `
-          <tr>
-            <td>${escapeHtml(project.label)}</td>
-            <td>${project.bookingCount}</td>
-            <td>${project.peopleCount}</td>
-          </tr>`
-          )
-          .join('')}
-      </tbody>
-    </table>`
-  }
+  <h2>⚠ Warnings Summary</h2>
+  ${renderTable(
+    ['Status', 'Priority', 'Type', 'Date', 'Description', 'Detail', 'For'],
+    warningRows,
+    'No warnings in period'
+  )}
 
-  <h2>Warnings</h2>
-  ${renderWarnings(data)}
+  <h2>🏗 Project Breakdown</h2>
+  ${projectSections || '<p class="empty">No project bookings in this period.</p>'}
+  <table>
+    <tbody>
+      <tr>
+        <td colspan="5"><strong>All Project Work</strong></td>
+        <td><strong>${formatDays(data.allProjectWorkTotal)}</strong></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>🔧 Sub Contractors</h2>
+  ${renderTable(['Project', 'Job No.', 'Sub Contractor', 'Type', 'Time', 'Days'], subRows, 'No sub contractor bookings')}
+  <table><tbody><tr><td colspan="5"><strong>Sub Contractor</strong></td><td><strong>${formatDays(data.subContractorTotal)}</strong></td></tr></tbody></table>
+
+  <h2>🌴 Annual Leave</h2>
+  ${renderTable(['Person', 'Role', 'Days', 'Type'], leaveRows, 'No annual leave in this period')}
+
+  <h2>📅 Manager / Admin Additional Schedule</h2>
+  ${renderTable(['Person', 'Role', 'Location', 'Time', 'Days'], managerRows, 'No additional manager schedule in this period')}
+
+  <h2>💷 Pay Summary</h2>
+  ${renderTable(['Person', 'Role', 'Rate Type', 'Days', 'Rate', 'Pay'], payRows, 'No pay data for this period')}
+
+  <div class="footer">Generated by Project Planner</div>
 </body>
 </html>`
 }
