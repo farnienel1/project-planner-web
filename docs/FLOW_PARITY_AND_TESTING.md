@@ -60,7 +60,7 @@ Booking created (project schedule / My Schedule)
 | Manager self-book | `MyScheduleView` | `/dashboard/my-schedule` | ✅ |
 | Subcontractor booking | Sub schedule | `…/schedule/subcontractors` | ⚠️ No clash detection |
 | **Daily overview** | `DailyOverviewView` | `/dashboard/daily-overview` | ✅ Operative + manager bookings |
-| **Weekly report** | Weekly report view | `/dashboard/weekly-report` | ✅ Week summary screen |
+| **Weekly report** | Weekly report view | `/dashboard/weekly-report` | ✅ Invoicing period / week / custom range + Generate report PDF |
 | Warnings — operative clashes | Warnings | `/dashboard/warnings` | ✅ |
 | Warnings — unbooked labour | Warnings | `/dashboard/warnings` | ✅ |
 | Warnings — manager overlaps | Warnings / weekly | `/dashboard/warnings` | ✅ |

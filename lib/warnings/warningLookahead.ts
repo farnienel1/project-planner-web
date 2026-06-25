@@ -33,7 +33,15 @@ export function endOfWorkingWeek(referenceDate: Date): Date {
   return weekdayOnOrBefore(referenceDate, 5)
 }
 
-function endOfDateRangeInvoicingPeriod(referenceDate: Date, invoicing: OrgInvoicingSettings): Date {
+export type InvoicingPeriodRange = {
+  start: Date
+  end: Date
+}
+
+function resolveDateRangeInvoicingPeriod(
+  referenceDate: Date,
+  invoicing: OrgInvoicingSettings
+): InvoicingPeriodRange {
   const dayOfMonth = getDate(referenceDate)
   const ranges = invoicing.paymentRunDateRanges.filter((range) => range.startDay > 0 && range.endDay > 0)
 
@@ -41,9 +49,11 @@ function endOfDateRangeInvoicingPeriod(referenceDate: Date, invoicing: OrgInvoic
     if (dayOfMonth >= range.startDay && dayOfMonth <= range.endDay) {
       const monthEnd = endOfMonth(referenceDate)
       const clampedEnd = Math.min(range.endDay, getDate(monthEnd))
+      const start = new Date(referenceDate)
+      start.setDate(range.startDay)
       const end = new Date(referenceDate)
       end.setDate(clampedEnd)
-      return startOfDay(end)
+      return { start: startOfDay(start), end: startOfDay(end) }
     }
   }
 
@@ -51,15 +61,20 @@ function endOfDateRangeInvoicingPeriod(referenceDate: Date, invoicing: OrgInvoic
     const fallback = ranges.reduce((latest, range) => (range.endDay > latest.endDay ? range : latest))
     const monthEnd = endOfMonth(referenceDate)
     const clampedEnd = Math.min(fallback.endDay, getDate(monthEnd))
+    const start = new Date(referenceDate)
+    start.setDate(fallback.startDay)
     const end = new Date(referenceDate)
     end.setDate(clampedEnd)
-    return startOfDay(end)
+    return { start: startOfDay(start), end: startOfDay(end) }
   }
 
-  return endOfMonth(referenceDate)
+  return { start: startOfDay(referenceDate), end: startOfDay(endOfMonth(referenceDate)) }
 }
 
-function endOfRecurringInvoicingPeriod(referenceDate: Date, invoicing: OrgInvoicingSettings): Date {
+function resolveRecurringInvoicingPeriod(
+  referenceDate: Date,
+  invoicing: OrgInvoicingSettings
+): InvoicingPeriodRange {
   const startWd = isoWeekdayIndex(invoicing.recurringRunStartDay)
   const endWd = isoWeekdayIndex(invoicing.recurringRunEndDay)
   const ref = startOfDay(referenceDate)
@@ -78,7 +93,26 @@ function endOfRecurringInvoicingPeriod(referenceDate: Date, invoicing: OrgInvoic
     }
   }
 
-  return startOfDay(periodEnd)
+  return { start: startOfDay(periodStart), end: startOfDay(periodEnd) }
+}
+
+/** Current invoicing / payment run period containing the reference date (iOS parity). */
+export function computeInvoicingPeriod(
+  referenceDate: Date,
+  invoicing: OrgInvoicingSettings
+): InvoicingPeriodRange {
+  const ref = startOfDay(referenceDate)
+  return invoicing.paymentRunMode === 'date_ranges'
+    ? resolveDateRangeInvoicingPeriod(ref, invoicing)
+    : resolveRecurringInvoicingPeriod(ref, invoicing)
+}
+
+function endOfDateRangeInvoicingPeriod(referenceDate: Date, invoicing: OrgInvoicingSettings): Date {
+  return resolveDateRangeInvoicingPeriod(referenceDate, invoicing).end
+}
+
+function endOfRecurringInvoicingPeriod(referenceDate: Date, invoicing: OrgInvoicingSettings): Date {
+  return resolveRecurringInvoicingPeriod(referenceDate, invoicing).end
 }
 
 export function computeWarningLookaheadEnd(

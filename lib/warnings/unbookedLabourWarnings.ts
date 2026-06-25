@@ -90,6 +90,37 @@ export function computeUnbookedLabourWarnings({
 }): UnbookedLabourWarning[] {
   const windowStart = startOfDay(referenceDate)
   const windowEnd = computeWarningLookaheadEnd(referenceDate, warningDetection, invoicing)
+  return computeUnbookedLabourWarningsForDateRange({
+    bookings,
+    operatives,
+    users,
+    holidays,
+    warningDetection,
+    periodStart: windowStart,
+    periodEnd: windowEnd,
+  })
+}
+
+/** Unbooked labour flags for an explicit date range (weekly report parity). */
+export function computeUnbookedLabourWarningsForDateRange({
+  bookings,
+  operatives,
+  users,
+  holidays,
+  warningDetection,
+  periodStart,
+  periodEnd,
+}: {
+  bookings: Booking[]
+  operatives: Operative[]
+  users: User[]
+  holidays: HolidayBooking[]
+  warningDetection: OrgWarningDetectionSettings
+  periodStart: Date
+  periodEnd: Date
+}): UnbookedLabourWarning[] {
+  const windowStart = startOfDay(periodStart)
+  const windowEnd = startOfDay(periodEnd)
   const excludedOperativeIds = buildExcludedOperativeIds(
     users,
     operatives,
