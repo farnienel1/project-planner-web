@@ -15,6 +15,7 @@ import {
 import {
   buildTimesheetInvoiceHtml,
   downloadTimesheetInvoice,
+  printTimesheetInvoice,
 } from '@/lib/timesheets/invoiceGenerator'
 import {
   buildTimesheetSubjects,
@@ -190,6 +191,7 @@ export function TimesheetsScreen({
       html,
       `invoice-${row.subject.name.replace(/\s+/g, '-').toLowerCase()}-${format(weekRange.start, 'yyyy-MM-dd')}.html`
     )
+    printTimesheetInvoice(html)
 
     await markTimesheetInvoiceGenerated(organization.id, row.subject.userId, weekStart)
     await reloadRecords()

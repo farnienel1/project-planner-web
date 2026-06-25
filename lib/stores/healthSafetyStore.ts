@@ -3,15 +3,15 @@
 import { create } from 'zustand'
 import { doc, getDoc, setDoc } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
+import {
+  healthSafetyDocPath,
+  legacyHealthSafetySettingsDocId,
+} from '@/lib/healthSafety/healthSafetyPaths'
 import { parseHealthSafetyPayload } from '@/lib/healthSafety/parseHealthSafety'
 import { serializeHealthSafetyPayload } from '@/lib/healthSafety/serializeHealthSafety'
 import type { HSProjectSafetyData, HSToolboxTalk } from '@/types'
 import { newUuid } from '@/lib/firebase/firestoreUtils'
 import { startOfWeek } from 'date-fns'
-
-function hsDocId(projectId: string, isSmallWorks: boolean): string {
-  return `healthSafety_${isSmallWorks ? 'smallWorks' : 'projects'}_${projectId}`
-}
 
 const emptyData = (): HSProjectSafetyData => ({
   talks: [],
@@ -21,6 +21,21 @@ const emptyData = (): HSProjectSafetyData => ({
   otherDocuments: [],
   updatedAt: new Date(),
 })
+
+function hsDocRef(organizationId: string, projectId: string, isSmallWorks: boolean) {
+  const { collection, segments } = healthSafetyDocPath(organizationId, projectId, isSmallWorks)
+  return doc(db, ...(segments as [string, string, string, string, string, string]))
+}
+
+function legacyHsDocRef(organizationId: string, projectId: string, isSmallWorks: boolean) {
+  return doc(
+    db,
+    'organizations',
+    organizationId,
+    'settings',
+    legacyHealthSafetySettingsDocId(projectId, isSmallWorks)
+  )
+}
 
 interface HealthSafetyState {
   data: HSProjectSafetyData | null
@@ -61,23 +76,33 @@ export const useHealthSafetyStore = create<HealthSafetyState>((set, get) => ({
   load: async (organizationId, projectId, isSmallWorks) => {
     set({ loading: true, error: null })
     try {
-      const ref = doc(db, 'organizations', organizationId, 'settings', hsDocId(projectId, isSmallWorks))
-      const snap = await getDoc(ref)
-      if (!snap.exists()) {
-        set({ data: emptyData(), loading: false })
+      const primary = await getDoc(hsDocRef(organizationId, projectId, isSmallWorks))
+      if (primary.exists()) {
+        set({
+          data: parseHealthSafetyPayload(primary.data() as Record<string, unknown>, projectId),
+          loading: false,
+        })
         return
       }
-      set({
-        data: parseHealthSafetyPayload(snap.data() as Record<string, unknown>, projectId),
-        loading: false,
-      })
+
+      const legacy = await getDoc(legacyHsDocRef(organizationId, projectId, isSmallWorks))
+      if (legacy.exists()) {
+        const parsed = parseHealthSafetyPayload(legacy.data() as Record<string, unknown>, projectId)
+        set({ data: parsed, loading: false })
+        await setDoc(hsDocRef(organizationId, projectId, isSmallWorks), serializeHealthSafetyPayload(parsed), {
+          merge: true,
+        })
+        return
+      }
+
+      set({ data: emptyData(), loading: false })
     } catch (error: unknown) {
       set({ error: error instanceof Error ? error.message : 'Failed to load H&S', loading: false })
     }
   },
 
   save: async (organizationId, projectId, isSmallWorks, data) => {
-    const ref = doc(db, 'organizations', organizationId, 'settings', hsDocId(projectId, isSmallWorks))
+    const ref = hsDocRef(organizationId, projectId, isSmallWorks)
     await setDoc(ref, serializeHealthSafetyPayload(data), { merge: true })
     set({ data: { ...data, updatedAt: new Date() } })
   },
@@ -139,6 +164,7 @@ export const useHealthSafetyStore = create<HealthSafetyState>((set, get) => ({
     const current = get().data ?? emptyData()
     const entry: HSToolboxTalk = {
       id: talk.id || newUuid(),
+      referenceCode: talk.referenceCode,
       title: talk.title,
       category: talk.category,
       isGeneral: talk.isGeneral,

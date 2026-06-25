@@ -11,6 +11,8 @@ import type {
 export function serializeTalk(talk: HSToolboxTalk): Record<string, unknown> {
   return {
     id: talk.id,
+    referenceCode: talk.referenceCode ?? '',
+    ref: talk.referenceCode ?? '',
     title: talk.title,
     category: talk.category,
     isGeneral: talk.isGeneral,

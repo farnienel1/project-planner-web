@@ -358,6 +358,8 @@ export interface ProjectMaterialLine {
 
 export interface HSToolboxTalk {
   id: string
+  /** e.g. TBT-ELE-004 — iOS library reference */
+  referenceCode?: string
   title: string
   category: string
   isGeneral: boolean

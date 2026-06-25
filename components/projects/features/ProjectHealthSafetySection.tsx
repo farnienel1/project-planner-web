@@ -8,6 +8,8 @@ import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { isOperativeMode } from '@/lib/navigation/menuPermissions'
 import { newUuid } from '@/lib/firebase/firestoreUtils'
 import { uploadFile, healthSafetyFilePath } from '@/lib/firebase/storageUtils'
+import { loadPlatformToolboxLibrary, mergeToolboxTalkLibraries } from '@/lib/healthSafety/toolboxLibrary'
+import { buildToolboxTalkPdfHtml, openToolboxTalkPdf } from '@/lib/healthSafety/toolboxTalkPdf'
 import { SignaturePad } from '@/components/forms/SignaturePad'
 import { EmptyState, ErrorBanner, LoadingSpinner } from '@/components/dashboard/PageShell'
 import { FormInput, FormLabel, FormSelect, FormTextarea } from '@/components/forms/FormShell'
@@ -98,6 +100,8 @@ export function ProjectHealthSafetySection({
   const [scheduleTalkId, setScheduleTalkId] = useState('')
   const [scheduleRecipients, setScheduleRecipients] = useState<string[]>([])
   const [schedulePublishAt, setSchedulePublishAt] = useState('')
+  const [platformTalks, setPlatformTalks] = useState<HSToolboxTalk[]>([])
+  const [libraryLoading, setLibraryLoading] = useState(false)
 
   const bannerGradient = isOperativeMode(user)
     ? 'bg-gradient-to-br from-[#19c4b3] to-[#0fae9e]'
@@ -109,6 +113,20 @@ export function ProjectHealthSafetySection({
       if (isManager) loadUsers(organization.id)
     }
   }, [organization, project.id, isSmallWorks, load, loadUsers, isManager])
+
+  useEffect(() => {
+    if (!isManager) return
+    setLibraryLoading(true)
+    loadPlatformToolboxLibrary()
+      .then(setPlatformTalks)
+      .catch(() => setPlatformTalks([]))
+      .finally(() => setLibraryLoading(false))
+  }, [isManager])
+
+  const libraryTalks = useMemo(
+    () => mergeToolboxTalkLibraries(platformTalks, data?.talks || []),
+    [platformTalks, data?.talks]
+  )
 
   const projectIssues = useMemo(
     () => (data?.issues || []).filter((i) => projectIdsMatch(i.projectId, project.id)),
@@ -133,7 +151,7 @@ export function ProjectHealthSafetySection({
         const issue = data.issues.find((i) => i.id === sig.issueId)
         if (!issue || !projectIdsMatch(issue.projectId, project.id)) return null
         if (issue.publishAt && issue.publishAt.getTime() > Date.now()) return null
-        return { issue, signature: sig, talk: data.talks.find((t) => t.id === issue.talkId) }
+        return { issue, signature: sig, talk: libraryTalks.find((t) => t.id === issue.talkId) || data.talks.find((t) => t.id === issue.talkId) }
       })
       .filter((e): e is NonNullable<typeof e> => e !== null)
   }, [data, user, project.id])
@@ -141,13 +159,14 @@ export function ProjectHealthSafetySection({
   const pendingMine = myAssigned.filter((e) => e.signature.status !== 'signed').length
 
   const filteredTalks = useMemo(() => {
-    let talks = data?.talks || []
+    let talks = libraryTalks
     const q = talkSearch.trim().toLowerCase()
     if (q) {
       talks = talks.filter(
         (t) =>
           t.title.toLowerCase().includes(q) ||
           t.purpose.toLowerCase().includes(q) ||
+          (t.referenceCode || '').toLowerCase().includes(q) ||
           t.trades.some((tr) => tr.toLowerCase().includes(q))
       )
     }
@@ -155,15 +174,15 @@ export function ProjectHealthSafetySection({
       talks = talks.filter((t) => t.isGeneral || t.trades.includes(tradeFilter))
     }
     return talks
-  }, [data?.talks, talkSearch, tradeFilter])
+  }, [libraryTalks, talkSearch, tradeFilter])
 
   const tradeFilters = useMemo(() => {
     const set = new Set<string>(['All'])
-    for (const t of data?.talks || []) {
+    for (const t of libraryTalks) {
       for (const tr of t.trades) set.add(tr)
     }
     return Array.from(set)
-  }, [data?.talks])
+  }, [libraryTalks])
 
   const operativeUsers = useMemo(
     () => users.filter((u) => u.isActive && (u.permissions.operatives || u.role === 'operative' || u.permissions.manager)),
@@ -180,6 +199,10 @@ export function ProjectHealthSafetySection({
 
   const submitIssue = async () => {
     if (!organization?.id || !user || !issueTalkId || issueRecipients.length === 0) return
+    const selectedTalk = libraryTalks.find((talk) => talk.id === issueTalkId)
+    if (selectedTalk && !data?.talks.some((talk) => talk.id === selectedTalk.id)) {
+      await addToolboxTalk(organization.id, project.id, isSmallWorks, selectedTalk)
+    }
     await issueToolboxTalk(
       organization.id,
       project.id,
@@ -457,7 +480,7 @@ export function ProjectHealthSafetySection({
               <HubCard
                 title="Toolbox library"
                 subtitle="Search and issue talks"
-                count={data.talks.length}
+                count={libraryTalks.length}
                 countLabel="in library"
                 iconBg="bg-[#e6f7f6]"
                 iconColor="text-[#0fae9e]"
@@ -511,8 +534,13 @@ export function ProjectHealthSafetySection({
           >
             + Upload custom talk
           </button>
-          {filteredTalks.length === 0 ? (
-            <EmptyState title="No toolbox talks" description="Upload a talk or sync from the iOS library." />
+          {libraryLoading ? (
+            <LoadingSpinner label="Loading toolbox library…" />
+          ) : filteredTalks.length === 0 ? (
+            <EmptyState
+              title="No toolbox talks"
+              description="The shared library loads from Firebase platformConfig. Upload a custom talk or add talks on iOS."
+            />
           ) : (
             <FeatureCard>
               {filteredTalks.map((talk: HSToolboxTalk) => (
@@ -522,7 +550,10 @@ export function ProjectHealthSafetySection({
                 >
                   <div className="min-w-0">
                     <p className="text-sm font-semibold text-slate-900">{talk.title}</p>
-                    <p className="text-xs text-slate-500">{talk.category} · {talk.source}</p>
+                    <p className="text-xs text-slate-500">
+                      {talk.referenceCode ? `${talk.referenceCode} · ` : ''}
+                      {talk.category} · {talk.source}
+                    </p>
                   </div>
                   <button
                     type="button"
@@ -547,15 +578,43 @@ export function ProjectHealthSafetySection({
             <EmptyState title="No issued talks" description="Issue a toolbox talk from the library." />
           ) : (
             activeIssues.map((issue) => {
-              const talk = data.talks.find((t) => t.id === issue.talkId)
+              const talk = libraryTalks.find((t) => t.id === issue.talkId) || data.talks.find((t) => t.id === issue.talkId)
               const sigs = data.signatures.filter((s) => s.issueId === issue.id)
               const signed = sigs.filter((s) => s.status === 'signed').length
+              const handlePdf = () => {
+                if (!talk || !organization) return
+                const html = buildToolboxTalkPdfHtml({
+                  talk,
+                  issue,
+                  signatures: sigs,
+                  users,
+                  project,
+                  organizationName: organization.name || 'Organisation',
+                  presentedBy: `${user?.firstName || ''} ${user?.surname || ''}`.trim() || organization.name || 'Project Planner',
+                })
+                openToolboxTalkPdf(
+                  html,
+                  `ToolboxTalk-${talk.referenceCode || talk.id}-${issue.id}.html`
+                )
+              }
               return (
                 <FeatureCard key={issue.id} className="p-4">
-                  <p className="text-sm font-semibold text-slate-900">{talk?.title || 'Toolbox talk'}</p>
-                  <p className="text-xs text-slate-500">
-                    Issued {format(issue.issuedAt, 'd MMM yyyy')} · W/C {format(issue.weekCommencing, 'd MMM')}
-                  </p>
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900">{talk?.title || 'Toolbox talk'}</p>
+                      <p className="text-xs text-slate-500">
+                        {talk?.referenceCode ? `${talk.referenceCode} · ` : ''}
+                        Issued {format(issue.issuedAt, 'd MMM yyyy')} · W/C {format(issue.weekCommencing, 'd MMM')}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handlePdf}
+                      className="shrink-0 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                    >
+                      Generate PDF
+                    </button>
+                  </div>
                   <p className="mt-2 text-sm font-bold text-[#0fae9e]">
                     {signed}/{sigs.length} signed
                   </p>
