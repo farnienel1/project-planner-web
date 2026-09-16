@@ -73,3 +73,89 @@ export function IosModal({
     </div>
   )
 }
+
+/** Sheet header: Cancel left, title centre. Sticky footer for the primary action. */
+export function IosFormModal({
+  title,
+  onCancel,
+  children,
+  footer,
+  width = 'sm',
+}: {
+  title: string
+  onCancel: () => void
+  children: ReactNode
+  footer?: ReactNode
+  width?: 'sm' | 'md'
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onCancel}>
+      <div
+        role="dialog"
+        aria-labelledby="ios-form-title"
+        className={`flex max-h-[85vh] w-full flex-col overflow-hidden rounded-2xl bg-ios-card shadow-ios-toast ${
+          width === 'md' ? 'max-w-[760px]' : 'max-w-[640px]'
+        }`}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <header className="grid grid-cols-[72px_1fr_72px] items-center border-b border-ios-border px-3 py-3">
+          <button type="button" onClick={onCancel} className="justify-self-start text-[15px] font-medium text-[#185FA5]">
+            Cancel
+          </button>
+          <h3 id="ios-form-title" className="text-center text-[17px] font-semibold tracking-tight">
+            {title}
+          </h3>
+          <span />
+        </header>
+        <div className="overflow-y-auto px-5 py-4">{children}</div>
+        {footer ? <div className="sticky bottom-0 border-t border-ios-border bg-ios-card px-5 py-4">{footer}</div> : null}
+      </div>
+    </div>
+  )
+}
+
+export function FilterChip({
+  title,
+  selected,
+  onClick,
+  selectedClass = 'bg-ios-chip-green text-ios-icon-green',
+}: {
+  title: string
+  selected: boolean
+  onClick: () => void
+  selectedClass?: string
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded-full border px-3.5 py-1.5 text-[13px] font-medium transition ${
+        selected
+          ? `border-transparent ${selectedClass}`
+          : 'border-ios-search-border bg-ios-card text-ios-ink hover:border-ios-muted'
+      }`}
+    >
+      {title}
+    </button>
+  )
+}
+
+export function StatsRow({
+  items,
+}: {
+  items: { value: number; label: string; valueClass?: string }[]
+}) {
+  return (
+    <div className="grid grid-cols-3 gap-2.5">
+      {items.map((item) => (
+        <div
+          key={item.label}
+          className="rounded-[14px] border border-ios-border bg-ios-card py-2.5 text-center"
+        >
+          <p className={`text-[28px] font-medium leading-none ${item.valueClass || 'text-ios-ink'}`}>{item.value}</p>
+          <p className="mt-1 text-[12px] font-medium text-ios-muted">{item.label}</p>
+        </div>
+      ))}
+    </div>
+  )
+}

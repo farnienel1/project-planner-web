@@ -9,7 +9,6 @@ import {
   deleteDoc,
   doc,
   Timestamp,
-  addDoc,
 } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
 import type { Project, Client } from '@/types'
@@ -20,6 +19,7 @@ import {
 } from '@/lib/firebase/projectPayload'
 import { runOrgLoad } from '@/lib/stores/orgLoadCache'
 import { parseFirestoreDate, parseNumber, parseOptionalString, parseString, newUuid } from '@/lib/firebase/firestoreUtils'
+import { parseClient as parseClientDoc, serializeClient } from '@/lib/ios-parity/converters'
 
 function parseClient(data: unknown): Client {
   const c = (data || {}) as Record<string, unknown>
@@ -162,20 +162,11 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       async () => {
         try {
           const snapshot = await getDocs(collection(db, 'organizations', organizationId, 'clients'))
-          const clients = snapshot.docs.map((entry) => {
-            const data = entry.data()
-            return {
-              id: entry.id,
-              name: parseString(data.name),
-              contactPerson: parseOptionalString(data.contactPerson),
-              email: parseOptionalString(data.email),
-              phone: parseOptionalString(data.phone),
-              address: parseOptionalString(data.address),
-              organizationId,
-              createdAt: parseFirestoreDate(data.createdAt) || new Date(),
-              updatedAt: parseFirestoreDate(data.updatedAt) || new Date(),
-            } satisfies Client
-          })
+          const clients: Client[] = []
+          for (const entry of snapshot.docs) {
+            const parsed = parseClientDoc(entry.id, entry.data() as Record<string, unknown>, organizationId)
+            if (parsed.ok) clients.push(parsed.value)
+          }
           set({ clients })
         } catch (error: unknown) {
           set({ error: error instanceof Error ? error.message : 'Failed to load clients' })
@@ -218,22 +209,22 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 
   createClient: async (clientData) => {
     const organizationId = clientData.organizationId || ''
-    const newClient = {
-      name: clientData.name,
-      contactPerson: clientData.contactPerson || '',
-      email: clientData.email || '',
-      phone: clientData.phone || '',
-      address: clientData.address || '',
-      createdAt: Timestamp.now(),
-      updatedAt: Timestamp.now(),
-    }
-    const docRef = await addDoc(collection(db, 'organizations', organizationId, 'clients'), newClient)
+    const now = new Date()
+    const id = newUuid()
     const client: Client = {
       ...clientData,
-      id: docRef.id,
-      createdAt: new Date(),
-      updatedAt: new Date(),
+      id,
+      name: clientData.name.trim(),
+      contactPerson: clientData.contactPerson?.trim() || undefined,
+      email: clientData.email?.trim() || undefined,
+      phone: clientData.phone?.trim() || undefined,
+      address: clientData.address?.trim() || undefined,
+      organizationId,
+      createdAt: now,
+      updatedAt: now,
     }
+    const payload = serializeClient(client)
+    await setDoc(doc(db, 'organizations', organizationId, 'clients', id), payload)
     set({ clients: [...get().clients, client] })
     return client
   },
