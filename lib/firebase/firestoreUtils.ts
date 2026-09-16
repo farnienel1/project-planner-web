@@ -18,8 +18,9 @@ export function toFirestoreTimestamp(date: Date): Timestamp {
   return Timestamp.fromDate(date)
 }
 
+/** Matches Swift `UUID().uuidString` (uppercase). */
 export function newUuid(): string {
-  return crypto.randomUUID()
+  return crypto.randomUUID().toUpperCase()
 }
 
 export function parseUuid(value: unknown, fallbackDocId?: string): string {

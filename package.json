@@ -8,7 +8,8 @@
     "dev:clean": "sh scripts/clean-dev.sh",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
+    "lint": "eslint . --ext .js,.jsx,.ts,.tsx --ignore-pattern '.next/**' --ignore-pattern 'node_modules/**'",
+    "test": "tsx --test lib/*.test.ts lib/**/*.test.ts",
     "verify-env": "node scripts/verify-env.mjs",
     "netlify:env": "npx netlify-cli env:import .env.local",
     "netlify:deploy": "npx netlify-cli deploy --build --prod"
@@ -27,6 +28,7 @@
     "react-dom": "^18.2.0",
     "react-hook-form": "^7.49.2",
     "stripe": "^22.2.2",
+    "zod": "^4.6.5",
     "zustand": "^4.4.7"
   },
   "devDependencies": {
@@ -39,6 +41,7 @@
     "eslint-config-next": "14.0.4",
     "postcss": "^8.4.32",
     "tailwindcss": "^3.4.0",
+    "tsx": "^4.23.13",
     "typescript": "^5.3.3"
   }
 }

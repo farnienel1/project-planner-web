@@ -1,14 +1,17 @@
 'use client'
 
 import { create } from 'zustand'
-import { addDoc, collection, deleteDoc, doc, getDocs, Timestamp } from 'firebase/firestore'
+import { deleteDoc, doc, setDoc } from 'firebase/firestore'
 import { startOfDay } from 'date-fns'
 import { db } from '@/lib/firebase/config'
-import { sanitizeForFirestore } from '@/lib/firebase/firestoreUtils'
-import { runOrgLoad } from '@/lib/stores/orgLoadCache'
+import { subscribeOrgCollection } from '@/lib/firebase/subscribeOrgCollection'
+import { newUppercaseUuid } from '@/lib/ios-parity/uuid'
+import {
+  logSkippedDocument,
+  parseManagerSiteBooking,
+  serializeManagerSiteBooking,
+} from '@/lib/ios-parity/converters'
 import type { ManagerLocationType, ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
-
-const LOAD_KEY = 'managerScheduleStore:bookings'
 
 export type SaveManagerSiteBookingInput = {
   userId: string
@@ -31,92 +34,36 @@ interface ManagerScheduleState {
   deleteManagerSiteBooking: (organizationId: string, bookingId: string) => Promise<void>
 }
 
-function parseLocationType(value: unknown): ManagerLocationType {
-  const raw = String(value || 'project')
-  if (
-    raw === 'project' ||
-    raw === 'small_work' ||
-    raw === 'office' ||
-    raw === 'working_from_home' ||
-    raw === 'site_survey' ||
-    raw === 'custom'
-  ) {
-    return raw
-  }
-  return 'project'
-}
-
 export const useManagerScheduleStore = create<ManagerScheduleState>((set, get) => ({
   managerSiteBookings: [],
   loading: false,
   error: null,
 
-  loadManagerSiteBookings: async (organizationId: string, options?: { force?: boolean }) => {
-    await runOrgLoad(
-      LOAD_KEY,
+  loadManagerSiteBookings: async (organizationId: string) => {
+    if (!organizationId || !db) return
+    set({ loading: true, error: null })
+    subscribeOrgCollection(
+      'managerSiteBookings',
       organizationId,
-      async () => {
-        set({ loading: true, error: null })
-        try {
-          const snapshot = await getDocs(
-            collection(db, 'organizations', organizationId, 'managerSiteBookings')
-          )
-          const managerSiteBookings: ManagerSiteBooking[] = []
-          for (const entry of snapshot.docs) {
-            const data = entry.data()
-            const userId = String(data.userId || '')
-            const date = data.date?.toDate?.() as Date | undefined
-            const timeSlot = String(data.timeSlot || '')
-            if (!userId || !date || !timeSlot) continue
-
-            managerSiteBookings.push({
-              id: entry.id,
-              userId,
-              date,
-              timeSlot,
-              locationType: parseLocationType(data.locationType),
-              locationId: typeof data.locationId === 'string' ? data.locationId : undefined,
-              customLocationName:
-                typeof data.customLocationName === 'string' ? data.customLocationName : undefined,
-              workStartTime: typeof data.workStartTime === 'string' ? data.workStartTime : undefined,
-              workEndTime: typeof data.workEndTime === 'string' ? data.workEndTime : undefined,
-              isBreakRemoved: data.isBreakRemoved === true,
-              bookingGroupId: typeof data.bookingGroupId === 'string' ? data.bookingGroupId : undefined,
-              createdAt: data.createdAt?.toDate?.() || new Date(),
-              updatedAt: data.updatedAt?.toDate?.() || new Date(),
-              organizationId,
-            })
-          }
-
-          set({ managerSiteBookings, loading: false })
-        } catch (error: unknown) {
-          const message = error instanceof Error ? error.message : 'Failed to load manager schedule'
-          set({ error: message, loading: false })
+      'managerSiteBookings',
+      (docs) => {
+        const managerSiteBookings: ManagerSiteBooking[] = []
+        for (const entry of docs) {
+          const parsed = parseManagerSiteBooking(entry.id, entry.data, organizationId)
+          if (parsed.ok) managerSiteBookings.push(parsed.value)
+          else logSkippedDocument('managerSiteBookings', entry.id, parsed.errors)
         }
+        set({ managerSiteBookings, loading: false })
       },
-      options
+      (error) => set({ error: error.message, loading: false })
     )
   },
 
   saveManagerSiteBooking: async (organizationId: string, booking: SaveManagerSiteBookingInput) => {
-    const payload = sanitizeForFirestore({
-      userId: booking.userId,
-      date: Timestamp.fromDate(startOfDay(booking.date)),
-      timeSlot: booking.timeSlot,
-      locationType: booking.locationType,
-      locationId: booking.locationId ?? null,
-      customLocationName: booking.customLocationName ?? null,
-      workStartTime: booking.workStartTime ?? null,
-      workEndTime: booking.workEndTime ?? null,
-      isBreakRemoved: booking.isBreakRemoved === true,
-      createdAt: Timestamp.now(),
-      updatedAt: Timestamp.now(),
-    })
-
-    const docRef = await addDoc(collection(db, 'organizations', organizationId, 'managerSiteBookings'), payload)
-    const createdAt = new Date()
-    const nextBooking: ManagerSiteBooking = {
-      id: docRef.id,
+    const id = newUppercaseUuid()
+    const now = new Date()
+    const next: ManagerSiteBooking = {
+      id,
       userId: booking.userId,
       date: startOfDay(booking.date),
       timeSlot: booking.timeSlot,
@@ -126,11 +73,13 @@ export const useManagerScheduleStore = create<ManagerScheduleState>((set, get) =
       workStartTime: booking.workStartTime,
       workEndTime: booking.workEndTime,
       isBreakRemoved: booking.isBreakRemoved === true,
-      createdAt,
-      updatedAt: createdAt,
+      createdAt: now,
+      updatedAt: now,
       organizationId,
     }
-    set({ managerSiteBookings: [...get().managerSiteBookings, nextBooking] })
+    const payload = serializeManagerSiteBooking({ ...next, organizationId })
+    await setDoc(doc(db, 'organizations', organizationId, 'managerSiteBookings', id), payload, { merge: true })
+    set({ managerSiteBookings: [...get().managerSiteBookings, next] })
   },
 
   deleteManagerSiteBooking: async (organizationId: string, bookingId: string) => {

@@ -3,15 +3,45 @@
 @tailwind utilities;
 
 :root {
-  --pp-bg: #f4f6f9;
-  --pp-ink: #0f172a;
-  --pp-muted: #475569;
-  --pp-border: #e7ebf0;
+  --pp-bg: #F7F8FA;
+  --pp-ink: #0B1020;
+  --pp-muted: #6B7280;
+  --pp-border: #EEF0F3;
+  --ios-canvas: #F7F8FA;
+  --ios-card: #FFFFFF;
+  --ios-ink: #0B1020;
+  --ios-muted: #6B7280;
+  --ios-border: #EEF0F3;
+  --ios-search-border: #E5E7EB;
+  --ios-blue: #185FA5;
+  --ios-blue-light: #378ADD;
+  --ios-green: #0F6E56;
+  --ios-amber: #854F0B;
+  --ios-placeholder: #C5C9D2;
+}
+
+.dark {
+  --pp-bg: #0B1017;
+  --pp-ink: #F2F5F9;
+  --pp-muted: #9AA7B8;
+  --pp-border: #252F3D;
+  --ios-canvas: #0B1017;
+  --ios-card: #151C26;
+  --ios-ink: #F2F5F9;
+  --ios-muted: #9AA7B8;
+  --ios-border: #252F3D;
+  --ios-search-border: #2A3544;
+  --ios-blue: #6B95FF;
+  --ios-blue-light: #8BB4FF;
+  --ios-green: #2ED18D;
+  --ios-amber: #F2AE45;
+  --ios-placeholder: #6B7686;
 }
 
 body {
-  background: var(--pp-bg);
-  color: var(--pp-ink);
+  background: var(--ios-canvas);
+  color: var(--ios-ink);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -19,8 +49,10 @@ body {
   .text-balance {
     text-wrap: balance;
   }
+  .ios-card {
+    @apply rounded-[16px] border border-ios-border bg-ios-card;
+  }
+  .ios-focus {
+    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ios-blue;
+  }
 }
-
-
-
-
