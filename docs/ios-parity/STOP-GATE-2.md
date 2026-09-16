@@ -7,7 +7,7 @@
 - Desktop AppShell = Main Menu sidebar + top bar (+ New, refresh, bell, avatar) + offline/role-preview banners + mobile bottom bar. Privacy in account nav. D1: Home is iOS Home, not the dashboard editor.
 - iOS Home: greeting, overview hero (admin metric customisation), Warnings/Tasks tiles, quick actions customise/add/remove, Up Next (live payroll policy), Maintenance card, task-limit banner. `/dashboard/edit` kept as web-only, not linked from Home.
 - Live `onSnapshot` for `bookings`, `managerSiteBookings`, notifications inbox. Dev-only `/dashboard/data-health` (read sample, never writes).
-- 22 unit tests passing. `tsc --noEmit` clean. `next build` TypeScript finished; full static generate needs Firebase env (this VM now has a local `.env.local` from the public web-app keys, gitignored).
+- 22 unit tests passing. `tsc --noEmit` clean. `next build` pass. Browser: LoginBrand at 1440/1280/1024/390; reset-password wording; signed-out `/dashboard` → `/login`. Signed-in Home not exercised (no test account).
 
 **Files created/changed:**
 - New: `lib/ios-parity/*`, `lib/permissions.ts`, `lib/access/workAccess.ts`, `lib/home/*`, `lib/payroll/policyCatalog.ts`, `lib/firebase/mergePlaceholderUser.ts`, `lib/firebase/subscribeOrgCollection.ts`, `lib/stores/notificationStore.ts`, `components/auth/*`, `components/home/HomeScreen.tsx`, `components/shell/AppShell.tsx`, `components/ios/*`, `app/dashboard/notifications/page.tsx`, `app/dashboard/privacy/page.tsx`, `app/dashboard/data-health/page.tsx`, `.eslintrc.json`, `docs/ios-parity/STOP-GATE-2.md`
