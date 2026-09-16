@@ -1,119 +1,94 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { useAuthStore } from '@/lib/stores/authStore'
 import Link from 'next/link'
+import { useAuthStore } from '@/lib/stores/authStore'
+
+const EMAIL_RE = /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,64}$/i
 
 export default function ResetPasswordPage() {
-  const router = useRouter()
-  const { resetPassword, loading, error } = useAuthStore()
+  const { resetPassword, error } = useAuthStore()
   const [email, setEmail] = useState('')
   const [localError, setLocalError] = useState('')
   const [success, setSuccess] = useState(false)
+  const [sending, setSending] = useState(false)
+
+  const trimmed = email.trim()
+  const canSend = EMAIL_RE.test(trimmed) && !sending
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLocalError('')
-    setSuccess(false)
-    
+    if (!EMAIL_RE.test(trimmed)) {
+      setLocalError('Please enter a valid email address.')
+      return
+    }
     try {
-      await resetPassword(email)
+      setSending(true)
+      await resetPassword(trimmed)
       setSuccess(true)
-    } catch (err: any) {
-      setLocalError(err.message || 'Failed to send reset email')
+    } catch {
+      setLocalError('Failed to send reset email')
+    } finally {
+      setSending(false)
     }
   }
 
-  if (success) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-md w-full space-y-8">
-          <div className="text-center">
-            <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-green-100">
-              <svg className="h-6 w-6 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-              </svg>
-            </div>
-            <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
-              Check your email
-            </h2>
-            <p className="mt-2 text-center text-sm text-gray-600">
-              We've sent a password reset link to {email}
-            </p>
-            <div className="mt-6">
-              <Link
-                href="/login"
-                className="font-medium text-primary-600 hover:text-primary-500"
-              >
-                Back to login
-              </Link>
-            </div>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-8">
-        <div>
-          <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
-            Reset your password
-          </h2>
-          <p className="mt-2 text-center text-sm text-gray-600">
-            Enter your email address and we'll send you a link to reset your password
-          </p>
-        </div>
-        <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
-          {(error || localError) && (
-            <div className="rounded-md bg-red-50 p-4">
-              <p className="text-sm text-red-800">{error || localError}</p>
-            </div>
-          )}
-          
-          <div>
-            <label htmlFor="email" className="block text-sm font-medium text-gray-700">
-              Email address
-            </label>
-            <input
-              id="email"
-              name="email"
-              type="email"
-              autoComplete="email"
-              required
-              className="mt-1 appearance-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-md focus:outline-none focus:ring-primary-500 focus:border-primary-500 focus:z-10 sm:text-sm"
-              placeholder="Enter your email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-            />
-          </div>
-
-          <div>
-            <button
-              type="submit"
-              disabled={loading}
-              className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {loading ? 'Sending...' : 'Send reset link'}
-            </button>
-          </div>
-
+    <div className="min-h-screen bg-ios-canvas px-5 py-10 font-ios text-ios-ink">
+      <div className="mx-auto w-full max-w-md rounded-[20px] border border-ios-border bg-ios-card px-6 py-10 shadow-ios-toast">
+        {success ? (
           <div className="text-center">
-            <Link
-              href="/login"
-              className="font-medium text-primary-600 hover:text-primary-500"
-            >
-              Back to login
+            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-ios-chip-green text-3xl text-ios-icon-green">
+              ✓
+            </div>
+            <h1 className="mt-6 text-[22px] font-bold text-ios-icon-green">Check your email</h1>
+            <p className="mt-3 text-sm text-ios-muted">
+              If an account exists for {trimmed}, you&apos;ll receive a password reset link shortly.
+            </p>
+            <Link href="/login" className="mt-8 inline-flex h-12 w-full items-center justify-center rounded-2xl bg-[#185FA5] text-sm font-semibold text-white">
+              Done
             </Link>
           </div>
-        </form>
+        ) : (
+          <>
+            <h1 className="text-center text-[28px] font-bold tracking-tight">Reset Password</h1>
+            <p className="mt-3 text-center text-sm text-ios-muted">
+              Enter your email and we&apos;ll send a link from Firebase to reset your password. Check spam if you
+              don&apos;t see it.
+            </p>
+            <form className="mt-8 space-y-4" onSubmit={handleSubmit}>
+              {(error || localError) && (
+                <p className="text-center text-sm text-ios-icon-red">{error || localError}</p>
+              )}
+              <label className="block text-sm font-medium">
+                Email Address
+                <input
+                  type="email"
+                  autoComplete="email"
+                  inputMode="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="mt-2 w-full rounded-xl border border-ios-border px-3 py-2.5 outline-none focus:border-[#185FA5] focus:ring-2 focus:ring-[#185FA5]/20"
+                  placeholder="Email Address"
+                />
+              </label>
+              <button
+                type="submit"
+                disabled={!canSend}
+                className="h-12 w-full rounded-2xl bg-[#185FA5] text-sm font-semibold text-white disabled:opacity-40"
+              >
+                {sending ? 'Sending…' : 'Send Reset Link'}
+              </button>
+              <div className="text-center">
+                <Link href="/login" className="text-sm font-semibold text-[#185FA5]">
+                  Cancel
+                </Link>
+              </div>
+            </form>
+          </>
+        )}
       </div>
     </div>
   )
 }
-
-
-
-

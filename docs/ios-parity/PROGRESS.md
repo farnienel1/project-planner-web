@@ -1,5 +1,5 @@
 # iOS → Web parity: progress
-Last updated: 2026-09-16 · Current step: Gate 1 answered (Q1–Q10); Phase 2 not started · Stopped at: Stop Gate 1 follow-up
+Last updated: 2026-09-16 · Current step: Phase 2 foundations complete · Stopped at: Stop Gate 2 (ask Farnie for test org)
 
 ## Access check (Phase 0)
 - **WEB_ROOT:** `/workspace` (this repo, `project-planner-web`)
@@ -8,19 +8,19 @@ Last updated: 2026-09-16 · Current step: Gate 1 answered (Q1–Q10); Phase 2 no
 - **Xcode project:** folder-synced (Xcode 26); iOS **17.0**; Swift 5.0; firebase-ios-sdk **12.15.0** (Auth, Core, Firestore, Storage, Messaging). `PRODUCT_BUNDLE_IDENTIFIER` `farnie.Project-Planner`.
 - **GoogleService-Info.plist:** `PROJECT_ID` `project-planner-f986c`, `STORAGE_BUCKET` `project-planner-f986c.firebasestorage.app`, `BUNDLE_ID` `farnie.Project-Planner`.
 - **Future Cloud Agent runs:** zip is not in the environment snapshot. Add the Xcode folder or an iOS GitHub repo to the environment.
-- **Branch:** `cursor/ios-parity-rebuild-c40f`
+- **Branch:** `cursor/ios-parity-phase-2-6b85` (from `main` after PR #7)
 
 ## Phases
 - [x] 0 Access check
 - [x] 1 Discovery (00 ☑ 01 ☑ 02 ☑ 03 ☑ 04 ☑ 05 ☑) + Gate 1 answers (Q1 xcodeproj received; Q2 how-to; Q3–Q10 noted)
-- [ ] 2 Foundations
+- [x] 2 Foundations
 - [ ] 3 Sections
 - [ ] 4 Final audit
 
 ## Sections
 | # | Section | Spec | Built | Agent-verified | Farnie-verified on iPhone | Notes |
 |---|---|---|---|---|---|---|
-| 0 | Shell, Login and Home (Phase 2) | ☐ | ☐ | ☐ | ☐ | Zod + Heroicons; D1 editor still open |
+| 0 | Shell, Login and Home (Phase 2) | ☑ | ☑ | ☑ | ☐ | Zod + Heroicons; D1 editor hidden from Home; live bookings/managerSiteBookings/notifications |
 | 1 | Manage Users | ☐ | ☐ | ☐ | ☐ | |
 | 2 | Add User | ☐ | ☐ | ☐ | ☐ | Invite URL `/setup-password.html?token=` |
 | 3 | Settings | ☐ | ☐ | ☐ | ☐ | |
@@ -47,7 +47,7 @@ Last updated: 2026-09-16 · Current step: Gate 1 answered (Q1–Q10); Phase 2 no
 | 24 | Notifications, Help, Privacy, Profile | ☐ | ☐ | ☐ | ☐ | in scope (Q8) |
 
 ## Open questions
-D1, D2, D5–D10 still at recommendation (see `STOP-GATE-1.md`). Q1–Q10 are decided.
+D1, D2, D5–D10 still at recommendation (see `STOP-GATE-1.md`). Q1–Q10 are decided. **Q11:** test organisation for write tests (`STOP-GATE-2.md`).
 
 ## Decisions (date · decision · by)
 - 2026-09-16 · Phase 1 produced from blueprint + web tree because IOS_ROOT was initially unreachable · agent
@@ -62,7 +62,7 @@ D1, D2, D5–D10 still at recommendation (see `STOP-GATE-1.md`). Q1–Q10 are de
 - 2026-09-16 · Q7: Heroicons (already installed); do not add lucide-react · agent (Farnie: pick one)
 - 2026-09-16 · Q8: sections 14–16 and 21–24 stay in scope · Farnie
 - 2026-09-16 · Q9: write `self_employed`; read both · Farnie
-- 2026-09-16 · Q10: new jobs `manager: "Custom"` · Farnie
+- 2026-09-16 · Phase 2 foundations: converters, permissions, shell, Home, auth merge/privacy, live bookings · agent
 
 ## Approved exceptions
 - Skills catalogue UI removed on web to match iOS deprecation (Q5). Firestore `users.skills` permission flag still written `false`. Existing `operatives.skills[]` is preserved on save, not wiped.
@@ -83,7 +83,7 @@ D1, D2, D5–D10 still at recommendation (see `STOP-GATE-1.md`). Q1–Q10 are de
 2. **Netlify:** set `NEXT_PUBLIC_APP_URL` to `https://www.projectplanner.us` (or apex `https://projectplanner.us`).
 3. **Optional until Xcode ships:** Firebase Hosting 301 `/setup` and `/setup-password.html` → the public site. Do not Hosting-deploy from this repo’s `firebase.json`.
 4. Confirm web app is registered in Firebase project `project-planner-f986c` and that `.env.local` uses that project (never commit keys).
-5. Confirm Storage bucket: iOS uses `project-planner-f986c.firebasestorage.app`; `.env.example` shows `project-planner-f986c.appspot.com`.
+5. Confirm Storage bucket: iOS uses `project-planner-f986c.firebasestorage.app`; `.env.example` now documents that hostname (legacy `.appspot.com` may still work).
 6. Confirm `storage.rules` location (not in this repo, not in the iOS zip).
 7. Confirm whether the HTTP function `sendProjectPlannerEmail` (us-central1) remains the canonical email path for the web client.
 8. Confirm App Check is still off (blueprint: unused).

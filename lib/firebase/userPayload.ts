@@ -66,7 +66,7 @@ export function buildSaveUserPayload(user: User): Record<string, unknown> {
     passwordSet: user.passwordSet,
     isSuperAdmin: isSuperAdminToSave,
     policyAccepted: user.policyAccepted,
-    employmentType: user.employmentType || 'selfEmployed',
+    employmentType: user.employmentType || 'self_employed',
     updatedAt: Timestamp.now(),
     permissions,
     ...permissions,
@@ -148,7 +148,7 @@ export function buildInvitedUserPayload(params: {
   dayRate?: number
   tradeTypePreset?: string
   tradeTypeCustom?: string
-  employmentType?: 'paye' | 'selfEmployed'
+  employmentType?: 'paye' | 'self_employed' | 'selfEmployed'
   timesheetsEnabled?: boolean
   vatNumber?: string
   utrNumber?: string
@@ -173,7 +173,7 @@ export function buildInvitedUserPayload(params: {
     passwordSet: false,
     isSuperAdmin: false,
     policyAccepted: false,
-    employmentType: params.employmentType || 'selfEmployed',
+    employmentType: params.employmentType === 'paye' ? 'paye' : 'self_employed',
     createdAt: Timestamp.now(),
     updatedAt: Timestamp.now(),
     permissions: permissionsToFirestoreMap(permissions),
