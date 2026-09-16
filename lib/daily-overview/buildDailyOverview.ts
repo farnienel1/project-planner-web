@@ -27,10 +27,12 @@ export type OverviewSubcontractorBooking = {
 
 export type OverviewPersonRow = {
   id: string
+  personKey: string
   name: string
   initials: string
   subtitle: string
   pillText: string
+  hours: number
   bookedOperativeNames: string[]
   kind: 'operative' | 'manager' | 'subcontractor'
 }
@@ -136,11 +138,29 @@ export type DailyOverviewModel = {
   empty: boolean
 }
 
+export function normalizeWorkId(id: string | undefined | null): string {
+  return String(id || '').trim().toUpperCase()
+}
+
+export function findWorkById(projects: Project[], id: string | undefined | null): Project | undefined {
+  const key = normalizeWorkId(id)
+  if (!key) return undefined
+  return (
+    projects.find((p) => normalizeWorkId(p.id) === key) ||
+    projects.find((p) => normalizeWorkId(p.jobNumber) === key)
+  )
+}
+
+function canonicalWorkKey(id: string | undefined | null, projects: Project[]): string {
+  const found = findWorkById(projects, id)
+  return found ? normalizeWorkId(found.id) : normalizeWorkId(id)
+}
+
 function placeholderProject(id: string): Project {
   return {
     id,
-    jobNumber: 'Job',
-    siteName: '',
+    jobNumber: id.slice(0, 8) || 'Job',
+    siteName: 'Unknown job',
     addressLine1: '',
     townCity: '',
     postcode: '',
@@ -196,23 +216,49 @@ export function buildDailyOverview(params: {
   const bookingsByProject = new Map<string, Booking[]>()
   for (const b of dayBookings) {
     if (!b.projectId) continue
-    const list = bookingsByProject.get(b.projectId) || []
+    const key = canonicalWorkKey(b.projectId, params.projects)
+    if (!key) continue
+    const list = bookingsByProject.get(key) || []
     list.push(b)
-    bookingsByProject.set(b.projectId, list)
+    bookingsByProject.set(key, list)
   }
   const projectIds = new Set(bookingsByProject.keys())
   for (const b of dayManager) {
     if ((b.locationType === 'project' || b.locationType === 'small_work') && b.locationId) {
-      projectIds.add(b.locationId)
+      const key = canonicalWorkKey(b.locationId, params.projects)
+      if (key) projectIds.add(key)
     }
   }
   for (const b of daySubs) {
-    if (b.projectId) projectIds.add(b.projectId)
+    if (b.projectId) {
+      const key = canonicalWorkKey(b.projectId, params.projects)
+      if (key) projectIds.add(key)
+    }
   }
 
-  const personRowsForProject = (projectId: string): OverviewPersonRow[] => {
+  const mergePersonRows = (rows: OverviewPersonRow[]): OverviewPersonRow[] => {
+    const byPerson = new Map<string, OverviewPersonRow>()
+    for (const row of rows) {
+      const existing = byPerson.get(row.personKey)
+      if (!existing) {
+        byPerson.set(row.personKey, { ...row, bookedOperativeNames: [...row.bookedOperativeNames] })
+        continue
+      }
+      existing.hours += row.hours
+      existing.pillText = `${overviewFormatHours(existing.hours)}h`
+      if (existing.subtitle !== row.subtitle) {
+        existing.subtitle = `${existing.subtitle} · ${row.subtitle}`
+      }
+      for (const name of row.bookedOperativeNames) {
+        if (!existing.bookedOperativeNames.includes(name)) existing.bookedOperativeNames.push(name)
+      }
+    }
+    return [...byPerson.values()]
+  }
+
+  const personRowsForProject = (projectKey: string): OverviewPersonRow[] => {
     const rows: OverviewPersonRow[] = []
-    const opBookings = (bookingsByProject.get(projectId) || []).slice().sort((a, b) => {
+    const opBookings = (bookingsByProject.get(projectKey) || []).slice().sort((a, b) => {
       const slot = slotSortKey(a.timeSlot) - slotSortKey(b.timeSlot)
       if (slot !== 0) return slot
       const nameA = operativeDisplayName(
@@ -231,10 +277,12 @@ export function buildDailyOverview(params: {
       const hours = estimatedPaidHours(b)
       rows.push({
         id: `op-${b.id}`,
+        personKey: `op:${normalizeWorkId(b.operativeId)}`,
         name,
         initials: initialsFrom(name),
         subtitle: slotLabel(String(b.timeSlot)),
         pillText: `${overviewFormatHours(hours)}h`,
+        hours,
         bookedOperativeNames: [],
         kind: 'operative',
       })
@@ -242,7 +290,8 @@ export function buildDailyOverview(params: {
     const mgrs = dayManager
       .filter(
         (b) =>
-          b.locationId === projectId && (b.locationType === 'project' || b.locationType === 'small_work')
+          canonicalWorkKey(b.locationId, params.projects) === projectKey &&
+          (b.locationType === 'project' || b.locationType === 'small_work')
       )
       .sort((a, b) => slotSortKey(a.timeSlot) - slotSortKey(b.timeSlot))
     for (const b of mgrs) {
@@ -251,39 +300,43 @@ export function buildDailyOverview(params: {
       const hours = estimatedPaidHours(b)
       rows.push({
         id: `mgr-${b.id}`,
+        personKey: `mgr:${normalizeWorkId(b.userId)}`,
         name,
         initials: initialsFrom(name),
         subtitle: slotLabel(b.timeSlot),
         pillText: `${overviewFormatHours(hours)}h`,
+        hours,
         bookedOperativeNames: [],
         kind: 'manager',
       })
     }
-    const subs = daySubs.filter((b) => b.projectId === projectId)
+    const subs = daySubs.filter((b) => canonicalWorkKey(b.projectId, params.projects) === projectKey)
     for (const b of subs) {
       const firm = params.subcontractors?.find((row) => row.id === b.subcontractorId)
       const name = firm?.name || 'Subcontractor'
       const hours = estimatedPaidHours(b)
       rows.push({
         id: `sub-${b.id}`,
+        personKey: `sub:${normalizeWorkId(b.subcontractorId)}`,
         name,
         initials: initialsFrom(name),
         subtitle: slotLabel(b.timeSlot),
         pillText: `${overviewFormatHours(hours)}h`,
+        hours,
         bookedOperativeNames: b.bookedOperativeNames || [],
         kind: 'subcontractor',
       })
     }
-    return rows
+    return mergePersonRows(rows)
   }
 
   const projectCards = [...projectIds]
     .map((id) => {
-      const found = params.projects.find((p) => p.id === id)
+      const found = findWorkById(params.projects, id)
       const project = found || placeholderProject(id)
       const bookings = bookingsByProject.get(id) || []
       const people = personRowsForProject(id)
-      const bookedHours = people.reduce((sum, row) => sum + (Number.parseFloat(row.pillText) || 0), 0)
+      const bookedHours = people.reduce((sum, row) => sum + row.hours, 0)
       return {
         project,
         bookings,
@@ -293,7 +346,11 @@ export function buildDailyOverview(params: {
         bookedHours,
       }
     })
-    .sort((a, b) => a.project.siteName.localeCompare(b.project.siteName))
+    .sort(
+      (a, b) =>
+        a.project.siteName.localeCompare(b.project.siteName) ||
+        a.project.jobNumber.localeCompare(b.project.jobNumber)
+    )
 
   const onSiteKeys = new Set<string>()
   for (const b of dayBookings) onSiteKeys.add(`op:${b.operativeId}`)

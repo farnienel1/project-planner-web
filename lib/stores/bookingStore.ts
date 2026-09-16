@@ -3,7 +3,7 @@
 import { create } from 'zustand'
 import { deleteDoc, doc, setDoc } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
-import { subscribeOrgCollection } from '@/lib/firebase/subscribeOrgCollection'
+import { isOrgCollectionSubscribed, subscribeOrgCollection } from '@/lib/firebase/subscribeOrgCollection'
 import { newUppercaseUuid } from '@/lib/ios-parity/uuid'
 import { logSkippedDocument, parseBooking, serializeBooking } from '@/lib/ios-parity/converters'
 import type { Booking } from '@/types'
@@ -28,6 +28,10 @@ export const useBookingStore = create<BookingState>((set, get) => ({
 
   loadBookings: async (organizationId: string) => {
     if (!organizationId || !db) return
+    if (isOrgCollectionSubscribed('bookings', organizationId)) {
+      set({ loading: false })
+      return
+    }
     set({ loading: true, error: null })
     subscribeOrgCollection('bookings', organizationId, 'bookings', (docs) => {
       const bookings: Booking[] = []

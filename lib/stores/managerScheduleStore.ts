@@ -4,7 +4,7 @@ import { create } from 'zustand'
 import { deleteDoc, doc, setDoc } from 'firebase/firestore'
 import { startOfDay } from 'date-fns'
 import { db } from '@/lib/firebase/config'
-import { subscribeOrgCollection } from '@/lib/firebase/subscribeOrgCollection'
+import { isOrgCollectionSubscribed, subscribeOrgCollection } from '@/lib/firebase/subscribeOrgCollection'
 import { newUppercaseUuid } from '@/lib/ios-parity/uuid'
 import {
   logSkippedDocument,
@@ -41,6 +41,10 @@ export const useManagerScheduleStore = create<ManagerScheduleState>((set, get) =
 
   loadManagerSiteBookings: async (organizationId: string) => {
     if (!organizationId || !db) return
+    if (isOrgCollectionSubscribed('managerSiteBookings', organizationId)) {
+      set({ loading: false })
+      return
+    }
     set({ loading: true, error: null })
     subscribeOrgCollection(
       'managerSiteBookings',

@@ -76,6 +76,8 @@ test('coversCalendarDay matches UTC midnight and London midnight', () => {
   assert.equal(coversCalendarDay(new Date('2026-09-16T00:00:00Z'), londonDay), true)
   assert.equal(coversCalendarDay(new Date('2026-09-15T23:00:00Z'), londonDay), true)
   assert.equal(coversCalendarDay(new Date('2026-09-14T12:00:00Z'), londonDay), false)
+  // Adjacent UTC calendar dates must not leak in via toDateString().
+  assert.equal(coversCalendarDay(new Date('2026-09-15T12:00:00Z'), londonDay), false)
 })
 
 test('normalizeTimeSlot accepts Full Day aliases', () => {

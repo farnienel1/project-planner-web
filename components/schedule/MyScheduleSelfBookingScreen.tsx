@@ -25,7 +25,12 @@ import {
   type ManagerSiteBooking,
 } from '@/lib/scheduling/managerSiteBookingUtils'
 import { AddWeekToCalendarButton } from '@/components/schedule/AddWeekToCalendarButton'
-import { LoadingSpinner } from '@/components/dashboard/PageShell'
+import {
+  MyScheduleStripeRow,
+  MyScheduleTotalHoursCard,
+  myScheduleClockSubtitle,
+  myScheduleStripeClass,
+} from '@/components/schedule/MyScheduleLooks'
 import type { Project } from '@/types'
 
 type TimeSlot = 'AM' | 'PM' | 'FULL_DAY' | 'CUSTOM_HOURS'
@@ -49,20 +54,7 @@ function slotLabel(booking: ManagerSiteBooking): string {
 }
 
 function locationStripe(type?: ManagerLocationType): string {
-  switch (type) {
-    case 'project':
-      return 'bg-[#185FA5]'
-    case 'small_work':
-      return 'bg-[#854F0B]'
-    case 'office':
-      return 'bg-[#534AB7]'
-    case 'working_from_home':
-      return 'bg-[#0F6E56]'
-    case 'site_survey':
-      return 'bg-[#993556]'
-    default:
-      return 'bg-slate-400'
-  }
+  return myScheduleStripeClass(type)
 }
 
 function Chevron({ open }: { open: boolean }) {
@@ -391,14 +383,19 @@ export function MyScheduleSelfBookingScreen({
   }
 
   if (loading && myBookings.length === 0) {
-    return <LoadingSpinner label="Loading My Schedule…" />
+    return (
+      <div className="mx-auto max-w-3xl pb-16">
+        <h1 className="text-[28px] font-semibold tracking-tight">My Schedule</h1>
+        <p className="mt-1 text-[14px] text-ios-muted">Opening your week…</p>
+      </div>
+    )
   }
 
   return (
     <div className="mx-auto max-w-3xl pb-16">
-      <h1 className="text-2xl font-bold text-slate-900">My Schedule</h1>
-      <p className="mt-1 mb-5 text-sm text-slate-500">
-        Book yourself into sites, the office, projects and small works.
+      <h1 className="text-[28px] font-semibold tracking-tight">My Schedule</h1>
+      <p className="mt-1 mb-5 text-[14px] text-ios-muted">
+        Book yourself into a site, the office, or a custom location — AM, PM, full day or custom hours.
       </p>
 
       {toast && (
@@ -561,45 +558,32 @@ export function MyScheduleSelfBookingScreen({
         </Section>
       </div>
 
-      <div className="mt-6">
-        <div className="mb-2 flex items-center justify-between px-1">
-          <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+      <div className="mt-6 space-y-3">
+        <MyScheduleTotalHoursCard bookings={dayBookings} policy={payrollPolicy} />
+        <div className="flex items-center justify-between px-1">
+          <span className="text-[11px] font-medium uppercase tracking-[0.4px] text-ios-muted">
             {format(selectedDate, 'EEEE, d MMM')}
           </span>
-          {dayBookings.length > 0 && (
-            <span className="text-xs text-slate-500">{dayBookings.length} booked</span>
-          )}
+          {dayBookings.length > 0 ? (
+            <span className="text-[11px] text-ios-muted">{dayBookings.length} booked</span>
+          ) : null}
         </div>
         {dayBookings.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-slate-200 bg-white py-10 text-center text-sm text-slate-500">
+          <div className="rounded-2xl border border-dashed border-ios-border bg-white py-10 text-center text-[14px] text-ios-muted">
             Nothing booked for this day yet.
           </div>
         ) : (
-          <ul className="space-y-2">
+          <div className="space-y-2">
             {dayBookings.map((booking) => (
-              <li
+              <MyScheduleStripeRow
                 key={booking.id}
-                className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white p-3"
-              >
-                <span className={`h-10 w-1.5 shrink-0 rounded-full ${locationStripe(booking.locationType)}`} />
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm font-semibold text-slate-900">{locationName(booking)}</div>
-                  <div className="text-xs text-slate-500">{slotLabel(booking)}</div>
-                </div>
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => removeBooking(booking)}
-                  className="rounded-lg p-2 text-red-600 hover:bg-red-50 disabled:opacity-50"
-                  aria-label="Remove booking"
-                >
-                  <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </li>
+                stripeClass={myScheduleStripeClass(booking.locationType)}
+                title={locationName(booking)}
+                subtitle={myScheduleClockSubtitle(booking, payrollPolicy)}
+                onDelete={() => void removeBooking(booking)}
+              />
             ))}
-          </ul>
+          </div>
         )}
       </div>
 

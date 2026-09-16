@@ -7,6 +7,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
 import { ChevronLeftIcon, ChevronRightIcon, CalendarDaysIcon } from '@heroicons/react/24/outline'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useBookingStore } from '@/lib/stores/bookingStore'
@@ -50,6 +51,7 @@ function holidayName(
 }
 
 export function DailyOverviewScreen() {
+  const searchParams = useSearchParams()
   const { user, organization } = useAuthStore()
   const { bookings, loadBookings, loading: bookingsLoading, error: bookingsError } = useBookingStore()
   const { managerSiteBookings, loadManagerSiteBookings, loading: managerLoading } = useManagerScheduleStore()
@@ -62,6 +64,13 @@ export function DailyOverviewScreen() {
     Awaited<ReturnType<typeof loadSubcontractorBookings>>
   >([])
   const [day, setDay] = useState(() => londonMidnight(new Date()))
+
+  useEffect(() => {
+    const raw = searchParams.get('date')
+    if (raw && /^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+      setDay(londonMidnight(new Date(`${raw}T12:00:00`)))
+    }
+  }, [searchParams])
 
   useEffect(() => {
     if (!organization?.id) return
@@ -117,7 +126,8 @@ export function DailyOverviewScreen() {
 
   const canBook = Boolean(user && (hasAdminAccess(user) || user.permissions?.manager))
   const dateParam = dayKey(day)
-  const loading = bookingsLoading || managerLoading
+  const firstPaint =
+    (bookingsLoading || managerLoading) && bookings.length === 0 && managerSiteBookings.length === 0
 
   if (user && !canViewDailyOverview(user)) {
     return <p className="text-ios-muted">Daily overview is not available for this account.</p>
@@ -207,8 +217,8 @@ export function DailyOverviewScreen() {
         </div>
       </section>
 
-      {loading && bookings.length === 0 && managerSiteBookings.length === 0 ? (
-        <p className="py-8 text-center text-[14px] text-ios-muted">Loading daily overview...</p>
+      {firstPaint ? (
+        <p className="py-8 text-center text-[14px] text-ios-muted">Loading daily overview…</p>
       ) : null}
 
       <div className="xl:grid xl:grid-cols-12 xl:gap-6">
@@ -246,7 +256,7 @@ export function DailyOverviewScreen() {
                     {people.length > 0 ? (
                       <div className="mt-2.5 divide-y divide-ios-border border-t border-ios-border">
                         {people.map((row) => (
-                          <PersonRow key={row.id} row={row} />
+                          <PersonRow key={row.personKey} row={row} />
                         ))}
                       </div>
                     ) : (
@@ -264,7 +274,7 @@ export function DailyOverviewScreen() {
             </section>
           ) : null}
 
-          {model.empty && !loading ? (
+          {model.empty && !firstPaint ? (
             <p className="rounded-2xl border border-ios-border bg-ios-card py-10 text-center text-[15px] font-medium text-ios-muted">
               No bookings
             </p>

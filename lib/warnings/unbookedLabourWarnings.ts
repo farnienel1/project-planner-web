@@ -21,6 +21,7 @@ export interface UnbookedLabourWarning {
   userId?: string
   date: Date
   message: string
+  missingHours: number
 }
 
 function isActiveBooking(booking: Booking): boolean {
@@ -169,11 +170,12 @@ export function computeUnbookedLabourWarningsForDateRange({
             operativeName: operativeDisplayName(operative),
             userId: linkedUser?.id,
             date: startOfDay(day),
-            message: `${operativeDisplayName(operative)} is not booked on ${day.toLocaleDateString('en-GB', {
+            missingHours: 8,
+            message: `${operativeDisplayName(operative)} is below the standard paid day on ${day.toLocaleDateString('en-GB', {
               weekday: 'long',
               day: 'numeric',
               month: 'long',
-            })}.`,
+            })}. Missing hours are shown below.`,
           })
         }
       }
@@ -182,6 +184,30 @@ export function computeUnbookedLabourWarningsForDateRange({
   }
 
   return warnings.sort((a, b) => a.date.getTime() - b.date.getTime())
+}
+
+export type UnbookedLabourDayGroup = {
+  id: string
+  date: Date
+  people: UnbookedLabourWarning[]
+}
+
+/** iOS unbooked card lists every person missing hours on that day. */
+export function groupUnbookedWarningsByDay(warnings: UnbookedLabourWarning[]): UnbookedLabourDayGroup[] {
+  const byDay = new Map<string, UnbookedLabourWarning[]>()
+  for (const warning of warnings) {
+    const key = startOfDay(warning.date).toISOString()
+    const list = byDay.get(key) || []
+    list.push(warning)
+    byDay.set(key, list)
+  }
+  return [...byDay.entries()]
+    .sort((a, b) => new Date(a[0]).getTime() - new Date(b[0]).getTime())
+    .map(([id, people]) => ({
+      id,
+      date: startOfDay(people[0].date),
+      people: people.sort((a, b) => a.operativeName.localeCompare(b.operativeName)),
+    }))
 }
 
 export function filterWarningsByLookahead<T extends { date: Date }>(
