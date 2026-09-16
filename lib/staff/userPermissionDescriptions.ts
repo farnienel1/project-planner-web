@@ -45,11 +45,6 @@ export const MANAGER_PERMISSION_TOGGLES: PermissionToggleDef[] = [
       'Can manage operatives and view their details. If turned off, they can still assign operatives to projects and small works, but will not see full operative profiles.',
   },
   {
-    key: 'skills',
-    title: 'Skills',
-    description: 'Can create and alter existing skills.',
-  },
-  {
     key: 'qualifications',
     title: 'Qualifications',
     description: 'Can create and alter existing qualifications.',

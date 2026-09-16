@@ -14,7 +14,6 @@ export const DEFAULT_NAVIGATION_LABELS: Record<string, string> = {
   dashboard_site_map: 'Site map',
   dashboard_site_audit: 'Site audit',
   dashboard_timesheets: 'Timesheets',
-  dashboard_skills: 'Skills',
   dashboard_qualifications: 'Qualifications',
   dashboard_job_types: 'Job types',
   dashboard_wholesalers: 'Wholesalers',

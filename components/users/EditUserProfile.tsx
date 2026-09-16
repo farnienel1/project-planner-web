@@ -589,7 +589,7 @@ export function EditUserProfile({
                   href={`/dashboard/operatives/${linkedOperative.id}/edit`}
                   className="inline-flex items-center gap-1.5 text-sm font-semibold text-blue-600 hover:underline"
                 >
-                  Skills &amp; qualifications
+                  Qualifications
                   <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                   </svg>

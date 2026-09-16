@@ -19,6 +19,7 @@ import { loadOrganizationDetails } from '@/lib/settings/organizationSettings'
 import type { UserPermissions } from '@/types'
 import { LineManagerMultiSelect } from '@/components/users/LineManagerMultiSelect'
 import {
+  PanelHeader,
   SectionLabel,
   SettingsCard,
   Toggle,

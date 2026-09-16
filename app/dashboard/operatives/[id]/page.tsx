@@ -7,12 +7,11 @@ import { useOperativeStore } from '@/lib/stores/operativeStore'
 import { useEffect, useMemo } from 'react'
 import { format } from 'date-fns'
 import { dedupeOperativesByEmail } from '@/lib/operatives/operativeRosterUtils'
-import { resolveOperativeSkillLabels } from '@/lib/staff/skillDisplayUtils'
 
 export default function OperativeDetailPage() {
   const params = useParams()
   const { organization } = useAuthStore()
-  const { operatives, skills, loadOperatives, loadSkills } = useOperativeStore()
+  const { operatives, loadOperatives } = useOperativeStore()
 
   const operative = useMemo(
     () => dedupeOperativesByEmail(operatives).find((entry) => entry.id === params.id),
@@ -22,11 +21,8 @@ export default function OperativeDetailPage() {
   useEffect(() => {
     if (organization?.id) {
       loadOperatives(organization.id)
-      loadSkills(organization.id)
     }
-  }, [organization, loadOperatives, loadSkills])
-
-  const skillLabels = operative ? resolveOperativeSkillLabels(operative, skills) : []
+  }, [organization, loadOperatives])
 
   if (!operative) {
     return (
@@ -92,19 +88,6 @@ export default function OperativeDetailPage() {
               </div>
             </dl>
           </div>
-
-          {skillLabels.length > 0 && (
-            <div className="rounded-lg bg-white p-6 shadow">
-              <h2 className="mb-4 text-xl font-semibold text-gray-900">Skills</h2>
-              <div className="flex flex-wrap gap-2">
-                {skillLabels.map((label) => (
-                  <span key={label} className="rounded-full bg-blue-50 px-3 py-1 text-sm text-blue-700">
-                    {label}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
 
           {operative.qualifications && operative.qualifications.length > 0 && (
             <div className="rounded-lg bg-white p-6 shadow">

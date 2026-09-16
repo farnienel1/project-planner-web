@@ -66,7 +66,7 @@ export function permissionsForAdminInvite(): UserPermissions {
     adminAccess: true,
     manager: true,
     operatives: true,
-    skills: true,
+    skills: false,
     qualifications: true,
     materials: true,
     projects: true,

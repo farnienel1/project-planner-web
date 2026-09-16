@@ -223,16 +223,6 @@ export async function persistGuidedSetup(
   const collectionName = project.jobType === 'Small Works' ? 'smallWorks' : 'projects'
   await setDoc(doc(db, 'organizations', organizationId, collectionName, projectId), payload)
 
-  if (guidedData.skill.name.trim() && guidedData.skill.trade.trim()) {
-    const skillId = newUuid()
-    await setDoc(doc(db, 'organizations', organizationId, 'skills', skillId), {
-      name: guidedData.skill.name.trim(),
-      trade: guidedData.skill.trade.trim(),
-      createdAt: Timestamp.now(),
-      updatedAt: Timestamp.now(),
-    })
-  }
-
   if (guidedData.qualification.name.trim()) {
     const qualificationId = newUuid()
     await setDoc(doc(db, 'organizations', organizationId, 'qualifications', qualificationId), {

@@ -12,7 +12,8 @@ import {
 export default function SetupPasswordClient() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const invitationId = searchParams.get('invitation')?.trim() || ''
+  const invitationId =
+    searchParams.get('token')?.trim() || searchParams.get('invitation')?.trim() || ''
 
   const [invitation, setInvitation] = useState<InvitationSummary | null>(null)
   const [password, setPassword] = useState('')
