@@ -352,6 +352,7 @@ export function parseBooking(
     status: status as BookingStatusRaw,
     workStartTime: asOptionalString(data.workStartTime),
     workEndTime: asOptionalString(data.workEndTime),
+    isBreakRemoved: data.isBreakRemoved === true,
     createdAt: asDate(data.createdAt) || new Date(),
     updatedAt: asDate(data.updatedAt) || new Date(),
     organizationId,
@@ -374,7 +375,7 @@ export function serializeBooking(booking: Booking): Record<string, unknown> {
     status,
     workStartTime: booking.workStartTime,
     workEndTime: booking.workEndTime,
-    isBreakRemoved: false,
+    isBreakRemoved: booking.isBreakRemoved === true,
     createdAt: booking.createdAt instanceof Date ? booking.createdAt : new Date(),
     updatedAt: new Date(),
   })

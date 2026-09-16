@@ -128,8 +128,8 @@ export const DEFAULT_ANNUAL_LEAVE: OrgAnnualLeaveDefaults = {
 
 export const DEFAULT_WARNING_DETECTION: OrgWarningDetectionSettings = {
   detectClashes: true,
-  clashLookaheadMode: 'endOfWorkingWeek',
-  clashLookaheadDays: 28,
+  clashLookaheadMode: 'numberOfDays',
+  clashLookaheadDays: 7,
   includeWeekendsForUnbookedLabour: false,
   excludedUserIdsFromUnbookedWarnings: [],
 }

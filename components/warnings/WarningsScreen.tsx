@@ -8,6 +8,8 @@ import type { OperativeBookingClashWarning } from '@/lib/scheduling/bookingClash
 import type { ManagerBookingClashWarning } from '@/lib/warnings/managerClashWarnings'
 import type { MissedMaterialOrderWarning } from '@/lib/warnings/materialOrderWarnings'
 import { groupUnbookedWarningsByDay, type UnbookedLabourWarning } from '@/lib/warnings/unbookedLabourWarnings'
+import { formatWarningHours } from '@/lib/warnings/clashIntervals'
+import type { QualificationExpiryWarning, UnverifiedOperativeWarning } from '@/lib/warnings/generateOrgWarnings'
 import {
   projectSchedulePath,
   projectMaterialsPath,
@@ -190,7 +192,7 @@ function UnbookedDayCard({
   canBook: boolean
 }) {
   const parsed = people.map((person) => ({
-    ...parseUnbookedPerson(`${person.operativeName} (missing ${person.missingHours}h)`),
+    ...parseUnbookedPerson(`${person.operativeName} (missing ${formatWarningHours(person.missingHours)}h)`),
     id: person.id,
     message: person.message,
   }))
@@ -272,12 +274,36 @@ function MaterialsCard({
   )
 }
 
+function LegacyCard({
+  title,
+  message,
+  severity,
+}: {
+  title: string
+  message: string
+  severity: 'high' | 'medium' | 'low'
+}) {
+  return (
+    <article className="overflow-hidden rounded-[15px] border border-black/[0.07] bg-white shadow-[0_2px_8px_rgba(0,0,0,0.08)]">
+      <header className="flex items-center gap-2.5 bg-gradient-to-b from-[#4B5563] to-[#374151] px-3.5 py-2.5">
+        <p className="min-w-0 flex-1 text-[16.5px] font-semibold tracking-tight text-white">{title}</p>
+        <PriorityBadge level={severity} />
+      </header>
+      <div className="px-3.5 py-3.5">
+        <p className="text-[14px] text-[#121B23]">{message}</p>
+      </div>
+    </article>
+  )
+}
+
 export function WarningsScreen({
   organizationName,
   clashWarnings,
   managerClashWarnings,
   unbookedWarnings,
   materialWarnings,
+  qualificationWarnings = [],
+  unverifiedWarnings = [],
   loading,
   user,
   operatives: _operatives,
@@ -290,6 +316,8 @@ export function WarningsScreen({
   managerClashWarnings: ManagerBookingClashWarning[]
   unbookedWarnings: UnbookedLabourWarning[]
   materialWarnings: MissedMaterialOrderWarning[]
+  qualificationWarnings?: QualificationExpiryWarning[]
+  unverifiedWarnings?: UnverifiedOperativeWarning[]
   loading?: boolean
   user: User | null
   operatives: Operative[]
@@ -304,14 +332,15 @@ export function WarningsScreen({
 
   const unbookedGroups = useMemo(() => groupUnbookedWarningsByDay(unbookedWarnings), [unbookedWarnings])
   const clashCount = clashWarnings.length + managerClashWarnings.length
-  const highCount = clashCount + unbookedGroups.length
+  const highCount = clashCount + unbookedWarnings.length
   const lowCount = materialWarnings.length
-  const totalCount = highCount + lowCount
+  const coreCount = highCount + lowCount
+  const allCount = coreCount + qualificationWarnings.length + unverifiedWarnings.length
 
   const chips: { value: FilterChip; label: string; count: number }[] = [
-    { value: 'all', label: 'All', count: totalCount },
+    { value: 'all', label: 'All', count: allCount },
     { value: 'clashes', label: 'Clashes', count: clashCount },
-    { value: 'unbooked', label: 'Unbooked', count: unbookedGroups.length },
+    { value: 'unbooked', label: 'Unbooked', count: unbookedWarnings.length },
     { value: 'materials', label: 'Materials', count: lowCount },
   ]
 
@@ -361,11 +390,11 @@ export function WarningsScreen({
         </div>
       </div>
 
-      {totalCount > 0 ? (
+      {coreCount > 0 ? (
         <section className="rounded-[18px] bg-gradient-to-br from-[#B83232] to-[#9E2A2A] p-4 text-white">
           <p className="text-[10px] font-bold uppercase tracking-[0.8px] text-white/60">Active issues</p>
           <div className="mt-1 flex items-center gap-3">
-            <p className="text-[26px] font-bold">{totalCount} need attention</p>
+            <p className="text-[26px] font-bold">{coreCount} need attention</p>
             <span className="ml-auto grid h-9 w-9 place-items-center rounded-full bg-white/18">
               <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M12 3 2 21h20L12 3Z" />
@@ -384,7 +413,7 @@ export function WarningsScreen({
         </section>
       ) : null}
 
-      {totalCount > 0 ? (
+      {allCount > 0 ? (
         <div className="flex flex-wrap gap-1.5">
           {chips.map((chip) => (
             <button
@@ -403,7 +432,7 @@ export function WarningsScreen({
         </div>
       ) : null}
 
-      {totalCount === 0 ? (
+      {allCount === 0 ? (
         <div className="rounded-2xl border border-ios-border bg-white px-6 py-16 text-center">
           {loading ? (
             <>
@@ -434,6 +463,28 @@ export function WarningsScreen({
       {showMaterials
         ? materialWarnings.map((warning) => (
             <MaterialsCard key={warning.id} warning={warning} smallWorkIds={smallWorkIds} />
+          ))
+        : null}
+
+      {filter === 'all'
+        ? qualificationWarnings.map((warning) => (
+            <LegacyCard
+              key={warning.id}
+              title="Qualification expiry"
+              message={warning.message}
+              severity={warning.severity}
+            />
+          ))
+        : null}
+
+      {filter === 'all'
+        ? unverifiedWarnings.map((warning) => (
+            <LegacyCard
+              key={warning.id}
+              title="Unverified operative"
+              message={warning.message}
+              severity="medium"
+            />
           ))
         : null}
 

@@ -326,7 +326,10 @@ export function buildWeeklyReportData({
 
   if (warningDetection?.detectClashes) {
     for (const clash of filterWarningsToPeriod(
-      computeOperativeBookingClashWarnings(bookings, rosterOperatives, mergedWorks),
+      computeOperativeBookingClashWarnings(bookings, rosterOperatives, mergedWorks, {
+        users,
+        payrollPolicy: payroll,
+      }),
       period
     )) {
       warnings.push({
@@ -340,7 +343,11 @@ export function buildWeeklyReportData({
       })
     }
     for (const clash of filterWarningsToPeriod(
-      computeManagerBookingClashWarnings(managerSiteBookings, users, mergedWorks),
+      computeManagerBookingClashWarnings(managerSiteBookings, users, mergedWorks, {
+        operativeBookings: bookings,
+        operatives,
+        payrollPolicy: payroll,
+      }),
       period
     )) {
       warnings.push({
@@ -358,10 +365,12 @@ export function buildWeeklyReportData({
   if (warningDetection) {
     for (const warning of computeUnbookedLabourWarningsForDateRange({
       bookings,
+      managerSiteBookings,
       operatives,
       users,
       holidays,
       warningDetection,
+      payrollPolicy: payroll,
       periodStart: period.start,
       periodEnd: period.end,
     })) {
