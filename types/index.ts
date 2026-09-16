@@ -100,6 +100,7 @@ export interface Booking {
   status: BookingStatus | string;
   workStartTime?: string;
   workEndTime?: string;
+  isBreakRemoved?: boolean;
   createdAt: Date;
   updatedAt: Date;
   organizationId?: string;

@@ -140,6 +140,7 @@ export function orgSetupSettingsToFirestoreFields(
     invoicing: invoicingToFirestore(features.invoicing),
     settings: {
       myScheduleOptions: myScheduleOptionsToFirestore(features.myScheduleOptions),
+      materialCutOff: features.notificationPreferences,
     },
   }
 }

@@ -326,8 +326,8 @@ export function parseBooking(
   data: Record<string, unknown>,
   organizationId?: string
 ): ParseResult<Booking> {
-  const operativeId = asString(data.operativeId)
-  const projectId = asString(data.projectId)
+  const operativeId = asString(data.operativeId) || asString(data.operativeID)
+  const projectId = asString(data.projectId) || asString(data.projectID)
   const date = asDate(data.date)
   const timeSlot = normalizeTimeSlot(data.timeSlot) || (asString(data.timeSlot) ? null : 'FULL DAY')
   const bookedBy = asString(data.bookedBy)
@@ -352,6 +352,7 @@ export function parseBooking(
     status: status as BookingStatusRaw,
     workStartTime: asOptionalString(data.workStartTime),
     workEndTime: asOptionalString(data.workEndTime),
+    isBreakRemoved: data.isBreakRemoved === true,
     createdAt: asDate(data.createdAt) || new Date(),
     updatedAt: asDate(data.updatedAt) || new Date(),
     organizationId,
@@ -374,7 +375,7 @@ export function serializeBooking(booking: Booking): Record<string, unknown> {
     status,
     workStartTime: booking.workStartTime,
     workEndTime: booking.workEndTime,
-    isBreakRemoved: false,
+    isBreakRemoved: booking.isBreakRemoved === true,
     createdAt: booking.createdAt instanceof Date ? booking.createdAt : new Date(),
     updatedAt: new Date(),
   })

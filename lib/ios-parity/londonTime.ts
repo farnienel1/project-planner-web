@@ -125,3 +125,40 @@ export function parseHhMm(value: string | undefined): number | null {
 export function addMinutesToDay(day: Date, minutes: number): Date {
   return new Date(londonMidnight(day).getTime() + minutes * 60_000)
 }
+
+/** Hour in Europe/London (0–23). */
+export function londonHour(date: Date): number {
+  return partsInLondon(date).h
+}
+
+/** Minutes past midnight in Europe/London (0–1439). */
+export function londonMinutesOfDay(date: Date): number {
+  const { h, min } = partsInLondon(date)
+  return h * 60 + min
+}
+
+/** JS weekday in Europe/London: 0 = Sunday … 6 = Saturday. */
+export function londonJsWeekday(date: Date): number {
+  const { y, m, d } = partsInLondon(date)
+  return new Date(Date.UTC(y, m - 1, d, 12, 0, 0)).getUTCDay()
+}
+
+/** ISO weekday in Europe/London: 1 = Monday … 7 = Sunday. */
+export function londonIsoWeekday(date: Date): number {
+  const js = londonJsWeekday(date)
+  return js === 0 ? 7 : js
+}
+
+export function londonDayOfMonth(date: Date): number {
+  return partsInLondon(date).d
+}
+
+/** Monday of the London week containing `date`. */
+export function startOfLondonWeek(date: Date): Date {
+  return addLondonDays(londonMidnight(date), -(londonIsoWeekday(date) - 1))
+}
+
+/** Sunday of the London week containing `date`. */
+export function endOfLondonWeek(date: Date): Date {
+  return addLondonDays(londonMidnight(date), 7 - londonIsoWeekday(date))
+}

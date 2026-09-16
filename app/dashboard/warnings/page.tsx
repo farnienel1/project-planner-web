@@ -10,26 +10,17 @@ import { useManagerScheduleStore } from '@/lib/stores/managerScheduleStore'
 import { useMaterialProjectStore } from '@/lib/stores/materialProjectStore'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { useHolidayStore } from '@/lib/stores/holidayStore'
-import { computeOperativeBookingClashWarnings } from '@/lib/scheduling/bookingClashUtils'
 import { mergeProjectsAndSmallWorks } from '@/lib/projects/workStatus'
 import { getActiveOperativesForScheduling } from '@/lib/operatives/operativeRosterUtils'
-import { computeMissedMaterialOrderWarnings } from '@/lib/warnings/materialOrderWarnings'
-import { computeManagerBookingClashWarnings } from '@/lib/warnings/managerClashWarnings'
-import {
-  computeUnbookedLabourWarnings,
-  filterWarningsByLookahead,
-} from '@/lib/warnings/unbookedLabourWarnings'
 import {
   acceptBookingClash,
   isClashAccepted,
   loadAcceptedBookingClashes,
   type AcceptedBookingClash,
 } from '@/lib/warnings/acceptedClashStorage'
-import {
-  DEFAULT_WARNING_DETECTION,
-  loadOrganizationDetails,
-  type OrganizationDetails,
-} from '@/lib/settings/organizationSettings'
+import { loadOrganizationDetails, type OrganizationDetails } from '@/lib/settings/organizationSettings'
+import { loadMaterialCutOffSettings, type NotificationPreferences } from '@/lib/settings/notificationPreferences'
+import { generateOrgWarnings } from '@/lib/warnings/generateOrgWarnings'
 import { WarningsScreen } from '@/components/warnings/WarningsScreen'
 import type { OperativeBookingClashWarning } from '@/lib/scheduling/bookingClashUtils'
 
@@ -41,11 +32,12 @@ export default function WarningsPage() {
   const { users, loadUsers } = useOrgUserStore()
   const { bookings, loadBookings, deleteBooking, loading: bookingsLoading } = useBookingStore()
   const { managerSiteBookings, loadManagerSiteBookings, loading: managerLoading } = useManagerScheduleStore()
-  const { materials, sendRecords, loadAllMaterials, loadSendRecords, loading: materialsLoading } =
+  const { materials, sendRecords, loadAllMaterials, loadSendRecords } =
     useMaterialProjectStore()
   const { bookings: holidayBookings, loadBookings: loadHolidayBookings } = useHolidayStore()
   const [acceptedClashes, setAcceptedClashes] = useState<AcceptedBookingClash[]>([])
   const [orgDetails, setOrgDetails] = useState<OrganizationDetails | null>(null)
+  const [notificationPreferences, setNotificationPreferences] = useState<NotificationPreferences | null>(null)
 
   useEffect(() => {
     if (!loading && !user) router.push('/login')
@@ -78,47 +70,52 @@ export default function WarningsPage() {
     loadHolidayBookings,
   ])
 
+  useEffect(() => {
+    if (!user?.id || !organization?.id) return
+    loadMaterialCutOffSettings(organization.id, user.id)
+      .then(setNotificationPreferences)
+      .catch(() => setNotificationPreferences(null))
+  }, [user?.id, organization?.id])
+
   const rosterOperatives = useMemo(() => getActiveOperativesForScheduling(operatives), [operatives])
   const smallWorkIds = useMemo(() => new Set(smallWorks.map((w) => w.id)), [smallWorks])
-  const warningDetection = orgDetails?.warningDetection ?? DEFAULT_WARNING_DETECTION
-  const invoicing = orgDetails?.invoicing
 
   const mergedWorks = useMemo(
     () => mergeProjectsAndSmallWorks(projects, smallWorks),
     [projects, smallWorks]
   )
 
-  const clashWarnings = useMemo(() => {
-    if (!warningDetection.detectClashes) return []
-    const all = computeOperativeBookingClashWarnings(bookings, rosterOperatives, mergedWorks)
-    const filtered = all.filter(
-      (w) => !isClashAccepted(w.bookingAId, w.bookingBId, acceptedClashes)
-    )
-    return filterWarningsByLookahead(filtered, warningDetection, invoicing)
-  }, [bookings, rosterOperatives, mergedWorks, acceptedClashes, warningDetection, invoicing])
-
-  const managerClashWarnings = useMemo(() => {
-    if (!warningDetection.detectClashes) return []
-    const all = computeManagerBookingClashWarnings(managerSiteBookings, users, mergedWorks)
-    return filterWarningsByLookahead(all, warningDetection, invoicing)
-  }, [managerSiteBookings, users, mergedWorks, warningDetection, invoicing])
-
-  const unbookedWarnings = useMemo(
+  const generated = useMemo(
     () =>
-      computeUnbookedLabourWarnings({
+      generateOrgWarnings({
         bookings,
+        managerSiteBookings,
         operatives,
         users,
+        projects: mergedWorks,
         holidays: holidayBookings,
-        warningDetection,
-        invoicing,
+        materials,
+        sendRecords,
+        orgDetails,
+        notificationPreferences,
       }),
-    [bookings, operatives, users, holidayBookings, warningDetection, invoicing]
+    [
+      bookings,
+      managerSiteBookings,
+      operatives,
+      users,
+      mergedWorks,
+      holidayBookings,
+      materials,
+      sendRecords,
+      orgDetails,
+      notificationPreferences,
+    ]
   )
 
-  const materialWarnings = useMemo(
-    () => computeMissedMaterialOrderWarnings(materials, sendRecords, mergedWorks),
-    [materials, sendRecords, mergedWorks]
+  const clashWarnings = useMemo(
+    () => generated.clashWarnings.filter((w) => !isClashAccepted(w.bookingAId, w.bookingBId, acceptedClashes)),
+    [generated.clashWarnings, acceptedClashes]
   )
 
   const handleAcceptClash = useCallback(
@@ -145,10 +142,15 @@ export default function WarningsPage() {
     <WarningsScreen
       organizationName={organization?.name || 'your organisation'}
       clashWarnings={clashWarnings}
-      managerClashWarnings={managerClashWarnings}
-      unbookedWarnings={unbookedWarnings}
-      materialWarnings={materialWarnings}
-      loading={bookingsLoading || materialsLoading || managerLoading}
+      managerClashWarnings={generated.managerClashWarnings}
+      unbookedWarnings={generated.unbookedWarnings}
+      materialWarnings={generated.materialWarnings}
+      qualificationWarnings={generated.qualificationWarnings}
+      unverifiedWarnings={generated.unverifiedWarnings}
+      loading={
+        (bookingsLoading && bookings.length === 0) ||
+        (managerLoading && managerSiteBookings.length === 0)
+      }
       user={user}
       operatives={rosterOperatives}
       smallWorkIds={smallWorkIds}

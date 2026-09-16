@@ -24,6 +24,7 @@ import { useBookingStore } from '@/lib/stores/bookingStore'
 import { useManagerScheduleStore } from '@/lib/stores/managerScheduleStore'
 import { useTaskStore } from '@/lib/stores/taskStore'
 import { useHolidayStore } from '@/lib/stores/holidayStore'
+import { useMaterialProjectStore } from '@/lib/stores/materialProjectStore'
 import { applyRoleTestingPreset, hasAdminAccess, isOperativeMode, roleTestingStorageKey } from '@/lib/permissions'
 import { formatHomeDateLine } from '@/lib/ios-parity/londonTime'
 import {
@@ -47,7 +48,9 @@ import {
 } from '@/lib/home/quickActions'
 import { policyForDay } from '@/lib/payroll/policyCatalog'
 import { IconChip, type ChipTint } from '@/components/ios/IconChip'
-import { computeOperativeBookingClashWarnings } from '@/lib/scheduling/bookingClashUtils'
+import { generateOrgWarnings } from '@/lib/warnings/generateOrgWarnings'
+import { loadOrganizationDetails, type OrganizationDetails } from '@/lib/settings/organizationSettings'
+import { loadMaterialCutOffSettings, type NotificationPreferences } from '@/lib/settings/notificationPreferences'
 import { mergeProjectsAndSmallWorks } from '@/lib/projects/workStatus'
 
 function greetingName(firstName: string, email: string): string {
@@ -65,6 +68,7 @@ export function HomeScreen() {
   const { managerSiteBookings, loadManagerSiteBookings } = useManagerScheduleStore()
   const { tasks, loadTasks } = useTaskStore()
   const { bookings: holidays, loadBookings: loadHolidays } = useHolidayStore()
+  const { materials, sendRecords, loadAllMaterials, loadSendRecords } = useMaterialProjectStore()
   const [customise, setCustomise] = useState(false)
   const [metricsOpen, setMetricsOpen] = useState(false)
   const [addOpen, setAddOpen] = useState(false)
@@ -72,6 +76,8 @@ export function HomeScreen() {
   const [metricIds, setMetricIds] = useState<HomeOverviewMetricID[]>(DEFAULT_ADMIN_OVERVIEW_METRICS)
   const [actionIds, setActionIds] = useState<string[]>([])
   const [now] = useState(() => new Date())
+  const [orgDetails, setOrgDetails] = useState<OrganizationDetails | null>(null)
+  const [notificationPreferences, setNotificationPreferences] = useState<NotificationPreferences | null>(null)
 
   const presetRaw =
     typeof window !== 'undefined' && user ? localStorage.getItem(roleTestingStorageKey(user.id)) : null
@@ -92,6 +98,9 @@ export function HomeScreen() {
     loadBookings(orgId)
     loadManagerSiteBookings(orgId)
     loadTasks(orgId)
+    loadAllMaterials(orgId)
+    loadSendRecords(orgId)
+    loadOrganizationDetails(orgId).then(setOrgDetails).catch(() => setOrgDetails(null))
     const t = window.setTimeout(() => loadHolidays(orgId), 400)
     return () => window.clearTimeout(t)
     // eslint-disable-next-line react-hooks/exhaustive-deps -- zustand loaders are stable
@@ -101,13 +110,18 @@ export function HomeScreen() {
     if (!user) return
     setMetricIds(loadSavedOverviewMetrics(user.id))
     setActionIds(loadSavedQuickActionOrder(user.id, displayUser || user))
+    if (organization?.id) {
+      loadMaterialCutOffSettings(organization.id, user.id)
+        .then(setNotificationPreferences)
+        .catch(() => setNotificationPreferences(null))
+    }
     try {
       setHint(!localStorage.getItem(quickActionHintStorageKey(user.id)))
     } catch {
       /* ignore */
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- displayUser is derived from user.id
-  }, [user?.id])
+  }, [user?.id, organization?.id])
 
   const merged = useMemo(() => mergeProjectsAndSmallWorks(projects, smallWorks), [projects, smallWorks])
   const liveCount = merged.filter((p) => p.isLive !== false).length
@@ -134,8 +148,33 @@ export function HomeScreen() {
 
   const warningCount = useMemo(() => {
     if (!admin) return 0
-    return computeOperativeBookingClashWarnings(bookings, operatives, merged).length
-  }, [admin, bookings, operatives, merged])
+    return generateOrgWarnings({
+      bookings,
+      managerSiteBookings,
+      operatives,
+      users,
+      projects: merged,
+      holidays,
+      materials,
+      sendRecords,
+      orgDetails,
+      notificationPreferences,
+      referenceDate: now,
+    }).coreCount
+  }, [
+    admin,
+    bookings,
+    managerSiteBookings,
+    operatives,
+    users,
+    merged,
+    holidays,
+    materials,
+    sendRecords,
+    orgDetails,
+    notificationPreferences,
+    now,
+  ])
 
   const shownMetrics: HomeOverviewMetricID[] = operative
     ? ['tasksDueTodayPersonal', 'tasksDueWeekPersonal']
