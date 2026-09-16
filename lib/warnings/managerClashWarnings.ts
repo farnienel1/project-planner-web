@@ -1,6 +1,16 @@
-import { format, isSameDay, startOfDay } from 'date-fns'
-import type { Project, User } from '@/types'
-import { timeSlotsOverlap } from '@/lib/scheduling/bookingClashUtils'
+import { format } from 'date-fns'
+import type { Booking, Operative, Project, User } from '@/types'
+import { UserRole } from '@/types'
+import { dayKey, londonMidnight } from '@/lib/ios-parity/londonTime'
+import { isActiveBookingStatus } from '@/lib/ios-parity/enums'
+import type { OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
+import { DEFAULT_PAYROLL_POLICY } from '@/lib/settings/organizationSettings'
+import {
+  intervalsOverlap,
+  managerClashInterval,
+  operativeClashInterval,
+  overlappingClusters,
+} from '@/lib/warnings/clashIntervals'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import { managerSiteBookingDisplayTitle } from '@/lib/scheduling/managerSiteBookingUtils'
 
@@ -16,8 +26,23 @@ export interface ManagerBookingClashWarning {
   message: string
 }
 
-function projectsByIdMap(projects: Project[]): Map<string, string> {
-  return new Map(projects.map((p) => [p.id, `${p.jobNumber} ${p.siteName}`.trim()]))
+type PersonDayItem = {
+  userId: string
+  date: Date
+  sortKey: string
+  bookingId: string
+  locationLabel: string
+  interval: { start: number; end: number } | null
+}
+
+function isManagerOrAdminUser(user: User): boolean {
+  return Boolean(
+    user.isActive &&
+      (user.permissions?.manager ||
+        user.permissions?.adminAccess ||
+        user.isSuperAdmin ||
+        user.role === UserRole.ADMIN)
+  )
 }
 
 function personName(userId: string, usersById: Map<string, User>): string {
@@ -26,67 +51,102 @@ function personName(userId: string, usersById: Map<string, User>): string {
   return `${user.firstName || ''} ${user.surname || ''}`.trim() || user.email || 'Manager'
 }
 
+function projectLabel(project: Project | undefined): string {
+  if (!project) return 'Project'
+  return `${project.jobNumber} ${project.siteName}`.trim()
+}
+
+/**
+ * iOS managerPersonDayItems: manager/admin users' site bookings plus any
+ * operative bookings linked by email, clustered by clock interval overlap.
+ */
 export function computeManagerBookingClashWarnings(
   managerSiteBookings: ManagerSiteBooking[],
   users: User[],
-  projects: Project[]
+  projects: Project[],
+  options?: {
+    operativeBookings?: Booking[]
+    operatives?: Operative[]
+    payrollPolicy?: OrgPayrollTimePolicy
+  }
 ): ManagerBookingClashWarning[] {
   const usersById = new Map(users.map((u) => [u.id, u]))
-  const projectsById = projectsByIdMap(projects)
+  const projectsById = new Map(projects.map((p) => [p.id, p]))
+  const projectTitles = new Map(projects.map((p) => [p.id, projectLabel(p)]))
+  const payrollPolicy = options?.payrollPolicy ?? DEFAULT_PAYROLL_POLICY
+  const managerAdminUsers = users.filter(isManagerOrAdminUser)
+  const managerAdminUserIds = new Set(managerAdminUsers.map((user) => user.id))
+  const emailToUserId = new Map<string, string>()
+  for (const user of managerAdminUsers) {
+    const email = user.email.trim().toLowerCase()
+    if (email) emailToUserId.set(email, user.id)
+  }
+  const operativesById = new Map((options?.operatives || []).map((operative) => [operative.id, operative]))
+
+  const itemsByPersonDay = new Map<string, PersonDayItem[]>()
+  const pushItem = (item: PersonDayItem) => {
+    const key = `${item.userId}|${dayKey(item.date)}`
+    const list = itemsByPersonDay.get(key) || []
+    list.push(item)
+    itemsByPersonDay.set(key, list)
+  }
+
+  for (const booking of managerSiteBookings) {
+    if (!managerAdminUserIds.has(booking.userId)) continue
+    const interval = managerClashInterval(booking, payrollPolicy)
+    pushItem({
+      userId: booking.userId,
+      date: booking.date,
+      sortKey: `m-${booking.id}`,
+      bookingId: booking.id,
+      locationLabel: managerSiteBookingDisplayTitle(booking, projectTitles),
+      interval,
+    })
+  }
+
+  for (const booking of options?.operativeBookings || []) {
+    if (!isActiveBookingStatus(booking.status)) continue
+    const operative = operativesById.get(booking.operativeId)
+    if (!operative) continue
+    const userId = emailToUserId.get(operative.email.trim().toLowerCase())
+    if (!userId) continue
+    pushItem({
+      userId,
+      date: booking.date,
+      sortKey: `o-${booking.id}`,
+      bookingId: booking.id,
+      locationLabel: projectLabel(projectsById.get(booking.projectId)),
+      interval: operativeClashInterval(booking, payrollPolicy),
+    })
+  }
+
   const warnings: ManagerBookingClashWarning[] = []
   const seen = new Set<string>()
 
-  const byUserDay = new Map<string, ManagerSiteBooking[]>()
-  for (const booking of managerSiteBookings) {
-    const key = `${booking.userId}|${startOfDay(booking.date).toISOString()}`
-    const list = byUserDay.get(key) || []
-    list.push(booking)
-    byUserDay.set(key, list)
-  }
-
-  for (const [, dayBookings] of byUserDay) {
-    if (dayBookings.length < 2) continue
-    const sorted = [...dayBookings].sort((a, b) => a.id.localeCompare(b.id))
-
-    for (let i = 0; i < sorted.length; i++) {
-      for (let j = i + 1; j < sorted.length; j++) {
-        const a = sorted[i]
-        const b = sorted[j]
-        if (a.locationId && b.locationId && a.locationId === b.locationId) continue
-
-        if (
-          !timeSlotsOverlap(
-            String(a.timeSlot),
-            String(b.timeSlot),
-            a.workStartTime,
-            a.workEndTime,
-            b.workStartTime,
-            b.workEndTime
-          )
-        ) {
-          continue
-        }
-
-        const pairKey = [a.id, b.id].sort().join('|')
-        if (seen.has(pairKey)) continue
-        seen.add(pairKey)
-
-        const locationALabel = managerSiteBookingDisplayTitle(a, projectsById)
-        const locationBLabel = managerSiteBookingDisplayTitle(b, projectsById)
-        const name = personName(a.userId, usersById)
-
-        warnings.push({
-          id: pairKey,
-          userId: a.userId,
-          personName: name,
-          date: startOfDay(a.date),
-          bookingAId: a.id,
-          bookingBId: b.id,
-          locationALabel,
-          locationBLabel,
-          message: `${name} has overlapping manager bookings (${locationALabel} & ${locationBLabel}) on ${format(a.date, 'd MMM yyyy')}.`,
-        })
-      }
+  for (const [, items] of itemsByPersonDay) {
+    if (items.length < 2) continue
+    const clusters = overlappingClusters(items, (a, b) => {
+      if (!a.interval || !b.interval) return false
+      return intervalsOverlap(a.interval, b.interval)
+    })
+    for (const cluster of clusters) {
+      const sorted = [...cluster].sort((a, b) => a.sortKey.localeCompare(b.sortKey))
+      const pairKey = sorted.map((item) => item.sortKey).join('|')
+      if (seen.has(pairKey)) continue
+      seen.add(pairKey)
+      const name = personName(sorted[0].userId, usersById)
+      const place = sorted.length === 2 ? 'two' : String(sorted.length)
+      warnings.push({
+        id: pairKey,
+        userId: sorted[0].userId,
+        personName: name,
+        date: londonMidnight(sorted[0].date),
+        bookingAId: sorted[0].bookingId,
+        bookingBId: sorted[1].bookingId,
+        locationALabel: sorted[0].locationLabel,
+        locationBLabel: sorted[1].locationLabel,
+        message: `${name} is booked in ${place} places on ${format(londonMidnight(sorted[0].date), 'd MMM yyyy')}. Approve if it's intentional and it'll be noted on the weekly report.`,
+      })
     }
   }
 

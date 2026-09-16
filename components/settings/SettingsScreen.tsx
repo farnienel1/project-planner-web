@@ -27,6 +27,7 @@ import {
 } from '@/components/settings/primitives'
 import { OrganisationHubPanel, type OrganisationHubDestination } from '@/components/settings/panels/OrganisationHubPanel'
 import { WarningsPanel } from '@/components/settings/panels/WarningsPanel'
+import { MaterialCutOffPanel } from '@/components/settings/panels/MaterialCutOffPanel'
 import { PaymentRunsPanel } from '@/components/settings/panels/PaymentRunsPanel'
 import { WorkingHoursPanel } from '@/components/settings/panels/WorkingHoursPanel'
 import { AnnualLeaveDefaultsPanel } from '@/components/settings/panels/AnnualLeaveDefaultsPanel'
@@ -45,6 +46,7 @@ type Panel =
   | 'annual-leave-defaults'
   | 'schedule-options'
   | 'warnings'
+  | 'material-cutoff'
   | 'payment-runs'
   | 'roles'
 
@@ -55,6 +57,7 @@ const ORGANISATION_HUB_PANELS: Panel[] = [
   'annual-leave-defaults',
   'schedule-options',
   'warnings',
+  'material-cutoff',
   'payment-runs',
   'roles',
 ]
@@ -258,8 +261,10 @@ function NotificationsPanel({ onBack }: { onBack: () => void }) {
       <SettingsCard>
         <div className="flex items-center justify-between gap-3 px-4 py-4">
           <div>
-            <p className="text-sm font-semibold text-slate-900">Material order cut-off (4:00 PM daily)</p>
-            <p className="text-xs text-slate-500 mt-0.5">Sends a daily reminder at 4:00 PM for admins and managers.</p>
+            <p className="text-sm font-semibold text-slate-900">Material order cut-off</p>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Company reminder time is set in Organisation settings → Material cut-off, and syncs with iOS.
+            </p>
           </div>
           <Toggle checked={materialCutoff} onChange={setMaterialCutoff} />
         </div>
@@ -329,6 +334,9 @@ export default function SettingsScreen({ initialPanel = 'main' }: { initialPanel
   if (panel === 'annual-leave-defaults' && canAccessOrgHub) return <AnnualLeaveDefaultsPanel onBack={() => setPanel('organisation')} />
   if (panel === 'schedule-options' && canAccessOrgHub) return <ScheduleOptionsPanel onBack={() => setPanel('organisation')} />
   if (panel === 'warnings' && canAccessOrgHub) return <WarningsPanel onBack={() => setPanel('organisation')} />
+  if (panel === 'material-cutoff' && canAccessOrgHub) {
+    return <MaterialCutOffPanel onBack={() => setPanel('organisation')} />
+  }
   if (panel === 'payment-runs' && canAccessOrgHub) return <PaymentRunsPanel onBack={() => setPanel('organisation')} />
   if (panel === 'roles' && canAccessOrgHub) return <RolesPanel onBack={() => setPanel('organisation')} />
 

@@ -1,5 +1,9 @@
 import { doc, getDoc, setDoc, Timestamp, updateDoc } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
+import {
+  parseNotificationPreferences,
+  type NotificationPreferences,
+} from '@/lib/settings/notificationPreferences'
 
 export type WeekendPayrollSettings = {
   allHoursAtMultiplierMode: boolean
@@ -85,6 +89,8 @@ export type OrganizationDetails = {
   warningDetection: OrgWarningDetectionSettings
   invoicing: OrgInvoicingSettings
   myScheduleOptions: MyScheduleOptions
+  /** Company-wide material cut-off (also dual-written to the saving user's iOS prefs). */
+  materialCutOff?: NotificationPreferences | null
 }
 
 const DEFAULT_WEEKEND: WeekendPayrollSettings = {
@@ -128,8 +134,8 @@ export const DEFAULT_ANNUAL_LEAVE: OrgAnnualLeaveDefaults = {
 
 export const DEFAULT_WARNING_DETECTION: OrgWarningDetectionSettings = {
   detectClashes: true,
-  clashLookaheadMode: 'endOfWorkingWeek',
-  clashLookaheadDays: 28,
+  clashLookaheadMode: 'numberOfDays',
+  clashLookaheadDays: 7,
   includeWeekendsForUnbookedLabour: false,
   excludedUserIdsFromUnbookedWarnings: [],
 }
@@ -345,6 +351,9 @@ export async function loadOrganizationDetails(organizationId: string): Promise<O
   if (!snap.exists()) return null
   const data = snap.data()
   const settings = (data.settings as Record<string, unknown> | undefined) ?? {}
+  const materialRaw =
+    (settings.materialCutOff as Record<string, unknown> | undefined) ??
+    (settings.notificationPreferences as Record<string, unknown> | undefined)
   return {
     id: snap.id,
     name: String(data.name ?? ''),
@@ -358,7 +367,24 @@ export async function loadOrganizationDetails(organizationId: string): Promise<O
     warningDetection: parseWarningDetection(data.warningDetection as Record<string, unknown> | undefined),
     invoicing: parseInvoicing(data.invoicing as Record<string, unknown> | undefined),
     myScheduleOptions: parseMyScheduleOptions(settings),
+    materialCutOff: materialRaw ? parseNotificationPreferences(materialRaw) : null,
   }
+}
+
+export async function saveMaterialCutOffSettings(
+  organizationId: string,
+  prefs: NotificationPreferences
+): Promise<void> {
+  await updateDoc(doc(db, 'organizations', organizationId), {
+    'settings.materialCutOff': {
+      materialOrderCutOff: prefs.materialOrderCutOff,
+      materialCutOffHour: prefs.materialCutOffHour,
+      materialCutOffMinute: prefs.materialCutOffMinute,
+      materialCutOffOnSaturday: prefs.materialCutOffOnSaturday,
+      materialCutOffOnSunday: prefs.materialCutOffOnSunday,
+    },
+    updatedAt: Timestamp.now(),
+  })
 }
 
 export async function savePayrollPolicy(organizationId: string, policy: OrgPayrollTimePolicy): Promise<void> {
@@ -435,6 +461,36 @@ export function formatScheduleOptionsSubtitle(options: MyScheduleOptions): strin
   const count =
     Number(options.showOffice) + Number(options.showWorkingFromHome) + Number(options.showSiteSurvey) + options.customItems.length
   return `${count} location option${count === 1 ? '' : 's'} in My Schedule`
+}
+
+export type ScheduleLocationPick = {
+  id: string
+  title: string
+  locationType: import('@/lib/scheduling/managerSiteBookingUtils').ManagerLocationType
+  customLocationName?: string
+}
+
+/** iOS MyScheduleOptions.enabledScheduleLocationPicks — Other locations in Book labour. */
+export function enabledScheduleLocationPicks(options: MyScheduleOptions): ScheduleLocationPick[] {
+  const rows: ScheduleLocationPick[] = []
+  if (options.showOffice) rows.push({ id: 'office', title: 'Office', locationType: 'office' })
+  if (options.showWorkingFromHome) {
+    rows.push({ id: 'wfh', title: 'Working from home', locationType: 'working_from_home' })
+  }
+  if (options.showSiteSurvey) {
+    rows.push({ id: 'survey', title: 'Site survey', locationType: 'site_survey' })
+  }
+  for (const raw of options.customItems ?? []) {
+    const trimmed = raw.trim()
+    if (!trimmed) continue
+    rows.push({
+      id: `custom:${trimmed}`,
+      title: trimmed,
+      locationType: 'custom',
+      customLocationName: trimmed,
+    })
+  }
+  return rows
 }
 
 export function formatInvoicingSubtitle(invoicing: OrgInvoicingSettings): string {

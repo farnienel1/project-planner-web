@@ -139,7 +139,11 @@ export type DailyOverviewModel = {
 }
 
 export function normalizeWorkId(id: string | undefined | null): string {
-  return String(id || '').trim().toUpperCase()
+  const raw = String(id || '').trim().toUpperCase()
+  if (!raw) return ''
+  const compact = raw.replace(/-/g, '')
+  if (/^[0-9A-F]{32}$/.test(compact)) return compact
+  return raw
 }
 
 export function findWorkById(projects: Project[], id: string | undefined | null): Project | undefined {
