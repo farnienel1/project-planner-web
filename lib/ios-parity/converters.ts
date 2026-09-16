@@ -44,6 +44,7 @@ import {
 } from './firestoreCodec'
 import {
   bookingWriteSchema,
+  clientWriteSchema,
   holidayWriteSchema,
   managerSiteBookingWriteSchema,
   notificationWriteSchema,
@@ -735,8 +736,9 @@ export function parseClient(
 ): ParseResult<Client> {
   const name = asString(data.name)
   if (!name) return fail(['name required'])
+  const idString = asString(data.id, docId)
   return ok({
-    id: docId,
+    id: idString || docId,
     name,
     contactPerson: asOptionalString(data.contactPerson),
     email: asOptionalString(data.email),
@@ -746,6 +748,82 @@ export function parseClient(
     createdAt: asDate(data.createdAt) || new Date(),
     updatedAt: asDate(data.updatedAt) || new Date(),
   })
+}
+
+/** Mirrors FirebaseBackend.saveClient ~L1724. Empty strings, not omitted keys. */
+export function serializeClient(client: Client): Record<string, unknown> {
+  const parsed = clientWriteSchema.safeParse({
+    id: client.id || newUppercaseUuid(),
+    name: client.name.trim(),
+    contactPerson: client.contactPerson ?? '',
+    email: client.email ?? '',
+    phone: client.phone ?? '',
+    address: client.address ?? '',
+    organizationId: client.organizationId || '',
+    createdAt: client.createdAt,
+    updatedAt: client.updatedAt,
+  })
+  if (!parsed.success) {
+    throw new IosWriteValidationError('Invalid client write', issuesFromZod(parsed.error))
+  }
+  const v = parsed.data
+  return {
+    id: v.id,
+    name: v.name,
+    contactPerson: v.contactPerson,
+    email: v.email,
+    phone: v.phone,
+    address: v.address,
+    organizationId: v.organizationId,
+    createdAt: asTimestamp(v.createdAt),
+    updatedAt: asTimestamp(v.updatedAt),
+  }
+}
+
+/** Mirrors FirebaseBackend.saveNotification ~L4580. */
+export function serializeNotification(row: {
+  organizationId: string
+  type: string
+  title: string
+  message: string
+  userId?: string | null
+  relatedId?: string | null
+  isRead?: boolean
+  createdAt?: Date
+  requiresPermission?: string | null
+  deepLinkUserId?: string | null
+  deepLinkWeekStart?: Date | null
+}): Record<string, unknown> {
+  const parsed = notificationWriteSchema.safeParse({
+    organizationId: row.organizationId,
+    type: row.type,
+    title: row.title,
+    message: row.message,
+    userId: row.userId ?? null,
+    relatedId: row.relatedId ?? null,
+    isRead: row.isRead === true,
+    createdAt: row.createdAt || new Date(),
+    requiresPermission: row.requiresPermission ?? null,
+    deepLinkUserId: row.deepLinkUserId ?? null,
+    deepLinkWeekStart: row.deepLinkWeekStart ?? null,
+  })
+  if (!parsed.success) {
+    throw new IosWriteValidationError('Invalid notification write', issuesFromZod(parsed.error))
+  }
+  const v = parsed.data
+  return {
+    organizationId: v.organizationId,
+    type: v.type,
+    title: v.title,
+    message: v.message,
+    userId: v.userId,
+    relatedId: v.relatedId,
+    isRead: v.isRead,
+    createdAt: asTimestamp(v.createdAt),
+    requiresPermission: v.requiresPermission,
+    deepLinkUserId: v.deepLinkUserId,
+    deepLinkWeekStart: v.deepLinkWeekStart ? asTimestamp(v.deepLinkWeekStart as Date) : null,
+  }
 }
 
 export function parseOperative(
