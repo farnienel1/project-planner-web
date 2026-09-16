@@ -56,7 +56,8 @@ export type GuidedSetupData = {
     contactName: string
     contactEmail: string
   }
-  skill: {
+  /** Kept so older guided-setup drafts still parse; not collected or written. */
+  skill?: {
     name: string
     trade: string
   }
@@ -75,7 +76,6 @@ export function createEmptyGuidedSetupData(): GuidedSetupData {
     client: { name: '', email: '', phone: '' },
     subcontractor: { name: '', tradeType: '', website: '', address: '', contactName: '', contactEmail: '', contactNumber: '' },
     wholesaler: { name: '', trade: '', address: '', accountNumber: '', contactName: '', contactEmail: '' },
-    skill: { name: '', trade: '' },
     qualification: { name: '', hasEndDate: false },
     jobType: { name: '' },
   }
@@ -96,7 +96,6 @@ export type IconName =
   | 'client'
   | 'subcontractor'
   | 'wholesaler'
-  | 'skill'
   | 'qualification'
   | 'jobtype'
   | 'check'
@@ -164,16 +163,6 @@ export function Icon({ name, className }: { name: IconName; className?: string }
           <path strokeLinecap="round" strokeLinejoin="round" d="m3.5 7 8.5-4 8.5 4-8.5 4-8.5-4Z" />
           <path strokeLinecap="round" strokeLinejoin="round" d="M3.5 7v10l8.5 4 8.5-4V7" />
           <path strokeLinecap="round" strokeLinejoin="round" d="M12 11v10" />
-        </svg>
-      )
-    case 'skill':
-      return (
-        <svg {...common}>
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            d="m12 3 2.6 5.6 6.1.6-4.6 4.1 1.3 6-5.4-3.2L6.6 19.3l1.3-6L3.3 9.2l6.1-.6L12 3Z"
-          />
         </svg>
       )
     case 'qualification':
@@ -268,7 +257,6 @@ type StepKey =
   | 'client'
   | 'subcontractor'
   | 'wholesaler'
-  | 'skill'
   | 'qualification'
   | 'jobtype'
 
@@ -286,7 +274,6 @@ const STEP_META: StepMeta[] = [
   { key: 'client', icon: 'client', label: 'Client', accent: { tile: 'bg-emerald-50', ring: 'ring-emerald-100', text: 'text-emerald-600', bar: 'bg-emerald-600' } },
   { key: 'subcontractor', icon: 'subcontractor', label: 'Sub contractor', accent: { tile: 'bg-violet-50', ring: 'ring-violet-100', text: 'text-violet-600', bar: 'bg-violet-600' } },
   { key: 'wholesaler', icon: 'wholesaler', label: 'Wholesaler', accent: { tile: 'bg-amber-50', ring: 'ring-amber-100', text: 'text-amber-600', bar: 'bg-amber-500' } },
-  { key: 'skill', icon: 'skill', label: 'Skill', accent: { tile: 'bg-orange-50', ring: 'ring-orange-100', text: 'text-orange-600', bar: 'bg-orange-500' } },
   { key: 'qualification', icon: 'qualification', label: 'Qualification', accent: { tile: 'bg-teal-50', ring: 'ring-teal-100', text: 'text-teal-600', bar: 'bg-teal-600' } },
   { key: 'jobtype', icon: 'jobtype', label: 'Job type', accent: { tile: 'bg-slate-100', ring: 'ring-slate-200', text: 'text-slate-700', bar: 'bg-slate-700' } },
 ]
@@ -507,10 +494,6 @@ export function GuidedOrgSetup({
         }
         return null
       }
-      case 'skill': {
-        if (!data.skill.name.trim() || !data.skill.trade.trim()) return 'Skill name and trade are required.'
-        return null
-      }
       case 'qualification': {
         if (!data.qualification.name.trim()) return 'Enter a qualification name.'
         return null
@@ -580,7 +563,7 @@ export function GuidedOrgSetup({
                 { icon: 'calendar', label: 'Schedules & bookings', detail: 'Book operatives and subcontractors onto jobs' },
                 { icon: 'project', label: 'Projects & small works', detail: 'Create and manage live jobs on site' },
                 { icon: 'clock', label: 'Timesheets & leave', detail: 'Review and approve team time off and hours' },
-                { icon: 'shield', label: 'Flexible permissions', detail: 'Grant extra access to skills, materials or reports per person' },
+                { icon: 'shield', label: 'Flexible permissions', detail: 'Grant extra access to materials, reports or site audit per person' },
               ]}
             />
           </div>
@@ -758,27 +741,6 @@ export function GuidedOrgSetup({
         </>
       )}
 
-      {meta?.key === 'skill' && (
-        <>
-          <StepHeader
-            meta={meta}
-            index={stepIndex}
-            title="Add a skill"
-            description="Skills sit under a trade and can be assigned to any operative — regardless of their own trade — so you can see at a glance who's qualified for a particular kind of work."
-          />
-          <div className="mt-6 grid gap-5 sm:grid-cols-2">
-            <div>
-              <FormLabel required>Skill name</FormLabel>
-              <FormInput placeholder="e.g. Containment" value={data.skill.name} onChange={(e) => update('skill', { name: e.target.value })} />
-            </div>
-            <div>
-              <FormLabel required>Trade</FormLabel>
-              <FormInput placeholder="e.g. Electrician" value={data.skill.trade} onChange={(e) => update('skill', { trade: e.target.value })} />
-            </div>
-          </div>
-        </>
-      )}
-
       {meta?.key === 'qualification' && (
         <>
           <StepHeader
@@ -878,7 +840,6 @@ function RecapStep({
         <RecapRow icon="client" label="Client" value={data.client.name || '—'} accent="bg-emerald-50 text-emerald-600" />
         <RecapRow icon="subcontractor" label="Sub contractor" value={data.subcontractor.name || '—'} accent="bg-violet-50 text-violet-600" />
         <RecapRow icon="wholesaler" label="Wholesaler" value={data.wholesaler.name || '—'} accent="bg-amber-50 text-amber-600" />
-        <RecapRow icon="skill" label="Skill" value={data.skill.name || '—'} accent="bg-orange-50 text-orange-600" />
         <RecapRow icon="qualification" label="Qualification" value={data.qualification.name || '—'} accent="bg-teal-50 text-teal-600" />
         <RecapRow icon="jobtype" label="Job type" value={data.jobType.name || '—'} accent="bg-slate-100 text-slate-700" />
       </div>

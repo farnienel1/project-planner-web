@@ -46,7 +46,7 @@ function permissionsForAccountType(accountType: 'operative' | 'manager' | 'admin
       adminAccess: true,
       manager: true,
       operatives: true,
-      skills: true,
+      skills: false,
       qualifications: true,
       subContractors: true,
     }
@@ -57,7 +57,7 @@ function permissionsForAccountType(accountType: 'operative' | 'manager' | 'admin
       ...base,
       manager: true,
       operatives: true,
-      skills: true,
+      skills: false,
       qualifications: true,
       subContractors: true,
     }

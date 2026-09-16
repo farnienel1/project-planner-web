@@ -21,7 +21,7 @@ export default function HelpSupportPage() {
         <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
           <h2 className="text-lg font-semibold text-slate-900">Permissions</h2>
           <p className="mt-2 text-sm text-slate-600">
-            Menu items respect the same permission flags as iOS (projects, operatives, admin access, skills,
+            Menu items respect the same permission flags as iOS (projects, operatives, admin access,
             qualifications). If a link is missing, ask an admin to enable that permission on your user.
           </p>
         </div>
