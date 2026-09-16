@@ -31,6 +31,7 @@ import {
   myScheduleClockSubtitle,
   myScheduleStripeClass,
 } from '@/components/schedule/MyScheduleLooks'
+import { HoursTimelinePicker } from '@/components/scheduling/HoursTimelinePicker'
 import type { Project } from '@/types'
 
 type TimeSlot = 'AM' | 'PM' | 'FULL_DAY' | 'CUSTOM_HOURS'
@@ -284,30 +285,17 @@ export function MyScheduleSelfBookingScreen({
             </button>
           ))}
         </div>
-        <div className="mt-3 flex flex-wrap items-center gap-3">
-          <label className="flex items-center gap-2 text-xs text-slate-600">
-            Start
-            <input
-              type="time"
-              value={customStart}
-              onChange={(e) => setCustomStart(e.target.value)}
-              className="rounded-lg border border-slate-200 px-2 py-1 text-sm focus:border-blue-500 focus:outline-none"
-            />
-          </label>
-          <label className="flex items-center gap-2 text-xs text-slate-600">
-            End
-            <input
-              type="time"
-              value={customEnd}
-              onChange={(e) => setCustomEnd(e.target.value)}
-              className="rounded-lg border border-slate-200 px-2 py-1 text-sm focus:border-blue-500 focus:outline-none"
-            />
-          </label>
-          <label className="flex items-center gap-2 text-xs text-slate-600">
-            <input type="checkbox" checked={breakRemoved} onChange={(e) => setBreakRemoved(e.target.checked)} />
-            No unpaid break
-          </label>
-          <span className="text-[11px] text-slate-400">“Custom hours” uses these times.</span>
+        <div className="mt-3">
+          <HoursTimelinePicker
+            start={customStart}
+            end={customEnd}
+            breakRemoved={breakRemoved}
+            policy={payrollPolicy}
+            onStart={setCustomStart}
+            onEnd={setCustomEnd}
+            onBreak={setBreakRemoved}
+          />
+          <p className="mt-2 text-[11px] text-slate-400">Custom hours uses the times on this 00:00–24:00 bar.</p>
         </div>
       </div>
     )

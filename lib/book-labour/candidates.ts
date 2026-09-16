@@ -27,6 +27,24 @@ function emailKey(value: string | undefined): string {
   return (value || '').trim().toLowerCase()
 }
 
+function nameKey(first?: string, last?: string): string {
+  return `${first || ''} ${last || ''}`.trim().toLowerCase().replace(/\s+/g, ' ')
+}
+
+function findLinkedOperative(
+  user: User,
+  byEmail: Map<string, Operative>,
+  byName: Map<string, Operative>,
+  claimed: Set<string>
+): Operative | undefined {
+  const email = emailKey(user.email)
+  const fromEmail = email ? byEmail.get(email) : undefined
+  if (fromEmail && !claimed.has(fromEmail.id)) return fromEmail
+  const fromName = byName.get(nameKey(user.firstName, user.surname))
+  if (fromName && !claimed.has(fromName.id)) return fromName
+  return undefined
+}
+
 function displayNameForUser(user: User): string {
   const name = `${user.firstName || ''} ${user.surname || ''}`.trim()
   return name || user.email || user.id
@@ -126,10 +144,14 @@ export function buildBookLabourCandidates(input: {
   const policy = input.payrollPolicy ?? DEFAULT_PAYROLL_POLICY
   const required = Math.max(policy.standardPaidHours, 0)
   const operativesByEmail = new Map<string, Operative>()
+  const operativesByName = new Map<string, Operative>()
   for (const operative of input.operatives) {
     const email = emailKey(operative.email)
     if (email) operativesByEmail.set(email, operative)
+    const name = nameKey(operative.firstName, operative.lastName)
+    if (name && !operativesByName.has(name)) operativesByName.set(name, operative)
   }
+  const claimedOperativeIds = new Set<string>()
 
   const operativeOnlyUsers = input.users.filter(
     (user) =>
@@ -153,13 +175,13 @@ export function buildBookLabourCandidates(input: {
   const seen = new Set<string>()
 
   for (const user of operativeOnlyUsers) {
-    const linked = operativesByEmail.get(emailKey(user.email))
+    const linked = findLinkedOperative(user, operativesByEmail, operativesByName, claimedOperativeIds)
     if (holidayCoversDay(input.holidays, day, user.id, linked?.id)) continue
-    if (!linked) continue
     const paid =
-      operativePaidHours(input.bookings, linked.id, day, policy) +
+      (linked ? operativePaidHours(input.bookings, linked.id, day, policy) : 0) +
       managerProjectPaidHours(input.managerSiteBookings, user.id, day, policy)
     if (paid >= required) continue
+    if (linked) claimedOperativeIds.add(linked.id)
     seen.add(user.id)
     out.push({
       id: user.id,
@@ -174,13 +196,14 @@ export function buildBookLabourCandidates(input: {
   }
 
   for (const user of managerUsers) {
-    const linked = operativesByEmail.get(emailKey(user.email))
+    const linked = findLinkedOperative(user, operativesByEmail, operativesByName, claimedOperativeIds)
     if (holidayCoversDay(input.holidays, day, user.id, linked?.id)) continue
     if (seen.has(user.id)) continue
     const paid =
       managerProjectPaidHours(input.managerSiteBookings, user.id, day, policy) +
       (linked ? operativePaidHours(input.bookings, linked.id, day, policy) : 0)
     if (paid >= required) continue
+    if (linked) claimedOperativeIds.add(linked.id)
     out.push({
       id: user.id,
       user,

@@ -131,6 +131,40 @@ test('book labour candidates skip weekends and fully booked operatives', () => {
   )
 })
 
+test('book labour includes unlinked operative users and name-matched roster', () => {
+  const unlinked = user({
+    id: 'U-UNLINKED',
+    email: 'no-match@site.test',
+    firstName: 'Una',
+    surname: 'Linked',
+  })
+  const named = user({
+    id: 'U-NAME',
+    email: 'alias@site.test',
+    firstName: 'Cam',
+    surname: 'Half',
+  })
+  const roster = operative({ id: 'OP-CAM', email: 'cam@site.test', firstName: 'Cam', lastName: 'Half' })
+
+  const people = buildBookLabourCandidates({
+    day: WED,
+    users: [unlinked, named],
+    operatives: [roster],
+    bookings: [],
+    managerSiteBookings: [],
+    holidays: [],
+    payrollPolicy: DEFAULT_PAYROLL_POLICY,
+  })
+  assert.ok(
+    people.some((row) => row.id === 'U-UNLINKED' && !row.linkedOperative),
+    'unlinked operative users must still appear so Daily overview Book labour is not empty'
+  )
+  assert.ok(
+    people.some((row) => row.id === 'U-NAME' && row.linkedOperative?.id === 'OP-CAM'),
+    'name match should link an operative when emails differ'
+  )
+})
+
 test('enabledScheduleLocationPicks matches iOS Other locations', () => {
   const picks = enabledScheduleLocationPicks({
     showOffice: true,

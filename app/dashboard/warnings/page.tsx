@@ -22,7 +22,6 @@ import { loadOrganizationDetails, type OrganizationDetails } from '@/lib/setting
 import { loadMaterialCutOffSettings, type NotificationPreferences } from '@/lib/settings/notificationPreferences'
 import { generateOrgWarnings } from '@/lib/warnings/generateOrgWarnings'
 import { WarningsScreen } from '@/components/warnings/WarningsScreen'
-import type { OperativeBookingClashWarning } from '@/lib/scheduling/bookingClashUtils'
 
 export default function WarningsPage() {
   const router = useRouter()
@@ -31,7 +30,8 @@ export default function WarningsPage() {
   const { operatives, loadOperatives } = useOperativeStore()
   const { users, loadUsers } = useOrgUserStore()
   const { bookings, loadBookings, deleteBooking, loading: bookingsLoading } = useBookingStore()
-  const { managerSiteBookings, loadManagerSiteBookings, loading: managerLoading } = useManagerScheduleStore()
+  const { managerSiteBookings, loadManagerSiteBookings, deleteManagerSiteBooking, loading: managerLoading } =
+    useManagerScheduleStore()
   const { materials, sendRecords, loadAllMaterials, loadSendRecords } =
     useMaterialProjectStore()
   const { bookings: holidayBookings, loadBookings: loadHolidayBookings } = useHolidayStore()
@@ -117,9 +117,14 @@ export default function WarningsPage() {
     () => generated.clashWarnings.filter((w) => !isClashAccepted(w.bookingAId, w.bookingBId, acceptedClashes)),
     [generated.clashWarnings, acceptedClashes]
   )
+  const managerClashWarnings = useMemo(
+    () =>
+      generated.managerClashWarnings.filter((w) => !isClashAccepted(w.bookingAId, w.bookingBId, acceptedClashes)),
+    [generated.managerClashWarnings, acceptedClashes]
+  )
 
   const handleAcceptClash = useCallback(
-    async (clash: OperativeBookingClashWarning) => {
+    async (clash: { bookingAId: string; bookingBId: string }) => {
       if (!organization?.id || !user?.id) return
       await acceptBookingClash(organization.id, clash.bookingAId, clash.bookingBId, user.id)
       const updated = await loadAcceptedBookingClashes(organization.id)
@@ -136,13 +141,21 @@ export default function WarningsPage() {
     [deleteBooking, organization?.id]
   )
 
+  const handleDeleteManagerBooking = useCallback(
+    async (bookingId: string) => {
+      if (!organization?.id) return
+      await deleteManagerSiteBooking(organization.id, bookingId)
+    },
+    [deleteManagerSiteBooking, organization?.id]
+  )
+
   if (loading || !user) return null
 
   return (
     <WarningsScreen
       organizationName={organization?.name || 'your organisation'}
       clashWarnings={clashWarnings}
-      managerClashWarnings={generated.managerClashWarnings}
+      managerClashWarnings={managerClashWarnings}
       unbookedWarnings={generated.unbookedWarnings}
       materialWarnings={generated.materialWarnings}
       qualificationWarnings={generated.qualificationWarnings}
@@ -156,6 +169,7 @@ export default function WarningsPage() {
       smallWorkIds={smallWorkIds}
       onAcceptClash={handleAcceptClash}
       onDeleteBooking={handleDeleteBooking}
+      onDeleteManagerBooking={handleDeleteManagerBooking}
     />
   )
 }

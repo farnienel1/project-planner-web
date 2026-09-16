@@ -39,6 +39,7 @@ import {
   buildBookLabourCandidates,
   type BookLabourCandidate,
 } from '@/lib/book-labour/candidates'
+import { HoursTimelinePicker } from '@/components/scheduling/HoursTimelinePicker'
 import { PanelHeader } from '@/components/settings/primitives'
 
 type BookToTab = 'other' | 'projects' | 'smallWorks'
@@ -520,7 +521,7 @@ export function BookLabourFlowScreen({
 
   const isCustom = phase.kind === 'pickCustomManager' || phase.kind === 'pickCustomOperative'
   const title = isCustom ? 'Custom hours' : 'Book labour'
-  const rosterLoading = (usersLoading || operativesLoading) && users.length === 0 && operatives.length === 0
+  const rosterLoading = (usersLoading && users.length === 0) || (operativesLoading && operatives.length === 0)
 
   return (
     <div className="mx-auto max-w-2xl pb-16">
@@ -666,6 +667,7 @@ export function BookLabourFlowScreen({
             start={customStart}
             end={customEnd}
             breakRemoved={breakRemoved}
+            policy={payroll}
             saving={saving}
             onStart={setCustomStart}
             onEnd={setCustomEnd}
@@ -1120,6 +1122,7 @@ function CustomHoursForm({
   start,
   end,
   breakRemoved,
+  policy,
   saving,
   onStart,
   onEnd,
@@ -1129,6 +1132,7 @@ function CustomHoursForm({
   start: string
   end: string
   breakRemoved: boolean
+  policy: OrgPayrollTimePolicy
   saving: boolean
   onStart: (value: string) => void
   onEnd: (value: string) => void
@@ -1137,28 +1141,15 @@ function CustomHoursForm({
 }) {
   return (
     <div className="space-y-4 rounded-2xl border border-ios-border bg-white p-4">
-      <label className="block text-[13px] font-medium">
-        Start
-        <input
-          type="time"
-          value={start}
-          onChange={(e) => onStart(e.target.value)}
-          className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm"
-        />
-      </label>
-      <label className="block text-[13px] font-medium">
-        End
-        <input
-          type="time"
-          value={end}
-          onChange={(e) => onEnd(e.target.value)}
-          className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm"
-        />
-      </label>
-      <label className="flex items-center justify-between text-[13px] font-medium">
-        No break (on this booking)
-        <input type="checkbox" checked={breakRemoved} onChange={(e) => onBreak(e.target.checked)} />
-      </label>
+      <HoursTimelinePicker
+        start={start}
+        end={end}
+        breakRemoved={breakRemoved}
+        policy={policy}
+        onStart={onStart}
+        onEnd={onEnd}
+        onBreak={onBreak}
+      />
       <button
         type="button"
         disabled={saving}
