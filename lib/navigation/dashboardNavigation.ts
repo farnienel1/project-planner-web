@@ -27,6 +27,7 @@ import {
   hasAdminAccess,
   isAnnualLeaveFeatureEnabled,
   isOperativeMode,
+  canAccessQualificationsHub,
 } from '@/lib/navigation/menuPermissions'
 
 export type NavSection = 'home' | 'navigate' | 'tools' | 'team' | 'account'
@@ -304,6 +305,16 @@ const ALL_NAV_ITEMS: DashboardNavItem[] = [
     section: 'account',
   },
   {
+    id: 'dashboard_privacy',
+    href: '/dashboard/privacy',
+    label: 'Privacy Policy',
+    subtitle: 'How we use your data',
+    navigationLabelKey: 'dashboard_privacy',
+    iconPath: 'M12 11c0 3.517-1.009 6.799-2.753 9.571m-3.44-2.04l.054-.09A13.916 13.916 0 008 11a4 4 0 118 0c0 1.017-.07 2.019-.203 3m-2.118 6.844A21.88 21.88 0 0015.171 17m3.839 1.132c.645-2.266.99-4.659.99-7.132A8 8 0 008 4.07M3 15.364c.64-1.319 1-2.8 1-4.364 0-1.457.39-2.823 1.07-4',
+    tileClasses: 'bg-slate-100 text-slate-700',
+    section: 'account',
+  },
+  {
     id: 'dashboard_reset_password',
     href: '/dashboard/settings/password',
     label: 'Reset password',
@@ -323,7 +334,7 @@ function canSeeNavItem(item: DashboardNavItem, user: User): boolean {
       return canViewClients(user)
     case 'dashboard_projects':
     case 'dashboard_small_works':
-      return canViewProjects(user) && !isOperativeMode(user)
+      return canViewProjects(user)
     case 'dashboard_operatives':
       return canViewOperatives(user)
     case 'dashboard_managers':
@@ -335,7 +346,7 @@ function canSeeNavItem(item: DashboardNavItem, user: User): boolean {
     case 'dashboard_schedule':
       return canViewMySchedule(user)
     case 'dashboard_warnings':
-      return canViewDailyOverview(user)
+      return hasAdminAccess(user)
     case 'dashboard_tasks':
       return true
     case 'dashboard_annual_leave':
@@ -347,7 +358,7 @@ function canSeeNavItem(item: DashboardNavItem, user: User): boolean {
     case 'dashboard_timesheets':
       return canAccessTimesheets(user)
     case 'dashboard_qualifications':
-      return canManageQualifications(user)
+      return canAccessQualificationsHub(user)
     case 'dashboard_my_qualifications':
       return canViewMyQualifications(user)
     case 'dashboard_job_types':
@@ -359,8 +370,9 @@ function canSeeNavItem(item: DashboardNavItem, user: User): boolean {
     case 'dashboard_sub_contractors':
       return canManageSubcontractors(user)
     case 'dashboard_add_user':
+      return canManageUsers(user) || canManageOperativesOnly(user)
     case 'dashboard_manage_users':
-      return canManageUsers(user)
+      return canManageUsers(user) || canManageOperativesOnly(user)
     case 'dashboard_help':
       return canViewHelp(user)
     default:
@@ -407,5 +419,5 @@ export function getDashboardQuickActions(user: User, organization: Organization 
 }
 
 export function hasTeamNav(user: User): boolean {
-  return canAccessTeamSection(user)
+  return canManageUsers(user) || canManageOperativesOnly(user)
 }

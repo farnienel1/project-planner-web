@@ -63,7 +63,7 @@ export function managerSiteBookingToScheduleBooking(
     timeSlot: booking.timeSlot,
     bookedBy: booking.userId,
     notes: displayTitle,
-    status: 'confirmed',
+    status: 'Confirmed',
     workStartTime: booking.workStartTime,
     workEndTime: booking.workEndTime,
     createdAt: booking.createdAt,

@@ -26,6 +26,15 @@ export default function HelpSupportPage() {
           </p>
         </div>
         <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+          <h2 className="text-lg font-semibold text-slate-900">Privacy</h2>
+          <p className="mt-2 text-sm text-slate-600">
+            Read how Project Planner collects, stores and uses organisation data.
+          </p>
+          <Link href="/dashboard/privacy" className="mt-3 inline-block text-sm font-medium text-blue-600 hover:text-blue-800">
+            Privacy Policy →
+          </Link>
+        </div>
+        <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
           <h2 className="text-lg font-semibold text-slate-900">Password</h2>
           <p className="mt-2 text-sm text-slate-600">
             To change your password while signed in, use Reset password in the sidebar or account settings.

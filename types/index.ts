@@ -432,12 +432,15 @@ export enum TimeSlot {
   FULL_DAY = 'FULL DAY',
   EVENING = 'Evening',
   OVERTIME = 'Overtime',
+  CUSTOM_HOURS = 'CUSTOM_HOURS',
 }
 
+/** iOS BookingStatus raw values (BookingModels.swift:171). Also accept legacy lowercase on read. */
 export enum BookingStatus {
-  CONFIRMED = 'confirmed',
-  PENDING = 'pending',
-  CANCELLED = 'cancelled',
+  CONFIRMED = 'Confirmed',
+  TENTATIVE = 'Tentative',
+  CANCELLED = 'Cancelled',
+  COMPLETED = 'Completed',
 }
 
 export enum UserRole {
