@@ -3,15 +3,16 @@ Last updated: 2026-09-16 · Current step: Gate 1 answered (Q1–Q10); Phase 2 no
 
 ## Access check (Phase 0)
 - **WEB_ROOT:** `/workspace` (this repo, `project-planner-web`)
-- **IOS_ROOT (this run):** `/home/ubuntu/ios-readonly/Project Planner` from attached `Project Planner.zip`. **Not in git.** App source folder only — **no `.xcodeproj`**.
+- **IOS_ROOT (this run):** `/home/ubuntu/ios-readonly/` — app folder from `Project Planner.zip` plus `Project Planner.xcodeproj` from the 19/06/2026 iCloud copy. **Not in git.**
 - **Swift on disk:** **210 files, 114,699 lines.** Catalogue: `docs/ios-parity/00-ios-inventory-disk.md`.
+- **Xcode project:** folder-synced (Xcode 26); iOS **17.0**; Swift 5.0; firebase-ios-sdk **12.15.0** (Auth, Core, Firestore, Storage, Messaging). `PRODUCT_BUNDLE_IDENTIFIER` `farnie.Project-Planner`.
 - **GoogleService-Info.plist:** `PROJECT_ID` `project-planner-f986c`, `STORAGE_BUCKET` `project-planner-f986c.firebasestorage.app`, `BUNDLE_ID` `farnie.Project-Planner`.
 - **Future Cloud Agent runs:** zip is not in the environment snapshot. Add the Xcode folder or an iOS GitHub repo to the environment.
 - **Branch:** `cursor/ios-parity-rebuild-c40f`
 
 ## Phases
 - [x] 0 Access check
-- [x] 1 Discovery (00 ☑ 01 ☑ 02 ☑ 03 ☑ 04 ☑ 05 ☑) + Gate 1 answers
+- [x] 1 Discovery (00 ☑ 01 ☑ 02 ☑ 03 ☑ 04 ☑ 05 ☑) + Gate 1 answers (Q1 xcodeproj received; Q2 how-to; Q3–Q10 noted)
 - [ ] 2 Foundations
 - [ ] 3 Sections
 - [ ] 4 Final audit
@@ -50,8 +51,9 @@ D1, D2, D5–D10 still at recommendation (see `STOP-GATE-1.md`). Q1–Q10 are de
 
 ## Decisions (date · decision · by)
 - 2026-09-16 · Phase 1 produced from blueprint + web tree because IOS_ROOT was initially unreachable · agent
-- 2026-09-16 · Q1: later phases read Swift from attached zip / future iOS repo; do not commit iOS · Farnie
-- 2026-09-16 · Q2: keep `/setup-password.html?token=`; org setup web-only (pay + wizard); invitees set password on web then iOS login · Farnie
+- 2026-09-16 · Q1: app-folder zip + `Project Planner.xcodeproj.zip` (19/06/2026 iCloud copy) · Farnie
+- 2026-09-16 · Q2: keep `/setup-password.html?token=`; further help in `Q2-SETUP-URLS.md` · Farnie
+- 2026-09-16 · Q3–Q10 noted (Title-Case status, Leaflet+Google, drop Skills, Zod, Heroicons, sections 14–16 & 21–24, `self_employed`, `manager: Custom`) · Farnie
 - 2026-09-16 · Canonical public site is `https://www.projectplanner.us` (apex `https://projectplanner.us`). Firebase Hosting `project-planner-f986c.web.app/setup` is a stale marketing page. iOS `AppBranding.webAppBaseURL` must change in Xcode · agent (verified live) + Farnie
 - 2026-09-16 · Q3: write booking status Title-Case (`Confirmed`, …) · Farnie
 - 2026-09-16 · Q4: Leaflet + Google Geocoding; paid tiles; skip MapKit JS · Farnie
@@ -77,7 +79,7 @@ D1, D2, D5–D10 still at recommendation (see `STOP-GATE-1.md`). Q1–Q10 are de
 - Marketing landing page at `/`
 
 ## Firebase / console actions for Farnie
-1. **Xcode (required):** set `AppBranding.webAppBaseURL` and invite `setupPasswordBaseURL` to `https://www.projectplanner.us`. This agent will not edit iOS.
+1. **Xcode (required):** follow `docs/ios-parity/Q2-SETUP-URLS.md` — change the two host strings (and the FirebaseBackend fallback) to `https://www.projectplanner.us`. This agent will not edit iOS.
 2. **Netlify:** set `NEXT_PUBLIC_APP_URL` to `https://www.projectplanner.us` (or apex `https://projectplanner.us`).
 3. **Optional until Xcode ships:** Firebase Hosting 301 `/setup` and `/setup-password.html` → the public site. Do not Hosting-deploy from this repo’s `firebase.json`.
 4. Confirm web app is registered in Firebase project `project-planner-f986c` and that `.env.local` uses that project (never commit keys).

@@ -19,9 +19,10 @@
 - `docs/ios-parity/04-business-logic.md`
 - `docs/ios-parity/05-web-gap-analysis.md`
 - `docs/ios-parity/STOP-GATE-1.md` (this file)
+- `docs/ios-parity/Q2-SETUP-URLS.md` (Xcode + Firebase Hosting how-to)
 - `docs/ios-parity/sections/` and `screenshots/` directories (empty, ready)
 
-**Evidence coverage:** **210 of 210** Swift files catalogued from the attached zip (`00-ios-inventory-disk.md`). Extract is read-only at `/home/ubuntu/ios-readonly/Project Planner` and is **not in git**. No `.xcodeproj` in the zip.
+**Evidence coverage:** **210 of 210** Swift files + **`Project Planner.xcodeproj`** (`project.pbxproj`, `Package.resolved`). Extract is read-only at `/home/ubuntu/ios-readonly/` and is **not in git**.
 
 **Parity table:** (discovery + Gate 1 follow-up)
 
@@ -49,16 +50,16 @@
 
 | Q | Answer |
 |---|---|
-| **Q1** How should later phases read Swift? | Attached **Project Planner.zip** (app folder, 210 Swift files). Extract read-only; do not commit. Prefer adding the Xcode folder or an iOS GitHub repo to the Cloud Agent environment on future runs (zip is not in the environment snapshot). **No `.xcodeproj` in the zip.** |
-| **Q2** Keep `/setup-password.html?token=`? | **Yes.** Next rewrite `/setup-password.html` → `/setup-password`. Page accepts `token` **or** `invitation`. Org setup stays **web-only** (pay + wizard). Invited users set password on the web, then log into iOS. Web invite emails now emit `/setup-password.html?token=`. |
-| **Q3** Booking status `Confirmed` vs `confirmed`? | Write **iOS Title-Case** (`Confirmed` / `Tentative` / `Cancelled` / `Completed`). |
-| **Q4** Map + geocoding? | **Leaflet + Google Geocoding**; paid raster tiles in production; **skip MapKit JS**. |
-| **Q5** Skills in the sidebar? | **Remove Skills from the web app** (not keep-the-page). Matches iOS deprecation. |
-| **Q6** Zod in Phase 2? | **Yes.** |
-| **Q7** Heroicons vs lucide-react? | **Heroicons** (`@heroicons/react` already installed). Do not add Lucide. |
-| **Q8** Sections 14–16 and 21–24 in scope? | **Yes.** |
-| **Q9** `self_employed` vs `selfEmployed`? | **Write `self_employed`; read both** during a transition. |
-| **Q10** New jobs `manager` field? | Write **`Custom`**, not `Project Manager`. |
+| **Q1** How should later phases read Swift? | App-folder zip **and** `Project Planner.xcodeproj.zip` (iCloud “Modified recently” 19/06/2026). Extract read-only; do not commit. Xcode 26 folder-synced project; iOS **17.0**; firebase-ios-sdk **12.15.0**. |
+| **Q2** Keep `/setup-password.html?token=`? | **Yes** (rewrite + App Router). Org setup stays web-only. **Further help:** [`Q2-SETUP-URLS.md`](./Q2-SETUP-URLS.md) — exact Xcode string changes + optional Firebase Hosting 301s. |
+| **Q3** Booking status `Confirmed` vs `confirmed`? | **Noted.** Write **iOS Title-Case**. |
+| **Q4** Map + geocoding? | **Noted.** Leaflet + Google Geocoding; paid tiles; skip MapKit JS. |
+| **Q5** Skills in the sidebar? | **Noted.** Removed from the web app. |
+| **Q6** Zod in Phase 2? | **Noted.** Yes. |
+| **Q7** Heroicons vs lucide-react? | **Noted.** Heroicons. |
+| **Q8** Sections 14–16 and 21–24 in scope? | **Noted.** Yes. |
+| **Q9** `self_employed` vs `selfEmployed`? | **Noted.** Write `self_employed`; read both. |
+| **Q10** New jobs `manager` field? | **Noted.** Write `Custom`. |
 
 ### Setup URL investigation (Q2)
 
@@ -72,10 +73,7 @@ iOS login “Set up your organisation on the web” calls `AppBranding.openOrgan
 | `https://project-planner-f986c.web.app/setup-password.html?token=` | Firebase Hosting **200**. Stale static password page (May 2026). iOS invite emails still point here (`ResendEmailService.setupPasswordBaseURL`, `FirebaseBackend.swift` ~L5096). |
 | `https://www.projectplanner.us/setup-password.html` | **404 today** (rewrite not deployed yet). After this PR: Next serves `/setup-password`. |
 
-**This agent cannot edit iOS.** Farnie must change in Xcode:
-
-1. `AppBranding.webAppBaseURL` → `https://www.projectplanner.us` (so login opens `/setup` on the real site).
-2. `ResendEmailService.setupPasswordBaseURL` (and the `FirebaseBackend.swift` invite HTML) → the same origin, keeping path `/setup-password.html?token=`.
+**This agent cannot edit iOS.** Click-by-click: [`Q2-SETUP-URLS.md`](./Q2-SETUP-URLS.md).
 
 Optional web-side mitigation (Firebase Console → Hosting redirects), **after this PR is live on Netlify**:
 
