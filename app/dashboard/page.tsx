@@ -43,12 +43,6 @@ const PRIORITY_TEXT: Record<string, string> = {
   Normal: 'text-blue-700',
   Low: 'text-slate-600',
 }
-const PRIORITY_BG: Record<string, string> = {
-  Urgent: 'bg-red-50',
-  High: 'bg-amber-50',
-  Normal: 'bg-blue-50',
-  Low: 'bg-slate-100',
-}
 
 export default function DashboardPage() {
   const router = useRouter()
@@ -234,7 +228,7 @@ export default function DashboardPage() {
   })
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <DashboardHero
         userName={user.firstName || user.email}
         organizationName={organization?.name || 'your organisation'}
@@ -243,109 +237,112 @@ export default function DashboardPage() {
         warningCount={totalWarningCount}
       />
 
-      <section className="grid grid-cols-2 gap-3 md:grid-cols-4">
+      <section className="grid grid-cols-2 gap-4 md:grid-cols-4">
         <DashboardWidgetGrid layout={layout} data={tileData} />
       </section>
 
-      <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-slate-900">Quick actions</h2>
-        <Link href="/dashboard/edit" className="text-sm font-semibold text-blue-600 hover:text-blue-700">
-          Customise metrics
-        </Link>
-      </div>
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {quickActions.map((item) => (
-          <Link
-            key={item.id}
-            href={item.href}
-            className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-slate-300 hover:shadow-md"
-          >
-            <div className={`mb-3 flex h-11 w-11 items-center justify-center rounded-xl ${item.tileClasses}`}>
-              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={item.iconPath} />
-              </svg>
+      <section className="grid gap-4 xl:grid-cols-[1.4fr_0.8fr]">
+        {openTasksByProject.length > 0 ? (
+          <div>
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-[15px] font-semibold tracking-tight text-slate-900">Open tasks</h2>
+              <Link href="/dashboard/tasks" className="text-[13px] font-medium text-slate-500 hover:text-slate-900">
+                View all
+              </Link>
             </div>
-            <h3 className="text-base font-semibold text-slate-900">{item.label}</h3>
-            <p className="mt-1 text-sm text-slate-500">{item.subtitle}</p>
-          </Link>
-        ))}
-      </div>
-
-      {openTasksByProject.length > 0 && (
-        <section>
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-slate-900">Open tasks by project</h2>
-            <Link href="/dashboard/tasks" className="text-sm font-semibold text-blue-600 hover:text-blue-700">
-              View all tasks
-            </Link>
-          </div>
-          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-            {openTasksByProject.map((group, i) => (
-              <div key={group.projectId}>
-                {i > 0 && <div className="border-t border-slate-100" />}
-                <div className="flex items-center justify-between bg-slate-50 px-5 py-2.5">
-                  <Link
-                    href={`/dashboard/${group.collection}/${group.projectId}/tasks`}
-                    className="text-sm font-semibold text-slate-800 transition-colors hover:text-blue-600"
-                  >
-                    {group.projectName}
-                  </Link>
-                  <span className="rounded-full bg-slate-200 px-2 py-0.5 text-xs font-semibold text-slate-600">
-                    {group.tasks.length}
-                  </span>
-                </div>
-                <div className="divide-y divide-slate-100">
-                  {group.tasks.slice(0, 3).map((task) => (
-                    <Link
-                      key={task.id}
-                      href={`/dashboard/${group.collection}/${group.projectId}/tasks`}
-                      className="flex items-center gap-3 px-5 py-2.5 transition-colors hover:bg-slate-50"
-                    >
-                      <span
-                        className={`h-1.5 w-1.5 shrink-0 rounded-full ${PRIORITY_DOT[task.priority] || 'bg-slate-400'}`}
-                      />
-                      <span className="flex-1 truncate text-sm text-slate-700">{task.title}</span>
-                      <span
-                        className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ${PRIORITY_BG[task.priority]} ${PRIORITY_TEXT[task.priority]}`}
-                      >
-                        {task.priority}
-                      </span>
-                      <span
-                        className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${
-                          task.status === 'In Progress' ? 'bg-blue-50 text-blue-700' : 'bg-slate-100 text-slate-600'
-                        }`}
-                      >
-                        {task.status}
-                      </span>
-                    </Link>
-                  ))}
-                  {group.tasks.length > 3 && (
+            <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+              {openTasksByProject.map((group, i) => (
+                <div key={group.projectId}>
+                  {i > 0 && <div className="border-t border-slate-100" />}
+                  <div className="flex items-center justify-between px-5 py-2.5">
                     <Link
                       href={`/dashboard/${group.collection}/${group.projectId}/tasks`}
-                      className="block px-5 py-2 text-xs font-medium text-blue-600 transition-colors hover:bg-slate-50"
+                      className="text-[13px] font-medium text-slate-800 hover:text-slate-950"
                     >
-                      + {group.tasks.length - 3} more tasks →
+                      {group.projectName}
                     </Link>
-                  )}
+                    <span className="text-[12px] tabular-nums text-slate-400">{group.tasks.length}</span>
+                  </div>
+                  <div className="divide-y divide-slate-100 border-t border-slate-100">
+                    {group.tasks.slice(0, 3).map((task) => (
+                      <Link
+                        key={task.id}
+                        href={`/dashboard/${group.collection}/${group.projectId}/tasks`}
+                        className="flex items-center gap-3 px-5 py-2.5 hover:bg-slate-50"
+                      >
+                        <span
+                          className={`h-1.5 w-1.5 shrink-0 rounded-full ${PRIORITY_DOT[task.priority] || 'bg-slate-400'}`}
+                        />
+                        <span className="flex-1 truncate text-[13px] text-slate-700">{task.title}</span>
+                        <span className={`text-[11px] font-medium ${PRIORITY_TEXT[task.priority] || 'text-slate-500'}`}>
+                          {task.priority}
+                        </span>
+                        <span className="text-[11px] text-slate-400">{task.status}</span>
+                      </Link>
+                    ))}
+                    {group.tasks.length > 3 && (
+                      <Link
+                        href={`/dashboard/${group.collection}/${group.projectId}/tasks`}
+                        className="block px-5 py-2 text-[12px] font-medium text-slate-500 hover:bg-slate-50 hover:text-slate-800"
+                      >
+                        {group.tasks.length - 3} more
+                      </Link>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
-        </section>
-      )}
+        ) : (
+          <div className="rounded-xl border border-slate-200 bg-white px-5 py-6">
+            <h2 className="text-[15px] font-semibold tracking-tight text-slate-900">Open tasks</h2>
+            <p className="mt-2 text-[13px] text-slate-500">No open tasks on live jobs.</p>
+          </div>
+        )}
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <div className="mb-2 flex items-center justify-between">
-          <h3 className="text-base font-semibold text-slate-900">Up next</h3>
-          <Link href="/dashboard/my-schedule" className="text-sm font-semibold text-blue-600">
-            See all
-          </Link>
+        <div className="space-y-4">
+          <div className="rounded-xl border border-slate-200 bg-white px-5 py-5">
+            <div className="mb-1 flex items-center justify-between">
+              <h3 className="text-[15px] font-semibold tracking-tight text-slate-900">Up next</h3>
+              <Link href="/dashboard/my-schedule" className="text-[13px] font-medium text-slate-500 hover:text-slate-900">
+                Schedule
+              </Link>
+            </div>
+            <p className="text-[13px] leading-6 text-slate-500">
+              {bookings.length === 0
+                ? 'No upcoming bookings on your schedule.'
+                : `${bookings.length} bookings scheduled. Open schedule for day-by-day detail.`}
+            </p>
+          </div>
+
+          <div className="rounded-xl border border-slate-200 bg-white px-5 py-5">
+            <div className="mb-3 flex items-center justify-between">
+              <h3 className="text-[15px] font-semibold tracking-tight text-slate-900">Quick actions</h3>
+              <Link href="/dashboard/edit" className="text-[13px] font-medium text-slate-500 hover:text-slate-900">
+                Customise
+              </Link>
+            </div>
+            <div className="divide-y divide-slate-100">
+              {quickActions.slice(0, 6).map((item) => (
+                <Link
+                  key={item.id}
+                  href={item.href}
+                  className="flex items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0"
+                >
+                  <div className="flex min-w-0 items-center gap-2.5">
+                    <svg className="h-4 w-4 shrink-0 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.7}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d={item.iconPath} />
+                    </svg>
+                    <span className="truncate text-[13px] font-medium text-slate-800">{item.label}</span>
+                  </div>
+                  <svg className="h-3.5 w-3.5 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                  </svg>
+                </Link>
+              ))}
+            </div>
+          </div>
         </div>
-        <p className="text-sm text-slate-500">
-          {bookings.length === 0
-            ? 'No upcoming bookings on your schedule.'
-            : `${bookings.length} bookings scheduled. Open My Schedule for day-by-day detail.`}
-        </p>
       </section>
     </div>
   )

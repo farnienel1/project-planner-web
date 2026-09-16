@@ -3,16 +3,21 @@
 @tailwind utilities;
 
 :root {
-  --pp-bg: #f4f6f9;
-  --pp-ink: #0f172a;
-  --pp-muted: #475569;
-  --pp-border: #e7ebf0;
+  --pp-bg: #f6f7f9;
+  --pp-ink: #0b1220;
+  --pp-muted: #5c6570;
+  --pp-border: #e6e8ee;
+}
+
+html {
+  font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
 }
 
 body {
   background: var(--pp-bg);
   color: var(--pp-ink);
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 @layer utilities {
@@ -20,7 +25,3 @@ body {
     text-wrap: balance;
   }
 }
-
-
-
-
