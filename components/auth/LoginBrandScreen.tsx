@@ -161,6 +161,10 @@ export function LoginBrandScreen() {
           Set up your organisation on the web
         </Link>
 
+        <Link href="/" className="mt-4 text-center text-[13px] font-medium text-white/40">
+          Open the website
+        </Link>
+
         <p className="mt-auto pt-10 text-center text-[12px] text-white/25">v1.0.0 · Project Planner</p>
       </div>
     </div>
