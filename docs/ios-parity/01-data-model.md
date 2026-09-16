@@ -24,11 +24,11 @@
 - [ ] **Storage bucket** — iOS `project-planner-f986c.firebasestorage.app` vs example `…appspot.com`. Same project, different hostname style; confirm which the rules/bucket actually use.
 - [x] **Functions region** — iOS: `us-central1`. Web currently does not call Functions.
 - [x] **Auth providers** — email/password only on both.
-- [ ] **Authorized domains** — must include hosted origin(s) (`project-planner-f986c.web.app`, any Netlify domain, localhost). Console check needed.
+- [ ] **Authorized domains** — must include `www.projectplanner.us` / `projectplanner.us`, localhost, and (until iOS URLs change) `project-planner-f986c.web.app`. Console check needed.
 - [x] **User ↔ org ↔ role** — `users/{uid}` with `organizationId` + flat permission flags + `role`. Web `authStore` loads this doc. Placeholder merge: iOS `mergePlaceholderUserDocOntoAuthUidIfNeeded` (`FirebaseBackend.swift` ~L3319). Web invite completion is `lib/invites/completeInviteSetup.ts` — ❓ must be compared in Phase 2.
 - [x] **Org scoping** — everything except `users`, `invitations`, `platformConfig` lives under `organizations/{orgId}/…`. Web `orgId` from `users.organizationId`.
 - [x] **Permission matrix** — see §8 below. Web `lib/navigation/menuPermissions.ts` is a **partial, divergent** port.
-- [x] **Add User** — iOS does **not** create an Auth user (`createUserInvitation` ~L4672). Writes invitation + placeholder `users/{UUID}` + `userEmails` + email. Web `inviteStore` / `inviteUserCore` follows that idea. **Never `createUserWithEmailAndPassword` on the admin’s main auth instance.** Web `/setup` **does** create Auth users for brand-new orgs (web-only). Invitees use `/setup-password` (App Router). iOS emails `/setup-password.html?token=` — **route mismatch**.
+- [x] **Add User** — iOS does **not** create an Auth user (`createUserInvitation` ~L4672). Writes invitation + placeholder `users/{UUID}` + `userEmails` + email. Web `inviteStore` / `inviteUserCore` follows that idea. **Never `createUserWithEmailAndPassword` on the admin’s main auth instance.** Web `/setup` **does** create Auth users for brand-new orgs (web-only). **Q2:** invitees use `/setup-password.html?token=` (rewrite → App Router `/setup-password`; also accepts `invitation=`).
 - [x] **App Check** — off.
 - [ ] **Rules location** — `firestore.rules` is in **this** repo. `storage.rules` is in **neither** tree (Blueprint §8.10).
 - [ ] **Indexes** — no `firestore.indexes.json` in this repo. iOS timesheet history avoids a composite index by querying `settings` `where userId == uid` and sorting in memory.
@@ -497,15 +497,17 @@ Fields: `userId`, `weekStart`, `updatedAt`, `managerNote`, `operativeSignedAt/By
 7. Same ID strategy; no extra fields on overwrite documents.
 8. Runtime validator **blocks invalid writes**; in development log documents that would fail the Swift parser.
 
-**Zod:** not installed. Propose adding it at Stop Gate 1.
+**Zod:** not installed. **Q6:** add in Phase 2.
 
 ## Blueprint corrections (candidate — need Swift)
 
-1. Web `employmentType` `selfEmployed` vs iOS `self_employed`.
-2. Web booking `status` lowercase vs iOS `Confirmed`.
+1. Web `employmentType` `selfEmployed` vs iOS `self_employed`. **Q9:** write `self_employed`; read both.
+2. Web booking `status` lowercase vs iOS `Confirmed`. **Q3:** write Title-Case.
 3. Web material `requestType` lowercase vs `Quote`/`Order`.
-4. Web new project `manager: 'Project Manager'` vs iOS `'Custom'`.
+4. Web new project `manager: 'Project Manager'` vs iOS `'Custom'`. **Q10:** write `Custom`.
 5. Web writes project `notes`; iOS does not save notes.
 6. Web `users` payload includes nested `permissions` map; iOS is flat-only (merge, so extra map is web-only cruft).
 7. `projects/{id}/healthSafety` exists in rules; iOS stores H&S under `settings/healthSafety_*`.
 8. `operativeDayRateHistory` is described in the blueprint but has no dedicated `firestore.rules` match (falls through to org catch-all **read-only**). Writes may already fail — confirm in Swift and rules before Phase 2.
+9. Invite URL: iOS `/setup-password.html?token=` vs web `/setup-password`. **Q2:** rewrite + accept both query names.
+10. iOS `AppBranding.webAppBaseURL` is Firebase Hosting, not `www.projectplanner.us`.

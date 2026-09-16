@@ -7,7 +7,6 @@ import {
   canManageJobTypes,
   canManageMaterialCatalogue,
   canManageQualifications,
-  canManageSkills,
   canManageSubcontractors,
   canManageUsers,
   canManageOperativesOnly,
@@ -195,16 +194,6 @@ const ALL_NAV_ITEMS: DashboardNavItem[] = [
     section: 'navigate',
   },
   {
-    id: 'dashboard_skills',
-    href: '/dashboard/skills',
-    label: 'Skills',
-    subtitle: 'Trades and skill catalogue',
-    navigationLabelKey: 'dashboard_skills',
-    iconPath: 'M13 10V3L4 14h7v7l9-11h-7z',
-    tileClasses: 'bg-yellow-50 text-yellow-700',
-    section: 'tools',
-  },
-  {
     id: 'dashboard_qualifications',
     href: '/dashboard/qualifications',
     label: 'Qualifications',
@@ -357,8 +346,6 @@ function canSeeNavItem(item: DashboardNavItem, user: User): boolean {
       return canViewSiteAudit(user)
     case 'dashboard_timesheets':
       return canAccessTimesheets(user)
-    case 'dashboard_skills':
-      return canManageSkills(user)
     case 'dashboard_qualifications':
       return canManageQualifications(user)
     case 'dashboard_my_qualifications':

@@ -84,7 +84,7 @@ export function TeamOnboardingPrompt() {
           </div>
 
           <p className="text-xs text-slate-500">
-            Skills, qualifications, day rate, VAT and UTR can be added to each person once they are in the app — keeping
+            Qualifications, day rate, VAT and UTR can be added to each person once they are in the app — keeping
             this setup flow simple.
           </p>
         </div>

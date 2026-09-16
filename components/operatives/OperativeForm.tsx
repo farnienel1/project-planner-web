@@ -1,6 +1,6 @@
 'use client'
 
-import { FormEvent, useEffect, useState } from 'react'
+import { FormEvent, useState } from 'react'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
 import type { Operative } from '@/types'
@@ -17,7 +17,7 @@ export function OperativeForm({
   onSaved: (id: string) => void
 }) {
   const { organization } = useAuthStore()
-  const { skills, loadSkills, saveOperative } = useOperativeStore()
+  const { saveOperative } = useOperativeStore()
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [form, setForm] = useState({
@@ -27,13 +27,8 @@ export function OperativeForm({
     phone: initial?.phone || '',
     hourlyRate: initial?.hourlyRate?.toString() || '',
     startDate: initial?.startDate ? new Date(initial.startDate).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10),
-    skillIds: (initial?.skills || []).map((s) => (typeof s === 'string' ? s : s.id)),
     isActive: initial?.isActive !== false,
   })
-
-  useEffect(() => {
-    if (organization?.id) loadSkills(organization.id)
-  }, [organization, loadSkills])
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
@@ -49,7 +44,7 @@ export function OperativeForm({
         phone: form.phone.trim() || undefined,
         startDate: new Date(form.startDate),
         hourlyRate: Number(form.hourlyRate) || 0,
-        skills: form.skillIds,
+        skills: initial?.skills || [],
         qualifications: initial?.qualifications || [],
         isActive: form.isActive,
         organizationId: organization.id,
@@ -75,19 +70,6 @@ export function OperativeForm({
         <div><FormLabel>Phone</FormLabel><FormInput value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></div>
         <div><FormLabel>Day rate</FormLabel><FormInput type="number" step="0.01" value={form.hourlyRate} onChange={(e) => setForm({ ...form, hourlyRate: e.target.value })} /></div>
         <div><FormLabel>Start date</FormLabel><FormInput type="date" value={form.startDate} onChange={(e) => setForm({ ...form, startDate: e.target.value })} /></div>
-      </div>
-      <div>
-        <FormLabel>Skills</FormLabel>
-        <select
-          multiple
-          value={form.skillIds}
-          onChange={(e) => setForm({ ...form, skillIds: Array.from(e.target.selectedOptions, (o) => o.value) })}
-          className="h-24 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-        >
-          {skills.map((s) => (
-            <option key={s.id} value={s.id}>{s.name} ({s.trade})</option>
-          ))}
-        </select>
       </div>
       <FormActions saving={saving} submitLabel={initial ? 'Save operative' : 'Add operative'} cancelHref={backHref} />
     </form>

@@ -629,7 +629,7 @@ export function OrgSetupWizard() {
                   </div>
                 </dl>
                 <p className="mt-3 text-xs text-slate-500">
-                  Plus a sub contractor, wholesaler, skill and qualification — all ready to activate the moment payment
+                  Plus a sub contractor, wholesaler and qualification — all ready to activate the moment payment
                   succeeds.
                 </p>
               </div>

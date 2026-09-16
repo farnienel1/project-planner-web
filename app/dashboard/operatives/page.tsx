@@ -8,7 +8,6 @@ import { useOperativeStore } from '@/lib/stores/operativeStore'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { canInviteOperatives, canViewOperatives } from '@/lib/navigation/menuPermissions'
 import { findOperativeForUser } from '@/lib/operatives/operativeRosterUtils'
-import { resolveOperativeSkillLabels } from '@/lib/staff/skillDisplayUtils'
 import {
   emptyRosterTitle,
   filterUsersBySearch,
@@ -30,7 +29,7 @@ const FILTER_OPTIONS: { value: OperativeFilterField; label: string }[] = [
 export default function OperativesPage() {
   const router = useRouter()
   const { organization, user } = useAuthStore()
-  const { operatives, skills, loading: operativesLoading, loadOperatives, loadSkills } = useOperativeStore()
+  const { operatives, loading: operativesLoading, loadOperatives } = useOperativeStore()
   const { users, loading: usersLoading, loadUsers } = useOrgUserStore()
   const [segment, setSegment] = useState<RosterSegment>('active')
   const [search, setSearch] = useState('')
@@ -48,10 +47,9 @@ export default function OperativesPage() {
   useEffect(() => {
     if (organization?.id) {
       loadOperatives(organization.id)
-      loadSkills(organization.id)
       loadUsers(organization.id)
     }
-  }, [organization, loadOperatives, loadSkills, loadUsers])
+  }, [organization, loadOperatives, loadUsers])
 
   const allOperativeUsers = useMemo(() => getOperativeModeUsers(users), [users])
 
@@ -131,7 +129,6 @@ export default function OperativesPage() {
                 <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">Email</th>
                 <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">Phone</th>
                 <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">Rate</th>
-                <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">Skills</th>
                 <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">Status</th>
                 <th className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-slate-500" aria-hidden>
                   <span className="sr-only">Open profile</span>
@@ -141,7 +138,6 @@ export default function OperativesPage() {
             <tbody className="divide-y divide-slate-200 bg-white">
               {filteredRows.map((user) => {
                 const operative = findOperativeForUser(user, operatives)
-                const skillLabels = operative ? resolveOperativeSkillLabels(operative, skills) : []
                 const status = rosterStatusLabel(user)
 
                 return (
@@ -164,24 +160,6 @@ export default function OperativesPage() {
                         : operative
                           ? `£${operative.hourlyRate.toFixed(2)}/hr`
                           : '—'}
-                    </td>
-                    <td className="px-6 py-4 text-sm text-slate-500">
-                      {skillLabels.length > 0 ? (
-                        <div className="flex max-w-xs flex-wrap gap-1">
-                          {skillLabels.slice(0, 3).map((label) => (
-                            <span key={label} className="rounded bg-blue-50 px-2 py-0.5 text-xs text-blue-700">
-                              {label}
-                            </span>
-                          ))}
-                          {skillLabels.length > 3 && (
-                            <span className="rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-600">
-                              +{skillLabels.length - 3}
-                            </span>
-                          )}
-                        </div>
-                      ) : (
-                        '—'
-                      )}
                     </td>
                     <td className="whitespace-nowrap px-6 py-4">
                       <RosterStatusBadge status={status} />
