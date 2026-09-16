@@ -7,13 +7,14 @@ import { useAuthStore } from '@/lib/stores/authStore'
 const EMAIL_RE = /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,64}$/i
 
 export default function ResetPasswordPage() {
-  const { resetPassword, loading, error } = useAuthStore()
+  const { resetPassword, error } = useAuthStore()
   const [email, setEmail] = useState('')
   const [localError, setLocalError] = useState('')
   const [success, setSuccess] = useState(false)
+  const [sending, setSending] = useState(false)
 
   const trimmed = email.trim()
-  const canSend = EMAIL_RE.test(trimmed) && !loading
+  const canSend = EMAIL_RE.test(trimmed) && !sending
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -23,10 +24,13 @@ export default function ResetPasswordPage() {
       return
     }
     try {
+      setSending(true)
       await resetPassword(trimmed)
       setSuccess(true)
     } catch {
       setLocalError('Failed to send reset email')
+    } finally {
+      setSending(false)
     }
   }
 
@@ -74,7 +78,7 @@ export default function ResetPasswordPage() {
                 disabled={!canSend}
                 className="h-12 w-full rounded-2xl bg-[#185FA5] text-sm font-semibold text-white disabled:opacity-40"
               >
-                {loading ? 'Sending…' : 'Send Reset Link'}
+                {sending ? 'Sending…' : 'Send Reset Link'}
               </button>
               <div className="text-center">
                 <Link href="/login" className="text-sm font-semibold text-[#185FA5]">

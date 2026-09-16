@@ -13,11 +13,12 @@ import { useAuthStore } from '@/lib/stores/authStore'
 
 export function LoginBrandScreen() {
   const router = useRouter()
-  const { signIn, loading, error } = useAuthStore()
+  const { signIn, error } = useAuthStore()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [localError, setLocalError] = useState('')
+  const [submitting, setSubmitting] = useState(false)
 
   const trimmedEmail = email.trim()
   const isFormValid = trimmedEmail.length > 0 && password.length > 0
@@ -35,10 +36,13 @@ export function LoginBrandScreen() {
       return
     }
     try {
+      setSubmitting(true)
       await signIn(trimmedEmail, password)
       router.push('/dashboard')
     } catch {
       setLocalError('Sign in failed. Please check your email/password and try again.')
+    } finally {
+      setSubmitting(false)
     }
   }
 
@@ -131,7 +135,7 @@ export function LoginBrandScreen() {
 
           <button
             type="submit"
-            disabled={loading || !isFormValid}
+            disabled={submitting || !isFormValid}
             className="h-14 w-full rounded-2xl text-[16px] font-bold tracking-wide text-white disabled:opacity-40"
             style={{
               background: isFormValid
@@ -140,7 +144,7 @@ export function LoginBrandScreen() {
               boxShadow: isFormValid ? '0 4px 16px rgba(26,107,245,0.45)' : undefined,
             }}
           >
-            {loading ? 'Signing in…' : 'Sign In'}
+            {submitting ? 'Signing in…' : 'Sign In'}
           </button>
         </form>
 
