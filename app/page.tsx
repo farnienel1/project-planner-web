@@ -81,10 +81,10 @@ export default function Home() {
               <span className="h-2 w-2 rounded-full bg-[#0f6e56]" />
               Built for construction &amp; M&amp;E teams
             </span>
-            <h1 className="text-4xl font-extrabold leading-tight tracking-tight sm:text-6xl">
+            <h1 className="text-4xl font-extrabold leading-tight tracking-tight sm:text-5xl xl:text-6xl">
               Run every project
               <br />
-              from site to sign-off.
+              from site to <span className="whitespace-nowrap">sign-off.</span>
             </h1>
             <p className="mt-5 max-w-xl text-lg text-slate-600">
               The comprehensive project management tool for construction teams. Track projects, manage operatives,
