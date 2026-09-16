@@ -136,6 +136,49 @@ test('buildDailyOverview groups jobs and weekday unbooked labour', () => {
   })
   assert.equal(model.jobsCount, 1)
   assert.equal(model.projectCards[0].project.siteName, 'Alpha')
+  assert.equal(model.projectCards[0].people.length, 1)
+  assert.equal(model.projectCards[0].people[0].name, 'Ada Booked')
   assert.ok(model.unbookedNames.some((n) => n.startsWith('Bob Free')))
   assert.equal(model.empty, false)
+})
+
+test('buildDailyOverview lists people even when the job document is missing', () => {
+  const day = new Date('2026-09-16T12:00:00Z')
+  const booking: Booking = {
+    id: 'B2',
+    operativeId: 'OP1',
+    projectId: 'MISSING',
+    date: new Date('2026-09-16T00:00:00Z'),
+    timeSlot: 'AM',
+    bookedBy: '',
+    status: 'Tentative',
+    createdAt: day,
+    updatedAt: day,
+  }
+  const model = buildDailyOverview({
+    day,
+    today: day,
+    projects: [],
+    bookings: [booking],
+    managerBookings: [],
+    holidays: [] as HolidayBooking[],
+    users: [],
+    operatives: [
+      {
+        id: 'OP1',
+        firstName: 'Sam',
+        lastName: 'Site',
+        email: 'sam@x.com',
+        startDate: day,
+        hourlyRate: 0,
+        skills: [],
+        qualifications: [],
+        isActive: true,
+        createdAt: day,
+        updatedAt: day,
+      },
+    ],
+  })
+  assert.equal(model.projectCards.length, 1)
+  assert.equal(model.projectCards[0].people[0].name, 'Sam Site')
 })

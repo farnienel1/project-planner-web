@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { addDays, format, startOfWeek } from 'date-fns'
-import { SetupSegmentedControl } from '@/components/setup/setupFormPrimitives'
 import { LoadingSpinner } from '@/components/dashboard/PageShell'
 import type { OrganizationDetails } from '@/lib/settings/organizationSettings'
 import { formatInvoicingSubtitle } from '@/lib/settings/organizationSettings'
@@ -36,9 +35,9 @@ function ReportTable({
   empty: string
 }) {
   return (
-    <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-      <div className="border-b border-slate-100 bg-slate-50 px-4 py-3">
-        <h2 className="text-sm font-semibold text-slate-900">{title}</h2>
+    <section className="overflow-hidden rounded-2xl border border-ios-border bg-ios-card">
+      <div className="border-b border-ios-border bg-[#F7F8FA] px-4 py-3">
+        <h2 className="text-[13px] font-semibold uppercase tracking-[0.3px] text-ios-ink">{title}</h2>
       </div>
       {rows.length === 0 ? (
         <p className="px-4 py-6 text-sm text-slate-500">{empty}</p>
@@ -188,55 +187,100 @@ export function WeeklyReportScreen({
     setWeekStart(format(startOfWeek(next, { weekStartsOn: 1 }), 'yyyy-MM-dd'))
   }
 
-  if (loading) return <LoadingSpinner label="Loading weekly report…" />
+  const selectThisWeek = () => {
+    setPeriodMode('week')
+    setWeekStart(format(startOfWeek(new Date(), { weekStartsOn: 1 }), 'yyyy-MM-dd'))
+  }
+
+  const selectLastWeek = () => {
+    setPeriodMode('week')
+    setWeekStart(format(startOfWeek(addDays(new Date(), -7), { weekStartsOn: 1 }), 'yyyy-MM-dd'))
+  }
+
+  const selectCurrentInvoicing = () => {
+    setPeriodMode('invoicing')
+    if (invoicingOptions[0]) setInvoicingPeriodId(invoicingOptions[0].id)
+  }
+
+  if (loading) return <LoadingSpinner label="Opening weekly report…" />
 
   return (
     <div className="space-y-6">
-      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-        <div className="border-b border-slate-100 bg-gradient-to-r from-slate-50 to-blue-50 px-5 py-5">
+      <div className="overflow-hidden rounded-2xl border border-ios-border bg-ios-card">
+        <div className="border-b border-ios-border bg-gradient-to-br from-[#185FA5] to-[#378ADD] px-5 py-5 text-white">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div>
-              <p className="text-[10px] font-bold tracking-[0.18em] text-slate-500">PROJECTPLANNER</p>
-              <p className="text-xl font-semibold text-slate-900">{organizationName}</p>
-              <p className="text-sm font-bold tracking-wide text-slate-800">WEEKLY REPORT</p>
+              <p className="text-[10px] font-medium uppercase tracking-[0.4px] text-white/80">Project Planner</p>
+              <p className="text-[22px] font-semibold tracking-tight">{organizationName}</p>
+              <p className="text-[13px] font-medium uppercase tracking-[0.4px] text-white/85">Weekly Report</p>
               {period && (
-                <p className="mt-2 text-sm text-slate-600">
+                <p className="mt-2 text-[13px] text-white/85">
                   Period: {formatReportPeriodLabel(period.start, period.end)}
                 </p>
               )}
               {report && (
-                <p className="text-sm text-slate-600">Invoicing period: {report.invoicingPeriodLabel}</p>
+                <p className="text-[12px] text-white/75">Invoicing period: {report.invoicingPeriodLabel}</p>
               )}
             </div>
             <button
               type="button"
               disabled={!report || generating}
               onClick={handleGenerateReport}
-              className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-[#185FA5] shadow-sm transition hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {generating ? 'Generating…' : 'Generate report'}
+              {generating ? 'Generating…' : 'Generate Report'}
             </button>
           </div>
         </div>
 
-        <div className="space-y-4 px-5 py-5">
-          <SetupSegmentedControl
-            value={periodMode}
-            onChange={setPeriodMode}
-            options={[
-              { value: 'invoicing', label: 'Invoicing period' },
-              { value: 'week', label: 'Week' },
-              { value: 'custom', label: 'Date range' },
-            ]}
-          />
+        <div className="space-y-5 px-5 py-5">
+          <section>
+            <p className="mb-2 text-[11px] font-medium uppercase tracking-[0.4px] text-ios-muted">Quick Select</p>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={selectThisWeek}
+                className={`rounded-full border px-3.5 py-1.5 text-[13px] font-medium ${
+                  periodMode === 'week' && weekStart === defaultWeekStart
+                    ? 'border-transparent bg-ios-chip-green text-ios-icon-green'
+                    : 'border-ios-search-border bg-white text-ios-ink'
+                }`}
+              >
+                This Week
+              </button>
+              <button
+                type="button"
+                onClick={selectLastWeek}
+                className={`rounded-full border px-3.5 py-1.5 text-[13px] font-medium ${
+                  periodMode === 'week' && weekStart !== defaultWeekStart
+                    ? 'border-transparent bg-ios-chip-green text-ios-icon-green'
+                    : 'border-ios-search-border bg-white text-ios-ink'
+                }`}
+              >
+                Last Week
+              </button>
+              <button
+                type="button"
+                onClick={selectCurrentInvoicing}
+                disabled={!invoicing}
+                className={`rounded-full border px-3.5 py-1.5 text-[13px] font-medium disabled:opacity-50 ${
+                  periodMode === 'invoicing'
+                    ? 'border-transparent bg-ios-chip-green text-ios-icon-green'
+                    : 'border-ios-search-border bg-white text-ios-ink'
+                }`}
+              >
+                Current invoicing period
+              </button>
+            </div>
+          </section>
 
           {periodMode === 'invoicing' && invoicing && (
-            <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Select invoicing period
+            <section>
+              <p className="mb-2 text-[11px] font-medium uppercase tracking-[0.4px] text-ios-muted">Invoicing Period</p>
               <select
                 value={effectiveInvoicingPeriodId}
                 onChange={(e) => setInvoicingPeriodId(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm normal-case text-slate-800"
+                className="w-full rounded-lg border border-ios-search-border bg-white px-3 py-2 text-sm text-ios-ink"
               >
                 {invoicingOptions.map((option) => (
                   <option key={option.id} value={option.id}>
@@ -245,36 +289,54 @@ export function WeeklyReportScreen({
                   </option>
                 ))}
               </select>
-              <span className="mt-1 block text-[11px] normal-case text-slate-500">
+              <p className="mt-1 text-[11px] text-ios-muted">
                 {formatInvoicingSubtitle(invoicing)} · {formatInvoicingPeriodDescription(invoicing)}
-              </span>
-            </label>
+              </p>
+            </section>
           )}
 
           {periodMode === 'week' && (
             <div className="flex flex-wrap items-center gap-3">
-              <button type="button" onClick={() => shiftWeek(-1)} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700">
+              <button type="button" onClick={() => shiftWeek(-1)} className="rounded-lg border border-ios-search-border bg-white px-3 py-2 text-sm font-semibold">
                 Previous week
               </button>
-              <input type="date" value={weekStart} onChange={(e) => setWeekStart(e.target.value)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-              <button type="button" onClick={() => shiftWeek(1)} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700">
+              <input type="date" value={weekStart} onChange={(e) => setWeekStart(e.target.value)} className="rounded-lg border border-ios-search-border px-3 py-2 text-sm" />
+              <button type="button" onClick={() => shiftWeek(1)} className="rounded-lg border border-ios-search-border bg-white px-3 py-2 text-sm font-semibold">
                 Next week
               </button>
             </div>
           )}
 
-          {periodMode === 'custom' && (
+          <section>
+            <p className="mb-2 text-[11px] font-medium uppercase tracking-[0.4px] text-ios-muted">Custom Range</p>
             <div className="flex flex-wrap items-end gap-3">
-              <label className="text-sm font-medium text-slate-700">
-                From
-                <input type="date" value={customStart} onChange={(e) => setCustomStart(e.target.value)} className="mt-1 block rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+              <label className="text-[13px] font-medium">
+                Start
+                <input
+                  type="date"
+                  value={customStart}
+                  onChange={(e) => {
+                    setCustomStart(e.target.value)
+                    setPeriodMode('custom')
+                  }}
+                  className="mt-1 block rounded-lg border border-ios-search-border px-3 py-2 text-sm"
+                />
               </label>
-              <label className="text-sm font-medium text-slate-700">
-                To
-                <input type="date" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)} className="mt-1 block rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+              <label className="text-[13px] font-medium">
+                End
+                <input
+                  type="date"
+                  min={customStart}
+                  value={customEnd}
+                  onChange={(e) => {
+                    setCustomEnd(e.target.value)
+                    setPeriodMode('custom')
+                  }}
+                  className="mt-1 block rounded-lg border border-ios-search-border px-3 py-2 text-sm"
+                />
               </label>
             </div>
-          )}
+          </section>
         </div>
       </div>
 

@@ -8,13 +8,13 @@ import {
   setDoc,
   deleteDoc,
   doc,
-  Timestamp,
 } from 'firebase/firestore'
 import { newUuid } from '@/lib/firebase/firestoreUtils'
 import { db } from '@/lib/firebase/config'
 import type { Operative, Manager, Skill, Qualification } from '@/types'
 import { filterRealManagers, isPlaceholderManager } from '@/lib/staff/managerRosterUtils'
 import { runOrgLoad } from '@/lib/stores/orgLoadCache'
+import { parseManager, parseOperative, serializeManager, serializeOperative } from '@/lib/ios-parity/converters'
 
 const OPERATIVES_KEY = 'operativeStore:operatives'
 
@@ -57,38 +57,24 @@ export const useOperativeStore = create<OperativeState>((set, get) => ({
         try {
           const operativesRef = collection(db, 'organizations', organizationId, 'operatives')
           const snapshot = await getDocs(operativesRef)
-          const operatives = snapshot.docs.map((doc) => {
-        const data = doc.data()
-        const qualificationExpiryDates: Record<string, Date> = {}
-        if (data.qualificationExpiryDates && typeof data.qualificationExpiryDates === 'object') {
-          for (const [key, value] of Object.entries(data.qualificationExpiryDates as Record<string, unknown>)) {
-            const date = (value as { toDate?: () => Date })?.toDate?.()
-            if (date) qualificationExpiryDates[key] = date
-          }
-        }
-        const qualificationCertificateURLs: Record<string, string> = {}
-        if (data.qualificationCertificateURLs && typeof data.qualificationCertificateURLs === 'object') {
-          for (const [key, value] of Object.entries(data.qualificationCertificateURLs as Record<string, string>)) {
-            if (typeof value === 'string') qualificationCertificateURLs[key] = value
-          }
-        }
-        return {
-          id: doc.id,
-          firstName: data.firstName || '',
-          lastName: data.lastName || '',
-          email: data.email || '',
-          phone: data.phone,
-          startDate: data.startDate?.toDate() || new Date(),
-          hourlyRate: data.hourlyRate || 0,
-          skills: data.skills || [],
-          qualifications: data.qualifications || [],
-          qualificationExpiryDates,
-          qualificationCertificateURLs,
-          isActive: data.isActive !== false,
-          organizationId: organizationId,
-          createdAt: data.createdAt?.toDate() || new Date(),
-          updatedAt: data.updatedAt?.toDate() || new Date(),
-        } as Operative
+          const operatives = snapshot.docs.flatMap((entry) => {
+            const parsed = parseOperative(entry.id, entry.data() as Record<string, unknown>, organizationId)
+            if (!parsed.ok) return []
+            const data = entry.data() as Record<string, unknown>
+            const qualificationExpiryDates: Record<string, Date> = {}
+            if (data.qualificationExpiryDates && typeof data.qualificationExpiryDates === 'object') {
+              for (const [key, value] of Object.entries(data.qualificationExpiryDates as Record<string, unknown>)) {
+                const date = (value as { toDate?: () => Date })?.toDate?.()
+                if (date) qualificationExpiryDates[key] = date
+              }
+            }
+            const qualificationCertificateURLs: Record<string, string> = {}
+            if (data.qualificationCertificateURLs && typeof data.qualificationCertificateURLs === 'object') {
+              for (const [key, value] of Object.entries(data.qualificationCertificateURLs as Record<string, string>)) {
+                if (typeof value === 'string') qualificationCertificateURLs[key] = value
+              }
+            }
+            return [{ ...parsed.value, qualificationExpiryDates, qualificationCertificateURLs }]
           })
           set({ operatives, loading: false })
         } catch (error: unknown) {
@@ -106,21 +92,9 @@ export const useOperativeStore = create<OperativeState>((set, get) => ({
     try {
       const managersRef = collection(db, 'organizations', organizationId, 'managers')
       const snapshot = await getDocs(managersRef)
-      const allManagers = snapshot.docs.map(doc => {
-        const data = doc.data()
-        return {
-          id: doc.id,
-          firstName: data.firstName || '',
-          lastName: data.lastName || '',
-          email: data.email || '',
-          phone: data.phone,
-          mobile: data.mobile,
-          department: data.department,
-          isActive: data.isActive !== false,
-          organizationId: organizationId,
-          createdAt: data.createdAt?.toDate() || new Date(),
-          updatedAt: data.updatedAt?.toDate() || new Date(),
-        } as Manager
+      const allManagers = snapshot.docs.flatMap((entry) => {
+        const parsed = parseManager(entry.id, entry.data() as Record<string, unknown>, organizationId)
+        return parsed.ok ? [parsed.value] : []
       })
       set({
         managers: filterRealManagers(allManagers),
@@ -213,52 +187,18 @@ export const useOperativeStore = create<OperativeState>((set, get) => ({
 
   saveOperative: async (organizationId, operative) => {
     const id = operative.id || newUuid()
-    const payload = {
-      id,
-      firstName: operative.firstName.trim(),
-      lastName: operative.lastName.trim(),
-      name: `${operative.firstName} ${operative.lastName}`.trim(),
-      email: operative.email.trim(),
-      phone: operative.phone || '',
-      startDate: Timestamp.fromDate(operative.startDate),
-      skills: operative.skills || [],
-      qualifications: operative.qualifications || [],
-      isActive: operative.isActive,
-      hourlyRate: operative.hourlyRate || 0,
-      currencySymbol: '£',
-      notes: '',
-      dayRate: operative.hourlyRate || 0,
-      tradeTypePreset: '',
-      tradeTypeCustom: '',
-      organizationId,
-      createdAt: Timestamp.fromDate(operative.createdAt || new Date()),
-      updatedAt: Timestamp.now(),
-    }
+    const payload = serializeOperative({ ...operative, id, organizationId })
     await setDoc(doc(db, 'organizations', organizationId, 'operatives', id), payload)
-    const saved = { ...operative, id, updatedAt: new Date() }
+    const saved = { ...operative, id, organizationId, updatedAt: new Date() }
     set({ operatives: [...get().operatives.filter((o) => o.id !== id), saved] })
     return id
   },
 
   saveManager: async (organizationId, manager) => {
     const id = manager.id || newUuid()
-    const payload = {
-      id,
-      firstName: manager.firstName.trim(),
-      lastName: manager.lastName.trim(),
-      email: manager.email.trim(),
-      mobileNumber: manager.mobile || manager.phone || '',
-      department: manager.department || '',
-      isActive: manager.isActive,
-      notes: '',
-      tradeTypePreset: '',
-      tradeTypeCustom: '',
-      organizationId,
-      createdAt: Timestamp.fromDate(manager.createdAt || new Date()),
-      updatedAt: Timestamp.now(),
-    }
+    const payload = serializeManager({ ...manager, id, organizationId })
     await setDoc(doc(db, 'organizations', organizationId, 'managers', id), payload)
-    const saved = { ...manager, id, updatedAt: new Date() }
+    const saved = { ...manager, id, organizationId, updatedAt: new Date() }
     set({ managers: [...get().managers.filter((m) => m.id !== id), saved] })
     return id
   },

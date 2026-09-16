@@ -1,5 +1,5 @@
 # iOS → Web parity: progress
-Last updated: 2026-09-16 · Current step: Phase 3 Clients / Projects list / Daily overview · Stopped at: Stop Gate 3 (these three screens)
+Last updated: 2026-09-16 · Current step: Phase 3 lists (Daily overview fix + Small works / Operatives / Managers / Weekly Report) · Stopped at: Stop Gate 3
 
 ## Access check (Phase 0)
 - **WEB_ROOT:** `/workspace` (this repo, `project-planner-web`)
@@ -30,10 +30,10 @@ Last updated: 2026-09-16 · Current step: Phase 3 Clients / Projects list / Dail
 | 7 | Material Catalogue | ☐ | ☐ | ☐ | ☐ | |
 | 8 | Sub Contractors | ☐ | ☐ | ☐ | ☐ | |
 | 9 | Clients | ☑ | ☑ | ☐ | ☐ | Master–detail; UUID writes; address field; admin delete |
-| 10 | Managers | ☐ | ☐ | ☐ | ☐ | |
-| 11 | Operatives | ☐ | ☐ | ☐ | ☐ | No skills UI |
+| 10 | Managers | ☑ | ☑ | ☐ | ☐ | Roster = manager users; catalogue writes `managers/` |
+| 11 | Operatives | ☑ | ☑ | ☐ | ☐ | Roster = operativeMode users; catalogue writes `operatives/` |
 | 12 | Projects | ☑ list/hub | ☑ list/hub | ☐ | ☐ | Create/edit forms + job tiles later. Write `manager: "Custom"` |
-| 13 | Small Works | ☐ | ☐ | ☐ | ☐ | |
+| 13 | Small Works | ☑ | ☑ list | ☐ | ☐ | Create form existing; list matches Projects |
 | 14 | Scheduling and My Schedule | ☐ | ☐ | ☐ | ☐ | Title-Case booking status |
 | 15 | Tasks | ☐ | ☐ | ☐ | ☐ | in scope (Q8) |
 | 16 | Job tiles (View, Materials, H&S, Deadlines, Location, Active users) | ☐ | ☐ | ☐ | ☐ | in scope (Q8) |
@@ -42,8 +42,8 @@ Last updated: 2026-09-16 · Current step: Phase 3 Clients / Projects list / Dail
 | 19 | Site Audit | ☐ | ☐ | ☐ | ☐ | |
 | 20 | Site Map | ☐ | ☐ | ☐ | ☐ | Leaflet + Google; paid tiles |
 | 21 | Warnings | ☐ | ☐ | ☐ | ☐ | in scope (Q8) |
-| 22 | Daily Overview | ☑ | ☑ | ☐ | ☐ | Hours estimated until payroll engine (s17) |
-| 23 | Weekly Report | ☐ | ☐ | ☐ | ☐ | in scope (Q8) |
+| 22 | Daily Overview | ☑ | ☑ | ☐ | ☐ | People on job cards; hours estimated until s17 |
+| 23 | Weekly Report | ☑ | ☑ | ☐ | ☐ | HTML generate; Monday-first week |
 | 24 | Notifications, Help, Privacy, Profile | ☐ | ☐ | ☐ | ☐ | in scope (Q8) |
 
 ## Open questions
