@@ -14,17 +14,14 @@ export function MarketingHeader({ active }: { active?: 'home' | 'login' | 'setup
             Features
           </Link>
           <Link
-            href="/#product"
-            className="hidden text-sm font-medium text-slate-600 hover:text-slate-900 md:block"
-          >
-            Web app
-          </Link>
-          <Link
             href="/#download"
             className="hidden text-sm font-medium text-slate-600 hover:text-slate-900 sm:block"
           >
-            iOS app
+            Download
           </Link>
+          <a href="mailto:support@projectplanner.app" className="hidden text-sm font-medium text-slate-600 hover:text-slate-900 sm:block">
+            Support
+          </a>
           <Link
             href="/setup"
             className={`hidden rounded-full border px-4 py-2 text-sm font-semibold transition sm:inline-flex ${
@@ -65,7 +62,7 @@ export function MarketingFooter() {
           </div>
         </div>
         <p className="mt-6 border-t border-slate-100 pt-6 text-center text-xs text-slate-500">
-          © 2026 Project Planner. The website and iOS app share the same organisation data.
+          © 2026 Project Planner. All rights reserved.
         </p>
       </div>
     </footer>
