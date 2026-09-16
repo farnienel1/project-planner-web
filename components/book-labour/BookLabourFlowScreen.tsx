@@ -24,7 +24,8 @@ import {
   type ScheduleLocationPick,
 } from '@/lib/settings/organizationSettings'
 import { isSmallWorksJobType, normalizeBookingStatus } from '@/lib/ios-parity/enums'
-import { dayKey, londonMidnight, parseHhMm } from '@/lib/ios-parity/londonTime'
+import { dateFromDayKey, dayKey, parseHhMm } from '@/lib/ios-parity/londonTime'
+import { IosWriteValidationError } from '@/lib/ios-parity/firestoreCodec'
 import { initialsFrom } from '@/lib/daily-overview/buildDailyOverview'
 import {
   bookingsOverlapByInterval,
@@ -79,20 +80,33 @@ function projectLocality(project: Project): string {
   return project.siteAddress?.trim() || project.addressLine1?.trim() || ' '
 }
 
-export function BookLabourFlowScreen() {
+type BookLabourFlowScreenProps = {
+  date?: string
+  from?: string
+  onClose?: () => void
+}
+
+export function BookLabourFlowScreen({
+  date: dateProp,
+  from: fromProp,
+  onClose,
+}: BookLabourFlowScreenProps = {}) {
   const router = useRouter()
   const searchParams = useSearchParams()
   const { user, organization } = useAuthStore()
   const { bookings, loadBookings, createBooking } = useBookingStore()
   const { managerSiteBookings, loadManagerSiteBookings, saveManagerSiteBooking } = useManagerScheduleStore()
-  const { operatives, loadOperatives } = useOperativeStore()
-  const { users, loadUsers } = useOrgUserStore()
+  const { operatives, loadOperatives, loading: operativesLoading } = useOperativeStore()
+  const { users, loadUsers, loading: usersLoading } = useOrgUserStore()
   const { projects, smallWorks, loadProjects, loadSmallWorks } = useProjectStore()
   const { bookings: holidays, loadBookings: loadHolidays } = useHolidayStore()
 
-  const dateParam = searchParams.get('date') || dayKey(new Date())
-  const from = searchParams.get('from')
-  const day = useMemo(() => londonMidnight(new Date(`${dateParam}T12:00:00`)), [dateParam])
+  const dateParam = dateProp || searchParams.get('date') || dayKey(new Date())
+  const from = fromProp || searchParams.get('from')
+  const day = useMemo(
+    () => (dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam) ? dateFromDayKey(dateParam) : dateFromDayKey(dayKey(new Date()))),
+    [dateParam]
+  )
   const dayLine = bookLabourDayLine(day)
 
   const [phase, setPhase] = useState<Phase>({ kind: 'pickPerson' })
@@ -191,6 +205,10 @@ export function BookLabourFlowScreen() {
     activeParty.length > 0 && activeParty.every((p) => p.canBookOtherLocations) && otherPicks.length > 0
 
   function closeFlow() {
+    if (onClose) {
+      onClose()
+      return
+    }
     if (from === 'warnings') router.push('/dashboard/warnings')
     else router.push(`/dashboard/daily-overview?date=${dateParam}`)
   }
@@ -423,6 +441,7 @@ export function BookLabourFlowScreen() {
             timeSlot: operativeSlot,
             bookedBy: user.id,
             status: 'Confirmed',
+            notes: '',
             workStartTime: args.workStart,
             workEndTime: args.workEnd,
             isBreakRemoved: args.breakRemoved === true,
@@ -447,7 +466,9 @@ export function BookLabourFlowScreen() {
       }
       closeFlow()
     } catch (error) {
-      setErrorBanner(error instanceof Error ? error.message : 'Could not book')
+      const extra =
+        error instanceof IosWriteValidationError && error.issues.length > 0 ? ` ${error.issues.join('; ')}` : ''
+      setErrorBanner(`${error instanceof Error ? error.message : 'Could not book'}${extra}`)
     } finally {
       setSaving(false)
     }
@@ -499,6 +520,7 @@ export function BookLabourFlowScreen() {
 
   const isCustom = phase.kind === 'pickCustomManager' || phase.kind === 'pickCustomOperative'
   const title = isCustom ? 'Custom hours' : 'Book labour'
+  const rosterLoading = (usersLoading || operativesLoading) && users.length === 0 && operatives.length === 0
 
   return (
     <div className="mx-auto max-w-2xl pb-16">
@@ -515,6 +537,7 @@ export function BookLabourFlowScreen() {
           <PickPerson
             dayLine={dayLine}
             candidates={candidates}
+            loading={rosterLoading}
             multiSelect={multiSelect}
             selectedIds={selectedIds}
             onToggleMulti={() => {
@@ -768,6 +791,7 @@ function Chip({ label, className }: { label: string; className: string }) {
 function PickPerson({
   dayLine,
   candidates,
+  loading,
   multiSelect,
   selectedIds,
   onToggleMulti,
@@ -777,6 +801,7 @@ function PickPerson({
 }: {
   dayLine: string
   candidates: BookLabourCandidate[]
+  loading: boolean
   multiSelect: boolean
   selectedIds: Set<string>
   onToggleMulti: () => void
@@ -784,6 +809,14 @@ function PickPerson({
   onPick: (person: BookLabourCandidate) => void
   onContinue: () => void
 }) {
+  if (loading) {
+    return (
+      <div className="rounded-2xl border border-ios-border bg-white py-16 text-center">
+        <div className="mx-auto h-8 w-8 animate-spin rounded-full border-2 border-[#185FA5] border-t-transparent" />
+        <p className="mt-3 text-[13px] text-ios-muted">Loading unbooked labour…</p>
+      </div>
+    )
+  }
   if (candidates.length === 0) {
     return (
       <div className="rounded-2xl border border-ios-border bg-white py-16 text-center">

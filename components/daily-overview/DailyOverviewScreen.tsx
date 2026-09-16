@@ -18,7 +18,7 @@ import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { useHolidayStore } from '@/lib/stores/holidayStore'
 import { useSubcontractorStore } from '@/lib/stores/subcontractorStore'
 import { canViewDailyOverview, hasAdminAccess } from '@/lib/permissions'
-import { dayKey, londonMidnight } from '@/lib/ios-parity/londonTime'
+import { dateFromDayKey, dayKey, londonMidnight } from '@/lib/ios-parity/londonTime'
 import { loadSubcontractorBookings } from '@/lib/weekly-report/loadSubcontractorBookings'
 import {
   buildDailyOverview,
@@ -27,6 +27,7 @@ import {
   shiftOverviewDay,
   type OverviewPersonRow,
 } from '@/lib/daily-overview/buildDailyOverview'
+import { BookLabourFlowScreen } from '@/components/book-labour/BookLabourFlowScreen'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import type { User } from '@/types'
 
@@ -64,11 +65,12 @@ export function DailyOverviewScreen() {
     Awaited<ReturnType<typeof loadSubcontractorBookings>>
   >([])
   const [day, setDay] = useState(() => londonMidnight(new Date()))
+  const [bookLabourOpen, setBookLabourOpen] = useState(false)
 
   useEffect(() => {
     const raw = searchParams.get('date')
     if (raw && /^\d{4}-\d{2}-\d{2}$/.test(raw)) {
-      setDay(londonMidnight(new Date(`${raw}T12:00:00`)))
+      setDay(dateFromDayKey(raw))
     }
   }, [searchParams])
 
@@ -134,6 +136,7 @@ export function DailyOverviewScreen() {
   }
 
   return (
+    <>
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-[28px] font-semibold tracking-tight">Daily overview</h1>
@@ -143,7 +146,9 @@ export function DailyOverviewScreen() {
           <input
             type="date"
             value={dateParam}
-            onChange={(e) => setDay(londonMidnight(new Date(`${e.target.value}T12:00:00`)))}
+            onChange={(e) => {
+              if (/^\d{4}-\d{2}-\d{2}$/.test(e.target.value)) setDay(dateFromDayKey(e.target.value))
+            }}
             className="rounded-lg border border-ios-search-border bg-white px-2 py-1 text-ios-ink"
           />
         </label>
@@ -299,12 +304,13 @@ export function DailyOverviewScreen() {
                 ))}
               </div>
               {canBook ? (
-                <Link
-                  href={`/dashboard/book-labour?date=${dateParam}&from=daily-overview`}
-                  className="mt-2 inline-flex rounded-full border border-[#A32D2D] px-2.5 py-1 text-[11px] font-medium text-[#A32D2D]"
+                <button
+                  type="button"
+                  onClick={() => setBookLabourOpen(true)}
+                  className="mt-3 inline-flex min-h-[36px] items-center rounded-full border border-[#A32D2D] bg-white px-4 py-1.5 text-[13px] font-semibold text-[#A32D2D] hover:bg-white/80"
                 >
                   Book labour
-                </Link>
+                </button>
               ) : null}
             </section>
           ) : null}
@@ -341,6 +347,14 @@ export function DailyOverviewScreen() {
         </div>
       </div>
     </div>
+    {bookLabourOpen ? (
+      <div className="fixed inset-0 z-[80] overflow-y-auto bg-[#F7F8FA]">
+        <div className="mx-auto max-w-2xl px-4 py-6 lg:px-10 lg:py-8">
+          <BookLabourFlowScreen date={dateParam} from="daily-overview" onClose={() => setBookLabourOpen(false)} />
+        </div>
+      </div>
+    ) : null}
+    </>
   )
 }
 

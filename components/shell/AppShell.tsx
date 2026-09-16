@@ -28,10 +28,10 @@ import {
   type DashboardNavItem,
 } from '@/lib/navigation/dashboardNavigation'
 import { IconChip, type ChipTint } from '@/components/ios/IconChip'
+import { AppLogoMark } from '@/components/ui/AppLogoMark'
 import { useNotificationStore } from '@/lib/stores/notificationStore'
 import {
   applyRoleTestingPreset,
-  canConfigureRoleTesting,
   canManageUsers,
   canManageWorkCatalogue,
   isOperativeMode,
@@ -114,11 +114,12 @@ function Section({
 }
 
 function pageTitle(pathname: string, items: DashboardNavItem[]): string {
+  if (pathname === '/dashboard') return 'Home'
+  if (pathname.startsWith('/dashboard/book-labour')) return 'Book labour'
   const match = items
     .filter((i) => i.href !== '/dashboard')
     .sort((a, b) => b.href.length - a.href.length)
     .find((i) => pathname === i.href || pathname.startsWith(`${i.href}/`))
-  if (pathname === '/dashboard') return 'Home'
   return match?.label || 'Project Planner'
 }
 
@@ -189,6 +190,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const allItems = [...homeItems, ...navigateItems, ...toolsItems, ...teamItems, ...accountItems]
   const title = pageTitle(pathname, allItems)
   const isHome = pathname === '/dashboard'
+  const hidePageChrome = isHome || pathname.startsWith('/dashboard/book-labour')
 
   const firstInitial = displayUser.firstName?.trim()?.charAt(0) || displayUser.email?.trim()?.charAt(0) || 'U'
   const surnameInitial = displayUser.surname?.trim()?.charAt(0) || ''
@@ -237,8 +239,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <div className="flex min-h-screen">
         <aside className="sticky top-0 hidden h-screen w-[248px] shrink-0 flex-col border-r border-ios-border bg-ios-card xl:w-[272px] lg:flex">
           <div className="flex items-center gap-3 border-b border-ios-border px-5 py-5">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-[#185FA5] to-[#378ADD] text-sm font-bold text-white">
-              PP
+            <div className="overflow-hidden rounded-xl">
+              <AppLogoMark size={40} radius={12} />
             </div>
             <div className="min-w-0">
               <p className="truncate text-sm font-semibold">Project Planner</p>
@@ -287,7 +289,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </div>
           ) : null}
 
-          {!isHome ? (
+          {!hidePageChrome ? (
             <header className="sticky top-0 z-20 flex h-16 items-center justify-between gap-3 border-b border-ios-border bg-ios-card/95 px-4 backdrop-blur lg:px-8">
               <div className="min-w-0">
                 <h1 className="truncate text-[20px] font-semibold tracking-tight lg:text-[28px]">{title}</h1>
@@ -351,27 +353,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 </Link>
               </div>
             </header>
-          ) : null}
-
-          {canConfigureRoleTesting(user) && !rolePreset ? (
-            <div className="hidden px-4 pt-2 lg:block">
-              <select
-                className="rounded-lg border border-ios-border bg-ios-card px-2 py-1 text-xs text-ios-muted"
-                defaultValue=""
-                onChange={(e) => {
-                  const v = e.target.value as RoleTestingPreset | ''
-                  if (!v) return
-                  setRolePreset(v)
-                  if (user) localStorage.setItem(roleTestingStorageKey(user.id), v)
-                }}
-              >
-                <option value="">Role preview…</option>
-                <option value="superAdmin">Super Admin</option>
-                <option value="admin">Admin</option>
-                <option value="manager">Manager</option>
-                <option value="operative">Operative</option>
-              </select>
-            </div>
           ) : null}
 
           <main className="min-w-0 flex-1">
