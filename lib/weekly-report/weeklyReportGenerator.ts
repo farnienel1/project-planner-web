@@ -222,16 +222,17 @@ export function downloadWeeklyReport(html: string, filename: string): void {
 }
 
 export function printWeeklyReport(html: string): void {
-  const printWindow = window.open('', '_blank', 'noopener,noreferrer,width=1024,height=768')
-  if (!printWindow) {
-    downloadWeeklyReport(html, 'weekly-report.html')
-    return
-  }
-  printWindow.document.open()
-  printWindow.document.write(html)
-  printWindow.document.close()
-  printWindow.focus()
-  printWindow.onload = () => {
-    printWindow.print()
+  try {
+    const printWindow = window.open('', '_blank', 'noopener,noreferrer,width=1024,height=768')
+    if (!printWindow) return
+    printWindow.document.open()
+    printWindow.document.write(html)
+    printWindow.document.close()
+    printWindow.focus()
+    printWindow.onload = () => {
+      printWindow.print()
+    }
+  } catch {
+    /* popup blocked — on-page report + download still work */
   }
 }

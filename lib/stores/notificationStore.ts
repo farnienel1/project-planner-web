@@ -32,11 +32,9 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
 
   loadNotifications: (organizationId, userId) => {
     if (!organizationId || !db) return
-    if (isOrgCollectionSubscribed('notifications', organizationId)) {
-      set({ loading: false })
-      return
-    }
-    set({ loading: true, error: null })
+    const already = isOrgCollectionSubscribed('notifications', organizationId)
+    if (already || get().notifications.length > 0) set({ loading: false })
+    else set({ loading: true, error: null })
     subscribeOrgCollection(
       'notifications',
       organizationId,
