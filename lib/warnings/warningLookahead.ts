@@ -1,14 +1,15 @@
-import {
-  addDays,
-  endOfMonth,
-  getDate,
-  getISODay,
-  isAfter,
-  isBefore,
-  startOfDay,
-} from 'date-fns'
+import { endOfMonth } from 'date-fns'
 import type { OrgInvoicingSettings, OrgWarningDetectionSettings } from '@/lib/settings/organizationSettings'
 import { WEEKDAY_OPTIONS } from '@/lib/settings/organizationSettings'
+import {
+  addLondonDays,
+  dayKey,
+  endOfLondonWeek,
+  londonDayOfMonth,
+  londonIsoWeekday,
+  londonMidnight,
+  startOfLondonWeek,
+} from '@/lib/ios-parity/londonTime'
 
 function isoWeekdayIndex(day: string): number {
   const normalized = day.trim().toLowerCase()
@@ -17,23 +18,28 @@ function isoWeekdayIndex(day: string): number {
 }
 
 function weekdayOnOrBefore(reference: Date, isoWeekday: number): Date {
-  const current = getISODay(reference)
+  const current = londonIsoWeekday(reference)
   const delta = current >= isoWeekday ? current - isoWeekday : current + 7 - isoWeekday
-  return startOfDay(addDays(reference, -delta))
+  return addLondonDays(londonMidnight(reference), -delta)
 }
 
 function weekdayOnOrAfter(reference: Date, isoWeekday: number): Date {
-  const current = getISODay(reference)
+  const current = londonIsoWeekday(reference)
   const delta = current <= isoWeekday ? isoWeekday - current : 7 - current + isoWeekday
-  return startOfDay(addDays(reference, delta))
+  return addLondonDays(londonMidnight(reference), delta)
 }
 
-/** Friday of the current working week (Mon–Fri), matching iOS endOfWorkingWeek. */
+/** Sunday of the current London week — iOS Full week coverageEnd. */
 export function endOfWorkingWeek(referenceDate: Date): Date {
-  return weekdayOnOrBefore(referenceDate, 5)
+  return endOfLondonWeek(referenceDate)
 }
 
 export type InvoicingPeriodRange = {
+  start: Date
+  end: Date
+}
+
+export type WarningCoverageWindow = {
   start: Date
   end: Date
 }
@@ -42,33 +48,39 @@ function resolveDateRangeInvoicingPeriod(
   referenceDate: Date,
   invoicing: OrgInvoicingSettings
 ): InvoicingPeriodRange {
-  const dayOfMonth = getDate(referenceDate)
+  const dayOfMonth = londonDayOfMonth(referenceDate)
   const ranges = invoicing.paymentRunDateRanges.filter((range) => range.startDay > 0 && range.endDay > 0)
+  const monthEnd = londonDayOfMonth(endOfMonth(londonMidnight(referenceDate)))
 
   for (const range of ranges) {
     if (dayOfMonth >= range.startDay && dayOfMonth <= range.endDay) {
-      const monthEnd = endOfMonth(referenceDate)
-      const clampedEnd = Math.min(range.endDay, getDate(monthEnd))
-      const start = new Date(referenceDate)
-      start.setDate(range.startDay)
-      const end = new Date(referenceDate)
-      end.setDate(clampedEnd)
-      return { start: startOfDay(start), end: startOfDay(end) }
+      const clampedEnd = Math.min(range.endDay, monthEnd)
+      return {
+        start: londonDateWithDay(referenceDate, range.startDay),
+        end: londonDateWithDay(referenceDate, clampedEnd),
+      }
     }
   }
 
   if (ranges.length > 0) {
     const fallback = ranges.reduce((latest, range) => (range.endDay > latest.endDay ? range : latest))
-    const monthEnd = endOfMonth(referenceDate)
-    const clampedEnd = Math.min(fallback.endDay, getDate(monthEnd))
-    const start = new Date(referenceDate)
-    start.setDate(fallback.startDay)
-    const end = new Date(referenceDate)
-    end.setDate(clampedEnd)
-    return { start: startOfDay(start), end: startOfDay(end) }
+    const clampedEnd = Math.min(fallback.endDay, monthEnd)
+    return {
+      start: londonDateWithDay(referenceDate, fallback.startDay),
+      end: londonDateWithDay(referenceDate, clampedEnd),
+    }
   }
 
-  return { start: startOfDay(referenceDate), end: startOfDay(endOfMonth(referenceDate)) }
+  return {
+    start: londonMidnight(referenceDate),
+    end: londonDateWithDay(referenceDate, monthEnd),
+  }
+}
+
+function londonDateWithDay(reference: Date, day: number): Date {
+  const key = dayKey(reference)
+  const [y, m] = key.split('-').map(Number)
+  return londonMidnight(new Date(Date.UTC(y, m - 1, day, 12, 0, 0)))
 }
 
 function resolveRecurringInvoicingPeriod(
@@ -77,23 +89,23 @@ function resolveRecurringInvoicingPeriod(
 ): InvoicingPeriodRange {
   const startWd = isoWeekdayIndex(invoicing.recurringRunStartDay)
   const endWd = isoWeekdayIndex(invoicing.recurringRunEndDay)
-  const ref = startOfDay(referenceDate)
+  const ref = londonMidnight(referenceDate)
 
   let periodStart = weekdayOnOrBefore(ref, startWd)
   let periodEnd = weekdayOnOrAfter(periodStart, endWd)
-  if (isBefore(periodEnd, periodStart)) {
-    periodEnd = addDays(periodEnd, 7)
+  if (dayKey(periodEnd) < dayKey(periodStart)) {
+    periodEnd = addLondonDays(periodEnd, 7)
   }
 
-  if (isAfter(ref, periodEnd)) {
-    periodStart = addDays(periodStart, 7)
+  if (dayKey(ref) > dayKey(periodEnd)) {
+    periodStart = addLondonDays(periodStart, 7)
     periodEnd = weekdayOnOrAfter(periodStart, endWd)
-    if (isBefore(periodEnd, periodStart)) {
-      periodEnd = addDays(periodEnd, 7)
+    if (dayKey(periodEnd) < dayKey(periodStart)) {
+      periodEnd = addLondonDays(periodEnd, 7)
     }
   }
 
-  return { start: startOfDay(periodStart), end: startOfDay(periodEnd) }
+  return { start: periodStart, end: periodEnd }
 }
 
 /** Current invoicing / payment run period containing the reference date (iOS parity). */
@@ -101,18 +113,40 @@ export function computeInvoicingPeriod(
   referenceDate: Date,
   invoicing: OrgInvoicingSettings
 ): InvoicingPeriodRange {
-  const ref = startOfDay(referenceDate)
+  const ref = londonMidnight(referenceDate)
   return invoicing.paymentRunMode === 'date_ranges'
     ? resolveDateRangeInvoicingPeriod(ref, invoicing)
     : resolveRecurringInvoicingPeriod(ref, invoicing)
 }
 
-function endOfDateRangeInvoicingPeriod(referenceDate: Date, invoicing: OrgInvoicingSettings): Date {
-  return resolveDateRangeInvoicingPeriod(referenceDate, invoicing).end
-}
+/**
+ * Inclusive scan window matching iOS OrgWarningDetectionSettings.coverageStart/End.
+ * - numberOfDays: today … today+(N-1)
+ * - Full week: Monday … Sunday of the current week (past days included)
+ * - Invoicing period: payment-run segment containing today (past days included)
+ */
+export function computeWarningCoverageWindow(
+  referenceDate: Date,
+  warningDetection: OrgWarningDetectionSettings,
+  invoicing?: OrgInvoicingSettings
+): WarningCoverageWindow {
+  const today = londonMidnight(referenceDate)
 
-function endOfRecurringInvoicingPeriod(referenceDate: Date, invoicing: OrgInvoicingSettings): Date {
-  return resolveRecurringInvoicingPeriod(referenceDate, invoicing).end
+  switch (warningDetection.clashLookaheadMode) {
+    case 'numberOfDays': {
+      const days = Math.max(1, Math.min(warningDetection.clashLookaheadDays || 1, 366))
+      return { start: today, end: addLondonDays(today, days - 1) }
+    }
+    case 'endOfInvoicingPeriod': {
+      if (!invoicing) {
+        return { start: startOfLondonWeek(today), end: endOfLondonWeek(today) }
+      }
+      return computeInvoicingPeriod(today, invoicing)
+    }
+    case 'endOfWorkingWeek':
+    default:
+      return { start: startOfLondonWeek(today), end: endOfLondonWeek(today) }
+  }
 }
 
 export function computeWarningLookaheadEnd(
@@ -120,25 +154,23 @@ export function computeWarningLookaheadEnd(
   warningDetection: OrgWarningDetectionSettings,
   invoicing?: OrgInvoicingSettings
 ): Date {
-  const ref = startOfDay(referenceDate)
-
-  switch (warningDetection.clashLookaheadMode) {
-    case 'numberOfDays': {
-      const days = Math.max(1, warningDetection.clashLookaheadDays || 1)
-      return startOfDay(addDays(ref, days - 1))
-    }
-    case 'endOfInvoicingPeriod':
-      if (!invoicing) return endOfWorkingWeek(ref)
-      return invoicing.paymentRunMode === 'date_ranges'
-        ? endOfDateRangeInvoicingPeriod(ref, invoicing)
-        : endOfRecurringInvoicingPeriod(ref, invoicing)
-    case 'endOfWorkingWeek':
-    default:
-      return endOfWorkingWeek(ref)
-  }
+  return computeWarningCoverageWindow(referenceDate, warningDetection, invoicing).end
 }
 
 export function isDateWithinWarningWindow(date: Date, windowStart: Date, windowEnd: Date): boolean {
-  const day = startOfDay(date)
-  return !isBefore(day, windowStart) && !isAfter(day, windowEnd)
+  const key = dayKey(date)
+  return key >= dayKey(windowStart) && key <= dayKey(windowEnd)
+}
+
+/** Iterate each London calendar day in an inclusive window. */
+export function eachLondonDay(start: Date, end: Date): Date[] {
+  const days: Date[] = []
+  let cursor = londonMidnight(start)
+  const lastKey = dayKey(end)
+  while (dayKey(cursor) <= lastKey) {
+    days.push(cursor)
+    cursor = addLondonDays(cursor, 1)
+    if (days.length > 400) break
+  }
+  return days
 }
