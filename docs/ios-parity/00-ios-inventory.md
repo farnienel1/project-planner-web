@@ -2,20 +2,22 @@
 
 > Spec: `docs/ios-parity/IOS_PARITY_REBUILD.md` Phase 1 · Blueprint starting point: whole file, especially §1, §6, §9.
 >
-> **Swift tree status:** IOS_ROOT is **not on this Cloud Agent VM**. No `.xcodeproj`, `GoogleService-Info.plist`, or `.swift` files could be listed. This catalogue is reconstructed from `IOS_APP_BLUEPRINT.md` (built 16 Sep 2026 from the real iOS source: **210 Swift files**, ~115,000 lines). Line numbers and purposes come from Blueprint §9 and section file lists. **0 Swift files were opened on disk.** Every behavioural claim remains ❓ UNVERIFIED until the Xcode project is added to the workspace.
+> **Swift tree status (updated 16 Sep 2026):** Farnie attached `Project Planner.zip`. Extracted **read-only** to `/home/ubuntu/ios-readonly/Project Planner` (not in git). This is the app source folder. The zip did **not** include the `.xcodeproj` wrapper. Complete path+line catalogue: [`00-ios-inventory-disk.md`](./00-ios-inventory-disk.md).
 
 ## Phase 0 access check
 
 | Check | Result |
 |---|---|
-| List `IOS_ROOT` | **Failed.** Config placeholder is still `<<IOS_PROJECT_PATH>>`. Existing web note (`docs/IOS_FIRESTORE_PARITY.md`) points at `/Users/farnienel/Desktop/Project Planner/Project Planner/`. |
-| `.xcodeproj` | Not found anywhere on this VM (`find` over `/workspace`, `/home`, `/opt`, `/tmp`). |
-| `GoogleService-Info.plist` | Not found. Firebase project id taken from Blueprint §1 + web `.firebaserc`: `project-planner-f986c`. |
-| `@main` app file | Blueprint: `Project_PlannerApp.swift`. Not on disk. |
-| `.swift` count (excluding Pods / DerivedData / SourcePackages) | Blueprint claims **210**. Disk count **0**. |
-| Cloud environment repos | Only `github.com/farnienel1/project-planner-web`. No iOS repo. |
+| List `IOS_ROOT` | **OK** via attached zip. App folder: `/home/ubuntu/ios-readonly/Project Planner`. |
+| `.xcodeproj` | **Not in the zip.** App sources, `GoogleService-Info.plist`, entitlements, and `Info.plist` are present. |
+| `GoogleService-Info.plist` | **Found.** `PROJECT_ID` = `project-planner-f986c`, `STORAGE_BUCKET` = `project-planner-f986c.firebasestorage.app`, `BUNDLE_ID` = `farnie.Project-Planner`. |
+| `@main` app file | `Project_PlannerApp.swift` (confirmed `@main`). |
+| `.swift` count | **210 files, 114,699 lines** (matches the blueprint). |
+| Cloud environment repos | Still only the web repo. Keep extracting the zip (or add a GitHub iOS repo) for future Cloud Agent runs. |
 
-**If you are Farnie:** add the iOS folder to this workspace (*File → Add Folder to Workspace…*), save the workspace, and make sure the Desktop folder is fully downloaded if it lives in iCloud. Then a follow-up chat can replace this reconstructed catalogue with a 100% on-disk catalogue.
+**Do not commit the zip or extracted iOS tree into the web git repo.** iOS remains read-only: never edit it from this project.
+
+**Setup URL (verified from disk):** `AppBranding.swift` `webAppBaseURL` is still `https://project-planner-f986c.web.app`, so the iOS login button opens `…/setup`. Live check: that Firebase Hosting URL serves a **stale marketing page**, not the setup wizard. The real wizard is `https://www.projectplanner.us/setup`. **Farnie must change `AppBranding.webAppBaseURL` in Xcode** (this agent will not edit iOS). Invite emails from iOS use `…/setup-password.html?token=` on the same Firebase host (`ResendEmailService.swift`, `FirebaseBackend.swift` ~L5096).
 
 ## Web stack (`WEB_ROOT` = this repo)
 
@@ -41,24 +43,24 @@ Identified from `package.json`, `package-lock.json`, `app/`, `next.config.js`, `
 | Lint | `"lint": "next lint"`; `eslint-config-next` is **14.0.4** while Next is 16.x |
 | Zod | **Not installed.** Rebuild §5 says propose it at Stop Gate 1. |
 | Firebase project file | `.firebaserc` → `project-planner-f986c`. `firebase.json` deploys `firestore.rules` only. **No `storage.rules`, no `firestore.indexes.json`, no `functions/`.** |
-| Hosted URL (blueprint) | `https://project-planner-f986c.web.app` |
+| Hosted URL (blueprint / iOS `AppBranding`) | `https://project-planner-f986c.web.app` — **stale Firebase Hosting**. Production wizard: `https://www.projectplanner.us/setup` → `https://projectplanner.us/setup`. |
 
-## iOS project metadata (from blueprint only)
+## iOS project metadata (from attached zip)
 
-| Item | Blueprint value | Evidence | Disk? |
+| Item | Value | Evidence | Disk? |
 |---|---|---|---|
-| App folder | `Project Planner/` inside IOS_ROOT, containing `ContentView.swift`, `FirebaseBackend.swift`, `Core/`, `Models/`, `Navigation/`, `Views/` | Blueprint intro | ❌ |
-| Bundle ID | `farnie.Project-Planner` | `GoogleService-Info.plist` (Blueprint §1) | ❌ |
-| Firebase project | `project-planner-f986c` | same | ❌ |
-| Storage bucket | `project-planner-f986c.firebasestorage.app` | same | ❌ |
+| App folder | `Project Planner/` containing `ContentView.swift`, `FirebaseBackend.swift`, `Core/`, `Models/`, `Navigation/`, `Views/` | zip extract | ✅ |
+| Bundle ID | `farnie.Project-Planner` | `GoogleService-Info.plist` | ✅ |
+| Firebase project | `project-planner-f986c` | same | ✅ |
+| Storage bucket | `project-planner-f986c.firebasestorage.app` | same | ✅ |
 | Firestore DB | `(default)` | `firestore.rules` (iOS + this web repo) | web rules only |
-| UI | SwiftUI, custom shell, no system `TabView` | `ContentView.swift` | ❌ |
-| Auth | Email/password only. No Apple/Google. No App Check. | `Project_PlannerApp.swift`, Blueprint §1 | ❌ |
-| Locale | Device locale/TZ (UK); Monday-first weeks; `£`; `en_GB` for payroll emails | `Core/MondayFirstCalendarSupport.swift` | ❌ |
-| Custom fonts | **None bundled.** System font. | Blueprint §4.3 | ❌ |
-| Device capabilities | Camera, photos, location, push (FCM), MapKit, PDF, share sheet, haptics / Face ID / widgets **not applicable on web** | Blueprint §3.3 translation table + §6 | ❌ |
-| Swift packages | Firebase iOS SDK (Auth, Firestore, Storage, Messaging), MapKit. Exact versions need `Package.resolved`. | Blueprint §1, §5.6 | ❌ |
-| Deployment target | ❓ UNVERIFIED (needs `project.pbxproj`) | — | ❌ |
+| UI | SwiftUI, custom shell, no system `TabView` | `ContentView.swift` | ✅ |
+| Auth | Email/password only. No Apple/Google. No App Check. | `Project_PlannerApp.swift` | ✅ |
+| Locale | Device locale/TZ (UK); Monday-first weeks; `£`; `en_GB` for payroll emails | `Core/MondayFirstCalendarSupport.swift` | ✅ |
+| Custom fonts | **None bundled.** System font. | zip: no font files | ✅ |
+| Device capabilities | Camera, photos, location, push (FCM), MapKit, PDF, share sheet; haptics / Face ID / widgets **not applicable on web** | Blueprint §3.3 + tree | ✅ |
+| Swift packages | Firebase iOS SDK (Auth, Firestore, Storage, Messaging), MapKit | **No `Package.resolved` in the zip** | ❌ |
+| Deployment target | ❓ | **No `.xcodeproj` / `project.pbxproj` in the zip** | ❌ |
 
 **iOS-only mechanisms not to port** (Blueprint §7): `SmartCacheService`, `PersistenceService`, `DataPersistenceManager`, `Offline*` stores/outbox, `LocalNotificationService`, `PlaygroundDemoSeeder`. These files may exist in the 210-file tree even when not listed below.
 
@@ -308,23 +310,25 @@ Rebuild Phase 3 §9 lists 24 sections. These iOS surfaces exist in the blueprint
 | Metric | Count |
 |---|---|
 | Swift files claimed by blueprint | 210 |
-| Swift files opened on disk this session | **0** |
-| Unique Swift paths named in the blueprint and listed above | ~155 |
+| Swift files on disk (attached zip) | **210** |
+| Total lines | **114,699** |
+| Unique Swift paths named in the blueprint catalogue above | ~155 |
 | §9 screen-index view files catalogued | 87 / 87 named in §9 |
-| Coverage of **disk** Swift files | **0 of 210 (0%)** |
+| Coverage of **disk** Swift files | **210 of 210 (100%)** |
 
-**Coverage: 0 of 210 Swift files catalogued from disk.**
+**Coverage: 210 of 210 Swift files catalogued from disk.** Full path+line table: [`00-ios-inventory-disk.md`](./00-ios-inventory-disk.md).
 
-Reconstructed named-file coverage of the blueprint’s own citations: **100% of cited paths are listed.** A true “X of Y Swift files catalogued” of **210 of 210** is blocked on IOS_ROOT.
+The named-file table in this document still uses blueprint line counts for narrative. Use the disk table when a later phase needs an exact `wc -l`.
 
 ## Blueprint corrections
 
-None that can be proven without the Swift tree. Open gaps in the *inventory itself*:
+Confirmed against the zip:
 
-1. Exact `Package.resolved` versions, deployment target, and entitlements.
-2. The unnamed ~55 Swift files that make up the 210.
-3. Whether `HSComponents.swift` / `DLComponents.swift` live under `Views/` or `Views/HS/` etc.
+1. **No `.xcodeproj`** in the attached app-folder zip — deployment target and SPM versions still unknown (`Package.resolved` missing).
+2. `AppBranding.webAppBaseURL` is `https://project-planner-f986c.web.app` (Firebase Hosting), not `https://www.projectplanner.us`.
+3. Invite emails from iOS (`ResendEmailService.swift`, `FirebaseBackend.swift` ~L5096) use `https://project-planner-f986c.web.app/setup-password.html?token=`.
+4. `AppBranding.swift` is **36** lines on disk (blueprint said 37).
 
 ## Next
 
-After Farnie adds IOS_ROOT, re-run Phase 0 step 1: list every `.swift` file with `wc -l`, fill the missing ~55, and replace ❓ UNVERIFIED line numbers.
+Phase 2 can cite live Swift from `/home/ubuntu/ios-readonly/Project Planner` (or a future iOS GitHub repo on the Cloud Agent environment). Do not commit that tree. **Farnie still needs to change iOS `AppBranding.webAppBaseURL`** (and `ResendEmailService.setupPasswordBaseURL`) to the public site; this agent will not edit iOS.

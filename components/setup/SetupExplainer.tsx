@@ -63,7 +63,6 @@ const GUIDED_PREVIEW: { icon: IconName; title: string }[] = [
   { icon: 'client', title: 'Add your first client' },
   { icon: 'subcontractor', title: 'Add a sub contractor' },
   { icon: 'wholesaler', title: 'Add a wholesaler' },
-  { icon: 'skill', title: 'Add a skill' },
   { icon: 'qualification', title: 'Add a qualification' },
   { icon: 'jobtype', title: 'Add a job type' },
 ]

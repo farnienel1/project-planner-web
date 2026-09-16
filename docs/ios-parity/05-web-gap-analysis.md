@@ -1,6 +1,6 @@
 # 05 — Web gap analysis
 
-> Spec: rebuild Phase 1 `05-web-gap-analysis.md`. iOS column = blueprint. Web column = this repo as of 16 Sep 2026 (`main` @ `28092a2` plus this docs-only branch).
+> Spec: rebuild Phase 1 `05-web-gap-analysis.md`. iOS column = blueprint + attached zip. Web column = this repo as of 16 Sep 2026. Gate 1 Q1–Q10 answered (see `STOP-GATE-1.md`).
 
 Legend: ✅ exists and is directionally the same · ⚠️ exists but diverges · ❌ missing · 🟦 web-only (keep until Farnie decides)
 
@@ -14,9 +14,9 @@ Legend: ✅ exists and is directionally the same · ⚠️ exists but diverges �
 | Auth methods | email/password | same | Reuse `authStore`; add placeholder merge + policy gate |
 | Live listeners | **none** (`getDocs` only) | org, bookings, managerSiteBookings, materials, notifications live | Rewrite store subscriptions |
 | Converters | hand-rolled payloads | hand-rolled dictionaries | Rewrite with validators; several enums/keys wrong (see 01) |
-| Zod | not installed | n/a | Propose add |
+| Zod | not installed | n/a | **Add in Phase 2 (Q6)** |
 | Design tokens | Tailwind default blue | `#185FA5` system | New tokens in Phase 2 |
-| Icons | inline SVG; unused Heroicons | SF Symbols | Map table; add Lucide or use Heroicons |
+| Icons | inline SVG; unused Heroicons | SF Symbols | **Use Heroicons (Q7); do not add Lucide** |
 | Tests | none | Swift tests unknown | Add with logic ports |
 | `storage.rules` | missing | missing from iOS folder too | Farnie locate |
 | Cloud Function email | unused | `sendProjectPlannerEmail` | Decide Resend vs Function |
@@ -72,7 +72,7 @@ Legend: ✅ exists and is directionally the same · ⚠️ exists but diverges �
 | **Notifications** | prefs only | inbox collection in rules | | Inbox UI, deep links, unread badge | New |
 | **Help** | `/help` | | copy ❓ | Category/step structure | Replace copy from Swift |
 | **Privacy / Profile** | profile in settings | | Privacy dead | Gate + `/privacy` | New |
-| **Skills** | `/skills` | deprecated on iOS | full CRUD | — | 🟦 keep |
+| **Skills** | removed | deprecated on iOS | page/nav/setup step deleted; `/dashboard/skills` → `/dashboard` | — | **removed (Q5)** |
 
 ## 4. Data compatibility landmines (web writes that can make iOS skip rows)
 
@@ -80,11 +80,11 @@ These are the “records disappear on iOS” class (rebuild §5):
 
 | Write | Web today | iOS parser expects | Risk |
 |---|---|---|---|
-| Booking `status` | `'confirmed'` default (`bookingStore`, `TimeSlot` enum in `types/index.ts`) | `'Confirmed'` | **Skip booking** |
+| Booking `status` | `'confirmed'` default (`bookingStore`, `TimeSlot` enum in `types/index.ts`) | `'Confirmed'` | **Skip booking.** **Q3:** Phase 2 writes Title-Case. |
 | Booking id | `addDoc` auto-id (likely lowercase) | uppercase UUID + `id` field | mismatch / skip |
-| `employmentType` | `selfEmployed` | `self_employed` | silent default |
+| `employmentType` | `selfEmployed` | `self_employed` | silent default. **Q9:** write `self_employed`; read both. |
 | Material `requestType` | `quote` / `order` | `Quote` / `Order` | fallback / skip |
-| Project `manager` | `'Project Manager'` | `'Custom'` on new/edit | wrong legacy field |
+| Project `manager` | `'Project Manager'` | `'Custom'` on new/edit | wrong legacy field. **Q10:** write `Custom`. |
 | Project `notes` | written | not saved by iOS | wiped on iOS save |
 | Int fields | JS numbers | `as? Int` | 7.5 breaks Int |
 | No snapshot listeners | stale web UI | live iOS | UX not data loss |
@@ -95,18 +95,18 @@ These are the “records disappear on iOS” class (rebuild §5):
 
 Do **not** delete these in Phase 2:
 
-1. Stripe subscription + `/setup` wizard (iOS login explicitly opens `/setup`).
+1. Stripe subscription + `/setup` wizard (iOS login **should** open `https://www.projectplanner.us/setup`; today it opens stale Firebase Hosting).
 2. `/setup/verify-email`, `/success`, `/cancel`.
-3. `dashboardLayouts` + `/dashboard/edit` (ask whether to hide once iOS Home ships).
+3. `dashboardLayouts` + `/dashboard/edit` (D1 still open: hide vs keep once iOS Home ships).
 4. `platformConfig`.
 5. `users/{uid}/orgMemberships`.
-6. Skills catalogue UI.
-7. Resend API invite emails (until Function is used).
-8. `/api/geocode` + Google key.
-9. Leaflet loaded from unpkg (works; production tiles still a question).
-10. Team onboarding prompt.
-11. Marketing `/` landing.
-12. `acceptedBookingClashes` (web warning dismissals) — **parallel** to iOS UserDefaults; do not assume they sync.
+6. Resend API invite emails (until Function is used).
+7. `/api/geocode` + Google key (**Q4** keep Google).
+8. Leaflet loaded from unpkg (works; **Q4** paid tiles in production).
+9. Team onboarding prompt.
+10. Marketing `/` landing.
+11. `acceptedBookingClashes` (web warning dismissals) — **parallel** to iOS UserDefaults; do not assume they sync.
+12. `/setup-password.html?token=` rewrite for iOS invite emails (**Q2**).
 
 ## 6. What to reuse vs rewrite in Phase 2+
 
@@ -122,6 +122,7 @@ Do **not** delete these in Phase 2:
 
 ## Blueprint corrections (web vs blueprint)
 
-1. Existing `docs/IOS_FIRESTORE_PARITY.md` still lists a **Skills** menu row and `/dashboard/skills` as if it were current iOS. Blueprint: skills deprecated, barred from quick actions, `skills` flag always false.
+1. Existing `docs/IOS_FIRESTORE_PARITY.md` still lists a **Skills** menu row and `/dashboard/skills`. Gate 1 Q5: Skills is removed on web as on iOS. Flag always written `false`.
 2. That older doc used `/dashboard/...` paths; Blueprint §2.3 used unprefixed paths. This gap analysis standardises on **keeping `/dashboard`**.
-3. Invite URL `.html` vs App Router — not in the older parity doc.
+3. Invite URL `.html` vs App Router — **Q2:** keep both (`token` and `invitation` query params).
+4. Blueprint hosted URL `https://project-planner-f986c.web.app` is Firebase Hosting, last deployed ~7 May 2026. Production wizard is `https://projectplanner.us/setup` (`www` 301s there). iOS `AppBranding` still points at Firebase.

@@ -154,7 +154,7 @@ Boot order after shell (Blueprint §1.2): projects+small works + operatives/mana
 | Switch org | `/dashboard/settings/switch-organisation` | `/dashboard/change-organisation` | keep either |
 | Help | `/dashboard/help` | yes | |
 | Privacy | `/dashboard/privacy` | **missing** (dead settings row) | |
-| Skills | `/dashboard/skills` | yes | **web-only / deprecated iOS** — keep until Farnie decides |
+| Skills | `/dashboard/skills` | removed | **Gate 1 Q5:** dropped from web (redirects to `/dashboard`); iOS already deprecated |
 
 **Do not drop:** `/setup/*`, Stripe success/cancel, `/api/*`.
 
@@ -260,7 +260,7 @@ Presentation: P = push/page, S = sheet/modal, F = fullScreenCover, A = alert, M 
 
 | Web item | File | Decision |
 |---|---|---|
-| Skills | `dashboardNavigation.ts` `dashboard_skills` | Keep as web-only until Farnie decides; iOS bars `staff-skills` |
+| Skills | was `dashboard_skills` | **Removed** (Gate 1 Q5). Route redirects to `/dashboard`. Permission flag still written `false`. |
 | Daily overview / Weekly report / Warnings / Tasks / My Schedule as **sidebar rows** | same | On iOS these are Main Menu / quick actions, not primary tabs. Desktop sidebar **should** include them (sidebar = Main Menu). OK if permissioned like the catalogue. |
 | Change organisation as always-on account row | web | iOS puts it under Settings → Personal. Either is fine; prefer iOS Settings row + keep a settings child route |
 | `/dashboard/edit` | dashboard layouts | web-only (Gate 1 Q) |

@@ -55,11 +55,6 @@ export function canAccessTimesheets(user: User | null): boolean {
   return user.permissions.manager === true || hasAdminAccess(user) || user.permissions.projects === true
 }
 
-export function canManageSkills(user: User | null): boolean {
-  if (!user || isOperativeMode(user)) return false
-  return hasAdminAccess(user) || user.permissions.skills === true || user.permissions.manager === true
-}
-
 export function canManageQualifications(user: User | null): boolean {
   if (!user || isOperativeMode(user)) return false
   return hasAdminAccess(user) || user.permissions.qualifications === true
@@ -173,7 +168,7 @@ export function parseUserPermissions(
       adminAccess: false,
       manager: false,
       operatives: false,
-      skills: false,
+      skills: false, // deprecated; iOS always writes false
       qualifications: false,
       materials: readFlag('materials') === true,
       projects: true,
@@ -192,7 +187,7 @@ export function parseUserPermissions(
     adminAccess: readFlag('adminAccess') === true || isSuperAdmin,
     manager: readFlag('manager') === true,
     operatives: readFlag('operatives') === true || (isSuperAdmin && readFlag('operatives') !== false),
-    skills: readFlag('skills') === true || (isSuperAdmin && readFlag('skills') !== false),
+    skills: false,
     qualifications:
       readFlag('qualifications') === true || (isSuperAdmin && readFlag('qualifications') !== false),
     materials: readFlag('materials') !== false,
