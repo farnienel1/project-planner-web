@@ -300,7 +300,7 @@ export function DailyOverviewScreen() {
               </div>
               {canBook ? (
                 <Link
-                  href={`/dashboard/schedule?date=${dateParam}`}
+                  href={`/dashboard/book-labour?date=${dateParam}&from=daily-overview`}
                   className="mt-2 inline-flex rounded-full border border-[#A32D2D] px-2.5 py-1 text-[11px] font-medium text-[#A32D2D]"
                 >
                   Book labour

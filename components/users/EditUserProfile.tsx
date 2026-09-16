@@ -345,18 +345,11 @@ export function EditUserProfile({
     )
   }
 
-  if (!canEdit) {
-    return (
-      <div className="mx-auto max-w-2xl rounded-2xl border border-slate-200 bg-white p-8 text-center">
-        <p className="text-slate-600">You do not have permission to edit this user.</p>
-        <Link href={backHref} className="mt-4 inline-block text-blue-600 hover:underline">
-          Go back
-        </Link>
-      </div>
-    )
-  }
-
-  const pageTitle = target.permissions.operativeMode ? 'Edit operative' : 'Edit user'
+  const pageTitle = !canEdit
+    ? roleLabel(target)
+    : target.permissions.operativeMode
+      ? 'Edit operative'
+      : 'Edit user'
   const status = rosterStatusLabel(target)
   const isPendingMgrOrOp =
     !target.passwordSet &&
@@ -370,13 +363,19 @@ export function EditUserProfile({
         title={pageTitle}
         onBack={() => router.push(backHref)}
         rightAction={
-          <button
-            type="submit"
-            disabled={saving}
-            className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 disabled:opacity-50"
-          >
-            {saving ? 'Saving…' : 'Save'}
-          </button>
+          canEdit ? (
+            <button
+              type="submit"
+              disabled={saving}
+              className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 disabled:opacity-50"
+            >
+              {saving ? 'Saving…' : 'Save'}
+            </button>
+          ) : (
+            <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold text-slate-500">
+              View only
+            </span>
+          )
         }
       />
 
@@ -469,6 +468,11 @@ export function EditUserProfile({
               disabled
             />
           </FormField>
+          {!canEdit && (
+            <FormField label="Trade type">
+              <Input value={displayTradeType(target.tradeTypePreset, target.tradeTypeCustom)} disabled />
+            </FormField>
+          )}
           {showEmploymentType && (
             <FormField label="Employment type">
               <Select
@@ -746,12 +750,15 @@ export function EditUserProfile({
         </>
       )}
 
-      <div className="mt-6">
-        <SaveButton saving={saving} saved={saved} onClick={() => handleSave()} />
-      </div>
+      {canEdit ? (
+        <div className="mt-6">
+          <SaveButton saving={saving} saved={saved} onClick={() => handleSave()} />
+        </div>
+      ) : null}
 
       {/* Account actions */}
-      <SectionLabel label="Account actions" />
+      {canEdit ? <SectionLabel label="Account actions" /> : null}
+      {canEdit ? (
       <div className="space-y-2">
         {target.passwordSet ? (
           <ActionButton
@@ -856,6 +863,7 @@ export function EditUserProfile({
           </>
         )}
       </div>
+      ) : null}
 
       {confirmDelete && (
         <div

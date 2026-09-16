@@ -15,13 +15,11 @@ import {
   type OrganizationDetails,
 } from '@/lib/settings/organizationSettings'
 import {
-  loadNotificationPreferences,
-  saveNotificationPreferences,
+  loadMaterialCutOffSettings,
   type NotificationPreferences,
 } from '@/lib/settings/notificationPreferences'
 import {
   materialCutoffTimeLabel,
-  MATERIAL_CUTOFF_TIME_OPTIONS,
   orgCountryLabel,
   orgCreatedLabel,
   orgInitials,
@@ -36,8 +34,6 @@ import {
   SectionLabel,
   SettingsCard,
   SettingsRow,
-  Toggle,
-  Select,
   SuccessBanner,
   ErrorBanner,
 } from '@/components/settings/primitives'
@@ -48,6 +44,7 @@ export type OrganisationHubDestination =
   | 'annual-leave-defaults'
   | 'schedule-options'
   | 'warnings'
+  | 'material-cutoff'
   | 'payment-runs'
   | 'roles'
 
@@ -95,9 +92,9 @@ export function OrganisationHubPanel({
   }, [organization?.id])
 
   useEffect(() => {
-    if (!user?.id) return
-    loadNotificationPreferences(user.id).then(setNotif).catch(() => {})
-  }, [user?.id])
+    if (!organization?.id) return
+    loadMaterialCutOffSettings(organization.id, user?.id).then(setNotif).catch(() => {})
+  }, [organization?.id, user?.id])
 
   const country = orgCountryLabel(details?.countryCode)
   const orgName = organization?.name ?? 'Organisation'
@@ -150,24 +147,6 @@ export function OrganisationHubPanel({
   const reminderSubtitle = cutOffOn
     ? `Daily at ${materialCutoffTimeLabel(cutOffMinutes)}`
     : 'Material cut-off notifications off'
-
-  async function patchNotif(patch: Partial<NotificationPreferences>) {
-    if (!user?.id || !notif) return
-    const previous = notif
-    const next = { ...notif, ...patch }
-    setNotif(next)
-    try {
-      await saveNotificationPreferences(user.id, next)
-      setFeedback({ kind: 'success', msg: 'Settings saved' })
-      window.setTimeout(() => setFeedback(null), 2500)
-    } catch (error) {
-      setNotif(previous)
-      setFeedback({
-        kind: 'error',
-        msg: error instanceof Error ? error.message : 'Could not save settings',
-      })
-    }
-  }
 
   return (
     <div className="mx-auto max-w-2xl space-y-5 pb-12">
@@ -274,58 +253,11 @@ export function OrganisationHubPanel({
           icon={ICON.bell}
           iconBg="bg-[#854F0B]/[0.18]"
           iconColor="text-[#854F0B]"
-          label="Material cut-off notification to all managers"
+          label="Material cut-off"
           description={reminderSubtitle}
-        >
-          <Toggle
-            checked={cutOffOn}
-            onChange={(value) => void patchNotif({ materialOrderCutOff: value })}
-          />
-        </SettingsRow>
-        <SettingsRow icon={ICON.clock} iconBg="bg-slate-100" iconColor="text-slate-400" label="Material cut-off time">
-          <Select
-            className="w-32 shrink-0 bg-white py-2 text-xs font-semibold text-blue-600"
-            value={String(cutOffMinutes)}
-            disabled={!cutOffOn || !notif}
-            onChange={(event) => {
-              const total = parseInt(event.target.value, 10)
-              void patchNotif({
-                materialCutOffHour: Math.floor(total / 60),
-                materialCutOffMinute: total % 60,
-              })
-            }}
-          >
-            {MATERIAL_CUTOFF_TIME_OPTIONS.map((minutes) => (
-              <option key={minutes} value={minutes}>
-                {materialCutoffTimeLabel(minutes)}
-              </option>
-            ))}
-          </Select>
-        </SettingsRow>
-        <SettingsRow
-          icon={ICON.calendar}
-          iconBg="bg-slate-100"
-          iconColor="text-slate-400"
-          label="Material cut-off email on Saturday"
-        >
-          <Toggle
-            checked={!!notif?.materialCutOffOnSaturday}
-            disabled={!cutOffOn}
-            onChange={(value) => void patchNotif({ materialCutOffOnSaturday: value })}
-          />
-        </SettingsRow>
-        <SettingsRow
-          icon={ICON.calendar}
-          iconBg="bg-slate-100"
-          iconColor="text-slate-400"
-          label="Material cut-off email on Sunday"
-        >
-          <Toggle
-            checked={!!notif?.materialCutOffOnSunday}
-            disabled={!cutOffOn}
-            onChange={(value) => void patchNotif({ materialCutOffOnSunday: value })}
-          />
-        </SettingsRow>
+          chevron
+          onClick={() => onNavigate('material-cutoff')}
+        />
       </SettingsCard>
 
       <SectionLabel label="Payment runs and timesheets" />

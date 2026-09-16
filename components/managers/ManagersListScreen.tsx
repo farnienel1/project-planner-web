@@ -8,7 +8,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { MagnifyingGlassIcon, PlusIcon, BriefcaseIcon } from '@heroicons/react/24/outline'
+import { MagnifyingGlassIcon, BriefcaseIcon } from '@heroicons/react/24/outline'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
@@ -87,20 +87,7 @@ export function ManagersListScreen() {
 
   return (
     <div className="space-y-4">
-      <PageHeader
-        title="Managers"
-        actions={
-          hasAdminAccess(user) ? (
-            <Link
-              href="/dashboard/managers/new"
-              aria-label="New manager"
-              className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-[#185FA5] text-white"
-            >
-              <PlusIcon className="h-5 w-5" />
-            </Link>
-          ) : null
-        }
-      />
+      <PageHeader title="Managers" />
 
       <div className="flex flex-wrap gap-1.5">
         <FilterChip title={`Active · ${counts.active}`} selected={segment === 'active'} onClick={() => setSegment('active')} />

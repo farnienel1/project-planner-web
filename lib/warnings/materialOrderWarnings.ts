@@ -1,5 +1,6 @@
 import { isActiveBookingStatus } from '@/lib/ios-parity/enums'
-import { addLondonDays, dayKey, londonHour, londonIsoWeekday, londonMidnight } from '@/lib/ios-parity/londonTime'
+import { addLondonDays, dayKey, londonIsoWeekday, londonMidnight, londonMinutesOfDay } from '@/lib/ios-parity/londonTime'
+import { materialCutoffTimeLabel } from '@/lib/settings/orgHubUtils'
 import type { Booking, MaterialSendRecord, Project, ProjectMaterialLine } from '@/types'
 
 export type MissedMaterialOrderWarning = {
@@ -32,13 +33,20 @@ export type MaterialCutoffOptions = {
   enabled?: boolean
   cutOffOnSaturday?: boolean
   cutOffOnSunday?: boolean
+  cutOffHour?: number
+  cutOffMinute?: number
   referenceDate?: Date
 }
 
+function cutoffMinutes(options: MaterialCutoffOptions): number {
+  const hour = options.cutOffHour ?? 16
+  const minute = options.cutOffMinute ?? 0
+  return Math.max(0, Math.min(23, hour)) * 60 + Math.max(0, Math.min(59, minute))
+}
+
 /**
- * iOS WarningsComputation materials cutoff:
- * after 16:00 London, for projects that have active bookings tomorrow.
- * Empty material list still warns. Saturday/Sunday tomorrow honour the toggles.
+ * iOS Organisation material cut-off: after the configured London time, for projects
+ * that have active bookings tomorrow. Empty material list still warns.
  */
 export function computeMissedMaterialOrderWarnings(
   materials: ProjectMaterialLine[],
@@ -49,7 +57,8 @@ export function computeMissedMaterialOrderWarnings(
 ): MissedMaterialOrderWarning[] {
   const now = options.referenceDate ?? new Date()
   if (options.enabled === false) return []
-  if (londonHour(now) < 16) return []
+  const cutoff = cutoffMinutes(options)
+  if (londonMinutesOfDay(now) < cutoff) return []
 
   const today = londonMidnight(now)
   const tomorrow = addLondonDays(today, 1)
@@ -66,6 +75,7 @@ export function computeMissedMaterialOrderWarnings(
 
   const projectsById = new Map(projects.map((project) => [project.id, project]))
   const warnings: MissedMaterialOrderWarning[] = []
+  const cutoffLabel = materialCutoffTimeLabel(cutoff)
 
   for (const projectId of projectIdsWithTomorrowBookings) {
     const project = projectsById.get(projectId)
@@ -80,8 +90,8 @@ export function computeMissedMaterialOrderWarnings(
     const jobNumber = project.jobNumber || project.siteName || projectId.slice(0, 8)
     const message =
       tomorrowMaterials.length === 0
-        ? `No materials have been ordered for ${jobNumber} tomorrow's work (cut-off 16:00).`
-        : `Materials for ${jobNumber} were not fully ordered by 16:00 for tomorrow's work (${unordered.length} line${
+        ? `No materials have been ordered for ${jobNumber} tomorrow's work (cut-off ${cutoffLabel}).`
+        : `Materials for ${jobNumber} were not fully ordered by ${cutoffLabel} for tomorrow's work (${unordered.length} line${
             unordered.length === 1 ? '' : 's'
           } still not ordered).`
 

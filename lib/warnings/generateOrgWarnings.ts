@@ -156,7 +156,7 @@ export function generateOrgWarnings(input: {
   const invoicing = input.invoicing ?? input.orgDetails?.invoicing
   const payrollPolicy = input.payrollPolicy ?? input.orgDetails?.payrollTimePolicy ?? DEFAULT_PAYROLL_POLICY
   const now = input.referenceDate ?? new Date()
-  const prefs = input.notificationPreferences
+  const prefs = input.notificationPreferences ?? input.orgDetails?.materialCutOff ?? null
 
   const clashWarnings = warningDetection.detectClashes
     ? filterWarningsByLookahead(
@@ -204,6 +204,8 @@ export function generateOrgWarnings(input: {
       enabled: prefs ? prefs.materialOrderCutOff !== false : true,
       cutOffOnSaturday: prefs?.materialCutOffOnSaturday === true,
       cutOffOnSunday: prefs?.materialCutOffOnSunday === true,
+      cutOffHour: prefs?.materialCutOffHour,
+      cutOffMinute: prefs?.materialCutOffMinute,
       referenceDate: now,
     }
   )

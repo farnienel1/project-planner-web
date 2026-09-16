@@ -19,7 +19,7 @@ import {
   type AcceptedBookingClash,
 } from '@/lib/warnings/acceptedClashStorage'
 import { loadOrganizationDetails, type OrganizationDetails } from '@/lib/settings/organizationSettings'
-import { loadNotificationPreferences, type NotificationPreferences } from '@/lib/settings/notificationPreferences'
+import { loadMaterialCutOffSettings, type NotificationPreferences } from '@/lib/settings/notificationPreferences'
 import { generateOrgWarnings } from '@/lib/warnings/generateOrgWarnings'
 import { WarningsScreen } from '@/components/warnings/WarningsScreen'
 import type { OperativeBookingClashWarning } from '@/lib/scheduling/bookingClashUtils'
@@ -71,9 +71,11 @@ export default function WarningsPage() {
   ])
 
   useEffect(() => {
-    if (!user?.id) return
-    loadNotificationPreferences(user.id).then(setNotificationPreferences).catch(() => setNotificationPreferences(null))
-  }, [user?.id])
+    if (!user?.id || !organization?.id) return
+    loadMaterialCutOffSettings(organization.id, user.id)
+      .then(setNotificationPreferences)
+      .catch(() => setNotificationPreferences(null))
+  }, [user?.id, organization?.id])
 
   const rosterOperatives = useMemo(() => getActiveOperativesForScheduling(operatives), [operatives])
   const smallWorkIds = useMemo(() => new Set(smallWorks.map((w) => w.id)), [smallWorks])
