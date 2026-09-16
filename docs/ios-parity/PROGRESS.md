@@ -1,5 +1,5 @@
 # iOS → Web parity: progress
-Last updated: 2026-09-16 · Current step: Phase 2 foundations complete · Stopped at: Stop Gate 2 (ask Farnie for test org)
+Last updated: 2026-09-16 · Current step: Phase 3 lists (Daily overview fix + Small works / Operatives / Managers / Weekly Report) · Stopped at: Stop Gate 3
 
 ## Access check (Phase 0)
 - **WEB_ROOT:** `/workspace` (this repo, `project-planner-web`)
@@ -14,7 +14,7 @@ Last updated: 2026-09-16 · Current step: Phase 2 foundations complete · Stoppe
 - [x] 0 Access check
 - [x] 1 Discovery (00 ☑ 01 ☑ 02 ☑ 03 ☑ 04 ☑ 05 ☑) + Gate 1 answers (Q1 xcodeproj received; Q2 how-to; Q3–Q10 noted)
 - [x] 2 Foundations
-- [ ] 3 Sections
+- [ ] 3 Sections (started: Clients, Projects list+hub, Daily overview)
 - [ ] 4 Final audit
 
 ## Sections
@@ -29,11 +29,11 @@ Last updated: 2026-09-16 · Current step: Phase 2 foundations complete · Stoppe
 | 6 | Wholesalers | ☐ | ☐ | ☐ | ☐ | |
 | 7 | Material Catalogue | ☐ | ☐ | ☐ | ☐ | |
 | 8 | Sub Contractors | ☐ | ☐ | ☐ | ☐ | |
-| 9 | Clients | ☐ | ☐ | ☐ | ☐ | |
-| 10 | Managers | ☐ | ☐ | ☐ | ☐ | |
-| 11 | Operatives | ☐ | ☐ | ☐ | ☐ | No skills UI |
-| 12 | Projects | ☐ | ☐ | ☐ | ☐ | Write `manager: "Custom"` |
-| 13 | Small Works | ☐ | ☐ | ☐ | ☐ | |
+| 9 | Clients | ☑ | ☑ | ☐ | ☐ | Master–detail; UUID writes; address field; admin delete |
+| 10 | Managers | ☑ | ☑ | ☐ | ☐ | Roster = manager users; catalogue writes `managers/` |
+| 11 | Operatives | ☑ | ☑ | ☐ | ☐ | Roster = operativeMode users; catalogue writes `operatives/` |
+| 12 | Projects | ☑ list/hub | ☑ list/hub | ☐ | ☐ | Create/edit forms + job tiles later. Write `manager: "Custom"` |
+| 13 | Small Works | ☑ | ☑ list | ☐ | ☐ | Create form existing; list matches Projects |
 | 14 | Scheduling and My Schedule | ☐ | ☐ | ☐ | ☐ | Title-Case booking status |
 | 15 | Tasks | ☐ | ☐ | ☐ | ☐ | in scope (Q8) |
 | 16 | Job tiles (View, Materials, H&S, Deadlines, Location, Active users) | ☐ | ☐ | ☐ | ☐ | in scope (Q8) |
@@ -42,8 +42,8 @@ Last updated: 2026-09-16 · Current step: Phase 2 foundations complete · Stoppe
 | 19 | Site Audit | ☐ | ☐ | ☐ | ☐ | |
 | 20 | Site Map | ☐ | ☐ | ☐ | ☐ | Leaflet + Google; paid tiles |
 | 21 | Warnings | ☐ | ☐ | ☐ | ☐ | in scope (Q8) |
-| 22 | Daily Overview | ☐ | ☐ | ☐ | ☐ | in scope (Q8) |
-| 23 | Weekly Report | ☐ | ☐ | ☐ | ☐ | in scope (Q8) |
+| 22 | Daily Overview | ☑ | ☑ | ☐ | ☐ | People on job cards; hours estimated until s17 |
+| 23 | Weekly Report | ☑ | ☑ | ☐ | ☐ | HTML generate; Monday-first week |
 | 24 | Notifications, Help, Privacy, Profile | ☐ | ☐ | ☐ | ☐ | in scope (Q8) |
 
 ## Open questions
@@ -63,6 +63,7 @@ D1, D2, D5–D10 still at recommendation (see `STOP-GATE-1.md`). Q1–Q10 are de
 - 2026-09-16 · Q8: sections 14–16 and 21–24 stay in scope · Farnie
 - 2026-09-16 · Q9: write `self_employed`; read both · Farnie
 - 2026-09-16 · Phase 2 foundations: converters, permissions, shell, Home, auth merge/privacy, live bookings · agent
+- 2026-09-16 · Phase 3 started with Clients, Projects list/hub, Daily overview (not Manage Users first) · Farnie
 
 ## Approved exceptions
 - Skills catalogue UI removed on web to match iOS deprecation (Q5). Firestore `users.skills` permission flag still written `false`. Existing `operatives.skills[]` is preserved on save, not wiped.

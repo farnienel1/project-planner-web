@@ -54,6 +54,17 @@ export function isSameLondonDay(a: Date, b: Date): boolean {
   return dayKey(a) === dayKey(b)
 }
 
+/**
+ * Same-day match in Europe/London, matching iOS
+ * `Calendar.current.isDate(_:inSameDayAs:)` for UK orgs.
+ * UTC midnight and London midnight for a UK calendar day already share a London day key.
+ * Do not also match `toDateString()` — on UTC hosts that pulls in the previous local day.
+ */
+export function coversCalendarDay(value: Date, day: Date): boolean {
+  if (!(value instanceof Date) || Number.isNaN(value.getTime())) return false
+  return isSameLondonDay(value, day)
+}
+
 export function addLondonDays(date: Date, days: number): Date {
   const { y, m, d } = partsInLondon(date)
   const noon = new Date(Date.UTC(y, m - 1, d + days, 12, 0, 0))

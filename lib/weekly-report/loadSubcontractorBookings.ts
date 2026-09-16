@@ -18,6 +18,10 @@ export async function loadSubcontractorBookings(organizationId: string): Promise
       timeSlot: String(data.timeSlot || 'FULL DAY'),
       workStartTime: data.workStartTime ? String(data.workStartTime) : undefined,
       workEndTime: data.workEndTime ? String(data.workEndTime) : undefined,
+      status: data.status ? String(data.status) : undefined,
+      bookedOperativeNames: Array.isArray(data.bookedOperativeNames)
+        ? (data.bookedOperativeNames as unknown[]).filter((n): n is string => typeof n === 'string')
+        : undefined,
     })
   }
   return rows

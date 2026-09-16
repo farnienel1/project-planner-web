@@ -19,10 +19,11 @@ import {
   getWeek,
 } from 'date-fns'
 import type { Booking } from '@/types'
-import { LoadingSpinner } from '@/components/dashboard/PageShell'
 import { BookingEditSheet } from '@/components/schedule/BookingEditSheet'
 import { AddWeekToCalendarButton } from '@/components/schedule/AddWeekToCalendarButton'
+import { MyScheduleTotalHoursCard, myScheduleClockSubtitle, myScheduleStripeClass } from '@/components/schedule/MyScheduleLooks'
 import type { OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
+import { DEFAULT_PAYROLL_POLICY } from '@/lib/settings/organizationSettings'
 
 type FilterStatus = 'all' | 'confirmed' | 'tentative'
 
@@ -173,24 +174,22 @@ function BookingCard({
     >
       <button
         type="button"
-        className="flex w-full items-start gap-4 px-5 py-4 text-left transition hover:bg-slate-50/80"
+        className="flex w-full items-stretch gap-0 text-left transition hover:bg-slate-50/80"
         onClick={() => setExpanded((v) => !v)}
         aria-expanded={expanded}
       >
         <div
-          className={`mt-0.5 flex h-10 w-1.5 shrink-0 rounded-full ${
-            (booking.timeSlot || '').toString().toUpperCase().includes('FULL')
-              ? 'bg-indigo-400'
-              : (booking.timeSlot || '').toString().toUpperCase() === 'AM' ||
-                  (booking.timeSlot || '').toString().toUpperCase() === 'MORNING'
-                ? 'bg-amber-400'
-                : 'bg-violet-400'
+          className={`w-1 shrink-0 self-stretch ${
+            booking.source === 'manager' ? myScheduleStripeClass('office') : myScheduleStripeClass('project')
           }`}
         />
 
-        <div className="min-w-0 flex-1">
-          <p className={`truncate text-sm font-semibold ${past ? 'text-slate-500' : 'text-slate-900'}`}>
+        <div className="min-w-0 flex-1 px-4 py-3">
+          <p className={`truncate text-[15px] font-semibold ${past ? 'text-slate-500' : 'text-slate-900'}`}>
             {projectName}
+          </p>
+          <p className="mt-0.5 text-[12px] font-medium text-ios-muted">
+            {myScheduleClockSubtitle(booking)}
           </p>
           <div className="mt-1 flex flex-wrap items-center gap-1.5">
             <span className="inline-flex items-center gap-1 text-xs text-slate-500">
@@ -541,8 +540,13 @@ export function ScheduleScreen({
     return isPast(startOfDay(d)) && !isToday(d)
   }).length
 
-  if (loading) {
-    return <LoadingSpinner label={variant === 'personal' ? 'Loading My Schedule…' : 'Loading daily overview…'} />
+  if (loading && scopedBookings.length === 0) {
+    return (
+      <div className="space-y-3">
+        <h1 className="text-[28px] font-semibold tracking-tight">{variant === 'personal' ? 'My Schedule' : 'Daily overview'}</h1>
+        <p className="text-[14px] text-ios-muted">{variant === 'personal' ? 'Opening your week…' : 'Opening daily overview…'}</p>
+      </div>
+    )
   }
 
   const pageTitle = variant === 'personal' ? 'My Schedule' : 'Daily overview'
@@ -559,8 +563,8 @@ export function ScheduleScreen({
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900">{pageTitle}</h1>
-          <p className="mt-1 text-sm text-slate-500">{pageSubtitle}</p>
+          <h1 className="text-[28px] font-semibold tracking-tight text-ios-ink">{pageTitle}</h1>
+          <p className="mt-1 text-[14px] text-ios-muted">{pageSubtitle}</p>
         </div>
         {variant === 'overview' && (
           <Link
@@ -659,13 +663,21 @@ export function ScheduleScreen({
       </div>
 
       {isPersonal && (
-        <AddWeekToCalendarButton
-          bookings={scopedBookings}
-          weekStart={weekStart}
-          projectsById={projectsById}
-          organizationName={organizationName}
-          payrollPolicy={payrollPolicy}
-        />
+        <>
+          <AddWeekToCalendarButton
+            bookings={scopedBookings}
+            weekStart={weekStart}
+            projectsById={projectsById}
+            organizationName={organizationName}
+            payrollPolicy={payrollPolicy}
+          />
+          {selectedDate ? (
+            <MyScheduleTotalHoursCard
+              bookings={bookingsByDate.get(startOfDay(selectedDate).toISOString()) || []}
+              policy={payrollPolicy || DEFAULT_PAYROLL_POLICY}
+            />
+          ) : null}
+        </>
       )}
 
       {!isPersonal && (

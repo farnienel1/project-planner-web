@@ -52,11 +52,15 @@ export interface Operative {
   phone?: string;
   startDate: Date;
   hourlyRate: number;
+  dayRate?: number;
   skills: (Skill | string)[];
   qualifications: Qualification[];
   qualificationExpiryDates?: Record<string, Date>;
   qualificationCertificateURLs?: Record<string, string>;
   isActive: boolean;
+  tradeTypePreset?: string;
+  tradeTypeCustom?: string;
+  notes?: string;
   createdAt: Date;
   updatedAt: Date;
   organizationId?: string;
@@ -71,6 +75,9 @@ export interface Manager {
   mobile?: string;
   department?: string;
   isActive: boolean;
+  notes?: string;
+  tradeTypePreset?: string;
+  tradeTypeCustom?: string;
   createdAt: Date;
   updatedAt: Date;
   organizationId?: string;

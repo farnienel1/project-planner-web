@@ -5,7 +5,7 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { parseBooking, serializeBooking, serializeProject } from './converters.ts'
+import { parseBooking, serializeBooking, serializeManager, serializeOperative, serializeProject } from './converters.ts'
 import { IosWriteValidationError } from './firestoreCodec.ts'
 import { normalizeBookingStatus, normalizeEmploymentType } from './enums.ts'
 
@@ -20,6 +20,59 @@ test('parseBooking skips lowercase status that is not aliased? wait — aliases 
   })
   assert.equal(result.ok, true)
   if (result.ok) assert.equal(result.value.status, 'Confirmed')
+})
+
+test('parseBooking accepts missing bookedBy and Full Day aliases', () => {
+  const result = parseBooking('ID', {
+    operativeId: 'AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA',
+    projectId: 'BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB',
+    date: new Date('2026-09-16T00:00:00Z'),
+    timeSlot: 'Full Day',
+    status: 'Confirmed',
+  })
+  assert.equal(result.ok, true)
+  if (result.ok) {
+    assert.equal(result.value.timeSlot, 'FULL DAY')
+    assert.equal(result.value.bookedBy, '')
+  }
+})
+
+test('serializeOperative and serializeManager write iOS empty-string fields', () => {
+  const now = new Date('2026-01-01T00:00:00Z')
+  const op = serializeOperative({
+    id: 'AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA',
+    firstName: 'Ada',
+    lastName: 'Booked',
+    email: 'ada@x.com',
+    startDate: now,
+    hourlyRate: 12,
+    dayRate: 100,
+    skills: [],
+    qualifications: [],
+    isActive: true,
+    organizationId: 'org1',
+    createdAt: now,
+    updatedAt: now,
+  })
+  assert.equal(op.name, 'Ada Booked')
+  assert.equal(op.phone, '')
+  assert.equal(op.currencySymbol, '£')
+  assert.equal(op.dayRate, 100)
+  assert.equal(op.organizationId, 'org1')
+
+  const mgr = serializeManager({
+    id: 'BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB',
+    firstName: 'Pat',
+    lastName: 'Boss',
+    email: 'pat@x.com',
+    isActive: true,
+    organizationId: 'org1',
+    createdAt: now,
+    updatedAt: now,
+  })
+  assert.equal(mgr.mobileNumber, '')
+  assert.equal(mgr.department, '')
+  assert.equal(mgr.notes, '')
 })
 
 test('parseBooking skips missing operativeId', () => {
