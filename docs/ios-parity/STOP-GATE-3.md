@@ -1,33 +1,32 @@
-## ⏸ STOP GATE: Phase 3 — Clients, Projects list/hub, Daily overview
+## ⏸ STOP GATE: Phase 3 — lists (Clients → Weekly Report)
 **Done:**
-- Specs for Clients, Projects (list+hub), Daily overview from Swift.
-- Clients master–detail with original wording, address field, UUID `setDoc`, `client_created` notification, admin-only delete.
-- Projects list: stats, search (incl. address), chips, iOS work cards, `visibleWorks`, empty states.
-- Project hub desktop split (Manage 8/12 + Details 4/12).
-- Daily overview date strip, glance hero, unbooked labour, annual leave, other/office/WFH, by-project cards.
+- Specs for Clients, Projects (list+hub), Daily overview, Small works, Operatives, Managers, Weekly Report from Swift.
+- Clients master–detail with UUID `setDoc`, `client_created` notification, admin-only delete.
+- Projects list: stats, search, chips, iOS work cards, `visibleWorks`.
+- **Daily overview fix:** job cards now list people (operatives, managers on-site, subcontractors) from Firebase; date matching covers London/UTC/local; getDocs seed + live `onSnapshot` for bookings; missing `bookedBy` / `Full Day` aliases parse; loading and Firestore errors shown.
+- Small works list matches Projects (Active default, `visibleWorks` `.smallWorks`, `WorkCard`).
+- Operatives: `operativeMode` users, token search, Create Operative writes `operatives/{UUID}`.
+- Managers: manager users excluding admins; Create Manager writes `managers/{UUID}` with `mobileNumber`.
+- Weekly Report: This Week / Last Week / invoicing / custom range; Generate Report from the same Firebase collections iOS uses.
 
-**Files created/changed:** `docs/ios-parity/sections/09-clients.md`, `12-projects.md`, `22-daily-overview.md`; `components/clients/ClientsScreen.tsx`; `components/projects/{WorkCard,ProjectsListScreen}.tsx`; `components/daily-overview/DailyOverviewScreen.tsx`; `lib/daily-overview/buildDailyOverview.ts`; converters serializeClient/Notification; `projectStore` client writes.
+**Files created/changed:** `docs/ios-parity/sections/{09,10,11,12,13,22,23}-*.md`; Daily overview builder/screen; SmallWorks/Operatives/Managers list screens; serializeOperative/serializeManager; subscribeOrgCollection getDocs seed.
 
-**Evidence coverage:** Clients 5/5 Swift files. ProjectsView + hub portion of ProjectDetailView (not 6k-line tiles). DailyOverviewView layout/grouping (payroll engine not ported).
+**Evidence coverage:** DailyOverviewView people rows + grouping. SmallWorksView + CreateSmallWorksView write path. OperativesView + CreateOperativeView. ManagersView + CreateManagerView. WeeklyReportView period + export sections (HTML instead of xlsx/pdf).
 
 **Parity table:**
 | iOS element | Web | Status | Note |
 | Client cards / create / edit | `ClientsScreen` | ✅ | |
-| `saveClient` UUID + empty strings | `serializeClient` | ✅ | |
-| Jobs not rewritten on client edit | updateClient only | ✅ | |
 | Projects list work cards | `WorkCard` | ✅ | |
-| Project hub tiles Deadlines / Active users | — | ❌ | Section 16 |
-| Daily overview grouping | `buildDailyOverview` | ✅ | |
-| Payroll OT hours | estimated | ⚠️ | Section 17 |
+| Daily overview people on jobs | `buildDailyOverview` + screen | ✅ | Hours estimated until s17 |
+| Small works list | `SmallWorksListScreen` | ✅ | |
+| Operatives roster | `OperativesListScreen` | ✅ | |
+| Managers roster | `ManagersListScreen` | ✅ | Admins excluded from this list |
+| Weekly report generate | `WeeklyReportScreen` | ✅ | HTML export |
 
-**Deviations and why:** Daily overview hours/OT use 8h full-day estimates until PayrollHoursEngine. Book labour opens `/dashboard/schedule`. Create/edit project forms unchanged.
+**Deviations and why:** Daily overview OT uses 8h estimates until PayrollHoursEngine. Book labour opens `/dashboard/schedule`. Weekly report HTML rather than xlsx/pdf binaries. Create/edit project hub tiles later (s16).
 
 **Blocked / needs Farnie:** Q11 test org for write tests. No iOS screenshots in `docs/ios-parity/screenshots/` (Q12).
 
-**Questions:**
-Q12. Please drop iOS screenshots for Clients, Projects list/hub, and Daily overview into `docs/ios-parity/screenshots/` (or attach in chat) so we can match light/dark pixels.
-Q13. Next section after this trio: Manage Users (default Phase 3 #1) or continue Projects create/edit?
+**Questions:** none new.
 
-**Suggestions (not built):** Projects table/grid toggle (optional desktop extra).
-
-**Next step:** Farnie’s go-ahead and screenshots; then either verify on a test org or the next section.
+**Next step:** Farnie’s check of Daily overview + these four screens on the live org; then Manage Users / Add User or project tiles.

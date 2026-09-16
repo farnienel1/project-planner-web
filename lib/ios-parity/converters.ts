@@ -47,7 +47,9 @@ import {
   clientWriteSchema,
   holidayWriteSchema,
   managerSiteBookingWriteSchema,
+  managerWriteSchema,
   notificationWriteSchema,
+  operativeWriteSchema,
   projectWriteSchema,
   taskWriteSchema,
   userWriteSchema,
@@ -327,16 +329,15 @@ export function parseBooking(
   const operativeId = asString(data.operativeId)
   const projectId = asString(data.projectId)
   const date = asDate(data.date)
-  const timeSlot = normalizeTimeSlot(data.timeSlot)
+  const timeSlot = normalizeTimeSlot(data.timeSlot) || (asString(data.timeSlot) ? null : 'FULL DAY')
   const bookedBy = asString(data.bookedBy)
   const status = normalizeBookingStatus(data.status)
-  if (!operativeId || !projectId || !date || !timeSlot || !bookedBy || !status) {
+  if (!operativeId || !projectId || !date || !timeSlot || !status) {
     return fail([
       !operativeId ? 'operativeId missing/invalid' : '',
       !projectId ? 'projectId missing/invalid' : '',
       !date ? 'date missing/invalid Timestamp' : '',
       !timeSlot ? `timeSlot invalid (${String(data.timeSlot)})` : '',
-      !bookedBy ? 'bookedBy missing' : '',
       !status ? `status invalid (${String(data.status)})` : '',
     ].filter(Boolean))
   }
@@ -842,15 +843,74 @@ export function parseOperative(
     phone: asOptionalString(data.phone),
     startDate: asDate(data.startDate) || new Date(),
     hourlyRate: asNumber(data.hourlyRate) ?? 0,
+    dayRate: asNumber(data.dayRate) ?? asNumber(data.hourlyRate) ?? 0,
     skills: Array.isArray(data.skills) ? (data.skills as Operative['skills']) : [],
     qualifications: Array.isArray(data.qualifications)
       ? (data.qualifications as Operative['qualifications'])
       : [],
     isActive: asBool(data.isActive, true),
+    tradeTypePreset: asOptionalString(data.tradeTypePreset),
+    tradeTypeCustom: asOptionalString(data.tradeTypeCustom),
+    notes: asOptionalString(data.notes),
     organizationId,
     createdAt: asDate(data.createdAt) || new Date(),
     updatedAt: asDate(data.updatedAt) || new Date(),
   })
+}
+
+/** iOS OperativeStore.save — organizations/{orgId}/operatives/{uuidString} */
+export function serializeOperative(
+  operative: Operative & { organizationId: string }
+): Record<string, unknown> {
+  const id = operative.id?.trim() || newUppercaseUuid()
+  const firstName = operative.firstName.trim()
+  const lastName = operative.lastName.trim()
+  const parsed = operativeWriteSchema.safeParse({
+    id,
+    firstName,
+    lastName,
+    name: `${firstName} ${lastName}`.trim(),
+    email: operative.email.trim(),
+    phone: operative.phone?.trim() || '',
+    startDate: operative.startDate instanceof Date ? operative.startDate : new Date(operative.startDate),
+    skills: operative.skills || [],
+    qualifications: operative.qualifications || [],
+    isActive: operative.isActive !== false,
+    hourlyRate: operative.hourlyRate || 0,
+    dayRate: operative.dayRate ?? operative.hourlyRate ?? 0,
+    currencySymbol: '£',
+    notes: operative.notes?.trim() || '',
+    tradeTypePreset: operative.tradeTypePreset?.trim() || '',
+    tradeTypeCustom: operative.tradeTypeCustom?.trim() || '',
+    organizationId: operative.organizationId,
+    createdAt: operative.createdAt instanceof Date ? operative.createdAt : new Date(),
+    updatedAt: new Date(),
+  })
+  if (!parsed.success) {
+    throw new IosWriteValidationError('Invalid operative write', issuesFromZod(parsed.error))
+  }
+  const v = parsed.data
+  return {
+    id: v.id,
+    firstName: v.firstName,
+    lastName: v.lastName,
+    name: v.name,
+    email: v.email,
+    phone: v.phone,
+    startDate: asTimestamp(v.startDate),
+    skills: v.skills,
+    qualifications: v.qualifications,
+    isActive: v.isActive,
+    hourlyRate: v.hourlyRate,
+    currencySymbol: v.currencySymbol,
+    notes: v.notes,
+    dayRate: v.dayRate,
+    tradeTypePreset: v.tradeTypePreset,
+    tradeTypeCustom: v.tradeTypeCustom,
+    organizationId: v.organizationId,
+    createdAt: asTimestamp(v.createdAt),
+    updatedAt: asTimestamp(v.updatedAt),
+  }
 }
 
 export function parseManager(
@@ -862,19 +922,62 @@ export function parseManager(
   const lastName = asString(data.lastName)
   const email = asString(data.email)
   if (!firstName || !email) return fail(['firstName and email required'])
+  const mobile = asOptionalString(data.mobileNumber) || asOptionalString(data.mobile) || asOptionalString(data.phone)
   return ok({
     id: docId,
     firstName,
     lastName,
     email,
-    phone: asOptionalString(data.phone),
-    mobile: asOptionalString(data.mobile),
+    phone: asOptionalString(data.phone) || mobile,
+    mobile,
     department: asOptionalString(data.department),
     isActive: asBool(data.isActive, true),
+    notes: asOptionalString(data.notes),
+    tradeTypePreset: asOptionalString(data.tradeTypePreset),
+    tradeTypeCustom: asOptionalString(data.tradeTypeCustom),
     organizationId,
     createdAt: asDate(data.createdAt) || new Date(),
     updatedAt: asDate(data.updatedAt) || new Date(),
   })
+}
+
+/** iOS CreateManagerView — organizations/{orgId}/managers/{uuidString} */
+export function serializeManager(manager: Manager & { organizationId: string }): Record<string, unknown> {
+  const id = manager.id?.trim() || newUppercaseUuid()
+  const parsed = managerWriteSchema.safeParse({
+    id,
+    firstName: manager.firstName.trim(),
+    lastName: manager.lastName.trim(),
+    email: manager.email.trim(),
+    mobileNumber: manager.mobile?.trim() || manager.phone?.trim() || '',
+    department: manager.department?.trim() || '',
+    isActive: manager.isActive !== false,
+    notes: manager.notes?.trim() || '',
+    tradeTypePreset: manager.tradeTypePreset?.trim() || '',
+    tradeTypeCustom: manager.tradeTypeCustom?.trim() || '',
+    organizationId: manager.organizationId,
+    createdAt: manager.createdAt instanceof Date ? manager.createdAt : new Date(),
+    updatedAt: new Date(),
+  })
+  if (!parsed.success) {
+    throw new IosWriteValidationError('Invalid manager write', issuesFromZod(parsed.error))
+  }
+  const v = parsed.data
+  return {
+    id: v.id,
+    firstName: v.firstName,
+    lastName: v.lastName,
+    email: v.email,
+    mobileNumber: v.mobileNumber,
+    department: v.department,
+    isActive: v.isActive,
+    notes: v.notes,
+    tradeTypePreset: v.tradeTypePreset,
+    tradeTypeCustom: v.tradeTypeCustom,
+    organizationId: v.organizationId,
+    createdAt: asTimestamp(v.createdAt),
+    updatedAt: asTimestamp(v.updatedAt),
+  }
 }
 
 export interface AppInboxNotification {

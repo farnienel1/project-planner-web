@@ -54,6 +54,19 @@ export function isSameLondonDay(a: Date, b: Date): boolean {
   return dayKey(a) === dayKey(b)
 }
 
+/**
+ * Booking dates in Firestore are sometimes London midnight, UTC midnight, or
+ * device-local start-of-day. Match the way iOS `Calendar.current.isDate(_:inSameDayAs:)`
+ * behaves for UK users, plus UTC date-only documents the old web schedule used.
+ */
+export function coversCalendarDay(value: Date, day: Date): boolean {
+  if (!(value instanceof Date) || Number.isNaN(value.getTime())) return false
+  if (isSameLondonDay(value, day)) return true
+  if (value.toDateString() === day.toDateString()) return true
+  const utcKey = `${value.getUTCFullYear()}-${String(value.getUTCMonth() + 1).padStart(2, '0')}-${String(value.getUTCDate()).padStart(2, '0')}`
+  return utcKey === dayKey(day)
+}
+
 export function addLondonDays(date: Date, days: number): Date {
   const { y, m, d } = partsInLondon(date)
   const noon = new Date(Date.UTC(y, m - 1, d + days, 12, 0, 0))

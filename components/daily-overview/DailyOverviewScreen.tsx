@@ -15,13 +15,16 @@ import { useOperativeStore } from '@/lib/stores/operativeStore'
 import { useProjectStore } from '@/lib/stores/projectStore'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { useHolidayStore } from '@/lib/stores/holidayStore'
+import { useSubcontractorStore } from '@/lib/stores/subcontractorStore'
 import { canViewDailyOverview, hasAdminAccess } from '@/lib/permissions'
 import { dayKey, londonMidnight } from '@/lib/ios-parity/londonTime'
+import { loadSubcontractorBookings } from '@/lib/weekly-report/loadSubcontractorBookings'
 import {
   buildDailyOverview,
   initialsFrom,
   overviewFormatHours,
   shiftOverviewDay,
+  type OverviewPersonRow,
 } from '@/lib/daily-overview/buildDailyOverview'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import type { User } from '@/types'
@@ -48,12 +51,16 @@ function holidayName(
 
 export function DailyOverviewScreen() {
   const { user, organization } = useAuthStore()
-  const { bookings, loadBookings, loading: bookingsLoading } = useBookingStore()
-  const { managerSiteBookings, loadManagerSiteBookings } = useManagerScheduleStore()
+  const { bookings, loadBookings, loading: bookingsLoading, error: bookingsError } = useBookingStore()
+  const { managerSiteBookings, loadManagerSiteBookings, loading: managerLoading } = useManagerScheduleStore()
   const { operatives, loadOperatives } = useOperativeStore()
   const { users, loadUsers } = useOrgUserStore()
   const { projects, smallWorks, loadProjects, loadSmallWorks } = useProjectStore()
   const { bookings: holidays, loadBookings: loadHolidays } = useHolidayStore()
+  const { subcontractors, loadSubcontractors } = useSubcontractorStore()
+  const [subcontractorBookings, setSubcontractorBookings] = useState<
+    Awaited<ReturnType<typeof loadSubcontractorBookings>>
+  >([])
   const [day, setDay] = useState(() => londonMidnight(new Date()))
 
   useEffect(() => {
@@ -65,6 +72,10 @@ export function DailyOverviewScreen() {
     loadProjects(organization.id, true)
     loadSmallWorks(organization.id)
     loadHolidays(organization.id)
+    loadSubcontractors(organization.id)
+    loadSubcontractorBookings(organization.id)
+      .then(setSubcontractorBookings)
+      .catch(() => setSubcontractorBookings([]))
   }, [
     organization?.id,
     loadBookings,
@@ -74,6 +85,7 @@ export function DailyOverviewScreen() {
     loadProjects,
     loadSmallWorks,
     loadHolidays,
+    loadSubcontractors,
   ])
 
   const model = useMemo(
@@ -86,12 +98,26 @@ export function DailyOverviewScreen() {
         holidays,
         users,
         operatives,
+        subcontractorBookings,
+        subcontractors,
       }),
-    [day, projects, smallWorks, bookings, managerSiteBookings, holidays, users, operatives]
+    [
+      day,
+      projects,
+      smallWorks,
+      bookings,
+      managerSiteBookings,
+      holidays,
+      users,
+      operatives,
+      subcontractorBookings,
+      subcontractors,
+    ]
   )
 
-  const canBook = Boolean(user && (hasAdminAccess(user) || user.permissions.manager))
+  const canBook = Boolean(user && (hasAdminAccess(user) || user.permissions?.manager))
   const dateParam = dayKey(day)
+  const loading = bookingsLoading || managerLoading
 
   if (user && !canViewDailyOverview(user)) {
     return <p className="text-ios-muted">Daily overview is not available for this account.</p>
@@ -112,6 +138,12 @@ export function DailyOverviewScreen() {
           />
         </label>
       </div>
+
+      {bookingsError ? (
+        <p className="rounded-xl border border-[#F4C0C0] bg-[#FCEBEB] px-3 py-2 text-[13px] text-[#A32D2D]">
+          Could not load bookings from Firebase: {bookingsError}
+        </p>
+      ) : null}
 
       <div className="flex items-center rounded-[18px] border border-ios-border bg-ios-card px-2 py-1.5">
         <button
@@ -175,20 +207,51 @@ export function DailyOverviewScreen() {
         </div>
       </section>
 
+      {loading && bookings.length === 0 && managerSiteBookings.length === 0 ? (
+        <p className="py-8 text-center text-[14px] text-ios-muted">Loading daily overview...</p>
+      ) : null}
+
       <div className="xl:grid xl:grid-cols-12 xl:gap-6">
         <div className="space-y-4 xl:col-span-8">
           {model.projectCards.length > 0 ? (
             <section>
               <p className="mb-2 px-1 text-[11px] font-medium uppercase tracking-[0.4px] text-ios-muted">By project</p>
               <div className="grid gap-2.5 lg:grid-cols-2">
-                {model.projectCards.map(({ project, bookings: jobBookings, isSmallWorks }) => (
+                {model.projectCards.map(({ project, people, peopleCount, bookedHours, isSmallWorks }) => (
                   <article key={project.id} className="rounded-2xl border border-ios-border bg-ios-card p-3.5">
-                    <p className="text-[13px] font-medium">
-                      {project.jobNumber} {project.siteName}
-                    </p>
-                    <p className="mt-1 text-[11px] text-ios-muted">
-                      {jobBookings.length} booking{jobBookings.length === 1 ? '' : 's'}
-                    </p>
+                    <div className="flex items-start gap-2.5">
+                      <div
+                        className={`grid h-8 w-8 shrink-0 place-items-center rounded-[9px] ${
+                          isSmallWorks ? 'bg-[#FAEED9] text-[#854F0B]' : 'bg-[#E1F5EE] text-[#0F6E56]'
+                        }`}
+                      >
+                        {isSmallWorks ? '⚒' : '📁'}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[14px] font-medium">
+                          <span className={isSmallWorks ? 'text-[#854F0B]' : 'text-[#185FA5]'}>{project.jobNumber}</span>{' '}
+                          <span>{project.siteName}</span>
+                          {isSmallWorks ? (
+                            <span className="ml-1.5 rounded bg-[#854F0B]/15 px-1 py-0.5 text-[8px] font-medium uppercase text-[#854F0B]">
+                              Small works
+                            </span>
+                          ) : null}
+                        </p>
+                        <p className="mt-0.5 text-[12px] font-medium text-ios-muted">
+                          {peopleCount} {peopleCount === 1 ? 'person' : 'people'} · {overviewFormatHours(bookedHours)}h
+                          booked
+                        </p>
+                      </div>
+                    </div>
+                    {people.length > 0 ? (
+                      <div className="mt-2.5 divide-y divide-ios-border border-t border-ios-border">
+                        {people.map((row) => (
+                          <PersonRow key={row.id} row={row} />
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="mt-2 text-[12px] text-ios-muted">No named people on this job today.</p>
+                    )}
                     <Link
                       href={isSmallWorks ? `/dashboard/small-works/${project.id}` : `/dashboard/projects/${project.id}`}
                       className="mt-2 flex items-center justify-center gap-1 rounded-[10px] bg-[#F7F8FA] py-2 text-[12px] font-medium text-[#185FA5]"
@@ -201,7 +264,7 @@ export function DailyOverviewScreen() {
             </section>
           ) : null}
 
-          {model.empty && !bookingsLoading ? (
+          {model.empty && !loading ? (
             <p className="rounded-2xl border border-ios-border bg-ios-card py-10 text-center text-[15px] font-medium text-ios-muted">
               No bookings
             </p>
@@ -243,7 +306,7 @@ export function DailyOverviewScreen() {
                 {model.holidays.map((row) => (
                   <p key={row.id} className="py-1.5 text-[13px]">
                     {holidayName(row, users, operatives)}
-                    <span className="ml-2 text-[11px] text-ios-muted">{row.timeSlot}</span>
+                    <span className="ml-2 text-[11px] text-ios-muted">Annual leave</span>
                   </p>
                 ))}
               </div>
@@ -267,6 +330,26 @@ export function DailyOverviewScreen() {
           ) : null}
         </div>
       </div>
+    </div>
+  )
+}
+
+function PersonRow({ row }: { row: OverviewPersonRow }) {
+  return (
+    <div className="flex items-center gap-2.5 py-2">
+      <span className="grid h-[26px] w-[26px] shrink-0 place-items-center rounded-full bg-gradient-to-br from-[#185FA5] to-[#378ADD] text-[10px] font-medium text-white">
+        {row.initials}
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-[13px] font-medium">{row.name}</p>
+        {row.bookedOperativeNames.map((name) => (
+          <p key={name} className="truncate text-[11px] text-ios-muted">
+            {name}
+          </p>
+        ))}
+        <p className="text-[11px] font-medium text-[#0F6E56]">{row.subtitle}</p>
+      </div>
+      <span className="rounded bg-[#E1F5EE] px-1.5 py-0.5 text-[11px] font-medium text-[#0F6E56]">{row.pillText}</span>
     </div>
   )
 }

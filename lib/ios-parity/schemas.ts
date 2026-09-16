@@ -142,6 +142,7 @@ export const clientWriteSchema = z.object({
 })
 
 export const operativeWriteSchema = z.object({
+  id: z.string().min(1),
   firstName: z.string(),
   lastName: z.string(),
   name: z.string(),
@@ -155,6 +156,24 @@ export const operativeWriteSchema = z.object({
   dayRate: z.number(),
   currencySymbol: z.string(),
   notes: z.string(),
+  tradeTypePreset: z.string(),
+  tradeTypeCustom: z.string(),
+  organizationId: z.string().min(1),
+  createdAt: z.date(),
+  updatedAt: z.date(),
+})
+
+export const managerWriteSchema = z.object({
+  id: z.string().min(1),
+  firstName: z.string().min(1),
+  lastName: z.string(),
+  email: z.string().min(1),
+  mobileNumber: z.string(),
+  department: z.string(),
+  isActive: z.boolean(),
+  notes: z.string(),
+  tradeTypePreset: z.string(),
+  tradeTypeCustom: z.string(),
   organizationId: z.string().min(1),
   createdAt: z.date(),
   updatedAt: z.date(),
