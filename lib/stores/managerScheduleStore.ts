@@ -2,10 +2,10 @@
 
 import { create } from 'zustand'
 import { deleteDoc, doc, setDoc } from 'firebase/firestore'
-import { startOfDay } from 'date-fns'
 import { db } from '@/lib/firebase/config'
 import { isOrgCollectionSubscribed, subscribeOrgCollection } from '@/lib/firebase/subscribeOrgCollection'
 import { newUppercaseUuid } from '@/lib/ios-parity/uuid'
+import { londonMidnight } from '@/lib/ios-parity/londonTime'
 import {
   logSkippedDocument,
   parseManagerSiteBooking,
@@ -67,7 +67,7 @@ export const useManagerScheduleStore = create<ManagerScheduleState>((set, get) =
     const next: ManagerSiteBooking = {
       id,
       userId: booking.userId,
-      date: startOfDay(booking.date),
+      date: londonMidnight(booking.date),
       timeSlot: booking.timeSlot,
       locationType: booking.locationType,
       locationId: booking.locationId,
