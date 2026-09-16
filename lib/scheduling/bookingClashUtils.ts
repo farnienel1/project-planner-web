@@ -4,10 +4,17 @@ import { UserRole } from '@/types'
 import type { ScheduleDateSlot } from '@/lib/scheduling/scheduleUtils'
 import { slotToFirestore } from '@/lib/scheduling/scheduleUtils'
 import { dayKey, isSameLondonDay, londonMidnight } from '@/lib/ios-parity/londonTime'
-import { isActiveBookingStatus } from '@/lib/ios-parity/enums'
+import { isActiveBookingStatus, isSmallWorksJobType } from '@/lib/ios-parity/enums'
 import type { OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 import { DEFAULT_PAYROLL_POLICY } from '@/lib/settings/organizationSettings'
-import { bookingsOverlapByInterval, overlappingClusters } from '@/lib/warnings/clashIntervals'
+import {
+  bookingsOverlapByInterval,
+  formatWarningHours,
+  operativeClashInterval,
+  overlappingClusters,
+  paidHoursForOperativeBooking,
+} from '@/lib/warnings/clashIntervals'
+import type { ClashTimelineEntry } from '@/lib/warnings/clashTimeline'
 
 export interface OperativeBookingClash {
   operativeId: string
@@ -32,6 +39,7 @@ export interface OperativeBookingClashWarning {
   projectALabel: string
   projectBLabel: string
   message: string
+  entries: ClashTimelineEntry[]
 }
 
 function isActiveBooking(booking: Booking): boolean {
@@ -108,6 +116,30 @@ function projectLabel(projectId: string, projectsById: Map<string, Project>): st
   const project = projectsById.get(projectId)
   if (!project) return 'Another job'
   return `${project.jobNumber} ${project.siteName}`.trim()
+}
+
+export function clashEntryFromOperativeBooking(
+  booking: Booking,
+  project: Project | undefined,
+  payrollPolicy: OrgPayrollTimePolicy
+): ClashTimelineEntry {
+  const iv = operativeClashInterval(booking, payrollPolicy) ?? { start: 8 * 60, end: 17 * 60 }
+  const hours = paidHoursForOperativeBooking(booking, payrollPolicy)
+  const clock =
+    booking.workStartTime?.trim() && booking.workEndTime?.trim()
+      ? `${booking.workStartTime}–${booking.workEndTime}`
+      : String(booking.timeSlot)
+  return {
+    bookingId: booking.id,
+    jobNumber: project?.jobNumber,
+    siteName: project?.siteName,
+    isSmallWorks: project ? isSmallWorksJobType(project.jobType) : false,
+    locationLabel: project ? `${project.jobNumber} ${project.siteName}`.trim() : 'Project',
+    timeLabel: clock,
+    startMinutes: iv.start,
+    endMinutes: iv.end,
+    hoursLabel: `${formatWarningHours(hours)}h`,
+  }
 }
 
 export function detectOperativeClashes({
@@ -251,6 +283,9 @@ export function computeOperativeBookingClashWarnings(
         projectALabel,
         projectBLabel,
         message: `${operativeName} is booked in ${place} places on ${format(londonMidnight(a.date), 'd MMM yyyy')}. Approve if it's intentional and it'll be noted on the weekly report.`,
+        entries: sorted.map((booking) =>
+          clashEntryFromOperativeBooking(booking, projectsById.get(booking.projectId), payrollPolicy)
+        ),
       })
     }
   }

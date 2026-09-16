@@ -13,6 +13,11 @@ import {
 } from '@/lib/ios-parity/converters'
 import type { ManagerLocationType, ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 
+function requireDb() {
+  if (!db) throw new Error('Firebase is not configured')
+  return db
+}
+
 export type SaveManagerSiteBookingInput = {
   userId: string
   date: Date
@@ -62,6 +67,8 @@ export const useManagerScheduleStore = create<ManagerScheduleState>((set, get) =
   },
 
   saveManagerSiteBooking: async (organizationId: string, booking: SaveManagerSiteBookingInput) => {
+    const firestore = requireDb()
+    if (!organizationId.trim()) throw new Error('Missing organisation for booking')
     const id = newUppercaseUuid()
     const now = new Date()
     const next: ManagerSiteBooking = {
@@ -80,12 +87,13 @@ export const useManagerScheduleStore = create<ManagerScheduleState>((set, get) =
       organizationId,
     }
     const payload = serializeManagerSiteBooking({ ...next, organizationId })
-    await setDoc(doc(db, 'organizations', organizationId, 'managerSiteBookings', id), payload, { merge: true })
+    await setDoc(doc(firestore, 'organizations', organizationId, 'managerSiteBookings', id), payload, { merge: true })
     set({ managerSiteBookings: [...get().managerSiteBookings, next] })
   },
 
   deleteManagerSiteBooking: async (organizationId: string, bookingId: string) => {
-    await deleteDoc(doc(db, 'organizations', organizationId, 'managerSiteBookings', bookingId))
+    const firestore = requireDb()
+    await deleteDoc(doc(firestore, 'organizations', organizationId, 'managerSiteBookings', bookingId))
     set({
       managerSiteBookings: get().managerSiteBookings.filter((booking) => booking.id !== bookingId),
     })
