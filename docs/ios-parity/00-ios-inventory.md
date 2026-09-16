@@ -2,22 +2,22 @@
 
 > Spec: `docs/ios-parity/IOS_PARITY_REBUILD.md` Phase 1 · Blueprint starting point: whole file, especially §1, §6, §9.
 >
-> **Swift tree status (updated 16 Sep 2026):** Farnie attached `Project Planner.zip`. Extracted **read-only** to `/home/ubuntu/ios-readonly/Project Planner` (not in git). This is the app source folder. The zip did **not** include the `.xcodeproj` wrapper. Complete path+line catalogue: [`00-ios-inventory-disk.md`](./00-ios-inventory-disk.md).
+> **Swift tree status (updated 16 Sep 2026):** Farnie attached `Project Planner.zip` (app sources) and `Project Planner.xcodeproj.zip` (the **Modified recently — 19/06/2026** iCloud copy). Extracted **read-only** to `/home/ubuntu/ios-readonly/` (not in git). Layout matches Xcode: `Project Planner.xcodeproj` beside `Project Planner/`. Complete Swift path+line catalogue: [`00-ios-inventory-disk.md`](./00-ios-inventory-disk.md).
 
 ## Phase 0 access check
 
 | Check | Result |
 |---|---|
-| List `IOS_ROOT` | **OK** via attached zip. App folder: `/home/ubuntu/ios-readonly/Project Planner`. |
-| `.xcodeproj` | **Not in the zip.** App sources, `GoogleService-Info.plist`, entitlements, and `Info.plist` are present. |
+| List `IOS_ROOT` | **OK.** `/home/ubuntu/ios-readonly/Project Planner` (sources) + `Project Planner.xcodeproj`. |
+| `.xcodeproj` | **OK.** `project.pbxproj`, `Package.resolved`. Xcode **26** folder-synced project (`PBXFileSystemSynchronizedRootGroup`; `objectVersion` 77). Zip timestamps match iCloud “Modified recently 19/06/2026”. |
 | `GoogleService-Info.plist` | **Found.** `PROJECT_ID` = `project-planner-f986c`, `STORAGE_BUCKET` = `project-planner-f986c.firebasestorage.app`, `BUNDLE_ID` = `farnie.Project-Planner`. |
 | `@main` app file | `Project_PlannerApp.swift` (confirmed `@main`). |
 | `.swift` count | **210 files, 114,699 lines** (matches the blueprint). |
-| Cloud environment repos | Still only the web repo. Keep extracting the zip (or add a GitHub iOS repo) for future Cloud Agent runs. |
+| Cloud environment repos | Still only the web repo. Keep extracting zips (or add a GitHub iOS repo) for future Cloud Agent runs. |
 
 **Do not commit the zip or extracted iOS tree into the web git repo.** iOS remains read-only: never edit it from this project.
 
-**Setup URL (verified from disk):** `AppBranding.swift` `webAppBaseURL` is still `https://project-planner-f986c.web.app`, so the iOS login button opens `…/setup`. Live check: that Firebase Hosting URL serves a **stale marketing page**, not the setup wizard. The real wizard is `https://www.projectplanner.us/setup`. **Farnie must change `AppBranding.webAppBaseURL` in Xcode** (this agent will not edit iOS). Invite emails from iOS use `…/setup-password.html?token=` on the same Firebase host (`ResendEmailService.swift`, `FirebaseBackend.swift` ~L5096).
+**Setup URL (verified from disk):** `AppBranding.swift` `webAppBaseURL` is still `https://project-planner-f986c.web.app`. Click-by-click fix: [`Q2-SETUP-URLS.md`](./Q2-SETUP-URLS.md). This agent will not edit iOS.
 
 ## Web stack (`WEB_ROOT` = this repo)
 
@@ -59,8 +59,9 @@ Identified from `package.json`, `package-lock.json`, `app/`, `next.config.js`, `
 | Locale | Device locale/TZ (UK); Monday-first weeks; `£`; `en_GB` for payroll emails | `Core/MondayFirstCalendarSupport.swift` | ✅ |
 | Custom fonts | **None bundled.** System font. | zip: no font files | ✅ |
 | Device capabilities | Camera, photos, location, push (FCM), MapKit, PDF, share sheet; haptics / Face ID / widgets **not applicable on web** | Blueprint §3.3 + tree | ✅ |
-| Swift packages | Firebase iOS SDK (Auth, Firestore, Storage, Messaging), MapKit | **No `Package.resolved` in the zip** | ❌ |
-| Deployment target | ❓ | **No `.xcodeproj` / `project.pbxproj` in the zip** | ❌ |
+| Swift packages | **firebase-ios-sdk 12.15.0** (pin), requirement `upToNextMajor` from **12.4.0**. Products: Auth, Core, Firestore, Storage, Messaging. Transitive pins include App Check 11.3.0 (not linked as a product). MapKit is a system framework, not SPM. | `Package.resolved` + `project.pbxproj` | ✅ |
+| Deployment target | **iOS 17.0**. Swift 5.0. Marketing version **1.0** (build 1). iPhone + iPad. Info.plist generated. Entitlements: `aps-environment` development (Debug) / production (Release). Camera, photos, calendars, remote notifications. `FirebaseAppDelegateProxyEnabled = NO`. | `project.pbxproj` | ✅ |
+| Xcode | Created on tools **26.0**; `LastUpgradeCheck = 2620`. Folder-synced app group (individual Swift files are **not** listed in the pbxproj). | `project.pbxproj` | ✅ |
 
 **iOS-only mechanisms not to port** (Blueprint §7): `SmartCacheService`, `PersistenceService`, `DataPersistenceManager`, `Offline*` stores/outbox, `LocalNotificationService`, `PlaygroundDemoSeeder`. These files may exist in the 210-file tree even when not listed below.
 
@@ -324,11 +325,11 @@ The named-file table in this document still uses blueprint line counts for narra
 
 Confirmed against the zip:
 
-1. **No `.xcodeproj`** in the attached app-folder zip — deployment target and SPM versions still unknown (`Package.resolved` missing).
+1. `.xcodeproj` is Xcode 26 folder-synced (`PBXFileSystemSynchronizedRootGroup`). Deployment target **iOS 17.0**. SPM **firebase-ios-sdk 12.15.0**.
 2. `AppBranding.webAppBaseURL` is `https://project-planner-f986c.web.app` (Firebase Hosting), not `https://www.projectplanner.us`.
 3. Invite emails from iOS (`ResendEmailService.swift`, `FirebaseBackend.swift` ~L5096) use `https://project-planner-f986c.web.app/setup-password.html?token=`.
 4. `AppBranding.swift` is **36** lines on disk (blueprint said 37).
 
 ## Next
 
-Phase 2 can cite live Swift from `/home/ubuntu/ios-readonly/Project Planner` (or a future iOS GitHub repo on the Cloud Agent environment). Do not commit that tree. **Farnie still needs to change iOS `AppBranding.webAppBaseURL`** (and `ResendEmailService.setupPasswordBaseURL`) to the public site; this agent will not edit iOS.
+Phase 2 can cite live Swift from `/home/ubuntu/ios-readonly/Project Planner` and settings from `Project Planner.xcodeproj`. Do not commit that tree. Q2 URL edits: [`Q2-SETUP-URLS.md`](./Q2-SETUP-URLS.md).
