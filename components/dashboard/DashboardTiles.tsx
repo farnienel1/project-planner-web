@@ -44,11 +44,11 @@ function Widget({
 }) {
   const inner = (
     <div
-      className={`rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition${
-        link ? ' cursor-pointer hover:border-indigo-300 hover:shadow-md group' : ''
+      className={`rounded-xl border border-slate-200 bg-white p-5 transition${
+        link ? ' cursor-pointer hover:border-slate-300 group' : ''
       }${wide ? ' col-span-2' : ''}`}
     >
-      <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">{label}</p>
+      <p className="mb-2 text-[12px] font-medium text-slate-500">{label}</p>
       {children}
     </div>
   )
@@ -64,7 +64,7 @@ function Widget({
 }
 
 function StatNum({ value, color = 'text-slate-900' }: { value: number | string; color?: string }) {
-  return <p className={`text-3xl font-semibold leading-none ${color}`}>{value}</p>
+  return <p className={`text-[28px] font-semibold leading-none tracking-tight ${color}`}>{value}</p>
 }
 
 function Pill({ label, color }: { label: string; color: string }) {
@@ -566,7 +566,7 @@ export function RenderDashboardTile({ id, data }: { id: TileId; data: DashboardT
 export function DashboardWidgetGrid({ layout, data }: { layout: TileId[]; data: DashboardTileData }) {
   if (layout.length === 0) {
     return (
-      <div className="col-span-2 rounded-2xl border border-dashed border-slate-300 p-10 text-center md:col-span-4">
+      <div className="col-span-2 rounded-xl border border-dashed border-slate-300 p-10 text-center md:col-span-4">
         <p className="text-sm text-slate-500">No tiles on your dashboard.</p>
         <Link
           href="/dashboard/edit"

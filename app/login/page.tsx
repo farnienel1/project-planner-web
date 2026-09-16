@@ -16,7 +16,7 @@ export default function LoginPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLocalError('')
-    
+
     try {
       await signIn(email, password)
       router.push('/dashboard')
@@ -26,68 +26,66 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#f4f6f9] px-5 py-10">
-      <div className="mx-auto grid w-full max-w-[1160px] overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-[0_2px_30px_rgba(15,23,42,0.08)] lg:grid-cols-2">
-        <section className="hidden bg-slate-900 px-10 py-12 text-white lg:flex lg:flex-col">
-          <div className="mb-8">
-            <ProjectPlannerLogo
-              href="/"
-              size="xl"
-              variant="dark"
-              subtitle="iOS parity web portal"
-            />
-          </div>
-          <h1 className="text-4xl font-extrabold leading-tight">Welcome back</h1>
-          <p className="mt-4 max-w-md text-sm text-slate-300">
-            The web app mirrors the iOS app visual language and navigation so your team can switch screens without changing workflow.
+    <div className="min-h-screen bg-[#f6f7f9]">
+      <header className="mx-auto flex h-16 w-full max-w-[1120px] items-center justify-between px-6">
+        <ProjectPlannerLogo href="/" size="sm" />
+        <Link href="/setup" className="text-[13px] font-medium text-slate-500 hover:text-slate-900">
+          Set up organisation
+        </Link>
+      </header>
+
+      <main className="mx-auto grid w-full max-w-[1120px] gap-10 px-6 pb-16 pt-8 lg:grid-cols-[1fr_420px] lg:items-start lg:pt-16">
+        <section className="hidden pt-4 lg:block">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Web portal</p>
+          <h1 className="mt-4 max-w-md text-4xl font-semibold tracking-[-0.035em] text-slate-900">
+            Sign in to the same organisation as iOS.
+          </h1>
+          <p className="mt-4 max-w-md text-[15px] leading-7 text-slate-500">
+            Projects, people, and schedules stay in sync. Use your existing account — nothing new to set up.
           </p>
-          <div className="mt-10 grid grid-cols-2 gap-3">
-            {['Projects', 'Small Works', 'Operatives', 'Managers', 'Schedule', 'Settings'].map((item) => (
-              <div key={item} className="rounded-xl border border-slate-700 bg-slate-800/70 px-3 py-2 text-sm">
-                {item}
-              </div>
-            ))}
-          </div>
         </section>
 
-        <section className="px-7 py-10 sm:px-12">
+        <section className="rounded-2xl border border-slate-200 bg-white p-8 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
           <div className="mb-6 lg:hidden">
-            <ProjectPlannerLogo href="/" size="lg" />
+            <ProjectPlannerLogo href="/" size="md" />
           </div>
-
-          <h2 className="text-3xl font-extrabold text-slate-900">Sign in to Project Planner</h2>
-          <p className="mt-2 text-sm text-slate-500">Access your organization dashboard and schedules.</p>
+          <h2 className="text-2xl font-semibold tracking-tight text-slate-900">Sign in</h2>
+          <p className="mt-1 text-[13px] text-slate-500">Access your organisation dashboard.</p>
 
           <form className="mt-8 space-y-5" onSubmit={handleSubmit}>
             {(error || localError) && (
-              <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3">
-                <p className="text-sm text-red-700">{error || localError}</p>
+              <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3">
+                <p className="text-[13px] text-red-700">{error || localError}</p>
               </div>
             )}
 
             <div>
-              <label htmlFor="email" className="mb-1 block text-sm font-semibold text-slate-700">Email</label>
+              <label htmlFor="email" className="mb-1.5 block text-[13px] font-medium text-slate-700">
+                Email
+              </label>
               <input
                 id="email"
                 name="email"
                 type="email"
                 autoComplete="email"
                 required
-                className="block w-full rounded-xl border border-slate-300 px-3 py-2.5 text-slate-900 placeholder-slate-400 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                className="block h-11 w-full rounded-lg border border-slate-200 px-3 text-[14px] text-slate-900 placeholder-slate-400 outline-none transition focus:border-slate-400"
                 placeholder="name@company.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
               />
             </div>
             <div>
-              <label htmlFor="password" className="mb-1 block text-sm font-semibold text-slate-700">Password</label>
+              <label htmlFor="password" className="mb-1.5 block text-[13px] font-medium text-slate-700">
+                Password
+              </label>
               <input
                 id="password"
                 name="password"
                 type="password"
                 autoComplete="current-password"
                 required
-                className="block w-full rounded-xl border border-slate-300 px-3 py-2.5 text-slate-900 placeholder-slate-400 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                className="block h-11 w-full rounded-lg border border-slate-200 px-3 text-[14px] text-slate-900 placeholder-slate-400 outline-none transition focus:border-slate-400"
                 placeholder="Enter password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
@@ -95,35 +93,28 @@ export default function LoginPage() {
             </div>
 
             <div className="flex items-center justify-between">
-              <Link
-                href="/reset-password"
-                className="text-sm font-semibold text-blue-600 hover:text-blue-700"
-              >
-                Forgot your password?
+              <Link href="/reset-password" className="text-[13px] font-medium text-slate-500 hover:text-slate-900">
+                Forgot password?
               </Link>
             </div>
 
             <button
               type="submit"
               disabled={loading}
-              className="w-full rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+              className="h-11 w-full rounded-lg bg-slate-900 text-[13px] font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {loading ? 'Signing in...' : 'Sign in'}
             </button>
 
-            <p className="text-center text-sm text-slate-600">
+            <p className="text-center text-[13px] text-slate-500">
               New organisation?{' '}
-              <Link href="/setup" className="font-semibold text-blue-600 hover:text-blue-700">
+              <Link href="/setup" className="font-medium text-slate-900 hover:underline">
                 Set up on desktop
               </Link>
             </p>
           </form>
         </section>
-      </div>
+      </main>
     </div>
   )
 }
-
-
-
-

@@ -9,32 +9,35 @@ type ProjectPlannerLogoProps = {
 }
 
 const ICON_SIZES = {
-  sm: 'h-9 w-9',
-  md: 'h-10 w-10',
-  lg: 'h-11 w-11',
-  xl: 'h-14 w-14',
+  sm: 'h-8 w-8',
+  md: 'h-9 w-9',
+  lg: 'h-10 w-10',
+  xl: 'h-11 w-11',
 } as const
 
 const SVG_SIZES = {
-  sm: 'h-5 w-5',
-  md: 'h-5 w-5',
-  lg: 'h-6 w-6',
-  xl: 'h-7 w-7',
+  sm: 'h-4 w-4',
+  md: 'h-4 w-4',
+  lg: 'h-5 w-5',
+  xl: 'h-5 w-5',
 } as const
 
 const TITLE_SIZES = {
-  sm: 'text-sm',
-  md: 'text-base',
-  lg: 'text-xl',
-  xl: 'text-2xl',
+  sm: 'text-[13px]',
+  md: 'text-sm',
+  lg: 'text-base',
+  xl: 'text-lg',
 } as const
 
-function LogoMark({ size }: { size: 'sm' | 'md' | 'lg' | 'xl' }) {
+function LogoMark({ size, variant }: { size: 'sm' | 'md' | 'lg' | 'xl'; variant: 'light' | 'dark' }) {
+  const markClass =
+    variant === 'dark'
+      ? 'bg-white text-slate-900'
+      : 'bg-slate-900 text-white'
+
   return (
-    <span
-      className={`grid shrink-0 place-items-center rounded-xl bg-gradient-to-br from-blue-600 to-blue-700 text-white shadow-lg shadow-blue-500/30 ${ICON_SIZES[size]}`}
-    >
-      <svg className={SVG_SIZES[size]} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.2}>
+    <span className={`grid shrink-0 place-items-center rounded-lg ${markClass} ${ICON_SIZES[size]}`}>
+      <svg className={SVG_SIZES[size]} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
         <path
           strokeLinecap="round"
           strokeLinejoin="round"
@@ -54,14 +57,14 @@ export function ProjectPlannerLogo({
 }: ProjectPlannerLogoProps) {
   const titleClass =
     variant === 'dark'
-      ? 'font-extrabold tracking-tight text-white'
-      : 'font-extrabold tracking-tight text-slate-900'
+      ? 'font-semibold tracking-tight text-white'
+      : 'font-semibold tracking-tight text-slate-900'
 
-  const subtitleClass = variant === 'dark' ? 'text-xs text-slate-300' : 'text-xs text-slate-500'
+  const subtitleClass = variant === 'dark' ? 'text-[11px] text-slate-400' : 'text-[11px] text-slate-500'
 
   const content = (
     <>
-      <LogoMark size={size} />
+      <LogoMark size={size} variant={variant} />
       <div className="min-w-0">
         <p className={`${titleClass} ${TITLE_SIZES[size]}`}>Project Planner</p>
         {subtitle ? <p className={subtitleClass}>{subtitle}</p> : null}
@@ -69,7 +72,7 @@ export function ProjectPlannerLogo({
     </>
   )
 
-  const baseClass = `inline-flex items-center gap-3 transition hover:opacity-90 ${className}`
+  const baseClass = `inline-flex items-center gap-2.5 transition hover:opacity-80 ${className}`
 
   if (href) {
     return (

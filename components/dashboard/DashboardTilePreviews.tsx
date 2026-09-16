@@ -427,7 +427,7 @@ export function DashboardEditorPreview({
 
       <div className="space-y-3">
         <p className="text-xs text-slate-500">
-          Drag eligible tiles from the grid below into the blue section (max {MAX_HERO_METRICS} single metrics).
+          Drag eligible tiles from the grid below into the overview metrics row (max {MAX_HERO_METRICS} single metrics).
         </p>
         <DashboardHero
           userName={userName}

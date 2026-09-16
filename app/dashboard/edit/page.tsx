@@ -276,8 +276,7 @@ export default function DashboardEditPage() {
       <section>
         <h2 className="mb-1 text-lg font-semibold text-slate-900">Add tiles</h2>
         <p className="mb-4 text-sm text-slate-500">
-          Tap to add or remove grid tiles. Drag hero-eligible tiles from the preview grid or catalogue into the blue
-          section, or use the star pin. Wide tiles and charts cannot be placed in the hero.
+          Tap to add or remove grid tiles. Drag hero-eligible tiles from the preview grid or catalogue into the overview metrics row, or use the star pin. Wide tiles and charts cannot be placed in the hero.
         </p>
 
         <input
