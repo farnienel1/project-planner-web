@@ -19,7 +19,7 @@
 
 | iOS element (File.swift:line) | Web implementation (file) | Status | Note |
 |---|---|---|---|
-| LoginBrand (`AuthenticationView.swift`) | `components/auth/LoginBrandScreen.tsx` | ✅ | Dark navy + cyan; “Sign In”; Forgot password? |
+| LoginBrand (`AuthenticationView.swift`) | `/login` | ⚠️ | Phone (`lg` and below): iOS dark LoginBrand. Desktop: website sign-in with marketing chrome. Public landing is `/`. |
 | PasswordResetView.swift | `app/reset-password/page.tsx` | ✅ | Same wording |
 | Placeholder merge (`FirebaseBackend.swift`:3319) | `lib/firebase/mergePlaceholderUser.ts` | ✅ | Copy onto Auth UID; `passwordSet: true` |
 | Policy gate (`policyAccepted == false`) | `PolicyGate` in dashboard layout | ✅ | Writes `policyAccepted` + `policyAcceptedAt` |
