@@ -326,8 +326,8 @@ export function parseBooking(
   data: Record<string, unknown>,
   organizationId?: string
 ): ParseResult<Booking> {
-  const operativeId = asString(data.operativeId)
-  const projectId = asString(data.projectId)
+  const operativeId = asString(data.operativeId) || asString(data.operativeID)
+  const projectId = asString(data.projectId) || asString(data.projectID)
   const date = asDate(data.date)
   const timeSlot = normalizeTimeSlot(data.timeSlot) || (asString(data.timeSlot) ? null : 'FULL DAY')
   const bookedBy = asString(data.bookedBy)

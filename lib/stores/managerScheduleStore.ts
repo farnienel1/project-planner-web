@@ -41,11 +41,9 @@ export const useManagerScheduleStore = create<ManagerScheduleState>((set, get) =
 
   loadManagerSiteBookings: async (organizationId: string) => {
     if (!organizationId || !db) return
-    if (isOrgCollectionSubscribed('managerSiteBookings', organizationId)) {
-      set({ loading: false })
-      return
-    }
-    set({ loading: true, error: null })
+    const already = isOrgCollectionSubscribed('managerSiteBookings', organizationId)
+    if (already || get().managerSiteBookings.length > 0) set({ loading: false })
+    else set({ loading: true, error: null })
     subscribeOrgCollection(
       'managerSiteBookings',
       organizationId,

@@ -28,11 +28,9 @@ export const useBookingStore = create<BookingState>((set, get) => ({
 
   loadBookings: async (organizationId: string) => {
     if (!organizationId || !db) return
-    if (isOrgCollectionSubscribed('bookings', organizationId)) {
-      set({ loading: false })
-      return
-    }
-    set({ loading: true, error: null })
+    const already = isOrgCollectionSubscribed('bookings', organizationId)
+    if (already || get().bookings.length > 0) set({ loading: false })
+    else set({ loading: true, error: null })
     subscribeOrgCollection('bookings', organizationId, 'bookings', (docs) => {
       const bookings: Booking[] = []
       for (const entry of docs) {

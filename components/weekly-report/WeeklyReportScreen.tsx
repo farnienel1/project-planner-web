@@ -125,7 +125,6 @@ export function WeeklyReportScreen({
   const [customStart, setCustomStart] = useState(defaultCustomStart)
   const [customEnd, setCustomEnd] = useState(defaultCustomEnd)
   const [generating, setGenerating] = useState(false)
-  const [showReport, setShowReport] = useState(false)
 
   const effectiveInvoicingPeriodId = invoicingPeriodId || invoicingOptions[0]?.id || ''
 
@@ -178,7 +177,6 @@ export function WeeklyReportScreen({
   const handleGenerateReport = () => {
     if (!report || !period) return
     setGenerating(true)
-    setShowReport(true)
     try {
       const html = buildWeeklyReportHtml(report)
       const filename = `WeeklyReport-${format(period.start, 'yyyyMMdd')}.html`
@@ -191,7 +189,6 @@ export function WeeklyReportScreen({
 
   const changePeriod = (next: () => void) => {
     next()
-    setShowReport(false)
   }
 
   const shiftWeek = (direction: -1 | 1) => {
@@ -354,8 +351,8 @@ export function WeeklyReportScreen({
           </section>
 
           <p className="text-center text-[12px] leading-5 text-ios-muted">
-            Period warnings and pay breakdown are calculated when you tap Generate — this is separate from Home
-            Warnings (live ops from today forward).
+            The breakdown below updates as you change the period. Generate exports a printable HTML file — this is
+            separate from Home Warnings (live ops from today forward).
           </p>
 
           <div className="space-y-3 text-center">
@@ -377,7 +374,7 @@ export function WeeklyReportScreen({
         </div>
       </div>
 
-      {showReport && report ? (
+      {report ? (
         <>
           <ReportTable
             title="⚠ Warnings Summary"

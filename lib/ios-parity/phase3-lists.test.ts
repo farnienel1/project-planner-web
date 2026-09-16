@@ -275,3 +275,63 @@ test('buildDailyOverview groups mixed-case project ids and merges a person\'s ho
   assert.equal(adaRow?.pillText, '8h')
   assert.equal(bobRow?.pillText, '8h')
 })
+
+test('buildDailyOverview groups dashed and undashed UUID project ids', () => {
+  const day = new Date('2026-09-16T12:00:00Z')
+  const id = 'AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA'
+  const project = {
+    id,
+    jobNumber: 'J9',
+    siteName: 'Bridge',
+    jobType: 'CAT A',
+    client: { id: 'c', name: 'Acme' },
+    addressLine1: '',
+    townCity: '',
+    postcode: '',
+    startDate: day,
+    endDate: day,
+    isLive: true,
+    manager: { name: 'Custom', email: '' },
+    createdAt: day,
+    updatedAt: day,
+  } as Project
+  const model = buildDailyOverview({
+    day,
+    today: day,
+    projects: [project],
+    bookings: [
+      {
+        id: 'B1',
+        operativeId: 'OP1',
+        projectId: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        date: day,
+        timeSlot: 'FULL DAY',
+        bookedBy: 'Ada',
+        status: 'Confirmed',
+        createdAt: day,
+        updatedAt: day,
+      },
+    ],
+    managerBookings: [],
+    holidays: [] as HolidayBooking[],
+    users: [],
+    operatives: [
+      {
+        id: 'OP1',
+        firstName: 'Ada',
+        lastName: 'Booked',
+        email: 'ada@x.com',
+        startDate: day,
+        hourlyRate: 0,
+        skills: [],
+        qualifications: [],
+        isActive: true,
+        createdAt: day,
+        updatedAt: day,
+      },
+    ],
+  })
+  assert.equal(model.jobsCount, 1)
+  assert.equal(model.projectCards[0].project.siteName, 'Bridge')
+  assert.equal(model.projectCards[0].people[0].name, 'Ada Booked')
+})

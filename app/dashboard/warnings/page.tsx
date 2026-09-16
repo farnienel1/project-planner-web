@@ -41,7 +41,7 @@ export default function WarningsPage() {
   const { users, loadUsers } = useOrgUserStore()
   const { bookings, loadBookings, deleteBooking, loading: bookingsLoading } = useBookingStore()
   const { managerSiteBookings, loadManagerSiteBookings, loading: managerLoading } = useManagerScheduleStore()
-  const { materials, sendRecords, loadAllMaterials, loadSendRecords, loading: materialsLoading } =
+  const { materials, sendRecords, loadAllMaterials, loadSendRecords } =
     useMaterialProjectStore()
   const { bookings: holidayBookings, loadBookings: loadHolidayBookings } = useHolidayStore()
   const [acceptedClashes, setAcceptedClashes] = useState<AcceptedBookingClash[]>([])
@@ -148,7 +148,10 @@ export default function WarningsPage() {
       managerClashWarnings={managerClashWarnings}
       unbookedWarnings={unbookedWarnings}
       materialWarnings={materialWarnings}
-      loading={bookingsLoading || materialsLoading || managerLoading}
+      loading={
+        (bookingsLoading && bookings.length === 0) ||
+        (managerLoading && managerSiteBookings.length === 0)
+      }
       user={user}
       operatives={rosterOperatives}
       smallWorkIds={smallWorkIds}
