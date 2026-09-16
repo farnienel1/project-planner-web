@@ -47,25 +47,65 @@ export function dedupeUsersByEmail(users: User[]): User[] {
 
 /** iOS OperativesView — operative-mode app users. */
 export function getOperativeModeUsers(users: User[]): User[] {
-  return dedupeUsersByEmail(users.filter((user) => user.permissions.operativeMode)).sort((a, b) =>
+  return dedupeUsersByEmail(users.filter((user) => user.permissions?.operativeMode)).sort((a, b) =>
     `${a.firstName} ${a.surname}`.localeCompare(`${b.firstName} ${b.surname}`, undefined, {
       sensitivity: 'base',
     })
   )
 }
 
-/** iOS ManagersView — admins and managers (not operative-mode). */
+/** Admins and managers (not operative-mode) — used by pickers / scheduling. */
 export function getManagerUsers(users: User[]): User[] {
   return dedupeUsersByEmail(
     users.filter((user) => {
-      if (user.permissions.operativeMode) return false
-      return user.permissions.adminAccess || user.isSuperAdmin || user.permissions.manager
+      if (user.permissions?.operativeMode) return false
+      return user.permissions?.adminAccess || user.isSuperAdmin || user.permissions?.manager
     })
   ).sort((a, b) =>
     `${a.firstName} ${a.surname}`.localeCompare(`${b.firstName} ${b.surname}`, undefined, {
       sensitivity: 'base',
     })
   )
+}
+
+/** iOS ManagersView — manager users, excluding admins / super-admins / operative-mode. */
+export function getManagersRosterUsers(users: User[]): User[] {
+  return dedupeUsersByEmail(
+    users.filter((user) => {
+      const p = user.permissions
+      if (!p) return false
+      if (p.operativeMode) return false
+      if (p.adminAccess || user.isSuperAdmin) return false
+      return p.manager === true
+    })
+  ).sort((a, b) =>
+    `${a.firstName} ${a.surname}`.localeCompare(`${b.firstName} ${b.surname}`, undefined, {
+      sensitivity: 'base',
+    })
+  )
+}
+
+/** iOS OperativesView live search — token match on first / surname / full / email / phone. */
+export function filterRosterByNameQuery(
+  users: User[],
+  search: string,
+  extraPhone?: Record<string, string>
+): User[] {
+  const tokens = search.trim().toLowerCase().split(/\s+/).filter(Boolean)
+  if (tokens.length === 0) return users
+  return users.filter((user) => {
+    const phone = extraPhone?.[user.id] || user.mobileNumber || ''
+    const hay = [
+      user.firstName,
+      user.surname,
+      `${user.firstName} ${user.surname}`,
+      user.email,
+      phone,
+    ]
+      .join(' ')
+      .toLowerCase()
+    return tokens.every((token) => hay.includes(token))
+  })
 }
 
 export function filterUsersBySearch<T extends OperativeFilterField | ManagerFilterField>(
@@ -101,14 +141,14 @@ export function emptyRosterTitle(
   hasAny: boolean
 ): string {
   if (!hasAny) {
-    return kind === 'operatives' ? 'No operatives added yet' : 'No managers added yet'
+    return kind === 'operatives' ? 'No Operatives Added Yet' : 'No managers added yet'
   }
   switch (segment) {
     case 'active':
-      return kind === 'operatives' ? 'No active operatives' : 'No active managers'
+      return kind === 'operatives' ? 'No Active Operatives' : 'No Active Managers'
     case 'inactive':
-      return kind === 'operatives' ? 'No inactive operatives' : 'No inactive managers'
+      return kind === 'operatives' ? 'No Inactive Operatives' : 'No Inactive Managers'
     case 'pending':
-      return kind === 'operatives' ? 'No pending operatives' : 'No pending managers'
+      return kind === 'operatives' ? 'No Pending Operatives' : 'No Pending Managers'
   }
 }

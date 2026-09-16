@@ -114,8 +114,14 @@ export function normalizeTimeSlot(raw: unknown): TimeSlotRaw | null {
   if (typeof raw !== 'string') return null
   const trimmed = raw.trim()
   if ((TIME_SLOTS as readonly string[]).includes(trimmed)) return trimmed as TimeSlotRaw
-  if (trimmed === 'FULL_DAY') return 'FULL DAY'
-  if (trimmed === 'CUSTOM') return 'CUSTOM_HOURS'
+  const compact = trimmed.replace(/[_\-]+/g, ' ').replace(/\s+/g, ' ').toUpperCase()
+  if (compact === 'FULL DAY' || compact === 'FULLDAY') return 'FULL DAY'
+  if (compact === 'CUSTOM' || compact === 'CUSTOM HOURS' || compact === 'CUSTOMHOURS') return 'CUSTOM_HOURS'
+  if (compact === 'MORNING') return 'AM'
+  if (compact === 'AFTERNOON') return 'PM'
+  if (compact === 'AM' || compact === 'PM' || compact === 'EVENING' || compact === 'OVERTIME') {
+    return compact as TimeSlotRaw
+  }
   return null
 }
 
@@ -125,7 +131,10 @@ export function normalizeManagerTimeSlot(raw: unknown): ManagerTimeSlotRaw | nul
   if ((MANAGER_TIME_SLOTS as readonly string[]).includes(trimmed)) {
     return trimmed as ManagerTimeSlotRaw
   }
-  if (trimmed === 'FULL DAY') return 'FULL_DAY'
+  const compact = trimmed.replace(/[_\-]+/g, ' ').replace(/\s+/g, ' ').toUpperCase()
+  if (compact === 'FULL DAY' || compact === 'FULLDAY' || compact === 'FULL DAY') return 'FULL_DAY'
+  if (compact === 'CUSTOM' || compact === 'CUSTOM HOURS' || compact === 'CUSTOMHOURS') return 'CUSTOM_HOURS'
+  if (compact === 'AM' || compact === 'PM') return compact as ManagerTimeSlotRaw
   return null
 }
 

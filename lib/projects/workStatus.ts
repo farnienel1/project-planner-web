@@ -93,6 +93,24 @@ export function mergeProjectsAndSmallWorks(projects: Project[], smallWorks: Proj
   return Array.from(byJob.values())
 }
 
+/** ProjectsView.swift ~L216 — job number, site name, address, client name. */
+export function searchWorks<T extends Project>(projects: T[], query: string): T[] {
+  const q = query.trim().toLowerCase()
+  if (!q) return projects
+  return projects.filter((p) => {
+    const address = [p.addressLine1, p.addressLine2, p.townCity, p.postcode, p.siteAddress]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase()
+    return (
+      (p.jobNumber || '').toLowerCase().includes(q) ||
+      (p.siteName || '').toLowerCase().includes(q) ||
+      address.includes(q) ||
+      (p.client?.name || '').toLowerCase().includes(q)
+    )
+  })
+}
+
 export function filterWorksByTab(projects: Project[], tab: 'all' | 'active' | 'upcoming' | 'completed'): Project[] {
   if (tab === 'all') return projects
   if (tab === 'completed') {

@@ -4,284 +4,273 @@ import { useMemo, useState } from 'react'
 import Link from 'next/link'
 import { format } from 'date-fns/format'
 import { isToday } from 'date-fns/isToday'
-import { isTomorrow } from 'date-fns/isTomorrow'
-import { isPast } from 'date-fns/isPast'
 import type { OperativeBookingClashWarning } from '@/lib/scheduling/bookingClashUtils'
 import type { ManagerBookingClashWarning } from '@/lib/warnings/managerClashWarnings'
 import type { MissedMaterialOrderWarning } from '@/lib/warnings/materialOrderWarnings'
-import type { UnbookedLabourWarning } from '@/lib/warnings/unbookedLabourWarnings'
+import { groupUnbookedWarningsByDay, type UnbookedLabourWarning } from '@/lib/warnings/unbookedLabourWarnings'
 import {
   projectSchedulePath,
   projectMaterialsPath,
   projectScheduleOpenLabel,
 } from '@/lib/navigation/projectSchedulePaths'
+import { hasAdminAccess } from '@/lib/permissions'
 import type { Operative, User } from '@/types'
-import { LoadingSpinner } from '@/components/dashboard/PageShell'
+import { initialsFrom } from '@/lib/daily-overview/buildDailyOverview'
+import { dayKey } from '@/lib/ios-parity/londonTime'
 
-function formatDateLabel(date: Date): string {
+type FilterChip = 'all' | 'clashes' | 'unbooked' | 'materials'
+
+const AVATAR_COLORS = ['#2C5BBF', '#4B7A5C', '#7A4B8C', '#B35614', '#2563EB', '#9E2A2A']
+
+function avatarColor(name: string): string {
+  const hash = [...name].reduce((sum, ch) => sum + ch.charCodeAt(0), 0)
+  return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length]
+}
+
+function parseUnbookedPerson(raw: string): { name: string; badge: string | null } {
+  const match = raw.match(/^(.*) \(missing (.+)\)$/)
+  if (!match) return { name: raw, badge: null }
+  let hours = match[2].replace(/\.0h$/, 'h')
+  if (!hours.endsWith('h')) hours += 'h'
+  return { name: match[1], badge: `−${hours}` }
+}
+
+function formatDayLabel(date: Date): string {
   if (isToday(date)) return 'Today'
-  if (isTomorrow(date)) return 'Tomorrow'
-  return format(date, 'EEEE d MMMM yyyy')
+  return format(date, 'EEE d MMM')
 }
 
-function urgencyLevel(date: Date): 'past' | 'today' | 'soon' | 'future' {
-  if (isPast(date) && !isToday(date)) return 'past'
-  if (isToday(date)) return 'today'
-  const diff = date.getTime() - Date.now()
-  if (diff < 1000 * 60 * 60 * 24 * 3) return 'soon'
-  return 'future'
+function formatLongDay(date: Date): string {
+  return format(date, 'd MMM yyyy')
 }
 
-const URGENCY_STYLES = {
-  past: { badge: 'bg-slate-100 text-slate-600', border: 'border-l-slate-300', dot: 'bg-slate-400', label: 'Past' },
-  today: { badge: 'bg-red-50 text-red-700', border: 'border-l-red-400', dot: 'bg-red-500', label: 'Today' },
-  soon: { badge: 'bg-amber-50 text-amber-700', border: 'border-l-amber-400', dot: 'bg-amber-500', label: 'Soon' },
-  future: { badge: 'bg-blue-50 text-blue-700', border: 'border-l-blue-300', dot: 'bg-blue-400', label: 'Upcoming' },
-}
-
-function StatCard({
-  value,
-  label,
-  color,
-  icon,
-}: {
-  value: number
-  label: string
-  color: string
-  icon: React.ReactNode
-}) {
+function Avatar({ name, size = 32 }: { name: string; size?: number }) {
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-      <div className="flex items-center justify-between gap-2">
-        <div>
-          <p className={`text-2xl font-bold ${color}`}>{value}</p>
-          <p className="mt-0.5 text-xs text-slate-500">{label}</p>
-        </div>
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-50">{icon}</div>
-      </div>
-    </div>
+    <span
+      className="grid shrink-0 place-items-center rounded-full font-bold text-white"
+      style={{ width: size, height: size, fontSize: size < 30 ? 10 : 11, background: avatarColor(name) }}
+    >
+      {initialsFrom(name)}
+    </span>
   )
 }
 
-function Avatar({ name }: { name: string }) {
-  const initials = name
-    .split(' ')
-    .map((n) => n[0])
-    .join('')
-    .toUpperCase()
-    .slice(0, 2)
+function PriorityBadge({ level }: { level: 'high' | 'medium' | 'low' }) {
   return (
-    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-600 ring-2 ring-white">
-      {initials}
-    </div>
+    <span className="inline-flex items-center gap-1 rounded-full bg-white/18 px-2.5 py-1 text-[11px] font-bold text-white ring-1 ring-white/28">
+      <svg className="h-3 w-3" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M12 3 2 21h20L12 3Zm1 14h-2v2h2v-2Zm0-8h-2v6h2V9Z" />
+      </svg>
+      {level.toUpperCase()}
+    </span>
   )
-}
-
-function ActionButton({
-  children,
-  onClick,
-  variant = 'secondary',
-  disabled,
-}: {
-  children: React.ReactNode
-  onClick?: () => void
-  variant?: 'primary' | 'secondary' | 'danger' | 'success'
-  disabled?: boolean
-}) {
-  const styles = {
-    primary: 'bg-blue-600 text-white hover:bg-blue-700',
-    secondary: 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50',
-    danger: 'border border-red-200 bg-red-50 text-red-700 hover:bg-red-100',
-    success: 'border border-green-200 bg-green-50 text-green-700 hover:bg-green-100',
-  }
-  if (onClick) {
-    return (
-      <button
-        type="button"
-        disabled={disabled}
-        onClick={onClick}
-        className={`inline-flex shrink-0 items-center whitespace-nowrap gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition disabled:opacity-50 ${styles[variant]}`}
-      >
-        {children}
-      </button>
-    )
-  }
-  return null
 }
 
 function ClashCard({
-  clash,
-  smallWorkIds,
-  onAccept,
-  onDeleteBooking,
+  title,
+  personName,
+  date,
+  locationA,
+  locationB,
+  message,
+  projectPathA,
+  projectPathB,
+  labelA,
+  labelB,
   busy,
+  onAccept,
+  onDeleteA,
+  onDeleteB,
 }: {
-  clash: OperativeBookingClashWarning
-  smallWorkIds: ReadonlySet<string>
-  onAccept: () => Promise<void>
-  onDeleteBooking: (bookingId: string, label: string) => Promise<void>
+  title: string
+  personName: string
+  date: Date
+  locationA: string
+  locationB: string
+  message: string
+  projectPathA?: string
+  projectPathB?: string
+  labelA?: string
+  labelB?: string
   busy?: boolean
+  onAccept?: () => Promise<void>
+  onDeleteA?: () => Promise<void>
+  onDeleteB?: () => Promise<void>
 }) {
-  const urgency = urgencyLevel(clash.date)
-  const styles = URGENCY_STYLES[urgency]
-  const isSmallA = smallWorkIds.has(clash.projectAId)
-  const isSmallB = smallWorkIds.has(clash.projectBId)
-  const projectPathA = projectSchedulePath(clash.projectAId, smallWorkIds)
-  const projectPathB = projectSchedulePath(clash.projectBId, smallWorkIds)
-  const blueLink =
-    'inline-flex shrink-0 items-center whitespace-nowrap rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-blue-700'
-
   return (
-    <div className={`overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm border-l-4 ${styles.border}`}>
-      <div className="flex w-full items-start gap-4 px-5 py-4">
-        <Avatar name={clash.operativeName} />
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-sm font-semibold text-slate-900">{clash.operativeName}</span>
-            <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${styles.badge}`}>
-              <span className={`h-1.5 w-1.5 rounded-full ${styles.dot}`} />
-              {formatDateLabel(clash.date)}
-            </span>
-            <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold uppercase text-amber-700">
-              Booking clash
-            </span>
-          </div>
-          <div className="mt-2 flex flex-wrap items-center gap-2">
-            <span className="rounded-lg bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">{clash.projectALabel}</span>
-            <span className="text-lg font-light text-slate-300">⇄</span>
-            <span className="rounded-lg bg-amber-50 px-3 py-1 text-xs font-medium text-amber-800">{clash.projectBLabel}</span>
-          </div>
-          <p className="mt-2 text-xs leading-relaxed text-slate-500">{clash.message}</p>
+    <article className="overflow-hidden rounded-[15px] border border-black/[0.07] bg-white shadow-[0_2px_8px_rgba(0,0,0,0.08)]">
+      <header className="flex items-center gap-2.5 bg-gradient-to-b from-[#B3261E] to-[#8C1A14] px-3.5 py-2.5">
+        <p className="min-w-0 flex-1 text-[16.5px] font-semibold tracking-tight text-white">{title}</p>
+        <PriorityBadge level="high" />
+      </header>
+      <div className="space-y-3 px-3.5 py-3.5">
+        <div>
+          <p className="text-[14.5px] text-[#121B23]">
+            <span className="font-semibold">{personName}</span> is booked in two places on {formatDayLabel(date)}.
+          </p>
+          <p className="mt-1 text-[13.5px] text-[#6C6C72]">
+            Approve if it&apos;s intentional and it&apos;ll be noted on the weekly report.
+          </p>
         </div>
-      </div>
-      <div className="border-t border-slate-100 bg-slate-50 px-5 py-3">
-        <div className="flex flex-nowrap items-center gap-2 overflow-x-auto">
-          <Link href={projectPathA} className={blueLink}>
-            {projectScheduleOpenLabel(clash.projectALabel, isSmallA)}
-          </Link>
-          <Link href={projectPathB} className={blueLink}>
-            {projectScheduleOpenLabel(clash.projectBLabel, isSmallB)}
-          </Link>
-          <ActionButton variant="success" disabled={busy} onClick={() => onAccept()}>
-            Accept clash
-          </ActionButton>
-          <ActionButton variant="danger" disabled={busy} onClick={() => onDeleteBooking(clash.bookingAId, clash.projectALabel)}>
-            Delete · {clash.projectALabel}
-          </ActionButton>
-          <ActionButton variant="danger" disabled={busy} onClick={() => onDeleteBooking(clash.bookingBId, clash.projectBLabel)}>
-            Delete · {clash.projectBLabel}
-          </ActionButton>
+        <div className="flex items-center gap-2.5">
+          <Avatar name={personName} size={30} />
+          <p className="min-w-0 flex-1 text-[15px] font-semibold">{personName}</p>
+          <p className="text-[13px] tabular-nums text-[#6C6C72]">{formatDayLabel(date)}</p>
         </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="rounded-lg bg-[#F3F4F6] px-3 py-1 text-[12px] font-medium">{locationA}</span>
+          <span className="text-lg font-light text-slate-300">⇄</span>
+          <span className="rounded-lg bg-[#FAEED9] px-3 py-1 text-[12px] font-medium text-[#854F0B]">{locationB}</span>
+        </div>
+        <p className="text-[12px] leading-relaxed text-ios-muted">{message}</p>
+        {onAccept ? (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void onAccept()}
+            className="w-full rounded-[13px] bg-gradient-to-r from-[#1D4ED8] to-[#2563EB] py-3.5 text-[15px] font-bold text-white shadow-[0_3px_12px_rgba(37,99,235,0.28)] disabled:opacity-50"
+          >
+            Approve clash
+          </button>
+        ) : null}
       </div>
-    </div>
+      <div className="flex divide-x divide-black/10 bg-[#FAFAFA]">
+        <Link
+          href={`/dashboard/daily-overview?date=${dayKey(date)}`}
+          className="flex-1 py-3 text-center text-[13px] font-semibold text-[#2563EB]"
+        >
+          Open daily overview
+        </Link>
+        {projectPathA && labelA ? (
+          <Link href={projectPathA} className="flex-1 py-3 text-center text-[13px] font-semibold text-[#2563EB]">
+            {labelA}
+          </Link>
+        ) : null}
+        {projectPathB && labelB ? (
+          <Link href={projectPathB} className="flex-1 py-3 text-center text-[13px] font-semibold text-[#2563EB]">
+            {labelB}
+          </Link>
+        ) : null}
+      </div>
+      {onDeleteA || onDeleteB ? (
+        <div className="flex gap-2 border-t border-black/[0.07] px-3.5 py-2.5">
+          {onDeleteA && labelA ? (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void onDeleteA()}
+              className="rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-[12px] font-semibold text-red-700 disabled:opacity-50"
+            >
+              Delete · {labelA}
+            </button>
+          ) : null}
+          {onDeleteB && labelB ? (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void onDeleteB()}
+              className="rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-[12px] font-semibold text-red-700 disabled:opacity-50"
+            >
+              Delete · {labelB}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+    </article>
   )
 }
 
-function MaterialWarningCard({
+function UnbookedDayCard({
+  date,
+  people,
+  canBook,
+}: {
+  date: Date
+  people: UnbookedLabourWarning[]
+  canBook: boolean
+}) {
+  const parsed = people.map((person) => ({
+    ...parseUnbookedPerson(`${person.operativeName} (missing ${person.missingHours}h)`),
+    id: person.id,
+    message: person.message,
+  }))
+  return (
+    <article className="overflow-hidden rounded-[18px] border border-black/[0.07] bg-white shadow-[0_2px_8px_rgba(0,0,0,0.06)]">
+      <header className="flex items-center gap-2 bg-gradient-to-br from-[#7F1D1D] to-[#B91C1C] px-4 py-4">
+        <p className="min-w-0 flex-1 text-[17px] font-extrabold tracking-tight text-white">Unbooked labour</p>
+        <PriorityBadge level="high" />
+      </header>
+      <div className="px-4 pb-1 pt-4">
+        <p className="pb-3 text-[13px] font-semibold leading-5 text-[#374151]">
+          {people.length} {people.length === 1 ? 'person is' : 'people are'} missing hours on{' '}
+          <span className="font-bold">{formatLongDay(date)}</span> and are below the standard paid day.
+        </p>
+        {parsed.map((person, index) => (
+          <div
+            key={person.id}
+            className={`flex items-center gap-2.5 py-2.5 ${index > 0 ? 'border-t border-black/[0.06]' : ''}`}
+          >
+            <Avatar name={person.name} />
+            <p className="min-w-0 flex-1 text-[13px] font-semibold">{person.name}</p>
+            {person.badge ? (
+              <span className="rounded-lg border border-[#FDE2E2] bg-[#FEF2F2] px-2 py-0.5 text-[11px] font-bold text-[#DC2626]">
+                {person.badge}
+              </span>
+            ) : null}
+          </div>
+        ))}
+      </div>
+      <div className="space-y-2.5 bg-[#FAFAFA] px-3.5 py-3.5">
+        {canBook ? (
+          <Link
+            href={`/dashboard/schedule?date=${dayKey(date)}`}
+            className="flex w-full items-center justify-center gap-2 rounded-[13px] bg-gradient-to-r from-[#1D4ED8] to-[#2563EB] py-3.5 text-[15px] font-bold text-white shadow-[0_3px_12px_rgba(37,99,235,0.28)]"
+          >
+            Book labour for this day
+          </Link>
+        ) : null}
+        <div className="flex overflow-hidden rounded-xl border border-black/10 bg-white">
+          <Link
+            href={`/dashboard/daily-overview?date=${dayKey(date)}`}
+            className="flex-1 py-3 text-center text-[13px] font-semibold text-[#2563EB]"
+          >
+            Open daily overview
+          </Link>
+        </div>
+      </div>
+    </article>
+  )
+}
+
+function MaterialsCard({
   warning,
   smallWorkIds,
 }: {
   warning: MissedMaterialOrderWarning
   smallWorkIds: ReadonlySet<string>
 }) {
-  const materialsHref = projectMaterialsPath(warning.projectId, smallWorkIds)
-
   return (
-    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm border-l-4 border-l-violet-400">
-      <div className="px-5 py-4">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-sm font-semibold text-slate-900">{warning.projectLabel}</span>
-          <span className="inline-flex items-center gap-1 rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-red-700">
-            <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
-            Today
-          </span>
-          <span className="rounded-full bg-violet-50 px-2 py-0.5 text-[10px] font-semibold uppercase text-violet-700">
-            Missed material order
-          </span>
-        </div>
-        <p className="mt-2 text-xs leading-relaxed text-slate-500">{warning.message}</p>
-        <div className="mt-3 flex flex-wrap gap-2">
-          <Link
-            href={materialsHref}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700"
-          >
-            Open materials
-          </Link>
-        </div>
+    <article className="overflow-hidden rounded-[18px] border border-black/[0.07] bg-white shadow-[0_2px_8px_rgba(0,0,0,0.06)]">
+      <header className="flex items-center gap-2 bg-gradient-to-br from-[#374151] to-[#4B5563] px-4 py-4">
+        <p className="min-w-0 flex-1 text-[17px] font-extrabold text-white">Missed material order</p>
+        <PriorityBadge level="low" />
+      </header>
+      <div className="space-y-2.5 px-4 py-4">
+        <p className="text-[13px] font-semibold text-[#374151]">{warning.message}</p>
+        <p className="text-[13px] font-semibold">{warning.projectLabel}</p>
+        <p className="text-[12px] text-ios-muted">Managers should confirm material lists with site teams.</p>
       </div>
-    </div>
-  )
-}
-
-function UnbookedLabourCard({ warning }: { warning: UnbookedLabourWarning }) {
-  const urgency = urgencyLevel(warning.date)
-  const styles = URGENCY_STYLES[urgency]
-
-  return (
-    <div className={`overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm border-l-4 ${styles.border}`}>
-      <div className="flex w-full items-start gap-4 px-5 py-4">
-        <Avatar name={warning.operativeName} />
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-sm font-semibold text-slate-900">{warning.operativeName}</span>
-            <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${styles.badge}`}>
-              <span className={`h-1.5 w-1.5 rounded-full ${styles.dot}`} />
-              {formatDateLabel(warning.date)}
-            </span>
-            <span className="rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-semibold uppercase text-red-700">
-              Unbooked labour
-            </span>
-          </div>
-          <p className="mt-2 text-xs leading-relaxed text-slate-500">{warning.message}</p>
-        </div>
-      </div>
-      <div className="border-t border-slate-100 bg-slate-50 px-5 py-3">
+      <div className="bg-[#FAFAFA] px-3.5 py-3.5">
         <Link
-          href="/dashboard/schedule"
-          className="inline-flex shrink-0 items-center whitespace-nowrap rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-blue-700"
+          href={projectMaterialsPath(warning.projectId, smallWorkIds)}
+          className="flex w-full items-center justify-center rounded-[13px] bg-gradient-to-r from-[#1D4ED8] to-[#2563EB] py-3 text-[14px] font-bold text-white"
         >
-          Open schedule
+          Open materials
         </Link>
       </div>
-    </div>
+    </article>
   )
 }
-
-function ManagerClashCard({ warning }: { warning: ManagerBookingClashWarning }) {
-  const urgency = urgencyLevel(warning.date)
-  const styles = URGENCY_STYLES[urgency]
-
-  return (
-    <div className={`overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm border-l-4 ${styles.border}`}>
-      <div className="flex w-full items-start gap-4 px-5 py-4">
-        <Avatar name={warning.personName} />
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-sm font-semibold text-slate-900">{warning.personName}</span>
-            <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${styles.badge}`}>
-              <span className={`h-1.5 w-1.5 rounded-full ${styles.dot}`} />
-              {formatDateLabel(warning.date)}
-            </span>
-            <span className="rounded-full bg-violet-50 px-2 py-0.5 text-[10px] font-semibold uppercase text-violet-700">
-              Manager overlap
-            </span>
-          </div>
-          <p className="mt-2 text-xs leading-relaxed text-slate-500">{warning.message}</p>
-        </div>
-      </div>
-      <div className="border-t border-slate-100 bg-slate-50 px-5 py-3">
-        <Link
-          href="/dashboard/daily-overview"
-          className="inline-flex shrink-0 items-center whitespace-nowrap rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-blue-700"
-        >
-          Open daily overview
-        </Link>
-      </div>
-    </div>
-  )
-}
-
-type FilterType = 'all' | 'today' | 'upcoming' | 'past' | 'clashes' | 'materials' | 'unbooked'
 
 export function WarningsScreen({
   organizationName,
@@ -290,7 +279,7 @@ export function WarningsScreen({
   unbookedWarnings,
   materialWarnings,
   loading,
-  user: _user,
+  user,
   operatives: _operatives,
   smallWorkIds,
   onAcceptClash,
@@ -308,93 +297,27 @@ export function WarningsScreen({
   onAcceptClash: (clash: OperativeBookingClashWarning) => Promise<void>
   onDeleteBooking: (bookingId: string) => Promise<void>
 }) {
-  const [filter, setFilter] = useState<FilterType>('all')
-  const [search, setSearch] = useState('')
+  const [filter, setFilter] = useState<FilterChip>('all')
   const [busyId, setBusyId] = useState<string | null>(null)
+  const canBook = Boolean(user && (hasAdminAccess(user) || user.permissions?.manager))
+  const isAdmin = Boolean(user && hasAdminAccess(user))
 
-  const totalCount =
-    clashWarnings.length + managerClashWarnings.length + unbookedWarnings.length + materialWarnings.length
-  const todayClashCount =
-    clashWarnings.filter((w) => isToday(w.date)).length +
-    managerClashWarnings.filter((w) => isToday(w.date)).length
-  const todayUnbookedCount = unbookedWarnings.filter((w) => isToday(w.date)).length
-  const todayMaterialCount = materialWarnings.length
+  const unbookedGroups = useMemo(() => groupUnbookedWarningsByDay(unbookedWarnings), [unbookedWarnings])
+  const clashCount = clashWarnings.length + managerClashWarnings.length
+  const highCount = clashCount + unbookedGroups.length
+  const lowCount = materialWarnings.length
+  const totalCount = highCount + lowCount
 
-  const filteredManagerClashes = useMemo(() => {
-    let list = [...managerClashWarnings]
-    if (filter === 'today') list = list.filter((w) => isToday(w.date))
-    else if (filter === 'upcoming') list = list.filter((w) => !isPast(w.date) || isToday(w.date))
-    else if (filter === 'past') list = list.filter((w) => isPast(w.date) && !isToday(w.date))
-    else if (filter === 'materials' || filter === 'unbooked') return []
-    if (search.trim()) {
-      const q = search.toLowerCase()
-      list = list.filter(
-        (w) =>
-          w.personName.toLowerCase().includes(q) ||
-          w.locationALabel.toLowerCase().includes(q) ||
-          w.locationBLabel.toLowerCase().includes(q)
-      )
-    }
-    return list.sort((a, b) => a.date.getTime() - b.date.getTime())
-  }, [managerClashWarnings, filter, search])
+  const chips: { value: FilterChip; label: string; count: number }[] = [
+    { value: 'all', label: 'All', count: totalCount },
+    { value: 'clashes', label: 'Clashes', count: clashCount },
+    { value: 'unbooked', label: 'Unbooked', count: unbookedGroups.length },
+    { value: 'materials', label: 'Materials', count: lowCount },
+  ]
 
-  const filteredClashes = useMemo(() => {
-    let list = [...clashWarnings]
-    if (filter === 'today') list = list.filter((w) => isToday(w.date))
-    else if (filter === 'upcoming') list = list.filter((w) => !isPast(w.date) || isToday(w.date))
-    else if (filter === 'past') list = list.filter((w) => isPast(w.date) && !isToday(w.date))
-    if (search.trim()) {
-      const q = search.toLowerCase()
-      list = list.filter(
-        (w) =>
-          w.operativeName.toLowerCase().includes(q) ||
-          w.projectALabel.toLowerCase().includes(q) ||
-          w.projectBLabel.toLowerCase().includes(q)
-      )
-    }
-    return list.sort((a, b) => a.date.getTime() - b.date.getTime())
-  }, [clashWarnings, filter, search])
-
-  const filteredUnbooked = useMemo(() => {
-    if (filter === 'materials' || filter === 'clashes') return []
-    if (filter === 'unbooked') {
-      let list = [...unbookedWarnings]
-      if (search.trim()) {
-        const q = search.toLowerCase()
-        list = list.filter((w) => w.operativeName.toLowerCase().includes(q))
-      }
-      return list
-    }
-    if (filter === 'today') {
-      return unbookedWarnings.filter((w) => isToday(w.date))
-    }
-    if (filter === 'upcoming') {
-      return unbookedWarnings.filter((w) => !isPast(w.date) || isToday(w.date))
-    }
-    if (filter === 'past') {
-      return unbookedWarnings.filter((w) => isPast(w.date) && !isToday(w.date))
-    }
-    let list = [...unbookedWarnings]
-    if (search.trim()) {
-      const q = search.toLowerCase()
-      list = list.filter((w) => w.operativeName.toLowerCase().includes(q))
-    }
-    return list
-  }, [unbookedWarnings, filter, search])
-
-  const filteredMaterials = useMemo(() => {
-    if (filter === 'past' || filter === 'upcoming' || filter === 'clashes' || filter === 'unbooked') return []
-    if (filter === 'materials') return materialWarnings
-    if (search.trim()) {
-      const q = search.toLowerCase()
-      return materialWarnings.filter((w) => w.projectLabel.toLowerCase().includes(q))
-    }
-    return materialWarnings
-  }, [materialWarnings, filter, search])
-
-  const showClashes = filter !== 'materials' && filter !== 'unbooked'
-  const showUnbooked = filter !== 'materials' && filter !== 'clashes'
-  const showMaterials = filter !== 'clashes' && filter !== 'past' && filter !== 'upcoming' && filter !== 'unbooked'
+  const showClashes = filter === 'all' || filter === 'clashes'
+  const showUnbooked = filter === 'all' || filter === 'unbooked'
+  const showMaterials = filter === 'all' || filter === 'materials'
 
   const handleAccept = async (clash: OperativeBookingClashWarning) => {
     setBusyId(clash.id)
@@ -415,130 +338,153 @@ export function WarningsScreen({
     }
   }
 
-  if (loading) {
-    return <LoadingSpinner label="Loading warnings…" />
-  }
-
   return (
-    <div className="space-y-6">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-red-50">
-              <svg className="h-5 w-5 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-              </svg>
-            </div>
-            <h1 className="text-2xl font-bold tracking-tight text-slate-900">Warnings</h1>
-            {totalCount > 0 && (
-              <span className="rounded-full bg-red-600 px-2.5 py-0.5 text-xs font-bold text-white">{totalCount}</span>
-            )}
-          </div>
-          <p className="mt-1 text-sm text-slate-500">
-            Booking clashes, manager overlaps, unbooked labour, and missed material orders for {organizationName}.
-          </p>
+    <div className="space-y-4">
+      <div className="flex items-center gap-3">
+        <div className="min-w-0 flex-1 text-center">
+          <h1 className="text-[17px] font-bold">Warnings</h1>
+          <p className="text-[11px] text-ios-muted">{organizationName}</p>
         </div>
-        <Link href="/dashboard/my-schedule" className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
-          Open My Schedule
-        </Link>
-      </div>
-
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
-        <StatCard value={totalCount} label="Total warnings" color={totalCount > 0 ? 'text-red-600' : 'text-slate-900'} icon={<span className={totalCount > 0 ? 'text-red-500' : 'text-slate-400'}>!</span>} />
-        <StatCard value={todayClashCount} label="Clashes today" color={todayClashCount > 0 ? 'text-red-600' : 'text-slate-900'} icon={<span>⏱</span>} />
-        <StatCard value={todayUnbookedCount} label="Unbooked today" color={todayUnbookedCount > 0 ? 'text-red-600' : 'text-slate-900'} icon={<span>👷</span>} />
-        <StatCard value={todayMaterialCount} label="Materials today" color={todayMaterialCount > 0 ? 'text-violet-600' : 'text-slate-900'} icon={<span>📦</span>} />
-        <StatCard value={unbookedWarnings.length} label="Unbooked labour" color={unbookedWarnings.length > 0 ? 'text-red-600' : 'text-slate-900'} icon={<span>📅</span>} />
-      </div>
-
-      <div className="flex flex-wrap items-center gap-3">
-        <input
-          type="text"
-          placeholder="Search operative or project…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="min-w-[200px] flex-1 rounded-xl border border-slate-200 bg-white py-2 px-3 text-sm"
-          aria-label="Search warnings"
-        />
-        <div className="flex flex-wrap gap-1 rounded-xl bg-slate-100 p-1">
-          {(
-            [
-              { value: 'all', label: 'All' },
-              { value: 'today', label: 'Today' },
-              { value: 'clashes', label: 'Clashes' },
-              { value: 'unbooked', label: 'Unbooked' },
-              { value: 'materials', label: 'Materials' },
-            ] as { value: FilterType; label: string }[]
-          ).map((f) => (
-            <button
-              key={f.value}
-              type="button"
-              onClick={() => setFilter(f.value)}
-              className={`rounded-lg px-3 py-1.5 text-xs font-semibold ${filter === f.value ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}
+        <div className="flex w-[76px] justify-end gap-2">
+          {isAdmin ? (
+            <Link
+              href="/dashboard/settings"
+              className="grid h-[34px] w-[34px] place-items-center rounded-full border border-black/10 bg-white text-[#555] shadow-sm"
+              aria-label="Warning settings"
             >
-              {f.label}
+              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M10.3 4.3 9.8 7.1a7.2 7.2 0 0 0-1.6.9L5.5 7.1 3.7 10l2.1 1.6a7 7 0 0 0 0 1.8L3.7 15l1.8 3 2.7-.9a7.2 7.2 0 0 0 1.6.9l.5 2.8h3.4l.5-2.8a7.2 7.2 0 0 0 1.6-.9l2.7.9 1.8-3-2.1-1.6a7 7 0 0 0 0-1.8L21.3 10l-1.8-3-2.7.9a7.2 7.2 0 0 0-1.6-.9l-.5-2.8h-3.4Z" />
+                <circle cx="12" cy="12.5" r="2.4" />
+              </svg>
+            </Link>
+          ) : null}
+        </div>
+      </div>
+
+      {totalCount > 0 ? (
+        <section className="rounded-[18px] bg-gradient-to-br from-[#B83232] to-[#9E2A2A] p-4 text-white">
+          <p className="text-[10px] font-bold uppercase tracking-[0.8px] text-white/60">Active issues</p>
+          <div className="mt-1 flex items-center gap-3">
+            <p className="text-[26px] font-bold">{totalCount} need attention</p>
+            <span className="ml-auto grid h-9 w-9 place-items-center rounded-full bg-white/18">
+              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12 3 2 21h20L12 3Z" />
+              </svg>
+            </span>
+          </div>
+          <div className="mt-3.5 grid grid-cols-3 gap-2">
+            <HeroStat value={highCount} label="High" />
+            <HeroStat value={0} label="Medium" />
+            <HeroStat value={lowCount} label="Low" />
+          </div>
+          <p className="mt-3 text-[11px] leading-4 text-white/55">
+            High: booking clashes & unbooked labour (approve clashes for the weekly report) · Low: materials not
+            ordered by 16:00
+          </p>
+        </section>
+      ) : null}
+
+      {totalCount > 0 ? (
+        <div className="flex flex-wrap gap-1.5">
+          {chips.map((chip) => (
+            <button
+              key={chip.value}
+              type="button"
+              onClick={() => setFilter(chip.value)}
+              className={`rounded-full px-3.5 py-1.5 text-[13px] font-semibold ${
+                filter === chip.value
+                  ? 'bg-[#1C1C1E] text-white'
+                  : 'border border-black/10 bg-white text-[#6B7280]'
+              }`}
+            >
+              {chip.label} · {chip.count}
             </button>
           ))}
         </div>
-      </div>
+      ) : null}
 
-      {totalCount === 0 && (
-        <div className="rounded-2xl border border-dashed border-slate-300 bg-white py-16 text-center">
-          <p className="text-sm font-semibold text-slate-700">No warnings</p>
-          <p className="mt-1 text-xs text-slate-400">Schedules and material orders look good.</p>
+      {totalCount === 0 ? (
+        <div className="rounded-2xl border border-ios-border bg-white px-6 py-16 text-center">
+          {loading ? (
+            <>
+              <p className="text-[18px] font-semibold">Check for warnings</p>
+              <p className="mx-auto mt-2 max-w-md text-[14px] text-ios-muted">
+                Scanning today and tomorrow. Results stay on Home and Weekly Report once they land.
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="text-[40px] text-[#0F6E56]">✓</p>
+              <p className="mt-2 text-[18px] font-semibold">No active warnings</p>
+              <p className="mx-auto mt-2 max-w-md text-[14px] text-ios-muted">
+                High: operative, manager, and admin booking clashes plus unbooked labour. Tick a clash to note it on
+                the weekly report. Low: material orders not placed by 16:00.
+              </p>
+            </>
+          )}
         </div>
-      )}
+      ) : null}
 
-      {showMaterials && filteredMaterials.length > 0 && (
-        <section className="space-y-3">
-          <h2 className="text-sm font-semibold text-slate-900">Missed material orders (today)</h2>
-          {filteredMaterials.map((w) => (
-            <MaterialWarningCard key={w.id} warning={w} smallWorkIds={smallWorkIds} />
-          ))}
-        </section>
-      )}
+      {showUnbooked
+        ? unbookedGroups.map((group) => (
+            <UnbookedDayCard key={group.id} date={group.date} people={group.people} canBook={canBook} />
+          ))
+        : null}
 
-      {showUnbooked && filteredUnbooked.length > 0 && (
-        <section className="space-y-3">
-          <h2 className="text-sm font-semibold text-slate-900">Unbooked labour</h2>
-          {filteredUnbooked.map((warning) => (
-            <UnbookedLabourCard key={warning.id} warning={warning} />
-          ))}
-        </section>
-      )}
+      {showMaterials
+        ? materialWarnings.map((warning) => (
+            <MaterialsCard key={warning.id} warning={warning} smallWorkIds={smallWorkIds} />
+          ))
+        : null}
 
-      {showClashes && filteredManagerClashes.length > 0 && (
-        <section className="space-y-3">
-          <h2 className="text-sm font-semibold text-slate-900">Manager / admin overlaps</h2>
-          {filteredManagerClashes.map((warning) => (
-            <ManagerClashCard key={warning.id} warning={warning} />
-          ))}
-        </section>
-      )}
-
-      {showClashes && filteredClashes.length > 0 && (
-        <section className="space-y-3">
-          <h2 className="text-sm font-semibold text-slate-900">Booking clashes</h2>
-          {filteredClashes.map((clash) => (
+      {showClashes
+        ? managerClashWarnings.map((warning) => (
             <ClashCard
-              key={clash.id}
-              clash={clash}
-              smallWorkIds={smallWorkIds}
-              busy={busyId === clash.id || busyId === clash.bookingAId || busyId === clash.bookingBId}
-              onAccept={() => handleAccept(clash)}
-              onDeleteBooking={handleDelete}
+              key={warning.id}
+              title="Manager booking clash"
+              personName={warning.personName}
+              date={warning.date}
+              locationA={warning.locationALabel}
+              locationB={warning.locationBLabel}
+              message={warning.message}
             />
-          ))}
-        </section>
-      )}
+          ))
+        : null}
 
-      {totalCount > 0 &&
-        filteredClashes.length === 0 &&
-        filteredManagerClashes.length === 0 &&
-        filteredUnbooked.length === 0 &&
-        filteredMaterials.length === 0 && (
-        <p className="text-sm text-slate-500">No results match your filters.</p>
-      )}
+      {showClashes
+        ? clashWarnings.map((clash) => {
+            const isSmallA = smallWorkIds.has(clash.projectAId)
+            const isSmallB = smallWorkIds.has(clash.projectBId)
+            return (
+              <ClashCard
+                key={clash.id}
+                title="Operative booking clash"
+                personName={clash.operativeName}
+                date={clash.date}
+                locationA={clash.projectALabel}
+                locationB={clash.projectBLabel}
+                message={clash.message}
+                projectPathA={projectSchedulePath(clash.projectAId, smallWorkIds)}
+                projectPathB={projectSchedulePath(clash.projectBId, smallWorkIds)}
+                labelA={projectScheduleOpenLabel(clash.projectALabel, isSmallA)}
+                labelB={projectScheduleOpenLabel(clash.projectBLabel, isSmallB)}
+                busy={busyId === clash.id || busyId === clash.bookingAId || busyId === clash.bookingBId}
+                onAccept={() => handleAccept(clash)}
+                onDeleteA={() => handleDelete(clash.bookingAId, clash.projectALabel)}
+                onDeleteB={() => handleDelete(clash.bookingBId, clash.projectBLabel)}
+              />
+            )
+          })
+        : null}
+    </div>
+  )
+}
+
+function HeroStat({ value, label }: { value: number; label: string }) {
+  return (
+    <div className="rounded-xl bg-white/14 px-2.5 py-2.5 ring-1 ring-white/12">
+      <p className="text-[22px] font-bold">{value}</p>
+      <p className="text-[11px] font-medium text-white/65">{label}</p>
     </div>
   )
 }

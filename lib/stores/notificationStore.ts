@@ -3,7 +3,7 @@
 import { create } from 'zustand'
 import { doc, updateDoc } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
-import { subscribeOrgCollection } from '@/lib/firebase/subscribeOrgCollection'
+import { isOrgCollectionSubscribed, subscribeOrgCollection } from '@/lib/firebase/subscribeOrgCollection'
 import {
   logSkippedDocument,
   parseNotification,
@@ -32,6 +32,10 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
 
   loadNotifications: (organizationId, userId) => {
     if (!organizationId || !db) return
+    if (isOrgCollectionSubscribed('notifications', organizationId)) {
+      set({ loading: false })
+      return
+    }
     set({ loading: true, error: null })
     subscribeOrgCollection(
       'notifications',

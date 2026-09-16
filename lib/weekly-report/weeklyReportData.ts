@@ -110,6 +110,8 @@ export type SubcontractorBookingRow = {
   timeSlot: string
   workStartTime?: string
   workEndTime?: string
+  status?: string
+  bookedOperativeNames?: string[]
 }
 
 function leaveDaysInPeriod(booking: HolidayBooking, period: ReportPeriod, standardHours: number): number {

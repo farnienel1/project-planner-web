@@ -18,7 +18,7 @@ import {
 import { loadSubcontractorBookings } from '@/lib/weekly-report/loadSubcontractorBookings'
 import type { SubcontractorBookingRow } from '@/lib/weekly-report/weeklyReportData'
 import { WeeklyReportScreen } from '@/components/weekly-report/WeeklyReportScreen'
-import { PageHeader } from '@/components/dashboard/PageShell'
+import { PageHeader } from '@/components/ios/primitives'
 
 export default function WeeklyReportPage() {
   const router = useRouter()
@@ -76,10 +76,7 @@ export default function WeeklyReportPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        title="Weekly report"
-        description="Matches the iOS weekly report PDF — project breakdown, leave, manager schedule, and pay summary."
-      />
+      <PageHeader title="Weekly Report" />
       <WeeklyReportScreen
         organizationName={organization?.name || orgDetails?.name || 'Organisation'}
         companyLogoURL={orgDetails?.companyLogoURL}
