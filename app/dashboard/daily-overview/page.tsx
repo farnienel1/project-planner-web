@@ -5,8 +5,13 @@
 
 'use client'
 
+import { Suspense } from 'react'
 import { DailyOverviewScreen } from '@/components/daily-overview/DailyOverviewScreen'
 
 export default function DailyOverviewPage() {
-  return <DailyOverviewScreen />
+  return (
+    <Suspense fallback={<p className="py-8 text-center text-[14px] text-ios-muted">Opening daily overview…</p>}>
+      <DailyOverviewScreen />
+    </Suspense>
+  )
 }

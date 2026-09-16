@@ -182,3 +182,96 @@ test('buildDailyOverview lists people even when the job document is missing', ()
   assert.equal(model.projectCards.length, 1)
   assert.equal(model.projectCards[0].people[0].name, 'Sam Site')
 })
+
+test('buildDailyOverview groups mixed-case project ids and merges a person\'s hours', () => {
+  const day = new Date('2026-09-16T12:00:00Z')
+  const project = {
+    id: 'P1',
+    jobNumber: 'J-100',
+    siteName: 'Alpha',
+    jobType: 'CAT A',
+    client: { id: 'c', name: 'Acme' },
+    addressLine1: '',
+    townCity: '',
+    postcode: '',
+    startDate: day,
+    endDate: day,
+    isLive: true,
+    manager: { name: 'Custom', email: '' },
+    createdAt: day,
+    updatedAt: day,
+  } as Project
+  const ada = {
+    id: 'OP1',
+    firstName: 'Ada',
+    lastName: 'Booked',
+    email: 'ada@x.com',
+    startDate: day,
+    hourlyRate: 0,
+    skills: [],
+    qualifications: [],
+    isActive: true,
+    createdAt: day,
+    updatedAt: day,
+  }
+  const bob = {
+    ...ada,
+    id: 'OP2',
+    firstName: 'Bob',
+    lastName: 'Site',
+    email: 'bob@x.com',
+  }
+  const model = buildDailyOverview({
+    day,
+    today: day,
+    projects: [project],
+    bookings: [
+      {
+        id: 'B-am',
+        operativeId: 'OP1',
+        projectId: 'p1',
+        date: day,
+        timeSlot: 'AM',
+        bookedBy: 'Ada',
+        status: 'Confirmed',
+        createdAt: day,
+        updatedAt: day,
+      },
+      {
+        id: 'B-pm',
+        operativeId: 'OP1',
+        projectId: 'J-100',
+        date: day,
+        timeSlot: 'PM',
+        bookedBy: 'Ada',
+        status: 'Confirmed',
+        createdAt: day,
+        updatedAt: day,
+      },
+      {
+        id: 'B-bob',
+        operativeId: 'OP2',
+        projectId: 'P1',
+        date: day,
+        timeSlot: 'FULL DAY',
+        bookedBy: 'Mo',
+        status: 'Confirmed',
+        createdAt: day,
+        updatedAt: day,
+      },
+    ],
+    managerBookings: [],
+    holidays: [] as HolidayBooking[],
+    users: [],
+    operatives: [ada, bob],
+  })
+  assert.equal(model.jobsCount, 1)
+  assert.equal(model.projectCards[0].project.siteName, 'Alpha')
+  assert.equal(model.projectCards[0].people.length, 2)
+  const adaRow = model.projectCards[0].people.find((row) => row.name === 'Ada Booked')
+  const bobRow = model.projectCards[0].people.find((row) => row.name === 'Bob Site')
+  assert.ok(adaRow)
+  assert.ok(bobRow)
+  assert.equal(adaRow?.pillText, '8h')
+  assert.equal(bobRow?.pillText, '8h')
+})
