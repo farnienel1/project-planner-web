@@ -225,7 +225,7 @@ function UnbookedDayCard({
       <div className="space-y-2.5 bg-[#FAFAFA] px-3.5 py-3.5">
         {canBook ? (
           <Link
-            href={`/dashboard/schedule?date=${dayKey(date)}`}
+            href={`/dashboard/book-labour?date=${dayKey(date)}&from=warnings`}
             className="flex w-full items-center justify-center gap-2 rounded-[13px] bg-gradient-to-r from-[#1D4ED8] to-[#2563EB] py-3.5 text-[15px] font-bold text-white shadow-[0_3px_12px_rgba(37,99,235,0.28)]"
           >
             Book labour for this day

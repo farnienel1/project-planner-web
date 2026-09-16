@@ -131,6 +131,12 @@ export function londonHour(date: Date): number {
   return partsInLondon(date).h
 }
 
+/** Minutes past midnight in Europe/London (0–1439). */
+export function londonMinutesOfDay(date: Date): number {
+  const { h, min } = partsInLondon(date)
+  return h * 60 + min
+}
+
 /** JS weekday in Europe/London: 0 = Sunday … 6 = Saturday. */
 export function londonJsWeekday(date: Date): number {
   const { y, m, d } = partsInLondon(date)

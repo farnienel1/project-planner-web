@@ -294,6 +294,33 @@ test('materials cutoff fires after 16:00 for tomorrow bookings, including empty 
   assert.equal(tooEarly.length, 0)
 })
 
+test('materials cutoff uses the configured hour and minute, not a hardcoded 16:00', () => {
+  const tomorrow = new Date('2026-09-17T08:00:00+01:00')
+  const works = [project('P1')]
+  const bookings = [booking({ id: 'B1', operativeId: 'OP1', date: tomorrow, projectId: 'P1' })]
+  const atTwo = new Date('2026-09-16T14:00:00+01:00')
+  const beforeTwo = new Date('2026-09-16T13:30:00+01:00')
+
+  assert.equal(
+    computeMissedMaterialOrderWarnings([], [], works, bookings, {
+      enabled: true,
+      cutOffHour: 14,
+      cutOffMinute: 0,
+      referenceDate: atTwo,
+    }).length,
+    1
+  )
+  assert.equal(
+    computeMissedMaterialOrderWarnings([], [], works, bookings, {
+      enabled: true,
+      cutOffHour: 14,
+      cutOffMinute: 0,
+      referenceDate: beforeTwo,
+    }).length,
+    0
+  )
+})
+
 test('generateOrgWarnings core count matches iOS (clashes + unbooked person-days + materials)', () => {
   const detection = {
     ...DEFAULT_WARNING_DETECTION,

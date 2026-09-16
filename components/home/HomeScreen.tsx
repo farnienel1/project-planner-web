@@ -50,7 +50,7 @@ import { policyForDay } from '@/lib/payroll/policyCatalog'
 import { IconChip, type ChipTint } from '@/components/ios/IconChip'
 import { generateOrgWarnings } from '@/lib/warnings/generateOrgWarnings'
 import { loadOrganizationDetails, type OrganizationDetails } from '@/lib/settings/organizationSettings'
-import { loadNotificationPreferences, type NotificationPreferences } from '@/lib/settings/notificationPreferences'
+import { loadMaterialCutOffSettings, type NotificationPreferences } from '@/lib/settings/notificationPreferences'
 import { mergeProjectsAndSmallWorks } from '@/lib/projects/workStatus'
 
 function greetingName(firstName: string, email: string): string {
@@ -110,14 +110,18 @@ export function HomeScreen() {
     if (!user) return
     setMetricIds(loadSavedOverviewMetrics(user.id))
     setActionIds(loadSavedQuickActionOrder(user.id, displayUser || user))
-    loadNotificationPreferences(user.id).then(setNotificationPreferences).catch(() => setNotificationPreferences(null))
+    if (organization?.id) {
+      loadMaterialCutOffSettings(organization.id, user.id)
+        .then(setNotificationPreferences)
+        .catch(() => setNotificationPreferences(null))
+    }
     try {
       setHint(!localStorage.getItem(quickActionHintStorageKey(user.id)))
     } catch {
       /* ignore */
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- displayUser is derived from user.id
-  }, [user?.id])
+  }, [user?.id, organization?.id])
 
   const merged = useMemo(() => mergeProjectsAndSmallWorks(projects, smallWorks), [projects, smallWorks])
   const liveCount = merged.filter((p) => p.isLive !== false).length

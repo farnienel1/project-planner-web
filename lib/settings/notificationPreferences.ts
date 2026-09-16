@@ -9,13 +9,15 @@ export type NotificationPreferences = {
   materialCutOffOnSunday: boolean
 }
 
-const DEFAULTS: NotificationPreferences = {
+export const DEFAULT_NOTIFICATION_PREFERENCES: NotificationPreferences = {
   materialOrderCutOff: true,
   materialCutOffHour: 16,
   materialCutOffMinute: 0,
   materialCutOffOnSaturday: false,
   materialCutOffOnSunday: false,
 }
+
+const DEFAULTS = DEFAULT_NOTIFICATION_PREFERENCES
 
 function storageKey(userId: string): string {
   return `pp.notificationPreferences.${userId}`
@@ -37,7 +39,7 @@ function cacheNotificationPreferencesLocally(userId: string, prefs: Notification
   window.localStorage.setItem(storageKey(userId), JSON.stringify(prefs))
 }
 
-function parseNotificationPreferences(raw: Record<string, unknown> | undefined): NotificationPreferences {
+export function parseNotificationPreferences(raw: Record<string, unknown> | undefined): NotificationPreferences {
   if (!raw) return { ...DEFAULTS }
   return {
     materialOrderCutOff: raw.materialOrderCutOff !== false,
@@ -49,6 +51,15 @@ function parseNotificationPreferences(raw: Record<string, unknown> | undefined):
 }
 
 export async function loadNotificationPreferences(userId: string): Promise<NotificationPreferences> {
+  const fromFirestore = await loadNotificationPreferencesFromFirestore(userId)
+  if (fromFirestore) return fromFirestore
+  return loadNotificationPreferencesFromLocalStorage(userId)
+}
+
+/** Returns null when the iOS user doc has no notificationPreferences map. */
+export async function loadNotificationPreferencesFromFirestore(
+  userId: string
+): Promise<NotificationPreferences | null> {
   try {
     const snap = await getDoc(doc(db, 'users', userId))
     if (snap.exists()) {
@@ -60,9 +71,9 @@ export async function loadNotificationPreferences(userId: string): Promise<Notif
       }
     }
   } catch {
-    // Fall back to local cache when offline or Firestore is unavailable.
+    // Fall through.
   }
-  return loadNotificationPreferencesFromLocalStorage(userId)
+  return null
 }
 
 export async function saveNotificationPreferences(userId: string, prefs: NotificationPreferences): Promise<void> {
@@ -75,6 +86,35 @@ export async function saveNotificationPreferences(userId: string, prefs: Notific
     },
     { merge: true }
   )
+}
+
+/**
+ * Org hub material cut-off: organisation settings (shared) with the current user's
+ * `notificationPreferences` as the iOS-compatible dual-write / fallback.
+ */
+export async function loadMaterialCutOffSettings(
+  organizationId: string,
+  userId?: string
+): Promise<NotificationPreferences> {
+  const { loadOrganizationDetails } = await import('@/lib/settings/organizationSettings')
+  try {
+    const details = await loadOrganizationDetails(organizationId)
+    if (details?.materialCutOff) return details.materialCutOff
+  } catch {
+    // Fall through to the iOS user-doc source.
+  }
+  if (userId) return loadNotificationPreferences(userId)
+  return { ...DEFAULTS }
+}
+
+export async function saveMaterialCutOffSettingsForOrgAndUser(
+  organizationId: string,
+  userId: string | undefined,
+  prefs: NotificationPreferences
+): Promise<void> {
+  const { saveMaterialCutOffSettings } = await import('@/lib/settings/organizationSettings')
+  await saveMaterialCutOffSettings(organizationId, prefs)
+  if (userId) await saveNotificationPreferences(userId, prefs)
 }
 
 export function formatCutoffTime(hour: number, minute: number): string {
