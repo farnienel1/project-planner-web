@@ -1,6 +1,5 @@
 /**
- * Desktop/web sign-in. The public site is not a phone clone of iOS LoginBrand.
- * Narrow viewports still use LoginBrandScreen.
+ * Desktop sign-in look. Same actions and wording as iOS LoginBrand; website chrome instead of the phone screen.
  */
 
 'use client'
@@ -50,41 +49,23 @@ export function WebLoginScreen() {
   return (
     <div className="min-h-screen bg-[#f6f8fb] text-[#0b1220]">
       <MarketingHeader active="login" />
-      <main className="mx-auto grid w-full max-w-[1160px] gap-12 px-6 py-16 lg:grid-cols-2 lg:items-center lg:py-24">
+      <main className="mx-auto grid w-full max-w-[1160px] gap-10 px-6 py-16 lg:grid-cols-2 lg:items-center lg:py-20">
         <section>
-          <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#185FA5]">Web app</p>
-          <h1 className="mt-3 text-4xl font-extrabold tracking-tight lg:text-5xl">Sign in on the website</h1>
+          <h1 className="text-4xl font-extrabold tracking-tight lg:text-5xl">Welcome back</h1>
           <p className="mt-4 max-w-lg text-lg text-slate-600">
-            This is the desktop product — projects, scheduling, timesheets and settings in a browser. It uses
-            the same organisation as the iOS app. It is not a copy of the phone login screen.
+            Sign in to your organisation to manage projects, people, scheduling and reports.
           </p>
-          <ul className="mt-8 space-y-3 text-sm text-slate-700">
-            <li className="flex gap-2">
-              <span className="font-semibold text-[#185FA5]">1.</span>
-              Open the marketing site, then sign in here when you already have an organisation.
-            </li>
-            <li className="flex gap-2">
-              <span className="font-semibold text-[#185FA5]">2.</span>
-              New company? Set up on the web first — Stripe checkout lives on this site, not on iPhone.
-            </li>
-            <li className="flex gap-2">
-              <span className="font-semibold text-[#185FA5]">3.</span>
-              On a phone browser, sign-in still matches the iOS LoginBrand screen.
-            </li>
-          </ul>
-          <div className="mt-8 flex flex-wrap gap-3">
-            <Link href="/" className="rounded-xl border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-900 shadow-sm hover:border-slate-300">
-              ← Back to website
-            </Link>
-            <Link href="/setup" className="rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-700">
-              Set up organisation
-            </Link>
+          <div className="mt-8 grid grid-cols-2 gap-3">
+            {['Projects', 'Small Works', 'Operatives', 'Managers', 'Schedule', 'Settings'].map((item) => (
+              <div key={item} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700">
+                {item}
+              </div>
+            ))}
           </div>
         </section>
 
         <section className="rounded-[28px] border border-slate-200 bg-white p-8 shadow-[0_2px_30px_rgba(15,23,42,0.08)] lg:p-10">
-          <h2 className="text-2xl font-extrabold tracking-tight">Sign in</h2>
-          <p className="mt-1 text-sm text-slate-500">Use the email and password for your organisation.</p>
+          <h2 className="text-2xl font-extrabold tracking-tight">Sign In</h2>
           <form onSubmit={handleSubmit} className="mt-8 space-y-5">
             {displayError ? (
               <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{displayError}</p>
@@ -95,7 +76,7 @@ export function WebLoginScreen() {
                 type="email"
                 autoComplete="username"
                 inputMode="email"
-                placeholder="name@company.com"
+                placeholder="your@email.com"
                 value={email}
                 onChange={(e) => {
                   setEmail(e.target.value)
@@ -110,7 +91,7 @@ export function WebLoginScreen() {
                 <input
                   type={showPassword ? 'text' : 'password'}
                   autoComplete="current-password"
-                  placeholder="Enter password"
+                  placeholder="Enter your password"
                   value={password}
                   onChange={(e) => {
                     setPassword(e.target.value)
@@ -136,10 +117,16 @@ export function WebLoginScreen() {
             <button
               type="submit"
               disabled={submitting || !isFormValid}
-              className="h-12 w-full rounded-xl bg-[#185FA5] text-sm font-semibold text-white disabled:opacity-40 hover:bg-[#154e88]"
+              className="h-12 w-full rounded-xl bg-[#185FA5] text-[16px] font-bold text-white disabled:opacity-40 hover:bg-[#154e88]"
             >
-              {submitting ? 'Signing in…' : 'Sign in'}
+              {submitting ? 'Signing in…' : 'Sign In'}
             </button>
+            <p className="text-center text-sm text-slate-600">
+              New to Project Planner?{' '}
+              <Link href="/setup" className="font-semibold text-[#185FA5]">
+                Set up your organisation on the web
+              </Link>
+            </p>
           </form>
         </section>
       </main>
