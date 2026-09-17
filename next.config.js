@@ -16,10 +16,6 @@ const ContentSecurityPolicy = [
   "media-src 'self' blob:",
 ]
 
-if (process.env.NODE_ENV === 'production') {
-  ContentSecurityPolicy.push('upgrade-insecure-requests')
-}
-
 const securityHeaders = [
   { key: 'X-DNS-Prefetch-Control', value: 'off' },
   { key: 'X-Content-Type-Options', value: 'nosniff' },
