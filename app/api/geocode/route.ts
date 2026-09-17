@@ -1,9 +1,17 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import {
   geocodeQuery,
   geocodeSiteInput,
   reverseGeocodeCoordinate,
 } from '@/lib/maps/geocodingServer'
+import {
+  enforceRateLimit,
+  isFirebaseUser,
+  jsonError,
+  readJsonBody,
+  requireFirebaseUser,
+} from '@/lib/security/apiGuard'
+import { clampString } from '@/lib/security/validation'
 
 export const runtime = 'nodejs'
 
@@ -14,40 +22,48 @@ function parseCoordinate(value: string | null): number | null {
 }
 
 export async function GET(request: NextRequest) {
+  const limited = enforceRateLimit(request, 'geocode-get', 60, 60 * 1000)
+  if (limited) return limited
+
+  const user = await requireFirebaseUser(request)
+  if (!isFirebaseUser(user)) return user
+
   const { searchParams } = request.nextUrl
   const latitude = parseCoordinate(searchParams.get('lat'))
   const longitude = parseCoordinate(searchParams.get('lon'))
 
   if (latitude != null && longitude != null) {
+    if (Math.abs(latitude) > 90 || Math.abs(longitude) > 180) {
+      return jsonError('Invalid coordinates', 400)
+    }
     const result = await reverseGeocodeCoordinate(latitude, longitude)
     if (!result) {
-      return NextResponse.json({ error: 'Reverse geocode failed' }, { status: 404 })
+      return jsonError('Reverse geocode failed', 404)
     }
-    return NextResponse.json(result)
+    return Response.json(result)
   }
 
-  const query = searchParams.get('q')?.trim()
+  const query = clampString(searchParams.get('q'), 200)
   if (!query) {
-    return NextResponse.json({ error: 'Missing q, or lat and lon' }, { status: 400 })
+    return jsonError('Missing q, or lat and lon', 400)
   }
 
   const point = await geocodeQuery(query)
   if (!point) {
-    return NextResponse.json({ error: 'Geocode failed' }, { status: 404 })
+    return jsonError('Geocode failed', 404)
   }
 
-  return NextResponse.json(point)
+  return Response.json(point)
 }
 
 export async function POST(request: NextRequest) {
-  let body: unknown
-  try {
-    body = await request.json()
-  } catch {
-    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
-  }
+  const limited = enforceRateLimit(request, 'geocode-post', 60, 60 * 1000)
+  if (limited) return limited
 
-  const payload = body as {
+  const user = await requireFirebaseUser(request)
+  if (!isFirebaseUser(user)) return user
+
+  const body = await readJsonBody<{
     site?: {
       addressLine1?: string
       addressLine2?: string
@@ -57,25 +73,26 @@ export async function POST(request: NextRequest) {
       siteAddress?: string
     }
     q?: string
-  }
+  }>(request)
+  if (!body.ok) return body.response
 
-  if (payload.site) {
-    const point = await geocodeSiteInput(payload.site)
+  if (body.value.site) {
+    const point = await geocodeSiteInput(body.value.site)
     if (!point) {
-      return NextResponse.json({ error: 'Geocode failed' }, { status: 404 })
+      return jsonError('Geocode failed', 404)
     }
-    return NextResponse.json(point)
+    return Response.json(point)
   }
 
-  const query = payload.q?.trim()
+  const query = clampString(body.value.q, 200)
   if (!query) {
-    return NextResponse.json({ error: 'Missing site or q' }, { status: 400 })
+    return jsonError('Missing site or q', 400)
   }
 
   const point = await geocodeQuery(query)
   if (!point) {
-    return NextResponse.json({ error: 'Geocode failed' }, { status: 404 })
+    return jsonError('Geocode failed', 404)
   }
 
-  return NextResponse.json(point)
+  return Response.json(point)
 }

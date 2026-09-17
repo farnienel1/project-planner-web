@@ -1,9 +1,13 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { isStripePriceConfigured, loadSubscriptionPlansWithStatus } from '@/lib/stripe/enrichPlansFromStripe'
+import { enforceRateLimit } from '@/lib/security/apiGuard'
 
 export const runtime = 'nodejs'
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const limited = enforceRateLimit(request, 'stripe-plans', 60, 60 * 1000)
+  if (limited) return limited
+
   try {
     const { plans, pricingLoaded, pricingError } = await loadSubscriptionPlansWithStatus()
     const configured = isStripePriceConfigured()
