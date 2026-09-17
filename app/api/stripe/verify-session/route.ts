@@ -1,13 +1,18 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { getStripe } from '@/lib/stripe/stripe'
+import { clientSafeMessage, enforceRateLimit, jsonError } from '@/lib/security/apiGuard'
+import { isStripeCheckoutSessionId } from '@/lib/security/validation'
 
 export const runtime = 'nodejs'
 
 export async function GET(request: NextRequest) {
+  const limited = enforceRateLimit(request, 'stripe-verify', 20, 10 * 60 * 1000)
+  if (limited) return limited
+
   try {
-    const sessionId = request.nextUrl.searchParams.get('session_id')
-    if (!sessionId) {
-      return NextResponse.json({ error: 'session_id is required' }, { status: 400 })
+    const sessionId = request.nextUrl.searchParams.get('session_id')?.trim()
+    if (!sessionId || !isStripeCheckoutSessionId(sessionId)) {
+      return jsonError('session_id is required', 400)
     }
 
     const stripe = getStripe()
@@ -16,7 +21,7 @@ export async function GET(request: NextRequest) {
     })
 
     if (session.payment_status !== 'paid' && session.status !== 'complete') {
-      return NextResponse.json({ error: 'Checkout session is not complete' }, { status: 400 })
+      return jsonError('Checkout session is not complete', 400)
     }
 
     const subscription =
@@ -24,8 +29,8 @@ export async function GET(request: NextRequest) {
         ? await stripe.subscriptions.retrieve(session.subscription)
         : session.subscription
 
-    if (!subscription || subscription.status !== 'active' && subscription.status !== 'trialing') {
-      return NextResponse.json({ error: 'Subscription is not active' }, { status: 400 })
+    if (!subscription || (subscription.status !== 'active' && subscription.status !== 'trialing')) {
+      return jsonError('Subscription is not active', 400)
     }
 
     const organizationId = session.metadata?.organizationId
@@ -33,13 +38,13 @@ export async function GET(request: NextRequest) {
     const userId = session.metadata?.userId
 
     if (!organizationId || !planKey || !userId) {
-      return NextResponse.json({ error: 'Checkout session is missing organization metadata' }, { status: 400 })
+      return jsonError('Checkout session is missing organization metadata', 400)
     }
 
     const priceId = subscription.items.data[0]?.price?.id
     const currentPeriodEnd = subscription.items.data[0]?.current_period_end
 
-    return NextResponse.json({
+    return Response.json({
       organizationId,
       userId,
       planKey,
@@ -52,7 +57,7 @@ export async function GET(request: NextRequest) {
       status: 'active',
     })
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Failed to verify checkout session'
-    return NextResponse.json({ error: message }, { status: 500 })
+    console.error('[stripe/verify-session]', error)
+    return jsonError(clientSafeMessage(error, 'Failed to verify checkout session'), 500)
   }
 }
