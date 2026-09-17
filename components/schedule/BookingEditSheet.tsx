@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import type { Booking } from '@/types'
 import { slotToFirestore, type ScheduleSlotChoice } from '@/lib/scheduling/scheduleUtils'
+import { HoursTimelinePicker } from '@/components/scheduling/HoursTimelinePicker'
 
 const SLOT_OPTIONS: { value: ScheduleSlotChoice; label: string }[] = [
   { value: 'AM', label: 'Morning (AM)' },
@@ -118,26 +119,15 @@ export function BookingEditSheet({
           </div>
 
           {slot === 'CUSTOM' && (
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="mb-1 block text-xs font-semibold text-slate-600">Start</label>
-                <input
-                  type="time"
-                  value={workStartTime}
-                  onChange={(e) => setWorkStartTime(e.target.value)}
-                  className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-xs font-semibold text-slate-600">End</label>
-                <input
-                  type="time"
-                  value={workEndTime}
-                  onChange={(e) => setWorkEndTime(e.target.value)}
-                  className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
-                />
-              </div>
-            </div>
+            <HoursTimelinePicker
+              start={workStartTime}
+              end={workEndTime}
+              breakRemoved={false}
+              showBreak={false}
+              onStart={setWorkStartTime}
+              onEnd={setWorkEndTime}
+              onBreak={() => {}}
+            />
           )}
 
           <div>

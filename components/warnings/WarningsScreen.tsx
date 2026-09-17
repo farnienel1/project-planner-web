@@ -3,18 +3,15 @@
 import { useMemo, useState } from 'react'
 import Link from 'next/link'
 import { format } from 'date-fns/format'
-import { isToday } from 'date-fns/isToday'
 import type { OperativeBookingClashWarning } from '@/lib/scheduling/bookingClashUtils'
 import type { ManagerBookingClashWarning } from '@/lib/warnings/managerClashWarnings'
 import type { MissedMaterialOrderWarning } from '@/lib/warnings/materialOrderWarnings'
 import { groupUnbookedWarningsByDay, type UnbookedLabourWarning } from '@/lib/warnings/unbookedLabourWarnings'
 import { formatWarningHours } from '@/lib/warnings/clashIntervals'
 import type { QualificationExpiryWarning, UnverifiedOperativeWarning } from '@/lib/warnings/generateOrgWarnings'
-import {
-  projectSchedulePath,
-  projectMaterialsPath,
-  projectScheduleOpenLabel,
-} from '@/lib/navigation/projectSchedulePaths'
+import { projectMaterialsPath } from '@/lib/navigation/projectSchedulePaths'
+import { ClashWarningCard } from '@/components/warnings/ClashWarningCard'
+import { displayTitle, type ClashTimelineEntry } from '@/lib/warnings/clashTimeline'
 import { hasAdminAccess } from '@/lib/permissions'
 import type { Operative, User } from '@/types'
 import { initialsFrom } from '@/lib/daily-overview/buildDailyOverview'
@@ -35,11 +32,6 @@ function parseUnbookedPerson(raw: string): { name: string; badge: string | null 
   let hours = match[2].replace(/\.0h$/, 'h')
   if (!hours.endsWith('h')) hours += 'h'
   return { name: match[1], badge: `−${hours}` }
-}
-
-function formatDayLabel(date: Date): string {
-  if (isToday(date)) return 'Today'
-  return format(date, 'EEE d MMM')
 }
 
 function formatLongDay(date: Date): string {
@@ -65,120 +57,6 @@ function PriorityBadge({ level }: { level: 'high' | 'medium' | 'low' }) {
       </svg>
       {level.toUpperCase()}
     </span>
-  )
-}
-
-function ClashCard({
-  title,
-  personName,
-  date,
-  locationA,
-  locationB,
-  message,
-  projectPathA,
-  projectPathB,
-  labelA,
-  labelB,
-  busy,
-  onAccept,
-  onDeleteA,
-  onDeleteB,
-}: {
-  title: string
-  personName: string
-  date: Date
-  locationA: string
-  locationB: string
-  message: string
-  projectPathA?: string
-  projectPathB?: string
-  labelA?: string
-  labelB?: string
-  busy?: boolean
-  onAccept?: () => Promise<void>
-  onDeleteA?: () => Promise<void>
-  onDeleteB?: () => Promise<void>
-}) {
-  return (
-    <article className="overflow-hidden rounded-[15px] border border-black/[0.07] bg-white shadow-[0_2px_8px_rgba(0,0,0,0.08)]">
-      <header className="flex items-center gap-2.5 bg-gradient-to-b from-[#B3261E] to-[#8C1A14] px-3.5 py-2.5">
-        <p className="min-w-0 flex-1 text-[16.5px] font-semibold tracking-tight text-white">{title}</p>
-        <PriorityBadge level="high" />
-      </header>
-      <div className="space-y-3 px-3.5 py-3.5">
-        <div>
-          <p className="text-[14.5px] text-[#121B23]">
-            <span className="font-semibold">{personName}</span> is booked in two places on {formatDayLabel(date)}.
-          </p>
-          <p className="mt-1 text-[13.5px] text-[#6C6C72]">
-            Approve if it&apos;s intentional and it&apos;ll be noted on the weekly report.
-          </p>
-        </div>
-        <div className="flex items-center gap-2.5">
-          <Avatar name={personName} size={30} />
-          <p className="min-w-0 flex-1 text-[15px] font-semibold">{personName}</p>
-          <p className="text-[13px] tabular-nums text-[#6C6C72]">{formatDayLabel(date)}</p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="rounded-lg bg-[#F3F4F6] px-3 py-1 text-[12px] font-medium">{locationA}</span>
-          <span className="text-lg font-light text-slate-300">⇄</span>
-          <span className="rounded-lg bg-[#FAEED9] px-3 py-1 text-[12px] font-medium text-[#854F0B]">{locationB}</span>
-        </div>
-        <p className="text-[12px] leading-relaxed text-ios-muted">{message}</p>
-        {onAccept ? (
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => void onAccept()}
-            className="w-full rounded-[13px] bg-gradient-to-r from-[#1D4ED8] to-[#2563EB] py-3.5 text-[15px] font-bold text-white shadow-[0_3px_12px_rgba(37,99,235,0.28)] disabled:opacity-50"
-          >
-            Approve clash
-          </button>
-        ) : null}
-      </div>
-      <div className="flex divide-x divide-black/10 bg-[#FAFAFA]">
-        <Link
-          href={`/dashboard/daily-overview?date=${dayKey(date)}`}
-          className="flex-1 py-3 text-center text-[13px] font-semibold text-[#2563EB]"
-        >
-          Open daily overview
-        </Link>
-        {projectPathA && labelA ? (
-          <Link href={projectPathA} className="flex-1 py-3 text-center text-[13px] font-semibold text-[#2563EB]">
-            {labelA}
-          </Link>
-        ) : null}
-        {projectPathB && labelB ? (
-          <Link href={projectPathB} className="flex-1 py-3 text-center text-[13px] font-semibold text-[#2563EB]">
-            {labelB}
-          </Link>
-        ) : null}
-      </div>
-      {onDeleteA || onDeleteB ? (
-        <div className="flex gap-2 border-t border-black/[0.07] px-3.5 py-2.5">
-          {onDeleteA && labelA ? (
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => void onDeleteA()}
-              className="rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-[12px] font-semibold text-red-700 disabled:opacity-50"
-            >
-              Delete · {labelA}
-            </button>
-          ) : null}
-          {onDeleteB && labelB ? (
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => void onDeleteB()}
-              className="rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-[12px] font-semibold text-red-700 disabled:opacity-50"
-            >
-              Delete · {labelB}
-            </button>
-          ) : null}
-        </div>
-      ) : null}
-    </article>
   )
 }
 
@@ -310,6 +188,7 @@ export function WarningsScreen({
   smallWorkIds,
   onAcceptClash,
   onDeleteBooking,
+  onDeleteManagerBooking,
 }: {
   organizationName: string
   clashWarnings: OperativeBookingClashWarning[]
@@ -322,8 +201,9 @@ export function WarningsScreen({
   user: User | null
   operatives: Operative[]
   smallWorkIds: ReadonlySet<string>
-  onAcceptClash: (clash: OperativeBookingClashWarning) => Promise<void>
+  onAcceptClash: (clash: { id: string; bookingAId: string; bookingBId: string }) => Promise<void>
   onDeleteBooking: (bookingId: string) => Promise<void>
+  onDeleteManagerBooking: (bookingId: string) => Promise<void>
 }) {
   const [filter, setFilter] = useState<FilterChip>('all')
   const [busyId, setBusyId] = useState<string | null>(null)
@@ -348,7 +228,7 @@ export function WarningsScreen({
   const showUnbooked = filter === 'all' || filter === 'unbooked'
   const showMaterials = filter === 'all' || filter === 'materials'
 
-  const handleAccept = async (clash: OperativeBookingClashWarning) => {
+  const handleAccept = async (clash: { id: string; bookingAId: string; bookingBId: string }) => {
     setBusyId(clash.id)
     try {
       await onAcceptClash(clash)
@@ -357,11 +237,14 @@ export function WarningsScreen({
     }
   }
 
-  const handleDelete = async (bookingId: string, label: string) => {
+  const handleRemoveEntry = async (entry: ClashTimelineEntry) => {
+    const label = displayTitle(entry)
     if (!window.confirm(`Delete the booking for ${label}?`)) return
-    setBusyId(bookingId)
+    const id = entry.managerBookingId || entry.bookingId
+    setBusyId(id)
     try {
-      await onDeleteBooking(bookingId)
+      if (entry.managerBookingId) await onDeleteManagerBooking(entry.managerBookingId)
+      else await onDeleteBooking(entry.bookingId)
     } finally {
       setBusyId(null)
     }
@@ -490,42 +373,36 @@ export function WarningsScreen({
 
       {showClashes
         ? managerClashWarnings.map((warning) => (
-            <ClashCard
+            <ClashWarningCard
               key={warning.id}
               title="Manager booking clash"
               personName={warning.personName}
               date={warning.date}
-              locationA={warning.locationALabel}
-              locationB={warning.locationBLabel}
-              message={warning.message}
+              entries={warning.entries}
+              busy={
+                busyId === warning.id ||
+                busyId === warning.bookingAId ||
+                busyId === warning.bookingBId
+              }
+              onApprove={() => handleAccept(warning)}
+              onRemove={handleRemoveEntry}
             />
           ))
         : null}
 
       {showClashes
-        ? clashWarnings.map((clash) => {
-            const isSmallA = smallWorkIds.has(clash.projectAId)
-            const isSmallB = smallWorkIds.has(clash.projectBId)
-            return (
-              <ClashCard
-                key={clash.id}
-                title="Operative booking clash"
-                personName={clash.operativeName}
-                date={clash.date}
-                locationA={clash.projectALabel}
-                locationB={clash.projectBLabel}
-                message={clash.message}
-                projectPathA={projectSchedulePath(clash.projectAId, smallWorkIds)}
-                projectPathB={projectSchedulePath(clash.projectBId, smallWorkIds)}
-                labelA={projectScheduleOpenLabel(clash.projectALabel, isSmallA)}
-                labelB={projectScheduleOpenLabel(clash.projectBLabel, isSmallB)}
-                busy={busyId === clash.id || busyId === clash.bookingAId || busyId === clash.bookingBId}
-                onAccept={() => handleAccept(clash)}
-                onDeleteA={() => handleDelete(clash.bookingAId, clash.projectALabel)}
-                onDeleteB={() => handleDelete(clash.bookingBId, clash.projectBLabel)}
-              />
-            )
-          })
+        ? clashWarnings.map((clash) => (
+            <ClashWarningCard
+              key={clash.id}
+              title="Operative booking clash"
+              personName={clash.operativeName}
+              date={clash.date}
+              entries={clash.entries}
+              busy={busyId === clash.id || busyId === clash.bookingAId || busyId === clash.bookingBId}
+              onApprove={() => handleAccept(clash)}
+              onRemove={handleRemoveEntry}
+            />
+          ))
         : null}
     </div>
   )
