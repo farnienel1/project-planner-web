@@ -4,24 +4,22 @@ import { useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/lib/stores/authStore'
-import { ProjectPlannerLogo } from '@/components/ui/ProjectPlannerLogo'
+import { MarketingFooter, MarketingHeader } from '@/components/marketing/MarketingChrome'
 
 export default function Home() {
   const router = useRouter()
   const { user, loading } = useAuthStore()
 
   useEffect(() => {
-    if (!loading) {
-      if (user) {
-        router.push('/dashboard')
-      }
+    if (!loading && user) {
+      router.push('/dashboard')
     }
   }, [user, loading, router])
 
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#f6f8fb]">
-        <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-blue-600"></div>
+        <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-blue-600" />
       </div>
     )
   }
@@ -63,7 +61,7 @@ export default function Home() {
       icon: 'M9 12l2 2 4-4m5.6-1A12 12 0 0112 21 12 12 0 013.4 9 12 12 0 0012 3a12 12 0 008.6 6',
     },
     {
-      title: 'Mobile First',
+      title: 'iOS and web',
       description: 'Designed for iOS and fully available from your web browser.',
       iconBg: 'bg-[#f1f3f6]',
       iconColor: 'text-slate-600',
@@ -73,23 +71,7 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-[#f6f8fb] text-[#0b1220]">
-      <header className="sticky top-0 z-50 border-b border-slate-200/70 bg-white/80 backdrop-blur">
-        <div className="mx-auto flex h-[68px] w-full max-w-[1160px] items-center justify-between px-6">
-          <ProjectPlannerLogo href="/" size="sm" />
-
-          <nav className="flex items-center gap-8">
-            <a href="#features" className="hidden text-sm font-medium text-slate-600 hover:text-slate-900 sm:block">Features</a>
-            <a href="#download" className="hidden text-sm font-medium text-slate-600 hover:text-slate-900 sm:block">Download</a>
-            <a href="mailto:support@projectplanner.app" className="hidden text-sm font-medium text-slate-600 hover:text-slate-900 sm:block">Support</a>
-            <Link href="/setup" className="hidden rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-white sm:inline-flex">
-              Set up organisation
-            </Link>
-            <Link href="/login" className="rounded-full bg-[#0b1220] px-4 py-2 text-sm font-semibold text-white transition hover:-translate-y-0.5">
-              Sign In
-            </Link>
-          </nav>
-        </div>
-      </header>
+      <MarketingHeader active="home" />
 
       <section className="relative overflow-hidden bg-gradient-to-b from-white to-[#f6f8fb] py-20">
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_80%_0%,rgba(83,74,183,0.14),transparent_40%),radial-gradient(circle_at_20%_0%,rgba(37,99,235,0.14),transparent_35%)]" />
@@ -99,51 +81,74 @@ export default function Home() {
               <span className="h-2 w-2 rounded-full bg-[#0f6e56]" />
               Built for construction &amp; M&amp;E teams
             </span>
-            <h1 className="text-4xl font-extrabold leading-tight tracking-tight sm:text-6xl">
+            <h1 className="text-4xl font-extrabold leading-tight tracking-tight sm:text-5xl xl:text-6xl">
               Run every project
               <br />
-              from site to sign-off.
+              from site to <span className="whitespace-nowrap">sign-off.</span>
             </h1>
             <p className="mt-5 max-w-xl text-lg text-slate-600">
-              The comprehensive project management tool for construction teams. Track projects,
-              manage operatives, and schedule work efficiently on iOS and the web.
+              The comprehensive project management tool for construction teams. Track projects, manage operatives,
+              and schedule work efficiently on iOS and the web.
             </p>
 
             <div className="mt-8 flex flex-wrap gap-3">
-              <Link href="/setup" className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-6 py-3 text-sm font-semibold text-white shadow-[0_18px_50px_rgba(37,99,235,0.35)] transition hover:bg-blue-700">
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6" />
-                </svg>
+              <Link
+                href="/setup"
+                className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-6 py-3 text-sm font-semibold text-white shadow-[0_18px_50px_rgba(37,99,235,0.35)] transition hover:bg-blue-700"
+              >
                 Set up organisation
               </Link>
-              <Link href="/login" className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-6 py-3 text-sm font-semibold text-slate-900 shadow-sm transition hover:-translate-y-0.5">
+              <Link
+                href="/login"
+                className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-6 py-3 text-sm font-semibold text-slate-900 shadow-sm transition hover:-translate-y-0.5"
+              >
                 Sign in
               </Link>
-              <a href="#download" className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-6 py-3 text-sm font-semibold text-slate-900 shadow-sm transition hover:-translate-y-0.5">
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v12m0 0l-4-4m4 4l4-4M4 20h16" />
-                </svg>
+              <a
+                href="#download"
+                className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-6 py-3 text-sm font-semibold text-slate-900 shadow-sm transition hover:-translate-y-0.5"
+              >
                 Download iOS App
               </a>
             </div>
           </div>
 
-          <div className="mx-auto w-full max-w-sm rounded-[32px] border border-slate-200 bg-white p-5 shadow-2xl">
-            <div className="rounded-2xl bg-gradient-to-br from-blue-600 to-blue-700 p-5 text-white">
-              <p className="text-[11px] font-bold tracking-widest text-blue-100">TODAY&apos;S OVERVIEW</p>
-              <p className="mt-1 text-xl font-extrabold">5 active projects</p>
-              <div className="mt-4 grid grid-cols-3 gap-2">
-                <div className="rounded-lg bg-white/15 p-2 text-center"><p className="text-lg font-bold">5</p><p className="text-[10px] text-blue-100">Projects</p></div>
-                <div className="rounded-lg bg-white/15 p-2 text-center"><p className="text-lg font-bold">12</p><p className="text-[10px] text-blue-100">Operatives</p></div>
-                <div className="rounded-lg bg-white/15 p-2 text-center"><p className="text-lg font-bold">55</p><p className="text-[10px] text-blue-100">Bookings</p></div>
-              </div>
+          <div className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-2xl">
+            <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-50 px-4 py-3">
+              <span className="h-2.5 w-2.5 rounded-full bg-slate-300" />
+              <span className="h-2.5 w-2.5 rounded-full bg-slate-300" />
+              <span className="h-2.5 w-2.5 rounded-full bg-slate-300" />
+              <span className="ml-3 truncate text-xs font-medium text-slate-400">projectplanner.us</span>
             </div>
-            <div className="mt-4 grid grid-cols-3 gap-2">
-              {['Projects', 'Small Works', 'Operatives', 'Schedule', 'Reports', 'Settings'].map((tile) => (
-                <div key={tile} className="rounded-lg border border-slate-200 bg-slate-50 p-2 text-center text-[11px] font-semibold text-slate-700">
-                  {tile}
+            <div className="grid min-h-[280px] grid-cols-[180px_1fr]">
+              <div className="border-r border-slate-100 bg-white p-4">
+                <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">Main Menu</p>
+                <div className="mt-3 space-y-2 text-sm font-medium text-slate-700">
+                  {['Home', 'Projects', 'Small works', 'Operatives', 'Timesheets', 'Settings'].map((item) => (
+                    <div key={item} className="rounded-lg bg-slate-50 px-3 py-2">
+                      {item}
+                    </div>
+                  ))}
                 </div>
-              ))}
+              </div>
+              <div className="bg-[#f6f8fb] p-5">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-[#185FA5]">Today&apos;s overview</p>
+                <p className="mt-1 text-xl font-extrabold text-slate-900">5 active projects</p>
+                <div className="mt-4 grid grid-cols-3 gap-2">
+                  <div className="rounded-xl bg-white p-3 shadow-sm">
+                    <p className="text-lg font-bold">5</p>
+                    <p className="text-[11px] text-slate-500">Projects</p>
+                  </div>
+                  <div className="rounded-xl bg-white p-3 shadow-sm">
+                    <p className="text-lg font-bold">12</p>
+                    <p className="text-[11px] text-slate-500">Operatives</p>
+                  </div>
+                  <div className="rounded-xl bg-white p-3 shadow-sm">
+                    <p className="text-lg font-bold">55</p>
+                    <p className="text-[11px] text-slate-500">Bookings</p>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -151,10 +156,22 @@ export default function Home() {
 
       <section className="bg-[#0b1220] py-12 text-white">
         <div className="mx-auto grid w-full max-w-[1160px] grid-cols-2 gap-8 px-6 text-center md:grid-cols-4">
-          <div><p className="text-3xl font-extrabold text-blue-200">5+</p><p className="mt-1 text-sm text-slate-300">Active project types</p></div>
-          <div><p className="text-3xl font-extrabold text-blue-200">100%</p><p className="mt-1 text-sm text-slate-300">Cloud synced</p></div>
-          <div><p className="text-3xl font-extrabold text-blue-200">iOS</p><p className="mt-1 text-sm text-slate-300">+ full web app</p></div>
-          <div><p className="text-3xl font-extrabold text-blue-200">24/7</p><p className="mt-1 text-sm text-slate-300">Access anywhere</p></div>
+          <div>
+            <p className="text-3xl font-extrabold text-blue-200">5+</p>
+            <p className="mt-1 text-sm text-slate-300">Active project types</p>
+          </div>
+          <div>
+            <p className="text-3xl font-extrabold text-blue-200">100%</p>
+            <p className="mt-1 text-sm text-slate-300">Cloud synced</p>
+          </div>
+          <div>
+            <p className="text-3xl font-extrabold text-blue-200">iOS</p>
+            <p className="mt-1 text-sm text-slate-300">+ full web app</p>
+          </div>
+          <div>
+            <p className="text-3xl font-extrabold text-blue-200">24/7</p>
+            <p className="mt-1 text-sm text-slate-300">Access anywhere</p>
+          </div>
         </div>
       </section>
 
@@ -206,25 +223,7 @@ export default function Home() {
         </div>
       </section>
 
-      <footer className="border-t border-slate-200 bg-white py-10">
-        <div className="mx-auto w-full max-w-[1160px] px-6">
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <p className="font-semibold text-slate-900">Project Planner</p>
-            <div className="flex flex-wrap items-center gap-5 text-sm text-slate-600">
-              <a href="mailto:support@projectplanner.app">Support</a>
-              <a href="https://projectplanner.us/privacy-policy.html">Privacy Policy</a>
-              <a href="https://projectplanner.us/terms-of-service.html">Terms of Service</a>
-            </div>
-          </div>
-          <p className="mt-6 border-t border-slate-100 pt-6 text-center text-xs text-slate-500">
-            © 2025 Project Planner. All rights reserved.
-          </p>
-        </div>
-      </footer>
+      <MarketingFooter />
     </div>
   )
 }
-
-
-
-
