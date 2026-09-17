@@ -319,11 +319,12 @@ service cloud.firestore {
   }
   
   match /databases/{database}/documents {
-    // Invitations - allow public read for verification (before user is authenticated)
+    // Invitees open /setup-password?token=<id> before they have an account, so get-by-id
+    // stays public. Listing every invitation (emails, org ids) must not be public.
     match /invitations/{invitationId} {
-      allow read: if true;
-      allow write: if request.auth != null;
-      allow update: if request.auth != null;
+      allow get: if true;
+      allow list: if request.auth != null;
+      allow create, update, delete: if request.auth != null;
     }
     
     // Users collection - with better validation

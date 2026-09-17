@@ -1,3 +1,5 @@
+import { jsonAuthHeaders } from '@/lib/security/clientAuthHeaders'
+
 /** Client helper — asks the server to send a Resend invite email. */
 export async function requestInviteSetupEmail(params: {
   invitationId: string
@@ -8,7 +10,7 @@ export async function requestInviteSetupEmail(params: {
 }): Promise<void> {
   const response = await fetch('/api/invites/send-setup-email', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: await jsonAuthHeaders(),
     body: JSON.stringify(params),
   })
 
