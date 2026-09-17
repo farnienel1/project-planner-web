@@ -1,6 +1,7 @@
 'use client'
 
 import { formatScheduleDay, type ScheduleDateSlot, type ScheduleSlotChoice } from '@/lib/scheduling/scheduleUtils'
+import { HoursTimelinePicker } from '@/components/scheduling/HoursTimelinePicker'
 
 const SLOT_OPTIONS: ScheduleSlotChoice[] = ['AM', 'PM', 'FULL DAY', 'CUSTOM']
 
@@ -59,25 +60,16 @@ export function ScheduleSelectedDates({
           </div>
 
           {entry.slot === 'CUSTOM' && (
-            <div className="mt-3 grid gap-3 sm:grid-cols-2">
-              <label className="block text-xs font-medium text-slate-600">
-                Start
-                <input
-                  type="time"
-                  value={entry.workStartTime || '07:30'}
-                  onChange={(e) => onSlotChange(entry.date, { workStartTime: e.target.value })}
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                />
-              </label>
-              <label className="block text-xs font-medium text-slate-600">
-                End
-                <input
-                  type="time"
-                  value={entry.workEndTime || '16:00'}
-                  onChange={(e) => onSlotChange(entry.date, { workEndTime: e.target.value })}
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                />
-              </label>
+            <div className="mt-3">
+              <HoursTimelinePicker
+                start={entry.workStartTime || '07:30'}
+                end={entry.workEndTime || '16:00'}
+                breakRemoved={false}
+                showBreak={false}
+                onStart={(value) => onSlotChange(entry.date, { workStartTime: value })}
+                onEnd={(value) => onSlotChange(entry.date, { workEndTime: value })}
+                onBreak={() => {}}
+              />
             </div>
           )}
         </div>

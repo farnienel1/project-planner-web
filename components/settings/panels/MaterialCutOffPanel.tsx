@@ -16,7 +16,6 @@ import {
   SettingsCard,
   SettingsRow,
   Toggle,
-  Select,
   SuccessBanner,
   ErrorBanner,
 } from '@/components/settings/primitives'
@@ -44,9 +43,10 @@ export function MaterialCutOffPanel({ onBack }: { onBack: () => void }) {
 
   const cutOffOn = prefs.materialOrderCutOff
   const cutOffMinutes = prefs.materialCutOffHour * 60 + prefs.materialCutOffMinute
-  const footerText = !cutOffOn
-    ? 'Turn on the notification to choose a time'
-    : `Managers are reminded daily at ${materialCutoffTimeLabel(cutOffMinutes)}`
+  const timeLabel = materialCutoffTimeLabel(cutOffMinutes)
+  const helperText = !cutOffOn
+    ? 'Turn on the notification to choose a time.'
+    : `Managers are reminded daily at ${timeLabel}.`
 
   async function persist(next: NotificationPreferences) {
     if (!organization?.id) return
@@ -65,90 +65,101 @@ export function MaterialCutOffPanel({ onBack }: { onBack: () => void }) {
     }
   }
 
+  function setCutOffMinutes(total: number) {
+    void persist({
+      ...prefs,
+      materialCutOffHour: Math.floor(total / 60),
+      materialCutOffMinute: total % 60,
+    })
+  }
+
   return (
-    <div className="mx-auto max-w-2xl space-y-5 pb-12">
+    <div className="mx-auto max-w-xl space-y-6 pb-12">
       <PanelHeader title="Material cut-off" onBack={onBack} />
 
       {feedback?.kind === 'success' && <SuccessBanner message={feedback.msg} />}
       {feedback?.kind === 'error' && <ErrorBanner message={feedback.msg} />}
 
-      <p className="px-1 text-[13px] text-slate-500">
-        Remind all managers when materials still need ordering before the daily cut-off. Saved on the organisation and
-        on your profile so iOS and the web app stay in sync.
+      <p className="text-[15px] leading-6 text-slate-500">
+        Remind all managers when materials still need ordering before the daily cut-off. The time is stored on the
+        organisation and on your profile so iOS and the web app stay in sync.
       </p>
 
-      <SectionLabel label="Notification" />
-      <SettingsCard>
-        <SettingsRow
-          icon={ICON.bell}
-          iconBg="bg-[#854F0B]/[0.18]"
-          iconColor="text-[#854F0B]"
-          label="Material cut-off notification"
-          description="Email all managers"
-        >
-          <Toggle
-            checked={cutOffOn}
-            onChange={(value) => void persist({ ...prefs, materialOrderCutOff: value })}
-          />
-        </SettingsRow>
-      </SettingsCard>
-
-      <SectionLabel label="Daily cut-off" />
-      <SettingsCard>
-        <SettingsRow
-          icon={ICON.clock}
-          iconBg="bg-[#185FA5]/10"
-          iconColor="text-[#185FA5]"
-          label="Cut-off time"
-          description={footerText}
-        >
-          <Select
-            className="w-32 shrink-0 bg-white py-2 text-xs font-semibold text-blue-600"
-            value={String(cutOffMinutes)}
-            disabled={!cutOffOn}
-            onChange={(event) => {
-              const total = parseInt(event.target.value, 10)
-              void persist({
-                ...prefs,
-                materialCutOffHour: Math.floor(total / 60),
-                materialCutOffMinute: total % 60,
-              })
-            }}
+      <div>
+        <SectionLabel label="Notification" />
+        <SettingsCard>
+          <SettingsRow
+            icon={ICON.bell}
+            iconBg="bg-[#854F0B]/[0.18]"
+            iconColor="text-[#854F0B]"
+            label="Material cut-off notification"
+            description="Email all managers"
           >
-            {MATERIAL_CUTOFF_TIME_OPTIONS.map((minutes) => (
-              <option key={minutes} value={minutes}>
-                {materialCutoffTimeLabel(minutes)}
-              </option>
-            ))}
-          </Select>
-        </SettingsRow>
-        <SettingsRow
-          icon={ICON.calendar}
-          iconBg="bg-[#EEEDFE]"
-          iconColor="text-[#3C3489]"
-          label="Include Saturday"
-          description="Send the reminder on Saturdays"
-        >
-          <Toggle
-            checked={prefs.materialCutOffOnSaturday}
-            disabled={!cutOffOn}
-            onChange={(value) => void persist({ ...prefs, materialCutOffOnSaturday: value })}
-          />
-        </SettingsRow>
-        <SettingsRow
-          icon={ICON.calendar}
-          iconBg="bg-[#FAECE7]"
-          iconColor="text-[#993C1D]"
-          label="Include Sunday"
-          description="Send the reminder on Sundays"
-        >
-          <Toggle
-            checked={prefs.materialCutOffOnSunday}
-            disabled={!cutOffOn}
-            onChange={(value) => void persist({ ...prefs, materialCutOffOnSunday: value })}
-          />
-        </SettingsRow>
-      </SettingsCard>
+            <Toggle
+              checked={cutOffOn}
+              onChange={(value) => void persist({ ...prefs, materialOrderCutOff: value })}
+            />
+          </SettingsRow>
+        </SettingsCard>
+      </div>
+
+      <div>
+        <SectionLabel label="Daily cut-off" />
+        <SettingsCard>
+          <div className="flex items-start gap-3 px-4 py-4">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#185FA5]/10">
+              <svg className="h-5 w-5 text-[#185FA5]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d={ICON.clock} />
+              </svg>
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold text-slate-900">Cut-off time</p>
+              <p className="mt-1 text-[13px] leading-5 text-slate-500">{helperText}</p>
+              <label className="mt-3 block">
+                <span className="sr-only">Cut-off time</span>
+                <select
+                  className="h-11 w-full max-w-[220px] rounded-xl border border-slate-200 bg-white px-3 text-[15px] font-semibold text-[#185FA5] outline-none transition focus:border-[#185FA5] focus:ring-2 focus:ring-[#185FA5]/15 disabled:bg-slate-50 disabled:text-slate-400"
+                  value={String(cutOffMinutes)}
+                  disabled={!cutOffOn}
+                  onChange={(event) => setCutOffMinutes(parseInt(event.target.value, 10))}
+                >
+                  {MATERIAL_CUTOFF_TIME_OPTIONS.map((minutes) => (
+                    <option key={minutes} value={minutes}>
+                      {materialCutoffTimeLabel(minutes)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          </div>
+          <SettingsRow
+            icon={ICON.calendar}
+            iconBg="bg-[#EEEDFE]"
+            iconColor="text-[#3C3489]"
+            label="Include Saturday"
+            description="Send on Saturdays"
+          >
+            <Toggle
+              checked={prefs.materialCutOffOnSaturday}
+              disabled={!cutOffOn}
+              onChange={(value) => void persist({ ...prefs, materialCutOffOnSaturday: value })}
+            />
+          </SettingsRow>
+          <SettingsRow
+            icon={ICON.calendar}
+            iconBg="bg-[#FAECE7]"
+            iconColor="text-[#993C1D]"
+            label="Include Sunday"
+            description="Send on Sundays"
+          >
+            <Toggle
+              checked={prefs.materialCutOffOnSunday}
+              disabled={!cutOffOn}
+              onChange={(value) => void persist({ ...prefs, materialCutOffOnSunday: value })}
+            />
+          </SettingsRow>
+        </SettingsCard>
+      </div>
     </div>
   )
 }

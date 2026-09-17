@@ -10,6 +10,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { EyeIcon, EyeSlashIcon } from '@heroicons/react/24/outline'
 import { useAuthStore } from '@/lib/stores/authStore'
+import { AppLogoMark } from '@/components/ui/AppLogoMark'
 
 export function LoginBrandScreen() {
   const router = useRouter()
@@ -63,14 +64,13 @@ export function LoginBrandScreen() {
       <div className="relative mx-auto flex min-h-screen max-w-md flex-col px-7 pb-10 pt-14">
         <div className="mb-11 flex flex-col items-center">
           <div
-            className="mb-7 flex h-[88px] w-[88px] items-center justify-center rounded-[22px]"
+            className="mb-7 flex h-[88px] w-[88px] items-center justify-center overflow-hidden rounded-[22px]"
             style={{
-              background: 'linear-gradient(135deg, #0D1B2E, #0A1525)',
               boxShadow: '0 0 18px rgba(34,229,255,0.18)',
               border: '1px solid rgba(0,212,255,0.25)',
             }}
           >
-            <span className="text-2xl font-black tracking-tight text-[#22E5FF]">PP</span>
+            <AppLogoMark size={88} radius={22} />
           </div>
           <p className="text-[30px] font-black tracking-tight text-white lg:text-[36px]">PROJECT</p>
           <p className="text-[30px] font-black tracking-tight text-[#22E5FF] lg:text-[36px]">PLANNER</p>

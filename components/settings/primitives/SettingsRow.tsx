@@ -41,10 +41,12 @@ export function SettingsRow({
             <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-bold text-blue-700">{badge}</span>
           )}
         </div>
-        {description && <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">{description}</p>}
+        {description && (
+          <p className="text-xs text-slate-500 mt-0.5 leading-relaxed break-words">{description}</p>
+        )}
       </div>
       {value && <span className="text-sm font-semibold text-blue-600 flex-shrink-0">{value}</span>}
-      {children}
+      {children ? <div className="shrink-0">{children}</div> : null}
       {chevron && (
         <svg className="h-4 w-4 text-slate-300 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />

@@ -227,6 +227,9 @@ test('operative clashes use clock intervals and skip manager-admin emails', () =
   )
   assert.equal(clashes.length, 1)
   assert.equal(clashes[0].operativeName, 'Ada Op')
+  assert.equal(clashes[0].entries.length, 2)
+  assert.equal(clashes[0].entries[0].startMinutes, 7 * 60 + 30)
+  assert.equal(clashes[0].entries[0].endMinutes, 16 * 60)
 })
 
 test('AM and PM on the same day do not clash; manager dual-role merges operative bookings', () => {
@@ -271,6 +274,9 @@ test('AM and PM on the same day do not clash; manager dual-role merges operative
   )
   assert.equal(merged.length, 1)
   assert.equal(merged[0].personName, 'Boss Mgr')
+  assert.equal(merged[0].entries.length, 2)
+  assert.ok(merged[0].entries.some((entry) => entry.managerBookingId === 'M1'))
+  assert.ok(merged[0].entries.some((entry) => entry.bookingId === 'O1' && !entry.managerBookingId))
 })
 
 test('materials cutoff fires after 16:00 for tomorrow bookings, including empty lists', () => {

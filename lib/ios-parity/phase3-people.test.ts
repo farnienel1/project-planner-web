@@ -7,7 +7,7 @@ import {
   getManagerUsers,
   getManagersRosterUsers,
 } from '../staff/userRosterUtils.ts'
-import { coversCalendarDay, dayKey } from './londonTime.ts'
+import { coversCalendarDay, dateFromDayKey, dayKey } from './londonTime.ts'
 import { normalizeTimeSlot } from './enums.ts'
 
 function user(partial: Partial<User> & { id: string; email: string }): User {
@@ -78,6 +78,12 @@ test('coversCalendarDay matches UTC midnight and London midnight', () => {
   assert.equal(coversCalendarDay(new Date('2026-09-14T12:00:00Z'), londonDay), false)
   // Adjacent UTC calendar dates must not leak in via toDateString().
   assert.equal(coversCalendarDay(new Date('2026-09-15T12:00:00Z'), londonDay), false)
+})
+
+test('dateFromDayKey stays on the London calendar day', () => {
+  const day = dateFromDayKey('2026-09-16')
+  assert.equal(dayKey(day), '2026-09-16')
+  assert.equal(coversCalendarDay(day, new Date('2026-09-16T12:00:00Z')), true)
 })
 
 test('normalizeTimeSlot accepts Full Day aliases', () => {
