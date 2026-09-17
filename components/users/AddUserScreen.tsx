@@ -279,9 +279,10 @@ export function AddUserScreen() {
 
       if (result.inviteType === 'existing_user_org_add') {
         try {
+          const { jsonAuthHeaders } = await import('@/lib/security/clientAuthHeaders')
           await fetch('/api/invites/send-org-addition-email', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: await jsonAuthHeaders(),
             body: JSON.stringify({
               organizationName: organization.name,
               firstName,

@@ -5,6 +5,7 @@ import {
 } from 'firebase/auth'
 import { deleteDoc, doc, getDoc, setDoc, Timestamp, updateDoc } from 'firebase/firestore'
 import { getFirebaseAuth, getFirebaseDb } from '@/lib/firebase/ensureFirebase'
+import { isValidUuid } from '@/lib/security/validation'
 
 export type InvitationSummary = {
   invitationId: string
@@ -15,6 +16,10 @@ export type InvitationSummary = {
 }
 
 export async function fetchInvitationSummary(invitationId: string): Promise<InvitationSummary> {
+  if (!isValidUuid(invitationId)) {
+    throw new Error('Invitation not found')
+  }
+
   const db = getFirebaseDb()
   const snap = await getDoc(doc(db, 'invitations', invitationId))
   if (!snap.exists()) {

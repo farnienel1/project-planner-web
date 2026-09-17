@@ -310,9 +310,10 @@ export function OrgSetupWizard() {
 
       await saveGuidedSetupDraft(organizationId, guidedData)
 
+      const { jsonAuthHeaders } = await import('@/lib/security/clientAuthHeaders')
       const checkoutResponse = await fetch('/api/stripe/create-checkout-session', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await jsonAuthHeaders(),
         body: JSON.stringify({
           planKey,
           organizationId,

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { loadLeaflet, type LeafletMap, type LeafletMarker } from '@/lib/maps/leafletLoader'
 import { mapPinIconOptions } from '@/lib/maps/mapPinIcon'
+import { escapeHtml } from '@/lib/security/htmlEscape'
 
 export type SiteMapMarker = {
   id: string
@@ -98,10 +99,10 @@ export function SiteMapBoard({
         zIndexOffset: selected ? 1000 : 0,
       }).addTo(map)
 
-      const jobLabel = entry.jobNumber ? `#${entry.jobNumber} · ` : ''
+      const jobLabel = entry.jobNumber ? `#${escapeHtml(String(entry.jobNumber))} · ` : ''
       leafletMarker.bindPopup(
         `<div style="min-width:160px">
-          <strong style="font-size:14px">${entry.label}</strong><br/>
+          <strong style="font-size:14px">${escapeHtml(entry.label)}</strong><br/>
           <span style="font-size:12px;color:#475569">${jobLabel}${entry.bookingCount} booking${entry.bookingCount === 1 ? '' : 's'} today</span><br/>
           <span style="font-size:11px;color:#64748b">Tap card below for details</span>
         </div>`

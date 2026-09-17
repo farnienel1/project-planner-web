@@ -1,6 +1,15 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { inviteSetupEmailSubject, buildInviteSetupEmailHtml } from '@/lib/email/inviteSetupEmail'
 import { sendResendEmail } from '@/lib/email/resendClient'
+import {
+  clientSafeMessage,
+  enforceRateLimit,
+  isFirebaseUser,
+  jsonError,
+  readJsonBody,
+  requireFirebaseUser,
+} from '@/lib/security/apiGuard'
+import { clampString, isValidEmail, isValidUuid } from '@/lib/security/validation'
 
 export const runtime = 'nodejs'
 
@@ -12,36 +21,49 @@ type SendBody = {
   to?: string
 }
 
+const ROLES = new Set(['manager', 'operative', 'admin'])
+
 export async function POST(request: NextRequest) {
+  const limited = enforceRateLimit(request, 'invite-setup-email', 8, 10 * 60 * 1000)
+  if (limited) return limited
+
+  const user = await requireFirebaseUser(request)
+  if (!isFirebaseUser(user)) return user
+
+  const body = await readJsonBody<SendBody>(request)
+  if (!body.ok) return body.response
+
+  const invitationId = clampString(body.value.invitationId, 80)
+  const organizationName = clampString(body.value.organizationName, 200)
+  const firstName = clampString(body.value.firstName, 100)
+  const role = body.value.role
+  const to = clampString(body.value.to, 254)
+
+  if (!invitationId || !isValidUuid(invitationId) || !organizationName || !firstName || !role || !to) {
+    return jsonError('invitationId, organizationName, firstName, role, and to are required', 400)
+  }
+  if (!ROLES.has(role) || !isValidEmail(to)) {
+    return jsonError('Invalid invite details', 400)
+  }
+
+  const email = to.trim().toLowerCase()
+
   try {
-    const body = (await request.json()) as SendBody
-    const { invitationId, organizationName, firstName, role, to } = body
-
-    if (!invitationId || !organizationName?.trim() || !firstName?.trim() || !role || !to?.trim()) {
-      return NextResponse.json(
-        { error: 'invitationId, organizationName, firstName, role, and to are required' },
-        { status: 400 }
-      )
-    }
-
-    const email = to.trim().toLowerCase()
-
     await sendResendEmail({
       to: email,
-      subject: inviteSetupEmailSubject(organizationName.trim()),
+      subject: inviteSetupEmailSubject(organizationName),
       html: buildInviteSetupEmailHtml({
         to: email,
-        firstName: firstName.trim(),
-        organizationName: organizationName.trim(),
+        firstName,
+        organizationName,
         invitationId,
         role,
       }),
     })
 
-    return NextResponse.json({ ok: true })
+    return Response.json({ ok: true })
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Failed to send invite email'
     console.error('[invites/send-setup-email]', error)
-    return NextResponse.json({ error: message }, { status: 500 })
+    return jsonError(clientSafeMessage(error, 'Failed to send invite email'), 500)
   }
 }

@@ -2,6 +2,18 @@ import { formatSiteAddress, isMappableSiteAddress } from '@/lib/maps/siteAddress
 import { buildGeocodeCandidates } from '@/lib/maps/geocodingCandidates'
 import { geocodeWithGoogleClient, reverseGeocodeWithGoogleClient } from '@/lib/maps/googleGeocoderClient'
 import { getClientGoogleMapsApiKey } from '@/lib/maps/googleMapsKey'
+import { getClientAuthHeaders } from '@/lib/security/clientAuthHeaders'
+
+async function geocodeApiFetch(input: string, init?: RequestInit): Promise<Response> {
+  const authHeaders = await getClientAuthHeaders()
+  return fetch(input, {
+    ...init,
+    headers: {
+      ...authHeaders,
+      ...(init?.headers || {}),
+    },
+  })
+}
 
 const CACHE_KEY = 'pp.geocode.cache.v3'
 const MIN_INTERVAL_MS = 100
@@ -60,7 +72,7 @@ function scheduleGeocode<T>(task: () => Promise<T>): Promise<T> {
 
 async function fetchCoordinateFromApi(query: string): Promise<GeoPoint | null> {
   try {
-    const response = await fetch(`/api/geocode?q=${encodeURIComponent(query)}`)
+    const response = await geocodeApiFetch(`/api/geocode?q=${encodeURIComponent(query)}`)
     if (!response.ok) return null
     const data = (await response.json()) as { latitude?: number; longitude?: number }
     if (data.latitude == null || data.longitude == null) return null
@@ -80,7 +92,7 @@ async function fetchSiteCoordinateFromApi(input: {
   siteAddress?: string
 }): Promise<GeoPoint | null> {
   try {
-    const response = await fetch('/api/geocode', {
+    const response = await geocodeApiFetch('/api/geocode', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ site: input }),
@@ -199,7 +211,7 @@ export async function reverseGeocode(latitude: number, longitude: number): Promi
       lon: String(longitude),
     })
 
-    const response = await scheduleGeocode(() => fetch(`/api/geocode?${params.toString()}`))
+    const response = await scheduleGeocode(() => geocodeApiFetch(`/api/geocode?${params.toString()}`))
     if (response.ok) {
       return (await response.json()) as ReverseGeocodeResult
     }

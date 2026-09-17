@@ -1,4 +1,5 @@
 import { getAppBaseUrl } from '@/lib/email/resendClient'
+import { escapeHtml, sanitizeEmailHeader } from '@/lib/security/htmlEscape'
 
 export type OrgAdditionEmailParams = {
   to: string
@@ -7,19 +8,21 @@ export type OrgAdditionEmailParams = {
 }
 
 export function orgAdditionEmailSubject(organizationName: string): string {
-  return `${organizationName} has invited you to join their organisation on Project Planner`
+  return `${sanitizeEmailHeader(organizationName)} has invited you to join their organisation on Project Planner`
 }
 
 export function buildOrgAdditionEmailHtml(params: OrgAdditionEmailParams): string {
   const signInUrl = `${getAppBaseUrl()}/dashboard/change-organisation`
+  const safeName = escapeHtml(params.firstName.trim() || 'there')
+  const safeOrg = escapeHtml(params.organizationName)
 
   return `
     <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; line-height: 1.5; color: #0f172a; max-width: 560px;">
       <p style="font-size: 14px; color: #64748b; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 700;">Project Planner</p>
       <h1 style="font-size: 24px; margin: 12px 0;">A new organisation has been added to your account</h1>
-      <p>Hi ${params.firstName.trim() || 'there'},</p>
+      <p>Hi ${safeName},</p>
       <p>
-        <strong>${params.organizationName}</strong> has invited you to join their organisation on Project Planner.
+        <strong>${safeOrg}</strong> has invited you to join their organisation on Project Planner.
       </p>
       <p>
         You are already part of another organisation, so you will now see both organisations within your account.
