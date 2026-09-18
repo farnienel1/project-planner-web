@@ -1,5 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { TimeoutError } from '../client/withTimeout.ts'
 import { formatSetupError } from './formatSetupError.ts'
 
 test('email-already-in-use tells the user they can add another organisation after sign-in', () => {
@@ -28,5 +29,13 @@ test('stale Next chunk errors tell the user to refresh and retry Activate', () =
     new Error('Failed to load chunk /_next/static/chunks/30kjy4zzj9grr.js from module 89014')
   )
   assert.match(message, /refresh this page/i)
+  assert.match(message, /Activate/)
+})
+
+test('activation timeouts surface the timed-out step instead of hanging silently', () => {
+  const message = formatSetupError(
+    new TimeoutError('Activation is taking too long. Refresh and try Activate again.')
+  )
+  assert.match(message, /taking too long/i)
   assert.match(message, /Activate/)
 })

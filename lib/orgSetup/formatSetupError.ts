@@ -1,5 +1,6 @@
 import { getFirebaseConfigError } from '@/lib/firebase/env'
 import { isChunkLoadError } from '@/lib/client/chunkLoadError'
+import { isTimeoutError } from '@/lib/client/withTimeout'
 import { authErrorCode, errorMessageOf, isExistingAccountSignInError } from '@/lib/orgSetup/authSetupErrors'
 
 export function formatSetupError(err: unknown): string {
@@ -8,6 +9,14 @@ export function formatSetupError(err: unknown): string {
 
   if (isChunkLoadError(err)) {
     return 'The site was just updated. Refresh this page, then click Activate again.'
+  }
+
+  if (isTimeoutError(err) || /taking too long/i.test(message)) {
+    return (
+      message && message !== 'Setup failed' && !/^timeout$/i.test(message)
+        ? message
+        : 'Activation is taking too long. Refresh this page, then click Activate again. If it still sticks, try a private window so you are not on an old copy of the site.'
+    )
   }
 
   if (isExistingAccountSignInError(err)) {
