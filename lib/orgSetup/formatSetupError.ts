@@ -1,9 +1,14 @@
 import { getFirebaseConfigError } from '@/lib/firebase/env'
+import { isChunkLoadError } from '@/lib/client/chunkLoadError'
 import { authErrorCode, errorMessageOf, isExistingAccountSignInError } from '@/lib/orgSetup/authSetupErrors'
 
 export function formatSetupError(err: unknown): string {
   const code = authErrorCode(err)
   const message = errorMessageOf(err) || 'Setup failed'
+
+  if (isChunkLoadError(err)) {
+    return 'The site was just updated. Refresh this page, then click Activate again.'
+  }
 
   if (isExistingAccountSignInError(err)) {
     return (

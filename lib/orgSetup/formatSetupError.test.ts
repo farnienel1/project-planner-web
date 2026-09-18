@@ -22,3 +22,11 @@ test('wrong password on setup points at using the existing login', () => {
   assert.match(message, /password for that login/)
   assert.match(message, /add another/)
 })
+
+test('stale Next chunk errors tell the user to refresh and retry Activate', () => {
+  const message = formatSetupError(
+    new Error('Failed to load chunk /_next/static/chunks/30kjy4zzj9grr.js from module 89014')
+  )
+  assert.match(message, /refresh this page/i)
+  assert.match(message, /Activate/)
+})
