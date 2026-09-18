@@ -27,10 +27,13 @@ const securityHeaders = [
   { key: 'Content-Security-Policy', value: ContentSecurityPolicy.join('; ') },
 ]
 
+const deploymentId = process.env.COMMIT_REF || process.env.NEXT_DEPLOYMENT_ID || ''
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
+  ...(deploymentId ? { deploymentId } : {}),
   experimental: {
     optimizePackageImports: ['date-fns'],
   },
