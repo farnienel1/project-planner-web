@@ -1,26 +1,29 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { doc, updateDoc } from 'firebase/firestore'
+import { withTimeout } from '@/lib/client/withTimeout'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { getFirebaseDb } from '@/lib/firebase/ensureFirebase'
 import type { TeamOnboardingState } from '@/lib/orgSetup/teamOnboarding'
-import { shouldShowTeamOnboarding } from '@/lib/orgSetup/teamOnboarding'
+import { shouldShowTeamOnboarding, teamOnboardingAfterGuideShown } from '@/lib/orgSetup/teamOnboarding'
 
 async function markUsersGuideShown(organizationId: string, onboarding: TeamOnboardingState) {
   const db = getFirebaseDb()
-  await updateDoc(doc(db, 'organizations', organizationId), {
-    teamOnboarding: {
-      ...onboarding,
-      status: 'complete',
-      addUsersGuideShown: true,
-    },
-    updatedAt: new Date(),
-  })
+  const next = teamOnboardingAfterGuideShown(onboarding)
+  await withTimeout(
+    updateDoc(doc(db, 'organizations', organizationId), {
+      teamOnboarding: next,
+      updatedAt: new Date(),
+    }),
+    8000,
+    'Saving the team prompt is taking too long.'
+  )
 }
 
 export function TeamOnboardingPrompt() {
+  const router = useRouter()
   const { user, organization } = useAuthStore()
   const [open, setOpen] = useState(false)
   const onboarding = organization?.teamOnboarding
@@ -35,9 +38,15 @@ export function TeamOnboardingPrompt() {
 
   if (!open || !organization?.id || !onboarding || !user) return null
 
-  async function handleDismiss() {
-    await markUsersGuideShown(organization!.id, onboarding!)
+  function dismissPrompt() {
+    const next = teamOnboardingAfterGuideShown(onboarding!)
+    useAuthStore.setState({
+      organization: { ...organization!, teamOnboarding: next },
+    })
     setOpen(false)
+    void markUsersGuideShown(organization!.id, onboarding!).catch((error) => {
+      console.warn('Team onboarding dismiss skipped:', error)
+    })
   }
 
   return (
@@ -90,16 +99,19 @@ export function TeamOnboardingPrompt() {
         </div>
 
         <div className="flex flex-wrap gap-3 border-t border-slate-100 px-6 py-4">
-          <Link
-            href="/dashboard/settings/users"
-            onClick={() => void handleDismiss()}
+          <button
+            type="button"
+            onClick={() => {
+              dismissPrompt()
+              router.push('/dashboard/settings/users')
+            }}
             className="rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-700"
           >
             Go to Manage Users
-          </Link>
+          </button>
           <button
             type="button"
-            onClick={() => void handleDismiss()}
+            onClick={() => dismissPrompt()}
             className="rounded-xl border border-slate-300 px-5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
           >
             I&apos;ll do this later

@@ -110,6 +110,10 @@ export async function createPendingOrganization(
           planKey: input.planKey,
           createdAt: now,
         },
+        teamOnboarding: {
+          status: 'pending_add_users',
+          addUsersGuideShown: false,
+        },
         createdAt: now,
         updatedAt: now,
         ...topLevelSetupFields,

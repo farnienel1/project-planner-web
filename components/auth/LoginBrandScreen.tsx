@@ -11,7 +11,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { EyeIcon, EyeSlashIcon } from '@heroicons/react/24/outline'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { AppLogoMark } from '@/components/ui/AppLogoMark'
-import { ACCOUNT_UNCONFIRMED_MESSAGE } from '@/lib/orgSetup/accountConfirmation'
+import { formatLoginError } from '@/lib/auth/formatLoginError'
 
 export function LoginBrandScreen() {
   const router = useRouter()
@@ -44,12 +44,7 @@ export function LoginBrandScreen() {
       await signIn(trimmedEmail, password)
       router.push('/dashboard')
     } catch (err) {
-      const message = err instanceof Error ? err.message : ''
-      setLocalError(
-        message === ACCOUNT_UNCONFIRMED_MESSAGE
-          ? ACCOUNT_UNCONFIRMED_MESSAGE
-          : 'Sign in failed. Please check your email/password and try again.'
-      )
+      setLocalError(formatLoginError(err))
     } finally {
       setSubmitting(false)
     }
