@@ -33,7 +33,14 @@ export function isExistingAccountSignInError(error: unknown): boolean {
     code === 'auth/wrong-password' ||
     code === 'auth/invalid-credential' ||
     code === 'auth/invalid-login-credentials' ||
+    code === 'auth/user-not-found' ||
     /auth\/wrong-password/i.test(message) ||
-    /auth\/invalid-credential/i.test(message)
+    /auth\/invalid-credential/i.test(message) ||
+    /auth\/user-not-found/i.test(message)
   )
+}
+
+/** Sign-in failed in a way that might mean a brand-new email — try createUser next. */
+export function shouldAttemptCreateUserAfterSignInFailure(error: unknown): boolean {
+  return isExistingAccountSignInError(error) && !isEmailInUseError(error)
 }

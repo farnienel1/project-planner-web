@@ -72,9 +72,10 @@ type SetupExplainerProps = {
   firstName: string
   onBack: () => void
   onContinue: () => void
+  onSkip?: () => void
 }
 
-export function SetupExplainer({ organizationName, firstName, onBack, onContinue }: SetupExplainerProps) {
+export function SetupExplainer({ organizationName, firstName, onBack, onContinue, onSkip }: SetupExplainerProps) {
   const displayName = organizationName.trim() || 'your organisation'
 
   return (
@@ -180,6 +181,15 @@ export function SetupExplainer({ organizationName, firstName, onBack, onContinue
         >
           Start guided setup
         </button>
+        {onSkip && (
+          <button
+            type="button"
+            onClick={onSkip}
+            className="rounded-xl border border-emerald-600 bg-emerald-50 px-5 py-2.5 text-sm font-semibold text-emerald-800 hover:bg-emerald-100"
+          >
+            Skip extra setup and activate
+          </button>
+        )}
       </div>
     </div>
   )

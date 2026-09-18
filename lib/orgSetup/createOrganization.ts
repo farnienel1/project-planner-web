@@ -26,6 +26,8 @@ export type CreateOrganizationInput = {
   organizationName: string
   planKey: SubscriptionPlanKey
   orgSetupSettings?: OrgSetupSettings
+  /** Test activation: skip logo, dashboard seed, and other non-essential writes. */
+  skipOptionalAssets?: boolean
 }
 
 export type CreateOrganizationResult = {
@@ -67,14 +69,15 @@ export async function createPendingOrganization(
   const userId = await resolveAuthUserIdForOrgSetup(email, input.password)
   const existingUserSnap = await withTimeout(
     getDoc(doc(db, 'users', userId)),
-    10000,
-    'Could not reach Firestore to create the organisation. Refresh this page, then click Activate again.'
+    6000,
+    'Could not reach Firestore to create the organisation. Click Activate again — your details are still on this page.'
   )
   const isAdditionalOrganization = existingUserSnap.exists()
   const alreadyConfirmed = existingUserSnap.data()?.accountConfirmed !== false
   const needsEmailConfirmation = !isAdditionalOrganization || !alreadyConfirmed
+  const skipOptional = input.skipOptionalAssets === true
 
-  if (isAdditionalOrganization) {
+  if (isAdditionalOrganization && !skipOptional) {
     try {
       await withTimeout(snapshotCurrentMembership(userId), 8000, 'membership-snapshot')
     } catch {
@@ -112,11 +115,11 @@ export async function createPendingOrganization(
         ...topLevelSetupFields,
       })
     ),
-    12000,
-    'Could not save the organisation. Refresh this page, then click Activate again.'
+    6000,
+    'Could not save the organisation. Click Activate again — your details are still on this page.'
   )
 
-  const logoFile = input.orgSetupSettings?.identity.logoFile
+  const logoFile = skipOptional ? null : input.orgSetupSettings?.identity.logoFile
   if (logoFile) {
     try {
       const storagePath = companyLogoPath(organizationId, logoFile.name)
@@ -134,15 +137,21 @@ export async function createPendingOrganization(
     }
   }
 
-  try {
-    await withTimeout(seedOrgDefaultDashboard(organizationId), 10000, 'dashboard-seed')
-  } catch {
-    // Dashboard layout can be seeded later; do not block org creation.
+  if (!skipOptional) {
+    try {
+      await withTimeout(seedOrgDefaultDashboard(organizationId), 10000, 'dashboard-seed')
+    } catch {
+      // Dashboard layout can be seeded later; do not block org creation.
+    }
   }
 
-  await setDoc(doc(db, 'organizations', organizationId, 'userEmails', email), {
-    userId,
-  })
+  await withTimeout(
+    setDoc(doc(db, 'organizations', organizationId, 'userEmails', email), {
+      userId,
+    }),
+    8000,
+    'Could not save the organisation email. Refresh this page, then click Activate again.'
+  )
 
   const notificationPreferences = input.orgSetupSettings?.features.notificationPreferences
   const annualLeaveDefaults = input.orgSetupSettings?.features.annualLeaveDefaults
@@ -159,56 +168,72 @@ export async function createPendingOrganization(
 
   if (isAdditionalOrganization) {
     const existing = existingUserSnap.data() as Record<string, unknown>
-    await updateDoc(
-      doc(db, 'users', userId),
-      sanitizeForFirestore({
-        email,
-        firstName: input.firstName.trim() || String(existing.firstName || ''),
-        surname: input.surname.trim() || String(existing.surname || ''),
-        ...(input.mobileNumber?.trim() ? { mobileNumber: input.mobileNumber.trim() } : {}),
-        organizationId,
-        role: 'admin',
-        isActive: true,
-        passwordSet: true,
-        ...founderFields,
-        ...leaveFields,
-        ...(notificationPreferences ? { notificationPreferences } : {}),
-        updatedAt: now,
-      }) as Record<string, unknown>
+    await withTimeout(
+      updateDoc(
+        doc(db, 'users', userId),
+        sanitizeForFirestore({
+          email,
+          firstName: input.firstName.trim() || String(existing.firstName || ''),
+          surname: input.surname.trim() || String(existing.surname || ''),
+          ...(input.mobileNumber?.trim() ? { mobileNumber: input.mobileNumber.trim() } : {}),
+          organizationId,
+          role: 'admin',
+          isActive: true,
+          passwordSet: true,
+          ...founderFields,
+          ...leaveFields,
+          ...(notificationPreferences ? { notificationPreferences } : {}),
+          updatedAt: now,
+        }) as Record<string, unknown>
+      ),
+      8000,
+      'Could not update your account. Refresh this page, then click Activate again.'
     )
   } else {
-    await setDoc(
-      doc(db, 'users', userId),
-      sanitizeForFirestore({
-        email,
-        firstName: input.firstName,
-        surname: input.surname,
-        ...(input.mobileNumber?.trim() ? { mobileNumber: input.mobileNumber.trim() } : {}),
-        organizationId,
-        role: 'admin',
-        isActive: true,
-        passwordSet: true,
-        accountConfirmed: false,
-        accountConfirmToken: confirmationToken,
-        ...founderFields,
-        policyAccepted: false,
-        policyAcceptedAt: null,
-        ...leaveFields,
-        ...(notificationPreferences ? { notificationPreferences } : {}),
-        createdAt: now,
-        updatedAt: now,
-      })
+    await withTimeout(
+      setDoc(
+        doc(db, 'users', userId),
+        sanitizeForFirestore({
+          email,
+          firstName: input.firstName,
+          surname: input.surname,
+          ...(input.mobileNumber?.trim() ? { mobileNumber: input.mobileNumber.trim() } : {}),
+          organizationId,
+          role: 'admin',
+          isActive: true,
+          passwordSet: true,
+          accountConfirmed: false,
+          accountConfirmToken: confirmationToken,
+          ...founderFields,
+          policyAccepted: false,
+          policyAcceptedAt: null,
+          ...leaveFields,
+          ...(notificationPreferences ? { notificationPreferences } : {}),
+          createdAt: now,
+          updatedAt: now,
+        })
+      ),
+      8000,
+      'Could not save your account. Refresh this page, then click Activate again.'
     )
   }
 
   if (needsEmailConfirmation && confirmationToken) {
-    await setDoc(doc(db, 'accountConfirmations', confirmationToken), {
-      userId,
-      email,
-      organizationId,
-      isUsed: false,
-      createdAt: Timestamp.fromDate(now),
-    })
+    try {
+      await withTimeout(
+        setDoc(doc(db, 'accountConfirmations', confirmationToken), {
+          userId,
+          email,
+          organizationId,
+          isUsed: false,
+          createdAt: Timestamp.fromDate(now),
+        }),
+        8000,
+        'confirm-token'
+      )
+    } catch {
+      // Email confirm doc can be repaired later; the Auth user exists.
+    }
   }
 
   try {
