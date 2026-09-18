@@ -326,6 +326,17 @@ service cloud.firestore {
       allow list: if request.auth != null;
       allow create, update, delete: if request.auth != null;
     }
+
+    // Founder confirm-account email tokens. Get-by-id is public so the emailed link can mark the token used.
+    match /accountConfirmations/{token} {
+      allow get: if true;
+      allow list: if request.auth != null;
+      allow create: if request.auth != null;
+      allow update: if resource.data.isUsed != true
+                    && request.resource.data.isUsed == true
+                    && request.resource.data.diff(resource.data).changedKeys().hasOnly(['isUsed', 'usedAt']);
+      allow delete: if false;
+    }
     
     // Users collection - with better validation
     //

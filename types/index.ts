@@ -161,6 +161,9 @@ export interface User {
   utrNumber?: string;
   policyAccepted: boolean;
   policyAcceptedAt?: Date;
+  /** Explicit false = founder has not clicked the confirm-account email. Missing means legacy (treated as confirmed). */
+  accountConfirmed?: boolean;
+  accountConfirmToken?: string;
   createdAt: Date;
   updatedAt: Date;
 }

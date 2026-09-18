@@ -27,14 +27,15 @@ export function buildInviteSetupEmailHtml(params: InviteSetupEmailParams): strin
         You&rsquo;ve been invited to join <strong>${safeOrg}</strong> on Project Planner as a
         <strong>${roleLabel}</strong>.
       </p>
-      <p>Choose a password to activate your account:</p>
+      <p>Choose a password to activate your account. Continue stays unavailable until both passwords match.</p>
       <p style="margin: 28px 0;">
         <a href="${safeUrl}" style="background: #2563eb; color: #fff; text-decoration: none; padding: 12px 20px; border-radius: 12px; font-weight: 700; display: inline-block;">
           Set up password
         </a>
       </p>
       <p style="font-size: 14px; color: #475569;">
-        After setting your password you can sign in on the web or download the iOS app:
+        After setting your password you will review and accept the customer terms on the web. Then you can sign in
+        on the web or open the iOS / Android app with the same email and password:
         <a href="${appStoreUrl}">App Store</a>
       </p>
       <p style="font-size: 12px; color: #94a3b8; margin-top: 32px;">
