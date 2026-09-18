@@ -16,8 +16,7 @@ import { formatSetupError } from '@/lib/orgSetup/formatSetupError'
 import { createPendingOrganization } from '@/lib/orgSetup/createOrganization'
 import { activateOrganizationSubscription } from '@/lib/orgSetup/activateSubscription'
 import { requestFounderConfirmEmail } from '@/lib/orgSetup/requestFounderConfirmEmail'
-import { persistGuidedSetup, saveGuidedSetupDraft } from '@/lib/orgSetup/persistGuidedSetup'
-import { hasRequiredGuidedProject } from '@/lib/orgSetup/guidedSetupComplete'
+import { saveGuidedSetupDraft } from '@/lib/orgSetup/persistGuidedSetup'
 import { jsonAuthHeaders } from '@/lib/security/clientAuthHeaders'
 import { SetupExplainer } from '@/components/setup/SetupExplainer'
 import { OrganisationDetailsStep } from '@/components/setup/OrganisationDetailsStep'
@@ -40,9 +39,31 @@ type WizardStep =
 
 type PlanOption = ReturnType<typeof getSubscriptionPlanDisplayOptions>[number]
 
-const ACTIVATION_OVERALL_MS = 32000
+const ACTIVATION_OVERALL_MS = 10000
 const ACTIVATION_TIMEOUT_MESSAGE =
-  'Activation is taking too long. Refresh this page, then click Activate again. If it still sticks on Activating, open /setup in a new private window.'
+  'Activation is taking too long. Your details are saved on this tab — click Activate again. If it still sticks, open /setup in a new private window.'
+const WIZARD_DRAFT_KEY = 'pp.setupWizard.v1'
+
+type WizardDraft = {
+  step?: WizardStep
+  firstName?: string
+  surname?: string
+  mobileNumber?: string
+  email?: string
+  organizationName?: string
+  planKey?: SubscriptionPlanKey
+}
+
+function readWizardDraft(): WizardDraft | null {
+  if (typeof window === 'undefined') return null
+  try {
+    const raw = window.sessionStorage.getItem(WIZARD_DRAFT_KEY)
+    if (!raw) return null
+    return JSON.parse(raw) as WizardDraft
+  } catch {
+    return null
+  }
+}
 
 const STEPS: { id: WizardStep; label: string }[] = [
   { id: 'account', label: 'Your Account' },
@@ -89,6 +110,7 @@ export function OrgSetupWizard() {
   const { user: signedInUser, firebaseUser } = useAuthStore()
   const creatingAdditionalOrg = Boolean(firebaseUser)
   const wizardTopRef = useRef<HTMLDivElement>(null)
+  const activationRunRef = useRef(0)
   const [step, setStep] = useState<WizardStep>('account')
   const [plans, setPlans] = useState<PlanOption[]>(() => getSubscriptionPlanDisplayOptions(false))
   const [loadingPlans, setLoadingPlans] = useState(true)
@@ -114,6 +136,39 @@ export function OrgSetupWizard() {
   // Guided team & data setup — team entities written after activation (see handoff note).
   const [guidedData, setGuidedData] = useState<GuidedSetupData>(createEmptyGuidedSetupData())
   const [guidedStepIndex, setGuidedStepIndex] = useState(0)
+  const [draftReady, setDraftReady] = useState(false)
+
+  useEffect(() => {
+    const draft = readWizardDraft()
+    if (draft) {
+      if (draft.firstName) setFirstName(draft.firstName)
+      if (draft.surname) setSurname(draft.surname)
+      if (draft.mobileNumber) setMobileNumber(draft.mobileNumber)
+      if (draft.email) setEmail(draft.email)
+      if (draft.organizationName) setOrganizationName(draft.organizationName)
+      if (draft.planKey) setPlanKey(draft.planKey)
+      if (draft.step && draft.step !== 'account') setStep(draft.step)
+    }
+    setDraftReady(true)
+  }, [])
+
+  useEffect(() => {
+    if (!draftReady) return
+    try {
+      const draft: WizardDraft = {
+        step,
+        firstName,
+        surname,
+        mobileNumber,
+        email,
+        organizationName,
+        planKey,
+      }
+      window.sessionStorage.setItem(WIZARD_DRAFT_KEY, JSON.stringify(draft))
+    } catch {
+      // private mode
+    }
+  }, [draftReady, step, firstName, surname, mobileNumber, email, organizationName, planKey])
 
   useEffect(() => {
     let cancelled = false
@@ -263,7 +318,9 @@ export function OrgSetupWizard() {
       if (!creatingAdditionalOrg) goToStep('account')
       return
     }
-    if (step === 'plan') goToStep('guided')
+    if (step === 'plan') {
+      goToStep(organizationName.trim() ? 'organization' : 'guided')
+    }
     if (step === 'review') goToStep('plan')
   }
 
@@ -271,7 +328,24 @@ export function OrgSetupWizard() {
     setOrgSetupSettings((prev) => ({ ...prev, ...patch }))
   }
 
-  async function createOrganizationRecord() {
+  function skipToReview() {
+    setError('')
+    const accountError = validateAccountStep()
+    if (accountError) {
+      setError(accountError)
+      goToStep('account')
+      return
+    }
+    const orgError = validateOrganizationStep()
+    if (orgError) {
+      setError(orgError)
+      goToStep('organization')
+      return
+    }
+    goToStep('review')
+  }
+
+  async function createOrganizationRecord(options?: { skipOptionalAssets?: boolean }) {
     const auth = getFirebaseAuth()
     const signedIn = Boolean(auth.currentUser)
     return createPendingOrganization({
@@ -283,10 +357,11 @@ export function OrgSetupWizard() {
       organizationName: organizationName.trim(),
       planKey,
       orgSetupSettings,
+      skipOptionalAssets: options?.skipOptionalAssets === true,
     })
   }
 
-  /** Test path: create org + activate without Stripe (guided setup runs before paywall). */
+  /** Test path: create org + activate without Stripe. Skip guided writes so this is fast. */
   async function handleTestActivation() {
     setError('')
     const accountError = validateAccountStep()
@@ -297,31 +372,23 @@ export function OrgSetupWizard() {
       return
     }
 
+    let didNavigate = false
+    const runId = activationRunRef.current + 1
+    activationRunRef.current = runId
+    const watchdog = window.setTimeout(() => {
+      if (activationRunRef.current !== runId) return
+      setError(ACTIVATION_TIMEOUT_MESSAGE)
+      setSubmitting(false)
+      setSubmittingStatus('')
+    }, ACTIVATION_OVERALL_MS)
+
     setSubmitting(true)
     setSubmittingStatus('Creating your organisation…')
     try {
       await withTimeout(
         (async () => {
-          const { userId, organizationId, confirmationToken, needsEmailConfirmation } =
-            await createOrganizationRecord()
-
-          if (hasRequiredGuidedProject(guidedData)) {
-            setSubmittingStatus('Saving starter data…')
-            try {
-              await withTimeout(
-                persistGuidedSetup({
-                  organizationId,
-                  organizationName: organizationName.trim(),
-                  adminUserId: userId,
-                  guidedData,
-                }),
-                10000,
-                'Saving starter data is taking too long.'
-              )
-            } catch {
-              // Organisation exists — do not fail activation because optional starter data stalled.
-            }
-          }
+          const { organizationId, confirmationToken, needsEmailConfirmation } =
+            await createOrganizationRecord({ skipOptionalAssets: true })
 
           setSubmittingStatus('Activating…')
           await withTimeout(
@@ -330,24 +397,30 @@ export function OrgSetupWizard() {
               planKey,
               activatedAt: new Date(),
             }),
-            8000,
-            'Could not finish activating. Check your connection, refresh, then click Activate again.'
+            6000,
+            'Could not finish activating. Click Activate again — your details are still on this page.'
           )
           if (!needsEmailConfirmation) {
+            didNavigate = true
             window.location.href = '/dashboard'
             return
           }
           setSubmittingStatus('Sending confirmation email…')
-          await withTimeout(
-            requestFounderConfirmEmail({
-              confirmationToken,
-              organizationName: organizationName.trim(),
-              firstName: firstName.trim(),
-              to: email.trim(),
-            }),
-            12000,
-            'The organisation was created but the confirmation email is taking too long. Check your inbox, or refresh and try Activate again.'
-          )
+          try {
+            await withTimeout(
+              requestFounderConfirmEmail({
+                confirmationToken,
+                organizationName: organizationName.trim(),
+                firstName: firstName.trim(),
+                to: (firebaseUser?.email || email).trim(),
+              }),
+              8000,
+              'email'
+            )
+          } catch {
+            // Account exists; they can confirm later.
+          }
+          didNavigate = true
           await signOut(getFirebaseAuth())
           router.push('/setup/check-email')
         })(),
@@ -357,8 +430,12 @@ export function OrgSetupWizard() {
     } catch (err) {
       if (reloadOnceOnStaleChunk(err)) return
       setError(formatSetupError(err))
-      setSubmitting(false)
-      setSubmittingStatus('')
+    } finally {
+      window.clearTimeout(watchdog)
+      if (activationRunRef.current === runId && !didNavigate) {
+        setSubmitting(false)
+        setSubmittingStatus('')
+      }
     }
   }
 
@@ -475,6 +552,21 @@ export function OrgSetupWizard() {
             </div>
           )}
 
+          {step !== 'account' && step !== 'review' && (
+            <div className="mt-6 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3">
+              <button
+                type="button"
+                onClick={skipToReview}
+                className="text-sm font-semibold text-emerald-900 underline decoration-emerald-400 underline-offset-2 hover:text-emerald-700"
+              >
+                Skip extra details and go to Activate
+              </button>
+              <p className="mt-1 text-xs text-emerald-800">
+                Name, email, password and organisation name are enough. You can add the rest after you are in the app.
+              </p>
+            </div>
+          )}
+
           {step === 'account' && (
             <div className="mt-8 grid gap-5 sm:grid-cols-2">
               <div>
@@ -543,6 +635,7 @@ export function OrgSetupWizard() {
                 firstName={firstName.trim()}
                 onBack={() => goToStep('organization')}
                 onContinue={() => goToStep('org-details')}
+                onSkip={skipToReview}
               />
             </div>
           )}
@@ -655,6 +748,34 @@ export function OrgSetupWizard() {
 
           {step === 'review' && (
             <div className="mt-8 space-y-5">
+              {!creatingAdditionalOrg && (
+                <div className="rounded-2xl border border-slate-200 bg-white p-5">
+                  <p className="text-sm font-semibold text-slate-800">
+                    Confirm the password for {email || 'this email'} so Activate can sign in to the existing account if
+                    one already exists.
+                  </p>
+                  <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                    <div>
+                      <FormLabel required>Password</FormLabel>
+                      <FormInput
+                        type="password"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        autoComplete="current-password"
+                      />
+                    </div>
+                    <div>
+                      <FormLabel required>Confirm password</FormLabel>
+                      <FormInput
+                        type="password"
+                        value={confirmPassword}
+                        onChange={(e) => setConfirmPassword(e.target.value)}
+                        autoComplete="new-password"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
                 <h3 className="text-sm font-bold uppercase tracking-wide text-slate-500">Summary</h3>
                 <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
