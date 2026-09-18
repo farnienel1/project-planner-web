@@ -15,7 +15,7 @@ export function SetupAuthGuard({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (loading) return
     if (user && organization?.id) {
-      router.replace('/dashboard')
+      router.replace(user.accountConfirmed === false ? '/setup/check-email' : '/dashboard')
     }
   }, [loading, user, organization?.id, router])
 
@@ -24,7 +24,7 @@ export function SetupAuthGuard({ children }: { children: React.ReactNode }) {
   }
 
   if (user && organization?.id) {
-    return <LoadingSpinner label="Redirecting to dashboard…" />
+    return <LoadingSpinner label={user.accountConfirmed === false ? 'Redirecting…' : 'Redirecting to dashboard…'} />
   }
 
   return <>{children}</>

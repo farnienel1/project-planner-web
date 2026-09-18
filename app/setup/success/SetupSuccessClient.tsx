@@ -5,7 +5,10 @@ import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { activateOrganizationSubscription } from '@/lib/orgSetup/activateSubscription'
 import { persistGuidedSetupDraftIfNeeded } from '@/lib/orgSetup/persistGuidedSetup'
-import { getFirebaseAuth } from '@/lib/firebase/ensureFirebase'
+import { getFirebaseAuth, getFirebaseDb } from '@/lib/firebase/ensureFirebase'
+import { signOut } from 'firebase/auth'
+import { doc, getDoc } from 'firebase/firestore'
+import { requestFounderConfirmEmail } from '@/lib/orgSetup/requestFounderConfirmEmail'
 
 type VerifiedSession = {
   organizationId: string
@@ -59,12 +62,33 @@ export default function SetupSuccessClient() {
         const adminUserId = getFirebaseAuth().currentUser?.uid
         if (adminUserId) {
           await persistGuidedSetupDraftIfNeeded(data.organizationId, adminUserId)
+          const db = getFirebaseDb()
+          const userSnap = await getDoc(doc(db, 'users', adminUserId))
+          const userData = userSnap.data()
+          const token = String(userData?.accountConfirmToken || '')
+          const firstName = String(userData?.firstName || 'there')
+          const to = String(userData?.email || getFirebaseAuth().currentUser?.email || '')
+          const orgSnap = await getDoc(doc(db, 'organizations', data.organizationId))
+          const organizationName = String(orgSnap.data()?.name || 'your organisation')
+          if (token && to) {
+            try {
+              await requestFounderConfirmEmail({
+                confirmationToken: token,
+                organizationName,
+                firstName,
+                to,
+              })
+            } catch (emailError) {
+              console.error('[setup/success] confirmation email failed', emailError)
+            }
+          }
+          await signOut(getFirebaseAuth())
         }
 
         if (!cancelled) {
           setStatus('success')
-          setMessage('Payment confirmed. One more step — verify your email to enter the app.')
-          window.setTimeout(() => router.push('/setup/verify-email'), 1200)
+          setMessage('Payment confirmed. Check your email for a link to open your account, then sign in.')
+          window.setTimeout(() => router.push('/setup/check-email'), 1200)
         }
       } catch (error) {
         if (!cancelled) {
@@ -97,7 +121,7 @@ export default function SetupSuccessClient() {
           </div>
         )}
         <h1 className="text-2xl font-extrabold text-slate-900">
-          {status === 'success' ? 'Welcome to Project Planner' : status === 'error' ? 'Setup issue' : 'Finishing setup'}
+          {status === 'success' ? 'Payment confirmed' : status === 'error' ? 'Setup issue' : 'Finishing setup'}
         </h1>
         <p className="mt-3 text-sm text-slate-600">{message}</p>
         {status === 'error' && (

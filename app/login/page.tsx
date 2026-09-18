@@ -1,7 +1,20 @@
-'use client'
-
+import { Suspense } from 'react'
 import { LoginBrandScreen } from '@/components/auth/LoginBrandScreen'
 
+export const metadata = {
+  title: 'Sign in | Project Planner',
+}
+
 export default function LoginPage() {
-  return <LoginBrandScreen />
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-screen items-center justify-center bg-[#060E1A]">
+          <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-[#22E5FF]" />
+        </div>
+      }
+    >
+      <LoginBrandScreen />
+    </Suspense>
+  )
 }

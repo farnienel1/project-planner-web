@@ -90,7 +90,6 @@ export function OrgSetupWizard() {
   const [confirmPassword, setConfirmPassword] = useState('')
   const [organizationName, setOrganizationName] = useState('')
   const [planKey, setPlanKey] = useState<SubscriptionPlanKey>('professional')
-  const [policyAccepted, setPolicyAccepted] = useState(false)
 
   const [orgSetupSettings, setOrgSetupSettings] = useState<OrgSetupSettings>(createDefaultOrgSetupSettings())
   const [featuresStepIndex, setFeaturesStepIndex] = useState(0)
@@ -246,7 +245,6 @@ export function OrgSetupWizard() {
       mobileNumber: mobileNumber.trim(),
       organizationName: organizationName.trim(),
       planKey,
-      policyAccepted,
       orgSetupSettings,
     })
   }
@@ -261,14 +259,10 @@ export function OrgSetupWizard() {
       setError(accountError || orgError || planError || 'Please complete all steps.')
       return
     }
-    if (!policyAccepted) {
-      setError('Please accept the terms and privacy policy to continue.')
-      return
-    }
 
     setSubmitting(true)
     try {
-      const { userId, organizationId } = await createOrganizationRecord()
+      const { userId, organizationId, confirmationToken } = await createOrganizationRecord()
       const { activateOrganizationSubscription } = await import('@/lib/orgSetup/activateSubscription')
 
       await persistGuidedSetup({
@@ -283,7 +277,17 @@ export function OrgSetupWizard() {
         planKey,
         activatedAt: new Date(),
       })
-      router.push('/dashboard')
+      const { requestFounderConfirmEmail } = await import('@/lib/orgSetup/requestFounderConfirmEmail')
+      await requestFounderConfirmEmail({
+        confirmationToken,
+        organizationName: organizationName.trim(),
+        firstName: firstName.trim(),
+        to: email.trim(),
+      })
+      const { getFirebaseAuth } = await import('@/lib/firebase/ensureFirebase')
+      const { signOut } = await import('firebase/auth')
+      await signOut(getFirebaseAuth())
+      router.push('/setup/check-email')
     } catch (err) {
       setError(formatSetupError(err))
       setSubmitting(false)
@@ -297,10 +301,6 @@ export function OrgSetupWizard() {
     const planError = validatePlanStep(true)
     if (accountError || orgError || planError) {
       setError(accountError || orgError || planError || 'Please complete all steps.')
-      return
-    }
-    if (!policyAccepted) {
-      setError('Please accept the terms and privacy policy to continue.')
       return
     }
 
@@ -635,35 +635,15 @@ export function OrgSetupWizard() {
                 </p>
               </div>
 
-              <label className="flex items-start gap-3 rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-700">
-                <input
-                  type="checkbox"
-                  checked={policyAccepted}
-                  onChange={(e) => setPolicyAccepted(e.target.checked)}
-                  className="mt-1 h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                />
-                <span>
-                  I agree to the{' '}
-                  <a href="https://projectplanner.us/terms-of-service.html" className="font-semibold text-blue-600 hover:underline">
-                    Terms of Service
-                  </a>{' '}
-                  and{' '}
-                  <a href="https://projectplanner.us/privacy-policy.html" className="font-semibold text-blue-600 hover:underline">
-                    Privacy Policy
-                  </a>
-                  .
-                </span>
-              </label>
-
               {stripeConfigured ? (
                 <div className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900">
-                  You&apos;ll be redirected to Stripe to enter payment details securely. Your organisation is
-                  created first, then activated once payment succeeds.
+                  You&apos;ll be redirected to Stripe to enter payment details securely. After payment we email a
+                  confirmation link — click it, then sign in and accept the customer terms before entering the app.
                 </div>
               ) : (
                 <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
                   Stripe is not configured in this environment. Use &ldquo;Activate without payment
-                  (testing)&rdquo; below to skip the paywall and go straight to your dashboard.
+                  (testing)&rdquo; below, then confirm the email we send before signing in.
                 </div>
               )}
             </div>
