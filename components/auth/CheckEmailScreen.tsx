@@ -76,15 +76,16 @@ export function CheckEmailScreen({ email }: { email?: string | null }) {
         </div>
         <h1 className="text-center text-2xl font-extrabold text-slate-900">Check your email</h1>
         <p className="mt-3 text-center text-sm text-slate-600">
-          We send a confirmation link to <strong className="text-slate-900">{displayEmail}</strong>. Open that
-          email and click the link to open your account. Then sign in with the password you chose during setup.
+          We send a confirmation link to <strong className="text-slate-900">{displayEmail}</strong> from the
+          same Outlook mailbox as the iOS app. Open that email and click the link to open your account. Then
+          sign in with the password you chose during setup.
         </p>
         <p className="mt-4 text-center text-sm text-slate-600">
           Until you click that link, your email and password will not work on the web or the iOS / Android apps.
         </p>
         {status === 'sent' ? (
           <div className="mt-6 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
-            Confirmation email sent. Check your inbox and spam folder.
+            Another confirmation email is on its way. It should sit at the top of your inbox (check spam too).
           </div>
         ) : status === 'error' ? (
           <div className="mt-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
@@ -92,7 +93,8 @@ export function CheckEmailScreen({ email }: { email?: string | null }) {
           </div>
         ) : (
           <div className="mt-6 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900">
-            Check your inbox and spam folder. If nothing arrives, tap Resend confirmation email.
+            Check your inbox and spam folder. If you cannot see it, tap Resend confirmation email to send
+            another copy to the top of your inbox.
           </div>
         )}
         <div className="mt-8 flex flex-col gap-3">
@@ -101,14 +103,18 @@ export function CheckEmailScreen({ email }: { email?: string | null }) {
               type="button"
               onClick={() => void handleResend()}
               disabled={sending}
-              className="rounded-xl border border-blue-600 bg-blue-50 px-5 py-3 text-sm font-semibold text-blue-800 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
+              className="rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {sending ? 'Sending…' : 'Resend confirmation email'}
             </button>
           ) : null}
           <Link
             href="/login"
-            className="rounded-xl bg-blue-600 px-5 py-3 text-center text-sm font-semibold text-white hover:bg-blue-700"
+            className={
+              canResend
+                ? 'rounded-xl border border-slate-300 px-5 py-3 text-center text-sm font-semibold text-slate-700 hover:bg-slate-50'
+                : 'rounded-xl bg-blue-600 px-5 py-3 text-center text-sm font-semibold text-white hover:bg-blue-700'
+            }
           >
             Go to login
           </Link>
