@@ -5,10 +5,11 @@ import {
 } from 'firebase/auth'
 import { withTimeout } from '@/lib/client/withTimeout'
 import { getFirebaseAuth } from '@/lib/firebase/ensureFirebase'
-import { isEmailInUseError } from '@/lib/orgSetup/authSetupErrors'
+import { isEmailInUseError, shouldAttemptCreateUserAfterSignInFailure } from '@/lib/orgSetup/authSetupErrors'
 
-const AUTH_STATE_READY_MS = 3000
-const AUTH_SIGN_IN_MS = 15000
+const AUTH_STATE_READY_MS = 2500
+const AUTH_SIGN_IN_MS = 8000
+const AUTH_CREATE_MS = 8000
 
 async function waitForAuthSession(auth: Auth): Promise<void> {
   const ready = (auth as Auth & { authStateReady?: () => Promise<void> }).authStateReady
@@ -26,7 +27,7 @@ function signedInUserId(auth: Auth): string | null {
 
 /**
  * Reuse the signed-in account when creating another organisation.
- * Never treat an existing email as a hard stop — one login can own many orgs.
+ * Sign in first so an existing email never hits createUser (that call can hang).
  */
 export async function resolveAuthUserIdForOrgSetup(
   email: string,
@@ -50,27 +51,29 @@ export async function resolveAuthUserIdForOrgSetup(
     'Signing in is taking too long. Check your connection, refresh this page, then click Activate again.'
 
   try {
-    const created = await withTimeout(
-      createUserWithEmailAndPassword(auth, emailLower, password),
+    const signedIn = await withTimeout(
+      signInWithEmailAndPassword(auth, emailLower, password),
       AUTH_SIGN_IN_MS,
       authBusyMessage
     )
-    return created.user.uid
-  } catch (error) {
-    if (!isEmailInUseError(error)) throw error
-    const existingAfterCreate = signedInUserId(auth)
-    if (existingAfterCreate) return existingAfterCreate
+    return signedIn.user.uid
+  } catch (signInError) {
+    const existingAfterSignIn = signedInUserId(auth)
+    if (existingAfterSignIn) return existingAfterSignIn
+    if (!shouldAttemptCreateUserAfterSignInFailure(signInError)) throw signInError
+
     try {
-      const signedIn = await withTimeout(
-        signInWithEmailAndPassword(auth, emailLower, password),
-        AUTH_SIGN_IN_MS,
+      const created = await withTimeout(
+        createUserWithEmailAndPassword(auth, emailLower, password),
+        AUTH_CREATE_MS,
         authBusyMessage
       )
-      return signedIn.user.uid
-    } catch (signInError) {
-      const existingAfterSignIn = signedInUserId(auth)
-      if (existingAfterSignIn) return existingAfterSignIn
-      throw signInError
+      return created.user.uid
+    } catch (createError) {
+      const existingAfterCreate = signedInUserId(auth)
+      if (existingAfterCreate) return existingAfterCreate
+      if (isEmailInUseError(createError)) throw signInError
+      throw createError
     }
   }
 }
