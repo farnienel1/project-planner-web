@@ -12,6 +12,7 @@ import { getFirebaseDb } from '@/lib/firebase/ensureFirebase'
 import { buildProjectFirestorePayload } from '@/lib/firebase/projectPayload'
 import { newUuid } from '@/lib/firebase/firestoreUtils'
 import type { TeamOnboardingState } from '@/lib/orgSetup/teamOnboarding'
+import { ensurePrimaryOrgMembership } from '@/lib/orgMembership/membershipService'
 import type { Subcontractor, SubcontractorContact, Wholesaler, WholesalerContact } from '@/types'
 
 export type PersistGuidedSetupInput = {
@@ -275,7 +276,6 @@ export async function persistGuidedSetup(
     updatedAt: Timestamp.now(),
   })
 
-  const { ensurePrimaryOrgMembership } = await import('@/lib/orgMembership/membershipService')
   await ensurePrimaryOrgMembership(adminUserId, organizationId, 'admin', { isSuperAdmin: true })
 
   return { teamOnboarding }

@@ -6,6 +6,7 @@ import {
 import { deleteDoc, doc, getDoc, setDoc, Timestamp, updateDoc } from 'firebase/firestore'
 import { getFirebaseAuth, getFirebaseDb } from '@/lib/firebase/ensureFirebase'
 import { isValidUuid } from '@/lib/security/validation'
+import { ensurePrimaryOrgMembership } from '@/lib/orgMembership/membershipService'
 
 export type InvitationSummary = {
   invitationId: string
@@ -99,7 +100,6 @@ async function migrateInvitedUserRecord(params: {
     await deleteDoc(oldRef)
   }
 
-  const { ensurePrimaryOrgMembership } = await import('@/lib/orgMembership/membershipService')
   const role = typeof userData.role === 'string' ? userData.role : 'member'
   await ensurePrimaryOrgMembership(params.authUid, params.organizationId, role)
 }

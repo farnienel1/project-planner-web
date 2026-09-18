@@ -7,6 +7,10 @@ import { permissionsToFirestoreMap } from '@/lib/firebase/userPayload'
 import { FOUNDER_PERMISSIONS } from '@/lib/orgMembership/orgRoleFlags'
 import { resolveAuthUserIdForOrgSetup } from '@/lib/orgSetup/resolveAuthForOrgSetup'
 import {
+  ensurePrimaryOrgMembership,
+  snapshotCurrentMembership,
+} from '@/lib/orgMembership/membershipService'
+import {
   orgSetupSettingsToFirestoreFields,
   type OrgSetupSettings,
 } from '@/lib/orgSetup/orgSetupSettings'
@@ -66,7 +70,6 @@ export async function createPendingOrganization(
   const needsEmailConfirmation = !isAdditionalOrganization || !alreadyConfirmed
 
   if (isAdditionalOrganization) {
-    const { snapshotCurrentMembership } = await import('@/lib/orgMembership/membershipService')
     await snapshotCurrentMembership(userId)
   }
 
@@ -183,7 +186,6 @@ export async function createPendingOrganization(
     })
   }
 
-  const { ensurePrimaryOrgMembership } = await import('@/lib/orgMembership/membershipService')
   await ensurePrimaryOrgMembership(userId, organizationId, 'admin', { isSuperAdmin: true })
 
   return {
