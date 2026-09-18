@@ -260,7 +260,7 @@ export function WarningsScreen({
         <div className="flex w-[76px] justify-end gap-2">
           {isAdmin ? (
             <Link
-              href="/dashboard/settings"
+              href="/dashboard/settings/warnings"
               className="grid h-[34px] w-[34px] place-items-center rounded-full border border-black/10 bg-white text-[#555] shadow-sm"
               aria-label="Warning settings"
             >

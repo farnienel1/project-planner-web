@@ -367,6 +367,10 @@ service cloud.firestore {
            get(/databases/(default)/documents/users/$(request.auth.uid)).data.isSuperAdmin == true) ||
           ('adminAccess' in get(/databases/(default)/documents/users/$(request.auth.uid)).data &&
            get(/databases/(default)/documents/users/$(request.auth.uid)).data.adminAccess == true) ||
+          ('permissions' in get(/databases/(default)/documents/users/$(request.auth.uid)).data &&
+           get(/databases/(default)/documents/users/$(request.auth.uid)).data.permissions is map &&
+           'adminAccess' in get(/databases/(default)/documents/users/$(request.auth.uid)).data.permissions &&
+           get(/databases/(default)/documents/users/$(request.auth.uid)).data.permissions.adminAccess == true) ||
           ('role' in get(/databases/(default)/documents/users/$(request.auth.uid)).data &&
            get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'admin'))) ||
         // Path 3: Web org setup bootstrap (org exists, caller is admin in members map, writing own profile)
