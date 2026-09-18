@@ -3,13 +3,20 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+import { signOut } from 'firebase/auth'
 import { FormInput, FormLabel } from '@/components/forms/FormShell'
 import { useAuthStore } from '@/lib/stores/authStore'
 import type { SubscriptionPlanKey } from '@/lib/stripe/plans'
 import { getSubscriptionPlanDisplayOptions } from '@/lib/stripe/plans'
 import { getFirebaseConfigError } from '@/lib/firebase/env'
+import { getFirebaseAuth } from '@/lib/firebase/ensureFirebase'
+import { reloadOnceOnStaleChunk } from '@/lib/client/chunkLoadError'
 import { formatSetupError } from '@/lib/orgSetup/formatSetupError'
+import { createPendingOrganization } from '@/lib/orgSetup/createOrganization'
+import { activateOrganizationSubscription } from '@/lib/orgSetup/activateSubscription'
+import { requestFounderConfirmEmail } from '@/lib/orgSetup/requestFounderConfirmEmail'
 import { persistGuidedSetup, saveGuidedSetupDraft } from '@/lib/orgSetup/persistGuidedSetup'
+import { jsonAuthHeaders } from '@/lib/security/clientAuthHeaders'
 import { SetupExplainer } from '@/components/setup/SetupExplainer'
 import { OrganisationDetailsStep } from '@/components/setup/OrganisationDetailsStep'
 import { OrganisationFeaturesStep } from '@/components/setup/OrganisationFeaturesStep'
@@ -258,14 +265,12 @@ export function OrgSetupWizard() {
   }
 
   async function createOrganizationRecord() {
-    const { getFirebaseAuth } = await import('@/lib/firebase/ensureFirebase')
     const auth = getFirebaseAuth()
     const ready = (auth as typeof auth & { authStateReady?: () => Promise<void> }).authStateReady
     if (typeof ready === 'function') {
       await ready.call(auth)
     }
     const signedIn = Boolean(auth.currentUser)
-    const { createPendingOrganization } = await import('@/lib/orgSetup/createOrganization')
     return createPendingOrganization({
       email: (auth.currentUser?.email || firebaseUser?.email || email).trim(),
       ...(signedIn ? {} : { password }),
@@ -293,7 +298,6 @@ export function OrgSetupWizard() {
     try {
       const { userId, organizationId, confirmationToken, needsEmailConfirmation } =
         await createOrganizationRecord()
-      const { activateOrganizationSubscription } = await import('@/lib/orgSetup/activateSubscription')
 
       await persistGuidedSetup({
         organizationId,
@@ -311,18 +315,16 @@ export function OrgSetupWizard() {
         window.location.href = '/dashboard'
         return
       }
-      const { requestFounderConfirmEmail } = await import('@/lib/orgSetup/requestFounderConfirmEmail')
       await requestFounderConfirmEmail({
         confirmationToken,
         organizationName: organizationName.trim(),
         firstName: firstName.trim(),
         to: email.trim(),
       })
-      const { getFirebaseAuth } = await import('@/lib/firebase/ensureFirebase')
-      const { signOut } = await import('firebase/auth')
       await signOut(getFirebaseAuth())
       router.push('/setup/check-email')
     } catch (err) {
+      if (reloadOnceOnStaleChunk(err)) return
       setError(formatSetupError(err))
       setSubmitting(false)
     }
@@ -344,7 +346,6 @@ export function OrgSetupWizard() {
 
       await saveGuidedSetupDraft(organizationId, guidedData)
 
-      const { jsonAuthHeaders } = await import('@/lib/security/clientAuthHeaders')
       const checkoutResponse = await fetch('/api/stripe/create-checkout-session', {
         method: 'POST',
         headers: await jsonAuthHeaders(),
@@ -363,6 +364,7 @@ export function OrgSetupWizard() {
 
       window.location.href = checkoutData.url
     } catch (err) {
+      if (reloadOnceOnStaleChunk(err)) return
       setError(formatSetupError(err))
       setSubmitting(false)
     }
