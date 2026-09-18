@@ -39,3 +39,9 @@ test('activation timeouts surface the timed-out step instead of hanging silently
   assert.match(message, /taking too long/i)
   assert.match(message, /Activate/)
 })
+
+test('email send failures still tell the user to resend from Check your email', () => {
+  const message = formatSetupError(new Error('RESEND_API_KEY is not configured'))
+  assert.match(message, /organisation was created/i)
+  assert.match(message, /Resend/i)
+})
