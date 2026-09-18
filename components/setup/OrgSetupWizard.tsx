@@ -258,10 +258,17 @@ export function OrgSetupWizard() {
   }
 
   async function createOrganizationRecord() {
+    const { getFirebaseAuth } = await import('@/lib/firebase/ensureFirebase')
+    const auth = getFirebaseAuth()
+    const ready = (auth as typeof auth & { authStateReady?: () => Promise<void> }).authStateReady
+    if (typeof ready === 'function') {
+      await ready.call(auth)
+    }
+    const signedIn = Boolean(auth.currentUser)
     const { createPendingOrganization } = await import('@/lib/orgSetup/createOrganization')
     return createPendingOrganization({
-      email: (firebaseUser?.email || email).trim(),
-      ...(creatingAdditionalOrg ? {} : { password }),
+      email: (auth.currentUser?.email || firebaseUser?.email || email).trim(),
+      ...(signedIn ? {} : { password }),
       firstName: firstName.trim(),
       surname: surname.trim(),
       mobileNumber: mobileNumber.trim(),
