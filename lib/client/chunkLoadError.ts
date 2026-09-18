@@ -24,17 +24,18 @@ export function isChunkLoadError(error: unknown): boolean {
   )
 }
 
-/** After a deploy, old hashed chunks 404. Reload once so the next page load uses the new build. */
+/** After a deploy, old hashed chunks 404. Load a cache-busted URL once. */
 export function reloadOnceOnStaleChunk(error: unknown): boolean {
   if (typeof window === 'undefined' || !isChunkLoadError(error)) return false
   try {
     if (sessionStorage.getItem(RELOAD_FLAG) === '1') return false
     sessionStorage.setItem(RELOAD_FLAG, '1')
   } catch {
-    window.location.reload()
-    return true
+    // continue to reload even if storage is blocked
   }
-  window.location.reload()
+  const next = new URL(window.location.href)
+  next.searchParams.set('_reload', Date.now().toString())
+  window.location.replace(next.toString())
   return true
 }
 

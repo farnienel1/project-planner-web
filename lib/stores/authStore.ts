@@ -21,6 +21,7 @@ import { withSeededNavigationLabels } from '@/lib/navigation/sharedUiLabels'
 import { parseTeamOnboarding } from '@/lib/orgSetup/teamOnboarding'
 import { topLevelAdminFlagPatch } from '@/lib/orgSetup/repairAdminFlags'
 import { ACCOUNT_UNCONFIRMED_MESSAGE } from '@/lib/orgSetup/accountConfirmation'
+import { ensurePrimaryOrgMembership } from '@/lib/orgMembership/membershipService'
 
 interface AuthState {
   user: User | null
@@ -139,7 +140,6 @@ async function loadSignedInProfile(firebaseUser: FirebaseUser) {
       }
 
       try {
-        const { ensurePrimaryOrgMembership } = await import('@/lib/orgMembership/membershipService')
         await ensurePrimaryOrgMembership(
           firebaseUser.uid,
           user.organizationId,
