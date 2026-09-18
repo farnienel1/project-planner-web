@@ -12,30 +12,65 @@ export type SchedulablePerson = {
   badge: string
 }
 
+function emailKey(value: string | undefined): string {
+  return (value || '').trim().toLowerCase()
+}
+
+function roleBadge(user: User | undefined): string {
+  if (!user) return 'Operative'
+  if (user.permissions.adminAccess || user.isSuperAdmin) return 'Admin'
+  if (user.permissions.manager) return 'Manager'
+  return 'Operative'
+}
+
+/**
+ * iOS ScheduleBookablePersonBuilder: one row per email.
+ * Roster operatives come first (badge Admin/Manager/Operative from the linked user).
+ * Manager/admin app users without a roster profile are appended once.
+ */
 export function buildSchedulablePeople(
   operatives: Operative[],
   users: User[]
 ): SchedulablePerson[] {
-  const activeOps = getActiveOperativesForScheduling(operatives)
-  const managers = getManagerUsers(users).filter((u) => u.passwordSet && u.isActive)
+  const usersByEmail = new Map<string, User>()
+  for (const user of users) {
+    const email = emailKey(user.email)
+    if (email && !usersByEmail.has(email)) usersByEmail.set(email, user)
+  }
 
-  const operativePeople: SchedulablePerson[] = activeOps.map((op) => ({
-    id: op.id,
-    kind: 'operative',
-    name: `${op.firstName} ${op.lastName}`.trim(),
-    email: op.email,
-    badge: 'Operative',
-  }))
+  const seenEmails = new Set<string>()
+  const people: SchedulablePerson[] = []
 
-  const managerPeople: SchedulablePerson[] = managers.map((user) => ({
-    id: user.id,
-    kind: 'manager',
-    name: `${user.firstName} ${user.surname}`.trim(),
-    email: user.email,
-    badge: user.permissions.adminAccess || user.isSuperAdmin ? 'Admin' : 'Manager',
-  }))
+  for (const operative of getActiveOperativesForScheduling(operatives)) {
+    const email = emailKey(operative.email)
+    if (email) {
+      if (seenEmails.has(email)) continue
+      seenEmails.add(email)
+    }
+    const linked = email ? usersByEmail.get(email) : undefined
+    people.push({
+      id: operative.id,
+      kind: 'operative',
+      name: `${operative.firstName} ${operative.lastName}`.trim() || operative.email,
+      email: operative.email,
+      badge: roleBadge(linked),
+    })
+  }
 
-  return [...operativePeople, ...managerPeople].sort((a, b) => a.name.localeCompare(b.name))
+  for (const user of getManagerUsers(users).filter((row) => row.passwordSet && row.isActive)) {
+    const email = emailKey(user.email)
+    if (email && seenEmails.has(email)) continue
+    if (email) seenEmails.add(email)
+    people.push({
+      id: user.id,
+      kind: 'manager',
+      name: `${user.firstName} ${user.surname}`.trim() || user.email,
+      email: user.email,
+      badge: roleBadge(user),
+    })
+  }
+
+  return people.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }))
 }
 
 export function filterSchedulablePeople(
@@ -44,15 +79,17 @@ export function filterSchedulablePeople(
   kindFilter: 'all' | SchedulablePersonKind
 ): SchedulablePerson[] {
   let list = people
-  if (kindFilter !== 'all') {
-    list = list.filter((p) => p.kind === kindFilter)
+  if (kindFilter === 'operative') {
+    list = list.filter((person) => person.badge === 'Operative')
+  } else if (kindFilter === 'manager') {
+    list = list.filter((person) => person.badge === 'Manager' || person.badge === 'Admin')
   }
   const q = search.trim().toLowerCase()
   if (!q) return list
   return list.filter(
-    (p) =>
-      p.name.toLowerCase().includes(q) ||
-      p.email.toLowerCase().includes(q) ||
-      p.badge.toLowerCase().includes(q)
+    (person) =>
+      person.name.toLowerCase().includes(q) ||
+      person.email.toLowerCase().includes(q) ||
+      person.badge.toLowerCase().includes(q)
   )
 }
