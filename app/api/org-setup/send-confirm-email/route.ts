@@ -3,7 +3,7 @@ import {
   confirmAccountEmailSubject,
   buildConfirmAccountEmailHtml,
 } from '@/lib/email/confirmAccountEmail'
-import { sendResendEmail } from '@/lib/email/resendClient'
+import { sendProjectPlannerEmail } from '@/lib/email/resendClient'
 import {
   clientSafeMessage,
   enforceRateLimit,
@@ -47,7 +47,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    await sendResendEmail({
+    await sendProjectPlannerEmail({
       to: email,
       subject: confirmAccountEmailSubject(organizationName),
       html: buildConfirmAccountEmailHtml({
