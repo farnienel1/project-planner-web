@@ -276,7 +276,7 @@ export async function persistGuidedSetup(
   })
 
   const { ensurePrimaryOrgMembership } = await import('@/lib/orgMembership/membershipService')
-  await ensurePrimaryOrgMembership(adminUserId, organizationId, 'admin')
+  await ensurePrimaryOrgMembership(adminUserId, organizationId, 'admin', { isSuperAdmin: true })
 
   return { teamOnboarding }
 }

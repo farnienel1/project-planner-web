@@ -6,25 +6,26 @@ import { useAuthStore } from '@/lib/stores/authStore'
 import { LoadingSpinner } from '@/components/dashboard/PageShell'
 
 /**
- * Redirects authenticated users who already belong to an organisation away from /setup.
+ * Lets signed-in users create another organisation. Unconfirmed founders are
+ * sent to check-email instead of repeating setup.
  */
 export function SetupAuthGuard({ children }: { children: React.ReactNode }) {
   const router = useRouter()
-  const { user, organization, loading } = useAuthStore()
+  const { user, loading } = useAuthStore()
 
   useEffect(() => {
     if (loading) return
-    if (user && organization?.id) {
-      router.replace(user.accountConfirmed === false ? '/setup/check-email' : '/dashboard')
+    if (user && user.accountConfirmed === false) {
+      router.replace('/setup/check-email')
     }
-  }, [loading, user, organization?.id, router])
+  }, [loading, user, router])
 
   if (loading) {
     return <LoadingSpinner label="Loading…" />
   }
 
-  if (user && organization?.id) {
-    return <LoadingSpinner label={user.accountConfirmed === false ? 'Redirecting…' : 'Redirecting to dashboard…'} />
+  if (user && user.accountConfirmed === false) {
+    return <LoadingSpinner label="Redirecting…" />
   }
 
   return <>{children}</>
