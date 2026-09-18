@@ -310,7 +310,7 @@ export function AddUserScreen() {
           setSuccess(`Invitation sent to ${email}. They will receive an email to set their password.`)
         } catch (emailError) {
           setSuccess(
-            `User invited but email could not be sent (${emailError instanceof Error ? emailError.message : 'unknown error'}). Add RESEND_API_KEY to .env.local.`
+            `User invited but email could not be sent (${emailError instanceof Error ? emailError.message : 'unknown error'}).`
           )
         }
       }

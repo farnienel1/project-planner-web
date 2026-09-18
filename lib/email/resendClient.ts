@@ -6,42 +6,52 @@ export function getAppBaseUrl(): string {
   )
 }
 
-export async function sendResendEmail(params: {
+/** Same HTTP function iOS uses (`ResendEmailService.swift` → Outlook / Microsoft 365). */
+export const PROJECT_PLANNER_EMAIL_FUNCTION_URL =
+  'https://us-central1-project-planner-f986c.cloudfunctions.net/sendProjectPlannerEmail'
+
+function emailFunctionUrl(): string {
+  return process.env.EMAIL_FUNCTION_URL?.trim() || PROJECT_PLANNER_EMAIL_FUNCTION_URL
+}
+
+function fromName(): string {
+  return process.env.EMAIL_FROM_NAME?.trim() || 'Project Planner'
+}
+
+function replyTo(): string | undefined {
+  const value = process.env.EMAIL_REPLY_TO?.trim()
+  return value || 'info@projectplanner.us'
+}
+
+export async function sendProjectPlannerEmail(params: {
   to: string
   subject: string
   html: string
 }): Promise<void> {
-  const apiKey = process.env.RESEND_API_KEY?.trim()
-  if (!apiKey) {
-    throw new Error('RESEND_API_KEY is not configured')
-  }
-
-  const from =
-    process.env.RESEND_FROM_EMAIL?.trim() || 'Project Planner <onboarding@resend.dev>'
-
-  const response = await fetch('https://api.resend.com/emails', {
+  const response = await fetch(emailFunctionUrl(), {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      from,
-      to: [params.to],
+      to: params.to,
       subject: params.subject,
       html: params.html,
+      fromName: fromName(),
+      replyTo: replyTo(),
     }),
   })
 
+  const body = await response.text()
   if (!response.ok) {
-    const body = await response.text()
-    let detail = body || `Resend API error (${response.status})`
+    let detail = body || `Email function error (${response.status})`
     try {
-      const parsed = JSON.parse(body) as { message?: string }
-      if (parsed.message) detail = parsed.message
+      const parsed = JSON.parse(body) as { error?: string; message?: string }
+      detail = parsed.error || parsed.message || detail
     } catch {
       // keep raw body
     }
     throw new Error(detail)
   }
 }
+
+/** @deprecated Use sendProjectPlannerEmail — kept so existing API routes keep compiling. */
+export const sendResendEmail = sendProjectPlannerEmail
