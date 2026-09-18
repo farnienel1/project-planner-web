@@ -19,6 +19,7 @@ import { parseAppUserDocument } from '@/lib/ios-parity/converters'
 import type { User, Organization } from '@/types'
 import { withSeededNavigationLabels } from '@/lib/navigation/sharedUiLabels'
 import { parseTeamOnboarding } from '@/lib/orgSetup/teamOnboarding'
+import { topLevelAdminFlagPatch } from '@/lib/orgSetup/repairAdminFlags'
 
 interface AuthState {
   user: User | null
@@ -74,7 +75,9 @@ async function loadSignedInProfile(firebaseUser: FirebaseUser) {
     email: parsed.value.email || firebaseUser.email || '',
   }
 
-  const patch: Record<string, unknown> = {}
+  const patch: Record<string, unknown> = {
+    ...topLevelAdminFlagPatch(userDoc.data() as Record<string, unknown>, user),
+  }
   if (!user.passwordSet) {
     user.passwordSet = true
     patch.passwordSet = true
