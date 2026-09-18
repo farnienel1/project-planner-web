@@ -1,4 +1,5 @@
 import { doc, getDoc, setDoc, Timestamp, updateDoc } from 'firebase/firestore'
+import { withTimeout } from '@/lib/client/withTimeout'
 import { seedOrgDefaultDashboard } from '@/lib/dashboard/dashboardLayoutStorage'
 import { newUuid, sanitizeForFirestore } from '@/lib/firebase/firestoreUtils'
 import { companyLogoPath, uploadFile } from '@/lib/firebase/storageUtils'
@@ -64,13 +65,21 @@ export async function createPendingOrganization(
   const db = getFirebaseDb()
   const email = input.email.toLowerCase().trim()
   const userId = await resolveAuthUserIdForOrgSetup(email, input.password)
-  const existingUserSnap = await getDoc(doc(db, 'users', userId))
+  const existingUserSnap = await withTimeout(
+    getDoc(doc(db, 'users', userId)),
+    10000,
+    'Could not reach Firestore to create the organisation. Refresh this page, then click Activate again.'
+  )
   const isAdditionalOrganization = existingUserSnap.exists()
   const alreadyConfirmed = existingUserSnap.data()?.accountConfirmed !== false
   const needsEmailConfirmation = !isAdditionalOrganization || !alreadyConfirmed
 
   if (isAdditionalOrganization) {
-    await snapshotCurrentMembership(userId)
+    try {
+      await withTimeout(snapshotCurrentMembership(userId), 8000, 'membership-snapshot')
+    } catch {
+      // Best-effort snapshot of the current org — do not block creating another organisation.
+    }
   }
 
   const organizationId = crypto.randomUUID()
@@ -86,34 +95,50 @@ export async function createPendingOrganization(
     creatorUserId?: string
   }
 
-  await setDoc(
-    doc(db, 'organizations', organizationId),
-    sanitizeForFirestore({
-      name: input.organizationName,
-      members: { [userId]: 'admin' },
-      settings: nestedSettings,
-      subscription: {
-        status: 'pending',
-        planKey: input.planKey,
+  await withTimeout(
+    setDoc(
+      doc(db, 'organizations', organizationId),
+      sanitizeForFirestore({
+        name: input.organizationName,
+        members: { [userId]: 'admin' },
+        settings: nestedSettings,
+        subscription: {
+          status: 'pending',
+          planKey: input.planKey,
+          createdAt: now,
+        },
         createdAt: now,
-      },
-      createdAt: now,
-      updatedAt: now,
-      ...topLevelSetupFields,
-    })
+        updatedAt: now,
+        ...topLevelSetupFields,
+      })
+    ),
+    12000,
+    'Could not save the organisation. Refresh this page, then click Activate again.'
   )
 
   const logoFile = input.orgSetupSettings?.identity.logoFile
   if (logoFile) {
-    const storagePath = companyLogoPath(organizationId, logoFile.name)
-    const companyLogoURL = await uploadFile(storagePath, logoFile, logoFile.type || 'image/png')
-    await updateDoc(doc(db, 'organizations', organizationId), {
-      companyLogoURL,
-      updatedAt: now,
-    })
+    try {
+      const storagePath = companyLogoPath(organizationId, logoFile.name)
+      const companyLogoURL = await withTimeout(
+        uploadFile(storagePath, logoFile, logoFile.type || 'image/png'),
+        8000,
+        'Logo upload is taking too long.'
+      )
+      await updateDoc(doc(db, 'organizations', organizationId), {
+        companyLogoURL,
+        updatedAt: now,
+      })
+    } catch {
+      // Continue without a logo — activation should not hang on Storage.
+    }
   }
 
-  await seedOrgDefaultDashboard(organizationId)
+  try {
+    await withTimeout(seedOrgDefaultDashboard(organizationId), 10000, 'dashboard-seed')
+  } catch {
+    // Dashboard layout can be seeded later; do not block org creation.
+  }
 
   await setDoc(doc(db, 'organizations', organizationId, 'userEmails', email), {
     userId,
@@ -186,7 +211,15 @@ export async function createPendingOrganization(
     })
   }
 
-  await ensurePrimaryOrgMembership(userId, organizationId, 'admin', { isSuperAdmin: true })
+  try {
+    await withTimeout(
+      ensurePrimaryOrgMembership(userId, organizationId, 'admin', { isSuperAdmin: true }),
+      8000,
+      'membership'
+    )
+  } catch {
+    // The organisation members map already includes this founder.
+  }
 
   return {
     userId,

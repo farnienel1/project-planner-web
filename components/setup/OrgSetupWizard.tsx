@@ -11,11 +11,13 @@ import { getSubscriptionPlanDisplayOptions } from '@/lib/stripe/plans'
 import { getFirebaseConfigError } from '@/lib/firebase/env'
 import { getFirebaseAuth } from '@/lib/firebase/ensureFirebase'
 import { reloadOnceOnStaleChunk } from '@/lib/client/chunkLoadError'
+import { withTimeout } from '@/lib/client/withTimeout'
 import { formatSetupError } from '@/lib/orgSetup/formatSetupError'
 import { createPendingOrganization } from '@/lib/orgSetup/createOrganization'
 import { activateOrganizationSubscription } from '@/lib/orgSetup/activateSubscription'
 import { requestFounderConfirmEmail } from '@/lib/orgSetup/requestFounderConfirmEmail'
 import { persistGuidedSetup, saveGuidedSetupDraft } from '@/lib/orgSetup/persistGuidedSetup'
+import { hasRequiredGuidedProject } from '@/lib/orgSetup/guidedSetupComplete'
 import { jsonAuthHeaders } from '@/lib/security/clientAuthHeaders'
 import { SetupExplainer } from '@/components/setup/SetupExplainer'
 import { OrganisationDetailsStep } from '@/components/setup/OrganisationDetailsStep'
@@ -37,6 +39,10 @@ type WizardStep =
   | 'review'
 
 type PlanOption = ReturnType<typeof getSubscriptionPlanDisplayOptions>[number]
+
+const ACTIVATION_OVERALL_MS = 32000
+const ACTIVATION_TIMEOUT_MESSAGE =
+  'Activation is taking too long. Refresh this page, then click Activate again. If it still sticks on Activating, open /setup in a new private window.'
 
 const STEPS: { id: WizardStep; label: string }[] = [
   { id: 'account', label: 'Your Account' },
@@ -90,6 +96,7 @@ export function OrgSetupWizard() {
   const [pricingMessage, setPricingMessage] = useState<string | null>(null)
   const firebaseConfigError = getFirebaseConfigError()
   const [submitting, setSubmitting] = useState(false)
+  const [submittingStatus, setSubmittingStatus] = useState('')
   const [error, setError] = useState('')
 
   const [firstName, setFirstName] = useState('')
@@ -266,10 +273,6 @@ export function OrgSetupWizard() {
 
   async function createOrganizationRecord() {
     const auth = getFirebaseAuth()
-    const ready = (auth as typeof auth & { authStateReady?: () => Promise<void> }).authStateReady
-    if (typeof ready === 'function') {
-      await ready.call(auth)
-    }
     const signedIn = Boolean(auth.currentUser)
     return createPendingOrganization({
       email: (auth.currentUser?.email || firebaseUser?.email || email).trim(),
@@ -295,38 +298,67 @@ export function OrgSetupWizard() {
     }
 
     setSubmitting(true)
+    setSubmittingStatus('Creating your organisation…')
     try {
-      const { userId, organizationId, confirmationToken, needsEmailConfirmation } =
-        await createOrganizationRecord()
+      await withTimeout(
+        (async () => {
+          const { userId, organizationId, confirmationToken, needsEmailConfirmation } =
+            await createOrganizationRecord()
 
-      await persistGuidedSetup({
-        organizationId,
-        organizationName: organizationName.trim(),
-        adminUserId: userId,
-        guidedData,
-      })
+          if (hasRequiredGuidedProject(guidedData)) {
+            setSubmittingStatus('Saving starter data…')
+            try {
+              await withTimeout(
+                persistGuidedSetup({
+                  organizationId,
+                  organizationName: organizationName.trim(),
+                  adminUserId: userId,
+                  guidedData,
+                }),
+                10000,
+                'Saving starter data is taking too long.'
+              )
+            } catch {
+              // Organisation exists — do not fail activation because optional starter data stalled.
+            }
+          }
 
-      await activateOrganizationSubscription(organizationId, {
-        status: 'active',
-        planKey,
-        activatedAt: new Date(),
-      })
-      if (!needsEmailConfirmation) {
-        window.location.href = '/dashboard'
-        return
-      }
-      await requestFounderConfirmEmail({
-        confirmationToken,
-        organizationName: organizationName.trim(),
-        firstName: firstName.trim(),
-        to: email.trim(),
-      })
-      await signOut(getFirebaseAuth())
-      router.push('/setup/check-email')
+          setSubmittingStatus('Activating…')
+          await withTimeout(
+            activateOrganizationSubscription(organizationId, {
+              status: 'active',
+              planKey,
+              activatedAt: new Date(),
+            }),
+            8000,
+            'Could not finish activating. Check your connection, refresh, then click Activate again.'
+          )
+          if (!needsEmailConfirmation) {
+            window.location.href = '/dashboard'
+            return
+          }
+          setSubmittingStatus('Sending confirmation email…')
+          await withTimeout(
+            requestFounderConfirmEmail({
+              confirmationToken,
+              organizationName: organizationName.trim(),
+              firstName: firstName.trim(),
+              to: email.trim(),
+            }),
+            12000,
+            'The organisation was created but the confirmation email is taking too long. Check your inbox, or refresh and try Activate again.'
+          )
+          await signOut(getFirebaseAuth())
+          router.push('/setup/check-email')
+        })(),
+        ACTIVATION_OVERALL_MS,
+        ACTIVATION_TIMEOUT_MESSAGE
+      )
     } catch (err) {
       if (reloadOnceOnStaleChunk(err)) return
       setError(formatSetupError(err))
       setSubmitting(false)
+      setSubmittingStatus('')
     }
   }
 
@@ -341,32 +373,46 @@ export function OrgSetupWizard() {
     }
 
     setSubmitting(true)
+    setSubmittingStatus('Creating your organisation…')
     try {
-      const { userId, organizationId } = await createOrganizationRecord()
+      await withTimeout(
+        (async () => {
+          const { userId, organizationId } = await createOrganizationRecord()
 
-      await saveGuidedSetupDraft(organizationId, guidedData)
+          setSubmittingStatus('Saving setup draft…')
+          try {
+            await withTimeout(saveGuidedSetupDraft(organizationId, guidedData), 8000, 'draft')
+          } catch {
+            // Checkout can still proceed without the draft.
+          }
 
-      const checkoutResponse = await fetch('/api/stripe/create-checkout-session', {
-        method: 'POST',
-        headers: await jsonAuthHeaders(),
-        body: JSON.stringify({
-          planKey,
-          organizationId,
-          userId,
-          email: (firebaseUser?.email || email).trim().toLowerCase(),
-        }),
-      })
+          setSubmittingStatus('Opening Stripe…')
+          const checkoutResponse = await fetch('/api/stripe/create-checkout-session', {
+            method: 'POST',
+            headers: await jsonAuthHeaders(),
+            body: JSON.stringify({
+              planKey,
+              organizationId,
+              userId,
+              email: (firebaseUser?.email || email).trim().toLowerCase(),
+            }),
+          })
 
-      const checkoutData = await checkoutResponse.json()
-      if (!checkoutResponse.ok) {
-        throw new Error(checkoutData.error || 'Could not start Stripe checkout')
-      }
+          const checkoutData = await checkoutResponse.json()
+          if (!checkoutResponse.ok) {
+            throw new Error(checkoutData.error || 'Could not start Stripe checkout')
+          }
 
-      window.location.href = checkoutData.url
+          window.location.href = checkoutData.url
+        })(),
+        ACTIVATION_OVERALL_MS,
+        'Opening checkout is taking too long. Refresh this page, then try again.'
+      )
     } catch (err) {
       if (reloadOnceOnStaleChunk(err)) return
       setError(formatSetupError(err))
       setSubmitting(false)
+      setSubmittingStatus('')
     }
   }
 
@@ -759,6 +805,10 @@ export function OrgSetupWizard() {
               )}
             </div>
           )}
+
+          {submitting && submittingStatus ? (
+            <p className="mt-3 text-sm font-medium text-emerald-800">{submittingStatus}</p>
+          ) : null}
         </div>
 
         <p className="mt-6 text-center text-xs text-slate-500">
