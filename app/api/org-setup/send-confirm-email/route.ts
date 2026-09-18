@@ -34,21 +34,17 @@ export async function POST(request: NextRequest) {
   if (!body.ok) return body.response
 
   const confirmationToken = clampString(body.value.confirmationToken, 80)
-  const organizationName = clampString(body.value.organizationName, 200)
-  const firstName = clampString(body.value.firstName, 100)
-  const to = clampString(body.value.to, 254)
+  const organizationName = clampString(body.value.organizationName, 200) || 'your organisation'
+  const firstName = clampString(body.value.firstName, 100) || 'there'
+  const requestedTo = clampString(body.value.to, 254)
+  const email = (user.email || requestedTo || '').trim().toLowerCase()
 
-  if (!confirmationToken || !isValidUuid(confirmationToken) || !organizationName || !firstName || !to) {
-    return jsonError('confirmationToken, organizationName, firstName, and to are required', 400)
+  if (!confirmationToken || !isValidUuid(confirmationToken) || !email) {
+    return jsonError('confirmationToken and a signed-in email are required', 400)
   }
-  if (!isValidEmail(to)) {
+  if (!isValidEmail(email)) {
     return jsonError('Invalid email', 400)
   }
-  if (user.email && user.email !== to.trim().toLowerCase()) {
-    return jsonError('Confirmation email must go to the signed-in account', 403)
-  }
-
-  const email = to.trim().toLowerCase()
 
   try {
     await sendResendEmail({

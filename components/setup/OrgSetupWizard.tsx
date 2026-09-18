@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { signOut } from 'firebase/auth'
 import { FormInput, FormLabel } from '@/components/forms/FormShell'
 import { useAuthStore } from '@/lib/stores/authStore'
 import type { SubscriptionPlanKey } from '@/lib/stripe/plans'
@@ -16,6 +15,7 @@ import { formatSetupError } from '@/lib/orgSetup/formatSetupError'
 import { createPendingOrganization } from '@/lib/orgSetup/createOrganization'
 import { activateOrganizationSubscription } from '@/lib/orgSetup/activateSubscription'
 import { requestFounderConfirmEmail } from '@/lib/orgSetup/requestFounderConfirmEmail'
+import { saveFounderConfirmEmailPayload } from '@/lib/orgSetup/founderConfirmEmail'
 import { saveGuidedSetupDraft } from '@/lib/orgSetup/persistGuidedSetup'
 import { jsonAuthHeaders } from '@/lib/security/clientAuthHeaders'
 import { SetupExplainer } from '@/components/setup/SetupExplainer'
@@ -39,7 +39,7 @@ type WizardStep =
 
 type PlanOption = ReturnType<typeof getSubscriptionPlanDisplayOptions>[number]
 
-const ACTIVATION_OVERALL_MS = 10000
+const ACTIVATION_OVERALL_MS = 15000
 const ACTIVATION_TIMEOUT_MESSAGE =
   'Activation is taking too long. Your details are saved on this tab — click Activate again. If it still sticks, open /setup in a new private window.'
 const WIZARD_DRAFT_KEY = 'pp.setupWizard.v1'
@@ -385,14 +385,12 @@ export function OrgSetupWizard() {
     setSubmitting(true)
     setSubmittingStatus('Creating your organisation…')
     try {
-      await withTimeout(
+      const created = await withTimeout(
         (async () => {
-          const { organizationId, confirmationToken, needsEmailConfirmation } =
-            await createOrganizationRecord({ skipOptionalAssets: true })
-
+          const record = await createOrganizationRecord({ skipOptionalAssets: true })
           setSubmittingStatus('Activating…')
           await withTimeout(
-            activateOrganizationSubscription(organizationId, {
+            activateOrganizationSubscription(record.organizationId, {
               status: 'active',
               planKey,
               activatedAt: new Date(),
@@ -400,33 +398,47 @@ export function OrgSetupWizard() {
             6000,
             'Could not finish activating. Click Activate again — your details are still on this page.'
           )
-          if (!needsEmailConfirmation) {
-            didNavigate = true
-            window.location.href = '/dashboard'
-            return
-          }
-          setSubmittingStatus('Sending confirmation email…')
-          try {
-            await withTimeout(
-              requestFounderConfirmEmail({
-                confirmationToken,
-                organizationName: organizationName.trim(),
-                firstName: firstName.trim(),
-                to: (firebaseUser?.email || email).trim(),
-              }),
-              8000,
-              'email'
-            )
-          } catch {
-            // Account exists; they can confirm later.
-          }
-          didNavigate = true
-          await signOut(getFirebaseAuth())
-          router.push('/setup/check-email')
+          return record
         })(),
         ACTIVATION_OVERALL_MS,
         ACTIVATION_TIMEOUT_MESSAGE
       )
+      window.clearTimeout(watchdog)
+
+      if (!created.needsEmailConfirmation) {
+        didNavigate = true
+        window.location.href = '/dashboard'
+        return
+      }
+
+      const to = (
+        getFirebaseAuth().currentUser?.email ||
+        firebaseUser?.email ||
+        email
+      )
+        .trim()
+        .toLowerCase()
+      const payload = {
+        confirmationToken: created.confirmationToken,
+        organizationName: organizationName.trim(),
+        firstName: firstName.trim() || 'there',
+        to,
+      }
+      setSubmittingStatus('Sending confirmation email…')
+      try {
+        await requestFounderConfirmEmail(payload)
+      } catch {
+        try {
+          await requestFounderConfirmEmail(payload)
+        } catch (emailError) {
+          saveFounderConfirmEmailPayload({
+            ...payload,
+            lastError: formatSetupError(emailError),
+          })
+        }
+      }
+      didNavigate = true
+      router.push('/setup/check-email')
     } catch (err) {
       if (reloadOnceOnStaleChunk(err)) return
       setError(formatSetupError(err))

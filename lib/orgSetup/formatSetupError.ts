@@ -47,6 +47,16 @@ export function formatSetupError(err: unknown): string {
     )
   }
 
+  if (
+    message.includes('RESEND_API_KEY') ||
+    (/resend/i.test(message) && /not configured/i.test(message))
+  ) {
+    return (
+      'The organisation was created, but the confirmation email could not be sent because email sending is not configured. ' +
+      'Add RESEND_API_KEY (and a verified RESEND_FROM_EMAIL) on Netlify, then tap Resend on the Check your email page.'
+    )
+  }
+
   if (message.includes('Firebase is not configured')) {
     return getFirebaseConfigError() || message
   }

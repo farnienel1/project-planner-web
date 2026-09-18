@@ -35,6 +35,13 @@ export async function sendResendEmail(params: {
 
   if (!response.ok) {
     const body = await response.text()
-    throw new Error(body || `Resend API error (${response.status})`)
+    let detail = body || `Resend API error (${response.status})`
+    try {
+      const parsed = JSON.parse(body) as { message?: string }
+      if (parsed.message) detail = parsed.message
+    } catch {
+      // keep raw body
+    }
+    throw new Error(detail)
   }
 }
