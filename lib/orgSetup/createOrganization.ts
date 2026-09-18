@@ -1,14 +1,11 @@
-import {
-  createUserWithEmailAndPassword,
-  signInWithEmailAndPassword,
-} from 'firebase/auth'
 import { doc, getDoc, setDoc, Timestamp, updateDoc } from 'firebase/firestore'
 import { seedOrgDefaultDashboard } from '@/lib/dashboard/dashboardLayoutStorage'
 import { newUuid, sanitizeForFirestore } from '@/lib/firebase/firestoreUtils'
 import { companyLogoPath, uploadFile } from '@/lib/firebase/storageUtils'
-import { getFirebaseAuth, getFirebaseDb } from '@/lib/firebase/ensureFirebase'
+import { getFirebaseDb } from '@/lib/firebase/ensureFirebase'
 import { permissionsToFirestoreMap } from '@/lib/firebase/userPayload'
 import { FOUNDER_PERMISSIONS } from '@/lib/orgMembership/orgRoleFlags'
+import { resolveAuthUserIdForOrgSetup } from '@/lib/orgSetup/resolveAuthForOrgSetup'
 import {
   orgSetupSettingsToFirestoreFields,
   type OrgSetupSettings,
@@ -32,31 +29,6 @@ export type CreateOrganizationResult = {
   confirmationToken: string
   isAdditionalOrganization: boolean
   needsEmailConfirmation: boolean
-}
-
-function authErrorCode(error: unknown): string {
-  if (error && typeof error === 'object' && 'code' in error) {
-    return String((error as { code?: string }).code ?? '')
-  }
-  return ''
-}
-
-async function resolveAuthUserId(email: string, password: string | undefined): Promise<string> {
-  const auth = getFirebaseAuth()
-  if (auth.currentUser) {
-    return auth.currentUser.uid
-  }
-  if (!password) {
-    throw new Error('Please enter a password to create your account.')
-  }
-  try {
-    const created = await createUserWithEmailAndPassword(auth, email, password)
-    return created.user.uid
-  } catch (error) {
-    if (authErrorCode(error) !== 'auth/email-already-in-use') throw error
-    const signedIn = await signInWithEmailAndPassword(auth, email, password)
-    return signedIn.user.uid
-  }
 }
 
 function founderPermissionFields() {
@@ -87,7 +59,7 @@ export async function createPendingOrganization(
 ): Promise<CreateOrganizationResult> {
   const db = getFirebaseDb()
   const email = input.email.toLowerCase().trim()
-  const userId = await resolveAuthUserId(email, input.password)
+  const userId = await resolveAuthUserIdForOrgSetup(email, input.password)
   const existingUserSnap = await getDoc(doc(db, 'users', userId))
   const isAdditionalOrganization = existingUserSnap.exists()
   const alreadyConfirmed = existingUserSnap.data()?.accountConfirmed !== false
