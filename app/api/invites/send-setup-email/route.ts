@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server'
 import { inviteSetupEmailSubject, buildInviteSetupEmailHtml } from '@/lib/email/inviteSetupEmail'
-import { sendResendEmail } from '@/lib/email/resendClient'
+import { sendProjectPlannerEmail } from '@/lib/email/resendClient'
 import {
   clientSafeMessage,
   enforceRateLimit,
@@ -49,7 +49,7 @@ export async function POST(request: NextRequest) {
   const email = to.trim().toLowerCase()
 
   try {
-    await sendResendEmail({
+    await sendProjectPlannerEmail({
       to: email,
       subject: inviteSetupEmailSubject(organizationName),
       html: buildInviteSetupEmailHtml({
