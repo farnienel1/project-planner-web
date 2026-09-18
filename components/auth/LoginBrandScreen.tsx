@@ -7,13 +7,16 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { EyeIcon, EyeSlashIcon } from '@heroicons/react/24/outline'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { AppLogoMark } from '@/components/ui/AppLogoMark'
+import { ACCOUNT_UNCONFIRMED_MESSAGE } from '@/lib/orgSetup/accountConfirmation'
 
 export function LoginBrandScreen() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const justConfirmed = searchParams.get('confirmed') === '1'
   const { signIn, error } = useAuthStore()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -40,8 +43,13 @@ export function LoginBrandScreen() {
       setSubmitting(true)
       await signIn(trimmedEmail, password)
       router.push('/dashboard')
-    } catch {
-      setLocalError('Sign in failed. Please check your email/password and try again.')
+    } catch (err) {
+      const message = err instanceof Error ? err.message : ''
+      setLocalError(
+        message === ACCOUNT_UNCONFIRMED_MESSAGE
+          ? ACCOUNT_UNCONFIRMED_MESSAGE
+          : 'Sign in failed. Please check your email/password and try again.'
+      )
     } finally {
       setSubmitting(false)
     }
@@ -80,6 +88,11 @@ export function LoginBrandScreen() {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          {justConfirmed ? (
+            <p className="rounded-[10px] border border-emerald-400/20 bg-emerald-500/10 px-3 py-3 text-center text-[13px] font-medium text-emerald-200">
+              Account confirmed. Sign in with the email and password you set during setup.
+            </p>
+          ) : null}
           {displayError ? (
             <p className="rounded-[10px] border border-red-400/20 bg-red-500/10 px-3 py-3 text-center text-[13px] font-medium text-red-300">
               {displayError}

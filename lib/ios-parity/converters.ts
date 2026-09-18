@@ -203,6 +203,8 @@ export function parseAppUserDocument(userId: string, data: Record<string, unknow
     utrNumber: asOptionalString(data.utrNumber),
     policyAccepted: data.policyAccepted === true,
     policyAcceptedAt: asDate(data.policyAcceptedAt),
+    accountConfirmed: data.accountConfirmed !== false,
+    accountConfirmToken: asOptionalString(data.accountConfirmToken),
     createdAt: asDate(data.createdAt) || new Date(),
     updatedAt: asDate(data.updatedAt) || new Date(),
   })

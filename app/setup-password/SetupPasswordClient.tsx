@@ -3,11 +3,8 @@
 import { FormEvent, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
-import {
-  completeInvitationPasswordSetup,
-  fetchInvitationSummary,
-  type InvitationSummary,
-} from '@/lib/invites/completeInviteSetup'
+import { completeInvitationPasswordSetup, fetchInvitationSummary, type InvitationSummary } from '@/lib/invites/completeInviteSetup'
+import { passwordsMatchAndReady } from '@/lib/legal/scrollUtils'
 
 export default function SetupPasswordClient() {
   const router = useRouter()
@@ -47,6 +44,8 @@ export default function SetupPasswordClient() {
       cancelled = true
     }
   }, [invitationId])
+
+  const canContinue = passwordsMatchAndReady(password, confirmPassword) && Boolean(invitation) && !submitting
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault()
@@ -119,10 +118,12 @@ export default function SetupPasswordClient() {
 
             <button
               type="submit"
-              disabled={submitting || !invitation}
-              className="w-full rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={!canContinue}
+              className={`w-full rounded-xl px-4 py-2.5 text-sm font-semibold text-white ${
+                canContinue ? 'bg-emerald-600 hover:bg-emerald-700' : 'cursor-not-allowed bg-slate-300 text-slate-500'
+              }`}
             >
-              {submitting ? 'Saving…' : 'Activate account'}
+              {submitting ? 'Saving…' : 'Continue'}
             </button>
           </form>
         )}
