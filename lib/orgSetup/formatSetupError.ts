@@ -13,8 +13,19 @@ export function formatSetupError(err: unknown): string {
   const message =
     err instanceof Error ? err.message : typeof err === 'string' ? err : 'Setup failed'
 
-  if (code === 'auth/email-already-in-use' || message.includes('email-already-in-use')) {
-    return 'An account with this email already exists. Sign in instead, or use a different email.'
+  if (
+    code === 'auth/email-already-in-use' ||
+    message.includes('email-already-in-use') ||
+    code === 'auth/wrong-password' ||
+    code === 'auth/invalid-credential' ||
+    code === 'auth/invalid-login-credentials' ||
+    message.includes('auth/wrong-password') ||
+    message.includes('auth/invalid-credential')
+  ) {
+    return (
+      'This email already has a Project Planner account. Sign in with your existing password, then open ' +
+      'Change organisation and choose Set up a new organisation. You can belong to as many organisations as you need.'
+    )
   }
 
   if (

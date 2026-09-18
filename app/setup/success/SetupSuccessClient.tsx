@@ -65,30 +65,41 @@ export default function SetupSuccessClient() {
           const db = getFirebaseDb()
           const userSnap = await getDoc(doc(db, 'users', adminUserId))
           const userData = userSnap.data()
+          const alreadyConfirmed = userData?.accountConfirmed !== false
           const token = String(userData?.accountConfirmToken || '')
           const firstName = String(userData?.firstName || 'there')
           const to = String(userData?.email || getFirebaseAuth().currentUser?.email || '')
           const orgSnap = await getDoc(doc(db, 'organizations', data.organizationId))
           const organizationName = String(orgSnap.data()?.name || 'your organisation')
-          if (token && to) {
-            try {
-              await requestFounderConfirmEmail({
-                confirmationToken: token,
-                organizationName,
-                firstName,
-                to,
-              })
-            } catch (emailError) {
-              console.error('[setup/success] confirmation email failed', emailError)
+          if (!alreadyConfirmed) {
+            if (token && to) {
+              try {
+                await requestFounderConfirmEmail({
+                  confirmationToken: token,
+                  organizationName,
+                  firstName,
+                  to,
+                })
+              } catch (emailError) {
+                console.error('[setup/success] confirmation email failed', emailError)
+              }
             }
+            await signOut(getFirebaseAuth())
+            if (!cancelled) {
+              setStatus('success')
+              setMessage('Payment confirmed. Check your email for a link to open your account, then sign in.')
+              window.setTimeout(() => router.push('/setup/check-email'), 1200)
+            }
+            return
           }
-          await signOut(getFirebaseAuth())
         }
 
         if (!cancelled) {
           setStatus('success')
-          setMessage('Payment confirmed. Check your email for a link to open your account, then sign in.')
-          window.setTimeout(() => router.push('/setup/check-email'), 1200)
+          setMessage('Payment confirmed. Your new organisation is ready — you can switch to it any time from Change organisation.')
+          window.setTimeout(() => {
+            window.location.href = '/dashboard'
+          }, 900)
         }
       } catch (error) {
         if (!cancelled) {
