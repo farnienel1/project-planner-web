@@ -22,6 +22,7 @@ import {
 } from '@heroicons/react/24/solid'
 import { TeamOnboardingPrompt } from '@/components/onboarding/TeamOnboardingPrompt'
 import { useAuthStore } from '@/lib/stores/authStore'
+import { shouldShowTeamOnboarding } from '@/lib/orgSetup/teamOnboarding'
 import {
   getDashboardNavBySection,
   isDashboardNavActive,
@@ -126,7 +127,7 @@ function pageTitle(pathname: string, items: DashboardNavItem[]): string {
 export function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const pathname = usePathname()
-  const { user, organization, loading, signOut, recordLastSeenIfDue } = useAuthStore()
+  const { user, organization, signOut, recordLastSeenIfDue } = useAuthStore()
   const unreadCount = useNotificationStore((s) => s.unreadCount)
   const loadNotifications = useNotificationStore((s) => s.loadNotifications)
   const [online, setOnline] = useState(true)
@@ -170,15 +171,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, [user?.id, recordLastSeenIfDue])
 
   useEffect(() => {
-    if (organization?.id && user?.id) loadNotifications(organization.id, user.id)
-  }, [organization?.id, user?.id, loadNotifications])
+    if (!organization?.id || !user?.id) return
+    if (shouldShowTeamOnboarding(organization.teamOnboarding, Boolean(user.permissions.adminAccess || user.isSuperAdmin))) {
+      return
+    }
+    loadNotifications(organization.id, user.id)
+  }, [organization?.id, organization?.teamOnboarding, user?.id, user?.permissions.adminAccess, user?.isSuperAdmin, loadNotifications])
 
   const displayUser = useMemo(
     () => (user ? applyRoleTestingPreset(user, rolePreset) : null),
     [user, rolePreset]
   )
 
-  if (loading || !displayUser) return null
+  if (!displayUser) return null
 
   const homeItems = getDashboardNavBySection(displayUser, organization, 'home')
   const navigateItems = getDashboardNavBySection(displayUser, organization, 'navigate')

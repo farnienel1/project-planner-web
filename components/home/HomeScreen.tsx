@@ -52,6 +52,7 @@ import { generateOrgWarnings } from '@/lib/warnings/generateOrgWarnings'
 import { loadOrganizationDetails, type OrganizationDetails } from '@/lib/settings/organizationSettings'
 import { loadMaterialCutOffSettings, type NotificationPreferences } from '@/lib/settings/notificationPreferences'
 import { mergeProjectsAndSmallWorks } from '@/lib/projects/workStatus'
+import { shouldShowTeamOnboarding } from '@/lib/orgSetup/teamOnboarding'
 
 function greetingName(firstName: string, email: string): string {
   const name = firstName.trim()
@@ -86,10 +87,14 @@ export function HomeScreen() {
       ? presetRaw
       : null
   const displayUser = user ? applyRoleTestingPreset(user, preset) : null
+  const pauseHomeLoads = shouldShowTeamOnboarding(
+    organization?.teamOnboarding,
+    Boolean(displayUser?.permissions.adminAccess || displayUser?.isSuperAdmin)
+  )
 
   useEffect(() => {
     const orgId = organization?.id
-    if (!orgId) return
+    if (!orgId || pauseHomeLoads) return
     loadProjects(orgId, true)
     loadSmallWorks(orgId)
     loadOperatives(orgId)
@@ -104,13 +109,13 @@ export function HomeScreen() {
     const t = window.setTimeout(() => loadHolidays(orgId), 400)
     return () => window.clearTimeout(t)
     // eslint-disable-next-line react-hooks/exhaustive-deps -- zustand loaders are stable
-  }, [organization?.id])
+  }, [organization?.id, pauseHomeLoads])
 
   useEffect(() => {
     if (!user) return
     setMetricIds(loadSavedOverviewMetrics(user.id))
     setActionIds(loadSavedQuickActionOrder(user.id, displayUser || user))
-    if (organization?.id) {
+    if (organization?.id && !pauseHomeLoads) {
       loadMaterialCutOffSettings(organization.id, user.id)
         .then(setNotificationPreferences)
         .catch(() => setNotificationPreferences(null))
@@ -121,7 +126,7 @@ export function HomeScreen() {
       /* ignore */
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- displayUser is derived from user.id
-  }, [user?.id, organization?.id])
+  }, [user?.id, organization?.id, pauseHomeLoads])
 
   const merged = useMemo(() => mergeProjectsAndSmallWorks(projects, smallWorks), [projects, smallWorks])
   const liveCount = merged.filter((p) => p.isLive !== false).length
