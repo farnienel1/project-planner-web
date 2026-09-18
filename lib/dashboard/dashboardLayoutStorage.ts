@@ -1,8 +1,13 @@
 import { doc, getDoc, setDoc, Timestamp } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
+import { withTimeout } from '@/lib/client/withTimeout'
 import { sanitizeHeroMetrics } from '@/lib/dashboard/heroMetrics'
 import { PLATFORM_DEFAULT_DASHBOARD } from '@/lib/dashboard/platformDashboardDefault'
+import { getFirebaseDb } from '@/lib/firebase/ensureFirebase'
 import type { DashboardLayoutConfig, TileId } from '@/lib/stores/dashboardStore'
+
+const PLATFORM_DASHBOARD_TIMEOUT_MS = 4000
+const SEED_DASHBOARD_TIMEOUT_MS = 6000
 
 export type SaveDashboardLayoutOptions = {
   /** When true, updates the org template for users who have not customised yet. */
@@ -98,33 +103,55 @@ async function loadOrgDefaultDashboard(orgId: string): Promise<DashboardLayoutCo
   }
 }
 
+function platformDashboardFallback(): DashboardLayoutConfig {
+  return {
+    ...PLATFORM_DEFAULT_DASHBOARD,
+    layout: [...PLATFORM_DEFAULT_DASHBOARD.layout],
+    heroMetrics: [...PLATFORM_DEFAULT_DASHBOARD.heroMetrics],
+  }
+}
+
 export async function loadPlatformDefaultDashboard(): Promise<DashboardLayoutConfig> {
   try {
-    const snap = await getDoc(doc(db, 'platformConfig', 'webDashboard'))
+    const firestore = getFirebaseDb()
+    const snap = await withTimeout(
+      getDoc(doc(firestore, 'platformConfig', 'webDashboard')),
+      PLATFORM_DASHBOARD_TIMEOUT_MS,
+      'Timed out loading the default dashboard.'
+    )
     if (snap.exists()) {
       const parsed = parseConfig(snap.data())
       if (parsed) return parsed
     }
   } catch {
-    // Fall through to code default.
+    // Fall through to code default — missing platformConfig or a hung getDoc must not block setup.
   }
-  return { ...PLATFORM_DEFAULT_DASHBOARD, layout: [...PLATFORM_DEFAULT_DASHBOARD.layout], heroMetrics: [...PLATFORM_DEFAULT_DASHBOARD.heroMetrics] }
+  return platformDashboardFallback()
 }
 
 export async function seedOrgDefaultDashboard(orgId: string): Promise<DashboardLayoutConfig> {
   const platformDefault = await loadPlatformDefaultDashboard()
-  await setDoc(
-    doc(db, 'organizations', orgId),
-    {
-      defaultWebDashboard: {
-        layout: platformDefault.layout,
-        heroMetrics: platformDefault.heroMetrics,
-        updatedAt: Timestamp.now(),
-      },
-      updatedAt: Timestamp.now(),
-    },
-    { merge: true }
-  )
+  try {
+    const firestore = getFirebaseDb()
+    await withTimeout(
+      setDoc(
+        doc(firestore, 'organizations', orgId),
+        {
+          defaultWebDashboard: {
+            layout: platformDefault.layout,
+            heroMetrics: platformDefault.heroMetrics,
+            updatedAt: Timestamp.now(),
+          },
+          updatedAt: Timestamp.now(),
+        },
+        { merge: true }
+      ),
+      SEED_DASHBOARD_TIMEOUT_MS,
+      'Timed out saving the default dashboard.'
+    )
+  } catch {
+    // New organisations can open with the code default if this write is slow or blocked.
+  }
   return platformDefault
 }
 
