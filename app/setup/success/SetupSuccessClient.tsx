@@ -6,9 +6,9 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { activateOrganizationSubscription } from '@/lib/orgSetup/activateSubscription'
 import { persistGuidedSetupDraftIfNeeded } from '@/lib/orgSetup/persistGuidedSetup'
 import { getFirebaseAuth, getFirebaseDb } from '@/lib/firebase/ensureFirebase'
-import { signOut } from 'firebase/auth'
 import { doc, getDoc } from 'firebase/firestore'
 import { requestFounderConfirmEmail } from '@/lib/orgSetup/requestFounderConfirmEmail'
+import { saveFounderConfirmEmailPayload } from '@/lib/orgSetup/founderConfirmEmail'
 
 type VerifiedSession = {
   organizationId: string
@@ -73,18 +73,21 @@ export default function SetupSuccessClient() {
           const organizationName = String(orgSnap.data()?.name || 'your organisation')
           if (!alreadyConfirmed) {
             if (token && to) {
+              const payload = {
+                confirmationToken: token,
+                organizationName,
+                firstName,
+                to,
+              }
               try {
-                await requestFounderConfirmEmail({
-                  confirmationToken: token,
-                  organizationName,
-                  firstName,
-                  to,
-                })
+                await requestFounderConfirmEmail(payload)
               } catch (emailError) {
-                console.error('[setup/success] confirmation email failed', emailError)
+                saveFounderConfirmEmailPayload({
+                  ...payload,
+                  lastError: emailError instanceof Error ? emailError.message : 'Could not send confirmation email',
+                })
               }
             }
-            await signOut(getFirebaseAuth())
             if (!cancelled) {
               setStatus('success')
               setMessage('Payment confirmed. Check your email for a link to open your account, then sign in.')
