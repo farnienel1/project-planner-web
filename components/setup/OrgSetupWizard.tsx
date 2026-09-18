@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { FormInput, FormLabel } from '@/components/forms/FormShell'
+import { useAuthStore } from '@/lib/stores/authStore'
 import type { SubscriptionPlanKey } from '@/lib/stripe/plans'
 import { getSubscriptionPlanDisplayOptions } from '@/lib/stripe/plans'
 import { getFirebaseConfigError } from '@/lib/firebase/env'
@@ -72,6 +73,8 @@ function StepIndicator({ current }: { current: WizardStep }) {
 
 export function OrgSetupWizard() {
   const router = useRouter()
+  const { user: signedInUser, firebaseUser } = useAuthStore()
+  const creatingAdditionalOrg = Boolean(firebaseUser)
   const wizardTopRef = useRef<HTMLDivElement>(null)
   const [step, setStep] = useState<WizardStep>('account')
   const [plans, setPlans] = useState<PlanOption[]>(() => getSubscriptionPlanDisplayOptions(false))
@@ -173,9 +176,25 @@ export function OrgSetupWizard() {
     wizardTopRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }, [step])
 
+  useEffect(() => {
+    if (!firebaseUser) return
+    if (signedInUser) {
+      setFirstName((value) => value || signedInUser.firstName)
+      setSurname((value) => value || signedInUser.surname)
+      setEmail(signedInUser.email || firebaseUser.email || '')
+      setMobileNumber((value) => value || signedInUser.mobileNumber || '')
+      if (signedInUser.firstName.trim() && signedInUser.surname.trim()) {
+        setStep((current) => (current === 'account' ? 'organization' : current))
+      }
+      return
+    }
+    if (firebaseUser.email) setEmail(firebaseUser.email)
+  }, [firebaseUser, signedInUser])
+
   function validateAccountStep(): string | null {
     if (!firstName.trim() || !surname.trim()) return 'Please enter your first and last name.'
     if (!email.trim()) return 'Please enter your email address.'
+    if (creatingAdditionalOrg) return null
     if (password.length < 8) return 'Password must be at least 8 characters.'
     if (password !== confirmPassword) return 'Passwords do not match.'
     return null
@@ -226,7 +245,10 @@ export function OrgSetupWizard() {
 
   function goBack() {
     setError('')
-    if (step === 'organization') goToStep('account')
+    if (step === 'organization') {
+      if (!creatingAdditionalOrg) goToStep('account')
+      return
+    }
     if (step === 'plan') goToStep('guided')
     if (step === 'review') goToStep('plan')
   }
@@ -238,8 +260,8 @@ export function OrgSetupWizard() {
   async function createOrganizationRecord() {
     const { createPendingOrganization } = await import('@/lib/orgSetup/createOrganization')
     return createPendingOrganization({
-      email: email.trim(),
-      password,
+      email: (firebaseUser?.email || email).trim(),
+      ...(creatingAdditionalOrg ? {} : { password }),
       firstName: firstName.trim(),
       surname: surname.trim(),
       mobileNumber: mobileNumber.trim(),
@@ -262,7 +284,8 @@ export function OrgSetupWizard() {
 
     setSubmitting(true)
     try {
-      const { userId, organizationId, confirmationToken } = await createOrganizationRecord()
+      const { userId, organizationId, confirmationToken, needsEmailConfirmation } =
+        await createOrganizationRecord()
       const { activateOrganizationSubscription } = await import('@/lib/orgSetup/activateSubscription')
 
       await persistGuidedSetup({
@@ -277,6 +300,10 @@ export function OrgSetupWizard() {
         planKey,
         activatedAt: new Date(),
       })
+      if (!needsEmailConfirmation) {
+        window.location.href = '/dashboard'
+        return
+      }
       const { requestFounderConfirmEmail } = await import('@/lib/orgSetup/requestFounderConfirmEmail')
       await requestFounderConfirmEmail({
         confirmationToken,
@@ -318,7 +345,7 @@ export function OrgSetupWizard() {
           planKey,
           organizationId,
           userId,
-          email: email.trim(),
+          email: (firebaseUser?.email || email).trim().toLowerCase(),
         }),
       })
 
@@ -348,16 +375,33 @@ export function OrgSetupWizard() {
             <Link href="/" className="text-sm font-semibold text-blue-600 hover:text-blue-700">
               ← Back to Project Planner
             </Link>
-            <h1 className="mt-3 text-3xl font-extrabold text-slate-900">Set up your organisation</h1>
+            <h1 className="mt-3 text-3xl font-extrabold text-slate-900">
+              {creatingAdditionalOrg ? 'Set up another organisation' : 'Set up your organisation'}
+            </h1>
             <p className="mt-2 max-w-2xl text-sm text-slate-600">
-              Create your admin account, name your company, and walk through guided team &amp; data setup before
-              choosing a subscription. For now, setup runs <strong>before</strong> payment so you can test the
-              full flow without Stripe.
+              {creatingAdditionalOrg ? (
+                'You can belong to as many organisations as you need. This new workspace is billed separately and does not replace your existing ones.'
+              ) : (
+                <>
+                  Create your admin account, name your company, and walk through guided team &amp; data setup before
+                  choosing a subscription. For now, setup runs <strong>before</strong> payment so you can test the
+                  full flow without Stripe.
+                </>
+              )}
             </p>
           </div>
-          <Link href="/login" className="text-sm font-semibold text-slate-600 hover:text-slate-900">
-            Already have an account? Sign in
-          </Link>
+          {creatingAdditionalOrg ? (
+            <Link
+              href="/dashboard/change-organisation"
+              className="text-sm font-semibold text-slate-600 hover:text-slate-900"
+            >
+              Back to organisations
+            </Link>
+          ) : (
+            <Link href="/login" className="text-sm font-semibold text-slate-600 hover:text-slate-900">
+              Already have an account? Sign in
+            </Link>
+          )}
         </div>
 
         <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_2px_30px_rgba(15,23,42,0.08)] sm:p-8">
@@ -388,25 +432,35 @@ export function OrgSetupWizard() {
               </div>
               <div className="sm:col-span-2">
                 <FormLabel required>Work email</FormLabel>
-                <FormInput type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" />
+                <FormInput
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  autoComplete="email"
+                  disabled={creatingAdditionalOrg}
+                />
               </div>
               <div className="sm:col-span-2">
                 <FormLabel>Mobile number</FormLabel>
                 <FormInput value={mobileNumber} onChange={(e) => setMobileNumber(e.target.value)} autoComplete="tel" />
               </div>
-              <div>
-                <FormLabel required>Password</FormLabel>
-                <FormInput type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" />
-              </div>
-              <div>
-                <FormLabel required>Confirm password</FormLabel>
-                <FormInput
-                  type="password"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  autoComplete="new-password"
-                />
-              </div>
+              {!creatingAdditionalOrg && (
+                <>
+                  <div>
+                    <FormLabel required>Password</FormLabel>
+                    <FormInput type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" />
+                  </div>
+                  <div>
+                    <FormLabel required>Confirm password</FormLabel>
+                    <FormInput
+                      type="password"
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      autoComplete="new-password"
+                    />
+                  </div>
+                </>
+              )}
             </div>
           )}
 
@@ -637,13 +691,15 @@ export function OrgSetupWizard() {
 
               {stripeConfigured ? (
                 <div className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900">
-                  You&apos;ll be redirected to Stripe to enter payment details securely. After payment we email a
-                  confirmation link — click it, then sign in and accept the customer terms before entering the app.
+                  {creatingAdditionalOrg
+                    ? "You'll be redirected to Stripe to enter payment details securely. After payment you'll stay signed in and can switch to this organisation from Change organisation."
+                    : "You'll be redirected to Stripe to enter payment details securely. After payment we email a confirmation link — click it, then sign in and accept the customer terms before entering the app."}
                 </div>
               ) : (
                 <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-                  Stripe is not configured in this environment. Use &ldquo;Activate without payment
-                  (testing)&rdquo; below, then confirm the email we send before signing in.
+                  {creatingAdditionalOrg
+                    ? 'Stripe is not configured in this environment. Use “Activate without payment (testing)” below to open the new organisation without leaving your account.'
+                    : 'Stripe is not configured in this environment. Use “Activate without payment (testing)” below, then confirm the email we send before signing in.'}
                 </div>
               )}
             </div>
@@ -651,7 +707,7 @@ export function OrgSetupWizard() {
 
           {showGenericNav && (
             <div className="mt-8 flex flex-wrap gap-3">
-              {step !== 'account' && (
+              {step !== 'account' && !(creatingAdditionalOrg && step === 'organization') && (
                 <button
                   type="button"
                   onClick={goBack}

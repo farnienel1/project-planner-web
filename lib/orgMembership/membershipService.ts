@@ -13,6 +13,11 @@ import { getFirebaseDb } from '@/lib/firebase/ensureFirebase'
 import { permissionsToFirestoreMap } from '@/lib/firebase/userPayload'
 import type { UserPermissions } from '@/types'
 import type { OrgMembership, UserOrgMembershipRecord } from '@/lib/orgMembership/types'
+import {
+  FOUNDER_PERMISSIONS,
+  membershipSnapshotFromUserDoc,
+  userPatchForActiveOrg,
+} from '@/lib/orgMembership/orgRoleFlags'
 
 function parseMembershipRecord(
   organizationId: string,
@@ -40,8 +45,22 @@ export async function findExistingAuthUserByEmail(email: string): Promise<{
   const snap = await getDocs(
     query(collection(db, 'users'), where('email', '==', emailLower), where('passwordSet', '==', true))
   )
-  if (snap.empty) return null
-  const docSnap = snap.docs[0]
+  if (!snap.empty) {
+    const docSnap = snap.docs[0]
+    const data = docSnap.data()
+    return {
+      userId: docSnap.id,
+      organizationId: String(data.organizationId || ''),
+      firstName: String(data.firstName || ''),
+      surname: String(data.surname || ''),
+    }
+  }
+
+  const mixed = await getDocs(
+    query(collection(db, 'users'), where('email', '==', email.trim()), where('passwordSet', '==', true))
+  )
+  if (mixed.empty) return null
+  const docSnap = mixed.docs[0]
   const data = docSnap.data()
   return {
     userId: docSnap.id,
@@ -145,20 +164,67 @@ export async function acceptOrgMembership(userId: string, organizationId: string
   })
 }
 
+/** Persist the active org's role flags onto its membership doc before switching away. */
+export async function snapshotCurrentMembership(userId: string): Promise<string | null> {
+  const db = getFirebaseDb()
+  const userSnap = await getDoc(doc(db, 'users', userId))
+  if (!userSnap.exists()) return null
+  const data = userSnap.data() as Record<string, unknown>
+  const organizationId = String(data.organizationId || '')
+  if (!organizationId) return null
+
+  const membershipRef = doc(db, 'users', userId, 'orgMemberships', organizationId)
+  const existing = await getDoc(membershipRef)
+  const now = Timestamp.now()
+  const snapshot = membershipSnapshotFromUserDoc(data)
+
+  await setDoc(
+    membershipRef,
+    {
+      ...snapshot,
+      invitedAt: existing.exists() ? existing.data().invitedAt ?? now : now,
+      acceptedAt: existing.exists() ? existing.data().acceptedAt ?? now : now,
+      updatedAt: now,
+    },
+    { merge: true }
+  )
+  return organizationId
+}
+
 export async function switchActiveOrganization(userId: string, organizationId: string): Promise<void> {
   const db = getFirebaseDb()
   const membershipRef = doc(db, 'users', userId, 'orgMemberships', organizationId)
   const membershipSnap = await getDoc(membershipRef)
+  const orgSnap = await getDoc(doc(db, 'organizations', organizationId))
+  const orgData = orgSnap.exists() ? (orgSnap.data() as Record<string, unknown>) : {}
+  const members = (orgData.members as Record<string, string> | undefined) ?? {}
+  const isCreator = String(orgData.creatorUserId || '') === userId
+  const listedRole = members[userId]
 
   if (membershipSnap.exists()) {
     const status = membershipSnap.data().status
     if (status === 'pending') {
       throw new Error('Accept the invitation before switching to this organisation.')
     }
+  } else if (!isCreator && listedRole == null) {
+    throw new Error('You are not a member of this organisation.')
   }
 
-  await updateDoc(doc(db, 'users', userId), {
+  await snapshotCurrentMembership(userId)
+
+  const membershipData = membershipSnap.exists()
+    ? (membershipSnap.data() as Record<string, unknown>)
+    : {}
+  const patch = userPatchForActiveOrg({
     organizationId,
+    role: String(membershipData.role || listedRole || (isCreator ? 'admin' : 'member')),
+    isCreator,
+    membershipIsSuperAdmin: membershipData.isSuperAdmin === true,
+    permissions: (membershipData.permissions as Record<string, unknown>) || membershipData,
+  })
+
+  await updateDoc(doc(db, 'users', userId), {
+    ...patch,
     updatedAt: Timestamp.now(),
   })
 }
@@ -167,16 +233,21 @@ export async function switchActiveOrganization(userId: string, organizationId: s
 export async function ensurePrimaryOrgMembership(
   userId: string,
   organizationId: string,
-  role: string
+  role: string,
+  options?: { isSuperAdmin?: boolean }
 ): Promise<void> {
   const db = getFirebaseDb()
   const ref = doc(db, 'users', userId, 'orgMemberships', organizationId)
   const snap = await getDoc(ref)
   if (snap.exists()) return
+  const now = Timestamp.now()
+  const isSuperAdmin = options?.isSuperAdmin === true
   await setDoc(ref, {
     role,
     status: 'active',
-    invitedAt: Timestamp.now(),
-    acceptedAt: Timestamp.now(),
+    isSuperAdmin,
+    ...(isSuperAdmin ? { permissions: permissionsToFirestoreMap(FOUNDER_PERMISSIONS) } : {}),
+    invitedAt: now,
+    acceptedAt: now,
   })
 }

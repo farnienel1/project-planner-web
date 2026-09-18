@@ -278,7 +278,7 @@ const ALL_NAV_ITEMS: DashboardNavItem[] = [
     id: 'dashboard_change_organisation',
     href: '/dashboard/change-organisation',
     label: 'Change organisation',
-    subtitle: 'Switch between your organisations',
+    subtitle: 'Switch or set up organisations',
     navigationLabelKey: 'dashboard_change_organisation',
     iconPath: 'M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4',
     tileClasses: 'bg-indigo-100 text-indigo-800',

@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/lib/stores/authStore'
 import {
@@ -118,9 +119,24 @@ export default function ChangeOrganisationPage() {
       <div>
         <h1 className="text-2xl font-bold text-slate-900">Change organisation</h1>
         <p className="mt-2 max-w-2xl text-sm text-slate-600">
-          Switch between organisations linked to your account. Each organisation has its own projects, team and
-          settings — there is no overlap when you switch.
+          Switch between organisations linked to your account, or set up a new one. Each organisation has its own
+          projects, team, settings and subscription — there is no overlap when you switch, and no limit on how many
+          you can belong to.
         </p>
+      </div>
+
+      <div className="rounded-2xl border border-blue-200 bg-blue-50 p-5">
+        <p className="text-sm font-semibold text-blue-950">Need another workspace?</p>
+        <p className="mt-1 text-sm text-blue-900">
+          Create your own organisation at any time. You will be billed separately for it, and your existing
+          organisations stay as they are.
+        </p>
+        <Link
+          href="/setup"
+          className="mt-3 inline-flex rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+        >
+          Set up a new organisation
+        </Link>
       </div>
 
       {error && (
@@ -131,7 +147,7 @@ export default function ChangeOrganisationPage() {
         {memberships.length === 0 && (
           <div className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-600">
             You are currently signed in to <strong>{organization?.name || 'your organisation'}</strong>. Additional
-            organisations will appear here when you are invited to join them.
+            organisations appear here when you are invited, or when you set up a new organisation of your own.
           </div>
         )}
 

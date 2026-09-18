@@ -49,7 +49,7 @@ export async function POST(request: NextRequest) {
     if (userId !== user.uid) {
       return jsonError('Sign in required', 403)
     }
-    if (user.email && user.email !== email) {
+    if (user.email && user.email.toLowerCase() !== email) {
       return jsonError('Checkout email must match the signed-in account', 403)
     }
 
