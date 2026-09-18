@@ -9,6 +9,7 @@ import {
 } from 'firebase/firestore'
 import type { GuidedSetupData } from '@/components/setup/GuidedOrgSetup'
 import { getFirebaseDb } from '@/lib/firebase/ensureFirebase'
+import { hasRequiredGuidedProject } from '@/lib/orgSetup/guidedSetupComplete'
 import { buildProjectFirestorePayload } from '@/lib/firebase/projectPayload'
 import { newUuid } from '@/lib/firebase/firestoreUtils'
 import type { TeamOnboardingState } from '@/lib/orgSetup/teamOnboarding'
@@ -156,20 +157,23 @@ export async function persistGuidedSetup(
   const db = getFirebaseDb()
   const { organizationId, adminUserId, guidedData } = input
   const now = new Date()
+  const teamOnboarding: TeamOnboardingState = {
+    status: 'pending_add_users',
+    addUsersGuideShown: false,
+  }
+
+  if (!hasRequiredGuidedProject(guidedData)) {
+    await updateDoc(doc(db, 'organizations', organizationId), {
+      teamOnboarding,
+      updatedAt: Timestamp.now(),
+    })
+    await ensurePrimaryOrgMembership(adminUserId, organizationId, 'admin', { isSuperAdmin: true })
+    return { teamOnboarding }
+  }
 
   const project = guidedData.project
-  const projectClientName = project.clientName.trim()
+  const projectClientName = project.clientName.trim() || guidedData.client.name.trim()
   const clientStepName = guidedData.client.name.trim()
-
-  if (
-    !project.jobNumber.trim() ||
-    !project.siteName.trim() ||
-    !project.startDate ||
-    !project.endDate ||
-    !projectClientName
-  ) {
-    throw new Error('Project setup is incomplete. Job number, site name, dates and client name are required.')
-  }
 
   let projectClient: { id: string; name: string; email?: string; phone?: string }
 
@@ -263,11 +267,6 @@ export async function persistGuidedSetup(
       doc(db, 'organizations', organizationId, 'subcontractors', subcontractor.id),
       subcontractorPayload(subcontractor)
     )
-  }
-
-  const teamOnboarding: TeamOnboardingState = {
-    status: 'pending_add_users',
-    addUsersGuideShown: false,
   }
 
   await updateDoc(doc(db, 'organizations', organizationId), {
