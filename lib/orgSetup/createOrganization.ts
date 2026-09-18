@@ -1,7 +1,7 @@
-import { createUserWithEmailAndPassword, sendEmailVerification } from 'firebase/auth'
-import { doc, setDoc, updateDoc } from 'firebase/firestore'
+import { createUserWithEmailAndPassword } from 'firebase/auth'
+import { doc, setDoc, Timestamp, updateDoc } from 'firebase/firestore'
 import { seedOrgDefaultDashboard } from '@/lib/dashboard/dashboardLayoutStorage'
-import { sanitizeForFirestore } from '@/lib/firebase/firestoreUtils'
+import { newUuid, sanitizeForFirestore } from '@/lib/firebase/firestoreUtils'
 import { companyLogoPath, uploadFile } from '@/lib/firebase/storageUtils'
 import { getFirebaseAuth, getFirebaseDb } from '@/lib/firebase/ensureFirebase'
 import {
@@ -18,13 +18,13 @@ export type CreateOrganizationInput = {
   mobileNumber?: string
   organizationName: string
   planKey: SubscriptionPlanKey
-  policyAccepted: boolean
   orgSetupSettings?: OrgSetupSettings
 }
 
 export type CreateOrganizationResult = {
   userId: string
   organizationId: string
+  confirmationToken: string
 }
 
 export async function createPendingOrganization(
@@ -35,13 +35,8 @@ export async function createPendingOrganization(
   const result = await createUserWithEmailAndPassword(auth, input.email, input.password)
   const userId = result.user.uid
   const organizationId = crypto.randomUUID()
+  const confirmationToken = newUuid()
   const now = new Date()
-
-  try {
-    await sendEmailVerification(result.user)
-  } catch (verifyError) {
-    console.warn('[org-setup] Verification email not sent:', verifyError)
-  }
 
   const setupFields = input.orgSetupSettings
     ? orgSetupSettingsToFirestoreFields(input.orgSetupSettings, userId)
@@ -96,6 +91,8 @@ export async function createPendingOrganization(
       role: 'admin',
       isActive: true,
       passwordSet: true,
+      accountConfirmed: false,
+      accountConfirmToken: confirmationToken,
       isSuperAdmin: true,
       adminAccess: true,
       manager: true,
@@ -127,8 +124,8 @@ export async function createPendingOrganization(
         weeklyReports: true,
         dailyOverview: true,
       },
-      policyAccepted: input.policyAccepted,
-      policyAcceptedAt: input.policyAccepted ? now : null,
+      policyAccepted: false,
+      policyAcceptedAt: null,
       ...(annualLeaveDefaults
         ? {
             annualLeaveEnabled: true,
@@ -144,8 +141,16 @@ export async function createPendingOrganization(
     })
   )
 
+  await setDoc(doc(db, 'accountConfirmations', confirmationToken), {
+    userId,
+    email: input.email.toLowerCase().trim(),
+    organizationId,
+    isUsed: false,
+    createdAt: Timestamp.fromDate(now),
+  })
+
   const { ensurePrimaryOrgMembership } = await import('@/lib/orgMembership/membershipService')
   await ensurePrimaryOrgMembership(userId, organizationId, 'admin')
 
-  return { userId, organizationId }
+  return { userId, organizationId, confirmationToken }
 }

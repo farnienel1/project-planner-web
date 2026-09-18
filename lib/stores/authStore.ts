@@ -20,6 +20,7 @@ import type { User, Organization } from '@/types'
 import { withSeededNavigationLabels } from '@/lib/navigation/sharedUiLabels'
 import { parseTeamOnboarding } from '@/lib/orgSetup/teamOnboarding'
 import { topLevelAdminFlagPatch } from '@/lib/orgSetup/repairAdminFlags'
+import { ACCOUNT_UNCONFIRMED_MESSAGE } from '@/lib/orgSetup/accountConfirmation'
 
 interface AuthState {
   user: User | null
@@ -90,6 +91,27 @@ async function loadSignedInProfile(firebaseUser: FirebaseUser) {
     user.permissions = { ...user.permissions, skills: false }
     patch.skills = false
   }
+
+  const raw = userDoc.data() as Record<string, unknown>
+  if (raw.accountConfirmed === false) {
+    const token =
+      (typeof raw.accountConfirmToken === 'string' && raw.accountConfirmToken) ||
+      user.accountConfirmToken ||
+      ''
+    if (token) {
+      try {
+        const confirmSnap = await getDoc(doc(db, 'accountConfirmations', token))
+        if (confirmSnap.exists() && confirmSnap.data().isUsed === true) {
+          patch.accountConfirmed = true
+          patch.accountConfirmedAt = Timestamp.now()
+          user.accountConfirmed = true
+        }
+      } catch (confirmError) {
+        console.warn('Account confirmation lookup skipped:', confirmError)
+      }
+    }
+  }
+
   if (Object.keys(patch).length > 0) {
     patch.updatedAt = Timestamp.now()
     try {
@@ -181,7 +203,20 @@ export const useAuthStore = create<AuthState>((set) => {
     signIn: async (email: string, password: string) => {
       try {
         set({ loading: true, error: null })
-        await signInWithEmailAndPassword(getFirebaseAuth(), email, password)
+        const credential = await signInWithEmailAndPassword(getFirebaseAuth(), email, password)
+        await loadSignedInProfile(credential.user)
+        const loaded = useAuthStore.getState().user
+        if (loaded && loaded.accountConfirmed === false) {
+          await firebaseSignOut(getFirebaseAuth())
+          set({
+            user: null,
+            firebaseUser: null,
+            organization: null,
+            loading: false,
+            error: ACCOUNT_UNCONFIRMED_MESSAGE,
+          })
+          throw new Error(ACCOUNT_UNCONFIRMED_MESSAGE)
+        }
         set({ loading: false })
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : 'Sign in failed'
@@ -231,6 +266,7 @@ export const useAuthStore = create<AuthState>((set) => {
           wholesalersOrderHistory: true,
           dailyOverview: true,
           policyAccepted: false,
+          accountConfirmed: true,
           employmentType: 'self_employed',
           createdAt: new Date(),
           updatedAt: new Date(),

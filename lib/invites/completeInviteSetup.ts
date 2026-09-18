@@ -73,8 +73,9 @@ async function migrateInvitedUserRecord(params: {
   const nextUser = {
     ...userData,
     email: params.email.toLowerCase().trim(),
-    passwordSet: true,
-    updatedAt: Timestamp.now(),
+        passwordSet: true,
+        accountConfirmed: true,
+        updatedAt: Timestamp.now(),
   }
 
   await setDoc(doc(db, 'users', params.authUid), nextUser)
@@ -138,6 +139,7 @@ export async function completeInvitationPasswordSetup(params: {
         organizationId: summary.organizationId,
         passwordSet: true,
         isActive: true,
+        accountConfirmed: true,
         updatedAt: Timestamp.now(),
       },
       { merge: true }
