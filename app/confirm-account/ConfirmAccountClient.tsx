@@ -3,7 +3,8 @@
 import { useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { doc, getDoc, Timestamp, updateDoc } from 'firebase/firestore'
-import { getFirebaseDb } from '@/lib/firebase/ensureFirebase'
+import { withTimeout } from '@/lib/client/withTimeout'
+import { getFirebaseAuth, getFirebaseDb } from '@/lib/firebase/ensureFirebase'
 import { isValidUuid } from '@/lib/security/validation'
 
 export default function ConfirmAccountClient() {
@@ -24,13 +25,38 @@ export default function ConfirmAccountClient() {
       try {
         const db = getFirebaseDb()
         const ref = doc(db, 'accountConfirmations', token)
-        const snap = await getDoc(ref)
+        const snap = await withTimeout(
+          getDoc(ref),
+          8000,
+          'Confirming your account is taking too long. Refresh this page and open the email link again.'
+        )
         if (!snap.exists()) {
           throw new Error('This confirmation link was not found. Ask support if you were expecting an email.')
         }
         const data = snap.data()
         if (data.isUsed !== true) {
-          await updateDoc(ref, { isUsed: true, usedAt: Timestamp.now() })
+          await withTimeout(
+            updateDoc(ref, { isUsed: true, usedAt: Timestamp.now() }),
+            8000,
+            'Confirming your account is taking too long. Refresh this page and open the email link again.'
+          )
+        }
+        const userId = typeof data.userId === 'string' ? data.userId : ''
+        const signedInUid = getFirebaseAuth().currentUser?.uid
+        if (userId && signedInUid === userId) {
+          try {
+            await withTimeout(
+              updateDoc(doc(db, 'users', userId), {
+                accountConfirmed: true,
+                accountConfirmedAt: Timestamp.now(),
+                updatedAt: Timestamp.now(),
+              }),
+              8000,
+              'Confirming your account is taking too long. Refresh this page and open the email link again.'
+            )
+          } catch (profileError) {
+            console.warn('Could not mark the user profile confirmed yet:', profileError)
+          }
         }
         if (!cancelled) {
           setMessage('Account confirmed. Redirecting to login…')

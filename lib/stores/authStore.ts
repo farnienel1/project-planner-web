@@ -11,6 +11,7 @@ import {
 } from 'firebase/auth'
 import { doc, getDoc, setDoc, updateDoc, Timestamp } from 'firebase/firestore'
 import { seedOrgDefaultDashboard } from '@/lib/dashboard/dashboardLayoutStorage'
+import { withTimeout, withTimeoutFallback } from '@/lib/client/withTimeout'
 import { getFirebaseAuth, getFirebaseDb } from '@/lib/firebase/ensureFirebase'
 import { isFirebaseConfigured } from '@/lib/firebase/env'
 import { loadUserDocumentWithRetry } from '@/lib/firebase/loadUserDocument'
@@ -38,14 +39,34 @@ interface AuthState {
 }
 
 const LAST_SEEN_THROTTLE_MS = 120_000
-let lastSeenWriteAt = 0
+const AUTH_SIGN_IN_MS = 8000
+const PROFILE_LOAD_MS = 12000
+const PROFILE_STEP_MS = 4000
+const SIGN_IN_SLOW_MESSAGE =
+  'Sign in is taking too long. Check your connection, refresh this page, then try again.'
 
-async function loadSignedInProfile(firebaseUser: FirebaseUser) {
+let lastSeenWriteAt = 0
+let inFlightProfile: { uid: string; promise: Promise<void> } | null = null
+
+function loadSignedInProfile(firebaseUser: FirebaseUser): Promise<void> {
+  if (inFlightProfile?.uid === firebaseUser.uid) return inFlightProfile.promise
+  const promise = loadSignedInProfileInner(firebaseUser).finally(() => {
+    if (inFlightProfile?.promise === promise) inFlightProfile = null
+  })
+  inFlightProfile = { uid: firebaseUser.uid, promise }
+  return promise
+}
+
+async function loadSignedInProfileInner(firebaseUser: FirebaseUser) {
   const db = getFirebaseDb()
   let userDoc = await loadUserDocumentWithRetry(firebaseUser.uid)
   if (!userDoc.exists() && firebaseUser.email) {
-    await mergePlaceholderUserDocOntoAuthUidIfNeeded(firebaseUser.uid, firebaseUser.email)
-    userDoc = await loadUserDocumentWithRetry(firebaseUser.uid, 4)
+    await withTimeoutFallback(
+      mergePlaceholderUserDocOntoAuthUidIfNeeded(firebaseUser.uid, firebaseUser.email),
+      PROFILE_STEP_MS,
+      false
+    )
+    userDoc = await loadUserDocumentWithRetry(firebaseUser.uid, 2)
   }
 
   if (!userDoc.exists()) {
@@ -101,7 +122,11 @@ async function loadSignedInProfile(firebaseUser: FirebaseUser) {
       ''
     if (token) {
       try {
-        const confirmSnap = await getDoc(doc(db, 'accountConfirmations', token))
+        const confirmSnap = await withTimeout(
+          getDoc(doc(db, 'accountConfirmations', token)),
+          PROFILE_STEP_MS,
+          SIGN_IN_SLOW_MESSAGE
+        )
         if (confirmSnap.exists() && confirmSnap.data().isUsed === true) {
           patch.accountConfirmed = true
           patch.accountConfirmedAt = Timestamp.now()
@@ -116,7 +141,11 @@ async function loadSignedInProfile(firebaseUser: FirebaseUser) {
   if (Object.keys(patch).length > 0) {
     patch.updatedAt = Timestamp.now()
     try {
-      await updateDoc(doc(db, 'users', firebaseUser.uid), patch)
+      await withTimeout(
+        updateDoc(doc(db, 'users', firebaseUser.uid), patch),
+        PROFILE_STEP_MS,
+        SIGN_IN_SLOW_MESSAGE
+      )
     } catch (profileFixError) {
       console.warn('Profile flag repair skipped:', profileFixError)
     }
@@ -124,7 +153,11 @@ async function loadSignedInProfile(firebaseUser: FirebaseUser) {
 
   let organization: Organization | null = null
   if (user.organizationId) {
-    const orgDoc = await getDoc(doc(db, 'organizations', user.organizationId))
+    const orgDoc = await withTimeout(
+      getDoc(doc(db, 'organizations', user.organizationId)),
+      PROFILE_STEP_MS,
+      SIGN_IN_SLOW_MESSAGE
+    )
     if (orgDoc.exists()) {
       const orgData = orgDoc.data()
       const seededLabels = withSeededNavigationLabels(orgData.settings || {})
@@ -139,25 +172,23 @@ async function loadSignedInProfile(firebaseUser: FirebaseUser) {
         updatedAt: orgData.updatedAt?.toDate() || new Date(),
       }
 
-      try {
-        await ensurePrimaryOrgMembership(
+      void withTimeoutFallback(
+        ensurePrimaryOrgMembership(
           firebaseUser.uid,
           user.organizationId,
           String(orgData.members?.[firebaseUser.uid] || user.role || 'member')
-        )
-      } catch (membershipError) {
-        console.warn('Org membership seed skipped:', membershipError)
-      }
+        ),
+        PROFILE_STEP_MS,
+        undefined
+      )
 
       if (seededLabels.changed && (user.isSuperAdmin || user.permissions.adminAccess)) {
-        try {
-          await updateDoc(doc(db, 'organizations', user.organizationId), {
-            'settings.uiLabels.navigationLabels': seededLabels.navigationLabels,
-            updatedAt: new Date(),
-          })
-        } catch (seedError) {
+        void updateDoc(doc(db, 'organizations', user.organizationId), {
+          'settings.uiLabels.navigationLabels': seededLabels.navigationLabels,
+          updatedAt: new Date(),
+        }).catch((seedError) => {
           console.warn('Navigation label seeding skipped:', seedError)
-        }
+        })
       }
     }
   }
@@ -176,7 +207,7 @@ export const useAuthStore = create<AuthState>((set) => {
     onAuthStateChanged(getFirebaseAuth(), async (firebaseUser) => {
       if (firebaseUser) {
         try {
-          await loadSignedInProfile(firebaseUser)
+          await withTimeout(loadSignedInProfile(firebaseUser), PROFILE_LOAD_MS, SIGN_IN_SLOW_MESSAGE)
         } catch (authLoadError) {
           console.error('Failed to load user profile:', authLoadError)
           set({
@@ -184,7 +215,10 @@ export const useAuthStore = create<AuthState>((set) => {
             firebaseUser,
             organization: null,
             loading: false,
-            error: 'Could not load your user profile from Firestore.',
+            error:
+              authLoadError instanceof Error
+                ? authLoadError.message
+                : 'Could not load your user profile from Firestore.',
           })
         }
       } else {
@@ -203,8 +237,38 @@ export const useAuthStore = create<AuthState>((set) => {
     signIn: async (email: string, password: string) => {
       try {
         set({ loading: true, error: null })
-        const credential = await signInWithEmailAndPassword(getFirebaseAuth(), email, password)
-        await loadSignedInProfile(credential.user)
+        const auth = getFirebaseAuth()
+        const emailLower = email.trim().toLowerCase()
+        const existing = auth.currentUser
+        const sessionMatches =
+          Boolean(existing?.email) && existing!.email!.trim().toLowerCase() === emailLower
+
+        let firebaseUser = existing
+        if (!sessionMatches) {
+          try {
+            const credential = await withTimeout(
+              signInWithEmailAndPassword(auth, emailLower, password),
+              AUTH_SIGN_IN_MS,
+              SIGN_IN_SLOW_MESSAGE
+            )
+            firebaseUser = credential.user
+          } catch (signInError) {
+            const after = auth.currentUser
+            if (
+              after?.email &&
+              after.email.trim().toLowerCase() === emailLower
+            ) {
+              firebaseUser = after
+            } else {
+              throw signInError
+            }
+          }
+        }
+        if (!firebaseUser) {
+          throw new Error(SIGN_IN_SLOW_MESSAGE)
+        }
+
+        await withTimeout(loadSignedInProfile(firebaseUser), PROFILE_LOAD_MS, SIGN_IN_SLOW_MESSAGE)
         const loaded = useAuthStore.getState().user
         if (loaded && loaded.accountConfirmed === false) {
           await firebaseSignOut(getFirebaseAuth())

@@ -51,3 +51,12 @@ export function shouldShowTeamOnboarding(
   if (onboarding.status === 'complete') return false
   return onboarding.status === 'pending_add_users' && !onboarding.addUsersGuideShown
 }
+
+/** Close the first-login “add your team” prompt without waiting on Firestore. */
+export function teamOnboardingAfterGuideShown(onboarding: TeamOnboardingState): TeamOnboardingState {
+  return {
+    ...onboarding,
+    status: 'complete',
+    addUsersGuideShown: true,
+  }
+}
