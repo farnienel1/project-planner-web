@@ -22,7 +22,7 @@ import {
 } from '@heroicons/react/24/solid'
 import { TeamOnboardingPrompt } from '@/components/onboarding/TeamOnboardingPrompt'
 import { useAuthStore } from '@/lib/stores/authStore'
-import { shouldShowTeamOnboarding } from '@/lib/orgSetup/teamOnboarding'
+import { shouldShowTeamOnboardingPrompt } from '@/lib/orgSetup/teamOnboarding'
 import {
   getDashboardNavBySection,
   isDashboardNavActive,
@@ -172,7 +172,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!organization?.id || !user?.id) return
-    if (shouldShowTeamOnboarding(organization.teamOnboarding, Boolean(user.permissions.adminAccess || user.isSuperAdmin))) {
+    if (
+      shouldShowTeamOnboardingPrompt(
+        organization.teamOnboarding,
+        Boolean(user.permissions.adminAccess || user.isSuperAdmin),
+        organization.id
+      )
+    ) {
       return
     }
     loadNotifications(organization.id, user.id)
