@@ -52,7 +52,7 @@ import { generateOrgWarnings } from '@/lib/warnings/generateOrgWarnings'
 import { loadOrganizationDetails, type OrganizationDetails } from '@/lib/settings/organizationSettings'
 import { loadMaterialCutOffSettings, type NotificationPreferences } from '@/lib/settings/notificationPreferences'
 import { mergeProjectsAndSmallWorks } from '@/lib/projects/workStatus'
-import { shouldShowTeamOnboarding } from '@/lib/orgSetup/teamOnboarding'
+import { shouldShowTeamOnboardingPrompt } from '@/lib/orgSetup/teamOnboarding'
 
 function greetingName(firstName: string, email: string): string {
   const name = firstName.trim()
@@ -87,9 +87,10 @@ export function HomeScreen() {
       ? presetRaw
       : null
   const displayUser = user ? applyRoleTestingPreset(user, preset) : null
-  const pauseHomeLoads = shouldShowTeamOnboarding(
+  const pauseHomeLoads = shouldShowTeamOnboardingPrompt(
     organization?.teamOnboarding,
-    Boolean(displayUser?.permissions.adminAccess || displayUser?.isSuperAdmin)
+    Boolean(displayUser?.permissions.adminAccess || displayUser?.isSuperAdmin),
+    organization?.id
   )
 
   useEffect(() => {
