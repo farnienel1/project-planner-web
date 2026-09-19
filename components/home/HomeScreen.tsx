@@ -16,6 +16,7 @@ import {
   WrenchScrewdriverIcon,
   XMarkIcon,
 } from '@heroicons/react/24/solid'
+import { QuickActionIcon } from '@/components/home/QuickActionIcon'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useProjectStore } from '@/lib/stores/projectStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
@@ -351,7 +352,7 @@ export function HomeScreen() {
                   className="ios-card flex min-h-[128px] flex-col items-center justify-center gap-3 p-4 text-center hover:border-ios-search-border"
                 >
                   <IconChip tint={meta.chip as ChipTint} size="lg">
-                    <PlusIcon className="h-6 w-6" />
+                    <QuickActionIcon name={meta.icon} className="h-6 w-6" />
                   </IconChip>
                   <span className="line-clamp-2 text-[16px] font-medium leading-tight">{meta.title.replace(/\n/g, ' ')}</span>
                 </Link>
@@ -516,7 +517,12 @@ export function HomeScreen() {
                       setAddOpen(false)
                     }}
                   >
-                    <span className="font-medium">{meta.title.replace(/\n/g, ' ')}</span>
+                    <span className="flex min-w-0 items-center gap-3">
+                      <IconChip tint={meta.chip as ChipTint} size="sm">
+                        <QuickActionIcon name={meta.icon} className="h-4 w-4" />
+                      </IconChip>
+                      <span className="font-medium">{meta.title.replace(/\n/g, ' ')}</span>
+                    </span>
                     <PlusIcon className="h-5 w-5 text-[#185FA5]" />
                   </button>
                 )
