@@ -251,7 +251,44 @@ export function parseAnnualLeaveDefaults(data: Record<string, unknown> | undefin
   }
 }
 
+export function copyWarningDetection(
+  settings: OrgWarningDetectionSettings = DEFAULT_WARNING_DETECTION
+): OrgWarningDetectionSettings {
+  return {
+    ...settings,
+    excludedUserIdsFromUnbookedWarnings: [...(settings.excludedUserIdsFromUnbookedWarnings ?? [])],
+  }
+}
+
+export function warningDetectionEquals(
+  a: OrgWarningDetectionSettings,
+  b: OrgWarningDetectionSettings
+): boolean {
+  return (
+    a.detectClashes === b.detectClashes &&
+    a.clashLookaheadMode === b.clashLookaheadMode &&
+    a.clashLookaheadDays === b.clashLookaheadDays &&
+    a.includeWeekendsForUnbookedLabour === b.includeWeekendsForUnbookedLabour &&
+    (a.excludedUserIdsFromUnbookedWarnings ?? []).join('\0') ===
+      (b.excludedUserIdsFromUnbookedWarnings ?? []).join('\0')
+  )
+}
+
+export function warningDetectionLooksLikeFactoryDefault(
+  settings: OrgWarningDetectionSettings
+): boolean {
+  return warningDetectionEquals(settings, {
+    ...DEFAULT_WARNING_DETECTION,
+    excludedUserIdsFromUnbookedWarnings: [],
+  })
+}
+
 export function clampClashLookaheadDays(value: unknown): number {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    const rec = value as Record<string, unknown>
+    if (rec.integerValue != null) return clampClashLookaheadDays(rec.integerValue)
+    if (rec.doubleValue != null) return clampClashLookaheadDays(rec.doubleValue)
+  }
   const n = typeof value === 'number' ? value : Number(value)
   if (!Number.isFinite(n)) return DEFAULT_WARNING_DETECTION.clashLookaheadDays
   return Math.max(1, Math.min(365, Math.round(n)))
@@ -267,9 +304,37 @@ function parseClashLookaheadMode(
   return DEFAULT_WARNING_DETECTION.clashLookaheadMode
 }
 
-function asSettingsRecord(value: unknown): Record<string, unknown> | undefined {
+export function asSettingsRecord(value: unknown): Record<string, unknown> | undefined {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
   return value as Record<string, unknown>
+}
+
+function warningDaysField(record: Record<string, unknown> | undefined): unknown {
+  if (!record) return undefined
+  return (
+    record.clashLookaheadDays ??
+    record.lookaheadDays ??
+    record.lookAheadDays ??
+    record.numberOfDays ??
+    record.daysAhead
+  )
+}
+
+/** Prefer the map that actually stored a day count (nested settings vs org root). */
+export function resolveWarningDetectionRaw(
+  topLevel: unknown,
+  nested: unknown
+): Record<string, unknown> | undefined {
+  const top = asSettingsRecord(topLevel)
+  const nestedRec = asSettingsRecord(nested)
+  if (!top && !nestedRec) return undefined
+  const merged: Record<string, unknown> = { ...(nestedRec ?? {}), ...(top ?? {}) }
+  const topDays = warningDaysField(top)
+  const nestedDays = warningDaysField(nestedRec)
+  if ((topDays === undefined || topDays === null) && nestedDays !== undefined && nestedDays !== null) {
+    merged.clashLookaheadDays = nestedDays
+  }
+  return merged
 }
 
 export function parseWarningDetection(data: Record<string, unknown> | undefined): OrgWarningDetectionSettings {
@@ -391,8 +456,7 @@ export async function loadOrganizationDetails(
   const materialRaw =
     asSettingsRecord(settings.materialCutOff) ??
     asSettingsRecord(settings.notificationPreferences)
-  const warningRaw =
-    asSettingsRecord(data.warningDetection) ?? asSettingsRecord(settings.warningDetection)
+  const warningRaw = resolveWarningDetectionRaw(data.warningDetection, settings.warningDetection)
   return {
     id: snap.id,
     name: String(data.name ?? ''),
@@ -452,14 +516,25 @@ export async function saveOrganizationBankHolidayRegion(
 
 export async function saveWarningDetection(organizationId: string, settings: OrgWarningDetectionSettings): Promise<void> {
   const payload = warningDetectionToFirestore(settings)
-  await setDoc(
-    doc(db, 'organizations', organizationId),
-    {
-      warningDetection: payload,
-      updatedAt: Timestamp.now(),
-    },
-    { merge: true }
-  )
+  const ref = doc(db, 'organizations', organizationId)
+  const fields: Record<string, unknown> = { updatedAt: Timestamp.now() }
+  for (const [key, value] of Object.entries(payload)) {
+    fields[`warningDetection.${key}`] = value
+    fields[`settings.warningDetection.${key}`] = value
+  }
+  try {
+    await updateDoc(ref, fields)
+  } catch {
+    // Dotted paths need an existing org document; merge the iOS top-level map if update is denied.
+    await setDoc(
+      ref,
+      {
+        warningDetection: payload,
+        updatedAt: Timestamp.now(),
+      },
+      { merge: true }
+    )
+  }
 }
 
 export async function saveInvoicingSettings(organizationId: string, settings: OrgInvoicingSettings): Promise<void> {
