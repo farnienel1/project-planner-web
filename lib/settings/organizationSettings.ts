@@ -1,4 +1,4 @@
-import { doc, getDoc, setDoc, Timestamp, updateDoc } from 'firebase/firestore'
+import { doc, getDoc, getDocFromServer, setDoc, Timestamp, updateDoc } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
 import {
   parseNotificationPreferences,
@@ -251,18 +251,49 @@ export function parseAnnualLeaveDefaults(data: Record<string, unknown> | undefin
   }
 }
 
+export function clampClashLookaheadDays(value: unknown): number {
+  const n = typeof value === 'number' ? value : Number(value)
+  if (!Number.isFinite(n)) return DEFAULT_WARNING_DETECTION.clashLookaheadDays
+  return Math.max(1, Math.min(365, Math.round(n)))
+}
+
+function parseClashLookaheadMode(
+  value: unknown
+): OrgWarningDetectionSettings['clashLookaheadMode'] {
+  const mode = String(value || '').trim()
+  if (mode === 'numberOfDays' || mode === 'days') return 'numberOfDays'
+  if (mode === 'endOfInvoicingPeriod' || mode === 'invoicing') return 'endOfInvoicingPeriod'
+  if (mode === 'endOfWorkingWeek' || mode === 'week') return 'endOfWorkingWeek'
+  return DEFAULT_WARNING_DETECTION.clashLookaheadMode
+}
+
+function asSettingsRecord(value: unknown): Record<string, unknown> | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
+  return value as Record<string, unknown>
+}
+
 export function parseWarningDetection(data: Record<string, unknown> | undefined): OrgWarningDetectionSettings {
-  if (!data) return { ...DEFAULT_WARNING_DETECTION, excludedUserIdsFromUnbookedWarnings: [] }
-  const mode = String(data.clashLookaheadMode ?? DEFAULT_WARNING_DETECTION.clashLookaheadMode)
-  const clashLookaheadMode =
-    mode === 'numberOfDays' || mode === 'endOfInvoicingPeriod' ? mode : 'endOfWorkingWeek'
+  const record = asSettingsRecord(data)
+  if (!record) return { ...DEFAULT_WARNING_DETECTION, excludedUserIdsFromUnbookedWarnings: [] }
+  const daysRaw =
+    record.clashLookaheadDays ??
+    record.lookaheadDays ??
+    record.lookAheadDays ??
+    record.numberOfDays ??
+    record.daysAhead
+  const days =
+    daysRaw === undefined || daysRaw === null
+      ? DEFAULT_WARNING_DETECTION.clashLookaheadDays
+      : daysRaw
   return {
-    detectClashes: data.detectClashes !== false,
-    clashLookaheadMode,
-    clashLookaheadDays: Number(data.clashLookaheadDays ?? DEFAULT_WARNING_DETECTION.clashLookaheadDays),
-    includeWeekendsForUnbookedLabour: Boolean(data.includeWeekendsForUnbookedLabour),
-    excludedUserIdsFromUnbookedWarnings: Array.isArray(data.excludedUserIdsFromUnbookedWarnings)
-      ? (data.excludedUserIdsFromUnbookedWarnings as string[])
+    detectClashes: record.detectClashes !== false,
+    clashLookaheadMode: parseClashLookaheadMode(
+      record.clashLookaheadMode ?? record.lookAheadMode ?? record.lookaheadMode
+    ),
+    clashLookaheadDays: clampClashLookaheadDays(days),
+    includeWeekendsForUnbookedLabour: Boolean(record.includeWeekendsForUnbookedLabour),
+    excludedUserIdsFromUnbookedWarnings: Array.isArray(record.excludedUserIdsFromUnbookedWarnings)
+      ? (record.excludedUserIdsFromUnbookedWarnings as string[])
       : [],
   }
 }
@@ -271,7 +302,7 @@ export function warningDetectionToFirestore(settings: OrgWarningDetectionSetting
   return {
     detectClashes: settings.detectClashes,
     clashLookaheadMode: settings.clashLookaheadMode,
-    clashLookaheadDays: settings.clashLookaheadDays,
+    clashLookaheadDays: clampClashLookaheadDays(settings.clashLookaheadDays),
     includeWeekendsForUnbookedLabour: settings.includeWeekendsForUnbookedLabour,
     excludedUserIdsFromUnbookedWarnings: settings.excludedUserIdsFromUnbookedWarnings,
   }
@@ -346,14 +377,22 @@ export function myScheduleOptionsToFirestore(options: MyScheduleOptions): Record
   }
 }
 
-export async function loadOrganizationDetails(organizationId: string): Promise<OrganizationDetails | null> {
-  const snap = await getDoc(doc(db, 'organizations', organizationId))
+export async function loadOrganizationDetails(
+  organizationId: string,
+  options?: { fromServer?: boolean }
+): Promise<OrganizationDetails | null> {
+  const ref = doc(db, 'organizations', organizationId)
+  const snap = options?.fromServer
+    ? await getDocFromServer(ref).catch(() => getDoc(ref))
+    : await getDoc(ref)
   if (!snap.exists()) return null
   const data = snap.data()
-  const settings = (data.settings as Record<string, unknown> | undefined) ?? {}
+  const settings = asSettingsRecord(data.settings) ?? {}
   const materialRaw =
-    (settings.materialCutOff as Record<string, unknown> | undefined) ??
-    (settings.notificationPreferences as Record<string, unknown> | undefined)
+    asSettingsRecord(settings.materialCutOff) ??
+    asSettingsRecord(settings.notificationPreferences)
+  const warningRaw =
+    asSettingsRecord(data.warningDetection) ?? asSettingsRecord(settings.warningDetection)
   return {
     id: snap.id,
     name: String(data.name ?? ''),
@@ -364,7 +403,7 @@ export async function loadOrganizationDetails(organizationId: string): Promise<O
     officeAddress: data.officeAddress as OrganizationDetails['officeAddress'],
     payrollTimePolicy: parsePayrollPolicy(data.payrollTimePolicy as Record<string, unknown> | undefined),
     annualLeaveDefaults: parseAnnualLeaveDefaults(data.annualLeaveDefaults as Record<string, unknown> | undefined),
-    warningDetection: parseWarningDetection(data.warningDetection as Record<string, unknown> | undefined),
+    warningDetection: parseWarningDetection(warningRaw),
     invoicing: parseInvoicing(data.invoicing as Record<string, unknown> | undefined),
     myScheduleOptions: parseMyScheduleOptions(settings),
     materialCutOff: materialRaw ? parseNotificationPreferences(materialRaw) : null,
@@ -412,10 +451,15 @@ export async function saveOrganizationBankHolidayRegion(
 }
 
 export async function saveWarningDetection(organizationId: string, settings: OrgWarningDetectionSettings): Promise<void> {
-  await updateDoc(doc(db, 'organizations', organizationId), {
-    warningDetection: warningDetectionToFirestore(settings),
-    updatedAt: Timestamp.now(),
-  })
+  const payload = warningDetectionToFirestore(settings)
+  await setDoc(
+    doc(db, 'organizations', organizationId),
+    {
+      warningDetection: payload,
+      updatedAt: Timestamp.now(),
+    },
+    { merge: true }
+  )
 }
 
 export async function saveInvoicingSettings(organizationId: string, settings: OrgInvoicingSettings): Promise<void> {

@@ -1,10 +1,11 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import {
   DEFAULT_WARNING_DETECTION,
+  clampClashLookaheadDays,
   loadOrganizationDetails,
   saveWarningDetection,
   type OrgWarningDetectionSettings,
@@ -81,6 +82,10 @@ export function WarningsPanel({ onBack }: { onBack: () => void }) {
   const [error, setError] = useState('')
   const [pickerOpen, setPickerOpen] = useState(false)
   const [search, setSearch] = useState('')
+  const dirtyRef = useRef(false)
+  const loadGenerationRef = useRef(0)
+  const draftRef = useRef(draft)
+  draftRef.current = draft
 
   useEffect(() => {
     if (organization?.id) loadUsers(organization.id)
@@ -88,14 +93,22 @@ export function WarningsPanel({ onBack }: { onBack: () => void }) {
 
   useEffect(() => {
     if (!organization?.id) return
-    loadOrganizationDetails(organization.id)
+    const generation = ++loadGenerationRef.current
+    dirtyRef.current = false
+    let cancelled = false
+    loadOrganizationDetails(organization.id, { fromServer: true })
       .then((details) => {
+        if (cancelled || dirtyRef.current || generation !== loadGenerationRef.current) return
         if (details?.warningDetection) setDraft(details.warningDetection)
       })
       .catch(() => {})
+    return () => {
+      cancelled = true
+    }
   }, [organization?.id])
 
   function patch(partial: Partial<OrgWarningDetectionSettings>) {
+    dirtyRef.current = true
     setDraft((current) => ({ ...current, ...partial }))
   }
 
@@ -122,8 +135,15 @@ export function WarningsPanel({ onBack }: { onBack: () => void }) {
     if (!organization?.id) return
     setSaving(true)
     setError('')
+    const toSave: OrgWarningDetectionSettings = {
+      ...draftRef.current,
+      clashLookaheadDays: clampClashLookaheadDays(draftRef.current.clashLookaheadDays),
+    }
     try {
-      await saveWarningDetection(organization.id, draft)
+      await saveWarningDetection(organization.id, toSave)
+      loadGenerationRef.current += 1
+      dirtyRef.current = false
+      setDraft(toSave)
       setSaved(true)
       window.setTimeout(() => setSaved(false), 3000)
     } catch (saveError) {
@@ -134,7 +154,7 @@ export function WarningsPanel({ onBack }: { onBack: () => void }) {
   }
 
   const mode = draft.clashLookaheadMode
-  const days = draft.clashLookaheadDays
+  const days = clampClashLookaheadDays(draft.clashLookaheadDays)
 
   return (
     <div className="mx-auto max-w-2xl pb-12">
