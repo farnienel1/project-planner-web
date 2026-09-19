@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import { usePathname, useRouter } from 'next/navigation'
 import { useEffect, useState, type ReactNode } from 'react'
 import { updatePassword, EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth'
 import { doc, Timestamp, updateDoc } from 'firebase/firestore'
@@ -304,6 +305,8 @@ function RolesPanel({ onBack }: { onBack: () => void }) {
 
 // ─── Main Settings Page ───────────────────────────────────────────────────────
 export default function SettingsScreen({ initialPanel = 'main' }: { initialPanel?: Panel }) {
+  const router = useRouter()
+  const pathname = usePathname()
   const { user, organization, signOut } = useAuthStore()
   const canAccessOrgHub = canAccessOrganisationSettingsHub(user)
   const safeInitialPanel =
@@ -333,7 +336,18 @@ export default function SettingsScreen({ initialPanel = 'main' }: { initialPanel
   if (panel === 'working-hours' && canAccessOrgHub) return <WorkingHoursPanel onBack={() => setPanel('organisation')} />
   if (panel === 'annual-leave-defaults' && canAccessOrgHub) return <AnnualLeaveDefaultsPanel onBack={() => setPanel('organisation')} />
   if (panel === 'schedule-options' && canAccessOrgHub) return <ScheduleOptionsPanel onBack={() => setPanel('organisation')} />
-  if (panel === 'warnings' && canAccessOrgHub) return <WarningsPanel onBack={() => setPanel('organisation')} />
+  if (panel === 'warnings' && canAccessOrgHub) {
+    const openedFromWarningsList =
+      initialPanel === 'warnings' || pathname === '/dashboard/settings/warnings'
+    return (
+      <WarningsPanel
+        onBack={() => {
+          if (openedFromWarningsList) router.push('/dashboard/warnings')
+          else setPanel('organisation')
+        }}
+      />
+    )
+  }
   if (panel === 'material-cutoff' && canAccessOrgHub) {
     return <MaterialCutOffPanel onBack={() => setPanel('organisation')} />
   }
