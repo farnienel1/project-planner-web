@@ -1,20 +1,24 @@
 'use client'
 
-import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { useState } from 'react'
 import { doc, updateDoc } from 'firebase/firestore'
 import { withTimeout } from '@/lib/client/withTimeout'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { getFirebaseDb } from '@/lib/firebase/ensureFirebase'
 import type { TeamOnboardingState } from '@/lib/orgSetup/teamOnboarding'
-import { shouldShowTeamOnboarding, teamOnboardingAfterGuideShown } from '@/lib/orgSetup/teamOnboarding'
+import {
+  markTeamOnboardingDismissedLocally,
+  shouldShowTeamOnboardingPrompt,
+  teamOnboardingAfterGuideShown,
+  teamOnboardingWritePayload,
+} from '@/lib/orgSetup/teamOnboarding'
 
-async function markUsersGuideShown(organizationId: string, onboarding: TeamOnboardingState) {
+async function persistUsersGuideShown(organizationId: string, onboarding: TeamOnboardingState) {
   const db = getFirebaseDb()
-  const next = teamOnboardingAfterGuideShown(onboarding)
   await withTimeout(
     updateDoc(doc(db, 'organizations', organizationId), {
-      teamOnboarding: next,
+      teamOnboarding: teamOnboardingWritePayload(onboarding),
       updatedAt: new Date(),
     }),
     8000,
@@ -24,27 +28,29 @@ async function markUsersGuideShown(organizationId: string, onboarding: TeamOnboa
 
 export function TeamOnboardingPrompt() {
   const router = useRouter()
-  const { user, organization } = useAuthStore()
-  const [open, setOpen] = useState(false)
+  const user = useAuthStore((state) => state.user)
+  const organization = useAuthStore((state) => state.organization)
+  const [, setDismissedTick] = useState(0)
   const onboarding = organization?.teamOnboarding
+  const isAdmin = Boolean(user?.permissions.adminAccess || user?.isSuperAdmin)
+  const show = shouldShowTeamOnboardingPrompt(onboarding, isAdmin, organization?.id)
 
-  useEffect(() => {
-    if (shouldShowTeamOnboarding(onboarding, Boolean(user?.permissions.adminAccess || user?.isSuperAdmin))) {
-      setOpen(true)
-    } else {
-      setOpen(false)
-    }
-  }, [onboarding, user])
+  if (!show || !organization?.id || !onboarding || !user) return null
 
-  if (!open || !organization?.id || !onboarding || !user) return null
+  const organizationId = organization.id
+  const currentOnboarding = onboarding
+  const currentOrganization = organization
 
   function dismissPrompt() {
-    const next = teamOnboardingAfterGuideShown(onboarding!)
+    markTeamOnboardingDismissedLocally(organizationId)
+    setDismissedTick((tick) => tick + 1)
     useAuthStore.setState({
-      organization: { ...organization!, teamOnboarding: next },
+      organization: {
+        ...currentOrganization,
+        teamOnboarding: teamOnboardingAfterGuideShown(currentOnboarding),
+      },
     })
-    setOpen(false)
-    void markUsersGuideShown(organization!.id, onboarding!).catch((error) => {
+    void persistUsersGuideShown(organizationId, currentOnboarding).catch((error) => {
       console.warn('Team onboarding dismiss skipped:', error)
     })
   }
