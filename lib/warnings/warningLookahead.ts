@@ -157,6 +157,33 @@ export function computeWarningLookaheadEnd(
   return computeWarningCoverageWindow(referenceDate, warningDetection, invoicing).end
 }
 
+function formatScanDay(date: Date): string {
+  return new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Europe/London',
+    day: 'numeric',
+    month: 'short',
+  }).format(date)
+}
+
+/** Copy for the days-ahead stepper — N includes today (iOS numberOfDays). */
+export function formatNumberOfDaysScanSummary(days: number, referenceDate = new Date()): string {
+  const n = Math.max(1, Math.min(Math.round(days) || 1, 365))
+  const window = computeWarningCoverageWindow(referenceDate, {
+    detectClashes: true,
+    clashLookaheadMode: 'numberOfDays',
+    clashLookaheadDays: n,
+    includeWeekendsForUnbookedLabour: false,
+    excludedUserIdsFromUnbookedWarnings: [],
+  })
+  const start = formatScanDay(window.start)
+  const end = formatScanDay(window.end)
+  if (n === 1) return `Scans today only (${start}). Today counts as 1 day.`
+  if (n === 2) {
+    return `Scans today and tomorrow (${start}–${end}). The day you are on is included.`
+  }
+  return `Scans ${n} calendar days including today: ${start} through ${end}.`
+}
+
 export function isDateWithinWarningWindow(date: Date, windowStart: Date, windowEnd: Date): boolean {
   const key = dayKey(date)
   return key >= dayKey(windowStart) && key <= dayKey(windowEnd)
