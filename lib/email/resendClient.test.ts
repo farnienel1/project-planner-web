@@ -34,6 +34,32 @@ test('sendProjectPlannerEmail posts to the iOS Cloud Function, not Resend', asyn
   assert.equal(calls[0].body.replyTo, 'info@projectplanner.us')
 })
 
+test('sendProjectPlannerEmail forwards cc, replyTo and fromName like iOS', async () => {
+  const calls: Array<{ body: Record<string, unknown> }> = []
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
+    calls.push({ body: JSON.parse(String(init?.body || '{}')) as Record<string, unknown> })
+    return new Response('ok', { status: 200 })
+  }) as typeof fetch
+
+  try {
+    await sendProjectPlannerEmail({
+      to: 'alex@cef.example',
+      subject: 'Quote request — P-104 — Acme',
+      html: '<p>Hi</p>',
+      cc: 'farnie@example.com',
+      replyTo: 'farnie@example.com',
+      fromName: 'Farnie (via Project Planner)',
+    })
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+
+  assert.equal(calls[0].body.cc, 'farnie@example.com')
+  assert.equal(calls[0].body.replyTo, 'farnie@example.com')
+  assert.equal(calls[0].body.fromName, 'Farnie (via Project Planner)')
+})
+
 test('sendProjectPlannerEmail surfaces a Cloud Function error', async () => {
   const originalFetch = globalThis.fetch
   globalThis.fetch = (async () =>
