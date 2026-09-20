@@ -27,17 +27,23 @@ export async function sendProjectPlannerEmail(params: {
   to: string
   subject: string
   html: string
+  cc?: string
+  replyTo?: string
+  fromName?: string
 }): Promise<void> {
+  const payload: Record<string, string> = {
+    to: params.to,
+    subject: params.subject,
+    html: params.html,
+    fromName: params.fromName?.trim() || fromName(),
+    replyTo: params.replyTo?.trim() || replyTo() || 'info@projectplanner.us',
+  }
+  if (params.cc?.trim()) payload.cc = params.cc.trim()
+
   const response = await fetch(emailFunctionUrl(), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      to: params.to,
-      subject: params.subject,
-      html: params.html,
-      fromName: fromName(),
-      replyTo: replyTo(),
-    }),
+    body: JSON.stringify(payload),
   })
 
   const body = await response.text()

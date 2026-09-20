@@ -1,5 +1,5 @@
 # iOS → Web parity: progress
-Last updated: 2026-09-20 · Current step: Phase 3 job tiles + Switch organisation · Stopped at: Stop Gate (job tiles 16 partial + switch org)
+Last updated: 2026-09-20 · Current step: Materials send list + job My Tasks · Stopped at: Stop Gate (materials send + tasks)
 
 ## Access check (Phase 0)
 - **WEB_ROOT:** `/workspace` (this repo, `project-planner-web`)
@@ -35,8 +35,8 @@ Last updated: 2026-09-20 · Current step: Phase 3 job tiles + Switch organisatio
 | 12 | Projects | ☑ list/hub | ☑ list/hub + tiles | ☐ | ☐ | Job tiles: Materials, View, My Tasks, H&S, Site Audit, Location |
 | 13 | Small Works | ☑ | ☑ list + tiles | ☐ | ☐ | Same six job tiles as Projects |
 | 14 | Scheduling and My Schedule | ☐ | ☐ | ☐ | ☐ | Title-Case booking status |
-| 15 | Tasks | ☑ job tile | ☑ job tile | ☐ | ☐ | Job My Tasks (not Home Tasks hub) |
-| 16 | Job tiles (View, Materials, H&S, Deadlines, Location, Active users) | ☑ six tiles | ☑ six tiles | ☐ | ☐ | Deadlines + Active users still later |
+| 15 | Tasks | ☑ job tile | ☑ job tile | ☐ | ☐ | iOS New task + rows + filters on job tile |
+| 16 | Job tiles (View, Materials, H&S, Deadlines, Location, Active users) | ☑ six tiles | ☑ six tiles + send list | ☐ | ☐ | Send list emails via Cloud Function; Deadlines + Active users later |
 | 17 | Timesheets | ☐ | ☐ | ☐ | ☐ | |
 | 18 | Annual Leave | ☐ | ☐ | ☐ | ☐ | |
 | 19 | Site Audit | ☑ per-job | ☑ per-job | ☐ | ☐ | Org hub still later |
@@ -63,7 +63,7 @@ D1, D2, D5–D10 still at recommendation (see `STOP-GATE-1.md`). Q1–Q10 are de
 - 2026-09-16 · Q8: sections 14–16 and 21–24 stay in scope · Farnie
 - 2026-09-16 · Q9: write `self_employed`; read both · Farnie
 - 2026-09-16 · Phase 2 foundations: converters, permissions, shell, Home, auth merge/privacy, live bookings · agent
-- 2026-09-20 · Phase 3 job tiles (Materials, View, My Tasks, H&S, Site Audit, Location) for projects and small works, plus Switch organisation · agent
+- 2026-09-20 · Materials send list + job My Tasks rebuilt from iOS sheets; Cloud Function email wired · agent
 - 2026-09-16 · Phase 3 started with Clients, Projects list/hub, Daily overview (not Manage Users first) · Farnie
 
 ## Approved exceptions

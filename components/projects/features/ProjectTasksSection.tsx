@@ -4,214 +4,49 @@
  */
 'use client'
 
-import { FormEvent, useEffect, useMemo, useState } from 'react'
-import { format } from 'date-fns'
+import { useEffect, useMemo, useState } from 'react'
+import { FunnelIcon, MagnifyingGlassIcon, PlusIcon } from '@heroicons/react/24/solid'
+import { ClipboardDocumentListIcon } from '@heroicons/react/24/outline'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useTaskStore } from '@/lib/stores/taskStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
 import { isOperativeMode } from '@/lib/navigation/menuPermissions'
-import { canManageWorkCatalogue } from '@/lib/permissions'
-import { newUuid } from '@/lib/firebase/firestoreUtils'
+import { canManageWorkCatalogue, hasAdminAccess } from '@/lib/permissions'
 import { ErrorBanner, LoadingSpinner } from '@/components/dashboard/PageShell'
-import { FormInput, FormLabel, FormSelect, FormTextarea } from '@/components/forms/FormShell'
+import { FeatureCard, FeatureScreen, FilterChipsRow } from '@/components/projects/features/featureUi'
+import { AddProjectTaskSheet } from '@/components/projects/tasks/AddProjectTaskSheet'
+import { ProjectTaskDetailSheet } from '@/components/projects/tasks/ProjectTaskDetailSheet'
+import { ProjectTaskFilterSheet } from '@/components/projects/tasks/ProjectTaskFilterSheet'
+import { ProjectTaskRow } from '@/components/projects/tasks/ProjectTaskRow'
 import {
-  FeatureCard,
-  FeatureScreen,
-  FilterChipsRow,
-} from '@/components/projects/features/featureUi'
-import {
+  EMPTY_JOB_TASK_FILTER,
   PROJECT_TASK_SCOPES,
+  applyJobTaskFilter,
   emptyCopyForScope,
   filterTasksForScope,
-  isTaskOverdue,
+  isAssignedToUser,
+  jobTaskFilterDescription,
   taskScopeCounts,
   taskStatCounts,
+  type JobTaskFilter,
   type ProjectTaskListScope,
 } from '@/lib/tasks/projectTaskFilters'
-import type { Project, ProjectTask, ProjectTaskPriority, ProjectTaskStatus } from '@/types'
-
-const PRIORITY_CONFIG: Record<ProjectTaskPriority, { label: string; bg: string; text: string }> = {
-  Low: { label: 'Low', bg: 'bg-slate-100', text: 'text-slate-600' },
-  Normal: { label: 'Normal', bg: 'bg-blue-50', text: 'text-blue-700' },
-  High: { label: 'High', bg: 'bg-amber-50', text: 'text-amber-700' },
-  Urgent: { label: 'Urgent', bg: 'bg-red-50', text: 'text-red-700' },
-}
-
-function TaskRow({
-  task,
-  onStatusChange,
-  onDelete,
-}: {
-  task: ProjectTask
-  onStatusChange: (task: ProjectTask, status: ProjectTaskStatus) => void
-  onDelete: (task: ProjectTask) => void
-}) {
-  const [expanded, setExpanded] = useState(false)
-  const priority = PRIORITY_CONFIG[task.priority] || PRIORITY_CONFIG.Normal
-  const overdue = isTaskOverdue(task)
-
-  return (
-    <FeatureCard className="overflow-hidden">
-      <button type="button" onClick={() => setExpanded((v) => !v)} className="w-full px-4 py-3 text-left">
-        <div className="flex items-start justify-between gap-2">
-          <p className="text-sm font-semibold text-slate-900">{task.title}</p>
-          <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${priority.bg} ${priority.text}`}>
-            {priority.label}
-          </span>
-        </div>
-        <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-slate-500">
-          {task.dueDate && (
-            <span className={overdue ? 'font-semibold text-red-600' : ''}>{format(task.dueDate, 'd MMM')}</span>
-          )}
-          <span>{task.status}</span>
-        </div>
-      </button>
-      {expanded && (
-        <div className="space-y-3 border-t border-slate-100 px-4 py-3">
-          {task.details && <p className="text-sm text-slate-600">{task.details}</p>}
-          <div className="flex flex-wrap gap-1.5">
-            {(['To Do', 'In Progress', 'Completed'] as ProjectTaskStatus[])
-              .filter((status) => status !== task.status)
-              .map((status) => (
-                <button
-                  key={status}
-                  type="button"
-                  onClick={() => onStatusChange(task, status)}
-                  className="rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50"
-                >
-                  {status === 'Completed' ? 'Complete' : status}
-                </button>
-              ))}
-            <button
-              type="button"
-              onClick={() => onDelete(task)}
-              className="ml-auto rounded-lg border border-red-100 px-2.5 py-1 text-xs font-medium text-red-600"
-            >
-              Delete
-            </button>
-          </div>
-        </div>
-      )}
-    </FeatureCard>
-  )
-}
-
-function AddTaskForm({
-  people,
-  onAdd,
-  onCancel,
-}: {
-  people: { id: string; label: string; kind: 'operative' | 'manager' }[]
-  onAdd: (input: {
-    title: string
-    details: string
-    priority: ProjectTaskPriority
-    dueDate: Date
-    assigneeId: string
-    assigneeKind: 'operative' | 'manager'
-  }) => Promise<void>
-  onCancel: () => void
-}) {
-  const [title, setTitle] = useState('')
-  const [details, setDetails] = useState('')
-  const [priority, setPriority] = useState<ProjectTaskPriority>('Normal')
-  const [dueDate, setDueDate] = useState('')
-  const [assignee, setAssignee] = useState('')
-  const [saving, setSaving] = useState(false)
-  const selected = people.find((row) => `${row.kind}:${row.id}` === assignee)
-  const canSubmit = Boolean(title.trim() && selected && dueDate)
-
-  const handleSubmit = async (e: FormEvent) => {
-    e.preventDefault()
-    if (!selected || !dueDate) return
-    setSaving(true)
-    await onAdd({
-      title,
-      details,
-      priority,
-      dueDate: new Date(`${dueDate}T00:00:00`),
-      assigneeId: selected.id,
-      assigneeKind: selected.kind,
-    })
-    setSaving(false)
-  }
-
-  return (
-    <FeatureCard className="p-5">
-      <h3 className="text-sm font-semibold text-slate-900">Create a new task</h3>
-      <p className="mt-1 text-xs text-slate-500">Assign to a manager or operative</p>
-      <form onSubmit={handleSubmit} className="mt-4 space-y-4">
-        <div>
-          <FormLabel>Title</FormLabel>
-          <FormInput
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="Replace fuse board"
-            required
-            autoFocus
-          />
-          <p className="mt-1 text-[11px] text-slate-400">
-            Keep titles short and action-led — &quot;Replace fuse board&quot; not &quot;Some work to do&quot;.
-          </p>
-        </div>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div>
-            <FormLabel>Assignee</FormLabel>
-            <FormSelect value={assignee} onChange={(e) => setAssignee(e.target.value)}>
-              <option value="">Select person</option>
-              {people.map((row) => (
-                <option key={`${row.kind}:${row.id}`} value={`${row.kind}:${row.id}`}>
-                  {row.label}
-                </option>
-              ))}
-            </FormSelect>
-          </div>
-          <div>
-            <FormLabel>Due date</FormLabel>
-            <FormInput type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} required />
-            <p className="mt-1 text-[11px] text-slate-400">Every task must have a due date.</p>
-          </div>
-          <div>
-            <FormLabel>Priority</FormLabel>
-            <FormSelect value={priority} onChange={(e) => setPriority(e.target.value as ProjectTaskPriority)}>
-              {(['Low', 'Normal', 'High', 'Urgent'] as ProjectTaskPriority[]).map((p) => (
-                <option key={p} value={p}>
-                  {p}
-                </option>
-              ))}
-            </FormSelect>
-          </div>
-        </div>
-        <div>
-          <FormLabel>Details (optional)</FormLabel>
-          <FormTextarea value={details} onChange={(e) => setDetails(e.target.value)} rows={3} />
-        </div>
-        <div className="flex gap-3">
-          <button
-            type="submit"
-            disabled={saving || !canSubmit}
-            className="rounded-xl bg-[#185FA5] px-5 py-2 text-sm font-semibold text-white disabled:opacity-50"
-          >
-            {saving ? 'Saving…' : canSubmit ? 'Create task' : 'Add a title and assignee to continue'}
-          </button>
-          <button type="button" onClick={onCancel} className="rounded-xl border border-slate-200 px-5 py-2 text-sm">
-            Cancel
-          </button>
-        </div>
-      </form>
-    </FeatureCard>
-  )
-}
+import type { Project, ProjectTask, ProjectTaskStatus } from '@/types'
 
 export function ProjectTasksSection({ project }: { project: Project }) {
   const { organization, user } = useAuthStore()
   const { tasks, loading, error, loadTasks, saveTask, deleteTask } = useTaskStore()
   const { operatives, managers, loadOperatives, loadManagers } = useOperativeStore()
   const [showForm, setShowForm] = useState(false)
+  const [editing, setEditing] = useState<ProjectTask | null>(null)
+  const [openTask, setOpenTask] = useState<ProjectTask | null>(null)
+  const [showFilter, setShowFilter] = useState(false)
+  const [taskFilter, setTaskFilter] = useState<JobTaskFilter>(EMPTY_JOB_TASK_FILTER)
   const [scope, setScope] = useState<ProjectTaskListScope>('assignedToMe')
   const [search, setSearch] = useState('')
   const isOperative = isOperativeMode(user)
   const canViewAll = canManageWorkCatalogue(user, 'projects') || canManageWorkCatalogue(user, 'smallWorks')
+  const canEdit = Boolean(user && (hasAdminAccess(user) || user.permissions.manager) && !isOperative)
 
   useEffect(() => {
     if (organization?.id) {
@@ -235,65 +70,71 @@ export function ProjectTasksSection({ project }: { project: Project }) {
   }
 
   const visibleBase = useMemo(() => {
-    if (canViewAll) return projectTasks
-    return projectTasks.filter((task) =>
-      filterTasksForScope([task], 'assignedToMe', filterOpts).length > 0
+    const filtered = applyJobTaskFilter(projectTasks, taskFilter)
+    if (canViewAll) return filtered
+    return filtered.filter((task) =>
+      isAssignedToUser(task, filterOpts.userEmail, operatives, managers, isOperative)
     )
-  }, [canViewAll, projectTasks, filterOpts.userEmail, filterOpts.operativeMode, operatives, managers, user])
+  }, [canViewAll, projectTasks, taskFilter, filterOpts.userEmail, filterOpts.operativeMode, operatives, managers, user, isOperative])
 
   const scoped = useMemo(() => {
     const q = search.trim().toLowerCase()
-    return filterTasksForScope(visibleBase, scope, filterOpts).filter((task) => {
-      if (!q) return true
-      return task.title.toLowerCase().includes(q) || (task.details || '').toLowerCase().includes(q)
-    })
-  }, [visibleBase, scope, search, filterOpts.userEmail, filterOpts.operativeMode, operatives, managers])
+    return filterTasksForScope(visibleBase, scope, filterOpts)
+      .filter((task) => {
+        if (!q) return true
+        return task.title.toLowerCase().includes(q) || (task.details || '').toLowerCase().includes(q)
+      })
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+  }, [visibleBase, scope, search, filterOpts.userEmail, filterOpts.operativeMode, operatives, managers, isOperative])
 
   const counts = taskScopeCounts(visibleBase, filterOpts)
   const stats = taskStatCounts(visibleBase)
   const empty = emptyCopyForScope(scope)
+  const liveOpenTask = openTask ? scoped.find((row) => row.id === openTask.id) || projectTasks.find((row) => row.id === openTask.id) || openTask : null
 
-  const people = useMemo(() => {
-    const ops = operatives.map((row) => ({
-      id: row.id,
-      label: `${row.firstName} ${row.lastName}`.trim() || row.email,
-      kind: 'operative' as const,
-    }))
-    const mgrs = managers.map((row) => ({
-      id: row.id,
-      label: `${row.firstName} ${row.lastName}`.trim() || row.email,
-      kind: 'manager' as const,
-    }))
-    return [...mgrs, ...ops]
-  }, [operatives, managers])
-
-  const handleAdd = async (input: {
+  const handleSaveForm = async (input: {
+    id: string
     title: string
-    details: string
-    priority: ProjectTaskPriority
+    details?: string
+    priority: ProjectTask['priority']
     dueDate: Date
-    assigneeId: string
-    assigneeKind: 'operative' | 'manager'
+    assignedManagerIds: string[]
+    assignedOperativeIds: string[]
+    items: NonNullable<ProjectTask['items']>
+    attachedImageURLs: string[]
+    attachedFileURL?: string
+    attachedFileName?: string
+    attachedSiteAuditId?: string
+    attachedSiteAuditTitle?: string
   }) => {
     if (!organization?.id || !user) return
+    const existing = editing
     await saveTask({
-      id: newUuid(),
+      id: input.id,
       organizationId: organization.id,
       projectId: project.id,
-      title: input.title.trim(),
-      details: input.details.trim() || undefined,
-      createdBy: `${user.firstName} ${user.surname}`.trim() || user.email,
-      status: 'To Do',
+      title: input.title,
+      details: input.details,
+      createdBy: existing?.createdBy || `${user.firstName} ${user.surname}`.trim() || user.email,
+      status: existing?.status || 'To Do',
       priority: input.priority,
       dueDate: input.dueDate,
-      assignedOperativeId: input.assigneeKind === 'operative' ? input.assigneeId : undefined,
-      assignedManagerId: input.assigneeKind === 'manager' ? input.assigneeId : undefined,
-      assignedOperativeIds: input.assigneeKind === 'operative' ? [input.assigneeId] : [],
-      assignedManagerIds: input.assigneeKind === 'manager' ? [input.assigneeId] : [],
-      createdAt: new Date(),
+      assignedOperativeId: input.assignedOperativeIds[0],
+      assignedManagerId: input.assignedManagerIds[0],
+      assignedOperativeIds: input.assignedOperativeIds,
+      assignedManagerIds: input.assignedManagerIds,
+      items: input.items,
+      completedItemIds: existing?.completedItemIds || [],
+      attachedImageURLs: input.attachedImageURLs,
+      attachedFileURL: input.attachedFileURL,
+      attachedFileName: input.attachedFileName,
+      attachedSiteAuditId: input.attachedSiteAuditId,
+      attachedSiteAuditTitle: input.attachedSiteAuditTitle,
+      createdAt: existing?.createdAt || new Date(),
       updatedAt: new Date(),
     })
     setShowForm(false)
+    setEditing(null)
   }
 
   const handleStatusChange = async (task: ProjectTask, status: ProjectTaskStatus) => {
@@ -306,91 +147,167 @@ export function ProjectTasksSection({ project }: { project: Project }) {
     })
   }
 
+  const handleToggleItem = async (task: ProjectTask, itemId: string) => {
+    const current = new Set(task.completedItemIds || [])
+    if (current.has(itemId)) current.delete(itemId)
+    else current.add(itemId)
+    await saveTask({ ...task, completedItemIds: [...current], updatedAt: new Date() })
+  }
+
   const handleDelete = async (task: ProjectTask) => {
     if (!organization?.id) return
     if (!window.confirm(`Delete "${task.title}"?`)) return
     await deleteTask(organization.id, task.id)
+    setOpenTask(null)
   }
 
   if (loading) return <LoadingSpinner />
   if (error) return <ErrorBanner message={error} />
 
-  const chips = PROJECT_TASK_SCOPES.map((item) => ({
-    id: item.id,
-    label: item.label,
-    count: item.id === 'assignedToMe' ? undefined : counts[item.id],
-  }))
+  const chips = PROJECT_TASK_SCOPES.map((item) => {
+    if (item.id === 'assignedToMe') return { id: item.id, label: item.label }
+    if (item.id === 'active') return { id: item.id, label: item.label, count: counts.active }
+    if ((item.id === 'overdue' || item.id === 'completed') && counts[item.id] > 0) {
+      return { id: item.id, label: item.label, count: counts[item.id] }
+    }
+    return { id: item.id, label: item.label }
+  })
 
   return (
     <FeatureScreen>
       <div className="flex items-center justify-end">
         <button
           type="button"
-          onClick={() => setShowForm(true)}
+          onClick={() => {
+            setEditing(null)
+            setShowForm(true)
+          }}
           className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-[#185FA5] text-white shadow-md"
           aria-label="Create a task"
         >
-          <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-          </svg>
+          <PlusIcon className="h-5 w-5" />
         </button>
       </div>
 
       <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
         {[
-          { label: 'To do', count: stats.todo, color: 'text-slate-800' },
-          { label: 'In progress', count: stats.inProgress, color: 'text-blue-800' },
-          { label: 'Overdue', count: stats.overdue, color: 'text-red-700' },
-          { label: 'Done', count: stats.done, color: 'text-emerald-800' },
+          { label: 'To do', count: stats.todo, color: 'text-[#6B7280]' },
+          { label: 'In progress', count: stats.inProgress, color: 'text-[#854F0B]' },
+          { label: 'Overdue', count: stats.overdue, color: 'text-[#A32D2D]' },
+          { label: 'Done', count: stats.done, color: 'text-[#0F6E56]' },
         ].map((item) => (
-          <FeatureCard key={item.label} className="px-3 py-3 text-center">
+          <FeatureCard key={item.label} className="px-3 py-2.5 text-center">
             <p className={`text-[18px] font-medium ${item.color}`}>{item.count}</p>
-            <p className="text-[10px] text-slate-500">{item.label}</p>
+            <p className="text-[10px] text-[#6B7280]">{item.label}</p>
           </FeatureCard>
         ))}
       </div>
 
-      <div className="mt-4 flex gap-2">
+      <div className="mt-4 flex items-center gap-2 rounded-xl border border-[#E5E7EB] bg-white px-3 py-2">
+        <MagnifyingGlassIcon className="h-4 w-4 text-[#6B7280]" />
         <input
           type="search"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search tasks…"
-          className="flex-1 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm outline-none"
+          className="flex-1 bg-transparent text-xs outline-none"
         />
+        <button
+          type="button"
+          disabled={isOperative}
+          onClick={() => setShowFilter(true)}
+          className={`text-[#185FA5] ${isOperative ? 'opacity-35' : ''}`}
+          aria-label="Task filters"
+        >
+          <FunnelIcon className="h-[15px] w-[15px]" />
+        </button>
       </div>
+
+      {!isOperative && (
+        <p className="mt-2 text-[10px] text-[#6B7280]">{jobTaskFilterDescription(taskFilter, operatives, managers)}</p>
+      )}
 
       <div className="mt-3">
         <FilterChipsRow chips={chips} selected={scope} onSelect={setScope} />
       </div>
 
-      {showForm && (
-        <div className="mt-4">
-          <AddTaskForm people={people} onAdd={handleAdd} onCancel={() => setShowForm(false)} />
-        </div>
-      )}
-
-      <div className="mt-4 space-y-2">
+      <div className="mt-4 space-y-2.5">
         {scoped.length === 0 && !showForm ? (
-          <FeatureCard className="py-12 text-center">
-            <p className="text-sm font-semibold text-slate-800">{empty.title}</p>
-            <p className="mt-1 px-6 text-xs text-slate-500">{empty.subtitle}</p>
+          <FeatureCard className="py-8 text-center">
+            <div className="mx-auto mb-3.5 flex h-14 w-14 items-center justify-center rounded-[18px] bg-[#E6F1FB]">
+              <ClipboardDocumentListIcon className="h-7 w-7 text-[#185FA5]" />
+            </div>
+            <p className="text-[15px] font-medium text-[#0B1020]">{empty.title}</p>
+            <p className="mt-1 px-6 text-xs text-[#6B7280]">{empty.subtitle}</p>
             {scope === 'active' && (
               <button
                 type="button"
-                onClick={() => setShowForm(true)}
-                className="mt-4 text-sm font-semibold text-[#185FA5]"
+                onClick={() => {
+                  setEditing(null)
+                  setShowForm(true)
+                }}
+                className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-[#185FA5] px-[18px] py-2.5 text-[13px] font-medium text-white"
               >
+                <PlusIcon className="h-3.5 w-3.5" />
                 Create a task
               </button>
             )}
           </FeatureCard>
         ) : (
           scoped.map((task) => (
-            <TaskRow key={task.id} task={task} onStatusChange={handleStatusChange} onDelete={handleDelete} />
+            <ProjectTaskRow
+              key={task.id}
+              task={task}
+              operatives={operatives}
+              managers={managers}
+              canEdit={canEdit}
+              onOpen={() => setOpenTask(task)}
+              onEdit={() => {
+                setEditing(task)
+                setShowForm(true)
+              }}
+            />
           ))
         )}
       </div>
+
+      {showForm && (
+        <AddProjectTaskSheet
+          project={project}
+          people={{ operatives, managers }}
+          existing={editing}
+          onSave={handleSaveForm}
+          onClose={() => {
+            setShowForm(false)
+            setEditing(null)
+          }}
+        />
+      )}
+
+      {showFilter && (
+        <ProjectTaskFilterSheet
+          filter={taskFilter}
+          operatives={operatives}
+          managers={managers}
+          onApply={(next) => {
+            if (next.type === 'operative' && !next.operativeId) next.operativeId = operatives[0]?.id
+            if (next.type === 'manager' && !next.managerId) next.managerId = managers[0]?.id
+            setTaskFilter(next)
+          }}
+          onClose={() => setShowFilter(false)}
+        />
+      )}
+
+      {liveOpenTask && (
+        <ProjectTaskDetailSheet
+          task={liveOpenTask}
+          canDelete={canEdit}
+          onClose={() => setOpenTask(null)}
+          onStatusChange={(status) => void handleStatusChange(liveOpenTask, status)}
+          onToggleItem={(itemId) => void handleToggleItem(liveOpenTask, itemId)}
+          onDelete={() => void handleDelete(liveOpenTask)}
+        />
+      )}
     </FeatureScreen>
   )
 }
