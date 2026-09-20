@@ -29,6 +29,22 @@ function mapTask(docId: string, data: Record<string, unknown>, organizationId: s
     completedAt: parseFirestoreDate(data.completedAt),
     completionNotes: parseOptionalString(data.completionNotes),
     attachedImageURLs: Array.isArray(data.attachedImageURLs) ? (data.attachedImageURLs as string[]) : [],
+    attachedFileURL: parseOptionalString(data.attachedFileURL),
+    attachedFileName: parseOptionalString(data.attachedFileName),
+    attachedSiteAuditId: parseOptionalString(data.attachedSiteAuditId),
+    attachedSiteAuditTitle: parseOptionalString(data.attachedSiteAuditTitle),
+    items: Array.isArray(data.items)
+      ? (data.items as Record<string, unknown>[])
+          .map((item) => ({
+            id: parseString(item.id) || newUuid(),
+            title: parseString(item.title),
+            description: parseOptionalString(item.description),
+          }))
+          .filter((item) => item.title)
+      : [],
+    completedItemIds: Array.isArray(data.completedItemIds)
+      ? (data.completedItemIds as unknown[]).map((id) => String(id))
+      : [],
     createdAt: parseFirestoreDate(data.createdAt) || new Date(),
     updatedAt: parseFirestoreDate(data.updatedAt) || new Date(),
   }
@@ -55,6 +71,18 @@ function taskPayload(task: ProjectTask): Record<string, unknown> {
   if (task.completedAt) data.completedAt = Timestamp.fromDate(task.completedAt)
   if (task.completionNotes) data.completionNotes = task.completionNotes
   if (task.attachedImageURLs?.length) data.attachedImageURLs = task.attachedImageURLs
+  if (task.attachedFileURL) data.attachedFileURL = task.attachedFileURL
+  if (task.attachedFileName) data.attachedFileName = task.attachedFileName
+  if (task.attachedSiteAuditId) data.attachedSiteAuditId = task.attachedSiteAuditId
+  if (task.attachedSiteAuditTitle) data.attachedSiteAuditTitle = task.attachedSiteAuditTitle
+  if (task.items?.length) {
+    data.items = task.items.map((item) => ({
+      id: item.id,
+      title: item.title,
+      description: item.description || '',
+    }))
+  }
+  if (task.completedItemIds?.length) data.completedItemIds = task.completedItemIds
   return data
 }
 

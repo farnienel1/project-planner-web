@@ -121,7 +121,7 @@ export function filterTasksForScope(
 
   switch (scope) {
     case 'assignedToMe':
-      return tasks.filter((task) => assigned(task))
+      return tasks.filter((task) => !isTaskCompleted(task) && assigned(task))
     case 'active':
       return tasks.filter((task) => !isTaskCompleted(task))
     case 'overdue':
@@ -150,4 +150,88 @@ export function taskStatCounts(tasks: ProjectTask[], now = new Date()) {
     overdue: tasks.filter((task) => isTaskOverdue(task, now)).length,
     done: tasks.filter((task) => isTaskCompleted(task)).length,
   }
+}
+
+export type JobTaskFilterType = 'all' | 'operative' | 'manager' | 'dateRange'
+
+export type JobTaskFilter = {
+  type: JobTaskFilterType
+  operativeId?: string
+  managerId?: string
+  dateStart?: Date
+  dateEnd?: Date
+}
+
+export const EMPTY_JOB_TASK_FILTER: JobTaskFilter = { type: 'all' }
+
+export const JOB_TASK_FILTER_TYPES: { id: JobTaskFilterType; label: string }[] = [
+  { id: 'all', label: 'All Tasks' },
+  { id: 'operative', label: 'By Operative' },
+  { id: 'manager', label: 'By Manager' },
+  { id: 'dateRange', label: 'Date Range' },
+]
+
+function startOfDay(date: Date): Date {
+  const next = new Date(date)
+  next.setHours(0, 0, 0, 0)
+  return next
+}
+
+export function applyJobTaskFilter(tasks: ProjectTask[], filter: JobTaskFilter): ProjectTask[] {
+  switch (filter.type) {
+    case 'operative':
+      return filter.operativeId
+        ? tasks.filter((task) => allAssignedOperativeIds(task).includes(filter.operativeId as string))
+        : tasks
+    case 'manager':
+      return filter.managerId
+        ? tasks.filter((task) => allAssignedManagerIds(task).includes(filter.managerId as string))
+        : tasks
+    case 'dateRange': {
+      if (!filter.dateStart && !filter.dateEnd) return tasks
+      const start = startOfDay(filter.dateStart || filter.dateEnd || new Date())
+      const end = startOfDay(filter.dateEnd || filter.dateStart || new Date())
+      return tasks.filter((task) => {
+        if (!task.dueDate) return false
+        const due = startOfDay(task.dueDate).getTime()
+        return due >= start.getTime() && due <= end.getTime()
+      })
+    }
+    default:
+      return tasks
+  }
+}
+
+export function jobTaskFilterDescription(
+  filter: JobTaskFilter,
+  operatives: Pick<Operative, 'id' | 'firstName' | 'lastName' | 'email'>[],
+  managers: Pick<Manager, 'id' | 'firstName' | 'lastName' | 'email'>[]
+): string {
+  const personName = (row: { firstName: string; lastName: string; email: string }) =>
+    `${row.firstName} ${row.lastName}`.trim() || row.email
+  switch (filter.type) {
+    case 'operative': {
+      const name = operatives.find((row) => row.id === filter.operativeId)
+      return name ? `Filtered by operative: ${personName(name)}` : 'Filtered by operative'
+    }
+    case 'manager': {
+      const name = managers.find((row) => row.id === filter.managerId)
+      return name ? `Filtered by manager: ${personName(name)}` : 'Filtered by manager'
+    }
+    case 'dateRange': {
+      if (!filter.dateStart && !filter.dateEnd) return 'Filtered by date range'
+      const start = filter.dateStart || filter.dateEnd
+      const end = filter.dateEnd || filter.dateStart
+      if (!start || !end) return 'Filtered by date range'
+      const fmt = (date: Date) =>
+        date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+      return `Filtered by date: ${fmt(start)} – ${fmt(end)}`
+    }
+    default:
+      return 'Showing all tasks'
+  }
+}
+
+export function personDisplayName(row: { firstName: string; lastName: string; email: string }): string {
+  return `${row.firstName} ${row.lastName}`.trim() || row.email
 }
