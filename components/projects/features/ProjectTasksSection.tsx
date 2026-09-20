@@ -1,38 +1,43 @@
+/**
+ * iOS parity source: Views/ProjectDetailView.swift tasksContent ~L2299–2462, Models/ProjectTask.swift
+ * Spec: docs/ios-parity/sections/16-job-tiles.md
+ */
 'use client'
 
 import { FormEvent, useEffect, useMemo, useState } from 'react'
 import { format } from 'date-fns'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useTaskStore } from '@/lib/stores/taskStore'
-import { useMaterialProjectStore } from '@/lib/stores/materialProjectStore'
-import { useWholesalerStore } from '@/lib/stores/wholesalerStore'
-import { useSiteAuditStore } from '@/lib/stores/siteAuditStore'
-import { useHealthSafetyStore } from '@/lib/stores/healthSafetyStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
-import { EmptyState, ErrorBanner, LoadingSpinner } from '@/components/dashboard/PageShell'
-import { FormInput, FormLabel, FormSelect, FormTextarea } from '@/components/forms/FormShell'
-import { uploadFile, healthSafetyFilePath, siteAuditImagePath } from '@/lib/firebase/storageUtils'
+import { isOperativeMode } from '@/lib/navigation/menuPermissions'
+import { canManageWorkCatalogue } from '@/lib/permissions'
 import { newUuid } from '@/lib/firebase/firestoreUtils'
+import { ErrorBanner, LoadingSpinner } from '@/components/dashboard/PageShell'
+import { FormInput, FormLabel, FormSelect, FormTextarea } from '@/components/forms/FormShell'
+import {
+  FeatureCard,
+  FeatureScreen,
+  FilterChipsRow,
+} from '@/components/projects/features/featureUi'
+import {
+  PROJECT_TASK_SCOPES,
+  emptyCopyForScope,
+  filterTasksForScope,
+  isTaskOverdue,
+  taskScopeCounts,
+  taskStatCounts,
+  type ProjectTaskListScope,
+} from '@/lib/tasks/projectTaskFilters'
 import type { Project, ProjectTask, ProjectTaskPriority, ProjectTaskStatus } from '@/types'
 
-// ─── Helpers ────────────────────────────────────────────────────────────────
-
-const PRIORITY_CONFIG: Record<ProjectTaskPriority, { label: string; bg: string; text: string; dot: string }> = {
-  Low:    { label: 'Low',    bg: 'bg-slate-100',   text: 'text-slate-600',  dot: 'bg-slate-400' },
-  Normal: { label: 'Normal', bg: 'bg-blue-50',     text: 'text-blue-700',   dot: 'bg-blue-500' },
-  High:   { label: 'High',   bg: 'bg-amber-50',    text: 'text-amber-700',  dot: 'bg-amber-500' },
-  Urgent: { label: 'Urgent', bg: 'bg-red-50',      text: 'text-red-700',    dot: 'bg-red-500' },
+const PRIORITY_CONFIG: Record<ProjectTaskPriority, { label: string; bg: string; text: string }> = {
+  Low: { label: 'Low', bg: 'bg-slate-100', text: 'text-slate-600' },
+  Normal: { label: 'Normal', bg: 'bg-blue-50', text: 'text-blue-700' },
+  High: { label: 'High', bg: 'bg-amber-50', text: 'text-amber-700' },
+  Urgent: { label: 'Urgent', bg: 'bg-red-50', text: 'text-red-700' },
 }
 
-const STATUS_COLUMNS: { status: ProjectTaskStatus; label: string; icon: string; headerBg: string; headerText: string }[] = [
-  { status: 'To Do',       label: 'To Do',       icon: 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z',                                          headerBg: 'bg-slate-100',  headerText: 'text-slate-700' },
-  { status: 'In Progress', label: 'In Progress', icon: 'M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15', headerBg: 'bg-blue-100',   headerText: 'text-blue-800' },
-  { status: 'Completed',   label: 'Completed',   icon: 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z',                                         headerBg: 'bg-emerald-100', headerText: 'text-emerald-800' },
-]
-
-// ─── Task Card ───────────────────────────────────────────────────────────────
-
-function TaskCard({
+function TaskRow({
   task,
   onStatusChange,
   onDelete,
@@ -43,260 +48,252 @@ function TaskCard({
 }) {
   const [expanded, setExpanded] = useState(false)
   const priority = PRIORITY_CONFIG[task.priority] || PRIORITY_CONFIG.Normal
+  const overdue = isTaskOverdue(task)
 
   return (
-    <div className="group rounded-2xl border border-slate-200 bg-white shadow-sm transition-shadow hover:shadow-md">
-      {/* Card header */}
-      <div
-        className="cursor-pointer px-4 py-3"
-        onClick={() => setExpanded((v) => !v)}
-      >
+    <FeatureCard className="overflow-hidden">
+      <button type="button" onClick={() => setExpanded((v) => !v)} className="w-full px-4 py-3 text-left">
         <div className="flex items-start justify-between gap-2">
-          <p className="flex-1 text-sm font-semibold text-slate-900 leading-snug">{task.title}</p>
-          <span className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${priority.bg} ${priority.text}`}>
-            <span className={`h-1.5 w-1.5 rounded-full ${priority.dot}`} />
+          <p className="text-sm font-semibold text-slate-900">{task.title}</p>
+          <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${priority.bg} ${priority.text}`}>
             {priority.label}
           </span>
         </div>
-        {task.details && !expanded && (
-          <p className="mt-1 line-clamp-1 text-xs text-slate-500">{task.details}</p>
-        )}
-        <div className="mt-2 flex flex-wrap items-center gap-2">
+        <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-slate-500">
           {task.dueDate && (
-            <span className="inline-flex items-center gap-1 rounded-md bg-slate-50 px-1.5 py-0.5 text-[11px] text-slate-500">
-              <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-              </svg>
-              {format(task.dueDate, 'd MMM')}
-            </span>
+            <span className={overdue ? 'font-semibold text-red-600' : ''}>{format(task.dueDate, 'd MMM')}</span>
           )}
-          <span className="text-[11px] text-slate-400">by {task.createdBy.split('@')[0]}</span>
+          <span>{task.status}</span>
         </div>
-      </div>
-
-      {/* Expanded detail */}
+      </button>
       {expanded && (
-        <div className="border-t border-slate-100 px-4 py-3 space-y-3">
-          {task.details && (
-            <p className="text-sm text-slate-600 leading-relaxed">{task.details}</p>
-          )}
-          {task.completionNotes && (
-            <div className="rounded-lg bg-emerald-50 px-3 py-2">
-              <p className="text-xs font-semibold text-emerald-700 mb-0.5">Completion notes</p>
-              <p className="text-xs text-emerald-800">{task.completionNotes}</p>
-            </div>
-          )}
-          {task.completedAt && (
-            <p className="text-xs text-slate-400">
-              Completed {format(task.completedAt, 'd MMM yyyy')}
-              {task.completedBy ? ` · ${task.completedBy.split('@')[0]}` : ''}
-            </p>
-          )}
-
-          {/* Status change buttons */}
+        <div className="space-y-3 border-t border-slate-100 px-4 py-3">
+          {task.details && <p className="text-sm text-slate-600">{task.details}</p>}
           <div className="flex flex-wrap gap-1.5">
-            {STATUS_COLUMNS.filter((c) => c.status !== task.status).map((col) => (
-              <button
-                key={col.status}
-                type="button"
-                onClick={() => onStatusChange(task, col.status)}
-                className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-slate-100 transition-colors"
-              >
-                → {col.label}
-              </button>
-            ))}
+            {(['To Do', 'In Progress', 'Completed'] as ProjectTaskStatus[])
+              .filter((status) => status !== task.status)
+              .map((status) => (
+                <button
+                  key={status}
+                  type="button"
+                  onClick={() => onStatusChange(task, status)}
+                  className="rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50"
+                >
+                  {status === 'Completed' ? 'Complete' : status}
+                </button>
+              ))}
             <button
               type="button"
               onClick={() => onDelete(task)}
-              className="ml-auto rounded-lg border border-red-100 bg-red-50 px-2.5 py-1 text-xs font-medium text-red-600 hover:bg-red-100 transition-colors"
+              className="ml-auto rounded-lg border border-red-100 px-2.5 py-1 text-xs font-medium text-red-600"
             >
               Delete
             </button>
           </div>
         </div>
       )}
-    </div>
+    </FeatureCard>
   )
 }
-
-// ─── Kanban Column ───────────────────────────────────────────────────────────
-
-function KanbanColumn({
-  column,
-  tasks,
-  onStatusChange,
-  onDelete,
-}: {
-  column: typeof STATUS_COLUMNS[number]
-  tasks: ProjectTask[]
-  onStatusChange: (task: ProjectTask, status: ProjectTaskStatus) => void
-  onDelete: (task: ProjectTask) => void
-}) {
-  return (
-    <div className="flex flex-col min-w-0">
-      {/* Column header */}
-      <div className={`mb-3 flex items-center justify-between rounded-xl px-3 py-2 ${column.headerBg}`}>
-        <div className="flex items-center gap-2">
-          <svg className={`h-4 w-4 ${column.headerText}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={column.icon} />
-          </svg>
-          <span className={`text-xs font-bold uppercase tracking-wide ${column.headerText}`}>{column.label}</span>
-        </div>
-        <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${column.headerBg} ${column.headerText}`}>
-          {tasks.length}
-        </span>
-      </div>
-
-      {/* Task cards */}
-      <div className="flex flex-col gap-2.5 flex-1">
-        {tasks.length === 0 ? (
-          <div className="rounded-2xl border-2 border-dashed border-slate-200 px-4 py-6 text-center">
-            <p className="text-xs text-slate-400">No tasks</p>
-          </div>
-        ) : (
-          tasks.map((task) => (
-            <TaskCard
-              key={task.id}
-              task={task}
-              onStatusChange={onStatusChange}
-              onDelete={onDelete}
-            />
-          ))
-        )}
-      </div>
-    </div>
-  )
-}
-
-// ─── Add Task Form ────────────────────────────────────────────────────────────
 
 function AddTaskForm({
+  people,
   onAdd,
   onCancel,
 }: {
-  onAdd: (title: string, details: string, priority: ProjectTaskPriority) => Promise<void>
+  people: { id: string; label: string; kind: 'operative' | 'manager' }[]
+  onAdd: (input: {
+    title: string
+    details: string
+    priority: ProjectTaskPriority
+    dueDate: Date
+    assigneeId: string
+    assigneeKind: 'operative' | 'manager'
+  }) => Promise<void>
   onCancel: () => void
 }) {
   const [title, setTitle] = useState('')
   const [details, setDetails] = useState('')
   const [priority, setPriority] = useState<ProjectTaskPriority>('Normal')
+  const [dueDate, setDueDate] = useState('')
+  const [assignee, setAssignee] = useState('')
   const [saving, setSaving] = useState(false)
+  const selected = people.find((row) => `${row.kind}:${row.id}` === assignee)
+  const canSubmit = Boolean(title.trim() && selected && dueDate)
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
-    if (!title.trim()) return
+    if (!selected || !dueDate) return
     setSaving(true)
-    await onAdd(title, details, priority)
+    await onAdd({
+      title,
+      details,
+      priority,
+      dueDate: new Date(`${dueDate}T00:00:00`),
+      assigneeId: selected.id,
+      assigneeKind: selected.kind,
+    })
     setSaving(false)
-    setTitle('')
-    setDetails('')
-    setPriority('Normal')
-    onCancel()
   }
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-      <div className="border-b border-slate-100 bg-slate-50 px-5 py-3.5">
-        <h3 className="text-sm font-semibold text-slate-900">New task</h3>
-      </div>
-      <form onSubmit={handleSubmit} className="p-5 space-y-4">
+    <FeatureCard className="p-5">
+      <h3 className="text-sm font-semibold text-slate-900">Create a new task</h3>
+      <p className="mt-1 text-xs text-slate-500">Assign to a manager or operative</p>
+      <form onSubmit={handleSubmit} className="mt-4 space-y-4">
+        <div>
+          <FormLabel>Title</FormLabel>
+          <FormInput
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="Replace fuse board"
+            required
+            autoFocus
+          />
+          <p className="mt-1 text-[11px] text-slate-400">
+            Keep titles short and action-led — &quot;Replace fuse board&quot; not &quot;Some work to do&quot;.
+          </p>
+        </div>
         <div className="grid gap-4 sm:grid-cols-2">
-          <div className="sm:col-span-2">
-            <FormLabel>Task title</FormLabel>
-            <FormInput
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="What needs to be done?"
-              required
-              autoFocus
-            />
+          <div>
+            <FormLabel>Assignee</FormLabel>
+            <FormSelect value={assignee} onChange={(e) => setAssignee(e.target.value)}>
+              <option value="">Select person</option>
+              {people.map((row) => (
+                <option key={`${row.kind}:${row.id}`} value={`${row.kind}:${row.id}`}>
+                  {row.label}
+                </option>
+              ))}
+            </FormSelect>
+          </div>
+          <div>
+            <FormLabel>Due date</FormLabel>
+            <FormInput type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} required />
+            <p className="mt-1 text-[11px] text-slate-400">Every task must have a due date.</p>
           </div>
           <div>
             <FormLabel>Priority</FormLabel>
-            <FormSelect
-              value={priority}
-              onChange={(e) => setPriority(e.target.value as ProjectTaskPriority)}
-            >
+            <FormSelect value={priority} onChange={(e) => setPriority(e.target.value as ProjectTaskPriority)}>
               {(['Low', 'Normal', 'High', 'Urgent'] as ProjectTaskPriority[]).map((p) => (
-                <option key={p} value={p}>{p}</option>
+                <option key={p} value={p}>
+                  {p}
+                </option>
               ))}
             </FormSelect>
           </div>
         </div>
         <div>
           <FormLabel>Details (optional)</FormLabel>
-          <FormTextarea
-            value={details}
-            onChange={(e) => setDetails(e.target.value)}
-            placeholder="Add more context or instructions…"
-            rows={3}
-          />
+          <FormTextarea value={details} onChange={(e) => setDetails(e.target.value)} rows={3} />
         </div>
-        <div className="flex gap-3 pt-1">
+        <div className="flex gap-3">
           <button
             type="submit"
-            disabled={saving || !title.trim()}
-            className="rounded-xl bg-blue-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 active:scale-95 disabled:opacity-50 transition-all"
+            disabled={saving || !canSubmit}
+            className="rounded-xl bg-[#185FA5] px-5 py-2 text-sm font-semibold text-white disabled:opacity-50"
           >
-            {saving ? 'Adding…' : 'Add task'}
+            {saving ? 'Saving…' : canSubmit ? 'Create task' : 'Add a title and assignee to continue'}
           </button>
-          <button
-            type="button"
-            onClick={onCancel}
-            className="rounded-xl border border-slate-200 px-5 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors"
-          >
+          <button type="button" onClick={onCancel} className="rounded-xl border border-slate-200 px-5 py-2 text-sm">
             Cancel
           </button>
         </div>
       </form>
-    </div>
+    </FeatureCard>
   )
 }
-
-// ─── Main Tasks Section ───────────────────────────────────────────────────────
 
 export function ProjectTasksSection({ project }: { project: Project }) {
   const { organization, user } = useAuthStore()
   const { tasks, loading, error, loadTasks, saveTask, deleteTask } = useTaskStore()
+  const { operatives, managers, loadOperatives, loadManagers } = useOperativeStore()
   const [showForm, setShowForm] = useState(false)
-  const [view, setView] = useState<'board' | 'list'>('board')
+  const [scope, setScope] = useState<ProjectTaskListScope>('assignedToMe')
+  const [search, setSearch] = useState('')
+  const isOperative = isOperativeMode(user)
+  const canViewAll = canManageWorkCatalogue(user, 'projects') || canManageWorkCatalogue(user, 'smallWorks')
 
   useEffect(() => {
-    if (organization?.id) loadTasks(organization.id)
-  }, [organization, loadTasks])
+    if (organization?.id) {
+      loadTasks(organization.id)
+      loadOperatives(organization.id)
+      loadManagers(organization.id)
+    }
+  }, [organization, loadTasks, loadOperatives, loadManagers])
 
   const projectTasks = useMemo(
-    () => tasks.filter((t) => t.projectId === project.id),
+    () => tasks.filter((t) => t.projectId.toLowerCase() === project.id.toLowerCase()),
     [tasks, project.id]
   )
 
-  const tasksByStatus = useMemo(() => {
-    const grouped: Record<ProjectTaskStatus, ProjectTask[]> = { 'To Do': [], 'In Progress': [], Completed: [] }
-    projectTasks.forEach((t) => { grouped[t.status]?.push(t) })
-    return grouped
-  }, [projectTasks])
-
-  const counts = {
-    total: projectTasks.length,
-    todo: tasksByStatus['To Do'].length,
-    inProgress: tasksByStatus['In Progress'].length,
-    done: tasksByStatus['Completed'].length,
+  const filterOpts = {
+    userEmail: user?.email,
+    user: user ? { email: user.email, firstName: user.firstName, surname: user.surname } : null,
+    operatives,
+    managers,
+    operativeMode: isOperative,
   }
 
-  const handleAdd = async (title: string, details: string, priority: ProjectTaskPriority) => {
+  const visibleBase = useMemo(() => {
+    if (canViewAll) return projectTasks
+    return projectTasks.filter((task) =>
+      filterTasksForScope([task], 'assignedToMe', filterOpts).length > 0
+    )
+  }, [canViewAll, projectTasks, filterOpts.userEmail, filterOpts.operativeMode, operatives, managers, user])
+
+  const scoped = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    return filterTasksForScope(visibleBase, scope, filterOpts).filter((task) => {
+      if (!q) return true
+      return task.title.toLowerCase().includes(q) || (task.details || '').toLowerCase().includes(q)
+    })
+  }, [visibleBase, scope, search, filterOpts.userEmail, filterOpts.operativeMode, operatives, managers])
+
+  const counts = taskScopeCounts(visibleBase, filterOpts)
+  const stats = taskStatCounts(visibleBase)
+  const empty = emptyCopyForScope(scope)
+
+  const people = useMemo(() => {
+    const ops = operatives.map((row) => ({
+      id: row.id,
+      label: `${row.firstName} ${row.lastName}`.trim() || row.email,
+      kind: 'operative' as const,
+    }))
+    const mgrs = managers.map((row) => ({
+      id: row.id,
+      label: `${row.firstName} ${row.lastName}`.trim() || row.email,
+      kind: 'manager' as const,
+    }))
+    return [...mgrs, ...ops]
+  }, [operatives, managers])
+
+  const handleAdd = async (input: {
+    title: string
+    details: string
+    priority: ProjectTaskPriority
+    dueDate: Date
+    assigneeId: string
+    assigneeKind: 'operative' | 'manager'
+  }) => {
     if (!organization?.id || !user) return
     await saveTask({
       id: newUuid(),
       organizationId: organization.id,
       projectId: project.id,
-      title: title.trim(),
-      details: details.trim() || undefined,
-      createdBy: user.email,
+      title: input.title.trim(),
+      details: input.details.trim() || undefined,
+      createdBy: `${user.firstName} ${user.surname}`.trim() || user.email,
       status: 'To Do',
-      priority,
+      priority: input.priority,
+      dueDate: input.dueDate,
+      assignedOperativeId: input.assigneeKind === 'operative' ? input.assigneeId : undefined,
+      assignedManagerId: input.assigneeKind === 'manager' ? input.assigneeId : undefined,
+      assignedOperativeIds: input.assigneeKind === 'operative' ? [input.assigneeId] : [],
+      assignedManagerIds: input.assigneeKind === 'manager' ? [input.assigneeId] : [],
       createdAt: new Date(),
       updatedAt: new Date(),
     })
+    setShowForm(false)
   }
 
   const handleStatusChange = async (task: ProjectTask, status: ProjectTaskStatus) => {
@@ -318,168 +315,82 @@ export function ProjectTasksSection({ project }: { project: Project }) {
   if (loading) return <LoadingSpinner />
   if (error) return <ErrorBanner message={error} />
 
+  const chips = PROJECT_TASK_SCOPES.map((item) => ({
+    id: item.id,
+    label: item.label,
+    count: item.id === 'assignedToMe' ? undefined : counts[item.id],
+  }))
+
   return (
-    <div className="space-y-5">
-
-      {/* Summary bar */}
-      {counts.total > 0 && (
-        <div className="grid grid-cols-3 gap-3">
-          {[
-            { label: 'To do',      count: counts.todo,       bg: 'bg-slate-100',   text: 'text-slate-700' },
-            { label: 'In progress', count: counts.inProgress, bg: 'bg-blue-50',    text: 'text-blue-800' },
-            { label: 'Completed',  count: counts.done,        bg: 'bg-emerald-50', text: 'text-emerald-800' },
-          ].map((s) => (
-            <div key={s.label} className={`rounded-2xl px-4 py-3 ${s.bg}`}>
-              <p className={`text-2xl font-bold leading-none ${s.text}`}>{s.count}</p>
-              <p className={`mt-1 text-xs font-medium ${s.text} opacity-75`}>{s.label}</p>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Toolbar */}
-      <div className="flex items-center justify-between gap-3">
-        {/* View toggle */}
-        <div className="flex rounded-xl border border-slate-200 bg-slate-50 p-1 gap-1">
-          {(['board', 'list'] as const).map((v) => (
-            <button
-              key={v}
-              type="button"
-              onClick={() => setView(v)}
-              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all capitalize ${
-                view === v
-                  ? 'bg-white text-slate-900 shadow-sm'
-                  : 'text-slate-500 hover:text-slate-700'
-              }`}
-            >
-              {v === 'board' ? (
-                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
-                </svg>
-              ) : (
-                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
-                </svg>
-              )}
-              {v}
-            </button>
-          ))}
-        </div>
-
-        {/* Add task button */}
-        {!showForm && (
-          <button
-            type="button"
-            onClick={() => setShowForm(true)}
-            className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 active:scale-95 transition-all"
-          >
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-            Add task
-          </button>
-        )}
+    <FeatureScreen>
+      <div className="flex items-center justify-end">
+        <button
+          type="button"
+          onClick={() => setShowForm(true)}
+          className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-[#185FA5] text-white shadow-md"
+          aria-label="Create a task"
+        >
+          <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+          </svg>
+        </button>
       </div>
 
-      {/* Add task form */}
+      <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+        {[
+          { label: 'To do', count: stats.todo, color: 'text-slate-800' },
+          { label: 'In progress', count: stats.inProgress, color: 'text-blue-800' },
+          { label: 'Overdue', count: stats.overdue, color: 'text-red-700' },
+          { label: 'Done', count: stats.done, color: 'text-emerald-800' },
+        ].map((item) => (
+          <FeatureCard key={item.label} className="px-3 py-3 text-center">
+            <p className={`text-[18px] font-medium ${item.color}`}>{item.count}</p>
+            <p className="text-[10px] text-slate-500">{item.label}</p>
+          </FeatureCard>
+        ))}
+      </div>
+
+      <div className="mt-4 flex gap-2">
+        <input
+          type="search"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search tasks…"
+          className="flex-1 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm outline-none"
+        />
+      </div>
+
+      <div className="mt-3">
+        <FilterChipsRow chips={chips} selected={scope} onSelect={setScope} />
+      </div>
+
       {showForm && (
-        <AddTaskForm onAdd={handleAdd} onCancel={() => setShowForm(false)} />
-      )}
-
-      {/* Empty state */}
-      {counts.total === 0 && !showForm && (
-        <div className="rounded-2xl border-2 border-dashed border-slate-200 px-8 py-12 text-center">
-          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100">
-            <svg className="h-6 w-6 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-            </svg>
-          </div>
-          <p className="text-sm font-semibold text-slate-700">No tasks yet</p>
-          <p className="mt-1 text-xs text-slate-400">Add tasks to track work for this project.</p>
-          <button
-            type="button"
-            onClick={() => setShowForm(true)}
-            className="mt-4 inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 transition-colors"
-          >
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-            Create first task
-          </button>
+        <div className="mt-4">
+          <AddTaskForm people={people} onAdd={handleAdd} onCancel={() => setShowForm(false)} />
         </div>
       )}
 
-      {/* Board view */}
-      {view === 'board' && counts.total > 0 && (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-          {STATUS_COLUMNS.map((col) => (
-            <KanbanColumn
-              key={col.status}
-              column={col}
-              tasks={tasksByStatus[col.status]}
-              onStatusChange={handleStatusChange}
-              onDelete={handleDelete}
-            />
-          ))}
-        </div>
-      )}
-
-      {/* List view */}
-      {view === 'list' && counts.total > 0 && (
-        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-          {STATUS_COLUMNS.map((col, ci) => (
-            tasksByStatus[col.status].length > 0 && (
-              <div key={col.status}>
-                {ci > 0 && <div className="border-t border-slate-100" />}
-                <div className={`px-5 py-2.5 ${col.headerBg}`}>
-                  <span className={`text-[11px] font-bold uppercase tracking-widest ${col.headerText}`}>{col.label} · {tasksByStatus[col.status].length}</span>
-                </div>
-                <div className="divide-y divide-slate-100">
-                  {tasksByStatus[col.status].map((task) => {
-                    const pr = PRIORITY_CONFIG[task.priority]
-                    return (
-                      <div key={task.id} className="flex items-center justify-between gap-3 px-5 py-3 hover:bg-slate-50 transition-colors">
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-slate-900 truncate">{task.title}</p>
-                          {task.details && <p className="mt-0.5 text-xs text-slate-500 truncate">{task.details}</p>}
-                        </div>
-                        <div className="flex items-center gap-2 shrink-0">
-                          {task.dueDate && (
-                            <span className="text-[11px] text-slate-400">{format(task.dueDate, 'd MMM')}</span>
-                          )}
-                          <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${pr.bg} ${pr.text}`}>
-                            <span className={`h-1.5 w-1.5 rounded-full ${pr.dot}`} />
-                            {pr.label}
-                          </span>
-                          <div className="flex gap-1">
-                            {STATUS_COLUMNS.filter((c) => c.status !== task.status).map((c) => (
-                              <button
-                                key={c.status}
-                                type="button"
-                                onClick={() => handleStatusChange(task, c.status)}
-                                className="rounded-lg border border-slate-200 px-2 py-0.5 text-[11px] font-medium text-slate-500 hover:bg-slate-100 transition-colors"
-                              >
-                                {c.status === 'To Do' ? 'Reopen' : c.status === 'In Progress' ? 'Start' : 'Complete'}
-                              </button>
-                            ))}
-                            <button
-                              type="button"
-                              onClick={() => handleDelete(task)}
-                              className="rounded-lg border border-red-100 px-2 py-0.5 text-[11px] font-medium text-red-500 hover:bg-red-50 transition-colors"
-                            >
-                              Delete
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
-            )
-          ))}
-        </div>
-      )}
-    </div>
+      <div className="mt-4 space-y-2">
+        {scoped.length === 0 && !showForm ? (
+          <FeatureCard className="py-12 text-center">
+            <p className="text-sm font-semibold text-slate-800">{empty.title}</p>
+            <p className="mt-1 px-6 text-xs text-slate-500">{empty.subtitle}</p>
+            {scope === 'active' && (
+              <button
+                type="button"
+                onClick={() => setShowForm(true)}
+                className="mt-4 text-sm font-semibold text-[#185FA5]"
+              >
+                Create a task
+              </button>
+            )}
+          </FeatureCard>
+        ) : (
+          scoped.map((task) => (
+            <TaskRow key={task.id} task={task} onStatusChange={handleStatusChange} onDelete={handleDelete} />
+          ))
+        )}
+      </div>
+    </FeatureScreen>
   )
 }

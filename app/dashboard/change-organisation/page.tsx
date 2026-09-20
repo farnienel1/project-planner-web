@@ -1,14 +1,20 @@
+/**
+ * iOS parity source: Views/SwitchOrganisationView.swift, Core/FirebaseBackend+OrganizationMembership.swift
+ * Spec: docs/ios-parity/sections/26-switch-organisation.md
+ */
 'use client'
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+import { BuildingOffice2Icon, ChevronRightIcon, LockClosedIcon } from '@heroicons/react/24/solid'
 import { useAuthStore } from '@/lib/stores/authStore'
 import {
   acceptOrgMembership,
   loadUserOrgMemberships,
   switchActiveOrganization,
 } from '@/lib/orgMembership/membershipService'
+import { roleDisplayName } from '@/lib/orgMembership/organizationTrialPolicy'
 import type { OrgMembership } from '@/lib/orgMembership/types'
 import { LoadingSpinner } from '@/components/dashboard/PageShell'
 
@@ -22,6 +28,8 @@ export default function ChangeOrganisationPage() {
   const [error, setError] = useState<string | null>(null)
   const [showSwitchSplash, setShowSwitchSplash] = useState(false)
 
+  const activeOrgId = organization?.id || user?.organizationId
+
   useEffect(() => {
     if (!authLoading && !user) {
       router.push('/login')
@@ -34,7 +42,7 @@ export default function ChangeOrganisationPage() {
       if (!firebaseUser?.uid) return
       setLoading(true)
       try {
-        const rows = await loadUserOrgMemberships(firebaseUser.uid)
+        const rows = await loadUserOrgMemberships(firebaseUser.uid, activeOrgId)
         if (!cancelled) {
           if (rows.length === 0 && organization) {
             setMemberships([
@@ -62,15 +70,13 @@ export default function ChangeOrganisationPage() {
     return () => {
       cancelled = true
     }
-  }, [firebaseUser?.uid, organization?.id])
+  }, [firebaseUser?.uid, organization?.id, activeOrgId])
 
-  if (authLoading || loading) {
-    return <LoadingSpinner label="Loading organisations…" />
+  async function reload() {
+    if (!firebaseUser?.uid) return
+    const rows = await loadUserOrgMemberships(firebaseUser.uid, activeOrgId)
+    setMemberships(rows)
   }
-
-  if (!user) return null
-
-  const activeOrgId = organization?.id || user.organizationId
 
   async function handleAccept(membership: OrgMembership) {
     if (!firebaseUser?.uid) return
@@ -78,8 +84,7 @@ export default function ChangeOrganisationPage() {
     setError(null)
     try {
       await acceptOrgMembership(firebaseUser.uid, membership.organizationId)
-      const rows = await loadUserOrgMemberships(firebaseUser.uid)
-      setMemberships(rows)
+      await reload()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not accept invitation')
     } finally {
@@ -89,6 +94,7 @@ export default function ChangeOrganisationPage() {
 
   async function handleSwitch(membership: OrgMembership) {
     if (!firebaseUser?.uid) return
+    if (membership.organizationId === activeOrgId || membership.trialAccessBlocked) return
     setSwitchingId(membership.organizationId)
     setError(null)
     setShowSwitchSplash(true)
@@ -103,6 +109,12 @@ export default function ChangeOrganisationPage() {
     }
   }
 
+  if (authLoading || loading) {
+    return <LoadingSpinner label="Loading organisations…" />
+  }
+
+  if (!user) return null
+
   if (showSwitchSplash) {
     return (
       <div className="flex min-h-[60vh] flex-col items-center justify-center gap-4">
@@ -115,92 +127,109 @@ export default function ChangeOrganisationPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900">Change organisation</h1>
-        <p className="mt-2 max-w-2xl text-sm text-slate-600">
-          Switch between organisations linked to your account, or set up a new one. Each organisation has its own
-          projects, team, settings and subscription — there is no overlap when you switch, and no limit on how many
-          you can belong to.
-        </p>
+    <div className="mx-auto max-w-3xl space-y-5 pb-10 xl:grid xl:max-w-6xl xl:grid-cols-12 xl:gap-8 xl:space-y-0">
+      <div className="xl:col-span-5">
+        <h1 className="text-[28px] font-bold tracking-tight text-slate-900">Switch organisation</h1>
+        <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <p className="text-lg font-semibold text-slate-900">Work across teams</p>
+          <p className="mt-2 text-sm leading-relaxed text-slate-600">
+            Choose which organisation you want to use in the app. Your schedule, projects, and settings will update to
+            match.
+          </p>
+        </div>
+        {error && (
+          <p className="mt-4 text-xs font-medium text-red-600">{error}</p>
+        )}
+        <div className="mt-4 rounded-2xl border border-blue-100 bg-blue-50 p-4">
+          <p className="text-sm font-semibold text-blue-950">Need another workspace?</p>
+          <p className="mt-1 text-sm text-blue-900">
+            Create your own organisation at any time. You will be billed separately for it, and your existing
+            organisations stay as they are.
+          </p>
+          <Link
+            href="/setup"
+            className="mt-3 inline-flex rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+          >
+            Set up a new organisation
+          </Link>
+        </div>
       </div>
 
-      <div className="rounded-2xl border border-blue-200 bg-blue-50 p-5">
-        <p className="text-sm font-semibold text-blue-950">Need another workspace?</p>
-        <p className="mt-1 text-sm text-blue-900">
-          Create your own organisation at any time. You will be billed separately for it, and your existing
-          organisations stay as they are.
-        </p>
-        <Link
-          href="/setup"
-          className="mt-3 inline-flex rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
-        >
-          Set up a new organisation
-        </Link>
-      </div>
+      <div className="xl:col-span-7">
+        {memberships.length === 0 ? (
+          <div className="rounded-2xl border border-slate-200 bg-white p-6">
+            <p className="text-base font-semibold text-slate-900">No organisations found</p>
+            <p className="mt-2 text-sm leading-relaxed text-slate-600">
+              If you were invited to another organisation, pull to refresh or sign out and sign in again.
+            </p>
+          </div>
+        ) : (
+          <div>
+            <p className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-[0.4px] text-slate-500">
+              Your organisations
+            </p>
+            <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm divide-y divide-slate-100">
+              {memberships.map((membership) => {
+                const isActive = membership.organizationId === activeOrgId
+                const isPending = membership.status === 'pending'
+                const locked = membership.trialAccessBlocked === true
+                const switching = switchingId === membership.organizationId
+                const disabled = isActive || switching || locked || Boolean(switchingId)
 
-      {error && (
-        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
-      )}
-
-      <div className="grid gap-4">
-        {memberships.length === 0 && (
-          <div className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-600">
-            You are currently signed in to <strong>{organization?.name || 'your organisation'}</strong>. Additional
-            organisations appear here when you are invited, or when you set up a new organisation of your own.
+                return (
+                  <button
+                    key={membership.organizationId}
+                    type="button"
+                    disabled={disabled && !isPending}
+                    onClick={() => {
+                      if (isPending) void handleAccept(membership)
+                      else void handleSwitch(membership)
+                    }}
+                    className="flex w-full items-center gap-3 px-4 py-3.5 text-left hover:bg-slate-50 disabled:hover:bg-white disabled:opacity-100"
+                  >
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#E6F1FB] text-[#185FA5]">
+                      <BuildingOffice2Icon className="h-5 w-5" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-semibold text-slate-900">{membership.organizationName}</p>
+                      <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-slate-500">
+                        <span>{roleDisplayName(membership.role)}</span>
+                        {membership.isTrial && (
+                          <span className="rounded-full bg-amber-50 px-1.5 py-0.5 font-semibold text-amber-800">
+                            Trial
+                          </span>
+                        )}
+                        {locked && (
+                          <span className="rounded-full bg-slate-100 px-1.5 py-0.5 font-semibold text-slate-600">
+                            Locked
+                          </span>
+                        )}
+                        {isPending && (
+                          <span className="rounded-full bg-emerald-50 px-1.5 py-0.5 font-semibold text-emerald-700">
+                            Invitation pending
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    {switching || acceptingId === membership.organizationId ? (
+                      <span className="text-xs font-medium text-slate-400">
+                        {isPending ? 'Accepting…' : 'Switching…'}
+                      </span>
+                    ) : isActive ? (
+                      <span className="rounded-full bg-[#E6F1FB] px-2 py-0.5 text-[11px] font-bold text-[#185FA5]">
+                        Active
+                      </span>
+                    ) : locked ? (
+                      <LockClosedIcon className="h-4 w-4 text-slate-400" />
+                    ) : (
+                      <ChevronRightIcon className="h-4 w-4 text-slate-300" />
+                    )}
+                  </button>
+                )
+              })}
+            </div>
           </div>
         )}
-
-        {memberships.map((membership) => {
-          const isActive = membership.organizationId === activeOrgId
-          const isPending = membership.status === 'pending'
-
-          return (
-            <div
-              key={membership.organizationId}
-              className={`rounded-2xl border bg-white p-5 shadow-sm ${
-                isActive ? 'border-blue-300 ring-1 ring-blue-100' : 'border-slate-200'
-              }`}
-            >
-              <div className="flex flex-wrap items-start justify-between gap-4">
-                <div>
-                  <p className="text-lg font-bold text-slate-900">{membership.organizationName}</p>
-                  <p className="mt-1 text-xs font-semibold uppercase tracking-wide text-slate-400">
-                    {membership.role}
-                    {isActive ? ' · Current' : ''}
-                    {isPending ? ' · Invitation pending' : ''}
-                  </p>
-                </div>
-
-                <div className="flex flex-wrap gap-2">
-                  {isPending ? (
-                    <button
-                      type="button"
-                      onClick={() => void handleAccept(membership)}
-                      disabled={acceptingId === membership.organizationId}
-                      className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
-                    >
-                      {acceptingId === membership.organizationId ? 'Accepting…' : 'Accept invitation'}
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => void handleSwitch(membership)}
-                      disabled={isActive || switchingId === membership.organizationId}
-                      className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      {isActive
-                        ? 'Current organisation'
-                        : switchingId === membership.organizationId
-                          ? 'Switching…'
-                          : 'Change to this organisation'}
-                    </button>
-                  )}
-                </div>
-              </div>
-            </div>
-          )
-        })}
       </div>
     </div>
   )

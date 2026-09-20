@@ -1,5 +1,5 @@
 # iOS → Web parity: progress
-Last updated: 2026-09-16 · Current step: Phase 3 lists (Daily overview fix + Small works / Operatives / Managers / Weekly Report) · Stopped at: Stop Gate 3
+Last updated: 2026-09-20 · Current step: Phase 3 job tiles + Switch organisation · Stopped at: Stop Gate (job tiles 16 partial + switch org)
 
 ## Access check (Phase 0)
 - **WEB_ROOT:** `/workspace` (this repo, `project-planner-web`)
@@ -14,7 +14,7 @@ Last updated: 2026-09-16 · Current step: Phase 3 lists (Daily overview fix + Sm
 - [x] 0 Access check
 - [x] 1 Discovery (00 ☑ 01 ☑ 02 ☑ 03 ☑ 04 ☑ 05 ☑) + Gate 1 answers (Q1 xcodeproj received; Q2 how-to; Q3–Q10 noted)
 - [x] 2 Foundations
-- [ ] 3 Sections (started: Clients, Projects list+hub, Daily overview)
+- [ ] 3 Sections (started: Clients, Projects list+hub, Daily overview, job tiles, Switch organisation)
 - [ ] 4 Final audit
 
 ## Sections
@@ -23,7 +23,7 @@ Last updated: 2026-09-16 · Current step: Phase 3 lists (Daily overview fix + Sm
 | 0 | Shell, Login and Home (Phase 2) | ☑ | ☑ | ☑ | ☐ | Zod + Heroicons; D1 editor hidden from Home; live bookings/managerSiteBookings/notifications |
 | 1 | Manage Users | ☐ | ☐ | ☐ | ☐ | |
 | 2 | Add User | ☐ | ☐ | ☐ | ☐ | Invite URL `/setup-password.html?token=` |
-| 3 | Settings | ☐ | ☐ | ☐ | ☐ | |
+| 3 | Settings | ☐ | ☑ Switch org | ☐ | ☐ | Settings → Personal → Switch organisation |
 | 4 | Job Types | ☐ | ☐ | ☐ | ☐ | |
 | 5 | Qualifications | ☐ | ☐ | ☐ | ☐ | |
 | 6 | Wholesalers | ☐ | ☐ | ☐ | ☐ | |
@@ -32,14 +32,14 @@ Last updated: 2026-09-16 · Current step: Phase 3 lists (Daily overview fix + Sm
 | 9 | Clients | ☑ | ☑ | ☐ | ☐ | Master–detail; UUID writes; address field; admin delete |
 | 10 | Managers | ☑ | ☑ | ☐ | ☐ | Roster = manager users; catalogue writes `managers/` |
 | 11 | Operatives | ☑ | ☑ | ☐ | ☐ | Roster = operativeMode users; catalogue writes `operatives/` |
-| 12 | Projects | ☑ list/hub | ☑ list/hub | ☐ | ☐ | Create/edit forms + job tiles later. Write `manager: "Custom"` |
-| 13 | Small Works | ☑ | ☑ list | ☐ | ☐ | Create form existing; list matches Projects |
+| 12 | Projects | ☑ list/hub | ☑ list/hub + tiles | ☐ | ☐ | Job tiles: Materials, View, My Tasks, H&S, Site Audit, Location |
+| 13 | Small Works | ☑ | ☑ list + tiles | ☐ | ☐ | Same six job tiles as Projects |
 | 14 | Scheduling and My Schedule | ☐ | ☐ | ☐ | ☐ | Title-Case booking status |
-| 15 | Tasks | ☐ | ☐ | ☐ | ☐ | in scope (Q8) |
-| 16 | Job tiles (View, Materials, H&S, Deadlines, Location, Active users) | ☐ | ☐ | ☐ | ☐ | in scope (Q8) |
+| 15 | Tasks | ☑ job tile | ☑ job tile | ☐ | ☐ | Job My Tasks (not Home Tasks hub) |
+| 16 | Job tiles (View, Materials, H&S, Deadlines, Location, Active users) | ☑ six tiles | ☑ six tiles | ☐ | ☐ | Deadlines + Active users still later |
 | 17 | Timesheets | ☐ | ☐ | ☐ | ☐ | |
 | 18 | Annual Leave | ☐ | ☐ | ☐ | ☐ | |
-| 19 | Site Audit | ☐ | ☐ | ☐ | ☐ | |
+| 19 | Site Audit | ☑ per-job | ☑ per-job | ☐ | ☐ | Org hub still later |
 | 20 | Site Map | ☐ | ☐ | ☐ | ☐ | Leaflet + Google; paid tiles |
 | 21 | Warnings | ☐ | ☐ | ☐ | ☐ | in scope (Q8) |
 | 22 | Daily Overview | ☑ | ☑ | ☐ | ☐ | People on job cards; hours estimated until s17 |
@@ -63,6 +63,7 @@ D1, D2, D5–D10 still at recommendation (see `STOP-GATE-1.md`). Q1–Q10 are de
 - 2026-09-16 · Q8: sections 14–16 and 21–24 stay in scope · Farnie
 - 2026-09-16 · Q9: write `self_employed`; read both · Farnie
 - 2026-09-16 · Phase 2 foundations: converters, permissions, shell, Home, auth merge/privacy, live bookings · agent
+- 2026-09-20 · Phase 3 job tiles (Materials, View, My Tasks, H&S, Site Audit, Location) for projects and small works, plus Switch organisation · agent
 - 2026-09-16 · Phase 3 started with Clients, Projects list/hub, Daily overview (not Manage Users first) · Farnie
 
 ## Approved exceptions

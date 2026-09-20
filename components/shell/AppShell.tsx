@@ -195,9 +195,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const navigateItems = getDashboardNavBySection(displayUser, organization, 'navigate')
   const toolsItems = getDashboardNavBySection(displayUser, organization, 'tools')
   const teamItems = getDashboardNavBySection(displayUser, organization, 'team')
-  const accountItems = getDashboardNavBySection(displayUser, organization, 'account').filter(
-    (i) => i.id !== 'dashboard_change_organisation'
-  )
+  const accountItems = getDashboardNavBySection(displayUser, organization, 'account')
   const allItems = [...homeItems, ...navigateItems, ...toolsItems, ...teamItems, ...accountItems]
   const title = pageTitle(pathname, allItems)
   const isHome = pathname === '/dashboard'

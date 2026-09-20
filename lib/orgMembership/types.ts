@@ -7,6 +7,9 @@ export type OrgMembership = {
   status: OrgMembershipStatus
   invitedAt: Date
   acceptedAt?: Date
+  isTrial?: boolean
+  trialAccessBlocked?: boolean
+  createdAt?: Date
 }
 
 export type UserOrgMembershipRecord = {
