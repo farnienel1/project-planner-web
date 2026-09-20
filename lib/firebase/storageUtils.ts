@@ -45,3 +45,13 @@ export function companyLogoPath(organizationId: string, fileName: string): strin
   const timestamp = Date.now()
   return `organizations/${organizationId}/branding/company_logo/${uid}_${timestamp}_${sanitizeFileName(fileName)}`
 }
+
+export function taskAttachmentPath(
+  organizationId: string,
+  taskId: string,
+  fileName: string
+): string {
+  const uid = auth.currentUser?.uid || 'web'
+  const timestamp = Date.now()
+  return `organizations/${organizationId}/tasks/${taskId}/${uid}_${timestamp}_${sanitizeFileName(fileName)}`
+}

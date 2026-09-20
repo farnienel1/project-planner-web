@@ -10,10 +10,9 @@ import { useAuthStore } from '@/lib/stores/authStore'
 import { useMaterialProjectStore } from '@/lib/stores/materialProjectStore'
 import { useWholesalerStore } from '@/lib/stores/wholesalerStore'
 import { isOperativeMode } from '@/lib/navigation/menuPermissions'
-import { newUuid } from '@/lib/firebase/firestoreUtils'
 import { ErrorBanner, LoadingSpinner } from '@/components/dashboard/PageShell'
-import { FormLabel, FormSelect } from '@/components/forms/FormShell'
 import { MaterialsAddSheet } from '@/components/projects/materials/MaterialsAddSheet'
+import { MaterialsSendListSheet } from '@/components/projects/materials/MaterialsSendListSheet'
 import { materialStatusLabel } from '@/lib/maps/siteLocation'
 import type { Project, ProjectMaterialLine } from '@/types'
 import {
@@ -50,7 +49,7 @@ function MaterialLineCard({ line }: { line: ProjectMaterialLine }) {
 
 export function ProjectMaterialsSection({ project }: { project: Project }) {
   const { organization, user } = useAuthStore()
-  const { materials, sendRecords, loading, error, loadProjectMaterials, loadSendRecords, saveSendRecord, updateMaterialWorkflowStatuses } =
+  const { materials, sendRecords, loading, error, loadProjectMaterials, loadSendRecords } =
     useMaterialProjectStore()
   const { wholesalers, loadWholesalers } = useWholesalerStore()
 
@@ -59,9 +58,6 @@ export function ProjectMaterialsSection({ project }: { project: Project }) {
   const [showAdd, setShowAdd] = useState(false)
   const [showSend, setShowSend] = useState(false)
   const [showHistory, setShowHistory] = useState(false)
-  const [selectedWholesaler, setSelectedWholesaler] = useState('')
-  const [sendType, setSendType] = useState<'quote' | 'order'>('quote')
-  const [sending, setSending] = useState(false)
 
   const isOperative = isOperativeMode(user)
   const canSend = !isOperative
@@ -99,45 +95,9 @@ export function ProjectMaterialsSection({ project }: { project: Project }) {
   const draftCount = projectMaterials.filter((m) => `${m.status}`.toLowerCase().includes('draft')).length
 
   const reloadMaterials = () => {
-    if (organization?.id) loadProjectMaterials(organization.id, project.id)
-  }
-
-  const sendToWholesaler = async () => {
-    if (!organization?.id || !user || !selectedWholesaler || dayMaterials.length === 0) return
-    const wholesaler = wholesalers.find((w) => w.id === selectedWholesaler)
-    if (!wholesaler) return
-    setSending(true)
-    try {
-      await saveSendRecord(organization.id, {
-        id: newUuid(),
-        projectId: project.id,
-        requestType: sendType,
-        sentAt: new Date(),
-        materialsDate: selectedDate,
-        sentBy: user.email,
-        recipients: wholesaler.contacts.map((c) => ({
-          name: c.name,
-          email: c.email,
-          wholesalerName: wholesaler.name,
-        })),
-        lines: dayMaterials.map((m) => ({
-          materialId: m.id,
-          name: m.material,
-          quantity: m.quantity,
-          unit: m.unit,
-          brand: m.brand,
-          productCode: m.productCode,
-        })),
-      })
-      await updateMaterialWorkflowStatuses(
-        organization.id,
-        dayMaterials.map((m) => m.id),
-        sendType === 'order' ? 'ordered' : 'sentForQuote',
-        sendType
-      )
-      setShowSend(false)
-    } finally {
-      setSending(false)
+    if (organization?.id) {
+      loadProjectMaterials(organization.id, project.id)
+      loadSendRecords(organization.id, project.id)
     }
   }
 
@@ -211,6 +171,17 @@ export function ProjectMaterialsSection({ project }: { project: Project }) {
         />
       )}
 
+      {showSend && canSend && (
+        <MaterialsSendListSheet
+          project={project}
+          materials={dayMaterials}
+          materialsDay={selectedDate}
+          wholesalers={wholesalers}
+          onClose={() => setShowSend(false)}
+          onSent={reloadMaterials}
+        />
+      )}
+
       {/* Day list */}
       <div className="mt-3 space-y-2">
         {dayMaterials.length === 0 && !showAdd ? (
@@ -245,49 +216,6 @@ export function ProjectMaterialsSection({ project }: { project: Project }) {
           >
             Send to wholesaler
           </button>
-        </FeatureCard>
-      )}
-
-      {/* Send sheet */}
-      {showSend && canSend && (
-        <FeatureCard className="mt-4 p-4">
-          <p className="text-sm font-bold text-slate-900">Send list · {format(selectedDate, 'd MMM')}</p>
-          <p className="mt-1 text-xs text-slate-500">{dayMaterials.length} lines for this day</p>
-          <div className="mt-3 space-y-3">
-            <div>
-              <FormLabel>Wholesaler</FormLabel>
-              <FormSelect value={selectedWholesaler} onChange={(e) => setSelectedWholesaler(e.target.value)}>
-                <option value="">Select wholesaler</option>
-                {wholesalers.map((w) => (
-                  <option key={w.id} value={w.id}>
-                    {w.name}
-                  </option>
-                ))}
-              </FormSelect>
-            </div>
-            <div>
-              <FormLabel>Request type</FormLabel>
-              <FormSelect value={sendType} onChange={(e) => setSendType(e.target.value as 'quote' | 'order')}>
-                <option value="quote">Quote</option>
-                <option value="order">Order</option>
-              </FormSelect>
-            </div>
-            <button
-              type="button"
-              disabled={sending || !selectedWholesaler}
-              onClick={sendToWholesaler}
-              className="w-full rounded-xl bg-[#0F6E56] py-3 text-sm font-bold text-white disabled:opacity-50"
-            >
-              {sending ? 'Sending…' : 'Send'}
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowSend(false)}
-              className="w-full rounded-xl border border-slate-200 py-2.5 text-sm text-slate-600"
-            >
-              Cancel
-            </button>
-          </div>
         </FeatureCard>
       )}
 

@@ -23,7 +23,9 @@ Empty: **No materials for {date}** / *Add what you need delivered on this day.* 
 
 Staff: Add, send (paperplane), Quote/Order History. Operative: Add only; cannot send.
 
-Data: `organizations/{orgId}/materials` where `projectId` matches. Status raw values `draft` / `sentForQuote` / `ordered`. Send writes `materialSendRecords` with `requestType` **Quote** or **Order**, then updates line `status`, `lastSentAt`, `lastSentRequestType`. Email via Cloud Function is a follow-up if not already wired.
+Send list (`MaterialsSendListSheet.swift`): job card with selectable “Materials in this send”; **WHOLESALERS · N selected** expandable groups with contact checkboxes; **ONE-OFF EMAIL · not saved** Name (for email greeting) + Email + Add; toggle **Send Material List in Plain Text**; footer `N items · N recipients` + **Cut-off 16:00**; **Quote** / **Order**. Orders to contacts at more than one wholesaler alert *Orders can only go to one wholesaler at a time.* Previously sent lines open **Review materials**. Confirmation **Quote sent** / **Order placed**. Emails go through `sendProjectPlannerEmail` (HTML or plain-text wrapper); then `materialSendRecords` with `requestType` **Quote** or **Order**, line `status` / `lastSentAt`.
+
+Data: `organizations/{orgId}/materials` where `projectId` matches. Status raw values `draft` / `sentForQuote` / `ordered`.
 
 ## View (visibility)
 
@@ -37,9 +39,9 @@ Tabs: Managers | Operatives. Filter: All / Active / Inactive / Pending. Search f
 
 `ProjectDetailView.swift` ~L2299–2462. Nav **Tasks**. Default scope **Assigned to me**.
 
-Stats: To do · In progress · Overdue · Done. Search **Search tasks…**. Pills: Assigned to me · Active · n · Overdue · n · Completed · n. Trailing **+**.
+Stats: To do · In progress (amber) · Overdue · Done. Search **Search tasks…** shares a bar with the filter control (disabled for operatives). Filter description *Showing all tasks* / By Operative / By Manager / Date Range. Pills: Assigned to me · Active · n · Overdue · n · Completed · n. Trailing **+**. Empty clipboard tile. Rows show title, uppercase priority pill, status, details, assignees, due date, **Created by**. Tap opens detail; gear (admin/manager) opens edit.
 
-Empty titles/subtitles: `ProjectDetailView.swift:2008–2027`. Create requires title, assignee, due date (*Every task must have a due date.*). Firestore `organizations/{orgId}/tasks`. Assignment IDs are operative/manager catalogue UUIDs (`assignedOperativeId(s)` / `assignedManagerId(s)`).
+New task (`AddProjectTaskView`): hero, title + description, optional checklist, **Myself / Manager / Operatives**, people picker with search + trade, priority grid (Medium = Normal), required due date, optional photos/file/site audit. Create requires title, assignee, due date (*Every task must have a due date.*). Firestore `organizations/{orgId}/tasks`. Assignment IDs are operative/manager catalogue UUIDs (`assignedOperativeId(s)` / `assignedManagerId(s)`). Checklist in `items` / `completedItemIds`. Assigned to me excludes completed.
 
 ## H&S
 

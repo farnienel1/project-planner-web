@@ -312,6 +312,12 @@ export enum JobType {
 export type ProjectTaskStatus = 'To Do' | 'In Progress' | 'Completed'
 export type ProjectTaskPriority = 'Low' | 'Normal' | 'High' | 'Urgent'
 
+export interface ProjectTaskItem {
+  id: string
+  title: string
+  description?: string
+}
+
 export interface ProjectTask {
   id: string
   organizationId: string
@@ -330,6 +336,12 @@ export interface ProjectTask {
   completedAt?: Date
   completionNotes?: string
   attachedImageURLs?: string[]
+  attachedFileURL?: string
+  attachedFileName?: string
+  attachedSiteAuditId?: string
+  attachedSiteAuditTitle?: string
+  items?: ProjectTaskItem[]
+  completedItemIds?: string[]
   createdAt: Date
   updatedAt: Date
 }
