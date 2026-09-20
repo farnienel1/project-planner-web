@@ -1,3 +1,7 @@
+/**
+ * iOS parity source: Views/SiteAuditView.swift, Views/SiteAudit/SiteAuditRevampViews.swift
+ * Spec: docs/ios-parity/sections/16-job-tiles.md
+ */
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
@@ -30,17 +34,10 @@ function SiteAuditHero({
   return (
     <FeatureCard className="overflow-hidden">
       <div className="bg-gradient-to-br from-slate-800 to-slate-900 px-4 py-4 text-white">
-        <p className="text-xs font-medium text-slate-300">Site audits</p>
-        <div className="mt-3 grid grid-cols-2 gap-3">
-          <div>
-            <p className="text-2xl font-extrabold">{auditCount}</p>
-            <p className="text-[10px] uppercase tracking-wide text-slate-400">Audits</p>
-          </div>
-          <div>
-            <p className="text-2xl font-extrabold">{photoCount}</p>
-            <p className="text-[10px] uppercase tracking-wide text-slate-400">Items</p>
-          </div>
-        </div>
+        <p className="text-[11px] font-semibold uppercase tracking-[0.4px] text-slate-300">This project</p>
+        <p className="mt-2 text-sm font-medium text-white">
+          {auditCount} audits · {photoCount} photos
+        </p>
         {lastLine && <p className="mt-3 text-[11px] text-slate-400">{lastLine}</p>}
       </div>
     </FeatureCard>
@@ -113,10 +110,14 @@ export function ProjectSiteAuditSection({ project }: { project: Project }) {
     if (organization?.id) loadAudits(organization.id)
   }, [organization, loadAudits])
 
-  const projectAudits = useMemo(
-    () => audits.filter((a) => a.projectId === project.id).sort((a, b) => b.date.getTime() - a.date.getTime()),
-    [audits, project.id]
-  )
+  const projectAudits = useMemo(() => {
+    const mine = isOperativeMode(user)
+      ? audits.filter((a) => a.visibleToOperatives || a.createdByUserId === user?.id)
+      : audits
+    return mine
+      .filter((a) => a.projectId.toLowerCase() === project.id.toLowerCase())
+      .sort((a, b) => b.date.getTime() - a.date.getTime())
+  }, [audits, project.id, user])
 
   const filteredAudits = useMemo(() => {
     if (typeFilter === 'All') return projectAudits

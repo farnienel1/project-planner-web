@@ -1,3 +1,7 @@
+/**
+ * iOS parity source: Views/ProjectDetailView.swift project load for job tiles
+ * Spec: docs/ios-parity/sections/16-job-tiles.md
+ */
 'use client'
 
 import { useEffect, useState } from 'react'
@@ -9,7 +13,7 @@ export function useLoadedProjectRecord(
   recordId: string | string[] | undefined,
   collection: 'projects' | 'smallWorks' = 'projects'
 ) {
-  const { organization } = useAuthStore()
+  const { organization, loading: authLoading } = useAuthStore()
   const { getProject } = useProjectStore()
   const [record, setRecord] = useState<Project | null>(null)
   const [loading, setLoading] = useState(true)
@@ -18,7 +22,19 @@ export function useLoadedProjectRecord(
   const id = Array.isArray(recordId) ? recordId[0] : recordId
 
   useEffect(() => {
-    if (!organization?.id || !id) {
+    if (authLoading) {
+      setLoading(true)
+      return
+    }
+    if (!id) {
+      setRecord(null)
+      setError('Record not found.')
+      setLoading(false)
+      return
+    }
+    if (!organization?.id) {
+      setRecord(null)
+      setError('Record not found.')
       setLoading(false)
       return
     }
@@ -49,7 +65,7 @@ export function useLoadedProjectRecord(
     return () => {
       cancelled = true
     }
-  }, [organization?.id, id, collection, getProject])
+  }, [authLoading, organization?.id, id, collection, getProject])
 
   return { record, loading, error, organization }
 }

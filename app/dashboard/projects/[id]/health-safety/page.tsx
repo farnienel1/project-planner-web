@@ -5,7 +5,7 @@ import { ProjectHealthSafetySection } from '@/components/projects/features/Proje
 
 export default function ProjectHealthSafetyPage() {
   return (
-    <ProjectFeaturePageShell title="H&S" backLabel="Back to project">
+    <ProjectFeaturePageShell title="Health & Safety" backLabel="Back to project">
       {(project) => <ProjectHealthSafetySection project={project} isSmallWorks={false} />}
     </ProjectFeaturePageShell>
   )

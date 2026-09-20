@@ -666,6 +666,10 @@ export function serializeTask(task: ProjectTask): Record<string, unknown> {
   }
   payload.assignedOperativeId = v.assignedOperativeId?.trim() ? v.assignedOperativeId : deleteField()
   payload.assignedManagerId = v.assignedManagerId?.trim() ? v.assignedManagerId : deleteField()
+  const operativeIds = task.assignedOperativeIds?.filter(Boolean) || []
+  const managerIds = task.assignedManagerIds?.filter(Boolean) || []
+  if (operativeIds.length) payload.assignedOperativeIds = operativeIds
+  if (managerIds.length) payload.assignedManagerIds = managerIds
   return payload
 }
 
@@ -1067,6 +1071,8 @@ export function parseTask(
       : 'Normal',
     assignedOperativeId: asOptionalString(data.assignedOperativeId),
     assignedManagerId: asOptionalString(data.assignedManagerId),
+    assignedOperativeIds: asStringArray(data.assignedOperativeIds),
+    assignedManagerIds: asStringArray(data.assignedManagerIds),
     dueDate: asDate(data.dueDate),
     completedBy: asOptionalString(data.completedBy),
     completedAt: asDate(data.completedAt),
