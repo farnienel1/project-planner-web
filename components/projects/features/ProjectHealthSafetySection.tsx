@@ -1,3 +1,7 @@
+/**
+ * iOS parity source: Views/ProjectHealthSafetyView.swift
+ * Spec: docs/ios-parity/sections/16-job-tiles.md
+ */
 'use client'
 
 import { FormEvent, useEffect, useMemo, useState } from 'react'
@@ -347,7 +351,7 @@ export function ProjectHealthSafetySection({
         { id: 'other', label: 'Other' },
       ]
     : [
-        { id: 'hub', label: 'Hub' },
+        { id: 'hub', label: 'Toolbox' },
         { id: 'rams', label: 'RAMS' },
         { id: 'other', label: 'Other' },
       ]
@@ -372,7 +376,7 @@ export function ProjectHealthSafetySection({
         <div>
           <p className="text-base font-bold">Health &amp; Safety</p>
           <p className="text-xs opacity-90">
-            {isManager ? 'Hub, library, tracking & documents' : 'Sign toolbox talks, view RAMS'}
+            {project.jobNumber} · {project.siteName}
           </p>
         </div>
       </div>
@@ -394,6 +398,12 @@ export function ProjectHealthSafetySection({
 
       {tab === 'hub' && (
         <div className="space-y-4">
+          {isManager && (
+            <div className="rounded-2xl bg-[#E6F1FB] px-4 py-3">
+              <p className="text-sm font-semibold text-[#185FA5]">Manager access</p>
+              <p className="text-xs text-[#185FA5]/80">Add, edit, issue &amp; track all H&amp;S records</p>
+            </div>
+          )}
           {myAssigned.length > 0 && (
             <div>
               <FeatureSectionLabel>My toolbox talks</FeatureSectionLabel>
@@ -426,8 +436,8 @@ export function ProjectHealthSafetySection({
 
           {isManager && (
             <>
-              <FeatureSectionLabel>This project</FeatureSectionLabel>
-              <div className="grid grid-cols-3 gap-2">
+              <FeatureSectionLabel>{isSmallWorks ? 'This small work' : 'This project'}</FeatureSectionLabel>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                 <FeatureCard className="p-3 text-center">
                   <p className="text-xl font-extrabold text-slate-900">{activeIssues.length}</p>
                   <p className="text-[10px] text-slate-500">Talks issued</p>
@@ -440,7 +450,11 @@ export function ProjectHealthSafetySection({
                 </FeatureCard>
                 <FeatureCard className="p-3 text-center">
                   <p className="text-xl font-extrabold text-slate-900">{data.ramsDocuments.length}</p>
-                  <p className="text-[10px] text-slate-500">RAMS docs</p>
+                  <p className="text-[10px] text-slate-500">RAMS documents</p>
+                </FeatureCard>
+                <FeatureCard className="p-3 text-center">
+                  <p className="text-xl font-extrabold text-slate-900">{scheduledIssues.length}</p>
+                  <p className="text-[10px] text-slate-500">Scheduled talks</p>
                 </FeatureCard>
               </div>
 
@@ -501,7 +515,7 @@ export function ProjectHealthSafetySection({
           )}
 
           {!isManager && myAssigned.length === 0 && (
-            <EmptyState title="No toolbox talks to sign" description="Issued talks will appear here." />
+            <EmptyState title="Nothing to sign" description="Toolbox talks issued to you will appear here." />
           )}
         </div>
       )}
@@ -537,10 +551,7 @@ export function ProjectHealthSafetySection({
           {libraryLoading ? (
             <LoadingSpinner label="Loading toolbox library…" />
           ) : filteredTalks.length === 0 ? (
-            <EmptyState
-              title="No toolbox talks"
-              description="The shared library loads from Firebase platformConfig. Upload a custom talk or add talks on iOS."
-            />
+            <EmptyState title="No talks found" description="Search the library or upload a custom talk." />
           ) : (
             <FeatureCard>
               {filteredTalks.map((talk: HSToolboxTalk) => (
@@ -575,7 +586,7 @@ export function ProjectHealthSafetySection({
       {tab === 'tracking' && isManager && (
         <div className="space-y-3">
           {activeIssues.length === 0 ? (
-            <EmptyState title="No issued talks" description="Issue a toolbox talk from the library." />
+            <EmptyState title="Nothing sent yet" description="Issue a toolbox talk from the library." />
           ) : (
             activeIssues.map((issue) => {
               const talk = libraryTalks.find((t) => t.id === issue.talkId) || data.talks.find((t) => t.id === issue.talkId)
@@ -655,7 +666,7 @@ export function ProjectHealthSafetySection({
           )}
           <FeatureSectionLabel>RAMS documents</FeatureSectionLabel>
           {data.ramsDocuments.length === 0 ? (
-            <EmptyState title="No RAMS" description="Upload RAMS for this job." />
+            <EmptyState title="No RAMS yet" description="Upload RAMS for this job." />
           ) : (
             <FeatureCard>
               {data.ramsDocuments.map((doc) => (
@@ -694,7 +705,7 @@ export function ProjectHealthSafetySection({
           )}
           <FeatureSectionLabel>Other documents</FeatureSectionLabel>
           {data.otherDocuments.length === 0 ? (
-            <EmptyState title="No other documents" description="Upload policies and supporting H&S files." />
+            <EmptyState title="No documents yet" description="Upload policies and supporting H&S files." />
           ) : (
             <FeatureCard>
               {data.otherDocuments.map((doc) => (
@@ -714,7 +725,7 @@ export function ProjectHealthSafetySection({
         <Modal title="Issue toolbox talk" onClose={() => setShowIssue(false)}>
           <FormSelect value={issueTalkId} onChange={(e) => setIssueTalkId(e.target.value)}>
             <option value="">Select talk</option>
-            {data.talks.map((t) => (
+            {libraryTalks.map((t) => (
               <option key={t.id} value={t.id}>{t.title}</option>
             ))}
           </FormSelect>
@@ -758,7 +769,7 @@ export function ProjectHealthSafetySection({
         <Modal title="Schedule toolbox talk" onClose={() => setShowScheduled(false)}>
           <FormSelect value={scheduleTalkId} onChange={(e) => setScheduleTalkId(e.target.value)}>
             <option value="">Select talk</option>
-            {data.talks.map((t) => (
+            {libraryTalks.map((t) => (
               <option key={t.id} value={t.id}>{t.title}</option>
             ))}
           </FormSelect>

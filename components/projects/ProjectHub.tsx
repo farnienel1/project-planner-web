@@ -1,3 +1,7 @@
+/**
+ * iOS parity source: Views/ProjectDetailView.swift hub tiles
+ * Spec: docs/ios-parity/sections/16-job-tiles.md
+ */
 'use client'
 
 import Link from 'next/link'
@@ -9,7 +13,9 @@ import {
   workStatusLabel,
 } from '@/lib/projects/workStatus'
 import { useAuthStore } from '@/lib/stores/authStore'
-import { canManageWorkCatalogue } from '@/lib/permissions'
+import { canManageWorkCatalogue, canViewMaterials, canViewSiteAudit } from '@/lib/permissions'
+import { isOperativeMode } from '@/lib/navigation/menuPermissions'
+import { jobHubTiles } from '@/lib/projects/jobHubTiles'
 import type { Project, User } from '@/types'
 
 function canConfigureProjectVisibility(user: User | null, isSmallWork: boolean): boolean {
@@ -79,22 +85,18 @@ export function ProjectHub({
   const isSmallWork = basePath.includes('small-works')
   const showViewTile = canConfigureProjectVisibility(user, isSmallWork)
   const canEdit = canManageWorkCatalogue(user, isSmallWork ? 'smallWorks' : 'projects')
+  const isOperative = isOperativeMode(user)
   const heroGradient = isSmallWork
     ? 'bg-gradient-to-br from-amber-500 to-orange-600'
     : 'bg-gradient-to-br from-blue-600 to-blue-800'
   const heroSubtext = isSmallWork ? 'text-amber-100' : 'text-blue-200'
-
-  const tiles = [
-    { href: 'schedule',       label: 'Scheduling',  desc: 'Bookings and operative schedule' },
-    ...(showViewTile
-      ? [{ href: 'view', label: 'View', desc: 'Control who can see this project' }]
-      : []),
-    { href: 'tasks',          label: 'My Tasks',     desc: 'Tasks and assignments', badge: taskCount },
-    { href: 'materials',      label: 'Materials',    desc: 'Materials list and send to wholesaler' },
-    { href: 'health-safety',  label: 'H&S',          desc: 'Toolbox talks, RAMS, documents' },
-    { href: 'site-audit',     label: 'Site Audit',   desc: 'Audits for this project' },
-    { href: 'location',       label: 'Location',     desc: project.addressLine1 || 'View on map' },
-  ]
+  const tiles = jobHubTiles({
+    isOperative,
+    showViewTile,
+    canViewMaterials: canViewMaterials(user),
+    canViewSiteAudit: canViewSiteAudit(user),
+    locationCaption: project.addressLine1 || undefined,
+  }).map((tile) => (tile.href === 'tasks' ? { ...tile, badge: taskCount } : tile))
 
   return (
     <div className="space-y-4">

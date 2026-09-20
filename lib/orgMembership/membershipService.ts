@@ -1,3 +1,7 @@
+/**
+ * iOS parity source: Core/FirebaseBackend+OrganizationMembership.swift
+ * Spec: docs/ios-parity/sections/26-switch-organisation.md
+ */
 import {
   collection,
   doc,
@@ -18,6 +22,11 @@ import {
   membershipSnapshotFromUserDoc,
   userPatchForActiveOrg,
 } from '@/lib/orgMembership/orgRoleFlags'
+import {
+  loginBlockMessage,
+  membershipSummary,
+  sortMemberships,
+} from '@/lib/orgMembership/organizationTrialPolicy'
 
 function parseMembershipRecord(
   organizationId: string,
@@ -70,28 +79,100 @@ export async function findExistingAuthUserByEmail(email: string): Promise<{
   }
 }
 
-export async function loadUserOrgMemberships(userId: string): Promise<OrgMembership[]> {
-  const db = getFirebaseDb()
-  const snap = await getDocs(collection(db, 'users', userId, 'orgMemberships'))
-  const memberships: OrgMembership[] = []
+function firestoreDate(value: unknown): Date | undefined {
+  if (value instanceof Date) return value
+  if (value && typeof value === 'object' && 'toDate' in value && typeof (value as Timestamp).toDate === 'function') {
+    return (value as Timestamp).toDate()
+  }
+  return undefined
+}
 
+function membershipFromOrgDoc(
+  organizationId: string,
+  orgData: Record<string, unknown>,
+  role: string,
+  extras?: Partial<OrgMembership>
+): OrgMembership {
+  const createdAt = firestoreDate(orgData.createdAt)
+  const summary = membershipSummary(organizationId, { ...orgData, createdAt: createdAt ?? null }, role)
+  return {
+    organizationId,
+    organizationName: summary.name,
+    role: summary.roleInOrg,
+    status: extras?.status || 'active',
+    invitedAt: extras?.invitedAt || createdAt || new Date(),
+    acceptedAt: extras?.acceptedAt,
+    isTrial: summary.isTrial,
+    trialAccessBlocked: summary.trialAccessBlocked,
+    createdAt,
+  }
+}
+
+export async function loadUserOrgMemberships(
+  userId: string,
+  activeOrgId?: string
+): Promise<OrgMembership[]> {
+  const db = getFirebaseDb()
+  const byId = new Map<string, OrgMembership>()
+
+  const snap = await getDocs(collection(db, 'users', userId, 'orgMemberships'))
   for (const entry of snap.docs) {
     const data = entry.data() as Record<string, unknown>
     const organizationId = entry.id
     const orgSnap = await getDoc(doc(db, 'organizations', organizationId))
-    const orgName = orgSnap.exists() ? String(orgSnap.data().name || 'Organisation') : 'Organisation'
+    const orgData = orgSnap.exists() ? (orgSnap.data() as Record<string, unknown>) : {}
     const record = parseMembershipRecord(organizationId, data)
-    memberships.push({
+    byId.set(
       organizationId,
-      organizationName: orgName,
-      role: record.role,
-      status: record.status,
-      invitedAt: record.invitedAt,
-      acceptedAt: record.acceptedAt,
-    })
+      membershipFromOrgDoc(organizationId, orgData, record.role, {
+        status: record.status,
+        invitedAt: record.invitedAt,
+        acceptedAt: record.acceptedAt,
+      })
+    )
   }
 
-  return memberships.sort((a, b) => a.organizationName.localeCompare(b.organizationName))
+  try {
+    const memberSnap = await getDocs(
+      query(collection(db, 'organizations'), where(`members.${userId}`, '!=', ''))
+    )
+    for (const orgDoc of memberSnap.docs) {
+      const orgData = orgDoc.data() as Record<string, unknown>
+      const members = (orgData.members as Record<string, string> | undefined) ?? {}
+      const existing = byId.get(orgDoc.id)
+      const role = members[userId] || existing?.role || 'member'
+      byId.set(
+        orgDoc.id,
+        membershipFromOrgDoc(orgDoc.id, orgData, role, {
+          status: existing?.status || 'active',
+          invitedAt: existing?.invitedAt,
+          acceptedAt: existing?.acceptedAt,
+        })
+      )
+    }
+  } catch {
+    // Permission or missing index: keep orgMemberships fallback.
+  }
+
+  try {
+    const creatorSnap = await getDocs(
+      query(collection(db, 'organizations'), where('creatorUserId', '==', userId))
+    )
+    for (const orgDoc of creatorSnap.docs) {
+      if (byId.has(orgDoc.id)) continue
+      const orgData = orgDoc.data() as Record<string, unknown>
+      byId.set(orgDoc.id, membershipFromOrgDoc(orgDoc.id, orgData, 'admin'))
+    }
+  } catch {
+    // Permission or missing index: keep orgMemberships fallback.
+  }
+
+  const rows = Array.from(byId.values()).map((row) => ({
+    ...row,
+    id: row.organizationId,
+    name: row.organizationName,
+  }))
+  return sortMemberships(rows, activeOrgId).map(({ id: _id, name: _name, ...row }) => row)
 }
 
 export async function addExistingUserToOrganization(params: {
@@ -207,7 +288,24 @@ export async function switchActiveOrganization(userId: string, organizationId: s
       throw new Error('Accept the invitation before switching to this organisation.')
     }
   } else if (!isCreator && listedRole == null) {
-    throw new Error('You are not a member of this organisation.')
+    throw new Error('You are not a member of that organisation.')
+  }
+
+  const memberships = await loadUserOrgMemberships(userId, organizationId)
+  const blockMessage = loginBlockMessage({
+    organizationId,
+    orgData,
+    memberships: memberships.map((row) => ({
+      id: row.organizationId,
+      name: row.organizationName,
+      roleInOrg: row.role,
+      isTrial: row.isTrial === true,
+      trialAccessBlocked: row.trialAccessBlocked === true,
+      createdAt: row.createdAt,
+    })),
+  })
+  if (blockMessage) {
+    throw new Error(blockMessage)
   }
 
   await snapshotCurrentMembership(userId)
