@@ -323,6 +323,8 @@ export interface ProjectTask {
   priority: ProjectTaskPriority
   assignedOperativeId?: string
   assignedManagerId?: string
+  assignedOperativeIds?: string[]
+  assignedManagerIds?: string[]
   dueDate?: Date
   completedBy?: string
   completedAt?: Date
@@ -365,6 +367,8 @@ export interface ProjectMaterialLine {
   category?: string
   catalogueItemId?: string
   notes?: string
+  lastSentAt?: Date
+  lastSentRequestType?: string
 }
 
 export interface HSToolboxTalk {

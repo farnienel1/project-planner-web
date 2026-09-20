@@ -1,6 +1,11 @@
+/**
+ * iOS parity source: Views/ProjectDetailView.swift ProjectVisibilitySettingsView ~L2517
+ * Spec: docs/ios-parity/sections/16-job-tiles.md
+ */
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import { CheckCircleIcon } from '@heroicons/react/24/solid'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { useProjectStore } from '@/lib/stores/projectStore'
@@ -9,14 +14,21 @@ import {
   getManagerUsers,
   getOperativeModeUsers,
   matchesRosterSegment,
-  rosterStatusLabel,
   type RosterSegment,
 } from '@/lib/staff/userRosterUtils'
-import { RosterStatusBadge } from '@/components/staff/StaffRosterFilters'
 import { ErrorBanner } from '@/components/dashboard/PageShell'
+import { FeatureCard } from '@/components/projects/features/featureUi'
 import type { Project, User } from '@/types'
 
 type VisibilityTab = 'managers' | 'operatives'
+type VisibilitySegment = 'all' | RosterSegment
+
+const FILTERS: { id: VisibilitySegment; label: string }[] = [
+  { id: 'all', label: 'All' },
+  { id: 'active', label: 'Active' },
+  { id: 'inactive', label: 'Inactive' },
+  { id: 'pending', label: 'Pending' },
+]
 
 export function ProjectVisibilityPage({
   project,
@@ -29,7 +41,8 @@ export function ProjectVisibilityPage({
   const { users, loadUsers } = useOrgUserStore()
   const { saveProject } = useProjectStore()
   const [tab, setTab] = useState<VisibilityTab>('managers')
-  const [segment, setSegment] = useState<RosterSegment>('active')
+  const [segment, setSegment] = useState<VisibilitySegment>('active')
+  const [showSearch, setShowSearch] = useState(false)
   const [search, setSearch] = useState('')
   const [hiddenManagers, setHiddenManagers] = useState<Set<string>>(
     () => new Set(project.hiddenManagerUserIds ?? [])
@@ -39,7 +52,6 @@ export function ProjectVisibilityPage({
   )
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [success, setSuccess] = useState<string | null>(null)
 
   useEffect(() => {
     if (organization?.id) loadUsers(organization.id)
@@ -49,6 +61,7 @@ export function ProjectVisibilityPage({
     const base = tab === 'managers' ? getManagerUsers(users) : getOperativeModeUsers(users)
     return base.filter((user) => {
       if (user.isSuperAdmin || user.permissions.adminAccess) return false
+      if (segment === 'all') return true
       return matchesRosterSegment(user, segment)
     })
   }, [users, tab, segment])
@@ -67,7 +80,6 @@ export function ProjectVisibilityPage({
 
   const toggleHidden = async (user: User) => {
     if (!organization?.id) return
-    const wasHidden = isHidden(user.id)
     const nextManagers = new Set(hiddenManagers)
     const nextOperatives = new Set(hiddenOperatives)
     if (tab === 'managers') {
@@ -82,7 +94,6 @@ export function ProjectVisibilityPage({
 
     setSaving(true)
     setError(null)
-    setSuccess(null)
     try {
       const input = projectToSaveInput(
         {
@@ -94,7 +105,6 @@ export function ProjectVisibilityPage({
         organization.id
       )
       await saveProject(input, collection)
-      setSuccess(wasHidden ? 'User can view this job again.' : 'User hidden from this job.')
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to save visibility')
       if (tab === 'managers') setHiddenManagers(hiddenManagers)
@@ -105,95 +115,100 @@ export function ProjectVisibilityPage({
   }
 
   return (
-    <div className="space-y-5">
-      <div>
-        <h2 className="text-lg font-bold text-slate-900">View</h2>
-        <p className="mt-1 text-sm text-slate-500 leading-relaxed">
-          Choose who cannot see this {collection === 'smallWorks' ? 'small work' : 'project'}. Administrators
-          always have access and cannot be hidden.
+    <div className="space-y-4 xl:grid xl:grid-cols-12 xl:items-start xl:gap-6 xl:space-y-0">
+      <div className="xl:col-span-4">
+        <h2 className="text-[22px] font-bold text-slate-900">View</h2>
+        <p className="mt-2 text-sm leading-relaxed text-slate-500">
+          This feature can be used to select who will not be able to view the project or small works. Admins always
+          have access and cannot be hidden.
         </p>
       </div>
 
-      {error && <ErrorBanner message={error} />}
-      {success && (
-        <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
-          {success}
+      <div className="space-y-4 xl:col-span-8">
+        {error && <ErrorBanner message={error} />}
+
+        <div className="flex gap-1 rounded-[13px] bg-[#e7ebf1] p-1">
+          {(['managers', 'operatives'] as VisibilityTab[]).map((item) => (
+            <button
+              key={item}
+              type="button"
+              onClick={() => setTab(item)}
+              className={`flex-1 rounded-[10px] py-2 text-sm font-semibold capitalize transition-colors ${
+                tab === item ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600'
+              }`}
+            >
+              {item}
+            </button>
+          ))}
         </div>
-      )}
 
-      <div className="flex gap-2 rounded-2xl border border-slate-200 bg-white p-1 shadow-sm">
-        {(['managers', 'operatives'] as VisibilityTab[]).map((item) => (
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
+            Filter:
+            <select
+              value={segment}
+              onChange={(e) => setSegment(e.target.value as VisibilitySegment)}
+              className="bg-transparent font-semibold outline-none"
+            >
+              {FILTERS.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.label}
+                </option>
+              ))}
+            </select>
+          </label>
           <button
-            key={item}
             type="button"
-            onClick={() => setTab(item)}
-            className={`flex-1 rounded-xl py-2 text-sm font-semibold capitalize transition-colors ${
-              tab === item ? 'bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-50'
-            }`}
+            onClick={() => {
+              setShowSearch((v) => !v)
+              if (showSearch) setSearch('')
+            }}
+            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700"
           >
-            {item}
+            Search
           </button>
-        ))}
-      </div>
+        </div>
 
-      <div className="flex flex-wrap gap-2">
-        {(['active', 'inactive', 'pending'] as RosterSegment[]).map((item) => (
-          <button
-            key={item}
-            type="button"
-            onClick={() => setSegment(item)}
-            className={`rounded-full px-3 py-1.5 text-xs font-semibold capitalize ${
-              segment === item
-                ? 'bg-slate-800 text-white'
-                : 'border border-slate-200 bg-white text-slate-600'
-            }`}
-          >
-            {item}
-          </button>
-        ))}
-      </div>
-
-      <input
-        type="search"
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        placeholder="Search users…"
-        className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm shadow-sm focus:border-blue-400 focus:ring-2 focus:ring-blue-100 outline-none"
-      />
-
-      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden divide-y divide-slate-100">
-        {filtered.length === 0 ? (
-          <p className="px-4 py-8 text-center text-sm text-slate-500">No users match this filter.</p>
-        ) : (
-          filtered.map((user) => {
-            const hidden = isHidden(user.id)
-            return (
-              <div key={user.id} className="flex items-center justify-between gap-3 px-4 py-3">
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold text-slate-900 truncate">
-                    {user.firstName} {user.surname}
-                  </p>
-                  <p className="text-xs text-slate-500 truncate">{user.email}</p>
-                </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  <RosterStatusBadge status={rosterStatusLabel(user)} />
-                  <button
-                    type="button"
-                    disabled={saving}
-                    onClick={() => toggleHidden(user)}
-                    className={`rounded-full px-3 py-1 text-xs font-bold transition-colors ${
-                      hidden
-                        ? 'bg-red-50 text-red-700 border border-red-200'
-                        : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                    }`}
-                  >
-                    {hidden ? 'Hidden' : 'Visible'}
-                  </button>
-                </div>
-              </div>
-            )
-          })
+        {showSearch && (
+          <input
+            type="search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search user"
+            className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm outline-none focus:border-blue-400"
+          />
         )}
+
+        <FeatureCard className="overflow-hidden divide-y divide-slate-100">
+          {filtered.length === 0 ? (
+            <p className="px-4 py-8 text-center text-sm text-slate-500">No users match this filter.</p>
+          ) : (
+            filtered.map((user) => {
+              const hidden = isHidden(user.id)
+              return (
+                <button
+                  key={user.id}
+                  type="button"
+                  disabled={saving}
+                  onClick={() => void toggleHidden(user)}
+                  className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left hover:bg-slate-50"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-slate-900">
+                      {user.firstName} {user.surname}
+                    </p>
+                    <p className="truncate text-xs text-slate-500">{user.email}</p>
+                  </div>
+                  {hidden ? (
+                    <span className="h-6 w-6 rounded-full border border-slate-300" />
+                  ) : (
+                    <CheckCircleIcon className="h-6 w-6 text-[#185FA5]" />
+                  )}
+                </button>
+              )
+            })
+          )}
+        </FeatureCard>
       </div>
     </div>
   )

@@ -27,6 +27,8 @@ function mapMaterialLine(docId: string, data: Record<string, unknown>): ProjectM
     category: parseOptionalString(data.category),
     catalogueItemId: parseOptionalString(data.catalogueItemId),
     notes: parseOptionalString(data.notes),
+    lastSentAt: parseFirestoreDate(data.lastSentAt),
+    lastSentRequestType: parseOptionalString(data.lastSentRequestType),
   }
 }
 
@@ -37,7 +39,7 @@ function mapSendRecord(docId: string, data: Record<string, unknown>): MaterialSe
   return {
     id: docId,
     projectId,
-    requestType: parseString(data.requestType) === 'order' ? 'order' : 'quote',
+    requestType: parseString(data.requestType) === 'Order' || parseString(data.requestType) === 'order' ? 'order' : 'quote',
     sentAt,
     materialsDate: parseFirestoreDate(data.materialsDate),
     sentBy: parseString(data.sentBy),
@@ -89,6 +91,12 @@ interface MaterialProjectState {
   loadSendRecords: (organizationId: string, projectId?: string) => Promise<void>
   saveMaterialLine: (organizationId: string, line: SaveMaterialLineInput) => Promise<void>
   saveSendRecord: (organizationId: string, record: MaterialSendRecord) => Promise<void>
+  updateMaterialWorkflowStatuses: (
+    organizationId: string,
+    materialIds: string[],
+    status: string,
+    requestType: 'quote' | 'order'
+  ) => Promise<void>
 }
 
 export const useMaterialProjectStore = create<MaterialProjectState>((set, get) => ({
@@ -179,10 +187,11 @@ export const useMaterialProjectStore = create<MaterialProjectState>((set, get) =
 
   saveSendRecord: async (organizationId, record) => {
     const id = record.id || newUuid()
+    const requestType = record.requestType === 'order' ? 'Order' : 'Quote'
     const payload: Record<string, unknown> = {
       id,
       projectId: record.projectId,
-      requestType: record.requestType,
+      requestType,
       sentAt: Timestamp.fromDate(record.sentAt),
       sentBy: record.sentBy,
       recipients: record.recipients,
@@ -202,5 +211,32 @@ export const useMaterialProjectStore = create<MaterialProjectState>((set, get) =
     if (mapped) {
       set({ sendRecords: [mapped, ...get().sendRecords.filter((r) => r.id !== id)] })
     }
+  },
+
+  updateMaterialWorkflowStatuses: async (organizationId, materialIds, status, requestType) => {
+    const now = new Date()
+    const next = [...get().materials]
+    for (const materialId of materialIds) {
+      const current = next.find((row) => row.id === materialId)
+      if (!current) continue
+      const nextStatus = current.status === 'ordered' && status === 'sentForQuote' ? 'ordered' : status
+      const payload: Record<string, unknown> = {
+        status: nextStatus,
+        lastSentAt: Timestamp.fromDate(now),
+        lastSentRequestType: requestType === 'order' ? 'Order' : 'Quote',
+        updatedAt: Timestamp.now(),
+      }
+      await setDoc(doc(db, 'organizations', organizationId, 'materials', materialId), payload, { merge: true })
+      const index = next.findIndex((row) => row.id === materialId)
+      if (index >= 0) {
+        next[index] = {
+          ...next[index],
+          status: nextStatus,
+          lastSentAt: now,
+          lastSentRequestType: requestType === 'order' ? 'Order' : 'Quote',
+        }
+      }
+    }
+    set({ materials: next })
   },
 }))

@@ -1,3 +1,7 @@
+/**
+ * iOS parity source: Views/MaterialsView.swift, Views/AdminManagerMaterialsView.swift
+ * Spec: docs/ios-parity/sections/16-job-tiles.md
+ */
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
@@ -7,9 +11,10 @@ import { useMaterialProjectStore } from '@/lib/stores/materialProjectStore'
 import { useWholesalerStore } from '@/lib/stores/wholesalerStore'
 import { isOperativeMode } from '@/lib/navigation/menuPermissions'
 import { newUuid } from '@/lib/firebase/firestoreUtils'
-import { EmptyState, ErrorBanner, LoadingSpinner } from '@/components/dashboard/PageShell'
+import { ErrorBanner, LoadingSpinner } from '@/components/dashboard/PageShell'
 import { FormLabel, FormSelect } from '@/components/forms/FormShell'
 import { MaterialsAddSheet } from '@/components/projects/materials/MaterialsAddSheet'
+import { materialStatusLabel } from '@/lib/maps/siteLocation'
 import type { Project, ProjectMaterialLine } from '@/types'
 import {
   FeatureCard,
@@ -22,6 +27,9 @@ import {
 } from '@/components/projects/features/featureUi'
 
 function MaterialLineCard({ line }: { line: ProjectMaterialLine }) {
+  const sentMeta = line.lastSentAt
+    ? `${line.addedBy.split('@')[0]} · ${format(line.lastSentAt, 'd MMM')}`
+    : 'Not yet sent'
   return (
     <FeatureCard className="p-3">
       <div className="flex items-start justify-between gap-2">
@@ -32,9 +40,9 @@ function MaterialLineCard({ line }: { line: ProjectMaterialLine }) {
             {line.brand ? ` · ${line.brand}` : ''}
             {line.productCode ? ` · ${line.productCode}` : ''}
           </p>
-          <p className="mt-1 text-[10px] text-slate-400">Added by {line.addedBy.split('@')[0]}</p>
+          <p className="mt-1 text-[10px] text-slate-400">{sentMeta}</p>
         </div>
-        <StatusPill label={line.status || 'draft'} tone={materialStatusTone(line.status)} />
+        <StatusPill label={materialStatusLabel(line.status)} tone={materialStatusTone(line.status)} />
       </div>
     </FeatureCard>
   )
@@ -42,7 +50,7 @@ function MaterialLineCard({ line }: { line: ProjectMaterialLine }) {
 
 export function ProjectMaterialsSection({ project }: { project: Project }) {
   const { organization, user } = useAuthStore()
-  const { materials, sendRecords, loading, error, loadProjectMaterials, loadSendRecords, saveSendRecord } =
+  const { materials, sendRecords, loading, error, loadProjectMaterials, loadSendRecords, saveSendRecord, updateMaterialWorkflowStatuses } =
     useMaterialProjectStore()
   const { wholesalers, loadWholesalers } = useWholesalerStore()
 
@@ -66,7 +74,10 @@ export function ProjectMaterialsSection({ project }: { project: Project }) {
     }
   }, [organization, project.id, loadProjectMaterials, loadSendRecords, loadWholesalers, canSend])
 
-  const projectMaterials = useMemo(() => materials.filter((m) => m.projectId === project.id), [materials, project.id])
+  const projectMaterials = useMemo(
+    () => materials.filter((m) => m.projectId.toLowerCase() === project.id.toLowerCase()),
+    [materials, project.id]
+  )
 
   const dayMaterials = useMemo(
     () =>
@@ -118,6 +129,12 @@ export function ProjectMaterialsSection({ project }: { project: Project }) {
           productCode: m.productCode,
         })),
       })
+      await updateMaterialWorkflowStatuses(
+        organization.id,
+        dayMaterials.map((m) => m.id),
+        sendType === 'order' ? 'ordered' : 'sentForQuote',
+        sendType
+      )
       setShowSend(false)
     } finally {
       setSending(false)
@@ -156,7 +173,7 @@ export function ProjectMaterialsSection({ project }: { project: Project }) {
               onClick={() => setShowHistory((v) => !v)}
               className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-medium text-slate-600 hover:bg-slate-50"
             >
-              Quote/order history
+              Quote/Order History
             </button>
           )}
           <button
@@ -220,9 +237,7 @@ export function ProjectMaterialsSection({ project }: { project: Project }) {
 
       {canSend && draftCount > 0 && (
         <FeatureCard className="mt-4 border-[#FAEEDA] bg-[#FAEEDA]/40 p-3">
-          <p className="text-xs font-semibold text-[#854F0B]">
-            {draftCount} draft line{draftCount !== 1 ? 's' : ''} ready to send
-          </p>
+          <p className="text-xs font-semibold text-[#854F0B]">Draft ready to send</p>
           <button
             type="button"
             onClick={() => setShowSend(true)}
@@ -278,12 +293,14 @@ export function ProjectMaterialsSection({ project }: { project: Project }) {
 
       {showHistory && sendRecords.length > 0 && (
         <div className="mt-4">
-          <FeatureSectionLabel>Send history</FeatureSectionLabel>
+          <FeatureSectionLabel>Quote &amp; order history</FeatureSectionLabel>
           <div className="space-y-2">
             {sendRecords.map((record) => (
               <FeatureCard key={record.id} className="px-4 py-3">
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-sm font-semibold capitalize text-slate-800">{record.requestType}</span>
+                  <span className="text-sm font-semibold capitalize text-slate-800">
+                    {record.requestType === 'order' ? 'Order' : 'Quote'}
+                  </span>
                   <StatusPill label="Sent" tone="green" />
                 </div>
                 <p className="mt-1 text-xs text-slate-500">

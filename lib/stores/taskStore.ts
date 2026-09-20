@@ -18,6 +18,12 @@ function mapTask(docId: string, data: Record<string, unknown>, organizationId: s
     priority: (parseString(data.priority, 'Normal') as ProjectTaskPriority) || 'Normal',
     assignedOperativeId: parseOptionalString(data.assignedOperativeId),
     assignedManagerId: parseOptionalString(data.assignedManagerId),
+    assignedOperativeIds: Array.isArray(data.assignedOperativeIds)
+      ? (data.assignedOperativeIds as unknown[]).map((id) => String(id))
+      : [],
+    assignedManagerIds: Array.isArray(data.assignedManagerIds)
+      ? (data.assignedManagerIds as unknown[]).map((id) => String(id))
+      : [],
     dueDate: parseFirestoreDate(data.dueDate),
     completedBy: parseOptionalString(data.completedBy),
     completedAt: parseFirestoreDate(data.completedAt),
@@ -42,6 +48,8 @@ function taskPayload(task: ProjectTask): Record<string, unknown> {
   }
   if (task.assignedOperativeId) data.assignedOperativeId = task.assignedOperativeId
   if (task.assignedManagerId) data.assignedManagerId = task.assignedManagerId
+  if (task.assignedOperativeIds?.length) data.assignedOperativeIds = task.assignedOperativeIds
+  if (task.assignedManagerIds?.length) data.assignedManagerIds = task.assignedManagerIds
   if (task.dueDate) data.dueDate = Timestamp.fromDate(task.dueDate)
   if (task.completedBy) data.completedBy = task.completedBy
   if (task.completedAt) data.completedAt = Timestamp.fromDate(task.completedAt)

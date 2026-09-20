@@ -193,8 +193,8 @@ export function StatusPill({ label, tone }: { label: string; tone: 'amber' | 'gr
 export function materialStatusTone(status: string): 'amber' | 'green' | 'blue' | 'grey' {
   const s = status.toLowerCase()
   if (s.includes('draft')) return 'amber'
-  if (s.includes('sent') || s.includes('order')) return 'green'
-  if (s.includes('quote')) return 'blue'
+  if (s.includes('order')) return 'green'
+  if (s.includes('quote') || s.includes('sent')) return 'blue'
   return 'grey'
 }
 

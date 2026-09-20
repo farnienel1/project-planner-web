@@ -5,7 +5,7 @@ import { ProjectSiteAuditSection } from '@/components/projects/features/ProjectS
 
 export default function ProjectSiteAuditPage() {
   return (
-    <ProjectFeaturePageShell title="Site audit" backLabel="Back to project">
+    <ProjectFeaturePageShell title="Site audits" backLabel="Back to project">
       {(project) => <ProjectSiteAuditSection project={project} />}
     </ProjectFeaturePageShell>
   )
