@@ -10,6 +10,8 @@ export type OrgMembership = {
   isTrial?: boolean
   trialAccessBlocked?: boolean
   createdAt?: Date
+  setupIncomplete?: boolean
+  subscriptionStatus?: string
 }
 
 export type UserOrgMembershipRecord = {

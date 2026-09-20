@@ -1,5 +1,5 @@
 # iOS → Web parity: progress
-Last updated: 2026-09-20 · Current step: Materials send list + job My Tasks · Stopped at: Stop Gate (materials send + tasks)
+Last updated: 2026-09-20 · Current step: Phase 3 catalogues + Switch org empty-name fix · Stopped at: Stop Gate (job types, qualifications, wholesalers, catalogue, sub contractors, timesheets hub)
 
 ## Access check (Phase 0)
 - **WEB_ROOT:** `/workspace` (this repo, `project-planner-web`)
@@ -8,7 +8,7 @@ Last updated: 2026-09-20 · Current step: Materials send list + job My Tasks · 
 - **Xcode project:** folder-synced (Xcode 26); iOS **17.0**; Swift 5.0; firebase-ios-sdk **12.15.0** (Auth, Core, Firestore, Storage, Messaging). `PRODUCT_BUNDLE_IDENTIFIER` `farnie.Project-Planner`.
 - **GoogleService-Info.plist:** `PROJECT_ID` `project-planner-f986c`, `STORAGE_BUCKET` `project-planner-f986c.firebasestorage.app`, `BUNDLE_ID` `farnie.Project-Planner`.
 - **Future Cloud Agent runs:** zip is not in the environment snapshot. Add the Xcode folder or an iOS GitHub repo to the environment.
-- **Branch:** `cursor/ios-parity-phase-2-6b85` (from `main` after PR #7)
+- **Branch:** `cursor/phase-3-catalogues-switch-org-6b85` (from `main` after PR #29)
 
 ## Phases
 - [x] 0 Access check
@@ -23,12 +23,12 @@ Last updated: 2026-09-20 · Current step: Materials send list + job My Tasks · 
 | 0 | Shell, Login and Home (Phase 2) | ☑ | ☑ | ☑ | ☐ | Zod + Heroicons; D1 editor hidden from Home; live bookings/managerSiteBookings/notifications |
 | 1 | Manage Users | ☐ | ☐ | ☐ | ☐ | |
 | 2 | Add User | ☐ | ☐ | ☐ | ☐ | Invite URL `/setup-password.html?token=` |
-| 3 | Settings | ☐ | ☑ Switch org | ☐ | ☐ | Settings → Personal → Switch organisation |
-| 4 | Job Types | ☐ | ☐ | ☐ | ☐ | |
-| 5 | Qualifications | ☐ | ☐ | ☐ | ☐ | |
-| 6 | Wholesalers | ☐ | ☐ | ☐ | ☐ | |
-| 7 | Material Catalogue | ☐ | ☐ | ☐ | ☐ | |
-| 8 | Sub Contractors | ☐ | ☐ | ☐ | ☐ | |
+| 3 | Settings | ☑ switch org | ☑ Switch org + distinguishers | ☐ | ☐ | Settings → Personal → Switch organisation. Created date, short ID, Setup incomplete. |
+| 4 | Job Types | ☑ | ☑ | ☐ | ☐ | Overwrite `settings/jobTypes` |
+| 5 | Qualifications | ☑ | ☑ | ☐ | ☐ | Org templates + My Qualifications |
+| 6 | Wholesalers | ☑ | ☑ | ☐ | ☐ | Master–detail + history |
+| 7 | Material Catalogue | ☑ | ☑ | ☐ | ☐ | Table + CSV import/export |
+| 8 | Sub Contractors | ☑ | ☑ | ☐ | ☐ | Master–detail + roster |
 | 9 | Clients | ☑ | ☑ | ☐ | ☐ | Master–detail; UUID writes; address field; admin delete |
 | 10 | Managers | ☑ | ☑ | ☐ | ☐ | Roster = manager users; catalogue writes `managers/` |
 | 11 | Operatives | ☑ | ☑ | ☐ | ☐ | Roster = operativeMode users; catalogue writes `operatives/` |
@@ -37,7 +37,7 @@ Last updated: 2026-09-20 · Current step: Materials send list + job My Tasks · 
 | 14 | Scheduling and My Schedule | ☐ | ☐ | ☐ | ☐ | Title-Case booking status |
 | 15 | Tasks | ☑ job tile | ☑ job tile | ☐ | ☐ | iOS New task + rows + filters on job tile |
 | 16 | Job tiles (View, Materials, H&S, Deadlines, Location, Active users) | ☑ six tiles | ☑ six tiles + send list | ☐ | ☐ | Send list emails via Cloud Function; Deadlines + Active users later |
-| 17 | Timesheets | ☐ | ☐ | ☐ | ☐ | |
+| 17 | Timesheets | ☑ hub | ☑ hub | ☐ | ☐ | Payment-run card + My/User tiles; extras engine later |
 | 18 | Annual Leave | ☐ | ☐ | ☐ | ☐ | |
 | 19 | Site Audit | ☑ per-job | ☑ per-job | ☐ | ☐ | Org hub still later |
 | 20 | Site Map | ☐ | ☐ | ☐ | ☐ | Leaflet + Google; paid tiles |
@@ -63,7 +63,7 @@ D1, D2, D5–D10 still at recommendation (see `STOP-GATE-1.md`). Q1–Q10 are de
 - 2026-09-16 · Q8: sections 14–16 and 21–24 stay in scope · Farnie
 - 2026-09-16 · Q9: write `self_employed`; read both · Farnie
 - 2026-09-16 · Phase 2 foundations: converters, permissions, shell, Home, auth merge/privacy, live bookings · agent
-- 2026-09-20 · Materials send list + job My Tasks rebuilt from iOS sheets; Cloud Function email wired · agent
+- 2026-09-20 · Phase 3 catalogues (job types, qualifications, wholesalers, material catalogue, sub contractors, timesheets hub) + Switch org empty-name fix · agent
 - 2026-09-16 · Phase 3 started with Clients, Projects list/hub, Daily overview (not Manage Users first) · Farnie
 
 ## Approved exceptions

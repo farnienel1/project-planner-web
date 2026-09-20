@@ -14,6 +14,7 @@ import { withTimeout } from '@/lib/client/withTimeout'
 import { formatSetupError } from '@/lib/orgSetup/formatSetupError'
 import { createPendingOrganization } from '@/lib/orgSetup/createOrganization'
 import { activateOrganizationSubscription } from '@/lib/orgSetup/activateSubscription'
+import { switchActiveOrganization } from '@/lib/orgMembership/membershipService'
 import { requestFounderConfirmEmail } from '@/lib/orgSetup/requestFounderConfirmEmail'
 import { saveFounderConfirmEmailPayload } from '@/lib/orgSetup/founderConfirmEmail'
 import { saveGuidedSetupDraft } from '@/lib/orgSetup/persistGuidedSetup'
@@ -398,6 +399,13 @@ export function OrgSetupWizard() {
             6000,
             'Could not finish activating. Click Activate again — your details are still on this page.'
           )
+          if (record.isAdditionalOrganization) {
+            await withTimeout(
+              switchActiveOrganization(record.userId, record.organizationId),
+              8000,
+              'Organisation is ready. Open Switch organisation to move into it.'
+            )
+          }
           return record
         })(),
         ACTIVATION_OVERALL_MS,

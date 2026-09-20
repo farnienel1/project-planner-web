@@ -112,7 +112,7 @@ export const useWholesalerStore = create<WholesalerState>((set, get) => ({
   saveWholesaler: async (organizationId, wholesaler) => {
     const id = wholesaler.id || newUuid()
     const payload = wholesalerPayload({ ...wholesaler, id, updatedAt: new Date() })
-    await setDoc(doc(db, 'organizations', organizationId, 'wholesalers', id), payload)
+    await setDoc(doc(db, 'organizations', organizationId, 'wholesalers', id), payload, { merge: true })
     const mapped = mapWholesaler(id, payload as unknown as Record<string, unknown>)
     if (!mapped) return
     const { wholesalers } = get()
