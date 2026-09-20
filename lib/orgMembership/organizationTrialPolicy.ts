@@ -88,15 +88,24 @@ export function loginBlockMessage(input: {
   return TRIAL_BLOCKED_LOGIN_MESSAGE
 }
 
-export function sortMemberships<T extends { id: string; name: string }>(
-  rows: T[],
-  activeOrgId?: string | null
-): T[] {
+export function sortMemberships<T extends {
+  id: string
+  name: string
+  setupIncomplete?: boolean
+  createdAt?: Date | null
+}>(rows: T[], activeOrgId?: string | null): T[] {
   return [...rows].sort((lhs, rhs) => {
     if (activeOrgId) {
       if (lhs.id === activeOrgId) return -1
       if (rhs.id === activeOrgId) return 1
     }
-    return lhs.name.localeCompare(rhs.name, undefined, { sensitivity: 'base' })
+    const leftIncomplete = lhs.setupIncomplete === true
+    const rightIncomplete = rhs.setupIncomplete === true
+    if (leftIncomplete !== rightIncomplete) return leftIncomplete ? 1 : -1
+    const byName = lhs.name.localeCompare(rhs.name, undefined, { sensitivity: 'base' })
+    if (byName !== 0) return byName
+    const l = lhs.createdAt?.getTime() ?? 0
+    const r = rhs.createdAt?.getTime() ?? 0
+    return l - r
   })
 }

@@ -55,3 +55,14 @@ export function taskAttachmentPath(
   const timestamp = Date.now()
   return `organizations/${organizationId}/tasks/${taskId}/${uid}_${timestamp}_${sanitizeFileName(fileName)}`
 }
+
+export function qualificationCertificatePath(
+  organizationId: string,
+  operativeId: string,
+  qualificationId: string,
+  fileName: string
+): string {
+  const uid = auth.currentUser?.uid || 'web'
+  const timestamp = Date.now()
+  return `organizations/${organizationId}/operatives/${operativeId}/qualifications/${qualificationId}/certificates/${uid}_${timestamp}_${sanitizeFileName(fileName)}`
+}

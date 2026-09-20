@@ -41,6 +41,9 @@ Errors: not signed in / not found / not a member / trial blocked (*Email info@pr
 
 Two-column: intro + list card (max width ~720px). Keep web-only “Set up a new organisation” below the iOS list.
 
+Web-only distinguishers (same-name / empty pending orgs from Activate retries): created date, short ID, **Setup incomplete** badge. Incomplete rows are not switchable. Complete orgs sort above incomplete copies. Activate reuses a pending org of the same name and does not switch away from a paid organisation until the new one is activated.
+
+
 ## Test script (Farnie)
 
 1. Open Settings → Personal → Switch organisation; current org shows **Active**.

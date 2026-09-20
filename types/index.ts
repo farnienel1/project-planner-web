@@ -230,6 +230,7 @@ export interface SubcontractorContact {
   email: string;
   contactNumber: string;
   position: string;
+  tradeType?: string;
   createdAt: Date;
 }
 
