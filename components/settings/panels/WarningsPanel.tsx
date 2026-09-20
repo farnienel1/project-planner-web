@@ -6,10 +6,18 @@ import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import {
   DEFAULT_WARNING_DETECTION,
   clampClashLookaheadDays,
+  copyWarningDetection,
   loadOrganizationDetails,
   saveWarningDetection,
+  warningDetectionEquals,
+  warningDetectionLooksLikeFactoryDefault,
   type OrgWarningDetectionSettings,
 } from '@/lib/settings/organizationSettings'
+import {
+  readCachedWarningDetection,
+  writeCachedWarningDetection,
+} from '@/lib/settings/warningDetectionCache'
+import { formatNumberOfDaysScanSummary } from '@/lib/warnings/warningLookahead'
 import { personDisplayName } from '@/lib/settings/orgHubUtils'
 import {
   PanelHeader,
@@ -76,9 +84,12 @@ export function WarningsPanel({ onBack }: { onBack: () => void }) {
   const { organization } = useAuthStore()
   const { users, loadUsers } = useOrgUserStore()
 
-  const [draft, setDraft] = useState<OrgWarningDetectionSettings>(DEFAULT_WARNING_DETECTION)
+  const [draft, setDraft] = useState<OrgWarningDetectionSettings>(() =>
+    copyWarningDetection(DEFAULT_WARNING_DETECTION)
+  )
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [dirty, setDirty] = useState(false)
   const [error, setError] = useState('')
   const [pickerOpen, setPickerOpen] = useState(false)
   const [search, setSearch] = useState('')
@@ -93,13 +104,33 @@ export function WarningsPanel({ onBack }: { onBack: () => void }) {
 
   useEffect(() => {
     if (!organization?.id) return
+    const cached = readCachedWarningDetection(organization.id)
+    if (cached) {
+      setDraft(cached)
+      draftRef.current = cached
+    }
     const generation = ++loadGenerationRef.current
     dirtyRef.current = false
+    setDirty(false)
     let cancelled = false
     loadOrganizationDetails(organization.id, { fromServer: true })
       .then((details) => {
         if (cancelled || dirtyRef.current || generation !== loadGenerationRef.current) return
-        if (details?.warningDetection) setDraft(details.warningDetection)
+        const loaded = details?.warningDetection
+        if (!loaded) return
+        const latestCache = readCachedWarningDetection(organization.id)
+        if (
+          latestCache &&
+          !warningDetectionEquals(loaded, latestCache) &&
+          warningDetectionLooksLikeFactoryDefault(loaded) &&
+          !warningDetectionLooksLikeFactoryDefault(latestCache)
+        ) {
+          setDraft(latestCache)
+          void saveWarningDetection(organization.id, latestCache).catch(() => {})
+          return
+        }
+        writeCachedWarningDetection(organization.id, loaded)
+        setDraft(loaded)
       })
       .catch(() => {})
     return () => {
@@ -109,7 +140,12 @@ export function WarningsPanel({ onBack }: { onBack: () => void }) {
 
   function patch(partial: Partial<OrgWarningDetectionSettings>) {
     dirtyRef.current = true
-    setDraft((current) => ({ ...current, ...partial }))
+    setDirty(true)
+    setDraft((current) => {
+      const next = { ...current, ...partial }
+      if (organization?.id) writeCachedWarningDetection(organization.id, next)
+      return next
+    })
   }
 
   const excluded = draft.excludedUserIdsFromUnbookedWarnings ?? []
@@ -131,8 +167,8 @@ export function WarningsPanel({ onBack }: { onBack: () => void }) {
     })
   }
 
-  async function save() {
-    if (!organization?.id) return
+  async function save(): Promise<boolean> {
+    if (!organization?.id) return false
     setSaving(true)
     setError('')
     const toSave: OrgWarningDetectionSettings = {
@@ -141,24 +177,56 @@ export function WarningsPanel({ onBack }: { onBack: () => void }) {
     }
     try {
       await saveWarningDetection(organization.id, toSave)
+      writeCachedWarningDetection(organization.id, toSave)
       loadGenerationRef.current += 1
       dirtyRef.current = false
+      setDirty(false)
       setDraft(toSave)
       setSaved(true)
       window.setTimeout(() => setSaved(false), 3000)
+      return true
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : 'Could not save warning settings.')
+      return false
     } finally {
       setSaving(false)
     }
   }
 
+  async function handleBack() {
+    if (dirtyRef.current) {
+      const ok = await save()
+      if (!ok) return
+    }
+    onBack()
+  }
+
   const mode = draft.clashLookaheadMode
   const days = clampClashLookaheadDays(draft.clashLookaheadDays)
+  const daysSummary = formatNumberOfDaysScanSummary(days)
 
   return (
     <div className="mx-auto max-w-2xl pb-12">
-      <PanelHeader title="Warnings" onBack={onBack} />
+      <PanelHeader
+        title="Warnings"
+        onBack={() => {
+          void handleBack()
+        }}
+        rightAction={
+          <button
+            type="button"
+            onClick={() => {
+              void save()
+            }}
+            disabled={saving || !dirty}
+            className={`min-w-[3.25rem] text-sm font-semibold ${
+              dirty && !saving ? 'text-blue-600' : 'text-slate-400'
+            }`}
+          >
+            {saving ? 'Saving…' : saved ? 'Saved' : 'Save'}
+          </button>
+        }
+      />
 
       {error && (
         <div className="mt-4">
@@ -185,7 +253,7 @@ export function WarningsPanel({ onBack }: { onBack: () => void }) {
           <ModeOption
             selected={mode === 'numberOfDays'}
             label="Set number of days"
-            description="Scan a fixed number of days from today — you control the window."
+            description="Scan today through N calendar days, including today. 2 days = today and tomorrow."
             onClick={() => patch({ clashLookaheadMode: 'numberOfDays' })}
           />
           <ModeOption
@@ -206,7 +274,7 @@ export function WarningsPanel({ onBack }: { onBack: () => void }) {
               <div className="flex items-center justify-between">
                 <div>
                   <div className="text-sm font-semibold text-slate-900">Days ahead</div>
-                  <div className="text-xs text-slate-500">Minimum 1 · Maximum 365</div>
+                  <div className="text-xs text-slate-500">Includes today · Minimum 1 · Maximum 365</div>
                 </div>
                 <div className="flex items-center gap-1.5">
                   <button
@@ -228,6 +296,7 @@ export function WarningsPanel({ onBack }: { onBack: () => void }) {
                   </button>
                 </div>
               </div>
+              <p className="mt-3 text-xs leading-5 text-slate-600">{daysSummary}</p>
             </div>
           )}
 

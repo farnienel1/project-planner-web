@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import {
   clampClashLookaheadDays,
   parseWarningDetection,
+  resolveWarningDetectionRaw,
   warningDetectionToFirestore,
 } from './organizationSettings.ts'
 
@@ -41,4 +42,18 @@ test('numeric strings from Firestore still load as 2, not the default 7', () => 
 
 test('missing detection map stays on the documented default of 7', () => {
   assert.equal(parseWarningDetection(undefined).clashLookaheadDays, 7)
+})
+
+test('nested settings.warningDetection is used when the top-level map has no days', () => {
+  const raw = resolveWarningDetectionRaw(
+    { detectClashes: true },
+    { clashLookaheadMode: 'numberOfDays', clashLookaheadDays: 2 }
+  )
+  const parsed = parseWarningDetection(raw)
+  assert.equal(parsed.clashLookaheadDays, 2)
+  assert.equal(parsed.clashLookaheadMode, 'numberOfDays')
+})
+
+test('Firestore integerValue wrappers still parse as 2', () => {
+  assert.equal(clampClashLookaheadDays({ integerValue: '2' }), 2)
 })

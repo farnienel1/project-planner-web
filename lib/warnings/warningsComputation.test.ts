@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { UserRole, type Booking, type HolidayBooking, type Operative, type Project, type User } from '../../types/index.ts'
 import { DEFAULT_PAYROLL_POLICY, DEFAULT_WARNING_DETECTION } from '../settings/organizationSettings.ts'
-import { computeWarningCoverageWindow } from './warningLookahead.ts'
+import { computeWarningCoverageWindow, formatNumberOfDaysScanSummary } from './warningLookahead.ts'
 import { computeUnbookedLabourWarnings } from './unbookedLabourWarnings.ts'
 import { computeOperativeBookingClashWarnings } from '../scheduling/bookingClashUtils.ts'
 import { computeManagerBookingClashWarnings } from './managerClashWarnings.ts'
@@ -116,6 +116,19 @@ test('numberOfDays coverage starts today and is inclusive', () => {
   })
   assert.equal(londonMidnight(window.start).getTime(), londonMidnight(WED).getTime())
   assert.equal(londonMidnight(window.end).getTime(), londonMidnight(new Date('2026-09-22T12:00:00+01:00')).getTime())
+})
+
+test('2 days ahead is today and tomorrow, not two days after today', () => {
+  const window = computeWarningCoverageWindow(WED, {
+    ...DEFAULT_WARNING_DETECTION,
+    clashLookaheadMode: 'numberOfDays',
+    clashLookaheadDays: 2,
+  })
+  assert.equal(dayKey(window.start), '2026-09-16')
+  assert.equal(dayKey(window.end), '2026-09-17')
+  const summary = formatNumberOfDaysScanSummary(2, WED)
+  assert.match(summary, /today and tomorrow/)
+  assert.match(summary, /included/)
 })
 
 test('unbooked labour includes managers, unlinked roster, and under-hours AM bookings', () => {
