@@ -7,14 +7,15 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import {
-  ArrowPathIcon,
-  BellIcon,
   ChevronRightIcon,
   Cog6ToothIcon,
   PlusIcon,
   WrenchScrewdriverIcon,
   XMarkIcon,
+  ExclamationTriangleIcon,
+  ClipboardDocumentCheckIcon,
 } from '@heroicons/react/24/solid'
 import { QuickActionIcon } from '@/components/home/QuickActionIcon'
 import { useAuthStore } from '@/lib/stores/authStore'
@@ -49,11 +50,32 @@ import {
 } from '@/lib/home/quickActions'
 import { policyForDay } from '@/lib/payroll/policyCatalog'
 import { IconChip, type ChipTint } from '@/components/ios/IconChip'
+import { Hero, StatCard } from '@/components/ui'
+import type { SectionHue } from '@/lib/ui/sectionHue'
 import { generateOrgWarnings } from '@/lib/warnings/generateOrgWarnings'
 import { loadOrganizationDetails, type OrganizationDetails } from '@/lib/settings/organizationSettings'
 import { loadMaterialCutOffSettings, type NotificationPreferences } from '@/lib/settings/notificationPreferences'
 import { mergeProjectsAndSmallWorks } from '@/lib/projects/workStatus'
 import { shouldShowTeamOnboardingPrompt } from '@/lib/orgSetup/teamOnboarding'
+
+function hueFromQuickChip(chip: ChipTint | string): SectionHue {
+  switch (chip) {
+    case 'green':
+      return 'proj'
+    case 'amber':
+      return 'sw'
+    case 'coral':
+      return 'leave'
+    case 'purple':
+      return 'user'
+    case 'rose':
+      return 'sched'
+    case 'grey':
+      return 'lib'
+    default:
+      return 'blue'
+  }
+}
 
 function greetingName(firstName: string, email: string): string {
   const name = firstName.trim()
@@ -62,6 +84,7 @@ function greetingName(firstName: string, email: string): string {
 }
 
 export function HomeScreen() {
+  const router = useRouter()
   const { user, organization } = useAuthStore()
   const { projects, smallWorks, loadProjects, loadSmallWorks } = useProjectStore()
   const { operatives, managers, loadOperatives, loadManagers } = useOperativeStore()
@@ -208,7 +231,6 @@ export function HomeScreen() {
 
   if (!displayUser || !user) return null
 
-  const initials = `${(displayUser.firstName || displayUser.email).charAt(0)}${displayUser.surname?.charAt(0) || ''}`.toUpperCase()
   const eligibleAdd = allEligibleQuickActionIds(displayUser, false, users).filter((id) => !actionIds.includes(id))
 
   const persistActions = (ids: string[]) => {
@@ -232,89 +254,67 @@ export function HomeScreen() {
         </div>
       ) : null}
 
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-[13px] text-ios-muted">{formatHomeDateLine(now)}</p>
-          <h1 className="mt-1 text-[30px] font-medium tracking-tight text-ios-ink lg:text-[36px]">
-            Hi, {greetingName(displayUser.firstName, displayUser.email)}
-          </h1>
-        </div>
-        <div className="flex items-center gap-2">
-          <button type="button" className="flex h-11 w-11 items-center justify-center rounded-full border border-[#E6E8ED] bg-white" aria-label="Refresh" onClick={() => window.location.reload()}>
-            <ArrowPathIcon className="h-5 w-5 text-ios-muted" />
-          </button>
-          <Link href="/dashboard/notifications" className="relative flex h-11 w-11 items-center justify-center rounded-full border border-[#E6E8ED] bg-white" aria-label="Notifications">
-            <BellIcon className="h-5 w-5 text-ios-muted" />
-          </Link>
-          <Link href="/dashboard/settings" className="flex h-11 w-11 items-center justify-center rounded-full bg-[#185FA5] text-xs font-bold text-white">
-            {initials}
-          </Link>
-        </div>
-      </div>
-
-      <div className="grid gap-4 xl:grid-cols-12">
-        <section className="xl:col-span-8">
-          <div
-            className="rounded-[20px] p-6 text-white"
-            style={{ background: 'linear-gradient(to bottom right, #185FA5, #378ADD)' }}
-          >
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-[13px] font-medium uppercase tracking-wide text-white/90">Today&apos;s overview</p>
-                <p className="mt-1 text-[18px]">
-                  {liveCount} active project{liveCount === 1 ? '' : 's'}
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                {admin ? (
-                  <button type="button" onClick={() => setMetricsOpen(true)} className="rounded-full bg-white/15 p-2" aria-label="Dashboard metrics">
-                    <Cog6ToothIcon className="h-5 w-5" />
-                  </button>
-                ) : null}
-                <span className="rounded-full bg-white/20 px-3 py-1 text-[12px] font-medium">
-                  {warningCount > 0 ? 'Heads up' : 'On track'}
-                </span>
-              </div>
+      <div className="grid gap-5 min-[1100px]:grid-cols-[minmax(0,1fr)_380px]">
+        <Hero
+          eyebrow={formatHomeDateLine(now)}
+            title={<h1>{`Hi, ${greetingName(displayUser.firstName, displayUser.email)}`}</h1>}
+            subtitle={`${liveCount} active project${liveCount === 1 ? '' : 's'}`}
+          stats={
+            operative
+              ? [
+                  { label: 'Tasks Due Today', value: metrics.tasksDueToday },
+                  { label: 'Tasks Due This Week', value: metrics.tasksDueThisWeek },
+                  { label: 'My Tasks Overdue', value: metrics.tasksOverdue },
+                ]
+              : shownMetrics.map((id) => ({
+                  label: HOME_OVERVIEW_PILL_TITLES[id],
+                  value: metricValue(id, metrics, warningCount),
+                }))
+          }
+          actions={
+            <div className="flex flex-wrap items-center gap-2">
+              {admin ? (
+                <button
+                  type="button"
+                  onClick={() => setMetricsOpen(true)}
+                  className="btn sm h-9 w-9 rounded-[11px] border border-white/20 bg-white/16 text-white"
+                  aria-label="Choose dashboard metrics"
+                >
+                  <Cog6ToothIcon className="h-5 w-5" />
+                </button>
+              ) : null}
+              <span className="inline-flex items-center rounded-full bg-white/20 px-3 py-1 text-[12px] font-medium">
+                {warningCount > 0 ? 'Heads up' : 'On track'}
+              </span>
             </div>
-            <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
-              {operative ? (
-                <>
-                  <MetricPill value={metrics.tasksDueToday} label="Tasks Due Today" />
-                  <MetricPill value={metrics.tasksDueThisWeek} label="Tasks Due This Week" />
-                  <MetricPill value={metrics.tasksOverdue} label="My Tasks Overdue" />
-                </>
-              ) : (
-                shownMetrics.map((id) => (
-                  <MetricPill
-                    key={id}
-                    value={metricValue(id, metrics, warningCount)}
-                    label={HOME_OVERVIEW_PILL_TITLES[id]}
-                  />
-                ))
-              )}
-            </div>
-          </div>
-        </section>
+          }
+        />
 
-        <aside className="grid grid-cols-2 gap-3 xl:col-span-4 xl:grid-cols-1">
+        <div className="flex flex-col gap-4">
           {admin ? (
-            <Link href="/dashboard/warnings" className="ios-card p-5 hover:border-ios-search-border">
-              <p className="text-[13px] font-medium text-ios-muted">Warnings</p>
-              <p className="mt-2 text-[22px] font-medium">{warningCount === 0 ? 'All clear' : `${warningCount} active`}</p>
-            </Link>
+            <StatCard
+              hue="warn"
+              label="Warnings"
+              value={warningCount === 0 ? 'All clear' : `${warningCount} active`}
+              icon={<ExclamationTriangleIcon className="h-6 w-6" />}
+              onClick={() => router.push('/dashboard/warnings')}
+            />
           ) : null}
-          <Link href="/dashboard/tasks" className="ios-card p-5 hover:border-ios-search-border">
-            <p className="text-[13px] font-medium text-ios-muted">Tasks</p>
-            <p className="mt-2 text-[22px] font-medium">{pendingTasks} pending</p>
-          </Link>
-        </aside>
+          <StatCard
+            hue="task"
+            label="Tasks"
+            value={`${pendingTasks} pending`}
+            icon={<ClipboardDocumentCheckIcon className="h-6 w-6" />}
+            onClick={() => router.push('/dashboard/tasks')}
+          />
+        </div>
       </div>
 
       <section>
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-[17px] font-semibold lg:text-[18px]">Quick actions</h2>
-          <div className="flex items-center gap-3 text-[14px] font-medium text-[#185FA5]">
-            <span>Main Menu</span>
+          <div className="flex items-center gap-3 text-[14px] font-medium text-[var(--blue)]">
+            <span>Main menu</span>
             <button type="button" onClick={() => setCustomise((v) => !v)}>
               {customise ? 'Done' : 'Customise'}
             </button>
@@ -343,7 +343,8 @@ export function HomeScreen() {
               <div key={meta.id} className="relative">
                 <Link
                   href={meta.href}
-                  className="ios-card flex min-h-[128px] flex-col items-center justify-center gap-3 p-4 text-center hover:border-ios-search-border"
+                  data-hue={hueFromQuickChip(meta.chip)}
+                  className="tile min-h-[128px] w-full text-center"
                 >
                   <IconChip tint={meta.chip as ChipTint} size="lg">
                     <QuickActionIcon name={meta.icon} className="h-6 w-6" />
@@ -525,15 +526,6 @@ export function HomeScreen() {
           </div>
         </div>
       ) : null}
-    </div>
-  )
-}
-
-function MetricPill({ value, label }: { value: number; label: string }) {
-  return (
-    <div className="rounded-xl bg-white/14 px-4 py-3">
-      <p className="text-[28px] font-medium leading-none lg:text-[32px]">{value}</p>
-      <p className="mt-2 text-[13px] text-white/90">{label}</p>
     </div>
   )
 }

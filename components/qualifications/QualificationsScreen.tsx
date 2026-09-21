@@ -17,7 +17,9 @@ import {
 } from '@/lib/permissions'
 import { consumeCreateQuery } from '@/lib/navigation/createMenu'
 import { findOperativeForUser } from '@/lib/operatives/operativeRosterUtils'
-import { EmptyState, IosFormModal, PageHeader } from '@/components/ios/primitives'
+import { IosFormModal } from '@/components/ios/primitives'
+import { PageHeader, EmptyState, Button, IconChip } from '@/components/ui'
+import { SegmentedControl, Field, Input } from '@/components/ui/controls'
 import {
   deleteOrganisationQualification,
   loadOrganisationQualifications,
@@ -30,6 +32,8 @@ import {
   QUALIFICATION_CERT_ACCEPT,
   QUALIFICATION_CERT_HINT,
   formatCertificateSaveError,
+  localDateInputValue,
+  dateFromLocalInputValue,
   qualificationCertificateContentType,
   qualificationCertificateFileError,
   uploadPendingCertificates,
@@ -193,32 +197,29 @@ export function QualificationsScreen({ initialTab }: { initialTab?: Tab } = {}) 
     <div className="space-y-5 pb-10">
       <PageHeader
         title="Qualifications"
+        subtitle="Organisation templates and the certificates on your profile"
+        hue="rep"
+        icon={<AcademicCapIcon className="h-7 w-7" />}
         actions={
           canManageOrg && tab === 'organisation' ? (
-            <button type="button" onClick={() => { setName(''); setError(null); setAddOpen(true) }} className="text-[15px] font-semibold text-[#185FA5]">
+            <Button variant="primary" onClick={() => { setName(''); setError(null); setAddOpen(true) }}>
               Add
-            </button>
+            </Button>
           ) : null
         }
       />
 
       {canManageOrg ? (
-        <div className="inline-flex rounded-xl bg-[#E5E5EA] p-1">
-          {(['organisation', 'mine'] as Tab[]).map((value) => (
-            <button
-              key={value}
-              type="button"
-              onClick={() => setTab(value)}
-              className={`rounded-lg px-4 py-1.5 text-[13px] font-semibold ${
-                tab === value ? 'bg-white text-ios-ink shadow-sm' : 'text-ios-muted'
-              }`}
-            >
-              {value === 'organisation' ? 'Organisation Qualifications' : 'My Qualifications'}
-            </button>
-          ))}
-        </div>
+        <SegmentedControl
+          value={tab}
+          onChange={(value) => setTab(value as Tab)}
+          options={[
+            { value: 'organisation', label: 'Organisation Qualifications' },
+            { value: 'mine', label: 'My Qualifications' },
+          ]}
+        />
       ) : (
-        <h2 className="text-[22px] font-semibold">My Qualifications</h2>
+        <h2 className="text-[22px] font-bold">My Qualifications</h2>
       )}
 
       {error ? <p className="text-sm font-medium text-red-600">{error}</p> : null}
@@ -227,30 +228,33 @@ export function QualificationsScreen({ initialTab }: { initialTab?: Tab } = {}) 
         <div className="xl:grid xl:grid-cols-[400px_1fr] xl:gap-8">
           <div>
             {templates.length === 0 ? (
-              <div className="rounded-2xl bg-white p-6 shadow-[0_1px_2px_rgba(0,0,0,0.10)]">
+              <div className="rounded-[18px] bg-[var(--card)] p-6 shadow-[var(--sh)]">
                 <EmptyState
-                  icon={<AcademicCapIcon className="h-[60px] w-[60px] text-gray-400" />}
+                  hue="rep"
+                  icon={<IconChip hue="rep" size="lg"><AcademicCapIcon className="h-7 w-7" /></IconChip>}
                   title="No Qualifications Added Yet"
                   subtitle="Add organisation qualification templates. Staff can then assign them on My Qualifications, with their own expiry dates and certificates."
+                  action={
+                    <Button variant="primary" onClick={() => setAddOpen(true)}>
+                      Create New Qualification
+                    </Button>
+                  }
                 />
-                <div className="flex justify-center">
-                  <button type="button" onClick={() => setAddOpen(true)} className="rounded-xl bg-[#185FA5] px-5 py-2.5 text-[15px] font-semibold text-white">
-                    Create New Qualification
-                  </button>
-                </div>
               </div>
             ) : (
-              <div className="overflow-hidden rounded-2xl bg-white shadow-[0_1px_2px_rgba(0,0,0,0.10)] divide-y divide-[#E5E5EA]">
+              <div className="divide-y divide-[var(--line)] overflow-hidden rounded-[18px] bg-[var(--card)] shadow-[var(--sh)]">
                 {templates.map((row) => (
                   <button
                     key={row.id}
                     type="button"
                     onClick={() => { setEditId(row.id); setName(row.name); setError(null) }}
-                    className={`flex w-full items-center gap-3 px-4 py-3.5 text-left hover:bg-slate-50 ${
-                      editId === row.id ? 'bg-[#E6F1FB]' : ''
+                    className={`flex w-full items-center gap-3 px-4 py-3.5 text-left hover:bg-[var(--soft)] ${
+                      editId === row.id ? 'bg-[var(--rep-t)]' : ''
                     }`}
                   >
-                    <AcademicCapIcon className="h-5 w-5 text-[#185FA5]" />
+                    <IconChip hue="rep" size="sm">
+                      <AcademicCapIcon className="h-4 w-4" />
+                    </IconChip>
                     <span className="text-[16px] font-medium">{row.name}</span>
                   </button>
                 ))}
@@ -258,23 +262,18 @@ export function QualificationsScreen({ initialTab }: { initialTab?: Tab } = {}) 
             )}
           </div>
           {editing ? (
-            <form onSubmit={handleEdit} className="rounded-2xl bg-white p-6 shadow-[0_1px_2px_rgba(0,0,0,0.10)]">
-              <h2 className="text-[22px] font-semibold">Edit Qualification</h2>
-              <label className="mt-4 block text-[15px] font-medium">
-                Name
-                <input
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  className="mt-1.5 w-full rounded-lg border border-ios-search-border px-3 py-2.5 text-[15px]"
-                />
-              </label>
+            <form onSubmit={handleEdit} className="rounded-[18px] bg-[var(--card)] p-6 shadow-[var(--sh)]">
+              <h2 className="text-[22px] font-bold">Edit Qualification</h2>
+              <Field label="Name" className="mt-4">
+                <Input value={name} onChange={(e) => setName(e.target.value)} />
+              </Field>
               <div className="mt-6 flex flex-wrap gap-3">
-                <button type="submit" disabled={saving || !name.trim()} className="rounded-xl bg-[#185FA5] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
+                <Button variant="primary" disabled={saving || !name.trim()} type="submit">
                   Save
-                </button>
-                <button type="button" onClick={handleDelete} className="text-sm font-semibold text-red-600">
+                </Button>
+                <Button variant="danger" onClick={handleDelete}>
                   Delete Qualification
-                </button>
+                </Button>
               </div>
               <p className="mt-3 text-[13px] text-ios-muted">
                 Deleting removes this template from the organisation list. Existing assignments on staff profiles are
@@ -393,9 +392,9 @@ function MyQualificationsPanel({
 
   if (!linked || !draft) {
     return (
-      <div className="rounded-2xl bg-white p-6 shadow-[0_1px_2px_rgba(0,0,0,0.10)]">
+      <div className="rounded-[18px] bg-[var(--card)] p-6 shadow-[var(--sh)]">
         <p className="text-[18px] font-semibold">Profile not linked</p>
-        <p className="mt-2 text-[15px] text-ios-muted">
+        <p className="mt-2 text-[15px] text-[var(--ink3)]">
           No operative record matches your email. Ask an admin to check your account email matches your operative
           profile.
         </p>
@@ -405,15 +404,15 @@ function MyQualificationsPanel({
 
   if (draft.qualifications.length === 0) {
     return (
-      <div className="rounded-2xl bg-white p-6 shadow-[0_1px_2px_rgba(0,0,0,0.10)]">
-        <p className="text-[15px] text-ios-muted">
+      <div className="rounded-[18px] bg-[var(--card)] p-6 shadow-[var(--sh)]">
+        <p className="text-[15px] text-[var(--ink3)]">
           {templates.length === 0
             ? 'No qualifications have been set up for your organisation yet. Ask a manager or admin to add qualification templates.'
             : 'You have not added any qualifications yet. Click Add qualifications to pick from your organisation list, then set expiry dates and certificates below.'}
         </p>
-        <button type="button" onClick={onAdd} className="mt-4 rounded-xl bg-[#185FA5] px-4 py-2 text-sm font-semibold text-white">
+        <Button variant="primary" className="mt-4" onClick={onAdd}>
           Add qualifications
-        </button>
+        </Button>
       </div>
     )
   }
@@ -459,18 +458,13 @@ function MyQualificationsPanel({
 
   return (
     <div className="space-y-4">
-      <div className="sticky bottom-20 z-10 flex flex-wrap items-center justify-end gap-3 rounded-2xl bg-white/95 p-3 shadow-[0_1px_2px_rgba(0,0,0,0.10)] backdrop-blur lg:bottom-4">
-        <button type="button" onClick={onAdd} className="text-[15px] font-semibold text-[#185FA5]">
+      <div className="sticky bottom-20 z-10 flex flex-wrap items-center justify-end gap-3 rounded-[18px] bg-[color-mix(in_srgb,var(--card)_95%,transparent)] p-3 shadow-[var(--sh)] backdrop-blur lg:bottom-4">
+        <Button variant="ghost" onClick={onAdd}>
           Add qualifications
-        </button>
-        <button
-          type="button"
-          disabled={saving || uploading || !dirty}
-          onClick={() => void handleSave()}
-          className="rounded-xl bg-[#185FA5] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
-        >
+        </Button>
+        <Button variant="primary" disabled={saving || uploading || !dirty} onClick={() => void handleSave()}>
           {uploading || saving ? 'Saving…' : dirty ? 'Save' : 'Saved'}
-        </button>
+        </Button>
       </div>
       {localError ? <p className="text-sm font-medium text-red-600">{localError}</p> : null}
       {dirty ? (
@@ -484,23 +478,24 @@ function MyQualificationsPanel({
           const cert = draft.qualificationCertificateURLs?.[qual.id]
           const pending = pendingFiles[qual.id]
           return (
-            <div key={qual.id} className="rounded-2xl bg-white p-5 shadow-[0_1px_2px_rgba(0,0,0,0.10)]">
+            <div key={qual.id} className="rounded-[18px] bg-[var(--card)] p-5 shadow-[var(--sh)]">
               <p className="text-[17px] font-semibold">{qual.name}</p>
               <label className="mt-3 block text-[13px] font-medium text-ios-muted">
                 Expiry date
                 <input
                   type="date"
-                  value={expiry ? expiry.toISOString().slice(0, 10) : ''}
+                  value={localDateInputValue(expiry)}
                   onChange={(e) => {
                     const value = e.target.value
                     patch((current) => {
                       const nextDates = { ...(current.qualificationExpiryDates || {}) }
-                      if (value) nextDates[qual.id] = new Date(`${value}T00:00:00`)
+                      const parsed = dateFromLocalInputValue(value)
+                      if (parsed) nextDates[qual.id] = parsed
                       else delete nextDates[qual.id]
                       return { ...current, qualificationExpiryDates: nextDates }
                     })
                   }}
-                  className="mt-1 w-full rounded-lg border border-ios-search-border px-3 py-2"
+                  className="mt-1 w-full rounded-[13px] border-[1.5px] border-[var(--line2)] bg-[var(--card)] px-3.5 py-2.5"
                 />
               </label>
               <p className="mt-3 text-[12px] text-ios-muted">{QUALIFICATION_CERT_HINT}</p>
