@@ -27,7 +27,7 @@ const PLAN_DEFINITIONS: Omit<SubscriptionPlan, 'priceId'>[] = [
       'Core project management',
       'Projects & small works',
       'Operative scheduling',
-      'iOS & web access',
+      'iOS, Android & web access',
     ],
   },
   {

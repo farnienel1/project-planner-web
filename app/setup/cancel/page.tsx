@@ -1,4 +1,6 @@
 import Link from 'next/link'
+import { MarketingShell } from '@/components/marketing/MarketingShell'
+import { MktIcon } from '@/components/marketing/icons'
 
 export const metadata = {
   title: 'Checkout cancelled | Project Planner',
@@ -6,22 +8,35 @@ export const metadata = {
 
 export default function SetupCancelPage() {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[#f4f6f9] px-5">
-      <div className="w-full max-w-lg rounded-3xl border border-slate-200 bg-white p-8 text-center shadow-[0_2px_30px_rgba(15,23,42,0.08)]">
-        <h1 className="text-2xl font-extrabold text-slate-900">Payment cancelled</h1>
-        <p className="mt-3 text-sm text-slate-600">
-          No charge was made. Your account may have been created with a pending subscription — you can return to
-          setup and choose a plan again, or sign in if you already completed payment elsewhere.
-        </p>
-        <div className="mt-6 flex flex-wrap justify-center gap-3">
-          <Link href="/setup" className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700">
-            Back to setup
-          </Link>
-          <Link href="/login" className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
-            Sign in
-          </Link>
+    <MarketingShell>
+      <section className="s">
+        <div className="wrap" style={{ maxWidth: 640 }}>
+          <div className="card wz-card">
+            <div className="banner" data-hue="warn" style={{ marginBottom: 18 }}>
+              <span className="ico-chip">
+                <MktIcon name="alert" size={18} />
+              </span>
+              <div>
+                <b>Payment cancelled.</b>
+                <div className="small ink2">Nothing was charged and your details are still here.</div>
+              </div>
+            </div>
+            <h1 style={{ fontSize: 28 }}>Return to setup</h1>
+            <p className="muted" style={{ marginTop: 10 }}>
+              No charge was made. Continue to Review &amp; Pay to choose a plan again, or sign in if you already
+              completed payment elsewhere.
+            </p>
+            <div className="row wr" style={{ marginTop: 22 }}>
+              <Link href="/setup?cancelled=1" className="btn primary">
+                Back to setup
+              </Link>
+              <Link href="/login" className="btn">
+                Sign in
+              </Link>
+            </div>
+          </div>
         </div>
-      </div>
-    </div>
+      </section>
+    </MarketingShell>
   )
 }
