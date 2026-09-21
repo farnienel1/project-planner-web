@@ -21,6 +21,7 @@ import {
   deleteOrganisationQualification,
   loadOrganisationQualifications,
   qualificationNameTaken,
+  restoreOrganisationQualificationsFromAssignments,
   saveOrganisationQualification,
 } from '@/lib/qualifications/orgQualificationStorage'
 import { qualificationCertificatePath, uploadFile } from '@/lib/firebase/storageUtils'
@@ -46,8 +47,13 @@ export function QualificationsScreen() {
     if (!organization?.id) return
     let cancelled = false
     setLoading(true)
-    Promise.all([loadOrganisationQualifications(organization.id), loadOperatives(organization.id)])
-      .then(([rows]) => {
+    loadOperatives(organization.id)
+      .then(async () => {
+        if (cancelled) return
+        const rows = await restoreOrganisationQualificationsFromAssignments(
+          organization.id,
+          useOperativeStore.getState().operatives
+        )
         if (!cancelled) setTemplates(rows)
       })
       .catch((err: unknown) => {

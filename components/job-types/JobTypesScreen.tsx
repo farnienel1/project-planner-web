@@ -10,7 +10,7 @@ import { FolderIcon, PlusIcon, TrashIcon } from '@heroicons/react/24/solid'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { canManageJobTypes } from '@/lib/permissions'
 import { EmptyState, IosFormModal, PageHeader } from '@/components/ios/primitives'
-import { loadJobTypes, saveJobTypes, validateJobTypeName } from '@/lib/jobTypes/jobTypesStorage'
+import { recoverJobTypesFromWork, saveJobTypes, validateJobTypeName } from '@/lib/jobTypes/jobTypesStorage'
 
 export function JobTypesScreen() {
   const router = useRouter()
@@ -31,9 +31,9 @@ export function JobTypesScreen() {
     if (!organization?.id) return
     let cancelled = false
     setLoading(true)
-    loadJobTypes(organization.id)
-      .then((list) => {
-        if (!cancelled) setJobTypes([...list].sort((a, b) => a.localeCompare(b)))
+    recoverJobTypesFromWork(organization.id)
+      .then((recovered) => {
+        if (!cancelled) setJobTypes([...recovered].sort((a, b) => a.localeCompare(b)))
       })
       .catch((err: unknown) => {
         if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load job types')

@@ -20,8 +20,8 @@ function parseContacts(rows: unknown): WholesalerContact[] {
       const data = row as Record<string, unknown>
       const name = parseString(data.name)
       const email = parseString(data.email)
-      const createdAt = parseFirestoreDate(data.createdAt)
-      if (!name || !email || !createdAt) return null
+      const createdAt = parseFirestoreDate(data.createdAt) || new Date()
+      if (!name || !email) return null
       return {
         id: parseUuid(data.id),
         name,
@@ -35,9 +35,9 @@ function parseContacts(rows: unknown): WholesalerContact[] {
 
 function mapWholesaler(docId: string, data: Record<string, unknown>): Wholesaler | null {
   const name = parseString(data.name)
-  const createdAt = parseFirestoreDate(data.createdAt)
-  const updatedAt = parseFirestoreDate(data.updatedAt)
-  if (!name || !createdAt || !updatedAt) return null
+  const createdAt = parseFirestoreDate(data.createdAt) || new Date()
+  const updatedAt = parseFirestoreDate(data.updatedAt) || createdAt
+  if (!name) return null
 
   let contacts = parseContacts(data.contacts)
   const primaryId = parseOptionalString(data.primaryContactId)

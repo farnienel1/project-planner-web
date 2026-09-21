@@ -1,0 +1,18 @@
+---
+description: iOS web-parity upgrades must include sub-pages and behaviour, not hub-only
+alwaysApply: true
+---
+
+# iOS parity upgrades — hubs are not enough
+
+When the web app is upgraded to match iOS, **do not stop at the hub / landing screen**.
+
+iOS is the source of truth (`/home/ubuntu/ios-readonly/` when present). A web “upgrade” is incomplete unless all of the following land in the same change:
+
+1. **Every nested screen** reached from that hub (lists, detail, editors, tabs, past/history, empty states). Example: Timesheets hub, My Timesheets (current + past), User Timesheets (Awaiting / Signed off / Exported), and the period detail — not the hub tiles alone.
+2. **Behaviour and rules**, not just look. Period math, roster filters, who sees whose data, save/merge vs overwrite, empty-state copy, and how hours/items appear from live bookings or assignments.
+3. **Data that iOS already shows.** If iOS lists a row after one booked day, one assigned qualification, or one catalogue item, the web surface must too. Do not hide rows behind the wrong date window, the wrong org, or a `hours > 0` filter on an ISO week when the pay run is a half-month.
+4. **Write safety.** Never port an iOS delete-all + rewrite, or a full-document overwrite, in a way that can persist an empty list after a failed load. Recover from assignments / projects when a catalogue is empty but live records still name those items.
+5. **One heading.** App shell title plus in-page `PageHeader`/`h1` must not double up. Nested pages: top control is the section name and goes back to the hub; the page `h1` is the sub-screen (My Timesheets, User Timesheets).
+
+Before calling an iOS-based web upgrade done, walk the iOS navigation stack for that section and tick each destination plus its rules. Hub-only restyles are a defect.
