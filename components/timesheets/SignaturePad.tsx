@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
 
 export function SignaturePad({
   value,
@@ -13,7 +13,6 @@ export function SignaturePad({
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const drawing = useRef(false)
-  const [hasInk, setHasInk] = useState(Boolean(value))
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -52,7 +51,6 @@ export function SignaturePad({
     const dataUrl = canvas.toDataURL('image/png')
     const base64 = dataUrl.replace(/^data:image\/png;base64,/, '')
     onChange(base64)
-    setHasInk(true)
   }
 
   const clear = () => {
@@ -61,7 +59,6 @@ export function SignaturePad({
     if (!canvas || !ctx) return
     ctx.fillStyle = '#ffffff'
     ctx.fillRect(0, 0, canvas.clientWidth, canvas.clientHeight)
-    setHasInk(false)
     onChange(null)
   }
 
@@ -100,7 +97,7 @@ export function SignaturePad({
           exportPng()
         }}
       />
-      <p className="text-[13px] text-ios-muted">{hasInk ? 'Sign above · tap Clear to start again' : 'Sign above · tap to clear'}</p>
+      <p className="text-[13px] text-ios-muted">Sign above · tap to clear</p>
     </div>
   )
 }
