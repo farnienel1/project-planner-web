@@ -7,8 +7,9 @@ import {
   effectiveExpenseAmount,
   effectivePayrollAmount,
   effectivePriceWorkAmount,
+  isPayrollLineRemoved,
 } from '@/lib/timesheets/timesheetAdjustments'
-import type { TimesheetPayrollLineItem, TimesheetPayrollSummary } from '@/lib/timesheets/timesheetPayrollCollector'
+import type { TimesheetPayrollSummary } from '@/lib/timesheets/timesheetPayrollCollector'
 import { timesheetHoursRateLine } from '@/lib/timesheets/timesheetPayrollCollector'
 import { formatAbbreviatedDayInZone, formatStampInZone } from '@/lib/orgTime/zoneTime'
 import { londonDateParts, dayKey } from '@/lib/ios-parity/londonTime'
@@ -109,17 +110,19 @@ export function invoiceLinesForTimesheet({
   managerHasSigned: boolean
   applyLiveReview: boolean
 }): TimesheetInvoiceLine[] {
-  const rows: TimesheetInvoiceLine[] = payroll.lineItems.map((line: TimesheetPayrollLineItem) => {
+  const rows: TimesheetInvoiceLine[] = []
+  for (const line of payroll.lineItems) {
+    if (isPayrollLineRemoved(line, draft, managerHasSigned, applyLiveReview)) continue
     const details = `${line.details} · ${timesheetHoursRateLine(line)}`
-    return {
+    rows.push({
       date: formatAbbreviatedDayInZone(line.date, timeZone),
       jobNumber: line.jobNumber || '—',
       projectName: line.projectName,
       details,
       description: `${line.jobNumber} ${line.projectName} · ${details}`,
       amount: effectivePayrollAmount(line, draft, managerHasSigned, applyLiveReview),
-    }
-  })
+    })
+  }
   for (const entry of draft.priceWorkEntries) {
     if (entry.managerDecision === 'declined' && (managerHasSigned || applyLiveReview)) continue
     const details = `Price work · ${entry.title}`
@@ -145,6 +148,11 @@ export function invoiceLinesForTimesheet({
     })
   }
   return rows
+}
+
+/** iOS TimesheetExportHelper grandTotal = sum of export line amounts. */
+export function invoiceLinesTotal(lines: TimesheetInvoiceLine[]): number {
+  return lines.reduce((sum, line) => sum + line.amount, 0)
 }
 
 export function managerExportEmailHTML({

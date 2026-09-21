@@ -339,9 +339,12 @@ export async function loadTimesheetDraftsForStarts(
     results.set(key, row.draft)
   }
   const missing = weekStarts.filter((start) => !results.has(dayKey(start, timeZone)))
-  if (missing.length > 0) {
+  // listTimesheetStates already loaded every cloud doc for this user. Only probe
+  // canonical ids when that query returned nothing (permission/index miss).
+  const probe = rows.length === 0 ? missing.slice(0, 24) : []
+  if (probe.length > 0) {
     const extras = await Promise.all(
-      missing.map(async (start) => {
+      probe.map(async (start) => {
         const draft = await loadTimesheetDraftByCandidates(organizationId, userId, start, timeZone)
         return [dayKey(start, timeZone), draft || emptyTimesheetDraft()] as const
       })

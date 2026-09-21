@@ -55,3 +55,9 @@ test('recurringRunDisplaySummary matches iOS in-arrears wording', () => {
     'In arrears: Monday to Sunday (of the previous week)'
   )
 })
+
+test('listPreviousPayPeriods can walk 120 prior runs like iOS My Timesheets', () => {
+  const periods = listPreviousPayPeriods(HALF_MONTH, new Date(Date.UTC(2026, 8, 21, 12, 0, 0)), 120)
+  assert.equal(periods.length, 120)
+  assert.equal(dayKey(periods[0].start), '2026-09-01')
+})
