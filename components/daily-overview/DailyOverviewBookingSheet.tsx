@@ -41,12 +41,22 @@ export type OverviewBookingTarget = OverviewPersonRow | {
   projectId?: string
 }
 
-function operativeSlotFromRaw(raw?: string): string {
+function slotKindFromRaw(raw?: string): 'AM' | 'PM' | 'CUSTOM_HOURS' | 'FULL' {
   const compact = (raw || '').toUpperCase().replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim()
   if (compact === 'AM') return 'AM'
   if (compact === 'PM') return 'PM'
   if (compact.includes('CUSTOM')) return 'CUSTOM_HOURS'
-  return 'FULL DAY'
+  return 'FULL'
+}
+
+function operativeSlotFromRaw(raw?: string): string {
+  const kind = slotKindFromRaw(raw)
+  return kind === 'FULL' ? 'FULL DAY' : kind
+}
+
+function managerSlotFromRaw(raw?: string): string {
+  const kind = slotKindFromRaw(raw)
+  return kind === 'FULL' ? 'FULL_DAY' : kind
 }
 
 export function DailyOverviewBookingSheet({
@@ -127,7 +137,9 @@ export function DailyOverviewBookingSheet({
     if (!row.operativeId) return undefined
     const op = operatives.find((entry) => entry.id === row.operativeId)
     if (!op) return undefined
-    return users.find((entry) => entry.email.trim().toLowerCase() === op.email.trim().toLowerCase())?.id
+    const byEmail = users.find((entry) => entry.email.trim().toLowerCase() === op.email.trim().toLowerCase())
+    if (byEmail) return byEmail.id
+    return users.find((entry) => findOperativeForUser(entry, operatives)?.id === row.operativeId)?.id
   }, [row.userId, row.operativeId, operatives, users])
 
   const linkedOperative = useMemo(() => {
@@ -197,7 +209,7 @@ export function DailyOverviewBookingSheet({
         await saveManagerSiteBooking(organization.id, {
           userId: resolvedUserId,
           date: day,
-          timeSlot: row.timeSlotRaw || 'FULL_DAY',
+          timeSlot: managerSlotFromRaw(row.timeSlotRaw),
           locationType: pick.locationType,
           customLocationName: pick.customLocationName,
           workStartTime: row.workStartTime,
