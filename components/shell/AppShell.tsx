@@ -5,7 +5,7 @@
 
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import {
@@ -15,10 +15,12 @@ import {
   PlusIcon,
   HomeIcon,
   FolderIcon,
-  WrenchScrewdriverIcon,
   UsersIcon,
   Cog6ToothIcon,
   EllipsisHorizontalIcon,
+  Bars3Icon,
+  MagnifyingGlassIcon,
+  WrenchScrewdriverIcon,
 } from '@heroicons/react/24/solid'
 import { TeamOnboardingPrompt } from '@/components/onboarding/TeamOnboardingPrompt'
 import { useAuthStore } from '@/lib/stores/authStore'
@@ -39,62 +41,66 @@ import {
   type NavigateConfig,
 } from '@/lib/navigation/navigateCustomization'
 import { CustomiseNavigateSheet } from '@/components/shell/CustomiseNavigateSheet'
-import { IconChip, type ChipTint } from '@/components/ios/IconChip'
 import { AppLogoMark } from '@/components/ui/AppLogoMark'
-import { UserAvatar } from '@/components/users/UserAvatar'
+import { AccountMenu } from '@/components/shell/AccountMenu'
+import { CommandPalette } from '@/components/shell/CommandPalette'
+import { NotificationsPopover } from '@/components/shell/NotificationsPopover'
+import { ToastProvider, useToast } from '@/components/ui/ToastProvider'
+import { Button, IconChip } from '@/components/ui'
 import { useNotificationStore } from '@/lib/stores/notificationStore'
+import { hueForCreateId, hueForNavId, type SectionHue } from '@/lib/ui/sectionHue'
+import type { PaletteItem } from '@/lib/ui/commandPalette'
 import { useProjectStore } from '@/lib/stores/projectStore'
 import { db } from '@/lib/firebase/config'
 import { doc, getDoc, setDoc } from 'firebase/firestore'
 import { recoverJobTypesFromWork } from '@/lib/jobTypes/jobTypesStorage'
-import { isOperativeMode } from '@/lib/permissions'
+import { canBookWork, isOperativeMode } from '@/lib/permissions'
 import { createMenuItems } from '@/lib/navigation/createMenu'
+import { cn } from '@/lib/ui/cn'
+import { UserAvatar } from '@/components/users/UserAvatar'
 
-const CHIP_FOR_ID: Record<string, ChipTint> = {
-  dashboard_home: 'blue',
-  dashboard_clients: 'blue',
-  dashboard_projects: 'green',
-  dashboard_small_works: 'amber',
-  dashboard_operatives: 'green',
-  dashboard_managers: 'purple',
-  dashboard_annual_leave: 'coral',
-  dashboard_site_map: 'green',
-  dashboard_site_audit: 'blue',
-  dashboard_timesheets: 'blue',
-  dashboard_daily_overview: 'purple',
-  dashboard_weekly_report: 'blue',
-  dashboard_schedule: 'rose',
-  dashboard_warnings: 'amber',
-  dashboard_tasks: 'blue',
-  dashboard_qualifications: 'blue',
-  dashboard_my_qualifications: 'blue',
-  dashboard_job_types: 'green',
-  dashboard_wholesalers: 'grey',
-  dashboard_materials: 'blue',
-  dashboard_sub_contractors: 'grey',
-  dashboard_add_user: 'purple',
-  dashboard_manage_users: 'blue',
-  dashboard_settings: 'grey',
-  dashboard_help: 'grey',
-  dashboard_privacy: 'grey',
-  dashboard_reset_password: 'coral',
+function NavGlyph({ path, className }: { path: string; className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8} aria-hidden>
+      <path strokeLinecap="round" strokeLinejoin="round" d={path} />
+    </svg>
+  )
 }
 
-function NavRow({ item, pathname, onClick }: { item: DashboardNavItem; pathname: string; onClick?: () => void }) {
+function NavRow({
+  item,
+  pathname,
+  onClick,
+  compact,
+}: {
+  item: DashboardNavItem
+  pathname: string
+  onClick?: () => void
+  compact?: boolean
+}) {
   const active = isDashboardNavActive(pathname, item.href)
-  const tint = CHIP_FOR_ID[item.id] || 'grey'
+  const hue = hueForNavId(item.id)
   return (
     <Link
       href={item.href}
       onClick={onClick}
-      className={`flex items-center gap-3 rounded-[14px] px-3 py-2.5 text-[15px] transition hover:border-ios-search-border ${
-        active ? 'bg-[#185FA5]/[0.18] font-semibold text-[#185FA5]' : 'font-medium text-ios-ink hover:bg-black/[0.03]'
-      }`}
+      data-hue={hue}
+      title={item.label}
+      className={cn(
+        'flex items-center gap-3 rounded-xl py-1.5 text-[14.5px] transition',
+        compact ? 'justify-center px-1.5' : 'px-2.5',
+        active ? 'bg-[var(--ht)] font-semibold text-[var(--ink)]' : 'font-medium text-[var(--ink2)] hover:bg-[var(--soft)]'
+      )}
     >
-      <IconChip tint={tint} size="sm">
-        <FolderIcon className="h-4 w-4" />
-      </IconChip>
-      <span className="min-w-0 flex-1 truncate">{item.label}</span>
+      <span
+        className={cn(
+          'inline-grid h-[30px] w-[30px] shrink-0 place-items-center rounded-[9px]',
+          active ? 'bg-[var(--h)] text-white' : 'bg-[var(--ht)] text-[var(--h)]'
+        )}
+      >
+        <NavGlyph path={item.iconPath} className="h-4 w-4" />
+      </span>
+      <span className={cn('min-w-0 flex-1 truncate', compact && 'hidden')}>{item.label}</span>
     </Link>
   )
 }
@@ -103,28 +109,39 @@ function ShortcutRow({
   href,
   label,
   pathname,
+  hue,
   onClick,
-  tint = 'green',
+  compact,
 }: {
   href: string
   label: string
   pathname: string
+  hue: SectionHue
   onClick?: () => void
-  tint?: ChipTint
+  compact?: boolean
 }) {
   const active = isDashboardNavActive(pathname, href)
   return (
     <Link
       href={href}
       onClick={onClick}
-      className={`flex items-center gap-3 rounded-[14px] px-3 py-2.5 text-[15px] transition hover:border-ios-search-border ${
-        active ? 'bg-[#185FA5]/[0.18] font-semibold text-[#185FA5]' : 'font-medium text-ios-ink hover:bg-black/[0.03]'
-      }`}
+      data-hue={hue}
+      title={label}
+      className={cn(
+        'flex items-center gap-3 rounded-xl py-1.5 text-[14.5px] transition',
+        compact ? 'justify-center px-1.5' : 'px-2.5',
+        active ? 'bg-[var(--ht)] font-semibold text-[var(--ink)]' : 'font-medium text-[var(--ink2)] hover:bg-[var(--soft)]'
+      )}
     >
-      <IconChip tint={tint} size="sm">
+      <span
+        className={cn(
+          'inline-grid h-[30px] w-[30px] shrink-0 place-items-center rounded-[9px]',
+          active ? 'bg-[var(--h)] text-white' : 'bg-[var(--ht)] text-[var(--h)]'
+        )}
+      >
         <FolderIcon className="h-4 w-4" />
-      </IconChip>
-      <span className="min-w-0 flex-1 truncate">{label}</span>
+      </span>
+      <span className={cn('min-w-0 flex-1 truncate', compact && 'hidden')}>{label}</span>
     </Link>
   )
 }
@@ -134,19 +151,23 @@ function Section({
   items,
   pathname,
   onClick,
+  compact,
 }: {
   title: string
   items: DashboardNavItem[]
   pathname: string
   onClick?: () => void
+  compact?: boolean
 }) {
   if (items.length === 0) return null
   return (
     <div>
-      <p className="px-3 pb-2 text-[11px] font-semibold uppercase tracking-[0.3px] text-ios-muted">{title}</p>
-      <div className="space-y-0.5">
+      <p className={cn('px-2.5 pb-1.5 text-[11.5px] font-semibold tracking-[0.04em] text-[var(--ink3)]', compact && 'hidden')}>
+        {title}
+      </p>
+      <div className="space-y-px">
         {items.map((item) => (
-          <NavRow key={item.id} item={item} pathname={pathname} onClick={onClick} />
+          <NavRow key={item.id} item={item} pathname={pathname} onClick={onClick} compact={compact} />
         ))}
       </div>
     </div>
@@ -163,16 +184,21 @@ function pageTitle(pathname: string, items: DashboardNavItem[]): string {
   return match?.label || 'Project Planner'
 }
 
-export function AppShell({ children }: { children: React.ReactNode }) {
+function AppShellInner({ children }: { children: ReactNode }) {
   const router = useRouter()
   const pathname = usePathname()
+  const toast = useToast()
   const { user, organization, signOut, recordLastSeenIfDue } = useAuthStore()
   const { users, loadUsers } = useOrgUserStore()
   const unreadCount = useNotificationStore((s) => s.unreadCount)
+  const notifications = useNotificationStore((s) => s.notifications)
   const loadNotifications = useNotificationStore((s) => s.loadNotifications)
+  const markAllAsRead = useNotificationStore((s) => s.markAllAsRead)
   const [online, setOnline] = useState(true)
-  const [moreOpen, setMoreOpen] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
   const [newOpen, setNewOpen] = useState(false)
+  const [paletteOpen, setPaletteOpen] = useState(false)
+  const [notifOpen, setNotifOpen] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const [customiseOpen, setCustomiseOpen] = useState(false)
   const [navigateConfig, setNavigateConfig] = useState<NavigateConfig | null>(null)
@@ -237,6 +263,68 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       .catch(() => {})
   }, [user?.id])
 
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault()
+        setPaletteOpen(true)
+      }
+      if (event.key === 'Escape') {
+        setPaletteOpen(false)
+        setNewOpen(false)
+        setNotifOpen(false)
+        setMenuOpen(false)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
+  const paletteItems = useMemo<PaletteItem[]>(() => {
+    if (!user) return []
+    const jobs: PaletteItem[] = [
+      ...projects.map((project) => ({
+        group: 'Jobs' as const,
+        label: `${project.jobNumber || 'Job'} · ${project.siteName}`,
+        href: `/dashboard/projects/${project.id}`,
+        meta: project.status,
+        hue: 'proj' as const,
+      })),
+      ...smallWorks.map((project) => ({
+        group: 'Jobs' as const,
+        label: `${project.jobNumber || 'Job'} · ${project.siteName}`,
+        href: `/dashboard/small-works/${project.id}`,
+        meta: project.status,
+        hue: 'sw' as const,
+      })),
+    ]
+    const people: PaletteItem[] = users.map((member) => ({
+      group: 'People',
+      label: `${member.firstName} ${member.surname}`.trim() || member.email,
+      href: `/dashboard/users/${member.id}`,
+      meta: member.role,
+      hue: 'user',
+    }))
+    const pages: PaletteItem[] = getDashboardNavItems(user, organization, users).map((item) => ({
+      group: 'Pages',
+      label: item.label,
+      href: item.href,
+      hue: hueForNavId(item.id),
+    }))
+    const actions: PaletteItem[] = [
+      ...(canBookWork(user)
+        ? [{ group: 'Actions' as const, label: 'Book labour', href: '/dashboard/book-labour', hue: 'blue' as const }]
+        : []),
+      ...createMenuItems(user).map((item) => ({
+        group: 'Actions' as const,
+        label: item.label,
+        href: item.href,
+        hue: hueForCreateId(item.id),
+      })),
+    ]
+    return [...jobs, ...people, ...pages, ...actions]
+  }, [user, organization, users, projects, smallWorks])
+
   if (!user) return null
 
   const homeItems = getDashboardNavBySection(user, organization, 'home', users)
@@ -257,7 +345,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     pathname.startsWith('/dashboard/job-types') ||
     pathname.startsWith('/dashboard/materials') ||
     pathname.startsWith('/dashboard/sub-contractors') ||
-    pathname.startsWith('/dashboard/users')
+    pathname.startsWith('/dashboard/users') ||
+    isHome
 
   const persistNavigate = (next: NavigateConfig) => {
     setNavigateConfig(next)
@@ -272,10 +361,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const effectiveNavigateConfig = navigateConfig ?? defaultNavigateConfig(navigateItems)
   const createItems = createMenuItems(user)
   const showOperativesTab = !isOperativeMode(user) && navigateItems.some((i) => i.id === 'dashboard_operatives')
+  const closeMenus = () => {
+    setMenuOpen(false)
+    setNewOpen(false)
+    setNotifOpen(false)
+  }
 
   const refresh = async () => {
     setRefreshing(true)
     router.refresh()
+    toast('Data refreshed')
     window.setTimeout(() => setRefreshing(false), 600)
   }
 
@@ -286,56 +381,94 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   const sidebar = (
-    <nav className="flex-1 space-y-5 overflow-y-auto px-3 py-4">
-      <div className="space-y-0.5">
-        {homeItems.map((item) => (
-          <NavRow key={item.id} item={item} pathname={pathname} onClick={() => setMoreOpen(false)} />
-        ))}
-      </div>
-      <div>
-        <div className="flex items-center justify-between px-3 pb-2">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.3px] text-ios-muted">Navigate</p>
-          <button
-            type="button"
-            onClick={() => setCustomiseOpen(true)}
-            className="text-[11px] font-semibold text-[#185FA5] hover:underline"
-          >
-            Customise
-          </button>
+    <>
+      <div className="flex items-center gap-3 px-[18px] py-[18px]">
+        <div className="overflow-hidden rounded-xl shadow-[0_4px_12px_rgba(30,90,168,.35)]">
+          <AppLogoMark size={40} radius={12} />
         </div>
-        <div className="space-y-0.5">
-          {resolvedNavigate.map((row) =>
-            row.navItem ? (
-              <NavRow
-                key={row.key}
-                item={row.navItem}
-                pathname={pathname}
-                onClick={() => setMoreOpen(false)}
-              />
-            ) : (
-              <ShortcutRow
-                key={row.key}
-                href={row.href}
-                label={row.label}
-                pathname={pathname}
-                tint={row.entry.type === 'smallWorks' ? 'amber' : 'green'}
-                onClick={() => setMoreOpen(false)}
-              />
-            )
-          )}
+        <div className="min-w-0">
+          <p className="truncate font-[family-name:var(--head)] text-base font-bold">Project Planner</p>
+          <p className="truncate text-[12.5px] text-[var(--ink3)]">{organization?.name || 'Organisation'}</p>
         </div>
       </div>
-      <Section title="Tools" items={toolsItems} pathname={pathname} onClick={() => setMoreOpen(false)} />
-      {teamItems.length > 0 && (
-        <Section title="Team" items={teamItems} pathname={pathname} onClick={() => setMoreOpen(false)} />
-      )}
-      <Section title="App & account" items={accountItems} pathname={pathname} onClick={() => setMoreOpen(false)} />
-    </nav>
+      <nav className="flex-1 space-y-4 overflow-y-auto px-3 pb-3">
+        <div className="space-y-px">
+          {homeItems.map((item) => (
+            <NavRow key={item.id} item={item} pathname={pathname} onClick={closeMenus} />
+          ))}
+        </div>
+        <div>
+          <div className="flex items-center justify-between px-2.5 pb-1.5">
+            <p className="text-[11.5px] font-semibold tracking-[0.04em] text-[var(--ink3)]">Navigate</p>
+            <button
+              type="button"
+              onClick={() => setCustomiseOpen(true)}
+              className="text-xs font-semibold text-[var(--blue)]"
+            >
+              Customise
+            </button>
+          </div>
+          <div className="space-y-px">
+            {resolvedNavigate.map((row) =>
+              row.navItem ? (
+                <NavRow
+                  key={row.key}
+                  item={row.navItem}
+                  pathname={pathname}
+                  onClick={closeMenus}
+                />
+              ) : (
+                <ShortcutRow
+                  key={row.key}
+                  href={row.href}
+                  label={row.label}
+                  pathname={pathname}
+                  hue={row.entry.type === 'smallWorks' ? 'sw' : 'proj'}
+                  onClick={closeMenus}
+                />
+              )
+            )}
+          </div>
+        </div>
+        <Section title="Tools" items={toolsItems} pathname={pathname} onClick={closeMenus} />
+        {teamItems.length > 0 && (
+          <Section title="Team" items={teamItems} pathname={pathname} onClick={closeMenus} />
+        )}
+        <Section title="App & account" items={accountItems} pathname={pathname} onClick={closeMenus} />
+      </nav>
+      <div className="border-t border-[var(--line)] p-3">
+        <div className="mb-1 flex items-center gap-2.5 rounded-[14px] px-2 py-2">
+          <UserAvatar user={user} size={36} />
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold">{`${user.firstName} ${user.surname}`.trim() || user.email}</p>
+            <p className="truncate text-xs text-[var(--ink3)]">{organization?.name || 'Organisation'}</p>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={confirmSignOut}
+          data-hue="red"
+          className="flex w-full items-center gap-3 rounded-[14px] px-3 py-2.5 text-[15px] font-medium text-[var(--red)] hover:bg-[var(--red-t)]"
+        >
+          <IconChip hue="red" size="sm">
+            <ArrowRightOnRectangleIcon className="h-4 w-4" />
+          </IconChip>
+          Sign out
+        </button>
+        <p className="px-3 pt-2 text-[11px] text-[var(--ink3)]">v1.0.0 · Project Planner</p>
+        {process.env.NODE_ENV !== 'production' ? (
+          <Link href="/dashboard/data-health" className="block px-3 pt-1 text-[11px] text-[var(--blue)]">
+            Data health
+          </Link>
+        ) : null}
+      </div>
+    </>
   )
 
   return (
-    <div className="min-h-screen bg-ios-canvas font-ios text-ios-ink">
+    <div className="min-h-screen bg-[var(--bg)] text-[var(--ink)]">
       <TeamOnboardingPrompt />
+      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} items={paletteItems} />
       {customiseOpen ? (
         <CustomiseNavigateSheet
           config={effectiveNavigateConfig}
@@ -346,179 +479,180 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           onClose={() => setCustomiseOpen(false)}
         />
       ) : null}
+      {menuOpen ? (
+        <button
+          type="button"
+          className="fixed inset-0 z-[60] bg-[rgba(10,20,40,.4)] lg:hidden"
+          aria-label="Close menu"
+          onClick={() => setMenuOpen(false)}
+        />
+      ) : null}
+
       <div className="flex min-h-screen">
-        <aside className="sticky top-0 hidden h-screen w-[248px] shrink-0 flex-col border-r border-ios-border bg-ios-card xl:w-[272px] lg:flex">
-          <div className="flex items-center gap-3 border-b border-ios-border px-5 py-5">
-            <div className="overflow-hidden rounded-xl">
-              <AppLogoMark size={40} radius={12} />
-            </div>
-            <div className="min-w-0">
-              <p className="truncate text-sm font-semibold">Project Planner</p>
-              <p className="truncate text-xs text-ios-muted">{organization?.name || 'Organisation'}</p>
-            </div>
-          </div>
-          {sidebar}
-          <div className="border-t border-ios-border p-3">
-            <button
-              type="button"
-              onClick={confirmSignOut}
-              className="flex w-full items-center gap-3 rounded-[14px] px-3 py-2.5 text-[15px] font-medium text-[#A32D2D] hover:bg-ios-chip-red"
-            >
-              <IconChip tint="red" size="sm">
-                <ArrowRightOnRectangleIcon className="h-4 w-4" />
-              </IconChip>
-              Sign out
-            </button>
-            <p className="px-3 pt-2 text-[11px] text-ios-placeholder">v1.0.0 · Project Planner</p>
-            {process.env.NODE_ENV !== 'production' ? (
-              <Link href="/dashboard/data-health" className="block px-3 pt-1 text-[11px] text-[#185FA5]">
-                Data health
-              </Link>
-            ) : null}
-          </div>
+        <aside
+          className={cn(
+            'flex min-h-0 flex-col bg-[var(--card)]',
+            'max-[1023px]:fixed max-[1023px]:inset-y-0 max-[1023px]:left-0 max-[1023px]:z-[70] max-[1023px]:w-[290px] max-[1023px]:transition-transform',
+            menuOpen ? 'max-[1023px]:translate-x-0' : 'max-[1023px]:-translate-x-full',
+            'lg:sticky lg:top-0 lg:flex lg:h-screen lg:w-[268px] xl:w-[272px]'
+          )}
+        >
+          <div className="flex h-full flex-col">{sidebar}</div>
         </aside>
 
-        <div className="flex min-w-0 flex-1 flex-col pb-20 lg:pb-0">
+        <div className="flex min-w-0 flex-1 flex-col pb-24 lg:pb-0">
           {!online ? (
-            <div className="bg-[#854F0B] px-4 py-2 text-center text-sm font-medium text-white">
+            <div className="bg-[var(--warn)] px-4 py-2 text-center text-sm font-medium text-white">
               You&apos;re offline. Changes will not sync until you reconnect.
             </div>
           ) : null}
 
           {showHeader ? (
-            <header className="sticky top-0 z-20 flex h-16 items-center justify-between gap-3 border-b border-ios-border bg-ios-card/95 px-4 backdrop-blur lg:px-8">
-              <div className="min-w-0">
-                {ownsPageTitle || isHome ? (
-                  <p className="truncate text-[13px] font-medium text-ios-muted">{organization?.name || 'Project Planner'}</p>
+            <header className="sticky top-0 z-20 flex h-[66px] items-center gap-3 bg-[color-mix(in_srgb,var(--bg)_85%,transparent)] px-6 backdrop-blur-[10px] max-[760px]:h-[60px] max-[760px]:px-3.5">
+              <button
+                type="button"
+                className="grid h-11 w-11 place-items-center rounded-[14px] bg-[var(--card)] text-[var(--ink2)] shadow-[var(--sh)] lg:hidden"
+                aria-label="Open menu"
+                onClick={() => setMenuOpen(true)}
+              >
+                <Bars3Icon className="h-5 w-5" />
+              </button>
+              <nav className="flex min-w-0 items-center gap-2 text-sm text-[var(--ink3)]">
+                <span className="hidden truncate max-[760px]:hidden min-[761px]:inline">{organization?.name || 'Project Planner'}</span>
+                <span className="hidden min-[761px]:inline">/</span>
+                {ownsPageTitle ? (
+                  <b className="truncate font-semibold text-[var(--ink)]">{title}</b>
                 ) : (
-                  <h1 className="truncate text-[20px] font-semibold tracking-tight lg:text-[28px]">{title}</h1>
+                  <h1 className="truncate text-[20px] font-extrabold tracking-tight text-[var(--ink)] min-[1100px]:text-[22px]">{title}</h1>
                 )}
-              </div>
+              </nav>
+              <button
+                type="button"
+                onClick={() => setPaletteOpen(true)}
+                className="ml-auto flex h-11 w-[320px] max-w-full items-center gap-2.5 rounded-[14px] bg-[var(--card)] px-3.5 text-[14.5px] text-[var(--ink3)] shadow-[var(--sh)] max-[1100px]:w-11 max-[1100px]:justify-center max-[1100px]:px-0"
+                aria-label="Search"
+              >
+                <MagnifyingGlassIcon className="h-5 w-5" />
+                <span className="hidden min-[1101px]:inline">Search projects, people, pages</span>
+                <kbd className="ml-auto hidden rounded-md bg-[var(--soft2)] px-1.5 py-0.5 text-[11.5px] font-semibold text-[var(--ink2)] min-[1101px]:inline">
+                  ⌘K
+                </kbd>
+              </button>
               <div className="flex items-center gap-2">
                 {createItems.length > 0 ? (
-                <div className="relative">
-                  {newOpen ? (
-                    <button
-                      type="button"
-                      className="fixed inset-0 z-10 cursor-default bg-transparent"
-                      aria-label="Close new menu"
-                      onClick={() => setNewOpen(false)}
-                    />
-                  ) : null}
-                  <button
-                    type="button"
-                    onClick={() => setNewOpen((v) => !v)}
-                    className="relative z-20 inline-flex h-10 items-center gap-1 rounded-full bg-[#185FA5] px-3 text-sm font-semibold text-white"
-                  >
-                    <PlusIcon className="h-4 w-4" /> New
-                  </button>
-                  {newOpen ? (
-                    <div className="absolute right-0 z-30 mt-2 w-56 rounded-2xl border border-ios-border bg-ios-card p-1 shadow-ios-toast">
-                      {createItems.map((item) => (
-                        <Link
-                          key={item.id}
-                          href={item.href}
-                          className="block rounded-xl px-3 py-2 text-sm hover:bg-black/[0.04]"
+                  <div className="relative">
+                    <Button variant="primary" onClick={() => setNewOpen((value) => !value)} className="relative z-20">
+                      <PlusIcon className="h-4 w-4" />
+                      <span className="hidden min-[761px]:inline">New</span>
+                    </Button>
+                    {newOpen ? (
+                      <>
+                        <button
+                          type="button"
+                          className="fixed inset-0 z-10 cursor-default bg-transparent"
+                          aria-label="Close new menu"
                           onClick={() => setNewOpen(false)}
-                        >
-                          {item.label}
-                        </Link>
-                      ))}
-                    </div>
-                  ) : null}
-                </div>
+                        />
+                        <div className="absolute right-0 z-30 mt-2 w-[260px] rounded-[18px] bg-[var(--card)] p-2 shadow-[var(--sh-pop)]">
+                          <p className="px-2.5 py-1 text-xs font-semibold text-[var(--ink3)]">Create new</p>
+                          {createItems.map((item) => (
+                            <Link
+                              key={item.id}
+                              href={item.href}
+                              data-hue={hueForCreateId(item.id)}
+                              className="flex items-center gap-3 rounded-xl px-2.5 py-2 text-[14.5px] hover:bg-[var(--soft)]"
+                              onClick={() => setNewOpen(false)}
+                            >
+                              <IconChip hue={hueForCreateId(item.id)} size="sm">
+                                <PlusIcon className="h-4 w-4" />
+                              </IconChip>
+                              {item.label}
+                            </Link>
+                          ))}
+                        </div>
+                      </>
+                    ) : null}
+                  </div>
                 ) : null}
                 <button
                   type="button"
-                  onClick={refresh}
-                  className="flex h-11 w-11 items-center justify-center rounded-full border border-[#E6E8ED] bg-white"
-                  aria-label="Refresh"
+                  onClick={() => void refresh()}
+                  className="grid h-11 w-11 place-items-center rounded-[14px] bg-[var(--card)] text-[var(--ink2)] shadow-[var(--sh)]"
+                  aria-label="Refresh data"
                 >
-                  <ArrowPathIcon className={`h-5 w-5 text-ios-muted ${refreshing ? 'animate-spin' : ''}`} />
+                  <ArrowPathIcon className={`h-5 w-5 ${refreshing ? 'animate-spin' : ''}`} />
                 </button>
-                <Link
-                  href="/dashboard/notifications"
-                  className="relative flex h-11 w-11 items-center justify-center rounded-full border border-[#E6E8ED] bg-white"
-                  aria-label="Notifications"
-                >
-                  <BellIcon className="h-5 w-5 text-ios-muted" />
-                  {unreadCount > 0 ? (
-                    <span className="absolute right-1 top-1 h-2.5 w-2.5 rounded-full bg-ios-unread" />
-                  ) : null}
-                </Link>
-                <Link
-                  href="/dashboard/settings"
-                  className="flex h-11 w-11 items-center justify-center overflow-hidden rounded-full bg-[#185FA5] text-xs font-bold text-white"
-                  aria-label="Profile"
-                >
-                  <UserAvatar user={user} size={44} />
-                </Link>
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setNotifOpen((value) => !value)}
+                    className="relative grid h-11 w-11 place-items-center rounded-[14px] bg-[var(--card)] text-[var(--ink2)] shadow-[var(--sh)]"
+                    aria-label="Notifications"
+                  >
+                    <BellIcon className="h-5 w-5" />
+                    {unreadCount > 0 ? (
+                      <span className="absolute right-[11px] top-2.5 h-[9px] w-[9px] rounded-full border-2 border-[var(--card)] bg-[var(--red)]" />
+                    ) : null}
+                  </button>
+                  <NotificationsPopover
+                    open={notifOpen}
+                    onClose={() => setNotifOpen(false)}
+                    notifications={notifications}
+                    onMarkAllRead={() => {
+                      if (organization?.id) void markAllAsRead(organization.id)
+                    }}
+                  />
+                </div>
+                <AccountMenu user={user} onSignOut={() => void confirmSignOut()} />
               </div>
             </header>
           ) : null}
 
           <main className="min-w-0 flex-1">
-            <div className={`mx-auto w-full max-w-shell ${isHome ? 'px-4 py-4 lg:px-10 lg:py-8' : 'px-4 py-6 lg:px-10 lg:py-8'}`}>
+            <div className={cn('page mx-auto w-full max-w-shell', isHome ? 'px-4 py-4 min-[760px]:px-7 min-[760px]:py-6' : 'px-4 py-6 min-[760px]:px-7 min-[760px]:pb-14')}>
               {children}
             </div>
           </main>
         </div>
       </div>
 
-      <nav className="fixed inset-x-3 bottom-3 z-30 flex items-center justify-around rounded-[18px] border border-ios-border bg-ios-card/95 px-1 py-2 shadow-ios-bar backdrop-blur lg:hidden">
-        <Link href="/dashboard" className={`flex flex-col items-center gap-0.5 px-2 py-1 text-[10px] ${pathname === '/dashboard' ? 'text-[#185FA5]' : 'text-ios-muted'}`}>
-          <HomeIcon className="h-6 w-6" />
+      <nav className="fixed inset-x-2.5 bottom-2.5 z-40 flex rounded-[22px] bg-[var(--card)] p-1.5 shadow-[var(--sh-pop)] lg:hidden" aria-label="Quick navigation">
+        <Link href="/dashboard" data-hue="blue" className={cn('flex flex-1 flex-col items-center gap-0.5 rounded-2xl py-1.5 text-[11px] font-semibold', pathname === '/dashboard' ? 'bg-[var(--ht)] text-[var(--h)]' : 'text-[var(--ink3)]')}>
+          <HomeIcon className="h-[22px] w-[22px]" />
           Home
         </Link>
-        <Link href="/dashboard/projects" className={`flex flex-col items-center gap-0.5 px-2 py-1 text-[10px] ${pathname.startsWith('/dashboard/projects') ? 'text-[#185FA5]' : 'text-ios-muted'}`}>
-          <FolderIcon className="h-6 w-6" />
+        <Link href="/dashboard/projects" data-hue="proj" className={cn('flex flex-1 flex-col items-center gap-0.5 rounded-2xl py-1.5 text-[11px] font-semibold', pathname.startsWith('/dashboard/projects') ? 'bg-[var(--ht)] text-[var(--h)]' : 'text-[var(--ink3)]')}>
+          <FolderIcon className="h-[22px] w-[22px]" />
           Projects
         </Link>
-        <Link href="/dashboard/small-works" className={`flex flex-col items-center gap-0.5 px-2 py-1 text-[10px] ${pathname.startsWith('/dashboard/small-works') ? 'text-[#185FA5]' : 'text-ios-muted'}`}>
-          <WrenchScrewdriverIcon className="h-6 w-6" />
+        <Link href="/dashboard/small-works" data-hue="sw" className={cn('flex flex-1 flex-col items-center gap-0.5 rounded-2xl py-1.5 text-[11px] font-semibold', pathname.startsWith('/dashboard/small-works') ? 'bg-[var(--ht)] text-[var(--h)]' : 'text-[var(--ink3)]')}>
+          <WrenchScrewdriverIcon className="h-[22px] w-[22px]" />
           Small Works
         </Link>
         {showOperativesTab ? (
-          <Link href="/dashboard/operatives" className={`flex flex-col items-center gap-0.5 px-2 py-1 text-[10px] ${pathname.startsWith('/dashboard/operatives') ? 'text-[#185FA5]' : 'text-ios-muted'}`}>
-            <UsersIcon className="h-6 w-6" />
+          <Link href="/dashboard/operatives" data-hue="ops" className={cn('flex flex-1 flex-col items-center gap-0.5 rounded-2xl py-1.5 text-[11px] font-semibold', pathname.startsWith('/dashboard/operatives') ? 'bg-[var(--ht)] text-[var(--h)]' : 'text-[var(--ink3)]')}>
+            <UsersIcon className="h-[22px] w-[22px]" />
             Operatives
           </Link>
         ) : (
-          <Link href="/dashboard/settings" className={`flex flex-col items-center gap-0.5 px-2 py-1 text-[10px] ${pathname.startsWith('/dashboard/settings') ? 'text-[#185FA5]' : 'text-ios-muted'}`}>
-            <Cog6ToothIcon className="h-6 w-6" />
+          <Link href="/dashboard/settings" data-hue="lib" className={cn('flex flex-1 flex-col items-center gap-0.5 rounded-2xl py-1.5 text-[11px] font-semibold', pathname.startsWith('/dashboard/settings') ? 'bg-[var(--ht)] text-[var(--h)]' : 'text-[var(--ink3)]')}>
+            <Cog6ToothIcon className="h-[22px] w-[22px]" />
             Settings
           </Link>
         )}
-        <button type="button" onClick={() => setMoreOpen(true)} className="flex flex-col items-center gap-0.5 px-2 py-1 text-[10px] text-ios-muted">
-          <EllipsisHorizontalIcon className="h-6 w-6" />
+        <button type="button" data-hue="lib" onClick={() => setMenuOpen(true)} className="flex flex-1 flex-col items-center gap-0.5 rounded-2xl py-1.5 text-[11px] font-semibold text-[var(--ink3)]">
+          <EllipsisHorizontalIcon className="h-[22px] w-[22px]" />
           More
         </button>
       </nav>
-
-      {moreOpen ? (
-        <div className="fixed inset-0 z-40 bg-black/40 lg:hidden" onClick={() => setMoreOpen(false)}>
-          <div
-            className="absolute inset-x-0 bottom-0 max-h-[85vh] overflow-y-auto rounded-t-3xl bg-ios-canvas pb-8"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between px-5 py-4">
-              <h2 className="text-[22px] font-semibold">Main Menu</h2>
-              <button type="button" onClick={() => setMoreOpen(false)} className="rounded-full bg-[#185FA5] px-4 py-1.5 text-sm font-semibold text-white">
-                Done
-              </button>
-            </div>
-            {sidebar}
-            <div className="px-3">
-              <button type="button" onClick={confirmSignOut} className="flex w-full items-center gap-3 rounded-[14px] px-3 py-2.5 text-[#A32D2D]">
-                <IconChip tint="red" size="sm">
-                  <ArrowRightOnRectangleIcon className="h-4 w-4" />
-                </IconChip>
-                Sign out
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
     </div>
+  )
+}
+
+export function AppShell({ children }: { children: ReactNode }) {
+  return (
+    <ToastProvider>
+      <AppShellInner>{children}</AppShellInner>
+    </ToastProvider>
   )
 }
