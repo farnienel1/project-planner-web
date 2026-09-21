@@ -251,7 +251,7 @@ export function WholesalersScreen({ selectedId }: { selectedId?: string }) {
 
   return (
     <div className="space-y-5 pb-10">
-      <PageHeader title="Wholesalers" />
+      <PageHeader title="Wholesalers" subtitle="Contacts and send history" hue="sw" />
       {error ? <p className="text-sm text-red-600">{error}</p> : null}
       <div className="xl:grid xl:grid-cols-[400px_1fr] xl:gap-8">
         {list}

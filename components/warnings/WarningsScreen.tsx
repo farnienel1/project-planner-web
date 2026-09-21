@@ -75,7 +75,7 @@ function UnbookedDayCard({
     message: person.message,
   }))
   return (
-    <article className="overflow-hidden rounded-[18px] border border-black/[0.07] bg-white shadow-[0_2px_8px_rgba(0,0,0,0.06)]">
+    <article className="card overflow-hidden">
       <header className="flex items-center gap-2 bg-gradient-to-br from-[#7F1D1D] to-[#B91C1C] px-4 py-4">
         <p className="min-w-0 flex-1 text-[17px] font-extrabold tracking-tight text-white">Unbooked labour</p>
         <PriorityBadge level="high" />
@@ -130,7 +130,7 @@ function MaterialsCard({
   smallWorkIds: ReadonlySet<string>
 }) {
   return (
-    <article className="overflow-hidden rounded-[18px] border border-black/[0.07] bg-white shadow-[0_2px_8px_rgba(0,0,0,0.06)]">
+    <article className="card overflow-hidden">
       <header className="flex items-center gap-2 bg-gradient-to-br from-[#374151] to-[#4B5563] px-4 py-4">
         <p className="min-w-0 flex-1 text-[17px] font-extrabold text-white">Missed material order</p>
         <PriorityBadge level="low" />
@@ -251,48 +251,40 @@ export function WarningsScreen({
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center gap-3">
-        <div className="min-w-0 flex-1 text-center">
-          <h1 className="text-[17px] font-bold">Warnings</h1>
-          <p className="text-[11px] text-ios-muted">{organizationName}</p>
+    <div className="stack" data-hue="warn">
+      <div className="phead" data-hue="warn">
+        <div className="badge-ico">
+          <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+          </svg>
         </div>
-        <div className="flex w-[76px] justify-end gap-2">
+        <div>
+          <h1>Warnings</h1>
+          <div className="sub">{organizationName}</div>
+        </div>
+        <div className="acts">
           {isAdmin ? (
-            <Link
-              href="/dashboard/settings/warnings"
-              className="grid h-[34px] w-[34px] place-items-center rounded-full border border-black/10 bg-white text-[#555] shadow-sm"
-              aria-label="Warning settings"
-            >
-              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M10.3 4.3 9.8 7.1a7.2 7.2 0 0 0-1.6.9L5.5 7.1 3.7 10l2.1 1.6a7 7 0 0 0 0 1.8L3.7 15l1.8 3 2.7-.9a7.2 7.2 0 0 0 1.6.9l.5 2.8h3.4l.5-2.8a7.2 7.2 0 0 0 1.6-.9l2.7.9 1.8-3-2.1-1.6a7 7 0 0 0 0-1.8L21.3 10l-1.8-3-2.7.9a7.2 7.2 0 0 0-1.6-.9l-.5-2.8h-3.4Z" />
-                <circle cx="12" cy="12.5" r="2.4" />
-              </svg>
+            <Link href="/dashboard/settings/warnings" className="btn">
+              Warning settings
             </Link>
           ) : null}
         </div>
       </div>
 
       {coreCount > 0 ? (
-        <section className="rounded-[18px] bg-gradient-to-br from-[#B83232] to-[#9E2A2A] p-4 text-white">
-          <p className="text-[10px] font-bold uppercase tracking-[0.8px] text-white/60">Active issues</p>
-          <div className="mt-1 flex items-center gap-3">
-            <p className="text-[26px] font-bold">{coreCount} need attention</p>
-            <span className="ml-auto grid h-9 w-9 place-items-center rounded-full bg-white/18">
-              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M12 3 2 21h20L12 3Z" />
-              </svg>
-            </span>
+        <section className="hero" data-hue="red" style={{ padding: '22px 26px' }}>
+          <div className="relative z-[1]">
+            <p className="eb">Active issues</p>
+            <div className="big" style={{ fontSize: 28 }}>{coreCount} need attention</div>
+            <div className="stats">
+              <div className="st"><b>{highCount}</b><span>High</span></div>
+              <div className="st"><b>0</b><span>Medium</span></div>
+              <div className="st"><b>{lowCount}</b><span>Low</span></div>
+            </div>
+            <p className="mt-3 text-[13px] opacity-85">
+              High: booking clashes and unbooked labour. Low: materials not ordered by cut-off.
+            </p>
           </div>
-          <div className="mt-3.5 grid grid-cols-3 gap-2">
-            <HeroStat value={highCount} label="High" />
-            <HeroStat value={0} label="Medium" />
-            <HeroStat value={lowCount} label="Low" />
-          </div>
-          <p className="mt-3 text-[11px] leading-4 text-white/55">
-            High: booking clashes & unbooked labour (approve clashes for the weekly report) · Low: materials not
-            ordered by 16:00
-          </p>
         </section>
       ) : null}
 
@@ -303,11 +295,7 @@ export function WarningsScreen({
               key={chip.value}
               type="button"
               onClick={() => setFilter(chip.value)}
-              className={`rounded-full px-3.5 py-1.5 text-[13px] font-semibold ${
-                filter === chip.value
-                  ? 'bg-[#1C1C1E] text-white'
-                  : 'border border-black/10 bg-white text-[#6B7280]'
-              }`}
+              className={`chip ${filter === chip.value ? 'on' : ''}`}
             >
               {chip.label} · {chip.count}
             </button>
@@ -316,7 +304,7 @@ export function WarningsScreen({
       ) : null}
 
       {allCount === 0 ? (
-        <div className="rounded-2xl border border-ios-border bg-white px-6 py-16 text-center">
+        <div className="empty card pad">
           {loading ? (
             <>
               <p className="text-[18px] font-semibold">Check for warnings</p>

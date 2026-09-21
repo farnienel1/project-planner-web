@@ -315,23 +315,32 @@ export function TasksScreen() {
   }
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight text-slate-900">Tasks</h1>
-        <p className="mt-1 text-sm text-slate-500">
-          {showAllTasks
-            ? `All project tasks and pending approvals for ${organization?.name || 'your organisation'}.`
-            : 'Your assigned tasks and updates.'}
-        </p>
+    <div className="stack" data-hue="task">
+      <div className="phead" data-hue="task">
+        <div className="badge-ico">
+          <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+          </svg>
+        </div>
+        <div>
+          <h1>Tasks</h1>
+          <div className="sub">
+            {showAllTasks
+              ? `All project tasks and pending approvals for ${organization?.name || 'your organisation'}.`
+              : 'Your assigned tasks and updates.'}
+          </div>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
         {statTiles.map((tile) => {
           const isActive = tile.key !== 'approvals' && statusFilter === tile.key
+          const hue = tile.key === 'overdue' ? 'red' : tile.key === 'inProgress' ? 'daily' : tile.key === 'completed' ? 'green' : tile.key === 'approvals' ? 'warn' : 'task'
           return (
             <button
               key={tile.key}
               type="button"
+              data-hue={hue}
               onClick={() => {
                 if (tile.key === 'approvals') {
                   scrollToApprovals()
@@ -339,12 +348,12 @@ export function TasksScreen() {
                   setStatusFilter(tile.key)
                 }
               }}
-              className={`rounded-2xl border bg-white p-4 text-left shadow-sm transition hover:border-slate-300 hover:shadow-md ${
-                isActive ? `border-slate-300 ring-2 ${tile.activeRing}` : 'border-slate-200'
-              }`}
+              className={`stat ${isActive ? 'on' : ''}`}
             >
-              <p className={`text-xl font-bold ${tile.color}`}>{tile.count}</p>
-              <p className="mt-0.5 text-xs text-slate-500">{tile.label}</p>
+              <div>
+                <b>{tile.count}</b>
+                <span>{tile.label}</span>
+              </div>
             </button>
           )
         })}

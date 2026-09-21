@@ -1,13 +1,15 @@
 'use client'
 
 import type { ReactNode } from 'react'
-import Link from 'next/link'
+import { useEffect, useState } from 'react'
 import { ProjectRecordPageShell } from '@/components/projects/ProjectRecordPageShell'
-import { FeatureProjectStrip } from '@/components/projects/features/featureUi'
+import { ProjectWorkspaceChrome } from '@/components/projects/ProjectWorkspaceChrome'
+import { useTaskStore } from '@/lib/stores/taskStore'
+import { useAuthStore } from '@/lib/stores/authStore'
 
 export function ProjectFeaturePageShell({
-  title,
-  backLabel,
+  title: _title,
+  backLabel: _backLabel,
   collection = 'projects',
   children,
 }: {
@@ -16,33 +18,27 @@ export function ProjectFeaturePageShell({
   collection?: 'projects' | 'smallWorks'
   children: (project: import('@/types').Project) => ReactNode
 }) {
-  const base = collection === 'smallWorks' ? '/dashboard/small-works' : '/dashboard/projects'
-  const accent = collection === 'smallWorks' ? 'text-amber-600' : 'text-blue-600'
+  const { organization } = useAuthStore()
+  const { tasks, loadTasks } = useTaskStore()
+  const [ready, setReady] = useState(false)
+
+  useEffect(() => {
+    if (!organization?.id) return
+    loadTasks(organization.id).finally(() => setReady(true))
+  }, [organization?.id, loadTasks])
 
   return (
     <ProjectRecordPageShell collection={collection}>
-      {(project) => (
-        <div className="space-y-3">
-          <div className="flex items-center justify-between gap-3">
-            <Link
-              href={`${base}/${project.id}`}
-              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 shadow-sm hover:bg-slate-50"
-            >
-              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-              </svg>
-              {backLabel}
-            </Link>
-            <span className={`text-sm font-bold ${accent}`}>{title}</span>
-          </div>
-          <FeatureProjectStrip
-            jobNumber={project.jobNumber}
-            siteName={project.siteName}
-            clientName={project.client?.name}
-          />
-          {children(project)}
-        </div>
-      )}
+      {(project) => {
+        const basePath =
+          collection === 'smallWorks' ? `/dashboard/small-works/${project.id}` : `/dashboard/projects/${project.id}`
+        const openTaskCount = tasks.filter((t) => t.projectId === project.id && t.status !== 'Completed').length
+        return (
+          <ProjectWorkspaceChrome project={project} basePath={basePath} taskCount={ready ? openTaskCount : undefined}>
+            {children(project)}
+          </ProjectWorkspaceChrome>
+        )
+      }}
     </ProjectRecordPageShell>
   )
 }

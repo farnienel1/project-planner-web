@@ -166,7 +166,7 @@ export function ClashWarningCard({
   const label = dateLabel(date)
 
   return (
-    <article className="overflow-hidden rounded-[15px] border border-black/[0.07] bg-white shadow-[0_2px_8px_rgba(0,0,0,0.08)]">
+    <article className="card overflow-hidden">
       <header className="flex items-center gap-2.5 bg-gradient-to-b from-[#B3261E] to-[#8C1A14] px-3.5 py-[11px]">
         <p className="min-w-0 flex-1 text-[16.5px] font-semibold tracking-tight text-white">{title}</p>
         <span className="inline-flex items-center gap-1 rounded-full bg-white/18 px-2.5 py-1 text-[11px] font-bold text-white ring-1 ring-white/28">

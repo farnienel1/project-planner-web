@@ -78,8 +78,8 @@ export function OperativesListScreen() {
   const emptyTitle = emptyRosterTitle(segment, 'operatives', allOperativeUsers.length > 0)
 
   return (
-    <div className="space-y-4">
-      <PageHeader title="Manage Operatives" />
+    <div className="stack" data-hue="ops">
+      <PageHeader title="Operatives" subtitle="People and availability" hue="ops" />
 
       <div className="flex flex-wrap gap-1.5">
         <FilterChip title={`Active · ${counts.active}`} selected={segment === 'active'} onClick={() => setSegment('active')} />

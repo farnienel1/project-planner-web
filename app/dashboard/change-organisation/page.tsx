@@ -133,7 +133,7 @@ export default function ChangeOrganisationPage() {
   return (
     <div className="mx-auto max-w-3xl space-y-5 pb-10 xl:grid xl:max-w-6xl xl:grid-cols-12 xl:gap-8 xl:space-y-0">
       <div className="xl:col-span-5">
-        <h1 className="text-[28px] font-bold tracking-tight text-slate-900">Switch organisation</h1>
+        <h1>Switch organisation</h1>
         <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <p className="text-lg font-semibold text-slate-900">Work across teams</p>
           <p className="mt-2 text-sm leading-relaxed text-slate-600">

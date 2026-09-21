@@ -840,7 +840,7 @@ export function AnnualLeaveScreen() {
   if (user?.annualLeaveEnabled === false) {
     return (
       <div className="mx-auto max-w-xl pb-10">
-        <h1 className="text-2xl font-bold text-slate-900">Annual leave</h1>
+        <h1>Annual leave</h1>
         <p className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-600">
           Annual leave is not enabled for your account. Contact your manager if you need this turned on.
         </p>
@@ -850,7 +850,7 @@ export function AnnualLeaveScreen() {
 
   return (
     <div className="mx-auto max-w-xl space-y-4 pb-10">
-      <h1 className="text-2xl font-bold text-slate-900">Annual leave</h1>
+      <h1>Annual leave</h1>
 
       {error && <ErrorBanner message={error} />}
 

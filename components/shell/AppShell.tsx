@@ -13,14 +13,9 @@ import {
   BellIcon,
   ArrowPathIcon,
   PlusIcon,
-  HomeIcon,
   FolderIcon,
-  UsersIcon,
-  Cog6ToothIcon,
-  EllipsisHorizontalIcon,
   Bars3Icon,
   MagnifyingGlassIcon,
-  WrenchScrewdriverIcon,
 } from '@heroicons/react/24/solid'
 import { TeamOnboardingPrompt } from '@/components/onboarding/TeamOnboardingPrompt'
 import { useAuthStore } from '@/lib/stores/authStore'
@@ -54,7 +49,7 @@ import { useProjectStore } from '@/lib/stores/projectStore'
 import { db } from '@/lib/firebase/config'
 import { doc, getDoc, setDoc } from 'firebase/firestore'
 import { recoverJobTypesFromWork } from '@/lib/jobTypes/jobTypesStorage'
-import { canBookWork, isOperativeMode } from '@/lib/permissions'
+import { canBookWork } from '@/lib/permissions'
 import { createMenuItems } from '@/lib/navigation/createMenu'
 import { cn } from '@/lib/ui/cn'
 import { UserAvatar } from '@/components/users/UserAvatar'
@@ -337,16 +332,7 @@ function AppShellInner({ children }: { children: ReactNode }) {
   const isHome = pathname === '/dashboard'
   const isBookLabour = pathname.startsWith('/dashboard/book-labour')
   const showHeader = !isBookLabour
-  const ownsPageTitle =
-    pathname.startsWith('/dashboard/timesheets') ||
-    pathname.startsWith('/dashboard/wholesalers') ||
-    pathname.startsWith('/dashboard/qualifications') ||
-    pathname.startsWith('/dashboard/my-qualifications') ||
-    pathname.startsWith('/dashboard/job-types') ||
-    pathname.startsWith('/dashboard/materials') ||
-    pathname.startsWith('/dashboard/sub-contractors') ||
-    pathname.startsWith('/dashboard/users') ||
-    isHome
+  // Prototype: top bar is breadcrumb only. Every page owns its own h1.
 
   const persistNavigate = (next: NavigateConfig) => {
     setNavigateConfig(next)
@@ -360,7 +346,6 @@ function AppShellInner({ children }: { children: ReactNode }) {
   const resolvedNavigate = resolveNavigateRows(navigateConfig, navigateItems, catalog)
   const effectiveNavigateConfig = navigateConfig ?? defaultNavigateConfig(navigateItems)
   const createItems = createMenuItems(user)
-  const showOperativesTab = !isOperativeMode(user) && navigateItems.some((i) => i.id === 'dashboard_operatives')
   const closeMenus = () => {
     setMenuOpen(false)
     setNewOpen(false)
@@ -491,7 +476,7 @@ function AppShellInner({ children }: { children: ReactNode }) {
       <div className="flex min-h-screen">
         <aside
           className={cn(
-            'flex min-h-0 flex-col bg-[var(--card)]',
+            'flex min-h-0 flex-col border-r border-[var(--line)] bg-[var(--card)]',
             'max-[1023px]:fixed max-[1023px]:inset-y-0 max-[1023px]:left-0 max-[1023px]:z-[70] max-[1023px]:w-[290px] max-[1023px]:transition-transform',
             menuOpen ? 'max-[1023px]:translate-x-0' : 'max-[1023px]:-translate-x-full',
             'lg:sticky lg:top-0 lg:flex lg:h-screen lg:w-[268px] xl:w-[272px]'
@@ -500,7 +485,7 @@ function AppShellInner({ children }: { children: ReactNode }) {
           <div className="flex h-full flex-col">{sidebar}</div>
         </aside>
 
-        <div className="flex min-w-0 flex-1 flex-col pb-24 lg:pb-0">
+        <div className="flex min-w-0 flex-1 flex-col">
           {!online ? (
             <div className="bg-[var(--warn)] px-4 py-2 text-center text-sm font-medium text-white">
               You&apos;re offline. Changes will not sync until you reconnect.
@@ -517,14 +502,10 @@ function AppShellInner({ children }: { children: ReactNode }) {
               >
                 <Bars3Icon className="h-5 w-5" />
               </button>
-              <nav className="flex min-w-0 items-center gap-2 text-sm text-[var(--ink3)]">
-                <span className="hidden truncate max-[760px]:hidden min-[761px]:inline">{organization?.name || 'Project Planner'}</span>
-                <span className="hidden min-[761px]:inline">/</span>
-                {ownsPageTitle ? (
-                  <b className="truncate font-semibold text-[var(--ink)]">{title}</b>
-                ) : (
-                  <h1 className="truncate text-[20px] font-extrabold tracking-tight text-[var(--ink)] min-[1100px]:text-[22px]">{title}</h1>
-                )}
+              <nav className="crumb flex min-w-0 items-center gap-2 text-sm text-[var(--ink3)]">
+                <span className="sep hidden truncate min-[761px]:inline">{organization?.name || 'Project Planner'}</span>
+                <span className="sep hidden min-[761px]:inline">/</span>
+                <b className="truncate font-semibold text-[var(--ink)]">{title}</b>
               </nav>
               <button
                 type="button"
@@ -615,36 +596,6 @@ function AppShellInner({ children }: { children: ReactNode }) {
           </main>
         </div>
       </div>
-
-      <nav className="fixed inset-x-2.5 bottom-2.5 z-40 flex rounded-[22px] bg-[var(--card)] p-1.5 shadow-[var(--sh-pop)] lg:hidden" aria-label="Quick navigation">
-        <Link href="/dashboard" data-hue="blue" className={cn('flex flex-1 flex-col items-center gap-0.5 rounded-2xl py-1.5 text-[11px] font-semibold', pathname === '/dashboard' ? 'bg-[var(--ht)] text-[var(--h)]' : 'text-[var(--ink3)]')}>
-          <HomeIcon className="h-[22px] w-[22px]" />
-          Home
-        </Link>
-        <Link href="/dashboard/projects" data-hue="proj" className={cn('flex flex-1 flex-col items-center gap-0.5 rounded-2xl py-1.5 text-[11px] font-semibold', pathname.startsWith('/dashboard/projects') ? 'bg-[var(--ht)] text-[var(--h)]' : 'text-[var(--ink3)]')}>
-          <FolderIcon className="h-[22px] w-[22px]" />
-          Projects
-        </Link>
-        <Link href="/dashboard/small-works" data-hue="sw" className={cn('flex flex-1 flex-col items-center gap-0.5 rounded-2xl py-1.5 text-[11px] font-semibold', pathname.startsWith('/dashboard/small-works') ? 'bg-[var(--ht)] text-[var(--h)]' : 'text-[var(--ink3)]')}>
-          <WrenchScrewdriverIcon className="h-[22px] w-[22px]" />
-          Small Works
-        </Link>
-        {showOperativesTab ? (
-          <Link href="/dashboard/operatives" data-hue="ops" className={cn('flex flex-1 flex-col items-center gap-0.5 rounded-2xl py-1.5 text-[11px] font-semibold', pathname.startsWith('/dashboard/operatives') ? 'bg-[var(--ht)] text-[var(--h)]' : 'text-[var(--ink3)]')}>
-            <UsersIcon className="h-[22px] w-[22px]" />
-            Operatives
-          </Link>
-        ) : (
-          <Link href="/dashboard/settings" data-hue="lib" className={cn('flex flex-1 flex-col items-center gap-0.5 rounded-2xl py-1.5 text-[11px] font-semibold', pathname.startsWith('/dashboard/settings') ? 'bg-[var(--ht)] text-[var(--h)]' : 'text-[var(--ink3)]')}>
-            <Cog6ToothIcon className="h-[22px] w-[22px]" />
-            Settings
-          </Link>
-        )}
-        <button type="button" data-hue="lib" onClick={() => setMenuOpen(true)} className="flex flex-1 flex-col items-center gap-0.5 rounded-2xl py-1.5 text-[11px] font-semibold text-[var(--ink3)]">
-          <EllipsisHorizontalIcon className="h-[22px] w-[22px]" />
-          More
-        </button>
-      </nav>
     </div>
   )
 }

@@ -200,7 +200,7 @@ export function SubcontractorsScreen({ selectedId }: { selectedId?: string }) {
 
   return (
     <div className="space-y-5 pb-10">
-      <PageHeader title="Sub contractors" />
+      <PageHeader title="Sub contractors" subtitle="Firms and their operatives" hue="sched" />
       {error ? <p className="text-sm text-red-600">{error}</p> : null}
       <div className="xl:grid xl:grid-cols-[400px_1fr] xl:gap-8">
         {list}
