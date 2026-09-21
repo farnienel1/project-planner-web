@@ -17,7 +17,6 @@ import {
   type RosterSegment,
 } from '@/lib/staff/userRosterUtils'
 import { ErrorBanner } from '@/components/dashboard/PageShell'
-import { FeatureCard } from '@/components/projects/features/featureUi'
 import type { Project, User } from '@/types'
 
 type VisibilityTab = 'managers' | 'operatives'
@@ -29,6 +28,13 @@ const FILTERS: { id: VisibilitySegment; label: string }[] = [
   { id: 'inactive', label: 'Inactive' },
   { id: 'pending', label: 'Pending' },
 ]
+
+function sameIds(a: Set<string>, b: string[] | undefined): boolean {
+  const other = new Set(b ?? [])
+  if (a.size !== other.size) return false
+  for (const id of a) if (!other.has(id)) return false
+  return true
+}
 
 export function ProjectVisibilityPage({
   project,
@@ -51,11 +57,21 @@ export function ProjectVisibilityPage({
     () => new Set(project.hiddenOperativeUserIds ?? [])
   )
   const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     if (organization?.id) loadUsers(organization.id)
   }, [organization, loadUsers])
+
+  useEffect(() => {
+    setHiddenManagers(new Set(project.hiddenManagerUserIds ?? []))
+    setHiddenOperatives(new Set(project.hiddenOperativeUserIds ?? []))
+  }, [project.id, project.hiddenManagerUserIds, project.hiddenOperativeUserIds])
+
+  const dirty =
+    !sameIds(hiddenManagers, project.hiddenManagerUserIds) ||
+    !sameIds(hiddenOperatives, project.hiddenOperativeUserIds)
 
   const roster = useMemo(() => {
     const base = tab === 'managers' ? getManagerUsers(users) : getOperativeModeUsers(users)
@@ -78,81 +94,87 @@ export function ProjectVisibilityPage({
   const isHidden = (userId: string) =>
     tab === 'managers' ? hiddenManagers.has(userId) : hiddenOperatives.has(userId)
 
-  const toggleHidden = async (user: User) => {
-    if (!organization?.id) return
-    const nextManagers = new Set(hiddenManagers)
-    const nextOperatives = new Set(hiddenOperatives)
+  const toggleHidden = (user: User) => {
+    setSaved(false)
+    setError(null)
     if (tab === 'managers') {
-      if (nextManagers.has(user.id)) nextManagers.delete(user.id)
-      else nextManagers.add(user.id)
-      setHiddenManagers(nextManagers)
+      const next = new Set(hiddenManagers)
+      if (next.has(user.id)) next.delete(user.id)
+      else next.add(user.id)
+      setHiddenManagers(next)
     } else {
-      if (nextOperatives.has(user.id)) nextOperatives.delete(user.id)
-      else nextOperatives.add(user.id)
-      setHiddenOperatives(nextOperatives)
+      const next = new Set(hiddenOperatives)
+      if (next.has(user.id)) next.delete(user.id)
+      else next.add(user.id)
+      setHiddenOperatives(next)
     }
+  }
 
+  const saveVisibility = async () => {
+    if (!organization?.id) return
     setSaving(true)
     setError(null)
     try {
       const input = projectToSaveInput(
         {
           ...project,
-          hiddenManagerUserIds: Array.from(tab === 'managers' ? nextManagers : hiddenManagers),
-          hiddenOperativeUserIds: Array.from(tab === 'operatives' ? nextOperatives : hiddenOperatives),
+          hiddenManagerUserIds: Array.from(hiddenManagers),
+          hiddenOperativeUserIds: Array.from(hiddenOperatives),
           updatedAt: new Date(),
         },
         organization.id
       )
       await saveProject(input, collection)
+      setSaved(true)
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to save visibility')
-      if (tab === 'managers') setHiddenManagers(hiddenManagers)
-      else setHiddenOperatives(hiddenOperatives)
     } finally {
       setSaving(false)
     }
   }
 
   return (
-    <div className="space-y-4 xl:grid xl:grid-cols-12 xl:items-start xl:gap-6 xl:space-y-0">
-      <div className="xl:col-span-4">
-        <h2 className="text-[22px] font-bold text-slate-900">View</h2>
-        <p className="mt-2 text-sm leading-relaxed text-slate-500">
+    <div className="grid gmain">
+      <div>
+        <h2 className="h2">View access</h2>
+        <p className="mt-2 muted small" style={{ lineHeight: 1.55 }}>
           This feature can be used to select who will not be able to view the project or small works. Admins always
           have access and cannot be hidden.
         </p>
+        <p className="mt-2 muted small" style={{ lineHeight: 1.55 }}>
+          When unselected the user will not see this job within their account.
+        </p>
       </div>
 
-      <div className="space-y-4 xl:col-span-8">
+      <div className="stack">
         {error && <ErrorBanner message={error} />}
 
-        <div className="flex gap-1 rounded-[13px] bg-[#e7ebf1] p-1">
+        <div className="seg">
           {(['managers', 'operatives'] as VisibilityTab[]).map((item) => (
             <button
               key={item}
               type="button"
+              className={tab === item ? 'on' : ''}
               onClick={() => setTab(item)}
-              className={`flex-1 rounded-[10px] py-2 text-sm font-semibold capitalize transition-colors ${
-                tab === item ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600'
-              }`}
             >
               {item}
             </button>
           ))}
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <label className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
-            Filter:
+        <div className="row wrap">
+          <label className="f" style={{ margin: 0 }}>
+            <span className="sr-only">Filter</span>
             <select
               value={segment}
               onChange={(e) => setSegment(e.target.value as VisibilitySegment)}
-              className="bg-transparent font-semibold outline-none"
+              className="in"
+              aria-label="Filter"
+              style={{ width: 160, height: 44 }}
             >
               {FILTERS.map((item) => (
                 <option key={item.id} value={item.id}>
-                  {item.label}
+                  Filter: {item.label}
                 </option>
               ))}
             </select>
@@ -163,7 +185,7 @@ export function ProjectVisibilityPage({
               setShowSearch((v) => !v)
               if (showSearch) setSearch('')
             }}
-            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700"
+            className="btn"
           >
             Search
           </button>
@@ -175,40 +197,62 @@ export function ProjectVisibilityPage({
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search user"
-            className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm outline-none focus:border-blue-400"
+            className="in"
+            aria-label="Search user"
           />
         )}
 
-        <FeatureCard className="overflow-hidden divide-y divide-slate-100">
+        <section className="card overflow-hidden">
           {filtered.length === 0 ? (
-            <p className="px-4 py-8 text-center text-sm text-slate-500">No users match this filter.</p>
+            <p className="card-b muted small" style={{ textAlign: 'center' }}>
+              No users match this filter.
+            </p>
           ) : (
-            filtered.map((user) => {
-              const hidden = isHidden(user.id)
-              return (
-                <button
-                  key={user.id}
-                  type="button"
-                  disabled={saving}
-                  onClick={() => void toggleHidden(user)}
-                  className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left hover:bg-slate-50"
-                >
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold text-slate-900">
-                      {user.firstName} {user.surname}
-                    </p>
-                    <p className="truncate text-xs text-slate-500">{user.email}</p>
-                  </div>
-                  {hidden ? (
-                    <span className="h-6 w-6 rounded-full border border-slate-300" />
-                  ) : (
-                    <CheckCircleIcon className="h-6 w-6 text-[var(--blue)]" />
-                  )}
-                </button>
-              )
-            })
+            <div className="card-b rows">
+              {filtered.map((user) => {
+                const hidden = isHidden(user.id)
+                return (
+                  <button
+                    key={user.id}
+                    type="button"
+                    onClick={() => toggleHidden(user)}
+                    className="ritem"
+                    aria-pressed={!hidden}
+                  >
+                    <span className="grow">
+                      <span className="t">
+                        {user.firstName} {user.surname}
+                      </span>
+                      <span className="s">{user.email}</span>
+                    </span>
+                    {hidden ? (
+                      <span
+                        className="grid h-6 w-6 place-items-center rounded-full"
+                        style={{ boxShadow: 'inset 0 0 0 2px var(--line2)' }}
+                        aria-label="Hidden"
+                      />
+                    ) : (
+                      <CheckCircleIcon className="h-6 w-6 text-[var(--blue)]" aria-label="Visible" />
+                    )}
+                  </button>
+                )
+              })}
+            </div>
           )}
-        </FeatureCard>
+        </section>
+
+        <div className="row wrap">
+          <button
+            type="button"
+            className="btn primary"
+            disabled={saving || !dirty}
+            onClick={() => void saveVisibility()}
+          >
+            {saving ? 'Saving…' : 'Save'}
+          </button>
+          {saved && !dirty ? <span className="muted small">View access saved.</span> : null}
+          {dirty ? <span className="muted small">Unsaved changes</span> : null}
+        </div>
       </div>
     </div>
   )

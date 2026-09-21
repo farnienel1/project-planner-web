@@ -49,17 +49,6 @@ function Avatar({ name, size = 32 }: { name: string; size?: number }) {
   )
 }
 
-function PriorityBadge({ level }: { level: 'high' | 'medium' | 'low' }) {
-  return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-white/18 px-2.5 py-1 text-[11px] font-bold text-white ring-1 ring-white/28">
-      <svg className="h-3 w-3" viewBox="0 0 24 24" fill="currentColor">
-        <path d="M12 3 2 21h20L12 3Zm1 14h-2v2h2v-2Zm0-8h-2v6h2V9Z" />
-      </svg>
-      {level.toUpperCase()}
-    </span>
-  )
-}
-
 function UnbookedDayCard({
   date,
   people,
@@ -75,50 +64,50 @@ function UnbookedDayCard({
     message: person.message,
   }))
   return (
-    <article className="card overflow-hidden">
-      <header className="flex items-center gap-2 bg-gradient-to-br from-[#7F1D1D] to-[#B91C1C] px-4 py-4">
-        <p className="min-w-0 flex-1 text-[17px] font-extrabold tracking-tight text-white">Unbooked labour</p>
-        <PriorityBadge level="high" />
-      </header>
-      <div className="px-4 pb-1 pt-4">
-        <p className="pb-3 text-[13px] font-semibold leading-5 text-[#374151]">
+    <section className="card" data-hue="warn">
+      <div className="card-h">
+        <div className="ico-chip sm">
+          <svg className="h-[18px] w-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+          </svg>
+        </div>
+        <h2 className="h2 grow">Unbooked labour</h2>
+        <span className="pill" data-hue="red">HIGH</span>
+      </div>
+      <div className="card-b rows">
+        <p className="small" style={{ marginBottom: 4 }}>
           {people.length} {people.length === 1 ? 'person is' : 'people are'} missing hours on{' '}
-          <span className="font-bold">{formatLongDay(date)}</span> and are below the standard paid day.
+          <b>{formatLongDay(date)}</b> and are below the standard paid day.
         </p>
-        {parsed.map((person, index) => (
-          <div
-            key={person.id}
-            className={`flex items-center gap-2.5 py-2.5 ${index > 0 ? 'border-t border-black/[0.06]' : ''}`}
-          >
+        {parsed.map((person) => (
+          <div key={person.id} className="ritem accent" data-hue="warn" style={{ cursor: 'default' }}>
             <Avatar name={person.name} />
-            <p className="min-w-0 flex-1 text-[13px] font-semibold">{person.name}</p>
+            <span className="grow">
+              <span className="t">{person.name}</span>
+              <span className="s">Unbooked labour</span>
+            </span>
             {person.badge ? (
-              <span className="rounded-lg border border-[#FDE2E2] bg-[#FEF2F2] px-2 py-0.5 text-[11px] font-bold text-[#DC2626]">
+              <span className="pill solid" data-hue="red">
                 {person.badge}
               </span>
             ) : null}
           </div>
         ))}
-      </div>
-      <div className="space-y-2.5 bg-[#FAFAFA] px-3.5 py-3.5">
-        {canBook ? (
-          <Link
-            href={`/dashboard/book-labour?date=${dayKey(date)}&from=warnings`}
-            className="flex w-full items-center justify-center gap-2 rounded-[13px] bg-gradient-to-r from-[#1D4ED8] to-[#2563EB] py-3.5 text-[15px] font-bold text-white shadow-[0_3px_12px_rgba(37,99,235,0.28)]"
-          >
-            Book labour for this day
-          </Link>
-        ) : null}
-        <div className="flex overflow-hidden rounded-xl border border-black/10 bg-white">
-          <Link
-            href={`/dashboard/daily-overview?date=${dayKey(date)}`}
-            className="flex-1 py-3 text-center text-[13px] font-semibold text-[#2563EB]"
-          >
+        <div className="row wrap" style={{ paddingTop: 4 }}>
+          {canBook ? (
+            <Link
+              href={`/dashboard/book-labour?date=${dayKey(date)}&from=warnings`}
+              className="btn primary"
+            >
+              Book labour for this day
+            </Link>
+          ) : null}
+          <Link href={`/dashboard/daily-overview?date=${dayKey(date)}`} className="btn">
             Open daily overview
           </Link>
         </div>
       </div>
-    </article>
+    </section>
   )
 }
 
@@ -130,25 +119,25 @@ function MaterialsCard({
   smallWorkIds: ReadonlySet<string>
 }) {
   return (
-    <article className="card overflow-hidden">
-      <header className="flex items-center gap-2 bg-gradient-to-br from-[#374151] to-[#4B5563] px-4 py-4">
-        <p className="min-w-0 flex-1 text-[17px] font-extrabold text-white">Missed material order</p>
-        <PriorityBadge level="low" />
-      </header>
-      <div className="space-y-2.5 px-4 py-4">
-        <p className="text-[13px] font-semibold text-[#374151]">{warning.message}</p>
-        <p className="text-[13px] font-semibold">{warning.projectLabel}</p>
-        <p className="text-[12px] text-[var(--ink3)]">Managers should confirm material lists with site teams.</p>
+    <section className="card" data-hue="sw">
+      <div className="card-h">
+        <div className="ico-chip sm">
+          <svg className="h-[18px] w-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M21 7.5l-9-4.5L3 7.5m18 0-9 4.5m9-4.5v9l-9 4.5M3 7.5l9 4.5M3 7.5v9l9 4.5m0-9v9" />
+          </svg>
+        </div>
+        <h2 className="h2 grow">Missed material order</h2>
+        <span className="pill" data-hue="lib">LOW</span>
       </div>
-      <div className="bg-[#FAFAFA] px-3.5 py-3.5">
-        <Link
-          href={projectMaterialsPath(warning.projectId, smallWorkIds)}
-          className="flex w-full items-center justify-center rounded-[13px] bg-gradient-to-r from-[#1D4ED8] to-[#2563EB] py-3 text-[14px] font-bold text-white"
-        >
+      <div className="card-b stack" style={{ gap: 10 }}>
+        <p className="small">{warning.message}</p>
+        <p><b>{warning.projectLabel}</b></p>
+        <p className="muted small">Managers should confirm material lists with site teams.</p>
+        <Link href={projectMaterialsPath(warning.projectId, smallWorkIds)} className="btn primary">
           Open materials
         </Link>
       </div>
-    </article>
+    </section>
   )
 }
 
@@ -161,16 +150,24 @@ function LegacyCard({
   message: string
   severity: 'high' | 'medium' | 'low'
 }) {
+  const hue = severity === 'high' ? 'red' : severity === 'medium' ? 'warn' : 'lib'
   return (
-    <article className="overflow-hidden rounded-[15px] border border-black/[0.07] bg-white shadow-[0_2px_8px_rgba(0,0,0,0.08)]">
-      <header className="flex items-center gap-2.5 bg-gradient-to-b from-[#4B5563] to-[#374151] px-3.5 py-2.5">
-        <p className="min-w-0 flex-1 text-[16.5px] font-semibold tracking-tight text-white">{title}</p>
-        <PriorityBadge level={severity} />
-      </header>
-      <div className="px-3.5 py-3.5">
-        <p className="text-[14px] text-[#121B23]">{message}</p>
+    <section className="card" data-hue={hue}>
+      <div className="card-h">
+        <div className="ico-chip sm">
+          <svg className="h-[18px] w-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+          </svg>
+        </div>
+        <h2 className="h2 grow">{title}</h2>
+        <span className="pill" data-hue={hue}>
+          {severity.toUpperCase()}
+        </span>
       </div>
-    </article>
+      <div className="card-b">
+        <p>{message}</p>
+      </div>
+    </section>
   )
 }
 
@@ -260,7 +257,9 @@ export function WarningsScreen({
         </div>
         <div>
           <h1>Warnings</h1>
-          <div className="sub">{organizationName}</div>
+          <div className="sub">
+            {organizationName} · Live issues from today forward. Separate from the weekly report.
+          </div>
         </div>
         <div className="acts">
           {isAdmin ? (
@@ -274,16 +273,33 @@ export function WarningsScreen({
       {coreCount > 0 ? (
         <section className="hero" data-hue="red" style={{ padding: '22px 26px' }}>
           <div className="relative z-[1]">
-            <p className="eb">Active issues</p>
-            <div className="big" style={{ fontSize: 28 }}>{coreCount} need attention</div>
-            <div className="stats">
-              <div className="st"><b>{highCount}</b><span>High</span></div>
-              <div className="st"><b>0</b><span>Medium</span></div>
-              <div className="st"><b>{lowCount}</b><span>Low</span></div>
+            <div className="row" style={{ alignItems: 'flex-start' }}>
+              <div className="grow">
+                <p className="eb">Active issues</p>
+                <div className="big" style={{ fontSize: 28 }}>{coreCount} need attention</div>
+              </div>
+              {canBook ? (
+                <Link href="/dashboard/book-labour?from=warnings" className="btn hbtn solid">
+                  Book labour
+                </Link>
+              ) : null}
             </div>
-            <p className="mt-3 text-[13px] opacity-85">
-              High: booking clashes and unbooked labour. Low: materials not ordered by cut-off.
-            </p>
+            <div className="stats">
+              <button type="button" className="st" onClick={() => setFilter('all')}>
+                <b>{highCount}</b>
+                <span>High</span>
+                <div className="xs" style={{ opacity: 0.75, marginTop: 2 }}>Booking clashes & unbooked labour</div>
+              </button>
+              <div className="st">
+                <b>0</b>
+                <span>Medium</span>
+              </div>
+              <button type="button" className="st" onClick={() => setFilter('materials')}>
+                <b>{lowCount}</b>
+                <span>Low</span>
+                <div className="xs" style={{ opacity: 0.75, marginTop: 2 }}>Materials not ordered by cut-off</div>
+              </button>
+            </div>
           </div>
         </section>
       ) : null}
@@ -392,15 +408,6 @@ export function WarningsScreen({
             />
           ))
         : null}
-    </div>
-  )
-}
-
-function HeroStat({ value, label }: { value: number; label: string }) {
-  return (
-    <div className="rounded-xl bg-white/14 px-2.5 py-2.5 ring-1 ring-white/12">
-      <p className="text-[22px] font-bold">{value}</p>
-      <p className="text-[11px] font-medium text-white/65">{label}</p>
     </div>
   )
 }

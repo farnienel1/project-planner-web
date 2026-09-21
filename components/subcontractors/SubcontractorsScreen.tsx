@@ -13,7 +13,7 @@ import { useSubcontractorStore } from '@/lib/stores/subcontractorStore'
 import { canManageSubcontractors } from '@/lib/permissions'
 import { consumeCreateQuery } from '@/lib/navigation/createMenu'
 import { newUuid } from '@/lib/firebase/firestoreUtils'
-import { EmptyState, FilterChip, IosFormModal, PageHeader } from '@/components/ios/primitives'
+import { IosFormModal } from '@/components/ios/primitives'
 
 const POSITIONS = ['Finance', 'Contract Manager', 'Project Manager', 'Site Manager', 'Supervisor', 'Installer']
 
@@ -48,19 +48,41 @@ export function SubcontractorsScreen({ selectedId }: { selectedId?: string }) {
     return ['All', ...Array.from(set).sort((a, b) => a.localeCompare(b))]
   }, [subcontractors])
 
+  const sorted = useMemo(
+    () => [...subcontractors].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })),
+    [subcontractors]
+  )
+
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase()
-    return [...subcontractors]
-      .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }))
-      .filter((row) => {
-        if (trade !== 'All' && row.subcontractorType.toLowerCase() !== trade.toLowerCase()) return false
-        if (!query) return true
-        return row.name.toLowerCase().includes(query) || row.subcontractorType.toLowerCase().includes(query)
-      })
-  }, [subcontractors, search, trade])
+    return sorted.filter((row) => {
+      if (trade !== 'All' && row.subcontractorType.toLowerCase() !== trade.toLowerCase()) return false
+      if (!query) return true
+      return row.name.toLowerCase().includes(query) || row.subcontractorType.toLowerCase().includes(query)
+    })
+  }, [sorted, search, trade])
 
-  const selected = subcontractors.find((row) => row.id === selectedId) || null
+  const selected = filtered.find((row) => row.id === selectedId) || filtered[0] || null
   const operativeCount = subcontractors.reduce((sum, row) => sum + row.contacts.length, 0)
+
+  function chooseTrade(next: string) {
+    setTrade(next)
+    const query = search.trim().toLowerCase()
+    const list = sorted.filter((row) => {
+      if (next !== 'All' && row.subcontractorType.toLowerCase() !== next.toLowerCase()) return false
+      if (!query) return true
+      return row.name.toLowerCase().includes(query) || row.subcontractorType.toLowerCase().includes(query)
+    })
+    if (list[0]) router.push(`/dashboard/sub-contractors/${list[0].id}`)
+    else router.push('/dashboard/sub-contractors')
+  }
+
+  useEffect(() => {
+    if (loading || sorted.length === 0) return
+    if (selectedId) return
+    const first = filtered[0]
+    if (first) router.replace(`/dashboard/sub-contractors/${first.id}`)
+  }, [loading, sorted.length, selectedId, filtered, router])
 
   if (!user || !canManage) return null
   if (loading && subcontractors.length === 0) {
@@ -71,65 +93,70 @@ export function SubcontractorsScreen({ selectedId }: { selectedId?: string }) {
     )
   }
 
+  const initials = (name: string) =>
+    name
+      .split(' ')
+      .filter(Boolean)
+      .map((part) => part[0])
+      .join('')
+      .slice(0, 2)
+      .toUpperCase() || 'SC'
+
   const list = (
-    <div className="space-y-4">
-      <button
-        type="button"
-        onClick={() => setEditor(emptyFirm())}
-        className="flex w-full items-center gap-3 rounded-xl border border-dashed border-[var(--blue)]/40 bg-white px-4 py-3 text-[var(--blue)]"
-      >
-        <PlusIcon className="h-5 w-5" />
-        <span className="font-semibold">New sub contractor</span>
-      </button>
-      <p className="px-1 text-[11px] font-semibold uppercase tracking-[0.4px] text-slate-500">
-        Your sub contractors · {subcontractors.length} Firm{subcontractors.length === 1 ? '' : 's'} · {operativeCount}{' '}
-        Operative{operativeCount === 1 ? '' : 's'}
-      </p>
+    <div className="stack" style={{ gap: 12 }}>
       <input
         value={search}
         onChange={(e) => setSearch(e.target.value)}
         placeholder="Search firms or trades…"
-        className="w-full rounded-xl border border-[var(--line2)] px-4 py-2.5"
+        className="in"
+        aria-label="Search firms or trades"
       />
-      <div className="flex flex-wrap gap-2">
+      <div className="chips">
         {trades.map((item) => (
-          <FilterChip key={item} title={item} selected={trade === item} onClick={() => setTrade(item)} />
+          <button
+            key={item}
+            type="button"
+            className={`chip ${trade === item ? 'on' : ''}`}
+            data-hue="sched"
+            onClick={() => chooseTrade(item)}
+          >
+            {item}
+          </button>
         ))}
       </div>
       {filtered.length === 0 ? (
-        <div className="rounded-2xl bg-white p-6 shadow-sm">
-          <EmptyState
-            icon={<UserGroupIcon className="h-[60px] w-[60px] text-gray-400" />}
-            title="No sub contractors yet"
-            subtitle="Add your first sub contractor to start booking them to projects and small works."
-          />
+        <div className="empty card pad">
+          <h3>No sub contractors yet</h3>
+          <p>Add your first sub contractor to start booking them to projects and small works.</p>
+          <button type="button" className="btn primary" onClick={() => setEditor(emptyFirm())}>
+            New sub contractor
+          </button>
         </div>
       ) : (
-        <div className="space-y-3">
+        <div className="rows">
           {filtered.map((row) => (
             <button
               key={row.id}
               type="button"
               onClick={() => router.push(`/dashboard/sub-contractors/${row.id}`)}
-              className={`w-full rounded-xl bg-white p-4 text-left shadow-[0_1px_2px_rgba(0,0,0,0.10)] ${
-                selected?.id === row.id ? 'ring-2 ring-[#185FA5]/30' : ''
-              }`}
+              className={`ritem ${selected?.id === row.id ? 'sel' : ''}`}
+              data-hue="sched"
             >
-              <p className="text-[16px] font-bold">{row.name}</p>
-              <p className="mt-1 text-[13px]">
-                <span className="rounded-full bg-violet-50 px-2 py-0.5 text-violet-800">{row.subcontractorType}</span>
-                <span className="ml-2 text-[var(--ink3)]">
-                  {row.contacts.length} Operative{row.contacts.length === 1 ? '' : 's'}
+              <span className="ico-chip" style={{ borderRadius: 12 }}>
+                {initials(row.name)}
+              </span>
+              <span className="grow">
+                <span className="t">{row.name}</span>
+                <span className="s">
+                  {row.contacts.map((c) => c.name).filter(Boolean).slice(0, 3).join(', ') || 'Roster on record'}
                 </span>
-              </p>
-              {row.contacts.slice(0, 3).map((contact) => (
-                <p key={contact.id} className="mt-1 text-[12px] text-[var(--ink3)]">
-                  {contact.name}
-                </p>
-              ))}
-              {row.contacts.length > 3 ? (
-                <p className="text-[12px] text-[var(--blue)]">More (+{row.contacts.length - 3})</p>
-              ) : null}
+              </span>
+              <span className="row" style={{ gap: 6 }}>
+                <span className="pill" data-hue="daily">
+                  {row.subcontractorType}
+                </span>
+                <span className="count soft">{row.contacts.length}</span>
+              </span>
             </button>
           ))}
         </div>
@@ -138,73 +165,90 @@ export function SubcontractorsScreen({ selectedId }: { selectedId?: string }) {
   )
 
   const detail = selected ? (
-    <div className="space-y-5">
-      <div className="flex items-center justify-between">
-        <h2 className="text-[17px] font-semibold">Firm details</h2>
-        <button type="button" onClick={() => setEditor(selected)} className="text-[15px] font-medium text-[var(--blue)]">
+    <section className="card pad" data-hue="sched">
+      <div className="row" style={{ marginBottom: 16 }}>
+        <span className="ico-chip lg" style={{ borderRadius: 24 }}>
+          {initials(selected.name)}
+        </span>
+        <div className="grow">
+          <h2 className="h2" style={{ fontSize: 22 }}>{selected.name}</h2>
+          <span className="pill" data-hue="daily">
+            {selected.subcontractorType}
+          </span>
+          {selected.website ? <p className="small" style={{ marginTop: 6 }}>{selected.website}</p> : null}
+          {selected.address ? <p className="muted small">{selected.address}</p> : null}
+        </div>
+        <button type="button" onClick={() => setEditor(selected)} className="btn">
           Edit
         </button>
       </div>
-      <div className="rounded-xl bg-[var(--soft)] p-5">
-        <h3 className="text-[32px] font-bold leading-tight">{selected.name}</h3>
-        <p className="mt-1 text-[15px] text-[var(--ink3)]">{selected.subcontractorType}</p>
-        {selected.website ? <p className="mt-2 text-sm">{selected.website}</p> : null}
-        {selected.address ? <p className="text-sm text-[var(--ink3)]">{selected.address}</p> : null}
-      </div>
-      <div className="flex items-center justify-between">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.4px] text-slate-500">Operatives</p>
-        <button
-          type="button"
-          onClick={() => setOperativeEditor({ firm: selected })}
-          className="text-[15px] font-semibold text-[var(--blue)]"
-        >
+      <div className="row" style={{ marginBottom: 10 }}>
+        <h3 className="h2 grow" style={{ fontSize: 16 }}>
+          Roster · {selected.contacts.length} operative{selected.contacts.length === 1 ? '' : 's'}
+        </h3>
+        <button type="button" className="btn sm tint" onClick={() => setOperativeEditor({ firm: selected })}>
           Add operative
         </button>
       </div>
       {selected.contacts.length === 0 ? (
-        <p className="text-sm text-[var(--ink3)]">No operatives added yet.</p>
+        <p className="muted">No operatives added yet.</p>
       ) : (
-        <div className="overflow-hidden rounded-2xl bg-white shadow-sm">
-          <table className="min-w-full text-left text-sm">
-            <thead className="bg-[var(--soft)] text-[12px] uppercase text-[var(--ink3)]">
-              <tr>
-                <th className="px-4 py-3">Name</th>
-                <th className="px-4 py-3">Position</th>
-                <th className="px-4 py-3">Email</th>
-                <th className="px-4 py-3">Phone</th>
-              </tr>
-            </thead>
-            <tbody>
-              {selected.contacts.map((contact) => (
-                <tr
-                  key={contact.id}
-                  className="cursor-pointer border-t hover:bg-slate-50"
-                  onClick={() => setOperativeEditor({ firm: selected, contact })}
-                >
-                  <td className="px-4 py-3 font-medium">{contact.name}</td>
-                  <td className="px-4 py-3">{contact.position}</td>
-                  <td className="px-4 py-3">{contact.email || '—'}</td>
-                  <td className="px-4 py-3">{contact.contactNumber || '—'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="rows">
+          {selected.contacts.map((contact) => (
+            <button
+              key={contact.id}
+              type="button"
+              className="ritem"
+              style={{ boxShadow: 'none', background: 'var(--soft)' }}
+              onClick={() => setOperativeEditor({ firm: selected, contact })}
+            >
+              <span className="ico-chip" data-hue="daily">
+                {initials(contact.name)}
+              </span>
+              <span className="grow">
+                <span className="t">{contact.name}</span>
+                <span className="s">
+                  {[contact.position, contact.tradeType, contact.email, contact.contactNumber].filter(Boolean).join(' · ') ||
+                    selected.subcontractorType}
+                </span>
+              </span>
+              <span className="btn sm">Edit</span>
+            </button>
+          ))}
         </div>
       )}
-    </div>
+    </section>
   ) : (
-    <div className="hidden rounded-2xl bg-[var(--soft)] p-8 text-sm text-[var(--ink3)] xl:block">
-      Select a firm to see its roster.
+    <div className="empty card pad">
+      <h3>Select a firm</h3>
+      <p>See its roster, add operatives, and edit firm details.</p>
     </div>
   )
 
   return (
-    <div className="space-y-5 pb-10">
-      <PageHeader title="Sub contractors" subtitle="Firms and their operatives" hue="sched" />
-      {error ? <p className="text-sm text-red-600">{error}</p> : null}
-      <div className="xl:grid xl:grid-cols-[400px_1fr] xl:gap-8">
+    <div className="stack" data-hue="sched">
+      <div className="phead" data-hue="sched">
+        <div className="badge-ico">
+          <UserGroupIcon className="h-6 w-6" />
+        </div>
+        <div>
+          <h1>Sub contractors</h1>
+          <div className="sub">
+            Your sub contractors · {subcontractors.length} firm{subcontractors.length === 1 ? '' : 's'} · {operativeCount}{' '}
+            operative{operativeCount === 1 ? '' : 's'}
+          </div>
+        </div>
+        <div className="acts">
+          <button type="button" className="btn primary" onClick={() => setEditor(emptyFirm())}>
+            <PlusIcon className="h-4 w-4" />
+            New sub contractor
+          </button>
+        </div>
+      </div>
+      {error ? <p className="banner" data-hue="red">{error}</p> : null}
+      <div className="grid gmain">
         {list}
-        {detail}
+        <div style={{ position: 'sticky', top: 10 }}>{detail}</div>
       </div>
       {editor ? (
         <FirmEditor
