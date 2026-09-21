@@ -124,6 +124,7 @@ export function WeeklyReportScreen({
   const [customStart, setCustomStart] = useState(defaultCustomStart)
   const [customEnd, setCustomEnd] = useState(defaultCustomEnd)
   const [generating, setGenerating] = useState(false)
+  const [generated, setGenerated] = useState(false)
 
   const effectiveInvoicingPeriodId = invoicingPeriodId || invoicingOptions[0]?.id || ''
 
@@ -178,16 +179,21 @@ export function WeeklyReportScreen({
     if (!report || !period) return
     setGenerating(true)
     try {
-      const html = buildWeeklyReportHtml(report)
-      const filename = `WeeklyReport-${format(period.start, 'yyyyMMdd')}.html`
-      printWeeklyReport(html)
-      downloadWeeklyReport(html, filename)
+      setGenerated(true)
     } finally {
       setGenerating(false)
     }
   }
 
+  const handleDownload = () => {
+    if (!report || !period) return
+    const html = buildWeeklyReportHtml(report)
+    const filename = `WeeklyReport-${format(period.start, 'yyyyMMdd')}.html`
+    downloadWeeklyReport(html, filename)
+  }
+
   const changePeriod = (next: () => void) => {
+    setGenerated(false)
     next()
   }
 
@@ -212,13 +218,13 @@ export function WeeklyReportScreen({
           <div className="sub">Updates as you change the period. Separate from live warnings.</div>
         </div>
         <div className="acts">
-          {report ? (
+          {generated && report ? (
             <>
-              <button type="button" className="btn" onClick={() => period && printWeeklyReport(buildWeeklyReportHtml(report))}>
+              <button type="button" className="btn" onClick={() => printWeeklyReport(buildWeeklyReportHtml(report))}>
                 Print
               </button>
-              <button type="button" className="btn primary" onClick={handleGenerateReport} disabled={generating}>
-                {generating ? 'Generating…' : 'Download report'}
+              <button type="button" className="btn primary" onClick={handleDownload}>
+                Download report
               </button>
             </>
           ) : null}
@@ -366,28 +372,32 @@ export function WeeklyReportScreen({
           </section>
 
           <p className="text-center text-[12px] leading-5 text-[var(--ink3)]">
-            The breakdown below updates as you change the period. Generate exports a printable HTML file — this is
-            separate from Home Warnings (live ops from today forward).
+            Choose a period, then generate to preview and download. This is separate from Home Warnings (live ops from
+            today forward).
           </p>
 
-          <div className="space-y-3 text-center">
+          <section className="card pad" data-hue="rep" style={{ textAlign: 'center' }}>
+            <h2 className="h2">Ready to generate</h2>
             {period ? (
-              <p className="inline-flex items-center rounded-full border border-[#D6E3F0] bg-white px-3.5 py-1.5 text-[12px] font-medium text-[var(--ink3)]">
+              <p className="muted small" style={{ marginTop: 6 }}>
                 {format(period.start, 'd MMM yyyy')} → {format(period.end, 'd MMM yyyy')}
               </p>
             ) : null}
+            <p className="muted small" style={{ marginTop: 8 }}>
+              Creates a printable HTML report ready to share. The breakdown is only shown after you generate.
+            </p>
             <button
               type="button"
               disabled={!report || generating}
               onClick={handleGenerateReport}
               className="btn primary block"
+              style={{ marginTop: 16 }}
             >
-              {generating ? 'Generating Report…' : 'Generate Report'}
+              {generating ? 'Generating report…' : 'Generate report'}
             </button>
-            <p className="text-[11px] text-[var(--ink3)]">Generates a printable HTML report ready to share.</p>
-          </div>
+          </section>
 
-      {report ? (
+      {generated && report ? (
         <>
           <ReportTable
             title="⚠ Warnings Summary"
@@ -500,7 +510,15 @@ export function WeeklyReportScreen({
             empty="No pay data for this period"
           />
         </>
-      ) : null}
+      ) : (
+          <div className="empty card pad">
+            <h3>Generate to preview</h3>
+            <p>
+              The breakdown appears here after you generate: warnings summary, each project, sub contractors, annual
+              leave and manager schedule.
+            </p>
+          </div>
+      )}
     </div>
     </div>
   )

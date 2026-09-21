@@ -453,29 +453,57 @@ a {
   position: relative;
   z-index: 1;
 }
+.hero,
+.hero .eb,
+.hero .big,
+.hero h1,
+.hero h2,
+.hero p,
+.hero .st,
+.hero .st b,
+.hero .st span {
+  color: #fff;
+}
 .hero .st {
-  background: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.14);
   backdrop-filter: blur(6px);
-  border: 1px solid rgba(255, 255, 255, 0.16);
+  border: 1px solid rgba(255, 255, 255, 0.28);
   border-radius: 16px;
   padding: 12px 16px;
   min-width: 130px;
   color: #fff;
   text-align: left;
-  transition: background 0.15s;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  transition: background 0.15s, transform 0.15s;
+}
+.hero:not([data-hue]) {
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.07) 1px, transparent 1px) 0 0 / 28px 28px,
+    linear-gradient(90deg, rgba(255, 255, 255, 0.07) 1px, transparent 1px) 0 0 / 28px 28px,
+    radial-gradient(120% 140% at 100% 0%, #3b86ea 0%, transparent 55%),
+    linear-gradient(135deg, #0c2350 0%, #15408a 55%, #1e5aa8 100%);
+}
+.hero:not([data-hue]) .st {
+  background: rgba(255, 255, 255, 0.16);
+  border-color: rgba(255, 255, 255, 0.32);
 }
 .hero .st:hover {
-  background: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.22);
+}
+.hero:not([data-hue]) .st:hover {
+  background: rgba(255, 255, 255, 0.24);
 }
 .hero .st b {
   font-family: var(--head);
   font-size: 26px;
   display: block;
   line-height: 1.15;
+  color: #fff;
 }
 .hero .st span {
   font-size: 13px;
-  opacity: 0.85;
+  opacity: 0.92;
+  color: #fff;
 }
 .hero .hbtn {
   background: rgba(255, 255, 255, 0.16);
@@ -1322,6 +1350,7 @@ html {
   .form { grid-template-columns: 1fr; }
   .settings-split { grid-template-columns: 1fr; }
   .week { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .hide-sm { display: none; }
   .login { grid-template-columns: 1fr; }
   .login .art,
   .login .hero.art {

@@ -52,6 +52,15 @@ export function getTaskProjectHref(
   return `/dashboard/${collection}/${task.projectId}/tasks`
 }
 
+export function getTaskDetailHref(
+  task: ProjectTask,
+  projects: Project[],
+  smallWorks: Project[]
+): string | null {
+  const href = getTaskProjectHref(task, projects, smallWorks)
+  return href ? `${href}?task=${encodeURIComponent(task.id)}` : null
+}
+
 export function resolveProjectName(
   task: ProjectTask,
   projects: Project[],

@@ -4,7 +4,8 @@
  */
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, Suspense } from 'react'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { FunnelIcon, MagnifyingGlassIcon, PlusIcon } from '@heroicons/react/24/solid'
 import { ClipboardDocumentListIcon } from '@heroicons/react/24/outline'
 import { useAuthStore } from '@/lib/stores/authStore'
@@ -34,6 +35,18 @@ import {
 import type { Project, ProjectTask, ProjectTaskStatus } from '@/types'
 
 export function ProjectTasksSection({ project }: { project: Project }) {
+  return (
+    <Suspense fallback={<LoadingSpinner />}>
+      <ProjectTasksSectionInner project={project} />
+    </Suspense>
+  )
+}
+
+function ProjectTasksSectionInner({ project }: { project: Project }) {
+  const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
+  const taskParam = searchParams.get('task')
   const { organization, user } = useAuthStore()
   const { tasks, loading, error, loadTasks, saveTask, deleteTask } = useTaskStore()
   const { operatives, managers, loadOperatives, loadManagers } = useOperativeStore()
@@ -60,6 +73,18 @@ export function ProjectTasksSection({ project }: { project: Project }) {
     () => tasks.filter((t) => t.projectId.toLowerCase() === project.id.toLowerCase()),
     [tasks, project.id]
   )
+
+  useEffect(() => {
+    if (!taskParam) return
+    const match = projectTasks.find((task) => task.id === taskParam)
+    if (match) setOpenTask(match)
+  }, [taskParam, projectTasks])
+
+  const closeOpenTask = () => {
+    setOpenTask(null)
+    if (!taskParam) return
+    router.replace(pathname, { scroll: false })
+  }
 
   const filterOpts = {
     userEmail: user?.email,
@@ -158,7 +183,7 @@ export function ProjectTasksSection({ project }: { project: Project }) {
     if (!organization?.id) return
     if (!window.confirm(`Delete "${task.title}"?`)) return
     await deleteTask(organization.id, task.id)
-    setOpenTask(null)
+    closeOpenTask()
   }
 
   if (loading) return <LoadingSpinner />
@@ -302,7 +327,7 @@ export function ProjectTasksSection({ project }: { project: Project }) {
         <ProjectTaskDetailSheet
           task={liveOpenTask}
           canDelete={canEdit}
-          onClose={() => setOpenTask(null)}
+          onClose={closeOpenTask}
           onStatusChange={(status) => void handleStatusChange(liveOpenTask, status)}
           onToggleItem={(itemId) => void handleToggleItem(liveOpenTask, itemId)}
           onDelete={() => void handleDelete(liveOpenTask)}
