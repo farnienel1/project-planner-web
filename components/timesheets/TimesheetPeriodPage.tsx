@@ -65,7 +65,7 @@ import {
 import { buildTimesheetInvoiceHtml, printTimesheetInvoice } from '@/lib/timesheets/invoiceGenerator'
 import {
   buildTimesheetInvoicePdf,
-  downloadTimesheetPdf,
+  shareTimesheetPdf,
   timesheetInvoicePdfFileName,
 } from '@/lib/timesheets/invoicePdf'
 import {
@@ -73,6 +73,7 @@ import {
   extraFormManagerSuggestions,
   isTimesheetAgreedManagerCandidate,
   subjectForUser,
+  timesheetReceiptStoredName,
 } from '@/lib/timesheets/timesheetWeekUtils'
 import { mergeProjectsAndSmallWorks } from '@/lib/projects/workStatus'
 import { SignaturePad } from '@/components/timesheets/SignaturePad'
@@ -748,8 +749,8 @@ export function TimesheetPeriodPage({
           canReview={canManagerReview}
           timeZone={timeZone}
           onSave={(next) => void persist(next)}
-          onEditExtra={(type, id, title, original, current) => {
-            setEditingExtra({ type, id, title, original })
+          onEditExtra={(type, id, title, _original, current) => {
+            setEditingExtra({ type, id, title, original: current })
             setEditAmount(current.toFixed(2))
           }}
         />
@@ -944,7 +945,10 @@ export function TimesheetPeriodPage({
               type="button"
               onClick={() => {
                 if (invoicePdf) {
-                  downloadTimesheetPdf(invoicePdf, timesheetInvoicePdfFileName(subjectForUser(subjectUser, operatives).name))
+                  void shareTimesheetPdf(
+                    invoicePdf,
+                    timesheetInvoicePdfFileName(subjectForUser(subjectUser, operatives).name)
+                  )
                   return
                 }
                 printTimesheetInvoice(invoiceHtml)
@@ -1784,11 +1788,16 @@ function ExtraForm({
             <span className={`ml-auto text-[12px] ${receiptName ? 'text-[#007AFF]' : 'text-red-600'}`}>{receiptName || 'Required'}</span>
             <input
               type="file"
-              accept="image/*,application/pdf"
+              accept="image/*"
               className="sr-only"
               onChange={(event) => {
                 const file = event.target.files?.[0]
-                setReceiptName(file ? file.name : null)
+                if (!file || !file.type.startsWith('image/')) {
+                  setReceiptName(null)
+                  event.target.value = ''
+                  return
+                }
+                setReceiptName(timesheetReceiptStoredName(file.name))
               }}
             />
           </label>
