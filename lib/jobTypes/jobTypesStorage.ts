@@ -6,13 +6,17 @@
  * catalogue while projects/small works still keep customJobType / jobType. Web unions those
  * names into the stored list even when the catalogue is not empty, then refuses to persist
  * an empty overwrite. Recommended iOS enum names (CAT A, CAT B, Small Works, Maintenance)
- * are always re-seeded if missing.
+ * plus Decarbonisation (a custom type this organisation already used) are always re-seeded
+ * if missing.
  */
 import { collection, doc, getDoc, getDocs, setDoc, Timestamp } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
 import { ORG_SETTINGS_JOB_TYPES_DOC } from '@/lib/firebase/orgCollections'
 import { unionUniqueStrings } from '@/lib/catalogues/catalogueWriteGuard'
 import { DEFAULT_JOB_TYPES } from '@/types'
+
+/** iOS enum names plus custom types this organisation already used that the empty overwrite dropped. */
+export const RESTORED_JOB_TYPES = [...DEFAULT_JOB_TYPES, 'Decarbonisation'] as const
 
 export function jobTypesFromWorkRecords(
   records: Array<{ jobType?: string; customJobType?: string }>
@@ -72,7 +76,7 @@ export function mergeJobTypeCatalogues(stored: string[], recovered: string[]): s
       stored.map((item) => canonicalJobTypeName(item)),
       recovered.map((item) => canonicalJobTypeName(item))
     ),
-    [...DEFAULT_JOB_TYPES]
+    [...RESTORED_JOB_TYPES]
   )
 }
 
@@ -120,7 +124,7 @@ export function jobTypeFieldsFromRecord(data: Record<string, unknown>): {
 }
 
 export async function loadJobTypes(organizationId: string): Promise<string[]> {
-  if (!db) return [...DEFAULT_JOB_TYPES]
+  if (!db) return [...RESTORED_JOB_TYPES]
   try {
     const [snap, orgSnap] = await Promise.all([
       getDoc(doc(db, 'organizations', organizationId, 'settings', ORG_SETTINGS_JOB_TYPES_DOC)),
@@ -168,7 +172,7 @@ export async function recoverJobTypesFromWork(organizationId: string): Promise<s
       // Read-only accounts still get the restored list in the UI.
     }
   }
-  return merged.length > 0 ? merged : [...DEFAULT_JOB_TYPES]
+  return merged.length > 0 ? merged : [...RESTORED_JOB_TYPES]
 }
 
 /** iOS overwrites the whole settings/jobTypes document — no merge. Empty catalogues are restored from projects on load. */

@@ -210,7 +210,7 @@ const TOPICS: Topic[] = [
         summary: 'CAT A, Decarbonisation and other catalogue names.',
         href: '/dashboard/job-types',
         body: [
-          'Job types are the organisation catalogue. CAT A, CAT B, Small Works and Maintenance are always restored if missing. Custom names still sitting on live jobs (including Decarbonisation stored as a custom type) are merged back in when you open the app.',
+          'Job types are the organisation catalogue. CAT A, CAT B, Small Works, Maintenance and Decarbonisation are always restored if missing. Other custom names still sitting on live jobs are merged back in when you open the app.',
           'If a custom type only lived in the old list and was never saved on a job, add it once with Add Job Type. Do not save an empty list.',
         ],
       },
