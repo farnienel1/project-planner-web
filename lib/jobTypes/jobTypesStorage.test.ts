@@ -67,7 +67,7 @@ test('mergeJobTypeCatalogues restores CAT A and custom types such as Decarbonisa
 
 test('mergeJobTypeCatalogues always re-seeds CAT A even when stored and recovered lists are empty', () => {
   const merged = mergeJobTypeCatalogues([], [])
-  assert.deepEqual(merged, ['CAT A', 'CAT B', 'Maintenance', 'Small Works'])
+  assert.deepEqual(merged, ['CAT A', 'CAT B', 'Decarbonisation', 'Maintenance', 'Small Works'])
 })
 
 test('collectionJobTypeForName keeps iOS enum for projects vs small works', () => {
