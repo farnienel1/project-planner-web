@@ -9,7 +9,11 @@ import { useOperativeStore } from '@/lib/stores/operativeStore'
 import { useSubcontractorStore } from '@/lib/stores/subcontractorStore'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { weekDaysFrom } from '@/lib/scheduling/scheduleUtils'
-import type { Project } from '@/types'
+import { estimatedPaidHours, formatHoursLabel, customHoursRangeLabel } from '@/lib/scheduling/paidHours'
+import { BookingEditSheet } from '@/components/schedule/BookingEditSheet'
+import { managerSiteBookingToScheduleBooking } from '@/lib/scheduling/managerSiteBookingUtils'
+import type { Booking, Project } from '@/types'
+import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import { collection, getDocs } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
 
@@ -18,6 +22,8 @@ type SubBooking = {
   subcontractorId: string
   date: Date
   timeSlot: string
+  workStartTime?: string
+  workEndTime?: string
 }
 
 function initials(name: string) {
@@ -46,20 +52,13 @@ function Avatar({ name, size = 'sm' }: { name: string; size?: 'sm' | 'md' }) {
 
 function formatSlot(slot: string): string {
   if (!slot || slot === 'FULL DAY' || slot === 'FULL_DAY' || slot === 'Full Day') {
-    return 'FULL DAY'
+    return 'Full day'
   }
+  const compact = slot.toUpperCase().replace(/_/g, ' ')
+  if (compact.includes('CUSTOM')) return 'Custom hours'
+  if (compact === 'AM' || compact.includes('MORNING')) return 'Morning (AM)'
+  if (compact === 'PM' || compact.includes('AFTERNOON')) return 'Afternoon (PM)'
   return slot
-}
-
-function estimateHours(slotStr: string): number {
-  let hours = 8
-  const match = slotStr.match(/(\d{2}):(\d{2})[–-](\d{2}):(\d{2})/)
-  if (match) {
-    const start = parseInt(match[1]) * 60 + parseInt(match[2])
-    const end = parseInt(match[3]) * 60 + parseInt(match[4])
-    hours = Math.round(((end - start) / 60) * 10) / 10
-  }
-  return hours
 }
 
 type DayRow = {
@@ -67,18 +66,26 @@ type DayRow = {
   name: string
   slot: string
   hours: number
+  range?: string | null
   roleLabel: string
   roleTone: 'operative' | 'manager' | 'subcontractor'
+  booking?: Booking
+  managerBooking?: ManagerSiteBooking
 }
 
 function OTBadge({ hours }: { hours: number }) {
   if (hours <= 8) return null
-  const ot = hours - 8
+  const ot = Math.round((hours - 8) * 10) / 10
   return (
     <span className="rounded-md bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-700">
-      +{ot}h OT ×1.5
+      +{formatHoursLabel(ot)}h OT ×1.5
     </span>
   )
+}
+
+function todayDayKey() {
+  const today = new Date()
+  return new Date(today.getFullYear(), today.getMonth(), today.getDate()).toISOString()
 }
 
 export function ProjectScheduleWeekOverview({
@@ -90,19 +97,18 @@ export function ProjectScheduleWeekOverview({
   organizationId: string
   scheduleBasePath: string
 }) {
-  const { bookings, loadBookings } = useBookingStore()
-  const { managerSiteBookings, loadManagerSiteBookings } = useManagerScheduleStore()
+  const { bookings, loadBookings, updateBooking, deleteBooking } = useBookingStore()
+  const { managerSiteBookings, loadManagerSiteBookings, updateManagerSiteBooking, deleteManagerSiteBooking } =
+    useManagerScheduleStore()
   const { operatives, loadOperatives } = useOperativeStore()
   const { users, loadUsers } = useOrgUserStore()
   const { subcontractors, loadSubcontractors } = useSubcontractorStore()
   const [weekStart, setWeekStart] = useState(startOfWeek(new Date(), { weekStartsOn: 1 }))
   const [subBookings, setSubBookings] = useState<SubBooking[]>([])
-  const [expandedDay, setExpandedDay] = useState<string | null>(() => {
-    // Auto-expand today
-    const today = new Date()
-    const todayKey = new Date(today.getFullYear(), today.getMonth(), today.getDate()).toISOString()
-    return todayKey
-  })
+  const [expandedDay, setExpandedDay] = useState<string | null>(todayDayKey)
+  const [editingRow, setEditingRow] = useState<DayRow | null>(null)
+  const [savingEdit, setSavingEdit] = useState(false)
+
   useEffect(() => {
     loadBookings(organizationId)
     loadManagerSiteBookings(organizationId)
@@ -124,6 +130,8 @@ export function ProjectScheduleWeekOverview({
               subcontractorId: String(data.subcontractorId || ''),
               date: (data.date as { toDate?: () => Date })?.toDate?.() || new Date(),
               timeSlot: String(data.timeSlot || 'FULL DAY'),
+              workStartTime: typeof data.workStartTime === 'string' ? data.workStartTime : undefined,
+              workEndTime: typeof data.workEndTime === 'string' ? data.workEndTime : undefined,
             }
           })
           .filter((row): row is SubBooking => row !== null)
@@ -160,9 +168,53 @@ export function ProjectScheduleWeekOverview({
     return { staff, subs }
   }, [weekDays, projectBookings, projectManagerBookings, subBookings])
 
+  const editingBooking: Booking | null = useMemo(() => {
+    if (!editingRow) return null
+    if (editingRow.booking) return editingRow.booking
+    if (editingRow.managerBooking) {
+      return managerSiteBookingToScheduleBooking(
+        editingRow.managerBooking,
+        new Map([[project.id, project.siteName || project.jobNumber]])
+      )
+    }
+    return null
+  }, [editingRow, project.id, project.jobNumber, project.siteName])
+
+  const saveEditing = async (updates: Partial<Booking>) => {
+    if (!editingRow) return
+    setSavingEdit(true)
+    try {
+      if (editingRow.booking) {
+        await updateBooking(editingRow.booking.id, updates)
+      } else if (editingRow.managerBooking) {
+        await updateManagerSiteBooking(organizationId, editingRow.managerBooking.id, {
+          timeSlot: String(updates.timeSlot || editingRow.managerBooking.timeSlot),
+          workStartTime: updates.workStartTime,
+          workEndTime: updates.workEndTime,
+          isBreakRemoved: updates.isBreakRemoved,
+        })
+      }
+    } finally {
+      setSavingEdit(false)
+    }
+  }
+
+  const deleteEditing = async () => {
+    if (!editingRow) return
+    setSavingEdit(true)
+    try {
+      if (editingRow.booking) {
+        await deleteBooking(editingRow.booking.id, organizationId)
+      } else if (editingRow.managerBooking) {
+        await deleteManagerSiteBooking(organizationId, editingRow.managerBooking.id)
+      }
+    } finally {
+      setSavingEdit(false)
+    }
+  }
+
   return (
     <div className="space-y-4">
-      {/* ── Project info strip ── */}
       <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
         <p className="text-xs font-bold text-blue-600 truncate">
           {project.jobNumber} {project.siteName}
@@ -178,7 +230,6 @@ export function ProjectScheduleWeekOverview({
         )}
       </div>
 
-      {/* ── Week nav ── */}
       <div className="flex items-center justify-between gap-3">
         <button
           type="button"
@@ -194,7 +245,7 @@ export function ProjectScheduleWeekOverview({
             Week of {format(weekStart, 'd MMM yyyy')}
           </p>
           <p className="text-xs text-slate-500">
-            {weekCounts.staff} booked · {weekCounts.subs} sub{weekCounts.subs !== 1 ? 's' : ''}
+            {format(weekStart, 'd MMM')} – {format(weekEnd, 'd MMM')} · {weekCounts.staff} booked · {weekCounts.subs} sub{weekCounts.subs !== 1 ? 's' : ''}
           </p>
         </div>
         <button
@@ -208,7 +259,6 @@ export function ProjectScheduleWeekOverview({
         </button>
       </div>
 
-      {/* ── Ops / Subs tab toggle ── */}
       <div className="grid grid-cols-2 gap-2">
         <Link
           href={`${scheduleBasePath}/operatives`}
@@ -230,9 +280,9 @@ export function ProjectScheduleWeekOverview({
         </Link>
       </div>
 
-      {/* ── Week overview ── */}
       <div>
         <p className="mb-2 px-1 text-[11px] font-bold uppercase tracking-widest text-slate-400">Week overview</p>
+        <p className="mb-3 px-1 text-xs text-slate-500">Tap a booking to see the hours breakdown and edit it.</p>
 
         <div className="space-y-2">
           {weekDays.map((day) => {
@@ -246,13 +296,16 @@ export function ProjectScheduleWeekOverview({
                 const op = operatives.find((o) => o.id === b.operativeId)
                 const name = op ? `${op.firstName} ${op.lastName}`.trim() : 'Operative'
                 const slotStr = formatSlot(String(b.timeSlot || 'FULL DAY'))
+                const range = customHoursRangeLabel(b)
                 return {
                   id: b.id,
                   name,
-                  slot: slotStr,
-                  hours: estimateHours(slotStr),
+                  slot: range ? `${slotStr} · ${range}` : slotStr,
+                  hours: estimatedPaidHours(b),
+                  range,
                   roleLabel: 'Op',
                   roleTone: 'operative',
+                  booking: b,
                 }
               })
 
@@ -262,15 +315,18 @@ export function ProjectScheduleWeekOverview({
                 const manager = users.find((u) => u.id === b.userId)
                 const name = manager ? `${manager.firstName} ${manager.surname}`.trim() : 'Manager'
                 const slotStr = formatSlot(String(b.timeSlot || 'FULL DAY'))
+                const range = customHoursRangeLabel(b)
                 const roleLabel =
                   manager?.permissions.adminAccess || manager?.isSuperAdmin ? 'Admin' : 'Mgr'
                 return {
                   id: b.id,
                   name,
-                  slot: slotStr,
-                  hours: estimateHours(slotStr),
+                  slot: range ? `${slotStr} · ${range}` : slotStr,
+                  hours: estimatedPaidHours(b),
+                  range,
                   roleLabel,
                   roleTone: 'manager',
+                  managerBooking: b,
                 }
               })
 
@@ -278,11 +334,15 @@ export function ProjectScheduleWeekOverview({
               .filter((b) => isSameDay(new Date(b.date), day))
               .map((b) => {
                 const sub = subcontractors.find((s) => s.id === b.subcontractorId)
+                const hours = estimatedPaidHours(b)
+                const range = customHoursRangeLabel(b)
+                const slotStr = formatSlot(b.timeSlot)
                 return {
                   id: b.id,
                   name: sub?.name || 'Sub contractor',
-                  slot: formatSlot(b.timeSlot),
-                  hours: 8,
+                  slot: range ? `${slotStr} · ${range}` : slotStr,
+                  hours,
+                  range,
                   roleLabel: 'Sub',
                   roleTone: 'subcontractor',
                 }
@@ -290,6 +350,7 @@ export function ProjectScheduleWeekOverview({
 
             const rows = [...opRows, ...managerRows, ...subRows]
             const bookedCount = rows.length
+            const dayHours = rows.reduce((sum, row) => sum + row.hours, 0)
 
             return (
               <div
@@ -298,7 +359,6 @@ export function ProjectScheduleWeekOverview({
                   isTodayDay ? 'border-blue-400 shadow-blue-100' : 'border-slate-200'
                 }`}
               >
-                {/* Day header row */}
                 <button
                   type="button"
                   onClick={() => setExpandedDay(isExpanded ? null : dayKey)}
@@ -311,8 +371,10 @@ export function ProjectScheduleWeekOverview({
                     <div>
                       <p className={`text-sm font-bold ${isTodayDay ? 'text-blue-700' : 'text-slate-900'}`}>
                         {format(day, 'EEE · d MMM')}
-                        {isTodayDay && <span className="ml-1 text-blue-500">·</span>}
                       </p>
+                      {bookedCount > 0 ? (
+                        <p className="text-[11px] text-slate-500">{formatHoursLabel(dayHours)}h booked</p>
+                      ) : null}
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
@@ -340,7 +402,6 @@ export function ProjectScheduleWeekOverview({
                   </div>
                 </button>
 
-                {/* Expanded rows */}
                 {isExpanded && (
                   <div className="border-t border-slate-100">
                     {rows.length === 0 ? (
@@ -355,32 +416,54 @@ export function ProjectScheduleWeekOverview({
                       </div>
                     ) : (
                       <div className="divide-y divide-slate-100">
-                        {rows.map((row) => (
-                          <div key={row.id} className="flex items-center gap-3 px-4 py-3">
-                            <Avatar name={row.name} size="sm" />
-                            <div className="flex-1 min-w-0">
-                              <p className="text-sm font-semibold text-slate-900 truncate">{row.name}</p>
-                              <p className="text-xs text-slate-500">{row.slot}</p>
+                        {rows.map((row) => {
+                          const clickable = Boolean(row.booking || row.managerBooking)
+                          const inner = (
+                            <>
+                              <Avatar name={row.name} size="sm" />
+                              <div className="flex-1 min-w-0 text-left">
+                                <p className="text-sm font-semibold text-slate-900 truncate">{row.name}</p>
+                                <p className="text-xs text-slate-500">{row.slot}</p>
+                              </div>
+                              <div className="flex items-center gap-1.5">
+                                <OTBadge hours={row.hours} />
+                                <span className={`rounded-lg px-2 py-0.5 text-xs font-bold ${
+                                  row.hours >= 10 ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-600'
+                                }`}>
+                                  {formatHoursLabel(row.hours)}h
+                                </span>
+                                <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                                  row.roleTone === 'subcontractor'
+                                    ? 'bg-violet-100 text-violet-700'
+                                    : row.roleTone === 'manager'
+                                      ? 'bg-blue-100 text-blue-700'
+                                      : 'bg-emerald-100 text-emerald-700'
+                                }`}>
+                                  {row.roleLabel}
+                                </span>
+                                {clickable ? (
+                                  <svg className="h-4 w-4 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                  </svg>
+                                ) : null}
+                              </div>
+                            </>
+                          )
+                          return clickable ? (
+                            <button
+                              key={row.id}
+                              type="button"
+                              onClick={() => setEditingRow(row)}
+                              className="flex w-full items-center gap-3 px-4 py-3 hover:bg-slate-50"
+                            >
+                              {inner}
+                            </button>
+                          ) : (
+                            <div key={row.id} className="flex items-center gap-3 px-4 py-3">
+                              {inner}
                             </div>
-                            <div className="flex items-center gap-1.5">
-                              <OTBadge hours={row.hours} />
-                              <span className={`rounded-lg px-2 py-0.5 text-xs font-bold ${
-                                row.hours >= 10 ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-600'
-                              }`}>
-                                {row.hours}h
-                              </span>
-                              <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                                row.roleTone === 'subcontractor'
-                                  ? 'bg-violet-100 text-violet-700'
-                                  : row.roleTone === 'manager'
-                                    ? 'bg-blue-100 text-blue-700'
-                                    : 'bg-emerald-100 text-emerald-700'
-                              }`}>
-                                {row.roleLabel}
-                              </span>
-                            </div>
-                          </div>
-                        ))}
+                          )
+                        })}
                       </div>
                     )}
                   </div>
@@ -390,6 +473,18 @@ export function ProjectScheduleWeekOverview({
           })}
         </div>
       </div>
+
+      {editingRow && editingBooking ? (
+        <BookingEditSheet
+          booking={editingBooking}
+          operativeName={editingRow.name}
+          projectName={`${project.jobNumber} ${project.siteName}`.trim()}
+          saving={savingEdit}
+          onSave={saveEditing}
+          onDelete={deleteEditing}
+          onClose={() => setEditingRow(null)}
+        />
+      ) : null}
     </div>
   )
 }

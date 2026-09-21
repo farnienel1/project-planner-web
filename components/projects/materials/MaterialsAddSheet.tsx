@@ -29,6 +29,11 @@ export function MaterialsAddSheet({ project, selectedDate, onClose, onSaved }: P
   const [brand, setBrand] = useState('')
   const [productCode, setProductCode] = useState('')
   const [notes, setNotes] = useState('')
+  const [size, setSize] = useState('')
+  const [length, setLength] = useState('')
+  const [lengthUnit, setLengthUnit] = useState('M')
+  const [category, setCategory] = useState('')
+  const [websiteURL, setWebsiteURL] = useState('')
   const [catalogueItemId, setCatalogueItemId] = useState<string | undefined>()
   const [showSuggestions, setShowSuggestions] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -55,6 +60,10 @@ export function MaterialsAddSheet({ project, selectedDate, onClose, onSaved }: P
     setProductCode(s.productCode || '')
     setUnit(s.unit || 'Number')
     setCatalogueItemId(s.catalogueItem?.id)
+    setCategory(s.category || s.catalogueItem?.category || '')
+    setSize(s.catalogueItem?.size || '')
+    setLength(s.catalogueItem?.length || '')
+    setLengthUnit(s.catalogueItem?.lengthUnit || 'M')
     setShowSuggestions(false)
   }
 
@@ -84,6 +93,11 @@ export function MaterialsAddSheet({ project, selectedDate, onClose, onSaved }: P
         productCode: productCode.trim() || undefined,
         catalogueItemId,
         notes: notes.trim() || undefined,
+        size: size.trim() || undefined,
+        length: length.trim() || undefined,
+        lengthUnit: length.trim() ? lengthUnit : undefined,
+        category: category.trim() || undefined,
+        websiteURL: websiteURL.trim() || undefined,
       })
       onSaved()
       onClose()
@@ -184,6 +198,27 @@ export function MaterialsAddSheet({ project, selectedDate, onClose, onSaved }: P
             value={productCode}
             onChange={(e) => setProductCode(e.target.value)}
             placeholder="Product code (optional)"
+          />
+          <FormInput
+            value={category}
+            onChange={(e) => setCategory(e.target.value)}
+            placeholder="Category (optional)"
+          />
+          <div className="grid grid-cols-2 gap-2">
+            <FormInput value={size} onChange={(e) => setSize(e.target.value)} placeholder="Size (optional)" />
+            <FormInput value={length} onChange={(e) => setLength(e.target.value)} placeholder="Length (optional)" />
+          </div>
+          {length.trim() ? (
+            <FormSelect value={lengthUnit} onChange={(e) => setLengthUnit(e.target.value)}>
+              <option value="M">Length unit: M</option>
+              <option value="MM">Length unit: MM</option>
+            </FormSelect>
+          ) : null}
+          <FormInput
+            value={websiteURL}
+            onChange={(e) => setWebsiteURL(e.target.value)}
+            placeholder="Website · optional"
+            type="url"
           />
           <FormTextarea
             value={notes}

@@ -4,6 +4,7 @@ import {
   clampClashLookaheadDays,
   parseWarningDetection,
   resolveWarningDetectionRaw,
+  warningDetectionLooksLikeFactoryDefault,
   warningDetectionToFirestore,
 } from './organizationSettings.ts'
 
@@ -56,4 +57,19 @@ test('nested settings.warningDetection is used when the top-level map has no day
 
 test('Firestore integerValue wrappers still parse as 2', () => {
   assert.equal(clampClashLookaheadDays({ integerValue: '2' }), 2)
+})
+
+test('saved non-default windows are not treated as the factory 7-day preset', () => {
+  assert.equal(
+    warningDetectionLooksLikeFactoryDefault(
+      parseWarningDetection({ clashLookaheadMode: 'numberOfDays', clashLookaheadDays: 7 })
+    ),
+    true
+  )
+  assert.equal(
+    warningDetectionLooksLikeFactoryDefault(
+      parseWarningDetection({ clashLookaheadMode: 'numberOfDays', clashLookaheadDays: 2 })
+    ),
+    false
+  )
 })
