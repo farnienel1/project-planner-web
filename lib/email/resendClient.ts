@@ -23,6 +23,13 @@ function replyTo(): string | undefined {
   return value || 'info@projectplanner.us'
 }
 
+export type ProjectPlannerEmailAttachment = {
+  filename: string
+  content: string
+  type?: string
+  content_type?: string
+}
+
 export async function sendProjectPlannerEmail(params: {
   to: string
   subject: string
@@ -30,8 +37,9 @@ export async function sendProjectPlannerEmail(params: {
   cc?: string
   replyTo?: string
   fromName?: string
+  attachments?: ProjectPlannerEmailAttachment[]
 }): Promise<void> {
-  const payload: Record<string, string> = {
+  const payload: Record<string, unknown> = {
     to: params.to,
     subject: params.subject,
     html: params.html,
@@ -39,6 +47,14 @@ export async function sendProjectPlannerEmail(params: {
     replyTo: params.replyTo?.trim() || replyTo() || 'info@projectplanner.us',
   }
   if (params.cc?.trim()) payload.cc = params.cc.trim()
+  if (params.attachments?.length) {
+    payload.attachments = params.attachments.map((attachment) => ({
+      filename: attachment.filename,
+      content: attachment.content,
+      type: attachment.type || 'application/pdf',
+      content_type: attachment.content_type || attachment.type || 'application/pdf',
+    }))
+  }
 
   const response = await fetch(emailFunctionUrl(), {
     method: 'POST',
