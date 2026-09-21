@@ -17,7 +17,9 @@ import {
 } from '@/lib/permissions'
 import { consumeCreateQuery } from '@/lib/navigation/createMenu'
 import { findOperativeForUser } from '@/lib/operatives/operativeRosterUtils'
-import { EmptyState, IosFormModal, PageHeader } from '@/components/ios/primitives'
+import { IosFormModal } from '@/components/ios/primitives'
+import { PageHeader, EmptyState, Button, IconChip } from '@/components/ui'
+import { SegmentedControl, Field, Input } from '@/components/ui/controls'
 import {
   deleteOrganisationQualification,
   loadOrganisationQualifications,
@@ -26,6 +28,16 @@ import {
   saveOrganisationQualification,
 } from '@/lib/qualifications/orgQualificationStorage'
 import { qualificationCertificatePath, uploadFile } from '@/lib/firebase/storageUtils'
+import {
+  QUALIFICATION_CERT_ACCEPT,
+  QUALIFICATION_CERT_HINT,
+  formatCertificateSaveError,
+  localDateInputValue,
+  dateFromLocalInputValue,
+  qualificationCertificateContentType,
+  qualificationCertificateFileError,
+  uploadPendingCertificates,
+} from '@/lib/qualifications/certificateUpload'
 
 type Tab = 'organisation' | 'mine'
 
@@ -103,6 +115,8 @@ export function QualificationsScreen({ initialTab }: { initialTab?: Tab } = {}) 
       setName('')
       setAddOpen(false)
       await reloadTemplates()
+    } catch (err: unknown) {
+      setError(formatCertificateSaveError(err))
     } finally {
       setSaving(false)
     }
@@ -116,6 +130,7 @@ export function QualificationsScreen({ initialTab }: { initialTab?: Tab } = {}) 
       return
     }
     setSaving(true)
+    setError(null)
     try {
       await saveOrganisationQualification(organization.id, {
         id: editing.id,
@@ -124,6 +139,8 @@ export function QualificationsScreen({ initialTab }: { initialTab?: Tab } = {}) 
       })
       setEditId(null)
       await reloadTemplates()
+    } catch (err: unknown) {
+      setError(formatCertificateSaveError(err))
     } finally {
       setSaving(false)
     }
@@ -133,10 +150,13 @@ export function QualificationsScreen({ initialTab }: { initialTab?: Tab } = {}) 
     if (!organization?.id || !editing) return
     if (!window.confirm(`Delete "${editing.name}"?\nThis cannot be undone.`)) return
     setSaving(true)
+    setError(null)
     try {
       await deleteOrganisationQualification(organization.id, editing.id)
       setEditId(null)
       await reloadTemplates()
+    } catch (err: unknown) {
+      setError(formatCertificateSaveError(err))
     } finally {
       setSaving(false)
     }
@@ -146,12 +166,15 @@ export function QualificationsScreen({ initialTab }: { initialTab?: Tab } = {}) 
     if (!organization?.id || !linked) return
     if (linked.qualifications.some((row) => row.id === template.id)) return
     setSaving(true)
+    setError(null)
     try {
       await saveOperative(organization.id, {
         ...linked,
         qualifications: [...linked.qualifications, template],
       })
       setPickerOpen(false)
+    } catch (err: unknown) {
+      setError(formatCertificateSaveError(err))
     } finally {
       setSaving(false)
     }
@@ -174,32 +197,29 @@ export function QualificationsScreen({ initialTab }: { initialTab?: Tab } = {}) 
     <div className="space-y-5 pb-10">
       <PageHeader
         title="Qualifications"
+        subtitle="Organisation templates and the certificates on your profile"
+        hue="rep"
+        icon={<AcademicCapIcon className="h-7 w-7" />}
         actions={
           canManageOrg && tab === 'organisation' ? (
-            <button type="button" onClick={() => { setName(''); setError(null); setAddOpen(true) }} className="text-[15px] font-semibold text-[#185FA5]">
+            <Button variant="primary" onClick={() => { setName(''); setError(null); setAddOpen(true) }}>
               Add
-            </button>
+            </Button>
           ) : null
         }
       />
 
       {canManageOrg ? (
-        <div className="inline-flex rounded-xl bg-[#E5E5EA] p-1">
-          {(['organisation', 'mine'] as Tab[]).map((value) => (
-            <button
-              key={value}
-              type="button"
-              onClick={() => setTab(value)}
-              className={`rounded-lg px-4 py-1.5 text-[13px] font-semibold ${
-                tab === value ? 'bg-white text-ios-ink shadow-sm' : 'text-ios-muted'
-              }`}
-            >
-              {value === 'organisation' ? 'Organisation Qualifications' : 'My Qualifications'}
-            </button>
-          ))}
-        </div>
+        <SegmentedControl
+          value={tab}
+          onChange={(value) => setTab(value as Tab)}
+          options={[
+            { value: 'organisation', label: 'Organisation Qualifications' },
+            { value: 'mine', label: 'My Qualifications' },
+          ]}
+        />
       ) : (
-        <h2 className="text-[22px] font-semibold">My Qualifications</h2>
+        <h2 className="text-[22px] font-bold">My Qualifications</h2>
       )}
 
       {error ? <p className="text-sm font-medium text-red-600">{error}</p> : null}
@@ -208,30 +228,33 @@ export function QualificationsScreen({ initialTab }: { initialTab?: Tab } = {}) 
         <div className="xl:grid xl:grid-cols-[400px_1fr] xl:gap-8">
           <div>
             {templates.length === 0 ? (
-              <div className="rounded-2xl bg-white p-6 shadow-[0_1px_2px_rgba(0,0,0,0.10)]">
+              <div className="rounded-[18px] bg-[var(--card)] p-6 shadow-[var(--sh)]">
                 <EmptyState
-                  icon={<AcademicCapIcon className="h-[60px] w-[60px] text-gray-400" />}
+                  hue="rep"
+                  icon={<IconChip hue="rep" size="lg"><AcademicCapIcon className="h-7 w-7" /></IconChip>}
                   title="No Qualifications Added Yet"
                   subtitle="Add organisation qualification templates. Staff can then assign them on My Qualifications, with their own expiry dates and certificates."
+                  action={
+                    <Button variant="primary" onClick={() => setAddOpen(true)}>
+                      Create New Qualification
+                    </Button>
+                  }
                 />
-                <div className="flex justify-center">
-                  <button type="button" onClick={() => setAddOpen(true)} className="rounded-xl bg-[#185FA5] px-5 py-2.5 text-[15px] font-semibold text-white">
-                    Create New Qualification
-                  </button>
-                </div>
               </div>
             ) : (
-              <div className="overflow-hidden rounded-2xl bg-white shadow-[0_1px_2px_rgba(0,0,0,0.10)] divide-y divide-[#E5E5EA]">
+              <div className="divide-y divide-[var(--line)] overflow-hidden rounded-[18px] bg-[var(--card)] shadow-[var(--sh)]">
                 {templates.map((row) => (
                   <button
                     key={row.id}
                     type="button"
                     onClick={() => { setEditId(row.id); setName(row.name); setError(null) }}
-                    className={`flex w-full items-center gap-3 px-4 py-3.5 text-left hover:bg-slate-50 ${
-                      editId === row.id ? 'bg-[#E6F1FB]' : ''
+                    className={`flex w-full items-center gap-3 px-4 py-3.5 text-left hover:bg-[var(--soft)] ${
+                      editId === row.id ? 'bg-[var(--rep-t)]' : ''
                     }`}
                   >
-                    <AcademicCapIcon className="h-5 w-5 text-[#185FA5]" />
+                    <IconChip hue="rep" size="sm">
+                      <AcademicCapIcon className="h-4 w-4" />
+                    </IconChip>
                     <span className="text-[16px] font-medium">{row.name}</span>
                   </button>
                 ))}
@@ -239,23 +262,18 @@ export function QualificationsScreen({ initialTab }: { initialTab?: Tab } = {}) 
             )}
           </div>
           {editing ? (
-            <form onSubmit={handleEdit} className="rounded-2xl bg-white p-6 shadow-[0_1px_2px_rgba(0,0,0,0.10)]">
-              <h2 className="text-[22px] font-semibold">Edit Qualification</h2>
-              <label className="mt-4 block text-[15px] font-medium">
-                Name
-                <input
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  className="mt-1.5 w-full rounded-lg border border-ios-search-border px-3 py-2.5 text-[15px]"
-                />
-              </label>
+            <form onSubmit={handleEdit} className="rounded-[18px] bg-[var(--card)] p-6 shadow-[var(--sh)]">
+              <h2 className="text-[22px] font-bold">Edit Qualification</h2>
+              <Field label="Name" className="mt-4">
+                <Input value={name} onChange={(e) => setName(e.target.value)} />
+              </Field>
               <div className="mt-6 flex flex-wrap gap-3">
-                <button type="submit" disabled={saving || !name.trim()} className="rounded-xl bg-[#185FA5] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
+                <Button variant="primary" disabled={saving || !name.trim()} type="submit">
                   Save
-                </button>
-                <button type="button" onClick={handleDelete} className="text-sm font-semibold text-red-600">
+                </Button>
+                <Button variant="danger" onClick={handleDelete}>
                   Delete Qualification
-                </button>
+                </Button>
               </div>
               <p className="mt-3 text-[13px] text-ios-muted">
                 Deleting removes this template from the organisation list. Existing assignments on staff profiles are
@@ -280,7 +298,9 @@ export function QualificationsScreen({ initialTab }: { initialTab?: Tab } = {}) 
             try {
               await updateMine(next)
             } catch (err: unknown) {
-              setError(err instanceof Error ? err.message : 'Failed to save qualifications')
+              const message = formatCertificateSaveError(err)
+              setError(message)
+              throw err instanceof Error ? err : new Error(message)
             } finally {
               setSaving(false)
             }
@@ -314,13 +334,13 @@ export function QualificationsScreen({ initialTab }: { initialTab?: Tab } = {}) 
             <p className="text-[15px] text-ios-muted">
               {templates.length === 0
                 ? canManageOrg
-                  ? 'No qualification templates yet. Tap Add to create one for the organisation.'
+                  ? 'No qualification templates yet. Click Add to create one for the organisation.'
                   : 'No qualification templates yet. Ask someone who can manage qualifications to add them.'
                 : 'Every organisation qualification is already on this profile.'}
             </p>
           ) : (
             <div className="space-y-2">
-              <p className="text-[13px] text-ios-muted">Tap + to add a qualification. Set expiry dates and certificates when you return.</p>
+              <p className="text-[13px] text-ios-muted">Click + to add a qualification. Set expiry dates and certificates when you return.</p>
               {templates
                 .filter((row) => !linked?.qualifications.some((assigned) => assigned.id === row.id))
                 .map((row) => (
@@ -360,18 +380,21 @@ function MyQualificationsPanel({
   const [draft, setDraft] = useState(linked)
   const [dirty, setDirty] = useState(false)
   const [uploading, setUploading] = useState(false)
+  const [pendingFiles, setPendingFiles] = useState<Record<string, File>>({})
+  const [localError, setLocalError] = useState<string | null>(null)
 
   useEffect(() => {
     if (dirty) return
     setDraft(linked)
-    setDirty(false)
+    setPendingFiles({})
+    setLocalError(null)
   }, [linked, dirty])
 
   if (!linked || !draft) {
     return (
-      <div className="rounded-2xl bg-white p-6 shadow-[0_1px_2px_rgba(0,0,0,0.10)]">
+      <div className="rounded-[18px] bg-[var(--card)] p-6 shadow-[var(--sh)]">
         <p className="text-[18px] font-semibold">Profile not linked</p>
-        <p className="mt-2 text-[15px] text-ios-muted">
+        <p className="mt-2 text-[15px] text-[var(--ink3)]">
           No operative record matches your email. Ask an admin to check your account email matches your operative
           profile.
         </p>
@@ -381,90 +404,126 @@ function MyQualificationsPanel({
 
   if (draft.qualifications.length === 0) {
     return (
-      <div className="rounded-2xl bg-white p-6 shadow-[0_1px_2px_rgba(0,0,0,0.10)]">
-        <p className="text-[15px] text-ios-muted">
+      <div className="rounded-[18px] bg-[var(--card)] p-6 shadow-[var(--sh)]">
+        <p className="text-[15px] text-[var(--ink3)]">
           {templates.length === 0
             ? 'No qualifications have been set up for your organisation yet. Ask a manager or admin to add qualification templates.'
-            : 'You have not added any qualifications yet. Tap Add qualifications to pick from your organisation list, then set expiry dates and certificates below.'}
+            : 'You have not added any qualifications yet. Click Add qualifications to pick from your organisation list, then set expiry dates and certificates below.'}
         </p>
-        <button type="button" onClick={onAdd} className="mt-4 rounded-xl bg-[#185FA5] px-4 py-2 text-sm font-semibold text-white">
+        <Button variant="primary" className="mt-4" onClick={onAdd}>
           Add qualifications
-        </button>
+        </Button>
       </div>
     )
   }
 
-  const patch = (next: NonNullable<typeof draft>) => {
-    setDraft(next)
+  const patch = (updater: (current: NonNullable<typeof draft>) => NonNullable<typeof draft>) => {
+    setDraft((current) => (current ? updater(current) : current))
     setDirty(true)
+  }
+
+  const handleSave = async () => {
+    if (!draft) return
+    if (!organizationId) {
+      setLocalError('Could not save qualifications. Organisation is missing.')
+      return
+    }
+    setLocalError(null)
+    setUploading(true)
+    try {
+      const uploadedUrls = await uploadPendingCertificates({
+        pending: pendingFiles,
+        existingUrls: draft.qualificationCertificateURLs,
+        uploadOne: async (qualificationId, file) => {
+          const path = qualificationCertificatePath(
+            organizationId,
+            draft.id,
+            qualificationId,
+            file.name
+          )
+          return uploadFile(path, file, qualificationCertificateContentType(file))
+        },
+      })
+      const next = { ...draft, qualificationCertificateURLs: uploadedUrls }
+      await onSave(next)
+      setDraft(next)
+      setPendingFiles({})
+      setDirty(false)
+    } catch (err: unknown) {
+      setLocalError(formatCertificateSaveError(err))
+    } finally {
+      setUploading(false)
+    }
   }
 
   return (
     <div className="space-y-4">
-      <div className="sticky bottom-20 z-10 flex flex-wrap items-center justify-end gap-3 rounded-2xl bg-white/95 p-3 shadow-[0_1px_2px_rgba(0,0,0,0.10)] backdrop-blur lg:bottom-4">
-        <button type="button" onClick={onAdd} className="text-[15px] font-semibold text-[#185FA5]">
+      <div className="sticky bottom-20 z-10 flex flex-wrap items-center justify-end gap-3 rounded-[18px] bg-[color-mix(in_srgb,var(--card)_95%,transparent)] p-3 shadow-[var(--sh)] backdrop-blur lg:bottom-4">
+        <Button variant="ghost" onClick={onAdd}>
           Add qualifications
-        </button>
-        <button
-          type="button"
-          disabled={saving || uploading || !dirty}
-          onClick={() => void onSave(draft).then(() => setDirty(false))}
-          className="rounded-xl bg-[#185FA5] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
-        >
-          {saving ? 'Saving…' : dirty ? 'Save' : 'Saved'}
-        </button>
+        </Button>
+        <Button variant="primary" disabled={saving || uploading || !dirty} onClick={() => void handleSave()}>
+          {uploading || saving ? 'Saving…' : dirty ? 'Save' : 'Saved'}
+        </Button>
       </div>
+      {localError ? <p className="text-sm font-medium text-red-600">{localError}</p> : null}
       {dirty ? (
-        <p className="text-right text-[13px] text-amber-700">Unsaved changes — tap Save to keep expiry dates and certificates.</p>
+        <p className="text-right text-[13px] text-amber-700">
+          Unsaved changes — click Save to keep expiry dates and certificates.
+        </p>
       ) : null}
       <div className="grid gap-4 md:grid-cols-2">
         {draft.qualifications.map((qual) => {
           const expiry = draft.qualificationExpiryDates?.[qual.id]
           const cert = draft.qualificationCertificateURLs?.[qual.id]
+          const pending = pendingFiles[qual.id]
           return (
-            <div key={qual.id} className="rounded-2xl bg-white p-5 shadow-[0_1px_2px_rgba(0,0,0,0.10)]">
+            <div key={qual.id} className="rounded-[18px] bg-[var(--card)] p-5 shadow-[var(--sh)]">
               <p className="text-[17px] font-semibold">{qual.name}</p>
               <label className="mt-3 block text-[13px] font-medium text-ios-muted">
                 Expiry date
                 <input
                   type="date"
-                  value={expiry ? expiry.toISOString().slice(0, 10) : ''}
+                  value={localDateInputValue(expiry)}
                   onChange={(e) => {
-                    const nextDates = { ...(draft.qualificationExpiryDates || {}) }
-                    if (e.target.value) nextDates[qual.id] = new Date(`${e.target.value}T00:00:00`)
-                    else delete nextDates[qual.id]
-                    patch({ ...draft, qualificationExpiryDates: nextDates })
+                    const value = e.target.value
+                    patch((current) => {
+                      const nextDates = { ...(current.qualificationExpiryDates || {}) }
+                      const parsed = dateFromLocalInputValue(value)
+                      if (parsed) nextDates[qual.id] = parsed
+                      else delete nextDates[qual.id]
+                      return { ...current, qualificationExpiryDates: nextDates }
+                    })
                   }}
-                  className="mt-1 w-full rounded-lg border border-ios-search-border px-3 py-2"
+                  className="mt-1 w-full rounded-[13px] border-[1.5px] border-[var(--line2)] bg-[var(--card)] px-3.5 py-2.5"
                 />
               </label>
-              <p className="mt-3 text-[12px] text-ios-muted">PDF or JPEG only · max 10MB</p>
+              <p className="mt-3 text-[12px] text-ios-muted">{QUALIFICATION_CERT_HINT}</p>
               <input
                 type="file"
-                accept="application/pdf,image/jpeg"
+                accept={QUALIFICATION_CERT_ACCEPT}
                 disabled={saving || uploading}
-                onChange={async (event) => {
-                  const file = event.target.files?.[0]
-                  if (!file || !organizationId) return
-                  if (file.size > 10 * 1024 * 1024) {
-                    window.alert('PDF or JPEG only · max 10MB')
+                onChange={(event) => {
+                  const picked = event.target.files?.[0]
+                  event.target.value = ''
+                  if (!picked) return
+                  const invalid = qualificationCertificateFileError(picked)
+                  if (invalid) {
+                    setLocalError(invalid)
                     return
                   }
-                  setUploading(true)
-                  try {
-                    const path = qualificationCertificatePath(organizationId, draft.id, qual.id, file.name)
-                    const url = await uploadFile(path, file, file.type || 'application/pdf')
-                    patch({
-                      ...draft,
-                      qualificationCertificateURLs: { ...(draft.qualificationCertificateURLs || {}), [qual.id]: url },
-                    })
-                  } finally {
-                    setUploading(false)
-                  }
+                  setLocalError(null)
+                  setPendingFiles((current) => ({ ...current, [qual.id]: picked }))
+                  setDirty(true)
                 }}
                 className="mt-2 text-sm"
               />
-              {cert ? (
+              {pending ? (
+                <div className="mt-2 rounded-xl bg-[#E6EBFF] px-3 py-2 text-[13px] text-[#3D56D1]">
+                  <p className="font-semibold">Ready to upload: {pending.name}</p>
+                  <p>Save to store this certificate</p>
+                </div>
+              ) : cert ? (
                 <div className="mt-3 flex flex-wrap gap-3 text-sm">
                   <a href={cert} target="_blank" rel="noreferrer" className="font-semibold text-[#185FA5]">
                     View certificate
@@ -473,9 +532,16 @@ function MyQualificationsPanel({
                     type="button"
                     className="font-semibold text-red-600"
                     onClick={() => {
-                      const next = { ...(draft.qualificationCertificateURLs || {}) }
-                      delete next[qual.id]
-                      patch({ ...draft, qualificationCertificateURLs: next })
+                      setPendingFiles((current) => {
+                        const next = { ...current }
+                        delete next[qual.id]
+                        return next
+                      })
+                      patch((current) => {
+                        const next = { ...(current.qualificationCertificateURLs || {}) }
+                        delete next[qual.id]
+                        return { ...current, qualificationCertificateURLs: next }
+                      })
                     }}
                   >
                     Remove Certificate
@@ -485,6 +551,26 @@ function MyQualificationsPanel({
               ) : (
                 <p className="mt-2 text-[13px] text-ios-muted">No certificate uploaded</p>
               )}
+              {pending && cert ? (
+                <div className="mt-2 flex flex-wrap gap-3 text-sm">
+                  <a href={cert} target="_blank" rel="noreferrer" className="font-semibold text-[#185FA5]">
+                    View current certificate
+                  </a>
+                  <button
+                    type="button"
+                    className="font-semibold text-red-600"
+                    onClick={() => {
+                      setPendingFiles((current) => {
+                        const next = { ...current }
+                        delete next[qual.id]
+                        return next
+                      })
+                    }}
+                  >
+                    Cancel upload
+                  </button>
+                </div>
+              ) : null}
             </div>
           )
         })}

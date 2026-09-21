@@ -11,7 +11,7 @@ module.exports = {
     './app/**/*.{js,ts,jsx,tsx,mdx}',
     './lib/**/*.{js,ts,jsx,tsx,mdx}',
   ],
-  darkMode: 'class',
+  darkMode: ['selector', ':is(.dark, [data-theme="dark"])'],
   theme: {
     extend: {
       colors: {
@@ -60,6 +60,8 @@ module.exports = {
       },
       fontFamily: {
         ios: [
+          'var(--font-body)',
+          'Inter',
           '-apple-system',
           'BlinkMacSystemFont',
           'Segoe UI',
@@ -67,13 +69,18 @@ module.exports = {
           'system-ui',
           'sans-serif',
         ],
+        head: ['var(--font-head)', 'Plus Jakarta Sans', 'Inter', 'sans-serif'],
+        body: ['var(--font-body)', 'Inter', 'sans-serif'],
       },
       maxWidth: {
         shell: '1440px',
       },
       boxShadow: {
-        'ios-bar': '0 -4px 16px rgba(0,0,0,0.06)',
-        'ios-toast': '0 6px 16px rgba(0,0,0,0.20)',
+        'ios-bar': 'var(--sh-pop)',
+        'ios-toast': 'var(--sh-pop)',
+        pp: 'var(--sh)',
+        'pp-hover': 'var(--sh-hover)',
+        'pp-pop': 'var(--sh-pop)',
       },
     },
   },

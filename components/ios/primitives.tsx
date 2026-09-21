@@ -35,8 +35,8 @@ export function EmptyState({
   return (
     <div className="flex min-h-[320px] flex-col items-center justify-center px-6 py-16 text-center">
       {icon ? <div className="mb-4 text-ios-muted">{icon}</div> : null}
-      <p className="text-[22px] font-semibold">{title}</p>
-      {subtitle ? <p className="mt-2 text-[15px] text-ios-muted">{subtitle}</p> : null}
+      <p className="text-[22px] font-extrabold">{title}</p>
+      {subtitle ? <p className="mt-2 text-[15px] text-[var(--ink3)]">{subtitle}</p> : null}
     </div>
   )
 }
@@ -44,7 +44,7 @@ export function EmptyState({
 export function PageHeader({ title, actions }: { title: string; actions?: ReactNode }) {
   return (
     <div className="mb-5 flex items-center justify-between gap-3">
-      <h1 className="text-[28px] font-semibold tracking-tight">{title}</h1>
+      <h1 className="text-[28px] font-extrabold tracking-tight">{title}</h1>
       {actions}
     </div>
   )
@@ -61,7 +61,7 @@ export function IosModal({
 }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="flex max-h-[80vh] w-full max-w-[640px] flex-col overflow-hidden rounded-2xl bg-ios-card">
+      <div className="flex max-h-[80vh] w-full max-w-[640px] flex-col overflow-hidden rounded-3xl bg-[var(--card)] shadow-[var(--sh-pop)]">
         <header className="flex items-center justify-between border-b border-ios-border px-5 py-3">
           <h3 className="text-lg font-semibold">{title}</h3>
           <button type="button" onClick={onDone} className="text-sm font-semibold text-[#185FA5]">
@@ -93,7 +93,7 @@ export function IosFormModal({
       <div
         role="dialog"
         aria-labelledby="ios-form-title"
-        className={`flex max-h-[85vh] w-full flex-col overflow-hidden rounded-2xl bg-ios-card shadow-ios-toast ${
+          className={`flex max-h-[85vh] w-full flex-col overflow-hidden rounded-3xl bg-[var(--card)] shadow-[var(--sh-pop)] ${
           width === 'md' ? 'max-w-[760px]' : 'max-w-[640px]'
         }`}
         onClick={(e) => e.stopPropagation()}

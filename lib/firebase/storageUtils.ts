@@ -1,18 +1,25 @@
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage'
 import { storage, auth } from '@/lib/firebase/config'
 
+export function requireStorageUid(): string {
+  const uid = auth?.currentUser?.uid
+  if (!uid) {
+    throw new Error('You must be signed in to upload files.')
+  }
+  return uid
+}
+
 export async function uploadFile(
   storagePath: string,
   file: Blob,
   contentType = 'image/jpeg'
 ): Promise<string> {
+  if (!storage) {
+    throw new Error('File storage is not configured.')
+  }
   const storageRef = ref(storage, storagePath)
   await uploadBytes(storageRef, file, { contentType })
-  try {
-    return await getDownloadURL(storageRef)
-  } catch {
-    return `gs://${storage.app.options.storageBucket}/${storagePath}`
-  }
+  return getDownloadURL(storageRef)
 }
 
 export function sanitizeFileName(name: string): string {
@@ -67,13 +74,14 @@ export function taskAttachmentPath(
   return `organizations/${organizationId}/tasks/${taskId}/${uid}_${timestamp}_${sanitizeFileName(fileName)}`
 }
 
+/** iOS: organizations/{orgId}/operatives/{operativeId}/qualifications/{qualificationId}/certificates/{uid}_{ts}_{name} */
 export function qualificationCertificatePath(
   organizationId: string,
   operativeId: string,
   qualificationId: string,
   fileName: string
 ): string {
-  const uid = auth.currentUser?.uid || 'web'
+  const uid = requireStorageUid()
   const timestamp = Date.now()
   return `organizations/${organizationId}/operatives/${operativeId}/qualifications/${qualificationId}/certificates/${uid}_${timestamp}_${sanitizeFileName(fileName)}`
 }

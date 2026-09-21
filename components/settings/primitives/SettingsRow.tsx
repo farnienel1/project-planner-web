@@ -27,7 +27,7 @@ export function SettingsRow({
 }) {
   const inner = (
     <div
-      className={`flex items-center gap-3 px-4 py-3.5 ${onClick ? 'cursor-pointer hover:bg-slate-50 transition-colors' : ''} ${danger ? 'hover:bg-red-50' : ''}`}
+      className={`flex items-center gap-3 px-4 py-3.5 ${onClick ? 'cursor-pointer hover:bg-[var(--soft)] transition-colors' : ''} ${danger ? 'hover:bg-[var(--red-t)]' : ''}`}
     >
       <div className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl ${iconBg}`}>
         <svg className={`h-5 w-5 ${iconColor}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -36,7 +36,7 @@ export function SettingsRow({
       </div>
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 flex-wrap">
-          <p className={`text-sm font-semibold ${danger ? 'text-red-600' : 'text-slate-900'}`}>{label}</p>
+          <p className={`text-sm font-semibold ${danger ? 'text-[var(--red)]' : 'text-[var(--ink)]'}`}>{label}</p>
           {badge && (
             <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-bold text-blue-700">{badge}</span>
           )}

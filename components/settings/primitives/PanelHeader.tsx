@@ -14,14 +14,15 @@ export function PanelHeader({
       <button
         type="button"
         onClick={onBack}
-        className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white shadow-sm hover:bg-slate-50"
+        className="iconbtn"
+        aria-label="Back"
       >
-        <svg className="h-4 w-4 text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
         </svg>
       </button>
-      <h2 className="text-base font-bold text-slate-900">{title}</h2>
-      {rightAction || <div className="w-9" />}
+      <h2 className="text-base font-bold text-[var(--ink)]">{title}</h2>
+      {rightAction || <div className="w-11" />}
     </div>
   )
 }
