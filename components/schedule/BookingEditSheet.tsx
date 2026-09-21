@@ -5,7 +5,8 @@ import type { Booking } from '@/types'
 import { slotToFirestore, type ScheduleSlotChoice } from '@/lib/scheduling/scheduleUtils'
 import { HoursTimelinePicker } from '@/components/scheduling/HoursTimelinePicker'
 import { hoursBreakdown } from '@/lib/scheduling/paidHours'
-import { DEFAULT_PAYROLL_POLICY } from '@/lib/settings/organizationSettings'
+import { HoursBreakdownCard } from '@/components/schedule/HoursBreakdownCard'
+import { DEFAULT_PAYROLL_POLICY, type OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 
 const SLOT_OPTIONS: { value: ScheduleSlotChoice; label: string }[] = [
   { value: 'AM', label: 'Morning (AM)' },
@@ -31,6 +32,7 @@ export function BookingEditSheet({
   onDelete,
   onClose,
   saving,
+  payroll = DEFAULT_PAYROLL_POLICY,
 }: {
   booking: Booking
   operativeName: string
@@ -39,12 +41,12 @@ export function BookingEditSheet({
   onDelete: () => Promise<void>
   onClose: () => void
   saving?: boolean
+  payroll?: OrgPayrollTimePolicy
 }) {
   const [slot, setSlot] = useState<ScheduleSlotChoice>(firestoreSlotToChoice(String(booking.timeSlot)))
-  const [workStartTime, setWorkStartTime] = useState(booking.workStartTime || DEFAULT_PAYROLL_POLICY.standardDayStart)
-  const [workEndTime, setWorkEndTime] = useState(booking.workEndTime || DEFAULT_PAYROLL_POLICY.standardDayEnd)
+  const [workStartTime, setWorkStartTime] = useState(booking.workStartTime || payroll.standardDayStart)
+  const [workEndTime, setWorkEndTime] = useState(booking.workEndTime || payroll.standardDayEnd)
   const [breakRemoved, setBreakRemoved] = useState(booking.isBreakRemoved === true)
-  const [status, setStatus] = useState(String(booking.status || 'Confirmed'))
   const [notes, setNotes] = useState(booking.notes || '')
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -56,13 +58,15 @@ export function BookingEditSheet({
       workStartTime: slot === 'CUSTOM' ? firestoreSlot.workStartTime || workStartTime : undefined,
       workEndTime: slot === 'CUSTOM' ? firestoreSlot.workEndTime || workEndTime : undefined,
       isBreakRemoved: slot === 'CUSTOM' ? breakRemoved : undefined,
-      unpaidBreakMinutes: DEFAULT_PAYROLL_POLICY.unpaidBreakMinutes,
-      standardPaidHours: DEFAULT_PAYROLL_POLICY.standardPaidHours,
-      standardDayStart: DEFAULT_PAYROLL_POLICY.standardDayStart,
-      standardDayEnd: DEFAULT_PAYROLL_POLICY.standardDayEnd,
-      overtimeMultiplier: DEFAULT_PAYROLL_POLICY.weekdayOutsideStandardMultiplier,
+      unpaidBreakMinutes: payroll.unpaidBreakMinutes,
+      breakWindowStart: payroll.breakWindowStart,
+      breakWindowEnd: payroll.breakWindowEnd,
+      standardPaidHours: payroll.standardPaidHours,
+      standardDayStart: payroll.standardDayStart,
+      standardDayEnd: payroll.standardDayEnd,
+      overtimeMultiplier: payroll.weekdayOutsideStandardMultiplier,
     })
-  }, [booking.date, slot, workStartTime, workEndTime, breakRemoved])
+  }, [booking.date, slot, workStartTime, workEndTime, breakRemoved, payroll])
 
   const handleSave = async () => {
     setError(null)
@@ -73,7 +77,6 @@ export function BookingEditSheet({
         workStartTime: firestoreSlot.workStartTime,
         workEndTime: firestoreSlot.workEndTime,
         isBreakRemoved: slot === 'CUSTOM' ? breakRemoved : false,
-        status,
         notes,
       })
       onClose()
@@ -142,6 +145,7 @@ export function BookingEditSheet({
               start={workStartTime}
               end={workEndTime}
               breakRemoved={breakRemoved}
+              policy={payroll}
               showBreak
               onStart={setWorkStartTime}
               onEnd={setWorkEndTime}
@@ -149,38 +153,7 @@ export function BookingEditSheet({
             />
           )}
 
-          <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Hours breakdown</p>
-            <p className="mt-1 text-lg font-bold text-slate-900">{breakdown.headline}</p>
-            <p className="mt-0.5 text-xs text-slate-500">{breakdown.detail}</p>
-            {slot === 'CUSTOM' && breakdown.overtimeEquation ? (
-              <p className="mt-2 rounded-lg bg-amber-50 px-2.5 py-1.5 text-sm font-semibold text-amber-800">
-                Overtime {breakdown.overtimeEquation}
-              </p>
-            ) : null}
-            {slot === 'CUSTOM' && !breakdown.overtimeEquation ? (
-              <p className="mt-2 text-xs text-slate-400">
-                {workStartTime}–{workEndTime}
-                {breakRemoved
-                  ? ' · unpaid break removed'
-                  : ` · ${DEFAULT_PAYROLL_POLICY.unpaidBreakMinutes} min unpaid break when it overlaps`}
-              </p>
-            ) : null}
-          </div>
-
-          {booking.source !== 'manager' ? (
-          <div>
-            <label className="mb-1 block text-xs font-semibold text-slate-600">Status</label>
-            <select
-              value={status}
-              onChange={(e) => setStatus(e.target.value)}
-              className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
-            >
-              <option value="Confirmed">Confirmed</option>
-              <option value="Tentative">Tentative</option>
-            </select>
-          </div>
-          ) : null}
+          <HoursBreakdownCard breakdown={breakdown} />
 
           {booking.source !== 'manager' ? (
           <div>

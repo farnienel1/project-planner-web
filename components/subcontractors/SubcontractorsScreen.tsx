@@ -11,6 +11,7 @@ import type { Subcontractor, SubcontractorContact } from '@/types'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useSubcontractorStore } from '@/lib/stores/subcontractorStore'
 import { canManageSubcontractors } from '@/lib/permissions'
+import { consumeCreateQuery } from '@/lib/navigation/createMenu'
 import { newUuid } from '@/lib/firebase/firestoreUtils'
 import { EmptyState, FilterChip, IosFormModal, PageHeader } from '@/components/ios/primitives'
 
@@ -32,6 +33,11 @@ export function SubcontractorsScreen({ selectedId }: { selectedId?: string }) {
   useEffect(() => {
     if (user && !canManage) router.replace('/dashboard')
   }, [user, canManage, router])
+
+  useEffect(() => {
+    if (!canManage) return
+    if (consumeCreateQuery()) setEditor(emptyFirm())
+  }, [canManage])
 
   useEffect(() => {
     if (organization?.id) loadSubcontractors(organization.id)

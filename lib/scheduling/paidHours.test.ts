@@ -51,6 +51,8 @@ test('custom hours never fall back to a flat 8h when start and end are present',
     11.5
   )
   assert.equal(formatHoursLabel(11.5), '11.5')
+  assert.equal(formatHoursLabel(19.25), '19.25')
+  assert.equal(formatHoursLabel(8), '8')
   assert.equal(
     customHoursRangeLabel({ timeSlot: 'CUSTOM_HOURS', workStartTime: '06:00', workEndTime: '18:00' }),
     '06:00–18:00'
@@ -139,4 +141,26 @@ test('hours breakdown for half day does not mention leftover full-day hours', ()
   })
   assert.equal(custom.overtimeEquation, '2 × 1.5 = 3')
   assert.match(custom.detail, /2 × 1\.5 = 3/)
+  assert.equal(custom.totalPaidHours, 11)
+})
+
+test('custom hours 06:00-22:00 uses standard window, break, OT multiplier, then total paid', () => {
+  const breakdown = hoursBreakdown({
+    timeSlot: 'CUSTOM_HOURS',
+    workStartTime: '06:00',
+    workEndTime: '22:00',
+    overtimeMultiplier: 1.5,
+  })
+  assert.equal(breakdown.workingRangeLabel, '06:00 - 22:00')
+  assert.equal(breakdown.standardRangeLabel, '07:30 - 16:00')
+  assert.equal(breakdown.breakHours, 0.5)
+  assert.equal(breakdown.overtimeRawHours, 7.5)
+  assert.equal(breakdown.overtimeEquivalentHours, 11.25)
+  assert.equal(breakdown.overtimeSegmentsLabel, '06:00 - 07:30 + 16:00 - 22:00')
+  assert.equal(breakdown.overtimeLine, '06:00 - 07:30 + 16:00 - 22:00 = 7.5 × 1.5 = 11.25')
+  assert.equal(breakdown.clockPaidHours, 15.5)
+  assert.equal(breakdown.totalPaidHours, 19.25)
+  assert.equal(breakdown.headline, 'Total paid hours 19.25')
+  assert.equal(breakdown.lines.find((line) => line.kind === 'break')?.value, '-0.5')
+  assert.equal(breakdown.lines.find((line) => line.kind === 'total')?.value, '19.25')
 })

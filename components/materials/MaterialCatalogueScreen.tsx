@@ -11,6 +11,7 @@ import type { MaterialCatalogItem, MaterialLengthUnit, MaterialUnit } from '@/ty
 import { useAuthStore } from '@/lib/stores/authStore'
 import { MATERIAL_UNITS, useMaterialCatalogStore } from '@/lib/stores/materialCatalogStore'
 import { canManageMaterialCatalogue } from '@/lib/permissions'
+import { consumeCreateQuery } from '@/lib/navigation/createMenu'
 import { newUuid } from '@/lib/firebase/firestoreUtils'
 import { duplicateKey } from '@/lib/materials/materialCatalogSearch'
 import {
@@ -60,6 +61,18 @@ export function MaterialCatalogueScreen() {
   useEffect(() => {
     if (user && !canManage) router.replace('/dashboard')
   }, [user, canManage, router])
+
+  useEffect(() => {
+    if (!canManage || !user) return
+    if (consumeCreateQuery()) {
+      setExistingId(null)
+      setEditor({
+        ...emptyDraft(),
+        createdByUserId: user.id,
+        createdByName: `${user.firstName} ${user.surname}`.trim() || user.email,
+      })
+    }
+  }, [canManage, user])
 
   useEffect(() => {
     if (organization?.id) loadItems(organization.id)
