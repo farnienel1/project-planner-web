@@ -5,7 +5,7 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { parseBooking, serializeBooking, serializeManager, serializeOperative, serializeProject } from './converters.ts'
+import { parseBooking, parseOperative, serializeBooking, serializeManager, serializeOperative, serializeProject } from './converters.ts'
 import { IosWriteValidationError } from './firestoreCodec.ts'
 import { normalizeBookingStatus, normalizeEmploymentType } from './enums.ts'
 
@@ -59,6 +59,8 @@ test('serializeOperative and serializeManager write iOS empty-string fields', ()
   assert.equal(op.currencySymbol, '£')
   assert.equal(op.dayRate, 100)
   assert.equal(op.organizationId, 'org1')
+  assert.deepEqual(op.qualificationCertificateURLs, {})
+  assert.ok(op.qualificationExpiryDates && typeof op.qualificationExpiryDates === 'object')
 
   const mgr = serializeManager({
     id: 'BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB',
@@ -73,6 +75,22 @@ test('serializeOperative and serializeManager write iOS empty-string fields', ()
   assert.equal(mgr.mobileNumber, '')
   assert.equal(mgr.department, '')
   assert.equal(mgr.notes, '')
+})
+
+test('parseOperative reads qualification expiry and certificate maps', () => {
+  const expiry = new Date('2027-03-01T00:00:00Z')
+  const result = parseOperative('OP1', {
+    firstName: 'Ada',
+    lastName: 'Booked',
+    email: 'ada@x.com',
+    qualificationExpiryDates: { q1: expiry },
+    qualificationCertificateURLs: { q1: 'https://example.com/cscs.pdf' },
+  })
+  assert.equal(result.ok, true)
+  if (result.ok) {
+    assert.equal(result.value.qualificationCertificateURLs?.q1, 'https://example.com/cscs.pdf')
+    assert.equal(result.value.qualificationExpiryDates?.q1?.toISOString(), expiry.toISOString())
+  }
 })
 
 test('parseBooking skips missing operativeId', () => {

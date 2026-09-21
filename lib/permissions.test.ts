@@ -8,7 +8,9 @@ import assert from 'node:assert/strict'
 import type { User, UserPermissions } from '../types/index.ts'
 import { UserRole } from '../types/index.ts'
 import {
+  canAccessTimesheets,
   canAccessTimesheetsSurface,
+  canAccessOperativeTimesheets,
   canManageSubcontractors,
   canManageUsers,
   canViewDailyOverview,
@@ -120,4 +122,20 @@ test('canManageWorkCatalogue uses manager flags', () => {
 test('canAccessTimesheetsSurface is true for self-employed', () => {
   const se = user({ employmentType: 'self_employed', permissions: { operativeMode: true } })
   assert.equal(canAccessTimesheetsSurface(se), true)
+})
+
+test('managers with direct reports can open Operative Timesheets without the operatives flag', () => {
+  const manager = user({
+    id: 'mgr',
+    role: UserRole.MANAGER,
+    permissions: { manager: true, operatives: false },
+  })
+  assert.equal(canAccessOperativeTimesheets(manager), false)
+  const report = user({
+    id: 'op1',
+    permissions: { operativeMode: true },
+    assignedManagerUserIds: ['mgr'],
+  })
+  assert.equal(canAccessOperativeTimesheets(manager, false, [report]), true)
+  assert.equal(canAccessTimesheets(manager, false, [report]), true)
 })

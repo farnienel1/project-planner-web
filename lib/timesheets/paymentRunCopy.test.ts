@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { currentPaymentRunCopy, listPreviousPayPeriods, payDateForPeriodEnd } from './paymentRunCopy.ts'
+import { currentPaymentRunCopy, listPreviousPayPeriods, payDateForPeriodEnd, recurringRunDisplaySummary } from './paymentRunCopy.ts'
 import { DEFAULT_INVOICING } from '../settings/organizationSettings.ts'
 import { dayKey } from '../ios-parity/londonTime.ts'
 
@@ -47,4 +47,17 @@ test('listPreviousPayPeriods walks backwards from the current half-month', () =>
   assert.equal(previous.length, 3)
   assert.equal(dayKey(previous[0].start), '2026-09-01')
   assert.equal(dayKey(previous[1].start), '2026-08-16')
+})
+
+test('recurringRunDisplaySummary matches iOS in-arrears wording', () => {
+  assert.equal(
+    recurringRunDisplaySummary(DEFAULT_INVOICING),
+    'In arrears: Monday to Sunday (of the previous week)'
+  )
+})
+
+test('listPreviousPayPeriods can walk 120 prior runs like iOS My Timesheets', () => {
+  const periods = listPreviousPayPeriods(HALF_MONTH, new Date(Date.UTC(2026, 8, 21, 12, 0, 0)), 120)
+  assert.equal(periods.length, 120)
+  assert.equal(dayKey(periods[0].start), '2026-09-01')
 })

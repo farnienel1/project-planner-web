@@ -81,6 +81,26 @@ export function OperativeForm({
         updatedAt: new Date(),
       }
       const id = await saveOperative(organization.id, operative)
+      try {
+        const previous = initial?.dayRate ?? initial?.hourlyRate
+        const next = rate
+        if (previous !== next) {
+          const { loadOperativeDayRateHistory, recordDayRateChangeIfNeeded } = await import(
+            '@/lib/timesheets/dayRateHistoryStorage'
+          )
+          const history = await loadOperativeDayRateHistory(organization.id)
+          await recordDayRateChangeIfNeeded({
+            organizationId: organization.id,
+            operativeId: id,
+            previousDayRate: previous,
+            nextDayRate: next,
+            createdAt: operative.createdAt,
+            history,
+          })
+        }
+      } catch {
+        // Best-effort history so roster saves still succeed.
+      }
       onSaved(id)
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to save operative')

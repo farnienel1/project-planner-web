@@ -2,6 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   collectSubjectDayEntries,
+  isTimesheetAgreedManagerCandidate,
   reportsToManager,
   subjectForUser,
   teamTimesheetUsers,
@@ -91,4 +92,23 @@ test('teamTimesheetUsers keeps other orgs out: managers only see their reports',
     ['r1']
   )
   assert.equal(reportsToManager(other, 'mgr'), false)
+})
+
+test('isTimesheetAgreedManagerCandidate matches iOS manager/admin eligibility', () => {
+  const roleManager = user({
+    id: 'm1',
+    email: 'm1@test.com',
+    role: 'manager',
+    permissions: { ...user({ id: 'x', email: 'x' }).permissions, manager: false, operativeMode: false },
+  })
+  assert.equal(isTimesheetAgreedManagerCandidate(roleManager), true)
+  const inactive = user({
+    id: 'm2',
+    email: 'm2@test.com',
+    isActive: false,
+    permissions: { ...user({ id: 'x', email: 'x' }).permissions, manager: true, operativeMode: false },
+  })
+  assert.equal(isTimesheetAgreedManagerCandidate(inactive), false)
+  const operative = user({ id: 'op', email: 'op@test.com' })
+  assert.equal(isTimesheetAgreedManagerCandidate(operative), false)
 })
