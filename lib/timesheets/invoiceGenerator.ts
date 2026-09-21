@@ -38,6 +38,7 @@ export function buildTimesheetInvoiceHtml({
   documentTitle = 'Invoice',
   periodMetaLabel = 'INVOICE PERIOD',
   totalLabel = 'Total invoice amount',
+  notes = [],
 }: {
   organizationName: string
   subject: TimesheetSubject
@@ -54,6 +55,7 @@ export function buildTimesheetInvoiceHtml({
   documentTitle?: string
   periodMetaLabel?: string
   totalLabel?: string
+  notes?: string[]
 }): string {
   const period = formatPaymentPeriodLine(weekStart, weekEnd, timeZone)
   const generated = formatStampInZone(generatedAt, timeZone)
@@ -155,6 +157,13 @@ export function buildTimesheetInvoiceHtml({
     </tbody>
   </table>
   <div class="total"><span>${escapeHtml(totalLabel)}</span><span>${escapeHtml(totalText)}</span></div>
+  ${
+    notes.length
+      ? `<h2 style="font-size:12px;margin:18px 0 8px;">Rate change notes</h2>${notes
+          .map((note) => `<p class="muted">• ${escapeHtml(note)}</p>`)
+          .join('')}`
+      : ''
+  }
 </body>
 </html>`
 }

@@ -10,8 +10,11 @@ import {
 } from '@/lib/timesheets/timesheetAdjustments'
 import type { TimesheetPayrollLineItem, TimesheetPayrollSummary } from '@/lib/timesheets/timesheetPayrollCollector'
 import { timesheetHoursRateLine } from '@/lib/timesheets/timesheetPayrollCollector'
-import { formatAbbreviatedDayInZone } from '@/lib/orgTime/zoneTime'
-import { londonDateParts } from '@/lib/ios-parity/londonTime'
+import { formatAbbreviatedDayInZone, formatStampInZone } from '@/lib/orgTime/zoneTime'
+import { londonDateParts, dayKey } from '@/lib/ios-parity/londonTime'
+import type { Operative, User } from '@/types'
+import { findOperativeForUser } from '@/lib/operatives/operativeRosterUtils'
+import type { OperativeDayRateHistoryCollection } from '@/lib/timesheets/dayRateHistoryStorage'
 
 export function paymentRunDateStamp(start: Date, end: Date, timeZone: string): string {
   const format = (date: Date) => {
@@ -22,22 +25,66 @@ export function paymentRunDateStamp(start: Date, end: Date, timeZone: string): s
 }
 
 export function timesheetExportFileName(userName: string, paymentRunStamp: string): string {
-  return `${userName} timesheet for payment run date ${paymentRunStamp}.html`
+  return `${userName} timesheet for payment run date ${paymentRunStamp}.pdf`
 }
 
-export function signatureNotes(draft: TimesheetDraft): string[] {
+export function signatureNotes(draft: TimesheetDraft, timeZone: string = 'Europe/London'): string[] {
   const notes: string[] = []
   if (draft.operativeSignedByName && draft.operativeSignedAt) {
     notes.push(
-      `Operative signed by ${draft.operativeSignedByName} on ${draft.operativeSignedAt.toISOString()}.`
+      `Operative signed by ${draft.operativeSignedByName} on ${formatStampInZone(draft.operativeSignedAt, timeZone)}.`
     )
   }
   if (draft.managerSignedByName && draft.managerSignedAt) {
     notes.push(
-      `Line manager counter-signed by ${draft.managerSignedByName} on ${draft.managerSignedAt.toISOString()}.`
+      `Line manager counter-signed by ${draft.managerSignedByName} on ${formatStampInZone(draft.managerSignedAt, timeZone)}.`
     )
   }
   return notes
+}
+
+/** iOS InvoicePDFGenerationSupport.rateChangeNotes */
+export function invoiceRateChangeNotes({
+  history,
+  user,
+  operatives,
+  periodStart,
+  periodEnd,
+  timeZone,
+}: {
+  history: OperativeDayRateHistoryCollection
+  user: User
+  operatives: Operative[]
+  periodStart: Date
+  periodEnd: Date
+  timeZone: string
+}): string[] {
+  const startKey = dayKey(periodStart, timeZone)
+  const endKey = dayKey(periodEnd, timeZone)
+  const inPeriod = (effectiveAt: Date) => {
+    const key = dayKey(effectiveAt, timeZone)
+    return key >= startKey && key <= endKey
+  }
+  const notes = new Set<string>()
+  for (const entry of (history.byUserId[user.id] || []).filter((row) => inPeriod(row.effectiveAt))) {
+    notes.add(
+      `Rate updated to £${entry.dayRate.toFixed(2)} from ${formatAbbreviatedDayInZone(entry.effectiveAt, timeZone)}.`
+    )
+  }
+  const matched = operatives.filter(
+    (operative) => operative.email.trim().toLowerCase() === user.email.trim().toLowerCase()
+  )
+  const linked = findOperativeForUser(user, operatives)
+  const ids = new Set(matched.map((row) => row.id))
+  if (linked) ids.add(linked.id)
+  for (const operativeId of ids) {
+    for (const entry of (history.byOperativeId[operativeId] || []).filter((row) => inPeriod(row.effectiveAt))) {
+      notes.add(
+        `Operative rate updated to £${entry.dayRate.toFixed(2)} from ${formatAbbreviatedDayInZone(entry.effectiveAt, timeZone)}.`
+      )
+    }
+  }
+  return [...notes].sort((a, b) => a.localeCompare(b))
 }
 
 export type TimesheetInvoiceLine = {
@@ -137,7 +184,7 @@ export function managerExportEmailHTML({
 <p>Hello ${escapeHtml(recipientName)},</p>
 <p>${attachNote}</p>
 <p>Each file is named: <em>User Name timesheet for payment run date ${escapeHtml(paymentRunStamp)}</em>.</p>
-<p style="color:#666;font-size:13px;">Web exports are HTML invoices (the iOS app emails PDFs). Open a link and print to PDF if you need a file copy.</p>
+<p style="color:#666;font-size:13px;">Each download is a PDF timesheet. The email function cannot attach files, so use the links below — the same PDFs iOS would send as attachments.</p>
 <ul>${list}</ul>
 <p style="color:#666;font-size:13px;">These timesheets were counter-signed and exported from User Timesheets → Signed off.</p>
 </body></html>`

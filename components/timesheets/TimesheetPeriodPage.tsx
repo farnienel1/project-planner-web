@@ -49,7 +49,7 @@ import {
   type TimesheetPayrollLineItem,
 } from '@/lib/timesheets/timesheetPayrollCollector'
 import { loadTimesheetDraft, saveTimesheetDraft } from '@/lib/timesheets/timesheetStorage'
-import { invoiceLinesForTimesheet } from '@/lib/timesheets/timesheetExport'
+import { invoiceLinesForTimesheet, invoiceRateChangeNotes } from '@/lib/timesheets/timesheetExport'
 import { emptyDayRateHistory, type OperativeDayRateHistoryCollection } from '@/lib/timesheets/dayRateHistoryStorage'
 import {
   decisionLabel,
@@ -58,7 +58,12 @@ import {
   type TimesheetDraft,
   type TimesheetManagerDecision,
 } from '@/lib/timesheets/timesheetDraft'
-import { buildTimesheetInvoiceHtml, downloadTimesheetInvoice, printTimesheetInvoice, timesheetInvoiceFileName } from '@/lib/timesheets/invoiceGenerator'
+import { buildTimesheetInvoiceHtml, printTimesheetInvoice } from '@/lib/timesheets/invoiceGenerator'
+import {
+  buildTimesheetInvoicePdf,
+  downloadTimesheetPdf,
+  timesheetInvoicePdfFileName,
+} from '@/lib/timesheets/invoicePdf'
 import { subjectForUser } from '@/lib/timesheets/timesheetWeekUtils'
 import { SignaturePad } from '@/components/timesheets/SignaturePad'
 import { LoadingSpinner } from '@/components/dashboard/PageShell'
@@ -122,6 +127,7 @@ export function TimesheetPeriodPage({
   const [editAmount, setEditAmount] = useState('')
   const [utrWarningOpen, setUtrWarningOpen] = useState(false)
   const [invoiceHtml, setInvoiceHtml] = useState<string | null>(null)
+  const [invoicePdf, setInvoicePdf] = useState<Uint8Array | null>(null)
 
   const periodTitle = formatPaymentPeriodLine(periodStart, periodEnd, timeZone)
   const payroll = useMemo(
@@ -301,6 +307,21 @@ export function TimesheetPeriodPage({
   const runInvoiceGeneration = () => {
     if (!organization || !fullyApproved) return
     const subject = subjectForUser(subjectUser, operatives)
+    const lines = invoiceLinesForTimesheet({
+      payroll,
+      draft,
+      timeZone,
+      managerHasSigned,
+      applyLiveReview: canManagerReview,
+    })
+    const notes = invoiceRateChangeNotes({
+      history,
+      user: subjectUser,
+      operatives,
+      periodStart,
+      periodEnd,
+      timeZone,
+    })
     const html = buildTimesheetInvoiceHtml({
       organizationName: organization.name || 'Organisation',
       subject,
@@ -312,16 +333,24 @@ export function TimesheetPeriodPage({
       vatNumber: subjectUser.vatNumber,
       utrNumber: subjectUser.utrNumber,
       timeZone,
-      lines: invoiceLinesForTimesheet({
-        payroll,
-        draft,
-        timeZone,
-        managerHasSigned,
-        applyLiveReview: canManagerReview,
-      }),
+      lines,
+      notes,
     })
-    downloadTimesheetInvoice(html, timesheetInvoiceFileName(subject.name))
+    const pdf = buildTimesheetInvoicePdf({
+      organizationName: organization.name || 'Organisation',
+      subject,
+      weekStart: periodStart,
+      weekEnd: periodEnd,
+      amount: total,
+      vatNumber: subjectUser.vatNumber,
+      utrNumber: subjectUser.utrNumber,
+      timeZone,
+      lines,
+      notes,
+    })
+    downloadTimesheetPdf(pdf, timesheetInvoicePdfFileName(subject.name))
     setInvoiceHtml(html)
+    setInvoicePdf(pdf)
   }
 
   const handleInvoice = () => {
@@ -713,7 +742,14 @@ export function TimesheetPeriodPage({
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-sm rounded-2xl bg-white p-6 text-center">
             <div className="flex justify-end">
-              <button type="button" onClick={() => setInvoiceHtml(null)} className="text-[15px] font-medium text-[#185FA5]">
+              <button
+                type="button"
+                onClick={() => {
+                  setInvoiceHtml(null)
+                  setInvoicePdf(null)
+                }}
+                className="text-[15px] font-medium text-[#185FA5]"
+              >
                 Done
               </button>
             </div>
@@ -721,12 +757,21 @@ export function TimesheetPeriodPage({
             <p className="mt-4 text-[20px] font-semibold">Invoice generated successfully</p>
             <button
               type="button"
-              onClick={() => printTimesheetInvoice(invoiceHtml)}
+              onClick={() => {
+                if (invoicePdf) {
+                  downloadTimesheetPdf(invoicePdf, timesheetInvoicePdfFileName(subjectForUser(subjectUser, operatives).name))
+                  return
+                }
+                printTimesheetInvoice(invoiceHtml)
+              }}
               className="mt-6 w-full rounded-xl bg-[#16A34A] py-3.5 text-[16px] font-semibold text-white"
             >
               Share invoice
             </button>
-            <p className="mt-3 text-[13px] text-ios-muted">Print or save as PDF. Generating an invoice does not move this sheet to Exported — that happens when a line manager emails and exports from Signed off.</p>
+            <p className="mt-3 text-[13px] text-ios-muted">
+              A PDF invoice is downloaded, matching iOS. Generating an invoice does not move this sheet to Exported — that
+              happens when a line manager emails and exports from Signed off.
+            </p>
           </div>
         </div>
       ) : null}

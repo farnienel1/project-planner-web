@@ -18,8 +18,8 @@ import {
 import { teamTimesheetUsers, subjectForUser } from '@/lib/timesheets/timesheetWeekUtils'
 import { formatPaymentPeriodLine, periodStartKey } from '@/lib/timesheets/paymentRunCopy'
 import { collectTimesheetPayroll } from '@/lib/timesheets/timesheetPayrollCollector'
-import { invoiceLinesForTimesheet, paymentRunDateStamp, timesheetExportFileName } from '@/lib/timesheets/timesheetExport'
-import { buildTimesheetInvoiceHtml } from '@/lib/timesheets/invoiceGenerator'
+import { invoiceLinesForTimesheet, paymentRunDateStamp, signatureNotes, timesheetExportFileName } from '@/lib/timesheets/timesheetExport'
+import { buildTimesheetInvoicePdf, timesheetPdfBlob } from '@/lib/timesheets/invoicePdf'
 import { shouldAppearInOperativeTimesheetRoster } from '@/lib/timesheets/timesheetPayrollPolicy'
 import { jsonAuthHeaders } from '@/lib/security/clientAuthHeaders'
 import { timesheetExportPath, uploadFile } from '@/lib/firebase/storageUtils'
@@ -180,31 +180,38 @@ export function TimesheetsScreen({
           history,
           scheduleOptions,
         })
-        const html = buildTimesheetInvoiceHtml({
+        const lines = invoiceLinesForTimesheet({
+          payroll,
+          draft,
+          timeZone,
+          managerHasSigned: isTimesheetFullyApproved(draft, member),
+          applyLiveReview: false,
+        })
+        const pdf = buildTimesheetInvoicePdf({
           organizationName: organization.name || 'Organisation',
           subject: subjectForUser(member, operatives),
           weekStart: periodStart,
           weekEnd: periodEnd,
-          totalHours: payroll.totalHours,
-          totalDays: payroll.totalHours / Math.max(payrollPolicy.standardPaidHours, 0.01),
-          amount: payroll.workAmount + (draft.priceWorkEntries.reduce((s, e) => s + e.amount, 0) + draft.expenseEntries.reduce((s, e) => s + e.amount, 0)),
+          amount:
+            payroll.workAmount +
+            draft.priceWorkEntries.reduce((sum, entry) => sum + entry.amount, 0) +
+            draft.expenseEntries.reduce((sum, entry) => sum + entry.amount, 0),
           vatNumber: member.vatNumber,
           utrNumber: member.utrNumber,
           timeZone,
-          lines: invoiceLinesForTimesheet({
-            payroll,
-            draft,
-            timeZone,
-            managerHasSigned: isTimesheetFullyApproved(draft, member),
-            applyLiveReview: false,
-          }),
+          lines,
+          notes: signatureNotes(draft, timeZone),
+          documentTitle: 'Timesheet',
+          periodMetaLabel: 'PAYMENT RUN',
+          totalLabel: 'Total timesheet amount',
+          emptyStateMessage: 'No work entries were found for this timesheet period.',
         })
         const fileName = timesheetExportFileName(name, stamp)
         try {
           const url = await uploadFile(
             timesheetExportPath(organization.id, fileName),
-            new Blob([html], { type: 'text/html;charset=utf-8' }),
-            'text/html'
+            timesheetPdfBlob(pdf),
+            'application/pdf'
           )
           downloadLinks.push({ fileName, url })
         } catch {
