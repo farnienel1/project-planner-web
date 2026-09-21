@@ -171,7 +171,7 @@ const TOPICS: Topic[] = [
         title: 'Pay runs and time zones',
         summary: 'The organisation country sets the calendar, not the phone.',
         body: [
-          'Payment-run dates, month length and timesheet stamps use the organisation’s origin country (for example United Kingdom → Europe/London).',
+          'Payment-run dates, month length and timesheet stamps use the organisation’s origin country (for example United Kingdom → Europe/London, Ireland → Europe/Dublin, Australia → Australia/Sydney). Every region offered at organisation setup is mapped.',
           'If you are abroad in a time zone that is a day ahead, the web app still uses the organisation country. It does not follow the iPhone or Android location.',
           'iOS currently still uses the device calendar until that app is updated to the same org-country rule. For UK organisations both already match unless the phone is set to another region.',
         ],
