@@ -122,17 +122,18 @@ export function ProjectScheduleWeekOverview({
       const snapshot = await getDocs(collection(db, 'organizations', organizationId, 'subcontractorBookings'))
       setSubBookings(
         snapshot.docs
-          .map((docSnap) => {
+          .map((docSnap): SubBooking | null => {
             const data = docSnap.data() as Record<string, unknown>
             if (String(data.projectId || '') !== project.id) return null
-            return {
+            const row: SubBooking = {
               id: docSnap.id,
               subcontractorId: String(data.subcontractorId || ''),
               date: (data.date as { toDate?: () => Date })?.toDate?.() || new Date(),
               timeSlot: String(data.timeSlot || 'FULL DAY'),
-              workStartTime: typeof data.workStartTime === 'string' ? data.workStartTime : undefined,
-              workEndTime: typeof data.workEndTime === 'string' ? data.workEndTime : undefined,
             }
+            if (typeof data.workStartTime === 'string') row.workStartTime = data.workStartTime
+            if (typeof data.workEndTime === 'string') row.workEndTime = data.workEndTime
+            return row
           })
           .filter((row): row is SubBooking => row !== null)
       )
