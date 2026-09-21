@@ -1315,7 +1315,10 @@ html {
   .form { grid-template-columns: 1fr; }
   .week { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .login { grid-template-columns: 1fr; }
-  .login .art { display: none; }
+  .login .art,
+  .login .hero.art {
+    display: none;
+  }
 }
 
 @layer utilities {
