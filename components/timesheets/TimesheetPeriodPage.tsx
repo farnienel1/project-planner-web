@@ -40,8 +40,10 @@ import {
   grandTotal,
   isPayrollLineRemoved,
   managerAdjustmentCount,
+  managerAdjustmentRows,
   payrollTotal,
   priceWorkTotal,
+  showsTimesheetAdjustment,
 } from '@/lib/timesheets/timesheetAdjustments'
 import {
   collectTimesheetPayroll,
@@ -53,6 +55,8 @@ import { invoiceLinesForTimesheet, invoiceRateChangeNotes } from '@/lib/timeshee
 import { emptyDayRateHistory, type OperativeDayRateHistoryCollection } from '@/lib/timesheets/dayRateHistoryStorage'
 import {
   decisionLabel,
+  decisionTint,
+  draftAdditionalTotal,
   emptyTimesheetDraft,
   reviewSelection,
   type TimesheetDraft,
@@ -68,9 +72,16 @@ import { subjectForUser } from '@/lib/timesheets/timesheetWeekUtils'
 import { SignaturePad } from '@/components/timesheets/SignaturePad'
 import { LoadingSpinner } from '@/components/dashboard/PageShell'
 import { formatAbbreviatedDayInZone, formatStampInZone } from '@/lib/orgTime/zoneTime'
-import { formatTimesheetHours } from '@/lib/timesheets/timesheetHours'
-import { parseTimesheetMoneyAmount } from '@/lib/timesheets/timesheetMoney'
+import { formatTimesheetHours, overtimeHoursBeyondPaidStandard, paidBookedHours, weekdayOtMultiplier } from '@/lib/timesheets/timesheetHours'
+import { parseTimesheetManagerAmount, parseTimesheetMoneyAmount } from '@/lib/timesheets/timesheetMoney'
 import { dateFromDayKey, dayKey } from '@/lib/ios-parity/londonTime'
+import { HoursTimelinePicker } from '@/components/scheduling/HoursTimelinePicker'
+import {
+  bookingIdFromLineId,
+  initialHoursChoice,
+  revisedPayrollAmount,
+} from '@/lib/timesheets/payrollLineBookingLookup'
+import { extraReviewAfterSave, payrollReviewAfterSave } from '@/lib/timesheets/managerReviewSave'
 
 function money(value: number): string {
   return `£${value.toFixed(2)}`
@@ -127,8 +138,19 @@ export function TimesheetPeriodPage({
   const [signature, setSignature] = useState<string | null>(null)
   const [extraMode, setExtraMode] = useState<'priceWork' | 'expense' | null>(null)
   const [editingLineId, setEditingLineId] = useState<string | null>(null)
-  const [editingExtra, setEditingExtra] = useState<{ type: 'expense' | 'priceWork'; id: string } | null>(null)
+  const [hoursStart, setHoursStart] = useState('07:30')
+  const [hoursEnd, setHoursEnd] = useState('16:00')
+  const [hoursBreakRemoved, setHoursBreakRemoved] = useState(false)
+  const [hoursOt, setHoursOt] = useState('')
+  const [editingExtra, setEditingExtra] = useState<{
+    type: 'expense' | 'priceWork'
+    id: string
+    title: string
+    original: number
+  } | null>(null)
   const [editAmount, setEditAmount] = useState('')
+  const [pendingExtraMode, setPendingExtraMode] = useState<'priceWork' | 'expense' | null>(null)
+  const [extrasReviewAlert, setExtrasReviewAlert] = useState(false)
   const [utrWarningOpen, setUtrWarningOpen] = useState(false)
   const [invoiceHtml, setInvoiceHtml] = useState<string | null>(null)
   const [invoicePdf, setInvoicePdf] = useState<Uint8Array | null>(null)
@@ -223,12 +245,85 @@ export function TimesheetPeriodPage({
 
   const beginExtra = (kind: 'priceWork' | 'expense') => {
     if (fullyApproved) {
-      const accept = window.confirm(postSignExtraWarningCopy(subjectUser, draft))
-      if (!accept) return
-      void persist(clearSignatures(draft)).then(() => setExtraMode(kind))
+      setPendingExtraMode(kind)
       return
     }
     setExtraMode(kind)
+  }
+
+  const acceptPostSignExtra = async () => {
+    const kind = pendingExtraMode
+    if (!kind) return
+    await persist(clearSignatures(draft))
+    setPendingExtraMode(null)
+    setExtraMode(kind)
+  }
+
+  const openPayrollHoursEditor = (line: TimesheetPayrollLineItem) => {
+    const bookingId = bookingIdFromLineId(line.id)
+    const operativeBooking = bookingId ? bookings.find((row) => row.id === bookingId) : undefined
+    const managerBooking = bookingId ? managerSiteBookings.find((row) => row.id === bookingId) : undefined
+    const choice =
+      initialHoursChoice({
+        row: line,
+        operativeBooking,
+        managerBooking,
+        policy: payrollPolicy,
+      }) || {
+        startTime: payrollPolicy.standardDayStart,
+        endTime: payrollPolicy.standardDayEnd,
+        breakRemoved: false,
+      }
+    setHoursStart(choice.startTime)
+    setHoursEnd(choice.endTime)
+    setHoursBreakRemoved(choice.breakRemoved)
+    setHoursOt(
+      line.isOvertimeLine ? String(weekdayOtMultiplier(line.date, payrollPolicy)) : ''
+    )
+    setEditingLineId(line.id)
+  }
+
+  const savePayrollHours = () => {
+    if (!editingLineId) return
+    const row = payroll.lineItems.find((item) => item.id === editingLineId)
+    if (!row) return
+    const amount = revisedPayrollAmount({
+      row,
+      startTime: hoursStart,
+      endTime: hoursEnd,
+      breakRemoved: hoursBreakRemoved,
+      policy: payrollPolicy,
+    })
+    const prior = draft.payrollLineReviews[editingLineId]?.decision
+    const review = payrollReviewAfterSave(prior, row.amount, amount)
+    void persist({
+      ...draft,
+      payrollLineReviews: {
+        ...draft.payrollLineReviews,
+        [editingLineId]: review,
+      },
+    })
+    setEditingLineId(null)
+  }
+
+  const saveExtraAmount = () => {
+    if (!editingExtra) return
+    const amount = parseTimesheetManagerAmount(editAmount)
+    if (amount == null) return
+    if (editingExtra.type === 'expense') {
+      const next = draft.expenseEntries.map((entry) => {
+        if (entry.id !== editingExtra.id) return entry
+        return { ...entry, ...extraReviewAfterSave(entry.managerDecision, entry.amount, amount) }
+      })
+      void persist({ ...draft, expenseEntries: next })
+    } else {
+      const next = draft.priceWorkEntries.map((entry) => {
+        if (entry.id !== editingExtra.id) return entry
+        return { ...entry, ...extraReviewAfterSave(entry.managerDecision, entry.amount, amount) }
+      })
+      void persist({ ...draft, priceWorkEntries: next })
+    }
+    setEditingExtra(null)
   }
 
   const handleOperativeSign = async () => {
@@ -271,7 +366,9 @@ export function TimesheetPeriodPage({
   const handleManagerSign = async () => {
     if (!viewer || !signature) return
     if (extrasPendingReview(draft) && (draft.expenseEntries.length > 0 || draft.priceWorkEntries.length > 0)) {
-      window.alert('Please approve, decline or edit each expense and price-work item using the buttons provided.')
+      setManagerSignOpen(false)
+      setSignature(null)
+      setExtrasReviewAlert(true)
       return
     }
     setBusy(true)
@@ -422,15 +519,15 @@ export function TimesheetPeriodPage({
             {`${subjectUser.firstName} ${subjectUser.surname}`.trim() || subjectUser.email}
           </p>
           <p className="mt-1 text-[15px] text-ios-muted">{periodTitle}</p>
-          <p className="mt-1 text-[15px] text-ios-muted">{statusLine(draft, subjectUser)}</p>
+          <ReviewStatusCapsule signed={Boolean(draft.operativeSignedAt)} />
         </div>
       ) : null}
 
       {managerHasSigned && managerAdjustmentCount(draft) > 0 ? (
-        <div className="rounded-2xl bg-amber-50 p-4 text-[14px] text-amber-900">
-          Line manager {draft.managerSignedByName || 'Line manager'} made {managerAdjustmentCount(draft)} adjustment
-          {managerAdjustmentCount(draft) === 1 ? '' : 's'} on this timesheet.
-        </div>
+        <AdjustmentSummaryCard
+          managerName={draft.managerSignedByName || 'Line manager'}
+          rows={managerAdjustmentRows(draft)}
+        />
       ) : null}
 
       <section className="overflow-hidden rounded-2xl bg-white shadow-[0_1px_2px_rgba(0,0,0,0.10)]">
@@ -447,8 +544,9 @@ export function TimesheetPeriodPage({
         </div>
         {payroll.lineItems.length === 0 ? (
           <p className="p-4 text-[14px] text-ios-muted">
-            No bookings found for this payment period yet. Hours from site, office, site survey and other schedule
-            entries will appear here automatically.
+            {mode === 'review'
+              ? 'No bookings found for this period.'
+              : 'No bookings found for this payment period yet. Hours from site, office, site survey and other schedule entries will appear here automatically.'}
           </p>
         ) : (
           <ul className="divide-y divide-slate-100">
@@ -462,10 +560,7 @@ export function TimesheetPeriodPage({
                 timeZone={timeZone}
                 onApprove={() => setLineDecision(line.id, 'approved')}
                 onDecline={() => setLineDecision(line.id, 'declined')}
-                onEdit={() => {
-                  setEditingLineId(line.id)
-                  setEditAmount(String(line.amount.toFixed(2)))
-                }}
+                onEdit={() => openPayrollHoursEditor(line)}
               />
             ))}
           </ul>
@@ -486,24 +581,43 @@ export function TimesheetPeriodPage({
               <Row label="Hours subtotal" value={money(hoursSubtotal)} strong />
               {overtimeAmount > 0 ? <Row label="Overtime" value={money(overtimeAmount)} /> : null}
               {extrasTotal + expensesAmount > 0 ? (
-                <Row
-                  label={managerHasSigned ? 'Approved extras' : 'Extras (price work & expenses)'}
-                  value={money(extrasTotal + expensesAmount)}
-                />
+                <div className="flex justify-between text-[15px]">
+                  <span>{managerHasSigned ? 'Approved extras' : 'Extras (price work & expenses)'}</span>
+                  {managerHasSigned && extrasTotal + expensesAmount !== draftAdditionalTotal(draft) ? (
+                    <span className="text-right">
+                      <span className="block text-[12px] text-ios-muted line-through">
+                        {money(draftAdditionalTotal(draft))}
+                      </span>
+                      <span className="font-semibold text-[#34C759]">{money(extrasTotal + expensesAmount)}</span>
+                    </span>
+                  ) : (
+                    <span className="font-semibold">
+                      {money(managerHasSigned ? extrasTotal + expensesAmount : draftAdditionalTotal(draft))}
+                    </span>
+                  )}
+                </div>
               ) : null}
             </>
           )}
           <div className="flex items-baseline justify-between pt-1">
-            <p className="text-[17px] font-semibold">{managerHasSigned ? 'Approved total' : 'Total'}</p>
+            <p className="text-[17px] font-semibold">
+              {mode === 'review' && managerHasSigned ? 'Approved total' : 'Total'}
+            </p>
             <p className="text-[22px] font-bold">{money(total)}</p>
           </div>
+          {mode === 'review' && draft.managerNote.trim() ? (
+            <div className="border-t border-slate-100 pt-3">
+              <p className="text-[15px] font-semibold">Note to manager</p>
+              <p className="mt-1 text-[14px] text-ios-muted">{draft.managerNote}</p>
+            </div>
+          ) : null}
           {managerHasSigned && managerAdjustmentCount(draft) > 0 ? (
             <p className="text-[12px] text-ios-muted">Includes line manager adjustments</p>
           ) : null}
         </div>
       </section>
 
-      <PaymentRunsBox invoicing={invoicing} />
+      {mode === 'mine' ? <PaymentRunsBox invoicing={invoicing} /> : null}
 
       {mode === 'mine' ? (
         <>
@@ -621,21 +735,15 @@ export function TimesheetPeriodPage({
           canReview={canManagerReview}
           timeZone={timeZone}
           onSave={(next) => void persist(next)}
-          onEditExtra={(type, id, amount) => {
-            setEditingExtra({ type, id })
-            setEditAmount(String(amount.toFixed(2)))
+          onEditExtra={(type, id, title, original, current) => {
+            setEditingExtra({ type, id, title, original })
+            setEditAmount(current.toFixed(2))
           }}
         />
       )}
 
       {mode === 'review' ? (
         <>
-          {draft.managerNote.trim() ? (
-            <div className="rounded-2xl bg-white p-4 shadow-[0_1px_2px_rgba(0,0,0,0.10)]">
-              <p className="text-[15px] font-semibold">Note to manager</p>
-              <p className="mt-1 text-[14px] text-ios-muted">{draft.managerNote}</p>
-            </div>
-          ) : null}
           <div className="rounded-2xl bg-white p-4 shadow-[0_1px_2px_rgba(0,0,0,0.10)]">
             <p className="text-[17px] font-semibold">Signatures</p>
             {draft.operativeSignedAt ? (
@@ -675,7 +783,7 @@ export function TimesheetPeriodPage({
                 disabled={!draft.operativeSignedAt}
                 onClick={() => {
                   if (extrasPendingReview(draft) && (draft.expenseEntries.length > 0 || draft.priceWorkEntries.length > 0)) {
-                    window.alert('Please approve, decline or edit each expense and price-work item using the buttons provided.')
+                    setExtrasReviewAlert(true)
                     return
                   }
                   setManagerSignOpen(true)
@@ -710,59 +818,73 @@ export function TimesheetPeriodPage({
         />
       ) : null}
 
-      {editingLineId || editingExtra ? (
+      {editingLineId ? (
+        <EditHoursSheet
+          line={payroll.lineItems.find((item) => item.id === editingLineId) || null}
+          start={hoursStart}
+          end={hoursEnd}
+          breakRemoved={hoursBreakRemoved}
+          otText={hoursOt}
+          policy={payrollPolicy}
+          timeZone={timeZone}
+          onStart={setHoursStart}
+          onEnd={setHoursEnd}
+          onBreak={setHoursBreakRemoved}
+          onOt={setHoursOt}
+          onCancel={() => setEditingLineId(null)}
+          onSave={savePayrollHours}
+        />
+      ) : null}
+
+      {editingExtra ? (
+        <AmountEditSheet
+          title={editingExtra.type === 'expense' ? 'Edit expense' : 'Edit price work'}
+          subtitle={editingExtra.title}
+          originalAmount={editingExtra.original}
+          amountText={editAmount}
+          onAmount={setEditAmount}
+          onCancel={() => setEditingExtra(null)}
+          onSave={saveExtraAmount}
+        />
+      ) : null}
+
+      {pendingExtraMode ? (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-sm rounded-2xl bg-white p-5">
-            <p className="text-[17px] font-semibold">Edit amount</p>
-            <input
-              value={editAmount}
-              onChange={(event) => setEditAmount(event.target.value)}
-              className="mt-3 w-full rounded-lg border px-3 py-2"
-              inputMode="decimal"
-            />
-            <div className="mt-4 flex justify-end gap-3">
-              <button
-                type="button"
-                onClick={() => {
-                  setEditingLineId(null)
-                  setEditingExtra(null)
-                }}
-                className="text-sm font-semibold text-ios-muted"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  const amount = Number(editAmount)
-                  if (!Number.isFinite(amount)) return
-                  if (editingLineId) {
-                    setLineDecision(editingLineId, 'edited', amount)
-                    setEditingLineId(null)
-                    return
-                  }
-                  if (editingExtra?.type === 'expense') {
-                    const next = draft.expenseEntries.map((entry) =>
-                      entry.id === editingExtra.id
-                        ? { ...entry, managerDecision: 'edited' as const, managerRevisedAmount: amount }
-                        : entry
-                    )
-                    void persist({ ...draft, expenseEntries: next })
-                  } else if (editingExtra?.type === 'priceWork') {
-                    const next = draft.priceWorkEntries.map((entry) =>
-                      entry.id === editingExtra.id
-                        ? { ...entry, managerDecision: 'edited' as const, managerRevisedAmount: amount }
-                        : entry
-                    )
-                    void persist({ ...draft, priceWorkEntries: next })
-                  }
-                  setEditingExtra(null)
-                }}
-                className="rounded-lg bg-[#185FA5] px-3 py-1.5 text-sm font-semibold text-white"
-              >
-                Save
-              </button>
-            </div>
+            <p className="text-[17px] font-semibold">Re-sign required</p>
+            <p className="mt-3 text-[15px] text-ios-muted">{postSignExtraWarningCopy(subjectUser, draft)}</p>
+            <button
+              type="button"
+              onClick={() => void acceptPostSignExtra()}
+              className="mt-5 w-full rounded-xl bg-[#007AFF] py-3 text-[16px] font-semibold text-white"
+            >
+              Accept — add anyway
+            </button>
+            <button
+              type="button"
+              onClick={() => setPendingExtraMode(null)}
+              className="mt-2 w-full py-2 text-[15px] font-semibold text-ios-muted"
+            >
+              Decline
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {extrasReviewAlert ? (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-sm rounded-2xl bg-white p-5">
+            <p className="text-[17px] font-semibold">Review required</p>
+            <p className="mt-3 text-[15px] text-ios-muted">
+              Please approve, decline or edit each expense and price-work item using the buttons provided.
+            </p>
+            <button
+              type="button"
+              onClick={() => setExtrasReviewAlert(false)}
+              className="mt-5 w-full rounded-xl bg-[#007AFF] py-3 text-[16px] font-semibold text-white"
+            >
+              OK
+            </button>
           </div>
         </div>
       ) : null}
@@ -821,10 +943,6 @@ export function TimesheetPeriodPage({
             >
               Share invoice
             </button>
-            <p className="mt-3 text-[13px] text-ios-muted">
-              A PDF invoice is downloaded, matching iOS. Generating an invoice does not move this sheet to Exported — that
-              happens when a line manager emails and exports from Signed off.
-            </p>
           </div>
         </div>
       ) : null}
@@ -832,13 +950,86 @@ export function TimesheetPeriodPage({
   )
 }
 
-function statusLine(draft: TimesheetDraft, user: User): string {
-  if (isTimesheetFullyApproved(draft, user)) return 'Signed off'
-  if (draft.operativeSignedAt && userHasLineManager(user) && !draft.managerSignedAt) {
-    return 'Awaiting your counter-sign'
+function ReviewStatusCapsule({ signed }: { signed: boolean }) {
+  return signed ? (
+    <span className="mt-2 inline-flex rounded-full bg-[#34C759]/15 px-2 py-0.5 text-[12px] font-semibold text-[#34C759]">
+      Operative signed
+    </span>
+  ) : (
+    <span className="mt-2 inline-flex rounded-full bg-[#FF9500]/15 px-2 py-0.5 text-[12px] font-semibold text-[#FF9500]">
+      Awaiting operative signature
+    </span>
+  )
+}
+
+function AdjustmentSummaryCard({
+  managerName,
+  rows,
+}: {
+  managerName: string
+  rows: ReturnType<typeof managerAdjustmentRows>
+}) {
+  return (
+    <section className="rounded-[14px] border border-[#007AFF]/20 bg-[#007AFF]/[0.06] p-3.5">
+      <p className="text-[17px] font-semibold">Line manager adjustments</p>
+      <p className="mt-1 text-[12px] text-ios-muted">
+        {managerName} reviewed your timesheet. Struck-through amounts are what you submitted; coloured amounts are what
+        will be paid.
+      </p>
+      <ul className="mt-3 space-y-2">
+        {rows.map((row) => (
+          <li key={`${row.title}-${row.decision}`} className="flex items-start gap-2">
+            <span
+              className="rounded-full px-2 py-0.5 text-[10px] font-bold uppercase"
+              style={{ color: decisionTint(row.decision), background: `${decisionTint(row.decision)}24` }}
+            >
+              {decisionLabel(row.decision)}
+            </span>
+            <div>
+              <p className="text-[15px] font-semibold">{row.title}</p>
+              {row.detail ? <p className="text-[12px] text-ios-muted">{row.detail}</p> : null}
+            </div>
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
+}
+
+function AdjustedAmountText({
+  original,
+  effective,
+  decision,
+  managerHasSigned,
+  applyLiveReview = false,
+}: {
+  original: number
+  effective: number
+  decision: TimesheetManagerDecision
+  managerHasSigned: boolean
+  applyLiveReview?: boolean
+}) {
+  if (
+    showsTimesheetAdjustment({
+      original,
+      effective,
+      decision,
+      managerHasSigned,
+      applyLiveReview,
+    })
+  ) {
+    return (
+      <div className="text-right">
+        <p className={`text-[12px] text-ios-muted ${decision === 'declined' || decision === 'edited' ? 'line-through' : ''}`}>
+          {money(original)}
+        </p>
+        <p className="text-[15px] font-bold" style={{ color: decisionTint(decision) }}>
+          {money(effective)}
+        </p>
+      </div>
+    )
   }
-  if (draft.operativeSignedAt) return 'Partially signed'
-  return 'Not signed yet'
+  return <p className="text-[15px] font-bold">{money(original)}</p>
 }
 
 function Row({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
@@ -886,14 +1077,13 @@ function PayrollLine({
         </p>
       </div>
       <div className="text-right">
-        {effective !== line.amount && (managerHasSigned || canReview) ? (
-          <>
-            <p className="text-[12px] text-ios-muted line-through">{money(line.amount)}</p>
-            <p className="text-[15px] font-semibold text-green-700">{money(effective)}</p>
-          </>
-        ) : (
-          <p className="text-[15px] font-semibold">{money(line.amount)}</p>
-        )}
+        <AdjustedAmountText
+          original={line.amount}
+          effective={effective}
+          decision={decision}
+          managerHasSigned={managerHasSigned}
+          applyLiveReview={canReview}
+        />
         {canReview ? <TickCross decision={decision} onApprove={onApprove} onDecline={onDecline} onEdit={onEdit} /> : null}
       </div>
     </li>
@@ -983,10 +1173,17 @@ function ExtraList({
               <p className={`font-semibold ${item.removed ? 'line-through' : ''}`}>{item.title}</p>
               <p className="text-[12px] text-ios-muted">{item.details}</p>
               {managerHasSigned && item.decision !== 'pending' ? (
-                <p className="text-[11px] font-bold uppercase text-ios-muted">{decisionLabel(item.decision)}</p>
+                <p className="text-[11px] font-bold uppercase" style={{ color: decisionTint(item.decision) }}>
+                  {decisionLabel(item.decision)}
+                </p>
               ) : null}
             </div>
-            <p className="font-semibold">{money(item.amount)}</p>
+            <AdjustedAmountText
+              original={item.original}
+              effective={item.amount}
+              decision={item.decision}
+              managerHasSigned={managerHasSigned}
+            />
           </li>
         ))}
       </ul>
@@ -1005,7 +1202,13 @@ function ReviewExtras({
   canReview: boolean
   timeZone: string
   onSave: (next: TimesheetDraft) => void
-  onEditExtra: (type: 'expense' | 'priceWork', id: string, amount: number) => void
+  onEditExtra: (
+    type: 'expense' | 'priceWork',
+    id: string,
+    title: string,
+    original: number,
+    current: number
+  ) => void
 }) {
   if (draft.expenseEntries.length === 0 && draft.priceWorkEntries.length === 0) return null
   return (
@@ -1020,7 +1223,12 @@ function ReviewExtras({
                 <p className="text-[12px] text-ios-muted">
                   {abbreviatedDate(entry.date, timeZone)} · {entry.jobNumber}
                 </p>
-                <p className="font-semibold">{money(effectiveExpenseAmount(entry, false, canReview))}</p>
+                <AdjustedAmountText
+                  original={entry.amount}
+                  effective={entry.managerDecision === 'edited' ? entry.managerRevisedAmount ?? entry.amount : entry.managerDecision === 'declined' ? 0 : entry.amount}
+                  decision={entry.managerDecision}
+                  managerHasSigned={!canReview && entry.managerDecision !== 'pending'}
+                />
               </div>
               {canReview ? (
                 <TickCross
@@ -1035,7 +1243,15 @@ function ReviewExtras({
                     next[index] = { ...entry, managerDecision: 'declined', managerRevisedAmount: null }
                     onSave({ ...draft, expenseEntries: next })
                   }}
-                  onEdit={() => onEditExtra('expense', entry.id, entry.amount)}
+                  onEdit={() =>
+                    onEditExtra(
+                      'expense',
+                      entry.id,
+                      entry.title,
+                      entry.amount,
+                      entry.managerRevisedAmount ?? entry.amount
+                    )
+                  }
                 />
               ) : null}
             </div>
@@ -1052,7 +1268,12 @@ function ReviewExtras({
                 <p className="text-[12px] text-ios-muted">
                   Agreed with: {entry.agreedManagerName} · {abbreviatedDate(entry.startDate, timeZone)} · {entry.jobNumber}
                 </p>
-                <p className="font-semibold">{money(effectivePriceWorkAmount(entry, false, canReview))}</p>
+                <AdjustedAmountText
+                  original={entry.amount}
+                  effective={entry.managerDecision === 'edited' ? entry.managerRevisedAmount ?? entry.amount : entry.managerDecision === 'declined' ? 0 : entry.amount}
+                  decision={entry.managerDecision}
+                  managerHasSigned={!canReview && entry.managerDecision !== 'pending'}
+                />
               </div>
               {canReview ? (
                 <TickCross
@@ -1067,7 +1288,15 @@ function ReviewExtras({
                     next[index] = { ...entry, managerDecision: 'declined', managerRevisedAmount: null }
                     onSave({ ...draft, priceWorkEntries: next })
                   }}
-                  onEdit={() => onEditExtra('priceWork', entry.id, entry.amount)}
+                  onEdit={() =>
+                    onEditExtra(
+                      'priceWork',
+                      entry.id,
+                      entry.title,
+                      entry.amount,
+                      entry.managerRevisedAmount ?? entry.amount
+                    )
+                  }
                 />
               ) : null}
             </div>
@@ -1160,7 +1389,7 @@ function SignSheet({
   return (
     <div className="space-y-4 pb-10">
       <button type="button" onClick={onCancel} className="text-[15px] font-medium text-[#185FA5]">
-        Back
+        {managerMode ? 'Cancel' : 'Back'}
       </button>
       <h2 className="text-[22px] font-semibold">{managerMode ? 'Sign Off' : 'Sign Timesheet'}</h2>
       {!managerMode ? (
@@ -1201,6 +1430,147 @@ function SignSheet({
       >
         {confirmTitle}
       </button>
+    </div>
+  )
+}
+
+function EditHoursSheet({
+  line,
+  start,
+  end,
+  breakRemoved,
+  otText,
+  policy,
+  timeZone,
+  onStart,
+  onEnd,
+  onBreak,
+  onOt,
+  onCancel,
+  onSave,
+}: {
+  line: TimesheetPayrollLineItem | null
+  start: string
+  end: string
+  breakRemoved: boolean
+  otText: string
+  policy: OrgPayrollTimePolicy
+  timeZone: string
+  onStart: (value: string) => void
+  onEnd: (value: string) => void
+  onBreak: (value: boolean) => void
+  onOt: (value: string) => void
+  onCancel: () => void
+  onSave: () => void
+}) {
+  if (!line) return null
+  const paid = paidBookedHours('customHours', start, end, policy, breakRemoved)
+  const ot = overtimeHoursBeyondPaidStandard(line.date, 'customHours', start, end, policy, breakRemoved)
+  const amount = revisedPayrollAmount({
+    row: line,
+    startTime: start,
+    endTime: end,
+    breakRemoved,
+    policy,
+  })
+  return (
+    <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/40 p-4 sm:items-center">
+      <div className="max-h-[90vh] w-full max-w-lg space-y-3 overflow-y-auto rounded-2xl bg-[#F2F2F7] p-5">
+        <div className="flex items-center justify-between">
+          <button type="button" onClick={onCancel} className="text-[15px] font-semibold text-[#007AFF]">
+            Cancel
+          </button>
+          <p className="text-[17px] font-semibold">Edit Hours</p>
+          <button type="button" onClick={onSave} className="text-[15px] font-semibold text-[#007AFF]">
+            Save
+          </button>
+        </div>
+        <p className="text-center text-[13px] text-ios-muted">
+          {abbreviatedDate(line.date, timeZone)} · {line.jobNumber} {line.projectName}
+        </p>
+        <div className="rounded-2xl bg-white p-4">
+          <HoursTimelinePicker
+            start={start}
+            end={end}
+            breakRemoved={breakRemoved}
+            policy={policy}
+            onStart={onStart}
+            onEnd={onEnd}
+            onBreak={onBreak}
+            showBreak={!line.isOvertimeLine}
+          />
+        </div>
+        {line.isOvertimeLine ? (
+          <label className="block rounded-2xl bg-white px-4 py-3 text-[11px] font-medium uppercase tracking-[0.4px] text-ios-muted">
+            Overtime multiplier
+            <input
+              value={otText}
+              onChange={(event) => onOt(event.target.value)}
+              className="mt-1 w-full border-0 p-0 text-[14px] font-medium text-ios-ink outline-none"
+              inputMode="decimal"
+            />
+          </label>
+        ) : null}
+        <div className="rounded-2xl bg-white px-4 py-3 text-[14px]">
+          <p className="flex justify-between">
+            <span>Paid hours</span>
+            <span className="font-semibold">{formatTimesheetHours(paid)}h</span>
+          </p>
+          <p className="mt-1 flex justify-between">
+            <span>Overtime</span>
+            <span className="font-semibold">{formatTimesheetHours(ot)}h</span>
+          </p>
+          <p className="mt-2 flex justify-between text-[15px] font-semibold">
+            <span>Revised amount</span>
+            <span>{money(amount)}</span>
+          </p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function AmountEditSheet({
+  title,
+  subtitle,
+  originalAmount,
+  amountText,
+  onAmount,
+  onCancel,
+  onSave,
+}: {
+  title: string
+  subtitle: string
+  originalAmount: number
+  amountText: string
+  onAmount: (value: string) => void
+  onCancel: () => void
+  onSave: () => void
+}) {
+  return (
+    <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4">
+      <div className="w-full max-w-sm rounded-2xl bg-white p-5">
+        <div className="flex items-center justify-between">
+          <button type="button" onClick={onCancel} className="text-[15px] font-semibold text-[#007AFF]">
+            Cancel
+          </button>
+          <p className="text-[17px] font-semibold">{title}</p>
+          <button type="button" onClick={onSave} className="text-[15px] font-semibold text-[#007AFF]">
+            Save
+          </button>
+        </div>
+        <p className="mt-3 text-[14px] text-ios-muted">{subtitle}</p>
+        <label className="mt-3 flex items-center gap-2 rounded-xl border px-3 py-2 text-[15px]">
+          £
+          <input
+            value={amountText}
+            onChange={(event) => onAmount(event.target.value)}
+            className="w-full border-0 p-0 outline-none"
+            inputMode="decimal"
+          />
+        </label>
+        <p className="mt-2 text-[12px] text-ios-muted">Original: {money(originalAmount)}</p>
+      </div>
     </div>
   )
 }

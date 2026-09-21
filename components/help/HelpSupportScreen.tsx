@@ -161,7 +161,8 @@ const TOPICS: Topic[] = [
         body: [
           'A timesheet does not appear in Awaiting sign-off until that person has signed their own sheet.',
           'Tap a person to open their timesheet on a new page.',
-          'Use ✓ to approve, ✕ to decline, or edit each day, expense and price-work line, then Sign off & finalise with your signature.',
+          'Use ✓ to approve, ✕ to decline, or ⚙ Edit Hours on each day (start, finish and break). Expenses and price work open an amount editor. Then Sign off & finalise with your signature.',
+          'After you sign off, the person sees a Line manager adjustments card with struck original amounts and the amounts that will be paid.',
           'On Signed off, Email and export sends the sheets to your email for filing. Exported sheets stay in Exported across pay runs.',
         ],
       },
