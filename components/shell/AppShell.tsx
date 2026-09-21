@@ -200,6 +200,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const title = pageTitle(pathname, allItems)
   const isHome = pathname === '/dashboard'
   const hidePageChrome = isHome || pathname.startsWith('/dashboard/book-labour')
+  const ownsPageTitle =
+    pathname.startsWith('/dashboard/timesheets') ||
+    pathname.startsWith('/dashboard/wholesalers') ||
+    pathname.startsWith('/dashboard/qualifications') ||
+    pathname.startsWith('/dashboard/my-qualifications') ||
+    pathname.startsWith('/dashboard/job-types') ||
+    pathname.startsWith('/dashboard/materials') ||
+    pathname.startsWith('/dashboard/sub-contractors')
 
   const firstInitial = displayUser.firstName?.trim()?.charAt(0) || displayUser.email?.trim()?.charAt(0) || 'U'
   const surnameInitial = displayUser.surname?.trim()?.charAt(0) || ''
@@ -301,7 +309,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           {!hidePageChrome ? (
             <header className="sticky top-0 z-20 flex h-16 items-center justify-between gap-3 border-b border-ios-border bg-ios-card/95 px-4 backdrop-blur lg:px-8">
               <div className="min-w-0">
-                <h1 className="truncate text-[20px] font-semibold tracking-tight lg:text-[28px]">{title}</h1>
+                {ownsPageTitle ? (
+                  <p className="truncate text-[13px] font-medium text-ios-muted">{organization?.name || 'Project Planner'}</p>
+                ) : (
+                  <h1 className="truncate text-[20px] font-semibold tracking-tight lg:text-[28px]">{title}</h1>
+                )}
               </div>
               <div className="flex items-center gap-2">
                 <div className="relative">

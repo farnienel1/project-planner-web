@@ -1,8 +1,10 @@
-import { format, isWithinInterval, startOfWeek, endOfWeek } from 'date-fns'
+import { format, startOfWeek, endOfWeek } from 'date-fns'
 import type { Booking, Operative, User } from '@/types'
 import { findOperativeForUser } from '@/lib/operatives/operativeRosterUtils'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import type { OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
+import { dayKey } from '@/lib/ios-parity/londonTime'
+import { hasAdminAccess } from '@/lib/permissions'
 
 export type TimesheetSubjectKind = 'operative' | 'manager'
 
@@ -33,6 +35,46 @@ export function weekStartKey(date: Date): string {
 export function weekRangeFromStart(weekStart: Date) {
   const start = startOfWeek(weekStart, { weekStartsOn: 1 })
   return { start, end: endOfWeek(start, { weekStartsOn: 1 }) }
+}
+
+function isDateInPeriod(date: Date, range: { start: Date; end: Date }): boolean {
+  const key = dayKey(date)
+  return key >= dayKey(range.start) && key <= dayKey(range.end)
+}
+
+export function subjectForUser(user: User, operatives: Operative[]): TimesheetSubject {
+  const linked = findOperativeForUser(user, operatives)
+  return {
+    key: linked ? `operative:${linked.id}` : `user:${user.id}`,
+    kind: linked ? 'operative' : 'manager',
+    name: `${user.firstName} ${user.surname}`.trim() || user.email,
+    userId: user.id,
+    operativeId: linked?.id,
+    dayRate: user.dayRate ?? linked?.dayRate,
+    hourlyRate: user.hourlyRate ?? linked?.hourlyRate,
+    vatNumber: user.vatNumber,
+    utrNumber: user.utrNumber,
+    employmentType: user.employmentType,
+  }
+}
+
+export function reportsToManager(member: User, managerId: string): boolean {
+  const ids = [
+    ...(member.assignedManagerUserIds || []),
+    member.assignedManagerUserId || '',
+  ]
+    .map((id) => id.trim())
+    .filter(Boolean)
+  return ids.includes(managerId)
+}
+
+export function teamTimesheetUsers(viewer: User, users: User[]): User[] {
+  const admin = hasAdminAccess(viewer) || viewer.isSuperAdmin
+  return users.filter((member) => {
+    if (member.isActive === false) return false
+    if (admin) return true
+    return reportsToManager(member, viewer.id)
+  })
 }
 
 function parseMinutes(value?: string): number | null {
@@ -132,7 +174,7 @@ export function collectSubjectDayEntries({
     for (const booking of bookings) {
       if (booking.operativeId !== subject.operativeId) continue
       const date = new Date(booking.date)
-      if (!isWithinInterval(date, weekRange)) continue
+      if (!isDateInPeriod(date, weekRange)) continue
       entries.push({
         date,
         label: String(booking.timeSlot),
@@ -147,11 +189,11 @@ export function collectSubjectDayEntries({
     }
   }
 
-  if (subject.userId && subject.kind === 'manager') {
+  if (subject.userId) {
     for (const booking of managerSiteBookings) {
       if (booking.userId !== subject.userId) continue
       const date = new Date(booking.date)
-      if (!isWithinInterval(date, weekRange)) continue
+      if (!isDateInPeriod(date, weekRange)) continue
       entries.push({
         date,
         label: String(booking.timeSlot),
