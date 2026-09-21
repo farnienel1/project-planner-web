@@ -153,6 +153,12 @@ export function londonDayOfMonth(date: Date): number {
   return partsInLondon(date).d
 }
 
+/** Last calendar day of the London month containing `date` (28–31). */
+export function daysInLondonMonth(date: Date): number {
+  const { y, m } = partsInLondon(date)
+  return new Date(Date.UTC(y, m, 0, 12, 0, 0)).getUTCDate()
+}
+
 /** Monday of the London week containing `date`. */
 export function startOfLondonWeek(date: Date): Date {
   return addLondonDays(londonMidnight(date), -(londonIsoWeekday(date) - 1))

@@ -80,11 +80,16 @@ export function MaterialCatalogueScreen() {
   const grouped = useMemo(() => {
     const map = new Map<string, MaterialCatalogItem[]>()
     for (const item of [...filtered].sort((a, b) => a.name.localeCompare(b.name))) {
-      const key = item.category || 'Other'
+      const key = (item.category || 'Other').trim() || 'Other'
       map.set(key, [...(map.get(key) || []), item])
     }
     return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b))
   }, [filtered])
+  const [expanded, setExpanded] = useState<string[]>([])
+
+  useEffect(() => {
+    setExpanded(grouped.map(([category]) => category))
+  }, [grouped])
 
   const brands = new Set(items.map((item) => item.brand)).size
   const categories = new Set(items.map((item) => item.category || 'Other')).size
@@ -132,17 +137,26 @@ export function MaterialCatalogueScreen() {
       {error ? <p className="text-sm text-red-600">{error}</p> : null}
       {alert ? <p className="text-sm text-red-600">{alert}</p> : null}
 
-      <div className="rounded-2xl bg-white p-5 shadow-[0_1px_2px_rgba(0,0,0,0.10)]">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.4px] text-slate-500">Catalogue</p>
-        <p className="mt-1 text-[28px] font-bold">{items.length} items</p>
-        <p className="text-[13px] text-ios-muted">
-          {brands} Brands · {categories} Categories · {addedToday} Added today
-        </p>
+      <div className="rounded-2xl bg-gradient-to-br from-[#185FA5] to-[#0F4C81] p-5 text-white shadow-sm">
+        <div className="flex items-start justify-between">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.4px] text-white/80">Catalogue</p>
+            <p className="mt-1 text-[28px] font-bold">{items.length} items</p>
+          </div>
+          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-white/20">
+            <CubeIcon className="h-5 w-5" />
+          </div>
+        </div>
+        <div className="mt-4 grid grid-cols-3 gap-2">
+          <StatTile value={String(brands)} label="Brands" />
+          <StatTile value={String(categories)} label="Categories" />
+          <StatTile value={String(addedToday)} label="Added today" />
+        </div>
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search by name, brand or code"
-          className="mt-4 w-full rounded-xl border border-ios-search-border px-4 py-2.5"
+          className="mt-4 w-full rounded-xl border-0 px-4 py-2.5 text-[15px] text-ios-ink"
         />
       </div>
 
@@ -155,44 +169,72 @@ export function MaterialCatalogueScreen() {
           />
         </div>
       ) : (
-        <div className="overflow-hidden rounded-2xl bg-white shadow-sm">
-          <table className="min-w-full text-left text-sm">
-            <thead className="bg-[#F2F2F7] text-[12px] uppercase text-ios-muted">
-              <tr>
-                <th className="px-4 py-3">Name</th>
-                <th className="px-4 py-3">Category</th>
-                <th className="px-4 py-3">Brand</th>
-                <th className="px-4 py-3">Code</th>
-                <th className="px-4 py-3">Type</th>
-                <th className="px-4 py-3">Size / Length</th>
-              </tr>
-            </thead>
-            <tbody>
-              {grouped.flatMap(([, rows]) =>
-                rows.map((item) => (
-                  <tr
-                    key={item.id}
-                    className="cursor-pointer border-t hover:bg-slate-50"
-                    onClick={() => {
-                      setExistingId(item.id)
-                      setEditor({ ...item })
-                    }}
-                  >
-                    <td className="px-4 py-3 font-medium">{item.name}</td>
-                    <td className="px-4 py-3">{item.category}</td>
-                    <td className="px-4 py-3">{item.brand}</td>
-                    <td className="px-4 py-3">{item.productCode || '—'}</td>
-                    <td className="px-4 py-3">{item.defaultUnit}</td>
-                    <td className="px-4 py-3 text-ios-muted">
-                      {item.size ? `Size: ${item.size}` : ''}
-                      {item.size && item.length ? ' · ' : ''}
-                      {item.length ? `Length: ${item.length}${item.lengthUnit || ''}` : ''}
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+        <div className="space-y-3">
+          {grouped.map(([category, rows]) => {
+            const open = expanded.includes(category)
+            return (
+              <div key={category} className="overflow-hidden rounded-2xl bg-white shadow-[0_1px_2px_rgba(0,0,0,0.10)]">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setExpanded((current) =>
+                      current.includes(category) ? current.filter((name) => name !== category) : [...current, category]
+                    )
+                  }
+                  className="flex w-full items-center justify-between px-4 py-3 text-left"
+                >
+                  <span className="text-[11px] font-semibold uppercase tracking-[0.4px] text-ios-muted">{category}</span>
+                  <span className="text-[12px] text-ios-muted">
+                    {rows.length} item{rows.length === 1 ? '' : 's'}
+                  </span>
+                </button>
+                {open ? (
+                  <div className="space-y-2 border-t border-[#E5E5EA] px-3 py-3">
+                    {rows.map((item) => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        className="flex w-full items-start gap-3 rounded-xl px-2 py-2 text-left hover:bg-slate-50"
+                        onClick={() => {
+                          setExistingId(item.id)
+                          setEditor({ ...item })
+                        }}
+                      >
+                        <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px] bg-[#E6F1FB] text-[#185FA5]">
+                          <CubeIcon className="h-4 w-4" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-[15px] font-medium">{item.name}</p>
+                          <p className="text-[13px] text-ios-muted">{item.brand || 'Custom'}</p>
+                          <div className="mt-1 flex flex-wrap gap-1.5">
+                            {item.productCode ? (
+                              <span className="rounded bg-[#E6F1FB] px-1.5 py-0.5 font-mono text-[11px] font-medium text-[#185FA5]">
+                                {item.productCode}
+                              </span>
+                            ) : null}
+                            <span className="rounded bg-[#F2F2F7] px-1.5 py-0.5 text-[11px] font-medium text-ios-muted">
+                              {item.defaultUnit}
+                            </span>
+                            {item.size ? (
+                              <span className="rounded bg-[#F2F2F7] px-1.5 py-0.5 text-[11px] text-ios-muted">
+                                Size {item.size}
+                              </span>
+                            ) : null}
+                            {item.length ? (
+                              <span className="rounded bg-[#F2F2F7] px-1.5 py-0.5 text-[11px] text-ios-muted">
+                                {item.length}
+                                {item.lengthUnit || ''}
+                              </span>
+                            ) : null}
+                          </div>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            )
+          })}
         </div>
       )}
 
@@ -258,6 +300,10 @@ export function MaterialCatalogueScreen() {
               return
             }
             const actor = { createdByUserId: user.id, createdByName: `${user.firstName} ${user.surname}`.trim() || user.email }
+            if (parsed.rows.length === 0) {
+              window.alert('That CSV has no materials. The current catalogue was left unchanged.')
+              return
+            }
             if (mode === 'replace') {
               if (!window.confirm('Replace the entire catalogue with this CSV? Existing items not in the file will be removed.')) return
               await replaceAllItems(
@@ -307,6 +353,15 @@ export function MaterialCatalogueScreen() {
           }}
         />
       ) : null}
+    </div>
+  )
+}
+
+function StatTile({ value, label }: { value: string; label: string }) {
+  return (
+    <div className="rounded-[9px] bg-white/15 px-2 py-1.5">
+      <p className="text-[14px] font-medium">{value}</p>
+      <p className="text-[10px] text-white/85">{label}</p>
     </div>
   )
 }

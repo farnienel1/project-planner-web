@@ -28,10 +28,10 @@ function parseLengthUnit(value: unknown): MaterialLengthUnit | undefined {
 function mapMaterialCatalogItem(docId: string, data: Record<string, unknown>): MaterialCatalogItem | null {
   const name = parseString(data.name)
   const brand = parseString(data.brand) || 'Custom'
-  const createdAt = parseFirestoreDate(data.createdAt)
-  const createdByUserId = parseString(data.createdByUserId)
-  const createdByName = parseString(data.createdByName)
-  if (!name || !createdAt || !createdByUserId || !createdByName) return null
+  const createdAt = parseFirestoreDate(data.createdAt) || new Date()
+  const createdByUserId = parseString(data.createdByUserId) || 'unknown'
+  const createdByName = parseString(data.createdByName) || 'Unknown'
+  if (!name) return null
 
   const category = parseOptionalString(data.category) || 'Other'
   return {
@@ -121,6 +121,9 @@ export const useMaterialCatalogStore = create<MaterialCatalogState>((set, get) =
   },
 
   replaceAllItems: async (organizationId, items) => {
+    if (items.length === 0 && get().items.length > 0) {
+      throw new Error('Refusing to overwrite the material catalogue with an empty list')
+    }
     const existing = get().items
     for (const item of existing) {
       await deleteDoc(doc(db, 'organizations', organizationId, 'materialCatalogue', item.id))

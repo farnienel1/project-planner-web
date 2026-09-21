@@ -220,8 +220,17 @@ export function WholesalersScreen({ selectedId }: { selectedId?: string }) {
           <div className="space-y-2">
             {history.slice(0, 5).map((record) => (
               <div key={record.id} className="rounded-xl bg-white px-4 py-3 text-sm shadow-sm">
-                {record.requestType === 'order' ? 'Order' : 'Quote'} · {record.lines.length} item
-                {record.lines.length === 1 ? '' : 's'}
+                <p className="font-medium">
+                  {record.requestType === 'order' ? 'Order' : 'Quote'} · {record.lines.length} item
+                  {record.lines.length === 1 ? '' : 's'}
+                </p>
+                <p className="mt-1 text-ios-muted">
+                  {record.lines
+                    .slice(0, 3)
+                    .map((line) => `${line.name} × ${line.quantity}`)
+                    .join(' · ') || 'No line items'}
+                  {record.lines.length > 3 ? ` · +${record.lines.length - 3} more` : ''}
+                </p>
               </div>
             ))}
           </div>
@@ -483,20 +492,37 @@ function HistorySheet({
         {filtered.length === 0 ? (
           <p className="text-sm text-ios-muted">No {type === 'quote' ? 'quotes' : 'orders'} match your filters</p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-left text-sm">
-              <tbody>
-                {filtered.map((record) => (
-                  <tr key={record.id} className="border-t">
-                    <td className="py-3">
-                      Materials day:{' '}
-                      {(record.materialsDate || record.sentAt).toLocaleDateString('en-GB')} · by {record.sentBy}
-                    </td>
-                    <td className="py-3 text-ios-muted">{record.lines.length} items</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="space-y-4">
+            {filtered.map((record) => (
+              <div key={record.id} className="rounded-2xl border border-[#E5E5EA] bg-white p-4">
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <p className="text-[15px] font-semibold">
+                    {record.requestType === 'order' ? 'Order' : 'Quote'} · materials day{' '}
+                    {(record.materialsDate || record.sentAt).toLocaleDateString('en-GB')}
+                  </p>
+                  <p className="text-[13px] text-ios-muted">by {record.sentBy}</p>
+                </div>
+                {record.lines.length === 0 ? (
+                  <p className="mt-3 text-sm text-ios-muted">No line items were stored on this send.</p>
+                ) : (
+                  <div className="mt-3 divide-y divide-[#E5E5EA]">
+                    {record.lines.map((line, index) => (
+                      <div key={`${record.id}-${line.materialId || index}`} className="flex items-start justify-between gap-3 py-2.5 text-sm">
+                        <div>
+                          <p className="font-medium">{line.name}</p>
+                          <p className="text-[13px] text-ios-muted">
+                            {[line.brand, line.productCode, line.lengthDisplay].filter(Boolean).join(' · ') || '—'}
+                          </p>
+                        </div>
+                        <p className="shrink-0 font-semibold">
+                          {line.quantity} {line.unit}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
         )}
       </div>

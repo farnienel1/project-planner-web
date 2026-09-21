@@ -1,9 +1,9 @@
-import { endOfMonth } from 'date-fns'
 import type { OrgInvoicingSettings, OrgWarningDetectionSettings } from '@/lib/settings/organizationSettings'
 import { WEEKDAY_OPTIONS } from '@/lib/settings/organizationSettings'
 import {
   addLondonDays,
   dayKey,
+  daysInLondonMonth,
   endOfLondonWeek,
   londonDayOfMonth,
   londonIsoWeekday,
@@ -50,7 +50,7 @@ function resolveDateRangeInvoicingPeriod(
 ): InvoicingPeriodRange {
   const dayOfMonth = londonDayOfMonth(referenceDate)
   const ranges = invoicing.paymentRunDateRanges.filter((range) => range.startDay > 0 && range.endDay > 0)
-  const monthEnd = londonDayOfMonth(endOfMonth(londonMidnight(referenceDate)))
+  const monthEnd = daysInLondonMonth(referenceDate)
 
   for (const range of ranges) {
     if (dayOfMonth >= range.startDay && dayOfMonth <= range.endDay) {
@@ -80,7 +80,8 @@ function resolveDateRangeInvoicingPeriod(
 function londonDateWithDay(reference: Date, day: number): Date {
   const key = dayKey(reference)
   const [y, m] = key.split('-').map(Number)
-  return londonMidnight(new Date(Date.UTC(y, m - 1, day, 12, 0, 0)))
+  const clamped = Math.min(Math.max(day, 1), daysInLondonMonth(reference))
+  return londonMidnight(new Date(Date.UTC(y, m - 1, clamped, 12, 0, 0)))
 }
 
 function resolveRecurringInvoicingPeriod(
