@@ -11,12 +11,22 @@ import { useHealthSafetyStore } from '@/lib/stores/healthSafetyStore'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { isOperativeMode } from '@/lib/navigation/menuPermissions'
 import { newUuid } from '@/lib/firebase/firestoreUtils'
-import { uploadFile, healthSafetyFilePath } from '@/lib/firebase/storageUtils'
+import { uploadFile as uploadHsFile, healthSafetyFilePath } from '@/lib/firebase/storageUtils'
 import { loadPlatformToolboxLibrary, mergeToolboxTalkLibraries } from '@/lib/healthSafety/toolboxLibrary'
 import { buildToolboxTalkPdfHtml, openToolboxTalkPdf } from '@/lib/healthSafety/toolboxTalkPdf'
-import { SignaturePad } from '@/components/forms/SignaturePad'
+import {
+  combineLocalDateAndTime,
+  defaultScheduleDate,
+  defaultScheduleTime,
+  filterToolboxTalks,
+  nextRamsVersion,
+  talkTradeFilters,
+} from '@/lib/healthSafety/hsTalks'
+import { isHsRecipient } from '@/lib/healthSafety/hsPeople'
+import { STAFF_TRADE_PRESETS } from '@/lib/staff/staffTradeTypes'
+import { SignaturePad } from '@/components/signature/SignaturePad'
 import { EmptyState, ErrorBanner, LoadingSpinner } from '@/components/dashboard/PageShell'
-import { FormInput, FormLabel, FormSelect, FormTextarea } from '@/components/forms/FormShell'
+import { FormInput } from '@/components/forms/FormShell'
 import type { HSToolboxIssue, HSToolboxTalk, Project } from '@/types'
 import {
   DocListRow,
@@ -25,8 +35,23 @@ import {
   FeatureSectionLabel,
   HubCard,
 } from '@/components/projects/features/featureUi'
+import {
+  HsChipRow,
+  HsFieldCard,
+  HsFileButton,
+  HsHero,
+  HsPrimaryButton,
+  HsRecipientPicker,
+  HsSearchField,
+  HsSectionLabel,
+  HsSheet,
+  HsTalkPicker,
+} from '@/components/projects/features/hsUi'
 
 type ManagerTab = 'hub' | 'library' | 'tracking' | 'rams' | 'other'
+
+const OTHER_CATEGORIES = ['Trade', 'Site', 'Policy', 'COSHH', 'Permit', 'Certificate', 'Insurance']
+const RAMS_TRADES = ['General', ...STAFF_TRADE_PRESETS]
 
 function projectIdsMatch(a: string, b: string): boolean {
   return a.trim().toLowerCase() === b.trim().toLowerCase()
@@ -76,7 +101,7 @@ export function ProjectHealthSafetySection({
   const { users, loadUsers } = useOrgUserStore()
 
   const isManager = !isOperativeMode(user)
-  const [tab, setTab] = useState<ManagerTab>(() => (isManager ? 'hub' : 'hub'))
+  const [tab, setTab] = useState<ManagerTab>('hub')
   const [talkSearch, setTalkSearch] = useState('')
   const [tradeFilter, setTradeFilter] = useState('All')
 
@@ -86,24 +111,32 @@ export function ProjectHealthSafetySection({
   const [showUploadTalk, setShowUploadTalk] = useState(false)
   const [uploadTitle, setUploadTitle] = useState('')
   const [uploadPurpose, setUploadPurpose] = useState('')
+  const [uploadCategory, setUploadCategory] = useState('general')
+  const [uploadTrades, setUploadTrades] = useState<string[]>([])
+  const [uploadIsGeneral, setUploadIsGeneral] = useState(true)
+  const [uploadKeyPoints, setUploadKeyPoints] = useState<string[]>([''])
+  const [uploadTalkFile, setUploadTalkFile] = useState<File | null>(null)
   const [showScheduled, setShowScheduled] = useState(false)
   const [showAddRams, setShowAddRams] = useState(false)
   const [showAddOther, setShowAddOther] = useState(false)
   const [signIssue, setSignIssue] = useState<HSToolboxIssue | null>(null)
   const [signatureB64, setSignatureB64] = useState<string | null>(null)
+  const [readConfirmed, setReadConfirmed] = useState(false)
   const [signing, setSigning] = useState(false)
 
   const [ramsTitle, setRamsTitle] = useState('')
   const [ramsTrade, setRamsTrade] = useState('General')
   const [ramsFile, setRamsFile] = useState<File | null>(null)
   const [otherTitle, setOtherTitle] = useState('')
-  const [otherCategory, setOtherCategory] = useState('General')
+  const [otherCategory, setOtherCategory] = useState('Trade')
+  const [otherTrade, setOtherTrade] = useState('General')
   const [otherFile, setOtherFile] = useState<File | null>(null)
   const [uploading, setUploading] = useState(false)
 
   const [scheduleTalkId, setScheduleTalkId] = useState('')
   const [scheduleRecipients, setScheduleRecipients] = useState<string[]>([])
-  const [schedulePublishAt, setSchedulePublishAt] = useState('')
+  const [scheduleDate, setScheduleDate] = useState(defaultScheduleDate)
+  const [scheduleTime, setScheduleTime] = useState(defaultScheduleTime)
   const [platformTalks, setPlatformTalks] = useState<HSToolboxTalk[]>([])
   const [libraryLoading, setLibraryLoading] = useState(false)
 
@@ -155,120 +188,113 @@ export function ProjectHealthSafetySection({
         const issue = data.issues.find((i) => i.id === sig.issueId)
         if (!issue || !projectIdsMatch(issue.projectId, project.id)) return null
         if (issue.publishAt && issue.publishAt.getTime() > Date.now()) return null
-        return { issue, signature: sig, talk: libraryTalks.find((t) => t.id === issue.talkId) || data.talks.find((t) => t.id === issue.talkId) }
+        return {
+          issue,
+          signature: sig,
+          talk: libraryTalks.find((t) => t.id === issue.talkId) || data.talks.find((t) => t.id === issue.talkId),
+        }
       })
       .filter((e): e is NonNullable<typeof e> => e !== null)
-  }, [data, user, project.id])
+  }, [data, user, project.id, libraryTalks])
 
   const pendingMine = myAssigned.filter((e) => e.signature.status !== 'signed').length
 
-  const filteredTalks = useMemo(() => {
-    let talks = libraryTalks
-    const q = talkSearch.trim().toLowerCase()
-    if (q) {
-      talks = talks.filter(
-        (t) =>
-          t.title.toLowerCase().includes(q) ||
-          t.purpose.toLowerCase().includes(q) ||
-          (t.referenceCode || '').toLowerCase().includes(q) ||
-          t.trades.some((tr) => tr.toLowerCase().includes(q))
-      )
-    }
-    if (tradeFilter !== 'All') {
-      talks = talks.filter((t) => t.isGeneral || t.trades.includes(tradeFilter))
-    }
-    return talks
-  }, [libraryTalks, talkSearch, tradeFilter])
-
-  const tradeFilters = useMemo(() => {
-    const set = new Set<string>(['All'])
-    for (const t of libraryTalks) {
-      for (const tr of t.trades) set.add(tr)
-    }
-    return Array.from(set)
-  }, [libraryTalks])
-
-  const operativeUsers = useMemo(
-    () => users.filter((u) => u.isActive && (u.permissions.operatives || u.role === 'operative' || u.permissions.manager)),
-    [users]
+  const filteredTalks = useMemo(
+    () => filterToolboxTalks(libraryTalks, talkSearch, tradeFilter),
+    [libraryTalks, talkSearch, tradeFilter]
   )
 
-  const toggleRecipient = (id: string) => {
-    setIssueRecipients((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
-  }
+  const tradeFilters = useMemo(() => talkTradeFilters(libraryTalks), [libraryTalks])
 
-  const toggleScheduleRecipient = (id: string) => {
-    setScheduleRecipients((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
+  const operativeUsers = useMemo(() => users.filter(isHsRecipient), [users])
+
+  const schedulePublishAt = useMemo(
+    () => combineLocalDateAndTime(scheduleDate, scheduleTime),
+    [scheduleDate, scheduleTime]
+  )
+
+  const selectedIssueTalk = libraryTalks.find((talk) => talk.id === issueTalkId)
+  const selectedScheduleTalk = libraryTalks.find((talk) => talk.id === scheduleTalkId)
+  const signTalk =
+    signIssue &&
+    (libraryTalks.find((talk) => talk.id === signIssue.talkId) || data?.talks.find((talk) => talk.id === signIssue.talkId))
+
+  const ensureTalkOnProject = async (talkId: string) => {
+    if (!organization?.id) return
+    const selectedTalk = libraryTalks.find((talk) => talk.id === talkId)
+    if (selectedTalk && !data?.talks.some((talk) => talk.id === selectedTalk.id)) {
+      await addToolboxTalk(organization.id, project.id, isSmallWorks, selectedTalk)
+    }
   }
 
   const submitIssue = async () => {
     if (!organization?.id || !user || !issueTalkId || issueRecipients.length === 0) return
-    const selectedTalk = libraryTalks.find((talk) => talk.id === issueTalkId)
-    if (selectedTalk && !data?.talks.some((talk) => talk.id === selectedTalk.id)) {
-      await addToolboxTalk(organization.id, project.id, isSmallWorks, selectedTalk)
-    }
-    await issueToolboxTalk(
-      organization.id,
-      project.id,
-      isSmallWorks,
-      issueTalkId,
-      issueRecipients,
-      user.id,
-      { weekCommencing: startOfWeek(new Date(), { weekStartsOn: 1 }) }
-    )
+    await ensureTalkOnProject(issueTalkId)
+    await issueToolboxTalk(organization.id, project.id, isSmallWorks, issueTalkId, issueRecipients, user.id, {
+      weekCommencing: startOfWeek(new Date(), { weekStartsOn: 1 }),
+    })
     setShowIssue(false)
     setIssueTalkId('')
     setIssueRecipients([])
   }
 
   const submitSchedule = async () => {
-    if (!organization?.id || !user || !scheduleTalkId || scheduleRecipients.length === 0 || !schedulePublishAt)
-      return
-    await issueToolboxTalk(
-      organization.id,
-      project.id,
-      isSmallWorks,
-      scheduleTalkId,
-      scheduleRecipients,
-      user.id,
-      {
-        weekCommencing: startOfWeek(new Date(schedulePublishAt), { weekStartsOn: 1 }),
-        publishAt: new Date(schedulePublishAt),
-      }
-    )
-    setShowScheduled(false)
+    if (!organization?.id || !user || !scheduleTalkId || scheduleRecipients.length === 0 || !schedulePublishAt) return
+    await ensureTalkOnProject(scheduleTalkId)
+    await issueToolboxTalk(organization.id, project.id, isSmallWorks, scheduleTalkId, scheduleRecipients, user.id, {
+      weekCommencing: startOfWeek(schedulePublishAt, { weekStartsOn: 1 }),
+      publishAt: schedulePublishAt,
+    })
     setScheduleTalkId('')
     setScheduleRecipients([])
-    setSchedulePublishAt('')
+    setScheduleDate(defaultScheduleDate())
+    setScheduleTime(defaultScheduleTime())
   }
 
   const submitUploadTalk = async (e: FormEvent) => {
     e.preventDefault()
     if (!organization?.id || !uploadTitle.trim()) return
-    await addToolboxTalk(organization.id, project.id, isSmallWorks, {
-      title: uploadTitle.trim(),
-      category: 'general',
-      isGeneral: true,
-      trades: [],
-      purpose: uploadPurpose.trim(),
-      keyPoints: [],
-      source: 'uploaded',
-      status: 'approved',
-      version: 1,
-    })
-    setShowUploadTalk(false)
-    setUploadTitle('')
-    setUploadPurpose('')
-    setTab('library')
+    setUploading(true)
+    try {
+      let fileURL: string | undefined
+      if (uploadTalkFile) {
+        const path = healthSafetyFilePath(organization.id, project.id, 'talks', uploadTalkFile.name)
+        fileURL = await uploadHsFile(path, uploadTalkFile, uploadTalkFile.type || 'application/octet-stream')
+      }
+      await addToolboxTalk(organization.id, project.id, isSmallWorks, {
+        title: uploadTitle.trim(),
+        category: uploadCategory.trim() || 'general',
+        isGeneral: uploadIsGeneral || uploadTrades.length === 0,
+        trades: uploadIsGeneral ? [] : uploadTrades,
+        purpose: uploadPurpose.trim(),
+        keyPoints: uploadKeyPoints.map((point) => point.trim()).filter(Boolean),
+        source: 'uploaded',
+        status: 'approved',
+        version: 1,
+        fileURL,
+      })
+      setShowUploadTalk(false)
+      setUploadTitle('')
+      setUploadPurpose('')
+      setUploadCategory('general')
+      setUploadTrades([])
+      setUploadIsGeneral(true)
+      setUploadKeyPoints([''])
+      setUploadTalkFile(null)
+      setTab('library')
+    } finally {
+      setUploading(false)
+    }
   }
 
   const submitSign = async () => {
-    if (!organization?.id || !user || !signIssue || !signatureB64) return
+    if (!organization?.id || !user || !signIssue || !signatureB64 || !readConfirmed) return
     setSigning(true)
     try {
       await signToolboxTalk(organization.id, project.id, isSmallWorks, signIssue.id, user.id, signatureB64)
       setSignIssue(null)
       setSignatureB64(null)
+      setReadConfirmed(false)
     } finally {
       setSigning(false)
     }
@@ -282,8 +308,9 @@ export function ProjectHealthSafetySection({
       let fileURL: string | undefined
       if (ramsFile) {
         const path = healthSafetyFilePath(organization.id, project.id, 'rams', ramsFile.name)
-        fileURL = await uploadFile(path, ramsFile, ramsFile.type || 'application/octet-stream')
+        fileURL = await uploadHsFile(path, ramsFile, ramsFile.type || 'application/octet-stream')
       }
+      const version = nextRamsVersion(data.ramsDocuments, ramsTitle)
       await save(organization.id, project.id, isSmallWorks, {
         ...data,
         ramsDocuments: [
@@ -291,7 +318,7 @@ export function ProjectHealthSafetySection({
             id: newUuid(),
             title: ramsTitle.trim(),
             trade: ramsTrade,
-            version: 1,
+            version,
             status: 'Active',
             uploadedAt: new Date(),
             fileURL,
@@ -317,7 +344,7 @@ export function ProjectHealthSafetySection({
       let fileURL: string | undefined
       if (otherFile) {
         const path = healthSafetyFilePath(organization.id, project.id, 'other', otherFile.name)
-        fileURL = await uploadFile(path, otherFile, otherFile.type || 'application/octet-stream')
+        fileURL = await uploadHsFile(path, otherFile, otherFile.type || 'application/octet-stream')
       }
       await save(organization.id, project.id, isSmallWorks, {
         ...data,
@@ -325,6 +352,7 @@ export function ProjectHealthSafetySection({
           {
             id: newUuid(),
             title: otherTitle.trim(),
+            trade: otherCategory === 'Trade' ? otherTrade : undefined,
             category: otherCategory,
             uploadedAt: new Date(),
             fileURL,
@@ -340,6 +368,11 @@ export function ProjectHealthSafetySection({
     } finally {
       setUploading(false)
     }
+  }
+
+  const toggleUploadTrade = (trade: string) => {
+    setUploadIsGeneral(false)
+    setUploadTrades((prev) => (prev.includes(trade) ? prev.filter((item) => item !== trade) : [...prev, trade]))
   }
 
   const managerTabs: { id: ManagerTab; label: string }[] = isManager
@@ -370,7 +403,12 @@ export function ProjectHealthSafetySection({
       <div className={`mb-4 flex items-center gap-3.5 rounded-[20px] px-4 py-4 text-white shadow-lg ${bannerGradient}`}>
         <div className="flex h-11 w-11 items-center justify-center rounded-[13px] bg-white/20">
           <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={1.5}
+              d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"
+            />
           </svg>
         </div>
         <div>
@@ -414,13 +452,16 @@ export function ProjectHealthSafetySection({
                     <FeatureCard key={issue.id} className="flex items-center gap-3 p-3">
                       <div className="min-w-0 flex-1">
                         <p className="text-sm font-semibold text-slate-900">{talk?.title || 'Toolbox talk'}</p>
-                        <p className="text-xs text-slate-500">
-                          W/C {format(issue.weekCommencing, 'd MMM yyyy')}
-                        </p>
+                        <p className="text-xs text-slate-500">W/C {format(issue.weekCommencing, 'd MMM yyyy')}</p>
                       </div>
                       <button
                         type="button"
-                        onClick={() => (pending ? setSignIssue(issue) : null)}
+                        onClick={() => {
+                          if (!pending) return
+                          setSignatureB64(null)
+                          setReadConfirmed(false)
+                          setSignIssue(issue)
+                        }}
                         className={`shrink-0 rounded-xl px-3 py-2 text-xs font-bold ${
                           pending ? 'bg-[#0fae9e] text-white' : 'bg-slate-100 text-slate-600'
                         }`}
@@ -462,30 +503,36 @@ export function ProjectHealthSafetySection({
               <div className="space-y-2">
                 <HubActionRow
                   title="Issue a toolbox talk"
-                  subtitle="Pick a talk and send to operatives"
-                  onClick={() => {
-                    setTab('library')
-                    setShowIssue(true)
-                  }}
+                  subtitle="Open the library and pick a talk"
+                  onClick={() => setTab('library')}
                 />
                 <HubActionRow
                   title="Upload a toolbox talk"
                   subtitle="Add your own talk to the library"
-                  onClick={() => setShowUploadTalk(true)}
+                  onClick={() => {
+                    setTab('library')
+                    setShowUploadTalk(true)
+                  }}
                 />
                 <HubActionRow
                   title="Upload RAMS"
                   subtitle="Risk assessment and method statement"
-                  onClick={() => setShowAddRams(true)}
+                  onClick={() => {
+                    setTab('rams')
+                    setShowAddRams(true)
+                  }}
                 />
                 <HubActionRow
                   title="Add H&S document"
                   subtitle="Policies, COSHH, permits and more"
-                  onClick={() => setShowAddOther(true)}
+                  onClick={() => {
+                    setTab('other')
+                    setShowAddOther(true)
+                  }}
                 />
                 <HubActionRow
-                  title="Scheduled toolbox talks"
-                  subtitle="Manage future talks and recipients"
+                  title="Schedule toolbox talk"
+                  subtitle="Pick a talk, date, time and recipients"
                   onClick={() => setShowScheduled(true)}
                 />
               </div>
@@ -522,29 +569,12 @@ export function ProjectHealthSafetySection({
 
       {tab === 'library' && isManager && (
         <div className="space-y-3">
-          <FormInput
-            value={talkSearch}
-            onChange={(e) => setTalkSearch(e.target.value)}
-            placeholder="Search toolbox talks"
-          />
-          <div className="flex gap-2 overflow-x-auto pb-1">
-            {tradeFilters.map((f) => (
-              <button
-                key={f}
-                type="button"
-                onClick={() => setTradeFilter(f)}
-                className={`shrink-0 rounded-full px-3 py-1 text-xs font-medium ${
-                  tradeFilter === f ? 'bg-[#0fae9e] text-white' : 'bg-white text-slate-600 border border-slate-200'
-                }`}
-              >
-                {f}
-              </button>
-            ))}
-          </div>
+          <HsSearchField value={talkSearch} onChange={setTalkSearch} placeholder="Search toolbox talks" />
+          <HsChipRow chips={tradeFilters} selected={tradeFilter} onSelect={setTradeFilter} />
           <button
             type="button"
             onClick={() => setShowUploadTalk(true)}
-            className="text-sm font-semibold text-[#2f73f0]"
+            className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-[#2f73f0]/40 bg-[#e8f0ff] py-2.5 text-sm font-semibold text-[#2f73f0]"
           >
             + Upload custom talk
           </button>
@@ -585,6 +615,23 @@ export function ProjectHealthSafetySection({
 
       {tab === 'tracking' && isManager && (
         <div className="space-y-3">
+          {scheduledIssues.length > 0 && (
+            <div>
+              <FeatureSectionLabel>Scheduled</FeatureSectionLabel>
+              {scheduledIssues.map((issue) => {
+                const talk = libraryTalks.find((t) => t.id === issue.talkId) || data.talks.find((t) => t.id === issue.talkId)
+                return (
+                  <FeatureCard key={issue.id} className="mb-2 p-4">
+                    <p className="text-sm font-semibold text-slate-900">{talk?.title || 'Toolbox talk'}</p>
+                    <p className="text-xs text-slate-500">
+                      {issue.publishAt ? format(issue.publishAt, "EEE d MMM yyyy 'at' HH:mm") : 'Scheduled'} ·{' '}
+                      {issue.recipientUserIds.length} recipients
+                    </p>
+                  </FeatureCard>
+                )
+              })}
+            </div>
+          )}
           {activeIssues.length === 0 ? (
             <EmptyState title="Nothing sent yet" description="Issue a toolbox talk from the library." />
           ) : (
@@ -603,10 +650,7 @@ export function ProjectHealthSafetySection({
                   organizationName: organization.name || 'Organisation',
                   presentedBy: `${user?.firstName || ''} ${user?.surname || ''}`.trim() || organization.name || 'Project Planner',
                 })
-                openToolboxTalkPdf(
-                  html,
-                  `ToolboxTalk-${talk.referenceCode || talk.id}-${issue.id}.html`
-                )
+                openToolboxTalkPdf(html, `ToolboxTalk-${talk.referenceCode || talk.id}-${issue.id}.html`)
               }
               return (
                 <FeatureCard key={issue.id} className="p-4">
@@ -651,22 +695,18 @@ export function ProjectHealthSafetySection({
 
       {tab === 'rams' && (
         <div className="space-y-4">
-          {isManager && showAddRams && (
-            <FeatureCard className="p-4">
-              <p className="mb-3 text-sm font-bold text-slate-900">Upload RAMS</p>
-              <form onSubmit={addRams} className="space-y-3">
-                <FormInput value={ramsTitle} onChange={(e) => setRamsTitle(e.target.value)} placeholder="Title" required />
-                <FormInput value={ramsTrade} onChange={(e) => setRamsTrade(e.target.value)} placeholder="Trade" />
-                <input type="file" accept=".pdf,image/*" onChange={(e) => setRamsFile(e.target.files?.[0] || null)} className="text-sm" />
-                <button type="submit" disabled={uploading} className="w-full rounded-xl bg-[#2F73F0] py-2.5 text-sm font-bold text-white disabled:opacity-50">
-                  {uploading ? 'Uploading…' : 'Upload RAMS'}
-                </button>
-              </form>
-            </FeatureCard>
+          {isManager && (
+            <button
+              type="button"
+              onClick={() => setShowAddRams(true)}
+              className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-[#2f73f0]/40 bg-[#e8f0ff] py-2.5 text-sm font-semibold text-[#2f73f0]"
+            >
+              + Upload RAMS
+            </button>
           )}
           <FeatureSectionLabel>RAMS documents</FeatureSectionLabel>
           {data.ramsDocuments.length === 0 ? (
-            <EmptyState title="No RAMS yet" description="Upload RAMS for this job." />
+            <EmptyState title="No RAMS yet" description="Upload RAMS for this job. You can add more than one copy." />
           ) : (
             <FeatureCard>
               {data.ramsDocuments.map((doc) => (
@@ -686,22 +726,14 @@ export function ProjectHealthSafetySection({
 
       {tab === 'other' && (
         <div className="space-y-4">
-          {isManager && showAddOther && (
-            <FeatureCard className="p-4">
-              <p className="mb-3 text-sm font-bold text-slate-900">Upload H&S document</p>
-              <form onSubmit={addOther} className="space-y-3">
-                <FormInput value={otherTitle} onChange={(e) => setOtherTitle(e.target.value)} placeholder="Title" required />
-                <FormSelect value={otherCategory} onChange={(e) => setOtherCategory(e.target.value)}>
-                  {['General', 'Policy', 'Method Statement', 'Certificate', 'Insurance'].map((c) => (
-                    <option key={c} value={c}>{c}</option>
-                  ))}
-                </FormSelect>
-                <input type="file" accept=".pdf,image/*" onChange={(e) => setOtherFile(e.target.files?.[0] || null)} className="text-sm" />
-                <button type="submit" disabled={uploading} className="w-full rounded-xl bg-[#2F73F0] py-2.5 text-sm font-bold text-white disabled:opacity-50">
-                  {uploading ? 'Uploading…' : 'Add document'}
-                </button>
-              </form>
-            </FeatureCard>
+          {isManager && (
+            <button
+              type="button"
+              onClick={() => setShowAddOther(true)}
+              className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-[#2f73f0]/40 bg-[#e8f0ff] py-2.5 text-sm font-semibold text-[#2f73f0]"
+            >
+              + Add Trade / Site Doc
+            </button>
           )}
           <FeatureSectionLabel>Other documents</FeatureSectionLabel>
           {data.otherDocuments.length === 0 ? (
@@ -712,7 +744,7 @@ export function ProjectHealthSafetySection({
                 <DocListRow
                   key={doc.id}
                   title={doc.title}
-                  meta={`${doc.category} · ${format(doc.uploadedAt, 'd MMM yyyy')}`}
+                  meta={`${doc.category}${doc.trade ? ` · ${doc.trade}` : ''} · ${format(doc.uploadedAt, 'd MMM yyyy')}`}
                   fileURL={doc.fileURL}
                 />
               ))}
@@ -722,136 +754,332 @@ export function ProjectHealthSafetySection({
       )}
 
       {showIssue && (
-        <Modal title="Issue toolbox talk" onClose={() => setShowIssue(false)}>
-          <FormSelect value={issueTalkId} onChange={(e) => setIssueTalkId(e.target.value)}>
-            <option value="">Select talk</option>
-            {libraryTalks.map((t) => (
-              <option key={t.id} value={t.id}>{t.title}</option>
-            ))}
-          </FormSelect>
-          <p className="mt-3 text-xs font-bold uppercase text-slate-400">Recipients</p>
-          <div className="mt-2 max-h-40 space-y-1 overflow-y-auto">
-            {operativeUsers.map((u) => (
-              <label key={u.id} className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={issueRecipients.includes(u.id)}
-                  onChange={() => toggleRecipient(u.id)}
-                />
-                {`${u.firstName} ${u.surname}`.trim() || u.email}
-              </label>
-            ))}
-          </div>
-          <button
-            type="button"
-            onClick={submitIssue}
-            disabled={!issueTalkId || issueRecipients.length === 0}
-            className="mt-4 w-full rounded-xl bg-[#0fae9e] py-2.5 text-sm font-bold text-white disabled:opacity-50"
-          >
-            Issue now
-          </button>
-        </Modal>
+        <HsSheet
+          title="Issue toolbox talk"
+          onClose={() => setShowIssue(false)}
+          footer={
+            <HsPrimaryButton onClick={() => void submitIssue()} disabled={!issueTalkId || issueRecipients.length === 0}>
+              Issue now
+            </HsPrimaryButton>
+          }
+        >
+          {selectedIssueTalk ? (
+            <HsFieldCard>
+              <p className="text-sm font-semibold text-slate-900">{selectedIssueTalk.title}</p>
+              <p className="text-xs text-slate-500">
+                {selectedIssueTalk.referenceCode ? `${selectedIssueTalk.referenceCode} · ` : ''}
+                {selectedIssueTalk.category}
+              </p>
+            </HsFieldCard>
+          ) : (
+            <HsTalkPicker talks={libraryTalks} selectedId={issueTalkId} onSelect={setIssueTalkId} />
+          )}
+          <HsSectionLabel>Recipients</HsSectionLabel>
+          <HsRecipientPicker users={operativeUsers} selectedIds={issueRecipients} onChange={setIssueRecipients} />
+        </HsSheet>
       )}
 
       {showUploadTalk && (
-        <Modal title="Upload toolbox talk" onClose={() => setShowUploadTalk(false)}>
-          <form onSubmit={submitUploadTalk} className="space-y-3">
-            <FormInput value={uploadTitle} onChange={(e) => setUploadTitle(e.target.value)} placeholder="Title" required />
-            <FormTextarea value={uploadPurpose} onChange={(e) => setUploadPurpose(e.target.value)} placeholder="Purpose" rows={3} />
-            <button type="submit" className="w-full rounded-xl bg-[#2F73F0] py-2.5 text-sm font-bold text-white">
-              Save to library
-            </button>
+        <HsSheet
+          title="Upload custom talk"
+          onClose={() => setShowUploadTalk(false)}
+          footer={
+            <HsPrimaryButton
+              type="submit"
+              tone="blue"
+              disabled={!uploadTitle.trim() || uploading}
+              onClick={() => {
+                const form = document.getElementById('hs-upload-talk-form') as HTMLFormElement | null
+                form?.requestSubmit()
+              }}
+            >
+              {uploading ? 'Saving…' : 'Save to library'}
+            </HsPrimaryButton>
+          }
+        >
+          <HsHero title="Upload a custom talk" subtitle="It stays with this job’s library" tone="blue" />
+          <form id="hs-upload-talk-form" onSubmit={submitUploadTalk} className="space-y-4">
+            <HsSectionLabel extra={<span className="text-[10px] font-medium text-[#A32D2D]">REQUIRED</span>}>
+              Talk
+            </HsSectionLabel>
+            <HsFieldCard>
+              <FormInput
+                value={uploadTitle}
+                onChange={(e) => setUploadTitle(e.target.value)}
+                placeholder="Talk title"
+                required
+              />
+              <textarea
+                value={uploadPurpose}
+                onChange={(e) => setUploadPurpose(e.target.value)}
+                placeholder="Purpose (optional)"
+                rows={3}
+                className="w-full resize-none bg-transparent text-sm text-slate-900 outline-none"
+              />
+            </HsFieldCard>
+            <HsSectionLabel>Category</HsSectionLabel>
+            <HsFieldCard>
+              <FormInput
+                value={uploadCategory}
+                onChange={(e) => setUploadCategory(e.target.value)}
+                placeholder="general, electrical…"
+              />
+            </HsFieldCard>
+            <HsSectionLabel>Trades</HsSectionLabel>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setUploadIsGeneral(true)
+                  setUploadTrades([])
+                }}
+                className={`rounded-full px-3 py-1.5 text-xs font-semibold ${
+                  uploadIsGeneral ? 'bg-[#0fae9e] text-white' : 'border border-slate-200 bg-white text-slate-600'
+                }`}
+              >
+                General
+              </button>
+              {STAFF_TRADE_PRESETS.map((trade) => {
+                const on = uploadTrades.includes(trade)
+                return (
+                  <button
+                    key={trade}
+                    type="button"
+                    onClick={() => toggleUploadTrade(trade)}
+                    className={`rounded-full px-3 py-1.5 text-xs font-semibold ${
+                      on ? 'bg-[#0fae9e] text-white' : 'border border-slate-200 bg-white text-slate-600'
+                    }`}
+                  >
+                    {trade}
+                  </button>
+                )
+              })}
+            </div>
+            <HsSectionLabel extra={<span className="text-[11px] text-[#C5C9D2]">Optional</span>}>Key points</HsSectionLabel>
+            <HsFieldCard>
+              {uploadKeyPoints.map((point, index) => (
+                <input
+                  key={index}
+                  value={point}
+                  onChange={(e) =>
+                    setUploadKeyPoints((prev) => prev.map((row, i) => (i === index ? e.target.value : row)))
+                  }
+                  placeholder={`Point ${index + 1}`}
+                  className="w-full border-b border-[#EEF0F3] bg-transparent py-1.5 text-sm outline-none last:border-0"
+                />
+              ))}
+              <button
+                type="button"
+                onClick={() => setUploadKeyPoints((prev) => [...prev, ''])}
+                className="text-xs font-semibold text-[#185FA5]"
+              >
+                + Add point
+              </button>
+            </HsFieldCard>
+            <HsFileButton file={uploadTalkFile} onChange={setUploadTalkFile} />
           </form>
-        </Modal>
+        </HsSheet>
       )}
 
       {showScheduled && (
-        <Modal title="Schedule toolbox talk" onClose={() => setShowScheduled(false)}>
-          <FormSelect value={scheduleTalkId} onChange={(e) => setScheduleTalkId(e.target.value)}>
-            <option value="">Select talk</option>
-            {libraryTalks.map((t) => (
-              <option key={t.id} value={t.id}>{t.title}</option>
-            ))}
-          </FormSelect>
-          <FormInput
-            type="datetime-local"
-            value={schedulePublishAt}
-            onChange={(e) => setSchedulePublishAt(e.target.value)}
-            className="mt-3"
-          />
-          <p className="mt-3 text-xs font-bold uppercase text-slate-400">Recipients</p>
-          <div className="mt-2 max-h-32 space-y-1 overflow-y-auto">
-            {operativeUsers.map((u) => (
-              <label key={u.id} className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={scheduleRecipients.includes(u.id)}
-                  onChange={() => toggleScheduleRecipient(u.id)}
-                />
-                {`${u.firstName} ${u.surname}`.trim() || u.email}
-              </label>
-            ))}
+        <HsSheet
+          wide
+          title="Schedule toolbox talk"
+          onClose={() => setShowScheduled(false)}
+          footer={
+            <HsPrimaryButton
+              tone="blue"
+              onClick={() => void submitSchedule()}
+              disabled={!scheduleTalkId || scheduleRecipients.length === 0 || !schedulePublishAt}
+            >
+              {schedulePublishAt && schedulePublishAt.getTime() <= Date.now()
+                ? 'Issue now (time is in the past)'
+                : 'Schedule talk'}
+            </HsPrimaryButton>
+          }
+        >
+          <HsHero title="Schedule a toolbox talk" subtitle="Set the date, time and who should receive it" tone="blue" />
+          <HsSectionLabel>Talk</HsSectionLabel>
+          <HsTalkPicker talks={libraryTalks} selectedId={scheduleTalkId} onSelect={setScheduleTalkId} />
+          {selectedScheduleTalk && (
+            <p className="px-1 text-[11px] text-slate-500">
+              Selected: {selectedScheduleTalk.title}
+              {selectedScheduleTalk.trades.length > 0 ? ` · ${selectedScheduleTalk.trades.join(', ')}` : ''}
+            </p>
+          )}
+          <HsSectionLabel extra={<span className="text-[10px] font-medium text-[#A32D2D]">REQUIRED</span>}>
+            Date and time
+          </HsSectionLabel>
+          <div className="grid grid-cols-2 gap-2">
+            <HsFieldCard>
+              <p className="text-[11px] font-semibold uppercase text-slate-400">Date</p>
+              <input
+                type="date"
+                value={scheduleDate}
+                onChange={(e) => setScheduleDate(e.target.value)}
+                className="w-full bg-transparent text-sm font-medium text-slate-900 outline-none"
+              />
+            </HsFieldCard>
+            <HsFieldCard>
+              <p className="text-[11px] font-semibold uppercase text-slate-400">Time</p>
+              <input
+                type="time"
+                value={scheduleTime}
+                onChange={(e) => setScheduleTime(e.target.value)}
+                className="w-full bg-transparent text-sm font-medium text-slate-900 outline-none"
+              />
+            </HsFieldCard>
           </div>
+          {schedulePublishAt && (
+            <p className="px-1 text-[11px] text-slate-500">
+              Goes live {format(schedulePublishAt, "EEEE d MMM yyyy 'at' HH:mm")}
+            </p>
+          )}
+          <HsSectionLabel>Recipients</HsSectionLabel>
+          <HsRecipientPicker users={operativeUsers} selectedIds={scheduleRecipients} onChange={setScheduleRecipients} />
           {scheduledIssues.length > 0 && (
-            <div className="mt-4">
-              <p className="text-xs font-bold text-slate-400">Scheduled ({scheduledIssues.length})</p>
-              {scheduledIssues.map((issue) => (
-                <p key={issue.id} className="mt-1 text-xs text-slate-600">
-                  {data.talks.find((t) => t.id === issue.talkId)?.title} ·{' '}
-                  {issue.publishAt ? format(issue.publishAt, 'd MMM yyyy HH:mm') : '—'}
-                </p>
-              ))}
+            <div>
+              <HsSectionLabel>Already scheduled · {scheduledIssues.length}</HsSectionLabel>
+              <FeatureCard>
+                {scheduledIssues.map((issue) => (
+                  <div key={issue.id} className="border-t border-[#EEF1F5] px-4 py-3 first:border-t-0">
+                    <p className="text-sm font-semibold text-slate-900">
+                      {libraryTalks.find((t) => t.id === issue.talkId)?.title ||
+                        data.talks.find((t) => t.id === issue.talkId)?.title ||
+                        'Toolbox talk'}
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      {issue.publishAt ? format(issue.publishAt, "EEE d MMM yyyy 'at' HH:mm") : '—'} ·{' '}
+                      {issue.recipientUserIds.length} recipients
+                    </p>
+                  </div>
+                ))}
+              </FeatureCard>
             </div>
           )}
-          <button
-            type="button"
-            onClick={submitSchedule}
-            disabled={!scheduleTalkId || scheduleRecipients.length === 0 || !schedulePublishAt}
-            className="mt-4 w-full rounded-xl bg-[#2F73F0] py-2.5 text-sm font-bold text-white disabled:opacity-50"
-          >
-            Schedule
-          </button>
-        </Modal>
+        </HsSheet>
+      )}
+
+      {showAddRams && (
+        <HsSheet
+          title="Upload RAMS"
+          onClose={() => setShowAddRams(false)}
+          footer={
+            <HsPrimaryButton
+              type="submit"
+              tone="blue"
+              disabled={!ramsTitle.trim() || uploading}
+              onClick={() => {
+                const form = document.getElementById('hs-upload-rams-form') as HTMLFormElement | null
+                form?.requestSubmit()
+              }}
+            >
+              {uploading ? 'Uploading…' : 'Upload RAMS'}
+            </HsPrimaryButton>
+          }
+        >
+          <HsHero title="Upload RAMS" subtitle="You can add more than one copy for this job" tone="blue" />
+          <form id="hs-upload-rams-form" onSubmit={addRams} className="space-y-4">
+            <HsSectionLabel extra={<span className="text-[10px] font-medium text-[#A32D2D]">REQUIRED</span>}>
+              Title
+            </HsSectionLabel>
+            <HsFieldCard>
+              <FormInput
+                value={ramsTitle}
+                onChange={(e) => setRamsTitle(e.target.value)}
+                placeholder="RAMS title"
+                required
+              />
+            </HsFieldCard>
+            <HsSectionLabel>Trade</HsSectionLabel>
+            <HsChipRow chips={RAMS_TRADES} selected={ramsTrade} onSelect={setRamsTrade} />
+            <HsFileButton file={ramsFile} onChange={setRamsFile} />
+          </form>
+        </HsSheet>
+      )}
+
+      {showAddOther && (
+        <HsSheet
+          title="Add Trade / Site Doc"
+          onClose={() => setShowAddOther(false)}
+          footer={
+            <HsPrimaryButton
+              type="submit"
+              tone="blue"
+              disabled={!otherTitle.trim() || uploading}
+              onClick={() => {
+                const form = document.getElementById('hs-upload-other-form') as HTMLFormElement | null
+                form?.requestSubmit()
+              }}
+            >
+              {uploading ? 'Uploading…' : 'Add document'}
+            </HsPrimaryButton>
+          }
+        >
+          <HsHero title="Add Trade / Site Doc" subtitle="Policies, COSHH, permits and supporting files" tone="blue" />
+          <form id="hs-upload-other-form" onSubmit={addOther} className="space-y-4">
+            <HsSectionLabel>Type</HsSectionLabel>
+            <HsChipRow chips={OTHER_CATEGORIES} selected={otherCategory} onSelect={setOtherCategory} />
+            {otherCategory === 'Trade' && (
+              <>
+                <HsSectionLabel>Trade</HsSectionLabel>
+                <HsChipRow chips={RAMS_TRADES} selected={otherTrade} onSelect={setOtherTrade} />
+              </>
+            )}
+            <HsSectionLabel extra={<span className="text-[10px] font-medium text-[#A32D2D]">REQUIRED</span>}>
+              Title
+            </HsSectionLabel>
+            <HsFieldCard>
+              <FormInput
+                value={otherTitle}
+                onChange={(e) => setOtherTitle(e.target.value)}
+                placeholder="Document title"
+                required
+              />
+            </HsFieldCard>
+            <HsFileButton file={otherFile} onChange={setOtherFile} />
+          </form>
+        </HsSheet>
       )}
 
       {signIssue && (
-        <Modal title="Sign toolbox talk" onClose={() => { setSignIssue(null); setSignatureB64(null) }}>
-          <p className="mb-3 text-sm text-slate-600">
-            {data.talks.find((t) => t.id === signIssue.talkId)?.title}
-          </p>
+        <HsSheet
+          title="Sign toolbox talk"
+          onClose={() => {
+            setSignIssue(null)
+            setSignatureB64(null)
+            setReadConfirmed(false)
+          }}
+          footer={
+            <HsPrimaryButton
+              disabled={!signatureB64 || !readConfirmed || signing}
+              onClick={() => void submitSign()}
+            >
+              {signing ? 'Saving…' : 'Confirm signature'}
+            </HsPrimaryButton>
+          }
+        >
+          <p className="text-sm font-semibold text-slate-900">{signTalk?.title || 'Toolbox talk'}</p>
+          {signTalk?.purpose ? <p className="text-sm text-slate-600">{signTalk.purpose}</p> : null}
+          {signTalk && signTalk.keyPoints.length > 0 && (
+            <ul className="list-disc space-y-1 pl-5 text-sm text-slate-600">
+              {signTalk.keyPoints.map((point) => (
+                <li key={point}>{point}</li>
+              ))}
+            </ul>
+          )}
+          <label className="flex items-start gap-2 rounded-2xl border border-[#EEF0F3] bg-white p-3 text-sm text-slate-700">
+            <input
+              type="checkbox"
+              className="mt-0.5"
+              checked={readConfirmed}
+              onChange={(e) => setReadConfirmed(e.target.checked)}
+            />
+            I have read this toolbox talk and understand the control points.
+          </label>
           <SignaturePad onChange={setSignatureB64} />
-          <button
-            type="button"
-            disabled={!signatureB64 || signing}
-            onClick={submitSign}
-            className="mt-4 w-full rounded-xl bg-[#0fae9e] py-2.5 text-sm font-bold text-white disabled:opacity-50"
-          >
-            {signing ? 'Saving…' : 'Confirm signature'}
-          </button>
-        </Modal>
+        </HsSheet>
       )}
     </FeatureScreen>
-  )
-}
-
-function Modal({
-  title,
-  onClose,
-  children,
-}: {
-  title: string
-  onClose: () => void
-  children: React.ReactNode
-}) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center">
-      <div className="max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-4 shadow-xl">
-        <div className="mb-3 flex items-center justify-between">
-          <p className="text-base font-bold text-slate-900">{title}</p>
-          <button type="button" onClick={onClose} className="text-slate-400">✕</button>
-        </div>
-        {children}
-      </div>
-    </div>
   )
 }
