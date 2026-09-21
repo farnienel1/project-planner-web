@@ -272,6 +272,7 @@ export const useMaterialProjectStore = create<MaterialProjectState>((set, get) =
   updateMaterialWorkflowStatuses: async (organizationId, materialIds, status, requestType) => {
     const now = new Date()
     const next = [...get().materials]
+    const writes: Promise<void>[] = []
     for (const materialId of materialIds) {
       const current = next.find((row) => row.id === materialId)
       if (!current) continue
@@ -282,7 +283,9 @@ export const useMaterialProjectStore = create<MaterialProjectState>((set, get) =
         lastSentRequestType: requestType === 'order' ? 'Order' : 'Quote',
         updatedAt: Timestamp.now(),
       }
-      await setDoc(doc(db, 'organizations', organizationId, 'materials', materialId), payload, { merge: true })
+      writes.push(
+        setDoc(doc(db, 'organizations', organizationId, 'materials', materialId), payload, { merge: true })
+      )
       const index = next.findIndex((row) => row.id === materialId)
       if (index >= 0) {
         next[index] = {
@@ -293,6 +296,7 @@ export const useMaterialProjectStore = create<MaterialProjectState>((set, get) =
         }
       }
     }
+    await Promise.all(writes)
     set({ materials: next })
   },
 

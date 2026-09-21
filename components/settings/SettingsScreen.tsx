@@ -131,7 +131,12 @@ function ProfilePanel({ onBack }: { onBack: () => void }) {
               setUploadingPhoto(true)
               setError('')
               try {
-                const url = await uploadFile(profilePhotoPath(user.id, file.name), file, file.type || 'image/jpeg')
+                if (!organization?.id) throw new Error('Missing organisation for profile photo')
+                const url = await uploadFile(
+                  profilePhotoPath(organization.id, user.id),
+                  file,
+                  file.type || 'image/jpeg'
+                )
                 await updateDoc(doc(db, 'users', user.id), { profilePhotoURL: url, updatedAt: Timestamp.now() })
                 const current = useAuthStore.getState().user
                 if (current) useAuthStore.setState({ user: { ...current, profilePhotoURL: url } })

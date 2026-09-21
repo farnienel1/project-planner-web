@@ -46,10 +46,10 @@ export function companyLogoPath(organizationId: string, fileName: string): strin
   return `organizations/${organizationId}/branding/company_logo/${uid}_${timestamp}_${sanitizeFileName(fileName)}`
 }
 
-export function profilePhotoPath(userId: string, fileName: string): string {
+/** iOS: organizations/{orgId}/userProfiles/{uid}/profile.jpg */
+export function profilePhotoPath(organizationId: string, userId: string): string {
   const uid = userId || auth.currentUser?.uid || 'web'
-  const timestamp = Date.now()
-  return `users/${uid}/profilePhotos/${timestamp}_${sanitizeFileName(fileName)}`
+  return `organizations/${organizationId}/userProfiles/${uid}/profile.jpg`
 }
 
 export function timesheetExportPath(organizationId: string, fileName: string): string {
