@@ -190,6 +190,7 @@ export function TimesheetsScreen({
           amount: payroll.workAmount + (draft.priceWorkEntries.reduce((s, e) => s + e.amount, 0) + draft.expenseEntries.reduce((s, e) => s + e.amount, 0)),
           vatNumber: member.vatNumber,
           utrNumber: member.utrNumber,
+          timeZone,
           lines: invoiceLinesForTimesheet({
             payroll,
             draft,
