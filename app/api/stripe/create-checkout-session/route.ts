@@ -81,7 +81,7 @@ export async function POST(request: NextRequest) {
         },
       },
       success_url: `${baseUrl}/setup/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${baseUrl}/setup/cancel`,
+      cancel_url: `${baseUrl}/setup?cancelled=1`,
     })
 
     if (!session.url) {

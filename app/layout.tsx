@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { Inter, Plus_Jakarta_Sans } from 'next/font/google'
 import './globals.css'
+import './marketing.css'
 import { StaleChunkReload } from '@/components/client/StaleChunkReload'
 import { WebIdleSessionGuard } from '@/components/auth/WebIdleSessionGuard'
 import { ThemeBoot } from '@/components/shell/AccountMenu'
@@ -15,7 +16,8 @@ const jakarta = Plus_Jakarta_Sans({
 
 export const metadata: Metadata = {
   title: 'Project Planner',
-  description: 'Construction project management platform',
+  description:
+    'Scheduling, timesheets, materials and health & safety for contractors. One platform on iOS, Android and web.',
 }
 
 export default function RootLayout({

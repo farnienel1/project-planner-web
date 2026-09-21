@@ -62,6 +62,10 @@ const nextConfig = {
     return [
       { source: '/dashboard/skills', destination: '/dashboard', permanent: false },
       { source: '/dashboard/skills/:path*', destination: '/dashboard', permanent: false },
+      { source: '/rates', destination: '/pricing', permanent: false },
+      { source: '/rates/:path*', destination: '/pricing', permanent: false },
+      { source: '/privacy-policy.html', destination: '/privacy', permanent: false },
+      { source: '/terms-of-service.html', destination: '/terms', permanent: false },
     ]
   },
 }
