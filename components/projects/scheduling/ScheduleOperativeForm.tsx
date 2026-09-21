@@ -62,8 +62,6 @@ export function ScheduleOperativeForm({
   const [quickDays, setQuickDays] = useState<number | null>(null)
   const [dateSlots, setDateSlots] = useState<Map<string, ScheduleDateSlot>>(new Map())
   const [draftPeople, setDraftPeople] = useState<DraftBookingPerson[]>([])
-  const [selectedPersonId, setSelectedPersonId] = useState<string | null>(null)
-  const [activePerson, setActivePerson] = useState<DraftBookingPerson | null>(null)
   const [expandedReviewPersonId, setExpandedReviewPersonId] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -129,6 +127,7 @@ export function ScheduleOperativeForm({
       bookings,
       managerSiteBookings,
       operatives,
+      users,
       projects: allProjects,
       currentProjectId: project.id,
     })
@@ -140,16 +139,11 @@ export function ScheduleOperativeForm({
         prev.map((draft) => rebuildDraftPerson(draft, slots)).filter(personHasBookableDays)
       )
     }
-    if (activePerson) {
-      setActivePerson(rebuildDraftPerson(activePerson, slots))
-    }
   }
 
   useEffect(() => {
     if (slotsList.length === 0) {
       setDraftPeople([])
-      setActivePerson(null)
-      setSelectedPersonId(null)
       if (step !== 'dates') setStep('dates')
       return
     }
@@ -157,44 +151,35 @@ export function ScheduleOperativeForm({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [slotsList.map((s) => `${slotKey(s.date)}:${s.slot}:${s.workStartTime}:${s.workEndTime}`).join('|')])
 
-  const handleSelectPerson = (person: SchedulablePerson) => {
+  const handleTogglePerson = (person: SchedulablePerson) => {
     setError(null)
-
-    if (selectedPersonId === person.id) {
-      setSelectedPersonId(null)
-      setActivePerson(null)
-      return
-    }
-
-    const draft = buildDraftPersonDayStates({
-      person,
-      slots: slotsList,
-      bookings,
-      managerSiteBookings,
-      operatives,
-      projects: allProjects,
-      currentProjectId: project.id,
+    setDraftPeople((prev) => {
+      if (prev.some((row) => row.personId === person.id)) {
+        return prev.filter((row) => row.personId !== person.id)
+      }
+      return [
+        ...prev,
+        buildDraftPersonDayStates({
+          person,
+          slots: slotsList,
+          bookings,
+          managerSiteBookings,
+          operatives,
+          users,
+          projects: allProjects,
+          currentProjectId: project.id,
+        }),
+      ]
     })
-
-    setSelectedPersonId(person.id)
-    setActivePerson(draft)
   }
 
-  const handleAddActivePerson = () => {
-    if (!activePerson) return
-    if (personHasPendingClashes(activePerson)) {
-      setError('Resolve every clash before adding this person.')
-      return
-    }
-    if (!personHasBookableDays(activePerson)) {
-      setError('No days left for this person. Change dates or pick someone else.')
-      return
-    }
-    setDraftPeople((prev) => [...prev.filter((p) => p.personId !== activePerson.personId), activePerson])
-    setSelectedPersonId(null)
-    setActivePerson(null)
-    setError(null)
-    setStep('review')
+  const handlePersonChange = (updated: DraftBookingPerson) => {
+    setDraftPeople((prev) => {
+      if (!personHasBookableDays(updated) && !personHasPendingClashes(updated)) {
+        return prev.filter((row) => row.personId !== updated.personId)
+      }
+      return prev.map((row) => (row.personId === updated.personId ? updated : row))
+    })
   }
 
   const confirmBooking = async () => {
@@ -256,15 +241,11 @@ export function ScheduleOperativeForm({
   }
 
   const goToDates = () => {
-    setActivePerson(null)
-    setSelectedPersonId(null)
     setError(null)
     setStep('dates')
   }
 
   const goToPickPerson = () => {
-    setActivePerson(null)
-    setSelectedPersonId(null)
     setError(null)
     setStep('pick-person')
   }
@@ -280,11 +261,15 @@ export function ScheduleOperativeForm({
       return
     }
     if (step === 'pick-person') {
-      if (activePerson) {
-        handleAddActivePerson()
+      if (draftPeople.length === 0) {
+        setError('Select at least one person.')
         return
       }
-      setStep(draftPeople.length > 0 ? 'review' : 'dates')
+      if (!allDraftPeopleResolved(draftPeople)) {
+        setError('Already booked people need ✓ to double-book that day, or ✕ to remove them.')
+        return
+      }
+      setStep('review')
       return
     }
     void confirmBooking()
@@ -293,22 +278,14 @@ export function ScheduleOperativeForm({
   const primaryLabel = () => {
     if (saving) return 'Booking…'
     if (step === 'dates') return draftPeople.length > 0 ? 'Continue to review' : 'Add operative or manager'
-    if (step === 'pick-person') {
-      if (activePerson) return 'Add to booking'
-      return draftPeople.length > 0 ? 'Back to review' : 'Back to dates'
-    }
+    if (step === 'pick-person') return 'Review'
     return 'Confirm booking'
   }
 
   const primaryEnabled = () => {
     if (saving) return false
     if (step === 'dates') return slotsList.length > 0
-    if (step === 'pick-person') {
-      if (activePerson) {
-        return !personHasPendingClashes(activePerson) && personHasBookableDays(activePerson)
-      }
-      return true
-    }
+    if (step === 'pick-person') return draftPeople.length > 0 && allDraftPeopleResolved(draftPeople)
     if (step === 'review') return canConfirm
     return true
   }
@@ -324,9 +301,9 @@ export function ScheduleOperativeForm({
   return (
     <div className="space-y-5 pb-32">
       <div className="card pad">
-        <p className="text-xs font-semibold text-blue-700">{project.jobNumber}</p>
-        <p className="text-lg font-semibold text-slate-900">{project.siteName}</p>
-        <p className="mt-1 text-sm text-slate-600">
+        <p className="text-xs font-semibold text-[var(--blue)]">{project.jobNumber}</p>
+        <p className="text-lg font-semibold text-[var(--ink)]">{project.siteName}</p>
+        <p className="mt-1 text-sm text-[var(--ink2)]">
           {project.client?.name} · {[project.addressLine1, project.townCity, project.postcode].filter(Boolean).join(', ')}
         </p>
       </div>
@@ -374,10 +351,8 @@ export function ScheduleOperativeForm({
           users={users}
           draftPeople={draftPeople}
           slots={slotsList}
-          selectedPersonId={selectedPersonId}
-          activePerson={activePerson}
-          onSelectPerson={handleSelectPerson}
-          onActivePersonChange={setActivePerson}
+          onTogglePerson={handleTogglePerson}
+          onPersonChange={handlePersonChange}
         />
       )}
 
@@ -398,14 +373,14 @@ export function ScheduleOperativeForm({
 
       {error && <ErrorBanner message={error} />}
 
-      <div className="fixed bottom-0 left-0 right-0 border-t border-slate-200 bg-white/95 p-4 backdrop-blur md:pl-64">
+      <div className="fixed bottom-0 left-0 right-0 border-t border-[var(--line)] bg-[var(--card)]/95 p-4 backdrop-blur md:pl-64">
         <div className="mx-auto flex max-w-3xl gap-2">
           {showBack && (
             <button
               type="button"
               onClick={backAction}
               disabled={saving}
-              className="rounded-xl border border-slate-300 px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+              className="btn ghost disabled:opacity-60"
             >
               Back
             </button>
@@ -414,20 +389,20 @@ export function ScheduleOperativeForm({
             type="button"
             disabled={!primaryEnabled()}
             onClick={primaryAction}
-            className={`flex-1 rounded-xl px-4 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60 ${
-              step === 'review' && canConfirm ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-blue-600 hover:bg-blue-700'
+            className={`btn primary flex-1 disabled:cursor-not-allowed disabled:opacity-60 ${
+              step === 'review' && canConfirm ? '' : ''
             }`}
           >
             {primaryLabel()}
           </button>
         </div>
-        {step === 'review' && (
-          <p className="mx-auto mt-2 max-w-3xl text-center text-xs text-slate-500">
+        {step === 'pick-person' || step === 'review' ? (
+          <p className="mx-auto mt-2 max-w-3xl text-center text-xs text-[var(--ink3)]">
             {draftPeople.length} person{draftPeople.length !== 1 ? 's' : ''} · {slotsList.length} date
             {slotsList.length !== 1 ? 's' : ''}
-            {!canConfirm && draftPeople.length > 0 && ' · Resolve all clashes to confirm'}
+            {!allDraftPeopleResolved(draftPeople) && draftPeople.length > 0 && ' · Resolve clashes with ✓ or ✕'}
           </p>
-        )}
+        ) : null}
       </div>
     </div>
   )

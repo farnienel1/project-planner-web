@@ -10,7 +10,7 @@ import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { useUserStore } from '@/lib/stores/userStore'
 import { findOperativeForUser } from '@/lib/operatives/operativeRosterUtils'
 import { displayTradeType } from '@/lib/staff/staffTradeTypes'
-import { canEditTargetUser, roleLabel } from '@/lib/staff/userEditPermissions'
+import { canShowAdminEditProfile, roleLabel } from '@/lib/staff/userEditPermissions'
 import { rosterStatusLabel } from '@/lib/staff/userRosterUtils'
 import { UserAvatar } from '@/components/users/UserAvatar'
 import { normalizeEmploymentType } from '@/lib/ios-parity/enums'
@@ -74,7 +74,7 @@ export function UserProfileSummary({
     )
   }
 
-  const canEdit = canEditTargetUser(currentUser, target)
+  const canEdit = canShowAdminEditProfile(currentUser)
   const editHref = `/dashboard/users/${target.id}/edit?from=${encodeURIComponent(from)}`
   const name = `${target.firstName} ${target.surname}`.trim() || roleLabel(target)
   const status = rosterStatusLabel(target)
@@ -109,11 +109,6 @@ export function UserProfileSummary({
               </span>
             </div>
           </div>
-          {linkedOperative ? (
-            <Link href={`/dashboard/operatives/${linkedOperative.id}/edit`} className="btn hbtn">
-              View certificates
-            </Link>
-          ) : null}
           {canEdit ? (
             <Link href={editHref} className="btn hbtn solid">
               Edit profile
@@ -153,15 +148,9 @@ export function UserProfileSummary({
         <section className="card pad" data-hue="rep">
           <div className="row" style={{ marginBottom: 14 }}>
             <h2 className="h2">Qualifications</h2>
-            <span className="grow" />
-            {linkedOperative ? (
-              <Link href={`/dashboard/operatives/${linkedOperative.id}/edit`} className="btn sm">
-                View certificates
-              </Link>
-            ) : null}
           </div>
           {quals.length === 0 ? (
-            <p className="muted small">No qualifications yet. Add them from Edit when needed.</p>
+            <p className="muted small">No qualifications yet.</p>
           ) : (
             <div className="rows">
               {quals.map((qual) => (

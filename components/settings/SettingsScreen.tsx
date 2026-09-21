@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useState, type ChangeEvent, type ReactNode } from 'react'
 import { updatePassword, EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth'
 import { doc, Timestamp, updateDoc } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
@@ -36,22 +36,17 @@ import { WorkingHoursPanel } from '@/components/settings/panels/WorkingHoursPane
 import { AnnualLeaveDefaultsPanel } from '@/components/settings/panels/AnnualLeaveDefaultsPanel'
 import { ScheduleOptionsPanel } from '@/components/settings/panels/ScheduleOptionsPanel'
 import { CompanyDetailsPanel } from '@/components/settings/panels/CompanyDetailsPanel'
+import { SettingsChrome } from '@/components/settings/SettingsChrome'
+import {
+  COMPANY_SETTINGS,
+  PERSONAL_SETTINGS,
+  settingsHrefForPanel,
+  settingsPanelFromPath,
+  type SettingsPanel,
+} from '@/lib/settings/settingsNav'
 
 // ─── Subpanels ────────────────────────────────────────────────────────────────
-type Panel = 
-  | 'main'
-  | 'profile'
-  | 'password'
-  | 'notifications'
-  | 'organisation'
-  | 'company-details'
-  | 'working-hours'
-  | 'annual-leave-defaults'
-  | 'schedule-options'
-  | 'warnings'
-  | 'material-cutoff'
-  | 'payment-runs'
-  | 'roles'
+type Panel = SettingsPanel
 
 const ORGANISATION_HUB_PANELS: Panel[] = [
   'organisation',
@@ -79,7 +74,6 @@ function ProfilePanel({ onBack }: { onBack: () => void }) {
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState('')
   const [uploadingPhoto, setUploadingPhoto] = useState(false)
-  const photoInput = useRef<HTMLInputElement>(null)
 
   const save = async () => {
     if (!user?.id) return
@@ -102,13 +96,37 @@ function ProfilePanel({ onBack }: { onBack: () => void }) {
     finally { setSaving(false) }
   }
 
+  const onPhoto = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file || !user?.id) return
+    setUploadingPhoto(true)
+    setError('')
+    try {
+      if (!organization?.id) throw new Error('Missing organisation for profile photo')
+      const url = await uploadFile(
+        profilePhotoPath(organization.id, user.id),
+        file,
+        file.type || 'image/jpeg'
+      )
+      await updateDoc(doc(db, 'users', user.id), { profilePhotoURL: url, updatedAt: Timestamp.now() })
+      const current = useAuthStore.getState().user
+      if (current) useAuthStore.setState({ user: { ...current, profilePhotoURL: url } })
+      setSaved(true)
+      window.setTimeout(() => setSaved(false), 3000)
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Could not upload photo')
+    } finally {
+      setUploadingPhoto(false)
+    }
+  }
+
   return (
     <div className="space-y-5">
       <PanelHeader title="My profile" onBack={onBack} />
 
-      {/* Avatar */}
       <div className="card pad">
-        <p className="mb-3 text-xs font-bold uppercase tracking-widest text-slate-400">Profile image</p>
+        <p className="eyebrow" style={{ marginBottom: 12 }}>Profile image</p>
         <div className="flex items-center gap-4">
           {user ? <UserAvatar user={{ ...user, firstName, surname }} size={56} /> : (
             <div className="flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 text-xl font-bold text-white flex-shrink-0">
@@ -116,56 +134,28 @@ function ProfilePanel({ onBack }: { onBack: () => void }) {
             </div>
           )}
           <div className="flex-1">
-            <p className="text-sm font-bold text-slate-900">Profile photo</p>
-            <p className="text-xs text-slate-500">Used across Home and Settings. Same photo as iOS.</p>
+            <p className="text-sm font-bold text-[var(--ink)]">Profile photo</p>
+            <p className="text-xs text-[var(--ink3)]">Used across Home and Settings. Same photo as iOS.</p>
           </div>
-          <input
-            ref={photoInput}
-            type="file"
-            accept="image/*"
-            className="hidden"
-            onChange={async (event) => {
-              const file = event.target.files?.[0]
-              event.target.value = ''
-              if (!file || !user?.id) return
-              setUploadingPhoto(true)
-              setError('')
-              try {
-                if (!organization?.id) throw new Error('Missing organisation for profile photo')
-                const url = await uploadFile(
-                  profilePhotoPath(organization.id, user.id),
-                  file,
-                  file.type || 'image/jpeg'
-                )
-                await updateDoc(doc(db, 'users', user.id), { profilePhotoURL: url, updatedAt: Timestamp.now() })
-                const current = useAuthStore.getState().user
-                if (current) useAuthStore.setState({ user: { ...current, profilePhotoURL: url } })
-                setSaved(true)
-                window.setTimeout(() => setSaved(false), 3000)
-              } catch (e: unknown) {
-                setError(e instanceof Error ? e.message : 'Could not upload photo')
-              } finally {
-                setUploadingPhoto(false)
-              }
-            }}
-          />
-          <button
-            type="button"
-            onClick={() => photoInput.current?.click()}
-            disabled={uploadingPhoto}
-            className="text-sm font-semibold text-blue-600 hover:underline disabled:opacity-50"
-          >
-            {uploadingPhoto ? 'Uploading…' : 'Change'}
-          </button>
+          <label className={`btn sm ${uploadingPhoto ? 'opacity-50' : ''}`}>
+            {uploadingPhoto ? 'Uploading…' : 'Change photo'}
+            <input
+              type="file"
+              accept="image/*"
+              className="sr-only"
+              disabled={uploadingPhoto}
+              onChange={onPhoto}
+            />
+          </label>
         </div>
       </div>
 
       {/* Fields */}
       <SettingsCard>
         <div className="px-4 py-3 space-y-1">
-          <div className="flex items-center justify-between py-1"><span className="text-sm text-slate-500">Name</span><span className="text-sm font-semibold text-slate-900">{user?.firstName} {user?.surname}</span></div>
-          <div className="flex items-center justify-between py-1"><span className="text-sm text-slate-500">Email</span><span className="text-sm font-semibold text-slate-900">{user?.email}</span></div>
-          <div className="flex items-center justify-between py-1"><span className="text-sm text-slate-500">Organisation</span><span className="text-sm font-semibold text-slate-900">{organization?.name}</span></div>
+          <div className="flex items-center justify-between py-1"><span className="text-sm text-[var(--ink3)]">Name</span><span className="text-sm font-semibold text-[var(--ink)]">{user?.firstName} {user?.surname}</span></div>
+          <div className="flex items-center justify-between py-1"><span className="text-sm text-[var(--ink3)]">Email</span><span className="text-sm font-semibold text-[var(--ink)]">{user?.email}</span></div>
+          <div className="flex items-center justify-between py-1"><span className="text-sm text-[var(--ink3)]">Organisation</span><span className="text-sm font-semibold text-[var(--ink)]">{organization?.name}</span></div>
         </div>
       </SettingsCard>
 
@@ -350,10 +340,16 @@ export default function SettingsScreen({ initialPanel = 'main' }: { initialPanel
   const pathname = usePathname()
   const { user, organization, signOut } = useAuthStore()
   const canAccessOrgHub = canAccessOrganisationSettingsHub(user)
+  const pathPanel = settingsPanelFromPath(pathname)
+  const requestedPanel = pathPanel || initialPanel
   const safeInitialPanel =
-    !canAccessOrgHub && isOrganisationHubPanel(initialPanel) ? 'main' : initialPanel
+    !canAccessOrgHub && isOrganisationHubPanel(requestedPanel) ? 'main' : requestedPanel
   const [panel, setPanel] = useState<Panel>(safeInitialPanel)
   const isAdmin = hasAdminAccess(user)
+
+  useEffect(() => {
+    setPanel(safeInitialPanel)
+  }, [safeInitialPanel])
 
   useEffect(() => {
     if (!canAccessOrgHub && isOrganisationHubPanel(panel)) {
@@ -361,38 +357,58 @@ export default function SettingsScreen({ initialPanel = 'main' }: { initialPanel
     }
   }, [canAccessOrgHub, panel])
 
-  if (panel === 'profile') return <div className="max-w-xl mx-auto pb-10"><ProfilePanel onBack={() => setPanel('main')} /></div>
-  if (panel === 'password') return <div className="max-w-xl mx-auto pb-10"><PasswordPanel onBack={() => setPanel('main')} /></div>
-  if (panel === 'notifications') return <div className="max-w-xl mx-auto pb-10"><NotificationsPanel onBack={() => setPanel('main')} /></div>
+  const goHub = () => router.push('/dashboard/settings')
+  const wrap = (active: Panel, node: ReactNode) => (
+    <SettingsChrome panel={active} canAccessCompany={canAccessOrgHub}>
+      {node}
+    </SettingsChrome>
+  )
+
+  if (panel === 'profile') return wrap('profile', <ProfilePanel onBack={goHub} />)
+  if (panel === 'password') return wrap('password', <PasswordPanel onBack={goHub} />)
+  if (panel === 'notifications') return wrap('notifications', <NotificationsPanel onBack={goHub} />)
   if (panel === 'organisation' && canAccessOrgHub) {
-    return (
+    return wrap(
+      'company-details',
       <OrganisationHubPanel
-        onBack={() => setPanel('main')}
-        onNavigate={(destination: OrganisationHubDestination) => setPanel(destination)}
+        onBack={goHub}
+        onNavigate={(destination: OrganisationHubDestination) =>
+          router.push(settingsHrefForPanel(destination))
+        }
       />
     )
   }
-  if (panel === 'company-details' && canAccessOrgHub) return <CompanyDetailsPanel onBack={() => setPanel('organisation')} />
-  if (panel === 'working-hours' && canAccessOrgHub) return <WorkingHoursPanel onBack={() => setPanel('organisation')} />
-  if (panel === 'annual-leave-defaults' && canAccessOrgHub) return <AnnualLeaveDefaultsPanel onBack={() => setPanel('organisation')} />
-  if (panel === 'schedule-options' && canAccessOrgHub) return <ScheduleOptionsPanel onBack={() => setPanel('organisation')} />
+  if (panel === 'company-details' && canAccessOrgHub) {
+    return wrap('company-details', <CompanyDetailsPanel onBack={goHub} />)
+  }
+  if (panel === 'working-hours' && canAccessOrgHub) {
+    return wrap('working-hours', <WorkingHoursPanel onBack={goHub} />)
+  }
+  if (panel === 'annual-leave-defaults' && canAccessOrgHub) {
+    return wrap('annual-leave-defaults', <AnnualLeaveDefaultsPanel onBack={goHub} />)
+  }
+  if (panel === 'schedule-options' && canAccessOrgHub) {
+    return wrap('schedule-options', <ScheduleOptionsPanel onBack={goHub} />)
+  }
   if (panel === 'warnings' && canAccessOrgHub) {
-    const openedFromWarningsList =
-      initialPanel === 'warnings' || pathname === '/dashboard/settings/warnings'
-    return (
+    const openedFromWarningsList = pathname === '/dashboard/settings/warnings'
+    return wrap(
+      'warnings',
       <WarningsPanel
         onBack={() => {
           if (openedFromWarningsList) router.push('/dashboard/warnings')
-          else setPanel('organisation')
+          else goHub()
         }}
       />
     )
   }
   if (panel === 'material-cutoff' && canAccessOrgHub) {
-    return <MaterialCutOffPanel onBack={() => setPanel('organisation')} />
+    return wrap('material-cutoff', <MaterialCutOffPanel onBack={goHub} />)
   }
-  if (panel === 'payment-runs' && canAccessOrgHub) return <PaymentRunsPanel onBack={() => setPanel('organisation')} />
-  if (panel === 'roles' && canAccessOrgHub) return <RolesPanel onBack={() => setPanel('organisation')} />
+  if (panel === 'payment-runs' && canAccessOrgHub) {
+    return wrap('payment-runs', <PaymentRunsPanel onBack={goHub} />)
+  }
+  if (panel === 'roles' && canAccessOrgHub) return wrap('roles', <RolesPanel onBack={goHub} />)
 
   return (
     <div className="mx-auto max-w-[1100px] space-y-5 pb-10">
@@ -412,7 +428,7 @@ export default function SettingsScreen({ initialPanel = 'main' }: { initialPanel
       <section className="hero" style={{ padding: '22px 26px' }}>
         <div className="relative z-[1] flex items-center gap-4">
           {user ? <UserAvatar user={user} size={72} /> : null}
-          <div className="min-w-0">
+          <div className="min-w-0 grow">
             <div className="big" style={{ fontSize: 26 }}>
               {user?.firstName} {user?.surname}
             </div>
@@ -423,58 +439,69 @@ export default function SettingsScreen({ initialPanel = 'main' }: { initialPanel
               </span>
             ) : null}
           </div>
+          <Link href="/dashboard/settings/profile" className="btn hbtn solid">
+            My profile
+          </Link>
         </div>
       </section>
 
-      {/* Personal */}
-      <SectionLabel label="Personal" />
-      <SettingsCard>
-        <Link href="/dashboard/change-organisation">
-          <SettingsRow
-            icon="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"
-            iconBg="bg-blue-50"
-            iconColor="text-blue-600"
-            label="Switch organisation"
-            description={organization?.name || 'No organisation linked'}
-            chevron
-          />
-        </Link>
-        <SettingsRow icon="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" iconBg="bg-blue-50" iconColor="text-blue-600" label="My profile" description="Name, photo, contact details" chevron onClick={() => setPanel('profile')} />
-        <SettingsRow icon="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" iconBg="bg-purple-50" iconColor="text-purple-600" label="Sign-in & password" description="Email, password, security" chevron onClick={() => setPanel('password')} />
-        <SettingsRow icon="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" iconBg="bg-red-50" iconColor="text-red-500" label="My notifications" description="What you get pinged about" chevron onClick={() => setPanel('notifications')} />
-      </SettingsCard>
+      <div className="grid g2">
+        <section>
+          <SectionLabel label="Personal" />
+          <SettingsCard>
+            <Link href="/dashboard/change-organisation">
+              <SettingsRow
+                icon="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"
+                iconBg="bg-blue-50"
+                iconColor="text-blue-600"
+                label="Switch organisation"
+                description={organization?.name || 'No organisation linked'}
+                chevron
+              />
+            </Link>
+            {PERSONAL_SETTINGS.map((item) => (
+              <Link key={item.id} href={item.href}>
+                <SettingsRow
+                  icon={item.icon}
+                  iconBg="bg-blue-50"
+                  iconColor="text-blue-600"
+                  label={item.label}
+                  description={item.description}
+                  chevron
+                />
+              </Link>
+            ))}
+          </SettingsCard>
+        </section>
 
-      {/* Company-wide (admin only — managers and operatives never see this hub) */}
-      {canAccessOrgHub && (
-        <>
-          <SectionLabel label="Company-wide" />
-          <button
-            type="button"
-            onClick={() => setPanel('organisation')}
-            className="w-full rounded-[22px] bg-gradient-to-br from-[var(--navy)] to-[var(--blue)] p-5 text-left shadow-[var(--sh)]"
-          >
-            <div className="flex items-start gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/20 flex-shrink-0">
-                <svg className="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" /></svg>
-              </div>
-              <div className="flex-1">
-                <div className="flex items-center gap-2">
-                  <p className="text-sm font-bold text-white">Organisation settings</p>
-                  <span className="rounded-full bg-white/20 px-2 py-0.5 text-[10px] font-bold text-blue-100">Admin only</span>
-                </div>
-                <p className="text-xs text-blue-200 mt-0.5">Hours, leave, schedule options &amp; more for {organization?.name}.</p>
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  {['Hours', 'Leave', 'Schedule', 'Warnings', 'Payment'].map(tag => (
-                    <span key={tag} className="rounded-full bg-white/15 px-2 py-0.5 text-[11px] font-semibold text-blue-100">{tag}</span>
-                  ))}
-                </div>
-              </div>
-              <svg className="h-4 w-4 text-white/50 flex-shrink-0 mt-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7"/></svg>
+        {canAccessOrgHub ? (
+          <section>
+            <div className="row" style={{ margin: '0 6px 10px' }}>
+              <SectionLabel label="Company-wide" />
+              <span className="pill" data-hue="user">
+                Admin only
+              </span>
             </div>
-          </button>
-          <p className="px-1 text-xs text-[var(--ink3)]">Click to manage how {organization?.name} runs — affects everyone in your team.</p>
-        </>
-      )}
+            <SettingsCard>
+              {COMPANY_SETTINGS.map((item) => (
+                <Link key={item.id} href={item.href}>
+                  <SettingsRow
+                    icon={item.icon}
+                    iconBg="bg-blue-50"
+                    iconColor="text-blue-600"
+                    label={item.label}
+                    description={item.description}
+                    chevron
+                  />
+                </Link>
+              ))}
+            </SettingsCard>
+            <p className="muted small" style={{ margin: '10px 6px' }}>
+              These settings affect everyone in {organization?.name}.
+            </p>
+          </section>
+        ) : null}
+      </div>
 
       {/* Support & legal */}
       <SectionLabel label="Support & legal" />

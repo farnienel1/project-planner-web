@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import {
   CalendarDaysIcon,
@@ -483,6 +483,7 @@ export function HelpSupportScreen() {
   const [topicId, setTopicId] = useState(TOPICS[0].id)
   const [articleId, setArticleId] = useState<string | null>(TOPICS[0].articles[0].id)
   const [query, setQuery] = useState('')
+  const articleRef = useRef<HTMLDivElement>(null)
   const topic = TOPICS.find((row) => row.id === topicId) || TOPICS[0]
   const needle = query.trim().toLowerCase()
   const article = useMemo(
@@ -501,10 +502,17 @@ export function HelpSupportScreen() {
     return hits
   }, [needle])
 
+  const scrollToArticle = () => {
+    window.setTimeout(() => {
+      articleRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }, 0)
+  }
+
   const openArticle = (nextTopicId: string, nextArticleId: string) => {
     setTopicId(nextTopicId)
     setArticleId(nextArticleId)
     setQuery('')
+    scrollToArticle()
   }
 
   return (
@@ -569,6 +577,7 @@ export function HelpSupportScreen() {
                   onClick={() => {
                     setTopicId(row.id)
                     setArticleId(row.articles[0].id)
+                    scrollToArticle()
                   }}
                   className={`card pad click text-left ${active ? 'ring-2 ring-[var(--blue)]' : ''}`}
                 >
@@ -580,7 +589,7 @@ export function HelpSupportScreen() {
             })}
           </div>
 
-          <div className="grid gap-6 lg:grid-cols-[280px_1fr]">
+          <div ref={articleRef} className="grid gap-6 lg:grid-cols-[280px_1fr] scroll-mt-24">
             <div className="space-y-2">
               {topic.articles.map((row) => (
                 <button
