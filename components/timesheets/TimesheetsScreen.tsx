@@ -18,7 +18,13 @@ import {
 import { teamTimesheetUsers, subjectForUser } from '@/lib/timesheets/timesheetWeekUtils'
 import { formatPaymentPeriodLine, periodStartKey } from '@/lib/timesheets/paymentRunCopy'
 import { collectTimesheetPayroll } from '@/lib/timesheets/timesheetPayrollCollector'
-import { invoiceLinesForTimesheet, paymentRunDateStamp, signatureNotes, timesheetExportFileName } from '@/lib/timesheets/timesheetExport'
+import {
+  invoiceLinesForTimesheet,
+  invoiceLinesTotal,
+  paymentRunDateStamp,
+  signatureNotes,
+  timesheetExportFileName,
+} from '@/lib/timesheets/timesheetExport'
 import { buildTimesheetInvoicePdf, timesheetPdfBlob } from '@/lib/timesheets/invoicePdf'
 import { shouldAppearInOperativeTimesheetRoster } from '@/lib/timesheets/timesheetPayrollPolicy'
 import { jsonAuthHeaders } from '@/lib/security/clientAuthHeaders'
@@ -197,10 +203,7 @@ export function TimesheetsScreen({
           subject: subjectForUser(member, operatives),
           weekStart: periodStart,
           weekEnd: periodEnd,
-          amount:
-            payroll.workAmount +
-            draft.priceWorkEntries.reduce((sum, entry) => sum + entry.amount, 0) +
-            draft.expenseEntries.reduce((sum, entry) => sum + entry.amount, 0),
+          amount: invoiceLinesTotal(lines),
           vatNumber: member.vatNumber,
           utrNumber: member.utrNumber,
           timeZone,

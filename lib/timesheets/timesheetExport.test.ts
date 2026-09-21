@@ -1,8 +1,10 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { managerExportEmailHTML, paymentRunDateStamp, invoiceRateChangeNotes, timesheetExportFileName } from './timesheetExport.ts'
+import { managerExportEmailHTML, paymentRunDateStamp, invoiceRateChangeNotes, timesheetExportFileName, invoiceLinesForTimesheet, invoiceLinesTotal } from './timesheetExport.ts'
 import type { User } from '../../types/index.ts'
 import { emptyDayRateHistory } from './dayRateHistoryStorage.ts'
+import { emptyTimesheetDraft } from './timesheetDraft.ts'
+import type { TimesheetPayrollSummary } from './timesheetPayrollCollector.ts'
 
 test('paymentRunDateStamp matches iOS dd.MM.yy dd.MM.yy', () => {
   assert.equal(
@@ -101,4 +103,88 @@ test('invoiceRateChangeNotes includes in-period user history like iOS', () => {
   })
   assert.equal(notes.length, 1)
   assert.match(notes[0], /Rate updated to £220.00/)
+})
+
+test('export PDF total matches line amounts after manager edits and skips declined extras/days', () => {
+  const payroll: TimesheetPayrollSummary = {
+    totalHours: 16,
+    overtimeHours: 0,
+    shiftCount: 2,
+    baseAmount: 400,
+    overtimeAmount: 0,
+    workAmount: 400,
+    lineItems: [
+      {
+        id: 'day-1',
+        date: new Date('2026-09-21T08:00:00Z'),
+        jobNumber: 'J-1',
+        projectName: 'Site One',
+        details: '08:00 – 16:00',
+        paidHours: 8,
+        payrollBasis: 'dayRate',
+        dayRate: 200,
+        amount: 200,
+        isPayeDay: false,
+        isOvertimeLine: false,
+        hasRate: true,
+      },
+      {
+        id: 'day-2',
+        date: new Date('2026-09-22T08:00:00Z'),
+        jobNumber: 'J-1',
+        projectName: 'Site One',
+        details: '08:00 – 16:00',
+        paidHours: 8,
+        payrollBasis: 'dayRate',
+        dayRate: 200,
+        amount: 200,
+        isPayeDay: false,
+        isOvertimeLine: false,
+        hasRate: true,
+      },
+    ],
+  }
+  const draft = {
+    ...emptyTimesheetDraft(),
+    payrollLineReviews: {
+      'day-2': { decision: 'declined' as const, revisedAmount: null },
+    },
+    expenseEntries: [
+      {
+        id: 'e1',
+        title: 'Parking',
+        details: '',
+        jobNumber: 'J-1',
+        date: new Date('2026-09-21T08:00:00Z'),
+        amount: 12,
+        managerDecision: 'declined' as const,
+      },
+    ],
+    priceWorkEntries: [
+      {
+        id: 'p1',
+        title: 'Extra first fix',
+        details: '',
+        jobNumber: 'J-1',
+        agreedManagerName: 'Pat',
+        startDate: new Date('2026-09-21T08:00:00Z'),
+        amount: 80,
+        managerDecision: 'edited' as const,
+        managerRevisedAmount: 60,
+      },
+    ],
+  }
+  const lines = invoiceLinesForTimesheet({
+    payroll,
+    draft,
+    timeZone: 'Europe/London',
+    managerHasSigned: true,
+    applyLiveReview: false,
+  })
+  assert.equal(lines.some((line) => line.amount === 0), false)
+  assert.equal(
+    lines.some((line) => line.description.includes('Parking')),
+    false
+  )
+  assert.equal(invoiceLinesTotal(lines), 260)
 })

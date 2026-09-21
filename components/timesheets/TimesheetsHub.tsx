@@ -36,16 +36,17 @@ import {
 } from '@/lib/timesheets/paymentRunCopy'
 import { TimesheetsScreen, type TeamTimesheetTab } from '@/components/timesheets/TimesheetsScreen'
 import { TimesheetPeriodPage } from '@/components/timesheets/TimesheetPeriodPage'
-import { dateFromDayKey, dayKey } from '@/lib/ios-parity/londonTime'
+import { dateFromDayKey } from '@/lib/ios-parity/londonTime'
 import { ianaTimeZoneForCountry } from '@/lib/orgTime/orgTimeZone'
 import { computeInvoicingPeriod } from '@/lib/warnings/warningLookahead'
-import { loadTimesheetDraftsForStarts } from '@/lib/timesheets/timesheetStorage'
+import { loadTimesheetDrafts, loadTimesheetDraftsForStarts, listTimesheetStates } from '@/lib/timesheets/timesheetStorage'
 import { emptyTimesheetDraft, type TimesheetDraft } from '@/lib/timesheets/timesheetDraft'
 import {
   awaitingManagerSignOff,
   isTimesheetFullyApproved,
 } from '@/lib/timesheets/timesheetApprovalPolicy'
-import { canAccessMyTimesheetsWithPolicy } from '@/lib/timesheets/timesheetPayrollPolicy'
+import { canAccessMyTimesheetsWithPolicy, shouldAppearInOperativeTimesheetRoster } from '@/lib/timesheets/timesheetPayrollPolicy'
+import { teamTimesheetUsers } from '@/lib/timesheets/timesheetWeekUtils'
 import {
   emptyDayRateHistory,
   loadOperativeDayRateHistory,
@@ -94,9 +95,9 @@ export function TimesheetsHub() {
   const [history, setHistory] = useState<OperativeDayRateHistoryCollection>(emptyDayRateHistory())
 
   const showMine = user ? canAccessMyTimesheetsWithPolicy(user, invoicing, new Date(), timeZone) : false
-  const showTeam = canAccessOperativeTimesheets(user)
+  const showTeam = canAccessOperativeTimesheets(user, usersLoading, users)
   const showDisabled = shouldShowTimesheetsDisabledMessage(user)
-  const canOpen = canAccessTimesheetsSurface(user)
+  const canOpen = canAccessTimesheetsSurface(user, usersLoading, users)
 
   useEffect(() => {
     if (!organization?.id) return
@@ -125,7 +126,7 @@ export function TimesheetsHub() {
     [invoicing, timeZone]
   )
   const pastPeriods = useMemo(
-    () => listPreviousPayPeriods(invoicing, new Date(), 24, timeZone),
+    () => listPreviousPayPeriods(invoicing, new Date(), 120, timeZone),
     [invoicing, timeZone]
   )
   const selectedPeriod = useMemo(() => {
@@ -178,6 +179,7 @@ export function TimesheetsHub() {
             subject={subject}
             currentPeriod={currentPeriod}
             pastPeriods={pastPeriods}
+            invoicing={invoicing}
             runCopyPeriodLine={runCopy.periodLine}
             timeZone={timeZone}
           />
@@ -256,32 +258,34 @@ export function TimesheetsHub() {
       {showDisabled && !showMine && !showTeam ? (
         <DisabledCard />
       ) : (
-        <div className="grid gap-4 md:grid-cols-2">
-          {showMine ? (
-            <Tile
-              icon={<ClockIcon className="h-6 w-6" />}
-              title="My Timesheets"
-              detail={
-                showTeam
-                  ? 'Your own hours, expenses and price work'
-                  : 'Current pay run, pending sign-off, and past timesheets.'
-              }
-              onClick={() => router.push('/dashboard/timesheets?surface=mine')}
-            />
-          ) : null}
-          {showTeam ? (
-            <Tile
-              icon={<UserGroupIcon className="h-6 w-6" />}
-              title={hasAdminAccess(user) ? 'User Timesheets' : 'Operative Timesheets'}
-              detail={
-                hasAdminAccess(user)
-                  ? 'Review, sign off and export company timesheets'
-                  : "Review, sign off and export your team's sheets"
-              }
-              onClick={() => router.push('/dashboard/timesheets?surface=team&tab=awaiting')}
-            />
-          ) : null}
-          {showDisabled && showTeam ? <DisabledCard /> : null}
+        <div className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-2">
+            {showMine ? (
+              <Tile
+                icon={<ClockIcon className="h-6 w-6" />}
+                title="My Timesheets"
+                detail={
+                  showTeam
+                    ? 'Your own hours, expenses and price work'
+                    : 'Current pay run, pending sign-off, and past timesheets.'
+                }
+                onClick={() => router.push('/dashboard/timesheets?surface=mine')}
+              />
+            ) : null}
+            {showTeam && user ? (
+              <ManagerTimesheetsTile
+                user={user}
+                users={users}
+                organizationId={organization?.id}
+                periodStart={currentPeriod.start}
+                periodEnd={currentPeriod.end}
+                invoicing={invoicing}
+                timeZone={timeZone}
+                onClick={() => router.push('/dashboard/timesheets?surface=team&tab=awaiting')}
+              />
+            ) : null}
+            {showDisabled && showTeam ? <DisabledCard /> : null}
+          </div>
         </div>
       )}
     </div>
@@ -302,6 +306,7 @@ function MineTimesheetsList({
   subject,
   currentPeriod,
   pastPeriods,
+  invoicing,
   runCopyPeriodLine,
   timeZone,
 }: {
@@ -309,41 +314,70 @@ function MineTimesheetsList({
   subject: User
   currentPeriod: { start: Date; end: Date }
   pastPeriods: Array<{ start: Date; end: Date }>
+  invoicing: OrgInvoicingSettings
   runCopyPeriodLine: string
   timeZone: string
 }) {
   const router = useRouter()
   const [drafts, setDrafts] = useState<Map<string, TimesheetDraft>>(new Map())
+  const [discoveredPast, setDiscoveredPast] = useState<Array<{ start: Date; end: Date }>>(pastPeriods)
+
+  useEffect(() => {
+    setDiscoveredPast(pastPeriods)
+  }, [pastPeriods])
 
   useEffect(() => {
     if (!organizationId) return
     let cancelled = false
-    const periods = [currentPeriod, ...pastPeriods]
-    loadTimesheetDraftsForStarts(
-      organizationId,
-      subject.id,
-      periods.map((period) => period.start),
-      timeZone
-    ).then((loaded) => {
+    const currentKey = periodStartKey(currentPeriod.start, timeZone)
+    listTimesheetStates(organizationId, subject.id, 400).then(async (rows) => {
       if (cancelled) return
+      const byKey = new Map<string, { start: Date; end: Date }>()
+      for (const period of pastPeriods) {
+        byKey.set(periodStartKey(period.start, timeZone), period)
+      }
+      for (const row of rows) {
+        const period = computeInvoicingPeriod(row.weekStart, invoicing, timeZone)
+        const key = periodStartKey(period.start, timeZone)
+        if (key === currentKey) continue
+        if (!byKey.has(key)) byKey.set(key, period)
+      }
+      const merged = Array.from(byKey.values()).sort((a, b) => b.start.getTime() - a.start.getTime())
+      setDiscoveredPast(merged)
       const next = new Map<string, TimesheetDraft>()
-      for (const period of periods) {
-        const periodKey = periodStartKey(period.start, timeZone)
-        next.set(periodKey, loaded.get(dayKey(period.start, timeZone)) || emptyTimesheetDraft())
+      next.set(currentKey, emptyTimesheetDraft())
+      for (const period of merged) next.set(periodStartKey(period.start, timeZone), emptyTimesheetDraft())
+      if (rows.length === 0) {
+        const loaded = await loadTimesheetDraftsForStarts(
+          organizationId,
+          subject.id,
+          [currentPeriod.start, ...merged.slice(0, 24).map((period) => period.start)],
+          timeZone
+        )
+        if (cancelled) return
+        for (const [key, draft] of loaded) next.set(key, draft)
+        setDrafts(next)
+        return
+      }
+      for (const row of rows) {
+        const period = computeInvoicingPeriod(row.weekStart, invoicing, timeZone)
+        const key = periodStartKey(period.start, timeZone)
+        if (!next.has(key)) continue
+        next.set(key, row.draft)
       }
       setDrafts(next)
     })
     return () => {
       cancelled = true
     }
-  }, [organizationId, subject.id, currentPeriod, pastPeriods, timeZone])
+  }, [organizationId, subject.id, currentPeriod, pastPeriods, invoicing, timeZone])
 
-  const pending = [currentPeriod, ...pastPeriods].filter((period) => {
+  const pending = [currentPeriod, ...discoveredPast].filter((period) => {
     const draft = drafts.get(periodStartKey(period.start, timeZone))
     return draft ? awaitingManagerSignOff(draft, subject) : false
   })
   const pendingKeys = new Set(pending.map((period) => periodStartKey(period.start, timeZone)))
-  const pastVisible = pastPeriods.filter((period) => !pendingKeys.has(periodStartKey(period.start, timeZone)))
+  const pastVisible = discoveredPast.filter((period) => !pendingKeys.has(periodStartKey(period.start, timeZone)))
 
   return (
     <div className="space-y-4">
@@ -450,26 +484,121 @@ function HubCard({
   )
 }
 
+function ManagerTimesheetsTile({
+  user,
+  users,
+  organizationId,
+  periodStart,
+  periodEnd,
+  invoicing,
+  timeZone,
+  onClick,
+}: {
+  user: User
+  users: User[]
+  organizationId?: string
+  periodStart: Date
+  periodEnd: Date
+  invoicing: OrgInvoicingSettings
+  timeZone: string
+  onClick: () => void
+}) {
+  const [stats, setStats] = useState({ awaiting: 0, signed: 0, exported: 0 })
+  const roster = useMemo(
+    () =>
+      teamTimesheetUsers(user, users).filter((member) =>
+        shouldAppearInOperativeTimesheetRoster(member, periodStart, periodEnd, invoicing, new Date(), timeZone)
+      ),
+    [user, users, periodStart, periodEnd, invoicing, timeZone]
+  )
+
+  useEffect(() => {
+    if (!organizationId || roster.length === 0) {
+      setStats({ awaiting: 0, signed: 0, exported: 0 })
+      return
+    }
+    let cancelled = false
+    loadTimesheetDrafts(
+      organizationId,
+      roster.map((member) => member.id),
+      periodStart,
+      timeZone
+    ).then((drafts) => {
+      if (cancelled) return
+      let awaiting = 0
+      let signed = 0
+      let exported = 0
+      for (const member of roster) {
+        const draft = drafts.get(member.id) || emptyTimesheetDraft()
+        if (draft.exportedAt) exported += 1
+        else if (isTimesheetFullyApproved(draft, member)) signed += 1
+        else if (awaitingManagerSignOff(draft, member)) awaiting += 1
+      }
+      setStats({ awaiting, signed, exported })
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [organizationId, roster, periodStart, timeZone])
+
+  return (
+    <div className="space-y-3 md:col-span-1">
+      <Tile
+        icon={<UserGroupIcon className="h-6 w-6" />}
+        title={hasAdminAccess(user) ? 'User Timesheets' : 'Operative Timesheets'}
+        detail={
+          hasAdminAccess(user)
+            ? 'Review, sign off and export company timesheets'
+            : "Review, sign off and export your team's sheets"
+        }
+        badge={stats.awaiting > 0 ? `${stats.awaiting} new` : undefined}
+        onClick={onClick}
+      />
+      <div className="grid grid-cols-3 gap-2.5">
+        <StatMiniCard value={String(stats.awaiting)} label="Awaiting sign-off" tone="text-amber-600 bg-amber-50" />
+        <StatMiniCard value={String(stats.signed)} label="Signed off" tone="text-green-700 bg-green-50" />
+        <StatMiniCard value={String(stats.exported)} label="Exported" tone="text-slate-600 bg-slate-100" />
+      </div>
+    </div>
+  )
+}
+
+function StatMiniCard({ value, label, tone }: { value: string; label: string; tone: string }) {
+  return (
+    <div className={`rounded-2xl px-3 py-3 text-center ${tone}`}>
+      <p className="text-[22px] font-semibold leading-none">{value}</p>
+      <p className="mt-1.5 text-[11px] font-semibold leading-tight">{label}</p>
+    </div>
+  )
+}
+
 function Tile({
   icon,
   title,
   detail,
+  badge,
   onClick,
 }: {
   icon: ReactNode
   title: string
   detail: string
+  badge?: string
   onClick: () => void
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className="flex items-start gap-4 rounded-2xl bg-white p-5 text-left shadow-[0_1px_2px_rgba(0,0,0,0.10)] hover:ring-2 hover:ring-[#185FA5]/20"
+      className="flex w-full items-start gap-4 rounded-2xl bg-white p-5 text-left shadow-[0_1px_2px_rgba(0,0,0,0.10)] hover:ring-2 hover:ring-[#185FA5]/20"
     >
-      <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#E6F1FB] text-[#185FA5]">{icon}</div>
-      <div>
-        <p className="text-[17px] font-semibold">{title}</p>
+      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#E6F1FB] text-[#185FA5]">{icon}</div>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-start justify-between gap-2">
+          <p className="text-[17px] font-semibold">{title}</p>
+          {badge ? (
+            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-700">{badge}</span>
+          ) : null}
+        </div>
         <p className="mt-1 text-[14px] text-ios-muted">{detail}</p>
       </div>
     </button>
