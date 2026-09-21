@@ -22,6 +22,7 @@ import {
 } from '@heroicons/react/24/solid'
 import { TeamOnboardingPrompt } from '@/components/onboarding/TeamOnboardingPrompt'
 import { useAuthStore } from '@/lib/stores/authStore'
+import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { shouldShowTeamOnboardingPrompt } from '@/lib/orgSetup/teamOnboarding'
 import {
   getDashboardNavBySection,
@@ -129,6 +130,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const pathname = usePathname()
   const { user, organization, signOut, recordLastSeenIfDue } = useAuthStore()
+  const { users, loadUsers } = useOrgUserStore()
   const unreadCount = useNotificationStore((s) => s.unreadCount)
   const loadNotifications = useNotificationStore((s) => s.loadNotifications)
   const [online, setOnline] = useState(true)
@@ -188,7 +190,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!organization?.id) return
     void recoverJobTypesFromWork(organization.id).catch(() => {})
-  }, [organization?.id])
+    loadUsers(organization.id)
+  }, [organization?.id, loadUsers])
 
   const displayUser = useMemo(
     () => (user ? applyRoleTestingPreset(user, rolePreset) : null),
@@ -197,11 +200,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   if (!displayUser) return null
 
-  const homeItems = getDashboardNavBySection(displayUser, organization, 'home')
-  const navigateItems = getDashboardNavBySection(displayUser, organization, 'navigate')
-  const toolsItems = getDashboardNavBySection(displayUser, organization, 'tools')
-  const teamItems = getDashboardNavBySection(displayUser, organization, 'team')
-  const accountItems = getDashboardNavBySection(displayUser, organization, 'account')
+  const homeItems = getDashboardNavBySection(displayUser, organization, 'home', users)
+  const navigateItems = getDashboardNavBySection(displayUser, organization, 'navigate', users)
+  const toolsItems = getDashboardNavBySection(displayUser, organization, 'tools', users)
+  const teamItems = getDashboardNavBySection(displayUser, organization, 'team', users)
+  const accountItems = getDashboardNavBySection(displayUser, organization, 'account', users)
   const allItems = [...homeItems, ...navigateItems, ...toolsItems, ...teamItems, ...accountItems]
   const title = pageTitle(pathname, allItems)
   const isHome = pathname === '/dashboard'

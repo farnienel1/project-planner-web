@@ -326,7 +326,7 @@ const ALL_NAV_ITEMS: DashboardNavItem[] = [
   },
 ]
 
-function canSeeNavItem(item: DashboardNavItem, user: User): boolean {
+function canSeeNavItem(item: DashboardNavItem, user: User, orgUsers: User[] = []): boolean {
   if (user.isSuperAdmin) return item.id !== 'dashboard_my_qualifications'
 
   switch (item.id) {
@@ -356,7 +356,7 @@ function canSeeNavItem(item: DashboardNavItem, user: User): boolean {
     case 'dashboard_site_audit':
       return canViewSiteAudit(user)
     case 'dashboard_timesheets':
-      return canAccessTimesheets(user)
+      return canAccessTimesheets(user, false, orgUsers)
     case 'dashboard_qualifications':
       return canAccessQualificationsHub(user)
     case 'dashboard_my_qualifications':
@@ -391,9 +391,13 @@ function withLabels(items: DashboardNavItem[], organization: Organization | null
   })
 }
 
-export function getDashboardNavItems(user: User, organization: Organization | null): DashboardNavItem[] {
+export function getDashboardNavItems(
+  user: User,
+  organization: Organization | null,
+  orgUsers: User[] = []
+): DashboardNavItem[] {
   return withLabels(
-    ALL_NAV_ITEMS.filter((item) => canSeeNavItem(item, user)),
+    ALL_NAV_ITEMS.filter((item) => canSeeNavItem(item, user, orgUsers)),
     organization,
     user
   )
@@ -407,9 +411,10 @@ export function allDashboardNavHrefs(): string[] {
 export function getDashboardNavBySection(
   user: User,
   organization: Organization | null,
-  section: NavSection
+  section: NavSection,
+  orgUsers: User[] = []
 ): DashboardNavItem[] {
-  return getDashboardNavItems(user, organization).filter((item) => item.section === section)
+  return getDashboardNavItems(user, organization, orgUsers).filter((item) => item.section === section)
 }
 
 export function isDashboardNavActive(pathname: string, href: string): boolean {
@@ -417,8 +422,8 @@ export function isDashboardNavActive(pathname: string, href: string): boolean {
   return pathname === href || pathname.startsWith(`${href}/`)
 }
 
-export function getDashboardQuickActions(user: User, organization: Organization | null) {
-  return getDashboardNavItems(user, organization).filter(
+export function getDashboardQuickActions(user: User, organization: Organization | null, orgUsers: User[] = []) {
+  return getDashboardNavItems(user, organization, orgUsers).filter(
     (item) => item.section === 'navigate' || item.section === 'tools'
   )
 }

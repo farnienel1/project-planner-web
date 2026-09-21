@@ -8,6 +8,7 @@ import assert from 'node:assert/strict'
 import type { User, UserPermissions } from '../types/index.ts'
 import { UserRole } from '../types/index.ts'
 import {
+  canAccessTimesheets,
   canAccessTimesheetsSurface,
   canAccessOperativeTimesheets,
   canManageSubcontractors,
@@ -136,4 +137,5 @@ test('managers with direct reports can open Operative Timesheets without the ope
     assignedManagerUserIds: ['mgr'],
   })
   assert.equal(canAccessOperativeTimesheets(manager, false, [report]), true)
+  assert.equal(canAccessTimesheets(manager, false, [report]), true)
 })

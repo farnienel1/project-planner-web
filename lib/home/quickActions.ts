@@ -88,7 +88,12 @@ export function quickActionMeta(id: string, settings?: NavSettings): HomeQuickAc
   return { id, ...row }
 }
 
-export function isQuickActionEligible(id: string, user: User, profileLoading = false): boolean {
+export function isQuickActionEligible(
+  id: string,
+  user: User,
+  profileLoading = false,
+  orgUsers: User[] = []
+): boolean {
   if (BARRED_FROM_HOME.has(id)) return false
   if (!quickActionMeta(id)) return false
   const op = isOperativeMode(user)
@@ -156,14 +161,14 @@ export function isQuickActionEligible(id: string, user: User, profileLoading = f
     case 'staff-tasks':
       return !op
     case 'staff-invoicing':
-      return canAccessTimesheetsSurface(user, profileLoading)
+      return canAccessTimesheetsSurface(user, profileLoading, orgUsers)
     default:
       return false
   }
 }
 
-export function defaultOrderedQuickActionIds(user: User, profileLoading = false): string[] {
-  const eligible = (id: string) => isQuickActionEligible(id, user, profileLoading)
+export function defaultOrderedQuickActionIds(user: User, profileLoading = false, orgUsers: User[] = []): string[] {
+  const eligible = (id: string) => isQuickActionEligible(id, user, profileLoading, orgUsers)
   if (isOperativeMode(user)) {
     const a = ['op-projects', 'op-small', 'op-leave']
     if (eligible('op-audit')) a.push('op-audit')
@@ -193,7 +198,7 @@ export function defaultOrderedQuickActionIds(user: User, profileLoading = false)
   return items
 }
 
-export function allEligibleQuickActionIds(user: User, profileLoading = false): string[] {
+export function allEligibleQuickActionIds(user: User, profileLoading = false, orgUsers: User[] = []): string[] {
   const ids = [
     'op-projects', 'op-small', 'op-leave', 'op-audit', 'op-schedule', 'op-settings',
     'staff-weekly', 'staff-daily', 'staff-projects', 'staff-small', 'staff-leave', 'staff-schedule',
@@ -202,7 +207,7 @@ export function allEligibleQuickActionIds(user: User, profileLoading = false): s
     'staff-my-qualifications', 'staff-job-types', 'staff-wholesalers', 'staff-material-catalogue',
     'staff-add-user', 'staff-manage-users', 'staff-help', 'staff-general-app', 'staff-tasks', 'staff-invoicing',
   ]
-  return ids.filter((id) => isQuickActionEligible(id, user, profileLoading)).sort()
+  return ids.filter((id) => isQuickActionEligible(id, user, profileLoading, orgUsers)).sort()
 }
 
 export function quickActionOrderStorageKey(uid: string): string {
@@ -213,15 +218,17 @@ export function quickActionHintStorageKey(uid: string): string {
   return `homeQuickActionCustomizeHint.${uid}`
 }
 
-export function loadSavedQuickActionOrder(uid: string, user: User): string[] {
-  const fallback = defaultOrderedQuickActionIds(user)
+export function loadSavedQuickActionOrder(uid: string, user: User, orgUsers: User[] = []): string[] {
+  const fallback = defaultOrderedQuickActionIds(user, false, orgUsers)
   if (typeof window === 'undefined') return fallback
   try {
     const raw = window.localStorage.getItem(quickActionOrderStorageKey(uid))
     if (!raw) return fallback
     const parsed = JSON.parse(raw) as unknown
     if (!Array.isArray(parsed)) return fallback
-    const eligible = parsed.filter((id): id is string => typeof id === 'string' && isQuickActionEligible(id, user))
+    const eligible = parsed.filter(
+      (id): id is string => typeof id === 'string' && isQuickActionEligible(id, user, false, orgUsers)
+    )
     return eligible.length ? eligible : fallback
   } catch {
     return fallback
