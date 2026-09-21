@@ -10,13 +10,18 @@ import {
   type FounderConfirmEmailPayload,
 } from '@/lib/orgSetup/founderConfirmEmail'
 import { formatSetupError } from '@/lib/orgSetup/formatSetupError'
+import { SUPPORT_EMAIL } from '@/lib/marketing/content'
+import { MarketingShell } from '@/components/marketing/MarketingShell'
+import { MktIcon } from '@/components/marketing/icons'
+import { StoreBadge } from '@/components/marketing/StoreBadge'
 
-export function CheckEmailScreen({ email }: { email?: string | null }) {
+export function CheckEmailScreen({ email, publicLayout = false }: { email?: string | null; publicLayout?: boolean }) {
   const { user, organization, signOut } = useAuthStore()
   const [stored, setStored] = useState<FounderConfirmEmailPayload | null>(null)
   const [sending, setSending] = useState(false)
   const [status, setStatus] = useState<'idle' | 'sent' | 'error'>('idle')
   const [message, setMessage] = useState('')
+  const [resendIn, setResendIn] = useState(0)
 
   useEffect(() => {
     const payload = loadFounderConfirmEmailPayload()
@@ -27,12 +32,19 @@ export function CheckEmailScreen({ email }: { email?: string | null }) {
     }
   }, [])
 
+  useEffect(() => {
+    if (resendIn <= 0) return
+    const t = window.setInterval(() => setResendIn((n) => Math.max(0, n - 1)), 1000)
+    return () => window.clearInterval(t)
+  }, [resendIn])
+
   const displayEmail = stored?.to || email || user?.email || 'the address you used at setup'
   const canResend = Boolean(
     (stored?.confirmationToken || user?.accountConfirmToken) && (stored?.to || user?.email)
   )
 
   async function handleResend() {
+    if (resendIn > 0) return
     const confirmationToken = stored?.confirmationToken || user?.accountConfirmToken || ''
     const to = (stored?.to || user?.email || '').trim().toLowerCase()
     const payload = {
@@ -54,6 +66,7 @@ export function CheckEmailScreen({ email }: { email?: string | null }) {
       saveFounderConfirmEmailPayload(payload)
       setStored(payload)
       setStatus('sent')
+      setResendIn(30)
     } catch (error) {
       const formatted = formatSetupError(error)
       const failed = { ...payload, lastError: formatted }
@@ -66,69 +79,96 @@ export function CheckEmailScreen({ email }: { email?: string | null }) {
     }
   }
 
-  return (
-    <div className="flex min-h-screen items-center justify-center bg-[#f4f6f9] px-5 py-10">
-      <div className="w-full max-w-lg rounded-3xl border border-slate-200 bg-white p-8 shadow-[0_2px_30px_rgba(15,23,42,0.08)]">
-        <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-50 text-blue-600">
-          <svg className="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.75}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2Z" />
-          </svg>
+  const inner = (
+    <div className="card wz-card" style={{ maxWidth: 640, margin: '0 auto' }}>
+      <div className="ico-chip lg" data-hue="blue" style={{ margin: '0 auto 16px', width: 72, height: 72, borderRadius: 22 }}>
+        <MktIcon name="mail" size={32} />
+      </div>
+      <h1 style={{ textAlign: 'center', fontSize: 32 }}>Check your email</h1>
+      <p className="muted" style={{ textAlign: 'center', marginTop: 10 }}>
+        We send a confirmation link to <b style={{ color: 'var(--ink)' }}>{displayEmail}</b>. Open that email and click
+        the link to open your account. Then sign in with the password you chose during setup.
+      </p>
+      <div className="grid g3" style={{ margin: '22px 0' }}>
+        {(
+          [
+            ['1', 'Open the email'],
+            ['2', 'Click confirm'],
+            ['3', 'Sign in'],
+          ] as const
+        ).map(([n, label]) => (
+          <div key={n} className="card pad" style={{ boxShadow: 'none', background: 'var(--soft)', textAlign: 'center' }}>
+            <b style={{ fontFamily: 'var(--head)', fontSize: 22 }}>{n}</b>
+            <div className="small ink2">{label}</div>
+          </div>
+        ))}
+      </div>
+      {status === 'sent' ? (
+        <div className="banner" data-hue="green">
+          <span className="ico-chip">
+            <MktIcon name="check" size={18} />
+          </span>
+          <div className="small">Another confirmation email is on its way. Check spam too.</div>
         </div>
-        <h1 className="text-center text-2xl font-extrabold text-slate-900">Check your email</h1>
-        <p className="mt-3 text-center text-sm text-slate-600">
-          We send a confirmation link to <strong className="text-slate-900">{displayEmail}</strong> from the
-          same Outlook mailbox as the iOS app. Open that email and click the link to open your account. Then
-          sign in with the password you chose during setup.
-        </p>
-        <p className="mt-4 text-center text-sm text-slate-600">
-          Until you click that link, your email and password will not work on the web or the iOS / Android apps.
-        </p>
-        {status === 'sent' ? (
-          <div className="mt-6 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
-            Another confirmation email is on its way. It should sit at the top of your inbox (check spam too).
-          </div>
-        ) : status === 'error' ? (
-          <div className="mt-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-            {message || 'The confirmation email did not send. Tap Resend below.'}
-          </div>
-        ) : (
-          <div className="mt-6 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900">
-            Check your inbox and spam folder. If you cannot see it, tap Resend confirmation email to send
-            another copy to the top of your inbox.
-          </div>
-        )}
-        <div className="mt-8 flex flex-col gap-3">
-          {canResend ? (
-            <button
-              type="button"
-              onClick={() => void handleResend()}
-              disabled={sending}
-              className="rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {sending ? 'Sending…' : 'Resend confirmation email'}
-            </button>
-          ) : null}
-          <Link
-            href="/login"
-            className={
-              canResend
-                ? 'rounded-xl border border-slate-300 px-5 py-3 text-center text-sm font-semibold text-slate-700 hover:bg-slate-50'
-                : 'rounded-xl bg-blue-600 px-5 py-3 text-center text-sm font-semibold text-white hover:bg-blue-700'
-            }
-          >
-            Go to login
-          </Link>
-          {user ? (
-            <button
-              type="button"
-              onClick={() => void signOut()}
-              className="rounded-xl border border-slate-300 px-5 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-            >
-              Sign out
-            </button>
-          ) : null}
+      ) : status === 'error' ? (
+        <div className="banner" data-hue="red">
+          <span className="ico-chip">
+            <MktIcon name="alert" size={18} />
+          </span>
+          <div className="small">{message || 'The confirmation email did not send. Tap Resend below.'}</div>
         </div>
+      ) : (
+        <div className="banner" data-hue="blue">
+          <span className="ico-chip">
+            <MktIcon name="mail" size={18} />
+          </span>
+          <div className="small ink2">
+            Until you click that link, your email and password will not work on the web or the iOS / Android apps.
+          </div>
+        </div>
+      )}
+      <div className="stack" style={{ marginTop: 22 }}>
+        {canResend ? (
+          <button type="button" className="btn primary block" onClick={() => void handleResend()} disabled={sending || resendIn > 0}>
+            {sending ? 'Sending…' : resendIn > 0 ? `Resend email in ${resendIn}s` : 'Resend confirmation email'}
+          </button>
+        ) : null}
+        <div className="row wr" style={{ justifyContent: 'center' }}>
+          <a className="btn" href="https://mail.google.com" target="_blank" rel="noopener noreferrer">
+            Open Gmail
+          </a>
+          <a className="btn" href="https://outlook.live.com" target="_blank" rel="noopener noreferrer">
+            Open Outlook
+          </a>
+        </div>
+        <Link href="/login" className="btn block">
+          Go to sign in
+        </Link>
+        {user ? (
+          <button type="button" className="btn ghost block" onClick={() => void signOut()}>
+            Sign out
+          </button>
+        ) : null}
+      </div>
+      <p className="muted xs" style={{ textAlign: 'center', marginTop: 18 }}>
+        Can&apos;t find it? Check spam, then contact <a href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a>
+      </p>
+      <div className="row" style={{ justifyContent: 'center', marginTop: 18 }}>
+        <StoreBadge store="ios" height={46} />
+        <StoreBadge store="android" height={46} />
       </div>
     </div>
   )
+
+  if (publicLayout) {
+    return (
+      <MarketingShell>
+        <section className="s">
+          <div className="wrap">{inner}</div>
+        </section>
+      </MarketingShell>
+    )
+  }
+
+  return <div className="mkt min-h-screen px-5 py-10">{inner}</div>
 }
