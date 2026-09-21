@@ -62,7 +62,7 @@ export function SupportPage() {
       </div>
       <section className="s" style={{ paddingTop: 20 }}>
         <div className="wrap">
-          <div className="grid" style={{ gridTemplateColumns: 'minmax(0,1.6fr) minmax(0,1fr)' }}>
+          <div className="grid support-grid" style={{ gridTemplateColumns: 'minmax(0,1.6fr) minmax(0,1fr)' }}>
             <div>
               {faqs.length ? (
                 <FaqList items={faqs} />
