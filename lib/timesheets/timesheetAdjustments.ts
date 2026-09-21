@@ -1,8 +1,19 @@
 /**
  * iOS parity: Views/TimesheetManagerReviewSupport.swift TimesheetDraftAdjustments
  */
-import type { TimesheetDraft, TimesheetExpenseEntry, TimesheetPriceWorkEntry } from '@/lib/timesheets/timesheetDraft'
+import type {
+  TimesheetDraft,
+  TimesheetExpenseEntry,
+  TimesheetManagerDecision,
+  TimesheetPriceWorkEntry,
+} from '@/lib/timesheets/timesheetDraft'
 import type { TimesheetPayrollLineItem } from '@/lib/timesheets/timesheetPayrollCollector'
+
+export type ManagerAdjustmentRow = {
+  title: string
+  decision: TimesheetManagerDecision
+  detail?: string | null
+}
 
 export function effectivePayrollAmount(
   line: TimesheetPayrollLineItem,
@@ -114,11 +125,57 @@ export function grandTotal(
 }
 
 export function managerAdjustmentCount(draft: TimesheetDraft): number {
-  const payroll = Object.values(draft.payrollLineReviews).filter(
-    (review) => review.decision === 'declined' || review.decision === 'edited'
-  ).length
-  const extras = [...draft.expenseEntries, ...draft.priceWorkEntries].filter(
-    (entry) => entry.managerDecision === 'declined' || entry.managerDecision === 'edited'
-  ).length
-  return payroll + extras
+  return managerAdjustmentRows(draft).length
+}
+
+export function showsTimesheetAdjustment(input: {
+  original: number
+  effective: number
+  decision: TimesheetManagerDecision
+  managerHasSigned: boolean
+  applyLiveReview?: boolean
+}): boolean {
+  const { original, effective, decision, managerHasSigned, applyLiveReview = false } = input
+  return (
+    (managerHasSigned || applyLiveReview) &&
+    decision !== 'approved' &&
+    decision !== 'pending' &&
+    (original !== effective || decision === 'declined')
+  )
+}
+
+export function managerAdjustmentRows(draft: TimesheetDraft): ManagerAdjustmentRow[] {
+  const rows: ManagerAdjustmentRow[] = []
+  for (const entry of draft.expenseEntries) {
+    if (entry.managerDecision === 'approved' || entry.managerDecision === 'pending') continue
+    rows.push({
+      title: `Expense: ${entry.title}`,
+      decision: entry.managerDecision,
+      detail:
+        entry.managerDecision === 'edited'
+          ? `£${entry.amount.toFixed(2)} → £${(entry.managerRevisedAmount ?? entry.amount).toFixed(2)}`
+          : null,
+    })
+  }
+  for (const entry of draft.priceWorkEntries) {
+    if (entry.managerDecision === 'approved' || entry.managerDecision === 'pending') continue
+    rows.push({
+      title: `Price work: ${entry.title}`,
+      decision: entry.managerDecision,
+      detail:
+        entry.managerDecision === 'edited'
+          ? `£${entry.amount.toFixed(2)} → £${(entry.managerRevisedAmount ?? entry.amount).toFixed(2)}`
+          : null,
+    })
+  }
+  for (const [lineId, review] of Object.entries(draft.payrollLineReviews)) {
+    if (review.decision !== 'declined' && review.decision !== 'edited') continue
+    rows.push({
+      title: `${review.decision === 'declined' ? 'Day removed' : 'Day adjusted'} (${lineId.slice(0, 8)}…)`,
+      decision: review.decision,
+      detail:
+        review.decision === 'edited' ? `New amount £${(review.revisedAmount ?? 0).toFixed(2)}` : null,
+    })
+  }
+  return rows
 }

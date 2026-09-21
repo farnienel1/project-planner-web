@@ -80,6 +80,22 @@ export function decisionLabel(decision: TimesheetManagerDecision): string {
   }
 }
 
+/** iOS TimesheetManagerDecision.tint */
+export function decisionTint(decision: TimesheetManagerDecision): string {
+  switch (decision) {
+    case 'pending':
+      return '#FF9500'
+    case 'approved':
+      return '#34C759'
+    case 'declined':
+      return '#FF3B30'
+    case 'edited':
+      return '#007AFF'
+    default:
+      return '#FF9500'
+  }
+}
+
 export function reviewSelection(decision: TimesheetManagerDecision): TimesheetManagerDecision {
   return decision === 'pending' ? 'approved' : decision
 }

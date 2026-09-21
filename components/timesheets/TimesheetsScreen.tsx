@@ -275,7 +275,7 @@ export function TimesheetsScreen({
         : 'No timesheets awaiting sign-off'
   const emptyDescription =
     teamTab === 'exported'
-      ? 'Exported timesheets stay here for years after you email and export, or generate an invoice.'
+      ? 'Exported timesheets stay here for years after a line manager emails and exports them. Generating an invoice does not move a sheet here.'
       : teamTab === 'signed'
         ? 'Counter-signed timesheets ready to export will appear here.'
         : 'People appear here only after they have signed their own timesheet. Unsigned booked hours stay on My Timesheets until they sign.'
