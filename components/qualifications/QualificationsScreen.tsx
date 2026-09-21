@@ -188,7 +188,7 @@ export function QualificationsScreen({ initialTab }: { initialTab?: Tab } = {}) 
   if (loading) {
     return (
       <div className="flex h-64 items-center justify-center">
-        <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-[#185FA5]" />
+        <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-[var(--blue)]" />
       </div>
     )
   }
@@ -275,14 +275,15 @@ export function QualificationsScreen({ initialTab }: { initialTab?: Tab } = {}) 
                   Delete Qualification
                 </Button>
               </div>
-              <p className="mt-3 text-[13px] text-ios-muted">
+              <p className="mt-3 text-[13px] text-[var(--ink3)]">
                 Deleting removes this template from the organisation list. Existing assignments on staff profiles are
                 not automatically removed.
               </p>
             </form>
           ) : (
-            <div className="hidden rounded-2xl bg-[#F2F2F7] p-6 text-sm text-ios-muted xl:block">
-              Select a qualification to edit.
+            <div className="empty card pad hidden xl:block">
+              <h3>Select a qualification</h3>
+              <p>Choose one from the list to view or edit it.</p>
             </div>
           )}
         </div>
@@ -311,17 +312,17 @@ export function QualificationsScreen({ initialTab }: { initialTab?: Tab } = {}) 
 
       {addOpen ? (
         <IosFormModal title="Add Qualification" onCancel={() => setAddOpen(false)} footer={
-          <button type="submit" form="add-qual" disabled={saving || !name.trim()} className="w-full rounded-xl bg-[#185FA5] py-3 text-[16px] font-semibold text-white disabled:opacity-50">
+          <button type="submit" form="add-qual" disabled={saving || !name.trim()} className="w-full rounded-xl bg-[var(--blue)] py-3 text-[16px] font-semibold text-white disabled:opacity-50">
             Save
           </button>
         }>
           <form id="add-qual" onSubmit={handleCreate} className="space-y-3">
-            <p className="text-[13px] font-semibold uppercase tracking-wide text-ios-muted">Qualification Details</p>
+            <p className="text-[13px] font-semibold uppercase tracking-wide text-[var(--ink3)]">Qualification Details</p>
             <label className="block text-[15px] font-medium">
               Qualification Name
-              <input value={name} onChange={(e) => setName(e.target.value)} className="mt-1.5 w-full rounded-lg border border-ios-search-border px-3 py-2.5" />
+              <input value={name} onChange={(e) => setName(e.target.value)} className="mt-1.5 w-full rounded-lg border border-[var(--line2)] px-3 py-2.5" />
             </label>
-            <p className="text-[13px] text-ios-muted">
+            <p className="text-[13px] text-[var(--ink3)]">
               Expiration dates and certificates are set when someone assigns this qualification on My Qualifications.
             </p>
           </form>
@@ -331,7 +332,7 @@ export function QualificationsScreen({ initialTab }: { initialTab?: Tab } = {}) 
       {pickerOpen ? (
         <IosFormModal title="Add qualifications" onCancel={() => setPickerOpen(false)}>
           {templates.filter((row) => !linked?.qualifications.some((assigned) => assigned.id === row.id)).length === 0 ? (
-            <p className="text-[15px] text-ios-muted">
+            <p className="text-[15px] text-[var(--ink3)]">
               {templates.length === 0
                 ? canManageOrg
                   ? 'No qualification templates yet. Click Add to create one for the organisation.'
@@ -340,7 +341,7 @@ export function QualificationsScreen({ initialTab }: { initialTab?: Tab } = {}) 
             </p>
           ) : (
             <div className="space-y-2">
-              <p className="text-[13px] text-ios-muted">Click + to add a qualification. Set expiry dates and certificates when you return.</p>
+              <p className="text-[13px] text-[var(--ink3)]">Click + to add a qualification. Set expiry dates and certificates when you return.</p>
               {templates
                 .filter((row) => !linked?.qualifications.some((assigned) => assigned.id === row.id))
                 .map((row) => (
@@ -348,10 +349,10 @@ export function QualificationsScreen({ initialTab }: { initialTab?: Tab } = {}) 
                     key={row.id}
                     type="button"
                     onClick={() => void handleAssign(row)}
-                    className="flex w-full items-center justify-between rounded-xl bg-[#F2F2F7] px-4 py-3 text-left"
+                    className="flex w-full items-center justify-between rounded-xl bg-[var(--soft)] px-4 py-3 text-left"
                   >
                     <span className="font-medium">{row.name}</span>
-                    <PlusIcon className="h-5 w-5 text-[#185FA5]" />
+                    <PlusIcon className="h-5 w-5 text-[var(--blue)]" />
                   </button>
                 ))}
             </div>
@@ -480,7 +481,7 @@ function MyQualificationsPanel({
           return (
             <div key={qual.id} className="rounded-[18px] bg-[var(--card)] p-5 shadow-[var(--sh)]">
               <p className="text-[17px] font-semibold">{qual.name}</p>
-              <label className="mt-3 block text-[13px] font-medium text-ios-muted">
+              <label className="mt-3 block text-[13px] font-medium text-[var(--ink3)]">
                 Expiry date
                 <input
                   type="date"
@@ -498,7 +499,7 @@ function MyQualificationsPanel({
                   className="mt-1 w-full rounded-[13px] border-[1.5px] border-[var(--line2)] bg-[var(--card)] px-3.5 py-2.5"
                 />
               </label>
-              <p className="mt-3 text-[12px] text-ios-muted">{QUALIFICATION_CERT_HINT}</p>
+              <p className="mt-3 text-[12px] text-[var(--ink3)]">{QUALIFICATION_CERT_HINT}</p>
               <input
                 type="file"
                 accept={QUALIFICATION_CERT_ACCEPT}
@@ -525,7 +526,7 @@ function MyQualificationsPanel({
                 </div>
               ) : cert ? (
                 <div className="mt-3 flex flex-wrap gap-3 text-sm">
-                  <a href={cert} target="_blank" rel="noreferrer" className="font-semibold text-[#185FA5]">
+                  <a href={cert} target="_blank" rel="noreferrer" className="font-semibold text-[var(--blue)]">
                     View certificate
                   </a>
                   <button
@@ -549,11 +550,11 @@ function MyQualificationsPanel({
                   <span className="text-emerald-700">Certificate uploaded</span>
                 </div>
               ) : (
-                <p className="mt-2 text-[13px] text-ios-muted">No certificate uploaded</p>
+                <p className="mt-2 text-[13px] text-[var(--ink3)]">No certificate uploaded</p>
               )}
               {pending && cert ? (
                 <div className="mt-2 flex flex-wrap gap-3 text-sm">
-                  <a href={cert} target="_blank" rel="noreferrer" className="font-semibold text-[#185FA5]">
+                  <a href={cert} target="_blank" rel="noreferrer" className="font-semibold text-[var(--blue)]">
                     View current certificate
                   </a>
                   <button

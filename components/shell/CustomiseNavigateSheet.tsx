@@ -103,14 +103,14 @@ export function CustomiseNavigateSheet({
           <button
             type="button"
             onClick={onClose}
-            className="rounded-full bg-[#185FA5] px-3 py-1 text-[13px] font-semibold text-white"
+            className="rounded-full bg-[var(--blue)] px-3 py-1 text-[13px] font-semibold text-white"
           >
             Done
           </button>
         </div>
         <div className="max-h-[calc(85vh-52px)] space-y-5 overflow-y-auto p-4">
           <div>
-            <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.3px] text-ios-muted">
+            <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.3px] text-[var(--ink3)]">
               Your Navigate list
             </p>
             <p className="mb-3 text-[12px] text-slate-500">
@@ -156,7 +156,7 @@ export function CustomiseNavigateSheet({
           </div>
 
           <div>
-            <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.3px] text-ios-muted">Add pages</p>
+            <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.3px] text-[var(--ink3)]">Add pages</p>
             <div className="flex flex-wrap gap-2">
               {available.map((item) => (
                 <button
@@ -178,7 +178,7 @@ export function CustomiseNavigateSheet({
             <button
               type="button"
               onClick={() => openPicker('project')}
-              className="rounded-xl bg-[#185FA5] px-3 py-2 text-[13px] font-semibold text-white"
+              className="rounded-xl bg-[var(--blue)] px-3 py-2 text-[13px] font-semibold text-white"
             >
               Add project
             </button>
@@ -205,7 +205,7 @@ export function CustomiseNavigateSheet({
                 value={workQuery}
                 onChange={(event) => setWorkQuery(event.target.value)}
                 placeholder={picker === 'project' ? 'Search projects' : 'Search small works'}
-                className="mb-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#185FA5]"
+                className="mb-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-[var(--blue)]"
               />
               <div className="max-h-56 space-y-1 overflow-y-auto">
                 {pickerWorks.map((work) => (

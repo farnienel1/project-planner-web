@@ -53,8 +53,8 @@ export function LoginBrandScreen() {
   }
 
   return (
-    <div className="login min-h-screen">
-      <div className="hero art">
+    <div className="login">
+      <div className="hero art" style={{ borderRadius: 0 }}>
         <div className="relative z-[1] flex items-center gap-3">
           <div className="overflow-hidden rounded-xl" style={{ background: 'rgba(255,255,255,.15)' }}>
             <AppLogoMark size={40} radius={12} />

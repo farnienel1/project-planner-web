@@ -61,7 +61,7 @@ export function ScrollAcceptDocument({
       <div
         ref={scrollerRef}
         onScroll={handleScroll}
-        className="h-[280px] overflow-y-auto rounded-2xl border border-slate-200 bg-white p-4 shadow-inner"
+        className="h-[280px] overflow-y-auto card p-4 shadow-inner"
       >
         <LegalDocumentBody document={document} />
       </div>

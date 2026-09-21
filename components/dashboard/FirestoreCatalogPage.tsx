@@ -100,12 +100,12 @@ export function FirestoreCatalogPage({
       )}
 
       {records.length === 0 ? (
-        <div className="rounded-2xl border border-slate-200 bg-white p-12 text-center shadow-sm">
+        <div className="card p-12 text-center shadow-sm">
           <h3 className="text-lg font-medium text-slate-900">No records yet</h3>
           <p className="mt-2 text-slate-500">{emptyHint}</p>
         </div>
       ) : (
-        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className="overflow-hidden card shadow-sm">
           <table className="min-w-full divide-y divide-slate-200">
             <thead className="bg-slate-50">
               <tr>

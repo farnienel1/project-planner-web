@@ -202,7 +202,7 @@ export function ProjectVisibilityPage({
                   {hidden ? (
                     <span className="h-6 w-6 rounded-full border border-slate-300" />
                   ) : (
-                    <CheckCircleIcon className="h-6 w-6 text-[#185FA5]" />
+                    <CheckCircleIcon className="h-6 w-6 text-[var(--blue)]" />
                   )}
                 </button>
               )

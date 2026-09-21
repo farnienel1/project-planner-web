@@ -165,7 +165,7 @@ export function SiteAuditCreateFlow({ project, onClose, onCreated }: Props) {
                     onClick={() => setAuditType(t)}
                     className={`rounded-xl border px-3 py-2.5 text-xs font-semibold ${
                       auditType === t
-                        ? 'border-[#185FA5] bg-[#E6F1FB] text-[#185FA5]'
+                        ? 'border-[var(--blue)] bg-[var(--blue-t)] text-[var(--blue)]'
                         : 'border-slate-200 bg-white text-slate-600'
                     }`}
                   >
@@ -201,7 +201,7 @@ export function SiteAuditCreateFlow({ project, onClose, onCreated }: Props) {
             <button
               type="button"
               onClick={() => setStep(2)}
-              className="w-full rounded-xl bg-[#185FA5] py-2.5 text-sm font-bold text-white"
+              className="w-full rounded-xl bg-[var(--blue)] py-2.5 text-sm font-bold text-white"
             >
               Next: add items &amp; photos
             </button>
@@ -251,7 +251,7 @@ export function SiteAuditCreateFlow({ project, onClose, onCreated }: Props) {
               <button
                 type="button"
                 onClick={addItemFromDraft}
-                className="w-full rounded-lg border border-dashed border-[#185FA5] py-2 text-sm font-semibold text-[#185FA5]"
+                className="w-full rounded-lg border border-dashed border-[var(--blue)] py-2 text-sm font-semibold text-[var(--blue)]"
               >
                 + Add item to audit
               </button>
@@ -292,7 +292,7 @@ export function SiteAuditCreateFlow({ project, onClose, onCreated }: Props) {
                 type="button"
                 disabled={saving}
                 onClick={submit}
-                className="flex-1 rounded-xl bg-[#185FA5] py-2.5 text-sm font-bold text-white disabled:opacity-50"
+                className="flex-1 rounded-xl bg-[var(--blue)] py-2.5 text-sm font-bold text-white disabled:opacity-50"
               >
                 {saving ? 'Uploading…' : 'Submit audit'}
               </button>

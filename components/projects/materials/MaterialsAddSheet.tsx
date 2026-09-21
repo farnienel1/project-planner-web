@@ -248,7 +248,7 @@ export function MaterialsAddSheet({ project, selectedDate, existing, onClose, on
             <button
               type="submit"
               disabled={saving}
-              className="flex-1 rounded-xl bg-[#185FA5] py-2.5 text-sm font-bold text-white disabled:opacity-50"
+              className="flex-1 rounded-xl bg-[var(--blue)] py-2.5 text-sm font-bold text-white disabled:opacity-50"
             >
               {saving ? 'Saving…' : editing ? 'Save material' : 'Add material'}
             </button>

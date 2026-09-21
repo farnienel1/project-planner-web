@@ -50,7 +50,7 @@ function Field({
   inputMode?: 'email' | 'tel' | 'text'
 }) {
   return (
-    <label className="block text-[13px] font-medium text-ios-ink">
+    <label className="f">
       {label}
       <input
         type={type}
@@ -58,66 +58,46 @@ function Field({
         autoCapitalize={autoCapitalize}
         inputMode={inputMode}
         onChange={(e) => onChange(e.target.value)}
-        className="mt-1.5 w-full rounded-lg border border-ios-search-border bg-white px-3 py-2.5 text-[15px] outline-none focus:border-[#185FA5] focus:ring-2 focus:ring-[#185FA5]/20"
+        className="pp-in"
       />
     </label>
   )
 }
 
-function ClientCard({ client, onClick }: { client: Client; onClick: () => void }) {
+function ClientCard({ client, onClick, selected }: { client: Client; onClick: () => void; selected?: boolean }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="w-full rounded-xl border border-transparent bg-white p-4 text-left shadow-[0_1px_2px_rgba(0,0,0,0.10)] transition hover:border-ios-search-border"
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-[16px] font-bold text-ios-ink">{client.name}</p>
-          {client.email ? (
-            <p className="mt-1 flex items-center gap-1 text-[14px] text-ios-muted">
-              <EnvelopeIcon className="h-3.5 w-3.5 text-[#2563eb]" />
-              {client.email}
-            </p>
-          ) : null}
-        </div>
-        {client.phone ? (
-          <p className="flex shrink-0 items-center gap-1 text-[12px] font-medium text-[#0F6E56]">
-            <PhoneIcon className="h-3.5 w-3.5" />
-            {client.phone}
-          </p>
-        ) : null}
-      </div>
-      {client.address ? (
-        <p className="mt-3 line-clamp-2 flex items-start gap-1 text-[12px] text-ios-muted">
-          <MapPinIcon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-orange-500" />
-          {client.address}
-        </p>
-      ) : null}
+    <button type="button" onClick={onClick} className={`ritem ${selected ? 'sel' : ''}`} data-hue="blue">
+      <span className="ico-chip">
+        <UserGroupIcon className="h-5 w-5" />
+      </span>
+      <span className="grow">
+        <span className="t">{client.name}</span>
+        <span className="s">{client.email || client.phone || client.address || 'No contact details'}</span>
+      </span>
     </button>
   )
 }
 
 function ClientInfo({ client }: { client: Client }) {
   return (
-    <div className="rounded-xl bg-[#F2F2F7] p-5">
-      <h2 className="text-[32px] font-bold leading-tight tracking-tight text-ios-ink">{client.name}</h2>
-      <div className="mt-4 space-y-2 text-[16px]">
+    <div className="card pad">
+      <h2 className="h2" style={{ fontSize: 28 }}>{client.name}</h2>
+      <div className="stack" style={{ gap: 10, marginTop: 16 }}>
         {client.email ? (
-          <p className="flex items-center gap-2">
-            <EnvelopeIcon className="h-4 w-4 text-[#2563eb]" />
+          <p className="row">
+            <EnvelopeIcon className="h-4 w-4 text-[var(--blue)]" />
             {client.email}
           </p>
         ) : null}
         {client.phone ? (
-          <p className="flex items-center gap-2">
-            <PhoneIcon className="h-4 w-4 text-[#0F6E56]" />
+          <p className="row">
+            <PhoneIcon className="h-4 w-4 text-[var(--ops)]" />
             {client.phone}
           </p>
         ) : null}
         {client.address ? (
-          <p className="flex items-start gap-2">
-            <MapPinIcon className="mt-0.5 h-4 w-4 shrink-0 text-orange-500" />
+          <p className="row" style={{ alignItems: 'flex-start' }}>
+            <MapPinIcon className="mt-0.5 h-4 w-4 shrink-0 text-[var(--sw)]" />
             {client.address}
           </p>
         ) : null}
@@ -287,58 +267,52 @@ export function ClientsScreen({ selectedId }: { selectedId?: string }) {
   if (loading && clients.length === 0) {
     return (
       <div className="flex h-64 items-center justify-center">
-        <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-[#185FA5]" />
+        <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-[var(--blue)]" />
       </div>
     )
   }
 
   const list = (
-    <div className="space-y-4">
+    <div className="rows">
       {clients.length === 0 ? (
         <EmptyState
-          icon={<UserGroupIcon className="h-[60px] w-[60px] text-gray-400" />}
-          title="No Clients Added Yet"
+          icon={<UserGroupIcon className="h-12 w-12" />}
+          title="No clients added yet"
           subtitle="Add clients to your organisation. Clients are the companies or individuals you work for."
+          hue="blue"
+          action={
+            <button type="button" onClick={openCreate} className="btn primary">
+              Create client
+            </button>
+          }
         />
       ) : (
-        <div className="space-y-4">
-          {clients.map((client) => (
-            <div
-              key={client.id}
-              className={selected?.id === client.id ? 'rounded-xl ring-2 ring-[#185FA5]/30' : ''}
-            >
-              <ClientCard client={client} onClick={() => selectClient(client)} />
-            </div>
-          ))}
-        </div>
+        clients.map((client) => (
+          <ClientCard
+            key={client.id}
+            client={client}
+            selected={selected?.id === client.id}
+            onClick={() => selectClient(client)}
+          />
+        ))
       )}
-      {clients.length === 0 ? (
-        <div className="flex justify-center">
-          <button
-            type="button"
-            onClick={openCreate}
-            className="rounded-xl bg-[#185FA5] px-5 py-2.5 text-[15px] font-semibold text-white"
-          >
-            Create Client
-          </button>
-        </div>
-      ) : null}
     </div>
   )
 
   const detail = selected ? (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-[17px] font-semibold">Client Details</h2>
-        <button type="button" onClick={() => openEdit(selected)} className="text-[15px] font-medium text-[#185FA5]">
+    <div className="stack">
+      <div className="row">
+        <h2 className="h2">Client details</h2>
+        <span className="grow" />
+        <button type="button" onClick={() => openEdit(selected)} className="btn sm">
           Edit
         </button>
       </div>
       <ClientInfo client={selected} />
       {clientProjects.length > 0 ? (
         <div>
-          <h3 className="mb-3 text-[17px] font-semibold">Projects ({clientProjects.length})</h3>
-          <div className="grid gap-3 sm:grid-cols-2">
+          <h3 className="h2 mb-3">Projects ({clientProjects.length})</h3>
+          <div className="grid g2">
             {clientProjects.map((project) => (
               <WorkCard
                 key={project.id}
@@ -355,16 +329,16 @@ export function ClientsScreen({ selectedId }: { selectedId?: string }) {
       ) : null}
     </div>
   ) : (
-    <div className="hidden min-h-[280px] items-center justify-center rounded-2xl border border-dashed border-ios-border text-sm text-ios-muted xl:flex">
-      Select a client
+    <div className="empty card pad hidden xl:block">
+      <h3>Select a client</h3>
+      <p>Choose someone from the list to see contact details and their jobs.</p>
     </div>
   )
 
   const formFields = (
-    <div className="space-y-4">
-      <p className="text-[11px] font-medium uppercase tracking-wide text-ios-muted">Client Information</p>
-      {error ? <p className="rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p> : null}
-      <Field label="Client Name" value={name} onChange={setName} />
+    <div className="form" style={{ gridTemplateColumns: '1fr' }}>
+      {error ? <p className="banner" data-hue="red">{error}</p> : null}
+      <Field label="Client name" value={name} onChange={setName} />
       <Field label="Email" value={email} onChange={setEmail} type="email" autoCapitalize="none" inputMode="email" />
       <Field label="Phone" value={phone} onChange={setPhone} type="tel" inputMode="tel" />
       <Field label="Address" value={address} onChange={setAddress} />
@@ -388,10 +362,10 @@ export function ClientsScreen({ selectedId }: { selectedId?: string }) {
         }
       />
 
-      <div className="xl:grid xl:grid-cols-[400px_minmax(0,1fr)] xl:gap-8">
+      <div className="grid gmain">
         <div className={selectedId ? 'hidden xl:block' : ''}>{list}</div>
         <div className={!selectedId ? 'hidden xl:block' : ''}>
-          {selectedId && !selected && !loading ? <p className="text-ios-muted">Client not found.</p> : detail}
+          {selectedId && !selected && !loading ? <p className="muted">Client not found.</p> : detail}
         </div>
       </div>
 
@@ -404,7 +378,7 @@ export function ClientsScreen({ selectedId }: { selectedId?: string }) {
               type="submit"
               form="create-client-form"
               disabled={!formValid || saving}
-              className="h-12 w-full rounded-lg bg-[#185FA5] text-[16px] font-semibold text-white disabled:bg-gray-400"
+              className="btn primary block"
             >
               {saving ? 'Creating…' : 'Create Client'}
             </button>
@@ -426,7 +400,7 @@ export function ClientsScreen({ selectedId }: { selectedId?: string }) {
                 type="submit"
                 form="edit-client-form"
                 disabled={!formValid || saving}
-                className="h-12 w-full rounded-lg bg-[#185FA5] text-[16px] font-semibold text-white disabled:bg-gray-400"
+                className="btn primary block"
               >
                 {saving ? 'Saving…' : 'Save Changes'}
               </button>
@@ -434,7 +408,7 @@ export function ClientsScreen({ selectedId }: { selectedId?: string }) {
                 <button
                   type="button"
                   onClick={() => setDeleteOpen(true)}
-                  className="h-12 w-full rounded-lg bg-red-50 text-[16px] font-semibold text-red-600"
+                  className="btn danger block"
                 >
                   Delete Client
                 </button>
@@ -457,21 +431,22 @@ export function ClientsScreen({ selectedId }: { selectedId?: string }) {
               <button
                 type="button"
                 onClick={() => setDeleteOpen(false)}
-                className="h-12 flex-1 rounded-lg border border-ios-search-border text-[15px] font-medium"
+                className="btn flex-1"
               >
                 Cancel
               </button>
               <button
                 type="button"
                 onClick={handleDelete}
-                className="h-12 flex-1 rounded-lg bg-red-600 text-[15px] font-semibold text-white"
+                className="btn hue flex-1"
+                data-hue="red"
               >
                 Delete
               </button>
             </div>
           }
         >
-          <p className="text-[15px] text-ios-ink">
+          <p className="text-[15px]">
             Are you sure you want to delete {selected.name}? This action cannot be undone.
           </p>
         </IosFormModal>
@@ -485,7 +460,7 @@ export function ClientsScreen({ selectedId }: { selectedId?: string }) {
             <button
               type="button"
               onClick={() => setCreatedAlert(null)}
-              className="h-12 w-full rounded-lg bg-[#185FA5] text-[16px] font-semibold text-white"
+              className="btn primary block"
             >
               OK
             </button>

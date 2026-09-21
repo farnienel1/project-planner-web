@@ -107,7 +107,7 @@ function ProfilePanel({ onBack }: { onBack: () => void }) {
       <PanelHeader title="My profile" onBack={onBack} />
 
       {/* Avatar */}
-      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="card pad">
         <p className="mb-3 text-xs font-bold uppercase tracking-widest text-slate-400">Profile image</p>
         <div className="flex items-center gap-4">
           {user ? <UserAvatar user={{ ...user, firstName, surname }} size={56} /> : (
@@ -169,7 +169,7 @@ function ProfilePanel({ onBack }: { onBack: () => void }) {
         </div>
       </SettingsCard>
 
-      <div className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="space-y-3 card pad">
         <FormField label="First name"><Input value={firstName} onChange={e => setFirstName(e.target.value)} /></FormField>
         <FormField label="Surname"><Input value={surname} onChange={e => setSurname(e.target.value)} /></FormField>
         <FormField label="Mobile number"><Input value={mobile} onChange={e => setMobile(e.target.value)} type="tel" /></FormField>
@@ -226,7 +226,7 @@ function PasswordPanel({ onBack }: { onBack: () => void }) {
         </div>
       </div>
 
-      <div className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="space-y-3 card pad">
         <FormField label="Current Password">
           <div className="relative">
             <Input type={showCurrent ? 'text' : 'password'} value={current} onChange={e => setCurrent(e.target.value)} placeholder="Enter your current password" />
@@ -335,7 +335,7 @@ function RolesPanel({ onBack }: { onBack: () => void }) {
           />
         </Link>
       </SettingsCard>
-      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm text-center py-8">
+      <div className="card pad text-center py-8">
         <svg className="mx-auto h-10 w-10 text-slate-300 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
         <p className="text-sm font-semibold text-slate-700">Change roles on user profiles</p>
         <p className="text-xs text-slate-400 mt-1">Use Manage users to assign admin, manager, or operative access.</p>

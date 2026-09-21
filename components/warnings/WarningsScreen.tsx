@@ -138,7 +138,7 @@ function MaterialsCard({
       <div className="space-y-2.5 px-4 py-4">
         <p className="text-[13px] font-semibold text-[#374151]">{warning.message}</p>
         <p className="text-[13px] font-semibold">{warning.projectLabel}</p>
-        <p className="text-[12px] text-ios-muted">Managers should confirm material lists with site teams.</p>
+        <p className="text-[12px] text-[var(--ink3)]">Managers should confirm material lists with site teams.</p>
       </div>
       <div className="bg-[#FAFAFA] px-3.5 py-3.5">
         <Link
@@ -308,7 +308,7 @@ export function WarningsScreen({
           {loading ? (
             <>
               <p className="text-[18px] font-semibold">Check for warnings</p>
-              <p className="mx-auto mt-2 max-w-md text-[14px] text-ios-muted">
+              <p className="mx-auto mt-2 max-w-md text-[14px] text-[var(--ink3)]">
                 Scanning today and tomorrow. Results stay on Home and Weekly Report once they land.
               </p>
             </>
@@ -316,7 +316,7 @@ export function WarningsScreen({
             <>
               <p className="text-[40px] text-[#0F6E56]">✓</p>
               <p className="mt-2 text-[18px] font-semibold">No active warnings</p>
-              <p className="mx-auto mt-2 max-w-md text-[14px] text-ios-muted">
+              <p className="mx-auto mt-2 max-w-md text-[14px] text-[var(--ink3)]">
                 High: operative, manager, and admin booking clashes plus unbooked labour. Tick a clash to note it on
                 the weekly report. Low: material orders not placed by 16:00.
               </p>

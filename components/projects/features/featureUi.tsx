@@ -4,7 +4,7 @@ import { addDays, format, isSameDay, startOfWeek } from 'date-fns'
 import type { ReactNode } from 'react'
 
 /** Shared tokens aligned with iOS / HTML prototypes */
-export const featurePageBg = 'bg-[#F7F8FA]'
+export const featurePageBg = 'bg-[var(--bg)]'
 
 export function FeatureScreen({ children }: { children: ReactNode }) {
   return <div className="space-y-4">{children}</div>
@@ -97,7 +97,7 @@ export function MaterialsWeekNavigator({
         <button
           type="button"
           onClick={onPrev}
-          className="flex h-9 w-9 items-center justify-center rounded-full border border-[#E5E7EB] bg-white text-[#185FA5] hover:bg-slate-50"
+          className="flex h-9 w-9 items-center justify-center rounded-full border border-[#E5E7EB] bg-white text-[var(--blue)] hover:bg-slate-50"
         >
           <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -110,7 +110,7 @@ export function MaterialsWeekNavigator({
         <button
           type="button"
           onClick={onNext}
-          className="flex h-9 w-9 items-center justify-center rounded-full border border-[#E5E7EB] bg-white text-[#185FA5] hover:bg-slate-50"
+          className="flex h-9 w-9 items-center justify-center rounded-full border border-[#E5E7EB] bg-white text-[var(--blue)] hover:bg-slate-50"
         >
           <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
@@ -145,19 +145,19 @@ export function MaterialsDayStrip({
             type="button"
             onClick={() => onSelectDate(day)}
             className={`flex flex-col items-center rounded-xl py-2 transition-colors ${
-              selected ? 'bg-[#185FA5] text-white shadow-sm' : 'bg-white border border-[#EEF0F3] text-slate-700 hover:bg-slate-50'
+              selected ? 'bg-[var(--blue)] text-white shadow-sm' : 'bg-white border border-[#EEF0F3] text-slate-700 hover:bg-slate-50'
             }`}
           >
             <span className={`text-[10px] font-medium ${selected ? 'text-blue-100' : 'text-slate-400'}`}>
               {format(day, 'EEE')}
             </span>
-            <span className={`text-sm font-bold ${isToday && !selected ? 'text-[#185FA5]' : ''}`}>
+            <span className={`text-sm font-bold ${isToday && !selected ? 'text-[var(--blue)]' : ''}`}>
               {format(day, 'd')}
             </span>
             {count > 0 && (
               <span
                 className={`mt-0.5 h-1.5 w-1.5 rounded-full ${
-                  selected ? 'bg-white' : 'bg-[#185FA5]'
+                  selected ? 'bg-white' : 'bg-[var(--blue)]'
                 }`}
               />
             )}
@@ -172,7 +172,7 @@ export function StatusPill({ label, tone }: { label: string; tone: 'amber' | 'gr
   const styles = {
     amber: 'bg-[#FAEEDA] text-[#854F0B]',
     green: 'bg-[#E1F5EE] text-[#0F6E56]',
-    blue: 'bg-[#E6F1FB] text-[#185FA5]',
+    blue: 'bg-[var(--blue-t)] text-[var(--blue)]',
     grey: 'bg-[#F2F3F5] text-[#6B7280]',
     red: 'bg-[#FCEBEB] text-[#A32D2D]',
     purple: 'bg-[#EEEDFE] text-[#534AB7]',

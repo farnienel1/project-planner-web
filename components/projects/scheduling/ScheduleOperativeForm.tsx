@@ -323,7 +323,7 @@ export function ScheduleOperativeForm({
 
   return (
     <div className="space-y-5 pb-32">
-      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="card pad">
         <p className="text-xs font-semibold text-blue-700">{project.jobNumber}</p>
         <p className="text-lg font-semibold text-slate-900">{project.siteName}</p>
         <p className="mt-1 text-sm text-slate-600">

@@ -240,14 +240,14 @@ export function MaterialsSendListSheet({
       <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/40 p-4 sm:items-center">
         <div className="flex max-h-[90vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-white shadow-xl">
           <header className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
-            <button type="button" className="text-sm font-medium text-[#185FA5]" onClick={() => setReviewType(null)}>
+            <button type="button" className="text-sm font-medium text-[var(--blue)]" onClick={() => setReviewType(null)}>
               Cancel
             </button>
             <p className="text-sm font-semibold text-slate-900">Review materials</p>
             <button
               type="button"
               disabled={continueIds.length === 0 || isSending}
-              className="text-sm font-semibold text-[#185FA5] disabled:opacity-40"
+              className="text-sm font-semibold text-[var(--blue)] disabled:opacity-40"
               onClick={() => void proceedSend(reviewType, continueIds)}
             >
               Continue
@@ -309,9 +309,9 @@ export function MaterialsSendListSheet({
 
   return (
     <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/40 sm:items-center sm:p-4">
-      <div className="flex h-[96vh] w-full max-w-2xl flex-col overflow-hidden bg-[#F7F8FA] shadow-xl sm:h-auto sm:max-h-[92vh] sm:rounded-2xl">
+      <div className="flex h-[96vh] w-full max-w-2xl flex-col overflow-hidden bg-[var(--bg)] shadow-xl sm:h-auto sm:max-h-[92vh] sm:rounded-2xl">
         <header className="flex items-center justify-between border-b border-slate-200 bg-white px-4 py-3">
-          <button type="button" onClick={onClose} className="text-sm font-medium text-[#185FA5]">
+          <button type="button" onClick={onClose} className="text-sm font-medium text-[var(--blue)]">
             Cancel
           </button>
           <p className="text-sm font-semibold text-slate-900">Send list</p>
@@ -323,7 +323,7 @@ export function MaterialsSendListSheet({
 
           <FeatureCard className="p-3">
             <div className="flex items-center gap-2">
-              <p className="text-xs font-medium text-[#185FA5]">{project.jobNumber}</p>
+              <p className="text-xs font-medium text-[var(--blue)]">{project.jobNumber}</p>
               <p className="text-xs font-medium text-slate-900">{project.siteName}</p>
               <span className="ml-auto rounded-full bg-[#E1F5EE] px-2 py-0.5 text-[10px] font-medium text-[#0F6E56]">
                 {selectedMaterialIds.size} items
@@ -353,7 +353,7 @@ export function MaterialsSendListSheet({
                     >
                       <span
                         className={`mt-0.5 flex h-4 w-4 items-center justify-center rounded border ${
-                          selected ? 'border-[#185FA5] bg-[#185FA5] text-white' : 'border-slate-300'
+                          selected ? 'border-[var(--blue)] bg-[var(--blue)] text-white' : 'border-slate-300'
                         }`}
                       >
                         {selected ? '✓' : ''}
@@ -411,7 +411,7 @@ export function MaterialsSendListSheet({
                           </span>
                         </span>
                         {selectedInGroup > 0 && (
-                          <span className="text-[10px] font-medium text-[#185FA5]">{selectedInGroup} selected</span>
+                          <span className="text-[10px] font-medium text-[var(--blue)]">{selectedInGroup} selected</span>
                         )}
                         {expanded ? (
                           <ChevronUpIcon className="h-3.5 w-3.5 text-slate-400" />
@@ -435,7 +435,7 @@ export function MaterialsSendListSheet({
                               </span>
                               <span
                                 className={`flex h-4 w-4 items-center justify-center rounded border ${
-                                  selected ? 'border-[#185FA5] bg-[#185FA5] text-white' : 'border-slate-300'
+                                  selected ? 'border-[var(--blue)] bg-[var(--blue)] text-white' : 'border-slate-300'
                                 }`}
                               >
                                 {selected ? '✓' : ''}
@@ -488,7 +488,7 @@ export function MaterialsSendListSheet({
                     type="button"
                     onClick={addOneOff}
                     disabled={!parseOneOffRecipient(newRecipientName, newEmail)}
-                    className="text-sm font-semibold text-[#185FA5] disabled:opacity-40"
+                    className="text-sm font-semibold text-[var(--blue)] disabled:opacity-40"
                   >
                     Add
                   </button>
@@ -519,14 +519,14 @@ export function MaterialsSendListSheet({
             <span className="text-slate-500">
               {selectedMaterialIds.size} items · {recipientCount} recipients
             </span>
-            <span className="font-medium text-[#185FA5]">Cut-off 16:00</span>
+            <span className="font-medium text-[var(--blue)]">Cut-off 16:00</span>
           </div>
           <div className="mt-3 grid grid-cols-2 gap-2">
             <button
               type="button"
               disabled={selectedMaterialIds.size === 0 || recipientCount === 0 || isSending}
               onClick={() => beginSend('quote')}
-              className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-[#185FA5] px-3 py-2.5 text-sm font-semibold text-[#185FA5] disabled:opacity-40"
+              className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-[var(--blue)] px-3 py-2.5 text-sm font-semibold text-[var(--blue)] disabled:opacity-40"
             >
               <DocumentTextIcon className="h-4 w-4" />
               Quote
@@ -552,7 +552,7 @@ export function MaterialsSendListSheet({
             <button
               type="button"
               onClick={() => setMultiWholesalerAlert(false)}
-              className="mt-4 rounded-xl bg-[#185FA5] px-5 py-2 text-sm font-semibold text-white"
+              className="mt-4 rounded-xl bg-[var(--blue)] px-5 py-2 text-sm font-semibold text-white"
             >
               OK
             </button>
@@ -592,7 +592,7 @@ function ReviewSection({
               <button
                 type="button"
                 onClick={() => onToggle(item.id)}
-                className={isExcluded ? 'text-[#185FA5]' : 'text-red-500'}
+                className={isExcluded ? 'text-[var(--blue)]' : 'text-red-500'}
                 aria-label={isExcluded ? `Include ${item.material}` : `Exclude ${item.material}`}
               >
                 {isExcluded ? '+' : '×'}

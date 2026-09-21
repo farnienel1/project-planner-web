@@ -68,7 +68,7 @@ export function ManagerForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4 rounded-2xl border border-ios-border bg-ios-card p-6">
+    <form onSubmit={handleSubmit} className="card pad stack">
       {error && <ErrorBanner message={error} />}
       <div className="grid gap-4 md:grid-cols-2">
         <div>

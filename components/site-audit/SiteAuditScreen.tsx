@@ -121,7 +121,7 @@ function AuditDetail({ audit, onClose }: { audit: SiteAudit; onClose: () => void
         </div>
 
         <div className="flex-1 space-y-4 overflow-y-auto p-4">
-          <div className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+          <div className="flex items-start gap-3 card pad">
             <TypeIcon type={audit.type} />
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
@@ -151,7 +151,7 @@ function AuditDetail({ audit, onClose }: { audit: SiteAudit; onClose: () => void
             <button
               type="button"
               onClick={handlePdf}
-              className="flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white py-3 text-sm font-bold text-slate-700 shadow-sm transition-all hover:bg-slate-50 active:scale-95"
+              className="flex items-center justify-center gap-2 card py-3 text-sm font-bold text-slate-700 shadow-sm transition-all hover:bg-slate-50 active:scale-95"
             >
               Preview PDF
             </button>
@@ -159,7 +159,7 @@ function AuditDetail({ audit, onClose }: { audit: SiteAudit; onClose: () => void
 
           <div>
             <p className="mb-2 text-[11px] font-bold uppercase tracking-widest text-slate-400">Summary</p>
-            <div className="divide-y divide-slate-100 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <div className="divide-y divide-slate-100 overflow-hidden card shadow-sm">
               {[
                 { label: 'Author', value: audit.authorName },
                 { label: 'Date', value: format(audit.date, 'd MMM yyyy') },
@@ -182,7 +182,7 @@ function AuditDetail({ audit, onClose }: { audit: SiteAudit; onClose: () => void
               {audit.items.map((item, idx) => (
                 <div
                   key={item.id}
-                  className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"
+                  className="overflow-hidden card shadow-sm"
                 >
                   <div className="px-4 pb-2 pt-3">
                     <p className="text-sm font-bold text-slate-900">
@@ -204,7 +204,7 @@ function AuditDetail({ audit, onClose }: { audit: SiteAudit; onClose: () => void
                         onClick={() => setImgExpanded(imgExpanded === item.id ? null : item.id)}
                       />
                       <p className="px-4 py-2 text-[11px] text-slate-400">
-                        {imgExpanded === item.id ? 'Tap to collapse' : 'Tap to expand'}
+                        {imgExpanded === item.id ? 'Click to collapse' : 'Click to expand'}
                       </p>
                     </div>
                   )}
@@ -331,7 +331,7 @@ function ProjectAuditsView({
       </div>
 
       {filtered.length === 0 ? (
-        <div className="rounded-2xl border-2 border-dashed border-slate-200 py-14 text-center">
+        <div className="empty py-14 text-center">
           <p className="text-sm font-bold text-slate-700">No site audits</p>
           <p className="mt-1 text-xs text-slate-400">Create your first audit for this project.</p>
         </div>
@@ -342,7 +342,7 @@ function ProjectAuditsView({
               key={audit.id}
               type="button"
               onClick={() => setSelectedAudit(audit)}
-              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3.5 text-left shadow-sm transition-shadow hover:shadow-md"
+              className="w-full card px-4 py-3.5 text-left shadow-sm transition-shadow hover:shadow-md"
             >
               <div className="flex items-center gap-3">
                 <TypeIcon type={audit.type} size="sm" />
@@ -446,7 +446,7 @@ function ProjectListView({
       </div>
 
       {filtered.length === 0 ? (
-        <div className="rounded-2xl border-2 border-dashed border-slate-200 py-12 text-center">
+        <div className="empty py-12 text-center">
           <p className="text-sm text-slate-400">No projects found</p>
         </div>
       ) : (
@@ -459,7 +459,7 @@ function ProjectListView({
                 key={project.id}
                 type="button"
                 onClick={() => onSelectProject(project)}
-                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3.5 text-left shadow-sm transition-all hover:border-slate-300 hover:shadow-md"
+                className="w-full card px-4 py-3.5 text-left shadow-sm transition-all hover:border-slate-300 hover:shadow-md"
               >
                 <div className="flex items-center gap-3">
                   <div className="min-w-0 flex-1">
@@ -544,89 +544,55 @@ export function SiteAuditScreen() {
         </div>
 
         {totalAudits > 0 && (
-          <div className="grid grid-cols-2 gap-3">
-            <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-center shadow-sm">
-              <p className="text-2xl font-bold text-blue-600">{totalAudits}</p>
-              <p className="mt-0.5 text-xs text-slate-500">Total audits</p>
+          <div className="grid g2">
+            <div className="stat" data-hue="hs">
+              <div>
+                <b>{totalAudits}</b>
+                <span>Total audits</span>
+              </div>
             </div>
-            <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-center shadow-sm">
-              <p className="text-2xl font-bold text-slate-700">{totalPhotos}</p>
-              <p className="mt-0.5 text-xs text-slate-500">Photos captured</p>
+            <div className="stat" data-hue="lib">
+              <div>
+                <b>{totalPhotos}</b>
+                <span>Photos captured</span>
+              </div>
             </div>
           </div>
         )}
 
-        <div className="divide-y divide-slate-100 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-          <Link
-            href="/dashboard/site-audit/new"
-            className="flex items-center gap-3 px-4 py-4 transition-colors hover:bg-slate-50"
-          >
-            <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-blue-600">
-              <svg className="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
-              </svg>
-            </div>
-            <div className="flex-1">
-              <p className="text-sm font-bold text-slate-900">New site audit</p>
-              <p className="text-xs text-slate-500">Start a new walkthrough</p>
-            </div>
-            <svg className="h-4 w-4 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-            </svg>
+        <div className="rows">
+          <Link href="/dashboard/site-audit/new" className="ritem" data-hue="hs">
+            <span className="ico-chip">+</span>
+            <span className="grow">
+              <span className="t">New site audit</span>
+              <span className="s">Start a new walkthrough</span>
+            </span>
           </Link>
 
-          <button
-            type="button"
-            onClick={() => setView({ type: 'projects' })}
-            className="flex w-full items-center gap-3 px-4 py-4 text-left transition-colors hover:bg-slate-50"
-          >
-            <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl border border-emerald-100 bg-emerald-50">
-              <svg className="h-5 w-5 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={1.5}
-                  d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"
-                />
+          <button type="button" onClick={() => setView({ type: 'projects' })} className="ritem" data-hue="proj">
+            <span className="ico-chip">
+              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
               </svg>
-            </div>
-            <div className="flex-1">
-              <p className="text-sm font-bold text-slate-900">Projects</p>
-              <p className="text-xs text-slate-500">Browse audits by project</p>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-slate-400">{projects.length}</span>
-              <svg className="h-4 w-4 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-              </svg>
-            </div>
+            </span>
+            <span className="grow">
+              <span className="t">Projects</span>
+              <span className="s">Browse audits by project</span>
+            </span>
+            <span className="count soft">{projects.length}</span>
           </button>
 
-          <button
-            type="button"
-            onClick={() => setView({ type: 'small-works' })}
-            className="flex w-full items-center gap-3 px-4 py-4 text-left transition-colors hover:bg-slate-50"
-          >
-            <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl border border-violet-100 bg-violet-50">
-              <svg className="h-5 w-5 text-violet-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={1.5}
-                  d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
-                />
+          <button type="button" onClick={() => setView({ type: 'small-works' })} className="ritem" data-hue="sw">
+            <span className="ico-chip">
+              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
               </svg>
-            </div>
-            <div className="flex-1">
-              <p className="text-sm font-bold text-slate-900">Small works</p>
-              <p className="text-xs text-slate-500">Browse audits by small works job</p>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-slate-400">{smallWorks.length}</span>
-              <svg className="h-4 w-4 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-              </svg>
-            </div>
+            </span>
+            <span className="grow">
+              <span className="t">Small works</span>
+              <span className="s">Browse audits by small works job</span>
+            </span>
+            <span className="count soft">{smallWorks.length}</span>
           </button>
         </div>
       </div>
@@ -745,7 +711,7 @@ export function SiteAuditNewScreen() {
               key={project.id}
               type="button"
               onClick={() => setCreateProject(project)}
-              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3.5 text-left shadow-sm hover:border-slate-300 hover:shadow-md"
+              className="w-full card px-4 py-3.5 text-left shadow-sm hover:border-slate-300 hover:shadow-md"
             >
               <span className="rounded bg-blue-50 px-1.5 py-0.5 text-[10px] font-bold text-blue-700">
                 {project.jobNumber}

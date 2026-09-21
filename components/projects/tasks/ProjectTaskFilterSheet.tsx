@@ -63,7 +63,7 @@ export function ProjectTaskFilterSheet({
     <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/40 p-4 sm:items-center">
       <div className="flex max-h-[90vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-white shadow-xl">
         <header className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
-          <button type="button" onClick={onClose} className="text-sm font-medium text-[#185FA5]">
+          <button type="button" onClick={onClose} className="text-sm font-medium text-[var(--blue)]">
             Cancel
           </button>
           <p className="text-sm font-semibold text-slate-900">Task Filters</p>
@@ -73,7 +73,7 @@ export function ProjectTaskFilterSheet({
               onApply(local)
               onClose()
             }}
-            className="text-sm font-semibold text-[#185FA5]"
+            className="text-sm font-semibold text-[var(--blue)]"
           >
             Apply
           </button>
@@ -153,7 +153,7 @@ export function ProjectTaskFilterSheet({
           <button
             type="button"
             onClick={() => setLocal({ type: 'all' })}
-            className="text-sm font-semibold text-[#185FA5]"
+            className="text-sm font-semibold text-[var(--blue)]"
           >
             Reset Filters
           </button>

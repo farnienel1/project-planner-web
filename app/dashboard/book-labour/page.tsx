@@ -5,7 +5,7 @@ import { BookLabourFlowScreen } from '@/components/book-labour/BookLabourFlowScr
 
 export default function BookLabourPage() {
   return (
-    <Suspense fallback={<p className="py-8 text-center text-[14px] text-ios-muted">Opening book labour…</p>}>
+    <Suspense fallback={<p className="py-8 text-center text-[14px] text-[var(--ink3)]">Opening book labour…</p>}>
       <BookLabourFlowScreen />
     </Suspense>
   )

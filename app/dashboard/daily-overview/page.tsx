@@ -10,7 +10,7 @@ import { DailyOverviewScreen } from '@/components/daily-overview/DailyOverviewSc
 
 export default function DailyOverviewPage() {
   return (
-    <Suspense fallback={<p className="py-8 text-center text-[14px] text-ios-muted">Opening daily overview…</p>}>
+    <Suspense fallback={<p className="py-8 text-center text-[14px] text-[var(--ink3)]">Opening daily overview…</p>}>
       <DailyOverviewScreen />
     </Suspense>
   )

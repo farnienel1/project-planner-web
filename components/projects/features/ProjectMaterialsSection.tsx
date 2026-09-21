@@ -63,7 +63,7 @@ function MaterialLineCard({
               target="_blank"
               rel="noreferrer"
               onClick={(event) => event.stopPropagation()}
-              className="mt-1 block truncate text-[11px] font-medium text-[#185FA5]"
+              className="mt-1 block truncate text-[11px] font-medium text-[var(--blue)]"
             >
               {line.websiteURL}
             </a>
@@ -178,7 +178,7 @@ export function ProjectMaterialsSection({ project }: { project: Project }) {
           <button
             type="button"
             onClick={() => setShowAdd(true)}
-            className="inline-flex items-center gap-1 rounded-lg bg-[#185FA5] px-3 py-1.5 text-[11px] font-semibold text-white shadow-sm hover:bg-[#134d88]"
+            className="inline-flex items-center gap-1 rounded-lg bg-[var(--blue)] px-3 py-1.5 text-[11px] font-semibold text-white shadow-sm hover:bg-[#134d88]"
           >
             <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -244,7 +244,7 @@ export function ProjectMaterialsSection({ project }: { project: Project }) {
             <button
               type="button"
               onClick={() => setShowAdd(true)}
-              className="mt-4 inline-flex items-center gap-1 rounded-xl bg-[#185FA5] px-4 py-2 text-sm font-semibold text-white"
+              className="mt-4 inline-flex items-center gap-1 rounded-xl bg-[var(--blue)] px-4 py-2 text-sm font-semibold text-white"
             >
               Add material
             </button>
@@ -305,7 +305,7 @@ export function ProjectMaterialsSection({ project }: { project: Project }) {
                     <p className="mt-0.5 text-xs text-slate-400">
                       {record.recipients.map((r) => r.wholesalerName || r.email).join(', ')}
                     </p>
-                    <p className="mt-1 text-[11px] font-semibold text-[#185FA5]">
+                    <p className="mt-1 text-[11px] font-semibold text-[var(--blue)]">
                       {open ? 'Hide items' : `View ${record.lines.length} item${record.lines.length === 1 ? '' : 's'}`}
                     </p>
                     {open ? (
