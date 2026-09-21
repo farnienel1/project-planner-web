@@ -2,12 +2,6 @@
  * iOS parity: InvoicingView.TimesheetExportHelper / ResendEmailService.sendTimesheetExportEmail.
  */
 import type { TimesheetDraft } from '@/lib/timesheets/timesheetDraft'
-import {
-  effectiveExpenseAmount,
-  effectivePayrollAmount,
-  effectivePriceWorkAmount,
-  isPayrollLineRemoved,
-} from '@/lib/timesheets/timesheetAdjustments'
 import type { TimesheetPayrollSummary } from '@/lib/timesheets/timesheetPayrollCollector'
 import { timesheetHoursRateLine } from '@/lib/timesheets/timesheetPayrollCollector'
 import { formatAbbreviatedDayInZone, formatStampInZone } from '@/lib/orgTime/zoneTime'
@@ -100,18 +94,15 @@ export function invoiceLinesForTimesheet({
   payroll,
   draft,
   timeZone,
-  managerHasSigned,
-  applyLiveReview,
+  extrasMode,
 }: {
   payroll: TimesheetPayrollSummary
   draft: TimesheetDraft
   timeZone: string
-  managerHasSigned: boolean
-  applyLiveReview: boolean
+  extrasMode: 'raw' | 'export'
 }): TimesheetInvoiceLine[] {
   const rows: TimesheetInvoiceLine[] = []
   for (const line of payroll.lineItems) {
-    if (isPayrollLineRemoved(line, draft, managerHasSigned, applyLiveReview)) continue
     const details = `${line.details} · ${timesheetHoursRateLine(line)}`
     rows.push({
       date: formatAbbreviatedDayInZone(line.date, timeZone),
@@ -119,11 +110,13 @@ export function invoiceLinesForTimesheet({
       projectName: line.projectName,
       details,
       description: `${line.jobNumber} ${line.projectName} · ${details}`,
-      amount: effectivePayrollAmount(line, draft, managerHasSigned, applyLiveReview),
+      amount: line.amount,
     })
   }
   for (const entry of draft.priceWorkEntries) {
-    if (entry.managerDecision === 'declined' && (managerHasSigned || applyLiveReview)) continue
+    if (extrasMode === 'export' && entry.managerDecision === 'declined') continue
+    const amount =
+      extrasMode === 'export' ? entry.managerRevisedAmount ?? entry.amount : entry.amount
     const details = `Price work · ${entry.title}`
     rows.push({
       date: formatAbbreviatedDayInZone(entry.startDate, timeZone),
@@ -131,11 +124,13 @@ export function invoiceLinesForTimesheet({
       projectName: entry.title,
       details,
       description: `${entry.jobNumber || '—'} ${details}`,
-      amount: effectivePriceWorkAmount(entry, managerHasSigned, applyLiveReview),
+      amount,
     })
   }
   for (const entry of draft.expenseEntries) {
-    if (entry.managerDecision === 'declined' && (managerHasSigned || applyLiveReview)) continue
+    if (extrasMode === 'export' && entry.managerDecision === 'declined') continue
+    const amount =
+      extrasMode === 'export' ? entry.managerRevisedAmount ?? entry.amount : entry.amount
     const details = `Expense · ${entry.title}`
     rows.push({
       date: formatAbbreviatedDayInZone(entry.date, timeZone),
@@ -143,7 +138,7 @@ export function invoiceLinesForTimesheet({
       projectName: entry.title,
       details,
       description: `${entry.jobNumber || '—'} ${details}`,
-      amount: effectiveExpenseAmount(entry, managerHasSigned, applyLiveReview),
+      amount,
     })
   }
   return rows

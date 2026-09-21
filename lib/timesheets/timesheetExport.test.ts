@@ -113,7 +113,7 @@ test('invoiceRateChangeNotes includes in-period user history like iOS', () => {
   assert.match(notes[0], /Rate updated to £220.00/)
 })
 
-test('export PDF total matches line amounts after manager edits and skips declined extras/days', () => {
+test('Email and export PDF uses raw payroll, skips declined extras, and uses revised extra amounts', () => {
   const payroll: TimesheetPayrollSummary = {
     totalHours: 16,
     overtimeHours: 0,
@@ -182,17 +182,27 @@ test('export PDF total matches line amounts after manager edits and skips declin
       },
     ],
   }
-  const lines = invoiceLinesForTimesheet({
+  const exported = invoiceLinesForTimesheet({
     payroll,
     draft,
     timeZone: 'Europe/London',
-    managerHasSigned: true,
-    applyLiveReview: false,
+    extrasMode: 'export',
   })
-  assert.equal(lines.some((line) => line.amount === 0), false)
   assert.equal(
-    lines.some((line) => line.description.includes('Parking')),
+    exported.some((line) => line.description.includes('Parking')),
     false
   )
-  assert.equal(invoiceLinesTotal(lines), 260)
+  assert.equal(invoiceLinesTotal(exported), 460)
+
+  const generated = invoiceLinesForTimesheet({
+    payroll,
+    draft,
+    timeZone: 'Europe/London',
+    extrasMode: 'raw',
+  })
+  assert.equal(
+    generated.some((line) => line.description.includes('Parking')),
+    true
+  )
+  assert.equal(invoiceLinesTotal(generated), 492)
 })

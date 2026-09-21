@@ -8,6 +8,7 @@ import {
   DEFAULT_MY_SCHEDULE,
   DEFAULT_PAYROLL_POLICY,
   includesManagerScheduleLocation,
+  orgPayrollPolicyForDay,
   type MyScheduleOptions,
   type OrgPayrollTimePolicy,
 } from '@/lib/settings/organizationSettings'
@@ -111,6 +112,8 @@ export function collectTimesheetPayroll({
   periodStart,
   periodEnd,
   payrollPolicy,
+  payrollPolicyPrior = null,
+  payrollPolicyEffectiveFrom = null,
   timeZone,
   history = emptyDayRateHistory(),
   scheduleOptions = DEFAULT_MY_SCHEDULE,
@@ -124,12 +127,13 @@ export function collectTimesheetPayroll({
   periodStart: Date
   periodEnd: Date
   payrollPolicy: OrgPayrollTimePolicy
+  payrollPolicyPrior?: OrgPayrollTimePolicy | null
+  payrollPolicyEffectiveFrom?: string | null
   timeZone?: string
   history?: OperativeDayRateHistoryCollection
   scheduleOptions?: MyScheduleOptions
 }): TimesheetPayrollSummary {
-  const policy = payrollPolicy || DEFAULT_PAYROLL_POLICY
-  const standardDayHours = Math.max(policy.standardPaidHours, 0.01)
+  const currentPolicy = payrollPolicy || DEFAULT_PAYROLL_POLICY
   const matched = operatives.filter(
     (operative) => operative.email.trim().toLowerCase() === user.email.trim().toLowerCase()
   )
@@ -156,6 +160,14 @@ export function collectTimesheetPayroll({
   ) => {
     if (!isDateInPeriod(date, periodStart, periodEnd, timeZone)) return
     if (!isBillableSelfEmployedDay(user, date, timeZone)) return
+    const policy = orgPayrollPolicyForDay(
+      date,
+      currentPolicy,
+      payrollPolicyPrior,
+      payrollPolicyEffectiveFrom,
+      timeZone
+    )
+    const standardDayHours = Math.max(policy.standardPaidHours, 0.01)
     const paidHours = paidBookedHours(timeSlot, workStartTime, workEndTime, policy, isBreakRemoved)
     const otHours = overtimeHoursBeyondPaidStandard(
       date,
