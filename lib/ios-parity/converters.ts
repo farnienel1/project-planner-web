@@ -177,6 +177,7 @@ export function parseAppUserDocument(userId: string, data: Record<string, unknow
     permissions,
     assignedManagerUserIds: managerIds.length ? managerIds : undefined,
     assignedManagerUserId: managerIds[0],
+    hasNoLineManager: data.hasNoLineManager === true,
     dayRate: dayRate && dayRate > 0 ? dayRate : undefined,
     hourlyRate: hourlyRate && hourlyRate > 0 ? hourlyRate : undefined,
     tradeTypePreset: asOptionalString(data.tradeTypePreset),
@@ -917,6 +918,13 @@ export function serializeOperative(
     organizationId: v.organizationId,
     createdAt: asTimestamp(v.createdAt),
     updatedAt: asTimestamp(v.updatedAt),
+    qualificationExpiryDates: Object.fromEntries(
+      Object.entries(operative.qualificationExpiryDates || {}).map(([key, value]) => [
+        key,
+        asTimestamp(value instanceof Date ? value : new Date(value)),
+      ])
+    ),
+    qualificationCertificateURLs: operative.qualificationCertificateURLs || {},
   }
 }
 

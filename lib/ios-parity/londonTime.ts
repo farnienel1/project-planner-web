@@ -1,80 +1,70 @@
 /**
  * iOS parity source: Core/MondayFirstCalendarSupport.swift
  * Spec: docs/ios-parity/04-business-logic.md §11
+ *
+ * Default zone is Europe/London. Pass the organisation origin-country IANA
+ * zone (see lib/orgTime/orgTimeZone.ts) for pay periods and timesheet stamps.
  */
 
-const LONDON = 'Europe/London'
+import {
+  LONDON_TIME_ZONE,
+  addDaysInZone,
+  dateFromDayKeyInZone,
+  datePartsInZone,
+  dayKeyInZone,
+  dayOfMonthInZone,
+  daysInZoneMonth,
+  formatLongDayInZone,
+  isoWeekdayInZone,
+  midnightInZone,
+  partsInZone,
+  unixStartOfDayInZone,
+} from '@/lib/orgTime/zoneTime'
 
-function partsInLondon(date: Date): { y: number; m: number; d: number; h: number; min: number } {
-  const fmt = new Intl.DateTimeFormat('en-GB', {
-    timeZone: LONDON,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hourCycle: 'h23',
-  })
-  const map: Record<string, string> = {}
-  for (const p of fmt.formatToParts(date)) {
-    if (p.type !== 'literal') map[p.type] = p.value
-  }
-  return {
-    y: Number(map.year),
-    m: Number(map.month),
-    d: Number(map.day),
-    h: Number(map.hour),
-    min: Number(map.minute),
-  }
+const LONDON = LONDON_TIME_ZONE
+
+export { LONDON_TIME_ZONE }
+
+function zone(timeZone?: string): string {
+  return timeZone || LONDON
 }
 
-/** yyyy-MM-dd in Europe/London. */
-export function dayKey(date: Date): string {
-  const { y, m, d } = partsInLondon(date)
-  return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+/** yyyy-MM-dd in the given zone (default Europe/London). */
+export function dayKey(date: Date, timeZone?: string): string {
+  return dayKeyInZone(date, zone(timeZone))
 }
 
-export function dateFromDayKey(key: string): Date {
-  const [y, m, d] = key.split('-').map(Number)
-  return londonMidnight(new Date(Date.UTC(y, m - 1, d, 12, 0, 0)))
+export function dateFromDayKey(key: string, timeZone?: string): Date {
+  return dateFromDayKeyInZone(key, zone(timeZone))
 }
 
-/** Local midnight Europe/London as a Date (UTC instant). */
-export function londonMidnight(date: Date): Date {
-  const { y, m, d } = partsInLondon(date)
-  // Construct a UTC date that displays as 00:00 in London.
-  const guess = new Date(Date.UTC(y, m - 1, d, 0, 0, 0))
-  const shown = partsInLondon(guess)
-  const deltaMin =
-    (shown.h * 60 + shown.min) - 0
-  return new Date(guess.getTime() - deltaMin * 60_000)
+/** Local midnight in the given zone as a Date (UTC instant). */
+export function londonMidnight(date: Date, timeZone?: string): Date {
+  return midnightInZone(date, zone(timeZone))
 }
 
-export function isSameLondonDay(a: Date, b: Date): boolean {
-  return dayKey(a) === dayKey(b)
+export function isSameLondonDay(a: Date, b: Date, timeZone?: string): boolean {
+  return dayKey(a, timeZone) === dayKey(b, timeZone)
 }
 
 /**
- * Same-day match in Europe/London, matching iOS
- * `Calendar.current.isDate(_:inSameDayAs:)` for UK orgs.
+ * Same-day match in the org zone (default Europe/London).
  * UTC midnight and London midnight for a UK calendar day already share a London day key.
  * Do not also match `toDateString()` — on UTC hosts that pulls in the previous local day.
  */
-export function coversCalendarDay(value: Date, day: Date): boolean {
+export function coversCalendarDay(value: Date, day: Date, timeZone?: string): boolean {
   if (!(value instanceof Date) || Number.isNaN(value.getTime())) return false
-  return isSameLondonDay(value, day)
+  return isSameLondonDay(value, day, timeZone)
 }
 
-export function addLondonDays(date: Date, days: number): Date {
-  const { y, m, d } = partsInLondon(date)
-  const noon = new Date(Date.UTC(y, m - 1, d + days, 12, 0, 0))
-  return londonMidnight(noon)
+export function addLondonDays(date: Date, days: number, timeZone?: string): Date {
+  return addDaysInZone(date, days, zone(timeZone))
 }
 
 /** Home date line: "Tuesday 16 Sep" (Blueprint §3.4). */
-export function formatHomeDateLine(date: Date): string {
+export function formatHomeDateLine(date: Date, timeZone?: string): string {
   return new Intl.DateTimeFormat('en-GB', {
-    timeZone: LONDON,
+    timeZone: zone(timeZone),
     weekday: 'long',
     day: 'numeric',
     month: 'short',
@@ -82,8 +72,8 @@ export function formatHomeDateLine(date: Date): string {
 }
 
 /** Up Next heading: "Wednesday 17th September" (HomeUpNextSupport.swift:209). */
-export function dayHeadingWithOrdinal(date: Date): string {
-  const { d } = partsInLondon(date)
+export function dayHeadingWithOrdinal(date: Date, timeZone?: string): string {
+  const { d } = partsInZone(date, zone(timeZone))
   const suffix =
     d % 100 >= 11 && d % 100 <= 13
       ? 'th'
@@ -95,20 +85,20 @@ export function dayHeadingWithOrdinal(date: Date): string {
             ? 'rd'
             : 'th'
   const weekday = new Intl.DateTimeFormat('en-GB', {
-    timeZone: LONDON,
+    timeZone: zone(timeZone),
     weekday: 'long',
   }).format(date)
   const month = new Intl.DateTimeFormat('en-GB', {
-    timeZone: LONDON,
+    timeZone: zone(timeZone),
     month: 'long',
   }).format(date)
   return `${weekday} ${d}${suffix} ${month}`
 }
 
 /** Short time like iOS `.short` in en-GB, e.g. "07:30". */
-export function formatShortTime(date: Date): string {
+export function formatShortTime(date: Date, timeZone?: string): string {
   return new Intl.DateTimeFormat('en-GB', {
-    timeZone: LONDON,
+    timeZone: zone(timeZone),
     hour: '2-digit',
     minute: '2-digit',
     hourCycle: 'h23',
@@ -122,49 +112,62 @@ export function parseHhMm(value: string | undefined): number | null {
   return h * 60 + m
 }
 
-export function addMinutesToDay(day: Date, minutes: number): Date {
-  return new Date(londonMidnight(day).getTime() + minutes * 60_000)
+export function addMinutesToDay(day: Date, minutes: number, timeZone?: string): Date {
+  return new Date(londonMidnight(day, timeZone).getTime() + minutes * 60_000)
 }
 
-/** Hour in Europe/London (0–23). */
-export function londonHour(date: Date): number {
-  return partsInLondon(date).h
+/** Hour in the zone (0–23). */
+export function londonHour(date: Date, timeZone?: string): number {
+  return partsInZone(date, zone(timeZone)).h
 }
 
-/** Minutes past midnight in Europe/London (0–1439). */
-export function londonMinutesOfDay(date: Date): number {
-  const { h, min } = partsInLondon(date)
+/** Minutes past midnight in the zone (0–1439). */
+export function londonMinutesOfDay(date: Date, timeZone?: string): number {
+  const { h, min } = partsInZone(date, zone(timeZone))
   return h * 60 + min
 }
 
-/** JS weekday in Europe/London: 0 = Sunday … 6 = Saturday. */
-export function londonJsWeekday(date: Date): number {
-  const { y, m, d } = partsInLondon(date)
+/** JS weekday in the zone: 0 = Sunday … 6 = Saturday. */
+export function londonJsWeekday(date: Date, timeZone?: string): number {
+  const { y, m, d } = partsInZone(date, zone(timeZone))
   return new Date(Date.UTC(y, m - 1, d, 12, 0, 0)).getUTCDay()
 }
 
-/** ISO weekday in Europe/London: 1 = Monday … 7 = Sunday. */
-export function londonIsoWeekday(date: Date): number {
-  const js = londonJsWeekday(date)
-  return js === 0 ? 7 : js
+/** ISO weekday in the zone: 1 = Monday … 7 = Sunday. */
+export function londonIsoWeekday(date: Date, timeZone?: string): number {
+  return isoWeekdayInZone(date, zone(timeZone))
 }
 
-export function londonDayOfMonth(date: Date): number {
-  return partsInLondon(date).d
+export function londonDayOfMonth(date: Date, timeZone?: string): number {
+  return dayOfMonthInZone(date, zone(timeZone))
 }
 
-/** Last calendar day of the London month containing `date` (28–31). */
-export function daysInLondonMonth(date: Date): number {
-  const { y, m } = partsInLondon(date)
-  return new Date(Date.UTC(y, m, 0, 12, 0, 0)).getUTCDate()
+/** Last calendar day of the month containing `date` in the zone (28–31). */
+export function daysInLondonMonth(date: Date, timeZone?: string): number {
+  return daysInZoneMonth(date, zone(timeZone))
 }
 
-/** Monday of the London week containing `date`. */
-export function startOfLondonWeek(date: Date): Date {
-  return addLondonDays(londonMidnight(date), -(londonIsoWeekday(date) - 1))
+/** Monday of the week containing `date` in the zone. */
+export function startOfLondonWeek(date: Date, timeZone?: string): Date {
+  return addLondonDays(londonMidnight(date, timeZone), -(londonIsoWeekday(date, timeZone) - 1), timeZone)
 }
 
-/** Sunday of the London week containing `date`. */
-export function endOfLondonWeek(date: Date): Date {
-  return addLondonDays(londonMidnight(date), 7 - londonIsoWeekday(date))
+/** Sunday of the week containing `date` in the zone. */
+export function endOfLondonWeek(date: Date, timeZone?: string): Date {
+  return addLondonDays(londonMidnight(date, timeZone), 7 - londonIsoWeekday(date, timeZone), timeZone)
+}
+
+export function unixStartOfDay(date: Date, timeZone?: string): number {
+  return unixStartOfDayInZone(date, zone(timeZone))
+}
+
+export function formatLongDay(date: Date, timeZone?: string): string {
+  return formatLongDayInZone(date, zone(timeZone))
+}
+
+export function londonDateParts(
+  date: Date,
+  timeZone?: string
+): { day: number; month: number; year: number; monthName: string } {
+  return datePartsInZone(date, zone(timeZone))
 }
