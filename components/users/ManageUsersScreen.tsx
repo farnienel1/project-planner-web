@@ -173,18 +173,20 @@ export function ManageUsersScreen() {
 
   return (
     <div className="mx-auto max-w-5xl px-1 pb-16 pt-2">
-      <div className="mb-5 flex items-center justify-between gap-4">
+      <div className="phead" data-hue="user">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">{title}</h1>
-          <p className="text-sm text-slate-500">Roles, access and invitations for your organisation.</p>
+          <h1>{title}</h1>
+          <div className="sub">Roles, access and invitations for your organisation.</div>
         </div>
         {canManage && (
+          <div className="acts">
           <Link
             href="/dashboard/settings/users/new"
-            className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700"
+            className="btn primary"
           >
-            + Add user
+            Add user
           </Link>
+          </div>
         )}
       </div>
 

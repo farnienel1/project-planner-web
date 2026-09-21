@@ -102,9 +102,11 @@ export function JobTypesScreen() {
   }
 
   return (
-    <div className="mx-auto max-w-[720px] space-y-5 pb-10">
+    <div className="mx-auto max-w-[720px] space-y-5 pb-10" data-hue="daily">
       <PageHeader
-        title="Job Types Management"
+        title="Job types"
+        subtitle="Used to categorise every project and small works job"
+        hue="daily"
         actions={
           <button
             type="button"
@@ -113,10 +115,10 @@ export function JobTypesScreen() {
               setName('')
               setAddOpen(true)
             }}
-            className="inline-flex items-center gap-1 text-[15px] font-semibold text-[#185FA5]"
+            className="btn primary"
           >
             <PlusIcon className="h-4 w-4" />
-            Add Job Type
+            Add job type
           </button>
         }
       />

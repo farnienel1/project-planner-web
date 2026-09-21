@@ -7,7 +7,7 @@ import type { ReactNode } from 'react'
 export const featurePageBg = 'bg-[#F7F8FA]'
 
 export function FeatureScreen({ children }: { children: ReactNode }) {
-  return <div className={`${featurePageBg} -mx-4 -mt-2 min-h-[60vh] px-4 py-4 sm:mx-0 sm:mt-0 sm:rounded-2xl`}>{children}</div>
+  return <div className="space-y-4">{children}</div>
 }
 
 export function FeatureProjectStrip({
@@ -30,9 +30,7 @@ export function FeatureProjectStrip({
 
 export function FeatureCard({ children, className = '' }: { children: ReactNode; className?: string }) {
   return (
-    <div className={`rounded-[14px] border border-[#EEF0F3] bg-white shadow-[0_1px_2px_rgba(16,32,53,0.04),0_4px_12px_rgba(16,32,53,0.04)] ${className}`}>
-      {children}
-    </div>
+    <div className={`card ${className}`}>{children}</div>
   )
 }
 
@@ -58,11 +56,7 @@ export function FilterChipsRow<T extends string>({
           key={chip.id}
           type="button"
           onClick={() => onSelect(chip.id)}
-          className={`shrink-0 rounded-full px-3.5 py-1.5 text-xs font-semibold transition-colors ${
-            selected === chip.id
-              ? 'bg-[#185FA5] text-white shadow-sm'
-              : 'border border-[#E5E7EB] bg-white text-slate-600 hover:border-slate-300'
-          }`}
+          className={`chip shrink-0 ${selected === chip.id ? 'on' : ''}`}
         >
           {chip.label}
           {chip.count !== undefined && <span className="ml-1 opacity-80">· {chip.count}</span>}

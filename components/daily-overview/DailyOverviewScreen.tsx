@@ -137,10 +137,14 @@ export function DailyOverviewScreen() {
 
   return (
     <>
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-[28px] font-semibold tracking-tight">Daily overview</h1>
-        <label className="flex items-center gap-2 text-[14px] font-medium text-[#185FA5]">
+    <div className="stack" data-hue="daily">
+      <div className="phead" data-hue="daily">
+        <div>
+          <h1>Daily overview</h1>
+          <div className="sub">All bookings across the organisation</div>
+        </div>
+        <div className="acts">
+        <label className="flex items-center gap-2 text-[14px] font-medium text-[var(--ink2)]">
           <CalendarDaysIcon className="h-4 w-4" />
           View by date
           <input
@@ -149,9 +153,11 @@ export function DailyOverviewScreen() {
             onChange={(e) => {
               if (/^\d{4}-\d{2}-\d{2}$/.test(e.target.value)) setDay(dateFromDayKey(e.target.value))
             }}
-            className="rounded-lg border border-ios-search-border bg-white px-2 py-1 text-ios-ink"
+            className="pp-in"
+            style={{ width: 170, height: 44 }}
           />
         </label>
+        </div>
       </div>
 
       {bookingsError ? (

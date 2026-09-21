@@ -508,27 +508,29 @@ export function HelpSupportScreen() {
   }
 
   return (
-    <div className="space-y-6 pb-10">
-      <div className="overflow-hidden rounded-2xl bg-gradient-to-br from-[#185FA5] to-[#0F4C81] p-6 text-white shadow-sm">
-        <div className="flex items-start gap-3">
-          <QuestionMarkCircleIcon className="h-8 w-8 shrink-0 text-white/90" />
-          <div className="min-w-0 flex-1">
-            <h1 className="text-[28px] font-semibold tracking-tight">Help & support</h1>
-            <p className="mt-1 text-[15px] text-white/85">
-              Guides for every part of ProjectPlanner. Search, open a topic, then jump into the page.
-            </p>
-            <label className="relative mt-4 block">
-              <MagnifyingGlassIcon className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-white/70" />
-              <input
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search timesheets, job types, signatures…"
-                className="w-full rounded-xl border-0 bg-white/15 py-2.5 pl-10 pr-3 text-[15px] text-white placeholder:text-white/60 outline-none ring-1 ring-white/20 focus:bg-white/20"
-              />
-            </label>
+    <div className="stack pb-10" data-hue="proj">
+      <section className="hero">
+        <div className="relative z-[1] max-w-2xl">
+          <div className="flex items-start gap-3">
+            <QuestionMarkCircleIcon className="h-8 w-8 shrink-0" />
+            <div className="min-w-0 flex-1">
+              <h1 className="big" style={{ fontSize: 28 }}>Help & support</h1>
+              <p className="mt-1.5 opacity-85">Guides, answers and a real person when you need one.</p>
+              <label className="search mt-4" style={{ maxWidth: 'none' }}>
+                <MagnifyingGlassIcon className="h-[18px] w-[18px]" />
+                <input
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder="Search timesheets, jobs, bookings…"
+                  className="pp-in"
+                  style={{ height: 54 }}
+                  aria-label="Search help"
+                />
+              </label>
+            </div>
           </div>
         </div>
-      </div>
+      </section>
 
       {needle ? (
         <div className="space-y-2">
@@ -568,9 +570,7 @@ export function HelpSupportScreen() {
                     setTopicId(row.id)
                     setArticleId(row.articles[0].id)
                   }}
-                  className={`rounded-2xl p-4 text-left shadow-[0_1px_2px_rgba(0,0,0,0.10)] ${
-                    active ? 'bg-[#E6F1FB] ring-2 ring-[#185FA5]/30' : 'bg-white'
-                  }`}
+                  className={`card pad click text-left ${active ? 'ring-2 ring-[var(--blue)]' : ''}`}
                 >
                   <Icon className="h-6 w-6 text-[#185FA5]" />
                   <p className="mt-2 text-[16px] font-semibold">{row.title}</p>
@@ -609,7 +609,7 @@ export function HelpSupportScreen() {
               {article.href ? (
                 <Link
                   href={article.href}
-                  className="mt-5 inline-flex rounded-xl bg-[#185FA5] px-4 py-2.5 text-[15px] font-semibold text-white"
+                  className="mt-5 btn primary"
                 >
                   Open this in the app
                 </Link>

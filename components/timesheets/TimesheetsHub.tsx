@@ -253,15 +253,25 @@ export function TimesheetsHub() {
   }
 
   return (
-    <div className="space-y-6 pb-10">
-      <h1 className="text-[28px] font-semibold tracking-tight">Timesheets</h1>
-
-      <div className="overflow-hidden rounded-2xl bg-gradient-to-br from-[#185FA5] to-[#0F4C81] p-6 text-white shadow-sm">
-        <p className="text-[11px] font-bold uppercase tracking-[1.2px] text-white/80">Current payment run</p>
-        <p className="mt-2 text-[22px] font-semibold">{runCopy.periodLine}</p>
-        <p className="mt-1 text-[15px] text-white/90">{runCopy.paidLine}</p>
-        {runCopy.note ? <p className="mt-3 line-clamp-3 text-[13px] text-white/80">{runCopy.note}</p> : null}
+    <div className="stack" data-hue="ts">
+      <div className="phead" data-hue="ts">
+        <div className="badge-ico">
+          <ClockIcon className="h-6 w-6" />
+        </div>
+        <div>
+          <h1>Timesheets</h1>
+          <div className="sub">Sign your hours and sign off your team</div>
+        </div>
       </div>
+
+      <section className="hero" data-hue="ts">
+        <div className="relative z-[1]">
+          <p className="eb">Current payment run</p>
+          <div className="big">{runCopy.periodLine}</div>
+          <p className="mt-1.5 opacity-85">{runCopy.paidLine}</p>
+          {runCopy.note ? <p className="mt-3 max-w-2xl text-[13px] opacity-80">{runCopy.note}</p> : null}
+        </div>
+      </section>
 
       {showDisabled && !showMine && !showTeam ? (
         <DisabledCard />
@@ -448,7 +458,7 @@ function TimesheetsNavBar({ href, title }: { href: string; title: string }) {
       <button
         type="button"
         onClick={() => router.push(href)}
-        className="absolute left-0 inline-flex items-center gap-0.5 text-[17px] font-semibold text-[#007AFF]"
+        className="btn sm ghost"
       >
         <span aria-hidden className="text-[22px] leading-none">
           ‹
@@ -465,7 +475,7 @@ function HubCard({
   title,
   subtitle,
   detail,
-  tint,
+  tint: _tint,
   onClick,
 }: {
   icon: ReactNode
@@ -479,9 +489,9 @@ function HubCard({
     <button
       type="button"
       onClick={onClick}
-      className="flex w-full items-start gap-3 rounded-2xl bg-white p-4 text-left shadow-[0_1px_2px_rgba(0,0,0,0.10)]"
+      className="ritem"
     >
-      <div className={`flex h-11 w-11 items-center justify-center rounded-xl ${tint}`}>{icon}</div>
+      <span className="ico-chip" data-hue="ts">{icon}</span>
       <div className="min-w-0">
         <p className="text-[17px] font-semibold">{title}</p>
         <p className="mt-0.5 text-[14px] font-semibold text-[#185FA5]">{subtitle}</p>
@@ -572,9 +582,9 @@ function ManagerTimesheetsTile({
 
 function StatMiniCard({ value, label, tone }: { value: string; label: string; tone: string }) {
   return (
-    <div className={`rounded-2xl px-3 py-3 text-center ${tone}`}>
-      <p className="text-[22px] font-semibold leading-none">{value}</p>
-      <p className="mt-1.5 text-[11px] font-semibold leading-tight">{label}</p>
+    <div className={`card pad text-center`} data-hue={tone.includes('amber') ? 'warn' : tone.includes('green') ? 'green' : 'lib'}>
+      <b className="block font-[family-name:var(--head)] text-[22px]">{value}</b>
+      <span className="small muted">{label}</span>
     </div>
   )
 }
@@ -596,9 +606,10 @@ function Tile({
     <button
       type="button"
       onClick={onClick}
-      className="flex w-full items-start gap-4 rounded-2xl bg-white p-5 text-left shadow-[0_1px_2px_rgba(0,0,0,0.10)] hover:ring-2 hover:ring-[#185FA5]/20"
+      className="ritem"
+      data-hue="ts"
     >
-      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#E6F1FB] text-[#185FA5]">{icon}</div>
+      <span className="ico-chip">{icon}</span>
       <div className="min-w-0 flex-1">
         <div className="flex items-start justify-between gap-2">
           <p className="text-[17px] font-semibold">{title}</p>

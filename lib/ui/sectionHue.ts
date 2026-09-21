@@ -65,6 +65,17 @@ export function hueForNavId(id: string): SectionHue {
   }
 }
 
+export function hueForJobType(jobType?: string): SectionHue {
+  const value = (jobType || '').toLowerCase()
+  if (value.includes('small')) return 'sw'
+  if (value.includes('cat a')) return 'task'
+  if (value.includes('cat b')) return 'daily'
+  if (value.includes('new build')) return 'proj'
+  if (value.includes('maintenance')) return 'sw'
+  if (value.includes('decarbon')) return 'hs'
+  return 'proj'
+}
+
 export function hueForCreateId(id: string): SectionHue {
   switch (id) {
     case 'project':

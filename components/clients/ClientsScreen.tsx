@@ -375,13 +375,15 @@ export function ClientsScreen({ selectedId }: { selectedId?: string }) {
     <div className="space-y-5">
       <PageHeader
         title="Clients"
+        subtitle="Who you work for, and how to reach them"
+        hue="blue"
         actions={
           <button
             type="button"
             onClick={openCreate}
-            className="rounded-full bg-[#185FA5] px-4 py-2 text-[14px] font-semibold text-white"
+            className="btn primary"
           >
-            New Client
+            New client
           </button>
         }
       />

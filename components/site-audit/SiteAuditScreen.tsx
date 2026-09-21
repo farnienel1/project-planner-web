@@ -536,10 +536,10 @@ export function SiteAuditScreen() {
 
     return shell(
       <div className="space-y-5">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900">Site audit</h1>
-          <p className="mt-0.5 text-sm text-slate-500">
-            Capture site evidence, notes, and produce a shareable PDF.
+        <div className="phead" data-hue="hs">
+          <h1>Site audit</h1>
+          <p className="sub">
+            Pre-starts, snags and variations across every job.
           </p>
         </div>
 

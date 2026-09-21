@@ -1,8 +1,11 @@
 /**
- * iOS parity source: Blueprint §4.5 shared primitives (subset used by Phase 2 shell / Home)
+ * Shared list/detail primitives. Visuals follow the v2 prototype;
+ * handlers stay with each screen.
  */
 
 import type { ReactNode } from 'react'
+import { cn } from '@/lib/ui/cn'
+import type { SectionHue } from '@/lib/ui/sectionHue'
 
 export function StatusPill({
   label,
@@ -11,15 +14,12 @@ export function StatusPill({
   label: string
   tone?: 'blue' | 'green' | 'amber' | 'red' | 'grey'
 }) {
-  const map = {
-    blue: 'bg-ios-chip-blue text-ios-icon-blue',
-    green: 'bg-ios-chip-green text-ios-icon-green',
-    amber: 'bg-ios-chip-amber text-ios-icon-amber',
-    red: 'bg-ios-chip-red text-ios-icon-red',
-    grey: 'bg-ios-chip-grey text-ios-icon-grey',
-  }
+  const hue: SectionHue =
+    tone === 'blue' ? 'blue' : tone === 'green' ? 'green' : tone === 'amber' ? 'warn' : tone === 'red' ? 'red' : 'lib'
   return (
-    <span className={`inline-flex rounded-full px-2.5 py-0.5 text-[12px] font-medium ${map[tone]}`}>{label}</span>
+    <span data-hue={hue} className="pill dot">
+      {label}
+    </span>
   )
 }
 
@@ -27,25 +27,46 @@ export function EmptyState({
   icon,
   title,
   subtitle,
+  action,
+  hue = 'lib',
 }: {
   icon?: ReactNode
   title: string
   subtitle?: string
+  action?: ReactNode
+  hue?: SectionHue
 }) {
   return (
-    <div className="flex min-h-[320px] flex-col items-center justify-center px-6 py-16 text-center">
-      {icon ? <div className="mb-4 text-ios-muted">{icon}</div> : null}
-      <p className="text-[22px] font-extrabold">{title}</p>
-      {subtitle ? <p className="mt-2 text-[15px] text-[var(--ink3)]">{subtitle}</p> : null}
+    <div className="empty card pad" data-hue={hue}>
+      {icon ? <div className="ico-chip lg">{icon}</div> : null}
+      <h3>{title}</h3>
+      {subtitle ? <p>{subtitle}</p> : null}
+      {action}
     </div>
   )
 }
 
-export function PageHeader({ title, actions }: { title: string; actions?: ReactNode }) {
+export function PageHeader({
+  title,
+  subtitle,
+  actions,
+  hue = 'blue',
+  icon,
+}: {
+  title: string
+  subtitle?: string
+  actions?: ReactNode
+  hue?: SectionHue
+  icon?: ReactNode
+}) {
   return (
-    <div className="mb-5 flex items-center justify-between gap-3">
-      <h1 className="text-[28px] font-extrabold tracking-tight">{title}</h1>
-      {actions}
+    <div className="phead" data-hue={hue}>
+      {icon ? <div className="badge-ico">{icon}</div> : null}
+      <div className="min-w-0">
+        <h1>{title}</h1>
+        {subtitle ? <div className="sub">{subtitle}</div> : null}
+      </div>
+      {actions ? <div className="acts">{actions}</div> : null}
     </div>
   )
 }
@@ -60,15 +81,15 @@ export function IosModal({
   children: ReactNode
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="flex max-h-[80vh] w-full max-w-[640px] flex-col overflow-hidden rounded-3xl bg-[var(--card)] shadow-[var(--sh-pop)]">
-        <header className="flex items-center justify-between border-b border-ios-border px-5 py-3">
-          <h3 className="text-lg font-semibold">{title}</h3>
-          <button type="button" onClick={onDone} className="text-sm font-semibold text-[#185FA5]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(10,20,40,.4)] p-4 backdrop-blur-[3px]">
+      <div className="flex max-h-[80vh] w-full max-w-[620px] flex-col overflow-hidden rounded-[24px] bg-[var(--card)] shadow-[var(--sh-pop)]">
+        <header className="flex items-center justify-between px-6 pb-3 pt-[22px]">
+          <h3 className="text-xl font-extrabold">{title}</h3>
+          <button type="button" onClick={onDone} className="btn sm ghost">
             Done
           </button>
         </header>
-        <div className="overflow-y-auto px-5 py-4">{children}</div>
+        <div className="overflow-y-auto px-6 py-4">{children}</div>
       </div>
     </div>
   )
@@ -89,26 +110,26 @@ export function IosFormModal({
   width?: 'sm' | 'md'
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onCancel}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(10,20,40,.4)] p-4 backdrop-blur-[3px]" onClick={onCancel}>
       <div
         role="dialog"
         aria-labelledby="ios-form-title"
-          className={`flex max-h-[85vh] w-full flex-col overflow-hidden rounded-3xl bg-[var(--card)] shadow-[var(--sh-pop)] ${
-          width === 'md' ? 'max-w-[760px]' : 'max-w-[640px]'
-        }`}
+        className={cn(
+          'flex max-h-[85vh] w-full flex-col overflow-hidden rounded-[24px] bg-[var(--card)] shadow-[var(--sh-pop)]',
+          width === 'md' ? 'max-w-[860px]' : 'max-w-[620px]'
+        )}
         onClick={(e) => e.stopPropagation()}
       >
-        <header className="grid grid-cols-[72px_1fr_72px] items-center border-b border-ios-border px-3 py-3">
-          <button type="button" onClick={onCancel} className="justify-self-start text-[15px] font-medium text-[#185FA5]">
-            Cancel
-          </button>
-          <h3 id="ios-form-title" className="text-center text-[17px] font-semibold tracking-tight">
+        <header className="flex items-center gap-3.5 px-6 pb-3 pt-[22px]">
+          <h3 id="ios-form-title" className="flex-1 text-xl font-extrabold tracking-tight">
             {title}
           </h3>
-          <span />
+          <button type="button" onClick={onCancel} className="btn sm ghost">
+            Cancel
+          </button>
         </header>
-        <div className="overflow-y-auto px-5 py-4">{children}</div>
-        {footer ? <div className="sticky bottom-0 border-t border-ios-border bg-ios-card px-5 py-4">{footer}</div> : null}
+        <div className="overflow-y-auto px-6 py-4">{children}</div>
+        {footer ? <div className="flex justify-end gap-2.5 border-t border-[var(--line)] px-6 py-4">{footer}</div> : null}
       </div>
     </div>
   )
@@ -118,44 +139,70 @@ export function FilterChip({
   title,
   selected,
   onClick,
-  selectedClass = 'bg-ios-chip-green text-ios-icon-green',
 }: {
   title: string
   selected: boolean
   onClick: () => void
+  /** @deprecated visual comes from the selected chip style */
   selectedClass?: string
 }) {
+  const [label, count] = splitChipTitle(title)
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`rounded-full border px-3.5 py-1.5 text-[13px] font-medium transition ${
-        selected
-          ? `border-transparent ${selectedClass}`
-          : 'border-ios-search-border bg-ios-card text-ios-ink hover:border-ios-muted'
-      }`}
-    >
-      {title}
+    <button type="button" onClick={onClick} className={cn('chip', selected && 'on')}>
+      {label}
+      {count !== undefined ? <span className="n">{count}</span> : null}
     </button>
   )
+}
+
+function splitChipTitle(title: string): [string, string | undefined] {
+  const match = title.match(/^(.*?)(?:\s*[·•]\s*)(\d+)\s*$/)
+  if (!match) return [title, undefined]
+  return [match[1].trim(), match[2]]
 }
 
 export function StatsRow({
   items,
 }: {
-  items: { value: number; label: string; valueClass?: string }[]
+  items: { value: number; label: string; valueClass?: string; hue?: SectionHue }[]
 }) {
   return (
     <div className="grid grid-cols-3 gap-2.5">
       {items.map((item) => (
-        <div
-          key={item.label}
-          className="rounded-[14px] border border-ios-border bg-ios-card py-2.5 text-center"
-        >
-          <p className={`text-[28px] font-medium leading-none ${item.valueClass || 'text-ios-ink'}`}>{item.value}</p>
-          <p className="mt-1 text-[12px] font-medium text-ios-muted">{item.label}</p>
+        <div key={item.label} className="stat" data-hue={item.hue || 'blue'} style={{ cursor: 'default' }}>
+          <div>
+            <b className={item.valueClass}>{item.value}</b>
+            <span>{item.label}</span>
+          </div>
         </div>
       ))}
     </div>
   )
 }
+
+export function SearchField({
+  value,
+  onChange,
+  placeholder,
+}: {
+  value: string
+  onChange: (value: string) => void
+  placeholder: string
+}) {
+  return (
+    <label className="search">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+        <circle cx="11" cy="11" r="7" />
+        <path d="m20 20-3.5-3.5" />
+      </svg>
+      <input
+        className="pp-in"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        aria-label={placeholder}
+      />
+    </label>
+  )
+}
+

@@ -86,8 +86,8 @@ export function ManagersListScreen() {
   const emptyTitle = emptyRosterTitle(segment, 'managers', allManagerUsers.length > 0)
 
   return (
-    <div className="space-y-4">
-      <PageHeader title="Managers" />
+    <div className="stack" data-hue="user">
+      <PageHeader title="Managers" subtitle="Leadership and ownership" hue="user" />
 
       <div className="flex flex-wrap gap-1.5">
         <FilterChip title={`Active · ${counts.active}`} selected={segment === 'active'} onClick={() => setSegment('active')} />

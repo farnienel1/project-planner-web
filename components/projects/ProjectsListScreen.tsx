@@ -7,7 +7,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { MagnifyingGlassIcon, FolderIcon, PlusIcon } from '@heroicons/react/24/outline'
+import { FolderIcon, PlusIcon } from '@heroicons/react/24/solid'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useProjectStore } from '@/lib/stores/projectStore'
 import { useTaskStore } from '@/lib/stores/taskStore'
@@ -21,7 +21,7 @@ import {
   filterWorksByTab,
   searchWorks,
 } from '@/lib/projects/workStatus'
-import { EmptyState, FilterChip, PageHeader, StatsRow } from '@/components/ios/primitives'
+import { EmptyState, FilterChip, PageHeader, SearchField, StatsRow } from '@/components/ios/primitives'
 import { WorkCard } from '@/components/projects/WorkCard'
 
 type Filter = 'all' | 'active' | 'upcoming' | 'completed'
@@ -98,17 +98,17 @@ export function ProjectsListScreen() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="stack" data-hue="proj">
       <PageHeader
         title="Projects"
+        subtitle="Main project pipeline"
+        hue="proj"
+        icon={<FolderIcon className="h-7 w-7" />}
         actions={
           canCreate ? (
-            <Link
-              href="/dashboard/projects/new"
-              aria-label="New project"
-              className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-[#185FA5] text-white"
-            >
-              <PlusIcon className="h-5 w-5" />
+            <Link href="/dashboard/projects/new" className="btn primary">
+              <PlusIcon className="h-4 w-4" />
+              New project
             </Link>
           ) : null
         }
@@ -124,23 +124,15 @@ export function ProjectsListScreen() {
         <>
           <StatsRow
             items={[
-              { value: counts.active, label: 'Active', valueClass: 'text-[#0F6E56]' },
-              { value: counts.upcoming, label: 'Upcoming', valueClass: 'text-[#854F0B]' },
-              { value: counts.completed, label: 'Completed', valueClass: 'text-ios-muted' },
+              { value: counts.active, label: 'Active', hue: 'proj' },
+              { value: counts.upcoming, label: 'Upcoming', hue: 'blue' },
+              { value: counts.completed, label: 'Completed', hue: 'lib' },
             ]}
           />
 
-          <div className="flex items-center gap-2 rounded-xl border border-ios-search-border bg-ios-card px-3 py-2">
-            <MagnifyingGlassIcon className="h-4 w-4 text-ios-muted" />
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search projects, addresses…"
-              className="w-full bg-transparent text-[14px] outline-none placeholder:text-ios-placeholder"
-            />
-          </div>
+          <SearchField value={search} onChange={setSearch} placeholder="Search projects, addresses…" />
 
-          <div className="flex flex-wrap gap-1.5">
+          <div className="chips">
             <FilterChip title={`All · ${counts.all}`} selected={filter === 'all'} onClick={() => setFilter('all')} />
             <FilterChip
               title={`Active · ${counts.active}`}
@@ -171,7 +163,7 @@ export function ProjectsListScreen() {
           ) : filtered.length === 0 ? (
             <EmptyState title="No projects found" subtitle="Get started by adding your first project" />
           ) : (
-            <div className="grid grid-cols-1 gap-2.5 lg:grid-cols-2 2xl:grid-cols-3">
+            <div className="grid grid-cols-1 gap-5 lg:grid-cols-2 2xl:grid-cols-3">
               {filtered.map((project) => (
                 <WorkCard
                   key={project.id}
@@ -189,7 +181,7 @@ export function ProjectsListScreen() {
               <button
                 type="button"
                 onClick={() => setFilter('all')}
-                className="rounded-xl bg-[#185FA5] px-4 py-2 text-sm font-semibold text-white"
+                className="btn primary"
               >
                 Show all projects
               </button>

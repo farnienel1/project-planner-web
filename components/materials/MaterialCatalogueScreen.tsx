@@ -125,9 +125,11 @@ export function MaterialCatalogueScreen() {
     <div className="space-y-5 pb-10">
       <PageHeader
         title="Material catalogue"
+        subtitle="Items you order for site"
+        hue="ts"
         actions={
           <div className="flex gap-3">
-            <button type="button" onClick={() => setCsvOpen(true)} className="text-[15px] font-semibold text-[#185FA5]">
+            <button type="button" onClick={() => setCsvOpen(true)} className="btn">
               CSV
             </button>
             <button
@@ -140,7 +142,7 @@ export function MaterialCatalogueScreen() {
                   createdByName: `${user.firstName} ${user.surname}`.trim() || user.email,
                 })
               }}
-              className="text-[15px] font-semibold text-[#185FA5]"
+              className="btn primary"
             >
               Add
             </button>

@@ -43,20 +43,32 @@ export default function NotificationsPage() {
   }, [notifications, filter])
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-end">
-        <label className="text-sm font-medium text-[#185FA5]">
-          Filter
-          <select
-            className="ml-2 rounded-lg border border-ios-border bg-ios-card px-2 py-1 text-ios-ink"
-            value={filter}
-            onChange={(e) => setFilter(e.target.value as FilterOption)}
-          >
-            <option>Newest</option>
-            <option>Oldest</option>
-            <option>Date</option>
-          </select>
-        </label>
+    <div className="stack" data-hue="blue">
+      <div className="phead" data-hue="blue">
+        <div className="badge-ico">
+          <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+          </svg>
+        </div>
+        <div>
+          <h1>Notifications</h1>
+          <div className="sub">Clashes, sign-offs, orders and reminders</div>
+        </div>
+        <div className="acts">
+          <label className="text-sm font-medium text-[var(--ink2)]">
+            Filter
+            <select
+              className="pp-in ml-2"
+              style={{ width: 140, height: 44 }}
+              value={filter}
+              onChange={(e) => setFilter(e.target.value as FilterOption)}
+            >
+              <option>Newest</option>
+              <option>Oldest</option>
+              <option>Date</option>
+            </select>
+          </label>
+        </div>
       </div>
       {rows.length === 0 ? (
         <EmptyState
@@ -65,11 +77,11 @@ export default function NotificationsPage() {
           subtitle="You're all caught up!"
         />
       ) : (
-        <div className="divide-y divide-ios-border overflow-hidden rounded-[16px] border border-ios-border bg-ios-card">
+        <div className="rows">
           {rows.map((row) => {
             const href = timesheetNotificationHref(row, timeZone)
             return (
-              <article key={row.id} className="px-4 py-4">
+              <article key={row.id} className="ritem" style={{ cursor: href ? 'pointer' : 'default' }}>
                 {href ? (
                   <Link href={href} className="block">
                     <h2 className="text-[17px] font-semibold text-[#185FA5]">{row.title}</h2>
