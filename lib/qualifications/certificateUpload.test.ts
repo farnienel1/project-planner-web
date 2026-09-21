@@ -3,7 +3,9 @@ import assert from 'node:assert/strict'
 import {
   QUALIFICATION_CERT_HINT,
   QUALIFICATION_CERT_MAX_BYTES,
+  dateFromLocalInputValue,
   formatCertificateSaveError,
+  localDateInputValue,
   mergeCertificateUrls,
   qualificationCertificateContentType,
   qualificationCertificateFileError,
@@ -76,6 +78,16 @@ test('uploadPendingCertificates does not mark a URL when the file is invalid', a
 
 test('mergeCertificateUrls keeps prior certificates', () => {
   assert.deepEqual(mergeCertificateUrls({ q1: 'a' }, { q2: 'b' }), { q1: 'a', q2: 'b' })
+})
+
+test('local date helpers round-trip without UTC day shift', () => {
+  const date = new Date(2026, 8, 21)
+  assert.equal(localDateInputValue(date), '2026-09-21')
+  const parsed = dateFromLocalInputValue('2026-09-21')
+  assert.ok(parsed)
+  assert.equal(parsed.getFullYear(), 2026)
+  assert.equal(parsed.getMonth(), 8)
+  assert.equal(parsed.getDate(), 21)
 })
 
 test('formatCertificateSaveError explains Storage permission failures', () => {

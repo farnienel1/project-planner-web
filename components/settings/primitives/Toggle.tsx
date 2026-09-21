@@ -14,10 +14,15 @@ export function Toggle({
       aria-checked={checked}
       disabled={disabled}
       onClick={() => !disabled && onChange(!checked)}
-      className={`relative inline-flex h-[28px] w-[50px] flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:cursor-not-allowed ${checked ? 'bg-blue-500' : 'bg-slate-200'}`}
+      data-hue="blue"
+      className={`relative inline-flex h-7 w-12 flex-shrink-0 cursor-pointer rounded-full transition-colors focus-visible:outline-none disabled:cursor-not-allowed ${
+        checked ? 'bg-[var(--h,var(--blue))]' : 'bg-[var(--line2)]'
+      }`}
     >
       <span
-        className={`pointer-events-none inline-block h-[22px] w-[22px] transform rounded-full bg-white shadow-[0_2px_4px_rgba(0,0,0,0.25)] ring-0 transition-transform duration-200 ${checked ? 'translate-x-[22px]' : 'translate-x-[1px]'}`}
+        className={`pointer-events-none inline-block h-[22px] w-[22px] transform rounded-full bg-white shadow-[0_2px_4px_rgba(0,0,0,0.2)] transition-transform ${
+          checked ? 'translate-x-5' : 'translate-x-[3px]'
+        } mt-[3px]`}
       />
     </button>
   )
