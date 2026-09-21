@@ -69,6 +69,8 @@ import { SignaturePad } from '@/components/timesheets/SignaturePad'
 import { LoadingSpinner } from '@/components/dashboard/PageShell'
 import { formatAbbreviatedDayInZone, formatStampInZone } from '@/lib/orgTime/zoneTime'
 import { formatTimesheetHours } from '@/lib/timesheets/timesheetHours'
+import { parseTimesheetMoneyAmount } from '@/lib/timesheets/timesheetMoney'
+import { dateFromDayKey, dayKey } from '@/lib/ios-parity/londonTime'
 
 function money(value: number): string {
   return `£${value.toFixed(2)}`
@@ -695,6 +697,7 @@ export function TimesheetPeriodPage({
             .filter((row) => row.permissions.manager || row.permissions.adminAccess || row.isSuperAdmin)
             .map((row) => `${row.firstName} ${row.surname}`.trim())
             .filter(Boolean)}
+          timeZone={timeZone}
           onCancel={() => setExtraMode(null)}
           onSave={async (entry) => {
             const next =
@@ -1206,12 +1209,14 @@ function ExtraForm({
   mode,
   jobs,
   managerNames,
+  timeZone,
   onCancel,
   onSave,
 }: {
   mode: 'priceWork' | 'expense'
   jobs: Array<{ jobNumber: string; siteName: string }>
   managerNames: string[]
+  timeZone: string
   onCancel: () => void
   onSave: (entry: {
     priceWork?: TimesheetDraft['priceWorkEntries'][number]
@@ -1223,12 +1228,12 @@ function ExtraForm({
   const [jobNumber, setJobNumber] = useState('')
   const [amount, setAmount] = useState('')
   const [agreedManagerName, setAgreedManagerName] = useState('')
-  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const [date, setDate] = useState(() => dayKey(new Date(), timeZone))
   const [includeEndDate, setIncludeEndDate] = useState(false)
   const [endDate, setEndDate] = useState('')
   const [receiptName, setReceiptName] = useState<string | null>(null)
-  const value = Number(amount)
-  const canSave = Number.isFinite(value) && value > 0 && (mode === 'priceWork' || Boolean(receiptName))
+  const value = parseTimesheetMoneyAmount(amount)
+  const canSave = value != null && (mode === 'priceWork' || Boolean(receiptName))
   const query = jobNumber.trim().toLowerCase()
   const jobSuggestions = jobs
     .filter((job) => {
@@ -1249,10 +1254,11 @@ function ExtraForm({
   return (
     <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/40 p-4 sm:items-center">
       <form
-        className="max-h-[90vh] w-full max-w-lg space-y-3 overflow-y-auto rounded-2xl bg-white p-5"
+        className="max-h-[90vh] w-full max-w-lg space-y-3 overflow-y-auto rounded-2xl bg-[#F2F2F7] p-5"
         onSubmit={(event) => {
           event.preventDefault()
-          if (!canSave) return
+          if (value == null || !canSave) return
+          const start = dateFromDayKey(date, timeZone)
           if (mode === 'priceWork') {
             void onSave({
               priceWork: {
@@ -1261,8 +1267,8 @@ function ExtraForm({
                 details: details.trim(),
                 jobNumber: jobNumber.trim(),
                 agreedManagerName: agreedManagerName.trim() || 'Manager',
-                startDate: new Date(`${date}T00:00:00`),
-                endDate: includeEndDate && endDate ? new Date(`${endDate}T00:00:00`) : null,
+                startDate: start,
+                endDate: includeEndDate && endDate ? dateFromDayKey(endDate, timeZone) : null,
                 amount: value,
                 managerDecision: 'approved',
               },
@@ -1274,7 +1280,7 @@ function ExtraForm({
                 title: title.trim() || 'Untitled expense',
                 details: details.trim(),
                 jobNumber: jobNumber.trim(),
-                date: new Date(`${date}T00:00:00`),
+                date: start,
                 amount: value,
                 receiptName,
                 managerDecision: 'approved',
@@ -1283,89 +1289,96 @@ function ExtraForm({
           }
         }}
       >
-        <p className="text-[18px] font-semibold">{mode === 'priceWork' ? 'Add Price Work' : 'Add Expense'}</p>
-        <label className="block text-[13px] font-medium text-ios-muted">
-          {mode === 'expense' ? 'Expense name' : 'Price work name'}
-          <input value={title} onChange={(e) => setTitle(e.target.value)} className="mt-1 w-full rounded-lg border px-3 py-2 text-[15px] text-ios-ink" />
-        </label>
-        <label className="block text-[13px] font-medium text-ios-muted">
-          Description
-          <textarea value={details} onChange={(e) => setDetails(e.target.value)} className="mt-1 min-h-[72px] w-full rounded-lg border px-3 py-2 text-[15px] text-ios-ink" />
-        </label>
-        <label className="block text-[13px] font-medium text-ios-muted">
-          Job number
-          <input value={jobNumber} onChange={(e) => setJobNumber(e.target.value)} className="mt-1 w-full rounded-lg border px-3 py-2 text-[15px] text-ios-ink" />
-        </label>
-        {jobSuggestions.length > 0 ? (
-          <div className="flex flex-wrap gap-2">
-            {jobSuggestions.map((job) => (
-              <button
-                key={`${job.jobNumber}-${job.siteName}`}
-                type="button"
-                onClick={() => setJobNumber(job.jobNumber)}
-                className="rounded-full bg-[#E6F1FB] px-3 py-1 text-[12px] font-semibold text-[#185FA5]"
-              >
-                {job.jobNumber} {job.siteName}
-              </button>
-            ))}
-          </div>
-        ) : null}
-        <label className="block text-[13px] font-medium text-ios-muted">
-          Amount
-          <input value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="£0.00" inputMode="decimal" className="mt-1 w-full rounded-lg border px-3 py-2 text-[15px] text-ios-ink" required />
-        </label>
-        <label className="block text-[13px] font-medium text-ios-muted">
-          {mode === 'expense' ? 'Date' : 'Start date'}
-          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="mt-1 w-full rounded-lg border px-3 py-2 text-[15px] text-ios-ink" />
-        </label>
+        <div className="flex items-center justify-between">
+          <button type="button" onClick={onCancel} className="text-[15px] font-semibold text-[#007AFF]">
+            Cancel
+          </button>
+          <p className="text-[17px] font-semibold">{mode === 'priceWork' ? 'Add Price Work' : 'Add Expense'}</p>
+          <button type="submit" disabled={!canSave} className="text-[15px] font-semibold text-[#007AFF] disabled:text-ios-muted">
+            {mode === 'expense' ? 'Add expense' : 'Add price work'}
+          </button>
+        </div>
+        <div className="space-y-0 overflow-hidden rounded-2xl bg-white px-4">
+          <label className="block border-b border-[#E5E5EA] py-3 text-[11px] font-medium uppercase tracking-[0.4px] text-ios-muted">
+            {mode === 'expense' ? 'Expense name' : 'Price work name'}
+            <input value={title} onChange={(e) => setTitle(e.target.value)} className="mt-1 w-full border-0 p-0 text-[14px] font-medium text-ios-ink outline-none" />
+          </label>
+          <label className="block border-b border-[#E5E5EA] py-3 text-[11px] font-medium uppercase tracking-[0.4px] text-ios-muted">
+            Description
+            <textarea value={details} onChange={(e) => setDetails(e.target.value)} className="mt-1 min-h-[72px] w-full border-0 p-0 text-[14px] text-ios-ink outline-none" />
+          </label>
+          <label className="block border-b border-[#E5E5EA] py-3 text-[11px] font-medium uppercase tracking-[0.4px] text-ios-muted">
+            Job number
+            <input value={jobNumber} onChange={(e) => setJobNumber(e.target.value)} className="mt-1 w-full border-0 p-0 text-[14px] font-medium text-ios-ink outline-none" />
+          </label>
+          {jobSuggestions.length > 0 ? (
+            <div className="flex flex-wrap gap-2 py-2">
+              {jobSuggestions.map((job) => (
+                <button
+                  key={`${job.jobNumber}-${job.siteName}`}
+                  type="button"
+                  onClick={() => setJobNumber(job.jobNumber)}
+                  className="rounded-full bg-[#007AFF]/10 px-3 py-1 text-[12px] font-medium text-[#007AFF]"
+                >
+                  {job.jobNumber}
+                </button>
+              ))}
+            </div>
+          ) : null}
+          <label className="block py-3 text-[11px] font-medium uppercase tracking-[0.4px] text-ios-muted">
+            Amount
+            <input value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="£0.00" inputMode="decimal" className="mt-1 w-full border-0 p-0 text-[14px] font-medium text-ios-ink outline-none" required />
+          </label>
+        </div>
+        <div className="overflow-hidden rounded-2xl bg-white px-4 py-3">
+          <label className="block text-[13px] font-medium text-ios-ink">
+            {mode === 'expense' ? 'Date' : 'Start date'}
+            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="mt-1 w-full rounded-lg border px-3 py-2 text-[15px] text-ios-ink" />
+          </label>
+          {mode === 'priceWork' ? (
+            <>
+              <label className="mt-3 flex items-center justify-between text-[13px] font-medium text-ios-ink">
+                Add end date
+                <input type="checkbox" checked={includeEndDate} onChange={(e) => setIncludeEndDate(e.target.checked)} />
+              </label>
+              {includeEndDate ? (
+                <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="mt-2 w-full rounded-lg border px-3 py-2 text-[15px]" />
+              ) : null}
+            </>
+          ) : null}
+        </div>
         {mode === 'priceWork' ? (
-          <>
-            <label className="flex items-center gap-2 text-[13px] font-medium text-ios-ink">
-              <input type="checkbox" checked={includeEndDate} onChange={(e) => setIncludeEndDate(e.target.checked)} />
-              Add end date
-            </label>
-            {includeEndDate ? (
-              <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="w-full rounded-lg border px-3 py-2 text-[15px]" />
-            ) : null}
-            <label className="block text-[13px] font-medium text-ios-muted">
+          <div className="overflow-hidden rounded-2xl bg-white px-4 py-3">
+            <label className="block text-[11px] font-medium uppercase tracking-[0.4px] text-ios-muted">
               Manager who agreed this
-              <input value={agreedManagerName} onChange={(e) => setAgreedManagerName(e.target.value)} className="mt-1 w-full rounded-lg border px-3 py-2 text-[15px] text-ios-ink" />
+              <input value={agreedManagerName} onChange={(e) => setAgreedManagerName(e.target.value)} className="mt-1 w-full border-0 p-0 text-[14px] font-medium text-ios-ink outline-none" />
             </label>
             {managerSuggestions.length > 0 ? (
-              <div className="flex flex-wrap gap-2">
+              <div className="mt-2 flex flex-wrap gap-2">
                 {managerSuggestions.map((name) => (
-                  <button key={name} type="button" onClick={() => setAgreedManagerName(name)} className="rounded-full bg-[#E6F1FB] px-3 py-1 text-[12px] font-semibold text-[#185FA5]">
+                  <button key={name} type="button" onClick={() => setAgreedManagerName(name)} className="rounded-full bg-[#007AFF]/10 px-3 py-1 text-[12px] font-medium text-[#007AFF]">
                     {name}
                   </button>
                 ))}
               </div>
             ) : null}
-          </>
+          </div>
         ) : (
-          <label className="block text-[13px] font-medium text-ios-muted">
-            Upload receipt
+          <label className="flex items-center gap-3 rounded-2xl bg-white px-4 py-3 text-[13px] font-medium text-ios-ink">
+            <span className="text-[#007AFF]">📎</span>
+            <span>Upload receipt</span>
+            <span className={`ml-auto text-[12px] ${receiptName ? 'text-[#007AFF]' : 'text-red-600'}`}>{receiptName || 'Required'}</span>
             <input
               type="file"
               accept="image/*,application/pdf"
-              className="mt-1 w-full text-sm"
+              className="sr-only"
               onChange={(event) => {
                 const file = event.target.files?.[0]
                 setReceiptName(file ? file.name : null)
               }}
             />
-            <span className={`mt-1 block text-[12px] ${receiptName ? 'text-[#185FA5]' : 'text-red-600'}`}>
-              {receiptName || 'Required'}
-            </span>
           </label>
         )}
-        <div className="flex justify-end gap-3 pt-2">
-          <button type="button" onClick={onCancel} className="text-sm font-semibold text-ios-muted">
-            Cancel
-          </button>
-          <button type="submit" disabled={!canSave} className="rounded-lg bg-[#185FA5] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
-            {mode === 'expense' ? 'Add expense' : 'Add price work'}
-          </button>
-        </div>
       </form>
     </div>
   )

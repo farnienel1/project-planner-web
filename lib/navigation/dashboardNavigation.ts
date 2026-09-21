@@ -399,6 +399,11 @@ export function getDashboardNavItems(user: User, organization: Organization | nu
   )
 }
 
+/** Every signed-in menu destination — Help must have a click-through for each. */
+export function allDashboardNavHrefs(): string[] {
+  return ALL_NAV_ITEMS.map((item) => item.href)
+}
+
 export function getDashboardNavBySection(
   user: User,
   organization: Organization | null,

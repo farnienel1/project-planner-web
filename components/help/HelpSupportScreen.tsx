@@ -194,6 +194,16 @@ const TOPICS: Topic[] = [
         ],
       },
       {
+        id: 'small-works',
+        title: 'Small works',
+        summary: 'Reactive jobs in their own list.',
+        href: '/dashboard/small-works',
+        body: [
+          'Small works are the same job record as a project, in a separate list. Create them from Small works or from New.',
+          'Job type still comes from the organisation catalogue. Hours booked here fill timesheets the same way as projects.',
+        ],
+      },
+      {
         id: 'job-types',
         title: 'Job types',
         summary: 'CAT A, Decarbonisation and other catalogue names.',
@@ -209,8 +219,28 @@ const TOPICS: Topic[] = [
         summary: 'Templates, My Qualifications and Save.',
         href: '/dashboard/my-qualifications',
         body: [
-          'Organisation templates are the shared list. People assign those templates on My Qualifications, then set their own expiry date and certificate.',
+          'Organisation templates are the shared list under Qualifications. People assign those templates on My Qualifications, then set their own expiry date and certificate.',
           'Upload the file, then tap Save. Leaving the page without Save discards unsaved expiry dates and certificates. Operatives use My Qualifications; managers and admins use Qualifications in Navigate.',
+        ],
+      },
+      {
+        id: 'org-quals',
+        title: 'Organisation qualifications',
+        summary: 'The shared template list.',
+        href: '/dashboard/qualifications',
+        body: [
+          'Managers and admins add qualification names here. Those names appear when someone taps Add qualifications on My Qualifications.',
+          'Deleting a template does not remove certificates already saved on an operative record.',
+        ],
+      },
+      {
+        id: 'wholesalers',
+        title: 'Wholesalers',
+        summary: 'Supplier contacts and order history.',
+        href: '/dashboard/wholesalers',
+        body: [
+          'Store wholesaler companies and contacts, then send a materials list from a job before the cut-off.',
+          'Order history stays on this page so you can see what was sent from web or iOS.',
         ],
       },
       {
@@ -272,10 +302,11 @@ const TOPICS: Topic[] = [
         id: 'users',
         title: 'Users and line managers',
         summary: 'Who countersigns a timesheet.',
-        href: '/dashboard/users',
+        href: '/dashboard/settings/users',
         body: [
-          'Each operative or manager can have one or more line managers, or none (typical for the founding admin).',
+          'Open Manage users (or Users) from Team. Each operative or manager can have one or more line managers, or none (typical for the founding admin).',
           'No line manager means their own signature completes the timesheet. A line manager means they sign first, then the manager counter-signs.',
+          'Add user invites a person with the same email they will use on iOS. Do not create a second login for the same email.',
         ],
       },
       {
@@ -345,6 +376,16 @@ const TOPICS: Topic[] = [
         body: [
           'Operatives and managers are organisation catalogues. Book labour, timesheets and qualifications match a person by email to their catalogue record.',
           'Keep the email on the user account the same as the operative or manager record so hours, rates and certificates stay linked.',
+        ],
+      },
+      {
+        id: 'managers',
+        title: 'Managers',
+        summary: 'The managers catalogue.',
+        href: '/dashboard/managers',
+        body: [
+          'The managers list is the catalogue used when you assign a job manager or book a manager onto site.',
+          'A manager user account still needs this catalogue email to match, the same as operatives.',
         ],
       },
       {

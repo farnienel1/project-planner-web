@@ -1,5 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { LEGAL_ENTITY, LEGAL_PACK_DOCUMENTS } from './customerLegalPack.ts'
 import { isScrolledToBottom, passwordsMatchAndReady } from './scrollUtils.ts'
 
@@ -24,6 +25,12 @@ test('pack has SaaS, DPA, AUP and Privacy with privacy as acknowledgement', () =
   const privacy = LEGAL_PACK_DOCUMENTS.find((doc) => doc.id === 'privacy')
   assert.equal(privacy?.acknowledgeOnly, true)
   assert.equal(privacy?.acceptLabel.includes('acknowledge'), true)
+})
+
+test('Legal policies page lists every sign-up pack document', () => {
+  const source = readFileSync(new URL('../../components/auth/PrivacyPolicyContent.tsx', import.meta.url), 'utf8')
+  assert.match(source, /LEGAL_PACK_DOCUMENTS/)
+  assert.match(source, /Legal policies/)
 })
 
 test('isScrolledToBottom is true when content fits or the user reaches the end', () => {
