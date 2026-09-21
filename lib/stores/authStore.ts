@@ -23,6 +23,13 @@ import { parseTeamOnboarding } from '@/lib/orgSetup/teamOnboarding'
 import { topLevelAdminFlagPatch } from '@/lib/orgSetup/repairAdminFlags'
 import { ACCOUNT_UNCONFIRMED_MESSAGE } from '@/lib/orgSetup/accountConfirmation'
 import { ensurePrimaryOrgMembership } from '@/lib/orgMembership/membershipService'
+import {
+  clearWebIdleActivity,
+  isWebIdleExpired,
+  markWebIdleExpired,
+  readWebIdleLastActivity,
+  touchWebIdleActivity,
+} from '@/lib/auth/webIdleSession'
 
 interface AuthState {
   user: User | null
@@ -32,7 +39,7 @@ interface AuthState {
   error: string | null
   signIn: (email: string, password: string) => Promise<void>
   signUp: (email: string, password: string, organizationName: string) => Promise<void>
-  signOut: () => Promise<void>
+  signOut: (opts?: { idle?: boolean }) => Promise<void>
   resetPassword: (email: string) => Promise<void>
   checkAuth: () => void
   recordLastSeenIfDue: () => Promise<void>
@@ -206,6 +213,17 @@ export const useAuthStore = create<AuthState>((set) => {
   if (typeof window !== 'undefined' && isFirebaseConfigured()) {
     onAuthStateChanged(getFirebaseAuth(), async (firebaseUser) => {
       if (firebaseUser) {
+        if (isWebIdleExpired(Date.now(), readWebIdleLastActivity())) {
+          try {
+            await firebaseSignOut(getFirebaseAuth())
+          } catch (idleSignOutError) {
+            console.warn('Idle sign-out skipped:', idleSignOutError)
+          }
+          markWebIdleExpired()
+          set({ user: null, firebaseUser: null, organization: null, loading: false, error: null })
+          return
+        }
+        if (readWebIdleLastActivity() == null) touchWebIdleActivity()
         try {
           await withTimeout(loadSignedInProfile(firebaseUser), PROFILE_LOAD_MS, SIGN_IN_SLOW_MESSAGE)
         } catch (authLoadError) {
@@ -272,6 +290,7 @@ export const useAuthStore = create<AuthState>((set) => {
         const loaded = useAuthStore.getState().user
         if (loaded && loaded.accountConfirmed === false) {
           await firebaseSignOut(getFirebaseAuth())
+          clearWebIdleActivity()
           set({
             user: null,
             firebaseUser: null,
@@ -281,6 +300,7 @@ export const useAuthStore = create<AuthState>((set) => {
           })
           throw new Error(ACCOUNT_UNCONFIRMED_MESSAGE)
         }
+        touchWebIdleActivity()
         set({ loading: false })
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : 'Sign in failed'
@@ -344,8 +364,10 @@ export const useAuthStore = create<AuthState>((set) => {
       }
     },
 
-    signOut: async () => {
+    signOut: async (opts) => {
       try {
+        if (opts?.idle) markWebIdleExpired()
+        else clearWebIdleActivity()
         await firebaseSignOut(getFirebaseAuth())
         set({ user: null, firebaseUser: null, organization: null })
       } catch (error: unknown) {
