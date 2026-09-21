@@ -109,7 +109,7 @@ export function SetupExplainer({ organizationName, firstName, onBack, onContinue
         </p>
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           {ORGANISATION_DETAILS_PREVIEW.map((item) => (
-            <div key={item.title} className="rounded-2xl border border-slate-200 bg-white p-4">
+            <div key={item.title} className="card p-4">
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100">
                 <Icon name={item.icon} className="h-5 w-5 text-slate-600" />
               </div>
@@ -132,7 +132,7 @@ export function SetupExplainer({ organizationName, firstName, onBack, onContinue
         </p>
         <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {FEATURES_PREVIEW.map((item) => (
-            <div key={item.title} className="rounded-2xl border border-slate-200 bg-white p-4">
+            <div key={item.title} className="card p-4">
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100">
                 <Icon name={item.icon} className="h-5 w-5 text-slate-600" />
               </div>

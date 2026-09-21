@@ -147,7 +147,7 @@ export function TimesheetsHub() {
     return (
       <div className="rounded-2xl bg-white p-8 text-center shadow-sm">
         <p className="text-[22px] font-semibold">Timesheets unavailable</p>
-        <p className="mt-2 text-[15px] text-ios-muted">No timesheet section is available for this account.</p>
+        <p className="mt-2 text-[15px] text-[var(--ink3)]">No timesheet section is available for this account.</p>
       </div>
     )
   }
@@ -211,22 +211,20 @@ export function TimesheetsHub() {
           <TimesheetPeriodPage {...periodPageProps} subjectUser={selectedUser} mode="review" />
         ) : (
           <>
-            <p className="text-sm text-ios-muted">Current pay run period · {runCopy.periodLine}</p>
-            <div className="inline-flex rounded-xl bg-[#E5E5EA] p-1">
+            <p className="muted small">Current pay run period · {runCopy.periodLine}</p>
+            <div className="seg">
               {TEAM_TABS.map((item) => (
                 <button
                   key={item.id}
                   type="button"
+                  className={tab === item.id ? 'on' : ''}
                   onClick={() => router.replace(`/dashboard/timesheets?surface=team&tab=${item.id}`)}
-                  className={`rounded-lg px-4 py-1.5 text-[13px] font-semibold ${
-                    tab === item.id ? 'bg-white text-ios-ink shadow-sm' : 'text-ios-muted'
-                  }`}
                 >
                   {item.label}
                 </button>
               ))}
             </div>
-            <p className="text-[13px] text-ios-muted">{TEAM_TABS.find((item) => item.id === tab)?.help}</p>
+            <p className="muted small">{TEAM_TABS.find((item) => item.id === tab)?.help}</p>
             <TimesheetsScreen
               bookings={bookings}
               managerSiteBookings={managerSiteBookings}
@@ -253,15 +251,25 @@ export function TimesheetsHub() {
   }
 
   return (
-    <div className="space-y-6 pb-10">
-      <h1 className="text-[28px] font-semibold tracking-tight">Timesheets</h1>
-
-      <div className="overflow-hidden rounded-2xl bg-gradient-to-br from-[#185FA5] to-[#0F4C81] p-6 text-white shadow-sm">
-        <p className="text-[11px] font-bold uppercase tracking-[1.2px] text-white/80">Current payment run</p>
-        <p className="mt-2 text-[22px] font-semibold">{runCopy.periodLine}</p>
-        <p className="mt-1 text-[15px] text-white/90">{runCopy.paidLine}</p>
-        {runCopy.note ? <p className="mt-3 line-clamp-3 text-[13px] text-white/80">{runCopy.note}</p> : null}
+    <div className="stack" data-hue="ts">
+      <div className="phead" data-hue="ts">
+        <div className="badge-ico">
+          <ClockIcon className="h-6 w-6" />
+        </div>
+        <div>
+          <h1>Timesheets</h1>
+          <div className="sub">Sign your hours and sign off your team</div>
+        </div>
       </div>
+
+      <section className="hero" data-hue="ts">
+        <div className="relative z-[1]">
+          <p className="eb">Current payment run</p>
+          <div className="big">{runCopy.periodLine}</div>
+          <p className="mt-1.5 opacity-85">{runCopy.paidLine}</p>
+          {runCopy.note ? <p className="mt-3 max-w-2xl text-[13px] opacity-80">{runCopy.note}</p> : null}
+        </div>
+      </section>
 
       {showDisabled && !showMine && !showTeam ? (
         <DisabledCard />
@@ -393,14 +401,14 @@ function MineTimesheetsList({
         title="Current pay run period"
         subtitle={runCopyPeriodLine}
         detail="Review bookings, add extras, and sign your timesheet."
-        tint="text-[#185FA5] bg-[#E6F1FB]"
+        tint="text-[var(--blue)] bg-[var(--blue-t)]"
         onClick={() =>
           router.push(`/dashboard/timesheets?surface=mine&period=${periodStartKey(currentPeriod.start, timeZone)}`)
         }
       />
       {pending.length > 0 ? (
         <div className="space-y-2">
-          <p className="px-1 text-[11px] font-bold uppercase tracking-[0.4px] text-ios-muted">Pending timesheets</p>
+          <p className="px-1 text-[11px] font-bold uppercase tracking-[0.4px] text-[var(--ink3)]">Pending timesheets</p>
           {pending.map((period) => (
             <HubCard
               key={`pending-${periodStartKey(period.start, timeZone)}`}
@@ -418,7 +426,7 @@ function MineTimesheetsList({
       ) : null}
       {pastVisible.length > 0 ? (
         <div className="space-y-2">
-          <p className="px-1 text-[11px] font-bold uppercase tracking-[0.4px] text-ios-muted">Past timesheets</p>
+          <p className="px-1 text-[11px] font-bold uppercase tracking-[0.4px] text-[var(--ink3)]">Past timesheets</p>
           {pastVisible.map((period) => {
             const draft = drafts.get(periodStartKey(period.start, timeZone))
             return (
@@ -444,18 +452,13 @@ function MineTimesheetsList({
 function TimesheetsNavBar({ href, title }: { href: string; title: string }) {
   const router = useRouter()
   return (
-    <div className="relative flex min-h-[28px] items-center justify-center">
-      <button
-        type="button"
-        onClick={() => router.push(href)}
-        className="absolute left-0 inline-flex items-center gap-0.5 text-[17px] font-semibold text-[#007AFF]"
-      >
-        <span aria-hidden className="text-[22px] leading-none">
-          ‹
-        </span>
-        Back
+    <div className="phead" data-hue="ts">
+      <button type="button" onClick={() => router.push(href)} className="btn sm ghost">
+        Timesheets
       </button>
-      <h1 className="px-16 text-center text-[17px] font-semibold">{title}</h1>
+      <div>
+        <h1>{title}</h1>
+      </div>
     </div>
   )
 }
@@ -465,7 +468,7 @@ function HubCard({
   title,
   subtitle,
   detail,
-  tint,
+  tint: _tint,
   onClick,
 }: {
   icon: ReactNode
@@ -479,13 +482,13 @@ function HubCard({
     <button
       type="button"
       onClick={onClick}
-      className="flex w-full items-start gap-3 rounded-2xl bg-white p-4 text-left shadow-[0_1px_2px_rgba(0,0,0,0.10)]"
+      className="ritem"
     >
-      <div className={`flex h-11 w-11 items-center justify-center rounded-xl ${tint}`}>{icon}</div>
+      <span className="ico-chip" data-hue="ts">{icon}</span>
       <div className="min-w-0">
         <p className="text-[17px] font-semibold">{title}</p>
-        <p className="mt-0.5 text-[14px] font-semibold text-[#185FA5]">{subtitle}</p>
-        <p className="mt-1 text-[13px] text-ios-muted">{detail}</p>
+        <p className="mt-0.5 text-[14px] font-semibold text-[var(--ts)]">{subtitle}</p>
+        <p className="mt-1 text-[13px] text-[var(--ink3)]">{detail}</p>
       </div>
     </button>
   )
@@ -572,9 +575,9 @@ function ManagerTimesheetsTile({
 
 function StatMiniCard({ value, label, tone }: { value: string; label: string; tone: string }) {
   return (
-    <div className={`rounded-2xl px-3 py-3 text-center ${tone}`}>
-      <p className="text-[22px] font-semibold leading-none">{value}</p>
-      <p className="mt-1.5 text-[11px] font-semibold leading-tight">{label}</p>
+    <div className={`card pad text-center`} data-hue={tone.includes('amber') ? 'warn' : tone.includes('green') ? 'green' : 'lib'}>
+      <b className="block font-[family-name:var(--head)] text-[22px]">{value}</b>
+      <span className="small muted">{label}</span>
     </div>
   )
 }
@@ -596,9 +599,10 @@ function Tile({
     <button
       type="button"
       onClick={onClick}
-      className="flex w-full items-start gap-4 rounded-2xl bg-white p-5 text-left shadow-[0_1px_2px_rgba(0,0,0,0.10)] hover:ring-2 hover:ring-[#185FA5]/20"
+      className="ritem"
+      data-hue="ts"
     >
-      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#E6F1FB] text-[#185FA5]">{icon}</div>
+      <span className="ico-chip">{icon}</span>
       <div className="min-w-0 flex-1">
         <div className="flex items-start justify-between gap-2">
           <p className="text-[17px] font-semibold">{title}</p>
@@ -606,7 +610,7 @@ function Tile({
             <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-700">{badge}</span>
           ) : null}
         </div>
-        <p className="mt-1 text-[14px] text-ios-muted">{detail}</p>
+        <p className="mt-1 text-[14px] text-[var(--ink3)]">{detail}</p>
       </div>
     </button>
   )
@@ -616,7 +620,7 @@ function DisabledCard() {
   return (
     <div className="rounded-2xl bg-white p-5 shadow-sm">
       <p className="text-[17px] font-semibold">Timesheets follow employment type</p>
-      <p className="mt-2 text-[15px] leading-relaxed text-ios-muted">{PAYE_DISABLED_BODY}</p>
+      <p className="mt-2 text-[15px] leading-relaxed text-[var(--ink3)]">{PAYE_DISABLED_BODY}</p>
     </div>
   )
 }

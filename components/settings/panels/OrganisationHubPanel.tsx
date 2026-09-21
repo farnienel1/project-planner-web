@@ -191,8 +191,8 @@ export function OrganisationHubPanel({
       <SettingsCard>
         <SettingsRow
           icon={ICON.building}
-          iconBg="bg-[#185FA5]/10"
-          iconColor="text-[#185FA5]"
+          iconBg="bg-[var(--blue)]/10"
+          iconColor="text-[var(--blue)]"
           label="Company details"
           description="Name, logo, office address, currency and region"
           chevron
@@ -264,8 +264,8 @@ export function OrganisationHubPanel({
       <SettingsCard>
         <SettingsRow
           icon={ICON.document}
-          iconBg="bg-[#185FA5]/10"
-          iconColor="text-[#185FA5]"
+          iconBg="bg-[var(--blue)]/10"
+          iconColor="text-[var(--blue)]"
           label="Payment Runs and Timesheets"
           description={paymentSubtitle}
           chevron

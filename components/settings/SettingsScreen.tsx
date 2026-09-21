@@ -107,7 +107,7 @@ function ProfilePanel({ onBack }: { onBack: () => void }) {
       <PanelHeader title="My profile" onBack={onBack} />
 
       {/* Avatar */}
-      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="card pad">
         <p className="mb-3 text-xs font-bold uppercase tracking-widest text-slate-400">Profile image</p>
         <div className="flex items-center gap-4">
           {user ? <UserAvatar user={{ ...user, firstName, surname }} size={56} /> : (
@@ -169,7 +169,7 @@ function ProfilePanel({ onBack }: { onBack: () => void }) {
         </div>
       </SettingsCard>
 
-      <div className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="space-y-3 card pad">
         <FormField label="First name"><Input value={firstName} onChange={e => setFirstName(e.target.value)} /></FormField>
         <FormField label="Surname"><Input value={surname} onChange={e => setSurname(e.target.value)} /></FormField>
         <FormField label="Mobile number"><Input value={mobile} onChange={e => setMobile(e.target.value)} type="tel" /></FormField>
@@ -226,7 +226,7 @@ function PasswordPanel({ onBack }: { onBack: () => void }) {
         </div>
       </div>
 
-      <div className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="space-y-3 card pad">
         <FormField label="Current Password">
           <div className="relative">
             <Input type={showCurrent ? 'text' : 'password'} value={current} onChange={e => setCurrent(e.target.value)} placeholder="Enter your current password" />
@@ -335,7 +335,7 @@ function RolesPanel({ onBack }: { onBack: () => void }) {
           />
         </Link>
       </SettingsCard>
-      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm text-center py-8">
+      <div className="card pad text-center py-8">
         <svg className="mx-auto h-10 w-10 text-slate-300 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
         <p className="text-sm font-semibold text-slate-700">Change roles on user profiles</p>
         <p className="text-xs text-slate-400 mt-1">Use Manage users to assign admin, manager, or operative access.</p>
@@ -354,7 +354,6 @@ export default function SettingsScreen({ initialPanel = 'main' }: { initialPanel
     !canAccessOrgHub && isOrganisationHubPanel(initialPanel) ? 'main' : initialPanel
   const [panel, setPanel] = useState<Panel>(safeInitialPanel)
   const isAdmin = hasAdminAccess(user)
-  const initials = `${user?.firstName?.[0] || ''}${user?.surname?.[0] || ''}`.toUpperCase()
 
   useEffect(() => {
     if (!canAccessOrgHub && isOrganisationHubPanel(panel)) {
@@ -396,23 +395,36 @@ export default function SettingsScreen({ initialPanel = 'main' }: { initialPanel
   if (panel === 'roles' && canAccessOrgHub) return <RolesPanel onBack={() => setPanel('organisation')} />
 
   return (
-    <div className="max-w-xl mx-auto space-y-5 pb-10">
-      {/* Profile hero */}
-      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm flex items-center gap-4">
-        <div className="flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 text-xl font-bold text-white flex-shrink-0">
-          {initials || '?'}
+    <div className="mx-auto max-w-[1100px] space-y-5 pb-10">
+      <div className="phead" data-hue="lib">
+        <div className="badge-ico">
+          <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+            <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+          </svg>
         </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-lg font-bold text-slate-900 truncate">{user?.firstName} {user?.surname}</p>
-          <p className="text-sm text-slate-500 truncate">{organization?.name}</p>
-          {isAdmin && (
-            <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-red-50 border border-red-100 px-2 py-0.5 text-[11px] font-bold text-red-600">
-              <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>
-              Admin
-            </span>
-          )}
+        <div>
+          <h1>Settings</h1>
+          <div className="sub">Personal, company-wide and support</div>
         </div>
       </div>
+
+      <section className="hero" style={{ padding: '22px 26px' }}>
+        <div className="relative z-[1] flex items-center gap-4">
+          {user ? <UserAvatar user={user} size={72} /> : null}
+          <div className="min-w-0">
+            <div className="big" style={{ fontSize: 26 }}>
+              {user?.firstName} {user?.surname}
+            </div>
+            <div className="opacity-85">{organization?.name}</div>
+            {isAdmin ? (
+              <span className="mt-2 inline-flex pill" style={{ background: 'rgba(255,255,255,.18)', color: '#fff' }}>
+                Admin
+              </span>
+            ) : null}
+          </div>
+        </div>
+      </section>
 
       {/* Personal */}
       <SectionLabel label="Personal" />
@@ -439,7 +451,7 @@ export default function SettingsScreen({ initialPanel = 'main' }: { initialPanel
           <button
             type="button"
             onClick={() => setPanel('organisation')}
-            className="w-full rounded-2xl bg-gradient-to-br from-blue-600 to-blue-700 p-4 text-left shadow-md hover:from-blue-700 hover:to-blue-800 transition-all"
+            className="w-full rounded-[22px] bg-gradient-to-br from-[var(--navy)] to-[var(--blue)] p-5 text-left shadow-[var(--sh)]"
           >
             <div className="flex items-start gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/20 flex-shrink-0">
@@ -460,7 +472,7 @@ export default function SettingsScreen({ initialPanel = 'main' }: { initialPanel
               <svg className="h-4 w-4 text-white/50 flex-shrink-0 mt-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7"/></svg>
             </div>
           </button>
-          <p className="px-1 text-xs text-slate-500">Tap to manage how {organization?.name} runs — affects everyone in your team.</p>
+          <p className="px-1 text-xs text-[var(--ink3)]">Click to manage how {organization?.name} runs — affects everyone in your team.</p>
         </>
       )}
 
@@ -470,13 +482,15 @@ export default function SettingsScreen({ initialPanel = 'main' }: { initialPanel
         <Link href="/dashboard/help">
           <SettingsRow icon="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" iconBg="bg-emerald-50" iconColor="text-emerald-600" label="Help & support" description="Get in touch, browse FAQs" chevron />
         </Link>
-        <SettingsRow icon="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" iconBg="bg-slate-100" iconColor="text-slate-600" label="Privacy & terms" description="Legal information" chevron />
+        <Link href="/dashboard/privacy">
+          <SettingsRow icon="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" iconBg="bg-slate-100" iconColor="text-slate-600" label="Privacy Policy" description="Legal agreements" chevron />
+        </Link>
       </SettingsCard>
 
       {/* Sign out */}
       <SettingsCard>
-        <button type="button" onClick={async () => { if (window.confirm('Sign out?')) await signOut() }}
-          className="flex w-full items-center justify-center gap-2 px-4 py-4 text-red-600 hover:bg-red-50 transition-colors">
+        <button type="button" onClick={async () => { if (window.confirm('Are you sure you want to sign out?')) await signOut() }}
+          className="flex w-full items-center justify-center gap-2 px-4 py-4 text-[var(--red)] hover:bg-[var(--red-t)] transition-colors">
           <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
           <span className="text-sm font-bold">Sign out</span>
         </button>

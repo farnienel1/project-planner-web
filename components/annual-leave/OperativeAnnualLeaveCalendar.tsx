@@ -206,7 +206,7 @@ export function OperativeAnnualLeaveCalendar({
         Back to team list
       </button>
 
-      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="card pad">
         <p className="text-lg font-bold text-slate-900">{person.displayName}</p>
         <p className="text-sm text-slate-500">{person.subtitle}</p>
         {person.tradeLabel && (
@@ -218,7 +218,7 @@ export function OperativeAnnualLeaveCalendar({
 
       <AnnualLeaveLegend />
 
-      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="card pad">
         <LeaveDayCalendar
           month={month}
           onMonthChange={setMonth}
@@ -230,7 +230,7 @@ export function OperativeAnnualLeaveCalendar({
       </div>
 
       {selectedDay && selectedKind === 'none' && (
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="card pad">
           <p className="text-sm font-bold text-slate-900">
             Book annual leave for {person.displayName}
           </p>
@@ -250,7 +250,7 @@ export function OperativeAnnualLeaveCalendar({
       )}
 
       {selectedDay && approvedBooking && (
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="card pad">
           <p className="text-sm font-bold text-slate-900">Change approved booking</p>
           <p className="mt-0.5 text-xs text-slate-500">
             {fmtDate(selectedDay)} · currently {approvedBooking.timeSlot}

@@ -9,7 +9,8 @@ import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
-  ChevronRightIcon,
+  CalendarDaysIcon,
+  ChartBarIcon,
   Cog6ToothIcon,
   PlusIcon,
   WrenchScrewdriverIcon,
@@ -27,7 +28,7 @@ import { useManagerScheduleStore } from '@/lib/stores/managerScheduleStore'
 import { useTaskStore } from '@/lib/stores/taskStore'
 import { useHolidayStore } from '@/lib/stores/holidayStore'
 import { useMaterialProjectStore } from '@/lib/stores/materialProjectStore'
-import { hasAdminAccess, isOperativeMode } from '@/lib/permissions'
+import { canBookWork, canViewDailyOverview, canViewWeeklyReports, hasAdminAccess, isOperativeMode } from '@/lib/permissions'
 import { formatHomeDateLine } from '@/lib/ios-parity/londonTime'
 import {
   computeHomeOverviewMetrics,
@@ -49,8 +50,9 @@ import {
   saveQuickActionOrder,
 } from '@/lib/home/quickActions'
 import { policyForDay } from '@/lib/payroll/policyCatalog'
-import { IconChip, type ChipTint } from '@/components/ios/IconChip'
+import { type ChipTint } from '@/components/ios/IconChip'
 import { Hero, StatCard } from '@/components/ui'
+import { IosModal } from '@/components/ios/primitives'
 import type { SectionHue } from '@/lib/ui/sectionHue'
 import { generateOrgWarnings } from '@/lib/warnings/generateOrgWarnings'
 import { loadOrganizationDetails, type OrganizationDetails } from '@/lib/settings/organizationSettings'
@@ -238,59 +240,92 @@ export function HomeScreen() {
     saveQuickActionOrder(user.id, ids)
   }
 
+  const showBook = canBookWork(displayUser)
+  const showDaily = canViewDailyOverview(displayUser)
+  const showWeekly = canViewWeeklyReports(displayUser)
+
   return (
-    <div className="space-y-5">
+    <div className="stack">
       {admin && taskLimitProjects.length > 0 ? (
-        <div className="rounded-2xl border border-[#FCEBEB] bg-[#FCEBEB] px-4 py-3 text-sm text-[#A32D2D]">
-          <p className="font-semibold">Warning: Task limit reached</p>
-          {taskLimitProjects.slice(0, 3).map((p) => (
-            <p key={p.id}>
-              {p.jobNumber}: Delete first 50 completed tasks to clear some space
-            </p>
-          ))}
-          {taskLimitProjects.length > 3 ? (
-            <p>And {taskLimitProjects.length - 3} more project{taskLimitProjects.length - 3 === 1 ? '' : 's'}...</p>
-          ) : null}
+        <div className="banner" data-hue="red">
+          <span className="ico-chip">
+            <ExclamationTriangleIcon className="h-5 w-5" />
+          </span>
+          <div>
+            <b>Task limit reached</b>
+            {taskLimitProjects.slice(0, 3).map((p) => (
+              <p key={p.id} className="small">
+                {p.jobNumber}: Delete first 50 completed tasks to clear some space
+              </p>
+            ))}
+            {taskLimitProjects.length > 3 ? (
+              <p className="small">
+                And {taskLimitProjects.length - 3} more project{taskLimitProjects.length - 3 === 1 ? '' : 's'}...
+              </p>
+            ) : null}
+          </div>
         </div>
       ) : null}
 
-      <div className="grid gap-5 min-[1100px]:grid-cols-[minmax(0,1fr)_380px]">
+      <div className="grid gmain">
         <Hero
           eyebrow={formatHomeDateLine(now)}
-            title={<h1>{`Hi, ${greetingName(displayUser.firstName, displayUser.email)}`}</h1>}
-            subtitle={`${liveCount} active project${liveCount === 1 ? '' : 's'}`}
+          title={<h1>{`Hi, ${greetingName(displayUser.firstName, displayUser.email)}`}</h1>}
+          subtitle={`${liveCount} active project${liveCount === 1 ? '' : 's'}`}
           stats={
             operative
               ? [
-                  { label: 'Tasks Due Today', value: metrics.tasksDueToday },
-                  { label: 'Tasks Due This Week', value: metrics.tasksDueThisWeek },
-                  { label: 'My Tasks Overdue', value: metrics.tasksOverdue },
+                  { label: 'Tasks Due Today', value: metrics.tasksDueToday, onClick: () => router.push('/dashboard/tasks') },
+                  { label: 'Tasks Due This Week', value: metrics.tasksDueThisWeek, onClick: () => router.push('/dashboard/tasks') },
+                  { label: 'My Tasks Overdue', value: metrics.tasksOverdue, onClick: () => router.push('/dashboard/tasks') },
                 ]
               : shownMetrics.map((id) => ({
                   label: HOME_OVERVIEW_PILL_TITLES[id],
                   value: metricValue(id, metrics, warningCount),
+                  onClick: () => {
+                    const title = HOME_OVERVIEW_PILL_TITLES[id]
+                    if (title.startsWith('Tasks') || title.startsWith('Open')) router.push('/dashboard/tasks')
+                    else if (title === 'Warnings') router.push('/dashboard/warnings')
+                    else if (title.includes('AL')) router.push('/dashboard/annual-leave')
+                    else router.push('/dashboard/daily-overview')
+                  },
                 }))
           }
           actions={
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="row wrap">
               {admin ? (
                 <button
                   type="button"
                   onClick={() => setMetricsOpen(true)}
-                  className="btn sm h-9 w-9 rounded-[11px] border border-white/20 bg-white/16 text-white"
+                  className="btn sm hbtn round"
                   aria-label="Choose dashboard metrics"
                 >
                   <Cog6ToothIcon className="h-5 w-5" />
                 </button>
               ) : null}
-              <span className="inline-flex items-center rounded-full bg-white/20 px-3 py-1 text-[12px] font-medium">
-                {warningCount > 0 ? 'Heads up' : 'On track'}
-              </span>
+              {showBook ? (
+                <button type="button" className="btn hbtn solid" onClick={() => router.push('/dashboard/book-labour')}>
+                  <PlusIcon className="h-4 w-4" />
+                  Book labour
+                </button>
+              ) : null}
+              {showDaily ? (
+                <button type="button" className="btn hbtn" onClick={() => router.push('/dashboard/daily-overview')}>
+                  <CalendarDaysIcon className="h-4 w-4" />
+                  Daily overview
+                </button>
+              ) : null}
+              {showWeekly ? (
+                <button type="button" className="btn hbtn" onClick={() => router.push('/dashboard/weekly-report')}>
+                  <ChartBarIcon className="h-4 w-4" />
+                  Weekly report
+                </button>
+              ) : null}
             </div>
           }
         />
 
-        <div className="flex flex-col gap-4">
+        <div className="stack" style={{ gap: 16 }}>
           {admin ? (
             <StatCard
               hue="warn"
@@ -310,22 +345,20 @@ export function HomeScreen() {
         </div>
       </div>
 
-      <section>
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-[17px] font-semibold lg:text-[18px]">Quick actions</h2>
-          <div className="flex items-center gap-3 text-[14px] font-medium text-[var(--blue)]">
-            <span>Main menu</span>
-            <button type="button" onClick={() => setCustomise((v) => !v)}>
-              {customise ? 'Done' : 'Customise'}
-            </button>
-          </div>
-        </div>
-        {customise && hint ? (
-          <p className="mb-3 rounded-xl bg-ios-chip-blue px-3 py-2 text-sm text-[#185FA5]">
-            Drag the icons to your desired layout.
+      <div className="row" style={{ marginTop: 10 }}>
+        <h2 className="h2">Quick actions</h2>
+        <span className="grow" />
+        <button type="button" className="link" onClick={() => setCustomise((v) => !v)}>
+          {customise ? 'Done' : 'Customise'}
+        </button>
+      </div>
+      {customise && hint ? (
+        <div className="banner" data-hue="blue">
+          <p className="small">
+            Drag the icons to your desired layout.{' '}
             <button
               type="button"
-              className="ml-2 underline"
+              className="link"
               onClick={() => {
                 localStorage.setItem(quickActionHintStorageKey(user.id), '1')
                 setHint(false)
@@ -334,197 +367,190 @@ export function HomeScreen() {
               OK
             </button>
           </p>
-        ) : null}
-        <div className="grid grid-cols-3 gap-3 lg:grid-cols-4 xl:grid-cols-6">
-          {actionIds
-            .map((id) => quickActionMeta(id, organization?.settings))
-            .filter((m): m is NonNullable<typeof m> => Boolean(m))
-            .map((meta) => (
-              <div key={meta.id} className="relative">
-                <Link
-                  href={meta.href}
-                  data-hue={hueFromQuickChip(meta.chip)}
-                  className="tile min-h-[128px] w-full text-center"
-                >
-                  <IconChip tint={meta.chip as ChipTint} size="lg">
-                    <QuickActionIcon name={meta.icon} className="h-6 w-6" />
-                  </IconChip>
-                  <span className="line-clamp-2 text-[16px] font-medium leading-tight">{meta.title.replace(/\n/g, ' ')}</span>
-                </Link>
-                {customise ? (
-                  <button
-                    type="button"
-                    aria-label="Remove"
-                    onClick={() => persistActions(actionIds.filter((id) => id !== meta.id))}
-                    className="absolute -right-1 -top-1 flex h-6 w-6 items-center justify-center rounded-full bg-[#A32D2D] text-white"
-                  >
-                    <XMarkIcon className="h-4 w-4" />
-                  </button>
-                ) : null}
-              </div>
-            ))}
-          {customise ? (
-            <button
-              type="button"
-              onClick={() => setAddOpen(true)}
-              className="ios-card flex min-h-[128px] flex-col items-center justify-center gap-2 border-dashed p-4 text-ios-muted"
-            >
-              <PlusIcon className="h-8 w-8" />
-              Add
-            </button>
-          ) : null}
         </div>
-      </section>
-
-      <div className="grid gap-4 xl:grid-cols-12">
-        <section className="xl:col-span-8">
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-[20px] font-semibold">Up next</h2>
-            <Link href="/dashboard/my-schedule" className="text-[14px] font-medium text-[#185FA5]">
-              See all
-            </Link>
-          </div>
-          {upNext.length === 0 ? (
-            <p className="ios-card p-6 text-sm text-ios-muted">No upcoming bookings on your schedule.</p>
-          ) : (
-            <div className="space-y-4">
-              {upNext.map((day) => (
-                <div key={day.id}>
-                  <p className="mb-2 text-[13px] font-semibold text-ios-muted">{day.heading}</p>
-                  <div className="space-y-2">
-                    {day.rows.map((row) => (
-                      <Link
-                        key={row.id}
-                        href="/dashboard/my-schedule"
-                        className="ios-card flex items-center gap-3 overflow-hidden hover:border-ios-search-border"
-                      >
-                        <span className={`h-full w-[5px] self-stretch ${row.accent === 'blue' ? 'bg-[#185FA5]' : 'bg-[#534AB7]'}`} />
-                        <div className="min-w-0 flex-1 py-3 pr-2">
-                          <p className="truncate text-[17px] font-semibold">{row.title}</p>
-                          <p className="truncate text-[14px] text-ios-muted">{row.subtitle}</p>
-                        </div>
-                        <ChevronRightIcon className="mr-3 h-5 w-5 text-[#C5C9D2]" />
-                      </Link>
-                    ))}
-                  </div>
-                </div>
-              ))}
+      ) : null}
+      <div className="tiles">
+        {actionIds
+          .map((id) => quickActionMeta(id, organization?.settings))
+          .filter((m): m is NonNullable<typeof m> => Boolean(m))
+          .map((meta) => (
+            <div key={meta.id} className="relative">
+              <Link
+                href={meta.href}
+                data-hue={hueFromQuickChip(meta.chip)}
+                className="tile"
+              >
+                <span className="ico-chip">
+                  <QuickActionIcon name={meta.icon} className="h-6 w-6" />
+                </span>
+                {meta.title.replace(/\n/g, ' ')}
+              </Link>
+              {customise ? (
+                <button
+                  type="button"
+                  aria-label="Remove"
+                  onClick={() => persistActions(actionIds.filter((id) => id !== meta.id))}
+                  className="absolute -right-1 -top-1 grid h-6 w-6 place-items-center rounded-full bg-[var(--red)] text-white"
+                >
+                  <XMarkIcon className="h-4 w-4" />
+                </button>
+              ) : null}
             </div>
-          )}
+          ))}
+        {customise ? (
+          <button type="button" onClick={() => setAddOpen(true)} className="tile" data-hue="lib" style={{ opacity: 0.7 }}>
+            <span className="ico-chip">
+              <PlusIcon className="h-6 w-6" />
+            </span>
+            Add
+          </button>
+        ) : null}
+      </div>
+
+      <div className="grid gmain">
+        <section className="card" data-hue="sched">
+          <div className="card-h">
+            <div className="ico-chip sm">
+              <CalendarDaysIcon className="h-[18px] w-[18px]" />
+            </div>
+            <h2 className="h2">Up next</h2>
+            <div className="acts">
+              <Link href="/dashboard/my-schedule" className="btn sm ghost">
+                See all
+              </Link>
+            </div>
+          </div>
+          <div className="card-b rows">
+            {upNext.length === 0 ? (
+              <p className="muted small">No upcoming bookings on your schedule.</p>
+            ) : (
+              upNext.flatMap((day) =>
+                day.rows.map((row) => (
+                  <Link
+                    key={row.id}
+                    href="/dashboard/my-schedule"
+                    className="ritem"
+                    data-hue={row.accent === 'blue' ? 'blue' : 'daily'}
+                  >
+                    <span className="ico-chip" style={{ flexDirection: 'column', lineHeight: 1 }}>
+                      <span className="xs" style={{ fontWeight: 700 }}>
+                        {day.heading.slice(0, 3).toUpperCase()}
+                      </span>
+                    </span>
+                    <span className="grow">
+                      <span className="t">{row.title}</span>
+                      <span className="s">{row.subtitle}</span>
+                    </span>
+                  </Link>
+                ))
+              )
+            )}
+          </div>
         </section>
 
         {!operative ? (
-          <aside className="xl:col-span-4">
-            <div className="ios-card p-5">
-              <div className="flex items-center gap-3">
-                <IconChip tint="amber">
-                  <WrenchScrewdriverIcon className="h-5 w-5" />
-                </IconChip>
-                <div>
-                  <p className="font-semibold">Maintenance</p>
-                  <span className="mt-1 inline-block rounded-full bg-ios-chip-amber px-2 py-0.5 text-[12px] font-medium text-ios-icon-amber">
-                    Soon
-                  </span>
-                </div>
+          <section className="card pad" data-hue="lib">
+            <div className="row">
+              <div className="ico-chip">
+                <WrenchScrewdriverIcon className="h-5 w-5" />
               </div>
-              <p className="mt-3 text-sm text-ios-muted">Coming in a future update</p>
+              <div className="grow">
+                <b style={{ fontFamily: 'var(--head)' }}>Maintenance</b>{' '}
+                <span className="pill" data-hue="warn">
+                  Soon
+                </span>
+                <div className="muted small">Coming in a future update</div>
+              </div>
             </div>
-          </aside>
+          </section>
         ) : null}
       </div>
 
       {metricsOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="max-h-[80vh] w-full max-w-[640px] overflow-y-auto rounded-2xl bg-ios-card p-6">
-            <div className="mb-4 flex items-center justify-between">
-              <h3 className="text-lg font-semibold">Dashboard metrics</h3>
-              <button type="button" onClick={() => setMetricsOpen(false)} className="text-[#185FA5]">
-                Done
+        <IosModal title="Dashboard metrics" onDone={() => setMetricsOpen(false)}>
+          <p className="mb-3 text-[13px] font-semibold">Shown on home (up to 3)</p>
+          <div className="chips" style={{ marginBottom: 18 }}>
+            {metricIds.map((id) => (
+              <button
+                key={id}
+                type="button"
+                className="chip on"
+                data-hue="blue"
+                onClick={() => {
+                  if (metricIds.length <= 1) return
+                  const next = metricIds.filter((x) => x !== id)
+                  setMetricIds(next)
+                  saveOverviewMetrics(user.id, next)
+                }}
+              >
+                {HOME_OVERVIEW_PILL_TITLES[id]} ×
               </button>
-            </div>
-            <p className="mb-3 text-[13px] font-semibold">Shown on home (up to 3)</p>
-            <div className="mb-4 flex gap-2">
-              {metricIds.map((id) => (
-                <button
-                  key={id}
-                  type="button"
-                  className="rounded-xl bg-[#185FA5] px-3 py-2 text-xs text-white"
-                  onClick={() => {
-                    if (metricIds.length <= 1) return
-                    const next = metricIds.filter((x) => x !== id)
-                    setMetricIds(next)
-                    saveOverviewMetrics(user.id, next)
-                  }}
-                >
-                  {HOME_OVERVIEW_PILL_TITLES[id]} ×
-                </button>
-              ))}
-            </div>
-            <p className="mb-3 text-[12px] text-ios-muted">These are just organisation metrics.</p>
-            <p className="mb-2 text-[13px] font-semibold">Add metrics</p>
+            ))}
+          </div>
+          <p className="eyebrow" style={{ marginBottom: 8 }}>
+            Add metrics
+          </p>
+          <p className="muted small mb-3">These are organisation metrics.</p>
+          <div className="rows">
             {HOME_OVERVIEW_METRIC_IDS.filter((id) => !metricIds.includes(id)).map((id) => (
               <button
                 key={id}
                 type="button"
                 disabled={metricIds.length >= 3}
-                className="flex w-full items-center justify-between border-b border-ios-border py-3 text-left disabled:opacity-40"
+                className="ritem"
+                style={metricIds.length >= 3 ? { opacity: 0.5 } : undefined}
                 onClick={() => {
                   const next = [...metricIds, id].slice(0, 3)
                   setMetricIds(next)
                   saveOverviewMetrics(user.id, next)
                 }}
               >
-                <span>
-                  <span className="block text-[15px] font-medium">{HOME_OVERVIEW_CATALOG_TITLES[id]}</span>
-                  <span className="text-[12px] text-ios-muted">Current: {metricValue(id, metrics, warningCount)}</span>
+                <span className="grow">
+                  <span className="t">{HOME_OVERVIEW_CATALOG_TITLES[id]}</span>
+                  <span className="s">Current: {metricValue(id, metrics, warningCount)}</span>
                 </span>
-                <PlusIcon className="h-5 w-5 text-[#185FA5]" />
+                <PlusIcon className="h-5 w-5 text-[var(--blue)]" />
               </button>
             ))}
           </div>
-        </div>
+        </IosModal>
       ) : null}
 
       {addOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="max-h-[80vh] w-full max-w-[640px] overflow-y-auto rounded-2xl bg-ios-card p-6">
-            <div className="mb-4 flex items-center justify-between">
-              <h3 className="text-lg font-semibold">Add quick action</h3>
-              <button type="button" onClick={() => setAddOpen(false)} className="text-[#185FA5]">
-                Done
-              </button>
-            </div>
-            {eligibleAdd.length === 0 ? (
-              <p className="text-sm text-ios-muted">
-                No more actions. All available quick actions are already on your home screen.
-              </p>
-            ) : (
-              eligibleAdd.map((id) => {
+        <IosModal title="Add quick action" onDone={() => setAddOpen(false)}>
+          {eligibleAdd.length === 0 ? (
+            <p className="muted small">
+              No more actions. All available quick actions are already on your home screen.
+            </p>
+          ) : (
+            <div className="rows">
+              {eligibleAdd.map((id) => {
                 const meta = quickActionMeta(id, organization?.settings)
                 if (!meta) return null
                 return (
                   <button
                     key={id}
                     type="button"
-                    className="flex w-full items-center justify-between border-b border-ios-border py-3 text-left"
+                    className="ritem"
+                    data-hue={hueFromQuickChip(meta.chip)}
                     onClick={() => {
                       persistActions([...actionIds, id])
                       setAddOpen(false)
                     }}
                   >
-                    <span className="flex min-w-0 items-center gap-3">
-                      <IconChip tint={meta.chip as ChipTint} size="sm">
-                        <QuickActionIcon name={meta.icon} className="h-4 w-4" />
-                      </IconChip>
-                      <span className="font-medium">{meta.title.replace(/\n/g, ' ')}</span>
+                    <span className="ico-chip">
+                      <QuickActionIcon name={meta.icon} className="h-4 w-4" />
                     </span>
-                    <PlusIcon className="h-5 w-5 text-[#185FA5]" />
+                    <span className="grow">
+                      <span className="t">{meta.title.replace(/\n/g, ' ')}</span>
+                    </span>
+                    <PlusIcon className="h-5 w-5 text-[var(--blue)]" />
                   </button>
                 )
-              })
-            )}
-          </div>
-        </div>
+              })}
+            </div>
+          )}
+        </IosModal>
       ) : null}
     </div>
   )

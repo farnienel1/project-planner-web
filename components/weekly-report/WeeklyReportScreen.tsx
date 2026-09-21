@@ -36,31 +36,27 @@ function ReportTable({
   empty: string
 }) {
   return (
-    <section className="overflow-hidden rounded-2xl border border-ios-border bg-ios-card">
-      <div className="border-b border-ios-border bg-[#F7F8FA] px-4 py-3">
-        <h2 className="text-[13px] font-semibold uppercase tracking-[0.3px] text-ios-ink">{title}</h2>
+    <section className="card overflow-hidden">
+      <div className="card-h">
+        <h2 className="h2">{title}</h2>
       </div>
       {rows.length === 0 ? (
-        <p className="px-4 py-6 text-sm text-slate-500">{empty}</p>
+        <p className="card-b muted small">{empty}</p>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="min-w-full text-xs">
-            <thead className="bg-white text-left uppercase tracking-wide text-slate-500">
+        <div className="tablewrap card-b">
+          <table className="t">
+            <thead>
               <tr>
                 {headers.map((header) => (
-                  <th key={header} className="px-3 py-2 font-semibold">
-                    {header}
-                  </th>
+                  <th key={header}>{header}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {rows.map((row, index) => (
-                <tr key={index} className="border-t border-slate-100">
+                <tr key={index}>
                   {row.map((cell, cellIndex) => (
-                    <td key={cellIndex} className="px-3 py-2 text-slate-700">
-                      {cell}
-                    </td>
+                    <td key={cellIndex}>{cell}</td>
                   ))}
                 </tr>
               ))}
@@ -209,26 +205,41 @@ export function WeeklyReportScreen({
   const lastWeekSelected = periodMode === 'week' && weekStart === format(lastWeekStart, 'yyyy-MM-dd')
 
   return (
-    <div className="space-y-6">
-      <div className="overflow-hidden rounded-2xl border border-ios-border bg-ios-card">
-        <div className="border-b border-ios-border bg-gradient-to-br from-[#0B1220] to-[#185FA5] px-5 py-5 text-white">
-          <p className="text-[10px] font-medium uppercase tracking-[0.4px] text-white/80">Project Planner</p>
-          <p className="text-[22px] font-semibold tracking-tight">{organizationName}</p>
-          <p className="text-[13px] font-medium uppercase tracking-[0.4px] text-white/85">Weekly Report</p>
-          {period ? (
-            <p className="mt-2 text-[13px] text-white/85">
-              Period: {formatReportPeriodLabel(period.start, period.end)}
-            </p>
+    <div className="stack" data-hue="rep">
+      <div className="phead" data-hue="rep">
+        <div>
+          <h1>Weekly report</h1>
+          <div className="sub">Updates as you change the period. Separate from live warnings.</div>
+        </div>
+        <div className="acts">
+          {report ? (
+            <>
+              <button type="button" className="btn" onClick={() => period && printWeeklyReport(buildWeeklyReportHtml(report))}>
+                Print
+              </button>
+              <button type="button" className="btn primary" onClick={handleGenerateReport} disabled={generating}>
+                {generating ? 'Generating…' : 'Download report'}
+              </button>
+            </>
           ) : null}
         </div>
+      </div>
 
-        <div className="space-y-5 px-5 py-5">
+      <section className="hero" data-hue="rep">
+        <div className="relative z-[1]">
+          <p className="eb">{organizationName}</p>
+          <div className="big">{period ? formatReportPeriodLabel(period.start, period.end) : 'Choose a period'}</div>
+          <p className="mt-1.5 opacity-85">Weekly report</p>
+        </div>
+      </section>
+
+      <div className="space-y-5">
           {loading ? (
-            <p className="text-[12px] text-ios-muted">Refreshing bookings from Firebase… the picker is ready.</p>
+            <p className="text-[12px] text-[var(--ink3)]">Refreshing bookings from Firebase… the picker is ready.</p>
           ) : null}
 
-          <section className="overflow-hidden rounded-2xl border border-ios-border">
-            <p className="bg-[#F7F8FA] px-4 py-2 text-[11px] font-medium uppercase tracking-[0.4px] text-ios-muted">
+          <section className="card overflow-hidden">
+            <p className="bg-[var(--bg)] px-4 py-2 text-[11px] font-medium uppercase tracking-[0.4px] text-[var(--ink3)]">
               Quick Select
             </p>
             <QuickRow
@@ -273,7 +284,7 @@ export function WeeklyReportScreen({
 
           {periodMode === 'invoicing' && invoicing ? (
             <section>
-              <p className="mb-2 text-[11px] font-medium uppercase tracking-[0.4px] text-ios-muted">Invoicing Period</p>
+              <p className="mb-2 text-[11px] font-medium uppercase tracking-[0.4px] text-[var(--ink3)]">Invoicing Period</p>
               <select
                 value={effectiveInvoicingPeriodId}
                 onChange={(e) =>
@@ -282,7 +293,7 @@ export function WeeklyReportScreen({
                     setPeriodMode('invoicing')
                   })
                 }
-                className="w-full rounded-lg border border-ios-search-border bg-white px-3 py-2 text-sm text-ios-ink"
+                className="w-full rounded-lg border border-[var(--line2)] bg-white px-3 py-2 text-sm text-[var(--ink)]"
               >
                 {invoicingOptions.map((option) => (
                   <option key={option.id} value={option.id}>
@@ -291,7 +302,7 @@ export function WeeklyReportScreen({
                   </option>
                 ))}
               </select>
-              <p className="mt-1 text-[11px] text-ios-muted">
+              <p className="mt-1 text-[11px] text-[var(--ink3)]">
                 {formatInvoicingSubtitle(invoicing)} · {formatInvoicingPeriodDescription(invoicing)}
               </p>
             </section>
@@ -299,7 +310,7 @@ export function WeeklyReportScreen({
 
           {periodMode === 'week' ? (
             <div className="flex flex-wrap items-center gap-3">
-              <button type="button" onClick={() => shiftWeek(-1)} className="rounded-lg border border-ios-search-border bg-white px-3 py-2 text-sm font-semibold">
+              <button type="button" onClick={() => shiftWeek(-1)} className="rounded-lg border border-[var(--line2)] bg-white px-3 py-2 text-sm font-semibold">
                 Previous week
               </button>
               <input
@@ -311,16 +322,16 @@ export function WeeklyReportScreen({
                     setPeriodMode('week')
                   })
                 }
-                className="rounded-lg border border-ios-search-border px-3 py-2 text-sm"
+                className="rounded-lg border border-[var(--line2)] px-3 py-2 text-sm"
               />
-              <button type="button" onClick={() => shiftWeek(1)} className="rounded-lg border border-ios-search-border bg-white px-3 py-2 text-sm font-semibold">
+              <button type="button" onClick={() => shiftWeek(1)} className="rounded-lg border border-[var(--line2)] bg-white px-3 py-2 text-sm font-semibold">
                 Next week
               </button>
             </div>
           ) : null}
 
           <section>
-            <p className="mb-2 text-[11px] font-medium uppercase tracking-[0.4px] text-ios-muted">Custom Range</p>
+            <p className="mb-2 text-[11px] font-medium uppercase tracking-[0.4px] text-[var(--ink3)]">Custom Range</p>
             <div className="flex flex-wrap items-end gap-3">
               <label className="text-[13px] font-medium">
                 Start
@@ -333,7 +344,7 @@ export function WeeklyReportScreen({
                       setPeriodMode('custom')
                     })
                   }
-                  className="mt-1 block rounded-lg border border-ios-search-border px-3 py-2 text-sm"
+                  className="mt-1 block rounded-lg border border-[var(--line2)] px-3 py-2 text-sm"
                 />
               </label>
               <label className="text-[13px] font-medium">
@@ -348,20 +359,20 @@ export function WeeklyReportScreen({
                       setPeriodMode('custom')
                     })
                   }
-                  className="mt-1 block rounded-lg border border-ios-search-border px-3 py-2 text-sm"
+                  className="mt-1 block rounded-lg border border-[var(--line2)] px-3 py-2 text-sm"
                 />
               </label>
             </div>
           </section>
 
-          <p className="text-center text-[12px] leading-5 text-ios-muted">
+          <p className="text-center text-[12px] leading-5 text-[var(--ink3)]">
             The breakdown below updates as you change the period. Generate exports a printable HTML file — this is
             separate from Home Warnings (live ops from today forward).
           </p>
 
           <div className="space-y-3 text-center">
             {period ? (
-              <p className="inline-flex items-center rounded-full border border-[#D6E3F0] bg-white px-3.5 py-1.5 text-[12px] font-medium text-ios-muted">
+              <p className="inline-flex items-center rounded-full border border-[#D6E3F0] bg-white px-3.5 py-1.5 text-[12px] font-medium text-[var(--ink3)]">
                 {format(period.start, 'd MMM yyyy')} → {format(period.end, 'd MMM yyyy')}
               </p>
             ) : null}
@@ -369,14 +380,12 @@ export function WeeklyReportScreen({
               type="button"
               disabled={!report || generating}
               onClick={handleGenerateReport}
-              className="flex w-full items-center justify-center gap-2 rounded-[14px] bg-gradient-to-br from-[#2563EB] to-[#0EA5E9] px-4 py-4 text-[16px] font-semibold text-white shadow-[0_5px_10px_rgba(37,99,235,0.35)] disabled:cursor-not-allowed disabled:opacity-50"
+              className="btn primary block"
             >
               {generating ? 'Generating Report…' : 'Generate Report'}
             </button>
-            <p className="text-[11px] text-ios-muted">Generates a printable HTML report ready to share.</p>
+            <p className="text-[11px] text-[var(--ink3)]">Generates a printable HTML report ready to share.</p>
           </div>
-        </div>
-      </div>
 
       {report ? (
         <>
@@ -419,8 +428,8 @@ export function WeeklyReportScreen({
             />
           ))}
 
-          <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-900 shadow-sm">
-            All Project Work: {formatDays(report.allProjectWorkTotal)}
+          <div className="card pad text-center">
+            <b>All project work: {formatDays(report.allProjectWorkTotal)}</b>
           </div>
 
           <ReportTable
@@ -493,6 +502,7 @@ export function WeeklyReportScreen({
         </>
       ) : null}
     </div>
+    </div>
   )
 }
 
@@ -514,18 +524,18 @@ function QuickRow({
       type="button"
       disabled={disabled}
       onClick={onClick}
-      className="flex w-full items-center gap-3 border-t border-ios-border px-4 py-3 text-left disabled:opacity-50"
+      className="flex w-full items-center gap-3 border-t border-[var(--line)] px-4 py-3 text-left disabled:opacity-50"
     >
-      <span className="grid h-9 w-9 place-items-center rounded-lg bg-[#E8F1FB] text-[#185FA5]">
+      <span className="grid h-9 w-9 place-items-center rounded-lg bg-[#E8F1FB] text-[var(--blue)]">
         <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3.75 8.25h16.5M4.5 6.75h15A1.5 1.5 0 0 1 21 8.25v10.5A1.5 1.5 0 0 1 19.5 20.25h-15A1.5 1.5 0 0 1 3 18.75V8.25A1.5 1.5 0 0 1 4.5 6.75Z" />
         </svg>
       </span>
       <span className="min-w-0 flex-1">
         <span className="block text-[15px] font-semibold">{label}</span>
-        <span className="block text-[12px] text-ios-muted">{subLabel}</span>
+        <span className="block text-[12px] text-[var(--ink3)]">{subLabel}</span>
       </span>
-      <span className={`grid h-[22px] w-[22px] place-items-center rounded-full ${selected ? 'bg-[#185FA5]' : 'bg-[#D6E3F0]'}`}>
+      <span className={`grid h-[22px] w-[22px] place-items-center rounded-full ${selected ? 'bg-[var(--blue)]' : 'bg-[#D6E3F0]'}`}>
         {selected ? (
           <svg className="h-3 w-3 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3}>
             <path strokeLinecap="round" strokeLinejoin="round" d="m5 13 4 4L19 7" />

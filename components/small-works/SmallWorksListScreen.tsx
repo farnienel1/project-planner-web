@@ -7,7 +7,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { MagnifyingGlassIcon, WrenchScrewdriverIcon, PlusIcon } from '@heroicons/react/24/outline'
+import { WrenchScrewdriverIcon, PlusIcon } from '@heroicons/react/24/solid'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useProjectStore } from '@/lib/stores/projectStore'
 import { useTaskStore } from '@/lib/stores/taskStore'
@@ -17,7 +17,7 @@ import { useOperativeStore } from '@/lib/stores/operativeStore'
 import { canManageWorkCatalogue, isOperativeMode } from '@/lib/permissions'
 import { visibleWorks } from '@/lib/access/workAccess'
 import { countWorksByTab, filterWorksByTab, searchWorks } from '@/lib/projects/workStatus'
-import { EmptyState, FilterChip, PageHeader, StatsRow } from '@/components/ios/primitives'
+import { EmptyState, FilterChip, PageHeader, SearchField, StatsRow } from '@/components/ios/primitives'
 import { WorkCard } from '@/components/projects/WorkCard'
 
 type Filter = 'all' | 'active' | 'upcoming' | 'completed'
@@ -88,23 +88,23 @@ export function SmallWorksListScreen() {
   if (loading && smallWorks.length === 0) {
     return (
       <div className="flex h-64 items-center justify-center">
-        <p className="text-sm text-ios-muted">Loading small works...</p>
+        <p className="text-sm text-[var(--ink3)]">Loading small works...</p>
       </div>
     )
   }
 
   return (
-    <div className="space-y-4">
+    <div className="stack" data-hue="sw">
       <PageHeader
         title="Small works"
+        subtitle="Reactive and ad-hoc jobs"
+        hue="sw"
+        icon={<WrenchScrewdriverIcon className="h-7 w-7" />}
         actions={
           canCreate ? (
-            <Link
-              href="/dashboard/small-works/new"
-              aria-label="New small works"
-              className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-[#185FA5] text-white"
-            >
-              <PlusIcon className="h-5 w-5" />
+            <Link href="/dashboard/small-works/new" className="btn primary">
+              <PlusIcon className="h-4 w-4" />
+              New small works
             </Link>
           ) : null
         }
@@ -120,23 +120,15 @@ export function SmallWorksListScreen() {
         <>
           <StatsRow
             items={[
-              { value: counts.active, label: 'Active', valueClass: 'text-[#0F6E56]' },
-              { value: counts.upcoming, label: 'Upcoming', valueClass: 'text-[#854F0B]' },
-              { value: counts.completed, label: 'Completed', valueClass: 'text-ios-muted' },
+              { value: counts.active, label: 'Active', hue: 'sw' },
+              { value: counts.upcoming, label: 'Upcoming', hue: 'blue' },
+              { value: counts.completed, label: 'Completed', hue: 'lib' },
             ]}
           />
 
-          <div className="flex items-center gap-2 rounded-xl border border-ios-search-border bg-ios-card px-3 py-2">
-            <MagnifyingGlassIcon className="h-4 w-4 text-ios-muted" />
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search small works…"
-              className="w-full bg-transparent text-[14px] outline-none placeholder:text-ios-placeholder"
-            />
-          </div>
+          <SearchField value={search} onChange={setSearch} placeholder="Search small works…" />
 
-          <div className="flex flex-wrap gap-1.5">
+          <div className="chips">
             <FilterChip title={`All · ${counts.all}`} selected={filter === 'all'} onClick={() => setFilter('all')} />
             <FilterChip
               title={`Active · ${counts.active}`}
@@ -158,7 +150,7 @@ export function SmallWorksListScreen() {
           </div>
 
           {emptySearch ? (
-            <p className="py-10 text-center text-[15px] text-ios-muted">No small works match your search.</p>
+            <p className="py-10 text-center text-[15px] text-[var(--ink3)]">No small works match your search.</p>
           ) : emptyDueToFilter ? (
             <EmptyState
               title="No small works found"
@@ -167,7 +159,7 @@ export function SmallWorksListScreen() {
           ) : filtered.length === 0 ? (
             <EmptyState title="No small works found" subtitle="Get started by adding your first small works job" />
           ) : (
-            <div className="grid grid-cols-1 gap-2.5 lg:grid-cols-2 2xl:grid-cols-3">
+            <div className="grid grid-cols-1 gap-5 lg:grid-cols-2 2xl:grid-cols-3">
               {filtered.map((project) => (
                 <WorkCard
                   key={project.id}
@@ -185,7 +177,7 @@ export function SmallWorksListScreen() {
               <button
                 type="button"
                 onClick={() => setFilter('all')}
-                className="rounded-xl bg-[#185FA5] px-4 py-2 text-sm font-semibold text-white"
+                className="btn primary"
               >
                 Show all small works
               </button>

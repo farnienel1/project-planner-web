@@ -592,7 +592,7 @@ export function BookLabourFlowScreen({
         )}
 
         {phase.kind === 'pickDestination' && !otherEnabled && activeParty.some((p) => !p.canBookOtherLocations) ? (
-          <p className="px-1 text-[11px] text-ios-muted">
+          <p className="px-1 text-[11px] text-[var(--ink3)]">
             Other is only available when every selected person can be booked to office / WFH locations.
           </p>
         ) : null}
@@ -690,7 +690,7 @@ export function BookLabourFlowScreen({
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
           <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl">
             <p className="text-[15px] font-semibold">Booking overlap</p>
-            <p className="mt-2 text-[13px] text-ios-muted">{overlap.message}</p>
+            <p className="mt-2 text-[13px] text-[var(--ink3)]">{overlap.message}</p>
             <ul className="mt-3 space-y-1 text-[12px]">
               {overlap.detailLines.map((line) => (
                 <li key={line}>{line}</li>
@@ -699,14 +699,14 @@ export function BookLabourFlowScreen({
             <div className="mt-5 flex justify-end gap-2">
               <button
                 type="button"
-                className="rounded-xl border border-ios-border px-4 py-2 text-[13px] font-medium"
+                className="rounded-xl border border-[var(--line)] px-4 py-2 text-[13px] font-medium"
                 onClick={() => setOverlap(null)}
               >
                 Cancel
               </button>
               <button
                 type="button"
-                className="rounded-xl bg-[#185FA5] px-4 py-2 text-[13px] font-semibold text-white"
+                className="rounded-xl bg-[var(--blue)] px-4 py-2 text-[13px] font-semibold text-white"
                 onClick={overlap.onConfirm}
               >
                 Book anyway
@@ -747,11 +747,11 @@ function PersonSummary({ people, dayLine }: { people: BookLabourCandidate[]; day
       .join(', ')} +${people.length - 2} · ${dayLine}`
   }
   return (
-    <div className="flex items-center gap-3 rounded-2xl border border-ios-border bg-white p-3">
+    <div className="flex items-center gap-3 card p-3">
       <Avatar name={first?.displayName || 'P'} operative={first?.user.permissions.operativeMode} />
       <div className="min-w-0">
         <p className="truncate text-[13px] font-medium">{title}</p>
-        <p className="text-[11px] text-ios-muted">{subtitle}</p>
+        <p className="text-[11px] text-[var(--ink3)]">{subtitle}</p>
       </div>
     </div>
   )
@@ -775,7 +775,7 @@ function RoleChips({ person }: { person: BookLabourCandidate }) {
   return (
     <div className="mt-0.5 flex flex-wrap gap-1">
       {person.user.permissions.operativeMode ? (
-        <Chip label="Operative" className="bg-[#E6F1FB] text-[#185FA5]" />
+        <Chip label="Operative" className="bg-[var(--blue-t)] text-[var(--blue)]" />
       ) : (
         person.roleChips
           .filter((chip) => chip !== 'Operative')
@@ -813,17 +813,17 @@ function PickPerson({
 }) {
   if (loading) {
     return (
-      <div className="rounded-2xl border border-ios-border bg-white py-16 text-center">
-        <div className="mx-auto h-8 w-8 animate-spin rounded-full border-2 border-[#185FA5] border-t-transparent" />
-        <p className="mt-3 text-[13px] text-ios-muted">Loading unbooked labour…</p>
+      <div className="card py-16 text-center">
+        <div className="mx-auto h-8 w-8 animate-spin rounded-full border-2 border-[var(--blue)] border-t-transparent" />
+        <p className="mt-3 text-[13px] text-[var(--ink3)]">Loading unbooked labour…</p>
       </div>
     )
   }
   if (candidates.length === 0) {
     return (
-      <div className="rounded-2xl border border-ios-border bg-white py-16 text-center">
+      <div className="card py-16 text-center">
         <p className="text-[17px] font-semibold">Everyone is booked</p>
-        <p className="mt-2 text-[13px] text-ios-muted">
+        <p className="mt-2 text-[13px] text-[var(--ink3)]">
           No unbooked team members for this day, or only weekdays show unbooked labour.
         </p>
       </div>
@@ -839,27 +839,27 @@ function PickPerson({
           type="button"
           onClick={onToggleMulti}
           className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
-            multiSelect ? 'bg-[#185FA5] text-white' : 'bg-white/70 text-[#A32D2D]'
+            multiSelect ? 'bg-[var(--blue)] text-white' : 'bg-white/70 text-[#A32D2D]'
           }`}
         >
           {multiSelect ? 'Multi-select on' : 'Multi-select'}
         </button>
       </div>
-      <p className="px-1 text-[11px] font-medium uppercase tracking-[0.4px] text-ios-muted">
+      <p className="px-1 text-[11px] font-medium uppercase tracking-[0.4px] text-[var(--ink3)]">
         {multiSelect ? 'Select people' : 'Select a person'}
       </p>
-      <div className="divide-y divide-ios-border overflow-hidden rounded-2xl border border-ios-border bg-white">
+      <div className="divide-y divide-[var(--line)] overflow-hidden card">
         {candidates.map((person) => (
           <button
             key={person.id}
             type="button"
             onClick={() => (multiSelect ? onToggleId(person.id) : onPick(person))}
-            className="flex w-full items-center gap-3 px-3.5 py-3 text-left hover:bg-[#F7F8FA]"
+            className="flex w-full items-center gap-3 px-3.5 py-3 text-left hover:bg-[var(--bg)]"
           >
             {multiSelect ? (
               <span
                 className={`grid h-5 w-5 place-items-center rounded-full border ${
-                  selectedIds.has(person.id) ? 'border-[#185FA5] bg-[#185FA5] text-white' : 'border-ios-muted'
+                  selectedIds.has(person.id) ? 'border-[var(--blue)] bg-[var(--blue)] text-white' : 'border-[var(--ink3)]'
                 }`}
               >
                 {selectedIds.has(person.id) ? '✓' : ''}
@@ -870,7 +870,7 @@ function PickPerson({
               <p className="truncate text-[13px] font-medium">{person.displayName}</p>
               <RoleChips person={person} />
             </div>
-            {!multiSelect ? <span className="text-ios-muted">›</span> : null}
+            {!multiSelect ? <span className="text-[var(--ink3)]">›</span> : null}
           </button>
         ))}
       </div>
@@ -879,7 +879,7 @@ function PickPerson({
           type="button"
           disabled={selectedIds.size === 0}
           onClick={onContinue}
-          className="w-full rounded-[14px] bg-[#185FA5] py-3.5 text-[15px] font-semibold text-white disabled:bg-ios-muted"
+          className="btn primary block disabled:bg-[var(--ink3)]"
         >
           {selectedIds.size === 0 ? 'Continue' : `Continue · ${selectedIds.size}`}
         </button>
@@ -903,13 +903,13 @@ function BookToSelector({
 }) {
   return (
     <div>
-      <p className="mb-2 px-1 text-[11px] font-medium uppercase tracking-[0.4px] text-ios-muted">Book to</p>
+      <p className="mb-2 px-1 text-[11px] font-medium uppercase tracking-[0.4px] text-[var(--ink3)]">Book to</p>
       <div className="grid grid-cols-3 gap-2">
         <BookToCell
           label="Other"
           selected={selected === 'other'}
           enabled={otherEnabled}
-          accent="#185FA5"
+          accent="var(--blue)"
           fill="#E6F1FB"
           onClick={onOther}
         />
@@ -976,24 +976,24 @@ function LocationList({
 }) {
   if (picks.length === 0) {
     return (
-      <p className="rounded-2xl border border-ios-border bg-white py-10 text-center text-[13px] text-ios-muted">
+      <p className="card py-10 text-center text-[13px] text-[var(--ink3)]">
         Enable at least one location under Organisation → Schedule options to use Other.
       </p>
     )
   }
   return (
     <div>
-      <p className="mb-2 px-1 text-[11px] font-medium uppercase tracking-[0.4px] text-ios-muted">Select location</p>
-      <div className="divide-y divide-ios-border overflow-hidden rounded-2xl border border-ios-border bg-white">
+      <p className="mb-2 px-1 text-[11px] font-medium uppercase tracking-[0.4px] text-[var(--ink3)]">Select location</p>
+      <div className="divide-y divide-[var(--line)] overflow-hidden card">
         {picks.map((pick) => (
           <button
             key={pick.id}
             type="button"
             onClick={() => onPick(pick)}
-            className="flex w-full items-center justify-between px-3.5 py-3 text-left text-[13px] font-medium hover:bg-[#F7F8FA]"
+            className="flex w-full items-center justify-between px-3.5 py-3 text-left text-[13px] font-medium hover:bg-[var(--bg)]"
           >
             {pick.title}
-            <span className="text-ios-muted">›</span>
+            <span className="text-[var(--ink3)]">›</span>
           </button>
         ))}
       </div>
@@ -1025,9 +1025,9 @@ function ProjectList({
     : list
   if (list.length === 0) {
     return (
-      <div className="rounded-2xl border border-ios-border bg-white py-16 text-center">
+      <div className="card py-16 text-center">
         <p className="text-[17px] font-semibold">No live {smallWorks ? 'small works' : 'projects'}</p>
-        <p className="mt-2 text-[13px] text-ios-muted">Create or activate work to book here.</p>
+        <p className="mt-2 text-[13px] text-[var(--ink3)]">Create or activate work to book here.</p>
       </div>
     )
   }
@@ -1037,30 +1037,30 @@ function ProjectList({
         value={search}
         onChange={(e) => onSearch(e.target.value)}
         placeholder={smallWorks ? 'Search small works…' : 'Search projects…'}
-        className="w-full rounded-xl border border-ios-search-border bg-ios-card px-3 py-2 text-[14px] outline-none"
+        className="w-full rounded-xl border border-[var(--line2)] bg-[var(--card)] px-3 py-2 text-[14px] outline-none"
       />
-      <p className="px-1 text-[11px] font-medium uppercase tracking-[0.4px] text-ios-muted">
+      <p className="px-1 text-[11px] font-medium uppercase tracking-[0.4px] text-[var(--ink3)]">
         {smallWorks ? 'Active small works' : 'Active projects'} · {filtered.length}
       </p>
-      <div className="divide-y divide-ios-border overflow-hidden rounded-2xl border border-ios-border bg-white">
+      <div className="divide-y divide-[var(--line)] overflow-hidden card">
         {filtered.length === 0 ? (
-          <p className="py-8 text-center text-[13px] text-ios-muted">No matches</p>
+          <p className="py-8 text-center text-[13px] text-[var(--ink3)]">No matches</p>
         ) : (
           filtered.map((project) => (
             <button
               key={project.id}
               type="button"
               onClick={() => onPick(project)}
-              className="flex w-full items-center justify-between gap-3 px-3.5 py-3 text-left hover:bg-[#F7F8FA]"
+              className="flex w-full items-center justify-between gap-3 px-3.5 py-3 text-left hover:bg-[var(--bg)]"
             >
               <div className="min-w-0">
                 <p className="truncate text-[13px] font-medium">
-                  <span className={smallWorks ? 'text-[#854F0B]' : 'text-[#185FA5]'}>{project.jobNumber}</span>{' '}
+                  <span className={smallWorks ? 'text-[#854F0B]' : 'text-[var(--blue)]'}>{project.jobNumber}</span>{' '}
                   {project.siteName}
                 </p>
-                <p className="truncate text-[10px] text-ios-muted">{projectLocality(project)}</p>
+                <p className="truncate text-[10px] text-[var(--ink3)]">{projectLocality(project)}</p>
               </div>
-              <span className="text-ios-muted">›</span>
+              <span className="text-[var(--ink3)]">›</span>
             </button>
           ))
         )}
@@ -1085,8 +1085,8 @@ function SlotPicker({
   return (
     <div className="space-y-3">
       <p className="text-[15px] font-semibold">{label}</p>
-      <p className="text-[11px] text-ios-muted">{dayLine}</p>
-      <p className="px-1 text-[11px] font-medium uppercase tracking-[0.4px] text-ios-muted">Select slot</p>
+      <p className="text-[11px] text-[var(--ink3)]">{dayLine}</p>
+      <p className="px-1 text-[11px] font-medium uppercase tracking-[0.4px] text-[var(--ink3)]">Select slot</p>
       <div className="grid grid-cols-3 gap-2.5">
         {(
           [
@@ -1100,7 +1100,7 @@ function SlotPicker({
             type="button"
             disabled={disabled}
             onClick={() => onSlot(slot)}
-            className="rounded-xl border border-[#185FA5]/35 bg-[#E6F1FB] py-3 text-[13px] font-medium text-[#185FA5] disabled:opacity-50"
+            className="rounded-xl border border-[var(--blue)]/35 bg-[var(--blue-t)] py-3 text-[13px] font-medium text-[var(--blue)] disabled:opacity-50"
           >
             {title}
           </button>
@@ -1110,7 +1110,7 @@ function SlotPicker({
         type="button"
         disabled={disabled}
         onClick={onCustom}
-        className="w-full rounded-xl border border-[#185FA5]/35 bg-[#E6F1FB] py-3 text-[13px] font-medium text-[#185FA5] disabled:opacity-50"
+        className="w-full rounded-xl border border-[var(--blue)]/35 bg-[var(--blue-t)] py-3 text-[13px] font-medium text-[var(--blue)] disabled:opacity-50"
       >
         Custom
       </button>
@@ -1140,7 +1140,7 @@ function CustomHoursForm({
   onSave: () => void
 }) {
   return (
-    <div className="space-y-4 rounded-2xl border border-ios-border bg-white p-4">
+    <div className="space-y-4 card p-4">
       <HoursTimelinePicker
         start={start}
         end={end}
@@ -1154,7 +1154,7 @@ function CustomHoursForm({
         type="button"
         disabled={saving}
         onClick={onSave}
-        className="w-full rounded-[14px] bg-[#185FA5] py-3 text-[15px] font-semibold text-white disabled:opacity-50"
+        className="w-full rounded-[14px] bg-[var(--blue)] py-3 text-[15px] font-semibold text-white disabled:opacity-50"
       >
         {saving ? 'Saving…' : 'Save'}
       </button>

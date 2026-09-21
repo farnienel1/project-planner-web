@@ -75,8 +75,8 @@ export default function WeeklyReportPage() {
   if (loading || !user) return null
 
   return (
-    <div className="space-y-6">
-      <PageHeader title="Weekly Report" />
+    <div className="stack" data-hue="rep">
+      <PageHeader title="Weekly report" subtitle="Hours, warnings and leave for the selected week" hue="rep" />
       <WeeklyReportScreen
         organizationName={organization?.name || orgDetails?.name || 'Organisation'}
         companyLogoURL={orgDetails?.companyLogoURL}

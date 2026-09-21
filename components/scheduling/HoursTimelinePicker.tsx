@@ -116,7 +116,7 @@ export function HoursTimelinePicker({
   return (
     <div className="space-y-4">
       <div>
-        <p className="mb-2 text-[11px] font-medium uppercase tracking-[0.4px] text-ios-muted">Hours · 00:00 to 24:00</p>
+        <p className="mb-2 text-[11px] font-medium uppercase tracking-[0.4px] text-[var(--ink3)]">Hours · 00:00 to 24:00</p>
         <div className="rounded-xl bg-[#F2F3F5] px-3 pb-2 pt-3">
           <div
             data-hours-track
@@ -218,7 +218,7 @@ export function HoursTimelinePicker({
             })}
           </div>
         </div>
-        <p className="mt-2 text-[12px] tabular-nums text-ios-muted">
+        <p className="mt-2 text-[12px] tabular-nums text-[var(--ink3)]">
           {valid
             ? `${format(startHm.hour, startHm.minute)}–${format(endHm.hour, endHm.minute)} · ${formatHoursLabel(breakdown.totalPaidHours)}h paid`
             : 'Finish must be after start'}
@@ -245,7 +245,7 @@ export function HoursTimelinePicker({
         />
       </div>
       {showBreak ? (
-      <label className="flex items-center justify-between rounded-xl border border-ios-border bg-white px-3.5 py-3 text-[13px] font-medium">
+      <label className="flex items-center justify-between rounded-xl border border-[var(--line)] bg-white px-3.5 py-3 text-[13px] font-medium">
         Unpaid break included
         <input
           type="checkbox"
@@ -273,12 +273,12 @@ function Handle({
       className="pointer-events-none absolute top-0 z-10 -translate-x-1/2"
       style={{ left: `${left}%` }}
     >
-      <span className="mb-0.5 block text-center text-[9px] font-semibold tabular-nums text-[#185FA5]">
+      <span className="mb-0.5 block text-center text-[9px] font-semibold tabular-nums text-[var(--blue)]">
         {label}
       </span>
       <span
         className={`mx-auto block h-3.5 w-3.5 rounded-full border-2 border-white shadow ${
-          side === 'start' ? 'bg-[#185FA5]' : 'bg-[#0F6E56]'
+          side === 'start' ? 'bg-[var(--blue)]' : 'bg-[#0F6E56]'
         }`}
       />
     </div>
@@ -299,8 +299,8 @@ function TimeColumn({
   onMinute: (value: number) => void
 }) {
   return (
-    <div className="rounded-[10px] bg-[#F7F8FA] p-2.5">
-      <p className="mb-1 text-[9px] uppercase tracking-[0.4px] text-ios-muted">{title}</p>
+    <div className="rounded-[10px] bg-[var(--bg)] p-2.5">
+      <p className="mb-1 text-[9px] uppercase tracking-[0.4px] text-[var(--ink3)]">{title}</p>
       <div className="flex items-center gap-1">
         <select
           value={hour}

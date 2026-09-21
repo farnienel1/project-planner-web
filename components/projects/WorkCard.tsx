@@ -1,26 +1,21 @@
 /**
- * iOS parity source: Views/ProjectsView.swift ProjectDetailRowView
- * Spec: docs/ios-parity/sections/12-projects.md
+ * Project / small-works card. Visuals match the v2 prototype pcard.
  */
 
 'use client'
 
-import type { ReactNode } from 'react'
 import Link from 'next/link'
-import {
-  BuildingOffice2Icon,
-  MapPinIcon,
-  UserIcon,
-  CalendarDaysIcon,
-  CheckIcon,
-} from '@heroicons/react/24/outline'
 import type { Project } from '@/types'
 import { formatSiteAddress } from '@/lib/maps/siteAddress'
 import {
+  daysLeftCaption,
   deriveWorkStatus,
   timelineProgressPercent,
-  type WorkStatus,
+  workStatusLabel,
 } from '@/lib/projects/workStatus'
+import { hueForJobType } from '@/lib/ui/sectionHue'
+import { ProgressRing } from '@/components/ui/media'
+import { StatusPill } from '@/components/ui/controls'
 
 function formatRange(start: Date, end: Date): string {
   const fmt = new Intl.DateTimeFormat('en-GB', {
@@ -32,21 +27,10 @@ function formatRange(start: Date, end: Date): string {
   return `${fmt.format(new Date(start))} – ${fmt.format(new Date(end))}`
 }
 
-function statusStyles(status: WorkStatus) {
-  switch (status) {
-    case 'active':
-      return { pill: 'bg-[#E1F5EE] text-[#0F6E56]', dot: 'bg-[#0F6E56]' }
-    case 'upcoming':
-      return { pill: 'bg-[#FFF6E1] text-[#854F0B]', dot: 'bg-[#854F0B]' }
-    default:
-      return { pill: 'bg-[#F2F3F5] text-[#6B7280]', dot: 'bg-[#6B7280]' }
-  }
-}
-
 function jobTypeLabel(project: Project): string {
   const custom = project.customJobType?.trim()
-  if (custom) return custom.toUpperCase()
-  return (project.jobType || '').toUpperCase()
+  if (custom) return custom
+  return project.jobType || ''
 }
 
 export function WorkCard({
@@ -61,85 +45,62 @@ export function WorkCard({
   managerName?: string
 }) {
   const status = deriveWorkStatus(project)
-  const styles = statusStyles(status)
   const pct = timelineProgressPercent(project.startDate, project.endDate, status)
   const address = formatSiteAddress(project) || '—'
   const manager = managerName || project.manager?.name || '—'
+  const type = jobTypeLabel(project)
+  const hue = href.includes('small-works') ? 'sw' : hueForJobType(type)
+  const days = daysLeftCaption(project.endDate, status)
 
   if (compact) {
     return (
-      <Link
-        href={href}
-        className="block rounded-2xl border border-ios-border bg-ios-card p-3.5 transition hover:border-ios-search-border hover:shadow-sm"
-      >
-        <p className="text-[16px] font-medium text-ios-ink">{project.jobNumber}</p>
-        <p className="mt-0.5 text-[13px] font-medium text-ios-ink">{project.siteName}</p>
-        <p className="mt-1 line-clamp-3 text-[11px] text-ios-muted">{address}</p>
+      <Link href={href} className="ritem" data-hue={hue}>
+        <span className="ico-chip sm">{project.jobNumber.slice(0, 2)}</span>
+        <span className="grow">
+          <span className="t">{project.jobNumber}</span>
+          <span className="s">{project.siteName}</span>
+        </span>
+        <StatusPill status={workStatusLabel(status)} />
       </Link>
     )
   }
 
-  const label = status.charAt(0).toUpperCase() + status.slice(1)
-
   return (
-    <Link
-      href={href}
-      className="block rounded-2xl border border-ios-border bg-ios-card p-3.5 transition hover:border-ios-search-border hover:shadow-sm"
-    >
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <p className="text-[16px] font-medium tracking-tight text-ios-ink">{project.jobNumber}</p>
-            {jobTypeLabel(project) ? (
-              <span className="rounded bg-[#EEEDFE] px-1.5 py-0.5 text-[9px] font-medium tracking-wide text-[#3C3489]">
-                {jobTypeLabel(project)}
-              </span>
-            ) : null}
+    <Link href={href} className="pcard" data-hue={hue}>
+      <div className="top">
+        <div className="min-w-0 flex-1">
+          <p className="job">{project.jobNumber}</p>
+          <h3>{project.siteName}</h3>
+          {type ? <p className="text-[13px] text-[var(--ink2)]">{type}</p> : null}
+        </div>
+        <ProgressRing value={pct} hue={hue} />
+      </div>
+      <div className="body">
+        <div className="meta">
+          <div>
+            <span>Client</span>
+            {project.client?.name || '—'}
           </div>
-          <p className="mt-0.5 text-[13px] font-medium text-ios-ink">{project.siteName}</p>
+          <div>
+            <span>Programme</span>
+            {formatRange(project.startDate, project.endDate)}
+          </div>
+          <div>
+            <span>Site</span>
+            {address}
+          </div>
+          <div>
+            <span>Status</span>
+            <StatusPill status={workStatusLabel(status)} />
+          </div>
         </div>
-        <span className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-medium ${styles.pill}`}>
-          {status === 'completed' ? (
-            <CheckIcon className="h-2.5 w-2.5" />
-          ) : (
-            <span className={`h-[5px] w-[5px] rounded-full ${styles.dot}`} />
-          )}
-          {label}
-        </span>
-      </div>
-
-      <div className="mt-2.5 space-y-1.5">
-        <MetaRow icon={<BuildingOffice2Icon className="h-3.5 w-3.5" />} text={project.client?.name || '—'} />
-        <MetaRow icon={<MapPinIcon className="h-3.5 w-3.5" />} text={address} />
-        <MetaRow icon={<UserIcon className="h-3.5 w-3.5" />} text={manager} />
-        <MetaRow icon={<CalendarDaysIcon className="h-3.5 w-3.5" />} text={formatRange(project.startDate, project.endDate)} />
-      </div>
-
-      <div className="mt-3">
-        <div className="flex items-center justify-between">
-          <span className="text-[10px] font-medium text-ios-muted">Progress</span>
-          <span className={`text-[11px] font-medium ${status === 'completed' ? 'text-ios-muted' : 'text-ios-ink'}`}>
-            {pct}%
+        <div className="foot">
+          <span className="muted small grow">{manager}</span>
+          <span className="pill" data-hue={hue}>
+            {days}
           </span>
-        </div>
-        <div className="mt-1.5 h-[5px] overflow-hidden rounded-full bg-ios-border">
-          <div
-            className={`h-full rounded-full ${
-              status === 'completed' ? 'bg-[#C5C9D2]' : 'bg-gradient-to-r from-[#185FA5] to-[#378ADD]'
-            }`}
-            style={{ width: `${Math.max(4, pct)}%` }}
-          />
         </div>
       </div>
     </Link>
-  )
-}
-
-function MetaRow({ icon, text }: { icon: ReactNode; text: string }) {
-  return (
-    <div className="flex items-start gap-2">
-      <span className="mt-0.5 text-[#C4C9D1]">{icon}</span>
-      <p className="text-[11px] leading-snug text-ios-muted">{text}</p>
-    </div>
   )
 }

@@ -224,7 +224,7 @@ function BookingRow({
       : statusColors[booking.status]
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+    <div className="card pad">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex items-start justify-between gap-2">
@@ -384,7 +384,7 @@ function ManagerView({
       {canManageOperatives && (
         <Link
           href="/dashboard/annual-leave/operatives"
-          className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-3.5 shadow-sm transition-colors hover:bg-slate-50"
+          className="flex items-center justify-between ritem transition-colors hover:bg-slate-50"
         >
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50">
@@ -420,7 +420,7 @@ function ManagerView({
       <button
         type="button"
         onClick={() => setShowBooked(!showBooked)}
-        className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-3.5 shadow-sm transition-colors hover:bg-slate-50"
+        className="flex w-full items-center justify-between ritem transition-colors hover:bg-slate-50"
       >
         <div className="flex items-center gap-3">
           <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-slate-100">
@@ -465,7 +465,7 @@ function ManagerView({
         </div>
       )}
 
-      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="card pad">
         <AnnualLeaveLegend />
         <div className="mt-3">
           <LeaveDayCalendar
@@ -523,7 +523,7 @@ function ManagerView({
       </div>
 
       {editBooking && (
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="card pad">
           <p className="text-sm font-bold text-slate-900">Change approved booking</p>
           <p className="mt-0.5 text-xs text-slate-500">
             {fmtDate(editBooking.startDate)} · currently {editBooking.timeSlot}
@@ -699,7 +699,7 @@ function OperativeView({
 
       {activeTab === 'request' && (
         <>
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="card pad">
             <AnnualLeaveLegend />
             <div className="mt-3">
               <LeaveDayCalendar
@@ -791,7 +791,7 @@ function OperativeView({
         <div className="space-y-3">
           <p className="text-base font-bold text-slate-900">My annual leave</p>
           {myApproved.length === 0 ? (
-            <div className="rounded-2xl border-2 border-dashed border-slate-200 py-10 text-center">
+            <div className="empty py-10 text-center">
               <p className="text-sm text-slate-400">No approved leave yet</p>
             </div>
           ) : (
@@ -811,7 +811,7 @@ function OperativeView({
         <div className="space-y-3">
           <p className="text-base font-bold text-slate-900">Pending</p>
           {myPending.length === 0 ? (
-            <div className="rounded-2xl border-2 border-dashed border-slate-200 py-10 text-center">
+            <div className="empty py-10 text-center">
               <p className="text-sm text-slate-400">No pending requests</p>
             </div>
           ) : (
@@ -840,7 +840,7 @@ export function AnnualLeaveScreen() {
   if (user?.annualLeaveEnabled === false) {
     return (
       <div className="mx-auto max-w-xl pb-10">
-        <h1 className="text-2xl font-bold text-slate-900">Annual leave</h1>
+        <h1>Annual leave</h1>
         <p className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-600">
           Annual leave is not enabled for your account. Contact your manager if you need this turned on.
         </p>
@@ -850,7 +850,7 @@ export function AnnualLeaveScreen() {
 
   return (
     <div className="mx-auto max-w-xl space-y-4 pb-10">
-      <h1 className="text-2xl font-bold text-slate-900">Annual leave</h1>
+      <h1>Annual leave</h1>
 
       {error && <ErrorBanner message={error} />}
 

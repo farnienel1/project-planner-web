@@ -25,30 +25,46 @@ export function SettingsRow({
   onClick?: () => void
   children?: ReactNode
 }) {
+  const hue = danger
+    ? 'red'
+    : iconBg.includes('emerald') || iconColor.includes('emerald')
+      ? 'hs'
+      : iconBg.includes('purple') || iconColor.includes('purple')
+        ? 'user'
+        : iconBg.includes('red') || iconColor.includes('red')
+          ? 'red'
+          : iconBg.includes('amber') || iconColor.includes('amber')
+            ? 'warn'
+            : iconBg.includes('slate')
+              ? 'lib'
+              : 'blue'
   const inner = (
     <div
+      data-hue={hue}
       className={`flex items-center gap-3 px-4 py-3.5 ${onClick ? 'cursor-pointer hover:bg-[var(--soft)] transition-colors' : ''} ${danger ? 'hover:bg-[var(--red-t)]' : ''}`}
     >
-      <div className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl ${iconBg}`}>
-        <svg className={`h-5 w-5 ${iconColor}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <div className="ico-chip sm">
+        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d={icon} />
         </svg>
       </div>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 flex-wrap">
-          <p className={`text-sm font-semibold ${danger ? 'text-[var(--red)]' : 'text-[var(--ink)]'}`}>{label}</p>
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <p className={`text-[15px] font-semibold ${danger ? 'text-[var(--red)]' : 'text-[var(--ink)]'}`}>{label}</p>
           {badge && (
-            <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-bold text-blue-700">{badge}</span>
+            <span className="pill" data-hue="blue">
+              {badge}
+            </span>
           )}
         </div>
         {description && (
-          <p className="text-xs text-slate-500 mt-0.5 leading-relaxed break-words">{description}</p>
+          <p className="mt-0.5 text-[13px] leading-relaxed text-[var(--ink3)]">{description}</p>
         )}
       </div>
-      {value && <span className="text-sm font-semibold text-blue-600 flex-shrink-0">{value}</span>}
+      {value && <span className="shrink-0 text-sm font-semibold text-[var(--blue)]">{value}</span>}
       {children ? <div className="shrink-0">{children}</div> : null}
       {chevron && (
-        <svg className="h-4 w-4 text-slate-300 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <svg className="h-4 w-4 shrink-0 text-[var(--ink3)]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
         </svg>
       )}

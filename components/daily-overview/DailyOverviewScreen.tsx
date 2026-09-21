@@ -8,7 +8,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
-import { ChevronLeftIcon, ChevronRightIcon, CalendarDaysIcon } from '@heroicons/react/24/outline'
+import { ChevronLeftIcon, ChevronRightIcon, CalendarDaysIcon, FolderIcon, WrenchScrewdriverIcon } from '@heroicons/react/24/solid'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useBookingStore } from '@/lib/stores/bookingStore'
 import { useManagerScheduleStore } from '@/lib/stores/managerScheduleStore'
@@ -132,198 +132,205 @@ export function DailyOverviewScreen() {
     (bookingsLoading || managerLoading) && bookings.length === 0 && managerSiteBookings.length === 0
 
   if (user && !canViewDailyOverview(user)) {
-    return <p className="text-ios-muted">Daily overview is not available for this account.</p>
+    return <p className="muted">Daily overview is not available for this account.</p>
   }
 
   return (
     <>
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-[28px] font-semibold tracking-tight">Daily overview</h1>
-        <label className="flex items-center gap-2 text-[14px] font-medium text-[#185FA5]">
-          <CalendarDaysIcon className="h-4 w-4" />
-          View by date
+    <div className="stack" data-hue="daily">
+      <div className="phead" data-hue="daily">
+        <div className="badge-ico">
+          <CalendarDaysIcon className="h-6 w-6" />
+        </div>
+        <div>
+          <h1>Daily overview</h1>
+          <div className="sub">Who is where, and who still needs booking</div>
+        </div>
+        <div className="acts">
+          <div className="seg">
+            <button type="button" aria-label="Previous day" onClick={() => setDay(shiftOverviewDay(day, -1))}>
+              <ChevronLeftIcon className="h-5 w-5" />
+            </button>
+            <button type="button" className={model.isToday ? 'on' : ''} onClick={() => setDay(londonMidnight(new Date()))}>
+              {model.isToday ? 'Today' : 'Back to today'}
+            </button>
+            <button type="button" aria-label="Next day" onClick={() => setDay(shiftOverviewDay(day, 1))}>
+              <ChevronRightIcon className="h-5 w-5" />
+            </button>
+          </div>
           <input
             type="date"
             value={dateParam}
+            aria-label="View by date"
             onChange={(e) => {
               if (/^\d{4}-\d{2}-\d{2}$/.test(e.target.value)) setDay(dateFromDayKey(e.target.value))
             }}
-            className="rounded-lg border border-ios-search-border bg-white px-2 py-1 text-ios-ink"
+            className="in"
+            style={{ width: 170, height: 44 }}
           />
-        </label>
+        </div>
       </div>
 
       {bookingsError ? (
-        <p className="rounded-xl border border-[#F4C0C0] bg-[#FCEBEB] px-3 py-2 text-[13px] text-[#A32D2D]">
+        <div className="banner" data-hue="red">
           Could not load bookings from Firebase: {bookingsError}
-        </p>
+        </div>
       ) : null}
 
-      <div className="flex items-center rounded-[18px] border border-ios-border bg-ios-card px-2 py-1.5">
-        <button
-          type="button"
-          aria-label="Previous day"
-          onClick={() => setDay(shiftOverviewDay(day, -1))}
-          className="grid h-11 w-11 place-items-center text-ios-muted"
-        >
-          <ChevronLeftIcon className="h-5 w-5" />
-        </button>
-        <div className="flex-1 text-center">
-          <p className="text-[14px] font-medium">{model.dayLabel}</p>
-          <p className="text-[11px] font-medium text-[#185FA5]">{model.isToday ? 'Today · Tap to change' : 'Tap to change'}</p>
+      <section className="hero" data-hue="daily">
+        <div className="row" style={{ position: 'relative', zIndex: 1 }}>
+          <div className="grow">
+            <div className="eb">{model.dayLabel}</div>
+            <div className="big" style={{ marginTop: 4 }}>
+              {overviewFormatHours(model.labourHours)}h booked{' '}
+              <span style={{ fontSize: 18, opacity: 0.8 }}>
+                · {model.peopleCount === 1 ? '1 person' : `${model.peopleCount} people`}
+              </span>
+            </div>
+          </div>
         </div>
-        <button
-          type="button"
-          aria-label="Next day"
-          onClick={() => setDay(shiftOverviewDay(day, 1))}
-          className="grid h-11 w-11 place-items-center text-ios-muted"
-        >
-          <ChevronRightIcon className="h-5 w-5" />
-        </button>
-      </div>
-
-      <section className="relative overflow-hidden rounded-[20px] bg-gradient-to-br from-[#185FA5] to-[#378ADD] p-[18px] text-white">
-        <p className="text-[10px] font-medium uppercase tracking-[0.4px] text-white/85">
-          {model.isToday ? 'Today at a glance' : 'Day at a glance'}
-        </p>
-        <div className="mt-1.5 flex flex-wrap items-baseline gap-2">
-          <p className="text-[28px] font-medium tracking-tight">{overviewFormatHours(model.labourHours)}h</p>
-          <p className="text-[13px] font-medium text-white/85">
-            · {model.peopleCount} {model.peopleCount === 1 ? 'person' : 'people'}
-          </p>
-          {model.unbookedCount > 0 ? (
-            <span className="ml-auto rounded-full bg-white/18 px-2.5 py-1 text-[10px] font-medium">
-              {model.unbookedCount} unbooked
-            </span>
-          ) : null}
+        <div className="stats">
+          <div className="st">
+            <b>{overviewFormatHours(model.labourHours)}</b>
+            <span>Standard hrs</span>
+          </div>
+          <div className="st">
+            <b>0</b>
+            <span>Overtime 1.5×</span>
+          </div>
+          <div className="st">
+            <b>{model.jobsCount}</b>
+            <span>{model.jobsCount === 1 ? 'Job active' : 'Jobs active'}</span>
+          </div>
+          <div className="st">
+            <b>{model.unbookedCount}</b>
+            <span>Unbooked</span>
+          </div>
         </div>
-        <div className="mt-3.5 grid grid-cols-3 gap-1.5">
-          <GlancePill value={overviewFormatHours(model.labourHours)} label="Standard hrs" />
-          <GlancePill value="0" label="OT 1.5×" />
-          <GlancePill value={String(model.jobsCount)} label={model.jobsCount === 1 ? 'Job active' : 'Jobs active'} />
-        </div>
-        <div className="mt-3.5 flex items-center justify-between border-t border-white/20 pt-3">
-          <p className="text-[10px] font-medium uppercase tracking-[0.4px] text-white/85">Where the team is</p>
-          <p className="text-[9px] font-medium text-white/70">
+        <div style={{ marginTop: 18, position: 'relative', zIndex: 1 }}>
+          <div className="row small" style={{ opacity: 0.9, marginBottom: 8 }}>
+            <b>Where the team is</b>
+            <span className="grow" />
             {model.bookedPeopleCount} booked · {model.unbookedCount} unbooked
-          </p>
-        </div>
-        <div className="mt-2.5 flex h-2 overflow-hidden rounded bg-black/18">
-          {model.officeCount > 0 ? <div className="bg-white" style={{ flex: model.officeCount }} /> : null}
-          {model.wfhCount > 0 ? <div className="bg-white/60" style={{ flex: model.wfhCount }} /> : null}
-          {model.onSiteCount > 0 ? <div className="bg-white/85" style={{ flex: model.onSiteCount }} /> : null}
-          {model.unbookedCount > 0 ? <div className="bg-white/20" style={{ flex: model.unbookedCount }} /> : null}
-        </div>
-        <div className="mt-2 flex flex-wrap gap-3 text-[11px] font-medium">
-          <span className={model.officeCount ? '' : 'text-white/55'}>{model.officeCount} Office</span>
-          <span className={model.wfhCount ? '' : 'text-white/55'}>{model.wfhCount} WFH</span>
-          <span className={model.onSiteCount ? '' : 'text-white/55'}>{model.onSiteCount} On site</span>
+          </div>
+          <div style={{ display: 'flex', height: 12, borderRadius: 99, overflow: 'hidden', background: 'rgba(255,255,255,.18)' }}>
+            {model.officeCount > 0 ? <i style={{ width: `${(100 * model.officeCount) / Math.max(1, model.officeCount + model.wfhCount + model.onSiteCount + model.unbookedCount)}%`, background: '#fff' }} /> : null}
+            {model.wfhCount > 0 ? <i style={{ width: `${(100 * model.wfhCount) / Math.max(1, model.officeCount + model.wfhCount + model.onSiteCount + model.unbookedCount)}%`, background: 'rgba(255,255,255,.6)' }} /> : null}
+            {model.onSiteCount > 0 ? <i style={{ width: `${(100 * model.onSiteCount) / Math.max(1, model.officeCount + model.wfhCount + model.onSiteCount + model.unbookedCount)}%`, background: 'rgba(255,255,255,.85)' }} /> : null}
+          </div>
+          <div className="row small" style={{ marginTop: 8, gap: 18, opacity: 0.9 }}>
+            <span>● {model.officeCount} Office</span>
+            <span>● {model.wfhCount} WFH</span>
+            <span>● {model.onSiteCount} On site</span>
+          </div>
         </div>
       </section>
 
-      {firstPaint ? (
-        <p className="py-8 text-center text-[14px] text-ios-muted">Loading daily overview…</p>
-      ) : null}
+      {firstPaint ? <p className="muted py-8 text-center">Loading daily overview…</p> : null}
 
-      <div className="xl:grid xl:grid-cols-12 xl:gap-6">
-        <div className="space-y-4 xl:col-span-8">
-          {model.projectCards.length > 0 ? (
-            <section>
-              <p className="mb-2 px-1 text-[11px] font-medium uppercase tracking-[0.4px] text-ios-muted">By project</p>
-              <div className="grid gap-2.5 lg:grid-cols-2">
-                {model.projectCards.map(({ project, people, peopleCount, bookedHours, isSmallWorks }) => (
-                  <article key={project.id} className="rounded-2xl border border-ios-border bg-ios-card p-3.5">
-                    <div className="flex items-start gap-2.5">
-                      <div
-                        className={`grid h-8 w-8 shrink-0 place-items-center rounded-[9px] ${
-                          isSmallWorks ? 'bg-[#FAEED9] text-[#854F0B]' : 'bg-[#E1F5EE] text-[#0F6E56]'
-                        }`}
-                      >
-                        {isSmallWorks ? '⚒' : '📁'}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-[14px] font-medium">
-                          <span className={isSmallWorks ? 'text-[#854F0B]' : 'text-[#185FA5]'}>{project.jobNumber}</span>{' '}
-                          <span>{project.siteName}</span>
-                          {isSmallWorks ? (
-                            <span className="ml-1.5 rounded bg-[#854F0B]/15 px-1 py-0.5 text-[8px] font-medium uppercase text-[#854F0B]">
-                              Small works
-                            </span>
-                          ) : null}
-                        </p>
-                        <p className="mt-0.5 text-[12px] font-medium text-ios-muted">
-                          {peopleCount} {peopleCount === 1 ? 'person' : 'people'} · {overviewFormatHours(bookedHours)}h
-                          booked
-                        </p>
+      <div className="grid gmain">
+        <section className="card">
+          <div className="card-h">
+            <h2 className="h2">By project</h2>
+          </div>
+          <div className="card-b rows">
+            {model.projectCards.length > 0 ? (
+              model.projectCards.map(({ project, people, peopleCount, bookedHours, isSmallWorks }) => (
+                <div key={project.id} className="card pad" data-hue={isSmallWorks ? 'sw' : 'proj'} style={{ boxShadow: 'none', background: 'var(--soft)' }}>
+                  <div className="row">
+                    <div className="ico-chip">
+                      {isSmallWorks ? <WrenchScrewdriverIcon className="h-5 w-5" /> : <FolderIcon className="h-5 w-5" />}
+                    </div>
+                    <div className="grow">
+                      <span className="tag">{project.jobNumber}</span>{' '}
+                      <b style={{ fontFamily: 'var(--head)', fontSize: 16 }}>{project.siteName}</b>
+                      <div className="muted small">
+                        {peopleCount} {peopleCount === 1 ? 'person' : 'people'} · {overviewFormatHours(bookedHours)}h booked
                       </div>
                     </div>
-                    {people.length > 0 ? (
-                      <div className="mt-2.5 divide-y divide-ios-border border-t border-ios-border">
-                        {people.map((row) => (
-                          <PersonRow key={row.personKey} row={row} />
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="mt-2 text-[12px] text-ios-muted">No named people on this job today.</p>
-                    )}
                     <Link
                       href={isSmallWorks ? `/dashboard/small-works/${project.id}` : `/dashboard/projects/${project.id}`}
-                      className="mt-2 flex items-center justify-center gap-1 rounded-[10px] bg-[#F7F8FA] py-2 text-[12px] font-medium text-[#185FA5]"
+                      className="btn sm tint"
                     >
-                      {isSmallWorks ? 'Open small works' : 'Open project'} →
+                      {isSmallWorks ? 'Open small works' : 'Open project'}
                     </Link>
-                  </article>
-                ))}
+                  </div>
+                  {people.length > 0 ? (
+                    <div className="rows" style={{ marginTop: 12 }}>
+                      {people.map((row) => (
+                        <PersonRow key={row.personKey} row={row} />
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="muted small" style={{ marginTop: 8 }}>
+                      No named people on this job today.
+                    </p>
+                  )}
+                </div>
+              ))
+            ) : !firstPaint && model.empty ? (
+              <div className="empty">
+                <h3>Nothing booked yet</h3>
+                <p>No one is booked onto a job for this day.</p>
+                {canBook ? (
+                  <button type="button" className="btn primary" onClick={() => setBookLabourOpen(true)}>
+                    Book labour
+                  </button>
+                ) : null}
               </div>
-            </section>
-          ) : null}
+            ) : null}
+          </div>
+        </section>
 
-          {model.empty && !firstPaint ? (
-            <p className="rounded-2xl border border-ios-border bg-ios-card py-10 text-center text-[15px] font-medium text-ios-muted">
-              No bookings
-            </p>
-          ) : null}
-        </div>
-
-        <div className="mt-4 space-y-4 xl:col-span-4 xl:mt-0">
+        <div className="stack">
           {model.isWeekday && model.unbookedNames.length > 0 ? (
-            <section className="rounded-2xl bg-[#FCEBEB] p-3.5">
-              <div className="flex items-start justify-between gap-2">
-                <p className="text-[13px] font-medium text-[#A32D2D]">Unbooked labour</p>
-                <p className="text-[10px] font-medium text-[#A32D2D]">{model.unbookedNames.length} people</p>
-              </div>
-              <div className="mt-2 flex flex-wrap gap-1.5">
-                {model.unbookedNames.map((name) => (
-                  <span key={name} className="inline-flex items-center gap-1.5 rounded-full bg-white px-2 py-1 text-[11px] font-medium">
-                    <span className="grid h-[18px] w-[18px] place-items-center rounded-full bg-gradient-to-br from-[#185FA5] to-[#378ADD] text-[8px] font-medium text-white">
-                      {initialsFrom(name)}
-                    </span>
-                    {name}
+            <section className="card" data-hue="warn">
+              <div className="card-h">
+                <div className="ico-chip sm">!</div>
+                <h2 className="h2">Unbooked labour</h2>
+                <div className="acts">
+                  <span className="count" data-hue="warn">
+                    {model.unbookedNames.length}
                   </span>
-                ))}
+                </div>
               </div>
-              {canBook ? (
-                <button
-                  type="button"
-                  onClick={() => setBookLabourOpen(true)}
-                  className="mt-3 inline-flex min-h-[36px] items-center rounded-full border border-[#A32D2D] bg-white px-4 py-1.5 text-[13px] font-semibold text-[#A32D2D] hover:bg-white/80"
-                >
-                  Book labour
-                </button>
-              ) : null}
+              <div className="card-b rows">
+                {model.unbookedNames.map((name) => (
+                  <div key={name} className="ritem" style={{ cursor: 'default' }}>
+                    <span className="ico-chip sm">{initialsFrom(name)}</span>
+                    <span className="grow">
+                      <span className="t">{name}</span>
+                    </span>
+                    <span className="pill" data-hue="warn">
+                      Unbooked
+                    </span>
+                  </div>
+                ))}
+                {canBook ? (
+                  <button type="button" className="btn primary block" onClick={() => setBookLabourOpen(true)}>
+                    Book labour
+                  </button>
+                ) : null}
+              </div>
             </section>
           ) : null}
 
           {model.holidays.length > 0 ? (
-            <section>
-              <p className="mb-2 px-1 text-[11px] font-medium uppercase tracking-[0.4px] text-ios-muted">Annual leave</p>
-              <div className="rounded-2xl border border-ios-border bg-ios-card p-3.5">
+            <section className="card" data-hue="leave">
+              <div className="card-h">
+                <h2 className="h2">Annual leave</h2>
+              </div>
+              <div className="card-b rows">
                 {model.holidays.map((row) => (
-                  <p key={row.id} className="py-1.5 text-[13px]">
-                    {holidayName(row, users, operatives)}
-                    <span className="ml-2 text-[11px] text-ios-muted">Annual leave</span>
-                  </p>
+                  <div key={row.id} className="ritem" style={{ cursor: 'default' }}>
+                    <span className="grow">
+                      <span className="t">{holidayName(row, users, operatives)}</span>
+                      <span className="s">Annual leave</span>
+                    </span>
+                    <span className="pill" data-hue="leave">
+                      Off
+                    </span>
+                  </div>
                 ))}
               </div>
             </section>
@@ -339,16 +346,13 @@ export function DailyOverviewScreen() {
           ) : null}
 
           {model.siteSurveyBookings.length > 0 ? (
-            <section>
-              <p className="mb-2 px-1 text-[11px] font-medium uppercase tracking-[0.4px] text-ios-muted">Site survey</p>
-              <ManagerCard title="Site survey" bookings={model.siteSurveyBookings} users={users} />
-            </section>
+            <ManagerCard title="Site survey" bookings={model.siteSurveyBookings} users={users} />
           ) : null}
         </div>
       </div>
     </div>
     {bookLabourOpen ? (
-      <div className="fixed inset-0 z-[80] overflow-y-auto bg-[#F7F8FA]">
+      <div className="fixed inset-0 z-[80] overflow-y-auto bg-[var(--bg)]">
         <div className="mx-auto max-w-2xl px-4 py-6 lg:px-10 lg:py-8">
           <BookLabourFlowScreen date={dateParam} from="daily-overview" onClose={() => setBookLabourOpen(false)} />
         </div>
@@ -360,29 +364,15 @@ export function DailyOverviewScreen() {
 
 function PersonRow({ row }: { row: OverviewPersonRow }) {
   return (
-    <div className="flex items-center gap-2.5 py-2">
-      <span className="grid h-[26px] w-[26px] shrink-0 place-items-center rounded-full bg-gradient-to-br from-[#185FA5] to-[#378ADD] text-[10px] font-medium text-white">
-        {row.initials}
+    <div className="ritem" style={{ cursor: 'default', marginTop: 12 }} data-hue="proj">
+      <span className="ico-chip sm">{row.initials}</span>
+      <span className="grow">
+        <span className="t">{row.name}</span>
+        <span className="s">{row.subtitle}</span>
       </span>
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-[13px] font-medium">{row.name}</p>
-        {row.bookedOperativeNames.map((name) => (
-          <p key={name} className="truncate text-[11px] text-ios-muted">
-            {name}
-          </p>
-        ))}
-        <p className="text-[11px] font-medium text-[#0F6E56]">{row.subtitle}</p>
-      </div>
-      <span className="rounded bg-[#E1F5EE] px-1.5 py-0.5 text-[11px] font-medium text-[#0F6E56]">{row.pillText}</span>
-    </div>
-  )
-}
-
-function GlancePill({ value, label }: { value: string; label: string }) {
-  return (
-    <div className="rounded-[11px] bg-white/14 px-2 py-2 text-center">
-      <p className="text-[16px] font-medium">{value}</p>
-      <p className="text-[9px] font-medium text-white/85">{label}</p>
+      <span className="pill" data-hue="proj">
+        {row.pillText}
+      </span>
     </div>
   )
 }
@@ -397,18 +387,26 @@ function ManagerCard({
   users: User[]
 }) {
   return (
-    <div className="rounded-2xl border border-ios-border bg-ios-card p-3.5">
-      <div className="mb-2.5 flex items-center justify-between">
-        <p className="text-[13px] font-medium">{title}</p>
-        <p className="text-[10px] font-medium text-ios-muted">Managers / admins</p>
+    <section className="card" data-hue="user">
+      <div className="card-h">
+        <h2 className="h2">{title}</h2>
+        <div className="acts">
+          <span className="muted xs">Managers / admins</span>
+        </div>
       </div>
-      {bookings.map((b) => (
-        <p key={b.id} className="py-1 text-[13px]">
-          <span className="mr-2 rounded bg-[#FBEAF0] px-1.5 py-0.5 text-[9px] font-medium text-[#993556]">{b.timeSlot}</span>
-          {personName(b.userId, users)}
-        </p>
-      ))}
-    </div>
+      <div className="card-b rows">
+        {bookings.map((b) => (
+          <div key={b.id} className="ritem" style={{ cursor: 'default' }}>
+            <span className="grow">
+              <span className="t">{personName(b.userId, users)}</span>
+            </span>
+            <span className="pill" data-hue="sched">
+              {b.timeSlot}
+            </span>
+          </div>
+        ))}
+      </div>
+    </section>
   )
 }
 
@@ -425,14 +423,16 @@ function OtherBlock({
 }) {
   const people = new Set([...office, ...wfh, ...custom.flatMap((g) => g.bookings)].map((b) => b.userId))
   return (
-    <section>
-      <div className="mb-2 flex items-center justify-between px-1">
-        <p className="text-[11px] font-medium uppercase tracking-[0.4px] text-ios-muted">Other</p>
-        <p className="text-[11px] font-medium text-ios-muted">
-          {people.size} person{people.size === 1 ? '' : 's'}
-        </p>
+    <section className="card" data-hue="lib">
+      <div className="card-h">
+        <h2 className="h2">Other</h2>
+        <div className="acts">
+          <span className="muted small">
+            {people.size} person{people.size === 1 ? '' : 's'}
+          </span>
+        </div>
       </div>
-      <div className="space-y-2">
+      <div className="card-b stack" style={{ gap: 12 }}>
         {office.length > 0 ? <ManagerCard title="Office" bookings={office} users={users} /> : null}
         {wfh.length > 0 ? <ManagerCard title="Working from home" bookings={wfh} users={users} /> : null}
         {custom.map((g) => (

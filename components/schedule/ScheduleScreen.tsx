@@ -171,7 +171,7 @@ function BookingCard({
           <p className={`truncate text-[15px] font-semibold ${past ? 'text-slate-500' : 'text-slate-900'}`}>
             {projectName}
           </p>
-          <p className="mt-0.5 text-[12px] font-medium text-ios-muted">
+          <p className="mt-0.5 text-[12px] font-medium text-[var(--ink3)]">
             {myScheduleClockSubtitle(booking)}
           </p>
           <div className="mt-1 flex flex-wrap items-center gap-1.5">
@@ -394,7 +394,7 @@ function MiniStat({
   color: string
 }) {
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+    <div className="card pad">
       <p className={`text-2xl font-bold ${color}`}>{value}</p>
       <p className="mt-0.5 text-xs font-medium text-slate-500">{label}</p>
       {sub && <p className="mt-0.5 text-[10px] text-slate-400">{sub}</p>}
@@ -526,7 +526,7 @@ export function ScheduleScreen({
     return (
       <div className="space-y-3">
         <h1 className="text-[28px] font-semibold tracking-tight">{variant === 'personal' ? 'My Schedule' : 'Daily overview'}</h1>
-        <p className="text-[14px] text-ios-muted">{variant === 'personal' ? 'Opening your week…' : 'Opening daily overview…'}</p>
+        <p className="text-[14px] text-[var(--ink3)]">{variant === 'personal' ? 'Opening your week…' : 'Opening daily overview…'}</p>
       </div>
     )
   }
@@ -545,8 +545,8 @@ export function ScheduleScreen({
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-[28px] font-semibold tracking-tight text-ios-ink">{pageTitle}</h1>
-          <p className="mt-1 text-[14px] text-ios-muted">{pageSubtitle}</p>
+          <h1 className="text-[28px] font-semibold tracking-tight text-[var(--ink)]">{pageTitle}</h1>
+          <p className="mt-1 text-[14px] text-[var(--ink3)]">{pageSubtitle}</p>
         </div>
         {variant === 'overview' && (
           <Link
@@ -588,7 +588,7 @@ export function ScheduleScreen({
       </div>
       )}
 
-      <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+      <div className="card pad">
         <div className="mb-2 flex items-center justify-between px-1">
           <p className="text-xs font-semibold text-slate-700">
             Week {getWeek(weekStart)} · {format(weekStart, 'MMM d')} –{' '}
@@ -711,7 +711,7 @@ export function ScheduleScreen({
       )}
 
       {datesToRender.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-slate-300 bg-white py-16 text-center">
+        <div className="empty card pad py-16 text-center">
           <p className="text-sm font-semibold text-slate-700">No bookings found</p>
           <p className="mt-1 text-xs text-slate-400">Try adjusting filters or selecting another week.</p>
         </div>

@@ -5,7 +5,7 @@ import { format, isSameDay } from 'date-fns'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useProjectStore } from '@/lib/stores/projectStore'
 import { useBookingStore } from '@/lib/stores/bookingStore'
-import { EmptyState, LoadingSpinner, PageHeader } from '@/components/dashboard/PageShell'
+import { EmptyState, LoadingSpinner } from '@/components/dashboard/PageShell'
 import { mergeProjectsAndSmallWorks } from '@/lib/projects/workStatus'
 import { geocodeSiteProject } from '@/lib/maps/geocoding'
 import {
@@ -171,45 +171,48 @@ export default function SiteMapPage() {
   if (!organization) return <LoadingSpinner />
 
   return (
-    <div className="space-y-6">
-      <PageHeader
-        title="Site map"
-        description="Active sites for the selected day. UK addresses are geocoded automatically (postcode lookup + map search), matching how the iOS app resolves locations."
-        meta={`${basePins.length} sites · ${withCoords.length} on map · ${withAddress.length} with address · ${withBookings.length} with bookings`}
-      />
+    <div className="stack" data-hue="proj">
+      <div className="phead" data-hue="proj">
+        <div>
+          <h1>Site map</h1>
+          <div className="sub">Every job on one map, with who is on site today</div>
+        </div>
+        <div className="acts">
+          <input
+            type="date"
+            value={selectedDate}
+            aria-label="Selected day"
+            onChange={(e) => {
+              setSelectedDate(e.target.value)
+              setSelectedPinId(null)
+            }}
+            className="in"
+            style={{ width: 170, height: 44 }}
+          />
+        </div>
+      </div>
+      {geocoding ? <p className="muted small">Locating sites on map…</p> : null}
 
-      <div className="flex flex-wrap items-center gap-3">
-        <label className="text-sm font-medium text-slate-700">Selected day</label>
-        <input
-          type="date"
-          value={selectedDate}
-          onChange={(e) => {
-            setSelectedDate(e.target.value)
-            setSelectedPinId(null)
-          }}
-          className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+      <div className="map card" style={{ minHeight: 420 }}>
+        <SiteMapBoard
+          markers={mapMarkers}
+          selectedMarkerId={selectedPinId}
+          onSelectMarker={handleSelectMarker}
         />
-        {geocoding && <span className="text-xs font-medium text-slate-500">Locating sites on map…</span>}
       </div>
 
-      <SiteMapBoard
-        markers={mapMarkers}
-        selectedMarkerId={selectedPinId}
-        onSelectMarker={handleSelectMarker}
-      />
-
       {withCoords.length === 0 && withAddress.length > 0 && (
-        <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+        <div className="banner" data-hue="warn">
           {geocoding
             ? 'Finding map locations from site addresses…'
             : 'Some addresses could not be located automatically. You can still open them in Google Maps from the cards below.'}
-        </p>
+        </div>
       )}
 
       {basePins.length === 0 ? (
         <EmptyState title="No sites found" description="Projects and small works from Firebase will appear here." />
       ) : (
-        <div className="grid gap-3 md:grid-cols-2">
+        <div className="rows">
           {basePins.map((pin) => {
             const isSelected = selectedPinId === pin.id
             return (
@@ -221,58 +224,43 @@ export default function SiteMapPage() {
                 onKeyDown={(event) => {
                   if (event.key === 'Enter' || event.key === ' ') setSelectedPinId(pin.id)
                 }}
-                className={`cursor-pointer rounded-xl border bg-white p-4 shadow-sm transition ${
-                  isSelected ? 'border-blue-400 ring-2 ring-blue-100' : 'border-slate-200 hover:border-slate-300'
-                }`}
+                className={`ritem ${isSelected ? 'sel' : ''}`}
+                data-hue={pin.source === 'smallWork' ? 'sw' : 'proj'}
               >
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <h3 className="font-semibold text-slate-900">{pin.label}</h3>
-                    <p className="text-sm text-slate-500">
-                      #{pin.jobNumber} · {pin.source === 'project' ? 'Project' : 'Small work'}
-                    </p>
-                    <p className="mt-1 text-sm text-slate-600">{pin.address || 'No address'}</p>
-                    <p className="mt-2 text-xs text-slate-500">
-                      {pin.bookingCount} booking{pin.bookingCount === 1 ? '' : 's'} on{' '}
-                      {format(dateObj, 'd MMM yyyy')}
-                    </p>
-                    {pin.geocodeFailed && (
-                      <p className="mt-1 text-xs text-amber-700">Could not place this address on the map</p>
-                    )}
-                  </div>
-                  <div
-                    className="flex shrink-0 flex-col items-end gap-2"
-                    onClick={(event) => event.stopPropagation()}
-                  >
-                    <SetSitePinButton
-                      project={pin.project}
-                      collection={pin.collection}
-                      onUpdated={(updated) => {
-                        setCoordinatesBySiteId((current) => ({
-                          ...current,
-                          [updated.id]: {
-                            latitude: updated.latitude!,
-                            longitude: updated.longitude!,
-                          },
-                        }))
-                      }}
-                    />
-                    {pin.mapsUrl ? (
-                      <a
-                        href={pin.mapsUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="rounded-lg bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100"
-                      >
-                        Open map
-                      </a>
-                    ) : (
-                      <span className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-400">
-                        No address
-                      </span>
-                    )}
-                  </div>
-                </div>
+                <span className="ico-chip">{pin.source === 'smallWork' ? 'SW' : 'P'}</span>
+                <span className="grow">
+                  <span className="t">{pin.label}</span>
+                  <span className="s">
+                    {pin.jobNumber} · {pin.source === 'project' ? 'Project' : 'Small works'} · {pin.address || 'No address'}
+                  </span>
+                </span>
+                <span className="pill">{pin.bookingCount} booked</span>
+                <span
+                  className="row"
+                  style={{ gap: 8 }}
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  <SetSitePinButton
+                    project={pin.project}
+                    collection={pin.collection}
+                    onUpdated={(updated) => {
+                      setCoordinatesBySiteId((current) => ({
+                        ...current,
+                        [updated.id]: {
+                          latitude: updated.latitude!,
+                          longitude: updated.longitude!,
+                        },
+                      }))
+                    }}
+                  />
+                  {pin.mapsUrl ? (
+                    <a href={pin.mapsUrl} target="_blank" rel="noreferrer" className="btn xs">
+                      Open map
+                    </a>
+                  ) : (
+                    <span className="muted xs">No address</span>
+                  )}
+                </span>
               </div>
             )
           })}

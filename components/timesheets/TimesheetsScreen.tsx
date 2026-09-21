@@ -313,7 +313,7 @@ export function TimesheetsScreen({
           const summary = summaryFor(row.user, row.draft, period.start, period.end)
           return (
             <div key={row.id}>
-              {index > 0 ? <div className="ml-[58px] h-px bg-[#E5E5EA]" /> : null}
+              {index > 0 ? <div className="ml-[58px] h-px bg-[var(--soft2)]" /> : null}
               <MemberRow
                 member={row.user}
                 users={users}
@@ -349,7 +349,7 @@ export function TimesheetsScreen({
           const summary = summaryFor(member, draft, periodStart, periodEnd)
           return (
             <div key={member.id}>
-              {index > 0 ? <div className="ml-[58px] h-px bg-[#E5E5EA]" /> : null}
+              {index > 0 ? <div className="ml-[58px] h-px bg-[var(--soft2)]" /> : null}
               <MemberRow
                 member={member}
                 users={users}
@@ -373,11 +373,11 @@ export function TimesheetsScreen({
             type="button"
             disabled={exporting}
             onClick={() => void exportSigned()}
-            className="w-full rounded-xl bg-[#185FA5] px-4 py-3.5 text-[15px] font-semibold text-white disabled:opacity-60"
+            className="w-full rounded-xl bg-[var(--blue)] px-4 py-3.5 text-[15px] font-semibold text-white disabled:opacity-60"
           >
             {exporting ? 'Sending timesheets…' : `Email and export ${visible.length} timesheet${visible.length === 1 ? '' : 's'}`}
           </button>
-          {exportMessage ? <p className="text-[13px] text-ios-muted">{exportMessage}</p> : null}
+          {exportMessage ? <p className="text-[13px] text-[var(--ink3)]">{exportMessage}</p> : null}
         </div>
       ) : null}
     </div>
@@ -421,17 +421,17 @@ function MemberRow({
           <p className="text-[17px] font-semibold">{displayName(member)}</p>
           <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${pillClass}`}>{pill}</span>
         </div>
-        {periodLine ? <p className="mt-0.5 text-[13px] font-semibold text-[#185FA5]">{periodLine}</p> : null}
+        {periodLine ? <p className="mt-0.5 text-[13px] font-semibold text-[var(--blue)]">{periodLine}</p> : null}
         {exportedAt && timeZone ? (
-          <p className="mt-0.5 text-[12px] text-ios-muted">Exported {formatStampInZone(exportedAt, timeZone)}</p>
+          <p className="mt-0.5 text-[12px] text-[var(--ink3)]">Exported {formatStampInZone(exportedAt, timeZone)}</p>
         ) : null}
-        <p className="mt-1 text-[13px] text-ios-muted">
+        <p className="mt-1 text-[13px] text-[var(--ink3)]">
           Hrs {summary.hours.toFixed(1)} · OT {summary.overtimeHours.toFixed(1)} · PW £{summary.priceWork.toFixed(2)} · Exp £
           {summary.expenses.toFixed(2)}
           {member.permissions.operativeMode ? ' · Operative' : hasAdminAccess(member) ? ' · Admin' : ' · Manager'}
         </p>
         {hasAdminAccess(viewer) ? (
-          <p className="mt-0.5 text-[12px] text-ios-muted">
+          <p className="mt-0.5 text-[12px] text-[var(--ink3)]">
             Line manager:{' '}
             {(() => {
               const managerId = member.assignedManagerUserIds?.[0] || member.assignedManagerUserId
@@ -442,7 +442,7 @@ function MemberRow({
           </p>
         ) : null}
       </div>
-      <span className="text-[#185FA5]">›</span>
+      <span className="text-[var(--blue)]">›</span>
     </button>
   )
 }

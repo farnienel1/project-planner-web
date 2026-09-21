@@ -88,7 +88,7 @@ export function LegalPackGate() {
         ))}
 
         {isSuperAdmin ? (
-          <label className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700">
+          <label className="flex items-start gap-3 card px-4 py-3 text-sm text-slate-700">
             <input
               type="checkbox"
               checked={authorisedToBind}

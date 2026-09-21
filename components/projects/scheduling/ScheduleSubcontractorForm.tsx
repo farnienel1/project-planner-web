@@ -161,7 +161,7 @@ export function ScheduleSubcontractorForm({
 
   return (
     <div className="space-y-5 pb-28">
-      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="card pad">
         <p className="text-xs font-semibold text-violet-700">{project.jobNumber}</p>
         <p className="text-lg font-semibold text-slate-900">{project.siteName}</p>
         <p className="mt-1 text-sm text-slate-600">
@@ -192,7 +192,7 @@ export function ScheduleSubcontractorForm({
             </button>
           ))}
         </div>
-        <div className="max-h-56 space-y-2 overflow-y-auto rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+        <div className="max-h-56 space-y-2 overflow-y-auto card pad">
           {filteredSubcontractors.length === 0 ? (
             <p className="text-sm text-slate-500">No sub contractors found.</p>
           ) : (
@@ -219,7 +219,7 @@ export function ScheduleSubcontractorForm({
       </section>
 
       {selectedSubcontractor && (
-        <section className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <section className="space-y-3 card pad">
           <p className="text-sm font-semibold text-slate-900">Who&apos;s attending</p>
           <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
             <input

@@ -138,8 +138,8 @@ export function SignaturePad({
   return (
     <div className={className || 'space-y-2'}>
       <div className="flex items-center justify-between">
-        <p className="text-[11px] font-medium uppercase tracking-wide text-ios-muted">Signature</p>
-        <button type="button" onClick={clear} disabled={disabled} className="text-[12px] font-semibold text-[#185FA5]">
+        <p className="text-[11px] font-medium uppercase tracking-wide text-[var(--ink3)]">Signature</p>
+        <button type="button" onClick={clear} disabled={disabled} className="text-[12px] font-semibold text-[var(--blue)]">
           Clear
         </button>
       </div>
@@ -156,7 +156,7 @@ export function SignaturePad({
           setTypedName(next)
           requestAnimationFrame(() => redrawAndExport())
         }}
-        className={`w-full rounded-[10px] border border-slate-200 bg-white px-3 py-2.5 text-[22px] text-slate-900 outline-none placeholder:text-[15px] placeholder:font-sans placeholder:text-slate-400 focus:border-[#185FA5] ${signatureFont.className}`}
+        className={`w-full rounded-[10px] border border-slate-200 bg-white px-3 py-2.5 text-[22px] text-slate-900 outline-none placeholder:text-[15px] placeholder:font-sans placeholder:text-slate-400 focus:border-[var(--blue)] ${signatureFont.className}`}
       />
       <canvas
         ref={canvasRef}
@@ -184,7 +184,7 @@ export function SignaturePad({
           drawing.current = false
         }}
       />
-      <p className="text-[13px] text-ios-muted">
+      <p className="text-[13px] text-[var(--ink3)]">
         Type your name to fill the box in handwriting, or draw. You can do both.
       </p>
     </div>

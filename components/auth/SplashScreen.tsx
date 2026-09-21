@@ -14,7 +14,7 @@ export function SplashScreen() {
           radius={26}
           className="shadow-[0_4px_12px_rgba(0,0,0,0.08)]"
         />
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-[#185FA5] border-t-transparent" />
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-[var(--blue)] border-t-transparent" />
       </div>
     </div>
   )

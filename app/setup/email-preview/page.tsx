@@ -64,11 +64,11 @@ export default function EmailPreviewPage() {
             Invited user set password
           </button>
         </div>
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 text-sm">
+        <div className="card p-4 text-sm">
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Subject</p>
           <p className="mt-1 font-medium text-slate-900">{preview.subject}</p>
         </div>
-        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white p-6">
+        <div className="overflow-hidden card p-6">
           <div dangerouslySetInnerHTML={{ __html: preview.html }} />
         </div>
       </div>
