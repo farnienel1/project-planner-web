@@ -20,6 +20,7 @@ import {
   hasAdminAccess,
   isOperativeMode,
   canManageWorkCatalogue,
+  shouldShowTimesheetsDisabledMessage,
 } from './permissions.ts'
 
 function perms(partial: Partial<UserPermissions>): UserPermissions {
@@ -124,18 +125,48 @@ test('canAccessTimesheetsSurface is true for self-employed', () => {
   assert.equal(canAccessTimesheetsSurface(se), true)
 })
 
-test('managers with direct reports can open Operative Timesheets without the operatives flag', () => {
+test('managers with the operatives flag still need assigned reports for Operative Timesheets', () => {
   const manager = user({
     id: 'mgr',
     role: UserRole.MANAGER,
-    permissions: { manager: true, operatives: false },
+    permissions: { manager: true, operatives: true },
+    employmentType: 'paye',
   })
-  assert.equal(canAccessOperativeTimesheets(manager), false)
+  assert.equal(canAccessOperativeTimesheets(manager, false, []), false)
   const report = user({
     id: 'op1',
     permissions: { operativeMode: true },
     assignedManagerUserIds: ['mgr'],
   })
   assert.equal(canAccessOperativeTimesheets(manager, false, [report]), true)
-  assert.equal(canAccessTimesheets(manager, false, [report]), true)
+  const noFlag = user({
+    id: 'mgr',
+    role: UserRole.MANAGER,
+    permissions: { manager: true, operatives: false },
+  })
+  assert.equal(canAccessOperativeTimesheets(noFlag, false, [report]), true)
+  assert.equal(canAccessTimesheets(noFlag, false, [report]), true)
+})
+
+test('admins only see User Timesheets when the org has an active operative', () => {
+  const admin = user({
+    role: UserRole.ADMIN,
+    permissions: { adminAccess: true },
+  })
+  assert.equal(canAccessOperativeTimesheets(admin, false, []), false)
+  const operative = user({
+    id: 'op1',
+    permissions: { operativeMode: true },
+  })
+  assert.equal(canAccessOperativeTimesheets(admin, false, [operative]), true)
+  assert.equal(canAccessOperativeTimesheets(admin, true, []), true)
+})
+
+test('PAYE users with remaining My Timesheets do not see the disabled card copy', () => {
+  const paye = user({
+    employmentType: 'paye',
+    permissions: { operativeMode: true },
+  })
+  assert.equal(shouldShowTimesheetsDisabledMessage(paye), true)
+  assert.equal(shouldShowTimesheetsDisabledMessage(paye, true), false)
 })
