@@ -476,15 +476,22 @@ a {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
   transition: background 0.15s, transform 0.15s;
 }
+.hero:not([data-hue]) {
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.07) 1px, transparent 1px) 0 0 / 28px 28px,
+    linear-gradient(90deg, rgba(255, 255, 255, 0.07) 1px, transparent 1px) 0 0 / 28px 28px,
+    radial-gradient(120% 140% at 100% 0%, #3b86ea 0%, transparent 55%),
+    linear-gradient(135deg, #0c2350 0%, #15408a 55%, #1e5aa8 100%);
+}
 .hero:not([data-hue]) .st {
-  background: var(--navy);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 8px 18px rgba(8, 24, 56, 0.28);
+  background: rgba(255, 255, 255, 0.16);
+  border-color: rgba(255, 255, 255, 0.32);
 }
 .hero .st:hover {
   background: rgba(255, 255, 255, 0.22);
 }
 .hero:not([data-hue]) .st:hover {
-  background: #15408a;
+  background: rgba(255, 255, 255, 0.24);
 }
 .hero .st b {
   font-family: var(--head);

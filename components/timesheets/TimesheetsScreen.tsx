@@ -40,7 +40,7 @@ import {
 } from '@/lib/settings/organizationSettings'
 import type { Booking, Operative, Project, User } from '@/types'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
-import { EmptyState, LoadingSpinner } from '@/components/dashboard/PageShell'
+import { LoadingSpinner } from '@/components/dashboard/PageShell'
 import { LONDON_TIME_ZONE } from '@/lib/ios-parity/londonTime'
 import { computeInvoicingPeriod } from '@/lib/warnings/warningLookahead'
 import { formatStampInZone } from '@/lib/orgTime/zoneTime'
@@ -304,33 +304,36 @@ export function TimesheetsScreen({
 
   if (teamTab === 'exported') {
     if (exportedRows.length === 0) {
-      return <EmptyState title={emptyTitle} description={emptyDescription} />
+      return (
+        <div className="empty card pad">
+          <h3>{emptyTitle}</h3>
+          <p>{emptyDescription}</p>
+        </div>
+      )
     }
     return (
-      <div className="overflow-hidden rounded-2xl bg-white p-2 shadow-[0_1px_2px_rgba(0,0,0,0.10)]">
-        {exportedRows.map((row, index) => {
+      <div className="rows">
+        {exportedRows.map((row) => {
           const period = computeInvoicingPeriod(row.weekStart, invoicing, timeZone)
           const summary = summaryFor(row.user, row.draft, period.start, period.end)
           return (
-            <div key={row.id}>
-              {index > 0 ? <div className="ml-[58px] h-px bg-[var(--soft2)]" /> : null}
-              <MemberRow
-                member={row.user}
-                users={users}
-                viewer={user}
-                pill="Exported"
-                pillClass="bg-slate-200/70 text-slate-600"
-                summary={summary}
-                periodLine={formatPaymentPeriodLine(period.start, period.end, timeZone)}
-                exportedAt={row.draft.exportedAt}
-                timeZone={timeZone}
-                onClick={() =>
-                  router.push(
-                    `/dashboard/timesheets?surface=team&tab=exported&user=${row.user.id}&period=${periodStartKey(period.start, timeZone)}`
-                  )
-                }
-              />
-            </div>
+            <MemberRow
+              key={row.id}
+              member={row.user}
+              users={users}
+              viewer={user}
+              pill="Exported"
+              pillHue="lib"
+              summary={summary}
+              periodLine={formatPaymentPeriodLine(period.start, period.end, timeZone)}
+              exportedAt={row.draft.exportedAt}
+              timeZone={timeZone}
+              onClick={() =>
+                router.push(
+                  `/dashboard/timesheets?surface=team&tab=exported&user=${row.user.id}&period=${periodStartKey(period.start, timeZone)}`
+                )
+              }
+            />
           )
         })}
       </div>
@@ -338,46 +341,49 @@ export function TimesheetsScreen({
   }
 
   if (visible.length === 0) {
-    return <EmptyState title={emptyTitle} description={emptyDescription} />
+    return (
+      <div className="empty card pad">
+        <h3>{emptyTitle}</h3>
+        <p>{emptyDescription}</p>
+      </div>
+    )
   }
 
   return (
-    <div className="space-y-3">
-      <div className="overflow-hidden rounded-2xl bg-white p-2 shadow-[0_1px_2px_rgba(0,0,0,0.10)]">
-        {visible.map((member, index) => {
+    <div className="stack" style={{ gap: 12 }}>
+      <div className="rows">
+        {visible.map((member) => {
           const draft = drafts.get(member.id)
           const summary = summaryFor(member, draft, periodStart, periodEnd)
           return (
-            <div key={member.id}>
-              {index > 0 ? <div className="ml-[58px] h-px bg-[var(--soft2)]" /> : null}
-              <MemberRow
-                member={member}
-                users={users}
-                viewer={user}
-                pill={teamTab === 'signed' ? 'Signed off' : 'Pending'}
-                pillClass={teamTab === 'signed' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}
-                summary={summary}
-                onClick={() =>
-                  router.push(
-                    `/dashboard/timesheets?surface=team&tab=${teamTab}&user=${member.id}&period=${periodStartKey(periodStart, timeZone)}`
-                  )
-                }
-              />
-            </div>
+            <MemberRow
+              key={member.id}
+              member={member}
+              users={users}
+              viewer={user}
+              pill={teamTab === 'signed' ? 'Signed off' : 'Pending'}
+              pillHue={teamTab === 'signed' ? 'green' : 'warn'}
+              summary={summary}
+              onClick={() =>
+                router.push(
+                  `/dashboard/timesheets?surface=team&tab=${teamTab}&user=${member.id}&period=${periodStartKey(periodStart, timeZone)}`
+                )
+              }
+            />
           )
         })}
       </div>
       {teamTab === 'signed' ? (
-        <div className="space-y-2 pt-2">
+        <div className="stack" style={{ gap: 8 }}>
           <button
             type="button"
             disabled={exporting}
             onClick={() => void exportSigned()}
-            className="w-full rounded-xl bg-[var(--blue)] px-4 py-3.5 text-[15px] font-semibold text-white disabled:opacity-60"
+            className="btn primary block"
           >
             {exporting ? 'Sending timesheets…' : `Email and export ${visible.length} timesheet${visible.length === 1 ? '' : 's'}`}
           </button>
-          {exportMessage ? <p className="text-[13px] text-[var(--ink3)]">{exportMessage}</p> : null}
+          {exportMessage ? <p className="muted small">{exportMessage}</p> : null}
         </div>
       ) : null}
     </div>
@@ -389,7 +395,7 @@ function MemberRow({
   users,
   viewer,
   pill,
-  pillClass,
+  pillHue,
   summary,
   periodLine,
   exportedAt,
@@ -400,49 +406,39 @@ function MemberRow({
   users: User[]
   viewer: User | null
   pill: string
-  pillClass: string
+  pillHue: 'warn' | 'green' | 'lib'
   summary: { hours: number; overtimeHours: number; priceWork: number; expenses: number }
   periodLine?: string
   exportedAt?: Date | null
   timeZone?: string
   onClick: () => void
 }) {
+  const role = member.permissions.operativeMode ? 'Operative' : hasAdminAccess(member) ? 'Admin' : 'Manager'
+  const lineManager = (() => {
+    if (!hasAdminAccess(viewer)) return null
+    const managerId = member.assignedManagerUserIds?.[0] || member.assignedManagerUserId
+    if (!managerId) return 'Unassigned'
+    const manager = users.find((row) => row.id === managerId)
+    return manager ? displayName(manager) : 'Unknown'
+  })()
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="flex w-full items-center gap-3 rounded-2xl bg-white p-4 text-left shadow-[0_1px_2px_rgba(0,0,0,0.10)] hover:ring-2 hover:ring-[#185FA5]/20"
-    >
-      <div className="flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-full bg-[#007AFF] text-[12px] font-bold text-white">
-        {initials(displayName(member))}
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center gap-2">
-          <p className="text-[17px] font-semibold">{displayName(member)}</p>
-          <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${pillClass}`}>{pill}</span>
-        </div>
-        {periodLine ? <p className="mt-0.5 text-[13px] font-semibold text-[var(--blue)]">{periodLine}</p> : null}
+    <button type="button" onClick={onClick} className="ritem" data-hue="ts">
+      <span className="ico-chip">{initials(displayName(member))}</span>
+      <span className="grow">
+        <span className="t">{displayName(member)}</span>
+        {periodLine ? <span className="s" style={{ color: 'var(--ts)', fontWeight: 600 }}>{periodLine}</span> : null}
         {exportedAt && timeZone ? (
-          <p className="mt-0.5 text-[12px] text-[var(--ink3)]">Exported {formatStampInZone(exportedAt, timeZone)}</p>
+          <span className="s">Exported {formatStampInZone(exportedAt, timeZone)}</span>
         ) : null}
-        <p className="mt-1 text-[13px] text-[var(--ink3)]">
+        <span className="s">
           Hrs {summary.hours.toFixed(1)} · OT {summary.overtimeHours.toFixed(1)} · PW £{summary.priceWork.toFixed(2)} · Exp £
-          {summary.expenses.toFixed(2)}
-          {member.permissions.operativeMode ? ' · Operative' : hasAdminAccess(member) ? ' · Admin' : ' · Manager'}
-        </p>
-        {hasAdminAccess(viewer) ? (
-          <p className="mt-0.5 text-[12px] text-[var(--ink3)]">
-            Line manager:{' '}
-            {(() => {
-              const managerId = member.assignedManagerUserIds?.[0] || member.assignedManagerUserId
-              if (!managerId) return 'Unassigned'
-              const manager = users.find((row) => row.id === managerId)
-              return manager ? displayName(manager) : 'Unknown'
-            })()}
-          </p>
-        ) : null}
-      </div>
-      <span className="text-[var(--blue)]">›</span>
+          {summary.expenses.toFixed(2)} · {role}
+        </span>
+        {lineManager ? <span className="s">Line manager: {lineManager}</span> : null}
+      </span>
+      <span className="pill" data-hue={pillHue}>
+        {pill}
+      </span>
     </button>
   )
 }

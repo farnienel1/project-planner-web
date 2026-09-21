@@ -501,9 +501,13 @@ export function ScheduleScreen({
 
   if (loading && scopedBookings.length === 0) {
     return (
-      <div className="space-y-3">
-        <h1 className="text-[28px] font-semibold tracking-tight">{variant === 'personal' ? 'My Schedule' : 'Daily overview'}</h1>
-        <p className="text-[14px] text-[var(--ink3)]">{variant === 'personal' ? 'Opening your week…' : 'Opening daily overview…'}</p>
+      <div className="stack" data-hue={variant === 'personal' ? 'sched' : 'daily'}>
+        <div className="phead" data-hue={variant === 'personal' ? 'sched' : 'daily'}>
+          <div>
+            <h1>{variant === 'personal' ? 'My Schedule' : 'Daily overview'}</h1>
+            <div className="sub">{variant === 'personal' ? 'Opening your week…' : 'Opening daily overview…'}</div>
+          </div>
+        </div>
       </div>
     )
   }
