@@ -101,7 +101,12 @@ export function TimesheetsScreen({
   const reload = useCallback(async () => {
     if (!organization?.id) return
     const userIds = roster.map((row) => row.id)
-    if (userIds.length === 0) return
+    if (userIds.length === 0) {
+      setExportedRows([])
+      setDrafts(new Map())
+      setRecordsLoading(false)
+      return
+    }
     setRecordsLoading(true)
     try {
       if (teamTab === 'exported') {
