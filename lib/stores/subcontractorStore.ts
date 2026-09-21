@@ -25,7 +25,7 @@ function parseContacts(rows: unknown): SubcontractorContact[] {
       const createdAt = parseFirestoreDate(data.createdAt) || new Date()
       if (!name) return null
       const contact: SubcontractorContact = {
-        id: parseUuid(data.id),
+        id: parseString(data.id) || parseString(data.uuid) || parseString(data.contactId),
         name,
         email,
         contactNumber,

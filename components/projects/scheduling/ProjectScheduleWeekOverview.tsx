@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { addDays, endOfWeek, format, isSameDay, isToday as dateFnsIsToday, startOfWeek } from 'date-fns'
+import { addDays, endOfWeek, format, isToday as dateFnsIsToday, startOfWeek } from 'date-fns'
 import { useEffect, useMemo, useState } from 'react'
 import { useBookingStore } from '@/lib/stores/bookingStore'
 import { useManagerScheduleStore } from '@/lib/stores/managerScheduleStore'
@@ -22,7 +22,16 @@ import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtil
 import { collection, getDocs } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
 import { asClockHhMm } from '@/lib/ios-parity/firestoreCodec'
+import { coversCalendarDay } from '@/lib/ios-parity/londonTime'
+import { parseFirestoreDate } from '@/lib/firebase/firestoreUtils'
 import { DEFAULT_PAYROLL_POLICY, loadOrganizationDetails, type OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
+import {
+  findSubcontractorFirm,
+  formatSubcontractorBookingLabel,
+  idsMatch,
+  parseBookedPeopleFields,
+  resolveSubcontractorBookingPeople,
+} from '@/lib/subcontractors/bookingPeople'
 
 type SubBooking = {
   id: string
@@ -31,6 +40,8 @@ type SubBooking = {
   timeSlot: string
   workStartTime?: string
   workEndTime?: string
+  bookedContactIds?: string[]
+  bookedOperativeNames?: string[]
 }
 
 function initials(name: string) {
@@ -69,6 +80,8 @@ type DayRow = {
   roleTone: 'operative' | 'manager' | 'subcontractor'
   booking?: Booking
   managerBooking?: ManagerSiteBooking
+  peopleLabel?: string
+  firmName?: string
 }
 
 type PersonWeek = {
@@ -76,6 +89,8 @@ type PersonWeek = {
   name: string
   roleLabel: string
   roleTone: DayRow['roleTone']
+  peopleLabel?: string
+  firmName?: string
   cells: DayRow[][]
 }
 
@@ -159,12 +174,17 @@ export function ProjectScheduleWeekOverview({
         snapshot.docs
           .map((docSnap): SubBooking | null => {
             const data = docSnap.data() as Record<string, unknown>
-            if (String(data.projectId || '') !== project.id) return null
+            if (!idsMatch(String(data.projectId || data.projectID || ''), project.id)) return null
+            const date = parseFirestoreDate(data.date)
+            if (!date) return null
+            const peopleFields = parseBookedPeopleFields(data)
             const row: SubBooking = {
               id: docSnap.id,
-              subcontractorId: String(data.subcontractorId || ''),
-              date: (data.date as { toDate?: () => Date })?.toDate?.() || new Date(),
+              subcontractorId: String(data.subcontractorId || data.subContractorId || ''),
+              date,
               timeSlot: String(data.timeSlot || 'FULL DAY'),
+              bookedContactIds: peopleFields.bookedContactIds,
+              bookedOperativeNames: peopleFields.bookedOperativeNames,
             }
             const start = asClockHhMm(data.workStartTime)
             const end = asClockHhMm(data.workEndTime)
@@ -181,7 +201,7 @@ export function ProjectScheduleWeekOverview({
   const weekDays = useMemo(() => weekDaysFrom(weekStart), [weekStart])
   const weekEnd = endOfWeek(weekStart, { weekStartsOn: 1 })
   const projectBookings = useMemo(
-    () => bookings.filter((b) => b.projectId === project.id),
+    () => bookings.filter((b) => idsMatch(b.projectId, project.id)),
     [bookings, project.id]
   )
 
@@ -189,7 +209,7 @@ export function ProjectScheduleWeekOverview({
     () =>
       managerSiteBookings.filter(
         (b) =>
-          b.locationId === project.id &&
+          idsMatch(b.locationId, project.id) &&
           (b.locationType === 'project' || b.locationType === 'small_work')
       ),
     [managerSiteBookings, project.id]
@@ -198,7 +218,7 @@ export function ProjectScheduleWeekOverview({
   const rowsByDay = useMemo(() => {
     return weekDays.map((day) => {
       const opRows: DayRow[] = projectBookings
-        .filter((b) => isSameDay(new Date(b.date), day))
+        .filter((b) => coversCalendarDay(new Date(b.date), day))
         .map((b) => {
           const op = operatives.find((o) => o.id === b.operativeId)
           const name = op ? `${op.firstName} ${op.lastName}`.trim() : 'Operative'
@@ -223,7 +243,7 @@ export function ProjectScheduleWeekOverview({
         })
 
       const managerRows: DayRow[] = projectManagerBookings
-        .filter((b) => isSameDay(new Date(b.date), day))
+        .filter((b) => coversCalendarDay(new Date(b.date), day))
         .map((b) => {
           const manager = users.find((u) => u.id === b.userId)
           const name = manager ? `${manager.firstName} ${manager.surname}`.trim() : 'Manager'
@@ -250,13 +270,19 @@ export function ProjectScheduleWeekOverview({
         })
 
       const subRows: DayRow[] = subBookings
-        .filter((b) => isSameDay(new Date(b.date), day))
+        .filter((b) => coversCalendarDay(new Date(b.date), day))
         .map((b) => {
-          const sub = subcontractors.find((s) => s.id === b.subcontractorId)
+          const sub = findSubcontractorFirm(subcontractors, b.subcontractorId)
+          const people = resolveSubcontractorBookingPeople(b, sub)
+          const firmName = sub?.name?.trim() || 'Sub contractor'
           return {
             id: b.id,
-            personKey: `sub:${b.subcontractorId}`,
-            name: sub?.name || 'Sub contractor',
+            personKey: people.length
+              ? `sub:${b.subcontractorId}:${people.join('|').toLowerCase()}`
+              : `sub:${b.subcontractorId}`,
+            name: formatSubcontractorBookingLabel(firmName, people),
+            peopleLabel: people.join(', ') || undefined,
+            firmName,
             roleLabel: 'Sub',
             roleTone: 'subcontractor' as const,
             ...bookingRowFromHours({
@@ -288,10 +314,16 @@ export function ProjectScheduleWeekOverview({
             name: row.name,
             roleLabel: row.roleLabel,
             roleTone: row.roleTone,
+            peopleLabel: row.peopleLabel,
+            firmName: row.firmName,
             cells: weekDays.map(() => []),
           }
           byKey.set(row.personKey, person)
           order.push(row.personKey)
+        } else if (row.peopleLabel && (!person.peopleLabel || row.peopleLabel.length > person.peopleLabel.length)) {
+          person.name = row.name
+          person.peopleLabel = row.peopleLabel
+          person.firmName = row.firmName
         }
         person.cells[dayIndex].push(row)
       }
@@ -539,9 +571,14 @@ function PersonRow({
   return (
     <>
       <div className="sticky left-0 z-10 flex items-center gap-2 border-t border-slate-100 bg-white px-3 py-2">
-        <Avatar name={person.name} size="sm" />
+        <Avatar name={person.peopleLabel || person.name} size="sm" />
         <div className="min-w-0">
-          <p className="truncate text-[13px] font-semibold text-slate-900">{person.name}</p>
+          <p className="text-[13px] font-semibold leading-tight text-slate-900">
+            {person.peopleLabel || person.name}
+          </p>
+          {person.peopleLabel && person.firmName ? (
+            <p className="text-[10px] leading-tight text-slate-500">{person.firmName}</p>
+          ) : null}
           <span className={`rounded-full px-1.5 py-px text-[9px] font-semibold ${toneClass(person.roleTone)}`}>
             {person.roleLabel}
           </span>
@@ -561,8 +598,12 @@ function PersonRow({
               <div className="space-y-1">
                 {cell.map((row) => {
                   const clickable = Boolean(row.booking || row.managerBooking)
+                  const nameOnTile = row.peopleLabel || (row.roleTone === 'subcontractor' ? row.name : '')
                   const inner = expanded ? (
                     <>
+                      {nameOnTile ? (
+                        <p className="text-[10px] font-semibold leading-tight text-slate-800">{nameOnTile}</p>
+                      ) : null}
                       <p className="text-[11px] font-semibold leading-tight text-slate-800">{row.slot}</p>
                       <p className="text-[12px] font-bold text-slate-900">{formatHoursLabel(row.hours)}h</p>
                       {row.overtimeEquation ? (
@@ -571,11 +612,14 @@ function PersonRow({
                     </>
                   ) : (
                     <>
+                      {nameOnTile ? (
+                        <p className="text-[10px] font-semibold leading-tight text-slate-700">{nameOnTile}</p>
+                      ) : null}
                       <p className="text-[10px] font-semibold leading-tight text-slate-700">{row.slot}</p>
                       <p className="text-[11px] font-bold text-slate-900">{formatHoursLabel(row.hours)}h</p>
                     </>
                   )
-                  const className = `w-full rounded-lg border px-1.5 ${expanded ? 'py-1.5 min-h-[72px]' : 'py-1 min-h-[44px]'} text-left ${cellFillClass(row.roleTone)} ${clickable ? '' : 'cursor-default'}`
+                  const className = `w-full rounded-lg border px-1.5 ${expanded || nameOnTile ? 'py-1.5 min-h-[72px]' : 'py-1 min-h-[44px]'} text-left ${cellFillClass(row.roleTone)} ${clickable ? '' : 'cursor-default'}`
                   return clickable ? (
                     <button key={row.id} type="button" onClick={() => onEdit(row)} className={className}>
                       {inner}

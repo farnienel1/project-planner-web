@@ -29,6 +29,10 @@ import {
   resolvePersonRole,
   resolvePersonTrade,
 } from '@/lib/weekly-report/weeklyReportPayroll'
+import {
+  formatSubcontractorBookingLabel,
+  resolveSubcontractorBookingPeople,
+} from '@/lib/subcontractors/bookingPeople'
 
 export type WeeklyReportWarningRow = {
   status: string
@@ -58,6 +62,7 @@ export type WeeklyReportSubRow = {
   projectName: string
   jobNumber: string
   subContractor: string
+  people: string
   type: string
   time: string
   days: number
@@ -113,6 +118,7 @@ export type SubcontractorBookingRow = {
   workStartTime?: string
   workEndTime?: string
   status?: string
+  bookedContactIds?: string[]
   bookedOperativeNames?: string[]
 }
 
@@ -275,6 +281,7 @@ export function buildWeeklyReportData({
   const subContractorRows: WeeklyReportSubRow[] = periodSubBookings.map((booking) => {
     const project = projectsById.get(booking.projectId)
     const sub = subcontractors.find((entry) => entry.id === booking.subcontractorId)
+    const people = resolveSubcontractorBookingPeople(booking, sub)
     const days = bookingDayUnits(
       booking.timeSlot,
       booking.workStartTime,
@@ -284,7 +291,8 @@ export function buildWeeklyReportData({
     return {
       projectName: project?.siteName || project?.jobNumber || 'Project',
       jobNumber: project?.jobNumber || '—',
-      subContractor: sub?.name || 'Sub contractor',
+      subContractor: formatSubcontractorBookingLabel(sub?.name || 'Sub contractor', []),
+      people: people.join(', ') || '—',
       type: sub?.subcontractorType || '—',
       time: booking.workStartTime && booking.workEndTime
         ? `${booking.workStartTime} – ${booking.workEndTime}`

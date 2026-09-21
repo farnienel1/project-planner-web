@@ -398,3 +398,100 @@ test('buildDailyOverview groups dashed and undashed UUID project ids', () => {
   assert.equal(model.projectCards[0].project.siteName, 'Bridge')
   assert.equal(model.projectCards[0].people[0].name, 'Ada Booked')
 })
+
+test('buildDailyOverview shows booked sub contractor people next to the firm name', () => {
+  const day = new Date('2026-09-16T12:00:00Z')
+  const project = {
+    id: 'P1',
+    jobNumber: 'J1',
+    siteName: 'Alpha',
+    jobType: 'CAT A',
+    client: { id: 'c', name: 'Acme' },
+    addressLine1: '',
+    townCity: '',
+    postcode: '',
+    startDate: day,
+    endDate: day,
+    isLive: true,
+    manager: { name: 'Custom', email: '' },
+    createdAt: day,
+    updatedAt: day,
+  } as Project
+  const model = buildDailyOverview({
+    day,
+    today: day,
+    projects: [project],
+    bookings: [],
+    managerBookings: [],
+    holidays: [] as HolidayBooking[],
+    users: [],
+    operatives: [],
+    subcontractorBookings: [
+      {
+        id: 'SB1',
+        subcontractorId: 'S1',
+        projectId: 'P1',
+        date: day,
+        timeSlot: 'FULL DAY',
+        bookedContactIds: ['C1'],
+      },
+    ],
+    subcontractors: [
+      {
+        id: 'S1',
+        name: 'Acme Electrical',
+        contacts: [{ id: 'C1', name: 'Jane Smith' }],
+      },
+    ],
+  })
+  assert.equal(model.projectCards[0].people[0].name, 'Acme Electrical · Jane Smith')
+  assert.deepEqual(model.projectCards[0].people[0].bookedOperativeNames, ['Jane Smith'])
+})
+
+test('buildDailyOverview resolves sub contractor names when ids omit dashes', () => {
+  const day = new Date('2026-09-16T12:00:00Z')
+  const project = {
+    id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+    jobNumber: 'J1',
+    siteName: 'Alpha',
+    jobType: 'CAT A',
+    client: { id: 'c', name: 'Acme' },
+    addressLine1: '',
+    townCity: '',
+    postcode: '',
+    startDate: day,
+    endDate: day,
+    isLive: true,
+    manager: { name: 'Custom', email: '' },
+    createdAt: day,
+    updatedAt: day,
+  } as Project
+  const model = buildDailyOverview({
+    day,
+    today: day,
+    projects: [project],
+    bookings: [],
+    managerBookings: [],
+    holidays: [] as HolidayBooking[],
+    users: [],
+    operatives: [],
+    subcontractorBookings: [
+      {
+        id: 'SB1',
+        subcontractorId: 'CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC',
+        projectId: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+        date: day,
+        timeSlot: 'FULL DAY',
+        bookedContactIds: ['DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD'],
+      },
+    ],
+    subcontractors: [
+      {
+        id: 'cccccccc-cccc-cccc-cccc-cccccccccccc',
+        name: 'Acme Electrical',
+        contacts: [{ id: 'dddddddd-dddd-dddd-dddd-dddddddddddd', name: 'Jane Smith' }],
+      },
+    ],
+  })
+  assert.equal(model.projectCards[0].people[0].name, 'Acme Electrical · Jane Smith')
+})
