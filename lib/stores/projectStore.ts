@@ -177,8 +177,15 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   },
 
   getProject: async (organizationId, projectId, collectionName = 'projects') => {
+    const needle = String(projectId || '').trim().toLowerCase()
+    const cachedList = collectionName === 'smallWorks' ? get().smallWorks : get().projects
+    const cached = cachedList.find((row) => row.id.toLowerCase() === needle)
+    if (cached) return cached
     const snap = await getDoc(doc(db, 'organizations', organizationId, collectionName, projectId))
-    if (!snap.exists()) return null
+    if (!snap.exists()) {
+      const other = collectionName === 'smallWorks' ? get().projects : get().smallWorks
+      return other.find((row) => row.id.toLowerCase() === needle) || null
+    }
     return mapProjectDoc(snap.id, snap.data() as Record<string, unknown>, organizationId)
   },
 

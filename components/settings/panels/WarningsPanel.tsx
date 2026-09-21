@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import {
@@ -102,7 +102,7 @@ export function WarningsPanel({ onBack }: { onBack: () => void }) {
     if (organization?.id) loadUsers(organization.id)
   }, [organization?.id, loadUsers])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!organization?.id) return
     const cached = readCachedWarningDetection(organization.id)
     if (cached) {

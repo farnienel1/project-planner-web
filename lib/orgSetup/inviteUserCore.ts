@@ -21,7 +21,7 @@ export type InviteUserCoreInput = {
   dayRate?: number
   tradeTypePreset?: string
   tradeTypeCustom?: string
-  employmentType?: 'paye' | 'selfEmployed'
+  employmentType?: 'paye' | 'self_employed' | 'selfEmployed'
   timesheetsEnabled?: boolean
   vatNumber?: string
   utrNumber?: string
@@ -93,7 +93,7 @@ export async function inviteUserCore(input: InviteUserCoreInput): Promise<Invite
     invitedBy: input.invitedBy,
     firstName: input.firstName.trim(),
     surname: input.surname.trim(),
-    employmentType: input.employmentType || 'selfEmployed',
+    employmentType: input.employmentType === 'paye' ? 'paye' : 'self_employed',
     permissions: permissionsToFirestoreMap(input.permissions),
     inviteType: 'new_user',
     createdAt: Timestamp.now(),

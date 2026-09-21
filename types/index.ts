@@ -382,6 +382,10 @@ export interface ProjectMaterialLine {
   category?: string
   catalogueItemId?: string
   notes?: string
+  size?: string
+  length?: string
+  lengthUnit?: string
+  websiteURL?: string
   lastSentAt?: Date
   lastSentRequestType?: string
 }

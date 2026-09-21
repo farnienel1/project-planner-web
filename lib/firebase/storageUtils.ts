@@ -46,6 +46,12 @@ export function companyLogoPath(organizationId: string, fileName: string): strin
   return `organizations/${organizationId}/branding/company_logo/${uid}_${timestamp}_${sanitizeFileName(fileName)}`
 }
 
+/** iOS: organizations/{orgId}/userProfiles/{uid}/profile.jpg */
+export function profilePhotoPath(organizationId: string, userId: string): string {
+  const uid = userId || auth.currentUser?.uid || 'web'
+  return `organizations/${organizationId}/userProfiles/${uid}/profile.jpg`
+}
+
 export function timesheetExportPath(organizationId: string, fileName: string): string {
   const stamp = Math.floor(Date.now() / 1000)
   return `organizations/${organizationId}/timesheetExports/${stamp}_${sanitizeFileName(fileName)}`

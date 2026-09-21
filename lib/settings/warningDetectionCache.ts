@@ -18,7 +18,9 @@ export function readCachedWarningDetection(
   if (fromMemory) return copyWarningDetection(fromMemory)
   if (typeof window === 'undefined') return null
   try {
-    const raw = window.sessionStorage.getItem(warningDetectionCacheKey(organizationId))
+    const raw =
+      window.localStorage.getItem(warningDetectionCacheKey(organizationId)) ||
+      window.sessionStorage.getItem(warningDetectionCacheKey(organizationId))
     if (!raw) return null
     const parsed = parseWarningDetection(JSON.parse(raw) as Record<string, unknown>)
     memory.set(organizationId, parsed)
@@ -36,10 +38,9 @@ export function writeCachedWarningDetection(
   memory.set(organizationId, copy)
   if (typeof window === 'undefined') return
   try {
-    window.sessionStorage.setItem(
-      warningDetectionCacheKey(organizationId),
-      JSON.stringify(warningDetectionToFirestore(copy))
-    )
+    const encoded = JSON.stringify(warningDetectionToFirestore(copy))
+    window.localStorage.setItem(warningDetectionCacheKey(organizationId), encoded)
+    window.sessionStorage.setItem(warningDetectionCacheKey(organizationId), encoded)
   } catch {
     /* ignore quota / private mode */
   }

@@ -18,7 +18,7 @@ export type InviteUserInput = {
   dayRate?: number
   tradeTypePreset?: string
   tradeTypeCustom?: string
-  employmentType?: 'paye' | 'selfEmployed'
+  employmentType?: 'paye' | 'self_employed' | 'selfEmployed'
   timesheetsEnabled?: boolean
   vatNumber?: string
   utrNumber?: string

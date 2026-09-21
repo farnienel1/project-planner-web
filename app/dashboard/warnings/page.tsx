@@ -18,7 +18,11 @@ import {
   loadAcceptedBookingClashes,
   type AcceptedBookingClash,
 } from '@/lib/warnings/acceptedClashStorage'
-import { loadOrganizationDetails, type OrganizationDetails } from '@/lib/settings/organizationSettings'
+import { loadOrganizationDetails, saveWarningDetection, type OrganizationDetails, warningDetectionLooksLikeFactoryDefault } from '@/lib/settings/organizationSettings'
+import {
+  readCachedWarningDetection,
+  writeCachedWarningDetection,
+} from '@/lib/settings/warningDetectionCache'
 import { loadMaterialCutOffSettings, type NotificationPreferences } from '@/lib/settings/notificationPreferences'
 import { generateOrgWarnings } from '@/lib/warnings/generateOrgWarnings'
 import { WarningsScreen } from '@/components/warnings/WarningsScreen'
@@ -38,6 +42,7 @@ export default function WarningsPage() {
   const [acceptedClashes, setAcceptedClashes] = useState<AcceptedBookingClash[]>([])
   const [orgDetails, setOrgDetails] = useState<OrganizationDetails | null>(null)
   const [notificationPreferences, setNotificationPreferences] = useState<NotificationPreferences | null>(null)
+  const cachedDetection = organization?.id ? readCachedWarningDetection(organization.id) : null
 
   useEffect(() => {
     if (!loading && !user) router.push('/login')
@@ -55,7 +60,27 @@ export default function WarningsPage() {
       loadSendRecords(organization.id)
       loadHolidayBookings(organization.id)
       loadAcceptedBookingClashes(organization.id).then(setAcceptedClashes).catch(() => setAcceptedClashes([]))
-      loadOrganizationDetails(organization.id).then(setOrgDetails).catch(() => setOrgDetails(null))
+      const cached = readCachedWarningDetection(organization.id)
+      loadOrganizationDetails(organization.id, { fromServer: true })
+        .then((details) => {
+          const loaded = details?.warningDetection
+          const latestCache = readCachedWarningDetection(organization.id) ?? cached
+          if (
+            details &&
+            loaded &&
+            latestCache &&
+            warningDetectionLooksLikeFactoryDefault(loaded) &&
+            !warningDetectionLooksLikeFactoryDefault(latestCache)
+          ) {
+            writeCachedWarningDetection(organization.id, latestCache)
+            setOrgDetails({ ...details, warningDetection: latestCache })
+            void saveWarningDetection(organization.id, latestCache).catch(() => {})
+            return
+          }
+          if (loaded) writeCachedWarningDetection(organization.id, loaded)
+          setOrgDetails(details)
+        })
+        .catch(() => setOrgDetails(null))
     }
   }, [
     organization?.id,
@@ -85,9 +110,54 @@ export default function WarningsPage() {
     [projects, smallWorks]
   )
 
+  const warningDetection = orgDetails?.warningDetection ?? cachedDetection
+
   const generated = useMemo(
-    () =>
-      generateOrgWarnings({
+    () => {
+      if (!warningDetection) {
+        return generateOrgWarnings({
+          bookings: [],
+          managerSiteBookings: [],
+          operatives: [],
+          users: [],
+          projects: [],
+          holidays: [],
+          materials: [],
+          sendRecords: [],
+          warningDetection: {
+            detectClashes: false,
+            clashLookaheadMode: 'numberOfDays',
+            clashLookaheadDays: 1,
+            includeWeekendsForUnbookedLabour: false,
+            excludedUserIdsFromUnbookedWarnings: [],
+          },
+        })
+      }
+      // Empty collections while the first snapshot is in flight would mark everyone
+      // unbooked. Wait until live data (or a cached snapshot) is present.
+      if (
+        (bookingsLoading && bookings.length === 0) ||
+        (managerLoading && managerSiteBookings.length === 0)
+      ) {
+        return generateOrgWarnings({
+          bookings: [],
+          managerSiteBookings: [],
+          operatives: [],
+          users: [],
+          projects: [],
+          holidays: [],
+          materials: [],
+          sendRecords: [],
+          warningDetection: {
+            detectClashes: false,
+            clashLookaheadMode: 'numberOfDays',
+            clashLookaheadDays: 1,
+            includeWeekendsForUnbookedLabour: false,
+            excludedUserIdsFromUnbookedWarnings: [],
+          },
+        })
+      }
+      return generateOrgWarnings({
         bookings,
         managerSiteBookings,
         operatives,
@@ -97,8 +167,10 @@ export default function WarningsPage() {
         materials,
         sendRecords,
         orgDetails,
+        warningDetection,
         notificationPreferences,
-      }),
+      })
+    },
     [
       bookings,
       managerSiteBookings,
@@ -109,7 +181,10 @@ export default function WarningsPage() {
       materials,
       sendRecords,
       orgDetails,
+      warningDetection,
       notificationPreferences,
+      bookingsLoading,
+      managerLoading,
     ]
   )
 
@@ -161,6 +236,7 @@ export default function WarningsPage() {
       qualificationWarnings={generated.qualificationWarnings}
       unverifiedWarnings={generated.unverifiedWarnings}
       loading={
+        !warningDetection ||
         (bookingsLoading && bookings.length === 0) ||
         (managerLoading && managerSiteBookings.length === 0)
       }

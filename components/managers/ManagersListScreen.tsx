@@ -23,7 +23,7 @@ import {
   type RosterSegment,
 } from '@/lib/staff/userRosterUtils'
 import { EmptyState, FilterChip, PageHeader, StatusPill } from '@/components/ios/primitives'
-import { initialsFrom } from '@/lib/daily-overview/buildDailyOverview'
+import { UserAvatar } from '@/components/users/UserAvatar'
 
 export function ManagersListScreen() {
   const router = useRouter()
@@ -166,9 +166,7 @@ export function ManagersListScreen() {
                 href={`/dashboard/users/${row.id}?from=managers`}
                 className="flex items-center gap-3 px-4 py-3 hover:bg-[#F7F8FA]"
               >
-                <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-gradient-to-br from-[#185FA5] to-[#378ADD] text-[12px] font-medium text-white">
-                  {initialsFrom(name)}
-                </span>
+                <UserAvatar user={row} size={40} />
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-[15px] font-medium">{name}</p>
                   <p className="truncate text-[13px] text-ios-muted">{row.email}</p>

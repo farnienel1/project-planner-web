@@ -36,6 +36,11 @@ interface ManagerScheduleState {
   error: string | null
   loadManagerSiteBookings: (organizationId: string, options?: { force?: boolean }) => Promise<void>
   saveManagerSiteBooking: (organizationId: string, booking: SaveManagerSiteBookingInput) => Promise<void>
+  updateManagerSiteBooking: (
+    organizationId: string,
+    bookingId: string,
+    updates: Partial<SaveManagerSiteBookingInput>
+  ) => Promise<void>
   deleteManagerSiteBooking: (organizationId: string, bookingId: string) => Promise<void>
 }
 
@@ -89,6 +94,27 @@ export const useManagerScheduleStore = create<ManagerScheduleState>((set, get) =
     const payload = serializeManagerSiteBooking({ ...next, organizationId })
     await setDoc(doc(firestore, 'organizations', organizationId, 'managerSiteBookings', id), payload, { merge: true })
     set({ managerSiteBookings: [...get().managerSiteBookings, next] })
+  },
+
+  updateManagerSiteBooking: async (organizationId, bookingId, updates) => {
+    const firestore = requireDb()
+    const existing = get().managerSiteBookings.find((row) => row.id === bookingId)
+    if (!existing) throw new Error('Booking not found')
+    const next: ManagerSiteBooking = {
+      ...existing,
+      ...updates,
+      id: bookingId,
+      date: londonMidnight(updates.date || existing.date),
+      updatedAt: new Date(),
+      organizationId,
+    }
+    const payload = serializeManagerSiteBooking({ ...next, organizationId })
+    await setDoc(doc(firestore, 'organizations', organizationId, 'managerSiteBookings', bookingId), payload, {
+      merge: true,
+    })
+    set({
+      managerSiteBookings: get().managerSiteBookings.map((row) => (row.id === bookingId ? next : row)),
+    })
   },
 
   deleteManagerSiteBooking: async (organizationId: string, bookingId: string) => {

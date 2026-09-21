@@ -8,10 +8,13 @@
 
 import { addLondonDays, coversCalendarDay, dayKey, isSameLondonDay } from '@/lib/ios-parity/londonTime'
 import { isSmallWorksJobType, normalizeBookingStatus } from '@/lib/ios-parity/enums'
+import {
+  estimatedPaidHours,
+  formatHoursLabel as overviewFormatHours,
+  parseMinutes,
+} from '@/lib/scheduling/paidHours'
 import type { Booking, HolidayBooking, Operative, Project, User } from '@/types'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
-
-const STANDARD_PAID_HOURS = 8
 
 export type OverviewSubcontractorBooking = {
   id: string
@@ -42,27 +45,9 @@ export function isLondonWeekday(date: Date): boolean {
   return wd !== 'Sat' && wd !== 'Sun'
 }
 
-export function overviewFormatHours(hours: number): string {
-  const rounded = Math.round(hours * 2) / 2
-  if (Math.abs(rounded - Math.trunc(rounded)) < 0.01) return String(Math.trunc(rounded))
-  return rounded.toFixed(1)
-}
+export { overviewFormatHours, parseMinutes, estimatedPaidHours }
 
-export function parseMinutes(hhmm?: string): number | null {
-  if (!hhmm) return null
-  const m = /^(\d{1,2}):(\d{2})$/.exec(hhmm.trim())
-  if (!m) return null
-  return Number(m[1]) * 60 + Number(m[2])
-}
-
-export function estimatedPaidHours(input: { timeSlot?: string; workStartTime?: string; workEndTime?: string }): number {
-  const start = parseMinutes(input.workStartTime)
-  const end = parseMinutes(input.workEndTime)
-  if (start != null && end != null && end > start) return (end - start) / 60
-  const slot = String(input.timeSlot || '').toUpperCase().replace(/_/g, ' ')
-  if (slot === 'AM' || slot === 'PM' || slot.includes('MORNING') || slot.includes('AFTERNOON')) return 4
-  return STANDARD_PAID_HOURS
-}
+const STANDARD_PAID_HOURS = 8
 
 function displayName(user: User): string {
   const full = `${user.firstName || ''} ${user.surname || ''}`.trim()
@@ -179,6 +164,17 @@ function placeholderProject(id: string): Project {
   }
 }
 
+function uniqueById<T extends { id: string }>(rows: T[]): T[] {
+  const seen = new Set<string>()
+  const out: T[] = []
+  for (const row of rows) {
+    if (seen.has(row.id)) continue
+    seen.add(row.id)
+    out.push(row)
+  }
+  return out
+}
+
 export function buildDailyOverview(params: {
   day: Date
   today?: Date
@@ -193,11 +189,11 @@ export function buildDailyOverview(params: {
 }): DailyOverviewModel {
   const day = params.day
   const today = params.today || new Date()
-  const dayBookings = params.bookings.filter((b) => {
+  const dayBookings = uniqueById(params.bookings).filter((b) => {
     const status = normalizeBookingStatus(b.status)
     return coversCalendarDay(b.date, day) && (status === 'Confirmed' || status === 'Tentative')
   })
-  const dayManager = params.managerBookings.filter((b) => coversCalendarDay(b.date, day))
+  const dayManager = uniqueById(params.managerBookings).filter((b) => coversCalendarDay(b.date, day))
   const daySubs = (params.subcontractorBookings || []).filter((b) => {
     if (!coversCalendarDay(b.date, day)) return false
     const status = String(b.status || '').toLowerCase()

@@ -1,5 +1,5 @@
 # iOS → Web parity: progress
-Last updated: 2026-09-21 · Current step: Timesheets sub-pages + catalogue restore · Stopped at: Stop Gate (payment-run copy, My/User Timesheets, quals/job types restore, wholesalers/history, catalogue categories)
+Last updated: 2026-09-21 · Current step: Phase 3 users / materials / navigate / scheduling hours · Stopped at: Stop Gate (exported timesheets, profile-first users, materials history, customise Navigate, warnings cache, job scheduling edit)
 
 ## Access check (Phase 0)
 - **WEB_ROOT:** `/workspace` (this repo, `project-planner-web`)
@@ -21,7 +21,7 @@ Last updated: 2026-09-21 · Current step: Timesheets sub-pages + catalogue resto
 | # | Section | Spec | Built | Agent-verified | Farnie-verified on iPhone | Notes |
 |---|---|---|---|---|---|---|
 | 0 | Shell, Login and Home (Phase 2) | ☑ | ☑ | ☑ | ☐ | Zod + Heroicons; D1 editor hidden from Home; live bookings/managerSiteBookings/notifications |
-| 1 | Manage Users | ☐ | ☐ | ☐ | ☐ | |
+| 1 | Manage Users | ☐ | ☑ profile-first | ☐ | ☐ | Row opens profile; Edit to change. Admin confirm. Photos via `profilePhotoURL`. |
 | 2 | Add User | ☐ | ☐ | ☐ | ☐ | Invite URL `/setup-password.html?token=` |
 | 3 | Settings | ☑ switch org | ☑ Switch org + distinguishers | ☐ | ☐ | Settings → Personal → Switch organisation. Created date, short ID, Setup incomplete. |
 | 4 | Job Types | ☑ | ☑ | ☐ | ☐ | Restore from projects when `settings/jobTypes` empty |
@@ -30,19 +30,19 @@ Last updated: 2026-09-21 · Current step: Timesheets sub-pages + catalogue resto
 | 7 | Material Catalogue | ☑ | ☑ | ☐ | ☐ | Category sections + empty-CSV guard |
 | 8 | Sub Contractors | ☑ | ☑ | ☐ | ☐ | Master–detail + roster |
 | 9 | Clients | ☑ | ☑ | ☐ | ☐ | Master–detail; UUID writes; address field; admin delete |
-| 10 | Managers | ☑ | ☑ | ☐ | ☐ | Roster = manager users; catalogue writes `managers/` |
-| 11 | Operatives | ☑ | ☑ | ☐ | ☐ | Roster = operativeMode users; catalogue writes `operatives/` |
+| 10 | Managers | ☑ | ☑ | ☐ | ☐ | Roster = manager users; row opens user profile |
+| 11 | Operatives | ☑ | ☑ | ☐ | ☐ | No + on Manage Operatives; Add User is the create path |
 | 12 | Projects | ☑ list/hub | ☑ list/hub + tiles | ☐ | ☐ | Job tiles: Materials, View, My Tasks, H&S, Site Audit, Location |
 | 13 | Small Works | ☑ | ☑ list + tiles | ☐ | ☐ | Same six job tiles as Projects |
-| 14 | Scheduling and My Schedule | ☐ | ☐ | ☐ | ☐ | Title-Case booking status |
+| 14 | Scheduling and My Schedule | ☐ | ☑ job week edit | ☐ | ☐ | Paid hours from clock times; tap booking to edit/breakdown |
 | 15 | Tasks | ☑ job tile | ☑ job tile | ☐ | ☐ | iOS New task + rows + filters on job tile |
-| 16 | Job tiles (View, Materials, H&S, Deadlines, Location, Active users) | ☑ six tiles | ☑ six tiles + send list | ☐ | ☐ | Send list emails via Cloud Function; Deadlines + Active users later |
+| 16 | Job tiles (View, Materials, H&S, Deadlines, Location, Active users) | ☑ six tiles | ☑ six tiles + send list | ☐ | ☐ | Delete material lines; richer add; clickable quote/order history |
 | 17 | Timesheets | ☑ hub + sub-pages | ☑ | ☐ | ☐ | Current period + pay date; My = self; User tabs; past in My Timesheets |
 | 18 | Annual Leave | ☐ | ☐ | ☐ | ☐ | |
 | 19 | Site Audit | ☑ per-job | ☑ per-job | ☐ | ☐ | Org hub still later |
 | 20 | Site Map | ☐ | ☐ | ☐ | ☐ | Leaflet + Google; paid tiles |
-| 21 | Warnings | ☐ | ☐ | ☐ | ☐ | in scope (Q8) |
-| 22 | Daily Overview | ☑ | ☑ | ☐ | ☐ | People on job cards; hours estimated until s17 |
+| 21 | Warnings | ☐ | ☑ cache | ☐ | ☐ | Cached lookahead days; ignore empty from-cache snapshots |
+| 22 | Daily Overview | ☑ | ☑ | ☐ | ☐ | Paid hours shared with scheduling; duplicate booking ids ignored |
 | 23 | Weekly Report | ☑ | ☑ | ☐ | ☐ | HTML generate; Monday-first week |
 | 24 | Notifications, Help, Privacy, Profile | ☐ | ☐ | ☐ | ☐ | in scope (Q8) |
 
@@ -64,6 +64,7 @@ D1, D2, D5–D10 still at recommendation (see `STOP-GATE-1.md`). Q1–Q10 are de
 - 2026-09-16 · Q9: write `self_employed`; read both · Farnie
 - 2026-09-16 · Phase 2 foundations: converters, permissions, shell, Home, auth merge/privacy, live bookings · agent
 - 2026-09-21 · Timesheets sub-pages (current pay run copy, My/User Timesheets, past in My), restore quals/job types, wholesaler line items, catalogue categories, iOS-upgrade Cursor rule · agent
+- 2026-09-21 · Phase 3 follow-up: exported timesheet query, profile-first users, Firebase photos, materials delete/history, customise Navigate (`users/{uid}.webNavigateSidebar`), warnings cache, job scheduling click-to-edit · agent
 - 2026-09-16 · Phase 3 started with Clients, Projects list/hub, Daily overview (not Manage Users first) · Farnie
 
 ## Approved exceptions
@@ -73,6 +74,7 @@ D1, D2, D5–D10 still at recommendation (see `STOP-GATE-1.md`). Q1–Q10 are de
 - Stripe org-setup / subscription checkout (`/setup`, `/api/stripe/*`)
 - Guided organisation wizard (`/setup/*`)
 - Customisable dashboard layouts (`dashboardLayouts/{uid}`, `/dashboard/edit`)
+- Web sidebar Navigate order (`users/{uid}.webNavigateSidebar` + `webNavigateSidebar.v1.{uid}` localStorage)
 - `platformConfig`
 - `users/{uid}/orgMemberships/{orgId}` (Change organisation)
 - Resend invite emails from Next.js API routes (instead of / in addition to the Cloud Function)
