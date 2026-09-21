@@ -9,6 +9,7 @@ import {
   DocumentTextIcon,
   HomeIcon,
   QuestionMarkCircleIcon,
+  MagnifyingGlassIcon,
   ShieldCheckIcon,
   UserGroupIcon,
   WrenchScrewdriverIcon,
@@ -149,6 +150,7 @@ const TOPICS: Topic[] = [
           'If you have a line manager: “If you don’t agree with the hours shown, contact your line manager…”',
           'If you have no line manager (typical admin/founder): amend the booking schedule yourself, then Continue to sign. You do not need a counter-signature.',
           'Continue to sign is blue. Draw your signature so iOS can show the same image. Generate Invoice stays grey until you have signed, and until your line manager has counter-signed if you have one. It turns green when the timesheet is fully approved.',
+          'Generate Invoice opens a printable HTML invoice in the browser. iOS still produces a PDF file; the money, hours and extras on the page are the same.',
         ],
       },
       {
@@ -160,7 +162,7 @@ const TOPICS: Topic[] = [
           'A timesheet does not appear in Awaiting sign-off until that person has signed their own sheet.',
           'Tap a person to open their timesheet on a new page.',
           'Use ✓ to approve, ✕ to decline, or edit each day, expense and price-work line, then Sign off & finalise with your signature.',
-          'Signed off sheets can generate an invoice. Exported sheets stay in Exported.',
+          'On Signed off, Email and export sends the sheets to your email for filing. Exported sheets stay in Exported across pay runs.',
         ],
       },
       {
@@ -197,8 +199,8 @@ const TOPICS: Topic[] = [
         summary: 'CAT A, Decarbonisation and other catalogue names.',
         href: '/dashboard/job-types',
         body: [
-          'Job types are the organisation catalogue. Names still sitting on live projects (including custom types such as Decarbonisation) are restored into the list if they were missing.',
-          'Do not save an empty list — that would wipe the catalogue.',
+          'Job types are the organisation catalogue. CAT A, CAT B, Small Works and Maintenance are always restored if missing. Custom names still sitting on live jobs (including Decarbonisation stored as a custom type) are merged back in when you open the app.',
+          'If a custom type only lived in the old list and was never saved on a job, add it once with Add Job Type. Do not save an empty list.',
         ],
       },
       {
@@ -326,12 +328,32 @@ const TOPICS: Topic[] = [
         ],
       },
       {
+        id: 'clients',
+        title: 'Clients',
+        summary: 'Who the job is for.',
+        href: '/dashboard/clients',
+        body: [
+          'Clients sit on projects and small works. Add the company name and contacts once, then pick them when you create a job.',
+          'The same client list is shared with iOS. Deleting a client does not delete the jobs that already used it.',
+        ],
+      },
+      {
+        id: 'overview',
+        title: 'Overview and reports',
+        summary: 'Company hours, logos and weekly totals.',
+        href: '/dashboard/weekly-report',
+        body: [
+          'Weekly report totals hours and pay for the current payment-run period in the organisation country calendar.',
+          'Company logo on Home and reports comes from Organisation settings. Book labour from Home or from a job hub.',
+        ],
+      },
+      {
         id: 'notifications',
         title: 'Notifications',
         summary: 'Inbox for bookings, leave and timesheets.',
         href: '/dashboard/notifications',
         body: [
-          'The inbox lists company notifications. Timesheet pending sign-off notices appear for line managers after someone signs their sheet on iOS; web stores the same signed timesheet so the manager can open User Timesheets.',
+          'The inbox lists company notifications. When someone signs a timesheet that needs a counter-signature, their line managers get “Timesheet needs sign-off” and can open that sheet. When a line manager signs off, the person is notified and other line managers get a peer update.',
         ],
       },
     ],
@@ -377,87 +399,142 @@ const TOPICS: Topic[] = [
 export function HelpSupportScreen() {
   const [topicId, setTopicId] = useState(TOPICS[0].id)
   const [articleId, setArticleId] = useState<string | null>(TOPICS[0].articles[0].id)
+  const [query, setQuery] = useState('')
   const topic = TOPICS.find((row) => row.id === topicId) || TOPICS[0]
+  const needle = query.trim().toLowerCase()
   const article = useMemo(
     () => topic.articles.find((row) => row.id === articleId) || topic.articles[0],
     [topic, articleId]
   )
+  const searchHits = useMemo(() => {
+    if (!needle) return []
+    const hits: Array<{ topic: Topic; article: Article }> = []
+    for (const row of TOPICS) {
+      for (const item of row.articles) {
+        const haystack = [item.title, item.summary, ...item.body].join(' ').toLowerCase()
+        if (haystack.includes(needle)) hits.push({ topic: row, article: item })
+      }
+    }
+    return hits
+  }, [needle])
+
+  const openArticle = (nextTopicId: string, nextArticleId: string) => {
+    setTopicId(nextTopicId)
+    setArticleId(nextArticleId)
+    setQuery('')
+  }
 
   return (
     <div className="space-y-6 pb-10">
       <div className="overflow-hidden rounded-2xl bg-gradient-to-br from-[#185FA5] to-[#0F4C81] p-6 text-white shadow-sm">
         <div className="flex items-start gap-3">
           <QuestionMarkCircleIcon className="h-8 w-8 shrink-0 text-white/90" />
-          <div>
+          <div className="min-w-0 flex-1">
             <h1 className="text-[28px] font-semibold tracking-tight">Help & support</h1>
             <p className="mt-1 text-[15px] text-white/85">
-              Guides for every part of ProjectPlanner. Open a topic, then an article. Where a page exists, jump straight
-              into it.
+              Guides for every part of ProjectPlanner. Search, open a topic, then jump into the page.
             </p>
+            <label className="relative mt-4 block">
+              <MagnifyingGlassIcon className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-white/70" />
+              <input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Search timesheets, job types, signatures…"
+                className="w-full rounded-xl border-0 bg-white/15 py-2.5 pl-10 pr-3 text-[15px] text-white placeholder:text-white/60 outline-none ring-1 ring-white/20 focus:bg-white/20"
+              />
+            </label>
           </div>
         </div>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-        {TOPICS.map((row) => {
-          const Icon = row.icon
-          const active = row.id === topic.id
-          return (
-            <button
-              key={row.id}
-              type="button"
-              onClick={() => {
-                setTopicId(row.id)
-                setArticleId(row.articles[0].id)
-              }}
-              className={`rounded-2xl p-4 text-left shadow-[0_1px_2px_rgba(0,0,0,0.10)] ${
-                active ? 'bg-[#E6F1FB] ring-2 ring-[#185FA5]/30' : 'bg-white'
-              }`}
-            >
-              <Icon className="h-6 w-6 text-[#185FA5]" />
-              <p className="mt-2 text-[16px] font-semibold">{row.title}</p>
-              <p className="mt-1 text-[13px] text-ios-muted">{row.intro}</p>
-            </button>
-          )
-        })}
-      </div>
-
-      <div className="grid gap-6 lg:grid-cols-[280px_1fr]">
+      {needle ? (
         <div className="space-y-2">
-          {topic.articles.map((row) => (
-            <button
-              key={row.id}
-              type="button"
-              onClick={() => setArticleId(row.id)}
-              className={`w-full rounded-xl px-4 py-3 text-left ${
-                article.id === row.id ? 'bg-white shadow-sm' : 'text-ios-muted hover:bg-white/70'
-              }`}
-            >
-              <p className="text-[15px] font-semibold text-ios-ink">{row.title}</p>
-              <p className="text-[12px]">{row.summary}</p>
-            </button>
-          ))}
+          <p className="text-[13px] font-semibold uppercase tracking-wide text-ios-muted">
+            {searchHits.length} result{searchHits.length === 1 ? '' : 's'}
+          </p>
+          {searchHits.length === 0 ? (
+            <p className="rounded-2xl bg-white p-5 text-[15px] text-ios-muted shadow-sm">
+              No guides match that search. Try “sign”, “invoice”, “job types” or “qualifications”.
+            </p>
+          ) : (
+            searchHits.map((hit) => (
+              <button
+                key={`${hit.topic.id}-${hit.article.id}`}
+                type="button"
+                onClick={() => openArticle(hit.topic.id, hit.article.id)}
+                className="w-full rounded-2xl bg-white p-4 text-left shadow-[0_1px_2px_rgba(0,0,0,0.10)]"
+              >
+                <p className="text-[12px] font-semibold uppercase tracking-wide text-[#185FA5]">{hit.topic.title}</p>
+                <p className="mt-1 text-[16px] font-semibold">{hit.article.title}</p>
+                <p className="mt-1 text-[13px] text-ios-muted">{hit.article.summary}</p>
+              </button>
+            ))
+          )}
         </div>
-        <article className="rounded-2xl bg-white p-6 shadow-[0_1px_2px_rgba(0,0,0,0.10)]">
-          <div className="flex items-start gap-2">
-            <DocumentTextIcon className="mt-0.5 h-5 w-5 text-[#185FA5]" />
-            <h2 className="text-[22px] font-semibold">{article.title}</h2>
+      ) : (
+        <>
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {TOPICS.map((row) => {
+              const Icon = row.icon
+              const active = row.id === topic.id
+              return (
+                <button
+                  key={row.id}
+                  type="button"
+                  onClick={() => {
+                    setTopicId(row.id)
+                    setArticleId(row.articles[0].id)
+                  }}
+                  className={`rounded-2xl p-4 text-left shadow-[0_1px_2px_rgba(0,0,0,0.10)] ${
+                    active ? 'bg-[#E6F1FB] ring-2 ring-[#185FA5]/30' : 'bg-white'
+                  }`}
+                >
+                  <Icon className="h-6 w-6 text-[#185FA5]" />
+                  <p className="mt-2 text-[16px] font-semibold">{row.title}</p>
+                  <p className="mt-1 text-[13px] text-ios-muted">{row.intro}</p>
+                </button>
+              )
+            })}
           </div>
-          <div className="mt-4 space-y-3 text-[15px] leading-relaxed text-slate-700">
-            {article.body.map((paragraph) => (
-              <p key={paragraph}>{paragraph}</p>
-            ))}
+
+          <div className="grid gap-6 lg:grid-cols-[280px_1fr]">
+            <div className="space-y-2">
+              {topic.articles.map((row) => (
+                <button
+                  key={row.id}
+                  type="button"
+                  onClick={() => setArticleId(row.id)}
+                  className={`w-full rounded-xl px-4 py-3 text-left ${
+                    article.id === row.id ? 'bg-white shadow-sm' : 'text-ios-muted hover:bg-white/70'
+                  }`}
+                >
+                  <p className="text-[15px] font-semibold text-ios-ink">{row.title}</p>
+                  <p className="text-[12px]">{row.summary}</p>
+                </button>
+              ))}
+            </div>
+            <article className="rounded-2xl bg-white p-6 shadow-[0_1px_2px_rgba(0,0,0,0.10)]">
+              <div className="flex items-start gap-2">
+                <DocumentTextIcon className="mt-0.5 h-5 w-5 text-[#185FA5]" />
+                <h2 className="text-[22px] font-semibold">{article.title}</h2>
+              </div>
+              <div className="mt-4 space-y-3 text-[15px] leading-relaxed text-slate-700">
+                {article.body.map((paragraph) => (
+                  <p key={paragraph}>{paragraph}</p>
+                ))}
+              </div>
+              {article.href ? (
+                <Link
+                  href={article.href}
+                  className="mt-5 inline-flex rounded-xl bg-[#185FA5] px-4 py-2.5 text-[15px] font-semibold text-white"
+                >
+                  Open this in the app
+                </Link>
+              ) : null}
+            </article>
           </div>
-          {article.href ? (
-            <Link
-              href={article.href}
-              className="mt-5 inline-flex rounded-xl bg-[#185FA5] px-4 py-2.5 text-[15px] font-semibold text-white"
-            >
-              Open this in the app
-            </Link>
-          ) : null}
-        </article>
-      </div>
+        </>
+      )}
 
       <div className="rounded-2xl bg-white p-5 text-[14px] text-ios-muted shadow-sm">
         <p className="flex items-center gap-2 font-semibold text-ios-ink">

@@ -31,6 +31,7 @@ import {
 import { IconChip, type ChipTint } from '@/components/ios/IconChip'
 import { AppLogoMark } from '@/components/ui/AppLogoMark'
 import { useNotificationStore } from '@/lib/stores/notificationStore'
+import { recoverJobTypesFromWork } from '@/lib/jobTypes/jobTypesStorage'
 import {
   applyRoleTestingPreset,
   canManageUsers,
@@ -183,6 +184,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     }
     loadNotifications(organization.id, user.id)
   }, [organization?.id, organization?.teamOnboarding, user?.id, user?.permissions.adminAccess, user?.isSuperAdmin, loadNotifications])
+
+  useEffect(() => {
+    if (!organization?.id) return
+    void recoverJobTypesFromWork(organization.id).catch(() => {})
+  }, [organization?.id])
 
   const displayUser = useMemo(
     () => (user ? applyRoleTestingPreset(user, rolePreset) : null),
