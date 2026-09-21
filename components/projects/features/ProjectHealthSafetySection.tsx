@@ -11,7 +11,7 @@ import { useHealthSafetyStore } from '@/lib/stores/healthSafetyStore'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { isOperativeMode } from '@/lib/navigation/menuPermissions'
 import { newUuid } from '@/lib/firebase/firestoreUtils'
-import { uploadFile, healthSafetyFilePath } from '@/lib/firebase/storageUtils'
+import { uploadFile as uploadHsFile, healthSafetyFilePath } from '@/lib/firebase/storageUtils'
 import { loadPlatformToolboxLibrary, mergeToolboxTalkLibraries } from '@/lib/healthSafety/toolboxLibrary'
 import { buildToolboxTalkPdfHtml, openToolboxTalkPdf } from '@/lib/healthSafety/toolboxTalkPdf'
 import {
@@ -115,7 +115,7 @@ export function ProjectHealthSafetySection({
   const [uploadTrades, setUploadTrades] = useState<string[]>([])
   const [uploadIsGeneral, setUploadIsGeneral] = useState(true)
   const [uploadKeyPoints, setUploadKeyPoints] = useState<string[]>([''])
-  const [uploadFile, setUploadFile] = useState<File | null>(null)
+  const [uploadTalkFile, setUploadTalkFile] = useState<File | null>(null)
   const [showScheduled, setShowScheduled] = useState(false)
   const [showAddRams, setShowAddRams] = useState(false)
   const [showAddOther, setShowAddOther] = useState(false)
@@ -257,9 +257,9 @@ export function ProjectHealthSafetySection({
     setUploading(true)
     try {
       let fileURL: string | undefined
-      if (uploadFile) {
-        const path = healthSafetyFilePath(organization.id, project.id, 'talks', uploadFile.name)
-        fileURL = await uploadFile(path, uploadFile, uploadFile.type || 'application/octet-stream')
+      if (uploadTalkFile) {
+        const path = healthSafetyFilePath(organization.id, project.id, 'talks', uploadTalkFile.name)
+        fileURL = await uploadHsFile(path, uploadTalkFile, uploadTalkFile.type || 'application/octet-stream')
       }
       await addToolboxTalk(organization.id, project.id, isSmallWorks, {
         title: uploadTitle.trim(),
@@ -280,7 +280,7 @@ export function ProjectHealthSafetySection({
       setUploadTrades([])
       setUploadIsGeneral(true)
       setUploadKeyPoints([''])
-      setUploadFile(null)
+      setUploadTalkFile(null)
       setTab('library')
     } finally {
       setUploading(false)
@@ -308,7 +308,7 @@ export function ProjectHealthSafetySection({
       let fileURL: string | undefined
       if (ramsFile) {
         const path = healthSafetyFilePath(organization.id, project.id, 'rams', ramsFile.name)
-        fileURL = await uploadFile(path, ramsFile, ramsFile.type || 'application/octet-stream')
+        fileURL = await uploadHsFile(path, ramsFile, ramsFile.type || 'application/octet-stream')
       }
       const version = nextRamsVersion(data.ramsDocuments, ramsTitle)
       await save(organization.id, project.id, isSmallWorks, {
@@ -344,7 +344,7 @@ export function ProjectHealthSafetySection({
       let fileURL: string | undefined
       if (otherFile) {
         const path = healthSafetyFilePath(organization.id, project.id, 'other', otherFile.name)
-        fileURL = await uploadFile(path, otherFile, otherFile.type || 'application/octet-stream')
+        fileURL = await uploadHsFile(path, otherFile, otherFile.type || 'application/octet-stream')
       }
       await save(organization.id, project.id, isSmallWorks, {
         ...data,
@@ -876,7 +876,7 @@ export function ProjectHealthSafetySection({
                 + Add point
               </button>
             </HsFieldCard>
-            <HsFileButton file={uploadFile} onChange={setUploadFile} />
+            <HsFileButton file={uploadTalkFile} onChange={setUploadTalkFile} />
           </form>
         </HsSheet>
       )}
