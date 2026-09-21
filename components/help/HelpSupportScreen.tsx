@@ -148,7 +148,7 @@ const TOPICS: Topic[] = [
           'Add Price Work and Expenses before you sign. Signing after extras means you must re-sign.',
           'If you have a line manager: “If you don’t agree with the hours shown, contact your line manager…”',
           'If you have no line manager (typical admin/founder): amend the booking schedule yourself, then Continue to sign. You do not need a counter-signature.',
-          'Continue to sign is blue. Draw your signature so iOS can show the same image. Generate Invoice stays grey until you have signed, and until your line manager has counter-signed if you have one. It turns green when the timesheet is fully approved.',
+          'Continue to sign is blue. Type your name to sign in handwriting, or draw in the box — you can do both. The web saves that as the same signature image iOS already shows. Generate Invoice stays grey until you have signed, and until your line manager has counter-signed if you have one. It turns green when the timesheet is fully approved.',
           'Generate Invoice builds a PDF that matches the iOS invoice (company, name, period, day-by-day job, hours and rates). Share invoice opens the device share sheet when the browser allows it, otherwise downloads the PDF. Generating an invoice does not export the sheet; line managers export PDFs from Signed off.',
         ],
       },
@@ -270,6 +270,8 @@ const TOPICS: Topic[] = [
         href: '/dashboard/projects',
         body: [
           'Open a job, then Health & safety. Documents and toolbox talks stay with that job so operatives see the pack on site.',
+          'Issue a toolbox talk opens the library. Upload a talk opens the library and the custom-talk sheet. Upload RAMS and Add H&S document open those tabs with their upload buttons. You can store more than one RAMS copy.',
+          'Schedule a toolbox talk with a date, time, talk categories, and recipients grouped by trade. Signing a talk or timesheet: type your name (handwriting in the box) or draw — both save as the same signature image iOS already shows.',
         ],
       },
       {
