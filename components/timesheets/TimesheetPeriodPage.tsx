@@ -405,6 +405,7 @@ export function TimesheetPeriodPage({
     }
   }
 
+  // Download only — iOS Generate Invoice does not set exportedAt. Email and export does.
   const runInvoiceGeneration = () => {
     if (!organization || !fullyApproved) return
     const subject = subjectForUser(subjectUser, operatives)

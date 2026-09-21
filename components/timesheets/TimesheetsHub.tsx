@@ -36,11 +36,11 @@ import {
 } from '@/lib/timesheets/paymentRunCopy'
 import { TimesheetsScreen, type TeamTimesheetTab } from '@/components/timesheets/TimesheetsScreen'
 import { TimesheetPeriodPage } from '@/components/timesheets/TimesheetPeriodPage'
-import { dateFromDayKey } from '@/lib/ios-parity/londonTime'
+import { dateFromDayKey, dayKey } from '@/lib/ios-parity/londonTime'
 import { ianaTimeZoneForCountry } from '@/lib/orgTime/orgTimeZone'
 import { computeInvoicingPeriod } from '@/lib/warnings/warningLookahead'
-import { loadTimesheetDraft } from '@/lib/timesheets/timesheetStorage'
-import type { TimesheetDraft } from '@/lib/timesheets/timesheetDraft'
+import { loadTimesheetDraftsForStarts } from '@/lib/timesheets/timesheetStorage'
+import { emptyTimesheetDraft, type TimesheetDraft } from '@/lib/timesheets/timesheetDraft'
 import {
   awaitingManagerSignOff,
   isTimesheetFullyApproved,
@@ -82,10 +82,10 @@ export function TimesheetsHub() {
   const userParam = searchParams.get('user')
   const tabParam = (searchParams.get('tab') as TeamTimesheetTab | null) || 'awaiting'
   const { user, organization } = useAuthStore()
-  const { bookings, loading: bookingsLoading, loadBookings } = useBookingStore()
-  const { managerSiteBookings, loadManagerSiteBookings, loading: managerLoading } = useManagerScheduleStore()
+  const { bookings, loadBookings } = useBookingStore()
+  const { managerSiteBookings, loadManagerSiteBookings } = useManagerScheduleStore()
   const { operatives, loadOperatives } = useOperativeStore()
-  const { users, loadUsers } = useOrgUserStore()
+  const { users, loadUsers, loading: usersLoading } = useOrgUserStore()
   const { projects, smallWorks, loadProjects, loadSmallWorks } = useProjectStore()
   const [invoicing, setInvoicing] = useState<OrgInvoicingSettings>(DEFAULT_INVOICING)
   const [payrollPolicy, setPayrollPolicy] = useState<OrgPayrollTimePolicy>(DEFAULT_PAYROLL_POLICY)
@@ -230,7 +230,7 @@ export function TimesheetsHub() {
               periodEnd={currentPeriod.end}
               payrollPolicy={payrollPolicy}
               invoicing={invoicing}
-              loading={bookingsLoading || managerLoading}
+              loading={usersLoading && users.length === 0}
               teamTab={tab}
               timeZone={timeZone}
               history={history}
@@ -319,13 +319,19 @@ function MineTimesheetsList({
     if (!organizationId) return
     let cancelled = false
     const periods = [currentPeriod, ...pastPeriods]
-    Promise.all(
-      periods.map(async (period) => {
-        const draft = await loadTimesheetDraft(organizationId, subject.id, period.start, timeZone)
-        return [periodStartKey(period.start, timeZone), draft] as const
-      })
-    ).then((rows) => {
-      if (!cancelled) setDrafts(new Map(rows))
+    loadTimesheetDraftsForStarts(
+      organizationId,
+      subject.id,
+      periods.map((period) => period.start),
+      timeZone
+    ).then((loaded) => {
+      if (cancelled) return
+      const next = new Map<string, TimesheetDraft>()
+      for (const period of periods) {
+        const periodKey = periodStartKey(period.start, timeZone)
+        next.set(periodKey, loaded.get(dayKey(period.start, timeZone)) || emptyTimesheetDraft())
+      }
+      setDrafts(next)
     })
     return () => {
       cancelled = true
