@@ -5,7 +5,7 @@
 
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import {
@@ -47,13 +47,7 @@ import { useProjectStore } from '@/lib/stores/projectStore'
 import { db } from '@/lib/firebase/config'
 import { doc, getDoc, setDoc } from 'firebase/firestore'
 import { recoverJobTypesFromWork } from '@/lib/jobTypes/jobTypesStorage'
-import {
-  applyRoleTestingPreset,
-  isOperativeMode,
-  roleTestingPresetTitle,
-  roleTestingStorageKey,
-  type RoleTestingPreset,
-} from '@/lib/permissions'
+import { isOperativeMode } from '@/lib/permissions'
 import { createMenuItems } from '@/lib/navigation/createMenu'
 
 const CHIP_FOR_ID: Record<string, ChipTint> = {
@@ -179,7 +173,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [online, setOnline] = useState(true)
   const [moreOpen, setMoreOpen] = useState(false)
   const [newOpen, setNewOpen] = useState(false)
-  const [rolePreset, setRolePreset] = useState<RoleTestingPreset | null>(null)
   const [refreshing, setRefreshing] = useState(false)
   const [customiseOpen, setCustomiseOpen] = useState(false)
   const [navigateConfig, setNavigateConfig] = useState<NavigateConfig | null>(null)
@@ -196,19 +189,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       window.removeEventListener('offline', off)
     }
   }, [])
-
-  useEffect(() => {
-    if (!user) return
-    try {
-      const raw = localStorage.getItem(roleTestingStorageKey(user.id))
-      if (raw === 'superAdmin' || raw === 'admin' || raw === 'manager' || raw === 'operative') {
-        setRolePreset(raw)
-      }
-    } catch {
-      /* ignore */
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on user.id
-  }, [user?.id])
 
   useEffect(() => {
     void recordLastSeenIfDue()
@@ -257,18 +237,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       .catch(() => {})
   }, [user?.id])
 
-  const displayUser = useMemo(
-    () => (user ? applyRoleTestingPreset(user, rolePreset) : null),
-    [user, rolePreset]
-  )
+  if (!user) return null
 
-  if (!displayUser) return null
-
-  const homeItems = getDashboardNavBySection(displayUser, organization, 'home', users)
-  const navigateItems = getDashboardNavBySection(displayUser, organization, 'navigate', users)
-  const toolsItems = getDashboardNavBySection(displayUser, organization, 'tools', users)
-  const teamItems = getDashboardNavBySection(displayUser, organization, 'team', users)
-  const accountItems = getDashboardNavBySection(displayUser, organization, 'account', users)
+  const homeItems = getDashboardNavBySection(user, organization, 'home', users)
+  const navigateItems = getDashboardNavBySection(user, organization, 'navigate', users)
+  const toolsItems = getDashboardNavBySection(user, organization, 'tools', users)
+  const teamItems = getDashboardNavBySection(user, organization, 'team', users)
+  const accountItems = getDashboardNavBySection(user, organization, 'account', users)
   const allItems = [...homeItems, ...navigateItems, ...toolsItems, ...teamItems, ...accountItems]
   const title = pageTitle(pathname, allItems)
   const isHome = pathname === '/dashboard'
@@ -292,16 +267,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     void setDoc(doc(db, 'users', user.id), { webNavigateSidebar: next }, { merge: true }).catch(() => {})
   }
 
-  const catalog = getDashboardNavItems(displayUser, organization, users)
+  const catalog = getDashboardNavItems(user, organization, users)
   const resolvedNavigate = resolveNavigateRows(navigateConfig, navigateItems, catalog)
   const effectiveNavigateConfig = navigateConfig ?? defaultNavigateConfig(navigateItems)
-  const createItems = createMenuItems(displayUser)
-  const showOperativesTab = !isOperativeMode(displayUser) && navigateItems.some((i) => i.id === 'dashboard_operatives')
-
-  const resetRolePreview = () => {
-    setRolePreset(null)
-    if (user) localStorage.removeItem(roleTestingStorageKey(user.id))
-  }
+  const createItems = createMenuItems(user)
+  const showOperativesTab = !isOperativeMode(user) && navigateItems.some((i) => i.id === 'dashboard_operatives')
 
   const refresh = async () => {
     setRefreshing(true)
@@ -414,20 +384,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               You&apos;re offline. Changes will not sync until you reconnect.
             </div>
           ) : null}
-          {rolePreset ? (
-            <div className="flex items-center justify-between gap-3 bg-amber-500 px-4 py-2 text-sm text-white">
-              <p>
-                <span className="font-semibold">Role preview: {roleTestingPresetTitle(rolePreset)}</span>
-                <span className="ml-2 opacity-90">
-                  Navigation matches this role. Firebase still uses your real account — some actions may fail if your
-                  real permissions differ.
-                </span>
-              </p>
-              <button type="button" onClick={resetRolePreview} className="rounded-full bg-white/20 px-3 py-1 font-semibold">
-                Reset
-              </button>
-            </div>
-          ) : null}
 
           {showHeader ? (
             <header className="sticky top-0 z-20 flex h-16 items-center justify-between gap-3 border-b border-ios-border bg-ios-card/95 px-4 backdrop-blur lg:px-8">
@@ -495,7 +451,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   className="flex h-11 w-11 items-center justify-center overflow-hidden rounded-full bg-[#185FA5] text-xs font-bold text-white"
                   aria-label="Profile"
                 >
-                  <UserAvatar user={displayUser} size={44} />
+                  <UserAvatar user={user} size={44} />
                 </Link>
               </div>
             </header>

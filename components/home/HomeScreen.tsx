@@ -26,7 +26,7 @@ import { useManagerScheduleStore } from '@/lib/stores/managerScheduleStore'
 import { useTaskStore } from '@/lib/stores/taskStore'
 import { useHolidayStore } from '@/lib/stores/holidayStore'
 import { useMaterialProjectStore } from '@/lib/stores/materialProjectStore'
-import { applyRoleTestingPreset, hasAdminAccess, isOperativeMode, roleTestingStorageKey } from '@/lib/permissions'
+import { hasAdminAccess, isOperativeMode } from '@/lib/permissions'
 import { formatHomeDateLine } from '@/lib/ios-parity/londonTime'
 import {
   computeHomeOverviewMetrics,
@@ -81,13 +81,7 @@ export function HomeScreen() {
   const [orgDetails, setOrgDetails] = useState<OrganizationDetails | null>(null)
   const [notificationPreferences, setNotificationPreferences] = useState<NotificationPreferences | null>(null)
 
-  const presetRaw =
-    typeof window !== 'undefined' && user ? localStorage.getItem(roleTestingStorageKey(user.id)) : null
-  const preset: 'superAdmin' | 'admin' | 'manager' | 'operative' | null =
-    presetRaw === 'superAdmin' || presetRaw === 'admin' || presetRaw === 'manager' || presetRaw === 'operative'
-      ? presetRaw
-      : null
-  const displayUser = user ? applyRoleTestingPreset(user, preset) : null
+  const displayUser = user
   const pauseHomeLoads = shouldShowTeamOnboardingPrompt(
     organization?.teamOnboarding,
     Boolean(displayUser?.permissions.adminAccess || displayUser?.isSuperAdmin),

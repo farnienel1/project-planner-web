@@ -4,15 +4,12 @@
  */
 
 import type { User, UserPermissions } from '@/types'
-import { UserRole } from '@/types'
 import { parseAppUserDocument } from '@/lib/ios-parity/converters'
 import { normalizeEmploymentType } from '@/lib/ios-parity/enums'
 
 export type PermissionUser = User | null | undefined
 
 export type WorkCatalogueKind = 'projects' | 'smallWorks' | 'all'
-
-export type RoleTestingPreset = 'superAdmin' | 'admin' | 'manager' | 'operative'
 
 export function parseUserPermissions(
   userData: Record<string, unknown>,
@@ -41,52 +38,6 @@ export function parseUserPermissions(
     siteAudit: true,
     wholesalersOrderHistory: true,
   }
-}
-
-/**
- * Role preview (UserStore.displayUser). Navigation only — data access still uses the real account.
- * Source: Core/UserStore.swift ~L101–185, Models/AppModels.swift RoleTestingPreset
- */
-export function applyRoleTestingPreset(user: User, preset: RoleTestingPreset | null): User {
-  if (!preset) return user
-  const next: User = {
-    ...user,
-    permissions: { ...user.permissions },
-  }
-  switch (preset) {
-    case 'superAdmin':
-      next.isSuperAdmin = true
-      next.role = UserRole.ADMIN
-      next.permissions.operativeMode = false
-      next.permissions.adminAccess = true
-      next.permissions.manager = true
-      break
-    case 'admin':
-      next.isSuperAdmin = false
-      next.role = UserRole.ADMIN
-      next.permissions.operativeMode = false
-      next.permissions.adminAccess = true
-      next.permissions.manager = true
-      break
-    case 'manager':
-      next.isSuperAdmin = false
-      next.role = UserRole.MANAGER
-      next.permissions.operativeMode = false
-      next.permissions.adminAccess = false
-      next.permissions.manager = true
-      next.permissions.operatives = true
-      next.permissions.projects = true
-      next.permissions.smallWorks = true
-      break
-    case 'operative':
-      next.isSuperAdmin = false
-      next.role = UserRole.OPERATIVE
-      next.permissions.operativeMode = true
-      next.permissions.adminAccess = false
-      next.permissions.manager = false
-      break
-  }
-  return next
 }
 
 function flag(user: PermissionUser, key: keyof UserPermissions): boolean {
@@ -317,11 +268,6 @@ export function canAccessOrganisationSettingsHub(user: PermissionUser): boolean 
   return hasAdminAccess(user)
 }
 
-export function canConfigureRoleTesting(user: PermissionUser): boolean {
-  if (!user || isOperativeMode(user)) return false
-  return user.isSuperAdmin || flag(user, 'adminAccess') || flag(user, 'manager')
-}
-
 function isTimesheetEligibleRole(user: PermissionUser): boolean {
   if (!user) return false
   return (
@@ -434,21 +380,4 @@ export function getManageUsersLabel(user: PermissionUser, _organization?: unknow
 export function getAddUserLabel(user: PermissionUser): string {
   if (canManageUsers(user)) return 'Add user'
   return 'Add operative'
-}
-
-export function roleTestingPresetTitle(preset: RoleTestingPreset): string {
-  switch (preset) {
-    case 'superAdmin':
-      return 'Super Admin'
-    case 'admin':
-      return 'Admin'
-    case 'manager':
-      return 'Manager'
-    case 'operative':
-      return 'Operative'
-  }
-}
-
-export function roleTestingStorageKey(uid: string): string {
-  return `roleTestingPreset.${uid}`
 }
