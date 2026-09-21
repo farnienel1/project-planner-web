@@ -12,6 +12,7 @@ import { EyeIcon, EyeSlashIcon } from '@heroicons/react/24/outline'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { AppLogoMark } from '@/components/ui/AppLogoMark'
 import { formatLoginError } from '@/lib/auth/formatLoginError'
+import { consumeWebIdleExpiredFlag } from '@/lib/auth/webIdleSession'
 
 export function LoginBrandScreen() {
   const router = useRouter()
@@ -23,6 +24,7 @@ export function LoginBrandScreen() {
   const [showPassword, setShowPassword] = useState(false)
   const [localError, setLocalError] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [idleNotice] = useState(() => consumeWebIdleExpiredFlag())
 
   const trimmedEmail = email.trim()
   const isFormValid = trimmedEmail.length > 0 && password.length > 0
@@ -86,6 +88,11 @@ export function LoginBrandScreen() {
           {justConfirmed ? (
             <p className="rounded-[10px] border border-emerald-400/20 bg-emerald-500/10 px-3 py-3 text-center text-[13px] font-medium text-emerald-200">
               Account confirmed. Sign in with the email and password you set during setup.
+            </p>
+          ) : null}
+          {idleNotice ? (
+            <p className="rounded-[10px] border border-white/10 bg-white/5 px-3 py-3 text-center text-[13px] font-medium text-white/70">
+              Signed out after 30 minutes idle. Sign in to continue.
             </p>
           ) : null}
           {displayError ? (
