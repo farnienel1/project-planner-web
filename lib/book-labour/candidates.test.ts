@@ -1,8 +1,12 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { UserRole, type Booking, type Operative, type User } from '../../types/index.ts'
-import { DEFAULT_PAYROLL_POLICY } from '../settings/organizationSettings.ts'
-import { enabledScheduleLocationPicks } from '../settings/organizationSettings.ts'
+import {
+  DEFAULT_MY_SCHEDULE,
+  DEFAULT_PAYROLL_POLICY,
+  enabledScheduleLocationPicks,
+  oneOffCustomLocationPick,
+} from '../settings/organizationSettings.ts'
 import { buildBookLabourCandidates } from './candidates.ts'
 
 function perms(partial: Partial<User['permissions']> = {}): User['permissions'] {
@@ -177,4 +181,19 @@ test('enabledScheduleLocationPicks matches iOS Other locations', () => {
     picks.map((p) => p.title),
     ['Office', 'Site survey', 'Yard']
   )
+})
+
+test('default Other custom items do not seed Training', () => {
+  assert.deepEqual(DEFAULT_MY_SCHEDULE.customItems, [])
+  const picks = enabledScheduleLocationPicks({
+    ...DEFAULT_MY_SCHEDULE,
+    customItemEnabled: {},
+  })
+  assert.equal(
+    picks.some((pick) => pick.title.toLowerCase() === 'training'),
+    false
+  )
+  const custom = oneOffCustomLocationPick('Training')
+  assert.equal(custom?.locationType, 'custom')
+  assert.equal(custom?.customLocationName, 'Training')
 })

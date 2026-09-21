@@ -19,6 +19,7 @@ import {
   DEFAULT_PAYROLL_POLICY,
   enabledScheduleLocationPicks,
   loadOrganizationDetails,
+  oneOffCustomLocationPick,
   type MyScheduleOptions,
   type OrgPayrollTimePolicy,
   type ScheduleLocationPick,
@@ -40,6 +41,7 @@ import {
   type BookLabourCandidate,
 } from '@/lib/book-labour/candidates'
 import { HoursTimelinePicker } from '@/components/scheduling/HoursTimelinePicker'
+import { CustomOtherLocationField } from '@/components/scheduling/CustomOtherLocationField'
 import { PanelHeader } from '@/components/settings/primitives'
 
 type BookToTab = 'other' | 'projects' | 'smallWorks'
@@ -202,7 +204,7 @@ export function BookLabourFlowScreen({
   const otherPicks = enabledScheduleLocationPicks(scheduleOpts)
   const activeParty = party.length > 0 ? party : []
   const fallbackPerson = activeParty[0]
-  const otherEnabled = otherPicks.length > 0
+  const otherEnabled = true
 
   function closeFlow() {
     if (onClose) {
@@ -590,12 +592,6 @@ export function BookLabourFlowScreen({
           />
         )}
 
-        {phase.kind === 'pickDestination' && !otherEnabled ? (
-          <p className="px-1 text-[11px] text-[var(--ink3)]">
-            Enable at least one location under Organisation → Schedule options to use Other.
-          </p>
-        ) : null}
-
         {phase.kind === 'pickOtherLocation' && (
           <LocationList
             picks={otherPicks}
@@ -973,29 +969,32 @@ function LocationList({
   picks: ScheduleLocationPick[]
   onPick: (pick: ScheduleLocationPick) => void
 }) {
-  if (picks.length === 0) {
-    return (
-      <p className="card py-10 text-center text-[13px] text-[var(--ink3)]">
-        Enable at least one location under Organisation → Schedule options to use Other.
-      </p>
-    )
-  }
   return (
-    <div>
+    <div className="stack" style={{ gap: 12 }}>
       <p className="mb-2 px-1 text-[11px] font-medium uppercase tracking-[0.4px] text-[var(--ink3)]">Select location</p>
-      <div className="divide-y divide-[var(--line)] overflow-hidden card">
-        {picks.map((pick) => (
-          <button
-            key={pick.id}
-            type="button"
-            onClick={() => onPick(pick)}
-            className="flex w-full items-center justify-between px-3.5 py-3 text-left text-[13px] font-medium hover:bg-[var(--bg)]"
-          >
-            {pick.title}
-            <span className="text-[var(--ink3)]">›</span>
-          </button>
-        ))}
-      </div>
+      {picks.length === 0 ? (
+        <p className="muted small">No saved Other locations. Add a custom one for this booking.</p>
+      ) : (
+        <div className="divide-y divide-[var(--line)] overflow-hidden card">
+          {picks.map((pick) => (
+            <button
+              key={pick.id}
+              type="button"
+              onClick={() => onPick(pick)}
+              className="flex w-full items-center justify-between px-3.5 py-3 text-left text-[13px] font-medium hover:bg-[var(--bg)]"
+            >
+              {pick.title}
+              <span className="text-[var(--ink3)]">›</span>
+            </button>
+          ))}
+        </div>
+      )}
+      <CustomOtherLocationField
+        onUse={(name) => {
+          const pick = oneOffCustomLocationPick(name)
+          if (pick) onPick(pick)
+        }}
+      />
     </div>
   )
 }
