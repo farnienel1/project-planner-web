@@ -32,10 +32,6 @@ function uuidFromSixteenBytes(bytes: Uint8Array): string {
  */
 export async function syntheticUuidFromKey(key: string): Promise<string> {
   const encoded = new TextEncoder().encode(key)
-  if (globalThis.crypto?.subtle?.digest) {
-    const digest = await globalThis.crypto.subtle.digest('SHA-256', encoded)
-    return uuidFromSixteenBytes(new Uint8Array(digest).slice(0, 16))
-  }
-  const { createHash } = await import('node:crypto')
-  return uuidFromSixteenBytes(new Uint8Array(createHash('sha256').update(key).digest().subarray(0, 16)))
+  const digest = await globalThis.crypto.subtle.digest('SHA-256', encoded)
+  return uuidFromSixteenBytes(new Uint8Array(digest).slice(0, 16))
 }
