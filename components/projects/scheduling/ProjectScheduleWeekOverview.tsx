@@ -9,7 +9,13 @@ import { useOperativeStore } from '@/lib/stores/operativeStore'
 import { useSubcontractorStore } from '@/lib/stores/subcontractorStore'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { weekDaysFrom } from '@/lib/scheduling/scheduleUtils'
-import { estimatedPaidHours, formatHoursLabel, customHoursRangeLabel } from '@/lib/scheduling/paidHours'
+import {
+  customHoursRangeLabel,
+  estimatedPaidHours,
+  formatHoursLabel,
+  hoursBreakdown,
+  namedSlotLabel,
+} from '@/lib/scheduling/paidHours'
 import { BookingEditSheet } from '@/components/schedule/BookingEditSheet'
 import { managerSiteBookingToScheduleBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import type { Booking, Project } from '@/types'
@@ -50,22 +56,13 @@ function Avatar({ name, size = 'sm' }: { name: string; size?: 'sm' | 'md' }) {
   )
 }
 
-function formatSlot(slot: string): string {
-  if (!slot || slot === 'FULL DAY' || slot === 'FULL_DAY' || slot === 'Full Day') {
-    return 'Full day'
-  }
-  const compact = slot.toUpperCase().replace(/_/g, ' ')
-  if (compact.includes('CUSTOM')) return 'Custom hours'
-  if (compact === 'AM' || compact.includes('MORNING')) return 'Morning (AM)'
-  if (compact === 'PM' || compact.includes('AFTERNOON')) return 'Afternoon (PM)'
-  return slot
-}
-
 type DayRow = {
   id: string
+  personKey: string
   name: string
   slot: string
   hours: number
+  overtimeEquation: string | null
   range?: string | null
   roleLabel: string
   roleTone: 'operative' | 'manager' | 'subcontractor'
@@ -73,19 +70,41 @@ type DayRow = {
   managerBooking?: ManagerSiteBooking
 }
 
-function OTBadge({ hours }: { hours: number }) {
-  if (hours <= 8) return null
-  const ot = Math.round((hours - 8) * 10) / 10
-  return (
-    <span className="rounded-md bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-700">
-      +{formatHoursLabel(ot)}h OT ×1.5
-    </span>
-  )
+type PersonWeek = {
+  key: string
+  name: string
+  roleLabel: string
+  roleTone: DayRow['roleTone']
+  cells: DayRow[][]
 }
 
-function todayDayKey() {
-  const today = new Date()
-  return new Date(today.getFullYear(), today.getMonth(), today.getDate()).toISOString()
+function bookingRowFromHours(input: {
+  timeSlot?: string
+  workStartTime?: string
+  workEndTime?: string
+  isBreakRemoved?: boolean
+}): Pick<DayRow, 'hours' | 'overtimeEquation' | 'range' | 'slot'> {
+  const breakdown = hoursBreakdown(input)
+  const slotStr = namedSlotLabel(input.timeSlot)
+  const range = customHoursRangeLabel(input)
+  return {
+    hours: estimatedPaidHours(input),
+    overtimeEquation: breakdown.overtimeEquation,
+    range,
+    slot: range ? `${slotStr} · ${range}` : slotStr,
+  }
+}
+
+function toneClass(tone: DayRow['roleTone']) {
+  if (tone === 'subcontractor') return 'bg-violet-100 text-violet-700'
+  if (tone === 'manager') return 'bg-blue-100 text-blue-700'
+  return 'bg-emerald-100 text-emerald-700'
+}
+
+function cellFillClass(tone: DayRow['roleTone']) {
+  if (tone === 'subcontractor') return 'bg-violet-50 border-violet-200 hover:bg-violet-100'
+  if (tone === 'manager') return 'bg-blue-50 border-blue-200 hover:bg-blue-100'
+  return 'bg-emerald-50 border-emerald-200 hover:bg-emerald-100'
 }
 
 export function ProjectScheduleWeekOverview({
@@ -105,7 +124,7 @@ export function ProjectScheduleWeekOverview({
   const { subcontractors, loadSubcontractors } = useSubcontractorStore()
   const [weekStart, setWeekStart] = useState(startOfWeek(new Date(), { weekStartsOn: 1 }))
   const [subBookings, setSubBookings] = useState<SubBooking[]>([])
-  const [expandedDay, setExpandedDay] = useState<string | null>(todayDayKey)
+  const [expanded, setExpanded] = useState(true)
   const [editingRow, setEditingRow] = useState<DayRow | null>(null)
   const [savingEdit, setSavingEdit] = useState(false)
 
@@ -158,16 +177,92 @@ export function ProjectScheduleWeekOverview({
     [managerSiteBookings, project.id]
   )
 
+  const rowsByDay = useMemo(() => {
+    return weekDays.map((day) => {
+      const opRows: DayRow[] = projectBookings
+        .filter((b) => isSameDay(new Date(b.date), day))
+        .map((b) => {
+          const op = operatives.find((o) => o.id === b.operativeId)
+          const name = op ? `${op.firstName} ${op.lastName}`.trim() : 'Operative'
+          return {
+            id: b.id,
+            personKey: `op:${b.operativeId}`,
+            name,
+            roleLabel: 'Op',
+            roleTone: 'operative' as const,
+            booking: b,
+            ...bookingRowFromHours(b),
+          }
+        })
+
+      const managerRows: DayRow[] = projectManagerBookings
+        .filter((b) => isSameDay(new Date(b.date), day))
+        .map((b) => {
+          const manager = users.find((u) => u.id === b.userId)
+          const name = manager ? `${manager.firstName} ${manager.surname}`.trim() : 'Manager'
+          const roleLabel =
+            manager?.permissions.adminAccess || manager?.isSuperAdmin ? 'Admin' : 'Mgr'
+          return {
+            id: b.id,
+            personKey: `mgr:${b.userId}`,
+            name,
+            roleLabel,
+            roleTone: 'manager' as const,
+            managerBooking: b,
+            ...bookingRowFromHours(b),
+          }
+        })
+
+      const subRows: DayRow[] = subBookings
+        .filter((b) => isSameDay(new Date(b.date), day))
+        .map((b) => {
+          const sub = subcontractors.find((s) => s.id === b.subcontractorId)
+          return {
+            id: b.id,
+            personKey: `sub:${b.subcontractorId}`,
+            name: sub?.name || 'Sub contractor',
+            roleLabel: 'Sub',
+            roleTone: 'subcontractor' as const,
+            ...bookingRowFromHours(b),
+          }
+        })
+
+      return [...opRows, ...managerRows, ...subRows]
+    })
+  }, [weekDays, projectBookings, projectManagerBookings, subBookings, operatives, users, subcontractors])
+
+  const people = useMemo((): PersonWeek[] => {
+    const order: string[] = []
+    const byKey = new Map<string, PersonWeek>()
+    rowsByDay.forEach((rows, dayIndex) => {
+      for (const row of rows) {
+        let person = byKey.get(row.personKey)
+        if (!person) {
+          person = {
+            key: row.personKey,
+            name: row.name,
+            roleLabel: row.roleLabel,
+            roleTone: row.roleTone,
+            cells: weekDays.map(() => []),
+          }
+          byKey.set(row.personKey, person)
+          order.push(row.personKey)
+        }
+        person.cells[dayIndex].push(row)
+      }
+    })
+    return order.map((key) => byKey.get(key)!).sort((a, b) => a.name.localeCompare(b.name))
+  }, [rowsByDay, weekDays])
+
   const weekCounts = useMemo(() => {
     let staff = 0
     let subs = 0
-    for (const day of weekDays) {
-      staff += projectBookings.filter((b) => isSameDay(new Date(b.date), day)).length
-      staff += projectManagerBookings.filter((b) => isSameDay(new Date(b.date), day)).length
-      subs += subBookings.filter((b) => isSameDay(new Date(b.date), day)).length
+    for (const rows of rowsByDay) {
+      staff += rows.filter((r) => r.roleTone !== 'subcontractor').length
+      subs += rows.filter((r) => r.roleTone === 'subcontractor').length
     }
     return { staff, subs }
-  }, [weekDays, projectBookings, projectManagerBookings, subBookings])
+  }, [rowsByDay])
 
   const editingBooking: Booking | null = useMemo(() => {
     if (!editingRow) return null
@@ -282,196 +377,86 @@ export function ProjectScheduleWeekOverview({
       </div>
 
       <div>
-        <p className="mb-2 px-1 text-[11px] font-bold uppercase tracking-widest text-slate-400">Week overview</p>
-        <p className="mb-3 px-1 text-xs text-slate-500">Tap a booking to see the hours breakdown and edit it.</p>
+        <div className="mb-2 flex items-center justify-between gap-2 px-1">
+          <div>
+            <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">Week overview</p>
+            <p className="text-xs text-slate-500">Tap a box to see the hours breakdown and edit it.</p>
+          </div>
+          <div className="flex rounded-lg border border-slate-200 bg-white p-0.5 text-[11px] font-semibold">
+            <button
+              type="button"
+              onClick={() => setExpanded(false)}
+              className={`rounded-md px-2.5 py-1 ${expanded ? 'text-slate-500' : 'bg-slate-900 text-white'}`}
+            >
+              Compact
+            </button>
+            <button
+              type="button"
+              onClick={() => setExpanded(true)}
+              className={`rounded-md px-2.5 py-1 ${expanded ? 'bg-slate-900 text-white' : 'text-slate-500'}`}
+            >
+              Expanded
+            </button>
+          </div>
+        </div>
 
-        <div className="space-y-2">
-          {weekDays.map((day) => {
-            const dayKey = day.toISOString()
-            const isExpanded = expandedDay === dayKey
-            const isTodayDay = dateFnsIsToday(day)
-
-            const opRows: DayRow[] = projectBookings
-              .filter((b) => isSameDay(new Date(b.date), day))
-              .map((b) => {
-                const op = operatives.find((o) => o.id === b.operativeId)
-                const name = op ? `${op.firstName} ${op.lastName}`.trim() : 'Operative'
-                const slotStr = formatSlot(String(b.timeSlot || 'FULL DAY'))
-                const range = customHoursRangeLabel(b)
-                return {
-                  id: b.id,
-                  name,
-                  slot: range ? `${slotStr} · ${range}` : slotStr,
-                  hours: estimatedPaidHours(b),
-                  range,
-                  roleLabel: 'Op',
-                  roleTone: 'operative',
-                  booking: b,
-                }
-              })
-
-            const managerRows: DayRow[] = projectManagerBookings
-              .filter((b) => isSameDay(new Date(b.date), day))
-              .map((b) => {
-                const manager = users.find((u) => u.id === b.userId)
-                const name = manager ? `${manager.firstName} ${manager.surname}`.trim() : 'Manager'
-                const slotStr = formatSlot(String(b.timeSlot || 'FULL DAY'))
-                const range = customHoursRangeLabel(b)
-                const roleLabel =
-                  manager?.permissions.adminAccess || manager?.isSuperAdmin ? 'Admin' : 'Mgr'
-                return {
-                  id: b.id,
-                  name,
-                  slot: range ? `${slotStr} · ${range}` : slotStr,
-                  hours: estimatedPaidHours(b),
-                  range,
-                  roleLabel,
-                  roleTone: 'manager',
-                  managerBooking: b,
-                }
-              })
-
-            const subRows: DayRow[] = subBookings
-              .filter((b) => isSameDay(new Date(b.date), day))
-              .map((b) => {
-                const sub = subcontractors.find((s) => s.id === b.subcontractorId)
-                const hours = estimatedPaidHours(b)
-                const range = customHoursRangeLabel(b)
-                const slotStr = formatSlot(b.timeSlot)
-                return {
-                  id: b.id,
-                  name: sub?.name || 'Sub contractor',
-                  slot: range ? `${slotStr} · ${range}` : slotStr,
-                  hours,
-                  range,
-                  roleLabel: 'Sub',
-                  roleTone: 'subcontractor',
-                }
-              })
-
-            const rows = [...opRows, ...managerRows, ...subRows]
-            const bookedCount = rows.length
-            const dayHours = rows.reduce((sum, row) => sum + row.hours, 0)
-
-            return (
-              <div
-                key={dayKey}
-                className={`overflow-hidden rounded-2xl border bg-white shadow-sm transition-shadow ${
-                  isTodayDay ? 'border-blue-400 shadow-blue-100' : 'border-slate-200'
-                }`}
-              >
-                <button
-                  type="button"
-                  onClick={() => setExpandedDay(isExpanded ? null : dayKey)}
-                  className="flex w-full items-center justify-between gap-3 px-4 py-3.5 text-left"
-                >
-                  <div className="flex items-center gap-3">
-                    {isTodayDay && (
-                      <span className="rounded-full bg-blue-600 px-2 py-0.5 text-[10px] font-bold text-white">Today</span>
-                    )}
-                    <div>
-                      <p className={`text-sm font-bold ${isTodayDay ? 'text-blue-700' : 'text-slate-900'}`}>
-                        {format(day, 'EEE · d MMM')}
-                      </p>
-                      {bookedCount > 0 ? (
-                        <p className="text-[11px] text-slate-500">{formatHoursLabel(dayHours)}h booked</p>
-                      ) : null}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {bookedCount > 0 && (
-                      <div className="flex -space-x-1.5">
-                        {rows.slice(0, 3).map((r) => (
-                          <Avatar key={r.id} name={r.name} size="sm" />
-                        ))}
-                        {rows.length > 3 && (
-                          <span className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-200 text-[10px] font-bold text-slate-600">
-                            +{rows.length - 3}
-                          </span>
-                        )}
-                      </div>
-                    )}
-                    <span className={`text-xs font-semibold ${bookedCount > 0 ? 'text-blue-600' : 'text-slate-400'}`}>
-                      {bookedCount === 0 ? 'No bookings' : `${bookedCount} booked`}
-                    </span>
-                    <svg
-                      className={`h-4 w-4 text-slate-400 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}
-                      fill="none" viewBox="0 0 24 24" stroke="currentColor"
-                    >
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                    </svg>
-                  </div>
-                </button>
-
-                {isExpanded && (
-                  <div className="border-t border-slate-100">
-                    {rows.length === 0 ? (
-                      <div className="px-4 py-4 text-center">
-                        <p className="text-sm text-slate-400">No bookings this day</p>
-                        <Link
-                          href={`${scheduleBasePath}/operatives`}
-                          className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-blue-600 hover:underline"
-                        >
-                          + Schedule operatives or managers
-                        </Link>
-                      </div>
-                    ) : (
-                      <div className="divide-y divide-slate-100">
-                        {rows.map((row) => {
-                          const clickable = Boolean(row.booking || row.managerBooking)
-                          const inner = (
-                            <>
-                              <Avatar name={row.name} size="sm" />
-                              <div className="flex-1 min-w-0 text-left">
-                                <p className="text-sm font-semibold text-slate-900 truncate">{row.name}</p>
-                                <p className="text-xs text-slate-500">{row.slot}</p>
-                              </div>
-                              <div className="flex items-center gap-1.5">
-                                <OTBadge hours={row.hours} />
-                                <span className={`rounded-lg px-2 py-0.5 text-xs font-bold ${
-                                  row.hours >= 10 ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-600'
-                                }`}>
-                                  {formatHoursLabel(row.hours)}h
-                                </span>
-                                <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                                  row.roleTone === 'subcontractor'
-                                    ? 'bg-violet-100 text-violet-700'
-                                    : row.roleTone === 'manager'
-                                      ? 'bg-blue-100 text-blue-700'
-                                      : 'bg-emerald-100 text-emerald-700'
-                                }`}>
-                                  {row.roleLabel}
-                                </span>
-                                {clickable ? (
-                                  <svg className="h-4 w-4 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                                  </svg>
-                                ) : null}
-                              </div>
-                            </>
-                          )
-                          return clickable ? (
-                            <button
-                              key={row.id}
-                              type="button"
-                              onClick={() => setEditingRow(row)}
-                              className="flex w-full items-center gap-3 px-4 py-3 hover:bg-slate-50"
-                            >
-                              {inner}
-                            </button>
-                          ) : (
-                            <div key={row.id} className="flex items-center gap-3 px-4 py-3">
-                              {inner}
-                            </div>
-                          )
-                        })}
-                      </div>
-                    )}
-                  </div>
-                )}
+        {people.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-slate-200 bg-white px-4 py-10 text-center">
+            <p className="text-sm text-slate-400">No bookings this week</p>
+            <Link
+              href={`${scheduleBasePath}/operatives`}
+              className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-blue-600 hover:underline"
+            >
+              + Schedule operatives or managers
+            </Link>
+          </div>
+        ) : (
+          <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <div
+              className="min-w-[720px]"
+              style={{
+                display: 'grid',
+                gridTemplateColumns: expanded ? 'minmax(140px, 0.9fr) repeat(7, minmax(110px, 1fr))' : 'minmax(120px, 0.8fr) repeat(7, minmax(72px, 1fr))',
+              }}
+            >
+              <div className="sticky left-0 z-10 border-b border-slate-100 bg-slate-50 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                Booked in
               </div>
-            )
-          })}
+              {weekDays.map((day) => {
+                const isTodayDay = dateFnsIsToday(day)
+                return (
+                  <div
+                    key={day.toISOString()}
+                    className={`border-b border-l border-slate-100 px-2 py-2 text-center ${isTodayDay ? 'bg-blue-50' : 'bg-slate-50'}`}
+                  >
+                    {isTodayDay ? (
+                      <span className="mb-0.5 inline-block rounded-full bg-blue-600 px-1.5 py-px text-[9px] font-bold text-white">Today</span>
+                    ) : null}
+                    <p className={`text-[11px] font-bold ${isTodayDay ? 'text-blue-700' : 'text-slate-700'}`}>
+                      {format(day, 'EEE')}
+                    </p>
+                    <p className="text-[10px] text-slate-500">{format(day, 'd MMM')}</p>
+                  </div>
+                )
+              })}
+
+              {people.map((person) => (
+                <PersonRow
+                  key={person.key}
+                  person={person}
+                  weekDays={weekDays}
+                  expanded={expanded}
+                  onEdit={setEditingRow}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div className="mt-3 flex flex-wrap gap-3 px-1 text-[11px] text-slate-500">
+          <span className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm bg-emerald-400" /> Operative</span>
+          <span className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm bg-blue-400" /> Manager</span>
+          <span className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm bg-violet-400" /> Sub contractor</span>
         </div>
       </div>
 
@@ -487,5 +472,77 @@ export function ProjectScheduleWeekOverview({
         />
       ) : null}
     </div>
+  )
+}
+
+function PersonRow({
+  person,
+  weekDays,
+  expanded,
+  onEdit,
+}: {
+  person: PersonWeek
+  weekDays: Date[]
+  expanded: boolean
+  onEdit: (row: DayRow) => void
+}) {
+  return (
+    <>
+      <div className="sticky left-0 z-10 flex items-center gap-2 border-t border-slate-100 bg-white px-3 py-2">
+        <Avatar name={person.name} size="sm" />
+        <div className="min-w-0">
+          <p className="truncate text-[13px] font-semibold text-slate-900">{person.name}</p>
+          <span className={`rounded-full px-1.5 py-px text-[9px] font-semibold ${toneClass(person.roleTone)}`}>
+            {person.roleLabel}
+          </span>
+        </div>
+      </div>
+      {weekDays.map((day, index) => {
+        const cell = person.cells[index]
+        const isTodayDay = dateFnsIsToday(day)
+        return (
+          <div
+            key={`${person.key}-${day.toISOString()}`}
+            className={`border-l border-t border-slate-100 p-1.5 ${isTodayDay ? 'bg-blue-50/40' : 'bg-white'}`}
+          >
+            {cell.length === 0 ? (
+              <div className={`rounded-lg border border-dashed border-slate-200 ${expanded ? 'min-h-[72px]' : 'min-h-[44px]'}`} />
+            ) : (
+              <div className="space-y-1">
+                {cell.map((row) => {
+                  const clickable = Boolean(row.booking || row.managerBooking)
+                  const inner = expanded ? (
+                    <>
+                      <p className="truncate text-[11px] font-semibold text-slate-800">{row.slot}</p>
+                      <p className="text-[12px] font-bold text-slate-900">{formatHoursLabel(row.hours)}h</p>
+                      {row.overtimeEquation ? (
+                        <p className="text-[10px] font-semibold leading-tight text-amber-700">{row.overtimeEquation}</p>
+                      ) : null}
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-[11px] font-bold text-slate-900">{formatHoursLabel(row.hours)}h</p>
+                      {row.overtimeEquation ? (
+                        <p className="text-[9px] font-semibold text-amber-700">OT</p>
+                      ) : null}
+                    </>
+                  )
+                  const className = `w-full rounded-lg border px-1.5 ${expanded ? 'py-1.5 min-h-[72px]' : 'py-1 min-h-[44px]'} text-left ${cellFillClass(row.roleTone)} ${clickable ? '' : 'cursor-default'}`
+                  return clickable ? (
+                    <button key={row.id} type="button" onClick={() => onEdit(row)} className={className}>
+                      {inner}
+                    </button>
+                  ) : (
+                    <div key={row.id} className={className}>
+                      {inner}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )
+      })}
+    </>
   )
 }
