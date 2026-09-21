@@ -1,7 +1,7 @@
 'use client'
 
 import { create } from 'zustand'
-import { collection, doc, getDocs, setDoc, Timestamp } from 'firebase/firestore'
+import { collection, deleteDoc, doc, getDocs, query, setDoc, Timestamp, where } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
 import type { MaterialSendRecord, ProjectMaterialLine } from '@/types'
 import { newUuid, parseFirestoreDate, parseNumber, parseOptionalString, parseString } from '@/lib/firebase/firestoreUtils'
@@ -27,6 +27,10 @@ function mapMaterialLine(docId: string, data: Record<string, unknown>): ProjectM
     category: parseOptionalString(data.category),
     catalogueItemId: parseOptionalString(data.catalogueItemId),
     notes: parseOptionalString(data.notes),
+    size: parseOptionalString(data.size),
+    length: parseOptionalString(data.length) || parseOptionalString(data.sizeOrLength),
+    lengthUnit: parseOptionalString(data.lengthUnit),
+    websiteURL: parseOptionalString(data.websiteURL),
     lastSentAt: parseFirestoreDate(data.lastSentAt),
     lastSentRequestType: parseOptionalString(data.lastSentRequestType),
   }
@@ -79,6 +83,10 @@ export type SaveMaterialLineInput = {
   category?: string
   catalogueItemId?: string
   notes?: string
+  size?: string
+  length?: string
+  lengthUnit?: string
+  websiteURL?: string
 }
 
 interface MaterialProjectState {
@@ -90,6 +98,7 @@ interface MaterialProjectState {
   loadAllMaterials: (organizationId: string) => Promise<void>
   loadSendRecords: (organizationId: string, projectId?: string) => Promise<void>
   saveMaterialLine: (organizationId: string, line: SaveMaterialLineInput) => Promise<void>
+  deleteMaterialLine: (organizationId: string, materialId: string) => Promise<void>
   saveSendRecord: (organizationId: string, record: MaterialSendRecord) => Promise<void>
   updateMaterialWorkflowStatuses: (
     organizationId: string,
@@ -99,6 +108,23 @@ interface MaterialProjectState {
   ) => Promise<void>
 }
 
+async function fetchProjectMaterials(organizationId: string, projectId: string): Promise<ProjectMaterialLine[]> {
+  let snapshot
+  try {
+    snapshot = await getDocs(
+      query(
+        collection(db, 'organizations', organizationId, 'materials'),
+        where('projectId', '==', projectId)
+      )
+    )
+  } catch {
+    snapshot = await getDocs(collection(db, 'organizations', organizationId, 'materials'))
+  }
+  return snapshot.docs
+    .map((entry) => mapMaterialLine(entry.id, entry.data() as Record<string, unknown>))
+    .filter((m) => m.projectId.toLowerCase() === projectId.toLowerCase())
+}
+
 export const useMaterialProjectStore = create<MaterialProjectState>((set, get) => ({
   materials: [],
   sendRecords: [],
@@ -106,13 +132,27 @@ export const useMaterialProjectStore = create<MaterialProjectState>((set, get) =
   error: null,
 
   loadProjectMaterials: async (organizationId, projectId) => {
+    const already = get().materials.some(
+      (row) => row.projectId.toLowerCase() === projectId.toLowerCase()
+    )
+    if (already) {
+      void fetchProjectMaterials(organizationId, projectId)
+        .then((loaded) => {
+          const others = get().materials.filter(
+            (row) => row.projectId.toLowerCase() !== projectId.toLowerCase()
+          )
+          set({ materials: [...others, ...loaded], loading: false })
+        })
+        .catch(() => {})
+      return
+    }
     set({ loading: true, error: null })
     try {
-      const snapshot = await getDocs(collection(db, 'organizations', organizationId, 'materials'))
-      const materials = snapshot.docs
-        .map((entry) => mapMaterialLine(entry.id, entry.data() as Record<string, unknown>))
-        .filter((m) => m.projectId === projectId)
-      set({ materials, loading: false })
+      const loaded = await fetchProjectMaterials(organizationId, projectId)
+      const others = get().materials.filter(
+        (row) => row.projectId.toLowerCase() !== projectId.toLowerCase()
+      )
+      set({ materials: [...others, ...loaded], loading: false })
     } catch (error: unknown) {
       set({ error: error instanceof Error ? error.message : 'Failed to load materials', loading: false })
       throw error
@@ -135,9 +175,21 @@ export const useMaterialProjectStore = create<MaterialProjectState>((set, get) =
 
   loadSendRecords: async (organizationId, projectId) => {
     try {
-      const snapshot = await getDocs(
-        collection(db, 'organizations', organizationId, 'materialSendRecords')
-      )
+      let snapshot
+      if (projectId) {
+        try {
+          snapshot = await getDocs(
+            query(
+              collection(db, 'organizations', organizationId, 'materialSendRecords'),
+              where('projectId', '==', projectId)
+            )
+          )
+        } catch {
+          snapshot = await getDocs(collection(db, 'organizations', organizationId, 'materialSendRecords'))
+        }
+      } else {
+        snapshot = await getDocs(collection(db, 'organizations', organizationId, 'materialSendRecords'))
+      }
       let sendRecords = snapshot.docs
         .map((entry) => mapSendRecord(entry.id, entry.data() as Record<string, unknown>))
         .filter((r): r is MaterialSendRecord => r !== null)
@@ -173,6 +225,10 @@ export const useMaterialProjectStore = create<MaterialProjectState>((set, get) =
     if (line.productCode?.trim()) payload.productCode = line.productCode.trim()
     if (line.category?.trim()) payload.category = line.category.trim()
     if (line.notes?.trim()) payload.notes = line.notes.trim()
+    if (line.size?.trim()) payload.size = line.size.trim()
+    if (line.length?.trim()) payload.length = line.length.trim()
+    if (line.lengthUnit?.trim()) payload.lengthUnit = line.lengthUnit.trim()
+    if (line.websiteURL?.trim()) payload.websiteURL = line.websiteURL.trim()
 
     try {
       await setDoc(doc(db, 'organizations', organizationId, 'materials', id), payload)
@@ -238,5 +294,16 @@ export const useMaterialProjectStore = create<MaterialProjectState>((set, get) =
       }
     }
     set({ materials: next })
+  },
+
+  deleteMaterialLine: async (organizationId, materialId) => {
+    try {
+      await deleteDoc(doc(db, 'organizations', organizationId, 'materials', materialId))
+      set({ materials: get().materials.filter((row) => row.id !== materialId), error: null })
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Failed to delete material'
+      set({ error: message })
+      throw new Error(message)
+    }
   },
 }))

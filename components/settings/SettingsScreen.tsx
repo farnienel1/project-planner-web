@@ -2,11 +2,13 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { updatePassword, EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth'
 import { doc, Timestamp, updateDoc } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
 import { useAuthStore } from '@/lib/stores/authStore'
+import { uploadFile, profilePhotoPath } from '@/lib/firebase/storageUtils'
+import { UserAvatar } from '@/components/users/UserAvatar'
 import { canAccessOrganisationSettingsHub, hasAdminAccess } from '@/lib/navigation/menuPermissions'
 import {
   loadNotificationPreferences,
@@ -76,8 +78,8 @@ function ProfilePanel({ onBack }: { onBack: () => void }) {
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState('')
-
-  const initials = `${firstName[0] || ''}${surname[0] || ''}`.toUpperCase()
+  const [uploadingPhoto, setUploadingPhoto] = useState(false)
+  const photoInput = useRef<HTMLInputElement>(null)
 
   const save = async () => {
     if (!user?.id) return
@@ -108,14 +110,48 @@ function ProfilePanel({ onBack }: { onBack: () => void }) {
       <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
         <p className="mb-3 text-xs font-bold uppercase tracking-widest text-slate-400">Profile image</p>
         <div className="flex items-center gap-4">
-          <div className="flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 text-xl font-bold text-white flex-shrink-0">
-            {initials || '?'}
-          </div>
+          {user ? <UserAvatar user={{ ...user, firstName, surname }} size={56} /> : (
+            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 text-xl font-bold text-white flex-shrink-0">
+              {(firstName[0] || '') + (surname[0] || '')}
+            </div>
+          )}
           <div className="flex-1">
             <p className="text-sm font-bold text-slate-900">Profile photo</p>
-            <p className="text-xs text-slate-500">Used across Home and Settings</p>
+            <p className="text-xs text-slate-500">Used across Home and Settings. Same photo as iOS.</p>
           </div>
-          <button type="button" className="text-sm font-semibold text-blue-600 hover:underline">Change</button>
+          <input
+            ref={photoInput}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={async (event) => {
+              const file = event.target.files?.[0]
+              event.target.value = ''
+              if (!file || !user?.id) return
+              setUploadingPhoto(true)
+              setError('')
+              try {
+                const url = await uploadFile(profilePhotoPath(user.id, file.name), file, file.type || 'image/jpeg')
+                await updateDoc(doc(db, 'users', user.id), { profilePhotoURL: url, updatedAt: Timestamp.now() })
+                const current = useAuthStore.getState().user
+                if (current) useAuthStore.setState({ user: { ...current, profilePhotoURL: url } })
+                setSaved(true)
+                window.setTimeout(() => setSaved(false), 3000)
+              } catch (e: unknown) {
+                setError(e instanceof Error ? e.message : 'Could not upload photo')
+              } finally {
+                setUploadingPhoto(false)
+              }
+            }}
+          />
+          <button
+            type="button"
+            onClick={() => photoInput.current?.click()}
+            disabled={uploadingPhoto}
+            className="text-sm font-semibold text-blue-600 hover:underline disabled:opacity-50"
+          >
+            {uploadingPhoto ? 'Uploading…' : 'Change'}
+          </button>
         </div>
       </div>
 
