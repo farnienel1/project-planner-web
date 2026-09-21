@@ -15,6 +15,10 @@ import {
   switchActiveOrganization,
 } from '@/lib/orgMembership/membershipService'
 import { roleDisplayName } from '@/lib/orgMembership/organizationTrialPolicy'
+import {
+  formatMembershipCreatedLabel,
+  shortOrganizationId,
+} from '@/lib/orgSetup/pendingOrganizationReuse'
 import type { OrgMembership } from '@/lib/orgMembership/types'
 import { LoadingSpinner } from '@/components/dashboard/PageShell'
 
@@ -136,6 +140,11 @@ export default function ChangeOrganisationPage() {
             Choose which organisation you want to use in the app. Your schedule, projects, and settings will update to
             match.
           </p>
+          <p className="mt-3 text-xs leading-relaxed text-slate-500">
+            Organisations with the same name are listed with the date they were created and a short ID so you can tell
+            them apart. Rows marked Setup incomplete were started during organisation setup and do not contain your
+            company data yet — stay on the one that has your projects.
+          </p>
         </div>
         {error && (
           <p className="mt-4 text-xs font-medium text-red-600">{error}</p>
@@ -173,8 +182,12 @@ export default function ChangeOrganisationPage() {
                 const isActive = membership.organizationId === activeOrgId
                 const isPending = membership.status === 'pending'
                 const locked = membership.trialAccessBlocked === true
+                const setupIncomplete = membership.setupIncomplete === true
                 const switching = switchingId === membership.organizationId
-                const disabled = isActive || switching || locked || Boolean(switchingId)
+                const disabled =
+                  isActive || switching || locked || Boolean(switchingId) || (setupIncomplete && !isActive)
+                const createdLabel = formatMembershipCreatedLabel(membership.createdAt)
+                const shortId = shortOrganizationId(membership.organizationId)
 
                 return (
                   <button
@@ -204,12 +217,22 @@ export default function ChangeOrganisationPage() {
                             Locked
                           </span>
                         )}
+                        {setupIncomplete && (
+                          <span className="rounded-full bg-orange-50 px-1.5 py-0.5 font-semibold text-orange-800">
+                            Setup incomplete
+                          </span>
+                        )}
                         {isPending && (
                           <span className="rounded-full bg-emerald-50 px-1.5 py-0.5 font-semibold text-emerald-700">
                             Invitation pending
                           </span>
                         )}
                       </div>
+                      <p className="mt-1 text-[11px] text-slate-400">
+                        {createdLabel ? `Created ${createdLabel}` : 'Created date unknown'}
+                        {' · '}
+                        ID {shortId}
+                      </p>
                     </div>
                     {switching || acceptingId === membership.organizationId ? (
                       <span className="text-xs font-medium text-slate-400">

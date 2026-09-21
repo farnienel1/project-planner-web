@@ -27,11 +27,11 @@ function parseLengthUnit(value: unknown): MaterialLengthUnit | undefined {
 
 function mapMaterialCatalogItem(docId: string, data: Record<string, unknown>): MaterialCatalogItem | null {
   const name = parseString(data.name)
-  const brand = parseString(data.brand)
+  const brand = parseString(data.brand) || 'Custom'
   const createdAt = parseFirestoreDate(data.createdAt)
   const createdByUserId = parseString(data.createdByUserId)
   const createdByName = parseString(data.createdByName)
-  if (!name || !brand || !createdAt || !createdByUserId || !createdByName) return null
+  if (!name || !createdAt || !createdByUserId || !createdByName) return null
 
   const category = parseOptionalString(data.category) || 'Other'
   return {
@@ -54,7 +54,7 @@ function materialPayload(item: Omit<MaterialCatalogItem, 'createdAt'> & { create
   const payload: Record<string, unknown> = {
     id: item.id,
     name: item.name.trim(),
-    brand: item.brand.trim(),
+    brand: item.brand.trim() || 'Custom',
     defaultUnit: item.defaultUnit,
     category: item.category.trim() || 'Other',
     createdAt: Timestamp.fromDate(item.createdAt || new Date()),
@@ -78,6 +78,10 @@ interface MaterialCatalogState {
   loadItems: (organizationId: string) => Promise<void>
   saveItem: (organizationId: string, item: Omit<MaterialCatalogItem, 'createdAt'> & { createdAt?: Date }) => Promise<void>
   deleteItem: (organizationId: string, id: string) => Promise<void>
+  replaceAllItems: (
+    organizationId: string,
+    items: Array<Omit<MaterialCatalogItem, 'createdAt'> & { createdAt?: Date }>
+  ) => Promise<void>
 }
 
 export const useMaterialCatalogStore = create<MaterialCatalogState>((set, get) => ({
@@ -114,6 +118,22 @@ export const useMaterialCatalogStore = create<MaterialCatalogState>((set, get) =
   deleteItem: async (organizationId, id) => {
     await deleteDoc(doc(db, 'organizations', organizationId, 'materialCatalogue', id))
     set({ items: get().items.filter((item) => item.id !== id) })
+  },
+
+  replaceAllItems: async (organizationId, items) => {
+    const existing = get().items
+    for (const item of existing) {
+      await deleteDoc(doc(db, 'organizations', organizationId, 'materialCatalogue', item.id))
+    }
+    const saved: MaterialCatalogItem[] = []
+    for (const item of items) {
+      const id = item.id || newUuid()
+      const payload = materialPayload({ ...item, id, createdAt: item.createdAt || new Date() })
+      await setDoc(doc(db, 'organizations', organizationId, 'materialCatalogue', id), payload)
+      const mapped = mapMaterialCatalogItem(id, payload)
+      if (mapped) saved.push(mapped)
+    }
+    set({ items: saved.sort((a, b) => a.name.localeCompare(b.name)) })
   },
 }))
 

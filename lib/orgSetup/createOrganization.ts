@@ -1,7 +1,7 @@
-import { doc, getDoc, setDoc, Timestamp, updateDoc } from 'firebase/firestore'
+import { collection, doc, getDoc, getDocs, query, setDoc, Timestamp, updateDoc, where } from 'firebase/firestore'
 import { withTimeout } from '@/lib/client/withTimeout'
 import { seedOrgDefaultDashboard } from '@/lib/dashboard/dashboardLayoutStorage'
-import { newUuid, sanitizeForFirestore } from '@/lib/firebase/firestoreUtils'
+import { newUuid, parseFirestoreDate, sanitizeForFirestore } from '@/lib/firebase/firestoreUtils'
 import { companyLogoPath, uploadFile } from '@/lib/firebase/storageUtils'
 import { getFirebaseDb } from '@/lib/firebase/ensureFirebase'
 import { permissionsToFirestoreMap } from '@/lib/firebase/userPayload'
@@ -15,6 +15,11 @@ import {
   orgSetupSettingsToFirestoreFields,
   type OrgSetupSettings,
 } from '@/lib/orgSetup/orgSetupSettings'
+import {
+  pickReusablePendingOrganization,
+  shouldSwitchUserToNewOrganization,
+  subscriptionStatusFromOrgData,
+} from '@/lib/orgSetup/pendingOrganizationReuse'
 import type { SubscriptionPlanKey } from '@/lib/stripe/plans'
 
 export type CreateOrganizationInput = {
@@ -36,6 +41,8 @@ export type CreateOrganizationResult = {
   confirmationToken: string
   isAdditionalOrganization: boolean
   needsEmailConfirmation: boolean
+  reusedPendingOrganization: boolean
+  switchedActiveOrganization: boolean
 }
 
 function founderPermissionFields() {
@@ -72,10 +79,37 @@ export async function createPendingOrganization(
     6000,
     'Could not reach Firestore to create the organisation. Click Activate again — your details are still on this page.'
   )
-  const isAdditionalOrganization = existingUserSnap.exists()
-  const alreadyConfirmed = existingUserSnap.data()?.accountConfirmed !== false
-  const needsEmailConfirmation = !isAdditionalOrganization || !alreadyConfirmed
+  const existingUser = existingUserSnap.exists()
+    ? (existingUserSnap.data() as Record<string, unknown>)
+    : null
+  const currentOrganizationId = String(existingUser?.organizationId || '')
+  let currentOrgSubscriptionStatus: string | null = null
+  if (currentOrganizationId) {
+    try {
+      const currentOrgSnap = await withTimeout(
+        getDoc(doc(db, 'organizations', currentOrganizationId)),
+        6000,
+        'Could not reach Firestore to create the organisation. Click Activate again — your details are still on this page.'
+      )
+      if (currentOrgSnap.exists()) {
+        currentOrgSubscriptionStatus = subscriptionStatusFromOrgData(
+          currentOrgSnap.data() as Record<string, unknown>
+        )
+      }
+    } catch {
+      currentOrgSubscriptionStatus = null
+    }
+  }
+
+  const switchActive = shouldSwitchUserToNewOrganization({
+    existingUser: existingUser ? { organizationId: currentOrganizationId } : null,
+    currentOrgSubscriptionStatus,
+  })
+  const isAdditionalOrganization = Boolean(existingUser) && !switchActive
+  const alreadyConfirmed = existingUser?.accountConfirmed !== false
+  const needsEmailConfirmation = !existingUser || !alreadyConfirmed
   const skipOptional = input.skipOptionalAssets === true
+  const now = new Date()
 
   if (isAdditionalOrganization && !skipOptional) {
     try {
@@ -85,9 +119,37 @@ export async function createPendingOrganization(
     }
   }
 
-  const organizationId = crypto.randomUUID()
+  let reusedPendingOrganization = false
+  let organizationId = crypto.randomUUID()
+  let reusedCreatedAt: Date | null = null
+  try {
+    const creatorSnap = await getDocs(
+      query(collection(db, 'organizations'), where('creatorUserId', '==', userId))
+    )
+    const reusable = pickReusablePendingOrganization(
+      creatorSnap.docs.map((entry) => {
+        const data = entry.data() as Record<string, unknown>
+        return {
+          id: entry.id,
+          name: String(data.name || ''),
+          creatorUserId: String(data.creatorUserId || ''),
+          subscriptionStatus: subscriptionStatusFromOrgData(data),
+          createdAt: parseFirestoreDate(data.createdAt) ?? null,
+        }
+      }),
+      userId,
+      input.organizationName
+    )
+    if (reusable) {
+      organizationId = reusable.id
+      reusedPendingOrganization = true
+      reusedCreatedAt = reusable.createdAt ?? now
+    }
+  } catch {
+    // Index / permission: mint a new pending org rather than blocking Activate.
+  }
+
   const confirmationToken = needsEmailConfirmation ? newUuid() : ''
-  const now = new Date()
 
   const setupFields = input.orgSetupSettings
     ? orgSetupSettingsToFirestoreFields(input.orgSetupSettings, userId)
@@ -108,16 +170,17 @@ export async function createPendingOrganization(
         subscription: {
           status: 'pending',
           planKey: input.planKey,
-          createdAt: now,
+          createdAt: reusedCreatedAt ?? now,
         },
         teamOnboarding: {
           status: 'pending_add_users',
           addUsersGuideShown: false,
         },
-        createdAt: now,
+        createdAt: reusedCreatedAt ?? now,
         updatedAt: now,
         ...topLevelSetupFields,
-      })
+      }) as Record<string, unknown>,
+      { merge: reusedPendingOrganization }
     ),
     6000,
     'Could not save the organisation. Click Activate again — your details are still on this page.'
@@ -170,15 +233,14 @@ export async function createPendingOrganization(
       }
     : {}
 
-  if (isAdditionalOrganization) {
-    const existing = existingUserSnap.data() as Record<string, unknown>
+  if (existingUser && switchActive) {
     await withTimeout(
       updateDoc(
         doc(db, 'users', userId),
         sanitizeForFirestore({
           email,
-          firstName: input.firstName.trim() || String(existing.firstName || ''),
-          surname: input.surname.trim() || String(existing.surname || ''),
+          firstName: input.firstName.trim() || String(existingUser.firstName || ''),
+          surname: input.surname.trim() || String(existingUser.surname || ''),
           ...(input.mobileNumber?.trim() ? { mobileNumber: input.mobileNumber.trim() } : {}),
           organizationId,
           role: 'admin',
@@ -193,7 +255,7 @@ export async function createPendingOrganization(
       8000,
       'Could not update your account. Refresh this page, then click Activate again.'
     )
-  } else {
+  } else if (!existingUser) {
     await withTimeout(
       setDoc(
         doc(db, 'users', userId),
@@ -256,5 +318,7 @@ export async function createPendingOrganization(
     confirmationToken,
     isAdditionalOrganization,
     needsEmailConfirmation,
+    reusedPendingOrganization,
+    switchedActiveOrganization: switchActive,
   }
 }

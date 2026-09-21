@@ -24,14 +24,17 @@ function parseContacts(rows: unknown): SubcontractorContact[] {
       const position = parseString(data.position, 'Installer')
       const createdAt = parseFirestoreDate(data.createdAt)
       if (!name || !createdAt) return null
-      return {
+      const contact: SubcontractorContact = {
         id: parseUuid(data.id),
         name,
         email,
         contactNumber,
         position,
         createdAt,
-      } satisfies SubcontractorContact
+      }
+      const tradeType = parseOptionalString(data.tradeType)
+      if (tradeType) contact.tradeType = tradeType
+      return contact
     })
     .filter((contact): contact is SubcontractorContact => contact !== null)
 }
@@ -68,6 +71,7 @@ function subcontractorPayload(subcontractor: Subcontractor) {
       email: contact.email.trim(),
       contactNumber: contact.contactNumber.trim(),
       position: contact.position,
+      tradeType: contact.tradeType?.trim() || null,
       createdAt: Timestamp.fromDate(contact.createdAt),
     })),
     createdAt: Timestamp.fromDate(subcontractor.createdAt),
