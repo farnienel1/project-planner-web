@@ -268,9 +268,13 @@ export function DailyOverviewScreen() {
                           key={row.personKey}
                           row={row}
                           onOpen={
-                            row.kind !== 'subcontractor' && row.bookingId
-                              ? () => setEditingRow(row)
-                              : undefined
+                            row.kind === 'subcontractor'
+                              ? undefined
+                              : () => {
+                                  const bookingId = row.bookingId || row.id.replace(/^(op|mgr)-/i, '')
+                                  if (!bookingId) return
+                                  setEditingRow({ ...row, bookingId })
+                                }
                           }
                         />
                       ))}
@@ -391,16 +395,32 @@ function PersonRow({ row, onOpen }: { row: OverviewPersonRow; onOpen?: () => voi
       <span className="ico-chip sm">{row.initials}</span>
       <span className="grow">
         <span className="t">{row.name}</span>
-        <span className="s">{row.subtitle}</span>
+        <span className="s">{row.subtitle}{onOpen ? ' · Tap to change booking' : ''}</span>
       </span>
       <span className="pill" data-hue="proj">
         {row.pillText}
       </span>
+      {onOpen ? (
+        <span className="muted xs" style={{ fontWeight: 700 }}>
+          Change
+        </span>
+      ) : null}
     </>
   )
   if (onOpen) {
     return (
-      <button type="button" className="ritem" style={{ marginTop: 12 }} data-hue="proj" onClick={onOpen}>
+      <button
+        type="button"
+        className="ritem click"
+        style={{ marginTop: 12, position: 'relative', zIndex: 1 }}
+        data-hue="proj"
+        onClick={(event) => {
+          event.preventDefault()
+          event.stopPropagation()
+          onOpen()
+        }}
+        aria-label={`Change booking for ${row.name}`}
+      >
         {inner}
       </button>
     )
@@ -441,8 +461,21 @@ function ManagerCard({
             </>
           )
           return onOpen ? (
-            <button key={b.id} type="button" className="ritem" onClick={() => onOpen(b)}>
+            <button
+              key={b.id}
+              type="button"
+              className="ritem click"
+              onClick={(event) => {
+                event.preventDefault()
+                event.stopPropagation()
+                onOpen(b)
+              }}
+              aria-label={`Change booking for ${personName(b.userId, users)}`}
+            >
               {inner}
+              <span className="muted xs" style={{ fontWeight: 700 }}>
+                Change
+              </span>
             </button>
           ) : (
             <div key={b.id} className="ritem" style={{ cursor: 'default' }}>
