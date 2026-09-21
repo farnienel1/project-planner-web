@@ -72,7 +72,7 @@ test('leftover exportedAt that matches invoiceGeneratedAt is ignored', () => {
     }),
     null
   )
-  const almost = new Date('2026-09-21T10:00:01.500Z')
+  const almost = new Date('2026-09-21T10:00:45.000Z')
   assert.equal(
     resolveTimesheetExportedAt({
       exportedAt: stamp(almost.toISOString()),
@@ -80,6 +80,18 @@ test('leftover exportedAt that matches invoiceGeneratedAt is ignored', () => {
     }),
     null
   )
+})
+
+test('list mapping can omit signature payloads', () => {
+  const draft = draftFromFirestoreMap(
+    {
+      operativeSignedAt: stamp('2026-09-21T09:00:00Z'),
+      operativeSignatureImageBase64: 'iVBORw0KGgoAAAANSUhEUg==',
+    },
+    { includeSignatures: false }
+  )
+  assert.equal(draft.operativeSignatureImageBase64, null)
+  assert.ok(draft.operativeSignedAt)
 })
 
 test('manager Email and export exportedAt stays exported even if an old invoice stamp exists', () => {

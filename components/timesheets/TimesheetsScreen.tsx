@@ -6,6 +6,7 @@ import { useAuthStore } from '@/lib/stores/authStore'
 import { hasAdminAccess } from '@/lib/navigation/menuPermissions'
 import {
   loadExportedTimesheetHistory,
+  loadTimesheetDraft,
   loadTimesheetDrafts,
   saveTimesheetDraft,
   type ExportedTimesheetHistoryRow,
@@ -254,13 +255,13 @@ export function TimesheetsScreen({
         return
       }
       for (const member of visible) {
-        const draft = drafts.get(member.id)
-        if (!draft) continue
+        if (!drafts.get(member.id)) continue
+        const full = await loadTimesheetDraft(organization.id, member.id, periodStart, timeZone)
         await saveTimesheetDraft({
           organizationId: organization.id,
           userId: member.id,
           weekStart: periodStart,
-          draft: { ...draft, exportedAt: new Date() },
+          draft: { ...full, exportedAt: new Date() },
           timeZone,
         })
       }

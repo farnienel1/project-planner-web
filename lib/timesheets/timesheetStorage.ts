@@ -5,7 +5,7 @@
  * Doc id: timesheet_{userId}_{unixStartOfDay} using the organisation origin-country zone.
  * Legacy yyyy-MM-dd / ISO-week keys are still read so older web drafts are not lost.
  */
-import { collection, doc, documentId, getDoc, getDocs, query, setDoc, Timestamp, where } from 'firebase/firestore'
+import { collection, doc, getDoc, getDocs, query, setDoc, Timestamp, where } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
 import { newUuid, parseFirestoreDate as parseSharedFirestoreDate, sanitizeForFirestore } from '@/lib/firebase/firestoreUtils'
 import { LONDON_TIME_ZONE, unixStartOfDay, dayKey } from '@/lib/ios-parity/londonTime'
@@ -67,12 +67,18 @@ function parseFirestoreDate(value: unknown): Date | undefined {
  * iOS TimesheetDraftStore.fromFirestoreMap only reads `exportedAt`.
  * Generate Invoice must not move a sheet to Exported — that is Email and export.
  * Older web builds wrote `invoiceGeneratedAt` and (briefly) copied it onto `exportedAt`.
+ * Treat near-simultaneous stamps as leftover generate, not a manager email export.
  */
+const INVOICE_EXPORT_LEFTOVER_MS = 60_000
+
 export function resolveTimesheetExportedAt(data: Record<string, unknown>): Date | null {
   const exportedAt = parseFirestoreDate(data.exportedAt) || null
   if (!exportedAt) return null
   const invoiceGeneratedAt = parseFirestoreDate(data.invoiceGeneratedAt)
-  if (invoiceGeneratedAt && Math.abs(exportedAt.getTime() - invoiceGeneratedAt.getTime()) <= 2000) {
+  if (
+    invoiceGeneratedAt &&
+    Math.abs(exportedAt.getTime() - invoiceGeneratedAt.getTime()) <= INVOICE_EXPORT_LEFTOVER_MS
+  ) {
     return null
   }
   return exportedAt
@@ -131,15 +137,23 @@ function mapReviews(raw: unknown): Record<string, TimesheetPayrollLineReview> {
   return output
 }
 
-export function draftFromFirestoreMap(data: Record<string, unknown>): TimesheetDraft {
+export function draftFromFirestoreMap(
+  data: Record<string, unknown>,
+  options?: { includeSignatures?: boolean }
+): TimesheetDraft {
+  const includeSignatures = options?.includeSignatures !== false
   const operativeSignedBy = typeof data.operativeSignedByName === 'string' ? data.operativeSignedByName.trim() : ''
   const operativeSignature =
-    typeof data.operativeSignatureImageBase64 === 'string' ? data.operativeSignatureImageBase64.trim() : ''
+    includeSignatures && typeof data.operativeSignatureImageBase64 === 'string'
+      ? data.operativeSignatureImageBase64.trim()
+      : ''
   const managerSignedBy = typeof data.managerSignedByName === 'string' ? data.managerSignedByName.trim() : ''
   const managerSignedByUserId =
     typeof data.managerSignedByUserId === 'string' ? data.managerSignedByUserId.trim() : ''
   const managerSignature =
-    typeof data.managerSignatureImageBase64 === 'string' ? data.managerSignatureImageBase64.trim() : ''
+    includeSignatures && typeof data.managerSignatureImageBase64 === 'string'
+      ? data.managerSignatureImageBase64.trim()
+      : ''
 
   const submittedAt = parseFirestoreDate(data.submittedAt)
   const approvedAt = parseFirestoreDate(data.approvedAt)
@@ -224,16 +238,28 @@ function weekStartMatches(data: Record<string, unknown>, weekStart: Date, timeZo
   return false
 }
 
+const LIST_DRAFT_OPTIONS = { includeSignatures: false } as const
+
+async function mapInBatches<T, R>(items: T[], batchSize: number, mapper: (item: T) => Promise<R>): Promise<R[]> {
+  const output: R[] = []
+  for (let index = 0; index < items.length; index += batchSize) {
+    const chunk = items.slice(index, index + batchSize)
+    output.push(...(await Promise.all(chunk.map(mapper))))
+  }
+  return output
+}
+
 async function loadTimesheetDraftByCandidates(
   organizationId: string,
   userId: string,
   weekStart: Date,
-  timeZone: string
+  timeZone: string,
+  includeSignatures = true
 ): Promise<TimesheetDraft | null> {
   const unique = [...new Set(candidateTimesheetDocIds(userId, weekStart, timeZone))]
   const hits = await Promise.all(unique.map(async (id) => ({ id, data: await readDoc(organizationId, id) })))
   const hit = hits.find((row) => row.data)
-  return hit?.data ? draftFromFirestoreMap(hit.data) : null
+  return hit?.data ? draftFromFirestoreMap(hit.data, { includeSignatures }) : null
 }
 
 export async function loadTimesheetDraft(
@@ -297,23 +323,34 @@ export async function loadTimesheetDrafts(
       const data = entry.data() as Record<string, unknown>
       const userId = typeof data.userId === 'string' ? data.userId : ''
       if (!wanted.has(userId) || results.has(userId)) continue
-      results.set(userId, draftFromFirestoreMap(data))
+      results.set(userId, draftFromFirestoreMap(data, LIST_DRAFT_OPTIONS))
     }
   } catch {
-    // Fall through to per-user candidate reads.
+    // Fall through to per-user userId reads — iOS docs often have no weekStartKey.
   }
 
-  const missing = userIds.filter((id) => !results.has(id))
-  if (missing.length === 0) return results
-
-  const extras = await Promise.all(
-    missing.map(async (userId) => {
-      const draft = await loadTimesheetDraftByCandidates(organizationId, userId, weekStart, timeZone)
+  let missing = userIds.filter((id) => !results.has(id))
+  if (missing.length > 0) {
+    const extras = await mapInBatches(missing, 8, async (userId) => {
+      const draft = await loadTimesheetDraftByCandidates(organizationId, userId, weekStart, timeZone, false)
       return [userId, draft] as const
     })
-  )
-  for (const [userId, draft] of extras) {
-    if (draft) results.set(userId, draft)
+    for (const [userId, draft] of extras) {
+      if (draft) results.set(userId, draft)
+    }
+  }
+
+  missing = userIds.filter((id) => !results.has(id))
+  if (missing.length > 0) {
+    const target = dayKey(weekStart, timeZone)
+    const fromUserQueries = await mapInBatches(missing, 8, async (userId) => {
+      const rows = await listTimesheetStates(organizationId, userId, 400)
+      const hit = rows.find((row) => dayKey(row.weekStart, timeZone) === target)
+      return [userId, hit?.draft ?? null] as const
+    })
+    for (const [userId, draft] of fromUserQueries) {
+      if (draft) results.set(userId, draft)
+    }
   }
 
   for (const userId of userIds) {
@@ -412,7 +449,7 @@ export async function listTimesheetStates(
         documentId: entry.id,
         userId,
         weekStart,
-        draft: draftFromFirestoreMap(data),
+        draft: draftFromFirestoreMap(data, LIST_DRAFT_OPTIONS),
       })
     }
     rows.sort((a, b) => b.weekStart.getTime() - a.weekStart.getTime())
@@ -448,40 +485,16 @@ export async function loadExportedTimesheetHistory({
   users: import('@/types').User[]
 }): Promise<ExportedTimesheetHistoryRow[]> {
   const byId = new Map<string, ExportedTimesheetHistoryRow>()
-  const userById = new Map(users.map((member) => [member.id, member]))
-  if (userById.size === 0) return []
+  if (users.length === 0) return []
 
-  try {
-    const snap = await getDocs(
-      query(
-        collection(db, 'organizations', organizationId, 'settings'),
-        where(documentId(), '>=', 'timesheet_'),
-        where(documentId(), '<=', 'timesheet_\uf8ff')
-      )
-    )
-    for (const entry of snap.docs) {
-      if (!entry.id.startsWith('timesheet_')) continue
-      const data = entry.data() as Record<string, unknown>
-      const weekStart = parseFirestoreDate(data.weekStart)
-      if (!weekStart) continue
-      const userId =
-        typeof data.userId === 'string' && data.userId
-          ? data.userId
-          : entry.id.split('_')[1] || ''
-      const member = userById.get(userId)
-      if (!member) continue
-      ingestExportedRow(byId, member, weekStart, draftFromFirestoreMap(data))
-    }
-  } catch {
-    const batches = await Promise.all(
-      users.map(async (member) => {
-        const rows = await listTimesheetStates(organizationId, member.id, 400)
-        return { member, rows }
-      })
-    )
-    for (const { member, rows } of batches) {
-      for (const row of rows) ingestExportedRow(byId, member, row.weekStart, row.draft)
-    }
+  // iOS loadExportedHistory: listTimesheetStates per user. Do not prefix-scan
+  // every timesheet_* settings doc (those payloads include signature PNGs).
+  const batches = await mapInBatches(users, 8, async (member) => {
+    const rows = await listTimesheetStates(organizationId, member.id, 400)
+    return { member, rows }
+  })
+  for (const { member, rows } of batches) {
+    for (const row of rows) ingestExportedRow(byId, member, row.weekStart, row.draft)
   }
 
   return Array.from(byId.values()).sort((a, b) => {

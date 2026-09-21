@@ -58,6 +58,18 @@ export function subjectForUser(user: User, operatives: Operative[]): TimesheetSu
   }
 }
 
+/** iOS TimesheetMoneyEntrySheet managerSuggestions eligibility. */
+export function isTimesheetAgreedManagerCandidate(user: User): boolean {
+  if (user.isActive === false) return false
+  return (
+    user.permissions.manager ||
+    user.permissions.adminAccess ||
+    user.isSuperAdmin ||
+    user.role === 'manager' ||
+    user.role === 'admin'
+  )
+}
+
 export function reportsToManager(member: User, managerId: string): boolean {
   const ids = [
     ...(member.assignedManagerUserIds || []),
