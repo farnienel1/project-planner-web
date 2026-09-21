@@ -6,6 +6,8 @@ import { computeOperativeBookingClashWarnings } from '@/lib/scheduling/bookingCl
 import { managerSiteBookingDisplayTitle } from '@/lib/scheduling/managerSiteBookingUtils'
 import { getActiveOperativesForScheduling } from '@/lib/operatives/operativeRosterUtils'
 import type { OrganizationDetails } from '@/lib/settings/organizationSettings'
+import { includesManagerScheduleLocation } from '@/lib/settings/organizationSettings'
+import { ianaTimeZoneForCountry } from '@/lib/orgTime/orgTimeZone'
 import { computeManagerBookingClashWarnings } from '@/lib/warnings/managerClashWarnings'
 import { computeUnbookedLabourWarningsForDateRange } from '@/lib/warnings/unbookedLabourWarnings'
 import type { Booking, HolidayBooking, Operative, Project, User } from '@/types'
@@ -163,18 +165,21 @@ export function buildWeeklyReportData({
   const payroll = orgDetails?.payrollTimePolicy
   const standardHours = payroll?.standardPaidHours ?? 8
   const otMultiplier = payroll?.weekdayOutsideStandardMultiplier ?? 1.5
+  const timeZone = ianaTimeZoneForCountry(orgDetails?.countryCode)
   const mergedWorks = mergeProjectsAndSmallWorks(projects, smallWorks)
   const projectsById = new Map<string, Project>()
   mergedWorks.forEach((project) => projectsById.set(project.id, project))
 
   const invoicingPeriod = orgDetails?.invoicing
-    ? computeInvoicingPeriod(period.end, orgDetails.invoicing)
+    ? computeInvoicingPeriod(period.end, orgDetails.invoicing, timeZone)
     : null
 
   const periodOperativeBookings = bookings.filter((booking) => isDateWithinReportPeriod(booking.date, period))
-  const periodManagerBookings = managerSiteBookings.filter((booking) =>
-    isDateWithinReportPeriod(booking.date, period)
-  )
+  const periodManagerBookings = managerSiteBookings.filter((booking) => {
+    if (!isDateWithinReportPeriod(booking.date, period)) return false
+    const options = orgDetails?.myScheduleOptions
+    return options ? includesManagerScheduleLocation(options, booking) : true
+  })
   const periodSubBookings = subcontractorBookings.filter((booking) =>
     isDateWithinReportPeriod(booking.date, period)
   )
@@ -373,6 +378,7 @@ export function buildWeeklyReportData({
       payrollPolicy: payroll,
       periodStart: period.start,
       periodEnd: period.end,
+      timeZone,
     })) {
       warnings.push({
         status: 'Open',

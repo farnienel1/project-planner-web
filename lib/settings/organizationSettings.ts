@@ -442,6 +442,31 @@ export function myScheduleOptionsToFirestore(options: MyScheduleOptions): Record
   }
 }
 
+/** iOS MyScheduleOptions.includesManagerScheduleLocation — project/small work always count. */
+export function includesManagerScheduleLocation(
+  options: MyScheduleOptions,
+  booking: { locationType: string; customLocationName?: string }
+): boolean {
+  switch (booking.locationType) {
+    case 'project':
+    case 'small_work':
+      return true
+    case 'office':
+      return options.showOffice
+    case 'working_from_home':
+      return options.showWorkingFromHome
+    case 'site_survey':
+      return options.showSiteSurvey
+    case 'custom': {
+      const name = booking.customLocationName?.trim() || ''
+      if (!name) return false
+      return options.customItems.some((item) => item.trim().toLowerCase() === name.toLowerCase())
+    }
+    default:
+      return true
+  }
+}
+
 export async function loadOrganizationDetails(
   organizationId: string,
   options?: { fromServer?: boolean }

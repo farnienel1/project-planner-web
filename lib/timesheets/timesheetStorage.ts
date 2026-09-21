@@ -281,3 +281,73 @@ export async function saveTimesheetDraft({
     { merge: true }
   )
 }
+
+export type TimesheetStateRow = {
+  documentId: string
+  userId: string
+  weekStart: Date
+  draft: TimesheetDraft
+}
+
+/** iOS FirebaseBackend.listTimesheetStates — query by userId, sort weekStart desc. */
+export async function listTimesheetStates(
+  organizationId: string,
+  userId: string,
+  limit = 400
+): Promise<TimesheetStateRow[]> {
+  try {
+    const snap = await getDocs(
+      query(collection(db, 'organizations', organizationId, 'settings'), where('userId', '==', userId))
+    )
+    const rows: TimesheetStateRow[] = []
+    for (const entry of snap.docs) {
+      if (!entry.id.startsWith('timesheet_')) continue
+      const data = entry.data() as Record<string, unknown>
+      const weekStart = parseFirestoreDate(data.weekStart)
+      if (!weekStart) continue
+      rows.push({
+        documentId: entry.id,
+        userId,
+        weekStart,
+        draft: draftFromFirestoreMap(data),
+      })
+    }
+    rows.sort((a, b) => b.weekStart.getTime() - a.weekStart.getTime())
+    return rows.slice(0, Math.max(1, limit))
+  } catch {
+    return []
+  }
+}
+
+export type ExportedTimesheetHistoryRow = {
+  id: string
+  user: import('@/types').User
+  weekStart: Date
+  draft: TimesheetDraft
+}
+
+export async function loadExportedTimesheetHistory({
+  organizationId,
+  users,
+}: {
+  organizationId: string
+  users: import('@/types').User[]
+}): Promise<ExportedTimesheetHistoryRow[]> {
+  const byId = new Map<string, ExportedTimesheetHistoryRow>()
+  for (const member of users) {
+    const rows = await listTimesheetStates(organizationId, member.id, 400)
+    for (const row of rows) {
+      if (!row.draft.exportedAt) continue
+      const id = `${member.id}|${Math.floor(row.weekStart.getTime() / 1000)}`
+      byId.set(id, { id, user: member, weekStart: row.weekStart, draft: row.draft })
+    }
+  }
+  return Array.from(byId.values()).sort((a, b) => {
+    const left = a.draft.exportedAt?.getTime() || 0
+    const right = b.draft.exportedAt?.getTime() || 0
+    if (left !== right) return right - left
+    const an = `${a.user.firstName} ${a.user.surname}`.trim()
+    const bn = `${b.user.firstName} ${b.user.surname}`.trim()
+    return an.localeCompare(bn)
+  })
+}

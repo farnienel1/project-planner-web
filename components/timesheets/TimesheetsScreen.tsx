@@ -5,24 +5,36 @@ import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { hasAdminAccess } from '@/lib/navigation/menuPermissions'
 import {
+  loadExportedTimesheetHistory,
   loadTimesheetDrafts,
+  saveTimesheetDraft,
+  type ExportedTimesheetHistoryRow,
 } from '@/lib/timesheets/timesheetStorage'
 import type { TimesheetDraft } from '@/lib/timesheets/timesheetDraft'
 import {
   awaitingManagerSignOff,
   isTimesheetFullyApproved,
 } from '@/lib/timesheets/timesheetApprovalPolicy'
+import { teamTimesheetUsers, subjectForUser } from '@/lib/timesheets/timesheetWeekUtils'
+import { formatPaymentPeriodLine, periodStartKey } from '@/lib/timesheets/paymentRunCopy'
+import { collectTimesheetPayroll } from '@/lib/timesheets/timesheetPayrollCollector'
+import { invoiceLinesForTimesheet, paymentRunDateStamp, timesheetExportFileName } from '@/lib/timesheets/timesheetExport'
+import { buildTimesheetInvoiceHtml } from '@/lib/timesheets/invoiceGenerator'
+import { shouldAppearInOperativeTimesheetRoster } from '@/lib/timesheets/timesheetPayrollPolicy'
+import { jsonAuthHeaders } from '@/lib/security/clientAuthHeaders'
+import { timesheetExportPath, uploadFile } from '@/lib/firebase/storageUtils'
+import { emptyDayRateHistory, type OperativeDayRateHistoryCollection } from '@/lib/timesheets/dayRateHistoryStorage'
 import {
-  collectSubjectDayEntries,
-  teamTimesheetUsers,
-  totalHours,
-} from '@/lib/timesheets/timesheetWeekUtils'
-import { periodStartKey } from '@/lib/timesheets/paymentRunCopy'
-import type { Booking, Operative, User } from '@/types'
+  DEFAULT_MY_SCHEDULE,
+  type MyScheduleOptions,
+  type OrgInvoicingSettings,
+  type OrgPayrollTimePolicy,
+} from '@/lib/settings/organizationSettings'
+import type { Booking, Operative, Project, User } from '@/types'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
-import type { OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 import { EmptyState, LoadingSpinner } from '@/components/dashboard/PageShell'
 import { LONDON_TIME_ZONE } from '@/lib/ios-parity/londonTime'
+import { computeInvoicingPeriod } from '@/lib/warnings/warningLookahead'
 
 export type TeamTimesheetTab = 'awaiting' | 'signed' | 'exported'
 
@@ -33,35 +45,58 @@ function initials(name: string): string {
   return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase()
 }
 
+function displayName(member: User): string {
+  return `${member.firstName} ${member.surname}`.trim() || member.email
+}
+
 export function TimesheetsScreen({
   bookings,
   managerSiteBookings,
   operatives,
   users,
+  projects = [],
+  smallWorks = [],
   periodStart,
   periodEnd,
   payrollPolicy,
+  invoicing,
   loading,
   teamTab,
   timeZone = LONDON_TIME_ZONE,
+  history = emptyDayRateHistory(),
+  scheduleOptions = DEFAULT_MY_SCHEDULE,
 }: {
   bookings: Booking[]
   managerSiteBookings: ManagerSiteBooking[]
   operatives: Operative[]
   users: User[]
+  projects?: Project[]
+  smallWorks?: Project[]
   periodStart: Date
   periodEnd: Date
   payrollPolicy: OrgPayrollTimePolicy
+  invoicing: OrgInvoicingSettings
   loading?: boolean
   teamTab: TeamTimesheetTab
   timeZone?: string
+  history?: OperativeDayRateHistoryCollection
+  scheduleOptions?: MyScheduleOptions
 }) {
   const router = useRouter()
   const { user, organization } = useAuthStore()
   const [drafts, setDrafts] = useState<Map<string, TimesheetDraft>>(new Map())
+  const [exportedRows, setExportedRows] = useState<ExportedTimesheetHistoryRow[]>([])
   const [recordsLoading, setRecordsLoading] = useState(false)
+  const [exporting, setExporting] = useState(false)
+  const [exportMessage, setExportMessage] = useState<string | null>(null)
 
-  const roster = useMemo(() => (user ? teamTimesheetUsers(user, users) : []), [user, users])
+  const roster = useMemo(() => {
+    const base = user ? teamTimesheetUsers(user, users) : []
+    if (teamTab === 'exported') return base
+    return base.filter((member) =>
+      shouldAppearInOperativeTimesheetRoster(member, periodStart, periodEnd, invoicing, new Date(), timeZone)
+    )
+  }, [user, users, teamTab, periodStart, periodEnd, invoicing, timeZone])
 
   const reload = useCallback(async () => {
     if (!organization?.id) return
@@ -69,11 +104,15 @@ export function TimesheetsScreen({
     if (userIds.length === 0) return
     setRecordsLoading(true)
     try {
-      setDrafts(await loadTimesheetDrafts(organization.id, userIds, periodStart, timeZone))
+      if (teamTab === 'exported') {
+        setExportedRows(await loadExportedTimesheetHistory({ organizationId: organization.id, users: roster }))
+      } else {
+        setDrafts(await loadTimesheetDrafts(organization.id, userIds, periodStart, timeZone))
+      }
     } finally {
       setRecordsLoading(false)
     }
-  }, [organization?.id, roster, periodStart, timeZone])
+  }, [organization?.id, roster, periodStart, timeZone, teamTab])
 
   useEffect(() => {
     void reload()
@@ -83,11 +122,140 @@ export function TimesheetsScreen({
     return roster.filter((member) => {
       const draft = drafts.get(member.id)
       if (!draft) return false
-      if (teamTab === 'exported') return Boolean(draft.exportedAt)
+      if (teamTab === 'exported') return false
       if (teamTab === 'signed') return isTimesheetFullyApproved(draft, member) && !draft.exportedAt
       return awaitingManagerSignOff(draft, member) && !draft.exportedAt
     })
   }, [roster, drafts, teamTab])
+
+  const summaryFor = (member: User, draft: TimesheetDraft | undefined, start: Date, end: Date) => {
+    const payroll = collectTimesheetPayroll({
+      user: member,
+      bookings,
+      managerSiteBookings,
+      operatives,
+      projects,
+      smallWorks,
+      periodStart: start,
+      periodEnd: end,
+      payrollPolicy,
+      timeZone,
+      history,
+      scheduleOptions,
+    })
+    const priceWork = draft?.priceWorkEntries.reduce((sum, entry) => sum + entry.amount, 0) || 0
+    const expenses = draft?.expenseEntries.reduce((sum, entry) => sum + entry.amount, 0) || 0
+    return { hours: payroll.totalHours, overtimeHours: payroll.overtimeHours, priceWork, expenses }
+  }
+
+  const exportSigned = async () => {
+    if (!organization?.id || !user || visible.length === 0) return
+    const recipientEmail = user.email?.trim()
+    if (!recipientEmail) {
+      setExportMessage('Your account needs an email address to receive the export.')
+      return
+    }
+    setExporting(true)
+    setExportMessage(null)
+    const stamp = paymentRunDateStamp(periodStart, periodEnd, timeZone)
+    const periodLine = formatPaymentPeriodLine(periodStart, periodEnd, timeZone)
+    const downloadLinks: Array<{ fileName: string; url: string }> = []
+    const failed: string[] = []
+    try {
+      for (const member of visible) {
+        const draft = drafts.get(member.id)
+        if (!draft) continue
+        const name = displayName(member)
+        const payroll = collectTimesheetPayroll({
+          user: member,
+          bookings,
+          managerSiteBookings,
+          operatives,
+          projects,
+          smallWorks,
+          periodStart,
+          periodEnd,
+          payrollPolicy,
+          timeZone,
+          history,
+          scheduleOptions,
+        })
+        const html = buildTimesheetInvoiceHtml({
+          organizationName: organization.name || 'Organisation',
+          subject: subjectForUser(member, operatives),
+          weekStart: periodStart,
+          weekEnd: periodEnd,
+          totalHours: payroll.totalHours,
+          totalDays: payroll.totalHours / Math.max(payrollPolicy.standardPaidHours, 0.01),
+          amount: payroll.workAmount + (draft.priceWorkEntries.reduce((s, e) => s + e.amount, 0) + draft.expenseEntries.reduce((s, e) => s + e.amount, 0)),
+          vatNumber: member.vatNumber,
+          utrNumber: member.utrNumber,
+          lines: invoiceLinesForTimesheet({
+            payroll,
+            draft,
+            timeZone,
+            managerHasSigned: isTimesheetFullyApproved(draft, member),
+            applyLiveReview: false,
+          }),
+        })
+        const fileName = timesheetExportFileName(name, stamp)
+        try {
+          const url = await uploadFile(
+            timesheetExportPath(organization.id, fileName),
+            new Blob([html], { type: 'text/html;charset=utf-8' }),
+            'text/html'
+          )
+          downloadLinks.push({ fileName, url })
+        } catch {
+          failed.push(name)
+        }
+      }
+      if (downloadLinks.length === 0) {
+        setExportMessage(failed.length ? `Could not build exports: ${failed.join(', ')}` : 'No timesheets could be exported.')
+        return
+      }
+      const response = await fetch('/api/timesheets/export-email', {
+        method: 'POST',
+        headers: await jsonAuthHeaders(),
+        body: JSON.stringify({
+          recipientEmail,
+          recipientName: `${user.firstName} ${user.surname}`.trim() || user.email,
+          organizationName: organization.name || 'Organisation',
+          weekTitle: periodLine,
+          paymentRunStamp: stamp,
+          timesheetCount: downloadLinks.length,
+          attachmentNames: downloadLinks.map((link) => link.fileName),
+          downloadLinks,
+        }),
+      })
+      const payload = (await response.json().catch(() => ({}))) as { error?: string }
+      if (!response.ok) {
+        setExportMessage(payload.error || 'Email delivery failed.')
+        return
+      }
+      for (const member of visible) {
+        const draft = drafts.get(member.id)
+        if (!draft) continue
+        await saveTimesheetDraft({
+          organizationId: organization.id,
+          userId: member.id,
+          weekStart: periodStart,
+          draft: { ...draft, exportedAt: new Date() },
+          timeZone,
+        })
+      }
+      setExportMessage(
+        failed.length
+          ? `Emailed ${downloadLinks.length} to ${recipientEmail}. Skipped: ${failed.join(', ')}.`
+          : `Emailed ${downloadLinks.length} timesheet${downloadLinks.length === 1 ? '' : 's'} to ${recipientEmail} for filing.`
+      )
+      router.replace('/dashboard/timesheets?surface=team&tab=exported')
+    } catch (error) {
+      setExportMessage(error instanceof Error ? error.message : 'Export failed.')
+    } finally {
+      setExporting(false)
+    }
+  }
 
   if (loading || recordsLoading) return <LoadingSpinner />
 
@@ -99,10 +267,41 @@ export function TimesheetsScreen({
         : 'No timesheets awaiting sign-off'
   const emptyDescription =
     teamTab === 'exported'
-      ? 'Exported timesheets stay here for years after you generate an invoice.'
+      ? 'Exported timesheets stay here for years after you email and export, or generate an invoice.'
       : teamTab === 'signed'
         ? 'Counter-signed timesheets ready to export will appear here.'
         : 'People appear here only after they have signed their own timesheet. Unsigned booked hours stay on My Timesheets until they sign.'
+
+  if (teamTab === 'exported') {
+    if (exportedRows.length === 0) {
+      return <EmptyState title={emptyTitle} description={emptyDescription} />
+    }
+    return (
+      <div className="space-y-3">
+        {exportedRows.map((row) => {
+          const period = computeInvoicingPeriod(row.weekStart, invoicing, timeZone)
+          const summary = summaryFor(row.user, row.draft, period.start, period.end)
+          return (
+            <MemberRow
+              key={row.id}
+              member={row.user}
+              users={users}
+              viewer={user}
+              pill="Exported"
+              pillClass="bg-slate-100 text-slate-600"
+              summary={summary}
+              periodLine={formatPaymentPeriodLine(period.start, period.end, timeZone)}
+              onClick={() =>
+                router.push(
+                  `/dashboard/timesheets?surface=team&tab=exported&user=${row.user.id}&period=${periodStartKey(period.start, timeZone)}`
+                )
+              }
+            />
+          )
+        })}
+      </div>
+    )
+  }
 
   if (visible.length === 0) {
     return <EmptyState title={emptyTitle} description={emptyDescription} />
@@ -112,70 +311,93 @@ export function TimesheetsScreen({
     <div className="space-y-3">
       {visible.map((member) => {
         const draft = drafts.get(member.id)
-        const entries = collectSubjectDayEntries({
-          subject: {
-            key: `user:${member.id}`,
-            kind: member.permissions.operativeMode ? 'operative' : 'manager',
-            name: `${member.firstName} ${member.surname}`.trim() || member.email,
-            userId: member.id,
-            operativeId: operatives.find((row) => row.email.toLowerCase() === member.email.toLowerCase())?.id,
-          },
-          bookings,
-          managerSiteBookings,
-          weekRange: { start: periodStart, end: periodEnd },
-          payrollPolicy,
-        })
-        const hours = totalHours(entries)
+        const summary = summaryFor(member, draft, periodStart, periodEnd)
         return (
-          <button
+          <MemberRow
             key={member.id}
-            type="button"
+            member={member}
+            users={users}
+            viewer={user}
+            pill={teamTab === 'signed' ? 'Signed off' : 'Pending'}
+            pillClass={teamTab === 'signed' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-800'}
+            summary={summary}
             onClick={() =>
               router.push(
                 `/dashboard/timesheets?surface=team&tab=${teamTab}&user=${member.id}&period=${periodStartKey(periodStart, timeZone)}`
               )
             }
-            className="flex w-full items-center gap-3 rounded-2xl bg-white p-4 text-left shadow-[0_1px_2px_rgba(0,0,0,0.10)] hover:ring-2 hover:ring-[#185FA5]/20"
-          >
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#E6F1FB] text-[13px] font-bold text-[#185FA5]">
-              {initials(`${member.firstName} ${member.surname}`.trim() || member.email)}
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <p className="text-[17px] font-semibold">{`${member.firstName} ${member.surname}`.trim() || member.email}</p>
-                <span
-                  className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
-                    teamTab === 'exported'
-                      ? 'bg-slate-100 text-slate-600'
-                      : teamTab === 'signed'
-                        ? 'bg-green-100 text-green-700'
-                        : 'bg-amber-100 text-amber-800'
-                  }`}
-                >
-                  {teamTab === 'exported' ? 'Exported' : teamTab === 'signed' ? 'Signed off' : 'Pending'}
-                </span>
-              </div>
-              <p className="mt-1 text-[13px] text-ios-muted">
-                Hrs {hours.toFixed(1)}
-                {draft?.priceWorkEntries.length ? ` · PW ${draft.priceWorkEntries.length}` : ''}
-                {draft?.expenseEntries.length ? ` · Exp ${draft.expenseEntries.length}` : ''}
-                {member.permissions.operativeMode ? ' · Operative' : hasAdminAccess(member) ? ' · Admin' : ' · Manager'}
-              </p>
-              {hasAdminAccess(user) && (member.assignedManagerUserIds?.[0] || member.assignedManagerUserId) ? (
-                <p className="mt-0.5 text-[12px] text-ios-muted">
-                  Line manager:{' '}
-                  {(() => {
-                    const managerId = member.assignedManagerUserIds?.[0] || member.assignedManagerUserId
-                    const manager = users.find((row) => row.id === managerId)
-                    return manager ? `${manager.firstName} ${manager.surname}`.trim() : 'Assigned'
-                  })()}
-                </p>
-              ) : null}
-            </div>
-            <span className="text-[#185FA5]">›</span>
-          </button>
+          />
         )
       })}
+      {teamTab === 'signed' ? (
+        <div className="space-y-2 pt-2">
+          <button
+            type="button"
+            disabled={exporting}
+            onClick={() => void exportSigned()}
+            className="w-full rounded-xl bg-[#185FA5] px-4 py-3.5 text-[15px] font-semibold text-white disabled:opacity-60"
+          >
+            {exporting ? 'Sending timesheets…' : `Email and export ${visible.length} timesheet${visible.length === 1 ? '' : 's'}`}
+          </button>
+          {exportMessage ? <p className="text-[13px] text-ios-muted">{exportMessage}</p> : null}
+        </div>
+      ) : null}
     </div>
+  )
+}
+
+function MemberRow({
+  member,
+  users,
+  viewer,
+  pill,
+  pillClass,
+  summary,
+  periodLine,
+  onClick,
+}: {
+  member: User
+  users: User[]
+  viewer: User | null
+  pill: string
+  pillClass: string
+  summary: { hours: number; overtimeHours: number; priceWork: number; expenses: number }
+  periodLine?: string
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex w-full items-center gap-3 rounded-2xl bg-white p-4 text-left shadow-[0_1px_2px_rgba(0,0,0,0.10)] hover:ring-2 hover:ring-[#185FA5]/20"
+    >
+      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#E6F1FB] text-[13px] font-bold text-[#185FA5]">
+        {initials(displayName(member))}
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="text-[17px] font-semibold">{displayName(member)}</p>
+          <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${pillClass}`}>{pill}</span>
+        </div>
+        {periodLine ? <p className="mt-0.5 text-[13px] font-semibold text-[#185FA5]">{periodLine}</p> : null}
+        <p className="mt-1 text-[13px] text-ios-muted">
+          Hrs {summary.hours.toFixed(1)} · OT {summary.overtimeHours.toFixed(1)} · PW £{summary.priceWork.toFixed(2)} · Exp £
+          {summary.expenses.toFixed(2)}
+          {member.permissions.operativeMode ? ' · Operative' : hasAdminAccess(member) ? ' · Admin' : ' · Manager'}
+        </p>
+        {hasAdminAccess(viewer) ? (
+          <p className="mt-0.5 text-[12px] text-ios-muted">
+            Line manager:{' '}
+            {(() => {
+              const managerId = member.assignedManagerUserIds?.[0] || member.assignedManagerUserId
+              if (!managerId) return 'Unassigned'
+              const manager = users.find((row) => row.id === managerId)
+              return manager ? displayName(manager) : 'Unknown'
+            })()}
+          </p>
+        ) : null}
+      </div>
+      <span className="text-[#185FA5]">›</span>
+    </button>
   )
 }
