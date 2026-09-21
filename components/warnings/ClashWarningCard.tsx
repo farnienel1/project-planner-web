@@ -166,45 +166,48 @@ export function ClashWarningCard({
   const label = dateLabel(date)
 
   return (
-    <article className="card overflow-hidden">
-      <header className="flex items-center gap-2.5 bg-gradient-to-b from-[#B3261E] to-[#8C1A14] px-3.5 py-[11px]">
-        <p className="min-w-0 flex-1 text-[16.5px] font-semibold tracking-tight text-white">{title}</p>
-        <span className="inline-flex items-center gap-1 rounded-full bg-white/18 px-2.5 py-1 text-[11px] font-bold text-white ring-1 ring-white/28">
-          HIGH
-        </span>
+    <article className="card overflow-hidden" data-hue="red">
+      <header className="card-h" data-hue="red">
+        <div className="ico-chip sm">
+          <svg className="h-[18px] w-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+          </svg>
+        </div>
+        <p className="h2 grow" style={{ fontSize: 17 }}>{title}</p>
+        <span className="pill solid" data-hue="red">HIGH</span>
       </header>
 
-      <div className="space-y-3 px-3.5 pb-3.5 pt-[13px]">
+      <div className="card-b stack" style={{ gap: 12 }}>
         <div>
-          <p className="text-[14.5px] text-[#121B23]">
+          <p>
             <span className="font-semibold">{personName}</span> is booked in {placeWord(entries.length)} places on{' '}
             {label}.
           </p>
-          <p className="mt-1 text-[13.5px] text-[#6C6C72]">
+          <p className="muted small" style={{ marginTop: 4 }}>
             Approve if it&apos;s intentional and it&apos;ll be noted on the weekly report.
           </p>
         </div>
 
-        <div className="flex items-center gap-2.5">
-          <span className="grid h-[30px] w-[30px] place-items-center rounded-full bg-[#2E85E8] text-[11px] font-semibold text-white">
+        <div className="ritem" style={{ cursor: 'default', boxShadow: 'none', background: 'var(--soft)' }}>
+          <span className="grid h-[30px] w-[30px] place-items-center rounded-full bg-[var(--blue)] text-[11px] font-semibold text-white">
             {initialsFrom(personName)}
           </span>
-          <p className="min-w-0 flex-1 text-[15px] font-semibold text-[#121B23]">{personName}</p>
-          <p className="text-[13px] tabular-nums text-[#6C6C72]">{label}</p>
+          <span className="grow">
+            <span className="t">{personName}</span>
+            <span className="s">{label}</span>
+          </span>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 rounded-[9px] border border-[#B3261E]/30 bg-[#B3261E]/[0.09] px-[11px] py-2">
-          <p className="text-[14.5px] font-semibold tabular-nums text-[#B3261E]">
-            {formatDuration(analysis.minutes)} overlap
-          </p>
-          {analysis.startMinutes != null && analysis.endMinutes != null ? (
-            <p className="text-[13px] tabular-nums text-[#6C6C72]">
-              · {formatClock(analysis.startMinutes)}–{formatClock(analysis.endMinutes)}
-            </p>
-          ) : null}
-          {analysis.peak > 2 ? (
-            <p className="text-[13px] tabular-nums text-[#6C6C72]">· up to {analysis.peak} at once</p>
-          ) : null}
+        <div className="banner" data-hue="red" style={{ margin: 0 }}>
+          <div>
+            <b className="num">{formatDuration(analysis.minutes)} overlap</b>
+            {analysis.startMinutes != null && analysis.endMinutes != null ? (
+              <span className="muted small"> · {formatClock(analysis.startMinutes)}–{formatClock(analysis.endMinutes)}</span>
+            ) : null}
+            {analysis.peak > 2 ? (
+              <span className="muted small"> · up to {analysis.peak} at once</span>
+            ) : null}
+          </div>
         </div>
 
         <div className="space-y-[3px] rounded-xl bg-[#F1F2F6] px-3 pb-[7px] pt-[11px]">
@@ -236,7 +239,7 @@ export function ClashWarningCard({
                     {entry.jobNumber ? '▦' : '⌂'}
                   </span>
                   <div className="min-w-0 flex-1">
-                    <p className="text-[14.5px] font-semibold text-[#121B23]">
+                    <p className="text-[14.5px] font-semibold">
                       {entry.jobNumber ? (
                         <span className="mr-1 font-bold" style={{ color: palette.ink }}>
                           {entry.jobNumber}
@@ -244,9 +247,9 @@ export function ClashWarningCard({
                       ) : null}
                       {displayTitle(entry)}
                     </p>
-                    <p className="text-[12.5px] tabular-nums text-[#6C6C72]">
+                    <p className="muted small num">
                       {timeText(entry)} ·{' '}
-                      <span className="font-semibold text-[#B3261E]">{formatDuration(mine)} clashing</span>
+                      <span className="font-semibold text-[var(--red)]">{formatDuration(mine)} clashing</span>
                     </p>
                   </div>
                   {onRemove ? (
@@ -268,10 +271,9 @@ export function ClashWarningCard({
           <button
             type="button"
             onClick={() => setTimelineOpen((value) => !value)}
-            className="flex w-full items-center justify-center gap-1.5 py-[11px] text-[13.5px] font-medium text-[#0A66D6]"
+            className="btn ghost block"
           >
             {timelineOpen ? 'Hide full timeline' : 'Show full timeline'}
-            <span className={`text-[11px] ${timelineOpen ? 'rotate-180' : ''}`}>▾</span>
           </button>
         </div>
 
@@ -311,17 +313,18 @@ export function ClashWarningCard({
             type="button"
             disabled={busy}
             onClick={() => void onApprove()}
-            className="flex w-full items-center justify-center gap-2 rounded-[11px] bg-gradient-to-b from-[#1E8A5E] to-[#146341] py-[13px] text-[15.5px] font-semibold text-white disabled:opacity-50"
+            className="btn hue block"
+            data-hue="green"
           >
-            ✓ Approve for weekly report
+            Approve for weekly report
           </button>
         ) : null}
       </div>
 
-      <div className="flex border-t border-black/10">
+      <div className="card-b" style={{ paddingTop: 0 }}>
         <Link
           href={`/dashboard/daily-overview?date=${dayKey(date)}`}
-          className="flex-1 py-[13px] text-center text-[14.5px] font-medium text-[#0A66D6]"
+          className="btn block"
         >
           Open daily overview
         </Link>

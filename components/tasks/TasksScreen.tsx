@@ -24,28 +24,7 @@ import {
 } from '@/lib/tasks/taskUtils'
 import { hasAdminAccess, isOperativeMode } from '@/lib/navigation/menuPermissions'
 import { LoadingSpinner } from '@/components/dashboard/PageShell'
-import type { HolidayBooking, ProjectTask, ProjectTaskPriority, ProjectTaskStatus } from '@/types'
-
-const PRIORITY_DOT: Record<ProjectTaskPriority, string> = {
-  Urgent: 'bg-red-500',
-  High: 'bg-amber-500',
-  Normal: 'bg-blue-500',
-  Low: 'bg-slate-400',
-}
-
-const PRIORITY_TEXT: Record<ProjectTaskPriority, string> = {
-  Urgent: 'text-red-700',
-  High: 'text-amber-700',
-  Normal: 'text-blue-700',
-  Low: 'text-slate-600',
-}
-
-const PRIORITY_BG: Record<ProjectTaskPriority, string> = {
-  Urgent: 'bg-red-50',
-  High: 'bg-amber-50',
-  Normal: 'bg-blue-50',
-  Low: 'bg-slate-100',
-}
+import type { HolidayBooking, ProjectTask, ProjectTaskStatus } from '@/types'
 
 const STATUS_STYLES: Record<ProjectTaskStatus, { badge: string; label: string }> = {
   'To Do': { badge: 'bg-slate-100 text-slate-700', label: 'To Do' },
@@ -77,7 +56,7 @@ function HolidayApprovalCard({
   const isCancellation = isCancellationRequest(request)
 
   return (
-    <div className="rounded-2xl border border-amber-200 bg-amber-50/60 p-4 shadow-sm">
+    <div className="card pad" data-hue="leave">
       <div className="flex items-start gap-3">
         <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-600">
           <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -93,9 +72,9 @@ function HolidayApprovalCard({
           <p className="text-sm font-semibold text-slate-900">
             {isCancellation ? 'Holiday cancellation request' : 'Annual leave request'}
           </p>
-          <p className="mt-0.5 text-sm font-medium text-slate-800">{requesterName}</p>
-          <p className="mt-0.5 text-xs text-slate-600">{formatDateRange(request.startDate, request.endDate, request.timeSlot)}</p>
-          <span className="mt-2 inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800">
+          <p className="mt-0.5 text-sm font-medium">{requesterName}</p>
+          <p className="mt-0.5 muted small">{formatDateRange(request.startDate, request.endDate, request.timeSlot)}</p>
+          <span className="pill" data-hue="warn" style={{ marginTop: 8 }}>
             {isCancellation ? 'Cancellation pending' : 'Pending approval'}
           </span>
         </div>
@@ -105,7 +84,8 @@ function HolidayApprovalCard({
           type="button"
           disabled={busy}
           onClick={onApprove}
-          className="rounded-xl bg-emerald-600 py-2.5 text-xs font-bold text-white transition hover:bg-emerald-700 disabled:opacity-60"
+          className="btn hue"
+          data-hue="green"
         >
           Approve
         </button>
@@ -113,7 +93,7 @@ function HolidayApprovalCard({
           type="button"
           disabled={busy}
           onClick={onDecline}
-          className="rounded-xl bg-red-600 py-2.5 text-xs font-bold text-white transition hover:bg-red-700 disabled:opacity-60"
+          className="btn danger"
         >
           Decline
         </button>
@@ -134,48 +114,56 @@ function TaskRow({
   const status = STATUS_STYLES[task.status] ?? STATUS_STYLES['To Do']
   const priority = task.priority ?? 'Normal'
   const overdue = isTaskOverdue(task)
+  const hue = priority === 'Urgent' ? 'red' : 'task'
 
   const inner = (
     <>
-      <span className={`mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full ${PRIORITY_DOT[priority] ?? 'bg-slate-400'}`} />
-      <div className="min-w-0 flex-1">
-        <p className="text-sm font-medium text-slate-900 truncate">{task.title}</p>
-        <p className="mt-0.5 text-xs text-slate-500 truncate">{projectName}</p>
-        {task.details && <p className="mt-0.5 text-xs text-slate-500 line-clamp-1">{task.details}</p>}
-        <div className="mt-1.5 flex flex-wrap gap-1.5">
-          <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${status.badge}`}>{status.label}</span>
-          <span
-            className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${PRIORITY_BG[priority]} ${PRIORITY_TEXT[priority]}`}
-          >
-            {priority}
-          </span>
-          {overdue && (
-            <span className="rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-red-700">Overdue</span>
-          )}
-          {task.dueDate && (
-            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">
-              Due {format(task.dueDate, 'd MMM yyyy')}
-            </span>
-          )}
-        </div>
-      </div>
-      {href && (
-        <svg className="mt-1 h-4 w-4 shrink-0 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+      <span className="ico-chip">
+        <svg className="h-[18px] w-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
         </svg>
-      )}
+      </span>
+      <span className="grow">
+        <span className="t">{task.title}</span>
+        <span className="s">
+          {projectName}
+          {task.details ? ` · ${task.details}` : ''}
+        </span>
+      </span>
+      <span className="row hide-sm" style={{ gap: 6 }}>
+        <span className="pill" data-hue={task.status === 'Completed' ? 'green' : task.status === 'In Progress' ? 'daily' : 'lib'}>
+          {status.label}
+        </span>
+        <span className="pill" data-hue={priority === 'Urgent' || priority === 'High' ? 'red' : 'lib'}>
+          {priority}
+        </span>
+        {overdue ? (
+          <span className="pill" data-hue="red">
+            Overdue
+          </span>
+        ) : null}
+        {task.dueDate ? (
+          <span className="pill" data-hue="lib">
+            Due {format(task.dueDate, 'd MMM yyyy')}
+          </span>
+        ) : null}
+      </span>
     </>
   )
 
   if (href) {
     return (
-      <Link href={href} className="flex items-start gap-4 px-5 py-3.5 transition hover:bg-slate-50">
+      <Link href={href} className="ritem accent" data-hue={hue}>
         {inner}
       </Link>
     )
   }
 
-  return <div className="flex items-start gap-4 px-5 py-3.5">{inner}</div>
+  return (
+    <div className="ritem accent" data-hue={hue} style={{ cursor: 'default' }}>
+      {inner}
+    </div>
+  )
 }
 
 export function TasksScreen() {
@@ -362,13 +350,10 @@ export function TasksScreen() {
       {pendingApprovals.length > 0 && (
         <section ref={approvalsRef} className="scroll-mt-6 space-y-3">
           <div className="flex items-center justify-between gap-3">
-            <h2 className="text-base font-semibold text-slate-900">Holiday approvals</h2>
+            <h2 className="h2">Holiday approvals</h2>
             {(hasAdminAccess(user) || user?.permissions.manager) && (
-              <Link
-                href="/dashboard/annual-leave/operatives"
-                className="text-xs font-semibold text-blue-600 hover:text-blue-700"
-              >
-                Manage all leave →
+              <Link href="/dashboard/annual-leave/operatives" className="link">
+                Manage all leave
               </Link>
             )}
           </div>
@@ -393,13 +378,15 @@ export function TasksScreen() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search tasks or projects…"
-            className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500 sm:max-w-md"
+            className="in"
+            style={{ maxWidth: 420 }}
+            aria-label="Search tasks or projects"
           />
         </div>
 
         {searchedTasks.length === 0 ? (
-          <div className="empty card pad p-10 text-center">
-            <p className="text-sm font-medium text-slate-500">
+          <div className="empty card pad">
+            <h3>
               {statusFilter === 'todo'
                 ? 'No to do tasks — nice work!'
                 : statusFilter === 'inProgress'
@@ -409,20 +396,19 @@ export function TasksScreen() {
                     : statusFilter === 'overdue'
                       ? 'No overdue tasks.'
                       : 'No tasks match this filter.'}
-            </p>
-            {tasks.length === 0 && (
-              <p className="mt-3 text-sm text-slate-500">
-                Tasks are created from a project&apos;s hub in the iOS app or web project detail page.
-              </p>
+            </h3>
+            {tasks.length === 0 ? (
+              <p>Tasks are created from a project&apos;s hub. Existing tasks keep their original editor when you open them.</p>
+            ) : (
+              <button type="button" className="btn" onClick={() => setStatusFilter('todo')}>
+                Show open tasks
+              </button>
             )}
-            {tasks.length === 0 && (
-              <Link
-                href="/dashboard/projects"
-                className="mt-4 inline-flex rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
-              >
+            {tasks.length === 0 ? (
+              <Link href="/dashboard/projects" className="btn primary">
                 Go to projects
               </Link>
-            )}
+            ) : null}
           </div>
         ) : (
           <div className="space-y-4">
@@ -430,26 +416,33 @@ export function TasksScreen() {
               const firstTask = group.tasks[0]
               const groupHref = firstTask ? getTaskProjectHref(firstTask, projects, smallWorks) : null
               return (
-                <div
-                  key={group.projectId}
-                  className="overflow-hidden card shadow-sm"
-                >
-                  <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3">
-                    <div>
-                      <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Project</p>
+                <section key={group.projectId} className="card">
+                  <div className="card-h" data-hue="proj">
+                    <div className="ico-chip sm">
+                      <svg className="h-[18px] w-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M3 7.5h18M3 12h18M3 16.5h18" />
+                      </svg>
+                    </div>
+                    <div className="grow">
+                      <div className="eyebrow">Project</div>
                       {groupHref ? (
-                        <Link href={groupHref} className="text-sm font-semibold text-slate-900 hover:text-blue-600">
+                        <Link href={groupHref} className="h2" style={{ fontSize: 17 }}>
                           {group.projectName}
                         </Link>
                       ) : (
-                        <p className="text-sm font-semibold text-slate-900">{group.projectName}</p>
+                        <h2 className="h2" style={{ fontSize: 17 }}>{group.projectName}</h2>
                       )}
                     </div>
-                    <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-600">
+                    <span className="count soft">
                       {group.tasks.length} task{group.tasks.length !== 1 ? 's' : ''}
                     </span>
+                    {groupHref ? (
+                      <Link href={groupHref} className="btn sm ghost">
+                        Open project
+                      </Link>
+                    ) : null}
                   </div>
-                  <div className="divide-y divide-slate-100">
+                  <div className="card-b rows">
                     {group.tasks.map((task) => (
                       <TaskRow
                         key={task.id}
@@ -459,7 +452,7 @@ export function TasksScreen() {
                       />
                     ))}
                   </div>
-                </div>
+                </section>
               )
             })}
           </div>

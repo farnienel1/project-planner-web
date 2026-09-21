@@ -224,7 +224,12 @@ export function TimesheetsHub() {
                 </button>
               ))}
             </div>
-            <p className="muted small">{TEAM_TABS.find((item) => item.id === tab)?.help}</p>
+            <div className="banner" data-hue="warn">
+              <div className="ico-chip">
+                <ClockIcon className="h-[18px] w-[18px]" />
+              </div>
+              <div className="grow small">{TEAM_TABS.find((item) => item.id === tab)?.help}</div>
+            </div>
             <TimesheetsScreen
               bookings={bookings}
               managerSiteBookings={managerSiteBookings}
@@ -274,33 +279,50 @@ export function TimesheetsHub() {
       {showDisabled && !showMine && !showTeam ? (
         <DisabledCard />
       ) : (
-        <div className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-2">
-            {showMine ? (
-              <Tile
-                icon={<ClockIcon className="h-6 w-6" />}
-                title="My Timesheets"
-                detail={
-                  showTeam
-                    ? 'Your own hours, expenses and price work'
-                    : 'Current pay run, pending sign-off, and past timesheets.'
-                }
-                onClick={() => router.push('/dashboard/timesheets?surface=mine')}
-              />
-            ) : null}
-            {showTeam && user ? (
-              <ManagerTimesheetsTile
-                user={user}
-                users={users}
-                organizationId={organization?.id}
-                periodStart={currentPeriod.start}
-                periodEnd={currentPeriod.end}
-                invoicing={invoicing}
-                timeZone={timeZone}
-                onClick={() => router.push('/dashboard/timesheets?surface=team&tab=awaiting')}
-              />
-            ) : null}
-          </div>
+        <div className="grid g2">
+          {showMine ? (
+            <button
+              type="button"
+              className="card pad click"
+              data-hue="blue"
+              onClick={() => router.push('/dashboard/timesheets?surface=mine')}
+              style={{ border: 0, textAlign: 'left' }}
+            >
+              <div className="row">
+                <span className="ico-chip lg">
+                  <ClockIcon className="h-7 w-7" />
+                </span>
+                <span className="grow">
+                  <b style={{ fontFamily: 'var(--head)', fontSize: 20 }}>My timesheets</b>
+                  <div className="muted">
+                    {showTeam
+                      ? 'Your own hours, expenses and price work'
+                      : 'Current pay run, pending sign-off, and past timesheets.'}
+                  </div>
+                </span>
+              </div>
+              <div className="row" style={{ marginTop: 18, gap: 10 }}>
+                <span className="pill" data-hue="blue">
+                  Current pay run
+                </span>
+                <span className="pill" data-hue="ts">
+                  {runCopy.periodLine}
+                </span>
+              </div>
+            </button>
+          ) : null}
+          {showTeam && user ? (
+            <ManagerTimesheetsTile
+              user={user}
+              users={users}
+              organizationId={organization?.id}
+              periodStart={currentPeriod.start}
+              periodEnd={currentPeriod.end}
+              invoicing={invoicing}
+              timeZone={timeZone}
+              onClick={() => router.push('/dashboard/timesheets?surface=team&tab=awaiting')}
+            />
+          ) : null}
         </div>
       )}
     </div>
@@ -552,65 +574,41 @@ function ManagerTimesheetsTile({
   }, [organizationId, roster, periodStart, timeZone])
 
   return (
-    <div className="space-y-3 md:col-span-1">
-      <Tile
-        icon={<UserGroupIcon className="h-6 w-6" />}
-        title={hasAdminAccess(user) ? 'User Timesheets' : 'Operative Timesheets'}
-        detail={
-          hasAdminAccess(user)
-            ? 'Review, sign off and export company timesheets'
-            : "Review, sign off and export your team's sheets"
-        }
-        badge={stats.awaiting > 0 ? `${stats.awaiting} new` : undefined}
-        onClick={onClick}
-      />
-      <div className="grid grid-cols-3 gap-2.5">
-        <StatMiniCard value={String(stats.awaiting)} label="Awaiting sign-off" tone="text-amber-600 bg-amber-50" />
-        <StatMiniCard value={String(stats.signed)} label="Signed off" tone="text-green-700 bg-green-50" />
-        <StatMiniCard value={String(stats.exported)} label="Exported" tone="text-slate-600 bg-slate-100" />
+    <button type="button" className="card pad click" data-hue="ts" onClick={onClick} style={{ border: 0, textAlign: 'left' }}>
+      <div className="row">
+        <span className="ico-chip lg">
+          <UserGroupIcon className="h-7 w-7" />
+        </span>
+        <span className="grow">
+          <b style={{ fontFamily: 'var(--head)', fontSize: 20 }}>
+            {hasAdminAccess(user) ? 'User timesheets' : 'Operative timesheets'}
+          </b>
+          <div className="muted">
+            {hasAdminAccess(user)
+              ? 'Review, sign off and export company timesheets'
+              : "Review, sign off and export your team's sheets"}
+          </div>
+        </span>
       </div>
-    </div>
-  )
-}
-
-function StatMiniCard({ value, label, tone }: { value: string; label: string; tone: string }) {
-  return (
-    <div className={`card pad text-center`} data-hue={tone.includes('amber') ? 'warn' : tone.includes('green') ? 'green' : 'lib'}>
-      <b className="block font-[family-name:var(--head)] text-[22px]">{value}</b>
-      <span className="small muted">{label}</span>
-    </div>
-  )
-}
-
-function Tile({
-  icon,
-  title,
-  detail,
-  badge,
-  onClick,
-}: {
-  icon: ReactNode
-  title: string
-  detail: string
-  badge?: string
-  onClick: () => void
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="ritem"
-      data-hue="ts"
-    >
-      <span className="ico-chip">{icon}</span>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-start justify-between gap-2">
-          <p className="text-[17px] font-semibold">{title}</p>
-          {badge ? (
-            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-700">{badge}</span>
-          ) : null}
+      <div className="grid g3" style={{ marginTop: 18, gap: 10 }}>
+        <div data-hue="warn" style={{ background: 'var(--ht)', borderRadius: 14, padding: 10, textAlign: 'center' }}>
+          <b style={{ fontFamily: 'var(--head)', fontSize: 22, color: 'var(--h)' }}>{stats.awaiting}</b>
+          <div className="xs" style={{ fontWeight: 600, color: 'var(--h)' }}>
+            Awaiting sign-off
+          </div>
         </div>
-        <p className="mt-1 text-[14px] text-[var(--ink3)]">{detail}</p>
+        <div data-hue="green" style={{ background: 'var(--ht)', borderRadius: 14, padding: 10, textAlign: 'center' }}>
+          <b style={{ fontFamily: 'var(--head)', fontSize: 22, color: 'var(--h)' }}>{stats.signed}</b>
+          <div className="xs" style={{ fontWeight: 600, color: 'var(--h)' }}>
+            Signed off
+          </div>
+        </div>
+        <div data-hue="lib" style={{ background: 'var(--ht)', borderRadius: 14, padding: 10, textAlign: 'center' }}>
+          <b style={{ fontFamily: 'var(--head)', fontSize: 22, color: 'var(--h)' }}>{stats.exported}</b>
+          <div className="xs" style={{ fontWeight: 600, color: 'var(--h)' }}>
+            Exported
+          </div>
+        </div>
       </div>
     </button>
   )
@@ -618,9 +616,9 @@ function Tile({
 
 function DisabledCard() {
   return (
-    <div className="rounded-2xl bg-white p-5 shadow-sm">
-      <p className="text-[17px] font-semibold">Timesheets follow employment type</p>
-      <p className="mt-2 text-[15px] leading-relaxed text-[var(--ink3)]">{PAYE_DISABLED_BODY}</p>
+    <div className="card pad" data-hue="ts">
+      <h2 className="h2">Timesheets follow employment type</h2>
+      <p className="muted" style={{ marginTop: 8 }}>{PAYE_DISABLED_BODY}</p>
     </div>
   )
 }
