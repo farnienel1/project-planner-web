@@ -9,6 +9,7 @@ import { useRouter } from 'next/navigation'
 import { FolderIcon, PlusIcon, TrashIcon } from '@heroicons/react/24/solid'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { canManageJobTypes } from '@/lib/permissions'
+import { consumeCreateQuery } from '@/lib/navigation/createMenu'
 import { EmptyState, IosFormModal, PageHeader } from '@/components/ios/primitives'
 import { recoverJobTypesFromWork, RESTORED_JOB_TYPES, saveJobTypes, validateJobTypeName } from '@/lib/jobTypes/jobTypesStorage'
 
@@ -26,6 +27,15 @@ export function JobTypesScreen() {
   useEffect(() => {
     if (user && !canManage) router.replace('/dashboard')
   }, [user, canManage, router])
+
+  useEffect(() => {
+    if (!canManage) return
+    if (consumeCreateQuery()) {
+      setError(null)
+      setName('')
+      setAddOpen(true)
+    }
+  }, [canManage])
 
   useEffect(() => {
     if (!organization?.id) return

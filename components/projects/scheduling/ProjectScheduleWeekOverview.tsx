@@ -11,7 +11,6 @@ import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { weekDaysFrom } from '@/lib/scheduling/scheduleUtils'
 import {
   customHoursRangeLabel,
-  estimatedPaidHours,
   formatHoursLabel,
   hoursBreakdown,
   namedSlotLabel,
@@ -22,6 +21,8 @@ import type { Booking, Project } from '@/types'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import { collection, getDocs } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
+import { asClockHhMm } from '@/lib/ios-parity/firestoreCodec'
+import { DEFAULT_PAYROLL_POLICY, loadOrganizationDetails, type OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 
 type SubBooking = {
   id: string
@@ -83,15 +84,22 @@ function bookingRowFromHours(input: {
   workStartTime?: string
   workEndTime?: string
   isBreakRemoved?: boolean
+  unpaidBreakMinutes?: number
+  breakWindowStart?: string
+  breakWindowEnd?: string
+  standardPaidHours?: number
+  standardDayStart?: string
+  standardDayEnd?: string
+  overtimeMultiplier?: number
 }): Pick<DayRow, 'hours' | 'overtimeEquation' | 'range' | 'slot'> {
   const breakdown = hoursBreakdown(input)
-  const slotStr = namedSlotLabel(input.timeSlot)
   const range = customHoursRangeLabel(input)
+  const slotStr = range && range !== 'Custom hours' ? range : namedSlotLabel(input.timeSlot)
   return {
-    hours: estimatedPaidHours(input),
-    overtimeEquation: breakdown.overtimeEquation,
+    hours: breakdown.totalPaidHours,
+    overtimeEquation: breakdown.overtimeLine || breakdown.overtimeEquation,
     range,
-    slot: range ? `${slotStr} · ${range}` : slotStr,
+    slot: slotStr,
   }
 }
 
@@ -127,6 +135,7 @@ export function ProjectScheduleWeekOverview({
   const [expanded, setExpanded] = useState(true)
   const [editingRow, setEditingRow] = useState<DayRow | null>(null)
   const [savingEdit, setSavingEdit] = useState(false)
+  const [payroll, setPayroll] = useState<OrgPayrollTimePolicy>(DEFAULT_PAYROLL_POLICY)
 
   useEffect(() => {
     loadBookings(organizationId)
@@ -134,6 +143,11 @@ export function ProjectScheduleWeekOverview({
     loadOperatives(organizationId)
     loadUsers(organizationId)
     loadSubcontractors(organizationId)
+    loadOrganizationDetails(organizationId)
+      .then((details) => {
+        if (details?.payrollTimePolicy) setPayroll(details.payrollTimePolicy)
+      })
+      .catch(() => {})
   }, [organizationId, loadBookings, loadManagerSiteBookings, loadOperatives, loadUsers, loadSubcontractors])
 
   useEffect(() => {
@@ -150,8 +164,10 @@ export function ProjectScheduleWeekOverview({
               date: (data.date as { toDate?: () => Date })?.toDate?.() || new Date(),
               timeSlot: String(data.timeSlot || 'FULL DAY'),
             }
-            if (typeof data.workStartTime === 'string') row.workStartTime = data.workStartTime
-            if (typeof data.workEndTime === 'string') row.workEndTime = data.workEndTime
+            const start = asClockHhMm(data.workStartTime)
+            const end = asClockHhMm(data.workEndTime)
+            if (start) row.workStartTime = start
+            if (end) row.workEndTime = end
             return row
           })
           .filter((row): row is SubBooking => row !== null)
@@ -191,7 +207,16 @@ export function ProjectScheduleWeekOverview({
             roleLabel: 'Op',
             roleTone: 'operative' as const,
             booking: b,
-            ...bookingRowFromHours(b),
+            ...bookingRowFromHours({
+              ...b,
+              unpaidBreakMinutes: payroll.unpaidBreakMinutes,
+              breakWindowStart: payroll.breakWindowStart,
+              breakWindowEnd: payroll.breakWindowEnd,
+              standardPaidHours: payroll.standardPaidHours,
+              standardDayStart: payroll.standardDayStart,
+              standardDayEnd: payroll.standardDayEnd,
+              overtimeMultiplier: payroll.weekdayOutsideStandardMultiplier,
+            }),
           }
         })
 
@@ -209,7 +234,16 @@ export function ProjectScheduleWeekOverview({
             roleLabel,
             roleTone: 'manager' as const,
             managerBooking: b,
-            ...bookingRowFromHours(b),
+            ...bookingRowFromHours({
+              ...b,
+              unpaidBreakMinutes: payroll.unpaidBreakMinutes,
+              breakWindowStart: payroll.breakWindowStart,
+              breakWindowEnd: payroll.breakWindowEnd,
+              standardPaidHours: payroll.standardPaidHours,
+              standardDayStart: payroll.standardDayStart,
+              standardDayEnd: payroll.standardDayEnd,
+              overtimeMultiplier: payroll.weekdayOutsideStandardMultiplier,
+            }),
           }
         })
 
@@ -223,13 +257,22 @@ export function ProjectScheduleWeekOverview({
             name: sub?.name || 'Sub contractor',
             roleLabel: 'Sub',
             roleTone: 'subcontractor' as const,
-            ...bookingRowFromHours(b),
+            ...bookingRowFromHours({
+              ...b,
+              unpaidBreakMinutes: payroll.unpaidBreakMinutes,
+              breakWindowStart: payroll.breakWindowStart,
+              breakWindowEnd: payroll.breakWindowEnd,
+              standardPaidHours: payroll.standardPaidHours,
+              standardDayStart: payroll.standardDayStart,
+              standardDayEnd: payroll.standardDayEnd,
+              overtimeMultiplier: payroll.weekdayOutsideStandardMultiplier,
+            }),
           }
         })
 
       return [...opRows, ...managerRows, ...subRows]
     })
-  }, [weekDays, projectBookings, projectManagerBookings, subBookings, operatives, users, subcontractors])
+  }, [weekDays, projectBookings, projectManagerBookings, subBookings, operatives, users, subcontractors, payroll])
 
   const people = useMemo((): PersonWeek[] => {
     const order: string[] = []
@@ -466,6 +509,7 @@ export function ProjectScheduleWeekOverview({
           operativeName={editingRow.name}
           projectName={`${project.jobNumber} ${project.siteName}`.trim()}
           saving={savingEdit}
+          payroll={payroll}
           onSave={saveEditing}
           onDelete={deleteEditing}
           onClose={() => setEditingRow(null)}
@@ -513,7 +557,7 @@ function PersonRow({
                   const clickable = Boolean(row.booking || row.managerBooking)
                   const inner = expanded ? (
                     <>
-                      <p className="truncate text-[11px] font-semibold text-slate-800">{row.slot}</p>
+                      <p className="text-[11px] font-semibold leading-tight text-slate-800">{row.slot}</p>
                       <p className="text-[12px] font-bold text-slate-900">{formatHoursLabel(row.hours)}h</p>
                       {row.overtimeEquation ? (
                         <p className="text-[10px] font-semibold leading-tight text-amber-700">{row.overtimeEquation}</p>
@@ -521,10 +565,8 @@ function PersonRow({
                     </>
                   ) : (
                     <>
+                      <p className="text-[10px] font-semibold leading-tight text-slate-700">{row.slot}</p>
                       <p className="text-[11px] font-bold text-slate-900">{formatHoursLabel(row.hours)}h</p>
-                      {row.overtimeEquation ? (
-                        <p className="text-[9px] font-semibold text-amber-700">OT</p>
-                      ) : null}
                     </>
                   )
                   const className = `w-full rounded-lg border px-1.5 ${expanded ? 'py-1.5 min-h-[72px]' : 'py-1 min-h-[44px]'} text-left ${cellFillClass(row.roleTone)} ${clickable ? '' : 'cursor-default'}`

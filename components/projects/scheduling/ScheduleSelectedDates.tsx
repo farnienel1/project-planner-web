@@ -49,7 +49,18 @@ export function ScheduleSelectedDates({
               <button
                 key={slot}
                 type="button"
-                onClick={() => onSlotChange(entry.date, { slot })}
+                onClick={() =>
+                  onSlotChange(
+                    entry.date,
+                    slot === 'CUSTOM'
+                      ? {
+                          slot,
+                          workStartTime: entry.workStartTime || '07:30',
+                          workEndTime: entry.workEndTime || '16:00',
+                        }
+                      : { slot, workStartTime: undefined, workEndTime: undefined }
+                  )
+                }
                 className={`rounded-lg px-2 py-2 text-[11px] font-semibold transition ${
                   entry.slot === slot ? activeClass : 'text-slate-700 hover:bg-white'
                 }`}
