@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { activateOrganizationSubscription } from '@/lib/orgSetup/activateSubscription'
+import { switchActiveOrganization } from '@/lib/orgMembership/membershipService'
 import { persistGuidedSetupDraftIfNeeded } from '@/lib/orgSetup/persistGuidedSetup'
 import { getFirebaseAuth, getFirebaseDb } from '@/lib/firebase/ensureFirebase'
 import { doc, getDoc } from 'firebase/firestore'
@@ -71,6 +72,14 @@ export default function SetupSuccessClient() {
           const to = String(userData?.email || getFirebaseAuth().currentUser?.email || '')
           const orgSnap = await getDoc(doc(db, 'organizations', data.organizationId))
           const organizationName = String(orgSnap.data()?.name || 'your organisation')
+          const currentOrgId = String(userData?.organizationId || '')
+          if (currentOrgId && currentOrgId !== data.organizationId) {
+            try {
+              await switchActiveOrganization(adminUserId, data.organizationId)
+            } catch {
+              // Leave them on the current org — they can pick the new one from Switch organisation.
+            }
+          }
           if (!alreadyConfirmed) {
             if (token && to) {
               const payload = {
@@ -99,7 +108,7 @@ export default function SetupSuccessClient() {
 
         if (!cancelled) {
           setStatus('success')
-          setMessage('Payment confirmed. Your new organisation is ready — you can switch to it any time from Change organisation.')
+          setMessage('Payment confirmed. Opening your new organisation…')
           window.setTimeout(() => {
             window.location.href = '/dashboard'
           }, 900)

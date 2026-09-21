@@ -18,6 +18,10 @@ import { permissionsToFirestoreMap } from '@/lib/firebase/userPayload'
 import type { UserPermissions } from '@/types'
 import type { OrgMembership, UserOrgMembershipRecord } from '@/lib/orgMembership/types'
 import {
+  isSetupIncomplete,
+  subscriptionStatusFromOrgData,
+} from '@/lib/orgSetup/pendingOrganizationReuse'
+import {
   FOUNDER_PERMISSIONS,
   membershipSnapshotFromUserDoc,
   userPatchForActiveOrg,
@@ -95,6 +99,7 @@ function membershipFromOrgDoc(
 ): OrgMembership {
   const createdAt = firestoreDate(orgData.createdAt)
   const summary = membershipSummary(organizationId, { ...orgData, createdAt: createdAt ?? null }, role)
+  const subscriptionStatus = subscriptionStatusFromOrgData(orgData)
   return {
     organizationId,
     organizationName: summary.name,
@@ -105,6 +110,8 @@ function membershipFromOrgDoc(
     isTrial: summary.isTrial,
     trialAccessBlocked: summary.trialAccessBlocked,
     createdAt,
+    setupIncomplete: isSetupIncomplete(orgData),
+    subscriptionStatus,
   }
 }
 

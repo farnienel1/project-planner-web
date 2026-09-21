@@ -68,7 +68,7 @@ test('explicit lock always blocks', () => {
   )
 })
 
-test('sortMemberships puts the active org first then name', () => {
+test('sortMemberships puts the active org first, then complete orgs, then name', () => {
   const sorted = sortMemberships(
     [
       { id: 'b', name: 'Beta' },
@@ -80,5 +80,35 @@ test('sortMemberships puts the active org first then name', () => {
   assert.deepEqual(
     sorted.map((row) => row.id),
     ['c', 'a', 'b']
+  )
+})
+
+test('sortMemberships lists complete same-name orgs before setup-incomplete copies', () => {
+  const sorted = sortMemberships(
+    [
+      {
+        id: 'empty-new',
+        name: 'Acme',
+        setupIncomplete: true,
+        createdAt: new Date('2026-09-20'),
+      },
+      {
+        id: 'empty-old',
+        name: 'Acme',
+        setupIncomplete: true,
+        createdAt: new Date('2026-09-01'),
+      },
+      {
+        id: 'live',
+        name: 'Acme',
+        setupIncomplete: false,
+        createdAt: new Date('2026-01-01'),
+      },
+    ],
+    'empty-new'
+  )
+  assert.deepEqual(
+    sorted.map((row) => row.id),
+    ['empty-new', 'live', 'empty-old']
   )
 })
