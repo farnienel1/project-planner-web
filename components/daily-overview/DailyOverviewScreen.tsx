@@ -427,9 +427,6 @@ function ManagerCard({
     <section className="card" data-hue="user">
       <div className="card-h">
         <h2 className="h2">{title}</h2>
-        <div className="acts">
-          <span className="muted xs">Managers / admins</span>
-        </div>
       </div>
       <div className="card-b rows">
         {bookings.map((b) => {
