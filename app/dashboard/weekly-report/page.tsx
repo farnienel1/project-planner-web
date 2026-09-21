@@ -18,7 +18,6 @@ import {
 import { loadSubcontractorBookings } from '@/lib/weekly-report/loadSubcontractorBookings'
 import type { SubcontractorBookingRow } from '@/lib/weekly-report/weeklyReportData'
 import { WeeklyReportScreen } from '@/components/weekly-report/WeeklyReportScreen'
-import { PageHeader } from '@/components/ios/primitives'
 
 export default function WeeklyReportPage() {
   const router = useRouter()
@@ -75,23 +74,20 @@ export default function WeeklyReportPage() {
   if (loading || !user) return null
 
   return (
-    <div className="stack" data-hue="rep">
-      <PageHeader title="Weekly report" subtitle="Hours, warnings and leave for the selected week" hue="rep" />
-      <WeeklyReportScreen
-        organizationName={organization?.name || orgDetails?.name || 'Organisation'}
-        companyLogoURL={orgDetails?.companyLogoURL}
-        bookings={bookings}
-        managerSiteBookings={managerSiteBookings}
-        subcontractorBookings={subcontractorBookings}
-        subcontractors={subcontractors}
-        operatives={operatives}
-        users={users}
-        projects={projects}
-        smallWorks={smallWorks}
-        holidays={holidayBookings}
-        orgDetails={orgDetails}
-        loading={bookingsLoading || managerLoading || subsLoading}
-      />
-    </div>
+    <WeeklyReportScreen
+      organizationName={organization?.name || orgDetails?.name || 'Organisation'}
+      companyLogoURL={orgDetails?.companyLogoURL}
+      bookings={bookings}
+      managerSiteBookings={managerSiteBookings}
+      subcontractorBookings={subcontractorBookings}
+      subcontractors={subcontractors}
+      operatives={operatives}
+      users={users}
+      projects={projects}
+      smallWorks={smallWorks}
+      holidays={holidayBookings}
+      orgDetails={orgDetails}
+      loading={bookingsLoading || managerLoading || subsLoading}
+    />
   )
 }

@@ -17,6 +17,7 @@ import { resolvePersonName } from '@/lib/annualLeave/annualLeavePerson'
 import {
   filterTasksForView,
   getTaskProjectHref,
+  getTaskDetailHref,
   isTaskAssignedToUser,
   isTaskOverdue,
   resolveProjectName,
@@ -448,7 +449,7 @@ export function TasksScreen() {
                         key={task.id}
                         task={task}
                         projectName={group.projectName}
-                        href={getTaskProjectHref(task, projects, smallWorks)}
+                        href={getTaskDetailHref(task, projects, smallWorks)}
                       />
                     ))}
                   </div>

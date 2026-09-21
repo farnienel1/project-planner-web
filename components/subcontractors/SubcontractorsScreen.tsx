@@ -62,7 +62,7 @@ export function SubcontractorsScreen({ selectedId }: { selectedId?: string }) {
     })
   }, [sorted, search, trade])
 
-  const selected = filtered.find((row) => row.id === selectedId) || subcontractors.find((row) => row.id === selectedId) || null
+  const selected = filtered.find((row) => row.id === selectedId) || filtered[0] || null
   const operativeCount = subcontractors.reduce((sum, row) => sum + row.contacts.length, 0)
 
   function chooseTrade(next: string) {

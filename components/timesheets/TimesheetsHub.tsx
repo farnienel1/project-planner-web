@@ -145,9 +145,9 @@ export function TimesheetsHub() {
   if (!user) return null
   if (!canOpen) {
     return (
-      <div className="rounded-2xl bg-white p-8 text-center shadow-sm">
-        <p className="text-[22px] font-semibold">Timesheets unavailable</p>
-        <p className="mt-2 text-[15px] text-[var(--ink3)]">No timesheet section is available for this account.</p>
+      <div className="empty card pad" data-hue="ts">
+        <h3>Timesheets unavailable</h3>
+        <p>No timesheet section is available for this account.</p>
       </div>
     )
   }
