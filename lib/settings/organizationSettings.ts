@@ -4,6 +4,8 @@ import {
   parseNotificationPreferences,
   type NotificationPreferences,
 } from '@/lib/settings/notificationPreferences'
+import { dayKey } from '@/lib/ios-parity/londonTime'
+import { ianaTimeZoneForCountry } from '@/lib/orgTime/orgTimeZone'
 
 export type WeekendPayrollSettings = {
   allHoursAtMultiplierMode: boolean
@@ -85,6 +87,8 @@ export type OrganizationDetails = {
     postcode?: string
   }
   payrollTimePolicy: OrgPayrollTimePolicy
+  payrollTimePolicyPrior?: OrgPayrollTimePolicy | null
+  payrollTimePolicyEffectiveFrom?: string | null
   annualLeaveDefaults: OrgAnnualLeaveDefaults
   warningDetection: OrgWarningDetectionSettings
   invoicing: OrgInvoicingSettings
@@ -204,6 +208,33 @@ export function payrollPolicyToFirestore(policy: OrgPayrollTimePolicy): Record<s
     saturday: weekendToFirestore(policy.saturday),
     sunday: weekendToFirestore(policy.sunday),
   }
+}
+
+/** iOS PayrollTimePolicyCatalog.policy(for:organization:) — prior rules before effectiveFrom. */
+export function orgPayrollPolicyForDay(
+  day: Date,
+  current: OrgPayrollTimePolicy,
+  prior?: OrgPayrollTimePolicy | null,
+  effectiveFrom?: string | null,
+  timeZone?: string
+): OrgPayrollTimePolicy {
+  if (!effectiveFrom || !prior) return current
+  const key = dayKey(day, timeZone)
+  if (key >= effectiveFrom) return current
+  return prior
+}
+
+function parsePayrollEffectiveFrom(value: unknown): string | null {
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value.trim())) return value.trim()
+  if (value && typeof value === 'object' && 'toDate' in value && typeof (value as { toDate: () => Date }).toDate === 'function') {
+    const parsed = (value as { toDate: () => Date }).toDate()
+    if (!Number.isNaN(parsed.getTime())) return dayKey(parsed)
+  }
+  if (value && typeof value === 'object' && 'seconds' in value) {
+    const seconds = Number((value as { seconds: unknown }).seconds)
+    if (Number.isFinite(seconds)) return dayKey(new Date(seconds * 1000))
+  }
+  return null
 }
 
 function weekendToFirestore(weekend: WeekendPayrollSettings): Record<string, unknown> {
@@ -491,6 +522,10 @@ export async function loadOrganizationDetails(
     companyLogoURL: data.companyLogoURL as string | undefined,
     officeAddress: data.officeAddress as OrganizationDetails['officeAddress'],
     payrollTimePolicy: parsePayrollPolicy(data.payrollTimePolicy as Record<string, unknown> | undefined),
+    payrollTimePolicyPrior: data.payrollTimePolicyPrior
+      ? parsePayrollPolicy(data.payrollTimePolicyPrior as Record<string, unknown>)
+      : null,
+    payrollTimePolicyEffectiveFrom: parsePayrollEffectiveFrom(data.payrollTimePolicyEffectiveFrom),
     annualLeaveDefaults: parseAnnualLeaveDefaults(data.annualLeaveDefaults as Record<string, unknown> | undefined),
     warningDetection: parseWarningDetection(warningRaw),
     invoicing: parseInvoicing(data.invoicing as Record<string, unknown> | undefined),
@@ -516,10 +551,18 @@ export async function saveMaterialCutOffSettings(
 }
 
 export async function savePayrollPolicy(organizationId: string, policy: OrgPayrollTimePolicy): Promise<void> {
-  await updateDoc(doc(db, 'organizations', organizationId), {
+  const existing = await loadOrganizationDetails(organizationId)
+  const timeZone = ianaTimeZoneForCountry(existing?.countryCode)
+  const payload: Record<string, unknown> = {
     payrollTimePolicy: payrollPolicyToFirestore(policy),
+    payrollTimePolicyEffectiveFrom: dayKey(new Date(), timeZone),
+    payrollTimePolicyScheduled: null,
     updatedAt: Timestamp.now(),
-  })
+  }
+  if (existing?.payrollTimePolicy) {
+    payload.payrollTimePolicyPrior = payrollPolicyToFirestore(existing.payrollTimePolicy)
+  }
+  await updateDoc(doc(db, 'organizations', organizationId), payload)
 }
 
 export async function saveAnnualLeaveDefaults(organizationId: string, defaults: OrgAnnualLeaveDefaults): Promise<void> {

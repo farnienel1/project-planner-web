@@ -146,3 +146,31 @@ test('payroll uses historic day rate including explicit £0', () => {
   assert.equal(line!.hasRate, true)
   assert.equal(timesheetRateAnnotation(line!), '£0.00/day')
 })
+
+test('payroll uses prior working-hours policy for days before effectiveFrom', () => {
+  const withTimes = (id: string, date: Date): Booking => ({
+    ...booking(id, date),
+    workStartTime: '07:30',
+    workEndTime: '16:00',
+  })
+  const current = { ...DEFAULT_PAYROLL_POLICY, unpaidBreakMinutes: 0, standardPaidHours: 8.5 }
+  const prior = { ...DEFAULT_PAYROLL_POLICY, unpaidBreakMinutes: 30, standardPaidHours: 8 }
+  const summary = collectTimesheetPayroll({
+    user: user({ id: 'u1' }),
+    bookings: [withTimes('old', new Date('2026-09-20T08:00:00Z')), withTimes('now', new Date('2026-09-21T08:00:00Z'))],
+    managerSiteBookings: [],
+    operatives: [operative],
+    projects: [project],
+    smallWorks: [],
+    periodStart: new Date('2026-09-16T00:00:00Z'),
+    periodEnd: new Date('2026-09-30T00:00:00Z'),
+    payrollPolicy: current,
+    payrollPolicyPrior: prior,
+    payrollPolicyEffectiveFrom: '2026-09-21',
+    timeZone: 'Europe/London',
+  })
+  const oldLine = summary.lineItems.find((item) => item.id === 'op-old-normal')
+  const nowLine = summary.lineItems.find((item) => item.id === 'op-now-normal')
+  assert.equal(oldLine?.paidHours, 8)
+  assert.equal(nowLine?.paidHours, 8.5)
+})

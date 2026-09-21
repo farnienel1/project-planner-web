@@ -43,6 +43,7 @@ import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtil
 import { EmptyState, LoadingSpinner } from '@/components/dashboard/PageShell'
 import { LONDON_TIME_ZONE } from '@/lib/ios-parity/londonTime'
 import { computeInvoicingPeriod } from '@/lib/warnings/warningLookahead'
+import { formatStampInZone } from '@/lib/orgTime/zoneTime'
 
 export type TeamTimesheetTab = 'awaiting' | 'signed' | 'exported'
 
@@ -67,6 +68,8 @@ export function TimesheetsScreen({
   periodStart,
   periodEnd,
   payrollPolicy,
+  payrollPolicyPrior = null,
+  payrollPolicyEffectiveFrom = null,
   invoicing,
   loading,
   teamTab,
@@ -83,6 +86,8 @@ export function TimesheetsScreen({
   periodStart: Date
   periodEnd: Date
   payrollPolicy: OrgPayrollTimePolicy
+  payrollPolicyPrior?: OrgPayrollTimePolicy | null
+  payrollPolicyEffectiveFrom?: string | null
   invoicing: OrgInvoicingSettings
   loading?: boolean
   teamTab: TeamTimesheetTab
@@ -152,6 +157,8 @@ export function TimesheetsScreen({
       periodStart: start,
       periodEnd: end,
       payrollPolicy,
+      payrollPolicyPrior,
+      payrollPolicyEffectiveFrom,
       timeZone,
       history,
       scheduleOptions,
@@ -190,6 +197,8 @@ export function TimesheetsScreen({
           periodStart,
           periodEnd,
           payrollPolicy,
+          payrollPolicyPrior,
+          payrollPolicyEffectiveFrom,
           timeZone,
           history,
           scheduleOptions,
@@ -198,8 +207,7 @@ export function TimesheetsScreen({
           payroll,
           draft,
           timeZone,
-          managerHasSigned: isTimesheetFullyApproved(draft, member),
-          applyLiveReview: false,
+          extrasMode: 'export',
         })
         const pdf = buildTimesheetInvoicePdf({
           organizationName: organization.name || 'Organisation',
@@ -257,6 +265,7 @@ export function TimesheetsScreen({
       for (const member of visible) {
         if (!drafts.get(member.id)) continue
         const full = await loadTimesheetDraft(organization.id, member.id, periodStart, timeZone)
+        if (!full.operativeSignedAt) continue
         await saveTimesheetDraft({
           organizationId: organization.id,
           userId: member.id,
@@ -313,6 +322,8 @@ export function TimesheetsScreen({
                 pillClass="bg-slate-200/70 text-slate-600"
                 summary={summary}
                 periodLine={formatPaymentPeriodLine(period.start, period.end, timeZone)}
+                exportedAt={row.draft.exportedAt}
+                timeZone={timeZone}
                 onClick={() =>
                   router.push(
                     `/dashboard/timesheets?surface=team&tab=exported&user=${row.user.id}&period=${periodStartKey(period.start, timeZone)}`
@@ -381,6 +392,8 @@ function MemberRow({
   pillClass,
   summary,
   periodLine,
+  exportedAt,
+  timeZone,
   onClick,
 }: {
   member: User
@@ -390,6 +403,8 @@ function MemberRow({
   pillClass: string
   summary: { hours: number; overtimeHours: number; priceWork: number; expenses: number }
   periodLine?: string
+  exportedAt?: Date | null
+  timeZone?: string
   onClick: () => void
 }) {
   return (
@@ -407,6 +422,9 @@ function MemberRow({
           <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${pillClass}`}>{pill}</span>
         </div>
         {periodLine ? <p className="mt-0.5 text-[13px] font-semibold text-[#185FA5]">{periodLine}</p> : null}
+        {exportedAt && timeZone ? (
+          <p className="mt-0.5 text-[12px] text-ios-muted">Exported {formatStampInZone(exportedAt, timeZone)}</p>
+        ) : null}
         <p className="mt-1 text-[13px] text-ios-muted">
           Hrs {summary.hours.toFixed(1)} · OT {summary.overtimeHours.toFixed(1)} · PW £{summary.priceWork.toFixed(2)} · Exp £
           {summary.expenses.toFixed(2)}

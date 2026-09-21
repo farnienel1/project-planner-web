@@ -103,6 +103,8 @@ export function TimesheetPeriodPage({
   periodEnd,
   invoicing,
   payrollPolicy,
+  payrollPolicyPrior = null,
+  payrollPolicyEffectiveFrom = null,
   bookings,
   managerSiteBookings,
   operatives,
@@ -118,6 +120,8 @@ export function TimesheetPeriodPage({
   periodEnd: Date
   invoicing: OrgInvoicingSettings
   payrollPolicy: OrgPayrollTimePolicy
+  payrollPolicyPrior?: OrgPayrollTimePolicy | null
+  payrollPolicyEffectiveFrom?: string | null
   bookings: Booking[]
   managerSiteBookings: ManagerSiteBooking[]
   operatives: Operative[]
@@ -168,6 +172,8 @@ export function TimesheetPeriodPage({
         periodStart,
         periodEnd,
         payrollPolicy,
+        payrollPolicyPrior,
+        payrollPolicyEffectiveFrom,
         timeZone,
         history,
         scheduleOptions,
@@ -182,6 +188,8 @@ export function TimesheetPeriodPage({
       periodStart,
       periodEnd,
       payrollPolicy,
+      payrollPolicyPrior,
+      payrollPolicyEffectiveFrom,
       timeZone,
       history,
       scheduleOptions,
@@ -413,8 +421,7 @@ export function TimesheetPeriodPage({
       payroll,
       draft,
       timeZone,
-      managerHasSigned,
-      applyLiveReview: canManagerReview,
+      extrasMode: 'raw',
     })
     const notes = invoiceRateChangeNotes({
       history,
@@ -670,7 +677,7 @@ export function TimesheetPeriodPage({
               <textarea
                 value={draft.managerNote}
                 onChange={(event) => setDraft({ ...draft, managerNote: event.target.value })}
-                onBlur={() => void persist(draft)}
+                onBlur={(event) => void persist({ ...draft, managerNote: event.currentTarget.value })}
                 className="mt-2 min-h-[74px] w-full rounded-xl bg-[#F7F8FC] p-3 text-[15px]"
               />
             </label>

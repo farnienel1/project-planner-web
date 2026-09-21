@@ -90,6 +90,8 @@ export function TimesheetsHub() {
   const { projects, smallWorks, loadProjects, loadSmallWorks } = useProjectStore()
   const [invoicing, setInvoicing] = useState<OrgInvoicingSettings>(DEFAULT_INVOICING)
   const [payrollPolicy, setPayrollPolicy] = useState<OrgPayrollTimePolicy>(DEFAULT_PAYROLL_POLICY)
+  const [payrollPolicyPrior, setPayrollPolicyPrior] = useState<OrgPayrollTimePolicy | null>(null)
+  const [payrollPolicyEffectiveFrom, setPayrollPolicyEffectiveFrom] = useState<string | null>(null)
   const [scheduleOptions, setScheduleOptions] = useState<MyScheduleOptions>(DEFAULT_MY_SCHEDULE)
   const [timeZone, setTimeZone] = useState(ianaTimeZoneForCountry('GB'))
   const [history, setHistory] = useState<OperativeDayRateHistoryCollection>(emptyDayRateHistory())
@@ -110,6 +112,8 @@ export function TimesheetsHub() {
     loadOrganizationDetails(organization.id)
       .then((details) => {
         if (details?.payrollTimePolicy) setPayrollPolicy(details.payrollTimePolicy)
+        setPayrollPolicyPrior(details?.payrollTimePolicyPrior ?? null)
+        setPayrollPolicyEffectiveFrom(details?.payrollTimePolicyEffectiveFrom ?? null)
         if (details?.invoicing) setInvoicing(details.invoicing)
         if (details?.myScheduleOptions) setScheduleOptions(details.myScheduleOptions)
         setTimeZone(ianaTimeZoneForCountry(details?.countryCode))
@@ -153,6 +157,8 @@ export function TimesheetsHub() {
     periodEnd: selectedPeriod.end,
     invoicing,
     payrollPolicy,
+    payrollPolicyPrior,
+    payrollPolicyEffectiveFrom,
     bookings,
     managerSiteBookings,
     operatives,
@@ -231,6 +237,8 @@ export function TimesheetsHub() {
               periodStart={currentPeriod.start}
               periodEnd={currentPeriod.end}
               payrollPolicy={payrollPolicy}
+              payrollPolicyPrior={payrollPolicyPrior}
+              payrollPolicyEffectiveFrom={payrollPolicyEffectiveFrom}
               invoicing={invoicing}
               loading={usersLoading && users.length === 0}
               teamTab={tab}
