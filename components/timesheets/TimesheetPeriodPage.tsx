@@ -7,8 +7,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { Booking, Operative, Project, User } from '@/types'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
-import type { OrgInvoicingSettings, OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
-import { capitalizeDay } from '@/lib/settings/organizationSettings'
+import {
+  capitalizeDay,
+  DEFAULT_MY_SCHEDULE,
+  type MyScheduleOptions,
+  type OrgInvoicingSettings,
+  type OrgPayrollTimePolicy,
+} from '@/lib/settings/organizationSettings'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { newUuid } from '@/lib/firebase/firestoreUtils'
@@ -40,6 +45,8 @@ import {
   type TimesheetPayrollLineItem,
 } from '@/lib/timesheets/timesheetPayrollCollector'
 import { loadTimesheetDraft, saveTimesheetDraft } from '@/lib/timesheets/timesheetStorage'
+import { invoiceLinesForTimesheet } from '@/lib/timesheets/timesheetExport'
+import { emptyDayRateHistory, type OperativeDayRateHistoryCollection } from '@/lib/timesheets/dayRateHistoryStorage'
 import {
   decisionLabel,
   emptyTimesheetDraft,
@@ -79,6 +86,8 @@ export function TimesheetPeriodPage({
   projects,
   smallWorks,
   timeZone,
+  history = emptyDayRateHistory(),
+  scheduleOptions = DEFAULT_MY_SCHEDULE,
 }: {
   subjectUser: User
   mode: 'mine' | 'review'
@@ -92,6 +101,8 @@ export function TimesheetPeriodPage({
   projects: Project[]
   smallWorks: Project[]
   timeZone: string
+  history?: OperativeDayRateHistoryCollection
+  scheduleOptions?: MyScheduleOptions
 }) {
   const { user: viewer, organization } = useAuthStore()
   const { users } = useOrgUserStore()
@@ -120,8 +131,23 @@ export function TimesheetPeriodPage({
         periodEnd,
         payrollPolicy,
         timeZone,
+        history,
+        scheduleOptions,
       }),
-    [subjectUser, bookings, managerSiteBookings, operatives, projects, smallWorks, periodStart, periodEnd, payrollPolicy, timeZone]
+    [
+      subjectUser,
+      bookings,
+      managerSiteBookings,
+      operatives,
+      projects,
+      smallWorks,
+      periodStart,
+      periodEnd,
+      payrollPolicy,
+      timeZone,
+      history,
+      scheduleOptions,
+    ]
   )
 
   const needsCounterSign = requiresLineManagerCounterSign(subjectUser)
@@ -258,11 +284,13 @@ export function TimesheetPeriodPage({
       amount: total,
       vatNumber: subjectUser.vatNumber,
       utrNumber: subjectUser.utrNumber,
-      lines: payroll.lineItems.map((line) => ({
-        date: abbreviatedDate(line.date, timeZone),
-        description: `${line.jobNumber} ${line.projectName} · ${line.details} · ${timesheetHoursRateLine(line)}`,
-        amount: effectivePayrollAmount(line, draft, managerHasSigned, canManagerReview),
-      })),
+      lines: invoiceLinesForTimesheet({
+        payroll,
+        draft,
+        timeZone,
+        managerHasSigned,
+        applyLiveReview: canManagerReview,
+      }),
     })
     downloadTimesheetInvoice(html, `invoice-${subjectUser.surname || 'timesheet'}-${periodTitle}.html`)
     printTimesheetInvoice(html)

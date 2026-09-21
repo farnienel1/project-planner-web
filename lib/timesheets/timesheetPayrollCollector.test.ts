@@ -1,8 +1,9 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import type { Booking, Operative, Project, User } from '../../types/index.ts'
-import { collectTimesheetPayroll } from './timesheetPayrollCollector.ts'
+import { collectTimesheetPayroll, timesheetRateAnnotation } from './timesheetPayrollCollector.ts'
 import { DEFAULT_PAYROLL_POLICY } from '../settings/organizationSettings.ts'
+import type { OperativeDayRateHistoryCollection } from './dayRateHistoryStorage.ts'
 
 function user(partial: Partial<User> & { id: string }): User {
   return {
@@ -107,4 +108,41 @@ test('payroll skips PAYE days after an employment-type transition', () => {
   })
   assert.equal(summary.lineItems.some((line) => line.id.startsWith('op-b1')), true)
   assert.equal(summary.lineItems.some((line) => line.id.startsWith('op-b2')), false)
+})
+
+test('payroll uses historic day rate including explicit £0', () => {
+  const history: OperativeDayRateHistoryCollection = {
+    byUserId: {
+      u1: [
+        {
+          id: 'h1',
+          userId: 'u1',
+          operativeId: 'op1',
+          dayRate: 0,
+          effectiveAt: new Date('2026-01-01T00:00:00Z'),
+          createdAt: new Date('2026-01-01T00:00:00Z'),
+        },
+      ],
+    },
+    byOperativeId: {},
+  }
+  const summary = collectTimesheetPayroll({
+    user: user({ id: 'u1', dayRate: 250 }),
+    bookings: [booking('b1', new Date('2026-09-21T08:00:00Z'))],
+    managerSiteBookings: [],
+    operatives: [operative],
+    projects: [project],
+    smallWorks: [],
+    periodStart: new Date('2026-09-16T00:00:00Z'),
+    periodEnd: new Date('2026-09-30T00:00:00Z'),
+    payrollPolicy: DEFAULT_PAYROLL_POLICY,
+    timeZone: 'Europe/London',
+    history,
+  })
+  const line = summary.lineItems.find((item) => item.id === 'op-b1-normal')
+  assert.ok(line)
+  assert.equal(line!.amount, 0)
+  assert.equal(line!.dayRate, 0)
+  assert.equal(line!.hasRate, true)
+  assert.equal(timesheetRateAnnotation(line!), '£0.00/day')
 })

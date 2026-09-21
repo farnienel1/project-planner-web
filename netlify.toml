@@ -9,9 +9,9 @@
 [context.branch-deploy]
   ignore = "exit 0"
 
-# Skip preview builds that only touch docs, Cursor rules, or markdown.
+# Skip preview builds that only touch docs, Cursor rules, markdown, or unit tests.
 [context.deploy-preview]
-  ignore = "git diff --quiet $CACHED_COMMIT_REF $COMMIT_REF -- . ':!docs' ':!.cursor' ':!*.md'"
+  ignore = "git diff --quiet $CACHED_COMMIT_REF $COMMIT_REF -- . ':!docs' ':!.cursor' ':!*.md' ':!**/*.test.ts' ':!**/*.test.tsx'"
 
 [[plugins]]
   package = "@netlify/plugin-nextjs"

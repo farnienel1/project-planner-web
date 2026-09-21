@@ -133,33 +133,35 @@ export function computeInvoicingPeriod(
 export function computeWarningCoverageWindow(
   referenceDate: Date,
   warningDetection: OrgWarningDetectionSettings,
-  invoicing?: OrgInvoicingSettings
+  invoicing?: OrgInvoicingSettings,
+  timeZone: string = LONDON_TIME_ZONE
 ): WarningCoverageWindow {
-  const today = londonMidnight(referenceDate)
+  const today = londonMidnight(referenceDate, timeZone)
 
   switch (warningDetection.clashLookaheadMode) {
     case 'numberOfDays': {
       const days = Math.max(1, Math.min(warningDetection.clashLookaheadDays || 1, 366))
-      return { start: today, end: addLondonDays(today, days - 1) }
+      return { start: today, end: addLondonDays(today, days - 1, timeZone) }
     }
     case 'endOfInvoicingPeriod': {
       if (!invoicing) {
-        return { start: startOfLondonWeek(today), end: endOfLondonWeek(today) }
+        return { start: startOfLondonWeek(today, timeZone), end: endOfLondonWeek(today, timeZone) }
       }
-      return computeInvoicingPeriod(today, invoicing)
+      return computeInvoicingPeriod(today, invoicing, timeZone)
     }
     case 'endOfWorkingWeek':
     default:
-      return { start: startOfLondonWeek(today), end: endOfLondonWeek(today) }
+      return { start: startOfLondonWeek(today, timeZone), end: endOfLondonWeek(today, timeZone) }
   }
 }
 
 export function computeWarningLookaheadEnd(
   referenceDate: Date,
   warningDetection: OrgWarningDetectionSettings,
-  invoicing?: OrgInvoicingSettings
+  invoicing?: OrgInvoicingSettings,
+  timeZone: string = LONDON_TIME_ZONE
 ): Date {
-  return computeWarningCoverageWindow(referenceDate, warningDetection, invoicing).end
+  return computeWarningCoverageWindow(referenceDate, warningDetection, invoicing, timeZone).end
 }
 
 function formatScanDay(date: Date): string {
@@ -189,19 +191,24 @@ export function formatNumberOfDaysScanSummary(days: number, referenceDate = new 
   return `Scans ${n} calendar days including today: ${start} through ${end}.`
 }
 
-export function isDateWithinWarningWindow(date: Date, windowStart: Date, windowEnd: Date): boolean {
-  const key = dayKey(date)
-  return key >= dayKey(windowStart) && key <= dayKey(windowEnd)
+export function isDateWithinWarningWindow(
+  date: Date,
+  windowStart: Date,
+  windowEnd: Date,
+  timeZone: string = LONDON_TIME_ZONE
+): boolean {
+  const key = dayKey(date, timeZone)
+  return key >= dayKey(windowStart, timeZone) && key <= dayKey(windowEnd, timeZone)
 }
 
-/** Iterate each London calendar day in an inclusive window. */
-export function eachLondonDay(start: Date, end: Date): Date[] {
+/** Iterate each calendar day in an inclusive window in the org zone. */
+export function eachLondonDay(start: Date, end: Date, timeZone: string = LONDON_TIME_ZONE): Date[] {
   const days: Date[] = []
-  let cursor = londonMidnight(start)
-  const lastKey = dayKey(end)
-  while (dayKey(cursor) <= lastKey) {
+  let cursor = londonMidnight(start, timeZone)
+  const lastKey = dayKey(end, timeZone)
+  while (dayKey(cursor, timeZone) <= lastKey) {
     days.push(cursor)
-    cursor = addLondonDays(cursor, 1)
+    cursor = addLondonDays(cursor, 1, timeZone)
     if (days.length > 400) break
   }
   return days

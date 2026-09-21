@@ -152,13 +152,17 @@ export function EditUserProfile({
   const [draftTypePermissions, setDraftTypePermissions] = useState<UserPermissions | null>(null)
   const [busyAction, setBusyAction] = useState<string | null>(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [originalDayRate, setOriginalDayRate] = useState<number | undefined>(undefined)
 
   useEffect(() => {
     if (!organization?.id) return
     loadUsers(organization.id)
     loadOperatives(organization.id)
     getUser(userId)
-      .then(setTarget)
+      .then((row) => {
+        setTarget(row)
+        setOriginalDayRate(row?.dayRate)
+      })
       .finally(() => setLoading(false))
   }, [organization?.id, userId, getUser, loadUsers, loadOperatives])
 
@@ -236,6 +240,24 @@ export function EditUserProfile({
       }
       await saveUser(toSave)
       await syncLinkedOperative(organization.id, toSave, operatives)
+      try {
+        const { loadOperativeDayRateHistory, recordDayRateChangeIfNeeded } = await import(
+          '@/lib/timesheets/dayRateHistoryStorage'
+        )
+        const history = await loadOperativeDayRateHistory(organization.id)
+        await recordDayRateChangeIfNeeded({
+          organizationId: organization.id,
+          userId: toSave.id,
+          operativeId: findOperativeForUser(toSave, operatives)?.id,
+          previousDayRate: originalDayRate,
+          nextDayRate: toSave.dayRate ?? null,
+          createdAt: toSave.createdAt,
+          history,
+        })
+        setOriginalDayRate(toSave.dayRate)
+      } catch {
+        // History write is best-effort so a profile save still succeeds.
+      }
       await loadUsers(organization.id)
       setSuccess('Profile saved.')
       setSaved(true)

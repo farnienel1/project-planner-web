@@ -14,6 +14,7 @@ import {
   DEFAULT_PAYROLL_POLICY,
   DEFAULT_WARNING_DETECTION,
 } from '@/lib/settings/organizationSettings'
+import { ianaTimeZoneForCountry } from '@/lib/orgTime/orgTimeZone'
 import type { NotificationPreferences } from '@/lib/settings/notificationPreferences'
 import { computeOperativeBookingClashWarnings, type OperativeBookingClashWarning } from '@/lib/scheduling/bookingClashUtils'
 import { computeManagerBookingClashWarnings, type ManagerBookingClashWarning } from '@/lib/warnings/managerClashWarnings'
@@ -157,6 +158,7 @@ export function generateOrgWarnings(input: {
   const payrollPolicy = input.payrollPolicy ?? input.orgDetails?.payrollTimePolicy ?? DEFAULT_PAYROLL_POLICY
   const now = input.referenceDate ?? new Date()
   const prefs = input.notificationPreferences ?? input.orgDetails?.materialCutOff ?? null
+  const timeZone = ianaTimeZoneForCountry(input.orgDetails?.countryCode)
 
   const clashWarnings = warningDetection.detectClashes
     ? filterWarningsByLookahead(
@@ -166,7 +168,8 @@ export function generateOrgWarnings(input: {
         }),
         warningDetection,
         invoicing,
-        now
+        now,
+        timeZone
       )
     : []
 
@@ -179,7 +182,8 @@ export function generateOrgWarnings(input: {
         }),
         warningDetection,
         invoicing,
-        now
+        now,
+        timeZone
       )
     : []
 
@@ -193,6 +197,7 @@ export function generateOrgWarnings(input: {
     invoicing,
     payrollPolicy,
     referenceDate: now,
+    timeZone,
   })
 
   const materialWarnings = computeMissedMaterialOrderWarnings(

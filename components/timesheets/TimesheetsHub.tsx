@@ -14,7 +14,6 @@ import { useOperativeStore } from '@/lib/stores/operativeStore'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { useProjectStore } from '@/lib/stores/projectStore'
 import {
-  canAccessMyTimesheets,
   canAccessOperativeTimesheets,
   canAccessTimesheetsSurface,
   hasAdminAccess,
@@ -22,8 +21,10 @@ import {
 } from '@/lib/permissions'
 import {
   DEFAULT_INVOICING,
+  DEFAULT_MY_SCHEDULE,
   DEFAULT_PAYROLL_POLICY,
   loadOrganizationDetails,
+  type MyScheduleOptions,
   type OrgInvoicingSettings,
   type OrgPayrollTimePolicy,
 } from '@/lib/settings/organizationSettings'
@@ -44,6 +45,12 @@ import {
   awaitingManagerSignOff,
   isTimesheetFullyApproved,
 } from '@/lib/timesheets/timesheetApprovalPolicy'
+import { canAccessMyTimesheetsWithPolicy } from '@/lib/timesheets/timesheetPayrollPolicy'
+import {
+  emptyDayRateHistory,
+  loadOperativeDayRateHistory,
+  type OperativeDayRateHistoryCollection,
+} from '@/lib/timesheets/dayRateHistoryStorage'
 import type { User } from '@/types'
 
 const PAYE_DISABLED_BODY =
@@ -58,7 +65,7 @@ const TEAM_TABS: Array<{ id: TeamTimesheetTab; label: string; help: string }> = 
   {
     id: 'signed',
     label: 'Signed off',
-    help: 'Counter-signed and ready. Email and export sends timesheet PDFs to your email for filing. On web, open a sheet and tap Generate Invoice.',
+    help: 'Counter-signed and ready. Email and export sends timesheets to your email for filing.',
   },
   {
     id: 'exported',
@@ -82,9 +89,11 @@ export function TimesheetsHub() {
   const { projects, smallWorks, loadProjects, loadSmallWorks } = useProjectStore()
   const [invoicing, setInvoicing] = useState<OrgInvoicingSettings>(DEFAULT_INVOICING)
   const [payrollPolicy, setPayrollPolicy] = useState<OrgPayrollTimePolicy>(DEFAULT_PAYROLL_POLICY)
+  const [scheduleOptions, setScheduleOptions] = useState<MyScheduleOptions>(DEFAULT_MY_SCHEDULE)
   const [timeZone, setTimeZone] = useState(ianaTimeZoneForCountry('GB'))
+  const [history, setHistory] = useState<OperativeDayRateHistoryCollection>(emptyDayRateHistory())
 
-  const showMine = canAccessMyTimesheets(user)
+  const showMine = user ? canAccessMyTimesheetsWithPolicy(user, invoicing, new Date(), timeZone) : false
   const showTeam = canAccessOperativeTimesheets(user)
   const showDisabled = shouldShowTimesheetsDisabledMessage(user)
   const canOpen = canAccessTimesheetsSurface(user)
@@ -101,8 +110,12 @@ export function TimesheetsHub() {
       .then((details) => {
         if (details?.payrollTimePolicy) setPayrollPolicy(details.payrollTimePolicy)
         if (details?.invoicing) setInvoicing(details.invoicing)
+        if (details?.myScheduleOptions) setScheduleOptions(details.myScheduleOptions)
         setTimeZone(ianaTimeZoneForCountry(details?.countryCode))
       })
+      .catch(() => {})
+    loadOperativeDayRateHistory(organization.id)
+      .then(setHistory)
       .catch(() => {})
   }, [organization?.id, loadBookings, loadManagerSiteBookings, loadOperatives, loadUsers, loadProjects, loadSmallWorks])
 
@@ -145,6 +158,8 @@ export function TimesheetsHub() {
     projects,
     smallWorks,
     timeZone,
+    history,
+    scheduleOptions,
   }
 
   if (surface === 'mine') {
@@ -213,12 +228,17 @@ export function TimesheetsHub() {
               managerSiteBookings={managerSiteBookings}
               operatives={operatives}
               users={users}
+              projects={projects}
+              smallWorks={smallWorks}
               periodStart={currentPeriod.start}
               periodEnd={currentPeriod.end}
               payrollPolicy={payrollPolicy}
+              invoicing={invoicing}
               loading={bookingsLoading || managerLoading}
               teamTab={tab}
               timeZone={timeZone}
+              history={history}
+              scheduleOptions={scheduleOptions}
             />
           </>
         )}
