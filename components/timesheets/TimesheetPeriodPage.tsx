@@ -68,7 +68,7 @@ import {
   downloadTimesheetPdf,
   timesheetInvoicePdfFileName,
 } from '@/lib/timesheets/invoicePdf'
-import { subjectForUser } from '@/lib/timesheets/timesheetWeekUtils'
+import { isTimesheetAgreedManagerCandidate, subjectForUser } from '@/lib/timesheets/timesheetWeekUtils'
 import { SignaturePad } from '@/components/timesheets/SignaturePad'
 import { LoadingSpinner } from '@/components/dashboard/PageShell'
 import { formatAbbreviatedDayInZone, formatStampInZone } from '@/lib/orgTime/zoneTime'
@@ -802,7 +802,7 @@ export function TimesheetPeriodPage({
           mode={extraMode}
           jobs={[...projects, ...smallWorks].filter((row) => row.jobNumber)}
           managerNames={users
-            .filter((row) => row.permissions.manager || row.permissions.adminAccess || row.isSuperAdmin)
+            .filter(isTimesheetAgreedManagerCandidate)
             .map((row) => `${row.firstName} ${row.surname}`.trim())
             .filter(Boolean)}
           timeZone={timeZone}
@@ -1216,18 +1216,22 @@ function ReviewExtras({
       {draft.expenseEntries.length > 0 ? (
         <section className="rounded-2xl bg-white p-4 shadow-[0_1px_2px_rgba(0,0,0,0.10)]">
           <p className="text-[17px] font-semibold">{canReview ? 'Expenses — review required' : 'Expenses'}</p>
-          {draft.expenseEntries.map((entry, index) => (
-            <div key={entry.id} className="mt-3 flex items-start justify-between gap-3">
+          {draft.expenseEntries.map((entry, index) => {
+            const effective = effectiveExpenseAmount(entry, !canReview, canReview)
+            const removed = entry.managerDecision === 'declined'
+            return (
+            <div key={entry.id} className={`mt-3 flex items-start justify-between gap-3 ${removed ? 'opacity-55' : ''}`}>
               <div>
-                <p className="font-semibold">{entry.title}</p>
-                <p className="text-[12px] text-ios-muted">
+                <p className={`font-semibold ${removed ? 'line-through' : ''}`}>{entry.title}</p>
+                <p className={`text-[12px] text-ios-muted ${removed ? 'line-through' : ''}`}>
                   {abbreviatedDate(entry.date, timeZone)} · {entry.jobNumber}
                 </p>
                 <AdjustedAmountText
                   original={entry.amount}
-                  effective={entry.managerDecision === 'edited' ? entry.managerRevisedAmount ?? entry.amount : entry.managerDecision === 'declined' ? 0 : entry.amount}
+                  effective={effective}
                   decision={entry.managerDecision}
-                  managerHasSigned={!canReview && entry.managerDecision !== 'pending'}
+                  managerHasSigned={!canReview}
+                  applyLiveReview={canReview}
                 />
               </div>
               {canReview ? (
@@ -1255,24 +1259,29 @@ function ReviewExtras({
                 />
               ) : null}
             </div>
-          ))}
+            )
+          })}
         </section>
       ) : null}
       {draft.priceWorkEntries.length > 0 ? (
         <section className="rounded-2xl bg-white p-4 shadow-[0_1px_2px_rgba(0,0,0,0.10)]">
           <p className="text-[17px] font-semibold">{canReview ? 'Price work — review required' : 'Price work'}</p>
-          {draft.priceWorkEntries.map((entry, index) => (
-            <div key={entry.id} className="mt-3 flex items-start justify-between gap-3">
+          {draft.priceWorkEntries.map((entry, index) => {
+            const effective = effectivePriceWorkAmount(entry, !canReview, canReview)
+            const removed = entry.managerDecision === 'declined'
+            return (
+            <div key={entry.id} className={`mt-3 flex items-start justify-between gap-3 ${removed ? 'opacity-55' : ''}`}>
               <div>
-                <p className="font-semibold">{entry.title}</p>
-                <p className="text-[12px] text-ios-muted">
+                <p className={`font-semibold ${removed ? 'line-through' : ''}`}>{entry.title}</p>
+                <p className={`text-[12px] text-ios-muted ${removed ? 'line-through' : ''}`}>
                   Agreed with: {entry.agreedManagerName} · {abbreviatedDate(entry.startDate, timeZone)} · {entry.jobNumber}
                 </p>
                 <AdjustedAmountText
                   original={entry.amount}
-                  effective={entry.managerDecision === 'edited' ? entry.managerRevisedAmount ?? entry.amount : entry.managerDecision === 'declined' ? 0 : entry.amount}
+                  effective={effective}
                   decision={entry.managerDecision}
-                  managerHasSigned={!canReview && entry.managerDecision !== 'pending'}
+                  managerHasSigned={!canReview}
+                  applyLiveReview={canReview}
                 />
               </div>
               {canReview ? (
@@ -1300,7 +1309,8 @@ function ReviewExtras({
                 />
               ) : null}
             </div>
-          ))}
+            )
+          })}
         </section>
       ) : null}
     </>
