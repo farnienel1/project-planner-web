@@ -5,7 +5,7 @@
  * Doc id: timesheet_{userId}_{unixStartOfDay} using the organisation origin-country zone.
  * Legacy yyyy-MM-dd / ISO-week keys are still read so older web drafts are not lost.
  */
-import { doc, getDoc, setDoc, Timestamp } from 'firebase/firestore'
+import { collection, doc, getDoc, getDocs, query, setDoc, Timestamp, where } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
 import { sanitizeForFirestore } from '@/lib/firebase/firestoreUtils'
 import { newUuid } from '@/lib/firebase/firestoreUtils'
@@ -23,6 +23,27 @@ import {
 
 export function timesheetDocId(userId: string, weekStart: Date, timeZone: string = LONDON_TIME_ZONE): string {
   return `timesheet_${userId}_${unixStartOfDay(weekStart, timeZone)}`
+}
+
+/** iOS uses Calendar.current midnight; web uses org zone. Try both plus UTC. */
+export function candidateTimesheetDocIds(
+  userId: string,
+  weekStart: Date,
+  timeZone: string = LONDON_TIME_ZONE
+): string[] {
+  const stamps = new Set<number>([
+    unixStartOfDay(weekStart, timeZone),
+    unixStartOfDay(weekStart, LONDON_TIME_ZONE),
+    unixStartOfDay(weekStart, 'UTC'),
+  ])
+  const key = dayKey(weekStart, timeZone)
+  const [year, month, day] = key.split('-').map(Number)
+  stamps.add(Math.floor(Date.UTC(year, month - 1, day) / 1000))
+  return [
+    ...Array.from(stamps).map((stamp) => `timesheet_${userId}_${stamp}`),
+    legacyPeriodDocId(userId, weekStart, timeZone),
+    legacyWeekDocId(userId, weekStart),
+  ]
 }
 
 function legacyPeriodDocId(userId: string, weekStart: Date, timeZone: string): string {
@@ -182,21 +203,39 @@ async function readDoc(organizationId: string, docId: string): Promise<Record<st
   return snap.exists() ? (snap.data() as Record<string, unknown>) : null
 }
 
+function weekStartMatches(data: Record<string, unknown>, weekStart: Date, timeZone: string): boolean {
+  const target = dayKey(weekStart, timeZone)
+  if (typeof data.weekStartKey === 'string' && data.weekStartKey === target) return true
+  const stored = parseFirestoreDate(data.weekStart)
+  if (stored && dayKey(stored, timeZone) === target) return true
+  return false
+}
+
 export async function loadTimesheetDraft(
   organizationId: string,
   userId: string,
   weekStart: Date,
   timeZone: string = LONDON_TIME_ZONE
 ): Promise<TimesheetDraft> {
-  const ids = [
-    timesheetDocId(userId, weekStart, timeZone),
-    legacyPeriodDocId(userId, weekStart, timeZone),
-    legacyWeekDocId(userId, weekStart),
-  ]
-  const unique = [...new Set(ids)]
+  const unique = [...new Set(candidateTimesheetDocIds(userId, weekStart, timeZone))]
   for (const id of unique) {
     const data = await readDoc(organizationId, id)
     if (data) return draftFromFirestoreMap(data)
+  }
+  try {
+    const snap = await getDocs(
+      query(collection(db, 'organizations', organizationId, 'settings'), where('userId', '==', userId))
+    )
+    for (const entry of snap.docs) {
+      const data = entry.data() as Record<string, unknown>
+      if (weekStartMatches(data, weekStart, timeZone)) return draftFromFirestoreMap(data)
+      const suffix = entry.id.split('_').pop()
+      if (suffix && unique.some((id) => id.endsWith(`_${suffix}`))) {
+        return draftFromFirestoreMap(data)
+      }
+    }
+  } catch {
+    // Permission or missing index — fall back to an empty draft.
   }
   return emptyTimesheetDraft()
 }

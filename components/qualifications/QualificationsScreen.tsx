@@ -13,7 +13,7 @@ import { useOperativeStore } from '@/lib/stores/operativeStore'
 import {
   canAccessQualificationsHub,
   canManageOrganisationQualifications,
-  isOperativeMode,
+  canViewMyQualifications,
 } from '@/lib/permissions'
 import { findOperativeForUser } from '@/lib/operatives/operativeRosterUtils'
 import { EmptyState, IosFormModal, PageHeader } from '@/components/ios/primitives'
@@ -28,12 +28,12 @@ import { qualificationCertificatePath, uploadFile } from '@/lib/firebase/storage
 
 type Tab = 'organisation' | 'mine'
 
-export function QualificationsScreen() {
+export function QualificationsScreen({ initialTab }: { initialTab?: Tab } = {}) {
   const { user, organization } = useAuthStore()
   const { operatives, loadOperatives, saveOperative } = useOperativeStore()
   const canManageOrg = canManageOrganisationQualifications(user)
-  const canOpenHub = canAccessQualificationsHub(user) || isOperativeMode(user)
-  const [tab, setTab] = useState<Tab>(canManageOrg ? 'organisation' : 'mine')
+  const canOpenHub = canAccessQualificationsHub(user) || canViewMyQualifications(user)
+  const [tab, setTab] = useState<Tab>(initialTab || (canManageOrg ? 'organisation' : 'mine'))
   const [templates, setTemplates] = useState<Qualification[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)

@@ -205,10 +205,10 @@ const TOPICS: Topic[] = [
         id: 'quals',
         title: 'Qualifications',
         summary: 'Templates, My Qualifications and Save.',
-        href: '/dashboard/qualifications',
+        href: '/dashboard/my-qualifications',
         body: [
           'Organisation templates are the shared list. People assign those templates on My Qualifications, then set their own expiry date and certificate.',
-          'Upload the file, then tap Save. Leaving the page without Save discards unsaved expiry dates and certificates.',
+          'Upload the file, then tap Save. Leaving the page without Save discards unsaved expiry dates and certificates. Operatives use My Qualifications; managers and admins use Qualifications in Navigate.',
         ],
       },
       {

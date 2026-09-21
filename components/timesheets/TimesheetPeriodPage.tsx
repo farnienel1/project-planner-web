@@ -46,24 +46,19 @@ import { buildTimesheetInvoiceHtml, downloadTimesheetInvoice, printTimesheetInvo
 import { subjectForUser } from '@/lib/timesheets/timesheetWeekUtils'
 import { SignaturePad } from '@/components/timesheets/SignaturePad'
 import { LoadingSpinner } from '@/components/dashboard/PageShell'
+import { formatAbbreviatedDayInZone, formatStampInZone } from '@/lib/orgTime/zoneTime'
 
 function money(value: number): string {
   return `£${value.toFixed(2)}`
 }
 
-function abbreviatedDate(date: Date): string {
-  return new Intl.DateTimeFormat('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }).format(date)
+function abbreviatedDate(date: Date, timeZone: string): string {
+  return formatAbbreviatedDayInZone(date, timeZone)
 }
 
-function signedStamp(date: Date | null | undefined): string {
+function signedStamp(date: Date | null | undefined, timeZone: string): string {
   if (!date) return ''
-  return new Intl.DateTimeFormat('en-GB', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(date)
+  return formatStampInZone(date, timeZone)
 }
 
 export function TimesheetPeriodPage({
@@ -249,7 +244,7 @@ export function TimesheetPeriodPage({
       vatNumber: subjectUser.vatNumber,
       utrNumber: subjectUser.utrNumber,
       lines: payroll.lineItems.map((line) => ({
-        date: abbreviatedDate(line.date),
+        date: abbreviatedDate(line.date, timeZone),
         description: `${line.jobNumber} ${line.projectName} · ${line.details} · ${timesheetHoursRateLine(line)}`,
         amount: effectivePayrollAmount(line, draft, managerHasSigned, canManagerReview),
       })),
@@ -351,6 +346,7 @@ export function TimesheetPeriodPage({
                 draft={draft}
                 managerHasSigned={managerHasSigned}
                 canReview={canManagerReview}
+                timeZone={timeZone}
                 onApprove={() => setLineDecision(line.id, 'approved')}
                 onDecline={() => setLineDecision(line.id, 'declined')}
                 onEdit={() => {
@@ -452,14 +448,14 @@ export function TimesheetPeriodPage({
           ) : (
             <SignedBlock
               base64={draft.operativeSignatureImageBase64}
-              caption={`Signed by ${draft.operativeSignedByName || 'Operative'} on ${signedStamp(draft.operativeSignedAt)}`}
+              caption={`Signed by ${draft.operativeSignedByName || 'Operative'} on ${signedStamp(draft.operativeSignedAt, timeZone)}`}
             />
           )}
 
           {needsCounterSign && draft.managerSignedAt ? (
             <SignedBlock
               base64={draft.managerSignatureImageBase64}
-              caption={`Manager: ${draft.managerSignedByName || 'Line manager'} · ${signedStamp(draft.managerSignedAt)}`}
+              caption={`Manager: ${draft.managerSignedByName || 'Line manager'} · ${signedStamp(draft.managerSignedAt, timeZone)}`}
             />
           ) : null}
 
@@ -493,6 +489,7 @@ export function TimesheetPeriodPage({
         <ReviewExtras
           draft={draft}
           canReview={canManagerReview}
+          timeZone={timeZone}
           onSave={(next) => void persist(next)}
         />
       )}
@@ -510,7 +507,7 @@ export function TimesheetPeriodPage({
             {draft.operativeSignedAt ? (
               <SignedBlock
                 base64={draft.operativeSignatureImageBase64}
-                caption={`Operative: ${draft.operativeSignedByName || `${subjectUser.firstName} ${subjectUser.surname}`.trim()} · ${signedStamp(draft.operativeSignedAt)}`}
+                caption={`Operative: ${draft.operativeSignedByName || `${subjectUser.firstName} ${subjectUser.surname}`.trim()} · ${signedStamp(draft.operativeSignedAt, timeZone)}`}
               />
             ) : (
               <p className="mt-2 text-[14px] text-amber-700">Operative has not signed this week yet.</p>
@@ -519,7 +516,7 @@ export function TimesheetPeriodPage({
               draft.managerSignedAt ? (
                 <SignedBlock
                   base64={draft.managerSignatureImageBase64}
-                  caption={`Manager approved: ${draft.managerSignedByName || 'Manager'} · ${signedStamp(draft.managerSignedAt)}`}
+                  caption={`Manager approved: ${draft.managerSignedByName || 'Manager'} · ${signedStamp(draft.managerSignedAt, timeZone)}`}
                 />
               ) : (
                 <div className="mt-3 flex h-[82px] items-center justify-center rounded-[10px] border border-dashed border-slate-300 italic text-slate-500">
@@ -630,6 +627,7 @@ function PayrollLine({
   draft,
   managerHasSigned,
   canReview,
+  timeZone,
   onApprove,
   onDecline,
   onEdit,
@@ -638,6 +636,7 @@ function PayrollLine({
   draft: TimesheetDraft
   managerHasSigned: boolean
   canReview: boolean
+  timeZone: string
   onApprove: () => void
   onDecline: () => void
   onEdit: () => void
@@ -649,7 +648,7 @@ function PayrollLine({
   return (
     <li className={`flex gap-3 px-4 py-3 ${removed ? 'opacity-55' : ''}`}>
       <div className="min-w-0 flex-1">
-        <p className={`text-[15px] font-bold ${removed ? 'line-through' : ''}`}>{abbreviatedDate(line.date)}</p>
+        <p className={`text-[15px] font-bold ${removed ? 'line-through' : ''}`}>{abbreviatedDate(line.date, timeZone)}</p>
         <p className={`text-[13px] text-ios-muted ${removed ? 'line-through' : ''}`}>
           {line.jobNumber} {line.projectName}
         </p>
@@ -751,10 +750,12 @@ function ExtraList({
 function ReviewExtras({
   draft,
   canReview,
+  timeZone,
   onSave,
 }: {
   draft: TimesheetDraft
   canReview: boolean
+  timeZone: string
   onSave: (next: TimesheetDraft) => void
 }) {
   if (draft.expenseEntries.length === 0 && draft.priceWorkEntries.length === 0) return null
@@ -768,7 +769,7 @@ function ReviewExtras({
               <div>
                 <p className="font-semibold">{entry.title}</p>
                 <p className="text-[12px] text-ios-muted">
-                  {abbreviatedDate(entry.date)} · {entry.jobNumber}
+                  {abbreviatedDate(entry.date, timeZone)} · {entry.jobNumber}
                 </p>
                 <p className="font-semibold">{money(effectiveExpenseAmount(entry, false, canReview))}</p>
               </div>
@@ -806,7 +807,7 @@ function ReviewExtras({
               <div>
                 <p className="font-semibold">{entry.title}</p>
                 <p className="text-[12px] text-ios-muted">
-                  Agreed with: {entry.agreedManagerName} · {abbreviatedDate(entry.startDate)} · {entry.jobNumber}
+                  Agreed with: {entry.agreedManagerName} · {abbreviatedDate(entry.startDate, timeZone)} · {entry.jobNumber}
                 </p>
                 <p className="font-semibold">{money(effectivePriceWorkAmount(entry, false, canReview))}</p>
               </div>
