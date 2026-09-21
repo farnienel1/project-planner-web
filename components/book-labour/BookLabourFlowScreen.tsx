@@ -202,8 +202,7 @@ export function BookLabourFlowScreen({
   const otherPicks = enabledScheduleLocationPicks(scheduleOpts)
   const activeParty = party.length > 0 ? party : []
   const fallbackPerson = activeParty[0]
-  const otherEnabled =
-    activeParty.length > 0 && activeParty.every((p) => p.canBookOtherLocations) && otherPicks.length > 0
+  const otherEnabled = otherPicks.length > 0
 
   function closeFlow() {
     if (onClose) {
@@ -591,9 +590,9 @@ export function BookLabourFlowScreen({
           />
         )}
 
-        {phase.kind === 'pickDestination' && !otherEnabled && activeParty.some((p) => !p.canBookOtherLocations) ? (
+        {phase.kind === 'pickDestination' && !otherEnabled ? (
           <p className="px-1 text-[11px] text-[var(--ink3)]">
-            Other is only available when every selected person can be booked to office / WFH locations.
+            Enable at least one location under Organisation → Schedule options to use Other.
           </p>
         ) : null}
 

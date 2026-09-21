@@ -17,7 +17,8 @@ import { buildWeeklyReportData } from '@/lib/weekly-report/weeklyReportData'
 import type { SubcontractorBookingRow } from '@/lib/weekly-report/weeklyReportData'
 import {
   buildWeeklyReportHtml,
-  downloadWeeklyReport,
+  buildWeeklyReportSpreadsheetXml,
+  downloadWeeklyReportWorkbook,
   printWeeklyReport,
 } from '@/lib/weekly-report/weeklyReportGenerator'
 import { formatCurrency, formatDays } from '@/lib/weekly-report/weeklyReportPayroll'
@@ -187,9 +188,9 @@ export function WeeklyReportScreen({
 
   const handleDownload = () => {
     if (!report || !period) return
-    const html = buildWeeklyReportHtml(report)
-    const filename = `WeeklyReport-${format(period.start, 'yyyyMMdd')}.html`
-    downloadWeeklyReport(html, filename)
+    const xml = buildWeeklyReportSpreadsheetXml(report)
+    const filename = `WeeklyReport-${format(period.start, 'yyyyMMdd')}.xls`
+    downloadWeeklyReportWorkbook(xml, filename)
   }
 
   const changePeriod = (next: () => void) => {
@@ -224,7 +225,7 @@ export function WeeklyReportScreen({
                 Print
               </button>
               <button type="button" className="btn primary" onClick={handleDownload}>
-                Download report
+                Download weekly report
               </button>
             </>
           ) : null}
@@ -384,7 +385,8 @@ export function WeeklyReportScreen({
               </p>
             ) : null}
             <p className="muted small" style={{ marginTop: 8 }}>
-              Creates a printable HTML report ready to share. The breakdown is only shown after you generate.
+              Creates a weekly report in the same Excel layout as iOS, with warnings, each project, named sub
+              contractors, leave, manager schedule and pay. Preview it here, then download.
             </p>
             <button
               type="button"
@@ -444,14 +446,15 @@ export function WeeklyReportScreen({
 
           <ReportTable
             title="🔧 Sub Contractors"
-            headers={['Project', 'Job No.', 'Sub Contractor', 'Type', 'Time', 'Days']}
+            headers={['Project', 'Job No.', 'Sub Contractor', 'People', 'Type', 'Time', 'Days']}
             rows={
               report.subContractorRows.length === 0
-                ? [['—', '—', '—', '—', '—', '—']]
+                ? [['—', '—', '—', '—', '—', '—', '—']]
                 : report.subContractorRows.map((row) => [
                     row.projectName,
                     row.jobNumber,
                     row.subContractor,
+                    row.people || '—',
                     row.type,
                     row.time,
                     formatDays(row.days),

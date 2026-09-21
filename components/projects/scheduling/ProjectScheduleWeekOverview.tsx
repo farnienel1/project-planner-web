@@ -23,6 +23,10 @@ import { collection, getDocs } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
 import { asClockHhMm } from '@/lib/ios-parity/firestoreCodec'
 import { DEFAULT_PAYROLL_POLICY, loadOrganizationDetails, type OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
+import {
+  formatSubcontractorBookingLabel,
+  resolveSubcontractorBookingPeople,
+} from '@/lib/subcontractors/bookingPeople'
 
 type SubBooking = {
   id: string
@@ -31,6 +35,8 @@ type SubBooking = {
   timeSlot: string
   workStartTime?: string
   workEndTime?: string
+  bookedContactIds?: string[]
+  bookedOperativeNames?: string[]
 }
 
 function initials(name: string) {
@@ -69,6 +75,7 @@ type DayRow = {
   roleTone: 'operative' | 'manager' | 'subcontractor'
   booking?: Booking
   managerBooking?: ManagerSiteBooking
+  peopleLabel?: string
 }
 
 type PersonWeek = {
@@ -165,6 +172,12 @@ export function ProjectScheduleWeekOverview({
               subcontractorId: String(data.subcontractorId || ''),
               date: (data.date as { toDate?: () => Date })?.toDate?.() || new Date(),
               timeSlot: String(data.timeSlot || 'FULL DAY'),
+              bookedContactIds: Array.isArray(data.bookedContactIds)
+                ? (data.bookedContactIds as unknown[]).filter((id): id is string => typeof id === 'string')
+                : undefined,
+              bookedOperativeNames: Array.isArray(data.bookedOperativeNames)
+                ? (data.bookedOperativeNames as unknown[]).filter((name): name is string => typeof name === 'string')
+                : undefined,
             }
             const start = asClockHhMm(data.workStartTime)
             const end = asClockHhMm(data.workEndTime)
@@ -253,10 +266,12 @@ export function ProjectScheduleWeekOverview({
         .filter((b) => isSameDay(new Date(b.date), day))
         .map((b) => {
           const sub = subcontractors.find((s) => s.id === b.subcontractorId)
+          const people = resolveSubcontractorBookingPeople(b, sub)
           return {
             id: b.id,
             personKey: `sub:${b.subcontractorId}`,
-            name: sub?.name || 'Sub contractor',
+            name: formatSubcontractorBookingLabel(sub?.name || 'Sub contractor', people),
+            peopleLabel: people.join(', ') || undefined,
             roleLabel: 'Sub',
             roleTone: 'subcontractor' as const,
             ...bookingRowFromHours({
@@ -563,6 +578,9 @@ function PersonRow({
                   const clickable = Boolean(row.booking || row.managerBooking)
                   const inner = expanded ? (
                     <>
+                      {row.peopleLabel ? (
+                        <p className="text-[10px] font-semibold leading-tight text-slate-800">{row.peopleLabel}</p>
+                      ) : null}
                       <p className="text-[11px] font-semibold leading-tight text-slate-800">{row.slot}</p>
                       <p className="text-[12px] font-bold text-slate-900">{formatHoursLabel(row.hours)}h</p>
                       {row.overtimeEquation ? (
@@ -571,6 +589,9 @@ function PersonRow({
                     </>
                   ) : (
                     <>
+                      {row.peopleLabel ? (
+                        <p className="text-[10px] font-semibold leading-tight text-slate-700">{row.peopleLabel}</p>
+                      ) : null}
                       <p className="text-[10px] font-semibold leading-tight text-slate-700">{row.slot}</p>
                       <p className="text-[11px] font-bold text-slate-900">{formatHoursLabel(row.hours)}h</p>
                     </>

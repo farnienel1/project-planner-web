@@ -18,14 +18,21 @@ export function isTaskAssignedToUser(
   if (isOperativeMode(user)) {
     const operative = operatives.find((op) => normalizedEmail(op.email) === email)
     if (!operative) return false
-    return task.assignedOperativeId === operative.id
+    return (
+      task.assignedOperativeId === operative.id ||
+      (task.assignedOperativeIds || []).includes(operative.id)
+    )
   }
 
   const manager = managers.find((m) => normalizedEmail(m.email) === email)
-  if (manager && task.assignedManagerId === manager.id) return true
+  if (manager && (task.assignedManagerId === manager.id || (task.assignedManagerIds || []).includes(manager.id))) {
+    return true
+  }
 
   const operative = operatives.find((op) => normalizedEmail(op.email) === email)
-  if (operative && task.assignedOperativeId === operative.id) return true
+  if (operative && (task.assignedOperativeId === operative.id || (task.assignedOperativeIds || []).includes(operative.id))) {
+    return true
+  }
 
   return false
 }

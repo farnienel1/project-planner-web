@@ -4,8 +4,8 @@
  */
 'use client'
 
-import { FormEvent, useEffect, useMemo, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { FormEvent, Suspense, useEffect, useMemo, useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { PlusIcon, UserGroupIcon } from '@heroicons/react/24/solid'
 import type { Subcontractor, SubcontractorContact } from '@/types'
 import { useAuthStore } from '@/lib/stores/authStore'
@@ -18,12 +18,33 @@ import { IosFormModal } from '@/components/ios/primitives'
 const POSITIONS = ['Finance', 'Contract Manager', 'Project Manager', 'Site Manager', 'Supervisor', 'Installer']
 
 export function SubcontractorsScreen({ selectedId }: { selectedId?: string }) {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex h-64 items-center justify-center">
+          <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-[var(--blue)]" />
+        </div>
+      }
+    >
+      <SubcontractorsScreenInner selectedId={selectedId} />
+    </Suspense>
+  )
+}
+
+function firmHref(id: string | undefined, trade: string) {
+  const base = id ? `/dashboard/sub-contractors/${id}` : '/dashboard/sub-contractors'
+  if (!trade || trade === 'All') return base
+  return `${base}?trade=${encodeURIComponent(trade)}`
+}
+
+function SubcontractorsScreenInner({ selectedId }: { selectedId?: string }) {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const { user, organization } = useAuthStore()
   const { subcontractors, loading, error, loadSubcontractors, saveSubcontractor, deleteSubcontractor } =
     useSubcontractorStore()
   const [search, setSearch] = useState('')
-  const [trade, setTrade] = useState('All')
+  const trade = searchParams.get('trade') || 'All'
   const [editor, setEditor] = useState<Subcontractor | null>(null)
   const [operativeEditor, setOperativeEditor] = useState<{ firm: Subcontractor; contact?: SubcontractorContact } | null>(
     null
@@ -66,23 +87,24 @@ export function SubcontractorsScreen({ selectedId }: { selectedId?: string }) {
   const operativeCount = subcontractors.reduce((sum, row) => sum + row.contacts.length, 0)
 
   function chooseTrade(next: string) {
-    setTrade(next)
     const query = search.trim().toLowerCase()
     const list = sorted.filter((row) => {
       if (next !== 'All' && row.subcontractorType.toLowerCase() !== next.toLowerCase()) return false
       if (!query) return true
       return row.name.toLowerCase().includes(query) || row.subcontractorType.toLowerCase().includes(query)
     })
-    if (list[0]) router.push(`/dashboard/sub-contractors/${list[0].id}`)
-    else router.push('/dashboard/sub-contractors')
+    if (list[0]) router.push(firmHref(list[0].id, next))
+    else router.push(firmHref(undefined, next))
   }
 
   useEffect(() => {
     if (loading || sorted.length === 0) return
-    if (selectedId) return
+    const inFilter = selectedId ? filtered.some((row) => row.id === selectedId) : false
+    if (inFilter) return
     const first = filtered[0]
-    if (first) router.replace(`/dashboard/sub-contractors/${first.id}`)
-  }, [loading, sorted.length, selectedId, filtered, router])
+    if (first) router.replace(firmHref(first.id, trade))
+    else if (selectedId) router.replace(firmHref(undefined, trade))
+  }, [loading, sorted.length, selectedId, trade, filtered, router])
 
   if (!user || !canManage) return null
   if (loading && subcontractors.length === 0) {
@@ -104,26 +126,6 @@ export function SubcontractorsScreen({ selectedId }: { selectedId?: string }) {
 
   const list = (
     <div className="stack" style={{ gap: 12 }}>
-      <input
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        placeholder="Search firms or trades…"
-        className="in"
-        aria-label="Search firms or trades"
-      />
-      <div className="chips">
-        {trades.map((item) => (
-          <button
-            key={item}
-            type="button"
-            className={`chip ${trade === item ? 'on' : ''}`}
-            data-hue="sched"
-            onClick={() => chooseTrade(item)}
-          >
-            {item}
-          </button>
-        ))}
-      </div>
       {filtered.length === 0 ? (
         <div className="empty card pad">
           <h3>No sub contractors yet</h3>
@@ -138,7 +140,7 @@ export function SubcontractorsScreen({ selectedId }: { selectedId?: string }) {
             <button
               key={row.id}
               type="button"
-              onClick={() => router.push(`/dashboard/sub-contractors/${row.id}`)}
+              onClick={() => router.push(firmHref(row.id, trade))}
               className={`ritem ${selected?.id === row.id ? 'sel' : ''}`}
               data-hue="sched"
             >
@@ -246,7 +248,31 @@ export function SubcontractorsScreen({ selectedId }: { selectedId?: string }) {
         </div>
       </div>
       {error ? <p className="banner" data-hue="red">{error}</p> : null}
-      <div className="grid gmain">
+      <div className="row wrap" style={{ marginBottom: 2 }}>
+        <div className="chips">
+          {trades.map((item) => (
+            <button
+              key={item}
+              type="button"
+              className={`chip ${trade === item ? 'on' : ''}`}
+              data-hue="sched"
+              onClick={() => chooseTrade(item)}
+            >
+              {item}
+            </button>
+          ))}
+        </div>
+        <span className="grow" />
+        <input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search firms or trades…"
+          className="in"
+          style={{ maxWidth: 280 }}
+          aria-label="Search firms or trades"
+        />
+      </div>
+      <div className="grid gmaster">
         {list}
         <div style={{ position: 'sticky', top: 10 }}>{detail}</div>
       </div>
@@ -259,7 +285,7 @@ export function SubcontractorsScreen({ selectedId }: { selectedId?: string }) {
             if (!organization?.id) return
             await saveSubcontractor(organization.id, next)
             setEditor(null)
-            router.push(`/dashboard/sub-contractors/${next.id}`)
+            router.push(firmHref(next.id, trade))
           }}
           onDelete={
             subcontractors.some((row) => row.id === editor.id)
@@ -268,7 +294,7 @@ export function SubcontractorsScreen({ selectedId }: { selectedId?: string }) {
                   if (!window.confirm(`Delete ${editor.name}?`)) return
                   await deleteSubcontractor(organization.id, editor.id)
                   setEditor(null)
-                  router.push('/dashboard/sub-contractors')
+                  router.push(firmHref(undefined, trade))
                 }
               : undefined
           }

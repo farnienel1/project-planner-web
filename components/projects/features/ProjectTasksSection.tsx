@@ -155,6 +155,11 @@ function ProjectTasksSectionInner({ project }: { project: Project }) {
       attachedFileName: input.attachedFileName,
       attachedSiteAuditId: input.attachedSiteAuditId,
       attachedSiteAuditTitle: input.attachedSiteAuditTitle,
+      completedBy: existing?.completedBy,
+      completedAt: existing?.completedAt,
+      completionNotes: existing?.completionNotes,
+      completionImages: existing?.completionImages,
+      completionFiles: existing?.completionFiles,
       createdAt: existing?.createdAt || new Date(),
       updatedAt: new Date(),
     })
@@ -166,8 +171,29 @@ function ProjectTasksSectionInner({ project }: { project: Project }) {
     await saveTask({
       ...task,
       status,
-      completedAt: status === 'Completed' ? new Date() : undefined,
-      completedBy: status === 'Completed' ? user?.email : undefined,
+      completedAt: status === 'Completed' ? task.completedAt || new Date() : undefined,
+      completedBy: status === 'Completed' ? task.completedBy || user?.email : undefined,
+      updatedAt: new Date(),
+    })
+  }
+
+  const handleComplete = async (
+    task: ProjectTask,
+    input: {
+      completionNotes?: string
+      completionImages: string[]
+      completionFiles: { name: string; url: string }[]
+    }
+  ) => {
+    const display = user ? `${user.firstName} ${user.surname}`.trim() || user.email : 'Unknown'
+    await saveTask({
+      ...task,
+      status: 'Completed',
+      completedAt: new Date(),
+      completedBy: display,
+      completionNotes: input.completionNotes,
+      completionImages: input.completionImages,
+      completionFiles: input.completionFiles,
       updatedAt: new Date(),
     })
   }
@@ -326,10 +352,28 @@ function ProjectTasksSectionInner({ project }: { project: Project }) {
       {liveOpenTask && (
         <ProjectTaskDetailSheet
           task={liveOpenTask}
+          operatives={operatives}
+          managers={managers}
+          canEdit={canEdit}
           canDelete={canEdit}
+          siteAuditHref={
+            liveOpenTask.attachedSiteAuditId
+              ? pathname.replace(/\/tasks\/?$/, '/site-audit')
+              : null
+          }
           onClose={closeOpenTask}
           onStatusChange={(status) => void handleStatusChange(liveOpenTask, status)}
           onToggleItem={(itemId) => void handleToggleItem(liveOpenTask, itemId)}
+          onComplete={(input) => handleComplete(liveOpenTask, input)}
+          onEdit={
+            canEdit
+              ? () => {
+                  closeOpenTask()
+                  setEditing(liveOpenTask)
+                  setShowForm(true)
+                }
+              : undefined
+          }
           onDelete={() => void handleDelete(liveOpenTask)}
         />
       )}

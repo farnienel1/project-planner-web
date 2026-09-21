@@ -28,6 +28,11 @@ import {
   type OverviewPersonRow,
 } from '@/lib/daily-overview/buildDailyOverview'
 import { BookLabourFlowScreen } from '@/components/book-labour/BookLabourFlowScreen'
+import {
+  DailyOverviewBookingSheet,
+  managerBookingToTarget,
+  type OverviewBookingTarget,
+} from '@/components/daily-overview/DailyOverviewBookingSheet'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import type { User } from '@/types'
 
@@ -66,6 +71,7 @@ export function DailyOverviewScreen() {
   >([])
   const [day, setDay] = useState(() => londonMidnight(new Date()))
   const [bookLabourOpen, setBookLabourOpen] = useState(false)
+  const [editingRow, setEditingRow] = useState<OverviewBookingTarget | null>(null)
 
   useEffect(() => {
     const raw = searchParams.get('date')
@@ -258,7 +264,15 @@ export function DailyOverviewScreen() {
                   {people.length > 0 ? (
                     <div className="rows" style={{ marginTop: 12 }}>
                       {people.map((row) => (
-                        <PersonRow key={row.personKey} row={row} />
+                        <PersonRow
+                          key={row.personKey}
+                          row={row}
+                          onOpen={
+                            row.kind !== 'subcontractor' && row.bookingId
+                              ? () => setEditingRow(row)
+                              : undefined
+                          }
+                        />
                       ))}
                     </div>
                   ) : (
@@ -342,11 +356,17 @@ export function DailyOverviewScreen() {
               wfh={model.wfhBookings}
               custom={model.customGroups}
               users={users}
+              onOpen={(booking) => setEditingRow(managerBookingToTarget(booking, personName(booking.userId, users)))}
             />
           ) : null}
 
           {model.siteSurveyBookings.length > 0 ? (
-            <ManagerCard title="Site survey" bookings={model.siteSurveyBookings} users={users} />
+            <ManagerCard
+              title="Site survey"
+              bookings={model.siteSurveyBookings}
+              users={users}
+              onOpen={(booking) => setEditingRow(managerBookingToTarget(booking, personName(booking.userId, users)))}
+            />
           ) : null}
         </div>
       </div>
@@ -358,13 +378,16 @@ export function DailyOverviewScreen() {
         </div>
       </div>
     ) : null}
+    {editingRow ? (
+      <DailyOverviewBookingSheet row={editingRow} day={day} onClose={() => setEditingRow(null)} />
+    ) : null}
     </>
   )
 }
 
-function PersonRow({ row }: { row: OverviewPersonRow }) {
-  return (
-    <div className="ritem" style={{ cursor: 'default', marginTop: 12 }} data-hue="proj">
+function PersonRow({ row, onOpen }: { row: OverviewPersonRow; onOpen?: () => void }) {
+  const inner = (
+    <>
       <span className="ico-chip sm">{row.initials}</span>
       <span className="grow">
         <span className="t">{row.name}</span>
@@ -373,6 +396,18 @@ function PersonRow({ row }: { row: OverviewPersonRow }) {
       <span className="pill" data-hue="proj">
         {row.pillText}
       </span>
+    </>
+  )
+  if (onOpen) {
+    return (
+      <button type="button" className="ritem" style={{ marginTop: 12 }} data-hue="proj" onClick={onOpen}>
+        {inner}
+      </button>
+    )
+  }
+  return (
+    <div className="ritem" style={{ cursor: 'default', marginTop: 12 }} data-hue="proj">
+      {inner}
     </div>
   )
 }
@@ -381,10 +416,12 @@ function ManagerCard({
   title,
   bookings,
   users,
+  onOpen,
 }: {
   title: string
   bookings: ManagerSiteBooking[]
   users: User[]
+  onOpen?: (booking: ManagerSiteBooking) => void
 }) {
   return (
     <section className="card" data-hue="user">
@@ -395,16 +432,27 @@ function ManagerCard({
         </div>
       </div>
       <div className="card-b rows">
-        {bookings.map((b) => (
-          <div key={b.id} className="ritem" style={{ cursor: 'default' }}>
-            <span className="grow">
-              <span className="t">{personName(b.userId, users)}</span>
-            </span>
-            <span className="pill" data-hue="sched">
-              {b.timeSlot}
-            </span>
-          </div>
-        ))}
+        {bookings.map((b) => {
+          const inner = (
+            <>
+              <span className="grow">
+                <span className="t">{personName(b.userId, users)}</span>
+              </span>
+              <span className="pill" data-hue="sched">
+                {b.timeSlot}
+              </span>
+            </>
+          )
+          return onOpen ? (
+            <button key={b.id} type="button" className="ritem" onClick={() => onOpen(b)}>
+              {inner}
+            </button>
+          ) : (
+            <div key={b.id} className="ritem" style={{ cursor: 'default' }}>
+              {inner}
+            </div>
+          )
+        })}
       </div>
     </section>
   )
@@ -415,11 +463,13 @@ function OtherBlock({
   wfh,
   custom,
   users,
+  onOpen,
 }: {
   office: ManagerSiteBooking[]
   wfh: ManagerSiteBooking[]
   custom: { name: string; bookings: ManagerSiteBooking[] }[]
   users: User[]
+  onOpen?: (booking: ManagerSiteBooking) => void
 }) {
   const people = new Set([...office, ...wfh, ...custom.flatMap((g) => g.bookings)].map((b) => b.userId))
   return (
@@ -433,10 +483,10 @@ function OtherBlock({
         </div>
       </div>
       <div className="card-b stack" style={{ gap: 12 }}>
-        {office.length > 0 ? <ManagerCard title="Office" bookings={office} users={users} /> : null}
-        {wfh.length > 0 ? <ManagerCard title="Working from home" bookings={wfh} users={users} /> : null}
+        {office.length > 0 ? <ManagerCard title="Office" bookings={office} users={users} onOpen={onOpen} /> : null}
+        {wfh.length > 0 ? <ManagerCard title="Working from home" bookings={wfh} users={users} onOpen={onOpen} /> : null}
         {custom.map((g) => (
-          <ManagerCard key={g.name} title={g.name} bookings={g.bookings} users={users} />
+          <ManagerCard key={g.name} title={g.name} bookings={g.bookings} users={users} onOpen={onOpen} />
         ))}
       </div>
     </section>
