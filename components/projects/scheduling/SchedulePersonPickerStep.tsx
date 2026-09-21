@@ -7,7 +7,10 @@ import {
   type SchedulablePerson,
   type SchedulablePersonKind,
 } from '@/lib/scheduling/scheduleRosterUtils'
-import type { DraftBookingPerson } from '@/lib/scheduling/draftProjectBooking'
+import {
+  personHasPendingClashes,
+  type DraftBookingPerson,
+} from '@/lib/scheduling/draftProjectBooking'
 import {
   SchedulePersonDayRows,
   SchedulePersonPickerRow,
@@ -20,38 +23,37 @@ export function SchedulePersonPickerStep({
   users,
   draftPeople,
   slots,
-  selectedPersonId,
-  activePerson,
-  onSelectPerson,
-  onActivePersonChange,
+  onTogglePerson,
+  onPersonChange,
 }: {
   operatives: Operative[]
   users: User[]
   draftPeople: DraftBookingPerson[]
   slots: ScheduleDateSlot[]
-  selectedPersonId: string | null
-  activePerson: DraftBookingPerson | null
-  onSelectPerson: (person: SchedulablePerson) => void
-  onActivePersonChange: (person: DraftBookingPerson) => void
+  onTogglePerson: (person: SchedulablePerson) => void
+  onPersonChange: (person: DraftBookingPerson) => void
 }) {
   const [search, setSearch] = useState('')
   const [kindFilter, setKindFilter] = useState<'all' | SchedulablePersonKind>('all')
 
-  const alreadyAdded = useMemo(() => new Set(draftPeople.map((p) => p.personId)), [draftPeople])
+  const selectedById = useMemo(
+    () => new Map(draftPeople.map((person) => [person.personId, person])),
+    [draftPeople]
+  )
 
   const allPeople = useMemo(() => buildSchedulablePeople(operatives, users), [operatives, users])
-
-  const filteredPeople = useMemo(() => {
-    const available = allPeople.filter((p) => !alreadyAdded.has(p.id))
-    return filterSchedulablePeople(available, search, kindFilter)
-  }, [allPeople, alreadyAdded, search, kindFilter])
+  const filteredPeople = useMemo(
+    () => filterSchedulablePeople(allPeople, search, kindFilter),
+    [allPeople, search, kindFilter]
+  )
 
   return (
     <div className="space-y-4">
       <div>
-        <p className="text-sm font-semibold text-slate-900">Add operative or manager</p>
-        <p className="mt-1 text-sm text-slate-600">
-          Tap someone to select them. Their days and any clashes appear below.
+        <p className="h2">Add operative or manager</p>
+        <p className="mt-1 muted small">
+          Select one or more people. If they are already booked, tick ✓ to double-book that day or ✕ to
+          remove them from this selection.
         </p>
       </div>
 
@@ -60,59 +62,59 @@ export function SchedulePersonPickerStep({
         value={search}
         onChange={(e) => setSearch(e.target.value)}
         placeholder="Search by name or email…"
-        className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm"
+        className="pp-in"
+        aria-label="Search people"
       />
 
-      <div className="flex gap-2">
+      <div className="chips">
         {(['all', 'operative', 'manager'] as const).map((filter) => (
           <button
             key={filter}
             type="button"
             onClick={() => setKindFilter(filter)}
-            className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${
-              kindFilter === filter
-                ? 'bg-blue-600 text-white'
-                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-            }`}
+            className={`chip ${kindFilter === filter ? 'on' : ''}`}
           >
             {filter === 'all' ? 'All' : filter === 'operative' ? 'Operatives' : 'Managers'}
           </button>
         ))}
+        <span className="pill" data-hue="blue">
+          {draftPeople.length} selected
+        </span>
       </div>
 
       <div className="space-y-2">
         {filteredPeople.length === 0 ? (
-          <div className="card p-6 text-center shadow-sm">
-            <p className="text-sm text-slate-500">No people match your search.</p>
+          <div className="empty card pad">
+            <p className="muted small">No people match your search.</p>
           </div>
         ) : (
           filteredPeople.map((person) => {
-            const selected = selectedPersonId === person.id
+            const selected = selectedById.get(person.id) || null
+            const pending = selected ? personHasPendingClashes(selected) : false
             return (
               <div key={person.id} className="space-y-2">
                 <SchedulePersonPickerRow
                   person={person}
-                  selected={selected}
+                  selected={Boolean(selected)}
                   badge={person.badge}
-                  onSelect={() => onSelectPerson(person)}
+                  clashLabel={pending ? 'Already booked' : undefined}
+                  onSelect={() => onTogglePerson(person)}
                 />
 
-                {selected && activePerson && (
-                  <div className="ml-2 space-y-2 border-l-2 border-blue-200 pl-3">
-                    <p className="text-xs font-medium text-slate-500">
-                      {activePerson.dayStates &&
-                      Object.values(activePerson.dayStates).some((s) => s === 'clash_pending')
-                        ? 'Resolve clashes for each day, then add to booking.'
-                        : 'All days clear — add to booking when ready.'}
+                {selected && pending ? (
+                  <div className="ml-2 space-y-2 border-l-2 border-[var(--warn)] pl-3">
+                    <p className="text-xs font-medium text-[var(--warn)]">
+                      Already booked on one or more selected days. Tick to confirm the double-book, or ✕
+                      to drop that day.
                     </p>
                     <SchedulePersonDayRows
-                      person={activePerson}
+                      person={selected}
                       slots={slots}
-                      onPersonChange={onActivePersonChange}
+                      onPersonChange={onPersonChange}
                       compact
                     />
                   </div>
-                )}
+                ) : null}
               </div>
             )
           })
