@@ -119,10 +119,12 @@ export function ProjectScheduleWeekOverview({
   project,
   organizationId,
   scheduleBasePath,
+  variant = 'full',
 }: {
   project: Project
   organizationId: string
   scheduleBasePath: string
+  variant?: 'full' | 'hub'
 }) {
   const { bookings, loadBookings, updateBooking, deleteBooking } = useBookingStore()
   const { managerSiteBookings, loadManagerSiteBookings, updateManagerSiteBooking, deleteManagerSiteBooking } =
@@ -132,7 +134,7 @@ export function ProjectScheduleWeekOverview({
   const { subcontractors, loadSubcontractors } = useSubcontractorStore()
   const [weekStart, setWeekStart] = useState(startOfWeek(new Date(), { weekStartsOn: 1 }))
   const [subBookings, setSubBookings] = useState<SubBooking[]>([])
-  const [expanded, setExpanded] = useState(true)
+  const [expanded, setExpanded] = useState(variant !== 'hub')
   const [editingRow, setEditingRow] = useState<DayRow | null>(null)
   const [savingEdit, setSavingEdit] = useState(false)
   const [payroll, setPayroll] = useState<OrgPayrollTimePolicy>(DEFAULT_PAYROLL_POLICY)
@@ -354,20 +356,22 @@ export function ProjectScheduleWeekOverview({
 
   return (
     <div className="space-y-4">
+      {variant === 'full' ? (
       <div className="card pad">
-        <p className="text-xs font-bold text-blue-600 truncate">
+        <p className="text-xs font-bold text-[var(--blue)] truncate">
           {project.jobNumber} {project.siteName}
         </p>
-        <p className="text-xs text-slate-500 truncate">
+        <p className="text-xs text-[var(--ink3)] truncate">
           {project.client?.name}
           {project.addressLine1 ? ` · ${project.addressLine1}` : ''}
         </p>
         {project.jobType && (
-          <span className="mt-1 inline-block rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600">
+          <span className="mt-1 inline-block rounded-md bg-[var(--soft)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--ink2)]">
             {project.jobType}
           </span>
         )}
       </div>
+      ) : null}
 
       <div className="flex items-center justify-between gap-3">
         <button
@@ -398,10 +402,11 @@ export function ProjectScheduleWeekOverview({
         </button>
       </div>
 
+      {variant === 'full' ? (
       <div className="grid grid-cols-2 gap-2">
         <Link
           href={`${scheduleBasePath}/operatives`}
-          className="flex items-center justify-center gap-2 rounded-2xl bg-blue-600 px-4 py-3 text-sm font-bold text-white shadow-sm hover:bg-blue-700 transition-colors"
+          className="flex items-center justify-center gap-2 rounded-2xl bg-[var(--blue)] px-4 py-3 text-sm font-bold text-white shadow-sm hover:opacity-95 transition-colors"
         >
           <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
@@ -418,6 +423,7 @@ export function ProjectScheduleWeekOverview({
           Subcontractors
         </Link>
       </div>
+      ) : null}
 
       <div>
         <div className="mb-2 flex items-center justify-between gap-2 px-1">

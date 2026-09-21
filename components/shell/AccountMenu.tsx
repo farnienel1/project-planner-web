@@ -84,7 +84,7 @@ export function AccountMenu({
             </div>
           </div>
           <div className="my-1.5 h-px bg-[var(--line)]" />
-          <Link href={`/dashboard/users/${user.id}`} onClick={() => setOpen(false)} className="flex items-center gap-3 rounded-xl px-2.5 py-2 text-[14.5px] hover:bg-[var(--soft)]" data-hue="blue">
+          <Link href="/dashboard/settings/profile" onClick={() => setOpen(false)} className="flex items-center gap-3 rounded-xl px-2.5 py-2 text-[14.5px] hover:bg-[var(--soft)]" data-hue="blue">
             <IconChip hue="blue" size="sm"><UserCircleIcon className="h-4 w-4" /></IconChip>
             My profile
           </Link>

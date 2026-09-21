@@ -1,5 +1,5 @@
 import { format, isSameDay, startOfDay } from 'date-fns'
-import type { Booking, Operative, Project } from '@/types'
+import type { Booking, Operative, Project, User } from '@/types'
 import {
   detectOperativeClashes,
   type OperativeBookingClash,
@@ -23,10 +23,29 @@ export type DraftBookingPerson = {
 
 export type WizardStep = 'dates' | 'pick-person' | 'review'
 
+function emailKey(value: string | undefined): string {
+  return (value || '').trim().toLowerCase()
+}
+
 function projectLabel(projectId: string, projects: Project[]): string {
   const project = projects.find((p) => p.id === projectId)
   if (!project) return 'Another job'
   return `${project.jobNumber} ${project.siteName}`.trim()
+}
+
+function linkedUserForPerson(person: SchedulablePerson, users: User[]): User | undefined {
+  const email = emailKey(person.email)
+  if (!email) return undefined
+  return users.find((user) => emailKey(user.email) === email)
+}
+
+function linkedOperativeForPerson(person: SchedulablePerson, operatives: Operative[]): Operative | undefined {
+  if (person.kind === 'operative') {
+    return operatives.find((operative) => operative.id === person.id)
+  }
+  const email = emailKey(person.email)
+  if (!email) return undefined
+  return operatives.find((operative) => emailKey(operative.email) === email)
 }
 
 function detectManagerDayClashes({
@@ -34,13 +53,12 @@ function detectManagerDayClashes({
   slot,
   managerSiteBookings,
   projects,
-  currentProjectId,
 }: {
   userId: string
   slot: ScheduleDateSlot
   managerSiteBookings: ManagerSiteBooking[]
   projects: Project[]
-  currentProjectId: string
+  currentProjectId?: string
 }): OperativeBookingClash[] {
   const firestoreSlot = slotToFirestore(slot)
   const clashes: OperativeBookingClash[] = []
@@ -48,7 +66,6 @@ function detectManagerDayClashes({
   for (const existing of managerSiteBookings) {
     if (existing.userId !== userId) continue
     if (!isSameDay(existing.date, slot.date)) continue
-    if (existing.locationId === currentProjectId) continue
 
     if (
       !timeSlotsOverlap(
@@ -86,6 +103,7 @@ export function buildDraftPersonDayStates({
   bookings,
   managerSiteBookings,
   operatives,
+  users = [],
   projects,
   currentProjectId,
 }: {
@@ -94,32 +112,43 @@ export function buildDraftPersonDayStates({
   bookings: Booking[]
   managerSiteBookings: ManagerSiteBooking[]
   operatives: Operative[]
+  users?: User[]
   projects: Project[]
   currentProjectId: string
 }): DraftBookingPerson {
   const dayStates: Record<string, DayBookingState> = {}
   const clashByDay: Record<string, OperativeBookingClash[]> = {}
+  const linkedUser = linkedUserForPerson(person, users)
+  const linkedOperative = linkedOperativeForPerson(person, operatives)
+  const managerUserId = person.kind === 'manager' ? person.id : linkedUser?.id
+  const operativeId = person.kind === 'operative' ? person.id : linkedOperative?.id
 
   for (const slot of slots) {
     const key = slotKey(slot.date)
-    let clashes: OperativeBookingClash[] = []
+    const clashes: OperativeBookingClash[] = []
 
-    if (person.kind === 'operative') {
-      clashes = detectOperativeClashes({
-        operativeIds: [person.id],
-        slots: [slot],
-        bookings,
-        operatives,
-        projects,
-      })
-    } else {
-      clashes = detectManagerDayClashes({
-        userId: person.id,
-        slot,
-        managerSiteBookings,
-        projects,
-        currentProjectId,
-      }).map((c) => ({ ...c, operativeName: person.name }))
+    if (operativeId) {
+      clashes.push(
+        ...detectOperativeClashes({
+          operativeIds: [operativeId],
+          slots: [slot],
+          bookings,
+          operatives,
+          projects,
+        }).map((clash) => ({ ...clash, operativeName: person.name }))
+      )
+    }
+
+    if (managerUserId) {
+      clashes.push(
+        ...detectManagerDayClashes({
+          userId: managerUserId,
+          slot,
+          managerSiteBookings,
+          projects,
+          currentProjectId,
+        }).map((clash) => ({ ...clash, operativeName: person.name }))
+      )
     }
 
     if (clashes.length > 0) {

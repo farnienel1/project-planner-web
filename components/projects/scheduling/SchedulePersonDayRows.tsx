@@ -53,16 +53,16 @@ export function SchedulePersonDayRows({
         return (
           <div
             key={key}
-            className={`rounded-xl border bg-white ${
+            className={`rounded-xl border bg-[var(--card)] ${
               compact ? 'p-3' : 'p-4 shadow-sm'
-            } ${state === 'clash_pending' ? 'border-amber-300' : 'border-slate-200'}`}
+            } ${state === 'clash_pending' ? 'border-[var(--warn)]' : 'border-[var(--line)]'}`}
           >
             <div className="flex items-start gap-3">
               <DayStateIcon state={state} />
               <div className="min-w-0 flex-1">
                 <p
                   className={`text-sm font-semibold ${
-                    removed ? 'text-slate-400 line-through' : 'text-slate-900'
+                    removed ? 'text-[var(--ink3)] line-through' : 'text-[var(--ink)]'
                   }`}
                 >
                   {format(slot.date, 'EEE d MMM yyyy')}
@@ -121,8 +121,8 @@ export function SchedulePersonDayRows({
 function SelectionDot({ selected }: { selected: boolean }) {
   return (
     <span
-      className={`h-3.5 w-3.5 shrink-0 rounded-full border-2 border-blue-600 ${
-        selected ? 'bg-blue-600' : 'bg-white'
+      className={`h-3.5 w-3.5 shrink-0 rounded-full border-2 border-[var(--blue)] ${
+        selected ? 'bg-[var(--blue)]' : 'bg-[var(--card)]'
       }`}
       aria-hidden
     />
@@ -133,23 +133,23 @@ export function SchedulePersonPickerRow({
   person,
   selected,
   badge,
+  clashLabel,
   onSelect,
 }: {
   person: { id: string; name: string; email: string }
   selected: boolean
   badge: string
+  clashLabel?: string
   onSelect: () => void
 }) {
   return (
     <button
       type="button"
       onClick={onSelect}
-      className={`flex w-full items-center gap-3 rounded-xl border px-3 py-3 text-left transition ${
-        selected ? 'border-blue-400 bg-blue-50' : 'border-slate-200 hover:bg-slate-50'
-      }`}
+      className={`ritem w-full ${selected ? 'sel' : ''}`}
     >
       <SelectionDot selected={selected} />
-      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-200 text-xs font-bold text-slate-700">
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--soft2)] text-xs font-bold text-[var(--ink)]">
         {person.name
           .split(' ')
           .map((part) => part[0] || '')
@@ -157,11 +157,16 @@ export function SchedulePersonPickerRow({
           .slice(0, 2)
           .toUpperCase()}
       </span>
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-semibold text-slate-900">{person.name}</p>
-        {person.email && <p className="truncate text-xs text-slate-500">{person.email}</p>}
-      </div>
-      <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600">
+      <span className="grow min-w-0 text-left">
+        <span className="t">{person.name}</span>
+        {person.email ? <span className="s">{person.email}</span> : null}
+      </span>
+      {clashLabel ? (
+        <span className="pill" data-hue="red">
+          {clashLabel}
+        </span>
+      ) : null}
+      <span className="pill" data-hue={badge === 'Operative' ? 'green' : 'user'}>
         {badge}
       </span>
     </button>
