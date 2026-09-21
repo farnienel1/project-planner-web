@@ -174,19 +174,23 @@ export function HomeScreen() {
 
   const warningCount = useMemo(() => {
     if (!admin) return 0
-    return generateOrgWarnings({
-      bookings,
-      managerSiteBookings,
-      operatives,
-      users,
-      projects: merged,
-      holidays,
-      materials,
-      sendRecords,
-      orgDetails,
-      notificationPreferences,
-      referenceDate: now,
-    }).coreCount
+    try {
+      return generateOrgWarnings({
+        bookings,
+        managerSiteBookings,
+        operatives,
+        users,
+        projects: merged,
+        holidays,
+        materials,
+        sendRecords,
+        orgDetails,
+        notificationPreferences,
+        referenceDate: now,
+      }).coreCount
+    } catch {
+      return 0
+    }
   }, [
     admin,
     bookings,

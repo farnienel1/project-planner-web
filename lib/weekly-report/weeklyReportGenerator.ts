@@ -66,11 +66,12 @@ export function buildWeeklyReportHtml(data: WeeklyReportData): string {
 
   const subRows =
     data.subContractorRows.length === 0
-      ? [['—', '—', '—', '—', '—', '—']]
+      ? [['—', '—', '—', '—', '—', '—', '—']]
       : data.subContractorRows.map((row) => [
           escapeHtml(row.projectName),
           escapeHtml(row.jobNumber),
           escapeHtml(row.subContractor),
+          escapeHtml(row.people || '—'),
           escapeHtml(row.type),
           escapeHtml(row.time),
           formatDays(row.days),
@@ -194,8 +195,12 @@ export function buildWeeklyReportHtml(data: WeeklyReportData): string {
   </table>
 
   <h2>🔧 Sub Contractors</h2>
-  ${renderTable(['Project', 'Job No.', 'Sub Contractor', 'Type', 'Time', 'Days'], subRows, 'No sub contractor bookings')}
-  <table><tbody><tr><td colspan="5"><strong>Sub Contractor</strong></td><td><strong>${formatDays(data.subContractorTotal)}</strong></td></tr></tbody></table>
+  ${renderTable(
+    ['Project', 'Job No.', 'Sub Contractor', 'People', 'Type', 'Time', 'Days'],
+    subRows,
+    'No sub contractor bookings'
+  )}
+  <table><tbody><tr><td colspan="6"><strong>Sub Contractor</strong></td><td><strong>${formatDays(data.subContractorTotal)}</strong></td></tr></tbody></table>
 
   <h2>🌴 Annual Leave</h2>
   ${renderTable(['Person', 'Role', 'Days', 'Type'], leaveRows, 'No annual leave in this period')}
@@ -212,13 +217,168 @@ export function buildWeeklyReportHtml(data: WeeklyReportData): string {
 }
 
 export function downloadWeeklyReport(html: string, filename: string): void {
-  const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
+  downloadTextFile(html, filename, 'text/html;charset=utf-8')
+}
+
+export function downloadWeeklyReportWorkbook(xml: string, filename: string): void {
+  downloadTextFile(xml, filename, 'application/vnd.ms-excel;charset=utf-8')
+}
+
+function downloadTextFile(contents: string, filename: string, mime: string): void {
+  const blob = new Blob([contents], { type: mime })
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
   link.href = url
   link.download = filename
   link.click()
   URL.revokeObjectURL(url)
+}
+
+function escapeXml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
+
+function spreadsheetRow(cells: string[]): string {
+  return `<Row>${cells
+    .map((cell) => `<Cell><Data ss:Type="String">${escapeXml(cell)}</Data></Cell>`)
+    .join('')}</Row>`
+}
+
+function spreadsheetTable(headers: string[], rows: string[][]): string {
+  const body = rows.length === 0 ? [spreadsheetRow(headers.map(() => ''))] : rows.map((row) => spreadsheetRow(row))
+  return `${spreadsheetRow(headers)}${body.join('')}`
+}
+
+/** Excel SpreadsheetML matching the iOS weekly report sections and columns. */
+export function buildWeeklyReportSpreadsheetXml(data: WeeklyReportData): string {
+  const periodLabel = formatReportPeriodLabel(data.reportPeriod.start, data.reportPeriod.end)
+  const generatedLabel = format(data.generatedAt, "d MMM yyyy 'at' HH:mm")
+
+  const warningRows =
+    data.warnings.length === 0
+      ? [['No warnings in period', '', '', '', '', '', '']]
+      : data.warnings.map((warning) => [
+          warning.status,
+          warning.priority,
+          warning.type,
+          warning.date,
+          warning.description,
+          warning.detail,
+          warning.forPerson,
+        ])
+
+  const projectChunks: string[] = []
+  for (const group of data.projectGroups) {
+    const rows = group.rows.map((row) => [
+      group.projectName,
+      group.jobNumber,
+      row.person,
+      row.trade,
+      row.role,
+      formatDays(row.days),
+    ])
+    rows.push(['', '', '', '', 'Project Total', formatDays(group.projectTotal)])
+    projectChunks.push(
+      spreadsheetRow([`Project Breakdown — ${group.projectName}`]),
+      spreadsheetTable(['Project', 'Job No.', 'Person', 'Trade', 'Role', 'Days'], rows)
+    )
+  }
+  projectChunks.push(spreadsheetRow(['All Project Work', formatDays(data.allProjectWorkTotal)]))
+
+  const subRows =
+    data.subContractorRows.length === 0
+      ? [['—', '—', '—', '—', '—', '—', '—']]
+      : data.subContractorRows.map((row) => [
+          row.projectName,
+          row.jobNumber,
+          row.subContractor,
+          row.people || '—',
+          row.type,
+          row.time,
+          formatDays(row.days),
+        ])
+  subRows.push(['', '', '', '', '', 'Sub Contractor total', formatDays(data.subContractorTotal)])
+
+  const leaveRows =
+    data.annualLeaveRows.length === 0
+      ? [['No annual leave in this period', '', '', '']]
+      : [
+          ...data.annualLeaveRows.map((row) => [row.person, row.role, formatDays(row.days), row.type]),
+          ['', 'Annual Leave Total', formatDays(data.annualLeaveTotal), ''],
+        ]
+
+  const managerRows =
+    data.managerScheduleRows.length === 0
+      ? [['No additional manager schedule', '', '', '', '']]
+      : [
+          ...data.managerScheduleRows.map((row) => [
+            row.person,
+            row.role,
+            row.location,
+            row.time,
+            formatDays(row.days),
+          ]),
+          ['', '', '', 'Total', formatDays(data.managerScheduleTotal)],
+        ]
+
+  const payRows: string[][] = []
+  for (const person of data.paySummary) {
+    for (const line of person.lines) {
+      payRows.push([
+        person.person,
+        person.role,
+        line.rateType,
+        formatDays(line.days),
+        formatCurrency(line.rate),
+        formatCurrency(line.pay),
+      ])
+    }
+    payRows.push([`${person.person} total`, '', '', '', '', formatCurrency(person.personTotal)])
+  }
+  payRows.push(['', '', '', '', 'Grand Total', formatCurrency(data.grandTotal)])
+
+  return `<?xml version="1.0"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:o="urn:schemas-microsoft-com:office:office"
+ xmlns:x="urn:schemas-microsoft-com:office:excel"
+ xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
+ <Worksheet ss:Name="Weekly Report">
+  <Table>
+   ${spreadsheetRow(['PROJECT PLANNER'])}
+   ${spreadsheetRow([data.organizationName])}
+   ${spreadsheetRow(['WEEKLY REPORT'])}
+   ${spreadsheetRow(['Period', periodLabel])}
+   ${spreadsheetRow(['Invoicing period', data.invoicingPeriodLabel])}
+   ${spreadsheetRow(['Generated', generatedLabel])}
+   ${spreadsheetRow([''])}
+   ${spreadsheetRow(['Warnings Summary'])}
+   ${spreadsheetTable(['Status', 'Priority', 'Type', 'Date', 'Description', 'Detail', 'For'], warningRows)}
+   ${spreadsheetRow([''])}
+   ${spreadsheetRow(['Project Breakdown'])}
+   ${projectChunks.join('')}
+   ${spreadsheetRow([''])}
+   ${spreadsheetRow(['Sub Contractors'])}
+   ${spreadsheetTable(
+     ['Project', 'Job No.', 'Sub Contractor', 'People', 'Type', 'Time', 'Days'],
+     subRows
+   )}
+   ${spreadsheetRow([''])}
+   ${spreadsheetRow(['Annual Leave'])}
+   ${spreadsheetTable(['Person', 'Role', 'Days', 'Type'], leaveRows)}
+   ${spreadsheetRow([''])}
+   ${spreadsheetRow(['Manager / Admin Additional Schedule'])}
+   ${spreadsheetTable(['Person', 'Role', 'Location', 'Time', 'Days'], managerRows)}
+   ${spreadsheetRow([''])}
+   ${spreadsheetRow(['Pay Summary'])}
+   ${spreadsheetTable(['Person', 'Role', 'Rate Type', 'Days', 'Rate', 'Pay'], payRows.length ? payRows : [['No pay data for this period', '', '', '', '', '']])}
+  </Table>
+ </Worksheet>
+</Workbook>`
 }
 
 export function printWeeklyReport(html: string): void {

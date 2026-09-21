@@ -109,7 +109,7 @@ test('book labour candidates skip weekends and fully booked operatives', () => {
     payrollPolicy: DEFAULT_PAYROLL_POLICY,
   })
   assert.equal(weekday.length, 2)
-  assert.ok(weekday.some((row) => row.id === 'U-OP' && row.usesOperativeProjectBookings))
+  assert.ok(weekday.some((row) => row.id === 'U-OP' && row.usesOperativeProjectBookings && row.canBookOtherLocations))
   assert.ok(weekday.some((row) => row.id === 'U-MGR' && row.canBookOtherLocations))
 
   const booked = buildBookLabourCandidates({

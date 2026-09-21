@@ -19,8 +19,11 @@ export async function loadSubcontractorBookings(organizationId: string): Promise
       workStartTime: data.workStartTime ? String(data.workStartTime) : undefined,
       workEndTime: data.workEndTime ? String(data.workEndTime) : undefined,
       status: data.status ? String(data.status) : undefined,
+      bookedContactIds: Array.isArray(data.bookedContactIds)
+        ? (data.bookedContactIds as unknown[]).filter((id): id is string => typeof id === 'string' && Boolean(id))
+        : undefined,
       bookedOperativeNames: Array.isArray(data.bookedOperativeNames)
-        ? (data.bookedOperativeNames as unknown[]).filter((n): n is string => typeof n === 'string')
+        ? (data.bookedOperativeNames as unknown[]).filter((n): n is string => typeof n === 'string' && Boolean(n))
         : undefined,
     })
   }
