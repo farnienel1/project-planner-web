@@ -40,7 +40,14 @@ export function signatureNotes(draft: TimesheetDraft): string[] {
   return notes
 }
 
-export type TimesheetInvoiceLine = { date: string; description: string; amount: number }
+export type TimesheetInvoiceLine = {
+  date: string
+  jobNumber: string
+  projectName: string
+  details: string
+  description: string
+  amount: number
+}
 
 export function invoiceLinesForTimesheet({
   payroll,
@@ -55,24 +62,38 @@ export function invoiceLinesForTimesheet({
   managerHasSigned: boolean
   applyLiveReview: boolean
 }): TimesheetInvoiceLine[] {
-  const rows: TimesheetInvoiceLine[] = payroll.lineItems.map((line: TimesheetPayrollLineItem) => ({
-    date: formatAbbreviatedDayInZone(line.date, timeZone),
-    description: `${line.jobNumber} ${line.projectName} · ${line.details} · ${timesheetHoursRateLine(line)}`,
-    amount: effectivePayrollAmount(line, draft, managerHasSigned, applyLiveReview),
-  }))
+  const rows: TimesheetInvoiceLine[] = payroll.lineItems.map((line: TimesheetPayrollLineItem) => {
+    const details = `${line.details} · ${timesheetHoursRateLine(line)}`
+    return {
+      date: formatAbbreviatedDayInZone(line.date, timeZone),
+      jobNumber: line.jobNumber || '—',
+      projectName: line.projectName,
+      details,
+      description: `${line.jobNumber} ${line.projectName} · ${details}`,
+      amount: effectivePayrollAmount(line, draft, managerHasSigned, applyLiveReview),
+    }
+  })
   for (const entry of draft.priceWorkEntries) {
     if (entry.managerDecision === 'declined' && (managerHasSigned || applyLiveReview)) continue
+    const details = `Price work · ${entry.title}`
     rows.push({
       date: formatAbbreviatedDayInZone(entry.startDate, timeZone),
-      description: `${entry.jobNumber || '—'} Price work · ${entry.title}`,
+      jobNumber: entry.jobNumber || '—',
+      projectName: entry.title,
+      details,
+      description: `${entry.jobNumber || '—'} ${details}`,
       amount: effectivePriceWorkAmount(entry, managerHasSigned, applyLiveReview),
     })
   }
   for (const entry of draft.expenseEntries) {
     if (entry.managerDecision === 'declined' && (managerHasSigned || applyLiveReview)) continue
+    const details = `Expense · ${entry.title}`
     rows.push({
       date: formatAbbreviatedDayInZone(entry.date, timeZone),
-      description: `${entry.jobNumber || '—'} Expense · ${entry.title}`,
+      jobNumber: entry.jobNumber || '—',
+      projectName: entry.title,
+      details,
+      description: `${entry.jobNumber || '—'} ${details}`,
       amount: effectiveExpenseAmount(entry, managerHasSigned, applyLiveReview),
     })
   }

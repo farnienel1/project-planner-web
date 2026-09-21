@@ -58,7 +58,7 @@ import {
   type TimesheetDraft,
   type TimesheetManagerDecision,
 } from '@/lib/timesheets/timesheetDraft'
-import { buildTimesheetInvoiceHtml, downloadTimesheetInvoice, printTimesheetInvoice } from '@/lib/timesheets/invoiceGenerator'
+import { buildTimesheetInvoiceHtml, downloadTimesheetInvoice, printTimesheetInvoice, timesheetInvoiceFileName } from '@/lib/timesheets/invoiceGenerator'
 import { subjectForUser } from '@/lib/timesheets/timesheetWeekUtils'
 import { SignaturePad } from '@/components/timesheets/SignaturePad'
 import { LoadingSpinner } from '@/components/dashboard/PageShell'
@@ -120,6 +120,8 @@ export function TimesheetPeriodPage({
   const [extraMode, setExtraMode] = useState<'priceWork' | 'expense' | null>(null)
   const [editingLineId, setEditingLineId] = useState<string | null>(null)
   const [editAmount, setEditAmount] = useState('')
+  const [utrWarningOpen, setUtrWarningOpen] = useState(false)
+  const [invoiceHtml, setInvoiceHtml] = useState<string | null>(null)
 
   const periodTitle = formatPaymentPeriodLine(periodStart, periodEnd, timeZone)
   const payroll = useMemo(
@@ -296,14 +298,8 @@ export function TimesheetPeriodPage({
     }
   }
 
-  const handleInvoice = async () => {
+  const runInvoiceGeneration = () => {
     if (!organization || !fullyApproved) return
-    if (!subjectUser.utrNumber?.trim()) {
-      const accept = window.confirm(
-        'Your UTR number is currently blank. Please fill this in via My Profile in Settings to ensure prompt payment. Continue anyway?'
-      )
-      if (!accept) return
-    }
     const subject = subjectForUser(subjectUser, operatives)
     const html = buildTimesheetInvoiceHtml({
       organizationName: organization.name || 'Organisation',
@@ -315,6 +311,7 @@ export function TimesheetPeriodPage({
       amount: total,
       vatNumber: subjectUser.vatNumber,
       utrNumber: subjectUser.utrNumber,
+      timeZone,
       lines: invoiceLinesForTimesheet({
         payroll,
         draft,
@@ -323,9 +320,17 @@ export function TimesheetPeriodPage({
         applyLiveReview: canManagerReview,
       }),
     })
-    downloadTimesheetInvoice(html, `invoice-${subjectUser.surname || 'timesheet'}-${periodTitle}.html`)
-    printTimesheetInvoice(html)
-    await persist({ ...draft, exportedAt: new Date() })
+    downloadTimesheetInvoice(html, timesheetInvoiceFileName(subject.name))
+    setInvoiceHtml(html)
+  }
+
+  const handleInvoice = () => {
+    if (!organization || !fullyApproved) return
+    if (!subjectUser.utrNumber?.trim()) {
+      setUtrWarningOpen(true)
+      return
+    }
+    runInvoiceGeneration()
   }
 
   const setLineDecision = (lineId: string, decision: TimesheetManagerDecision, revisedAmount?: number | null) => {
@@ -537,7 +542,7 @@ export function TimesheetPeriodPage({
             <button
               type="button"
               disabled={busy}
-              onClick={() => void handleInvoice()}
+              onClick={handleInvoice}
               className="w-full rounded-xl bg-[#16A34A] py-3.5 text-[16px] font-semibold text-white disabled:opacity-60"
             >
               Generate Invoice
@@ -632,7 +637,7 @@ export function TimesheetPeriodPage({
       {extraMode ? (
         <ExtraForm
           mode={extraMode}
-          jobNumbers={[...projects, ...smallWorks].map((row) => row.jobNumber).filter(Boolean)}
+          jobs={[...projects, ...smallWorks].filter((row) => row.jobNumber)}
           managerNames={users
             .filter((row) => row.permissions.manager || row.permissions.adminAccess || row.isSuperAdmin)
             .map((row) => `${row.firstName} ${row.surname}`.trim())
@@ -676,6 +681,52 @@ export function TimesheetPeriodPage({
                 Save
               </button>
             </div>
+          </div>
+        </div>
+      ) : null}
+
+      {utrWarningOpen ? (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-sm rounded-2xl bg-white p-5">
+            <button type="button" onClick={() => setUtrWarningOpen(false)} className="text-[15px] font-medium text-[#185FA5]">
+              Back
+            </button>
+            <p className="mt-3 text-[17px] font-semibold">Before you invoice</p>
+            <p className="mt-3 text-[15px] text-ios-muted">
+              Your UTR number is currently blank. Please fill this in via My Profile in Settings to ensure prompt payment.
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                setUtrWarningOpen(false)
+                runInvoiceGeneration()
+              }}
+              className="mt-5 w-full rounded-xl bg-[#16A34A] py-3 text-[16px] font-semibold text-white"
+            >
+              Accept
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {invoiceHtml ? (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-sm rounded-2xl bg-white p-6 text-center">
+            <div className="flex justify-end">
+              <button type="button" onClick={() => setInvoiceHtml(null)} className="text-[15px] font-medium text-[#185FA5]">
+                Done
+              </button>
+            </div>
+            <p className="mt-2 text-[40px] leading-none text-[#16A34A]">✓</p>
+            <p className="mt-4 text-[20px] font-semibold">Invoice generated successfully</p>
+            <button
+              type="button"
+              onClick={() => printTimesheetInvoice(invoiceHtml)}
+              className="mt-6 w-full rounded-xl bg-[#16A34A] py-3.5 text-[16px] font-semibold text-white"
+            >
+              Share invoice
+            </button>
+            <p className="mt-3 text-[13px] text-ios-muted">Print or save as PDF. Generating an invoice does not move this sheet to Exported — that happens when a line manager emails and exports from Signed off.</p>
           </div>
         </div>
       ) : null}
@@ -1049,13 +1100,13 @@ function SignSheet({
 
 function ExtraForm({
   mode,
-  jobNumbers,
+  jobs,
   managerNames,
   onCancel,
   onSave,
 }: {
   mode: 'priceWork' | 'expense'
-  jobNumbers: string[]
+  jobs: Array<{ jobNumber: string; siteName: string }>
   managerNames: string[]
   onCancel: () => void
   onSave: (entry: {
@@ -1073,9 +1124,14 @@ function ExtraForm({
   const [endDate, setEndDate] = useState('')
   const [receiptName, setReceiptName] = useState<string | null>(null)
   const value = Number(amount)
-  const canSave = title.trim() && Number.isFinite(value) && value > 0 && (mode === 'priceWork' || Boolean(receiptName))
-  const jobSuggestions = jobNumbers
-    .filter((number) => jobNumber.trim() && number.toLowerCase().includes(jobNumber.trim().toLowerCase()) && number !== jobNumber)
+  const canSave = Number.isFinite(value) && value > 0 && (mode === 'priceWork' || Boolean(receiptName))
+  const query = jobNumber.trim().toLowerCase()
+  const jobSuggestions = jobs
+    .filter((job) => {
+      if (!query) return false
+      const haystack = `${job.jobNumber} ${job.siteName}`.toLowerCase()
+      return haystack.includes(query) && job.jobNumber.toLowerCase() !== query
+    })
     .slice(0, 6)
   const managerSuggestions = managerNames
     .filter(
@@ -1126,7 +1182,7 @@ function ExtraForm({
         <p className="text-[18px] font-semibold">{mode === 'priceWork' ? 'Add Price Work' : 'Add Expense'}</p>
         <label className="block text-[13px] font-medium text-ios-muted">
           {mode === 'expense' ? 'Expense name' : 'Price work name'}
-          <input value={title} onChange={(e) => setTitle(e.target.value)} className="mt-1 w-full rounded-lg border px-3 py-2 text-[15px] text-ios-ink" required />
+          <input value={title} onChange={(e) => setTitle(e.target.value)} className="mt-1 w-full rounded-lg border px-3 py-2 text-[15px] text-ios-ink" />
         </label>
         <label className="block text-[13px] font-medium text-ios-muted">
           Description
@@ -1138,9 +1194,14 @@ function ExtraForm({
         </label>
         {jobSuggestions.length > 0 ? (
           <div className="flex flex-wrap gap-2">
-            {jobSuggestions.map((number) => (
-              <button key={number} type="button" onClick={() => setJobNumber(number)} className="rounded-full bg-[#E6F1FB] px-3 py-1 text-[12px] font-semibold text-[#185FA5]">
-                {number}
+            {jobSuggestions.map((job) => (
+              <button
+                key={`${job.jobNumber}-${job.siteName}`}
+                type="button"
+                onClick={() => setJobNumber(job.jobNumber)}
+                className="rounded-full bg-[#E6F1FB] px-3 py-1 text-[12px] font-semibold text-[#185FA5]"
+              >
+                {job.jobNumber} {job.siteName}
               </button>
             ))}
           </div>
