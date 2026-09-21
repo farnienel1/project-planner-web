@@ -1,46 +1,28 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { format } from 'date-fns'
+import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/lib/stores/authStore'
-import { hasAdminAccess, isOperativeMode } from '@/lib/navigation/menuPermissions'
-import { findOperativeForUser } from '@/lib/operatives/operativeRosterUtils'
+import { hasAdminAccess } from '@/lib/navigation/menuPermissions'
 import {
-  approveTimesheetWeek,
-  loadTimesheetWeekRecords,
-  markTimesheetInvoiceGenerated,
-  submitTimesheetWeek,
-  type TimesheetWeekRecord,
+  loadTimesheetDrafts,
 } from '@/lib/timesheets/timesheetStorage'
+import type { TimesheetDraft } from '@/lib/timesheets/timesheetDraft'
 import {
-  buildTimesheetInvoiceHtml,
-  downloadTimesheetInvoice,
-  printTimesheetInvoice,
-} from '@/lib/timesheets/invoiceGenerator'
+  awaitingManagerSignOff,
+  isTimesheetFullyApproved,
+} from '@/lib/timesheets/timesheetApprovalPolicy'
 import {
-  buildTimesheetSubjects,
   collectSubjectDayEntries,
-  estimatedAmount,
-  estimatedDays,
-  subjectForUser,
   teamTimesheetUsers,
   totalHours,
-  type TimesheetSubject,
 } from '@/lib/timesheets/timesheetWeekUtils'
-import { formatPaymentPeriodLine } from '@/lib/timesheets/paymentRunCopy'
+import { periodStartKey } from '@/lib/timesheets/paymentRunCopy'
 import type { Booking, Operative, User } from '@/types'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import type { OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 import { EmptyState, LoadingSpinner } from '@/components/dashboard/PageShell'
-
-type SubjectRow = {
-  subject: TimesheetSubject
-  entries: ReturnType<typeof collectSubjectDayEntries>
-  hours: number
-  days: number
-  amount: number | null
-  record: TimesheetWeekRecord | null
-}
+import { LONDON_TIME_ZONE } from '@/lib/ios-parity/londonTime'
 
 export type TeamTimesheetTab = 'awaiting' | 'signed' | 'exported'
 
@@ -53,9 +35,8 @@ export function TimesheetsScreen({
   periodEnd,
   payrollPolicy,
   loading,
-  scope,
-  selectedUserId,
   teamTab,
+  timeZone = LONDON_TIME_ZONE,
 }: {
   bookings: Booking[]
   managerSiteBookings: ManagerSiteBooking[]
@@ -65,305 +46,101 @@ export function TimesheetsScreen({
   periodEnd: Date
   payrollPolicy: OrgPayrollTimePolicy
   loading?: boolean
-  scope: 'mine' | 'team' | 'detail'
-  selectedUserId?: string | null
-  teamTab?: TeamTimesheetTab
+  teamTab: TeamTimesheetTab
+  timeZone?: string
 }) {
+  const router = useRouter()
   const { user, organization } = useAuthStore()
-  const [records, setRecords] = useState<Map<string, TimesheetWeekRecord>>(new Map())
+  const [drafts, setDrafts] = useState<Map<string, TimesheetDraft>>(new Map())
   const [recordsLoading, setRecordsLoading] = useState(false)
-  const [busyKey, setBusyKey] = useState<string | null>(null)
-  const [expandedKey, setExpandedKey] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
 
-  const weekRange = useMemo(() => ({ start: periodStart, end: periodEnd }), [periodStart, periodEnd])
-  const allSubjects = useMemo(() => buildTimesheetSubjects(users, operatives), [users, operatives])
+  const roster = useMemo(() => (user ? teamTimesheetUsers(user, users) : []), [user, users])
 
-  const subjects = useMemo(() => {
-    if (!user) return []
-    if (scope === 'mine') return [subjectForUser(user, operatives)]
-    if (scope === 'detail' && selectedUserId) {
-      const match =
-        allSubjects.find((subject) => subject.userId === selectedUserId) ||
-        (() => {
-          const member = users.find((row) => row.id === selectedUserId)
-          return member ? subjectForUser(member, operatives) : null
-        })()
-      return match ? [match] : []
-    }
-    const rosterIds = new Set(teamTimesheetUsers(user, users).map((row) => row.id))
-    return allSubjects.filter((subject) => subject.userId && rosterIds.has(subject.userId))
-  }, [user, scope, selectedUserId, operatives, allSubjects, users])
-
-  const rows = useMemo<SubjectRow[]>(() => {
-    return subjects
-      .map((subject) => {
-        const entries = collectSubjectDayEntries({
-          subject,
-          bookings,
-          managerSiteBookings,
-          weekRange,
-          payrollPolicy,
-        })
-        const hours = totalHours(entries)
-        const record = subject.userId ? records.get(subject.userId) || null : null
-        return {
-          subject,
-          entries,
-          hours,
-          days: estimatedDays(entries, payrollPolicy.standardPaidHours),
-          amount: estimatedAmount(subject, hours),
-          record,
-        }
-      })
-      .sort((a, b) => a.subject.name.localeCompare(b.subject.name))
-  }, [subjects, bookings, managerSiteBookings, weekRange, payrollPolicy, records])
-
-  const visibleRows = useMemo(() => {
-    if (scope === 'mine' || scope === 'detail') return rows
-    return rows.filter((row) => matchesTeamTab(row, teamTab || 'awaiting'))
-  }, [rows, scope, teamTab])
-
-  const linkedOperative = useMemo(
-    () => (user ? findOperativeForUser(user, operatives) : undefined),
-    [user, operatives]
-  )
-
-  const canApprove = Boolean(user && (hasAdminAccess(user) || user.permissions.manager))
-  const isManagerView = canApprove && !isOperativeMode(user)
-
-  const reloadRecords = useCallback(async () => {
+  const reload = useCallback(async () => {
     if (!organization?.id) return
-    const userIds = subjects.map((s) => s.userId).filter((id): id is string => Boolean(id))
+    const userIds = roster.map((row) => row.id)
     if (userIds.length === 0) return
     setRecordsLoading(true)
     try {
-      const next = await loadTimesheetWeekRecords(organization.id, userIds, periodStart)
-      setRecords(next)
+      setDrafts(await loadTimesheetDrafts(organization.id, userIds, periodStart, timeZone))
     } finally {
       setRecordsLoading(false)
     }
-  }, [organization?.id, subjects, periodStart])
+  }, [organization?.id, roster, periodStart, timeZone])
 
   useEffect(() => {
-    void reloadRecords()
-  }, [reloadRecords])
+    void reload()
+  }, [reload])
 
-  const resolveRecord = (subject: TimesheetSubject): TimesheetWeekRecord | null => {
-    if (!subject.userId) return null
-    return records.get(subject.userId) || { userId: subject.userId, weekStart: format(weekRange.start, 'yyyy-MM-dd'), status: 'draft' }
-  }
-
-  const canSubmitForSubject = (subject: TimesheetSubject) => {
-    if (!user) return false
-    if (subject.userId && subject.userId === user.id) return true
-    if (linkedOperative && subject.operativeId === linkedOperative.id) return true
-    return canApprove
-  }
-
-  const handleSubmit = async (row: SubjectRow) => {
-    if (!organization?.id || !user?.id || !row.subject.userId) return
-    setBusyKey(row.subject.key)
-    setError(null)
-    try {
-      await submitTimesheetWeek({
-        organizationId: organization.id,
-        userId: row.subject.userId,
-        weekStart: periodStart,
-        totalHours: row.hours,
-        submittedByUserId: user.id,
-      })
-      await reloadRecords()
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Failed to submit timesheet')
-    } finally {
-      setBusyKey(null)
-    }
-  }
-
-  const handleApprove = async (row: SubjectRow) => {
-    if (!organization?.id || !user?.id || !row.subject.userId || !canApprove) return
-    setBusyKey(row.subject.key)
-    setError(null)
-    try {
-      await approveTimesheetWeek({
-        organizationId: organization.id,
-        userId: row.subject.userId,
-        weekStart: periodStart,
-        approvedByUserId: user.id,
-        approvedByName: `${user.firstName || ''} ${user.surname || ''}`.trim() || user.email,
-      })
-      await reloadRecords()
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Failed to approve timesheet')
-    } finally {
-      setBusyKey(null)
-    }
-  }
-
-  const handleInvoice = async (row: SubjectRow) => {
-    if (!organization?.id || !row.subject.userId) return
-    const record = resolveRecord(row.subject)
-    if (record?.status !== 'approved') return
-
-    const html = buildTimesheetInvoiceHtml({
-      organizationName: organization?.name || 'Organisation',
-      subject: row.subject,
-      weekStart: weekRange.start,
-      weekEnd: weekRange.end,
-      totalHours: row.hours,
-      totalDays: row.days,
-      amount: row.amount,
-      vatNumber: row.subject.vatNumber,
-      utrNumber: row.subject.utrNumber,
+  const visible = useMemo(() => {
+    return roster.filter((member) => {
+      const draft = drafts.get(member.id)
+      if (!draft) return false
+      if (teamTab === 'exported') return Boolean(draft.exportedAt)
+      if (teamTab === 'signed') return isTimesheetFullyApproved(draft, member) && !draft.exportedAt
+      return awaitingManagerSignOff(draft, member) && !draft.exportedAt
     })
-
-    downloadTimesheetInvoice(
-      html,
-      `invoice-${row.subject.name.replace(/\s+/g, '-').toLowerCase()}-${format(weekRange.start, 'yyyy-MM-dd')}.html`
-    )
-    printTimesheetInvoice(html)
-
-    await markTimesheetInvoiceGenerated(organization.id, row.subject.userId, periodStart)
-    await reloadRecords()
-  }
+  }, [roster, drafts, teamTab])
 
   if (loading || recordsLoading) return <LoadingSpinner />
 
   const emptyTitle =
-    scope === 'mine'
-      ? 'No bookings found for this payment period yet'
-      : teamTab === 'exported'
-        ? 'No exported timesheets'
-        : teamTab === 'signed'
-          ? 'No signed-off timesheets'
-          : 'No timesheets awaiting sign-off'
+    teamTab === 'exported'
+      ? 'No exported timesheets'
+      : teamTab === 'signed'
+        ? 'No signed-off timesheets'
+        : 'No timesheets awaiting sign-off'
   const emptyDescription =
-    scope === 'mine'
-      ? 'Hours from site, office, site survey and other schedule entries will appear here automatically, even after a single booked day.'
-      : teamTab === 'exported'
-        ? 'Exported timesheets stay here after you generate an invoice.'
-        : teamTab === 'signed'
-          ? 'Approved timesheets ready to export will appear here.'
-          : 'Submitted timesheets, and people already booked in this pay run, appear here.'
+    teamTab === 'exported'
+      ? 'Exported timesheets stay here for years after you generate an invoice.'
+      : teamTab === 'signed'
+        ? 'Counter-signed timesheets ready to export will appear here.'
+        : 'People appear here only after they have signed their own timesheet. Unsigned booked hours stay on My Timesheets until they sign.'
+
+  if (visible.length === 0) {
+    return <EmptyState title={emptyTitle} description={emptyDescription} />
+  }
 
   return (
-    <div className="space-y-6">
-      <p className="text-[15px] font-medium text-ios-muted">{formatPaymentPeriodLine(periodStart, periodEnd)}</p>
-
-      {error && (
-        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</div>
-      )}
-
-      {visibleRows.length === 0 ? (
-        <EmptyState title={emptyTitle} description={emptyDescription} />
-      ) : (
-        <div className="space-y-3">
-          {visibleRows.map((row) => {
-            const record = row.subject.userId ? records.get(row.subject.userId) : null
-            const status = record?.status || (row.hours > 0 ? 'draft' : 'draft')
-            const expanded = expandedKey === row.subject.key || scope !== 'team'
-            const busy = busyKey === row.subject.key
-
-            return (
-              <div key={row.subject.key} className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-                <button
-                  type="button"
-                  onClick={() => setExpandedKey(expanded && scope === 'team' ? null : row.subject.key)}
-                  className="flex w-full items-center gap-4 px-4 py-4 text-left hover:bg-slate-50"
-                >
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className="text-sm font-semibold text-slate-900">{row.subject.name}</p>
-                      <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600">
-                        {row.subject.kind === 'manager' ? 'Manager' : 'Operative'}
-                      </span>
-                      <span
-                        className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase ${
-                          status === 'approved'
-                            ? 'bg-green-100 text-green-700'
-                            : status === 'submitted'
-                              ? 'bg-amber-100 text-amber-800'
-                              : 'bg-slate-100 text-slate-600'
-                        }`}
-                      >
-                        {status === 'approved' && record?.invoiceGeneratedAt ? 'exported' : status}
-                      </span>
-                    </div>
-                    <p className="mt-1 text-xs text-slate-500">
-                      {row.hours.toFixed(1)}h · {row.days.toFixed(1)} days · {row.entries.length} booking
-                      {row.entries.length !== 1 ? 's' : ''}
-                      {row.amount != null ? ` · £${row.amount.toFixed(2)} est.` : ''}
-                      {row.amount == null ? ' · Rate not set by your line manager' : ''}
-                    </p>
-                  </div>
-                </button>
-
-                {expanded && (
-                  <div className="border-t border-slate-100 px-4 py-4">
-                    {row.entries.length === 0 ? (
-                      <p className="text-sm text-ios-muted">
-                        No bookings found for this payment period yet. Hours from site, office, site survey and other
-                        schedule entries will appear here automatically.
-                      </p>
-                    ) : (
-                      <div className="space-y-2">
-                        {row.entries.map((entry) => (
-                          <div key={`${entry.date.toISOString()}-${entry.label}`} className="flex justify-between text-xs text-slate-600">
-                            <span>{format(entry.date, 'EEE d MMM')} · {entry.label}</span>
-                            <span>{entry.hours.toFixed(1)}h</span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    <div className="mt-4 flex flex-wrap gap-2">
-                      {canSubmitForSubject(row.subject) && status === 'draft' && (
-                        <button
-                          type="button"
-                          disabled={busy || row.hours <= 0}
-                          onClick={() => handleSubmit(row)}
-                          className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
-                        >
-                          {busy ? 'Submitting…' : 'Submit for approval'}
-                        </button>
-                      )}
-                      {isManagerView && status === 'submitted' && (
-                        <button
-                          type="button"
-                          disabled={busy}
-                          onClick={() => handleApprove(row)}
-                          className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
-                        >
-                          {busy ? 'Approving…' : 'Approve timesheet'}
-                        </button>
-                      )}
-                      {status === 'approved' && (
-                        <button
-                          type="button"
-                          disabled={busy}
-                          onClick={() => handleInvoice(row)}
-                          className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-                        >
-                          Generate invoice
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )
-          })}
-        </div>
-      )}
+    <div className="space-y-3">
+      {visible.map((member) => {
+        const draft = drafts.get(member.id)
+        const entries = collectSubjectDayEntries({
+          subject: {
+            key: `user:${member.id}`,
+            kind: member.permissions.operativeMode ? 'operative' : 'manager',
+            name: `${member.firstName} ${member.surname}`.trim() || member.email,
+            userId: member.id,
+            operativeId: operatives.find((row) => row.email.toLowerCase() === member.email.toLowerCase())?.id,
+          },
+          bookings,
+          managerSiteBookings,
+          weekRange: { start: periodStart, end: periodEnd },
+          payrollPolicy,
+        })
+        const hours = totalHours(entries)
+        return (
+          <button
+            key={member.id}
+            type="button"
+            onClick={() =>
+              router.push(
+                `/dashboard/timesheets?surface=team&tab=${teamTab}&user=${member.id}&period=${periodStartKey(periodStart, timeZone)}`
+              )
+            }
+            className="flex w-full items-center justify-between rounded-2xl bg-white p-4 text-left shadow-[0_1px_2px_rgba(0,0,0,0.10)] hover:ring-2 hover:ring-[#185FA5]/20"
+          >
+            <div>
+              <p className="text-[17px] font-semibold">{`${member.firstName} ${member.surname}`.trim() || member.email}</p>
+              <p className="mt-1 text-[13px] text-ios-muted">
+                {hours.toFixed(1)}h · {member.permissions.operativeMode ? 'Operative' : hasAdminAccess(member) ? 'Admin' : 'Manager'}
+                {draft?.operativeSignedAt ? ' · Signed by user' : ''}
+              </p>
+            </div>
+            <span className="text-[#185FA5]">›</span>
+          </button>
+        )
+      })}
     </div>
   )
-}
-
-function matchesTeamTab(row: SubjectRow, tab: TeamTimesheetTab): boolean {
-  const status = row.record?.status || 'draft'
-  const exported = Boolean(row.record?.invoiceGeneratedAt)
-  if (tab === 'exported') return exported
-  if (tab === 'signed') return status === 'approved' && !exported
-  return (status === 'submitted' || (status === 'draft' && row.hours > 0)) && !exported
 }

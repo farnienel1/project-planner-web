@@ -4,6 +4,15 @@
 [build.environment]
   NETLIFY_NEXT_SKEW_PROTECTION = "true"
 
+# PRs already get a Deploy Preview. Skip the extra branch-deploy so each pull
+# does not spend a second Next.js build (~same credit cost again).
+[context.branch-deploy]
+  ignore = "exit 0"
+
+# Skip preview builds that only touch docs, Cursor rules, or markdown.
+[context.deploy-preview]
+  ignore = "git diff --quiet $CACHED_COMMIT_REF $COMMIT_REF -- . ':!docs' ':!.cursor' ':!*.md'"
+
 [[plugins]]
   package = "@netlify/plugin-nextjs"
 

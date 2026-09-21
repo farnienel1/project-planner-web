@@ -263,7 +263,17 @@ export function QualificationsScreen() {
           templates={templates}
           saving={saving}
           onAdd={() => setPickerOpen(true)}
-          onChange={(next) => void updateMine(next)}
+          onSave={async (next) => {
+            setSaving(true)
+            setError(null)
+            try {
+              await updateMine(next)
+            } catch (err: unknown) {
+              setError(err instanceof Error ? err.message : 'Failed to save qualifications')
+            } finally {
+              setSaving(false)
+            }
+          }}
           organizationId={organization?.id || ''}
         />
       )}
@@ -326,17 +336,26 @@ function MyQualificationsPanel({
   templates,
   saving,
   onAdd,
-  onChange,
+  onSave,
   organizationId,
 }: {
   linked?: ReturnType<typeof findOperativeForUser>
   templates: Qualification[]
   saving: boolean
   onAdd: () => void
-  onChange: (next: NonNullable<ReturnType<typeof findOperativeForUser>>) => void
+  onSave: (next: NonNullable<ReturnType<typeof findOperativeForUser>>) => Promise<void>
   organizationId: string
 }) {
-  if (!linked) {
+  const [draft, setDraft] = useState(linked)
+  const [dirty, setDirty] = useState(false)
+  const [uploading, setUploading] = useState(false)
+
+  useEffect(() => {
+    setDraft(linked)
+    setDirty(false)
+  }, [linked])
+
+  if (!linked || !draft) {
     return (
       <div className="rounded-2xl bg-white p-6 shadow-[0_1px_2px_rgba(0,0,0,0.10)]">
         <p className="text-[18px] font-semibold">Profile not linked</p>
@@ -348,7 +367,7 @@ function MyQualificationsPanel({
     )
   }
 
-  if (linked.qualifications.length === 0) {
+  if (draft.qualifications.length === 0) {
     return (
       <div className="rounded-2xl bg-white p-6 shadow-[0_1px_2px_rgba(0,0,0,0.10)]">
         <p className="text-[15px] text-ios-muted">
@@ -363,17 +382,33 @@ function MyQualificationsPanel({
     )
   }
 
+  const patch = (next: NonNullable<typeof draft>) => {
+    setDraft(next)
+    setDirty(true)
+  }
+
   return (
     <div className="space-y-4">
-      <div className="flex justify-end">
+      <div className="flex flex-wrap items-center justify-end gap-3">
         <button type="button" onClick={onAdd} className="text-[15px] font-semibold text-[#185FA5]">
           Add qualifications
         </button>
+        <button
+          type="button"
+          disabled={saving || uploading || !dirty}
+          onClick={() => void onSave(draft).then(() => setDirty(false))}
+          className="rounded-xl bg-[#185FA5] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+        >
+          {saving ? 'Saving…' : 'Save'}
+        </button>
       </div>
+      {dirty ? (
+        <p className="text-right text-[13px] text-amber-700">Unsaved changes — tap Save to keep expiry dates and certificates.</p>
+      ) : null}
       <div className="grid gap-4 md:grid-cols-2">
-        {linked.qualifications.map((qual) => {
-          const expiry = linked.qualificationExpiryDates?.[qual.id]
-          const cert = linked.qualificationCertificateURLs?.[qual.id]
+        {draft.qualifications.map((qual) => {
+          const expiry = draft.qualificationExpiryDates?.[qual.id]
+          const cert = draft.qualificationCertificateURLs?.[qual.id]
           return (
             <div key={qual.id} className="rounded-2xl bg-white p-5 shadow-[0_1px_2px_rgba(0,0,0,0.10)]">
               <p className="text-[17px] font-semibold">{qual.name}</p>
@@ -383,10 +418,10 @@ function MyQualificationsPanel({
                   type="date"
                   value={expiry ? expiry.toISOString().slice(0, 10) : ''}
                   onChange={(e) => {
-                    const nextDates = { ...(linked.qualificationExpiryDates || {}) }
+                    const nextDates = { ...(draft.qualificationExpiryDates || {}) }
                     if (e.target.value) nextDates[qual.id] = new Date(`${e.target.value}T00:00:00`)
                     else delete nextDates[qual.id]
-                    onChange({ ...linked, qualificationExpiryDates: nextDates })
+                    patch({ ...draft, qualificationExpiryDates: nextDates })
                   }}
                   className="mt-1 w-full rounded-lg border border-ios-search-border px-3 py-2"
                 />
@@ -395,7 +430,7 @@ function MyQualificationsPanel({
               <input
                 type="file"
                 accept="application/pdf,image/jpeg"
-                disabled={saving}
+                disabled={saving || uploading}
                 onChange={async (event) => {
                   const file = event.target.files?.[0]
                   if (!file || !organizationId) return
@@ -403,12 +438,17 @@ function MyQualificationsPanel({
                     window.alert('PDF or JPEG only · max 10MB')
                     return
                   }
-                  const path = qualificationCertificatePath(organizationId, linked.id, qual.id, file.name)
-                  const url = await uploadFile(path, file, file.type || 'application/pdf')
-                  onChange({
-                    ...linked,
-                    qualificationCertificateURLs: { ...(linked.qualificationCertificateURLs || {}), [qual.id]: url },
-                  })
+                  setUploading(true)
+                  try {
+                    const path = qualificationCertificatePath(organizationId, draft.id, qual.id, file.name)
+                    const url = await uploadFile(path, file, file.type || 'application/pdf')
+                    patch({
+                      ...draft,
+                      qualificationCertificateURLs: { ...(draft.qualificationCertificateURLs || {}), [qual.id]: url },
+                    })
+                  } finally {
+                    setUploading(false)
+                  }
                 }}
                 className="mt-2 text-sm"
               />
@@ -421,9 +461,9 @@ function MyQualificationsPanel({
                     type="button"
                     className="font-semibold text-red-600"
                     onClick={() => {
-                      const next = { ...(linked.qualificationCertificateURLs || {}) }
+                      const next = { ...(draft.qualificationCertificateURLs || {}) }
                       delete next[qual.id]
-                      onChange({ ...linked, qualificationCertificateURLs: next })
+                      patch({ ...draft, qualificationCertificateURLs: next })
                     }}
                   >
                     Remove Certificate

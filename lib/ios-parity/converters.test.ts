@@ -59,6 +59,8 @@ test('serializeOperative and serializeManager write iOS empty-string fields', ()
   assert.equal(op.currencySymbol, '£')
   assert.equal(op.dayRate, 100)
   assert.equal(op.organizationId, 'org1')
+  assert.deepEqual(op.qualificationCertificateURLs, {})
+  assert.ok(op.qualificationExpiryDates && typeof op.qualificationExpiryDates === 'object')
 
   const mgr = serializeManager({
     id: 'BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB',

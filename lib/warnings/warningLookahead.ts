@@ -1,6 +1,7 @@
 import type { OrgInvoicingSettings, OrgWarningDetectionSettings } from '@/lib/settings/organizationSettings'
 import { WEEKDAY_OPTIONS } from '@/lib/settings/organizationSettings'
 import {
+  LONDON_TIME_ZONE,
   addLondonDays,
   dayKey,
   daysInLondonMonth,
@@ -17,16 +18,16 @@ function isoWeekdayIndex(day: string): number {
   return index >= 0 ? index + 1 : 5
 }
 
-function weekdayOnOrBefore(reference: Date, isoWeekday: number): Date {
-  const current = londonIsoWeekday(reference)
+function weekdayOnOrBefore(reference: Date, isoWeekday: number, timeZone: string): Date {
+  const current = londonIsoWeekday(reference, timeZone)
   const delta = current >= isoWeekday ? current - isoWeekday : current + 7 - isoWeekday
-  return addLondonDays(londonMidnight(reference), -delta)
+  return addLondonDays(londonMidnight(reference, timeZone), -delta, timeZone)
 }
 
-function weekdayOnOrAfter(reference: Date, isoWeekday: number): Date {
-  const current = londonIsoWeekday(reference)
+function weekdayOnOrAfter(reference: Date, isoWeekday: number, timeZone: string): Date {
+  const current = londonIsoWeekday(reference, timeZone)
   const delta = current <= isoWeekday ? isoWeekday - current : 7 - current + isoWeekday
-  return addLondonDays(londonMidnight(reference), delta)
+  return addLondonDays(londonMidnight(reference, timeZone), delta, timeZone)
 }
 
 /** Sunday of the current London week — iOS Full week coverageEnd. */
@@ -46,18 +47,19 @@ export type WarningCoverageWindow = {
 
 function resolveDateRangeInvoicingPeriod(
   referenceDate: Date,
-  invoicing: OrgInvoicingSettings
+  invoicing: OrgInvoicingSettings,
+  timeZone: string
 ): InvoicingPeriodRange {
-  const dayOfMonth = londonDayOfMonth(referenceDate)
+  const dayOfMonth = londonDayOfMonth(referenceDate, timeZone)
   const ranges = invoicing.paymentRunDateRanges.filter((range) => range.startDay > 0 && range.endDay > 0)
-  const monthEnd = daysInLondonMonth(referenceDate)
+  const monthEnd = daysInLondonMonth(referenceDate, timeZone)
 
   for (const range of ranges) {
     if (dayOfMonth >= range.startDay && dayOfMonth <= range.endDay) {
       const clampedEnd = Math.min(range.endDay, monthEnd)
       return {
-        start: londonDateWithDay(referenceDate, range.startDay),
-        end: londonDateWithDay(referenceDate, clampedEnd),
+        start: londonDateWithDay(referenceDate, range.startDay, timeZone),
+        end: londonDateWithDay(referenceDate, clampedEnd, timeZone),
       }
     }
   }
@@ -66,58 +68,60 @@ function resolveDateRangeInvoicingPeriod(
     const fallback = ranges.reduce((latest, range) => (range.endDay > latest.endDay ? range : latest))
     const clampedEnd = Math.min(fallback.endDay, monthEnd)
     return {
-      start: londonDateWithDay(referenceDate, fallback.startDay),
-      end: londonDateWithDay(referenceDate, clampedEnd),
+      start: londonDateWithDay(referenceDate, fallback.startDay, timeZone),
+      end: londonDateWithDay(referenceDate, clampedEnd, timeZone),
     }
   }
 
   return {
-    start: londonMidnight(referenceDate),
-    end: londonDateWithDay(referenceDate, monthEnd),
+    start: londonMidnight(referenceDate, timeZone),
+    end: londonDateWithDay(referenceDate, monthEnd, timeZone),
   }
 }
 
-function londonDateWithDay(reference: Date, day: number): Date {
-  const key = dayKey(reference)
+function londonDateWithDay(reference: Date, day: number, timeZone: string): Date {
+  const key = dayKey(reference, timeZone)
   const [y, m] = key.split('-').map(Number)
-  const clamped = Math.min(Math.max(day, 1), daysInLondonMonth(reference))
-  return londonMidnight(new Date(Date.UTC(y, m - 1, clamped, 12, 0, 0)))
+  const clamped = Math.min(Math.max(day, 1), daysInLondonMonth(reference, timeZone))
+  return londonMidnight(new Date(Date.UTC(y, m - 1, clamped, 12, 0, 0)), timeZone)
 }
 
 function resolveRecurringInvoicingPeriod(
   referenceDate: Date,
-  invoicing: OrgInvoicingSettings
+  invoicing: OrgInvoicingSettings,
+  timeZone: string
 ): InvoicingPeriodRange {
   const startWd = isoWeekdayIndex(invoicing.recurringRunStartDay)
   const endWd = isoWeekdayIndex(invoicing.recurringRunEndDay)
-  const ref = londonMidnight(referenceDate)
+  const ref = londonMidnight(referenceDate, timeZone)
 
-  let periodStart = weekdayOnOrBefore(ref, startWd)
-  let periodEnd = weekdayOnOrAfter(periodStart, endWd)
-  if (dayKey(periodEnd) < dayKey(periodStart)) {
-    periodEnd = addLondonDays(periodEnd, 7)
+  let periodStart = weekdayOnOrBefore(ref, startWd, timeZone)
+  let periodEnd = weekdayOnOrAfter(periodStart, endWd, timeZone)
+  if (dayKey(periodEnd, timeZone) < dayKey(periodStart, timeZone)) {
+    periodEnd = addLondonDays(periodEnd, 7, timeZone)
   }
 
-  if (dayKey(ref) > dayKey(periodEnd)) {
-    periodStart = addLondonDays(periodStart, 7)
-    periodEnd = weekdayOnOrAfter(periodStart, endWd)
-    if (dayKey(periodEnd) < dayKey(periodStart)) {
-      periodEnd = addLondonDays(periodEnd, 7)
+  if (dayKey(ref, timeZone) > dayKey(periodEnd, timeZone)) {
+    periodStart = addLondonDays(periodStart, 7, timeZone)
+    periodEnd = weekdayOnOrAfter(periodStart, endWd, timeZone)
+    if (dayKey(periodEnd, timeZone) < dayKey(periodStart, timeZone)) {
+      periodEnd = addLondonDays(periodEnd, 7, timeZone)
     }
   }
 
   return { start: periodStart, end: periodEnd }
 }
 
-/** Current invoicing / payment run period containing the reference date (iOS parity). */
+/** Current invoicing / payment run period containing the reference date (org-country zone). */
 export function computeInvoicingPeriod(
   referenceDate: Date,
-  invoicing: OrgInvoicingSettings
+  invoicing: OrgInvoicingSettings,
+  timeZone: string = LONDON_TIME_ZONE
 ): InvoicingPeriodRange {
-  const ref = londonMidnight(referenceDate)
+  const ref = londonMidnight(referenceDate, timeZone)
   return invoicing.paymentRunMode === 'date_ranges'
-    ? resolveDateRangeInvoicingPeriod(ref, invoicing)
-    : resolveRecurringInvoicingPeriod(ref, invoicing)
+    ? resolveDateRangeInvoicingPeriod(ref, invoicing, timeZone)
+    : resolveRecurringInvoicingPeriod(ref, invoicing, timeZone)
 }
 
 /**
