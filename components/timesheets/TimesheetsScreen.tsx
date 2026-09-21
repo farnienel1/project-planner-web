@@ -285,26 +285,28 @@ export function TimesheetsScreen({
       return <EmptyState title={emptyTitle} description={emptyDescription} />
     }
     return (
-      <div className="space-y-3">
-        {exportedRows.map((row) => {
+      <div className="overflow-hidden rounded-2xl bg-white p-2 shadow-[0_1px_2px_rgba(0,0,0,0.10)]">
+        {exportedRows.map((row, index) => {
           const period = computeInvoicingPeriod(row.weekStart, invoicing, timeZone)
           const summary = summaryFor(row.user, row.draft, period.start, period.end)
           return (
-            <MemberRow
-              key={row.id}
-              member={row.user}
-              users={users}
-              viewer={user}
-              pill="Exported"
-              pillClass="bg-slate-100 text-slate-600"
-              summary={summary}
-              periodLine={formatPaymentPeriodLine(period.start, period.end, timeZone)}
-              onClick={() =>
-                router.push(
-                  `/dashboard/timesheets?surface=team&tab=exported&user=${row.user.id}&period=${periodStartKey(period.start, timeZone)}`
-                )
-              }
-            />
+            <div key={row.id}>
+              {index > 0 ? <div className="ml-[58px] h-px bg-[#E5E5EA]" /> : null}
+              <MemberRow
+                member={row.user}
+                users={users}
+                viewer={user}
+                pill="Exported"
+                pillClass="bg-slate-200/70 text-slate-600"
+                summary={summary}
+                periodLine={formatPaymentPeriodLine(period.start, period.end, timeZone)}
+                onClick={() =>
+                  router.push(
+                    `/dashboard/timesheets?surface=team&tab=exported&user=${row.user.id}&period=${periodStartKey(period.start, timeZone)}`
+                  )
+                }
+              />
+            </div>
           )
         })}
       </div>
@@ -317,26 +319,30 @@ export function TimesheetsScreen({
 
   return (
     <div className="space-y-3">
-      {visible.map((member) => {
-        const draft = drafts.get(member.id)
-        const summary = summaryFor(member, draft, periodStart, periodEnd)
-        return (
-          <MemberRow
-            key={member.id}
-            member={member}
-            users={users}
-            viewer={user}
-            pill={teamTab === 'signed' ? 'Signed off' : 'Pending'}
-            pillClass={teamTab === 'signed' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-800'}
-            summary={summary}
-            onClick={() =>
-              router.push(
-                `/dashboard/timesheets?surface=team&tab=${teamTab}&user=${member.id}&period=${periodStartKey(periodStart, timeZone)}`
-              )
-            }
-          />
-        )
-      })}
+      <div className="overflow-hidden rounded-2xl bg-white p-2 shadow-[0_1px_2px_rgba(0,0,0,0.10)]">
+        {visible.map((member, index) => {
+          const draft = drafts.get(member.id)
+          const summary = summaryFor(member, draft, periodStart, periodEnd)
+          return (
+            <div key={member.id}>
+              {index > 0 ? <div className="ml-[58px] h-px bg-[#E5E5EA]" /> : null}
+              <MemberRow
+                member={member}
+                users={users}
+                viewer={user}
+                pill={teamTab === 'signed' ? 'Signed off' : 'Pending'}
+                pillClass={teamTab === 'signed' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}
+                summary={summary}
+                onClick={() =>
+                  router.push(
+                    `/dashboard/timesheets?surface=team&tab=${teamTab}&user=${member.id}&period=${periodStartKey(periodStart, timeZone)}`
+                  )
+                }
+              />
+            </div>
+          )
+        })}
+      </div>
       {teamTab === 'signed' ? (
         <div className="space-y-2 pt-2">
           <button
@@ -379,7 +385,7 @@ function MemberRow({
       onClick={onClick}
       className="flex w-full items-center gap-3 rounded-2xl bg-white p-4 text-left shadow-[0_1px_2px_rgba(0,0,0,0.10)] hover:ring-2 hover:ring-[#185FA5]/20"
     >
-      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#E6F1FB] text-[13px] font-bold text-[#185FA5]">
+      <div className="flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-full bg-[#007AFF] text-[12px] font-bold text-white">
         {initials(displayName(member))}
       </div>
       <div className="min-w-0 flex-1">

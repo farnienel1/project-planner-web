@@ -68,6 +68,7 @@ import { subjectForUser } from '@/lib/timesheets/timesheetWeekUtils'
 import { SignaturePad } from '@/components/timesheets/SignaturePad'
 import { LoadingSpinner } from '@/components/dashboard/PageShell'
 import { formatAbbreviatedDayInZone, formatStampInZone } from '@/lib/orgTime/zoneTime'
+import { formatTimesheetHours } from '@/lib/timesheets/timesheetHours'
 
 function money(value: number): string {
   return `£${value.toFixed(2)}`
@@ -124,6 +125,7 @@ export function TimesheetPeriodPage({
   const [signature, setSignature] = useState<string | null>(null)
   const [extraMode, setExtraMode] = useState<'priceWork' | 'expense' | null>(null)
   const [editingLineId, setEditingLineId] = useState<string | null>(null)
+  const [editingExtra, setEditingExtra] = useState<{ type: 'expense' | 'priceWork'; id: string } | null>(null)
   const [editAmount, setEditAmount] = useState('')
   const [utrWarningOpen, setUtrWarningOpen] = useState(false)
   const [invoiceHtml, setInvoiceHtml] = useState<string | null>(null)
@@ -417,6 +419,7 @@ export function TimesheetPeriodPage({
           <p className="text-[20px] font-semibold">
             {`${subjectUser.firstName} ${subjectUser.surname}`.trim() || subjectUser.email}
           </p>
+          <p className="mt-1 text-[15px] text-ios-muted">{periodTitle}</p>
           <p className="mt-1 text-[15px] text-ios-muted">{statusLine(draft, subjectUser)}</p>
         </div>
       ) : null}
@@ -466,18 +469,35 @@ export function TimesheetPeriodPage({
           </ul>
         )}
         <div className="space-y-2 border-t border-slate-100 px-4 py-4">
-          <Row label="Hours subtotal" value={money(hoursSubtotal)} strong />
-          {overtimeAmount > 0 ? <Row label="Overtime" value={money(overtimeAmount)} /> : null}
-          {extrasTotal + expensesAmount > 0 ? (
-            <Row
-              label={managerHasSigned ? 'Approved extras' : 'Extras (price work & expenses)'}
-              value={money(extrasTotal + expensesAmount)}
-            />
-          ) : null}
+          {mode === 'review' ? (
+            <>
+              <Row
+                label={`Hours · ${payroll.shiftCount} shifts (${formatTimesheetHours(payroll.totalHours)}h)`}
+                value={money(hoursSubtotal)}
+              />
+              <Row label="Overtime" value={money(overtimeAmount)} />
+              <Row label={`Price work · ${draft.priceWorkEntries.length}`} value={money(extrasTotal)} />
+              <Row label={`Expenses · ${draft.expenseEntries.length}`} value={money(expensesAmount)} />
+            </>
+          ) : (
+            <>
+              <Row label="Hours subtotal" value={money(hoursSubtotal)} strong />
+              {overtimeAmount > 0 ? <Row label="Overtime" value={money(overtimeAmount)} /> : null}
+              {extrasTotal + expensesAmount > 0 ? (
+                <Row
+                  label={managerHasSigned ? 'Approved extras' : 'Extras (price work & expenses)'}
+                  value={money(extrasTotal + expensesAmount)}
+                />
+              ) : null}
+            </>
+          )}
           <div className="flex items-baseline justify-between pt-1">
             <p className="text-[17px] font-semibold">{managerHasSigned ? 'Approved total' : 'Total'}</p>
             <p className="text-[22px] font-bold">{money(total)}</p>
           </div>
+          {managerHasSigned && managerAdjustmentCount(draft) > 0 ? (
+            <p className="text-[12px] text-ios-muted">Includes line manager adjustments</p>
+          ) : null}
         </div>
       </section>
 
@@ -549,7 +569,7 @@ export function TimesheetPeriodPage({
             <button
               type="button"
               onClick={() => setSignOpen(true)}
-              className="w-full rounded-xl bg-[#185FA5] py-3.5 text-[16px] font-semibold text-white"
+              className="w-full rounded-xl bg-[#007AFF] py-3.5 text-[16px] font-semibold text-white"
             >
               Continue to sign
             </button>
@@ -599,6 +619,10 @@ export function TimesheetPeriodPage({
           canReview={canManagerReview}
           timeZone={timeZone}
           onSave={(next) => void persist(next)}
+          onEditExtra={(type, id, amount) => {
+            setEditingExtra({ type, id })
+            setEditAmount(String(amount.toFixed(2)))
+          }}
         />
       )}
 
@@ -683,7 +707,7 @@ export function TimesheetPeriodPage({
         />
       ) : null}
 
-      {editingLineId ? (
+      {editingLineId || editingExtra ? (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-sm rounded-2xl bg-white p-5">
             <p className="text-[17px] font-semibold">Edit amount</p>
@@ -694,7 +718,14 @@ export function TimesheetPeriodPage({
               inputMode="decimal"
             />
             <div className="mt-4 flex justify-end gap-3">
-              <button type="button" onClick={() => setEditingLineId(null)} className="text-sm font-semibold text-ios-muted">
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingLineId(null)
+                  setEditingExtra(null)
+                }}
+                className="text-sm font-semibold text-ios-muted"
+              >
                 Cancel
               </button>
               <button
@@ -702,8 +733,27 @@ export function TimesheetPeriodPage({
                 onClick={() => {
                   const amount = Number(editAmount)
                   if (!Number.isFinite(amount)) return
-                  setLineDecision(editingLineId, 'edited', amount)
-                  setEditingLineId(null)
+                  if (editingLineId) {
+                    setLineDecision(editingLineId, 'edited', amount)
+                    setEditingLineId(null)
+                    return
+                  }
+                  if (editingExtra?.type === 'expense') {
+                    const next = draft.expenseEntries.map((entry) =>
+                      entry.id === editingExtra.id
+                        ? { ...entry, managerDecision: 'edited' as const, managerRevisedAmount: amount }
+                        : entry
+                    )
+                    void persist({ ...draft, expenseEntries: next })
+                  } else if (editingExtra?.type === 'priceWork') {
+                    const next = draft.priceWorkEntries.map((entry) =>
+                      entry.id === editingExtra.id
+                        ? { ...entry, managerDecision: 'edited' as const, managerRevisedAmount: amount }
+                        : entry
+                    )
+                    void persist({ ...draft, priceWorkEntries: next })
+                  }
+                  setEditingExtra(null)
                 }}
                 className="rounded-lg bg-[#185FA5] px-3 py-1.5 text-sm font-semibold text-white"
               >
@@ -859,12 +909,20 @@ function TickCross({
   onEdit: () => void
 }) {
   const selected = reviewSelection(decision)
+  const approved = selected === 'approved' || selected === 'edited'
+  const declined = selected === 'declined'
   return (
-    <div className="mt-2 flex justify-end gap-1">
+    <div className="mt-2 flex justify-end gap-2">
       <button
         type="button"
         onClick={onApprove}
-        className={`rounded-md px-2 py-1 text-sm font-bold ${selected === 'approved' || selected === 'edited' ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}
+        className={`flex h-[34px] w-[34px] items-center justify-center rounded-[9px] text-[13px] font-bold ${
+          approved
+            ? 'bg-[#34C759] text-white'
+            : declined
+              ? 'bg-[#E5E5EA] text-[#C7C7CC]'
+              : 'bg-[#34C759]/15 text-[#34C759] ring-1 ring-[#34C759]/25'
+        }`}
         aria-label="Approve"
       >
         ✓
@@ -872,13 +930,24 @@ function TickCross({
       <button
         type="button"
         onClick={onDecline}
-        className={`rounded-md px-2 py-1 text-sm font-bold ${selected === 'declined' ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-500'}`}
+        className={`flex h-[34px] w-[34px] items-center justify-center rounded-[9px] text-[13px] font-bold ${
+          declined
+            ? 'bg-[#FF3B30] text-white'
+            : approved
+              ? 'bg-[#E5E5EA] text-[#C7C7CC]'
+              : 'bg-[#FF3B30]/15 text-[#FF3B30] ring-1 ring-[#FF3B30]/25'
+        }`}
         aria-label="Decline"
       >
         ✕
       </button>
-      <button type="button" onClick={onEdit} className="rounded-md bg-slate-100 px-2 py-1 text-sm text-slate-600" aria-label="Edit">
-        ✎
+      <button
+        type="button"
+        onClick={onEdit}
+        className="flex h-[34px] w-[34px] items-center justify-center rounded-[9px] bg-[#007AFF]/12 text-[13px] text-[#007AFF] ring-1 ring-[#007AFF]/25"
+        aria-label="Edit"
+      >
+        ⚙
       </button>
     </div>
   )
@@ -927,11 +996,13 @@ function ReviewExtras({
   canReview,
   timeZone,
   onSave,
+  onEditExtra,
 }: {
   draft: TimesheetDraft
   canReview: boolean
   timeZone: string
   onSave: (next: TimesheetDraft) => void
+  onEditExtra: (type: 'expense' | 'priceWork', id: string, amount: number) => void
 }) {
   if (draft.expenseEntries.length === 0 && draft.priceWorkEntries.length === 0) return null
   return (
@@ -961,13 +1032,7 @@ function ReviewExtras({
                     next[index] = { ...entry, managerDecision: 'declined', managerRevisedAmount: null }
                     onSave({ ...draft, expenseEntries: next })
                   }}
-                  onEdit={() => {
-                    const amount = window.prompt('Revised expense amount', String(entry.amount))
-                    if (amount == null) return
-                    const next = [...draft.expenseEntries]
-                    next[index] = { ...entry, managerDecision: 'edited', managerRevisedAmount: Number(amount) }
-                    onSave({ ...draft, expenseEntries: next })
-                  }}
+                  onEdit={() => onEditExtra('expense', entry.id, entry.amount)}
                 />
               ) : null}
             </div>
@@ -999,13 +1064,7 @@ function ReviewExtras({
                     next[index] = { ...entry, managerDecision: 'declined', managerRevisedAmount: null }
                     onSave({ ...draft, priceWorkEntries: next })
                   }}
-                  onEdit={() => {
-                    const amount = window.prompt('Revised price-work amount', String(entry.amount))
-                    if (amount == null) return
-                    const next = [...draft.priceWorkEntries]
-                    next[index] = { ...entry, managerDecision: 'edited', managerRevisedAmount: Number(amount) }
-                    onSave({ ...draft, priceWorkEntries: next })
-                  }}
+                  onEdit={() => onEditExtra('priceWork', entry.id, entry.amount)}
                 />
               ) : null}
             </div>

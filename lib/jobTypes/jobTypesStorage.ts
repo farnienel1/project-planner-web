@@ -36,6 +36,8 @@ const JOB_TYPE_ALIASES: Record<string, string> = {
   smallworks: 'Small Works',
   smallwork: 'Small Works',
   maintenance: 'Maintenance',
+  decarbonisation: 'Decarbonisation',
+  decarbonization: 'Decarbonisation',
 }
 
 export function canonicalJobTypeName(name: string): string {
@@ -58,10 +60,8 @@ export function coerceJobTypeList(raw: unknown): string[] {
       names.push(canonicalJobTypeName(item.trim()))
       continue
     }
-    if (item && typeof item === 'object' && 'name' in item) {
-      const nested = (item as { name?: unknown }).name
-      if (typeof nested === 'string' && nested.trim()) names.push(canonicalJobTypeName(nested.trim()))
-    }
+    const nested = stringFromJobTypeField(item)
+    if (nested) names.push(canonicalJobTypeName(nested))
   }
   return unionUniqueStrings([], names)
 }
@@ -94,13 +94,47 @@ export function collectionJobTypeForName(
   return 'CAT A'
 }
 
+export function stringFromJobTypeField(value: unknown): string {
+  if (typeof value === 'string') return value.trim()
+  if (value && typeof value === 'object') {
+    const record = value as Record<string, unknown>
+    if (typeof record.name === 'string' && record.name.trim()) return record.name.trim()
+    if (typeof record.rawValue === 'string' && record.rawValue.trim()) return record.rawValue.trim()
+  }
+  return ''
+}
+
+/** iOS catalogue names can live on jobType, customJobType, or older worksType fields. */
+export function jobTypeFieldsFromRecord(data: Record<string, unknown>): {
+  jobType?: string
+  customJobType?: string
+} {
+  return {
+    jobType:
+      stringFromJobTypeField(data.jobType) ||
+      stringFromJobTypeField(data.type) ||
+      stringFromJobTypeField(data.worksType) ||
+      stringFromJobTypeField(data.projectWorksType),
+    customJobType: stringFromJobTypeField(data.customJobType) || stringFromJobTypeField(data.worksType),
+  }
+}
+
 export async function loadJobTypes(organizationId: string): Promise<string[]> {
   if (!db) return [...DEFAULT_JOB_TYPES]
   try {
-    const snap = await getDoc(
-      doc(db, 'organizations', organizationId, 'settings', ORG_SETTINGS_JOB_TYPES_DOC)
+    const [snap, orgSnap] = await Promise.all([
+      getDoc(doc(db, 'organizations', organizationId, 'settings', ORG_SETTINGS_JOB_TYPES_DOC)),
+      getDoc(doc(db, 'organizations', organizationId)),
+    ])
+    const orgData = orgSnap.data() as Record<string, unknown> | undefined
+    const nestedSettings =
+      orgData?.settings && typeof orgData.settings === 'object'
+        ? (orgData.settings as Record<string, unknown>).jobTypes
+        : undefined
+    return unionUniqueStrings(
+      coerceJobTypeList(snap.data()?.jobTypes),
+      coerceJobTypeList(orgData?.jobTypes ?? nestedSettings)
     )
-    return coerceJobTypeList(snap.data()?.jobTypes)
   } catch {
     return []
   }
@@ -115,13 +149,9 @@ async function loadWorkJobTypeRecords(
       getDocs(collection(db, 'organizations', organizationId, 'projects')),
       getDocs(collection(db, 'organizations', organizationId, 'smallWorks')),
     ])
-    return [...projectsSnap.docs, ...smallSnap.docs].map((entry) => {
-      const data = entry.data() as Record<string, unknown>
-      return {
-        jobType: typeof data.jobType === 'string' ? data.jobType : '',
-        customJobType: typeof data.customJobType === 'string' ? data.customJobType : '',
-      }
-    })
+    return [...projectsSnap.docs, ...smallSnap.docs].map((entry) =>
+      jobTypeFieldsFromRecord(entry.data() as Record<string, unknown>)
+    )
   } catch {
     return []
   }

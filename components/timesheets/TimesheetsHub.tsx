@@ -166,23 +166,21 @@ export function TimesheetsHub() {
     const subject = users.find((row) => row.id === user.id) || user
     return (
       <div className="space-y-5 pb-10">
-        <TimesheetsBackLink
+        <TimesheetsNavBar
           href={periodParam ? '/dashboard/timesheets?surface=mine' : '/dashboard/timesheets'}
+          title={periodParam ? 'Timesheet' : 'My Timesheets'}
         />
         {periodParam ? (
           <TimesheetPeriodPage {...periodPageProps} subjectUser={subject} mode="mine" />
         ) : (
-          <>
-            <h1 className="text-[28px] font-semibold tracking-tight">My Timesheets</h1>
-            <MineTimesheetsList
-              organizationId={organization?.id}
-              subject={subject}
-              currentPeriod={currentPeriod}
-              pastPeriods={pastPeriods}
-              runCopyPeriodLine={runCopy.periodLine}
-              timeZone={timeZone}
-            />
-          </>
+          <MineTimesheetsList
+            organizationId={organization?.id}
+            subject={subject}
+            currentPeriod={currentPeriod}
+            pastPeriods={pastPeriods}
+            runCopyPeriodLine={runCopy.periodLine}
+            timeZone={timeZone}
+          />
         )}
       </div>
     )
@@ -193,20 +191,18 @@ export function TimesheetsHub() {
     const selectedUser = userParam ? users.find((row) => row.id === userParam) : undefined
     return (
       <div className="space-y-5 pb-10">
-        <TimesheetsBackLink
+        <TimesheetsNavBar
           href={
             userParam
               ? `/dashboard/timesheets?surface=team&tab=${tab}`
               : '/dashboard/timesheets'
           }
+          title={selectedUser ? 'Review Timesheet' : hasAdminAccess(user) ? 'User Timesheets' : 'Operative Timesheets'}
         />
         {selectedUser ? (
           <TimesheetPeriodPage {...periodPageProps} subjectUser={selectedUser} mode="review" />
         ) : (
           <>
-            <h1 className="text-[28px] font-semibold tracking-tight">
-              {hasAdminAccess(user) ? 'User Timesheets' : 'Operative Timesheets'}
-            </h1>
             <p className="text-sm text-ios-muted">Current pay run period · {runCopy.periodLine}</p>
             <div className="inline-flex rounded-xl bg-[#E5E5EA] p-1">
               {TEAM_TABS.map((item) => (
@@ -398,12 +394,22 @@ function MineTimesheetsList({
   )
 }
 
-function TimesheetsBackLink({ href }: { href: string }) {
+function TimesheetsNavBar({ href, title }: { href: string; title: string }) {
   const router = useRouter()
   return (
-    <button type="button" onClick={() => router.push(href)} className="text-[15px] font-medium text-[#185FA5]">
-      Back
-    </button>
+    <div className="relative flex min-h-[28px] items-center justify-center">
+      <button
+        type="button"
+        onClick={() => router.push(href)}
+        className="absolute left-0 inline-flex items-center gap-0.5 text-[17px] font-semibold text-[#007AFF]"
+      >
+        <span aria-hidden className="text-[22px] leading-none">
+          ‹
+        </span>
+        Back
+      </button>
+      <h1 className="px-16 text-center text-[17px] font-semibold">{title}</h1>
+    </div>
   )
 }
 
