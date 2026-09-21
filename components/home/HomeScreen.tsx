@@ -116,7 +116,7 @@ export function HomeScreen() {
   useEffect(() => {
     if (!user) return
     setMetricIds(loadSavedOverviewMetrics(user.id))
-    setActionIds(loadSavedQuickActionOrder(user.id, displayUser || user))
+    setActionIds(loadSavedQuickActionOrder(user.id, displayUser || user, users))
     if (organization?.id && !pauseHomeLoads) {
       loadMaterialCutOffSettings(organization.id, user.id)
         .then(setNotificationPreferences)
@@ -128,7 +128,7 @@ export function HomeScreen() {
       /* ignore */
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- displayUser is derived from user.id
-  }, [user?.id, organization?.id, pauseHomeLoads])
+  }, [user?.id, organization?.id, pauseHomeLoads, users])
 
   const merged = useMemo(() => mergeProjectsAndSmallWorks(projects, smallWorks), [projects, smallWorks])
   const liveCount = merged.filter((p) => p.isLive !== false).length
@@ -215,7 +215,7 @@ export function HomeScreen() {
   if (!displayUser || !user) return null
 
   const initials = `${(displayUser.firstName || displayUser.email).charAt(0)}${displayUser.surname?.charAt(0) || ''}`.toUpperCase()
-  const eligibleAdd = allEligibleQuickActionIds(displayUser).filter((id) => !actionIds.includes(id))
+  const eligibleAdd = allEligibleQuickActionIds(displayUser, false, users).filter((id) => !actionIds.includes(id))
 
   const persistActions = (ids: string[]) => {
     setActionIds(ids)

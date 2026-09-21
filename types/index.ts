@@ -142,6 +142,8 @@ export interface User {
   permissions: UserPermissions;
   assignedManagerUserId?: string;
   assignedManagerUserIds?: string[];
+  /** iOS `hasNoLineManager` — admin/founder with no counter-sign. */
+  hasNoLineManager?: boolean;
   dayRate?: number;
   hourlyRate?: number;
   tradeTypePreset?: string;

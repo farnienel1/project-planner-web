@@ -339,12 +339,29 @@ export function canAccessMyTimesheets(user: PermissionUser): boolean {
   return normalizeEmploymentType(user.employmentType) === 'self_employed'
 }
 
-export function canAccessOperativeTimesheets(user: PermissionUser, profileLoading = false): boolean {
+export function canAccessOperativeTimesheets(
+  user: PermissionUser,
+  profileLoading = false,
+  orgUsers: Array<NonNullable<PermissionUser>> = []
+): boolean {
   if (!user) return false
-  const managerLike = hasAdminAccess(user) || flag(user, 'manager') || user.isSuperAdmin
+  const managerLike =
+    hasAdminAccess(user) || flag(user, 'manager') || user.isSuperAdmin || user.role === 'manager' || user.role === 'admin'
   if (!managerLike) return false
   if (hasAdminAccess(user) || user.isSuperAdmin) return true
-  return profileLoading || flag(user, 'operatives')
+  if (profileLoading) return true
+  if (flag(user, 'operatives')) return true
+  return orgUsers.some((member) => {
+    if (!member || member.isActive === false) return false
+    if (!member.permissions?.operativeMode) return false
+    const ids = [
+      ...(member.assignedManagerUserIds || []),
+      member.assignedManagerUserId || '',
+    ]
+      .map((id) => id.trim())
+      .filter(Boolean)
+    return ids.includes(user.id)
+  })
 }
 
 export function shouldShowTimesheetsDisabledMessage(user: PermissionUser): boolean {
@@ -354,17 +371,25 @@ export function shouldShowTimesheetsDisabledMessage(user: PermissionUser): boole
 }
 
 /** UserStore.canAccessTimesheetsSurface ~L608 */
-export function canAccessTimesheetsSurface(user: PermissionUser, profileLoading = false): boolean {
+export function canAccessTimesheetsSurface(
+  user: PermissionUser,
+  profileLoading = false,
+  orgUsers: Array<NonNullable<PermissionUser>> = []
+): boolean {
   return (
     canAccessMyTimesheets(user) ||
-    canAccessOperativeTimesheets(user, profileLoading) ||
+    canAccessOperativeTimesheets(user, profileLoading, orgUsers) ||
     shouldShowTimesheetsDisabledMessage(user)
   )
 }
 
 /** Existing web name — maps to timesheets surface. */
-export function canAccessTimesheets(user: PermissionUser): boolean {
-  return canAccessTimesheetsSurface(user)
+export function canAccessTimesheets(
+  user: PermissionUser,
+  profileLoading = false,
+  orgUsers: Array<NonNullable<PermissionUser>> = []
+): boolean {
+  return canAccessTimesheetsSurface(user, profileLoading, orgUsers)
 }
 
 export function canEditTargetUserPermissions(

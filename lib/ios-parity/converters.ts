@@ -68,6 +68,25 @@ function ok<T>(value: T): ParseResult<T> {
   return { ok: true, value }
 }
 
+function parseDateMap(raw: unknown): Record<string, Date> {
+  if (!raw || typeof raw !== 'object') return {}
+  const output: Record<string, Date> = {}
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    const date = asDate(value)
+    if (date) output[key] = date
+  }
+  return output
+}
+
+function parseStringMap(raw: unknown): Record<string, string> {
+  if (!raw || typeof raw !== 'object') return {}
+  const output: Record<string, string> = {}
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof value === 'string' && value.trim()) output[key] = value
+  }
+  return output
+}
+
 export function defaultUserPermissions(operativeMode = false): UserPermissions {
   if (operativeMode) {
     return {
@@ -177,6 +196,7 @@ export function parseAppUserDocument(userId: string, data: Record<string, unknow
     permissions,
     assignedManagerUserIds: managerIds.length ? managerIds : undefined,
     assignedManagerUserId: managerIds[0],
+    hasNoLineManager: data.hasNoLineManager === true,
     dayRate: dayRate && dayRate > 0 ? dayRate : undefined,
     hourlyRate: hourlyRate && hourlyRate > 0 ? hourlyRate : undefined,
     tradeTypePreset: asOptionalString(data.tradeTypePreset),
@@ -862,6 +882,8 @@ export function parseOperative(
     organizationId,
     createdAt: asDate(data.createdAt) || new Date(),
     updatedAt: asDate(data.updatedAt) || new Date(),
+    qualificationExpiryDates: parseDateMap(data.qualificationExpiryDates),
+    qualificationCertificateURLs: parseStringMap(data.qualificationCertificateURLs),
   })
 }
 
@@ -917,6 +939,13 @@ export function serializeOperative(
     organizationId: v.organizationId,
     createdAt: asTimestamp(v.createdAt),
     updatedAt: asTimestamp(v.updatedAt),
+    qualificationExpiryDates: Object.fromEntries(
+      Object.entries(operative.qualificationExpiryDates || {}).map(([key, value]) => [
+        key,
+        asTimestamp(value instanceof Date ? value : new Date(value)),
+      ])
+    ),
+    qualificationCertificateURLs: operative.qualificationCertificateURLs || {},
   }
 }
 

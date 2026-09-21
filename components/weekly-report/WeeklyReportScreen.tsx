@@ -4,6 +4,8 @@ import { useMemo, useState } from 'react'
 import { addDays, format, startOfWeek } from 'date-fns'
 import type { OrganizationDetails } from '@/lib/settings/organizationSettings'
 import { formatInvoicingSubtitle } from '@/lib/settings/organizationSettings'
+import { ianaTimeZoneForCountry } from '@/lib/orgTime/orgTimeZone'
+import { dayKey } from '@/lib/ios-parity/londonTime'
 import {
   formatInvoicingPeriodDescription,
   formatReportPeriodLabel,
@@ -104,19 +106,20 @@ export function WeeklyReportScreen({
   loading?: boolean
 }) {
   const invoicing = orgDetails?.invoicing
+  const timeZone = ianaTimeZoneForCountry(orgDetails?.countryCode)
   const invoicingOptions = useMemo(
-    () => (invoicing ? listInvoicingPeriodOptions(invoicing) : []),
-    [invoicing]
+    () => (invoicing ? listInvoicingPeriodOptions(invoicing, new Date(), 6, timeZone) : []),
+    [invoicing, timeZone]
   )
 
   const thisWeekStart = mondayOf(new Date())
   const lastWeekStart = mondayOf(addDays(new Date(), -7))
   const defaultWeekStart = format(thisWeekStart, 'yyyy-MM-dd')
   const defaultCustomStart = invoicingOptions[0]
-    ? format(invoicingOptions[0].start, 'yyyy-MM-dd')
+    ? dayKey(invoicingOptions[0].start, timeZone)
     : defaultWeekStart
   const defaultCustomEnd = invoicingOptions[0]
-    ? format(invoicingOptions[0].end, 'yyyy-MM-dd')
+    ? dayKey(invoicingOptions[0].end, timeZone)
     : format(addDays(thisWeekStart, 6), 'yyyy-MM-dd')
 
   const [periodMode, setPeriodMode] = useState<WeeklyReportPeriodMode>('week')
@@ -137,8 +140,9 @@ export function WeeklyReportScreen({
         weekStart,
         customStart,
         customEnd,
+        timeZone,
       }),
-    [periodMode, invoicing, effectiveInvoicingPeriodId, weekStart, customStart, customEnd]
+    [periodMode, invoicing, effectiveInvoicingPeriodId, weekStart, customStart, customEnd, timeZone]
   )
 
   const report = useMemo(() => {

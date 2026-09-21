@@ -1,8 +1,10 @@
-import { addDays, format, isAfter, isBefore, startOfDay, subDays } from 'date-fns'
+import { addDays, format, isAfter, isBefore, startOfDay } from 'date-fns'
 import { endOfWeek, startOfWeek } from 'date-fns'
 import type { OrgInvoicingSettings } from '@/lib/settings/organizationSettings'
 import { capitalizeDay } from '@/lib/settings/organizationSettings'
 import { computeInvoicingPeriod } from '@/lib/warnings/warningLookahead'
+import { LONDON_TIME_ZONE, addLondonDays, dayKey, londonMidnight } from '@/lib/ios-parity/londonTime'
+import { formatPaymentPeriodLine } from '@/lib/timesheets/paymentRunCopy'
 
 export type WeeklyReportPeriodMode = 'invoicing' | 'week' | 'custom'
 
@@ -17,15 +19,8 @@ export type InvoicingPeriodOption = ReportPeriod & {
   isCurrent: boolean
 }
 
-export function formatReportPeriodLabel(start: Date, end: Date): string {
-  const sameYear = start.getFullYear() === end.getFullYear()
-  if (sameYear && start.getMonth() === end.getMonth()) {
-    return `${format(start, 'd')} – ${format(end, 'd MMM yyyy')}`
-  }
-  if (sameYear) {
-    return `${format(start, 'd MMM')} – ${format(end, 'd MMM yyyy')}`
-  }
-  return `${format(start, 'd MMM yyyy')} – ${format(end, 'd MMM yyyy')}`
+export function formatReportPeriodLabel(start: Date, end: Date, timeZone: string = LONDON_TIME_ZONE): string {
+  return formatPaymentPeriodLine(start, end, timeZone)
 }
 
 export function formatInvoicingPeriodDescription(invoicing: OrgInvoicingSettings): string {
@@ -37,36 +32,45 @@ export function formatInvoicingPeriodDescription(invoicing: OrgInvoicingSettings
   return ranges.map((range) => `${range.startDay}–${range.endDay}`).join(' · ')
 }
 
-function invoicingPeriodContainingDate(referenceDate: Date, invoicing: OrgInvoicingSettings): ReportPeriod {
-  const { start, end } = computeInvoicingPeriod(referenceDate, invoicing)
+function invoicingPeriodContainingDate(
+  referenceDate: Date,
+  invoicing: OrgInvoicingSettings,
+  timeZone: string = LONDON_TIME_ZONE
+): ReportPeriod {
+  const { start, end } = computeInvoicingPeriod(referenceDate, invoicing, timeZone)
   return {
     start,
     end,
-    label: formatReportPeriodLabel(start, end),
+    label: formatReportPeriodLabel(start, end, timeZone),
   }
 }
 
-function previousInvoicingPeriod(period: ReportPeriod, invoicing: OrgInvoicingSettings): ReportPeriod {
-  const anchor = subDays(startOfDay(period.start), 1)
-  return invoicingPeriodContainingDate(anchor, invoicing)
+function previousInvoicingPeriod(
+  period: ReportPeriod,
+  invoicing: OrgInvoicingSettings,
+  timeZone: string = LONDON_TIME_ZONE
+): ReportPeriod {
+  const anchor = addLondonDays(londonMidnight(period.start, timeZone), -1, timeZone)
+  return invoicingPeriodContainingDate(anchor, invoicing, timeZone)
 }
 
 /** Recent invoicing periods for the report picker (current first). */
 export function listInvoicingPeriodOptions(
   invoicing: OrgInvoicingSettings,
   referenceDate: Date = new Date(),
-  count = 6
+  count = 6,
+  timeZone: string = LONDON_TIME_ZONE
 ): InvoicingPeriodOption[] {
   const options: InvoicingPeriodOption[] = []
-  let current = invoicingPeriodContainingDate(referenceDate, invoicing)
+  let current = invoicingPeriodContainingDate(referenceDate, invoicing, timeZone)
 
   for (let index = 0; index < count; index += 1) {
     options.push({
       ...current,
-      id: `${format(current.start, 'yyyy-MM-dd')}_${format(current.end, 'yyyy-MM-dd')}`,
+      id: `${dayKey(current.start, timeZone)}_${dayKey(current.end, timeZone)}`,
       isCurrent: index === 0,
     })
-    current = previousInvoicingPeriod(current, invoicing)
+    current = previousInvoicingPeriod(current, invoicing, timeZone)
   }
 
   return options
@@ -102,6 +106,7 @@ export function resolveReportPeriod({
   customStart,
   customEnd,
   referenceDate = new Date(),
+  timeZone = LONDON_TIME_ZONE,
 }: {
   mode: WeeklyReportPeriodMode
   invoicing?: OrgInvoicingSettings
@@ -110,6 +115,7 @@ export function resolveReportPeriod({
   customStart: string
   customEnd: string
   referenceDate?: Date
+  timeZone?: string
 }): ReportPeriod | null {
   if (mode === 'week') {
     return resolveWeekPeriod(weekStart)
@@ -120,7 +126,7 @@ export function resolveReportPeriod({
   }
 
   if (!invoicing) return null
-  const options = listInvoicingPeriodOptions(invoicing, referenceDate)
+  const options = listInvoicingPeriodOptions(invoicing, referenceDate, 6, timeZone)
   const selected =
     (invoicingPeriodId && options.find((option) => option.id === invoicingPeriodId)) || options[0]
   if (!selected) return null
