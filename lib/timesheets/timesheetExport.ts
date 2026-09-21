@@ -1,6 +1,5 @@
 /**
- * iOS parity: InvoicingView.TimesheetExportHelper (HTML substitute — Cloud Function
- * sendProjectPlannerEmail has no PDF attachments).
+ * iOS parity: InvoicingView.TimesheetExportHelper / ResendEmailService.sendTimesheetExportEmail.
  */
 import type { TimesheetDraft } from '@/lib/timesheets/timesheetDraft'
 import {
@@ -185,17 +184,27 @@ export function managerExportEmailHTML({
   const pdfWord = timesheetCount === 1 ? '' : 's'
   const attachNote =
     downloadLinks.length === 0
-      ? `${timesheetCount} signed-off timesheet${pdfWord} for payment run <strong>${escapeHtml(paymentRunStamp)}</strong> (${escapeHtml(weekTitle)}) from <strong>${escapeHtml(organizationName)}</strong> ${noun} listed below for your records.`
-      : `${timesheetCount} signed-off timesheet${pdfWord} for payment run <strong>${escapeHtml(paymentRunStamp)}</strong> (${escapeHtml(weekTitle)}) from <strong>${escapeHtml(organizationName)}</strong> ${noun} ready, with download links below.`
+      ? `${timesheetCount} signed-off timesheet PDF${pdfWord} for payment run <strong>${escapeHtml(paymentRunStamp)}</strong> (${escapeHtml(weekTitle)}) from <strong>${escapeHtml(organizationName)}</strong> ${noun} attached for your records.`
+      : `${timesheetCount} signed-off timesheet PDF${pdfWord} for payment run <strong>${escapeHtml(paymentRunStamp)}</strong> (${escapeHtml(weekTitle)}) from <strong>${escapeHtml(organizationName)}</strong> ${noun} attached, with backup download links below.`
   return `<html><body style="font-family:Arial,sans-serif;max-width:720px;margin:0 auto;padding:20px;">
 <h2 style="color:#0D67ED;">Signed timesheets for filing</h2>
 <p>Hello ${escapeHtml(recipientName)},</p>
 <p>${attachNote}</p>
 <p>Each file is named: <em>User Name timesheet for payment run date ${escapeHtml(paymentRunStamp)}</em>.</p>
-<p style="color:#666;font-size:13px;">Each download is a PDF timesheet. The email function cannot attach files, so use the links below — the same PDFs iOS would send as attachments.</p>
 <ul>${list}</ul>
-<p style="color:#666;font-size:13px;">These timesheets were counter-signed and exported from User Timesheets → Signed off.</p>
+<p style="color:#666;font-size:13px;">These timesheets were counter-signed and exported from Operative Timesheets → Signed off.</p>
 </body></html>`
+}
+
+/** Browser/Node helper so Email and export can send the same PDF bytes iOS attaches. */
+export function pdfBytesToBase64(bytes: Uint8Array): string {
+  if (typeof Buffer !== 'undefined') return Buffer.from(bytes).toString('base64')
+  let binary = ''
+  const chunk = 0x8000
+  for (let index = 0; index < bytes.length; index += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(index, index + chunk))
+  }
+  return btoa(binary)
 }
 
 function escapeHtml(value: string): string {

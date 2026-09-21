@@ -22,6 +22,7 @@ import {
   invoiceLinesForTimesheet,
   invoiceLinesTotal,
   paymentRunDateStamp,
+  pdfBytesToBase64,
   signatureNotes,
   timesheetExportFileName,
 } from '@/lib/timesheets/timesheetExport'
@@ -171,6 +172,7 @@ export function TimesheetsScreen({
     const stamp = paymentRunDateStamp(periodStart, periodEnd, timeZone)
     const periodLine = formatPaymentPeriodLine(periodStart, periodEnd, timeZone)
     const downloadLinks: Array<{ fileName: string; url: string }> = []
+    const pdfAttachments: Array<{ fileName: string; content: string }> = []
     const failed: string[] = []
     try {
       for (const member of visible) {
@@ -215,6 +217,7 @@ export function TimesheetsScreen({
           emptyStateMessage: 'No work entries were found for this timesheet period.',
         })
         const fileName = timesheetExportFileName(name, stamp)
+        pdfAttachments.push({ fileName, content: pdfBytesToBase64(pdf) })
         try {
           const url = await uploadFile(
             timesheetExportPath(organization.id, fileName),
@@ -226,7 +229,7 @@ export function TimesheetsScreen({
           failed.push(name)
         }
       }
-      if (downloadLinks.length === 0) {
+      if (pdfAttachments.length === 0) {
         setExportMessage(failed.length ? `Could not build exports: ${failed.join(', ')}` : 'No timesheets could be exported.')
         return
       }
@@ -239,9 +242,10 @@ export function TimesheetsScreen({
           organizationName: organization.name || 'Organisation',
           weekTitle: periodLine,
           paymentRunStamp: stamp,
-          timesheetCount: downloadLinks.length,
-          attachmentNames: downloadLinks.map((link) => link.fileName),
+          timesheetCount: pdfAttachments.length,
+          attachmentNames: pdfAttachments.map((row) => row.fileName),
           downloadLinks,
+          pdfAttachments,
         }),
       })
       const payload = (await response.json().catch(() => ({}))) as { error?: string }
@@ -262,8 +266,8 @@ export function TimesheetsScreen({
       }
       setExportMessage(
         failed.length
-          ? `Emailed ${downloadLinks.length} to ${recipientEmail}. Skipped: ${failed.join(', ')}.`
-          : `Emailed ${downloadLinks.length} timesheet${downloadLinks.length === 1 ? '' : 's'} to ${recipientEmail} for filing.`
+          ? `Emailed ${pdfAttachments.length} to ${recipientEmail}. Storage backup skipped: ${failed.join(', ')}.`
+          : `Emailed ${pdfAttachments.length} timesheet${pdfAttachments.length === 1 ? '' : 's'} to ${recipientEmail} for filing.`
       )
       router.replace('/dashboard/timesheets?surface=team&tab=exported')
     } catch (error) {

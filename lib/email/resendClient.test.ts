@@ -60,6 +60,39 @@ test('sendProjectPlannerEmail forwards cc, replyTo and fromName like iOS', async
   assert.equal(calls[0].body.fromName, 'Farnie (via Project Planner)')
 })
 
+test('sendProjectPlannerEmail forwards PDF attachments like iOS ResendEmailService', async () => {
+  const calls: Array<{ body: Record<string, unknown> }> = []
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
+    calls.push({ body: JSON.parse(String(init?.body || '{}')) as Record<string, unknown> })
+    return new Response('ok', { status: 200 })
+  }) as typeof fetch
+
+  try {
+    await sendProjectPlannerEmail({
+      to: 'alex@cef.example',
+      subject: 'Signed timesheets for filing',
+      html: '<p>Hi</p>',
+      fromName: 'Acme',
+      attachments: [
+        {
+          filename: 'Ada Booked timesheet for payment run date 16.09.26 30.09.26.pdf',
+          content: Buffer.from('%PDF-1.4').toString('base64'),
+        },
+      ],
+    })
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+
+  const attachments = calls[0].body.attachments as Array<Record<string, string>>
+  assert.equal(attachments.length, 1)
+  assert.equal(attachments[0].filename.endsWith('.pdf'), true)
+  assert.equal(attachments[0].type, 'application/pdf')
+  assert.equal(attachments[0].content_type, 'application/pdf')
+  assert.ok(attachments[0].content.length > 0)
+})
+
 test('sendProjectPlannerEmail surfaces a Cloud Function error', async () => {
   const originalFetch = globalThis.fetch
   globalThis.fetch = (async () =>

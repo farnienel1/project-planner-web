@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { managerExportEmailHTML, paymentRunDateStamp, invoiceRateChangeNotes, timesheetExportFileName, invoiceLinesForTimesheet, invoiceLinesTotal } from './timesheetExport.ts'
+import { managerExportEmailHTML, paymentRunDateStamp, invoiceRateChangeNotes, timesheetExportFileName, invoiceLinesForTimesheet, invoiceLinesTotal, pdfBytesToBase64 } from './timesheetExport.ts'
 import type { User } from '../../types/index.ts'
 import { emptyDayRateHistory } from './dayRateHistoryStorage.ts'
 import { emptyTimesheetDraft } from './timesheetDraft.ts'
@@ -32,6 +32,8 @@ test('manager export email lists download links for filing', () => {
   assert.match(html, /Hello Alex/)
   assert.match(html, /https:\/\/example.com\/export.pdf/)
   assert.match(html, /16.09.26 30.09.26/)
+  assert.match(html, /attached, with backup download links/)
+  assert.equal(/cannot attach files/i.test(html), false)
 })
 
 test('timesheetExportFileName matches iOS PDF naming', () => {
@@ -39,6 +41,12 @@ test('timesheetExportFileName matches iOS PDF naming', () => {
     timesheetExportFileName('Ada Booked', '16.09.26 30.09.26'),
     'Ada Booked timesheet for payment run date 16.09.26 30.09.26.pdf'
   )
+})
+
+test('pdfBytesToBase64 round-trips PDF bytes', () => {
+  const bytes = Buffer.from('%PDF-1.4 test')
+  const encoded = pdfBytesToBase64(new Uint8Array(bytes))
+  assert.equal(Buffer.from(encoded, 'base64').toString(), '%PDF-1.4 test')
 })
 
 test('invoiceRateChangeNotes includes in-period user history like iOS', () => {
