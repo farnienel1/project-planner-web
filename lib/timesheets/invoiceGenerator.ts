@@ -20,6 +20,7 @@ export function buildTimesheetInvoiceHtml({
   amount,
   vatNumber,
   utrNumber,
+  lines,
 }: {
   organizationName: string
   subject: TimesheetSubject
@@ -30,6 +31,7 @@ export function buildTimesheetInvoiceHtml({
   amount: number | null
   vatNumber?: string
   utrNumber?: string
+  lines?: Array<{ date: string; description: string; amount: number }>
 }): string {
   const invoiceDate = format(new Date(), 'd MMMM yyyy')
   const period = `${format(weekStart, 'd MMM')} – ${format(weekEnd, 'd MMM yyyy')}`
@@ -88,12 +90,21 @@ export function buildTimesheetInvoiceHtml({
       <tr><th>Description</th><th>Hours</th><th>Days</th><th>Amount</th></tr>
     </thead>
     <tbody>
-      <tr>
+      ${
+        lines && lines.length > 0
+          ? lines
+              .map(
+                (line) =>
+                  `<tr><td>${escapeHtml(line.date)} — ${escapeHtml(line.description)}</td><td></td><td></td><td>${formatCurrency(line.amount)}</td></tr>`
+              )
+              .join('')
+          : `<tr>
         <td>Labour — week of ${format(weekStart, 'd MMM yyyy')}</td>
         <td>${totalHours.toFixed(1)}</td>
         <td>${totalDays.toFixed(2)}</td>
         <td>${amount != null ? formatCurrency(amount) : '—'}</td>
-      </tr>
+      </tr>`
+      }
     </tbody>
   </table>
 

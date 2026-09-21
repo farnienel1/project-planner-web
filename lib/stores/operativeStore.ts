@@ -8,7 +8,6 @@ import {
   setDoc,
   deleteDoc,
   doc,
-  Timestamp,
 } from 'firebase/firestore'
 import { newUuid } from '@/lib/firebase/firestoreUtils'
 import { db } from '@/lib/firebase/config'
@@ -189,17 +188,6 @@ export const useOperativeStore = create<OperativeState>((set, get) => ({
   saveOperative: async (organizationId, operative) => {
     const id = operative.id || newUuid()
     const payload = serializeOperative({ ...operative, id, organizationId })
-    if (operative.qualificationExpiryDates) {
-      payload.qualificationExpiryDates = Object.fromEntries(
-        Object.entries(operative.qualificationExpiryDates).map(([key, value]) => [
-          key,
-          Timestamp.fromDate(value instanceof Date ? value : new Date(value)),
-        ])
-      )
-    }
-    if (operative.qualificationCertificateURLs) {
-      payload.qualificationCertificateURLs = operative.qualificationCertificateURLs
-    }
     await setDoc(doc(db, 'organizations', organizationId, 'operatives', id), payload)
     const saved = { ...operative, id, organizationId, updatedAt: new Date() }
     set({ operatives: [...get().operatives.filter((o) => o.id !== id), saved] })

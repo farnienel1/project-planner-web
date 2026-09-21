@@ -3,8 +3,9 @@
  * Spec: docs/ios-parity/sections/04-job-types.md
  *
  * iOS overwrites settings/jobTypes with the in-memory set. An empty load plus save wipes the
- * catalogue while projects/small works still keep customJobType / jobType. Web restores the
- * union of those names and refuses to persist an empty overwrite.
+ * catalogue while projects/small works still keep customJobType / jobType. Web unions those
+ * names into the stored list even when the catalogue is not empty, then refuses to persist
+ * an empty overwrite.
  */
 import { collection, doc, getDoc, getDocs, setDoc, Timestamp } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
@@ -47,10 +48,11 @@ export async function recoverJobTypesFromWork(organizationId: string): Promise<s
     })
   )
   const stored = await loadJobTypes(organizationId)
-  if (stored.length > 0) return stored
-  if (recovered.length === 0) return stored
-  await persistJobTypes(organizationId, recovered)
-  return recovered
+  const merged = unionUniqueStrings(stored, recovered)
+  if (merged.length > stored.length) {
+    await persistJobTypes(organizationId, merged)
+  }
+  return merged
 }
 
 /** iOS overwrites the whole settings/jobTypes document — no merge. Empty catalogues are restored from projects on load. */
