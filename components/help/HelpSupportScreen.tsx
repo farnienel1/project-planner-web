@@ -221,6 +221,43 @@ const TOPICS: Topic[] = [
           'Wholesaler catalogues and order history are under Navigate when your permissions allow them.',
         ],
       },
+      {
+        id: 'tasks',
+        title: 'Tasks',
+        summary: 'To do, in progress, overdue and done.',
+        href: '/dashboard/tasks',
+        body: [
+          'Job tasks sit on a project or small works. Assigned people see them on Home and on the job hub.',
+          'Statuses match iOS: To do, In progress, Completed. Overdue is a task still open after its due date.',
+        ],
+      },
+      {
+        id: 'hs',
+        title: 'Health and safety',
+        summary: 'RAMS, toolbox talks and site documents.',
+        href: '/dashboard/projects',
+        body: [
+          'Open a job, then Health & safety. Documents and toolbox talks stay with that job so operatives see the pack on site.',
+        ],
+      },
+      {
+        id: 'site-audit',
+        title: 'Site audit',
+        summary: 'General, variations and snags.',
+        href: '/dashboard/site-audit',
+        body: [
+          'Site audit records issues against a job. Operatives only see this if Site audit is turned on for their account.',
+        ],
+      },
+      {
+        id: 'site-map',
+        title: 'Site map',
+        summary: 'Pins for jobs and office.',
+        href: '/dashboard/site-map',
+        body: [
+          'Admins can drop a map pin on a job so the location used for travel and site cards is exact.',
+        ],
+      },
     ],
   },
   {
@@ -258,6 +295,43 @@ const TOPICS: Topic[] = [
           'Company region/country drives bank holidays and the calendar used for pay runs on web.',
           'Working hours set standard paid hours, unpaid break and overtime multipliers.',
           'Invoicing sets payment-run date ranges or a recurring week, plus payout days and the note shown on timesheets.',
+        ],
+      },
+      {
+        id: 'leave',
+        title: 'Annual leave',
+        summary: 'Self-book and the company year.',
+        href: '/dashboard/annual-leave',
+        body: [
+          'Leave years and carry-over are set in Organisation settings. People with self-book permission request leave from Annual leave.',
+          'Approved leave days do not count as unbooked labour on Warnings.',
+        ],
+      },
+      {
+        id: 'org-schedule',
+        title: 'Organisation schedule',
+        summary: 'Everyone’s week in one place.',
+        href: '/dashboard/daily-overview',
+        body: [
+          'Managers and admins use Organisation schedule to see who is on which job. Book labour from a day or from a job hub.',
+        ],
+      },
+      {
+        id: 'switch-org',
+        title: 'Switch organisation',
+        summary: 'One login, many companies.',
+        href: '/dashboard/change-organisation',
+        body: [
+          'If you belong to more than one company, Switch organisation in Settings changes the live jobs and people you see. Data is never mixed between organisations.',
+        ],
+      },
+      {
+        id: 'notifications',
+        title: 'Notifications',
+        summary: 'Inbox for bookings, leave and timesheets.',
+        href: '/dashboard/notifications',
+        body: [
+          'The inbox lists company notifications. Timesheet pending sign-off notices appear for line managers after someone signs their sheet on iOS; web stores the same signed timesheet so the manager can open User Timesheets.',
         ],
       },
     ],

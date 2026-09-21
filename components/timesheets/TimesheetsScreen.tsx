@@ -26,6 +26,13 @@ import { LONDON_TIME_ZONE } from '@/lib/ios-parity/londonTime'
 
 export type TeamTimesheetTab = 'awaiting' | 'signed' | 'exported'
 
+function initials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean)
+  if (parts.length === 0) return '?'
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
+  return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase()
+}
+
 export function TimesheetsScreen({
   bookings,
   managerSiteBookings,
@@ -128,14 +135,42 @@ export function TimesheetsScreen({
                 `/dashboard/timesheets?surface=team&tab=${teamTab}&user=${member.id}&period=${periodStartKey(periodStart, timeZone)}`
               )
             }
-            className="flex w-full items-center justify-between rounded-2xl bg-white p-4 text-left shadow-[0_1px_2px_rgba(0,0,0,0.10)] hover:ring-2 hover:ring-[#185FA5]/20"
+            className="flex w-full items-center gap-3 rounded-2xl bg-white p-4 text-left shadow-[0_1px_2px_rgba(0,0,0,0.10)] hover:ring-2 hover:ring-[#185FA5]/20"
           >
-            <div>
-              <p className="text-[17px] font-semibold">{`${member.firstName} ${member.surname}`.trim() || member.email}</p>
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#E6F1FB] text-[13px] font-bold text-[#185FA5]">
+              {initials(`${member.firstName} ${member.surname}`.trim() || member.email)}
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="text-[17px] font-semibold">{`${member.firstName} ${member.surname}`.trim() || member.email}</p>
+                <span
+                  className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                    teamTab === 'exported'
+                      ? 'bg-slate-100 text-slate-600'
+                      : teamTab === 'signed'
+                        ? 'bg-green-100 text-green-700'
+                        : 'bg-amber-100 text-amber-800'
+                  }`}
+                >
+                  {teamTab === 'exported' ? 'Exported' : teamTab === 'signed' ? 'Signed off' : 'Pending'}
+                </span>
+              </div>
               <p className="mt-1 text-[13px] text-ios-muted">
-                {hours.toFixed(1)}h · {member.permissions.operativeMode ? 'Operative' : hasAdminAccess(member) ? 'Admin' : 'Manager'}
-                {draft?.operativeSignedAt ? ' · Signed by user' : ''}
+                Hrs {hours.toFixed(1)}
+                {draft?.priceWorkEntries.length ? ` · PW ${draft.priceWorkEntries.length}` : ''}
+                {draft?.expenseEntries.length ? ` · Exp ${draft.expenseEntries.length}` : ''}
+                {member.permissions.operativeMode ? ' · Operative' : hasAdminAccess(member) ? ' · Admin' : ' · Manager'}
               </p>
+              {hasAdminAccess(user) && (member.assignedManagerUserIds?.[0] || member.assignedManagerUserId) ? (
+                <p className="mt-0.5 text-[12px] text-ios-muted">
+                  Line manager:{' '}
+                  {(() => {
+                    const managerId = member.assignedManagerUserIds?.[0] || member.assignedManagerUserId
+                    const manager = users.find((row) => row.id === managerId)
+                    return manager ? `${manager.firstName} ${manager.surname}`.trim() : 'Assigned'
+                  })()}
+                </p>
+              ) : null}
             </div>
             <span className="text-[#185FA5]">›</span>
           </button>

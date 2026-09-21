@@ -105,9 +105,9 @@ export function ProjectHub({
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-[22px] font-medium tracking-tight">{project.jobNumber}</span>
-              {project.jobType && !isSmallWork ? (
+              {project.customJobType?.trim() || project.jobType ? (
                 <span className="rounded bg-white/20 px-1.5 py-0.5 text-[9px] font-medium tracking-wide text-white">
-                  {project.jobType}
+                  {project.customJobType?.trim() || project.jobType}
                 </span>
               ) : null}
             </div>

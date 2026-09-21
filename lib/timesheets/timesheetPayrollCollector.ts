@@ -87,9 +87,9 @@ function projectLabel(
   projects: Project[],
   smallWorks: Project[]
 ): { jobNumber: string; siteName: string } {
-  if (!projectId) return { jobNumber: '—', siteName: 'Site' }
+  if (!projectId) return { jobNumber: '—', siteName: 'Unknown Project' }
   const match = projects.find((row) => row.id === projectId) || smallWorks.find((row) => row.id === projectId)
-  if (!match) return { jobNumber: '—', siteName: 'Site' }
+  if (!match) return { jobNumber: '—', siteName: 'Unknown Project' }
   return { jobNumber: match.jobNumber || '—', siteName: match.siteName || 'Site' }
 }
 

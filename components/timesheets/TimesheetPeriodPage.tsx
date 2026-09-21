@@ -8,14 +8,17 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { Booking, Operative, Project, User } from '@/types'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import type { OrgInvoicingSettings, OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
+import { capitalizeDay } from '@/lib/settings/organizationSettings'
 import { useAuthStore } from '@/lib/stores/authStore'
+import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { newUuid } from '@/lib/firebase/firestoreUtils'
-import { formatPaymentPeriodLine } from '@/lib/timesheets/paymentRunCopy'
+import { formatPaymentPeriodLine, recurringRunDisplaySummary } from '@/lib/timesheets/paymentRunCopy'
 import {
   applySelfApprovalIfNoLineManager,
   clearSignatures,
   hoursWarningCopy,
   isTimesheetFullyApproved,
+  postSignExtraWarningCopy,
   requiresLineManagerCounterSign,
   userHasLineManager,
 } from '@/lib/timesheets/timesheetApprovalPolicy'
@@ -23,11 +26,13 @@ import {
   effectiveExpenseAmount,
   effectivePayrollAmount,
   effectivePriceWorkAmount,
+  expensesTotal,
   extrasPendingReview,
   grandTotal,
   isPayrollLineRemoved,
   managerAdjustmentCount,
   payrollTotal,
+  priceWorkTotal,
 } from '@/lib/timesheets/timesheetAdjustments'
 import {
   collectTimesheetPayroll,
@@ -89,6 +94,7 @@ export function TimesheetPeriodPage({
   timeZone: string
 }) {
   const { user: viewer, organization } = useAuthStore()
+  const { users } = useOrgUserStore()
   const [draft, setDraft] = useState<TimesheetDraft>(emptyTimesheetDraft())
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
@@ -123,10 +129,21 @@ export function TimesheetPeriodPage({
     mode === 'review' && userHasLineManager(subjectUser) && !draft.managerSignedAt && Boolean(draft.operativeSignedAt)
   const managerHasSigned = Boolean(draft.managerSignedAt)
   const fullyApproved = isTimesheetFullyApproved(draft, subjectUser)
-  const workAmount = payroll.workAmount
-  const extrasTotal = draft.priceWorkEntries.reduce((sum, item) => sum + item.amount, 0)
-  const expensesAmount = draft.expenseEntries.reduce((sum, item) => sum + item.amount, 0)
+  const extrasTotal = priceWorkTotal(draft, managerHasSigned, canManagerReview)
+  const expensesAmount = expensesTotal(draft, managerHasSigned, canManagerReview)
   const total = grandTotal(payroll.lineItems, draft, managerHasSigned, canManagerReview)
+  const overtimeAmount = payrollTotal(
+    payroll.lineItems.filter((line) => line.isOvertimeLine),
+    draft,
+    managerHasSigned,
+    canManagerReview
+  )
+  const hoursSubtotal = payrollTotal(
+    payroll.lineItems.filter((line) => !line.isOvertimeLine),
+    draft,
+    managerHasSigned,
+    canManagerReview
+  )
 
   const persist = useCallback(
     async (next: TimesheetDraft) => {
@@ -163,10 +180,8 @@ export function TimesheetPeriodPage({
   }, [organization?.id, subjectUser.id, periodStart, timeZone, subjectUser])
 
   const beginExtra = (kind: 'priceWork' | 'expense') => {
-    if (fullyApproved || draft.operativeSignedAt) {
-      const accept = window.confirm(
-        'Adding extras after signing clears signatures so the timesheet can be re-signed. Add anyway?'
-      )
+    if (fullyApproved) {
+      const accept = window.confirm(postSignExtraWarningCopy(subjectUser, draft))
       if (!accept) return
       void persist(clearSignatures(draft)).then(() => setExtraMode(kind))
       return
@@ -267,9 +282,9 @@ export function TimesheetPeriodPage({
   if (loading) return <LoadingSpinner />
 
   if (signOpen || managerSignOpen) {
-    const hoursAmount = workAmount
-    const priceWorkAmount = draft.priceWorkEntries.reduce((sum, item) => sum + item.amount, 0)
-    const expenses = draft.expenseEntries.reduce((sum, item) => sum + item.amount, 0)
+    const hoursAmount = payrollTotal(payroll.lineItems, draft, managerHasSigned, managerSignOpen)
+    const priceWorkAmount = priceWorkTotal(draft, managerHasSigned, managerSignOpen)
+    const expenses = expensesTotal(draft, managerHasSigned, managerSignOpen)
     const signerName = `${viewer?.firstName || ''} ${viewer?.surname || ''}`.trim() || viewer?.email || 'User'
     return (
       <SignSheet
@@ -358,8 +373,8 @@ export function TimesheetPeriodPage({
           </ul>
         )}
         <div className="space-y-2 border-t border-slate-100 px-4 py-4">
-          <Row label="Hours subtotal" value={money(payrollTotal(payroll.lineItems.filter((line) => !line.isOvertimeLine), draft, managerHasSigned, canManagerReview))} strong />
-          {mode === 'review' ? <Row label="Overtime" value={money(payrollTotal(payroll.lineItems.filter((line) => line.isOvertimeLine), draft, managerHasSigned, canManagerReview))} /> : null}
+          <Row label="Hours subtotal" value={money(hoursSubtotal)} strong />
+          {overtimeAmount > 0 ? <Row label="Overtime" value={money(overtimeAmount)} /> : null}
           {extrasTotal + expensesAmount > 0 ? (
             <Row
               label={managerHasSigned ? 'Approved extras' : 'Extras (price work & expenses)'}
@@ -558,6 +573,11 @@ export function TimesheetPeriodPage({
       {extraMode ? (
         <ExtraForm
           mode={extraMode}
+          jobNumbers={[...projects, ...smallWorks].map((row) => row.jobNumber).filter(Boolean)}
+          managerNames={users
+            .filter((row) => row.permissions.manager || row.permissions.adminAccess || row.isSuperAdmin)
+            .map((row) => `${row.firstName} ${row.surname}`.trim())
+            .filter(Boolean)}
           onCancel={() => setExtraMode(null)}
           onSave={async (entry) => {
             const next =
@@ -848,7 +868,7 @@ function PaymentRunsBox({ invoicing }: { invoicing: OrgInvoicingSettings }) {
       if (index >= dates.length) return null
       return `• Payout day ${dates[index]}`
     }
-    return `• Payout every ${invoicing.recurringPaymentDay}`
+    return `• Payout every ${capitalizeDay(invoicing.recurringPaymentDay)}`
   }
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-4">
@@ -862,9 +882,7 @@ function PaymentRunsBox({ invoicing }: { invoicing: OrgInvoicingSettings }) {
         ))
       ) : (
         <div className="mt-1 text-[15px]">
-          <p>
-            • {invoicing.recurringRunStartDay} – {invoicing.recurringRunEndDay}
-          </p>
+          <p>• {recurringRunDisplaySummary(invoicing)}</p>
           {payout(0) ? <p>{payout(0)}</p> : null}
         </div>
       )}
@@ -972,10 +990,14 @@ function SignSheet({
 
 function ExtraForm({
   mode,
+  jobNumbers,
+  managerNames,
   onCancel,
   onSave,
 }: {
   mode: 'priceWork' | 'expense'
+  jobNumbers: string[]
+  managerNames: string[]
   onCancel: () => void
   onSave: (entry: {
     priceWork?: TimesheetDraft['priceWorkEntries'][number]
@@ -988,24 +1010,40 @@ function ExtraForm({
   const [amount, setAmount] = useState('')
   const [agreedManagerName, setAgreedManagerName] = useState('')
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const [includeEndDate, setIncludeEndDate] = useState(false)
+  const [endDate, setEndDate] = useState('')
+  const [receiptName, setReceiptName] = useState<string | null>(null)
+  const value = Number(amount)
+  const canSave = title.trim() && Number.isFinite(value) && value > 0 && (mode === 'priceWork' || Boolean(receiptName))
+  const jobSuggestions = jobNumbers
+    .filter((number) => jobNumber.trim() && number.toLowerCase().includes(jobNumber.trim().toLowerCase()) && number !== jobNumber)
+    .slice(0, 6)
+  const managerSuggestions = managerNames
+    .filter(
+      (name) =>
+        agreedManagerName.trim() &&
+        name.toLowerCase().includes(agreedManagerName.trim().toLowerCase()) &&
+        name.toLowerCase() !== agreedManagerName.trim().toLowerCase()
+    )
+    .slice(0, 6)
 
   return (
     <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/40 p-4 sm:items-center">
       <form
-        className="w-full max-w-lg space-y-3 rounded-2xl bg-white p-5"
+        className="max-h-[90vh] w-full max-w-lg space-y-3 overflow-y-auto rounded-2xl bg-white p-5"
         onSubmit={(event) => {
           event.preventDefault()
-          const value = Number(amount)
-          if (!title.trim() || !Number.isFinite(value)) return
+          if (!canSave) return
           if (mode === 'priceWork') {
             void onSave({
               priceWork: {
                 id: newUuid(),
-                title: title.trim(),
+                title: title.trim() || 'Untitled price work',
                 details: details.trim(),
                 jobNumber: jobNumber.trim(),
                 agreedManagerName: agreedManagerName.trim() || 'Manager',
                 startDate: new Date(`${date}T00:00:00`),
+                endDate: includeEndDate && endDate ? new Date(`${endDate}T00:00:00`) : null,
                 amount: value,
                 managerDecision: 'approved',
               },
@@ -1014,37 +1052,94 @@ function ExtraForm({
             void onSave({
               expense: {
                 id: newUuid(),
-                title: title.trim(),
+                title: title.trim() || 'Untitled expense',
                 details: details.trim(),
                 jobNumber: jobNumber.trim(),
                 date: new Date(`${date}T00:00:00`),
                 amount: value,
+                receiptName,
                 managerDecision: 'approved',
               },
             })
           }
         }}
       >
-        <p className="text-[18px] font-semibold">{mode === 'priceWork' ? 'Add price work' : 'Add expense'}</p>
-        <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Title" className="w-full rounded-lg border px-3 py-2" required />
-        <input value={details} onChange={(e) => setDetails(e.target.value)} placeholder="Details" className="w-full rounded-lg border px-3 py-2" />
-        <input value={jobNumber} onChange={(e) => setJobNumber(e.target.value)} placeholder="Job number" className="w-full rounded-lg border px-3 py-2" />
-        {mode === 'priceWork' ? (
-          <input
-            value={agreedManagerName}
-            onChange={(e) => setAgreedManagerName(e.target.value)}
-            placeholder="Agreed with (manager)"
-            className="w-full rounded-lg border px-3 py-2"
-          />
+        <p className="text-[18px] font-semibold">{mode === 'priceWork' ? 'Add Price Work' : 'Add Expense'}</p>
+        <label className="block text-[13px] font-medium text-ios-muted">
+          {mode === 'expense' ? 'Expense name' : 'Price work name'}
+          <input value={title} onChange={(e) => setTitle(e.target.value)} className="mt-1 w-full rounded-lg border px-3 py-2 text-[15px] text-ios-ink" required />
+        </label>
+        <label className="block text-[13px] font-medium text-ios-muted">
+          Description
+          <textarea value={details} onChange={(e) => setDetails(e.target.value)} className="mt-1 min-h-[72px] w-full rounded-lg border px-3 py-2 text-[15px] text-ios-ink" />
+        </label>
+        <label className="block text-[13px] font-medium text-ios-muted">
+          Job number
+          <input value={jobNumber} onChange={(e) => setJobNumber(e.target.value)} className="mt-1 w-full rounded-lg border px-3 py-2 text-[15px] text-ios-ink" />
+        </label>
+        {jobSuggestions.length > 0 ? (
+          <div className="flex flex-wrap gap-2">
+            {jobSuggestions.map((number) => (
+              <button key={number} type="button" onClick={() => setJobNumber(number)} className="rounded-full bg-[#E6F1FB] px-3 py-1 text-[12px] font-semibold text-[#185FA5]">
+                {number}
+              </button>
+            ))}
+          </div>
         ) : null}
-        <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-full rounded-lg border px-3 py-2" />
-        <input value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="Amount £" inputMode="decimal" className="w-full rounded-lg border px-3 py-2" required />
+        <label className="block text-[13px] font-medium text-ios-muted">
+          Amount
+          <input value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="£0.00" inputMode="decimal" className="mt-1 w-full rounded-lg border px-3 py-2 text-[15px] text-ios-ink" required />
+        </label>
+        <label className="block text-[13px] font-medium text-ios-muted">
+          {mode === 'expense' ? 'Date' : 'Start date'}
+          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="mt-1 w-full rounded-lg border px-3 py-2 text-[15px] text-ios-ink" />
+        </label>
+        {mode === 'priceWork' ? (
+          <>
+            <label className="flex items-center gap-2 text-[13px] font-medium text-ios-ink">
+              <input type="checkbox" checked={includeEndDate} onChange={(e) => setIncludeEndDate(e.target.checked)} />
+              Add end date
+            </label>
+            {includeEndDate ? (
+              <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="w-full rounded-lg border px-3 py-2 text-[15px]" />
+            ) : null}
+            <label className="block text-[13px] font-medium text-ios-muted">
+              Manager who agreed this
+              <input value={agreedManagerName} onChange={(e) => setAgreedManagerName(e.target.value)} className="mt-1 w-full rounded-lg border px-3 py-2 text-[15px] text-ios-ink" />
+            </label>
+            {managerSuggestions.length > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                {managerSuggestions.map((name) => (
+                  <button key={name} type="button" onClick={() => setAgreedManagerName(name)} className="rounded-full bg-[#E6F1FB] px-3 py-1 text-[12px] font-semibold text-[#185FA5]">
+                    {name}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </>
+        ) : (
+          <label className="block text-[13px] font-medium text-ios-muted">
+            Upload receipt
+            <input
+              type="file"
+              accept="image/*,application/pdf"
+              className="mt-1 w-full text-sm"
+              onChange={(event) => {
+                const file = event.target.files?.[0]
+                setReceiptName(file ? file.name : null)
+              }}
+            />
+            <span className={`mt-1 block text-[12px] ${receiptName ? 'text-[#185FA5]' : 'text-red-600'}`}>
+              {receiptName || 'Required'}
+            </span>
+          </label>
+        )}
         <div className="flex justify-end gap-3 pt-2">
           <button type="button" onClick={onCancel} className="text-sm font-semibold text-ios-muted">
             Cancel
           </button>
-          <button type="submit" className="rounded-lg bg-[#185FA5] px-4 py-2 text-sm font-semibold text-white">
-            Save
+          <button type="submit" disabled={!canSave} className="rounded-lg bg-[#185FA5] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
+            {mode === 'expense' ? 'Add expense' : 'Add price work'}
           </button>
         </div>
       </form>

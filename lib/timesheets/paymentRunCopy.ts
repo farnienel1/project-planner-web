@@ -49,6 +49,11 @@ export function currentPaymentRunCopy(
   }
 }
 
+/** iOS OrganizationInvoicingSettings.recurringRunDisplaySummary */
+export function recurringRunDisplaySummary(invoicing: OrgInvoicingSettings): string {
+  return `In arrears: ${capitalizeDay(invoicing.recurringRunStartDay)} to ${capitalizeDay(invoicing.recurringRunEndDay)} (of the previous week)`
+}
+
 export function formatPaymentPeriodLine(start: Date, end: Date, timeZone: string = LONDON_TIME_ZONE): string {
   const startParts = londonDateParts(start, timeZone)
   const endParts = londonDateParts(end, timeZone)
