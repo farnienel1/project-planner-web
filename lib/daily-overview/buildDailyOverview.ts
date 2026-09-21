@@ -14,7 +14,12 @@ import {
   parseMinutes,
 } from '@/lib/scheduling/paidHours'
 import type { Booking, HolidayBooking, Operative, Project, User } from '@/types'
-import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
+import type { ManagerLocationType, ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
+import {
+  formatSubcontractorBookingLabel,
+  findSubcontractorFirm,
+  resolveSubcontractorBookingPeople,
+} from '@/lib/subcontractors/bookingPeople'
 
 export type OverviewSubcontractorBooking = {
   id: string
@@ -25,6 +30,7 @@ export type OverviewSubcontractorBooking = {
   workStartTime?: string
   workEndTime?: string
   status?: string
+  bookedContactIds?: string[]
   bookedOperativeNames?: string[]
 }
 
@@ -38,6 +44,15 @@ export type OverviewPersonRow = {
   hours: number
   bookedOperativeNames: string[]
   kind: 'operative' | 'manager' | 'subcontractor'
+  bookingId?: string
+  userId?: string
+  operativeId?: string
+  projectId?: string
+  locationType?: ManagerLocationType
+  customLocationName?: string
+  timeSlotRaw?: string
+  workStartTime?: string
+  workEndTime?: string
 }
 
 export function isLondonWeekday(date: Date): boolean {
@@ -185,7 +200,7 @@ export function buildDailyOverview(params: {
   users: User[]
   operatives: Operative[]
   subcontractorBookings?: OverviewSubcontractorBooking[]
-  subcontractors?: { id: string; name: string }[]
+  subcontractors?: { id: string; name: string; contacts?: { id: string; name: string }[] }[]
 }): DailyOverviewModel {
   const day = params.day
   const today = params.today || new Date()
@@ -249,6 +264,9 @@ export function buildDailyOverview(params: {
       if (existing.subtitle !== row.subtitle) {
         existing.subtitle = `${existing.subtitle} · ${row.subtitle}`
       }
+      if (existing.name !== row.name && row.bookedOperativeNames.length > existing.bookedOperativeNames.length) {
+        existing.name = row.name
+      }
       for (const name of row.bookedOperativeNames) {
         if (!existing.bookedOperativeNames.includes(name)) existing.bookedOperativeNames.push(name)
       }
@@ -275,6 +293,9 @@ export function buildDailyOverview(params: {
       const op = params.operatives.find((row) => row.id === b.operativeId)
       const name = operativeDisplayName(op, b.operativeId)
       const hours = estimatedPaidHours(b)
+      const linkedUser = op
+        ? params.users.find((row) => row.email.trim().toLowerCase() === op.email.trim().toLowerCase())
+        : undefined
       rows.push({
         id: `op-${b.id}`,
         personKey: `op:${normalizeWorkId(b.operativeId)}`,
@@ -285,6 +306,13 @@ export function buildDailyOverview(params: {
         hours,
         bookedOperativeNames: [],
         kind: 'operative',
+        bookingId: b.id,
+        operativeId: b.operativeId,
+        userId: linkedUser?.id,
+        projectId: b.projectId,
+        timeSlotRaw: String(b.timeSlot || 'FULL DAY'),
+        workStartTime: b.workStartTime,
+        workEndTime: b.workEndTime,
       })
     }
     const mgrs = dayManager
@@ -308,22 +336,31 @@ export function buildDailyOverview(params: {
         hours,
         bookedOperativeNames: [],
         kind: 'manager',
+        bookingId: b.id,
+        userId: b.userId,
+        projectId: b.locationId,
+        locationType: b.locationType,
+        customLocationName: b.customLocationName,
+        timeSlotRaw: b.timeSlot,
+        workStartTime: b.workStartTime,
+        workEndTime: b.workEndTime,
       })
     }
     const subs = daySubs.filter((b) => canonicalWorkKey(b.projectId, params.projects) === projectKey)
     for (const b of subs) {
-      const firm = params.subcontractors?.find((row) => row.id === b.subcontractorId)
-      const name = firm?.name || 'Subcontractor'
+      const firm = findSubcontractorFirm(params.subcontractors, b.subcontractorId)
+      const people = resolveSubcontractorBookingPeople(b, firm)
+      const name = formatSubcontractorBookingLabel(firm?.name || 'Subcontractor', people)
       const hours = estimatedPaidHours(b)
       rows.push({
         id: `sub-${b.id}`,
         personKey: `sub:${normalizeWorkId(b.subcontractorId)}`,
         name,
-        initials: initialsFrom(name),
+        initials: initialsFrom(firm?.name || name),
         subtitle: slotLabel(b.timeSlot),
         pillText: `${overviewFormatHours(hours)}h`,
         hours,
-        bookedOperativeNames: b.bookedOperativeNames || [],
+        bookedOperativeNames: people,
         kind: 'subcontractor',
       })
     }

@@ -338,6 +338,8 @@ export interface ProjectTask {
   completedBy?: string
   completedAt?: Date
   completionNotes?: string
+  completionImages?: string[]
+  completionFiles?: { name: string; url: string }[]
   attachedImageURLs?: string[]
   attachedFileURL?: string
   attachedFileName?: string

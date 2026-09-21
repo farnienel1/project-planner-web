@@ -28,6 +28,17 @@ function mapTask(docId: string, data: Record<string, unknown>, organizationId: s
     completedBy: parseOptionalString(data.completedBy),
     completedAt: parseFirestoreDate(data.completedAt),
     completionNotes: parseOptionalString(data.completionNotes),
+    completionImages: Array.isArray(data.completionImages)
+      ? (data.completionImages as unknown[]).filter((url): url is string => typeof url === 'string' && Boolean(url))
+      : [],
+    completionFiles: Array.isArray(data.completionFiles)
+      ? (data.completionFiles as Record<string, unknown>[])
+          .map((file) => ({
+            name: parseString(file.name) || parseString(file.fileName),
+            url: parseString(file.url) || parseString(file.fileURL),
+          }))
+          .filter((file) => file.url)
+      : [],
     attachedImageURLs: Array.isArray(data.attachedImageURLs) ? (data.attachedImageURLs as string[]) : [],
     attachedFileURL: parseOptionalString(data.attachedFileURL),
     attachedFileName: parseOptionalString(data.attachedFileName),
@@ -70,6 +81,13 @@ function taskPayload(task: ProjectTask): Record<string, unknown> {
   if (task.completedBy) data.completedBy = task.completedBy
   if (task.completedAt) data.completedAt = Timestamp.fromDate(task.completedAt)
   if (task.completionNotes) data.completionNotes = task.completionNotes
+  if (task.completionImages?.length) data.completionImages = task.completionImages
+  if (task.completionFiles?.length) {
+    data.completionFiles = task.completionFiles.map((file) => ({
+      name: file.name,
+      url: file.url,
+    }))
+  }
   if (task.attachedImageURLs?.length) data.attachedImageURLs = task.attachedImageURLs
   if (task.attachedFileURL) data.attachedFileURL = task.attachedFileURL
   if (task.attachedFileName) data.attachedFileName = task.attachedFileName

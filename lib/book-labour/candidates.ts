@@ -85,11 +85,9 @@ function tradeFor(user: User, linked?: Operative): string | undefined {
   return fromOp && fromOp !== '—' ? fromOp : undefined
 }
 
-function canBookOtherLocations(user: User): boolean {
-  return (
-    !user.permissions.operativeMode &&
-    Boolean(user.permissions.manager || user.permissions.adminAccess || user.isSuperAdmin)
-  )
+function canBookOtherLocations(_user: User): boolean {
+  // Any booked person can go to Other (office, WFH, site survey, or a custom item such as training).
+  return true
 }
 
 function sameDay(date: Date, day: Date): boolean {

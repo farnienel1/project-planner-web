@@ -136,21 +136,31 @@ export function ScheduleSubcontractorForm({
     setSaving(true)
     setError(null)
     try {
-      for (const slot of slotsList) {
-        const firestoreSlot = slotToFirestore(slot)
-        await addDoc(collection(db, 'organizations', organization.id, 'subcontractorBookings'), {
-          subcontractorId: selectedSubcontractorId,
-          projectId: project.id,
-          date: Timestamp.fromDate(slot.date),
-          timeSlot: firestoreSlot.timeSlot,
-          workStartTime: firestoreSlot.workStartTime ?? null,
-          workEndTime: firestoreSlot.workEndTime ?? null,
-          bookedBy: user.email,
-          bookedContactIds: useGeneralAttendance ? [] : Array.from(selectedContactIds),
-          createdAt: Timestamp.fromDate(new Date()),
-          updatedAt: Timestamp.fromDate(new Date()),
+      const payloadNames = useGeneralAttendance
+        ? []
+        : selectedSubcontractor?.contacts
+            .filter((contact) => selectedContactIds.has(contact.id))
+            .map((contact) => contact.name)
+            .filter(Boolean) || []
+      const payloadIds = useGeneralAttendance ? [] : Array.from(selectedContactIds)
+      await Promise.all(
+        slotsList.map((slot) => {
+          const firestoreSlot = slotToFirestore(slot)
+          return addDoc(collection(db, 'organizations', organization.id, 'subcontractorBookings'), {
+            subcontractorId: selectedSubcontractorId,
+            projectId: project.id,
+            date: Timestamp.fromDate(slot.date),
+            timeSlot: firestoreSlot.timeSlot,
+            workStartTime: firestoreSlot.workStartTime ?? null,
+            workEndTime: firestoreSlot.workEndTime ?? null,
+            bookedBy: user.email,
+            bookedContactIds: payloadIds,
+            bookedOperativeNames: payloadNames,
+            createdAt: Timestamp.fromDate(new Date()),
+            updatedAt: Timestamp.fromDate(new Date()),
+          })
         })
-      }
+      )
       router.push(scheduleBasePath)
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to create bookings')

@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useId, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { cn } from '@/lib/ui/cn'
 import type { SectionHue } from '@/lib/ui/sectionHue'
 import { IconChip } from '@/components/ui/IconChip'
@@ -36,9 +37,9 @@ export function Modal({
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
   }, [open, onClose])
-  if (!open) return null
-  return (
-    <div className="fixed inset-0 z-[60]">
+  if (!open || typeof document === 'undefined') return null
+  return createPortal(
+    <div className="fixed inset-0 z-[100]">
       <button type="button" className="absolute inset-0 bg-[rgba(10,20,40,.4)] backdrop-blur-[3px]" aria-label="Close" onClick={onClose} />
       <div
         role="dialog"
@@ -66,7 +67,8 @@ export function Modal({
           <div className="flex justify-end gap-2.5 border-t border-[var(--line)] px-6 py-4">{footer}</div>
         ) : null}
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }
 

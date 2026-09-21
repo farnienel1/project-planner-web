@@ -680,6 +680,18 @@ export function enabledScheduleLocationPicks(options: MyScheduleOptions): Schedu
   return rows
 }
 
+/** One-off Other location for this booking only. Not written into organisation defaults. */
+export function oneOffCustomLocationPick(name: string): ScheduleLocationPick | null {
+  const trimmed = name.trim()
+  if (!trimmed) return null
+  return {
+    id: `custom:${trimmed}`,
+    title: trimmed,
+    locationType: 'custom',
+    customLocationName: trimmed,
+  }
+}
+
 export function formatInvoicingSubtitle(invoicing: OrgInvoicingSettings): string {
   if (invoicing.paymentRunMode === 'recurring_timeframe') {
     return `Recurring: ${capitalizeDay(invoicing.recurringRunStartDay)}–${capitalizeDay(invoicing.recurringRunEndDay)}`
