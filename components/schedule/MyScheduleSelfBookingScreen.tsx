@@ -271,7 +271,7 @@ export function MyScheduleSelfBookingScreen({
   }) {
     if (expandedLoc !== locKey) return null
     return (
-      <div className="border-t border-slate-100 bg-slate-50/60 px-4 py-3">
+      <div className="mt-3 rounded-[14px] bg-[var(--soft)] px-4 py-3">
         <div className="flex flex-wrap gap-2">
           {SLOTS.map(({ slot, label }) => (
             <button
@@ -279,7 +279,7 @@ export function MyScheduleSelfBookingScreen({
               type="button"
               disabled={busy}
               onClick={() => book({ timeSlot: slot, locationType: type, locationId, customLocationName })}
-              className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:border-blue-400 hover:bg-blue-50 hover:text-blue-700 disabled:opacity-50"
+              className="btn sm"
             >
               {label}
             </button>
@@ -295,7 +295,7 @@ export function MyScheduleSelfBookingScreen({
             onEnd={setCustomEnd}
             onBreak={setBreakRemoved}
           />
-          <p className="mt-2 text-[11px] text-slate-400">Custom hours uses the times on this 00:00–24:00 bar.</p>
+          <p className="mt-2 muted xs">Custom hours uses the times on this 00:00–24:00 bar.</p>
         </div>
       </div>
     )
@@ -320,10 +320,14 @@ export function MyScheduleSelfBookingScreen({
         <button
           type="button"
           onClick={() => setExpandedLoc(open ? null : locKey)}
-          className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-slate-50"
+          className="ritem"
+          data-hue="sched"
         >
           <span className={`h-8 w-1.5 shrink-0 rounded-full ${locationStripe(type)}`} />
-          <span className="flex-1 truncate text-sm font-medium text-slate-900">{name}</span>
+          <span className="grow">
+            <span className="t">{name}</span>
+            <span className="s">AM, PM, full day or custom</span>
+          </span>
           <Chevron open={open} />
         </button>
         <SlotPicker locKey={locKey} type={type} locationId={locationId} customLocationName={customLocationName} />
@@ -344,24 +348,38 @@ export function MyScheduleSelfBookingScreen({
   }) {
     const open = openSection === id
     return (
-      <div className="overflow-hidden card">
+      <div className="card overflow-hidden" data-hue="sched">
         <button
           type="button"
           onClick={() => {
             setOpenSection(open ? null : id)
             setExpandedLoc(null)
           }}
-          className="flex w-full items-center justify-between px-4 py-3.5 text-left hover:bg-slate-50"
+          className="card-h w-full"
+          data-hue={id === 'projects' ? 'proj' : id === 'smallworks' ? 'sw' : 'sched'}
         >
-          <span className="text-sm font-bold text-slate-900">
-            {title}
-            {typeof count === 'number' && (
-              <span className="ml-2 text-xs font-medium text-slate-400">{count}</span>
+          <div className="ico-chip sm">
+            {id === 'projects' ? (
+              <svg className="h-[18px] w-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 7.5h18M3 12h18M3 16.5h18" />
+              </svg>
+            ) : id === 'smallworks' ? (
+              <svg className="h-[18px] w-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M11.42 15.17 17.25 21A2.652 2.652 0 0 0 21 17.25l-5.877-5.877M11.42 15.17l2.496-3.03c.317-.384.74-.626 1.208-.766M11.42 15.17l-4.655 5.653a2.548 2.548 0 1 1-3.586-3.586l6.837-5.63m5.108-.233c.55-.164 1.163-.188 1.743-.14a4.5 4.5 0 0 0 4.486-6.336l-3.276 3.277a3.004 3.004 0 0 1-2.25-2.25l3.276-3.276a4.5 4.5 0 0 0-6.336 4.486c.091 1.076-.071 2.264-.904 2.95l-.102.085" />
+              </svg>
+            ) : (
+              <svg className="h-[18px] w-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+              </svg>
             )}
-          </span>
+          </div>
+          <h2 className="h2 grow" style={{ fontSize: 17 }}>
+            {title}
+            {typeof count === 'number' ? <span className="count soft" style={{ marginLeft: 8 }}>{count}</span> : null}
+          </h2>
           <Chevron open={open} />
         </button>
-        {open && <div className="divide-y divide-slate-100 border-t border-slate-100">{children}</div>}
+        {open && <div className="card-b rows">{children}</div>}
       </div>
     )
   }
@@ -372,119 +390,110 @@ export function MyScheduleSelfBookingScreen({
 
   if (loading && myBookings.length === 0) {
     return (
-      <div className="mx-auto max-w-3xl pb-16">
-        <h1 className="text-[28px] font-semibold tracking-tight">My Schedule</h1>
-        <p className="mt-1 text-[14px] text-[var(--ink3)]">Opening your week…</p>
+      <div className="stack" data-hue="sched">
+        <div className="phead" data-hue="sched">
+          <div>
+            <h1>My Schedule</h1>
+            <div className="sub">Opening your week…</div>
+          </div>
+        </div>
       </div>
     )
   }
 
   return (
-    <div className="mx-auto max-w-3xl pb-16">
-      <h1 className="text-[28px] font-semibold tracking-tight">My Schedule</h1>
-      <p className="mt-1 mb-5 text-[14px] text-[var(--ink3)]">
-        Book yourself into a site, the office, or a custom location — AM, PM, full day or custom hours.
-      </p>
-
-      {toast && (
-        <div
-          className={`mb-4 rounded-2xl border px-4 py-3 text-sm font-semibold ${
-            toast.kind === 'success'
-              ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
-              : 'border-red-200 bg-red-50 text-red-800'
-          }`}
-        >
-          {toast.msg}
-        </div>
-      )}
-
-      <div className="mb-3 flex items-center justify-between card px-3 py-2.5">
-        <button
-          type="button"
-          onClick={() => setWeekStart((w) => addDays(w, -7))}
-          className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100"
-          aria-label="Previous week"
-        >
-          <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
+    <div className="stack" data-hue="sched">
+      <div className="phead" data-hue="sched">
+        <div className="badge-ico">
+          <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25m-18 0A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75m-18 0v-7.5A2.25 2.25 0 0 1 5.25 9h13.5A2.25 2.25 0 0 1 21 11.25v7.5" />
           </svg>
-        </button>
-        <div className="flex flex-wrap items-center justify-center gap-3">
-          <span className="text-base font-semibold text-slate-900">{weekRangeText}</span>
+        </div>
+        <div>
+          <h1>My Schedule</h1>
+          <div className="sub">
+            Book yourself into a site, the office, or a custom location. AM, PM, full day or custom hours.
+          </div>
+        </div>
+        <div className="acts">
+          <div className="seg">
+            <button type="button" aria-label="Previous week" onClick={() => setWeekStart((w) => addDays(w, -7))}>
+              ‹
+            </button>
+            <button
+              type="button"
+              className="on"
+              onClick={() => {
+                const today = startOfDay(new Date())
+                setWeekStart(startOfWeek(today, { weekStartsOn: 1 }))
+                setSelectedDate(today)
+              }}
+            >
+              Today
+            </button>
+            <button type="button" aria-label="Next week" onClick={() => setWeekStart((w) => addDays(w, 7))}>
+              ›
+            </button>
+          </div>
           <button
             type="button"
-            onClick={() => {
-              const today = startOfDay(new Date())
-              setWeekStart(startOfWeek(today, { weekStartsOn: 1 }))
-              setSelectedDate(today)
-            }}
-            className="rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50"
-          >
-            Today
-          </button>
-          <button
-            type="button"
+            className={`btn ${multiDay ? 'hue' : ''}`}
+            data-hue="sched"
             onClick={() => {
               setMultiDay((v) => !v)
               setSelectedDates(multiDay ? [] : [startOfDay(selectedDate)])
             }}
-            className={`rounded-lg border px-2.5 py-1 text-xs font-medium transition ${
-              multiDay ? 'border-blue-600 bg-blue-600 text-white' : 'border-slate-200 text-slate-600 hover:bg-slate-50'
-            }`}
           >
-            {multiDay ? 'Multi-day: On' : 'Multi-day'}
+            {multiDay ? 'Multi-day on' : 'Multi-day'}
           </button>
-          {multiDay && selectedDates.length > 0 && (
-            <button
-              type="button"
-              onClick={() => setSelectedDates([])}
-              className="rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50"
-            >
+          {multiDay && selectedDates.length > 0 ? (
+            <button type="button" className="btn ghost" onClick={() => setSelectedDates([])}>
               Clear
             </button>
-          )}
+          ) : null}
         </div>
-        <button
-          type="button"
-          onClick={() => setWeekStart((w) => addDays(w, 7))}
-          className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100"
-          aria-label="Next week"
-        >
-          <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
-          </svg>
-        </button>
       </div>
 
-      <div className="mb-4 grid grid-cols-7 gap-1.5">
+      {toast && (
+        <div className={`banner ${toast.kind === 'success' ? '' : ''}`} data-hue={toast.kind === 'success' ? 'green' : 'red'}>
+          <b>{toast.msg}</b>
+        </div>
+      )}
+
+      <div className="week" data-hue="sched">
         {weekDates.map((day, index) => {
           const isSel = multiDay ? selectedDates.some((d) => isSameDay(d, day)) : isSameDay(day, selectedDate)
           const today = isToday(day)
-          const has = myBookingsOn(day).length > 0
+          const dayRows = myBookingsOn(day)
+          const weekend = index > 4
           return (
             <button
               key={day.toISOString()}
               type="button"
               onClick={() => (multiDay ? toggleDayInMulti(day) : setSelectedDate(startOfDay(day)))}
-              className={`flex flex-col items-center rounded-xl border py-2 transition ${
-                isSel
-                  ? 'border-blue-600 bg-blue-600 text-white'
-                  : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
-              }`}
+              className={`day ${today ? 'today' : ''} ${weekend ? 'wk' : ''} ${isSel ? 'sel' : ''}`}
             >
-              <span className={`text-[10px] font-medium ${isSel ? 'text-white/80' : 'text-slate-400'}`}>
-                {DOW[index]}
-              </span>
-              <span className="text-base font-bold">{format(day, 'd')}</span>
-              <span
-                className={`mt-0.5 h-1.5 w-1.5 rounded-full ${
-                  has ? (isSel ? 'bg-white' : 'bg-blue-500') : 'bg-transparent'
-                } ${today && !isSel ? 'ring-1 ring-blue-400' : ''}`}
-              />
+              <div className="dn">
+                <b>{format(day, 'd')}</b>
+                <span>
+                  {DOW[index]}
+                  {today ? ' · Today' : ''}
+                </span>
+              </div>
+              {dayRows.length > 0
+                ? dayRows.map((booking) => (
+                    <div key={booking.id} className="bk" data-hue={booking.locationType === 'office' ? 'blue' : booking.locationType === 'working_from_home' ? 'daily' : booking.locationType === 'small_work' ? 'sw' : 'proj'}>
+                      <b>{locationName(booking)}</b>
+                      <span className="x">{slotLabel(booking)}</span>
+                    </div>
+                  ))
+                : <div className="emptyday">{weekend ? 'Weekend' : '+ Book'}</div>}
             </button>
           )
         })}
       </div>
+
+      <p className="muted small">Week of {weekRangeText}</p>
 
       <AddWeekToCalendarButton
         bookings={calendarBookings}
@@ -494,85 +503,128 @@ export function MyScheduleSelfBookingScreen({
         payrollPolicy={payrollPolicy}
       />
 
-      <div className="mt-5 space-y-3">
-        <Section id="self" title="Book yourself">
-          {selfLocations.length === 0 ? (
-            <p className="px-4 py-3 text-sm text-slate-500">
-              No location options enabled — configure them in Organisation → Schedule options.
-            </p>
-          ) : (
-            selfLocations.map((loc) => (
-              <LocationRow
-                key={loc.key}
-                locKey={loc.key}
-                name={loc.name}
-                type={loc.type}
-                customLocationName={loc.custom}
-              />
-            ))
-          )}
-        </Section>
+      <div className="grid gmain">
+        <div className="stack">
+          <Section id="self" title={`Book yourself · ${format(selectedDate, 'EEE d MMM')}`}>
+            {selfLocations.length === 0 ? (
+              <p className="muted small">
+                No location options enabled — configure them in Organisation → Schedule options.
+              </p>
+            ) : (
+              selfLocations.map((loc) => (
+                <LocationRow
+                  key={loc.key}
+                  locKey={loc.key}
+                  name={loc.name}
+                  type={loc.type}
+                  customLocationName={loc.custom}
+                />
+              ))
+            )}
+          </Section>
 
-        <Section id="projects" title="Projects" count={liveProjects.length}>
-          {liveProjects.length === 0 ? (
-            <p className="px-4 py-3 text-sm text-slate-500">No live projects.</p>
-          ) : (
-            liveProjects.map((project) => (
-              <LocationRow
-                key={project.id}
-                locKey={`project:${project.id}`}
-                name={projectLabel(project)}
-                type="project"
-                locationId={project.id}
-              />
-            ))
-          )}
-        </Section>
+          <div className="grid g2" style={{ gap: 12 }}>
+            <button
+              type="button"
+              className="stat"
+              data-hue="proj"
+              onClick={() => {
+                setOpenSection(openSection === 'projects' ? null : 'projects')
+                setExpandedLoc(null)
+              }}
+            >
+              <div className="ico-chip">
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 7.5h18M3 12h18M3 16.5h18" />
+                </svg>
+              </div>
+              <div className="grow">
+                <b style={{ fontSize: 18 }}>Projects</b>
+                <span>{liveProjects.length} available</span>
+              </div>
+            </button>
+            <button
+              type="button"
+              className="stat"
+              data-hue="sw"
+              onClick={() => {
+                setOpenSection(openSection === 'smallworks' ? null : 'smallworks')
+                setExpandedLoc(null)
+              }}
+            >
+              <div className="ico-chip">
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M11.42 15.17 17.25 21A2.652 2.652 0 0 0 21 17.25l-5.877-5.877M11.42 15.17l2.496-3.03c.317-.384.74-.626 1.208-.766M11.42 15.17l-4.655 5.653a2.548 2.548 0 1 1-3.586-3.586l6.837-5.63m5.108-.233c.55-.164 1.163-.188 1.743-.14a4.5 4.5 0 0 0 4.486-6.336l-3.276 3.277a3.004 3.004 0 0 1-2.25-2.25l3.276-3.276a4.5 4.5 0 0 0-6.336 4.486c.091 1.076-.071 2.264-.904 2.95l-.102.085" />
+                </svg>
+              </div>
+              <div className="grow">
+                <b style={{ fontSize: 18 }}>Small Works</b>
+                <span>{liveSmallWorks.length} available</span>
+              </div>
+            </button>
+          </div>
 
-        <Section id="smallworks" title="Small Works" count={liveSmallWorks.length}>
-          {liveSmallWorks.length === 0 ? (
-            <p className="px-4 py-3 text-sm text-slate-500">No live small works.</p>
-          ) : (
-            liveSmallWorks.map((project) => (
-              <LocationRow
-                key={project.id}
-                locKey={`sw:${project.id}`}
-                name={projectLabel(project)}
-                type="small_work"
-                locationId={project.id}
-              />
-            ))
-          )}
-        </Section>
-      </div>
+          {openSection === 'projects' ? (
+            <Section id="projects" title="Projects" count={liveProjects.length}>
+              {liveProjects.length === 0 ? (
+                <p className="muted small">No live projects.</p>
+              ) : (
+                liveProjects.map((project) => (
+                  <LocationRow
+                    key={project.id}
+                    locKey={`project:${project.id}`}
+                    name={projectLabel(project)}
+                    type="project"
+                    locationId={project.id}
+                  />
+                ))
+              )}
+            </Section>
+          ) : null}
 
-      <div className="mt-6 space-y-3">
-        <MyScheduleTotalHoursCard bookings={dayBookings} policy={payrollPolicy} />
-        <div className="flex items-center justify-between px-1">
-          <span className="text-[11px] font-medium uppercase tracking-[0.4px] text-[var(--ink3)]">
-            {format(selectedDate, 'EEEE, d MMM')}
-          </span>
-          {dayBookings.length > 0 ? (
-            <span className="text-[11px] text-[var(--ink3)]">{dayBookings.length} booked</span>
+          {openSection === 'smallworks' ? (
+            <Section id="smallworks" title="Small Works" count={liveSmallWorks.length}>
+              {liveSmallWorks.length === 0 ? (
+                <p className="muted small">No live small works.</p>
+              ) : (
+                liveSmallWorks.map((project) => (
+                  <LocationRow
+                    key={project.id}
+                    locKey={`sw:${project.id}`}
+                    name={projectLabel(project)}
+                    type="small_work"
+                    locationId={project.id}
+                  />
+                ))
+              )}
+            </Section>
           ) : null}
         </div>
-        {dayBookings.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-[var(--line)] bg-white py-10 text-center text-[14px] text-[var(--ink3)]">
-            Nothing booked for this day yet.
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {dayBookings.map((booking) => (
-              <MyScheduleStripeRow
-                key={booking.id}
-                stripeClass={myScheduleStripeClass(booking.locationType)}
-                title={locationName(booking)}
-                subtitle={myScheduleClockSubtitle(booking, payrollPolicy)}
-                onDelete={() => void removeBooking(booking)}
-              />
-            ))}
-          </div>
-        )}
+
+        <div className="stack">
+          <MyScheduleTotalHoursCard bookings={dayBookings} policy={payrollPolicy} />
+          <section className="card" data-hue="sched">
+            <div className="card-h">
+              <h2 className="h2">{format(selectedDate, 'EEEE, d MMM')}</h2>
+              {dayBookings.length > 0 ? <span className="count soft">{dayBookings.length}</span> : null}
+            </div>
+            <div className="card-b rows">
+              {dayBookings.length === 0 ? (
+                <p className="muted small">Nothing booked for this day yet.</p>
+              ) : (
+                dayBookings.map((booking) => (
+                  <MyScheduleStripeRow
+                    key={booking.id}
+                    stripeClass={myScheduleStripeClass(booking.locationType)}
+                    title={locationName(booking)}
+                    subtitle={myScheduleClockSubtitle(booking, payrollPolicy)}
+                    onDelete={() => void removeBooking(booking)}
+                  />
+                ))
+              )}
+            </div>
+          </section>
+        </div>
       </div>
 
       {confirm && (
@@ -580,22 +632,14 @@ export function MyScheduleSelfBookingScreen({
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
           onClick={() => setConfirm(null)}
         >
-          <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <h2 className="text-lg font-bold text-slate-900">Another booking this day</h2>
-            <p className="mt-2 whitespace-pre-line text-sm text-slate-600">{confirm.msg}</p>
-            <div className="mt-5 flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setConfirm(null)}
-                className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
-              >
+          <div className="card pad" style={{ width: '100%', maxWidth: 420 }} onClick={(e) => e.stopPropagation()}>
+            <h2 className="h2">Another booking this day</h2>
+            <p className="muted small" style={{ marginTop: 8, whiteSpace: 'pre-line' }}>{confirm.msg}</p>
+            <div className="row" style={{ marginTop: 18, justifyContent: 'flex-end' }}>
+              <button type="button" onClick={() => setConfirm(null)} className="btn">
                 Cancel
               </button>
-              <button
-                type="button"
-                onClick={confirm.onYes}
-                className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
-              >
+              <button type="button" onClick={confirm.onYes} className="btn primary">
                 Add anyway
               </button>
             </div>

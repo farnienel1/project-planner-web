@@ -65,33 +65,14 @@ function DayPill({
     <button
       type="button"
       onClick={onClick}
-      className={`flex min-w-[52px] flex-col items-center gap-1 rounded-xl px-3 py-2 transition ${
-        selected
-          ? 'bg-blue-600 text-white shadow-sm'
-          : today
-            ? 'bg-blue-50 text-blue-700'
-            : 'bg-white text-slate-600 hover:bg-slate-50'
-      } border ${selected ? 'border-blue-600' : 'border-slate-200'}`}
+      className={`day ${today ? 'today' : ''} ${selected ? 'sel' : ''}`}
+      style={{ minHeight: 0, padding: '10px 8px', alignItems: 'center' }}
     >
-      <span
-        className={`text-[10px] font-semibold uppercase tracking-wider ${selected ? 'text-blue-200' : 'text-slate-400'}`}
-      >
+      <span className="muted xs" style={{ fontWeight: 700, textTransform: 'uppercase' }}>
         {format(date, 'EEE')}
       </span>
-      <span className={`text-base font-bold ${selected ? 'text-white' : today ? 'text-blue-600' : 'text-slate-800'}`}>
-        {format(date, 'd')}
-      </span>
-      {count > 0 ? (
-        <span
-          className={`h-4 min-w-[16px] rounded-full px-1 text-[10px] font-bold leading-4 ${
-            selected ? 'bg-blue-400 text-white' : 'bg-blue-100 text-blue-700'
-          }`}
-        >
-          {count}
-        </span>
-      ) : (
-        <span className="h-4" />
-      )}
+      <b style={{ fontFamily: 'var(--head)', fontSize: 18 }}>{format(date, 'd')}</b>
+      {count > 0 ? <span className="count">{count}</span> : <span className="h-4" />}
     </button>
   )
 }
@@ -147,17 +128,13 @@ function BookingCard({
     <div
       ref={cardRef}
       id={`booking-${booking.id}`}
-      className={`overflow-hidden rounded-2xl border bg-white shadow-sm transition-all ${
-        isHighlighted
-          ? 'border-blue-400 ring-2 ring-blue-200'
-          : past
-            ? 'border-slate-100 opacity-60'
-            : 'border-slate-200'
+      className={`overflow-hidden card ${
+        isHighlighted ? 'shadow-[0_0_0_2px_var(--blue),var(--sh)]' : past ? 'opacity-60' : ''
       }`}
     >
       <button
         type="button"
-        className="flex w-full items-stretch gap-0 text-left transition hover:bg-slate-50/80"
+        className="flex w-full items-stretch gap-0 text-left"
         onClick={() => setExpanded((v) => !v)}
         aria-expanded={expanded}
       >
@@ -168,7 +145,7 @@ function BookingCard({
         />
 
         <div className="min-w-0 flex-1 px-4 py-3">
-          <p className={`truncate text-[15px] font-semibold ${past ? 'text-slate-500' : 'text-slate-900'}`}>
+          <p className={`truncate text-[15px] font-semibold ${past ? 'text-[var(--ink3)]' : ''}`}>
             {projectName}
           </p>
           <p className="mt-0.5 text-[12px] font-medium text-[var(--ink3)]">
@@ -542,20 +519,24 @@ export function ScheduleScreen({
         : `All operative bookings across ${organizationName}.`
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-[28px] font-semibold tracking-tight text-[var(--ink)]">{pageTitle}</h1>
-          <p className="mt-1 text-[14px] text-[var(--ink3)]">{pageSubtitle}</p>
+    <div className="stack" data-hue={isPersonal ? 'sched' : 'daily'}>
+      <div className="phead" data-hue={isPersonal ? 'sched' : 'daily'}>
+        <div className="badge-ico">
+          <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25m-18 0A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75m-18 0v-7.5A2.25 2.25 0 0 1 5.25 9h13.5A2.25 2.25 0 0 1 21 11.25v7.5" />
+          </svg>
         </div>
-        {variant === 'overview' && (
-          <Link
-            href="/dashboard/warnings"
-            className="inline-flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-700 transition hover:bg-amber-100"
-          >
-            View warnings
-          </Link>
-        )}
+        <div>
+          <h1>{pageTitle}</h1>
+          <div className="sub">{pageSubtitle}</div>
+        </div>
+        <div className="acts">
+          {variant === 'overview' ? (
+            <Link href="/dashboard/warnings" className="btn" data-hue="warn">
+              View warnings
+            </Link>
+          ) : null}
+        </div>
       </div>
 
       {variant === 'overview' && focusOperativeId && focusOperativeName && (

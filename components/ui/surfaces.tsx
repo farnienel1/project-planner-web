@@ -49,41 +49,29 @@ export function Hero({
   return (
     <section
       data-hue={hue}
-      className={cn(
-        'relative overflow-hidden rounded-[24px] px-[30px] py-7 text-white shadow-[0_18px_40px_rgba(12,35,80,.25)] max-[760px]:px-[22px]',
-        hue
-          ? 'bg-[linear-gradient(rgba(255,255,255,.1)_1px,transparent_1px)_0_0/28px_28px,linear-gradient(90deg,rgba(255,255,255,.1)_1px,transparent_1px)_0_0/28px_28px,linear-gradient(135deg,color-mix(in_srgb,var(--h)_80%,#000)_0%,var(--h)_100%)]'
-          : 'bg-[linear-gradient(rgba(255,255,255,.07)_1px,transparent_1px)_0_0/28px_28px,linear-gradient(90deg,rgba(255,255,255,.07)_1px,transparent_1px)_0_0/28px_28px,radial-gradient(120%_140%_at_100%_0%,#3B86EA_0%,transparent_55%),linear-gradient(135deg,var(--navy)_0%,#15408A_55%,#1E5AA8_100%)]',
-        className
-      )}
+      className={cn('hero', className)}
     >
-      <div className="pointer-events-none absolute -right-[60px] -bottom-[60px] h-[260px] w-[260px] rounded-full border border-dashed border-white/20" />
       <div className="relative z-[1]">
-        {eyebrow ? <p className="text-[13px] font-semibold opacity-80">{eyebrow}</p> : null}
-        <div className="mt-1.5 font-[family-name:var(--head)] text-[34px] font-extrabold leading-[1.1] tracking-[-0.02em] max-[760px]:text-[28px]">
+        {eyebrow ? <p className="eb">{eyebrow}</p> : null}
+        <div className="big" style={{ marginTop: 6 }}>
           {title}
         </div>
         {subtitle ? <div className="mt-1.5 text-[15.5px] opacity-85">{subtitle}</div> : null}
         {stats && stats.length > 0 ? (
-          <div className="mt-[22px] flex flex-wrap gap-3">
+          <div className="stats">
             {stats.map((stat) => {
               const inner = (
                 <>
-                  <b className="block font-[family-name:var(--head)] text-[26px] leading-[1.15] tabular-nums">{stat.value}</b>
-                  <span className="text-[13px] opacity-85">{stat.label}</span>
+                  <b>{stat.value}</b>
+                  <span>{stat.label}</span>
                 </>
               )
               return stat.onClick ? (
-                <button
-                  key={stat.label}
-                  type="button"
-                  onClick={stat.onClick}
-                  className="min-w-[130px] rounded-2xl border border-white/16 bg-white/12 px-4 py-3 text-left text-white backdrop-blur-sm hover:bg-white/20"
-                >
+                <button key={stat.label} type="button" onClick={stat.onClick} className="st">
                   {inner}
                 </button>
               ) : (
-                <div key={stat.label} className="min-w-[130px] rounded-2xl border border-white/16 bg-white/12 px-4 py-3">
+                <div key={stat.label} className="st">
                   {inner}
                 </div>
               )
