@@ -4,12 +4,19 @@
  *
  * Shared by Daily Overview and job Scheduling so custom hours never fall back
  * to a flat 8h when workStartTime / workEndTime are present.
+ *
+ * Named slots (AM / PM / full day) always use the slot, never leftover custom
+ * clock times — switching the editor to half/full day must not keep showing
+ * the previous custom span.
  */
 
 const FALLBACK_STANDARD_PAID_HOURS = 8
 const FALLBACK_UNPAID_BREAK_MINUTES = 30
 const FALLBACK_BREAK_START = '12:00'
 const FALLBACK_BREAK_END = '12:30'
+const FALLBACK_DAY_START = '07:30'
+const FALLBACK_DAY_END = '16:00'
+const FALLBACK_OT_MULTIPLIER = 1.5
 
 function minutesFromHourValue(n: number): number | null {
   if (!Number.isFinite(n) || n < 0) return null
@@ -60,16 +67,46 @@ export function formatHoursLabel(hours: number): string {
   return rounded.toFixed(1)
 }
 
-function slotHours(timeSlot?: string): number | null {
-  const slot = String(timeSlot || '').toUpperCase().replace(/_/g, ' ').trim()
-  if (slot === 'AM' || slot === 'PM' || slot.includes('MORNING') || slot.includes('AFTERNOON')) return 4
-  if (slot === 'EVENING' || slot === 'OVERTIME') return 4
-  return null
+export type NamedSlotKind = 'am' | 'pm' | 'full' | 'custom' | 'evening' | 'unknown'
+
+export function namedSlotKind(timeSlot?: string): NamedSlotKind {
+  const slot = String(timeSlot || '')
+    .toUpperCase()
+    .replace(/_/g, ' ')
+    .trim()
+  if (slot === 'AM' || slot.includes('MORNING')) return 'am'
+  if (slot === 'PM' || slot.includes('AFTERNOON')) return 'pm'
+  if (slot.includes('FULL')) return 'full'
+  if (slot.includes('CUSTOM')) return 'custom'
+  if (slot === 'EVENING' || slot === 'OVERTIME') return 'evening'
+  return 'unknown'
+}
+
+export function namedSlotLabel(timeSlot?: string): string {
+  switch (namedSlotKind(timeSlot)) {
+    case 'am':
+      return 'Morning (AM)'
+    case 'pm':
+      return 'Afternoon (PM)'
+    case 'full':
+      return 'Full day'
+    case 'custom':
+      return 'Custom hours'
+    case 'evening':
+      return 'Evening'
+    default:
+      return String(timeSlot || '').replace(/_/g, ' ').trim() || 'Full day'
+  }
+}
+
+function halfDayHours(standardPaidHours: number): number {
+  return Math.round((standardPaidHours / 2) * 10) / 10
 }
 
 /**
- * Paid hours for a booking. Custom hours use start/end wall-clock minus the
- * unpaid break when the span covers the lunch window, unless the break was removed.
+ * Paid hours for a booking.
+ * AM / PM / full day ignore leftover custom clock times so the editor and
+ * week grid show half-day or full-day hours after you switch away from custom.
  */
 export function estimatedPaidHours(input: {
   timeSlot?: string
@@ -82,6 +119,10 @@ export function estimatedPaidHours(input: {
   standardPaidHours?: number
 }): number {
   const standard = input.standardPaidHours ?? FALLBACK_STANDARD_PAID_HOURS
+  const kind = namedSlotKind(input.timeSlot)
+  if (kind === 'am' || kind === 'pm' || kind === 'evening') return halfDayHours(standard)
+  if (kind === 'full') return standard
+
   const start = parseMinutes(input.workStartTime)
   const end = parseMinutes(input.workEndTime)
   if (start != null && end != null && end !== start) {
@@ -102,8 +143,6 @@ export function estimatedPaidHours(input: {
     }
     return Math.max(0, Math.round((minutes / 60) * 10) / 10)
   }
-  const fromSlot = slotHours(input.timeSlot)
-  if (fromSlot != null) return fromSlot
   return standard
 }
 
@@ -112,11 +151,121 @@ export function customHoursRangeLabel(input: {
   workStartTime?: string
   workEndTime?: string
 }): string | null {
-  const slot = String(input.timeSlot || '').toUpperCase().replace(/_/g, ' ')
-  const isCustom = slot.includes('CUSTOM')
-  if (!isCustom && !input.workStartTime && !input.workEndTime) return null
+  if (namedSlotKind(input.timeSlot) !== 'custom') return null
   if (input.workStartTime && input.workEndTime) {
     return `${input.workStartTime}–${input.workEndTime}`
   }
-  return isCustom ? 'Custom hours' : null
+  return 'Custom hours'
+}
+
+/** Raw overtime hours outside the standard window — not the already-multiplied equivalent. */
+export function overtimeRawHours(input: {
+  timeSlot?: string
+  workStartTime?: string
+  workEndTime?: string
+  standardDayStart?: string
+  standardDayEnd?: string
+}): number {
+  const kind = namedSlotKind(input.timeSlot)
+  if (kind === 'am' || kind === 'pm' || kind === 'full' || kind === 'evening') return 0
+  const start = parseMinutes(input.workStartTime)
+  const end = parseMinutes(input.workEndTime)
+  if (start == null || end == null || end === start) return 0
+  let span = end - start
+  if (span < 0) span += 24 * 60
+  const spanEnd = start + span
+  const windowStart = parseMinutes(input.standardDayStart || FALLBACK_DAY_START) ?? 7 * 60 + 30
+  const windowEnd = parseMinutes(input.standardDayEnd || FALLBACK_DAY_END) ?? 16 * 60
+  let ot = 0
+  if (start < windowStart) ot += Math.min(spanEnd, windowStart) - start
+  if (spanEnd > windowEnd) ot += spanEnd - Math.max(start, windowEnd)
+  return Math.max(0, Math.round((ot / 60) * 10) / 10)
+}
+
+export function formatOvertimeEquation(rawHours: number, multiplier = FALLBACK_OT_MULTIPLIER): string {
+  const equivalent = Math.round(rawHours * multiplier * 10) / 10
+  return `${formatHoursLabel(rawHours)} × ${formatHoursLabel(multiplier)} = ${formatHoursLabel(equivalent)}`
+}
+
+export type HoursBreakdown = {
+  kind: NamedSlotKind
+  slotLabel: string
+  paidHours: number
+  rangeLabel: string | null
+  overtimeRawHours: number
+  overtimeMultiplier: number
+  overtimeEquivalentHours: number
+  overtimeEquation: string | null
+  headline: string
+  detail: string
+}
+
+export function hoursBreakdown(input: {
+  timeSlot?: string
+  workStartTime?: string
+  workEndTime?: string
+  isBreakRemoved?: boolean
+  unpaidBreakMinutes?: number
+  breakWindowStart?: string
+  breakWindowEnd?: string
+  standardPaidHours?: number
+  standardDayStart?: string
+  standardDayEnd?: string
+  overtimeMultiplier?: number
+}): HoursBreakdown {
+  const standard = input.standardPaidHours ?? FALLBACK_STANDARD_PAID_HOURS
+  const multiplier = input.overtimeMultiplier ?? FALLBACK_OT_MULTIPLIER
+  const kind = namedSlotKind(input.timeSlot)
+  const slotLabel = namedSlotLabel(input.timeSlot)
+  const paidHours = estimatedPaidHours({ ...input, standardPaidHours: standard })
+  const rangeLabel = customHoursRangeLabel(input)
+  const rawOt = overtimeRawHours(input)
+  const equivalent = Math.round(rawOt * multiplier * 10) / 10
+  const overtimeEquation = rawOt > 0 ? formatOvertimeEquation(rawOt, multiplier) : null
+
+  if (kind === 'am' || kind === 'pm' || kind === 'evening') {
+    return {
+      kind,
+      slotLabel,
+      paidHours,
+      rangeLabel: null,
+      overtimeRawHours: 0,
+      overtimeMultiplier: multiplier,
+      overtimeEquivalentHours: 0,
+      overtimeEquation: null,
+      headline: `${formatHoursLabel(paidHours)}h paid`,
+      detail: `${slotLabel} = ${formatHoursLabel(paidHours)} paid hours`,
+    }
+  }
+  if (kind === 'full' || (kind === 'unknown' && !input.workStartTime && !input.workEndTime)) {
+    return {
+      kind: kind === 'unknown' ? 'full' : kind,
+      slotLabel: kind === 'unknown' ? 'Full day' : slotLabel,
+      paidHours,
+      rangeLabel: null,
+      overtimeRawHours: 0,
+      overtimeMultiplier: multiplier,
+      overtimeEquivalentHours: 0,
+      overtimeEquation: null,
+      headline: `${formatHoursLabel(paidHours)}h paid`,
+      detail: `Full day = ${formatHoursLabel(standard)} paid hours`,
+    }
+  }
+
+  const breakNote = input.isBreakRemoved
+    ? 'unpaid break removed'
+    : `${input.unpaidBreakMinutes ?? FALLBACK_UNPAID_BREAK_MINUTES} min unpaid break when it overlaps`
+  const range = rangeLabel || (input.workStartTime && input.workEndTime ? `${input.workStartTime}–${input.workEndTime}` : slotLabel)
+  return {
+    kind,
+    slotLabel,
+    paidHours,
+    rangeLabel: range,
+    overtimeRawHours: rawOt,
+    overtimeMultiplier: multiplier,
+    overtimeEquivalentHours: equivalent,
+    overtimeEquation,
+    headline: `${formatHoursLabel(paidHours)}h paid`,
+    detail: overtimeEquation ? `${range} · overtime ${overtimeEquation}` : `${range} · ${breakNote}`,
+  }
 }

@@ -2,7 +2,7 @@
 
 import { useSearchParams } from 'next/navigation'
 import { useParams } from 'next/navigation'
-import { UserProfileSummary } from '@/components/users/UserProfileSummary'
+import { EditUserProfile } from '@/components/users/EditUserProfile'
 
 function hubHref(from: string | null) {
   if (from === 'managers') return '/dashboard/managers'
@@ -10,11 +10,18 @@ function hubHref(from: string | null) {
   return '/dashboard/settings/users'
 }
 
-export default function UserProfilePage() {
+export default function EditUserPage() {
   const params = useParams()
   const searchParams = useSearchParams()
   const userId = params.userId as string
   const from = searchParams.get('from') || 'users'
 
-  return <UserProfileSummary userId={userId} backHref={hubHref(from)} from={from} />
+  return (
+    <EditUserProfile
+      userId={userId}
+      backHref={`/dashboard/users/${userId}?from=${encodeURIComponent(from)}`}
+      suppressAdminAccessToggle={from === 'managers'}
+      hubHref={hubHref(from)}
+    />
+  )
 }

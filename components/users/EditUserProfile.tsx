@@ -126,14 +126,46 @@ function ActionButton({
   )
 }
 
+function profileSnapshot(
+  user: User,
+  draftAccountType: 'operative' | 'manager' | 'admin' | null,
+  draftTypePermissions: UserPermissions | null
+) {
+  return JSON.stringify({
+    firstName: user.firstName,
+    surname: user.surname,
+    email: user.email,
+    mobileNumber: user.mobileNumber || '',
+    employmentType: user.employmentType,
+    assignedManagerUserId: user.assignedManagerUserId || '',
+    dayRate: user.dayRate ?? null,
+    hourlyRate: user.hourlyRate ?? null,
+    tradeTypePreset: user.tradeTypePreset || '',
+    tradeTypeCustom: user.tradeTypeCustom || '',
+    annualLeaveEnabled: user.annualLeaveEnabled !== false,
+    annualLeaveDaysPerYear: user.annualLeaveDaysPerYear ?? null,
+    annualLeaveYearStartMonth: user.annualLeaveYearStartMonth ?? null,
+    annualLeaveYearEndMonth: user.annualLeaveYearEndMonth ?? null,
+    annualLeaveCarriesOver: user.annualLeaveCarriesOver === true,
+    timesheetsEnabled: user.timesheetsEnabled === true,
+    vatNumber: user.vatNumber || '',
+    utrNumber: user.utrNumber || '',
+    isActive: user.isActive,
+    permissions: draftTypePermissions ?? user.permissions,
+    draftAccountType,
+  })
+}
+
 export function EditUserProfile({
   userId,
   backHref,
   suppressAdminAccessToggle,
+  hubHref,
 }: {
   userId: string
   backHref: string
   suppressAdminAccessToggle?: boolean
+  hubHref?: string
 }) {
   const router = useRouter()
   const { user: currentUser, organization } = useAuthStore()
@@ -155,7 +187,7 @@ export function EditUserProfile({
   const [busyAction, setBusyAction] = useState<string | null>(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [confirmAdmin, setConfirmAdmin] = useState(false)
-  const [editing, setEditing] = useState(false)
+  const [baseline, setBaseline] = useState<string | null>(null)
   const [originalDayRate, setOriginalDayRate] = useState<number | undefined>(undefined)
 
   useEffect(() => {
@@ -166,6 +198,7 @@ export function EditUserProfile({
       .then((row) => {
         setTarget(row)
         setOriginalDayRate(row?.dayRate)
+        if (row) setBaseline(profileSnapshot(row, null, null))
       })
       .finally(() => setLoading(false))
   }, [organization?.id, userId, getUser, loadUsers, loadOperatives])
@@ -274,7 +307,7 @@ export function EditUserProfile({
       setDraftAccountType(null)
       setDraftTypePermissions(null)
       setShowChangeType(false)
-      setEditing(false)
+      setBaseline(profileSnapshot(toSave, null, null))
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to save user')
     } finally {
@@ -342,7 +375,7 @@ export function EditUserProfile({
     setBusyAction('delete')
     try {
       await deleteUser(target.id)
-      router.push(backHref)
+      router.push(hubHref || backHref)
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to delete user')
     } finally {
@@ -385,11 +418,11 @@ export function EditUserProfile({
     )
   }
 
-  const pageTitle = !editing
-    ? `${target.firstName} ${target.surname}`.trim() || roleLabel(target)
-    : target.permissions.operativeMode
-      ? 'Edit operative'
-      : 'Edit user'
+  const dirty =
+    Boolean(target) &&
+    baseline != null &&
+    profileSnapshot(target, draftAccountType, draftTypePermissions) !== baseline
+  const pageTitle = target.permissions.operativeMode ? 'Edit operative' : 'Edit user'
   const status = rosterStatusLabel(target)
   const isPendingMgrOrOp =
     !target.passwordSet &&
@@ -403,22 +436,17 @@ export function EditUserProfile({
         title={pageTitle}
         onBack={() => router.push(backHref)}
         rightAction={
-          canEdit && editing ? (
+          canEdit && dirty ? (
             <button
-              type="submit"
+              type="button"
               disabled={saving}
+              onClick={() => handleSave()}
               className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 disabled:opacity-50"
             >
               {saving ? 'Saving…' : 'Save'}
             </button>
           ) : canEdit ? (
-            <button
-              type="button"
-              onClick={() => setEditing(true)}
-              className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700"
-            >
-              Edit
-            </button>
+            <span className="px-2 text-[11px] font-medium text-slate-400">No changes</span>
           ) : (
             <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold text-slate-500">
               View only
@@ -482,14 +510,14 @@ export function EditUserProfile({
           <FormField label="First name">
             <Input
               value={target.firstName}
-              disabled={!canEditIdentity || !editing}
+              disabled={!canEditIdentity}
               onChange={(e) => setTarget({ ...target, firstName: e.target.value })}
             />
           </FormField>
           <FormField label="Surname">
             <Input
               value={target.surname}
-              disabled={!canEditIdentity || !editing}
+              disabled={!canEditIdentity}
               onChange={(e) => setTarget({ ...target, surname: e.target.value })}
             />
           </FormField>
@@ -497,14 +525,14 @@ export function EditUserProfile({
             <Input
               type="email"
               value={target.email}
-              disabled={!canEditIdentity || !editing}
+              disabled={!canEditIdentity}
               onChange={(e) => setTarget({ ...target, email: e.target.value })}
             />
           </FormField>
           <FormField label="Mobile number">
             <Input
               value={target.mobileNumber || ''}
-              disabled={!canEditIdentity || !editing}
+              disabled={!canEditIdentity}
               onChange={(e) => setTarget({ ...target, mobileNumber: e.target.value })}
             />
           </FormField>
@@ -523,7 +551,7 @@ export function EditUserProfile({
             <FormField label="Employment type">
               <Select
                 value={normalizeEmploymentType(target.employmentType)}
-                disabled={!canEditMatrix || !editing}
+                disabled={!canEditMatrix}
                 onChange={(e) => setTarget({ ...target, employmentType: e.target.value })}
               >
                 <option value="self_employed">Self-Employed</option>
@@ -545,14 +573,14 @@ export function EditUserProfile({
                   defs={OPERATIVE_PERMISSION_TOGGLES}
                   permissions={effectivePermissions}
                   onChange={updatePermissions}
-                  disabled={!editing}
+                  disabled={!canEdit}
                 />
               ) : (
                 <PermissionToggleList
                   defs={MANAGER_PERMISSION_TOGGLES}
                   permissions={effectivePermissions}
                   onChange={updatePermissions}
-                  disabled={!editing}
+                  disabled={!canEdit}
                   excludeKeys={suppressAdminAccessToggle ? ['adminAccess'] : undefined}
                 />
               )}
@@ -571,7 +599,7 @@ export function EditUserProfile({
                 <FormField label="Line manager" hint="Same as iOS — leave as “No line manager” if not applicable.">
                   <Select
                     value={target.assignedManagerUserId || ''}
-                    disabled={!editing}
+                    disabled={!canEdit}
                     onChange={(e) => setTarget({ ...target, assignedManagerUserId: e.target.value })}
                   >
                     <option value="">No line manager</option>
@@ -594,7 +622,7 @@ export function EditUserProfile({
                     step="0.01"
                     value={target.dayRate?.toString() || ''}
                     className="pl-7"
-                    disabled={!editing}
+                    disabled={!canEdit}
                     onChange={(e) =>
                       setTarget({
                         ...target,
@@ -610,7 +638,7 @@ export function EditUserProfile({
                 <FormField label="Trade type">
                   <Select
                     value={target.tradeTypePreset || ''}
-                    disabled={!editing}
+                    disabled={!canEdit}
                     onChange={(e) => setTarget({ ...target, tradeTypePreset: e.target.value })}
                   >
                     <option value="">Select trade</option>
@@ -625,7 +653,7 @@ export function EditUserProfile({
                   <FormField label="Custom trade">
                     <Input
                       value={target.tradeTypeCustom || ''}
-                      disabled={!editing}
+                      disabled={!canEdit}
                       onChange={(e) => setTarget({ ...target, tradeTypeCustom: e.target.value })}
                     />
                   </FormField>
@@ -670,7 +698,7 @@ export function EditUserProfile({
                 </div>
                 <Toggle
                   checked={target.annualLeaveEnabled !== false}
-                  disabled={!editing}
+                  disabled={!canEdit}
                   onChange={(checked) => setTarget({ ...target, annualLeaveEnabled: checked })}
                 />
               </div>
@@ -692,7 +720,7 @@ export function EditUserProfile({
                 <Input
                   type="number"
                   value={target.annualLeaveDaysPerYear?.toString() || '28'}
-                  disabled={!editing}
+                  disabled={!canEdit}
                   onChange={(e) =>
                     setTarget({ ...target, annualLeaveDaysPerYear: Number(e.target.value) || undefined })
                   }
@@ -705,7 +733,7 @@ export function EditUserProfile({
                 <div className="flex items-center gap-3">
                   <Select
                     value={String(target.annualLeaveYearStartMonth ?? 1)}
-                    disabled={!editing}
+                    disabled={!canEdit}
                     onChange={(e) =>
                       setTarget({ ...target, annualLeaveYearStartMonth: Number(e.target.value) })
                     }
@@ -719,7 +747,7 @@ export function EditUserProfile({
                   <span className="text-slate-400">→</span>
                   <Select
                     value={String(target.annualLeaveYearEndMonth ?? 12)}
-                    disabled={!editing}
+                    disabled={!canEdit}
                     onChange={(e) =>
                       setTarget({ ...target, annualLeaveYearEndMonth: Number(e.target.value) })
                     }
@@ -741,7 +769,7 @@ export function EditUserProfile({
                 </div>
                 <Toggle
                   checked={target.annualLeaveCarriesOver === true}
-                  disabled={!editing}
+                  disabled={!canEdit}
                   onChange={(checked) => setTarget({ ...target, annualLeaveCarriesOver: checked })}
                 />
               </div>
@@ -763,7 +791,7 @@ export function EditUserProfile({
                 </div>
                 <Toggle
                   checked={target.timesheetsEnabled === true}
-                  disabled={!editing}
+                  disabled={!canEdit}
                   onChange={(checked) => setTarget({ ...target, timesheetsEnabled: checked })}
                 />
               </div>
@@ -771,14 +799,14 @@ export function EditUserProfile({
                 <FormField label="VAT number" hint="Optional.">
                   <Input
                     value={target.vatNumber || ''}
-                    disabled={!editing}
+                    disabled={!canEdit}
                     onChange={(e) => setTarget({ ...target, vatNumber: e.target.value })}
                   />
                 </FormField>
                 <FormField label="UTR number" hint="Optional.">
                   <Input
                     value={target.utrNumber || ''}
-                    disabled={!editing}
+                    disabled={!canEdit}
                     onChange={(e) => setTarget({ ...target, utrNumber: e.target.value })}
                   />
                 </FormField>
@@ -801,7 +829,7 @@ export function EditUserProfile({
                 </div>
                 <Toggle
                   checked={target.isActive}
-                  disabled={!editing}
+                  disabled={!canEdit}
                   onChange={(checked) => setTarget({ ...target, isActive: checked })}
                 />
               </div>
@@ -810,7 +838,7 @@ export function EditUserProfile({
         </>
       )}
 
-      {canEdit && editing ? (
+      {canEdit && dirty ? (
         <div className="mt-6">
           <SaveButton saving={saving} saved={saved} onClick={() => handleSave()} />
         </div>
@@ -979,7 +1007,6 @@ export function EditUserProfile({
                 type="button"
                 onClick={() => {
                   setConfirmAdmin(false)
-                  setEditing(true)
                   applyDraftAccountType('admin')
                 }}
                 className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"

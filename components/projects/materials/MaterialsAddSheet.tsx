@@ -7,34 +7,36 @@ import { useMaterialProjectStore } from '@/lib/stores/materialProjectStore'
 import { searchMaterialCatalogue, type MaterialSuggestion } from '@/lib/materials/materialCatalogSearch'
 import { FormInput, FormLabel, FormSelect, FormTextarea } from '@/components/forms/FormShell'
 import { ErrorBanner } from '@/components/dashboard/PageShell'
-import type { Project } from '@/types'
+import type { Project, ProjectMaterialLine } from '@/types'
 
 const UNITS = ['Number', 'Box', 'Length', 'Drum', 'Pallet', 'm', 'mm', 'kg']
 
 type Props = {
   project: Project
   selectedDate: Date
+  existing?: ProjectMaterialLine | null
   onClose: () => void
   onSaved: () => void
 }
 
-export function MaterialsAddSheet({ project, selectedDate, onClose, onSaved }: Props) {
+export function MaterialsAddSheet({ project, selectedDate, existing, onClose, onSaved }: Props) {
   const { organization, user } = useAuthStore()
   const { items: catalogue, loadItems } = useMaterialCatalogStore()
   const { materials, saveMaterialLine, error: storeError } = useMaterialProjectStore()
 
-  const [query, setQuery] = useState('')
-  const [quantity, setQuantity] = useState('1')
-  const [unit, setUnit] = useState('Number')
-  const [brand, setBrand] = useState('')
-  const [productCode, setProductCode] = useState('')
-  const [notes, setNotes] = useState('')
-  const [size, setSize] = useState('')
-  const [length, setLength] = useState('')
-  const [lengthUnit, setLengthUnit] = useState('M')
-  const [category, setCategory] = useState('')
-  const [websiteURL, setWebsiteURL] = useState('')
-  const [catalogueItemId, setCatalogueItemId] = useState<string | undefined>()
+  const [name, setName] = useState(existing?.material || '')
+  const [search, setSearch] = useState('')
+  const [quantity, setQuantity] = useState(existing ? String(existing.quantity) : '1')
+  const [unit, setUnit] = useState(existing?.unit || 'Number')
+  const [brand, setBrand] = useState(existing?.brand || '')
+  const [productCode, setProductCode] = useState(existing?.productCode || '')
+  const [notes, setNotes] = useState(existing?.notes || '')
+  const [size, setSize] = useState(existing?.size || '')
+  const [length, setLength] = useState(existing?.length || '')
+  const [lengthUnit, setLengthUnit] = useState(existing?.lengthUnit || 'M')
+  const [category, setCategory] = useState(existing?.category || '')
+  const [websiteURL, setWebsiteURL] = useState(existing?.websiteURL || '')
+  const [catalogueItemId, setCatalogueItemId] = useState<string | undefined>(existing?.catalogueItemId)
   const [showSuggestions, setShowSuggestions] = useState(false)
   const [saving, setSaving] = useState(false)
   const [localError, setLocalError] = useState<string | null>(null)
@@ -46,8 +48,8 @@ export function MaterialsAddSheet({ project, selectedDate, onClose, onSaved }: P
   )
 
   const suggestions = useMemo(
-    () => searchMaterialCatalogue(query, catalogue, projectMaterials, 10),
-    [query, catalogue, projectMaterials]
+    () => searchMaterialCatalogue(search, catalogue, projectMaterials, 10),
+    [search, catalogue, projectMaterials]
   )
 
   useEffect(() => {
@@ -55,7 +57,8 @@ export function MaterialsAddSheet({ project, selectedDate, onClose, onSaved }: P
   }, [organization, loadItems])
 
   const applySuggestion = (s: MaterialSuggestion) => {
-    setQuery(s.name)
+    setName(s.name)
+    setSearch('')
     setBrand(s.brand)
     setProductCode(s.productCode || '')
     setUnit(s.unit || 'Number')
@@ -70,8 +73,8 @@ export function MaterialsAddSheet({ project, selectedDate, onClose, onSaved }: P
   const submit = async (e: FormEvent) => {
     e.preventDefault()
     if (!organization?.id || !user) return
-    const name = query.trim()
-    if (!name) {
+    const materialName = name.trim()
+    if (!materialName) {
       setLocalError('Enter a material name')
       return
     }
@@ -79,16 +82,19 @@ export function MaterialsAddSheet({ project, selectedDate, onClose, onSaved }: P
     setLocalError(null)
     try {
       const displayName =
-        `${user.firstName || ''} ${user.surname || ''}`.trim() || user.email.split('@')[0]
+        existing?.addedBy ||
+        `${user.firstName || ''} ${user.surname || ''}`.trim() ||
+        user.email.split('@')[0]
       await saveMaterialLine(organization.id, {
+        id: existing?.id,
         quantity: Number(quantity) || 1,
         unit,
-        material: name,
+        material: materialName,
         addedBy: displayName,
         addedByUserId: user.id,
         projectId: project.id,
-        date: selectedDate,
-        status: 'draft',
+        date: existing?.date || selectedDate,
+        status: existing?.status || 'draft',
         brand: brand.trim() || undefined,
         productCode: productCode.trim() || undefined,
         catalogueItemId,
@@ -108,11 +114,13 @@ export function MaterialsAddSheet({ project, selectedDate, onClose, onSaved }: P
     }
   }
 
+  const editing = Boolean(existing)
+
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center">
       <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-4 shadow-xl">
         <div className="mb-4 flex items-center justify-between">
-          <p className="text-base font-bold text-slate-900">Add material</p>
+          <p className="text-base font-bold text-slate-900">{editing ? 'Edit material' : 'Add material'}</p>
           <button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-600">
             ✕
           </button>
@@ -126,22 +134,19 @@ export function MaterialsAddSheet({ project, selectedDate, onClose, onSaved }: P
 
         <form onSubmit={submit} className="space-y-3">
           <div className="relative">
-            <FormLabel>Material</FormLabel>
+            <FormLabel>Search catalogue</FormLabel>
             <FormInput
-              value={query}
+              value={search}
               onChange={(e) => {
-                setQuery(e.target.value)
-                setCatalogueItemId(undefined)
+                setSearch(e.target.value)
                 setShowSuggestions(true)
               }}
               onFocus={() => setShowSuggestions(true)}
               onBlur={() => {
                 blurTimer.current = setTimeout(() => setShowSuggestions(false), 150)
               }}
-              placeholder="Search catalogue or recent materials"
-              required
+              placeholder="Search then tap an item to fill the fields"
               autoComplete="off"
-              autoFocus
             />
             {showSuggestions && suggestions.length > 0 && (
               <ul className="absolute z-10 mt-1 max-h-48 w-full overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
@@ -164,6 +169,19 @@ export function MaterialsAddSheet({ project, selectedDate, onClose, onSaved }: P
                 ))}
               </ul>
             )}
+          </div>
+
+          <div>
+            <FormLabel required>Material title</FormLabel>
+            <FormInput
+              value={name}
+              onChange={(e) => {
+                setName(e.target.value)
+                setCatalogueItemId(undefined)
+              }}
+              placeholder="Or type a name without using search"
+              required
+            />
           </div>
 
           <div className="grid grid-cols-2 gap-2">
@@ -218,7 +236,6 @@ export function MaterialsAddSheet({ project, selectedDate, onClose, onSaved }: P
             value={websiteURL}
             onChange={(e) => setWebsiteURL(e.target.value)}
             placeholder="Website · optional"
-            type="url"
           />
           <FormTextarea
             value={notes}
@@ -233,7 +250,7 @@ export function MaterialsAddSheet({ project, selectedDate, onClose, onSaved }: P
               disabled={saving}
               className="flex-1 rounded-xl bg-[#185FA5] py-2.5 text-sm font-bold text-white disabled:opacity-50"
             >
-              {saving ? 'Saving…' : 'Add material'}
+              {saving ? 'Saving…' : editing ? 'Save material' : 'Add material'}
             </button>
             <button
               type="button"

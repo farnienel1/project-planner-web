@@ -29,10 +29,12 @@ function MaterialLineCard({
   line,
   canDelete,
   onDelete,
+  onOpen,
 }: {
   line: ProjectMaterialLine
   canDelete: boolean
   onDelete: () => void
+  onOpen: () => void
 }) {
   const sentMeta = line.lastSentAt
     ? `${line.addedBy.split('@')[0]} · ${format(line.lastSentAt, 'd MMM')}`
@@ -49,7 +51,7 @@ function MaterialLineCard({
   return (
     <FeatureCard className="p-3">
       <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0 flex-1">
+        <button type="button" onClick={onOpen} className="min-w-0 flex-1 text-left">
           <p className="text-sm font-semibold text-slate-900">{line.material}</p>
           <p className="mt-0.5 text-xs text-slate-500">
             {line.quantity} {line.unit}
@@ -60,6 +62,7 @@ function MaterialLineCard({
               href={line.websiteURL}
               target="_blank"
               rel="noreferrer"
+              onClick={(event) => event.stopPropagation()}
               className="mt-1 block truncate text-[11px] font-medium text-[#185FA5]"
             >
               {line.websiteURL}
@@ -67,13 +70,16 @@ function MaterialLineCard({
           ) : null}
           {line.notes ? <p className="mt-1 text-[11px] text-slate-500">{line.notes}</p> : null}
           <p className="mt-1 text-[10px] text-slate-400">{sentMeta}</p>
-        </div>
+        </button>
         <div className="flex shrink-0 flex-col items-end gap-2">
           <StatusPill label={materialStatusLabel(line.status)} tone={materialStatusTone(line.status)} />
           {canDelete ? (
             <button
               type="button"
-              onClick={onDelete}
+              onClick={(event) => {
+                event.stopPropagation()
+                onDelete()
+              }}
               className="text-[11px] font-semibold text-red-600 hover:underline"
             >
               Delete
@@ -94,6 +100,7 @@ export function ProjectMaterialsSection({ project }: { project: Project }) {
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date(), { weekStartsOn: 1 }))
   const [selectedDate, setSelectedDate] = useState(() => new Date())
   const [showAdd, setShowAdd] = useState(false)
+  const [editingLine, setEditingLine] = useState<ProjectMaterialLine | null>(null)
   const [showSend, setShowSend] = useState(false)
   const [showHistory, setShowHistory] = useState(false)
   const [historyRecordId, setHistoryRecordId] = useState<string | null>(null)
@@ -202,6 +209,15 @@ export function ProjectMaterialsSection({ project }: { project: Project }) {
           onSaved={() => setShowAdd(false)}
         />
       )}
+      {editingLine && (
+        <MaterialsAddSheet
+          project={project}
+          selectedDate={selectedDate}
+          existing={editingLine}
+          onClose={() => setEditingLine(null)}
+          onSaved={() => setEditingLine(null)}
+        />
+      )}
 
       {showSend && canSend && (
         <MaterialsSendListSheet
@@ -239,6 +255,7 @@ export function ProjectMaterialsSection({ project }: { project: Project }) {
               key={line.id}
               line={line}
               canDelete={!isOperative}
+              onOpen={() => setEditingLine(line)}
               onDelete={async () => {
                 if (!organization?.id) return
                 if (!window.confirm(`Remove ${line.material} from this day's list?`)) return
