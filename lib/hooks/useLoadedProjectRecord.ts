@@ -14,16 +14,28 @@ export function useLoadedProjectRecord(
   collection: 'projects' | 'smallWorks' = 'projects'
 ) {
   const { organization, loading: authLoading } = useAuthStore()
-  const { getProject } = useProjectStore()
-  const [record, setRecord] = useState<Project | null>(null)
-  const [loading, setLoading] = useState(true)
+  const { getProject, projects, smallWorks } = useProjectStore()
+  const id = Array.isArray(recordId) ? recordId[0] : recordId
+  const needle = String(id || '').trim().toLowerCase()
+  const stored =
+    (collection === 'smallWorks' ? smallWorks : projects).find((row) => row.id.toLowerCase() === needle) ||
+    [...projects, ...smallWorks].find((row) => row.id.toLowerCase() === needle) ||
+    null
+  const [record, setRecord] = useState<Project | null>(stored)
+  const [loading, setLoading] = useState(!stored)
   const [error, setError] = useState<string | null>(null)
 
-  const id = Array.isArray(recordId) ? recordId[0] : recordId
+  useEffect(() => {
+    if (stored) {
+      setRecord(stored)
+      setLoading(false)
+      setError(null)
+    }
+  }, [stored?.id, stored?.updatedAt])
 
   useEffect(() => {
     if (authLoading) {
-      setLoading(true)
+      if (!stored) setLoading(true)
       return
     }
     if (!id) {
@@ -40,17 +52,22 @@ export function useLoadedProjectRecord(
     }
 
     let cancelled = false
-    setLoading(true)
-    setError(null)
+    if (!stored) {
+      setLoading(true)
+      setError(null)
+    }
 
     getProject(organization.id, String(id), collection)
       .then((result) => {
         if (cancelled) return
         if (!result) {
-          setError('Record not found.')
-          setRecord(null)
+          if (!stored) {
+            setError('Record not found.')
+            setRecord(null)
+          }
         } else {
           setRecord(result)
+          setError(null)
         }
       })
       .catch((err: unknown) => {

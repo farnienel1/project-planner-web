@@ -16,6 +16,7 @@ import {
 import { matchesRosterSegment, type RosterSegment } from '@/lib/staff/userRosterUtils'
 import { displayTradeType } from '@/lib/staff/staffTradeTypes'
 import type { User } from '@/types'
+import { UserAvatar } from '@/components/users/UserAvatar'
 
 const ROLE_TABS: { tab: ManageUsersTab; label: string; section: string }[] = [
   { tab: 'admins', label: 'Admins', section: 'Administrators' },
@@ -31,11 +32,6 @@ const SEGMENTS: { key: RosterSegment; title: string }[] = [
 
 function displayName(user: User): string {
   return `${user.firstName} ${user.surname}`.trim() || user.email
-}
-
-function initialsOf(user: User): string {
-  const initials = `${user.firstName?.[0] ?? ''}${user.surname?.[0] ?? ''}`.toUpperCase()
-  return initials.trim() || user.email.slice(0, 2).toUpperCase()
 }
 
 function avatarGradient(user: User): string {
@@ -323,13 +319,7 @@ export function ManageUsersScreen() {
                 className="group relative rounded-2xl border border-black/[0.04] bg-white p-4 shadow-sm transition hover:shadow-md"
               >
                 <button type="button" onClick={() => selectUser(user)} className="flex w-full items-center gap-3 text-left">
-                  <div
-                    className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-[14px] bg-gradient-to-br ${avatarGradient(
-                      user
-                    )} text-base font-bold text-white`}
-                  >
-                    {initialsOf(user)}
-                  </div>
+                  <UserAvatar user={user} size={48} className="rounded-[14px]" gradient={avatarGradient(user)} />
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-base font-bold text-slate-900">{displayName(user)}</div>
                     <div className="truncate text-sm text-slate-500">{user.email}</div>

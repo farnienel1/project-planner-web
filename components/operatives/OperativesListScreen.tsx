@@ -8,7 +8,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { MagnifyingGlassIcon, PlusIcon, UserGroupIcon } from '@heroicons/react/24/outline'
+import { MagnifyingGlassIcon, UserGroupIcon } from '@heroicons/react/24/outline'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
@@ -23,7 +23,7 @@ import {
   type RosterSegment,
 } from '@/lib/staff/userRosterUtils'
 import { EmptyState, FilterChip, PageHeader, StatusPill } from '@/components/ios/primitives'
-import { initialsFrom } from '@/lib/daily-overview/buildDailyOverview'
+import { UserAvatar } from '@/components/users/UserAvatar'
 
 export function OperativesListScreen() {
   const router = useRouter()
@@ -79,20 +79,7 @@ export function OperativesListScreen() {
 
   return (
     <div className="space-y-4">
-      <PageHeader
-        title="Manage Operatives"
-        actions={
-          canView ? (
-            <Link
-              href="/dashboard/operatives/new"
-              aria-label="New Operative"
-              className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-[#185FA5] text-white"
-            >
-              <PlusIcon className="h-5 w-5" />
-            </Link>
-          ) : null
-        }
-      />
+      <PageHeader title="Manage Operatives" />
 
       <div className="flex flex-wrap gap-1.5">
         <FilterChip title={`Active · ${counts.active}`} selected={segment === 'active'} onClick={() => setSegment('active')} />
@@ -134,8 +121,8 @@ export function OperativesListScreen() {
                 href={`/dashboard/users/${row.id}?from=operatives`}
                 className="flex items-center gap-3 px-4 py-3 hover:bg-[#F7F8FA]"
               >
-                <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-gradient-to-br from-[#185FA5] to-[#378ADD] text-[12px] font-medium text-white">
-                  {initialsFrom(name)}
+                <span className="grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-full">
+                  <UserAvatar user={row} size={40} />
                 </span>
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-[15px] font-medium">{name}</p>

@@ -25,10 +25,27 @@ import {
   materialStatusTone,
 } from '@/components/projects/features/featureUi'
 
-function MaterialLineCard({ line }: { line: ProjectMaterialLine }) {
+function MaterialLineCard({
+  line,
+  canDelete,
+  onDelete,
+}: {
+  line: ProjectMaterialLine
+  canDelete: boolean
+  onDelete: () => void
+}) {
   const sentMeta = line.lastSentAt
     ? `${line.addedBy.split('@')[0]} · ${format(line.lastSentAt, 'd MMM')}`
     : 'Not yet sent'
+  const extras = [
+    line.brand,
+    line.productCode,
+    line.size,
+    line.length ? `${line.length}${line.lengthUnit ? ` ${line.lengthUnit}` : ''}` : null,
+    line.category,
+  ]
+    .filter(Boolean)
+    .join(' · ')
   return (
     <FeatureCard className="p-3">
       <div className="flex items-start justify-between gap-2">
@@ -36,12 +53,33 @@ function MaterialLineCard({ line }: { line: ProjectMaterialLine }) {
           <p className="text-sm font-semibold text-slate-900">{line.material}</p>
           <p className="mt-0.5 text-xs text-slate-500">
             {line.quantity} {line.unit}
-            {line.brand ? ` · ${line.brand}` : ''}
-            {line.productCode ? ` · ${line.productCode}` : ''}
+            {extras ? ` · ${extras}` : ''}
           </p>
+          {line.websiteURL ? (
+            <a
+              href={line.websiteURL}
+              target="_blank"
+              rel="noreferrer"
+              className="mt-1 block truncate text-[11px] font-medium text-[#185FA5]"
+            >
+              {line.websiteURL}
+            </a>
+          ) : null}
+          {line.notes ? <p className="mt-1 text-[11px] text-slate-500">{line.notes}</p> : null}
           <p className="mt-1 text-[10px] text-slate-400">{sentMeta}</p>
         </div>
-        <StatusPill label={materialStatusLabel(line.status)} tone={materialStatusTone(line.status)} />
+        <div className="flex shrink-0 flex-col items-end gap-2">
+          <StatusPill label={materialStatusLabel(line.status)} tone={materialStatusTone(line.status)} />
+          {canDelete ? (
+            <button
+              type="button"
+              onClick={onDelete}
+              className="text-[11px] font-semibold text-red-600 hover:underline"
+            >
+              Delete
+            </button>
+          ) : null}
+        </div>
       </div>
     </FeatureCard>
   )
@@ -49,7 +87,7 @@ function MaterialLineCard({ line }: { line: ProjectMaterialLine }) {
 
 export function ProjectMaterialsSection({ project }: { project: Project }) {
   const { organization, user } = useAuthStore()
-  const { materials, sendRecords, loading, error, loadProjectMaterials, loadSendRecords } =
+  const { materials, sendRecords, loading, error, loadProjectMaterials, loadSendRecords, deleteMaterialLine } =
     useMaterialProjectStore()
   const { wholesalers, loadWholesalers } = useWholesalerStore()
 
@@ -58,6 +96,7 @@ export function ProjectMaterialsSection({ project }: { project: Project }) {
   const [showAdd, setShowAdd] = useState(false)
   const [showSend, setShowSend] = useState(false)
   const [showHistory, setShowHistory] = useState(false)
+  const [historyRecordId, setHistoryRecordId] = useState<string | null>(null)
 
   const isOperative = isOperativeMode(user)
   const canSend = !isOperative
@@ -94,14 +133,7 @@ export function ProjectMaterialsSection({ project }: { project: Project }) {
 
   const draftCount = projectMaterials.filter((m) => `${m.status}`.toLowerCase().includes('draft')).length
 
-  const reloadMaterials = () => {
-    if (organization?.id) {
-      loadProjectMaterials(organization.id, project.id)
-      loadSendRecords(organization.id, project.id)
-    }
-  }
-
-  if (loading) return <LoadingSpinner />
+  if (loading && projectMaterials.length === 0) return <LoadingSpinner />
 
   return (
     <FeatureScreen>
@@ -167,7 +199,7 @@ export function ProjectMaterialsSection({ project }: { project: Project }) {
           project={project}
           selectedDate={selectedDate}
           onClose={() => setShowAdd(false)}
-          onSaved={reloadMaterials}
+          onSaved={() => setShowAdd(false)}
         />
       )}
 
@@ -178,7 +210,7 @@ export function ProjectMaterialsSection({ project }: { project: Project }) {
           materialsDay={selectedDate}
           wholesalers={wholesalers}
           onClose={() => setShowSend(false)}
-          onSent={reloadMaterials}
+          onSent={() => setShowSend(false)}
         />
       )}
 
@@ -202,7 +234,18 @@ export function ProjectMaterialsSection({ project }: { project: Project }) {
             </button>
           </FeatureCard>
         ) : (
-          dayMaterials.map((line) => <MaterialLineCard key={line.id} line={line} />)
+          dayMaterials.map((line) => (
+            <MaterialLineCard
+              key={line.id}
+              line={line}
+              canDelete={!isOperative}
+              onDelete={async () => {
+                if (!organization?.id) return
+                if (!window.confirm(`Remove ${line.material} from this day's list?`)) return
+                await deleteMaterialLine(organization.id, line.id)
+              }}
+            />
+          ))
         )}
       </div>
 
@@ -223,22 +266,50 @@ export function ProjectMaterialsSection({ project }: { project: Project }) {
         <div className="mt-4">
           <FeatureSectionLabel>Quote &amp; order history</FeatureSectionLabel>
           <div className="space-y-2">
-            {sendRecords.map((record) => (
-              <FeatureCard key={record.id} className="px-4 py-3">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-sm font-semibold capitalize text-slate-800">
-                    {record.requestType === 'order' ? 'Order' : 'Quote'}
-                  </span>
-                  <StatusPill label="Sent" tone="green" />
-                </div>
-                <p className="mt-1 text-xs text-slate-500">
-                  {format(record.sentAt, 'd MMM yyyy HH:mm')} · {record.sentBy.split('@')[0]}
-                </p>
-                <p className="mt-0.5 text-xs text-slate-400">
-                  {record.recipients.map((r) => r.wholesalerName || r.email).join(', ')}
-                </p>
-              </FeatureCard>
-            ))}
+            {sendRecords.map((record) => {
+              const open = historyRecordId === record.id
+              return (
+                <button
+                  key={record.id}
+                  type="button"
+                  onClick={() => setHistoryRecordId(open ? null : record.id)}
+                  className="w-full text-left"
+                >
+                  <FeatureCard className="px-4 py-3 hover:bg-slate-50">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-sm font-semibold capitalize text-slate-800">
+                        {record.requestType === 'order' ? 'Order' : 'Quote'}
+                      </span>
+                      <StatusPill label="Sent" tone="green" />
+                    </div>
+                    <p className="mt-1 text-xs text-slate-500">
+                      {format(record.sentAt, 'd MMM yyyy HH:mm')} · {record.sentBy.split('@')[0]}
+                    </p>
+                    <p className="mt-0.5 text-xs text-slate-400">
+                      {record.recipients.map((r) => r.wholesalerName || r.email).join(', ')}
+                    </p>
+                    <p className="mt-1 text-[11px] font-semibold text-[#185FA5]">
+                      {open ? 'Hide items' : `View ${record.lines.length} item${record.lines.length === 1 ? '' : 's'}`}
+                    </p>
+                    {open ? (
+                      <ul className="mt-2 space-y-1 border-t border-slate-100 pt-2">
+                        {record.lines.map((line) => (
+                          <li key={line.materialId || line.name} className="text-[13px] text-slate-700">
+                            {line.quantity} {line.unit} · {line.name}
+                            {line.brand ? ` · ${line.brand}` : ''}
+                            {line.productCode ? ` · ${line.productCode}` : ''}
+                            {line.lengthDisplay ? ` · ${line.lengthDisplay}` : ''}
+                          </li>
+                        ))}
+                        {record.lines.length === 0 ? (
+                          <li className="text-[13px] text-slate-400">No line items stored on this send.</li>
+                        ) : null}
+                      </ul>
+                    ) : null}
+                  </FeatureCard>
+                </button>
+              )
+            })}
           </div>
         </div>
       )}

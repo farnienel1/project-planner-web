@@ -20,6 +20,8 @@ import {
   setupSectionTitle,
 } from '@/lib/staff/userEditPermissions'
 import { rosterStatusLabel } from '@/lib/staff/userRosterUtils'
+import { UserAvatar } from '@/components/users/UserAvatar'
+import { normalizeEmploymentType } from '@/lib/ios-parity/enums'
 import type { User, UserPermissions } from '@/types'
 import { PermissionToggleList } from '@/components/users/ProfileExpandablePermissionToggle'
 import {
@@ -152,6 +154,8 @@ export function EditUserProfile({
   const [draftTypePermissions, setDraftTypePermissions] = useState<UserPermissions | null>(null)
   const [busyAction, setBusyAction] = useState<string | null>(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [confirmAdmin, setConfirmAdmin] = useState(false)
+  const [editing, setEditing] = useState(false)
   const [originalDayRate, setOriginalDayRate] = useState<number | undefined>(undefined)
 
   useEffect(() => {
@@ -213,6 +217,10 @@ export function EditUserProfile({
 
   const updatePermissions = (patch: Partial<UserPermissions>) => {
     if (!target) return
+    if (patch.adminAccess === true && currentAccountType(target) !== 'admin') {
+      setConfirmAdmin(true)
+      return
+    }
     if (draftTypePermissions) {
       const next = { ...draftTypePermissions, ...patch }
       if (patch.adminAccess === true) next.manager = true
@@ -266,6 +274,7 @@ export function EditUserProfile({
       setDraftAccountType(null)
       setDraftTypePermissions(null)
       setShowChangeType(false)
+      setEditing(false)
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to save user')
     } finally {
@@ -343,6 +352,15 @@ export function EditUserProfile({
 
   const selectDraftAccountType = (accountType: 'operative' | 'manager' | 'admin') => {
     if (!target) return
+    if (accountType === 'admin' && currentAccountType(target) !== 'admin') {
+      setConfirmAdmin(true)
+      return
+    }
+    applyDraftAccountType(accountType)
+  }
+
+  const applyDraftAccountType = (accountType: 'operative' | 'manager' | 'admin') => {
+    if (!target) return
     setDraftAccountType(accountType)
     setDraftTypePermissions(applyAccountType(cloneUser(target), accountType).permissions)
     setSuccess(`Account type set to ${accountType}. Press Save to apply.`)
@@ -367,8 +385,8 @@ export function EditUserProfile({
     )
   }
 
-  const pageTitle = !canEdit
-    ? roleLabel(target)
+  const pageTitle = !editing
+    ? `${target.firstName} ${target.surname}`.trim() || roleLabel(target)
     : target.permissions.operativeMode
       ? 'Edit operative'
       : 'Edit user'
@@ -385,13 +403,21 @@ export function EditUserProfile({
         title={pageTitle}
         onBack={() => router.push(backHref)}
         rightAction={
-          canEdit ? (
+          canEdit && editing ? (
             <button
               type="submit"
               disabled={saving}
               className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 disabled:opacity-50"
             >
               {saving ? 'Saving…' : 'Save'}
+            </button>
+          ) : canEdit ? (
+            <button
+              type="button"
+              onClick={() => setEditing(true)}
+              className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700"
+            >
+              Edit
             </button>
           ) : (
             <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold text-slate-500">
@@ -419,9 +445,7 @@ export function EditUserProfile({
 
       {/* Profile header */}
       <div className="mt-4 flex items-center gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-[#7F77DD] to-[#534AB7] text-xl font-bold text-white">
-          {initialsOf(target)}
-        </div>
+        <UserAvatar user={target} size={64} className="rounded-2xl" gradient="from-[#7F77DD] to-[#534AB7]" />
         <div className="min-w-0 flex-1">
           <div className="truncate text-lg font-bold text-slate-900">
             {target.firstName} {target.surname}
@@ -458,14 +482,14 @@ export function EditUserProfile({
           <FormField label="First name">
             <Input
               value={target.firstName}
-              disabled={!canEditIdentity}
+              disabled={!canEditIdentity || !editing}
               onChange={(e) => setTarget({ ...target, firstName: e.target.value })}
             />
           </FormField>
           <FormField label="Surname">
             <Input
               value={target.surname}
-              disabled={!canEditIdentity}
+              disabled={!canEditIdentity || !editing}
               onChange={(e) => setTarget({ ...target, surname: e.target.value })}
             />
           </FormField>
@@ -473,14 +497,14 @@ export function EditUserProfile({
             <Input
               type="email"
               value={target.email}
-              disabled={!canEditIdentity}
+              disabled={!canEditIdentity || !editing}
               onChange={(e) => setTarget({ ...target, email: e.target.value })}
             />
           </FormField>
           <FormField label="Mobile number">
             <Input
               value={target.mobileNumber || ''}
-              disabled={!canEditIdentity}
+              disabled={!canEditIdentity || !editing}
               onChange={(e) => setTarget({ ...target, mobileNumber: e.target.value })}
             />
           </FormField>
@@ -498,13 +522,12 @@ export function EditUserProfile({
           {showEmploymentType && (
             <FormField label="Employment type">
               <Select
-                value={target.employmentType || 'selfEmployed'}
-                disabled={!canEditMatrix}
+                value={normalizeEmploymentType(target.employmentType)}
+                disabled={!canEditMatrix || !editing}
                 onChange={(e) => setTarget({ ...target, employmentType: e.target.value })}
               >
-                <option value="selfEmployed">Self-Employed</option>
+                <option value="self_employed">Self-Employed</option>
                 <option value="paye">PAYE</option>
-                <option value="self_employed">Self employed (legacy)</option>
               </Select>
             </FormField>
           )}
@@ -522,12 +545,14 @@ export function EditUserProfile({
                   defs={OPERATIVE_PERMISSION_TOGGLES}
                   permissions={effectivePermissions}
                   onChange={updatePermissions}
+                  disabled={!editing}
                 />
               ) : (
                 <PermissionToggleList
                   defs={MANAGER_PERMISSION_TOGGLES}
                   permissions={effectivePermissions}
                   onChange={updatePermissions}
+                  disabled={!editing}
                   excludeKeys={suppressAdminAccessToggle ? ['adminAccess'] : undefined}
                 />
               )}
@@ -546,6 +571,7 @@ export function EditUserProfile({
                 <FormField label="Line manager" hint="Same as iOS — leave as “No line manager” if not applicable.">
                   <Select
                     value={target.assignedManagerUserId || ''}
+                    disabled={!editing}
                     onChange={(e) => setTarget({ ...target, assignedManagerUserId: e.target.value })}
                   >
                     <option value="">No line manager</option>
@@ -568,6 +594,7 @@ export function EditUserProfile({
                     step="0.01"
                     value={target.dayRate?.toString() || ''}
                     className="pl-7"
+                    disabled={!editing}
                     onChange={(e) =>
                       setTarget({
                         ...target,
@@ -583,6 +610,7 @@ export function EditUserProfile({
                 <FormField label="Trade type">
                   <Select
                     value={target.tradeTypePreset || ''}
+                    disabled={!editing}
                     onChange={(e) => setTarget({ ...target, tradeTypePreset: e.target.value })}
                   >
                     <option value="">Select trade</option>
@@ -597,6 +625,7 @@ export function EditUserProfile({
                   <FormField label="Custom trade">
                     <Input
                       value={target.tradeTypeCustom || ''}
+                      disabled={!editing}
                       onChange={(e) => setTarget({ ...target, tradeTypeCustom: e.target.value })}
                     />
                   </FormField>
@@ -641,6 +670,7 @@ export function EditUserProfile({
                 </div>
                 <Toggle
                   checked={target.annualLeaveEnabled !== false}
+                  disabled={!editing}
                   onChange={(checked) => setTarget({ ...target, annualLeaveEnabled: checked })}
                 />
               </div>
@@ -662,6 +692,7 @@ export function EditUserProfile({
                 <Input
                   type="number"
                   value={target.annualLeaveDaysPerYear?.toString() || '28'}
+                  disabled={!editing}
                   onChange={(e) =>
                     setTarget({ ...target, annualLeaveDaysPerYear: Number(e.target.value) || undefined })
                   }
@@ -674,6 +705,7 @@ export function EditUserProfile({
                 <div className="flex items-center gap-3">
                   <Select
                     value={String(target.annualLeaveYearStartMonth ?? 1)}
+                    disabled={!editing}
                     onChange={(e) =>
                       setTarget({ ...target, annualLeaveYearStartMonth: Number(e.target.value) })
                     }
@@ -687,6 +719,7 @@ export function EditUserProfile({
                   <span className="text-slate-400">→</span>
                   <Select
                     value={String(target.annualLeaveYearEndMonth ?? 12)}
+                    disabled={!editing}
                     onChange={(e) =>
                       setTarget({ ...target, annualLeaveYearEndMonth: Number(e.target.value) })
                     }
@@ -708,6 +741,7 @@ export function EditUserProfile({
                 </div>
                 <Toggle
                   checked={target.annualLeaveCarriesOver === true}
+                  disabled={!editing}
                   onChange={(checked) => setTarget({ ...target, annualLeaveCarriesOver: checked })}
                 />
               </div>
@@ -729,6 +763,7 @@ export function EditUserProfile({
                 </div>
                 <Toggle
                   checked={target.timesheetsEnabled === true}
+                  disabled={!editing}
                   onChange={(checked) => setTarget({ ...target, timesheetsEnabled: checked })}
                 />
               </div>
@@ -736,12 +771,14 @@ export function EditUserProfile({
                 <FormField label="VAT number" hint="Optional.">
                   <Input
                     value={target.vatNumber || ''}
+                    disabled={!editing}
                     onChange={(e) => setTarget({ ...target, vatNumber: e.target.value })}
                   />
                 </FormField>
                 <FormField label="UTR number" hint="Optional.">
                   <Input
                     value={target.utrNumber || ''}
+                    disabled={!editing}
                     onChange={(e) => setTarget({ ...target, utrNumber: e.target.value })}
                   />
                 </FormField>
@@ -764,6 +801,7 @@ export function EditUserProfile({
                 </div>
                 <Toggle
                   checked={target.isActive}
+                  disabled={!editing}
                   onChange={(checked) => setTarget({ ...target, isActive: checked })}
                 />
               </div>
@@ -772,7 +810,7 @@ export function EditUserProfile({
         </>
       )}
 
-      {canEdit ? (
+      {canEdit && editing ? (
         <div className="mt-6">
           <SaveButton saving={saving} saved={saved} onClick={() => handleSave()} />
         </div>
@@ -912,6 +950,41 @@ export function EditUserProfile({
                 className="rounded-xl bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
               >
                 Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {confirmAdmin && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          onClick={() => setConfirmAdmin(false)}
+        >
+          <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <h2 className="text-lg font-bold text-slate-900">Make this user an administrator?</h2>
+            <p className="mt-2 text-sm text-slate-600">
+              Administrators have full access, including user management, organisation settings, and warnings. This
+              takes effect when you press Save.
+            </p>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setConfirmAdmin(false)}
+                className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setConfirmAdmin(false)
+                  setEditing(true)
+                  applyDraftAccountType('admin')
+                }}
+                className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+              >
+                Make administrator
               </button>
             </div>
           </div>

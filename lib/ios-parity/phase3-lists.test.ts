@@ -142,6 +142,65 @@ test('buildDailyOverview groups jobs and weekday unbooked labour', () => {
   assert.equal(model.empty, false)
 })
 
+test('buildDailyOverview does not double-count the same booking id', () => {
+  const day = new Date('2026-09-16T12:00:00Z')
+  const project = {
+    id: 'P1',
+    jobNumber: 'J1',
+    siteName: 'Alpha',
+    jobType: 'CAT A',
+    client: { id: 'c', name: 'Acme' },
+    addressLine1: '',
+    townCity: '',
+    postcode: '',
+    startDate: day,
+    endDate: day,
+    isLive: true,
+    manager: { name: 'Custom', email: '' },
+    createdAt: day,
+    updatedAt: day,
+  } as Project
+  const booking: Booking = {
+    id: 'B1',
+    operativeId: 'OP1',
+    projectId: 'P1',
+    date: day,
+    timeSlot: 'CUSTOM_HOURS',
+    workStartTime: '07:30',
+    workEndTime: '16:00',
+    bookedBy: 'Ada',
+    status: 'Confirmed',
+    createdAt: day,
+    updatedAt: day,
+  }
+  const model = buildDailyOverview({
+    day,
+    today: day,
+    projects: [project],
+    bookings: [booking, { ...booking }],
+    managerBookings: [],
+    holidays: [] as HolidayBooking[],
+    users: [user({ id: 'U1', email: 'ada@x.com', firstName: 'Ada', surname: 'Booked' })],
+    operatives: [
+      {
+        id: 'OP1',
+        firstName: 'Ada',
+        lastName: 'Booked',
+        email: 'ada@x.com',
+        startDate: day,
+        hourlyRate: 0,
+        skills: [],
+        qualifications: [],
+        isActive: true,
+        createdAt: day,
+        updatedAt: day,
+      },
+    ],
+  })
+  assert.equal(model.projectCards[0].people[0].hours, 8)
+  assert.equal(model.labourHours, 8)
+})
+
 test('buildDailyOverview lists people even when the job document is missing', () => {
   const day = new Date('2026-09-16T12:00:00Z')
   const booking: Booking = {

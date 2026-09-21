@@ -486,9 +486,39 @@ export async function loadExportedTimesheetHistory({
 }): Promise<ExportedTimesheetHistoryRow[]> {
   const byId = new Map<string, ExportedTimesheetHistoryRow>()
   if (users.length === 0) return []
+  const byUserId = new Map(users.map((user) => [user.id, user]))
 
-  // iOS loadExportedHistory: listTimesheetStates per user. Do not prefix-scan
-  // every timesheet_* settings doc (those payloads include signature PNGs).
+  const ingestData = (member: import('@/types').User, weekStart: Date, data: Record<string, unknown>) => {
+    ingestExportedRow(byId, member, weekStart, draftFromFirestoreMap(data, LIST_DRAFT_OPTIONS))
+  }
+
+  try {
+    const snap = await getDocs(
+      query(collection(db, 'organizations', organizationId, 'settings'), where('exportedAt', '!=', null))
+    )
+    for (const entry of snap.docs) {
+      if (!entry.id.startsWith('timesheet_')) continue
+      const data = entry.data() as Record<string, unknown>
+      const userId = typeof data.userId === 'string' ? data.userId : ''
+      const member = byUserId.get(userId)
+      const weekStart = parseFirestoreDate(data.weekStart)
+      if (!member || !weekStart) continue
+      ingestData(member, weekStart, data)
+    }
+    if (byId.size > 0) {
+      return Array.from(byId.values()).sort((a, b) => {
+        const left = a.draft.exportedAt?.getTime() || 0
+        const right = b.draft.exportedAt?.getTime() || 0
+        if (left !== right) return right - left
+        const an = `${a.user.firstName} ${a.user.surname}`.trim()
+        const bn = `${b.user.firstName} ${b.user.surname}`.trim()
+        return an.localeCompare(bn)
+      })
+    }
+  } catch {
+    // Missing index or rules — fall back to per-user list.
+  }
+
   const batches = await mapInBatches(users, 8, async (member) => {
     const rows = await listTimesheetStates(organizationId, member.id, 400)
     return { member, rows }

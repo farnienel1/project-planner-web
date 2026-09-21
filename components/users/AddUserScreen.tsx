@@ -150,7 +150,7 @@ export function AddUserScreen() {
     dayRate: '',
     tradeTypePreset: '',
     tradeTypeCustom: '',
-    employmentType: 'selfEmployed' as 'paye' | 'selfEmployed',
+    employmentType: 'self_employed' as 'paye' | 'self_employed',
     timesheetsEnabled: false,
     vatNumber: '',
     utrNumber: '',
@@ -613,10 +613,10 @@ export function AddUserScreen() {
                 <Select
                   value={form.employmentType}
                   onChange={(e) =>
-                    setForm({ ...form, employmentType: e.target.value as 'paye' | 'selfEmployed' })
+                    setForm({ ...form, employmentType: e.target.value as 'paye' | 'self_employed' })
                   }
                 >
-                  <option value="selfEmployed">Self-Employed</option>
+                  <option value="self_employed">Self-Employed</option>
                   <option value="paye">PAYE</option>
                 </Select>
               </FormField>

@@ -26,12 +26,26 @@ import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { shouldShowTeamOnboardingPrompt } from '@/lib/orgSetup/teamOnboarding'
 import {
   getDashboardNavBySection,
+  getDashboardNavItems,
   isDashboardNavActive,
   type DashboardNavItem,
 } from '@/lib/navigation/dashboardNavigation'
+import {
+  defaultNavigateConfig,
+  parseNavigateConfig,
+  readLocalNavigateConfig,
+  resolveNavigateRows,
+  writeLocalNavigateConfig,
+  type NavigateConfig,
+} from '@/lib/navigation/navigateCustomization'
+import { CustomiseNavigateSheet } from '@/components/shell/CustomiseNavigateSheet'
 import { IconChip, type ChipTint } from '@/components/ios/IconChip'
 import { AppLogoMark } from '@/components/ui/AppLogoMark'
+import { UserAvatar } from '@/components/users/UserAvatar'
 import { useNotificationStore } from '@/lib/stores/notificationStore'
+import { useProjectStore } from '@/lib/stores/projectStore'
+import { db } from '@/lib/firebase/config'
+import { doc, getDoc, setDoc } from 'firebase/firestore'
 import { recoverJobTypesFromWork } from '@/lib/jobTypes/jobTypesStorage'
 import {
   applyRoleTestingPreset,
@@ -92,6 +106,36 @@ function NavRow({ item, pathname, onClick }: { item: DashboardNavItem; pathname:
   )
 }
 
+function ShortcutRow({
+  href,
+  label,
+  pathname,
+  onClick,
+  tint = 'green',
+}: {
+  href: string
+  label: string
+  pathname: string
+  onClick?: () => void
+  tint?: ChipTint
+}) {
+  const active = isDashboardNavActive(pathname, href)
+  return (
+    <Link
+      href={href}
+      onClick={onClick}
+      className={`flex items-center gap-3 rounded-[14px] px-3 py-2.5 text-[15px] transition hover:border-ios-search-border ${
+        active ? 'bg-[#185FA5]/[0.18] font-semibold text-[#185FA5]' : 'font-medium text-ios-ink hover:bg-black/[0.03]'
+      }`}
+    >
+      <IconChip tint={tint} size="sm">
+        <FolderIcon className="h-4 w-4" />
+      </IconChip>
+      <span className="min-w-0 flex-1 truncate">{label}</span>
+    </Link>
+  )
+}
+
 function Section({
   title,
   items,
@@ -138,6 +182,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [newOpen, setNewOpen] = useState(false)
   const [rolePreset, setRolePreset] = useState<RoleTestingPreset | null>(null)
   const [refreshing, setRefreshing] = useState(false)
+  const [customiseOpen, setCustomiseOpen] = useState(false)
+  const [navigateConfig, setNavigateConfig] = useState<NavigateConfig | null>(null)
+  const { projects, smallWorks, loadProjects, loadSmallWorks } = useProjectStore()
 
   useEffect(() => {
     const on = () => setOnline(true)
@@ -191,7 +238,25 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     if (!organization?.id) return
     void recoverJobTypesFromWork(organization.id).catch(() => {})
     loadUsers(organization.id)
-  }, [organization?.id, loadUsers])
+    loadProjects(organization.id, true)
+    loadSmallWorks(organization.id)
+  }, [organization?.id, loadUsers, loadProjects, loadSmallWorks])
+
+  useEffect(() => {
+    if (!user?.id) return
+    const local = readLocalNavigateConfig(user.id)
+    if (local) setNavigateConfig(local)
+    if (!db) return
+    getDoc(doc(db, 'users', user.id))
+      .then((snap) => {
+        const remote = parseNavigateConfig(snap.data()?.webNavigateSidebar)
+        if (remote) {
+          setNavigateConfig(remote)
+          writeLocalNavigateConfig(user.id, remote)
+        }
+      })
+      .catch(() => {})
+  }, [user?.id])
 
   const displayUser = useMemo(
     () => (user ? applyRoleTestingPreset(user, rolePreset) : null),
@@ -218,9 +283,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     pathname.startsWith('/dashboard/materials') ||
     pathname.startsWith('/dashboard/sub-contractors')
 
-  const firstInitial = displayUser.firstName?.trim()?.charAt(0) || displayUser.email?.trim()?.charAt(0) || 'U'
-  const surnameInitial = displayUser.surname?.trim()?.charAt(0) || ''
-  const avatarInitials = `${firstInitial}${surnameInitial}`.toUpperCase()
+  const persistNavigate = (next: NavigateConfig) => {
+    setNavigateConfig(next)
+    if (!user?.id) return
+    writeLocalNavigateConfig(user.id, next)
+    if (!db) return
+    void setDoc(doc(db, 'users', user.id), { webNavigateSidebar: next }, { merge: true }).catch(() => {})
+  }
+
+  const catalog = getDashboardNavItems(displayUser, organization, users)
+  const resolvedNavigate = resolveNavigateRows(navigateConfig, navigateItems, catalog)
+  const effectiveNavigateConfig = navigateConfig ?? defaultNavigateConfig(navigateItems)
   const canNewProject = canManageWorkCatalogue(displayUser, 'projects')
   const canNewSmall = canManageWorkCatalogue(displayUser, 'smallWorks')
   const canNewUser = canManageUsers(displayUser) || displayUser.permissions.manager
@@ -250,7 +323,39 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <NavRow key={item.id} item={item} pathname={pathname} onClick={() => setMoreOpen(false)} />
         ))}
       </div>
-      <Section title="Navigate" items={navigateItems} pathname={pathname} onClick={() => setMoreOpen(false)} />
+      <div>
+        <div className="flex items-center justify-between px-3 pb-2">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.3px] text-ios-muted">Navigate</p>
+          <button
+            type="button"
+            onClick={() => setCustomiseOpen(true)}
+            className="text-[11px] font-semibold text-[#185FA5] hover:underline"
+          >
+            Customise
+          </button>
+        </div>
+        <div className="space-y-0.5">
+          {resolvedNavigate.map((row) =>
+            row.navItem ? (
+              <NavRow
+                key={row.key}
+                item={row.navItem}
+                pathname={pathname}
+                onClick={() => setMoreOpen(false)}
+              />
+            ) : (
+              <ShortcutRow
+                key={row.key}
+                href={row.href}
+                label={row.label}
+                pathname={pathname}
+                tint={row.entry.type === 'smallWorks' ? 'amber' : 'green'}
+                onClick={() => setMoreOpen(false)}
+              />
+            )
+          )}
+        </div>
+      </div>
       <Section title="Tools" items={toolsItems} pathname={pathname} onClick={() => setMoreOpen(false)} />
       {teamItems.length > 0 && (
         <Section title="Team" items={teamItems} pathname={pathname} onClick={() => setMoreOpen(false)} />
@@ -262,6 +367,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen bg-ios-canvas font-ios text-ios-ink">
       <TeamOnboardingPrompt />
+      {customiseOpen ? (
+        <CustomiseNavigateSheet
+          config={effectiveNavigateConfig}
+          catalog={catalog}
+          projects={projects}
+          smallWorks={smallWorks}
+          onChange={persistNavigate}
+          onClose={() => setCustomiseOpen(false)}
+        />
+      ) : null}
       <div className="flex min-h-screen">
         <aside className="sticky top-0 hidden h-screen w-[248px] shrink-0 flex-col border-r border-ios-border bg-ios-card xl:w-[272px] lg:flex">
           <div className="flex items-center gap-3 border-b border-ios-border px-5 py-5">
@@ -376,10 +491,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 </Link>
                 <Link
                   href="/dashboard/settings"
-                  className="flex h-11 w-11 items-center justify-center rounded-full bg-[#185FA5] text-xs font-bold text-white"
+                  className="flex h-11 w-11 items-center justify-center overflow-hidden rounded-full bg-[#185FA5] text-xs font-bold text-white"
                   aria-label="Profile"
                 >
-                  {avatarInitials}
+                  <UserAvatar user={displayUser} size={44} />
                 </Link>
               </div>
             </header>
