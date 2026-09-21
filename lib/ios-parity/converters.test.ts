@@ -93,6 +93,26 @@ test('parseOperative reads qualification expiry and certificate maps', () => {
   }
 })
 
+test('parseBooking reads custom hours from Timestamp clock values', () => {
+  const start = new Date('2026-09-16T06:00:00')
+  const end = new Date('2026-09-16T22:00:00')
+  const result = parseBooking('ID', {
+    operativeId: 'AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA',
+    projectId: 'BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB',
+    date: new Date('2026-09-16T00:00:00Z'),
+    timeSlot: 'CUSTOM_HOURS',
+    bookedBy: 'Farnie',
+    status: 'Confirmed',
+    workStartTime: start,
+    workEndTime: end,
+  })
+  assert.equal(result.ok, true)
+  if (result.ok) {
+    assert.equal(result.value.workStartTime, `${String(start.getHours()).padStart(2, '0')}:${String(start.getMinutes()).padStart(2, '0')}`)
+    assert.equal(result.value.workEndTime, `${String(end.getHours()).padStart(2, '0')}:${String(end.getMinutes()).padStart(2, '0')}`)
+  }
+})
+
 test('parseBooking skips missing operativeId', () => {
   const result = parseBooking('ID', {
     projectId: 'BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB',

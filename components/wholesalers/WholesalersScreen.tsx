@@ -12,6 +12,7 @@ import { useAuthStore } from '@/lib/stores/authStore'
 import { newWholesalerId, useWholesalerStore } from '@/lib/stores/wholesalerStore'
 import { useMaterialProjectStore } from '@/lib/stores/materialProjectStore'
 import { canAccessWholesalers, canViewWholesalerOrderHistory } from '@/lib/permissions'
+import { consumeCreateQuery } from '@/lib/navigation/createMenu'
 import { newUuid } from '@/lib/firebase/firestoreUtils'
 import { EmptyState, IosFormModal, PageHeader } from '@/components/ios/primitives'
 
@@ -35,6 +36,11 @@ export function WholesalersScreen({ selectedId }: { selectedId?: string }) {
   useEffect(() => {
     if (user && !canManage) router.replace('/dashboard')
   }, [user, canManage, router])
+
+  useEffect(() => {
+    if (!canManage) return
+    if (consumeCreateQuery()) setEditor(emptyWholesaler())
+  }, [canManage])
 
   useEffect(() => {
     if (!organization?.id) return

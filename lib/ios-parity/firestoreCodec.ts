@@ -72,6 +72,56 @@ export function asOptionalString(value: unknown): string | undefined {
   return trimmed ? trimmed : undefined
 }
 
+function padClockPart(n: number): string {
+  return String(n).padStart(2, '0')
+}
+
+/** Booking custom hours are `"HH:mm"`; older docs may store a Timestamp or hour number. */
+export function asClockHhMm(value: unknown): string | undefined {
+  if (value == null || value === '') return undefined
+  if (typeof value === 'string') {
+    const raw = value.trim()
+    if (!raw) return undefined
+    const ampm = raw.match(/^(\d{1,2})(?::(\d{2}))?(?::\d{2})?\s*(AM|PM)$/i)
+    if (ampm) {
+      let hours = Number(ampm[1])
+      const minutes = Number(ampm[2] || '0')
+      const mer = ampm[3].toUpperCase()
+      if (mer === 'AM' && hours === 12) hours = 0
+      if (mer === 'PM' && hours !== 12) hours += 12
+      if (hours >= 0 && hours < 24 && minutes >= 0 && minutes < 60) {
+        return `${padClockPart(hours)}:${padClockPart(minutes)}`
+      }
+    }
+    const m = /^(\d{1,2}):(\d{2})(?::\d{2}(?:\.\d+)?)?$/.exec(raw)
+    if (m) {
+      const hours = Number(m[1])
+      const minutes = Number(m[2])
+      if (hours >= 0 && hours < 24 && minutes >= 0 && minutes < 60) {
+        return `${padClockPart(hours)}:${padClockPart(minutes)}`
+      }
+    }
+    const compact = /^(\d{2})(\d{2})$/.exec(raw)
+    if (compact) return `${compact[1]}:${compact[2]}`
+    return undefined
+  }
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    if (value >= 0 && value < 24) {
+      const hours = Math.floor(value)
+      const minutes = Math.round((value - hours) * 60)
+      return `${padClockPart(hours)}:${padClockPart(minutes % 60)}`
+    }
+    if (value >= 24 && value < 24 * 60) {
+      const minutes = Math.round(value)
+      return `${padClockPart(Math.floor(minutes / 60))}:${padClockPart(minutes % 60)}`
+    }
+    return undefined
+  }
+  const date = asDate(value)
+  if (date) return `${padClockPart(date.getHours())}:${padClockPart(date.getMinutes())}`
+  return undefined
+}
+
 export function asBool(value: unknown, fallback: boolean): boolean {
   return typeof value === 'boolean' ? value : fallback
 }

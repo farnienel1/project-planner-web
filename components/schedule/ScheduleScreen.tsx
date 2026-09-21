@@ -109,23 +109,6 @@ function SlotPill({ slot }: { slot: string }) {
   )
 }
 
-function StatusBadge({ status }: { status: string }) {
-  if (bookingStatus(status) === 'confirmed') {
-    return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-green-50 px-2 py-0.5 text-[11px] font-semibold text-green-700">
-        <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
-        Confirmed
-      </span>
-    )
-  }
-  return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700">
-      <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
-      Tentative
-    </span>
-  )
-}
-
 function BookingCard({
   booking,
   operativeName,
@@ -206,7 +189,6 @@ function BookingCard({
           </div>
           <div className="mt-2 flex flex-wrap gap-1.5">
             <SlotPill slot={String(booking.timeSlot)} />
-            <StatusBadge status={String(booking.status)} />
           </div>
         </div>
 

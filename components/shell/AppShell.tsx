@@ -49,13 +49,12 @@ import { doc, getDoc, setDoc } from 'firebase/firestore'
 import { recoverJobTypesFromWork } from '@/lib/jobTypes/jobTypesStorage'
 import {
   applyRoleTestingPreset,
-  canManageUsers,
-  canManageWorkCatalogue,
   isOperativeMode,
   roleTestingPresetTitle,
   roleTestingStorageKey,
   type RoleTestingPreset,
 } from '@/lib/permissions'
+import { createMenuItems } from '@/lib/navigation/createMenu'
 
 const CHIP_FOR_ID: Record<string, ChipTint> = {
   dashboard_home: 'blue',
@@ -273,7 +272,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const allItems = [...homeItems, ...navigateItems, ...toolsItems, ...teamItems, ...accountItems]
   const title = pageTitle(pathname, allItems)
   const isHome = pathname === '/dashboard'
-  const hidePageChrome = isHome || pathname.startsWith('/dashboard/book-labour')
+  const isBookLabour = pathname.startsWith('/dashboard/book-labour')
+  const showHeader = !isBookLabour
   const ownsPageTitle =
     pathname.startsWith('/dashboard/timesheets') ||
     pathname.startsWith('/dashboard/wholesalers') ||
@@ -295,9 +295,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const catalog = getDashboardNavItems(displayUser, organization, users)
   const resolvedNavigate = resolveNavigateRows(navigateConfig, navigateItems, catalog)
   const effectiveNavigateConfig = navigateConfig ?? defaultNavigateConfig(navigateItems)
-  const canNewProject = canManageWorkCatalogue(displayUser, 'projects')
-  const canNewSmall = canManageWorkCatalogue(displayUser, 'smallWorks')
-  const canNewUser = canManageUsers(displayUser) || displayUser.permissions.manager
+  const createItems = createMenuItems(displayUser)
   const showOperativesTab = !isOperativeMode(displayUser) && navigateItems.some((i) => i.id === 'dashboard_operatives')
 
   const resetRolePreview = () => {
@@ -431,47 +429,49 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </div>
           ) : null}
 
-          {!hidePageChrome ? (
+          {showHeader ? (
             <header className="sticky top-0 z-20 flex h-16 items-center justify-between gap-3 border-b border-ios-border bg-ios-card/95 px-4 backdrop-blur lg:px-8">
               <div className="min-w-0">
-                {ownsPageTitle ? (
+                {ownsPageTitle || isHome ? (
                   <p className="truncate text-[13px] font-medium text-ios-muted">{organization?.name || 'Project Planner'}</p>
                 ) : (
                   <h1 className="truncate text-[20px] font-semibold tracking-tight lg:text-[28px]">{title}</h1>
                 )}
               </div>
               <div className="flex items-center gap-2">
+                {createItems.length > 0 ? (
                 <div className="relative">
+                  {newOpen ? (
+                    <button
+                      type="button"
+                      className="fixed inset-0 z-10 cursor-default bg-transparent"
+                      aria-label="Close new menu"
+                      onClick={() => setNewOpen(false)}
+                    />
+                  ) : null}
                   <button
                     type="button"
                     onClick={() => setNewOpen((v) => !v)}
-                    className="inline-flex h-10 items-center gap-1 rounded-full bg-[#185FA5] px-3 text-sm font-semibold text-white"
+                    className="relative z-20 inline-flex h-10 items-center gap-1 rounded-full bg-[#185FA5] px-3 text-sm font-semibold text-white"
                   >
                     <PlusIcon className="h-4 w-4" /> New
                   </button>
                   {newOpen ? (
-                    <div className="absolute right-0 mt-2 w-48 rounded-2xl border border-ios-border bg-ios-card p-1 shadow-ios-toast">
-                      {canNewProject ? (
-                        <Link href="/dashboard/projects/new" className="block rounded-xl px-3 py-2 text-sm hover:bg-black/[0.04]" onClick={() => setNewOpen(false)}>
-                          Project
+                    <div className="absolute right-0 z-30 mt-2 w-56 rounded-2xl border border-ios-border bg-ios-card p-1 shadow-ios-toast">
+                      {createItems.map((item) => (
+                        <Link
+                          key={item.id}
+                          href={item.href}
+                          className="block rounded-xl px-3 py-2 text-sm hover:bg-black/[0.04]"
+                          onClick={() => setNewOpen(false)}
+                        >
+                          {item.label}
                         </Link>
-                      ) : null}
-                      {canNewSmall ? (
-                        <Link href="/dashboard/small-works/new" className="block rounded-xl px-3 py-2 text-sm hover:bg-black/[0.04]" onClick={() => setNewOpen(false)}>
-                          Small work
-                        </Link>
-                      ) : null}
-                      {canNewUser ? (
-                        <Link href="/dashboard/settings/users/new" className="block rounded-xl px-3 py-2 text-sm hover:bg-black/[0.04]" onClick={() => setNewOpen(false)}>
-                          User
-                        </Link>
-                      ) : null}
-                      <Link href="/dashboard/tasks" className="block rounded-xl px-3 py-2 text-sm hover:bg-black/[0.04]" onClick={() => setNewOpen(false)}>
-                        Task
-                      </Link>
+                      ))}
                     </div>
                   ) : null}
                 </div>
+                ) : null}
                 <button
                   type="button"
                   onClick={refresh}

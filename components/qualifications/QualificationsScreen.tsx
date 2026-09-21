@@ -15,6 +15,7 @@ import {
   canManageOrganisationQualifications,
   canViewMyQualifications,
 } from '@/lib/permissions'
+import { consumeCreateQuery } from '@/lib/navigation/createMenu'
 import { findOperativeForUser } from '@/lib/operatives/operativeRosterUtils'
 import { EmptyState, IosFormModal, PageHeader } from '@/components/ios/primitives'
 import {
@@ -42,6 +43,16 @@ export function QualificationsScreen({ initialTab }: { initialTab?: Tab } = {}) 
   const [pickerOpen, setPickerOpen] = useState(false)
   const [name, setName] = useState('')
   const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    if (!canManageOrg) return
+    if (consumeCreateQuery()) {
+      setTab('organisation')
+      setName('')
+      setError(null)
+      setAddOpen(true)
+    }
+  }, [canManageOrg])
 
   useEffect(() => {
     if (!organization?.id) return
