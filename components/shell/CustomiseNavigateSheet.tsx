@@ -5,7 +5,7 @@
 
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Project } from '@/types'
 import type { DashboardNavItem } from '@/lib/navigation/dashboardNavigation'
 import {
@@ -17,7 +17,15 @@ import {
   type NavigateConfig,
   type NavigateEntry,
 } from '@/lib/navigation/navigateCustomization'
-import { deriveWorkStatus } from '@/lib/projects/workStatus'
+import { deriveWorkStatus, searchWorks } from '@/lib/projects/workStatus'
+
+function sortByDateAdded(works: Project[]): Project[] {
+  return [...works].sort((a, b) => {
+    const aTime = a.createdAt instanceof Date ? a.createdAt.getTime() : 0
+    const bTime = b.createdAt instanceof Date ? b.createdAt.getTime() : 0
+    return bTime - aTime
+  })
+}
 
 export function CustomiseNavigateSheet({
   config,
@@ -35,10 +43,30 @@ export function CustomiseNavigateSheet({
   onClose: () => void
 }) {
   const [picker, setPicker] = useState<'project' | 'smallWorks' | null>(null)
+  const [workQuery, setWorkQuery] = useState('')
+  const [pickerTick, setPickerTick] = useState(0)
   const [dragIndex, setDragIndex] = useState<number | null>(null)
+  const pickerRef = useRef<HTMLDivElement>(null)
   const available = useMemo(() => availableCatalogItems(config, catalog), [config, catalog])
-  const liveProjects = projects.filter((row) => deriveWorkStatus(row) !== 'inactive')
-  const liveSmallWorks = smallWorks.filter((row) => deriveWorkStatus(row) !== 'inactive')
+  const liveProjects = useMemo(
+    () => sortByDateAdded(projects.filter((row) => deriveWorkStatus(row) !== 'inactive')),
+    [projects]
+  )
+  const liveSmallWorks = useMemo(
+    () => sortByDateAdded(smallWorks.filter((row) => deriveWorkStatus(row) !== 'inactive')),
+    [smallWorks]
+  )
+
+  useEffect(() => {
+    if (!picker) return
+    pickerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }, [picker, pickerTick])
+
+  const openPicker = (kind: 'project' | 'smallWorks') => {
+    setPicker(kind)
+    setWorkQuery('')
+    setPickerTick((value) => value + 1)
+  }
 
   const addWork = (kind: 'project' | 'smallWorks', work: Project) => {
     onChange(
@@ -59,6 +87,10 @@ export function CustomiseNavigateSheet({
     const prefix = entry.jobNumber ? `${entry.jobNumber} · ` : ''
     return `${prefix}${entry.label}`
   }
+
+  const pickerWorks = picker
+    ? searchWorks(picker === 'project' ? liveProjects : liveSmallWorks, workQuery)
+    : []
 
   return (
     <div className="fixed inset-0 z-[80] flex items-start justify-center bg-black/40 p-4 pt-16" onClick={onClose}>
@@ -145,14 +177,14 @@ export function CustomiseNavigateSheet({
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
-              onClick={() => setPicker('project')}
+              onClick={() => openPicker('project')}
               className="rounded-xl bg-[#185FA5] px-3 py-2 text-[13px] font-semibold text-white"
             >
               Add project
             </button>
             <button
               type="button"
-              onClick={() => setPicker('smallWorks')}
+              onClick={() => openPicker('smallWorks')}
               className="rounded-xl bg-amber-600 px-3 py-2 text-[13px] font-semibold text-white"
             >
               Add small works
@@ -160,7 +192,7 @@ export function CustomiseNavigateSheet({
           </div>
 
           {picker ? (
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+            <div ref={pickerRef} className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
               <div className="mb-2 flex items-center justify-between">
                 <p className="text-sm font-semibold">
                   {picker === 'project' ? 'Live projects' : 'Live small works'}
@@ -169,8 +201,14 @@ export function CustomiseNavigateSheet({
                   Close
                 </button>
               </div>
+              <input
+                value={workQuery}
+                onChange={(event) => setWorkQuery(event.target.value)}
+                placeholder={picker === 'project' ? 'Search projects' : 'Search small works'}
+                className="mb-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#185FA5]"
+              />
               <div className="max-h-56 space-y-1 overflow-y-auto">
-                {(picker === 'project' ? liveProjects : liveSmallWorks).map((work) => (
+                {pickerWorks.map((work) => (
                   <button
                     key={work.id}
                     type="button"
@@ -184,8 +222,10 @@ export function CustomiseNavigateSheet({
                     <span className="text-[11px] text-slate-400">{deriveWorkStatus(work)}</span>
                   </button>
                 ))}
-                {(picker === 'project' ? liveProjects : liveSmallWorks).length === 0 ? (
-                  <p className="px-2 py-4 text-center text-sm text-slate-500">No live jobs to add.</p>
+                {pickerWorks.length === 0 ? (
+                  <p className="px-2 py-4 text-center text-sm text-slate-500">
+                    {workQuery.trim() ? 'No jobs match that search.' : 'No live jobs to add.'}
+                  </p>
                 ) : null}
               </div>
             </div>

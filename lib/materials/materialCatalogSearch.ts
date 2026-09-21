@@ -30,52 +30,58 @@ export function searchMaterialCatalogue(
   limit = 10
 ): MaterialSuggestion[] {
   const q = normalizeMaterialText(query)
-  if (!q) return []
+  const browsing = !q
 
   const merged: MaterialSuggestion[] = []
   const seen = new Set<string>()
 
-  for (const item of searchMaterialCatalogueItems(q, catalogue, 8)) {
-    const key = duplicateKey(item.name, item.productCode)
-    if (!seen.has(key)) {
+  const pushRecent = () => {
+    for (const line of recentLines) {
+      const name = line.material
+      const brand = line.brand || 'Custom'
+      const code = line.productCode
+      if (
+        !browsing &&
+        !normalizeMaterialText(name).includes(q) &&
+        !normalizeMaterialText(brand).includes(q) &&
+        !normalizeMaterialCode(code).includes(q)
+      ) {
+        continue
+      }
+      const key = duplicateKey(name, code)
+      if (seen.has(key) || merged.length >= limit) continue
       seen.add(key)
       merged.push({
-        id: `cat:${item.id}`,
-        source: 'catalogue',
-        name: item.name,
-        brand: item.brand,
-        productCode: item.productCode,
-        unit: item.defaultUnit,
-        category: item.category,
-        catalogueItem: item,
+        id: `recent:${line.id}`,
+        source: 'recent',
+        name,
+        brand,
+        productCode: code,
+        unit: line.unit,
+        category: line.category,
       })
     }
   }
 
-  for (const line of recentLines) {
-    const name = line.material
-    const brand = line.brand || 'Custom'
-    const code = line.productCode
-    if (
-      !normalizeMaterialText(name).includes(q) &&
-      !normalizeMaterialText(brand).includes(q) &&
-      !normalizeMaterialCode(code).includes(q)
-    ) {
-      continue
-    }
-    const key = duplicateKey(name, code)
+  if (browsing) pushRecent()
+
+  for (const item of searchMaterialCatalogueItems(q, catalogue, browsing ? limit : 8)) {
+    const key = duplicateKey(item.name, item.productCode)
     if (seen.has(key) || merged.length >= limit) continue
     seen.add(key)
     merged.push({
-      id: `recent:${line.id}`,
-      source: 'recent',
-      name,
-      brand,
-      productCode: code,
-      unit: line.unit,
-      category: line.category,
+      id: `cat:${item.id}`,
+      source: 'catalogue',
+      name: item.name,
+      brand: item.brand,
+      productCode: item.productCode,
+      unit: item.defaultUnit,
+      category: item.category,
+      catalogueItem: item,
     })
   }
+
+  if (!browsing) pushRecent()
 
   return merged.slice(0, limit)
 }
