@@ -8,6 +8,7 @@ import { CalendarDaysIcon, ClipboardDocumentCheckIcon, CubeIcon, ShieldCheckIcon
 import { useAuthStore } from '@/lib/stores/authStore'
 import { canManageWorkCatalogue } from '@/lib/permissions'
 import { ProjectDetailsCard, ProjectWorkspaceChrome } from '@/components/projects/ProjectWorkspaceChrome'
+import { ProjectScheduleSection } from '@/components/projects/scheduling/ProjectScheduleSection'
 import type { Project } from '@/types'
 
 export function ProjectHub({
@@ -40,9 +41,7 @@ export function ProjectHub({
               </div>
             </div>
             <div className="card-b">
-              <p className="muted small">
-                Book operatives, managers and subcontractors from Scheduling. Click a day in the week grid to see hours.
-              </p>
+              <ProjectScheduleSection project={project} scheduleBasePath={`${basePath}/schedule`} variant="hub" />
             </div>
           </section>
           <div className="g2 grid">

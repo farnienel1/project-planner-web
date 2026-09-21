@@ -7,9 +7,11 @@ import type { Project } from '@/types'
 export function ProjectScheduleSection({
   project,
   scheduleBasePath,
+  variant = 'full',
 }: {
   project: Project
   scheduleBasePath: string
+  variant?: 'full' | 'hub'
 }) {
   const { organization } = useAuthStore()
 
@@ -20,6 +22,7 @@ export function ProjectScheduleSection({
       project={project}
       organizationId={organization.id}
       scheduleBasePath={scheduleBasePath}
+      variant={variant}
     />
   )
 }

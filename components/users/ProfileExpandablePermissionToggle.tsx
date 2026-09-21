@@ -34,9 +34,9 @@ export function ProfileExpandablePermissionToggle({
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
           </svg>
           <span>
-            <span className="block text-sm font-medium text-slate-900">{def.title}</span>
+            <span className="block text-sm font-medium text-[var(--ink)]">{def.title}</span>
             {expanded ? (
-              <span className="mt-1 block text-xs leading-relaxed text-slate-500">{def.description}</span>
+              <span className="mt-1 block text-xs leading-relaxed text-[var(--ink2)]">{def.description}</span>
             ) : null}
           </span>
         </button>

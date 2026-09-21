@@ -215,11 +215,6 @@ export function EditUserProfile({
     [users, target?.id]
   )
 
-  const linkedOperative = useMemo(
-    () => (target ? findOperativeForUser(target, operatives) : undefined),
-    [target, operatives]
-  )
-
   const canEdit = target ? canEditTargetUser(currentUser, target) : false
   const canEditIdentity = target ? canEditIdentityDetails(currentUser, target) : false
   const canEditMatrix = target ? canEditPermissionsMatrix(currentUser, target) : false
@@ -475,7 +470,7 @@ export function EditUserProfile({
       <div className="mt-4 flex items-center gap-4 card p-5 shadow-sm">
         <UserAvatar user={target} size={64} className="rounded-2xl" gradient="from-[#7F77DD] to-[#534AB7]" />
         <div className="min-w-0 flex-1">
-          <div className="truncate text-lg font-bold text-slate-900">
+          <div className="truncate text-lg font-bold text-[var(--ink)]">
             {target.firstName} {target.surname}
           </div>
           <div className="text-sm text-slate-500">{roleLabel(target)}</div>
@@ -660,24 +655,12 @@ export function EditUserProfile({
                 )}
               </div>
 
-              <p className="text-sm text-slate-500">
+              <p className="text-sm text-[var(--ink2)]">
                 Current trade:{' '}
-                <span className="font-medium text-slate-700">
+                <span className="font-medium text-[var(--ink)]">
                   {displayTradeType(target.tradeTypePreset, target.tradeTypeCustom)}
                 </span>
               </p>
-
-              {linkedOperative && (
-                <Link
-                  href={`/dashboard/operatives/${linkedOperative.id}/edit`}
-                  className="inline-flex items-center gap-1.5 text-sm font-semibold text-blue-600 hover:underline"
-                >
-                  Qualifications
-                  <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                  </svg>
-                </Link>
-              )}
             </div>
           </SettingsCard>
         </>
@@ -691,8 +674,8 @@ export function EditUserProfile({
             <div className="p-4">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <div className="text-sm font-semibold text-slate-900">Annual leave enabled</div>
-                  <p className="mt-0.5 text-xs text-slate-500">
+                  <div className="text-sm font-semibold text-[var(--ink)]">Annual leave enabled</div>
+                  <p className="mt-0.5 text-xs text-[var(--ink3)]">
                     Turn off for self-employed staff who do not use paid annual leave.
                   </p>
                 </div>
@@ -762,8 +745,8 @@ export function EditUserProfile({
               </FormField>
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <div className="text-sm font-semibold text-slate-900">Carry unused days into next leave year</div>
-                  <p className="mt-0.5 text-xs text-slate-500">
+                  <div className="text-sm font-semibold text-[var(--ink)]">Carry unused days into next leave year</div>
+                  <p className="mt-0.5 text-xs text-[var(--ink3)]">
                     Unused allowance from the previous leave year is added to this year&apos;s balance.
                   </p>
                 </div>
@@ -786,8 +769,8 @@ export function EditUserProfile({
             <div className="space-y-4 p-4">
               <div className="flex items-center justify-between gap-3">
                 <div>
-                  <div className="text-sm font-semibold text-slate-900">Timesheets enabled</div>
-                  <p className="mt-0.5 text-xs text-slate-500">Allow this person to log and submit timesheets.</p>
+                  <div className="text-sm font-semibold text-[var(--ink)]">Timesheets enabled</div>
+                  <p className="mt-0.5 text-xs text-[var(--ink3)]">Allow this person to log and submit timesheets.</p>
                 </div>
                 <Toggle
                   checked={target.timesheetsEnabled === true}
@@ -824,8 +807,8 @@ export function EditUserProfile({
             <div className="p-4">
               <div className="flex items-center justify-between gap-3">
                 <div>
-                  <div className="text-sm font-semibold text-slate-900">Active</div>
-                  <p className="mt-0.5 text-xs text-slate-500">User can sign in and use the app.</p>
+                  <div className="text-sm font-semibold text-[var(--ink)]">Active</div>
+                  <p className="mt-0.5 text-xs text-[var(--ink3)]">User can sign in and use the app.</p>
                 </div>
                 <Toggle
                   checked={target.isActive}

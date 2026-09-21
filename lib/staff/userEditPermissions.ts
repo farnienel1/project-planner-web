@@ -13,6 +13,11 @@ export function canUseAdminAccountTools(current: User | null): boolean {
   return canManageUsers(current)
 }
 
+/** Admin user-edit screen (permissions, payroll, account type). Not personal settings. */
+export function canShowAdminEditProfile(current: User | null): boolean {
+  return canManageUsers(current)
+}
+
 export function canEditPermissionsMatrix(current: User | null, target: User): boolean {
   return canEditTargetUser(current, target)
 }
