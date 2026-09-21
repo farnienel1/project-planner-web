@@ -275,7 +275,8 @@ a {
   }
 }
 
-.pp-page {
+.pp-page,
+.page {
   animation: pagein 0.22s ease-out;
 }
 
