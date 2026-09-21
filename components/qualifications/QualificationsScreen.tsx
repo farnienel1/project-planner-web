@@ -390,7 +390,7 @@ function MyQualificationsPanel({
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-end gap-3">
+      <div className="sticky bottom-20 z-10 flex flex-wrap items-center justify-end gap-3 rounded-2xl bg-white/95 p-3 shadow-[0_1px_2px_rgba(0,0,0,0.10)] backdrop-blur lg:bottom-4">
         <button type="button" onClick={onAdd} className="text-[15px] font-semibold text-[#185FA5]">
           Add qualifications
         </button>
@@ -400,7 +400,7 @@ function MyQualificationsPanel({
           onClick={() => void onSave(draft).then(() => setDirty(false))}
           className="rounded-xl bg-[#185FA5] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
         >
-          {saving ? 'Saving…' : 'Save'}
+          {saving ? 'Saving…' : dirty ? 'Save' : 'Saved'}
         </button>
       </div>
       {dirty ? (

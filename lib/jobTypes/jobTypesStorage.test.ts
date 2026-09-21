@@ -4,6 +4,7 @@ import {
   canonicalJobTypeName,
   coerceJobTypeList,
   collectionJobTypeForName,
+  jobTypeFieldsFromRecord,
   jobTypesFromWorkRecords,
   mergeJobTypeCatalogues,
   validateJobTypeName,
@@ -21,6 +22,7 @@ test('canonicalJobTypeName maps iOS enum aliases', () => {
   assert.equal(canonicalJobTypeName('CAT-A'), 'CAT A')
   assert.equal(canonicalJobTypeName('small_works'), 'Small Works')
   assert.equal(canonicalJobTypeName('Decarbonisation'), 'Decarbonisation')
+  assert.equal(canonicalJobTypeName('Decarbonization'), 'Decarbonisation')
 })
 
 test('coerceJobTypeList accepts arrays, maps, and comma strings', () => {
@@ -37,6 +39,13 @@ test('jobTypesFromWorkRecords recovers names still stored on projects and small 
       { customJobType: 'Decarbonisation' },
     ]),
     ['CAT A', 'Decarbonisation', 'Fit-out', 'Small Works']
+  )
+})
+
+test('jobTypeFieldsFromRecord reads custom names from older worksType fields', () => {
+  assert.deepEqual(
+    jobTypeFieldsFromRecord({ worksType: 'Decarbonisation', jobType: { rawValue: 'CAT A' } }),
+    { jobType: 'CAT A', customJobType: 'Decarbonisation' }
   )
 })
 

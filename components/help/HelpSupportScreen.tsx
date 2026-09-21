@@ -338,6 +338,46 @@ const TOPICS: Topic[] = [
         ],
       },
       {
+        id: 'operatives',
+        title: 'Operatives and managers',
+        summary: 'The people catalogues behind bookings.',
+        href: '/dashboard/operatives',
+        body: [
+          'Operatives and managers are organisation catalogues. Book labour, timesheets and qualifications match a person by email to their catalogue record.',
+          'Keep the email on the user account the same as the operative or manager record so hours, rates and certificates stay linked.',
+        ],
+      },
+      {
+        id: 'subcontractors',
+        title: 'Sub-contractors',
+        summary: 'Companies you book onto jobs.',
+        href: '/dashboard/sub-contractors',
+        body: [
+          'Add a sub-contractor company and contacts, then book them onto a job from the job hub.',
+          'Sub-contractor bookings are separate from operative timesheets. They do not appear in User Timesheets.',
+        ],
+      },
+      {
+        id: 'quotes',
+        title: 'Quotes and orders',
+        summary: 'Send a materials list to a wholesaler.',
+        href: '/dashboard/materials',
+        body: [
+          'Build the send list on a job, grouped by category. Send it to the wholesaler before the company cut-off.',
+          'Order history stays under Wholesalers. The same send is visible on iOS.',
+        ],
+      },
+      {
+        id: 'dashboard',
+        title: 'Home tiles',
+        summary: 'Customise the dashboard layout.',
+        href: '/dashboard/edit',
+        body: [
+          'Admins and managers can rearrange Home tiles. The layout is stored per user for the active organisation.',
+          'Warnings, Up Next and quick actions still follow your role even if you hide a tile.',
+        ],
+      },
+      {
         id: 'overview',
         title: 'Overview and reports',
         summary: 'Company hours, logos and weekly totals.',
@@ -518,11 +558,11 @@ export function HelpSupportScreen() {
                 <DocumentTextIcon className="mt-0.5 h-5 w-5 text-[#185FA5]" />
                 <h2 className="text-[22px] font-semibold">{article.title}</h2>
               </div>
-              <div className="mt-4 space-y-3 text-[15px] leading-relaxed text-slate-700">
+              <ol className="mt-4 list-decimal space-y-3 pl-5 text-[15px] leading-relaxed text-slate-700">
                 {article.body.map((paragraph) => (
-                  <p key={paragraph}>{paragraph}</p>
+                  <li key={paragraph}>{paragraph}</li>
                 ))}
-              </div>
+              </ol>
               {article.href ? (
                 <Link
                   href={article.href}
