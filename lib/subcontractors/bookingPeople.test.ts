@@ -1,7 +1,10 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  findSubcontractorFirm,
   formatSubcontractorBookingLabel,
+  idsMatch,
+  parseBookedPeopleFields,
   resolveSubcontractorBookingPeople,
 } from './bookingPeople.ts'
 
@@ -29,6 +32,43 @@ test('resolveSubcontractorBookingPeople maps contact ids when names were not sto
     'Tom Watts',
     'Jane Smith',
   ])
+})
+
+test('resolveSubcontractorBookingPeople matches dashed and undashed contact ids', () => {
+  const dashedFirm = {
+    id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+    name: 'Acme Electrical',
+    contacts: [{ id: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', name: 'Jane Smith' }],
+  }
+  assert.deepEqual(
+    resolveSubcontractorBookingPeople(
+      { bookedContactIds: ['BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB'] },
+      dashedFirm
+    ),
+    ['Jane Smith']
+  )
+  assert.ok(idsMatch('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'))
+  assert.equal(
+    findSubcontractorFirm([dashedFirm], 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA')?.name,
+    'Acme Electrical'
+  )
+})
+
+test('parseBookedPeopleFields reads iOS aliases and object entries', () => {
+  assert.deepEqual(
+    parseBookedPeopleFields({
+      contactIds: ['C1'],
+      bookedNames: ['Jane Smith'],
+    }),
+    { bookedContactIds: ['C1'], bookedOperativeNames: ['Jane Smith'] }
+  )
+  assert.deepEqual(
+    parseBookedPeopleFields({
+      bookedContactIds: [{ id: 'C2' }],
+      bookedOperativeNames: [{ name: 'Tom Watts' }],
+    }),
+    { bookedContactIds: ['C2'], bookedOperativeNames: ['Tom Watts'] }
+  )
 })
 
 test('formatSubcontractorBookingLabel puts people next to the firm', () => {

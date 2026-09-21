@@ -17,6 +17,7 @@ import type { Booking, HolidayBooking, Operative, Project, User } from '@/types'
 import type { ManagerLocationType, ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import {
   formatSubcontractorBookingLabel,
+  findSubcontractorFirm,
   resolveSubcontractorBookingPeople,
 } from '@/lib/subcontractors/bookingPeople'
 
@@ -347,7 +348,7 @@ export function buildDailyOverview(params: {
     }
     const subs = daySubs.filter((b) => canonicalWorkKey(b.projectId, params.projects) === projectKey)
     for (const b of subs) {
-      const firm = params.subcontractors?.find((row) => row.id === b.subcontractorId)
+      const firm = findSubcontractorFirm(params.subcontractors, b.subcontractorId)
       const people = resolveSubcontractorBookingPeople(b, firm)
       const name = formatSubcontractorBookingLabel(firm?.name || 'Subcontractor', people)
       const hours = estimatedPaidHours(b)
