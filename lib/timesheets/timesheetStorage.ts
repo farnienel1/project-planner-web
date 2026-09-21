@@ -1,6 +1,7 @@
 import { doc, getDoc, setDoc, Timestamp } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
 import { sanitizeForFirestore } from '@/lib/firebase/firestoreUtils'
+import { periodStartKey } from '@/lib/timesheets/paymentRunCopy'
 import { weekStartKey } from '@/lib/timesheets/timesheetWeekUtils'
 
 export type TimesheetWeekStatus = 'draft' | 'submitted' | 'approved'
@@ -19,6 +20,10 @@ export type TimesheetWeekRecord = {
 }
 
 function timesheetDocId(userId: string, weekStart: Date): string {
+  return `timesheet_${userId}_${periodStartKey(weekStart)}`
+}
+
+function legacyTimesheetDocId(userId: string, weekStart: Date): string {
   return `timesheet_${userId}_${weekStartKey(weekStart)}`
 }
 
@@ -50,13 +55,22 @@ export async function loadTimesheetWeekRecord(
   userId: string,
   weekStart: Date
 ): Promise<TimesheetWeekRecord | null> {
-  const weekKey = weekStartKey(weekStart)
+  const weekKey = periodStartKey(weekStart)
   const ref = doc(db, 'organizations', organizationId, 'settings', timesheetDocId(userId, weekStart))
   const snap = await getDoc(ref)
-  if (!snap.exists()) {
-    return { userId, weekStart: weekKey, status: 'draft' }
+  if (snap.exists()) {
+    return mapRecord(snap.data() as Record<string, unknown>, userId, weekKey)
   }
-  return mapRecord(snap.data() as Record<string, unknown>, userId, weekKey)
+  const legacyKey = weekStartKey(weekStart)
+  if (legacyKey !== weekKey) {
+    const legacySnap = await getDoc(
+      doc(db, 'organizations', organizationId, 'settings', legacyTimesheetDocId(userId, weekStart))
+    )
+    if (legacySnap.exists()) {
+      return mapRecord(legacySnap.data() as Record<string, unknown>, userId, weekKey)
+    }
+  }
+  return { userId, weekStart: weekKey, status: 'draft' }
 }
 
 export async function loadTimesheetWeekRecords(
@@ -91,7 +105,7 @@ export async function submitTimesheetWeek({
     ref,
     sanitizeForFirestore({
       userId,
-      weekStart: weekStartKey(weekStart),
+      weekStart: periodStartKey(weekStart),
       status: 'submitted',
       totalHours,
       submittedAt: Timestamp.now(),

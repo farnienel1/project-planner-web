@@ -14,5 +14,7 @@ Errors: empty / already exists (case-sensitive exact match).
 ## Data
 `organizations/{orgId}/settings/jobTypes` overwritten (`jobTypes[]`, `organizationId`, `updatedAt`). No merge.
 
+If that document is empty but projects/small works still have `jobType` / `customJobType`, web **restores the union** into `settings/jobTypes`. Same class of wipe as qualifications: iOS in-memory empty set + full overwrite.
+
 ## Desktop
 Centred card max 720px.

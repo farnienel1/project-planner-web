@@ -22,10 +22,12 @@ import {
   collectSubjectDayEntries,
   estimatedAmount,
   estimatedDays,
+  subjectForUser,
+  teamTimesheetUsers,
   totalHours,
-  weekRangeFromStart,
   type TimesheetSubject,
 } from '@/lib/timesheets/timesheetWeekUtils'
+import { formatPaymentPeriodLine } from '@/lib/timesheets/paymentRunCopy'
 import type { Booking, Operative, User } from '@/types'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import type { OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
@@ -40,24 +42,32 @@ type SubjectRow = {
   record: TimesheetWeekRecord | null
 }
 
+export type TeamTimesheetTab = 'awaiting' | 'signed' | 'exported'
+
 export function TimesheetsScreen({
   bookings,
   managerSiteBookings,
   operatives,
   users,
-  weekStart,
+  periodStart,
+  periodEnd,
   payrollPolicy,
   loading,
-  onWeekStartChange,
+  scope,
+  selectedUserId,
+  teamTab,
 }: {
   bookings: Booking[]
   managerSiteBookings: ManagerSiteBooking[]
   operatives: Operative[]
   users: User[]
-  weekStart: Date
+  periodStart: Date
+  periodEnd: Date
   payrollPolicy: OrgPayrollTimePolicy
   loading?: boolean
-  onWeekStartChange: (value: string) => void
+  scope: 'mine' | 'team' | 'detail'
+  selectedUserId?: string | null
+  teamTab?: TeamTimesheetTab
 }) {
   const { user, organization } = useAuthStore()
   const [records, setRecords] = useState<Map<string, TimesheetWeekRecord>>(new Map())
@@ -66,8 +76,24 @@ export function TimesheetsScreen({
   const [expandedKey, setExpandedKey] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  const weekRange = useMemo(() => weekRangeFromStart(weekStart), [weekStart])
-  const subjects = useMemo(() => buildTimesheetSubjects(users, operatives), [users, operatives])
+  const weekRange = useMemo(() => ({ start: periodStart, end: periodEnd }), [periodStart, periodEnd])
+  const allSubjects = useMemo(() => buildTimesheetSubjects(users, operatives), [users, operatives])
+
+  const subjects = useMemo(() => {
+    if (!user) return []
+    if (scope === 'mine') return [subjectForUser(user, operatives)]
+    if (scope === 'detail' && selectedUserId) {
+      const match =
+        allSubjects.find((subject) => subject.userId === selectedUserId) ||
+        (() => {
+          const member = users.find((row) => row.id === selectedUserId)
+          return member ? subjectForUser(member, operatives) : null
+        })()
+      return match ? [match] : []
+    }
+    const rosterIds = new Set(teamTimesheetUsers(user, users).map((row) => row.id))
+    return allSubjects.filter((subject) => subject.userId && rosterIds.has(subject.userId))
+  }, [user, scope, selectedUserId, operatives, allSubjects, users])
 
   const rows = useMemo<SubjectRow[]>(() => {
     return subjects
@@ -80,18 +106,23 @@ export function TimesheetsScreen({
           payrollPolicy,
         })
         const hours = totalHours(entries)
+        const record = subject.userId ? records.get(subject.userId) || null : null
         return {
           subject,
           entries,
           hours,
           days: estimatedDays(entries, payrollPolicy.standardPaidHours),
           amount: estimatedAmount(subject, hours),
-          record: subject.userId ? records.get(subject.userId) || null : records.get(subject.userId || '') || null,
+          record,
         }
       })
-      .filter((row) => row.hours > 0 || row.record?.status === 'submitted' || row.record?.status === 'approved')
       .sort((a, b) => a.subject.name.localeCompare(b.subject.name))
   }, [subjects, bookings, managerSiteBookings, weekRange, payrollPolicy, records])
+
+  const visibleRows = useMemo(() => {
+    if (scope === 'mine' || scope === 'detail') return rows
+    return rows.filter((row) => matchesTeamTab(row, teamTab || 'awaiting'))
+  }, [rows, scope, teamTab])
 
   const linkedOperative = useMemo(
     () => (user ? findOperativeForUser(user, operatives) : undefined),
@@ -107,12 +138,12 @@ export function TimesheetsScreen({
     if (userIds.length === 0) return
     setRecordsLoading(true)
     try {
-      const next = await loadTimesheetWeekRecords(organization.id, userIds, weekStart)
+      const next = await loadTimesheetWeekRecords(organization.id, userIds, periodStart)
       setRecords(next)
     } finally {
       setRecordsLoading(false)
     }
-  }, [organization?.id, subjects, weekStart])
+  }, [organization?.id, subjects, periodStart])
 
   useEffect(() => {
     void reloadRecords()
@@ -138,7 +169,7 @@ export function TimesheetsScreen({
       await submitTimesheetWeek({
         organizationId: organization.id,
         userId: row.subject.userId,
-        weekStart,
+        weekStart: periodStart,
         totalHours: row.hours,
         submittedByUserId: user.id,
       })
@@ -158,7 +189,7 @@ export function TimesheetsScreen({
       await approveTimesheetWeek({
         organizationId: organization.id,
         userId: row.subject.userId,
-        weekStart,
+        weekStart: periodStart,
         approvedByUserId: user.id,
         approvedByName: `${user.firstName || ''} ${user.surname || ''}`.trim() || user.email,
       })
@@ -193,54 +224,52 @@ export function TimesheetsScreen({
     )
     printTimesheetInvoice(html)
 
-    await markTimesheetInvoiceGenerated(organization.id, row.subject.userId, weekStart)
+    await markTimesheetInvoiceGenerated(organization.id, row.subject.userId, periodStart)
     await reloadRecords()
   }
 
   if (loading || recordsLoading) return <LoadingSpinner />
 
+  const emptyTitle =
+    scope === 'mine'
+      ? 'No bookings found for this payment period yet'
+      : teamTab === 'exported'
+        ? 'No exported timesheets'
+        : teamTab === 'signed'
+          ? 'No signed-off timesheets'
+          : 'No timesheets awaiting sign-off'
+  const emptyDescription =
+    scope === 'mine'
+      ? 'Hours from site, office, site survey and other schedule entries will appear here automatically, even after a single booked day.'
+      : teamTab === 'exported'
+        ? 'Exported timesheets stay here after you generate an invoice.'
+        : teamTab === 'signed'
+          ? 'Approved timesheets ready to export will appear here.'
+          : 'Submitted timesheets, and people already booked in this pay run, appear here.'
+
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center gap-3">
-        <label className="text-sm font-medium text-slate-700">Week starting</label>
-        <input
-          type="date"
-          value={format(weekStart, 'yyyy-MM-dd')}
-          onChange={(e) => onWeekStartChange(e.target.value)}
-          className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
-        />
-        <span className="text-sm text-slate-500">
-          {format(weekRange.start, 'd MMM')} – {format(weekRange.end, 'd MMM yyyy')}
-        </span>
-      </div>
+      <p className="text-[15px] font-medium text-ios-muted">{formatPaymentPeriodLine(periodStart, periodEnd)}</p>
 
       {error && (
         <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</div>
       )}
 
-      <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
-        Hours are calculated from operative <strong>bookings</strong> and manager <strong>site bookings</strong>.
-        Submit your week for approval, then generate an invoice once approved — synced to Firestore for iOS parity.
-      </div>
-
-      {rows.length === 0 ? (
-        <EmptyState
-          title="No timesheet hours this week"
-          description="Schedule operatives or managers on projects to populate timesheet data."
-        />
+      {visibleRows.length === 0 ? (
+        <EmptyState title={emptyTitle} description={emptyDescription} />
       ) : (
         <div className="space-y-3">
-          {rows.map((row) => {
+          {visibleRows.map((row) => {
             const record = row.subject.userId ? records.get(row.subject.userId) : null
-            const status = record?.status || 'draft'
-            const expanded = expandedKey === row.subject.key
+            const status = record?.status || (row.hours > 0 ? 'draft' : 'draft')
+            const expanded = expandedKey === row.subject.key || scope !== 'team'
             const busy = busyKey === row.subject.key
 
             return (
               <div key={row.subject.key} className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
                 <button
                   type="button"
-                  onClick={() => setExpandedKey(expanded ? null : row.subject.key)}
+                  onClick={() => setExpandedKey(expanded && scope === 'team' ? null : row.subject.key)}
                   className="flex w-full items-center gap-4 px-4 py-4 text-left hover:bg-slate-50"
                 >
                   <div className="min-w-0 flex-1">
@@ -258,27 +287,35 @@ export function TimesheetsScreen({
                               : 'bg-slate-100 text-slate-600'
                         }`}
                       >
-                        {status}
+                        {status === 'approved' && record?.invoiceGeneratedAt ? 'exported' : status}
                       </span>
                     </div>
                     <p className="mt-1 text-xs text-slate-500">
                       {row.hours.toFixed(1)}h · {row.days.toFixed(1)} days · {row.entries.length} booking
                       {row.entries.length !== 1 ? 's' : ''}
                       {row.amount != null ? ` · £${row.amount.toFixed(2)} est.` : ''}
+                      {row.amount == null ? ' · Rate not set by your line manager' : ''}
                     </p>
                   </div>
                 </button>
 
                 {expanded && (
                   <div className="border-t border-slate-100 px-4 py-4">
-                    <div className="space-y-2">
-                      {row.entries.map((entry) => (
-                        <div key={`${entry.date.toISOString()}-${entry.label}`} className="flex justify-between text-xs text-slate-600">
-                          <span>{format(entry.date, 'EEE d MMM')} · {entry.label}</span>
-                          <span>{entry.hours.toFixed(1)}h</span>
-                        </div>
-                      ))}
-                    </div>
+                    {row.entries.length === 0 ? (
+                      <p className="text-sm text-ios-muted">
+                        No bookings found for this payment period yet. Hours from site, office, site survey and other
+                        schedule entries will appear here automatically.
+                      </p>
+                    ) : (
+                      <div className="space-y-2">
+                        {row.entries.map((entry) => (
+                          <div key={`${entry.date.toISOString()}-${entry.label}`} className="flex justify-between text-xs text-slate-600">
+                            <span>{format(entry.date, 'EEE d MMM')} · {entry.label}</span>
+                            <span>{entry.hours.toFixed(1)}h</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
 
                     <div className="mt-4 flex flex-wrap gap-2">
                       {canSubmitForSubject(row.subject) && status === 'draft' && (
@@ -321,4 +358,12 @@ export function TimesheetsScreen({
       )}
     </div>
   )
+}
+
+function matchesTeamTab(row: SubjectRow, tab: TeamTimesheetTab): boolean {
+  const status = row.record?.status || 'draft'
+  const exported = Boolean(row.record?.invoiceGeneratedAt)
+  if (tab === 'exported') return exported
+  if (tab === 'signed') return status === 'approved' && !exported
+  return (status === 'submitted' || (status === 'draft' && row.hours > 0)) && !exported
 }

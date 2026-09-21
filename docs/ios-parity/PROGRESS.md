@@ -1,5 +1,5 @@
 # iOS → Web parity: progress
-Last updated: 2026-09-20 · Current step: Phase 3 catalogues + Switch org empty-name fix · Stopped at: Stop Gate (job types, qualifications, wholesalers, catalogue, sub contractors, timesheets hub)
+Last updated: 2026-09-21 · Current step: Timesheets sub-pages + catalogue restore · Stopped at: Stop Gate (payment-run copy, My/User Timesheets, quals/job types restore, wholesalers/history, catalogue categories)
 
 ## Access check (Phase 0)
 - **WEB_ROOT:** `/workspace` (this repo, `project-planner-web`)
@@ -24,10 +24,10 @@ Last updated: 2026-09-20 · Current step: Phase 3 catalogues + Switch org empty-
 | 1 | Manage Users | ☐ | ☐ | ☐ | ☐ | |
 | 2 | Add User | ☐ | ☐ | ☐ | ☐ | Invite URL `/setup-password.html?token=` |
 | 3 | Settings | ☑ switch org | ☑ Switch org + distinguishers | ☐ | ☐ | Settings → Personal → Switch organisation. Created date, short ID, Setup incomplete. |
-| 4 | Job Types | ☑ | ☑ | ☐ | ☐ | Overwrite `settings/jobTypes` |
-| 5 | Qualifications | ☑ | ☑ | ☐ | ☐ | Org templates + My Qualifications |
-| 6 | Wholesalers | ☑ | ☑ | ☐ | ☐ | Master–detail + history |
-| 7 | Material Catalogue | ☑ | ☑ | ☐ | ☐ | Table + CSV import/export |
+| 4 | Job Types | ☑ | ☑ | ☐ | ☐ | Restore from projects when `settings/jobTypes` empty |
+| 5 | Qualifications | ☑ | ☑ | ☐ | ☐ | Restore org templates from assigned quals; iOS hasEndDate parse wipe |
+| 6 | Wholesalers | ☑ | ☑ | ☐ | ☐ | History line items; no double heading |
+| 7 | Material Catalogue | ☑ | ☑ | ☐ | ☐ | Category sections + empty-CSV guard |
 | 8 | Sub Contractors | ☑ | ☑ | ☐ | ☐ | Master–detail + roster |
 | 9 | Clients | ☑ | ☑ | ☐ | ☐ | Master–detail; UUID writes; address field; admin delete |
 | 10 | Managers | ☑ | ☑ | ☐ | ☐ | Roster = manager users; catalogue writes `managers/` |
@@ -37,7 +37,7 @@ Last updated: 2026-09-20 · Current step: Phase 3 catalogues + Switch org empty-
 | 14 | Scheduling and My Schedule | ☐ | ☐ | ☐ | ☐ | Title-Case booking status |
 | 15 | Tasks | ☑ job tile | ☑ job tile | ☐ | ☐ | iOS New task + rows + filters on job tile |
 | 16 | Job tiles (View, Materials, H&S, Deadlines, Location, Active users) | ☑ six tiles | ☑ six tiles + send list | ☐ | ☐ | Send list emails via Cloud Function; Deadlines + Active users later |
-| 17 | Timesheets | ☑ hub | ☑ hub | ☐ | ☐ | Payment-run card + My/User tiles; extras engine later |
+| 17 | Timesheets | ☑ hub + sub-pages | ☑ | ☐ | ☐ | Current period + pay date; My = self; User tabs; past in My Timesheets |
 | 18 | Annual Leave | ☐ | ☐ | ☐ | ☐ | |
 | 19 | Site Audit | ☑ per-job | ☑ per-job | ☐ | ☐ | Org hub still later |
 | 20 | Site Map | ☐ | ☐ | ☐ | ☐ | Leaflet + Google; paid tiles |
@@ -63,7 +63,7 @@ D1, D2, D5–D10 still at recommendation (see `STOP-GATE-1.md`). Q1–Q10 are de
 - 2026-09-16 · Q8: sections 14–16 and 21–24 stay in scope · Farnie
 - 2026-09-16 · Q9: write `self_employed`; read both · Farnie
 - 2026-09-16 · Phase 2 foundations: converters, permissions, shell, Home, auth merge/privacy, live bookings · agent
-- 2026-09-20 · Phase 3 catalogues (job types, qualifications, wholesalers, material catalogue, sub contractors, timesheets hub) + Switch org empty-name fix · agent
+- 2026-09-21 · Timesheets sub-pages (current pay run copy, My/User Timesheets, past in My), restore quals/job types, wholesaler line items, catalogue categories, iOS-upgrade Cursor rule · agent
 - 2026-09-16 · Phase 3 started with Clients, Projects list/hub, Daily overview (not Manage Users first) · Farnie
 
 ## Approved exceptions

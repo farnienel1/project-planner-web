@@ -22,8 +22,8 @@ function parseContacts(rows: unknown): SubcontractorContact[] {
       const email = parseString(data.email)
       const contactNumber = parseString(data.contactNumber)
       const position = parseString(data.position, 'Installer')
-      const createdAt = parseFirestoreDate(data.createdAt)
-      if (!name || !createdAt) return null
+      const createdAt = parseFirestoreDate(data.createdAt) || new Date()
+      if (!name) return null
       const contact: SubcontractorContact = {
         id: parseUuid(data.id),
         name,
@@ -42,9 +42,9 @@ function parseContacts(rows: unknown): SubcontractorContact[] {
 function mapSubcontractor(docId: string, data: Record<string, unknown>): Subcontractor | null {
   const name = parseString(data.name)
   const subcontractorType = parseString(data.subcontractorType)
-  const createdAt = parseFirestoreDate(data.createdAt)
-  const updatedAt = parseFirestoreDate(data.updatedAt)
-  if (!name || !subcontractorType || !createdAt || !updatedAt) return null
+  const createdAt = parseFirestoreDate(data.createdAt) || new Date()
+  const updatedAt = parseFirestoreDate(data.updatedAt) || createdAt
+  if (!name || !subcontractorType) return null
 
   return {
     id: parseUuid(data.id, docId),
