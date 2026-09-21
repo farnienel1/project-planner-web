@@ -8,7 +8,7 @@ import type { OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 import { DEFAULT_PAYROLL_POLICY } from '@/lib/settings/organizationSettings'
 import { dayKey } from '@/lib/ios-parity/londonTime'
 import { findOperativeForUser } from '@/lib/operatives/operativeRosterUtils'
-import { normalizeEmploymentType } from '@/lib/ios-parity/enums'
+import { employmentTypeOnDay, isBillableSelfEmployedDay } from '@/lib/ios-parity/employmentType'
 import {
   formatTimesheetHours,
   overtimeHoursBeyondPaidStandard,
@@ -47,10 +47,6 @@ export type TimesheetPayrollSummary = {
 function isDateInPeriod(date: Date, start: Date, end: Date, timeZone?: string): boolean {
   const key = dayKey(date, timeZone)
   return key >= dayKey(start, timeZone) && key <= dayKey(end, timeZone)
-}
-
-function isBillableSelfEmployedDay(user: User): boolean {
-  return normalizeEmploymentType(user.employmentType) !== 'paye'
 }
 
 function resolveRate(user: User, operative?: Operative | null): {
@@ -171,7 +167,7 @@ export function collectTimesheetPayroll({
     labels: { jobNumber: string; siteName: string }
   ) => {
     if (!isDateInPeriod(date, periodStart, periodEnd, timeZone)) return
-    if (!isBillableSelfEmployedDay(user)) return
+    if (!isBillableSelfEmployedDay(user, date, timeZone)) return
     const paidHours = paidBookedHours(timeSlot, workStartTime, workEndTime, policy, isBreakRemoved)
     const otHours = overtimeHoursBeyondPaidStandard(
       date,
@@ -186,7 +182,7 @@ export function collectTimesheetPayroll({
     shiftCount += 1
     totalHours += paidHours
     overtimeHours += otHours
-    const isPaye = normalizeEmploymentType(user.employmentType) === 'paye'
+    const isPaye = employmentTypeOnDay(user, date, timeZone) === 'paye'
     const dayRate = isPaye ? 0 : resolved.dayRate
     const hourlyRate = isPaye ? null : resolved.hourlyRate
     const normalAmount = isPaye ? 0 : payForHours(normalHours, standardDayHours, resolved)

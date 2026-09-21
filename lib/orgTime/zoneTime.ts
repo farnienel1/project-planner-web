@@ -87,6 +87,26 @@ export function formatLongDayInZone(date: Date, timeZone: string): string {
   return fmt.format(date)
 }
 
+export function formatAbbreviatedDayInZone(date: Date, timeZone: string): string {
+  return new Intl.DateTimeFormat('en-GB', {
+    timeZone,
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+  }).format(date)
+}
+
+export function formatStampInZone(date: Date, timeZone: string): string {
+  return new Intl.DateTimeFormat('en-GB', {
+    timeZone,
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date)
+}
+
 export function datePartsInZone(
   date: Date,
   timeZone: string

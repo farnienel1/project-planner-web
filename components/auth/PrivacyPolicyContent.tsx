@@ -1,7 +1,6 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import Link from 'next/link'
 import {
   LEGAL_ENTITY,
   LEGAL_PACK_DOCUMENTS,
