@@ -59,22 +59,7 @@ export const useOperativeStore = create<OperativeState>((set, get) => ({
           const snapshot = await getDocs(operativesRef)
           const operatives = snapshot.docs.flatMap((entry) => {
             const parsed = parseOperative(entry.id, entry.data() as Record<string, unknown>, organizationId)
-            if (!parsed.ok) return []
-            const data = entry.data() as Record<string, unknown>
-            const qualificationExpiryDates: Record<string, Date> = {}
-            if (data.qualificationExpiryDates && typeof data.qualificationExpiryDates === 'object') {
-              for (const [key, value] of Object.entries(data.qualificationExpiryDates as Record<string, unknown>)) {
-                const date = (value as { toDate?: () => Date })?.toDate?.()
-                if (date) qualificationExpiryDates[key] = date
-              }
-            }
-            const qualificationCertificateURLs: Record<string, string> = {}
-            if (data.qualificationCertificateURLs && typeof data.qualificationCertificateURLs === 'object') {
-              for (const [key, value] of Object.entries(data.qualificationCertificateURLs as Record<string, string>)) {
-                if (typeof value === 'string') qualificationCertificateURLs[key] = value
-              }
-            }
-            return [{ ...parsed.value, qualificationExpiryDates, qualificationCertificateURLs }]
+            return parsed.ok ? [parsed.value] : []
           })
           set({ operatives, loading: false })
         } catch (error: unknown) {

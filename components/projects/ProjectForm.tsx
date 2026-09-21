@@ -6,6 +6,7 @@ import { useProjectStore } from '@/lib/stores/projectStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
 import type { Project } from '@/types'
 import { DEFAULT_JOB_TYPES } from '@/types'
+import { collectionJobTypeForName, recoverJobTypesFromWork } from '@/lib/jobTypes/jobTypesStorage'
 import type { ProjectSaveInput } from '@/lib/firebase/projectPayload'
 import { FormActions, FormInput, FormLabel, FormSelect, FormTextarea } from '@/components/forms/FormShell'
 import { ErrorBanner } from '@/components/dashboard/PageShell'
@@ -46,6 +47,7 @@ export function ProjectForm({ initial, collection = 'projects', backHref, onSave
   const [newClientName, setNewClientName] = useState('')
   const managersFieldRef = useRef<HTMLDivElement>(null)
 
+  const [jobTypes, setJobTypes] = useState<string[]>([...DEFAULT_JOB_TYPES])
   const [form, setForm] = useState({
     jobNumber: initial?.jobNumber || '',
     siteName: initial?.siteName || '',
@@ -56,8 +58,11 @@ export function ProjectForm({ initial, collection = 'projects', backHref, onSave
     clientId: initial?.client?.id || '',
     startDate: initial?.startDate ? new Date(initial.startDate).toISOString().slice(0, 10) : '',
     endDate: initial?.endDate ? new Date(initial.endDate).toISOString().slice(0, 10) : '',
-    jobType: initial?.jobType || (collection === 'smallWorks' ? 'Small Works' : 'CAT A'),
-    customJobType: initial?.customJobType || '',
+    jobType: collectionJobTypeForName(
+      initial?.customJobType || initial?.jobType || (collection === 'smallWorks' ? 'Small Works' : 'CAT A'),
+      collection
+    ),
+    customJobType: initial?.customJobType || initial?.jobType || (collection === 'smallWorks' ? 'Small Works' : 'CAT A'),
     managerIds: initial?.managerIds?.length ? initial.managerIds : initial?.managerId ? [initial.managerId] : [],
     description: initial?.description || '',
     notes: initial?.notes || '',
@@ -71,6 +76,16 @@ export function ProjectForm({ initial, collection = 'projects', backHref, onSave
       loadClients(organization.id)
       loadManagers(organization.id)
       loadUsers(organization.id)
+      recoverJobTypesFromWork(organization.id)
+        .then((recovered) => {
+          const names = [...recovered]
+          if (initial?.customJobType && !names.includes(initial.customJobType)) {
+            names.push(initial.customJobType)
+          }
+          if (initial?.jobType && !names.includes(initial.jobType)) names.push(initial.jobType)
+          setJobTypes(names.sort((a, b) => a.localeCompare(b)))
+        })
+        .catch(() => {})
     }
   }, [organization, loadClients, loadManagers, loadUsers])
 
@@ -241,15 +256,25 @@ export function ProjectForm({ initial, collection = 'projects', backHref, onSave
         </div>
         <div>
           <FormLabel>Job type</FormLabel>
-          <FormSelect value={form.jobType} onChange={(e) => setForm({ ...form, jobType: e.target.value })}>
-            {DEFAULT_JOB_TYPES.map((t) => (
+          <FormSelect
+            value={form.customJobType || form.jobType}
+            onChange={(e) => {
+              const name = e.target.value
+              setForm({
+                ...form,
+                customJobType: name,
+                jobType: collectionJobTypeForName(name, collection),
+              })
+            }}
+          >
+            {jobTypes.map((t) => (
               <option key={t} value={t}>{t}</option>
             ))}
+            {(form.customJobType || form.jobType) &&
+            !jobTypes.includes(form.customJobType || form.jobType) ? (
+              <option value={form.customJobType || form.jobType}>{form.customJobType || form.jobType}</option>
+            ) : null}
           </FormSelect>
-        </div>
-        <div>
-          <FormLabel>Custom job type</FormLabel>
-          <FormInput value={form.customJobType} onChange={(e) => setForm({ ...form, customJobType: e.target.value })} />
         </div>
       </div>
 
