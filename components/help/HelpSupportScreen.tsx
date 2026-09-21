@@ -150,7 +150,7 @@ const TOPICS: Topic[] = [
           'If you have a line manager: “If you don’t agree with the hours shown, contact your line manager…”',
           'If you have no line manager (typical admin/founder): amend the booking schedule yourself, then Continue to sign. You do not need a counter-signature.',
           'Continue to sign is blue. Draw your signature so iOS can show the same image. Generate Invoice stays grey until you have signed, and until your line manager has counter-signed if you have one. It turns green when the timesheet is fully approved.',
-          'Generate Invoice downloads a PDF that matches the iOS invoice (company, name, period, day-by-day job, hours and rates). Share invoice downloads it again. Generating an invoice does not export the sheet; line managers export PDFs from Signed off.',
+          'Generate Invoice builds a PDF that matches the iOS invoice (company, name, period, day-by-day job, hours and rates). Share invoice downloads it. Generating an invoice does not export the sheet; line managers export PDFs from Signed off.',
         ],
       },
       {

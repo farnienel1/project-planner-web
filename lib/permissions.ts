@@ -384,8 +384,12 @@ export function canAccessTimesheetsSurface(
 }
 
 /** Existing web name — maps to timesheets surface. */
-export function canAccessTimesheets(user: PermissionUser): boolean {
-  return canAccessTimesheetsSurface(user)
+export function canAccessTimesheets(
+  user: PermissionUser,
+  profileLoading = false,
+  orgUsers: Array<NonNullable<PermissionUser>> = []
+): boolean {
+  return canAccessTimesheetsSurface(user, profileLoading, orgUsers)
 }
 
 export function canEditTargetUserPermissions(

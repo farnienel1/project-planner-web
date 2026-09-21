@@ -51,7 +51,7 @@ import {
   type TimesheetPayrollLineItem,
 } from '@/lib/timesheets/timesheetPayrollCollector'
 import { loadTimesheetDraft, saveTimesheetDraft } from '@/lib/timesheets/timesheetStorage'
-import { invoiceLinesForTimesheet, invoiceRateChangeNotes } from '@/lib/timesheets/timesheetExport'
+import { invoiceLinesForTimesheet, invoiceLinesTotal, invoiceRateChangeNotes } from '@/lib/timesheets/timesheetExport'
 import { emptyDayRateHistory, type OperativeDayRateHistoryCollection } from '@/lib/timesheets/dayRateHistoryStorage'
 import {
   decisionLabel,
@@ -431,7 +431,7 @@ export function TimesheetPeriodPage({
       weekEnd: periodEnd,
       totalHours: payroll.totalHours,
       totalDays: payroll.totalHours / Math.max(payrollPolicy.standardPaidHours, 0.01),
-      amount: total,
+      amount: invoiceLinesTotal(lines),
       vatNumber: subjectUser.vatNumber,
       utrNumber: subjectUser.utrNumber,
       timeZone,
@@ -443,14 +443,13 @@ export function TimesheetPeriodPage({
       subject,
       weekStart: periodStart,
       weekEnd: periodEnd,
-      amount: total,
+      amount: invoiceLinesTotal(lines),
       vatNumber: subjectUser.vatNumber,
       utrNumber: subjectUser.utrNumber,
       timeZone,
       lines,
       notes,
     })
-    downloadTimesheetPdf(pdf, timesheetInvoicePdfFileName(subject.name))
     setInvoiceHtml(html)
     setInvoicePdf(pdf)
   }
