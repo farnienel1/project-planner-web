@@ -98,7 +98,7 @@ export function TimesheetsHub() {
 
   const showMine = user ? canAccessMyTimesheetsWithPolicy(user, invoicing, new Date(), timeZone) : false
   const showTeam = canAccessOperativeTimesheets(user, usersLoading, users)
-  const showDisabled = shouldShowTimesheetsDisabledMessage(user)
+  const showDisabled = shouldShowTimesheetsDisabledMessage(user, showMine)
   const canOpen = canAccessTimesheetsSurface(user, usersLoading, users)
 
   useEffect(() => {
@@ -292,7 +292,6 @@ export function TimesheetsHub() {
                 onClick={() => router.push('/dashboard/timesheets?surface=team&tab=awaiting')}
               />
             ) : null}
-            {showDisabled && showTeam ? <DisabledCard /> : null}
           </div>
         </div>
       )}

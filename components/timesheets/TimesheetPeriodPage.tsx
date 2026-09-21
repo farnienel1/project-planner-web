@@ -68,7 +68,13 @@ import {
   downloadTimesheetPdf,
   timesheetInvoicePdfFileName,
 } from '@/lib/timesheets/invoicePdf'
-import { isTimesheetAgreedManagerCandidate, subjectForUser } from '@/lib/timesheets/timesheetWeekUtils'
+import {
+  extraFormJobSuggestions,
+  extraFormManagerSuggestions,
+  isTimesheetAgreedManagerCandidate,
+  subjectForUser,
+} from '@/lib/timesheets/timesheetWeekUtils'
+import { mergeProjectsAndSmallWorks } from '@/lib/projects/workStatus'
 import { SignaturePad } from '@/components/timesheets/SignaturePad'
 import { LoadingSpinner } from '@/components/dashboard/PageShell'
 import { formatAbbreviatedDayInZone, formatStampInZone } from '@/lib/orgTime/zoneTime'
@@ -807,11 +813,8 @@ export function TimesheetPeriodPage({
       {extraMode ? (
         <ExtraForm
           mode={extraMode}
-          jobs={[...projects, ...smallWorks].filter((row) => row.jobNumber)}
-          managerNames={users
-            .filter(isTimesheetAgreedManagerCandidate)
-            .map((row) => `${row.firstName} ${row.surname}`.trim())
-            .filter(Boolean)}
+          jobs={mergeProjectsAndSmallWorks(projects, smallWorks).filter((row) => row.jobNumber.trim())}
+          managers={users.filter(isTimesheetAgreedManagerCandidate)}
           timeZone={timeZone}
           onCancel={() => setExtraMode(null)}
           onSave={async (entry) => {
@@ -1039,6 +1042,30 @@ function AdjustedAmountText({
   return <p className="text-[15px] font-bold">{money(original)}</p>
 }
 
+/** iOS managerExtraRow while canReview: declined is strikethrough original only, no £0. */
+function LiveReviewExtraAmount({
+  amount,
+  decision,
+  revisedAmount,
+}: {
+  amount: number
+  decision: TimesheetManagerDecision
+  revisedAmount?: number | null
+}) {
+  if (decision === 'edited' && revisedAmount != null && Math.abs(revisedAmount - amount) >= 0.01) {
+    return (
+      <div className="text-right">
+        <p className="text-[12px] text-ios-muted line-through">{money(amount)}</p>
+        <p className="text-[15px] font-bold text-[#007AFF]">{money(revisedAmount)}</p>
+      </div>
+    )
+  }
+  if (decision === 'declined') {
+    return <p className="text-[15px] font-bold text-ios-muted line-through">{money(amount)}</p>
+  }
+  return <p className="text-[15px] font-bold">{money(amount)}</p>
+}
+
 function Row({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
   return (
     <div className="flex justify-between text-[15px]">
@@ -1233,13 +1260,20 @@ function ReviewExtras({
                 <p className={`text-[12px] text-ios-muted ${removed ? 'line-through' : ''}`}>
                   {abbreviatedDate(entry.date, timeZone)} · {entry.jobNumber}
                 </p>
-                <AdjustedAmountText
-                  original={entry.amount}
-                  effective={effective}
-                  decision={entry.managerDecision}
-                  managerHasSigned={!canReview}
-                  applyLiveReview={canReview}
-                />
+                {canReview ? (
+                  <LiveReviewExtraAmount
+                    amount={entry.amount}
+                    decision={entry.managerDecision}
+                    revisedAmount={entry.managerRevisedAmount}
+                  />
+                ) : (
+                  <AdjustedAmountText
+                    original={entry.amount}
+                    effective={effective}
+                    decision={entry.managerDecision}
+                    managerHasSigned
+                  />
+                )}
               </div>
               {canReview ? (
                 <TickCross
@@ -1283,13 +1317,20 @@ function ReviewExtras({
                 <p className={`text-[12px] text-ios-muted ${removed ? 'line-through' : ''}`}>
                   Agreed with: {entry.agreedManagerName} · {abbreviatedDate(entry.startDate, timeZone)} · {entry.jobNumber}
                 </p>
-                <AdjustedAmountText
-                  original={entry.amount}
-                  effective={effective}
-                  decision={entry.managerDecision}
-                  managerHasSigned={!canReview}
-                  applyLiveReview={canReview}
-                />
+                {canReview ? (
+                  <LiveReviewExtraAmount
+                    amount={entry.amount}
+                    decision={entry.managerDecision}
+                    revisedAmount={entry.managerRevisedAmount}
+                  />
+                ) : (
+                  <AdjustedAmountText
+                    original={entry.amount}
+                    effective={effective}
+                    decision={entry.managerDecision}
+                    managerHasSigned
+                  />
+                )}
               </div>
               {canReview ? (
                 <TickCross
@@ -1595,14 +1636,14 @@ function AmountEditSheet({
 function ExtraForm({
   mode,
   jobs,
-  managerNames,
+  managers,
   timeZone,
   onCancel,
   onSave,
 }: {
   mode: 'priceWork' | 'expense'
   jobs: Array<{ jobNumber: string; siteName: string }>
-  managerNames: string[]
+  managers: Array<{ firstName: string; surname: string; email: string }>
   timeZone: string
   onCancel: () => void
   onSave: (entry: {
@@ -1621,22 +1662,8 @@ function ExtraForm({
   const [receiptName, setReceiptName] = useState<string | null>(null)
   const value = parseTimesheetMoneyAmount(amount)
   const canSave = value != null && (mode === 'priceWork' || Boolean(receiptName))
-  const query = jobNumber.trim().toLowerCase()
-  const jobSuggestions = jobs
-    .filter((job) => {
-      if (!query) return false
-      const haystack = `${job.jobNumber} ${job.siteName}`.toLowerCase()
-      return haystack.includes(query) && job.jobNumber.toLowerCase() !== query
-    })
-    .slice(0, 6)
-  const managerSuggestions = managerNames
-    .filter(
-      (name) =>
-        agreedManagerName.trim() &&
-        name.toLowerCase().includes(agreedManagerName.trim().toLowerCase()) &&
-        name.toLowerCase() !== agreedManagerName.trim().toLowerCase()
-    )
-    .slice(0, 6)
+  const jobSuggestions = extraFormJobSuggestions(jobs, jobNumber)
+  const managerSuggestions = extraFormManagerSuggestions(managers, agreedManagerName)
 
   return (
     <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/40 p-4 sm:items-center">

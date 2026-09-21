@@ -4,6 +4,7 @@
 import type { TimesheetDraft } from '@/lib/timesheets/timesheetDraft'
 import type { TimesheetPayrollSummary } from '@/lib/timesheets/timesheetPayrollCollector'
 import { timesheetHoursRateLine } from '@/lib/timesheets/timesheetPayrollCollector'
+import { formatTimesheetHours } from '@/lib/timesheets/timesheetHours'
 import { formatAbbreviatedDayInZone, formatStampInZone } from '@/lib/orgTime/zoneTime'
 import { londonDateParts, dayKey } from '@/lib/ios-parity/londonTime'
 import type { Operative, User } from '@/types'
@@ -117,13 +118,14 @@ export function invoiceLinesForTimesheet({
     if (extrasMode === 'export' && entry.managerDecision === 'declined') continue
     const amount =
       extrasMode === 'export' ? entry.managerRevisedAmount ?? entry.amount : entry.amount
-    const details = `Price work · ${entry.title}`
+    const details = extraInvoiceDetails(entry.title)
+    const jobNumber = entry.jobNumber.trim() || '—'
     rows.push({
       date: formatAbbreviatedDayInZone(entry.startDate, timeZone),
-      jobNumber: entry.jobNumber || '—',
-      projectName: entry.title,
+      jobNumber,
+      projectName: 'Price work',
       details,
-      description: `${entry.jobNumber || '—'} ${details}`,
+      description: `${jobNumber} Price work · ${details}`,
       amount,
     })
   }
@@ -131,13 +133,14 @@ export function invoiceLinesForTimesheet({
     if (extrasMode === 'export' && entry.managerDecision === 'declined') continue
     const amount =
       extrasMode === 'export' ? entry.managerRevisedAmount ?? entry.amount : entry.amount
-    const details = `Expense · ${entry.title}`
+    const details = extraInvoiceDetails(entry.title)
+    const jobNumber = extrasMode === 'raw' ? '—' : entry.jobNumber.trim() || '—'
     rows.push({
       date: formatAbbreviatedDayInZone(entry.date, timeZone),
-      jobNumber: entry.jobNumber || '—',
-      projectName: entry.title,
+      jobNumber,
+      projectName: 'Expense',
       details,
-      description: `${entry.jobNumber || '—'} ${details}`,
+      description: `${jobNumber} Expense · ${details}`,
       amount,
     })
   }
@@ -200,6 +203,11 @@ export function pdfBytesToBase64(bytes: Uint8Array): string {
     binary += String.fromCharCode(...bytes.subarray(index, index + chunk))
   }
   return btoa(binary)
+}
+
+/** iOS InvoicePDFGenerationSupport extras: details · 0h · rate not set */
+function extraInvoiceDetails(title: string): string {
+  return `${title} · ${formatTimesheetHours(0)}h · rate not set`
 }
 
 function escapeHtml(value: string): string {

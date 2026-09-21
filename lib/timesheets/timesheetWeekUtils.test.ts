@@ -2,6 +2,8 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   collectSubjectDayEntries,
+  extraFormJobSuggestions,
+  extraFormManagerSuggestions,
   isTimesheetAgreedManagerCandidate,
   reportsToManager,
   subjectForUser,
@@ -111,4 +113,29 @@ test('isTimesheetAgreedManagerCandidate matches iOS manager/admin eligibility', 
   assert.equal(isTimesheetAgreedManagerCandidate(inactive), false)
   const operative = user({ id: 'op', email: 'op@test.com' })
   assert.equal(isTimesheetAgreedManagerCandidate(operative), false)
+})
+
+test('extraFormManagerSuggestions matches iOS name + email haystack', () => {
+  const names = extraFormManagerSuggestions(
+    [
+      { firstName: 'Pat', surname: 'Manager', email: 'pat@site.com' },
+      { firstName: 'Pat', surname: 'Manager', email: 'pat.alt@site.com' },
+      { firstName: 'Alex', surname: 'Admin', email: 'alex@site.com' },
+    ],
+    'pat@'
+  )
+  assert.deepEqual(names, ['Pat Manager'])
+})
+
+test('extraFormJobSuggestions dedupes the same job number from projects and small works', () => {
+  const jobs = extraFormJobSuggestions(
+    [
+      { jobNumber: 'J-1', siteName: 'Site One' },
+      { jobNumber: 'J-1', siteName: 'Site One SW' },
+      { jobNumber: 'J-22', siteName: 'Other' },
+    ],
+    'site one'
+  )
+  assert.equal(jobs.length, 1)
+  assert.equal(jobs[0]?.jobNumber, 'J-1')
 })
