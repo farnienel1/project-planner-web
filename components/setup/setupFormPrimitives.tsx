@@ -10,7 +10,7 @@ export function SetupSectionLabel({ children }: { children: ReactNode }) {
 
 export function SetupCard({ children }: { children: ReactNode }) {
   return (
-    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm divide-y divide-slate-100">
+    <div className="overflow-hidden card shadow-sm divide-y divide-slate-100">
       {children}
     </div>
   )

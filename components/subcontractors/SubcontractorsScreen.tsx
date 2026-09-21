@@ -66,7 +66,7 @@ export function SubcontractorsScreen({ selectedId }: { selectedId?: string }) {
   if (loading && subcontractors.length === 0) {
     return (
       <div className="flex h-64 items-center justify-center">
-        <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-[#185FA5]" />
+        <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-[var(--blue)]" />
       </div>
     )
   }
@@ -76,7 +76,7 @@ export function SubcontractorsScreen({ selectedId }: { selectedId?: string }) {
       <button
         type="button"
         onClick={() => setEditor(emptyFirm())}
-        className="flex w-full items-center gap-3 rounded-xl border border-dashed border-[#185FA5]/40 bg-white px-4 py-3 text-[#185FA5]"
+        className="flex w-full items-center gap-3 rounded-xl border border-dashed border-[var(--blue)]/40 bg-white px-4 py-3 text-[var(--blue)]"
       >
         <PlusIcon className="h-5 w-5" />
         <span className="font-semibold">New sub contractor</span>
@@ -89,7 +89,7 @@ export function SubcontractorsScreen({ selectedId }: { selectedId?: string }) {
         value={search}
         onChange={(e) => setSearch(e.target.value)}
         placeholder="Search firms or trades…"
-        className="w-full rounded-xl border border-ios-search-border px-4 py-2.5"
+        className="w-full rounded-xl border border-[var(--line2)] px-4 py-2.5"
       />
       <div className="flex flex-wrap gap-2">
         {trades.map((item) => (
@@ -118,17 +118,17 @@ export function SubcontractorsScreen({ selectedId }: { selectedId?: string }) {
               <p className="text-[16px] font-bold">{row.name}</p>
               <p className="mt-1 text-[13px]">
                 <span className="rounded-full bg-violet-50 px-2 py-0.5 text-violet-800">{row.subcontractorType}</span>
-                <span className="ml-2 text-ios-muted">
+                <span className="ml-2 text-[var(--ink3)]">
                   {row.contacts.length} Operative{row.contacts.length === 1 ? '' : 's'}
                 </span>
               </p>
               {row.contacts.slice(0, 3).map((contact) => (
-                <p key={contact.id} className="mt-1 text-[12px] text-ios-muted">
+                <p key={contact.id} className="mt-1 text-[12px] text-[var(--ink3)]">
                   {contact.name}
                 </p>
               ))}
               {row.contacts.length > 3 ? (
-                <p className="text-[12px] text-[#185FA5]">More (+{row.contacts.length - 3})</p>
+                <p className="text-[12px] text-[var(--blue)]">More (+{row.contacts.length - 3})</p>
               ) : null}
             </button>
           ))}
@@ -141,32 +141,32 @@ export function SubcontractorsScreen({ selectedId }: { selectedId?: string }) {
     <div className="space-y-5">
       <div className="flex items-center justify-between">
         <h2 className="text-[17px] font-semibold">Firm details</h2>
-        <button type="button" onClick={() => setEditor(selected)} className="text-[15px] font-medium text-[#185FA5]">
+        <button type="button" onClick={() => setEditor(selected)} className="text-[15px] font-medium text-[var(--blue)]">
           Edit
         </button>
       </div>
-      <div className="rounded-xl bg-[#F2F2F7] p-5">
+      <div className="rounded-xl bg-[var(--soft)] p-5">
         <h3 className="text-[32px] font-bold leading-tight">{selected.name}</h3>
-        <p className="mt-1 text-[15px] text-ios-muted">{selected.subcontractorType}</p>
+        <p className="mt-1 text-[15px] text-[var(--ink3)]">{selected.subcontractorType}</p>
         {selected.website ? <p className="mt-2 text-sm">{selected.website}</p> : null}
-        {selected.address ? <p className="text-sm text-ios-muted">{selected.address}</p> : null}
+        {selected.address ? <p className="text-sm text-[var(--ink3)]">{selected.address}</p> : null}
       </div>
       <div className="flex items-center justify-between">
         <p className="text-[11px] font-semibold uppercase tracking-[0.4px] text-slate-500">Operatives</p>
         <button
           type="button"
           onClick={() => setOperativeEditor({ firm: selected })}
-          className="text-[15px] font-semibold text-[#185FA5]"
+          className="text-[15px] font-semibold text-[var(--blue)]"
         >
           Add operative
         </button>
       </div>
       {selected.contacts.length === 0 ? (
-        <p className="text-sm text-ios-muted">No operatives added yet.</p>
+        <p className="text-sm text-[var(--ink3)]">No operatives added yet.</p>
       ) : (
         <div className="overflow-hidden rounded-2xl bg-white shadow-sm">
           <table className="min-w-full text-left text-sm">
-            <thead className="bg-[#F2F2F7] text-[12px] uppercase text-ios-muted">
+            <thead className="bg-[var(--soft)] text-[12px] uppercase text-[var(--ink3)]">
               <tr>
                 <th className="px-4 py-3">Name</th>
                 <th className="px-4 py-3">Position</th>
@@ -193,14 +193,14 @@ export function SubcontractorsScreen({ selectedId }: { selectedId?: string }) {
       )}
     </div>
   ) : (
-    <div className="hidden rounded-2xl bg-[#F2F2F7] p-8 text-sm text-ios-muted xl:block">
+    <div className="hidden rounded-2xl bg-[var(--soft)] p-8 text-sm text-[var(--ink3)] xl:block">
       Select a firm to see its roster.
     </div>
   )
 
   return (
     <div className="space-y-5 pb-10">
-      <PageHeader title="Sub contractors" />
+      <PageHeader title="Sub contractors" subtitle="Firms and their operatives" hue="sched" />
       {error ? <p className="text-sm text-red-600">{error}</p> : null}
       <div className="xl:grid xl:grid-cols-[400px_1fr] xl:gap-8">
         {list}
@@ -288,7 +288,7 @@ function FirmEditor({
           type="submit"
           form="firm-editor"
           disabled={!valid || saving}
-          className="w-full rounded-xl bg-[#185FA5] py-3 font-semibold text-white disabled:opacity-50"
+          className="w-full rounded-xl bg-[var(--blue)] py-3 font-semibold text-white disabled:opacity-50"
         >
           Save
         </button>
@@ -349,7 +349,7 @@ function FirmEditor({
           Address · optional
           <input value={draft.address || ''} onChange={(e) => setDraft({ ...draft, address: e.target.value })} className="mt-1 w-full rounded-lg border px-3 py-2" />
         </label>
-        <p className="text-[13px] text-ios-muted">Names only · no logins</p>
+        <p className="text-[13px] text-[var(--ink3)]">Names only · no logins</p>
         {onDelete ? (
           <button type="button" onClick={() => void onDelete()} className="text-sm font-semibold text-red-600">
             Delete
@@ -388,7 +388,7 @@ function OperativeEditor({
           type="submit"
           form="op-editor"
           disabled={!valid || saving}
-          className="w-full rounded-xl bg-[#185FA5] py-3 font-semibold text-white disabled:opacity-50"
+          className="w-full rounded-xl bg-[var(--blue)] py-3 font-semibold text-white disabled:opacity-50"
         >
           Save
         </button>
@@ -416,7 +416,7 @@ function OperativeEditor({
         }}
         className="space-y-3"
       >
-        <p className="text-[13px] text-ios-muted">Adding to this firm&apos;s roster · {firmName}</p>
+        <p className="text-[13px] text-[var(--ink3)]">Adding to this firm&apos;s roster · {firmName}</p>
         <label className="block text-sm font-medium">
           First name *
           <input required value={first} onChange={(e) => setFirst(e.target.value)} className="mt-1 w-full rounded-lg border px-3 py-2" />

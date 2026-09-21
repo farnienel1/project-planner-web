@@ -29,7 +29,7 @@ export function ScheduleSelectedDates({
   return (
     <div className="space-y-3">
       {slots.map((entry) => (
-        <div key={entry.date.toISOString()} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div key={entry.date.toISOString()} className="card pad">
           <div className="mb-3 flex items-start justify-between gap-3">
             <div>
               <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Selected date</p>

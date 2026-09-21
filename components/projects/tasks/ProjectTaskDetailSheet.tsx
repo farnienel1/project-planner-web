@@ -28,9 +28,9 @@ export function ProjectTaskDetailSheet({
 
   return (
     <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/40 p-4 sm:items-center">
-      <div className="flex max-h-[90vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-[#F7F8FA] shadow-xl">
+      <div className="flex max-h-[90vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-[var(--bg)] shadow-xl">
         <header className="flex items-center justify-between bg-white px-4 py-3">
-          <button type="button" onClick={onClose} className="text-sm font-medium text-[#185FA5]">
+          <button type="button" onClick={onClose} className="text-sm font-medium text-[var(--blue)]">
             Close
           </button>
           <p className="text-sm font-semibold text-slate-900">Task</p>
@@ -65,7 +65,7 @@ export function ProjectTaskDetailSheet({
                   >
                     <span
                       className={`flex h-[18px] w-[18px] items-center justify-center rounded-[5px] border ${
-                        ticked ? 'border-[#185FA5] bg-[#185FA5] text-white' : 'border-slate-300'
+                        ticked ? 'border-[var(--blue)] bg-[var(--blue)] text-white' : 'border-slate-300'
                       }`}
                     >
                       {ticked ? '✓' : ''}

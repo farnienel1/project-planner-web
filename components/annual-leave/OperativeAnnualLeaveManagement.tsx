@@ -46,7 +46,7 @@ function BookingListRow({
   onDecline?: () => void
 }) {
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+    <div className="card pad">
       <p className="text-sm font-bold text-slate-900">{name}</p>
       <p className="mt-0.5 text-sm text-slate-700">{fmtRange(booking)}</p>
       <p className="text-xs text-slate-500">{booking.timeSlot}</p>
@@ -219,7 +219,7 @@ export function OperativeAnnualLeaveManagement() {
 
       {activeTab === 'manage' && (
         <div className="space-y-4">
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="card pad">
             <label className="block text-[11px] font-bold uppercase tracking-widest text-slate-400">
               Sort by
             </label>
@@ -278,7 +278,7 @@ export function OperativeAnnualLeaveManagement() {
                   key={person.id}
                   type="button"
                   onClick={() => setSelectedPerson(person)}
-                  className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-3.5 text-left shadow-sm transition-colors hover:bg-slate-50"
+                  className="flex w-full items-center justify-between card px-4 py-3.5 text-left shadow-sm transition-colors hover:bg-slate-50"
                 >
                   <div>
                     <p className="text-sm font-bold text-slate-900">{person.displayName}</p>

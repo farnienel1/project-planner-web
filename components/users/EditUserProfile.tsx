@@ -409,7 +409,7 @@ export function EditUserProfile({
 
   if (!target) {
     return (
-      <div className="mx-auto max-w-2xl rounded-2xl border border-slate-200 bg-white p-8 text-center">
+      <div className="mx-auto max-w-2xl card p-8 text-center">
         <p className="text-slate-600">User not found.</p>
         <Link href={backHref} className="mt-4 inline-block text-blue-600 hover:underline">
           Go back
@@ -472,7 +472,7 @@ export function EditUserProfile({
       )}
 
       {/* Profile header */}
-      <div className="mt-4 flex items-center gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="mt-4 flex items-center gap-4 card p-5 shadow-sm">
         <UserAvatar user={target} size={64} className="rounded-2xl" gradient="from-[#7F77DD] to-[#534AB7]" />
         <div className="min-w-0 flex-1">
           <div className="truncate text-lg font-bold text-slate-900">

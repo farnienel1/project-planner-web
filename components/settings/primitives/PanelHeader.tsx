@@ -10,19 +10,17 @@ export function PanelHeader({
   rightAction?: ReactNode
 }) {
   return (
-    <div className="flex items-center justify-between gap-3">
-      <button
-        type="button"
-        onClick={onBack}
-        className="iconbtn"
-        aria-label="Back"
-      >
+    <div className="phead" data-hue="lib">
+      <button type="button" onClick={onBack} className="btn sm ghost" aria-label="Back">
         <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
         </svg>
+        Back
       </button>
-      <h2 className="text-base font-bold text-[var(--ink)]">{title}</h2>
-      {rightAction || <div className="w-11" />}
+      <div className="min-w-0">
+        <h1>{title}</h1>
+      </div>
+      {rightAction ? <div className="acts">{rightAction}</div> : null}
     </div>
   )
 }

@@ -63,8 +63,8 @@ const ACCOUNT_TYPES: {
     title: 'Manager',
     description: 'Run day-to-day operations — schedules, projects, operatives and approvals.',
     badge: 'Manager',
-    badgeCls: 'bg-[#E6F1FB] text-[#185FA5]',
-    ringCls: 'ring-[#185FA5]/30 border-[#185FA5]/40',
+    badgeCls: 'bg-[var(--blue-t)] text-[var(--blue)]',
+    ringCls: 'ring-[#185FA5]/30 border-[var(--blue)]/40',
   },
   {
     id: 'operative',
@@ -79,17 +79,17 @@ const ACCOUNT_TYPES: {
 const PERM_CHIP: Partial<Record<string, { bg: string; fg: string }>> = {
   adminAccess: { bg: 'bg-[#FDECF1]', fg: 'text-[#993556]' },
   operatives: { bg: 'bg-[#EEEDFE]', fg: 'text-[#534AB7]' },
-  annualLeaveSelfBook: { bg: 'bg-[#E6F1FB]', fg: 'text-[#185FA5]' },
+  annualLeaveSelfBook: { bg: 'bg-[var(--blue-t)]', fg: 'text-[var(--blue)]' },
   weeklyReports: { bg: 'bg-[#E1F5EE]', fg: 'text-[#0F6E56]' },
   dailyOverview: { bg: 'bg-[#E1F5EE]', fg: 'text-[#0F6E56]' },
   subContractors: { bg: 'bg-[#E1F5EE]', fg: 'text-[#0F6E56]' },
   skills: { bg: 'bg-[#FBEAF0]', fg: 'text-[#993556]' },
   qualifications: { bg: 'bg-[#FBEAF0]', fg: 'text-[#993556]' },
-  projects: { bg: 'bg-[#E6F1FB]', fg: 'text-[#185FA5]' },
-  smallWorks: { bg: 'bg-[#E6F1FB]', fg: 'text-[#185FA5]' },
+  projects: { bg: 'bg-[var(--blue-t)]', fg: 'text-[var(--blue)]' },
+  smallWorks: { bg: 'bg-[var(--blue-t)]', fg: 'text-[var(--blue)]' },
   materials: { bg: 'bg-[#FAEEDA]', fg: 'text-[#854F0B]' },
   siteAudit: { bg: 'bg-[#E1F5EE]', fg: 'text-[#0F6E56]' },
-  wholesalersOrderHistory: { bg: 'bg-[#E6F1FB]', fg: 'text-[#185FA5]' },
+  wholesalersOrderHistory: { bg: 'bg-[var(--blue-t)]', fg: 'text-[var(--blue)]' },
 }
 
 const ICON_PERSON =
@@ -328,7 +328,7 @@ export function AddUserScreen() {
 
   if (!canAccess) {
     return (
-      <div className="mx-auto max-w-2xl rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-16 text-center">
+      <div className="mx-auto max-w-2xl empty card pad px-6 py-16 text-center">
         <p className="text-slate-600">You do not have permission to invite users.</p>
       </div>
     )
@@ -359,34 +359,14 @@ export function AddUserScreen() {
                   key={type.id}
                   type="button"
                   onClick={() => selectAccountType(type.id)}
-                  className={`w-full rounded-2xl border bg-white p-4 text-left transition ${
-                    selected
-                      ? `ring-2 ${type.ringCls} shadow-sm`
-                      : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50/50'
-                  }`}
+                  data-hue={type.id === 'admin' ? 'user' : type.id === 'operative' ? 'ops' : 'blue'}
+                  className={`optcard ${selected ? 'on' : ''}`}
                 >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-sm font-bold text-slate-900">{type.title}</span>
-                        <span className={`rounded-md px-2 py-0.5 text-[11px] font-semibold ${type.badgeCls}`}>
-                          {type.badge}
-                        </span>
-                      </div>
-                      <p className="mt-1.5 text-xs leading-relaxed text-slate-500">{type.description}</p>
-                    </div>
-                    <span
-                      className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 ${
-                        selected ? 'border-blue-600 bg-blue-600' : 'border-slate-300 bg-white'
-                      }`}
-                    >
-                      {selected && (
-                        <svg className="h-3 w-3 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                        </svg>
-                      )}
-                    </span>
-                  </div>
+                  <span className="ico-chip">{type.badge.slice(0, 1)}</span>
+                  <span className="grow">
+                    <span className="t">{type.title}</span>
+                    <span className="s" style={{ whiteSpace: 'normal' }}>{type.description}</span>
+                  </span>
                 </button>
               )
             })}

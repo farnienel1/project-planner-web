@@ -131,7 +131,7 @@ function MySchedulePageContent() {
 
   if (isOperativeMode(user) && !linkedOperative) {
     return (
-      <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-16 text-center">
+      <div className="empty card pad px-6 py-16 text-center">
         <h1 className="text-2xl font-bold text-slate-900">My Schedule</h1>
         <p className="mx-auto mt-2 max-w-lg text-sm text-slate-500">
           Your account is not linked to an operative profile yet. Ask your line manager to link your email to an

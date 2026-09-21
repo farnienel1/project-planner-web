@@ -326,7 +326,7 @@ function InfographicCard({
   accent: { tile: string; ring: string; text: string }
 }) {
   return (
-    <div className={`rounded-2xl border border-slate-200 bg-white p-6 ring-1 ${accent.ring}`}>
+    <div className={`card p-6 ring-1 ${accent.ring}`}>
       <div className="flex items-start gap-4">
         <div className={`flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl ${accent.tile}`}>
           <Icon name={icon} className={`h-8 w-8 ${accent.text}`} />

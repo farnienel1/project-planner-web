@@ -8,7 +8,7 @@ import { MAX_HERO_METRICS, resolveHeroMetricPreviews } from '@/lib/dashboard/her
 
 function Shell({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="h-full rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+    <div className="h-full card pad">
       <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">{label}</p>
       {children}
     </div>
@@ -446,7 +446,7 @@ export function DashboardEditorPreview({
         />
 
         {layout.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-12 text-center">
+          <div className="empty card pad p-12 text-center">
             <p className="text-sm text-slate-500">No tiles selected yet.</p>
             <p className="mt-1 text-xs text-slate-400">Choose tiles from the catalogue below to see them here.</p>
           </div>

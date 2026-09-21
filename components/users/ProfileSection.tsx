@@ -8,7 +8,7 @@ export function ProfileSection({
   children: React.ReactNode
 }) {
   return (
-    <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+    <section className="overflow-hidden card shadow-sm">
       <div className="border-b border-slate-100 bg-slate-50/60 px-5 py-3.5">
         <h2 className="text-[11px] font-semibold uppercase tracking-widest text-slate-400">{title}</h2>
       </div>

@@ -133,8 +133,8 @@ export default function ChangeOrganisationPage() {
   return (
     <div className="mx-auto max-w-3xl space-y-5 pb-10 xl:grid xl:max-w-6xl xl:grid-cols-12 xl:gap-8 xl:space-y-0">
       <div className="xl:col-span-5">
-        <h1 className="text-[28px] font-bold tracking-tight text-slate-900">Switch organisation</h1>
-        <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <h1>Switch organisation</h1>
+        <div className="mt-4 card p-5 shadow-sm">
           <p className="text-lg font-semibold text-slate-900">Work across teams</p>
           <p className="mt-2 text-sm leading-relaxed text-slate-600">
             Choose which organisation you want to use in the app. Your schedule, projects, and settings will update to
@@ -166,7 +166,7 @@ export default function ChangeOrganisationPage() {
 
       <div className="xl:col-span-7">
         {memberships.length === 0 ? (
-          <div className="rounded-2xl border border-slate-200 bg-white p-6">
+          <div className="card p-6">
             <p className="text-base font-semibold text-slate-900">No organisations found</p>
             <p className="mt-2 text-sm leading-relaxed text-slate-600">
               If you were invited to another organisation, pull to refresh or sign out and sign in again.
@@ -177,7 +177,7 @@ export default function ChangeOrganisationPage() {
             <p className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-[0.4px] text-slate-500">
               Your organisations
             </p>
-            <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm divide-y divide-slate-100">
+            <div className="overflow-hidden card shadow-sm divide-y divide-slate-100">
               {memberships.map((membership) => {
                 const isActive = membership.organizationId === activeOrgId
                 const isPending = membership.status === 'pending'
@@ -200,7 +200,7 @@ export default function ChangeOrganisationPage() {
                     }}
                     className="flex w-full items-center gap-3 px-4 py-3.5 text-left hover:bg-slate-50 disabled:hover:bg-white disabled:opacity-100"
                   >
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#E6F1FB] text-[#185FA5]">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[var(--blue-t)] text-[var(--blue)]">
                       <BuildingOffice2Icon className="h-5 w-5" />
                     </div>
                     <div className="min-w-0 flex-1">
@@ -239,7 +239,7 @@ export default function ChangeOrganisationPage() {
                         {isPending ? 'Accepting…' : 'Switching…'}
                       </span>
                     ) : isActive ? (
-                      <span className="rounded-full bg-[#E6F1FB] px-2 py-0.5 text-[11px] font-bold text-[#185FA5]">
+                      <span className="rounded-full bg-[var(--blue-t)] px-2 py-0.5 text-[11px] font-bold text-[var(--blue)]">
                         Active
                       </span>
                     ) : locked ? (

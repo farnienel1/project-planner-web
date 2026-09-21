@@ -116,7 +116,7 @@ export function MaterialCatalogueScreen() {
   if (loading && items.length === 0) {
     return (
       <div className="flex h-64 items-center justify-center">
-        <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-[#185FA5]" />
+        <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-[var(--blue)]" />
       </div>
     )
   }
@@ -125,9 +125,11 @@ export function MaterialCatalogueScreen() {
     <div className="space-y-5 pb-10">
       <PageHeader
         title="Material catalogue"
+        subtitle="Items you order for site"
+        hue="ts"
         actions={
           <div className="flex gap-3">
-            <button type="button" onClick={() => setCsvOpen(true)} className="text-[15px] font-semibold text-[#185FA5]">
+            <button type="button" onClick={() => setCsvOpen(true)} className="btn">
               CSV
             </button>
             <button
@@ -140,7 +142,7 @@ export function MaterialCatalogueScreen() {
                   createdByName: `${user.firstName} ${user.surname}`.trim() || user.email,
                 })
               }}
-              className="text-[15px] font-semibold text-[#185FA5]"
+              className="btn primary"
             >
               Add
             </button>
@@ -169,7 +171,7 @@ export function MaterialCatalogueScreen() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search by name, brand or code"
-          className="mt-4 w-full rounded-xl border-0 px-4 py-2.5 text-[15px] text-ios-ink"
+          className="mt-4 w-full rounded-xl border-0 px-4 py-2.5 text-[15px] text-[var(--ink)]"
         />
       </div>
 
@@ -196,8 +198,8 @@ export function MaterialCatalogueScreen() {
                   }
                   className="flex w-full items-center justify-between px-4 py-3 text-left"
                 >
-                  <span className="text-[11px] font-semibold uppercase tracking-[0.4px] text-ios-muted">{category}</span>
-                  <span className="text-[12px] text-ios-muted">
+                  <span className="text-[11px] font-semibold uppercase tracking-[0.4px] text-[var(--ink3)]">{category}</span>
+                  <span className="text-[12px] text-[var(--ink3)]">
                     {rows.length} item{rows.length === 1 ? '' : 's'}
                   </span>
                 </button>
@@ -213,28 +215,28 @@ export function MaterialCatalogueScreen() {
                           setEditor({ ...item })
                         }}
                       >
-                        <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px] bg-[#E6F1FB] text-[#185FA5]">
+                        <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px] bg-[var(--blue-t)] text-[var(--blue)]">
                           <CubeIcon className="h-4 w-4" />
                         </div>
                         <div className="min-w-0 flex-1">
                           <p className="text-[15px] font-medium">{item.name}</p>
-                          <p className="text-[13px] text-ios-muted">{item.brand || 'Custom'}</p>
+                          <p className="text-[13px] text-[var(--ink3)]">{item.brand || 'Custom'}</p>
                           <div className="mt-1 flex flex-wrap gap-1.5">
                             {item.productCode ? (
-                              <span className="rounded bg-[#E6F1FB] px-1.5 py-0.5 font-mono text-[11px] font-medium text-[#185FA5]">
+                              <span className="rounded bg-[var(--blue-t)] px-1.5 py-0.5 font-mono text-[11px] font-medium text-[var(--blue)]">
                                 {item.productCode}
                               </span>
                             ) : null}
-                            <span className="rounded bg-[#F2F2F7] px-1.5 py-0.5 text-[11px] font-medium text-ios-muted">
+                            <span className="rounded bg-[var(--soft)] px-1.5 py-0.5 text-[11px] font-medium text-[var(--ink3)]">
                               {item.defaultUnit}
                             </span>
                             {item.size ? (
-                              <span className="rounded bg-[#F2F2F7] px-1.5 py-0.5 text-[11px] text-ios-muted">
+                              <span className="rounded bg-[var(--soft)] px-1.5 py-0.5 text-[11px] text-[var(--ink3)]">
                                 Size {item.size}
                               </span>
                             ) : null}
                             {item.length ? (
-                              <span className="rounded bg-[#F2F2F7] px-1.5 py-0.5 text-[11px] text-ios-muted">
+                              <span className="rounded bg-[var(--soft)] px-1.5 py-0.5 text-[11px] text-[var(--ink3)]">
                                 {item.length}
                                 {item.lengthUnit || ''}
                               </span>
@@ -409,7 +411,7 @@ function MaterialEditor({
       title={isNew ? 'New material' : 'Edit material'}
       onCancel={onCancel}
       footer={
-        <button type="submit" form="material-editor" disabled={!form.name.trim() || saving} className="w-full rounded-xl bg-[#185FA5] py-3 font-semibold text-white disabled:opacity-50">
+        <button type="submit" form="material-editor" disabled={!form.name.trim() || saving} className="w-full rounded-xl bg-[var(--blue)] py-3 font-semibold text-white disabled:opacity-50">
           Save
         </button>
       }
@@ -431,7 +433,7 @@ function MaterialEditor({
           Product code
           <input value={form.productCode || ''} onChange={(e) => setForm({ ...form, productCode: e.target.value })} className="mt-1 w-full rounded-lg border px-3 py-2" />
         </label>
-        <p className="text-[11px] font-semibold uppercase text-ios-muted">Default type</p>
+        <p className="text-[11px] font-semibold uppercase text-[var(--ink3)]">Default type</p>
         <div className="flex flex-wrap gap-2">
           {MATERIAL_UNITS.map((unit) => (
             <button
@@ -439,14 +441,14 @@ function MaterialEditor({
               type="button"
               onClick={() => setForm({ ...form, defaultUnit: unit })}
               className={`rounded-full px-3 py-1.5 text-[13px] font-medium ${
-                form.defaultUnit === unit ? 'bg-[#E6F1FB] text-[#185FA5]' : 'bg-[#F2F2F7] text-ios-ink'
+                form.defaultUnit === unit ? 'bg-[var(--blue-t)] text-[var(--blue)]' : 'bg-[var(--soft)] text-[var(--ink)]'
               }`}
             >
               {unit}
             </button>
           ))}
         </div>
-        <p className="text-[12px] text-ios-muted">{TYPE_HINTS[form.defaultUnit]}</p>
+        <p className="text-[12px] text-[var(--ink3)]">{TYPE_HINTS[form.defaultUnit]}</p>
         <label className="block text-sm font-medium">
           Size
           <input value={form.size || ''} onChange={(e) => setForm({ ...form, size: e.target.value })} placeholder="Optional" className="mt-1 w-full rounded-lg border px-3 py-2" />
@@ -493,10 +495,10 @@ function CsvSheet({
     <IosFormModal title="Catalogue CSV" onCancel={onClose} width="md">
       <div className="space-y-6 text-sm">
         <section>
-          <p className="text-[11px] font-semibold uppercase text-ios-muted">Step 1 · Download</p>
+          <p className="text-[11px] font-semibold uppercase text-[var(--ink3)]">Step 1 · Download</p>
           <button
             type="button"
-            className="mt-2 rounded-xl bg-[#185FA5] px-4 py-2 font-semibold text-white"
+            className="mt-2 rounded-xl bg-[var(--blue)] px-4 py-2 font-semibold text-white"
             onClick={() => downloadTextFile(CATALOGUE_CSV_FILENAME, exportCatalogueCsv(items))}
           >
             Download Material Catalogue
@@ -504,16 +506,16 @@ function CsvSheet({
           <p className="mt-2 text-amber-800">⚠️ CSV Warning — save the file as csv and not .xls (excel) or .numbers.</p>
           <button
             type="button"
-            className="mt-3 text-[#185FA5] font-semibold"
+            className="mt-3 text-[var(--blue)] font-semibold"
             onClick={() => downloadTextFile(CATALOGUE_TEMPLATE_FILENAME, exportCatalogueTemplateCsv())}
           >
             Download blank template
           </button>
-          <p className="text-ios-muted">Headers only — use this to start a brand new list</p>
+          <p className="text-[var(--ink3)]">Headers only — use this to start a brand new list</p>
         </section>
         <section>
-          <p className="text-[11px] font-semibold uppercase text-ios-muted">Step 2 · Upload updated catalogue</p>
-          <p className="mt-1 text-ios-muted">Use this to upload your updated catalogue</p>
+          <p className="text-[11px] font-semibold uppercase text-[var(--ink3)]">Step 2 · Upload updated catalogue</p>
+          <p className="mt-1 text-[var(--ink3)]">Use this to upload your updated catalogue</p>
           <input
             type="file"
             accept=".csv,text/csv"
@@ -531,8 +533,8 @@ function CsvSheet({
           />
         </section>
         <section>
-          <p className="text-[11px] font-semibold uppercase text-ios-muted">Step 3 · Replace entire catalogue</p>
-          <p className="mt-1 text-ios-muted">Use this to upload a brand new catalogue</p>
+          <p className="text-[11px] font-semibold uppercase text-[var(--ink3)]">Step 3 · Replace entire catalogue</p>
+          <p className="mt-1 text-[var(--ink3)]">Use this to upload a brand new catalogue</p>
           <input
             type="file"
             accept=".csv,text/csv"
@@ -549,10 +551,10 @@ function CsvSheet({
             }}
           />
         </section>
-        <p className="text-ios-muted">
+        <p className="text-[var(--ink3)]">
           Edit on a laptop if you can, then save as .csv and upload here. Leave Catalogue ID blank for brand new rows.
         </p>
-        <p className="text-ios-muted">Drop CSV or tap to browse · Max 5MB · 5,000 items</p>
+        <p className="text-[var(--ink3)]">Drop CSV or tap to browse · Max 5MB · 5,000 items</p>
       </div>
     </IosFormModal>
   )

@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { format } from 'date-fns'
-import { Cog6ToothIcon } from '@heroicons/react/24/solid'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
@@ -15,7 +14,6 @@ import { canEditTargetUser, roleLabel } from '@/lib/staff/userEditPermissions'
 import { rosterStatusLabel } from '@/lib/staff/userRosterUtils'
 import { UserAvatar } from '@/components/users/UserAvatar'
 import { normalizeEmploymentType } from '@/lib/ios-parity/enums'
-import { PanelHeader, SectionLabel, SettingsCard } from '@/components/settings/primitives'
 
 function employmentLabel(value?: string) {
   return normalizeEmploymentType(value) === 'paye' ? 'PAYE' : 'Self-employed'
@@ -59,16 +57,17 @@ export function UserProfileSummary({
   if (loading) {
     return (
       <div className="flex h-64 items-center justify-center">
-        <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-blue-600" />
+        <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-[var(--blue)]" />
       </div>
     )
   }
 
   if (!target) {
     return (
-      <div className="mx-auto max-w-2xl rounded-2xl border border-slate-200 bg-white p-8 text-center">
-        <p className="text-slate-600">User not found.</p>
-        <Link href={backHref} className="mt-4 inline-block text-blue-600 hover:underline">
+      <div className="empty card pad mx-auto max-w-2xl">
+        <h3>User not found</h3>
+        <p>That profile is not in this organisation.</p>
+        <Link href={backHref} className="btn primary">
           Go back
         </Link>
       </div>
@@ -82,56 +81,56 @@ export function UserProfileSummary({
   const quals = linkedOperative?.qualifications || []
 
   return (
-    <div className="mx-auto max-w-2xl pb-16">
-      <PanelHeader
-        title={name}
-        onBack={() => router.push(backHref)}
-        rightAction={
-          canEdit ? (
-            <Link
-              href={editHref}
-              aria-label="Edit profile"
-              className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 shadow-sm hover:bg-slate-50"
-            >
-              <Cog6ToothIcon className="h-5 w-5" />
+    <div className="stack" data-hue="user">
+      <button type="button" onClick={() => router.push(backHref)} className="btn sm ghost self-start">
+        Back
+      </button>
+
+      <section className="hero">
+        <div className="row wrap" style={{ position: 'relative', zIndex: 1, gap: 20 }}>
+          <UserAvatar user={target} size={72} />
+          <div className="grow">
+            <div className="big">{name}</div>
+            <div className="row wrap" style={{ marginTop: 8, gap: 8 }}>
+              <span className="pill" style={{ background: 'rgba(255,255,255,.18)', color: '#fff' }}>
+                {roleLabel(target)}
+              </span>
+              {target.passwordSet ? (
+                <span className="pill dot" style={{ background: 'rgba(255,255,255,.18)', color: '#fff' }}>
+                  Verified
+                </span>
+              ) : (
+                <span className="pill dot" data-hue="warn">
+                  Pending
+                </span>
+              )}
+              <span className="pill dot" style={{ background: 'rgba(255,255,255,.18)', color: '#fff' }}>
+                {status}
+              </span>
+            </div>
+          </div>
+          {linkedOperative ? (
+            <Link href={`/dashboard/operatives/${linkedOperative.id}/edit`} className="btn hbtn">
+              View certificates
+            </Link>
+          ) : null}
+          {canEdit ? (
+            <Link href={editHref} className="btn hbtn solid">
+              Edit profile
             </Link>
           ) : (
-            <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold text-slate-500">
+            <span className="pill" style={{ background: 'rgba(255,255,255,.18)', color: '#fff' }}>
               View only
             </span>
-          )
-        }
-      />
-
-      <div className="mt-4 flex items-center gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <UserAvatar user={target} size={64} className="rounded-2xl" gradient="from-[#7F77DD] to-[#534AB7]" />
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-lg font-bold text-slate-900">{name}</div>
-          <div className="text-sm text-slate-500">{roleLabel(target)}</div>
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            <span
-              className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-semibold ring-1 ${
-                target.passwordSet
-                  ? 'bg-emerald-50 text-emerald-700 ring-emerald-100'
-                  : 'bg-amber-50 text-amber-700 ring-amber-100'
-              }`}
-            >
-              {target.passwordSet ? 'Verified' : 'Pending'}
-            </span>
-            <span
-              className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-semibold ring-1 ${
-                status === 'Active' ? 'bg-blue-50 text-blue-700 ring-blue-100' : 'bg-slate-100 text-slate-600 ring-slate-200'
-              }`}
-            >
-              {status}
-            </span>
-          </div>
+          )}
         </div>
-      </div>
+      </section>
 
-      <SectionLabel label="Details" />
-      <SettingsCard>
-        <dl className="divide-y divide-slate-100">
+      <section className="card pad">
+        <h2 className="h2" style={{ marginBottom: 16 }}>
+          Details
+        </h2>
+        <dl className="grid g2">
           <SummaryRow label="Email" value={target.email} />
           <SummaryRow label="Mobile" value={target.mobileNumber || '—'} />
           <SummaryRow
@@ -148,52 +147,36 @@ export function UserProfileSummary({
             <SummaryRow label="Day rate" value={`£${Number(target.dayRate).toFixed(2)}`} />
           ) : null}
         </dl>
-      </SettingsCard>
+      </section>
 
       {target.permissions.operativeMode ? (
-        <>
-          <SectionLabel label="Qualifications" />
-          <SettingsCard>
-            {quals.length === 0 ? (
-              <p className="px-4 py-5 text-sm text-slate-500">
-                No qualifications yet. Add them from Edit when needed.
-              </p>
-            ) : (
-              <ul className="divide-y divide-slate-100">
-                {quals.map((qual) => (
-                  <li key={qual.id} className="flex items-center justify-between gap-3 px-4 py-3">
-                    <span className="text-sm font-medium text-slate-900">{qual.name}</span>
-                    <span className="text-xs text-slate-500">
+        <section className="card pad" data-hue="rep">
+          <div className="row" style={{ marginBottom: 14 }}>
+            <h2 className="h2">Qualifications</h2>
+            <span className="grow" />
+            {linkedOperative ? (
+              <Link href={`/dashboard/operatives/${linkedOperative.id}/edit`} className="btn sm">
+                View certificates
+              </Link>
+            ) : null}
+          </div>
+          {quals.length === 0 ? (
+            <p className="muted small">No qualifications yet. Add them from Edit when needed.</p>
+          ) : (
+            <div className="rows">
+              {quals.map((qual) => (
+                <div key={qual.id} className="ritem" style={{ cursor: 'default' }} data-hue="rep">
+                  <span className="grow">
+                    <span className="t">{qual.name}</span>
+                    <span className="s">
                       {qual.hasEndDate && qual.endDate ? `Expires ${format(qual.endDate, 'd MMM yyyy')}` : 'No expiry'}
                     </span>
-                  </li>
-                ))}
-              </ul>
-            )}
-            {linkedOperative ? (
-              <div className="border-t border-slate-100 px-4 py-3">
-                <Link
-                  href={`/dashboard/operatives/${linkedOperative.id}/edit`}
-                  className="text-sm font-semibold text-blue-600 hover:underline"
-                >
-                  View certificates
-                </Link>
-              </div>
-            ) : null}
-          </SettingsCard>
-        </>
-      ) : null}
-
-      {canEdit ? (
-        <div className="mt-6">
-          <Link
-            href={editHref}
-            className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-700"
-          >
-            <Cog6ToothIcon className="h-4 w-4" />
-            Edit profile
-          </Link>
-        </div>
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
       ) : null}
     </div>
   )
@@ -201,9 +184,9 @@ export function UserProfileSummary({
 
 function SummaryRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex items-start justify-between gap-4 px-4 py-3">
-      <dt className="text-xs font-semibold uppercase tracking-wide text-slate-400">{label}</dt>
-      <dd className="text-right text-sm font-medium text-slate-900">{value}</dd>
+    <div className="f">
+      <span className="eyebrow">{label}</span>
+      <span style={{ fontWeight: 600 }}>{value}</span>
     </div>
   )
 }

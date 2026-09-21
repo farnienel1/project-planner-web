@@ -68,7 +68,7 @@ export function ProjectTaskRow({
           {task.priority}
         </span>
         {canEdit && (
-          <button type="button" onClick={onEdit} className="shrink-0 text-[#185FA5]" aria-label="Edit task">
+          <button type="button" onClick={onEdit} className="shrink-0 text-[var(--blue)]" aria-label="Edit task">
             <Cog6ToothIcon className="h-4 w-4" />
           </button>
         )}

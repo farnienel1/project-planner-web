@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { useAuthStore } from '@/lib/stores/authStore'
+import { AppLogoMark } from '@/components/ui/AppLogoMark'
 
 const EMAIL_RE = /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,64}$/i
 
@@ -35,59 +36,63 @@ export default function ResetPasswordPage() {
   }
 
   return (
-    <div className="min-h-screen bg-ios-canvas px-5 py-10 font-ios text-ios-ink">
-      <div className="mx-auto w-full max-w-md rounded-[20px] border border-ios-border bg-ios-card px-6 py-10 shadow-ios-toast">
-        {success ? (
-          <div className="text-center">
-            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-ios-chip-green text-3xl text-ios-icon-green">
-              ✓
-            </div>
-            <h1 className="mt-6 text-[22px] font-bold text-ios-icon-green">Check your email</h1>
-            <p className="mt-3 text-sm text-ios-muted">
-              If an account exists for {trimmed}, you&apos;ll receive a password reset link shortly.
-            </p>
-            <Link href="/login" className="mt-8 inline-flex h-12 w-full items-center justify-center rounded-2xl bg-[#185FA5] text-sm font-semibold text-white">
-              Done
-            </Link>
+    <div className="login" style={{ gridTemplateColumns: '1fr' }}>
+      <div className="form-side">
+        <div style={{ width: 'min(420px, 100%)' }}>
+          <div className="mb-6 flex items-center gap-3">
+            <AppLogoMark size={40} radius={12} />
+            <b className="font-[family-name:var(--head)] text-lg">Project Planner</b>
           </div>
-        ) : (
-          <>
-            <h1 className="text-center text-[28px] font-bold tracking-tight">Reset Password</h1>
-            <p className="mt-3 text-center text-sm text-ios-muted">
-              Enter your email and we&apos;ll send a link from Firebase to reset your password. Check spam if you
-              don&apos;t see it.
-            </p>
-            <form className="mt-8 space-y-4" onSubmit={handleSubmit}>
-              {(error || localError) && (
-                <p className="text-center text-sm text-ios-icon-red">{error || localError}</p>
-              )}
-              <label className="block text-sm font-medium">
-                Email Address
-                <input
-                  type="email"
-                  autoComplete="email"
-                  inputMode="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="mt-2 w-full rounded-xl border border-ios-border px-3 py-2.5 outline-none focus:border-[#185FA5] focus:ring-2 focus:ring-[#185FA5]/20"
-                  placeholder="Email Address"
-                />
-              </label>
-              <button
-                type="submit"
-                disabled={!canSend}
-                className="h-12 w-full rounded-2xl bg-[#185FA5] text-sm font-semibold text-white disabled:opacity-40"
-              >
-                {sending ? 'Sending…' : 'Send Reset Link'}
-              </button>
-              <div className="text-center">
-                <Link href="/login" className="text-sm font-semibold text-[#185FA5]">
-                  Cancel
-                </Link>
+          {success ? (
+            <>
+              <div className="ico-chip lg" data-hue="green">
+                ✓
               </div>
-            </form>
-          </>
-        )}
+              <h1 className="mt-4 text-[28px] font-extrabold">Check your email</h1>
+              <p className="muted mt-2">
+                If an account exists for {trimmed}, you&apos;ll receive a password reset link shortly.
+              </p>
+              <Link href="/login" className="btn primary block mt-6">
+                Done
+              </Link>
+            </>
+          ) : (
+            <>
+              <h1 className="text-[28px] font-extrabold">Reset password</h1>
+              <p className="muted mt-1.5">
+                Enter your email and we&apos;ll send a link from Firebase to reset your password. Check spam if you
+                don&apos;t see it.
+              </p>
+              {(error || localError) ? (
+                <p className="banner mt-4" data-hue="red">
+                  {error || localError}
+                </p>
+              ) : null}
+              <form className="form mt-6" style={{ gridTemplateColumns: '1fr' }} onSubmit={handleSubmit}>
+                <label className="f">
+                  Email
+                  <input
+                    type="email"
+                    autoComplete="email"
+                    inputMode="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="pp-in"
+                    placeholder="your@email.com"
+                  />
+                </label>
+                <button type="submit" disabled={!canSend} className="btn primary block">
+                  {sending ? 'Sending…' : 'Send reset link'}
+                </button>
+              </form>
+              <p className="muted small mt-[18px] text-center">
+                <Link href="/login" className="link">
+                  Back to sign in
+                </Link>
+              </p>
+            </>
+          )}
+        </div>
       </div>
     </div>
   )

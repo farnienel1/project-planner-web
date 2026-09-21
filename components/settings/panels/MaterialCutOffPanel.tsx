@@ -107,8 +107,8 @@ export function MaterialCutOffPanel({ onBack }: { onBack: () => void }) {
         <SectionLabel label="Daily cut-off" />
         <SettingsCard>
           <div className="flex items-start gap-3 px-4 py-4">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#185FA5]/10">
-              <svg className="h-5 w-5 text-[#185FA5]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[var(--blue)]/10">
+              <svg className="h-5 w-5 text-[var(--blue)]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d={ICON.clock} />
               </svg>
             </div>
@@ -118,7 +118,7 @@ export function MaterialCutOffPanel({ onBack }: { onBack: () => void }) {
               <label className="mt-3 block">
                 <span className="sr-only">Cut-off time</span>
                 <select
-                  className="h-11 w-full max-w-[220px] rounded-xl border border-slate-200 bg-white px-3 text-[15px] font-semibold text-[#185FA5] outline-none transition focus:border-[#185FA5] focus:ring-2 focus:ring-[#185FA5]/15 disabled:bg-slate-50 disabled:text-slate-400"
+                  className="h-11 w-full max-w-[220px] rounded-xl border border-slate-200 bg-white px-3 text-[15px] font-semibold text-[var(--blue)] outline-none transition focus:border-[var(--blue)] focus:ring-2 focus:ring-[#185FA5]/15 disabled:bg-slate-50 disabled:text-slate-400"
                   value={String(cutOffMinutes)}
                   disabled={!cutOffOn}
                   onChange={(event) => setCutOffMinutes(parseInt(event.target.value, 10))}
