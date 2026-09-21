@@ -5,6 +5,7 @@ import {
   awaitingManagerSignOff,
   hoursWarningCopy,
   isTimesheetFullyApproved,
+  postSignExtraWarningCopy,
   requiresLineManagerCounterSign,
   userHasLineManager,
 } from './timesheetApprovalPolicy.ts'
@@ -93,4 +94,13 @@ test('operative with a line manager only appears in awaiting after they have sig
 test('hasNoLineManager wins over leftover assigned manager ids', () => {
   const founder = user({ id: 'founder', assignedManagerUserIds: ['ghost'], hasNoLineManager: true })
   assert.equal(userHasLineManager(founder), false)
+})
+
+test('post-sign extras copy distinguishes line-manager counter-sign', () => {
+  const admin = user({ id: 'admin' })
+  const signed = { ...emptyTimesheetDraft(), operativeSignedAt: new Date() }
+  assert.match(postSignExtraWarningCopy(admin, signed), /sign it again before generating an invoice/)
+  const operative = user({ id: 'op', assignedManagerUserIds: ['mgr'] })
+  const countersigned = { ...signed, managerSignedAt: new Date() }
+  assert.match(postSignExtraWarningCopy(operative, countersigned), /yourself and your line manager/)
 })

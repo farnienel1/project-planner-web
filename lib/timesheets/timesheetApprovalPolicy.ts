@@ -89,3 +89,11 @@ export function hoursWarningCopy(user: User): string {
     ? "If you don't agree with the hours shown, contact your line manager to amend your booking schedule before signing. Agreed changes appear on a new timesheet."
     : "If you don't agree with the hours shown, amend your booking schedule before signing. Agreed changes appear on a new timesheet."
 }
+
+/** iOS MyTimesheetView.postSignWarningMessage — only used once the sheet is fully approved. */
+export function postSignExtraWarningCopy(user: User, draft: TimesheetDraft): string {
+  if (requiresLineManagerCounterSign(user) && draft.managerSignedAt) {
+    return 'You have already signed your timesheet and your line manager has signed it off. If you add price work or expenses, you will need to have your timesheet signed again by yourself and your line manager.'
+  }
+  return 'You have already signed your timesheet. If you add price work or expenses, you will need to sign it again before generating an invoice.'
+}

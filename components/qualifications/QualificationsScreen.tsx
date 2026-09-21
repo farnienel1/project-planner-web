@@ -351,9 +351,10 @@ function MyQualificationsPanel({
   const [uploading, setUploading] = useState(false)
 
   useEffect(() => {
+    if (dirty) return
     setDraft(linked)
     setDirty(false)
-  }, [linked])
+  }, [linked, dirty])
 
   if (!linked || !draft) {
     return (

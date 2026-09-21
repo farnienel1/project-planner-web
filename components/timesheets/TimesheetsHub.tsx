@@ -38,6 +38,13 @@ import { TimesheetPeriodPage } from '@/components/timesheets/TimesheetPeriodPage
 import { dateFromDayKey } from '@/lib/ios-parity/londonTime'
 import { ianaTimeZoneForCountry } from '@/lib/orgTime/orgTimeZone'
 import { computeInvoicingPeriod } from '@/lib/warnings/warningLookahead'
+import { loadTimesheetDraft } from '@/lib/timesheets/timesheetStorage'
+import type { TimesheetDraft } from '@/lib/timesheets/timesheetDraft'
+import {
+  awaitingManagerSignOff,
+  isTimesheetFullyApproved,
+} from '@/lib/timesheets/timesheetApprovalPolicy'
+import type { User } from '@/types'
 
 const PAYE_DISABLED_BODY =
   'My Timesheets is for self-employed pay. PAYE accounts keep the current pay run until it is paid, then schedule hours no longer fill the next timesheet. Switch the person back to self-employed if they need timesheets again.'
@@ -51,7 +58,7 @@ const TEAM_TABS: Array<{ id: TeamTimesheetTab; label: string; help: string }> = 
   {
     id: 'signed',
     label: 'Signed off',
-    help: 'Counter-signed and ready. Generate an invoice to move them to Exported.',
+    help: 'Counter-signed and ready. Email and export sends timesheet PDFs to your email for filing. On web, open a sheet and tap Generate Invoice.',
   },
   {
     id: 'exported',
@@ -148,45 +155,18 @@ export function TimesheetsHub() {
           href={periodParam ? '/dashboard/timesheets?surface=mine' : '/dashboard/timesheets'}
         />
         {periodParam ? (
-          <>
-            <h1 className="text-[28px] font-semibold tracking-tight">Timesheet</h1>
-            <TimesheetPeriodPage {...periodPageProps} subjectUser={subject} mode="mine" />
-          </>
+          <TimesheetPeriodPage {...periodPageProps} subjectUser={subject} mode="mine" />
         ) : (
           <>
             <h1 className="text-[28px] font-semibold tracking-tight">My Timesheets</h1>
-            <div className="space-y-4">
-              <HubCard
-                icon={<CalendarDaysIcon className="h-6 w-6" />}
-                title="Current pay run period"
-                subtitle={runCopy.periodLine}
-                detail="Review bookings, add extras, and sign your timesheet."
-                tint="text-[#185FA5] bg-[#E6F1FB]"
-                onClick={() =>
-                  router.push(`/dashboard/timesheets?surface=mine&period=${periodStartKey(currentPeriod.start, timeZone)}`)
-                }
-              />
-              {pastPeriods.length > 0 ? (
-                <div className="space-y-2">
-                  <p className="px-1 text-[11px] font-bold uppercase tracking-[0.4px] text-ios-muted">Past timesheets</p>
-                  {pastPeriods.map((period) => (
-                    <HubCard
-                      key={periodStartKey(period.start, timeZone)}
-                      icon={<ClockIcon className="h-6 w-6" />}
-                      title={formatPaymentPeriodLine(period.start, period.end, timeZone)}
-                      subtitle="Previous period"
-                      detail="View breakdown, signatures, and generate invoice again."
-                      tint="text-slate-500 bg-slate-100"
-                      onClick={() =>
-                        router.push(
-                          `/dashboard/timesheets?surface=mine&period=${periodStartKey(period.start, timeZone)}`
-                        )
-                      }
-                    />
-                  ))}
-                </div>
-              ) : null}
-            </div>
+            <MineTimesheetsList
+              organizationId={organization?.id}
+              subject={subject}
+              currentPeriod={currentPeriod}
+              pastPeriods={pastPeriods}
+              runCopyPeriodLine={runCopy.periodLine}
+              timeZone={timeZone}
+            />
           </>
         )}
       </div>
@@ -206,10 +186,7 @@ export function TimesheetsHub() {
           }
         />
         {selectedUser ? (
-          <>
-            <h1 className="text-[28px] font-semibold tracking-tight">Review Timesheet</h1>
-            <TimesheetPeriodPage {...periodPageProps} subjectUser={selectedUser} mode="review" />
-          </>
+          <TimesheetPeriodPage {...periodPageProps} subjectUser={selectedUser} mode="review" />
         ) : (
           <>
             <h1 className="text-[28px] font-semibold tracking-tight">
@@ -291,6 +268,112 @@ export function TimesheetsHub() {
           {showDisabled && showTeam ? <DisabledCard /> : null}
         </div>
       )}
+    </div>
+  )
+}
+
+function pastSubtitle(draft: TimesheetDraft | undefined, user: User): string {
+  if (!draft) return 'Previous period'
+  if (draft.exportedAt) return 'Exported'
+  if (isTimesheetFullyApproved(draft, user)) return 'Signed off'
+  if (awaitingManagerSignOff(draft, user)) return 'Timesheet pending manager signature'
+  if (draft.operativeSignedAt) return 'Partially signed'
+  return 'Saved draft'
+}
+
+function MineTimesheetsList({
+  organizationId,
+  subject,
+  currentPeriod,
+  pastPeriods,
+  runCopyPeriodLine,
+  timeZone,
+}: {
+  organizationId?: string
+  subject: User
+  currentPeriod: { start: Date; end: Date }
+  pastPeriods: Array<{ start: Date; end: Date }>
+  runCopyPeriodLine: string
+  timeZone: string
+}) {
+  const router = useRouter()
+  const [drafts, setDrafts] = useState<Map<string, TimesheetDraft>>(new Map())
+
+  useEffect(() => {
+    if (!organizationId) return
+    let cancelled = false
+    const periods = [currentPeriod, ...pastPeriods]
+    Promise.all(
+      periods.map(async (period) => {
+        const draft = await loadTimesheetDraft(organizationId, subject.id, period.start, timeZone)
+        return [periodStartKey(period.start, timeZone), draft] as const
+      })
+    ).then((rows) => {
+      if (!cancelled) setDrafts(new Map(rows))
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [organizationId, subject.id, currentPeriod, pastPeriods, timeZone])
+
+  const pending = [currentPeriod, ...pastPeriods].filter((period) => {
+    const draft = drafts.get(periodStartKey(period.start, timeZone))
+    return draft ? awaitingManagerSignOff(draft, subject) : false
+  })
+  const pendingKeys = new Set(pending.map((period) => periodStartKey(period.start, timeZone)))
+  const pastVisible = pastPeriods.filter((period) => !pendingKeys.has(periodStartKey(period.start, timeZone)))
+
+  return (
+    <div className="space-y-4">
+      <HubCard
+        icon={<CalendarDaysIcon className="h-6 w-6" />}
+        title="Current pay run period"
+        subtitle={runCopyPeriodLine}
+        detail="Review bookings, add extras, and sign your timesheet."
+        tint="text-[#185FA5] bg-[#E6F1FB]"
+        onClick={() =>
+          router.push(`/dashboard/timesheets?surface=mine&period=${periodStartKey(currentPeriod.start, timeZone)}`)
+        }
+      />
+      {pending.length > 0 ? (
+        <div className="space-y-2">
+          <p className="px-1 text-[11px] font-bold uppercase tracking-[0.4px] text-ios-muted">Pending timesheets</p>
+          {pending.map((period) => (
+            <HubCard
+              key={`pending-${periodStartKey(period.start, timeZone)}`}
+              icon={<ClockIcon className="h-6 w-6" />}
+              title={formatPaymentPeriodLine(period.start, period.end, timeZone)}
+              subtitle="Timesheet pending manager signature"
+              detail="You signed — waiting for your line manager to counter-sign."
+              tint="text-amber-600 bg-amber-50"
+              onClick={() =>
+                router.push(`/dashboard/timesheets?surface=mine&period=${periodStartKey(period.start, timeZone)}`)
+              }
+            />
+          ))}
+        </div>
+      ) : null}
+      {pastVisible.length > 0 ? (
+        <div className="space-y-2">
+          <p className="px-1 text-[11px] font-bold uppercase tracking-[0.4px] text-ios-muted">Past timesheets</p>
+          {pastVisible.map((period) => {
+            const draft = drafts.get(periodStartKey(period.start, timeZone))
+            return (
+              <HubCard
+                key={periodStartKey(period.start, timeZone)}
+                icon={<ClockIcon className="h-6 w-6" />}
+                title={formatPaymentPeriodLine(period.start, period.end, timeZone)}
+                subtitle={pastSubtitle(draft, subject)}
+                detail="View breakdown, signatures, and generate invoice again."
+                tint="text-slate-500 bg-slate-100"
+                onClick={() =>
+                  router.push(`/dashboard/timesheets?surface=mine&period=${periodStartKey(period.start, timeZone)}`)
+                }
+              />
+            )
+          })}
+        </div>
+      ) : null}
     </div>
   )
 }
