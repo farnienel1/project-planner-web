@@ -77,6 +77,7 @@ import {
 } from '@/lib/timesheets/timesheetWeekUtils'
 import { mergeProjectsAndSmallWorks } from '@/lib/projects/workStatus'
 import { SignaturePad } from '@/components/timesheets/SignaturePad'
+import { signaturePngSrc } from '@/lib/signature/signatureImage'
 import { LoadingSpinner } from '@/components/dashboard/PageShell'
 import { formatAbbreviatedDayInZone, formatStampInZone } from '@/lib/orgTime/zoneTime'
 import { formatTimesheetHours, overtimeHoursBeyondPaidStandard, paidBookedHours, weekdayOtMultiplier } from '@/lib/timesheets/timesheetHours'
@@ -1405,12 +1406,13 @@ function PaymentRunsBox({ invoicing }: { invoicing: OrgInvoicingSettings }) {
 }
 
 function SignedBlock({ base64, caption }: { base64?: string | null; caption: string }) {
+  const src = signaturePngSrc(base64)
   return (
     <div className="space-y-2">
-      {base64 ? (
+      {src ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
-          src={`data:image/png;base64,${base64}`}
+          src={src}
           alt="Signature"
           className="h-[88px] w-full rounded-xl border border-slate-200 bg-white object-contain"
         />

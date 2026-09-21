@@ -1,4 +1,5 @@
 import { format } from 'date-fns'
+import { signaturePngSrc } from '@/lib/signature/signatureImage'
 import type { HSToolboxIssue, HSToolboxSignature, HSToolboxTalk, Project, User } from '@/types'
 
 function escapeHtml(value: string): string {
@@ -33,8 +34,9 @@ export function buildToolboxTalkPdfHtml({
     const name = user ? `${user.firstName || ''} ${user.surname || ''}`.trim() || user.email : 'Operative'
     const trade = user?.tradeTypeCustom || user?.tradeTypePreset || talk.trades[0] || 'General'
     const signedAt = sig.signedAt ? format(sig.signedAt, "d MMM yyyy 'at' HH:mm") : ''
-    const signatureCell = sig.signatureImageBase64
-      ? `<img src="${sig.signatureImageBase64}" alt="Signature" style="max-height:36px;" />`
+    const signatureSrc = signaturePngSrc(sig.signatureImageBase64)
+    const signatureCell = signatureSrc
+      ? `<img src="${signatureSrc}" alt="Signature" style="max-height:36px;" />`
       : 'Awaiting'
     return `
       <tr>
