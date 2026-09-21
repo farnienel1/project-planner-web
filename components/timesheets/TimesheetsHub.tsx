@@ -147,7 +147,7 @@ export function TimesheetsHub() {
     return (
       <div className="rounded-2xl bg-white p-8 text-center shadow-sm">
         <p className="text-[22px] font-semibold">Timesheets unavailable</p>
-        <p className="mt-2 text-[15px] text-ios-muted">No timesheet section is available for this account.</p>
+        <p className="mt-2 text-[15px] text-[var(--ink3)]">No timesheet section is available for this account.</p>
       </div>
     )
   }
@@ -211,22 +211,20 @@ export function TimesheetsHub() {
           <TimesheetPeriodPage {...periodPageProps} subjectUser={selectedUser} mode="review" />
         ) : (
           <>
-            <p className="text-sm text-ios-muted">Current pay run period · {runCopy.periodLine}</p>
-            <div className="inline-flex rounded-xl bg-[#E5E5EA] p-1">
+            <p className="muted small">Current pay run period · {runCopy.periodLine}</p>
+            <div className="seg">
               {TEAM_TABS.map((item) => (
                 <button
                   key={item.id}
                   type="button"
+                  className={tab === item.id ? 'on' : ''}
                   onClick={() => router.replace(`/dashboard/timesheets?surface=team&tab=${item.id}`)}
-                  className={`rounded-lg px-4 py-1.5 text-[13px] font-semibold ${
-                    tab === item.id ? 'bg-white text-ios-ink shadow-sm' : 'text-ios-muted'
-                  }`}
                 >
                   {item.label}
                 </button>
               ))}
             </div>
-            <p className="text-[13px] text-ios-muted">{TEAM_TABS.find((item) => item.id === tab)?.help}</p>
+            <p className="muted small">{TEAM_TABS.find((item) => item.id === tab)?.help}</p>
             <TimesheetsScreen
               bookings={bookings}
               managerSiteBookings={managerSiteBookings}
@@ -403,14 +401,14 @@ function MineTimesheetsList({
         title="Current pay run period"
         subtitle={runCopyPeriodLine}
         detail="Review bookings, add extras, and sign your timesheet."
-        tint="text-[#185FA5] bg-[#E6F1FB]"
+        tint="text-[var(--blue)] bg-[var(--blue-t)]"
         onClick={() =>
           router.push(`/dashboard/timesheets?surface=mine&period=${periodStartKey(currentPeriod.start, timeZone)}`)
         }
       />
       {pending.length > 0 ? (
         <div className="space-y-2">
-          <p className="px-1 text-[11px] font-bold uppercase tracking-[0.4px] text-ios-muted">Pending timesheets</p>
+          <p className="px-1 text-[11px] font-bold uppercase tracking-[0.4px] text-[var(--ink3)]">Pending timesheets</p>
           {pending.map((period) => (
             <HubCard
               key={`pending-${periodStartKey(period.start, timeZone)}`}
@@ -428,7 +426,7 @@ function MineTimesheetsList({
       ) : null}
       {pastVisible.length > 0 ? (
         <div className="space-y-2">
-          <p className="px-1 text-[11px] font-bold uppercase tracking-[0.4px] text-ios-muted">Past timesheets</p>
+          <p className="px-1 text-[11px] font-bold uppercase tracking-[0.4px] text-[var(--ink3)]">Past timesheets</p>
           {pastVisible.map((period) => {
             const draft = drafts.get(periodStartKey(period.start, timeZone))
             return (
@@ -454,18 +452,13 @@ function MineTimesheetsList({
 function TimesheetsNavBar({ href, title }: { href: string; title: string }) {
   const router = useRouter()
   return (
-    <div className="relative flex min-h-[28px] items-center justify-center">
-      <button
-        type="button"
-        onClick={() => router.push(href)}
-        className="btn sm ghost"
-      >
-        <span aria-hidden className="text-[22px] leading-none">
-          ‹
-        </span>
-        Back
+    <div className="phead" data-hue="ts">
+      <button type="button" onClick={() => router.push(href)} className="btn sm ghost">
+        Timesheets
       </button>
-      <h1 className="px-16 text-center text-[17px] font-semibold">{title}</h1>
+      <div>
+        <h1>{title}</h1>
+      </div>
     </div>
   )
 }
@@ -494,8 +487,8 @@ function HubCard({
       <span className="ico-chip" data-hue="ts">{icon}</span>
       <div className="min-w-0">
         <p className="text-[17px] font-semibold">{title}</p>
-        <p className="mt-0.5 text-[14px] font-semibold text-[#185FA5]">{subtitle}</p>
-        <p className="mt-1 text-[13px] text-ios-muted">{detail}</p>
+        <p className="mt-0.5 text-[14px] font-semibold text-[var(--ts)]">{subtitle}</p>
+        <p className="mt-1 text-[13px] text-[var(--ink3)]">{detail}</p>
       </div>
     </button>
   )
@@ -617,7 +610,7 @@ function Tile({
             <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-700">{badge}</span>
           ) : null}
         </div>
-        <p className="mt-1 text-[14px] text-ios-muted">{detail}</p>
+        <p className="mt-1 text-[14px] text-[var(--ink3)]">{detail}</p>
       </div>
     </button>
   )
@@ -627,7 +620,7 @@ function DisabledCard() {
   return (
     <div className="rounded-2xl bg-white p-5 shadow-sm">
       <p className="text-[17px] font-semibold">Timesheets follow employment type</p>
-      <p className="mt-2 text-[15px] leading-relaxed text-ios-muted">{PAYE_DISABLED_BODY}</p>
+      <p className="mt-2 text-[15px] leading-relaxed text-[var(--ink3)]">{PAYE_DISABLED_BODY}</p>
     </div>
   )
 }

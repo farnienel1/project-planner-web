@@ -525,7 +525,7 @@ export function TimesheetPeriodPage({
 
   return (
     <div className="space-y-4 pb-10">
-      <p className="text-[15px] font-semibold text-ios-muted">{periodTitle}</p>
+      <p className="text-[15px] font-semibold text-[var(--ink3)]">{periodTitle}</p>
       {error ? <p className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-800">{error}</p> : null}
 
       {mode === 'review' ? (
@@ -533,7 +533,7 @@ export function TimesheetPeriodPage({
           <p className="text-[20px] font-semibold">
             {`${subjectUser.firstName} ${subjectUser.surname}`.trim() || subjectUser.email}
           </p>
-          <p className="mt-1 text-[15px] text-ios-muted">{periodTitle}</p>
+          <p className="mt-1 text-[15px] text-[var(--ink3)]">{periodTitle}</p>
           <ReviewStatusCapsule signed={Boolean(draft.operativeSignedAt)} />
         </div>
       ) : null}
@@ -547,18 +547,18 @@ export function TimesheetPeriodPage({
 
       <section className="overflow-hidden rounded-2xl bg-white shadow-[0_1px_2px_rgba(0,0,0,0.10)]">
         <div className="px-4 pt-4">
-          <p className="text-[13px] font-semibold uppercase tracking-[0.4px] text-ios-muted">
+          <p className="text-[13px] font-semibold uppercase tracking-[0.4px] text-[var(--ink3)]">
             {mode === 'review' ? 'Breakdown' : 'This period'}
           </p>
           {canManagerReview ? (
-            <p className="mt-1 text-[13px] text-ios-muted">
+            <p className="mt-1 text-[13px] text-[var(--ink3)]">
               Review each day, expense and price-work line. Use ✓ approve, ✕ decline, or edit. Changes are shown to the
               operative when you sign off.
             </p>
           ) : null}
         </div>
         {payroll.lineItems.length === 0 ? (
-          <p className="p-4 text-[14px] text-ios-muted">
+          <p className="p-4 text-[14px] text-[var(--ink3)]">
             {mode === 'review'
               ? 'No bookings found for this period.'
               : 'No bookings found for this payment period yet. Hours from site, office, site survey and other schedule entries will appear here automatically.'}
@@ -600,7 +600,7 @@ export function TimesheetPeriodPage({
                   <span>{managerHasSigned ? 'Approved extras' : 'Extras (price work & expenses)'}</span>
                   {managerHasSigned && extrasTotal + expensesAmount !== draftAdditionalTotal(draft) ? (
                     <span className="text-right">
-                      <span className="block text-[12px] text-ios-muted line-through">
+                      <span className="block text-[12px] text-[var(--ink3)] line-through">
                         {money(draftAdditionalTotal(draft))}
                       </span>
                       <span className="font-semibold text-[#34C759]">{money(extrasTotal + expensesAmount)}</span>
@@ -623,11 +623,11 @@ export function TimesheetPeriodPage({
           {mode === 'review' && draft.managerNote.trim() ? (
             <div className="border-t border-slate-100 pt-3">
               <p className="text-[15px] font-semibold">Note to manager</p>
-              <p className="mt-1 text-[14px] text-ios-muted">{draft.managerNote}</p>
+              <p className="mt-1 text-[14px] text-[var(--ink3)]">{draft.managerNote}</p>
             </div>
           ) : null}
           {managerHasSigned && managerAdjustmentCount(draft) > 0 ? (
-            <p className="text-[12px] text-ios-muted">Includes line manager adjustments</p>
+            <p className="text-[12px] text-[var(--ink3)]">Includes line manager adjustments</p>
           ) : null}
         </div>
       </section>
@@ -667,15 +667,15 @@ export function TimesheetPeriodPage({
             />
           ) : null}
 
-          <p className="text-[13px] font-semibold uppercase tracking-[0.4px] text-ios-muted">Add to this timesheet</p>
+          <p className="text-[13px] font-semibold uppercase tracking-[0.4px] text-[var(--ink3)]">Add to this timesheet</p>
           <div className="grid grid-cols-2 gap-3">
             <button type="button" onClick={() => beginExtra('priceWork')} className="rounded-2xl bg-white p-4 text-left shadow-[0_1px_2px_rgba(0,0,0,0.10)]">
               <p className="text-[16px] font-semibold text-[#5449B7]">Price Work</p>
-              <p className="text-[13px] text-ios-muted">Agreed extras</p>
+              <p className="text-[13px] text-[var(--ink3)]">Agreed extras</p>
             </button>
             <button type="button" onClick={() => beginExtra('expense')} className="rounded-2xl bg-white p-4 text-left shadow-[0_1px_2px_rgba(0,0,0,0.10)]">
               <p className="text-[16px] font-semibold text-[#B45309]">Expenses</p>
-              <p className="text-[13px] text-ios-muted">+ receipts</p>
+              <p className="text-[13px] text-[var(--ink3)]">+ receipts</p>
             </button>
           </div>
 
@@ -732,7 +732,7 @@ export function TimesheetPeriodPage({
               <div className="w-full rounded-xl bg-[#D1D1D6] py-3.5 text-center text-[16px] font-semibold text-slate-500">
                 Generate Invoice
               </div>
-              <p className="text-center text-[13px] text-ios-muted">
+              <p className="text-center text-[13px] text-[var(--ink3)]">
                 {!draft.operativeSignedAt
                   ? needsCounterSign
                     ? 'Add any expenses or price work, then sign your timesheet. Your line manager will counter-sign before you can invoice.'
@@ -864,7 +864,7 @@ export function TimesheetPeriodPage({
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-sm rounded-2xl bg-white p-5">
             <p className="text-[17px] font-semibold">Re-sign required</p>
-            <p className="mt-3 text-[15px] text-ios-muted">{postSignExtraWarningCopy(subjectUser, draft)}</p>
+            <p className="mt-3 text-[15px] text-[var(--ink3)]">{postSignExtraWarningCopy(subjectUser, draft)}</p>
             <button
               type="button"
               onClick={() => void acceptPostSignExtra()}
@@ -875,7 +875,7 @@ export function TimesheetPeriodPage({
             <button
               type="button"
               onClick={() => setPendingExtraMode(null)}
-              className="mt-2 w-full py-2 text-[15px] font-semibold text-ios-muted"
+              className="mt-2 w-full py-2 text-[15px] font-semibold text-[var(--ink3)]"
             >
               Decline
             </button>
@@ -887,7 +887,7 @@ export function TimesheetPeriodPage({
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-sm rounded-2xl bg-white p-5">
             <p className="text-[17px] font-semibold">Review required</p>
-            <p className="mt-3 text-[15px] text-ios-muted">
+            <p className="mt-3 text-[15px] text-[var(--ink3)]">
               Please approve, decline or edit each expense and price-work item using the buttons provided.
             </p>
             <button
@@ -904,11 +904,11 @@ export function TimesheetPeriodPage({
       {utrWarningOpen ? (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-sm rounded-2xl bg-white p-5">
-            <button type="button" onClick={() => setUtrWarningOpen(false)} className="text-[15px] font-medium text-[#185FA5]">
+            <button type="button" onClick={() => setUtrWarningOpen(false)} className="text-[15px] font-medium text-[var(--blue)]">
               Back
             </button>
             <p className="mt-3 text-[17px] font-semibold">Before you invoice</p>
-            <p className="mt-3 text-[15px] text-ios-muted">
+            <p className="mt-3 text-[15px] text-[var(--ink3)]">
               Your UTR number is currently blank. Please fill this in via My Profile in Settings to ensure prompt payment.
             </p>
             <button
@@ -935,7 +935,7 @@ export function TimesheetPeriodPage({
                   setInvoiceHtml(null)
                   setInvoicePdf(null)
                 }}
-                className="text-[15px] font-medium text-[#185FA5]"
+                className="text-[15px] font-medium text-[var(--blue)]"
               >
                 Done
               </button>
@@ -987,7 +987,7 @@ function AdjustmentSummaryCard({
   return (
     <section className="rounded-[14px] border border-[#007AFF]/20 bg-[#007AFF]/[0.06] p-3.5">
       <p className="text-[17px] font-semibold">Line manager adjustments</p>
-      <p className="mt-1 text-[12px] text-ios-muted">
+      <p className="mt-1 text-[12px] text-[var(--ink3)]">
         {managerName} reviewed your timesheet. Struck-through amounts are what you submitted; coloured amounts are what
         will be paid.
       </p>
@@ -1002,7 +1002,7 @@ function AdjustmentSummaryCard({
             </span>
             <div>
               <p className="text-[15px] font-semibold">{row.title}</p>
-              {row.detail ? <p className="text-[12px] text-ios-muted">{row.detail}</p> : null}
+              {row.detail ? <p className="text-[12px] text-[var(--ink3)]">{row.detail}</p> : null}
             </div>
           </li>
         ))}
@@ -1035,7 +1035,7 @@ function AdjustedAmountText({
   ) {
     return (
       <div className="text-right">
-        <p className={`text-[12px] text-ios-muted ${decision === 'declined' || decision === 'edited' ? 'line-through' : ''}`}>
+        <p className={`text-[12px] text-[var(--ink3)] ${decision === 'declined' || decision === 'edited' ? 'line-through' : ''}`}>
           {money(original)}
         </p>
         <p className="text-[15px] font-bold" style={{ color: decisionTint(decision) }}>
@@ -1060,13 +1060,13 @@ function LiveReviewExtraAmount({
   if (decision === 'edited' && revisedAmount != null && Math.abs(revisedAmount - amount) >= 0.01) {
     return (
       <div className="text-right">
-        <p className="text-[12px] text-ios-muted line-through">{money(amount)}</p>
+        <p className="text-[12px] text-[var(--ink3)] line-through">{money(amount)}</p>
         <p className="text-[15px] font-bold text-[#007AFF]">{money(revisedAmount)}</p>
       </div>
     )
   }
   if (decision === 'declined') {
-    return <p className="text-[15px] font-bold text-ios-muted line-through">{money(amount)}</p>
+    return <p className="text-[15px] font-bold text-[var(--ink3)] line-through">{money(amount)}</p>
   }
   return <p className="text-[15px] font-bold">{money(amount)}</p>
 }
@@ -1107,10 +1107,10 @@ function PayrollLine({
     <li className={`flex gap-3 px-4 py-3 ${removed ? 'opacity-55' : ''}`}>
       <div className="min-w-0 flex-1">
         <p className={`text-[15px] font-bold ${removed ? 'line-through' : ''}`}>{abbreviatedDate(line.date, timeZone)}</p>
-        <p className={`text-[13px] text-ios-muted ${removed ? 'line-through' : ''}`}>
+        <p className={`text-[13px] text-[var(--ink3)] ${removed ? 'line-through' : ''}`}>
           {line.jobNumber} · {line.projectName}
         </p>
-        <p className={`text-[12px] text-ios-muted ${removed ? 'line-through' : ''}`}>{line.details}</p>
+        <p className={`text-[12px] text-[var(--ink3)] ${removed ? 'line-through' : ''}`}>{line.details}</p>
         <p className={`text-[12px] font-medium ${orange ? 'text-orange-500' : ''} ${removed ? 'line-through' : ''}`}>
           {timesheetHoursRateLine(line)}
         </p>
@@ -1152,7 +1152,7 @@ function TickCross({
           approved
             ? 'bg-[#34C759] text-white'
             : declined
-              ? 'bg-[#E5E5EA] text-[#C7C7CC]'
+              ? 'bg-[var(--soft2)] text-[#C7C7CC]'
               : 'bg-[#34C759]/15 text-[#34C759] ring-1 ring-[#34C759]/25'
         }`}
         aria-label="Approve"
@@ -1166,7 +1166,7 @@ function TickCross({
           declined
             ? 'bg-[#FF3B30] text-white'
             : approved
-              ? 'bg-[#E5E5EA] text-[#C7C7CC]'
+              ? 'bg-[var(--soft2)] text-[#C7C7CC]'
               : 'bg-[#FF3B30]/15 text-[#FF3B30] ring-1 ring-[#FF3B30]/25'
         }`}
         aria-label="Decline"
@@ -1210,7 +1210,7 @@ function ExtraList({
           <li key={item.id} className={`flex justify-between gap-3 ${item.removed ? 'opacity-55' : ''}`}>
             <div>
               <p className={`font-semibold ${item.removed ? 'line-through' : ''}`}>{item.title}</p>
-              <p className="text-[12px] text-ios-muted">{item.details}</p>
+              <p className="text-[12px] text-[var(--ink3)]">{item.details}</p>
               {managerHasSigned && item.decision !== 'pending' ? (
                 <p className="text-[11px] font-bold uppercase" style={{ color: decisionTint(item.decision) }}>
                   {decisionLabel(item.decision)}
@@ -1262,7 +1262,7 @@ function ReviewExtras({
             <div key={entry.id} className={`mt-3 flex items-start justify-between gap-3 ${removed ? 'opacity-55' : ''}`}>
               <div>
                 <p className={`font-semibold ${removed ? 'line-through' : ''}`}>{entry.title}</p>
-                <p className={`text-[12px] text-ios-muted ${removed ? 'line-through' : ''}`}>
+                <p className={`text-[12px] text-[var(--ink3)] ${removed ? 'line-through' : ''}`}>
                   {abbreviatedDate(entry.date, timeZone)} · {entry.jobNumber}
                 </p>
                 {canReview ? (
@@ -1319,7 +1319,7 @@ function ReviewExtras({
             <div key={entry.id} className={`mt-3 flex items-start justify-between gap-3 ${removed ? 'opacity-55' : ''}`}>
               <div>
                 <p className={`font-semibold ${removed ? 'line-through' : ''}`}>{entry.title}</p>
-                <p className={`text-[12px] text-ios-muted ${removed ? 'line-through' : ''}`}>
+                <p className={`text-[12px] text-[var(--ink3)] ${removed ? 'line-through' : ''}`}>
                   Agreed with: {entry.agreedManagerName} · {abbreviatedDate(entry.startDate, timeZone)} · {entry.jobNumber}
                 </p>
                 {canReview ? (
@@ -1380,7 +1380,7 @@ function PaymentRunsBox({ invoicing }: { invoicing: OrgInvoicingSettings }) {
     return `• Payout every ${capitalizeDay(invoicing.recurringPaymentDay)}`
   }
   return (
-    <section className="rounded-2xl border border-slate-200 bg-white p-4">
+    <section className="card p-4">
       <p className="text-[17px] font-semibold">Payment Runs and Payouts</p>
       {invoicing.paymentRunMode === 'date_ranges' ? (
         invoicing.paymentRunDateRanges.map((range, index) => (
@@ -1398,7 +1398,7 @@ function PaymentRunsBox({ invoicing }: { invoicing: OrgInvoicingSettings }) {
       {invoicing.noteToUsers.trim() ? (
         <>
           <p className="mt-3 text-[15px] font-semibold">Note</p>
-          <p className="text-[15px] text-ios-muted">{invoicing.noteToUsers}</p>
+          <p className="text-[15px] text-[var(--ink3)]">{invoicing.noteToUsers}</p>
         </>
       ) : null}
     </section>
@@ -1452,7 +1452,7 @@ function SignSheet({
   const total = hoursAmount + priceWorkAmount + expensesAmount
   return (
     <div className="space-y-4 pb-10">
-      <button type="button" onClick={onCancel} className="text-[15px] font-medium text-[#185FA5]">
+      <button type="button" onClick={onCancel} className="text-[15px] font-medium text-[var(--blue)]">
         {managerMode ? 'Cancel' : 'Back'}
       </button>
       <h2 className="text-[22px] font-semibold">{managerMode ? 'Sign Off' : 'Sign Timesheet'}</h2>
@@ -1471,11 +1471,11 @@ function SignSheet({
           </div>
         </section>
       ) : (
-        <p className="text-[14px] text-ios-muted">Sign as {signerName} to finalise this timesheet.</p>
+        <p className="text-[14px] text-[var(--ink3)]">Sign as {signerName} to finalise this timesheet.</p>
       )}
       <section className="rounded-2xl bg-white p-4 shadow-[0_1px_2px_rgba(0,0,0,0.10)]">
         <p className="text-[17px] font-semibold">Your signature</p>
-        <p className="text-[12px] text-ios-muted">Signing as {signerName}</p>
+        <p className="text-[12px] text-[var(--ink3)]">Signing as {signerName}</p>
         <div className="mt-3">
           <SignaturePad value={signature} onChange={onSignature} />
         </div>
@@ -1539,7 +1539,7 @@ function EditHoursSheet({
   })
   return (
     <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/40 p-4 sm:items-center">
-      <div className="max-h-[90vh] w-full max-w-lg space-y-3 overflow-y-auto rounded-2xl bg-[#F2F2F7] p-5">
+      <div className="max-h-[90vh] w-full max-w-lg space-y-3 overflow-y-auto rounded-2xl bg-[var(--soft)] p-5">
         <div className="flex items-center justify-between">
           <button type="button" onClick={onCancel} className="text-[15px] font-semibold text-[#007AFF]">
             Cancel
@@ -1549,7 +1549,7 @@ function EditHoursSheet({
             Save
           </button>
         </div>
-        <p className="text-center text-[13px] text-ios-muted">
+        <p className="text-center text-[13px] text-[var(--ink3)]">
           {abbreviatedDate(line.date, timeZone)} · {line.jobNumber} {line.projectName}
         </p>
         <div className="rounded-2xl bg-white p-4">
@@ -1565,12 +1565,12 @@ function EditHoursSheet({
           />
         </div>
         {line.isOvertimeLine ? (
-          <label className="block rounded-2xl bg-white px-4 py-3 text-[11px] font-medium uppercase tracking-[0.4px] text-ios-muted">
+          <label className="block rounded-2xl bg-white px-4 py-3 text-[11px] font-medium uppercase tracking-[0.4px] text-[var(--ink3)]">
             Overtime multiplier
             <input
               value={otText}
               onChange={(event) => onOt(event.target.value)}
-              className="mt-1 w-full border-0 p-0 text-[14px] font-medium text-ios-ink outline-none"
+              className="mt-1 w-full border-0 p-0 text-[14px] font-medium text-[var(--ink)] outline-none"
               inputMode="decimal"
             />
           </label>
@@ -1623,7 +1623,7 @@ function AmountEditSheet({
             Save
           </button>
         </div>
-        <p className="mt-3 text-[14px] text-ios-muted">{subtitle}</p>
+        <p className="mt-3 text-[14px] text-[var(--ink3)]">{subtitle}</p>
         <label className="mt-3 flex items-center gap-2 rounded-xl border px-3 py-2 text-[15px]">
           £
           <input
@@ -1633,7 +1633,7 @@ function AmountEditSheet({
             inputMode="decimal"
           />
         </label>
-        <p className="mt-2 text-[12px] text-ios-muted">Original: {money(originalAmount)}</p>
+        <p className="mt-2 text-[12px] text-[var(--ink3)]">Original: {money(originalAmount)}</p>
       </div>
     </div>
   )
@@ -1674,7 +1674,7 @@ function ExtraForm({
   return (
     <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/40 p-4 sm:items-center">
       <form
-        className="max-h-[90vh] w-full max-w-lg space-y-3 overflow-y-auto rounded-2xl bg-[#F2F2F7] p-5"
+        className="max-h-[90vh] w-full max-w-lg space-y-3 overflow-y-auto rounded-2xl bg-[var(--soft)] p-5"
         onSubmit={(event) => {
           event.preventDefault()
           if (value == null || !canSave) return
@@ -1714,22 +1714,22 @@ function ExtraForm({
             Cancel
           </button>
           <p className="text-[17px] font-semibold">{mode === 'priceWork' ? 'Add Price Work' : 'Add Expense'}</p>
-          <button type="submit" disabled={!canSave} className="text-[15px] font-semibold text-[#007AFF] disabled:text-ios-muted">
+          <button type="submit" disabled={!canSave} className="text-[15px] font-semibold text-[#007AFF] disabled:text-[var(--ink3)]">
             {mode === 'expense' ? 'Add expense' : 'Add price work'}
           </button>
         </div>
         <div className="space-y-0 overflow-hidden rounded-2xl bg-white px-4">
-          <label className="block border-b border-[#E5E5EA] py-3 text-[11px] font-medium uppercase tracking-[0.4px] text-ios-muted">
+          <label className="block border-b border-[#E5E5EA] py-3 text-[11px] font-medium uppercase tracking-[0.4px] text-[var(--ink3)]">
             {mode === 'expense' ? 'Expense name' : 'Price work name'}
-            <input value={title} onChange={(e) => setTitle(e.target.value)} className="mt-1 w-full border-0 p-0 text-[14px] font-medium text-ios-ink outline-none" />
+            <input value={title} onChange={(e) => setTitle(e.target.value)} className="mt-1 w-full border-0 p-0 text-[14px] font-medium text-[var(--ink)] outline-none" />
           </label>
-          <label className="block border-b border-[#E5E5EA] py-3 text-[11px] font-medium uppercase tracking-[0.4px] text-ios-muted">
+          <label className="block border-b border-[#E5E5EA] py-3 text-[11px] font-medium uppercase tracking-[0.4px] text-[var(--ink3)]">
             Description
-            <textarea value={details} onChange={(e) => setDetails(e.target.value)} className="mt-1 min-h-[72px] w-full border-0 p-0 text-[14px] text-ios-ink outline-none" />
+            <textarea value={details} onChange={(e) => setDetails(e.target.value)} className="mt-1 min-h-[72px] w-full border-0 p-0 text-[14px] text-[var(--ink)] outline-none" />
           </label>
-          <label className="block border-b border-[#E5E5EA] py-3 text-[11px] font-medium uppercase tracking-[0.4px] text-ios-muted">
+          <label className="block border-b border-[#E5E5EA] py-3 text-[11px] font-medium uppercase tracking-[0.4px] text-[var(--ink3)]">
             Job number
-            <input value={jobNumber} onChange={(e) => setJobNumber(e.target.value)} className="mt-1 w-full border-0 p-0 text-[14px] font-medium text-ios-ink outline-none" />
+            <input value={jobNumber} onChange={(e) => setJobNumber(e.target.value)} className="mt-1 w-full border-0 p-0 text-[14px] font-medium text-[var(--ink)] outline-none" />
           </label>
           {jobSuggestions.length > 0 ? (
             <div className="flex flex-wrap gap-2 py-2">
@@ -1745,19 +1745,19 @@ function ExtraForm({
               ))}
             </div>
           ) : null}
-          <label className="block py-3 text-[11px] font-medium uppercase tracking-[0.4px] text-ios-muted">
+          <label className="block py-3 text-[11px] font-medium uppercase tracking-[0.4px] text-[var(--ink3)]">
             Amount
-            <input value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="£0.00" inputMode="decimal" className="mt-1 w-full border-0 p-0 text-[14px] font-medium text-ios-ink outline-none" required />
+            <input value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="£0.00" inputMode="decimal" className="mt-1 w-full border-0 p-0 text-[14px] font-medium text-[var(--ink)] outline-none" required />
           </label>
         </div>
         <div className="overflow-hidden rounded-2xl bg-white px-4 py-3">
-          <label className="block text-[13px] font-medium text-ios-ink">
+          <label className="block text-[13px] font-medium text-[var(--ink)]">
             {mode === 'expense' ? 'Date' : 'Start date'}
-            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="mt-1 w-full rounded-lg border px-3 py-2 text-[15px] text-ios-ink" />
+            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="mt-1 w-full rounded-lg border px-3 py-2 text-[15px] text-[var(--ink)]" />
           </label>
           {mode === 'priceWork' ? (
             <>
-              <label className="mt-3 flex items-center justify-between text-[13px] font-medium text-ios-ink">
+              <label className="mt-3 flex items-center justify-between text-[13px] font-medium text-[var(--ink)]">
                 Add end date
                 <input type="checkbox" checked={includeEndDate} onChange={(e) => setIncludeEndDate(e.target.checked)} />
               </label>
@@ -1769,9 +1769,9 @@ function ExtraForm({
         </div>
         {mode === 'priceWork' ? (
           <div className="overflow-hidden rounded-2xl bg-white px-4 py-3">
-            <label className="block text-[11px] font-medium uppercase tracking-[0.4px] text-ios-muted">
+            <label className="block text-[11px] font-medium uppercase tracking-[0.4px] text-[var(--ink3)]">
               Manager who agreed this
-              <input value={agreedManagerName} onChange={(e) => setAgreedManagerName(e.target.value)} className="mt-1 w-full border-0 p-0 text-[14px] font-medium text-ios-ink outline-none" />
+              <input value={agreedManagerName} onChange={(e) => setAgreedManagerName(e.target.value)} className="mt-1 w-full border-0 p-0 text-[14px] font-medium text-[var(--ink)] outline-none" />
             </label>
             {managerSuggestions.length > 0 ? (
               <div className="mt-2 flex flex-wrap gap-2">
@@ -1784,7 +1784,7 @@ function ExtraForm({
             ) : null}
           </div>
         ) : (
-          <label className="flex items-center gap-3 rounded-2xl bg-white px-4 py-3 text-[13px] font-medium text-ios-ink">
+          <label className="flex items-center gap-3 rounded-2xl bg-white px-4 py-3 text-[13px] font-medium text-[var(--ink)]">
             <span className="text-[#007AFF]">📎</span>
             <span>Upload receipt</span>
             <span className={`ml-auto text-[12px] ${receiptName ? 'text-[#007AFF]' : 'text-red-600'}`}>{receiptName || 'Required'}</span>

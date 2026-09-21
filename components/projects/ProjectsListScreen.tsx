@@ -92,7 +92,7 @@ export function ProjectsListScreen() {
   if (loading && projects.length === 0) {
     return (
       <div className="flex h-64 items-center justify-center">
-        <p className="text-sm text-ios-muted">Loading projects...</p>
+        <p className="text-sm text-[var(--ink3)]">Loading projects...</p>
       </div>
     )
   }
@@ -154,7 +154,7 @@ export function ProjectsListScreen() {
           </div>
 
           {emptySearch ? (
-            <p className="py-10 text-center text-[15px] text-ios-muted">No projects match your search.</p>
+            <p className="py-10 text-center text-[15px] text-[var(--ink3)]">No projects match your search.</p>
           ) : emptyDueToFilter ? (
             <EmptyState
               title="No projects found"

@@ -17,7 +17,7 @@ const TRACK_SPAN = TRACK_END - TRACK_START
 export function myScheduleStripeClass(type?: ManagerLocationType | string): string {
   switch (type) {
     case 'office':
-      return 'bg-[#185FA5]'
+      return 'bg-[var(--blue)]'
     case 'working_from_home':
       return 'bg-[#5349B7]'
     case 'site_survey':
@@ -87,14 +87,14 @@ export function MyScheduleStripeRow({
   onDelete?: () => void
 }) {
   return (
-    <div className="overflow-hidden rounded-xl border border-ios-border bg-white">
+    <div className="overflow-hidden rounded-xl border border-[var(--line)] bg-white">
       <div className="flex items-stretch">
         <div className={`w-1 shrink-0 ${stripeClass}`} />
         <div className="min-w-0 flex-1 p-3">
           <div className="flex items-start gap-2.5">
             <div className="min-w-0 flex-1">
-              <p className="text-[15px] font-semibold text-ios-ink">{title}</p>
-              <p className="mt-0.5 text-[12px] font-medium text-ios-muted">{subtitle}</p>
+              <p className="text-[15px] font-semibold text-[var(--ink)]">{title}</p>
+              <p className="mt-0.5 text-[12px] font-medium text-[var(--ink3)]">{subtitle}</p>
             </div>
             {otChip ? (
               <span className="shrink-0 rounded-full bg-[#FAEED9] px-2 py-1 text-[10px] font-semibold text-[#854F0B]">
@@ -105,13 +105,13 @@ export function MyScheduleStripeRow({
           {onEdit || onDelete ? (
             <div className="mt-2 flex items-center">
               {onEdit ? (
-                <button type="button" onClick={onEdit} className="text-[13px] font-semibold text-[#185FA5]">
+                <button type="button" onClick={onEdit} className="text-[13px] font-semibold text-[var(--blue)]">
                   Edit
                 </button>
               ) : null}
               <span className="flex-1" />
               {onDelete ? (
-                <button type="button" onClick={onDelete} className="grid h-8 w-8 place-items-center text-ios-muted" aria-label="Delete booking">
+                <button type="button" onClick={onDelete} className="grid h-8 w-8 place-items-center text-[var(--ink3)]" aria-label="Delete booking">
                   <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M6 7h12M9 7V5h6v2m-7 4v8m4-8v8m4-8v8M8 7l1 12h6l1-12" />
                   </svg>
@@ -144,11 +144,11 @@ export function MyScheduleTotalHoursCard({
   const ticks = ['6:00', '9:00', '12:00', '15:00', '18:00']
 
   return (
-    <div className="rounded-2xl border border-ios-border bg-white p-3.5">
+    <div className="card p-3.5">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-[14px] font-medium text-ios-ink">Total hours</p>
-          <p className="text-[11px] text-ios-muted">
+          <p className="text-[14px] font-medium text-[var(--ink)]">Total hours</p>
+          <p className="text-[11px] text-[var(--ink3)]">
             Standard {policy.standardDayStart}–{policy.standardDayEnd} · {overviewFormatHours(std)} hrs
           </p>
         </div>
@@ -156,8 +156,8 @@ export function MyScheduleTotalHoursCard({
           <span className="rounded-full bg-[#FAEED9] px-2 py-1 text-[10px] font-semibold text-[#9E3B12]">Annual Leave</span>
         ) : (
           <div className="text-right">
-            <p className="text-[18px] font-medium text-ios-ink">{overviewFormatHours(paid)}</p>
-            <p className="text-[10px] font-medium text-ios-muted">hrs paid</p>
+            <p className="text-[18px] font-medium text-[var(--ink)]">{overviewFormatHours(paid)}</p>
+            <p className="text-[10px] font-medium text-[var(--ink3)]">hrs paid</p>
             {ot > 0.05 ? (
               <p className="text-[10px] font-semibold text-[#854F0B]">
                 OT {formatOvertimeEquation(ot, policy.weekdayOutsideStandardMultiplier || 1.5)}
@@ -191,7 +191,7 @@ export function MyScheduleTotalHoursCard({
       </div>
       <div className="mt-1.5 flex">
         {ticks.map((tick) => (
-          <span key={tick} className="flex-1 text-center text-[9px] text-ios-muted">
+          <span key={tick} className="flex-1 text-center text-[9px] text-[var(--ink3)]">
             {tick}
           </span>
         ))}

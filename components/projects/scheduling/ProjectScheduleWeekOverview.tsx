@@ -354,7 +354,7 @@ export function ProjectScheduleWeekOverview({
 
   return (
     <div className="space-y-4">
-      <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+      <div className="card pad">
         <p className="text-xs font-bold text-blue-600 truncate">
           {project.jobNumber} {project.siteName}
         </p>
@@ -454,7 +454,7 @@ export function ProjectScheduleWeekOverview({
             </Link>
           </div>
         ) : (
-          <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="overflow-x-auto card shadow-sm">
             <div
               className="min-w-[720px]"
               style={{

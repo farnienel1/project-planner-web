@@ -88,7 +88,7 @@ export function SmallWorksListScreen() {
   if (loading && smallWorks.length === 0) {
     return (
       <div className="flex h-64 items-center justify-center">
-        <p className="text-sm text-ios-muted">Loading small works...</p>
+        <p className="text-sm text-[var(--ink3)]">Loading small works...</p>
       </div>
     )
   }
@@ -150,7 +150,7 @@ export function SmallWorksListScreen() {
           </div>
 
           {emptySearch ? (
-            <p className="py-10 text-center text-[15px] text-ios-muted">No small works match your search.</p>
+            <p className="py-10 text-center text-[15px] text-[var(--ink3)]">No small works match your search.</p>
           ) : emptyDueToFilter ? (
             <EmptyState
               title="No small works found"

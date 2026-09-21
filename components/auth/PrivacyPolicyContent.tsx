@@ -15,8 +15,8 @@ export function PrivacyPolicyContent() {
   return (
     <div className="mx-auto max-w-3xl space-y-6 px-5 py-8">
       <header>
-        <h1 className="text-[28px] font-semibold tracking-tight text-ios-ink lg:text-[32px]">Legal policies</h1>
-        <p className="mt-2 text-sm text-ios-muted">
+        <h1 className="text-[28px] font-semibold tracking-tight text-[var(--ink)] lg:text-[32px]">Legal policies</h1>
+        <p className="mt-2 text-sm text-[var(--ink3)]">
           {LEGAL_ENTITY.name} · Version {LEGAL_ENTITY.version} · Effective {LEGAL_ENTITY.effectiveDate}
         </p>
         <p className="mt-3 text-[15px] leading-relaxed text-slate-700">
@@ -32,7 +32,7 @@ export function PrivacyPolicyContent() {
             type="button"
             onClick={() => setActive(row.id)}
             className={`rounded-full px-4 py-2 text-[13px] font-semibold ${
-              active === row.id ? 'bg-[#185FA5] text-white' : 'bg-slate-100 text-slate-700'
+              active === row.id ? 'bg-[var(--blue)] text-white' : 'bg-slate-100 text-slate-700'
             }`}
           >
             {row.title}
@@ -45,7 +45,7 @@ export function PrivacyPolicyContent() {
         <LegalDocumentBody document={document} />
       </article>
 
-      <p className="text-[13px] text-ios-muted">
+      <p className="text-[13px] text-[var(--ink3)]">
         Questions: {LEGAL_ENTITY.privacyEmail}. Registered office: {LEGAL_ENTITY.registeredOffice}.
       </p>
     </div>

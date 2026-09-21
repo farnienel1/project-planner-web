@@ -242,7 +242,7 @@ export function ProjectForm({ initial, collection = 'projects', backHref, onSave
   }
 
   return (
-    <form onSubmit={handleSubmit} noValidate className="space-y-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+    <form onSubmit={handleSubmit} noValidate className="card pad stack">
       {error && <ErrorBanner message={error} />}
 
       <div className="grid gap-4 md:grid-cols-2">

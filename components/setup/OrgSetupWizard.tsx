@@ -769,7 +769,7 @@ export function OrgSetupWizard() {
           {step === 'review' && (
             <div className="mt-8 space-y-5">
               {!creatingAdditionalOrg && (
-                <div className="rounded-2xl border border-slate-200 bg-white p-5">
+                <div className="card p-5">
                   <p className="text-sm font-semibold text-slate-800">
                     Confirm the password for {email || 'this email'} so Activate can sign in to the existing account if
                     one already exists.

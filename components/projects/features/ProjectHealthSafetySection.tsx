@@ -437,9 +437,9 @@ export function ProjectHealthSafetySection({
       {tab === 'hub' && (
         <div className="space-y-4">
           {isManager && (
-            <div className="rounded-2xl bg-[#E6F1FB] px-4 py-3">
-              <p className="text-sm font-semibold text-[#185FA5]">Manager access</p>
-              <p className="text-xs text-[#185FA5]/80">Add, edit, issue &amp; track all H&amp;S records</p>
+            <div className="rounded-2xl bg-[var(--blue-t)] px-4 py-3">
+              <p className="text-sm font-semibold text-[var(--blue)]">Manager access</p>
+              <p className="text-xs text-[var(--blue)]/80">Add, edit, issue &amp; track all H&amp;S records</p>
             </div>
           )}
           {myAssigned.length > 0 && (
@@ -871,7 +871,7 @@ export function ProjectHealthSafetySection({
               <button
                 type="button"
                 onClick={() => setUploadKeyPoints((prev) => [...prev, ''])}
-                className="text-xs font-semibold text-[#185FA5]"
+                className="text-xs font-semibold text-[var(--blue)]"
               >
                 + Add point
               </button>

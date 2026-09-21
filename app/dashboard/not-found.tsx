@@ -2,7 +2,7 @@ import Link from 'next/link'
 
 export default function DashboardNotFound() {
   return (
-    <div className="flex min-h-[50vh] flex-col items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-16 text-center shadow-sm">
+    <div className="flex min-h-[50vh] flex-col items-center justify-center empty card pad px-6 py-16 text-center shadow-sm">
       <p className="text-6xl font-bold text-slate-200">404</p>
       <h1 className="mt-4 text-2xl font-bold text-slate-900">Page not found</h1>
       <p className="mt-2 max-w-md text-sm text-slate-500">

@@ -84,17 +84,17 @@ export default function NotificationsPage() {
               <article key={row.id} className="ritem" style={{ cursor: href ? 'pointer' : 'default' }}>
                 {href ? (
                   <Link href={href} className="block">
-                    <h2 className="text-[17px] font-semibold text-[#185FA5]">{row.title}</h2>
-                    <p className="mt-1 whitespace-pre-wrap text-[15px] text-ios-muted">{row.message}</p>
-                    <p className="mt-2 text-[12px] font-semibold text-[#185FA5]">Open timesheet</p>
+                    <h2 className="text-[17px] font-semibold text-[var(--blue)]">{row.title}</h2>
+                    <p className="mt-1 whitespace-pre-wrap text-[15px] text-[var(--ink3)]">{row.message}</p>
+                    <p className="mt-2 text-[12px] font-semibold text-[var(--blue)]">Open timesheet</p>
                   </Link>
                 ) : (
                   <>
                     <h2 className="text-[17px] font-semibold">{row.title}</h2>
-                    <p className="mt-1 whitespace-pre-wrap text-[15px] text-ios-muted">{row.message}</p>
+                    <p className="mt-1 whitespace-pre-wrap text-[15px] text-[var(--ink3)]">{row.message}</p>
                   </>
                 )}
-                <p className="mt-2 text-[12px] text-ios-placeholder">
+                <p className="mt-2 text-[12px] text-[var(--ink3)]">
                   {row.createdAt.toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })}
                 </p>
               </article>

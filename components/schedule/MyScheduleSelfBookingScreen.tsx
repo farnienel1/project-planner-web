@@ -344,7 +344,7 @@ export function MyScheduleSelfBookingScreen({
   }) {
     const open = openSection === id
     return (
-      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+      <div className="overflow-hidden card">
         <button
           type="button"
           onClick={() => {
@@ -374,7 +374,7 @@ export function MyScheduleSelfBookingScreen({
     return (
       <div className="mx-auto max-w-3xl pb-16">
         <h1 className="text-[28px] font-semibold tracking-tight">My Schedule</h1>
-        <p className="mt-1 text-[14px] text-ios-muted">Opening your week…</p>
+        <p className="mt-1 text-[14px] text-[var(--ink3)]">Opening your week…</p>
       </div>
     )
   }
@@ -382,7 +382,7 @@ export function MyScheduleSelfBookingScreen({
   return (
     <div className="mx-auto max-w-3xl pb-16">
       <h1 className="text-[28px] font-semibold tracking-tight">My Schedule</h1>
-      <p className="mt-1 mb-5 text-[14px] text-ios-muted">
+      <p className="mt-1 mb-5 text-[14px] text-[var(--ink3)]">
         Book yourself into a site, the office, or a custom location — AM, PM, full day or custom hours.
       </p>
 
@@ -398,7 +398,7 @@ export function MyScheduleSelfBookingScreen({
         </div>
       )}
 
-      <div className="mb-3 flex items-center justify-between rounded-2xl border border-slate-200 bg-white px-3 py-2.5">
+      <div className="mb-3 flex items-center justify-between card px-3 py-2.5">
         <button
           type="button"
           onClick={() => setWeekStart((w) => addDays(w, -7))}
@@ -549,15 +549,15 @@ export function MyScheduleSelfBookingScreen({
       <div className="mt-6 space-y-3">
         <MyScheduleTotalHoursCard bookings={dayBookings} policy={payrollPolicy} />
         <div className="flex items-center justify-between px-1">
-          <span className="text-[11px] font-medium uppercase tracking-[0.4px] text-ios-muted">
+          <span className="text-[11px] font-medium uppercase tracking-[0.4px] text-[var(--ink3)]">
             {format(selectedDate, 'EEEE, d MMM')}
           </span>
           {dayBookings.length > 0 ? (
-            <span className="text-[11px] text-ios-muted">{dayBookings.length} booked</span>
+            <span className="text-[11px] text-[var(--ink3)]">{dayBookings.length} booked</span>
           ) : null}
         </div>
         {dayBookings.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-ios-border bg-white py-10 text-center text-[14px] text-ios-muted">
+          <div className="rounded-2xl border border-dashed border-[var(--line)] bg-white py-10 text-center text-[14px] text-[var(--ink3)]">
             Nothing booked for this day yet.
           </div>
         ) : (

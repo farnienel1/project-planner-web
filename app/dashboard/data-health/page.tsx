@@ -106,19 +106,19 @@ export default function DataHealthPage() {
   }, [organization?.id, user])
 
   if (!isDev) {
-    return <p className="text-sm text-ios-muted">Data health is only available in development builds.</p>
+    return <p className="text-sm text-[var(--ink3)]">Data health is only available in development builds.</p>
   }
 
   return (
     <div className="space-y-4">
-      <p className="rounded-xl bg-ios-chip-amber px-4 py-3 text-sm text-ios-icon-amber">
+      <p className="banner" data-hue="warn">
         Development only. Reads up to 25 documents per collection. Never writes.
       </p>
-      {error ? <p className="text-sm text-ios-icon-red">{error}</p> : null}
-      {running ? <p className="text-sm text-ios-muted">Sampling collections…</p> : null}
-      <div className="overflow-hidden rounded-[16px] border border-ios-border bg-ios-card">
+      {error ? <p className="banner" data-hue="red">{error}</p> : null}
+      {running ? <p className="text-sm text-[var(--ink3)]">Sampling collections…</p> : null}
+      <div className="card overflow-hidden">
         <table className="w-full text-left text-sm">
-          <thead className="bg-black/[0.03] text-[12px] uppercase tracking-wide text-ios-muted">
+          <thead className="bg-black/[0.03] text-[12px] uppercase tracking-wide text-[var(--ink3)]">
             <tr>
               <th className="px-4 py-2">Collection</th>
               <th className="px-4 py-2">Sampled</th>
@@ -129,12 +129,12 @@ export default function DataHealthPage() {
           </thead>
           <tbody>
             {rows.map((row) => (
-              <tr key={row.collection} className="border-t border-ios-border align-top">
+              <tr key={row.collection} className="border-t border-[var(--line)] align-top">
                 <td className="px-4 py-2 font-medium">{row.collection}</td>
                 <td className="px-4 py-2">{row.sampled}</td>
                 <td className="px-4 py-2">{row.ok}</td>
                 <td className="px-4 py-2">{row.skipped}</td>
-                <td className="px-4 py-2 text-xs text-ios-muted">
+                <td className="px-4 py-2 text-xs text-[var(--ink3)]">
                   {row.examples.length === 0 ? '—' : row.examples.map((ex) => <div key={ex}>{ex}</div>)}
                 </td>
               </tr>

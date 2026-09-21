@@ -47,7 +47,7 @@ function badgesFor(user: User, showAdminBadge: boolean): Badge[] {
   if (user.isSuperAdmin || user.permissions.adminAccess) {
     out.push({ label: 'Administrator', cls: 'bg-[#FDECF1] text-[#E11D48]' })
   } else if (user.permissions.manager) {
-    out.push({ label: 'Manager', cls: 'bg-[#E6F1FB] text-[#185FA5]' })
+    out.push({ label: 'Manager', cls: 'bg-[var(--blue-t)] text-[var(--blue)]' })
   } else if (user.permissions.operativeMode) {
     out.push({ label: 'Operative', cls: 'bg-[#E9F9EF] text-[#15A34A]' })
   }
@@ -272,7 +272,7 @@ export function ManageUsersScreen() {
       </div>
 
       {filtered.length === 0 ? (
-        <div className="flex flex-col items-center justify-center rounded-2xl border border-slate-200 bg-white py-16 text-center">
+        <div className="flex flex-col items-center justify-center card py-16 text-center">
           <p className="text-base font-semibold text-slate-600">
             No {segment} {section.toLowerCase()}
           </p>
@@ -351,7 +351,7 @@ export function ManageUsersScreen() {
                         disabled={busy}
                         onClick={() => resendInvite(user)}
                         title="Resend sign-up email"
-                        className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#E6F1FB] text-[#2563EB] hover:brightness-95 disabled:opacity-50"
+                        className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--blue-t)] text-[#2563EB] hover:brightness-95 disabled:opacity-50"
                       >
                         <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
                           <path d="M1.5 8.67v8.58a3 3 0 0 0 3 3h15a3 3 0 0 0 3-3V8.67l-8.928 5.493a3 3 0 0 1-3.144 0L1.5 8.67Z" />

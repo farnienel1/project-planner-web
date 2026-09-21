@@ -44,7 +44,7 @@ function Widget({
 }) {
   const inner = (
     <div
-      className={`rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition${
+      className={`card pad transition${
         link ? ' cursor-pointer hover:border-indigo-300 hover:shadow-md group' : ''
       }${wide ? ' col-span-2' : ''}`}
     >

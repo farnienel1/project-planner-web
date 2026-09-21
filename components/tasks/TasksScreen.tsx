@@ -398,7 +398,7 @@ export function TasksScreen() {
         </div>
 
         {searchedTasks.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-10 text-center">
+          <div className="empty card pad p-10 text-center">
             <p className="text-sm font-medium text-slate-500">
               {statusFilter === 'todo'
                 ? 'No to do tasks — nice work!'
@@ -432,7 +432,7 @@ export function TasksScreen() {
               return (
                 <div
                   key={group.projectId}
-                  className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"
+                  className="overflow-hidden card shadow-sm"
                 >
                   <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3">
                     <div>
