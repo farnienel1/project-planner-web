@@ -205,4 +205,11 @@ test('Email and export PDF uses raw payroll, skips declined extras, and uses rev
     true
   )
   assert.equal(invoiceLinesTotal(generated), 492)
+  const parking = generated.find((line) => line.projectName === 'Expense')
+  assert.equal(parking?.jobNumber, '—')
+  assert.equal(parking?.details, 'Parking · 0h · rate not set')
+  const priceWork = exported.find((line) => line.projectName === 'Price work')
+  assert.equal(priceWork?.projectName, 'Price work')
+  assert.equal(priceWork?.details, 'Extra first fix · 0h · rate not set')
+  assert.equal(priceWork?.amount, 60)
 })

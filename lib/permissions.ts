@@ -348,9 +348,11 @@ export function canAccessOperativeTimesheets(
   const managerLike =
     hasAdminAccess(user) || flag(user, 'manager') || user.isSuperAdmin || user.role === 'manager' || user.role === 'admin'
   if (!managerLike) return false
-  if (hasAdminAccess(user) || user.isSuperAdmin) return true
   if (profileLoading) return true
-  if (flag(user, 'operatives')) return true
+  const hasAnyActiveOperative = orgUsers.some(
+    (member) => Boolean(member?.permissions?.operativeMode) && member.isActive !== false
+  )
+  if (hasAdminAccess(user) || user.isSuperAdmin || user.role === 'admin') return hasAnyActiveOperative
   return orgUsers.some((member) => {
     if (!member || member.isActive === false) return false
     if (!member.permissions?.operativeMode) return false
@@ -364,9 +366,13 @@ export function canAccessOperativeTimesheets(
   })
 }
 
-export function shouldShowTimesheetsDisabledMessage(user: PermissionUser): boolean {
+/** iOS UserStore.shouldShowTimesheetsDisabledMessage — PAYE with no remaining My Timesheets. */
+export function shouldShowTimesheetsDisabledMessage(
+  user: PermissionUser,
+  hasMyTimesheets = canAccessMyTimesheets(user)
+): boolean {
   if (!user) return false
-  if (canAccessMyTimesheets(user)) return false
+  if (hasMyTimesheets) return false
   return isTimesheetEligibleRole(user)
 }
 

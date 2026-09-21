@@ -70,6 +70,57 @@ export function isTimesheetAgreedManagerCandidate(user: User): boolean {
   )
 }
 
+/** iOS TimesheetMoneyEntrySheet jobSuggestions — unique job numbers, skip exact query. */
+export function extraFormJobSuggestions(
+  jobs: Array<{ jobNumber: string; siteName: string }>,
+  query: string
+): Array<{ jobNumber: string; siteName: string }> {
+  const needle = query.trim().toLowerCase()
+  if (!needle) return []
+  const seen = new Set<string>()
+  const matches: Array<{ jobNumber: string; siteName: string }> = []
+  for (const job of jobs) {
+    const number = job.jobNumber.trim()
+    if (!number) continue
+    const key = number.toLowerCase()
+    const haystack = `${number} ${job.siteName}`.toLowerCase()
+    if (!haystack.includes(needle) || key === needle || seen.has(key)) continue
+    seen.add(key)
+    matches.push(job)
+    if (matches.length >= 6) break
+  }
+  return matches
+}
+
+/** iOS TimesheetMoneyEntrySheet managerSuggestions — name + email haystack, unique names. */
+export function extraFormManagerSuggestions(
+  candidates: Array<{ firstName: string; surname: string; email: string }>,
+  query: string
+): string[] {
+  const needle = query.trim().toLowerCase()
+  if (!needle) return []
+  const seen = new Set<string>()
+  const names: string[] = []
+  for (const candidate of candidates) {
+    const name = `${candidate.firstName} ${candidate.surname}`.trim()
+    if (!name) continue
+    const haystack = `${name} ${candidate.firstName} ${candidate.surname} ${candidate.email}`.toLowerCase()
+    if (!haystack.includes(needle) || name.toLowerCase() === needle || seen.has(name.toLowerCase())) continue
+    seen.add(name.toLowerCase())
+    names.push(name)
+    if (names.length >= 6) break
+  }
+  return names
+}
+
+/** iOS TimesheetMoneyEntrySheet receiptName = receipt.{ext} or receipt-uploaded. */
+export function timesheetReceiptStoredName(fileName?: string | null): string {
+  const trimmed = fileName?.trim() || ''
+  const dot = trimmed.lastIndexOf('.')
+  if (dot <= 0 || dot === trimmed.length - 1) return 'receipt-uploaded'
+  return `receipt.${trimmed.slice(dot + 1).toLowerCase()}`
+}
+
 export function reportsToManager(member: User, managerId: string): boolean {
   const ids = [
     ...(member.assignedManagerUserIds || []),
