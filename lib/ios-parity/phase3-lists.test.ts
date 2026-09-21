@@ -71,10 +71,14 @@ function user(partial: Partial<User> & { id: string; email: string }): User {
   } as User
 }
 
-test('estimatedPaidHours uses clock times then slot', () => {
+test('estimatedPaidHours uses named slots ahead of leftover custom clock times', () => {
   assert.equal(estimatedPaidHours({ workStartTime: '08:00', workEndTime: '12:00' }), 4)
   assert.equal(estimatedPaidHours({ timeSlot: 'FULL DAY' }), 8)
   assert.equal(estimatedPaidHours({ timeSlot: 'AM' }), 4)
+  assert.equal(
+    estimatedPaidHours({ timeSlot: 'AM', workStartTime: '07:30', workEndTime: '16:00' }),
+    4
+  )
 })
 
 test('buildDailyOverview groups jobs and weekday unbooked labour', () => {

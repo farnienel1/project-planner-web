@@ -281,7 +281,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     pathname.startsWith('/dashboard/my-qualifications') ||
     pathname.startsWith('/dashboard/job-types') ||
     pathname.startsWith('/dashboard/materials') ||
-    pathname.startsWith('/dashboard/sub-contractors')
+    pathname.startsWith('/dashboard/sub-contractors') ||
+    pathname.startsWith('/dashboard/users')
 
   const persistNavigate = (next: NavigateConfig) => {
     setNavigateConfig(next)
