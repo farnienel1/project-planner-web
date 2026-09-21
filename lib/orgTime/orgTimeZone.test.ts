@@ -1,14 +1,27 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { ianaTimeZoneForCountry } from './orgTimeZone.ts'
+import { COUNTRY_TIME_ZONES, ianaTimeZoneForCountry } from './orgTimeZone.ts'
+import { BANK_HOLIDAY_REGIONS } from '../settings/bankHolidayRegions.ts'
 import { daysInZoneMonth, unixStartOfDayInZone, dayKeyInZone, midnightInZone } from './zoneTime.ts'
 
 test('org origin country maps to an IANA zone; unknown falls back to London', () => {
   assert.equal(ianaTimeZoneForCountry('GB'), 'Europe/London')
   assert.equal(ianaTimeZoneForCountry('ie'), 'Europe/Dublin')
   assert.equal(ianaTimeZoneForCountry('AU'), 'Australia/Sydney')
+  assert.equal(ianaTimeZoneForCountry('JP'), 'Asia/Tokyo')
+  assert.equal(ianaTimeZoneForCountry('GB-SCT'), 'Europe/London')
   assert.equal(ianaTimeZoneForCountry(''), 'Europe/London')
   assert.equal(ianaTimeZoneForCountry('ZZ'), 'Europe/London')
+})
+
+test('every organisation signup region has a mapped zone, not a silent London fallback', () => {
+  const missing = BANK_HOLIDAY_REGIONS.filter((region) => !COUNTRY_TIME_ZONES[region.code])
+  assert.deepEqual(missing, [])
+  for (const region of BANK_HOLIDAY_REGIONS) {
+    const zone = ianaTimeZoneForCountry(region.code)
+    assert.match(zone, /\//, region.code)
+    assert.doesNotThrow(() => new Intl.DateTimeFormat('en-GB', { timeZone: zone }).format(new Date()))
+  }
 })
 
 test('month length is the calendar month in the org zone, not the host UTC month', () => {
