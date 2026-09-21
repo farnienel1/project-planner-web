@@ -95,32 +95,50 @@ export function collectionJobTypeForName(
 }
 
 export async function loadJobTypes(organizationId: string): Promise<string[]> {
-  const snap = await getDoc(
-    doc(db, 'organizations', organizationId, 'settings', ORG_SETTINGS_JOB_TYPES_DOC)
-  )
-  return coerceJobTypeList(snap.data()?.jobTypes)
+  if (!db) return [...DEFAULT_JOB_TYPES]
+  try {
+    const snap = await getDoc(
+      doc(db, 'organizations', organizationId, 'settings', ORG_SETTINGS_JOB_TYPES_DOC)
+    )
+    return coerceJobTypeList(snap.data()?.jobTypes)
+  } catch {
+    return []
+  }
 }
 
-export async function recoverJobTypesFromWork(organizationId: string): Promise<string[]> {
-  const [projectsSnap, smallSnap] = await Promise.all([
-    getDocs(collection(db, 'organizations', organizationId, 'projects')),
-    getDocs(collection(db, 'organizations', organizationId, 'smallWorks')),
-  ])
-  const recovered = jobTypesFromWorkRecords(
-    [...projectsSnap.docs, ...smallSnap.docs].map((entry) => {
+async function loadWorkJobTypeRecords(
+  organizationId: string
+): Promise<Array<{ jobType?: string; customJobType?: string }>> {
+  if (!db) return []
+  try {
+    const [projectsSnap, smallSnap] = await Promise.all([
+      getDocs(collection(db, 'organizations', organizationId, 'projects')),
+      getDocs(collection(db, 'organizations', organizationId, 'smallWorks')),
+    ])
+    return [...projectsSnap.docs, ...smallSnap.docs].map((entry) => {
       const data = entry.data() as Record<string, unknown>
       return {
         jobType: typeof data.jobType === 'string' ? data.jobType : '',
         customJobType: typeof data.customJobType === 'string' ? data.customJobType : '',
       }
     })
-  )
+  } catch {
+    return []
+  }
+}
+
+export async function recoverJobTypesFromWork(organizationId: string): Promise<string[]> {
   const stored = await loadJobTypes(organizationId)
+  const recovered = jobTypesFromWorkRecords(await loadWorkJobTypeRecords(organizationId))
   const merged = mergeJobTypeCatalogues(stored, recovered)
   if (!jobTypeListsEqual(stored, merged)) {
-    await persistJobTypes(organizationId, merged)
+    try {
+      await persistJobTypes(organizationId, merged)
+    } catch {
+      // Read-only accounts still get the restored list in the UI.
+    }
   }
-  return merged
+  return merged.length > 0 ? merged : [...DEFAULT_JOB_TYPES]
 }
 
 /** iOS overwrites the whole settings/jobTypes document — no merge. Empty catalogues are restored from projects on load. */

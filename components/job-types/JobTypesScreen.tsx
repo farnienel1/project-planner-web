@@ -11,6 +11,7 @@ import { useAuthStore } from '@/lib/stores/authStore'
 import { canManageJobTypes } from '@/lib/permissions'
 import { EmptyState, IosFormModal, PageHeader } from '@/components/ios/primitives'
 import { recoverJobTypesFromWork, saveJobTypes, validateJobTypeName } from '@/lib/jobTypes/jobTypesStorage'
+import { DEFAULT_JOB_TYPES } from '@/types'
 
 export function JobTypesScreen() {
   const router = useRouter()
@@ -36,7 +37,10 @@ export function JobTypesScreen() {
         if (!cancelled) setJobTypes([...recovered].sort((a, b) => a.localeCompare(b)))
       })
       .catch((err: unknown) => {
-        if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load job types')
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : 'Failed to load job types')
+          setJobTypes([...DEFAULT_JOB_TYPES])
+        }
       })
       .finally(() => {
         if (!cancelled) setLoading(false)

@@ -28,6 +28,10 @@ import {
   userHasLineManager,
 } from '@/lib/timesheets/timesheetApprovalPolicy'
 import {
+  notifyTimesheetPendingManagerSignoff,
+  notifyTimesheetSignedByManager,
+} from '@/lib/timesheets/timesheetNotifications'
+import {
   effectiveExpenseAmount,
   effectivePayrollAmount,
   effectivePriceWorkAmount,
@@ -231,6 +235,18 @@ export function TimesheetPeriodPage({
         subjectUser
       )
       await persist(next)
+      if (organization?.id && requiresLineManagerCounterSign(subjectUser)) {
+        try {
+          await notifyTimesheetPendingManagerSignoff({
+            organizationId: organization.id,
+            signedByUser: subjectUser,
+            weekStart: periodStart,
+            timeZone,
+          })
+        } catch {
+          // Signature is already saved; inbox delivery is best-effort like iOS Task {}.
+        }
+      }
       setSignOpen(false)
       setSignature(null)
     } catch (err: unknown) {
@@ -256,6 +272,21 @@ export function TimesheetPeriodPage({
         managerSignedByUserId: viewer.id,
         managerSignatureImageBase64: signature,
       })
+      if (organization?.id) {
+        try {
+          await notifyTimesheetSignedByManager({
+            organizationId: organization.id,
+            subjectUser,
+            signedByName: name,
+            signedByUserId: viewer.id,
+            weekStart: periodStart,
+            weekEnd: periodEnd,
+            timeZone,
+          })
+        } catch {
+          // Counter-sign is already saved; inbox delivery is best-effort.
+        }
+      }
       setManagerSignOpen(false)
       setSignature(null)
     } catch (err: unknown) {
@@ -698,7 +729,7 @@ function PayrollLine({
       <div className="min-w-0 flex-1">
         <p className={`text-[15px] font-bold ${removed ? 'line-through' : ''}`}>{abbreviatedDate(line.date, timeZone)}</p>
         <p className={`text-[13px] text-ios-muted ${removed ? 'line-through' : ''}`}>
-          {line.jobNumber} {line.projectName}
+          {line.jobNumber} · {line.projectName}
         </p>
         <p className={`text-[12px] text-ios-muted ${removed ? 'line-through' : ''}`}>{line.details}</p>
         <p className={`text-[12px] font-medium ${orange ? 'text-orange-500' : ''} ${removed ? 'line-through' : ''}`}>

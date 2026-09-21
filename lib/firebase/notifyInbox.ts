@@ -13,18 +13,25 @@ export async function saveInboxNotification(input: {
   type: string
   title: string
   message: string
+  userId?: string | null
   relatedId?: string | null
   requiresPermission?: string | null
+  deepLinkUserId?: string | null
+  deepLinkWeekStart?: Date | null
+  id?: string
 }): Promise<void> {
   if (!db) return
-  const id = newUppercaseUuid()
+  const id = input.id || newUppercaseUuid()
   const payload = serializeNotification({
     organizationId: input.organizationId,
     type: input.type,
     title: input.title,
     message: input.message,
+    userId: input.userId ?? null,
     relatedId: input.relatedId ?? null,
     requiresPermission: input.requiresPermission ?? null,
+    deepLinkUserId: input.deepLinkUserId ?? null,
+    deepLinkWeekStart: input.deepLinkWeekStart ?? null,
     isRead: false,
     createdAt: new Date(),
   })

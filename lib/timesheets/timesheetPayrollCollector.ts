@@ -95,7 +95,10 @@ export function timesheetRateAnnotation(line: TimesheetPayrollLineItem): string 
 }
 
 export function timesheetHoursRateLine(line: TimesheetPayrollLineItem): string {
-  return `${formatTimesheetHours(line.paidHours)}h · ${timesheetRateAnnotation(line)}`
+  const hours = `${formatTimesheetHours(line.paidHours)}h`
+  const rate = timesheetRateAnnotation(line)
+  if (line.isOvertimeLine) return `${hours} · overtime ${rate}`
+  return `${hours} · ${rate}`
 }
 
 export function collectTimesheetPayroll({
