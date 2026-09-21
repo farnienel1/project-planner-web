@@ -203,6 +203,8 @@ export const useMaterialProjectStore = create<MaterialProjectState>((set, get) =
 
   saveMaterialLine: async (organizationId, line) => {
     const id = line.id || newUuid()
+    const existing = get().materials.find((row) => row.id === id)
+    const isUpdate = Boolean(existing)
     const normalizedDate = startOfDay(line.date)
     const addedByName = line.addedBy.trim()
     const payload: Record<string, unknown> = {
@@ -213,26 +215,36 @@ export const useMaterialProjectStore = create<MaterialProjectState>((set, get) =
       name: line.material.trim(),
       addedBy: addedByName,
       addedByUserId: line.addedByUserId,
-      addedAt: Timestamp.now(),
       projectId: line.projectId,
       date: Timestamp.fromDate(normalizedDate),
       status: line.status,
-      createdAt: Timestamp.now(),
       updatedAt: Timestamp.now(),
+      catalogueItemId: line.catalogueItemId || null,
+      brand: line.brand?.trim() || null,
+      productCode: line.productCode?.trim() || null,
+      category: line.category?.trim() || null,
+      notes: line.notes?.trim() || null,
+      size: line.size?.trim() || null,
+      length: line.length?.trim() || null,
+      lengthUnit: line.length?.trim() ? line.lengthUnit || null : null,
+      websiteURL: line.websiteURL?.trim() || null,
     }
-    if (line.catalogueItemId) payload.catalogueItemId = line.catalogueItemId
-    if (line.brand?.trim()) payload.brand = line.brand.trim()
-    if (line.productCode?.trim()) payload.productCode = line.productCode.trim()
-    if (line.category?.trim()) payload.category = line.category.trim()
-    if (line.notes?.trim()) payload.notes = line.notes.trim()
-    if (line.size?.trim()) payload.size = line.size.trim()
-    if (line.length?.trim()) payload.length = line.length.trim()
-    if (line.lengthUnit?.trim()) payload.lengthUnit = line.lengthUnit.trim()
-    if (line.websiteURL?.trim()) payload.websiteURL = line.websiteURL.trim()
+    if (!isUpdate) {
+      payload.addedAt = Timestamp.now()
+      payload.createdAt = Timestamp.now()
+    }
 
     try {
-      await setDoc(doc(db, 'organizations', organizationId, 'materials', id), payload)
-      const saved = mapMaterialLine(id, payload)
+      await setDoc(doc(db, 'organizations', organizationId, 'materials', id), payload, isUpdate ? { merge: true } : {})
+      const mapped = mapMaterialLine(id, payload)
+      const saved: ProjectMaterialLine = existing
+        ? {
+            ...mapped,
+            lastSentAt: existing.lastSentAt,
+            lastSentRequestType: existing.lastSentRequestType,
+            date: mapped.date,
+          }
+        : mapped
       set({ materials: [...get().materials.filter((m) => m.id !== id), saved], error: null })
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Failed to save material'

@@ -4,6 +4,7 @@ import { useMemo, useRef } from 'react'
 import type { OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 import { DEFAULT_PAYROLL_POLICY } from '@/lib/settings/organizationSettings'
 import { parseHhMm } from '@/lib/ios-parity/londonTime'
+import { formatOvertimeEquation, overtimeRawHours } from '@/lib/scheduling/paidHours'
 
 const HOURS = Array.from({ length: 24 }, (_, i) => i)
 const MINUTES = [0, 15, 30, 45]
@@ -85,6 +86,17 @@ export function HoursTimelinePicker({
   const hours = valid ? (endMin - startMin) / 60 : 0
   const breakHours = !breakRemoved && valid ? (policy.unpaidBreakMinutes || 0) / 60 : 0
   const paid = Math.max(0, hours - breakHours)
+  const rawOt = overtimeRawHours({
+    timeSlot: 'CUSTOM_HOURS',
+    workStartTime: start,
+    workEndTime: end,
+    standardDayStart: policy.standardDayStart,
+    standardDayEnd: policy.standardDayEnd,
+  })
+  const overtimeEquation =
+    valid && rawOt > 0
+      ? formatOvertimeEquation(rawOt, policy.weekdayOutsideStandardMultiplier || 1.5)
+      : null
 
   function minutesFromClientX(clientX: number, rect: DOMRect): number {
     const raw = ((clientX - rect.left) / rect.width) * DAY_MINUTES
@@ -212,6 +224,9 @@ export function HoursTimelinePicker({
             ? `${format(startHm.hour, startHm.minute)}–${format(endHm.hour, endHm.minute)} · ${paid.toFixed(paid % 1 ? 1 : 0)}h paid`
             : 'Finish must be after start'}
         </p>
+        {overtimeEquation ? (
+          <p className="mt-1 text-[12px] font-semibold text-[#854F0B]">Overtime {overtimeEquation}</p>
+        ) : null}
       </div>
 
       <div className="grid grid-cols-2 gap-3">

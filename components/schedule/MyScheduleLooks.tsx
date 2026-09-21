@@ -5,6 +5,7 @@
 'use client'
 
 import { estimatedPaidHours, overviewFormatHours, parseMinutes } from '@/lib/daily-overview/buildDailyOverview'
+import { formatOvertimeEquation } from '@/lib/scheduling/paidHours'
 import type { ManagerLocationType, ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import type { OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 import type { Booking } from '@/types'
@@ -158,7 +159,9 @@ export function MyScheduleTotalHoursCard({
             <p className="text-[18px] font-medium text-ios-ink">{overviewFormatHours(paid)}</p>
             <p className="text-[10px] font-medium text-ios-muted">hrs paid</p>
             {ot > 0.05 ? (
-              <p className="text-[10px] font-semibold text-[#854F0B]">+{overviewFormatHours(ot)}h OT</p>
+              <p className="text-[10px] font-semibold text-[#854F0B]">
+                OT {formatOvertimeEquation(ot, policy.weekdayOutsideStandardMultiplier || 1.5)}
+              </p>
             ) : null}
           </div>
         )}

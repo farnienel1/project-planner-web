@@ -36,14 +36,13 @@ const TOPICS: Topic[] = [
     id: 'getting-started',
     title: 'Getting started',
     icon: HomeIcon,
-    intro: 'How the web app and iPhone app share one organisation, and how to sign in safely.',
+    intro: 'How to sign in safely, what each role can see, and how the organisation calendar works.',
     articles: [
       {
-        id: 'one-org',
-        title: 'One organisation, two apps',
-        summary: 'Web and iOS read and write the same live records.',
+        id: 'sign-in',
+        title: 'Signing in',
+        summary: 'Use the email you were invited with.',
         body: [
-          'ProjectPlanner is one platform. The web app and the iOS app use the same organisation, users, bookings, timesheets and catalogues.',
           'Sign in with the email you were invited with. Each person has one login, even if they belong to more than one organisation.',
           'Switch organisation from Settings when you need to move between companies you belong to. The active organisation is the one whose jobs and people you see.',
         ],
