@@ -21,6 +21,7 @@ import { useManagerScheduleStore } from '@/lib/stores/managerScheduleStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
 import { useTaskStore } from '@/lib/stores/taskStore'
 import { canViewClients, hasAdminAccess, isOperativeMode } from '@/lib/permissions'
+import { consumeCreateQuery } from '@/lib/navigation/createMenu'
 import { visibleWorks } from '@/lib/access/workAccess'
 import { notifyClientCreated } from '@/lib/firebase/notifyInbox'
 import { EmptyState, IosFormModal, PageHeader } from '@/components/ios/primitives'
@@ -198,6 +199,11 @@ export function ClientsScreen({ selectedId }: { selectedId?: string }) {
     setError(null)
     setCreateOpen(true)
   }
+
+  useEffect(() => {
+    if (consumeCreateQuery()) openCreate()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const openEdit = (client: Client) => {
     setName(client.name)
