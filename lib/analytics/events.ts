@@ -64,7 +64,7 @@ export const FEATURE_EVENT_GROUPS: { id: string; label: string; events: ProductE
   { id: 'timesheets', label: 'Timesheets', events: ['timesheet_viewed'] },
   { id: 'reports', label: 'Reports', events: ['report_viewed'] },
   { id: 'dashboard', label: 'Home', events: ['dashboard_viewed'] },
-  { id: 'ideas', label: 'Ideas', events: ['idea_submitted', 'idea_voted'] },
+  { id: 'ideas', label: 'Feedback', events: ['idea_submitted', 'idea_voted'] },
 ]
 
 export function featureForEvent(eventName: ProductEventName): string {
