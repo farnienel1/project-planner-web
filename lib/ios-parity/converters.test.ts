@@ -77,6 +77,43 @@ test('serializeOperative and serializeManager write iOS empty-string fields', ()
   assert.equal(mgr.notes, '')
 })
 
+test('serializeOperative omits undefined qualification fields so Firestore setDoc can succeed', () => {
+  const now = new Date('2026-01-01T00:00:00Z')
+  const op = serializeOperative({
+    id: 'AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA',
+    firstName: 'Ada',
+    lastName: 'Booked',
+    email: 'ada@x.com',
+    startDate: now,
+    hourlyRate: 12,
+    dayRate: 100,
+    skills: [{ id: 's1', name: 'First aid', createdAt: now, updatedAt: now }],
+    qualifications: [
+      {
+        id: 'Q1',
+        name: 'CSCS',
+        hasEndDate: false,
+        endDate: undefined,
+        createdAt: now,
+        updatedAt: now,
+      },
+    ],
+    isActive: true,
+    organizationId: 'org1',
+    createdAt: now,
+    updatedAt: now,
+    qualificationCertificateURLs: { Q1: undefined as unknown as string },
+  })
+  const json = JSON.stringify(op)
+  assert.equal(json.includes('undefined'), false)
+  const quals = op.qualifications as Array<Record<string, unknown>>
+  assert.equal(quals[0].name, 'CSCS')
+  assert.equal('endDate' in quals[0], false)
+  const skills = op.skills as Array<Record<string, unknown>>
+  assert.equal('trade' in skills[0], false)
+  assert.deepEqual(op.qualificationCertificateURLs, {})
+})
+
 test('parseOperative reads qualification expiry and certificate maps', () => {
   const expiry = new Date('2027-03-01T00:00:00Z')
   const result = parseOperative('OP1', {

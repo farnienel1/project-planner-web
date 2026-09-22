@@ -4,7 +4,7 @@
  */
 'use client'
 
-import { FormEvent, useEffect, useMemo, useState } from 'react'
+import { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { CubeIcon } from '@heroicons/react/24/solid'
 import type { MaterialCatalogItem, MaterialLengthUnit, MaterialUnit } from '@/types'
@@ -320,7 +320,6 @@ export function MaterialCatalogueScreen() {
               return
             }
             if (mode === 'replace') {
-              if (!window.confirm('Replace the entire catalogue with this CSV? Existing items not in the file will be removed.')) return
               await replaceAllItems(
                 organization.id,
                 parsed.rows.map((row) => ({
@@ -491,70 +490,132 @@ function CsvSheet({
   onUpdate: (mode: 'update' | 'replace', file: File) => Promise<void>
 }) {
   const [busy, setBusy] = useState(false)
+  const [replacePrompt, setReplacePrompt] = useState(false)
+  const updateInputRef = useRef<HTMLInputElement>(null)
+  const replaceInputRef = useRef<HTMLInputElement>(null)
+  const categories = [...new Set(items.map((item) => (item.category || 'Other').trim() || 'Other'))]
+  const downloadBtn =
+    'mt-2 flex h-11 w-full max-w-[320px] items-center justify-center rounded-xl px-4 text-[14.5px] font-semibold'
+
+  const pickFile = async (mode: 'update' | 'replace', file: File | undefined, input: HTMLInputElement | null) => {
+    if (!file) return
+    setBusy(true)
+    try {
+      await onUpdate(mode, file)
+    } finally {
+      setBusy(false)
+      if (input) input.value = ''
+    }
+  }
+
   return (
     <IosFormModal title="Catalogue CSV" onCancel={onClose} width="md">
       <div className="space-y-6 text-sm">
-        <section>
-          <p className="text-[11px] font-semibold uppercase text-[var(--ink3)]">Step 1 · Download</p>
-          <button
-            type="button"
-            className="mt-2 rounded-xl bg-[var(--blue)] px-4 py-2 font-semibold text-white"
-            onClick={() => downloadTextFile(CATALOGUE_CSV_FILENAME, exportCatalogueCsv(items))}
-          >
-            Download Material Catalogue
-          </button>
-          <p className="mt-2 text-amber-800">⚠️ CSV Warning — save the file as csv and not .xls (excel) or .numbers.</p>
-          <button
-            type="button"
-            className="mt-3 text-[var(--blue)] font-semibold"
-            onClick={() => downloadTextFile(CATALOGUE_TEMPLATE_FILENAME, exportCatalogueTemplateCsv())}
-          >
-            Download blank template
-          </button>
-          <p className="text-[var(--ink3)]">Headers only — use this to start a brand new list</p>
-        </section>
-        <section>
-          <p className="text-[11px] font-semibold uppercase text-[var(--ink3)]">Step 2 · Upload updated catalogue</p>
-          <p className="mt-1 text-[var(--ink3)]">Use this to upload your updated catalogue</p>
-          <input
-            type="file"
-            accept=".csv,text/csv"
-            disabled={busy}
-            onChange={async (e) => {
-              const file = e.target.files?.[0]
-              if (!file) return
-              setBusy(true)
-              try {
-                await onUpdate('update', file)
-              } finally {
-                setBusy(false)
-              }
-            }}
-          />
-        </section>
-        <section>
-          <p className="text-[11px] font-semibold uppercase text-[var(--ink3)]">Step 3 · Replace entire catalogue</p>
-          <p className="mt-1 text-[var(--ink3)]">Use this to upload a brand new catalogue</p>
-          <input
-            type="file"
-            accept=".csv,text/csv"
-            disabled={busy}
-            onChange={async (e) => {
-              const file = e.target.files?.[0]
-              if (!file) return
-              setBusy(true)
-              try {
-                await onUpdate('replace', file)
-              } finally {
-                setBusy(false)
-              }
-            }}
-          />
-        </section>
-        <p className="text-[var(--ink3)]">
-          Edit on a laptop if you can, then save as .csv and upload here. Leave Catalogue ID blank for brand new rows.
-        </p>
-        <p className="text-[var(--ink3)]">Drop CSV or tap to browse · Max 5MB · 5,000 items</p>
+        {replacePrompt ? (
+          <section className="space-y-4">
+            <p className="text-[16px] font-semibold text-[var(--ink)]">Replace entire catalogue?</p>
+            <p className="text-[15px] text-[var(--ink2)]">
+              Are you sure you want to replace your entire catalogue? This step can&apos;t be undone. Existing items that
+              are not in the new file will be removed.
+            </p>
+            <div className="flex flex-wrap gap-3">
+              <button
+                type="button"
+                className="h-11 rounded-xl bg-[var(--soft)] px-4 font-semibold text-[var(--ink)]"
+                onClick={() => setReplacePrompt(false)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="h-11 rounded-xl bg-[var(--blue)] px-5 font-semibold text-white"
+                onClick={() => {
+                  setReplacePrompt(false)
+                  replaceInputRef.current?.click()
+                }}
+              >
+                Accept
+              </button>
+            </div>
+          </section>
+        ) : (
+          <>
+            <section>
+              <p className="text-[11px] font-semibold uppercase text-[var(--ink3)]">Step 1 · Download</p>
+              <p className="mt-1 text-[var(--ink3)]">
+                Download your current catalogue, edit it in a spreadsheet, then save the file as .csv (not Excel or
+                Numbers).
+              </p>
+              <button
+                type="button"
+                className={`${downloadBtn} bg-[var(--blue)] text-white`}
+                onClick={() => downloadTextFile(CATALOGUE_CSV_FILENAME, exportCatalogueCsv(items))}
+              >
+                Download Material Catalogue
+              </button>
+              <p className="mt-2 text-amber-800">⚠️ CSV Warning — save the file as csv and not .xls (excel) or .numbers.</p>
+              <button
+                type="button"
+                className={`${downloadBtn} border-[1.5px] border-[var(--blue)] bg-white text-[var(--blue)]`}
+                onClick={() =>
+                  downloadTextFile(CATALOGUE_TEMPLATE_FILENAME, exportCatalogueTemplateCsv(categories))
+                }
+              >
+                Download blank template
+              </button>
+              <p className="mt-2 text-[var(--ink3)]">
+                Headers only — use this to start a brand new list. The category note in the file is ignored when you
+                upload.
+              </p>
+            </section>
+            <section>
+              <p className="text-[11px] font-semibold uppercase text-[var(--ink3)]">Step 2 · Upload</p>
+              <p className="mt-1 font-medium text-[var(--ink)]">Upload updated catalogue</p>
+              <p className="mt-1 text-[var(--ink3)]">
+                Choose the CSV you edited. Matching items keep their IDs. Rows in the file are saved; items missing from
+                the file are removed.
+              </p>
+              <input
+                ref={updateInputRef}
+                type="file"
+                accept=".csv,text/csv"
+                className="mt-3 block w-full max-w-[320px] text-sm"
+                disabled={busy}
+                onChange={(e) => void pickFile('update', e.target.files?.[0], updateInputRef.current)}
+              />
+              <div className="my-5 flex items-center gap-3">
+                <div className="h-px flex-1 bg-[var(--line)]" />
+                <span className="text-[11px] font-semibold uppercase tracking-wide text-[var(--ink3)]">or</span>
+                <div className="h-px flex-1 bg-[var(--line)]" />
+              </div>
+              <p className="font-medium text-[var(--ink)]">Replace entire catalogue</p>
+              <p className="mt-1 text-[var(--ink3)]">
+                Use this only when you want to throw away the current list and load a brand new file.
+              </p>
+              <button
+                type="button"
+                disabled={busy}
+                className={`${downloadBtn} border-[1.5px] border-[var(--line2)] bg-[var(--card)] text-[var(--ink)]`}
+                onClick={() => setReplacePrompt(true)}
+              >
+                Replace entire catalogue…
+              </button>
+              <input
+                ref={replaceInputRef}
+                type="file"
+                accept=".csv,text/csv"
+                className="hidden"
+                disabled={busy}
+                onChange={(e) => void pickFile('replace', e.target.files?.[0], replaceInputRef.current)}
+              />
+            </section>
+            <p className="text-[var(--ink3)]">
+              Edit on a laptop if you can, then save as .csv and upload here. Leave Catalogue ID blank for brand new
+              rows.
+            </p>
+            <p className="text-[var(--ink3)]">Max 5MB · 5,000 items</p>
+          </>
+        )}
       </div>
     </IosFormModal>
   )

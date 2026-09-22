@@ -11,7 +11,14 @@ import { useAuthStore } from '@/lib/stores/authStore'
 import { canManageJobTypes } from '@/lib/permissions'
 import { consumeCreateQuery } from '@/lib/navigation/createMenu'
 import { EmptyState, IosFormModal, PageHeader } from '@/components/ios/primitives'
-import { recoverJobTypesFromWork, RESTORED_JOB_TYPES, saveJobTypes, validateJobTypeName } from '@/lib/jobTypes/jobTypesStorage'
+import {
+  loadJobTypes,
+  mergeJobTypeCatalogues,
+  recoverJobTypesFromWork,
+  RESTORED_JOB_TYPES,
+  saveJobTypes,
+  validateJobTypeName,
+} from '@/lib/jobTypes/jobTypesStorage'
 
 export function JobTypesScreen() {
   const router = useRouter()
@@ -40,20 +47,31 @@ export function JobTypesScreen() {
   useEffect(() => {
     if (!organization?.id) return
     let cancelled = false
+    const orgId = organization.id
     setLoading(true)
-    recoverJobTypesFromWork(organization.id)
+
+    const showList = (names: string[]) => {
+      setJobTypes([...names].sort((a, b) => a.localeCompare(b)))
+      setLoading(false)
+    }
+
+    void loadJobTypes(orgId)
+      .then((stored) => {
+        if (cancelled) return
+        showList(mergeJobTypeCatalogues(stored, []))
+        return recoverJobTypesFromWork(orgId)
+      })
       .then((recovered) => {
-        if (!cancelled) setJobTypes([...recovered].sort((a, b) => a.localeCompare(b)))
+        if (cancelled || !recovered) return
+        showList(recovered)
       })
       .catch((err: unknown) => {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : 'Failed to load job types')
-          setJobTypes([...RESTORED_JOB_TYPES])
+          showList([...RESTORED_JOB_TYPES])
         }
       })
-      .finally(() => {
-        if (!cancelled) setLoading(false)
-      })
+
     return () => {
       cancelled = true
     }
