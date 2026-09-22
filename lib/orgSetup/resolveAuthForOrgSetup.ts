@@ -1,25 +1,10 @@
-import {
-  createUserWithEmailAndPassword,
-  signInWithEmailAndPassword,
-  type Auth,
-} from 'firebase/auth'
+import { createUserWithEmailAndPassword, type Auth } from 'firebase/auth'
 import { withTimeout } from '@/lib/client/withTimeout'
+import { completeEmailSignIn, waitForAuthSession } from '@/lib/auth/completeEmailSignIn'
 import { getFirebaseAuth } from '@/lib/firebase/ensureFirebase'
 import { isEmailInUseError, shouldAttemptCreateUserAfterSignInFailure } from '@/lib/orgSetup/authSetupErrors'
 
-const AUTH_STATE_READY_MS = 2500
-const AUTH_SIGN_IN_MS = 8000
-const AUTH_CREATE_MS = 8000
-
-async function waitForAuthSession(auth: Auth): Promise<void> {
-  const ready = (auth as Auth & { authStateReady?: () => Promise<void> }).authStateReady
-  if (typeof ready !== 'function') return
-  try {
-    await withTimeout(ready.call(auth) as Promise<void>, AUTH_STATE_READY_MS, 'auth-ready')
-  } catch {
-    // IndexedDB / private-mode can leave authStateReady pending. Continue with currentUser.
-  }
-}
+const AUTH_CREATE_MS = 20_000
 
 function signedInUserId(auth: Auth): string | null {
   return auth.currentUser?.uid ?? null
@@ -51,12 +36,8 @@ export async function resolveAuthUserIdForOrgSetup(
     'Signing in is taking too long. Check your connection, refresh this page, then click Activate again.'
 
   try {
-    const signedIn = await withTimeout(
-      signInWithEmailAndPassword(auth, emailLower, password),
-      AUTH_SIGN_IN_MS,
-      authBusyMessage
-    )
-    return signedIn.user.uid
+    const signedIn = await completeEmailSignIn(auth, emailLower, password)
+    return signedIn.uid
   } catch (signInError) {
     const existingAfterSignIn = signedInUserId(auth)
     if (existingAfterSignIn) return existingAfterSignIn
