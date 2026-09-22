@@ -135,10 +135,12 @@ export async function loadJobTypes(organizationId: string): Promise<string[]> {
       orgData?.settings && typeof orgData.settings === 'object'
         ? (orgData.settings as Record<string, unknown>).jobTypes
         : undefined
-    return unionUniqueStrings(
+    const names = unionUniqueStrings(
       coerceJobTypeList(snap.data()?.jobTypes),
       coerceJobTypeList(orgData?.jobTypes ?? nestedSettings)
     )
+    if (names.length) rememberJobTypes(organizationId, names)
+    return names
   } catch {
     return []
   }
@@ -161,6 +163,17 @@ async function loadWorkJobTypeRecords(
   }
 }
 
+const jobTypesMemory = new Map<string, string[]>()
+
+export function peekCachedJobTypes(organizationId: string): string[] | undefined {
+  const names = jobTypesMemory.get(organizationId)
+  return names ? [...names] : undefined
+}
+
+function rememberJobTypes(organizationId: string, names: string[]): void {
+  jobTypesMemory.set(organizationId, [...names])
+}
+
 export async function recoverJobTypesFromWork(organizationId: string): Promise<string[]> {
   const stored = await loadJobTypes(organizationId)
   const recovered = jobTypesFromWorkRecords(await loadWorkJobTypeRecords(organizationId))
@@ -172,7 +185,9 @@ export async function recoverJobTypesFromWork(organizationId: string): Promise<s
       // Read-only accounts still get the restored list in the UI.
     }
   }
-  return merged.length > 0 ? merged : [...RESTORED_JOB_TYPES]
+  const names = merged.length > 0 ? merged : [...RESTORED_JOB_TYPES]
+  rememberJobTypes(organizationId, names)
+  return names
 }
 
 /** iOS overwrites the whole settings/jobTypes document — no merge. Empty catalogues are restored from projects on load. */
@@ -185,6 +200,7 @@ export async function saveJobTypes(organizationId: string, jobTypes: string[]): 
 }
 
 async function persistJobTypes(organizationId: string, jobTypes: string[]): Promise<void> {
+  rememberJobTypes(organizationId, jobTypes)
   await setDoc(doc(db, 'organizations', organizationId, 'settings', ORG_SETTINGS_JOB_TYPES_DOC), {
     jobTypes,
     organizationId,

@@ -77,7 +77,7 @@ export function QualificationsScreen({ initialTab }: { initialTab?: Tab } = {}) 
     const refresh = async () => {
       await loadOperatives(orgId, { force: true })
       if (cancelled) return
-      const existing = await loadOrganisationQualifications(orgId)
+      const existing = await loadOrganisationQualifications(orgId, { fromServer: true })
       const assigned = assignedQualificationTemplates(useOperativeStore.getState().operatives)
       const merged = mergeQualificationTemplates(existing, assigned)
       if (cancelled) return
@@ -104,10 +104,15 @@ export function QualificationsScreen({ initialTab }: { initialTab?: Tab } = {}) 
     const onVisibility = () => {
       if (document.visibilityState === 'visible') void refresh()
     }
+    const onFocus = () => void refresh()
     document.addEventListener('visibilitychange', onVisibility)
+    window.addEventListener('focus', onFocus)
+    window.addEventListener('pageshow', onFocus)
     return () => {
       cancelled = true
       document.removeEventListener('visibilitychange', onVisibility)
+      window.removeEventListener('focus', onFocus)
+      window.removeEventListener('pageshow', onFocus)
     }
   }, [organization?.id, loadOperatives])
 
@@ -404,14 +409,14 @@ function MyQualificationsPanel({
         setPickerSelected([])
       }}
       footer={
-        availableTemplates.length === 0 ? null : (
+        availableTemplates.length === 0 || pickerSelected.length === 0 ? null : (
           <button
             type="button"
-            disabled={saving || pickerSelected.length === 0}
+            disabled={saving}
             onClick={() => void handlePickerSave()}
             className="w-full rounded-xl bg-[var(--blue)] py-3 text-[16px] font-semibold text-white disabled:opacity-50"
           >
-            {saving ? 'Saving…' : pickerSelected.length ? `Save (${pickerSelected.length})` : 'Save'}
+            {saving ? 'Saving…' : pickerSelected.length > 1 ? `Save (${pickerSelected.length})` : 'Save'}
           </button>
         )
       }
