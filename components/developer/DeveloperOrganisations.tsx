@@ -16,7 +16,7 @@ export function DeveloperOrganisationsScreen() {
   const [preset, setPreset] = useState<DateRangePreset>('all_time')
   const [query, setQuery] = useState('')
   const range = useMemo(() => resolveDateRange(preset), [preset])
-  const { organisations, users, events, loading, error, warning, load, refresh } = useAnalyticsStore()
+  const { organisations, users, events, loading, error, load, refresh } = useAnalyticsStore()
   const { suggestions, loadBoard } = useFeedbackStore()
 
   useEffect(() => {
@@ -41,7 +41,7 @@ export function DeveloperOrganisationsScreen() {
     [rows, query]
   )
 
-  if (loading && organisations.length === 0 && users.length === 0 && !error && !warning) {
+  if (loading && organisations.length === 0 && users.length === 0 && !error) {
     return <LoadingSpinner label="Loading organisations…" />
   }
 
@@ -55,12 +55,11 @@ export function DeveloperOrganisationsScreen() {
       }
     >
       <p className="text-sm text-[var(--ink2)]">
-        Every company that has completed organisation setup. User counts come from live account records; event columns stay
-        empty until product tracking is readable.
+        Every company that has completed organisation setup. User counts come from live account records.
       </p>
       <DateRangePicker preset={preset} onChange={setPreset} />
       <SearchField value={query} onChange={setQuery} placeholder="Search organisations" />
-      <DeveloperStatus error={error} warning={warning} loading={loading && rows.length > 0} />
+      <DeveloperStatus error={error} loading={loading && rows.length > 0} />
       <div className="grid gap-3 sm:grid-cols-3">
         <MetricCard label="Organisations" value={rows.length} />
         <MetricCard label="Registered users" value={users.length} href="/developer/users" />
@@ -75,7 +74,7 @@ export function DeveloperOrganisationsScreen() {
       {rows.length === 0 ? (
         <EmptyState
           title="No organisations found"
-          description="When companies complete setup they appear here. If this is empty after going live, publish firestore.rules so the owner login can list organizations, or refresh — user records still recover tenant rows."
+          description="When companies complete setup they appear here."
         />
       ) : visible.length === 0 ? (
         <EmptyState title="No matching organisations" description="Try a different name or organisation id." />
@@ -87,9 +86,9 @@ export function DeveloperOrganisationsScreen() {
                 <th className="px-4 py-2">Organisation</th>
                 <th className="px-4 py-2">Users</th>
                 <th className="px-4 py-2">Active</th>
-                <th className="px-4 py-2">Events</th>
+                {events.length > 0 ? <th className="px-4 py-2">Events</th> : null}
                 <th className="px-4 py-2">Ideas</th>
-                <th className="px-4 py-2">Last activity</th>
+                <th className="px-4 py-2">Last seen</th>
               </tr>
             </thead>
             <tbody>
@@ -103,7 +102,7 @@ export function DeveloperOrganisationsScreen() {
                   </td>
                   <td className="px-4 py-3">{row.userCount}</td>
                   <td className="px-4 py-3">{row.activeUsers}</td>
-                  <td className="px-4 py-3">{row.events}</td>
+                  {events.length > 0 ? <td className="px-4 py-3">{row.events}</td> : null}
                   <td className="px-4 py-3">{row.ideaCount}</td>
                   <td className="px-4 py-3 text-[var(--ink2)]">{formatOwnerWhen(row.lastActivityAt)}</td>
                 </tr>

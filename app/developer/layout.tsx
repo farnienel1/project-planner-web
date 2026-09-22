@@ -15,7 +15,7 @@ export default function DeveloperLayout({ children }: { children: React.ReactNod
   const allowed = isPlatformOwnerEmail(email)
 
   useEffect(() => {
-    if (loading) return
+    if (loading && !firebaseUser && !user) return
     if (!firebaseUser && !user) {
       router.replace('/developer-login')
       return
@@ -25,12 +25,14 @@ export default function DeveloperLayout({ children }: { children: React.ReactNod
     }
   }, [allowed, firebaseUser, loading, router, user])
 
-  if (loading || !allowed) return <LoadingSpinner label="Checking owner access…" />
+  if (allowed) {
+    return (
+      <DeveloperAppShell>
+        <DeveloperDataBoot />
+        {children}
+      </DeveloperAppShell>
+    )
+  }
 
-  return (
-    <DeveloperAppShell>
-      <DeveloperDataBoot />
-      {children}
-    </DeveloperAppShell>
-  )
+  return <LoadingSpinner label="Checking owner access…" />
 }

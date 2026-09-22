@@ -8,6 +8,7 @@ import { useAuthStore } from '@/lib/stores/authStore'
 import { AppLogoMark } from '@/components/ui/AppLogoMark'
 import { formatLoginError } from '@/lib/auth/formatLoginError'
 import { PLATFORM_OWNER_EMAIL, isPlatformOwnerEmail } from '@/lib/platform/owner'
+import { LoadingSpinner } from '@/components/dashboard/PageShell'
 
 const MIN_PASSWORD = 10
 
@@ -35,6 +36,10 @@ export function DeveloperLoginScreen() {
     if (loading) return
     if (signedInOwner) router.replace('/developer')
   }, [loading, router, signedInOwner])
+
+  if (signedInOwner || (loading && Boolean(firebaseUser || user))) {
+    return <LoadingSpinner label="Opening the owner console…" />
+  }
 
   const displayError = localError || error
   const canSubmit = password.length >= MIN_PASSWORD && !submitting

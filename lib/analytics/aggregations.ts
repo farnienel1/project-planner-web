@@ -132,6 +132,62 @@ export function uniqueUsersChart(
   return fillMonthSeries(range.start, range.end, counts, timeZone)
 }
 
+export function directoryDateChart(
+  users: { id: string; createdAt: Date; lastSeenAt?: Date }[],
+  range: AnalyticsDateRange,
+  field: 'createdAt' | 'lastSeenAt',
+  timeZone = LONDON_TIME_ZONE
+): { day: string; value: number }[] {
+  const monthly = chartUsesMonths(range)
+  const map = new Map<string, number>()
+  for (const user of users) {
+    const date = field === 'lastSeenAt' ? user.lastSeenAt : user.createdAt
+    if (!date || date.getTime() <= 0 || !inRange(date, range.start, range.end)) continue
+    const key = monthly ? monthKeyInZone(date, timeZone) : dayKeyInZone(date, timeZone)
+    map.set(key, (map.get(key) || 0) + 1)
+  }
+  return monthly ? fillMonthSeries(range.start, range.end, map, timeZone) : fillDaySeries(range.start, range.end, map, timeZone)
+}
+
+export function lastSeenRetention(
+  users: { id: string; createdAt: Date; lastSeenAt?: Date }[],
+  now = new Date()
+): { label: string; size: number; retained: number; rate: number | null }[] {
+  const dayMs = 86_400_000
+  return [1, 7, 30].map((days) => {
+    const eligible = users.filter((user) => user.createdAt.getTime() > 0 && now.getTime() - user.createdAt.getTime() >= days * dayMs)
+    if (eligible.length < 5) {
+      return { label: `Day ${days}`, size: eligible.length, retained: 0, rate: null }
+    }
+    const retained = eligible.filter((user) => {
+      if (!user.lastSeenAt) return false
+      return user.lastSeenAt.getTime() - user.createdAt.getTime() >= days * dayMs
+    }).length
+    return {
+      label: `Day ${days}`,
+      size: eligible.length,
+      retained,
+      rate: Math.round((retained / eligible.length) * 1000) / 10,
+    }
+  })
+}
+
+export function roleMix(users: { role: string; permissions?: { operativeMode?: boolean; adminAccess?: boolean; manager?: boolean } }[]) {
+  const counts = { admin: 0, manager: 0, operative: 0, other: 0 }
+  for (const user of users) {
+    if (user.permissions?.operativeMode || user.role === 'operative') counts.operative += 1
+    else if (user.permissions?.adminAccess || user.role === 'admin') counts.admin += 1
+    else if (user.permissions?.manager || user.role === 'manager') counts.manager += 1
+    else counts.other += 1
+  }
+  return [
+    { id: 'admin', label: 'Admins', count: counts.admin },
+    { id: 'manager', label: 'Managers', count: counts.manager },
+    { id: 'operative', label: 'Operatives', count: counts.operative },
+    { id: 'other', label: 'Other', count: counts.other },
+  ].filter((row) => row.count > 0)
+}
+
 export function featureUsageRows(
   events: ProductEvent[],
   range: AnalyticsDateRange,
