@@ -216,6 +216,10 @@ async function loadSignedInProfileInner(firebaseUser: FirebaseUser) {
     error: null,
   })
 
+  void import('@/lib/analytics/trackEvent').then(({ trackEvent }) =>
+    trackEvent('user_logged_in', { userId: user.id, organizationId: user.organizationId })
+  )
+
   if (Object.keys(patch).length > 0) {
     patch.updatedAt = Timestamp.now()
     void withTimeoutFallback(

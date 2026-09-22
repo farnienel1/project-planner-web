@@ -58,6 +58,7 @@ export const userPermissionsSchema = z.object({
   subContractors: z.boolean(),
   siteAudit: z.boolean(),
   wholesalersOrderHistory: z.boolean(),
+  developerAccess: z.boolean().optional(),
 })
 
 export const bookingWriteSchema = z.object({
@@ -262,4 +263,5 @@ export const userWriteSchema = z.object({
   subContractors: z.boolean(),
   siteAudit: z.boolean(),
   wholesalersOrderHistory: z.boolean(),
+  developerAccess: z.boolean().optional(),
 })

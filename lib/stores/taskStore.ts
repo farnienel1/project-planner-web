@@ -5,6 +5,8 @@ import { collection, deleteDoc, doc, getDocs, setDoc, Timestamp } from 'firebase
 import { db } from '@/lib/firebase/config'
 import type { ProjectTask, ProjectTaskPriority, ProjectTaskStatus } from '@/types'
 import { newUuid, parseFirestoreDate, parseOptionalString, parseString } from '@/lib/firebase/firestoreUtils'
+import { trackEvent } from '@/lib/analytics/trackEvent'
+import { useAuthStore } from '@/lib/stores/authStore'
 
 function mapTask(docId: string, data: Record<string, unknown>, organizationId: string): ProjectTask {
   return {
@@ -133,15 +135,33 @@ export const useTaskStore = create<TaskState>((set, get) => ({
 
   saveTask: async (task) => {
     const id = task.id || newUuid()
+    const isNew = !get().tasks.some((row) => row.id === id)
     const payload = taskPayload({ ...task, id, updatedAt: new Date() })
     await setDoc(doc(db, 'organizations', task.organizationId, 'tasks', id), payload)
     const saved = mapTask(id, payload as Record<string, unknown>, task.organizationId)
     const { tasks } = get()
     set({ tasks: [...tasks.filter((t) => t.id !== id), saved] })
+    const eventName =
+      saved.status === 'Completed' && (isNew || tasks.find((row) => row.id === id)?.status !== 'Completed')
+        ? 'task_completed'
+        : isNew
+          ? 'task_created'
+          : 'task_updated'
+    void trackEvent(eventName, {
+      userId: useAuthStore.getState().user?.id || task.createdBy,
+      organizationId: task.organizationId,
+      metadata: { taskId: id, projectId: task.projectId },
+    })
   },
 
   deleteTask: async (organizationId, taskId) => {
+    const existing = get().tasks.find((row) => row.id === taskId)
     await deleteDoc(doc(db, 'organizations', organizationId, 'tasks', taskId))
     set({ tasks: get().tasks.filter((t) => t.id !== taskId) })
+    void trackEvent('task_deleted', {
+      userId: useAuthStore.getState().user?.id || existing?.createdBy,
+      organizationId,
+      metadata: { taskId },
+    })
   },
 }))
