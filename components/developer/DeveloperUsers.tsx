@@ -16,7 +16,7 @@ export function DeveloperUsersScreen() {
   const [preset, setPreset] = useState<DateRangePreset>('all_time')
   const [query, setQuery] = useState('')
   const range = useMemo(() => resolveDateRange(preset), [preset])
-  const { organisations, users, loading, error, warning, load, refresh } = useAnalyticsStore()
+  const { organisations, users, loading, error, load, refresh } = useAnalyticsStore()
 
   useEffect(() => {
     void load()
@@ -40,7 +40,7 @@ export function DeveloperUsersScreen() {
     [users, query, orgName]
   )
 
-  if (loading && users.length === 0 && !error && !warning) {
+  if (loading && users.length === 0 && !error) {
     return <LoadingSpinner label="Loading users…" />
   }
 
@@ -58,7 +58,7 @@ export function DeveloperUsersScreen() {
       </p>
       <DateRangePicker preset={preset} onChange={setPreset} />
       <SearchField value={query} onChange={setQuery} placeholder="Search users, emails or organisations" />
-      <DeveloperStatus error={error} warning={warning} loading={loading && users.length > 0} />
+      <DeveloperStatus error={error} loading={loading && users.length > 0} />
       <div className="grid gap-3 sm:grid-cols-3">
         <MetricCard label="Registered users" value={users.length} />
         <MetricCard label="Active in range" value={directoryActiveUsers(users, range)} hint="From last-seen on user records" />
@@ -67,7 +67,7 @@ export function DeveloperUsersScreen() {
       {users.length === 0 ? (
         <EmptyState
           title="No users found"
-          description="Accounts appear here as soon as someone completes organisation setup. If this is empty, sign in as info@projectplanner.us and publish firestore.rules so the owner console can list users."
+          description="Accounts appear here as soon as someone completes organisation setup."
         />
       ) : visible.length === 0 ? (
         <EmptyState title="No matching users" description="Try a different name, email or organisation." />

@@ -20,3 +20,7 @@ export function hasCustomerOrganisation(organizationId?: string | null): boolean
   const id = (organizationId || '').trim()
   return id.length > 0 && !isPlatformOwnerSentinelOrg(id)
 }
+
+export function isPlatformOwnerSession(email?: string | null, organizationId?: string | null): boolean {
+  return isPlatformOwnerEmail(email) || isPlatformOwnerSentinelOrg(organizationId)
+}

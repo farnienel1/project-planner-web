@@ -36,7 +36,7 @@ import {
   readWebIdleLastActivity,
   touchWebIdleActivity,
 } from '@/lib/auth/webIdleSession'
-import { isPlatformOwnerEmail, isPlatformOwnerSentinelOrg, PLATFORM_OWNER_EMAIL } from '@/lib/platform/owner'
+import { isPlatformOwnerEmail, isPlatformOwnerSentinelOrg, isPlatformOwnerSession, PLATFORM_OWNER_EMAIL } from '@/lib/platform/owner'
 import { platformOwnerProfilePayload, platformOwnerUser } from '@/lib/platform/ownerProfile'
 import { passwordResetActionSettings } from '@/lib/auth/passwordResetSettings'
 
@@ -79,14 +79,52 @@ async function loadSignedInProfileWithWait(firebaseUser: FirebaseUser): Promise<
     await withTimeout(pending, PROFILE_LOAD_MS, SIGN_IN_SLOW_MESSAGE)
   } catch (error) {
     if (useAuthStore.getState().user?.id === firebaseUser.uid) return
+    if (isPlatformOwnerEmail(firebaseUser.email)) {
+      keepOwnerSession(firebaseUser)
+      return
+    }
     if (!isTimeoutError(error)) throw error
     try {
       await withTimeout(pending, PROFILE_LOAD_GRACE_MS, SIGN_IN_SLOW_MESSAGE)
     } catch (graceError) {
       if (useAuthStore.getState().user?.id === firebaseUser.uid) return
+      if (isPlatformOwnerEmail(firebaseUser.email)) {
+        keepOwnerSession(firebaseUser)
+        return
+      }
       throw graceError
     }
   }
+}
+
+function keepOwnerSession(firebaseUser: FirebaseUser) {
+  const owner = platformOwnerUser(firebaseUser.uid, firebaseUser.email || PLATFORM_OWNER_EMAIL)
+  useAuthStore.setState({
+    user: owner,
+    firebaseUser,
+    organization: null,
+    loading: false,
+    error: null,
+  })
+  void firebaseUser.getIdToken(true).catch(() => undefined)
+}
+
+function recoverOwnerSession(email?: string | null): boolean {
+  try {
+    const current = getFirebaseAuth().currentUser
+    if (current && isPlatformOwnerEmail(current.email || email)) {
+      keepOwnerSession(current)
+      return true
+    }
+  } catch {
+    /* Firebase not ready — fall through to the in-memory session. */
+  }
+  const loaded = useAuthStore.getState().user
+  if (loaded && isPlatformOwnerEmail(loaded.email || email)) {
+    useAuthStore.setState({ loading: false, error: null })
+    return true
+  }
+  return false
 }
 
 async function loadSignedInProfileInner(firebaseUser: FirebaseUser) {
@@ -103,14 +141,7 @@ async function loadSignedInProfileInner(firebaseUser: FirebaseUser) {
 
   if (!userDoc.exists()) {
     if (isPlatformOwnerEmail(firebaseUser.email)) {
-      const owner = platformOwnerUser(firebaseUser.uid, firebaseUser.email || '')
-      useAuthStore.setState({
-        user: owner,
-        firebaseUser,
-        organization: null,
-        loading: false,
-        error: null,
-      })
+      keepOwnerSession(firebaseUser)
       void withTimeoutFallback(
         setDoc(doc(db, 'users', firebaseUser.uid), platformOwnerProfilePayload(firebaseUser.email || ''), { merge: true }),
         PROFILE_STEP_MS,
@@ -133,6 +164,10 @@ async function loadSignedInProfileInner(firebaseUser: FirebaseUser) {
 
   const parsed = parseAppUserDocument(firebaseUser.uid, userDoc.data() as Record<string, unknown>)
   if (!parsed.ok) {
+    if (isPlatformOwnerEmail(firebaseUser.email)) {
+      keepOwnerSession(firebaseUser)
+      return
+    }
     useAuthStore.setState({
       user: null,
       firebaseUser,
@@ -263,7 +298,10 @@ export const useAuthStore = create<AuthState>((set) => {
   if (typeof window !== 'undefined' && isFirebaseConfigured()) {
     onAuthStateChanged(getFirebaseAuth(), async (firebaseUser) => {
       if (firebaseUser) {
-        if (isWebIdleExpired(Date.now(), readWebIdleLastActivity())) {
+        if (
+          isWebIdleExpired(Date.now(), readWebIdleLastActivity()) &&
+          !isPlatformOwnerSession(firebaseUser.email, useAuthStore.getState().user?.organizationId)
+        ) {
           try {
             await firebaseSignOut(getFirebaseAuth())
           } catch (idleSignOutError) {
@@ -277,6 +315,10 @@ export const useAuthStore = create<AuthState>((set) => {
         try {
           await loadSignedInProfileWithWait(firebaseUser)
         } catch (authLoadError) {
+          if (isPlatformOwnerEmail(firebaseUser.email)) {
+            keepOwnerSession(firebaseUser)
+            return
+          }
           if (useAuthStore.getState().user?.id === firebaseUser.uid) return
           console.error('Failed to load user profile:', authLoadError)
           set({
@@ -308,6 +350,9 @@ export const useAuthStore = create<AuthState>((set) => {
         set({ loading: true, error: null })
         const auth = getFirebaseAuth()
         const firebaseUser = await completeEmailSignIn(auth, email, password)
+        if (isPlatformOwnerEmail(firebaseUser.email || email)) {
+          await firebaseUser.getIdToken(true).catch(() => undefined)
+        }
 
         await loadSignedInProfileWithWait(firebaseUser)
         const loaded = useAuthStore.getState().user
@@ -326,7 +371,7 @@ export const useAuthStore = create<AuthState>((set) => {
         touchWebIdleActivity()
         set({ loading: false })
       } catch (error: unknown) {
-        if (useAuthStore.getState().user) {
+        if (recoverOwnerSession(email) || useAuthStore.getState().user) {
           set({ loading: false, error: null })
           return
         }
@@ -397,11 +442,16 @@ export const useAuthStore = create<AuthState>((set) => {
         const auth = getFirebaseAuth()
         const db = getFirebaseDb()
         const result = await createUserWithEmailAndPassword(auth, PLATFORM_OWNER_EMAIL, password)
+        await result.user.getIdToken(true).catch(() => undefined)
         await setDoc(doc(db, 'users', result.user.uid), platformOwnerProfilePayload(PLATFORM_OWNER_EMAIL), { merge: true })
         await loadSignedInProfileWithWait(result.user)
         touchWebIdleActivity()
         set({ loading: false })
       } catch (error: unknown) {
+        if (recoverOwnerSession(PLATFORM_OWNER_EMAIL) || useAuthStore.getState().user) {
+          set({ loading: false, error: null })
+          return
+        }
         const message = error instanceof Error ? error.message : 'Could not create the owner login'
         set({ loading: false, error: message })
         throw error

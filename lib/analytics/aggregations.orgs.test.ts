@@ -1,7 +1,8 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { directoryActiveUsers, organisationActivityRows } from './aggregations.ts'
+import { directoryActiveUsers, directoryDateChart, lastSeenRetention, organisationActivityRows, roleMix } from './aggregations.ts'
 import type { ProductEvent } from './events.ts'
+import { resolveDateRange } from './dateRange.ts'
 
 test('organisation activity rolls up users, events and ideas across tenants', () => {
   const now = new Date('2026-09-22T12:00:00Z')
@@ -86,3 +87,43 @@ test('extra organisations are recovered from users even with no events', () => {
   assert.equal(extra?.userCount, 1)
   assert.equal(extra?.activeUsers, 1)
 })
+
+test('directory charts count live signups and last-seen without product events', () => {
+  const range = resolveDateRange('last_7', new Date('2026-09-22T12:00:00Z'))
+  const points = directoryDateChart(
+    [
+      { id: 'u1', createdAt: new Date('2026-09-21T10:00:00Z') },
+      { id: 'u2', createdAt: new Date('2026-09-21T18:00:00Z') },
+      { id: 'u3', createdAt: new Date('2026-08-01T10:00:00Z'), lastSeenAt: new Date('2026-09-21T12:00:00Z') },
+    ],
+    range,
+    'createdAt'
+  )
+  const day = points.find((point) => point.day === '2026-09-21')
+  assert.equal(day?.value, 2)
+  const seen = directoryDateChart(
+    [
+      { id: 'u1', createdAt: new Date('2026-08-01T10:00:00Z'), lastSeenAt: new Date('2026-09-21T12:00:00Z') },
+      { id: 'u2', createdAt: new Date('2026-08-01T10:00:00Z') },
+    ],
+    range,
+    'lastSeenAt'
+  )
+  assert.equal(seen.find((point) => point.day === '2026-09-21')?.value, 1)
+})
+
+test('last-seen retention uses account records, not product events', () => {
+  const now = new Date('2026-09-22T12:00:00Z')
+  const users = [
+    { id: 'a', createdAt: new Date('2026-08-01T00:00:00Z'), lastSeenAt: new Date('2026-09-20T00:00:00Z') },
+    { id: 'b', createdAt: new Date('2026-08-01T00:00:00Z'), lastSeenAt: new Date('2026-08-02T00:00:00Z') },
+    { id: 'c', createdAt: new Date('2026-08-01T00:00:00Z'), lastSeenAt: new Date('2026-09-10T00:00:00Z') },
+    { id: 'd', createdAt: new Date('2026-08-01T00:00:00Z'), lastSeenAt: new Date('2026-09-15T00:00:00Z') },
+    { id: 'e', createdAt: new Date('2026-08-01T00:00:00Z'), lastSeenAt: new Date('2026-09-18T00:00:00Z') },
+  ]
+  const day30 = lastSeenRetention(users, now).find((row) => row.label === 'Day 30')
+  assert.equal(day30?.size, 5)
+  assert.equal(day30?.retained, 4)
+  assert.equal(roleMix([{ role: 'admin', permissions: { adminAccess: true } }, { role: 'operative', permissions: { operativeMode: true } }])[0].count, 1)
+})
+

@@ -10,6 +10,7 @@ import {
   countUnique,
   dailyActiveUsers,
   directoryActiveUsers,
+  directoryDateChart,
   inRange,
   organisationActivityRows,
   uniqueUsersChart,
@@ -55,8 +56,8 @@ export function DateRangePicker({
 export function DeveloperOverviewScreen() {
   const [preset, setPreset] = useState<DateRangePreset>('all_time')
   const range = useMemo(() => resolveDateRange(preset), [preset])
-  const { events, sessions, users, organisations, loading, error, warning, loadedAt, load, refresh } = useAnalyticsStore()
-  const { suggestions, votes, error: boardError, loadBoard } = useFeedbackStore()
+  const { events, sessions, users, organisations, loading, error, loadedAt, load, refresh } = useAnalyticsStore()
+  const { suggestions, votes, loadBoard } = useFeedbackStore()
 
   useEffect(() => {
     void load()
@@ -110,7 +111,7 @@ export function DeveloperOverviewScreen() {
     }
   }, [events, sessions, users, organisations, suggestions, votes, range])
 
-  if (loading && users.length === 0 && organisations.length === 0 && !error && !warning) {
+  if (loading && users.length === 0 && organisations.length === 0 && !error) {
     return <LoadingSpinner label="Loading live organisations…" />
   }
 
@@ -129,7 +130,7 @@ export function DeveloperOverviewScreen() {
       }
     >
       <DateRangePicker preset={preset} onChange={setPreset} />
-      <DeveloperStatus error={error} warning={warning || boardError} loading={loading && (users.length > 0 || organisations.length > 0)} />
+      <DeveloperStatus error={error} loading={loading && (users.length > 0 || organisations.length > 0)} />
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <MetricCard label="Organisations" value={metrics.organisations} href="/developer/organisations" />
         <MetricCard label="Registered users" value={metrics.totalUsers} href="/developer/users" />
@@ -184,8 +185,7 @@ export function DeveloperOverviewScreen() {
         </p>
         {metrics.topOrgs.length === 0 ? (
           <p className="mt-3 text-sm text-[var(--ink3)]">
-            Organisations appear here as soon as a company completes setup. If this list is empty, refresh after publishing
-            firestore.rules so the owner login can read every tenant.
+            Organisations appear here as soon as a company completes setup.
           </p>
         ) : (
           <ul className="mt-3 space-y-2">
@@ -207,19 +207,30 @@ export function DeveloperOverviewScreen() {
         )}
       </section>
       <section className="card pad">
-        <h2 className="h2">{range.preset === 'all_time' ? 'Monthly active users' : 'Daily active users'}</h2>
+        <h2 className="h2">{range.preset === 'all_time' ? 'New users by month' : 'New users'}</h2>
+        <p className="mt-1 text-xs text-[var(--ink3)]">From live user records, not estimated.</p>
+        <div className="mt-4">
+          {users.length === 0 ? (
+            <EmptyState title="No users yet" description="Accounts appear here as organisations complete setup." />
+          ) : (
+            <MiniBars points={directoryDateChart(users, range, 'createdAt')} hue="hs" />
+          )}
+        </div>
+      </section>
+      <section className="card pad">
+        <h2 className="h2">{range.preset === 'all_time' ? 'Last seen by month' : 'Last seen'}</h2>
         <p className="mt-1 text-xs text-[var(--ink3)]">
-          Unique people who generated a product event. Last-seen on user records still counts in the Active metric above.
+          People whose user record has a last-seen timestamp in this range
+          {metrics.hasEvents ? ', plus unique product-event users when those exist.' : '.'}
         </p>
         <div className="mt-4">
-          {!metrics.hasEvents ? (
-            <EmptyState
-              title="No product events yet"
-              description="Organisation and user counts above still come from live account records. Feature charts fill in after people use the app with tracking enabled."
-            />
-          ) : (
-            <MiniBars points={uniqueUsersChart(events, range)} />
-          )}
+          <MiniBars
+            points={
+              metrics.hasEvents
+                ? uniqueUsersChart(events, range)
+                : directoryDateChart(users, range, 'lastSeenAt')
+            }
+          />
         </div>
       </section>
     </DeveloperShell>
