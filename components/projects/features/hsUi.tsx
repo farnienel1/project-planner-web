@@ -26,7 +26,7 @@ export function HsSheet({
   wide?: boolean
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center sm:p-4">
+    <div className="fixed inset-0 z-[90] flex items-end justify-center bg-[var(--bg)] sm:items-center sm:p-4">
       <div
         className={`flex max-h-[92vh] w-full flex-col overflow-hidden bg-[var(--bg)] shadow-xl sm:rounded-2xl ${
           wide ? 'max-w-2xl' : 'max-w-lg'

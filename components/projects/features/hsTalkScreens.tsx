@@ -2,37 +2,35 @@
 
 import { format } from 'date-fns'
 import type { HSToolboxIssue, HSToolboxSignature, HSToolboxTalk, User } from '@/types'
-import { signaturePngSrc } from '@/lib/signature/signatureImage'
 import { signedPercent } from '@/lib/healthSafety/hsTracking'
+import { looksLikeSiteAuditFile, talkPreviewHtml } from '@/lib/healthSafety/toolboxTalkPdf'
 import { FeatureCard, FeatureSectionLabel } from '@/components/projects/features/featureUi'
-import { HsPrimaryButton, HsSectionLabel } from '@/components/projects/features/hsUi'
+import { HsPrimaryButton } from '@/components/projects/features/hsUi'
 
 export function HsTalkBody({ talk }: { talk: HSToolboxTalk }) {
+  const fileURL = talk.fileURL || ''
+  const siteAuditFile = looksLikeSiteAuditFile(fileURL)
+  const previewHtml = talkPreviewHtml(talk)
+  const originalPdf = Boolean(fileURL) && !siteAuditFile
   return (
-    <div className="space-y-3">
+    <div className="space-y-3" data-hs-talk-preview="true">
       {talk.referenceCode ? (
         <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{talk.referenceCode}</p>
       ) : null}
       <p className="text-sm font-semibold text-slate-900">{talk.title}</p>
-      {talk.purpose ? <p className="text-sm text-slate-600">{talk.purpose}</p> : null}
-      {talk.keyPoints.length > 0 ? (
-        <div>
-          <HsSectionLabel>Key control points</HsSectionLabel>
-          <ul className="mt-1 list-disc space-y-1 pl-5 text-sm text-slate-600">
-            {talk.keyPoints.map((point) => (
-              <li key={point}>{point}</li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-      {talk.fileURL ? (
+      <iframe
+        srcDoc={previewHtml}
+        title="Toolbox talk preview"
+        className="h-[55vh] w-full rounded-xl border border-slate-200 bg-white"
+      />
+      {originalPdf ? (
         <a
-          href={talk.fileURL}
+          href={fileURL}
           target="_blank"
           rel="noreferrer"
           className="inline-flex text-sm font-semibold text-[#2F73F0] hover:underline"
         >
-          Open uploaded talk
+          Open original PDF
         </a>
       ) : null}
     </div>
@@ -191,10 +189,13 @@ export function HsIssueDetail({
   canSign,
   canViewSigned,
   downloadError,
+  reminding,
   onBack,
   onView,
   onSign,
   onDownload,
+  onRemind,
+  onAddRecipients,
 }: {
   issue: HSToolboxIssue
   talk?: HSToolboxTalk
@@ -203,11 +204,15 @@ export function HsIssueDetail({
   canSign: boolean
   canViewSigned: boolean
   downloadError?: string | null
+  reminding?: boolean
   onBack: () => void
   onView: () => void
   onSign: () => void
   onDownload: () => void
+  onRemind?: () => void
+  onAddRecipients?: () => void
 }) {
+  const pending = signatures.filter((signature) => signature.status !== 'signed').length
   return (
     <div className="space-y-4">
       <button type="button" onClick={onBack} className="btn sm ghost">
@@ -226,10 +231,37 @@ export function HsIssueDetail({
         onSign={onSign}
         onDownload={onDownload}
       />
+      {onRemind || onAddRecipients ? (
+        <div className="grid grid-cols-2 gap-2">
+          {onRemind ? (
+            <button
+              type="button"
+              onClick={onRemind}
+              disabled={pending === 0 || reminding}
+              className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+            >
+              {reminding ? 'Sending…' : `Remind pending (${pending})`}
+            </button>
+          ) : null}
+          {onAddRecipients ? (
+            <button
+              type="button"
+              onClick={onAddRecipients}
+              className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-50"
+            >
+              Send to further operatives
+            </button>
+          ) : null}
+        </div>
+      ) : null}
       {downloadError ? <p className="text-sm font-semibold text-[#A32D2D]">{downloadError}</p> : null}
-      <FeatureSectionLabel>Sign-off</FeatureSectionLabel>
+      <FeatureSectionLabel>Signed</FeatureSectionLabel>
       <FeatureCard className="p-4">
-        <HsSignatureList signatures={signatures} users={users} />
+        <HsSignatureList signatures={signatures.filter((signature) => signature.status === 'signed')} users={users} />
+      </FeatureCard>
+      <FeatureSectionLabel>Pending</FeatureSectionLabel>
+      <FeatureCard className="p-4">
+        <HsSignatureList signatures={signatures.filter((signature) => signature.status !== 'signed')} users={users} />
       </FeatureCard>
     </div>
   )
@@ -237,27 +269,21 @@ export function HsIssueDetail({
 
 export function HsSignedTalkBody({
   talk,
-  signature,
+  signatures,
+  users,
 }: {
   talk?: HSToolboxTalk
-  signature?: HSToolboxSignature
+  signatures: HSToolboxSignature[]
+  users: User[]
 }) {
-  const src = signaturePngSrc(signature?.signatureImageBase64)
   return (
     <div className="space-y-4">
       {talk ? <HsTalkBody talk={talk} /> : <p className="text-sm text-slate-500">Talk details are unavailable.</p>}
-      <div className="rounded-2xl border border-slate-200 bg-white p-3">
-        <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Your signature</p>
-        {src ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={src} alt="Signature" className="mt-2 max-h-16" />
-        ) : (
-          <p className="mt-2 text-sm text-slate-500">Signed</p>
-        )}
-        {signature?.signedAt ? (
-          <p className="mt-1 text-xs text-slate-500">{format(signature.signedAt, "d MMM yyyy 'at' HH:mm")}</p>
-        ) : null}
-      </div>
+      <HsSignedProgress signatures={signatures} recipientCount={signatures.length} />
+      <FeatureSectionLabel>Who has signed</FeatureSectionLabel>
+      <HsSignatureList signatures={signatures.filter((signature) => signature.status === 'signed')} users={users} />
+      <FeatureSectionLabel>Pending</FeatureSectionLabel>
+      <HsSignatureList signatures={signatures.filter((signature) => signature.status !== 'signed')} users={users} />
     </div>
   )
 }

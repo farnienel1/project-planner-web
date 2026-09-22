@@ -24,7 +24,7 @@ export function jobHubTiles(input: {
   if (input.showViewTile && !input.isOperative) {
     tiles.push({ href: 'view', label: 'View', desc: 'Control who can see this project' })
   }
-  tiles.push({ href: 'tasks', label: 'My Tasks', desc: 'Tasks and assignments' })
+    tiles.push({ href: 'tasks', label: 'Tasks', desc: 'Tasks and assignments' })
   if (input.canViewMaterials) {
     tiles.push({ href: 'materials', label: 'Materials', desc: 'Materials list and send to wholesaler' })
   }

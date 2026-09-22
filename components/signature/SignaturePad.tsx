@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import localFont from 'next/font/local'
-import { signaturePngSrc, stripPngDataUrl } from '@/lib/signature/signatureImage'
+import { compactCanvasPng, signaturePngSrc } from '@/lib/signature/signatureImage'
 
 const signatureFont = localFont({
   src: [{ path: '../../fonts/GreatVibes-latin-400.woff2', weight: '400', style: 'normal' }],
@@ -83,7 +83,7 @@ export function SignaturePad({
       onChange(null)
       return
     }
-    onChange(stripPngDataUrl(canvas.toDataURL('image/png')))
+    onChange(compactCanvasPng(canvas))
   }, [onChange])
 
   const redrawAndExport = useCallback(() => {

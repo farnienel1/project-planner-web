@@ -50,7 +50,7 @@ export function ProjectHub({
                 <span className="ico-chip sm">
                   <ClipboardDocumentCheckIcon className="h-4 w-4" />
                 </span>
-                <h2 className="h2">My tasks</h2>
+                <h2 className="h2">Tasks</h2>
                 <div className="acts">
                   <Link href={`${basePath}/tasks`} className="btn sm ghost">
                     All
@@ -62,7 +62,7 @@ export function ProjectHub({
                   {taskCount ? `${taskCount} open task${taskCount === 1 ? '' : 's'} on this job.` : 'No open tasks. Create snags, variations and to-dos for this job.'}
                 </p>
                 <Link href={`${basePath}/tasks`} className="btn sm primary mt-3">
-                  {taskCount ? 'Open tasks' : 'Create a task'}
+                  Tasks
                 </Link>
               </div>
             </section>
