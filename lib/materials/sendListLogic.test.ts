@@ -70,12 +70,18 @@ test('one-off recipient requires name and an email with @', () => {
 
 test('recipient snapshots keep wholesaler name and one-off emails', () => {
   const rows = buildRecipientSnapshots(wholesalers, ['c1'], [
-    { id: 'oneoff-custom@example.com', name: 'Custom', email: 'custom@example.com' },
+    { id: 'oneoff-custom@example.com', name: 'Custom', email: 'custom@example.com', phone: '07700 900123' },
   ])
   assert.equal(rows.length, 2)
   assert.equal(rows[0].wholesalerName, 'CEF')
   assert.equal(rows[1].name, 'Custom')
   assert.equal(rows[1].wholesalerName, undefined)
+  assert.equal(rows[1].phone, '07700 900123')
+})
+
+test('one-off recipient can carry an optional mobile number', () => {
+  const parsed = parseOneOffRecipient('Pat', 'pat@example.com', ' +44 7700 900123 ')
+  assert.equal(parsed?.phone, '+44 7700 900123')
 })
 
 test('plain-text greeting uses the full contact name', () => {

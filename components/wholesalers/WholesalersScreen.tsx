@@ -59,7 +59,10 @@ export function WholesalersScreen({ selectedId }: { selectedId?: string }) {
         (row.trade || '').toLowerCase().includes(query) ||
         city.includes(query) ||
         row.contacts.some(
-          (contact) => contact.name.toLowerCase().includes(query) || contact.email.toLowerCase().includes(query)
+          (contact) =>
+            contact.name.toLowerCase().includes(query) ||
+            contact.email.toLowerCase().includes(query) ||
+            (contact.phone || '').toLowerCase().includes(query)
         )
       )
     })
@@ -382,6 +385,17 @@ function WholesalerEditor({
                 value={contact.email}
                 onChange={(email) => {
                   const contacts = draft.contacts.map((row) => (row.id === contact.id ? { ...row, email } : row))
+                  setDraft({ ...draft, contacts })
+                }}
+              />
+            </div>
+            <div className="mt-2">
+              <Field
+                label="Mobile · WhatsApp"
+                type="tel"
+                value={contact.phone || ''}
+                onChange={(phone) => {
+                  const contacts = draft.contacts.map((row) => (row.id === contact.id ? { ...row, phone } : row))
                   setDraft({ ...draft, contacts })
                 }}
               />

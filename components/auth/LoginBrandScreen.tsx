@@ -55,18 +55,22 @@ export function LoginBrandScreen() {
   return (
     <div className="login">
       <div className="hero art" style={{ borderRadius: 0 }}>
-        <div className="relative z-[1] flex items-center gap-3">
-          <div className="overflow-hidden rounded-xl" style={{ background: 'rgba(255,255,255,.15)' }}>
-            <AppLogoMark size={40} radius={12} />
+        <Link
+          href="/"
+          className="relative z-[1] flex items-center gap-3.5 text-white no-underline"
+          aria-label="Project Planner home"
+        >
+          <div className="overflow-hidden rounded-[14px]" style={{ background: 'rgba(255,255,255,.15)' }}>
+            <AppLogoMark size={52} radius={14} />
           </div>
-          <b className="font-[family-name:var(--head)] text-lg">Project Planner</b>
-        </div>
+          <b className="font-[family-name:var(--head)] text-[22px] font-extrabold tracking-tight">Project Planner</b>
+        </Link>
         <div className="relative z-[1]">
           <div className="big" style={{ fontSize: 44, maxWidth: 520 }}>
             Every job, every operative, every hour.
           </div>
           <p style={{ opacity: 0.85, fontSize: 17, maxWidth: 460, marginTop: 12 }}>
-            Scheduling, timesheets, materials and H&amp;S for MEP contractors.
+            Scheduling, timesheets, materials and H&amp;S for contractors.
           </p>
         </div>
         <div className="relative z-[1] xs" style={{ opacity: 0.7 }}>
@@ -76,6 +80,16 @@ export function LoginBrandScreen() {
 
       <div className="form-side">
         <div style={{ width: 'min(420px, 100%)' }}>
+          <Link
+            href="/"
+            className="login-form-home mb-7 flex items-center gap-3 text-[var(--ink)] no-underline"
+            aria-label="Project Planner home"
+          >
+            <div className="overflow-hidden rounded-[14px] shadow-[var(--sh)]">
+              <AppLogoMark size={48} radius={14} />
+            </div>
+            <b className="font-[family-name:var(--head)] text-[22px] font-extrabold tracking-tight">Project Planner</b>
+          </Link>
           <h1 className="text-[28px] font-extrabold">Sign in</h1>
           <p className="muted mt-1.5">Welcome back</p>
 
