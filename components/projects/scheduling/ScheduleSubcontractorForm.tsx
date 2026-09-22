@@ -1,7 +1,7 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { addDoc, collection, Timestamp } from 'firebase/firestore'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useSubcontractorStore } from '@/lib/stores/subcontractorStore'
@@ -39,6 +39,7 @@ export function ScheduleSubcontractorForm({
   const [selectedContactIds, setSelectedContactIds] = useState<Set<string>>(new Set())
   const [search, setSearch] = useState('')
   const [typeFilter, setTypeFilter] = useState('All Types')
+  const previousTypeFilter = useRef(typeFilter)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -51,16 +52,21 @@ export function ScheduleSubcontractorForm({
       .filter((sub) => typeFilter === 'All Types' || sub.subcontractorType === typeFilter)
       .sort((a, b) => a.name.localeCompare(b.name))
     const first = list[0]
+    const filterChanged = previousTypeFilter.current !== typeFilter
+    previousTypeFilter.current = typeFilter
     if (!first) {
       setSelectedSubcontractorId('')
       setUseGeneralAttendance(true)
       setSelectedContactIds(new Set())
       return
     }
-    setSelectedSubcontractorId(first.id)
-    setUseGeneralAttendance(true)
-    setSelectedContactIds(new Set())
-  }, [typeFilter, subcontractors])
+    const stillVisible = list.some((sub) => sub.id === selectedSubcontractorId)
+    if (filterChanged || !stillVisible) {
+      setSelectedSubcontractorId(first.id)
+      setUseGeneralAttendance(true)
+      setSelectedContactIds(new Set())
+    }
+  }, [typeFilter, subcontractors, selectedSubcontractorId])
 
   const typeFilters = useMemo(() => {
     const types = new Set(subcontractors.map((s) => s.subcontractorType))
