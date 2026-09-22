@@ -101,7 +101,7 @@ export function DeveloperLoginScreen() {
     try {
       setSubmitting(true)
       await resetPassword(PLATFORM_OWNER_EMAIL)
-      setNotice(`If the owner account exists, Firebase has emailed a reset link to ${PLATFORM_OWNER_EMAIL}. Check spam if it is not in the inbox.`)
+      setNotice(`If the owner account exists, a reset link has been emailed to ${PLATFORM_OWNER_EMAIL}. Open it on this site to choose a new password. Check spam if it is not in the inbox.`)
       setMode('sign-in')
     } catch (err) {
       setLocalError(formatLoginError(err))
