@@ -2,17 +2,20 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
+import { ChatBubbleLeftIcon, ChevronUpIcon } from '@heroicons/react/24/solid'
 import { useAuthStore } from '@/lib/stores/authStore'
-import { useFeedbackStore, hasVoted } from '@/lib/feedback/feedbackStore'
+import { feedbackWriteError, hasVoted, useFeedbackStore } from '@/lib/feedback/feedbackStore'
 import { similarSuggestions } from '@/lib/feedback/similar'
 import {
   FEEDBACK_CATEGORIES,
+  PUBLIC_STATUS_COPY,
   PUBLIC_STATUS_LABEL,
   type FeedbackCategory,
   type FeedbackSuggestion,
   type RelatedFeature,
 } from '@/lib/feedback/types'
 import { EmptyState, ErrorBanner, LoadingSpinner } from '@/components/dashboard/PageShell'
+import { Hero } from '@/components/ui/surfaces'
 
 const CATEGORY_FEATURE: Record<FeedbackCategory, RelatedFeature> = {
   Projects: 'projects',
@@ -28,33 +31,12 @@ const CATEGORY_FEATURE: Record<FeedbackCategory, RelatedFeature> = {
   Other: 'dashboard',
 }
 
-function orgLabel(row: FeedbackSuggestion) {
-  return row.organizationName?.trim() || 'Another organisation'
+function orgLabel(row: FeedbackSuggestion): string {
+  return row.organizationName?.trim() || 'An organisation'
 }
 
-function VoteButton({
-  count,
-  voted,
-  onClick,
-  large,
-}: {
-  count: number
-  voted: boolean
-  onClick: () => void
-  large?: boolean
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`flex flex-col items-center rounded-xl px-2 font-extrabold ${
-        large ? 'min-w-[64px] py-3 text-lg' : 'min-w-[56px] py-2 text-sm'
-      } ${voted ? 'bg-[var(--task-t)] text-[var(--task)]' : 'bg-[var(--soft)] text-[var(--ink2)]'}`}
-    >
-      {count}
-      <span className="text-[10px] font-semibold uppercase">{voted ? 'Voted' : 'Vote'}</span>
-    </button>
-  )
+function postedWhen(row: FeedbackSuggestion): string {
+  return row.createdAt.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
 }
 
 export function FeedbackBoardScreen() {
@@ -69,6 +51,7 @@ export function FeedbackBoardScreen() {
   const [saving, setSaving] = useState(false)
   const [savedId, setSavedId] = useState<string | null>(null)
   const [submitError, setSubmitError] = useState('')
+  const [voteError, setVoteError] = useState('')
 
   useEffect(() => {
     void loadBoard(false)
@@ -84,23 +67,33 @@ export function FeedbackBoardScreen() {
     })
   }, [suggestions, query, category])
 
-  const topRated = useMemo(() => {
+  const featured = useMemo(() => {
+    if (query.trim() || category !== 'All') return null
     const open = suggestions.filter((row) => !row.mergedIntoId && !row.hidden)
-    if (open.length === 0) return []
-    return [...open].sort((a, b) => b.voteCount - a.voteCount || Number(b.pinned) - Number(a.pinned)).slice(0, 3)
-  }, [suggestions])
-
-  const featured = topRated[0]
-  const rest = useMemo(() => visible.filter((row) => row.id !== featured?.id), [visible, featured?.id])
+    if (open.length === 0) return null
+    return [...open].sort(
+      (a, b) =>
+        Number(b.pinned) - Number(a.pinned) ||
+        b.voteCount - a.voteCount ||
+        b.commentCount - a.commentCount ||
+        b.createdAt.getTime() - a.createdAt.getTime()
+    )[0]
+  }, [suggestions, query, category])
 
   const similar = useMemo(
     () => similarSuggestions(title, details, suggestions),
     [title, details, suggestions]
   )
 
-  const orgCount = useMemo(() => {
-    return new Set(suggestions.map((row) => row.organizationId).filter(Boolean)).size
-  }, [suggestions])
+  const vote = async (row: FeedbackSuggestion) => {
+    if (!user) return
+    setVoteError('')
+    try {
+      await toggleVote(row, user.id)
+    } catch (err) {
+      setVoteError(feedbackWriteError(err))
+    }
+  }
 
   const submit = async () => {
     if (!user || !title.trim()) return
@@ -115,41 +108,41 @@ export function FeedbackBoardScreen() {
         userId: user.id,
         authorName: `${user.firstName} ${user.surname}`.trim() || user.email,
         organizationId: organization?.id || user.organizationId,
-        organizationName: organization?.name || '',
+        organizationName: organization?.name,
       })
       setSavedId(id)
       setTitle('')
       setDetails('')
       setCompose(false)
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Could not submit this idea'
-      setSubmitError(
-        /permission|insufficient/i.test(message)
-          ? 'Submitting is blocked until the latest Firestore rules are published. Your organisation can still vote once the board is live.'
-          : message
-      )
+      setSubmitError(feedbackWriteError(err))
     } finally {
       setSaving(false)
     }
   }
 
-  if (loading && suggestions.length === 0) return <LoadingSpinner label="Loading the shared ideas board…" />
+  if (loading && suggestions.length === 0) return <LoadingSpinner label="Loading ideas…" />
 
   return (
-    <div className="space-y-4">
-      <section className="hero" data-hue="task" style={{ padding: '22px 24px' }}>
-        <p className="eb">Shared across every organisation</p>
-        <h1 className="big">Ideas</h1>
-        <p style={{ opacity: 0.9, marginTop: 6, maxWidth: 620 }}>
-          One board for every company using Project Planner. Suggest an improvement, vote on what would help on site,
-          and see the highest-rated ideas from other organisations.
-        </p>
-        <button type="button" className="btn sm hbtn solid mt-4" onClick={() => setCompose(true)}>
-          Suggest an idea
-        </button>
-      </section>
+    <div className="stack" data-hue="task">
+      <Hero
+        hue="task"
+        eyebrow="Shared across every organisation"
+        title="Vote the most useful idea to the top"
+        subtitle="This board is the same for every company using Project Planner. Suggest an improvement, vote once per idea, and the highest-rated request is featured so the product team can see what matters on site."
+        stats={[
+          { label: 'Ideas on the board', value: suggestions.filter((row) => !row.mergedIntoId).length },
+          { label: 'Votes cast', value: votes.length },
+        ]}
+        actions={
+          <button type="button" className="btn sm hbtn solid" onClick={() => { setCompose(true); setSubmitError('') }}>
+            Suggest an idea
+          </button>
+        }
+      />
 
       {error ? <ErrorBanner message={error} /> : null}
+      {voteError ? <ErrorBanner message={voteError} /> : null}
       {savedId ? (
         <div className="banner" data-hue="hs">
           Thanks — your idea is on the shared board.{' '}
@@ -159,29 +152,14 @@ export function FeedbackBoardScreen() {
         </div>
       ) : null}
 
-      <div className="grid gap-3 sm:grid-cols-3">
-        <div className="card pad">
-          <p className="eyebrow">Ideas on the board</p>
-          <p className="mt-1 text-2xl font-extrabold">{suggestions.filter((row) => !row.mergedIntoId).length}</p>
-        </div>
-        <div className="card pad">
-          <p className="eyebrow">Organisations contributing</p>
-          <p className="mt-1 text-2xl font-extrabold">{orgCount}</p>
-        </div>
-        <div className="card pad">
-          <p className="eyebrow">Votes cast</p>
-          <p className="mt-1 text-2xl font-extrabold">{votes.length}</p>
-        </div>
-      </div>
-
       {featured ? (
-        <section className="card pad" data-hue="task">
+        <article className="card pad" data-hue="task">
           <p className="eyebrow">Top rated</p>
-          <div className="mt-3 flex items-start gap-3">
-            <VoteButton
-              count={featured.voteCount}
+          <div className="mt-2 flex items-start gap-3">
+            <VoteControl
+              row={featured}
               voted={hasVoted(votes, featured.id, user?.id)}
-              onClick={() => user && void toggleVote(featured, user.id)}
+              onVote={() => void vote(featured)}
               large
             />
             <div className="min-w-0 flex-1">
@@ -192,34 +170,19 @@ export function FeedbackBoardScreen() {
                 {featured.details || 'No extra detail yet.'}
               </p>
               <p className="mt-2 text-xs text-[var(--ink3)]">
-                {orgLabel(featured)} · {featured.category} · {PUBLIC_STATUS_LABEL[featured.publicStatus]} ·{' '}
+                {orgLabel(featured)} · {featured.authorName} · {featured.category} · {PUBLIC_STATUS_LABEL[featured.publicStatus]} ·{' '}
                 {featured.commentCount} comments
               </p>
             </div>
           </div>
-          {topRated.length > 1 ? (
-            <ol className="mt-4 grid gap-2 sm:grid-cols-2">
-              {topRated.slice(1).map((row, index) => (
-                <li key={row.id} className="rounded-xl bg-[var(--soft)] p-3">
-                  <p className="text-[10px] font-bold uppercase text-[var(--ink3)]">#{index + 2} most voted</p>
-                  <Link href={`/dashboard/ideas/${row.id}`} className="mt-1 block font-bold">
-                    {row.title}
-                  </Link>
-                  <p className="mt-1 text-xs text-[var(--ink3)]">
-                    {row.voteCount} votes · {orgLabel(row)}
-                  </p>
-                </li>
-              ))}
-            </ol>
-          ) : null}
-        </section>
+        </article>
       ) : null}
 
       <div className="flex flex-wrap gap-2">
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search every organisation’s ideas…"
+          placeholder="Search ideas or organisations…"
           className="pp-in min-w-[220px] flex-1"
         />
         {(['All', ...FEEDBACK_CATEGORIES] as const).map((item) => (
@@ -236,29 +199,47 @@ export function FeedbackBoardScreen() {
 
       {visible.length === 0 ? (
         <EmptyState
-          title="No ideas on the shared board yet"
-          description="Be the first organisation to suggest something. Everyone else will see it and can vote it to the top."
+          title="No ideas yet"
+          description="Be the first organisation to suggest something, or clear the filters. Everyone on Project Planner will see it."
         />
       ) : (
         <div className="space-y-2">
-          {(featured && visible.some((row) => row.id === featured.id) ? rest : visible).map((row) => {
+          {visible.map((row) => {
             const voted = hasVoted(votes, row.id, user?.id)
             return (
               <article key={row.id} className="card pad">
                 <div className="flex items-start gap-3">
-                  <VoteButton
-                    count={row.voteCount}
-                    voted={voted}
-                    onClick={() => user && void toggleVote(row, user.id)}
-                  />
+                  <VoteControl row={row} voted={voted} onVote={() => void vote(row)} />
                   <div className="min-w-0 flex-1">
-                    <Link href={`/dashboard/ideas/${row.id}`} className="text-base font-bold text-[var(--ink)]">
-                      {row.title}
-                    </Link>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Link href={`/dashboard/ideas/${row.id}`} className="text-base font-bold text-[var(--ink)]">
+                        {row.title}
+                      </Link>
+                      {row.pinned ? (
+                        <span className="pill" data-hue="task">
+                          Pinned
+                        </span>
+                      ) : null}
+                      {featured && row.id === featured.id ? (
+                        <span className="pill" data-hue="hs">
+                          Top rated
+                        </span>
+                      ) : null}
+                    </div>
                     <p className="mt-1 line-clamp-2 text-sm text-[var(--ink2)]">{row.details || 'No extra detail yet.'}</p>
-                    <p className="mt-2 text-xs text-[var(--ink3)]">
-                      {orgLabel(row)} · {row.category} · {PUBLIC_STATUS_LABEL[row.publicStatus]} · {row.commentCount}{' '}
-                      comments
+                    <p className="mt-2 flex flex-wrap items-center gap-x-2 text-xs text-[var(--ink3)]">
+                      <span>{orgLabel(row)}</span>
+                      <span>·</span>
+                      <span>{row.category}</span>
+                      <span>·</span>
+                      <span>{PUBLIC_STATUS_LABEL[row.publicStatus]}</span>
+                      <span>·</span>
+                      <span className="inline-flex items-center gap-1">
+                        <ChatBubbleLeftIcon className="h-3 w-3" />
+                        {row.commentCount}
+                      </span>
+                      <span>·</span>
+                      <span>{postedWhen(row)}</span>
                     </p>
                   </div>
                 </div>
@@ -272,17 +253,21 @@ export function FeedbackBoardScreen() {
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center sm:p-4">
           <div className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-t-2xl bg-[var(--bg)] p-4 sm:rounded-2xl">
             <div className="mb-3 flex items-center justify-between">
-              <button type="button" className="text-sm font-semibold text-[var(--blue)]" onClick={() => setCompose(false)}>
+              <button
+                type="button"
+                className="text-sm font-semibold text-[var(--blue)]"
+                onClick={() => setCompose(false)}
+              >
                 Cancel
               </button>
               <p className="text-sm font-bold">Suggest an idea</p>
               <span className="w-12" />
             </div>
-            <p className="mb-3 text-sm text-[var(--ink2)]">
-              This goes on the shared board. Other organisations will see it and can vote.
+            <p className="text-sm text-[var(--ink2)]">
+              Posted from {organization?.name || 'your organisation'} onto the shared board. Every company can see and vote on it.
             </p>
-            {submitError ? <ErrorBanner message={submitError} /> : null}
-            <label className="eyebrow">Title</label>
+            {submitError ? <div className="mt-3"><ErrorBanner message={submitError} /></div> : null}
+            <label className="eyebrow mt-3 block">Title</label>
             <input
               value={title}
               onChange={(e) => setTitle(e.target.value)}
@@ -314,7 +299,11 @@ export function FeedbackBoardScreen() {
                 <p className="eyebrow">Similar ideas already on the board</p>
                 <div className="mt-2 space-y-2">
                   {similar.map((row) => (
-                    <Link key={row.id} href={`/dashboard/ideas/${row.id}`} className="block rounded-xl bg-white p-3 text-sm font-semibold">
+                    <Link
+                      key={row.id}
+                      href={`/dashboard/ideas/${row.id}`}
+                      className="block rounded-xl bg-white p-3 text-sm font-semibold"
+                    >
                       {row.title}
                       <span className="mt-1 block text-xs font-normal text-[var(--ink3)]">
                         {row.voteCount} votes · {orgLabel(row)}
@@ -324,7 +313,12 @@ export function FeedbackBoardScreen() {
                 </div>
               </div>
             ) : null}
-            <button type="button" className="btn primary mt-4 w-full" disabled={!title.trim() || saving} onClick={() => void submit()}>
+            <button
+              type="button"
+              className="btn primary mt-4 w-full"
+              disabled={!title.trim() || saving}
+              onClick={() => void submit()}
+            >
               {saving ? 'Saving…' : 'Submit idea'}
             </button>
           </div>
@@ -334,4 +328,31 @@ export function FeedbackBoardScreen() {
   )
 }
 
-export { CATEGORY_FEATURE }
+function VoteControl({
+  row,
+  voted,
+  onVote,
+  large,
+}: {
+  row: FeedbackSuggestion
+  voted: boolean
+  onVote: () => void
+  large?: boolean
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onVote}
+      className={`flex flex-col items-center rounded-xl px-2 py-2 text-sm font-extrabold ${
+        large ? 'min-w-[64px] py-3 text-lg' : 'min-w-[56px]'
+      } ${voted ? 'bg-[var(--task-t)] text-[var(--task)]' : 'bg-[var(--soft)] text-[var(--ink2)]'}`}
+      aria-label={voted ? 'Remove vote' : 'Vote for this idea'}
+    >
+      <ChevronUpIcon className={large ? 'h-5 w-5' : 'h-4 w-4'} />
+      {row.voteCount}
+      <span className="text-[10px] font-semibold uppercase">{voted ? 'Voted' : 'Vote'}</span>
+    </button>
+  )
+}
+
+export { CATEGORY_FEATURE, PUBLIC_STATUS_COPY }

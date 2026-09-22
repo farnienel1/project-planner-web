@@ -183,9 +183,10 @@ export function LoginBrandScreen() {
               Set up an organisation
             </Link>
           </p>
-          <Link href="/developer-login" className="btn sm ghost mt-4 block text-center">
+          <Link href="/developer-login" className="btn sm ghost mt-4 block text-center" style={{ height: 44 }}>
             Developer login
           </Link>
+          <p className="muted small mt-2 text-center">App owner only — not an organisation dashboard.</p>
         </div>
       </div>
     </div>
