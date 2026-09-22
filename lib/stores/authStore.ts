@@ -279,6 +279,14 @@ async function loadSignedInProfileInner(firebaseUser: FirebaseUser) {
 
   void import('@/lib/analytics/trackEvent').then(({ trackEvent }) => {
     if (isPlatformOwnerEmail(user.email) || isPlatformOwnerSentinelOrg(user.organizationId)) return
+    if (typeof window !== 'undefined') {
+      try {
+        if (window.sessionStorage.getItem('pp.loginTracked') === '1') return
+        window.sessionStorage.setItem('pp.loginTracked', '1')
+      } catch {
+        /* private mode */
+      }
+    }
     trackEvent('user_logged_in', { userId: user.id, organizationId: user.organizationId })
   })
 
