@@ -72,8 +72,27 @@ function parseLengthUnit(value: string): MaterialLengthUnit | undefined {
   return match
 }
 
+export function catalogueCategoriesNote(categories: string[]): string {
+  const names = [...new Set(categories.map((name) => name.trim()).filter(Boolean))].sort((a, b) =>
+    a.localeCompare(b, undefined, { sensitivity: 'base' })
+  )
+  if (names.length === 0) {
+    return '# Categories: type your own in the Category column (for example Electrical). This note is ignored on upload.'
+  }
+  return `# Categories currently in this catalogue (ignored on upload): ${names.join(', ')}`
+}
+
+function isCsvNoteLine(line: string): boolean {
+  const trimmed = line.trim()
+  if (!trimmed) return true
+  if (trimmed.startsWith('#') || trimmed.startsWith('//')) return true
+  const first = splitCsvLine(trimmed)[0] || ''
+  return first.startsWith('#') || first.startsWith('//')
+}
+
 export function exportCatalogueCsv(items: MaterialCatalogItem[]): string {
-  const lines = [CATALOGUE_CSV_HEADER]
+  const categories = items.map((item) => item.category || 'Other')
+  const lines = [CATALOGUE_CSV_HEADER, catalogueCategoriesNote(categories)]
   for (const item of items) {
     lines.push(
       [
@@ -94,33 +113,47 @@ export function exportCatalogueCsv(items: MaterialCatalogItem[]): string {
   return `${lines.join('\n')}\n`
 }
 
-export function exportCatalogueTemplateCsv(): string {
-  return `${CATALOGUE_CSV_HEADER}\n`
+export function exportCatalogueTemplateCsv(categories: string[] = []): string {
+  return `${CATALOGUE_CSV_HEADER}\n${catalogueCategoriesNote(categories)}\n`
 }
 
 export function parseCatalogueCsv(text: string): CatalogueCsvParseResult {
   const errors: string[] = []
   const rows: ParsedCatalogueRow[] = []
-  const lines = text.replace(/^\uFEFF/, '').split(/\r?\n/).filter((line) => line.trim())
-  if (lines.length === 0) {
+  const lines = text.replace(/^\uFEFF/, '').split(/\r?\n/)
+  const meaningful = lines.map((line, index) => ({ line, index })).filter((entry) => entry.line.trim())
+  if (meaningful.length === 0) {
     return { rows, errors: ['Import error: the CSV is empty.'] }
   }
-  const header = lines[0].replace(/^"|"$/g, '')
-  if (!header.startsWith('Catalogue ID') || !header.includes('Name')) {
-    errors.push('Import error: CSV header does not match the Material Catalogue template.')
+
+  const headerEntry = meaningful.find((entry) => {
+    const candidate = entry.line.replace(/^"|"$/g, '').trim()
+    return candidate.startsWith('Catalogue ID') && candidate.includes('Name')
+  })
+  if (!headerEntry) {
+    const first = meaningful[0].line.replace(/^"|"$/g, '')
+    if (!first.startsWith('Catalogue ID') || !first.includes('Name')) {
+      errors.push('Import error: CSV header does not match the Material Catalogue template.')
+    }
   }
-  const body = lines.slice(1)
+  const bodyStart = headerEntry ? headerEntry.index + 1 : 1
+  const body = lines
+    .slice(bodyStart)
+    .map((line, offset) => ({ line, rowNumber: bodyStart + offset + 1 }))
+    .filter((entry) => entry.line.trim() && !isCsvNoteLine(entry.line))
+
   if (body.length > CATALOGUE_CSV_MAX_ROWS) {
     return { rows: [], errors: [`Import error: maximum ${CATALOGUE_CSV_MAX_ROWS} rows.`] }
   }
 
   const seen = new Set<string>()
-  for (let index = 0; index < body.length; index += 1) {
-    const cells = splitCsvLine(body[index])
+  for (const entry of body) {
+    const cells = splitCsvLine(entry.line)
     const name = (cells[1] || '').trim()
     const category = (cells[2] || '').trim() || 'Other'
-    if (!name || !category) {
-      errors.push(`Row ${index + 2}: Name and Category are required.`)
+    if (!name) continue
+    if (!category) {
+      errors.push(`Row ${entry.rowNumber}: Name and Category are required.`)
       continue
     }
     const brand = (cells[3] || '').trim() || 'Unknown'

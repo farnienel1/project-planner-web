@@ -1,12 +1,12 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Great_Vibes } from 'next/font/google'
+import localFont from 'next/font/local'
 import { signaturePngSrc, stripPngDataUrl } from '@/lib/signature/signatureImage'
 
-const signatureFont = Great_Vibes({
-  subsets: ['latin'],
-  weight: '400',
+const signatureFont = localFont({
+  src: [{ path: '../../fonts/GreatVibes-latin-400.woff2', weight: '400', style: 'normal' }],
+  display: 'swap',
 })
 
 type Point = { x: number; y: number }
