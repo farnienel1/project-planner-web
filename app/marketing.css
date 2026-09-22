@@ -104,8 +104,9 @@ html:has(.mkt){scroll-behavior:smooth;scroll-padding-top:calc(84px + env(safe-ar
   min-height: 56px;
   height: 56px;
 }
-.mkt footer a{color:var(--ink2)}
-.mkt footer a:hover{color:var(--blue)}
+.mkt footer a:not(.store){color:var(--ink2)}
+.mkt footer a:not(.store):hover{color:var(--blue)}
+.mkt footer a.store:hover{color:#fff}
 .mkt input[type=range]{accent-color:var(--blue);width:100%}
 .mkt .skip-link{position:absolute;left:-9999px;top:8px;z-index:99}
 .mkt .skip-link:focus{left:8px}
