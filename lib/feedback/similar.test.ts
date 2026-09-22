@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { consolidateVotesOnMerge, similarSuggestions, suggestionTokens } from './similar.ts'
+import { consolidateVotesOnMerge, mergePreviewCounts, similarSuggestions, suggestionTokens } from './similar.ts'
 import { defaultPublicStatusForDecision } from './types.ts'
 import type { FeedbackSuggestion } from './types.ts'
 
@@ -34,10 +34,33 @@ test('similar suggestions match overlapping product language', () => {
   assert.equal(matches.some((row) => row.id === '2'), false)
 })
 
+test('typos and synonyms still match similar ideas', () => {
+  const existing = [
+    suggestion({ id: 'schedule', title: 'Cant see achedule well', details: 'The rota is hard to read on a phone' }),
+    suggestion({ id: 'excel', title: 'download reports as spreadsheet', details: 'Need csv for payroll' }),
+    suggestion({ id: 'unrelated', title: 'Dark mode', details: 'Toggle appearance' }),
+  ]
+  const schedule = similarSuggestions('schedule view hard to see', '', existing)
+  assert.equal(schedule[0]?.id, 'schedule')
+  const reports = similarSuggestions('Export reports to Excel', '', existing)
+  assert.equal(reports[0]?.id, 'excel')
+})
+
 test('merge vote consolidation keeps unique voters only', () => {
   const result = consolidateVotesOnMerge([{ userId: 'a' }, { userId: 'b' }], [{ userId: 'b' }, { userId: 'c' }])
   assert.deepEqual(result.keepUserIds, ['c'])
   assert.deepEqual(result.duplicateUserIds, ['b'])
+})
+
+test('merge preview 3+3 with 1 overlap becomes 5 unique voters', () => {
+  const preview = mergePreviewCounts(
+    [{ userId: 'a' }, { userId: 'b' }, { userId: 'c' }],
+    [{ userId: 'c' }, { userId: 'd' }, { userId: 'e' }]
+  )
+  assert.equal(preview.source, 3)
+  assert.equal(preview.destination, 3)
+  assert.equal(preview.overlap, 1)
+  assert.equal(preview.mergedTotal, 5)
 })
 
 test('tokens drop short stop words', () => {

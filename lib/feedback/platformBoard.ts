@@ -57,6 +57,7 @@ export type IdeaAdminOverlay = Partial<
     FeedbackSuggestion,
     | 'publicStatus'
     | 'productDecision'
+    | 'status'
     | 'category'
     | 'relatedFeature'
     | 'officialResponse'
@@ -65,6 +66,8 @@ export type IdeaAdminOverlay = Partial<
     | 'mergedIntoId'
     | 'reviewedAt'
     | 'reviewedByUserId'
+    | 'releaseNote'
+    | 'effort'
   >
 >
 
@@ -203,6 +206,7 @@ function parseAdminOverlay(data: Record<string, unknown>): IdeaAdminOverlay | un
   const overlay: IdeaAdminOverlay = {}
   if (typeof data.publicStatus === 'string') overlay.publicStatus = parsed.publicStatus
   if (typeof data.productDecision === 'string') overlay.productDecision = parsed.productDecision
+  if (typeof data.status === 'string') overlay.status = parsed.status
   if (typeof data.category === 'string') overlay.category = parsed.category
   if (typeof data.relatedFeature === 'string') overlay.relatedFeature = parsed.relatedFeature
   if (typeof data.officialResponse === 'string') overlay.officialResponse = parsed.officialResponse
@@ -240,15 +244,29 @@ async function fetchPaged(db: Firestore, collectionName: string): Promise<QueryD
   return out
 }
 
-export async function loadCanonicalIdeaBoard(db: Firestore): Promise<IdeaBoardSnapshot | null> {
+export async function loadCanonicalIdeaBoard(
+  db: Firestore,
+  options: { includeAllVotes?: boolean; voterUserId?: string } = {}
+): Promise<IdeaBoardSnapshot | null> {
   try {
-    const [suggestionSnap, voteSnap] = await Promise.all([
-      getDocs(collection(db, 'productFeedback')),
-      getDocs(collection(db, 'productFeedbackVotes')),
-    ])
+    const suggestionSnap = await getDocs(collection(db, 'productFeedback'))
+    let votes: FeedbackVote[] = []
+    if (options.includeAllVotes) {
+      const voteSnap = await getDocs(collection(db, 'productFeedbackVotes'))
+      votes = voteSnap.docs.map((entry) => parseVote(entry.id, entry.data() as Record<string, unknown>))
+    } else if (options.voterUserId) {
+      try {
+        const voteSnap = await getDocs(
+          query(collection(db, 'productFeedbackVotes'), where('userId', '==', options.voterUserId))
+        )
+        votes = voteSnap.docs.map((entry) => parseVote(entry.id, entry.data() as Record<string, unknown>))
+      } catch {
+        votes = []
+      }
+    }
     return {
       suggestions: suggestionSnap.docs.map((entry) => parseSuggestion(entry.id, entry.data() as Record<string, unknown>)),
-      votes: voteSnap.docs.map((entry) => parseVote(entry.id, entry.data() as Record<string, unknown>)),
+      votes,
       comments: [],
       history: [],
       internalNotes: {},
@@ -372,6 +390,7 @@ export async function writeUserAdmin(
   const fields: Record<string, unknown> = {}
   if (overlay.publicStatus !== undefined) fields[`${prefix}.publicStatus`] = overlay.publicStatus
   if (overlay.productDecision !== undefined) fields[`${prefix}.productDecision`] = overlay.productDecision
+  if (overlay.status !== undefined) fields[`${prefix}.status`] = overlay.status
   if (overlay.category !== undefined) fields[`${prefix}.category`] = overlay.category
   if (overlay.relatedFeature !== undefined) fields[`${prefix}.relatedFeature`] = overlay.relatedFeature
   if (overlay.officialResponse !== undefined) fields[`${prefix}.officialResponse`] = overlay.officialResponse
