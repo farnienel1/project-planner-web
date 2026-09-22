@@ -87,7 +87,7 @@ export function DeveloperOrganisationsScreen() {
                 <th className="px-4 py-2">Users</th>
                 <th className="px-4 py-2">Active</th>
                 {events.length > 0 ? <th className="px-4 py-2">Events</th> : null}
-                <th className="px-4 py-2">Ideas</th>
+                <th className="px-4 py-2">Feedback</th>
                 <th className="px-4 py-2">Last seen</th>
               </tr>
             </thead>

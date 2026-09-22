@@ -182,7 +182,7 @@ export function DeveloperAnalyticsScreen() {
         )}
       </section>
       <section className="card pad">
-        <h2 className="h2">Ideas pipeline</h2>
+        <h2 className="h2">Feedback pipeline</h2>
         <ul className="mt-3 grid gap-2 sm:grid-cols-3 lg:grid-cols-6">
           {pipeline.map((row) => (
             <li key={row.id} className="rounded-xl bg-[var(--soft)] px-3 py-2">

@@ -26,7 +26,7 @@ export function FeedbackDetailScreen({ ideaId }: { ideaId: string }) {
     : undefined
 
   if (loading && !suggestion) return <LoadingSpinner />
-  if (!suggestion) return <EmptyState title="Idea not found" description="It may have been hidden or merged." />
+  if (!suggestion) return <EmptyState title="Feedback not found" description="It may have been hidden or merged." />
 
   const voted = hasVoted(votes, suggestion.id, user?.id)
   const orgName = suggestion.organizationName?.trim() || 'An organisation'
@@ -34,7 +34,7 @@ export function FeedbackDetailScreen({ ideaId }: { ideaId: string }) {
   return (
     <div className="stack space-y-4" data-hue="task">
       <Link href="/dashboard/ideas" className="btn sm ghost w-fit">
-        ← Ideas
+        ← Feedback
       </Link>
       {error ? <ErrorBanner message={error} /> : null}
       {actionError ? <ErrorBanner message={actionError} /> : null}
@@ -54,7 +54,7 @@ export function FeedbackDetailScreen({ ideaId }: { ideaId: string }) {
             className={`flex min-w-[64px] flex-col items-center rounded-xl px-2 py-3 text-lg font-extrabold ${
               voted ? 'bg-[var(--task-t)] text-[var(--task)]' : 'bg-[var(--soft)] text-[var(--ink2)]'
             }`}
-            aria-label={voted ? 'Remove vote' : 'Vote for this idea'}
+            aria-label={voted ? 'Remove vote' : 'Vote for this feedback'}
           >
             <ChevronUpIcon className="h-5 w-5" />
             {suggestion.voteCount}
