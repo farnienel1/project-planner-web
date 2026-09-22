@@ -6,7 +6,7 @@
 'use client'
 
 import { FormEvent, useEffect, useMemo, useState } from 'react'
-import { AcademicCapIcon, PlusIcon } from '@heroicons/react/24/solid'
+import { AcademicCapIcon, CheckIcon, PlusIcon } from '@heroicons/react/24/solid'
 import type { Qualification } from '@/types'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
@@ -23,6 +23,8 @@ import { SegmentedControl, Field, Input } from '@/components/ui/controls'
 import {
   deleteOrganisationQualification,
   loadOrganisationQualifications,
+  mergeQualificationTemplates,
+  assignedQualificationTemplates,
   qualificationNameTaken,
   restoreOrganisationQualificationsFromAssignments,
   saveOrganisationQualification,
@@ -52,7 +54,6 @@ export function QualificationsScreen({ initialTab }: { initialTab?: Tab } = {}) 
   const [error, setError] = useState<string | null>(null)
   const [addOpen, setAddOpen] = useState(false)
   const [editId, setEditId] = useState<string | null>(null)
-  const [pickerOpen, setPickerOpen] = useState(false)
   const [name, setName] = useState('')
   const [saving, setSaving] = useState(false)
 
@@ -69,24 +70,44 @@ export function QualificationsScreen({ initialTab }: { initialTab?: Tab } = {}) 
   useEffect(() => {
     if (!organization?.id) return
     let cancelled = false
-    setLoading(true)
-    loadOperatives(organization.id)
-      .then(async () => {
-        if (cancelled) return
+    const orgId = organization.id
+    const showSpinner = useOperativeStore.getState().operatives.length === 0
+    if (showSpinner) setLoading(true)
+
+    const refresh = async () => {
+      await loadOperatives(orgId, { force: true })
+      if (cancelled) return
+      const existing = await loadOrganisationQualifications(orgId)
+      const assigned = assignedQualificationTemplates(useOperativeStore.getState().operatives)
+      const merged = mergeQualificationTemplates(existing, assigned)
+      if (cancelled) return
+      setTemplates(merged)
+      setLoading(false)
+      try {
         const rows = await restoreOrganisationQualificationsFromAssignments(
-          organization.id,
+          orgId,
           useOperativeStore.getState().operatives
         )
         if (!cancelled) setTemplates(rows)
-      })
-      .catch((err: unknown) => {
-        if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load qualifications')
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false)
-      })
+      } catch {
+        // Display already uses merged templates; background restore can fail for read-only accounts.
+      }
+    }
+
+    void refresh().catch((err: unknown) => {
+      if (!cancelled) {
+        setError(err instanceof Error ? err.message : 'Failed to load qualifications')
+        setLoading(false)
+      }
+    })
+
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') void refresh()
+    }
+    document.addEventListener('visibilitychange', onVisibility)
     return () => {
       cancelled = true
+      document.removeEventListener('visibilitychange', onVisibility)
     }
   }, [organization?.id, loadOperatives])
 
@@ -155,24 +176,6 @@ export function QualificationsScreen({ initialTab }: { initialTab?: Tab } = {}) 
       await deleteOrganisationQualification(organization.id, editing.id)
       setEditId(null)
       await reloadTemplates()
-    } catch (err: unknown) {
-      setError(formatCertificateSaveError(err))
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const handleAssign = async (template: Qualification) => {
-    if (!organization?.id || !linked) return
-    if (linked.qualifications.some((row) => row.id === template.id)) return
-    setSaving(true)
-    setError(null)
-    try {
-      await saveOperative(organization.id, {
-        ...linked,
-        qualifications: [...linked.qualifications, template],
-      })
-      setPickerOpen(false)
     } catch (err: unknown) {
       setError(formatCertificateSaveError(err))
     } finally {
@@ -292,7 +295,6 @@ export function QualificationsScreen({ initialTab }: { initialTab?: Tab } = {}) 
           linked={linked}
           templates={templates}
           saving={saving}
-          onAdd={() => setPickerOpen(true)}
           onSave={async (next) => {
             setSaving(true)
             setError(null)
@@ -307,6 +309,7 @@ export function QualificationsScreen({ initialTab }: { initialTab?: Tab } = {}) 
             }
           }}
           organizationId={organization?.id || ''}
+          canManageOrg={canManageOrg}
         />
       )}
 
@@ -328,37 +331,6 @@ export function QualificationsScreen({ initialTab }: { initialTab?: Tab } = {}) 
           </form>
         </IosFormModal>
       ) : null}
-
-      {pickerOpen ? (
-        <IosFormModal title="Add qualifications" onCancel={() => setPickerOpen(false)}>
-          {templates.filter((row) => !linked?.qualifications.some((assigned) => assigned.id === row.id)).length === 0 ? (
-            <p className="text-[15px] text-[var(--ink3)]">
-              {templates.length === 0
-                ? canManageOrg
-                  ? 'No qualification templates yet. Click Add to create one for the organisation.'
-                  : 'No qualification templates yet. Ask someone who can manage qualifications to add them.'
-                : 'Every organisation qualification is already on this profile.'}
-            </p>
-          ) : (
-            <div className="space-y-2">
-              <p className="text-[13px] text-[var(--ink3)]">Click + to add a qualification. Set expiry dates and certificates when you return.</p>
-              {templates
-                .filter((row) => !linked?.qualifications.some((assigned) => assigned.id === row.id))
-                .map((row) => (
-                  <button
-                    key={row.id}
-                    type="button"
-                    onClick={() => void handleAssign(row)}
-                    className="flex w-full items-center justify-between rounded-xl bg-[var(--soft)] px-4 py-3 text-left"
-                  >
-                    <span className="font-medium">{row.name}</span>
-                    <PlusIcon className="h-5 w-5 text-[var(--blue)]" />
-                  </button>
-                ))}
-            </div>
-          )}
-        </IosFormModal>
-      ) : null}
     </div>
   )
 }
@@ -367,22 +339,24 @@ function MyQualificationsPanel({
   linked,
   templates,
   saving,
-  onAdd,
   onSave,
   organizationId,
+  canManageOrg,
 }: {
   linked?: ReturnType<typeof findOperativeForUser>
   templates: Qualification[]
   saving: boolean
-  onAdd: () => void
   onSave: (next: NonNullable<ReturnType<typeof findOperativeForUser>>) => Promise<void>
   organizationId: string
+  canManageOrg: boolean
 }) {
   const [draft, setDraft] = useState(linked)
   const [dirty, setDirty] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [pendingFiles, setPendingFiles] = useState<Record<string, File>>({})
   const [localError, setLocalError] = useState<string | null>(null)
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const [pickerSelected, setPickerSelected] = useState<string[]>([])
 
   useEffect(() => {
     if (dirty) return
@@ -390,6 +364,99 @@ function MyQualificationsPanel({
     setPendingFiles({})
     setLocalError(null)
   }, [linked, dirty])
+
+  const openPicker = () => {
+    setPickerSelected([])
+    setLocalError(null)
+    setPickerOpen(true)
+  }
+
+  const availableTemplates = templates.filter(
+    (row) => !draft?.qualifications.some((assigned) => assigned.id === row.id)
+  )
+
+  const handlePickerSave = async () => {
+    if (!draft) return
+    const added = availableTemplates.filter((row) => pickerSelected.includes(row.id))
+    if (added.length === 0) {
+      setPickerOpen(false)
+      return
+    }
+    const next = { ...draft, qualifications: [...draft.qualifications, ...added] }
+    setDraft(next)
+    setDirty(true)
+    setPickerOpen(false)
+    setPickerSelected([])
+    setLocalError(null)
+    try {
+      await onSave(next)
+      setDirty(false)
+    } catch (err: unknown) {
+      setLocalError(formatCertificateSaveError(err))
+    }
+  }
+
+  const picker = pickerOpen ? (
+    <IosFormModal
+      title="Add qualifications"
+      onCancel={() => {
+        setPickerOpen(false)
+        setPickerSelected([])
+      }}
+      footer={
+        availableTemplates.length === 0 ? null : (
+          <button
+            type="button"
+            disabled={saving || pickerSelected.length === 0}
+            onClick={() => void handlePickerSave()}
+            className="w-full rounded-xl bg-[var(--blue)] py-3 text-[16px] font-semibold text-white disabled:opacity-50"
+          >
+            {saving ? 'Saving…' : pickerSelected.length ? `Save (${pickerSelected.length})` : 'Save'}
+          </button>
+        )
+      }
+    >
+      {availableTemplates.length === 0 ? (
+        <p className="text-[15px] text-[var(--ink3)]">
+          {templates.length === 0
+            ? canManageOrg
+              ? 'No qualification templates yet. Click Add to create one for the organisation.'
+              : 'No qualification templates yet. Ask someone who can manage qualifications to add them.'
+            : 'Every organisation qualification is already on this profile.'}
+        </p>
+      ) : (
+        <div className="space-y-2">
+          <p className="text-[13px] text-[var(--ink3)]">
+            Click + to choose a qualification, then Save. Set expiry dates and certificates on the cards after saving.
+          </p>
+          {availableTemplates.map((row) => {
+            const selected = pickerSelected.includes(row.id)
+            return (
+              <button
+                key={row.id}
+                type="button"
+                onClick={() =>
+                  setPickerSelected((current) =>
+                    current.includes(row.id) ? current.filter((id) => id !== row.id) : [...current, row.id]
+                  )
+                }
+                className={`flex w-full items-center justify-between rounded-xl px-4 py-3 text-left ${
+                  selected ? 'bg-[var(--rep-t)] ring-1 ring-[var(--blue)]' : 'bg-[var(--soft)]'
+                }`}
+              >
+                <span className="font-medium">{row.name}</span>
+                {selected ? (
+                  <CheckIcon className="h-5 w-5 text-[var(--blue)]" />
+                ) : (
+                  <PlusIcon className="h-5 w-5 text-[var(--blue)]" />
+                )}
+              </button>
+            )
+          })}
+        </div>
+      )}
+    </IosFormModal>
+  ) : null
 
   if (!linked || !draft) {
     return (
@@ -405,16 +472,19 @@ function MyQualificationsPanel({
 
   if (draft.qualifications.length === 0) {
     return (
-      <div className="rounded-[18px] bg-[var(--card)] p-6 shadow-[var(--sh)]">
-        <p className="text-[15px] text-[var(--ink3)]">
-          {templates.length === 0
-            ? 'No qualifications have been set up for your organisation yet. Ask a manager or admin to add qualification templates.'
-            : 'You have not added any qualifications yet. Click Add qualifications to pick from your organisation list, then set expiry dates and certificates below.'}
-        </p>
-        <Button variant="primary" className="mt-4" onClick={onAdd}>
-          Add qualifications
-        </Button>
-      </div>
+      <>
+        <div className="rounded-[18px] bg-[var(--card)] p-6 shadow-[var(--sh)]">
+          <p className="text-[15px] text-[var(--ink3)]">
+            {templates.length === 0
+              ? 'No qualifications have been set up for your organisation yet. Ask a manager or admin to add qualification templates.'
+              : 'You have not added any qualifications yet. Click Add qualifications to pick from your organisation list, then set expiry dates and certificates below.'}
+          </p>
+          <Button variant="primary" className="mt-4" onClick={openPicker}>
+            Add qualifications
+          </Button>
+        </div>
+        {picker}
+      </>
     )
   }
 
@@ -460,7 +530,7 @@ function MyQualificationsPanel({
   return (
     <div className="space-y-4">
       <div className="sticky bottom-20 z-10 flex flex-wrap items-center justify-end gap-3 rounded-[18px] bg-[color-mix(in_srgb,var(--card)_95%,transparent)] p-3 shadow-[var(--sh)] backdrop-blur lg:bottom-4">
-        <Button variant="ghost" onClick={onAdd}>
+        <Button variant="ghost" onClick={openPicker}>
           Add qualifications
         </Button>
         <Button variant="primary" disabled={saving || uploading || !dirty} onClick={() => void handleSave()}>
@@ -576,6 +646,7 @@ function MyQualificationsPanel({
           )
         })}
       </div>
+      {picker}
     </div>
   )
 }

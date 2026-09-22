@@ -13,7 +13,7 @@ import { newUuid } from '@/lib/firebase/firestoreUtils'
 import { db } from '@/lib/firebase/config'
 import type { Operative, Manager, Skill, Qualification } from '@/types'
 import { filterRealManagers, isPlaceholderManager } from '@/lib/staff/managerRosterUtils'
-import { runOrgLoad } from '@/lib/stores/orgLoadCache'
+import { runOrgLoad, invalidateOrgLoad } from '@/lib/stores/orgLoadCache'
 import { parseManager, parseOperative, serializeManager, serializeOperative } from '@/lib/ios-parity/converters'
 
 const OPERATIVES_KEY = 'operativeStore:operatives'
@@ -174,6 +174,7 @@ export const useOperativeStore = create<OperativeState>((set, get) => ({
     const id = operative.id || newUuid()
     const payload = serializeOperative({ ...operative, id, organizationId })
     await setDoc(doc(db, 'organizations', organizationId, 'operatives', id), payload)
+    invalidateOrgLoad(OPERATIVES_KEY)
     const saved = { ...operative, id, organizationId, updatedAt: new Date() }
     set({ operatives: [...get().operatives.filter((o) => o.id !== id), saved] })
     return id

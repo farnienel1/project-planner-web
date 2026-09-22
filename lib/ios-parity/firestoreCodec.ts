@@ -146,6 +146,25 @@ export function emptyOrDelete(value: string | undefined | null) {
   return trimmed ? trimmed : deleteField()
 }
 
+/** Firestore `setDoc` rejects `undefined` anywhere in the payload, including nested maps/arrays. */
+export function omitUndefinedDeep<T>(value: T): T {
+  if (Array.isArray(value)) {
+    return value.map((item) => omitUndefinedDeep(item)) as T
+  }
+  if (value && typeof value === 'object') {
+    const proto = Object.getPrototypeOf(value)
+    if (proto === Object.prototype || proto === null) {
+      const output: Record<string, unknown> = {}
+      for (const [key, nested] of Object.entries(value as Record<string, unknown>)) {
+        if (nested === undefined) continue
+        output[key] = omitUndefinedDeep(nested)
+      }
+      return output as T
+    }
+  }
+  return value
+}
+
 export const firestoreDateSchema = z.preprocess(
   (v) => asDate(v),
   z.date()
