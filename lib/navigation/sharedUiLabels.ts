@@ -19,7 +19,7 @@ export const DEFAULT_NAVIGATION_LABELS: Record<string, string> = {
   dashboard_wholesalers: 'Wholesalers',
   dashboard_materials: 'Material catalogue',
   dashboard_sub_contractors: 'Sub contractor',
-  dashboard_ideas: 'Ideas',
+  dashboard_ideas: 'Feedback',
   dashboard_developer: 'Developer',
   dashboard_add_user: 'Add user',
   dashboard_manage_users: 'Manage users',
@@ -35,6 +35,7 @@ type OrganizationSettings = Record<string, any> | undefined
 const FORCED_NAVIGATION_LABELS: Record<string, string> = {
   dashboard_schedule: 'My Schedule',
   dashboard_daily_overview: 'Daily overview',
+  dashboard_ideas: 'Feedback',
 }
 
 export function getNavigationLabel(

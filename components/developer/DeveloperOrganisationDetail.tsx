@@ -76,7 +76,7 @@ export function DeveloperOrganisationDetailScreen({ organisationId }: { organisa
         {events.length > 0 ? (
           <MetricCard label="Product events" value={activity?.events || 0} />
         ) : null}
-        <MetricCard label="Ideas" value={activity?.ideaCount || 0} />
+        <MetricCard label="Feedback" value={activity?.ideaCount || 0} />
       </div>
       <section className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-3">

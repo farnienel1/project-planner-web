@@ -23,7 +23,7 @@ import {
   ignoreIfDenied,
   loadCanonicalIdeaBoard,
   loadUserDocumentIdeaBoard,
-  mergeIdeaBoards,
+  mergeCanonicalAndUserBoard,
   writeUserAdmin,
   writeUserComment,
   writeUserHistory,
@@ -31,6 +31,7 @@ import {
   writeUserNotes,
   writeUserVote,
 } from '@/lib/feedback/platformBoard'
+import { platformOwnerProfilePayload } from '@/lib/platform/ownerProfile'
 import {
   parseComment,
   parseHistory,
@@ -46,7 +47,6 @@ import {
   type FeedbackPublicStatus,
   type FeedbackSuggestion,
   type FeedbackVote,
-  type ProductDecision,
 } from '@/lib/feedback/types'
 
 type FeedbackState = {
@@ -108,17 +108,22 @@ async function writeHistory(entry: Omit<FeedbackHistoryEntry, 'id' | 'createdAt'
     createdAt: Timestamp.now(),
   })
   await ignoreIfDenied(() => setDoc(doc(db, 'productFeedbackHistory', id), payload))
-  await writeUserHistory(db, entry.actorUserId, {
-    id,
-    suggestionId: entry.suggestionId,
-    actorUserId: entry.actorUserId,
-    actorName: entry.actorName,
-    field: entry.field,
-    fromValue: entry.fromValue,
-    toValue: entry.toValue,
-    reason: entry.reason,
-    createdAt,
-  })
+  await writeUserHistory(
+    db,
+    entry.actorUserId,
+    {
+      id,
+      suggestionId: entry.suggestionId,
+      actorUserId: entry.actorUserId,
+      actorName: entry.actorName,
+      field: entry.field,
+      fromValue: entry.fromValue,
+      toValue: entry.toValue,
+      reason: entry.reason,
+      createdAt,
+    },
+    platformOwnerProfilePayload()
+  )
 }
 
 export const useFeedbackStore = create<FeedbackState>((set, get) => ({
@@ -134,8 +139,8 @@ export const useFeedbackStore = create<FeedbackState>((set, get) => ({
     if (!db) return
     set({ loading: true, error: null })
     try {
-      const [canonical, userBoard] = await Promise.all([loadCanonicalIdeaBoard(db), loadUserDocumentIdeaBoard(db)])
-      const merged = canonical ? mergeIdeaBoards(canonical, userBoard) : userBoard
+      const [canonical, userLoaded] = await Promise.all([loadCanonicalIdeaBoard(db), loadUserDocumentIdeaBoard(db)])
+      const merged = mergeCanonicalAndUserBoard(canonical, userLoaded.board, userLoaded.overlays)
       const suggestions = merged.suggestions
         .filter((row) => includeHidden || (!row.hidden && !row.mergedIntoId))
         .sort(
@@ -154,7 +159,7 @@ export const useFeedbackStore = create<FeedbackState>((set, get) => ({
     } catch (error: unknown) {
       const mapped = feedbackWriteError(error)
       set({
-        error: mapped === 'Could not save this idea. Stay signed in and try again.' ? 'Could not load ideas' : mapped,
+        error: mapped === 'Could not save this feedback. Stay signed in and try again.' ? 'Could not load feedback' : mapped,
         loading: false,
       })
     }
@@ -318,7 +323,7 @@ export const useFeedbackStore = create<FeedbackState>((set, get) => ({
       void saveInboxNotification({
         organizationId: suggestion.organizationId,
         type: 'idea_comment',
-        title: 'New comment on your idea',
+        title: 'New comment on your feedback',
         message: `${authorName} commented on “${suggestion.title}”.`,
         userId: suggestion.authorUserId,
         relatedId: suggestion.id,
@@ -327,7 +332,7 @@ export const useFeedbackStore = create<FeedbackState>((set, get) => ({
   },
 
   updateAdmin: async ({ suggestion, actorUserId, actorName, patch, reason }) => {
-    if (!db) return
+    if (!db) throw new Error('Firestore is not configured')
     const next: FeedbackSuggestion = { ...suggestion, ...patch, updatedAt: new Date() }
     if (patch.productDecision && patch.productDecision !== suggestion.productDecision && !patch.publicStatus) {
       next.publicStatus = defaultPublicStatusForDecision(patch.productDecision)
@@ -336,18 +341,25 @@ export const useFeedbackStore = create<FeedbackState>((set, get) => ({
       next.reviewedAt = new Date()
       next.reviewedByUserId = actorUserId
     }
-    await writeUserAdmin(db, actorUserId, suggestion.id, {
-      publicStatus: next.publicStatus,
-      productDecision: next.productDecision,
-      category: next.category,
-      relatedFeature: next.relatedFeature,
-      officialResponse: next.officialResponse,
-      pinned: next.pinned,
-      hidden: next.hidden,
-      mergedIntoId: next.mergedIntoId,
-      reviewedAt: next.reviewedAt,
-      reviewedByUserId: next.reviewedByUserId,
-    })
+    const ownerIdentity = platformOwnerProfilePayload()
+    await writeUserAdmin(
+      db,
+      actorUserId,
+      suggestion.id,
+      {
+        publicStatus: next.publicStatus,
+        productDecision: next.productDecision,
+        category: next.category,
+        relatedFeature: next.relatedFeature,
+        officialResponse: next.officialResponse,
+        pinned: next.pinned,
+        hidden: next.hidden,
+        mergedIntoId: next.mergedIntoId,
+        reviewedAt: next.reviewedAt,
+        reviewedByUserId: next.reviewedByUserId,
+      },
+      ownerIdentity
+    )
     await ignoreIfDenied(() => setDoc(doc(db, 'productFeedback', suggestion.id), serializeSuggestion(next), { merge: true }))
     const fields: Array<keyof typeof patch> = [
       'publicStatus',
@@ -381,7 +393,7 @@ export const useFeedbackStore = create<FeedbackState>((set, get) => ({
       void saveInboxNotification({
         organizationId: suggestion.organizationId,
         type: 'idea_status',
-        title: 'Update on your idea',
+        title: 'Update on your feedback',
         message: `“${suggestion.title}” is now ${next.publicStatus.replace('_', ' ')}.`,
         userId: suggestion.authorUserId,
         relatedId: suggestion.id,
@@ -390,9 +402,9 @@ export const useFeedbackStore = create<FeedbackState>((set, get) => ({
   },
 
   saveInternalNotes: async (suggestionId, notes, userId) => {
-    if (!db) return
+    if (!db) throw new Error('Firestore is not configured')
     const payload = { notes, updatedAt: Timestamp.now(), updatedByUserId: userId }
-    await writeUserNotes(db, userId, suggestionId, notes)
+    await writeUserNotes(db, userId, suggestionId, notes, platformOwnerProfilePayload())
     await ignoreIfDenied(() => setDoc(doc(db, 'productFeedback', suggestionId, 'private', 'notes'), payload))
     set({
       internalNotes: {
@@ -403,7 +415,7 @@ export const useFeedbackStore = create<FeedbackState>((set, get) => ({
   },
 
   mergeSuggestions: async ({ source, destination, actorUserId, actorName, reason }) => {
-    if (!db) return
+    if (!db) throw new Error('Firestore is not configured')
     const sourceVotes = get().votes.filter((vote) => vote.suggestionId === source.id)
     const destVotes = get().votes.filter((vote) => vote.suggestionId === destination.id)
     const { keepUserIds } = consolidateVotesOnMerge(destVotes, sourceVotes)
@@ -431,17 +443,30 @@ export const useFeedbackStore = create<FeedbackState>((set, get) => ({
       mergedIntoId: destination.id,
       updatedAt: new Date(),
     }
-    await writeUserAdmin(db, actorUserId, destination.id, {
-      publicStatus: merged.publicStatus,
-      productDecision: merged.productDecision,
-      officialResponse: merged.officialResponse,
-      pinned: merged.pinned,
-      hidden: merged.hidden,
-    })
-    await writeUserAdmin(db, actorUserId, source.id, {
-      hidden: true,
-      mergedIntoId: destination.id,
-    })
+    const ownerIdentity = platformOwnerProfilePayload()
+    await writeUserAdmin(
+      db,
+      actorUserId,
+      destination.id,
+      {
+        publicStatus: merged.publicStatus,
+        productDecision: merged.productDecision,
+        officialResponse: merged.officialResponse,
+        pinned: merged.pinned,
+        hidden: merged.hidden,
+      },
+      ownerIdentity
+    )
+    await writeUserAdmin(
+      db,
+      actorUserId,
+      source.id,
+      {
+        hidden: true,
+        mergedIntoId: destination.id,
+      },
+      ownerIdentity
+    )
     await ignoreIfDenied(() => setDoc(doc(db, 'productFeedback', destination.id), serializeSuggestion(merged), { merge: true }))
     await ignoreIfDenied(() => setDoc(doc(db, 'productFeedback', source.id), serializeSuggestion(hiddenSource), { merge: true }))
     await writeHistory({
@@ -466,7 +491,7 @@ export const useFeedbackStore = create<FeedbackState>((set, get) => ({
       void saveInboxNotification({
         organizationId: source.organizationId,
         type: 'idea_merged',
-        title: 'Your idea was merged',
+        title: 'Your feedback was merged',
         message: `“${source.title}” was merged into “${destination.title}”.`,
         userId: source.authorUserId,
         relatedId: destination.id,

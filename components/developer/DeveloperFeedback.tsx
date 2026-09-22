@@ -70,24 +70,24 @@ export function DeveloperFeedbackScreen() {
     )
   }, [open, votes, filter, query])
 
-  if (loading && suggestions.length === 0 && !error) return <LoadingSpinner label="Loading ideas…" />
+  if (loading && suggestions.length === 0 && !error) return <LoadingSpinner label="Loading feedback…" />
 
   return (
     <DeveloperShell
-      title="Ideas"
+      title="Feedback"
       actions={
         <button type="button" className="btn sm primary" onClick={() => setCompose(true)}>
-          Add idea
+          Add feedback
         </button>
       }
     >
       <p className="text-sm text-[var(--ink2)]">
-        Shared board for every organisation. Customers submit from Ideas in the app; you triage, merge and move cards
+        Shared board for every organisation. Customers submit from Feedback in the app; you triage, merge and move cards
         onto the roadmap here.
       </p>
       <DeveloperStatus error={error} loading={loading && suggestions.length > 0} />
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <MetricCard label="Open ideas" value={open.filter((row) => !row.hidden).length} />
+        <MetricCard label="Open feedback" value={open.filter((row) => !row.hidden).length} />
         <MetricCard label="Awaiting review" value={pipeline.find((row) => row.id === 'none')?.count || 0} href="/developer/feedback?filter=review" />
         <MetricCard label="On the roadmap" value={(pipeline.find((row) => row.id === 'build')?.count || 0) + (pipeline.find((row) => row.id === 'in_progress')?.count || 0)} href="/developer/roadmap" />
         <MetricCard label="Votes" value={votes.length} />
@@ -113,11 +113,11 @@ export function DeveloperFeedbackScreen() {
       </div>
       {open.length === 0 ? (
         <EmptyState
-          title="No ideas yet"
-          description="When someone submits from Ideas in their organisation app, it appears here. You can also add one with Add idea."
+          title="No feedback yet"
+          description="When someone submits from Feedback in their organisation app, it appears here. You can also add one with Add feedback."
         />
       ) : rows.length === 0 ? (
-        <EmptyState title="No matching ideas" description="Try a different filter or search." />
+        <EmptyState title="No matching feedback" description="Try a different filter or search." />
       ) : (
         <div className="space-y-2">
           {rows.map((row) => (
@@ -171,7 +171,7 @@ function OwnerIdeaComposer({ onClose }: { onClose: () => void }) {
       })
       onClose()
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : 'Could not save this idea.')
+      setFormError(err instanceof Error ? err.message : 'Could not save this feedback.')
     } finally {
       setSaving(false)
     }
@@ -184,7 +184,7 @@ function OwnerIdeaComposer({ onClose }: { onClose: () => void }) {
           <button type="button" className="text-sm font-semibold text-[var(--blue)]" onClick={onClose}>
             Cancel
           </button>
-          <p className="text-sm font-bold">Add idea</p>
+          <p className="text-sm font-bold">Add feedback</p>
           <span className="w-12" />
         </div>
         {formError ? <p className="banner mb-3" data-hue="red">{formError}</p> : null}
@@ -201,7 +201,7 @@ function OwnerIdeaComposer({ onClose }: { onClose: () => void }) {
           ))}
         </div>
         <button type="button" className="btn primary mt-4 w-full" disabled={!title.trim() || saving} onClick={() => void submit()}>
-          {saving ? 'Saving…' : 'Save idea'}
+          {saving ? 'Saving…' : 'Save feedback'}
         </button>
       </div>
     </div>
@@ -231,14 +231,14 @@ export function DeveloperRoadmapScreen() {
   return (
     <DeveloperShell title="Roadmap">
       <p className="text-sm text-[var(--ink2)]">
-        Move customer ideas through product decisions. Backlog is everything still awaiting review. Declined ideas stay
-        on Ideas, not on this board.
+        Move customer feedback through product decisions. Backlog is everything still awaiting review. Declined feedback stays
+        on Feedback, not on this board.
       </p>
       <DeveloperStatus error={error} loading={loading && suggestions.length > 0} />
       {open.length === 0 ? (
         <EmptyState
           title="Roadmap is empty"
-          description="Ideas appear here once customers submit them, or after you add one yourself from Ideas."
+          description="Feedback appears here once customers submit it, or after you add one yourself from Feedback."
         />
       ) : (
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">

@@ -16,7 +16,7 @@ const LINKS = [
   { href: '/developer/users', label: 'Users' },
   { href: '/developer/analytics', label: 'Analytics' },
   { href: '/developer/usage', label: 'Feature usage' },
-  { href: '/developer/feedback', label: 'Ideas' },
+  { href: '/developer/feedback', label: 'Feedback' },
   { href: '/developer/roadmap', label: 'Roadmap' },
   { href: '/developer/account', label: 'Account' },
 ]
@@ -41,7 +41,7 @@ export function DeveloperAppShell({ children }: { children: ReactNode }) {
         </div>
         <div className="flex flex-wrap items-center gap-3 text-sm">
           <span className="hidden sm:inline text-white/80">
-            {orgCount} organisations · {userCount} users · {ideaCount} ideas
+            {orgCount} organisations · {userCount} users · {ideaCount} feedback
           </span>
           {orgApp ? (
             <Link href="/dashboard" className="btn sm ghost" style={{ color: 'white', borderColor: 'rgba(255,255,255,.25)' }}>

@@ -4,6 +4,7 @@ import {
   applyAdminOverlay,
   applyOverlaysFromDocs,
   emptyBoard,
+  mergeCanonicalAndUserBoard,
   mergeIdeaBoards,
   parseUserIdeaBoard,
   recountBoard,
@@ -104,4 +105,25 @@ test('empty board helper is safe to render', () => {
   const board = emptyBoard()
   assert.deepEqual(board.suggestions, [])
   assert.deepEqual(board.votes, [])
+})
+
+test('owner officialResponse survives a canonical document without a response', () => {
+  const overlay = { officialResponse: 'We will ship this in the next release.' }
+  const userBoard = {
+    suggestions: [applyAdminOverlay(idea('a'), overlay)],
+    votes: [],
+    comments: [],
+    history: [],
+    internalNotes: {},
+  }
+  const canonical = {
+    suggestions: [idea('a')],
+    votes: [],
+    comments: [],
+    history: [],
+    internalNotes: {},
+  }
+  const restored = mergeCanonicalAndUserBoard(canonical, userBoard, { a: overlay })
+  assert.equal(restored.suggestions[0].officialResponse, overlay.officialResponse)
+  assert.equal(restored.suggestions[0].title, 'a')
 })
