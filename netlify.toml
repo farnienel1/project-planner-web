@@ -7,16 +7,11 @@
 [[plugins]]
   package = "@netlify/plugin-nextjs"
 
+# 302 (not 200 rewrite): the browser URL must become /auth/action or Next.js hydrates a 404.
 [[redirects]]
-  from = "/__/auth/action"
+  from = "/__/auth/*"
   to = "/auth/action"
-  status = 200
-  force = true
-
-[[redirects]]
-  from = "/__/auth/handler"
-  to = "/auth/action"
-  status = 200
+  status = 302
   force = true
 
 [[headers]]

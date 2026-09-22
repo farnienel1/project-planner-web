@@ -1,9 +1,11 @@
 import Link from 'next/link'
 import { MktIcon } from '@/components/marketing/icons'
+import { RecoverEmailAction } from '@/components/auth/RecoverEmailAction'
 
 export function NotFoundPage() {
   return (
     <div className="page">
+      <RecoverEmailAction />
       <div className="phero" style={{ padding: '120px 0' }}>
         <div className="wrap">
           <div className="ico-chip lg" data-hue="blue" style={{ margin: '0 auto 18px' }}>
