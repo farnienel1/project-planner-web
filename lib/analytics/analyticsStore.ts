@@ -7,11 +7,21 @@ import { parseFirestoreDate } from '@/lib/firebase/firestoreUtils'
 import type { ProductEvent, ProductEventName, ProductSession } from '@/lib/analytics/events'
 import type { User } from '@/types'
 import { parseAppUserDocument } from '@/lib/ios-parity/converters'
+import { isPlatformOwnerSentinelOrg } from '@/lib/platform/owner'
+
+export type PlatformOrganisation = {
+  id: string
+  name: string
+  memberCount: number
+  createdAt?: Date
+  updatedAt?: Date
+}
 
 type AnalyticsState = {
   events: ProductEvent[]
   sessions: ProductSession[]
   users: User[]
+  organisations: PlatformOrganisation[]
   loading: boolean
   error: string | null
   loadedAt?: Date
@@ -53,10 +63,31 @@ function parseSession(id: string, data: Record<string, unknown>): ProductSession
   }
 }
 
+function parseOrganisation(id: string, data: Record<string, unknown>): PlatformOrganisation | null {
+  if (isPlatformOwnerSentinelOrg(id)) return null
+  const members = data.members && typeof data.members === 'object' ? (data.members as Record<string, unknown>) : {}
+  return {
+    id,
+    name: typeof data.name === 'string' && data.name.trim() ? data.name.trim() : 'Unnamed organisation',
+    memberCount: Object.keys(members).length,
+    createdAt: parseFirestoreDate(data.createdAt),
+    updatedAt: parseFirestoreDate(data.updatedAt),
+  }
+}
+
+function permissionMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : ''
+  if (/permission|insufficient/i.test(message)) {
+    return 'Missing or insufficient permissions. Publish the latest firestore.rules so the owner console can read every organisation, user, idea and product event.'
+  }
+  return message || 'Could not load analytics'
+}
+
 export const useAnalyticsStore = create<AnalyticsState>((set) => ({
   events: [],
   sessions: [],
   users: [],
+  organisations: [],
   loading: false,
   error: null,
 
@@ -65,10 +96,11 @@ export const useAnalyticsStore = create<AnalyticsState>((set) => ({
     set({ loading: true, error: null })
     try {
       const stamp = Timestamp.fromDate(since)
-      const [eventSnap, sessionSnap, userSnap] = await Promise.all([
+      const [eventSnap, sessionSnap, userSnap, orgSnap] = await Promise.all([
         getDocs(query(collection(db, 'productEvents'), where('createdAt', '>=', stamp))),
         getDocs(query(collection(db, 'productSessions'), where('startedAt', '>=', stamp))),
         getDocs(collection(db, 'users')),
+        getDocs(collection(db, 'organizations')),
       ])
       const events = eventSnap.docs
         .map((entry) => parseEvent(entry.id, entry.data() as Record<string, unknown>))
@@ -78,12 +110,17 @@ export const useAnalyticsStore = create<AnalyticsState>((set) => ({
         .filter((row): row is ProductSession => Boolean(row))
       const users: User[] = []
       for (const entry of userSnap.docs) {
+        if (isPlatformOwnerSentinelOrg(String((entry.data() as Record<string, unknown>).organizationId || ''))) continue
         const parsed = parseAppUserDocument(entry.id, entry.data() as Record<string, unknown>)
         if (parsed.ok) users.push(parsed.value)
       }
-      set({ events, sessions, users, loading: false, loadedAt: new Date() })
+      const organisations = orgSnap.docs
+        .map((entry) => parseOrganisation(entry.id, entry.data() as Record<string, unknown>))
+        .filter((row): row is PlatformOrganisation => Boolean(row))
+        .sort((a, b) => a.name.localeCompare(b.name))
+      set({ events, sessions, users, organisations, loading: false, loadedAt: new Date() })
     } catch (error: unknown) {
-      set({ error: error instanceof Error ? error.message : 'Could not load analytics', loading: false })
+      set({ error: permissionMessage(error), loading: false })
     }
   },
 }))

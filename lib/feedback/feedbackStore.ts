@@ -17,6 +17,7 @@ import { newUuid } from '@/lib/firebase/firestoreUtils'
 import { omitUndefinedDeep } from '@/lib/ios-parity/firestoreCodec'
 import { saveInboxNotification } from '@/lib/firebase/notifyInbox'
 import { trackEvent } from '@/lib/analytics/trackEvent'
+import { feedbackWriteError } from '@/lib/feedback/errors'
 import { consolidateVotesOnMerge, voteId } from '@/lib/feedback/similar'
 import {
   parseComment,
@@ -55,6 +56,7 @@ type FeedbackState = {
     userId: string
     authorName: string
     organizationId: string
+    organizationName?: string
   }) => Promise<string>
   toggleVote: (suggestion: FeedbackSuggestion, userId: string) => Promise<void>
   addComment: (suggestion: FeedbackSuggestion, userId: string, authorName: string, body: string) => Promise<void>
@@ -122,7 +124,11 @@ export const useFeedbackStore = create<FeedbackState>((set, get) => ({
       const votes = voteSnap.docs.map((entry) => parseVote(entry.id, entry.data() as Record<string, unknown>))
       set({ suggestions, votes, loading: false })
     } catch (error: unknown) {
-      set({ error: error instanceof Error ? error.message : 'Could not load ideas', loading: false })
+      const mapped = feedbackWriteError(error)
+      set({
+        error: mapped === 'Could not save' ? 'Could not load ideas' : mapped,
+        loading: false,
+      })
     }
   },
 
@@ -171,6 +177,7 @@ export const useFeedbackStore = create<FeedbackState>((set, get) => ({
       authorUserId: input.userId,
       authorName: input.authorName,
       organizationId: input.organizationId,
+      organizationName: input.organizationName?.trim() || undefined,
       voteCount: 1,
       commentCount: 0,
       publicStatus: 'under_review',
@@ -394,6 +401,8 @@ export const useFeedbackStore = create<FeedbackState>((set, get) => ({
 export function publicStatusLabel(status: FeedbackPublicStatus): string {
   return status.replace(/_/g, ' ')
 }
+
+export { feedbackWriteError } from '@/lib/feedback/errors'
 
 export function hasVoted(votes: FeedbackVote[], suggestionId: string, userId: string | undefined): boolean {
   if (!userId) return false

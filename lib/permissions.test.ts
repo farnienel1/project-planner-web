@@ -163,20 +163,24 @@ test('admins only see User Timesheets when the org has an active operative', () 
   assert.equal(canAccessOperativeTimesheets(admin, true, []), true)
 })
 
-test('developer dashboard is super-admin or developerAccess, never operatives', () => {
+test('developer dashboard is the platform owner email only, never organisation roles', () => {
   const customer = user({ role: UserRole.BASIC, permissions: { manager: true } })
   const admin = user({ role: UserRole.ADMIN, permissions: { adminAccess: true, manager: true } })
-  const developer = user({ role: UserRole.ADMIN, permissions: { adminAccess: true, developerAccess: true } })
+  const flagged = user({ role: UserRole.ADMIN, permissions: { adminAccess: true, developerAccess: true } })
   const superAdmin = user({ role: UserRole.ADMIN, isSuperAdmin: true, permissions: { adminAccess: true } })
-  const operative = user({
-    role: UserRole.OPERATIVE,
-    permissions: { operativeMode: true, developerAccess: true },
+  const owner = user({
+    email: 'info@projectplanner.us',
+    role: UserRole.ADMIN,
+    isSuperAdmin: false,
+    permissions: { adminAccess: false },
   })
+  const ownerCased = user({ email: '  Info@ProjectPlanner.us  ' })
   assert.equal(canAccessDeveloperDashboard(customer), false)
   assert.equal(canAccessDeveloperDashboard(admin), false)
-  assert.equal(canAccessDeveloperDashboard(developer), true)
-  assert.equal(canAccessDeveloperDashboard(superAdmin), true)
-  assert.equal(canAccessDeveloperDashboard(operative), false)
+  assert.equal(canAccessDeveloperDashboard(flagged), false)
+  assert.equal(canAccessDeveloperDashboard(superAdmin), false)
+  assert.equal(canAccessDeveloperDashboard(owner), true)
+  assert.equal(canAccessDeveloperDashboard(ownerCased), true)
 })
 
 test('PAYE users with remaining My Timesheets do not see the disabled card copy', () => {

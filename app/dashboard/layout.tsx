@@ -8,6 +8,7 @@ import { ProductAnalyticsProvider } from '@/components/analytics/ProductAnalytic
 import { SplashScreen } from '@/components/auth/SplashScreen'
 import { PolicyGate } from '@/components/auth/PolicyGate'
 import { CheckEmailScreen } from '@/components/auth/CheckEmailScreen'
+import { hasCustomerOrganisation, isPlatformOwnerEmail } from '@/lib/platform/owner'
 
 export default function DashboardLayout({
   children,
@@ -20,6 +21,10 @@ export default function DashboardLayout({
   useEffect(() => {
     if (!loading && !user) {
       router.push('/login')
+      return
+    }
+    if (!loading && user && isPlatformOwnerEmail(user.email) && !hasCustomerOrganisation(user.organizationId)) {
+      router.replace('/developer')
     }
   }, [user, loading, router])
 

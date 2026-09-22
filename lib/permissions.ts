@@ -6,6 +6,7 @@
 import type { User, UserPermissions } from '@/types'
 import { parseAppUserDocument } from '@/lib/ios-parity/converters'
 import { normalizeEmploymentType } from '@/lib/ios-parity/enums'
+import { isPlatformOwnerEmail } from '@/lib/platform/owner'
 
 export type PermissionUser = User | null | undefined
 
@@ -251,10 +252,9 @@ export function canViewHelp(user: PermissionUser): boolean {
   return !isOperativeMode(user)
 }
 
-/** Product developer dashboard — super admins, or users granted developerAccess. Never operatives. */
+/** Owner console only — info@projectplanner.us. Organisation admins never get this. */
 export function canAccessDeveloperDashboard(user: PermissionUser): boolean {
-  if (!user || isOperativeMode(user)) return false
-  return user.isSuperAdmin === true || flag(user, 'developerAccess')
+  return isPlatformOwnerEmail(user?.email)
 }
 
 export function canViewMySchedule(user: PermissionUser): boolean {

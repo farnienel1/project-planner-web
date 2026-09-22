@@ -66,6 +66,8 @@ const nextConfig = {
       { source: '/rates/:path*', destination: '/pricing', permanent: false },
       { source: '/privacy-policy.html', destination: '/privacy', permanent: false },
       { source: '/terms-of-service.html', destination: '/terms', permanent: false },
+      { source: '/dashboard/developer', destination: '/developer', permanent: false },
+      { source: '/dashboard/developer/:path*', destination: '/developer/:path*', permanent: false },
     ]
   },
 }
