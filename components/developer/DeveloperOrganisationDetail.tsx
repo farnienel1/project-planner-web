@@ -17,7 +17,7 @@ export function DeveloperOrganisationDetailScreen({ organisationId }: { organisa
   const [preset, setPreset] = useState<DateRangePreset>('all_time')
   const [query, setQuery] = useState('')
   const range = useMemo(() => resolveDateRange(preset), [preset])
-  const { organisations, users, events, loading, error, warning, load } = useAnalyticsStore()
+  const { organisations, users, events, loading, error, load } = useAnalyticsStore()
   const { suggestions, loadBoard } = useFeedbackStore()
 
   useEffect(() => {
@@ -52,7 +52,7 @@ export function DeveloperOrganisationDetailScreen({ organisationId }: { organisa
     [orgUsers, query]
   )
 
-  if (loading && users.length === 0 && organisations.length === 0 && !error && !warning) {
+  if (loading && users.length === 0 && organisations.length === 0 && !error) {
     return <LoadingSpinner label="Loading organisation…" />
   }
 
@@ -69,11 +69,13 @@ export function DeveloperOrganisationDetailScreen({ organisationId }: { organisa
     <DeveloperShell title={name} back={{ href: '/developer/organisations', label: 'Organisations' }}>
       <p className="text-xs text-[var(--ink3)]">{organisationId}</p>
       <DateRangePicker preset={preset} onChange={setPreset} />
-      <DeveloperStatus error={error} warning={warning} loading={loading} />
+      <DeveloperStatus error={error} loading={loading} />
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <MetricCard label="Registered users" value={orgUsers.length} />
         <MetricCard label="Active in range" value={Math.max(activity?.activeUsers || 0, directoryActiveUsers(orgUsers, range))} />
-        <MetricCard label="Product events" value={activity?.events || 0} hint={events.length ? undefined : 'No product events recorded yet'} />
+        {events.length > 0 ? (
+          <MetricCard label="Product events" value={activity?.events || 0} />
+        ) : null}
         <MetricCard label="Ideas" value={activity?.ideaCount || 0} />
       </div>
       <section className="space-y-3">

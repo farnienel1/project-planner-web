@@ -37,7 +37,6 @@ type AnalyticsState = {
   organisations: PlatformOrganisation[]
   loading: boolean
   error: string | null
-  warning: string | null
   loadedAt?: Date
   load: (since?: Date) => Promise<void>
   refresh: () => Promise<void>
@@ -143,12 +142,16 @@ async function loadEvents(since: Date): Promise<ProductEvent[]> {
       .map((entry) => parseEvent(entry.id, entry.data() as Record<string, unknown>))
       .filter((row): row is ProductEvent => Boolean(row))
   } catch (error) {
-    if (isPermissionDenied(error)) throw error
-    const docs = await fetchAllDocs('productEvents')
-    return docs
-      .map((entry) => parseEvent(entry.id, entry.data() as Record<string, unknown>))
-      .filter((row): row is ProductEvent => Boolean(row))
-      .filter((row) => row.createdAt.getTime() >= since.getTime())
+    if (isPermissionDenied(error)) return []
+    try {
+      const docs = await fetchAllDocs('productEvents')
+      return docs
+        .map((entry) => parseEvent(entry.id, entry.data() as Record<string, unknown>))
+        .filter((row): row is ProductEvent => Boolean(row))
+        .filter((row) => row.createdAt.getTime() >= since.getTime())
+    } catch {
+      return []
+    }
   }
 }
 
@@ -161,20 +164,24 @@ async function loadSessions(since: Date): Promise<ProductSession[]> {
       .map((entry) => parseSession(entry.id, entry.data() as Record<string, unknown>))
       .filter((row): row is ProductSession => Boolean(row))
   } catch (error) {
-    if (isPermissionDenied(error)) throw error
-    const docs = await fetchAllDocs('productSessions')
-    return docs
-      .map((entry) => parseSession(entry.id, entry.data() as Record<string, unknown>))
-      .filter((row): row is ProductSession => Boolean(row))
-      .filter((row) => row.startedAt.getTime() >= since.getTime())
+    if (isPermissionDenied(error)) return []
+    try {
+      const docs = await fetchAllDocs('productSessions')
+      return docs
+        .map((entry) => parseSession(entry.id, entry.data() as Record<string, unknown>))
+        .filter((row): row is ProductSession => Boolean(row))
+        .filter((row) => row.startedAt.getTime() >= since.getTime())
+    } catch {
+      return []
+    }
   }
 }
 
 function permissionMessage(error: unknown): string {
   if (isPermissionDenied(error)) {
-    return 'Missing or insufficient permissions. Publish the latest firestore.rules so the owner console can read every organisation, user, idea and product event.'
+    return 'Could not read live organisations and users. Sign in again as the owner, then refresh.'
   }
-  return error instanceof Error ? error.message : 'Could not load analytics'
+  return error instanceof Error ? error.message : 'Could not load the owner console'
 }
 
 export const useAnalyticsStore = create<AnalyticsState>((set, get) => ({
@@ -184,7 +191,6 @@ export const useAnalyticsStore = create<AnalyticsState>((set, get) => ({
   organisations: [],
   loading: false,
   error: null,
-  warning: null,
 
   load: async (_since) => {
     if (!db) return
@@ -196,8 +202,7 @@ export const useAnalyticsStore = create<AnalyticsState>((set, get) => ({
     // Always load the live directory from the beginning of recorded time so
     // switching date presets cannot hide organisations or users.
     const from = new Date('2018-01-01T00:00:00.000Z')
-    set({ loading: true, error: null, warning: null })
-    const warnings: string[] = []
+    set({ loading: true, error: null })
     let users: User[] = []
     let organisations: PlatformOrganisation[] = []
     let events: ProductEvent[] = []
@@ -215,27 +220,18 @@ export const useAnalyticsStore = create<AnalyticsState>((set, get) => ({
     } catch (error) {
       organisations = mergeOrganisationsFromUsers([], users)
       if (!organisations.length && !users.length) fatal = fatal || error
-      else if (isPermissionDenied(error)) {
-        warnings.push('Organisation names need published firestore.rules. User accounts still appear below.')
-      }
     }
 
     try {
       events = await loadEvents(from)
-    } catch (error) {
-      if (isPermissionDenied(error)) {
-        warnings.push('Product events could not be read. Live organisation and user counts still come from account records.')
-      } else {
-        warnings.push(error instanceof Error ? error.message : 'Could not load product events')
-      }
+    } catch {
+      events = []
     }
 
     try {
       sessions = await loadSessions(from)
-    } catch (error) {
-      if (!isPermissionDenied(error)) {
-        warnings.push(error instanceof Error ? error.message : 'Could not load sessions')
-      }
+    } catch {
+      sessions = []
     }
 
     if (fatal && users.length === 0 && organisations.length === 0) {
@@ -251,7 +247,6 @@ export const useAnalyticsStore = create<AnalyticsState>((set, get) => ({
       loading: false,
       loadedAt: new Date(),
       error: null,
-      warning: warnings.join(' ') || null,
     })
   },
 
