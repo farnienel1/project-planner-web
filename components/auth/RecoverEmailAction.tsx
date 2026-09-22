@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect } from 'react'
-import { parseEmailActionSearch, emailActionRecoveryHref } from '@/lib/auth/emailAction'
+import { emailActionRecoveryHref } from '@/lib/auth/emailAction'
 
 /** Firebase reset links often land on /__/auth/action. After hydration Next treats that as 404. */
 export function RecoverEmailAction() {
