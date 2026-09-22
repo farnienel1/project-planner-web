@@ -1,8 +1,11 @@
 import Link from 'next/link'
 
+import { RecoverEmailAction } from '@/components/auth/RecoverEmailAction'
+
 export default function DashboardNotFound() {
   return (
     <div className="flex min-h-[50vh] flex-col items-center justify-center empty card pad px-6 py-16 text-center shadow-sm">
+      <RecoverEmailAction />
       <p className="text-6xl font-bold text-slate-200">404</p>
       <h1 className="mt-4 text-2xl font-bold text-slate-900">Page not found</h1>
       <p className="mt-2 max-w-md text-sm text-slate-500">

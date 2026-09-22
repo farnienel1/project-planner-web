@@ -45,3 +45,11 @@ export function formatPasswordResetError(error: unknown): string {
   }
   return message || 'Could not update the password. Request a new reset link and try again.'
 }
+
+export function emailActionRecoveryHref(pathname: string, search: string): string | null {
+  const query = search.startsWith('?') ? search.slice(1) : search
+  const action = parseEmailActionSearch(new URLSearchParams(query))
+  if (!action.oobCode) return null
+  if (pathname === '/auth/action') return null
+  return `/auth/action${search.startsWith('?') ? search : search ? `?${search}` : ''}`
+}

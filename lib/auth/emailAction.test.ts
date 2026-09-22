@@ -1,6 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  emailActionRecoveryHref,
   formatPasswordResetError,
   isPasswordResetAction,
   loginPathForResetEmail,
@@ -39,4 +40,11 @@ test('owner reset returns to developer login', () => {
 test('expired action codes are explained in plain language', () => {
   assert.match(formatPasswordResetError({ code: 'auth/expired-action-code', message: 'expired' }), /expired/i)
   assert.match(formatPasswordResetError({ code: 'auth/invalid-action-code', message: 'invalid' }), /already been used/i)
+})
+
+test('Firebase /__/auth/action links recover onto /auth/action', () => {
+  const href = emailActionRecoveryHref('/__/auth/action', '?mode=resetPassword&oobCode=abc123')
+  assert.equal(href, '/auth/action?mode=resetPassword&oobCode=abc123')
+  assert.equal(emailActionRecoveryHref('/auth/action', '?mode=resetPassword&oobCode=abc123'), null)
+  assert.equal(emailActionRecoveryHref('/__/auth/action', ''), null)
 })

@@ -56,16 +56,15 @@ const nextConfig = {
   },
   async rewrites() {
     // iOS invite emails use /setup-password.html?token=
-    // Firebase password-reset emails use /__/auth/action when the Auth domain is this site.
-    return [
-      { source: '/setup-password.html', destination: '/setup-password' },
-      { source: '/__/auth/action', destination: '/auth/action' },
-      { source: '/__/auth/handler', destination: '/auth/action' },
-      { source: '/auth', destination: '/auth/action' },
-    ]
+    return [{ source: '/setup-password.html', destination: '/setup-password' }]
   },
   async redirects() {
     return [
+      // Firebase emails keep the path /__/auth/action. A rewrite left that URL in the
+      // address bar, and the App Router then 404ed after hydration. Redirect instead.
+      { source: '/__/auth/action', destination: '/auth/action', permanent: false },
+      { source: '/__/auth/handler', destination: '/auth/action', permanent: false },
+      { source: '/__/auth/:path*', destination: '/auth/action', permanent: false },
       { source: '/dashboard/skills', destination: '/dashboard', permanent: false },
       { source: '/dashboard/skills/:path*', destination: '/dashboard', permanent: false },
       { source: '/rates', destination: '/pricing', permanent: false },

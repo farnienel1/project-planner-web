@@ -1,6 +1,8 @@
 import { Suspense } from 'react'
 import { CompletePasswordResetScreen } from '@/components/auth/CompletePasswordResetScreen'
 
+export const dynamic = 'force-dynamic'
+
 export const metadata = {
   title: 'Reset password | Project Planner',
 }
