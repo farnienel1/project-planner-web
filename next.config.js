@@ -56,7 +56,13 @@ const nextConfig = {
   },
   async rewrites() {
     // iOS invite emails use /setup-password.html?token=
-    return [{ source: '/setup-password.html', destination: '/setup-password' }]
+    // Firebase password-reset emails use /__/auth/action when the Auth domain is this site.
+    return [
+      { source: '/setup-password.html', destination: '/setup-password' },
+      { source: '/__/auth/action', destination: '/auth/action' },
+      { source: '/__/auth/handler', destination: '/auth/action' },
+      { source: '/auth', destination: '/auth/action' },
+    ]
   },
   async redirects() {
     return [
