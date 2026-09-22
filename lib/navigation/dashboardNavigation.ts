@@ -4,7 +4,6 @@ import {
   canAccessTeamSection,
   canAccessTimesheets,
   canAccessWholesalers,
-  canAccessDeveloperDashboard,
   canManageJobTypes,
   canManageMaterialCatalogue,
   canManageQualifications,
@@ -266,16 +265,6 @@ const ALL_NAV_ITEMS: DashboardNavItem[] = [
     section: 'tools',
   },
   {
-    id: 'dashboard_developer',
-    href: '/dashboard/developer',
-    label: 'Developer',
-    subtitle: 'Product analytics and feedback admin',
-    navigationLabelKey: 'dashboard_developer',
-    iconPath: 'M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z',
-    tileClasses: 'bg-slate-100 text-slate-800',
-    section: 'tools',
-  },
-  {
     id: 'dashboard_add_user',
     href: '/dashboard/settings/users/new',
     label: 'Add user',
@@ -392,8 +381,6 @@ function canSeeNavItem(item: DashboardNavItem, user: User, orgUsers: User[] = []
       return canManageSubcontractors(user)
     case 'dashboard_ideas':
       return Boolean(user)
-    case 'dashboard_developer':
-      return canAccessDeveloperDashboard(user)
     case 'dashboard_add_user':
       return canManageUsers(user) || canManageOperativesOnly(user)
     case 'dashboard_manage_users':

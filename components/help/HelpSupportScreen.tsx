@@ -45,6 +45,7 @@ const TOPICS: Topic[] = [
         body: [
           'Sign in with the email you were invited with. Each person has one login, even if they belong to more than one organisation.',
           'Switch organisation from Settings when you need to move between companies you belong to. The active organisation is the one whose jobs and people you see.',
+          'The separate Developer login on the sign-in page is only for the Project Planner owner. Organisation accounts never get an analytics console.',
         ],
       },
       {
@@ -443,21 +444,12 @@ const TOPICS: Topic[] = [
       {
         id: 'ideas',
         title: 'Ideas board',
-        summary: 'Suggest improvements and vote.',
+        summary: 'Shared board across every organisation.',
         href: '/dashboard/ideas',
         body: [
-          'Open Ideas from Tools. Search existing suggestions first — similar ideas are shown before you submit a new one.',
-          'Vote once per idea. Comments stay on the request. Public status is Under review, Planned, In progress, Released or Not planned.',
-        ],
-      },
-      {
-        id: 'developer',
-        title: 'Developer dashboard',
-        summary: 'Product analytics and feedback admin.',
-        href: '/dashboard/developer',
-        body: [
-          'The Developer area is only for super admins and people given Developer dashboard access. Other signed-in users are redirected away.',
-          'It combines real product usage (sessions, feature events, funnels) with the same Ideas board customers use. Traffic-light decisions, internal notes and merge stay private to developers.',
+          'Open Ideas from Tools. This is one shared board for every company using Project Planner — not a private list for your organisation. You can see, vote on and comment on ideas from other companies, and they can see yours.',
+          'The top-rated idea is featured so the most useful request is obvious. Search existing suggestions first — similar ideas are shown before you submit a new one.',
+          'Vote once per idea. Comments stay on the request. Public status is Under review, Planned, In progress, Released or Not planned. There is no organisation analytics console; the product owner reviews Ideas privately.',
         ],
       },
     ],

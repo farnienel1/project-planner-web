@@ -55,6 +55,7 @@ type FeedbackState = {
     userId: string
     authorName: string
     organizationId: string
+    organizationName?: string
   }) => Promise<string>
   toggleVote: (suggestion: FeedbackSuggestion, userId: string) => Promise<void>
   addComment: (suggestion: FeedbackSuggestion, userId: string, authorName: string, body: string) => Promise<void>
@@ -122,7 +123,13 @@ export const useFeedbackStore = create<FeedbackState>((set, get) => ({
       const votes = voteSnap.docs.map((entry) => parseVote(entry.id, entry.data() as Record<string, unknown>))
       set({ suggestions, votes, loading: false })
     } catch (error: unknown) {
-      set({ error: error instanceof Error ? error.message : 'Could not load ideas', loading: false })
+      const message = error instanceof Error ? error.message : 'Could not load ideas'
+      set({
+        error: /permission|insufficient/i.test(message)
+          ? 'Missing or insufficient permissions. The shared Ideas board needs the latest firestore.rules published so every organisation can read and submit.'
+          : message,
+        loading: false,
+      })
     }
   },
 
@@ -171,6 +178,7 @@ export const useFeedbackStore = create<FeedbackState>((set, get) => ({
       authorUserId: input.userId,
       authorName: input.authorName,
       organizationId: input.organizationId,
+      organizationName: input.organizationName?.trim() || undefined,
       voteCount: 1,
       commentCount: 0,
       publicStatus: 'under_review',
@@ -393,6 +401,14 @@ export const useFeedbackStore = create<FeedbackState>((set, get) => ({
 
 export function publicStatusLabel(status: FeedbackPublicStatus): string {
   return status.replace(/_/g, ' ')
+}
+
+export function feedbackWriteError(error: unknown): string {
+  const message = error instanceof Error ? error.message : 'Could not save'
+  if (/permission|insufficient/i.test(message)) {
+    return 'Missing or insufficient permissions. The shared Ideas board needs the latest firestore.rules published so every organisation can read and submit.'
+  }
+  return message
 }
 
 export function hasVoted(votes: FeedbackVote[], suggestionId: string, userId: string | undefined): boolean {

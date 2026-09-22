@@ -182,3 +182,74 @@ export function relatedFeatureUsage(
   )
   return { users: countUnique(matched.map((event) => event.userId)), uses: matched.length }
 }
+
+export type OrganisationActivityRow = {
+  id: string
+  name: string
+  userCount: number
+  activeUsers: number
+  events: number
+  lastActivityAt?: Date
+  ideaCount: number
+  createdAt?: Date
+}
+
+export function organisationActivityRows(input: {
+  organisations: { id: string; name: string; createdAt?: Date }[]
+  users: { id: string; organizationId: string; lastSeenAt?: Date }[]
+  events: ProductEvent[]
+  ideas: { organizationId: string }[]
+  range: { start: Date; end: Date }
+}): OrganisationActivityRow[] {
+  const usersByOrg = new Map<string, typeof input.users>()
+  for (const user of input.users) {
+    const list = usersByOrg.get(user.organizationId) || []
+    list.push(user)
+    usersByOrg.set(user.organizationId, list)
+  }
+  const eventsByOrg = new Map<string, ProductEvent[]>()
+  for (const event of input.events) {
+    if (!event.organizationId) continue
+    const list = eventsByOrg.get(event.organizationId) || []
+    list.push(event)
+    eventsByOrg.set(event.organizationId, list)
+  }
+  const ideasByOrg = new Map<string, number>()
+  for (const idea of input.ideas) {
+    if (!idea.organizationId) continue
+    ideasByOrg.set(idea.organizationId, (ideasByOrg.get(idea.organizationId) || 0) + 1)
+  }
+
+  const knownIds = new Set(input.organisations.map((org) => org.id))
+  const extraIds = [...usersByOrg.keys(), ...eventsByOrg.keys()].filter((id) => id && !knownIds.has(id))
+  const rows = [
+    ...input.organisations,
+    ...extraIds.map((id) => ({ id, name: 'Unknown organisation', createdAt: undefined as Date | undefined })),
+  ]
+
+  return rows
+    .map((org) => {
+      const orgUsers = usersByOrg.get(org.id) || []
+      const orgEvents = (eventsByOrg.get(org.id) || []).filter((event) => inRange(event.createdAt, input.range.start, input.range.end))
+      const lastEvent = (eventsByOrg.get(org.id) || []).reduce<Date | undefined>((latest, event) => {
+        if (!latest || event.createdAt.getTime() > latest.getTime()) return event.createdAt
+        return latest
+      }, undefined)
+      const lastSeen = orgUsers.reduce<Date | undefined>((latest, user) => {
+        if (!user.lastSeenAt) return latest
+        if (!latest || user.lastSeenAt.getTime() > latest.getTime()) return user.lastSeenAt
+        return latest
+      }, lastEvent)
+      return {
+        id: org.id,
+        name: org.name,
+        userCount: orgUsers.length,
+        activeUsers: countUnique(orgEvents.map((event) => event.userId)),
+        events: orgEvents.length,
+        lastActivityAt: lastSeen,
+        ideaCount: ideasByOrg.get(org.id) || 0,
+        createdAt: org.createdAt,
+      }
+    })
+    .sort((a, b) => b.activeUsers - a.activeUsers || b.userCount - a.userCount || a.name.localeCompare(b.name))
+}

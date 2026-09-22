@@ -13,6 +13,7 @@ import { useAuthStore } from '@/lib/stores/authStore'
 import { AppLogoMark } from '@/components/ui/AppLogoMark'
 import { formatLoginError } from '@/lib/auth/formatLoginError'
 import { consumeWebIdleExpiredFlag } from '@/lib/auth/webIdleSession'
+import { hasCustomerOrganisation, isPlatformOwnerEmail } from '@/lib/platform/owner'
 
 export function LoginBrandScreen() {
   const router = useRouter()
@@ -27,7 +28,12 @@ export function LoginBrandScreen() {
   const [idleNotice] = useState(() => consumeWebIdleExpiredFlag())
 
   useEffect(() => {
-    if (user) router.replace('/dashboard')
+    if (!user) return
+    if (isPlatformOwnerEmail(user.email) && !hasCustomerOrganisation(user.organizationId)) {
+      router.replace('/developer')
+      return
+    }
+    router.replace('/dashboard')
   }, [user, router])
 
   const trimmedEmail = email.trim()
@@ -48,7 +54,12 @@ export function LoginBrandScreen() {
     try {
       setSubmitting(true)
       await signIn(trimmedEmail, password)
-      router.push('/dashboard')
+      const signedIn = useAuthStore.getState().user
+      if (signedIn && isPlatformOwnerEmail(signedIn.email) && !hasCustomerOrganisation(signedIn.organizationId)) {
+        router.push('/developer')
+      } else {
+        router.push('/dashboard')
+      }
     } catch (err) {
       setLocalError(formatLoginError(err))
     } finally {
@@ -172,6 +183,9 @@ export function LoginBrandScreen() {
               Set up an organisation
             </Link>
           </p>
+          <Link href="/developer-login" className="btn sm ghost mt-4 block text-center">
+            Developer login
+          </Link>
         </div>
       </div>
     </div>

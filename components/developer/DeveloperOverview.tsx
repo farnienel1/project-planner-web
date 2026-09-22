@@ -9,12 +9,12 @@ import {
   countUnique,
   dailyActiveUsers,
   inRange,
+  organisationActivityRows,
   uniqueUsersByDay,
 } from '@/lib/analytics/aggregations'
 import type { DateRangePreset } from '@/lib/analytics/events'
 import { ChangeHint, DeveloperShell, MetricCard, MiniBars } from '@/components/developer/DeveloperShell'
-import { ErrorBanner, LoadingSpinner } from '@/components/dashboard/PageShell'
-import { EmptyState } from '@/components/dashboard/PageShell'
+import { EmptyState, ErrorBanner, LoadingSpinner } from '@/components/dashboard/PageShell'
 
 const PRESETS: { id: DateRangePreset; label: string }[] = [
   { id: 'today', label: 'Today' },
@@ -52,7 +52,7 @@ export function DateRangePicker({
 export function DeveloperOverviewScreen() {
   const [preset, setPreset] = useState<DateRangePreset>('last_7')
   const range = useMemo(() => resolveDateRange(preset), [preset])
-  const { events, sessions, users, loading, error, loadedAt, load } = useAnalyticsStore()
+  const { events, sessions, users, organisations, loading, error, loadedAt, load } = useAnalyticsStore()
   const { suggestions, votes, loadBoard } = useFeedbackStore()
 
   useEffect(() => {
@@ -72,8 +72,16 @@ export function DeveloperOverviewScreen() {
     const openRequests = suggestions.filter((row) => !row.hidden && !row.mergedIntoId && row.publicStatus !== 'released' && row.publicStatus !== 'not_planned')
     const awaiting = suggestions.filter((row) => !row.hidden && !row.mergedIntoId && row.productDecision === 'none')
     const avgSession = averageSessionDuration(sessions, range)
+    const orgRows = organisationActivityRows({
+      organisations,
+      users,
+      events,
+      ideas: suggestions.filter((row) => !row.hidden && !row.mergedIntoId),
+      range,
+    })
     return {
       totalUsers: users.length,
+      organisations: organisations.length || orgRows.length,
       active,
       prevActive,
       newUsers,
@@ -87,8 +95,9 @@ export function DeveloperOverviewScreen() {
       awaiting: awaiting.length,
       projects: currentEvents.filter((event) => event.eventName === 'project_created' || event.eventName === 'small_work_created').length,
       tasks: currentEvents.filter((event) => event.eventName === 'task_created').length,
+      topOrgs: orgRows.slice(0, 5),
     }
-  }, [events, sessions, users, suggestions, votes, range])
+  }, [events, sessions, users, organisations, suggestions, votes, range])
 
   if (loading && events.length === 0) return <LoadingSpinner label="Loading analytics…" />
 
@@ -100,7 +109,8 @@ export function DeveloperOverviewScreen() {
       <DateRangePicker preset={preset} onChange={setPreset} />
       {error ? <ErrorBanner message={error} /> : null}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <MetricCard label="Total users" value={metrics.totalUsers} href="/dashboard/developer/analytics" />
+        <MetricCard label="Organisations" value={metrics.organisations} href="/developer/organisations" />
+        <MetricCard label="Total users" value={metrics.totalUsers} href="/developer/analytics" />
         <MetricCard
           label="Active in range"
           value={metrics.active}
@@ -120,12 +130,30 @@ export function DeveloperOverviewScreen() {
             </>
           }
         />
-        <MetricCard label="Open requests" value={metrics.openRequests} href="/dashboard/developer/feedback" />
+        <MetricCard label="Open requests" value={metrics.openRequests} href="/developer/feedback" />
         <MetricCard label="Returning users" value={metrics.returning} hint="People with a login or home view in range" />
-        <MetricCard label="Votes" value={metrics.votes} />
-        <MetricCard label="Awaiting review" value={metrics.awaiting} href="/dashboard/developer/feedback?filter=review" />
+        <MetricCard label="Awaiting review" value={metrics.awaiting} href="/developer/feedback?filter=review" />
         <MetricCard label="Projects / tasks created" value={`${metrics.projects} / ${metrics.tasks}`} />
+        <MetricCard label="Votes" value={metrics.votes} />
       </div>
+      <section className="card pad">
+        <h2 className="h2">Most active organisations</h2>
+        <p className="mt-1 text-xs text-[var(--ink3)]">Ranked by people who generated a product event in this range.</p>
+        {metrics.topOrgs.length === 0 ? (
+          <p className="mt-3 text-sm text-[var(--ink3)]">Organisations appear here after setup. Usage ranks fill in once events are recorded.</p>
+        ) : (
+          <ul className="mt-3 space-y-2">
+            {metrics.topOrgs.map((org) => (
+              <li key={org.id} className="flex items-center justify-between rounded-xl bg-[var(--soft)] px-3 py-2 text-sm">
+                <span className="font-semibold">{org.name}</span>
+                <span className="text-[var(--ink3)]">
+                  {org.activeUsers} active · {org.userCount} users
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
       <section className="card pad">
         <h2 className="h2">Daily active users</h2>
         <p className="mt-1 text-xs text-[var(--ink3)]">Unique people who generated a product event in this range.</p>

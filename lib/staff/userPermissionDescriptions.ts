@@ -20,14 +20,6 @@ export const OPERATIVE_PERMISSION_TOGGLES: PermissionToggleDef[] = [
   },
 ]
 
-export const DEVELOPER_PERMISSION_TOGGLES: PermissionToggleDef[] = [
-  {
-    key: 'developerAccess',
-    title: 'Developer dashboard',
-    description: 'Can open the product developer area: analytics, ideas admin, and the roadmap. Super admins already have this.',
-  },
-]
-
 export const MANAGER_PERMISSION_TOGGLES: PermissionToggleDef[] = [
   {
     key: 'adminAccess',

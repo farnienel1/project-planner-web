@@ -13,6 +13,7 @@ export function FeedbackDetailScreen({ ideaId }: { ideaId: string }) {
     useFeedbackStore()
   const [body, setBody] = useState('')
   const [saving, setSaving] = useState(false)
+  const [commentError, setCommentError] = useState('')
 
   useEffect(() => {
     void loadBoard(false).then(() => loadSuggestionExtras(ideaId, false))
@@ -50,7 +51,8 @@ export function FeedbackDetailScreen({ ideaId }: { ideaId: string }) {
             <h1 className="text-xl font-extrabold text-[var(--ink)]">{suggestion.title}</h1>
             <p className="mt-2 whitespace-pre-wrap text-sm text-[var(--ink2)]">{suggestion.details}</p>
             <p className="mt-3 text-xs text-[var(--ink3)]">
-              {suggestion.category} · {suggestion.authorName}
+              {suggestion.organizationName?.trim() || 'Another organisation'} · {suggestion.category} ·{' '}
+              {suggestion.authorName}
             </p>
           </div>
         </div>
@@ -83,6 +85,7 @@ export function FeedbackDetailScreen({ ideaId }: { ideaId: string }) {
             </div>
           ))}
         </div>
+        {commentError ? <ErrorBanner message={commentError} /> : null}
         <textarea
           value={body}
           onChange={(e) => setBody(e.target.value)}
@@ -96,9 +99,12 @@ export function FeedbackDetailScreen({ ideaId }: { ideaId: string }) {
           onClick={async () => {
             if (!user) return
             setSaving(true)
+            setCommentError('')
             try {
               await addComment(suggestion, user.id, `${user.firstName} ${user.surname}`.trim() || user.email, body)
               setBody('')
+            } catch (err) {
+              setCommentError(err instanceof Error ? err.message : 'Could not post this comment.')
             } finally {
               setSaving(false)
             }
