@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Reset password | Project Planner</title>
+    <script>
+      (function () {
+        location.replace('/auth/action' + location.search + location.hash)
+      })()
+    </script>
+  </head>
+  <body>
+    <p>Continue to <a id="reset-link" href="/auth/action">choose a new password</a>.</p>
+    <script>
+      document.getElementById('reset-link').href = '/auth/action' + location.search + location.hash
+    </script>
+  </body>
+</html>

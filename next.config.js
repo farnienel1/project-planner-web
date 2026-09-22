@@ -52,20 +52,33 @@ const nextConfig = {
         source: '/:path*',
         headers: securityHeaders,
       },
+      {
+        source: '/auth/action',
+        headers: [{ key: 'Cache-Control', value: 'private, no-store, must-revalidate' }],
+      },
+      {
+        source: '/reset-password',
+        headers: [{ key: 'Cache-Control', value: 'private, no-store, must-revalidate' }],
+      },
     ]
   },
   async rewrites() {
     // iOS invite emails use /setup-password.html?token=
-    // Firebase password-reset emails use /__/auth/action when the Auth domain is this site.
+    // Firebase /__/auth/* cannot hydrate as a Next page; serve a static hop instead.
     return [
       { source: '/setup-password.html', destination: '/setup-password' },
-      { source: '/__/auth/action', destination: '/auth/action' },
-      { source: '/__/auth/handler', destination: '/auth/action' },
-      { source: '/auth', destination: '/auth/action' },
+      { source: '/__/auth/action', destination: '/firebase-auth-action.html' },
+      { source: '/__/auth/handler', destination: '/firebase-auth-action.html' },
+      { source: '/__/auth/:path*', destination: '/firebase-auth-action.html' },
     ]
   },
   async redirects() {
     return [
+      // Firebase emails keep the path /__/auth/action. A rewrite left that URL in the
+      // address bar, and the App Router then 404ed after hydration. Redirect instead.
+      { source: '/__/auth/action', destination: '/auth/action', permanent: false },
+      { source: '/__/auth/handler', destination: '/auth/action', permanent: false },
+      { source: '/__/auth/:path*', destination: '/auth/action', permanent: false },
       { source: '/dashboard/skills', destination: '/dashboard', permanent: false },
       { source: '/dashboard/skills/:path*', destination: '/dashboard', permanent: false },
       { source: '/rates', destination: '/pricing', permanent: false },

@@ -10,10 +10,14 @@ export function EmailActionCatch() {
   const searchParams = useSearchParams()
 
   useEffect(() => {
-    const action = parseEmailActionSearch(searchParams)
+    const fromHook = parseEmailActionSearch(searchParams)
+    const fromWindow =
+      typeof window === 'undefined' ? fromHook : parseEmailActionSearch(new URLSearchParams(window.location.search))
+    const action = fromWindow.oobCode ? fromWindow : fromHook
     if (!action.oobCode) return
     if (action.mode === 'resetPassword' || isPasswordResetAction(action) || action.mode) {
-      router.replace(`/auth/action?${searchParams.toString()}`)
+      const query = typeof window !== 'undefined' ? window.location.search : `?${searchParams.toString()}`
+      router.replace(`/auth/action${query.startsWith('?') ? query : `?${query}`}`)
     }
   }, [router, searchParams])
 

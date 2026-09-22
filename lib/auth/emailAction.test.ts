@@ -1,6 +1,8 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  EMAIL_ACTION_BOOT_SCRIPT,
+  emailActionRecoveryHref,
   formatPasswordResetError,
   isPasswordResetAction,
   loginPathForResetEmail,
@@ -39,4 +41,19 @@ test('owner reset returns to developer login', () => {
 test('expired action codes are explained in plain language', () => {
   assert.match(formatPasswordResetError({ code: 'auth/expired-action-code', message: 'expired' }), /expired/i)
   assert.match(formatPasswordResetError({ code: 'auth/invalid-action-code', message: 'invalid' }), /already been used/i)
+})
+
+test('Firebase /__/auth/action links recover onto /auth/action', () => {
+  const href = emailActionRecoveryHref('/__/auth/action', '?mode=resetPassword&oobCode=abc123')
+  assert.equal(href, '/auth/action?mode=resetPassword&oobCode=abc123')
+  assert.equal(emailActionRecoveryHref('/__/auth/action/', '?mode=resetPassword&oobCode=abc123'), href)
+  assert.equal(emailActionRecoveryHref('/auth/action', '?mode=resetPassword&oobCode=abc123'), null)
+  assert.equal(emailActionRecoveryHref('/reset-password', '?mode=resetPassword&oobCode=abc123'), null)
+  assert.equal(emailActionRecoveryHref('/__/auth/action', ''), null)
+})
+
+test('boot script sends leftover oobCode URLs to /auth/action', () => {
+  assert.match(EMAIL_ACTION_BOOT_SCRIPT, /\/auth\/action/)
+  assert.match(EMAIL_ACTION_BOOT_SCRIPT, /oobCode/)
+  assert.match(EMAIL_ACTION_BOOT_SCRIPT, /location\.replace/)
 })

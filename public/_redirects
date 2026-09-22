@@ -1,0 +1,3 @@
+/__/auth/action  /auth/action  302!
+/__/auth/handler  /auth/action  302!
+/__/auth/*        /auth/action  302!
