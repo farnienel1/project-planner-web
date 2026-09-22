@@ -683,10 +683,6 @@ service cloud.firestore {
       allow write: if isAdminOrSuperAdmin();
     }
 
-    function isPlatformDeveloper() {
-      return isPlatformOwner();
-    }
-
     // Shared product ideas board — every signed-in organisation can read and submit.
     // The owner console (info@projectplanner.us) can hide, merge, and write private notes.
     match /productFeedback/{suggestionId} {
@@ -705,7 +701,8 @@ service cloud.firestore {
       allow delete: if isPlatformOwner();
 
       match /private/{docId} {
-        allow read, write: if isPlatformOwner();
+        allow read: if isPlatformOwner();
+        allow write: if isPlatformOwner();
       }
     }
 
@@ -719,25 +716,30 @@ service cloud.firestore {
     match /productFeedbackComments/{commentId} {
       allow read: if request.auth != null;
       allow create: if request.auth != null && request.resource.data.authorUserId == request.auth.uid;
-      allow update, delete: if isPlatformOwner() || (
+      allow update: if isPlatformOwner() || (
+        request.auth != null && resource.data.authorUserId == request.auth.uid
+      );
+      allow delete: if isPlatformOwner() || (
         request.auth != null && resource.data.authorUserId == request.auth.uid
       );
     }
 
     match /productFeedbackHistory/{historyId} {
-      allow read, write: if isPlatformOwner();
+      allow read: if isPlatformOwner();
+      allow write: if isPlatformOwner();
     }
 
     match /productEvents/{eventId} {
       allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
-      allow get, list: if isPlatformOwner();
-      allow update, delete: if false;
+      allow read: if isPlatformOwner();
+      allow update: if false;
+      allow delete: if false;
     }
 
     match /productSessions/{sessionId} {
       allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
       allow update: if request.auth != null && resource.data.userId == request.auth.uid;
-      allow get, list: if isPlatformOwner() || (request.auth != null && resource.data.userId == request.auth.uid);
+      allow read: if isPlatformOwner() || (request.auth != null && resource.data.userId == request.auth.uid);
       allow delete: if false;
     }
   }
