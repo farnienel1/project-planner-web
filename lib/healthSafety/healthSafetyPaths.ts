@@ -1,4 +1,4 @@
-/** iOS parity: project H&S lives under projects/{id}/healthSafety/data (not org settings). */
+/** Dual-write: iOS reads `settings/healthSafety_{projects|smallWorks}_{projectId}`. Web also keeps the nested job doc. */
 export const HEALTH_SAFETY_DOC_ID = 'data'
 
 export function healthSafetyDocPath(

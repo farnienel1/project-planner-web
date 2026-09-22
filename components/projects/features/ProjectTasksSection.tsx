@@ -226,17 +226,18 @@ function ProjectTasksSectionInner({ project }: { project: Project }) {
 
   return (
     <FeatureScreen>
-      <div className="flex items-center justify-end">
+      <div className="flex items-center justify-between gap-3">
+        <h1 className="text-lg font-extrabold text-slate-900">Tasks</h1>
         <button
           type="button"
           onClick={() => {
             setEditing(null)
             setShowForm(true)
           }}
-          className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-[var(--blue)] text-white shadow-md"
-          aria-label="Create a task"
+          className="inline-flex items-center gap-1.5 rounded-full bg-[var(--blue)] px-3.5 py-2 text-[13px] font-medium text-white shadow-md"
         >
-          <PlusIcon className="h-5 w-5" />
+          <PlusIcon className="h-4 w-4" />
+          Tasks
         </button>
       </div>
 
@@ -300,7 +301,7 @@ function ProjectTasksSectionInner({ project }: { project: Project }) {
                 className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-[var(--blue)] px-[18px] py-2.5 text-[13px] font-medium text-white"
               >
                 <PlusIcon className="h-3.5 w-3.5" />
-                Create a task
+                Tasks
               </button>
             )}
           </FeatureCard>

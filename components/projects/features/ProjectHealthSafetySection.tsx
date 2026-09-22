@@ -12,14 +12,14 @@ import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { isOperativeMode } from '@/lib/navigation/menuPermissions'
 import { newUuid } from '@/lib/firebase/firestoreUtils'
 import { uploadFile as uploadHsFile, healthSafetyFilePath } from '@/lib/firebase/storageUtils'
+import { withTimeout } from '@/lib/client/withTimeout'
 import { loadPlatformToolboxLibrary, mergeToolboxTalkLibraries } from '@/lib/healthSafety/toolboxLibrary'
-import { buildToolboxTalkPdfHtml, downloadHtmlFile, openTalkFile, openToolboxTalkPdf } from '@/lib/healthSafety/toolboxTalkPdf'
+import { buildToolboxTalkPdfHtml, downloadHtmlFile, openToolboxTalkPdf } from '@/lib/healthSafety/toolboxTalkPdf'
 import {
   findTalkForIssue,
   issueSignatures,
-  pendingSignatureForUser,
-  signedSignatureForUser,
   talkDownloadName,
+  trackingAwaitingCount,
 } from '@/lib/healthSafety/hsTracking'
 import {
   HsIssueDetail,
@@ -63,7 +63,6 @@ import {
 
 type ManagerTab = 'hub' | 'library' | 'tracking' | 'rams' | 'other'
 
-const OTHER_CATEGORIES = ['Trade', 'Site', 'Policy', 'COSHH', 'Permit', 'Certificate', 'Insurance']
 const RAMS_TRADES = ['General', ...STAFF_TRADE_PRESETS]
 
 function projectIdsMatch(a: string, b: string): boolean {
@@ -109,7 +108,7 @@ export function ProjectHealthSafetySection({
   isSmallWorks: boolean
 }) {
   const { organization, user } = useAuthStore()
-  const { data, loading, error, load, save, issueToolboxTalk, signToolboxTalk, addToolboxTalk } =
+  const { data, loading, error, load, save, issueToolboxTalk, signToolboxTalk, addToolboxTalk, remindPending, addRecipients } =
     useHealthSafetyStore()
   const { users, loadUsers } = useOrgUserStore()
 
@@ -145,10 +144,13 @@ export function ProjectHealthSafetySection({
   const [ramsTrade, setRamsTrade] = useState('General')
   const [ramsFile, setRamsFile] = useState<File | null>(null)
   const [otherTitle, setOtherTitle] = useState('')
-  const [otherCategory, setOtherCategory] = useState('Trade')
   const [otherTrade, setOtherTrade] = useState('General')
   const [otherFile, setOtherFile] = useState<File | null>(null)
   const [uploading, setUploading] = useState(false)
+  const [uploadError, setUploadError] = useState<string | null>(null)
+  const [extraRecipients, setExtraRecipients] = useState<string[]>([])
+  const [showAddRecipients, setShowAddRecipients] = useState(false)
+  const [reminding, setReminding] = useState(false)
 
   const [scheduleTalkId, setScheduleTalkId] = useState('')
   const [scheduleRecipients, setScheduleRecipients] = useState<string[]>([])
@@ -164,18 +166,17 @@ export function ProjectHealthSafetySection({
   useEffect(() => {
     if (organization?.id) {
       load(organization.id, project.id, isSmallWorks)
-      if (isManager) loadUsers(organization.id)
+      loadUsers(organization.id)
     }
-  }, [organization, project.id, isSmallWorks, load, loadUsers, isManager])
+  }, [organization, project.id, isSmallWorks, load, loadUsers])
 
   useEffect(() => {
-    if (!isManager) return
     setLibraryLoading(true)
     loadPlatformToolboxLibrary()
       .then(setPlatformTalks)
       .catch(() => setPlatformTalks([]))
       .finally(() => setLibraryLoading(false))
-  }, [isManager])
+  }, [])
 
   const libraryTalks = useMemo(
     () => mergeToolboxTalkLibraries(platformTalks, data?.talks || []),
@@ -197,10 +198,20 @@ export function ProjectHealthSafetySection({
     return projectIssues.filter((i) => !i.publishAt || i.publishAt.getTime() <= now)
   }, [projectIssues])
 
+  const userAliasIds = useMemo(() => {
+    if (!user) return [] as string[]
+    const email = user.email.trim().toLowerCase()
+    const ids = new Set<string>([user.id])
+    for (const row of users) {
+      if (row.email.trim().toLowerCase() === email) ids.add(row.id)
+    }
+    return [...ids]
+  }, [user, users])
+
   const myAssigned = useMemo(() => {
     if (!user || !data) return []
     return data.signatures
-      .filter((sig) => sig.userId === user.id)
+      .filter((sig) => userAliasIds.includes(sig.userId))
       .map((sig) => {
         const issue = data.issues.find((i) => i.id === sig.issueId)
         if (!issue || !projectIdsMatch(issue.projectId, project.id)) return null
@@ -208,13 +219,11 @@ export function ProjectHealthSafetySection({
         return {
           issue,
           signature: sig,
-          talk: libraryTalks.find((t) => t.id === issue.talkId) || data.talks.find((t) => t.id === issue.talkId),
+          talk: findTalkForIssue(issue, libraryTalks, data.talks),
         }
       })
       .filter((e): e is NonNullable<typeof e> => e !== null)
-  }, [data, user, project.id, libraryTalks])
-
-  const pendingMine = myAssigned.filter((e) => e.signature.status !== 'signed').length
+  }, [data, user, project.id, libraryTalks, userAliasIds])
 
   const filteredTalks = useMemo(
     () => filterToolboxTalks(libraryTalks, talkSearch, tradeFilter),
@@ -229,6 +238,17 @@ export function ProjectHealthSafetySection({
     () => combineLocalDateAndTime(scheduleDate, scheduleTime),
     [scheduleDate, scheduleTime]
   )
+
+  const awaitingSignatures = useMemo(
+    () => trackingAwaitingCount(activeIssues, data?.signatures || []),
+    [activeIssues, data?.signatures]
+  )
+
+  const pendingForCurrentUser = (signatures: { userId: string; status: string }[]) =>
+    signatures.find((signature) => userAliasIds.includes(signature.userId) && signature.status !== 'signed')
+
+  const signedForCurrentUser = (signatures: { userId: string; status: string }[]) =>
+    signatures.find((signature) => userAliasIds.includes(signature.userId) && signature.status === 'signed')
 
   const selectedIssueTalk = libraryTalks.find((talk) => talk.id === issueTalkId)
   const selectedScheduleTalk = libraryTalks.find((talk) => talk.id === scheduleTalkId)
@@ -272,11 +292,16 @@ export function ProjectHealthSafetySection({
     e.preventDefault()
     if (!organization?.id || !uploadTitle.trim()) return
     setUploading(true)
+    setUploadError(null)
     try {
       let fileURL: string | undefined
       if (uploadTalkFile) {
         const path = healthSafetyFilePath(organization.id, project.id, 'talks', uploadTalkFile.name)
-        fileURL = await uploadHsFile(path, uploadTalkFile, uploadTalkFile.type || 'application/octet-stream')
+        fileURL = await withTimeout(
+          uploadHsFile(path, uploadTalkFile, uploadTalkFile.type || 'application/octet-stream'),
+          45_000,
+          'Talk file upload timed out. Try a smaller PDF.'
+        )
       }
       await addToolboxTalk(organization.id, project.id, isSmallWorks, {
         title: uploadTitle.trim(),
@@ -299,6 +324,8 @@ export function ProjectHealthSafetySection({
       setUploadKeyPoints([''])
       setUploadTalkFile(null)
       setTab('library')
+    } catch (err: unknown) {
+      setUploadError(err instanceof Error ? err.message : 'Could not save toolbox talk')
     } finally {
       setUploading(false)
     }
@@ -307,11 +334,25 @@ export function ProjectHealthSafetySection({
   const submitSign = async () => {
     if (!organization?.id || !user || !signIssue || !signatureB64 || !readConfirmed) return
     setSigning(true)
+    setUploadError(null)
     try {
-      await signToolboxTalk(organization.id, project.id, isSmallWorks, signIssue.id, user.id, signatureB64)
+      const aliasUserIds = users
+        .filter((row) => row.email.trim().toLowerCase() === user.email.trim().toLowerCase())
+        .map((row) => row.id)
+      await signToolboxTalk(
+        organization.id,
+        project.id,
+        isSmallWorks,
+        signIssue.id,
+        user.id,
+        signatureB64,
+        aliasUserIds
+      )
       setSignIssue(null)
       setSignatureB64(null)
       setReadConfirmed(false)
+    } catch (err: unknown) {
+      setUploadError(err instanceof Error ? err.message : 'Could not save signature')
     } finally {
       setSigning(false)
     }
@@ -321,11 +362,16 @@ export function ProjectHealthSafetySection({
     e.preventDefault()
     if (!organization?.id || !data || !ramsTitle.trim()) return
     setUploading(true)
+    setUploadError(null)
     try {
       let fileURL: string | undefined
       if (ramsFile) {
         const path = healthSafetyFilePath(organization.id, project.id, 'rams', ramsFile.name)
-        fileURL = await uploadHsFile(path, ramsFile, ramsFile.type || 'application/octet-stream')
+        fileURL = await withTimeout(
+          uploadHsFile(path, ramsFile, ramsFile.type || 'application/octet-stream'),
+          45_000,
+          'RAMS upload timed out. Try a smaller PDF.'
+        )
       }
       const version = nextRamsVersion(data.ramsDocuments, ramsTitle)
       await save(organization.id, project.id, isSmallWorks, {
@@ -348,6 +394,8 @@ export function ProjectHealthSafetySection({
       setRamsFile(null)
       setShowAddRams(false)
       setTab('rams')
+    } catch (err: unknown) {
+      setUploadError(err instanceof Error ? err.message : 'Could not upload RAMS')
     } finally {
       setUploading(false)
     }
@@ -357,11 +405,16 @@ export function ProjectHealthSafetySection({
     e.preventDefault()
     if (!organization?.id || !data || !otherTitle.trim()) return
     setUploading(true)
+    setUploadError(null)
     try {
       let fileURL: string | undefined
       if (otherFile) {
         const path = healthSafetyFilePath(organization.id, project.id, 'other', otherFile.name)
-        fileURL = await uploadHsFile(path, otherFile, otherFile.type || 'application/octet-stream')
+        fileURL = await withTimeout(
+          uploadHsFile(path, otherFile, otherFile.type || 'application/octet-stream'),
+          45_000,
+          'Document upload timed out. Try a smaller PDF.'
+        )
       }
       await save(organization.id, project.id, isSmallWorks, {
         ...data,
@@ -369,8 +422,8 @@ export function ProjectHealthSafetySection({
           {
             id: newUuid(),
             title: otherTitle.trim(),
-            trade: otherCategory === 'Trade' ? otherTrade : undefined,
-            category: otherCategory,
+            trade: otherTrade,
+            category: 'Trade',
             uploadedAt: new Date(),
             fileURL,
             fileName: otherFile?.name,
@@ -382,6 +435,8 @@ export function ProjectHealthSafetySection({
       setOtherFile(null)
       setShowAddOther(false)
       setTab('other')
+    } catch (err: unknown) {
+      setUploadError(err instanceof Error ? err.message : 'Could not add document')
     } finally {
       setUploading(false)
     }
@@ -394,10 +449,6 @@ export function ProjectHealthSafetySection({
     setDownloadError(null)
     if (!talk) {
       setDownloadError('This toolbox talk could not be loaded.')
-      return
-    }
-    if (talk.fileURL) {
-      openTalkFile(talk.fileURL)
       return
     }
     if (!organization) {
@@ -452,14 +503,14 @@ export function ProjectHealthSafetySection({
         { id: 'other', label: 'Other' },
       ]
 
-  if (loading) return <LoadingSpinner />
+  if (loading && !data) return <LoadingSpinner />
   if (!data) return <EmptyState title="H&S unavailable" description="Could not load health & safety data." />
 
   return (
     <FeatureScreen>
-      {error && (
+      {(error || uploadError) && (
         <div className="mb-4">
-          <ErrorBanner message={error} />
+          <ErrorBanner message={error || uploadError || ''} />
         </div>
       )}
 
@@ -526,9 +577,23 @@ export function ProjectHealthSafetySection({
                       <div className="flex shrink-0 items-center gap-2">
                         <button
                           type="button"
-                          onClick={() => {
-                            if (talk) setViewTalk(talk)
-                          }}
+                          onClick={() =>
+                            setViewTalk(
+                              talk || {
+                                id: issue.talkId,
+                                title: 'Toolbox talk',
+                                category: 'general',
+                                isGeneral: true,
+                                trades: [],
+                                purpose: '',
+                                keyPoints: [],
+                                source: 'library',
+                                status: 'approved',
+                                version: 1,
+                                updatedAt: new Date(),
+                              }
+                            )
+                          }
                           className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700"
                         >
                           View
@@ -563,7 +628,7 @@ export function ProjectHealthSafetySection({
                 </FeatureCard>
                 <FeatureCard className="p-3 text-center">
                   <p className="text-xl font-extrabold text-slate-900">
-                    {data.signatures.filter((s) => s.status === 'pending').length}
+                    {awaitingSignatures}
                   </p>
                   <p className="text-[10px] text-slate-500">Awaiting signatures</p>
                 </FeatureCard>
@@ -629,8 +694,8 @@ export function ProjectHealthSafetySection({
               <HubCard
                 title="Tracking"
                 subtitle="Signature progress by issue"
-                count={pendingMine}
-                countLabel="your pending"
+                count={awaitingSignatures}
+                countLabel="awaiting"
                 iconBg="bg-[#fdf2e0]"
                 iconColor="text-[#e08a1e]"
                 iconPath="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
@@ -708,26 +773,55 @@ export function ProjectHealthSafetySection({
               talk={resolveTalk(trackIssue)}
               signatures={issueSignatures(data.signatures, trackIssue.id)}
               users={users}
-              canSign={Boolean(pendingSignatureForUser(issueSignatures(data.signatures, trackIssue.id), user?.id))}
-              canViewSigned={Boolean(signedSignatureForUser(issueSignatures(data.signatures, trackIssue.id), user?.id))}
+              canSign={Boolean(pendingForCurrentUser(issueSignatures(data.signatures, trackIssue.id)))}
+              canViewSigned={Boolean(signedForCurrentUser(issueSignatures(data.signatures, trackIssue.id)))}
               downloadError={downloadError}
+              reminding={reminding}
               onBack={() => {
                 setTrackIssue(null)
                 setDownloadError(null)
               }}
               onView={() => {
                 const talk = resolveTalk(trackIssue)
-                if (talk) setViewTalk(talk)
-                else setDownloadError('This toolbox talk could not be loaded.')
+                setViewTalk(
+                  talk || {
+                    id: trackIssue.talkId,
+                    title: 'Toolbox talk',
+                    category: 'general',
+                    isGeneral: true,
+                    trades: [],
+                    purpose: '',
+                    keyPoints: [],
+                    source: 'library',
+                    status: 'approved',
+                    version: 1,
+                    updatedAt: new Date(),
+                  }
+                )
               }}
               onSign={() => {
-                if (pendingSignatureForUser(issueSignatures(data.signatures, trackIssue.id), user?.id)) {
+                if (pendingForCurrentUser(issueSignatures(data.signatures, trackIssue.id))) {
                   openSign(trackIssue)
                   return
                 }
                 setViewSignedIssue(trackIssue)
               }}
               onDownload={() => handleDownloadTalk(resolveTalk(trackIssue), trackIssue)}
+              onRemind={() => {
+                if (!organization?.id) return
+                setReminding(true)
+                void remindPending(
+                  organization.id,
+                  project.id,
+                  isSmallWorks,
+                  trackIssue.id,
+                  resolveTalk(trackIssue)?.title || 'Toolbox talk'
+                ).finally(() => setReminding(false))
+              }}
+              onAddRecipients={() => {
+                setExtraRecipients([])
+                setShowAddRecipients(true)
+              }}
             />
           ) : (
             <>
@@ -1101,14 +1195,8 @@ export function ProjectHealthSafetySection({
         >
           <HsHero title="Add Trade / Site Doc" subtitle="Policies, COSHH, permits and supporting files" tone="blue" />
           <form id="hs-upload-other-form" onSubmit={addOther} className="space-y-4">
-            <HsSectionLabel>Type</HsSectionLabel>
-            <HsChipRow chips={OTHER_CATEGORIES} selected={otherCategory} onSelect={setOtherCategory} />
-            {otherCategory === 'Trade' && (
-              <>
-                <HsSectionLabel>Trade</HsSectionLabel>
-                <HsChipRow chips={RAMS_TRADES} selected={otherTrade} onSelect={setOtherTrade} />
-              </>
-            )}
+            <HsSectionLabel>Trade</HsSectionLabel>
+            <HsChipRow chips={RAMS_TRADES} selected={otherTrade} onSelect={setOtherTrade} />
             <HsSectionLabel extra={<span className="text-[10px] font-medium text-[#A32D2D]">REQUIRED</span>}>
               Title
             </HsSectionLabel>
@@ -1122,6 +1210,36 @@ export function ProjectHealthSafetySection({
             </HsFieldCard>
             <HsFileButton file={otherFile} onChange={setOtherFile} />
           </form>
+        </HsSheet>
+      )}
+
+      {showAddRecipients && trackIssue && (
+        <HsSheet
+          title="Send to further operatives"
+          onClose={() => setShowAddRecipients(false)}
+          footer={
+            <HsPrimaryButton
+              disabled={extraRecipients.length === 0}
+              onClick={() => {
+                if (!organization?.id) return
+                void addRecipients(organization.id, project.id, isSmallWorks, trackIssue.id, extraRecipients).then(
+                  () => {
+                    setShowAddRecipients(false)
+                    setExtraRecipients([])
+                  }
+                )
+              }}
+            >
+              Add recipients
+            </HsPrimaryButton>
+          }
+        >
+          <HsSectionLabel>People who have not received this talk yet</HsSectionLabel>
+          <HsRecipientPicker
+            users={operativeUsers.filter((row) => !trackIssue.recipientUserIds.includes(row.id))}
+            selectedIds={extraRecipients}
+            onChange={setExtraRecipients}
+          />
         </HsSheet>
       )}
 
@@ -1168,7 +1286,8 @@ export function ProjectHealthSafetySection({
         >
           <HsSignedTalkBody
             talk={resolveTalk(viewSignedIssue)}
-            signature={signedSignatureForUser(issueSignatures(data.signatures, viewSignedIssue.id), user?.id)}
+            signatures={issueSignatures(data.signatures, viewSignedIssue.id)}
+            users={users}
           />
         </HsSheet>
       )}

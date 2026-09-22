@@ -26,6 +26,9 @@ import { taskAttachmentPath, uploadFile } from '@/lib/firebase/storageUtils'
 import { FormInput } from '@/components/forms/FormShell'
 import { ErrorBanner } from '@/components/dashboard/PageShell'
 import { personDisplayName } from '@/lib/tasks/projectTaskFilters'
+import { peopleForTaskPicker } from '@/lib/tasks/taskAssigneePeople'
+import { compressTaskAttachment } from '@/lib/tasks/compressTaskAttachment'
+import { withTimeout } from '@/lib/client/withTimeout'
 import type { Manager, Operative, Project, ProjectTask, ProjectTaskItem, ProjectTaskPriority } from '@/types'
 
 type PeopleRoute = 'managers' | 'operatives' | 'combined'
@@ -104,8 +107,8 @@ export function AddProjectTaskSheet({
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    if (organization?.id) loadAudits(organization.id)
-  }, [organization, loadAudits])
+    if (showAuditPicker && organization?.id) loadAudits(organization.id)
+  }, [showAuditPicker, organization, loadAudits])
 
   const projectAudits = useMemo(
     () => audits.filter((audit) => audit.projectId.toLowerCase() === project.id.toLowerCase()),
@@ -125,8 +128,13 @@ export function AddProjectTaskSheet({
     if (includeManagers) selectedManagers.forEach((id) => managers.add(id))
     if (includeOperatives) selectedOperatives.forEach((id) => operatives.add(id))
     if (includeSelf) {
-      if (selfManagerId) managers.add(selfManagerId)
-      if (selfOperativeId) operatives.add(selfOperativeId)
+      if (selfManagerId && selfOperativeId) {
+        managers.add(selfManagerId)
+      } else if (selfManagerId) {
+        managers.add(selfManagerId)
+      } else if (selfOperativeId) {
+        operatives.add(selfOperativeId)
+      }
     }
     return { managers: [...managers], operatives: [...operatives] }
   }, [
@@ -166,40 +174,60 @@ export function AddProjectTaskSheet({
     try {
       const taskId = existing?.id || newUuid()
       const attachedImageURLs = [...(existing?.attachedImageURLs || [])]
-      for (const file of imageFiles) {
-        const url = await uploadFile(taskAttachmentPath(organization.id, taskId, file.name), file, file.type || 'image/jpeg')
-        attachedImageURLs.push(url)
-      }
+      const uploaded = await Promise.all(
+        imageFiles.map(async (file) => {
+          const body = await compressTaskAttachment(file)
+          return withTimeout(
+            uploadFile(taskAttachmentPath(organization.id, taskId, file.name), body, body.type || 'image/jpeg'),
+            45_000,
+            'Photo upload timed out. Try a smaller image.'
+          )
+        })
+      )
+      attachedImageURLs.push(...uploaded)
       let attachedFileURL = existing?.attachedFileURL
       let attachedFileName = existing?.attachedFileName
       if (docFile) {
-        attachedFileURL = await uploadFile(
-          taskAttachmentPath(organization.id, taskId, docFile.name),
-          docFile,
-          docFile.type || 'application/octet-stream'
+        attachedFileURL = await withTimeout(
+          uploadFile(
+            taskAttachmentPath(organization.id, taskId, docFile.name),
+            docFile,
+            docFile.type || 'application/octet-stream'
+          ),
+          45_000,
+          'File upload timed out. Try a smaller file.'
         )
         attachedFileName = docFile.name
       }
       const audit = projectAudits.find((row) => row.id === siteAuditId)
-      await onSave({
-        id: taskId,
-        title: title.trim(),
-        details: details.trim() || undefined,
-        priority,
-        dueDate: new Date(`${dueDate}T00:00:00`),
-        assignedManagerIds: assignment.managers,
-        assignedOperativeIds: assignment.operatives,
-        items: checklist
-          .map((item) => ({ id: item.id, title: item.title.trim() }))
-          .filter((item) => item.title),
-        attachedImageURLs,
-        attachedFileURL,
-        attachedFileName,
-        attachedSiteAuditId: audit?.id,
-        attachedSiteAuditTitle: audit ? audit.customTitle || audit.type : undefined,
-      })
+      await withTimeout(
+        onSave({
+          id: taskId,
+          title: title.trim(),
+          details: details.trim() || undefined,
+          priority,
+          dueDate: new Date(`${dueDate}T00:00:00`),
+          assignedManagerIds: assignment.managers,
+          assignedOperativeIds: assignment.operatives,
+          items: checklist
+            .map((item) => ({ id: item.id, title: item.title.trim() }))
+            .filter((item) => item.title),
+          attachedImageURLs,
+          attachedFileURL,
+          attachedFileName,
+          attachedSiteAuditId: siteAuditId || undefined,
+          attachedSiteAuditTitle: audit
+            ? audit.customTitle || audit.type
+            : siteAuditId
+              ? existing?.attachedSiteAuditTitle
+              : undefined,
+        }),
+        45_000,
+        'Saving the task timed out. Check your connection and try again.'
+      )
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Could not save task')
+    } finally {
       setSaving(false)
     }
   }
@@ -544,9 +572,10 @@ function PeoplePicker({
   const q = search.trim().toLowerCase()
   const showManagers = route !== 'operatives'
   const showOperatives = route !== 'managers'
+  const { managers: pickerManagers, operatives: pickerOperatives } = peopleForTaskPicker(managers, operatives, route)
   const trades = [
     ...new Set(
-      [...(showManagers ? managers : []), ...(showOperatives ? operatives : [])]
+      [...(showManagers ? pickerManagers : []), ...(showOperatives ? pickerOperatives : [])]
         .map(tradeLabel)
         .filter(Boolean)
     ),
@@ -597,7 +626,7 @@ function PeoplePicker({
         </div>
         <div className="flex-1 overflow-y-auto px-3 pb-4">
           {showManagers &&
-            managers.filter(match).map((row) => {
+            pickerManagers.filter(match).map((row) => {
               const on = selectedManagers.has(row.id)
               return (
                 <button
@@ -620,7 +649,7 @@ function PeoplePicker({
               )
             })}
           {showOperatives &&
-            operatives.filter(match).map((row) => {
+            pickerOperatives.filter(match).map((row) => {
               const on = selectedOperatives.has(row.id)
               return (
                 <button

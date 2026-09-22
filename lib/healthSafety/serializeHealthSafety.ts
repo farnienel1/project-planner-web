@@ -48,10 +48,10 @@ export function serializeSignature(sig: HSToolboxSignature): Record<string, unkn
     id: sig.id,
     issueId: sig.issueId,
     userId: sig.userId,
-    status: sig.status,
+    status: sig.status === 'signed' ? 'signed' : 'pending',
     readConfirmed: sig.readConfirmed,
-    signatureImageBase64: sig.signatureImageBase64 ?? '',
   }
+  if (sig.signatureImageBase64) row.signatureImageBase64 = sig.signatureImageBase64
   if (sig.signedAt) row.signedAt = Timestamp.fromDate(sig.signedAt)
   if (sig.reminderSentAt) row.reminderSentAt = Timestamp.fromDate(sig.reminderSentAt)
   return row

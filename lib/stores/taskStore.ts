@@ -4,9 +4,10 @@ import { create } from 'zustand'
 import { collection, deleteDoc, doc, getDocs, setDoc, Timestamp } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
 import type { ProjectTask, ProjectTaskPriority, ProjectTaskStatus } from '@/types'
-import { newUuid, parseFirestoreDate, parseOptionalString, parseString } from '@/lib/firebase/firestoreUtils'
+import { newUuid, parseFirestoreDate, parseOptionalString, parseString, sanitizeForFirestore } from '@/lib/firebase/firestoreUtils'
 import { trackEvent } from '@/lib/analytics/trackEvent'
 import { useAuthStore } from '@/lib/stores/authStore'
+import { invalidateOrgLoad, runOrgLoad } from '@/lib/stores/orgLoadCache'
 
 function mapTask(docId: string, data: Record<string, unknown>, organizationId: string): ProjectTask {
   return {
@@ -121,23 +122,26 @@ export const useTaskStore = create<TaskState>((set, get) => ({
   error: null,
 
   loadTasks: async (organizationId) => {
-    set({ loading: true, error: null })
-    try {
-      const snapshot = await getDocs(collection(db, 'organizations', organizationId, 'tasks'))
-      const tasks = snapshot.docs.map((entry) =>
-        mapTask(entry.id, entry.data() as Record<string, unknown>, organizationId)
-      )
-      set({ tasks, loading: false })
-    } catch (error: unknown) {
-      set({ error: error instanceof Error ? error.message : 'Failed to load tasks', loading: false })
-    }
+    await runOrgLoad(`taskStore:tasks`, organizationId, async () => {
+      set({ loading: get().tasks.length === 0, error: null })
+      try {
+        const snapshot = await getDocs(collection(db, 'organizations', organizationId, 'tasks'))
+        const tasks = snapshot.docs.map((entry) =>
+          mapTask(entry.id, entry.data() as Record<string, unknown>, organizationId)
+        )
+        set({ tasks, loading: false })
+      } catch (error: unknown) {
+        set({ error: error instanceof Error ? error.message : 'Failed to load tasks', loading: false })
+      }
+    })
   },
 
   saveTask: async (task) => {
     const id = task.id || newUuid()
     const isNew = !get().tasks.some((row) => row.id === id)
-    const payload = taskPayload({ ...task, id, updatedAt: new Date() })
+    const payload = sanitizeForFirestore(taskPayload({ ...task, id, updatedAt: new Date() })) as Record<string, unknown>
     await setDoc(doc(db, 'organizations', task.organizationId, 'tasks', id), payload)
+    invalidateOrgLoad('taskStore:tasks')
     const saved = mapTask(id, payload as Record<string, unknown>, task.organizationId)
     const { tasks } = get()
     set({ tasks: [...tasks.filter((t) => t.id !== id), saved] })
@@ -157,6 +161,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
   deleteTask: async (organizationId, taskId) => {
     const existing = get().tasks.find((row) => row.id === taskId)
     await deleteDoc(doc(db, 'organizations', organizationId, 'tasks', taskId))
+    invalidateOrgLoad('taskStore:tasks')
     set({ tasks: get().tasks.filter((t) => t.id !== taskId) })
     void trackEvent('task_deleted', {
       userId: useAuthStore.getState().user?.id || existing?.createdBy,
