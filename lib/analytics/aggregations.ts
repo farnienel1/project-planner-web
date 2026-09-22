@@ -469,10 +469,10 @@ export function ideaPipeline(ideas: { productDecision?: string; hidden?: boolean
     counts[decision] += 1
   }
   return [
-    { id: 'none', label: 'Awaiting review', count: counts.none },
-    { id: 'investigate', label: 'Investigate', count: counts.investigate },
-    { id: 'build', label: 'Build', count: counts.build },
-    { id: 'in_progress', label: 'In progress', count: counts.in_progress },
+    { id: 'none', label: 'Needs review', count: counts.none },
+    { id: 'investigate', label: 'Investigating', count: counts.investigate },
+    { id: 'build', label: 'Planned', count: counts.build },
+    { id: 'in_progress', label: 'Building', count: counts.in_progress },
     { id: 'released', label: 'Released', count: counts.released },
     { id: 'decline', label: 'Declined', count: counts.decline },
   ]

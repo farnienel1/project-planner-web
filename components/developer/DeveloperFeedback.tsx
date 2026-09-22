@@ -7,20 +7,24 @@ import { useAuthStore } from '@/lib/stores/authStore'
 import { useFeedbackStore } from '@/lib/feedback/feedbackStore'
 import { trendingScore } from '@/lib/feedback/serialize'
 import {
+  CONSOLE_STATUS_LABEL,
   DECISION_HUE,
   DECISION_LABEL,
   FEEDBACK_CATEGORIES,
   PRODUCT_DECISIONS,
-  PUBLIC_STATUS_LABEL,
+  CATEGORY_FEATURE,
+  unifiedStatus,
   type FeedbackCategory,
   type ProductDecision,
 } from '@/lib/feedback/types'
 import { ideaPipeline } from '@/lib/analytics/aggregations'
 import { DeveloperShell, DeveloperStatus, MetricCard } from '@/components/developer/DeveloperShell'
 import { EmptyState, LoadingSpinner, SearchField } from '@/components/dashboard/PageShell'
-import { CATEGORY_FEATURE } from '@/components/feedback/FeedbackBoardScreen'
+import { similarSuggestionsScored } from '@/lib/feedback/similar'
+import type { FeedbackSuggestion } from '@/lib/feedback/types'
 
 type Filter = 'all' | 'trending' | 'voted' | 'review' | 'planned' | 'in_progress' | 'released' | 'declined'
+type OwnerTab = 'board' | 'inbox' | 'insights'
 
 export function DeveloperFeedbackScreen() {
   const search = useSearchParams()
@@ -28,7 +32,9 @@ export function DeveloperFeedbackScreen() {
   const [filter, setFilter] = useState<Filter>(initial)
   const [query, setQuery] = useState('')
   const [compose, setCompose] = useState(false)
-  const { suggestions, votes, loading, error, loadBoard } = useFeedbackStore()
+  const [ownerTab, setOwnerTab] = useState<OwnerTab>(initial === 'review' ? 'inbox' : 'board')
+  const { suggestions, votes, loading, error, loadBoard, updateAdmin } = useFeedbackStore()
+  const { user } = useAuthStore()
 
   useEffect(() => {
     void loadBoard(true)
@@ -46,19 +52,19 @@ export function DeveloperFeedbackScreen() {
         list = [...open].sort((a, b) => b.voteCount - a.voteCount)
         break
       case 'review':
-        list = open.filter((row) => row.productDecision === 'none' && !row.hidden)
+        list = open.filter((row) => unifiedStatus(row) === 'new' && !row.hidden)
         break
       case 'planned':
-        list = open.filter((row) => row.productDecision === 'build' || row.publicStatus === 'planned')
+        list = open.filter((row) => unifiedStatus(row) === 'planned')
         break
       case 'in_progress':
-        list = open.filter((row) => row.productDecision === 'in_progress' || row.publicStatus === 'in_progress')
+        list = open.filter((row) => unifiedStatus(row) === 'in_progress')
         break
       case 'released':
-        list = open.filter((row) => row.productDecision === 'released' || row.publicStatus === 'released')
+        list = open.filter((row) => unifiedStatus(row) === 'shipped')
         break
       case 'declined':
-        list = open.filter((row) => row.productDecision === 'decline' || row.publicStatus === 'not_planned')
+        list = open.filter((row) => unifiedStatus(row) === 'not_planned')
         break
       default:
         list = open
@@ -86,13 +92,41 @@ export function DeveloperFeedbackScreen() {
         onto the roadmap here.
       </p>
       <DeveloperStatus error={error} loading={loading && suggestions.length > 0} />
+      <div className="flex gap-1 border-b border-[var(--line)]">
+        {(
+          [
+            ['inbox', 'Inbox'],
+            ['board', 'Board'],
+            ['insights', 'Insights'],
+          ] as const
+        ).map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            className={`border-b-2 px-3 py-2 text-sm font-semibold ${
+              ownerTab === id ? 'border-[var(--blue)] text-[var(--ink)]' : 'border-transparent text-[var(--ink3)]'
+            }`}
+            onClick={() => {
+              setOwnerTab(id)
+              if (id === 'inbox') setFilter('review')
+            }}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <MetricCard label="Open feedback" value={open.filter((row) => !row.hidden).length} />
-        <MetricCard label="Awaiting review" value={pipeline.find((row) => row.id === 'none')?.count || 0} href="/developer/feedback?filter=review" />
+        <MetricCard label="Needs review" value={pipeline.find((row) => row.id === 'none')?.count || 0} href="/developer/feedback?filter=review" />
         <MetricCard label="On the roadmap" value={(pipeline.find((row) => row.id === 'build')?.count || 0) + (pipeline.find((row) => row.id === 'in_progress')?.count || 0)} href="/developer/roadmap" />
         <MetricCard label="Votes" value={votes.length} />
       </div>
+      {ownerTab === 'insights' ? (
+        <InsightsPanel suggestions={open} votes={votes} />
+      ) : (
+        <>
       <SearchField value={query} onChange={setQuery} placeholder="Search title, organisation or author" />
+      {ownerTab === 'board' ? (
       <div className="flex flex-wrap gap-2">
         {(
           [
@@ -100,8 +134,8 @@ export function DeveloperFeedbackScreen() {
             ['trending', 'Trending'],
             ['voted', 'Most voted'],
             ['review', 'Needs review'],
-            ['planned', 'Build'],
-            ['in_progress', 'In progress'],
+            ['planned', 'Planned'],
+            ['in_progress', 'Building'],
             ['released', 'Released'],
             ['declined', 'Declined'],
           ] as const
@@ -111,6 +145,11 @@ export function DeveloperFeedbackScreen() {
           </button>
         ))}
       </div>
+      ) : (
+        <p className="text-xs text-[var(--ink3)]">
+          Keyboard: A approve · D decline · H hide · J/K next. Oldest unreviewed ideas first.
+        </p>
+      )}
       {open.length === 0 ? (
         <EmptyState
           title="No feedback yet"
@@ -120,28 +159,135 @@ export function DeveloperFeedbackScreen() {
         <EmptyState title="No matching feedback" description="Try a different filter or search." />
       ) : (
         <div className="space-y-2">
-          {rows.map((row) => (
-            <Link key={row.id} href={`/developer/feedback/${row.id}`} className="card pad block">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="font-bold">{row.title}</p>
-                  <p className="mt-1 line-clamp-2 text-sm text-[var(--ink2)]">{row.details || 'No extra detail yet.'}</p>
-                  <p className="mt-1 text-xs text-[var(--ink3)]">
-                    {row.voteCount} votes · {row.commentCount} comments · {row.category} ·{' '}
-                    {row.organizationName?.trim() || 'Unknown organisation'} · {row.authorName}
-                  </p>
+          {rows.map((row) => {
+            const duplicate = similarSuggestionsScored(row.title, row.details, open.filter((item) => item.id !== row.id), 1)[0]
+            return (
+            <div key={row.id} className="card pad">
+              <Link href={`/developer/feedback/${row.id}`} className="block">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="font-bold">{row.title}</p>
+                    <p className="mt-1 line-clamp-2 text-sm text-[var(--ink2)]">{row.details || 'No extra detail yet.'}</p>
+                    <p className="mt-1 text-xs text-[var(--ink3)]">
+                      {row.voteCount} votes · {row.commentCount} comments · {row.category} ·{' '}
+                      {row.organizationName?.trim() || 'Unfinished setup'} · {row.authorName}
+                    </p>
+                    {duplicate ? (
+                      <p className="mt-1 text-xs text-[var(--ink3)]">
+                        Suggested duplicate: {duplicate.row.title} ({Math.round(duplicate.score * 100)}%)
+                      </p>
+                    ) : null}
+                  </div>
+                  <span className="pill shrink-0" data-hue={DECISION_HUE[row.productDecision]}>
+                    {CONSOLE_STATUS_LABEL[unifiedStatus(row)]}
+                  </span>
                 </div>
-                <span className="pill shrink-0" data-hue={DECISION_HUE[row.productDecision]}>
-                  {DECISION_LABEL[row.productDecision]}
-                </span>
-              </div>
-              <p className="mt-2 text-xs text-[var(--ink3)]">{PUBLIC_STATUS_LABEL[row.publicStatus]}</p>
-            </Link>
-          ))}
+              </Link>
+              {ownerTab === 'inbox' && user ? (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    className="btn sm primary"
+                    onClick={() =>
+                      void updateAdmin({
+                        suggestion: row,
+                        actorUserId: user.id,
+                        actorName: `${user.firstName} ${user.surname}`.trim() || user.email,
+                        patch: { status: 'under_review' },
+                      })
+                    }
+                  >
+                    Approve
+                  </button>
+                  <Link href={`/developer/feedback/${row.id}`} className="btn sm ghost">
+                    Merge
+                  </Link>
+                  <button
+                    type="button"
+                    className="btn sm ghost"
+                    onClick={() =>
+                      void updateAdmin({
+                        suggestion: row,
+                        actorUserId: user.id,
+                        actorName: `${user.firstName} ${user.surname}`.trim() || user.email,
+                        patch: { status: 'not_planned' },
+                      })
+                    }
+                  >
+                    Not planned
+                  </button>
+                  <button
+                    type="button"
+                    className="btn sm ghost"
+                    onClick={() =>
+                      void updateAdmin({
+                        suggestion: row,
+                        actorUserId: user.id,
+                        actorName: `${user.firstName} ${user.surname}`.trim() || user.email,
+                        patch: { hidden: true },
+                      })
+                    }
+                  >
+                    Hide
+                  </button>
+                </div>
+              ) : null}
+            </div>
+          )})}
         </div>
+      )}
+        </>
       )}
       {compose ? <OwnerIdeaComposer onClose={() => setCompose(false)} /> : null}
     </DeveloperShell>
+  )
+}
+
+function InsightsPanel({
+  suggestions,
+  votes,
+}: {
+  suggestions: FeedbackSuggestion[]
+  votes: { suggestionId: string }[]
+}) {
+  const byCategory = FEEDBACK_CATEGORIES.map((category) => ({
+    category,
+    ideas: suggestions.filter((row) => row.category === category).length,
+    votes: suggestions.filter((row) => row.category === category).reduce((sum, row) => sum + row.voteCount, 0),
+  }))
+  const responded = suggestions.filter((row) => Boolean(row.officialResponse)).length
+  const shipped = suggestions.filter((row) => unifiedStatus(row) === 'shipped').length
+  return (
+    <div className="space-y-3">
+      <div className="grid gap-3 sm:grid-cols-3">
+        <MetricCard label="Ideas submitted" value={suggestions.length} />
+        <MetricCard label="Votes" value={votes.length} />
+        <MetricCard
+          label="Response health"
+          value={suggestions.length ? `${Math.round((responded / suggestions.length) * 100)}%` : '—'}
+          hint="Share of open ideas with an official response"
+        />
+      </div>
+      <section className="card pad">
+        <h2 className="h2">Demand by category</h2>
+        <ul className="mt-3 space-y-2 text-sm">
+          {byCategory
+            .filter((row) => row.ideas > 0)
+            .sort((a, b) => b.votes - a.votes)
+            .map((row) => (
+              <li key={row.category} className="flex justify-between gap-3">
+                <span>{row.category}</span>
+                <span className="text-[var(--ink3)]">
+                  {row.ideas} ideas · {row.votes} votes
+                </span>
+              </li>
+            ))}
+        </ul>
+      </section>
+      <p className="text-xs text-[var(--ink3)]">
+        {shipped} shipped. Cycle time, deflection and MRR-at-stake need daily rollups (not yet computed on the client).
+      </p>
+    </div>
   )
 }
 
@@ -217,10 +363,10 @@ export function DeveloperRoadmapScreen() {
   }, [loadBoard])
 
   const columns: { id: ProductDecision; label: string }[] = [
-    { id: 'none', label: 'Backlog' },
-    { id: 'investigate', label: 'Investigate' },
-    { id: 'build', label: 'Build' },
-    { id: 'in_progress', label: 'In progress' },
+    { id: 'none', label: 'Needs review' },
+    { id: 'investigate', label: 'Investigating' },
+    { id: 'build', label: 'Planned' },
+    { id: 'in_progress', label: 'Building' },
     { id: 'released', label: 'Released' },
   ]
 
@@ -231,8 +377,8 @@ export function DeveloperRoadmapScreen() {
   return (
     <DeveloperShell title="Roadmap">
       <p className="text-sm text-[var(--ink2)]">
-        Move customer feedback through product decisions. Backlog is everything still awaiting review. Declined feedback stays
-        on Feedback, not on this board.
+        Move customer feedback through the same status model customers see. Needs review is everything still awaiting
+        triage. Declined feedback stays on Feedback, not on this board.
       </p>
       <DeveloperStatus error={error} loading={loading && suggestions.length > 0} />
       {open.length === 0 ? (

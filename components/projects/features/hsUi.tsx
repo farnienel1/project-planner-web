@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { CheckIcon, MagnifyingGlassIcon } from '@heroicons/react/24/solid'
 import type { HSToolboxTalk, User } from '@/types'
 import {
@@ -244,54 +244,92 @@ export function HsTalkPicker({
 }) {
   const [search, setSearch] = useState('')
   const [trade, setTrade] = useState('All')
+  const [openCategories, setOpenCategories] = useState<string[]>(['General'])
   const chips = useMemo(() => talkTradeFilters(talks), [talks])
   const filtered = useMemo(() => filterToolboxTalks(talks, search, trade), [talks, search, trade])
   const groups = useMemo(() => groupTalksByCategory(filtered), [filtered])
+
+  useEffect(() => {
+    if (search.trim()) {
+      setOpenCategories(groups.map((group) => group.category))
+      return
+    }
+    if (trade !== 'All') {
+      setOpenCategories(groups.map((group) => group.category))
+      return
+    }
+    setOpenCategories((current) => {
+      if (groups.some((group) => current.includes(group.category))) return current
+      return groups[0] ? [groups[0].category] : []
+    })
+  }, [search, trade, groups])
 
   return (
     <div className="space-y-2">
       <HsSearchField value={search} onChange={setSearch} placeholder="Search toolbox talks" />
       <HsChipRow chips={chips} selected={trade} onSelect={setTrade} />
-      <div className="overflow-hidden rounded-2xl border border-[#EEF0F3] bg-white">
+      <p className="px-1 text-[11px] text-slate-500">{filtered.length} talks</p>
+      <div className="max-h-[50vh] overflow-y-auto rounded-2xl border border-[#EEF0F3] bg-white">
         {groups.length === 0 ? (
           <p className="px-4 py-6 text-center text-sm text-slate-500">No talks match this search.</p>
         ) : (
-          groups.map((group) => (
-            <div key={group.category} className="border-t border-[#EEF1F5] first:border-t-0">
-              <p className="bg-[var(--bg)] px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.4px] text-[#6B7280]">
-                {group.category}
-              </p>
-              {group.talks.map((talk) => {
-                const on = selectedId === talk.id
-                return (
-                  <button
-                    key={talk.id}
-                    type="button"
-                    onClick={() => onSelect(talk.id)}
-                    className={`flex w-full items-start justify-between gap-3 border-t border-[#EEF1F5] px-4 py-3 text-left ${
-                      on ? 'bg-[#E7F8F6]' : 'bg-white'
-                    }`}
-                  >
-                    <span>
-                      <span className="block text-sm font-semibold text-slate-900">{talk.title}</span>
-                      <span className="mt-0.5 block text-[11px] text-slate-500">
-                        {talk.referenceCode ? `${talk.referenceCode} · ` : ''}
-                        {talk.source}
-                        {talk.trades.length > 0 ? ` · ${talk.trades.join(', ')}` : ''}
-                      </span>
-                    </span>
-                    <span
-                      className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border ${
-                        on ? 'border-[#0fae9e] bg-[#0fae9e] text-white' : 'border-slate-300'
-                      }`}
-                    >
-                      {on ? <CheckIcon className="h-3 w-3" /> : null}
-                    </span>
-                  </button>
-                )
-              })}
-            </div>
-          ))
+          groups.map((group) => {
+            const open = openCategories.includes(group.category) || group.talks.some((talk) => talk.id === selectedId)
+            return (
+              <div key={group.category} className="border-t border-[#EEF1F5] first:border-t-0">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setOpenCategories((current) =>
+                      current.includes(group.category)
+                        ? current.filter((item) => item !== group.category)
+                        : [...current, group.category]
+                    )
+                  }
+                  className="flex w-full items-center justify-between bg-[var(--bg)] px-3 py-2 text-left"
+                >
+                  <span className="text-[11px] font-semibold uppercase tracking-[0.4px] text-[#6B7280]">
+                    {group.category}
+                  </span>
+                  <span className="text-[11px] font-semibold text-slate-400">
+                    {group.talks.length}
+                    {open ? ' · hide' : ' · show'}
+                  </span>
+                </button>
+                {open
+                  ? group.talks.map((talk) => {
+                      const on = selectedId === talk.id
+                      return (
+                        <button
+                          key={talk.id}
+                          type="button"
+                          onClick={() => onSelect(talk.id)}
+                          className={`flex w-full items-start justify-between gap-3 border-t border-[#EEF1F5] px-4 py-3 text-left ${
+                            on ? 'bg-[#E7F8F6]' : 'bg-white'
+                          }`}
+                        >
+                          <span>
+                            <span className="block text-sm font-semibold text-slate-900">{talk.title}</span>
+                            <span className="mt-0.5 block text-[11px] text-slate-500">
+                              {talk.referenceCode ? `${talk.referenceCode} · ` : ''}
+                              {talk.source}
+                              {talk.trades.length > 0 ? ` · ${talk.trades.join(', ')}` : ' · General'}
+                            </span>
+                          </span>
+                          <span
+                            className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border ${
+                              on ? 'border-[#0fae9e] bg-[#0fae9e] text-white' : 'border-slate-300'
+                            }`}
+                          >
+                            {on ? <CheckIcon className="h-3 w-3" /> : null}
+                          </span>
+                        </button>
+                      )
+                    })
+                  : null}
+              </div>
+            )
+          })
         )}
       </div>
     </div>

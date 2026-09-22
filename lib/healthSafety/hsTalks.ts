@@ -1,12 +1,61 @@
 import type { HSToolboxTalk } from '@/types'
 
+/** iOS master-library trade order. General is a real category, not an empty-trades leftover. */
+export const TALK_CATEGORY_ORDER = [
+  'General',
+  'Electrical',
+  'Mechanical',
+  'Plumbing & Gas',
+  'Groundworks',
+  'Scaffolding',
+  'Brick & Block',
+  'Joinery',
+  'Drylining',
+  'Painting',
+  'Roofing',
+  'Demolition',
+  'Steel Fixing',
+  'Plant',
+] as const
+
+function talkKey(talk: Pick<HSToolboxTalk, 'id' | 'referenceCode'>): string {
+  return (talk.referenceCode || talk.id).trim().toUpperCase()
+}
+
+function isGeneralTalk(talk: Pick<HSToolboxTalk, 'isGeneral' | 'category' | 'trades'>): boolean {
+  return talk.isGeneral || talk.trades.length === 0 || talk.category.trim().toLowerCase() === 'general'
+}
+
+function categoryRank(category: string): number {
+  const index = TALK_CATEGORY_ORDER.findIndex((item) => item.toLowerCase() === category.trim().toLowerCase())
+  return index === -1 ? TALK_CATEGORY_ORDER.length + 1 : index
+}
+
+export function overlayToolboxLibraries(base: HSToolboxTalk[], extra: HSToolboxTalk[]): HSToolboxTalk[] {
+  const merged = new Map<string, HSToolboxTalk>()
+  for (const talk of base) merged.set(talkKey(talk), talk)
+  for (const talk of extra) {
+    const key = talkKey(talk)
+    const existing = merged.get(key)
+    if (!existing) {
+      merged.set(key, talk)
+      continue
+    }
+    if (!existing.fileURL && talk.fileURL) merged.set(key, { ...existing, fileURL: talk.fileURL })
+  }
+  return Array.from(merged.values())
+}
+
 export function filterToolboxTalks(talks: HSToolboxTalk[], search: string, trade: string): HSToolboxTalk[] {
   const q = search.trim().toLowerCase()
   const tradeFilter = trade.trim()
   return talks.filter((talk) => {
     if (tradeFilter && tradeFilter !== 'All') {
-      const matchesTrade = talk.isGeneral || talk.trades.includes(tradeFilter)
-      if (!matchesTrade) return false
+      if (tradeFilter === 'General') {
+        if (!isGeneralTalk(talk)) return false
+      } else if (!(talk.isGeneral || talk.trades.includes(tradeFilter))) {
+        return false
+      }
     }
     if (!q) return true
     return (
@@ -20,19 +69,25 @@ export function filterToolboxTalks(talks: HSToolboxTalk[], search: string, trade
 }
 
 export function talkTradeFilters(talks: HSToolboxTalk[]): string[] {
-  const set = new Set<string>(['All'])
+  const trades = new Set<string>()
+  let hasGeneral = false
   for (const talk of talks) {
+    if (isGeneralTalk(talk)) hasGeneral = true
     for (const trade of talk.trades) {
-      if (trade.trim()) set.add(trade)
+      if (trade.trim()) trades.add(trade.trim())
     }
   }
-  return Array.from(set)
+  const ordered = TALK_CATEGORY_ORDER.filter((item) => item !== 'General' && trades.has(item))
+  const extras = Array.from(trades)
+    .filter((item) => !TALK_CATEGORY_ORDER.includes(item as (typeof TALK_CATEGORY_ORDER)[number]))
+    .sort((a, b) => a.localeCompare(b))
+  return ['All', ...(hasGeneral ? ['General'] : []), ...ordered, ...extras]
 }
 
 export function groupTalksByCategory(talks: HSToolboxTalk[]): { category: string; talks: HSToolboxTalk[] }[] {
   const map = new Map<string, HSToolboxTalk[]>()
   for (const talk of talks) {
-    const category = (talk.category || 'general').trim() || 'general'
+    const category = (talk.category || 'General').trim() || 'General'
     const list = map.get(category) || []
     list.push(talk)
     map.set(category, list)
@@ -42,7 +97,18 @@ export function groupTalksByCategory(talks: HSToolboxTalk[]): { category: string
       category,
       talks: [...grouped].sort((a, b) => a.title.localeCompare(b.title)),
     }))
-    .sort((a, b) => a.category.localeCompare(b.category))
+    .sort((a, b) => categoryRank(a.category) - categoryRank(b.category) || a.category.localeCompare(b.category))
+}
+
+/** Issuers are managers, so they are not in the operative picker. Always add them when they want to sign. */
+export function recipientsWithIssuer(
+  recipientUserIds: string[],
+  issuerUserId: string,
+  includeIssuer: boolean
+): string[] {
+  const ids = new Set(recipientUserIds.filter(Boolean))
+  if (includeIssuer && issuerUserId) ids.add(issuerUserId)
+  return Array.from(ids)
 }
 
 /** Local date `yyyy-MM-dd` + time `HH:mm` → publishAt. Null when either part is missing. */

@@ -22,6 +22,7 @@ test('parseSuggestion keeps the submitting organisation name', () => {
   })
   assert.equal(row.organizationName, 'Acme Fit-out')
   assert.equal(row.organizationId, 'org-1')
+  assert.equal(row.status, 'new')
 })
 
 test('feedback write errors stay actionable without asking people to publish rules', () => {
