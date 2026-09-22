@@ -5,7 +5,7 @@
 
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { EyeIcon, EyeSlashIcon } from '@heroicons/react/24/outline'
@@ -18,13 +18,17 @@ export function LoginBrandScreen() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const justConfirmed = searchParams.get('confirmed') === '1'
-  const { signIn, error } = useAuthStore()
+  const { signIn, error, user } = useAuthStore()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [localError, setLocalError] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [idleNotice] = useState(() => consumeWebIdleExpiredFlag())
+
+  useEffect(() => {
+    if (user) router.replace('/dashboard')
+  }, [user, router])
 
   const trimmedEmail = email.trim()
   const isFormValid = trimmedEmail.length > 0 && password.length > 0

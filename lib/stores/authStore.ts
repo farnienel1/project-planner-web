@@ -2,7 +2,6 @@
 
 import { create } from 'zustand'
 import {
-  signInWithEmailAndPassword,
   signOut as firebaseSignOut,
   onAuthStateChanged,
   User as FirebaseUser,
@@ -11,7 +10,7 @@ import {
 } from 'firebase/auth'
 import { doc, getDoc, setDoc, updateDoc, Timestamp } from 'firebase/firestore'
 import { seedOrgDefaultDashboard } from '@/lib/dashboard/dashboardLayoutStorage'
-import { withTimeout, withTimeoutFallback } from '@/lib/client/withTimeout'
+import { withTimeout, withTimeoutFallback, isTimeoutError } from '@/lib/client/withTimeout'
 import { getFirebaseAuth, getFirebaseDb } from '@/lib/firebase/ensureFirebase'
 import { isFirebaseConfigured } from '@/lib/firebase/env'
 import { loadUserDocumentWithRetry } from '@/lib/firebase/loadUserDocument'
@@ -23,6 +22,10 @@ import { parseTeamOnboarding } from '@/lib/orgSetup/teamOnboarding'
 import { topLevelAdminFlagPatch } from '@/lib/orgSetup/repairAdminFlags'
 import { ACCOUNT_UNCONFIRMED_MESSAGE } from '@/lib/orgSetup/accountConfirmation'
 import { ensurePrimaryOrgMembership } from '@/lib/orgMembership/membershipService'
+import {
+  completeEmailSignIn,
+  SIGN_IN_SLOW_MESSAGE,
+} from '@/lib/auth/completeEmailSignIn'
 import {
   clearWebIdleActivity,
   isWebIdleExpired,
@@ -46,11 +49,9 @@ interface AuthState {
 }
 
 const LAST_SEEN_THROTTLE_MS = 120_000
-const AUTH_SIGN_IN_MS = 8000
-const PROFILE_LOAD_MS = 12000
+const PROFILE_LOAD_MS = 20_000
+const PROFILE_LOAD_GRACE_MS = 15_000
 const PROFILE_STEP_MS = 4000
-const SIGN_IN_SLOW_MESSAGE =
-  'Sign in is taking too long. Check your connection, refresh this page, then try again.'
 
 let lastSeenWriteAt = 0
 let inFlightProfile: { uid: string; promise: Promise<void> } | null = null
@@ -62,6 +63,22 @@ function loadSignedInProfile(firebaseUser: FirebaseUser): Promise<void> {
   })
   inFlightProfile = { uid: firebaseUser.uid, promise }
   return promise
+}
+
+async function loadSignedInProfileWithWait(firebaseUser: FirebaseUser): Promise<void> {
+  const pending = loadSignedInProfile(firebaseUser)
+  try {
+    await withTimeout(pending, PROFILE_LOAD_MS, SIGN_IN_SLOW_MESSAGE)
+  } catch (error) {
+    if (useAuthStore.getState().user?.id === firebaseUser.uid) return
+    if (!isTimeoutError(error)) throw error
+    try {
+      await withTimeout(pending, PROFILE_LOAD_GRACE_MS, SIGN_IN_SLOW_MESSAGE)
+    } catch (graceError) {
+      if (useAuthStore.getState().user?.id === firebaseUser.uid) return
+      throw graceError
+    }
+  }
 }
 
 async function loadSignedInProfileInner(firebaseUser: FirebaseUser) {
@@ -146,16 +163,7 @@ async function loadSignedInProfileInner(firebaseUser: FirebaseUser) {
   }
 
   if (Object.keys(patch).length > 0) {
-    patch.updatedAt = Timestamp.now()
-    try {
-      await withTimeout(
-        updateDoc(doc(db, 'users', firebaseUser.uid), patch),
-        PROFILE_STEP_MS,
-        SIGN_IN_SLOW_MESSAGE
-      )
-    } catch (profileFixError) {
-      console.warn('Profile flag repair skipped:', profileFixError)
-    }
+    user.updatedAt = new Date()
   }
 
   let organization: Organization | null = null
@@ -207,6 +215,17 @@ async function loadSignedInProfileInner(firebaseUser: FirebaseUser) {
     loading: false,
     error: null,
   })
+
+  if (Object.keys(patch).length > 0) {
+    patch.updatedAt = Timestamp.now()
+    void withTimeoutFallback(
+      updateDoc(doc(db, 'users', firebaseUser.uid), patch),
+      PROFILE_STEP_MS,
+      undefined
+    ).catch((profileFixError) => {
+      console.warn('Profile flag repair skipped:', profileFixError)
+    })
+  }
 }
 
 export const useAuthStore = create<AuthState>((set) => {
@@ -225,8 +244,9 @@ export const useAuthStore = create<AuthState>((set) => {
         }
         if (readWebIdleLastActivity() == null) touchWebIdleActivity()
         try {
-          await withTimeout(loadSignedInProfile(firebaseUser), PROFILE_LOAD_MS, SIGN_IN_SLOW_MESSAGE)
+          await loadSignedInProfileWithWait(firebaseUser)
         } catch (authLoadError) {
+          if (useAuthStore.getState().user?.id === firebaseUser.uid) return
           console.error('Failed to load user profile:', authLoadError)
           set({
             user: null,
@@ -256,37 +276,9 @@ export const useAuthStore = create<AuthState>((set) => {
       try {
         set({ loading: true, error: null })
         const auth = getFirebaseAuth()
-        const emailLower = email.trim().toLowerCase()
-        const existing = auth.currentUser
-        const sessionMatches =
-          Boolean(existing?.email) && existing!.email!.trim().toLowerCase() === emailLower
+        const firebaseUser = await completeEmailSignIn(auth, email, password)
 
-        let firebaseUser = existing
-        if (!sessionMatches) {
-          try {
-            const credential = await withTimeout(
-              signInWithEmailAndPassword(auth, emailLower, password),
-              AUTH_SIGN_IN_MS,
-              SIGN_IN_SLOW_MESSAGE
-            )
-            firebaseUser = credential.user
-          } catch (signInError) {
-            const after = auth.currentUser
-            if (
-              after?.email &&
-              after.email.trim().toLowerCase() === emailLower
-            ) {
-              firebaseUser = after
-            } else {
-              throw signInError
-            }
-          }
-        }
-        if (!firebaseUser) {
-          throw new Error(SIGN_IN_SLOW_MESSAGE)
-        }
-
-        await withTimeout(loadSignedInProfile(firebaseUser), PROFILE_LOAD_MS, SIGN_IN_SLOW_MESSAGE)
+        await loadSignedInProfileWithWait(firebaseUser)
         const loaded = useAuthStore.getState().user
         if (loaded && loaded.accountConfirmed === false) {
           await firebaseSignOut(getFirebaseAuth())
@@ -303,6 +295,10 @@ export const useAuthStore = create<AuthState>((set) => {
         touchWebIdleActivity()
         set({ loading: false })
       } catch (error: unknown) {
+        if (useAuthStore.getState().user) {
+          set({ loading: false, error: null })
+          return
+        }
         const message = error instanceof Error ? error.message : 'Sign in failed'
         set({ loading: false, error: message })
         throw error
