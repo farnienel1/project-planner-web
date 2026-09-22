@@ -80,6 +80,9 @@ export function ProjectHub({
               </div>
               <div className="card-b">
                 <p className="muted small">Order materials for delivery to site.</p>
+                <Link href={`${basePath}/materials`} className="btn sm hue mt-3" data-hue="sw">
+                  Order materials
+                </Link>
               </div>
             </section>
           </div>

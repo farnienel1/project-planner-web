@@ -109,6 +109,7 @@ export function defaultUserPermissions(operativeMode = false): UserPermissions {
       subContractors: false,
       siteAudit: true,
       wholesalersOrderHistory: true,
+      developerAccess: false,
     }
   }
   return {
@@ -127,6 +128,7 @@ export function defaultUserPermissions(operativeMode = false): UserPermissions {
     subContractors: false,
     siteAudit: true,
     wholesalersOrderHistory: true,
+    developerAccess: false,
   }
 }
 
@@ -169,6 +171,7 @@ export function parseAppUserDocument(userId: string, data: Record<string, unknow
     subContractors: readFlag(data, 'subContractors') === true,
     siteAudit: readFlag(data, 'siteAudit') !== false,
     wholesalersOrderHistory: readFlag(data, 'wholesalersOrderHistory') !== false,
+    developerAccess: operativeMode ? false : readFlag(data, 'developerAccess') === true,
   }
 
   const rawIsSuperAdmin = data.isSuperAdmin === true
@@ -251,6 +254,7 @@ function permissionFlags(permissions: UserPermissions, operativeMode: boolean): 
     subContractors: permissions.subContractors,
     siteAudit: permissions.siteAudit,
     wholesalersOrderHistory: permissions.wholesalersOrderHistory !== false,
+    developerAccess: operativeMode ? false : permissions.developerAccess === true,
   }
 }
 

@@ -159,7 +159,7 @@ export function JobTypesScreen() {
             subtitle="Add job types that you can assign to your projects. These will appear as options when creating or editing projects."
           />
           <p className="-mt-8 pb-6 text-center text-[13px] text-[var(--ink3)]">
-            Recommended: Create job types like 'CAT A', 'CAT B', 'Small Works', 'Maintenance', or any custom types you
+            Recommended: Create job types like &apos;CAT A&apos;, &apos;CAT B&apos;, &apos;Small Works&apos;, &apos;Maintenance&apos;, or any custom types you
             use.
           </p>
           <div className="flex justify-center">

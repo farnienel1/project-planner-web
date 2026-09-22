@@ -186,6 +186,8 @@ export interface UserPermissions {
   annualLeaveSelfBook?: boolean;
   weeklyReports?: boolean;
   dailyOverview?: boolean;
+  /** Web-only: product developer dashboard (analytics + feedback admin). */
+  developerAccess?: boolean;
 }
 
 export type MaterialUnit = 'Number' | 'Box' | 'Length' | 'Drum' | 'Pallet';

@@ -13,7 +13,20 @@ import { isOperativeMode } from '@/lib/navigation/menuPermissions'
 import { newUuid } from '@/lib/firebase/firestoreUtils'
 import { uploadFile as uploadHsFile, healthSafetyFilePath } from '@/lib/firebase/storageUtils'
 import { loadPlatformToolboxLibrary, mergeToolboxTalkLibraries } from '@/lib/healthSafety/toolboxLibrary'
-import { buildToolboxTalkPdfHtml, openToolboxTalkPdf } from '@/lib/healthSafety/toolboxTalkPdf'
+import { buildToolboxTalkPdfHtml, downloadHtmlFile, openTalkFile, openToolboxTalkPdf } from '@/lib/healthSafety/toolboxTalkPdf'
+import {
+  findTalkForIssue,
+  issueSignatures,
+  pendingSignatureForUser,
+  signedSignatureForUser,
+  talkDownloadName,
+} from '@/lib/healthSafety/hsTracking'
+import {
+  HsIssueDetail,
+  HsSignedTalkBody,
+  HsTalkBody,
+  HsTrackingIssueCard,
+} from '@/components/projects/features/hsTalkScreens'
 import {
   combineLocalDateAndTime,
   defaultScheduleDate,
@@ -120,9 +133,13 @@ export function ProjectHealthSafetySection({
   const [showAddRams, setShowAddRams] = useState(false)
   const [showAddOther, setShowAddOther] = useState(false)
   const [signIssue, setSignIssue] = useState<HSToolboxIssue | null>(null)
+  const [trackIssue, setTrackIssue] = useState<HSToolboxIssue | null>(null)
+  const [viewTalk, setViewTalk] = useState<HSToolboxTalk | null>(null)
+  const [viewSignedIssue, setViewSignedIssue] = useState<HSToolboxIssue | null>(null)
   const [signatureB64, setSignatureB64] = useState<string | null>(null)
   const [readConfirmed, setReadConfirmed] = useState(false)
   const [signing, setSigning] = useState(false)
+  const [downloadError, setDownloadError] = useState<string | null>(null)
 
   const [ramsTitle, setRamsTitle] = useState('')
   const [ramsTrade, setRamsTrade] = useState('General')
@@ -370,6 +387,52 @@ export function ProjectHealthSafetySection({
     }
   }
 
+  const resolveTalk = (issue: HSToolboxIssue) =>
+    findTalkForIssue(issue, libraryTalks, data?.talks || [])
+
+  const handleDownloadTalk = (talk: HSToolboxTalk | undefined, issue?: HSToolboxIssue) => {
+    setDownloadError(null)
+    if (!talk) {
+      setDownloadError('This toolbox talk could not be loaded.')
+      return
+    }
+    if (talk.fileURL) {
+      openTalkFile(talk.fileURL)
+      return
+    }
+    if (!organization) {
+      setDownloadError('Organisation is required to generate the talk.')
+      return
+    }
+    const html = buildToolboxTalkPdfHtml({
+      talk,
+      issue: issue || {
+        id: talk.id,
+        projectId: project.id,
+        talkId: talk.id,
+        weekCommencing: startOfWeek(new Date(), { weekStartsOn: 1 }),
+        issuedByUserId: user?.id || '',
+        issuedAt: new Date(),
+        recipientUserIds: [],
+        status: 'issued',
+      },
+      signatures: issue ? issueSignatures(data?.signatures || [], issue.id) : [],
+      users,
+      project,
+      organizationName: organization.name || 'Organisation',
+      presentedBy: `${user?.firstName || ''} ${user?.surname || ''}`.trim() || organization.name || 'Project Planner',
+    })
+    const filename = `${talkDownloadName(talk)}${issue ? `-${issue.id.slice(0, 8)}` : ''}.html`
+    const result = openToolboxTalkPdf(html, filename)
+    if (!result.printed) downloadHtmlFile(html, filename)
+  }
+
+  const openSign = (issue: HSToolboxIssue) => {
+    setSignatureB64(null)
+    setReadConfirmed(false)
+    setSignIssue(issue)
+  }
+
   const toggleUploadTrade = (trade: string) => {
     setUploadIsGeneral(false)
     setUploadTrades((prev) => (prev.includes(trade) ? prev.filter((item) => item !== trade) : [...prev, trade]))
@@ -400,6 +463,7 @@ export function ProjectHealthSafetySection({
         </div>
       )}
 
+      {!(tab === 'tracking' && trackIssue) && (
       <div className={`mb-4 flex items-center gap-3.5 rounded-[20px] px-4 py-4 text-white shadow-lg ${bannerGradient}`}>
         <div className="flex h-11 w-11 items-center justify-center rounded-[13px] bg-white/20">
           <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -418,13 +482,17 @@ export function ProjectHealthSafetySection({
           </p>
         </div>
       </div>
-
+      )}
+      {!(tab === 'tracking' && trackIssue) && (
       <div className="mb-4 flex gap-1 overflow-x-auto rounded-[13px] bg-[#e7ebf1] p-1">
         {managerTabs.map((item) => (
           <button
             key={item.id}
             type="button"
-            onClick={() => setTab(item.id)}
+            onClick={() => {
+              setTrackIssue(null)
+              setTab(item.id)
+            }}
             className={`min-w-[72px] flex-1 rounded-[10px] py-2 text-xs font-bold transition-colors ${
               tab === item.id ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600'
             }`}
@@ -433,6 +501,7 @@ export function ProjectHealthSafetySection({
           </button>
         ))}
       </div>
+      )}
 
       {tab === 'hub' && (
         <div className="space-y-4">
@@ -454,20 +523,29 @@ export function ProjectHealthSafetySection({
                         <p className="text-sm font-semibold text-slate-900">{talk?.title || 'Toolbox talk'}</p>
                         <p className="text-xs text-slate-500">W/C {format(issue.weekCommencing, 'd MMM yyyy')}</p>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (!pending) return
-                          setSignatureB64(null)
-                          setReadConfirmed(false)
-                          setSignIssue(issue)
-                        }}
-                        className={`shrink-0 rounded-xl px-3 py-2 text-xs font-bold ${
-                          pending ? 'bg-[#0fae9e] text-white' : 'bg-slate-100 text-slate-600'
-                        }`}
-                      >
-                        {pending ? 'Sign now' : 'Signed'}
-                      </button>
+                      <div className="flex shrink-0 items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (talk) setViewTalk(talk)
+                          }}
+                          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700"
+                        >
+                          View
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (pending) openSign(issue)
+                            else setViewSignedIssue(issue)
+                          }}
+                          className={`rounded-xl px-3 py-2 text-xs font-bold ${
+                            pending ? 'bg-[#0fae9e] text-white' : 'bg-slate-100 text-slate-600'
+                          }`}
+                        >
+                          {pending ? 'Sign now' : 'Signed'}
+                        </button>
+                      </div>
                     </FeatureCard>
                   )
                 })}
@@ -596,16 +674,25 @@ export function ProjectHealthSafetySection({
                       {talk.category} · {talk.source}
                     </p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIssueTalkId(talk.id)
-                      setShowIssue(true)
-                    }}
-                    className="shrink-0 rounded-lg bg-[#2f73f0] px-3 py-1.5 text-xs font-bold text-white"
-                  >
-                    Issue
-                  </button>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setViewTalk(talk)}
+                      className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                    >
+                      View
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIssueTalkId(talk.id)
+                        setShowIssue(true)
+                      }}
+                      className="rounded-lg bg-[#2f73f0] px-3 py-1.5 text-xs font-bold text-white"
+                    >
+                      Issue
+                    </button>
+                  </div>
                 </div>
               ))}
             </FeatureCard>
@@ -615,11 +702,40 @@ export function ProjectHealthSafetySection({
 
       {tab === 'tracking' && isManager && (
         <div className="space-y-3">
+          {trackIssue ? (
+            <HsIssueDetail
+              issue={trackIssue}
+              talk={resolveTalk(trackIssue)}
+              signatures={issueSignatures(data.signatures, trackIssue.id)}
+              users={users}
+              canSign={Boolean(pendingSignatureForUser(issueSignatures(data.signatures, trackIssue.id), user?.id))}
+              canViewSigned={Boolean(signedSignatureForUser(issueSignatures(data.signatures, trackIssue.id), user?.id))}
+              downloadError={downloadError}
+              onBack={() => {
+                setTrackIssue(null)
+                setDownloadError(null)
+              }}
+              onView={() => {
+                const talk = resolveTalk(trackIssue)
+                if (talk) setViewTalk(talk)
+                else setDownloadError('This toolbox talk could not be loaded.')
+              }}
+              onSign={() => {
+                if (pendingSignatureForUser(issueSignatures(data.signatures, trackIssue.id), user?.id)) {
+                  openSign(trackIssue)
+                  return
+                }
+                setViewSignedIssue(trackIssue)
+              }}
+              onDownload={() => handleDownloadTalk(resolveTalk(trackIssue), trackIssue)}
+            />
+          ) : (
+            <>
           {scheduledIssues.length > 0 && (
             <div>
               <FeatureSectionLabel>Scheduled</FeatureSectionLabel>
               {scheduledIssues.map((issue) => {
-                const talk = libraryTalks.find((t) => t.id === issue.talkId) || data.talks.find((t) => t.id === issue.talkId)
+                const talk = resolveTalk(issue)
                 return (
                   <FeatureCard key={issue.id} className="mb-2 p-4">
                     <p className="text-sm font-semibold text-slate-900">{talk?.title || 'Toolbox talk'}</p>
@@ -636,59 +752,26 @@ export function ProjectHealthSafetySection({
             <EmptyState title="Nothing sent yet" description="Issue a toolbox talk from the library." />
           ) : (
             activeIssues.map((issue) => {
-              const talk = libraryTalks.find((t) => t.id === issue.talkId) || data.talks.find((t) => t.id === issue.talkId)
-              const sigs = data.signatures.filter((s) => s.issueId === issue.id)
-              const signed = sigs.filter((s) => s.status === 'signed').length
-              const handlePdf = () => {
-                if (!talk || !organization) return
-                const html = buildToolboxTalkPdfHtml({
-                  talk,
-                  issue,
-                  signatures: sigs,
-                  users,
-                  project,
-                  organizationName: organization.name || 'Organisation',
-                  presentedBy: `${user?.firstName || ''} ${user?.surname || ''}`.trim() || organization.name || 'Project Planner',
-                })
-                openToolboxTalkPdf(html, `ToolboxTalk-${talk.referenceCode || talk.id}-${issue.id}.html`)
-              }
+              const talk = resolveTalk(issue)
+              const sigs = issueSignatures(data.signatures, issue.id)
               return (
-                <FeatureCard key={issue.id} className="p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-semibold text-slate-900">{talk?.title || 'Toolbox talk'}</p>
-                      <p className="text-xs text-slate-500">
-                        {talk?.referenceCode ? `${talk.referenceCode} · ` : ''}
-                        Issued {format(issue.issuedAt, 'd MMM yyyy')} · W/C {format(issue.weekCommencing, 'd MMM')}
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={handlePdf}
-                      className="shrink-0 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                    >
-                      Generate PDF
-                    </button>
-                  </div>
-                  <p className="mt-2 text-sm font-bold text-[#0fae9e]">
-                    {signed}/{sigs.length} signed
-                  </p>
-                  <ul className="mt-2 space-y-1">
-                    {sigs.map((sig) => {
-                      const u = users.find((x) => x.id === sig.userId)
-                      return (
-                        <li key={sig.id} className="flex justify-between text-xs text-slate-600">
-                          <span>{u ? `${u.firstName} ${u.surname}`.trim() || u.email : sig.userId}</span>
-                          <span className={sig.status === 'signed' ? 'text-green-600' : 'text-amber-600'}>
-                            {sig.status}
-                          </span>
-                        </li>
-                      )
-                    })}
-                  </ul>
-                </FeatureCard>
+                <HsTrackingIssueCard
+                  key={issue.id}
+                  title={talk?.title || 'Toolbox talk'}
+                  reference={talk?.referenceCode}
+                  issuedAt={issue.issuedAt}
+                  weekCommencing={issue.weekCommencing}
+                  signatures={sigs}
+                  recipientCount={issue.recipientUserIds.length}
+                  onOpen={() => {
+                    setDownloadError(null)
+                    setTrackIssue(issue)
+                  }}
+                />
               )
             })
+          )}
+            </>
           )}
         </div>
       )}
@@ -1039,6 +1122,54 @@ export function ProjectHealthSafetySection({
             </HsFieldCard>
             <HsFileButton file={otherFile} onChange={setOtherFile} />
           </form>
+        </HsSheet>
+      )}
+
+      {viewTalk && (
+        <HsSheet
+          wide
+          title="Toolbox talk"
+          onClose={() => setViewTalk(null)}
+          footer={
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => handleDownloadTalk(viewTalk, trackIssue || undefined)}
+                className="flex-1 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-700"
+              >
+                Download talk
+              </button>
+              <HsPrimaryButton onClick={() => setViewTalk(null)}>Done</HsPrimaryButton>
+            </div>
+          }
+        >
+          <HsTalkBody talk={viewTalk} />
+          {downloadError ? <p className="text-sm font-semibold text-[#A32D2D]">{downloadError}</p> : null}
+        </HsSheet>
+      )}
+
+      {viewSignedIssue && (
+        <HsSheet
+          wide
+          title="Signed talk"
+          onClose={() => setViewSignedIssue(null)}
+          footer={
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => handleDownloadTalk(resolveTalk(viewSignedIssue), viewSignedIssue)}
+                className="flex-1 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-700"
+              >
+                Download talk
+              </button>
+              <HsPrimaryButton onClick={() => setViewSignedIssue(null)}>Done</HsPrimaryButton>
+            </div>
+          }
+        >
+          <HsSignedTalkBody
+            talk={resolveTalk(viewSignedIssue)}
+            signature={signedSignatureForUser(issueSignatures(data.signatures, viewSignedIssue.id), user?.id)}
+          />
         </HsSheet>
       )}
 

@@ -18,6 +18,8 @@ import {
   type ProjectSaveInput,
 } from '@/lib/firebase/projectPayload'
 import { runOrgLoad } from '@/lib/stores/orgLoadCache'
+import { trackEvent } from '@/lib/analytics/trackEvent'
+import { useAuthStore } from '@/lib/stores/authStore'
 import { parseFirestoreDate, parseNumber, parseOptionalString, parseString, newUuid } from '@/lib/firebase/firestoreUtils'
 import { parseClient as parseClientDoc, serializeClient } from '@/lib/ios-parity/converters'
 
@@ -192,6 +194,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   saveProject: async (input, collectionOverride) => {
     const collectionName = collectionOverride || projectCollectionName(input.jobType)
     const id = input.id || newUuid()
+    const isNew = ![...get().projects, ...get().smallWorks].some((row) => row.id === id)
     const payload = buildProjectFirestorePayload({ ...input, id })
     await setDoc(doc(db, 'organizations', input.organizationId, collectionName, id), payload)
     const saved = mapProjectDoc(id, payload as Record<string, unknown>, input.organizationId)
@@ -202,6 +205,11 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       const { projects } = get()
       set({ projects: [...projects.filter((p) => p.id !== id), saved] })
     }
+    void trackEvent(isNew ? (collectionName === 'smallWorks' ? 'small_work_created' : 'project_created') : 'project_updated', {
+      userId: useAuthStore.getState().user?.id,
+      organizationId: input.organizationId,
+      metadata: { projectId: id, collection: collectionName },
+    })
     return id
   },
 

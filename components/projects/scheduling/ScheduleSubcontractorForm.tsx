@@ -46,6 +46,22 @@ export function ScheduleSubcontractorForm({
     if (organization?.id) loadSubcontractors(organization.id)
   }, [organization?.id, loadSubcontractors])
 
+  useEffect(() => {
+    const list = subcontractors
+      .filter((sub) => typeFilter === 'All Types' || sub.subcontractorType === typeFilter)
+      .sort((a, b) => a.name.localeCompare(b.name))
+    const first = list[0]
+    if (!first) {
+      setSelectedSubcontractorId('')
+      setUseGeneralAttendance(true)
+      setSelectedContactIds(new Set())
+      return
+    }
+    setSelectedSubcontractorId(first.id)
+    setUseGeneralAttendance(true)
+    setSelectedContactIds(new Set())
+  }, [typeFilter, subcontractors])
+
   const typeFilters = useMemo(() => {
     const types = new Set(subcontractors.map((s) => s.subcontractorType))
     return ['All Types', ...Array.from(types).sort()]
@@ -193,7 +209,10 @@ export function ScheduleSubcontractorForm({
             <button
               key={type}
               type="button"
-              onClick={() => setTypeFilter(type)}
+              onClick={() => {
+                if (type === typeFilter) return
+                setTypeFilter(type)
+              }}
               className={`rounded-full px-3 py-1.5 text-xs font-semibold ${
                 typeFilter === type ? 'bg-violet-600 text-white' : 'border border-slate-300 bg-white text-slate-600'
               }`}
