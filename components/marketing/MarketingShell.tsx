@@ -160,9 +160,9 @@ export function MarketingShell({
                 Scheduling, timesheets, materials and H&S for MEP and construction subcontractors. Built by a
                 London MEP contractor.
               </p>
-              <div className="row" style={{ marginTop: 18 }}>
-                <StoreBadge store="ios" height={46} />
-                <StoreBadge store="android" height={46} />
+              <div className="row wr" style={{ marginTop: 18 }}>
+                <StoreBadge store="ios" />
+                <StoreBadge store="android" />
               </div>
             </div>
             <div>

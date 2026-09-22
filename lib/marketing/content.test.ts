@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
   MARKETING_PLANS,
+  RATES_FAQ,
   planHasModule,
   setupPathForPlan,
   suggestPlanForUsers,
@@ -36,4 +37,9 @@ test('estimator suggests a plan that covers team size plus two users', () => {
 
 test('choose-plan links preselect the plan on setup', () => {
   assert.equal(setupPathForPlan('professional'), '/setup?plan=professional')
+})
+
+test('user-limit FAQ tells admins they can upgrade with no down time', () => {
+  const answer = RATES_FAQ.find(([question]) => question.includes('user limit'))?.[1]
+  assert.match(String(answer), /upgrade to continue adding users with no down time/)
 })
