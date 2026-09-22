@@ -3,6 +3,7 @@
 import { create } from 'zustand'
 import { deleteDoc, doc, getDoc, setDoc, updateDoc, Timestamp } from 'firebase/firestore'
 import { sendPasswordResetEmail } from 'firebase/auth'
+import { passwordResetActionSettings } from '@/lib/auth/passwordResetSettings'
 import type { Operative, User, UserPermissions } from '@/types'
 import { auth, db } from '@/lib/firebase/config'
 import { buildSaveUserPayload } from '@/lib/firebase/userPayload'
@@ -92,7 +93,7 @@ export const useUserStore = create<UserStoreState>(() => ({
   },
 
   sendPasswordReset: async (email) => {
-    await sendPasswordResetEmail(auth, email.toLowerCase().trim())
+    await sendPasswordResetEmail(auth, email.toLowerCase().trim(), passwordResetActionSettings(email))
   },
 
   applyAccountType: (user, accountType) => ({
