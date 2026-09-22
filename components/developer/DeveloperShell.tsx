@@ -9,6 +9,7 @@ import { AppLogoMark } from '@/components/ui/AppLogoMark'
 import { useFeedbackStore } from '@/lib/feedback/feedbackStore'
 import { cn } from '@/lib/ui/cn'
 import { ErrorBanner } from '@/components/dashboard/PageShell'
+import { hasCustomerOrganisation } from '@/lib/platform/owner'
 
 const LINKS = [
   { href: '/developer', label: 'Overview' },
