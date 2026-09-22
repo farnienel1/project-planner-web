@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from 'react'
 import { useAuthStore } from '@/lib/stores/authStore'
+import { isPlatformOwnerSession } from '@/lib/platform/owner'
 import {
   WEB_IDLE_STORAGE_KEY,
   isWebIdleExpired,
@@ -18,11 +19,14 @@ const CHECK_EVERY_MS = 60_000
  */
 export function WebIdleSessionGuard() {
   const signedIn = useAuthStore((state) => Boolean(state.firebaseUser || state.user))
+  const ownerEmail = useAuthStore((state) => state.firebaseUser?.email || state.user?.email)
+  const ownerOrg = useAuthStore((state) => state.user?.organizationId)
+  const ownerSession = isPlatformOwnerSession(ownerEmail, ownerOrg)
   const signOut = useAuthStore((state) => state.signOut)
   const signingOut = useRef(false)
 
   useEffect(() => {
-    if (!signedIn) {
+    if (!signedIn || ownerSession) {
       signingOut.current = false
       return
     }
@@ -67,7 +71,7 @@ export function WebIdleSessionGuard() {
       window.removeEventListener('storage', onStorage)
       window.clearInterval(timer)
     }
-  }, [signedIn, signOut])
+  }, [ownerSession, signedIn, signOut])
 
   return null
 }

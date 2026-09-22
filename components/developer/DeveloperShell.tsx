@@ -4,10 +4,11 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import type { ReactNode } from 'react'
 import { useAuthStore } from '@/lib/stores/authStore'
+import { useAnalyticsStore } from '@/lib/analytics/analyticsStore'
 import { AppLogoMark } from '@/components/ui/AppLogoMark'
 import { hasCustomerOrganisation } from '@/lib/platform/owner'
 import { cn } from '@/lib/ui/cn'
-import { ErrorBanner, WarningBanner } from '@/components/dashboard/PageShell'
+import { ErrorBanner } from '@/components/dashboard/PageShell'
 
 const LINKS = [
   { href: '/developer', label: 'Overview' },
@@ -23,28 +24,33 @@ const LINKS = [
 export function DeveloperAppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname() || ''
   const { user, organization, signOut } = useAuthStore()
+  const orgCount = useAnalyticsStore((state) => state.organisations.length)
+  const userCount = useAnalyticsStore((state) => state.users.length)
   const orgApp = hasCustomerOrganisation(user?.organizationId)
 
   return (
     <div className="min-h-screen bg-[var(--bg)]">
-      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--line)] bg-white px-4 py-3">
+      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--navy)] bg-[var(--navy)] px-4 py-3 text-white">
         <div className="flex items-center gap-3">
           <AppLogoMark size={36} radius={10} />
           <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ink3)]">Owner console</p>
-            <p className="text-sm font-bold text-[var(--ink)]">{user?.email}</p>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-white/70">Owner console</p>
+            <p className="text-sm font-bold">{user?.email || 'info@projectplanner.us'}</p>
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-3 text-sm">
+          <span className="hidden sm:inline text-white/80">
+            {orgCount} organisations · {userCount} users
+          </span>
           {orgApp ? (
-            <Link href="/dashboard" className="btn sm ghost">
+            <Link href="/dashboard" className="btn sm ghost" style={{ color: 'white', borderColor: 'rgba(255,255,255,.25)' }}>
               Organisation app
             </Link>
           ) : null}
-          <Link href="/developer/account" className="btn sm ghost">
-            Password
+          <Link href="/developer/account" className="btn sm ghost" style={{ color: 'white', borderColor: 'rgba(255,255,255,.25)' }}>
+            Account
           </Link>
-          <button type="button" className="btn sm ghost" onClick={() => void signOut()}>
+          <button type="button" className="btn sm ghost" style={{ color: 'white', borderColor: 'rgba(255,255,255,.25)' }} onClick={() => void signOut()}>
             Sign out
           </button>
         </div>
@@ -108,16 +114,14 @@ export function DeveloperShell({
 
 export function DeveloperStatus({
   error,
-  warning,
   loading,
 }: {
   error?: string | null
-  warning?: string | null
   loading?: boolean
 }) {
   return (
     <>
-      {error ? <ErrorBanner message={error} /> : warning ? <WarningBanner message={warning} /> : null}
+      {error ? <ErrorBanner message={error} /> : null}
       {loading ? <p className="text-xs text-[var(--ink3)]">Refreshing live directory…</p> : null}
     </>
   )

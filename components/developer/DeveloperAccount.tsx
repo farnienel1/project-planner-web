@@ -11,7 +11,7 @@ function AccountForm() {
   const search = useSearchParams()
   const first = search.get('first') === '1'
   const { changePassword, user } = useAuthStore()
-  const { organisations, users, loading, error, warning, load, refresh } = useAnalyticsStore()
+  const { organisations, users, loading, error, load, refresh } = useAnalyticsStore()
   const [currentPassword, setCurrentPassword] = useState('')
   const [nextPassword, setNextPassword] = useState('')
   const [confirm, setConfirm] = useState('')
@@ -63,7 +63,7 @@ function AccountForm() {
           First login complete. Change the password now so the temporary or newly created one is not kept.
         </p>
       ) : null}
-      <DeveloperStatus error={error} warning={warning} loading={loading && users.length > 0} />
+      <DeveloperStatus error={error} loading={loading && users.length > 0} />
       <div className="grid gap-3 sm:grid-cols-2">
         <MetricCard label="Organisations" value={organisations.length} href="/developer/organisations" />
         <MetricCard label="Registered users" value={users.length} href="/developer/users" />
@@ -73,7 +73,7 @@ function AccountForm() {
         <p className="mt-1 text-lg font-extrabold">{user?.email || PLATFORM_OWNER_EMAIL}</p>
         <p className="mt-2 text-sm text-[var(--ink2)]">
           This console is only for you. Organisation users never see it, and they cannot be granted access from User
-          settings.
+          settings. This login stays signed in — it is not signed out after 30 minutes idle.
         </p>
       </section>
       <form className="card pad space-y-3" onSubmit={(e) => void submit(e)}>
