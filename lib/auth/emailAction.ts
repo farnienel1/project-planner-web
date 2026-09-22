@@ -1,3 +1,5 @@
+import { isPlatformOwnerEmail } from '@/lib/platform/owner'
+
 export const EMAIL_ACTION_MODES = ['resetPassword', 'verifyEmail', 'recoverEmail', 'signIn'] as const
 export type EmailActionMode = (typeof EMAIL_ACTION_MODES)[number]
 
@@ -20,8 +22,6 @@ export function parseEmailActionSearch(search: { get(name: string): string | nul
 export function isPasswordResetAction(action: ParsedEmailAction): boolean {
   return action.mode === 'resetPassword' && action.oobCode.length > 0
 }
-
-import { isPlatformOwnerEmail } from '@/lib/platform/owner'
 
 export function loginPathForResetEmail(email: string): '/developer-login' | '/login' {
   return isPlatformOwnerEmail(email) ? '/developer-login' : '/login'
@@ -46,10 +46,23 @@ export function formatPasswordResetError(error: unknown): string {
   return message || 'Could not update the password. Request a new reset link and try again.'
 }
 
-export function emailActionRecoveryHref(pathname: string, search: string): string | null {
-  const query = search.startsWith('?') ? search.slice(1) : search
-  const action = parseEmailActionSearch(new URLSearchParams(query))
-  if (!action.oobCode) return null
-  if (pathname === '/auth/action') return null
-  return `/auth/action${search.startsWith('?') ? search : search ? `?${search}` : ''}`
+const HANDLED_EMAIL_ACTION_PATHS = new Set(['/auth/action', '/reset-password'])
+
+export function normalizeEmailActionPathname(pathname: string): string {
+  if (!pathname) return '/'
+  const trimmed = pathname.replace(/\/+$/, '')
+  return trimmed || '/'
 }
+
+export function emailActionRecoveryHref(pathname: string, search: string): string | null {
+  const path = normalizeEmailActionPathname(pathname)
+  const query = search.startsWith('?') ? search : search ? `?${search}` : ''
+  const action = parseEmailActionSearch(new URLSearchParams(query.startsWith('?') ? query.slice(1) : query))
+  if (!action.oobCode) return null
+  if (HANDLED_EMAIL_ACTION_PATHS.has(path)) return null
+  return `/auth/action${query}`
+}
+
+/** Runs in <head> before React hydrates. Firebase links keep /__/auth/action in the URL. */
+export const EMAIL_ACTION_BOOT_SCRIPT =
+  "(function(){try{var p=(location.pathname||'/').replace(/\\/+$/,'')||'/';var s=location.search||'';if(!/[?&]oobCode=/i.test(s))return;if(p==='/auth/action'||p==='/reset-password')return;location.replace('/auth/action'+s+location.hash)}catch(e){}})();"

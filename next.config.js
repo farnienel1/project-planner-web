@@ -52,11 +52,25 @@ const nextConfig = {
         source: '/:path*',
         headers: securityHeaders,
       },
+      {
+        source: '/auth/action',
+        headers: [{ key: 'Cache-Control', value: 'private, no-store, must-revalidate' }],
+      },
+      {
+        source: '/reset-password',
+        headers: [{ key: 'Cache-Control', value: 'private, no-store, must-revalidate' }],
+      },
     ]
   },
   async rewrites() {
     // iOS invite emails use /setup-password.html?token=
-    return [{ source: '/setup-password.html', destination: '/setup-password' }]
+    // Firebase /__/auth/* cannot hydrate as a Next page; serve a static hop instead.
+    return [
+      { source: '/setup-password.html', destination: '/setup-password' },
+      { source: '/__/auth/action', destination: '/firebase-auth-action.html' },
+      { source: '/__/auth/handler', destination: '/firebase-auth-action.html' },
+      { source: '/__/auth/:path*', destination: '/firebase-auth-action.html' },
+    ]
   },
   async redirects() {
     return [

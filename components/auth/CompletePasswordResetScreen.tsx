@@ -17,7 +17,12 @@ import {
 
 export function CompletePasswordResetScreen() {
   const searchParams = useSearchParams()
-  const action = useMemo(() => parseEmailActionSearch(searchParams), [searchParams])
+  const action = useMemo(() => {
+    const fromHook = parseEmailActionSearch(searchParams)
+    if (typeof window === 'undefined') return fromHook
+    const fromWindow = parseEmailActionSearch(new URLSearchParams(window.location.search))
+    return fromWindow.oobCode ? fromWindow : fromHook
+  }, [searchParams])
   const [email, setEmail] = useState('')
   const [checking, setChecking] = useState(isPasswordResetAction(action))
   const [password, setPassword] = useState('')
