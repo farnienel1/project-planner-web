@@ -153,9 +153,9 @@ export function CheckEmailScreen({ email, publicLayout = false }: { email?: stri
       <p className="muted xs" style={{ textAlign: 'center', marginTop: 18 }}>
         Can&apos;t find it? Check spam, then contact <a href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a>
       </p>
-      <div className="row" style={{ justifyContent: 'center', marginTop: 18 }}>
-        <StoreBadge store="ios" height={46} />
-        <StoreBadge store="android" height={46} />
+      <div className="row wr" style={{ justifyContent: 'center', marginTop: 18 }}>
+        <StoreBadge store="ios" />
+        <StoreBadge store="android" />
       </div>
     </div>
   )
