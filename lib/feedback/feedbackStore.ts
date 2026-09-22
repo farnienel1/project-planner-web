@@ -20,10 +20,21 @@ import { trackEvent } from '@/lib/analytics/trackEvent'
 import { feedbackWriteError } from '@/lib/feedback/errors'
 import { consolidateVotesOnMerge, voteId } from '@/lib/feedback/similar'
 import {
+  ignoreIfDenied,
+  loadCanonicalIdeaBoard,
+  loadUserDocumentIdeaBoard,
+  mergeIdeaBoards,
+  writeUserAdmin,
+  writeUserComment,
+  writeUserHistory,
+  writeUserIdea,
+  writeUserNotes,
+  writeUserVote,
+} from '@/lib/feedback/platformBoard'
+import {
   parseComment,
   parseHistory,
   parseInternalNotes,
-  parseSuggestion,
   parseVote,
   serializeSuggestion,
 } from '@/lib/feedback/serialize'
@@ -85,19 +96,29 @@ type FeedbackState = {
 async function writeHistory(entry: Omit<FeedbackHistoryEntry, 'id' | 'createdAt'> & { id?: string }) {
   if (!db) return
   const id = entry.id || newUuid()
-  await setDoc(
-    doc(db, 'productFeedbackHistory', id),
-    omitUndefinedDeep({
-      suggestionId: entry.suggestionId,
-      actorUserId: entry.actorUserId,
-      actorName: entry.actorName,
-      field: entry.field,
-      fromValue: entry.fromValue,
-      toValue: entry.toValue,
-      reason: entry.reason || '',
-      createdAt: Timestamp.now(),
-    })
-  )
+  const createdAt = new Date()
+  const payload = omitUndefinedDeep({
+    suggestionId: entry.suggestionId,
+    actorUserId: entry.actorUserId,
+    actorName: entry.actorName,
+    field: entry.field,
+    fromValue: entry.fromValue,
+    toValue: entry.toValue,
+    reason: entry.reason || '',
+    createdAt: Timestamp.now(),
+  })
+  await ignoreIfDenied(() => setDoc(doc(db, 'productFeedbackHistory', id), payload))
+  await writeUserHistory(db, entry.actorUserId, {
+    id,
+    suggestionId: entry.suggestionId,
+    actorUserId: entry.actorUserId,
+    actorName: entry.actorName,
+    field: entry.field,
+    fromValue: entry.fromValue,
+    toValue: entry.toValue,
+    reason: entry.reason,
+    createdAt,
+  })
 }
 
 export const useFeedbackStore = create<FeedbackState>((set, get) => ({
@@ -113,20 +134,27 @@ export const useFeedbackStore = create<FeedbackState>((set, get) => ({
     if (!db) return
     set({ loading: true, error: null })
     try {
-      const [suggestionSnap, voteSnap] = await Promise.all([
-        getDocs(collection(db, 'productFeedback')),
-        getDocs(collection(db, 'productFeedbackVotes')),
-      ])
-      const suggestions = suggestionSnap.docs
-        .map((entry) => parseSuggestion(entry.id, entry.data() as Record<string, unknown>))
+      const [canonical, userBoard] = await Promise.all([loadCanonicalIdeaBoard(db), loadUserDocumentIdeaBoard(db)])
+      const merged = canonical ? mergeIdeaBoards(canonical, userBoard) : userBoard
+      const suggestions = merged.suggestions
         .filter((row) => includeHidden || (!row.hidden && !row.mergedIntoId))
-        .sort((a, b) => Number(b.pinned) - Number(a.pinned) || b.voteCount - a.voteCount || b.createdAt.getTime() - a.createdAt.getTime())
-      const votes = voteSnap.docs.map((entry) => parseVote(entry.id, entry.data() as Record<string, unknown>))
-      set({ suggestions, votes, loading: false })
+        .sort(
+          (a, b) =>
+            Number(b.pinned) - Number(a.pinned) || b.voteCount - a.voteCount || b.createdAt.getTime() - a.createdAt.getTime()
+        )
+      set({
+        suggestions,
+        votes: merged.votes,
+        comments: merged.comments,
+        history: merged.history,
+        internalNotes: merged.internalNotes,
+        loading: false,
+        error: null,
+      })
     } catch (error: unknown) {
       const mapped = feedbackWriteError(error)
       set({
-        error: mapped === 'Could not save' ? 'Could not load ideas' : mapped,
+        error: mapped === 'Could not save this idea. Stay signed in and try again.' ? 'Could not load ideas' : mapped,
         loading: false,
       })
     }
@@ -134,31 +162,45 @@ export const useFeedbackStore = create<FeedbackState>((set, get) => ({
 
   loadSuggestionExtras: async (suggestionId, asDeveloper) => {
     if (!db) return
-    const [commentSnap, voteSnap] = await Promise.all([
-      getDocs(query(collection(db, 'productFeedbackComments'), where('suggestionId', '==', suggestionId))),
-      getDocs(query(collection(db, 'productFeedbackVotes'), where('suggestionId', '==', suggestionId))),
-    ])
-    const comments = commentSnap.docs
-      .map((entry) => parseComment(entry.id, entry.data() as Record<string, unknown>))
-      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
-    const votes = [
-      ...get().votes.filter((vote) => vote.suggestionId !== suggestionId),
-      ...voteSnap.docs.map((entry) => parseVote(entry.id, entry.data() as Record<string, unknown>)),
-    ]
-    const next: Partial<FeedbackState> = { comments, votes }
-    if (asDeveloper) {
-      const [historySnap, notesSnap] = await Promise.all([
-        getDocs(query(collection(db, 'productFeedbackHistory'), where('suggestionId', '==', suggestionId))),
-        getDoc(doc(db, 'productFeedback', suggestionId, 'private', 'notes')),
+    const current = get()
+    let comments = current.comments.filter((comment) => comment.suggestionId === suggestionId)
+    let votes = current.votes
+    const next: Partial<FeedbackState> = {}
+    try {
+      const [commentSnap, voteSnap] = await Promise.all([
+        getDocs(query(collection(db, 'productFeedbackComments'), where('suggestionId', '==', suggestionId))),
+        getDocs(query(collection(db, 'productFeedbackVotes'), where('suggestionId', '==', suggestionId))),
       ])
-      next.history = historySnap.docs
-        .map((entry) => parseHistory(entry.id, entry.data() as Record<string, unknown>))
-        .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
-      if (notesSnap.exists()) {
-        next.internalNotes = {
-          ...get().internalNotes,
-          [suggestionId]: parseInternalNotes(notesSnap.data() as Record<string, unknown>),
+      comments = commentSnap.docs
+        .map((entry) => parseComment(entry.id, entry.data() as Record<string, unknown>))
+        .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+      votes = [
+        ...current.votes.filter((vote) => vote.suggestionId !== suggestionId),
+        ...voteSnap.docs.map((entry) => parseVote(entry.id, entry.data() as Record<string, unknown>)),
+      ]
+    } catch {
+      /* User-document board already has comments and votes. */
+    }
+    next.comments = comments
+    next.votes = votes
+    if (asDeveloper) {
+      try {
+        const [historySnap, notesSnap] = await Promise.all([
+          getDocs(query(collection(db, 'productFeedbackHistory'), where('suggestionId', '==', suggestionId))),
+          getDoc(doc(db, 'productFeedback', suggestionId, 'private', 'notes')),
+        ])
+        next.history = historySnap.docs
+          .map((entry) => parseHistory(entry.id, entry.data() as Record<string, unknown>))
+          .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+        if (notesSnap.exists()) {
+          next.internalNotes = {
+            ...current.internalNotes,
+            [suggestionId]: parseInternalNotes(notesSnap.data() as Record<string, unknown>),
+          }
         }
+      } catch {
+        next.history = current.history.filter((entry) => entry.suggestionId === suggestionId)
+        next.internalNotes = current.internalNotes
       }
     }
     set(next)
@@ -187,13 +229,22 @@ export const useFeedbackStore = create<FeedbackState>((set, get) => ({
       createdAt: now,
       updatedAt: now,
     }
-    await setDoc(doc(db, 'productFeedback', id), serializeSuggestion(row))
-    await setDoc(doc(db, 'productFeedbackVotes', voteId(id, input.userId)), {
-      suggestionId: id,
-      userId: input.userId,
-      createdAt: Timestamp.now(),
+    await writeUserIdea(db, input.userId, row)
+    await ignoreIfDenied(async () => {
+      await setDoc(doc(db, 'productFeedback', id), serializeSuggestion(row))
+      await setDoc(doc(db, 'productFeedbackVotes', voteId(id, input.userId)), {
+        suggestionId: id,
+        userId: input.userId,
+        createdAt: Timestamp.now(),
+      })
     })
-    set({ suggestions: [row, ...get().suggestions] })
+    set({
+      suggestions: [row, ...get().suggestions],
+      votes: [
+        ...get().votes,
+        { id: voteId(id, input.userId), suggestionId: id, userId: input.userId, createdAt: now },
+      ],
+    })
     void trackEvent('idea_submitted', {
       userId: input.userId,
       organizationId: input.organizationId,
@@ -207,22 +258,28 @@ export const useFeedbackStore = create<FeedbackState>((set, get) => ({
     const id = voteId(suggestion.id, userId)
     const existing = get().votes.find((vote) => vote.id === id || (vote.suggestionId === suggestion.id && vote.userId === userId))
     if (existing) {
-      await deleteDoc(doc(db, 'productFeedbackVotes', existing.id))
+      await writeUserVote(db, userId, suggestion.id, false)
+      await ignoreIfDenied(() => deleteDoc(doc(db, 'productFeedbackVotes', existing.id)))
       const voteCount = Math.max(0, suggestion.voteCount - 1)
-      await setDoc(doc(db, 'productFeedback', suggestion.id), { voteCount, updatedAt: Timestamp.now() }, { merge: true })
+      await ignoreIfDenied(() =>
+        setDoc(doc(db, 'productFeedback', suggestion.id), { voteCount, updatedAt: Timestamp.now() }, { merge: true })
+      )
       set({
         votes: get().votes.filter((vote) => vote.id !== existing.id),
         suggestions: get().suggestions.map((row) => (row.id === suggestion.id ? { ...row, voteCount } : row)),
       })
       return
     }
-    await setDoc(doc(db, 'productFeedbackVotes', id), {
-      suggestionId: suggestion.id,
-      userId,
-      createdAt: Timestamp.now(),
-    })
+    await writeUserVote(db, userId, suggestion.id, true)
     const voteCount = suggestion.voteCount + 1
-    await setDoc(doc(db, 'productFeedback', suggestion.id), { voteCount, updatedAt: Timestamp.now() }, { merge: true })
+    await ignoreIfDenied(async () => {
+      await setDoc(doc(db, 'productFeedbackVotes', id), {
+        suggestionId: suggestion.id,
+        userId,
+        createdAt: Timestamp.now(),
+      })
+      await setDoc(doc(db, 'productFeedback', suggestion.id), { voteCount, updatedAt: Timestamp.now() }, { merge: true })
+    })
     set({
       votes: [...get().votes, { id, suggestionId: suggestion.id, userId, createdAt: new Date() }],
       suggestions: get().suggestions.map((row) => (row.id === suggestion.id ? { ...row, voteCount } : row)),
@@ -241,15 +298,18 @@ export const useFeedbackStore = create<FeedbackState>((set, get) => ({
       body: body.trim(),
       createdAt: new Date(),
     }
-    await setDoc(doc(db, 'productFeedbackComments', id), {
-      suggestionId: suggestion.id,
-      authorUserId: userId,
-      authorName,
-      body: comment.body,
-      createdAt: Timestamp.now(),
-    })
+    await writeUserComment(db, userId, comment)
     const commentCount = suggestion.commentCount + 1
-    await setDoc(doc(db, 'productFeedback', suggestion.id), { commentCount, updatedAt: Timestamp.now() }, { merge: true })
+    await ignoreIfDenied(async () => {
+      await setDoc(doc(db, 'productFeedbackComments', id), {
+        suggestionId: suggestion.id,
+        authorUserId: userId,
+        authorName,
+        body: comment.body,
+        createdAt: Timestamp.now(),
+      })
+      await setDoc(doc(db, 'productFeedback', suggestion.id), { commentCount, updatedAt: Timestamp.now() }, { merge: true })
+    })
     set({
       comments: [...get().comments, comment],
       suggestions: get().suggestions.map((row) => (row.id === suggestion.id ? { ...row, commentCount } : row)),
@@ -276,7 +336,19 @@ export const useFeedbackStore = create<FeedbackState>((set, get) => ({
       next.reviewedAt = new Date()
       next.reviewedByUserId = actorUserId
     }
-    await setDoc(doc(db, 'productFeedback', suggestion.id), serializeSuggestion(next), { merge: true })
+    await writeUserAdmin(db, actorUserId, suggestion.id, {
+      publicStatus: next.publicStatus,
+      productDecision: next.productDecision,
+      category: next.category,
+      relatedFeature: next.relatedFeature,
+      officialResponse: next.officialResponse,
+      pinned: next.pinned,
+      hidden: next.hidden,
+      mergedIntoId: next.mergedIntoId,
+      reviewedAt: next.reviewedAt,
+      reviewedByUserId: next.reviewedByUserId,
+    })
+    await ignoreIfDenied(() => setDoc(doc(db, 'productFeedback', suggestion.id), serializeSuggestion(next), { merge: true }))
     const fields: Array<keyof typeof patch> = [
       'publicStatus',
       'productDecision',
@@ -320,7 +392,8 @@ export const useFeedbackStore = create<FeedbackState>((set, get) => ({
   saveInternalNotes: async (suggestionId, notes, userId) => {
     if (!db) return
     const payload = { notes, updatedAt: Timestamp.now(), updatedByUserId: userId }
-    await setDoc(doc(db, 'productFeedback', suggestionId, 'private', 'notes'), payload)
+    await writeUserNotes(db, userId, suggestionId, notes)
+    await ignoreIfDenied(() => setDoc(doc(db, 'productFeedback', suggestionId, 'private', 'notes'), payload))
     set({
       internalNotes: {
         ...get().internalNotes,
@@ -335,12 +408,14 @@ export const useFeedbackStore = create<FeedbackState>((set, get) => ({
     const destVotes = get().votes.filter((vote) => vote.suggestionId === destination.id)
     const { keepUserIds } = consolidateVotesOnMerge(destVotes, sourceVotes)
     for (const userId of keepUserIds) {
-      const id = voteId(destination.id, userId)
-      await setDoc(doc(db, 'productFeedbackVotes', id), {
-        suggestionId: destination.id,
-        userId,
-        createdAt: Timestamp.now(),
-      })
+      await writeUserVote(db, userId, destination.id, true)
+      await ignoreIfDenied(() =>
+        setDoc(doc(db, 'productFeedbackVotes', voteId(destination.id, userId)), {
+          suggestionId: destination.id,
+          userId,
+          createdAt: Timestamp.now(),
+        })
+      )
     }
     const voteCount = destination.voteCount + keepUserIds.length
     const commentCount = destination.commentCount + source.commentCount
@@ -356,8 +431,19 @@ export const useFeedbackStore = create<FeedbackState>((set, get) => ({
       mergedIntoId: destination.id,
       updatedAt: new Date(),
     }
-    await setDoc(doc(db, 'productFeedback', destination.id), serializeSuggestion(merged), { merge: true })
-    await setDoc(doc(db, 'productFeedback', source.id), serializeSuggestion(hiddenSource), { merge: true })
+    await writeUserAdmin(db, actorUserId, destination.id, {
+      publicStatus: merged.publicStatus,
+      productDecision: merged.productDecision,
+      officialResponse: merged.officialResponse,
+      pinned: merged.pinned,
+      hidden: merged.hidden,
+    })
+    await writeUserAdmin(db, actorUserId, source.id, {
+      hidden: true,
+      mergedIntoId: destination.id,
+    })
+    await ignoreIfDenied(() => setDoc(doc(db, 'productFeedback', destination.id), serializeSuggestion(merged), { merge: true }))
+    await ignoreIfDenied(() => setDoc(doc(db, 'productFeedback', source.id), serializeSuggestion(hiddenSource), { merge: true }))
     await writeHistory({
       suggestionId: destination.id,
       actorUserId,
