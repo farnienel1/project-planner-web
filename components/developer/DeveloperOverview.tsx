@@ -14,6 +14,7 @@ import {
   inRange,
   organisationActivityRows,
   uniqueUsersChart,
+  activityLanes,
 } from '@/lib/analytics/aggregations'
 import type { DateRangePreset } from '@/lib/analytics/events'
 import { ChangeHint, DeveloperShell, DeveloperStatus, MetricCard, MiniBars } from '@/components/developer/DeveloperShell'
@@ -108,6 +109,7 @@ export function DeveloperOverviewScreen() {
       tasks: currentEvents.filter((event) => event.eventName === 'task_created').length,
       topOrgs: orgRows.slice(0, 8),
       hasEvents: events.length > 0,
+      lanes: activityLanes(users),
     }
   }, [events, sessions, users, organisations, suggestions, votes, range])
 
@@ -178,6 +180,17 @@ export function DeveloperOverviewScreen() {
         />
         <MetricCard label="Votes" value={metrics.votes} href="/developer/feedback" />
       </div>
+      <section className="card pad">
+        <h2 className="h2">Last seen</h2>
+        <ul className="mt-3 grid gap-2 sm:grid-cols-3 lg:grid-cols-6">
+          {metrics.lanes.map((row) => (
+            <li key={row.id} className="rounded-xl bg-[var(--soft)] px-3 py-2">
+              <p className="eyebrow">{row.label}</p>
+              <p className="text-2xl font-extrabold">{row.count}</p>
+            </li>
+          ))}
+        </ul>
+      </section>
       <section className="card pad">
         <h2 className="h2">Organisations</h2>
         <p className="mt-1 text-xs text-[var(--ink3)]">

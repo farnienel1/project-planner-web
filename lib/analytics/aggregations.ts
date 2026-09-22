@@ -340,7 +340,9 @@ export function organisationActivityRows(input: {
   }
 
   const knownIds = new Set(input.organisations.map((org) => org.id))
-  const extraIds = [...usersByOrg.keys(), ...eventsByOrg.keys()].filter((id) => id && !knownIds.has(id))
+  const extraIds = [...usersByOrg.keys(), ...eventsByOrg.keys()].filter(
+    (id) => id && !knownIds.has(id) && id !== 'platform-owner'
+  )
   const rows = [
     ...input.organisations,
     ...extraIds.map((id) => ({ id, name: 'Unknown organisation', createdAt: undefined as Date | undefined })),
@@ -377,4 +379,101 @@ export function directoryActiveUsers(
   range: { start: Date; end: Date }
 ): number {
   return users.filter((user) => (user.lastSeenAt ? inRange(user.lastSeenAt, range.start, range.end) : false)).length
+}
+
+export type DirectoryLane = { id: string; label: string; count: number }
+
+export function activityLanes(
+  users: { lastSeenAt?: Date }[],
+  now = new Date()
+): DirectoryLane[] {
+  const day = 86_400_000
+  let today = 0
+  let week = 0
+  let month = 0
+  let quarter = 0
+  let stale = 0
+  let never = 0
+  for (const user of users) {
+    const seen = user.lastSeenAt?.getTime() || 0
+    if (seen <= 0) {
+      never += 1
+      continue
+    }
+    const ago = now.getTime() - seen
+    if (ago <= day) today += 1
+    if (ago <= 7 * day) week += 1
+    if (ago <= 30 * day) month += 1
+    if (ago <= 90 * day) quarter += 1
+    if (ago > 90 * day) stale += 1
+  }
+  return [
+    { id: 'today', label: 'Seen today', count: today },
+    { id: 'week', label: 'Last 7 days', count: week },
+    { id: 'month', label: 'Last 30 days', count: month },
+    { id: 'quarter', label: 'Last 90 days', count: quarter },
+    { id: 'stale', label: 'Quiet 90+ days', count: stale },
+    { id: 'never', label: 'Never seen', count: never },
+  ]
+}
+
+export function orgSizeBuckets(
+  organisations: { id: string }[],
+  users: { organizationId: string }[]
+): DirectoryLane[] {
+  const counts = new Map<string, number>()
+  for (const user of users) {
+    const id = (user.organizationId || '').trim()
+    if (!id || id === 'platform-owner') continue
+    counts.set(id, (counts.get(id) || 0) + 1)
+  }
+  const ids = organisations.length ? organisations.map((org) => org.id) : [...counts.keys()]
+  const buckets = { one: 0, small: 0, medium: 0, large: 0 }
+  for (const id of new Set(ids)) {
+    if (!id || id === 'platform-owner') continue
+    const n = counts.get(id) || 0
+    if (n <= 1) buckets.one += 1
+    else if (n <= 5) buckets.small += 1
+    else if (n <= 20) buckets.medium += 1
+    else buckets.large += 1
+  }
+  return [
+    { id: '1', label: '1 user', count: buckets.one },
+    { id: '2-5', label: '2–5 users', count: buckets.small },
+    { id: '6-20', label: '6–20 users', count: buckets.medium },
+    { id: '21+', label: '21+ users', count: buckets.large },
+  ]
+}
+
+export function rosterMix(users: { isActive?: boolean; passwordSet?: boolean }[]): DirectoryLane[] {
+  let active = 0
+  let inactive = 0
+  let pending = 0
+  for (const user of users) {
+    if (!user.passwordSet) pending += 1
+    else if (user.isActive === false) inactive += 1
+    else active += 1
+  }
+  return [
+    { id: 'active', label: 'Active', count: active },
+    { id: 'inactive', label: 'Inactive', count: inactive },
+    { id: 'pending', label: 'Pending', count: pending },
+  ].filter((row) => row.count > 0)
+}
+
+export function ideaPipeline(ideas: { productDecision?: string; hidden?: boolean; mergedIntoId?: string }[]): DirectoryLane[] {
+  const open = ideas.filter((row) => !row.hidden && !row.mergedIntoId)
+  const counts: Record<string, number> = { none: 0, investigate: 0, build: 0, in_progress: 0, released: 0, decline: 0 }
+  for (const idea of open) {
+    const decision = idea.productDecision && idea.productDecision in counts ? idea.productDecision : 'none'
+    counts[decision] += 1
+  }
+  return [
+    { id: 'none', label: 'Awaiting review', count: counts.none },
+    { id: 'investigate', label: 'Investigate', count: counts.investigate },
+    { id: 'build', label: 'Build', count: counts.build },
+    { id: 'in_progress', label: 'In progress', count: counts.in_progress },
+    { id: 'released', label: 'Released', count: counts.released },
+    { id: 'decline', label: 'Declined', count: counts.decline },
+  ]
 }

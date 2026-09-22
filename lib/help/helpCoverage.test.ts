@@ -22,7 +22,7 @@ test('Help does not mention Firebase sync', () => {
   assert.equal(/firebase sync/i.test(source), false)
 })
 
-test('Help treats Ideas as a shared board and does not advertise a company Developer dashboard', () => {
+test('Help treats Feedback as a shared board and does not advertise a company Developer dashboard', () => {
   const source = readFileSync(new URL('../../components/help/HelpSupportScreen.tsx', import.meta.url), 'utf8')
   assert.equal(/shared board/i.test(source), true)
   assert.equal(/href: '\/dashboard\/developer'/.test(source), false)
