@@ -104,3 +104,27 @@ export function isPermissionDenied(error: unknown): boolean {
   const code = error && typeof error === 'object' && 'code' in error ? String((error as { code: unknown }).code) : ''
   return /permission|insufficient/i.test(message) || code === 'permission-denied'
 }
+
+export function ownerPersonName(user: { firstName?: string; surname?: string; email?: string }): string {
+  return `${user.firstName || ''} ${user.surname || ''}`.trim() || user.email || 'Unknown user'
+}
+
+export function ownerRoleLabel(role?: string): string {
+  const value = (role || '').toLowerCase()
+  if (value === 'admin') return 'Admin'
+  if (value === 'manager') return 'Manager'
+  if (value === 'operative') return 'Operative'
+  if (value === 'viewer') return 'Viewer'
+  return role?.trim() || 'User'
+}
+
+export function matchesOwnerSearch(parts: Array<string | undefined>, query: string): boolean {
+  const needle = query.trim().toLowerCase()
+  if (!needle) return true
+  return parts.some((part) => (part || '').toLowerCase().includes(needle))
+}
+
+export function formatOwnerWhen(date?: Date, empty = 'No activity recorded yet'): string {
+  if (!date || date.getTime() === 0) return empty
+  return date.toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })
+}

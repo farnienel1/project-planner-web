@@ -186,14 +186,16 @@ export const useAnalyticsStore = create<AnalyticsState>((set, get) => ({
   error: null,
   warning: null,
 
-  load: async (since) => {
+  load: async (_since) => {
     if (!db) return
     const current = get()
     if (current.loading) return
     if (current.loadedAt && Date.now() - current.loadedAt.getTime() < 15_000 && current.users.length + current.organisations.length > 0) {
       return
     }
-    const from = since && since.getTime() > 0 ? since : new Date('2018-01-01T00:00:00.000Z')
+    // Always load the live directory from the beginning of recorded time so
+    // switching date presets cannot hide organisations or users.
+    const from = new Date('2018-01-01T00:00:00.000Z')
     set({ loading: true, error: null, warning: null })
     const warnings: string[] = []
     let users: User[] = []
