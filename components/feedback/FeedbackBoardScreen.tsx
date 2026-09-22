@@ -121,22 +121,22 @@ export function FeedbackBoardScreen() {
     }
   }
 
-  if (loading && suggestions.length === 0 && !error) return <LoadingSpinner label="Loading ideas…" />
+  if (loading && suggestions.length === 0 && !error) return <LoadingSpinner label="Loading feedback…" />
 
   return (
     <div className="stack" data-hue="task">
       <Hero
         hue="task"
         eyebrow="Shared across every organisation"
-        title="Vote the most useful idea to the top"
-        subtitle="This board is the same for every company using Project Planner. Suggest an improvement, vote once per idea, and the highest-rated request is featured so the product team can see what matters on site."
+        title="Vote the most useful feedback to the top"
+        subtitle="This board is the same for every company using Project Planner. Suggest an improvement, vote once per request, and the highest-rated feedback is featured so the product team can see what matters on site."
         stats={[
-          { label: 'Ideas on the board', value: suggestions.filter((row) => !row.mergedIntoId).length },
+          { label: 'Feedback on the board', value: suggestions.filter((row) => !row.mergedIntoId).length },
           { label: 'Votes cast', value: votes.length },
         ]}
         actions={
           <button type="button" className="btn sm hbtn solid" onClick={() => { setCompose(true); setSubmitError('') }}>
-            Suggest an idea
+            Add feedback
           </button>
         }
       />
@@ -145,7 +145,7 @@ export function FeedbackBoardScreen() {
       {voteError ? <ErrorBanner message={voteError} /> : null}
       {savedId ? (
         <div className="banner" data-hue="hs">
-          Thanks — your idea is on the shared board.{' '}
+          Thanks — your feedback is on the shared board.{' '}
           <Link href={`/dashboard/ideas/${savedId}`} className="font-semibold underline">
             Open it
           </Link>
@@ -182,7 +182,7 @@ export function FeedbackBoardScreen() {
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search ideas or organisations…"
+          placeholder="Search feedback or organisations…"
           className="pp-in min-w-[220px] flex-1"
         />
         {(['All', ...FEEDBACK_CATEGORIES] as const).map((item) => (
@@ -199,7 +199,7 @@ export function FeedbackBoardScreen() {
 
       {visible.length === 0 ? (
         <EmptyState
-          title="No ideas yet"
+          title="No feedback yet"
           description="Be the first organisation to suggest something, or clear the filters. Everyone on Project Planner will see it."
         />
       ) : (
@@ -260,7 +260,7 @@ export function FeedbackBoardScreen() {
               >
                 Cancel
               </button>
-              <p className="text-sm font-bold">Suggest an idea</p>
+              <p className="text-sm font-bold">Add feedback</p>
               <span className="w-12" />
             </div>
             <p className="text-sm text-[var(--ink2)]">
@@ -296,7 +296,7 @@ export function FeedbackBoardScreen() {
             </div>
             {similar.length > 0 ? (
               <div className="mt-4">
-                <p className="eyebrow">Similar ideas already on the board</p>
+                <p className="eyebrow">Similar feedback already on the board</p>
                 <div className="mt-2 space-y-2">
                   {similar.map((row) => (
                     <Link
@@ -319,7 +319,7 @@ export function FeedbackBoardScreen() {
               disabled={!title.trim() || saving}
               onClick={() => void submit()}
             >
-              {saving ? 'Saving…' : 'Submit idea'}
+              {saving ? 'Saving…' : 'Submit feedback'}
             </button>
           </div>
         </div>
@@ -346,7 +346,7 @@ function VoteControl({
       className={`flex flex-col items-center rounded-xl px-2 py-2 text-sm font-extrabold ${
         large ? 'min-w-[64px] py-3 text-lg' : 'min-w-[56px]'
       } ${voted ? 'bg-[var(--task-t)] text-[var(--task)]' : 'bg-[var(--soft)] text-[var(--ink2)]'}`}
-      aria-label={voted ? 'Remove vote' : 'Vote for this idea'}
+      aria-label={voted ? 'Remove vote' : 'Vote for this feedback'}
     >
       <ChevronUpIcon className={large ? 'h-5 w-5' : 'h-4 w-4'} />
       {row.voteCount}

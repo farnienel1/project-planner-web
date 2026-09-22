@@ -259,7 +259,19 @@ export async function loadCanonicalIdeaBoard(db: Firestore): Promise<IdeaBoardSn
   }
 }
 
-export async function loadUserDocumentIdeaBoard(db: Firestore): Promise<IdeaBoardSnapshot> {
+export function mergeCanonicalAndUserBoard(
+  canonical: IdeaBoardSnapshot | null,
+  userBoard: IdeaBoardSnapshot,
+  overlays: Record<string, IdeaAdminOverlay>
+): IdeaBoardSnapshot {
+  const merged = canonical ? mergeIdeaBoards(canonical, userBoard) : userBoard
+  return applyOverlaysFromDocs(merged, overlays)
+}
+
+export async function loadUserDocumentIdeaBoard(db: Firestore): Promise<{
+  board: IdeaBoardSnapshot
+  overlays: Record<string, IdeaAdminOverlay>
+}> {
   let docs: QueryDocumentSnapshot<DocumentData>[] = []
   try {
     const flagged = await getDocs(query(collection(db, 'users'), where(BOARD_FLAG, '==', true)))
@@ -271,7 +283,7 @@ export async function loadUserDocumentIdeaBoard(db: Firestore): Promise<IdeaBoar
     try {
       docs = await fetchPaged(db, 'users')
     } catch (error) {
-      if (isPermissionDenied(error)) return emptyBoard()
+      if (isPermissionDenied(error)) return { board: emptyBoard(), overlays: {} }
       throw error
     }
   }
@@ -285,7 +297,7 @@ export async function loadUserDocumentIdeaBoard(db: Firestore): Promise<IdeaBoar
       overlays[id] = { ...overlays[id], ...parseAdminOverlay(asRecord(value)) }
     }
   }
-  return applyOverlaysFromDocs(board, overlays)
+  return { board: applyOverlaysFromDocs(board, overlays), overlays }
 }
 
 export function emptyBoard(): IdeaBoardSnapshot {
@@ -349,46 +361,72 @@ export async function writeUserComment(db: Firestore, userId: string, comment: F
   })
 }
 
-export async function writeUserAdmin(db: Firestore, ownerUserId: string, suggestionId: string, overlay: IdeaAdminOverlay) {
-  const payload: Record<string, unknown> = {}
-  if (overlay.publicStatus !== undefined) payload.publicStatus = overlay.publicStatus
-  if (overlay.productDecision !== undefined) payload.productDecision = overlay.productDecision
-  if (overlay.category !== undefined) payload.category = overlay.category
-  if (overlay.relatedFeature !== undefined) payload.relatedFeature = overlay.relatedFeature
-  if (overlay.officialResponse !== undefined) payload.officialResponse = overlay.officialResponse
-  if (overlay.pinned !== undefined) payload.pinned = overlay.pinned
-  if (overlay.hidden !== undefined) payload.hidden = overlay.hidden
-  if (overlay.mergedIntoId !== undefined) payload.mergedIntoId = overlay.mergedIntoId
-  if (overlay.reviewedAt) payload.reviewedAt = Timestamp.fromDate(overlay.reviewedAt)
-  if (overlay.reviewedByUserId !== undefined) payload.reviewedByUserId = overlay.reviewedByUserId
-  await patchUserDoc(db, ownerUserId, {
-    [`${BOARD_ADMIN}.${suggestionId}`]: payload,
-  })
+export async function writeUserAdmin(
+  db: Firestore,
+  ownerUserId: string,
+  suggestionId: string,
+  overlay: IdeaAdminOverlay,
+  identity?: Record<string, unknown>
+) {
+  const prefix = `${BOARD_ADMIN}.${suggestionId}`
+  const fields: Record<string, unknown> = {}
+  if (overlay.publicStatus !== undefined) fields[`${prefix}.publicStatus`] = overlay.publicStatus
+  if (overlay.productDecision !== undefined) fields[`${prefix}.productDecision`] = overlay.productDecision
+  if (overlay.category !== undefined) fields[`${prefix}.category`] = overlay.category
+  if (overlay.relatedFeature !== undefined) fields[`${prefix}.relatedFeature`] = overlay.relatedFeature
+  if (overlay.officialResponse !== undefined) fields[`${prefix}.officialResponse`] = overlay.officialResponse
+  if (overlay.pinned !== undefined) fields[`${prefix}.pinned`] = overlay.pinned
+  if (overlay.hidden !== undefined) fields[`${prefix}.hidden`] = overlay.hidden
+  if (overlay.mergedIntoId !== undefined) fields[`${prefix}.mergedIntoId`] = overlay.mergedIntoId
+  if (overlay.reviewedAt) fields[`${prefix}.reviewedAt`] = Timestamp.fromDate(overlay.reviewedAt)
+  if (overlay.reviewedByUserId !== undefined) fields[`${prefix}.reviewedByUserId`] = overlay.reviewedByUserId
+  await patchUserDoc(db, ownerUserId, fields, identity)
 }
 
-export async function writeUserNotes(db: Firestore, ownerUserId: string, suggestionId: string, notes: string) {
-  await patchUserDoc(db, ownerUserId, {
-    [`${BOARD_NOTES}.${suggestionId}`]: {
-      notes,
-      updatedAt: Timestamp.now(),
-      updatedByUserId: ownerUserId,
+export async function writeUserNotes(
+  db: Firestore,
+  ownerUserId: string,
+  suggestionId: string,
+  notes: string,
+  identity?: Record<string, unknown>
+) {
+  await patchUserDoc(
+    db,
+    ownerUserId,
+    {
+      [`${BOARD_NOTES}.${suggestionId}`]: {
+        notes,
+        updatedAt: Timestamp.now(),
+        updatedByUserId: ownerUserId,
+      },
     },
-  })
+    identity
+  )
 }
 
-export async function writeUserHistory(db: Firestore, ownerUserId: string, entry: FeedbackHistoryEntry) {
-  await patchUserDoc(db, ownerUserId, {
-    [`${BOARD_HISTORY}.${entry.id}`]: {
-      suggestionId: entry.suggestionId,
-      actorUserId: entry.actorUserId,
-      actorName: entry.actorName,
-      field: entry.field,
-      fromValue: entry.fromValue,
-      toValue: entry.toValue,
-      reason: entry.reason || '',
-      createdAt: Timestamp.fromDate(entry.createdAt),
+export async function writeUserHistory(
+  db: Firestore,
+  ownerUserId: string,
+  entry: FeedbackHistoryEntry,
+  identity?: Record<string, unknown>
+) {
+  await patchUserDoc(
+    db,
+    ownerUserId,
+    {
+      [`${BOARD_HISTORY}.${entry.id}`]: {
+        suggestionId: entry.suggestionId,
+        actorUserId: entry.actorUserId,
+        actorName: entry.actorName,
+        field: entry.field,
+        fromValue: entry.fromValue,
+        toValue: entry.toValue,
+        reason: entry.reason || '',
+        createdAt: Timestamp.fromDate(entry.createdAt),
+      },
     },
-  })
+    identity
+  )
 }
 
 export async function ignoreIfDenied(work: () => Promise<void>): Promise<boolean> {
