@@ -24,7 +24,7 @@ test('parseSuggestion keeps the submitting organisation name', () => {
   assert.equal(row.organizationId, 'org-1')
 })
 
-test('feedback write errors tell people to publish firestore.rules', () => {
-  assert.match(feedbackWriteError(new Error('Missing or insufficient permissions.')), /firestore\.rules/)
+test('feedback write errors stay actionable without asking people to publish rules', () => {
+  assert.match(feedbackWriteError(new Error('Missing or insufficient permissions.')), /signed in/i)
   assert.equal(feedbackWriteError(new Error('offline')), 'offline')
 })

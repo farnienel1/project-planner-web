@@ -121,7 +121,7 @@ export function FeedbackBoardScreen() {
     }
   }
 
-  if (loading && suggestions.length === 0) return <LoadingSpinner label="Loading ideas…" />
+  if (loading && suggestions.length === 0 && !error) return <LoadingSpinner label="Loading ideas…" />
 
   return (
     <div className="stack" data-hue="task">

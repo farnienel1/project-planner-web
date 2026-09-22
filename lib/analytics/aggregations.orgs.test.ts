@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { directoryActiveUsers, directoryDateChart, lastSeenRetention, organisationActivityRows, roleMix } from './aggregations.ts'
+import { activityLanes, directoryActiveUsers, directoryDateChart, lastSeenRetention, organisationActivityRows, orgSizeBuckets, roleMix } from './aggregations.ts'
 import type { ProductEvent } from './events.ts'
 import { resolveDateRange } from './dateRange.ts'
 
@@ -125,5 +125,39 @@ test('last-seen retention uses account records, not product events', () => {
   assert.equal(day30?.size, 5)
   assert.equal(day30?.retained, 4)
   assert.equal(roleMix([{ role: 'admin', permissions: { adminAccess: true } }, { role: 'operative', permissions: { operativeMode: true } }])[0].count, 1)
+})
+
+test('activity lanes and org size buckets use live account records', () => {
+  const now = new Date('2026-09-22T12:00:00Z')
+  const lanes = activityLanes(
+    [
+      { lastSeenAt: new Date('2026-09-22T10:00:00Z') },
+      { lastSeenAt: new Date('2026-09-18T10:00:00Z') },
+      { lastSeenAt: new Date('2026-06-01T10:00:00Z') },
+      {},
+    ],
+    now
+  )
+  assert.equal(lanes.find((row) => row.id === 'today')?.count, 1)
+  assert.equal(lanes.find((row) => row.id === 'week')?.count, 2)
+  assert.equal(lanes.find((row) => row.id === 'never')?.count, 1)
+  assert.equal(lanes.find((row) => row.id === 'stale')?.count, 1)
+  const sizes = orgSizeBuckets(
+    [{ id: 'A' }, { id: 'B' }, { id: 'C' }],
+    [
+      { organizationId: 'A' },
+      { organizationId: 'A' },
+      { organizationId: 'B' },
+      { organizationId: 'C' },
+      { organizationId: 'C' },
+      { organizationId: 'C' },
+      { organizationId: 'C' },
+      { organizationId: 'C' },
+      { organizationId: 'C' },
+    ]
+  )
+  assert.equal(sizes.find((row) => row.id === '1')?.count, 1)
+  assert.equal(sizes.find((row) => row.id === '2-5')?.count, 1)
+  assert.equal(sizes.find((row) => row.id === '6-20')?.count, 1)
 })
 
