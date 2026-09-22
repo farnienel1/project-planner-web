@@ -1289,6 +1289,11 @@ html {
   align-self: stretch;
 }
 .login .form-side { display: grid; place-items: center; padding: 40px; background: var(--bg); }
+.login .login-form-home { display: none; }
+.login a.login-form-home:hover,
+.login .hero.art a:hover {
+  opacity: 0.92;
+}
 
 .map {
   position: relative;
@@ -1358,6 +1363,7 @@ html {
   .login .hero.art {
     display: none;
   }
+  .login .login-form-home { display: flex; }
 }
 
 /* Leftover Tailwind slate/white from pre-v2 screens — keep copy readable in dark mode. */

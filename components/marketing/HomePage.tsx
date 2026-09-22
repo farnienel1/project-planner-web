@@ -27,7 +27,7 @@ export function HomePage() {
                 Built by an MEP contractor, for subcontractors
               </span>
               <h1>
-                Every job. Every operative. <em>Every hour.</em>
+                <span>Every job. Every operative.</span> <em>Every hour.</em>
               </h1>
               <p className="lead">
                 Project Planner runs your labour, timesheets, materials and H&S in one place, so you stop chasing
@@ -53,7 +53,7 @@ export function HomePage() {
                 </span>
                 <span>
                   <MktIcon name="check" size={18} />
-                  UK hours, overtime &amp; bank holidays built in
+                  Annual Leave, Overtime &amp; Bank Holidays Built In.
                 </span>
               </div>
             </div>

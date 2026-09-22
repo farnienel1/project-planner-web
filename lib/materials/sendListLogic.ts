@@ -11,12 +11,15 @@ export type OneOffRecipient = {
   id: string
   name: string
   email: string
+  phone?: string
 }
 
 export type SendListContact = {
   id?: string
   name: string
   email: string
+  phone?: string
+  wholesalerId?: string
   wholesalerName?: string
 }
 
@@ -96,19 +99,21 @@ export function resendSubheadline(requestType: MaterialSendRequestType): string 
   return 'Choose which previously sent items to include in this order.'
 }
 
-export function parseOneOffRecipient(name: string, email: string): OneOffRecipient | null {
+export function parseOneOffRecipient(name: string, email: string, phone?: string): OneOffRecipient | null {
   const trimmedName = name.trim()
   const trimmedEmail = email.trim()
   if (!trimmedName || !trimmedEmail.includes('@')) return null
+  const trimmedPhone = (phone || '').trim()
   return {
     id: `oneoff-${trimmedEmail.toLowerCase()}`,
     name: trimmedName,
     email: trimmedEmail,
+    ...(trimmedPhone ? { phone: trimmedPhone } : {}),
   }
 }
 
 export function buildRecipientSnapshots(
-  wholesalers: Pick<Wholesaler, 'name' | 'contacts'>[],
+  wholesalers: Pick<Wholesaler, 'id' | 'name' | 'contacts'>[],
   selectedContactIds: Set<string> | string[],
   oneOffRecipients: OneOffRecipient[]
 ): SendListContact[] {
@@ -121,6 +126,8 @@ export function buildRecipientSnapshots(
         id: contact.id,
         name: contact.name,
         email: contact.email,
+        phone: contact.phone,
+        wholesalerId: wholesaler.id,
         wholesalerName: wholesaler.name,
       })
     }
@@ -130,6 +137,7 @@ export function buildRecipientSnapshots(
       id: recipient.id,
       name: recipient.name,
       email: recipient.email,
+      phone: recipient.phone,
     })
   }
   return contacts
