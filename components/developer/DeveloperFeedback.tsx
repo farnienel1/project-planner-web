@@ -50,10 +50,10 @@ export function DeveloperFeedbackScreen() {
     }
   }, [suggestions, votes, filter])
 
-  if (loading && suggestions.length === 0) return <LoadingSpinner />
+  if (loading && suggestions.length === 0 && !error) return <LoadingSpinner />
 
   return (
-    <DeveloperShell title="Feedback">
+    <DeveloperShell title="Ideas">
       {error ? <ErrorBanner message={error} /> : null}
       <div className="flex flex-wrap gap-2">
         {(
@@ -101,7 +101,7 @@ export function DeveloperFeedbackScreen() {
 }
 
 export function DeveloperRoadmapScreen() {
-  const { suggestions, loading, loadBoard, updateAdmin } = useFeedbackStore()
+  const { suggestions, loading, error, loadBoard, updateAdmin } = useFeedbackStore()
   const { user } = useAuthStore()
 
   useEffect(() => {
@@ -115,10 +115,11 @@ export function DeveloperRoadmapScreen() {
     { id: 'released', label: 'Released' },
   ]
 
-  if (loading && suggestions.length === 0) return <LoadingSpinner />
+  if (loading && suggestions.length === 0 && !error) return <LoadingSpinner />
 
   return (
     <DeveloperShell title="Roadmap">
+      {error ? <ErrorBanner message={error} /> : null}
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         {columns.map((column) => {
           const cards = suggestions.filter((row) => !row.hidden && !row.mergedIntoId && row.productDecision === column.id)

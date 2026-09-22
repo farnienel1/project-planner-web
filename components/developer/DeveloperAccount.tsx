@@ -1,32 +1,38 @@
 'use client'
 
-import { Suspense, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { useAuthStore } from '@/lib/stores/authStore'
-import { DeveloperShell } from '@/components/developer/DeveloperShell'
+import { useAnalyticsStore } from '@/lib/analytics/analyticsStore'
+import { DeveloperShell, DeveloperStatus, MetricCard } from '@/components/developer/DeveloperShell'
 import { PLATFORM_OWNER_EMAIL } from '@/lib/platform/owner'
 
 function AccountForm() {
   const search = useSearchParams()
   const first = search.get('first') === '1'
   const { changePassword, user } = useAuthStore()
+  const { organisations, users, loading, error, warning, load, refresh } = useAnalyticsStore()
   const [currentPassword, setCurrentPassword] = useState('')
   const [nextPassword, setNextPassword] = useState('')
   const [confirm, setConfirm] = useState('')
-  const [error, setError] = useState('')
+  const [formError, setFormError] = useState('')
   const [saved, setSaved] = useState(false)
   const [saving, setSaving] = useState(false)
 
+  useEffect(() => {
+    void load()
+  }, [load])
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
-    setError('')
+    setFormError('')
     setSaved(false)
     if (nextPassword.length < 10) {
-      setError('Use at least 10 characters.')
+      setFormError('Use at least 10 characters.')
       return
     }
     if (nextPassword !== confirm) {
-      setError('New passwords do not match.')
+      setFormError('New passwords do not match.')
       return
     }
     try {
@@ -37,19 +43,31 @@ function AccountForm() {
       setConfirm('')
       setSaved(true)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not change password.')
+      setFormError(err instanceof Error ? err.message : 'Could not change password.')
     } finally {
       setSaving(false)
     }
   }
 
   return (
-    <DeveloperShell title="Owner account">
+    <DeveloperShell
+      title="Account"
+      actions={
+        <button type="button" className="btn sm ghost" onClick={() => void refresh()} disabled={loading}>
+          {loading ? 'Refreshing…' : 'Refresh'}
+        </button>
+      }
+    >
       {first ? (
         <p className="banner" data-hue="warn">
           First login complete. Change the password now so the temporary or newly created one is not kept.
         </p>
       ) : null}
+      <DeveloperStatus error={error} warning={warning} loading={loading && users.length > 0} />
+      <div className="grid gap-3 sm:grid-cols-2">
+        <MetricCard label="Organisations" value={organisations.length} href="/developer/organisations" />
+        <MetricCard label="Registered users" value={users.length} href="/developer/users" />
+      </div>
       <section className="card pad">
         <p className="eyebrow">Signed in as</p>
         <p className="mt-1 text-lg font-extrabold">{user?.email || PLATFORM_OWNER_EMAIL}</p>
@@ -60,9 +78,9 @@ function AccountForm() {
       </section>
       <form className="card pad space-y-3" onSubmit={(e) => void submit(e)}>
         <h2 className="h2">Change password</h2>
-        {error ? (
+        {formError ? (
           <p className="banner" data-hue="red">
-            {error}
+            {formError}
           </p>
         ) : null}
         {saved ? (

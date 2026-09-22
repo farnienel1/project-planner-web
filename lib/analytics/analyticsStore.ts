@@ -1,21 +1,34 @@
 'use client'
 
 import { create } from 'zustand'
-import { collection, getDocs, query, Timestamp, where } from 'firebase/firestore'
+import {
+  collection,
+  doc,
+  documentId,
+  getDoc,
+  getDocs,
+  limit,
+  orderBy,
+  query,
+  startAfter,
+  Timestamp,
+  where,
+  type DocumentData,
+  type QueryDocumentSnapshot,
+} from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
 import { parseFirestoreDate } from '@/lib/firebase/firestoreUtils'
 import type { ProductEvent, ProductEventName, ProductSession } from '@/lib/analytics/events'
+import type { PlatformOrganisation } from '@/lib/analytics/analyticsTypes'
+import {
+  isPermissionDenied,
+  mergeOrganisationsFromUsers,
+  parseOwnerConsoleOrganisation,
+  parseOwnerConsoleUser,
+} from '@/lib/analytics/ownerDirectory'
 import type { User } from '@/types'
-import { parseAppUserDocument } from '@/lib/ios-parity/converters'
-import { isPlatformOwnerSentinelOrg } from '@/lib/platform/owner'
 
-export type PlatformOrganisation = {
-  id: string
-  name: string
-  memberCount: number
-  createdAt?: Date
-  updatedAt?: Date
-}
+export type { PlatformOrganisation } from '@/lib/analytics/analyticsTypes'
 
 type AnalyticsState = {
   events: ProductEvent[]
@@ -24,9 +37,13 @@ type AnalyticsState = {
   organisations: PlatformOrganisation[]
   loading: boolean
   error: string | null
+  warning: string | null
   loadedAt?: Date
-  load: (since: Date) => Promise<void>
+  load: (since?: Date) => Promise<void>
+  refresh: () => Promise<void>
 }
+
+const PAGE = 400
 
 function parseEvent(id: string, data: Record<string, unknown>): ProductEvent | null {
   const eventName = data.eventName
@@ -63,64 +80,183 @@ function parseSession(id: string, data: Record<string, unknown>): ProductSession
   }
 }
 
-function parseOrganisation(id: string, data: Record<string, unknown>): PlatformOrganisation | null {
-  if (isPlatformOwnerSentinelOrg(id)) return null
-  const members = data.members && typeof data.members === 'object' ? (data.members as Record<string, unknown>) : {}
-  return {
-    id,
-    name: typeof data.name === 'string' && data.name.trim() ? data.name.trim() : 'Unnamed organisation',
-    memberCount: Object.keys(members).length,
-    createdAt: parseFirestoreDate(data.createdAt),
-    updatedAt: parseFirestoreDate(data.updatedAt),
+async function fetchAllDocs(collectionName: string): Promise<QueryDocumentSnapshot<DocumentData>[]> {
+  if (!db) return []
+  const out: QueryDocumentSnapshot<DocumentData>[] = []
+  let cursor: QueryDocumentSnapshot<DocumentData> | undefined
+  for (;;) {
+    const page = cursor
+      ? query(collection(db, collectionName), orderBy(documentId()), startAfter(cursor), limit(PAGE))
+      : query(collection(db, collectionName), orderBy(documentId()), limit(PAGE))
+    const snap = await getDocs(page)
+    out.push(...snap.docs)
+    if (snap.size < PAGE) break
+    cursor = snap.docs[snap.docs.length - 1]
+  }
+  return out
+}
+
+async function loadUsers(): Promise<User[]> {
+  const docs = await fetchAllDocs('users')
+  const users: User[] = []
+  for (const entry of docs) {
+    const parsed = parseOwnerConsoleUser(entry.id, entry.data() as Record<string, unknown>)
+    if (parsed) users.push(parsed)
+  }
+  return users
+}
+
+async function loadOrganisations(userOrgIds: string[]): Promise<PlatformOrganisation[]> {
+  if (!db) return []
+  try {
+    const docs = await fetchAllDocs('organizations')
+    return docs
+      .map((entry) => parseOwnerConsoleOrganisation(entry.id, entry.data() as Record<string, unknown>))
+      .filter((row): row is PlatformOrganisation => Boolean(row))
+  } catch (error) {
+    if (!isPermissionDenied(error)) throw error
+    const recovered: PlatformOrganisation[] = []
+    const unique = [...new Set(userOrgIds.filter(Boolean))]
+    await Promise.all(
+      unique.map(async (id) => {
+        if (!db) return
+        try {
+          const snap = await getDoc(doc(db, 'organizations', id))
+          if (!snap.exists()) return
+          const parsed = parseOwnerConsoleOrganisation(snap.id, snap.data() as Record<string, unknown>)
+          if (parsed) recovered.push(parsed)
+        } catch {
+          /* keep the user-derived row */
+        }
+      })
+    )
+    return recovered
+  }
+}
+
+async function loadEvents(since: Date): Promise<ProductEvent[]> {
+  if (!db) return []
+  const stamp = Timestamp.fromDate(since)
+  try {
+    const snap = await getDocs(query(collection(db, 'productEvents'), where('createdAt', '>=', stamp)))
+    return snap.docs
+      .map((entry) => parseEvent(entry.id, entry.data() as Record<string, unknown>))
+      .filter((row): row is ProductEvent => Boolean(row))
+  } catch (error) {
+    if (isPermissionDenied(error)) throw error
+    const docs = await fetchAllDocs('productEvents')
+    return docs
+      .map((entry) => parseEvent(entry.id, entry.data() as Record<string, unknown>))
+      .filter((row): row is ProductEvent => Boolean(row))
+      .filter((row) => row.createdAt.getTime() >= since.getTime())
+  }
+}
+
+async function loadSessions(since: Date): Promise<ProductSession[]> {
+  if (!db) return []
+  const stamp = Timestamp.fromDate(since)
+  try {
+    const snap = await getDocs(query(collection(db, 'productSessions'), where('startedAt', '>=', stamp)))
+    return snap.docs
+      .map((entry) => parseSession(entry.id, entry.data() as Record<string, unknown>))
+      .filter((row): row is ProductSession => Boolean(row))
+  } catch (error) {
+    if (isPermissionDenied(error)) throw error
+    const docs = await fetchAllDocs('productSessions')
+    return docs
+      .map((entry) => parseSession(entry.id, entry.data() as Record<string, unknown>))
+      .filter((row): row is ProductSession => Boolean(row))
+      .filter((row) => row.startedAt.getTime() >= since.getTime())
   }
 }
 
 function permissionMessage(error: unknown): string {
-  const message = error instanceof Error ? error.message : ''
-  if (/permission|insufficient/i.test(message)) {
+  if (isPermissionDenied(error)) {
     return 'Missing or insufficient permissions. Publish the latest firestore.rules so the owner console can read every organisation, user, idea and product event.'
   }
-  return message || 'Could not load analytics'
+  return error instanceof Error ? error.message : 'Could not load analytics'
 }
 
-export const useAnalyticsStore = create<AnalyticsState>((set) => ({
+export const useAnalyticsStore = create<AnalyticsState>((set, get) => ({
   events: [],
   sessions: [],
   users: [],
   organisations: [],
   loading: false,
   error: null,
+  warning: null,
 
-  load: async (since) => {
+  load: async (_since) => {
     if (!db) return
-    set({ loading: true, error: null })
-    try {
-      const stamp = Timestamp.fromDate(since)
-      const [eventSnap, sessionSnap, userSnap, orgSnap] = await Promise.all([
-        getDocs(query(collection(db, 'productEvents'), where('createdAt', '>=', stamp))),
-        getDocs(query(collection(db, 'productSessions'), where('startedAt', '>=', stamp))),
-        getDocs(collection(db, 'users')),
-        getDocs(collection(db, 'organizations')),
-      ])
-      const events = eventSnap.docs
-        .map((entry) => parseEvent(entry.id, entry.data() as Record<string, unknown>))
-        .filter((row): row is ProductEvent => Boolean(row))
-      const sessions = sessionSnap.docs
-        .map((entry) => parseSession(entry.id, entry.data() as Record<string, unknown>))
-        .filter((row): row is ProductSession => Boolean(row))
-      const users: User[] = []
-      for (const entry of userSnap.docs) {
-        if (isPlatformOwnerSentinelOrg(String((entry.data() as Record<string, unknown>).organizationId || ''))) continue
-        const parsed = parseAppUserDocument(entry.id, entry.data() as Record<string, unknown>)
-        if (parsed.ok) users.push(parsed.value)
-      }
-      const organisations = orgSnap.docs
-        .map((entry) => parseOrganisation(entry.id, entry.data() as Record<string, unknown>))
-        .filter((row): row is PlatformOrganisation => Boolean(row))
-        .sort((a, b) => a.name.localeCompare(b.name))
-      set({ events, sessions, users, organisations, loading: false, loadedAt: new Date() })
-    } catch (error: unknown) {
-      set({ error: permissionMessage(error), loading: false })
+    const current = get()
+    if (current.loading) return
+    if (current.loadedAt && Date.now() - current.loadedAt.getTime() < 15_000 && current.users.length + current.organisations.length > 0) {
+      return
     }
+    // Always load the live directory from the beginning of recorded time so
+    // switching date presets cannot hide organisations or users.
+    const from = new Date('2018-01-01T00:00:00.000Z')
+    set({ loading: true, error: null, warning: null })
+    const warnings: string[] = []
+    let users: User[] = []
+    let organisations: PlatformOrganisation[] = []
+    let events: ProductEvent[] = []
+    let sessions: ProductSession[] = []
+    let fatal: unknown
+
+    try {
+      users = await loadUsers()
+    } catch (error) {
+      fatal = error
+    }
+
+    try {
+      organisations = mergeOrganisationsFromUsers(await loadOrganisations(users.map((user) => user.organizationId)), users)
+    } catch (error) {
+      organisations = mergeOrganisationsFromUsers([], users)
+      if (!organisations.length && !users.length) fatal = fatal || error
+      else if (isPermissionDenied(error)) {
+        warnings.push('Organisation names need published firestore.rules. User accounts still appear below.')
+      }
+    }
+
+    try {
+      events = await loadEvents(from)
+    } catch (error) {
+      if (isPermissionDenied(error)) {
+        warnings.push('Product events could not be read. Live organisation and user counts still come from account records.')
+      } else {
+        warnings.push(error instanceof Error ? error.message : 'Could not load product events')
+      }
+    }
+
+    try {
+      sessions = await loadSessions(from)
+    } catch (error) {
+      if (!isPermissionDenied(error)) {
+        warnings.push(error instanceof Error ? error.message : 'Could not load sessions')
+      }
+    }
+
+    if (fatal && users.length === 0 && organisations.length === 0) {
+      set({ error: permissionMessage(fatal), loading: false })
+      return
+    }
+
+    set({
+      users,
+      organisations,
+      events,
+      sessions,
+      loading: false,
+      loadedAt: new Date(),
+      error: null,
+      warning: warnings.join(' ') || null,
+    })
+  },
+
+  refresh: async () => {
+    set({ loadedAt: undefined })
+    await get().load()
   },
 }))

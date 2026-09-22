@@ -63,7 +63,7 @@ export function DeveloperFeedbackDetailScreen({ ideaId }: { ideaId: string }) {
   return (
     <div className="space-y-4">
       <Link href="/developer/feedback" className="btn sm ghost">
-        ← Feedback
+        Ideas
       </Link>
       {error ? <ErrorBanner message={error} /> : null}
       <h1 className="text-xl font-extrabold">{suggestion.title}</h1>

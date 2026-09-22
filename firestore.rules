@@ -100,6 +100,7 @@ service cloud.firestore {
 
   function canAccessOrganization(organizationId) {
     return request.auth != null && (
+      isPlatformOwner() ||
       isAdminOrSuperAdmin() ||
       belongsToOrganization(organizationId) ||
       organizationExists(organizationId)
@@ -263,9 +264,14 @@ service cloud.firestore {
 
   // App owner only (Project Planner), never an organisation admin.
   function isPlatformOwner() {
-    return request.auth != null &&
-           request.auth.token.email is string &&
-           request.auth.token.email.lower() == 'info@projectplanner.us';
+    return request.auth != null && (
+      (request.auth.token.email is string &&
+       request.auth.token.email.lower() == 'info@projectplanner.us') ||
+      (exists(/databases/(default)/documents/users/$(request.auth.uid)) &&
+       'email' in get(/databases/(default)/documents/users/$(request.auth.uid)).data &&
+       get(/databases/(default)/documents/users/$(request.auth.uid)).data.email is string &&
+       get(/databases/(default)/documents/users/$(request.auth.uid)).data.email.lower() == 'info@projectplanner.us')
+    );
   }
 
   // Managers with operative-management access may edit limited operative profile fields on users docs.
@@ -724,14 +730,14 @@ service cloud.firestore {
 
     match /productEvents/{eventId} {
       allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
-      allow read: if isPlatformOwner();
+      allow get, list: if isPlatformOwner();
       allow update, delete: if false;
     }
 
     match /productSessions/{sessionId} {
       allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
       allow update: if request.auth != null && resource.data.userId == request.auth.uid;
-      allow read: if isPlatformOwner() || (request.auth != null && resource.data.userId == request.auth.uid);
+      allow get, list: if isPlatformOwner() || (request.auth != null && resource.data.userId == request.auth.uid);
       allow delete: if false;
     }
   }

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { isPlatformOwnerEmail } from '@/lib/platform/owner'
 import { DeveloperAppShell } from '@/components/developer/DeveloperShell'
+import { DeveloperDataBoot } from '@/components/developer/DeveloperDataBoot'
 import { LoadingSpinner } from '@/components/dashboard/PageShell'
 
 export default function DeveloperLayout({ children }: { children: React.ReactNode }) {
@@ -26,5 +27,10 @@ export default function DeveloperLayout({ children }: { children: React.ReactNod
 
   if (loading || !allowed) return <LoadingSpinner label="Checking owner access…" />
 
-  return <DeveloperAppShell>{children}</DeveloperAppShell>
+  return (
+    <DeveloperAppShell>
+      <DeveloperDataBoot />
+      {children}
+    </DeveloperAppShell>
+  )
 }
