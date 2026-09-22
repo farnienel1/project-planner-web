@@ -8,7 +8,7 @@
  * deletes the whole collection and rewrites the in-memory list — an empty load followed
  * by any save wipes templates. Expiry dates live on operative assignment maps, not templates.
  */
-import { collection, deleteDoc, doc, getDocs, setDoc, Timestamp } from 'firebase/firestore'
+import { collection, deleteDoc, doc, getDocs, getDocsFromServer, setDoc, Timestamp } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
 import { newUuid, parseFirestoreDate } from '@/lib/firebase/firestoreUtils'
 import type { Operative, Qualification } from '@/types'
@@ -59,8 +59,14 @@ export function mergeQualificationTemplates(existing: Qualification[], assigned:
   return Array.from(byName.values()).sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }))
 }
 
-export async function loadOrganisationQualifications(organizationId: string): Promise<Qualification[]> {
-  const snapshot = await getDocs(collection(db, 'organizations', organizationId, 'qualifications'))
+export async function loadOrganisationQualifications(
+  organizationId: string,
+  options?: { fromServer?: boolean }
+): Promise<Qualification[]> {
+  const ref = collection(db, 'organizations', organizationId, 'qualifications')
+  const snapshot = options?.fromServer
+    ? await getDocsFromServer(ref).catch(() => getDocs(ref))
+    : await getDocs(ref)
   return snapshot.docs
     .map((entry) => parseQualificationDoc(entry.id, entry.data() as Record<string, unknown>))
     .filter((row): row is Qualification => row !== null)

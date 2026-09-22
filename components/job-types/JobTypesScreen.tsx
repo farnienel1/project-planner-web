@@ -11,9 +11,11 @@ import { useAuthStore } from '@/lib/stores/authStore'
 import { canManageJobTypes } from '@/lib/permissions'
 import { consumeCreateQuery } from '@/lib/navigation/createMenu'
 import { EmptyState, IosFormModal, PageHeader } from '@/components/ios/primitives'
+import { runOrgLoad } from '@/lib/stores/orgLoadCache'
 import {
   loadJobTypes,
   mergeJobTypeCatalogues,
+  peekCachedJobTypes,
   recoverJobTypesFromWork,
   RESTORED_JOB_TYPES,
   saveJobTypes,
@@ -48,10 +50,17 @@ export function JobTypesScreen() {
     if (!organization?.id) return
     let cancelled = false
     const orgId = organization.id
-    setLoading(true)
+    const peek = peekCachedJobTypes(orgId)
+    if (peek?.length) {
+      setJobTypes(peek)
+      setLoading(false)
+    } else {
+      setLoading(true)
+    }
 
     const showList = (names: string[]) => {
-      setJobTypes([...names].sort((a, b) => a.localeCompare(b)))
+      const sorted = [...names].sort((a, b) => a.localeCompare(b))
+      setJobTypes(sorted)
       setLoading(false)
     }
 
@@ -59,11 +68,10 @@ export function JobTypesScreen() {
       .then((stored) => {
         if (cancelled) return
         showList(mergeJobTypeCatalogues(stored, []))
-        return recoverJobTypesFromWork(orgId)
-      })
-      .then((recovered) => {
-        if (cancelled || !recovered) return
-        showList(recovered)
+        return runOrgLoad('jobTypes:recover', orgId, async () => {
+          const recovered = await recoverJobTypesFromWork(orgId)
+          if (!cancelled) showList(recovered)
+        })
       })
       .catch((err: unknown) => {
         if (!cancelled) {
