@@ -24,6 +24,7 @@ import {
   parseCatalogueCsv,
 } from '@/lib/materials/materialCatalogCSV'
 import { EmptyState, IosFormModal, PageHeader } from '@/components/ios/primitives'
+import { MATERIAL_CATEGORY_SUGGESTIONS } from '@/lib/materials/materialCategorySuggestions'
 
 const TYPE_HINTS: Record<MaterialUnit, string> = {
   Number: 'Each / piece',
@@ -491,9 +492,9 @@ function CsvSheet({
 }) {
   const [busy, setBusy] = useState(false)
   const [replacePrompt, setReplacePrompt] = useState(false)
+  const [suggestionsOpen, setSuggestionsOpen] = useState(false)
   const updateInputRef = useRef<HTMLInputElement>(null)
   const replaceInputRef = useRef<HTMLInputElement>(null)
-  const categories = [...new Set(items.map((item) => (item.category || 'Other').trim() || 'Other'))]
   const downloadBtn =
     'mt-2 flex h-11 w-full max-w-[320px] items-center justify-center rounded-xl px-4 text-[14.5px] font-semibold'
 
@@ -541,10 +542,22 @@ function CsvSheet({
         ) : (
           <>
             <section>
+              <button
+                type="button"
+                className={`${downloadBtn} mt-0 border-[1.5px] border-[var(--blue)] bg-white text-[var(--blue)]`}
+                onClick={() => setSuggestionsOpen(true)}
+              >
+                Material Category Suggestions
+              </button>
+              <p className="mt-2 text-[var(--ink3)]">
+                Optional names you can type in the Category column. You can also use your own.
+              </p>
+            </section>
+            <section>
               <p className="text-[11px] font-semibold uppercase text-[var(--ink3)]">Step 1 · Download</p>
               <p className="mt-1 text-[var(--ink3)]">
                 Download your current catalogue, edit it in a spreadsheet, then save the file as .csv (not Excel or
-                Numbers). A category guide is included at the top of the file as a note — it is ignored when you upload.
+                Numbers).
               </p>
               <button
                 type="button"
@@ -557,15 +570,11 @@ function CsvSheet({
               <button
                 type="button"
                 className={`${downloadBtn} border-[1.5px] border-[var(--blue)] bg-white text-[var(--blue)]`}
-                onClick={() =>
-                  downloadTextFile(CATALOGUE_TEMPLATE_FILENAME, exportCatalogueTemplateCsv(categories))
-                }
+                onClick={() => downloadTextFile(CATALOGUE_TEMPLATE_FILENAME, exportCatalogueTemplateCsv())}
               >
                 Download blank template
               </button>
-              <p className="mt-2 text-[var(--ink3)]">
-                Headers plus the category guide only — use this to start a brand new list.
-              </p>
+              <p className="mt-2 text-[var(--ink3)]">Headers only — use this to start a brand new list.</p>
             </section>
             <section>
               <p className="text-[11px] font-semibold uppercase text-[var(--ink3)]">Step 2 · Upload updated catalogue</p>
@@ -616,6 +625,50 @@ function CsvSheet({
           </>
         )}
       </div>
+      {suggestionsOpen ? (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-[rgba(10,20,40,.45)] p-4"
+          onClick={() => setSuggestionsOpen(false)}
+        >
+          <div
+            role="dialog"
+            aria-labelledby="category-suggestions-title"
+            className="flex max-h-[85vh] w-full max-w-[620px] flex-col overflow-hidden rounded-[24px] bg-[var(--card)] shadow-[var(--sh-pop)]"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <header className="px-6 pb-3 pt-[22px]">
+              <h3 id="category-suggestions-title" className="text-xl font-extrabold tracking-tight">
+                Material Category Suggestions
+              </h3>
+            </header>
+            <div className="overflow-y-auto px-6 py-4">
+              <div className="grid gap-5 sm:grid-cols-2">
+                {MATERIAL_CATEGORY_SUGGESTIONS.map((group) => (
+                  <section key={group.section}>
+                    <p className="text-[15px] font-bold">{group.section}:</p>
+                    <ul className="mt-1.5 space-y-0.5">
+                      {group.items.map((name) => (
+                        <li key={`${group.section}-${name}`} className="text-[14px] leading-5 text-[var(--ink2)]">
+                          {name}
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                ))}
+              </div>
+            </div>
+            <div className="border-t border-[var(--line)] px-6 py-4">
+              <button
+                type="button"
+                className="w-full rounded-xl bg-[var(--blue)] py-3 text-[16px] font-semibold text-white"
+                onClick={() => setSuggestionsOpen(false)}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </IosFormModal>
   )
 }
