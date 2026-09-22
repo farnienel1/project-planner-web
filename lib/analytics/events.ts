@@ -51,6 +51,7 @@ export type DateRangePreset =
   | 'last_90'
   | 'this_month'
   | 'last_month'
+  | 'all_time'
   | 'custom'
 
 export const FEATURE_EVENT_GROUPS: { id: string; label: string; events: ProductEventName[] }[] = [

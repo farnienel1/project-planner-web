@@ -1,4 +1,4 @@
-import { dayKeyInZone, LONDON_TIME_ZONE } from '@/lib/orgTime/zoneTime'
+import { dateFromDayKeyInZone, dayKeyInZone, LONDON_TIME_ZONE } from '@/lib/orgTime/zoneTime'
 import { FEATURE_EVENT_GROUPS, type ProductEvent, type ProductEventName, type ProductSession } from '@/lib/analytics/events'
 import type { AnalyticsDateRange } from '@/lib/analytics/dateRange'
 
@@ -48,13 +48,51 @@ export function eventDayCounts(
   timeZone = LONDON_TIME_ZONE
 ): { day: string; value: number }[] {
   const map = new Map<string, number>()
+  const monthly = chartUsesMonths(range)
   for (const event of events) {
     if (!inRange(event.createdAt, range.start, range.end)) continue
     if (eventName && event.eventName !== eventName) continue
-    const key = dayKeyInZone(event.createdAt, timeZone)
+    const key = monthly ? monthKeyInZone(event.createdAt, timeZone) : dayKeyInZone(event.createdAt, timeZone)
     map.set(key, (map.get(key) || 0) + 1)
   }
-  return fillDaySeries(range.start, range.end, map, timeZone)
+  return monthly ? fillMonthSeries(range.start, range.end, map, timeZone) : fillDaySeries(range.start, range.end, map, timeZone)
+}
+
+function chartUsesMonths(range: AnalyticsDateRange): boolean {
+  if (range.preset === 'all_time') return true
+  return Math.round((range.end.getTime() - range.start.getTime()) / 86_400_000) > 92
+}
+
+function monthKeyInZone(date: Date, timeZone: string): string {
+  return dayKeyInZone(date, timeZone).slice(0, 7)
+}
+
+function startOfMonthInZone(date: Date, timeZone: string): Date {
+  const [y, m] = monthKeyInZone(date, timeZone).split('-')
+  return dateFromDayKeyInZone(`${y}-${m}-01`, timeZone)
+}
+
+function addMonthInZone(date: Date, timeZone: string): Date {
+  const [y, m] = monthKeyInZone(date, timeZone).split('-').map(Number)
+  const nextM = m === 12 ? 1 : m + 1
+  const nextY = m === 12 ? y + 1 : y
+  return dateFromDayKeyInZone(`${nextY}-${String(nextM).padStart(2, '0')}-01`, timeZone)
+}
+
+export function fillMonthSeries(
+  start: Date,
+  end: Date,
+  values: Map<string, number>,
+  timeZone = LONDON_TIME_ZONE
+): { day: string; value: number }[] {
+  const out: { day: string; value: number }[] = []
+  let cursor = startOfMonthInZone(start, timeZone)
+  while (cursor.getTime() < end.getTime()) {
+    const key = monthKeyInZone(cursor, timeZone)
+    out.push({ day: key, value: values.get(key) || 0 })
+    cursor = addMonthInZone(cursor, timeZone)
+  }
+  return out
 }
 
 export function uniqueUsersByDay(
@@ -73,6 +111,25 @@ export function uniqueUsersByDay(
   const counts = new Map<string, number>()
   for (const [day, users] of map) counts.set(day, users.size)
   return fillDaySeries(range.start, range.end, counts, timeZone)
+}
+
+export function uniqueUsersChart(
+  events: ProductEvent[],
+  range: AnalyticsDateRange,
+  timeZone = LONDON_TIME_ZONE
+): { day: string; value: number }[] {
+  if (!chartUsesMonths(range)) return uniqueUsersByDay(events, range, timeZone)
+  const map = new Map<string, Set<string>>()
+  for (const event of events) {
+    if (!inRange(event.createdAt, range.start, range.end)) continue
+    const key = monthKeyInZone(event.createdAt, timeZone)
+    const set = map.get(key) || new Set<string>()
+    set.add(event.userId)
+    map.set(key, set)
+  }
+  const counts = new Map<string, number>()
+  for (const [day, users] of map) counts.set(day, users.size)
+  return fillMonthSeries(range.start, range.end, counts, timeZone)
 }
 
 export function featureUsageRows(
@@ -194,6 +251,12 @@ export type OrganisationActivityRow = {
   createdAt?: Date
 }
 
+function laterDate(a?: Date, b?: Date): Date | undefined {
+  if (!a) return b
+  if (!b) return a
+  return a.getTime() >= b.getTime() ? a : b
+}
+
 export function organisationActivityRows(input: {
   organisations: { id: string; name: string; createdAt?: Date }[]
   users: { id: string; organizationId: string; lastSeenAt?: Date }[]
@@ -236,20 +299,26 @@ export function organisationActivityRows(input: {
         return latest
       }, undefined)
       const lastSeen = orgUsers.reduce<Date | undefined>((latest, user) => {
-        if (!user.lastSeenAt) return latest
-        if (!latest || user.lastSeenAt.getTime() > latest.getTime()) return user.lastSeenAt
-        return latest
+        return laterDate(latest, user.lastSeenAt)
       }, lastEvent)
+      const seenInRange = orgUsers.filter((user) => user.lastSeenAt && inRange(user.lastSeenAt, input.range.start, input.range.end))
       return {
         id: org.id,
         name: org.name,
         userCount: orgUsers.length,
-        activeUsers: countUnique(orgEvents.map((event) => event.userId)),
+        activeUsers: Math.max(countUnique(orgEvents.map((event) => event.userId)), seenInRange.length),
         events: orgEvents.length,
         lastActivityAt: lastSeen,
         ideaCount: ideasByOrg.get(org.id) || 0,
         createdAt: org.createdAt,
       }
     })
-    .sort((a, b) => b.activeUsers - a.activeUsers || b.userCount - a.userCount || a.name.localeCompare(b.name))
+    .sort((a, b) => b.userCount - a.userCount || b.activeUsers - a.activeUsers || a.name.localeCompare(b.name))
+}
+
+export function directoryActiveUsers(
+  users: { id: string; lastSeenAt?: Date }[],
+  range: { start: Date; end: Date }
+): number {
+  return users.filter((user) => (user.lastSeenAt ? inRange(user.lastSeenAt, range.start, range.end) : false)).length
 }
