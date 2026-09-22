@@ -38,6 +38,7 @@ import {
 } from '@/lib/auth/webIdleSession'
 import { isPlatformOwnerEmail, isPlatformOwnerSentinelOrg, PLATFORM_OWNER_EMAIL } from '@/lib/platform/owner'
 import { platformOwnerProfilePayload, platformOwnerUser } from '@/lib/platform/ownerProfile'
+import { passwordResetActionSettings } from '@/lib/auth/passwordResetSettings'
 
 interface AuthState {
   user: User | null
@@ -432,7 +433,7 @@ export const useAuthStore = create<AuthState>((set) => {
     resetPassword: async (email: string) => {
       try {
         set({ loading: true, error: null })
-        await sendPasswordResetEmail(getFirebaseAuth(), email)
+        await sendPasswordResetEmail(getFirebaseAuth(), email, passwordResetActionSettings(email))
         set({ loading: false })
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : 'Reset failed'
