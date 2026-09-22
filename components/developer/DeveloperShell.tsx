@@ -7,6 +7,7 @@ import { useAuthStore } from '@/lib/stores/authStore'
 import { AppLogoMark } from '@/components/ui/AppLogoMark'
 import { hasCustomerOrganisation } from '@/lib/platform/owner'
 import { cn } from '@/lib/ui/cn'
+import { ErrorBanner, WarningBanner } from '@/components/dashboard/PageShell'
 
 const LINKS = [
   { href: '/developer', label: 'Overview' },
@@ -78,15 +79,47 @@ export function DeveloperAppShell({ children }: { children: ReactNode }) {
   )
 }
 
-export function DeveloperShell({ title, children, actions }: { title: string; children: ReactNode; actions?: ReactNode }) {
+export function DeveloperShell({
+  title,
+  children,
+  actions,
+  back,
+}: {
+  title: string
+  children: ReactNode
+  actions?: ReactNode
+  back?: { href: string; label: string }
+}) {
   return (
     <div className="space-y-4">
+      {back ? (
+        <Link href={back.href} className="btn sm ghost w-fit">
+          {back.label}
+        </Link>
+      ) : null}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <h1 className="text-xl font-extrabold text-[var(--ink)]">{title}</h1>
         {actions}
       </div>
       {children}
     </div>
+  )
+}
+
+export function DeveloperStatus({
+  error,
+  warning,
+  loading,
+}: {
+  error?: string | null
+  warning?: string | null
+  loading?: boolean
+}) {
+  return (
+    <>
+      {error ? <ErrorBanner message={error} /> : warning ? <WarningBanner message={warning} /> : null}
+      {loading ? <p className="text-xs text-[var(--ink3)]">Refreshing live directory…</p> : null}
+    </>
   )
 }
 

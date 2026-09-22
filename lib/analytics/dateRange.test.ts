@@ -1,8 +1,22 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { resolveDateRange, percentChange } from './dateRange.ts'
-import { dailyActiveUsers, relatedFeatureUsage, signupFunnel } from './aggregations.ts'
+import { dailyActiveUsers, relatedFeatureUsage, signupFunnel, uniqueUsersChart } from './aggregations.ts'
 import type { ProductEvent } from './events.ts'
+
+test('all_time starts in 2018 and includes today', () => {
+  const range = resolveDateRange('all_time', new Date('2026-09-22T12:00:00.000Z'))
+  assert.equal(range.label, 'All time')
+  assert.equal(range.preset, 'all_time')
+  assert.equal(range.start.getFullYear(), 2018)
+  assert.equal(range.end.getTime() > new Date('2026-09-22T00:00:00.000Z').getTime(), true)
+  const chart = uniqueUsersChart(
+    [{ id: '1', userId: 'a', eventName: 'dashboard_viewed', createdAt: new Date('2026-09-21T10:00:00.000Z') }],
+    range
+  )
+  assert.equal(chart.length < 200, true)
+  assert.equal(chart.some((point) => point.day === '2026-09' && point.value === 1), true)
+})
 
 test('last 7 days range is inclusive of today and compares the previous 7', () => {
   const range = resolveDateRange('last_7', new Date('2026-09-22T12:00:00.000Z'))

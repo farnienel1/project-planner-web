@@ -1,7 +1,10 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  isPermissionDenied,
+  matchesOwnerSearch,
   mergeOrganisationsFromUsers,
+  ownerPersonName,
   parseOwnerConsoleOrganisation,
   parseOwnerConsoleUser,
   readOrganizationId,
@@ -42,4 +45,13 @@ test('mergeOrganisationsFromUsers recovers tenants that only exist on user recor
 test('parseOwnerConsoleOrganisation skips the owner sentinel', () => {
   assert.equal(parseOwnerConsoleOrganisation('platform-owner', { name: 'Owner' }), null)
   assert.equal(parseOwnerConsoleOrganisation('Z', { name: 'Zed Ltd', members: { a: 'admin', b: 'user' } })?.memberCount, 2)
+})
+
+test('permission helper and search helpers', () => {
+  assert.equal(isPermissionDenied(new Error('Missing or insufficient permissions.')), true)
+  assert.equal(isPermissionDenied({ code: 'permission-denied' }), true)
+  assert.equal(isPermissionDenied(new Error('network')), false)
+  assert.equal(matchesOwnerSearch(['Alpha Ltd', 'abc'], 'alpha'), true)
+  assert.equal(matchesOwnerSearch(['Alpha Ltd'], 'zzz'), false)
+  assert.equal(ownerPersonName({ firstName: 'Sam', surname: 'Lee', email: 'sam@x.com' }), 'Sam Lee')
 })
