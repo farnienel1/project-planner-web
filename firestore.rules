@@ -666,5 +666,78 @@ service cloud.firestore {
       allow read: if request.auth != null;
       allow write: if isAdminOrSuperAdmin();
     }
+
+    function isPlatformDeveloper() {
+      return request.auth != null &&
+             exists(/databases/(default)/documents/users/$(request.auth.uid)) &&
+             !('operativeMode' in get(/databases/(default)/documents/users/$(request.auth.uid)).data &&
+               truthyBool(get(/databases/(default)/documents/users/$(request.auth.uid)).data.operativeMode)) &&
+             (
+               ('isSuperAdmin' in get(/databases/(default)/documents/users/$(request.auth.uid)).data &&
+                 truthyBool(get(/databases/(default)/documents/users/$(request.auth.uid)).data.isSuperAdmin)) ||
+               ('developerAccess' in get(/databases/(default)/documents/users/$(request.auth.uid)).data &&
+                 truthyBool(get(/databases/(default)/documents/users/$(request.auth.uid)).data.developerAccess)) ||
+               ('permissions' in get(/databases/(default)/documents/users/$(request.auth.uid)).data &&
+                 get(/databases/(default)/documents/users/$(request.auth.uid)).data.permissions is map &&
+                 'developerAccess' in get(/databases/(default)/documents/users/$(request.auth.uid)).data.permissions &&
+                 truthyBool(get(/databases/(default)/documents/users/$(request.auth.uid)).data.permissions.developerAccess))
+             );
+    }
+
+    match /productFeedback/{suggestionId} {
+      allow read: if request.auth != null && (
+        isPlatformDeveloper() ||
+        !('hidden' in resource.data) ||
+        resource.data.hidden != true
+      );
+      allow create: if request.auth != null &&
+        request.resource.data.authorUserId == request.auth.uid &&
+        (!('hidden' in request.resource.data) || request.resource.data.hidden != true);
+      allow update: if isPlatformDeveloper() || (
+        request.auth != null &&
+        resource.data.authorUserId == request.auth.uid &&
+        request.resource.data.diff(resource.data).changedKeys().hasOnly(['title', 'details', 'category', 'updatedAt', 'voteCount', 'commentCount'])
+      ) || (
+        request.auth != null &&
+        request.resource.data.diff(resource.data).changedKeys().hasOnly(['voteCount', 'commentCount', 'updatedAt'])
+      );
+      allow delete: if isPlatformDeveloper();
+
+      match /private/{docId} {
+        allow read, write: if isPlatformDeveloper();
+      }
+    }
+
+    match /productFeedbackVotes/{voteId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
+      allow delete: if request.auth != null && resource.data.userId == request.auth.uid;
+      allow update: if false;
+    }
+
+    match /productFeedbackComments/{commentId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null && request.resource.data.authorUserId == request.auth.uid;
+      allow update, delete: if isPlatformDeveloper() || (
+        request.auth != null && resource.data.authorUserId == request.auth.uid
+      );
+    }
+
+    match /productFeedbackHistory/{historyId} {
+      allow read, write: if isPlatformDeveloper();
+    }
+
+    match /productEvents/{eventId} {
+      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
+      allow read: if isPlatformDeveloper();
+      allow update, delete: if false;
+    }
+
+    match /productSessions/{sessionId} {
+      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
+      allow update: if request.auth != null && resource.data.userId == request.auth.uid;
+      allow read: if isPlatformDeveloper() || (request.auth != null && resource.data.userId == request.auth.uid);
+      allow delete: if false;
+    }
   }
 }

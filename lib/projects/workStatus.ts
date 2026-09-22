@@ -1,16 +1,20 @@
-import { differenceInDays } from 'date-fns'
 import type { Project } from '@/types'
+import { LONDON_TIME_ZONE } from '@/lib/orgTime/zoneTime'
+import { calendarDayOffset, programmeProgressPercent } from '@/lib/projects/programmeDates'
 
 export type WorkStatus = 'active' | 'upcoming' | 'completed' | 'inactive'
 
 /** Mirrors iOS `Project.status` — past end date is completed, not overdue. */
-export function deriveWorkStatus(project: Pick<Project, 'isLive' | 'startDate' | 'endDate'>): WorkStatus {
+export function deriveWorkStatus(
+  project: Pick<Project, 'isLive' | 'startDate' | 'endDate'>,
+  now = new Date(),
+  timeZone = LONDON_TIME_ZONE
+): WorkStatus {
   if (!project.isLive) return 'inactive'
-  const now = new Date()
-  const start = new Date(project.startDate)
-  const end = new Date(project.endDate)
-  if (now < start) return 'upcoming'
-  if (now > end) return 'completed'
+  const startOffset = calendarDayOffset(project.startDate, now, timeZone)
+  const endOffset = calendarDayOffset(project.endDate, now, timeZone)
+  if (startOffset > 0) return 'upcoming'
+  if (endOffset < 0) return 'completed'
   return 'active'
 }
 
@@ -27,25 +31,30 @@ export function workStatusLabel(status: WorkStatus): string {
   }
 }
 
-/** Timeline progress 0–100. Completed / past end date always returns 100. */
+/** Timeline progress 0–100. Completed / past end date always returns 100. Uses organisation calendar days. */
 export function timelineProgressPercent(
   startDate: Date,
   endDate: Date,
-  status?: WorkStatus
+  status?: WorkStatus,
+  now = new Date(),
+  timeZone = LONDON_TIME_ZONE
 ): number {
   if (status === 'completed' || status === 'inactive') return 100
-  const start = new Date(startDate).getTime()
-  const end = new Date(endDate).getTime()
-  const now = Date.now()
-  if (end <= start) return 0
-  if (now >= end) return 100
-  return Math.round(Math.min(100, Math.max(0, ((now - start) / (end - start)) * 100)))
+  return programmeProgressPercent(startDate, endDate, now, timeZone)
 }
 
-export function daysLeftCaption(endDate: Date, status: WorkStatus): string {
+export function daysLeftCaption(
+  endDate: Date,
+  status: WorkStatus,
+  now = new Date(),
+  timeZone = LONDON_TIME_ZONE
+): string {
   if (status === 'completed') return 'Completed'
   if (status === 'inactive') return 'Inactive'
-  const days = Math.max(0, differenceInDays(new Date(endDate), new Date()))
+  const days = calendarDayOffset(endDate, now, timeZone)
+  if (days < 0) return 'Completed'
+  if (days === 0) return 'Ends today'
+  if (days === 1) return '1 day left'
   return `${days} days left`
 }
 

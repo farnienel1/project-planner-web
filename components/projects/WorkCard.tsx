@@ -13,7 +13,7 @@ import {
   timelineProgressPercent,
   workStatusLabel,
 } from '@/lib/projects/workStatus'
-import { hueForJobType } from '@/lib/ui/sectionHue'
+import type { SectionHue } from '@/lib/ui/sectionHue'
 import { ProgressRing } from '@/components/ui/media'
 import { StatusPill } from '@/components/ui/controls'
 
@@ -49,7 +49,7 @@ export function WorkCard({
   const address = formatSiteAddress(project) || '—'
   const manager = managerName || project.manager?.name || '—'
   const type = jobTypeLabel(project)
-  const hue = href.includes('small-works') ? 'sw' : hueForJobType(type)
+  const hue: SectionHue = href.includes('small-works') ? 'sw' : 'proj'
   const days = daysLeftCaption(project.endDate, status)
 
   if (compact) {

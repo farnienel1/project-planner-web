@@ -21,6 +21,7 @@ import {
   isOperativeMode,
   canManageWorkCatalogue,
   shouldShowTimesheetsDisabledMessage,
+  canAccessDeveloperDashboard,
 } from './permissions.ts'
 
 function perms(partial: Partial<UserPermissions>): UserPermissions {
@@ -160,6 +161,22 @@ test('admins only see User Timesheets when the org has an active operative', () 
   })
   assert.equal(canAccessOperativeTimesheets(admin, false, [operative]), true)
   assert.equal(canAccessOperativeTimesheets(admin, true, []), true)
+})
+
+test('developer dashboard is super-admin or developerAccess, never operatives', () => {
+  const customer = user({ role: UserRole.BASIC, permissions: { manager: true } })
+  const admin = user({ role: UserRole.ADMIN, permissions: { adminAccess: true, manager: true } })
+  const developer = user({ role: UserRole.ADMIN, permissions: { adminAccess: true, developerAccess: true } })
+  const superAdmin = user({ role: UserRole.ADMIN, isSuperAdmin: true, permissions: { adminAccess: true } })
+  const operative = user({
+    role: UserRole.OPERATIVE,
+    permissions: { operativeMode: true, developerAccess: true },
+  })
+  assert.equal(canAccessDeveloperDashboard(customer), false)
+  assert.equal(canAccessDeveloperDashboard(admin), false)
+  assert.equal(canAccessDeveloperDashboard(developer), true)
+  assert.equal(canAccessDeveloperDashboard(superAdmin), true)
+  assert.equal(canAccessDeveloperDashboard(operative), false)
 })
 
 test('PAYE users with remaining My Timesheets do not see the disabled card copy', () => {

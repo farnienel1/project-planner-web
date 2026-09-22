@@ -271,6 +271,7 @@ const TOPICS: Topic[] = [
         body: [
           'Open a job, then Health & safety. Documents and toolbox talks stay with that job so operatives see the pack on site.',
           'Issue a toolbox talk opens the library. Upload a talk opens the library and the custom-talk sheet. Upload RAMS and Add H&S document open those tabs with their upload buttons. You can store more than one RAMS copy.',
+          'Tracking shows the signed percentage for each issued talk. Open a talk to view the TBT, sign it, and download it. Signed talks stay available to read again.',
           'Schedule a toolbox talk with a date, time, talk categories, and recipients grouped by trade. Signing a talk or timesheet: type your name (handwriting in the box) or draw — both save as the same signature image iOS already shows.',
         ],
       },
@@ -437,6 +438,26 @@ const TOPICS: Topic[] = [
         href: '/dashboard/notifications',
         body: [
           'The inbox lists company notifications. When someone signs a timesheet that needs a counter-signature, their line managers get “Timesheet needs sign-off” and can open that sheet. When a line manager signs off, the person is notified and other line managers get a peer update.',
+        ],
+      },
+      {
+        id: 'ideas',
+        title: 'Ideas board',
+        summary: 'Suggest improvements and vote.',
+        href: '/dashboard/ideas',
+        body: [
+          'Open Ideas from Tools. Search existing suggestions first — similar ideas are shown before you submit a new one.',
+          'Vote once per idea. Comments stay on the request. Public status is Under review, Planned, In progress, Released or Not planned.',
+        ],
+      },
+      {
+        id: 'developer',
+        title: 'Developer dashboard',
+        summary: 'Product analytics and feedback admin.',
+        href: '/dashboard/developer',
+        body: [
+          'The Developer area is only for super admins and people given Developer dashboard access. Other signed-in users are redirected away.',
+          'It combines real product usage (sessions, feature events, funnels) with the same Ideas board customers use. Traffic-light decisions, internal notes and merge stay private to developers.',
         ],
       },
     ],
