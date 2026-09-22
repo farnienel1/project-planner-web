@@ -16,7 +16,7 @@ import {
   uniqueUsersChart,
   activityLanes,
 } from '@/lib/analytics/aggregations'
-import type { DateRangePreset } from '@/lib/analytics/events'
+import { METRIC_DEFINITIONS, type DateRangePreset } from '@/lib/analytics/events'
 import { ChangeHint, DeveloperShell, DeveloperStatus, MetricCard, MiniBars } from '@/components/developer/DeveloperShell'
 import { EmptyState, LoadingSpinner } from '@/components/dashboard/PageShell'
 
@@ -139,18 +139,13 @@ export function DeveloperOverviewScreen() {
         <MetricCard
           label="Active in range"
           value={metrics.active}
-          hint={
-            <>
-              <ChangeHint current={metrics.active} previous={metrics.prevActive} />
-              {metrics.hasEvents
-                ? ` · ${metrics.eventActive} from product events`
-                : ' · from last-seen on user records'}
-            </>
-          }
+          definition={METRIC_DEFINITIONS['Active user']}
+          hint={<ChangeHint current={metrics.active} previous={metrics.prevActive} />}
         />
         <MetricCard
           label="New users"
           value={metrics.newUsers}
+          definition={METRIC_DEFINITIONS['New user']}
           hint={<ChangeHint current={metrics.newUsers} previous={metrics.prevNew} />}
         />
         <MetricCard
@@ -170,13 +165,15 @@ export function DeveloperOverviewScreen() {
         <MetricCard
           label="Returning users"
           value={metrics.hasEvents ? metrics.returning : '—'}
-          hint={metrics.hasEvents ? 'People with a login or home view in range' : 'Needs product events'}
+          definition={METRIC_DEFINITIONS['Returning user']}
+          hint={metrics.hasEvents ? undefined : 'Needs product events'}
         />
         <MetricCard label="Awaiting review" value={metrics.awaiting} href="/developer/feedback?filter=review" />
         <MetricCard
           label="Projects / tasks created"
           value={metrics.hasEvents ? `${metrics.projects} / ${metrics.tasks}` : '—'}
-          hint={metrics.hasEvents ? undefined : 'Needs product events'}
+          definition={METRIC_DEFINITIONS['Projects / tasks created']}
+          hint={metrics.hasEvents ? undefined : 'Needs product events — historic jobs are not invented'}
         />
         <MetricCard label="Votes" value={metrics.votes} href="/developer/feedback" />
       </div>

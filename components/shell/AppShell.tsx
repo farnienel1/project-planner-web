@@ -221,6 +221,17 @@ function AppShellInner({ children }: { children: ReactNode }) {
   }, [user?.id, recordLastSeenIfDue])
 
   useEffect(() => {
+    if (!user?.id || !pathname) return
+    void import('@/lib/analytics/trackEvent').then(({ trackEvent }) => {
+      void trackEvent('page_viewed', {
+        userId: user.id,
+        organizationId: organization?.id,
+        metadata: { path: pathname },
+      })
+    })
+  }, [pathname, user?.id, organization?.id])
+
+  useEffect(() => {
     if (!organization?.id || !user?.id) return
     if (
       shouldShowTeamOnboardingPrompt(

@@ -32,7 +32,9 @@ import {
   defaultScheduleDate,
   defaultScheduleTime,
   filterToolboxTalks,
+  groupTalksByCategory,
   nextRamsVersion,
+  recipientsWithIssuer,
   talkTradeFilters,
 } from '@/lib/healthSafety/hsTalks'
 import { isHsRecipient } from '@/lib/healthSafety/hsPeople'
@@ -120,6 +122,9 @@ export function ProjectHealthSafetySection({
   const [showIssue, setShowIssue] = useState(false)
   const [issueTalkId, setIssueTalkId] = useState('')
   const [issueRecipients, setIssueRecipients] = useState<string[]>([])
+  const [signAsIssuer, setSignAsIssuer] = useState(true)
+  const [scheduleSignAsIssuer, setScheduleSignAsIssuer] = useState(true)
+  const [openLibraryCategories, setOpenLibraryCategories] = useState<string[]>(['General'])
   const [showUploadTalk, setShowUploadTalk] = useState(false)
   const [uploadTitle, setUploadTitle] = useState('')
   const [uploadPurpose, setUploadPurpose] = useState('')
@@ -230,6 +235,8 @@ export function ProjectHealthSafetySection({
     [libraryTalks, talkSearch, tradeFilter]
   )
 
+  const libraryGroups = useMemo(() => groupTalksByCategory(filteredTalks), [filteredTalks])
+
   const tradeFilters = useMemo(() => talkTradeFilters(libraryTalks), [libraryTalks])
 
   const operativeUsers = useMemo(() => users.filter(isHsRecipient), [users])
@@ -265,25 +272,31 @@ export function ProjectHealthSafetySection({
   }
 
   const submitIssue = async () => {
-    if (!organization?.id || !user || !issueTalkId || issueRecipients.length === 0) return
+    if (!organization?.id || !user || !issueTalkId) return
+    const recipients = recipientsWithIssuer(issueRecipients, user.id, signAsIssuer)
+    if (recipients.length === 0) return
     await ensureTalkOnProject(issueTalkId)
-    await issueToolboxTalk(organization.id, project.id, isSmallWorks, issueTalkId, issueRecipients, user.id, {
+    await issueToolboxTalk(organization.id, project.id, isSmallWorks, issueTalkId, recipients, user.id, {
       weekCommencing: startOfWeek(new Date(), { weekStartsOn: 1 }),
     })
     setShowIssue(false)
     setIssueTalkId('')
     setIssueRecipients([])
+    setSignAsIssuer(true)
   }
 
   const submitSchedule = async () => {
-    if (!organization?.id || !user || !scheduleTalkId || scheduleRecipients.length === 0 || !schedulePublishAt) return
+    if (!organization?.id || !user || !scheduleTalkId || !schedulePublishAt) return
+    const recipients = recipientsWithIssuer(scheduleRecipients, user.id, scheduleSignAsIssuer)
+    if (recipients.length === 0) return
     await ensureTalkOnProject(scheduleTalkId)
-    await issueToolboxTalk(organization.id, project.id, isSmallWorks, scheduleTalkId, scheduleRecipients, user.id, {
+    await issueToolboxTalk(organization.id, project.id, isSmallWorks, scheduleTalkId, recipients, user.id, {
       weekCommencing: startOfWeek(schedulePublishAt, { weekStartsOn: 1 }),
       publishAt: schedulePublishAt,
     })
     setScheduleTalkId('')
     setScheduleRecipients([])
+    setScheduleSignAsIssuer(true)
     setScheduleDate(defaultScheduleDate())
     setScheduleTime(defaultScheduleTime())
   }
@@ -714,6 +727,9 @@ export function ProjectHealthSafetySection({
         <div className="space-y-3">
           <HsSearchField value={talkSearch} onChange={setTalkSearch} placeholder="Search toolbox talks" />
           <HsChipRow chips={tradeFilters} selected={tradeFilter} onSelect={setTradeFilter} />
+          <p className="px-1 text-[11px] text-slate-500">
+            {libraryLoading ? 'Loading library…' : `${filteredTalks.length} talks · ${libraryTalks.length} in the master library`}
+          </p>
           <button
             type="button"
             onClick={() => setShowUploadTalk(true)}
@@ -727,39 +743,70 @@ export function ProjectHealthSafetySection({
             <EmptyState title="No talks found" description="Search the library or upload a custom talk." />
           ) : (
             <FeatureCard>
-              {filteredTalks.map((talk: HSToolboxTalk) => (
-                <div
-                  key={talk.id}
-                  className="flex items-center justify-between gap-2 border-t border-[#EEF1F5] px-4 py-3 first:border-t-0"
-                >
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold text-slate-900">{talk.title}</p>
-                    <p className="text-xs text-slate-500">
-                      {talk.referenceCode ? `${talk.referenceCode} · ` : ''}
-                      {talk.category} · {talk.source}
-                    </p>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-2">
+              {libraryGroups.map((group) => {
+                const open =
+                  talkSearch.trim().length > 0 ||
+                  tradeFilter === group.category ||
+                  openLibraryCategories.includes(group.category)
+                return (
+                  <div key={group.category} className="border-t border-[#EEF1F5] first:border-t-0">
                     <button
                       type="button"
-                      onClick={() => setViewTalk(talk)}
-                      className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                      onClick={() =>
+                        setOpenLibraryCategories((current) =>
+                          current.includes(group.category)
+                            ? current.filter((item) => item !== group.category)
+                            : [...current, group.category]
+                        )
+                      }
+                      className="flex w-full items-center justify-between px-4 py-2.5 text-left"
                     >
-                      View
+                      <span className="text-xs font-bold uppercase tracking-wide text-slate-500">{group.category}</span>
+                      <span className="text-xs font-semibold text-slate-400">
+                        {group.talks.length}
+                        {open ? ' · hide' : ' · show'}
+                      </span>
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIssueTalkId(talk.id)
-                        setShowIssue(true)
-                      }}
-                      className="rounded-lg bg-[#2f73f0] px-3 py-1.5 text-xs font-bold text-white"
-                    >
-                      Issue
-                    </button>
+                    {open
+                      ? group.talks.map((talk: HSToolboxTalk) => (
+                          <div
+                            key={talk.id}
+                            className="flex items-center justify-between gap-2 border-t border-[#EEF1F5] px-4 py-3"
+                          >
+                            <div className="min-w-0">
+                              <p className="text-sm font-semibold text-slate-900">{talk.title}</p>
+                              <p className="text-xs text-slate-500">
+                                {talk.referenceCode ? `${talk.referenceCode} · ` : ''}
+                                {talk.category}
+                                {talk.trades.length > 0 ? ` · ${talk.trades.join(', ')}` : ' · General'}
+                              </p>
+                            </div>
+                            <div className="flex shrink-0 items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => setViewTalk(talk)}
+                                className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                              >
+                                View
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setIssueTalkId(talk.id)
+                                  setSignAsIssuer(true)
+                                  setShowIssue(true)
+                                }}
+                                className="rounded-lg bg-[#2f73f0] px-3 py-1.5 text-xs font-bold text-white"
+                              >
+                                Issue
+                              </button>
+                            </div>
+                          </div>
+                        ))
+                      : null}
                   </div>
-                </div>
-              ))}
+                )
+              })}
             </FeatureCard>
           )}
         </div>
@@ -935,7 +982,10 @@ export function ProjectHealthSafetySection({
           title="Issue toolbox talk"
           onClose={() => setShowIssue(false)}
           footer={
-            <HsPrimaryButton onClick={() => void submitIssue()} disabled={!issueTalkId || issueRecipients.length === 0}>
+            <HsPrimaryButton
+              onClick={() => void submitIssue()}
+              disabled={!issueTalkId || recipientsWithIssuer(issueRecipients, user?.id || '', signAsIssuer).length === 0}
+            >
               Issue now
             </HsPrimaryButton>
           }
@@ -952,6 +1002,20 @@ export function ProjectHealthSafetySection({
             <HsTalkPicker talks={libraryTalks} selectedId={issueTalkId} onSelect={setIssueTalkId} />
           )}
           <HsSectionLabel>Recipients</HsSectionLabel>
+          <label className="flex items-start gap-3 rounded-2xl border border-[#EEF0F3] bg-white px-4 py-3">
+            <input
+              type="checkbox"
+              className="mt-1 h-4 w-4 accent-[#0fae9e]"
+              checked={signAsIssuer}
+              onChange={(event) => setSignAsIssuer(event.target.checked)}
+            />
+            <span>
+              <span className="block text-sm font-semibold text-slate-900">Sign as issuer</span>
+              <span className="block text-[11px] text-slate-500">
+                Add me as a recipient so I can preview, download the signed talk, and sign it myself.
+              </span>
+            </span>
+          </label>
           <HsRecipientPicker users={operativeUsers} selectedIds={issueRecipients} onChange={setIssueRecipients} />
         </HsSheet>
       )}
@@ -1067,7 +1131,11 @@ export function ProjectHealthSafetySection({
             <HsPrimaryButton
               tone="blue"
               onClick={() => void submitSchedule()}
-              disabled={!scheduleTalkId || scheduleRecipients.length === 0 || !schedulePublishAt}
+              disabled={
+                !scheduleTalkId ||
+                recipientsWithIssuer(scheduleRecipients, user?.id || '', scheduleSignAsIssuer).length === 0 ||
+                !schedulePublishAt
+              }
             >
               {schedulePublishAt && schedulePublishAt.getTime() <= Date.now()
                 ? 'Issue now (time is in the past)'
@@ -1113,6 +1181,20 @@ export function ProjectHealthSafetySection({
             </p>
           )}
           <HsSectionLabel>Recipients</HsSectionLabel>
+          <label className="flex items-start gap-3 rounded-2xl border border-[#EEF0F3] bg-white px-4 py-3">
+            <input
+              type="checkbox"
+              className="mt-1 h-4 w-4 accent-[#0fae9e]"
+              checked={scheduleSignAsIssuer}
+              onChange={(event) => setScheduleSignAsIssuer(event.target.checked)}
+            />
+            <span>
+              <span className="block text-sm font-semibold text-slate-900">Sign as issuer</span>
+              <span className="block text-[11px] text-slate-500">
+                Include me on the sign-off sheet when this talk goes live.
+              </span>
+            </span>
+          </label>
           <HsRecipientPicker users={operativeUsers} selectedIds={scheduleRecipients} onChange={setScheduleRecipients} />
           {scheduledIssues.length > 0 && (
             <div>

@@ -134,15 +134,24 @@ export function MetricCard({
   value,
   hint,
   href,
+  definition,
 }: {
   label: string
   value: string | number
   hint?: ReactNode
   href?: string
+  definition?: string
 }) {
   const inner = (
     <>
-      <p className="eyebrow">{label}</p>
+      <p className="eyebrow flex items-center gap-1">
+        {label}
+        {definition ? (
+          <span title={definition} className="cursor-help text-[11px] font-bold text-[var(--ink3)]">
+            ⓘ
+          </span>
+        ) : null}
+      </p>
       <p className="mt-1 text-2xl font-extrabold">{value}</p>
       {hint ? <p className="mt-1 text-xs text-[var(--ink3)]">{hint}</p> : null}
     </>

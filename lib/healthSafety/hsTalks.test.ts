@@ -6,6 +6,8 @@ import {
   filterToolboxTalks,
   groupTalksByCategory,
   nextRamsVersion,
+  overlayToolboxLibraries,
+  recipientsWithIssuer,
   talkTradeFilters,
 } from './hsTalks.ts'
 
@@ -30,10 +32,14 @@ test('talk filters match library search and trade chips including general talks'
     talk({ id: '2', title: 'Slips and trips', category: 'general', isGeneral: true, trades: [], purpose: 'Housekeeping' }),
     talk({ id: '3', title: 'Pipework', category: 'plumbing', isGeneral: false, trades: ['Plumber'] }),
   ]
-  assert.deepEqual(talkTradeFilters(talks), ['All', 'Electrician', 'Plumber'])
+  assert.deepEqual(talkTradeFilters(talks), ['All', 'General', 'Electrician', 'Plumber'])
   assert.deepEqual(
     filterToolboxTalks(talks, '', 'Electrician').map((row) => row.id),
     ['1', '2']
+  )
+  assert.deepEqual(
+    filterToolboxTalks(talks, '', 'General').map((row) => row.id),
+    ['2']
   )
   assert.deepEqual(
     filterToolboxTalks(talks, 'lock', 'All').map((row) => row.id),
@@ -41,8 +47,30 @@ test('talk filters match library search and trade chips including general talks'
   )
   assert.deepEqual(
     groupTalksByCategory(talks).map((group) => group.category),
-    ['electrical', 'general', 'plumbing']
+    ['general', 'electrical', 'plumbing']
   )
+})
+
+test('seed talks win over a thin firestore overlay and extras are kept', () => {
+  const seed = [
+    talk({ id: 'TBT-GEN-001', referenceCode: 'TBT-GEN-001', title: 'Working at Height', purpose: 'Falls', keyPoints: ['A'] }),
+  ]
+  const platform = [
+    talk({ id: 'TBT-GEN-001', referenceCode: 'TBT-GEN-001', title: 'WH', purpose: '', keyPoints: [] }),
+    talk({ id: 'TBT-CUSTOM-1', referenceCode: 'TBT-CUSTOM-1', title: 'Site specific', isGeneral: false, trades: ['Joinery'] }),
+  ]
+  const merged = overlayToolboxLibraries(seed, platform)
+  assert.equal(merged.length, 2)
+  const height = merged.find((row) => row.referenceCode === 'TBT-GEN-001')
+  assert.equal(height?.title, 'Working at Height')
+  assert.equal(height?.purpose, 'Falls')
+  assert.equal(merged.some((row) => row.id === 'TBT-CUSTOM-1'), true)
+})
+
+test('issuer is added as a recipient so they can sign the talk they issued', () => {
+  assert.deepEqual(recipientsWithIssuer(['op-1'], 'mgr-1', true).sort(), ['mgr-1', 'op-1'])
+  assert.deepEqual(recipientsWithIssuer(['op-1'], 'mgr-1', false), ['op-1'])
+  assert.deepEqual(recipientsWithIssuer([], 'mgr-1', true), ['mgr-1'])
 })
 
 test('combineLocalDateAndTime builds a local publishAt and rejects bad parts', () => {

@@ -8,18 +8,23 @@ import { useFeedbackStore } from '@/lib/feedback/feedbackStore'
 import { relatedFeatureUsage } from '@/lib/analytics/aggregations'
 import { resolveDateRange } from '@/lib/analytics/dateRange'
 import {
+  CONSOLE_STATUS_LABEL,
+  CUSTOMER_STATUS_COPY,
+  CUSTOMER_STATUS_LABEL,
   DECISION_HUE,
   DECISION_LABEL,
   FEEDBACK_CATEGORIES,
+  FEEDBACK_STATUSES,
   PRODUCT_DECISIONS,
-  PUBLIC_STATUS_COPY,
-  PUBLIC_STATUS_LABEL,
   RELATED_FEATURES,
+  unifiedStatus,
   type FeedbackPublicStatus,
+  type FeedbackStatus,
   type ProductDecision,
 } from '@/lib/feedback/types'
 import { EmptyState, ErrorBanner, LoadingSpinner } from '@/components/dashboard/PageShell'
 import { feedbackWriteError } from '@/lib/feedback/errors'
+import { mergePreviewCounts } from '@/lib/feedback/similar'
 
 const STATUSES: FeedbackPublicStatus[] = ['under_review', 'planned', 'in_progress', 'released', 'not_planned']
 
@@ -124,8 +129,8 @@ export function DeveloperFeedbackDetailScreen({ ideaId }: { ideaId: string }) {
         </div>
         <div className="card pad" data-hue={DECISION_HUE[suggestion.productDecision]}>
           <p className="eyebrow">Product decision</p>
-          <p className="text-xl font-extrabold">{DECISION_LABEL[suggestion.productDecision]}</p>
-          <p className="text-xs">{PUBLIC_STATUS_LABEL[suggestion.publicStatus]}</p>
+          <p className="text-xl font-extrabold">{CONSOLE_STATUS_LABEL[unifiedStatus(suggestion)]}</p>
+          <p className="text-xs">{CUSTOMER_STATUS_LABEL[unifiedStatus(suggestion)]}</p>
         </div>
       </div>
 
@@ -155,6 +160,28 @@ export function DeveloperFeedbackDetailScreen({ ideaId }: { ideaId: string }) {
             </button>
           ))}
         </div>
+        <label className="eyebrow mt-4 block">Shared status (customers and console)</label>
+        <select
+          className="pp-in mt-1"
+          value={unifiedStatus(suggestion)}
+          onChange={(e) =>
+            void runAdmin('other', (current) =>
+              updateAdmin({
+                suggestion,
+                actorUserId: current.id,
+                actorName: current.name,
+                patch: { status: e.target.value as FeedbackStatus },
+                reason,
+              })
+            )
+          }
+        >
+          {FEEDBACK_STATUSES.filter((status) => status !== 'merged').map((status) => (
+            <option key={status} value={status}>
+              {CONSOLE_STATUS_LABEL[status]} · customer: {CUSTOMER_STATUS_LABEL[status]}
+            </option>
+          ))}
+        </select>
         <label className="eyebrow mt-4 block">Public status customers see</label>
         <select
           className="pp-in mt-1"
@@ -173,11 +200,11 @@ export function DeveloperFeedbackDetailScreen({ ideaId }: { ideaId: string }) {
         >
           {STATUSES.map((status) => (
             <option key={status} value={status}>
-              {PUBLIC_STATUS_LABEL[status]}
+              {CUSTOMER_STATUS_LABEL[status === 'released' ? 'shipped' : status === 'under_review' ? 'under_review' : status]}
             </option>
           ))}
         </select>
-        <p className="mt-2 text-sm text-[var(--ink2)]">{PUBLIC_STATUS_COPY[suggestion.publicStatus]}</p>
+        <p className="mt-2 text-sm text-[var(--ink2)]">{CUSTOMER_STATUS_COPY[unifiedStatus(suggestion)]}</p>
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
           <label>
             <span className="eyebrow">Category</span>
@@ -318,6 +345,9 @@ export function DeveloperFeedbackDetailScreen({ ideaId }: { ideaId: string }) {
               </option>
             ))}
         </select>
+        {mergeId ? (
+          <MergePreview source={suggestion} destinationId={mergeId} votes={votes} suggestions={suggestions} />
+        ) : null}
         <button
           type="button"
           className="btn sm ghost mt-2"
@@ -382,5 +412,30 @@ export function DeveloperFeedbackDetailScreen({ ideaId }: { ideaId: string }) {
         </ul>
       </section>
     </div>
+  )
+}
+
+function MergePreview({
+  source,
+  destinationId,
+  votes,
+  suggestions,
+}: {
+  source: { id: string; title: string }
+  destinationId: string
+  votes: { suggestionId: string; userId: string }[]
+  suggestions: { id: string; title: string }[]
+}) {
+  const destination = suggestions.find((row) => row.id === destinationId)
+  if (!destination) return null
+  const preview = mergePreviewCounts(
+    votes.filter((vote) => vote.suggestionId === destination.id),
+    votes.filter((vote) => vote.suggestionId === source.id)
+  )
+  return (
+    <p className="mt-2 rounded-xl bg-[var(--soft)] p-3 text-sm text-[var(--ink2)]">
+      {source.title} has {preview.source} voters, {destination.title} has {preview.destination},{' '}
+      <strong>{preview.overlap} overlap</strong> → merged total <strong>{preview.mergedTotal}</strong>.
+    </p>
   )
 }
