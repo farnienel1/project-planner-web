@@ -19,6 +19,7 @@ import {
   type ProductDecision,
 } from '@/lib/feedback/types'
 import { EmptyState, ErrorBanner, LoadingSpinner } from '@/components/dashboard/PageShell'
+import { feedbackWriteError } from '@/lib/feedback/errors'
 
 const STATUSES: FeedbackPublicStatus[] = ['under_review', 'planned', 'in_progress', 'released', 'not_planned']
 
@@ -31,6 +32,9 @@ export function DeveloperFeedbackDetailScreen({ ideaId }: { ideaId: string }) {
   const [response, setResponse] = useState('')
   const [mergeId, setMergeId] = useState('')
   const [reason, setReason] = useState('')
+  const [adminBusy, setAdminBusy] = useState<'response' | 'notes' | 'other' | null>(null)
+  const [adminError, setAdminError] = useState('')
+  const [adminMessage, setAdminMessage] = useState('')
   const range = useMemo(() => resolveDateRange('last_30'), [])
 
   useEffect(() => {
@@ -60,12 +64,40 @@ export function DeveloperFeedbackDetailScreen({ ideaId }: { ideaId: string }) {
 
   const actor = user ? { id: user.id, name: `${user.firstName} ${user.surname}`.trim() || user.email } : null
 
+  const runAdmin = async (
+    kind: 'response' | 'notes' | 'other',
+    work: (current: { id: string; name: string }) => Promise<void>
+  ) => {
+    if (!actor) {
+      setAdminError('Sign in again to save this change.')
+      return
+    }
+    setAdminBusy(kind)
+    setAdminError('')
+    setAdminMessage('')
+    try {
+      await work(actor)
+      if (kind === 'response') setAdminMessage('Response published.')
+      if (kind === 'notes') setAdminMessage('Internal notes saved.')
+    } catch (err) {
+      setAdminError(feedbackWriteError(err))
+    } finally {
+      setAdminBusy(null)
+    }
+  }
+
   return (
     <div className="space-y-4">
       <Link href="/developer/feedback" className="btn sm ghost">
-        Ideas
+        Feedback
       </Link>
       {error ? <ErrorBanner message={error} /> : null}
+      {adminError ? <ErrorBanner message={adminError} /> : null}
+      {adminMessage ? (
+        <div className="banner" data-hue="hs">
+          {adminMessage}
+        </div>
+      ) : null}
       <h1 className="text-xl font-extrabold">{suggestion.title}</h1>
       <p className="text-sm text-[var(--ink3)]">
         {suggestion.organizationName?.trim() || 'Unknown organisation'} · {suggestion.authorName} · {suggestion.category}
@@ -108,14 +140,15 @@ export function DeveloperFeedbackDetailScreen({ ideaId }: { ideaId: string }) {
               className="pill"
               data-hue={DECISION_HUE[decision]}
               onClick={() =>
-                actor &&
-                void updateAdmin({
-                  suggestion,
-                  actorUserId: actor.id,
-                  actorName: actor.name,
-                  patch: { productDecision: decision },
-                  reason,
-                })
+                void runAdmin('other', (current) =>
+                  updateAdmin({
+                    suggestion,
+                    actorUserId: current.id,
+                    actorName: current.name,
+                    patch: { productDecision: decision },
+                    reason,
+                  })
+                )
               }
             >
               {DECISION_LABEL[decision]}
@@ -127,14 +160,15 @@ export function DeveloperFeedbackDetailScreen({ ideaId }: { ideaId: string }) {
           className="pp-in mt-1"
           value={suggestion.publicStatus}
           onChange={(e) =>
-            actor &&
-            void updateAdmin({
-              suggestion,
-              actorUserId: actor.id,
-              actorName: actor.name,
-              patch: { publicStatus: e.target.value as FeedbackPublicStatus },
-              reason,
-            })
+            void runAdmin('other', (current) =>
+              updateAdmin({
+                suggestion,
+                actorUserId: current.id,
+                actorName: current.name,
+                patch: { publicStatus: e.target.value as FeedbackPublicStatus },
+                reason,
+              })
+            )
           }
         >
           {STATUSES.map((status) => (
@@ -151,13 +185,14 @@ export function DeveloperFeedbackDetailScreen({ ideaId }: { ideaId: string }) {
               className="pp-in mt-1"
               value={suggestion.category}
               onChange={(e) =>
-                actor &&
-                void updateAdmin({
-                  suggestion,
-                  actorUserId: actor.id,
-                  actorName: actor.name,
-                  patch: { category: e.target.value as (typeof FEEDBACK_CATEGORIES)[number] },
-                })
+                void runAdmin('other', (current) =>
+                  updateAdmin({
+                    suggestion,
+                    actorUserId: current.id,
+                    actorName: current.name,
+                    patch: { category: e.target.value as (typeof FEEDBACK_CATEGORIES)[number] },
+                  })
+                )
               }
             >
               {FEEDBACK_CATEGORIES.map((item) => (
@@ -173,13 +208,14 @@ export function DeveloperFeedbackDetailScreen({ ideaId }: { ideaId: string }) {
               className="pp-in mt-1"
               value={suggestion.relatedFeature}
               onChange={(e) =>
-                actor &&
-                void updateAdmin({
-                  suggestion,
-                  actorUserId: actor.id,
-                  actorName: actor.name,
-                  patch: { relatedFeature: e.target.value as (typeof RELATED_FEATURES)[number] },
-                })
+                void runAdmin('other', (current) =>
+                  updateAdmin({
+                    suggestion,
+                    actorUserId: current.id,
+                    actorName: current.name,
+                    patch: { relatedFeature: e.target.value as (typeof RELATED_FEATURES)[number] },
+                  })
+                )
               }
             >
               {RELATED_FEATURES.map((item) => (
@@ -195,13 +231,14 @@ export function DeveloperFeedbackDetailScreen({ ideaId }: { ideaId: string }) {
             type="button"
             className="btn sm ghost"
             onClick={() =>
-              actor &&
-              void updateAdmin({
-                suggestion,
-                actorUserId: actor.id,
-                actorName: actor.name,
-                patch: { pinned: !suggestion.pinned },
-              })
+              void runAdmin('other', (current) =>
+                updateAdmin({
+                  suggestion,
+                  actorUserId: current.id,
+                  actorName: current.name,
+                  patch: { pinned: !suggestion.pinned },
+                })
+              )
             }
           >
             {suggestion.pinned ? 'Unpin' : 'Pin'}
@@ -210,13 +247,14 @@ export function DeveloperFeedbackDetailScreen({ ideaId }: { ideaId: string }) {
             type="button"
             className="btn sm ghost"
             onClick={() =>
-              actor &&
-              void updateAdmin({
-                suggestion,
-                actorUserId: actor.id,
-                actorName: actor.name,
-                patch: { hidden: !suggestion.hidden },
-              })
+              void runAdmin('other', (current) =>
+                updateAdmin({
+                  suggestion,
+                  actorUserId: current.id,
+                  actorName: current.name,
+                  patch: { hidden: !suggestion.hidden },
+                })
+              )
             }
           >
             {suggestion.hidden ? 'Unhide' : 'Hide'}
@@ -236,18 +274,20 @@ export function DeveloperFeedbackDetailScreen({ ideaId }: { ideaId: string }) {
         <button
           type="button"
           className="btn primary mt-2"
+          disabled={adminBusy !== null || !response.trim()}
           onClick={() =>
-            actor &&
-            void updateAdmin({
-              suggestion,
-              actorUserId: actor.id,
-              actorName: actor.name,
-              patch: { officialResponse: response },
-              reason,
-            })
+            void runAdmin('response', (current) =>
+              updateAdmin({
+                suggestion,
+                actorUserId: current.id,
+                actorName: current.name,
+                patch: { officialResponse: response.trim() },
+                reason,
+              })
+            )
           }
         >
-          Publish response
+          {adminBusy === 'response' ? 'Publishing…' : 'Publish response'}
         </button>
       </section>
 
@@ -259,16 +299,17 @@ export function DeveloperFeedbackDetailScreen({ ideaId }: { ideaId: string }) {
           type="button"
           className="btn sm hue mt-2"
           data-hue="warn"
-          onClick={() => actor && void saveInternalNotes(suggestion.id, notes, actor.id)}
+          disabled={adminBusy !== null}
+          onClick={() => void runAdmin('notes', (current) => saveInternalNotes(suggestion.id, notes, current.id))}
         >
-          Save internal notes
+          {adminBusy === 'notes' ? 'Saving…' : 'Save internal notes'}
         </button>
       </section>
 
       <section className="card pad">
         <h2 className="h2">Merge duplicate</h2>
         <select className="pp-in mt-2" value={mergeId} onChange={(e) => setMergeId(e.target.value)}>
-          <option value="">Select destination idea</option>
+          <option value="">Select destination feedback</option>
           {suggestions
             .filter((row) => row.id !== suggestion.id && !row.mergedIntoId && !row.hidden)
             .map((row) => (
@@ -284,13 +325,15 @@ export function DeveloperFeedbackDetailScreen({ ideaId }: { ideaId: string }) {
           onClick={() => {
             const destination = suggestions.find((row) => row.id === mergeId)
             if (!destination || !actor) return
-            void mergeSuggestions({
-              source: suggestion,
-              destination,
-              actorUserId: actor.id,
-              actorName: actor.name,
-              reason,
-            })
+            void runAdmin('other', (current) =>
+              mergeSuggestions({
+                source: suggestion,
+                destination,
+                actorUserId: current.id,
+                actorName: current.name,
+                reason,
+              })
+            )
           }}
         >
           Merge into selected
@@ -299,9 +342,11 @@ export function DeveloperFeedbackDetailScreen({ ideaId }: { ideaId: string }) {
 
       <section className="card pad">
         <h2 className="h2">Comments</h2>
-        {comments.length === 0 ? <p className="mt-2 text-sm text-[var(--ink3)]">No comments.</p> : null}
+        {comments.filter((comment) => comment.suggestionId === suggestion.id).length === 0 ? <p className="mt-2 text-sm text-[var(--ink3)]">No comments.</p> : null}
         <div className="mt-2 space-y-2">
-          {comments.map((comment) => (
+          {comments
+            .filter((comment) => comment.suggestionId === suggestion.id)
+            .map((comment) => (
             <div key={comment.id} className="rounded-xl bg-[var(--soft)] p-3 text-sm">
               <p className="text-xs font-semibold">{comment.authorName}</p>
               {comment.body}
@@ -324,9 +369,11 @@ export function DeveloperFeedbackDetailScreen({ ideaId }: { ideaId: string }) {
 
       <section className="card pad">
         <h2 className="h2">Audit trail</h2>
-        {history.length === 0 ? <p className="mt-2 text-sm text-[var(--ink3)]">No admin changes yet.</p> : null}
+        {history.filter((entry) => entry.suggestionId === suggestion.id).length === 0 ? <p className="mt-2 text-sm text-[var(--ink3)]">No admin changes yet.</p> : null}
         <ul className="mt-2 space-y-2 text-sm">
-          {history.map((entry) => (
+          {history
+            .filter((entry) => entry.suggestionId === suggestion.id)
+            .map((entry) => (
             <li key={entry.id}>
               <span className="font-semibold">{entry.actorName}</span> changed {entry.field} from {entry.fromValue} to {entry.toValue}
               {entry.reason ? ` — ${entry.reason}` : ''}

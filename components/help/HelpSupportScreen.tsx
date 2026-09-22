@@ -443,13 +443,13 @@ const TOPICS: Topic[] = [
       },
       {
         id: 'ideas',
-        title: 'Ideas board',
+        title: 'Feedback board',
         summary: 'Shared board across every organisation.',
         href: '/dashboard/ideas',
         body: [
-          'Open Ideas from Tools. This is one shared board for every company using Project Planner — not a private list for your organisation. You can see, vote on and comment on ideas from other companies, and they can see yours.',
-          'The top-rated idea is featured so the most useful request is obvious. Search existing suggestions first — similar ideas are shown before you submit a new one.',
-          'Vote once per idea. Comments stay on the request. Public status is Under review, Planned, In progress, Released or Not planned. There is no organisation analytics console; the product owner reviews Ideas privately.',
+          'Open Feedback from Tools. This is one shared board for every company using Project Planner — not a private list for your organisation. You can see, vote on and comment on feedback from other companies, and they can see yours.',
+          'The top-rated request is featured so the most useful feedback is obvious. Search existing suggestions first — similar feedback is shown before you submit a new one.',
+          'Vote once per request. Comments stay on the request. Public status is Under review, Planned, In progress, Released or Not planned. There is no organisation analytics console; the product owner reviews Feedback privately.',
         ],
       },
     ],
