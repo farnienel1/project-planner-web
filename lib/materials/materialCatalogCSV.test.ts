@@ -2,7 +2,8 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   CATALOGUE_CSV_HEADER,
-  catalogueCategoriesNote,
+  CATALOGUE_CATEGORY_GUIDE,
+  catalogueCategoryGuideLines,
   exportCatalogueCsv,
   exportCatalogueTemplateCsv,
   parseCatalogueCsv,
@@ -30,10 +31,14 @@ test('exportCatalogueCsv uses the exact iOS header', () => {
   assert.match(csv, /ABC,T&E 2.5mm,Electrical,Prysmian,TE25,Length,2.5mm,100,M/)
 })
 
-test('exportCatalogueTemplateCsv includes a skipped category note after the header', () => {
-  const csv = exportCatalogueTemplateCsv(['Electrical', 'Lighting'])
+test('exportCatalogueTemplateCsv includes the skipped category guide after the header', () => {
+  const csv = exportCatalogueTemplateCsv()
   assert.equal(csv.split('\n')[0], CATALOGUE_CSV_HEADER)
-  assert.match(csv, /# Categories currently in this catalogue \(ignored on upload\): Electrical, Lighting/)
+  assert.match(csv, /# Project Planner category guide \(this row is ignored on upload\)/)
+  assert.match(csv, /# Categories: Electrical \| Lighting \| Cable/)
+  assert.match(csv, /Renewable Energy \| Other/)
+  assert.equal(CATALOGUE_CATEGORY_GUIDE.includes('Electrical'), true)
+  assert.equal(CATALOGUE_CATEGORY_GUIDE.includes('Other'), true)
 })
 
 test('parseCatalogueCsv fills brand/category defaults and skips in-file duplicates', () => {
@@ -47,9 +52,9 @@ test('parseCatalogueCsv fills brand/category defaults and skips in-file duplicat
   assert.equal(parsed.rows[0].category, 'Other')
 })
 
-test('parseCatalogueCsv ignores the category note on re-upload', () => {
+test('parseCatalogueCsv ignores the category guide on re-upload', () => {
   const csv = `${CATALOGUE_CSV_HEADER}
-${catalogueCategoriesNote(['Electrical', 'Lighting'])}
+${catalogueCategoryGuideLines().join('\n')}
 ABC,T&E 2.5mm,Electrical,Prysmian,TE25,Length,2.5mm,100,M
 `
   const parsed = parseCatalogueCsv(csv)
@@ -58,8 +63,18 @@ ABC,T&E 2.5mm,Electrical,Prysmian,TE25,Length,2.5mm,100,M
   assert.equal(parsed.rows[0].name, 'T&E 2.5mm')
 })
 
-test('exportCatalogueCsv lists current categories in a comment row', () => {
-  const csv = exportCatalogueCsv([item])
+test('parseCatalogueCsv ignores an Excel-split category note row', () => {
+  const csv = `${CATALOGUE_CSV_HEADER}
+"# Project Planner category guide (this row is ignored on upload)",Lighting,Cable
+ABC,T&E 2.5mm,Electrical,Prysmian,TE25,Length,2.5mm,100,M
+`
+  const parsed = parseCatalogueCsv(csv)
+  assert.equal(parsed.rows.length, 1)
+  assert.equal(parsed.rows[0].name, 'T&E 2.5mm')
+})
+
+test('exportCatalogueCsv lists extra catalogue categories in a skipped note', () => {
+  const csv = exportCatalogueCsv([{ ...item, category: 'Bespoke Tray' }])
   assert.equal(csv.split('\n')[0], CATALOGUE_CSV_HEADER)
-  assert.match(csv, /# Categories currently in this catalogue \(ignored on upload\): Electrical/)
+  assert.match(csv, /# Also in your catalogue \(ignored on upload\): Bespoke Tray/)
 })
