@@ -103,6 +103,40 @@ export function buildToolboxTalkPdfHtml({
 </html>`
 }
 
+export function talkPreviewHtml(talk: Pick<HSToolboxTalk, 'title' | 'referenceCode' | 'purpose' | 'keyPoints' | 'category' | 'version'>): string {
+  const points = talk.keyPoints.length
+    ? `<ul>${talk.keyPoints.map((point) => `<li>${escapeHtml(point)}</li>`).join('')}</ul>`
+    : '<p>No key control points recorded on this talk.</p>'
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>${escapeHtml(talk.title)}</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: #111827; margin: 20px; font-size: 13px; }
+    .brand { font-size: 10px; font-weight: 700; letter-spacing: 0.18em; color: #64748b; }
+    h1 { font-size: 18px; margin: 8px 0 4px; }
+    .ref { color: #64748b; font-size: 12px; margin-bottom: 16px; }
+    h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: #64748b; margin: 16px 0 6px; }
+    ul { margin: 0; padding-left: 18px; }
+  </style>
+</head>
+<body>
+  <div class="brand">PROJECT PLANNER · TOOLBOX TALK</div>
+  <h1>${escapeHtml(talk.title)}</h1>
+  <p class="ref">${escapeHtml(talk.referenceCode || talk.category || 'Toolbox talk')} · v${talk.version}</p>
+  <h2>Purpose</h2>
+  <p>${escapeHtml(talk.purpose || '—')}</p>
+  <h2>Key control points</h2>
+  ${points}
+</body>
+</html>`
+}
+
+export function looksLikeSiteAuditFile(url: string): boolean {
+  return /siteAudits|site-audit|site_audit|SiteAudit/i.test(url)
+}
+
 export function downloadHtmlFile(html: string, filename: string): void {
   const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
   const url = URL.createObjectURL(blob)

@@ -6,7 +6,7 @@ import { db } from '@/lib/firebase/config'
 import type { SiteAudit, SiteAuditItem, User } from '@/types'
 import { parseOrgUser } from '@/lib/firebase/parseUser'
 import { dedupeUsersByEmail } from '@/lib/staff/userRosterUtils'
-import { runOrgLoad } from '@/lib/stores/orgLoadCache'
+import { runOrgLoad, invalidateOrgLoad } from '@/lib/stores/orgLoadCache'
 import { newUuid, parseFirestoreDate, parseOptionalString, parseString, parseUuid } from '@/lib/firebase/firestoreUtils'
 
 function parseAuditItems(rows: unknown): SiteAuditItem[] {
@@ -117,6 +117,7 @@ export const useSiteAuditStore = create<SiteAuditState>((set, get) => ({
       items,
     }
     await setDoc(doc(db, 'organizations', organizationId, 'siteAudits', auditId), payload)
+    invalidateOrgLoad('siteAuditStore:audits')
     const mapped = mapSiteAudit(auditId, payload as Record<string, unknown>)
     if (mapped) {
       set({ audits: [mapped, ...get().audits.filter((a) => a.id !== auditId)] })
@@ -125,18 +126,21 @@ export const useSiteAuditStore = create<SiteAuditState>((set, get) => ({
   },
 
   loadAudits: async (organizationId) => {
-    set({ loading: true, error: null })
-    try {
-      const ref = collection(db, 'organizations', organizationId, 'siteAudits')
-      const snapshot = await getDocs(ref)
-      const audits = snapshot.docs
-        .map((entry) => mapSiteAudit(entry.id, entry.data() as Record<string, unknown>))
-        .filter((item): item is SiteAudit => item !== null)
-        .sort((a, b) => b.date.getTime() - a.date.getTime())
-      set({ audits, loading: false })
-    } catch (error: unknown) {
-      set({ error: error instanceof Error ? error.message : 'Failed to load site audits', loading: false })
-    }
+    await runOrgLoad('siteAuditStore:audits', organizationId, async () => {
+      if (get().audits.length === 0) set({ loading: true, error: null })
+      else set({ error: null })
+      try {
+        const ref = collection(db, 'organizations', organizationId, 'siteAudits')
+        const snapshot = await getDocs(ref)
+        const audits = snapshot.docs
+          .map((entry) => mapSiteAudit(entry.id, entry.data() as Record<string, unknown>))
+          .filter((item): item is SiteAudit => item !== null)
+          .sort((a, b) => b.date.getTime() - a.date.getTime())
+        set({ audits, loading: false })
+      } catch (error: unknown) {
+        set({ error: error instanceof Error ? error.message : 'Failed to load site audits', loading: false })
+      }
+    })
   },
 }))
 

@@ -13,7 +13,8 @@ export function userTradeLabel(user: Pick<User, 'tradeTypePreset' | 'tradeTypeCu
 export function isHsRecipient(user: User): boolean {
   if (!user.isActive) return false
   return Boolean(
-    user.permissions.operatives ||
+    user.permissions.operativeMode ||
+      user.permissions.operatives ||
       user.permissions.manager ||
       user.role === 'operative' ||
       user.role === 'manager'

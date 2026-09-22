@@ -11,8 +11,8 @@ import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { useProjectStore } from '@/lib/stores/projectStore'
 import { projectToSaveInput } from '@/lib/firebase/projectPayload'
 import {
-  getManagerUsers,
-  getOperativeModeUsers,
+  getVisibilityManagerUsers,
+  getVisibilityOperativeUsers,
   matchesRosterSegment,
   type RosterSegment,
 } from '@/lib/staff/userRosterUtils'
@@ -47,7 +47,7 @@ export function ProjectVisibilityPage({
   const { users, loadUsers } = useOrgUserStore()
   const { saveProject } = useProjectStore()
   const [tab, setTab] = useState<VisibilityTab>('managers')
-  const [segment, setSegment] = useState<VisibilitySegment>('active')
+  const [segment, setSegment] = useState<VisibilitySegment>('all')
   const [showSearch, setShowSearch] = useState(false)
   const [search, setSearch] = useState('')
   const [hiddenManagers, setHiddenManagers] = useState<Set<string>>(
@@ -74,9 +74,8 @@ export function ProjectVisibilityPage({
     !sameIds(hiddenOperatives, project.hiddenOperativeUserIds)
 
   const roster = useMemo(() => {
-    const base = tab === 'managers' ? getManagerUsers(users) : getOperativeModeUsers(users)
+    const base = tab === 'managers' ? getVisibilityManagerUsers(users) : getVisibilityOperativeUsers(users)
     return base.filter((user) => {
-      if (user.isSuperAdmin || user.permissions.adminAccess) return false
       if (segment === 'all') return true
       return matchesRosterSegment(user, segment)
     })
@@ -138,8 +137,8 @@ export function ProjectVisibilityPage({
       <div>
         <h2 className="h2">View access</h2>
         <p className="mt-2 muted small" style={{ lineHeight: 1.55 }}>
-          This feature can be used to select who will not be able to view the project or small works. Admins always
-          have access and cannot be hidden.
+          This feature can be used to select who will not be able to view the project or small works. Admins appear
+          under Managers and operatives under Operatives. Admins always have access and cannot be hidden.
         </p>
         <p className="mt-2 muted small" style={{ lineHeight: 1.55 }}>
           When unselected the user will not see this job within their account.
@@ -211,19 +210,26 @@ export function ProjectVisibilityPage({
             <div className="card-b rows">
               {filtered.map((user) => {
                 const hidden = isHidden(user.id)
+                const locked = tab === 'managers' && (user.isSuperAdmin || user.permissions.adminAccess)
                 return (
                   <button
                     key={user.id}
                     type="button"
-                    onClick={() => toggleHidden(user)}
+                    onClick={() => {
+                      if (!locked) toggleHidden(user)
+                    }}
                     className="ritem"
                     aria-pressed={!hidden}
+                    disabled={locked}
                   >
                     <span className="grow">
                       <span className="t">
                         {user.firstName} {user.surname}
                       </span>
-                      <span className="s">{user.email}</span>
+                      <span className="s">
+                        {user.email}
+                        {locked ? ' · Admin' : ''}
+                      </span>
                     </span>
                     {hidden ? (
                       <span

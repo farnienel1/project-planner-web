@@ -15,12 +15,35 @@ export function signedPercent(signatures: HSToolboxSignature[], recipientCount =
   return { signed, total, percent }
 }
 
+function talkMatchesId(talk: HSToolboxTalk, talkId: string): boolean {
+  const id = talkId.trim().toLowerCase()
+  if (!id) return false
+  return talk.id.toLowerCase() === id || (talk.referenceCode || '').trim().toLowerCase() === id
+}
+
 export function findTalkForIssue(
   issue: Pick<HSToolboxIssue, 'talkId'>,
   libraryTalks: HSToolboxTalk[],
   projectTalks: HSToolboxTalk[]
 ): HSToolboxTalk | undefined {
-  return libraryTalks.find((talk) => talk.id === issue.talkId) || projectTalks.find((talk) => talk.id === issue.talkId)
+  return (
+    libraryTalks.find((talk) => talkMatchesId(talk, issue.talkId)) ||
+    projectTalks.find((talk) => talkMatchesId(talk, issue.talkId))
+  )
+}
+
+/** Pending signatures for issued (not scheduled) talks on this job — shared tracking count for iOS + web. */
+export function trackingAwaitingCount(
+  issues: HSToolboxIssue[],
+  signatures: HSToolboxSignature[],
+  now = Date.now()
+): number {
+  const activeIds = new Set(
+    issues
+      .filter((issue) => !issue.publishAt || issue.publishAt.getTime() <= now)
+      .map((issue) => issue.id)
+  )
+  return signatures.filter((signature) => activeIds.has(signature.issueId) && signature.status !== 'signed').length
 }
 
 export function pendingSignatureForUser(

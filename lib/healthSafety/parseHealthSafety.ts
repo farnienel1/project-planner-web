@@ -34,6 +34,19 @@ export function parseTalk(row: Record<string, unknown>): HSToolboxTalk | null {
   }
 }
 
+export function normalizeIssueStatus(raw: string): string {
+  const value = raw.trim().toLowerCase()
+  if (value === 'complete' || value === 'completed' || value === 'signed') return 'complete'
+  if (value === 'scheduled' || value === 'schedule') return 'scheduled'
+  return 'awaiting'
+}
+
+export function normalizeSignatureStatus(raw: string): string {
+  const value = raw.trim().toLowerCase()
+  if (value === 'signed' || value === 'complete' || value === 'completed') return 'signed'
+  return 'pending'
+}
+
 function parseIssue(row: Record<string, unknown>, projectId: string): HSToolboxIssue | null {
   const id = parseString(row.id)
   const talkId = parseString(row.talkId)
@@ -50,7 +63,7 @@ function parseIssue(row: Record<string, unknown>, projectId: string): HSToolboxI
     recipientUserIds: Array.isArray(row.recipientUserIds)
       ? (row.recipientUserIds as unknown[]).map((id) => parseString(id)).filter(Boolean)
       : [],
-    status: parseString(row.status, 'awaiting'),
+    status: normalizeIssueStatus(parseString(row.status, 'awaiting')),
   }
 }
 
@@ -63,7 +76,7 @@ function parseSignature(row: Record<string, unknown>): HSToolboxSignature | null
     id,
     issueId,
     userId,
-    status: parseString(row.status, 'pending'),
+    status: normalizeSignatureStatus(parseString(row.status, 'pending')),
     readConfirmed: row.readConfirmed === true,
     signatureImageBase64: parseOptionalString(row.signatureImageBase64),
     signedAt: parseFirestoreDate(row.signedAt),
@@ -124,5 +137,73 @@ export function parseHealthSafetyPayload(data: Record<string, unknown>, projectI
     ramsDocuments: ramsDocuments.sort((a, b) => b.uploadedAt.getTime() - a.uploadedAt.getTime()),
     otherDocuments: otherDocuments.sort((a, b) => b.uploadedAt.getTime() - a.uploadedAt.getTime()),
     updatedAt: parseFirestoreDate(data.updatedAt),
+  }
+}
+
+function byId<T extends { id: string }>(rows: T[], pick: (current: T, extra: T) => T): T[] {
+  const map = new Map<string, T>()
+  for (const row of rows) {
+    const existing = map.get(row.id)
+    map.set(row.id, existing ? pick(existing, row) : row)
+  }
+  return [...map.values()]
+}
+
+function richerTalk(a: HSToolboxTalk, b: HSToolboxTalk): HSToolboxTalk {
+  const aScore = (a.purpose ? 1 : 0) + a.keyPoints.length + (a.fileURL ? 2 : 0)
+  const bScore = (b.purpose ? 1 : 0) + b.keyPoints.length + (b.fileURL ? 2 : 0)
+  if (bScore !== aScore) return bScore > aScore ? b : a
+  return (b.updatedAt?.getTime() || 0) >= (a.updatedAt?.getTime() || 0) ? b : a
+}
+
+function richerSignature(a: HSToolboxSignature, b: HSToolboxSignature): HSToolboxSignature {
+  if (a.status === 'signed' && b.status !== 'signed') return { ...b, ...a }
+  if (b.status === 'signed' && a.status !== 'signed') return { ...a, ...b }
+  const aTime = a.signedAt?.getTime() || a.reminderSentAt?.getTime() || 0
+  const bTime = b.signedAt?.getTime() || b.reminderSentAt?.getTime() || 0
+  const newer = bTime >= aTime ? { ...a, ...b } : { ...b, ...a }
+  return {
+    ...newer,
+    signatureImageBase64: a.signatureImageBase64 || b.signatureImageBase64,
+  }
+}
+
+function signatureMergeKey(row: HSToolboxSignature): string {
+  return `${row.issueId}::${row.userId.toLowerCase()}`
+}
+
+function mergeByKey<T>(rows: T[], keyOf: (row: T) => string, pick: (current: T, extra: T) => T): T[] {
+  const map = new Map<string, T>()
+  for (const row of rows) {
+    const key = keyOf(row)
+    const existing = map.get(key)
+    map.set(key, existing ? pick(existing, row) : row)
+  }
+  return [...map.values()]
+}
+
+/** Union iOS settings doc with the nested web doc so tracking/signing stay in sync. */
+export function mergeHealthSafetyPayload(
+  primary: HSProjectSafetyData,
+  extra: HSProjectSafetyData
+): HSProjectSafetyData {
+  return {
+    talks: byId([...extra.talks, ...primary.talks], richerTalk),
+    issues: byId([...extra.issues, ...primary.issues], (a, b) =>
+      (b.issuedAt?.getTime() || 0) >= (a.issuedAt?.getTime() || 0) ? { ...a, ...b } : { ...b, ...a }
+    ).sort((a, b) => b.issuedAt.getTime() - a.issuedAt.getTime()),
+    signatures: mergeByKey(
+      [...extra.signatures, ...primary.signatures],
+      signatureMergeKey,
+      richerSignature
+    ).sort((a, b) => (b.signedAt?.getTime() ?? 0) - (a.signedAt?.getTime() ?? 0)),
+    ramsDocuments: byId([...extra.ramsDocuments, ...primary.ramsDocuments], (a, b) =>
+      b.uploadedAt.getTime() >= a.uploadedAt.getTime() ? b : a
+    ).sort((a, b) => b.uploadedAt.getTime() - a.uploadedAt.getTime()),
+    otherDocuments: byId([...extra.otherDocuments, ...primary.otherDocuments], (a, b) =>
+      b.uploadedAt.getTime() >= a.uploadedAt.getTime() ? b : a
+    ).sort((a, b) => b.uploadedAt.getTime() - a.uploadedAt.getTime()),
+    updatedAt:
+      (primary.updatedAt?.getTime() || 0) >= (extra.updatedAt?.getTime() || 0) ? primary.updatedAt : extra.updatedAt,
   }
 }

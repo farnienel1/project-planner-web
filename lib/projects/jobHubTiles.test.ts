@@ -25,7 +25,7 @@ test('managers see Scheduling, optional View, materials and site audit', () => {
   })
   assert.deepEqual(
     tiles.map((tile) => tile.label),
-    ['Scheduling', 'View', 'My Tasks', 'Materials', 'H&S', 'Site Audit', 'Location']
+    ['Scheduling', 'View', 'Tasks', 'Materials', 'H&S', 'Site Audit', 'Location']
   )
   assert.equal(tiles.at(-1)?.desc, '12 High St')
 })
