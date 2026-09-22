@@ -1,10 +1,13 @@
 import { MarketingShell } from '@/components/marketing/MarketingShell'
 import { NotFoundPage } from '@/components/marketing/NotFoundPage'
+import { EmailActionNotFoundGate } from '@/components/auth/RecoverEmailAction'
 
 export default function NotFound() {
   return (
-    <MarketingShell>
-      <NotFoundPage />
-    </MarketingShell>
+    <EmailActionNotFoundGate>
+      <MarketingShell>
+        <NotFoundPage />
+      </MarketingShell>
+    </EmailActionNotFoundGate>
   )
 }
