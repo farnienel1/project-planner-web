@@ -514,9 +514,9 @@ function CsvSheet({
         {replacePrompt ? (
           <section className="space-y-4">
             <p className="text-[16px] font-semibold text-[var(--ink)]">Replace entire catalogue?</p>
-            <p className="text-[15px] text-[var(--ink2)]">
-              Are you sure you want to replace your entire catalogue? This step can&apos;t be undone. Existing items that
-              are not in the new file will be removed.
+            <p className="text-[15px] leading-6 text-[var(--ink2)]">
+              Are you sure you want to replace your entire catalogue? This step can&apos;t be undone, so please download
+              your current material catalogue and save it so you can revert back if required.
             </p>
             <div className="flex flex-wrap gap-3">
               <button
@@ -544,7 +544,7 @@ function CsvSheet({
               <p className="text-[11px] font-semibold uppercase text-[var(--ink3)]">Step 1 · Download</p>
               <p className="mt-1 text-[var(--ink3)]">
                 Download your current catalogue, edit it in a spreadsheet, then save the file as .csv (not Excel or
-                Numbers).
+                Numbers). A category guide is included at the top of the file as a note — it is ignored when you upload.
               </p>
               <button
                 type="button"
@@ -564,13 +564,11 @@ function CsvSheet({
                 Download blank template
               </button>
               <p className="mt-2 text-[var(--ink3)]">
-                Headers only — use this to start a brand new list. The category note in the file is ignored when you
-                upload.
+                Headers plus the category guide only — use this to start a brand new list.
               </p>
             </section>
             <section>
-              <p className="text-[11px] font-semibold uppercase text-[var(--ink3)]">Step 2 · Upload</p>
-              <p className="mt-1 font-medium text-[var(--ink)]">Upload updated catalogue</p>
+              <p className="text-[11px] font-semibold uppercase text-[var(--ink3)]">Step 2 · Upload updated catalogue</p>
               <p className="mt-1 text-[var(--ink3)]">
                 Choose the CSV you edited. Matching items keep their IDs. Rows in the file are saved; items missing from
                 the file are removed.
@@ -588,9 +586,10 @@ function CsvSheet({
                 <span className="text-[11px] font-semibold uppercase tracking-wide text-[var(--ink3)]">or</span>
                 <div className="h-px flex-1 bg-[var(--line)]" />
               </div>
-              <p className="font-medium text-[var(--ink)]">Replace entire catalogue</p>
+              <p className="text-[11px] font-semibold uppercase text-[var(--ink3)]">Step 2 · Replace entire catalogue</p>
               <p className="mt-1 text-[var(--ink3)]">
-                Use this only when you want to throw away the current list and load a brand new file.
+                Use this only when you want to throw away the current list and load a brand new file. You will be asked
+                to confirm before your computer&apos;s file picker opens.
               </p>
               <button
                 type="button"
@@ -598,7 +597,7 @@ function CsvSheet({
                 className={`${downloadBtn} border-[1.5px] border-[var(--line2)] bg-[var(--card)] text-[var(--ink)]`}
                 onClick={() => setReplacePrompt(true)}
               >
-                Replace entire catalogue…
+                Choose file
               </button>
               <input
                 ref={replaceInputRef}

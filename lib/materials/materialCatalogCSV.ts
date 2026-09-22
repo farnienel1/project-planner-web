@@ -16,6 +16,90 @@ export const CATALOGUE_CSV_MAX_ROWS = 5000
 const UNITS: MaterialUnit[] = ['Number', 'Box', 'Length', 'Drum', 'Pallet']
 const LENGTH_UNITS: MaterialLengthUnit[] = ['M', 'MM']
 
+/** Canonical Category-column names shown as a CSV note. Upload parser ignores these lines. */
+export const CATALOGUE_CATEGORY_GUIDE = [
+  'Electrical',
+  'Lighting',
+  'Cable',
+  'Containment',
+  'Tray',
+  'Trunking',
+  'Conduit',
+  'Switchgear & Distribution',
+  'Fire Alarm',
+  'Security & Access Control',
+  'Data & Communications',
+  'AV & TV',
+  'BMS & Controls',
+  'Mechanical',
+  'Pipework',
+  'Valves & Fittings',
+  'Heating',
+  'Cooling',
+  'Ventilation',
+  'Air Conditioning / VRF',
+  'Plumbing',
+  'Sanitaryware',
+  'Drainage',
+  'Water Systems',
+  'Gas',
+  'Fire Protection',
+  'Sprinklers',
+  'Insulation',
+  'Ductwork',
+  'Building Management Systems',
+  'Timber',
+  'Doors & Ironmongery',
+  'Windows & Glazing',
+  'Roofing',
+  'Cladding',
+  'Brickwork & Blockwork',
+  'Concrete & Cement',
+  'Steelwork & Metalwork',
+  'Drylining & Plasterboard',
+  'Plaster & Render',
+  'Flooring',
+  'Ceilings',
+  'Wall Finishes',
+  'Decorating & Paint',
+  'Tiling',
+  'Kitchens',
+  'Joinery',
+  'Ironmongery',
+  'Sealants & Adhesives',
+  'Fixings & Fasteners',
+  'Tools & Equipment',
+  'Plant',
+  'PPE & Safety',
+  'Site Consumables',
+  'Sundries',
+  'Temporary Works',
+  'Groundworks',
+  'Drainage & Civils',
+  'Landscaping',
+  'External Works',
+  'Access & Lifting',
+  'Signage',
+  'Fire Stopping',
+  'Acoustic Materials',
+  'Waterproofing',
+  'Thermal Insulation',
+  'Mechanical Insulation',
+  'Electrical Accessories',
+  'Heating Controls',
+  'Plumbing Accessories',
+  'Specialist Equipment',
+  'White Goods & Appliances',
+  'Furniture & Fittings',
+  'Cleaning & Waste',
+  'Solar PV',
+  'EV Charging',
+  'Renewable Energy',
+  'Other',
+] as const
+
+const CATEGORY_GUIDE_CHUNK = 10
+
 export type ParsedCatalogueRow = {
   id: string
   name: string
@@ -72,27 +156,42 @@ function parseLengthUnit(value: string): MaterialLengthUnit | undefined {
   return match
 }
 
-export function catalogueCategoriesNote(categories: string[]): string {
-  const names = [...new Set(categories.map((name) => name.trim()).filter(Boolean))].sort((a, b) =>
-    a.localeCompare(b, undefined, { sensitivity: 'base' })
-  )
-  if (names.length === 0) {
-    return '# Categories: type your own in the Category column (for example Electrical). This note is ignored on upload.'
+export function catalogueCategoryGuideLines(extraCategories: string[] = []): string[] {
+  const lines = [
+    '# Project Planner category guide (this row is ignored on upload). Use one of these names in the Category column, or type your own.',
+  ]
+  for (let index = 0; index < CATALOGUE_CATEGORY_GUIDE.length; index += CATEGORY_GUIDE_CHUNK) {
+    const chunk = CATALOGUE_CATEGORY_GUIDE.slice(index, index + CATEGORY_GUIDE_CHUNK)
+    const prefix = index === 0 ? '# Categories:' : '# Categories (cont.):'
+    lines.push(`${prefix} ${chunk.join(' | ')}`)
   }
-  return `# Categories currently in this catalogue (ignored on upload): ${names.join(', ')}`
+  const known = new Set(CATALOGUE_CATEGORY_GUIDE.map((name) => name.toLowerCase()))
+  const extras = [...new Set(extraCategories.map((name) => name.trim()).filter(Boolean))]
+    .filter((name) => !known.has(name.toLowerCase()))
+    .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+  if (extras.length > 0) {
+    lines.push(`# Also in your catalogue (ignored on upload): ${extras.join(' | ')}`)
+  }
+  return lines
+}
+
+export function catalogueCategoriesNote(categories: string[] = []): string {
+  return catalogueCategoryGuideLines(categories).join('\n')
 }
 
 function isCsvNoteLine(line: string): boolean {
-  const trimmed = line.trim()
+  const trimmed = line.trim().replace(/^"|"$/g, '')
   if (!trimmed) return true
   if (trimmed.startsWith('#') || trimmed.startsWith('//')) return true
-  const first = splitCsvLine(trimmed)[0] || ''
-  return first.startsWith('#') || first.startsWith('//')
+  const first = (splitCsvLine(trimmed)[0] || '').replace(/^"|"$/g, '')
+  if (first.startsWith('#') || first.startsWith('//')) return true
+  const haystack = `${first} ${trimmed}`.toLowerCase()
+  return haystack.includes('ignored on upload') || haystack.includes('project planner category guide')
 }
 
 export function exportCatalogueCsv(items: MaterialCatalogItem[]): string {
-  const categories = items.map((item) => item.category || 'Other')
-  const lines = [CATALOGUE_CSV_HEADER, catalogueCategoriesNote(categories)]
+  const extras = items.map((item) => item.category || 'Other')
+  const lines = [CATALOGUE_CSV_HEADER, ...catalogueCategoryGuideLines(extras)]
   for (const item of items) {
     lines.push(
       [
@@ -113,8 +212,8 @@ export function exportCatalogueCsv(items: MaterialCatalogItem[]): string {
   return `${lines.join('\n')}\n`
 }
 
-export function exportCatalogueTemplateCsv(categories: string[] = []): string {
-  return `${CATALOGUE_CSV_HEADER}\n${catalogueCategoriesNote(categories)}\n`
+export function exportCatalogueTemplateCsv(extraCategories: string[] = []): string {
+  return `${CATALOGUE_CSV_HEADER}\n${catalogueCategoryGuideLines(extraCategories).join('\n')}\n`
 }
 
 export function parseCatalogueCsv(text: string): CatalogueCsvParseResult {

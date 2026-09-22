@@ -4,6 +4,7 @@ import { create } from 'zustand'
 import {
   collection,
   getDocs,
+  getDocsFromServer,
   getDoc,
   setDoc,
   deleteDoc,
@@ -53,10 +54,13 @@ export const useOperativeStore = create<OperativeState>((set, get) => ({
       OPERATIVES_KEY,
       organizationId,
       async () => {
-        set({ loading: true, error: null })
+        if (get().operatives.length === 0) set({ loading: true, error: null })
+        else set({ error: null })
         try {
           const operativesRef = collection(db, 'organizations', organizationId, 'operatives')
-          const snapshot = await getDocs(operativesRef)
+          const snapshot = options?.force
+            ? await getDocsFromServer(operativesRef).catch(() => getDocs(operativesRef))
+            : await getDocs(operativesRef)
           const operatives = snapshot.docs.flatMap((entry) => {
             const parsed = parseOperative(entry.id, entry.data() as Record<string, unknown>, organizationId)
             return parsed.ok ? [parsed.value] : []
