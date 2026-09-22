@@ -110,6 +110,17 @@ export function resolveDateRange(
         label: 'Last month',
       }
     },
+    all_time: () => {
+      const start = dateFromDayKeyInZone('2018-01-01', timeZone)
+      return {
+        preset: 'all_time',
+        start,
+        end: tomorrow,
+        previousStart: start,
+        previousEnd: start,
+        label: 'All time',
+      }
+    },
   }
 
   return configs[preset === 'custom' ? 'last_7' : preset]()

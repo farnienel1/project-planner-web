@@ -194,6 +194,12 @@ export type OrganisationActivityRow = {
   createdAt?: Date
 }
 
+function laterDate(a?: Date, b?: Date): Date | undefined {
+  if (!a) return b
+  if (!b) return a
+  return a.getTime() >= b.getTime() ? a : b
+}
+
 export function organisationActivityRows(input: {
   organisations: { id: string; name: string; createdAt?: Date }[]
   users: { id: string; organizationId: string; lastSeenAt?: Date }[]
@@ -236,20 +242,26 @@ export function organisationActivityRows(input: {
         return latest
       }, undefined)
       const lastSeen = orgUsers.reduce<Date | undefined>((latest, user) => {
-        if (!user.lastSeenAt) return latest
-        if (!latest || user.lastSeenAt.getTime() > latest.getTime()) return user.lastSeenAt
-        return latest
+        return laterDate(latest, user.lastSeenAt)
       }, lastEvent)
+      const seenInRange = orgUsers.filter((user) => user.lastSeenAt && inRange(user.lastSeenAt, input.range.start, input.range.end))
       return {
         id: org.id,
         name: org.name,
         userCount: orgUsers.length,
-        activeUsers: countUnique(orgEvents.map((event) => event.userId)),
+        activeUsers: Math.max(countUnique(orgEvents.map((event) => event.userId)), seenInRange.length),
         events: orgEvents.length,
         lastActivityAt: lastSeen,
         ideaCount: ideasByOrg.get(org.id) || 0,
         createdAt: org.createdAt,
       }
     })
-    .sort((a, b) => b.activeUsers - a.activeUsers || b.userCount - a.userCount || a.name.localeCompare(b.name))
+    .sort((a, b) => b.userCount - a.userCount || b.activeUsers - a.activeUsers || a.name.localeCompare(b.name))
+}
+
+export function directoryActiveUsers(
+  users: { id: string; lastSeenAt?: Date }[],
+  range: { start: Date; end: Date }
+): number {
+  return users.filter((user) => (user.lastSeenAt ? inRange(user.lastSeenAt, range.start, range.end) : false)).length
 }

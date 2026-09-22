@@ -67,3 +67,11 @@ export function ErrorBanner({ message }: { message: string }) {
     </div>
   )
 }
+
+export function WarningBanner({ message }: { message: string }) {
+  return (
+    <div className="banner" data-hue="warn">
+      <span className="text-sm font-semibold">{message}</span>
+    </div>
+  )
+}

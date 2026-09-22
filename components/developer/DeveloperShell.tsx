@@ -11,6 +11,7 @@ import { cn } from '@/lib/ui/cn'
 const LINKS = [
   { href: '/developer', label: 'Overview' },
   { href: '/developer/organisations', label: 'Organisations' },
+  { href: '/developer/users', label: 'Users' },
   { href: '/developer/analytics', label: 'Analytics' },
   { href: '/developer/usage', label: 'Feature usage' },
   { href: '/developer/feedback', label: 'Ideas' },
