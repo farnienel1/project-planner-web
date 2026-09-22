@@ -32,3 +32,19 @@ test('organisation activity rolls up users, events and ideas across tenants', ()
   assert.equal(rows[1].id, 'B')
   assert.equal(rows[1].userCount, 1)
 })
+
+test('activity includes organisations only seen on users or events', () => {
+  const start = new Date('2026-09-15T00:00:00Z')
+  const now = new Date('2026-09-22T12:00:00Z')
+  const rows = organisationActivityRows({
+    organisations: [],
+    users: [{ id: 'u9', organizationId: 'C' }],
+    events: [{ id: 'e9', userId: 'u9', organizationId: 'C', eventName: 'dashboard_viewed', createdAt: now }],
+    ideas: [{ organizationId: 'C' }],
+    range: { start, end: new Date('2026-09-23T00:00:00Z') },
+  })
+  assert.equal(rows[0].id, 'C')
+  assert.equal(rows[0].name, 'Unknown organisation')
+  assert.equal(rows[0].ideaCount, 1)
+  assert.equal(rows[0].activeUsers, 1)
+})

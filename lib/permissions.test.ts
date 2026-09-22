@@ -174,11 +174,13 @@ test('developer dashboard is the platform owner email only, never organisation r
     isSuperAdmin: false,
     permissions: { adminAccess: false },
   })
+  const ownerCased = user({ email: '  Info@ProjectPlanner.us  ' })
   assert.equal(canAccessDeveloperDashboard(customer), false)
   assert.equal(canAccessDeveloperDashboard(admin), false)
   assert.equal(canAccessDeveloperDashboard(flagged), false)
   assert.equal(canAccessDeveloperDashboard(superAdmin), false)
   assert.equal(canAccessDeveloperDashboard(owner), true)
+  assert.equal(canAccessDeveloperDashboard(ownerCased), true)
 })
 
 test('PAYE users with remaining My Timesheets do not see the disabled card copy', () => {

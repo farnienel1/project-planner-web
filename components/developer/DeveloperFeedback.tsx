@@ -83,8 +83,8 @@ export function DeveloperFeedbackScreen() {
                 <div>
                   <p className="font-bold">{row.title}</p>
                   <p className="mt-1 text-xs text-[var(--ink3)]">
-                    {row.voteCount} votes · {row.commentCount} comments · {row.category}
-                    {row.organizationName ? ` · ${row.organizationName}` : ''}
+                    {row.voteCount} votes · {row.commentCount} comments · {row.category} ·{' '}
+                    {row.organizationName?.trim() || 'Unknown organisation'}
                   </p>
                 </div>
                 <span className="pill" data-hue={DECISION_HUE[row.productDecision]}>
@@ -132,7 +132,9 @@ export function DeveloperRoadmapScreen() {
                     <Link href={`/developer/feedback/${row.id}`} className="text-sm font-bold">
                       {row.title}
                     </Link>
-                    <p className="mt-1 text-xs text-[var(--ink3)]">{row.voteCount} votes</p>
+                    <p className="mt-1 text-xs text-[var(--ink3)]">
+                      {row.voteCount} votes · {row.organizationName?.trim() || 'Unknown organisation'}
+                    </p>
                     <select
                       className="pp-in mt-2 text-xs"
                       value={row.productDecision}

@@ -17,6 +17,7 @@ import { newUuid } from '@/lib/firebase/firestoreUtils'
 import { omitUndefinedDeep } from '@/lib/ios-parity/firestoreCodec'
 import { saveInboxNotification } from '@/lib/firebase/notifyInbox'
 import { trackEvent } from '@/lib/analytics/trackEvent'
+import { feedbackWriteError } from '@/lib/feedback/errors'
 import { consolidateVotesOnMerge, voteId } from '@/lib/feedback/similar'
 import {
   parseComment,
@@ -123,11 +124,9 @@ export const useFeedbackStore = create<FeedbackState>((set, get) => ({
       const votes = voteSnap.docs.map((entry) => parseVote(entry.id, entry.data() as Record<string, unknown>))
       set({ suggestions, votes, loading: false })
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Could not load ideas'
+      const mapped = feedbackWriteError(error)
       set({
-        error: /permission|insufficient/i.test(message)
-          ? 'Missing or insufficient permissions. The shared Ideas board needs the latest firestore.rules published so every organisation can read and submit.'
-          : message,
+        error: mapped === 'Could not save' ? 'Could not load ideas' : mapped,
         loading: false,
       })
     }
@@ -403,13 +402,7 @@ export function publicStatusLabel(status: FeedbackPublicStatus): string {
   return status.replace(/_/g, ' ')
 }
 
-export function feedbackWriteError(error: unknown): string {
-  const message = error instanceof Error ? error.message : 'Could not save'
-  if (/permission|insufficient/i.test(message)) {
-    return 'Missing or insufficient permissions. The shared Ideas board needs the latest firestore.rules published so every organisation can read and submit.'
-  }
-  return message
-}
+export { feedbackWriteError } from '@/lib/feedback/errors'
 
 export function hasVoted(votes: FeedbackVote[], suggestionId: string, userId: string | undefined): boolean {
   if (!userId) return false
