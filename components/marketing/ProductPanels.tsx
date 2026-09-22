@@ -365,7 +365,7 @@ export function MaterialsPanel() {
         [
           ['2.5mm² T&E LSF', '3no 100m drums · Prysmian', 'Ordered', 'green'],
           ['300mm tray', '12 lengths · Legrand', 'Draft', 'lib'],
-          ['GU10 3000K dimmable', '40 · Formation', 'Ordered', 'green'],
+          ['GU10 3000K dimmable', '40 · Bell', 'Ordered', 'green'],
         ] as const
       ).map((row) => (
         <div key={row[0]} className="mrow" style={{ marginBottom: 9 }}>

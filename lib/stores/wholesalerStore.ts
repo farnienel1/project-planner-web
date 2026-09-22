@@ -22,12 +22,14 @@ function parseContacts(rows: unknown): WholesalerContact[] {
       const email = parseString(data.email)
       const createdAt = parseFirestoreDate(data.createdAt) || new Date()
       if (!name || !email) return null
+      const phone = parseOptionalString(data.phone)
       return {
         id: parseUuid(data.id),
         name,
         email,
         isPrimary: data.isPrimary === true,
         createdAt,
+        ...(phone ? { phone } : {}),
       } satisfies WholesalerContact
     })
     .filter((contact): contact is WholesalerContact => contact !== null)
@@ -73,6 +75,7 @@ function wholesalerPayload(wholesaler: Wholesaler) {
       name: contact.name.trim(),
       email: contact.email.trim(),
       isPrimary: contact.isPrimary,
+      phone: contact.phone?.trim() || null,
       createdAt: Timestamp.fromDate(contact.createdAt),
     })),
     createdAt: Timestamp.fromDate(wholesaler.createdAt),

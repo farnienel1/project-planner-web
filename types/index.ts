@@ -210,6 +210,7 @@ export interface WholesalerContact {
   id: string;
   name: string;
   email: string;
+  phone?: string;
   isPrimary: boolean;
   createdAt: Date;
 }
