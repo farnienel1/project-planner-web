@@ -103,20 +103,30 @@ export function buildToolboxTalkPdfHtml({
 </html>`
 }
 
-export function openToolboxTalkPdf(html: string, filename: string): void {
+export function downloadHtmlFile(html: string, filename: string): void {
+  const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename.endsWith('.html') ? filename : `${filename}.html`
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  window.setTimeout(() => URL.revokeObjectURL(url), 1500)
+}
+
+export function openToolboxTalkPdf(html: string, filename: string): { downloaded: boolean; printed: boolean } {
+  downloadHtmlFile(html, filename)
   const printWindow = window.open('', '_blank', 'noopener,noreferrer,width=900,height=700')
-  if (!printWindow) return
+  if (!printWindow) return { downloaded: true, printed: false }
   printWindow.document.open()
   printWindow.document.write(html)
   printWindow.document.close()
   printWindow.focus()
   printWindow.onload = () => printWindow.print()
+  return { downloaded: true, printed: true }
+}
 
-  const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = filename
-  link.click()
-  URL.revokeObjectURL(url)
+export function openTalkFile(fileURL: string): void {
+  window.open(fileURL, '_blank', 'noopener,noreferrer')
 }

@@ -31,6 +31,7 @@ export {
   canAccessOperativeAnnualLeaveDirectory,
   canAccessTeamSection,
   canViewHelp,
+  canAccessDeveloperDashboard,
   canViewSchedule,
   canViewDailyOverview,
   canViewWeeklyReports,

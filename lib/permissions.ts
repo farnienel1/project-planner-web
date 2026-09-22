@@ -37,6 +37,7 @@ export function parseUserPermissions(
     subContractors: false,
     siteAudit: true,
     wholesalersOrderHistory: true,
+    developerAccess: false,
   }
 }
 
@@ -248,6 +249,12 @@ export function canAccessTeamSection(user: PermissionUser): boolean {
 
 export function canViewHelp(user: PermissionUser): boolean {
   return !isOperativeMode(user)
+}
+
+/** Product developer dashboard — super admins, or users granted developerAccess. Never operatives. */
+export function canAccessDeveloperDashboard(user: PermissionUser): boolean {
+  if (!user || isOperativeMode(user)) return false
+  return user.isSuperAdmin === true || flag(user, 'developerAccess')
 }
 
 export function canViewMySchedule(user: PermissionUser): boolean {

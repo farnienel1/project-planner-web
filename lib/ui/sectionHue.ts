@@ -52,6 +52,10 @@ export function hueForNavId(id: string): SectionHue {
     case 'dashboard_site_audit':
     case 'dashboard_site_map':
       return 'hs'
+    case 'dashboard_ideas':
+      return 'task'
+    case 'dashboard_developer':
+      return 'lib'
     case 'dashboard_clients':
     case 'dashboard_wholesalers':
     case 'dashboard_settings':

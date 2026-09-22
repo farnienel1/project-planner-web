@@ -1,7 +1,7 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { addDoc, collection, Timestamp } from 'firebase/firestore'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useSubcontractorStore } from '@/lib/stores/subcontractorStore'
@@ -39,12 +39,34 @@ export function ScheduleSubcontractorForm({
   const [selectedContactIds, setSelectedContactIds] = useState<Set<string>>(new Set())
   const [search, setSearch] = useState('')
   const [typeFilter, setTypeFilter] = useState('All Types')
+  const previousTypeFilter = useRef(typeFilter)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     if (organization?.id) loadSubcontractors(organization.id)
   }, [organization?.id, loadSubcontractors])
+
+  useEffect(() => {
+    const list = subcontractors
+      .filter((sub) => typeFilter === 'All Types' || sub.subcontractorType === typeFilter)
+      .sort((a, b) => a.name.localeCompare(b.name))
+    const first = list[0]
+    const filterChanged = previousTypeFilter.current !== typeFilter
+    previousTypeFilter.current = typeFilter
+    if (!first) {
+      setSelectedSubcontractorId('')
+      setUseGeneralAttendance(true)
+      setSelectedContactIds(new Set())
+      return
+    }
+    const stillVisible = list.some((sub) => sub.id === selectedSubcontractorId)
+    if (filterChanged || !stillVisible) {
+      setSelectedSubcontractorId(first.id)
+      setUseGeneralAttendance(true)
+      setSelectedContactIds(new Set())
+    }
+  }, [typeFilter, subcontractors, selectedSubcontractorId])
 
   const typeFilters = useMemo(() => {
     const types = new Set(subcontractors.map((s) => s.subcontractorType))
@@ -193,7 +215,10 @@ export function ScheduleSubcontractorForm({
             <button
               key={type}
               type="button"
-              onClick={() => setTypeFilter(type)}
+              onClick={() => {
+                if (type === typeFilter) return
+                setTypeFilter(type)
+              }}
               className={`rounded-full px-3 py-1.5 text-xs font-semibold ${
                 typeFilter === type ? 'bg-violet-600 text-white' : 'border border-slate-300 bg-white text-slate-600'
               }`}

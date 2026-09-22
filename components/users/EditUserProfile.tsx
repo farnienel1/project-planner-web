@@ -25,6 +25,7 @@ import { normalizeEmploymentType } from '@/lib/ios-parity/enums'
 import type { User, UserPermissions } from '@/types'
 import { PermissionToggleList } from '@/components/users/ProfileExpandablePermissionToggle'
 import {
+  DEVELOPER_PERMISSION_TOGGLES,
   MANAGER_PERMISSION_TOGGLES,
   OPERATIVE_PERMISSION_TOGGLES,
 } from '@/lib/staff/userPermissionDescriptions'
@@ -584,7 +585,21 @@ export function EditUserProfile({
         </>
       )}
 
-      {/* Operative / manager setup */}
+      {currentUser?.isSuperAdmin && effectivePermissions && effectiveAccountType !== 'operative' && (
+        <>
+          <SectionLabel label="Product developer" />
+          <SettingsCard>
+            <div className="divide-y divide-slate-100">
+              <PermissionToggleList
+                defs={DEVELOPER_PERMISSION_TOGGLES}
+                permissions={effectivePermissions}
+                onChange={updatePermissions}
+                disabled={!canEdit}
+              />
+            </div>
+          </SettingsCard>
+        </>
+      )}
       {showSetupCard && (
         <>
           <SectionLabel label={setupSectionTitle(target)} />
