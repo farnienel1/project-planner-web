@@ -314,7 +314,7 @@ export const RATES_FAQ: [string, string][] = [
   ],
   [
     'What happens if we go over our user limit?',
-    'We warn admins before you reach it, across web, iOS and Android, so you can upgrade before anyone is locked out.',
+    'We warn admins before you reach it, across web, iOS and Android, so you can upgrade to continue adding users with no down time.',
   ],
 ]
 
