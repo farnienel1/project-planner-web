@@ -16,7 +16,7 @@ export function StoreBadge({
       target="_blank"
       rel="noopener noreferrer"
     >
-      <MktIcon name={store === 'ios' ? 'apple' : 'android'} size={store === 'ios' ? 20 : 22} />
+      <MktIcon name={store === 'ios' ? 'apple' : 'android'} size={18} />
       <span>
         <small>{kicker}</small>
         {label}
