@@ -60,13 +60,17 @@ test('Timesheets appears in the menu for a manager with direct reports and no op
   assert.equal(ids.includes('dashboard_timesheets'), true)
 })
 
-test('Ideas is in the menu for every signed-in role; Developer is only for product developers', () => {
+test('Ideas is in the organisation menu; Developer never is', () => {
   const operative = user({ role: UserRole.OPERATIVE, permissions: { operativeMode: true } })
   const manager = user({ role: UserRole.MANAGER, permissions: { manager: true } })
   const orgAdmin = user({ role: UserRole.ADMIN, permissions: { adminAccess: true, manager: true } })
   const superAdmin = user({ role: UserRole.ADMIN, isSuperAdmin: true, permissions: { adminAccess: true } })
+  const owner = user({ email: 'info@projectplanner.us', isSuperAdmin: true, permissions: { adminAccess: true } })
   assert.equal(getDashboardNavItems(operative, null).some((item) => item.id === 'dashboard_ideas'), true)
+  assert.equal(getDashboardNavItems(manager, null).some((item) => item.id === 'dashboard_ideas'), true)
+  assert.equal(getDashboardNavItems(orgAdmin, null).some((item) => item.id === 'dashboard_ideas'), true)
+  assert.equal(getDashboardNavItems(superAdmin, null).some((item) => item.id === 'dashboard_developer'), false)
+  assert.equal(getDashboardNavItems(owner, null).some((item) => item.id === 'dashboard_developer'), false)
   assert.equal(getDashboardNavItems(manager, null).some((item) => item.id === 'dashboard_developer'), false)
   assert.equal(getDashboardNavItems(orgAdmin, null).some((item) => item.id === 'dashboard_developer'), false)
-  assert.equal(getDashboardNavItems(superAdmin, null).some((item) => item.id === 'dashboard_developer'), true)
 })

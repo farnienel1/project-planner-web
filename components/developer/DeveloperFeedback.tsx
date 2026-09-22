@@ -78,12 +78,13 @@ export function DeveloperFeedbackScreen() {
       ) : (
         <div className="space-y-2">
           {rows.map((row) => (
-            <Link key={row.id} href={`/dashboard/developer/feedback/${row.id}`} className="card pad block">
+            <Link key={row.id} href={`/developer/feedback/${row.id}`} className="card pad block">
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="font-bold">{row.title}</p>
                   <p className="mt-1 text-xs text-[var(--ink3)]">
-                    {row.voteCount} votes · {row.commentCount} comments · {row.category}
+                    {row.voteCount} votes · {row.commentCount} comments · {row.category} ·{' '}
+                    {row.organizationName?.trim() || 'Unknown organisation'}
                   </p>
                 </div>
                 <span className="pill" data-hue={DECISION_HUE[row.productDecision]}>
@@ -128,10 +129,12 @@ export function DeveloperRoadmapScreen() {
                 {cards.length === 0 ? <p className="text-xs text-[var(--ink3)]">No cards</p> : null}
                 {cards.map((row) => (
                   <div key={row.id} className="rounded-xl bg-[var(--soft)] p-3">
-                    <Link href={`/dashboard/developer/feedback/${row.id}`} className="text-sm font-bold">
+                    <Link href={`/developer/feedback/${row.id}`} className="text-sm font-bold">
                       {row.title}
                     </Link>
-                    <p className="mt-1 text-xs text-[var(--ink3)]">{row.voteCount} votes</p>
+                    <p className="mt-1 text-xs text-[var(--ink3)]">
+                      {row.voteCount} votes · {row.organizationName?.trim() || 'Unknown organisation'}
+                    </p>
                     <select
                       className="pp-in mt-2 text-xs"
                       value={row.productDecision}

@@ -52,6 +52,7 @@ export type FeedbackSuggestion = {
   authorUserId: string
   authorName: string
   organizationId: string
+  organizationName?: string
   voteCount: number
   commentCount: number
   publicStatus: FeedbackPublicStatus

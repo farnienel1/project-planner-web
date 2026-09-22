@@ -7,6 +7,9 @@ import {
   User as FirebaseUser,
   createUserWithEmailAndPassword,
   sendPasswordResetEmail,
+  EmailAuthProvider,
+  reauthenticateWithCredential,
+  updatePassword,
 } from 'firebase/auth'
 import { doc, getDoc, setDoc, updateDoc, Timestamp } from 'firebase/firestore'
 import { seedOrgDefaultDashboard } from '@/lib/dashboard/dashboardLayoutStorage'
@@ -33,6 +36,8 @@ import {
   readWebIdleLastActivity,
   touchWebIdleActivity,
 } from '@/lib/auth/webIdleSession'
+import { isPlatformOwnerEmail, isPlatformOwnerSentinelOrg, PLATFORM_OWNER_EMAIL } from '@/lib/platform/owner'
+import { platformOwnerProfilePayload, platformOwnerUser } from '@/lib/platform/ownerProfile'
 
 interface AuthState {
   user: User | null
@@ -42,6 +47,8 @@ interface AuthState {
   error: string | null
   signIn: (email: string, password: string) => Promise<void>
   signUp: (email: string, password: string, organizationName: string) => Promise<void>
+  signUpOwner: (password: string) => Promise<void>
+  changePassword: (currentPassword: string, nextPassword: string) => Promise<void>
   signOut: (opts?: { idle?: boolean }) => Promise<void>
   resetPassword: (email: string) => Promise<void>
   checkAuth: () => void
@@ -94,6 +101,24 @@ async function loadSignedInProfileInner(firebaseUser: FirebaseUser) {
   }
 
   if (!userDoc.exists()) {
+    if (isPlatformOwnerEmail(firebaseUser.email)) {
+      const owner = platformOwnerUser(firebaseUser.uid, firebaseUser.email || '')
+      useAuthStore.setState({
+        user: owner,
+        firebaseUser,
+        organization: null,
+        loading: false,
+        error: null,
+      })
+      void withTimeoutFallback(
+        setDoc(doc(db, 'users', firebaseUser.uid), platformOwnerProfilePayload(firebaseUser.email || ''), { merge: true }),
+        PROFILE_STEP_MS,
+        undefined
+      ).catch((ownerProfileError) => {
+        console.warn('Platform owner profile write skipped:', ownerProfileError)
+      })
+      return
+    }
     useAuthStore.setState({
       user: null,
       firebaseUser,
@@ -216,9 +241,10 @@ async function loadSignedInProfileInner(firebaseUser: FirebaseUser) {
     error: null,
   })
 
-  void import('@/lib/analytics/trackEvent').then(({ trackEvent }) =>
+  void import('@/lib/analytics/trackEvent').then(({ trackEvent }) => {
+    if (isPlatformOwnerEmail(user.email) || isPlatformOwnerSentinelOrg(user.organizationId)) return
     trackEvent('user_logged_in', { userId: user.id, organizationId: user.organizationId })
-  )
+  })
 
   if (Object.keys(patch).length > 0) {
     patch.updatedAt = Timestamp.now()
@@ -284,7 +310,7 @@ export const useAuthStore = create<AuthState>((set) => {
 
         await loadSignedInProfileWithWait(firebaseUser)
         const loaded = useAuthStore.getState().user
-        if (loaded && loaded.accountConfirmed === false) {
+        if (loaded && loaded.accountConfirmed === false && !isPlatformOwnerEmail(firebaseUser.email)) {
           await firebaseSignOut(getFirebaseAuth())
           clearWebIdleActivity()
           set({
@@ -362,6 +388,32 @@ export const useAuthStore = create<AuthState>((set) => {
         set({ loading: false, error: message })
         throw error
       }
+    },
+
+    signUpOwner: async (password: string) => {
+      try {
+        set({ loading: true, error: null })
+        const auth = getFirebaseAuth()
+        const db = getFirebaseDb()
+        const result = await createUserWithEmailAndPassword(auth, PLATFORM_OWNER_EMAIL, password)
+        await setDoc(doc(db, 'users', result.user.uid), platformOwnerProfilePayload(PLATFORM_OWNER_EMAIL), { merge: true })
+        await loadSignedInProfileWithWait(result.user)
+        touchWebIdleActivity()
+        set({ loading: false })
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : 'Could not create the owner login'
+        set({ loading: false, error: message })
+        throw error
+      }
+    },
+
+    changePassword: async (currentPassword: string, nextPassword: string) => {
+      const auth = getFirebaseAuth()
+      const current = auth.currentUser
+      if (!current?.email) throw new Error('You need to be signed in to change your password.')
+      const credential = EmailAuthProvider.credential(current.email, currentPassword)
+      await reauthenticateWithCredential(current, credential)
+      await updatePassword(current, nextPassword)
     },
 
     signOut: async (opts) => {
