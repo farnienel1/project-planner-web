@@ -78,6 +78,7 @@ export const useOperativeStore = create<OperativeState>((set, get) => ({
   },
   
   loadManagers: async (organizationId: string) => {
+    await runOrgLoad('operativeStore:managers', organizationId, async () => {
     try {
       const managersRef = collection(db, 'organizations', organizationId, 'managers')
       const snapshot = await getDocs(managersRef)
@@ -92,6 +93,7 @@ export const useOperativeStore = create<OperativeState>((set, get) => ({
     } catch (error: any) {
       set({ error: error.message })
     }
+    })
   },
   
   loadSkills: async (organizationId: string) => {
@@ -188,6 +190,7 @@ export const useOperativeStore = create<OperativeState>((set, get) => ({
     const id = manager.id || newUuid()
     const payload = serializeManager({ ...manager, id, organizationId })
     await setDoc(doc(db, 'organizations', organizationId, 'managers', id), payload)
+    invalidateOrgLoad('operativeStore:managers')
     const saved = { ...manager, id, organizationId, updatedAt: new Date() }
     set({ managers: [...get().managers.filter((m) => m.id !== id), saved] })
     return id
@@ -207,6 +210,7 @@ export const useOperativeStore = create<OperativeState>((set, get) => ({
   
   deleteManager: async (id, organizationId) => {
     await deleteDoc(doc(db, 'organizations', organizationId, 'managers', id))
+    invalidateOrgLoad('operativeStore:managers')
     set({ managers: get().managers.filter((m) => m.id !== id) })
   },
 

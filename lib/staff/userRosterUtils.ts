@@ -54,6 +54,27 @@ export function getOperativeModeUsers(users: User[]): User[] {
   )
 }
 
+/** Admins and managers for job View access — admins stay in Managers even if they also have operative mode. */
+export function getVisibilityManagerUsers(users: User[]): User[] {
+  return dedupeUsersByEmail(
+    users.filter((user) => user.permissions?.adminAccess || user.isSuperAdmin || user.permissions?.manager)
+  ).sort((a, b) =>
+    `${a.firstName} ${a.surname}`.localeCompare(`${b.firstName} ${b.surname}`, undefined, {
+      sensitivity: 'base',
+    })
+  )
+}
+
+/** Everyone who is not in the Managers tab — so View lists the whole organisation. */
+export function getVisibilityOperativeUsers(users: User[]): User[] {
+  const managerIds = new Set(getVisibilityManagerUsers(users).map((user) => user.id))
+  return dedupeUsersByEmail(users.filter((user) => !managerIds.has(user.id))).sort((a, b) =>
+    `${a.firstName} ${a.surname}`.localeCompare(`${b.firstName} ${b.surname}`, undefined, {
+      sensitivity: 'base',
+    })
+  )
+}
+
 /** Admins and managers (not operative-mode) — used by pickers / scheduling. */
 export function getManagerUsers(users: User[]): User[] {
   return dedupeUsersByEmail(

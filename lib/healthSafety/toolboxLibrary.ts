@@ -12,8 +12,15 @@ function parseTalkList(raw: unknown): HSToolboxTalk[] {
     .filter((talk): talk is HSToolboxTalk => talk !== null)
 }
 
+let cachedLibrary: Promise<HSToolboxTalk[]> | null = null
+
 /** Master toolbox talks shipped in platformConfig — shared by iOS and web. */
 export async function loadPlatformToolboxLibrary(): Promise<HSToolboxTalk[]> {
+  if (!cachedLibrary) cachedLibrary = loadPlatformToolboxLibraryUncached()
+  return cachedLibrary
+}
+
+async function loadPlatformToolboxLibraryUncached(): Promise<HSToolboxTalk[]> {
   for (const docId of PLATFORM_DOC_IDS) {
     try {
       const snap = await getDoc(doc(db, 'platformConfig', docId))
