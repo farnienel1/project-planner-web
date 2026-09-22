@@ -186,7 +186,7 @@ export interface UserPermissions {
   annualLeaveSelfBook?: boolean;
   weeklyReports?: boolean;
   dailyOverview?: boolean;
-  /** Web-only: product developer dashboard (analytics + feedback admin). */
+  /** Legacy flag. Owner console access is email-only (info@projectplanner.us), never granted from an organisation. */
   developerAccess?: boolean;
 }
 

@@ -62,11 +62,14 @@ export function DeveloperFeedbackDetailScreen({ ideaId }: { ideaId: string }) {
 
   return (
     <div className="space-y-4">
-      <Link href="/dashboard/developer/feedback" className="btn sm ghost">
+      <Link href="/developer/feedback" className="btn sm ghost">
         ← Feedback
       </Link>
       {error ? <ErrorBanner message={error} /> : null}
       <h1 className="text-xl font-extrabold">{suggestion.title}</h1>
+      <p className="text-sm text-[var(--ink3)]">
+        {suggestion.organizationName?.trim() || 'Unknown organisation'} · {suggestion.authorName} · {suggestion.category}
+      </p>
       <p className="whitespace-pre-wrap text-sm text-[var(--ink2)]">{suggestion.details}</p>
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -312,7 +315,7 @@ export function DeveloperFeedbackDetailScreen({ ideaId }: { ideaId: string }) {
         {related.length === 0 ? <p className="mt-2 text-sm text-[var(--ink3)]">None in this feature area.</p> : null}
         <div className="mt-2 space-y-2">
           {related.slice(0, 6).map((row) => (
-            <Link key={row.id} href={`/dashboard/developer/feedback/${row.id}`} className="block text-sm font-semibold">
+            <Link key={row.id} href={`/developer/feedback/${row.id}`} className="block text-sm font-semibold">
               {row.title} · {row.voteCount} votes
             </Link>
           ))}

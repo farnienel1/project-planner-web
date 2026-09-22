@@ -1,21 +1,17 @@
 'use client'
 
 import { useEffect } from 'react'
-import { useRouter } from 'next/navigation'
-import { useAuthStore } from '@/lib/stores/authStore'
-import { canAccessDeveloperDashboard } from '@/lib/permissions'
+import { usePathname, useRouter } from 'next/navigation'
 import { LoadingSpinner } from '@/components/dashboard/PageShell'
 
-export default function DeveloperLayout({ children }: { children: React.ReactNode }) {
+export default function LegacyDeveloperRedirect() {
   const router = useRouter()
-  const { user, loading } = useAuthStore()
-  const allowed = canAccessDeveloperDashboard(user)
+  const pathname = usePathname() || '/dashboard/developer'
 
   useEffect(() => {
-    if (!loading && user && !allowed) router.replace('/dashboard')
-  }, [allowed, loading, router, user])
+    const next = pathname.replace(/^\/dashboard\/developer/, '/developer') || '/developer'
+    router.replace(next)
+  }, [pathname, router])
 
-  if (loading || !user) return <LoadingSpinner />
-  if (!allowed) return <LoadingSpinner label="Not authorised" />
-  return <>{children}</>
+  return <LoadingSpinner label="Opening the owner console…" />
 }
