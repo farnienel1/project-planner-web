@@ -299,9 +299,11 @@ export function DeveloperFeedbackDetailScreen({ ideaId }: { ideaId: string }) {
 
       <section className="card pad">
         <h2 className="h2">Comments</h2>
-        {comments.length === 0 ? <p className="mt-2 text-sm text-[var(--ink3)]">No comments.</p> : null}
+        {comments.filter((comment) => comment.suggestionId === suggestion.id).length === 0 ? <p className="mt-2 text-sm text-[var(--ink3)]">No comments.</p> : null}
         <div className="mt-2 space-y-2">
-          {comments.map((comment) => (
+          {comments
+            .filter((comment) => comment.suggestionId === suggestion.id)
+            .map((comment) => (
             <div key={comment.id} className="rounded-xl bg-[var(--soft)] p-3 text-sm">
               <p className="text-xs font-semibold">{comment.authorName}</p>
               {comment.body}
@@ -324,9 +326,11 @@ export function DeveloperFeedbackDetailScreen({ ideaId }: { ideaId: string }) {
 
       <section className="card pad">
         <h2 className="h2">Audit trail</h2>
-        {history.length === 0 ? <p className="mt-2 text-sm text-[var(--ink3)]">No admin changes yet.</p> : null}
+        {history.filter((entry) => entry.suggestionId === suggestion.id).length === 0 ? <p className="mt-2 text-sm text-[var(--ink3)]">No admin changes yet.</p> : null}
         <ul className="mt-2 space-y-2 text-sm">
-          {history.map((entry) => (
+          {history
+            .filter((entry) => entry.suggestionId === suggestion.id)
+            .map((entry) => (
             <li key={entry.id}>
               <span className="font-semibold">{entry.actorName}</span> changed {entry.field} from {entry.fromValue} to {entry.toValue}
               {entry.reason ? ` — ${entry.reason}` : ''}

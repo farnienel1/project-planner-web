@@ -6,7 +6,7 @@ import type { ReactNode } from 'react'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useAnalyticsStore } from '@/lib/analytics/analyticsStore'
 import { AppLogoMark } from '@/components/ui/AppLogoMark'
-import { hasCustomerOrganisation } from '@/lib/platform/owner'
+import { useFeedbackStore } from '@/lib/feedback/feedbackStore'
 import { cn } from '@/lib/ui/cn'
 import { ErrorBanner } from '@/components/dashboard/PageShell'
 
@@ -26,6 +26,7 @@ export function DeveloperAppShell({ children }: { children: ReactNode }) {
   const { user, organization, signOut } = useAuthStore()
   const orgCount = useAnalyticsStore((state) => state.organisations.length)
   const userCount = useAnalyticsStore((state) => state.users.length)
+  const ideaCount = useFeedbackStore((state) => state.suggestions.filter((row) => !row.hidden && !row.mergedIntoId).length)
   const orgApp = hasCustomerOrganisation(user?.organizationId)
 
   return (
@@ -40,7 +41,7 @@ export function DeveloperAppShell({ children }: { children: ReactNode }) {
         </div>
         <div className="flex flex-wrap items-center gap-3 text-sm">
           <span className="hidden sm:inline text-white/80">
-            {orgCount} organisations · {userCount} users
+            {orgCount} organisations · {userCount} users · {ideaCount} ideas
           </span>
           {orgApp ? (
             <Link href="/dashboard" className="btn sm ghost" style={{ color: 'white', borderColor: 'rgba(255,255,255,.25)' }}>
