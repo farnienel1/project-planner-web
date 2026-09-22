@@ -15,6 +15,8 @@ import type {
   Operative,
   Project,
   ProjectTask,
+  Qualification,
+  Skill,
   User,
   UserPermissions,
 } from '@/types'
@@ -42,6 +44,7 @@ import {
   asStringArray,
   asTimestamp,
   issuesFromZod,
+  omitUndefinedDeep,
 } from './firestoreCodec'
 import {
   bookingWriteSchema,
@@ -888,6 +891,44 @@ export function parseOperative(
   })
 }
 
+function serializeAssignedQualification(row: Qualification): Record<string, unknown> {
+  const createdAt = row.createdAt instanceof Date && !Number.isNaN(row.createdAt.getTime()) ? row.createdAt : new Date()
+  const updatedAt = row.updatedAt instanceof Date && !Number.isNaN(row.updatedAt.getTime()) ? row.updatedAt : createdAt
+  const payload: Record<string, unknown> = {
+    id: String(row.id || ''),
+    name: String(row.name || '').trim(),
+    hasEndDate: row.hasEndDate === true,
+    createdAt: asTimestamp(createdAt),
+    updatedAt: asTimestamp(updatedAt),
+  }
+  if (row.endDate instanceof Date && !Number.isNaN(row.endDate.getTime())) {
+    payload.endDate = asTimestamp(row.endDate)
+  }
+  return payload
+}
+
+function serializeAssignedSkill(skill: Skill | string): string | Record<string, unknown> {
+  if (typeof skill === 'string') return skill
+  const createdAt = skill.createdAt instanceof Date && !Number.isNaN(skill.createdAt.getTime()) ? skill.createdAt : new Date()
+  const updatedAt = skill.updatedAt instanceof Date && !Number.isNaN(skill.updatedAt.getTime()) ? skill.updatedAt : createdAt
+  const payload: Record<string, unknown> = {
+    id: String(skill.id || ''),
+    name: String(skill.name || '').trim(),
+    createdAt: asTimestamp(createdAt),
+    updatedAt: asTimestamp(updatedAt),
+  }
+  if (skill.trade?.trim()) payload.trade = skill.trade.trim()
+  return payload
+}
+
+function serializeStringMap(raw: Record<string, string> | undefined): Record<string, string> {
+  const output: Record<string, string> = {}
+  for (const [key, value] of Object.entries(raw || {})) {
+    if (typeof value === 'string' && value) output[key] = value
+  }
+  return output
+}
+
 /** iOS OperativeStore.save — organizations/{orgId}/operatives/{uuidString} */
 export function serializeOperative(
   operative: Operative & { organizationId: string }
@@ -920,7 +961,7 @@ export function serializeOperative(
     throw new IosWriteValidationError('Invalid operative write', issuesFromZod(parsed.error))
   }
   const v = parsed.data
-  return {
+  return omitUndefinedDeep({
     id: v.id,
     firstName: v.firstName,
     lastName: v.lastName,
@@ -928,8 +969,8 @@ export function serializeOperative(
     email: v.email,
     phone: v.phone,
     startDate: asTimestamp(v.startDate),
-    skills: v.skills,
-    qualifications: v.qualifications,
+    skills: (v.skills as (Skill | string)[]).map(serializeAssignedSkill),
+    qualifications: (v.qualifications as Qualification[]).map(serializeAssignedQualification),
     isActive: v.isActive,
     hourlyRate: v.hourlyRate,
     currencySymbol: v.currencySymbol,
@@ -941,13 +982,14 @@ export function serializeOperative(
     createdAt: asTimestamp(v.createdAt),
     updatedAt: asTimestamp(v.updatedAt),
     qualificationExpiryDates: Object.fromEntries(
-      Object.entries(operative.qualificationExpiryDates || {}).map(([key, value]) => [
-        key,
-        asTimestamp(value instanceof Date ? value : new Date(value)),
-      ])
+      Object.entries(operative.qualificationExpiryDates || {}).flatMap(([key, value]) => {
+        const date = value instanceof Date ? value : new Date(value)
+        if (Number.isNaN(date.getTime())) return []
+        return [[key, asTimestamp(date)] as const]
+      })
     ),
-    qualificationCertificateURLs: operative.qualificationCertificateURLs || {},
-  }
+    qualificationCertificateURLs: serializeStringMap(operative.qualificationCertificateURLs),
+  })
 }
 
 export function parseManager(
