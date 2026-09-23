@@ -10,7 +10,7 @@ function ResetPasswordRouter() {
   const searchParams = useSearchParams()
   const action = parseEmailActionSearch(searchParams)
   if (isPasswordResetAction(action)) return <CompletePasswordResetScreen />
-  return <ResetPasswordRequestScreen />
+  return <ResetPasswordRequestScreen initialEmail={searchParams.get('email') || ''} />
 }
 
 export default function ResetPasswordPage() {

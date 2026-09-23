@@ -2,6 +2,7 @@ import { getFirebaseConfigError } from '@/lib/firebase/env'
 import { isChunkLoadError } from '@/lib/client/chunkLoadError'
 import { isTimeoutError } from '@/lib/client/withTimeout'
 import { authErrorCode, errorMessageOf, isExistingAccountSignInError } from '@/lib/orgSetup/authSetupErrors'
+import { isExistingProjectPlannerLoginError } from '@/lib/orgSetup/existingLogin'
 
 export function formatSetupError(err: unknown): string {
   const code = authErrorCode(err)
@@ -19,10 +20,10 @@ export function formatSetupError(err: unknown): string {
     )
   }
 
-  if (isExistingAccountSignInError(err)) {
+  if (isExistingProjectPlannerLoginError(err) || isExistingAccountSignInError(err)) {
     return (
-      'This email already has a Project Planner account. Use the password for that login — Activate will add another ' +
-      'organisation to it. You can belong to as many organisations as you need.'
+      'This email already has a Project Planner login. Sign in, then open Switch organisation and choose ' +
+      'Set up a new organisation to pay for another firm. You stay in whichever organisation you last switched to.'
     )
   }
 
