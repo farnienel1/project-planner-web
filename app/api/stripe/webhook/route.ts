@@ -4,7 +4,7 @@ import { getAppBaseUrl, getStripe } from '@/lib/stripe/stripe'
 import { organizationIdFromStripeObject, syncSubscriptionToOrg } from '@/lib/stripe/syncOrgBilling'
 import { adminFirestoreCreateNamed, adminFirestoreGet, firestoreValue } from '@/lib/stripe/writeOrgBilling'
 import { sendProjectPlannerEmail } from '@/lib/email/resendClient'
-import { getStripePortalConfigurationId } from '@/lib/stripe/plans'
+import { createBillingPortalSession } from '@/lib/stripe/billingPortal'
 import { escapeHtml } from '@/lib/security/htmlEscape'
 import { readString } from '@/lib/owner/firestoreRest'
 
@@ -65,11 +65,11 @@ async function portalLink(customerId?: string | null): Promise<string> {
   if (!customerId) return `${base}/dashboard/settings/billing`
   try {
     const stripe = getStripe()
-    const session = await stripe.billingPortal.sessions.create({
-      customer: customerId,
-      return_url: `${base}/dashboard/settings/billing`,
-      configuration: getStripePortalConfigurationId(),
-    })
+    const session = await createBillingPortalSession(
+      stripe,
+      customerId,
+      `${base}/dashboard/settings/billing`
+    )
     return session.url || `${base}/dashboard/settings/billing`
   } catch {
     return `${base}/dashboard/settings/billing`

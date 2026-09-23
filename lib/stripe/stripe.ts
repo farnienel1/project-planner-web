@@ -5,7 +5,7 @@ let stripeClient: Stripe | null = null
 export function assertStripeTestKey(secretKey: string) {
   const mode = (process.env.STRIPE_MODE || '').trim().toLowerCase()
   const refuseLive = mode === 'test' || process.env.NODE_ENV !== 'production'
-  if (refuseLive && secretKey.startsWith('sk_live_')) {
+  if (refuseLive && /^(sk|rk|rkcs)_live_/.test(secretKey)) {
     throw new Error('Live Stripe keys are blocked while STRIPE_MODE=test (sandbox only).')
   }
 }
@@ -19,7 +19,7 @@ export function getStripe(): Stripe {
 
   if (!stripeClient) {
     stripeClient = new Stripe(secretKey, {
-      apiVersion: '2026-05-27.dahlia',
+      apiVersion: '2026-08-26.dahlia',
       typescript: true,
     })
   }

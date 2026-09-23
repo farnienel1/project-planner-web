@@ -7,6 +7,7 @@ import {
   PLAN_KEYS,
   STRIPE_LOOKUP_ANNUAL,
   STRIPE_LOOKUP_MONTHLY,
+  stripeNotConfiguredMessage,
 } from '@/lib/stripe/plans'
 import { getStripe } from '@/lib/stripe/stripe'
 import type Stripe from 'stripe'
@@ -43,7 +44,7 @@ export async function loadSubscriptionPlansWithStatus(): Promise<{
     return {
       plans: getSubscriptionPlans(),
       pricingLoaded: false,
-      pricingError: 'Add STRIPE_SECRET_KEY to load live prices.',
+      pricingError: stripeNotConfiguredMessage(),
     }
   }
   if (cached && Date.now() - cached.at < CACHE_MS) {
