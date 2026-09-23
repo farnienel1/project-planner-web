@@ -53,8 +53,9 @@ export async function POST(request: NextRequest) {
   }
 
   const ok: MfaOk = { uid: challenge.uid, exp: Date.now() + MFA_OK_TTL_MS }
-  const response = NextResponse.json({ ok: true, next: challenge.next || '' })
-  response.cookies.delete(MFA_CHALLENGE_COOKIE)
+  const next = challenge.next || ''
+  const response = NextResponse.json({ ok: true, next })
+  response.cookies.set(MFA_CHALLENGE_COOKIE, '', { ...cookieOptions(0), maxAge: 0 })
   response.cookies.set(MFA_OK_COOKIE, encodeSigned(ok), cookieOptions(MFA_OK_TTL_MS))
   return response
 }
