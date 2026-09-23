@@ -382,7 +382,12 @@ export function DailyOverviewScreen() {
     {bookLabourOpen ? (
       <div className="fixed inset-0 z-[80] overflow-y-auto bg-[var(--bg)]">
         <div className="mx-auto max-w-2xl px-4 py-6 lg:px-10 lg:py-8">
-          <BookLabourFlowScreen date={dateParam} from="daily-overview" onClose={() => setBookLabourOpen(false)} />
+          <BookLabourFlowScreen
+            date={dateParam}
+            from="daily-overview"
+            onlyUserIds={model.unbookedUserIds}
+            onClose={() => setBookLabourOpen(false)}
+          />
         </div>
       </div>
     ) : null}

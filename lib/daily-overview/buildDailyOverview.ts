@@ -108,6 +108,80 @@ function operativeDisplayName(op: Operative | undefined, fallbackId: string): st
   return `${op.firstName || ''} ${op.lastName || ''}`.trim() || op.email || fallbackId
 }
 
+export type UnbookedLabourRow = {
+  userId: string
+  name: string
+  missingHours: number
+  label: string
+}
+
+/** People the daily overview lists under Unbooked labour. Book labour uses this same set. */
+export function listUnbookedLabour(params: {
+  day: Date
+  bookings: Booking[]
+  managerBookings: ManagerSiteBooking[]
+  holidays: HolidayBooking[]
+  users: User[]
+  operatives: Operative[]
+}): UnbookedLabourRow[] {
+  const day = params.day
+  const dayBookings = uniqueById(params.bookings).filter((booking) => {
+    const status = normalizeBookingStatus(booking.status)
+    return coversCalendarDay(booking.date, day) && (status === 'Confirmed' || status === 'Tentative')
+  })
+  const dayManager = uniqueById(params.managerBookings).filter((booking) => coversCalendarDay(booking.date, day))
+  const holidays = params.holidays.filter((booking) => holidayCovers(booking, day))
+
+  const paidByOperative = new Map<string, number>()
+  for (const booking of dayBookings) {
+    const key = booking.operativeId.trim().toLowerCase()
+    paidByOperative.set(key, (paidByOperative.get(key) || 0) + estimatedPaidHours(booking))
+  }
+  const paidByUser = new Map<string, number>()
+  for (const booking of dayManager) {
+    paidByUser.set(booking.userId, (paidByUser.get(booking.userId) || 0) + estimatedPaidHours(booking))
+  }
+
+  const operativeUsers = params.users.filter((user) => {
+    const permissions = permsOf(user)
+    return (
+      user.isActive &&
+      permissions.operativeMode &&
+      !permissions.manager &&
+      !permissions.adminAccess &&
+      !user.isSuperAdmin &&
+      user.role !== 'admin'
+    )
+  })
+  const managerUsers = params.users.filter((user) => {
+    const permissions = permsOf(user)
+    return user.isActive && (permissions.manager || permissions.adminAccess || user.isSuperAdmin || user.role === 'admin')
+  })
+
+  const rows: UnbookedLabourRow[] = []
+  const pushUnbooked = (user: User) => {
+    const linked = params.operatives.find(
+      (operative) => operative.email.trim().toLowerCase() === user.email.trim().toLowerCase()
+    )
+    if (holidays.some((booking) => booking.userId === user.id || (linked && booking.operativeId === linked.id))) return
+    const operativePaid = linked ? paidByOperative.get(linked.id.trim().toLowerCase()) || 0 : 0
+    const paid = operativePaid + (paidByUser.get(user.id) || 0)
+    if (paid >= STANDARD_PAID_HOURS) return
+    const missing = Math.max(0, STANDARD_PAID_HOURS - paid)
+    const name = linked ? `${linked.firstName} ${linked.lastName}`.trim() || displayName(user) : displayName(user)
+    rows.push({
+      userId: user.id,
+      name,
+      missingHours: missing,
+      label: `${name} (missing ${overviewFormatHours(missing)}h)`,
+    })
+  }
+  operativeUsers.forEach(pushUnbooked)
+  managerUsers.forEach(pushUnbooked)
+  rows.sort((a, b) => a.label.localeCompare(b.label))
+  return rows
+}
+
 export type DailyOverviewModel = {
   day: Date
   dayLabel: string
@@ -119,6 +193,7 @@ export type DailyOverviewModel = {
   bookedPeopleCount: number
   unbookedCount: number
   unbookedNames: string[]
+  unbookedUserIds: string[]
   officeCount: number
   wfhCount: number
   onSiteCount: number
@@ -399,44 +474,16 @@ export function buildDailyOverview(params: {
   const bookedKeys = new Set(onSiteKeys)
   for (const b of dayManager) bookedKeys.add(`u:${b.userId}`)
 
-  const paidByOperative = new Map<string, number>()
-  for (const b of dayBookings) {
-    paidByOperative.set(b.operativeId, (paidByOperative.get(b.operativeId) || 0) + estimatedPaidHours(b))
-  }
-  const paidByUser = new Map<string, number>()
-  for (const b of dayManager) {
-    paidByUser.set(b.userId, (paidByUser.get(b.userId) || 0) + estimatedPaidHours(b))
-  }
-
-  const operativeUsers = params.users.filter((u) => {
-    const p = permsOf(u)
-    return (
-      u.isActive &&
-      p.operativeMode &&
-      !p.manager &&
-      !p.adminAccess &&
-      !u.isSuperAdmin &&
-      u.role !== 'admin'
-    )
+  const unbooked = listUnbookedLabour({
+    day,
+    bookings: params.bookings,
+    managerBookings: params.managerBookings,
+    holidays: params.holidays,
+    users: params.users,
+    operatives: params.operatives,
   })
-  const managerUsers = params.users.filter((u) => {
-    const p = permsOf(u)
-    return u.isActive && (p.manager || p.adminAccess || u.isSuperAdmin || u.role === 'admin')
-  })
-
-  const unbookedNames: string[] = []
-  const pushUnbooked = (user: User) => {
-    const linked = params.operatives.find((o) => o.email.toLowerCase() === user.email.toLowerCase())
-    if (holidays.some((h) => h.userId === user.id || (linked && h.operativeId === linked.id))) return
-    const paid = (linked ? paidByOperative.get(linked.id) || 0 : 0) + (paidByUser.get(user.id) || 0)
-    if (paid >= STANDARD_PAID_HOURS) return
-    const missing = Math.max(0, STANDARD_PAID_HOURS - paid)
-    const name = linked ? `${linked.firstName} ${linked.lastName}`.trim() || displayName(user) : displayName(user)
-    unbookedNames.push(`${name} (missing ${overviewFormatHours(missing)}h)`)
-  }
-  operativeUsers.forEach(pushUnbooked)
-  managerUsers.forEach(pushUnbooked)
-  unbookedNames.sort()
+  const unbookedNames = unbooked.map((row) => row.label)
+  const unbookedUserIds = unbooked.map((row) => row.userId)
 
   const labourHours = [
     ...dayBookings,
@@ -467,6 +514,7 @@ export function buildDailyOverview(params: {
     bookedPeopleCount: bookedKeys.size,
     unbookedCount: unbookedNames.length,
     unbookedNames,
+    unbookedUserIds,
     officeCount: new Set(officeBookings.map((b) => b.userId)).size,
     wfhCount: new Set(wfhBookings.map((b) => b.userId)).size,
     onSiteCount: onSiteKeys.size,
