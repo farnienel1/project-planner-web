@@ -11,7 +11,7 @@ export const COMPANY = {
   address: '71–75 Shelton Street, Covent Garden, London WC2H 9JQ',
 } as const
 
-export const PRICE_NOTE = 'Prices per month, excluding VAT. One-month free trial on every plan.'
+export const PRICE_NOTE = '£149/month or £1,490/year + VAT. 30-day free trial. Unlimited users.'
 
 export type MarketingModuleId =
   | 'scheduling'
@@ -153,94 +153,53 @@ export type MarketingPlan = {
   users: string
   userLimit: number
   popular?: boolean
+  interval: 'month' | 'year'
   features: string[]
 }
 
+const PLAN_FEATURES = [
+  'Everything included',
+  'Unlimited users',
+  'Unlimited projects and small works',
+  'Scheduling, timesheets, materials and H&S',
+  'iOS, Android and web',
+  'No feature tiers or paid add-ons',
+]
+
 export const MARKETING_PLANS: MarketingPlan[] = [
   {
-    key: 'starter',
-    name: 'Starter',
-    desc: 'For solo operators and very small teams.',
-    price: 29,
-    users: 'Up to 5 users',
-    userLimit: 5,
-    features: [
-      'Core project management',
-      'Projects & small works',
-      'Operative scheduling',
-      'iOS, Android & web access',
-    ],
-  },
-  {
-    key: 'team',
-    name: 'Team',
-    desc: 'For small teams starting to scale.',
-    price: 69,
-    users: 'Up to 15 users',
-    userLimit: 15,
-    features: [
-      'Everything in Starter',
-      'More operatives & managers',
-      'Materials catalogue',
-      'Annual leave',
-    ],
-  },
-  {
-    key: 'professional',
-    name: 'Professional',
-    desc: 'For growing contractors who need the full toolkit.',
+    key: 'month',
+    name: 'ProjectPlanner',
+    desc: 'Everything your construction team needs. One simple price. Unlimited users.',
     price: 149,
-    users: 'Up to 40 users',
-    userLimit: 40,
+    users: 'Unlimited users',
+    userLimit: Number.MAX_SAFE_INTEGER,
     popular: true,
-    features: [
-      'Everything in Team',
-      'Larger operative roster',
-      'Site audits & health & safety',
-      'Wholesalers & order history',
-    ],
+    interval: 'month',
+    features: PLAN_FEATURES,
   },
   {
-    key: 'enterprise',
-    name: 'Enterprise',
-    desc: 'For larger organisations with advanced needs.',
-    price: 299,
-    users: '40+ users',
-    userLimit: 1_000_000_000,
-    features: [
-      'Everything in Professional',
-      'Highest limits',
-      'Sub-contractor scheduling',
-      'Priority support',
-    ],
+    key: 'year',
+    name: 'ProjectPlanner Annual',
+    desc: 'Same software billed yearly. Save £298 a year.',
+    price: 1490,
+    users: 'Unlimited users',
+    userLimit: Number.MAX_SAFE_INTEGER,
+    interval: 'year',
+    features: PLAN_FEATURES,
   },
 ]
 
-const PLAN_ORDER: SubscriptionPlanKey[] = ['starter', 'team', 'professional', 'enterprise']
-
-const MODULE_FROM_PLAN: Record<MarketingModuleId, SubscriptionPlanKey> = {
-  scheduling: 'starter',
-  projects: 'starter',
-  warnings: 'starter',
-  timesheets: 'starter',
-  reports: 'starter',
-  people: 'starter',
-  materials: 'team',
-  hs: 'professional',
+export function planHasModule(_planKey: SubscriptionPlanKey, _moduleId: MarketingModuleId): boolean {
+  return true
 }
 
-export function planHasModule(planKey: SubscriptionPlanKey, moduleId: MarketingModuleId): boolean {
-  return PLAN_ORDER.indexOf(planKey) >= PLAN_ORDER.indexOf(MODULE_FROM_PLAN[moduleId])
+export function planHasExtra(_planKey: SubscriptionPlanKey, _from: SubscriptionPlanKey): boolean {
+  return true
 }
 
-export function planHasExtra(planKey: SubscriptionPlanKey, from: SubscriptionPlanKey): boolean {
-  return PLAN_ORDER.indexOf(planKey) >= PLAN_ORDER.indexOf(from)
-}
-
-export function suggestPlanForUsers(userCount: number): MarketingPlan {
-  return (
-    MARKETING_PLANS.find((plan) => userCount <= plan.userLimit) || MARKETING_PLANS[MARKETING_PLANS.length - 1]
-  )
+export function suggestPlanForUsers(_userCount: number): MarketingPlan {
+  return MARKETING_PLANS[0]
 }
 
 export function setupPathForPlan(planKey?: SubscriptionPlanKey): string {
@@ -271,7 +230,7 @@ export const PAGE_META: Record<string, { title: string; description: string }> =
   },
   pricing: {
     title: 'Pricing | Project Planner',
-    description: 'Flat-rate plans from £29 a month. One-month free trial. No per-user surprises.',
+    description: 'One plan: £149/month or £1,490/year + VAT. 30-day free trial. Unlimited users.',
   },
   download: {
     title: 'Download | Project Planner',
@@ -297,24 +256,24 @@ export const PAGE_META: Record<string, { title: string; description: string }> =
 
 export const RATES_FAQ: [string, string][] = [
   [
-    'Is there really a free month?',
-    'Yes. Set up your organisation, add your team and use every feature on your plan for a month. You choose a plan during setup and payment starts after the trial.',
+    'Is there really a free 30-day trial?',
+    'Yes. Set up your organisation, add your team and use every feature. You will not be charged until day 31. Cancel any time before then from Settings → Billing.',
   ],
   [
     'What counts as a user?',
-    'Anyone who signs in: admins, managers and operatives. Sub contractor operatives you book do not need their own login.',
+    'Anyone who signs in: admins, managers and operatives. There is no per-user charge and no seat limit.',
   ],
   [
-    'Can I change plans later?',
-    'Yes, any time from Settings. Upgrades apply straight away; downgrades apply from your next billing date.',
+    'Can I switch monthly and annual later?',
+    'Yes. Settings → Billing opens the Stripe customer portal, where you can switch monthly ↔ annual (prorated) or cancel at period end.',
   ],
   [
     'Do prices include VAT?',
     'No. Prices are shown excluding VAT, which is added at checkout for UK customers.',
   ],
   [
-    'What happens if we go over our user limit?',
-    'We warn admins before you reach it, across web, iOS and Android, so you can upgrade to continue adding users with no down time.',
+    'Are there feature tiers or add-ons?',
+    'No. One plan includes scheduling, timesheets, materials, H&S, reports and unlimited users and projects.',
   ],
 ]
 

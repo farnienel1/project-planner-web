@@ -47,6 +47,7 @@ export type OrganisationHubDestination =
   | 'material-cutoff'
   | 'payment-runs'
   | 'roles'
+  | 'billing'
 
 const ICON = {
   building:
@@ -270,6 +271,19 @@ export function OrganisationHubPanel({
           description={paymentSubtitle}
           chevron
           onClick={() => onNavigate('payment-runs')}
+        />
+      </SettingsCard>
+
+      <SectionLabel label="Billing" />
+      <SettingsCard>
+        <SettingsRow
+          icon={ICON.document}
+          iconBg="bg-[var(--blue)]/10"
+          iconColor="text-[var(--blue)]"
+          label="Billing"
+          description="Plan, trial, invoices and payment method"
+          chevron
+          onClick={() => onNavigate('billing')}
         />
       </SettingsCard>
 

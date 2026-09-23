@@ -1,5 +1,13 @@
-import type { SubscriptionPlan, SubscriptionPlanKey } from '@/lib/stripe/plans'
-import { getStripePriceId, getSubscriptionPlans, PLAN_KEYS } from '@/lib/stripe/plans'
+import type { SubscriptionPlan } from '@/lib/stripe/plans'
+import {
+  getStripePriceId,
+  getSubscriptionPlans,
+  lookupKeyForPlan,
+  normalizePlanKey,
+  PLAN_KEYS,
+  STRIPE_LOOKUP_ANNUAL,
+  STRIPE_LOOKUP_MONTHLY,
+} from '@/lib/stripe/plans'
 import { getStripe } from '@/lib/stripe/stripe'
 import type Stripe from 'stripe'
 
@@ -17,251 +25,72 @@ function formatPrice(amount: number, currency: string): string {
   }
 }
 
-function tierAmountCents(tier: Stripe.Price.Tier): number | null {
-  if (tier.flat_amount != null) return tier.flat_amount
-  if (tier.unit_amount != null) return tier.unit_amount
-  if (tier.flat_amount_decimal != null) return Math.round(Number(tier.flat_amount_decimal))
-  if (tier.unit_amount_decimal != null) return Math.round(Number(tier.unit_amount_decimal))
-  return null
-}
-
 function priceAmountCents(price: Stripe.Price): number | null {
   if (price.unit_amount != null) return price.unit_amount
   if (price.unit_amount_decimal != null) return Math.round(Number(price.unit_amount_decimal))
   return null
 }
 
-function getProductId(price: Stripe.Price): string | null {
-  if (typeof price.product === 'string') return price.product
-  if (price.product && typeof price.product === 'object' && 'id' in price.product) {
-    return price.product.id
-  }
-  return null
-}
+let cached: { at: number; plans: SubscriptionPlan[] } | null = null
+const CACHE_MS = 10 * 60 * 1000
 
-function recurringInterval(price: Stripe.Price): 'month' | 'year' {
-  return price.recurring?.interval === 'year' ? 'year' : 'month'
-}
-
-function tierCheckoutQuantity(
-  tier: Stripe.Price.Tier,
-  index: number,
-  previousUpTo: number | null
-): number {
-  if (index === 0) return 1
-  if (previousUpTo != null) return previousUpTo + 1
-  return index + 1
-}
-
-function mergeTieredPriceToPlans(
-  plans: SubscriptionPlan[],
-  price: Stripe.Price
-): SubscriptionPlan[] {
-  const tiers = price.tiers ?? []
-  const currency = price.currency ?? 'gbp'
-  const interval = recurringInterval(price)
-
-  return plans.map((plan, index) => {
-    const tier = tiers[index] ?? tiers[tiers.length - 1]
-    const previousUpTo = index > 0 ? tiers[index - 1]?.up_to ?? null : null
-    const amount = tierAmountCents(tier)
-
-    return {
-      ...plan,
-      name: plan.name,
-      description: plan.description,
-      priceLabel: amount != null ? formatPrice(amount, currency) : plan.priceLabel,
-      interval,
-      priceId: price.id,
-      checkoutQuantity: tierCheckoutQuantity(tier, index, previousUpTo),
-    }
-  })
-}
-
-async function listProductRecurringPrices(
-  stripe: Stripe,
-  productId: string
-): Promise<Stripe.Price[]> {
-  const prices = await stripe.prices.list({
-    product: productId,
-    active: true,
-    limit: 20,
-    expand: ['data.tiers'],
-  })
-
-  return prices.data
-    .filter((entry) => entry.type === 'recurring')
-    .sort((a, b) => (priceAmountCents(a) ?? 0) - (priceAmountCents(b) ?? 0))
-}
-
-function mergeMultiplePricesToPlans(
-  plans: SubscriptionPlan[],
-  prices: Stripe.Price[]
-): SubscriptionPlan[] {
-  return plans.map((plan, index) => {
-    const price = prices[index] ?? prices[prices.length - 1]
-    const amount = priceAmountCents(price)
-
-    return {
-      ...plan,
-      name: price.nickname?.trim() || plan.name,
-      description: price.metadata?.description?.trim() || plan.description,
-      priceLabel:
-        amount != null && price.currency ? formatPrice(amount, price.currency) : plan.priceLabel,
-      interval: recurringInterval(price),
-      priceId: price.id,
-      checkoutQuantity: 1,
-    }
-  })
-}
-
-function mergeFlatPriceToPlans(
-  plans: SubscriptionPlan[],
-  price: Stripe.Price,
-  product: Stripe.Product | null
-): SubscriptionPlan[] {
-  const amount = priceAmountCents(price)
-  const priceLabel =
-    amount != null && price.currency ? formatPrice(amount, price.currency) : undefined
-  const interval = recurringInterval(price)
-
-  return plans.map((plan) => ({
-    ...plan,
-    name: price.nickname?.trim() || product?.name?.trim() || plan.name,
-    description: product?.description?.trim() || plan.description,
-    priceLabel: priceLabel ?? plan.priceLabel,
-    interval,
-    priceId: price.id,
-    checkoutQuantity: 1,
-  }))
-}
-
-export async function enrichPlansWithStripeDetails(
-  plans: SubscriptionPlan[]
-): Promise<SubscriptionPlan[]> {
-  return loadSubscriptionPlans()
-}
-
-function planKeyFromPrice(price: Stripe.Price): SubscriptionPlanKey | null {
-  const metaKey = (price.metadata?.planKey || price.metadata?.plan_key || '').toLowerCase()
-  if (PLAN_KEYS.includes(metaKey as SubscriptionPlanKey)) return metaKey as SubscriptionPlanKey
-
-  const nickname = (price.nickname || '').toLowerCase()
-  for (const key of PLAN_KEYS) {
-    if (nickname.includes(key)) return key
-  }
-  return null
-}
-
-function mergePricesByPlanKey(
-  plans: SubscriptionPlan[],
-  prices: Stripe.Price[]
-): SubscriptionPlan[] | null {
-  const byKey = new Map<SubscriptionPlanKey, Stripe.Price>()
-  for (const price of prices) {
-    const key = planKeyFromPrice(price)
-    if (key && !byKey.has(key)) byKey.set(key, price)
-  }
-  if (byKey.size < 2) return null
-
-  return plans.map((plan) => {
-    const price = byKey.get(plan.key)
-    if (!price) return plan
-    const amount = priceAmountCents(price)
-    return {
-      ...plan,
-      name: price.nickname?.trim() || plan.name,
-      description: price.metadata?.description?.trim() || plan.description,
-      priceLabel:
-        amount != null && price.currency ? formatPrice(amount, price.currency) : plan.priceLabel,
-      interval: recurringInterval(price),
-      priceId: price.id,
-      checkoutQuantity: 1,
-    }
-  })
-}
-
-export type LoadSubscriptionPlansResult = {
+export async function loadSubscriptionPlansWithStatus(): Promise<{
   plans: SubscriptionPlan[]
   pricingLoaded: boolean
   pricingError?: string
-}
-
-export async function loadSubscriptionPlansWithStatus(): Promise<LoadSubscriptionPlansResult> {
-  const plans = getSubscriptionPlans()
-  const priceId = getStripePriceId()
-
+}> {
   if (!process.env.STRIPE_SECRET_KEY?.trim()) {
     return {
-      plans,
+      plans: getSubscriptionPlans(),
       pricingLoaded: false,
-      pricingError: 'Add STRIPE_SECRET_KEY to .env.local to load live tier prices.',
+      pricingError: 'Add STRIPE_SECRET_KEY to load live prices.',
     }
   }
-
-  if (!priceId) {
-    return {
-      plans,
-      pricingLoaded: false,
-      pricingError: 'Add STRIPE_PRICE_ID to .env.local.',
-    }
+  if (cached && Date.now() - cached.at < CACHE_MS) {
+    return { plans: cached.plans, pricingLoaded: true }
   }
-
-  const stripe = getStripe()
-
   try {
-    const anchorPrice = await stripe.prices.retrieve(priceId, {
-      expand: ['product', 'tiers'],
+    const stripe = getStripe()
+    const listed = await stripe.prices.list({
+      lookup_keys: [STRIPE_LOOKUP_MONTHLY, STRIPE_LOOKUP_ANNUAL],
+      active: true,
+      limit: 10,
     })
-
-    const product =
-      anchorPrice.product && typeof anchorPrice.product === 'object' && 'name' in anchorPrice.product
-        ? anchorPrice.product
-        : null
-
-    if (anchorPrice.billing_scheme === 'tiered' && (anchorPrice.tiers?.length ?? 0) >= 2) {
-      const merged = mergeTieredPriceToPlans(plans, anchorPrice)
-      const hasPrices = merged.some((plan) => plan.priceLabel !== '—')
-      return { plans: merged, pricingLoaded: hasPrices }
+    const byKey = new Map<string, Stripe.Price>()
+    for (const price of listed.data) {
+      const lookup = price.lookup_key || ''
+      if (lookup) byKey.set(lookup, price)
     }
-
-    const productId = getProductId(anchorPrice)
-    if (productId) {
-      const productPrices = await listProductRecurringPrices(stripe, productId)
-      const keyed = mergePricesByPlanKey(plans, productPrices)
-      if (keyed) {
-        const hasPrices = keyed.some((plan) => plan.priceLabel !== '—')
-        return { plans: keyed, pricingLoaded: hasPrices }
+    const plans = getSubscriptionPlans().map((plan) => {
+      const live = byKey.get(lookupKeyForPlan(plan.key))
+      const amount = live ? priceAmountCents(live) : null
+      return {
+        ...plan,
+        priceId: live?.id || plan.priceId,
+        priceLabel: amount != null ? formatPrice(amount, live?.currency || 'gbp') : plan.priceLabel,
+        amountPence: amount ?? plan.amountPence,
       }
-      if (productPrices.length >= 2) {
-        const merged = mergeMultiplePricesToPlans(plans, productPrices.slice(0, plans.length))
-        const hasPrices = merged.some((plan) => plan.priceLabel !== '—')
-        return { plans: merged, pricingLoaded: hasPrices }
-      }
-    }
-
-    const merged = mergeFlatPriceToPlans(plans, anchorPrice, product)
-    const hasPrices = merged.some((plan) => plan.priceLabel !== '—')
-    return { plans: merged, pricingLoaded: hasPrices }
+    })
+    cached = { at: Date.now(), plans }
+    return { plans, pricingLoaded: true }
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Stripe pricing request failed'
     console.warn('[stripe] Could not load subscription plans:', error)
-    return { plans, pricingLoaded: false, pricingError: message }
+    return {
+      plans: getSubscriptionPlans(),
+      pricingLoaded: false,
+      pricingError: error instanceof Error ? error.message : 'Could not load Stripe prices.',
+    }
   }
 }
 
-export async function loadSubscriptionPlans(): Promise<SubscriptionPlan[]> {
-  const result = await loadSubscriptionPlansWithStatus()
-  return result.plans
-}
-
-export async function getResolvedSubscriptionPlan(
-  planKey: string
-): Promise<SubscriptionPlan | undefined> {
-  const plans = await loadSubscriptionPlans()
-  return plans.find((plan) => plan.key === planKey)
+export async function getResolvedSubscriptionPlan(planKey: string) {
+  const key = normalizePlanKey(planKey)
+  const { plans } = await loadSubscriptionPlansWithStatus()
+  return plans.find((plan) => plan.key === key) || getSubscriptionPlans().find((plan) => plan.key === key)
 }
 
 export function isStripePriceConfigured(): boolean {
-  return Boolean(getStripePriceId()?.trim() && process.env.STRIPE_SECRET_KEY?.trim())
+  return Boolean(getStripePriceId('month') && process.env.STRIPE_SECRET_KEY?.trim())
 }
+
+export { PLAN_KEYS }

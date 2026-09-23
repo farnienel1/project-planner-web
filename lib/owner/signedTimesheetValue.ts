@@ -1,24 +1,18 @@
 import { collection, getDocs } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
+import { withTimeoutFallback } from '@/lib/client/withTimeout'
 import { parseFirestoreDate } from '@/lib/firebase/firestoreUtils'
-import { parseBooking, parseManagerSiteBooking, parseOperative } from '@/lib/ios-parity/converters'
-import { findOperativeForUser } from '@/lib/operatives/operativeRosterUtils'
 import { isTimesheetFullyApproved } from '@/lib/timesheets/timesheetApprovalPolicy'
 import { draftAdditionalTotal, emptyTimesheetDraft } from '@/lib/timesheets/timesheetDraft'
 import { draftFromFirestoreMap } from '@/lib/timesheets/timesheetStorage'
-import { ratePenceFromPounds } from '@/lib/timesheets/timesheetValue'
 import { penceForSignedTimesheet, userIdFromTimesheetDoc } from '@/lib/timesheets/signedSheetPence'
-import {
-  buildTimesheetSubjects,
-  collectSubjectDayEntries,
-  weekRangeFromStart,
-} from '@/lib/timesheets/timesheetWeekUtils'
 import type { User } from '@/types'
 
 export type SignedTimesheetValueTotals = {
   valuePence: number
   previousPence: number
   sheetCount: number
+  hours: number
   missingRateCount: number
   loaded: boolean
   error?: string
@@ -35,10 +29,10 @@ function inRange(date: Date | null | undefined, start: Date, end: Date): boolean
   return ms >= start.getTime() && ms <= end.getTime()
 }
 
-async function loadCollection(organizationId: string, name: string) {
-  if (!db) return []
-  const snap = await getDocs(collection(db, 'organizations', organizationId, name))
-  return snap.docs
+function usersForSheet(orgUsers: User[]) {
+  const byId = new Map(orgUsers.map((user) => [user.id, user]))
+  const byEmail = new Map(orgUsers.map((user) => [user.email.toLowerCase(), user]))
+  return { byId, byEmail }
 }
 
 export async function loadSignedTimesheetValueTotals(input: {
@@ -49,7 +43,15 @@ export async function loadSignedTimesheetValueTotals(input: {
   previousStart: Date
   previousEnd: Date
 }): Promise<SignedTimesheetValueTotals> {
-  if (!db) return { valuePence: 0, previousPence: 0, sheetCount: 0, missingRateCount: 0, loaded: true }
+  const empty: SignedTimesheetValueTotals = {
+    valuePence: 0,
+    previousPence: 0,
+    sheetCount: 0,
+    hours: 0,
+    missingRateCount: 0,
+    loaded: true,
+  }
+  if (!db) return empty
   const usersByOrg = new Map<string, User[]>()
   for (const user of input.users) {
     const list = usersByOrg.get(user.organizationId) || []
@@ -60,38 +62,29 @@ export async function loadSignedTimesheetValueTotals(input: {
   let valuePence = 0
   let previousPence = 0
   let sheetCount = 0
+  let hours = 0
   let missingRateCount = 0
 
   const ids = input.organizationIds.filter(Boolean)
-  for (let i = 0; i < ids.length; i += 3) {
-    const batch = ids.slice(i, i + 3)
+  for (let i = 0; i < ids.length; i += 4) {
+    const batch = ids.slice(i, i + 4)
     await Promise.all(
       batch.map(async (organizationId) => {
         try {
-          const [settingsDocs, bookingDocs, managerDocs, operativeDocs] = await Promise.all([
-            loadCollection(organizationId, 'settings'),
-            loadCollection(organizationId, 'bookings'),
-            loadCollection(organizationId, 'managerSiteBookings'),
-            loadCollection(organizationId, 'operatives'),
-          ])
+          const settingsDocs = await withTimeoutFallback(
+            getDocs(collection(db!, 'organizations', organizationId, 'settings')),
+            8000,
+            null
+          )
+          if (!settingsDocs) return
           const orgUsers = usersByOrg.get(organizationId) || []
-          const usersById = new Map(orgUsers.map((user) => [user.id, user]))
-          const operatives = operativeDocs
-            .map((row) => parseOperative(row.id, row.data() as Record<string, unknown>, organizationId))
-            .flatMap((parsed) => (parsed.ok ? [parsed.value] : []))
-          const bookings = bookingDocs
-            .map((row) => parseBooking(row.id, row.data() as Record<string, unknown>, organizationId))
-            .flatMap((parsed) => (parsed.ok ? [parsed.value] : []))
-          const managerSiteBookings = managerDocs
-            .map((row) => parseManagerSiteBooking(row.id, row.data() as Record<string, unknown>, organizationId))
-            .flatMap((parsed) => (parsed.ok ? [parsed.value] : []))
-          const subjects = buildTimesheetSubjects(orgUsers, operatives)
+          const { byId } = usersForSheet(orgUsers)
 
-          for (const entry of settingsDocs) {
+          for (const entry of settingsDocs.docs) {
             if (!entry.id.startsWith('timesheet_')) continue
             const data = entry.data() as Record<string, unknown>
             const userId = userIdFromTimesheetDoc(entry.id, data)
-            const user = usersById.get(userId)
+            const user = byId.get(userId) || orgUsers.find((row) => row.id === userId)
             if (!user) continue
             const draft = draftFromFirestoreMap(data, { includeSignatures: false }) || emptyTimesheetDraft()
             if (!isTimesheetFullyApproved(draft, user)) continue
@@ -100,42 +93,21 @@ export async function loadSignedTimesheetValueTotals(input: {
             const previous = inRange(signedAt, input.previousStart, input.previousEnd)
             if (!current && !previous) continue
 
-            const weekStart = parseFirestoreDate(data.weekStart) || signedAt || new Date()
-            const weekEnd =
-              parseFirestoreDate(data.weekEnd) || parseFirestoreDate(data.periodEnd) || weekRangeFromStart(weekStart).end
-            const linked = findOperativeForUser(user, operatives)
-            const subject =
-              subjects.find((row) => row.userId === user.id) ||
-              subjects.find((row) => linked && row.operativeId === linked.id) || {
-                key: `user:${user.id}`,
-                kind: 'manager' as const,
-                name: `${user.firstName} ${user.surname}`.trim(),
-                userId: user.id,
-                operativeId: linked?.id,
-                dayRate: user.dayRate,
-                hourlyRate: user.hourlyRate,
-              }
-            const hours = collectSubjectDayEntries({
-              subject,
-              bookings,
-              managerSiteBookings,
-              weekRange: { start: weekStart, end: weekEnd },
-            })
-            const rates = ratePenceFromPounds(user.dayRate ?? linked?.dayRate, user.hourlyRate ?? linked?.hourlyRate)
+            const storedHours =
+              typeof data.valueHours === 'number' && Number.isFinite(data.valueHours) ? data.valueHours : 0
+            const extrasPounds = draftAdditionalTotal(draft)
             const valued = penceForSignedTimesheet({
               storedValuePence: asPence(data.valuePence),
-              extrasPounds: draftAdditionalTotal(draft),
-              hoursByDate: hours.map((row) => ({
-                date: row.date.toISOString().slice(0, 10),
-                hours: row.hours,
-              })),
-              dayRatePence: rates.dayRatePence,
-              hourlyRatePence: rates.hourlyRatePence,
+              extrasPounds,
+              hoursByDate: storedHours > 0 ? [{ date: (signedAt || new Date()).toISOString().slice(0, 10), hours: storedHours }] : [],
+              dayRatePence: undefined,
+              hourlyRatePence: undefined,
             })
             if (current) {
               valuePence += valued.valuePence
               sheetCount += 1
-              if (valued.missingRate) missingRateCount += 1
+              hours += storedHours
+              if (valued.missingRate && !asPence(data.valuePence)) missingRateCount += 1
             }
             if (previous) previousPence += valued.valuePence
           }
@@ -146,5 +118,5 @@ export async function loadSignedTimesheetValueTotals(input: {
     )
   }
 
-  return { valuePence, previousPence, sheetCount, missingRateCount, loaded: true }
+  return { valuePence, previousPence, sheetCount, hours, missingRateCount, loaded: true }
 }

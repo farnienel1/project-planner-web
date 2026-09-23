@@ -36,6 +36,7 @@ import { WorkingHoursPanel } from '@/components/settings/panels/WorkingHoursPane
 import { AnnualLeaveDefaultsPanel } from '@/components/settings/panels/AnnualLeaveDefaultsPanel'
 import { ScheduleOptionsPanel } from '@/components/settings/panels/ScheduleOptionsPanel'
 import { CompanyDetailsPanel } from '@/components/settings/panels/CompanyDetailsPanel'
+import { BillingPanel } from '@/components/settings/panels/BillingPanel'
 import { SettingsChrome } from '@/components/settings/SettingsChrome'
 import {
   COMPANY_SETTINGS,
@@ -58,6 +59,7 @@ const ORGANISATION_HUB_PANELS: Panel[] = [
   'material-cutoff',
   'payment-runs',
   'roles',
+  'billing',
 ]
 
 function isOrganisationHubPanel(panel: Panel): boolean {
@@ -409,6 +411,7 @@ export default function SettingsScreen({ initialPanel = 'main' }: { initialPanel
     return wrap('payment-runs', <PaymentRunsPanel onBack={goHub} />)
   }
   if (panel === 'roles' && canAccessOrgHub) return wrap('roles', <RolesPanel onBack={goHub} />)
+  if (panel === 'billing' && canAccessOrgHub) return wrap('billing', <BillingPanel onBack={goHub} />)
 
   return (
     <div className="mx-auto max-w-[1100px] space-y-5 pb-10">
