@@ -36,7 +36,20 @@ export function LoginBrandScreen() {
       router.replace(mfaVerifyHref(nextPath))
       return
     }
-    if (loading || !user) return
+    if (firebaseUser && !mfaVerified) {
+      router.replace(mfaVerifyHref(nextPath))
+      return
+    }
+    if (loading) return
+    if (firebaseUser && mfaVerified) {
+      if (user && isPlatformOwnerEmail(user.email) && !hasCustomerOrganisation(user.organizationId)) {
+        router.replace('/developer')
+        return
+      }
+      router.replace(nextPath)
+      return
+    }
+    if (!user) return
     if (!mfaStatusKnown) return
     if (!mfaVerified) {
       router.replace(mfaVerifyHref(nextPath))
@@ -47,11 +60,14 @@ export function LoginBrandScreen() {
       return
     }
     router.replace(nextPath)
-  }, [firebaseUser?.uid, loading, mfaPending, mfaStatusKnown, mfaVerified, nextPath, router, user])
+  }, [firebaseUser, loading, mfaPending, mfaStatusKnown, mfaVerified, nextPath, router, user])
 
   const uid = user?.id || firebaseUser?.uid
-  if (mfaPending || (uid && isMfaGateOpen(uid)) || (user && mfaStatusKnown && !mfaVerified)) {
+  if (mfaPending || (uid && isMfaGateOpen(uid)) || (user && mfaStatusKnown && !mfaVerified) || (firebaseUser && !mfaVerified)) {
     return <LoadingSpinner label="Opening verification…" />
+  }
+  if (firebaseUser && (mfaVerified || loading)) {
+    return <LoadingSpinner label="Opening your organisation…" />
   }
 
   const trimmedEmail = email.trim()

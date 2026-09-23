@@ -20,13 +20,26 @@ import {
   shortOrganizationId,
 } from '@/lib/orgSetup/pendingOrganizationReuse'
 import type { OrgMembership } from '@/lib/orgMembership/types'
+import type { Organization, User } from '@/types'
 import { LoadingSpinner } from '@/components/dashboard/PageShell'
+
+function membershipFromCurrentOrg(organization: Organization, user: User): OrgMembership {
+  return {
+    organizationId: organization.id,
+    organizationName: organization.name,
+    role: user.role || 'admin',
+    status: 'active',
+    invitedAt: organization.createdAt,
+    createdAt: organization.createdAt,
+  }
+}
 
 export default function ChangeOrganisationPage() {
   const router = useRouter()
   const { user, firebaseUser, organization, loading: authLoading } = useAuthStore()
-  const [memberships, setMemberships] = useState<OrgMembership[]>([])
-  const [loading, setLoading] = useState(true)
+  const seeded = organization && user ? [membershipFromCurrentOrg(organization, user)] : []
+  const [memberships, setMemberships] = useState<OrgMembership[]>(seeded)
+  const [refreshing, setRefreshing] = useState(seeded.length === 0)
   const [switchingId, setSwitchingId] = useState<string | null>(null)
   const [acceptingId, setAcceptingId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -44,21 +57,13 @@ export default function ChangeOrganisationPage() {
     let cancelled = false
     async function load() {
       if (!firebaseUser?.uid) return
-      setLoading(true)
+      if (!organization) setRefreshing(true)
       try {
         const rows = await loadUserOrgMemberships(firebaseUser.uid, activeOrgId)
         if (!cancelled) {
-          if (rows.length === 0 && organization) {
-            setMemberships([
-              {
-                organizationId: organization.id,
-                organizationName: organization.name,
-                role: 'admin',
-                status: 'active',
-                invitedAt: organization.createdAt,
-              },
-            ])
-          } else {
+          if (rows.length === 0 && organization && user) {
+            setMemberships([membershipFromCurrentOrg(organization, user)])
+          } else if (rows.length > 0) {
             setMemberships(rows)
           }
         }
@@ -67,7 +72,7 @@ export default function ChangeOrganisationPage() {
           setError(err instanceof Error ? err.message : 'Could not load organisations')
         }
       } finally {
-        if (!cancelled) setLoading(false)
+        if (!cancelled) setRefreshing(false)
       }
     }
     void load()
@@ -104,7 +109,6 @@ export default function ChangeOrganisationPage() {
     setShowSwitchSplash(true)
     try {
       await switchActiveOrganization(firebaseUser.uid, membership.organizationId)
-      await new Promise((resolve) => setTimeout(resolve, 900))
       window.location.href = '/dashboard'
     } catch (err) {
       setShowSwitchSplash(false)
@@ -113,11 +117,15 @@ export default function ChangeOrganisationPage() {
     }
   }
 
-  if (authLoading || loading) {
+  if (authLoading && !user) {
     return <LoadingSpinner label="Loading organisations…" />
   }
 
   if (!user) return null
+
+  if (memberships.length === 0 && refreshing) {
+    return <LoadingSpinner label="Loading organisations…" />
+  }
 
   if (showSwitchSplash) {
     return (
@@ -152,6 +160,8 @@ export default function ChangeOrganisationPage() {
           your company data yet, so stay on the organisation that has your projects.
         </p>
       </section>
+
+      {refreshing ? <p className="muted xs">Checking for other organisations…</p> : null}
 
       {error ? <p className="banner" data-hue="red">{error}</p> : null}
 

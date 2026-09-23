@@ -14,6 +14,7 @@ import {
   where,
 } from 'firebase/firestore'
 import { getFirebaseDb } from '@/lib/firebase/ensureFirebase'
+import { queryWithin } from '@/lib/orgMembership/queryBudget'
 import { permissionsToFirestoreMap } from '@/lib/firebase/userPayload'
 import type { UserPermissions } from '@/types'
 import type { OrgMembership, UserOrgMembershipRecord } from '@/lib/orgMembership/types'
@@ -123,15 +124,19 @@ export async function loadUserOrgMemberships(
   const byId = new Map<string, OrgMembership>()
 
   const snap = await getDocs(collection(db, 'users', userId, 'orgMemberships'))
-  for (const entry of snap.docs) {
+  const orgSnaps = await Promise.all(
+    snap.docs.map(async (entry) => {
+      const orgSnap = await getDoc(doc(db, 'organizations', entry.id))
+      return { entry, orgSnap }
+    })
+  )
+  for (const { entry, orgSnap } of orgSnaps) {
     const data = entry.data() as Record<string, unknown>
-    const organizationId = entry.id
-    const orgSnap = await getDoc(doc(db, 'organizations', organizationId))
     const orgData = orgSnap.exists() ? (orgSnap.data() as Record<string, unknown>) : {}
-    const record = parseMembershipRecord(organizationId, data)
+    const record = parseMembershipRecord(entry.id, data)
     byId.set(
-      organizationId,
-      membershipFromOrgDoc(organizationId, orgData, record.role, {
+      entry.id,
+      membershipFromOrgDoc(entry.id, orgData, record.role, {
         status: record.status,
         invitedAt: record.invitedAt,
         acceptedAt: record.acceptedAt,
@@ -139,10 +144,14 @@ export async function loadUserOrgMemberships(
     )
   }
 
-  try {
-    const memberSnap = await getDocs(
-      query(collection(db, 'organizations'), where(`members.${userId}`, '!=', ''))
-    )
+  // Collection scans can hang on a missing index. If we already have memberships, do not wait on them.
+  const extraBudgetMs = byId.size > 0 ? 1800 : 6000
+  const [memberSnap, creatorSnap] = await Promise.all([
+    queryWithin(getDocs(query(collection(db, 'organizations'), where(`members.${userId}`, '!=', ''))), extraBudgetMs),
+    queryWithin(getDocs(query(collection(db, 'organizations'), where('creatorUserId', '==', userId))), extraBudgetMs),
+  ])
+
+  if (memberSnap) {
     for (const orgDoc of memberSnap.docs) {
       const orgData = orgDoc.data() as Record<string, unknown>
       const members = (orgData.members as Record<string, string> | undefined) ?? {}
@@ -157,21 +166,14 @@ export async function loadUserOrgMemberships(
         })
       )
     }
-  } catch {
-    // Permission or missing index: keep orgMemberships fallback.
   }
 
-  try {
-    const creatorSnap = await getDocs(
-      query(collection(db, 'organizations'), where('creatorUserId', '==', userId))
-    )
+  if (creatorSnap) {
     for (const orgDoc of creatorSnap.docs) {
       if (byId.has(orgDoc.id)) continue
       const orgData = orgDoc.data() as Record<string, unknown>
       byId.set(orgDoc.id, membershipFromOrgDoc(orgDoc.id, orgData, 'admin'))
     }
-  } catch {
-    // Permission or missing index: keep orgMemberships fallback.
   }
 
   const rows = Array.from(byId.values()).map((row) => ({
