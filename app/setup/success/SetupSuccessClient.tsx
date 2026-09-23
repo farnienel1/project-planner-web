@@ -10,6 +10,7 @@ import { getFirebaseAuth, getFirebaseDb } from '@/lib/firebase/ensureFirebase'
 import { doc, getDoc } from 'firebase/firestore'
 import { requestFounderConfirmEmail } from '@/lib/orgSetup/requestFounderConfirmEmail'
 import { saveFounderConfirmEmailPayload } from '@/lib/orgSetup/founderConfirmEmail'
+import { grantMfaSkip } from '@/lib/auth/mfa/mfaClient'
 
 type VerifiedSession = {
   organizationId: string
@@ -110,7 +111,11 @@ export default function SetupSuccessClient() {
           setStatus('success')
           setMessage('Payment confirmed. Opening your new organisation…')
           window.setTimeout(() => {
-            window.location.href = '/dashboard'
+            void grantMfaSkip()
+              .catch(() => undefined)
+              .finally(() => {
+                window.location.href = '/dashboard'
+              })
           }, 900)
         }
       } catch (error) {
