@@ -31,6 +31,7 @@ export const PRODUCT_EVENT_NAMES = [
   'report_exported',
   'timesheet_viewed',
   'timesheet_submitted',
+  'timesheet_signed',
   'timesheet_approved',
   'warning_issued',
   'annual_leave_requested',
@@ -100,7 +101,7 @@ export const FEATURE_EVENT_GROUPS: { id: string; label: string; events: ProductE
   { id: 'schedule', label: 'Schedule', events: ['schedule_viewed', 'schedule_edited'] },
   { id: 'materials', label: 'Materials', events: ['materials_viewed', 'material_order_created'] },
   { id: 'health_safety', label: 'Health & safety', events: ['health_safety_viewed', 'hs_document_uploaded', 'rams_signed'] },
-  { id: 'timesheets', label: 'Timesheets', events: ['timesheet_viewed', 'timesheet_submitted', 'timesheet_approved'] },
+  { id: 'timesheets', label: 'Timesheets', events: ['timesheet_viewed', 'timesheet_submitted', 'timesheet_signed', 'timesheet_approved'] },
   { id: 'reports', label: 'Reports', events: ['report_viewed', 'report_exported'] },
   { id: 'dashboard', label: 'Home', events: ['dashboard_viewed', 'page_viewed'] },
   {

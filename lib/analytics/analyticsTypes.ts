@@ -4,4 +4,6 @@ export type PlatformOrganisation = {
   memberCount: number
   createdAt?: Date
   updatedAt?: Date
+  unfinishedSetup?: boolean
+  isInternal?: boolean
 }

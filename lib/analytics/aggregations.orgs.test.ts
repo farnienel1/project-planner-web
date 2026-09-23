@@ -39,13 +39,13 @@ test('activity includes organisations only seen on users or events', () => {
   const now = new Date('2026-09-22T12:00:00Z')
   const rows = organisationActivityRows({
     organisations: [],
-    users: [{ id: 'u9', organizationId: 'C' }],
+    users: [{ id: 'u9', organizationId: 'C', email: 'pat@contractor.com' }],
     events: [{ id: 'e9', userId: 'u9', organizationId: 'C', eventName: 'dashboard_viewed', createdAt: now }],
     ideas: [{ organizationId: 'C' }],
     range: { start, end: new Date('2026-09-23T00:00:00Z') },
   })
   assert.equal(rows[0].id, 'C')
-  assert.equal(rows[0].name, 'Unknown organisation')
+  assert.equal(rows[0].name, 'Unfinished setup · p•••@contractor.com')
   assert.equal(rows[0].ideaCount, 1)
   assert.equal(rows[0].activeUsers, 1)
 })
@@ -75,7 +75,7 @@ test('extra organisations are recovered from users even with no events', () => {
     organisations: [{ id: 'A', name: 'Alpha Ltd' }],
     users: [
       { id: 'u1', organizationId: 'A' },
-      { id: 'u9', organizationId: 'C', lastSeenAt: new Date('2026-09-21T10:00:00Z') },
+      { id: 'u9', organizationId: 'C', lastSeenAt: new Date('2026-09-21T10:00:00Z'), email: 'pat@contractor.com' },
     ],
     events: [],
     ideas: [],
@@ -83,7 +83,7 @@ test('extra organisations are recovered from users even with no events', () => {
   })
   assert.equal(rows.length, 2)
   const extra = rows.find((row) => row.id === 'C')
-  assert.equal(extra?.name, 'Unknown organisation')
+  assert.equal(extra?.name, 'Unfinished setup · p•••@contractor.com')
   assert.equal(extra?.userCount, 1)
   assert.equal(extra?.activeUsers, 1)
 })

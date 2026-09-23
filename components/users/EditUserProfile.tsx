@@ -189,6 +189,9 @@ export function EditUserProfile({
   const [confirmAdmin, setConfirmAdmin] = useState(false)
   const [baseline, setBaseline] = useState<string | null>(null)
   const [originalDayRate, setOriginalDayRate] = useState<number | undefined>(undefined)
+  const [fixEmail, setFixEmail] = useState('')
+  const [fixNote, setFixNote] = useState('')
+  const [fixOpen, setFixOpen] = useState(false)
 
   useEffect(() => {
     if (!organization?.id) return
@@ -845,6 +848,68 @@ export function EditUserProfile({
             onClick={handleResendInvite}
           />
         )}
+        {canAdminTools ? (
+          <div className="rounded-xl border border-slate-200 bg-white p-4">
+            <p className="text-sm font-semibold text-slate-900">Wrong login email? Ask Project Planner to fix it</p>
+            <p className="mt-1 text-xs text-slate-500">
+              Sends a support request to the platform owner. They will change the login email; you never see or set a password.
+            </p>
+            {fixOpen ? (
+              <div className="mt-3 space-y-2">
+                <input
+                  className="pp-in"
+                  placeholder="Correct email"
+                  value={fixEmail}
+                  onChange={(e) => setFixEmail(e.target.value)}
+                />
+                <textarea
+                  className="pp-in min-h-[72px]"
+                  placeholder="Note (optional)"
+                  value={fixNote}
+                  onChange={(e) => setFixNote(e.target.value)}
+                />
+                <button
+                  type="button"
+                  className="btn sm primary"
+                  disabled={busyAction === 'fix-email'}
+                  onClick={async () => {
+                    if (!organization?.id || !target) return
+                    setBusyAction('fix-email')
+                    setError(null)
+                    try {
+                      const { jsonAuthHeaders } = await import('@/lib/security/clientAuthHeaders')
+                      const response = await fetch('/api/support/login-email', {
+                        method: 'POST',
+                        headers: await jsonAuthHeaders(),
+                        body: JSON.stringify({
+                          orgId: organization.id,
+                          targetUid: target.id,
+                          suggestedEmail: fixEmail,
+                          note: fixNote,
+                          targetName: `${target.firstName} ${target.surname}`.trim(),
+                        }),
+                      })
+                      const data = (await response.json().catch(() => ({}))) as { error?: string }
+                      if (!response.ok) throw new Error(data.error || 'Could not send that request.')
+                      setSuccess('Project Planner has been asked to fix this login email.')
+                      setFixOpen(false)
+                    } catch (err) {
+                      setError(err instanceof Error ? err.message : 'Could not send that request.')
+                    } finally {
+                      setBusyAction(null)
+                    }
+                  }}
+                >
+                  Send request
+                </button>
+              </div>
+            ) : (
+              <button type="button" className="btn sm ghost mt-2" onClick={() => setFixOpen(true)}>
+                Ask Project Planner to fix it
+              </button>
+            )}
+          </div>
+        ) : null}
 
         {canAdminTools && (
           <>

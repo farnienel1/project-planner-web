@@ -36,9 +36,10 @@ import {
   readWebIdleLastActivity,
   touchWebIdleActivity,
 } from '@/lib/auth/webIdleSession'
-import { isPlatformOwnerEmail, isPlatformOwnerSentinelOrg, isPlatformOwnerSession, PLATFORM_OWNER_EMAIL } from '@/lib/platform/owner'
+import { hasCustomerOrganisation, isPlatformOwnerEmail, isPlatformOwnerSentinelOrg, isPlatformOwnerSession, PLATFORM_OWNER_EMAIL } from '@/lib/platform/owner'
 import { platformOwnerProfilePayload, platformOwnerUser } from '@/lib/platform/ownerProfile'
 import { passwordResetActionSettings } from '@/lib/auth/passwordResetSettings'
+import { isMfaGateOpen, isMfaRequiredError, MfaRequiredError, openMfaGate, startEmailMfa } from '@/lib/auth/mfa/mfaClient'
 
 interface AuthState {
   user: User | null
@@ -287,7 +288,8 @@ async function loadSignedInProfileInner(firebaseUser: FirebaseUser) {
         /* private mode */
       }
     }
-    trackEvent('user_logged_in', { userId: user.id, organizationId: user.organizationId })
+    void trackEvent('user_logged_in', { userId: user.id, organizationId: user.organizationId })
+    void trackEvent('login', { userId: user.id, organizationId: user.organizationId, metadata: { source: 'web' } })
   })
 
   if (Object.keys(patch).length > 0) {
@@ -358,8 +360,26 @@ export const useAuthStore = create<AuthState>((set) => {
         set({ loading: true, error: null })
         const auth = getFirebaseAuth()
         const firebaseUser = await completeEmailSignIn(auth, email, password)
-        if (isPlatformOwnerEmail(firebaseUser.email || email)) {
-          await firebaseUser.getIdToken(true).catch(() => undefined)
+        const idToken = await firebaseUser.getIdToken(true).catch(() => firebaseUser.getIdToken())
+
+        try {
+          const nextPath =
+            isPlatformOwnerEmail(firebaseUser.email || email) && !hasCustomerOrganisation(useAuthStore.getState().user?.organizationId)
+              ? '/developer'
+              : '/dashboard'
+          const mfa = await startEmailMfa(idToken || '', nextPath)
+          if (mfa.required) {
+            openMfaGate(firebaseUser.uid, nextPath)
+          }
+        } catch (mfaError) {
+          await firebaseSignOut(auth).catch(() => undefined)
+          clearWebIdleActivity()
+          const message =
+            mfaError instanceof Error
+              ? mfaError.message
+              : 'Could not email a verification code. You have not been signed in.'
+          set({ user: null, firebaseUser: null, organization: null, loading: false, error: message })
+          throw mfaError instanceof Error ? mfaError : new Error(message)
         }
 
         await loadSignedInProfileWithWait(firebaseUser)
@@ -378,7 +398,14 @@ export const useAuthStore = create<AuthState>((set) => {
         }
         touchWebIdleActivity()
         set({ loading: false })
+        if (isMfaGateOpen(firebaseUser.uid)) {
+          throw new MfaRequiredError()
+        }
       } catch (error: unknown) {
+        if (isMfaRequiredError(error)) {
+          set({ loading: false, error: null })
+          throw error
+        }
         if (recoverOwnerSession(email) || useAuthStore.getState().user) {
           set({ loading: false, error: null })
           return

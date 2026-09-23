@@ -1,6 +1,7 @@
 import { dateFromDayKeyInZone, dayKeyInZone, LONDON_TIME_ZONE } from '@/lib/orgTime/zoneTime'
 import { FEATURE_EVENT_GROUPS, type ProductEvent, type ProductEventName, type ProductSession } from '@/lib/analytics/events'
 import type { AnalyticsDateRange } from '@/lib/analytics/dateRange'
+import { unfinishedSetupLabel } from '@/lib/owner/unfinishedSetup'
 
 export function inRange(date: Date, start: Date, end: Date): boolean {
   const time = date.getTime()
@@ -305,6 +306,7 @@ export type OrganisationActivityRow = {
   lastActivityAt?: Date
   ideaCount: number
   createdAt?: Date
+  unfinishedSetup?: boolean
 }
 
 function laterDate(a?: Date, b?: Date): Date | undefined {
@@ -314,8 +316,8 @@ function laterDate(a?: Date, b?: Date): Date | undefined {
 }
 
 export function organisationActivityRows(input: {
-  organisations: { id: string; name: string; createdAt?: Date }[]
-  users: { id: string; organizationId: string; lastSeenAt?: Date }[]
+  organisations: { id: string; name: string; createdAt?: Date; unfinishedSetup?: boolean }[]
+  users: { id: string; organizationId: string; lastSeenAt?: Date; email?: string }[]
   events: ProductEvent[]
   ideas: { organizationId: string }[]
   range: { start: Date; end: Date }
@@ -345,7 +347,15 @@ export function organisationActivityRows(input: {
   )
   const rows = [
     ...input.organisations,
-    ...extraIds.map((id) => ({ id, name: 'Unknown organisation', createdAt: undefined as Date | undefined })),
+    ...extraIds.map((id) => {
+      const email = (usersByOrg.get(id) || []).find((user) => user.email)?.email
+      return {
+        id,
+        name: unfinishedSetupLabel(email),
+        createdAt: undefined as Date | undefined,
+        unfinishedSetup: true,
+      }
+    }),
   ]
 
   return rows
@@ -369,6 +379,7 @@ export function organisationActivityRows(input: {
         lastActivityAt: lastSeen,
         ideaCount: ideasByOrg.get(org.id) || 0,
         createdAt: org.createdAt,
+        unfinishedSetup: org.unfinishedSetup,
       }
     })
     .sort((a, b) => b.userCount - a.userCount || b.activeUsers - a.activeUsers || a.name.localeCompare(b.name))
