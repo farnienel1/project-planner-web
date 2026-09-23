@@ -55,6 +55,33 @@ test('findTalkForIssue matches library reference codes used as talkId', () => {
   assert.equal(found?.title, 'Electrical isolation')
 })
 
+test('findTalkForIssue skips a stored TBT placeholder and uses the real library talk', () => {
+  const library = {
+    id: 'TBT-GEN-001',
+    referenceCode: 'TBT-GEN-001',
+    title: 'Working at Height',
+    category: 'General',
+    isGeneral: true,
+    trades: [],
+    purpose: 'Falls',
+    keyPoints: ['Guardrails'],
+    source: 'library',
+    status: 'approved',
+    version: 1,
+    updatedAt: new Date(),
+  }
+  const placeholder = {
+    ...library,
+    id: 'stored-placeholder',
+    title: 'TBT',
+    purpose: '',
+    keyPoints: [],
+  }
+  const found = findTalkForIssue({ talkId: 'stored-placeholder' }, [library], [placeholder])
+  assert.equal(found?.title, 'Working at Height')
+  assert.equal(found?.id, 'TBT-GEN-001')
+})
+
 test('tracking awaiting count is pending signatures on issued talks only', () => {
   const issues = [
     {
