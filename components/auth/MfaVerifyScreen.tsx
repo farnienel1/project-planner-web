@@ -6,39 +6,64 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { AppLogoMark } from '@/components/ui/AppLogoMark'
 import { maskEmail } from '@/lib/auth/maskEmail'
-import { clearMfaGate, isMfaGateOpen, readMfaGate, resendEmailMfa, verifyEmailMfa } from '@/lib/auth/mfa/mfaClient'
-import { hasCustomerOrganisation, isPlatformOwnerEmail } from '@/lib/platform/owner'
+import {
+  clearMfaGate,
+  resendEmailMfa,
+  safePostMfaPath,
+  startEmailMfa,
+  verifyEmailMfa,
+} from '@/lib/auth/mfa/mfaClient'
 
 export function MfaVerifyScreen() {
   const router = useRouter()
   const search = useSearchParams()
-  const { user, firebaseUser, signOut } = useAuthStore()
+  const { user, firebaseUser, signOut, loading, mfaNext, markMfaVerified } = useAuthStore()
   const [code, setCode] = useState('')
   const [error, setError] = useState('')
-  const [notice, setNotice] = useState('An email with your verification code has been sent.')
+  const [notice, setNotice] = useState('Sending a verification code to your email…')
   const [submitting, setSubmitting] = useState(false)
   const [resending, setResending] = useState(false)
+  const [cooldown, setCooldown] = useState(0)
   const email = firebaseUser?.email || user?.email || ''
+  const requestedNext = search.get('next') || mfaNext
+  const fallback = safePostMfaPath(
+    requestedNext,
+    (requestedNext || '').startsWith('/developer') ? '/developer' : '/dashboard'
+  )
 
   useEffect(() => {
-    if (!isMfaGateOpen(firebaseUser?.uid || user?.id) && firebaseUser) {
-      const next = search.get('next') || readMfaGate()?.next || ''
-      if (isPlatformOwnerEmail(email) && !hasCustomerOrganisation(user?.organizationId)) {
-        router.replace(next.startsWith('/developer') ? next : '/developer')
-      } else {
-        router.replace(next.startsWith('/dashboard') ? next : '/dashboard')
-      }
+    if (loading) return
+    if (!firebaseUser && !user) {
+      router.replace(fallback === '/developer' ? '/developer-login' : '/login')
     }
-  }, [email, firebaseUser, router, search, user?.id, user?.organizationId])
+  }, [fallback, firebaseUser, loading, router, user])
+
+  useEffect(() => {
+    let cancelled = false
+    void startEmailMfa(fallback)
+      .then((result) => {
+        if (cancelled) return
+        setNotice('An email with your verification code has been sent.')
+        if (result.retryAfterSec) setCooldown(result.retryAfterSec)
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : 'Could not send a verification code.')
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [fallback])
+
+  useEffect(() => {
+    if (cooldown <= 0) return
+    const timer = window.setTimeout(() => setCooldown((value) => Math.max(0, value - 1)), 1000)
+    return () => window.clearTimeout(timer)
+  }, [cooldown])
 
   const finish = (nextPath?: string) => {
     clearMfaGate()
-    const next = nextPath || search.get('next') || readMfaGate()?.next || ''
-    if (isPlatformOwnerEmail(email) && !hasCustomerOrganisation(user?.organizationId)) {
-      router.replace(next.startsWith('/developer') ? next : '/developer')
-      return
-    }
-    router.replace(next.startsWith('/dashboard') ? next : '/dashboard')
+    markMfaVerified()
+    router.replace(safePostMfaPath(nextPath || requestedNext, fallback))
   }
 
   const submit = async (event: FormEvent) => {
@@ -46,8 +71,8 @@ export function MfaVerifyScreen() {
     setError('')
     try {
       setSubmitting(true)
-      await verifyEmailMfa(code)
-      finish()
+      const result = await verifyEmailMfa(code)
+      finish(result.next || fallback)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'That code was not accepted.')
     } finally {
@@ -59,10 +84,17 @@ export function MfaVerifyScreen() {
     setError('')
     try {
       setResending(true)
-      await resendEmailMfa()
+      const result = await resendEmailMfa()
       setNotice('A new verification code has been emailed to you.')
+      setCooldown(result.retryAfterSec && result.retryAfterSec > 0 ? result.retryAfterSec : 8)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not resend the code yet.')
+      const retry = err && typeof err === 'object' && 'retryAfterSec' in err ? Number((err as { retryAfterSec?: number }).retryAfterSec) : 0
+      if (retry > 0) {
+        setCooldown(retry)
+        setNotice(`Please wait ${retry} seconds before requesting another code.`)
+      } else {
+        setError(err instanceof Error ? err.message : 'Could not resend the code yet.')
+      }
     } finally {
       setResending(false)
     }
@@ -82,7 +114,7 @@ export function MfaVerifyScreen() {
             Check your email
           </div>
           <p style={{ opacity: 0.85, fontSize: 17, maxWidth: 460, marginTop: 12 }}>
-            Two-step verification keeps your account safe after you have set your password from an invitation.
+            Enter the 6-digit code before opening the app. This page is required on every sign-in.
           </p>
         </div>
       </div>
@@ -115,8 +147,8 @@ export function MfaVerifyScreen() {
             </button>
           </form>
           <p className="muted small mt-[18px] text-center">
-            <button type="button" className="link" onClick={() => void resend()} disabled={resending}>
-              {resending ? 'Sending…' : 'Click here to resend'}
+            <button type="button" className="link" onClick={() => void resend()} disabled={resending || cooldown > 0}>
+              {resending ? 'Sending…' : cooldown > 0 ? `Resend available in ${cooldown}s` : 'Click here to resend'}
             </button>
           </p>
           <p className="muted small mt-3 text-center">
@@ -126,7 +158,7 @@ export function MfaVerifyScreen() {
               onClick={() => {
                 clearMfaGate()
                 void signOut()
-                router.replace('/login')
+                router.replace(fallback === '/developer' ? '/developer-login' : '/login')
               }}
             >
               Use a different account

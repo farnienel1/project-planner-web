@@ -22,6 +22,7 @@ import { requestFounderConfirmEmail } from '@/lib/orgSetup/requestFounderConfirm
 import { saveFounderConfirmEmailPayload } from '@/lib/orgSetup/founderConfirmEmail'
 import { saveGuidedSetupDraft } from '@/lib/orgSetup/persistGuidedSetup'
 import { jsonAuthHeaders } from '@/lib/security/clientAuthHeaders'
+import { grantMfaSkip } from '@/lib/auth/mfa/mfaClient'
 import { SetupExplainer } from '@/components/setup/SetupExplainer'
 import { OrganisationDetailsStep } from '@/components/setup/OrganisationDetailsStep'
 import { OrganisationFeaturesStep } from '@/components/setup/OrganisationFeaturesStep'
@@ -431,6 +432,7 @@ export function OrgSetupWizard() {
 
       if (!created.needsEmailConfirmation) {
         didNavigate = true
+        await grantMfaSkip().catch(() => undefined)
         window.location.href = '/dashboard'
         return
       }

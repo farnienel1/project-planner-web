@@ -36,10 +36,23 @@ import {
   readWebIdleLastActivity,
   touchWebIdleActivity,
 } from '@/lib/auth/webIdleSession'
-import { hasCustomerOrganisation, isPlatformOwnerEmail, isPlatformOwnerSentinelOrg, isPlatformOwnerSession, PLATFORM_OWNER_EMAIL } from '@/lib/platform/owner'
+import { isPlatformOwnerEmail, isPlatformOwnerSentinelOrg, isPlatformOwnerSession, PLATFORM_OWNER_EMAIL } from '@/lib/platform/owner'
 import { platformOwnerProfilePayload, platformOwnerUser } from '@/lib/platform/ownerProfile'
 import { passwordResetActionSettings } from '@/lib/auth/passwordResetSettings'
-import { isMfaGateOpen, isMfaRequiredError, MfaRequiredError, openMfaGate, startEmailMfa } from '@/lib/auth/mfa/mfaClient'
+import {
+  clearMfaCookiesOnly,
+  clearMfaSession,
+  grantMfaSkip,
+  isMfaGateOpen,
+  isMfaRequiredError,
+  MfaRequiredError,
+  openMfaGate,
+  readMfaStatus,
+  readSignedOutFlag,
+  startEmailMfa,
+  writeSignedOutFlag,
+} from '@/lib/auth/mfa/mfaClient'
+import { postSignOutHref, safePostMfaPath } from '@/lib/auth/mfa/mfaConstants'
 
 interface AuthState {
   user: User | null
@@ -47,7 +60,13 @@ interface AuthState {
   organization: Organization | null
   loading: boolean
   error: string | null
-  signIn: (email: string, password: string) => Promise<void>
+  mfaPending: boolean
+  mfaVerified: boolean
+  mfaStatusKnown: boolean
+  mfaNext: string
+  setMfaPending: (value: boolean) => void
+  markMfaVerified: () => void
+  signIn: (email: string, password: string, opts?: { next?: string }) => Promise<void>
   signUp: (email: string, password: string, organizationName: string) => Promise<void>
   signUpOwner: (password: string) => Promise<void>
   changePassword: (currentPassword: string, nextPassword: string) => Promise<void>
@@ -64,6 +83,36 @@ const PROFILE_STEP_MS = 4000
 
 let lastSeenWriteAt = 0
 let inFlightProfile: { uid: string; promise: Promise<void> } | null = null
+let signingOut = false
+
+function redirectAfterSignOut() {
+  if (typeof window === 'undefined') return
+  const path = window.location.pathname
+  if (
+    path === '/login' ||
+    path === '/developer-login' ||
+    path.startsWith('/auth/') ||
+    path.startsWith('/setup') ||
+    path.startsWith('/reset-password') ||
+    path.startsWith('/confirm-account')
+  ) {
+    return
+  }
+  window.location.replace(postSignOutHref(path))
+}
+
+async function syncMfaStatusFromCookie() {
+  const state = useAuthStore.getState()
+  if (state.mfaPending || isMfaGateOpen()) return
+  const status = await readMfaStatus()
+  if (useAuthStore.getState().mfaPending || isMfaGateOpen()) return
+  useAuthStore.setState({
+    mfaVerified: status.verified,
+    mfaStatusKnown: true,
+    mfaPending: Boolean((state.firebaseUser || state.user) && !status.verified),
+    mfaNext: status.next ? safePostMfaPath(status.next, state.mfaNext === '/developer' ? '/developer' : '/dashboard') : state.mfaNext,
+  })
+}
 
 function loadSignedInProfile(firebaseUser: FirebaseUser): Promise<void> {
   if (inFlightProfile?.uid === firebaseUser.uid) return inFlightProfile.promise
@@ -111,6 +160,8 @@ function keepOwnerSession(firebaseUser: FirebaseUser) {
 }
 
 function recoverOwnerSession(email?: string | null): boolean {
+  if (useAuthStore.getState().mfaPending) return false
+  if (readSignedOutFlag()) return false
   try {
     const current = getFirebaseAuth().currentUser
     if (current && isPlatformOwnerEmail(current.email || email)) {
@@ -307,6 +358,26 @@ async function loadSignedInProfileInner(firebaseUser: FirebaseUser) {
 export const useAuthStore = create<AuthState>((set) => {
   if (typeof window !== 'undefined' && isFirebaseConfigured()) {
     onAuthStateChanged(getFirebaseAuth(), async (firebaseUser) => {
+      if (signingOut || readSignedOutFlag()) {
+        if (firebaseUser) {
+          try {
+            await firebaseSignOut(getFirebaseAuth())
+          } catch {
+            /* already signed out */
+          }
+        }
+        set({
+          user: null,
+          firebaseUser: null,
+          organization: null,
+          loading: false,
+          mfaPending: false,
+          mfaVerified: false,
+          mfaStatusKnown: true,
+          mfaNext: '',
+        })
+        return
+      }
       if (firebaseUser) {
         if (
           isWebIdleExpired(Date.now(), readWebIdleLastActivity()) &&
@@ -322,6 +393,9 @@ export const useAuthStore = create<AuthState>((set) => {
           return
         }
         if (readWebIdleLastActivity() == null) touchWebIdleActivity()
+        if (!useAuthStore.getState().mfaPending && !isMfaGateOpen(firebaseUser.uid)) {
+          void syncMfaStatusFromCookie()
+        }
         try {
           await loadSignedInProfileWithWait(firebaseUser)
         } catch (authLoadError) {
@@ -343,7 +417,16 @@ export const useAuthStore = create<AuthState>((set) => {
           })
         }
       } else {
-        set({ user: null, firebaseUser: null, organization: null, loading: false })
+        set({
+          user: null,
+          firebaseUser: null,
+          organization: null,
+          loading: false,
+          mfaPending: false,
+          mfaVerified: false,
+          mfaStatusKnown: true,
+          mfaNext: '',
+        })
       }
     })
   }
@@ -354,62 +437,53 @@ export const useAuthStore = create<AuthState>((set) => {
     organization: null,
     loading: true,
     error: null,
+    mfaPending: false,
+    mfaVerified: false,
+    mfaStatusKnown: false,
+    mfaNext: '',
+    setMfaPending: (mfaPending) => set({ mfaPending }),
+    markMfaVerified: () => set({ mfaPending: false, mfaVerified: true, mfaStatusKnown: true }),
 
-    signIn: async (email: string, password: string) => {
+    signIn: async (email: string, password: string, opts) => {
+      const nextPath = safePostMfaPath(opts?.next, opts?.next?.startsWith('/developer') ? '/developer' : '/dashboard')
       try {
-        set({ loading: true, error: null })
+        set({
+          loading: true,
+          error: null,
+          mfaPending: true,
+          mfaVerified: false,
+          mfaStatusKnown: true,
+          mfaNext: nextPath,
+        })
         const auth = getFirebaseAuth()
         const firebaseUser = await completeEmailSignIn(auth, email, password)
-        const idToken = await firebaseUser.getIdToken(true).catch(() => firebaseUser.getIdToken())
-
-        try {
-          const nextPath =
-            isPlatformOwnerEmail(firebaseUser.email || email) && !hasCustomerOrganisation(useAuthStore.getState().user?.organizationId)
-              ? '/developer'
-              : '/dashboard'
-          const mfa = await startEmailMfa(idToken || '', nextPath)
-          if (mfa.required) {
-            openMfaGate(firebaseUser.uid, nextPath)
-          }
-        } catch (mfaError) {
-          await firebaseSignOut(auth).catch(() => undefined)
-          clearWebIdleActivity()
-          const message =
-            mfaError instanceof Error
-              ? mfaError.message
-              : 'Could not email a verification code. You have not been signed in.'
-          set({ user: null, firebaseUser: null, organization: null, loading: false, error: message })
-          throw mfaError instanceof Error ? mfaError : new Error(message)
-        }
-
-        await loadSignedInProfileWithWait(firebaseUser)
-        const loaded = useAuthStore.getState().user
-        if (loaded && loaded.accountConfirmed === false && !isPlatformOwnerEmail(firebaseUser.email)) {
-          await firebaseSignOut(getFirebaseAuth())
-          clearWebIdleActivity()
-          set({
-            user: null,
-            firebaseUser: null,
-            organization: null,
-            loading: false,
-            error: ACCOUNT_UNCONFIRMED_MESSAGE,
-          })
-          throw new Error(ACCOUNT_UNCONFIRMED_MESSAGE)
-        }
-        touchWebIdleActivity()
-        set({ loading: false })
-        if (isMfaGateOpen(firebaseUser.uid)) {
-          throw new MfaRequiredError()
-        }
+        writeSignedOutFlag(false)
+        openMfaGate(firebaseUser.uid, nextPath)
+        await clearMfaCookiesOnly()
+        set({
+          firebaseUser,
+          mfaPending: true,
+          mfaVerified: false,
+          mfaStatusKnown: true,
+          mfaNext: nextPath,
+          loading: false,
+          error: null,
+        })
+        void startEmailMfa(nextPath).catch((startError) => {
+          console.warn('Verification email is still sending:', startError)
+        })
+        throw new MfaRequiredError()
       } catch (error: unknown) {
         if (isMfaRequiredError(error)) {
-          set({ loading: false, error: null })
+          set({ loading: false, error: null, mfaPending: true, mfaVerified: false, mfaStatusKnown: true })
           throw error
         }
-        if (recoverOwnerSession(email) || useAuthStore.getState().user) {
-          set({ loading: false, error: null })
-          return
-        }
+        set({
+          loading: false,
+          mfaPending: false,
+          mfaVerified: false,
+          mfaStatusKnown: true,
+        })
         const message = error instanceof Error ? error.message : 'Sign in failed'
         set({ loading: false, error: message })
         throw error
@@ -463,7 +537,8 @@ export const useAuthStore = create<AuthState>((set) => {
           updatedAt: new Date(),
         })
 
-        set({ loading: false })
+        await grantMfaSkip()
+        set({ loading: false, mfaPending: false, mfaVerified: true, mfaStatusKnown: true })
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : 'Sign up failed'
         set({ loading: false, error: message })
@@ -480,8 +555,9 @@ export const useAuthStore = create<AuthState>((set) => {
         await result.user.getIdToken(true).catch(() => undefined)
         await setDoc(doc(db, 'users', result.user.uid), platformOwnerProfilePayload(PLATFORM_OWNER_EMAIL), { merge: true })
         await loadSignedInProfileWithWait(result.user)
+        await grantMfaSkip()
         touchWebIdleActivity()
-        set({ loading: false })
+        set({ loading: false, mfaPending: false, mfaVerified: true, mfaStatusKnown: true })
       } catch (error: unknown) {
         if (recoverOwnerSession(PLATFORM_OWNER_EMAIL) || useAuthStore.getState().user) {
           set({ loading: false, error: null })
@@ -503,15 +579,47 @@ export const useAuthStore = create<AuthState>((set) => {
     },
 
     signOut: async (opts) => {
+      signingOut = true
+      writeSignedOutFlag(true)
       try {
         if (opts?.idle) markWebIdleExpired()
         else clearWebIdleActivity()
+        await clearMfaSession()
         await firebaseSignOut(getFirebaseAuth())
-        set({ user: null, firebaseUser: null, organization: null })
+        set({
+          user: null,
+          firebaseUser: null,
+          organization: null,
+          mfaPending: false,
+          mfaVerified: false,
+          mfaStatusKnown: true,
+          mfaNext: '',
+          error: null,
+          loading: false,
+        })
       } catch (error: unknown) {
+        try {
+          await firebaseSignOut(getFirebaseAuth())
+        } catch {
+          /* still clear local state */
+        }
+        set({
+          user: null,
+          firebaseUser: null,
+          organization: null,
+          mfaPending: false,
+          mfaVerified: false,
+          mfaStatusKnown: true,
+          mfaNext: '',
+          error: null,
+          loading: false,
+        })
         const message = error instanceof Error ? error.message : 'Sign out failed'
         set({ error: message })
         throw error
+      } finally {
+        signingOut = false
+        redirectAfterSignOut()
       }
     },
 
