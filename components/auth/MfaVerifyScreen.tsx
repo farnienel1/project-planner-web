@@ -6,10 +6,12 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { AppLogoMark } from '@/components/ui/AppLogoMark'
 import { maskEmail } from '@/lib/auth/maskEmail'
+import { extractMfaCode } from '@/lib/auth/mfa/mfaCode'
 import {
   clearMfaGate,
   isMfaGateOpen,
   readMfaGate,
+  readMfaStatus,
   resendEmailMfa,
   safePostMfaPath,
   startEmailMfa,
@@ -27,6 +29,7 @@ export function MfaVerifyScreen() {
   const [resending, setResending] = useState(false)
   const [cooldown, setCooldown] = useState(0)
   const startedFor = useRef('')
+  const submittingRef = useRef(false)
   const email = firebaseUser?.email || user?.email || ''
   const uid = firebaseUser?.uid || user?.id || ''
   const requestedNext = search.get('next') || mfaNext
@@ -38,10 +41,15 @@ export function MfaVerifyScreen() {
 
   useEffect(() => {
     if (loading || mfaPending || isMfaGateOpen(uid) || readMfaGate()) return
-    if (!firebaseUser && !user) {
-      router.replace(loginHref)
-    }
-  }, [fallback, firebaseUser, loading, loginHref, mfaPending, router, uid, user])
+    if (firebaseUser || user) return
+    router.replace(loginHref)
+  }, [firebaseUser, loading, loginHref, mfaPending, router, uid, user])
+
+  function goToApp(nextPath?: string) {
+    clearMfaGate()
+    markMfaVerified()
+    window.location.assign(safePostMfaPath(nextPath || requestedNext, fallback))
+  }
 
   useEffect(() => {
     const readyUid = firebaseUser?.uid
@@ -49,18 +57,35 @@ export function MfaVerifyScreen() {
     if (startedFor.current === readyUid) return
     startedFor.current = readyUid
     let cancelled = false
-    void startEmailMfa(fallback)
-      .then((result) => {
+    void (async () => {
+      try {
+        const status = await readMfaStatus()
         if (cancelled) return
+        if (status.verified) {
+          goToApp(status.next || fallback)
+          return
+        }
+        if (status.pending) {
+          setNotice('Enter the 6-digit code from your email.')
+          return
+        }
+        const result = await startEmailMfa(fallback)
+        if (cancelled) return
+        if (result.skipped) {
+          goToApp(fallback)
+          return
+        }
         setNotice('An email with your verification code has been sent.')
         if (result.retryAfterSec) setCooldown(result.retryAfterSec)
-      })
-      .catch((err) => {
+      } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : 'Could not send a verification code.')
-      })
+      }
+    })()
     return () => {
       cancelled = true
     }
+    // goToApp reads latest next from search params; mount once per uid
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fallback, firebaseUser?.uid])
 
   useEffect(() => {
@@ -69,23 +94,29 @@ export function MfaVerifyScreen() {
     return () => window.clearTimeout(timer)
   }, [cooldown])
 
-  const finish = (nextPath?: string) => {
-    clearMfaGate()
-    markMfaVerified()
-    router.replace(safePostMfaPath(nextPath || requestedNext, fallback))
+  const submit = async (event?: FormEvent, raw?: string) => {
+    event?.preventDefault()
+    const digits = extractMfaCode(raw ?? code)
+    if (digits.length !== 6 || submittingRef.current) return
+    submittingRef.current = true
+    setCode(digits)
+    setError('')
+    setSubmitting(true)
+    try {
+      const result = await verifyEmailMfa(digits)
+      goToApp(result.next || fallback)
+    } catch (err) {
+      submittingRef.current = false
+      setSubmitting(false)
+      setError(err instanceof Error ? err.message : 'That code was not accepted.')
+    }
   }
 
-  const submit = async (event: FormEvent) => {
-    event.preventDefault()
-    setError('')
-    try {
-      setSubmitting(true)
-      const result = await verifyEmailMfa(code)
-      finish(result.next || fallback)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'That code was not accepted.')
-    } finally {
-      setSubmitting(false)
+  const applyCode = (raw: string) => {
+    const digits = extractMfaCode(raw)
+    setCode(digits)
+    if (digits.length === 6) {
+      void submit(undefined, digits)
     }
   }
 
@@ -144,14 +175,21 @@ export function MfaVerifyScreen() {
               <input
                 inputMode="numeric"
                 autoComplete="one-time-code"
-                pattern="[0-9]*"
-                maxLength={6}
+                autoCorrect="off"
+                autoCapitalize="off"
+                spellCheck={false}
                 className="pp-in tracking-[0.4em] text-center text-lg font-extrabold"
                 value={code}
-                onChange={(event) => setCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
+                onChange={(event) => applyCode(event.target.value)}
+                onPaste={(event) => {
+                  const pasted = event.clipboardData.getData('text')
+                  if (!pasted) return
+                  event.preventDefault()
+                  applyCode(pasted)
+                }}
               />
             </label>
-            <button type="submit" className="btn primary block" style={{ height: 52 }} disabled={submitting || code.length !== 6}>
+            <button type="submit" className="btn primary block" style={{ height: 52 }} disabled={submitting || extractMfaCode(code).length !== 6}>
               {submitting ? 'Checking…' : 'Verify and continue'}
             </button>
           </form>

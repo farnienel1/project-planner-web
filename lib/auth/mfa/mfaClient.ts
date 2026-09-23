@@ -1,5 +1,6 @@
 import { jsonAuthHeaders } from '@/lib/security/clientAuthHeaders'
 import { MFA_GATE_KEY, MFA_SIGNED_OUT_KEY, mfaGateMatches, mfaVerifyHref, safePostMfaPath } from '@/lib/auth/mfa/mfaConstants'
+import { extractMfaCode } from '@/lib/auth/mfa/mfaCode'
 
 export { MFA_GATE_KEY, MFA_SIGNED_OUT_KEY, mfaGateMatches, mfaVerifyHref, safePostMfaPath }
 
@@ -124,8 +125,8 @@ export async function verifyEmailMfa(code: string): Promise<{ next: string }> {
   const response = await fetch('/api/auth/mfa/verify', {
     ...FETCH_OPTS,
     method: 'POST',
-    headers: await jsonAuthHeaders(),
-    body: JSON.stringify({ code }),
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code: extractMfaCode(code) }),
   })
   const data = (await response.json().catch(() => ({}))) as { error?: string; next?: string }
   if (!response.ok) throw new Error(data.error || 'That code was not accepted.')

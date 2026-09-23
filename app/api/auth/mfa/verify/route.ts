@@ -13,6 +13,7 @@ import {
   type MfaOk,
 } from '@/lib/auth/mfa/mfaCookies'
 import { jsonError, readJsonBody } from '@/lib/security/apiGuard'
+import { extractMfaCode } from '@/lib/auth/mfa/mfaCode'
 
 export const runtime = 'nodejs'
 
@@ -21,7 +22,7 @@ type VerifyBody = { code?: string }
 export async function POST(request: NextRequest) {
   const body = await readJsonBody<VerifyBody>(request)
   if (!body.ok) return body.response
-  const code = String(body.value.code || '').replace(/\s+/g, '')
+  const code = extractMfaCode(String(body.value.code || ''))
   if (!/^\d{6}$/.test(code)) return jsonError('Enter the 6-digit code from your email.', 400)
 
   const raw = request.cookies.get(MFA_CHALLENGE_COOKIE)?.value

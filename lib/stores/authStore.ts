@@ -104,11 +104,20 @@ function redirectAfterSignOut() {
   window.location.replace(postSignOutHref(path))
 }
 
+let lastVerifiedAt = 0
+
+function recentlyMarkedVerified(): boolean {
+  return Date.now() - lastVerifiedAt < 20_000
+}
+
 async function syncMfaStatusFromCookie() {
   const state = useAuthStore.getState()
   if (state.mfaPending || readMfaGate()) return
   const status = await readMfaStatus()
   if (useAuthStore.getState().mfaPending || readMfaGate()) return
+  if (recentlyMarkedVerified() && !status.verified) {
+    return
+  }
   useAuthStore.setState({
     mfaVerified: status.verified,
     mfaStatusKnown: true,
@@ -432,6 +441,7 @@ export const useAuthStore = create<AuthState>((set) => {
           })
         }
       } else if (!signingIn && !useAuthStore.getState().mfaPending) {
+        if (recentlyMarkedVerified()) return
         set({
           user: null,
           firebaseUser: null,
@@ -457,7 +467,11 @@ export const useAuthStore = create<AuthState>((set) => {
     mfaStatusKnown: false,
     mfaNext: '',
     setMfaPending: (mfaPending) => set({ mfaPending }),
-    markMfaVerified: () => set({ mfaPending: false, mfaVerified: true, mfaStatusKnown: true }),
+    markMfaVerified: () => {
+      lastVerifiedAt = Date.now()
+      const hasUser = Boolean(useAuthStore.getState().user)
+      set({ mfaPending: false, mfaVerified: true, mfaStatusKnown: true, loading: hasUser ? false : true })
+    },
 
     signIn: async (email: string, password: string, opts) => {
       const nextPath = safePostMfaPath(opts?.next, opts?.next?.startsWith('/developer') ? '/developer' : '/dashboard')

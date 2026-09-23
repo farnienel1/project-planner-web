@@ -247,10 +247,13 @@ function AppShellInner({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!organization?.id) return
-    void recoverJobTypesFromWork(organization.id).catch(() => {})
     loadUsers(organization.id)
     loadProjects(organization.id, true)
     loadSmallWorks(organization.id)
+    const timer = window.setTimeout(() => {
+      void recoverJobTypesFromWork(organization.id).catch(() => {})
+    }, 400)
+    return () => window.clearTimeout(timer)
   }, [organization?.id, loadUsers, loadProjects, loadSmallWorks])
 
   useEffect(() => {
