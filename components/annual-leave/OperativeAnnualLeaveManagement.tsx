@@ -14,6 +14,7 @@ import {
 import { isPendingHolidayRequest } from '@/lib/stores/holidayStore'
 import {
   buildAnnualLeavePeople,
+  canManagePersonAnnualLeave,
   resolvePersonName,
   sortAnnualLeavePeople,
   bookingMatchesPerson,
@@ -85,7 +86,10 @@ export function OperativeAnnualLeaveManagement() {
   const [search, setSearch] = useState('')
   const [selectedPerson, setSelectedPerson] = useState<AnnualLeavePerson | null>(null)
 
-  const people = useMemo(() => buildAnnualLeavePeople(users, operatives), [users, operatives])
+  const people = useMemo(() => {
+    const rows = buildAnnualLeavePeople(users, operatives)
+    return rows.filter((person) => canManagePersonAnnualLeave(user, person, users))
+  }, [users, operatives, user])
 
   const tradeChoices = useMemo(
     () => Array.from(new Set(people.map((p) => p.tradeLabel).filter(Boolean))).sort(),
@@ -296,7 +300,7 @@ export function OperativeAnnualLeaveManagement() {
           )}
 
           <p className="text-xs text-slate-500">
-            Select a person to view their calendar, book approved leave, or approve pending requests.
+            Select a person to view their calendar, their future annual leave, and book or delete approved leave.
           </p>
         </div>
       )}

@@ -302,12 +302,16 @@ export function DailyOverviewScreen() {
 
         <div className="stack">
           {model.isWeekday && model.unbookedNames.length > 0 ? (
-            <section className="card" data-hue="warn">
+            <section className="card" data-hue="red">
               <div className="card-h">
-                <div className="ico-chip sm">!</div>
+                <div className="ico-chip sm" aria-hidden="true">
+                  <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 2.4 1.4 21h21.2L12 2.4zm1.15 13.3h-2.3v-5.1h2.3v5.1zm0 3.3h-2.3v-2h2.3v2z" />
+                  </svg>
+                </div>
                 <h2 className="h2">Unbooked labour</h2>
                 <div className="acts">
-                  <span className="count" data-hue="warn">
+                  <span className="count" data-hue="red">
                     {model.unbookedNames.length}
                   </span>
                 </div>
@@ -319,7 +323,7 @@ export function DailyOverviewScreen() {
                     <span className="grow">
                       <span className="t">{name}</span>
                     </span>
-                    <span className="pill" data-hue="warn">
+                    <span className="pill" data-hue="red">
                       Unbooked
                     </span>
                   </div>
