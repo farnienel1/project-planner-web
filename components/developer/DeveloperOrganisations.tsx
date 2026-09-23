@@ -11,6 +11,7 @@ import type { DateRangePreset } from '@/lib/analytics/events'
 import { DateRangePicker } from '@/components/developer/DeveloperOverview'
 import { DeveloperShell, DeveloperStatus, MetricCard } from '@/components/developer/DeveloperShell'
 import { EmptyState, LoadingSpinner, SearchField } from '@/components/dashboard/PageShell'
+import { isTestRecord, useConsolePrefs } from '@/lib/analytics/consolePrefs'
 
 export function DeveloperOrganisationsScreen() {
   const [preset, setPreset] = useState<DateRangePreset>('all_time')
@@ -18,6 +19,7 @@ export function DeveloperOrganisationsScreen() {
   const range = useMemo(() => resolveDateRange(preset), [preset])
   const { organisations, users, events, loading, error, load, refresh } = useAnalyticsStore()
   const { suggestions, loadBoard } = useFeedbackStore()
+  const { includeTestData, jumpQuery } = useConsolePrefs()
 
   useEffect(() => {
     void load()
@@ -37,8 +39,12 @@ export function DeveloperOrganisationsScreen() {
   )
 
   const visible = useMemo(
-    () => rows.filter((row) => matchesOwnerSearch([row.name, row.id], query)),
-    [rows, query]
+    () =>
+      rows.filter((row) => {
+        if (!includeTestData && isTestRecord(row)) return false
+        return matchesOwnerSearch([row.name, row.id], query || jumpQuery)
+      }),
+    [rows, query, jumpQuery, includeTestData]
   )
 
   if (loading && organisations.length === 0 && users.length === 0 && !error) {

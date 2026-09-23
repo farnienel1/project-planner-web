@@ -75,6 +75,10 @@ function AccountForm() {
           This console is only for you. Organisation users never see it, and they cannot be granted access from User
           settings. This login stays signed in — it is not signed out after 30 minutes idle.
         </p>
+        <p className="mt-3 text-sm text-[var(--ink2)]">
+          Email verification (2FA) runs on every later sign-in after the owner password has been created. The first
+          Create owner password visit is not blocked, so you cannot lock yourself out on day one.
+        </p>
       </section>
       <form className="card pad space-y-3" onSubmit={(e) => void submit(e)}>
         <h2 className="h2">Change password</h2>
@@ -122,6 +126,13 @@ function AccountForm() {
           {saving ? 'Saving…' : 'Update password'}
         </button>
       </form>
+      <section className="card pad space-y-2">
+        <h2 className="h2">Two-step verification</h2>
+        <p className="text-sm text-[var(--ink2)]">
+          After email and password, a 6-digit code is emailed to {PLATFORM_OWNER_EMAIL}. Codes expire in 10 minutes.
+          Five wrong attempts starts sign-in again. If the email cannot be sent, sign-in is refused rather than skipped.
+        </p>
+      </section>
     </DeveloperShell>
   )
 }

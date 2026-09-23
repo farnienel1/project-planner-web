@@ -376,7 +376,7 @@ export const LEGAL_PACK_DOCUMENTS: LegalDocument[] = [
       {
         title: "7. Retention",
         paragraphs: [
-          "We keep personal information only for as long as reasonably necessary for the purposes described in this Policy, including to provide services, maintain business and financial records, resolve disputes, enforce agreements and comply with legal obligations. Retention periods vary according to the type of information and purpose.",
+          "We keep personal information only for as long as reasonably necessary for the purposes described in this Policy, including to provide services, maintain business and financial records, resolve disputes, enforce agreements and comply with legal obligations. Retention periods vary according to the type of information and purpose. Product usage events and sessions are kept for 13 months. Unfinished organisation set-ups that never activated are reviewed after 12 months and may be deleted.",
         ],
       },
       {
@@ -401,6 +401,14 @@ export const LEGAL_PACK_DOCUMENTS: LegalDocument[] = [
         title: "11. Changes to this Policy",
         paragraphs: [
           "We may update this Privacy Policy to reflect changes in law, technology, services or our processing activities. The latest version will be published on the ProjectPlanner website and will show its effective date.",
+        ],
+      },
+      {
+        title: "12. Product analytics and public statistics",
+        paragraphs: [
+          "We record product usage events (for example that a page was opened or a timesheet was signed) so the platform owner can operate and improve Project Planner. Those events store identifiers, categories and paths — not names, emails or free-text notes.",
+          "We may publish anonymised, aggregated platform statistics (for example total hours or timesheet value processed). These never identify you or your organisation. Figures are rounded down and are not published from fewer than five real organisations.",
+          "The platform owner’s console can access organisation and user records needed for support, security and billing. Login emails in that console are masked until revealed, and reveals are audited.",
         ],
       },
     ],

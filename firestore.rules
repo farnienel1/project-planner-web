@@ -408,7 +408,7 @@ service cloud.firestore {
       // Allow update if:
       // 1. User updating themselves (always allow - they can update their own document including organizationId), OR
       // 2. Admin/Super Admin updating other users (for user management)
-      allow update: if request.auth != null && (
+      allow update: if isPlatformOwner() || (request.auth != null && (
         // User updating themselves - always allow (most permissive - can update anything including organizationId)
         request.auth.uid == userId ||
         // User updating themselves by email match
@@ -430,7 +430,7 @@ service cloud.firestore {
         (('organizationId' in resource.data && orgIdsMatch(request.resource.data.organizationId, resource.data.organizationId)) ||
          // Allow setting organizationId if organization exists (for manual linking)
          (organizationExists(request.resource.data.organizationId) && isAdminOrSuperAdmin()))
-      );
+      ));
       
       // Allow delete if:
       // 1) User deleting themselves by uid, OR
@@ -438,6 +438,7 @@ service cloud.firestore {
       // 3) Super Admin deleting any non-creator user in their organization, OR
       // 4) Admin (non-super) deleting non-admin/non-super users in their organization.
       allow delete: if request.auth != null && (
+        isPlatformOwner() ||
         request.auth.uid == userId ||
         (request.auth.token.email != null && resource.data.email == request.auth.token.email) ||
         (
@@ -511,7 +512,7 @@ service cloud.firestore {
       allow create: if request.auth != null && 
                      request.resource.data.members[request.auth.uid] == 'admin';
       
-      allow update: if isAdminOrSuperAdmin() ||
+      allow update: if isPlatformOwner() ||
                      isOrganizationAdmin(organizationId) ||
                      isOrgAdminViaMembersMap(organizationId) ||
                      isOrgCreatorViaParentGet(organizationId) ||
@@ -754,6 +755,62 @@ service cloud.firestore {
       allow update: if request.auth != null && resource.data.userId == request.auth.uid;
       allow read: if isPlatformOwner() || (request.auth != null && resource.data.userId == request.auth.uid);
       allow delete: if false;
+    }
+
+    match /adminAuditLog/{id} {
+      allow read: if isPlatformOwner();
+      allow create: if isPlatformOwner();
+      allow update, delete: if false;
+    }
+
+    match /supportRequests/{id} {
+      allow read: if isPlatformOwner() ||
+        (request.auth != null && resource.data.requestedByUid == request.auth.uid);
+      allow create: if request.auth != null &&
+        request.resource.data.requestedByUid == request.auth.uid &&
+        request.resource.data.status == 'open';
+      allow update: if isPlatformOwner();
+      allow delete: if false;
+    }
+
+    match /publicStats/{id} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    match /analyticsDaily/{id} {
+      allow read: if isPlatformOwner();
+      allow write: if false;
+    }
+
+    match /analyticsMonthly/{id} {
+      allow read: if isPlatformOwner();
+      allow write: if false;
+    }
+
+    match /analyticsTotals/{id} {
+      allow read: if isPlatformOwner();
+      allow write: if false;
+    }
+
+    match /ownerAlerts/{id} {
+      allow read: if isPlatformOwner();
+      allow write: if false;
+    }
+
+    match /adminJobs/{id} {
+      allow read: if isPlatformOwner();
+      allow write: if false;
+    }
+
+    match /deletedOrganisations/{id} {
+      allow read: if isPlatformOwner();
+      allow write: if false;
+    }
+
+    match /platformConfig/{id} {
+      allow read: if isPlatformOwner();
+      allow write: if isPlatformOwner();
     }
   }
 }

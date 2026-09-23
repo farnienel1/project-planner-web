@@ -10,15 +10,21 @@ import { useFeedbackStore } from '@/lib/feedback/feedbackStore'
 import { cn } from '@/lib/ui/cn'
 import { ErrorBanner } from '@/components/dashboard/PageShell'
 import { hasCustomerOrganisation } from '@/lib/platform/owner'
+import { useConsolePrefs } from '@/lib/analytics/consolePrefs'
 
 const LINKS = [
   { href: '/developer', label: 'Overview' },
   { href: '/developer/organisations', label: 'Organisations' },
   { href: '/developer/users', label: 'Users' },
-  { href: '/developer/analytics', label: 'Analytics' },
+  { href: '/developer/growth', label: 'Growth' },
+  { href: '/developer/revenue', label: 'Revenue' },
   { href: '/developer/usage', label: 'Feature usage' },
+  { href: '/developer/pages', label: 'Pages & errors' },
+  { href: '/developer/website-stats', label: 'Website stats' },
+  { href: '/developer/analytics', label: 'Analytics' },
   { href: '/developer/feedback', label: 'Feedback' },
   { href: '/developer/roadmap', label: 'Roadmap' },
+  { href: '/developer/data-quality', label: 'Data quality' },
   { href: '/developer/account', label: 'Account' },
 ]
 
@@ -29,6 +35,10 @@ export function DeveloperAppShell({ children }: { children: ReactNode }) {
   const userCount = useAnalyticsStore((state) => state.users.length)
   const ideaCount = useFeedbackStore((state) => state.suggestions.filter((row) => !row.hidden && !row.mergedIntoId).length)
   const orgApp = hasCustomerOrganisation(user?.organizationId)
+  const { includeTestData, setIncludeTestData, jumpQuery, setJumpQuery } = useConsolePrefs()
+  const triageCount = useFeedbackStore(
+    (state) => state.suggestions.filter((row) => !row.hidden && !row.mergedIntoId && row.productDecision === 'none').length
+  )
 
   return (
     <div className="min-h-screen bg-[var(--bg)]">
@@ -40,7 +50,29 @@ export function DeveloperAppShell({ children }: { children: ReactNode }) {
             <p className="text-sm font-bold">{user?.email || 'info@projectplanner.us'}</p>
           </div>
         </div>
+        <label className="hidden min-w-[240px] flex-1 items-center gap-2 rounded-xl border border-white/20 bg-white/10 px-3 py-2 text-sm text-white/80 lg:flex">
+          <span className="text-white/60">Jump</span>
+          <input
+            value={jumpQuery}
+            onChange={(event) => setJumpQuery(event.target.value)}
+            placeholder="Organisation or user"
+            className="w-full bg-transparent text-white outline-none placeholder:text-white/50"
+          />
+          <kbd className="rounded border border-white/30 px-1 text-[10px]">⌘K</kbd>
+        </label>
         <div className="flex flex-wrap items-center gap-3 text-sm">
+          <button
+            type="button"
+            role="switch"
+            aria-checked={includeTestData}
+            onClick={() => setIncludeTestData(!includeTestData)}
+            className="flex items-center gap-2 text-white/80"
+          >
+            Include test data
+            <span className={`relative h-5 w-9 rounded-full ${includeTestData ? 'bg-[var(--blue)]' : 'bg-white/25'}`}>
+              <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition ${includeTestData ? 'left-4' : 'left-0.5'}`} />
+            </span>
+          </button>
           <span className="hidden sm:inline text-white/80">
             {orgCount} organisations · {userCount} users · {ideaCount} feedback
           </span>
@@ -72,12 +104,15 @@ export function DeveloperAppShell({ children }: { children: ReactNode }) {
                 )}
               >
                 {link.label}
+                {link.href === '/developer/feedback' && triageCount > 0 ? (
+                  <span className="ml-1 rounded-full bg-[var(--red)] px-1.5 text-[10px] text-white">{triageCount}</span>
+                ) : null}
               </Link>
             )
           })}
         </div>
       </nav>
-      <main className="mx-auto w-full max-w-6xl px-4 py-5">{children}</main>
+      <main className="mx-auto w-full max-w-[1400px] px-4 py-5">{children}</main>
       {organization && orgApp ? (
         <p className="px-4 pb-4 text-center text-xs text-[var(--ink3)]">
           Signed in with a profile that also belongs to {organization.name}. The pages above still show every organisation.
