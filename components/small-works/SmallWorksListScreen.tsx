@@ -16,6 +16,7 @@ import { useManagerScheduleStore } from '@/lib/stores/managerScheduleStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
 import { canManageWorkCatalogue, isOperativeMode } from '@/lib/permissions'
 import { visibleWorks } from '@/lib/access/workAccess'
+import { useDeadlineAssignedProjectIds } from '@/lib/deadlines/useDeadlineAssignedProjectIds'
 import { countWorksByTab, filterWorksByTab, searchWorks } from '@/lib/projects/workStatus'
 import { EmptyState, FilterChip, PageHeader, SearchField, StatsRow } from '@/components/ios/primitives'
 import { WorkCard } from '@/components/projects/WorkCard'
@@ -29,6 +30,7 @@ export function SmallWorksListScreen() {
   const { bookings, loadBookings } = useBookingStore()
   const { managerSiteBookings, loadManagerSiteBookings } = useManagerScheduleStore()
   const { operatives, managers, loadOperatives, loadManagers } = useOperativeStore()
+  const deadlineAssignedProjectIds = useDeadlineAssignedProjectIds()
   const [filter, setFilter] = useState<Filter>('active')
   const [search, setSearch] = useState('')
 
@@ -61,8 +63,9 @@ export function SmallWorksListScreen() {
         bookings,
         managerBookings: managerSiteBookings,
         tasks,
+        deadlineAssignedProjectIds,
       }),
-    [smallWorks, user, operatives, managers, bookings, managerSiteBookings, tasks]
+    [smallWorks, user, operatives, managers, bookings, managerSiteBookings, tasks, deadlineAssignedProjectIds]
   )
 
   const counts = useMemo(() => countWorksByTab(visible), [visible])

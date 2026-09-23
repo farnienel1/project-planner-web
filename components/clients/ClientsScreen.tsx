@@ -23,6 +23,7 @@ import { useTaskStore } from '@/lib/stores/taskStore'
 import { canViewClients, hasAdminAccess, isOperativeMode } from '@/lib/permissions'
 import { consumeCreateQuery } from '@/lib/navigation/createMenu'
 import { visibleWorks } from '@/lib/access/workAccess'
+import { useDeadlineAssignedProjectIds } from '@/lib/deadlines/useDeadlineAssignedProjectIds'
 import { notifyClientCreated } from '@/lib/firebase/notifyInbox'
 import { EmptyState, IosFormModal, PageHeader } from '@/components/ios/primitives'
 import { WorkCard } from '@/components/projects/WorkCard'
@@ -115,6 +116,7 @@ export function ClientsScreen({ selectedId }: { selectedId?: string }) {
   const { managerSiteBookings, loadManagerSiteBookings } = useManagerScheduleStore()
   const { operatives, loadOperatives } = useOperativeStore()
   const { tasks, loadTasks } = useTaskStore()
+  const deadlineAssignedProjectIds = useDeadlineAssignedProjectIds()
 
   const [createOpen, setCreateOpen] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
@@ -165,8 +167,9 @@ export function ClientsScreen({ selectedId }: { selectedId?: string }) {
       bookings,
       managerBookings: managerSiteBookings,
       tasks,
+      deadlineAssignedProjectIds,
     })
-  }, [selected, user, projects, operatives, bookings, managerSiteBookings, tasks])
+  }, [selected, user, projects, operatives, bookings, managerSiteBookings, tasks, deadlineAssignedProjectIds])
 
   const canDelete = hasAdminAccess(user)
   const formValid = name.trim().length > 0
