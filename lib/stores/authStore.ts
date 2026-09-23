@@ -20,6 +20,7 @@ import { loadUserDocumentWithRetry } from '@/lib/firebase/loadUserDocument'
 import { mergePlaceholderUserDocOntoAuthUidIfNeeded } from '@/lib/firebase/mergePlaceholderUser'
 import { parseAppUserDocument } from '@/lib/ios-parity/converters'
 import type { User, Organization } from '@/types'
+import { parseOrgBilling } from '@/lib/stripe/billing'
 import { withSeededNavigationLabels } from '@/lib/navigation/sharedUiLabels'
 import { parseTeamOnboarding } from '@/lib/orgSetup/teamOnboarding'
 import { topLevelAdminFlagPatch } from '@/lib/orgSetup/repairAdminFlags'
@@ -298,6 +299,7 @@ async function loadSignedInProfileInner(firebaseUser: FirebaseUser) {
         members: orgData.members || {},
         settings: seededLabels.settings,
         teamOnboarding: parseTeamOnboarding(orgData.teamOnboarding) || undefined,
+        billing: parseOrgBilling(orgData as Record<string, unknown>) || undefined,
         createdAt: orgData.createdAt?.toDate() || new Date(),
         updatedAt: orgData.updatedAt?.toDate() || new Date(),
       }

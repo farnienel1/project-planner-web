@@ -2,27 +2,11 @@
 
 import { useEffect } from 'react'
 import Link from 'next/link'
-import {
-  MARKETING_PLANS,
-  MODULES,
-  PRICE_NOTE,
-  RATES_FAQ,
-  planHasExtra,
-  planHasModule,
-  setupPathForPlan,
-} from '@/lib/marketing/content'
-import { AdminEstimator } from '@/components/marketing/AdminEstimator'
+import { MODULES, PRICE_NOTE, RATES_FAQ } from '@/lib/marketing/content'
 import { CtaBand } from '@/components/marketing/MarketingShell'
 import { FaqList } from '@/components/marketing/FaqList'
 import { MktIcon } from '@/components/marketing/icons'
 import { PlanCards } from '@/components/marketing/PlanCards'
-
-const EXTRAS: [string, 'starter' | 'professional' | 'enterprise'][] = [
-  ['Sub-contractor scheduling', 'enterprise'],
-  ['Wholesalers & order history', 'professional'],
-  ['Priority support', 'enterprise'],
-  ['iOS, Android & web apps', 'starter'],
-]
 
 export function PricingPage({ scrollToCompare = false }: { scrollToCompare?: boolean }) {
   useEffect(() => {
@@ -44,7 +28,7 @@ export function PricingPage({ scrollToCompare = false }: { scrollToCompare?: boo
             </i>
             Pricing
           </span>
-          <h1>Flat-rate plans. No per-user surprises.</h1>
+          <h1>Construction management software without the pricing headache.</h1>
           <p>
             {PRICE_NOTE} Cancel any time.
           </p>
@@ -56,8 +40,8 @@ export function PricingPage({ scrollToCompare = false }: { scrollToCompare?: boo
           <div className="grid g3" style={{ marginTop: 34 }}>
             {(
               [
-                ['rocket', 'blue', 'One-month free trial', 'Every feature on your chosen plan. No card needed to set up.'],
-                ['users', 'proj', 'Change plan any time', 'Move up as your team grows. We warn you before you hit a limit.'],
+                ['rocket', 'blue', '30-day free trial', 'Use every feature. You will not be charged until day 31.'],
+                ['users', 'proj', 'Unlimited users', 'No seat bands, no per-user charges, no paid add-ons.'],
                 ['lock', 'daily', 'Your data, protected', 'Encrypted, backed up and GDPR-ready. Export whenever you like.'],
               ] as const
             ).map(([icon, hue, title, copy]) => (
@@ -74,104 +58,32 @@ export function PricingPage({ scrollToCompare = false }: { scrollToCompare?: boo
               </div>
             ))}
           </div>
-          <div className="card pad" style={{ marginTop: 34, padding: 34 }}>
-            <span className="kicker" data-hue="blue">
-              Admin cost estimator
-            </span>
-            <h2 style={{ fontSize: 30, margin: '8px 0 20px' }}>What is the admin costing you now?</h2>
-            <AdminEstimator />
-          </div>
         </div>
       </section>
       <section className="s" id="compare" style={{ paddingTop: 20 }}>
         <div className="wrap">
           <div className="shead">
-            <h2>Compare plans</h2>
+            <h2>Everything included</h2>
+            <p className="muted">One plan. No feature tiers.</p>
           </div>
-          <div className="card" style={{ overflowX: 'auto' }}>
-            <table className="cmp">
-              <thead>
-                <tr>
-                  <th>Feature</th>
-                  {MARKETING_PLANS.map((plan) => (
-                    <th key={plan.key}>
-                      {plan.name}
-                      <div className="muted xs" style={{ fontWeight: 600 }}>
-                        £{plan.price}/mo
-                      </div>
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                <tr className="grp">
-                  <td colSpan={5}>Team size</td>
-                </tr>
-                <tr>
-                  <td>Users</td>
-                  {MARKETING_PLANS.map((plan) => (
-                    <td key={plan.key} className="small">
-                      <b>{plan.users}</b>
-                    </td>
-                  ))}
-                </tr>
-                <tr className="grp">
-                  <td colSpan={5}>Modules</td>
-                </tr>
-                {MODULES.map((mod) => (
-                  <tr key={mod.id}>
-                    <td>
-                      <span className="row" style={{ gap: 10 }} data-hue={mod.hue}>
-                        <span className="ico-chip sm" style={{ width: 30, height: 30 }}>
-                          <MktIcon name={mod.icon} size={15} />
-                        </span>
-                        {mod.name}
-                      </span>
-                    </td>
-                    {MARKETING_PLANS.map((plan) => (
-                      <td key={plan.key}>
-                        {planHasModule(plan.key, mod.id) ? (
-                          <svg className="y" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="m5 12 5 5L20 7" />
-                          </svg>
-                        ) : (
-                          <span className="n">—</span>
-                        )}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-                <tr className="grp">
-                  <td colSpan={5}>Extras</td>
-                </tr>
-                {EXTRAS.map(([label, from]) => (
-                  <tr key={label}>
-                    <td>{label}</td>
-                    {MARKETING_PLANS.map((plan) => (
-                      <td key={plan.key}>
-                        {planHasExtra(plan.key, from) ? (
-                          <svg className="y" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="m5 12 5 5L20 7" />
-                          </svg>
-                        ) : (
-                          <span className="n">—</span>
-                        )}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-                <tr>
-                  <td />
-                  {MARKETING_PLANS.map((plan) => (
-                    <td key={plan.key}>
-                      <Link href={setupPathForPlan(plan.key)} className={`btn sm ${plan.popular ? 'primary' : ''}`}>
-                        Choose {plan.name}
-                      </Link>
-                    </td>
-                  ))}
-                </tr>
-              </tbody>
-            </table>
+          <div className="card pad">
+            <ul className="ticks">
+              {MODULES.map((mod) => (
+                <li key={mod.id}>
+                  <span className="row" style={{ gap: 10 }} data-hue={mod.hue}>
+                    <span className="ico-chip sm" style={{ width: 30, height: 30 }}>
+                      <MktIcon name={mod.icon} size={15} />
+                    </span>
+                    {mod.name}
+                  </span>
+                </li>
+              ))}
+            </ul>
+            <div style={{ marginTop: 22 }}>
+              <Link href="/setup" className="btn primary">
+                Start your 30-day free trial
+              </Link>
+            </div>
           </div>
         </div>
       </section>

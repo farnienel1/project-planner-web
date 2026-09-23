@@ -5,8 +5,9 @@ import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useAuthStore } from '@/lib/stores/authStore'
 import type { SubscriptionPlanKey } from '@/lib/stripe/plans'
-import { PLAN_KEYS, getSubscriptionPlanDisplayOptions } from '@/lib/stripe/plans'
+import { PLAN_KEYS, getSubscriptionPlanDisplayOptions, normalizePlanKey } from '@/lib/stripe/plans'
 import { MARKETING_PLANS } from '@/lib/marketing/content'
+import { formatTrialChargeCopy } from '@/lib/stripe/billing'
 import { MarketingShell } from '@/components/marketing/MarketingShell'
 import { PlanCards } from '@/components/marketing/PlanCards'
 import { MktIcon } from '@/components/marketing/icons'
@@ -131,7 +132,7 @@ export function OrgSetupWizard() {
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [organizationName, setOrganizationName] = useState('')
-  const [planKey, setPlanKey] = useState<SubscriptionPlanKey>('professional')
+  const [planKey, setPlanKey] = useState<SubscriptionPlanKey>('month')
 
   const [orgSetupSettings, setOrgSetupSettings] = useState<OrgSetupSettings>(createDefaultOrgSetupSettings())
   const [featuresStepIndex, setFeaturesStepIndex] = useState(0)
@@ -149,7 +150,7 @@ export function OrgSetupWizard() {
       if (draft.mobileNumber) setMobileNumber(draft.mobileNumber)
       if (draft.email) setEmail(draft.email)
       if (draft.organizationName) setOrganizationName(draft.organizationName)
-      if (draft.planKey) setPlanKey(draft.planKey)
+      if (draft.planKey) setPlanKey(normalizePlanKey(draft.planKey))
       if (draft.step && draft.step !== 'account') setStep(draft.step)
     }
     setDraftReady(true)
@@ -295,7 +296,7 @@ export function OrgSetupWizard() {
   function validatePlanStep(requireStripe = false): string | null {
     if (!selectedPlan) return 'Please choose a subscription plan.'
     if (requireStripe && !selectedPlan.configured) {
-      return 'Stripe is not configured yet. Add STRIPE_SECRET_KEY and STRIPE_PRICE_ID to your .env.local file, then restart the dev server.'
+      return 'Stripe is not configured yet. Add STRIPE_SECRET_KEY and STRIPE_PRICE_MONTHLY to your .env.local file, then restart the dev server.'
     }
     return null
   }
@@ -882,7 +883,7 @@ export function OrgSetupWizard() {
               {step === 'plan' ? (
                 <div>
                   <p className="muted" style={{ marginBottom: 22 }}>
-                    One-month free trial on every plan. You can change later from Settings.
+                    30-day free trial. You will not be charged until day 31. Cancel any time from Settings → Billing.
                   </p>
                   {!IS_PROD && !loadingPlans && pricingMessage && !pricingLoaded ? (
                     <div className="banner" data-hue="warn" style={{ marginBottom: 16 }}>
@@ -939,7 +940,7 @@ export function OrgSetupWizard() {
                         ['Admin', `${firstName} ${surname}`.trim(), 'account'],
                         ['Email', email, 'account'],
                         ['Organisation', organizationName, 'organization'],
-                        ['Plan', `${selectedPlan?.name || ''} · ${displayPrice}/month`, 'plan'],
+                        ['Plan', `${selectedPlan?.name || 'ProjectPlanner'} · ${displayPrice}${planKey === 'year' ? '/year' : '/month'} + VAT`, 'plan'],
                       ] as const
                     ).map(([label, value, target]) => (
                       <div key={label} className="sumrow">
@@ -954,6 +955,9 @@ export function OrgSetupWizard() {
                         </button>
                       </div>
                     ))}
+                    <p className="muted small" style={{ marginTop: 12 }}>
+                      {formatTrialChargeCopy()}
+                    </p>
                   </div>
 
                   <div className="banner" data-hue={settingsSkipped ? 'lib' : 'green'}>

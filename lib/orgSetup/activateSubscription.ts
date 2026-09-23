@@ -2,7 +2,7 @@ import { doc, updateDoc } from 'firebase/firestore'
 import { getFirebaseDb } from '@/lib/firebase/ensureFirebase'
 
 export type OrganizationSubscription = {
-  status: 'active' | 'pending' | 'canceled' | 'past_due'
+  status: 'active' | 'pending' | 'canceled' | 'past_due' | 'trialing'
   planKey?: string
   stripeCustomerId?: string
   stripeSubscriptionId?: string

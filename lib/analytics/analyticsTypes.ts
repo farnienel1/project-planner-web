@@ -6,4 +6,5 @@ export type PlatformOrganisation = {
   updatedAt?: Date
   unfinishedSetup?: boolean
   isInternal?: boolean
+  billing?: import('@/lib/stripe/billing').OrgBilling | null
 }

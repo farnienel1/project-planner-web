@@ -5,7 +5,7 @@
  * Invited users live at users/{uppercase UUID} until first sign-in. Copy fields onto users/{authUid}.
  */
 
-import { collection, doc, getDocs, limit, query, setDoc, Timestamp, where } from 'firebase/firestore'
+import { collection, deleteDoc, doc, getDocs, limit, query, setDoc, Timestamp, where } from 'firebase/firestore'
 import { getFirebaseDb } from '@/lib/firebase/ensureFirebase'
 
 export function placeholderMergeFields(
@@ -46,6 +46,11 @@ export async function mergePlaceholderUserDocOntoAuthUidIfNeeded(
         { userId: authUid },
         { merge: true }
       )
+      try {
+        await deleteDoc(placeholder.ref)
+      } catch (error) {
+        console.warn('Invite placeholder left in place after merge', placeholder.id, error)
+      }
       return true
     }
   }
