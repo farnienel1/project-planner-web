@@ -21,6 +21,7 @@ import { ChangeHint, DeveloperShell, DeveloperStatus, MetricCard, MiniBars } fro
 import { EmptyState, LoadingSpinner } from '@/components/dashboard/PageShell'
 import { CONSOLE_PERIODS, type ConsolePeriodId, deltaCopy, formatCount, formatGbpFromPence, resolveConsolePeriod } from '@/lib/analytics/consolePeriod'
 import { isTestRecord, useConsolePrefs } from '@/lib/analytics/consolePrefs'
+import { loadSignedTimesheetValueTotals, type SignedTimesheetValueTotals } from '@/lib/owner/signedTimesheetValue'
 
 const PRESETS: { id: DateRangePreset; label: string }[] = [
   { id: 'all_time', label: 'All time' },
@@ -58,7 +59,7 @@ export function DateRangePicker({
 
 export function DeveloperOverviewScreen() {
   const [preset, setPreset] = useState<DateRangePreset>('all_time')
-  const [period, setPeriod] = useState<ConsolePeriodId>('month')
+  const [period, setPeriod] = useState<ConsolePeriodId>('to_date')
   const range = useMemo(() => resolveDateRange(preset), [preset])
   const periodRange = useMemo(() => resolveConsolePeriod(period), [period])
   const { events, sessions, users, organisations, loading, error, loadedAt, load, refresh } = useAnalyticsStore()
@@ -66,11 +67,44 @@ export function DeveloperOverviewScreen() {
   const includeTestData = useConsolePrefs((state) => state.includeTestData)
   const visibleUsers = includeTestData ? users : users.filter((user) => !isTestRecord(user))
   const visibleOrgs = includeTestData ? organisations : organisations.filter((org) => !isTestRecord(org))
+  const [timesheetValue, setTimesheetValue] = useState<SignedTimesheetValueTotals>({
+    valuePence: 0,
+    previousPence: 0,
+    sheetCount: 0,
+    missingRateCount: 0,
+    loaded: false,
+  })
+
+  const orgIdsKey = visibleOrgs.map((org) => org.id).sort().join(',')
+  const userCount = visibleUsers.length
 
   useEffect(() => {
     void load()
     void loadBoard(true)
   }, [load, loadBoard])
+
+  useEffect(() => {
+    let cancelled = false
+    if (!orgIdsKey) {
+      setTimesheetValue({ valuePence: 0, previousPence: 0, sheetCount: 0, missingRateCount: 0, loaded: true })
+      return
+    }
+    setTimesheetValue((current) => ({ ...current, loaded: false }))
+    const orgUsers = includeTestData ? users : users.filter((user) => !isTestRecord(user))
+    void loadSignedTimesheetValueTotals({
+      organizationIds: orgIdsKey.split(',').filter(Boolean),
+      users: orgUsers,
+      start: periodRange.start,
+      end: periodRange.end,
+      previousStart: periodRange.previousStart,
+      previousEnd: periodRange.previousEnd,
+    }).then((result) => {
+      if (!cancelled) setTimesheetValue(result)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [orgIdsKey, userCount, includeTestData, users, periodRange.start, periodRange.end, periodRange.previousStart, periodRange.previousEnd])
 
   const metrics = useMemo(() => {
     const currentEvents = events.filter((event) => inRange(event.createdAt, range.start, range.end))
@@ -155,11 +189,19 @@ export function DeveloperOverviewScreen() {
       <div className="grid gap-3 lg:grid-cols-[1.2fr_2fr]">
         <div className="card pad text-white" style={{ background: 'linear-gradient(160deg,#1D4ED8,#0F2447)' }}>
           <p className="text-sm font-bold text-white/80">Timesheet value signed · {periodRange.label}</p>
-          <p className="mt-2 text-5xl font-extrabold tracking-tight">{formatGbpFromPence(0)}</p>
-          <p className="mt-2 text-sm text-white/80">
-            Stored on each fully signed timesheet (frozen at signing). Live totals need the Cloud Function rollup; this
-            page does not invent £ figures from the browser.
+          <p className="mt-2 text-5xl font-extrabold tracking-tight">
+            {timesheetValue.loaded ? formatGbpFromPence(timesheetValue.valuePence) : '…'}
           </p>
+          <p className="mt-2 text-sm text-white/80">
+            {timesheetValue.loaded
+              ? `${timesheetValue.sheetCount} fully signed timesheet${timesheetValue.sheetCount === 1 ? '' : 's'} in this period, from live bookings and rates${
+                  timesheetValue.missingRateCount ? ` · ${timesheetValue.missingRateCount} missing a rate` : ''
+                }. Historical sheets are included — this is not a going-forward-only figure.`
+              : 'Reading signed timesheets across organisations…'}
+          </p>
+          {timesheetValue.loaded && timesheetValue.previousPence > 0 ? (
+            <p className="mt-2 text-sm text-white/80">{deltaCopy(timesheetValue.valuePence, timesheetValue.previousPence).text}</p>
+          ) : null}
         </div>
         <div className="grid gap-3 sm:grid-cols-2">
           {[

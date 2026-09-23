@@ -14,13 +14,14 @@ import { AppLogoMark } from '@/components/ui/AppLogoMark'
 import { formatLoginError } from '@/lib/auth/formatLoginError'
 import { consumeWebIdleExpiredFlag } from '@/lib/auth/webIdleSession'
 import { hasCustomerOrganisation, isPlatformOwnerEmail } from '@/lib/platform/owner'
+import { LoadingSpinner } from '@/components/dashboard/PageShell'
 import { isMfaGateOpen, isMfaRequiredError, mfaVerifyHref } from '@/lib/auth/mfa/mfaClient'
 
 export function LoginBrandScreen() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const justConfirmed = searchParams.get('confirmed') === '1'
-  const { signIn, error, user, mfaPending, mfaVerified, mfaStatusKnown, loading } = useAuthStore()
+  const { signIn, error, user, firebaseUser, mfaPending, mfaVerified, mfaStatusKnown, loading } = useAuthStore()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
@@ -29,7 +30,8 @@ export function LoginBrandScreen() {
   const [idleNotice] = useState(() => consumeWebIdleExpiredFlag())
 
   useEffect(() => {
-    if (mfaPending || isMfaGateOpen(user?.id)) {
+    const uid = user?.id || firebaseUser?.uid
+    if ((mfaPending && uid) || (uid && isMfaGateOpen(uid))) {
       router.replace(mfaVerifyHref('/dashboard'))
       return
     }
@@ -44,7 +46,12 @@ export function LoginBrandScreen() {
       return
     }
     router.replace('/dashboard')
-  }, [loading, mfaPending, mfaStatusKnown, mfaVerified, router, user])
+  }, [firebaseUser?.uid, loading, mfaPending, mfaStatusKnown, mfaVerified, router, user])
+
+  const uid = user?.id || firebaseUser?.uid
+  if (mfaPending || (uid && isMfaGateOpen(uid)) || (user && mfaStatusKnown && !mfaVerified)) {
+    return <LoadingSpinner label="Opening verification…" />
+  }
 
   const trimmedEmail = email.trim()
   const isFormValid = trimmedEmail.length > 0 && password.length > 0
