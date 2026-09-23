@@ -3,6 +3,11 @@
 
 [build.environment]
   NETLIFY_NEXT_SKEW_PROTECTION = "true"
+  # These are public catalogue ids and the word "test", not credentials.
+  # Netlify still scans them if "Contains secret values" is ticked, and "test"
+  # matches the rest of the repo. Real secrets (STRIPE_SECRET_KEY,
+  # STRIPE_WEBHOOK_SECRET) stay in the scan.
+  SECRETS_SCAN_OMIT_KEYS = "STRIPE_MODE,STRIPE_PRICE_MONTHLY,STRIPE_PRICE_ANNUAL,STRIPE_PRODUCT_ID,STRIPE_PORTAL_CONFIGURATION_ID,STRIPE_TRIAL_REQUIRES_CARD,STRIPE_AUTOMATIC_TAX,NEXT_PUBLIC_APP_URL,NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY"
 
 [[plugins]]
   package = "@netlify/plugin-nextjs"
