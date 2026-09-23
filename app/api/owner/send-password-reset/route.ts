@@ -3,6 +3,7 @@ import { clientIp, enforceRateLimit, isFirebaseUser, jsonError, readJsonBody } f
 import { requireOwner, writeAuditLog } from '@/lib/owner/requireOwner'
 import { passwordResetActionSettings } from '@/lib/auth/passwordResetSettings'
 import { isValidEmail } from '@/lib/security/validation'
+import { maskEmail } from '@/lib/auth/maskEmail'
 
 export const runtime = 'nodejs'
 
@@ -49,7 +50,7 @@ export async function POST(request: NextRequest) {
       action: 'ownerSendPasswordReset',
       actorUid: owner.uid,
       targetUserId: uid || undefined,
-      after: { email },
+      after: { email: maskEmail(email) },
       ip: clientIp(request),
     })
     return NextResponse.json({ ok: true })

@@ -33,7 +33,9 @@ export function DeveloperLoginScreen() {
 
   const signedInOwner = isPlatformOwnerEmail(firebaseUser?.email || user?.email)
 
-  const needsMfa = mfaPending || isMfaGateOpen(firebaseUser?.uid || user?.id)
+  const needsMfa = Boolean(
+    (mfaPending && (firebaseUser?.uid || user?.id)) || isMfaGateOpen(firebaseUser?.uid || user?.id)
+  )
 
   useEffect(() => {
     if (needsMfa) {

@@ -20,6 +20,7 @@ export async function ownerChangeUserEmail(input: {
 }) {
   const response = await fetch('/api/owner/change-email', {
     method: 'POST',
+    credentials: 'include',
     headers: await jsonAuthHeaders(),
     body: JSON.stringify(input),
   })
@@ -30,6 +31,7 @@ export async function ownerChangeUserEmail(input: {
 export async function ownerSendPasswordReset(uid: string, email?: string) {
   const response = await fetch('/api/owner/send-password-reset', {
     method: 'POST',
+    credentials: 'include',
     headers: await jsonAuthHeaders(),
     body: JSON.stringify({ uid, email }),
   })
