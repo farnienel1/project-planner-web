@@ -14,6 +14,7 @@ import { AppLogoMark } from '@/components/ui/AppLogoMark'
 import { formatLoginError } from '@/lib/auth/formatLoginError'
 import { consumeWebIdleExpiredFlag } from '@/lib/auth/webIdleSession'
 import { hasCustomerOrganisation, isPlatformOwnerEmail } from '@/lib/platform/owner'
+import { isMfaGateOpen, isMfaRequiredError } from '@/lib/auth/mfa/mfaClient'
 
 export function LoginBrandScreen() {
   const router = useRouter()
@@ -29,6 +30,10 @@ export function LoginBrandScreen() {
 
   useEffect(() => {
     if (!user) return
+    if (isMfaGateOpen(user.id)) {
+      router.replace('/auth/mfa?next=/dashboard')
+      return
+    }
     if (isPlatformOwnerEmail(user.email) && !hasCustomerOrganisation(user.organizationId)) {
       router.replace('/developer')
       return
@@ -54,6 +59,10 @@ export function LoginBrandScreen() {
     try {
       setSubmitting(true)
       await signIn(trimmedEmail, password)
+      if (isMfaGateOpen(useAuthStore.getState().user?.id)) {
+        router.push('/auth/mfa?next=/dashboard')
+        return
+      }
       const signedIn = useAuthStore.getState().user
       if (signedIn && isPlatformOwnerEmail(signedIn.email) && !hasCustomerOrganisation(signedIn.organizationId)) {
         router.push('/developer')
@@ -61,6 +70,10 @@ export function LoginBrandScreen() {
         router.push('/dashboard')
       }
     } catch (err) {
+      if (isMfaRequiredError(err)) {
+        router.push('/auth/mfa?next=/dashboard')
+        return
+      }
       setLocalError(formatLoginError(err))
     } finally {
       setSubmitting(false)

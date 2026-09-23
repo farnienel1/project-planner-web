@@ -404,7 +404,7 @@ export function DeveloperRoadmapScreen() {
                         {row.title}
                       </Link>
                       <p className="mt-1 text-xs text-[var(--ink3)]">
-                        {row.voteCount} votes · {row.organizationName?.trim() || 'Unknown organisation'}
+                        {row.voteCount} votes · {row.organizationName?.trim() || 'Unfinished setup'}
                       </p>
                       <select
                         className="pp-in mt-2 text-xs"

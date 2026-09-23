@@ -19,6 +19,8 @@ import {
 import { METRIC_DEFINITIONS, type DateRangePreset } from '@/lib/analytics/events'
 import { ChangeHint, DeveloperShell, DeveloperStatus, MetricCard, MiniBars } from '@/components/developer/DeveloperShell'
 import { EmptyState, LoadingSpinner } from '@/components/dashboard/PageShell'
+import { CONSOLE_PERIODS, type ConsolePeriodId, deltaCopy, formatCount, formatGbpFromPence, resolveConsolePeriod } from '@/lib/analytics/consolePeriod'
+import { isTestRecord, useConsolePrefs } from '@/lib/analytics/consolePrefs'
 
 const PRESETS: { id: DateRangePreset; label: string }[] = [
   { id: 'all_time', label: 'All time' },
@@ -56,9 +58,14 @@ export function DateRangePicker({
 
 export function DeveloperOverviewScreen() {
   const [preset, setPreset] = useState<DateRangePreset>('all_time')
+  const [period, setPeriod] = useState<ConsolePeriodId>('month')
   const range = useMemo(() => resolveDateRange(preset), [preset])
+  const periodRange = useMemo(() => resolveConsolePeriod(period), [period])
   const { events, sessions, users, organisations, loading, error, loadedAt, load, refresh } = useAnalyticsStore()
   const { suggestions, votes, loadBoard } = useFeedbackStore()
+  const includeTestData = useConsolePrefs((state) => state.includeTestData)
+  const visibleUsers = includeTestData ? users : users.filter((user) => !isTestRecord(user))
+  const visibleOrgs = includeTestData ? organisations : organisations.filter((org) => !isTestRecord(org))
 
   useEffect(() => {
     void load()
@@ -68,14 +75,14 @@ export function DeveloperOverviewScreen() {
   const metrics = useMemo(() => {
     const currentEvents = events.filter((event) => inRange(event.createdAt, range.start, range.end))
     const eventActive = dailyActiveUsers(events, range)
-    const seenActive = directoryActiveUsers(users, range)
+    const seenActive = directoryActiveUsers(visibleUsers, range)
     const active = Math.max(eventActive, seenActive)
     const prevActive = Math.max(
       dailyActiveUsers(events, { start: range.previousStart, end: range.previousEnd }),
-      directoryActiveUsers(users, { start: range.previousStart, end: range.previousEnd })
+      directoryActiveUsers(visibleUsers, { start: range.previousStart, end: range.previousEnd })
     )
-    const newUsers = users.filter((user) => inRange(user.createdAt, range.start, range.end)).length
-    const prevNew = users.filter((user) => inRange(user.createdAt, range.previousStart, range.previousEnd)).length
+    const newUsers = visibleUsers.filter((user) => inRange(user.createdAt, range.start, range.end)).length
+    const prevNew = visibleUsers.filter((user) => inRange(user.createdAt, range.previousStart, range.previousEnd)).length
     const returning = countUnique(
       currentEvents.filter((event) => event.eventName === 'user_logged_in' || event.eventName === 'dashboard_viewed').map((e) => e.userId)
     )
@@ -83,15 +90,15 @@ export function DeveloperOverviewScreen() {
     const awaiting = suggestions.filter((row) => !row.hidden && !row.mergedIntoId && row.productDecision === 'none')
     const avgSession = averageSessionDuration(sessions, range)
     const orgRows = organisationActivityRows({
-      organisations,
-      users,
+      organisations: visibleOrgs,
+      users: visibleUsers,
       events,
       ideas: suggestions.filter((row) => !row.hidden && !row.mergedIntoId),
       range,
     })
     return {
-      totalUsers: users.length,
-      organisations: organisations.length || orgRows.length,
+      totalUsers: visibleUsers.length,
+      organisations: visibleOrgs.length || orgRows.length,
       active,
       prevActive,
       eventActive,
@@ -109,9 +116,9 @@ export function DeveloperOverviewScreen() {
       tasks: currentEvents.filter((event) => event.eventName === 'task_created').length,
       topOrgs: orgRows.slice(0, 8),
       hasEvents: events.length > 0,
-      lanes: activityLanes(users),
+      lanes: activityLanes(visibleUsers),
     }
-  }, [events, sessions, users, organisations, suggestions, votes, range])
+  }, [events, sessions, visibleUsers, visibleOrgs, suggestions, votes, range])
 
   if (loading && users.length === 0 && organisations.length === 0 && !error) {
     return <LoadingSpinner label="Loading live organisations…" />
@@ -132,6 +139,43 @@ export function DeveloperOverviewScreen() {
       }
     >
       <DateRangePicker preset={preset} onChange={setPreset} />
+      <div className="pills flex flex-wrap gap-1 rounded-2xl border border-[var(--line)] bg-white p-1">
+        {CONSOLE_PERIODS.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            aria-pressed={period === item.id}
+            className={`rounded-[10px] px-3 py-2 text-sm font-semibold ${period === item.id ? 'bg-[var(--blue)] text-white' : 'text-[var(--ink3)]'}`}
+            onClick={() => setPeriod(item.id)}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
+      <div className="grid gap-3 lg:grid-cols-[1.2fr_2fr]">
+        <div className="card pad text-white" style={{ background: 'linear-gradient(160deg,#1D4ED8,#0F2447)' }}>
+          <p className="text-sm font-bold text-white/80">Timesheet value signed · {periodRange.label}</p>
+          <p className="mt-2 text-5xl font-extrabold tracking-tight">{formatGbpFromPence(0)}</p>
+          <p className="mt-2 text-sm text-white/80">
+            Stored on each fully signed timesheet (frozen at signing). Live totals need the Cloud Function rollup; this
+            page does not invent £ figures from the browser.
+          </p>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          {[
+            ['Logins', events.filter((event) => inRange(event.createdAt, periodRange.start, periodRange.end) && (event.eventName === 'login' || event.eventName === 'user_logged_in')).length],
+            ['Projects created', events.filter((event) => inRange(event.createdAt, periodRange.start, periodRange.end) && event.eventName === 'project_created').length],
+            ['Tasks completed', events.filter((event) => inRange(event.createdAt, periodRange.start, periodRange.end) && event.eventName === 'task_completed').length],
+            ['New organisations', organisations.filter((org) => org.createdAt && inRange(org.createdAt, periodRange.start, periodRange.end)).length],
+          ].map(([label, value]) => (
+            <div key={String(label)} className="card pad">
+              <p className="eyebrow">{label}</p>
+              <p className="mt-1 text-2xl font-extrabold">{formatCount(Number(value))}</p>
+              <p className="mt-1 text-xs text-[var(--ink3)]">{deltaCopy(Number(value), 0).text}</p>
+            </div>
+          ))}
+        </div>
+      </div>
       <DeveloperStatus error={error} loading={loading && (users.length > 0 || organisations.length > 0)} />
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <MetricCard label="Organisations" value={metrics.organisations} href="/developer/organisations" />

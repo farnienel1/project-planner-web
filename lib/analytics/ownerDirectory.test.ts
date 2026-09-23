@@ -34,11 +34,11 @@ test('parseOwnerConsoleUser keeps live tenant accounts even when the strict pars
 test('mergeOrganisationsFromUsers recovers tenants that only exist on user records', () => {
   const rows = mergeOrganisationsFromUsers(
     [{ id: 'A', name: 'Alpha Ltd', memberCount: 1 }],
-    [{ organizationId: 'A' }, { organizationId: 'A' }, { organizationId: 'B' }, { organizationId: 'platform-owner' }]
+    [{ organizationId: 'A' }, { organizationId: 'A' }, { organizationId: 'B', email: 'user@unknown.user' }, { organizationId: 'platform-owner' }]
   )
   assert.equal(rows.length, 2)
   assert.equal(rows.find((row) => row.id === 'A')?.memberCount, 2)
-  assert.equal(rows.find((row) => row.id === 'B')?.name, 'Unknown organisation')
+  assert.equal(rows.find((row) => row.id === 'B')?.name, 'Unfinished setup · u•••@unknown.user')
   assert.equal(rows.find((row) => row.id === 'B')?.memberCount, 1)
 })
 

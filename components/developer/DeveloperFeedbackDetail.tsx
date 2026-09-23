@@ -105,7 +105,7 @@ export function DeveloperFeedbackDetailScreen({ ideaId }: { ideaId: string }) {
       ) : null}
       <h1 className="text-xl font-extrabold">{suggestion.title}</h1>
       <p className="text-sm text-[var(--ink3)]">
-        {suggestion.organizationName?.trim() || 'Unknown organisation'} · {suggestion.authorName} · {suggestion.category}
+        {suggestion.organizationName?.trim() || 'Unfinished setup'} · {suggestion.authorName} · {suggestion.category}
       </p>
       <p className="whitespace-pre-wrap text-sm text-[var(--ink2)]">{suggestion.details}</p>
 

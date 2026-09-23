@@ -7,6 +7,7 @@ import { isPlatformOwnerEmail } from '@/lib/platform/owner'
 import { DeveloperAppShell } from '@/components/developer/DeveloperShell'
 import { DeveloperDataBoot } from '@/components/developer/DeveloperDataBoot'
 import { LoadingSpinner } from '@/components/dashboard/PageShell'
+import { isMfaGateOpen } from '@/lib/auth/mfa/mfaClient'
 
 export default function DeveloperLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter()
@@ -18,6 +19,10 @@ export default function DeveloperLayout({ children }: { children: React.ReactNod
     if (loading && !firebaseUser && !user) return
     if (!firebaseUser && !user) {
       router.replace('/developer-login')
+      return
+    }
+    if (isMfaGateOpen(firebaseUser?.uid || user?.id)) {
+      router.replace('/auth/mfa?next=/developer')
       return
     }
     if (!allowed) {

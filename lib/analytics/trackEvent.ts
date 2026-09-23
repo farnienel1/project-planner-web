@@ -2,6 +2,7 @@ import { addDoc, collection, doc, setDoc, Timestamp } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
 import { omitUndefinedDeep } from '@/lib/ios-parity/firestoreCodec'
 import type { ProductEventName } from '@/lib/analytics/events'
+import { sanitizeEventMetadata } from '@/lib/analytics/sanitizeEventMetadata'
 
 const SESSION_KEY = 'pp.productSessionId'
 
@@ -40,7 +41,7 @@ export async function trackEvent(
     source: 'web',
     appVersion: process.env.NEXT_PUBLIC_APP_VERSION || process.env.NEXT_PUBLIC_BUILD_ID || 'web',
     path: typeof window === 'undefined' ? '' : window.location.pathname,
-    metadata: input.metadata || {},
+    metadata: sanitizeEventMetadata(input.metadata),
     createdAt: Timestamp.now(),
   })
   try {
