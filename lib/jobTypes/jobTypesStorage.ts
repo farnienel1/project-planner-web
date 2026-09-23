@@ -174,7 +174,13 @@ function rememberJobTypes(organizationId: string, names: string[]): void {
   jobTypesMemory.set(organizationId, [...names])
 }
 
+const recoveredJobTypesOrgs = new Set<string>()
+
 export async function recoverJobTypesFromWork(organizationId: string): Promise<string[]> {
+  if (recoveredJobTypesOrgs.has(organizationId)) {
+    return peekCachedJobTypes(organizationId) || loadJobTypes(organizationId)
+  }
+  recoveredJobTypesOrgs.add(organizationId)
   const stored = await loadJobTypes(organizationId)
   const recovered = jobTypesFromWorkRecords(await loadWorkJobTypeRecords(organizationId))
   const merged = mergeJobTypeCatalogues(stored, recovered)

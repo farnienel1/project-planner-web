@@ -115,7 +115,8 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       cacheKey,
       organizationId,
       async () => {
-        set({ loading: true, error: null })
+        if (get().projects.length === 0) set({ loading: true, error: null })
+        else set({ error: null })
         try {
           const snapshot = await getDocs(collection(db, 'organizations', organizationId, 'projects'))
           let projects = snapshot.docs.map((entry) =>
@@ -139,7 +140,8 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       'projectStore:smallWorks',
       organizationId,
       async () => {
-        set({ loading: true, error: null })
+        if (get().smallWorks.length === 0) set({ loading: true, error: null })
+        else set({ error: null })
         try {
           const snapshot = await getDocs(collection(db, 'organizations', organizationId, 'smallWorks'))
           const smallWorks = snapshot.docs.map((entry) =>

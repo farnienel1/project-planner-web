@@ -18,28 +18,30 @@ export default function DashboardLayout({
   children: React.ReactNode
 }) {
   const router = useRouter()
-  const { user, loading, mfaPending, mfaVerified, mfaStatusKnown } = useAuthStore()
-  const blocked =
+  const { user, firebaseUser, loading, mfaPending, mfaVerified, mfaStatusKnown } = useAuthStore()
+  const needsMfa =
     mfaPending ||
-    isMfaGateOpen(user?.id) ||
-    Boolean(user && (!mfaStatusKnown || !mfaVerified))
+    isMfaGateOpen(user?.id || firebaseUser?.uid) ||
+    (mfaStatusKnown && !mfaVerified && Boolean(user || firebaseUser))
 
   useEffect(() => {
-    if (blocked) {
+    if (needsMfa) {
       router.replace(mfaVerifyHref('/dashboard'))
       return
     }
-    if (!loading && !user) {
+    if (!loading && !user && !firebaseUser) {
       router.push('/login')
       return
     }
     if (!loading && mfaVerified && user && isPlatformOwnerEmail(user.email) && !hasCustomerOrganisation(user.organizationId)) {
       router.replace('/developer')
     }
-  }, [blocked, user, loading, mfaVerified, router])
+  }, [needsMfa, user, firebaseUser, loading, mfaVerified, router])
 
-  if (blocked) return <SplashScreen />
+  if (needsMfa) return <SplashScreen />
   if (loading) return <SplashScreen />
+  if (!mfaStatusKnown && (firebaseUser || user)) return <SplashScreen />
+  if (!user && firebaseUser) return <SplashScreen />
   if (!user) return <SplashScreen />
   if (!mfaVerified) return <SplashScreen />
   if (user.accountConfirmed === false) return <CheckEmailScreen email={user.email} />

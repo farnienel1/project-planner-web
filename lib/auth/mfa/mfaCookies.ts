@@ -73,12 +73,14 @@ export function codesMatch(left: string, right: string): boolean {
 }
 
 export function cookieOptions(maxAgeMs: number) {
+  const maxAge = Math.max(0, Math.floor(maxAgeMs / 1000))
   return {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax' as const,
     path: '/',
-    maxAge: Math.floor(maxAgeMs / 1000),
+    maxAge,
+    expires: new Date(Date.now() + Math.max(0, maxAgeMs)),
   }
 }
 
