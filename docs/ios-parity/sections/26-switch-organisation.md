@@ -41,7 +41,7 @@ Errors: not signed in / not found / not a member / trial blocked (*Email info@pr
 
 Two-column: intro + list card (max width ~720px). Keep web-only “Set up a new organisation” below the iOS list.
 
-Web-only distinguishers (same-name / empty pending orgs from Activate retries): created date, short ID, **Setup incomplete** badge. Incomplete rows are not switchable. Complete orgs sort above incomplete copies. Activate reuses a pending org of the same name and does not switch away from a paid organisation until the new one is activated.
+Web-only distinguishers (same-name / empty pending orgs from Activate retries): created date, short ID, **Setup incomplete** badge. Incomplete rows are not switchable; they show **Continue setup**, which reopens `/setup` for that pending organisation so payment can finish. Complete orgs sort above incomplete copies. Public `/setup` does not attach a second live organisation to an existing login — sign in, then use this page. Activate reuses a pending org of the same name (or the resume id) and does not switch away from a paid organisation until the new one is activated.
 
 
 ## Test script (Farnie)

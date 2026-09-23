@@ -3,7 +3,10 @@ export const MFA_OK_COOKIE = 'pp_mfa_ok'
 export const MFA_GATE_KEY = 'pp.mfa.gate'
 export const MFA_SIGNED_OUT_KEY = 'pp.signedOut'
 
-export function mfaVerifyHref(next: '/dashboard' | '/developer'): string {
+export const POST_AUTH_PATHS = ['/dashboard', '/dashboard/change-organisation', '/developer'] as const
+export type PostAuthPath = (typeof POST_AUTH_PATHS)[number]
+
+export function mfaVerifyHref(next: PostAuthPath): string {
   return `/auth/mfa?next=${encodeURIComponent(next)}`
 }
 
@@ -26,9 +29,10 @@ export function expireMfaCookieOptions() {
   }
 }
 
-export function safePostMfaPath(next: string | undefined | null, fallback: '/dashboard' | '/developer' = '/dashboard'): '/dashboard' | '/developer' {
+export function safePostMfaPath(next: string | undefined | null, fallback: PostAuthPath = '/dashboard'): PostAuthPath {
   const path = (next || '').trim().split('?')[0]
   if (path === '/developer' || path.startsWith('/developer/')) return '/developer'
+  if (path === '/dashboard/change-organisation') return '/dashboard/change-organisation'
   if (path === '/dashboard' || path.startsWith('/dashboard/')) return '/dashboard'
-  return fallback
+  return fallback === '/developer' ? '/developer' : fallback === '/dashboard/change-organisation' ? '/dashboard/change-organisation' : '/dashboard'
 }

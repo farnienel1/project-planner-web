@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import {
   formatMembershipCreatedLabel,
   isSetupIncomplete,
+  pickPendingOrganizationToReuse,
   pickReusablePendingOrganization,
   shouldSwitchUserToNewOrganization,
   shortOrganizationId,
@@ -62,6 +63,27 @@ test('pickReusablePendingOrganization returns newest same-name pending for the c
     'Acme Ltd'
   )
   assert.equal(picked?.id, 'NEW')
+})
+
+test('pickPendingOrganizationToReuse prefers the resume id when that org is still pending', () => {
+  const orgs = [
+    {
+      id: 'OLD',
+      name: 'Acme Ltd',
+      creatorUserId: 'u1',
+      subscriptionStatus: 'pending',
+      createdAt: new Date('2026-01-01'),
+    },
+    {
+      id: 'RESUME',
+      name: 'Other Ltd',
+      creatorUserId: 'u1',
+      subscriptionStatus: 'pending',
+      createdAt: new Date('2026-02-01'),
+    },
+  ]
+  assert.equal(pickPendingOrganizationToReuse(orgs, 'u1', 'Acme Ltd', 'RESUME')?.id, 'RESUME')
+  assert.equal(pickPendingOrganizationToReuse(orgs, 'u1', 'Acme Ltd')?.id, 'OLD')
 })
 
 test('shouldSwitchUserToNewOrganization is false when the user already has a complete org', () => {

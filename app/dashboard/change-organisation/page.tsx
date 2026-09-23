@@ -144,12 +144,12 @@ export default function ChangeOrganisationPage() {
         <h2 className="h2">Work across teams</h2>
         <p className="muted small" style={{ marginTop: 8 }}>
           Choose which organisation you want to use in the app. Your schedule, projects, and settings will update to
-          match.
+          match. You stay in whichever organisation you last switched to.
         </p>
         <p className="muted xs" style={{ marginTop: 10 }}>
           Organisations with the same name are listed with the date they were created and a short ID so you can tell
-          them apart. Rows marked Setup incomplete were started during organisation setup and do not contain your
-          company data yet — stay on the one that has your projects.
+          them apart. Rows marked Setup incomplete still need payment — continue setup to finish. They do not contain
+          your company data yet, so stay on the organisation that has your projects.
         </p>
       </section>
 
@@ -168,10 +168,35 @@ export default function ChangeOrganisationPage() {
             const locked = membership.trialAccessBlocked === true
             const setupIncomplete = membership.setupIncomplete === true
             const switching = switchingId === membership.organizationId
-            const disabled =
-              isActive || switching || locked || Boolean(switchingId) || (setupIncomplete && !isActive)
             const createdLabel = formatMembershipCreatedLabel(membership.createdAt)
             const shortId = shortOrganizationId(membership.organizationId)
+
+            if (setupIncomplete) {
+              return (
+                <div key={membership.organizationId} className={`ritem ${isActive ? 'sel' : ''}`} data-hue="lib" style={{ cursor: 'default' }}>
+                  <span className="ico-chip">
+                    <BuildingOffice2Icon className="h-5 w-5" />
+                  </span>
+                  <span className="grow">
+                    <span className="t" style={{ fontSize: 17 }}>{membership.organizationName}</span>
+                    <span className="s">
+                      {roleDisplayName(membership.role)}
+                      {isActive ? ' · Current organisation' : ''}
+                      {' · Setup incomplete'}
+                    </span>
+                    <span className="s">
+                      {createdLabel ? `Created ${createdLabel}` : 'Created date unknown'} · ID {shortId}
+                    </span>
+                  </span>
+                  <Link href={`/setup?resumeOrgId=${encodeURIComponent(membership.organizationId)}`} className="btn sm primary">
+                    Continue setup
+                  </Link>
+                </div>
+              )
+            }
+
+            const disabled =
+              isActive || switching || locked || Boolean(switchingId)
 
             return (
               <button
@@ -195,7 +220,6 @@ export default function ChangeOrganisationPage() {
                     {isActive ? ' · Current organisation' : ''}
                     {membership.isTrial ? ' · Trial' : ''}
                     {locked ? ' · Locked' : ''}
-                    {setupIncomplete ? ' · Setup incomplete' : ''}
                     {isPending ? ' · Invitation pending' : ''}
                   </span>
                   <span className="s">
@@ -229,8 +253,8 @@ export default function ChangeOrganisationPage() {
           <div>
             <b style={{ fontFamily: 'var(--head)', fontSize: 17 }}>Set up a new organisation</b>
             <div className="muted">
-              Create your own organisation at any time. You will be billed separately for it, and your existing
-              organisations stay as they are.
+              Create another organisation from this same login. You will be billed separately for it, and you stay in
+              whichever organisation you last switched to until you pick the new one.
             </div>
           </div>
         </div>

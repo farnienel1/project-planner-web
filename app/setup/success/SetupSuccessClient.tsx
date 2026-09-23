@@ -22,12 +22,20 @@ type VerifiedSession = {
   status: 'active' | 'trialing'
 }
 
+type AdditionalChoice = {
+  newOrganizationId: string
+  newOrganizationName: string
+  currentOrganizationName: string
+}
+
 export default function SetupSuccessClient() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const sessionId = searchParams.get('session_id')
-  const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading')
+  const [status, setStatus] = useState<'loading' | 'success' | 'choose' | 'error'>('loading')
   const [message, setMessage] = useState('Confirming your subscription…')
+  const [choice, setChoice] = useState<AdditionalChoice | null>(null)
+  const [switching, setSwitching] = useState(false)
 
   useEffect(() => {
     if (!sessionId) {
@@ -74,13 +82,8 @@ export default function SetupSuccessClient() {
           const orgSnap = await getDoc(doc(db, 'organizations', data.organizationId))
           const organizationName = String(orgSnap.data()?.name || 'your organisation')
           const currentOrgId = String(userData?.organizationId || '')
-          if (currentOrgId && currentOrgId !== data.organizationId) {
-            try {
-              await switchActiveOrganization(adminUserId, data.organizationId)
-            } catch {
-              // Leave them on the current org — they can pick the new one from Switch organisation.
-            }
-          }
+          const isAdditionalOrg = Boolean(alreadyConfirmed && currentOrgId && currentOrgId !== data.organizationId)
+
           if (!alreadyConfirmed) {
             if (token && to) {
               const payload = {
@@ -102,6 +105,26 @@ export default function SetupSuccessClient() {
               setStatus('success')
               setMessage('Payment confirmed. Check your email for a link to open your account, then sign in.')
               window.setTimeout(() => router.push('/setup/check-email'), 1200)
+            }
+            return
+          }
+
+          if (isAdditionalOrg) {
+            let currentName = 'your current organisation'
+            try {
+              const currentSnap = await getDoc(doc(db, 'organizations', currentOrgId))
+              currentName = String(currentSnap.data()?.name || currentName)
+            } catch {
+              // Names are display-only.
+            }
+            if (!cancelled) {
+              setChoice({
+                newOrganizationId: data.organizationId,
+                newOrganizationName: organizationName,
+                currentOrganizationName: currentName,
+              })
+              setStatus('choose')
+              setMessage('Payment confirmed. You can switch to the new organisation now, or stay where you are.')
             }
             return
           }
@@ -132,13 +155,48 @@ export default function SetupSuccessClient() {
     }
   }, [sessionId, router])
 
+  async function goToDashboard() {
+    await grantMfaSkip().catch(() => undefined)
+    window.location.href = '/dashboard'
+  }
+
+  async function switchToNewOrganisation() {
+    const adminUserId = getFirebaseAuth().currentUser?.uid
+    if (!adminUserId || !choice) {
+      await goToDashboard()
+      return
+    }
+    setSwitching(true)
+    try {
+      await switchActiveOrganization(adminUserId, choice.newOrganizationId)
+      await goToDashboard()
+    } catch (error) {
+      setSwitching(false)
+      setStatus('error')
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : 'The organisation is ready. Open Switch organisation to move into it.'
+      )
+    }
+  }
+
+  const heading =
+    status === 'error'
+      ? 'Setup issue'
+      : status === 'choose'
+        ? 'Organisation ready'
+        : status === 'success'
+          ? 'Payment confirmed'
+          : 'Finishing setup'
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-[#f4f6f9] px-5">
       <div className="w-full max-w-lg rounded-3xl border border-slate-200 bg-white p-8 text-center shadow-[0_2px_30px_rgba(15,23,42,0.08)]">
         {status === 'loading' && (
           <div className="mx-auto mb-4 h-12 w-12 animate-spin rounded-full border-b-2 border-blue-600" />
         )}
-        {status === 'success' && (
+        {(status === 'success' || status === 'choose') && (
           <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100 text-2xl text-emerald-700">
             ✓
           </div>
@@ -148,10 +206,35 @@ export default function SetupSuccessClient() {
             !
           </div>
         )}
-        <h1 className="text-2xl font-extrabold text-slate-900">
-          {status === 'success' ? 'Payment confirmed' : status === 'error' ? 'Setup issue' : 'Finishing setup'}
-        </h1>
+        <h1 className="text-2xl font-extrabold text-slate-900">{heading}</h1>
         <p className="mt-3 text-sm text-slate-600">{message}</p>
+        {status === 'choose' && choice ? (
+          <div className="mt-6 grid gap-3">
+            <p className="text-sm text-slate-500">
+              You stay in whichever organisation you last switched to. Switching now makes {choice.newOrganizationName}{' '}
+              the one you are working in.
+            </p>
+            <button
+              type="button"
+              className="rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
+              onClick={() => void switchToNewOrganisation()}
+              disabled={switching}
+            >
+              {switching ? 'Switching…' : `Switch to ${choice.newOrganizationName} now`}
+            </button>
+            <button
+              type="button"
+              className="rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+              onClick={() => void goToDashboard()}
+              disabled={switching}
+            >
+              Stay in {choice.currentOrganizationName}
+            </button>
+            <Link href="/dashboard/change-organisation" className="text-sm font-semibold text-blue-700 hover:underline">
+              Open Switch organisation
+            </Link>
+          </div>
+        ) : null}
         {status === 'error' && (
           <div className="mt-6 flex flex-wrap justify-center gap-3">
             <Link href="/setup" className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700">

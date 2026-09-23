@@ -7,9 +7,9 @@ import { AppLogoMark } from '@/components/ui/AppLogoMark'
 
 const EMAIL_RE = /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,64}$/i
 
-export function ResetPasswordRequestScreen() {
+export function ResetPasswordRequestScreen({ initialEmail = '' }: { initialEmail?: string }) {
   const { resetPassword, error } = useAuthStore()
-  const [email, setEmail] = useState('')
+  const [email, setEmail] = useState(initialEmail)
   const [localError, setLocalError] = useState('')
   const [success, setSuccess] = useState(false)
   const [sending, setSending] = useState(false)
