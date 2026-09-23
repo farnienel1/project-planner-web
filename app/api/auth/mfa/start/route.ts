@@ -22,6 +22,7 @@ import {
   MFA_OK_COOKIE,
   MFA_RESEND_MS,
   type MfaChallenge,
+  type MfaOk,
 } from '@/lib/auth/mfa/mfaCookies'
 
 export const runtime = 'nodejs'
@@ -42,18 +43,27 @@ export async function POST(request: NextRequest) {
     return jsonError('This account has no email address, so a verification code cannot be sent. Sign in again.', 400)
   }
 
+  const alreadyOk = decodeSigned<MfaOk>(request.cookies.get(MFA_OK_COOKIE)?.value)
+  if (alreadyOk && alreadyOk.uid === user.uid && alreadyOk.exp > Date.now()) {
+    return NextResponse.json({
+      ok: true,
+      required: false,
+      skipped: true,
+      verified: true,
+      next: nextPath,
+    })
+  }
+
   const existing = decodeSigned<MfaChallenge>(request.cookies.get(MFA_CHALLENGE_COOKIE)?.value)
-  if (existing && existing.uid === user.uid && Date.now() - existing.lastSentAt < MFA_RESEND_MS) {
+  if (existing && existing.uid === user.uid && existing.exp > Date.now() && Date.now() - existing.lastSentAt < MFA_RESEND_MS) {
     const retryAfterSec = Math.max(1, Math.ceil((MFA_RESEND_MS - (Date.now() - existing.lastSentAt)) / 1000))
-    const response = NextResponse.json({
+    return NextResponse.json({
       ok: true,
       required: true,
       sent: true,
       retryAfterSec,
       next: existing.next || nextPath,
     })
-    response.cookies.set(MFA_OK_COOKIE, '', { ...cookieOptions(0), maxAge: 0 })
-    return response
   }
 
   const code = generateMfaCode()

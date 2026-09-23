@@ -17,7 +17,7 @@ export default function DeveloperLayout({ children }: { children: React.ReactNod
   const blocked =
     mfaPending ||
     isMfaGateOpen(firebaseUser?.uid || user?.id) ||
-    Boolean((firebaseUser || user) && (!mfaStatusKnown || !mfaVerified))
+    (mfaStatusKnown && !mfaVerified && Boolean(firebaseUser || user))
 
   useEffect(() => {
     if (blocked) {
@@ -34,7 +34,15 @@ export default function DeveloperLayout({ children }: { children: React.ReactNod
     }
   }, [allowed, blocked, firebaseUser, loading, router, user])
 
-  if (blocked || !mfaVerified) {
+  if (blocked) {
+    return <LoadingSpinner label="Verification required…" />
+  }
+
+  if (!mfaStatusKnown && (firebaseUser || user)) {
+    return <LoadingSpinner label="Checking owner access…" />
+  }
+
+  if (!mfaVerified) {
     return <LoadingSpinner label="Verification required…" />
   }
 

@@ -155,7 +155,7 @@ interface OrgUserState {
   loadUsers: (organizationId: string, options?: { force?: boolean }) => Promise<void>
 }
 
-export const useOrgUserStore = create<OrgUserState>((set) => ({
+export const useOrgUserStore = create<OrgUserState>((set, get) => ({
   users: [],
   loading: false,
   error: null,
@@ -165,7 +165,8 @@ export const useOrgUserStore = create<OrgUserState>((set) => ({
       'orgUserStore:users',
       organizationId,
       async () => {
-        set({ loading: true, error: null })
+        if (get().users.length === 0) set({ loading: true, error: null })
+        else set({ error: null })
         try {
           const usersRef = query(collection(db, 'users'), where('organizationId', '==', organizationId))
           const snapshot = await getDocs(usersRef)
