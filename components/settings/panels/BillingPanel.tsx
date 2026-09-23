@@ -55,8 +55,8 @@ export function BillingPanel({ onBack }: { onBack: () => void }) {
           </p>
           <p className="text-sm text-slate-600">{billingStatusLabel(billing)}</p>
           <p className="text-sm text-slate-600">
-            Next charge {amount === ANNUAL_PENCE ? '£1,490' : '£149'} + VAT
-            {billing?.currentPeriodEnd ? ` on ${billing.currentPeriodEnd.toLocaleDateString('en-GB')}` : ''}.
+            Next charge {amount === ANNUAL_PENCE ? '£1,490 a year' : '£149 a month'}
+            {billing?.currentPeriodEnd ? ` on ${billing.currentPeriodEnd.toLocaleDateString('en-GB')}` : ''}. VAT is not charged.
           </p>
           {billing?.status === 'trialing' || billing?.status === 'pending' ? (
             <p className="text-xs text-slate-500">{formatTrialChargeCopy(billing?.trialStart || undefined)}</p>
