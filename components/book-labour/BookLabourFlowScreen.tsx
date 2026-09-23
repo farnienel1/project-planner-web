@@ -14,6 +14,7 @@ import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { useProjectStore } from '@/lib/stores/projectStore'
 import { useHolidayStore } from '@/lib/stores/holidayStore'
 import { visibleWorks } from '@/lib/access/workAccess'
+import { useDeadlineAssignedProjectIds } from '@/lib/deadlines/useDeadlineAssignedProjectIds'
 import {
   DEFAULT_MY_SCHEDULE,
   DEFAULT_PAYROLL_POLICY,
@@ -97,6 +98,7 @@ export function BookLabourFlowScreen({
   const router = useRouter()
   const searchParams = useSearchParams()
   const { user, organization } = useAuthStore()
+  const deadlineAssignedProjectIds = useDeadlineAssignedProjectIds()
   const { bookings, loadBookings, createBooking } = useBookingStore()
   const { managerSiteBookings, loadManagerSiteBookings, saveManagerSiteBooking } = useManagerScheduleStore()
   const { operatives, loadOperatives, loading: operativesLoading } = useOperativeStore()
@@ -185,8 +187,9 @@ export function BookLabourFlowScreen({
         operatives,
         bookings,
         managerBookings: managerSiteBookings,
+        deadlineAssignedProjectIds,
       }).filter((project) => project.isLive),
-    [allWorks, user, operatives, bookings, managerSiteBookings]
+    [allWorks, user, operatives, bookings, managerSiteBookings, deadlineAssignedProjectIds]
   )
   const liveSmallWorks = useMemo(
     () =>
@@ -197,8 +200,9 @@ export function BookLabourFlowScreen({
         operatives,
         bookings,
         managerBookings: managerSiteBookings,
+        deadlineAssignedProjectIds,
       }).filter((project) => project.isLive),
-    [allWorks, user, operatives, bookings, managerSiteBookings]
+    [allWorks, user, operatives, bookings, managerSiteBookings, deadlineAssignedProjectIds]
   )
 
   const otherPicks = enabledScheduleLocationPicks(scheduleOpts)

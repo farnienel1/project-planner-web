@@ -29,6 +29,7 @@ export function jobHubTiles(input: {
     tiles.push({ href: 'materials', label: 'Materials', desc: 'Materials list and send to wholesaler' })
   }
   tiles.push({ href: 'health-safety', label: 'H&S', desc: 'Toolbox talks, RAMS, documents' })
+  tiles.push({ href: 'deadlines', label: 'Deadlines', desc: 'Key dates, pace and sign-offs' })
   if (input.canViewSiteAudit) {
     tiles.push({ href: 'site-audit', label: 'Site Audit', desc: 'Audits for this project' })
   }
