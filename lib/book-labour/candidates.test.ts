@@ -169,6 +169,61 @@ test('book labour includes unlinked operative users and name-matched roster', ()
   )
 })
 
+test('book labour hides people who are already booked for the day', () => {
+  const opUser = user({ id: 'U-OP', email: 'ada@site.test' })
+  const linked = operative({ id: 'OP-ADA', email: 'ada@site.test' })
+  const mgr = user({
+    id: 'U-MGR',
+    email: 'boss@site.test',
+    firstName: 'Boss',
+    surname: 'Mgr',
+    role: UserRole.MANAGER,
+    permissions: perms({ manager: true }),
+  })
+
+  const fullDayWithLeftoverClocks = buildBookLabourCandidates({
+    day: WED,
+    users: [opUser, mgr],
+    operatives: [linked],
+    bookings: [
+      booking({
+        id: 'B-CLOCK',
+        operativeId: 'OP-ADA',
+        timeSlot: 'FULL DAY',
+        workStartTime: '08:00',
+        workEndTime: '16:00',
+      }),
+    ],
+    managerSiteBookings: [
+      {
+        id: 'M-OFFICE',
+        userId: 'U-MGR',
+        date: WED,
+        timeSlot: 'FULL DAY',
+        locationType: 'office',
+        workStartTime: '08:00',
+        workEndTime: '16:00',
+        createdAt: WED,
+        updatedAt: WED,
+      },
+    ],
+    holidays: [],
+    payrollPolicy: DEFAULT_PAYROLL_POLICY,
+  })
+  assert.equal(fullDayWithLeftoverClocks.length, 0)
+
+  const morningOnly = buildBookLabourCandidates({
+    day: WED,
+    users: [opUser],
+    operatives: [linked],
+    bookings: [booking({ id: 'B-AM', operativeId: 'OP-ADA', timeSlot: 'AM' })],
+    managerSiteBookings: [],
+    holidays: [],
+    payrollPolicy: DEFAULT_PAYROLL_POLICY,
+  })
+  assert.equal(morningOnly.some((row) => row.id === 'U-OP'), true)
+})
+
 test('enabledScheduleLocationPicks matches iOS Other locations', () => {
   const picks = enabledScheduleLocationPicks({
     showOffice: true,

@@ -5,6 +5,7 @@ import { format, isSameDay, startOfDay } from 'date-fns'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { newHolidayId, useHolidayStore } from '@/lib/stores/holidayStore'
 import type { AnnualLeavePerson } from '@/lib/annualLeave/annualLeavePerson'
+import { isFutureAcceptedAnnualLeave } from '@/lib/annualLeave/holidayApprovalUtils'
 import {
   getBookingForDay,
   getDayKindForPerson,
@@ -16,6 +17,36 @@ import { AnnualLeaveLegend, LeaveDayCalendar } from './LeaveDayCalendar'
 
 function fmtDate(d: Date) {
   return format(d, 'd MMM yyyy')
+}
+
+function fmtRange(booking: HolidayBooking) {
+  const start = format(booking.startDate, 'd MMM yyyy')
+  const end = format(booking.endDate, 'd MMM yyyy')
+  return start === end ? start : `${start} – ${end}`
+}
+
+function DeleteAnnualLeaveButton({
+  onClick,
+  disabled,
+  label = 'Delete annual leave',
+}: {
+  onClick: () => void
+  disabled?: boolean
+  label?: string
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      className="flex w-full items-center justify-center gap-2 rounded-2xl border border-red-200 bg-red-50 py-3.5 text-sm font-bold text-red-700 hover:bg-red-100 disabled:opacity-60"
+    >
+      <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5} aria-hidden="true">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+      </svg>
+      {label}
+    </button>
+  )
 }
 
 function DurationButtons({
@@ -55,7 +86,7 @@ export function OperativeAnnualLeaveCalendar({
   onBack: () => void
 }) {
   const { organization, user } = useAuthStore()
-  const { saveBooking } = useHolidayStore()
+  const { saveBooking, deleteBooking } = useHolidayStore()
 
   const [month, setMonth] = useState(new Date())
   const [selectedDay, setSelectedDay] = useState<Date | null>(null)
@@ -72,6 +103,14 @@ export function OperativeAnnualLeaveCalendar({
           (person.operativeId && b.operativeId === person.operativeId)
       ),
     [bookings, person]
+  )
+
+  const futureBookings = useMemo(
+    () =>
+      personBookings
+        .filter((booking) => isFutureAcceptedAnnualLeave(booking))
+        .sort((a, b) => a.startDate.getTime() - b.startDate.getTime()),
+    [personBookings]
   )
 
   const selectedKind: AnnualLeaveDayKind | null = selectedDay
@@ -173,6 +212,26 @@ export function OperativeAnnualLeaveCalendar({
     }
   }
 
+  const deleteAnnualLeave = async (booking: HolidayBooking) => {
+    if (!organization?.id) return
+    if (
+      !window.confirm(
+        `Delete annual leave for ${person.displayName} on ${fmtRange(booking)}?`
+      )
+    ) {
+      return
+    }
+    setSaving(true)
+    try {
+      await deleteBooking(organization.id, booking.id)
+      setMessage('Annual leave deleted.')
+      if (approvedBooking?.id === booking.id) setSelectedDay(null)
+      setTimeout(() => setMessage(null), 3000)
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const declineRequest = async () => {
     if (!organization?.id || !user || !pendingBooking) return
     if (!window.confirm(`Decline this annual leave request for ${person.displayName}?`)) return
@@ -266,6 +325,9 @@ export function OperativeAnnualLeaveCalendar({
           >
             {saving ? 'Saving…' : 'Confirm annual leave booking change'}
           </button>
+          <div className="mt-3">
+            <DeleteAnnualLeaveButton disabled={saving} onClick={() => void deleteAnnualLeave(approvedBooking)} />
+          </div>
         </div>
       )}
 
@@ -307,6 +369,44 @@ export function OperativeAnnualLeaveCalendar({
           This day is fully booked ({selectedKind === 'approvedFull' ? 'approved' : 'pending'}).
         </div>
       )}
+
+      <div className="space-y-2">
+        <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">
+          Future annual leave · {futureBookings.length}
+        </p>
+        {futureBookings.length === 0 ? (
+          <p className="rounded-2xl border border-slate-200 bg-white px-4 py-6 text-center text-sm text-slate-500">
+            No future annual leave booked.
+          </p>
+        ) : (
+          futureBookings.map((booking) => (
+            <div key={booking.id} className="card pad">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-bold text-slate-900">{fmtRange(booking)}</p>
+                  <p className="mt-0.5 text-xs text-slate-500">{booking.timeSlot}</p>
+                  <p className="mt-0.5 text-xs font-semibold text-emerald-600">Approved</p>
+                </div>
+                <button
+                  type="button"
+                  disabled={saving}
+                  onClick={() => void deleteAnnualLeave(booking)}
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-red-200 bg-red-50 text-red-600 hover:bg-red-100 disabled:opacity-60"
+                  aria-label="Delete annual leave"
+                  title="Delete annual leave"
+                >
+                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5} aria-hidden="true">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              <div className="mt-3">
+                <DeleteAnnualLeaveButton disabled={saving} onClick={() => void deleteAnnualLeave(booking)} />
+              </div>
+            </div>
+          ))
+        )}
+      </div>
 
       {message && (
         <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800">

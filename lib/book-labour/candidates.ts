@@ -10,7 +10,7 @@ import { displayTradeType } from '@/lib/staff/staffTradeTypes'
 import type { OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 import { DEFAULT_PAYROLL_POLICY } from '@/lib/settings/organizationSettings'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
-import { paidHoursForOperativeBooking } from '@/lib/warnings/clashIntervals'
+import { estimatedPaidHours } from '@/lib/scheduling/paidHours'
 
 export type BookLabourCandidate = {
   id: string
@@ -94,6 +94,20 @@ function sameDay(date: Date, day: Date): boolean {
   return dayKey(date) === dayKey(day)
 }
 
+function slotPaidHours(
+  booking: { timeSlot?: string; workStartTime?: string; workEndTime?: string; isBreakRemoved?: boolean },
+  policy: OrgPayrollTimePolicy
+): number {
+  return estimatedPaidHours({
+    timeSlot: booking.timeSlot,
+    workStartTime: booking.workStartTime,
+    workEndTime: booking.workEndTime,
+    isBreakRemoved: booking.isBreakRemoved,
+    unpaidBreakMinutes: policy.unpaidBreakMinutes,
+    standardPaidHours: policy.standardPaidHours,
+  })
+}
+
 function operativePaidHours(
   bookings: Booking[],
   operativeId: string,
@@ -107,23 +121,19 @@ function operativePaidHours(
         sameDay(booking.date, day) &&
         isActiveBookingStatus(booking.status)
     )
-    .reduce((sum, booking) => sum + paidHoursForOperativeBooking(booking, policy), 0)
+    .reduce((sum, booking) => sum + slotPaidHours(booking, policy), 0)
 }
 
-function managerProjectPaidHours(
+/** Every same-day manager booking counts, including office, home, site survey and custom locations. */
+function managerPaidHours(
   managerSiteBookings: ManagerSiteBooking[],
   userId: string,
   day: Date,
   policy: OrgPayrollTimePolicy
 ): number {
   return managerSiteBookings
-    .filter(
-      (booking) =>
-        booking.userId === userId &&
-        sameDay(booking.date, day) &&
-        (booking.locationType === 'project' || booking.locationType === 'small_work')
-    )
-    .reduce((sum, booking) => sum + paidHoursForOperativeBooking(booking, policy), 0)
+    .filter((booking) => booking.userId === userId && sameDay(booking.date, day))
+    .reduce((sum, booking) => sum + slotPaidHours(booking, policy), 0)
 }
 
 export function buildBookLabourCandidates(input: {
@@ -177,7 +187,7 @@ export function buildBookLabourCandidates(input: {
     if (holidayCoversDay(input.holidays, day, user.id, linked?.id)) continue
     const paid =
       (linked ? operativePaidHours(input.bookings, linked.id, day, policy) : 0) +
-      managerProjectPaidHours(input.managerSiteBookings, user.id, day, policy)
+      managerPaidHours(input.managerSiteBookings, user.id, day, policy)
     if (paid >= required) continue
     if (linked) claimedOperativeIds.add(linked.id)
     seen.add(user.id)
@@ -198,7 +208,7 @@ export function buildBookLabourCandidates(input: {
     if (holidayCoversDay(input.holidays, day, user.id, linked?.id)) continue
     if (seen.has(user.id)) continue
     const paid =
-      managerProjectPaidHours(input.managerSiteBookings, user.id, day, policy) +
+      managerPaidHours(input.managerSiteBookings, user.id, day, policy) +
       (linked ? operativePaidHours(input.bookings, linked.id, day, policy) : 0)
     if (paid >= required) continue
     if (linked) claimedOperativeIds.add(linked.id)
