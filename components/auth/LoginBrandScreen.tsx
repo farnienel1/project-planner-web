@@ -14,13 +14,13 @@ import { AppLogoMark } from '@/components/ui/AppLogoMark'
 import { formatLoginError } from '@/lib/auth/formatLoginError'
 import { consumeWebIdleExpiredFlag } from '@/lib/auth/webIdleSession'
 import { hasCustomerOrganisation, isPlatformOwnerEmail } from '@/lib/platform/owner'
-import { isMfaGateOpen, isMfaRequiredError } from '@/lib/auth/mfa/mfaClient'
+import { isMfaGateOpen, isMfaRequiredError, mfaVerifyHref } from '@/lib/auth/mfa/mfaClient'
 
 export function LoginBrandScreen() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const justConfirmed = searchParams.get('confirmed') === '1'
-  const { signIn, error, user } = useAuthStore()
+  const { signIn, error, user, mfaPending, mfaVerified, mfaStatusKnown, loading } = useAuthStore()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
@@ -29,9 +29,14 @@ export function LoginBrandScreen() {
   const [idleNotice] = useState(() => consumeWebIdleExpiredFlag())
 
   useEffect(() => {
-    if (!user) return
-    if (isMfaGateOpen(user.id)) {
-      router.replace('/auth/mfa?next=/dashboard')
+    if (mfaPending || isMfaGateOpen(user?.id)) {
+      router.replace(mfaVerifyHref('/dashboard'))
+      return
+    }
+    if (loading || !user) return
+    if (!mfaStatusKnown) return
+    if (!mfaVerified) {
+      router.replace(mfaVerifyHref('/dashboard'))
       return
     }
     if (isPlatformOwnerEmail(user.email) && !hasCustomerOrganisation(user.organizationId)) {
@@ -39,7 +44,7 @@ export function LoginBrandScreen() {
       return
     }
     router.replace('/dashboard')
-  }, [user, router])
+  }, [loading, mfaPending, mfaStatusKnown, mfaVerified, router, user])
 
   const trimmedEmail = email.trim()
   const isFormValid = trimmedEmail.length > 0 && password.length > 0
@@ -58,20 +63,10 @@ export function LoginBrandScreen() {
     }
     try {
       setSubmitting(true)
-      await signIn(trimmedEmail, password)
-      if (isMfaGateOpen(useAuthStore.getState().user?.id)) {
-        router.push('/auth/mfa?next=/dashboard')
-        return
-      }
-      const signedIn = useAuthStore.getState().user
-      if (signedIn && isPlatformOwnerEmail(signedIn.email) && !hasCustomerOrganisation(signedIn.organizationId)) {
-        router.push('/developer')
-      } else {
-        router.push('/dashboard')
-      }
+      await signIn(trimmedEmail, password, { next: '/dashboard' })
     } catch (err) {
       if (isMfaRequiredError(err)) {
-        router.push('/auth/mfa?next=/dashboard')
+        router.replace(mfaVerifyHref('/dashboard'))
         return
       }
       setLocalError(formatLoginError(err))
