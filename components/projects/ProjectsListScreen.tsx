@@ -16,6 +16,7 @@ import { useManagerScheduleStore } from '@/lib/stores/managerScheduleStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
 import { canManageWorkCatalogue, isOperativeMode } from '@/lib/permissions'
 import { visibleWorks } from '@/lib/access/workAccess'
+import { useDeadlineAssignedProjectIds } from '@/lib/deadlines/useDeadlineAssignedProjectIds'
 import {
   countWorksByTab,
   filterWorksByTab,
@@ -33,6 +34,7 @@ export function ProjectsListScreen() {
   const { bookings, loadBookings } = useBookingStore()
   const { managerSiteBookings, loadManagerSiteBookings } = useManagerScheduleStore()
   const { operatives, managers, loadOperatives, loadManagers } = useOperativeStore()
+  const deadlineAssignedProjectIds = useDeadlineAssignedProjectIds()
   const [filter, setFilter] = useState<Filter>('active')
   const [search, setSearch] = useState('')
 
@@ -65,8 +67,9 @@ export function ProjectsListScreen() {
         bookings,
         managerBookings: managerSiteBookings,
         tasks,
+        deadlineAssignedProjectIds,
       }),
-    [projects, user, operatives, managers, bookings, managerSiteBookings, tasks]
+    [projects, user, operatives, managers, bookings, managerSiteBookings, tasks, deadlineAssignedProjectIds]
   )
 
   const counts = useMemo(() => countWorksByTab(visible), [visible])
