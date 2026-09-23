@@ -1,7 +1,7 @@
 import { jsonAuthHeaders } from '@/lib/security/clientAuthHeaders'
-import { MFA_GATE_KEY, MFA_SIGNED_OUT_KEY, mfaVerifyHref, safePostMfaPath } from '@/lib/auth/mfa/mfaConstants'
+import { MFA_GATE_KEY, MFA_SIGNED_OUT_KEY, mfaGateMatches, mfaVerifyHref, safePostMfaPath } from '@/lib/auth/mfa/mfaConstants'
 
-export { MFA_GATE_KEY, MFA_SIGNED_OUT_KEY, mfaVerifyHref, safePostMfaPath }
+export { MFA_GATE_KEY, MFA_SIGNED_OUT_KEY, mfaGateMatches, mfaVerifyHref, safePostMfaPath }
 
 const FETCH_OPTS: RequestInit = { credentials: 'include', cache: 'no-store' }
 
@@ -68,10 +68,7 @@ export function clearMfaGate() {
 }
 
 export function isMfaGateOpen(uid?: string | null): boolean {
-  const gate = readMfaGate()
-  if (!gate) return false
-  if (uid && gate.uid !== uid) return false
-  return true
+  return mfaGateMatches(readMfaGate()?.uid, uid)
 }
 
 async function readError(response: Response): Promise<{ error: string; retryAfterSec?: number }> {

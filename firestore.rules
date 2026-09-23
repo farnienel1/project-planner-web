@@ -488,12 +488,13 @@ service cloud.firestore {
       match /userEmails/{emailKey} {
         allow read: if request.auth != null;
         allow create, update: if request.auth != null && (
+          isPlatformOwner() ||
           isAdminOrSuperAdmin() ||
           isOrgAdminViaMembersMap(organizationId) ||
           request.resource.data.userId == request.auth.uid ||
           (isManagerWithOperativesAccess() && userOrgIdMatchesPath(organizationId))
         );
-        allow delete: if request.auth != null && (isAdminOrSuperAdmin() || isOrgAdminViaMembersMap(organizationId));
+        allow delete: if request.auth != null && (isPlatformOwner() || isAdminOrSuperAdmin() || isOrgAdminViaMembersMap(organizationId));
       }
       
       // Org root document: must not call get(organizations/{organizationId}) inside the rule (same doc → circular deny).

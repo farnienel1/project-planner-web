@@ -47,6 +47,7 @@ import {
   isMfaRequiredError,
   MfaRequiredError,
   openMfaGate,
+  readMfaGate,
   readMfaStatus,
   readSignedOutFlag,
   startEmailMfa,
@@ -84,6 +85,7 @@ const PROFILE_STEP_MS = 4000
 let lastSeenWriteAt = 0
 let inFlightProfile: { uid: string; promise: Promise<void> } | null = null
 let signingOut = false
+let signingIn = false
 
 function redirectAfterSignOut() {
   if (typeof window === 'undefined') return
@@ -103,9 +105,9 @@ function redirectAfterSignOut() {
 
 async function syncMfaStatusFromCookie() {
   const state = useAuthStore.getState()
-  if (state.mfaPending || isMfaGateOpen()) return
+  if (state.mfaPending || readMfaGate()) return
   const status = await readMfaStatus()
-  if (useAuthStore.getState().mfaPending || isMfaGateOpen()) return
+  if (useAuthStore.getState().mfaPending || readMfaGate()) return
   useAuthStore.setState({
     mfaVerified: status.verified,
     mfaStatusKnown: true,
@@ -358,7 +360,16 @@ async function loadSignedInProfileInner(firebaseUser: FirebaseUser) {
 export const useAuthStore = create<AuthState>((set) => {
   if (typeof window !== 'undefined' && isFirebaseConfigured()) {
     onAuthStateChanged(getFirebaseAuth(), async (firebaseUser) => {
-      if (signingOut || readSignedOutFlag()) {
+      if (signingIn) {
+        if (firebaseUser) {
+          useAuthStore.setState({ firebaseUser, loading: false })
+        }
+        return
+      }
+      if (
+        signingOut ||
+        (readSignedOutFlag() && !useAuthStore.getState().mfaPending && !isMfaGateOpen(firebaseUser?.uid))
+      ) {
         if (firebaseUser) {
           try {
             await firebaseSignOut(getFirebaseAuth())
@@ -381,6 +392,8 @@ export const useAuthStore = create<AuthState>((set) => {
       if (firebaseUser) {
         if (
           isWebIdleExpired(Date.now(), readWebIdleLastActivity()) &&
+          !useAuthStore.getState().mfaPending &&
+          !isMfaGateOpen(firebaseUser.uid) &&
           !isPlatformOwnerSession(firebaseUser.email, useAuthStore.getState().user?.organizationId)
         ) {
           try {
@@ -416,7 +429,7 @@ export const useAuthStore = create<AuthState>((set) => {
                 : 'Could not load your user profile from Firestore.',
           })
         }
-      } else {
+      } else if (!signingIn && !useAuthStore.getState().mfaPending) {
         set({
           user: null,
           firebaseUser: null,
@@ -446,6 +459,9 @@ export const useAuthStore = create<AuthState>((set) => {
 
     signIn: async (email: string, password: string, opts) => {
       const nextPath = safePostMfaPath(opts?.next, opts?.next?.startsWith('/developer') ? '/developer' : '/dashboard')
+      signingIn = true
+      writeSignedOutFlag(false)
+      touchWebIdleActivity()
       try {
         set({
           loading: true,
@@ -457,7 +473,6 @@ export const useAuthStore = create<AuthState>((set) => {
         })
         const auth = getFirebaseAuth()
         const firebaseUser = await completeEmailSignIn(auth, email, password)
-        writeSignedOutFlag(false)
         openMfaGate(firebaseUser.uid, nextPath)
         await clearMfaCookiesOnly()
         set({
@@ -487,6 +502,8 @@ export const useAuthStore = create<AuthState>((set) => {
         const message = error instanceof Error ? error.message : 'Sign in failed'
         set({ loading: false, error: message })
         throw error
+      } finally {
+        signingIn = false
       }
     },
 
