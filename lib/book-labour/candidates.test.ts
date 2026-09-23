@@ -8,6 +8,7 @@ import {
   oneOffCustomLocationPick,
 } from '../settings/organizationSettings.ts'
 import { buildBookLabourCandidates } from './candidates.ts'
+import { listUnbookedLabour } from '../daily-overview/buildDailyOverview.ts'
 
 function perms(partial: Partial<User['permissions']> = {}): User['permissions'] {
   return {
@@ -222,6 +223,48 @@ test('book labour hides people who are already booked for the day', () => {
     payrollPolicy: DEFAULT_PAYROLL_POLICY,
   })
   assert.equal(morningOnly.some((row) => row.id === 'U-OP'), true)
+})
+
+test('book labour matches the daily overview unbooked list when payroll hours are higher', () => {
+  const bookedUser = user({ id: 'U-OP', email: 'ada@site.test' })
+  const freeUser = user({
+    id: 'U-FREE',
+    email: 'free@site.test',
+    firstName: 'Bea',
+    surname: 'Free',
+  })
+  const linked = operative({ id: 'OP-ADA', email: 'ada@site.test' })
+  const input = {
+    day: WED,
+    users: [bookedUser, freeUser],
+    operatives: [linked],
+    bookings: [
+      booking({
+        id: 'B-CLOCK',
+        operativeId: 'op-ada',
+        timeSlot: 'FULL DAY',
+        workStartTime: '07:30',
+        workEndTime: '16:00',
+      }),
+    ],
+    managerSiteBookings: [],
+    holidays: [],
+    payrollPolicy: { ...DEFAULT_PAYROLL_POLICY, standardPaidHours: 9 },
+  }
+  const candidates = buildBookLabourCandidates(input)
+  const overviewIds = listUnbookedLabour({
+    day: WED,
+    users: input.users,
+    operatives: input.operatives,
+    bookings: input.bookings,
+    managerBookings: [],
+    holidays: [],
+  }).map((row) => row.userId)
+  assert.deepEqual(
+    candidates.map((row) => row.id),
+    ['U-FREE']
+  )
+  assert.deepEqual(overviewIds, ['U-FREE'])
 })
 
 test('enabledScheduleLocationPicks matches iOS Other locations', () => {

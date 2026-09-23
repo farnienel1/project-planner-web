@@ -87,12 +87,15 @@ type BookLabourFlowScreenProps = {
   date?: string
   from?: string
   onClose?: () => void
+  /** Daily overview unbooked warning. Only these people can be booked from that card. */
+  onlyUserIds?: string[]
 }
 
 export function BookLabourFlowScreen({
   date: dateProp,
   from: fromProp,
   onClose,
+  onlyUserIds,
 }: BookLabourFlowScreenProps = {}) {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -161,9 +164,10 @@ export function BookLabourFlowScreen({
     loadHolidays,
   ])
 
+  const allowedUserIds = useMemo(() => (onlyUserIds ? new Set(onlyUserIds) : null), [onlyUserIds])
   const candidates = useMemo(
-    () =>
-      buildBookLabourCandidates({
+    () => {
+      const rows = buildBookLabourCandidates({
         day,
         users,
         operatives,
@@ -171,8 +175,11 @@ export function BookLabourFlowScreen({
         managerSiteBookings,
         holidays,
         payrollPolicy: payroll,
-      }),
-    [day, users, operatives, bookings, managerSiteBookings, holidays, payroll]
+      })
+      if (!allowedUserIds) return rows
+      return rows.filter((row) => allowedUserIds.has(row.id))
+    },
+    [day, users, operatives, bookings, managerSiteBookings, holidays, payroll, allowedUserIds]
   )
 
   const allWorks = useMemo(() => [...projects, ...smallWorks], [projects, smallWorks])

@@ -4,13 +4,11 @@
 
 import type { Booking, HolidayBooking, Operative, User } from '@/types'
 import { UserRole } from '@/types'
-import { isActiveBookingStatus } from '@/lib/ios-parity/enums'
-import { dayKey, londonIsoWeekday, londonMidnight } from '@/lib/ios-parity/londonTime'
+import { londonIsoWeekday, londonMidnight } from '@/lib/ios-parity/londonTime'
 import { displayTradeType } from '@/lib/staff/staffTradeTypes'
 import type { OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
-import { DEFAULT_PAYROLL_POLICY } from '@/lib/settings/organizationSettings'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
-import { estimatedPaidHours } from '@/lib/scheduling/paidHours'
+import { listUnbookedLabour } from '@/lib/daily-overview/buildDailyOverview'
 
 export type BookLabourCandidate = {
   id: string
@@ -50,24 +48,6 @@ function displayNameForUser(user: User): string {
   return name || user.email || user.id
 }
 
-function holidayCoversDay(
-  holidays: HolidayBooking[],
-  day: Date,
-  userId?: string,
-  operativeId?: string
-): boolean {
-  const key = dayKey(day)
-  return holidays.some((holiday) => {
-    if (String(holiday.status).toLowerCase() !== 'approved') return false
-    const start = dayKey(holiday.startDate)
-    const end = dayKey(holiday.endDate)
-    if (key < start || key > end) return false
-    if (userId && holiday.userId && holiday.userId === userId) return true
-    if (operativeId && holiday.operativeId && holiday.operativeId === operativeId) return true
-    return false
-  })
-}
-
 function roleChipsFor(user: User): string[] {
   const chips: string[] = []
   if (user.permissions.operativeMode) chips.push('Operative')
@@ -90,52 +70,6 @@ function canBookOtherLocations(_user: User): boolean {
   return true
 }
 
-function sameDay(date: Date, day: Date): boolean {
-  return dayKey(date) === dayKey(day)
-}
-
-function slotPaidHours(
-  booking: { timeSlot?: string; workStartTime?: string; workEndTime?: string; isBreakRemoved?: boolean },
-  policy: OrgPayrollTimePolicy
-): number {
-  return estimatedPaidHours({
-    timeSlot: booking.timeSlot,
-    workStartTime: booking.workStartTime,
-    workEndTime: booking.workEndTime,
-    isBreakRemoved: booking.isBreakRemoved,
-    unpaidBreakMinutes: policy.unpaidBreakMinutes,
-    standardPaidHours: policy.standardPaidHours,
-  })
-}
-
-function operativePaidHours(
-  bookings: Booking[],
-  operativeId: string,
-  day: Date,
-  policy: OrgPayrollTimePolicy
-): number {
-  return bookings
-    .filter(
-      (booking) =>
-        booking.operativeId === operativeId &&
-        sameDay(booking.date, day) &&
-        isActiveBookingStatus(booking.status)
-    )
-    .reduce((sum, booking) => sum + slotPaidHours(booking, policy), 0)
-}
-
-/** Every same-day manager booking counts, including office, home, site survey and custom locations. */
-function managerPaidHours(
-  managerSiteBookings: ManagerSiteBooking[],
-  userId: string,
-  day: Date,
-  policy: OrgPayrollTimePolicy
-): number {
-  return managerSiteBookings
-    .filter((booking) => booking.userId === userId && sameDay(booking.date, day))
-    .reduce((sum, booking) => sum + slotPaidHours(booking, policy), 0)
-}
-
 export function buildBookLabourCandidates(input: {
   day: Date
   users: User[]
@@ -149,8 +83,16 @@ export function buildBookLabourCandidates(input: {
   const weekday = londonIsoWeekday(day)
   if (weekday < 1 || weekday > 5) return []
 
-  const policy = input.payrollPolicy ?? DEFAULT_PAYROLL_POLICY
-  const required = Math.max(policy.standardPaidHours, 0)
+  const unbookedIds = new Set(
+    listUnbookedLabour({
+      day,
+      bookings: input.bookings,
+      managerBookings: input.managerSiteBookings,
+      holidays: input.holidays,
+      users: input.users,
+      operatives: input.operatives,
+    }).map((row) => row.userId)
+  )
   const operativesByEmail = new Map<string, Operative>()
   const operativesByName = new Map<string, Operative>()
   for (const operative of input.operatives) {
@@ -183,12 +125,8 @@ export function buildBookLabourCandidates(input: {
   const seen = new Set<string>()
 
   for (const user of operativeOnlyUsers) {
+    if (!unbookedIds.has(user.id)) continue
     const linked = findLinkedOperative(user, operativesByEmail, operativesByName, claimedOperativeIds)
-    if (holidayCoversDay(input.holidays, day, user.id, linked?.id)) continue
-    const paid =
-      (linked ? operativePaidHours(input.bookings, linked.id, day, policy) : 0) +
-      managerPaidHours(input.managerSiteBookings, user.id, day, policy)
-    if (paid >= required) continue
     if (linked) claimedOperativeIds.add(linked.id)
     seen.add(user.id)
     out.push({
@@ -204,13 +142,9 @@ export function buildBookLabourCandidates(input: {
   }
 
   for (const user of managerUsers) {
+    if (!unbookedIds.has(user.id)) continue
     const linked = findLinkedOperative(user, operativesByEmail, operativesByName, claimedOperativeIds)
-    if (holidayCoversDay(input.holidays, day, user.id, linked?.id)) continue
     if (seen.has(user.id)) continue
-    const paid =
-      managerPaidHours(input.managerSiteBookings, user.id, day, policy) +
-      (linked ? operativePaidHours(input.bookings, linked.id, day, policy) : 0)
-    if (paid >= required) continue
     if (linked) claimedOperativeIds.add(linked.id)
     out.push({
       id: user.id,
