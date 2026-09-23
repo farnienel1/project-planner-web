@@ -17,10 +17,10 @@ export const PLAN_KEYS: SubscriptionPlanKey[] = ['month', 'year']
 
 export const STRIPE_LOOKUP_MONTHLY = 'projectplanner_monthly_gbp'
 export const STRIPE_LOOKUP_ANNUAL = 'projectplanner_annual_gbp'
-export const STRIPE_PRODUCT_ID_DEFAULT = 'prod_VJO1l93ObO0yN4'
-export const STRIPE_PRICE_MONTHLY_DEFAULT = 'price_1UIlFqQZYhBFKpOTfGAGMonZ'
-export const STRIPE_PRICE_ANNUAL_DEFAULT = 'price_1UIlFvQZYhBFKpOTAPEu7iDu'
-export const STRIPE_PORTAL_CONFIG_DEFAULT = 'bpc_1UIlG8QZYhBFKpOTpPqrcFfU'
+export const STRIPE_PRODUCT_ID_DEFAULT = 'prod_VJRTsDgwXEkoIS'
+export const STRIPE_PRICE_MONTHLY_DEFAULT = 'price_1UIoarDAbu1xyzaBw0yZNCnJ'
+export const STRIPE_PRICE_ANNUAL_DEFAULT = 'price_1UIoasDAbu1xyzaB80igg3WU'
+export const STRIPE_PORTAL_CONFIG_DEFAULT = 'bpc_1UIochDAbu1xyzaBGLeMkVKW'
 export const TRIAL_DAYS = 30
 export const MONTHLY_PENCE = 14_900
 export const ANNUAL_PENCE = 149_000
@@ -136,4 +136,11 @@ export function trialRequiresCard(): boolean {
 
 export function automaticTaxEnabled(): boolean {
   return (process.env.STRIPE_AUTOMATIC_TAX || '').trim().toLowerCase() === 'true'
+}
+
+export function stripeNotConfiguredMessage(): string {
+  if (process.env.NODE_ENV === 'production') {
+    return 'Stripe is not configured on the live site. Add STRIPE_SECRET_KEY (a sandbox test key) in Netlify → Site configuration → Environment variables, then redeploy. The live site does not read .env.local.'
+  }
+  return 'Stripe is not configured yet. Add STRIPE_SECRET_KEY to .env.local and restart the dev server.'
 }

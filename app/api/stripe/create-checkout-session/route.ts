@@ -1,11 +1,12 @@
+import { randomBytes } from 'crypto'
 import { NextRequest } from 'next/server'
 import { getAppBaseUrl, getStripe } from '@/lib/stripe/stripe'
+import { createBillingPortalSession } from '@/lib/stripe/billingPortal'
 import { getResolvedSubscriptionPlan } from '@/lib/stripe/enrichPlansFromStripe'
 import {
   PLAN_KEYS,
   TRIAL_DAYS,
   automaticTaxEnabled,
-  getStripePortalConfigurationId,
   trialRequiresCard,
 } from '@/lib/stripe/plans'
 import {
@@ -22,6 +23,14 @@ import { parseOrgBilling } from '@/lib/stripe/billing'
 import { firestoreValue } from '@/lib/stripe/writeOrgBilling'
 
 export const runtime = 'nodejs'
+
+function checkoutIntegrationIdentifier(): string {
+  const alphabet = 'abcdefghijklmnopqrstuvwxyz'
+  const bytes = randomBytes(8)
+  let suffix = ''
+  for (let i = 0; i < 8; i++) suffix += alphabet[bytes[i]! % 26]
+  return `projectplanner_checkout_${suffix}`
+}
 
 type CheckoutBody = {
   planKey?: string
@@ -79,11 +88,11 @@ export async function POST(request: NextRequest) {
         .retrieve(billing.stripeSubscriptionId)
         .catch(() => null)
       if (existing && (existing.status === 'active' || existing.status === 'trialing')) {
-        const portal = await stripe.billingPortal.sessions.create({
-          customer: billing.stripeCustomerId,
-          return_url: `${getAppBaseUrl()}/dashboard/settings/billing`,
-          configuration: getStripePortalConfigurationId(),
-        })
+        const portal = await createBillingPortalSession(
+          stripe,
+          billing.stripeCustomerId,
+          `${getAppBaseUrl()}/dashboard/settings/billing`
+        )
         return Response.json({ url: portal.url, portal: true })
       }
     }
@@ -158,6 +167,7 @@ export async function POST(request: NextRequest) {
         },
         success_url: `${baseUrl}/setup/success?session_id={CHECKOUT_SESSION_ID}`,
         cancel_url: `${baseUrl}/setup?cancelled=1`,
+        integration_identifier: checkoutIntegrationIdentifier(),
       },
       { idempotencyKey: `checkout-${organizationId}-${planKey}-${bucket}` }
     )

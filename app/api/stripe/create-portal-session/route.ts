@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server'
 import { getAppBaseUrl, getStripe } from '@/lib/stripe/stripe'
-import { getStripePortalConfigurationId } from '@/lib/stripe/plans'
+import { createBillingPortalSession } from '@/lib/stripe/billingPortal'
 import {
   clientSafeMessage,
   enforceRateLimit,
@@ -44,11 +44,11 @@ export async function POST(request: NextRequest) {
     if (!customerId) return jsonError('This organisation does not have a Stripe customer yet.', 400)
 
     const stripe = getStripe()
-    const session = await stripe.billingPortal.sessions.create({
-      customer: customerId,
-      return_url: `${getAppBaseUrl()}/dashboard/settings/billing`,
-      configuration: getStripePortalConfigurationId(),
-    })
+    const session = await createBillingPortalSession(
+      stripe,
+      customerId,
+      `${getAppBaseUrl()}/dashboard/settings/billing`
+    )
     if (!session.url) return jsonError('Stripe did not return a portal URL', 500)
     return Response.json({ url: session.url })
   } catch (error) {

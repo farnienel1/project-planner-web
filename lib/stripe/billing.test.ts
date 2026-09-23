@@ -46,7 +46,11 @@ test('test-mode guard refuses live secret keys', () => {
   const previous = process.env.STRIPE_MODE
   process.env.STRIPE_MODE = 'test'
   assert.throws(() => assertStripeTestKey('sk_live_example'))
+  assert.throws(() => assertStripeTestKey('rk_live_example'))
+  assert.throws(() => assertStripeTestKey('rkcs_live_example'))
   assert.doesNotThrow(() => assertStripeTestKey('sk_test_example'))
+  assert.doesNotThrow(() => assertStripeTestKey('rk_test_example'))
+  assert.doesNotThrow(() => assertStripeTestKey('rkcs_test_example'))
   if (previous == null) delete process.env.STRIPE_MODE
   else process.env.STRIPE_MODE = previous
 })

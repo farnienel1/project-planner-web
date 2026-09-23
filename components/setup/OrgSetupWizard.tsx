@@ -7,7 +7,12 @@ import { fetchSignInMethodsForEmail } from 'firebase/auth'
 import { doc, getDoc } from 'firebase/firestore'
 import { useAuthStore } from '@/lib/stores/authStore'
 import type { SubscriptionPlanKey } from '@/lib/stripe/plans'
-import { PLAN_KEYS, getSubscriptionPlanDisplayOptions, normalizePlanKey } from '@/lib/stripe/plans'
+import {
+  PLAN_KEYS,
+  getSubscriptionPlanDisplayOptions,
+  normalizePlanKey,
+  stripeNotConfiguredMessage,
+} from '@/lib/stripe/plans'
 import { MARKETING_PLANS } from '@/lib/marketing/content'
 import { formatTrialChargeCopy } from '@/lib/stripe/billing'
 import { MarketingShell } from '@/components/marketing/MarketingShell'
@@ -215,7 +220,7 @@ export function OrgSetupWizard() {
               data.pricingLoaded
                 ? null
                 : data.pricingError ||
-                    'Live Stripe prices not loaded — add STRIPE_SECRET_KEY to .env.local and restart npm run dev.'
+                    stripeNotConfiguredMessage()
             )
           } else {
             setPlans(getSubscriptionPlanDisplayOptions(false))
@@ -368,7 +373,7 @@ export function OrgSetupWizard() {
   function validatePlanStep(requireStripe = false): string | null {
     if (!selectedPlan) return 'Please choose a subscription plan.'
     if (requireStripe && !selectedPlan.configured) {
-      return 'Stripe is not configured yet. Add STRIPE_SECRET_KEY and STRIPE_PRICE_MONTHLY to your .env.local file, then restart the dev server.'
+      return stripeNotConfiguredMessage()
     }
     return null
   }
@@ -570,6 +575,7 @@ export function OrgSetupWizard() {
     const planError = validatePlanStep(true)
     if (accountError || orgError || planError) {
       setError(accountError || orgError || planError || 'Please complete all steps.')
+      wizardTopRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
       return
     }
 
@@ -976,7 +982,7 @@ export function OrgSetupWizard() {
                   <p className="muted" style={{ marginBottom: 22 }}>
                     30-day free trial. You will not be charged until day 31. Cancel any time from Settings → Billing.
                   </p>
-                  {!IS_PROD && !loadingPlans && pricingMessage && !pricingLoaded ? (
+                  {!loadingPlans && pricingMessage && !pricingLoaded ? (
                     <div className="banner" data-hue="warn" style={{ marginBottom: 16 }}>
                       <span className="ico-chip">
                         <MktIcon name="alert" size={18} />
@@ -1065,23 +1071,12 @@ export function OrgSetupWizard() {
                           : "You'll be redirected to Stripe to enter payment details securely. After payment we email a confirmation link — click it, then sign in and accept the customer terms before entering the app."}
                       </div>
                     </div>
-                  ) : !IS_PROD ? (
+                  ) : (
                     <div className="banner" data-hue="warn">
                       <span className="ico-chip">
                         <MktIcon name="alert" size={18} />
                       </span>
-                      <div className="small ink2">
-                        Stripe is not configured in this environment. Use “Activate without payment (testing)” below.
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="banner" data-hue="blue">
-                      <span className="ico-chip">
-                        <MktIcon name="lock" size={18} />
-                      </span>
-                      <div className="small ink2">
-                        Continue to Stripe to finish setting up your organisation.
-                      </div>
+                      <div className="small ink2">{stripeNotConfiguredMessage()}</div>
                     </div>
                   )}
                 </div>
