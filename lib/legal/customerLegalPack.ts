@@ -309,6 +309,12 @@ export const LEGAL_PACK_DOCUMENTS: LegalDocument[] = [
           "Suspected security issues, abuse or unlawful use should be reported to info@projectplanner.us. Reports should include enough information for the Provider to investigate.",
         ],
       },
+      {
+        title: "7. Toolbox Talks",
+        paragraphs: [
+          "The Toolbox Talks provided within this app are for general guidance and informational purposes only; users remain solely responsible for assessing and managing their own health and safety obligations, ensuring the content is appropriate to the specific circumstances, and complying with all applicable laws, regulations, risk assessments and site requirements.",
+        ],
+      },
     ],
   },
   {
