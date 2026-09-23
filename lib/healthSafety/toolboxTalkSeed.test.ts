@@ -3,6 +3,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { isPlaceholderTalkTitle } from './mergeToolboxTalks.ts'
 
 test('bundled toolbox talk seed matches the iOS master library', () => {
   const path = join(dirname(fileURLToPath(import.meta.url)), 'toolboxTalkSeed.json')
@@ -41,6 +42,10 @@ test('bundled toolbox talk seed matches the iOS master library', () => {
   }
   assert.equal(
     talks.every((talk) => talk.purpose.trim().length > 0 && talk.keyPoints.length > 0),
+    true
+  )
+  assert.equal(
+    talks.every((talk) => !isPlaceholderTalkTitle(talk.title)),
     true
   )
 })
