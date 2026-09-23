@@ -9,7 +9,7 @@ import { AppLogoMark } from '@/components/ui/AppLogoMark'
 import { formatLoginError } from '@/lib/auth/formatLoginError'
 import { PLATFORM_OWNER_EMAIL, isPlatformOwnerEmail } from '@/lib/platform/owner'
 import { LoadingSpinner } from '@/components/dashboard/PageShell'
-import { isMfaGateOpen, isMfaRequiredError } from '@/lib/auth/mfa/mfaClient'
+import { isMfaGateOpen, isMfaRequiredError, mfaVerifyHref } from '@/lib/auth/mfa/mfaClient'
 
 const MIN_PASSWORD = 10
 
@@ -22,7 +22,7 @@ function codeOf(error: unknown): string {
 
 export function DeveloperLoginScreen() {
   const router = useRouter()
-  const { signIn, signUpOwner, resetPassword, signOut, error, user, firebaseUser, loading } = useAuthStore()
+  const { signIn, signUpOwner, resetPassword, signOut, error, user, firebaseUser, loading, mfaPending, mfaVerified, mfaStatusKnown } = useAuthStore()
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
   const [showPassword, setShowPassword] = useState(false)
@@ -33,20 +33,35 @@ export function DeveloperLoginScreen() {
 
   const signedInOwner = isPlatformOwnerEmail(firebaseUser?.email || user?.email)
 
+  const needsMfa = mfaPending || isMfaGateOpen(firebaseUser?.uid || user?.id)
+
   useEffect(() => {
-    if (loading) return
-    if (isMfaGateOpen(firebaseUser?.uid || user?.id)) {
-      router.replace('/auth/mfa?next=/developer')
+    if (needsMfa) {
+      router.replace(mfaVerifyHref('/developer'))
       return
     }
-    if (signedInOwner) router.replace('/developer')
-  }, [firebaseUser?.uid, loading, router, signedInOwner, user?.id])
+    if (loading) return
+    if (signedInOwner && !mfaStatusKnown) return
+    if (signedInOwner && !mfaVerified) {
+      router.replace(mfaVerifyHref('/developer'))
+      return
+    }
+    if (signedInOwner && mfaVerified) router.replace('/developer')
+  }, [loading, mfaStatusKnown, mfaVerified, needsMfa, router, signedInOwner])
 
-  if (isMfaGateOpen(firebaseUser?.uid || user?.id)) {
+  if (needsMfa) {
     return <LoadingSpinner label="Opening verification…" />
   }
 
-  if (signedInOwner || (loading && Boolean(firebaseUser || user))) {
+  if (signedInOwner && !mfaStatusKnown) {
+    return <LoadingSpinner label="Checking verification…" />
+  }
+
+  if (signedInOwner && !mfaVerified) {
+    return <LoadingSpinner label="Opening verification…" />
+  }
+
+  if (signedInOwner && mfaVerified) {
     return <LoadingSpinner label="Opening the owner console…" />
   }
 
@@ -61,13 +76,7 @@ export function DeveloperLoginScreen() {
   }
 
   const handleSignIn = async () => {
-    await signIn(PLATFORM_OWNER_EMAIL, password)
-    if (isMfaGateOpen(useAuthStore.getState().firebaseUser?.uid)) {
-      router.push('/auth/mfa?next=/developer')
-      return
-    }
-    await rejectIfNotOwner()
-    router.push('/developer')
+    await signIn(PLATFORM_OWNER_EMAIL, password, { next: '/developer' })
   }
 
   const handleCreate = async () => {
@@ -104,7 +113,7 @@ export function DeveloperLoginScreen() {
     } catch (err) {
       const code = codeOf(err)
       if (isMfaRequiredError(err)) {
-        router.push('/auth/mfa?next=/developer')
+        router.replace(mfaVerifyHref('/developer'))
         return
       }
       if (code === 'auth/user-not-found' || code === 'auth/invalid-credential') {

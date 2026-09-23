@@ -1,12 +1,13 @@
 import { createHmac, randomInt, timingSafeEqual } from 'node:crypto'
 
+import { expireMfaCookieOptions, MFA_CHALLENGE_COOKIE, MFA_OK_COOKIE } from '@/lib/auth/mfa/mfaConstants'
+
+export { expireMfaCookieOptions, MFA_CHALLENGE_COOKIE, MFA_OK_COOKIE }
+
 export const MFA_CODE_TTL_MS = 10 * 60 * 1000
-export const MFA_RESEND_MS = 30 * 1000
+export const MFA_RESEND_MS = 8 * 1000
 export const MFA_MAX_ATTEMPTS = 5
 export const MFA_OK_TTL_MS = 12 * 60 * 60 * 1000
-export const MFA_CHALLENGE_COOKIE = 'pp_mfa_challenge'
-export const MFA_OK_COOKIE = 'pp_mfa_ok'
-export const MFA_GATE_KEY = 'pp.mfa.gate'
 
 export type MfaChallenge = {
   uid: string
@@ -79,6 +80,12 @@ export function cookieOptions(maxAgeMs: number) {
     path: '/',
     maxAge: Math.floor(maxAgeMs / 1000),
   }
+}
+
+export function clearMfaCookies(cookies: { set: (name: string, value: string, options: ReturnType<typeof cookieOptions>) => void }) {
+  const expired = { ...cookieOptions(0), maxAge: 0 }
+  cookies.set(MFA_CHALLENGE_COOKIE, '', expired)
+  cookies.set(MFA_OK_COOKIE, '', expired)
 }
 
 export function readFirestoreBoolean(fields: Record<string, unknown> | undefined, key: string): boolean | undefined {
