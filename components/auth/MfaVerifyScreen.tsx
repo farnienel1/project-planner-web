@@ -1,6 +1,6 @@
 'use client'
 
-import { FormEvent, useEffect, useState } from 'react'
+import { FormEvent, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useAuthStore } from '@/lib/stores/authStore'
@@ -8,6 +8,8 @@ import { AppLogoMark } from '@/components/ui/AppLogoMark'
 import { maskEmail } from '@/lib/auth/maskEmail'
 import {
   clearMfaGate,
+  isMfaGateOpen,
+  readMfaGate,
   resendEmailMfa,
   safePostMfaPath,
   startEmailMfa,
@@ -17,28 +19,35 @@ import {
 export function MfaVerifyScreen() {
   const router = useRouter()
   const search = useSearchParams()
-  const { user, firebaseUser, signOut, loading, mfaNext, markMfaVerified } = useAuthStore()
+  const { user, firebaseUser, signOut, loading, mfaPending, mfaNext, markMfaVerified } = useAuthStore()
   const [code, setCode] = useState('')
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('Sending a verification code to your email…')
   const [submitting, setSubmitting] = useState(false)
   const [resending, setResending] = useState(false)
   const [cooldown, setCooldown] = useState(0)
+  const startedFor = useRef('')
   const email = firebaseUser?.email || user?.email || ''
+  const uid = firebaseUser?.uid || user?.id || ''
   const requestedNext = search.get('next') || mfaNext
   const fallback = safePostMfaPath(
     requestedNext,
     (requestedNext || '').startsWith('/developer') ? '/developer' : '/dashboard'
   )
+  const loginHref = fallback === '/developer' ? '/developer-login' : '/login'
 
   useEffect(() => {
-    if (loading) return
+    if (loading || mfaPending || isMfaGateOpen(uid) || readMfaGate()) return
     if (!firebaseUser && !user) {
-      router.replace(fallback === '/developer' ? '/developer-login' : '/login')
+      router.replace(loginHref)
     }
-  }, [fallback, firebaseUser, loading, router, user])
+  }, [fallback, firebaseUser, loading, loginHref, mfaPending, router, uid, user])
 
   useEffect(() => {
+    const readyUid = firebaseUser?.uid
+    if (!readyUid) return
+    if (startedFor.current === readyUid) return
+    startedFor.current = readyUid
     let cancelled = false
     void startEmailMfa(fallback)
       .then((result) => {
@@ -52,7 +61,7 @@ export function MfaVerifyScreen() {
     return () => {
       cancelled = true
     }
-  }, [fallback])
+  }, [fallback, firebaseUser?.uid])
 
   useEffect(() => {
     if (cooldown <= 0) return
@@ -122,7 +131,7 @@ export function MfaVerifyScreen() {
         <div style={{ width: 'min(420px, 100%)' }}>
           <h1 className="text-[28px] font-extrabold">Enter verification code</h1>
           <p className="muted mt-1.5">
-            {notice} {email ? `Sent to ${maskEmail(email)}.` : ''}
+            {notice} {email ? `Sent to ${maskEmail(email)}.` : 'Stay on this page while the code is sent.'}
           </p>
           {error ? (
             <p className="banner mt-4" data-hue="red">
@@ -147,7 +156,7 @@ export function MfaVerifyScreen() {
             </button>
           </form>
           <p className="muted small mt-[18px] text-center">
-            <button type="button" className="link" onClick={() => void resend()} disabled={resending || cooldown > 0}>
+            <button type="button" className="link" onClick={() => void resend()} disabled={resending || cooldown > 0 || !uid}>
               {resending ? 'Sending…' : cooldown > 0 ? `Resend available in ${cooldown}s` : 'Click here to resend'}
             </button>
           </p>
@@ -158,7 +167,7 @@ export function MfaVerifyScreen() {
               onClick={() => {
                 clearMfaGate()
                 void signOut()
-                router.replace(fallback === '/developer' ? '/developer-login' : '/login')
+                router.replace(loginHref)
               }}
             >
               Use a different account

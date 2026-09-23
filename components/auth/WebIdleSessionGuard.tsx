@@ -19,6 +19,7 @@ const CHECK_EVERY_MS = 60_000
  */
 export function WebIdleSessionGuard() {
   const signedIn = useAuthStore((state) => Boolean(state.firebaseUser || state.user))
+  const mfaPending = useAuthStore((state) => state.mfaPending)
   const ownerEmail = useAuthStore((state) => state.firebaseUser?.email || state.user?.email)
   const ownerOrg = useAuthStore((state) => state.user?.organizationId)
   const ownerSession = isPlatformOwnerSession(ownerEmail, ownerOrg)
@@ -26,7 +27,7 @@ export function WebIdleSessionGuard() {
   const signingOut = useRef(false)
 
   useEffect(() => {
-    if (!signedIn || ownerSession) {
+    if (!signedIn || ownerSession || mfaPending) {
       signingOut.current = false
       return
     }
@@ -71,7 +72,7 @@ export function WebIdleSessionGuard() {
       window.removeEventListener('storage', onStorage)
       window.clearInterval(timer)
     }
-  }, [ownerSession, signedIn, signOut])
+  }, [mfaPending, ownerSession, signedIn, signOut])
 
   return null
 }

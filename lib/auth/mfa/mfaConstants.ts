@@ -7,6 +7,11 @@ export function mfaVerifyHref(next: '/dashboard' | '/developer'): string {
   return `/auth/mfa?next=${encodeURIComponent(next)}`
 }
 
+/** A verification gate is only open for that Firebase uid — never for a missing user. */
+export function mfaGateMatches(gateUid?: string | null, uid?: string | null): boolean {
+  return Boolean(gateUid && uid && gateUid === uid)
+}
+
 export function postSignOutHref(pathname?: string | null): '/login' | '/developer-login' {
   return (pathname || '').startsWith('/developer') ? '/developer-login' : '/login'
 }

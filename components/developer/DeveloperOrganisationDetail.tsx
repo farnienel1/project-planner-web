@@ -15,6 +15,7 @@ import type { DateRangePreset } from '@/lib/analytics/events'
 import { MaskedEmail } from '@/components/developer/MaskedEmail'
 import { unfinishedSetupLabel } from '@/lib/owner/unfinishedSetup'
 import { auditOwnerAction, ownerDeleteOrganisation } from '@/lib/owner/ownerActions'
+import { OwnerUserAccountMenu } from '@/components/developer/OwnerUserAccountMenu'
 import { useConsolePrefs } from '@/lib/analytics/consolePrefs'
 
 export function DeveloperOrganisationDetailScreen({ organisationId }: { organisationId: string }) {
@@ -22,6 +23,7 @@ export function DeveloperOrganisationDetailScreen({ organisationId }: { organisa
   const [query, setQuery] = useState('')
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [busy, setBusy] = useState('')
+  const [notice, setNotice] = useState('')
   const range = useMemo(() => resolveDateRange(preset), [preset])
   const { organisations, users, events, loading, error, load } = useAnalyticsStore()
   const { suggestions, loadBoard } = useFeedbackStore()
@@ -77,6 +79,11 @@ export function DeveloperOrganisationDetailScreen({ organisationId }: { organisa
       <p className="text-xs text-[var(--ink3)]">{organisationId}</p>
       <DateRangePicker preset={preset} onChange={setPreset} />
       <DeveloperStatus error={error} loading={loading} />
+      {notice ? (
+        <p className="banner" data-hue="green">
+          {notice}
+        </p>
+      ) : null}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <MetricCard label="Registered users" value={orgUsers.length} />
         <MetricCard label="Active in range" value={Math.max(activity?.activeUsers || 0, directoryActiveUsers(orgUsers, range))} />
@@ -107,6 +114,7 @@ export function DeveloperOrganisationDetailScreen({ organisationId }: { organisa
                   <th className="px-4 py-2">Role</th>
                   <th className="px-4 py-2">Status</th>
                   <th className="px-4 py-2">Last seen</th>
+                  <th className="px-4 py-2" />
                 </tr>
               </thead>
               <tbody>
@@ -123,6 +131,13 @@ export function DeveloperOrganisationDetailScreen({ organisationId }: { organisa
                     <td className="px-4 py-3">{ownerRoleLabel(user.role)}</td>
                     <td className="px-4 py-3">{rosterStatusLabel(user)}</td>
                     <td className="px-4 py-3 text-[var(--ink2)]">{formatOwnerWhen(user.lastSeenAt, 'Never')}</td>
+                    <OwnerUserAccountMenu
+                      user={user}
+                      onDone={(message) => {
+                        setNotice(message)
+                        void load()
+                      }}
+                    />
                   </tr>
                 ))}
               </tbody>

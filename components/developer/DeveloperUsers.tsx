@@ -16,14 +16,13 @@ import { MaskedEmail } from '@/components/developer/MaskedEmail'
 import { emailTypoHint } from '@/lib/auth/emailTypo'
 import { isTestRecord, useConsolePrefs } from '@/lib/analytics/consolePrefs'
 import { unfinishedSetupLabel } from '@/lib/owner/unfinishedSetup'
-import { auditOwnerAction, ownerSendPasswordReset } from '@/lib/owner/ownerActions'
+import { auditOwnerAction } from '@/lib/owner/ownerActions'
+import { OwnerUserAccountMenu } from '@/components/developer/OwnerUserAccountMenu'
 import { emailsMatchIgnoreMask } from '@/lib/auth/maskEmail'
 
 export function DeveloperUsersScreen() {
   const [preset, setPreset] = useState<DateRangePreset>('all_time')
   const [query, setQuery] = useState('')
-  const [menuFor, setMenuFor] = useState<string | null>(null)
-  const [busy, setBusy] = useState('')
   const [notice, setNotice] = useState('')
   const searchParams = useSearchParams()
   const range = useMemo(() => resolveDateRange(preset), [preset])
@@ -92,8 +91,13 @@ export function DeveloperUsersScreen() {
       </p>
       {searchParams.get('fix') ? (
         <p className="banner" data-hue="warn">
-          Open support request for user {searchParams.get('fix')}. Use Send password reset here; changing the login email
-          needs the Admin SDK on the server.
+          Open support request for user {searchParams.get('fix')}. Use ⋯ to change their login email or send a password
+          reset.
+        </p>
+      ) : null}
+      {notice ? (
+        <p className="banner" data-hue="green">
+          {notice}
         </p>
       ) : null}
       <DateRangePicker preset={preset} onChange={setPreset} />
@@ -148,50 +152,21 @@ export function DeveloperUsersScreen() {
                     <td className="px-4 py-3">{ownerRoleLabel(user.role)}</td>
                     <td className="px-4 py-3">{rosterStatusLabel(user)}</td>
                     <td className="px-4 py-3 text-[var(--ink2)]">{formatOwnerWhen(user.lastSeenAt, 'Never')}</td>
-                    <td className="relative px-4 py-3">
-                      <button type="button" className="btn sm ghost" onClick={() => setMenuFor(menuFor === user.id ? null : user.id)}>
-                        ⋯
-                      </button>
-                      {menuFor === user.id ? (
-                        <div className="absolute right-4 z-20 mt-1 w-52 rounded-xl border border-[var(--line)] bg-white p-1 shadow-lg">
-                          <Link href={`/developer/organisations/${encodeURIComponent(user.organizationId)}`} className="block rounded-lg px-3 py-2 text-left text-sm hover:bg-[var(--soft)]">
-                            View organisation
-                          </Link>
-                          <button
-                            type="button"
-                            className="block w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-[var(--soft)]"
-                            disabled={busy === user.id}
-                            onClick={() => {
-                              void navigator.clipboard.writeText(user.id)
-                              setNotice('User id copied.')
-                              setMenuFor(null)
-                            }}
-                          >
-                            Copy user ID
-                          </button>
-                          <button
-                            type="button"
-                            className="block w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-[var(--soft)]"
-                            disabled={busy === user.id}
-                            onClick={async () => {
-                              setBusy(user.id)
-                              setNotice('')
-                              try {
-                                await ownerSendPasswordReset(user.id, user.email)
-                                setNotice(`Reset sent for ${ownerPersonName(user)}.`)
-                              } catch (err) {
-                                setNotice(err instanceof Error ? err.message : 'Could not send reset.')
-                              } finally {
-                                setBusy('')
-                                setMenuFor(null)
-                              }
-                            }}
-                          >
-                            Send password reset…
-                          </button>
-                        </div>
-                      ) : null}
-                    </td>
+                    <OwnerUserAccountMenu
+                      user={user}
+                      onDone={(message) => {
+                        setNotice(message)
+                        void refresh()
+                      }}
+                      extra={
+                        <Link
+                          href={`/developer/organisations/${encodeURIComponent(user.organizationId)}`}
+                          className="block rounded-lg px-3 py-2 text-left text-sm hover:bg-[var(--soft)]"
+                        >
+                          View organisation
+                        </Link>
+                      }
+                    />
                   </tr>
                 )
               })}
