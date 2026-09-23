@@ -67,7 +67,7 @@ export function PlanCards({
       <div>
         <div className="price">
           £{plan.price}
-          <small>{interval === 'year' ? ' /year' : ' /month'} + VAT</small>
+          <small>{interval === 'year' ? ' a year' : ' a month'}. VAT is not charged.</small>
         </div>
         <div className="muted xs" style={{ marginTop: 6 }}>
           {plan.users} · no feature tiers

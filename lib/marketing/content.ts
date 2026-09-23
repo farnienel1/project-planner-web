@@ -11,7 +11,7 @@ export const COMPANY = {
   address: '71–75 Shelton Street, Covent Garden, London WC2H 9JQ',
 } as const
 
-export const PRICE_NOTE = '£149/month or £1,490/year + VAT. 30-day free trial. Unlimited users.'
+export const PRICE_NOTE = '£149 a month or £1,490 a year. VAT is not charged. 30-day free trial. Unlimited users.'
 
 export type MarketingModuleId =
   | 'scheduling'
@@ -230,7 +230,7 @@ export const PAGE_META: Record<string, { title: string; description: string }> =
   },
   pricing: {
     title: 'Pricing | Project Planner',
-    description: 'One plan: £149/month or £1,490/year + VAT. 30-day free trial. Unlimited users.',
+    description: 'One plan: £149 a month or £1,490 a year. VAT is not charged. 30-day free trial. Unlimited users.',
   },
   download: {
     title: 'Download | Project Planner',
@@ -269,7 +269,7 @@ export const RATES_FAQ: [string, string][] = [
   ],
   [
     'Do prices include VAT?',
-    'No. Prices are shown excluding VAT, which is added at checkout for UK customers.',
+    'VAT is not charged. The price is £149 a month, or £1,490 a year.',
   ],
   [
     'Are there feature tiers or add-ons?',
