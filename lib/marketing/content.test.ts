@@ -35,6 +35,11 @@ test('choose-plan links preselect monthly or annual', () => {
   assert.equal(setupPathForPlan('year'), '/setup?plan=year')
 })
 
+test('pricing says VAT is not charged', () => {
+  const vat = RATES_FAQ.find(([question]) => question === 'Do prices include VAT?')
+  assert.equal(vat?.[1], 'VAT is not charged. The price is £149 a month, or £1,490 a year.')
+})
+
 test('FAQ no longer talks about user-limit bands', () => {
   assert.equal(
     RATES_FAQ.find(([question]) => question.toLowerCase().includes('user limit')),
