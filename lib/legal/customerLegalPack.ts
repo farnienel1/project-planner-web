@@ -51,7 +51,7 @@ export const LEGAL_PACK_DOCUMENTS: LegalDocument[] = [
       {
         title: "3. Account and User Responsibilities",
         paragraphs: [
-          "The Customer is responsible for keeping login credentials confidential, controlling access to its accounts and ensuring that Authorised Users comply with this Agreement. The Customer must not share accounts in a way that circumvents user limits, attempt to gain unauthorised access, interfere with the Platform, reverse engineer the Platform except where the law expressly permits it, or use the Platform for unlawful purposes. The Customer is responsible for the accuracy, legality and appropriateness of Customer Data and for obtaining any permissions needed to upload or process it.",
+          "The Customer is responsible for keeping login credentials confidential, controlling access to its accounts and ensuring that Authorised Users comply with this Agreement. The Customer must not share accounts, attempt to gain unauthorised access, interfere with the Platform, reverse engineer the Platform except where the law expressly permits it, or use the Platform for unlawful purposes. The Customer is responsible for the accuracy, legality and appropriateness of Customer Data and for obtaining any permissions needed to upload it.",
         ],
       },
       {

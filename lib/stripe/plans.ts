@@ -1,98 +1,99 @@
-export type SubscriptionPlanKey = 'starter' | 'team' | 'professional' | 'enterprise'
+export type SubscriptionPlanKey = 'month' | 'year'
 
 export type SubscriptionPlan = {
   key: SubscriptionPlanKey
   name: string
   description: string
   priceLabel: string
+  amountPence: number
   interval: 'month' | 'year'
   features: string[]
   priceId: string | undefined
-  /** Quantity sent to Stripe Checkout for tiered prices (defaults to 1). */
-  checkoutQuantity?: number
+  lookupKey: string
   recommended?: boolean
 }
 
-export const PLAN_KEYS: SubscriptionPlanKey[] = ['starter', 'team', 'professional', 'enterprise']
+export const PLAN_KEYS: SubscriptionPlanKey[] = ['month', 'year']
+
+export const STRIPE_LOOKUP_MONTHLY = 'projectplanner_monthly_gbp'
+export const STRIPE_LOOKUP_ANNUAL = 'projectplanner_annual_gbp'
+export const STRIPE_PRODUCT_ID_DEFAULT = 'prod_VJO1l93ObO0yN4'
+export const STRIPE_PRICE_MONTHLY_DEFAULT = 'price_1UIlFqQZYhBFKpOTfGAGMonZ'
+export const STRIPE_PRICE_ANNUAL_DEFAULT = 'price_1UIlFvQZYhBFKpOTAPEu7iDu'
+export const STRIPE_PORTAL_CONFIG_DEFAULT = 'bpc_1UIlG8QZYhBFKpOTpPqrcFfU'
+export const TRIAL_DAYS = 30
+export const MONTHLY_PENCE = 14_900
+export const ANNUAL_PENCE = 149_000
+export const ANNUAL_MRR_PENCE = Math.round(ANNUAL_PENCE / 12)
+
+const FEATURES = [
+  'Everything included',
+  'Unlimited users',
+  'Unlimited projects and small works',
+  'Scheduling, timesheets, materials and H&S',
+  'iOS, Android and web',
+  'No feature tiers or paid add-ons',
+]
 
 const PLAN_DEFINITIONS: Omit<SubscriptionPlan, 'priceId'>[] = [
   {
-    key: 'starter',
-    name: 'Starter',
-    description: 'For solo operators and very small teams.',
-    priceLabel: '—',
+    key: 'month',
+    name: 'ProjectPlanner Monthly',
+    description: '£149 / month + VAT. 30-day free trial, then billed monthly.',
+    priceLabel: '£149',
+    amountPence: MONTHLY_PENCE,
     interval: 'month',
-    checkoutQuantity: 1,
-    features: [
-      'Core project management',
-      'Projects & small works',
-      'Operative scheduling',
-      'iOS, Android & web access',
-    ],
-  },
-  {
-    key: 'team',
-    name: 'Team',
-    description: 'For small teams starting to scale.',
-    priceLabel: '—',
-    interval: 'month',
-    checkoutQuantity: 2,
-    features: [
-      'More operatives & managers',
-      'Everything in Starter',
-      'Materials catalogue',
-      'Annual leave',
-    ],
-  },
-  {
-    key: 'professional',
-    name: 'Professional',
-    description: 'For growing contractors who need the full toolkit.',
-    priceLabel: '—',
-    interval: 'month',
-    checkoutQuantity: 3,
+    lookupKey: STRIPE_LOOKUP_MONTHLY,
     recommended: true,
-    features: [
-      'Larger operative roster',
-      'Everything in Team',
-      'Site audits & health & safety',
-      'Wholesalers & order history',
-    ],
+    features: FEATURES,
   },
   {
-    key: 'enterprise',
-    name: 'Enterprise',
-    description: 'For larger organisations with advanced needs.',
-    priceLabel: '—',
-    interval: 'month',
-    checkoutQuantity: 4,
-    features: [
-      'Highest limits',
-      'Everything in Professional',
-      'Sub-contractor scheduling',
-      'Priority support',
-    ],
+    key: 'year',
+    name: 'ProjectPlanner Annual',
+    description: '£1,490 / year + VAT. Save £298 a year. 30-day free trial.',
+    priceLabel: '£1,490',
+    amountPence: ANNUAL_PENCE,
+    interval: 'year',
+    lookupKey: STRIPE_LOOKUP_ANNUAL,
+    features: FEATURES,
   },
 ]
 
-/** Single Stripe price used for all subscription tiers. */
-export function getStripePriceId(): string | undefined {
-  return process.env.STRIPE_PRICE_ID?.trim() || undefined
+export function normalizePlanKey(value?: string | null): SubscriptionPlanKey {
+  const key = (value || '').trim().toLowerCase()
+  if (key === 'year' || key === 'annual' || key === 'yearly') return 'year'
+  return 'month'
 }
 
-export function requireStripePriceId(): string {
-  const priceId = getStripePriceId()
-  if (!priceId) {
-    throw new Error('STRIPE_PRICE_ID is not configured. Add it to your .env.local file.')
+export function getStripePriceId(planKey: SubscriptionPlanKey = 'month'): string | undefined {
+  if (planKey === 'year') {
+    return process.env.STRIPE_PRICE_ANNUAL?.trim() || STRIPE_PRICE_ANNUAL_DEFAULT
   }
+  return (
+    process.env.STRIPE_PRICE_MONTHLY?.trim() ||
+    process.env.STRIPE_PRICE_ID?.trim() ||
+    STRIPE_PRICE_MONTHLY_DEFAULT
+  )
+}
+
+export function getStripeProductId(): string {
+  return process.env.STRIPE_PRODUCT_ID?.trim() || STRIPE_PRODUCT_ID_DEFAULT
+}
+
+export function getStripePortalConfigurationId(): string | undefined {
+  return process.env.STRIPE_PORTAL_CONFIGURATION_ID?.trim() || STRIPE_PORTAL_CONFIG_DEFAULT
+}
+
+export function requireStripePriceId(planKey: SubscriptionPlanKey = 'month'): string {
+  const priceId = getStripePriceId(planKey)
+  if (!priceId) throw new Error('Stripe price is not configured.')
   return priceId
 }
 
 export function getSubscriptionPlans(): SubscriptionPlan[] {
-  const priceId = getStripePriceId()
   return PLAN_DEFINITIONS.map((plan) => ({
     ...plan,
-    priceId,
+    priceId: getStripePriceId(plan.key),
   }))
 }
 
@@ -101,10 +102,7 @@ export type SubscriptionPlanDisplay = SubscriptionPlan & {
   recommended: boolean
 }
 
-/** Static plan cards for the setup wizard (works even when /api/stripe/plans fails). */
-export function getSubscriptionPlanDisplayOptions(
-  configured = false
-): SubscriptionPlanDisplay[] {
+export function getSubscriptionPlanDisplayOptions(configured = false): SubscriptionPlanDisplay[] {
   return getSubscriptionPlans().map((plan) => ({
     ...plan,
     configured,
@@ -113,11 +111,29 @@ export function getSubscriptionPlanDisplayOptions(
 }
 
 export function getSubscriptionPlan(planKey: string): SubscriptionPlan | undefined {
-  return getSubscriptionPlans().find((plan) => plan.key === planKey)
+  return getSubscriptionPlans().find((plan) => plan.key === normalizePlanKey(planKey))
 }
 
 export function requireSubscriptionPlanPriceId(planKey: string): string {
   const plan = getSubscriptionPlan(planKey)
   if (plan?.priceId) return plan.priceId
-  return requireStripePriceId()
+  return requireStripePriceId(normalizePlanKey(planKey))
+}
+
+export function lookupKeyForPlan(planKey: SubscriptionPlanKey): string {
+  return planKey === 'year' ? STRIPE_LOOKUP_ANNUAL : STRIPE_LOOKUP_MONTHLY
+}
+
+export function mrrPenceForInterval(interval: 'month' | 'year' | null | undefined): number {
+  if (interval === 'year') return ANNUAL_MRR_PENCE
+  if (interval === 'month') return MONTHLY_PENCE
+  return 0
+}
+
+export function trialRequiresCard(): boolean {
+  return (process.env.STRIPE_TRIAL_REQUIRES_CARD || 'true').trim().toLowerCase() !== 'false'
+}
+
+export function automaticTaxEnabled(): boolean {
+  return (process.env.STRIPE_AUTOMATIC_TAX || '').trim().toLowerCase() === 'true'
 }

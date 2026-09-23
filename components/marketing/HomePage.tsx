@@ -207,7 +207,7 @@ export function HomePage() {
           <div className="wrap">
             <Reveal className="shead">
               <span className="kicker">Pricing</span>
-              <h2>Simple flat-rate plans.</h2>
+              <h2>One plan. Unlimited users.</h2>
               <p>{PRICE_NOTE}</p>
             </Reveal>
             <PlanCards />

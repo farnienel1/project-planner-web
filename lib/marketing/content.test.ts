@@ -8,38 +8,36 @@ import {
   suggestPlanForUsers,
 } from './content'
 
-test('marketing plans expose four named tiers with monthly prices', () => {
+test('marketing plans are monthly and annual ProjectPlanner', () => {
   assert.deepEqual(
     MARKETING_PLANS.map((plan) => [plan.key, plan.price, plan.users]),
     [
-      ['starter', 29, 'Up to 5 users'],
-      ['team', 69, 'Up to 15 users'],
-      ['professional', 149, 'Up to 40 users'],
-      ['enterprise', 299, '40+ users'],
+      ['month', 149, 'Unlimited users'],
+      ['year', 1490, 'Unlimited users'],
     ]
   )
-  assert.equal(MARKETING_PLANS.find((plan) => plan.popular)?.key, 'professional')
+  assert.equal(MARKETING_PLANS.find((plan) => plan.popular)?.key, 'month')
 })
 
-test('module gating matches starter / team / professional', () => {
-  assert.equal(planHasModule('starter', 'scheduling'), true)
-  assert.equal(planHasModule('starter', 'materials'), false)
-  assert.equal(planHasModule('team', 'materials'), true)
-  assert.equal(planHasModule('team', 'hs'), false)
-  assert.equal(planHasModule('professional', 'hs'), true)
+test('every module is on the one plan', () => {
+  assert.equal(planHasModule('month', 'scheduling'), true)
+  assert.equal(planHasModule('month', 'materials'), true)
+  assert.equal(planHasModule('year', 'hs'), true)
 })
 
-test('estimator suggests a plan that covers team size plus two users', () => {
-  assert.equal(suggestPlanForUsers(7).key, 'team')
-  assert.equal(suggestPlanForUsers(17).key, 'professional')
-  assert.equal(suggestPlanForUsers(50).key, 'enterprise')
+test('estimator always points at the single plan', () => {
+  assert.equal(suggestPlanForUsers(7).key, 'month')
+  assert.equal(suggestPlanForUsers(50).key, 'month')
 })
 
-test('choose-plan links preselect the plan on setup', () => {
-  assert.equal(setupPathForPlan('professional'), '/setup?plan=professional')
+test('choose-plan links preselect monthly or annual', () => {
+  assert.equal(setupPathForPlan('month'), '/setup?plan=month')
+  assert.equal(setupPathForPlan('year'), '/setup?plan=year')
 })
 
-test('user-limit FAQ tells admins they can upgrade with no down time', () => {
-  const answer = RATES_FAQ.find(([question]) => question.includes('user limit'))?.[1]
-  assert.match(String(answer), /upgrade to continue adding users with no down time/)
+test('FAQ no longer talks about user-limit bands', () => {
+  assert.equal(
+    RATES_FAQ.find(([question]) => question.toLowerCase().includes('user limit')),
+    undefined
+  )
 })

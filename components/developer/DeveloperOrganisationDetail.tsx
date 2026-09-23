@@ -16,6 +16,7 @@ import { MaskedEmail } from '@/components/developer/MaskedEmail'
 import { unfinishedSetupLabel } from '@/lib/owner/unfinishedSetup'
 import { auditOwnerAction, ownerDeleteOrganisation } from '@/lib/owner/ownerActions'
 import { OwnerUserAccountMenu } from '@/components/developer/OwnerUserAccountMenu'
+import { collapseDirectoryUsers } from '@/lib/owner/collapseDirectoryUsers'
 import { useConsolePrefs } from '@/lib/analytics/consolePrefs'
 
 export function DeveloperOrganisationDetailScreen({ organisationId }: { organisationId: string }) {
@@ -35,7 +36,7 @@ export function DeveloperOrganisationDetailScreen({ organisationId }: { organisa
   }, [load, loadBoard])
 
   const orgUsers = useMemo(
-    () => users.filter((user) => user.organizationId === organisationId),
+    () => collapseDirectoryUsers(users.filter((user) => user.organizationId === organisationId)).users,
     [users, organisationId]
   )
   const org = organisations.find((row) => row.id === organisationId)
@@ -105,7 +106,7 @@ export function DeveloperOrganisationDetailScreen({ organisationId }: { organisa
         ) : visibleUsers.length === 0 ? (
           <EmptyState title="No matching users" description="Try a different name or email." />
         ) : (
-          <div className="card overflow-hidden">
+          <div className="card overflow-visible">
             <table className="w-full text-left text-sm">
               <thead className="bg-[var(--soft)] text-xs uppercase text-[var(--ink3)]">
                 <tr>
@@ -145,6 +146,7 @@ export function DeveloperOrganisationDetailScreen({ organisationId }: { organisa
           </div>
         )}
         <p className="text-xs text-[var(--ink3)]">
+          Invite placeholders (UUID ids, last seen Never) are hidden when the same email later signed in as a Firebase Auth account. Future sign-ins delete the leftover row.{' '}
           <Link href="/developer/users">All users</Link>
         </p>
       </section>

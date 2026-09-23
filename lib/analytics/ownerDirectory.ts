@@ -4,6 +4,7 @@ import { isPlatformOwnerSentinelOrg } from '@/lib/platform/owner'
 import { unfinishedSetupLabel } from '@/lib/owner/unfinishedSetup'
 import { UserRole, type User } from '@/types'
 import type { PlatformOrganisation } from '@/lib/analytics/analyticsTypes'
+import { parseOrgBilling } from '@/lib/stripe/billing'
 
 export function readOrganizationId(value: unknown): string {
   if (typeof value === 'string') {
@@ -77,6 +78,7 @@ export function parseOwnerConsoleOrganisation(id: string, data: Record<string, u
     updatedAt: asDate(data.updatedAt),
     isInternal: data.isInternal === true || data.isTest === true,
     unfinishedSetup: false,
+    billing: parseOrgBilling(data),
   }
 }
 

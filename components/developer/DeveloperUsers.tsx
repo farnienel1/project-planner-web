@@ -18,6 +18,7 @@ import { isTestRecord, useConsolePrefs } from '@/lib/analytics/consolePrefs'
 import { unfinishedSetupLabel } from '@/lib/owner/unfinishedSetup'
 import { auditOwnerAction } from '@/lib/owner/ownerActions'
 import { OwnerUserAccountMenu } from '@/components/developer/OwnerUserAccountMenu'
+import { collapseDirectoryUsers } from '@/lib/owner/collapseDirectoryUsers'
 import { emailsMatchIgnoreMask } from '@/lib/auth/maskEmail'
 
 export function DeveloperUsersScreen() {
@@ -42,10 +43,10 @@ export function DeveloperUsersScreen() {
     }
   }, [organisations, showFullEmails])
 
-  const filteredUsers = useMemo(
-    () => (includeTestData ? users : users.filter((user) => !isTestRecord(user))),
-    [includeTestData, users]
-  )
+  const filteredUsers = useMemo(() => {
+    const source = includeTestData ? users : users.filter((user) => !isTestRecord(user))
+    return collapseDirectoryUsers(source).users
+  }, [includeTestData, users])
 
   const visible = useMemo(() => {
     const needle = (query || jumpQuery).trim()
@@ -116,7 +117,7 @@ export function DeveloperUsersScreen() {
       ) : visible.length === 0 ? (
         <EmptyState title="No matching users" description="Try a different name, email or organisation." />
       ) : (
-        <div className="card overflow-hidden">
+        <div className="card overflow-visible">
           <table className="w-full text-left text-sm">
             <thead className="bg-[var(--soft)] text-xs uppercase text-[var(--ink3)]">
               <tr>

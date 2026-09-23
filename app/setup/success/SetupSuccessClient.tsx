@@ -19,7 +19,7 @@ type VerifiedSession = {
   stripeSubscriptionId?: string
   stripePriceId?: string
   currentPeriodEnd?: string | null
-  status: 'active'
+  status: 'active' | 'trialing'
 }
 
 export default function SetupSuccessClient() {
@@ -52,7 +52,7 @@ export default function SetupSuccessClient() {
         }
 
         await activateOrganizationSubscription(data.organizationId, {
-          status: 'active',
+          status: data.status === 'trialing' ? 'trialing' : 'active',
           planKey: data.planKey,
           stripeCustomerId: data.stripeCustomerId,
           stripeSubscriptionId: data.stripeSubscriptionId,

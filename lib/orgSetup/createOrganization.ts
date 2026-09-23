@@ -172,6 +172,13 @@ export async function createPendingOrganization(
           planKey: input.planKey,
           createdAt: reusedCreatedAt ?? now,
         },
+        billing: {
+          status: 'pending',
+          billingInterval: input.planKey === 'year' ? 'year' : 'month',
+          trialUsed: false,
+          mrrPence: 0,
+          updatedAt: now,
+        },
         teamOnboarding: {
           status: 'pending_add_users',
           addUsersGuideShown: false,

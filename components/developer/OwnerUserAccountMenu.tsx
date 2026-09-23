@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { ownerChangeUserEmail, ownerSendPasswordReset } from '@/lib/owner/ownerActions'
 import { ownerPersonName } from '@/lib/analytics/ownerDirectory'
 import { isPlatformOwnerEmail } from '@/lib/platform/owner'
@@ -23,6 +24,8 @@ export function OwnerUserAccountMenu({
   const [sendReset, setSendReset] = useState(true)
   const [busy, setBusy] = useState('')
   const [error, setError] = useState('')
+  const buttonRef = useRef<HTMLButtonElement>(null)
+  const [menuPos, setMenuPos] = useState({ top: 0, right: 0, dropUp: false })
 
   const close = () => {
     setOpen(false)
@@ -30,18 +33,53 @@ export function OwnerUserAccountMenu({
     setError('')
   }
 
-  return (
-    <td className="relative px-4 py-3">
-      <button type="button" className="btn sm ghost" onClick={() => setOpen((value) => !value)}>
-        ⋯
-      </button>
-      {open ? (
-        <div className="absolute right-4 z-20 mt-1 w-56 rounded-xl border border-[var(--line)] bg-white p-1 shadow-lg">
-          {extra}
-          {lockedOwner ? (
-            <p className="px-3 py-2 text-xs text-[var(--ink3)]">Owner login email is locked.</p>
-          ) : (
-            <>
+  function toggleMenu() {
+    const rect = buttonRef.current?.getBoundingClientRect()
+    if (!rect) {
+      setOpen((value) => !value)
+      return
+    }
+    const menuHeight = 220
+    const dropUp = rect.bottom + menuHeight > window.innerHeight - 12
+    setMenuPos({
+      top: dropUp ? rect.top - 8 : rect.bottom + 4,
+      right: Math.max(12, window.innerWidth - rect.right),
+      dropUp,
+    })
+    setOpen((value) => !value)
+  }
+
+  useEffect(() => {
+    if (!open) return
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(false)
+    }
+    const onClick = (event: MouseEvent) => {
+      if (buttonRef.current?.contains(event.target as Node)) return
+      setOpen(false)
+    }
+    window.addEventListener('keydown', onKey)
+    window.addEventListener('mousedown', onClick)
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      window.removeEventListener('mousedown', onClick)
+    }
+  }, [open])
+
+  const menu = open ? (
+    <div
+      className="fixed z-[80] w-56 rounded-xl border border-[var(--line)] bg-white p-1 shadow-lg"
+      style={{
+        top: menuPos.dropUp ? undefined : menuPos.top,
+        bottom: menuPos.dropUp ? Math.max(12, window.innerHeight - menuPos.top) : undefined,
+        right: menuPos.right,
+      }}
+    >
+      {extra}
+      {lockedOwner ? (
+        <p className="px-3 py-2 text-xs text-[var(--ink3)]">Owner login email is locked.</p>
+      ) : (
+        <>
           <button
             type="button"
             className="block w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-[var(--soft)]"
@@ -68,26 +106,34 @@ export function OwnerUserAccountMenu({
             onClick={() => {
               setEmail(user.email || '')
               setEmailOpen(true)
+              setOpen(false)
             }}
           >
             Change login email…
           </button>
-            </>
-          )}
-          <button
-            type="button"
-            className="block w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-[var(--soft)]"
-            onClick={() => {
-              void navigator.clipboard.writeText(user.id)
-              onDone('User id copied.')
-              close()
-            }}
-          >
-            Copy user ID
-          </button>
-          {error ? <p className="px-3 py-2 text-xs text-[var(--red)]">{error}</p> : null}
-        </div>
-      ) : null}
+        </>
+      )}
+      <button
+        type="button"
+        className="block w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-[var(--soft)]"
+        onClick={() => {
+          void navigator.clipboard.writeText(user.id)
+          onDone('User id copied.')
+          close()
+        }}
+      >
+        Copy user ID
+      </button>
+      {error ? <p className="px-3 py-2 text-xs text-[var(--red)]">{error}</p> : null}
+    </div>
+  ) : null
+
+  return (
+    <td className="relative px-4 py-3">
+      <button ref={buttonRef} type="button" className="btn sm ghost" onClick={toggleMenu} aria-haspopup="menu" aria-expanded={open}>
+        ⋯
+      </button>
+      {typeof document !== 'undefined' && menu ? createPortal(menu, document.body) : menu}
       {emailOpen ? (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4" role="dialog" aria-modal="true">
           <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl">

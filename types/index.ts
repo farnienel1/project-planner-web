@@ -305,6 +305,7 @@ export interface Organization {
   members: Record<string, string>;
   settings: Record<string, any>;
   teamOnboarding?: import('@/lib/orgSetup/teamOnboarding').TeamOnboardingState;
+  billing?: import('@/lib/stripe/billing').OrgBilling;
   createdAt: Date;
   updatedAt: Date;
 }

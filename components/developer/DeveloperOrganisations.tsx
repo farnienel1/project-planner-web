@@ -12,6 +12,7 @@ import { DateRangePicker } from '@/components/developer/DeveloperOverview'
 import { DeveloperShell, DeveloperStatus, MetricCard } from '@/components/developer/DeveloperShell'
 import { EmptyState, LoadingSpinner, SearchField } from '@/components/dashboard/PageShell'
 import { isTestRecord, useConsolePrefs } from '@/lib/analytics/consolePrefs'
+import { billingLabel, billingStatusLabel } from '@/lib/stripe/billing'
 
 export function DeveloperOrganisationsScreen() {
   const [preset, setPreset] = useState<DateRangePreset>('all_time')
@@ -37,6 +38,8 @@ export function DeveloperOrganisationsScreen() {
       }),
     [organisations, users, events, suggestions, range]
   )
+
+  const orgById = useMemo(() => new Map(organisations.map((org) => [org.id, org])), [organisations])
 
   const visible = useMemo(
     () =>
@@ -66,8 +69,9 @@ export function DeveloperOrganisationsScreen() {
       <DateRangePicker preset={preset} onChange={setPreset} />
       <SearchField value={query} onChange={setQuery} placeholder="Search organisations" />
       <DeveloperStatus error={error} loading={loading && rows.length > 0} />
-      <div className="grid gap-3 sm:grid-cols-3">
-        <MetricCard label="Organisations" value={rows.length} />
+      <div className="grid gap-3 sm:grid-cols-4">
+        <MetricCard label="Organisations" value={visible.length} />
+        <MetricCard label="Paying / trial" value={`${visible.filter((row) => orgById.get(row.id)?.billing?.status === 'active').length} / ${visible.filter((row) => orgById.get(row.id)?.billing?.status === 'trialing').length}`} />
         <MetricCard label="Registered users" value={users.length} href="/developer/users" />
         <MetricCard
           label="Active in range"
@@ -90,6 +94,8 @@ export function DeveloperOrganisationsScreen() {
             <thead className="bg-[var(--soft)] text-xs uppercase text-[var(--ink3)]">
               <tr>
                 <th className="px-4 py-2">Organisation</th>
+                <th className="px-4 py-2">Billing</th>
+                <th className="px-4 py-2">Status</th>
                 <th className="px-4 py-2">Users</th>
                 <th className="px-4 py-2">Active</th>
                 {events.length > 0 ? <th className="px-4 py-2">Events</th> : null}
@@ -106,6 +112,8 @@ export function DeveloperOrganisationsScreen() {
                     </Link>
                     <p className="text-[11px] text-[var(--ink3)]">{row.id}</p>
                   </td>
+                  <td className="px-4 py-3">{billingLabel(orgById.get(row.id)?.billing)}</td>
+                  <td className="px-4 py-3">{billingStatusLabel(orgById.get(row.id)?.billing)}</td>
                   <td className="px-4 py-3">{row.userCount}</td>
                   <td className="px-4 py-3">{row.activeUsers}</td>
                   {events.length > 0 ? <td className="px-4 py-3">{row.events}</td> : null}

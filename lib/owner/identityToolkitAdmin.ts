@@ -64,6 +64,79 @@ async function googleAccessToken(scopes: string[]): Promise<{ token: string; pro
   }
 }
 
+export async function adminGoogleAccessToken(scopes: string[]) {
+  return googleAccessToken(scopes)
+}
+
+export async function adminLookupAuthEmail(uid: string): Promise<string | null> {
+  const { token, projectId } = await googleAccessToken([
+    'https://www.googleapis.com/auth/identitytoolkit',
+    'https://www.googleapis.com/auth/firebase',
+  ])
+  if (!projectId) throw new Error('Firebase project id is missing.')
+  const response = await fetch(
+    `https://identitytoolkit.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/accounts:lookup`,
+    {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ localId: [uid] }),
+    }
+  )
+  const data = (await response.json().catch(() => ({}))) as { users?: { email?: string }[]; error?: { message?: string } }
+  if (!response.ok) return null
+  const email = data.users?.[0]?.email
+  return email ? email.trim().toLowerCase() : null
+}
+
+export async function adminPasswordResetLink(email: string, continueUrl: string): Promise<string> {
+  const { token, projectId } = await googleAccessToken([
+    'https://www.googleapis.com/auth/identitytoolkit',
+    'https://www.googleapis.com/auth/firebase',
+  ])
+  if (!projectId) throw new Error('Firebase project id is missing.')
+  const response = await fetch(
+    `https://identitytoolkit.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/accounts:sendOobCode`,
+    {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        requestType: 'PASSWORD_RESET',
+        email,
+        returnOobLink: true,
+        continueUrl,
+      }),
+    }
+  )
+  let data = (await response.json().catch(() => ({}))) as { oobLink?: string; error?: { message?: string } }
+  if ((!response.ok || !data.oobLink) && continueUrl) {
+    const retry = await fetch(
+      `https://identitytoolkit.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/accounts:sendOobCode`,
+      {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          requestType: 'PASSWORD_RESET',
+          email,
+          returnOobLink: true,
+        }),
+      }
+    )
+    data = (await retry.json().catch(() => ({}))) as { oobLink?: string; error?: { message?: string } }
+    if (!retry.ok || !data.oobLink) {
+      const message = data.error?.message || ''
+      if (message.includes('EMAIL_NOT_FOUND')) throw new Error('No Firebase login exists for that email yet.')
+      throw new Error(data.error?.message || 'Could not create a password reset link.')
+    }
+    return data.oobLink
+  }
+  if (!response.ok || !data.oobLink) {
+    const message = data.error?.message || ''
+    if (message.includes('EMAIL_NOT_FOUND')) throw new Error('No Firebase login exists for that email yet.')
+    throw new Error(data.error?.message || 'Could not create a password reset link.')
+  }
+  return data.oobLink
+}
+
 export async function adminUpdateAuthEmail(uid: string, email: string): Promise<void> {
   const { token, projectId } = await googleAccessToken([
     'https://www.googleapis.com/auth/identitytoolkit',
