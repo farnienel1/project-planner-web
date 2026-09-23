@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
+import { fetchSignInMethodsForEmail } from 'firebase/auth'
+import { doc, getDoc } from 'firebase/firestore'
 import { useAuthStore } from '@/lib/stores/authStore'
 import type { SubscriptionPlanKey } from '@/lib/stripe/plans'
 import { PLAN_KEYS, getSubscriptionPlanDisplayOptions, normalizePlanKey } from '@/lib/stripe/plans'
@@ -12,11 +14,14 @@ import { MarketingShell } from '@/components/marketing/MarketingShell'
 import { PlanCards } from '@/components/marketing/PlanCards'
 import { MktIcon } from '@/components/marketing/icons'
 import { getFirebaseConfigError } from '@/lib/firebase/env'
-import { getFirebaseAuth } from '@/lib/firebase/ensureFirebase'
+import { getFirebaseAuth, getFirebaseDb } from '@/lib/firebase/ensureFirebase'
 import { reloadOnceOnStaleChunk } from '@/lib/client/chunkLoadError'
 import { withTimeout } from '@/lib/client/withTimeout'
 import { formatSetupError } from '@/lib/orgSetup/formatSetupError'
 import { createPendingOrganization } from '@/lib/orgSetup/createOrganization'
+import { isEmailInUseError } from '@/lib/orgSetup/authSetupErrors'
+import { existingLoginSignInHref, isExistingProjectPlannerLoginError } from '@/lib/orgSetup/existingLogin'
+import { ExistingLoginModal } from '@/components/setup/ExistingLoginModal'
 import { activateOrganizationSubscription } from '@/lib/orgSetup/activateSubscription'
 import { switchActiveOrganization } from '@/lib/orgMembership/membershipService'
 import { requestFounderConfirmEmail } from '@/lib/orgSetup/requestFounderConfirmEmail'
@@ -110,6 +115,7 @@ export function OrgSetupWizard() {
   const searchParams = useSearchParams()
   const { user: signedInUser, firebaseUser } = useAuthStore()
   const creatingAdditionalOrg = Boolean(firebaseUser)
+  const resumeOrgId = (searchParams.get('resumeOrgId') || '').trim()
   const wizardTopRef = useRef<HTMLDivElement>(null)
   const activationRunRef = useRef(0)
   const [step, setStep] = useState<WizardStep>('account')
@@ -121,6 +127,9 @@ export function OrgSetupWizard() {
   const [submitting, setSubmitting] = useState(false)
   const [submittingStatus, setSubmittingStatus] = useState('')
   const [error, setError] = useState('')
+  const [existingLogin, setExistingLogin] = useState<{ email: string; signedIn: boolean; isAdmin: boolean } | null>(
+    null
+  )
   const [paymentCancelled, setPaymentCancelled] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const [farthestIndex, setFarthestIndex] = useState(0)
@@ -278,6 +287,69 @@ export function OrgSetupWizard() {
     if (firebaseUser.email) setEmail(firebaseUser.email)
   }, [firebaseUser, signedInUser])
 
+  useEffect(() => {
+    if (!resumeOrgId || !firebaseUser) return
+    let cancelled = false
+    void (async () => {
+      try {
+        const snap = await getDoc(doc(getFirebaseDb(), 'organizations', resumeOrgId))
+        if (!snap.exists() || cancelled) return
+        const data = snap.data() as Record<string, unknown>
+        const nested = data.subscription
+        const status =
+          nested && typeof nested === 'object' && nested !== null && 'status' in nested
+            ? String((nested as { status?: unknown }).status || '')
+            : String(data.subscriptionStatus || '')
+        if (status.toLowerCase() !== 'pending') {
+          router.replace('/dashboard/change-organisation')
+          return
+        }
+        const name = String(data.name || '').trim()
+        const planFromOrg =
+          nested && typeof nested === 'object' && nested !== null && 'planKey' in nested
+            ? String((nested as { planKey?: unknown }).planKey || '')
+            : ''
+        if (name) setOrganizationName(name)
+        if (planFromOrg && PLAN_KEYS.includes(planFromOrg as SubscriptionPlanKey)) {
+          setPlanKey(planFromOrg as SubscriptionPlanKey)
+        }
+        setStep('review')
+        setFarthestIndex(STEPS.length - 1)
+      } catch {
+        // Stay on the wizard — they can still name the organisation.
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [firebaseUser, resumeOrgId, router])
+
+  function showExistingLogin(err: unknown, fallbackEmail: string) {
+    const signedIn =
+      Boolean(getFirebaseAuth().currentUser) ||
+      (isExistingProjectPlannerLoginError(err) && err.signedIn)
+    const isAdmin = isExistingProjectPlannerLoginError(err) ? err.isAdmin : Boolean(signedInUser?.isSuperAdmin)
+    setExistingLogin({
+      email: (getFirebaseAuth().currentUser?.email || fallbackEmail).trim(),
+      signedIn,
+      isAdmin,
+    })
+    setError('')
+  }
+
+  function isExistingLoginFailure(err: unknown): boolean {
+    return isExistingProjectPlannerLoginError(err) || isEmailInUseError(err)
+  }
+
+  async function emailAlreadyHasLogin(value: string): Promise<boolean> {
+    try {
+      const methods = await fetchSignInMethodsForEmail(getFirebaseAuth(), value.trim().toLowerCase())
+      return methods.length > 0
+    } catch {
+      return false
+    }
+  }
+
   function validateAccountStep(): string | null {
     if (!firstName.trim() || !surname.trim()) return 'Please enter your first and last name.'
     if (!email.trim()) return 'Please enter your email address.'
@@ -301,13 +373,20 @@ export function OrgSetupWizard() {
     return null
   }
 
-  function goNext() {
+  async function goNext() {
     setError('')
     if (step === 'account') {
       const validationError = validateAccountStep()
       if (validationError) {
         setError(validationError)
         return
+      }
+      if (!creatingAdditionalOrg) {
+        const taken = await emailAlreadyHasLogin(email)
+        if (taken) {
+          setExistingLogin({ email: email.trim(), signedIn: false, isAdmin: false })
+          return
+        }
       }
       goToStep('organization')
       return
@@ -377,6 +456,8 @@ export function OrgSetupWizard() {
       planKey,
       orgSetupSettings,
       skipOptionalAssets: options?.skipOptionalAssets === true,
+      allowAdditionalOrganization: creatingAdditionalOrg,
+      ...(resumeOrgId ? { resumeOrganizationId: resumeOrgId } : {}),
     })
   }
 
@@ -468,6 +549,10 @@ export function OrgSetupWizard() {
       router.push('/setup/check-email')
     } catch (err) {
       if (reloadOnceOnStaleChunk(err)) return
+      if (isExistingLoginFailure(err)) {
+        showExistingLogin(err, email)
+        return
+      }
       setError(formatSetupError(err))
     } finally {
       window.clearTimeout(watchdog)
@@ -526,6 +611,12 @@ export function OrgSetupWizard() {
       )
     } catch (err) {
       if (reloadOnceOnStaleChunk(err)) return
+      if (isExistingLoginFailure(err)) {
+        showExistingLogin(err, email)
+        setSubmitting(false)
+        setSubmittingStatus('')
+        return
+      }
       setError(formatSetupError(err))
       setSubmitting(false)
       setSubmittingStatus('')
@@ -587,7 +678,7 @@ export function OrgSetupWizard() {
                 Back to organisations
               </Link>
             ) : (
-              <Link href="/login" className="btn ghost">
+              <Link href={existingLoginSignInHref('')} className="btn ghost">
                 Already have an account? Sign in
               </Link>
             )}
@@ -910,29 +1001,6 @@ export function OrgSetupWizard() {
 
               {step === 'review' ? (
                 <div className="stack">
-                  {!creatingAdditionalOrg ? (
-                    <div className="card pad" style={{ boxShadow: 'none', background: 'var(--soft)' }}>
-                      <p className="small" style={{ fontWeight: 700 }}>
-                        Confirm the password for {email || 'this email'} so Activate can sign in to the existing account if
-                        one already exists.
-                      </p>
-                      <div className="form" style={{ marginTop: 14 }}>
-                        <div className="f">
-                          <label>
-                            Password <span className="req">*</span>
-                          </label>
-                          <input className="in" type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" />
-                        </div>
-                        <div className="f">
-                          <label>
-                            Confirm password <span className="req">*</span>
-                          </label>
-                          <input className="in" type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} autoComplete="new-password" />
-                        </div>
-                      </div>
-                    </div>
-                  ) : null}
-
                   <div className="card pad" style={{ boxShadow: 'none', background: 'var(--soft)' }}>
                     <h3 style={{ fontSize: 16, marginBottom: 12 }}>Summary</h3>
                     {(
@@ -1037,7 +1105,7 @@ export function OrgSetupWizard() {
                   ) : null}
                   <span className="grow" />
                   {step !== 'review' ? (
-                    <button type="button" className="btn primary" onClick={goNext}>
+                    <button type="button" className="btn primary" onClick={() => void goNext()}>
                       Continue
                     </button>
                   ) : (
@@ -1085,6 +1153,14 @@ export function OrgSetupWizard() {
           </div>
         </div>
       </section>
+      {existingLogin ? (
+        <ExistingLoginModal
+          email={existingLogin.email}
+          signedIn={existingLogin.signedIn}
+          isAdmin={existingLogin.isAdmin}
+          onClose={() => setExistingLogin(null)}
+        />
+      ) : null}
     </MarketingShell>
   )
 }

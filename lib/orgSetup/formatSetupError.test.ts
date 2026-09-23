@@ -2,26 +2,34 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { TimeoutError } from '../client/withTimeout.ts'
 import { formatSetupError } from './formatSetupError.ts'
+import { ExistingProjectPlannerLoginError } from './existingLogin.ts'
 
-test('email-already-in-use tells the user they can add another organisation after sign-in', () => {
+test('email-already-in-use sends the user to Switch organisation instead of a second password', () => {
   const message = formatSetupError({ code: 'auth/email-already-in-use', message: 'auth/email-already-in-use' })
-  assert.match(message, /already has a Project Planner account/i)
-  assert.match(message, /add another/)
-  assert.match(message, /as many organisations/i)
+  assert.match(message, /already has a Project Planner login/i)
+  assert.match(message, /Switch organisation/)
+  assert.match(message, /last switched/i)
+  assert.doesNotMatch(message, /Use the password for that login/)
 })
 
 test('legacy already-exists copy is rewritten to the same guidance', () => {
   const message = formatSetupError({
     message: 'An account with this email already exists. Sign in instead, or use a different email.',
   })
-  assert.match(message, /already has a Project Planner account/i)
+  assert.match(message, /already has a Project Planner login/i)
   assert.doesNotMatch(message, /use a different email/i)
 })
 
-test('wrong password on setup points at using the existing login', () => {
+test('wrong password on setup still points at the existing login, not a new account', () => {
   const message = formatSetupError({ code: 'auth/invalid-credential' })
-  assert.match(message, /password for that login/)
-  assert.match(message, /add another/)
+  assert.match(message, /already has a Project Planner login/i)
+  assert.match(message, /Switch organisation/)
+})
+
+test('custom existing-login error uses the Switch organisation copy', () => {
+  const message = formatSetupError(new ExistingProjectPlannerLoginError({ signedIn: true, isAdmin: true }))
+  assert.match(message, /Switch organisation/)
+  assert.doesNotMatch(message, /Use the password/)
 })
 
 test('stale Next chunk errors tell the user to refresh and retry Activate', () => {

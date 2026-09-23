@@ -15,14 +15,15 @@ import { formatLoginError } from '@/lib/auth/formatLoginError'
 import { consumeWebIdleExpiredFlag } from '@/lib/auth/webIdleSession'
 import { hasCustomerOrganisation, isPlatformOwnerEmail } from '@/lib/platform/owner'
 import { LoadingSpinner } from '@/components/dashboard/PageShell'
-import { isMfaGateOpen, isMfaRequiredError, mfaVerifyHref } from '@/lib/auth/mfa/mfaClient'
+import { isMfaGateOpen, isMfaRequiredError, mfaVerifyHref, safePostMfaPath } from '@/lib/auth/mfa/mfaClient'
 
 export function LoginBrandScreen() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const justConfirmed = searchParams.get('confirmed') === '1'
+  const nextPath = safePostMfaPath(searchParams.get('next'), '/dashboard')
   const { signIn, error, user, firebaseUser, mfaPending, mfaVerified, mfaStatusKnown, loading } = useAuthStore()
-  const [email, setEmail] = useState('')
+  const [email, setEmail] = useState(() => searchParams.get('email') || '')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [localError, setLocalError] = useState('')
@@ -32,21 +33,21 @@ export function LoginBrandScreen() {
   useEffect(() => {
     const uid = user?.id || firebaseUser?.uid
     if ((mfaPending && uid) || (uid && isMfaGateOpen(uid))) {
-      router.replace(mfaVerifyHref('/dashboard'))
+      router.replace(mfaVerifyHref(nextPath))
       return
     }
     if (loading || !user) return
     if (!mfaStatusKnown) return
     if (!mfaVerified) {
-      router.replace(mfaVerifyHref('/dashboard'))
+      router.replace(mfaVerifyHref(nextPath))
       return
     }
     if (isPlatformOwnerEmail(user.email) && !hasCustomerOrganisation(user.organizationId)) {
       router.replace('/developer')
       return
     }
-    router.replace('/dashboard')
-  }, [firebaseUser?.uid, loading, mfaPending, mfaStatusKnown, mfaVerified, router, user])
+    router.replace(nextPath)
+  }, [firebaseUser?.uid, loading, mfaPending, mfaStatusKnown, mfaVerified, nextPath, router, user])
 
   const uid = user?.id || firebaseUser?.uid
   if (mfaPending || (uid && isMfaGateOpen(uid)) || (user && mfaStatusKnown && !mfaVerified)) {
@@ -70,10 +71,10 @@ export function LoginBrandScreen() {
     }
     try {
       setSubmitting(true)
-      await signIn(trimmedEmail, password, { next: '/dashboard' })
+      await signIn(trimmedEmail, password, { next: nextPath })
     } catch (err) {
       if (isMfaRequiredError(err)) {
-        router.replace(mfaVerifyHref('/dashboard'))
+        router.replace(mfaVerifyHref(nextPath))
         return
       }
       setLocalError(formatLoginError(err))
@@ -126,6 +127,12 @@ export function LoginBrandScreen() {
           {justConfirmed ? (
             <p className="banner mt-4" data-hue="green">
               Account confirmed. Sign in with the email and password you set during setup.
+            </p>
+          ) : null}
+          {nextPath === '/dashboard/change-organisation' ? (
+            <p className="banner mt-4" data-hue="blue">
+              Sign in, then use Switch organisation to set up and pay for another firm. You stay in whichever
+              organisation you last switched to.
             </p>
           ) : null}
           {idleNotice ? (

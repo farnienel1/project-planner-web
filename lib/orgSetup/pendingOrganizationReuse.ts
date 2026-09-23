@@ -46,6 +46,26 @@ export function pickReusablePendingOrganization(
   return matches[0] ?? null
 }
 
+/** Prefer a specific pending org (Continue setup), else the newest same-name pending. */
+export function pickPendingOrganizationToReuse(
+  orgs: PendingOrgCandidate[],
+  userId: string,
+  organizationName: string,
+  resumeOrganizationId?: string
+): PendingOrgCandidate | null {
+  const resumeId = String(resumeOrganizationId || '').trim()
+  if (resumeId) {
+    const exact = orgs.find(
+      (org) =>
+        org.id === resumeId &&
+        org.creatorUserId === userId &&
+        org.subscriptionStatus?.toLowerCase() === 'pending'
+    )
+    if (exact) return exact
+  }
+  return pickReusablePendingOrganization(orgs, userId, organizationName)
+}
+
 /**
  * Switch the signed-in user onto a newly created pending org only when they do not
  * already have a paid/complete organisation. Additional-org setup must not yank them

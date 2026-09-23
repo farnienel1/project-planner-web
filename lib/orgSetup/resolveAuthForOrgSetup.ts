@@ -3,6 +3,7 @@ import { withTimeout } from '@/lib/client/withTimeout'
 import { completeEmailSignIn, waitForAuthSession } from '@/lib/auth/completeEmailSignIn'
 import { getFirebaseAuth } from '@/lib/firebase/ensureFirebase'
 import { isEmailInUseError, shouldAttemptCreateUserAfterSignInFailure } from '@/lib/orgSetup/authSetupErrors'
+import { ExistingProjectPlannerLoginError } from '@/lib/orgSetup/existingLogin'
 
 const AUTH_CREATE_MS = 20_000
 
@@ -27,9 +28,7 @@ export async function resolveAuthUserIdForOrgSetup(
 
   const emailLower = email.toLowerCase().trim()
   if (!password) {
-    throw new Error(
-      'Please sign in with your existing Project Planner password, then use Change organisation to set up another organisation.'
-    )
+    throw new ExistingProjectPlannerLoginError({ signedIn: false })
   }
 
   const authBusyMessage =
@@ -53,7 +52,9 @@ export async function resolveAuthUserIdForOrgSetup(
     } catch (createError) {
       const existingAfterCreate = signedInUserId(auth)
       if (existingAfterCreate) return existingAfterCreate
-      if (isEmailInUseError(createError)) throw signInError
+      if (isEmailInUseError(createError)) {
+        throw new ExistingProjectPlannerLoginError({ signedIn: Boolean(signedInUserId(auth)) })
+      }
       throw createError
     }
   }
