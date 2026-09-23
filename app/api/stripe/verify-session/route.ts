@@ -2,6 +2,9 @@ import { NextRequest } from 'next/server'
 import { getStripe } from '@/lib/stripe/stripe'
 import { clientSafeMessage, enforceRateLimit, jsonError } from '@/lib/security/apiGuard'
 import { isStripeCheckoutSessionId } from '@/lib/security/validation'
+import { organizationIdFromStripeObject, syncSubscriptionToOrg } from '@/lib/stripe/syncOrgBilling'
+import { billingFromSubscription } from '@/lib/stripe/writeOrgBilling'
+import { normalizePlanKey } from '@/lib/stripe/plans'
 
 export const runtime = 'nodejs'
 
@@ -33,28 +36,34 @@ export async function GET(request: NextRequest) {
       return jsonError('Subscription is not active', 400)
     }
 
-    const organizationId = session.metadata?.organizationId
-    const planKey = session.metadata?.planKey
+    const organizationId = organizationIdFromStripeObject(session)
+    const planKey = normalizePlanKey(session.metadata?.planKey)
     const userId = session.metadata?.userId
 
-    if (!organizationId || !planKey || !userId) {
+    if (!organizationId || !userId) {
       return jsonError('Checkout session is missing organization metadata', 400)
     }
 
+    const customerId = typeof session.customer === 'string' ? session.customer : session.customer?.id
+    await syncSubscriptionToOrg(subscription.id, {
+      organizationId,
+      stripeCustomerId: customerId,
+    }).catch(() => undefined)
+
+    const billing = billingFromSubscription(subscription, { stripeCustomerId: customerId })
     const priceId = subscription.items.data[0]?.price?.id
-    const currentPeriodEnd = subscription.items.data[0]?.current_period_end
+    const currentPeriodEnd = billing.currentPeriodEnd
 
     return Response.json({
       organizationId,
       userId,
       planKey,
-      stripeCustomerId: typeof session.customer === 'string' ? session.customer : session.customer?.id,
+      stripeCustomerId: customerId,
       stripeSubscriptionId: subscription.id,
       stripePriceId: priceId,
-      currentPeriodEnd: currentPeriodEnd
-        ? new Date(currentPeriodEnd * 1000).toISOString()
-        : null,
-      status: 'active',
+      currentPeriodEnd: currentPeriodEnd ? currentPeriodEnd.toISOString() : null,
+      status: subscription.status === 'trialing' ? 'trialing' : 'active',
+      trialEnd: billing.trialEnd ? billing.trialEnd.toISOString() : null,
     })
   } catch (error) {
     console.error('[stripe/verify-session]', error)

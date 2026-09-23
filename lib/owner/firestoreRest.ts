@@ -58,6 +58,32 @@ export function readBool(fields: Record<string, unknown> | undefined, key: strin
   return field?.booleanValue === true
 }
 
+export function restFieldsToPlain(fields?: Record<string, unknown>): Record<string, unknown> {
+  if (!fields) return {}
+  const out: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(fields)) {
+    const entry = value as Record<string, unknown>
+    if (!entry || typeof entry !== 'object') continue
+    if ('stringValue' in entry) out[key] = entry.stringValue
+    else if ('booleanValue' in entry) out[key] = entry.booleanValue
+    else if ('integerValue' in entry) out[key] = Number(entry.integerValue)
+    else if ('doubleValue' in entry) out[key] = Number(entry.doubleValue)
+    else if ('timestampValue' in entry) out[key] = new Date(String(entry.timestampValue))
+    else if ('nullValue' in entry) out[key] = null
+    else if ('mapValue' in entry) {
+      const nested = (entry.mapValue as { fields?: Record<string, unknown> })?.fields
+      out[key] = restFieldsToPlain(nested)
+    } else if ('arrayValue' in entry) {
+      const values = ((entry.arrayValue as { values?: Record<string, unknown>[] })?.values || []) as Record<
+        string,
+        unknown
+      >[]
+      out[key] = values.map((item) => restFieldsToPlain({ _: item })._)
+    }
+  }
+  return out
+}
+
 export function bearerToken(request: { headers: { get(name: string): string | null } }): string {
   const header = request.headers.get('authorization') || ''
   return header.startsWith('Bearer ') ? header.slice(7).trim() : ''
