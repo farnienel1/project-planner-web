@@ -11,6 +11,7 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({
     pending,
     verified,
+    next: challenge?.next || '',
     emailMasked: pending
       ? challenge!.email.replace(/^(.)(.*)(@.*)$/, (_m, a, _mid, domain) => `${a}•••${domain}`)
       : null,

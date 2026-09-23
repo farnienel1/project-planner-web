@@ -9,7 +9,7 @@ import { SplashScreen } from '@/components/auth/SplashScreen'
 import { PolicyGate } from '@/components/auth/PolicyGate'
 import { CheckEmailScreen } from '@/components/auth/CheckEmailScreen'
 import { hasCustomerOrganisation, isPlatformOwnerEmail } from '@/lib/platform/owner'
-import { isMfaGateOpen } from '@/lib/auth/mfa/mfaClient'
+import { isMfaGateOpen, mfaVerifyHref } from '@/lib/auth/mfa/mfaClient'
 
 export default function DashboardLayout({
   children,
@@ -17,24 +17,30 @@ export default function DashboardLayout({
   children: React.ReactNode
 }) {
   const router = useRouter()
-  const { user, loading } = useAuthStore()
+  const { user, loading, mfaPending, mfaVerified, mfaStatusKnown } = useAuthStore()
+  const blocked =
+    mfaPending ||
+    isMfaGateOpen(user?.id) ||
+    Boolean(user && (!mfaStatusKnown || !mfaVerified))
 
   useEffect(() => {
+    if (blocked) {
+      router.replace(mfaVerifyHref('/dashboard'))
+      return
+    }
     if (!loading && !user) {
       router.push('/login')
       return
     }
-    if (!loading && user && isMfaGateOpen(user.id)) {
-      router.replace('/auth/mfa?next=/dashboard')
-      return
-    }
-    if (!loading && user && isPlatformOwnerEmail(user.email) && !hasCustomerOrganisation(user.organizationId)) {
+    if (!loading && mfaVerified && user && isPlatformOwnerEmail(user.email) && !hasCustomerOrganisation(user.organizationId)) {
       router.replace('/developer')
     }
-  }, [user, loading, router])
+  }, [blocked, user, loading, mfaVerified, router])
 
+  if (blocked) return <SplashScreen />
   if (loading) return <SplashScreen />
   if (!user) return <SplashScreen />
+  if (!mfaVerified) return <SplashScreen />
   if (user.accountConfirmed === false) return <CheckEmailScreen email={user.email} />
   if (!user.policyAccepted) return <PolicyGate />
 

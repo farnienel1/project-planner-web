@@ -20,7 +20,10 @@ export function clientIp(request: NextRequest): string {
 export function jsonError(message: string, status: number, retryAfterSec?: number) {
   const headers: Record<string, string> = { 'Cache-Control': 'no-store' }
   if (retryAfterSec) headers['Retry-After'] = String(retryAfterSec)
-  return NextResponse.json({ error: message }, { status, headers })
+  return NextResponse.json(
+    retryAfterSec ? { error: message, retryAfterSec } : { error: message },
+    { status, headers }
+  )
 }
 
 export function enforceRateLimit(
