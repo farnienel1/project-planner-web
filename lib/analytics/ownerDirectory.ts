@@ -1,6 +1,7 @@
 import { parseAppUserDocument, defaultUserPermissions } from '@/lib/ios-parity/converters'
 import { asDate } from '@/lib/ios-parity/firestoreCodec'
 import { isPlatformOwnerSentinelOrg } from '@/lib/platform/owner'
+import { unfinishedSetupLabel } from '@/lib/owner/unfinishedSetup'
 import { UserRole, type User } from '@/types'
 import type { PlatformOrganisation } from '@/lib/analytics/analyticsTypes'
 
@@ -26,7 +27,7 @@ export function parseOwnerConsoleUser(id: string, data: Record<string, unknown>)
   const parsed = parseAppUserDocument(id, normalized)
   if (parsed.ok) {
     if (isPlatformOwnerSentinelOrg(parsed.value.organizationId)) return null
-    return parsed.value
+    return { ...parsed.value, isInternal: data.isInternal === true }
   }
   if (!organizationId) return null
   const email = typeof data.email === 'string' ? data.email.trim().toLowerCase() : ''
@@ -56,6 +57,7 @@ export function parseOwnerConsoleUser(id: string, data: Record<string, unknown>)
     createdAt: asDate(data.createdAt) || new Date(0),
     updatedAt: asDate(data.updatedAt) || asDate(data.lastSeenAt) || asDate(data.createdAt) || new Date(0),
     policyAccepted: data.policyAccepted === true,
+    isInternal: data.isInternal === true,
   }
 }
 
@@ -73,12 +75,14 @@ export function parseOwnerConsoleOrganisation(id: string, data: Record<string, u
     memberCount: Object.keys(members).length,
     createdAt: asDate(data.createdAt),
     updatedAt: asDate(data.updatedAt),
+    isInternal: data.isInternal === true || data.isTest === true,
+    unfinishedSetup: false,
   }
 }
 
 export function mergeOrganisationsFromUsers(
   organisations: PlatformOrganisation[],
-  users: Pick<User, 'organizationId'>[]
+  users: Pick<User, 'organizationId' | 'email'>[]
 ): PlatformOrganisation[] {
   const map = new Map<string, PlatformOrganisation>()
   for (const org of organisations) {
@@ -86,16 +90,27 @@ export function mergeOrganisationsFromUsers(
     map.set(org.id, { ...org })
   }
   const counts = new Map<string, number>()
+  const emails = new Map<string, string>()
   for (const user of users) {
     const id = (user.organizationId || '').trim()
     if (!id || isPlatformOwnerSentinelOrg(id)) continue
     counts.set(id, (counts.get(id) || 0) + 1)
+    if (user.email && !emails.has(id)) emails.set(id, user.email)
     if (!map.has(id)) {
-      map.set(id, { id, name: 'Unknown organisation', memberCount: 0 })
+      map.set(id, {
+        id,
+        name: unfinishedSetupLabel(user.email),
+        memberCount: 0,
+        unfinishedSetup: true,
+      })
     }
   }
   return [...map.values()]
-    .map((org) => ({ ...org, memberCount: counts.get(org.id) || org.memberCount }))
+    .map((org) => ({
+      ...org,
+      memberCount: counts.get(org.id) || org.memberCount,
+      name: org.unfinishedSetup ? unfinishedSetupLabel(emails.get(org.id)) : org.name,
+    }))
     .sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id))
 }
 

@@ -12,13 +12,20 @@ import { DateRangePicker } from '@/components/developer/DeveloperOverview'
 import { DeveloperShell, DeveloperStatus, MetricCard } from '@/components/developer/DeveloperShell'
 import { EmptyState, LoadingSpinner, SearchField } from '@/components/dashboard/PageShell'
 import type { DateRangePreset } from '@/lib/analytics/events'
+import { MaskedEmail } from '@/components/developer/MaskedEmail'
+import { unfinishedSetupLabel } from '@/lib/owner/unfinishedSetup'
+import { auditOwnerAction, ownerDeleteOrganisation } from '@/lib/owner/ownerActions'
+import { useConsolePrefs } from '@/lib/analytics/consolePrefs'
 
 export function DeveloperOrganisationDetailScreen({ organisationId }: { organisationId: string }) {
   const [preset, setPreset] = useState<DateRangePreset>('all_time')
   const [query, setQuery] = useState('')
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [busy, setBusy] = useState('')
   const range = useMemo(() => resolveDateRange(preset), [preset])
   const { organisations, users, events, loading, error, load } = useAnalyticsStore()
   const { suggestions, loadBoard } = useFeedbackStore()
+  const { showFullEmails } = useConsolePrefs()
 
   useEffect(() => {
     void load()
@@ -56,7 +63,7 @@ export function DeveloperOrganisationDetailScreen({ organisationId }: { organisa
     return <LoadingSpinner label="Loading organisation…" />
   }
 
-  const name = org?.name || activity?.name || 'Unknown organisation'
+  const name = org?.name || activity?.name || unfinishedSetupLabel(orgUsers[0]?.email)
   if (!org && orgUsers.length === 0 && !loading) {
     return (
       <DeveloperShell title="Organisation" back={{ href: '/developer/organisations', label: 'Organisations' }}>
@@ -106,7 +113,13 @@ export function DeveloperOrganisationDetailScreen({ organisationId }: { organisa
                 {visibleUsers.map((user) => (
                   <tr key={user.id} className="border-t border-[var(--line)]">
                     <td className="px-4 py-3 font-semibold">{ownerPersonName(user)}</td>
-                    <td className="px-4 py-3">{user.email}</td>
+                    <td className="px-4 py-3">
+                      <MaskedEmail
+                        email={user.email}
+                        reveal={showFullEmails}
+                        onReveal={() => void auditOwnerAction('reveal_email', { targetUserId: user.id, targetOrgId: organisationId })}
+                      />
+                    </td>
                     <td className="px-4 py-3">{ownerRoleLabel(user.role)}</td>
                     <td className="px-4 py-3">{rosterStatusLabel(user)}</td>
                     <td className="px-4 py-3 text-[var(--ink2)]">{formatOwnerWhen(user.lastSeenAt, 'Never')}</td>
@@ -120,6 +133,54 @@ export function DeveloperOrganisationDetailScreen({ organisationId }: { organisa
           <Link href="/developer/users">All users</Link>
         </p>
       </section>
+      <section className="card pad space-y-3">
+        <h2 className="h2">Danger zone</h2>
+        <p className="text-sm text-[var(--ink2)]">
+          Delete this organisation and its users, projects, bookings, timesheets and plan. This cannot be undone.
+        </p>
+        <button type="button" className="btn sm" style={{ color: 'var(--red)', borderColor: 'var(--red)' }} onClick={() => setConfirmDelete(true)}>
+          Delete organisation…
+        </button>
+      </section>
+      {confirmDelete ? (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4" role="alertdialog" aria-modal="true" aria-labelledby="delete-org-title">
+          <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl">
+            <h2 id="delete-org-title" className="text-lg font-extrabold">
+              Delete {name}?
+            </h2>
+            <p className="mt-2 text-sm text-[var(--ink2)]">
+              Are you sure you want to delete this organisation? <strong>This can&apos;t be undone.</strong>
+            </p>
+            <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-[var(--ink2)]">
+              <li>{orgUsers.length} users</li>
+              <li>Projects, bookings, timesheets and timesheet value</li>
+              <li>Plan / subscription (cancel in Stripe first if a refund is needed)</li>
+            </ul>
+            {busy ? <p className="banner mt-3" data-hue="red">{busy}</p> : null}
+            <div className="mt-4 flex justify-end gap-2">
+              <button type="button" className="btn sm ghost" autoFocus onClick={() => setConfirmDelete(false)}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn sm"
+                style={{ background: 'var(--red)', color: 'white', borderColor: 'transparent' }}
+                onClick={async () => {
+                  setBusy('Working…')
+                  try {
+                    await ownerDeleteOrganisation(organisationId)
+                    setConfirmDelete(false)
+                  } catch (err) {
+                    setBusy(err instanceof Error ? err.message : 'Could not delete.')
+                  }
+                }}
+              >
+                Confirm
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </DeveloperShell>
   )
 }

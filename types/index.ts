@@ -168,6 +168,8 @@ export interface User {
   accountConfirmToken?: string;
   createdAt: Date;
   updatedAt: Date;
+  /** Owner-console flag: exclude from platform metrics unless "Include test data" is on. */
+  isInternal?: boolean;
 }
 
 export interface UserPermissions {

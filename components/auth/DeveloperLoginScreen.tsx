@@ -9,6 +9,7 @@ import { AppLogoMark } from '@/components/ui/AppLogoMark'
 import { formatLoginError } from '@/lib/auth/formatLoginError'
 import { PLATFORM_OWNER_EMAIL, isPlatformOwnerEmail } from '@/lib/platform/owner'
 import { LoadingSpinner } from '@/components/dashboard/PageShell'
+import { isMfaGateOpen, isMfaRequiredError } from '@/lib/auth/mfa/mfaClient'
 
 const MIN_PASSWORD = 10
 
@@ -34,8 +35,16 @@ export function DeveloperLoginScreen() {
 
   useEffect(() => {
     if (loading) return
+    if (isMfaGateOpen(firebaseUser?.uid || user?.id)) {
+      router.replace('/auth/mfa?next=/developer')
+      return
+    }
     if (signedInOwner) router.replace('/developer')
-  }, [loading, router, signedInOwner])
+  }, [firebaseUser?.uid, loading, router, signedInOwner, user?.id])
+
+  if (isMfaGateOpen(firebaseUser?.uid || user?.id)) {
+    return <LoadingSpinner label="Opening verification…" />
+  }
 
   if (signedInOwner || (loading && Boolean(firebaseUser || user))) {
     return <LoadingSpinner label="Opening the owner console…" />
@@ -53,6 +62,10 @@ export function DeveloperLoginScreen() {
 
   const handleSignIn = async () => {
     await signIn(PLATFORM_OWNER_EMAIL, password)
+    if (isMfaGateOpen(useAuthStore.getState().firebaseUser?.uid)) {
+      router.push('/auth/mfa?next=/developer')
+      return
+    }
     await rejectIfNotOwner()
     router.push('/developer')
   }
@@ -90,6 +103,10 @@ export function DeveloperLoginScreen() {
       else await handleSignIn()
     } catch (err) {
       const code = codeOf(err)
+      if (isMfaRequiredError(err)) {
+        router.push('/auth/mfa?next=/developer')
+        return
+      }
       if (code === 'auth/user-not-found' || code === 'auth/invalid-credential') {
         setLocalError('No owner login yet, or the password is wrong. Use Create owner password the first time, or Reset password if the account already exists.')
         return

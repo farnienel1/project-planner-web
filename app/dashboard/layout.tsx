@@ -9,6 +9,7 @@ import { SplashScreen } from '@/components/auth/SplashScreen'
 import { PolicyGate } from '@/components/auth/PolicyGate'
 import { CheckEmailScreen } from '@/components/auth/CheckEmailScreen'
 import { hasCustomerOrganisation, isPlatformOwnerEmail } from '@/lib/platform/owner'
+import { isMfaGateOpen } from '@/lib/auth/mfa/mfaClient'
 
 export default function DashboardLayout({
   children,
@@ -21,6 +22,10 @@ export default function DashboardLayout({
   useEffect(() => {
     if (!loading && !user) {
       router.push('/login')
+      return
+    }
+    if (!loading && user && isMfaGateOpen(user.id)) {
+      router.replace('/auth/mfa?next=/dashboard')
       return
     }
     if (!loading && user && isPlatformOwnerEmail(user.email) && !hasCustomerOrganisation(user.organizationId)) {
