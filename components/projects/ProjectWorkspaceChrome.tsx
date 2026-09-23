@@ -13,6 +13,7 @@ import {
   MapPinIcon,
   PencilSquareIcon,
   PlusIcon,
+  FlagIcon,
   ShieldCheckIcon,
   Squares2X2Icon,
 } from '@heroicons/react/24/solid'
@@ -45,6 +46,7 @@ const TAB_META: Record<string, { hue: SectionHue; icon: typeof Squares2X2Icon }>
   tasks: { hue: 'task', icon: ClipboardDocumentCheckIcon },
   materials: { hue: 'sw', icon: CubeIcon },
   'health-safety': { hue: 'hs', icon: ShieldCheckIcon },
+  deadlines: { hue: 'red', icon: FlagIcon },
   'site-audit': { hue: 'daily', icon: CameraIcon },
   location: { hue: 'proj', icon: MapPinIcon },
 }
@@ -57,6 +59,7 @@ function tabFromPath(pathname: string, basePath: string): string {
   if (rest.startsWith('tasks')) return 'tasks'
   if (rest.startsWith('materials')) return 'materials'
   if (rest.startsWith('health-safety')) return 'health-safety'
+  if (rest.startsWith('deadlines')) return 'deadlines'
   if (rest.startsWith('site-audit')) return 'site-audit'
   if (rest.startsWith('location')) return 'location'
   return 'overview'

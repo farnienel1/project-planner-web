@@ -11,7 +11,7 @@ test('operatives do not see Scheduling or View, and respect materials/site-audit
   })
   assert.deepEqual(
     tiles.map((tile) => tile.href),
-    ['tasks', 'health-safety', 'location']
+    ['tasks', 'health-safety', 'deadlines', 'location']
   )
 })
 
@@ -25,7 +25,7 @@ test('managers see Scheduling, optional View, materials and site audit', () => {
   })
   assert.deepEqual(
     tiles.map((tile) => tile.label),
-    ['Scheduling', 'View', 'Tasks', 'Materials', 'H&S', 'Site Audit', 'Location']
+    ['Scheduling', 'View', 'Tasks', 'Materials', 'H&S', 'Deadlines', 'Site Audit', 'Location']
   )
   assert.equal(tiles.at(-1)?.desc, '12 High St')
 })

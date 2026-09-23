@@ -9,6 +9,7 @@ import { useProjectStore } from '@/lib/stores/projectStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { visibleWorks } from '@/lib/access/workAccess'
+import { useDeadlineAssignedProjectIds } from '@/lib/deadlines/useDeadlineAssignedProjectIds'
 import { findOperativeForUser } from '@/lib/operatives/operativeRosterUtils'
 import {
   DEFAULT_MY_SCHEDULE,
@@ -69,6 +70,7 @@ export function DailyOverviewBookingSheet({
   onClose: () => void
 }) {
   const { user, organization } = useAuthStore()
+  const deadlineAssignedProjectIds = useDeadlineAssignedProjectIds()
   const { bookings, createBooking, updateBooking, deleteBooking } = useBookingStore()
   const {
     managerSiteBookings,
@@ -109,8 +111,9 @@ export function DailyOverviewBookingSheet({
         operatives,
         bookings,
         managerBookings: managerSiteBookings,
+        deadlineAssignedProjectIds,
       }).filter((project) => project.isLive),
-    [allWorks, user, operatives, bookings, managerSiteBookings]
+    [allWorks, user, operatives, bookings, managerSiteBookings, deadlineAssignedProjectIds]
   )
   const liveSmallWorks = useMemo(
     () =>
@@ -121,8 +124,9 @@ export function DailyOverviewBookingSheet({
         operatives,
         bookings,
         managerBookings: managerSiteBookings,
+        deadlineAssignedProjectIds,
       }).filter((project) => project.isLive),
-    [allWorks, user, operatives, bookings, managerSiteBookings]
+    [allWorks, user, operatives, bookings, managerSiteBookings, deadlineAssignedProjectIds]
   )
   const otherPicks = enabledScheduleLocationPicks(scheduleOpts)
   const list = tab === 'smallWorks' ? liveSmallWorks : liveProjects
