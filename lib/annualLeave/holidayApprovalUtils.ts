@@ -1,5 +1,6 @@
 import type { HolidayBooking, Operative, User } from '@/types'
 import { hasAdminAccess, isOperativeMode } from '@/lib/navigation/menuPermissions'
+import { dayKey } from '@/lib/ios-parity/londonTime'
 import { isPendingHolidayRequest } from '@/lib/stores/holidayStore'
 
 /** Line manager who should approve this leave request (mirrors iOS `assignedApproverUserId`). */
@@ -80,4 +81,10 @@ export function getPendingHolidayApprovalsForUser(
 
 export function isCancellationRequest(booking: HolidayBooking): boolean {
   return booking.cancellationRequestedAt != null
+}
+
+/** Accepted leave that still has a day after today. Past and today-only bookings stay on the calendar. */
+export function isFutureAcceptedAnnualLeave(booking: HolidayBooking, today = new Date()): boolean {
+  if (String(booking.status).toLowerCase() !== 'approved') return false
+  return dayKey(booking.endDate) > dayKey(today)
 }

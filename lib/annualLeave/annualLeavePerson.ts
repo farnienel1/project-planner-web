@@ -1,4 +1,6 @@
 import type { Operative, User } from '@/types'
+import { hasAdminAccess } from '@/lib/permissions'
+import { lineManagerUserIds } from '@/lib/timesheets/timesheetApprovalPolicy'
 
 export interface AnnualLeavePerson {
   id: string
@@ -138,6 +140,20 @@ export function bookingMatchesPerson(
   if (person.userId && booking.userId === person.userId) return true
   if (person.operativeId && booking.operativeId === person.operativeId) return true
   return false
+}
+
+/** Admins with annual-leave access see the whole team. Managers see people they line-manage. */
+export function canManagePersonAnnualLeave(
+  actor: User | null | undefined,
+  person: AnnualLeavePerson,
+  users: User[]
+): boolean {
+  if (!actor) return false
+  if (hasAdminAccess(actor)) return true
+  if (!actor.permissions?.manager) return false
+  const member = person.userId ? users.find((user) => user.id === person.userId) : undefined
+  if (!member) return false
+  return lineManagerUserIds(member).includes(actor.id)
 }
 
 export function resolvePersonName(

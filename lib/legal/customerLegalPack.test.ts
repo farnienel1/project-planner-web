@@ -27,6 +27,15 @@ test('pack has SaaS, DPA, AUP and Privacy with privacy as acknowledgement', () =
   assert.equal(privacy?.acceptLabel.includes('acknowledge'), true)
 })
 
+test('sign-up policy includes the toolbox talks disclaimer', () => {
+  const aup = LEGAL_PACK_DOCUMENTS.find((doc) => doc.id === 'aup')
+  const blob = JSON.stringify(aup)
+  assert.match(
+    blob,
+    /The Toolbox Talks provided within this app are for general guidance and informational purposes only; users remain solely responsible for assessing and managing their own health and safety obligations, ensuring the content is appropriate to the specific circumstances, and complying with all applicable laws, regulations, risk assessments and site requirements\./
+  )
+})
+
 test('Legal policies page lists every sign-up pack document', () => {
   const source = readFileSync(new URL('../../components/auth/PrivacyPolicyContent.tsx', import.meta.url), 'utf8')
   assert.match(source, /LEGAL_PACK_DOCUMENTS/)
