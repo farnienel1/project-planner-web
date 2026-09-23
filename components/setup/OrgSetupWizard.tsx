@@ -1014,7 +1014,7 @@ export function OrgSetupWizard() {
                         ['Admin', `${firstName} ${surname}`.trim(), 'account'],
                         ['Email', email, 'account'],
                         ['Organisation', organizationName, 'organization'],
-                        ['Plan', `${selectedPlan?.name || 'ProjectPlanner'} · ${displayPrice}${planKey === 'year' ? '/year' : '/month'} + VAT`, 'plan'],
+                        ['Plan', `${selectedPlan?.name || 'ProjectPlanner'} · ${displayPrice}${planKey === 'year' ? ' a year' : ' a month'}. VAT is not charged.`, 'plan'],
                       ] as const
                     ).map(([label, value, target]) => (
                       <div key={label} className="sumrow">

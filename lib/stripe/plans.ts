@@ -39,7 +39,7 @@ const PLAN_DEFINITIONS: Omit<SubscriptionPlan, 'priceId'>[] = [
   {
     key: 'month',
     name: 'ProjectPlanner Monthly',
-    description: '£149 / month + VAT. 30-day free trial, then billed monthly.',
+    description: '£149 a month. VAT is not charged. 30-day free trial, then billed monthly.',
     priceLabel: '£149',
     amountPence: MONTHLY_PENCE,
     interval: 'month',
@@ -50,7 +50,7 @@ const PLAN_DEFINITIONS: Omit<SubscriptionPlan, 'priceId'>[] = [
   {
     key: 'year',
     name: 'ProjectPlanner Annual',
-    description: '£1,490 / year + VAT. Save £298 a year. 30-day free trial.',
+    description: '£1,490 a year. VAT is not charged. Save £298 a year. 30-day free trial.',
     priceLabel: '£1,490',
     amountPence: ANNUAL_PENCE,
     interval: 'year',
