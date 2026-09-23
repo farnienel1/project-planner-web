@@ -16,10 +16,14 @@ import {
   type OrgSetupSettings,
 } from '@/lib/orgSetup/orgSetupSettings'
 import {
-  pickReusablePendingOrganization,
+  pickPendingOrganizationToReuse,
   shouldSwitchUserToNewOrganization,
   subscriptionStatusFromOrgData,
 } from '@/lib/orgSetup/pendingOrganizationReuse'
+import {
+  ExistingProjectPlannerLoginError,
+  shouldBlockPublicSetupForExistingLogin,
+} from '@/lib/orgSetup/existingLogin'
 import type { SubscriptionPlanKey } from '@/lib/stripe/plans'
 
 export type CreateOrganizationInput = {
@@ -33,6 +37,10 @@ export type CreateOrganizationInput = {
   orgSetupSettings?: OrgSetupSettings
   /** Test activation: skip logo, dashboard seed, and other non-essential writes. */
   skipOptionalAssets?: boolean
+  /** Signed-in users creating another firm from Switch organisation. */
+  allowAdditionalOrganization?: boolean
+  /** Continue setup for a specific pending organisation. */
+  resumeOrganizationId?: string
 }
 
 export type CreateOrganizationResult = {
@@ -106,6 +114,17 @@ export async function createPendingOrganization(
     currentOrgSubscriptionStatus,
   })
   const isAdditionalOrganization = Boolean(existingUser) && !switchActive
+  if (
+    shouldBlockPublicSetupForExistingLogin({
+      allowAdditionalOrganization: input.allowAdditionalOrganization === true,
+      isAdditionalOrganization,
+    })
+  ) {
+    throw new ExistingProjectPlannerLoginError({
+      signedIn: true,
+      isAdmin: existingUser?.isSuperAdmin === true || existingUser?.role === 'admin',
+    })
+  }
   const alreadyConfirmed = existingUser?.accountConfirmed !== false
   const needsEmailConfirmation = !existingUser || !alreadyConfirmed
   const skipOptional = input.skipOptionalAssets === true
@@ -126,7 +145,7 @@ export async function createPendingOrganization(
     const creatorSnap = await getDocs(
       query(collection(db, 'organizations'), where('creatorUserId', '==', userId))
     )
-    const reusable = pickReusablePendingOrganization(
+    const reusable = pickPendingOrganizationToReuse(
       creatorSnap.docs.map((entry) => {
         const data = entry.data() as Record<string, unknown>
         return {
@@ -138,7 +157,8 @@ export async function createPendingOrganization(
         }
       }),
       userId,
-      input.organizationName
+      input.organizationName,
+      input.resumeOrganizationId
     )
     if (reusable) {
       organizationId = reusable.id
