@@ -14,13 +14,16 @@ import { newUuid } from '@/lib/firebase/firestoreUtils'
 import { uploadFile as uploadHsFile, healthSafetyFilePath } from '@/lib/firebase/storageUtils'
 import { withTimeout } from '@/lib/client/withTimeout'
 import { loadPlatformToolboxLibrary, mergeToolboxTalkLibraries } from '@/lib/healthSafety/toolboxLibrary'
-import { buildToolboxTalkPdfHtml, downloadHtmlFile, openToolboxTalkPdf } from '@/lib/healthSafety/toolboxTalkPdf'
+import { blankToolboxTalkTemplate } from '@/lib/healthSafety/mergeToolboxTalks'
 import {
-  findTalkForIssue,
-  issueSignatures,
-  talkDownloadName,
-  trackingAwaitingCount,
-} from '@/lib/healthSafety/hsTracking'
+  buildToolboxTalkPdf,
+  customTalkDownloadName,
+  downloadPdfFile,
+  downloadRemoteFile,
+  isCustomUploadedTalk,
+  toolboxTalkPdfFilename,
+} from '@/lib/healthSafety/toolboxTalkPdf'
+import { findTalkForIssue, issueSignatures, trackingAwaitingCount } from '@/lib/healthSafety/hsTracking'
 import {
   HsIssueDetail,
   HsSignedTalkBody,
@@ -464,31 +467,23 @@ export function ProjectHealthSafetySection({
       setDownloadError('This toolbox talk could not be loaded.')
       return
     }
-    if (!organization) {
-      setDownloadError('Organisation is required to generate the talk.')
+    if (isCustomUploadedTalk(talk) && talk.fileURL) {
+      void downloadRemoteFile(talk.fileURL, customTalkDownloadName(talk.fileURL, talk)).catch(() => {
+        setDownloadError('Could not download the toolbox talk PDF.')
+      })
       return
     }
-    const html = buildToolboxTalkPdfHtml({
+    const filename = toolboxTalkPdfFilename(talk)
+    const projectLabel = issue ? project.jobNumber || project.siteName || 'Project' : 'Library talk'
+    void buildToolboxTalkPdf({
       talk,
-      issue: issue || {
-        id: talk.id,
-        projectId: project.id,
-        talkId: talk.id,
-        weekCommencing: startOfWeek(new Date(), { weekStartsOn: 1 }),
-        issuedByUserId: user?.id || '',
-        issuedAt: new Date(),
-        recipientUserIds: [],
-        status: 'issued',
-      },
+      issue,
       signatures: issue ? issueSignatures(data?.signatures || [], issue.id) : [],
       users,
-      project,
-      organizationName: organization.name || 'Organisation',
-      presentedBy: `${user?.firstName || ''} ${user?.surname || ''}`.trim() || organization.name || 'Project Planner',
+      projectLabel,
     })
-    const filename = `${talkDownloadName(talk)}${issue ? `-${issue.id.slice(0, 8)}` : ''}.html`
-    const result = openToolboxTalkPdf(html, filename)
-    if (!result.printed) downloadHtmlFile(html, filename)
+      .then((bytes) => downloadPdfFile(bytes, filename))
+      .catch(() => setDownloadError('Could not download the toolbox talk PDF.'))
   }
 
   const openSign = (issue: HSToolboxIssue) => {
@@ -728,18 +723,26 @@ export function ProjectHealthSafetySection({
           <HsSearchField value={talkSearch} onChange={setTalkSearch} placeholder="Search toolbox talks" />
           <HsChipRow chips={tradeFilters} selected={tradeFilter} onSelect={setTradeFilter} />
           <p className="px-1 text-[11px] text-slate-500">
-            {libraryLoading ? 'Loading library…' : `${filteredTalks.length} talks · ${libraryTalks.length} in the master library`}
+            {filteredTalks.length} talks · {libraryTalks.length} in the master library
+            {libraryLoading ? ' · updating' : ''}
           </p>
-          <button
-            type="button"
-            onClick={() => setShowUploadTalk(true)}
-            className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-[#2f73f0]/40 bg-[#e8f0ff] py-2.5 text-sm font-semibold text-[#2f73f0]"
-          >
-            + Upload custom talk
-          </button>
-          {libraryLoading ? (
-            <LoadingSpinner label="Loading toolbox library…" />
-          ) : filteredTalks.length === 0 ? (
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => handleDownloadTalk(blankToolboxTalkTemplate())}
+              className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-50"
+            >
+              Download blank template
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowUploadTalk(true)}
+              className="rounded-xl border border-dashed border-[#2f73f0]/40 bg-[#e8f0ff] px-3 py-2.5 text-xs font-bold text-[#2f73f0]"
+            >
+              Upload your own
+            </button>
+          </div>
+          {filteredTalks.length === 0 ? (
             <EmptyState title="No talks found" description="Search the library or upload a custom talk." />
           ) : (
             <FeatureCard>
@@ -1203,9 +1206,7 @@ export function ProjectHealthSafetySection({
                 {scheduledIssues.map((issue) => (
                   <div key={issue.id} className="border-t border-[#EEF1F5] px-4 py-3 first:border-t-0">
                     <p className="text-sm font-semibold text-slate-900">
-                      {libraryTalks.find((t) => t.id === issue.talkId)?.title ||
-                        data.talks.find((t) => t.id === issue.talkId)?.title ||
-                        'Toolbox talk'}
+                      {resolveTalk(issue)?.title || 'Toolbox talk'}
                     </p>
                     <p className="text-xs text-slate-500">
                       {issue.publishAt ? format(issue.publishAt, "EEE d MMM yyyy 'at' HH:mm") : '—'} ·{' '}
@@ -1343,7 +1344,13 @@ export function ProjectHealthSafetySection({
             </div>
           }
         >
-          <HsTalkBody talk={viewTalk} />
+          <HsTalkBody
+            talk={viewTalk}
+            issue={trackIssue}
+            signatures={trackIssue ? issueSignatures(data.signatures, trackIssue.id) : []}
+            users={users}
+            projectLabel={trackIssue ? project.jobNumber || project.siteName || 'Project' : 'Library talk'}
+          />
           {downloadError ? <p className="text-sm font-semibold text-[#A32D2D]">{downloadError}</p> : null}
         </HsSheet>
       )}
@@ -1368,8 +1375,10 @@ export function ProjectHealthSafetySection({
         >
           <HsSignedTalkBody
             talk={resolveTalk(viewSignedIssue)}
+            issue={viewSignedIssue}
             signatures={issueSignatures(data.signatures, viewSignedIssue.id)}
             users={users}
+            projectLabel={project.jobNumber || project.siteName || 'Project'}
           />
         </HsSheet>
       )}

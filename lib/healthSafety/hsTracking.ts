@@ -1,3 +1,4 @@
+import { isPlaceholderTalkTitle } from '@/lib/healthSafety/mergeToolboxTalks'
 import type { HSToolboxIssue, HSToolboxSignature, HSToolboxTalk } from '@/types'
 
 export function issueSignatures(signatures: HSToolboxSignature[], issueId: string): HSToolboxSignature[] {
@@ -26,9 +27,15 @@ export function findTalkForIssue(
   libraryTalks: HSToolboxTalk[],
   projectTalks: HSToolboxTalk[]
 ): HSToolboxTalk | undefined {
+  const fromLibrary = libraryTalks.find((talk) => talkMatchesId(talk, issue.talkId))
+  if (fromLibrary) return fromLibrary
+  const fromProject = projectTalks.find((talk) => talkMatchesId(talk, issue.talkId))
+  if (fromProject && !isPlaceholderTalkTitle(fromProject.title)) return fromProject
+  const ref = (fromProject?.referenceCode || issue.talkId).trim()
+  if (!ref) return undefined
   return (
-    libraryTalks.find((talk) => talkMatchesId(talk, issue.talkId)) ||
-    projectTalks.find((talk) => talkMatchesId(talk, issue.talkId))
+    libraryTalks.find((talk) => talkMatchesId(talk, ref)) ||
+    projectTalks.find((talk) => talkMatchesId(talk, ref) && !isPlaceholderTalkTitle(talk.title))
   )
 }
 
