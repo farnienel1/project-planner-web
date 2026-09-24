@@ -102,6 +102,55 @@ export function invoiceLinesForTimesheet({
   timeZone: string
   extrasMode: 'raw' | 'export'
 }): TimesheetInvoiceLine[] {
+  const override = draft.weeklyReportOverride
+  if (override) {
+    const liveById = new Map(payroll.lineItems.map((line) => [line.id, line]))
+    const rows: TimesheetInvoiceLine[] = []
+    for (const line of override.lines) {
+      if (line.decision === 'declined' || line.amount <= 0.0001) continue
+      const live = liveById.get(line.id)
+      const details = live
+        ? `${live.details} · ${timesheetHoursRateLine(live)}`
+        : `${line.details} · ${formatTimesheetHours(line.paidHours)}h`
+      const jobNumber = (live?.jobNumber || line.jobNumber || '—').trim() || '—'
+      const projectName = live?.projectName || line.projectName
+      rows.push({
+        date: formatAbbreviatedDayInZone((live?.date || line.date), timeZone),
+        jobNumber,
+        projectName,
+        details,
+        description: `${jobNumber} ${projectName} · ${details}`,
+        amount: line.amount,
+      })
+    }
+    for (const line of override.priceWork) {
+      if (line.decision === 'declined' || line.amount <= 0.0001) continue
+      const details = extraInvoiceDetails(line.title)
+      const jobNumber = line.jobNumber.trim() || '—'
+      rows.push({
+        date: formatAbbreviatedDayInZone(line.date, timeZone),
+        jobNumber,
+        projectName: 'Price work',
+        details,
+        description: `${jobNumber} Price work · ${details}`,
+        amount: line.amount,
+      })
+    }
+    for (const line of override.expenses) {
+      if (line.decision === 'declined' || line.amount <= 0.0001) continue
+      const details = extraInvoiceDetails(line.title)
+      const jobNumber = line.jobNumber.trim() || '—'
+      rows.push({
+        date: formatAbbreviatedDayInZone(line.date, timeZone),
+        jobNumber,
+        projectName: 'Expense',
+        details,
+        description: `${jobNumber} Expense · ${details}`,
+        amount: line.amount,
+      })
+    }
+    return rows
+  }
   const rows: TimesheetInvoiceLine[] = []
   for (const line of payroll.lineItems) {
     const details = `${line.details} · ${timesheetHoursRateLine(line)}`

@@ -75,6 +75,7 @@ export default function WeeklyReportPage() {
 
   return (
     <WeeklyReportScreen
+      organizationId={organization?.id}
       organizationName={organization?.name || orgDetails?.name || 'Organisation'}
       companyLogoURL={orgDetails?.companyLogoURL}
       bookings={bookings}

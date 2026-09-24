@@ -112,14 +112,10 @@ export async function POST(request: NextRequest) {
   try {
     await sendProjectPlannerEmail({ ...mail, attachments })
   } catch (error) {
-    if (attachments.length === 0) {
-      console.error('[timesheets/export-email]', error)
-      return jsonError(clientSafeMessage(error, 'Failed to send timesheet export email'), 500)
-    }
     try {
-      await sendProjectPlannerEmail(mail)
+      await sendProjectPlannerEmail({ ...mail, attachments })
     } catch (retryError) {
-      console.error('[timesheets/export-email]', retryError)
+      console.error('[timesheets/export-email]', retryError || error)
       return jsonError(clientSafeMessage(retryError, 'Failed to send timesheet export email'), 500)
     }
   }
