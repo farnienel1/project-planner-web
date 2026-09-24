@@ -238,6 +238,62 @@ test('enabledScheduleLocationPicks matches iOS Other locations', () => {
   )
 })
 
+test('book labour skips pending users unless a warning focuses that user', () => {
+  const pending = user({
+    id: 'U-PEND',
+    email: 'pat@site.test',
+    firstName: 'Pat',
+    surname: 'Pending',
+    passwordSet: false,
+  })
+  const live = user({ id: 'U-LIVE', email: 'ada@site.test', firstName: 'Ada', surname: 'Live' })
+  const linked = operative({ id: 'OP-ADA', email: 'ada@site.test' })
+  const open = buildBookLabourCandidates({
+    day: WED,
+    users: [pending, live],
+    operatives: [linked],
+    bookings: [],
+    managerSiteBookings: [],
+    holidays: [],
+    payrollPolicy: DEFAULT_PAYROLL_POLICY,
+  })
+  assert.deepEqual(
+    open.map((row) => row.id),
+    ['U-LIVE']
+  )
+
+  const focusedPending = buildBookLabourCandidates({
+    day: WED,
+    users: [pending, live],
+    operatives: [linked],
+    bookings: [booking({ id: 'B1', operativeId: 'OP-ADA' })],
+    managerSiteBookings: [],
+    holidays: [],
+    payrollPolicy: DEFAULT_PAYROLL_POLICY,
+    focusedUserIds: ['U-PEND'],
+  })
+  assert.equal(focusedPending[0]?.id, 'U-PEND')
+  assert.equal(
+    focusedPending.some((row) => row.id === 'U-LIVE'),
+    false
+  )
+
+  const focusedOperative = buildBookLabourCandidates({
+    day: WED,
+    users: [live],
+    operatives: [linked],
+    bookings: [booking({ id: 'B1', operativeId: 'OP-ADA' })],
+    managerSiteBookings: [],
+    holidays: [],
+    payrollPolicy: DEFAULT_PAYROLL_POLICY,
+    focusedUserIds: ['OP-ADA'],
+  })
+  assert.deepEqual(
+    focusedOperative.map((row) => row.id),
+    ['U-LIVE']
+  )
+})
+
 test('default Other custom items do not seed Training', () => {
   assert.deepEqual(DEFAULT_MY_SCHEDULE.customItems, [])
   const picks = enabledScheduleLocationPicks({

@@ -58,6 +58,44 @@ function emailKey(value: string | undefined): string {
   return (value || '').trim().toLowerCase()
 }
 
+/** Finished signup. Pending invitees (`passwordSet === false`) are not unbooked labour. */
+function hasFinishedSignup(user: User): boolean {
+  return user.passwordSet === true
+}
+
+/**
+ * When two user docs share an email, keep the finished account.
+ * Prefer passwordSet && isActive, then any passwordSet account.
+ */
+function preferFinishedAccount(candidates: User[]): User | undefined {
+  return (
+    candidates.find((user) => user.passwordSet && user.isActive) ??
+    candidates.find((user) => user.passwordSet)
+  )
+}
+
+function dedupeFinishedUsers(users: User[]): User[] {
+  const groups = new Map<string, User[]>()
+  const withoutEmail: User[] = []
+  for (const user of users) {
+    if (!hasFinishedSignup(user)) continue
+    const email = emailKey(user.email)
+    if (!email) {
+      withoutEmail.push(user)
+      continue
+    }
+    const list = groups.get(email) || []
+    list.push(user)
+    groups.set(email, list)
+  }
+  const picked: User[] = []
+  for (const group of groups.values()) {
+    const best = preferFinishedAccount(group)
+    if (best) picked.push(best)
+  }
+  return [...picked, ...withoutEmail]
+}
+
 function holidayCoversDay(
   holidays: HolidayBooking[],
   day: Date,
@@ -209,11 +247,17 @@ export function computeUnbookedLabourWarningsForDateRange({
     if (email) operativesByEmail.set(email, operative)
   }
 
-  const usersById = new Map(users.map((user) => [user.id, user]))
-  const operativeUsers = users.filter(isOperativeModeOnlyUser)
-  const managerUsers = users.filter(isManagerOrAdminUser)
-  const managerAdminUserIds = new Set(managerUsers.map((user) => user.id))
-  const operativeUserEmails = new Set(operativeUsers.map((user) => emailKey(user.email)))
+  const operativeUsers = dedupeFinishedUsers(users.filter(isOperativeModeOnlyUser))
+  const managerUsers = dedupeFinishedUsers(users.filter(isManagerOrAdminUser))
+  const managerAdminUserIds = new Set(
+    users.filter(isManagerOrAdminUser).filter(hasFinishedSignup).map((user) => user.id)
+  )
+  const operativeUserEmails = new Set(operativeUsers.map((user) => emailKey(user.email)).filter(Boolean))
+
+  const verifiedUserForEmail = (email: string): User | undefined => {
+    if (!email) return undefined
+    return preferFinishedAccount(users.filter((user) => emailKey(user.email) === email))
+  }
 
   const rosterOperatives = operatives.filter(
     (operative) => operative.isActive !== false && !isPlaceholderOperative(operative)
@@ -260,7 +304,7 @@ export function computeUnbookedLabourWarningsForDateRange({
       if (holidayCoversDay(approvedHolidays, day, user.id, linked?.id, timeZone)) continue
       appendIfUnbooked({
         personKey: user.id,
-        name: linked ? displayNameForOperative(linked) : displayNameForUser(user),
+        name: displayNameForUser(user),
         email: emailKey(user.email),
         hasBooking: hasOperativeBooking(linked?.id, day) || hasManagerBooking(user.id, day),
         requiredHours,
@@ -291,15 +335,17 @@ export function computeUnbookedLabourWarningsForDateRange({
     for (const operative of rosterOperatives) {
       const email = emailKey(operative.email)
       if (email && operativeUserEmails.has(email)) continue
-      const matchedUser = email
-        ? [...usersById.values()].find((user) => emailKey(user.email) === email)
-        : undefined
+      const matchedUser = email ? verifiedUserForEmail(email) : undefined
+      if (!matchedUser && email && users.some((user) => emailKey(user.email) === email)) {
+        // Invite sent, signup not finished — not unbooked labour.
+        continue
+      }
       if (matchedUser && managerAdminUserIds.has(matchedUser.id)) continue
       if (matchedUser && excludedUserIds.has(matchedUser.id)) continue
       if (holidayCoversDay(approvedHolidays, day, matchedUser?.id, operative.id, timeZone)) continue
       appendIfUnbooked({
         personKey: matchedUser?.id || operative.id,
-        name: displayNameForOperative(operative),
+        name: matchedUser ? displayNameForUser(matchedUser) : displayNameForOperative(operative),
         email: email || operative.id,
         hasBooking: hasOperativeBooking(operative.id, day) || hasManagerBooking(matchedUser?.id, day),
         requiredHours,
