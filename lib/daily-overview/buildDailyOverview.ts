@@ -412,6 +412,7 @@ export function buildDailyOverview(params: {
     const p = permsOf(u)
     return (
       u.isActive &&
+      u.passwordSet &&
       p.operativeMode &&
       !p.manager &&
       !p.adminAccess &&
@@ -421,7 +422,7 @@ export function buildDailyOverview(params: {
   })
   const managerUsers = params.users.filter((u) => {
     const p = permsOf(u)
-    return u.isActive && (p.manager || p.adminAccess || u.isSuperAdmin || u.role === 'admin')
+    return u.isActive && u.passwordSet && (p.manager || p.adminAccess || u.isSuperAdmin || u.role === 'admin')
   })
 
   const unbookedNames: string[] = []
@@ -431,7 +432,7 @@ export function buildDailyOverview(params: {
     const paid = (linked ? paidByOperative.get(linked.id) || 0 : 0) + (paidByUser.get(user.id) || 0)
     if (paid >= STANDARD_PAID_HOURS) return
     const missing = Math.max(0, STANDARD_PAID_HOURS - paid)
-    const name = linked ? `${linked.firstName} ${linked.lastName}`.trim() || displayName(user) : displayName(user)
+    const name = `${user.firstName || ''} ${user.surname || ''}`.trim() || user.email
     unbookedNames.push(`${name} (missing ${overviewFormatHours(missing)}h)`)
   }
   operativeUsers.forEach(pushUnbooked)

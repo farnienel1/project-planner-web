@@ -320,7 +320,7 @@ export function WarningsPanel({ onBack }: { onBack: () => void }) {
         <div className="space-y-3 p-4">
           <p className="text-xs text-slate-500">
             Some staff (e.g. PAYE employees) don&apos;t need to appear in unbooked labour warnings. Users added here are
-            silently skipped by the warnings engine.
+            silently skipped. Pending users who have not finished sign-up are never unbooked-labour warnings.
           </p>
 
           <button
@@ -402,8 +402,8 @@ export function WarningsPanel({ onBack }: { onBack: () => void }) {
             <div>
               <div className="text-sm font-semibold text-slate-900">Booking clashes</div>
               <p className="mt-1 text-xs text-slate-500">
-                Flags when an operative is double-booked on the same date across two or more projects. Clashes are always
-                treated as high-urgency.
+                Flags when a person is double-booked on the same date. Operative clashes are high-urgency; manager and
+                admin overlaps are medium. Each can be approved for the weekly report.
               </p>
             </div>
             <Toggle checked={draft.detectClashes} onChange={(value) => patch({ detectClashes: value })} />
@@ -433,17 +433,17 @@ export function WarningsPanel({ onBack }: { onBack: () => void }) {
           <SeverityRow
             tone="red"
             title="High"
-            description="Operative clashes and unbooked labour — directly affect project delivery and must be resolved promptly."
+            description="Operative booking clashes and unbooked labour. Approve a clash to note it on the weekly report."
           />
           <SeverityRow
             tone="amber"
             title="Medium"
-            description="Manager and admin overlaps — flagged for the weekly report but less time-critical."
+            description="Manager and admin booking overlaps. Approve if intentional so they appear on the weekly report."
           />
           <SeverityRow
             tone="blue"
             title="Low"
-            description="Materials not ordered by the required cut-off date — useful reminders that won't block site work immediately."
+            description="Materials not ordered by the 16:00 cut-off, qualification expiry (including already expired), and unverified accounts."
           />
         </div>
       </SettingsCard>
