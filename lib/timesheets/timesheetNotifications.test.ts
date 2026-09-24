@@ -12,7 +12,7 @@ test('pending sign-off notifications open the user’s timesheet for the manager
   })
   assert.equal(
     href,
-    `/dashboard/timesheets?surface=team&tab=awaiting&user=op-1&period=${dayKey(weekStart)}`
+    `/dashboard/timesheets/team?tab=awaiting&user=op-1&period=${dayKey(weekStart)}`
   )
 })
 
@@ -23,7 +23,7 @@ test('manager-signed notifications open My Timesheets for that pay run', () => {
     deepLinkUserId: 'op-1',
     deepLinkWeekStart: weekStart,
   })
-  assert.equal(href, `/dashboard/timesheets?surface=mine&period=${dayKey(weekStart)}`)
+  assert.equal(href, `/dashboard/timesheets/mine?period=${dayKey(weekStart)}`)
 })
 
 test('peer line-manager updates open the signed timesheet', () => {
@@ -35,7 +35,7 @@ test('peer line-manager updates open the signed timesheet', () => {
   })
   assert.equal(
     href,
-    `/dashboard/timesheets?surface=team&tab=signed&user=op-1&period=${dayKey(weekStart)}`
+    `/dashboard/timesheets/team?tab=signed&user=op-1&period=${dayKey(weekStart)}`
   )
 })
 

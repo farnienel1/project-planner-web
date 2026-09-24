@@ -44,6 +44,7 @@ import { ToastProvider, useToast } from '@/components/ui/ToastProvider'
 import { Button, IconChip } from '@/components/ui'
 import { useNotificationStore } from '@/lib/stores/notificationStore'
 import { hueForCreateId, hueForNavId, type SectionHue } from '@/lib/ui/sectionHue'
+import { TIMESHEETS_HUB_PATH, timesheetLinkShouldHardReset } from '@/lib/timesheets/timesheetRoutes'
 import type { PaletteItem } from '@/lib/ui/commandPalette'
 import { useProjectStore } from '@/lib/stores/projectStore'
 import { db } from '@/lib/firebase/config'
@@ -78,7 +79,16 @@ function NavRow({
   return (
     <Link
       href={item.href}
-      onClick={onClick}
+      onClick={(event) => {
+        onClick?.()
+        if (
+          item.href === TIMESHEETS_HUB_PATH &&
+          timesheetLinkShouldHardReset(window.location.pathname, window.location.search, item.href)
+        ) {
+          event.preventDefault()
+          window.location.assign(TIMESHEETS_HUB_PATH)
+        }
+      }}
       data-hue={hue}
       title={item.label}
       className={cn(
