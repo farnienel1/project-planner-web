@@ -22,6 +22,9 @@ import {
   printWeeklyReport,
 } from '@/lib/weekly-report/weeklyReportGenerator'
 import { formatCurrency, formatDays } from '@/lib/weekly-report/weeklyReportPayroll'
+import { loadWeeklyReportTimesheetFeed } from '@/lib/weekly-report/loadTimesheetFeed'
+import type { ApprovedTimesheetWeek } from '@/lib/weekly-report/timesheetFeed'
+import { loadOperativeDayRateHistory } from '@/lib/timesheets/dayRateHistoryStorage'
 import type { Booking, HolidayBooking, Operative, Project, Subcontractor, User } from '@/types'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 
@@ -74,6 +77,7 @@ function mondayOf(date: Date): Date {
 }
 
 export function WeeklyReportScreen({
+  organizationId,
   organizationName,
   companyLogoURL,
   bookings,
@@ -88,6 +92,7 @@ export function WeeklyReportScreen({
   orgDetails,
   loading,
 }: {
+  organizationId?: string
   organizationName: string
   companyLogoURL?: string
   bookings: Booking[]
@@ -126,6 +131,7 @@ export function WeeklyReportScreen({
   const [customEnd, setCustomEnd] = useState(defaultCustomEnd)
   const [generating, setGenerating] = useState(false)
   const [generated, setGenerated] = useState(false)
+  const [timesheetWeeks, setTimesheetWeeks] = useState<ApprovedTimesheetWeek[]>([])
 
   const effectiveInvoicingPeriodId = invoicingPeriodId || invoicingOptions[0]?.id || ''
 
@@ -159,6 +165,7 @@ export function WeeklyReportScreen({
       smallWorks,
       holidays,
       orgDetails,
+      timesheetWeeks,
     })
   }, [
     period,
@@ -174,12 +181,37 @@ export function WeeklyReportScreen({
     smallWorks,
     holidays,
     orgDetails,
+    timesheetWeeks,
   ])
 
-  const handleGenerateReport = () => {
-    if (!report || !period) return
+  const handleGenerateReport = async () => {
+    if (!period) return
     setGenerating(true)
     try {
+      if (organizationId && invoicing) {
+        const history = await loadOperativeDayRateHistory(organizationId).catch(() => null)
+        const weeks = await loadWeeklyReportTimesheetFeed({
+          organizationId,
+          users,
+          operatives,
+          rangeStart: period.start,
+          rangeEnd: period.end,
+          invoicing,
+          bookings,
+          managerSiteBookings,
+          projects,
+          smallWorks,
+          history: history || undefined,
+          payrollPolicy: orgDetails?.payrollTimePolicy,
+          payrollPolicyPrior: orgDetails?.payrollTimePolicyPrior,
+          payrollPolicyEffectiveFrom: orgDetails?.payrollTimePolicyEffectiveFrom,
+          scheduleOptions: orgDetails?.myScheduleOptions,
+          timeZone,
+        })
+        setTimesheetWeeks(weeks)
+      } else {
+        setTimesheetWeeks([])
+      }
       setGenerated(true)
     } finally {
       setGenerating(false)
@@ -195,6 +227,7 @@ export function WeeklyReportScreen({
 
   const changePeriod = (next: () => void) => {
     setGenerated(false)
+    setTimesheetWeeks([])
     next()
   }
 
@@ -491,6 +524,48 @@ export function WeeklyReportScreen({
                 : []),
             ]}
             empty="No additional manager schedule"
+          />
+
+          <ReportTable
+            title="🧱 Price Work"
+            headers={['Person', 'Title', 'Job No.', 'Date', 'Details', 'Amount']}
+            rows={
+              report.priceWorkRows.length === 0
+                ? []
+                : [
+                    ...report.priceWorkRows.map((row) => [
+                      row.person,
+                      row.title,
+                      row.jobNumber,
+                      row.date,
+                      row.details,
+                      formatCurrency(row.amount),
+                    ]),
+                    ['', '', '', '', 'Price Work Total', formatCurrency(report.priceWorkTotal)],
+                  ]
+            }
+            empty="No price work in this period"
+          />
+
+          <ReportTable
+            title="🧾 Expenses"
+            headers={['Person', 'Title', 'Job No.', 'Date', 'Details', 'Amount']}
+            rows={
+              report.expenseRows.length === 0
+                ? []
+                : [
+                    ...report.expenseRows.map((row) => [
+                      row.person,
+                      row.title,
+                      row.jobNumber,
+                      row.date,
+                      row.details,
+                      formatCurrency(row.amount),
+                    ]),
+                    ['', '', '', '', 'Expenses Total', formatCurrency(report.expenseTotal)],
+                  ]
+            }
+            empty="No expenses in this period"
           />
 
           <ReportTable

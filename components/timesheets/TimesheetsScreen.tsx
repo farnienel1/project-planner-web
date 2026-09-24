@@ -15,7 +15,9 @@ import type { TimesheetDraft } from '@/lib/timesheets/timesheetDraft'
 import {
   awaitingManagerSignOff,
   isTimesheetFullyApproved,
+  SIGNED_OFF_EDIT_NOTE,
 } from '@/lib/timesheets/timesheetApprovalPolicy'
+import { applyWeeklyReportOverride } from '@/lib/timesheets/weeklyReportOverride'
 import { teamTimesheetUsers, subjectForUser } from '@/lib/timesheets/timesheetWeekUtils'
 import { formatPaymentPeriodLine, periodStartKey } from '@/lib/timesheets/paymentRunCopy'
 import { collectTimesheetPayroll } from '@/lib/timesheets/timesheetPayrollCollector'
@@ -203,9 +205,27 @@ export function TimesheetsScreen({
           history,
           scheduleOptions,
         })
+        const agreed = applyWeeklyReportOverride({
+          draft,
+          user: member,
+          viewer: user,
+          weekStart: periodStart,
+          weekEnd: periodEnd,
+          bookings,
+          managerSiteBookings,
+          operatives,
+          projects,
+          smallWorks,
+          history,
+          payrollPolicy,
+          payrollPolicyPrior,
+          payrollPolicyEffectiveFrom,
+          scheduleOptions,
+          timeZone,
+        })
         const lines = invoiceLinesForTimesheet({
           payroll,
-          draft,
+          draft: agreed,
           timeZone,
           extrasMode: 'export',
         })
@@ -266,11 +286,29 @@ export function TimesheetsScreen({
         if (!drafts.get(member.id)) continue
         const full = await loadTimesheetDraft(organization.id, member.id, periodStart, timeZone)
         if (!full.operativeSignedAt) continue
+        const agreed = applyWeeklyReportOverride({
+          draft: { ...full, exportedAt: new Date() },
+          user: member,
+          viewer: user,
+          weekStart: periodStart,
+          weekEnd: periodEnd,
+          bookings,
+          managerSiteBookings,
+          operatives,
+          projects,
+          smallWorks,
+          history,
+          payrollPolicy,
+          payrollPolicyPrior,
+          payrollPolicyEffectiveFrom,
+          scheduleOptions,
+          timeZone,
+        })
         await saveTimesheetDraft({
           organizationId: organization.id,
           userId: member.id,
           weekStart: periodStart,
-          draft: { ...full, exportedAt: new Date() },
+          draft: agreed,
           timeZone,
         })
       }
@@ -297,9 +335,9 @@ export function TimesheetsScreen({
         : 'No timesheets awaiting sign-off'
   const emptyDescription =
     teamTab === 'exported'
-      ? 'Exported timesheets stay here for years after a line manager emails and exports them. Generating an invoice does not move a sheet here.'
+      ? 'Exported timesheets stay here for years. Open a row to edit agreed days, price work or expenses; those changes feed the weekly report.'
       : teamTab === 'signed'
-        ? 'Counter-signed timesheets ready to export will appear here.'
+        ? `Counter-signed and ready. Email and export sends timesheet PDFs to your email for filing. ${SIGNED_OFF_EDIT_NOTE}`
         : 'People appear here only after they have signed their own timesheet. Unsigned booked hours stay on My Timesheets until they sign.'
 
   if (teamTab === 'exported') {
@@ -375,6 +413,7 @@ export function TimesheetsScreen({
       </div>
       {teamTab === 'signed' ? (
         <div className="stack" style={{ gap: 8 }}>
+          <p className="muted small">{SIGNED_OFF_EDIT_NOTE}</p>
           <button
             type="button"
             disabled={exporting}

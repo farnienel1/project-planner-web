@@ -25,8 +25,11 @@ import {
   isTimesheetFullyApproved,
   postSignExtraWarningCopy,
   requiresLineManagerCounterSign,
+  SIGNED_OFF_EDIT_NOTE,
   userHasLineManager,
 } from '@/lib/timesheets/timesheetApprovalPolicy'
+import { applyWeeklyReportOverride } from '@/lib/timesheets/weeklyReportOverride'
+import { hasAdminAccess } from '@/lib/permissions'
 import {
   notifyTimesheetPendingManagerSignoff,
   notifyTimesheetSignedByManager,
@@ -72,6 +75,7 @@ import {
   extraFormJobSuggestions,
   extraFormManagerSuggestions,
   isTimesheetAgreedManagerCandidate,
+  reportsToManager,
   subjectForUser,
   timesheetReceiptStoredName,
 } from '@/lib/timesheets/timesheetWeekUtils'
@@ -205,8 +209,15 @@ export function TimesheetPeriodPage({
   )
 
   const needsCounterSign = requiresLineManagerCounterSign(subjectUser)
-  const canManagerReview =
-    mode === 'review' && userHasLineManager(subjectUser) && !draft.managerSignedAt && Boolean(draft.operativeSignedAt)
+  const canManagerReview = (() => {
+    if (mode !== 'review' || !viewer) return false
+    const isAdmin = hasAdminAccess(viewer) || viewer.isSuperAdmin || viewer.role === 'admin'
+    const isLineManager = reportsToManager(subjectUser, viewer.id)
+    if (draft.exportedAt) {
+      return (isAdmin || isLineManager) && isTimesheetFullyApproved(draft, subjectUser)
+    }
+    return userHasLineManager(subjectUser) && !draft.managerSignedAt && Boolean(draft.operativeSignedAt)
+  })()
   const managerHasSigned = Boolean(draft.managerSignedAt)
   const fullyApproved = isTimesheetFullyApproved(draft, subjectUser)
   const extrasTotal = priceWorkTotal(draft, managerHasSigned, canManagerReview)
@@ -228,16 +239,51 @@ export function TimesheetPeriodPage({
   const persist = useCallback(
     async (next: TimesheetDraft) => {
       if (!organization?.id) return
-      setDraft(next)
+      const withOverride = applyWeeklyReportOverride({
+        draft: next,
+        user: subjectUser,
+        viewer,
+        weekStart: periodStart,
+        weekEnd: periodEnd,
+        bookings,
+        managerSiteBookings,
+        operatives,
+        projects,
+        smallWorks,
+        history,
+        payrollPolicy,
+        payrollPolicyPrior,
+        payrollPolicyEffectiveFrom,
+        scheduleOptions,
+        timeZone,
+      })
+      setDraft(withOverride)
       await saveTimesheetDraft({
         organizationId: organization.id,
         userId: subjectUser.id,
         weekStart: periodStart,
-        draft: next,
+        draft: withOverride,
         timeZone,
       })
     },
-    [organization?.id, subjectUser.id, periodStart, timeZone]
+    [
+      organization?.id,
+      subjectUser,
+      viewer,
+      periodStart,
+      periodEnd,
+      bookings,
+      managerSiteBookings,
+      operatives,
+      projects,
+      smallWorks,
+      history,
+      payrollPolicy,
+      payrollPolicyPrior,
+      payrollPolicyEffectiveFrom,
+      scheduleOptions,
+      timeZone,
+    ]
   )
 
   useEffect(() => {
@@ -719,6 +765,10 @@ export function TimesheetPeriodPage({
           ) : null}
 
           {fullyApproved ? (
+            <>
+            {needsCounterSign ? (
+              <p className="text-[13px] text-[var(--ink3)]">{SIGNED_OFF_EDIT_NOTE}</p>
+            ) : null}
             <button
               type="button"
               disabled={busy}
@@ -727,6 +777,7 @@ export function TimesheetPeriodPage({
             >
               Generate Invoice
             </button>
+            </>
           ) : (
             <div className="space-y-2">
               <div className="w-full rounded-xl bg-[#D1D1D6] py-3.5 text-center text-[16px] font-semibold text-slate-500">
@@ -783,8 +834,11 @@ export function TimesheetPeriodPage({
             ) : null}
           </div>
           {fullyApproved ? (
-            <div className="rounded-xl bg-green-100 py-3.5 text-center text-[16px] font-semibold text-green-700">
-              Signed off
+            <div className="space-y-2">
+              <div className="rounded-xl bg-green-100 py-3.5 text-center text-[16px] font-semibold text-green-700">
+                Signed off
+              </div>
+              <p className="text-[13px] text-[var(--ink3)]">{SIGNED_OFF_EDIT_NOTE}</p>
             </div>
           ) : userHasLineManager(subjectUser) && !draft.managerSignedAt ? (
             <div className="space-y-2">

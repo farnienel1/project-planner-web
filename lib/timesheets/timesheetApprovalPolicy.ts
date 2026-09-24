@@ -70,6 +70,7 @@ export function clearSignatures(draft: TimesheetDraft): TimesheetDraft {
     managerSignedByUserId: null,
     managerSignatureImageBase64: null,
     exportedAt: null,
+    weeklyReportOverride: null,
     payrollLineReviews: {},
     expenseEntries: draft.expenseEntries.map((entry) => ({
       ...entry,
@@ -89,6 +90,10 @@ export function hoursWarningCopy(user: User): string {
     ? "If you don't agree with the hours shown, contact your line manager to amend your booking schedule before signing. Agreed changes appear on a new timesheet."
     : "If you don't agree with the hours shown, amend your booking schedule before signing. Agreed changes appear on a new timesheet."
 }
+
+/** Shown under Signed off. Exact copy shared with iOS. */
+export const SIGNED_OFF_EDIT_NOTE =
+  'To edit this timesheet, please go to the signed off timesheets page, export it and then edit within the exported timesheets tab.'
 
 /** iOS MyTimesheetView.postSignWarningMessage — only used once the sheet is fully approved. */
 export function postSignExtraWarningCopy(user: User, draft: TimesheetDraft): string {
