@@ -9,6 +9,7 @@ import {
   loadTimesheetDraft,
   loadTimesheetDrafts,
   saveTimesheetDraft,
+  timesheetSourceDocumentId,
   type ExportedTimesheetHistoryRow,
 } from '@/lib/timesheets/timesheetStorage'
 import type { TimesheetDraft } from '@/lib/timesheets/timesheetDraft'
@@ -44,6 +45,7 @@ import type { Booking, Operative, Project, User } from '@/types'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import { LoadingSpinner } from '@/components/dashboard/PageShell'
 import { LONDON_TIME_ZONE } from '@/lib/ios-parity/londonTime'
+import { timesheetsTeamHref } from '@/lib/timesheets/timesheetRoutes'
 import { computeInvoicingPeriod } from '@/lib/warnings/warningLookahead'
 import { formatStampInZone } from '@/lib/orgTime/zoneTime'
 
@@ -104,6 +106,7 @@ export function TimesheetsScreen({
   const [recordsLoading, setRecordsLoading] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [exportMessage, setExportMessage] = useState<string | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
 
   const roster = useMemo(() => {
     const base = user ? teamTimesheetUsers(user, users) : []
@@ -123,16 +126,19 @@ export function TimesheetsScreen({
       return
     }
     setRecordsLoading(true)
+    setLoadError(null)
     try {
       if (teamTab === 'exported') {
         setExportedRows(await loadExportedTimesheetHistory({ organizationId: organization.id, users: roster }))
       } else {
-        setDrafts(await loadTimesheetDrafts(organization.id, userIds, periodStart, timeZone))
+        setDrafts(await loadTimesheetDrafts(organization.id, userIds, periodStart, timeZone, periodEnd))
       }
+    } catch {
+      setLoadError('Timesheets did not finish loading. Check the connection and try again.')
     } finally {
       setRecordsLoading(false)
     }
-  }, [organization?.id, roster, periodStart, timeZone, teamTab])
+  }, [organization?.id, roster, periodStart, periodEnd, timeZone, teamTab])
 
   useEffect(() => {
     void reload()
@@ -284,7 +290,8 @@ export function TimesheetsScreen({
       }
       for (const member of visible) {
         if (!drafts.get(member.id)) continue
-        const full = await loadTimesheetDraft(organization.id, member.id, periodStart, timeZone)
+        const full = await loadTimesheetDraft(organization.id, member.id, periodStart, timeZone, periodEnd)
+        const documentId = timesheetSourceDocumentId(full)
         if (!full.operativeSignedAt) continue
         const agreed = applyWeeklyReportOverride({
           draft: { ...full, exportedAt: new Date() },
@@ -310,6 +317,7 @@ export function TimesheetsScreen({
           weekStart: periodStart,
           draft: agreed,
           timeZone,
+          documentId,
         })
       }
       setExportMessage(
@@ -317,7 +325,7 @@ export function TimesheetsScreen({
           ? `Emailed ${pdfAttachments.length} to ${recipientEmail}. Storage backup skipped: ${failed.join(', ')}.`
           : `Emailed ${pdfAttachments.length} timesheet${pdfAttachments.length === 1 ? '' : 's'} to ${recipientEmail} for filing.`
       )
-      router.replace('/dashboard/timesheets?surface=team&tab=exported')
+      router.replace(timesheetsTeamHref({ tab: 'exported' }))
     } catch (error) {
       setExportMessage(error instanceof Error ? error.message : 'Export failed.')
     } finally {
@@ -326,6 +334,18 @@ export function TimesheetsScreen({
   }
 
   if (loading || recordsLoading) return <LoadingSpinner />
+
+  if (loadError) {
+    return (
+      <div className="empty card pad">
+        <h3>Timesheets did not load</h3>
+        <p>{loadError}</p>
+        <button type="button" className="btn sm" onClick={() => void reload()}>
+          Try again
+        </button>
+      </div>
+    )
+  }
 
   const emptyTitle =
     teamTab === 'exported'
@@ -368,7 +388,11 @@ export function TimesheetsScreen({
               timeZone={timeZone}
               onClick={() =>
                 router.push(
-                  `/dashboard/timesheets?surface=team&tab=exported&user=${row.user.id}&period=${periodStartKey(period.start, timeZone)}`
+                  timesheetsTeamHref({
+                    tab: 'exported',
+                    user: row.user.id,
+                    period: periodStartKey(period.start, timeZone),
+                  })
                 )
               }
             />
@@ -404,7 +428,11 @@ export function TimesheetsScreen({
               summary={summary}
               onClick={() =>
                 router.push(
-                  `/dashboard/timesheets?surface=team&tab=${teamTab}&user=${member.id}&period=${periodStartKey(periodStart, timeZone)}`
+                  timesheetsTeamHref({
+                    tab: teamTab,
+                    user: member.id,
+                    period: periodStartKey(periodStart, timeZone),
+                  })
                 )
               }
             />

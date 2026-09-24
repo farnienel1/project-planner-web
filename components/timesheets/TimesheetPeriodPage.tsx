@@ -4,7 +4,7 @@
  */
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Booking, Operative, Project, User } from '@/types'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import {
@@ -53,7 +53,7 @@ import {
   timesheetHoursRateLine,
   type TimesheetPayrollLineItem,
 } from '@/lib/timesheets/timesheetPayrollCollector'
-import { loadTimesheetDraft, saveTimesheetDraft } from '@/lib/timesheets/timesheetStorage'
+import { loadTimesheetDraft, saveTimesheetDraft, timesheetSourceDocumentId } from '@/lib/timesheets/timesheetStorage'
 import { invoiceLinesForTimesheet, invoiceLinesTotal, invoiceRateChangeNotes } from '@/lib/timesheets/timesheetExport'
 import { emptyDayRateHistory, type OperativeDayRateHistoryCollection } from '@/lib/timesheets/dayRateHistoryStorage'
 import {
@@ -146,6 +146,7 @@ export function TimesheetPeriodPage({
   const { user: viewer, organization } = useAuthStore()
   const { users } = useOrgUserStore()
   const [draft, setDraft] = useState<TimesheetDraft>(emptyTimesheetDraft())
+  const sourceDocumentId = useRef<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -264,6 +265,7 @@ export function TimesheetPeriodPage({
         weekStart: periodStart,
         draft: withOverride,
         timeZone,
+        documentId: sourceDocumentId.current,
       })
     },
     [
@@ -290,9 +292,11 @@ export function TimesheetPeriodPage({
     if (!organization?.id) return
     let cancelled = false
     setLoading(true)
-    loadTimesheetDraft(organization.id, subjectUser.id, periodStart, timeZone)
+    loadTimesheetDraft(organization.id, subjectUser.id, periodStart, timeZone, periodEnd)
       .then((loaded) => {
-        if (!cancelled) setDraft(applySelfApprovalIfNoLineManager(loaded, subjectUser))
+        if (cancelled) return
+        sourceDocumentId.current = timesheetSourceDocumentId(loaded)
+        setDraft(applySelfApprovalIfNoLineManager(loaded, subjectUser))
       })
       .catch((err: unknown) => {
         if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load timesheet')
@@ -303,7 +307,7 @@ export function TimesheetPeriodPage({
     return () => {
       cancelled = true
     }
-  }, [organization?.id, subjectUser.id, periodStart, timeZone, subjectUser])
+  }, [organization?.id, subjectUser.id, periodStart, periodEnd, timeZone, subjectUser])
 
   const beginExtra = (kind: 'priceWork' | 'expense') => {
     if (fullyApproved) {

@@ -140,10 +140,21 @@ const TOPICS: Topic[] = [
     intro: 'Sign your own sheet first. Line managers only see it after that.',
     articles: [
       {
+        id: 'hub',
+        title: 'Timesheets',
+        summary: 'The main page for your sheet and your team’s sheets.',
+        href: '/dashboard/timesheets',
+        body: [
+          'The Timesheets item in the left menu always opens this main page.',
+          'My timesheets is your own pay run. User timesheets is where a line manager counter-signs after the operative has signed.',
+          'On My timesheets or User timesheets, the Timesheets button at the top returns to this main page.',
+        ],
+      },
+      {
         id: 'mine',
         title: 'My Timesheets',
         summary: 'Day-by-day hours, extras, sign, then invoice.',
-        href: '/dashboard/timesheets?surface=mine',
+        href: '/dashboard/timesheets/mine',
         body: [
           'Open the current pay run. Each day shows the job number and name, hours, day rate, and overtime for that day.',
           'Add Price Work and Expenses before you sign. Signing after extras means you must re-sign.',
@@ -157,7 +168,7 @@ const TOPICS: Topic[] = [
         id: 'team',
         title: 'User Timesheets',
         summary: 'Awaiting sign-off only after the user has signed.',
-        href: '/dashboard/timesheets?surface=team&tab=awaiting',
+        href: '/dashboard/timesheets/team?tab=awaiting',
         body: [
           'A timesheet does not appear in Awaiting sign-off until that person has signed their own sheet.',
           'Tap a person to open their timesheet on a new page.',
