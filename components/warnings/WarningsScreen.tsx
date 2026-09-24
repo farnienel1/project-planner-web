@@ -76,8 +76,8 @@ function UnbookedDayCard({
       </div>
       <div className="card-b rows">
         <p className="small" style={{ marginBottom: 4 }}>
-          {people.length} {people.length === 1 ? 'person is' : 'people are'} missing hours on{' '}
-          <b>{formatLongDay(date)}</b> and are below the standard paid day.
+          {people.length} {people.length === 1 ? 'person is' : 'people are'} not booked on{' '}
+          <b>{formatLongDay(date)}</b>.
         </p>
         {parsed.map((person) => (
           <div key={person.id} className="ritem accent" data-hue="warn" style={{ cursor: 'default' }}>
