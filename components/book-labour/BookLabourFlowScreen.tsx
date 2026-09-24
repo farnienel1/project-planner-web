@@ -108,6 +108,13 @@ export function BookLabourFlowScreen({
 
   const dateParam = dateProp || searchParams.get('date') || dayKey(new Date())
   const from = fromProp || searchParams.get('from')
+  const focusedUserIds = useMemo(() => {
+    const raw = searchParams.get('focus') || ''
+    return raw
+      .split(',')
+      .map((id) => id.trim())
+      .filter(Boolean)
+  }, [searchParams])
   const day = useMemo(
     () => (dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam) ? dateFromDayKey(dateParam) : dateFromDayKey(dayKey(new Date()))),
     [dateParam]
@@ -173,8 +180,9 @@ export function BookLabourFlowScreen({
         managerSiteBookings,
         holidays,
         payrollPolicy: payroll,
+        focusedUserIds,
       }),
-    [day, users, operatives, bookings, managerSiteBookings, holidays, payroll]
+    [day, users, operatives, bookings, managerSiteBookings, holidays, payroll, focusedUserIds]
   )
 
   const allWorks = useMemo(() => [...projects, ...smallWorks], [projects, smallWorks])

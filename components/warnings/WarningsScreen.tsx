@@ -17,7 +17,7 @@ import type { Operative, User } from '@/types'
 import { initialsFrom } from '@/lib/daily-overview/buildDailyOverview'
 import { dayKey } from '@/lib/ios-parity/londonTime'
 
-type FilterChip = 'all' | 'clashes' | 'unbooked' | 'materials'
+type FilterChip = 'all' | 'clashes' | 'unbooked' | 'materials' | 'qualifications'
 
 const AVATAR_COLORS = ['#2C5BBF', '#4B7A5C', '#7A4B8C', '#B35614', '#2563EB', '#9E2A2A']
 
@@ -96,7 +96,9 @@ function UnbookedDayCard({
         <div className="row wrap" style={{ paddingTop: 4 }}>
           {canBook ? (
             <Link
-              href={`/dashboard/book-labour?date=${dayKey(date)}&from=warnings`}
+              href={`/dashboard/book-labour?date=${dayKey(date)}&from=warnings&focus=${encodeURIComponent(
+                people.map((person) => person.userId || person.operativeId).filter(Boolean).join(',')
+              )}`}
               className="btn primary"
             >
               Book labour for this day
@@ -209,21 +211,24 @@ export function WarningsScreen({
 
   const unbookedGroups = useMemo(() => groupUnbookedWarningsByDay(unbookedWarnings), [unbookedWarnings])
   const clashCount = clashWarnings.length + managerClashWarnings.length
-  const highCount = clashCount + unbookedWarnings.length
-  const lowCount = materialWarnings.length
-  const coreCount = highCount + lowCount
-  const allCount = coreCount + qualificationWarnings.length + unverifiedWarnings.length
+  const qualificationCount = qualificationWarnings.length + unverifiedWarnings.length
+  const highCount = clashWarnings.length + unbookedWarnings.length
+  const mediumCount = managerClashWarnings.length
+  const lowCount = materialWarnings.length + qualificationCount
+  const allCount = highCount + mediumCount + lowCount
 
   const chips: { value: FilterChip; label: string; count: number }[] = [
     { value: 'all', label: 'All', count: allCount },
     { value: 'clashes', label: 'Clashes', count: clashCount },
     { value: 'unbooked', label: 'Unbooked', count: unbookedWarnings.length },
-    { value: 'materials', label: 'Materials', count: lowCount },
+    { value: 'materials', label: 'Materials', count: materialWarnings.length },
+    { value: 'qualifications', label: 'Qualifications', count: qualificationCount },
   ]
 
   const showClashes = filter === 'all' || filter === 'clashes'
   const showUnbooked = filter === 'all' || filter === 'unbooked'
   const showMaterials = filter === 'all' || filter === 'materials'
+  const showQualifications = filter === 'all' || filter === 'qualifications'
 
   const handleAccept = async (clash: { id: string; bookingAId: string; bookingBId: string }) => {
     setBusyId(clash.id)
@@ -270,13 +275,17 @@ export function WarningsScreen({
         </div>
       </div>
 
-      {coreCount > 0 ? (
+      {allCount > 0 ? (
         <section className="hero" data-hue="red" style={{ padding: '22px 26px' }}>
           <div className="relative z-[1]">
             <div className="row" style={{ alignItems: 'flex-start' }}>
               <div className="grow">
                 <p className="eb">Active issues</p>
-                <div className="big" style={{ fontSize: 28 }}>{coreCount} need attention</div>
+                <div className="big" style={{ fontSize: 28 }}>{allCount} need attention</div>
+                <p className="small" style={{ marginTop: 8, maxWidth: 640 }}>
+                  High: operative booking clashes &amp; unbooked labour · Medium: manager/admin overlaps · Low:
+                  materials and qualifications
+                </p>
               </div>
               {canBook ? (
                 <Link href="/dashboard/book-labour?from=warnings" className="btn hbtn solid">
@@ -288,16 +297,17 @@ export function WarningsScreen({
               <button type="button" className="st" onClick={() => setFilter('all')}>
                 <b>{highCount}</b>
                 <span>High</span>
-                <div className="xs" style={{ opacity: 0.75, marginTop: 2 }}>Booking clashes & unbooked labour</div>
+                <div className="xs" style={{ opacity: 0.75, marginTop: 2 }}>Operative booking clashes & unbooked labour</div>
               </button>
-              <div className="st">
-                <b>0</b>
+              <button type="button" className="st" onClick={() => setFilter('clashes')}>
+                <b>{mediumCount}</b>
                 <span>Medium</span>
-              </div>
-              <button type="button" className="st" onClick={() => setFilter('materials')}>
+                <div className="xs" style={{ opacity: 0.75, marginTop: 2 }}>Manager/admin overlaps</div>
+              </button>
+              <button type="button" className="st" onClick={() => setFilter('all')}>
                 <b>{lowCount}</b>
                 <span>Low</span>
-                <div className="xs" style={{ opacity: 0.75, marginTop: 2 }}>Materials not ordered by cut-off</div>
+                <div className="xs" style={{ opacity: 0.75, marginTop: 2 }}>Materials and qualifications</div>
               </button>
             </div>
           </div>
@@ -333,8 +343,8 @@ export function WarningsScreen({
               <p className="text-[40px] text-[#0F6E56]">✓</p>
               <p className="mt-2 text-[18px] font-semibold">No active warnings</p>
               <p className="mx-auto mt-2 max-w-md text-[14px] text-[var(--ink3)]">
-                High: operative, manager, and admin booking clashes plus unbooked labour. Tick a clash to note it on
-                the weekly report. Low: material orders not placed by 16:00.
+                High: operative booking clashes and unbooked labour. Medium: manager/admin overlaps (tick for weekly
+                report). Low: materials and qualifications.
               </p>
             </>
           )}
@@ -353,24 +363,24 @@ export function WarningsScreen({
           ))
         : null}
 
-      {filter === 'all'
+      {showQualifications
         ? qualificationWarnings.map((warning) => (
             <LegacyCard
               key={warning.id}
-              title="Qualification expiry"
+              title={warning.title}
               message={warning.message}
               severity={warning.severity}
             />
           ))
         : null}
 
-      {filter === 'all'
+      {showQualifications
         ? unverifiedWarnings.map((warning) => (
             <LegacyCard
               key={warning.id}
               title="Unverified operative"
               message={warning.message}
-              severity="medium"
+              severity="low"
             />
           ))
         : null}
@@ -380,6 +390,7 @@ export function WarningsScreen({
             <ClashWarningCard
               key={warning.id}
               title="Manager booking clash"
+              severity="medium"
               personName={warning.personName}
               date={warning.date}
               entries={warning.entries}
