@@ -5,7 +5,7 @@
 'use client'
 
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { CalendarDaysIcon, ClockIcon, UserGroupIcon } from '@heroicons/react/24/solid'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useBookingStore } from '@/lib/stores/bookingStore'
@@ -48,6 +48,14 @@ import {
 import { canAccessMyTimesheetsWithPolicy, shouldAppearInOperativeTimesheetRoster } from '@/lib/timesheets/timesheetPayrollPolicy'
 import { teamTimesheetUsers } from '@/lib/timesheets/timesheetWeekUtils'
 import {
+  TIMESHEETS_HUB_PATH,
+  legacyTimesheetRedirect,
+  timesheetSurfaceFromPath,
+  timesheetLinkShouldHardReset,
+  timesheetsMineHref,
+  timesheetsTeamHref,
+} from '@/lib/timesheets/timesheetRoutes'
+import {
   emptyDayRateHistory,
   loadOperativeDayRateHistory,
   type OperativeDayRateHistoryCollection,
@@ -77,8 +85,10 @@ const TEAM_TABS: Array<{ id: TeamTimesheetTab; label: string; help: string }> = 
 
 export function TimesheetsHub() {
   const router = useRouter()
+  const pathname = usePathname()
   const searchParams = useSearchParams()
-  const surface = searchParams.get('surface')
+  const pathSurface = timesheetSurfaceFromPath(pathname)
+  const surface = pathSurface === 'hub' ? null : pathSurface
   const periodParam = searchParams.get('period')
   const userParam = searchParams.get('user')
   const tabParam = (searchParams.get('tab') as TeamTimesheetTab | null) || 'awaiting'
@@ -100,6 +110,12 @@ export function TimesheetsHub() {
   const showTeam = canAccessOperativeTimesheets(user, usersLoading, users)
   const showDisabled = shouldShowTimesheetsDisabledMessage(user, showMine)
   const canOpen = canAccessTimesheetsSurface(user, usersLoading, users)
+
+  useEffect(() => {
+    if (pathSurface !== 'hub') return
+    const next = legacyTimesheetRedirect(searchParams.get('surface'), searchParams.toString())
+    if (next) router.replace(next)
+  }, [pathSurface, searchParams, router])
 
   useEffect(() => {
     if (!organization?.id) return
@@ -142,7 +158,10 @@ export function TimesheetsHub() {
     }
   }, [periodParam, invoicing, currentPeriod, timeZone])
 
+  const legacyRedirect = pathSurface === 'hub' ? legacyTimesheetRedirect(searchParams.get('surface'), searchParams.toString()) : null
+
   if (!user) return null
+  if (legacyRedirect) return <p className="muted">Opening timesheets…</p>
   if (!canOpen) {
     return (
       <div className="empty card pad" data-hue="ts">
@@ -174,7 +193,7 @@ export function TimesheetsHub() {
     return (
       <div className="space-y-5 pb-10">
         <TimesheetsNavBar
-          href={periodParam ? '/dashboard/timesheets?surface=mine' : '/dashboard/timesheets'}
+          href={periodParam ? timesheetsMineHref() : TIMESHEETS_HUB_PATH}
           title={periodParam ? 'Timesheet' : 'My Timesheets'}
         />
         {periodParam ? (
@@ -200,11 +219,7 @@ export function TimesheetsHub() {
     return (
       <div className="space-y-5 pb-10">
         <TimesheetsNavBar
-          href={
-            userParam
-              ? `/dashboard/timesheets?surface=team&tab=${tab}`
-              : '/dashboard/timesheets'
-          }
+          href={userParam ? timesheetsTeamHref({ tab }) : TIMESHEETS_HUB_PATH}
           title={selectedUser ? 'Review Timesheet' : hasAdminAccess(user) ? 'User Timesheets' : 'Operative Timesheets'}
         />
         {selectedUser ? (
@@ -218,7 +233,7 @@ export function TimesheetsHub() {
                   key={item.id}
                   type="button"
                   className={tab === item.id ? 'on' : ''}
-                  onClick={() => router.replace(`/dashboard/timesheets?surface=team&tab=${item.id}`)}
+                  onClick={() => router.replace(timesheetsTeamHref({ tab: item.id }))}
                 >
                   {item.label}
                 </button>
@@ -285,7 +300,7 @@ export function TimesheetsHub() {
               type="button"
               className="card pad click"
               data-hue="blue"
-              onClick={() => router.push('/dashboard/timesheets?surface=mine')}
+              onClick={() => router.push(timesheetsMineHref())}
               style={{ border: 0, textAlign: 'left' }}
             >
               <div className="row">
@@ -320,7 +335,7 @@ export function TimesheetsHub() {
               periodEnd={currentPeriod.end}
               invoicing={invoicing}
               timeZone={timeZone}
-              onClick={() => router.push('/dashboard/timesheets?surface=team&tab=awaiting')}
+              onClick={() => router.push(timesheetsTeamHref({ tab: 'awaiting' }))}
             />
           ) : null}
         </div>
@@ -425,7 +440,7 @@ function MineTimesheetsList({
         detail="Review bookings, add extras, and sign your timesheet."
         tint="text-[var(--blue)] bg-[var(--blue-t)]"
         onClick={() =>
-          router.push(`/dashboard/timesheets?surface=mine&period=${periodStartKey(currentPeriod.start, timeZone)}`)
+          router.push(timesheetsMineHref(periodStartKey(currentPeriod.start, timeZone)))
         }
       />
       {pending.length > 0 ? (
@@ -440,7 +455,7 @@ function MineTimesheetsList({
               detail="You signed — waiting for your line manager to counter-sign."
               tint="text-amber-600 bg-amber-50"
               onClick={() =>
-                router.push(`/dashboard/timesheets?surface=mine&period=${periodStartKey(period.start, timeZone)}`)
+                router.push(timesheetsMineHref(periodStartKey(period.start, timeZone)))
               }
             />
           ))}
@@ -460,7 +475,7 @@ function MineTimesheetsList({
                 detail="View breakdown, signatures, and generate invoice again."
                 tint="text-slate-500 bg-slate-100"
                 onClick={() =>
-                  router.push(`/dashboard/timesheets?surface=mine&period=${periodStartKey(period.start, timeZone)}`)
+                  router.push(timesheetsMineHref(periodStartKey(period.start, timeZone)))
                 }
               />
             )
@@ -475,7 +490,18 @@ function TimesheetsNavBar({ href, title }: { href: string; title: string }) {
   const router = useRouter()
   return (
     <div className="phead" data-hue="ts">
-      <button type="button" onClick={() => router.push(href)} className="btn sm ghost">
+      <button
+        type="button"
+        onClick={() => {
+          if (timesheetLinkShouldHardReset(window.location.pathname, window.location.search, href)) {
+            const target = new URL(href, window.location.origin)
+            window.location.assign(`${target.pathname}${target.search}`)
+            return
+          }
+          router.push(href)
+        }}
+        className="btn sm ghost"
+      >
         Timesheets
       </button>
       <div>
@@ -554,7 +580,8 @@ function ManagerTimesheetsTile({
       organizationId,
       roster.map((member) => member.id),
       periodStart,
-      timeZone
+      timeZone,
+      periodEnd
     ).then((drafts) => {
       if (cancelled) return
       let awaiting = 0
@@ -567,11 +594,13 @@ function ManagerTimesheetsTile({
         else if (awaitingManagerSignOff(draft, member)) awaiting += 1
       }
       setStats({ awaiting, signed, exported })
+    }).catch(() => {
+      if (!cancelled) setStats({ awaiting: 0, signed: 0, exported: 0 })
     })
     return () => {
       cancelled = true
     }
-  }, [organizationId, roster, periodStart, timeZone])
+  }, [organizationId, roster, periodStart, periodEnd, timeZone])
 
   return (
     <button type="button" className="card pad click" data-hue="ts" onClick={onClick} style={{ border: 0, textAlign: 'left' }}>
