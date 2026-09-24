@@ -121,6 +121,7 @@ test('buildDailyOverview groups jobs and weekday unbooked labour', () => {
     users: [
       user({ id: 'U1', email: 'ada@x.com', firstName: 'Ada', surname: 'Booked' }),
       user({ id: 'U2', email: 'bob@x.com', firstName: 'Bob', surname: 'Free' }),
+      user({ id: 'U3', email: 'pat@x.com', firstName: 'Pat', surname: 'Pending', passwordSet: false }),
     ],
     operatives: [
       {
@@ -136,6 +137,19 @@ test('buildDailyOverview groups jobs and weekday unbooked labour', () => {
         createdAt: day,
         updatedAt: day,
       },
+      {
+        id: 'OP2',
+        firstName: 'Robert',
+        lastName: 'Roster',
+        email: 'bob@x.com',
+        startDate: day,
+        hourlyRate: 0,
+        skills: [],
+        qualifications: [],
+        isActive: true,
+        createdAt: day,
+        updatedAt: day,
+      },
     ],
   })
   assert.equal(model.jobsCount, 1)
@@ -143,6 +157,10 @@ test('buildDailyOverview groups jobs and weekday unbooked labour', () => {
   assert.equal(model.projectCards[0].people.length, 1)
   assert.equal(model.projectCards[0].people[0].name, 'Ada Booked')
   assert.ok(model.unbookedNames.some((n) => n.startsWith('Bob Free')))
+  assert.equal(
+    model.unbookedNames.some((n) => n.includes('Robert') || n.includes('Pat')),
+    false
+  )
   assert.equal(model.empty, false)
 })
 

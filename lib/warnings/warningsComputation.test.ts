@@ -7,7 +7,11 @@ import { computeUnbookedLabourWarnings } from './unbookedLabourWarnings.ts'
 import { computeOperativeBookingClashWarnings } from '../scheduling/bookingClashUtils.ts'
 import { computeManagerBookingClashWarnings } from './managerClashWarnings.ts'
 import { computeMissedMaterialOrderWarnings } from './materialOrderWarnings.ts'
-import { generateOrgWarnings } from './generateOrgWarnings.ts'
+import {
+  computeQualificationExpiryWarnings,
+  computeUnverifiedOperativeWarnings,
+  generateOrgWarnings,
+} from './generateOrgWarnings.ts'
 import { londonMidnight, dayKey } from '../ios-parity/londonTime.ts'
 
 const WED = new Date('2026-09-16T12:00:00+01:00')
@@ -498,6 +502,106 @@ test('materials cutoff uses the configured hour and minute, not a hardcoded 16:0
   )
 })
 
+test('pending invitees are not unbooked labour, and the card uses the app user name', () => {
+  const detection = {
+    ...DEFAULT_WARNING_DETECTION,
+    clashLookaheadMode: 'numberOfDays' as const,
+    clashLookaheadDays: 1,
+  }
+  const pending = user({
+    id: 'U-PEND',
+    email: 'pat@site.test',
+    firstName: 'Pat',
+    surname: 'Pending',
+    passwordSet: false,
+  })
+  const finished = user({
+    id: 'U-LIVE',
+    email: 'ada@site.test',
+    firstName: 'Ada',
+    surname: 'App',
+  })
+  const staleInvite = user({
+    id: 'U-OLD',
+    email: 'ada@site.test',
+    firstName: 'Old',
+    surname: 'Invite',
+    passwordSet: false,
+  })
+  const warnings = computeUnbookedLabourWarnings({
+    bookings: [],
+    operatives: [
+      operative({ id: 'OP-ADA', email: 'ada@site.test', firstName: 'Roster', lastName: 'Ada' }),
+      operative({ id: 'OP-PAT', email: 'pat@site.test', firstName: 'Roster', lastName: 'Pat' }),
+      operative({ id: 'OP-BOB', email: 'bob@site.test', firstName: 'Bob', lastName: 'Roster' }),
+    ],
+    users: [pending, staleInvite, finished],
+    holidays: [] as HolidayBooking[],
+    warningDetection: detection,
+    referenceDate: WED,
+  })
+  const names = warnings.map((row) => row.operativeName)
+  assert.deepEqual(names.sort(), ['Ada App', 'Bob Roster'])
+  const ada = warnings.find((row) => row.operativeName === 'Ada App')
+  assert.equal(ada?.userId, 'U-LIVE')
+  assert.equal(ada?.id, 'unbooked-2026-09-16-U-LIVE')
+  assert.equal(
+    computeUnverifiedOperativeWarnings(
+      [operative({ id: 'OP-PAT', email: 'pat@site.test', firstName: 'Pat', lastName: 'Pending' })],
+      [pending],
+      WED
+    ).length,
+    1
+  )
+})
+
+test('qualification warnings include already-expired quals on active operatives at low severity', () => {
+  const qual = {
+    id: 'Q1',
+    name: 'CSCS',
+    hasEndDate: true,
+    createdAt: WED,
+    updatedAt: WED,
+  }
+  const active = operative({
+    id: 'OP-Q',
+    email: 'ada@site.test',
+    firstName: 'Ada',
+    lastName: 'Qual',
+    qualifications: [qual],
+    qualificationExpiryDates: { Q1: new Date('2026-09-01T12:00:00+01:00') },
+  })
+  const expired = computeQualificationExpiryWarnings([active], WED)
+  assert.equal(expired.length, 1)
+  assert.equal(expired[0].severity, 'low')
+  assert.equal(expired[0].title, 'Qualification expired')
+  assert.match(expired[0].message, /expired \d+ days ago/)
+  assert.ok(expired[0].daysUntilExpiry < 0)
+
+  const today = computeQualificationExpiryWarnings(
+    [operative({ ...active, qualificationExpiryDates: { Q1: WED } })],
+    WED
+  )
+  assert.equal(today[0].title, 'Qualification expiry')
+  assert.match(today[0].message, /expires today/)
+
+  const soon = computeQualificationExpiryWarnings(
+    [operative({ ...active, qualificationExpiryDates: { Q1: new Date('2026-10-16T12:00:00+01:00') } })],
+    WED
+  )
+  assert.equal(soon.length, 1)
+  assert.equal(soon[0].title, 'Qualification expiry')
+
+  const later = computeQualificationExpiryWarnings(
+    [operative({ ...active, qualificationExpiryDates: { Q1: new Date('2026-10-17T12:00:00+01:00') } })],
+    WED
+  )
+  assert.equal(later.length, 0)
+
+  const inactive = computeQualificationExpiryWarnings([{ ...active, isActive: false }], WED)
+  assert.equal(inactive.length, 0)
+})
+
 test('generateOrgWarnings core count matches iOS (clashes + unbooked person-days + materials)', () => {
   const detection = {
     ...DEFAULT_WARNING_DETECTION,
@@ -520,4 +624,79 @@ test('generateOrgWarnings core count matches iOS (clashes + unbooked person-days
   assert.equal(result.unbookedWarnings.length, 1)
   assert.equal(result.coreCount, 1)
   assert.equal(result.highCount, 1)
+  assert.equal(result.mediumCount, 0)
+  assert.equal(result.lowCount, 0)
+})
+
+test('active issue count includes qualifications and counts manager overlaps as medium', () => {
+  const detection = {
+    ...DEFAULT_WARNING_DETECTION,
+    clashLookaheadMode: 'numberOfDays' as const,
+    clashLookaheadDays: 1,
+  }
+  const managerUser = user({
+    id: 'U-MGR',
+    email: 'boss@site.test',
+    firstName: 'Boss',
+    surname: 'Mgr',
+    permissions: perms({ manager: true, operativeMode: false }),
+    role: UserRole.MANAGER,
+  })
+  const pending = user({
+    id: 'U-PEND',
+    email: 'pat@site.test',
+    firstName: 'Pat',
+    surname: 'Pending',
+    passwordSet: false,
+    createdAt: WED,
+  })
+  const qualOp = operative({
+    id: 'OP-Q',
+    email: 'qual@site.test',
+    firstName: 'Ada',
+    lastName: 'Qual',
+    qualifications: [{ id: 'Q1', name: 'CSCS', hasEndDate: true, createdAt: WED, updatedAt: WED }],
+    qualificationExpiryDates: { Q1: new Date('2026-08-01T12:00:00+01:00') },
+  })
+  const result = generateOrgWarnings({
+    bookings: [booking({ id: 'B-Q', operativeId: 'OP-Q', timeSlot: 'FULL DAY' })],
+    managerSiteBookings: [
+      {
+        id: 'M1',
+        userId: 'U-MGR',
+        date: WED,
+        timeSlot: 'AM',
+        locationType: 'office',
+        createdAt: WED,
+        updatedAt: WED,
+      },
+      {
+        id: 'M2',
+        userId: 'U-MGR',
+        date: WED,
+        timeSlot: 'AM',
+        locationType: 'working_from_home',
+        createdAt: WED,
+        updatedAt: WED,
+      },
+    ],
+    operatives: [
+      operative({ id: 'OP-BOSS', email: 'boss@site.test', firstName: 'Boss', lastName: 'Mgr' }),
+      operative({ id: 'OP-PAT', email: 'pat@site.test', firstName: 'Pat', lastName: 'Pending' }),
+      qualOp,
+    ],
+    users: [managerUser, pending],
+    projects: [project()],
+    holidays: [],
+    warningDetection: detection,
+    payrollPolicy: DEFAULT_PAYROLL_POLICY,
+    referenceDate: WED,
+  })
+  assert.equal(result.managerClashWarnings.length, 1)
+  assert.equal(result.unbookedWarnings.length, 0)
+  assert.equal(result.qualificationWarnings.length, 1)
+  assert.equal(result.highCount, 0)
+  assert.equal(result.mediumCount, 1)
+  assert.equal(result.lowCount, 1)
+  assert.equal(result.coreCount, 2)
 })

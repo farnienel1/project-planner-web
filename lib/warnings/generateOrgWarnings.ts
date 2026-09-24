@@ -24,7 +24,7 @@ import {
   type UnbookedLabourWarning,
 } from '@/lib/warnings/unbookedLabourWarnings'
 import { computeMissedMaterialOrderWarnings, type MissedMaterialOrderWarning } from '@/lib/warnings/materialOrderWarnings'
-import { addLondonDays, dayKey, londonIsoWeekday, londonMidnight } from '@/lib/ios-parity/londonTime'
+import { addLondonDays, dateFromDayKey, dayKey, londonIsoWeekday, londonMidnight } from '@/lib/ios-parity/londonTime'
 
 export type QualificationExpiryWarning = {
   id: string
@@ -33,7 +33,8 @@ export type QualificationExpiryWarning = {
   qualificationName: string
   date: Date
   daysUntilExpiry: number
-  severity: 'high' | 'medium' | 'low'
+  severity: 'low'
+  title: 'Qualification expired' | 'Qualification expiry'
   message: string
 }
 
@@ -71,40 +72,61 @@ function workingDaysBetween(start: Date, end: Date): number {
   return count
 }
 
+/** Calendar months in the org zone, matching iOS `Calendar.date(byAdding: .month)`. */
+function addLondonCalendarMonths(date: Date, months: number): Date {
+  const [year, month, day] = dayKey(londonMidnight(date)).split('-').map(Number)
+  const shifted = new Date(Date.UTC(year, month - 1 + months, 1))
+  const yearOut = shifted.getUTCFullYear()
+  const monthOut = shifted.getUTCMonth()
+  const lastDay = new Date(Date.UTC(yearOut, monthOut + 1, 0)).getUTCDate()
+  const dayOut = Math.min(day, lastDay)
+  const key = `${yearOut}-${String(monthOut + 1).padStart(2, '0')}-${String(dayOut).padStart(2, '0')}`
+  return dateFromDayKey(key)
+}
+
+function signedLondonDayDelta(from: Date, to: Date): number {
+  const start = londonMidnight(from).getTime()
+  const end = londonMidnight(to).getTime()
+  return Math.round((end - start) / (24 * 60 * 60 * 1000))
+}
+
 export function computeQualificationExpiryWarnings(
   operatives: Operative[],
   referenceDate = new Date()
 ): QualificationExpiryWarning[] {
   const today = londonMidnight(referenceDate)
-  const oneMonth = addLondonDays(today, 31)
-  const todayKey = dayKey(today)
+  const oneMonth = addLondonCalendarMonths(today, 1)
   const endKey = dayKey(oneMonth)
   const warnings: QualificationExpiryWarning[] = []
 
   for (const operative of operatives) {
+    if (!operative.isActive) continue
     const names = new Map((operative.qualifications || []).map((q) => [q.id, q.name]))
     const expiries = operative.qualificationExpiryDates || {}
+    const operativeName = `${operative.firstName} ${operative.lastName}`.trim() || operative.email
     for (const [qualificationId, expiry] of Object.entries(expiries)) {
       const name = names.get(qualificationId)
       if (!name || !(expiry instanceof Date) || Number.isNaN(expiry.getTime())) continue
       const expiryDay = londonMidnight(expiry)
-      const expiryKey = dayKey(expiryDay)
-      if (expiryKey < todayKey || expiryKey > endKey) continue
-      const daysUntilExpiry = Math.max(
-        0,
-        Math.round((expiryDay.getTime() - today.getTime()) / (24 * 60 * 60 * 1000))
-      )
-      const severity: QualificationExpiryWarning['severity'] =
-        daysUntilExpiry <= 7 ? 'high' : daysUntilExpiry <= 14 ? 'medium' : 'low'
+      if (dayKey(expiryDay) > endKey) continue
+      const daysUntilExpiry = signedLondonDayDelta(today, expiryDay)
+      const ago = Math.abs(daysUntilExpiry)
+      const message =
+        daysUntilExpiry < 0
+          ? `${operativeName}'s ${name} expired ${ago} day${ago === 1 ? '' : 's'} ago`
+          : daysUntilExpiry === 0
+            ? `${operativeName}'s ${name} expires today`
+            : `${operativeName}'s ${name} expires in ${daysUntilExpiry} day${daysUntilExpiry === 1 ? '' : 's'}`
       warnings.push({
         id: `qual-${operative.id}-${qualificationId}`,
         operativeId: operative.id,
-        operativeName: `${operative.firstName} ${operative.lastName}`.trim() || operative.email,
+        operativeName,
         qualificationName: name,
         date: expiryDay,
         daysUntilExpiry,
-        severity,
-        message: `${`${operative.firstName} ${operative.lastName}`.trim() || operative.email}'s ${name} expires in ${daysUntilExpiry} day${daysUntilExpiry === 1 ? '' : 's'}`,
+        severity: 'low',
+        title: daysUntilExpiry < 0 ? 'Qualification expired' : 'Qualification expiry',
+        message,
       })
     }
   }
@@ -218,9 +240,10 @@ export function generateOrgWarnings(input: {
   const qualificationWarnings = computeQualificationExpiryWarnings(input.operatives, now)
   const unverifiedWarnings = computeUnverifiedOperativeWarnings(input.operatives, input.users, now)
 
-  const highCount = clashWarnings.length + managerClashWarnings.length + unbookedWarnings.length
-  const lowCount = materialWarnings.length
-  const coreCount = highCount + lowCount
+  const highCount = clashWarnings.length + unbookedWarnings.length
+  const mediumCount = managerClashWarnings.length
+  const lowCount = materialWarnings.length + qualificationWarnings.length + unverifiedWarnings.length
+  const coreCount = highCount + mediumCount + lowCount
 
   return {
     clashWarnings,
@@ -231,7 +254,7 @@ export function generateOrgWarnings(input: {
     unverifiedWarnings,
     coreCount,
     highCount,
-    mediumCount: 0,
+    mediumCount,
     lowCount,
   }
 }

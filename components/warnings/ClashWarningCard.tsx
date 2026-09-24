@@ -150,6 +150,7 @@ export function ClashWarningCard({
   date,
   entries,
   busy,
+  severity = 'high',
   onApprove,
   onRemove,
 }: {
@@ -158,23 +159,25 @@ export function ClashWarningCard({
   date: Date
   entries: ClashTimelineEntry[]
   busy?: boolean
+  severity?: 'high' | 'medium'
   onApprove?: () => Promise<void>
   onRemove?: (entry: ClashTimelineEntry) => Promise<void>
 }) {
   const [timelineOpen, setTimelineOpen] = useState(false)
   const analysis = useMemo(() => analyse(entries, FULL_DAY_WINDOW), [entries])
   const label = dateLabel(date)
+  const hue = severity === 'medium' ? 'warn' : 'red'
 
   return (
-    <article className="card overflow-hidden" data-hue="red">
-      <header className="card-h" data-hue="red">
+    <article className="card overflow-hidden" data-hue={hue}>
+      <header className="card-h" data-hue={hue}>
         <div className="ico-chip sm">
           <svg className="h-[18px] w-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
           </svg>
         </div>
         <p className="h2 grow" style={{ fontSize: 17 }}>{title}</p>
-        <span className="pill solid" data-hue="red">HIGH</span>
+        <span className="pill solid" data-hue={hue}>{severity === 'medium' ? 'MEDIUM' : 'HIGH'}</span>
       </header>
 
       <div className="card-b stack" style={{ gap: 12 }}>

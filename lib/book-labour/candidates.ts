@@ -144,6 +144,8 @@ export function buildBookLabourCandidates(input: {
   managerSiteBookings: ManagerSiteBooking[]
   holidays: HolidayBooking[]
   payrollPolicy?: OrgPayrollTimePolicy
+  /** User ids (or linked operative ids) named on a warning. Pending users stay out unless focused. */
+  focusedUserIds?: string[]
 }): BookLabourCandidate[] {
   const day = londonMidnight(input.day)
   const weekday = londonIsoWeekday(day)
@@ -151,6 +153,10 @@ export function buildBookLabourCandidates(input: {
 
   const policy = input.payrollPolicy ?? DEFAULT_PAYROLL_POLICY
   const required = Math.max(policy.standardPaidHours, 0)
+  const focused = new Set(input.focusedUserIds || [])
+  const isWarningFocus = (userId: string, linkedOperativeId?: string) =>
+    focused.has(userId) || (linkedOperativeId ? focused.has(linkedOperativeId) : false)
+  const bookable = (user: User) => user.passwordSet || focused.has(user.id)
   const operativesByEmail = new Map<string, Operative>()
   const operativesByName = new Map<string, Operative>()
   for (const operative of input.operatives) {
@@ -164,6 +170,7 @@ export function buildBookLabourCandidates(input: {
   const operativeOnlyUsers = input.users.filter(
     (user) =>
       user.isActive &&
+      bookable(user) &&
       user.permissions.operativeMode &&
       !user.permissions.manager &&
       !user.permissions.adminAccess &&
@@ -173,6 +180,7 @@ export function buildBookLabourCandidates(input: {
   const managerUsers = input.users.filter(
     (user) =>
       user.isActive &&
+      bookable(user) &&
       (user.permissions.manager ||
         user.permissions.adminAccess ||
         user.isSuperAdmin ||
@@ -188,7 +196,7 @@ export function buildBookLabourCandidates(input: {
     const paid =
       (linked ? operativePaidHours(input.bookings, linked.id, day, policy) : 0) +
       managerPaidHours(input.managerSiteBookings, user.id, day, policy)
-    if (paid >= required) continue
+    if (!isWarningFocus(user.id, linked?.id) && paid >= required) continue
     if (linked) claimedOperativeIds.add(linked.id)
     seen.add(user.id)
     out.push({
@@ -210,7 +218,7 @@ export function buildBookLabourCandidates(input: {
     const paid =
       managerPaidHours(input.managerSiteBookings, user.id, day, policy) +
       (linked ? operativePaidHours(input.bookings, linked.id, day, policy) : 0)
-    if (paid >= required) continue
+    if (!isWarningFocus(user.id, linked?.id) && paid >= required) continue
     if (linked) claimedOperativeIds.add(linked.id)
     out.push({
       id: user.id,
@@ -224,7 +232,12 @@ export function buildBookLabourCandidates(input: {
     })
   }
 
-  return out.sort((a, b) => a.displayName.localeCompare(b.displayName, undefined, { sensitivity: 'base' }))
+  return out.sort((a, b) => {
+    const aFocus = isWarningFocus(a.user.id, a.linkedOperative?.id)
+    const bFocus = isWarningFocus(b.user.id, b.linkedOperative?.id)
+    if (aFocus !== bFocus) return aFocus ? -1 : 1
+    return a.displayName.localeCompare(b.displayName, undefined, { sensitivity: 'base' })
+  })
 }
 
 export function bookLabourDayLine(day: Date): string {
