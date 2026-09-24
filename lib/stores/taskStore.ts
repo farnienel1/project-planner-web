@@ -132,6 +132,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
         set({ tasks, loading: false })
       } catch (error: unknown) {
         set({ error: error instanceof Error ? error.message : 'Failed to load tasks', loading: false })
+        throw error
       }
     })
   },

@@ -71,6 +71,7 @@ export const useOperativeStore = create<OperativeState>((set, get) => ({
             error: error instanceof Error ? error.message : 'Failed to load operatives',
             loading: false,
           })
+          throw error
         }
       },
       options
@@ -90,8 +91,9 @@ export const useOperativeStore = create<OperativeState>((set, get) => ({
         managers: filterRealManagers(allManagers),
         placeholderManagerCount: allManagers.filter(isPlaceholderManager).length,
       })
-    } catch (error: any) {
-      set({ error: error.message })
+    } catch (error: unknown) {
+      set({ error: error instanceof Error ? error.message : 'Failed to load managers' })
+      throw error
     }
     })
   },

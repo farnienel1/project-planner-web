@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { AppShell } from '@/components/shell/AppShell'
@@ -18,7 +18,9 @@ export default function DashboardLayout({
   children: React.ReactNode
 }) {
   const router = useRouter()
-  const { user, firebaseUser, loading, mfaPending, mfaVerified, mfaStatusKnown } = useAuthStore()
+  const { user, firebaseUser, loading, error, mfaPending, mfaVerified, mfaStatusKnown, ensureSignedInProfile } =
+    useAuthStore()
+  const profileRetryStarted = useRef(false)
   const needsMfa =
     mfaPending ||
     isMfaGateOpen(user?.id || firebaseUser?.uid) ||
@@ -38,9 +40,35 @@ export default function DashboardLayout({
     }
   }, [needsMfa, user, firebaseUser, loading, mfaVerified, router])
 
+  useEffect(() => {
+    if (profileRetryStarted.current || needsMfa || loading || user || !firebaseUser) return
+    profileRetryStarted.current = true
+    void ensureSignedInProfile()
+  }, [needsMfa, loading, user, firebaseUser, ensureSignedInProfile])
+
   if (needsMfa) return <SplashScreen />
   if (loading) return <SplashScreen />
   if (!mfaStatusKnown && (firebaseUser || user)) return <SplashScreen />
+  if (!user && firebaseUser && error) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-white px-6">
+        <div className="w-full max-w-md text-center">
+          <p className="text-lg font-semibold text-slate-900">Signing in did not finish loading</p>
+          <p className="mt-2 text-sm text-slate-600">{error}</p>
+          <button
+            type="button"
+            className="btn primary mt-6"
+            onClick={() => {
+              profileRetryStarted.current = false
+              void ensureSignedInProfile()
+            }}
+          >
+            Try again
+          </button>
+        </div>
+      </div>
+    )
+  }
   if (!user && firebaseUser) return <SplashScreen />
   if (!user) return <SplashScreen />
   if (!mfaVerified) return <SplashScreen />

@@ -8,6 +8,8 @@
 
 import { collection, getDocs, onSnapshot, type FirestoreError, type Unsubscribe } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
+import { isRetryableAuthLoadError, authLoadRetryDelayMs } from '@/lib/auth/authBoot'
+import { waitForAuthToken } from '@/lib/firebase/waitForAuthToken'
 
 export type OrgCollectionDoc = { id: string; data: Record<string, unknown> }
 
@@ -84,24 +86,44 @@ export function subscribeOrgCollection(
     lastDocs.set(storedKey, docs)
     current.onDocs(docs)
   }
-  const fail = (error: FirestoreError) => {
-    activeCallback(key)?.onError?.(error)
-  }
 
   if (isOrgCollectionSubscribed(key, organizationId)) {
     return
   }
 
-  // Skip the extra getDocs round-trip when this session already has a snapshot.
-  if (!cached) {
-    getDocs(col).then(emit).catch(fail)
-  }
-
   unsubs.get(key)?.()
   unsubs.delete(key)
   orgs.set(key, organizationId)
-  const unsub = onSnapshot(col, emit, fail)
-  unsubs.set(key, unsub)
+
+  const listen = (attempt: number) => {
+    const fail = (error: FirestoreError) => {
+      if (orgs.get(key) !== organizationId) return
+      if (attempt < 3 && isRetryableAuthLoadError(error)) {
+        globalThis.setTimeout(() => {
+          if (orgs.get(key) !== organizationId) return
+          void waitForAuthToken().finally(() => listen(attempt + 1))
+        }, authLoadRetryDelayMs(attempt))
+        return
+      }
+      activeCallback(key)?.onError?.(error)
+    }
+
+    if (!cached && attempt === 0) {
+      void waitForAuthToken()
+        .then(() => getDocs(col))
+        .then(emit)
+        .catch((error) => fail(error as FirestoreError))
+    }
+
+    unsubs.get(key)?.()
+    const unsub = onSnapshot(col, emit, fail)
+    unsubs.set(key, unsub)
+  }
+
+  void waitForAuthToken().finally(() => {
+    if (orgs.get(key) !== organizationId) return
+    listen(0)
+  })
 }
 
 export function unsubscribeOrgCollection(key: string): void {

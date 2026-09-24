@@ -129,6 +129,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
             error: error instanceof Error ? error.message : 'Failed to load projects',
             loading: false,
           })
+          throw error
         }
       },
       options
@@ -153,6 +154,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
             error: error instanceof Error ? error.message : 'Failed to load small works',
             loading: false,
           })
+          throw error
         }
       },
       options
@@ -174,6 +176,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
           set({ clients })
         } catch (error: unknown) {
           set({ error: error instanceof Error ? error.message : 'Failed to load clients' })
+          throw error
         }
       },
       options
