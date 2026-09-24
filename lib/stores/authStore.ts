@@ -55,6 +55,8 @@ import {
   writeSignedOutFlag,
 } from '@/lib/auth/mfa/mfaClient'
 import { postSignOutHref, safePostMfaPath } from '@/lib/auth/mfa/mfaConstants'
+import { authLoadRetryDelayMs, isRetryableAuthLoadError, shouldHoldSignedOutCallback } from '@/lib/auth/authBoot'
+import { waitForAuthToken } from '@/lib/firebase/waitForAuthToken'
 
 interface AuthState {
   user: User | null
@@ -76,6 +78,7 @@ interface AuthState {
   resetPassword: (email: string) => Promise<void>
   checkAuth: () => void
   recordLastSeenIfDue: () => Promise<void>
+  ensureSignedInProfile: () => Promise<void>
 }
 
 const LAST_SEEN_THROTTLE_MS = 120_000
@@ -87,6 +90,8 @@ let lastSeenWriteAt = 0
 let inFlightProfile: { uid: string; promise: Promise<void> } | null = null
 let signingOut = false
 let signingIn = false
+let mfaStatusFailures = 0
+const PROFILE_ATTEMPTS = 4
 
 function redirectAfterSignOut() {
   if (typeof window === 'undefined') return
@@ -113,16 +118,48 @@ function recentlyMarkedVerified(): boolean {
 async function syncMfaStatusFromCookie() {
   const state = useAuthStore.getState()
   if (state.mfaPending || readMfaGate()) return
-  const status = await readMfaStatus()
+  let status: { pending: boolean; verified: boolean; next?: string } = {
+    pending: false,
+    verified: false,
+    next: '',
+  }
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      status = await withTimeout(readMfaStatus(), 8000, 'mfa-status')
+      mfaStatusFailures = 0
+      break
+    } catch {
+      if (attempt < 2) {
+        await new Promise((resolve) => setTimeout(resolve, authLoadRetryDelayMs(attempt)))
+        continue
+      }
+      mfaStatusFailures += 1
+      if (mfaStatusFailures < 4 && typeof window !== 'undefined') {
+        window.setTimeout(() => {
+          void syncMfaStatusFromCookie()
+        }, 1000)
+        return
+      }
+      if (recentlyMarkedVerified()) {
+        useAuthStore.setState({ mfaVerified: true, mfaStatusKnown: true, mfaPending: false })
+      } else {
+        useAuthStore.setState({ mfaStatusKnown: true, mfaVerified: false, mfaPending: false })
+      }
+      return
+    }
+  }
   if (useAuthStore.getState().mfaPending || readMfaGate()) return
   if (recentlyMarkedVerified() && !status.verified) {
     return
   }
+  const latest = useAuthStore.getState()
   useAuthStore.setState({
     mfaVerified: status.verified,
     mfaStatusKnown: true,
-    mfaPending: Boolean((state.firebaseUser || state.user) && !status.verified),
-    mfaNext: status.next ? safePostMfaPath(status.next, state.mfaNext === '/developer' ? '/developer' : '/dashboard') : state.mfaNext,
+    mfaPending: Boolean((latest.firebaseUser || latest.user) && !status.verified),
+    mfaNext: status.next
+      ? safePostMfaPath(status.next, latest.mfaNext === '/developer' ? '/developer' : '/dashboard')
+      : latest.mfaNext,
   })
 }
 
@@ -191,7 +228,40 @@ function recoverOwnerSession(email?: string | null): boolean {
   return false
 }
 
+async function loadProfileWithRetries(firebaseUser: FirebaseUser): Promise<void> {
+  let lastError: unknown
+  for (let attempt = 0; attempt < PROFILE_ATTEMPTS; attempt += 1) {
+    if (useAuthStore.getState().user?.id === firebaseUser.uid) return
+    try {
+      await loadSignedInProfileWithWait(firebaseUser)
+      if (useAuthStore.getState().user?.id === firebaseUser.uid) return
+      const settled = useAuthStore.getState().error
+      if (settled && !isRetryableAuthLoadError(new Error(settled))) return
+      lastError = new Error(settled || 'Could not load your user profile from Firestore.')
+    } catch (error) {
+      lastError = error
+      if (useAuthStore.getState().user?.id === firebaseUser.uid) return
+    }
+    if (attempt === PROFILE_ATTEMPTS - 1 || !isRetryableAuthLoadError(lastError)) break
+    await new Promise((resolve) => setTimeout(resolve, authLoadRetryDelayMs(attempt)))
+  }
+  throw lastError instanceof Error ? lastError : new Error('Could not load your user profile from Firestore.')
+}
+
+function profileLoadFailed(firebaseUser: FirebaseUser, error: unknown) {
+  if (useAuthStore.getState().user?.id === firebaseUser.uid) return
+  if (useAuthStore.getState().mfaPending) return
+  useAuthStore.setState({
+    user: null,
+    firebaseUser,
+    organization: null,
+    loading: false,
+    error: error instanceof Error ? error.message : 'Could not load your user profile from Firestore.',
+  })
+}
+
 async function loadSignedInProfileInner(firebaseUser: FirebaseUser) {
+  await waitForAuthToken()
   const db = getFirebaseDb()
   let userDoc = await loadUserDocumentWithRetry(firebaseUser.uid)
   if (!userDoc.exists() && firebaseUser.email) {
@@ -370,10 +440,13 @@ async function loadSignedInProfileInner(firebaseUser: FirebaseUser) {
 
 export const useAuthStore = create<AuthState>((set) => {
   if (typeof window !== 'undefined' && isFirebaseConfigured()) {
-    onAuthStateChanged(getFirebaseAuth(), async (firebaseUser) => {
+    const auth = getFirebaseAuth()
+    void auth.authStateReady().catch(() => undefined)
+
+    onAuthStateChanged(auth, async (firebaseUser) => {
       if (signingIn) {
         if (firebaseUser) {
-          useAuthStore.setState({ firebaseUser, loading: false })
+          useAuthStore.setState({ firebaseUser, loading: true })
         }
         return
       }
@@ -417,31 +490,36 @@ export const useAuthStore = create<AuthState>((set) => {
           return
         }
         if (readWebIdleLastActivity() == null) touchWebIdleActivity()
+        if (!useAuthStore.getState().user) {
+          useAuthStore.setState({ firebaseUser, loading: true, error: null })
+        }
         if (!useAuthStore.getState().mfaPending && !isMfaGateOpen(firebaseUser.uid)) {
           void syncMfaStatusFromCookie()
         }
         try {
-          await loadSignedInProfileWithWait(firebaseUser)
+          await loadProfileWithRetries(firebaseUser)
         } catch (authLoadError) {
           if (isPlatformOwnerEmail(firebaseUser.email)) {
             keepOwnerSession(firebaseUser)
             return
           }
-          if (useAuthStore.getState().user?.id === firebaseUser.uid) return
           console.error('Failed to load user profile:', authLoadError)
-          set({
-            user: null,
-            firebaseUser,
-            organization: null,
-            loading: false,
-            error:
-              authLoadError instanceof Error
-                ? authLoadError.message
-                : 'Could not load your user profile from Firestore.',
-          })
+          profileLoadFailed(firebaseUser, authLoadError)
         }
       } else if (!signingIn && !useAuthStore.getState().mfaPending) {
         if (recentlyMarkedVerified()) return
+        try {
+          await withTimeout(auth.authStateReady(), 5000, 'auth-ready')
+        } catch {
+          /* Persistence can be slow on the first visit. */
+        }
+        const restored = auth.currentUser
+        if (shouldHoldSignedOutCallback({ authReady: true, hasCurrentUser: Boolean(restored) })) {
+          if (restored && useAuthStore.getState().user?.id !== restored.uid) {
+            void loadProfileWithRetries(restored).catch((error) => profileLoadFailed(restored, error))
+          }
+          return
+        }
         set({
           user: null,
           firebaseUser: null,
@@ -520,6 +598,14 @@ export const useAuthStore = create<AuthState>((set) => {
         throw error
       } finally {
         signingIn = false
+        try {
+          const current = getFirebaseAuth().currentUser
+          if (current && useAuthStore.getState().user?.id !== current.uid) {
+            void loadProfileWithRetries(current).catch((error) => profileLoadFailed(current, error))
+          }
+        } catch {
+          /* Auth is not ready yet. The listener will load the profile. */
+        }
       }
     },
 
@@ -670,6 +756,23 @@ export const useAuthStore = create<AuthState>((set) => {
 
     checkAuth: () => {
       // Auth state is handled by onAuthStateChanged
+    },
+
+    ensureSignedInProfile: async () => {
+      let current: FirebaseUser | null = null
+      try {
+        current = getFirebaseAuth().currentUser
+      } catch {
+        return
+      }
+      if (!current) return
+      if (useAuthStore.getState().user?.id === current.uid && !useAuthStore.getState().error) return
+      set({ loading: true, error: null, firebaseUser: current })
+      try {
+        await loadProfileWithRetries(current)
+      } catch (error) {
+        profileLoadFailed(current, error)
+      }
     },
 
     recordLastSeenIfDue: async () => {
