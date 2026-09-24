@@ -1,36 +1,92 @@
 'use client'
 
+import { useEffect, useState } from 'react'
 import { format } from 'date-fns'
 import type { HSToolboxIssue, HSToolboxSignature, HSToolboxTalk, User } from '@/types'
 import { signedPercent } from '@/lib/healthSafety/hsTracking'
-import { looksLikeSiteAuditFile, talkPreviewHtml } from '@/lib/healthSafety/toolboxTalkPdf'
+import { buildToolboxTalkPdf, isCustomUploadedTalk } from '@/lib/healthSafety/toolboxTalkPdf'
 import { FeatureCard, FeatureSectionLabel } from '@/components/projects/features/featureUi'
 import { HsPrimaryButton } from '@/components/projects/features/hsUi'
 
-export function HsTalkBody({ talk }: { talk: HSToolboxTalk }) {
-  const fileURL = talk.fileURL || ''
-  const siteAuditFile = looksLikeSiteAuditFile(fileURL)
-  const previewHtml = talkPreviewHtml(talk)
-  const originalPdf = Boolean(fileURL) && !siteAuditFile
+export function HsTalkBody({
+  talk,
+  issue,
+  signatures,
+  users,
+  projectLabel,
+}: {
+  talk: HSToolboxTalk
+  issue?: HSToolboxIssue | null
+  signatures?: HSToolboxSignature[]
+  users?: User[]
+  projectLabel?: string
+}) {
+  const customFile = isCustomUploadedTalk(talk) ? (talk.fileURL || '').trim() : ''
+  const previewKey = [
+    talk.id,
+    talk.title,
+    talk.purpose,
+    talk.keyPoints.join('\n'),
+    talk.version,
+    talk.status,
+    customFile,
+    issue?.id || '',
+    projectLabel || '',
+    (signatures || [])
+      .map((signature) => `${signature.id}:${signature.status}:${signature.signedAt?.getTime() || 0}`)
+      .join('|'),
+    (users || []).map((row) => row.id).join('|'),
+  ].join('::')
+  const [src, setSrc] = useState<string | null>(customFile || null)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (customFile) {
+      setSrc(customFile)
+      setError(null)
+      return
+    }
+    let cancelled = false
+    let objectUrl = ''
+    setSrc(null)
+    setError(null)
+    void buildToolboxTalkPdf({ talk, issue, signatures, users, projectLabel })
+      .then((bytes) => {
+        if (cancelled) return
+        const copy = new Uint8Array(bytes)
+        objectUrl = URL.createObjectURL(new Blob([copy.buffer], { type: 'application/pdf' }))
+        setSrc(objectUrl)
+      })
+      .catch(() => {
+        if (!cancelled) setError('Could not open the toolbox talk PDF.')
+      })
+    return () => {
+      cancelled = true
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
+    }
+    // previewKey already covers the talk, issue, signatures and people used to draw the PDF.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [previewKey, customFile])
+
   return (
-    <div className="space-y-3" data-hs-talk-preview="true">
+    <div className="space-y-3" data-hs-talk-preview="pdf">
       {talk.referenceCode ? (
         <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{talk.referenceCode}</p>
       ) : null}
       <p className="text-sm font-semibold text-slate-900">{talk.title}</p>
-      <iframe
-        srcDoc={previewHtml}
-        title="Toolbox talk preview"
-        className="h-[55vh] w-full rounded-xl border border-slate-200 bg-white"
-      />
-      {originalPdf ? (
+      {src ? (
+        <iframe src={src} title={talk.title} className="h-[70vh] w-full rounded-xl border border-slate-200 bg-white" />
+      ) : (
+        <p className="text-sm text-slate-500">{error || 'Preparing the toolbox talk PDF…'}</p>
+      )}
+      {customFile ? (
         <a
-          href={fileURL}
+          href={customFile}
           target="_blank"
           rel="noreferrer"
           className="inline-flex text-sm font-semibold text-[#2F73F0] hover:underline"
         >
-          Open original PDF
+          Open original file
         </a>
       ) : null}
     </div>
@@ -269,16 +325,24 @@ export function HsIssueDetail({
 
 export function HsSignedTalkBody({
   talk,
+  issue,
   signatures,
   users,
+  projectLabel,
 }: {
   talk?: HSToolboxTalk
+  issue?: HSToolboxIssue | null
   signatures: HSToolboxSignature[]
   users: User[]
+  projectLabel?: string
 }) {
   return (
     <div className="space-y-4">
-      {talk ? <HsTalkBody talk={talk} /> : <p className="text-sm text-slate-500">Talk details are unavailable.</p>}
+      {talk ? (
+        <HsTalkBody talk={talk} issue={issue} signatures={signatures} users={users} projectLabel={projectLabel} />
+      ) : (
+        <p className="text-sm text-slate-500">Talk details are unavailable.</p>
+      )}
       <HsSignedProgress signatures={signatures} recipientCount={signatures.length} />
       <FeatureSectionLabel>Who has signed</FeatureSectionLabel>
       <HsSignatureList signatures={signatures.filter((signature) => signature.status === 'signed')} users={users} />

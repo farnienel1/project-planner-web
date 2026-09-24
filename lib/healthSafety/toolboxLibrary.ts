@@ -2,6 +2,7 @@ import { doc, getDoc } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
 import { parseTalk } from '@/lib/healthSafety/parseHealthSafety'
 import { overlayToolboxLibraries } from '@/lib/healthSafety/hsTalks'
+import { mergeToolboxTalks } from '@/lib/healthSafety/mergeToolboxTalks'
 import seedTalks from '@/lib/healthSafety/toolboxTalkSeed.json'
 import type { HSToolboxTalk } from '@/types'
 
@@ -54,16 +55,10 @@ async function loadPlatformToolboxLibraryUncached(): Promise<HSToolboxTalk[]> {
   return seed
 }
 
+/** Catalogue titles win. Placeholder stored rows ("TBT", bare TBT- codes) are left out. */
 export function mergeToolboxTalkLibraries(
   platformTalks: HSToolboxTalk[],
   projectTalks: HSToolboxTalk[]
 ): HSToolboxTalk[] {
-  const merged = new Map<string, HSToolboxTalk>()
-  for (const talk of overlayToolboxLibraries([], platformTalks)) {
-    merged.set(talk.referenceCode || talk.id, talk)
-  }
-  for (const talk of projectTalks) {
-    merged.set(talk.referenceCode || talk.id, talk)
-  }
-  return Array.from(merged.values()).sort((a, b) => a.title.localeCompare(b.title))
+  return mergeToolboxTalks(bundledToolboxTalks(), platformTalks, projectTalks)
 }
