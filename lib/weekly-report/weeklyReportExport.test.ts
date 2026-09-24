@@ -32,6 +32,10 @@ test('weekly report spreadsheet includes iOS section titles and named sub contra
     annualLeaveTotal: 0,
     managerScheduleRows: [],
     managerScheduleTotal: 0,
+    priceWorkRows: [],
+    priceWorkTotal: 0,
+    expenseRows: [],
+    expenseTotal: 0,
     paySummary: [],
     grandTotal: 0,
   }
