@@ -131,7 +131,7 @@ test('2 days ahead is today and tomorrow, not two days after today', () => {
   assert.match(summary, /included/)
 })
 
-test('unbooked labour includes managers, unlinked roster, and under-hours AM bookings', () => {
+test('unbooked labour is anyone with no booking that day, including managers and unlinked roster', () => {
   const detection = {
     ...DEFAULT_WARNING_DETECTION,
     clashLookaheadMode: 'numberOfDays' as const,
@@ -180,10 +180,168 @@ test('unbooked labour includes managers, unlinked roster, and under-hours AM boo
   const names = warnings.map((w) => w.operativeName).sort()
   assert.ok(names.includes('Morgan Manager'), `managers must be scanned: ${names.join(', ')}`)
   assert.ok(names.includes('Bob Roster'), `unlinked roster must be scanned: ${names.join(', ')}`)
-  assert.ok(names.includes('Cam Half'), `AM-only is below a standard paid day: ${names.join(', ')}`)
+  assert.ok(!names.includes('Cam Half'), `an AM booking covers the day: ${names.join(', ')}`)
   assert.ok(!names.includes('Ada Operative'), 'full-day booked operative is not unbooked')
-  const cam = warnings.find((w) => w.operativeName === 'Cam Half')
-  assert.equal(cam?.missingHours, 4)
+  const morgan = warnings.find((w) => w.operativeName === 'Morgan Manager')
+  assert.equal(morgan?.missingHours, 8)
+  assert.match(morgan?.message || '', /is not booked on/)
+})
+
+test('a short clock window or office booking still counts as booked', () => {
+  const detection = {
+    ...DEFAULT_WARNING_DETECTION,
+    clashLookaheadMode: 'numberOfDays' as const,
+    clashLookaheadDays: 1,
+  }
+  const opUser = user({
+    id: 'U-OP',
+    email: 'ada@site.test',
+    firstName: 'Ada',
+    surname: 'Operative',
+    permissions: perms({ operativeMode: true }),
+  })
+  const mgrUser = user({
+    id: 'U-MGR',
+    email: 'morgan@site.test',
+    firstName: 'Morgan',
+    surname: 'Manager',
+    role: UserRole.MANAGER,
+    permissions: perms({ manager: true, operativeMode: false }),
+  })
+  const linked = operative({ id: 'OP-ADA', email: 'ada@site.test', firstName: 'Ada', lastName: 'Operative' })
+  const warnings = computeUnbookedLabourWarnings({
+    bookings: [
+      booking({
+        id: 'B-SHORT',
+        operativeId: 'OP-ADA',
+        timeSlot: 'CUSTOM_HOURS',
+        workStartTime: '07:30',
+        workEndTime: '15:30',
+      }),
+      booking({ id: 'B-CANCELLED', operativeId: 'OP-ADA', status: 'Cancelled', projectId: 'P2' }),
+    ],
+    managerSiteBookings: [
+      {
+        id: 'M-OFFICE',
+        userId: 'U-MGR',
+        date: WED,
+        timeSlot: 'AM',
+        locationType: 'office',
+        createdAt: WED,
+        updatedAt: WED,
+      },
+    ],
+    operatives: [linked],
+    users: [opUser, mgrUser],
+    holidays: [] as HolidayBooking[],
+    warningDetection: detection,
+    payrollPolicy: DEFAULT_PAYROLL_POLICY,
+    referenceDate: WED,
+  })
+  assert.equal(warnings.length, 0)
+})
+
+test('tentative operative bookings cover the day; cancelled ones do not', () => {
+  const detection = {
+    ...DEFAULT_WARNING_DETECTION,
+    clashLookaheadMode: 'numberOfDays' as const,
+    clashLookaheadDays: 1,
+  }
+  const opUser = user({ id: 'U-OP', email: 'ada@site.test', firstName: 'Ada', surname: 'Operative' })
+  const linked = operative({ id: 'OP-ADA', email: 'ada@site.test', firstName: 'Ada', lastName: 'Operative' })
+  const base = {
+    operatives: [linked],
+    users: [opUser],
+    holidays: [] as HolidayBooking[],
+    warningDetection: detection,
+    referenceDate: WED,
+  }
+  const tentative = computeUnbookedLabourWarnings({
+    ...base,
+    bookings: [booking({ id: 'B-TENT', operativeId: 'OP-ADA', status: 'Tentative', timeSlot: 'AM' })],
+  })
+  assert.equal(tentative.length, 0)
+
+  const cancelled = computeUnbookedLabourWarnings({
+    ...base,
+    bookings: [booking({ id: 'B-CAN', operativeId: 'OP-ADA', status: 'Cancelled' })],
+  })
+  assert.equal(cancelled.length, 1)
+  assert.equal(cancelled[0].missingHours, 8)
+})
+
+test('weekends are skipped unless included, and a zero counts-as weekend is not a working day', () => {
+  const saturday = new Date('2026-09-19T12:00:00+01:00')
+  const opUser = user({ id: 'U-OP', email: 'ada@site.test', firstName: 'Ada', surname: 'Operative' })
+  const linked = operative({ id: 'OP-ADA', email: 'ada@site.test', firstName: 'Ada', lastName: 'Operative' })
+  const base = {
+    bookings: [] as Booking[],
+    operatives: [linked],
+    users: [opUser],
+    holidays: [] as HolidayBooking[],
+    referenceDate: saturday,
+  }
+  const off = computeUnbookedLabourWarnings({
+    ...base,
+    warningDetection: {
+      ...DEFAULT_WARNING_DETECTION,
+      clashLookaheadMode: 'numberOfDays',
+      clashLookaheadDays: 1,
+      includeWeekendsForUnbookedLabour: false,
+    },
+  })
+  assert.equal(off.length, 0)
+
+  const nonWorking = computeUnbookedLabourWarnings({
+    ...base,
+    warningDetection: {
+      ...DEFAULT_WARNING_DETECTION,
+      clashLookaheadMode: 'numberOfDays',
+      clashLookaheadDays: 1,
+      includeWeekendsForUnbookedLabour: true,
+    },
+    payrollPolicy: {
+      ...DEFAULT_PAYROLL_POLICY,
+      saturday: { ...DEFAULT_PAYROLL_POLICY.saturday, countsAsStandardHours: 0 },
+    },
+  })
+  assert.equal(nonWorking.length, 0)
+
+  const workingWeekend = computeUnbookedLabourWarnings({
+    ...base,
+    warningDetection: {
+      ...DEFAULT_WARNING_DETECTION,
+      clashLookaheadMode: 'numberOfDays',
+      clashLookaheadDays: 1,
+      includeWeekendsForUnbookedLabour: true,
+    },
+    payrollPolicy: {
+      ...DEFAULT_PAYROLL_POLICY,
+      saturday: { ...DEFAULT_PAYROLL_POLICY.saturday, countsAsStandardHours: 5 },
+    },
+  })
+  assert.equal(workingWeekend.length, 1)
+  assert.equal(workingWeekend[0].missingHours, 5)
+})
+
+test('excluded users stay out of unbooked labour warnings', () => {
+  const detection = {
+    ...DEFAULT_WARNING_DETECTION,
+    clashLookaheadMode: 'numberOfDays' as const,
+    clashLookaheadDays: 1,
+    excludedUserIdsFromUnbookedWarnings: ['U-OP'],
+  }
+  const opUser = user({ id: 'U-OP', email: 'ada@site.test' })
+  const linked = operative({ id: 'OP-ADA', email: 'ada@site.test' })
+  const warnings = computeUnbookedLabourWarnings({
+    bookings: [],
+    operatives: [linked],
+    users: [opUser],
+    holidays: [] as HolidayBooking[],
+    warningDetection: detection,
+    referenceDate: WED,
+  })
+  assert.equal(warnings.length, 0)
 })
 
 test('approved holiday suppresses unbooked labour for that person-day', () => {
