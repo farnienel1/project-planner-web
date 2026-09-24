@@ -34,6 +34,47 @@ export type TimesheetPriceWorkEntry = {
   managerRevisedAmount?: number | null
 }
 
+/** Shared with iOS `TimesheetWeeklyReportLabourLine`. `bookingId` is "" when unknown. */
+export type WeeklyReportLabourLine = {
+  id: string
+  date: Date
+  jobNumber: string
+  projectName: string
+  locationKind: 'project' | 'small_work' | 'office' | 'working_from_home' | 'site_survey' | 'custom' | string
+  details: string
+  paidHours: number
+  days: number
+  amount: number
+  isOvertime: boolean
+  decision: TimesheetManagerDecision
+  bookingId: string
+}
+
+/** Shared with iOS `TimesheetWeeklyReportMoneyLine`. */
+export type WeeklyReportMoneyLine = {
+  id: string
+  title: string
+  details: string
+  jobNumber: string
+  date: Date
+  amount: number
+  decision: TimesheetManagerDecision
+}
+
+/**
+ * Written on `organizations/{orgId}/settings/timesheet_{userId}_{weekStartUnix}`
+ * when the timesheet is fully approved. Cleared when signatures are cleared.
+ */
+export type WeeklyReportOverride = {
+  approvedAt: Date
+  approvedByUserId: string
+  approvedByName: string
+  selfSigned: boolean
+  lines: WeeklyReportLabourLine[]
+  priceWork: WeeklyReportMoneyLine[]
+  expenses: WeeklyReportMoneyLine[]
+}
+
 export type TimesheetDraft = {
   expenseEntries: TimesheetExpenseEntry[]
   priceWorkEntries: TimesheetPriceWorkEntry[]
@@ -47,6 +88,7 @@ export type TimesheetDraft = {
   managerSignedByUserId?: string | null
   managerSignatureImageBase64?: string | null
   exportedAt?: Date | null
+  weeklyReportOverride?: WeeklyReportOverride | null
 }
 
 export function emptyTimesheetDraft(): TimesheetDraft {

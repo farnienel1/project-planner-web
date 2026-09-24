@@ -208,6 +208,36 @@ export function buildWeeklyReportHtml(data: WeeklyReportData): string {
   <h2>📅 Manager / Admin Additional Schedule</h2>
   ${renderTable(['Person', 'Role', 'Location', 'Time', 'Days'], managerRows, 'No additional manager schedule in this period')}
 
+  <h2>🧱 Price Work</h2>
+  ${renderTable(
+    ['Person', 'Title', 'Job No.', 'Date', 'Details', 'Amount'],
+    data.priceWorkRows.map((row) => [
+      row.person,
+      row.title,
+      row.jobNumber,
+      row.date,
+      row.details,
+      formatCurrency(row.amount),
+    ]),
+    'No price work in this period'
+  )}
+  <table><tbody><tr><td colspan="5"><strong>Price Work Total</strong></td><td><strong>${formatCurrency(data.priceWorkTotal)}</strong></td></tr></tbody></table>
+
+  <h2>🧾 Expenses</h2>
+  ${renderTable(
+    ['Person', 'Title', 'Job No.', 'Date', 'Details', 'Amount'],
+    data.expenseRows.map((row) => [
+      row.person,
+      row.title,
+      row.jobNumber,
+      row.date,
+      row.details,
+      formatCurrency(row.amount),
+    ]),
+    'No expenses in this period'
+  )}
+  <table><tbody><tr><td colspan="5"><strong>Expenses Total</strong></td><td><strong>${formatCurrency(data.expenseTotal)}</strong></td></tr></tbody></table>
+
   <h2>💷 Pay Summary</h2>
   ${renderTable(['Person', 'Role', 'Rate Type', 'Days', 'Rate', 'Pay'], payRows, 'No pay data for this period')}
 
@@ -373,6 +403,42 @@ export function buildWeeklyReportSpreadsheetXml(data: WeeklyReportData): string 
    ${spreadsheetRow([''])}
    ${spreadsheetRow(['Manager / Admin Additional Schedule'])}
    ${spreadsheetTable(['Person', 'Role', 'Location', 'Time', 'Days'], managerRows)}
+   ${spreadsheetRow([''])}
+   ${spreadsheetRow(['PRICE WORK'])}
+   ${spreadsheetTable(
+     ['Person', 'Title', 'Job Number', 'Date', 'Details', 'Amount'],
+     data.priceWorkRows.length === 0
+       ? [['No price work in this period', '', '', '', '', '']]
+       : [
+           ...data.priceWorkRows.map((row) => [
+             row.person,
+             row.title,
+             row.jobNumber,
+             row.date,
+             row.details,
+             formatCurrency(row.amount),
+           ]),
+           ['', '', '', '', 'Price Work Total', formatCurrency(data.priceWorkTotal)],
+         ]
+   )}
+   ${spreadsheetRow([''])}
+   ${spreadsheetRow(['EXPENSES'])}
+   ${spreadsheetTable(
+     ['Person', 'Title', 'Job Number', 'Date', 'Details', 'Amount'],
+     data.expenseRows.length === 0
+       ? [['No expenses in this period', '', '', '', '', '']]
+       : [
+           ...data.expenseRows.map((row) => [
+             row.person,
+             row.title,
+             row.jobNumber,
+             row.date,
+             row.details,
+             formatCurrency(row.amount),
+           ]),
+           ['', '', '', '', 'Expenses Total', formatCurrency(data.expenseTotal)],
+         ]
+   )}
    ${spreadsheetRow([''])}
    ${spreadsheetRow(['Pay Summary'])}
    ${spreadsheetTable(['Person', 'Role', 'Rate Type', 'Days', 'Rate', 'Pay'], payRows.length ? payRows : [['No pay data for this period', '', '', '', '', '']])}

@@ -4,7 +4,7 @@
  */
 import type { User } from '@/types'
 import type { OrgInvoicingSettings } from '@/lib/settings/organizationSettings'
-import { LONDON_TIME_ZONE, dayKey, londonMidnight } from '@/lib/ios-parity/londonTime'
+import { LONDON_TIME_ZONE, addLondonDays, dayKey, londonMidnight } from '@/lib/ios-parity/londonTime'
 import { employmentTypeOnDay, isBillableSelfEmployedDay } from '@/lib/ios-parity/employmentType'
 import { computeInvoicingPeriod, eachLondonDay } from '@/lib/warnings/warningLookahead'
 import { payDateForPeriodEnd } from '@/lib/timesheets/paymentRunCopy'
@@ -24,6 +24,30 @@ export function canAccessMyTimesheetsWithPolicy(
   const payDate = payDateForPeriodEnd(period.end, invoicing, timeZone)
   if (!payDate) return true
   return dayKey(referenceDate, timeZone) <= dayKey(payDate, timeZone)
+}
+
+/** Pay runs whose calendar window overlaps a weekly-report range. iOS payPeriodsOverlapping. */
+export function payPeriodsOverlapping(
+  rangeStart: Date,
+  rangeEnd: Date,
+  invoicing: OrgInvoicingSettings,
+  timeZone: string = LONDON_TIME_ZONE
+): { start: Date; end: Date }[] {
+  const periods: { start: Date; end: Date }[] = []
+  let cursor = londonMidnight(rangeStart, timeZone)
+  const endKey = dayKey(rangeEnd, timeZone)
+  let guard = 0
+  while (dayKey(cursor, timeZone) <= endKey && guard < 80) {
+    const period = computeInvoicingPeriod(cursor, invoicing, timeZone)
+    if (!periods.some((row) => dayKey(row.start, timeZone) === dayKey(period.start, timeZone))) {
+      periods.push({ start: period.start, end: period.end })
+    }
+    const next = addLondonDays(londonMidnight(period.end, timeZone), 1, timeZone)
+    if (dayKey(next, timeZone) <= dayKey(cursor, timeZone)) break
+    cursor = next
+    guard += 1
+  }
+  return periods
 }
 
 export function shouldAppearInOperativeTimesheetRoster(

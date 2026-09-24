@@ -18,6 +18,9 @@ import {
   type TimesheetManagerDecision,
   type TimesheetPayrollLineReview,
   type TimesheetPriceWorkEntry,
+  type WeeklyReportLabourLine,
+  type WeeklyReportMoneyLine,
+  type WeeklyReportOverride,
 } from '@/lib/timesheets/timesheetDraft'
 
 export function timesheetDocId(userId: string, weekStart: Date, timeZone: string = LONDON_TIME_ZONE): string {
@@ -124,6 +127,104 @@ function mapPriceWork(row: Record<string, unknown>): TimesheetPriceWorkEntry | n
   }
 }
 
+function finiteNumber(value: unknown): number {
+  const number = typeof value === 'number' ? value : Number(value)
+  return Number.isFinite(number) ? number : 0
+}
+
+function mapMoneyLine(row: Record<string, unknown>): WeeklyReportMoneyLine | null {
+  const id = typeof row.id === 'string' ? row.id : ''
+  if (!id) return null
+  return {
+    id,
+    title: typeof row.title === 'string' ? row.title : '',
+    details: typeof row.details === 'string' ? row.details : '',
+    jobNumber: typeof row.jobNumber === 'string' ? row.jobNumber : '',
+    date: parseFirestoreDate(row.date) || new Date(),
+    amount: finiteNumber(row.amount),
+    decision: asDecision(row.decision),
+  }
+}
+
+function mapLabourLine(row: Record<string, unknown>): WeeklyReportLabourLine | null {
+  const id = typeof row.id === 'string' ? row.id : ''
+  if (!id) return null
+  const bookingId = typeof row.bookingId === 'string' ? row.bookingId.trim() : ''
+  return {
+    id,
+    date: parseFirestoreDate(row.date) || new Date(),
+    jobNumber: typeof row.jobNumber === 'string' ? row.jobNumber : '',
+    projectName: typeof row.projectName === 'string' ? row.projectName : '',
+    locationKind: typeof row.locationKind === 'string' && row.locationKind ? row.locationKind : 'project',
+    details: typeof row.details === 'string' ? row.details : '',
+    paidHours: finiteNumber(row.paidHours),
+    days: finiteNumber(row.days),
+    amount: finiteNumber(row.amount),
+    isOvertime: row.isOvertime === true,
+    decision: asDecision(row.decision),
+    bookingId,
+  }
+}
+
+export function weeklyReportOverrideFromFirestore(raw: unknown): WeeklyReportOverride | null {
+  if (!raw || typeof raw !== 'object') return null
+  const map = raw as Record<string, unknown>
+  const lines = Array.isArray(map.lines)
+    ? map.lines
+        .map((row) => mapLabourLine((row || {}) as Record<string, unknown>))
+        .filter((row): row is WeeklyReportLabourLine => Boolean(row))
+    : []
+  const money = (key: 'priceWork' | 'expenses') =>
+    Array.isArray(map[key])
+      ? (map[key] as unknown[])
+          .map((row) => mapMoneyLine((row || {}) as Record<string, unknown>))
+          .filter((row): row is WeeklyReportMoneyLine => Boolean(row))
+      : []
+  return {
+    approvedAt: parseFirestoreDate(map.approvedAt) || new Date(),
+    approvedByUserId: typeof map.approvedByUserId === 'string' ? map.approvedByUserId : '',
+    approvedByName: typeof map.approvedByName === 'string' ? map.approvedByName : '',
+    selfSigned: map.selfSigned === true,
+    lines,
+    priceWork: money('priceWork'),
+    expenses: money('expenses'),
+  }
+}
+
+export function weeklyReportOverrideToFirestore(override: WeeklyReportOverride): Record<string, unknown> {
+  const money = (line: WeeklyReportMoneyLine) => ({
+    id: line.id,
+    title: line.title,
+    details: line.details,
+    jobNumber: line.jobNumber,
+    date: Timestamp.fromDate(line.date),
+    amount: line.amount,
+    decision: line.decision,
+  })
+  return {
+    approvedAt: Timestamp.fromDate(override.approvedAt),
+    approvedByUserId: override.approvedByUserId,
+    approvedByName: override.approvedByName,
+    selfSigned: override.selfSigned,
+    lines: override.lines.map((line) => ({
+      id: line.id,
+      date: Timestamp.fromDate(line.date),
+      jobNumber: line.jobNumber,
+      projectName: line.projectName,
+      locationKind: line.locationKind,
+      details: line.details,
+      paidHours: line.paidHours,
+      days: line.days,
+      amount: line.amount,
+      isOvertime: line.isOvertime,
+      decision: line.decision,
+      bookingId: line.bookingId || '',
+    })),
+    priceWork: override.priceWork.map(money),
+    expenses: override.expenses.map(money),
+  }
+}
+
 function mapReviews(raw: unknown): Record<string, TimesheetPayrollLineReview> {
   if (!raw || typeof raw !== 'object') return {}
   const output: Record<string, TimesheetPayrollLineReview> = {}
@@ -179,6 +280,7 @@ export function draftFromFirestoreMap(
           .filter((row): row is TimesheetPriceWorkEntry => Boolean(row))
       : [],
     payrollLineReviews: mapReviews(data.payrollLineReviews),
+    weeklyReportOverride: weeklyReportOverrideFromFirestore(data.weeklyReportOverride),
   }
 }
 
@@ -222,6 +324,9 @@ export function draftToFirestoreMap(draft: TimesheetDraft): Record<string, unkno
         { decision: review.decision, revisedAmount: review.revisedAmount ?? null },
       ])
     ),
+    weeklyReportOverride: draft.weeklyReportOverride
+      ? weeklyReportOverrideToFirestore(draft.weeklyReportOverride)
+      : null,
   }
 }
 
