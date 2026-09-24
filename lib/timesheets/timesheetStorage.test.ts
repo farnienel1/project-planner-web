@@ -4,7 +4,9 @@ import type { User } from '../../types/index.ts'
 import { emptyTimesheetDraft } from './timesheetDraft.ts'
 import {
   draftFromFirestoreMap,
+  pickTimesheetDraftForPeriod,
   resolveTimesheetExportedAt,
+  samePayPeriodStart,
 } from './timesheetStorage.ts'
 import { isTimesheetFullyApproved } from './timesheetApprovalPolicy.ts'
 
@@ -112,6 +114,34 @@ test('true exportedAt without invoiceGeneratedAt still counts as exported', () =
     exportedAt: stamp(emailed.toISOString()),
   })
   assert.equal(draft.exportedAt?.toISOString(), emailed.toISOString())
+})
+
+test('a signed sheet stored inside the pay run is used when the period-start doc is empty', () => {
+  const periodStart = new Date('2026-09-01T00:00:00.000Z')
+  const periodEnd = new Date('2026-09-15T00:00:00.000Z')
+  const signed = {
+    ...emptyTimesheetDraft(),
+    operativeSignedAt: new Date('2026-09-08T09:00:00.000Z'),
+    operativeSignedByName: 'Operative',
+  }
+  const picked = pickTimesheetDraftForPeriod(
+    [
+      { weekStart: periodStart, draft: emptyTimesheetDraft(), documentId: 'empty' },
+      { weekStart: new Date('2026-09-07T00:00:00.000Z'), draft: signed, documentId: 'signed' },
+    ],
+    periodStart,
+    periodEnd,
+    'UTC'
+  )
+  assert.equal(picked?.documentId, 'signed')
+  assert.equal(picked?.draft.operativeSignedByName, 'Operative')
+})
+
+test('same pay-period start matches London midnight and the UTC instant of that midnight', () => {
+  const londonMidnight = new Date('2026-08-31T23:00:00.000Z')
+  const utcMidnight = new Date('2026-09-01T00:00:00.000Z')
+  assert.equal(samePayPeriodStart(utcMidnight, londonMidnight, 'Europe/London'), true)
+  assert.equal(samePayPeriodStart(new Date('2026-09-20T00:00:00.000Z'), londonMidnight, 'Europe/London'), false)
 })
 
 test('draftFromFirestoreMap keeps signatures when export stamps are absent', () => {

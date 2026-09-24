@@ -8,10 +8,10 @@ Title **Timesheets**. CURRENT PAYMENT RUN card shows the **period containing tod
 Tiles: My Timesheets; User/Operative Timesheets for managers/admins; PAYE disabled copy when employment type blocks My Timesheets. Past runs are **not** a separate hub page.
 
 ## My Timesheets
-`?surface=mine`. Current pay run period card, then **Past timesheets**. Detail is the signed-in user only (never the org roster). Hours come from bookings / manager site bookings across the **pay period**, including a single booked day. Empty copy matches iOS when nothing is booked yet.
+`/dashboard/timesheets/mine`. Current pay run period card, then **Past timesheets**. Detail is the signed-in user only (never the org roster). Hours come from bookings / manager site bookings across the **pay period**, including a single booked day. Empty copy matches iOS when nothing is booked yet.
 
 ## User Timesheets
-`?surface=team`. Tabs **Awaiting sign-off / Signed off / Exported** (iOS `OperativeTimesheetsView`). Admins see the org roster; managers see people who report to them (`assignedManagerUserId` / `assignedManagerUserIds`). Nested heading: Timesheets (back to hub) + User Timesheets.
+`/dashboard/timesheets/team`. Tabs **Awaiting sign-off / Signed off / Exported** (iOS `OperativeTimesheetsView`). Admins see the org roster; managers see people who report to them (`assignedManagerUserId` / `assignedManagerUserIds`). Nested heading: Timesheets (back to hub) + User Timesheets. The left-menu Timesheets item and that back control open `/dashboard/timesheets` with no query. Older `?surface=mine` / `?surface=team` links redirect onto these paths.
 
 ## Access
 `canAccessTimesheetsSurface` = my timesheets (self-employed) OR operative timesheets (manager/admin) OR PAYE disabled message.
