@@ -10,6 +10,7 @@ import {
   Timestamp,
 } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
+import { withAuthReadRetry } from '@/lib/firebase/waitForAuthToken'
 import type { HolidayBooking, HolidayStatus, HolidayTimeSlot } from '@/types'
 import { newUuid, parseFirestoreDate, parseOptionalString, parseString, parseUuid } from '@/lib/firebase/firestoreUtils'
 
@@ -93,7 +94,7 @@ export const useHolidayStore = create<HolidayState>((set, get) => ({
     set({ loading: true, error: null })
     try {
       const ref = collection(db, 'organizations', organizationId, 'holidayBookings')
-      const snapshot = await getDocs(ref)
+      const snapshot = await withAuthReadRetry(() => getDocs(ref))
       const bookings = snapshot.docs
         .map((entry) => mapHolidayBooking(entry.id, entry.data() as Record<string, unknown>, organizationId))
         .filter((item): item is HolidayBooking => item !== null)

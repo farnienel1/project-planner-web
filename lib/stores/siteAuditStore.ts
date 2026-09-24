@@ -139,6 +139,7 @@ export const useSiteAuditStore = create<SiteAuditState>((set, get) => ({
         set({ audits, loading: false })
       } catch (error: unknown) {
         set({ error: error instanceof Error ? error.message : 'Failed to load site audits', loading: false })
+        throw error
       }
     })
   },
@@ -184,6 +185,7 @@ export const useOrgUserStore = create<OrgUserState>((set, get) => ({
             error: error instanceof Error ? error.message : 'Failed to load users',
             loading: false,
           })
+          throw error
         }
       },
       options

@@ -1,6 +1,10 @@
 /** Shared TTL + in-flight dedup for org-scoped Firestore loads. */
 
+import { authLoadRetryDelayMs, isRetryableAuthLoadError } from '@/lib/auth/authBoot'
+import { waitForAuthToken } from '@/lib/firebase/waitForAuthToken'
+
 const DEFAULT_TTL_MS = 60_000
+const LOAD_ATTEMPTS = 3
 
 type CacheEntry = {
   orgId: string | null
@@ -45,14 +49,26 @@ export async function runOrgLoad(
     return
   }
 
-  const promise = loader()
-    .then(() => {
-      entry.orgId = organizationId
-      entry.loadedAt = Date.now()
-    })
-    .finally(() => {
-      if (entry.inflight === promise) entry.inflight = null
-    })
+  const promise = (async () => {
+    let lastError: unknown
+    for (let attempt = 0; attempt < LOAD_ATTEMPTS; attempt += 1) {
+      try {
+        await waitForAuthToken()
+        await loader()
+        entry.orgId = organizationId
+        entry.loadedAt = Date.now()
+        return
+      } catch (error) {
+        lastError = error
+        entry.loadedAt = 0
+        if (attempt === LOAD_ATTEMPTS - 1 || !isRetryableAuthLoadError(error)) break
+        await new Promise((resolve) => setTimeout(resolve, authLoadRetryDelayMs(attempt)))
+      }
+    }
+    console.warn('Organisation data load failed:', lastError)
+  })().finally(() => {
+    if (entry.inflight === promise) entry.inflight = null
+  })
 
   entry.inflight = promise
   await promise

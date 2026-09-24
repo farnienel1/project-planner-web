@@ -45,10 +45,18 @@ export function MfaVerifyScreen() {
     router.replace(loginHref)
   }, [firebaseUser, loading, loginHref, mfaPending, router, uid, user])
 
-  function goToApp(nextPath?: string) {
+  async function goToApp(nextPath?: string) {
     clearMfaGate()
     markMfaVerified()
-    window.location.assign(safePostMfaPath(nextPath || requestedNext, fallback))
+    const destination = safePostMfaPath(nextPath || requestedNext, fallback)
+    // The verification cookie has to be visible before the dashboard request,
+    // otherwise middleware sends the first navigation back here until a refresh.
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      const status = await readMfaStatus()
+      if (status.verified) break
+      await new Promise((resolve) => setTimeout(resolve, 200))
+    }
+    window.location.assign(destination)
   }
 
   useEffect(() => {
