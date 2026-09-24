@@ -1,17 +1,11 @@
 import type { OrgPayrollTimePolicy, OrgWarningDetectionSettings } from '@/lib/settings/organizationSettings'
 import { DEFAULT_PAYROLL_POLICY } from '@/lib/settings/organizationSettings'
+import { effectiveWeekendSettings } from '@/lib/setup/workingHoursUtils'
 import type { Booking, HolidayBooking, Operative, User } from '@/types'
 import { UserRole } from '@/types'
 import { isActiveBookingStatus } from '@/lib/ios-parity/enums'
 import { dayKey, londonIsoWeekday, londonMidnight } from '@/lib/ios-parity/londonTime'
-import {
-  combinedPaidHoursFromIntervals,
-  formatWarningHours,
-  isLegacyFullDaySlot,
-  managerClashInterval,
-  paidHoursForOperativeBooking,
-  type MinuteInterval,
-} from '@/lib/warnings/clashIntervals'
+import { formatWarningHours } from '@/lib/warnings/clashIntervals'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import { isPlaceholderOperative } from '@/lib/operatives/operativeRosterUtils'
 import {
@@ -90,6 +84,22 @@ function isUnbookedLabourWeekday(day: Date, includeWeekends: boolean, timeZone?:
   return iso >= 1 && iso <= 5
 }
 
+/** iOS paidHoursRequired: weekday standard day, or that weekend's counts-as hours. */
+export function paidHoursRequiredForUnbookedDay(
+  day: Date,
+  payrollPolicy: OrgPayrollTimePolicy,
+  timeZone?: string
+): number {
+  const iso = londonIsoWeekday(day, timeZone)
+  if (iso === 6 || iso === 7) {
+    const settings = effectiveWeekendSettings(iso === 6 ? 'saturday' : 'sunday', payrollPolicy)
+    const countsAs = settings.countsAsStandardHours
+    const hours = typeof countsAs === 'number' && Number.isFinite(countsAs) ? countsAs : payrollPolicy.standardPaidHours
+    return Math.max(hours, 0)
+  }
+  return Math.max(payrollPolicy.standardPaidHours, 0)
+}
+
 function formatUnbookedDay(day: Date, timeZone = 'Europe/London'): string {
   return new Intl.DateTimeFormat('en-GB', {
     timeZone,
@@ -163,51 +173,35 @@ export function computeUnbookedLabourWarningsForDateRange({
 }): UnbookedLabourWarning[] {
   const windowStart = londonMidnight(periodStart, timeZone)
   const windowEnd = londonMidnight(periodEnd, timeZone)
-  const requiredPaidHours = Math.max(payrollPolicy.standardPaidHours, 0)
   const excludedUserIds = new Set(warningDetection.excludedUserIdsFromUnbookedWarnings)
 
   const coverageBookings = bookings.filter(
     (booking) =>
-      isActiveBookingStatus(booking.status) && isDateWithinWarningWindow(booking.date, windowStart, windowEnd, timeZone)
+      isActiveBookingStatus(booking.status) &&
+      Boolean(booking.operativeId) &&
+      isDateWithinWarningWindow(booking.date, windowStart, windowEnd, timeZone)
   )
-  const coverageManager = managerSiteBookings.filter((booking) =>
-    isDateWithinWarningWindow(booking.date, windowStart, windowEnd, timeZone)
+  const coverageManager = managerSiteBookings.filter(
+    (booking) =>
+      Boolean(booking.userId) && isDateWithinWarningWindow(booking.date, windowStart, windowEnd, timeZone)
   )
   const approvedHolidays = holidays.filter((holiday) => String(holiday.status).toLowerCase() === 'approved')
 
-  const operativePaidByDay = new Map<string, number>()
+  const operativeBookedDays = new Set<string>()
   for (const booking of coverageBookings) {
-    const key = `${booking.operativeId}|${dayKey(booking.date, timeZone)}`
-    operativePaidByDay.set(key, (operativePaidByDay.get(key) || 0) + paidHoursForOperativeBooking(booking, payrollPolicy))
+    operativeBookedDays.add(`${booking.operativeId}|${dayKey(booking.date, timeZone)}`)
   }
 
-  const managerBookingsByDay = new Map<string, ManagerSiteBooking[]>()
+  const managerBookedDays = new Set<string>()
   for (const booking of coverageManager) {
-    const key = `${booking.userId}|${dayKey(booking.date, timeZone)}`
-    const list = managerBookingsByDay.get(key) || []
-    list.push(booking)
-    managerBookingsByDay.set(key, list)
+    managerBookedDays.add(`${booking.userId}|${dayKey(booking.date, timeZone)}`)
   }
 
-  const managerPaidTotal = (userId: string, day: Date): number => {
-    const dayMgr = managerBookingsByDay.get(`${userId}|${dayKey(day, timeZone)}`) || []
-    if (dayMgr.length === 0) return 0
-    const intervals: MinuteInterval[] = []
-    for (const booking of dayMgr) {
-      const iv = managerClashInterval(booking, payrollPolicy)
-      if (iv) intervals.push(iv)
-    }
-    return combinedPaidHoursFromIntervals(intervals, {
-      anyBreakRemoved: dayMgr.some((booking) => booking.isBreakRemoved === true),
-      includesLegacyFullDay: dayMgr.some((booking) =>
-        isLegacyFullDaySlot(String(booking.timeSlot), booking.workStartTime, booking.workEndTime)
-      ),
-      policy: payrollPolicy,
-    })
-  }
+  const hasOperativeBooking = (operativeId: string | undefined, day: Date): boolean =>
+    Boolean(operativeId) && operativeBookedDays.has(`${operativeId}|${dayKey(day, timeZone)}`)
 
-  const operativePaidTotal = (operativeId: string, day: Date): number =>
-    operativePaidByDay.get(`${operativeId}|${dayKey(day, timeZone)}`) || 0
+  const hasManagerBooking = (userId: string | undefined, day: Date): boolean =>
+    Boolean(userId) && managerBookedDays.has(`${userId}|${dayKey(day, timeZone)}`)
 
   const operativesByEmail = new Map<string, Operative>()
   for (const operative of operatives) {
@@ -226,11 +220,12 @@ export function computeUnbookedLabourWarningsForDateRange({
   )
   const warnings: UnbookedLabourWarning[] = []
 
-  const appendIfUnderBooked = (args: {
+  const appendIfUnbooked = (args: {
     personKey: string
     name: string
     email: string
-    paid: number
+    hasBooking: boolean
+    requiredHours: number
     day: Date
     operativeId: string
     userId?: string
@@ -239,8 +234,7 @@ export function computeUnbookedLabourWarningsForDateRange({
     const emailKeyValue = args.email || args.personKey
     if (args.seenEmails.has(emailKeyValue)) return
     args.seenEmails.add(emailKeyValue)
-    if (args.paid >= requiredPaidHours) return
-    const missing = Math.max(0, requiredPaidHours - args.paid)
+    if (args.hasBooking) return
     const date = londonMidnight(args.day, timeZone)
     warnings.push({
       id: `unbooked-${dayKey(date, timeZone)}-${args.personKey}`,
@@ -248,25 +242,28 @@ export function computeUnbookedLabourWarningsForDateRange({
       operativeName: args.name,
       userId: args.userId,
       date,
-      missingHours: missing,
-      message: `${args.name} is below the standard paid day on ${formatUnbookedDay(date, timeZone)}. Missing hours are shown below.`,
+      missingHours: args.requiredHours,
+      message: `${args.name} is not booked on ${formatUnbookedDay(date, timeZone)}.`,
     })
   }
 
   for (const day of eachLondonDay(windowStart, windowEnd, timeZone)) {
     if (!isUnbookedLabourWeekday(day, warningDetection.includeWeekendsForUnbookedLabour, timeZone)) continue
+    const requiredHours = paidHoursRequiredForUnbookedDay(day, payrollPolicy, timeZone)
+    // A non-working weekend (counts-as 0) is not unbooked labour.
+    if (requiredHours <= 0.001) continue
     const seenEmails = new Set<string>()
 
     for (const user of operativeUsers) {
       if (excludedUserIds.has(user.id)) continue
       const linked = operativesByEmail.get(emailKey(user.email))
       if (holidayCoversDay(approvedHolidays, day, user.id, linked?.id, timeZone)) continue
-      const paid = (linked ? operativePaidTotal(linked.id, day) : 0) + managerPaidTotal(user.id, day)
-      appendIfUnderBooked({
+      appendIfUnbooked({
         personKey: user.id,
         name: linked ? displayNameForOperative(linked) : displayNameForUser(user),
         email: emailKey(user.email),
-        paid,
+        hasBooking: hasOperativeBooking(linked?.id, day) || hasManagerBooking(user.id, day),
+        requiredHours,
         day,
         operativeId: linked?.id || user.id,
         userId: user.id,
@@ -278,12 +275,12 @@ export function computeUnbookedLabourWarningsForDateRange({
       if (excludedUserIds.has(user.id)) continue
       const linked = operativesByEmail.get(emailKey(user.email))
       if (holidayCoversDay(approvedHolidays, day, user.id, linked?.id, timeZone)) continue
-      const paid = managerPaidTotal(user.id, day) + (linked ? operativePaidTotal(linked.id, day) : 0)
-      appendIfUnderBooked({
+      appendIfUnbooked({
         personKey: user.id,
         name: displayNameForUser(user),
         email: emailKey(user.email),
-        paid,
+        hasBooking: hasManagerBooking(user.id, day) || hasOperativeBooking(linked?.id, day),
+        requiredHours,
         day,
         operativeId: linked?.id || user.id,
         userId: user.id,
@@ -300,12 +297,12 @@ export function computeUnbookedLabourWarningsForDateRange({
       if (matchedUser && managerAdminUserIds.has(matchedUser.id)) continue
       if (matchedUser && excludedUserIds.has(matchedUser.id)) continue
       if (holidayCoversDay(approvedHolidays, day, matchedUser?.id, operative.id, timeZone)) continue
-      const paid = operativePaidTotal(operative.id, day) + (matchedUser ? managerPaidTotal(matchedUser.id, day) : 0)
-      appendIfUnderBooked({
+      appendIfUnbooked({
         personKey: matchedUser?.id || operative.id,
         name: displayNameForOperative(operative),
         email: email || operative.id,
-        paid,
+        hasBooking: hasOperativeBooking(operative.id, day) || hasManagerBooking(matchedUser?.id, day),
+        requiredHours,
         day,
         operativeId: operative.id,
         userId: matchedUser?.id,
@@ -327,7 +324,7 @@ export type UnbookedLabourDayGroup = {
   people: UnbookedLabourWarning[]
 }
 
-/** iOS unbooked card lists every person missing hours on that day. */
+/** iOS unbooked card lists every person with no booking on that day. */
 export function groupUnbookedWarningsByDay(warnings: UnbookedLabourWarning[]): UnbookedLabourDayGroup[] {
   const byDay = new Map<string, UnbookedLabourWarning[]>()
   for (const warning of warnings) {
