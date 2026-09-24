@@ -3,6 +3,7 @@
 import { create } from 'zustand'
 import { collection, deleteDoc, doc, getDocs, query, setDoc, Timestamp, where } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
+import { withAuthReadRetry } from '@/lib/firebase/waitForAuthToken'
 import type { MaterialSendRecord, ProjectMaterialLine } from '@/types'
 import { newUuid, parseFirestoreDate, parseNumber, parseOptionalString, parseString } from '@/lib/firebase/firestoreUtils'
 
@@ -162,7 +163,9 @@ export const useMaterialProjectStore = create<MaterialProjectState>((set, get) =
   loadAllMaterials: async (organizationId) => {
     set({ loading: true, error: null })
     try {
-      const snapshot = await getDocs(collection(db, 'organizations', organizationId, 'materials'))
+      const snapshot = await withAuthReadRetry(() =>
+        getDocs(collection(db, 'organizations', organizationId, 'materials'))
+      )
       const materials = snapshot.docs.map((entry) =>
         mapMaterialLine(entry.id, entry.data() as Record<string, unknown>)
       )
