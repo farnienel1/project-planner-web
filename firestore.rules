@@ -679,10 +679,79 @@ service cloud.firestore {
           (request.auth.uid == layoutUserId || isOrganizationAdmin(organizationId));
       }
 
+      // Variations are not covered by the read-only catch-all below.
+      // Admins read every job. Managers read and write only jobs they are assigned to.
+      // Operatives never read or write. Hard delete is denied; rows are soft-deleted.
+      function variationCallerIsOperative() {
+        return exists(/databases/(default)/documents/users/$(request.auth.uid)) && (
+          (
+            'operativeMode' in get(/databases/(default)/documents/users/$(request.auth.uid)).data &&
+            truthyBool(get(/databases/(default)/documents/users/$(request.auth.uid)).data.operativeMode)
+          ) ||
+          (
+            'permissions' in get(/databases/(default)/documents/users/$(request.auth.uid)).data &&
+            get(/databases/(default)/documents/users/$(request.auth.uid)).data.permissions is map &&
+            'operativeMode' in get(/databases/(default)/documents/users/$(request.auth.uid)).data.permissions &&
+            truthyBool(get(/databases/(default)/documents/users/$(request.auth.uid)).data.permissions.operativeMode)
+          ) ||
+          (
+            'role' in get(/databases/(default)/documents/users/$(request.auth.uid)).data &&
+            get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'operative'
+          )
+        );
+      }
+
+      function variationJobHasManager(data) {
+        return ('managerId' in data && data.managerId == request.auth.uid) ||
+          ('managerIds' in data && data.managerIds is list && request.auth.uid in data.managerIds);
+      }
+
+      function variationAssignedToJob(organizationId, parentId) {
+        return (
+          exists(/databases/(default)/documents/organizations/$(organizationId)/projects/$(parentId)) &&
+          variationJobHasManager(get(/databases/(default)/documents/organizations/$(organizationId)/projects/$(parentId)).data)
+        ) || (
+          exists(/databases/(default)/documents/organizations/$(organizationId)/smallWorks/$(parentId)) &&
+          variationJobHasManager(get(/databases/(default)/documents/organizations/$(organizationId)/smallWorks/$(parentId)).data)
+        );
+      }
+
+      function canAdminVariations(organizationId) {
+        return isOrganizationAdmin(organizationId) && !variationCallerIsOperative();
+      }
+
+      function canAccessJobVariations(organizationId, parentId) {
+        return canAdminVariations(organizationId) || (
+          isOrganizationMaterialManager(organizationId) &&
+          !variationCallerIsOperative() &&
+          variationAssignedToJob(organizationId, parentId)
+        );
+      }
+
+      match /variations/{variationId} {
+        allow read: if resource.data.parentId is string &&
+          canAccessJobVariations(organizationId, resource.data.parentId);
+        allow create: if request.resource.data.parentId is string &&
+          request.resource.data.isDeleted == false &&
+          canAccessJobVariations(organizationId, request.resource.data.parentId);
+        allow update: if resource.data.parentId is string &&
+          request.resource.data.parentId == resource.data.parentId &&
+          canAccessJobVariations(organizationId, resource.data.parentId);
+        allow delete: if false;
+      }
+
+      match /variationTrackers/{parentId} {
+        allow read: if canAccessJobVariations(organizationId, parentId);
+        allow create, update: if canAdminVariations(organizationId);
+        allow delete: if false;
+      }
+
       // Unknown subcollections: allow org-scoped read fallback only.
       // Keep writes explicit per known subcollection rules above.
       match /{collection}/{document=**} {
-        allow read: if canAccessOrganization(organizationId);
+        allow read: if canAccessOrganization(organizationId) &&
+          collection != 'variations' &&
+          collection != 'variationTrackers';
       }
     }
 

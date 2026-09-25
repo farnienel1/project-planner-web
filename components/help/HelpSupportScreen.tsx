@@ -206,6 +206,18 @@ const TOPICS: Topic[] = [
         ],
       },
       {
+        id: 'variations',
+        title: 'Variations',
+        summary: 'Extra hours and materials on a project or small work.',
+        href: '/dashboard/variations',
+        body: [
+          'Admins see variations on every project and small work. A manager sees a job only when they are listed under Managers on that job. Operatives do not see variations.',
+          'Open: Any variations that have not been submitted, and are still required or have been carried out.',
+          'Submitted: Any variations that have been submitted by the QS to the client. Closed: Any variations that are no longer required.',
+          'Numbers are never reused. The variation tracker, which reorders numbers on one job, is for admins.',
+        ],
+      },
+      {
         id: 'small-works',
         title: 'Small works',
         summary: 'Reactive jobs in their own list.',
