@@ -16,6 +16,7 @@ import {
   namedSlotLabel,
 } from '@/lib/scheduling/paidHours'
 import { BookingEditSheet } from '@/components/schedule/BookingEditSheet'
+import { SubcontractorBookingEditSheet } from '@/components/projects/scheduling/SubcontractorBookingEditSheet'
 import { managerSiteBookingToScheduleBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import type { Booking, Project } from '@/types'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
@@ -40,6 +41,7 @@ type SubBooking = {
   timeSlot: string
   workStartTime?: string
   workEndTime?: string
+  isBreakRemoved?: boolean
   bookedContactIds?: string[]
   bookedOperativeNames?: string[]
 }
@@ -80,6 +82,7 @@ type DayRow = {
   roleTone: 'operative' | 'manager' | 'subcontractor'
   booking?: Booking
   managerBooking?: ManagerSiteBooking
+  subBooking?: SubBooking
   peopleLabel?: string
   firmName?: string
 }
@@ -190,6 +193,7 @@ export function ProjectScheduleWeekOverview({
             const end = asClockHhMm(data.workEndTime)
             if (start) row.workStartTime = start
             if (end) row.workEndTime = end
+            if (data.isBreakRemoved === true) row.isBreakRemoved = true
             return row
           })
           .filter((row): row is SubBooking => row !== null)
@@ -285,6 +289,7 @@ export function ProjectScheduleWeekOverview({
             firmName,
             roleLabel: 'Sub',
             roleTone: 'subcontractor' as const,
+            subBooking: b,
             ...bookingRowFromHours({
               ...b,
               unpaidBreakMinutes: payroll.unpaidBreakMinutes,
@@ -541,6 +546,24 @@ export function ProjectScheduleWeekOverview({
         </div>
       </div>
 
+      {editingRow?.subBooking ? (
+        <SubcontractorBookingEditSheet
+          organizationId={organizationId}
+          booking={editingRow.subBooking}
+          subcontractor={findSubcontractorFirm(subcontractors, editingRow.subBooking.subcontractorId) || null}
+          payroll={payroll}
+          onClose={() => setEditingRow(null)}
+          onSaved={(next) => {
+            const id = editingRow.subBooking?.id
+            setSubBookings((rows) => {
+              if (!id) return rows
+              if (next === 'deleted') return rows.filter((row) => row.id !== id)
+              return rows.map((row) => (row.id === id ? { ...row, ...next } : row))
+            })
+            setEditingRow(null)
+          }}
+        />
+      ) : null}
       {editingRow && editingBooking ? (
         <BookingEditSheet
           booking={editingBooking}
@@ -597,7 +620,7 @@ function PersonRow({
             ) : (
               <div className="space-y-1">
                 {cell.map((row) => {
-                  const clickable = Boolean(row.booking || row.managerBooking)
+                  const clickable = Boolean(row.booking || row.managerBooking || row.subBooking)
                   const nameOnTile = row.peopleLabel || (row.roleTone === 'subcontractor' ? row.name : '')
                   const inner = expanded ? (
                     <>
