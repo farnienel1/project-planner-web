@@ -29,6 +29,7 @@ import {
   isOperativeMode,
   canAccessQualificationsHub,
 } from '@/lib/navigation/menuPermissions'
+import { canSeeAnyVariations } from '@/lib/variations/variationAccess'
 
 export type NavSection = 'home' | 'navigate' | 'tools' | 'team' | 'account'
 
@@ -192,6 +193,16 @@ const ALL_NAV_ITEMS: DashboardNavItem[] = [
     navigationLabelKey: 'dashboard_timesheets',
     iconPath: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z',
     tileClasses: 'bg-sky-50 text-sky-700',
+    section: 'navigate',
+  },
+  {
+    id: 'dashboard_variations',
+    href: '/dashboard/variations',
+    label: 'Variations',
+    subtitle: 'Extra hours and materials on a job',
+    navigationLabelKey: 'dashboard_variations',
+    iconPath: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z',
+    tileClasses: 'bg-amber-50 text-amber-800',
     section: 'navigate',
   },
   {
@@ -367,6 +378,8 @@ function canSeeNavItem(item: DashboardNavItem, user: User, orgUsers: User[] = []
       return canViewSiteAudit(user)
     case 'dashboard_timesheets':
       return canAccessTimesheets(user, false, orgUsers)
+    case 'dashboard_variations':
+      return canSeeAnyVariations(user)
     case 'dashboard_qualifications':
       return canAccessQualificationsHub(user)
     case 'dashboard_my_qualifications':

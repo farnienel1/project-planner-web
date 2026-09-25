@@ -37,6 +37,8 @@ export function hueForNavId(id: string): SectionHue {
     case 'dashboard_timesheets':
     case 'dashboard_materials':
       return 'ts'
+    case 'dashboard_variations':
+      return 'warn'
     case 'dashboard_operatives':
       return 'ops'
     case 'dashboard_weekly_report':
