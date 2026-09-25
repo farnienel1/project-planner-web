@@ -1234,26 +1234,37 @@ table.t { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 
 .pcard .foot { display: flex; align-items: center; gap: 10px; border-top: 1px solid var(--line); padding-top: 12px; }
 
 .ptabs {
-  display: flex;
-  gap: 8px;
-  overflow-x: auto;
-  padding: 4px 2px 6px;
-  margin: 18px 0 20px;
-  scrollbar-width: none;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+  gap: 10px;
+  overflow: visible;
+  padding: 0;
+  margin: 18px 0 22px;
 }
 .ptabs a {
   display: flex;
   align-items: center;
   gap: 9px;
-  padding: 8px 16px 8px 8px;
+  min-height: 72px;
+  height: 100%;
+  padding: 12px 14px;
   border-radius: 14px;
   background: var(--card);
   box-shadow: var(--sh);
   color: var(--ink2);
   font-weight: 600;
   font-size: 14.5px;
-  white-space: nowrap;
+  white-space: normal;
+  line-height: 1.25;
   transition: transform 0.12s;
+}
+.ptabs a.overview {
+  grid-column: span 2;
+  min-height: 88px;
+  font-size: 16px;
+}
+@media (max-width: 560px) {
+  .ptabs { grid-template-columns: 1fr 1fr; }
 }
 .ptabs a .ico-chip { width: 32px; height: 32px; border-radius: 10px; }
 .ptabs a:hover { transform: translateY(-1px); color: var(--ink); }

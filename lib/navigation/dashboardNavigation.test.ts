@@ -60,6 +60,15 @@ test('Timesheets appears in the menu for a manager with direct reports and no op
   assert.equal(ids.includes('dashboard_timesheets'), true)
 })
 
+test('Variations is in the menu for admins and managers, and hidden for operatives', () => {
+  const operative = user({ role: UserRole.OPERATIVE, permissions: { operativeMode: true } })
+  const manager = user({ role: UserRole.MANAGER, permissions: { manager: true } })
+  const admin = user({ role: UserRole.ADMIN, permissions: { adminAccess: true } })
+  assert.equal(getDashboardNavItems(operative, null).some((item) => item.id === 'dashboard_variations'), false)
+  assert.equal(getDashboardNavItems(manager, null).some((item) => item.id === 'dashboard_variations'), true)
+  assert.equal(getDashboardNavItems(admin, null).some((item) => item.id === 'dashboard_variations'), true)
+})
+
 test('Feedback is in the organisation menu; Developer never is', () => {
   const operative = user({ role: UserRole.OPERATIVE, permissions: { operativeMode: true } })
   const manager = user({ role: UserRole.MANAGER, permissions: { manager: true } })

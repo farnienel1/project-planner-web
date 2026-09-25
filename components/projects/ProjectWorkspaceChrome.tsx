@@ -1,6 +1,6 @@
 'use client'
 
-import type { ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { format } from 'date-fns'
@@ -13,6 +13,7 @@ import {
   MapPinIcon,
   PencilSquareIcon,
   PlusIcon,
+  DocumentTextIcon,
   FlagIcon,
   ShieldCheckIcon,
   Squares2X2Icon,
@@ -28,6 +29,8 @@ import { useAuthStore } from '@/lib/stores/authStore'
 import { canBookWork, canManageWorkCatalogue, canViewMaterials, canViewSiteAudit } from '@/lib/permissions'
 import { isOperativeMode } from '@/lib/navigation/menuPermissions'
 import { jobHubTiles } from '@/lib/projects/jobHubTiles'
+import { canSeeJobVariations } from '@/lib/variations/variationAccess'
+import { subscribeParentVariations } from '@/lib/variations/variationStorage'
 import type { SectionHue } from '@/lib/ui/sectionHue'
 import type { Project, User } from '@/types'
 import { cn } from '@/lib/ui/cn'
@@ -49,6 +52,7 @@ const TAB_META: Record<string, { hue: SectionHue; icon: typeof Squares2X2Icon }>
   deadlines: { hue: 'red', icon: FlagIcon },
   'site-audit': { hue: 'daily', icon: CameraIcon },
   location: { hue: 'proj', icon: MapPinIcon },
+  variations: { hue: 'warn', icon: DocumentTextIcon },
 }
 
 function tabFromPath(pathname: string, basePath: string): string {
@@ -62,6 +66,7 @@ function tabFromPath(pathname: string, basePath: string): string {
   if (rest.startsWith('deadlines')) return 'deadlines'
   if (rest.startsWith('site-audit')) return 'site-audit'
   if (rest.startsWith('location')) return 'location'
+  if (rest.startsWith('variations')) return 'variations'
   return 'overview'
 }
 
@@ -85,7 +90,7 @@ export function ProjectWorkspaceChrome({
   children: ReactNode
 }) {
   const pathname = usePathname() || ''
-  const { user } = useAuthStore()
+  const { user, organization } = useAuthStore()
   const isSmallWork = basePath.includes('small-works')
   const status = deriveWorkStatus(project)
   const progress = timelineProgressPercent(project.startDate, project.endDate, status)
@@ -101,6 +106,22 @@ export function ProjectWorkspaceChrome({
   const catalogue = isSmallWork ? '/dashboard/small-works' : '/dashboard/projects'
   const catalogueLabel = isSmallWork ? 'Small works' : 'Projects'
 
+  const showVariations = canSeeJobVariations(user, project)
+  const [openVariations, setOpenVariations] = useState(0)
+
+  useEffect(() => {
+    if (!showVariations || !organization?.id) {
+      setOpenVariations(0)
+      return
+    }
+    return subscribeParentVariations(
+      organization.id,
+      project.id,
+      (rows) => setOpenVariations(rows.filter((row) => !row.isDeleted && row.status === 'open').length),
+      () => setOpenVariations(0)
+    )
+  }, [showVariations, organization?.id, project.id])
+
   const tiles = jobHubTiles({
     isOperative,
     showViewTile,
@@ -110,7 +131,17 @@ export function ProjectWorkspaceChrome({
   }).map((tile) => (tile.href === 'tasks' ? { ...tile, badge: taskCount } : tile))
 
   const tabs = [
-    { href: '', label: 'Overview', key: 'overview' as const, badge: undefined as number | undefined },
+    { href: '', label: 'Overview', key: 'overview', badge: undefined as number | undefined },
+    ...(showVariations
+      ? [
+          {
+            href: 'variations',
+            label: 'Variations',
+            key: 'variations',
+            badge: openVariations > 0 ? openVariations : undefined,
+          },
+        ]
+      : []),
     ...tiles.map((tile) => ({
       href: tile.href,
       label: tile.href === 'view' ? 'View access' : tile.href === 'health-safety' ? 'H&S' : tile.label,
@@ -194,7 +225,7 @@ export function ProjectWorkspaceChrome({
                 key={tab.key}
                 href={tab.href ? `${basePath}/${tab.href}` : basePath}
                 data-hue={meta.hue}
-                className={cn(on && 'on')}
+                className={cn(tab.key === 'overview' && 'overview', on && 'on')}
               >
                 <span className="ico-chip">
                   <Icon className="h-[17px] w-[17px]" />
