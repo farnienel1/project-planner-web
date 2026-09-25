@@ -1,7 +1,12 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { format } from 'date-fns'
 import { Modal } from '@/components/ui'
+import { FilterChip } from '@/components/ios/primitives'
+import { HoursBreakdownCard } from '@/components/schedule/HoursBreakdownCard'
+import { HoursTimelinePicker } from '@/components/scheduling/HoursTimelinePicker'
+import { CustomOtherLocationField } from '@/components/scheduling/CustomOtherLocationField'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useBookingStore } from '@/lib/stores/bookingStore'
 import { useManagerScheduleStore } from '@/lib/stores/managerScheduleStore'
@@ -11,21 +16,25 @@ import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { visibleWorks } from '@/lib/access/workAccess'
 import { useDeadlineAssignedProjectIds } from '@/lib/deadlines/useDeadlineAssignedProjectIds'
 import { findOperativeForUser } from '@/lib/operatives/operativeRosterUtils'
+import { splitBookingMoveCatalogues } from '@/lib/projects/bookingMoveCatalogues'
+import { countWorksByTab, filterWorksByTab } from '@/lib/projects/workStatus'
+import { hoursBreakdown } from '@/lib/scheduling/paidHours'
 import {
   DEFAULT_MY_SCHEDULE,
+  DEFAULT_PAYROLL_POLICY,
   enabledScheduleLocationPicks,
   loadOrganizationDetails,
   oneOffCustomLocationPick,
   type MyScheduleOptions,
+  type OrgPayrollTimePolicy,
   type ScheduleLocationPick,
 } from '@/lib/settings/organizationSettings'
-import { isSmallWorksJobType } from '@/lib/ios-parity/enums'
 import type { ManagerLocationType, ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import type { OverviewPersonRow } from '@/lib/daily-overview/buildDailyOverview'
 import type { Project } from '@/types'
-import { CustomOtherLocationField } from '@/components/scheduling/CustomOtherLocationField'
 
 type DestTab = 'other' | 'projects' | 'smallWorks'
+type StatusFilter = 'active' | 'upcoming' | 'completed'
 
 export type OverviewBookingTarget = OverviewPersonRow | {
   id: string
@@ -82,6 +91,7 @@ export function DailyOverviewBookingSheet({
   const { operatives } = useOperativeStore()
   const { users } = useOrgUserStore()
   const [tab, setTab] = useState<DestTab | undefined>(undefined)
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('active')
   const [search, setSearch] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -89,6 +99,11 @@ export function DailyOverviewBookingSheet({
     ...DEFAULT_MY_SCHEDULE,
     customItemEnabled: {},
   })
+  const [payroll, setPayroll] = useState<OrgPayrollTimePolicy>(DEFAULT_PAYROLL_POLICY)
+  const [workStartTime, setWorkStartTime] = useState(row.workStartTime || DEFAULT_PAYROLL_POLICY.standardDayStart)
+  const [workEndTime, setWorkEndTime] = useState(row.workEndTime || DEFAULT_PAYROLL_POLICY.standardDayEnd)
+  const [breakRemoved, setBreakRemoved] = useState(false)
+  const hoursTouched = useRef(false)
 
   useEffect(() => {
     if (!organization?.id) return
@@ -97,40 +112,50 @@ export function DailyOverviewBookingSheet({
     loadOrganizationDetails(organization.id)
       .then((details) => {
         if (details?.myScheduleOptions) setScheduleOpts(details.myScheduleOptions)
+        if (details?.payrollTimePolicy) setPayroll(details.payrollTimePolicy)
       })
       .catch(() => {})
   }, [organization?.id, loadProjects, loadSmallWorks])
 
-  const allWorks = useMemo(() => [...projects, ...smallWorks], [projects, smallWorks])
-  const liveProjects = useMemo(
-    () =>
-      visibleWorks({
-        projects: allWorks,
-        catalogue: 'projects',
-        user,
-        operatives,
-        bookings,
-        managerBookings: managerSiteBookings,
-        deadlineAssignedProjectIds,
-      }).filter((project) => project.isLive),
-    [allWorks, user, operatives, bookings, managerSiteBookings, deadlineAssignedProjectIds]
+  useEffect(() => {
+    hoursTouched.current = false
+    const operative = bookings.find((entry) => entry.id === row.bookingId)
+    const manager = managerSiteBookings.find((entry) => entry.id === row.bookingId)
+    setBreakRemoved(operative?.isBreakRemoved === true || manager?.isBreakRemoved === true)
+    setWorkStartTime(row.workStartTime || payroll.standardDayStart)
+    setWorkEndTime(row.workEndTime || payroll.standardDayEnd)
+    // Seed once per booking. Later store updates must not wipe slider changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [row.bookingId])
+
+  useEffect(() => {
+    if (hoursTouched.current) return
+    if (row.workStartTime && row.workEndTime) return
+    setWorkStartTime(row.workStartTime || payroll.standardDayStart)
+    setWorkEndTime(row.workEndTime || payroll.standardDayEnd)
+  }, [row.bookingId, row.workStartTime, row.workEndTime, payroll.standardDayStart, payroll.standardDayEnd])
+
+  const catalogues = useMemo(() => splitBookingMoveCatalogues(projects, smallWorks), [projects, smallWorks])
+  const accessInput = {
+    user,
+    operatives,
+    bookings,
+    managerBookings: managerSiteBookings,
+    deadlineAssignedProjectIds,
+    catalogue: 'all' as const,
+  }
+  const visibleProjects = useMemo(
+    () => visibleWorks({ ...accessInput, projects: catalogues.projects }),
+    [catalogues.projects, user, operatives, bookings, managerSiteBookings, deadlineAssignedProjectIds]
   )
-  const liveSmallWorks = useMemo(
-    () =>
-      visibleWorks({
-        projects: allWorks,
-        catalogue: 'smallWorks',
-        user,
-        operatives,
-        bookings,
-        managerBookings: managerSiteBookings,
-        deadlineAssignedProjectIds,
-      }).filter((project) => project.isLive),
-    [allWorks, user, operatives, bookings, managerSiteBookings, deadlineAssignedProjectIds]
+  const visibleSmallWorks = useMemo(
+    () => visibleWorks({ ...accessInput, projects: catalogues.smallWorks }),
+    [catalogues.smallWorks, user, operatives, bookings, managerSiteBookings, deadlineAssignedProjectIds]
   )
   const otherPicks = enabledScheduleLocationPicks(scheduleOpts)
-  const list = tab === 'smallWorks' ? liveSmallWorks : liveProjects
-  const filtered = list.filter((project) => {
+  const catalogue = tab === 'smallWorks' ? visibleSmallWorks : visibleProjects
+  const counts = useMemo(() => countWorksByTab(catalogue), [catalogue])
+  const filtered = filterWorksByTab(catalogue, statusFilter).filter((project) => {
     const q = search.trim().toLowerCase()
     if (!q) return true
     return project.siteName.toLowerCase().includes(q) || project.jobNumber.toLowerCase().includes(q)
@@ -153,6 +178,8 @@ export function DailyOverviewBookingSheet({
     return matchedUser ? findOperativeForUser(matchedUser, operatives) : undefined
   }, [row.operativeId, resolvedUserId, operatives, users])
 
+  const allWorks = useMemo(() => [...catalogues.projects, ...catalogues.smallWorks], [catalogues])
+
   const currentLabel = useMemo(() => {
     if (row.locationType === 'office') return 'Office'
     if (row.locationType === 'working_from_home') return 'Working from home'
@@ -163,33 +190,68 @@ export function DailyOverviewBookingSheet({
     return row.kind === 'operative' ? 'Project booking' : 'Current booking'
   }, [row, allWorks])
 
-  const saveToProject = async (project: Project) => {
-    if (!organization?.id || !row.bookingId || !user) return
+  const hoursValid = useMemo(() => {
+    const start = workStartTime.split(':').map(Number)
+    const end = workEndTime.split(':').map(Number)
+    const startMin = (start[0] || 0) * 60 + (start[1] || 0)
+    const endMin = (end[0] || 0) * 60 + (end[1] || 0)
+    return endMin > startMin
+  }, [workStartTime, workEndTime])
+
+  const breakdown = useMemo(
+    () =>
+      hoursBreakdown({
+        timeSlot: 'CUSTOM_HOURS',
+        workStartTime,
+        workEndTime,
+        isBreakRemoved: breakRemoved,
+        unpaidBreakMinutes: payroll.unpaidBreakMinutes,
+        breakWindowStart: payroll.breakWindowStart,
+        breakWindowEnd: payroll.breakWindowEnd,
+        standardPaidHours: payroll.standardPaidHours,
+        standardDayStart: payroll.standardDayStart,
+        standardDayEnd: payroll.standardDayEnd,
+        overtimeMultiplier: payroll.weekdayOutsideStandardMultiplier,
+      }),
+    [workStartTime, workEndTime, breakRemoved, payroll]
+  )
+
+  const hoursFields = () => ({
+    timeSlot: 'CUSTOM_HOURS',
+    workStartTime,
+    workEndTime,
+    isBreakRemoved: breakRemoved,
+  })
+
+  const saveToProject = async (project: Project, asSmallWork: boolean) => {
+    if (!organization?.id || !row.bookingId || !user || !hoursValid) return
     setSaving(true)
     setError(null)
     try {
-      const smallWorksJob = isSmallWorksJobType(project.jobType)
+      const hours = hoursFields()
       if (row.kind === 'operative') {
-        await updateBooking(row.bookingId, { projectId: project.id })
+        await updateBooking(row.bookingId, { projectId: project.id, ...hours })
       } else if (linkedOperative) {
         await createBooking({
           operativeId: linkedOperative.id,
           projectId: project.id,
           date: day,
-          timeSlot: operativeSlotFromRaw(row.timeSlotRaw),
+          timeSlot: operativeSlotFromRaw('CUSTOM_HOURS'),
           bookedBy: user.id,
           status: 'Confirmed',
           notes: '',
-          workStartTime: row.workStartTime,
-          workEndTime: row.workEndTime,
+          workStartTime: hours.workStartTime,
+          workEndTime: hours.workEndTime,
+          isBreakRemoved: hours.isBreakRemoved,
           organizationId: organization.id,
         })
         await deleteManagerSiteBooking(organization.id, row.bookingId)
       } else {
         await updateManagerSiteBooking(organization.id, row.bookingId, {
-          locationType: smallWorksJob ? 'small_work' : 'project',
+          locationType: asSmallWork ? 'small_work' : 'project',
           locationId: project.id,
           customLocationName: undefined,
+          ...hours,
         })
       }
       onClose()
@@ -201,7 +263,7 @@ export function DailyOverviewBookingSheet({
   }
 
   const saveToOther = async (pick: ScheduleLocationPick) => {
-    if (!organization?.id) return
+    if (!organization?.id || !hoursValid) return
     if (!resolvedUserId) {
       setError('This person needs a user account to be booked to Other.')
       return
@@ -209,15 +271,17 @@ export function DailyOverviewBookingSheet({
     setSaving(true)
     setError(null)
     try {
+      const hours = hoursFields()
       if (row.kind === 'operative' && row.bookingId) {
         await saveManagerSiteBooking(organization.id, {
           userId: resolvedUserId,
           date: day,
-          timeSlot: managerSlotFromRaw(row.timeSlotRaw),
+          timeSlot: managerSlotFromRaw('CUSTOM_HOURS'),
           locationType: pick.locationType,
           customLocationName: pick.customLocationName,
-          workStartTime: row.workStartTime,
-          workEndTime: row.workEndTime,
+          workStartTime: hours.workStartTime,
+          workEndTime: hours.workEndTime,
+          isBreakRemoved: hours.isBreakRemoved,
         })
         await deleteBooking(row.bookingId, organization.id)
       } else if (row.bookingId) {
@@ -225,6 +289,7 @@ export function DailyOverviewBookingSheet({
           locationType: pick.locationType,
           locationId: undefined,
           customLocationName: pick.customLocationName,
+          ...hours,
         })
       }
       onClose()
@@ -235,24 +300,52 @@ export function DailyOverviewBookingSheet({
     }
   }
 
+  const saveHoursOnly = async () => {
+    if (!organization?.id || !row.bookingId || !hoursValid) return
+    setSaving(true)
+    setError(null)
+    try {
+      const hours = hoursFields()
+      if (row.kind === 'operative') {
+        await updateBooking(row.bookingId, hours)
+      } else {
+        await updateManagerSiteBooking(organization.id, row.bookingId, hours)
+      }
+      onClose()
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Could not update booking')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const openTab = (next: DestTab) => {
+    setTab(next)
+    setSearch('')
+    setStatusFilter('active')
+  }
+
   return (
-    <Modal open hue="daily" title={row.name} subtitle="Change this booking" onClose={onClose} footer={false}>
+    <Modal
+      open
+      hue="daily"
+      title={row.name}
+      subtitle={`Change this booking · ${format(day, 'EEE d MMM')}`}
+      onClose={onClose}
+      footer={false}
+    >
       <div className="stack" style={{ gap: 14 }}>
         <p className="muted small">
-          Currently booked to <b>{currentLabel}</b>. Move them to Other, a project, or small works.
+          Currently booked to <b>{currentLabel}</b>. Choose Other, a project, or small works, and set the start and finish.
         </p>
         <div className="grid g3" style={{ gap: 8 }}>
-          <button type="button" className={`btn ${tab === 'other' ? 'primary' : ''}`} onClick={() => setTab('other')}>
+          <button type="button" className={`btn ${tab === 'other' ? 'primary' : ''}`} onClick={() => openTab('other')}>
             Other
           </button>
-          <button type="button" className={`btn ${tab === 'projects' ? 'primary' : ''}`} onClick={() => setTab('projects')}>
+          <button type="button" className={`btn ${tab === 'projects' ? 'primary' : ''}`} onClick={() => openTab('projects')}>
             Projects
           </button>
-          <button
-            type="button"
-            className={`btn ${tab === 'smallWorks' ? 'primary' : ''}`}
-            onClick={() => setTab('smallWorks')}
-          >
+          <button type="button" className={`btn ${tab === 'smallWorks' ? 'primary' : ''}`} onClick={() => openTab('smallWorks')}>
             Small works
           </button>
         </div>
@@ -270,6 +363,7 @@ export function DailyOverviewBookingSheet({
                     type="button"
                     className="ritem"
                     data-hue="daily"
+                    disabled={saving || !hoursValid}
                     onClick={() => void saveToOther(pick)}
                   >
                     <span className="grow">
@@ -280,7 +374,7 @@ export function DailyOverviewBookingSheet({
               </div>
             )}
             <CustomOtherLocationField
-              disabled={saving}
+              disabled={saving || !hoursValid}
               onUse={(name) => {
                 const pick = oneOffCustomLocationPick(name)
                 if (pick) void saveToOther(pick)
@@ -290,6 +384,11 @@ export function DailyOverviewBookingSheet({
         ) : null}
         {tab === 'projects' || tab === 'smallWorks' ? (
           <>
+            <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+              <FilterChip title={`Active · ${counts.active}`} selected={statusFilter === 'active'} onClick={() => setStatusFilter('active')} />
+              <FilterChip title={`Upcoming · ${counts.upcoming}`} selected={statusFilter === 'upcoming'} onClick={() => setStatusFilter('upcoming')} />
+              <FilterChip title={`Completed · ${counts.completed}`} selected={statusFilter === 'completed'} onClick={() => setStatusFilter('completed')} />
+            </div>
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -297,24 +396,56 @@ export function DailyOverviewBookingSheet({
               className="in"
             />
             <div className="rows">
-              {filtered.map((project) => (
-                <button
-                  key={project.id}
-                  type="button"
-                  className="ritem"
-                  data-hue={tab === 'smallWorks' ? 'sw' : 'proj'}
-                  onClick={() => void saveToProject(project)}
-                >
-                  <span className="grow">
-                    <span className="t">
-                      {project.jobNumber} · {project.siteName}
+              {filtered.length === 0 ? (
+                <p className="muted small">No {statusFilter} {tab === 'smallWorks' ? 'small works' : 'projects'}.</p>
+              ) : (
+                filtered.map((project) => (
+                  <button
+                    key={project.id}
+                    type="button"
+                    className="ritem"
+                    data-hue={tab === 'smallWorks' ? 'sw' : 'proj'}
+                    disabled={saving || !hoursValid}
+                    onClick={() => void saveToProject(project, tab === 'smallWorks')}
+                  >
+                    <span className="grow">
+                      <span className="t">
+                        {project.jobNumber} · {project.siteName}
+                      </span>
                     </span>
-                  </span>
-                </button>
-              ))}
+                  </button>
+                ))
+              )}
             </div>
           </>
         ) : null}
+        <div className="stack" style={{ gap: 10 }}>
+          <p className="eyebrow">Start and finish</p>
+          <HoursTimelinePicker
+            start={workStartTime}
+            end={workEndTime}
+            breakRemoved={breakRemoved}
+            policy={payroll}
+            showBreak
+            onStart={(value) => {
+              hoursTouched.current = true
+              setWorkStartTime(value)
+            }}
+            onEnd={(value) => {
+              hoursTouched.current = true
+              setWorkEndTime(value)
+            }}
+            onBreak={(value) => {
+              hoursTouched.current = true
+              setBreakRemoved(value)
+            }}
+          />
+          {!hoursValid ? <p className="muted small">Finish needs to be after the start.</p> : null}
+          <HoursBreakdownCard breakdown={breakdown} />
+          <button type="button" className="btn primary" disabled={saving || !hoursValid} onClick={() => void saveHoursOnly()}>
+            Save hours on this booking
+          </button>
+        </div>
       </div>
     </Modal>
   )
