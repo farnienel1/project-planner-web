@@ -35,7 +35,7 @@ test('talk filters match library search and trade chips including general talks'
   assert.deepEqual(talkTradeFilters(talks), ['All', 'General', 'Electrician', 'Plumber'])
   assert.deepEqual(
     filterToolboxTalks(talks, '', 'Electrician').map((row) => row.id),
-    ['1', '2']
+    ['1']
   )
   assert.deepEqual(
     filterToolboxTalks(talks, '', 'General').map((row) => row.id),
@@ -47,7 +47,14 @@ test('talk filters match library search and trade chips including general talks'
   )
   assert.deepEqual(
     groupTalksByCategory(talks).map((group) => group.category),
-    ['general', 'electrical', 'plumbing']
+    ['General', 'Electrical', 'Plumbing']
+  )
+  assert.deepEqual(
+    groupTalksByCategory([
+      talk({ id: 'a', title: 'A', category: 'General' }),
+      talk({ id: 'b', title: 'B', category: 'general' }),
+    ]).map((group) => group.category),
+    ['General']
   )
 })
 

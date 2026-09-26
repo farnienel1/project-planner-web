@@ -749,7 +749,7 @@ export function ProjectHealthSafetySection({
               {libraryGroups.map((group) => {
                 const open =
                   talkSearch.trim().length > 0 ||
-                  tradeFilter === group.category ||
+                  tradeFilter !== 'All' ||
                   openLibraryCategories.includes(group.category)
                 return (
                   <div key={group.category} className="border-t border-[#EEF1F5] first:border-t-0">
@@ -780,7 +780,7 @@ export function ProjectHealthSafetySection({
                               <p className="text-sm font-semibold text-slate-900">{talk.title}</p>
                               <p className="text-xs text-slate-500">
                                 {talk.referenceCode ? `${talk.referenceCode} · ` : ''}
-                                {talk.category}
+                                {group.category}
                                 {talk.trades.length > 0 ? ` · ${talk.trades.join(', ')}` : ' · General'}
                               </p>
                             </div>

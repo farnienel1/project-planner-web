@@ -22,8 +22,23 @@ function talkKey(talk: Pick<HSToolboxTalk, 'id' | 'referenceCode'>): string {
   return (talk.referenceCode || talk.id).trim().toUpperCase()
 }
 
+export function canonicalTalkCategory(category: string): string {
+  const trimmed = category.trim()
+  if (!trimmed) return 'General'
+  const match = TALK_CATEGORY_ORDER.find((item) => item.toLowerCase() === trimmed.toLowerCase())
+  if (match) return match
+  return trimmed.charAt(0).toUpperCase() + trimmed.slice(1)
+}
+
 function isGeneralTalk(talk: Pick<HSToolboxTalk, 'isGeneral' | 'category' | 'trades'>): boolean {
-  return talk.isGeneral || talk.trades.length === 0 || talk.category.trim().toLowerCase() === 'general'
+  const category = canonicalTalkCategory(talk.category)
+  if (category.toLowerCase() === 'general') return true
+  return talk.isGeneral && talk.trades.length === 0
+}
+
+function talkMatchesFilter(talk: Pick<HSToolboxTalk, 'isGeneral' | 'category' | 'trades'>, wanted: string): boolean {
+  if (talk.trades.some((item) => item.trim().toLowerCase() === wanted)) return true
+  return canonicalTalkCategory(talk.category).toLowerCase() === wanted
 }
 
 function categoryRank(category: string): number {
@@ -51,9 +66,10 @@ export function filterToolboxTalks(talks: HSToolboxTalk[], search: string, trade
   const tradeFilter = trade.trim()
   return talks.filter((talk) => {
     if (tradeFilter && tradeFilter !== 'All') {
-      if (tradeFilter === 'General') {
+      const wanted = tradeFilter.toLowerCase()
+      if (wanted === 'general') {
         if (!isGeneralTalk(talk)) return false
-      } else if (!(talk.isGeneral || talk.trades.includes(tradeFilter))) {
+      } else if (!talkMatchesFilter(talk, wanted)) {
         return false
       }
     }
@@ -87,7 +103,7 @@ export function talkTradeFilters(talks: HSToolboxTalk[]): string[] {
 export function groupTalksByCategory(talks: HSToolboxTalk[]): { category: string; talks: HSToolboxTalk[] }[] {
   const map = new Map<string, HSToolboxTalk[]>()
   for (const talk of talks) {
-    const category = (talk.category || 'General').trim() || 'General'
+    const category = canonicalTalkCategory(talk.category || 'General')
     const list = map.get(category) || []
     list.push(talk)
     map.set(category, list)
