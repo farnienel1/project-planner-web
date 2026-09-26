@@ -53,9 +53,16 @@ export function Sheet({
   footer?: ReactNode
 }) {
   return (
-    <div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/40 sm:items-center sm:p-4" role="dialog" aria-modal="true">
-      <button type="button" className="absolute inset-0 cursor-default" aria-label="Close" onClick={onClose} />
-      <div className="relative flex max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-t-[22px] bg-[var(--bg)] shadow-[var(--sh-pop)] sm:rounded-[22px]">
+    <div
+      className="fixed inset-0 z-[80] flex items-end justify-center bg-black/40 sm:items-center sm:p-4"
+      role="dialog"
+      aria-modal="true"
+      onClick={onClose}
+    >
+      <div
+        className="relative z-10 flex max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-t-[22px] bg-[var(--bg)] shadow-[var(--sh-pop)] sm:rounded-[22px]"
+        onClick={(event) => event.stopPropagation()}
+      >
         <div className="flex items-start gap-3 border-b border-[var(--line)] bg-[var(--card)] px-4 py-3">
           <button type="button" className="btn sm ghost" onClick={onClose}>
             Close
@@ -332,7 +339,7 @@ export function EditorSheet({
   audits: SiteAudit[]
   authorName: string
   onClose: () => void
-  onSave: (draft: Deadline, file: File | null) => void
+  onSave: (draft: Deadline, file: File | null) => void | Promise<void>
 }) {
   const [title, setTitle] = useState(existing?.title || '')
   const [location, setLocation] = useState(existing?.location || '')
@@ -350,6 +357,8 @@ export function EditorSheet({
   const [detail, setDetail] = useState(existing?.detail || '')
   const [auditId, setAuditId] = useState(existing?.siteAuditId || '')
   const [file, setFile] = useState<File | null>(null)
+  const [formError, setFormError] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
   const live = people.filter((person) => person.isLive)
   const extras = people.filter((person) => {
     if (person.isLive) return false
@@ -358,15 +367,22 @@ export function EditorSheet({
     return person.name.toLowerCase().includes(q) || person.subtitle.toLowerCase().includes(q)
   })
   const tradeChoices = Array.from(new Set([...(existing?.trade ? [existing.trade] : []), ...DEADLINE_TRADE_OPTIONS]))
-  const canSave = title.trim().length > 0
 
   function toggle(id: string) {
     setSelected((current) => (current.includes(id) ? current.filter((row) => row !== id) : [...current, id]))
   }
 
-  function submit(event: FormEvent) {
-    event.preventDefault()
-    if (!canSave) return
+  async function submit(event?: FormEvent) {
+    event?.preventDefault()
+    if (!title.trim()) {
+      setFormError('Give the deadline a title to continue.')
+      return
+    }
+    const dueDate = dateFromDayKey(due)
+    if (Number.isNaN(dueDate.getTime())) {
+      setFormError('Choose a due date.')
+      return
+    }
     const chosen = people.filter((person) => selected.includes(person.id))
     const audit = audits.find((row) => row.id === auditId)
     const base: Deadline = existing
@@ -378,7 +394,7 @@ export function EditorSheet({
           trade: null,
           detail: null,
           start: null,
-          due: dateFromDayKey(due),
+          due: dueDate,
           completedAt: null,
           assignees: [],
           assigneeUserIds: [],
@@ -406,7 +422,7 @@ export function EditorSheet({
       trade,
       detail: detail.trim() || null,
       start: hasStart ? dateFromDayKey(start) : null,
-      due: dateFromDayKey(due),
+      due: dueDate,
       isCritical: critical,
       reminderDaysBefore: reminder ? 2 : null,
       contextKind,
@@ -416,8 +432,20 @@ export function EditorSheet({
       siteAuditTitle: audit ? auditTitle(audit) : null,
       fileName: file?.name || base.fileName,
     }
+    if (hasStart && Number.isNaN(next.start?.getTime())) {
+      setFormError('Choose a start date, or turn the start date off.')
+      return
+    }
     const stamped = existing ? applyEditHistory(existing, next, authorName, new Date()) : applyCreatedHistory(next, authorName, new Date())
-    onSave(stamped, file)
+    setSaving(true)
+    setFormError(null)
+    try {
+      await onSave(stamped, file)
+    } catch (err: unknown) {
+      setFormError(err instanceof Error ? err.message : 'Could not save the deadline.')
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -427,9 +455,9 @@ export function EditorSheet({
       onClose={onClose}
       footer={
         <div>
-          {!canSave ? <p className="mb-2 text-xs text-[var(--ink3)]">Give the deadline a title to continue</p> : null}
-          <button type="submit" form="deadline-editor" className="btn primary" disabled={!canSave}>
-            {existing ? 'Save changes' : 'Add deadline'}
+          {formError ? <p className="mb-2 text-xs font-semibold text-[var(--red)]">{formError}</p> : null}
+          <button type="button" className="btn primary" disabled={saving} onClick={() => void submit()}>
+            {saving ? 'Saving…' : existing ? 'Save changes' : 'Add deadline'}
           </button>
         </div>
       }

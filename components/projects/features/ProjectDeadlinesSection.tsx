@@ -170,8 +170,10 @@ export function ProjectDeadlinesSection({ project, isSmallWorks }: { project: Pr
   }
 
   async function commit(draft: Deadline, file: File | null) {
-    if (!organization?.id || !user) return
+    if (!organization?.id || !user) throw new Error('Sign in again, then add the deadline.')
     setBanner(null)
+    if (!loaded) await load(organization.id, project.id, isSmallWorks)
+    const currentItems = useDeadlineStore.getState().items
     let next = { ...draft, projectId: project.id, contextKind }
     if (!next.createdByUserId) next.createdByUserId = user.id
     if (file) {
@@ -180,16 +182,19 @@ export function ProjectDeadlinesSection({ project, isSmallWorks }: { project: Pr
         const url = await uploadFile(path, file, file.type || 'application/octet-stream')
         next = withFileAttached(next, file.name, url, authorName, new Date())
       } catch (err: unknown) {
-        setBanner(err instanceof Error ? err.message : 'Could not attach the file.')
-        return
+        const message = err instanceof Error ? err.message : 'Could not attach the file.'
+        setBanner(message)
+        throw new Error(message)
       }
     }
-    const previous = items.find((item) => item.id === next.id) || null
+    const previous = currentItems.find((item) => item.id === next.id) || null
     try {
-      await persist(replaceDeadline(items, next), previous, next.id)
+      await persist(replaceDeadline(currentItems, next), previous, next.id)
       setEditing(null)
     } catch (err: unknown) {
-      setBanner(err instanceof Error ? err.message : 'Could not save the deadline.')
+      const message = err instanceof Error ? err.message : 'Could not save the deadline.'
+      setBanner(message)
+      throw new Error(message)
     }
   }
 

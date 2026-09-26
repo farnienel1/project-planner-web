@@ -280,6 +280,12 @@ a {
   animation: pagein 0.22s ease-out;
 }
 
+/* Shrink page content so more of each screen fits. The left menu is outside this box. */
+.app-stage {
+  zoom: 0.86;
+  width: calc(100% / 0.86);
+}
+
 .btn {
   display: inline-flex;
   align-items: center;

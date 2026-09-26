@@ -11,6 +11,7 @@ import { useSiteAuditStore } from '@/lib/stores/siteAuditStore'
 import { isOperativeMode } from '@/lib/navigation/menuPermissions'
 import { EmptyState, LoadingSpinner } from '@/components/dashboard/PageShell'
 import { SiteAuditCreateFlow } from '@/components/projects/siteAudit/SiteAuditCreateFlow'
+import { buildSiteAuditPdfContextFromProject, openSiteAuditPdf } from '@/lib/siteAudit/siteAuditPdf'
 import type { Project, SiteAudit } from '@/types'
 import {
   FeatureCard,
@@ -208,6 +209,26 @@ export function ProjectSiteAuditSection({ project }: { project: Project }) {
               </div>
               <button type="button" onClick={() => setSelectedAudit(null)} className="text-slate-400 hover:text-slate-600">
                 ✕
+              </button>
+            </div>
+            <div className="mt-4 grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() =>
+                  openSiteAuditPdf(selectedAudit, buildSiteAuditPdfContextFromProject(selectedAudit, project, organization))
+                }
+                className="rounded-xl bg-blue-600 px-3 py-2.5 text-sm font-bold text-white hover:bg-blue-700"
+              >
+                Share / Download
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  openSiteAuditPdf(selectedAudit, buildSiteAuditPdfContextFromProject(selectedAudit, project, organization))
+                }
+                className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-50"
+              >
+                Preview PDF
               </button>
             </div>
             <div className="mt-4 space-y-3">
