@@ -613,9 +613,11 @@ function AppShellInner({ children }: { children: ReactNode }) {
             </header>
           ) : null}
 
-          <main className="min-w-0 flex-1">
-            <div className={cn('page mx-auto w-full max-w-shell', isHome ? 'px-4 py-4 min-[760px]:px-7 min-[760px]:py-6' : 'px-4 py-6 min-[760px]:px-7 min-[760px]:pb-14')}>
-              {children}
+          <main className="min-w-0 flex-1 overflow-x-clip">
+            <div className="app-stage">
+              <div className={cn('page mx-auto w-full max-w-shell', isHome ? 'px-4 py-4 min-[760px]:px-7 min-[760px]:py-6' : 'px-4 py-6 min-[760px]:px-7 min-[760px]:pb-14')}>
+                {children}
+              </div>
             </div>
           </main>
         </div>

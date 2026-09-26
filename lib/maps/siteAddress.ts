@@ -60,8 +60,10 @@ export function resolveStoredCoordinates(
 }
 
 export function openMapsForProject(project: Parameters<typeof formatSiteAddress>[0]): string | null {
-  const coords = resolveStoredCoordinates(project)
-  if (coords) return googleMapsCoordinateUrl(coords.latitude, coords.longitude)
+  if (project.usesMapPinForLocation !== false) {
+    const coords = resolveStoredCoordinates(project)
+    if (coords) return googleMapsCoordinateUrl(coords.latitude, coords.longitude)
+  }
   const address = formatSiteAddress(project)
   if (!isMappableSiteAddress(address)) return null
   return googleMapsSearchUrl(address)

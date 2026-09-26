@@ -169,7 +169,7 @@ export function EditUserProfile({
 }) {
   const router = useRouter()
   const { user: currentUser, organization } = useAuthStore()
-  const { users, loadUsers } = useOrgUserStore()
+  const { users, loadUsers, setListedUserActive } = useOrgUserStore()
   const { operatives, loadOperatives } = useOperativeStore()
   const { getUser, saveUser, setUserActive, deleteUser, sendPasswordReset, applyAccountType, syncLinkedOperative } =
     useUserStore()
@@ -278,6 +278,7 @@ export function EditUserProfile({
         toSave = { ...toSave, permissions: draftTypePermissions }
       }
       await saveUser(toSave)
+      setListedUserActive(toSave.id, toSave.isActive)
       await syncLinkedOperative(organization.id, toSave, operatives)
       try {
         const { loadOperativeDayRateHistory, recordDayRateChangeIfNeeded } = await import(
@@ -297,7 +298,7 @@ export function EditUserProfile({
       } catch {
         // History write is best-effort so a profile save still succeeds.
       }
-      await loadUsers(organization.id)
+      await loadUsers(organization.id, { force: true })
       setSuccess('Profile saved.')
       setSaved(true)
       window.setTimeout(() => setSaved(false), 3000)
@@ -358,7 +359,14 @@ export function EditUserProfile({
     setBusyAction('active')
     try {
       await setUserActive(target.id, next)
-      setTarget({ ...target, isActive: next })
+      const nextUser = { ...target, isActive: next, updatedAt: new Date() }
+      setListedUserActive(target.id, next)
+      setTarget(nextUser)
+      if (organization?.id) {
+        await syncLinkedOperative(organization.id, nextUser, operatives)
+        await loadUsers(organization.id, { force: true })
+        setListedUserActive(target.id, next)
+      }
       setSuccess(next ? 'User reactivated.' : 'User deactivated.')
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to update status')

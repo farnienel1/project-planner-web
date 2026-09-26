@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { loadLeaflet, type LeafletMap, type LeafletMarker } from '@/lib/maps/leafletLoader'
 import { mapPinIconOptions } from '@/lib/maps/mapPinIcon'
-import { cacheGeocodeResult, reverseGeocode } from '@/lib/maps/geocoding'
+import { cacheGeocodeResult, geocodeSiteProject, reverseGeocode } from '@/lib/maps/geocoding'
 import { formatSiteAddress, googleMapsCoordinateUrl } from '@/lib/maps/siteAddress'
 
 export type SitePinSavePayload = {
@@ -56,6 +56,9 @@ export function SitePinPickerSheet({
   const [saving, setSaving] = useState(false)
   const [lookingUp, setLookingUp] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const addressDriven = useRef(false)
+  const draftRef = useRef(draft)
+  draftRef.current = draft
 
   useEffect(() => {
     if (!open) return
@@ -72,6 +75,7 @@ export function SitePinPickerSheet({
     })
     setResolvedAddress(formatSiteAddress(initial))
     setError(null)
+    addressDriven.current = false
   }, [open, initial])
 
   useEffect(() => {
@@ -97,7 +101,10 @@ export function SitePinPickerSheet({
             getLatLng?: () => { lat: number; lng: number }
           }
           const latlng = target.getLatLng?.()
-          if (latlng) updateDraft(latlng.lat, latlng.lng)
+          if (latlng) {
+            addressDriven.current = false
+            updateDraft(latlng.lat, latlng.lng)
+          }
         })
       }
     }
@@ -115,11 +122,12 @@ export function SitePinPickerSheet({
           maxZoom: 19,
         }).addTo(map)
 
-        const start = draft || { latitude: 51.5074, longitude: -0.1278 }
-        map.setView([start.latitude, start.longitude], draft ? 16 : 11)
-        if (draft) updateDraft(draft.latitude, draft.longitude)
+        const start = draftRef.current || { latitude: 51.5074, longitude: -0.1278 }
+        map.setView([start.latitude, start.longitude], draftRef.current ? 16 : 11)
+        if (draftRef.current) updateDraft(draftRef.current.latitude, draftRef.current.longitude)
 
         map.on('click', (event: { latlng: { lat: number; lng: number } }) => {
+          addressDriven.current = false
           updateDraft(event.latlng.lat, event.latlng.lng)
         })
 
@@ -138,7 +146,39 @@ export function SitePinPickerSheet({
   }, [open])
 
   useEffect(() => {
-    if (!open || !draft) return
+    if (!open || !addressDriven.current) return
+    const handle = window.setTimeout(() => {
+      void geocodeSiteProject(addressFields).then((point) => {
+        if (!point || !addressDriven.current) return
+        setDraft(point)
+        const map = mapRef.current
+        if (map) map.setView([point.latitude, point.longitude], 16)
+        if (markerRef.current) {
+          markerRef.current.setLatLng([point.latitude, point.longitude])
+          return
+        }
+        const L = window.L
+        if (!map || !L) return
+        markerRef.current = L.marker([point.latitude, point.longitude], {
+          icon: L.divIcon(mapPinIconOptions('#2563eb', true)),
+          draggable: true,
+        }).addTo(map)
+        markerRef.current.on('dragend', () => {
+          const target = markerRef.current as LeafletMarker & {
+            getLatLng?: () => { lat: number; lng: number }
+          }
+          const latlng = target.getLatLng?.()
+          if (!latlng) return
+          addressDriven.current = false
+          setDraft({ latitude: latlng.lat, longitude: latlng.lng })
+        })
+      })
+    }, 450)
+    return () => window.clearTimeout(handle)
+  }, [addressFields, open])
+
+  useEffect(() => {
+    if (!open || !draft || addressDriven.current) return
 
     let cancelled = false
     setLookingUp(true)
@@ -216,7 +256,10 @@ export function SitePinPickerSheet({
                   </span>
                   <input
                     value={addressFields.addressLine1}
-                    onChange={(e) => setAddressFields((f) => ({ ...f, addressLine1: e.target.value }))}
+                    onChange={(e) => {
+                      addressDriven.current = true
+                      setAddressFields((f) => ({ ...f, addressLine1: e.target.value }))
+                    }}
                     className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
                   />
                 </label>
@@ -226,7 +269,10 @@ export function SitePinPickerSheet({
                   </span>
                   <input
                     value={addressFields.townCity}
-                    onChange={(e) => setAddressFields((f) => ({ ...f, townCity: e.target.value }))}
+                    onChange={(e) => {
+                      addressDriven.current = true
+                      setAddressFields((f) => ({ ...f, townCity: e.target.value }))
+                    }}
                     className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
                   />
                 </label>
@@ -236,7 +282,10 @@ export function SitePinPickerSheet({
                   </span>
                   <input
                     value={addressFields.postcode}
-                    onChange={(e) => setAddressFields((f) => ({ ...f, postcode: e.target.value }))}
+                    onChange={(e) => {
+                      addressDriven.current = true
+                      setAddressFields((f) => ({ ...f, postcode: e.target.value }))
+                    }}
                     className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
                   />
                 </label>
@@ -270,20 +319,25 @@ export function SitePinPickerSheet({
             type="button"
             disabled={!draft || saving}
             onClick={async () => {
-              if (!draft) return
               setSaving(true)
               setError(null)
               try {
+                let point = draft
+                if (addressDriven.current) {
+                  const lookedUp = await geocodeSiteProject(addressFields)
+                  if (lookedUp) point = lookedUp
+                }
+                if (!point) return
                 const payload: SitePinSavePayload = {
-                  latitude: draft.latitude,
-                  longitude: draft.longitude,
+                  latitude: point.latitude,
+                  longitude: point.longitude,
                   addressLine1: addressFields.addressLine1.trim(),
                   addressLine2: addressFields.addressLine2.trim() || undefined,
                   townCity: addressFields.townCity.trim(),
                   postcode: addressFields.postcode.trim(),
                   usesMapPinForLocation: true,
                 }
-                cacheGeocodeResult(formatSiteAddress(payload), draft)
+                cacheGeocodeResult(formatSiteAddress(payload), point)
                 await onSave(payload)
                 onClose()
               } catch (saveError: unknown) {
