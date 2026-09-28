@@ -5,10 +5,33 @@ import { requireOwner, writeAuditLog } from '@/lib/owner/requireOwner'
 import { isValidEmail } from '@/lib/security/validation'
 import { maskEmail } from '@/lib/auth/maskEmail'
 import { adminUpdateAuthEmail, firebaseAdminConfigured } from '@/lib/owner/identityToolkitAdmin'
-import { bearerToken, firestoreDelete, firestoreGet, firestorePatch, readString, stringField } from '@/lib/owner/firestoreRest'
+import {
+  bearerToken,
+  firestoreDelete,
+  firestoreGet,
+  firestorePatch,
+  firestoreQueryEqual,
+  readString,
+  stringField,
+} from '@/lib/owner/firestoreRest'
 import { passwordResetActionSettings } from '@/lib/auth/passwordResetSettings'
 
 export const runtime = 'nodejs'
+
+async function syncRosterEmail(token: string, organizationId: string, oldEmail: string, newEmail: string) {
+  if (!token || !oldEmail) return
+  const parent = `organizations/${organizationId}`
+  for (const collectionId of ['operatives', 'managers']) {
+    const paths = await firestoreQueryEqual(token, parent, collectionId, 'email', oldEmail)
+    await Promise.all(
+      paths.map((path) =>
+        firestorePatch(token, path, { email: stringField(newEmail) }, ['email']).catch((error) => {
+          console.error('[owner/change-email] roster', path, error)
+        })
+      )
+    )
+  }
+}
 
 export async function POST(request: NextRequest) {
   const limited = enforceRateLimit(request, 'owner-change-email', 20, 10 * 60 * 1000)
@@ -61,6 +84,7 @@ export async function POST(request: NextRequest) {
         { userId: stringField(uid) },
         ['userId']
       ).catch(() => undefined)
+      await syncRosterEmail(token, organizationId, oldEmail, newEmail)
     }
   } catch (error) {
     console.error('[owner/change-email] firestore', error)

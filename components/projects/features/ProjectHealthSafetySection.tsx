@@ -15,6 +15,7 @@ import { uploadFile as uploadHsFile, healthSafetyFilePath } from '@/lib/firebase
 import { withTimeout } from '@/lib/client/withTimeout'
 import { loadPlatformToolboxLibrary, mergeToolboxTalkLibraries } from '@/lib/healthSafety/toolboxLibrary'
 import { blankToolboxTalkTemplate } from '@/lib/healthSafety/mergeToolboxTalks'
+import { downloadBlankTalkExcel } from '@/lib/healthSafety/blankTalkWorkbook'
 import {
   buildToolboxTalkPdf,
   customTalkDownloadName,
@@ -129,6 +130,7 @@ export function ProjectHealthSafetySection({
   const [scheduleSignAsIssuer, setScheduleSignAsIssuer] = useState(true)
   const [openLibraryCategories, setOpenLibraryCategories] = useState<string[]>(['General'])
   const [showUploadTalk, setShowUploadTalk] = useState(false)
+  const [blankTemplateOpen, setBlankTemplateOpen] = useState(false)
   const [uploadTitle, setUploadTitle] = useState('')
   const [uploadPurpose, setUploadPurpose] = useState('')
   const [uploadCategory, setUploadCategory] = useState('general')
@@ -729,7 +731,7 @@ export function ProjectHealthSafetySection({
           <div className="grid grid-cols-2 gap-2">
             <button
               type="button"
-              onClick={() => handleDownloadTalk(blankToolboxTalkTemplate())}
+              onClick={() => setBlankTemplateOpen(true)}
               className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-50"
             >
               Download blank template
@@ -1023,6 +1025,53 @@ export function ProjectHealthSafetySection({
         </HsSheet>
       )}
 
+      {blankTemplateOpen ? (
+        <div
+          className="fixed inset-0 z-[80] flex items-end justify-center bg-black/40 p-4 sm:items-center"
+          onClick={() => setBlankTemplateOpen(false)}
+        >
+          <div
+            className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-xl"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="blank-template-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <h2 id="blank-template-title" className="text-lg font-bold text-slate-900">
+              Download blank template
+            </h2>
+            <p className="mt-1 text-sm text-slate-500">
+              Edit the file, then upload it back into this job’s library.
+            </p>
+            <div className="mt-4 grid gap-2">
+              <button
+                type="button"
+                className="rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-bold text-white"
+                onClick={() => {
+                  handleDownloadTalk(blankToolboxTalkTemplate())
+                  setBlankTemplateOpen(false)
+                }}
+              >
+                PDF
+              </button>
+              <button
+                type="button"
+                className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-800"
+                onClick={() => {
+                  downloadBlankTalkExcel()
+                  setBlankTemplateOpen(false)
+                }}
+              >
+                Excel
+              </button>
+              <button type="button" className="px-4 py-2 text-sm font-semibold text-slate-500" onClick={() => setBlankTemplateOpen(false)}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {showUploadTalk && (
         <HsSheet
           title="Upload custom talk"
@@ -1120,7 +1169,13 @@ export function ProjectHealthSafetySection({
                 + Add point
               </button>
             </HsFieldCard>
-            <HsFileButton file={uploadTalkFile} onChange={setUploadTalkFile} />
+            <HsFileButton
+              file={uploadTalkFile}
+              onChange={setUploadTalkFile}
+              accept=".pdf,.xls,.xlsx,image/*"
+              label="Choose PDF, Excel or photo"
+              hint="PDF, Excel or image · up to 10MB"
+            />
           </form>
         </HsSheet>
       )}
