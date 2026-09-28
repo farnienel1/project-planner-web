@@ -207,22 +207,6 @@ export function ProjectDeadlinesSection({ project, isSmallWorks }: { project: Pr
     }
   }
 
-  if (loading && !loaded) {
-    return (
-      <div className="stack" data-hue="red">
-        <header className="phead">
-          <span className="badge-ico">
-            <FlagIcon className="h-6 w-6" />
-          </span>
-          <div>
-            <h1>Deadlines</h1>
-          </div>
-        </header>
-        <p className="text-sm text-[var(--ink3)]">Loading deadlines…</p>
-      </div>
-    )
-  }
-
   return (
     <div className="stack" data-hue="red">
       <header className="phead">
@@ -235,7 +219,7 @@ export function ProjectDeadlinesSection({ project, isSmallWorks }: { project: Pr
             {stats.completeCount} of {scoped.length} deadlines met
           </p>
         </div>
-        <div className="ml-auto flex gap-2">
+        <div className="ml-auto flex max-w-full flex-wrap gap-2">
           <button type="button" className="btn sm" onClick={() => setMode(mode === 'list' ? 'timeline' : 'list')}>
             {mode === 'list' ? 'Timeline' : 'List'}
           </button>
@@ -247,7 +231,13 @@ export function ProjectDeadlinesSection({ project, isSmallWorks }: { project: Pr
         </div>
       </header>
 
+      {loading && !loaded ? <p className="text-sm text-[var(--ink3)]">Loading deadlines…</p> : null}
       {banner || error ? <p className="text-sm font-semibold text-[var(--red)]">{banner || error}</p> : null}
+      {error && !loaded && organization?.id ? (
+        <button type="button" className="btn sm" onClick={() => void load(organization.id, project.id, isSmallWorks)}>
+          Try again
+        </button>
+      ) : null}
 
       <div className="grid grid-cols-2 gap-3">
         {(

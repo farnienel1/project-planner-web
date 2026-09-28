@@ -44,6 +44,24 @@ test('founder permission set keeps adminAccess', () => {
   assert.equal(FOUNDER_PERMISSIONS.operativeMode, false)
 })
 
+test('switching copies accountActive onto isActive and treats a missing flag as active', () => {
+  const inactive = userPatchForActiveOrg({
+    organizationId: 'ORG-A',
+    role: 'operative',
+    accountActive: false,
+    permissions: { operativeMode: true, projects: true },
+  })
+  assert.equal(inactive.isActive, false)
+  const legacy = userPatchForActiveOrg({
+    organizationId: 'ORG-B',
+    role: 'manager',
+    permissions: { manager: true, projects: true },
+  })
+  assert.equal(legacy.isActive, true)
+  const snap = membershipSnapshotFromUserDoc({ isActive: false, role: 'operative', operativeMode: true })
+  assert.equal(snap.accountActive, false)
+})
+
 test('membership snapshot captures the active org flags, not leftover founder admin', () => {
   const snap = membershipSnapshotFromUserDoc({
     role: 'operative',

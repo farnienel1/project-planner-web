@@ -29,6 +29,43 @@ export async function firestorePatch(
   }
 }
 
+/** Document paths under parentPath whose field equals value. Empty when the query is not allowed. */
+export async function firestoreQueryEqual(
+  idToken: string,
+  parentPath: string,
+  collectionId: string,
+  field: string,
+  value: string
+): Promise<string[]> {
+  const url = `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(projectId())}/databases/(default)/documents/${parentPath}:runQuery`
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${idToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      structuredQuery: {
+        from: [{ collectionId }],
+        where: {
+          fieldFilter: {
+            field: { fieldPath: field },
+            op: 'EQUAL',
+            value: { stringValue: value },
+          },
+        },
+      },
+    }),
+  })
+  if (!response.ok) return []
+  const rows = (await response.json().catch(() => [])) as { document?: { name?: string } }[]
+  return rows
+    .map((row) => row.document?.name || '')
+    .map((name) => {
+      const marker = '/documents/'
+      const index = name.indexOf(marker)
+      return index >= 0 ? name.slice(index + marker.length) : ''
+    })
+    .filter(Boolean)
+}
+
 export async function firestoreDelete(idToken: string, path: string) {
   const response = await fetch(docUrl(path), {
     method: 'DELETE',
