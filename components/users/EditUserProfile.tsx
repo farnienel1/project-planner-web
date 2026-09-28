@@ -1,6 +1,6 @@
 'use client'
 
-import { FormEvent, useEffect, useMemo, useState } from 'react'
+import { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { format } from 'date-fns'
@@ -192,18 +192,24 @@ export function EditUserProfile({
   const [fixEmail, setFixEmail] = useState('')
   const [fixNote, setFixNote] = useState('')
   const [fixOpen, setFixOpen] = useState(false)
+  const [activeSaving, setActiveSaving] = useState(false)
+  const profileLoadGen = useRef(0)
 
   useEffect(() => {
     if (!organization?.id) return
+    const generation = ++profileLoadGen.current
     loadUsers(organization.id)
     loadOperatives(organization.id)
     getUser(userId)
       .then((row) => {
+        if (generation !== profileLoadGen.current) return
         setTarget(row)
         setOriginalDayRate(row?.dayRate)
         if (row) setBaseline(profileSnapshot(row, null, null))
       })
-      .finally(() => setLoading(false))
+      .finally(() => {
+        if (generation === profileLoadGen.current) setLoading(false)
+      })
   }, [organization?.id, userId, getUser, loadUsers, loadOperatives])
 
   const managers = useMemo(
@@ -361,12 +367,16 @@ export function EditUserProfile({
   }
 
   const handleToggleActive = async () => {
-    if (!target || !canAdminTools) return
+    if (!target || !canAdminTools || activeSaving) return
     const previous = target
     const next = !target.isActive
     const nextUser = { ...target, isActive: next, updatedAt: new Date() }
+    profileLoadGen.current += 1
+    setActiveSaving(true)
+    setError(null)
     setTarget(nextUser)
     setListedUserActive(target.id, next)
+    setBaseline(profileSnapshot(nextUser, null, null))
     setSuccess(next ? 'User reactivated.' : 'User deactivated.')
     try {
       await setUserActive(target.id, next, organization?.id)
@@ -374,8 +384,11 @@ export function EditUserProfile({
     } catch (err: unknown) {
       setTarget(previous)
       setListedUserActive(previous.id, previous.isActive)
+      setBaseline(profileSnapshot(previous, null, null))
       setSuccess(null)
       setError(err instanceof Error ? err.message : 'Failed to update status')
+    } finally {
+      setActiveSaving(false)
     }
   }
 
@@ -826,8 +839,8 @@ export function EditUserProfile({
                 </div>
                 <Toggle
                   checked={target.isActive}
-                  disabled={!canEdit}
-                  onChange={(checked) => setTarget({ ...target, isActive: checked })}
+                  disabled={!canEdit || activeSaving}
+                  onChange={() => void handleToggleActive()}
                 />
               </div>
             </div>
@@ -1000,7 +1013,7 @@ export function EditUserProfile({
               title={target.isActive ? 'Deactivate user' : 'Reactivate user'}
               subtitle={target.isActive ? 'Suspend access, keep history' : 'Restore sign-in access'}
               tone="amber"
-              busy={busyAction === 'active'}
+              busy={activeSaving}
               onClick={handleToggleActive}
             />
             <ActionButton
