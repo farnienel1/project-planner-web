@@ -9,12 +9,12 @@ import { SetSitePinButton } from '@/components/site-map/SetSitePinButton'
 import { SiteLocationMap } from '@/components/projects/SiteLocationMap'
 import { FeatureCard } from '@/components/projects/features/featureUi'
 import { resolveSiteCoordinate } from '@/lib/maps/geocoding'
-import { resolveStoredCoordinates } from '@/lib/maps/siteAddress'
 import {
   appleMapsUrlForProject,
   googleMapsUrlForProject,
   hasValidSiteLocation,
   locationDisplayText,
+  mapCoordinateForProject,
 } from '@/lib/maps/siteLocation'
 import type { Project } from '@/types'
 
@@ -26,8 +26,8 @@ export function ProjectLocationPage({
   hubPath?: string
   collection?: 'projects' | 'smallWorks'
 }) {
-  const stored = resolveStoredCoordinates(project)
-  const [coords, setCoords] = useState<{ latitude: number; longitude: number } | null>(stored)
+  const pinned = mapCoordinateForProject(project)
+  const [coords, setCoords] = useState<{ latitude: number; longitude: number } | null>(pinned)
   const valid = hasValidSiteLocation(project)
   const display = locationDisplayText(project)
   const appleUrl = appleMapsUrlForProject({ ...project, siteName: project.siteName })
@@ -35,6 +35,13 @@ export function ProjectLocationPage({
 
   useEffect(() => {
     let cancelled = false
+    if (pinned) {
+      setCoords(pinned)
+      return () => {
+        cancelled = true
+      }
+    }
+    setCoords(null)
     void resolveSiteCoordinate(
       {
         addressLine1: project.addressLine1,
@@ -44,9 +51,9 @@ export function ProjectLocationPage({
         siteName: project.siteName,
         siteAddress: project.siteAddress,
       },
-      stored
+      null
     ).then((point) => {
-      if (!cancelled && point) setCoords(point)
+      if (!cancelled) setCoords(point)
     })
     return () => {
       cancelled = true
@@ -58,8 +65,9 @@ export function ProjectLocationPage({
     project.postcode,
     project.siteAddress,
     project.siteName,
-    stored?.latitude,
-    stored?.longitude,
+    project.usesMapPinForLocation,
+    pinned?.latitude,
+    pinned?.longitude,
   ])
 
   return (

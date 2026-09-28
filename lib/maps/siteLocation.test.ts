@@ -32,6 +32,22 @@ test('maps URLs match iOS web fallbacks', () => {
   assert.ok(appleMapsUrlForProject({ latitude: 51.5, longitude: -0.12, siteName: 'Yard' })?.includes('maps.apple.com'))
 })
 
+test('address mode ignores a leftover pin so the map follows the typed location', () => {
+  const project = {
+    addressLine1: '10 New St',
+    townCity: 'Leeds',
+    postcode: 'LS1 1AA',
+    latitude: 51.5,
+    longitude: -0.12,
+    usesMapPinForLocation: false as const,
+  }
+  assert.equal(locationDisplayText(project), '10 New St, Leeds, LS1 1AA')
+  const google = googleMapsUrlForProject(project)
+  assert.ok(google)
+  assert.equal(google.includes('51.5'), false)
+  assert.ok(google.includes('10%20New%20St') || google.includes(encodeURIComponent('10 New St')))
+})
+
 test('material status labels and send request types match iOS raw values', () => {
   assert.equal(materialStatusLabel('draft'), 'Draft')
   assert.equal(materialStatusLabel('sentForQuote'), 'Sent for quote')
