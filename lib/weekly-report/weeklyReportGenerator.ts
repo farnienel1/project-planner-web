@@ -22,7 +22,11 @@ function renderTable(headers: string[], rows: string[][], emptyMessage: string):
       </thead>
       <tbody>
         ${rows
-          .map((row) => `<tr>${row.map((cell) => `<td>${cell}</td>`).join('')}</tr>`)
+          .map((row) =>
+            row.every((cell) => cell === '')
+              ? `<tr class="gap">${row.map(() => '<td></td>').join('')}</tr>`
+              : `<tr>${row.map((cell) => `<td>${cell}</td>`).join('')}</tr>`
+          )
           .join('')}
       </tbody>
     </table>`
@@ -124,6 +128,7 @@ export function buildWeeklyReportHtml(data: WeeklyReportData): string {
       '',
       `<strong>${formatCurrency(person.personTotal)}</strong>`,
     ])
+    payRows.push(['', '', '', '', '', ''])
   }
   payRows.push(['', '', '', '', '<strong>Grand Total</strong>', `<strong>${formatCurrency(data.grandTotal)}</strong>`])
 
@@ -142,16 +147,19 @@ export function buildWeeklyReportHtml(data: WeeklyReportData): string {
       font-size: 11px;
       line-height: 1.35;
     }
-    .brand { font-size: 10px; font-weight: 700; letter-spacing: 0.18em; color: #64748b; }
-    .org { font-size: 18px; font-weight: 700; margin: 4px 0 2px; }
-    .title { font-size: 14px; font-weight: 700; letter-spacing: 0.08em; margin-bottom: 10px; }
-    .meta { margin-bottom: 18px; color: #334155; }
-    .meta strong { color: #0f172a; }
+    .banner { background: #0f2744; color: #fff; padding: 18px 20px; border-radius: 10px; margin-bottom: 16px; }
+    .brand { font-size: 10px; font-weight: 700; letter-spacing: 0.18em; color: #93c5fd; }
+    .org { font-size: 20px; font-weight: 700; margin: 4px 0 2px; }
+    .title { font-size: 13px; font-weight: 700; letter-spacing: 0.12em; color: #bfdbfe; }
+    .meta { margin: 10px 0 0; color: #e2e8f0; }
+    .meta strong { color: #fff; }
     h2 {
       font-size: 12px;
-      margin: 22px 0 8px;
-      padding-bottom: 4px;
-      border-bottom: 1px solid #e2e8f0;
+      margin: 18px 0 8px;
+      padding: 6px 8px;
+      background: #1d4ed8;
+      color: #fff;
+      border-radius: 6px;
     }
     table { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
     th, td {
@@ -160,20 +168,28 @@ export function buildWeeklyReportHtml(data: WeeklyReportData): string {
       text-align: left;
       vertical-align: top;
     }
-    th { background: #f8fafc; font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; color: #475569; }
-    .empty { color: #94a3b8; font-style: italic; }
+    th { background: #0f2744; font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; color: #fff; }
+    tbody tr:nth-child(even) td { background: #f8fafc; }
+    td strong { color: #14532d; }
+    tr.gap td { border: none; background: transparent; height: 14px; padding: 0; }
+    .empty { color: #64748b; font-style: italic; }
     .footer { margin-top: 24px; font-size: 10px; color: #64748b; }
-    @media print { body { padding: 0; } }
+    @media print {
+      body { padding: 0; }
+      .banner, h2, th { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    }
   </style>
 </head>
 <body>
-  <div class="brand">PROJECTPLANNER</div>
-  <div class="org">${escapeHtml(data.organizationName)}</div>
-  <div class="title">WEEKLY REPORT</div>
-  <div class="meta">
-    <div><strong>Period:</strong> ${escapeHtml(periodLabel)}</div>
-    <div><strong>Invoicing period</strong> ${escapeHtml(data.invoicingPeriodLabel)}</div>
-    <div><strong>Generated:</strong> ${escapeHtml(generatedLabel)}</div>
+  <div class="banner">
+    <div class="brand">PROJECTPLANNER</div>
+    <div class="org">${escapeHtml(data.organizationName)}</div>
+    <div class="title">WEEKLY REPORT</div>
+    <div class="meta">
+      <div><strong>Period:</strong> ${escapeHtml(periodLabel)}</div>
+      <div><strong>Invoicing period</strong> ${escapeHtml(data.invoicingPeriodLabel)}</div>
+      <div><strong>Generated:</strong> ${escapeHtml(generatedLabel)}</div>
+    </div>
   </div>
 
   <h2>⚠ Warnings Summary</h2>
@@ -368,6 +384,7 @@ export function buildWeeklyReportSpreadsheetXml(data: WeeklyReportData): string 
       ])
     }
     payRows.push([`${person.person} total`, '', '', '', '', formatCurrency(person.personTotal)])
+    payRows.push(['', '', '', '', '', ''])
   }
   payRows.push(['', '', '', '', 'Grand Total', formatCurrency(data.grandTotal)])
 
@@ -448,17 +465,27 @@ export function buildWeeklyReportSpreadsheetXml(data: WeeklyReportData): string 
 }
 
 export function printWeeklyReport(html: string): void {
-  try {
-    const printWindow = window.open('', '_blank', 'noopener,noreferrer,width=1024,height=768')
-    if (!printWindow) return
-    printWindow.document.open()
-    printWindow.document.write(html)
-    printWindow.document.close()
-    printWindow.focus()
-    printWindow.onload = () => {
-      printWindow.print()
-    }
-  } catch {
-    /* popup blocked — on-page report + download still work */
+  const frame = document.createElement('iframe')
+  frame.setAttribute('aria-hidden', 'true')
+  frame.style.position = 'fixed'
+  frame.style.right = '0'
+  frame.style.bottom = '0'
+  frame.style.width = '0'
+  frame.style.height = '0'
+  frame.style.border = '0'
+  document.body.appendChild(frame)
+  const doc = frame.contentDocument
+  const win = frame.contentWindow
+  if (!doc || !win) {
+    frame.remove()
+    return
   }
+  doc.open()
+  doc.write(html)
+  doc.close()
+  window.setTimeout(() => {
+    win.focus()
+    win.print()
+    window.setTimeout(() => frame.remove(), 1000)
+  }, 200)
 }

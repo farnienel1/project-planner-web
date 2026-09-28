@@ -12,7 +12,6 @@ import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { isOperativeMode } from '@/lib/navigation/menuPermissions'
 import { newUuid } from '@/lib/firebase/firestoreUtils'
 import { uploadFile as uploadHsFile, healthSafetyFilePath } from '@/lib/firebase/storageUtils'
-import { withTimeout } from '@/lib/client/withTimeout'
 import { loadPlatformToolboxLibrary, mergeToolboxTalkLibraries } from '@/lib/healthSafety/toolboxLibrary'
 import { blankToolboxTalkTemplate } from '@/lib/healthSafety/mergeToolboxTalks'
 import { downloadBlankTalkExcel, readBlankTalkFile } from '@/lib/healthSafety/blankTalkWorkbook'
@@ -315,10 +314,10 @@ export function ProjectHealthSafetySection({
       let fileURL: string | undefined
       if (uploadTalkFile) {
         const path = healthSafetyFilePath(organization.id, project.id, 'talks', uploadTalkFile.name)
-        fileURL = await withTimeout(
-          uploadHsFile(path, uploadTalkFile, uploadTalkFile.type || 'application/octet-stream'),
-          45_000,
-          'Talk file upload timed out. Try a smaller PDF.'
+        fileURL = await uploadHsFile(
+          path,
+          uploadTalkFile,
+          uploadTalkFile.type || 'application/pdf'
         )
       }
       await addToolboxTalk(organization.id, project.id, isSmallWorks, {
@@ -385,11 +384,7 @@ export function ProjectHealthSafetySection({
       let fileURL: string | undefined
       if (ramsFile) {
         const path = healthSafetyFilePath(organization.id, project.id, 'rams', ramsFile.name)
-        fileURL = await withTimeout(
-          uploadHsFile(path, ramsFile, ramsFile.type || 'application/octet-stream'),
-          45_000,
-          'RAMS upload timed out. Try a smaller PDF.'
-        )
+        fileURL = await uploadHsFile(path, ramsFile, ramsFile.type || 'application/pdf')
       }
       const version = nextRamsVersion(data.ramsDocuments, ramsTitle)
       await save(organization.id, project.id, isSmallWorks, {
@@ -428,11 +423,7 @@ export function ProjectHealthSafetySection({
       let fileURL: string | undefined
       if (otherFile) {
         const path = healthSafetyFilePath(organization.id, project.id, 'other', otherFile.name)
-        fileURL = await withTimeout(
-          uploadHsFile(path, otherFile, otherFile.type || 'application/octet-stream'),
-          45_000,
-          'Document upload timed out. Try a smaller PDF.'
-        )
+        fileURL = await uploadHsFile(path, otherFile, otherFile.type || 'application/pdf')
       }
       await save(organization.id, project.id, isSmallWorks, {
         ...data,

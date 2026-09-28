@@ -1,5 +1,8 @@
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage'
+import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage'
 import { storage, auth } from '@/lib/firebase/config'
+import { withTimeout } from '@/lib/client/withTimeout'
+
+const UPLOAD_TIMEOUT_MS = 180_000
 
 export function requireStorageUid(): string {
   const uid = auth?.currentUser?.uid
@@ -9,6 +12,42 @@ export function requireStorageUid(): string {
   return uid
 }
 
+async function ensureStorageAuth(): Promise<void> {
+  const user = auth?.currentUser
+  if (!user) {
+    throw new Error('You must be signed in to upload files.')
+  }
+  await withTimeout(user.getIdToken(), 15_000, 'Sign-in did not finish. Try the upload again.')
+}
+
+function uploadOnce(storagePath: string, file: Blob, contentType: string): Promise<string> {
+  const storageRef = ref(storage, storagePath)
+  return new Promise((resolve, reject) => {
+    const task = uploadBytesResumable(storageRef, file, { contentType })
+    const timer = setTimeout(() => {
+      task.cancel()
+      reject(new Error('The file upload did not finish. Check your connection and try again.'))
+    }, UPLOAD_TIMEOUT_MS)
+    task.on(
+      'state_changed',
+      () => {},
+      (error) => {
+        clearTimeout(timer)
+        reject(error)
+      },
+      () => {
+        clearTimeout(timer)
+        getDownloadURL(storageRef).then(resolve).catch(reject)
+      }
+    )
+  })
+}
+
+/**
+ * Resumable upload with a fresh auth token. A short race timeout used to abandon
+ * a 200KB PDF while Storage was still accepting it, so the talk or certificate
+ * never got its new URL.
+ */
 export async function uploadFile(
   storagePath: string,
   file: Blob,
@@ -17,9 +56,17 @@ export async function uploadFile(
   if (!storage) {
     throw new Error('File storage is not configured.')
   }
-  const storageRef = ref(storage, storagePath)
-  await uploadBytes(storageRef, file, { contentType })
-  return getDownloadURL(storageRef)
+  await ensureStorageAuth()
+  try {
+    return await uploadOnce(storagePath, file, contentType)
+  } catch (first) {
+    await ensureStorageAuth()
+    try {
+      return await uploadOnce(storagePath, file, contentType)
+    } catch {
+      throw first
+    }
+  }
 }
 
 export function sanitizeFileName(name: string): string {

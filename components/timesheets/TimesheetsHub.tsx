@@ -195,6 +195,7 @@ export function TimesheetsHub() {
         <TimesheetsNavBar
           href={periodParam ? timesheetsMineHref() : TIMESHEETS_HUB_PATH}
           title={periodParam ? 'Timesheet' : 'My Timesheets'}
+          backLabel={periodParam ? 'My Timesheets' : undefined}
         />
         {periodParam ? (
           <TimesheetPeriodPage {...periodPageProps} subjectUser={subject} mode="mine" />
@@ -221,6 +222,9 @@ export function TimesheetsHub() {
         <TimesheetsNavBar
           href={userParam ? timesheetsTeamHref({ tab }) : TIMESHEETS_HUB_PATH}
           title={selectedUser ? 'Review Timesheet' : hasAdminAccess(user) ? 'User Timesheets' : 'Operative Timesheets'}
+          backLabel={
+            userParam ? (hasAdminAccess(user) ? 'User Timesheets' : 'Operative Timesheets') : undefined
+          }
         />
         {selectedUser ? (
           <TimesheetPeriodPage {...periodPageProps} subjectUser={selectedUser} mode="review" />
@@ -486,24 +490,34 @@ function MineTimesheetsList({
   )
 }
 
-function TimesheetsNavBar({ href, title }: { href: string; title: string }) {
+function TimesheetsNavBar({
+  href,
+  title,
+  backLabel,
+}: {
+  href: string
+  title: string
+  backLabel?: string
+}) {
   const router = useRouter()
   return (
     <div className="phead" data-hue="ts">
-      <button
-        type="button"
-        onClick={() => {
-          if (timesheetLinkShouldHardReset(window.location.pathname, window.location.search, href)) {
-            const target = new URL(href, window.location.origin)
-            window.location.assign(`${target.pathname}${target.search}`)
-            return
-          }
-          router.push(href)
-        }}
-        className="btn sm ghost"
-      >
-        Timesheets
-      </button>
+      {backLabel ? (
+        <button
+          type="button"
+          onClick={() => {
+            if (timesheetLinkShouldHardReset(window.location.pathname, window.location.search, href)) {
+              const target = new URL(href, window.location.origin)
+              window.location.assign(`${target.pathname}${target.search}`)
+              return
+            }
+            router.push(href)
+          }}
+          className="btn sm ghost"
+        >
+          {backLabel}
+        </button>
+      ) : null}
       <div>
         <h1>{title}</h1>
       </div>
