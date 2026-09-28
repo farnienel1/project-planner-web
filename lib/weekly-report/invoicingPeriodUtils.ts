@@ -54,23 +54,41 @@ function previousInvoicingPeriod(
   return invoicingPeriodContainingDate(anchor, invoicing, timeZone)
 }
 
-/** Recent invoicing periods for the report picker (current first). */
+/** Two years of payment runs. The picker only stores date labels, so this does not load historical bookings. */
+export const INVOICING_PERIOD_HISTORY_DAYS = 730
+
+/** Stops a one-day run from building hundreds of rows. Weekly history for two years is about 105. */
+export const INVOICING_PERIOD_HISTORY_CAP = 120
+
+/**
+ * Invoicing periods for the report picker, current first.
+ * Omit `count` for two years of history (capped). Pass `count` for a fixed recent slice.
+ */
 export function listInvoicingPeriodOptions(
   invoicing: OrgInvoicingSettings,
   referenceDate: Date = new Date(),
-  count = 6,
+  count?: number,
   timeZone: string = LONDON_TIME_ZONE
 ): InvoicingPeriodOption[] {
   const options: InvoicingPeriodOption[] = []
+  const limit = count ?? INVOICING_PERIOD_HISTORY_CAP
+  const cutoff = addLondonDays(londonMidnight(referenceDate, timeZone), -INVOICING_PERIOD_HISTORY_DAYS, timeZone)
   let current = invoicingPeriodContainingDate(referenceDate, invoicing, timeZone)
+  const seen = new Set<string>()
 
-  for (let index = 0; index < count; index += 1) {
+  while (options.length < limit) {
+    const id = `${dayKey(current.start, timeZone)}_${dayKey(current.end, timeZone)}`
+    if (seen.has(id)) break
+    seen.add(id)
     options.push({
       ...current,
-      id: `${dayKey(current.start, timeZone)}_${dayKey(current.end, timeZone)}`,
-      isCurrent: index === 0,
+      id,
+      isCurrent: options.length === 0,
     })
-    current = previousInvoicingPeriod(current, invoicing, timeZone)
+    if (count == null && !isAfter(current.start, cutoff)) break
+    const previous = previousInvoicingPeriod(current, invoicing, timeZone)
+    if (previous.start.getTime() >= current.start.getTime()) break
+    current = previous
   }
 
   return options
@@ -126,7 +144,7 @@ export function resolveReportPeriod({
   }
 
   if (!invoicing) return null
-  const options = listInvoicingPeriodOptions(invoicing, referenceDate, 6, timeZone)
+  const options = listInvoicingPeriodOptions(invoicing, referenceDate, undefined, timeZone)
   const selected =
     (invoicingPeriodId && options.find((option) => option.id === invoicingPeriodId)) || options[0]
   if (!selected) return null

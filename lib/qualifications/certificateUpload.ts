@@ -55,6 +55,44 @@ export function mergeCertificateUrls(
   return { ...(existing || {}), ...uploaded }
 }
 
+/** iOS keys this map by qualification UUID. Match ignoring case so a stored URL still shows. */
+export function certificateUrlForQualification(
+  urls: Record<string, string> | undefined,
+  qualificationId: string
+): string | undefined {
+  if (!urls || !qualificationId) return undefined
+  const direct = urls[qualificationId]
+  if (typeof direct === 'string' && direct.trim()) return direct
+  const target = qualificationId.toLowerCase()
+  const found = Object.entries(urls).find(([key, value]) => key.toLowerCase() === target && value.trim())
+  return found?.[1]
+}
+
+/**
+ * Rewrite URL keys onto the qualification ids iOS already stores.
+ * Other keys are kept so a profile is not stripped of certificates the web list does not show.
+ */
+export function canonicalCertificateUrls(
+  qualifications: { id: string }[],
+  urls: Record<string, string> | undefined
+): Record<string, string> {
+  const next: Record<string, string> = {}
+  const used = new Set<string>()
+  for (const qual of qualifications) {
+    const id = qual.id?.trim()
+    if (!id) continue
+    const url = certificateUrlForQualification(urls, id)
+    if (!url) continue
+    next[id] = url
+    used.add(id.toLowerCase())
+  }
+  for (const [key, value] of Object.entries(urls || {})) {
+    if (!value?.trim() || used.has(key.toLowerCase())) continue
+    next[key] = value
+  }
+  return next
+}
+
 export async function uploadPendingCertificates<T extends NamedFile>(args: {
   pending: Record<string, T>
   existingUrls?: Record<string, string>
