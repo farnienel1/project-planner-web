@@ -32,6 +32,7 @@ import {
   membershipSummary,
   sortMemberships,
 } from '@/lib/orgMembership/organizationTrialPolicy'
+import { membershipAccountIsActive } from '@/lib/auth/deactivatedAccount'
 
 function parseMembershipRecord(
   organizationId: string,
@@ -328,6 +329,7 @@ export async function switchActiveOrganization(userId: string, organizationId: s
     isCreator,
     membershipIsSuperAdmin: membershipData.isSuperAdmin === true,
     permissions: (membershipData.permissions as Record<string, unknown>) || membershipData,
+    accountActive: membershipAccountIsActive(membershipData.accountActive),
   })
 
   await updateDoc(doc(db, 'users', userId), {
