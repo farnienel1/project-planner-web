@@ -1103,6 +1103,17 @@ textarea.in {
 .cal button.sel { background: var(--h, var(--blue)); color: #fff; }
 
 .week { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 12px; max-width: 100%; }
+.book-cols {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  width: 100%;
+  max-width: 100%;
+}
+.book-cols > * { min-width: 0; }
+@media (max-width: 1100px) {
+  .book-cols { grid-template-columns: 1fr; }
+}
 .day {
   background: var(--card);
   border-radius: var(--r);

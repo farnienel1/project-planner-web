@@ -131,6 +131,7 @@ export function WeeklyReportScreen({
   const [customEnd, setCustomEnd] = useState(defaultCustomEnd)
   const [generating, setGenerating] = useState(false)
   const [generated, setGenerated] = useState(false)
+  const [downloadOpen, setDownloadOpen] = useState(false)
   const [timesheetWeeks, setTimesheetWeeks] = useState<ApprovedTimesheetWeek[]>([])
 
   const effectiveInvoicingPeriodId = invoicingPeriodId || invoicingOptions[0]?.id || ''
@@ -213,6 +214,7 @@ export function WeeklyReportScreen({
         setTimesheetWeeks([])
       }
       setGenerated(true)
+      setDownloadOpen(true)
     } finally {
       setGenerating(false)
     }
@@ -320,6 +322,16 @@ export function WeeklyReportScreen({
                 })
               }
             />
+            <QuickRow
+              label="Custom range"
+              subLabel={
+                periodMode === 'custom' && period
+                  ? formatReportPeriodLabel(period.start, period.end)
+                  : 'Choose a start and end date'
+              }
+              selected={periodMode === 'custom'}
+              onClick={() => changePeriod(() => setPeriodMode('custom'))}
+            />
           </section>
 
           {periodMode === 'invoicing' && invoicing ? (
@@ -370,40 +382,42 @@ export function WeeklyReportScreen({
             </div>
           ) : null}
 
-          <section>
-            <p className="mb-2 text-[11px] font-medium uppercase tracking-[0.4px] text-[var(--ink3)]">Custom Range</p>
-            <div className="flex flex-wrap items-end gap-3">
-              <label className="text-[13px] font-medium">
-                Start
-                <input
-                  type="date"
-                  value={customStart}
-                  onChange={(e) =>
-                    changePeriod(() => {
-                      setCustomStart(e.target.value)
-                      setPeriodMode('custom')
-                    })
-                  }
-                  className="mt-1 block rounded-lg border border-[var(--line2)] px-3 py-2 text-sm"
-                />
-              </label>
-              <label className="text-[13px] font-medium">
-                End
-                <input
-                  type="date"
-                  min={customStart}
-                  value={customEnd}
-                  onChange={(e) =>
-                    changePeriod(() => {
-                      setCustomEnd(e.target.value)
-                      setPeriodMode('custom')
-                    })
-                  }
-                  className="mt-1 block rounded-lg border border-[var(--line2)] px-3 py-2 text-sm"
-                />
-              </label>
-            </div>
-          </section>
+          {periodMode === 'custom' ? (
+            <section>
+              <p className="mb-2 text-[11px] font-medium uppercase tracking-[0.4px] text-[var(--ink3)]">Custom range</p>
+              <div className="flex flex-wrap items-end gap-3">
+                <label className="text-[13px] font-medium">
+                  Start
+                  <input
+                    type="date"
+                    value={customStart}
+                    onChange={(e) =>
+                      changePeriod(() => {
+                        setCustomStart(e.target.value)
+                        setPeriodMode('custom')
+                      })
+                    }
+                    className="mt-1 block rounded-lg border border-[var(--line2)] px-3 py-2 text-sm"
+                  />
+                </label>
+                <label className="text-[13px] font-medium">
+                  End
+                  <input
+                    type="date"
+                    min={customStart}
+                    value={customEnd}
+                    onChange={(e) =>
+                      changePeriod(() => {
+                        setCustomEnd(e.target.value)
+                        setPeriodMode('custom')
+                      })
+                    }
+                    className="mt-1 block rounded-lg border border-[var(--line2)] px-3 py-2 text-sm"
+                  />
+                </label>
+              </div>
+            </section>
+          ) : null}
 
           <p className="text-center text-[12px] leading-5 text-[var(--ink3)]">
             Choose a period, then generate to preview and download. This is separate from Home Warnings (live ops from
@@ -431,6 +445,53 @@ export function WeeklyReportScreen({
               {generating ? 'Generating report…' : 'Generate report'}
             </button>
           </section>
+
+      {downloadOpen && report && period ? (
+        <div
+          className="fixed inset-0 z-[80] flex items-end justify-center bg-black/40 p-4 sm:items-center"
+          onClick={() => setDownloadOpen(false)}
+        >
+          <div
+            className="w-full max-w-sm rounded-2xl bg-[var(--card)] p-5 shadow-xl"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="report-download-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <h2 id="report-download-title" className="text-lg font-bold text-[var(--ink)]">
+              Download report
+            </h2>
+            <p className="mt-1 text-sm text-[var(--ink3)]">
+              {format(period.start, 'd MMM yyyy')} → {format(period.end, 'd MMM yyyy')}. The preview stays on this page.
+            </p>
+            <div className="mt-4 grid gap-2">
+              <button
+                type="button"
+                className="btn primary"
+                onClick={() => {
+                  printWeeklyReport(buildWeeklyReportHtml(report))
+                  setDownloadOpen(false)
+                }}
+              >
+                PDF
+              </button>
+              <button
+                type="button"
+                className="btn"
+                onClick={() => {
+                  handleDownload()
+                  setDownloadOpen(false)
+                }}
+              >
+                Excel
+              </button>
+              <button type="button" className="btn ghost" onClick={() => setDownloadOpen(false)}>
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {generated && report ? (
         <>

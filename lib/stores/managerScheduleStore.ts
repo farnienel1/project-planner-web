@@ -93,7 +93,8 @@ export const useManagerScheduleStore = create<ManagerScheduleState>((set, get) =
     }
     const payload = serializeManagerSiteBooking({ ...next, organizationId })
     await setDoc(doc(firestore, 'organizations', organizationId, 'managerSiteBookings', id), payload, { merge: true })
-    set({ managerSiteBookings: [...get().managerSiteBookings, next] })
+    const without = get().managerSiteBookings.filter((row) => row.id !== next.id)
+    set({ managerSiteBookings: [...without, next] })
   },
 
   updateManagerSiteBooking: async (organizationId, bookingId, updates) => {

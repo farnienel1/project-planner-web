@@ -15,7 +15,7 @@ import { uploadFile as uploadHsFile, healthSafetyFilePath } from '@/lib/firebase
 import { withTimeout } from '@/lib/client/withTimeout'
 import { loadPlatformToolboxLibrary, mergeToolboxTalkLibraries } from '@/lib/healthSafety/toolboxLibrary'
 import { blankToolboxTalkTemplate } from '@/lib/healthSafety/mergeToolboxTalks'
-import { downloadBlankTalkExcel } from '@/lib/healthSafety/blankTalkWorkbook'
+import { downloadBlankTalkExcel, readBlankTalkFile } from '@/lib/healthSafety/blankTalkWorkbook'
 import {
   buildToolboxTalkPdf,
   customTalkDownloadName,
@@ -1041,7 +1041,7 @@ export function ProjectHealthSafetySection({
               Download blank template
             </h2>
             <p className="mt-1 text-sm text-slate-500">
-              Edit the file, then upload it back into this job’s library.
+              The Excel file matches the talk sheet. Fill the pale cells, save, print if you want, then upload it back into this job’s library.
             </p>
             <div className="mt-4 grid gap-2">
               <button
@@ -1171,7 +1171,22 @@ export function ProjectHealthSafetySection({
             </HsFieldCard>
             <HsFileButton
               file={uploadTalkFile}
-              onChange={setUploadTalkFile}
+              onChange={(file) => {
+                setUploadTalkFile(file)
+                if (!file) return
+                void readBlankTalkFile(file).then((parsed) => {
+                  if (!parsed) return
+                  if (parsed.title) setUploadTitle(parsed.title)
+                  if (parsed.category) setUploadCategory(parsed.category)
+                  if (parsed.trades) {
+                    const trades = parsed.trades.split(',').map((trade) => trade.trim()).filter(Boolean)
+                    setUploadTrades(trades)
+                    setUploadIsGeneral(trades.length === 0)
+                  }
+                  if (parsed.purpose) setUploadPurpose(parsed.purpose)
+                  if (parsed.keyPoints.length > 0) setUploadKeyPoints(parsed.keyPoints)
+                })
+              }}
               accept=".pdf,.xls,.xlsx,image/*"
               label="Choose PDF, Excel or photo"
               hint="PDF, Excel or image · up to 10MB"
