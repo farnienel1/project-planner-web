@@ -33,6 +33,8 @@ import { qualificationCertificatePath, uploadFile } from '@/lib/firebase/storage
 import {
   QUALIFICATION_CERT_ACCEPT,
   QUALIFICATION_CERT_HINT,
+  canonicalCertificateUrls,
+  certificateUrlForQualification,
   formatCertificateSaveError,
   localDateInputValue,
   dateFromLocalInputValue,
@@ -45,7 +47,7 @@ type Tab = 'organisation' | 'mine'
 
 export function QualificationsScreen({ initialTab }: { initialTab?: Tab } = {}) {
   const { user, organization } = useAuthStore()
-  const { operatives, loadOperatives, saveOperative } = useOperativeStore()
+  const { operatives, loadOperatives, patchOperativeQualifications } = useOperativeStore()
   const canManageOrg = canManageOrganisationQualifications(user)
   const canOpenHub = canAccessQualificationsHub(user) || canViewMyQualifications(user)
   const [tab, setTab] = useState<Tab>(initialTab || (canManageOrg ? 'organisation' : 'mine'))
@@ -189,8 +191,9 @@ export function QualificationsScreen({ initialTab }: { initialTab?: Tab } = {}) 
   }
 
   const updateMine = async (next: typeof linked) => {
-    if (!organization?.id || !next) return
-    await saveOperative(organization.id, next)
+    if (!organization?.id || !next?.id) return
+    const urls = canonicalCertificateUrls(next.qualifications, next.qualificationCertificateURLs)
+    await patchOperativeQualifications(organization.id, { ...next, qualificationCertificateURLs: urls })
   }
 
   if (loading) {
@@ -359,6 +362,7 @@ function MyQualificationsPanel({
   const [dirty, setDirty] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [pendingFiles, setPendingFiles] = useState<Record<string, File>>({})
+  const [previewUrls, setPreviewUrls] = useState<Record<string, string>>({})
   const [localError, setLocalError] = useState<string | null>(null)
   const [pickerOpen, setPickerOpen] = useState(false)
   const [pickerSelected, setPickerSelected] = useState<string[]>([])
@@ -369,6 +373,17 @@ function MyQualificationsPanel({
     setPendingFiles({})
     setLocalError(null)
   }, [linked, dirty])
+
+  useEffect(() => {
+    const next: Record<string, string> = {}
+    for (const [qualificationId, file] of Object.entries(pendingFiles)) {
+      next[qualificationId] = URL.createObjectURL(file)
+    }
+    setPreviewUrls(next)
+    return () => {
+      for (const url of Object.values(next)) URL.revokeObjectURL(url)
+    }
+  }, [pendingFiles])
 
   const openPicker = () => {
     setPickerSelected([])
@@ -551,8 +566,9 @@ function MyQualificationsPanel({
       <div className="grid gap-4 md:grid-cols-2">
         {draft.qualifications.map((qual) => {
           const expiry = draft.qualificationExpiryDates?.[qual.id]
-          const cert = draft.qualificationCertificateURLs?.[qual.id]
+          const cert = certificateUrlForQualification(draft.qualificationCertificateURLs, qual.id)
           const pending = pendingFiles[qual.id]
+          const preview = previewUrls[qual.id]
           return (
             <div key={qual.id} className="rounded-[18px] bg-[var(--card)] p-5 shadow-[var(--sh)]">
               <p className="text-[17px] font-semibold">{qual.name}</p>
@@ -597,7 +613,12 @@ function MyQualificationsPanel({
               {pending ? (
                 <div className="mt-2 rounded-xl bg-[#E6EBFF] px-3 py-2 text-[13px] text-[#3D56D1]">
                   <p className="font-semibold">Ready to upload: {pending.name}</p>
-                  <p>Save to store this certificate</p>
+                  <p>Save to store this certificate.</p>
+                  {preview ? (
+                    <a href={preview} target="_blank" rel="noreferrer" className="mt-1 inline-block font-semibold text-[var(--blue)]">
+                      View new certificate
+                    </a>
+                  ) : null}
                 </div>
               ) : cert ? (
                 <div className="mt-3 flex flex-wrap gap-3 text-sm">

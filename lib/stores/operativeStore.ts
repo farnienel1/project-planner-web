@@ -19,6 +19,9 @@ import { parseManager, parseOperative, serializeManager, serializeOperative } fr
 
 const OPERATIVES_KEY = 'operativeStore:operatives'
 
+/** Bumped around each operative write so an older roster fetch cannot put the previous certificate back. */
+let operativeMutationEpoch = 0
+
 interface OperativeState {
   operatives: Operative[]
   managers: Manager[]
@@ -34,6 +37,7 @@ interface OperativeState {
   getOperative: (organizationId: string, id: string) => Promise<Operative | null>
   getManager: (organizationId: string, id: string) => Promise<Manager | null>
   saveOperative: (organizationId: string, operative: Operative) => Promise<string>
+  patchOperativeQualifications: (organizationId: string, operative: Operative) => Promise<string>
   saveManager: (organizationId: string, manager: Manager) => Promise<string>
   deleteOperative: (id: string, organizationId: string) => Promise<void>
   deleteManager: (id: string, organizationId: string) => Promise<void>
@@ -56,11 +60,16 @@ export const useOperativeStore = create<OperativeState>((set, get) => ({
       async () => {
         if (get().operatives.length === 0) set({ loading: true, error: null })
         else set({ error: null })
+        const epoch = operativeMutationEpoch
         try {
           const operativesRef = collection(db, 'organizations', organizationId, 'operatives')
           const snapshot = options?.force
             ? await getDocsFromServer(operativesRef).catch(() => getDocs(operativesRef))
             : await getDocs(operativesRef)
+          if (epoch !== operativeMutationEpoch) {
+            set({ loading: false })
+            return
+          }
           const operatives = snapshot.docs.flatMap((entry) => {
             const parsed = parseOperative(entry.id, entry.data() as Record<string, unknown>, organizationId)
             return parsed.ok ? [parsed.value] : []
@@ -181,10 +190,46 @@ export const useOperativeStore = create<OperativeState>((set, get) => ({
   saveOperative: async (organizationId, operative) => {
     const id = operative.id || newUuid()
     const payload = serializeOperative({ ...operative, id, organizationId })
+    operativeMutationEpoch += 1
     await setDoc(doc(db, 'organizations', organizationId, 'operatives', id), payload)
+    operativeMutationEpoch += 1
     invalidateOrgLoad(OPERATIVES_KEY)
     const saved = { ...operative, id, organizationId, updatedAt: new Date() }
     set({ operatives: [...get().operatives.filter((o) => o.id !== id), saved] })
+    return id
+  },
+
+  /**
+   * Qualification edits merge into the operative document.
+   * A full rewrite would drop fields iOS stores on the same record.
+   * The certificate map stays qualification UUID → download URL, which is what iOS reads.
+   */
+  patchOperativeQualifications: async (organizationId, operative) => {
+    const id = operative.id
+    if (!id) throw new Error('Operative profile is missing.')
+    const payload = serializeOperative({ ...operative, id, organizationId })
+    operativeMutationEpoch += 1
+    await setDoc(
+      doc(db, 'organizations', organizationId, 'operatives', id),
+      {
+        qualifications: payload.qualifications,
+        qualificationExpiryDates: payload.qualificationExpiryDates,
+        qualificationCertificateURLs: payload.qualificationCertificateURLs,
+        updatedAt: payload.updatedAt,
+      },
+      { merge: true }
+    )
+    operativeMutationEpoch += 1
+    invalidateOrgLoad(OPERATIVES_KEY)
+    const existing = get().operatives.find((row) => row.id === id)
+    const saved = {
+      ...existing,
+      ...operative,
+      id,
+      organizationId,
+      updatedAt: new Date(),
+    }
+    set({ operatives: [...get().operatives.filter((row) => row.id !== id), saved] })
     return id
   },
 

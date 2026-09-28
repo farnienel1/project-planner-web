@@ -44,7 +44,12 @@ import { ToastProvider, useToast } from '@/components/ui/ToastProvider'
 import { Button, IconChip } from '@/components/ui'
 import { useNotificationStore } from '@/lib/stores/notificationStore'
 import { hueForCreateId, hueForNavId, type SectionHue } from '@/lib/ui/sectionHue'
-import { TIMESHEETS_HUB_PATH, timesheetLinkShouldHardReset } from '@/lib/timesheets/timesheetRoutes'
+import {
+  TIMESHEETS_HUB_PATH,
+  TIMESHEETS_MINE_PATH,
+  TIMESHEETS_TEAM_PATH,
+  timesheetLinkShouldHardReset,
+} from '@/lib/timesheets/timesheetRoutes'
 import type { PaletteItem } from '@/lib/ui/commandPalette'
 import { useProjectStore } from '@/lib/stores/projectStore'
 import { db } from '@/lib/firebase/config'
@@ -361,6 +366,11 @@ function AppShellInner({ children }: { children: ReactNode }) {
   const accountItems = getDashboardNavBySection(user, organization, 'account', users)
   const allItems = [...homeItems, ...navigateItems, ...toolsItems, ...teamItems, ...accountItems]
   const title = pageTitle(pathname, allItems)
+  const timesheetChild =
+    pathname === TIMESHEETS_MINE_PATH ||
+    pathname.startsWith(`${TIMESHEETS_MINE_PATH}/`) ||
+    pathname === TIMESHEETS_TEAM_PATH ||
+    pathname.startsWith(`${TIMESHEETS_TEAM_PATH}/`)
   const isHome = pathname === '/dashboard'
   const isBookLabour = pathname.startsWith('/dashboard/book-labour')
   const showHeader = !isBookLabour
@@ -537,7 +547,28 @@ function AppShellInner({ children }: { children: ReactNode }) {
               <nav className="crumb flex min-w-0 items-center gap-2 text-sm text-[var(--ink3)]">
                 <span className="sep hidden truncate min-[761px]:inline">{organization?.name || 'Project Planner'}</span>
                 <span className="sep hidden min-[761px]:inline">/</span>
-                <b className="truncate font-semibold text-[var(--ink)]">{title}</b>
+                {timesheetChild ? (
+                  <Link
+                    href={TIMESHEETS_HUB_PATH}
+                    className="truncate font-semibold text-[var(--ink)] underline-offset-2 hover:underline"
+                    onClick={(event) => {
+                      if (
+                        timesheetLinkShouldHardReset(
+                          window.location.pathname,
+                          window.location.search,
+                          TIMESHEETS_HUB_PATH
+                        )
+                      ) {
+                        event.preventDefault()
+                        window.location.assign(TIMESHEETS_HUB_PATH)
+                      }
+                    }}
+                  >
+                    {title}
+                  </Link>
+                ) : (
+                  <b className="truncate font-semibold text-[var(--ink)]">{title}</b>
+                )}
               </nav>
               <button
                 type="button"
