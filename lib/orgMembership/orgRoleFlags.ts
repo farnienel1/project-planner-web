@@ -54,6 +54,7 @@ export function userPatchForActiveOrg(input: {
   isCreator?: boolean
   membershipIsSuperAdmin?: boolean
   permissions?: Record<string, unknown> | null
+  accountActive?: boolean
 }): Record<string, unknown> {
   const isSuperAdmin = input.membershipIsSuperAdmin === true || input.isCreator === true
   const permissions = isSuperAdmin
@@ -74,6 +75,7 @@ export function userPatchForActiveOrg(input: {
     organizationId: input.organizationId,
     role,
     isSuperAdmin,
+    isActive: input.accountActive !== false,
     permissions: flags,
     ...flags,
     adminAccess: isSuperAdmin ? true : flags.adminAccess,
@@ -87,6 +89,7 @@ export function membershipSnapshotFromUserDoc(data: Record<string, unknown>): {
   role: string
   status: 'active'
   isSuperAdmin: boolean
+  accountActive: boolean
   permissions: Record<string, boolean>
 } {
   const permissions = permissionsFromRecord(data)
@@ -94,6 +97,7 @@ export function membershipSnapshotFromUserDoc(data: Record<string, unknown>): {
     role: String(data.role || 'member'),
     status: 'active',
     isSuperAdmin: data.isSuperAdmin === true,
+    accountActive: data.isActive !== false,
     permissions: permissionsToFirestoreMap(permissions),
   }
 }

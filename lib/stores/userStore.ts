@@ -15,7 +15,7 @@ interface UserStoreState {
   error: string | null
   getUser: (userId: string) => Promise<User | null>
   saveUser: (user: User) => Promise<void>
-  setUserActive: (userId: string, isActive: boolean) => Promise<void>
+  setUserActive: (userId: string, isActive: boolean, organizationId?: string) => Promise<void>
   deleteUser: (userId: string) => Promise<void>
   sendPasswordReset: (email: string) => Promise<void>
   applyAccountType: (user: User, accountType: 'operative' | 'manager' | 'admin') => User
@@ -84,8 +84,15 @@ export const useUserStore = create<UserStoreState>(() => ({
     })
   },
 
-  setUserActive: async (userId, isActive) => {
-    await updateDoc(doc(db, 'users', userId), { isActive, updatedAt: Timestamp.now() })
+  setUserActive: async (userId, isActive, organizationId) => {
+    const updatedAt = Timestamp.now()
+    await updateDoc(doc(db, 'users', userId), { isActive, updatedAt })
+    const orgId = organizationId?.trim()
+    if (!orgId) return
+    const membershipRef = doc(db, 'users', userId, 'orgMemberships', orgId)
+    const membership = await getDoc(membershipRef)
+    if (!membership.exists()) return
+    await updateDoc(membershipRef, { accountActive: isActive, updatedAt })
   },
 
   deleteUser: async (userId) => {

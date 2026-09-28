@@ -517,7 +517,7 @@ function AppShellInner({ children }: { children: ReactNode }) {
           ) : null}
 
           {showHeader ? (
-            <header className="sticky top-0 z-20 flex h-[66px] items-center gap-3 bg-[color-mix(in_srgb,var(--bg)_85%,transparent)] px-6 backdrop-blur-[10px] max-[760px]:h-[60px] max-[760px]:px-3.5">
+            <header className="sticky top-0 z-20 flex h-[66px] min-w-0 items-center gap-3 bg-[color-mix(in_srgb,var(--bg)_85%,transparent)] px-6 backdrop-blur-[10px] max-[760px]:h-[60px] max-[760px]:px-3.5">
               <button
                 type="button"
                 className="grid h-11 w-11 place-items-center rounded-[14px] bg-[var(--card)] text-[var(--ink2)] shadow-[var(--sh)] lg:hidden"
@@ -534,7 +534,7 @@ function AppShellInner({ children }: { children: ReactNode }) {
               <button
                 type="button"
                 onClick={() => setPaletteOpen(true)}
-                className="ml-auto flex h-11 w-[320px] max-w-full items-center gap-2.5 rounded-[14px] bg-[var(--card)] px-3.5 text-[14.5px] text-[var(--ink3)] shadow-[var(--sh)] max-[1100px]:w-11 max-[1100px]:justify-center max-[1100px]:px-0"
+                className="ml-auto flex h-11 w-[min(320px,100%)] min-w-0 shrink items-center gap-2.5 rounded-[14px] bg-[var(--card)] px-3.5 text-[14.5px] text-[var(--ink3)] shadow-[var(--sh)] max-[1100px]:w-11 max-[1100px]:shrink-0 max-[1100px]:justify-center max-[1100px]:px-0"
                 aria-label="Search"
               >
                 <MagnifyingGlassIcon className="h-5 w-5" />
@@ -613,11 +613,9 @@ function AppShellInner({ children }: { children: ReactNode }) {
             </header>
           ) : null}
 
-          <main className="min-w-0 flex-1 overflow-x-clip">
-            <div className="app-stage">
-              <div className={cn('page mx-auto w-full max-w-shell', isHome ? 'px-4 py-4 min-[760px]:px-7 min-[760px]:py-6' : 'px-4 py-6 min-[760px]:px-7 min-[760px]:pb-14')}>
-                {children}
-              </div>
+          <main className="min-w-0 flex-1">
+            <div className={cn('page mx-auto w-full max-w-shell', isHome ? 'px-4 py-4 min-[760px]:px-7 min-[760px]:py-6' : 'px-4 py-6 min-[760px]:px-7 min-[760px]:pb-14')}>
+              {children}
             </div>
           </main>
         </div>

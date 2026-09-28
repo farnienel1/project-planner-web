@@ -341,16 +341,18 @@ export function HsFileButton({
   onChange,
   accept = '.pdf,image/*',
   label = 'Choose PDF or photo',
+  hint = 'PDF or image · up to 10MB',
 }: {
   file: File | null
   onChange: (file: File | null) => void
   accept?: string
   label?: string
+  hint?: string
 }) {
   return (
     <label className="flex cursor-pointer flex-col items-center gap-1 rounded-2xl border border-dashed border-[#C5C9D2] bg-white px-4 py-5 text-center">
       <span className="text-sm font-semibold text-[var(--blue)]">{file ? 'Replace file' : label}</span>
-      <span className="text-[11px] text-slate-500">{file ? file.name : 'PDF or image · up to 10MB'}</span>
+      <span className="text-[11px] text-slate-500">{file ? file.name : hint}</span>
       <input
         type="file"
         accept={accept}

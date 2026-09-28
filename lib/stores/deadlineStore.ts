@@ -15,6 +15,7 @@ import { mergeDeadlinesFirstWriterWins } from '@/lib/deadlines/logic'
 import type { Deadline } from '@/lib/deadlines/types'
 
 const FWW_GRACE_MS = 400
+let deadlineLoadGeneration = 0
 
 function deadlinesRef(organizationId: string, projectId: string, isSmallWorks: boolean) {
   return doc(db, 'organizations', organizationId, 'settings', deadlinesSettingsDocId(projectId, isSmallWorks))
@@ -72,13 +73,14 @@ export const useDeadlineStore = create<DeadlineState>((set, get) => ({
 
   load: async (organizationId, projectId, isSmallWorks) => {
     const projectKey = `${organizationId}:${deadlinesSettingsDocId(projectId, isSmallWorks)}`
+    const generation = ++deadlineLoadGeneration
     if (get().projectKey !== projectKey) {
       set({ items: [], updatedAt: null, loaded: false, error: null, projectKey })
     }
-    set({ loading: true, error: null })
+    set({ loading: true, error: null, projectKey })
     try {
       const snap = await getDoc(deadlinesRef(organizationId, projectId, isSmallWorks))
-      if (get().projectKey !== projectKey) return
+      if (generation !== deadlineLoadGeneration) return
       if (!snap.exists()) {
         set({ items: [], updatedAt: null, loaded: true, loading: false })
         return
@@ -89,6 +91,7 @@ export const useDeadlineStore = create<DeadlineState>((set, get) => ({
         .map((row) => (row && typeof row === 'object' ? parseDeadline(row as Record<string, unknown>, projectId) : null))
         .filter((row): row is Deadline => row !== null)
         .sort((a, b) => a.due.getTime() - b.due.getTime())
+      if (generation !== deadlineLoadGeneration) return
       set({
         items,
         updatedAt: parseFirestoreDate(data.updatedAt) ?? null,
@@ -96,7 +99,7 @@ export const useDeadlineStore = create<DeadlineState>((set, get) => ({
         loading: false,
       })
     } catch (error: unknown) {
-      if (get().projectKey !== projectKey) return
+      if (generation !== deadlineLoadGeneration) return
       set({
         loading: false,
         loaded: false,

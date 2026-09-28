@@ -10,9 +10,9 @@ import {
 } from '@/lib/security/apiGuard'
 import { clampString, isValidEmail } from '@/lib/security/validation'
 import { getAppBaseUrl } from '@/lib/email/resendClient'
-import { maskEmail } from '@/lib/auth/maskEmail'
 import { PLATFORM_OWNER_EMAIL } from '@/lib/platform/owner'
-import { bearerToken } from '@/lib/owner/firestoreRest'
+import { bearerToken, firestoreGet, readString } from '@/lib/owner/firestoreRest'
+import { LOGIN_EMAIL_FIX_INBOX, loginEmailFixMessage } from '@/lib/support/loginEmailFix'
 
 export const runtime = 'nodejs'
 
@@ -23,7 +23,10 @@ export async function POST(request: NextRequest) {
   if (!isFirebaseUser(user)) return user
   const body = await readJsonBody<{
     orgId?: string
+    orgName?: string
     targetUid?: string
+    targetName?: string
+    currentEmail?: string
     suggestedEmail?: string
     note?: string
   }>(request)
@@ -32,6 +35,9 @@ export async function POST(request: NextRequest) {
   const targetUid = clampString(body.value.targetUid, 80) || ''
   const suggestedEmail = (clampString(body.value.suggestedEmail, 254) || '').toLowerCase()
   const note = clampString(body.value.note, 500) || ''
+  const orgNameHint = clampString(body.value.orgName, 160) || ''
+  const targetNameHint = clampString(body.value.targetName, 160) || ''
+  const currentEmailHint = (clampString(body.value.currentEmail, 254) || '').toLowerCase()
   if (!orgId || !targetUid || !isValidEmail(suggestedEmail)) {
     return jsonError('orgId, targetUid and a valid suggestedEmail are required', 400)
   }
@@ -60,16 +66,34 @@ export async function POST(request: NextRequest) {
       }
     )
     if (!created.ok) {
-      return jsonError('Could not store that support request. Publish the updated Firestore rules first.', 502)
+      console.error('[support/login-email] could not store the request', created.status)
     }
+    let userDoc: Awaited<ReturnType<typeof firestoreGet>> = null
+    let orgDoc: Awaited<ReturnType<typeof firestoreGet>> = null
+    try {
+      userDoc = await firestoreGet(token, `users/${targetUid}`)
+      orgDoc = await firestoreGet(token, `organizations/${orgId}`)
+    } catch (readError) {
+      console.error('[support/login-email] could not read org or user', readError)
+    }
+    const oldEmail = (userDoc ? readString(userDoc.fields, 'email') : currentEmailHint).toLowerCase()
+    const storedName = userDoc
+      ? `${readString(userDoc.fields, 'firstName')} ${readString(userDoc.fields, 'surname')}`.trim()
+      : ''
+    const message = loginEmailFixMessage({
+      organizationName: (orgDoc ? readString(orgDoc.fields, 'name') : '') || orgNameHint,
+      organizationId: orgId,
+      userName: storedName || targetNameHint,
+      userId: targetUid,
+      oldEmail: oldEmail || currentEmailHint,
+      newEmail: suggestedEmail,
+      note,
+    })
     const deepLink = `${getAppBaseUrl()}/developer/users?fix=${encodeURIComponent(targetUid)}`
     await sendProjectPlannerEmail({
-      to: PLATFORM_OWNER_EMAIL,
-      subject: 'Login email fix requested',
-      html: `<p>An organisation admin asked Project Planner to fix a login email.</p>
-        <p>Suggested email: ${maskEmail(suggestedEmail)}</p>
-        <p>Note: ${note || '—'}</p>
-        <p><a href="${deepLink}">Open in the owner console</a></p>`,
+      to: LOGIN_EMAIL_FIX_INBOX || PLATFORM_OWNER_EMAIL,
+      subject: message.subject,
+      html: `${message.html}<p><a href="${deepLink}">Open in the owner console</a></p>`,
     })
     return NextResponse.json({ ok: true })
   } catch (error) {
