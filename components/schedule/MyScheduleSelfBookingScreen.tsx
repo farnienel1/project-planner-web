@@ -25,14 +25,113 @@ import {
   type ManagerSiteBooking,
 } from '@/lib/scheduling/managerSiteBookingUtils'
 import { AddWeekToCalendarButton } from '@/components/schedule/AddWeekToCalendarButton'
-import {
-  MyScheduleStripeRow,
-  MyScheduleTotalHoursCard,
-  myScheduleClockSubtitle,
-  myScheduleStripeClass,
-} from '@/components/schedule/MyScheduleLooks'
+import { myScheduleStripeClass } from '@/components/schedule/MyScheduleLooks'
 import { HoursTimelinePicker } from '@/components/scheduling/HoursTimelinePicker'
+import { countWorksByTab, filterWorksByTab, searchWorks } from '@/lib/projects/workStatus'
 import type { Project } from '@/types'
+
+type JobFilter = 'all' | 'active' | 'upcoming' | 'completed'
+
+const selfBookInflight = new Set<string>()
+
+function bookingIdentity(booking: ManagerSiteBooking): string {
+  const day = format(startOfDay(booking.date), 'yyyy-MM-dd')
+  return [
+    booking.userId,
+    day,
+    booking.timeSlot,
+    booking.locationType,
+    booking.locationId || '',
+    (booking.customLocationName || '').trim().toLowerCase(),
+  ].join('|')
+}
+
+function BookColumn({
+  title,
+  hue,
+  count,
+  children,
+}: {
+  title: string
+  hue: string
+  count: number
+  children: ReactNode
+}) {
+  return (
+    <section className="card" data-hue={hue}>
+      <div className="card-h">
+        <h2 className="h2 grow" style={{ fontSize: 17 }}>
+          {title}
+        </h2>
+        <span className="count soft">{count}</span>
+      </div>
+      <div className="card-b rows">{children}</div>
+    </section>
+  )
+}
+
+function ColumnSearch({
+  value,
+  onChange,
+  placeholder,
+}: {
+  value: string
+  onChange: (value: string) => void
+  placeholder: string
+}) {
+  return (
+    <input
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+      placeholder={placeholder}
+      className="in"
+      aria-label={placeholder}
+    />
+  )
+}
+
+function StatusFilters({
+  value,
+  counts,
+  onChange,
+}: {
+  value: JobFilter
+  counts: { all: number; active: number; upcoming: number; completed: number }
+  onChange: (value: JobFilter) => void
+}) {
+  const chips: { id: JobFilter; label: string }[] = [
+    { id: 'all', label: `All · ${counts.all}` },
+    { id: 'active', label: `Active · ${counts.active}` },
+    { id: 'upcoming', label: `Upcoming · ${counts.upcoming}` },
+    { id: 'completed', label: `Completed · ${counts.completed}` },
+  ]
+  return (
+    <div className="chips">
+      {chips.map((chip) => (
+        <button
+          key={chip.id}
+          type="button"
+          className={`chip ${value === chip.id ? 'on' : ''}`}
+          onClick={() => onChange(chip.id)}
+        >
+          {chip.label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function uniqueBookings(rows: ManagerSiteBooking[]): ManagerSiteBooking[] {
+  const seen = new Set<string>()
+  const out: ManagerSiteBooking[] = []
+  for (const row of rows) {
+    const key = bookingIdentity(row)
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push(row)
+  }
+  return out
+}
 
 type TimeSlot = 'AM' | 'PM' | 'FULL_DAY' | 'CUSTOM_HOURS'
 
@@ -96,7 +195,6 @@ export function MyScheduleSelfBookingScreen({
   const [selectedDate, setSelectedDate] = useState<Date>(() => startOfDay(new Date()))
   const [multiDay, setMultiDay] = useState(false)
   const [selectedDates, setSelectedDates] = useState<Date[]>([])
-  const [openSection, setOpenSection] = useState<'self' | 'projects' | 'smallworks' | null>('self')
   const [expandedLoc, setExpandedLoc] = useState<string | null>(null)
   const [customStart, setCustomStart] = useState('07:30')
   const [customEnd, setCustomEnd] = useState('16:00')
@@ -108,6 +206,11 @@ export function MyScheduleSelfBookingScreen({
   const [toast, setToast] = useState<{ kind: 'success' | 'error'; msg: string } | null>(null)
   const [confirm, setConfirm] = useState<{ msg: string; onYes: () => void } | null>(null)
   const [busy, setBusy] = useState(false)
+  const [otherQuery, setOtherQuery] = useState('')
+  const [projectQuery, setProjectQuery] = useState('')
+  const [smallQuery, setSmallQuery] = useState('')
+  const [projectStatus, setProjectStatus] = useState<JobFilter>('active')
+  const [smallStatus, setSmallStatus] = useState<JobFilter>('active')
 
   useEffect(() => {
     loadManagerSiteBookings(organizationId)
@@ -122,18 +225,13 @@ export function MyScheduleSelfBookingScreen({
 
   const weekDates = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart])
 
-  const liveProjects = useMemo(() => projects.filter((p) => p.isLive !== false), [projects])
-  const liveSmallWorks = useMemo(() => smallWorks.filter((p) => p.isLive !== false), [smallWorks])
-
   const myBookings = useMemo(
-    () => managerSiteBookings.filter((b) => b.userId === userId),
+    () => uniqueBookings(managerSiteBookings.filter((b) => b.userId === userId)),
     [managerSiteBookings, userId]
   )
 
   const myBookingsOn = (day: Date): ManagerSiteBooking[] =>
     myBookings.filter((b) => isSameDay(startOfDay(b.date), startOfDay(day)))
-
-  const dayBookings = useMemo(() => myBookingsOn(selectedDate), [myBookings, selectedDate])
 
   const projectsById = useMemo(() => {
     const map = new Map<string, string>()
@@ -170,9 +268,19 @@ export function MyScheduleSelfBookingScreen({
     locationId?: string
     customLocationName?: string
   }) {
+    const keys = args.days.map(
+      (day) =>
+        `${userId}|${format(startOfDay(day), 'yyyy-MM-dd')}|${args.timeSlot}|${args.locationType}|${args.locationId || ''}|${(args.customLocationName || '').trim().toLowerCase()}`
+    )
+    if (keys.some((key) => selfBookInflight.has(key))) return
+    keys.forEach((key) => selfBookInflight.add(key))
     setBusy(true)
     try {
+      let wrote = 0
       for (const day of args.days) {
+        const identity = `${userId}|${format(startOfDay(day), 'yyyy-MM-dd')}|${args.timeSlot}|${args.locationType}|${args.locationId || ''}|${(args.customLocationName || '').trim().toLowerCase()}`
+        const already = myBookingsOn(day).some((booking) => bookingIdentity(booking) === identity)
+        if (already) continue
         await saveManagerSiteBooking(organizationId, {
           userId,
           date: day,
@@ -184,12 +292,18 @@ export function MyScheduleSelfBookingScreen({
           workEndTime: args.timeSlot === 'CUSTOM_HOURS' ? customEnd : undefined,
           isBreakRemoved: args.timeSlot === 'CUSTOM_HOURS' ? breakRemoved : false,
         })
+        wrote += 1
       }
-      flash('success', args.days.length > 1 ? `Booked across ${args.days.length} days.` : 'Booking added.')
+      if (wrote === 0) {
+        flash('success', 'That time is already booked.')
+      } else {
+        flash('success', wrote > 1 ? `Booked across ${wrote} days.` : 'Booking added.')
+      }
       setExpandedLoc(null)
     } catch (error) {
       flash('error', error instanceof Error ? error.message : 'Could not save booking.')
     } finally {
+      keys.forEach((key) => selfBookInflight.delete(key))
       setBusy(false)
     }
   }
@@ -257,6 +371,11 @@ export function MyScheduleSelfBookingScreen({
         custom: item,
       })),
   ]
+
+  const otherQueryText = otherQuery.trim().toLowerCase()
+  const filteredOther = selfLocations.filter((loc) => loc.name.toLowerCase().includes(otherQueryText))
+  const filteredProjects = searchWorks(filterWorksByTab(projects, projectStatus), projectQuery)
+  const filteredSmallWorks = searchWorks(filterWorksByTab(smallWorks, smallStatus), smallQuery)
 
   function SlotPicker({
     locKey,
@@ -331,55 +450,6 @@ export function MyScheduleSelfBookingScreen({
           <Chevron open={open} />
         </button>
         <SlotPicker locKey={locKey} type={type} locationId={locationId} customLocationName={customLocationName} />
-      </div>
-    )
-  }
-
-  function Section({
-    id,
-    title,
-    count,
-    children,
-  }: {
-    id: 'self' | 'projects' | 'smallworks'
-    title: string
-    count?: number
-    children: ReactNode
-  }) {
-    const open = openSection === id
-    return (
-      <div className="card overflow-hidden" data-hue="sched">
-        <button
-          type="button"
-          onClick={() => {
-            setOpenSection(open ? null : id)
-            setExpandedLoc(null)
-          }}
-          className="card-h w-full"
-          data-hue={id === 'projects' ? 'proj' : id === 'smallworks' ? 'sw' : 'sched'}
-        >
-          <div className="ico-chip sm">
-            {id === 'projects' ? (
-              <svg className="h-[18px] w-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M3 7.5h18M3 12h18M3 16.5h18" />
-              </svg>
-            ) : id === 'smallworks' ? (
-              <svg className="h-[18px] w-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M11.42 15.17 17.25 21A2.652 2.652 0 0 0 21 17.25l-5.877-5.877M11.42 15.17l2.496-3.03c.317-.384.74-.626 1.208-.766M11.42 15.17l-4.655 5.653a2.548 2.548 0 1 1-3.586-3.586l6.837-5.63m5.108-.233c.55-.164 1.163-.188 1.743-.14a4.5 4.5 0 0 0 4.486-6.336l-3.276 3.277a3.004 3.004 0 0 1-2.25-2.25l3.276-3.276a4.5 4.5 0 0 0-6.336 4.486c.091 1.076-.071 2.264-.904 2.95l-.102.085" />
-              </svg>
-            ) : (
-              <svg className="h-[18px] w-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-              </svg>
-            )}
-          </div>
-          <h2 className="h2 grow" style={{ fontSize: 17 }}>
-            {title}
-            {typeof count === 'number' ? <span className="count soft" style={{ marginLeft: 8 }}>{count}</span> : null}
-          </h2>
-          <Chevron open={open} />
-        </button>
-        {open && <div className="card-b rows">{children}</div>}
       </div>
     )
   }
@@ -467,10 +537,17 @@ export function MyScheduleSelfBookingScreen({
           const dayRows = myBookingsOn(day)
           const weekend = index > 4
           return (
-            <button
+            <div
               key={day.toISOString()}
-              type="button"
+              role="button"
+              tabIndex={0}
               onClick={() => (multiDay ? toggleDayInMulti(day) : setSelectedDate(startOfDay(day)))}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault()
+                  multiDay ? toggleDayInMulti(day) : setSelectedDate(startOfDay(day))
+                }
+              }}
               className={`day ${today ? 'today' : ''} ${weekend ? 'wk' : ''} ${isSel ? 'sel' : ''}`}
             >
               <div className="dn">
@@ -485,10 +562,20 @@ export function MyScheduleSelfBookingScreen({
                     <div key={booking.id} className="bk" data-hue={booking.locationType === 'office' ? 'blue' : booking.locationType === 'working_from_home' ? 'daily' : booking.locationType === 'small_work' ? 'sw' : 'proj'}>
                       <b>{locationName(booking)}</b>
                       <span className="x">{slotLabel(booking)}</span>
+                      <button
+                        type="button"
+                        className="btn xs ghost"
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          void removeBooking(booking)
+                        }}
+                      >
+                        Remove
+                      </button>
                     </div>
                   ))
                 : <div className="emptyday">{weekend ? 'Weekend' : '+ Book'}</div>}
-            </button>
+            </div>
           )
         })}
       </div>
@@ -503,128 +590,57 @@ export function MyScheduleSelfBookingScreen({
         payrollPolicy={payrollPolicy}
       />
 
-      <div className="grid gmain">
-        <div className="stack">
-          <Section id="self" title={`Book yourself · ${format(selectedDate, 'EEE d MMM')}`}>
-            {selfLocations.length === 0 ? (
-              <p className="muted small">
-                No location options enabled — configure them in Organisation → Schedule options.
-              </p>
-            ) : (
-              selfLocations.map((loc) => (
-                <LocationRow
-                  key={loc.key}
-                  locKey={loc.key}
-                  name={loc.name}
-                  type={loc.type}
-                  customLocationName={loc.custom}
-                />
-              ))
-            )}
-          </Section>
-
-          <div className="grid g2" style={{ gap: 12 }}>
-            <button
-              type="button"
-              className="stat"
-              data-hue="proj"
-              onClick={() => {
-                setOpenSection(openSection === 'projects' ? null : 'projects')
-                setExpandedLoc(null)
-              }}
-            >
-              <div className="ico-chip">
-                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 7.5h18M3 12h18M3 16.5h18" />
-                </svg>
-              </div>
-              <div className="grow">
-                <b style={{ fontSize: 18 }}>Projects</b>
-                <span>{liveProjects.length} available</span>
-              </div>
-            </button>
-            <button
-              type="button"
-              className="stat"
-              data-hue="sw"
-              onClick={() => {
-                setOpenSection(openSection === 'smallworks' ? null : 'smallworks')
-                setExpandedLoc(null)
-              }}
-            >
-              <div className="ico-chip">
-                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M11.42 15.17 17.25 21A2.652 2.652 0 0 0 21 17.25l-5.877-5.877M11.42 15.17l2.496-3.03c.317-.384.74-.626 1.208-.766M11.42 15.17l-4.655 5.653a2.548 2.548 0 1 1-3.586-3.586l6.837-5.63m5.108-.233c.55-.164 1.163-.188 1.743-.14a4.5 4.5 0 0 0 4.486-6.336l-3.276 3.277a3.004 3.004 0 0 1-2.25-2.25l3.276-3.276a4.5 4.5 0 0 0-6.336 4.486c.091 1.076-.071 2.264-.904 2.95l-.102.085" />
-                </svg>
-              </div>
-              <div className="grow">
-                <b style={{ fontSize: 18 }}>Small Works</b>
-                <span>{liveSmallWorks.length} available</span>
-              </div>
-            </button>
-          </div>
-
-          {openSection === 'projects' ? (
-            <Section id="projects" title="Projects" count={liveProjects.length}>
-              {liveProjects.length === 0 ? (
-                <p className="muted small">No live projects.</p>
-              ) : (
-                liveProjects.map((project) => (
-                  <LocationRow
-                    key={project.id}
-                    locKey={`project:${project.id}`}
-                    name={projectLabel(project)}
-                    type="project"
-                    locationId={project.id}
-                  />
-                ))
-              )}
-            </Section>
-          ) : null}
-
-          {openSection === 'smallworks' ? (
-            <Section id="smallworks" title="Small Works" count={liveSmallWorks.length}>
-              {liveSmallWorks.length === 0 ? (
-                <p className="muted small">No live small works.</p>
-              ) : (
-                liveSmallWorks.map((project) => (
-                  <LocationRow
-                    key={project.id}
-                    locKey={`sw:${project.id}`}
-                    name={projectLabel(project)}
-                    type="small_work"
-                    locationId={project.id}
-                  />
-                ))
-              )}
-            </Section>
-          ) : null}
-        </div>
-
-        <div className="stack">
-          <MyScheduleTotalHoursCard bookings={dayBookings} policy={payrollPolicy} />
-          <section className="card" data-hue="sched">
-            <div className="card-h">
-              <h2 className="h2">{format(selectedDate, 'EEEE, d MMM')}</h2>
-              {dayBookings.length > 0 ? <span className="count soft">{dayBookings.length}</span> : null}
-            </div>
-            <div className="card-b rows">
-              {dayBookings.length === 0 ? (
-                <p className="muted small">Nothing booked for this day yet.</p>
-              ) : (
-                dayBookings.map((booking) => (
-                  <MyScheduleStripeRow
-                    key={booking.id}
-                    stripeClass={myScheduleStripeClass(booking.locationType)}
-                    title={locationName(booking)}
-                    subtitle={myScheduleClockSubtitle(booking, payrollPolicy)}
-                    onDelete={() => void removeBooking(booking)}
-                  />
-                ))
-              )}
-            </div>
-          </section>
-        </div>
+      <div className="book-cols">
+        <BookColumn title="Other" hue="sched" count={filteredOther.length}>
+          <ColumnSearch value={otherQuery} onChange={setOtherQuery} placeholder="Search office, home, survey…" />
+          {filteredOther.length === 0 ? (
+            <p className="muted small">No locations match that search.</p>
+          ) : (
+            filteredOther.map((loc) => (
+              <LocationRow
+                key={loc.key}
+                locKey={loc.key}
+                name={loc.name}
+                type={loc.type}
+                customLocationName={loc.custom}
+              />
+            ))
+          )}
+        </BookColumn>
+        <BookColumn title="Projects" hue="proj" count={filteredProjects.length}>
+          <ColumnSearch value={projectQuery} onChange={setProjectQuery} placeholder="Search projects…" />
+          <StatusFilters value={projectStatus} counts={countWorksByTab(projects)} onChange={setProjectStatus} />
+          {filteredProjects.length === 0 ? (
+            <p className="muted small">No projects in this filter.</p>
+          ) : (
+            filteredProjects.map((project) => (
+              <LocationRow
+                key={project.id}
+                locKey={`project:${project.id}`}
+                name={projectLabel(project)}
+                type="project"
+                locationId={project.id}
+              />
+            ))
+          )}
+        </BookColumn>
+        <BookColumn title="Small works" hue="sw" count={filteredSmallWorks.length}>
+          <ColumnSearch value={smallQuery} onChange={setSmallQuery} placeholder="Search small works…" />
+          <StatusFilters value={smallStatus} counts={countWorksByTab(smallWorks)} onChange={setSmallStatus} />
+          {filteredSmallWorks.length === 0 ? (
+            <p className="muted small">No small works in this filter.</p>
+          ) : (
+            filteredSmallWorks.map((project) => (
+              <LocationRow
+                key={project.id}
+                locKey={`sw:${project.id}`}
+                name={projectLabel(project)}
+                type="small_work"
+                locationId={project.id}
+              />
+            ))
+          )}
+        </BookColumn>
       </div>
 
       {confirm && (

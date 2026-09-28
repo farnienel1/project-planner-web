@@ -89,10 +89,15 @@ export const useUserStore = create<UserStoreState>(() => ({
     await updateDoc(doc(db, 'users', userId), { isActive, updatedAt })
     const orgId = organizationId?.trim()
     if (!orgId) return
-    const membershipRef = doc(db, 'users', userId, 'orgMemberships', orgId)
-    const membership = await getDoc(membershipRef)
-    if (!membership.exists()) return
-    await updateDoc(membershipRef, { accountActive: isActive, updatedAt })
+    // Admins can update a membership but cannot read another user's membership doc.
+    // A get() here throws "Missing or insufficient permissions" and the screen rolls the toggle back.
+    try {
+      await updateDoc(doc(db, 'users', userId, 'orgMemberships', orgId), { accountActive: isActive, updatedAt })
+    } catch (error) {
+      const code = (error as { code?: string }).code || ''
+      if (code === 'not-found' || code === 'permission-denied') return
+      throw error
+    }
   },
 
   deleteUser: async (userId) => {
