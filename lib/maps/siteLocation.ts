@@ -33,18 +33,26 @@ export function hasValidAddress(project: LocationFields): boolean {
 }
 
 export function hasValidSiteLocation(project: LocationFields): boolean {
-  return hasValidAddress(project) || resolveStoredCoordinates(project) != null
+  return hasValidAddress(project) || mapCoordinateForProject(project) != null
+}
+
+/** Stored pin only while the job is still in map-pin mode. An address save clears the flag so the map geocodes the text. */
+export function mapCoordinateForProject(
+  project: LocationFields
+): { latitude: number; longitude: number } | null {
+  if (project.usesMapPinForLocation === false) return null
+  return resolveStoredCoordinates(project)
 }
 
 export function locationDisplayText(project: LocationFields): string {
   if (hasValidAddress(project)) return formatSiteAddress(project)
-  const coords = resolveStoredCoordinates(project)
+  const coords = mapCoordinateForProject(project)
   if (coords) return `${coords.latitude.toFixed(5)}, ${coords.longitude.toFixed(5)}`
   return ''
 }
 
 export function googleMapsUrlForProject(project: LocationFields): string | null {
-  const coords = resolveStoredCoordinates(project)
+  const coords = mapCoordinateForProject(project)
   if (coords) {
     return `https://www.google.com/maps/search/?api=1&query=${coords.latitude},${coords.longitude}`
   }
@@ -52,7 +60,7 @@ export function googleMapsUrlForProject(project: LocationFields): string | null 
 }
 
 export function appleMapsUrlForProject(project: LocationFields): string | null {
-  const coords = resolveStoredCoordinates(project)
+  const coords = mapCoordinateForProject(project)
   if (coords) {
     const query = encodeURIComponent(project.siteName?.trim() || `${coords.latitude},${coords.longitude}`)
     return `https://maps.apple.com/?ll=${coords.latitude},${coords.longitude}&q=${query}`

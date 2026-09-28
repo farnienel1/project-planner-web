@@ -69,6 +69,9 @@ export function ProjectForm({ initial, collection = 'projects', backHref, onSave
     isLive: initial?.isLive !== false,
     latitude: initial?.latitude?.toString() || '',
     longitude: initial?.longitude?.toString() || '',
+    useMapPin:
+      initial?.usesMapPinForLocation === true ||
+      (initial?.usesMapPinForLocation !== false && initial?.latitude != null && initial?.longitude != null),
   })
 
   useEffect(() => {
@@ -117,6 +120,16 @@ export function ProjectForm({ initial, collection = 'projects', backHref, onSave
 
     return options.sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base' }))
   }, [managers, managerUsers])
+
+  const setAddressField = (patch: Partial<Pick<typeof form, 'addressLine1' | 'addressLine2' | 'townCity' | 'postcode'>>) => {
+    setForm((current) => ({
+      ...current,
+      ...patch,
+      latitude: '',
+      longitude: '',
+      useMapPin: false,
+    }))
+  }
 
   const scrollToFirstError = () => {
     managersFieldRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
@@ -220,9 +233,9 @@ export function ProjectForm({ initial, collection = 'projects', backHref, onSave
         isLive: form.isLive,
         description: form.description,
         notes: form.notes,
-        latitude: form.latitude ? Number(form.latitude) : undefined,
-        longitude: form.longitude ? Number(form.longitude) : undefined,
-        usesMapPinForLocation: Boolean(form.latitude && form.longitude),
+        latitude: form.useMapPin && form.latitude ? Number(form.latitude) : undefined,
+        longitude: form.useMapPin && form.longitude ? Number(form.longitude) : undefined,
+        usesMapPinForLocation: Boolean(form.useMapPin && form.latitude && form.longitude),
         createdAt: initial?.createdAt,
       }
       const id = await saveProject(input, collection)
@@ -341,19 +354,19 @@ export function ProjectForm({ initial, collection = 'projects', backHref, onSave
       <div className="grid gap-4 md:grid-cols-2">
         <div>
           <FormLabel>Address line 1</FormLabel>
-          <FormInput value={form.addressLine1} onChange={(e) => setForm({ ...form, addressLine1: e.target.value })} />
+          <FormInput value={form.addressLine1} onChange={(e) => setAddressField({ addressLine1: e.target.value })} />
         </div>
         <div>
           <FormLabel>Address line 2</FormLabel>
-          <FormInput value={form.addressLine2} onChange={(e) => setForm({ ...form, addressLine2: e.target.value })} />
+          <FormInput value={form.addressLine2} onChange={(e) => setAddressField({ addressLine2: e.target.value })} />
         </div>
         <div>
           <FormLabel>Town / city</FormLabel>
-          <FormInput value={form.townCity} onChange={(e) => setForm({ ...form, townCity: e.target.value })} />
+          <FormInput value={form.townCity} onChange={(e) => setAddressField({ townCity: e.target.value })} />
         </div>
         <div>
           <FormLabel>Postcode</FormLabel>
-          <FormInput value={form.postcode} onChange={(e) => setForm({ ...form, postcode: e.target.value })} />
+          <FormInput value={form.postcode} onChange={(e) => setAddressField({ postcode: e.target.value })} />
         </div>
         <div>
           <FormLabel required>Start date</FormLabel>
@@ -364,21 +377,50 @@ export function ProjectForm({ initial, collection = 'projects', backHref, onSave
           <FormInput type="date" value={form.endDate} onChange={(e) => setForm({ ...form, endDate: e.target.value })} required />
         </div>
         <div className="md:col-span-2">
-          <FormLabel>Site location pin</FormLabel>
-          <div className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-            <button
-              type="button"
-              onClick={() => setPinPickerOpen(true)}
-              className="inline-flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-100"
-            >
-              Set pin on map
-            </button>
-            {form.latitude && form.longitude ? (
-              <p className="text-xs font-mono text-slate-600">
-                Pin: {Number(form.latitude).toFixed(5)}, {Number(form.longitude).toFixed(5)}
-              </p>
+          <FormLabel>Site location</FormLabel>
+          <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => setForm((current) => ({ ...current, useMapPin: false, latitude: '', longitude: '' }))}
+                className={`rounded-lg px-3 py-1.5 text-sm font-semibold ${
+                  form.useMapPin ? 'border border-slate-200 bg-white text-slate-600' : 'bg-slate-900 text-white'
+                }`}
+              >
+                Address
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setForm((current) => ({ ...current, useMapPin: true }))
+                  setPinPickerOpen(true)
+                }}
+                className={`rounded-lg px-3 py-1.5 text-sm font-semibold ${
+                  form.useMapPin ? 'bg-slate-900 text-white' : 'border border-slate-200 bg-white text-slate-600'
+                }`}
+              >
+                Map pin
+              </button>
+            </div>
+            {form.useMapPin ? (
+              <div className="flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setPinPickerOpen(true)}
+                  className="inline-flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-100"
+                >
+                  Set pin on map
+                </button>
+                {form.latitude && form.longitude ? (
+                  <p className="text-xs font-mono text-slate-600">
+                    Pin: {Number(form.latitude).toFixed(5)}, {Number(form.longitude).toFixed(5)}
+                  </p>
+                ) : (
+                  <p className="text-xs text-slate-500">Drop a pin for the exact site.</p>
+                )}
+              </div>
             ) : (
-              <p className="text-xs text-slate-500">No pin set — use the map for an exact location.</p>
+              <p className="text-xs text-slate-500">The location map follows this address.</p>
             )}
           </div>
         </div>
@@ -406,6 +448,7 @@ export function ProjectForm({ initial, collection = 'projects', backHref, onSave
             postcode: payload.postcode,
             latitude: String(payload.latitude),
             longitude: String(payload.longitude),
+            useMapPin: true,
           }))
         }}
       />

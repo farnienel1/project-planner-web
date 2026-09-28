@@ -154,7 +154,10 @@ interface OrgUserState {
   loading: boolean
   error: string | null
   loadUsers: (organizationId: string, options?: { force?: boolean }) => Promise<void>
+  setListedUserActive: (userId: string, isActive: boolean) => void
 }
+
+let listedUserRevision = 0
 
 export const useOrgUserStore = create<OrgUserState>((set, get) => ({
   users: [],
@@ -162,6 +165,7 @@ export const useOrgUserStore = create<OrgUserState>((set, get) => ({
   error: null,
 
   loadUsers: async (organizationId, options?: { force?: boolean }) => {
+    const revisionAtStart = listedUserRevision
     await runOrgLoad(
       'orgUserStore:users',
       organizationId,
@@ -179,6 +183,10 @@ export const useOrgUserStore = create<OrgUserState>((set, get) => ({
             if (a.isSuperAdmin !== b.isSuperAdmin) return a.isSuperAdmin ? -1 : 1
             return a.email.localeCompare(b.email)
           })
+          if (revisionAtStart !== listedUserRevision) {
+            set({ loading: false })
+            return
+          }
           set({ users, loading: false })
         } catch (error: unknown) {
           set({
@@ -190,5 +198,15 @@ export const useOrgUserStore = create<OrgUserState>((set, get) => ({
       },
       options
     )
+  },
+
+  setListedUserActive: (userId, isActive) => {
+    listedUserRevision += 1
+    invalidateOrgLoad('orgUserStore:users')
+    set({
+      users: get().users.map((user) =>
+        user.id === userId ? { ...user, isActive, updatedAt: new Date() } : user
+      ),
+    })
   },
 }))

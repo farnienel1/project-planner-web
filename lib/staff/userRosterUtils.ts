@@ -29,8 +29,9 @@ export function rosterStatusLabel(user: User): 'Active' | 'Inactive' | 'Pending'
 
 function choosePreferredUser(a: User, b: User): User {
   if (a.passwordSet !== b.passwordSet) return a.passwordSet ? a : b
+  if (a.updatedAt.getTime() !== b.updatedAt.getTime()) return a.updatedAt >= b.updatedAt ? a : b
   if (a.isActive !== b.isActive) return a.isActive ? a : b
-  return a.updatedAt >= b.updatedAt ? a : b
+  return a
 }
 
 /** Deduplicate by email — keeps the best account when duplicates exist in Firebase. */
