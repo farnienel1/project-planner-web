@@ -5,7 +5,7 @@
 
 'use client'
 
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import {
@@ -208,6 +208,7 @@ function AppShellInner({ children }: { children: ReactNode }) {
   const [customiseOpen, setCustomiseOpen] = useState(false)
   const [navigateConfig, setNavigateConfig] = useState<NavigateConfig | null>(null)
   const { projects, smallWorks, loadProjects, loadSmallWorks } = useProjectStore()
+  const prefetchedNav = useRef(false)
 
   useEffect(() => {
     const on = () => setOnline(true)
@@ -254,6 +255,13 @@ function AppShellInner({ children }: { children: ReactNode }) {
     }
     loadNotifications(organization.id, user.id)
   }, [organization?.id, organization?.teamOnboarding, user?.id, user?.permissions.adminAccess, user?.isSuperAdmin, loadNotifications])
+
+  useEffect(() => {
+    if (!user || prefetchedNav.current) return
+    prefetchedNav.current = true
+    const hrefs = getDashboardNavItems(user, organization, users).map((item) => item.href)
+    for (const href of hrefs) router.prefetch(href)
+  }, [user, organization, users, router])
 
   useEffect(() => {
     if (!organization?.id) return
