@@ -160,7 +160,7 @@ export function ProjectWorkspaceChrome({
 
       <section className="hero" data-hue={isSmallWork ? 'sw' : 'proj'} style={{ padding: '24px 28px' }}>
         <div className="relative z-[1] flex flex-wrap items-start gap-[18px]">
-          <div className="grow" style={{ minWidth: 260 }}>
+          <div className="grow" style={{ minWidth: 'min(100%, 260px)' }}>
             <div className="flex flex-wrap items-center gap-2">
               <span className="font-[family-name:var(--head)] font-extrabold opacity-85">{project.jobNumber}</span>
               {typeLabel ? (
