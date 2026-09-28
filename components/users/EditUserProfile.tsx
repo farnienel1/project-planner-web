@@ -267,51 +267,58 @@ export function EditUserProfile({
     e?.preventDefault()
     if (!target || !organization?.id || !canEdit) return
 
-    setSaving(true)
+    const previous = target
+    const previousBaseline = baseline
     setError(null)
     setSuccess(null)
-    setSaved(false)
-    try {
-      let toSave = { ...target, updatedAt: new Date() }
-      if (draftAccountType && draftTypePermissions) {
-        toSave = applyAccountType(toSave, draftAccountType)
-        toSave = { ...toSave, permissions: draftTypePermissions }
-      }
-      await saveUser(toSave)
-      setListedUserActive(toSave.id, toSave.isActive)
-      await syncLinkedOperative(organization.id, toSave, operatives)
-      try {
-        const { loadOperativeDayRateHistory, recordDayRateChangeIfNeeded } = await import(
-          '@/lib/timesheets/dayRateHistoryStorage'
-        )
-        const history = await loadOperativeDayRateHistory(organization.id)
-        await recordDayRateChangeIfNeeded({
-          organizationId: organization.id,
-          userId: toSave.id,
-          operativeId: findOperativeForUser(toSave, operatives)?.id,
-          previousDayRate: originalDayRate,
-          nextDayRate: toSave.dayRate ?? null,
-          createdAt: toSave.createdAt,
-          history,
-        })
-        setOriginalDayRate(toSave.dayRate)
-      } catch {
-        // History write is best-effort so a profile save still succeeds.
-      }
-      await loadUsers(organization.id, { force: true })
-      setSuccess('Profile saved.')
-      setSaved(true)
-      window.setTimeout(() => setSaved(false), 3000)
-      setTarget(toSave)
-      setDraftAccountType(null)
-      setDraftTypePermissions(null)
-      setShowChangeType(false)
-      setBaseline(profileSnapshot(toSave, null, null))
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to save user')
-    } finally {
-      setSaving(false)
+    let toSave = { ...target, updatedAt: new Date() }
+    if (draftAccountType && draftTypePermissions) {
+      toSave = applyAccountType(toSave, draftAccountType)
+      toSave = { ...toSave, permissions: draftTypePermissions }
     }
+    setListedUserActive(toSave.id, toSave.isActive)
+    setTarget(toSave)
+    setDraftAccountType(null)
+    setDraftTypePermissions(null)
+    setShowChangeType(false)
+    setBaseline(profileSnapshot(toSave, null, null))
+    setSaved(true)
+    window.setTimeout(() => setSaved(false), 3000)
+    setSuccess(toSave.isActive ? 'Profile saved.' : 'User deactivated.')
+    setSaving(false)
+    void (async () => {
+      try {
+        await saveUser(toSave)
+        void setUserActive(toSave.id, toSave.isActive, organization.id).catch(() => undefined)
+        void syncLinkedOperative(organization.id, toSave, operatives).catch(() => undefined)
+        void loadUsers(organization.id, { force: true }).catch(() => undefined)
+        try {
+          const { loadOperativeDayRateHistory, recordDayRateChangeIfNeeded } = await import(
+            '@/lib/timesheets/dayRateHistoryStorage'
+          )
+          const history = await loadOperativeDayRateHistory(organization.id)
+          await recordDayRateChangeIfNeeded({
+            organizationId: organization.id,
+            userId: toSave.id,
+            operativeId: findOperativeForUser(toSave, operatives)?.id,
+            previousDayRate: originalDayRate,
+            nextDayRate: toSave.dayRate ?? null,
+            createdAt: toSave.createdAt,
+            history,
+          })
+          setOriginalDayRate(toSave.dayRate)
+        } catch {
+          // History write is best-effort so a profile save still succeeds.
+        }
+      } catch (err: unknown) {
+        setTarget(previous)
+        setListedUserActive(previous.id, previous.isActive)
+        setBaseline(previousBaseline)
+        setSaved(false)
+        setSuccess(null)
+        setError(err instanceof Error ? err.message : 'Failed to save user')
+      }
+    })()
   }
 
   const handlePasswordReset = async () => {
@@ -355,23 +362,20 @@ export function EditUserProfile({
 
   const handleToggleActive = async () => {
     if (!target || !canAdminTools) return
+    const previous = target
     const next = !target.isActive
-    setBusyAction('active')
+    const nextUser = { ...target, isActive: next, updatedAt: new Date() }
+    setTarget(nextUser)
+    setListedUserActive(target.id, next)
+    setSuccess(next ? 'User reactivated.' : 'User deactivated.')
     try {
-      await setUserActive(target.id, next)
-      const nextUser = { ...target, isActive: next, updatedAt: new Date() }
-      setListedUserActive(target.id, next)
-      setTarget(nextUser)
-      if (organization?.id) {
-        await syncLinkedOperative(organization.id, nextUser, operatives)
-        await loadUsers(organization.id, { force: true })
-        setListedUserActive(target.id, next)
-      }
-      setSuccess(next ? 'User reactivated.' : 'User deactivated.')
+      await setUserActive(target.id, next, organization?.id)
+      if (organization?.id) void syncLinkedOperative(organization.id, nextUser, operatives).catch(() => undefined)
     } catch (err: unknown) {
+      setTarget(previous)
+      setListedUserActive(previous.id, previous.isActive)
+      setSuccess(null)
       setError(err instanceof Error ? err.message : 'Failed to update status')
-    } finally {
-      setBusyAction(null)
     }
   }
 
@@ -891,10 +895,12 @@ export function EditUserProfile({
                         headers: await jsonAuthHeaders(),
                         body: JSON.stringify({
                           orgId: organization.id,
+                          orgName: organization.name,
                           targetUid: target.id,
+                          targetName: `${target.firstName} ${target.surname}`.trim(),
+                          currentEmail: target.email,
                           suggestedEmail: fixEmail,
                           note: fixNote,
-                          targetName: `${target.firstName} ${target.surname}`.trim(),
                         }),
                       })
                       const data = (await response.json().catch(() => ({}))) as { error?: string }

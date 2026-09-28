@@ -10,6 +10,7 @@ import { SplashScreen } from '@/components/auth/SplashScreen'
 import { PolicyGate } from '@/components/auth/PolicyGate'
 import { CheckEmailScreen } from '@/components/auth/CheckEmailScreen'
 import { hasCustomerOrganisation, isPlatformOwnerEmail } from '@/lib/platform/owner'
+import { DeactivatedAccountScreen } from '@/components/auth/DeactivatedAccountScreen'
 import { isMfaGateOpen, mfaVerifyHref } from '@/lib/auth/mfa/mfaClient'
 
 export default function DashboardLayout({
@@ -72,6 +73,7 @@ export default function DashboardLayout({
   if (!user && firebaseUser) return <SplashScreen />
   if (!user) return <SplashScreen />
   if (!mfaVerified) return <SplashScreen />
+  if (user.isActive === false && !isPlatformOwnerEmail(user.email)) return <DeactivatedAccountScreen />
   if (user.accountConfirmed === false) return <CheckEmailScreen email={user.email} />
   if (!user.policyAccepted) return <PolicyGate />
 
