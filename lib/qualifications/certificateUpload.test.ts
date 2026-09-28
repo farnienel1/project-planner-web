@@ -6,6 +6,8 @@ import {
   dateFromLocalInputValue,
   formatCertificateSaveError,
   localDateInputValue,
+  canonicalCertificateUrls,
+  certificateUrlForQualification,
   mergeCertificateUrls,
   qualificationCertificateContentType,
   qualificationCertificateFileError,
@@ -78,6 +80,19 @@ test('uploadPendingCertificates does not mark a URL when the file is invalid', a
 
 test('mergeCertificateUrls keeps prior certificates', () => {
   assert.deepEqual(mergeCertificateUrls({ q1: 'a' }, { q2: 'b' }), { q1: 'a', q2: 'b' })
+})
+
+test('certificate lookup matches the qualification id ignoring case', () => {
+  const urls = { 'ABC-1': 'https://files.example/old.pdf' }
+  assert.equal(certificateUrlForQualification(urls, 'abc-1'), 'https://files.example/old.pdf')
+  assert.equal(certificateUrlForQualification(urls, 'missing'), undefined)
+})
+
+test('canonical certificate urls keep the qualification id iOS stores', () => {
+  const urls = canonicalCertificateUrls([{ id: 'ABC-1' }], { 'abc-1': 'https://files.example/new.pdf', OTHER: 'https://files.example/keep.pdf' })
+  assert.equal(urls['ABC-1'], 'https://files.example/new.pdf')
+  assert.equal(urls.OTHER, 'https://files.example/keep.pdf')
+  assert.equal(urls['abc-1'], undefined)
 })
 
 test('local date helpers round-trip without UTC day shift', () => {

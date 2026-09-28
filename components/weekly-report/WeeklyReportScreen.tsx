@@ -21,6 +21,7 @@ import {
   downloadWeeklyReportWorkbook,
   printWeeklyReport,
 } from '@/lib/weekly-report/weeklyReportGenerator'
+import { buildWeeklyReportPdf, downloadWeeklyReportPdf } from '@/lib/weekly-report/weeklyReportPdf'
 import { formatCurrency, formatDays } from '@/lib/weekly-report/weeklyReportPayroll'
 import { loadWeeklyReportTimesheetFeed } from '@/lib/weekly-report/loadTimesheetFeed'
 import type { ApprovedTimesheetWeek } from '@/lib/weekly-report/timesheetFeed'
@@ -110,7 +111,7 @@ export function WeeklyReportScreen({
   const invoicing = orgDetails?.invoicing
   const timeZone = ianaTimeZoneForCountry(orgDetails?.countryCode)
   const invoicingOptions = useMemo(
-    () => (invoicing ? listInvoicingPeriodOptions(invoicing, new Date(), 6, timeZone) : []),
+    () => (invoicing ? listInvoicingPeriodOptions(invoicing, new Date(), undefined, timeZone) : []),
     [invoicing, timeZone]
   )
 
@@ -225,6 +226,12 @@ export function WeeklyReportScreen({
     const xml = buildWeeklyReportSpreadsheetXml(report)
     const filename = `WeeklyReport-${format(period.start, 'yyyyMMdd')}.xls`
     downloadWeeklyReportWorkbook(xml, filename)
+  }
+
+  const handleDownloadPdf = async () => {
+    if (!report || !period) return
+    const bytes = await buildWeeklyReportPdf(report)
+    downloadWeeklyReportPdf(bytes, `WeeklyReport-${format(period.start, 'yyyyMMdd')}.pdf`)
   }
 
   const changePeriod = (next: () => void) => {
@@ -355,7 +362,7 @@ export function WeeklyReportScreen({
                 ))}
               </select>
               <p className="mt-1 text-[11px] text-[var(--ink3)]">
-                {formatInvoicingSubtitle(invoicing)} · {formatInvoicingPeriodDescription(invoicing)}
+                {formatInvoicingSubtitle(invoicing)} · {formatInvoicingPeriodDescription(invoicing)} · last two years
               </p>
             </section>
           ) : null}
@@ -469,8 +476,7 @@ export function WeeklyReportScreen({
                 type="button"
                 className="btn primary"
                 onClick={() => {
-                  printWeeklyReport(buildWeeklyReportHtml(report))
-                  setDownloadOpen(false)
+                  void handleDownloadPdf().finally(() => setDownloadOpen(false))
                 }}
               >
                 PDF
