@@ -92,6 +92,17 @@ export function siteAuditImagePath(
   return `organizations/${organizationId}/siteAudits/${auditId}/images/${uid}_${timestamp}_${sanitizeFileName(imageName)}`
 }
 
+/** Evidence sits under healthSafety, the prefix other job files already upload to. */
+export function variationEvidencePath(
+  organizationId: string,
+  parentId: string,
+  fileName: string
+): string {
+  const uid = requireStorageUid()
+  const timestamp = Date.now()
+  return `organizations/${organizationId}/healthSafety/${parentId}/variations/${uid}_${timestamp}_${sanitizeFileName(fileName)}`
+}
+
 export function healthSafetyFilePath(
   organizationId: string,
   projectId: string,
