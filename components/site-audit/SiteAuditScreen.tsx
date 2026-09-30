@@ -188,11 +188,15 @@ function AuditDetail({ audit, onClose }: { audit: SiteAudit; onClose: () => void
                     <p className="text-sm font-bold text-slate-900">
                       {idx + 1}. {item.title}
                     </p>
+                    <p className="mt-0.5 text-[11px] font-semibold text-slate-500">
+                      Taken {format(item.createdAt, 'd MMM yyyy, HH:mm')}
+                    </p>
                     {item.location && <p className="mt-0.5 text-xs text-slate-500">{item.location}</p>}
                     {item.assignee && <p className="text-xs text-slate-500">{item.assignee}</p>}
                     {item.comments && (
                       <p className="mt-2 text-sm leading-relaxed text-slate-700">{item.comments}</p>
                     )}
+                    {item.annotations ? <p className="mt-1 text-xs text-slate-500">{item.annotations}</p> : null}
                   </div>
                   {item.imageURL && (
                     <div>
