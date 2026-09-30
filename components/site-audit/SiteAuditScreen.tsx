@@ -403,7 +403,7 @@ function ProjectListView({
   onBack: () => void
   onSelectProject: (p: Project) => void
 }) {
-  const [filter, setFilter] = useState<ProjectFilter>('All')
+  const [filter, setFilter] = useState<ProjectFilter>('Active')
 
   const filtered = useMemo(() => {
     return projects.filter((p) => {

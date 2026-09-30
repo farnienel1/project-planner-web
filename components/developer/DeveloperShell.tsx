@@ -7,6 +7,7 @@ import { useAuthStore } from '@/lib/stores/authStore'
 import { useAnalyticsStore } from '@/lib/analytics/analyticsStore'
 import { AppLogoMark } from '@/components/ui/AppLogoMark'
 import { useFeedbackStore } from '@/lib/feedback/feedbackStore'
+import { useNewInterestCount } from '@/lib/interest/interestStore'
 import { cn } from '@/lib/ui/cn'
 import { ErrorBanner } from '@/components/dashboard/PageShell'
 import { hasCustomerOrganisation } from '@/lib/platform/owner'
@@ -23,6 +24,7 @@ const LINKS = [
   { href: '/developer/website-stats', label: 'Website stats' },
   { href: '/developer/analytics', label: 'Analytics' },
   { href: '/developer/feedback', label: 'Feedback' },
+  { href: '/developer/register-interest', label: 'Register interest' },
   { href: '/developer/roadmap', label: 'Roadmap' },
   { href: '/developer/data-quality', label: 'Data quality' },
   { href: '/developer/account', label: 'Account' },
@@ -36,6 +38,7 @@ export function DeveloperAppShell({ children }: { children: ReactNode }) {
   const ideaCount = useFeedbackStore((state) => state.suggestions.filter((row) => !row.hidden && !row.mergedIntoId).length)
   const orgApp = hasCustomerOrganisation(user?.organizationId)
   const { includeTestData, setIncludeTestData, jumpQuery, setJumpQuery } = useConsolePrefs()
+  const newInterestCount = useNewInterestCount()
   const triageCount = useFeedbackStore(
     (state) => state.suggestions.filter((row) => !row.hidden && !row.mergedIntoId && row.productDecision === 'none').length
   )
@@ -106,6 +109,9 @@ export function DeveloperAppShell({ children }: { children: ReactNode }) {
                 {link.label}
                 {link.href === '/developer/feedback' && triageCount > 0 ? (
                   <span className="ml-1 rounded-full bg-[var(--red)] px-1.5 text-[10px] text-white">{triageCount}</span>
+                ) : null}
+                {link.href === '/developer/register-interest' && newInterestCount > 0 ? (
+                  <span className="ml-1 rounded-full bg-[var(--red)] px-1.5 text-[10px] text-white">{newInterestCount}</span>
                 ) : null}
               </Link>
             )

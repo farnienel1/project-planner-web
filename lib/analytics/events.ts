@@ -53,6 +53,10 @@ export const PRODUCT_EVENT_NAMES = [
   'feedback_board_viewed',
   'feedback_search',
   'feedback_filter_used',
+  'interest_page_viewed',
+  'interest_form_started',
+  'interest_registered',
+  'interest_failed',
 ] as const
 
 export type ProductEventName = (typeof PRODUCT_EVENT_NAMES)[number]

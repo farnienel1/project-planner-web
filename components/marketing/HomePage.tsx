@@ -34,6 +34,9 @@ export function HomePage() {
                 spreadsheets and WhatsApp groups and start running jobs.
               </p>
               <div className="ctas">
+                <Link href="/register-interest" className="btn lg">
+                  Register interest
+                </Link>
                 <Link href="/setup" className="btn primary lg">
                   <MktIcon name="rocket" size={20} />
                   Start free trial

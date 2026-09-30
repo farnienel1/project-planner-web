@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { useToast } from '@/components/ui/ToastProvider'
-import { uploadFile } from '@/lib/firebase/storageUtils'
+import { uploadFile, variationEvidencePath } from '@/lib/firebase/storageUtils'
 import { newUuid } from '@/lib/firebase/firestoreUtils'
 import {
   EVIDENCE_MAX_FILES,
@@ -228,40 +228,48 @@ export function VariationsWorkspace({
           onClose={() => setEditing(null)}
           onSave={async (draft, files) => {
             if (!organization.id) return
-            const evidence = await uploadEvidenceFiles(organization.id, editing === 'new' ? newUuid() : editing.id, files, user.id)
-            const mergedEvidence = [...(editing === 'new' ? [] : editing.evidence), ...evidence]
-            if (editing === 'new') {
-              await createVariation({
-                organizationId: organization.id,
-                parentType,
-                parentId: project.id,
-                parentName,
-                origin: 'app',
-                voNumber: draft.voNumber,
-                heading: draft.heading,
-                description: draft.description,
-                labour: draft.labour,
-                materials: draft.materials,
-                evidence: mergedEvidence,
-                actor: { uid: user.id, name: displayUser(user) },
-                users,
-                managerIds: [project.managerId || '', ...(project.managerIds || [])],
-              })
-              toast('Variation saved as open')
-            } else {
-              await updateVariation({
-                organizationId: organization.id,
-                actorUid: user.id,
-                variation: { ...editing, ...draft, evidence: mergedEvidence },
-              })
-              toast('Variation updated')
-            }
-            if (draft.customTrades?.length) {
-              let next = trades
-              for (const trade of draft.customTrades) {
-                next = await saveCustomTrade(organization.id, trade)
+            try {
+              const evidence = await uploadEvidenceFiles(organization.id, project.id, files, user.id)
+              const mergedEvidence = [...(editing === 'new' ? [] : editing.evidence), ...evidence]
+              if (editing === 'new') {
+                await createVariation({
+                  organizationId: organization.id,
+                  parentType,
+                  parentId: project.id,
+                  parentName,
+                  origin: 'app',
+                  voNumber: draft.voNumber,
+                  heading: draft.heading,
+                  description: draft.description,
+                  labour: draft.labour,
+                  materials: draft.materials,
+                  evidence: mergedEvidence,
+                  actor: { uid: user.id, name: displayUser(user) },
+                  users,
+                  managerIds: [project.managerId || '', ...(project.managerIds || [])],
+                })
+                toast('Variation saved as open')
+              } else {
+                await updateVariation({
+                  organizationId: organization.id,
+                  actorUid: user.id,
+                  variation: { ...editing, ...draft, evidence: mergedEvidence },
+                })
+                toast('Variation updated')
               }
-              setTrades(next)
+            } catch (err) {
+              throw new Error(readableVariationError(err))
+            }
+            try {
+              if (draft.customTrades?.length) {
+                let next = trades
+                for (const trade of draft.customTrades) {
+                  next = await saveCustomTrade(organization.id, trade)
+                }
+                setTrades(next)
+              }
+            } catch {
+              toast('Variation saved. The new trade was not added to the company list.')
             }
             setEditing(null)
           }}
@@ -353,17 +361,28 @@ function VariationRow({ row, onClick }: { row: Variation; onClick: () => void })
   )
 }
 
+function readableVariationError(error: unknown): string {
+  const code = typeof error === 'object' && error && 'code' in error ? String((error as { code?: string }).code) : ''
+  const message = error instanceof Error ? error.message : 'Could not save the variation.'
+  if (code === 'storage/unauthorized' || /does not have permission to access/i.test(message)) {
+    return 'The evidence file could not be uploaded. Sign in again, then save the variation. The variation was not saved.'
+  }
+  if (code === 'permission-denied' || /insufficient permissions/i.test(message)) {
+    return 'Missing or insufficient permissions. This account cannot save variations on this job. An organisation admin, or a manager assigned to the job, needs to save it.'
+  }
+  return message
+}
+
 async function uploadEvidenceFiles(
   organizationId: string,
-  variationId: string,
+  parentId: string,
   files: File[],
   uid: string
 ): Promise<VariationEvidence[]> {
   const uploaded: VariationEvidence[] = []
   for (const file of files) {
     const id = newUuid()
-    const ext = file.name.split('.').pop()?.toLowerCase() || 'bin'
-    const storagePath = `organizations/${organizationId}/variations/${variationId}/${id}.${ext}`
+    const storagePath = variationEvidencePath(organizationId, parentId, file.name)
     const downloadURL = await uploadFile(storagePath, file, file.type || 'application/octet-stream')
     uploaded.push({
       id,

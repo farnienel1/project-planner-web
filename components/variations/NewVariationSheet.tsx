@@ -362,20 +362,20 @@ export function NewVariationSheet({
   /** Accepts any number of files at once, and can be called again to add more. */
   const onFiles = (list: FileList | null) => {
     if (!list?.length) return;
+    const picked = Array.from(list);
+    if (fileRef.current) fileRef.current.value = '';
     setEvidence((prev) => {
       const room = MAX_EVIDENCE - savedEvidenceCount - prev.length;
       if (room <= 0) {
         showUndo(`Up to ${MAX_EVIDENCE} files per variation`);
         return prev;
       }
-      const incoming = Array.from(list).map((file) => ({ id: uid(), file, name: file.name }));
+      const incoming = picked.map((file) => ({ id: uid(), file, name: file.name }));
       if (incoming.length > room) {
         showUndo(`Only ${room} more file${room === 1 ? '' : 's'} fit on this variation`);
       }
       return [...prev, ...incoming.slice(0, room)];
     });
-    // reset the input so the same file can be chosen again after being removed
-    if (fileRef.current) fileRef.current.value = '';
   };
 
   const evidenceTotal = savedEvidenceCount + evidence.length;
@@ -687,8 +687,8 @@ export function NewVariationSheet({
               ref={fileRef}
               type="file"
               multiple
-              accept="image/*,application/pdf"
-              hidden
+              accept="image/*,application/pdf,.heic,.heif"
+              className="sr-only"
               onChange={(e) => onFiles(e.target.files)}
             />
 
