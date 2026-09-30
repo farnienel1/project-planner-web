@@ -1,28 +1,37 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { format, isSameDay, startOfDay } from 'date-fns'
+import { isSameDay, startOfDay } from 'date-fns'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { newHolidayId, useHolidayStore } from '@/lib/stores/holidayStore'
-import type { AnnualLeavePerson } from '@/lib/annualLeave/annualLeavePerson'
-import { isFutureAcceptedAnnualLeave } from '@/lib/annualLeave/holidayApprovalUtils'
+import { bookingMatchesPerson, type AnnualLeavePerson } from '@/lib/annualLeave/annualLeavePerson'
 import {
   getBookingForDay,
-  getDayKindForPerson,
+  getDayKindForBookings,
   isDayLocked,
   type AnnualLeaveDayKind,
 } from '@/lib/annualLeave/dayStatus'
+import { formatLeaveDate, formatLeaveRange } from '@/lib/annualLeave/formatLeaveDays'
 import type { HolidayBooking, HolidayTimeSlot } from '@/types'
 import { AnnualLeaveLegend, LeaveDayCalendar } from './LeaveDayCalendar'
+import { useOrgBankHolidays } from './useOrgBankHolidays'
 
 function fmtDate(d: Date) {
-  return format(d, 'd MMM yyyy')
+  return formatLeaveDate(d)
 }
 
 function fmtRange(booking: HolidayBooking) {
-  const start = format(booking.startDate, 'd MMM yyyy')
-  const end = format(booking.endDate, 'd MMM yyyy')
-  return start === end ? start : `${start} – ${end}`
+  return formatLeaveRange(booking)
+}
+
+function monthOfNextBooking(person: AnnualLeavePerson, bookings: HolidayBooking[]): Date {
+  const today = startOfDay(new Date())
+  const next = bookings
+    .filter((booking) => bookingMatchesPerson(booking, person) && booking.status !== 'rejected')
+    .map((booking) => startOfDay(booking.startDate))
+    .filter((day) => day >= today)
+    .sort((a, b) => a.getTime() - b.getTime())[0]
+  return next || new Date()
 }
 
 function DeleteAnnualLeaveButton({
@@ -88,7 +97,11 @@ export function OperativeAnnualLeaveCalendar({
   const { organization, user } = useAuthStore()
   const { saveBooking, deleteBooking } = useHolidayStore()
 
-  const [month, setMonth] = useState(new Date())
+  const [month, setMonth] = useState(() => monthOfNextBooking(person, bookings))
+  const bankYear = month.getFullYear()
+  const bank = useOrgBankHolidays(new Date(bankYear, 0, 1), new Date(bankYear, 11, 31))
+  const [holidayNote, setHolidayNote] = useState<string | null>(null)
+  const [pendingDelete, setPendingDelete] = useState<HolidayBooking | null>(null)
   const [selectedDay, setSelectedDay] = useState<Date | null>(null)
   const [bookSlot, setBookSlot] = useState<HolidayTimeSlot>('FULL DAY')
   const [changeSlot, setChangeSlot] = useState<HolidayTimeSlot>('FULL DAY')
@@ -96,25 +109,23 @@ export function OperativeAnnualLeaveCalendar({
   const [message, setMessage] = useState<string | null>(null)
 
   const personBookings = useMemo(
-    () =>
-      bookings.filter(
-        (b) =>
-          (person.userId && b.userId === person.userId) ||
-          (person.operativeId && b.operativeId === person.operativeId)
-      ),
+    () => bookings.filter((booking) => bookingMatchesPerson(booking, person)),
     [bookings, person]
   )
 
   const futureBookings = useMemo(
     () =>
       personBookings
-        .filter((booking) => isFutureAcceptedAnnualLeave(booking))
+        .filter(
+          (booking) =>
+            booking.status !== 'rejected' && startOfDay(booking.endDate) >= startOfDay(new Date())
+        )
         .sort((a, b) => a.startDate.getTime() - b.startDate.getTime()),
     [personBookings]
   )
 
   const selectedKind: AnnualLeaveDayKind | null = selectedDay
-    ? getDayKindForPerson(selectedDay, personBookings, person)
+    ? getDayKindForBookings(selectedDay, personBookings)
     : null
 
   const pendingBooking =
@@ -134,7 +145,7 @@ export function OperativeAnnualLeaveCalendar({
       return
     }
     setSelectedDay(sod)
-    const kind = getDayKindForPerson(sod, personBookings, person)
+    const kind = getDayKindForBookings(sod, personBookings)
     if (kind === 'approvedFull' || kind === 'approvedHalf') {
       const b = getBookingForDay(sod, personBookings, 'approved')
       if (b) setChangeSlot(b.timeSlot)
@@ -214,21 +225,15 @@ export function OperativeAnnualLeaveCalendar({
 
   const deleteAnnualLeave = async (booking: HolidayBooking) => {
     if (!organization?.id) return
-    if (
-      !window.confirm(
-        `Delete annual leave for ${person.displayName} on ${fmtRange(booking)}?`
-      )
-    ) {
-      return
-    }
     setSaving(true)
     try {
       await deleteBooking(organization.id, booking.id)
-      setMessage('Annual leave deleted.')
+      setMessage('Annual leave removed.')
       if (approvedBooking?.id === booking.id) setSelectedDay(null)
       setTimeout(() => setMessage(null), 3000)
     } finally {
       setSaving(false)
+      setPendingDelete(null)
     }
   }
 
@@ -276,12 +281,20 @@ export function OperativeAnnualLeaveCalendar({
       </div>
 
       <AnnualLeaveLegend />
+      <p className="text-xs leading-relaxed text-slate-500">{bank.sentence}</p>
+      {holidayNote ? <p className="rounded-xl bg-violet-50 px-3 py-2 text-sm text-violet-900">{holidayNote}</p> : null}
 
       <div className="card pad">
         <LeaveDayCalendar
           month={month}
           onMonthChange={setMonth}
-          getDayKind={(day) => getDayKindForPerson(day, personBookings, person)}
+          getDayKind={(day) => getDayKindForBookings(day, personBookings)}
+          bankHolidayName={bank.nameOn}
+          onBankHoliday={(name) =>
+            setHolidayNote(
+              `${name} is a bank holiday. It cannot be booked as annual leave, and it does not come out of ${person.displayName}'s allowance.`
+            )
+          }
           selectedDay={selectedDay}
           onDayClick={handleDayClick}
           disableLocked={false}
@@ -326,7 +339,7 @@ export function OperativeAnnualLeaveCalendar({
             {saving ? 'Saving…' : 'Confirm annual leave booking change'}
           </button>
           <div className="mt-3">
-            <DeleteAnnualLeaveButton disabled={saving} onClick={() => void deleteAnnualLeave(approvedBooking)} />
+            <DeleteAnnualLeaveButton disabled={saving} onClick={() => setPendingDelete(approvedBooking)} />
           </div>
         </div>
       )}
@@ -385,12 +398,18 @@ export function OperativeAnnualLeaveCalendar({
                 <div className="min-w-0">
                   <p className="text-sm font-bold text-slate-900">{fmtRange(booking)}</p>
                   <p className="mt-0.5 text-xs text-slate-500">{booking.timeSlot}</p>
-                  <p className="mt-0.5 text-xs font-semibold text-emerald-600">Approved</p>
+                  <p className={`mt-0.5 text-xs font-semibold ${booking.status === 'pending' || booking.cancellationRequestedAt ? 'text-amber-700' : 'text-emerald-600'}`}>
+                    {booking.cancellationRequestedAt
+                      ? 'Cancellation pending'
+                      : booking.status === 'pending'
+                        ? 'Awaiting approval'
+                        : 'Approved'}
+                  </p>
                 </div>
                 <button
                   type="button"
                   disabled={saving}
-                  onClick={() => void deleteAnnualLeave(booking)}
+                  onClick={() => setPendingDelete(booking)}
                   className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-red-200 bg-red-50 text-red-600 hover:bg-red-100 disabled:opacity-60"
                   aria-label="Delete annual leave"
                   title="Delete annual leave"
@@ -401,7 +420,7 @@ export function OperativeAnnualLeaveCalendar({
                 </button>
               </div>
               <div className="mt-3">
-                <DeleteAnnualLeaveButton disabled={saving} onClick={() => void deleteAnnualLeave(booking)} />
+                <DeleteAnnualLeaveButton disabled={saving} onClick={() => setPendingDelete(booking)} />
               </div>
             </div>
           ))
@@ -410,9 +429,32 @@ export function OperativeAnnualLeaveCalendar({
 
       {message && (
         <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800">
-          ✓ {message}
+          {message}
         </div>
       )}
+
+      {pendingDelete ? (
+        <div className="fixed inset-0 z-50 grid place-items-end bg-black/40 p-4 sm:place-items-center">
+          <div className="w-full max-w-sm rounded-2xl bg-white p-4 shadow-xl">
+            <p className="text-base font-bold text-slate-900">Remove this booking?</p>
+            <p className="mt-1 text-sm text-slate-600">
+              {person.displayName} · {fmtRange(pendingDelete)}
+            </p>
+            <div className="mt-4 grid grid-cols-2 gap-2">
+              <button type="button" className="rounded-xl border border-slate-200 py-2.5 text-sm font-semibold" onClick={() => setPendingDelete(null)}>
+                Keep it
+              </button>
+              <button
+                type="button"
+                className="rounded-xl bg-[var(--red)] py-2.5 text-sm font-bold text-white"
+                onClick={() => void deleteAnnualLeave(pendingDelete)}
+              >
+                Remove
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }
