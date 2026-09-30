@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { FormEvent, ReactNode } from 'react'
 import { newUuid } from '@/lib/firebase/firestoreUtils'
 import { dateFromDayKey, dayKey } from '@/lib/ios-parity/londonTime'
@@ -52,15 +52,23 @@ export function Sheet({
   children: ReactNode
   footer?: ReactNode
 }) {
+  const backdropArmed = useRef(false)
   return (
     <div
       className="fixed inset-0 z-[80] flex items-end justify-center bg-black/40 sm:items-center sm:p-4"
       role="dialog"
       aria-modal="true"
-      onClick={onClose}
+      onPointerDown={(event) => {
+        backdropArmed.current = event.target === event.currentTarget
+      }}
+      onClick={(event) => {
+        if (backdropArmed.current && event.target === event.currentTarget) onClose()
+        backdropArmed.current = false
+      }}
     >
       <div
         className="relative z-10 flex max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-t-[22px] bg-[var(--bg)] shadow-[var(--sh-pop)] sm:rounded-[22px]"
+        onPointerDown={(event) => event.stopPropagation()}
         onClick={(event) => event.stopPropagation()}
       >
         <div className="flex items-start gap-3 border-b border-[var(--line)] bg-[var(--card)] px-4 py-3">

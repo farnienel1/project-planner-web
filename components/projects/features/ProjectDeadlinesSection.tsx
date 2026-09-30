@@ -191,7 +191,21 @@ export function ProjectDeadlinesSection({ project, isSmallWorks }: { project: Pr
     }
     const previous = currentItems.find((item) => item.id === next.id) || null
     try {
-      await persist(replaceDeadline(currentItems, next), previous, next.id)
+      const written = await save(organization.id, project.id, isSmallWorks, replaceDeadline(currentItems, next))
+      if (!written.some((item) => item.id === next.id)) {
+        throw new Error('The deadline did not stay on the list. Try saving it again.')
+      }
+      const saved = written.find((item) => item.id === next.id)
+      if (saved) {
+        void notifyNewDeadlineAssignees({
+          organizationId: organization.id,
+          previous,
+          current: saved,
+          projectName: projectNotificationName(project.siteName, project.jobNumber),
+          createdBy: authorName,
+        }).catch(() => {})
+      }
+      setBanner(null)
       setEditing(null)
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Could not save the deadline.'

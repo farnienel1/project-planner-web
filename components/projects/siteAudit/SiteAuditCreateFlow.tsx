@@ -21,6 +21,7 @@ type DraftItem = {
   photo: File
   previewUrl: string
   takenAt: Date
+  detailsAdded: boolean
 }
 
 type Props = {
@@ -39,16 +40,15 @@ export function SiteAuditCreateFlow({ project, onClose, onCreated }: Props) {
   const [auditDate, setAuditDate] = useState(() => format(new Date(), 'yyyy-MM-dd'))
   const [visibleToOperatives, setVisibleToOperatives] = useState(true)
   const [items, setItems] = useState<DraftItem[]>([])
-  const [editingId, setEditingId] = useState<string | null>(null)
   const [preparing, setPreparing] = useState(false)
   const [saving, setSaving] = useState(false)
   const [uploadLabel, setUploadLabel] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const authorName = user ? `${user.firstName} ${user.surname}`.trim() || user.email : 'Unknown'
-  const editing = items.find((item) => item.id === editingId) || null
   const itemsRef = useRef(items)
   itemsRef.current = items
+  const cardRefs = useRef<Record<string, HTMLElement | null>>({})
 
   useEffect(() => {
     return () => {
@@ -74,11 +74,16 @@ export function SiteAuditCreateFlow({ project, onClose, onCreated }: Props) {
           photo: prepared.file,
           previewUrl: prepared.previewUrl,
           takenAt: prepared.takenAt,
+          detailsAdded: false,
         })
       }
       setItems((current) => [...current, ...next])
-      if (next.length === 1) setEditingId(next[0].id)
-      else setEditingId(next[0]?.id || null)
+      const firstId = next[0]?.id
+      if (firstId) {
+        window.setTimeout(() => {
+          cardRefs.current[firstId]?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        }, 60)
+      }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Could not prepare those photos.')
     } finally {
@@ -90,13 +95,35 @@ export function SiteAuditCreateFlow({ project, onClose, onCreated }: Props) {
     setItems((current) => current.map((item) => (item.id === id ? { ...item, ...partial } : item)))
   }
 
+  const confirmDetails = (id: string) => {
+    const item = items.find((row) => row.id === id)
+    if (!item) return
+    if (!item.title.trim()) {
+      setError('Add a title for this photo before moving on.')
+      cardRefs.current[id]?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      return
+    }
+    setError(null)
+    const index = items.findIndex((row) => row.id === id)
+    setItems((current) => current.map((row) => (row.id === id ? { ...row, detailsAdded: true } : row)))
+    const following = items[index + 1]
+    if (following) {
+      window.setTimeout(() => {
+        cardRefs.current[following.id]?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      }, 40)
+      return
+    }
+    window.setTimeout(() => {
+      document.getElementById('audit-submit')?.scrollIntoView({ behavior: 'smooth', block: 'end' })
+    }, 40)
+  }
+
   const removeItem = (id: string) => {
     setItems((current) => {
       const target = current.find((item) => item.id === id)
       if (target) URL.revokeObjectURL(target.previewUrl)
       return current.filter((item) => item.id !== id)
     })
-    setEditingId((current) => (current === id ? null : current))
   }
 
   const submit = async () => {
@@ -107,7 +134,7 @@ export function SiteAuditCreateFlow({ project, onClose, onCreated }: Props) {
     }
     const missing = items.find((item) => !item.title.trim())
     if (missing) {
-      setEditingId(missing.id)
+      cardRefs.current[missing.id]?.scrollIntoView({ behavior: 'smooth', block: 'start' })
       setError('Each photo needs a title before the audit can be saved.')
       return
     }
@@ -228,26 +255,42 @@ export function SiteAuditCreateFlow({ project, onClose, onCreated }: Props) {
               <div className="rounded-2xl border border-dashed border-[var(--line2)] px-4 py-8 text-center">
                 <p className="font-semibold text-[var(--ink)]">No items yet</p>
                 <p className="mt-1 text-sm text-[var(--ink3)]">
-                  Tap Add item for one entry, or Multi-add to pick several photos at once.
+                  Tap Add item for one photo, then its details. Multi-add stacks several photos so you can scroll down through each one.
                 </p>
               </div>
             ) : (
-              <div className="grid grid-cols-2 gap-2">
-                {items.map((item) => (
-                  <button
+              <div className="space-y-4">
+                {items.map((item, index) => (
+                  <article
                     key={item.id}
-                    type="button"
-                    onClick={() => setEditingId(item.id)}
-                    className={`overflow-hidden rounded-xl border text-left ${
-                      editingId === item.id ? 'border-[var(--blue)]' : 'border-[var(--line)]'
+                    ref={(node) => {
+                      cardRefs.current[item.id] = node
+                    }}
+                    className={`scroll-mt-4 space-y-2 rounded-2xl border p-3 ${
+                      item.detailsAdded ? 'border-[var(--proj)] bg-[var(--card)]' : 'border-[var(--line)] bg-[var(--soft)]'
                     }`}
                   >
-                    <img src={item.previewUrl} alt="" className="h-28 w-full object-cover" />
-                    <span className="block px-2 py-1.5 text-[11px] font-semibold text-[var(--ink)]">
-                      {format(item.takenAt, 'd MMM yyyy, HH:mm')}
-                    </span>
-                    <span className="block truncate px-2 pb-2 text-xs text-[var(--ink3)]">{item.title || 'Add details'}</span>
-                  </button>
+                    <p className="text-xs font-bold tracking-wide text-[var(--ink3)]">PHOTO {index + 1}</p>
+                    <img src={item.previewUrl} alt="" className="max-h-72 w-full rounded-xl object-cover" />
+                    <p className="text-xs font-semibold text-[var(--ink2)]">Taken {format(item.takenAt, 'd MMM yyyy, HH:mm')}</p>
+                    <FormInput value={item.title} onChange={(e) => patch(item.id, { title: e.target.value, detailsAdded: false })} placeholder="Title, e.g. Front courtyard" />
+                    <FormInput value={item.location} onChange={(e) => patch(item.id, { location: e.target.value })} placeholder="Location, e.g. Front entrance courtyard" />
+                    <FormTextarea value={item.comments} onChange={(e) => patch(item.id, { comments: e.target.value })} placeholder="Notes…" rows={2} />
+                    <FormInput value={item.assignee} onChange={(e) => patch(item.id, { assignee: e.target.value })} placeholder="Assignee name" />
+                    <FormInput value={item.annotations} onChange={(e) => patch(item.id, { annotations: e.target.value })} placeholder="Notes on the photo" />
+                    <div className="flex items-center justify-between gap-2">
+                      <button type="button" className="text-sm font-semibold text-[var(--red)]" onClick={() => removeItem(item.id)}>
+                        Remove
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => confirmDetails(item.id)}
+                        className="rounded-xl bg-[var(--blue)] px-3 py-2 text-sm font-bold text-white"
+                      >
+                        {item.detailsAdded ? 'Details added' : 'Add these details'}
+                      </button>
+                    </div>
+                  </article>
                 ))}
               </div>
             )}
@@ -280,22 +323,7 @@ export function SiteAuditCreateFlow({ project, onClose, onCreated }: Props) {
               </label>
             </div>
 
-            {editing ? (
-              <div className="space-y-2 rounded-2xl bg-[var(--soft)] p-3">
-                <img src={editing.previewUrl} alt="" className="max-h-48 w-full rounded-xl object-cover" />
-                <p className="text-xs font-semibold text-[var(--ink2)]">Taken {format(editing.takenAt, 'd MMM yyyy, HH:mm')}</p>
-                <FormInput value={editing.title} onChange={(e) => patch(editing.id, { title: e.target.value })} placeholder="Front courtyard" />
-                <FormInput value={editing.location} onChange={(e) => patch(editing.id, { location: e.target.value })} placeholder="e.g. Front entrance courtyard" />
-                <FormTextarea value={editing.comments} onChange={(e) => patch(editing.id, { comments: e.target.value })} placeholder="Notes…" rows={2} />
-                <FormInput value={editing.assignee} onChange={(e) => patch(editing.id, { assignee: e.target.value })} placeholder="Assignee name" />
-                <FormInput value={editing.annotations} onChange={(e) => patch(editing.id, { annotations: e.target.value })} placeholder="Notes on photo" />
-                <button type="button" className="text-sm font-semibold text-[var(--red)]" onClick={() => removeItem(editing.id)}>
-                  Remove this item
-                </button>
-              </div>
-            ) : null}
-
-            <div className="flex gap-2">
+            <div className="flex gap-2" id="audit-submit">
               <button type="button" onClick={() => setStep(1)} className="rounded-xl border border-[var(--line)] px-4 py-2.5 text-sm text-[var(--ink2)]">
                 Back
               </button>
