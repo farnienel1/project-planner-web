@@ -716,8 +716,13 @@ service cloud.firestore {
         );
       }
 
+      // Admins are never treated as operatives here. A leftover operativeMode flag
+      // on an admin account used to deny the write while the app still showed Save.
+      // Members-map admins match the other organisation writes (web bootstrap).
       function canAdminVariations(organizationId) {
-        return isOrganizationAdmin(organizationId) && !variationCallerIsOperative();
+        return isOrganizationAdmin(organizationId) ||
+          isOrgAdminViaMembersMap(organizationId) ||
+          isPlatformOwner();
       }
 
       function canAccessJobVariations(organizationId, parentId) {
@@ -891,6 +896,53 @@ service cloud.firestore {
     match /platformConfig/{id} {
       allow read: if isPlatformOwner();
       allow write: if isPlatformOwner();
+    }
+
+    // Public pre-launch registrations. Create is field-locked. Only the platform owner can read or change them.
+    match /interestRegistrations/{id} {
+      allow create: if request.resource.data.consent == true
+        && request.resource.data.keys().hasOnly([
+          'firstName', 'lastName', 'company', 'email', 'phone', 'role', 'teamSize',
+          'sectors', 'currentTools', 'message', 'consent', 'status', 'source',
+          'campaign', 'referrer', 'pagePath', 'userAgent', 'createdAt'
+        ])
+        && request.resource.data.status == 'new'
+        && request.resource.data.email is string
+        && request.resource.data.email.matches('^[^@]+@[^@]+\\.[^@]+$')
+        && request.resource.data.email.size() < 200
+        && request.resource.data.firstName is string
+        && request.resource.data.firstName.size() > 0
+        && request.resource.data.firstName.size() < 100
+        && request.resource.data.lastName is string
+        && request.resource.data.lastName.size() > 0
+        && request.resource.data.lastName.size() < 100
+        && request.resource.data.company is string
+        && request.resource.data.company.size() > 0
+        && request.resource.data.company.size() < 200
+        && request.resource.data.phone is string
+        && request.resource.data.phone.size() < 40
+        && request.resource.data.role is string
+        && request.resource.data.role.size() < 80
+        && request.resource.data.teamSize is string
+        && request.resource.data.teamSize.size() < 40
+        && request.resource.data.currentTools is string
+        && request.resource.data.currentTools.size() < 80
+        && request.resource.data.message is string
+        && request.resource.data.message.size() <= 2000
+        && request.resource.data.source is string
+        && request.resource.data.source.size() < 80
+        && request.resource.data.campaign is string
+        && request.resource.data.campaign.size() < 120
+        && request.resource.data.referrer is string
+        && request.resource.data.referrer.size() < 500
+        && request.resource.data.pagePath is string
+        && request.resource.data.pagePath.size() < 200
+        && request.resource.data.userAgent is string
+        && request.resource.data.userAgent.size() < 1000
+        && request.resource.data.sectors is list
+        && request.resource.data.sectors.size() < 12
+        && request.resource.data.createdAt is timestamp;
+      allow read, update, delete: if isPlatformOwner();
     }
   }
 }

@@ -117,6 +117,8 @@ export const useDeadlineStore = create<DeadlineState>((set, get) => ({
     if (items.length === 0 && get().items.length > 0) {
       throw new Error('Refusing to clear the deadline programme.')
     }
+    // Drop any load that started before this write, so it cannot replace the saved list.
+    deadlineLoadGeneration += 1
     set({ saving: true, error: null })
     try {
       const ref = deadlinesRef(organizationId, projectId, isSmallWorks)
@@ -151,8 +153,10 @@ export const useDeadlineStore = create<DeadlineState>((set, get) => ({
       const assigneeIds = Array.from(new Set(itemsToWrite.flatMap((item) => item.assigneeUserIds))).sort()
       void writeAssignments(organizationId, projectId, assigneeIds).catch(() => {})
       const updatedAt = new Date()
+      // A load that started while setDoc was in flight must not paint the old programme.
+      deadlineLoadGeneration += 1
       if (get().projectKey === projectKey) {
-        set({ items: itemsToWrite, updatedAt, loaded: true, saving: false })
+        set({ items: itemsToWrite, updatedAt, loaded: true, loading: false, saving: false })
       } else {
         set({ saving: false })
       }
