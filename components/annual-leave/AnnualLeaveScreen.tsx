@@ -81,7 +81,7 @@ export function AnnualLeaveScreen() {
           deleteBooking={deleteBooking}
           requestCancellation={requestCancellation}
         />
-      )}
+      ) : null}
     </div>
   )
 }
