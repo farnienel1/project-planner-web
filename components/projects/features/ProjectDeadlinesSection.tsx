@@ -159,13 +159,13 @@ export function ProjectDeadlinesSection({ project, isSmallWorks }: { project: Pr
     const written = await save(organization.id, project.id, isSmallWorks, nextItems)
     const saved = written.find((item) => item.id === draftId)
     if (saved) {
-      await notifyNewDeadlineAssignees({
+      void notifyNewDeadlineAssignees({
         organizationId: organization.id,
         previous: notifyFrom,
         current: saved,
         projectName: projectNotificationName(project.siteName, project.jobNumber),
         createdBy: authorName,
-      })
+      }).catch(() => {})
     }
   }
 
@@ -178,9 +178,11 @@ export function ProjectDeadlinesSection({ project, isSmallWorks }: { project: Pr
     if (!next.createdByUserId) next.createdByUserId = user.id
     if (file) {
       try {
+        setBanner('Uploading the attachment…')
         const path = healthSafetyFilePath(organization.id, project.id, 'deadlines', file.name)
         const url = await uploadFile(path, file, file.type || 'application/octet-stream')
         next = withFileAttached(next, file.name, url, authorName, new Date())
+        setBanner(null)
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : 'Could not attach the file.'
         setBanner(message)

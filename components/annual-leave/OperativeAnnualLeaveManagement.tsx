@@ -1,16 +1,12 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { format } from 'date-fns'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useHolidayStore } from '@/lib/stores/holidayStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
-import {
-  hasAdminAccess,
-  canAccessOperativeAnnualLeaveDirectory,
-} from '@/lib/navigation/menuPermissions'
+import { canAccessOperativeAnnualLeaveDirectory } from '@/lib/navigation/menuPermissions'
 import { isPendingHolidayRequest } from '@/lib/stores/holidayStore'
 import {
   buildAnnualLeavePeople,
@@ -22,15 +18,19 @@ import {
   type AnnualLeavePersonSort,
 } from '@/lib/annualLeave/annualLeavePerson'
 import { isCancellationRequest } from '@/lib/annualLeave/holidayApprovalUtils'
+import { bookingDayCount, daysLabel, formatLeaveRange } from '@/lib/annualLeave/formatLeaveDays'
+import { getDayKindForBookings } from '@/lib/annualLeave/dayStatus'
 import type { HolidayBooking } from '@/types'
 import { OperativeAnnualLeaveCalendar } from './OperativeAnnualLeaveCalendar'
+import { AnnualLeaveLegend, LeaveDayCalendar } from './LeaveDayCalendar'
+import { useOrgBankHolidays } from './useOrgBankHolidays'
 
 type HubTab = 'manage' | 'approved' | 'requests'
 
-function fmtRange(b: HolidayBooking) {
-  const start = format(b.startDate, 'd MMM yyyy')
-  const end = format(b.endDate, 'd MMM yyyy')
-  return start === end ? start : `${start} – ${end}`
+function initials(name: string): string {
+  const parts = name.split(/\s+/).filter(Boolean)
+  if (parts.length >= 2) return `${parts[0][0] || ''}${parts[parts.length - 1][0] || ''}`.toUpperCase()
+  return name.slice(0, 2).toUpperCase()
 }
 
 function BookingListRow({
@@ -49,8 +49,11 @@ function BookingListRow({
   return (
     <div className="card pad">
       <p className="text-sm font-bold text-slate-900">{name}</p>
-      <p className="mt-0.5 text-sm text-slate-700">{fmtRange(booking)}</p>
-      <p className="text-xs text-slate-500">{booking.timeSlot}</p>
+      <p className="mt-0.5 text-sm text-slate-700">{formatLeaveRange(booking)}</p>
+      <p className="text-xs text-slate-500">
+        {booking.timeSlot} · {daysLabel(bookingDayCount(booking))}
+        {isCancellationRequest(booking) ? ' · Cancellation request' : booking.status === 'pending' ? ' · Leave request' : ''}
+      </p>
       {showApprove && (
         <div className="mt-3 grid grid-cols-2 gap-2">
           <button
@@ -73,13 +76,18 @@ function BookingListRow({
   )
 }
 
-export function OperativeAnnualLeaveManagement() {
+export function OperativeAnnualLeaveManagement({
+  embedded = false,
+  onQueueCount,
+}: {
+  embedded?: boolean
+  onQueueCount?: (count: number) => void
+} = {}) {
   const { user, organization } = useAuthStore()
   const { bookings, saveBooking, deleteBooking } = useHolidayStore()
   const { operatives } = useOperativeStore()
   const { users } = useOrgUserStore()
 
-  const isAdmin = hasAdminAccess(user)
   const [activeTab, setActiveTab] = useState<HubTab>('manage')
   const [sortMode, setSortMode] = useState<AnnualLeavePersonSort>('firstName')
   const [tradeFilter, setTradeFilter] = useState<string>('')
@@ -132,6 +140,30 @@ export function OperativeAnnualLeaveManagement() {
     [teamBookings]
   )
 
+  useEffect(() => {
+    onQueueCount?.(pendingRequests.length)
+  }, [onQueueCount, pendingRequests.length])
+
+  const [awayMonth, setAwayMonth] = useState(new Date())
+  const [declineTarget, setDeclineTarget] = useState<HolidayBooking | null>(null)
+  const [holidayNote, setHolidayNote] = useState<string | null>(null)
+  const bankYear = new Date().getFullYear()
+  const bank = useOrgBankHolidays(new Date(bankYear, 0, 1), new Date(bankYear, 11, 31))
+
+  const awayCaption = (day: Date) => {
+    const names = people
+      .filter((person) => {
+        const rows = teamBookings.filter(
+          (booking) => bookingMatchesPerson(booking, person) && booking.status !== 'rejected'
+        )
+        return getDayKindForBookings(day, rows) !== 'none'
+      })
+      .map((person) => initials(person.displayName))
+    if (names.length === 0) return null
+    if (names.length <= 2) return names.join(' ')
+    return `${names[0]} +${names.length - 1}`
+  }
+
   const updateStatus = async (booking: HolidayBooking, status: 'approved' | 'rejected') => {
     if (!organization?.id || !user) return
     if (status === 'approved' && isCancellationRequest(booking)) {
@@ -168,27 +200,23 @@ export function OperativeAnnualLeaveManagement() {
 
   if (selectedPerson && activeTab === 'manage') {
     return (
-      <div className="mx-auto max-w-xl space-y-4 pb-10">
-        <h1 className="text-2xl font-bold text-slate-900">Operative annual leave</h1>
-        <OperativeAnnualLeaveCalendar
-          person={selectedPerson}
-          bookings={bookings}
-          onBack={() => setSelectedPerson(null)}
-        />
-      </div>
+      <OperativeAnnualLeaveCalendar
+        person={selectedPerson}
+        bookings={bookings}
+        onBack={() => setSelectedPerson(null)}
+      />
     )
   }
 
-  const tabs: { key: HubTab; label: string }[] = isAdmin
-    ? [
-        { key: 'manage', label: 'Manage operative annual leave' },
-        { key: 'approved', label: 'View approved bookings' },
-        { key: 'requests', label: 'View annual leave requests' },
-      ]
-    : [{ key: 'manage', label: 'Manage operative annual leave' }]
+  const tabs: { key: HubTab; label: string }[] = [
+    { key: 'manage', label: 'Team' },
+    { key: 'approved', label: 'Approved' },
+    { key: 'requests', label: 'Requests' },
+  ]
 
   return (
-    <div className="mx-auto max-w-xl space-y-4 pb-10">
+    <div className={embedded ? 'space-y-4' : 'mx-auto max-w-xl space-y-4 pb-10'}>
+      {embedded ? null : (
       <div className="flex items-center gap-3">
         <Link
           href="/dashboard/annual-leave"
@@ -199,8 +227,9 @@ export function OperativeAnnualLeaveManagement() {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
           </svg>
         </Link>
-        <h1 className="text-2xl font-bold text-slate-900">View and manage operative annual leave</h1>
+        <h1 className="text-2xl font-bold text-slate-900">Team annual leave</h1>
       </div>
+      )}
 
       {tabs.length > 1 && (
         <div className="flex gap-1 rounded-2xl border border-slate-200 bg-slate-100 p-1">
@@ -269,12 +298,39 @@ export function OperativeAnnualLeaveManagement() {
             />
           </div>
 
+          <div className="card pad">
+            <p className="text-sm font-bold text-slate-900">Who is off</p>
+            <p className="mt-0.5 text-xs text-slate-500">Initials show people with leave on that day.</p>
+            <div className="mt-3">
+              <LeaveDayCalendar
+                month={awayMonth}
+                onMonthChange={setAwayMonth}
+                getDayKind={() => 'none'}
+                onDayClick={() => {}}
+                bankHolidayName={bank.nameOn}
+                onBankHoliday={(name) =>
+                  setHolidayNote(
+                    `${name} is a bank holiday. It cannot be booked as annual leave, and it does not come out of anyone's allowance.`
+                  )
+                }
+                dayCaption={awayCaption}
+              />
+            </div>
+            <div className="mt-3">
+              <AnnualLeaveLegend />
+            </div>
+            <p className="mt-3 text-xs leading-relaxed text-slate-500">{bank.sentence}</p>
+            {holidayNote ? <p className="mt-2 rounded-xl bg-violet-50 px-3 py-2 text-sm text-violet-900">{holidayNote}</p> : null}
+          </div>
+
           <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">
-            Active team · {filteredPeople.length}
+            Your team · {filteredPeople.length}
           </p>
 
           {filteredPeople.length === 0 ? (
-            <p className="py-8 text-center text-sm text-slate-400">No team members match your filters.</p>
+            <p className="rounded-2xl border border-slate-200 bg-white px-4 py-6 text-sm text-slate-500">
+              Nobody matches those filters. Clear the trade or search to see the people you can manage.
+            </p>
           ) : (
             <div className="space-y-2">
               {filteredPeople.map((person) => (
@@ -311,7 +367,9 @@ export function OperativeAnnualLeaveManagement() {
             Approved bookings · {approvedBookings.length}
           </p>
           {approvedBookings.length === 0 ? (
-            <p className="py-8 text-center text-sm text-slate-400">No approved operative bookings.</p>
+            <p className="rounded-2xl border border-slate-200 bg-white px-4 py-6 text-sm text-slate-500">
+              Approved leave for your team shows here after you approve a request or book it for them.
+            </p>
           ) : (
             approvedBookings.map((b) => (
               <BookingListRow
@@ -327,10 +385,12 @@ export function OperativeAnnualLeaveManagement() {
       {activeTab === 'requests' && (
         <div className="space-y-3">
           <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">
-            Pending requests · {pendingRequests.length}
+            Waiting for you · {pendingRequests.length}
           </p>
           {pendingRequests.length === 0 ? (
-            <p className="py-8 text-center text-sm text-slate-400">No pending requests.</p>
+            <p className="rounded-2xl border border-slate-200 bg-white px-4 py-6 text-sm text-slate-500">
+              Nothing is waiting for you. New leave requests and cancellation requests from your team show up here.
+            </p>
           ) : (
             pendingRequests.map((b) => (
               <BookingListRow
@@ -339,16 +399,45 @@ export function OperativeAnnualLeaveManagement() {
                 name={resolvePersonName(b, users, operatives)}
                 showApprove
                 onApprove={() => updateStatus(b, 'approved')}
-                onDecline={() => {
-                  if (window.confirm(`Decline request for ${resolvePersonName(b, users, operatives)}?`)) {
-                    updateStatus(b, 'rejected')
-                  }
-                }}
+                onDecline={() => setDeclineTarget(b)}
               />
             ))
           )}
         </div>
       )}
+
+      {declineTarget ? (
+        <div className="fixed inset-0 z-50 grid place-items-end bg-black/40 p-4 sm:place-items-center">
+          <div className="w-full max-w-sm rounded-2xl bg-white p-4 shadow-xl">
+            <p className="text-base font-bold text-slate-900">
+              {isCancellationRequest(declineTarget) ? 'Decline this cancellation?' : 'Decline this request?'}
+            </p>
+            <p className="mt-1 text-sm text-slate-600">
+              {resolvePersonName(declineTarget, users, operatives)} · {formatLeaveRange(declineTarget)}
+            </p>
+            <div className="mt-4 grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                className="rounded-xl border border-slate-200 py-2.5 text-sm font-semibold"
+                onClick={() => setDeclineTarget(null)}
+              >
+                Keep it
+              </button>
+              <button
+                type="button"
+                className="rounded-xl bg-[var(--red)] py-2.5 text-sm font-bold text-white"
+                onClick={() => {
+                  const target = declineTarget
+                  setDeclineTarget(null)
+                  void updateStatus(target, 'rejected')
+                }}
+              >
+                Decline
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }

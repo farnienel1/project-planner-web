@@ -18,57 +18,77 @@ import type { AnnualLeaveDayKind } from '@/lib/annualLeave/dayStatus'
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
 export function AnnualLeaveLegend() {
+  const items = [
+    ['bg-emerald-500', 'Approved'],
+    ['bg-emerald-300', 'Half day'],
+    ['bg-amber-400', 'Pending'],
+    ['bg-violet-400', 'Bank holiday'],
+    ['bg-slate-300', 'Weekend'],
+  ] as const
   return (
-    <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-500">
-      <span className="flex items-center gap-1.5">
-        <span className="h-2 w-2 rounded-full bg-emerald-500" />
-        Approved full day
-      </span>
-      <span className="flex items-center gap-1.5">
-        <span className="h-2 w-2 rounded-full bg-orange-500" />
-        Approved half day
-      </span>
-      <span className="flex items-center gap-1.5">
-        <span className="h-2 w-2 rounded-full bg-red-500" />
-        Pending request
-      </span>
+    <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-[var(--ink3)]">
+      {items.map(([swatch, label]) => (
+        <span key={label} className="flex items-center gap-1.5">
+          <span className={`h-2.5 w-2.5 rounded-sm ${swatch}`} />
+          {label}
+        </span>
+      ))}
     </div>
   )
 }
 
 function dayStyles(
   kind: AnnualLeaveDayKind,
-  opts: { inMonth: boolean; isSelected: boolean; isMultiSelected: boolean; todayDay: boolean }
+  opts: {
+    inMonth: boolean
+    isSelected: boolean
+    isMultiSelected: boolean
+    todayDay: boolean
+    weekend: boolean
+    bankHoliday: boolean
+  }
 ): string {
-  const { inMonth, isSelected, isMultiSelected, todayDay } = opts
+  const { inMonth, isSelected, isMultiSelected, todayDay, weekend, bankHoliday } = opts
   let cls =
-    'relative flex h-9 w-full items-center justify-center rounded-full text-sm font-medium transition-all '
+    'relative flex h-12 w-full flex-col items-center justify-center rounded-lg text-base font-medium transition-all '
 
   if (!inMonth) return cls + 'cursor-default text-slate-300'
+  if (todayDay) cls += 'ring-2 ring-slate-900 ring-offset-1 '
 
   if (isSelected || isMultiSelected) {
     return cls + 'bg-blue-600 font-bold text-white shadow-sm'
   }
 
+  if (bankHoliday) return cls + 'bg-violet-100 font-semibold text-violet-800'
+
   switch (kind) {
     case 'approvedFull':
-      cls += 'bg-emerald-500/55 font-semibold text-slate-900 '
+      cls += 'bg-emerald-500 font-semibold text-white '
       break
     case 'approvedHalf':
-      cls += 'font-semibold text-slate-900 ring-2 ring-orange-500 ring-inset '
+      cls += 'bg-[linear-gradient(135deg,#10b981_50%,#a7f3d0_50%)] font-semibold text-slate-900 '
       break
     case 'pendingFull':
-      cls += 'bg-red-500/85 font-semibold text-white ring-1 ring-red-400/35 '
-      break
     case 'pendingHalf':
-      cls += 'font-semibold text-slate-900 ring-2 ring-red-500 '
+      cls += 'bg-amber-100 font-semibold text-amber-950 ring-2 ring-amber-400 ring-inset '
       break
     default:
-      if (todayDay) cls += 'border-2 border-emerald-500 font-bold text-emerald-700 '
-      else cls += 'cursor-pointer text-slate-700 hover:bg-slate-100 '
+      cls += weekend
+        ? 'bg-slate-100 text-slate-400 '
+        : 'cursor-pointer text-slate-700 hover:bg-slate-100 '
   }
 
   return cls
+}
+
+function spokenLabel(day: Date, kind: AnnualLeaveDayKind, holiday: string | null, selected: boolean): string {
+  const when = format(day, 'd MMMM')
+  if (holiday) return `${when}, ${holiday}, bank holiday, not bookable`
+  if (selected) return `${when}, selected`
+  if (kind === 'approvedFull') return `${when}, approved full day`
+  if (kind === 'approvedHalf') return `${when}, approved half day`
+  if (kind === 'pendingFull' || kind === 'pendingHalf') return `${when}, pending`
+  return when
 }
 
 export function LeaveDayCalendar({
@@ -79,6 +99,9 @@ export function LeaveDayCalendar({
   selectedDays,
   onDayClick,
   disableLocked = false,
+  bankHolidayName,
+  onBankHoliday,
+  dayCaption,
 }: {
   month: Date
   onMonthChange: (d: Date) => void
@@ -87,6 +110,9 @@ export function LeaveDayCalendar({
   selectedDays?: Date[]
   onDayClick: (day: Date) => void
   disableLocked?: boolean
+  bankHolidayName?: (day: Date) => string | null
+  onBankHoliday?: (name: string, day: Date) => void
+  dayCaption?: (day: Date) => string | null
 }) {
   const start = startOfWeek(startOfMonth(month), { weekStartsOn: 1 })
   const end = endOfWeek(endOfMonth(month), { weekStartsOn: 1 })
@@ -137,22 +163,37 @@ export function LeaveDayCalendar({
           const isMultiSelected = selectedDays?.some((d) => isSameDay(d, day)) ?? false
           const todayDay = isToday(day)
           const weekend = isWeekend(day)
+          const holiday = inMonth ? bankHolidayName?.(day) || null : null
           const locked = disableLocked && (kind === 'approvedFull' || kind === 'pendingFull')
-
-          let btnClass = dayStyles(kind, { inMonth, isSelected, isMultiSelected, todayDay })
-          if (inMonth && kind === 'none' && weekend && !todayDay && !isMultiSelected && !isSelected) {
-            btnClass += ' text-slate-400 hover:bg-slate-100'
-          }
+          const caption = inMonth ? dayCaption?.(day) : null
+          const btnClass = dayStyles(kind, {
+            inMonth,
+            isSelected,
+            isMultiSelected,
+            todayDay,
+            weekend,
+            bankHoliday: Boolean(holiday),
+          })
 
           return (
             <button
               key={day.toISOString()}
               type="button"
               disabled={!inMonth || locked}
-              onClick={() => inMonth && onDayClick(day)}
+              aria-label={inMonth ? spokenLabel(day, kind, holiday, isSelected || isMultiSelected) : undefined}
+              onClick={() => {
+                if (!inMonth) return
+                if (holiday) {
+                  onBankHoliday?.(holiday, day)
+                  return
+                }
+                onDayClick(day)
+              }}
               className={btnClass}
             >
-              {format(day, 'd')}
+              <span>{format(day, 'd')}</span>
+              {holiday ? <span className="mt-0.5 h-1 w-1 rounded-full bg-violet-600" /> : null}
+              {caption ? <span className="text-[9px] font-bold leading-none">{caption}</span> : null}
             </button>
           )
         })}

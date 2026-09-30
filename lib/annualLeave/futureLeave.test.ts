@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { UserRole, type HolidayBooking, type User } from '../../types/index.ts'
-import { canManagePersonAnnualLeave, type AnnualLeavePerson } from './annualLeavePerson.ts'
+import { bookingMatchesPerson, canManagePersonAnnualLeave, type AnnualLeavePerson } from './annualLeavePerson.ts'
 import { isFutureAcceptedAnnualLeave } from './holidayApprovalUtils.ts'
 
 function booking(partial: Partial<HolidayBooking> & { id: string; startDate: Date; endDate: Date }): HolidayBooking {
@@ -150,4 +150,11 @@ test('admins manage every person and managers only their line reports', () => {
   assert.equal(canManagePersonAnnualLeave(admin, otherPerson, users), true)
   assert.equal(canManagePersonAnnualLeave(manager, reportPerson, users), true)
   assert.equal(canManagePersonAnnualLeave(manager, otherPerson, users), false)
+})
+
+test('a person calendar matches a booking stored under either id', () => {
+  const personRow = person({ id: 'user-op', userId: 'auth-1', operativeId: 'op-1' })
+  assert.equal(bookingMatchesPerson({ userId: 'op-1' }, personRow), true)
+  assert.equal(bookingMatchesPerson({ operativeId: 'auth-1' }, personRow), true)
+  assert.equal(bookingMatchesPerson({ userId: 'someone-else' }, personRow), false)
 })

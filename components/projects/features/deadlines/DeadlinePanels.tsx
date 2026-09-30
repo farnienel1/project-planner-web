@@ -230,12 +230,38 @@ export function DetailSheet({
               {item.fileURL ? (
                 <a className="block px-4 py-3 text-sm font-semibold" href={item.fileURL} target="_blank" rel="noreferrer">
                   {item.fileName || 'Attached file'}
+                  {/\.(png|jpe?g|webp|gif|heic)$/i.test(item.fileName || item.fileURL) ? (
+                    <img src={item.fileURL} alt="" className="mt-2 max-h-48 rounded-lg object-cover" />
+                  ) : null}
                 </a>
               ) : item.fileName ? (
                 <p className="px-4 py-3 text-sm font-semibold">{item.fileName}</p>
               ) : null}
               {item.siteAuditId ? (
-                <p className="px-4 py-3 text-sm font-semibold">{audit ? auditTitle(audit) : item.siteAuditTitle || 'Attached site audit'}</p>
+                <div className="px-4 py-3">
+                  <a className="text-sm font-semibold text-[var(--blue)]" href="/dashboard/site-audit">
+                    {audit ? auditTitle(audit) : item.siteAuditTitle || 'Attached site audit'}
+                  </a>
+                  {audit ? (
+                    <div className="mt-3 space-y-3">
+                      {audit.items.map((entry) => (
+                        <div key={entry.id} className="rounded-xl bg-[var(--soft)] p-3">
+                          <p className="text-sm font-semibold">{entry.title}</p>
+                          <p className="text-[11px] font-semibold text-[var(--ink3)]">Taken {formatStamp(entry.createdAt)}</p>
+                          {entry.location ? <p className="text-xs text-[var(--ink3)]">{entry.location}</p> : null}
+                          {entry.comments ? <p className="mt-1 text-sm">{entry.comments}</p> : null}
+                          {entry.imageURL ? (
+                            <a href={entry.imageURL} target="_blank" rel="noreferrer" className="mt-2 block">
+                              <img src={entry.imageURL} alt="" className="max-h-40 rounded-lg object-cover" />
+                            </a>
+                          ) : null}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="mt-1 text-xs text-[var(--ink3)]">Open site audits to see the photos if this one is not on the job yet.</p>
+                  )}
+                </div>
               ) : null}
             </div>
           </section>

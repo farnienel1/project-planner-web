@@ -23,21 +23,30 @@ async function ensureStorageAuth(): Promise<void> {
 function uploadOnce(storagePath: string, file: Blob, contentType: string): Promise<string> {
   const storageRef = ref(storage, storagePath)
   return new Promise((resolve, reject) => {
+    let settled = false
     const task = uploadBytesResumable(storageRef, file, { contentType })
+    const finish = (outcome: () => void) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      outcome()
+    }
     const timer = setTimeout(() => {
-      task.cancel()
-      reject(new Error('The file upload did not finish. Check your connection and try again.'))
+      try {
+        task.cancel()
+      } catch {
+        /* already finished */
+      }
+      finish(() => reject(new Error('The file upload did not finish. Check your connection and try again.')))
     }, UPLOAD_TIMEOUT_MS)
     task.on(
       'state_changed',
       () => {},
-      (error) => {
-        clearTimeout(timer)
-        reject(error)
-      },
+      (error) => finish(() => reject(error)),
       () => {
-        clearTimeout(timer)
-        getDownloadURL(storageRef).then(resolve).catch(reject)
+        getDownloadURL(storageRef)
+          .then((url) => finish(() => resolve(url)))
+          .catch((error) => finish(() => reject(error)))
       }
     )
   })
