@@ -8,7 +8,6 @@ import { useToast } from '@/components/ui/ToastProvider'
 import { uploadFile } from '@/lib/firebase/storageUtils'
 import { newUuid } from '@/lib/firebase/firestoreUtils'
 import {
-  CUSTOM_TRADE_OPTION,
   EVIDENCE_MAX_FILES,
   VARIATION_HEADER_COPY,
   VARIATION_STATUS_COPY,
@@ -23,6 +22,13 @@ import {
   type VariationTracker,
 } from '@/lib/variations/variationModel'
 import { nextFreeVoNumber, voNumberTaken } from '@/lib/variations/variationNumbering'
+import {
+  lineHours,
+  NewVariationSheet,
+  type LabourLine,
+  type MaterialLine,
+  type Unit,
+} from '@/components/variations/NewVariationSheet'
 import { canChangeVariationStatus, canEditVariationContent, canManageVariationTracker, canSeeJobVariations } from '@/lib/variations/variationAccess'
 import { variationsToCsv } from '@/lib/variations/variationCsv'
 import {
@@ -250,8 +256,11 @@ export function VariationsWorkspace({
               })
               toast('Variation updated')
             }
-            if (draft.customTrade) {
-              const next = await saveCustomTrade(organization.id, draft.customTrade)
+            if (draft.customTrades?.length) {
+              let next = trades
+              for (const trade of draft.customTrades) {
+                next = await saveCustomTrade(organization.id, trade)
+              }
               setTrades(next)
             }
             setEditing(null)
@@ -394,226 +403,106 @@ function VariationEditor({
       description: string
       labour: VariationLabourLine[]
       materials: VariationMaterialLine[]
-      customTrade?: string
+      customTrades?: string[]
     },
     files: File[]
   ) => Promise<void>
 }) {
   const suggested = nextFreeVoNumber(siblings, prefix, padding)
-  const [voNumber, setVoNumber] = useState(existing?.voNumber || suggested)
-  const [heading, setHeading] = useState(existing?.heading || '')
-  const [description, setDescription] = useState(existing?.description || '')
-  const [labour, setLabour] = useState<VariationLabourLine[]>(existing?.labour || [])
-  const [materials, setMaterials] = useState<VariationMaterialLine[]>(existing?.materials || [])
-  const [files, setFiles] = useState<File[]>([])
-  const [customTrade, setCustomTrade] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
   const tradeOptions = [...VARIATION_TRADES, ...trades.filter((item) => !VARIATION_TRADES.includes(item as (typeof VARIATION_TRADES)[number]))]
-
-  const addLabour = (trade = tradeOptions[0] || 'Electrician') => {
-    setLabour((rows) => [...rows, { id: newUuid(), trade, hours: 0 }])
-  }
-  const addHours = (amount: number) => {
-    setLabour((rows) => {
-      if (rows.length === 0) return [{ id: newUuid(), trade: tradeOptions[0] || 'Electrician', hours: amount }]
-      return rows.map((row, index) => (index === rows.length - 1 ? { ...row, hours: Math.round((row.hours + amount) * 100) / 100 } : row))
-    })
-  }
+  const initialLabour: LabourLine[] = (existing?.labour || []).map((line) => ({
+    id: line.id,
+    trade: line.trade,
+    operatives: 1,
+    hoursEach: line.hours,
+  }))
+  const initialMaterials: MaterialLine[] = (existing?.materials || []).map((line) => splitMaterialQuantity(line))
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4" role="dialog" aria-modal="true">
-      <form
-        className="card stack max-h-[90vh] w-full max-w-3xl overflow-auto"
-        style={{ gap: 14, padding: 18 }}
-        onSubmit={async (event) => {
-          event.preventDefault()
-          if (!heading.trim()) {
-            setError('Add a heading before saving.')
-            return
-          }
-          if (!trackerEnabled && voNumberTaken(siblings, voNumber, existing?.id)) {
-            setError(`${voNumber} is already used on this job.`)
-            return
-          }
-          if ((existing?.evidence.length || 0) + files.length > EVIDENCE_MAX_FILES) {
-            setError('A variation can hold 10 files.')
-            return
-          }
-          setBusy(true)
-          setError(null)
-          try {
+    <div className="fixed inset-0 z-50 grid place-items-end bg-black/40 sm:place-items-center" role="dialog" aria-modal="true">
+      <div className="h-[min(100dvh,920px)] w-full max-w-lg overflow-hidden bg-[var(--bg)] shadow-2xl sm:rounded-3xl">
+        <NewVariationSheet
+          parentName="this job"
+          defaultVoNumber={trackerEnabled ? existing?.voNumber || suggested : existing?.voNumber || suggested}
+          voNumberLocked={trackerEnabled || Boolean(existing)}
+          trades={tradeOptions}
+          recentTrades={tradeOptions.slice(0, 5)}
+          initialHeading={existing?.heading || ''}
+          initialDescription={existing?.description || ''}
+          initialLabour={initialLabour}
+          initialMaterials={initialMaterials}
+          savedEvidenceCount={existing?.evidence.length || 0}
+          title={existing ? 'Edit variation' : 'New variation'}
+          onCancel={onClose}
+          onCustomTrade={() => {
+            /* persisted from the saved labour line if it is new */
+          }}
+          onSave={async (draft) => {
+            const voNumber = trackerEnabled ? existing?.voNumber || suggested : draft.voNumber.trim()
+            if (!trackerEnabled && voNumberTaken(siblings, voNumber, existing?.id)) {
+              throw new Error(`${voNumber} is already used on this job.`)
+            }
+            const files = draft.evidence.map((item) => item.file)
+            const problem = files.map((file) => evidenceFileAllowed(file)).find(Boolean)
+            if (problem) throw new Error(problem)
+            if ((existing?.evidence.length || 0) + files.length > EVIDENCE_MAX_FILES) {
+              throw new Error('A variation can hold 10 files.')
+            }
+            const known = new Set(tradeOptions.map((trade) => trade.toLowerCase()))
+            const customTrades = Array.from(
+              new Set(
+                draft.labour
+                  .map((line) => line.trade.trim())
+                  .filter((trade) => trade && !known.has(trade.toLowerCase()))
+              )
+            )
             await onSave(
               {
-                voNumber: trackerEnabled ? existing?.voNumber || suggested : voNumber.trim(),
-                heading: heading.trim(),
-                description: description.trim(),
-                labour,
-                materials,
-                customTrade: customTrade.trim() || undefined,
+                voNumber,
+                heading: draft.heading.trim(),
+                description: draft.description.trim(),
+                labour: draft.labour
+                  .map((line) => ({
+                    id: line.id || newUuid(),
+                    trade: line.trade,
+                    hours: Math.round(lineHours(line) * 100) / 100,
+                  }))
+                  .filter((line) => line.hours > 0),
+                materials: draft.materials
+                  .filter((line) => line.name.trim())
+                  .map((line) => ({
+                    id: line.id || newUuid(),
+                    name: line.name.trim(),
+                    quantity: materialQuantity(line),
+                  })),
+                customTrades,
               },
               files
             )
-          } catch (err) {
-            setError(err instanceof Error ? err.message : 'Could not save the variation.')
-            setBusy(false)
-          }
-        }}
-      >
-        <div className="row">
-          <h2 className="h2 grow">{existing ? 'Edit variation' : 'New variation'}</h2>
-          <button type="button" className="btn sm ghost" onClick={onClose}>Close</button>
-        </div>
-        <label className="stack" style={{ gap: 4 }}>
-          <span className="eyebrow">VO number</span>
-          <input className="input" value={trackerEnabled ? existing?.voNumber || suggested : voNumber} readOnly={trackerEnabled || Boolean(existing)} onChange={(event) => setVoNumber(event.target.value)} />
-          {trackerEnabled ? <span className="muted small">Numbered by the tracker · next free number is {suggested}</span> : null}
-        </label>
-        <label className="stack" style={{ gap: 4 }}>
-          <span className="eyebrow">Heading</span>
-          <input className="input" value={heading} onChange={(event) => setHeading(event.target.value)} required />
-        </label>
-        <label className="stack" style={{ gap: 4 }}>
-          <span className="eyebrow">Description</span>
-          <textarea className="input" rows={3} value={description} onChange={(event) => setDescription(event.target.value)} />
-        </label>
-        <div className="grid g2">
-          <section className="card pad stack" style={{ gap: 8 }}>
-            <div className="row">
-              <b className="grow">Labour · {labour.reduce((sum, line) => sum + line.hours, 0).toFixed(1)} hrs</b>
-              <button type="button" className="btn sm ghost" onClick={() => addLabour()}>Add labour row</button>
-            </div>
-            {labour.map((line) => (
-              <div key={line.id} className="row" style={{ gap: 8 }}>
-                <select
-                  className="input"
-                  value={tradeOptions.includes(line.trade) ? line.trade : CUSTOM_TRADE_OPTION}
-                  onChange={(event) => {
-                    const value = event.target.value
-                    if (value === CUSTOM_TRADE_OPTION) return
-                    setLabour((rows) => rows.map((item) => (item.id === line.id ? { ...item, trade: value } : item)))
-                  }}
-                >
-                  {tradeOptions.map((trade) => (
-                    <option key={trade}>{trade}</option>
-                  ))}
-                  <option>{CUSTOM_TRADE_OPTION}</option>
-                </select>
-                <input
-                  className="input"
-                  type="number"
-                  min={0}
-                  step={0.5}
-                  value={line.hours}
-                  onChange={(event) =>
-                    setLabour((rows) => rows.map((item) => (item.id === line.id ? { ...item, hours: Number(event.target.value) } : item)))
-                  }
-                  style={{ width: 90 }}
-                />
-              </div>
-            ))}
-            <label className="stack" style={{ gap: 4 }}>
-              <span className="muted small">Custom trade…</span>
-              <input className="input" value={customTrade} placeholder="Save a trade for the whole company" onChange={(event) => setCustomTrade(event.target.value)} />
-            </label>
-            <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
-              <button type="button" className="btn sm ghost" onClick={() => addHours(0.5)}>+30 min</button>
-              <button type="button" className="btn sm ghost" onClick={() => addHours(1)}>+1 hr</button>
-              <button type="button" className="btn sm ghost" onClick={() => addHours(4)}>+4 hrs</button>
-              <button type="button" className="btn sm ghost" onClick={() => addHours(8)}>+8 hrs</button>
-            </div>
-          </section>
-          <section className="card pad stack" style={{ gap: 8 }}>
-            <div className="row">
-              <b className="grow">Materials · {materials.length}</b>
-              <button type="button" className="btn sm ghost" onClick={() => setMaterials((rows) => [...rows, { id: newUuid(), name: '', quantity: '' }])}>
-                Add material
-              </button>
-            </div>
-            {materials.map((line) => (
-              <div key={line.id} className="row" style={{ gap: 8 }}>
-                <input
-                  className="input"
-                  placeholder="Material"
-                  value={line.name}
-                  onChange={(event) =>
-                    setMaterials((rows) => rows.map((item) => (item.id === line.id ? { ...item, name: event.target.value } : item)))
-                  }
-                />
-                <input
-                  className="input"
-                  placeholder="Qty"
-                  value={line.quantity}
-                  onChange={(event) =>
-                    setMaterials((rows) => rows.map((item) => (item.id === line.id ? { ...item, quantity: event.target.value } : item)))
-                  }
-                  style={{ width: 90 }}
-                />
-              </div>
-            ))}
-            <div className="row" style={{ gap: 6 }}>
-              {['m', 'no', 'box', 'kg'].map((unit) => (
-                <button
-                  key={unit}
-                  type="button"
-                  className="btn sm ghost"
-                  onClick={() =>
-                    setMaterials((rows) =>
-                      rows.length === 0
-                        ? [{ id: newUuid(), name: '', quantity: unit }]
-                        : rows.map((item, index) => (index === rows.length - 1 ? { ...item, quantity: `${item.quantity}${unit}` } : item))
-                    )
-                  }
-                >
-                  {unit}
-                </button>
-              ))}
-            </div>
-          </section>
-        </div>
-        <EvidencePicker
-          files={files}
-          onFiles={(next) => {
-            const problem = next.map((file) => evidenceFileAllowed(file)).find(Boolean)
-            if (problem) {
-              setError(problem)
-              return
-            }
-            setFiles(next.slice(0, EVIDENCE_MAX_FILES))
           }}
         />
-        {error ? <p style={{ color: 'var(--red, #D3453F)' }}>{error}</p> : null}
-        <button type="submit" className="btn primary" disabled={busy || !heading.trim()}>
-          {busy ? 'Saving…' : 'Save'}
-        </button>
-        <p className="muted small">Saves as Open and notifies every admin.</p>
-      </form>
+      </div>
     </div>
   )
 }
 
-function EvidencePicker({ files, onFiles }: { files: File[]; onFiles: (files: File[]) => void }) {
-  return (
-    <section
-      className="card pad"
-      onDragOver={(event) => event.preventDefault()}
-      onDrop={(event) => {
-        event.preventDefault()
-        onFiles([...files, ...Array.from(event.dataTransfer.files)])
-      }}
-    >
-      <p><b>Please upload any supporting evidence here</b></p>
-      <input
-        type="file"
-        accept=".jpg,.jpeg,.png,.heic,.pdf,image/jpeg,image/png,image/heic,application/pdf"
-        multiple
-        onChange={(event) => onFiles([...files, ...Array.from(event.target.files || [])])}
-      />
-      {files.map((file) => (
-        <p key={file.name} className="muted small">{file.name} · {(file.size / 1024 / 1024).toFixed(1)} MB</p>
-      ))}
-    </section>
-  )
+const MATERIAL_UNITS: Unit[] = ['m', 'box', 'kg', 'no']
+
+function splitMaterialQuantity(line: VariationMaterialLine): MaterialLine {
+  const raw = line.quantity.trim()
+  const match = raw.match(/^(.*\d)\s*(m|box|kg)$/i)
+  const unit = match?.[2]?.toLowerCase()
+  if (!match || (unit !== 'm' && unit !== 'box' && unit !== 'kg')) {
+    return { id: line.id, name: line.name, quantity: raw, unit: 'no' }
+  }
+  return { id: line.id, name: line.name, quantity: match[1].trim(), unit }
+}
+
+function materialQuantity(line: MaterialLine): string {
+  const qty = line.quantity.trim()
+  if (!qty || line.unit === 'no') return qty
+  if (qty.toLowerCase().endsWith(line.unit)) return qty
+  return `${qty}${line.unit}`
 }
 
 function VariationDrawer({

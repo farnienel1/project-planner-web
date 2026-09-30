@@ -137,8 +137,8 @@ export function bookingMatchesPerson(
   booking: { userId?: string; operativeId?: string },
   person: AnnualLeavePerson
 ): boolean {
-  if (person.userId && booking.userId === person.userId) return true
-  if (person.operativeId && booking.operativeId === person.operativeId) return true
+  if (person.userId && (booking.userId === person.userId || booking.operativeId === person.userId)) return true
+  if (person.operativeId && (booking.operativeId === person.operativeId || booking.userId === person.operativeId)) return true
   return false
 }
 

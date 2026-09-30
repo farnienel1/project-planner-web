@@ -235,8 +235,13 @@ export function ProjectSiteAuditSection({ project }: { project: Project }) {
               {selectedAudit.items.map((item) => (
                 <div key={item.id} className="rounded-xl border border-slate-100 bg-slate-50 p-3">
                   <p className="text-sm font-semibold text-slate-900">{item.title}</p>
+                  <p className="text-[11px] font-semibold text-slate-500">
+                    Taken {format(item.createdAt, 'd MMM yyyy, HH:mm')}
+                  </p>
                   {item.location && <p className="text-xs text-slate-500">{item.location}</p>}
+                  {item.assignee ? <p className="text-xs text-slate-500">{item.assignee}</p> : null}
                   {item.comments && <p className="mt-1 text-sm text-slate-600">{item.comments}</p>}
+                  {item.annotations ? <p className="mt-1 text-xs text-slate-500">{item.annotations}</p> : null}
                   {item.imageURL && (
                     <a href={item.imageURL} target="_blank" rel="noreferrer" className="mt-2 block">
                       <img src={item.imageURL} alt="" className="max-h-40 rounded-lg object-cover" />

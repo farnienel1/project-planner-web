@@ -9,6 +9,7 @@ import { create } from 'zustand'
 import { doc, getDoc, setDoc, Timestamp, updateDoc } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
 import { parseFirestoreDate } from '@/lib/firebase/firestoreUtils'
+import { withTimeout } from '@/lib/client/withTimeout'
 import { asUppercaseUuid } from '@/lib/ios-parity/uuid'
 import { deadlinesSettingsDocId, parseDeadline, serializeDeadline } from '@/lib/deadlines/codec'
 import { mergeDeadlinesFirstWriterWins } from '@/lib/deadlines/logic'
@@ -122,27 +123,33 @@ export const useDeadlineStore = create<DeadlineState>((set, get) => ({
       let itemsToWrite = items
       const base = get().updatedAt
       if (base) {
-        const remoteSnap = await getDoc(ref)
-        const remoteUpdated = remoteSnap.exists() ? parseFirestoreDate(remoteSnap.data()?.updatedAt) : null
-        if (remoteUpdated && remoteUpdated.getTime() > base.getTime() + FWW_GRACE_MS) {
-          const raw = Array.isArray(remoteSnap.data()?.items) ? remoteSnap.data()?.items : []
-          const remoteItems = (raw as unknown[])
-            .map((row) => (row && typeof row === 'object' ? parseDeadline(row as Record<string, unknown>, projectId) : null))
-            .filter((row): row is Deadline => row !== null)
-          itemsToWrite = mergeDeadlinesFirstWriterWins(remoteItems, items)
+        const remoteSnap = await withTimeout(getDoc(ref), 8_000, 'deadline-remote').catch(() => null)
+        if (remoteSnap && remoteSnap.exists()) {
+          const remoteUpdated = parseFirestoreDate(remoteSnap.data()?.updatedAt)
+          if (remoteUpdated && remoteUpdated.getTime() > base.getTime() + FWW_GRACE_MS) {
+            const raw = Array.isArray(remoteSnap.data()?.items) ? remoteSnap.data()?.items : []
+            const remoteItems = (raw as unknown[])
+              .map((row) => (row && typeof row === 'object' ? parseDeadline(row as Record<string, unknown>, projectId) : null))
+              .filter((row): row is Deadline => row !== null)
+            itemsToWrite = mergeDeadlinesFirstWriterWins(remoteItems, items)
+          }
         }
       }
-      await setDoc(
-        ref,
-        {
-          items: itemsToWrite.map(serializeDeadline),
-          updatedAt: Timestamp.now(),
-          projectId: asUppercaseUuid(projectId),
-        },
-        { merge: true }
+      await withTimeout(
+        setDoc(
+          ref,
+          {
+            items: itemsToWrite.map(serializeDeadline),
+            updatedAt: Timestamp.now(),
+            projectId: asUppercaseUuid(projectId),
+          },
+          { merge: true }
+        ),
+        20_000,
+        'Could not save the deadline. Check your connection and try again.'
       )
       const assigneeIds = Array.from(new Set(itemsToWrite.flatMap((item) => item.assigneeUserIds))).sort()
-      await writeAssignments(organizationId, projectId, assigneeIds)
+      void writeAssignments(organizationId, projectId, assigneeIds).catch(() => {})
       const updatedAt = new Date()
       if (get().projectKey === projectKey) {
         set({ items: itemsToWrite, updatedAt, loaded: true, saving: false })
