@@ -124,13 +124,15 @@ export const useDeadlineStore = create<DeadlineState>((set, get) => ({
       const base = get().updatedAt
       if (base) {
         const remoteSnap = await withTimeout(getDoc(ref), 8_000, 'deadline-remote').catch(() => null)
-        const remoteUpdated = remoteSnap?.exists() ? parseFirestoreDate(remoteSnap.data()?.updatedAt) : null
-        if (remoteUpdated && remoteUpdated.getTime() > base.getTime() + FWW_GRACE_MS) {
-          const raw = Array.isArray(remoteSnap.data()?.items) ? remoteSnap.data()?.items : []
-          const remoteItems = (raw as unknown[])
-            .map((row) => (row && typeof row === 'object' ? parseDeadline(row as Record<string, unknown>, projectId) : null))
-            .filter((row): row is Deadline => row !== null)
-          itemsToWrite = mergeDeadlinesFirstWriterWins(remoteItems, items)
+        if (remoteSnap && remoteSnap.exists()) {
+          const remoteUpdated = parseFirestoreDate(remoteSnap.data()?.updatedAt)
+          if (remoteUpdated && remoteUpdated.getTime() > base.getTime() + FWW_GRACE_MS) {
+            const raw = Array.isArray(remoteSnap.data()?.items) ? remoteSnap.data()?.items : []
+            const remoteItems = (raw as unknown[])
+              .map((row) => (row && typeof row === 'object' ? parseDeadline(row as Record<string, unknown>, projectId) : null))
+              .filter((row): row is Deadline => row !== null)
+            itemsToWrite = mergeDeadlinesFirstWriterWins(remoteItems, items)
+          }
         }
       }
       await withTimeout(

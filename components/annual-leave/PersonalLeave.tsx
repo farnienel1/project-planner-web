@@ -206,11 +206,13 @@ export function PersonalLeave({
     }
     setEditDay(null)
     setNotice(null)
-    setPicks((current) =>
-      current.some((pick) => isSameDay(pick.day, day))
-        ? current.filter((pick) => !isSameDay(pick.day, day))
-        : [...current, { day, slot: 'FULL DAY' }].sort((a, b) => a.day.getTime() - b.day.getTime())
-    )
+    setPicks((current) => {
+      if (current.some((pick) => isSameDay(pick.day, day))) {
+        return current.filter((pick) => !isSameDay(pick.day, day))
+      }
+      const added: DayPick = { day, slot: 'FULL DAY' }
+      return [...current, added].sort((a, b) => a.day.getTime() - b.day.getTime())
+    })
   }
 
   const submit = async () => {
