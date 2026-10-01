@@ -66,6 +66,9 @@ export function firestoreValue(value: unknown): Record<string, unknown> {
   }
   if (typeof value === 'string') return { stringValue: value }
   if (value instanceof Date) return { timestampValue: value.toISOString() }
+  if (Array.isArray(value)) {
+    return { arrayValue: { values: value.map((item) => firestoreValue(item)) } }
+  }
   if (typeof value === 'object') {
     return {
       mapValue: {
