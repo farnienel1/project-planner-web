@@ -8,6 +8,7 @@ import {
   retainLoadedRows,
   retainParsedRows,
   retainScopedRows,
+  rosterParseRecord,
   userFromRosterRecord,
 } from './rosterRetain.ts'
 import { UserRole, type User, type UserPermissions } from '../../types/index.ts'
@@ -156,6 +157,29 @@ test('an admin stays on the admins tab when operativeMode is also set', () => {
   assert.equal(parsed.value.permissions.adminAccess, true)
   assert.equal(parsed.value.permissions.operativeMode, false)
   assert.equal(classifyManageUsersTab(parsed.value), 'admins')
+})
+
+test('a user document with no organisation id still belongs to the company that listed them', () => {
+  const prepared = rosterParseRecord(
+    { email: 'ollie@site.com', firstName: 'Ollie', surname: 'Site', isActive: false },
+    'org'
+  )
+  assert.ok(prepared)
+  const parsed = parseAppUserDocument('op', prepared!)
+  assert.equal(parsed.ok, true)
+  if (!parsed.ok) return
+  assert.equal(parsed.value.organizationId, 'org')
+  assert.equal(parsed.value.isActive, false)
+  assert.equal(parsed.value.permissions.operativeMode, false)
+  assert.equal(classifyManageUsersTab(parsed.value), 'operatives')
+})
+
+test('a user document from another organisation is not pulled in by a loose match', () => {
+  assert.equal(rosterParseRecord({ email: 'ada@site.com', organizationId: 'other' }, 'org'), null)
+  const named = rosterParseRecord({ email: 'ada@site.com', organizationId: 'other', isSuperAdmin: true }, 'org', {
+    allowNamedOrg: true,
+  })
+  assert.equal(named?.organizationId, 'other')
 })
 
 test('an inactive account stays inactive', () => {

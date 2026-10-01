@@ -9,9 +9,9 @@ export function classifyManageUsersTab(user: User): ManageUsersTab | null {
   if (user.isSuperAdmin || user.permissions.adminAccess || user.role === 'admin') return 'admins'
   if (user.permissions.operativeMode) return 'operatives'
   if (user.permissions.manager) return 'managers'
-  // Pending invites without role flags yet — same bucket as iOS operative invites
-  if (!user.passwordSet) return 'operatives'
-  return null
+  // Pending invites and existing accounts with no role flags still have to appear.
+  // Admins are already returned above, so this cannot move a super admin onto Operatives.
+  return 'operatives'
 }
 
 export function filterUsersForManageTab(users: User[], tab: ManageUsersTab): User[] {
