@@ -37,6 +37,14 @@ function user(partial: Partial<User> & Pick<User, 'id' | 'email' | 'firstName'>)
   }
 }
 
+test('a person with no email address is still kept on the roster', () => {
+  const kept = dedupeUsersByEmail([
+    user({ id: 'op', email: '', firstName: 'Ollie', permissions: { ...emptyPermissions, operativeMode: true } }),
+  ])
+  assert.equal(kept.length, 1)
+  assert.equal(kept[0].id, 'op')
+})
+
 test('a freshly deactivated account wins over an older active duplicate', () => {
   const olderActive = user({
     id: 'old',

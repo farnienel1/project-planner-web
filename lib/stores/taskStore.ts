@@ -8,6 +8,7 @@ import { newUuid, parseFirestoreDate, parseOptionalString, parseString, sanitize
 import { trackEvent } from '@/lib/analytics/trackEvent'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { invalidateOrgLoad, runOrgLoad } from '@/lib/stores/orgLoadCache'
+import { markRowsRemoved, retainScopedRows } from '@/lib/staff/rosterRetain'
 
 function mapTask(docId: string, data: Record<string, unknown>, organizationId: string): ProjectTask {
   return {
@@ -116,6 +117,8 @@ interface TaskState {
   deleteTask: (organizationId: string, taskId: string) => Promise<void>
 }
 
+let tasksOrgId = ''
+
 export const useTaskStore = create<TaskState>((set, get) => ({
   tasks: [],
   loading: false,
@@ -126,9 +129,12 @@ export const useTaskStore = create<TaskState>((set, get) => ({
       set({ loading: get().tasks.length === 0, error: null })
       try {
         const snapshot = await getDocs(collection(db, 'organizations', organizationId, 'tasks'))
-        const tasks = snapshot.docs.map((entry) =>
+        const mapped = snapshot.docs.map((entry) =>
           mapTask(entry.id, entry.data() as Record<string, unknown>, organizationId)
         )
+        const previous = tasksOrgId === organizationId ? get().tasks : []
+        const tasks = retainScopedRows(`tasks:${organizationId}`, previous, mapped)
+        tasksOrgId = organizationId
         set({ tasks, loading: false })
       } catch (error: unknown) {
         set({ error: error instanceof Error ? error.message : 'Failed to load tasks', loading: false })
@@ -162,6 +168,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
   deleteTask: async (organizationId, taskId) => {
     const existing = get().tasks.find((row) => row.id === taskId)
     await deleteDoc(doc(db, 'organizations', organizationId, 'tasks', taskId))
+    markRowsRemoved(`tasks:${organizationId}`, [taskId])
     invalidateOrgLoad('taskStore:tasks')
     set({ tasks: get().tasks.filter((t) => t.id !== taskId) })
     void trackEvent('task_deleted', {

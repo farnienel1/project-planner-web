@@ -13,6 +13,7 @@ import {
 import { db } from '@/lib/firebase/config'
 import type { OrgCollectionKey } from '@/lib/firebase/orgCollections'
 import { ORG_COLLECTIONS } from '@/lib/firebase/orgCollections'
+import { markRowsRemoved, retainScopedRows } from '@/lib/staff/rosterRetain'
 
 export type CatalogRecord = {
   id: string
@@ -76,6 +77,8 @@ function mapDoc(id: string, data: Record<string, unknown>): CatalogRecord {
   }
 }
 
+let catalogScope = ''
+
 export const useCatalogStore = create<CatalogState>((set, get) => ({
   records: [],
   loading: false,
@@ -91,7 +94,11 @@ export const useCatalogStore = create<CatalogState>((set, get) => ({
         mapDoc(item.id, item.data() as Record<string, unknown>)
       )
       records.sort((a, b) => a.name.localeCompare(b.name))
-      set({ records, loading: false })
+      const scope = `${organizationId}:${collectionKey}`
+      const previous = catalogScope === scope ? get().records : []
+      const kept = retainScopedRows(`catalog:${scope}`, previous, records)
+      catalogScope = scope
+      set({ records: kept, loading: false })
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Failed to load data'
       set({ error: message, loading: false })
@@ -136,6 +143,7 @@ export const useCatalogStore = create<CatalogState>((set, get) => ({
     const collectionName = ORG_COLLECTIONS[collectionKey]
     const docRef = doc(db, 'organizations', organizationId, collectionName, id)
     await deleteDoc(docRef)
+    markRowsRemoved(`catalog:${organizationId}:${collectionKey}`, [id])
     set({ records: get().records.filter((record) => record.id !== id) })
   },
 }))

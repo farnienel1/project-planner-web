@@ -39,9 +39,9 @@ export function dedupeUsersByEmail(users: User[]): User[] {
   const byEmail = new Map<string, User>()
   for (const user of users) {
     const email = normalizeEmail(user.email)
-    if (!email) continue
-    const existing = byEmail.get(email)
-    byEmail.set(email, existing ? choosePreferredUser(existing, user) : user)
+    const key = email || `id:${user.id}`
+    const existing = byEmail.get(key)
+    byEmail.set(key, existing ? choosePreferredUser(existing, user) : user)
   }
   return Array.from(byEmail.values())
 }
