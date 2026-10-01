@@ -1,10 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import {
-  InterestAdminUnavailable,
-  addInterestNoteAdmin,
-  deleteInterestRegistrationAdmin,
-  setInterestStatusAdmin,
-} from '@/lib/interest/adminStore'
+import { InterestAdminUnavailable } from '@/lib/interest/adminStore'
+import { removeInterestRegistration, updateInterestNote, updateInterestStatus } from '@/lib/interest/repository'
 import { INTEREST_STATUSES, type InterestStatus } from '@/lib/interest/registration'
 import { requireOwner } from '@/lib/owner/requireOwner'
 import { isFirebaseUser, jsonError, readJsonBody } from '@/lib/security/apiGuard'
@@ -27,10 +23,10 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
       if (!(INTEREST_STATUSES as readonly string[]).includes(body.value.status)) {
         return jsonError('Unknown registration status.', 400)
       }
-      await setInterestStatusAdmin(id, body.value.status as InterestStatus)
+      await updateInterestStatus(id, body.value.status as InterestStatus)
     }
     if (typeof body.value.note === 'string' && body.value.note.trim()) {
-      await addInterestNoteAdmin(id, body.value.note, body.value.authorName || owner.email || 'Owner')
+      await updateInterestNote(id, body.value.note, body.value.authorName || owner.email || 'Owner')
     }
     return NextResponse.json({ ok: true })
   } catch (error) {
@@ -48,7 +44,7 @@ export async function DELETE(request: NextRequest, context: { params: Promise<{ 
   const id = cleanId((await context.params).id)
   if (!id) return jsonError('That registration is not on the list.', 404)
   try {
-    await deleteInterestRegistrationAdmin(id)
+    await removeInterestRegistration(id)
     return NextResponse.json({ ok: true })
   } catch (error) {
     if (error instanceof InterestAdminUnavailable) {

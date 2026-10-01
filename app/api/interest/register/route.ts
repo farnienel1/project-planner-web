@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { InterestAdminUnavailable, createInterestRegistration } from '@/lib/interest/adminStore'
+import { InterestAdminUnavailable } from '@/lib/interest/adminStore'
+import { saveInterestRegistration } from '@/lib/interest/repository'
 import { sendInterestEmails } from '@/lib/interest/notifyEmail'
 import { buildInterestDraft } from '@/lib/interest/registration'
 import { enforceRateLimit, jsonError, readJsonBody } from '@/lib/security/apiGuard'
@@ -37,7 +38,7 @@ export async function POST(request: NextRequest) {
   if (!built.ok) return jsonError('Check the form and try again.', 400)
   if (built.silent) return NextResponse.json({ ok: true })
   try {
-    const id = await createInterestRegistration(built.draft)
+    const id = await saveInterestRegistration(built.draft)
     if (process.env.NODE_ENV === 'production' || !process.env.FIRESTORE_EMULATOR_HOST) {
       await sendInterestEmails(built.draft).catch((error) => {
         console.error('[interest] email failed after save', error)
