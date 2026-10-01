@@ -3,9 +3,10 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { addDoc, collection, serverTimestamp } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
+import { INTEREST_INBOX } from '@/lib/interest/inbox'
 import { trackEvent } from '@/lib/analytics/trackEvent'
 import { useAuthStore } from '@/lib/stores/authStore'
-import { buildInterestDraft, type InterestFieldErrors } from '@/lib/interest/registration'
+import { buildInterestDraft, type InterestDraft, type InterestFieldErrors } from '@/lib/interest/registration'
 
 const ROLES = [
   'Owner / Director',
@@ -31,6 +32,26 @@ const CURRENT_TOOLS = [
 
 const SUBMIT_KEY = 'pp_interest_submitted_at'
 const COOLDOWN_MS = 60_000
+
+async function saveInterestRegistration(draft: InterestDraft): Promise<boolean> {
+  const response = await fetch('/api/interest/register', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(draft),
+  })
+  if (response.ok) return true
+  if (response.status !== 503 || !db) return false
+  await addDoc(collection(db, 'interestRegistrations'), {
+    ...draft,
+    createdAt: serverTimestamp(),
+  })
+  void fetch('/api/interest/notify', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(draft),
+  }).catch(() => {})
+  return true
+}
 
 const field =
   'w-full rounded-2xl border border-[var(--line)] bg-[var(--soft)] px-3.5 py-3.5 text-base text-[var(--ink)] outline-none focus:border-[var(--blue)] focus:bg-[var(--card)]'
@@ -119,26 +140,18 @@ export function RegisterInterestForm() {
     } catch {
       /* private browsing */
     }
-    if (!db) {
-      setFailed(true)
-      return
-    }
     setSending(true)
     try {
-      await addDoc(collection(db, 'interestRegistrations'), {
-        ...built.draft,
-        createdAt: serverTimestamp(),
-      })
+      const saved = await saveInterestRegistration(built.draft)
+      if (!saved) {
+        setFailed(true)
+        return
+      }
       try {
         window.localStorage.setItem(SUBMIT_KEY, String(Date.now()))
       } catch {
         /* ignore */
       }
-      void fetch('/api/interest/notify', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(built.draft),
-      }).catch(() => {})
       void trackEvent('interest_registered', {
         userId: user?.id,
         organizationId: user?.organizationId,
@@ -181,8 +194,8 @@ export function RegisterInterestForm() {
           </div>
           <p className="mt-4 text-sm text-[var(--ink2)]">
             Can&rsquo;t wait? Email{' '}
-            <a href="mailto:support@projectplanner.us" className="font-semibold text-[var(--blue)]">
-              support@projectplanner.us
+            <a href={`mailto:${INTEREST_INBOX}`} className="font-semibold text-[var(--blue)]">
+              {INTEREST_INBOX}
             </a>
             .
           </p>
@@ -293,8 +306,8 @@ export function RegisterInterestForm() {
         {failed ? (
           <p role="alert" className="mt-3 rounded-2xl bg-[var(--red-t)] px-3.5 py-3 text-[13.5px] text-[var(--ink2)]">
             <b className="text-[var(--red)]">That didn&rsquo;t send.</b> Please try again, or email{' '}
-            <a href="mailto:support@projectplanner.us" className="font-semibold text-[var(--blue)]">
-              support@projectplanner.us
+            <a href={`mailto:${INTEREST_INBOX}`} className="font-semibold text-[var(--blue)]">
+              {INTEREST_INBOX}
             </a>{' '}
             and we&rsquo;ll pick it up from there.
           </p>

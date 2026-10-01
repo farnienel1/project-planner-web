@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { InterestAdminUnavailable } from '@/lib/interest/adminStore'
+import { saveInterestRegistration } from '@/lib/interest/repository'
 import { sendInterestEmails } from '@/lib/interest/notifyEmail'
 import { buildInterestDraft } from '@/lib/interest/registration'
 import { enforceRateLimit, jsonError, readJsonBody } from '@/lib/security/apiGuard'
@@ -10,7 +12,7 @@ function text(value: unknown): string {
 }
 
 export async function POST(request: NextRequest) {
-  const limited = enforceRateLimit(request, 'interest-notify', 8, 60 * 60 * 1000)
+  const limited = enforceRateLimit(request, 'interest-register', 8, 60 * 60 * 1000)
   if (limited) return limited
   const body = await readJsonBody<Record<string, unknown>>(request)
   if (!body.ok) return body.response
@@ -33,8 +35,21 @@ export async function POST(request: NextRequest) {
     pagePath: text(body.value.pagePath),
     userAgent: text(body.value.userAgent),
   })
-  if (!built.ok) return jsonError('That registration could not be emailed.', 400)
+  if (!built.ok) return jsonError('Check the form and try again.', 400)
   if (built.silent) return NextResponse.json({ ok: true })
-  await sendInterestEmails(built.draft)
-  return NextResponse.json({ ok: true })
+  try {
+    const id = await saveInterestRegistration(built.draft)
+    if (process.env.NODE_ENV === 'production' || !process.env.FIRESTORE_EMULATOR_HOST) {
+      await sendInterestEmails(built.draft).catch((error) => {
+        console.error('[interest] email failed after save', error)
+      })
+    }
+    return NextResponse.json({ ok: true, id })
+  } catch (error) {
+    if (error instanceof InterestAdminUnavailable) {
+      return jsonError('Registration storage is not configured.', 503)
+    }
+    console.error('[interest] save failed', error)
+    return jsonError("That didn't send.", 500)
+  }
 }
