@@ -167,8 +167,8 @@ export default function RegisterInterestPage() {
           <Link href="/privacy" className="text-[var(--ink2)]">
             Privacy
           </Link>
-          <a href="mailto:support@projectplanner.us" className="text-[var(--ink2)]">
-            support@projectplanner.us
+          <a href="mailto:info@projectplanner.us" className="text-[var(--ink2)]">
+            info@projectplanner.us
           </a>
         </div>
       </footer>
