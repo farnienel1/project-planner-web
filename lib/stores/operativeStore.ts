@@ -16,8 +16,13 @@ import type { Operative, Manager, Skill, Qualification } from '@/types'
 import { filterRealManagers, isPlaceholderManager } from '@/lib/staff/managerRosterUtils'
 import { runOrgLoad, invalidateOrgLoad } from '@/lib/stores/orgLoadCache'
 import { parseManager, parseOperative, serializeManager, serializeOperative } from '@/lib/ios-parity/converters'
+import { markRowsRemoved, retainScopedRows } from '@/lib/staff/rosterRetain'
 
 const OPERATIVES_KEY = 'operativeStore:operatives'
+let operativesOrgId = ''
+let managersOrgId = ''
+let skillsOrgId = ''
+let qualificationsOrgId = ''
 
 /** Bumped around each operative write so an older roster fetch cannot put the previous certificate back. */
 let operativeMutationEpoch = 0
@@ -70,10 +75,13 @@ export const useOperativeStore = create<OperativeState>((set, get) => ({
             set({ loading: false })
             return
           }
-          const operatives = snapshot.docs.flatMap((entry) => {
+          const mapped = snapshot.docs.flatMap((entry) => {
             const parsed = parseOperative(entry.id, entry.data() as Record<string, unknown>, organizationId)
             return parsed.ok ? [parsed.value] : []
           })
+          const previous = operativesOrgId === organizationId ? get().operatives : []
+          const operatives = retainScopedRows(`operatives:${organizationId}`, previous, mapped)
+          operativesOrgId = organizationId
           set({ operatives, loading: false })
         } catch (error: unknown) {
           set({
@@ -96,8 +104,12 @@ export const useOperativeStore = create<OperativeState>((set, get) => ({
         const parsed = parseManager(entry.id, entry.data() as Record<string, unknown>, organizationId)
         return parsed.ok ? [parsed.value] : []
       })
+      const realManagers = filterRealManagers(allManagers)
+      const previous = managersOrgId === organizationId ? get().managers : []
+      const managers = retainScopedRows(`managers:${organizationId}`, previous, realManagers)
+      managersOrgId = organizationId
       set({
-        managers: filterRealManagers(allManagers),
+        managers,
         placeholderManagerCount: allManagers.filter(isPlaceholderManager).length,
       })
     } catch (error: unknown) {
@@ -121,7 +133,10 @@ export const useOperativeStore = create<OperativeState>((set, get) => ({
           updatedAt: data.updatedAt?.toDate() || new Date(),
         }
       }) as Skill[]
-      set({ skills })
+      const previous = skillsOrgId === organizationId ? get().skills : []
+      const kept = retainScopedRows(`skills:${organizationId}`, previous, skills)
+      skillsOrgId = organizationId
+      set({ skills: kept })
     } catch (error: any) {
       set({ error: error.message })
     }
@@ -141,7 +156,10 @@ export const useOperativeStore = create<OperativeState>((set, get) => ({
           updatedAt: data.updatedAt?.toDate() || new Date(),
         } as Qualification
       })
-      set({ qualifications })
+      const previous = qualificationsOrgId === organizationId ? get().qualifications : []
+      const kept = retainScopedRows(`qualifications:${organizationId}`, previous, qualifications)
+      qualificationsOrgId = organizationId
+      set({ qualifications: kept })
     } catch (error: any) {
       set({ error: error.message })
     }
@@ -248,6 +266,7 @@ export const useOperativeStore = create<OperativeState>((set, get) => ({
     try {
       const operativeRef = doc(db, 'organizations', organizationId, 'operatives', id)
       await deleteDoc(operativeRef)
+      markRowsRemoved(`operatives:${organizationId}`, [id])
       set({ operatives: operatives.filter(o => o.id !== id) })
     } catch (error: any) {
       set({ error: error.message })
@@ -257,6 +276,7 @@ export const useOperativeStore = create<OperativeState>((set, get) => ({
   
   deleteManager: async (id, organizationId) => {
     await deleteDoc(doc(db, 'organizations', organizationId, 'managers', id))
+    markRowsRemoved(`managers:${organizationId}`, [id])
     invalidateOrgLoad('operativeStore:managers')
     set({ managers: get().managers.filter((m) => m.id !== id) })
   },
@@ -279,6 +299,7 @@ export const useOperativeStore = create<OperativeState>((set, get) => ({
     for (const id of placeholderIds) {
       await deleteDoc(doc(db, 'organizations', organizationId, 'managers', id))
     }
+    markRowsRemoved(`managers:${organizationId}`, placeholderIds)
 
     await get().loadManagers(organizationId)
     return placeholderIds.length

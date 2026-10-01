@@ -126,6 +126,11 @@ export function asBool(value: unknown, fallback: boolean): boolean {
   return typeof value === 'boolean' ? value : fallback
 }
 
+/** Missing `passwordSet` is an existing account. Only an explicit false is a pending invite. */
+export function passwordSetFromDocument(value: unknown): boolean {
+  return value !== false
+}
+
 export function asStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) return []
   return value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)

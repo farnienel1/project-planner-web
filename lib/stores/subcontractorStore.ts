@@ -12,6 +12,7 @@ import {
 import { db } from '@/lib/firebase/config'
 import type { Subcontractor, SubcontractorContact } from '@/types'
 import { newUuid, parseFirestoreDate, parseOptionalString, parseString, parseUuid } from '@/lib/firebase/firestoreUtils'
+import { markRowsRemoved, retainScopedRows } from '@/lib/staff/rosterRetain'
 
 function parseContacts(rows: unknown): SubcontractorContact[] {
   if (!Array.isArray(rows)) return []
@@ -88,6 +89,8 @@ interface SubcontractorState {
   deleteSubcontractor: (organizationId: string, id: string) => Promise<void>
 }
 
+let subcontractorOrgId = ''
+
 export const useSubcontractorStore = create<SubcontractorState>((set, get) => ({
   subcontractors: [],
   loading: false,
@@ -102,7 +105,10 @@ export const useSubcontractorStore = create<SubcontractorState>((set, get) => ({
         .map((entry) => mapSubcontractor(entry.id, entry.data() as Record<string, unknown>))
         .filter((item): item is Subcontractor => item !== null)
         .sort((a, b) => a.name.localeCompare(b.name))
-      set({ subcontractors, loading: false })
+      const previous = subcontractorOrgId === organizationId ? get().subcontractors : []
+      const kept = retainScopedRows(`subcontractors:${organizationId}`, previous, subcontractors)
+      subcontractorOrgId = organizationId
+      set({ subcontractors: kept, loading: false })
     } catch (error: unknown) {
       set({ error: error instanceof Error ? error.message : 'Failed to load subcontractors', loading: false })
     }
@@ -124,6 +130,7 @@ export const useSubcontractorStore = create<SubcontractorState>((set, get) => ({
 
   deleteSubcontractor: async (organizationId, id) => {
     await deleteDoc(doc(db, 'organizations', organizationId, 'subcontractors', id))
+    markRowsRemoved(`subcontractors:${organizationId}`, [id])
     set({ subcontractors: get().subcontractors.filter((s) => s.id !== id) })
   },
 }))

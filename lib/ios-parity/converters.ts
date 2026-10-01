@@ -36,6 +36,7 @@ import {
 import {
   IosWriteValidationError,
   asBool,
+  passwordSetFromDocument,
   asDate,
   asNumber,
   asClockHhMm,
@@ -197,7 +198,7 @@ export function parseAppUserDocument(userId: string, data: Record<string, unknow
     organizationId,
     role,
     isActive: asBool(data.isActive, true),
-    passwordSet: asBool(data.passwordSet, false),
+    passwordSet: passwordSetFromDocument(data.passwordSet),
     isSuperAdmin,
     mobileNumber: asOptionalString(data.mobileNumber),
     permissions,
