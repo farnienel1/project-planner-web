@@ -17,6 +17,7 @@
   "dependencies": {
     "@headlessui/react": "^1.7.17",
     "@heroicons/react": "^2.1.1",
+    "@netlify/blobs": "^10.7.13",
     "@stripe/stripe-js": "^9.8.0",
     "clsx": "^2.1.0",
     "date-fns": "^3.0.6",
