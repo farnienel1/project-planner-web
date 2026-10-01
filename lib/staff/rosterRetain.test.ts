@@ -1,14 +1,15 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { parseAppUserDocument } from '../ios-parity/converters.ts'
+import { classifyManageUsersTab } from './manageUsersUtils.ts'
 import {
   markRowsRemoved,
   mergeRetainedRoster,
   retainLoadedRows,
   retainParsedRows,
   retainScopedRows,
+  rosterParseRecord,
   userFromRosterRecord,
-  withRosterMembership,
 } from './rosterRetain.ts'
 import { UserRole, type User, type UserPermissions } from '../../types/index.ts'
 
@@ -129,15 +130,71 @@ test('an in-app delete stays gone and an empty refresh keeps everyone else', () 
   assert.deepEqual(kept, [{ id: 'b2' }])
 })
 
-test('a managers record restores list membership when the user document lost the flag', () => {
-  const stripped = user({
-    id: 'mgr',
-    email: 'mo@site.com',
-    firstName: 'Mo',
-    role: UserRole.OPERATIVE,
-    permissions: { ...permissions, adminAccess: false, manager: false, operativeMode: false },
+test('an admin stays on the admins tab when operativeMode is also set', () => {
+  const admin = user({
+    id: 'admin',
+    email: 'ada@site.com',
+    firstName: 'Ada',
+    role: UserRole.ADMIN,
+    isSuperAdmin: true,
+    permissions: { ...permissions, adminAccess: true, manager: true, operativeMode: true },
   })
-  const restored = withRosterMembership(stripped, 'manager')
-  assert.equal(restored.permissions.manager, true)
-  assert.equal(restored.email, 'mo@site.com')
+  assert.equal(classifyManageUsersTab(admin), 'admins')
+  const parsed = parseAppUserDocument('admin', {
+    email: 'ada@site.com',
+    organizationId: 'org',
+    firstName: 'Ada',
+    surname: 'Admin',
+    role: 'admin',
+    isSuperAdmin: true,
+    adminAccess: true,
+    operativeMode: true,
+    isActive: true,
+  })
+  assert.equal(parsed.ok, true)
+  if (!parsed.ok) return
+  assert.equal(parsed.value.isSuperAdmin, true)
+  assert.equal(parsed.value.permissions.adminAccess, true)
+  assert.equal(parsed.value.permissions.operativeMode, false)
+  assert.equal(classifyManageUsersTab(parsed.value), 'admins')
+})
+
+test('a user document with no organisation id still belongs to the company that listed them', () => {
+  const prepared = rosterParseRecord(
+    { email: 'ollie@site.com', firstName: 'Ollie', surname: 'Site', isActive: false },
+    'org'
+  )
+  assert.ok(prepared)
+  const parsed = parseAppUserDocument('op', prepared!)
+  assert.equal(parsed.ok, true)
+  if (!parsed.ok) return
+  assert.equal(parsed.value.organizationId, 'org')
+  assert.equal(parsed.value.isActive, false)
+  assert.equal(parsed.value.permissions.operativeMode, false)
+  assert.equal(classifyManageUsersTab(parsed.value), 'operatives')
+})
+
+test('a user document from another organisation is not pulled in by a loose match', () => {
+  assert.equal(rosterParseRecord({ email: 'ada@site.com', organizationId: 'other' }, 'org'), null)
+  const named = rosterParseRecord({ email: 'ada@site.com', organizationId: 'other', isSuperAdmin: true }, 'org', {
+    allowNamedOrg: true,
+  })
+  assert.equal(named?.organizationId, 'other')
+})
+
+test('an inactive account stays inactive', () => {
+  const parsed = parseAppUserDocument('op', {
+    email: 'ollie@site.com',
+    organizationId: 'org',
+    firstName: 'Ollie',
+    surname: 'Site',
+    operativeMode: true,
+    isActive: false,
+    passwordSet: true,
+  })
+  assert.equal(parsed.ok, true)
+  if (!parsed.ok) return
+  assert.equal(parsed.value.isActive, false)
+  assert.equal(parsed.value.permissions.operativeMode, true)
+  assert.equal(classifyManageUsersTab(parsed.value), 'operatives')
 })

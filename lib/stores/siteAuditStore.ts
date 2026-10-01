@@ -1,12 +1,12 @@
 'use client'
 
 import { create } from 'zustand'
-import { collection, doc, getDoc, getDocs, query, setDoc, Timestamp, where } from 'firebase/firestore'
+import { collection, doc, getDoc, getDocs, limit, query, setDoc, Timestamp, where } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
-import type { SiteAudit, SiteAuditItem, User } from '@/types'
+import { UserRole, type SiteAudit, type SiteAuditItem, type User } from '@/types'
 import { parseOrgUser } from '@/lib/firebase/parseUser'
 import { dedupeUsersByEmail } from '@/lib/staff/userRosterUtils'
-import { mergeRetainedRoster, retainScopedRows, userFromRosterRecord, withRosterMembership } from '@/lib/staff/rosterRetain'
+import { mergeRetainedRoster, retainScopedRows, rosterParseRecord } from '@/lib/staff/rosterRetain'
 import { runOrgLoad, invalidateOrgLoad } from '@/lib/stores/orgLoadCache'
 import { newUuid, parseFirestoreDate, parseOptionalString, parseString, parseUuid } from '@/lib/firebase/firestoreUtils'
 
@@ -159,6 +159,18 @@ function text(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
 }
 
+function userForThisOrganisation(id: string, data: Record<string, unknown>, organizationId: string, allowNamedOrg = false): User | null {
+  const prepared = rosterParseRecord(data, organizationId, { allowNamedOrg })
+  if (!prepared) return null
+  return mapOrgUser(id, prepared)
+}
+
+function withManagerListHint(user: User): User {
+  if (user.isSuperAdmin || user.permissions.adminAccess || user.role === 'admin') return user
+  if (user.permissions.operativeMode || user.permissions.manager) return user
+  return { ...user, permissions: { ...user.permissions, manager: true } }
+}
+
 async function fetchOrganisationRoster(organizationId: string): Promise<{
   users: User[]
   complete: boolean
@@ -170,46 +182,111 @@ async function fetchOrganisationRoster(organizationId: string): Promise<{
   const presentEmails = new Set<string>()
   let complete = true
 
-  const remember = (user: User | null, rosterKind?: 'operative' | 'manager') => {
+  const remember = (user: User | null) => {
     if (!user) return
     const withOrg = user.organizationId ? user : { ...user, organizationId }
     const email = withOrg.email.trim().toLowerCase()
-    if (rosterKind) {
-      const existing = collected.find(
-        (row) => row.id === withOrg.id || (email !== '' && row.email.trim().toLowerCase() === email)
-      )
-      if (existing) {
-        const patched = withRosterMembership(existing, rosterKind)
-        if (patched !== existing) {
-          const index = collected.indexOf(existing)
-          collected[index] = patched
-        }
-        presentIds.add(withOrg.id)
-        presentIds.add(existing.id)
-        if (email) presentEmails.add(email)
-        return
-      }
+    if (collected.some((row) => row.id === withOrg.id)) {
+      presentIds.add(withOrg.id)
+      if (email) presentEmails.add(email)
+      return
     }
     collected.push(withOrg)
     presentIds.add(withOrg.id)
     if (email) presentEmails.add(email)
   }
 
-  try {
-    const snapshot = await getDocs(query(collection(db, 'users'), where('organizationId', '==', organizationId)))
-    for (const entry of snapshot.docs) remember(mapOrgUser(entry.id, entry.data() as Record<string, unknown>))
-  } catch {
-    complete = false
+  const loadUserDocument = async (id: string, allowNamedOrg = false): Promise<User | null> => {
+    if (!id) return null
+    try {
+      const snap = await getDoc(doc(db, 'users', id))
+      if (!snap.exists()) return null
+      return userForThisOrganisation(snap.id, snap.data() as Record<string, unknown>, organizationId, allowNamedOrg)
+    } catch {
+      return null
+    }
+  }
+
+  const noteUser = (user: User | null, kind?: 'manager') => {
+    if (!user) return
+    remember(user)
+    if (kind !== 'manager') return
+    const email = user.email.trim().toLowerCase()
+    const index = collected.findIndex(
+      (row) => row.id === user.id || (email !== '' && row.email.trim().toLowerCase() === email)
+    )
+    if (index >= 0) collected[index] = withManagerListHint(collected[index])
+  }
+
+  const userIdForEmail = async (email: string): Promise<string> => {
+    const needle = email.trim().toLowerCase()
+    if (!needle) return ''
+    try {
+      const pointer = await getDoc(doc(db, 'organizations', organizationId, 'userEmails', needle))
+      const userId = pointer.exists() ? text(pointer.data().userId) : ''
+      if (userId) return userId
+    } catch {
+      /* The users query below still runs. */
+    }
+    const variants = email.trim() === needle ? [needle] : [needle, email.trim()]
+    for (const variant of variants) {
+      try {
+        const snapshot = await getDocs(query(collection(db, 'users'), where('email', '==', variant), limit(5)))
+        for (const entry of snapshot.docs) {
+          const user = userForThisOrganisation(entry.id, entry.data() as Record<string, unknown>, organizationId)
+          if (user) return user.id
+        }
+      } catch {
+        /* Try the next spelling. */
+      }
+    }
+    return ''
+  }
+
+  const attachRosterLink = async (entryId: string, data: Record<string, unknown>, kind?: 'manager') => {
+    const email = text(data.email)
+    const linkedIds = [text(data.userId), text(data.userID), text(data.uid), text(data.linkedUserId), entryId].filter(
+      (id, index, all) => id !== '' && all.indexOf(id) === index
+    )
+    for (const id of linkedIds) {
+      const user = await loadUserDocument(id, true)
+      if (!user) continue
+      noteUser(user, kind)
+      return
+    }
+    const userId = await userIdForEmail(email)
+    if (!userId) return
+    noteUser(await loadUserDocument(userId, true), kind)
+  }
+
+  for (const field of ['organizationId', 'organisationId', 'orgId'] as const) {
+    try {
+      const snapshot = await getDocs(query(collection(db, 'users'), where(field, '==', organizationId)))
+      for (const entry of snapshot.docs) {
+        remember(userForThisOrganisation(entry.id, entry.data() as Record<string, unknown>, organizationId, true))
+      }
+    } catch {
+      complete = false
+    }
   }
 
   try {
     const orgSnap = await getDoc(doc(db, 'organizations', organizationId))
     const members = (orgSnap.data()?.members ?? {}) as Record<string, unknown>
-    const missingIds = Object.keys(members).filter((id) => id && !presentIds.has(id))
-    const memberDocs = await Promise.all(missingIds.map((id) => getDoc(doc(db, 'users', id)).catch(() => null)))
-    for (const snap of memberDocs) {
-      if (!snap?.exists()) continue
-      remember(mapOrgUser(snap.id, snap.data() as Record<string, unknown>))
+    for (const id of Object.keys(members)) {
+      if (!id || presentIds.has(id)) continue
+      noteUser(await loadUserDocument(id, true))
+    }
+  } catch {
+    complete = false
+  }
+
+  try {
+    const snapshot = await getDocs(collection(db, 'organizations', organizationId, 'userEmails'))
+    for (const entry of snapshot.docs) {
+      const userId = text(entry.data().userId)
+      if (!userId || presentIds.has(userId)) continue
+      noteUser(await loadUserDocument(userId, true))
     }
   } catch {
     complete = false
@@ -218,20 +295,7 @@ async function fetchOrganisationRoster(organizationId: string): Promise<{
   try {
     const snapshot = await getDocs(collection(db, 'organizations', organizationId, 'operatives'))
     for (const entry of snapshot.docs) {
-      const data = entry.data() as Record<string, unknown>
-      remember(
-        userFromRosterRecord({
-          id: entry.id,
-          organizationId,
-          firstName: text(data.firstName),
-          surname: text(data.lastName) || text(data.surname),
-          email: text(data.email),
-          phone: text(data.phone) || text(data.mobileNumber),
-          isActive: data.isActive !== false,
-          kind: 'operative',
-        }),
-        'operative'
-      )
+      await attachRosterLink(entry.id, entry.data() as Record<string, unknown>)
     }
   } catch {
     complete = false
@@ -240,20 +304,7 @@ async function fetchOrganisationRoster(organizationId: string): Promise<{
   try {
     const snapshot = await getDocs(collection(db, 'organizations', organizationId, 'managers'))
     for (const entry of snapshot.docs) {
-      const data = entry.data() as Record<string, unknown>
-      remember(
-        userFromRosterRecord({
-          id: entry.id,
-          organizationId,
-          firstName: text(data.firstName),
-          surname: text(data.lastName) || text(data.surname),
-          email: text(data.email),
-          phone: text(data.phone) || text(data.mobile) || text(data.mobileNumber),
-          isActive: data.isActive !== false,
-          kind: 'manager',
-        }),
-        'manager'
-      )
+      await attachRosterLink(entry.id, entry.data() as Record<string, unknown>, 'manager')
     }
   } catch {
     complete = false
@@ -311,13 +362,25 @@ function readStoredRoster(organizationId: string): User[] {
     if (!raw) return []
     const rows = JSON.parse(raw) as User[]
     if (!Array.isArray(rows)) return []
-    return rows
-      .filter((row) => row && typeof row.id === 'string' && row.organizationId === organizationId)
-      .map((row) => ({
-        ...row,
-        createdAt: new Date(row.createdAt),
-        updatedAt: new Date(row.updatedAt),
-      }))
+    return rows.flatMap((row) => {
+      if (!row || typeof row.id !== 'string' || row.organizationId !== organizationId) return []
+      const createdAt = new Date(row.createdAt)
+      const updatedAt = new Date(row.updatedAt)
+      // Invented roster rows used the epoch. They are not user accounts.
+      if (createdAt.getTime() === 0 && updatedAt.getTime() === 0) return []
+      const permissions = { ...row.permissions }
+      const admin = row.isSuperAdmin || permissions.adminAccess || row.role === 'admin'
+      if (admin) permissions.operativeMode = false
+      return [
+        {
+          ...row,
+          createdAt,
+          updatedAt,
+          permissions,
+          role: admin && row.role === UserRole.OPERATIVE ? UserRole.ADMIN : row.role,
+        },
+      ]
+    })
   } catch {
     return []
   }

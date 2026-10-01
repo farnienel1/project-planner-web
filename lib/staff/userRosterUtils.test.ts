@@ -1,7 +1,13 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { UserRole, type User, type UserPermissions } from '../../types/index.ts'
-import { dedupeUsersByEmail, getVisibilityManagerUsers, getVisibilityOperativeUsers, matchesRosterSegment } from './userRosterUtils.ts'
+import {
+  dedupeUsersByEmail,
+  getOperativeModeUsers,
+  getVisibilityManagerUsers,
+  getVisibilityOperativeUsers,
+  matchesRosterSegment,
+} from './userRosterUtils.ts'
 
 const emptyPermissions: UserPermissions = {
   adminAccess: false,
@@ -36,6 +42,40 @@ function user(partial: Partial<User> & Pick<User, 'id' | 'email' | 'firstName'>)
     permissions: { ...emptyPermissions, ...partial.permissions },
   }
 }
+
+test('operatives list keeps flagless accounts and leaves admins and managers off it', () => {
+  const rows = dedupeUsersByEmail([
+    user({ id: 'admin', email: 'ada@site.com', firstName: 'Ada', role: UserRole.ADMIN, isSuperAdmin: true, permissions: { ...emptyPermissions, adminAccess: true } }),
+    user({ id: 'mgr', email: 'mo@site.com', firstName: 'Mo', permissions: { ...emptyPermissions, manager: true } }),
+    user({ id: 'op', email: 'ollie@site.com', firstName: 'Ollie', permissions: { ...emptyPermissions, operativeMode: true } }),
+    user({ id: 'plain', email: 'pat@site.com', firstName: 'Pat' }),
+  ])
+  const ids = getOperativeModeUsers(rows).map((row) => row.id).sort()
+  assert.deepEqual(ids, ['op', 'plain'])
+})
+
+test('an admin wins over an operative duplicate of the same email', () => {
+  const operative = user({
+    id: 'op-copy',
+    email: 'ada@site.com',
+    firstName: 'Ada',
+    role: UserRole.OPERATIVE,
+    updatedAt: new Date('2026-09-01'),
+    permissions: { ...emptyPermissions, operativeMode: true },
+  })
+  const admin = user({
+    id: 'admin',
+    email: 'ada@site.com',
+    firstName: 'Ada',
+    role: UserRole.ADMIN,
+    isSuperAdmin: true,
+    updatedAt: new Date('2026-01-01'),
+    permissions: { ...emptyPermissions, adminAccess: true },
+  })
+  const [kept] = dedupeUsersByEmail([operative, admin])
+  assert.equal(kept.id, 'admin')
+  assert.equal(kept.permissions.operativeMode, false)
+})
 
 test('a person with no email address is still kept on the roster', () => {
   const kept = dedupeUsersByEmail([

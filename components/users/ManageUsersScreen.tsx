@@ -35,8 +35,8 @@ function displayName(user: User): string {
 }
 
 function avatarGradient(user: User): string {
+  if (user.isSuperAdmin || user.permissions.adminAccess || user.role === 'admin') return 'from-[#4F46E5] to-[#2563EB]'
   if (user.permissions.operativeMode) return 'from-[#16A34A] to-[#0D9488]'
-  if (user.permissions.adminAccess || user.isSuperAdmin) return 'from-[#4F46E5] to-[#2563EB]'
   return 'from-[#2563EB] to-[#3B82F6]'
 }
 
