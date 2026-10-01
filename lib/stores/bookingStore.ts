@@ -3,7 +3,8 @@
 import { create } from 'zustand'
 import { deleteDoc, doc, setDoc } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
-import { isOrgCollectionSubscribed, subscribeOrgCollection } from '@/lib/firebase/subscribeOrgCollection'
+import { forgetOrgCollectionDoc, isOrgCollectionSubscribed, subscribeOrgCollection } from '@/lib/firebase/subscribeOrgCollection'
+import { retainParsedRows } from '@/lib/staff/rosterRetain'
 import { newUppercaseUuid } from '@/lib/ios-parity/uuid'
 import { londonMidnight } from '@/lib/ios-parity/londonTime'
 import { logSkippedDocument, parseBooking, serializeBooking } from '@/lib/ios-parity/converters'
@@ -44,7 +45,7 @@ export const useBookingStore = create<BookingState>((set, get) => ({
         if (parsed.ok) bookings.push(parsed.value)
         else logSkippedDocument('bookings', entry.id, parsed.errors)
       }
-      set({ bookings, loading: false })
+      set({ bookings: retainParsedRows(docs.length, get().bookings, bookings), loading: false })
     }, (error) => {
       set({ error: error.message, loading: false })
     })
@@ -98,6 +99,7 @@ export const useBookingStore = create<BookingState>((set, get) => ({
     const { bookings } = get()
     try {
       await deleteDoc(doc(firestore, 'organizations', organizationId, 'bookings', id))
+      forgetOrgCollectionDoc('bookings', organizationId, id)
       set({ bookings: bookings.filter((row) => row.id !== id) })
     } catch (error: unknown) {
       set({ error: error instanceof Error ? error.message : 'Failed to delete booking' })

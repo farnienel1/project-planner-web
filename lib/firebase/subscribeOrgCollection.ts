@@ -10,12 +10,14 @@ import { collection, getDocs, onSnapshot, type FirestoreError, type Unsubscribe 
 import { db } from '@/lib/firebase/config'
 import { isRetryableAuthLoadError, authLoadRetryDelayMs } from '@/lib/auth/authBoot'
 import { waitForAuthToken } from '@/lib/firebase/waitForAuthToken'
+import { retainLoadedRows } from '@/lib/staff/rosterRetain'
 
 export type OrgCollectionDoc = { id: string; data: Record<string, unknown> }
 
 const unsubs = new Map<string, Unsubscribe>()
 const orgs = new Map<string, string>()
 const lastDocs = new Map<string, OrgCollectionDoc[]>()
+const removedDocIds = new Map<string, Set<string>>()
 const listeners = new Map<
   string,
   {
@@ -48,6 +50,17 @@ export function peekOrgCollectionCache(key: string, organizationId: string): Org
   return lastDocs.get(cacheKey(key, organizationId)) ?? null
 }
 
+/** The app deleted this document. Drop it from the retained snapshot so an empty listener cannot put it back. */
+export function forgetOrgCollectionDoc(key: string, organizationId: string, id: string): void {
+  if (!id) return
+  const storedKey = cacheKey(key, organizationId)
+  const removed = removedDocIds.get(storedKey) ?? new Set<string>()
+  removed.add(id)
+  removedDocIds.set(storedKey, removed)
+  const previous = lastDocs.get(storedKey)
+  if (previous) lastDocs.set(storedKey, previous.filter((entry) => entry.id !== id))
+}
+
 export function subscribeOrgCollection(
   key: string,
   organizationId: string,
@@ -72,19 +85,19 @@ export function subscribeOrgCollection(
   }) => {
     const current = activeCallback(key)
     if (!current) return
-    const docs = snap.docs.map((entry) => ({
-      id: entry.id,
-      data: entry.data() as Record<string, unknown>,
-    }))
-    const previous = lastDocs.get(storedKey)
-    // An empty from-cache snapshot after reconnect would briefly wipe bookings
-    // and make unbooked-labour warnings explode. Keep the last good set.
-    if (docs.length === 0 && previous && previous.length > 0 && snap.metadata?.fromCache) {
-      current.onDocs(previous)
-      return
-    }
-    lastDocs.set(storedKey, docs)
-    current.onDocs(docs)
+    const removed = removedDocIds.get(storedKey)
+    const docs = snap.docs
+      .filter((entry) => !removed?.has(entry.id))
+      .map((entry) => ({
+        id: entry.id,
+        data: entry.data() as Record<string, unknown>,
+      }))
+    const previous = (lastDocs.get(storedKey) ?? []).filter((entry) => !removed?.has(entry.id))
+    // An empty snapshot must not wipe bookings or the other live org collections.
+    // A real delete is recorded with forgetOrgCollectionDoc first.
+    const kept = retainLoadedRows(previous, docs)
+    lastDocs.set(storedKey, kept)
+    current.onDocs(kept)
   }
 
   if (isOrgCollectionSubscribed(key, organizationId)) {

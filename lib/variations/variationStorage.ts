@@ -18,6 +18,7 @@ import {
   type Unsubscribe,
 } from 'firebase/firestore'
 import { deleteObject, ref } from 'firebase/storage'
+import { retainLoadedRows } from '@/lib/staff/rosterRetain'
 import { db, storage } from '@/lib/firebase/config'
 import { newUuid, parseFirestoreDate, sanitizeForFirestore } from '@/lib/firebase/firestoreUtils'
 import { saveInboxNotification } from '@/lib/firebase/notifyInbox'
@@ -249,6 +250,8 @@ export function trackerFromFirestore(parentId: string, data: Record<string, unkn
   }
 }
 
+const lastVariationRows = new Map<string, Variation[]>()
+
 export function subscribeParentVariations(
   organizationId: string,
   parentId: string,
@@ -259,10 +262,14 @@ export function subscribeParentVariations(
     onRows([])
     return () => {}
   }
+  const key = `${organizationId}:${parentId}`
   return onSnapshot(
     query(variationsCollection(organizationId), where('parentId', '==', parentId)),
     (snap) => {
-      onRows(snap.docs.map((entry) => variationFromFirestore(entry.id, entry.data() as Record<string, unknown>)))
+      const next = snap.docs.map((entry) => variationFromFirestore(entry.id, entry.data() as Record<string, unknown>))
+      const kept = retainLoadedRows(lastVariationRows.get(key) ?? [], next)
+      lastVariationRows.set(key, kept)
+      onRows(kept)
     },
     (error) => onError?.(error)
   )

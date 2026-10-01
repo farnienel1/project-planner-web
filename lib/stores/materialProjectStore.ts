@@ -6,6 +6,7 @@ import { db } from '@/lib/firebase/config'
 import { withAuthReadRetry } from '@/lib/firebase/waitForAuthToken'
 import type { MaterialSendRecord, ProjectMaterialLine } from '@/types'
 import { newUuid, parseFirestoreDate, parseNumber, parseOptionalString, parseString } from '@/lib/firebase/firestoreUtils'
+import { markRowsRemoved, retainScopedRows } from '@/lib/staff/rosterRetain'
 
 function startOfDay(date: Date): Date {
   const d = new Date(date)
@@ -126,6 +127,17 @@ async function fetchProjectMaterials(organizationId: string, projectId: string):
     .filter((m) => m.projectId.toLowerCase() === projectId.toLowerCase())
 }
 
+let materialsOrgId = ''
+
+function keepMaterialRows(
+  organizationId: string,
+  previous: ProjectMaterialLine[],
+  loaded: ProjectMaterialLine[]
+): ProjectMaterialLine[] {
+  const prior = materialsOrgId === organizationId ? previous : []
+  return retainScopedRows(`materials:${organizationId}`, prior, loaded)
+}
+
 export const useMaterialProjectStore = create<MaterialProjectState>((set, get) => ({
   materials: [],
   sendRecords: [],
@@ -142,7 +154,12 @@ export const useMaterialProjectStore = create<MaterialProjectState>((set, get) =
           const others = get().materials.filter(
             (row) => row.projectId.toLowerCase() !== projectId.toLowerCase()
           )
-          set({ materials: [...others, ...loaded], loading: false })
+          const previous = get().materials.filter(
+            (row) => row.projectId.toLowerCase() === projectId.toLowerCase()
+          )
+          const kept = keepMaterialRows(organizationId, previous, loaded)
+          materialsOrgId = organizationId
+          set({ materials: [...others, ...kept], loading: false })
         })
         .catch(() => {})
       return
@@ -153,7 +170,12 @@ export const useMaterialProjectStore = create<MaterialProjectState>((set, get) =
       const others = get().materials.filter(
         (row) => row.projectId.toLowerCase() !== projectId.toLowerCase()
       )
-      set({ materials: [...others, ...loaded], loading: false })
+      const previous = get().materials.filter(
+        (row) => row.projectId.toLowerCase() === projectId.toLowerCase()
+      )
+      const kept = keepMaterialRows(organizationId, previous, loaded)
+      materialsOrgId = organizationId
+      set({ materials: [...others, ...kept], loading: false })
     } catch (error: unknown) {
       set({ error: error instanceof Error ? error.message : 'Failed to load materials', loading: false })
       throw error
@@ -166,9 +188,11 @@ export const useMaterialProjectStore = create<MaterialProjectState>((set, get) =
       const snapshot = await withAuthReadRetry(() =>
         getDocs(collection(db, 'organizations', organizationId, 'materials'))
       )
-      const materials = snapshot.docs.map((entry) =>
+      const mapped = snapshot.docs.map((entry) =>
         mapMaterialLine(entry.id, entry.data() as Record<string, unknown>)
       )
+      const materials = keepMaterialRows(organizationId, get().materials, mapped)
+      materialsOrgId = organizationId
       set({ materials, loading: false })
     } catch (error: unknown) {
       set({ error: error instanceof Error ? error.message : 'Failed to load materials', loading: false })
@@ -318,6 +342,7 @@ export const useMaterialProjectStore = create<MaterialProjectState>((set, get) =
   deleteMaterialLine: async (organizationId, materialId) => {
     try {
       await deleteDoc(doc(db, 'organizations', organizationId, 'materials', materialId))
+      markRowsRemoved(`materials:${organizationId}`, [materialId])
       set({ materials: get().materials.filter((row) => row.id !== materialId), error: null })
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Failed to delete material'

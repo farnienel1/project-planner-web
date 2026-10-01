@@ -12,6 +12,7 @@ import {
 import { db } from '@/lib/firebase/config'
 import type { Wholesaler, WholesalerContact } from '@/types'
 import { newUuid, parseFirestoreDate, parseOptionalString, parseString, parseUuid } from '@/lib/firebase/firestoreUtils'
+import { markRowsRemoved, retainScopedRows } from '@/lib/staff/rosterRetain'
 
 function parseContacts(rows: unknown): WholesalerContact[] {
   if (!Array.isArray(rows)) return []
@@ -92,6 +93,8 @@ interface WholesalerState {
   deleteWholesaler: (organizationId: string, id: string) => Promise<void>
 }
 
+let wholesalerOrgId = ''
+
 export const useWholesalerStore = create<WholesalerState>((set, get) => ({
   wholesalers: [],
   loading: false,
@@ -106,7 +109,10 @@ export const useWholesalerStore = create<WholesalerState>((set, get) => ({
         .map((entry) => mapWholesaler(entry.id, entry.data() as Record<string, unknown>))
         .filter((item): item is Wholesaler => item !== null)
         .sort((a, b) => a.name.localeCompare(b.name))
-      set({ wholesalers, loading: false })
+      const previous = wholesalerOrgId === organizationId ? get().wholesalers : []
+      const kept = retainScopedRows(`wholesalers:${organizationId}`, previous, wholesalers)
+      wholesalerOrgId = organizationId
+      set({ wholesalers: kept, loading: false })
     } catch (error: unknown) {
       set({ error: error instanceof Error ? error.message : 'Failed to load wholesalers', loading: false })
     }
@@ -126,6 +132,7 @@ export const useWholesalerStore = create<WholesalerState>((set, get) => ({
 
   deleteWholesaler: async (organizationId, id) => {
     await deleteDoc(doc(db, 'organizations', organizationId, 'wholesalers', id))
+    markRowsRemoved(`wholesalers:${organizationId}`, [id])
     set({ wholesalers: get().wholesalers.filter((w) => w.id !== id) })
   },
 }))
