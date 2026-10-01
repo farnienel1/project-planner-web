@@ -129,18 +129,3 @@ export function retainScopedRows<T extends { id: string }>(
   return retainLoadedRows(withoutRemoved(previous), withoutRemoved(next))
 }
 
-/** A managers or operatives record means that person belongs on that list, even if their user document lost the flag. */
-export function withRosterMembership(user: User, kind: 'operative' | 'manager'): User {
-  if (kind === 'operative' && user.permissions.operativeMode) return user
-  if (kind === 'manager' && user.permissions.manager && !user.permissions.operativeMode) return user
-  return {
-    ...user,
-    permissions: {
-      ...user.permissions,
-      operativeMode: kind === 'operative' ? true : user.permissions.operativeMode,
-      manager: kind === 'manager' ? true : user.permissions.manager,
-      operatives: kind === 'manager' ? true : user.permissions.operatives,
-      qualifications: kind === 'manager' ? true : user.permissions.qualifications,
-    },
-  }
-}

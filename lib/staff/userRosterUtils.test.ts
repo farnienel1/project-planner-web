@@ -37,6 +37,29 @@ function user(partial: Partial<User> & Pick<User, 'id' | 'email' | 'firstName'>)
   }
 }
 
+test('an admin wins over an operative duplicate of the same email', () => {
+  const operative = user({
+    id: 'op-copy',
+    email: 'ada@site.com',
+    firstName: 'Ada',
+    role: UserRole.OPERATIVE,
+    updatedAt: new Date('2026-09-01'),
+    permissions: { ...emptyPermissions, operativeMode: true },
+  })
+  const admin = user({
+    id: 'admin',
+    email: 'ada@site.com',
+    firstName: 'Ada',
+    role: UserRole.ADMIN,
+    isSuperAdmin: true,
+    updatedAt: new Date('2026-01-01'),
+    permissions: { ...emptyPermissions, adminAccess: true },
+  })
+  const [kept] = dedupeUsersByEmail([operative, admin])
+  assert.equal(kept.id, 'admin')
+  assert.equal(kept.permissions.operativeMode, false)
+})
+
 test('a person with no email address is still kept on the roster', () => {
   const kept = dedupeUsersByEmail([
     user({ id: 'op', email: '', firstName: 'Ollie', permissions: { ...emptyPermissions, operativeMode: true } }),
