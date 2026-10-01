@@ -62,6 +62,30 @@ function emailKey(email: string): string {
   return email.trim().toLowerCase()
 }
 
+function textField(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+/**
+ * A user document the organisation query missed can still belong to this company.
+ * Fill a missing organisation id so the document can be read.
+ * Do not relabel a document that already names a different organisation.
+ */
+export function rosterParseRecord(
+  data: Record<string, unknown>,
+  organizationId: string,
+  options?: { allowNamedOrg?: boolean }
+): Record<string, unknown> | null {
+  const named =
+    textField(data.organizationId) || textField(data.organisationId) || textField(data.orgId)
+  if (named && named !== organizationId && !options?.allowNamedOrg) return null
+  if (!named) return { ...data, organizationId }
+  if (named === organizationId && data.organizationId !== organizationId) {
+    return { ...data, organizationId }
+  }
+  return data
+}
+
 /**
  * The organisation user query can come back as only the signed-in admin.
  * Keep everyone already on screen, and add anyone this load did find.
