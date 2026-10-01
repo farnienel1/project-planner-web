@@ -27,7 +27,14 @@ export function rosterStatusLabel(user: User): 'Active' | 'Inactive' | 'Pending'
   return 'Active'
 }
 
+function directoryAdmin(user: User): boolean {
+  return user.isSuperAdmin === true || user.permissions?.adminAccess === true || user.role === 'admin'
+}
+
 function choosePreferredUser(a: User, b: User): User {
+  const adminA = directoryAdmin(a)
+  const adminB = directoryAdmin(b)
+  if (adminA !== adminB) return adminA ? a : b
   if (a.passwordSet !== b.passwordSet) return a.passwordSet ? a : b
   if (a.updatedAt.getTime() !== b.updatedAt.getTime()) return a.updatedAt >= b.updatedAt ? a : b
   if (a.isActive !== b.isActive) return a.isActive ? a : b

@@ -74,7 +74,13 @@ export const useUserStore = create<UserStoreState>(() => ({
   getUser: async (userId) => {
     const snap = await getDoc(doc(db, 'users', userId))
     if (!snap.exists()) return null
-    return parseOrgUser(snap.id, snap.data() as Record<string, unknown>)
+    const data = snap.data() as Record<string, unknown>
+    const orgOnDoc = typeof data.organizationId === 'string' ? data.organizationId.trim() : ''
+    if (orgOnDoc) return parseOrgUser(snap.id, data)
+    const { useAuthStore } = await import('@/lib/stores/authStore')
+    const fallback = useAuthStore.getState().organization?.id || useAuthStore.getState().user?.organizationId || ''
+    if (!fallback) return parseOrgUser(snap.id, data)
+    return parseOrgUser(snap.id, { ...data, organizationId: fallback })
   },
 
   saveUser: async (user) => {
