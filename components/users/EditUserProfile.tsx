@@ -68,8 +68,8 @@ const ACCOUNT_TYPE_OPTIONS: {
 ]
 
 function currentAccountType(user: User): 'operative' | 'manager' | 'admin' {
+  if (user.isSuperAdmin || user.permissions.adminAccess || user.role === 'admin') return 'admin'
   if (user.permissions.operativeMode) return 'operative'
-  if (user.permissions.adminAccess || user.isSuperAdmin) return 'admin'
   return 'manager'
 }
 
@@ -445,7 +445,7 @@ export function EditUserProfile({
     Boolean(target) &&
     baseline != null &&
     profileSnapshot(target, draftAccountType, draftTypePermissions) !== baseline
-  const pageTitle = target.permissions.operativeMode ? 'Edit operative' : 'Edit user'
+  const pageTitle = currentAccountType(target) === 'operative' ? 'Edit operative' : 'Edit user'
   const status = rosterStatusLabel(target)
   const isPendingMgrOrOp =
     !target.passwordSet &&

@@ -27,7 +27,14 @@ export function rosterStatusLabel(user: User): 'Active' | 'Inactive' | 'Pending'
   return 'Active'
 }
 
+function directoryAdmin(user: User): boolean {
+  return user.isSuperAdmin === true || user.permissions?.adminAccess === true || user.role === 'admin'
+}
+
 function choosePreferredUser(a: User, b: User): User {
+  const adminA = directoryAdmin(a)
+  const adminB = directoryAdmin(b)
+  if (adminA !== adminB) return adminA ? a : b
   if (a.passwordSet !== b.passwordSet) return a.passwordSet ? a : b
   if (a.updatedAt.getTime() !== b.updatedAt.getTime()) return a.updatedAt >= b.updatedAt ? a : b
   if (a.isActive !== b.isActive) return a.isActive ? a : b
@@ -46,9 +53,15 @@ export function dedupeUsersByEmail(users: User[]): User[] {
   return Array.from(byEmail.values())
 }
 
-/** iOS OperativesView — operative-mode app users. */
+/** iOS OperativesView — operative-mode app users, plus accounts with no admin or manager role. */
 export function getOperativeModeUsers(users: User[]): User[] {
-  return dedupeUsersByEmail(users.filter((user) => user.permissions?.operativeMode)).sort((a, b) =>
+  return dedupeUsersByEmail(
+    users.filter((user) => {
+      if (directoryAdmin(user)) return false
+      if (user.permissions?.manager && !user.permissions?.operativeMode) return false
+      return true
+    })
+  ).sort((a, b) =>
     `${a.firstName} ${a.surname}`.localeCompare(`${b.firstName} ${b.surname}`, undefined, {
       sensitivity: 'base',
     })

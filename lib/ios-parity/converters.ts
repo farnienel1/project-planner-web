@@ -153,7 +153,12 @@ export function parseAppUserDocument(userId: string, data: Record<string, unknow
     return fail(['email and organizationId are required'])
   }
 
-  const operativeMode = readFlag(data, 'operativeMode') === true
+  const rawIsSuperAdmin = data.isSuperAdmin === true
+  const roleRaw = normalizeUserRole(data.role)
+  const keepsAdmin =
+    rawIsSuperAdmin || readFlag(data, 'adminAccess') === true || roleRaw === 'admin'
+  // A stray operativeMode flag must not take an admin or super admin off the Admins list.
+  const operativeMode = readFlag(data, 'operativeMode') === true && !keepsAdmin
   const permissions: UserPermissions = {
     adminAccess: operativeMode ? false : readFlag(data, 'adminAccess') === true,
     manager: operativeMode ? false : readFlag(data, 'manager') === true,
@@ -175,9 +180,8 @@ export function parseAppUserDocument(userId: string, data: Record<string, unknow
     developerAccess: operativeMode ? false : readFlag(data, 'developerAccess') === true,
   }
 
-  const rawIsSuperAdmin = data.isSuperAdmin === true
   const isSuperAdmin = operativeMode ? false : rawIsSuperAdmin
-  const role = operativeMode ? UserRole.OPERATIVE : (normalizeUserRole(data.role) as UserRole)
+  const role = operativeMode ? UserRole.OPERATIVE : (roleRaw as UserRole)
 
   const assignedManagerUserIds = asStringArray(data.assignedManagerUserIds)
   const legacyManager = asOptionalString(data.assignedManagerUserId)
