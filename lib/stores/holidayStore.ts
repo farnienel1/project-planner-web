@@ -13,6 +13,7 @@ import { db } from '@/lib/firebase/config'
 import { withAuthReadRetry } from '@/lib/firebase/waitForAuthToken'
 import type { HolidayBooking, HolidayStatus, HolidayTimeSlot } from '@/types'
 import { newUuid, parseFirestoreDate, parseOptionalString, parseString, parseUuid } from '@/lib/firebase/firestoreUtils'
+import { markRowsRemoved, retainScopedRows } from '@/lib/staff/rosterRetain'
 
 function parseHolidayStatus(value: unknown): HolidayStatus {
   const raw = parseString(value, 'pending')
@@ -85,6 +86,8 @@ export function isPendingHolidayRequest(booking: HolidayBooking): boolean {
   )
 }
 
+let holidayOrgId = ''
+
 export const useHolidayStore = create<HolidayState>((set, get) => ({
   bookings: [],
   loading: false,
@@ -99,7 +102,10 @@ export const useHolidayStore = create<HolidayState>((set, get) => ({
         .map((entry) => mapHolidayBooking(entry.id, entry.data() as Record<string, unknown>, organizationId))
         .filter((item): item is HolidayBooking => item !== null)
         .sort((a, b) => b.startDate.getTime() - a.startDate.getTime())
-      set({ bookings, loading: false })
+      const previous = holidayOrgId === organizationId ? get().bookings : []
+      const kept = retainScopedRows(`holidayBookings:${organizationId}`, previous, bookings)
+      holidayOrgId = organizationId
+      set({ bookings: kept, loading: false })
     } catch (error: unknown) {
       set({ error: error instanceof Error ? error.message : 'Failed to load holiday bookings', loading: false })
     }
@@ -119,6 +125,7 @@ export const useHolidayStore = create<HolidayState>((set, get) => ({
 
   deleteBooking: async (organizationId, id) => {
     await deleteDoc(doc(db, 'organizations', organizationId, 'holidayBookings', id))
+    markRowsRemoved(`holidayBookings:${organizationId}`, [id])
     set({ bookings: get().bookings.filter((b) => b.id !== id) })
   },
 

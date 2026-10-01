@@ -4,6 +4,7 @@ import { create } from 'zustand'
 import { doc, updateDoc } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
 import { isOrgCollectionSubscribed, subscribeOrgCollection } from '@/lib/firebase/subscribeOrgCollection'
+import { retainParsedRows } from '@/lib/staff/rosterRetain'
 import {
   logSkippedDocument,
   parseNotification,
@@ -41,15 +42,24 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
       'notifications',
       (docs) => {
         const notifications: AppInboxNotification[] = []
+        let failed = 0
         for (const entry of docs) {
           const parsed = parseNotification(entry.id, entry.data, organizationId)
-          if (parsed.ok && visibleToUser(parsed.value, userId)) notifications.push(parsed.value)
-          else if (!parsed.ok) logSkippedDocument('notifications', entry.id, parsed.errors)
+          if (!parsed.ok) {
+            failed += 1
+            logSkippedDocument('notifications', entry.id, parsed.errors)
+            continue
+          }
+          if (visibleToUser(parsed.value, userId)) notifications.push(parsed.value)
         }
         notifications.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+        const kept =
+          docs.length > 0 && failed === docs.length
+            ? retainParsedRows(docs.length, get().notifications, notifications)
+            : notifications
         set({
-          notifications,
-          unreadCount: notifications.filter((row) => !row.isRead).length,
+          notifications: kept,
+          unreadCount: kept.filter((row) => !row.isRead).length,
           loading: false,
         })
       },

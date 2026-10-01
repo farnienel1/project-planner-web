@@ -3,7 +3,8 @@
 import { create } from 'zustand'
 import { deleteDoc, doc, setDoc } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
-import { isOrgCollectionSubscribed, subscribeOrgCollection } from '@/lib/firebase/subscribeOrgCollection'
+import { forgetOrgCollectionDoc, isOrgCollectionSubscribed, subscribeOrgCollection } from '@/lib/firebase/subscribeOrgCollection'
+import { retainParsedRows } from '@/lib/staff/rosterRetain'
 import { newUppercaseUuid } from '@/lib/ios-parity/uuid'
 import { londonMidnight } from '@/lib/ios-parity/londonTime'
 import {
@@ -65,7 +66,10 @@ export const useManagerScheduleStore = create<ManagerScheduleState>((set, get) =
           if (parsed.ok) managerSiteBookings.push(parsed.value)
           else logSkippedDocument('managerSiteBookings', entry.id, parsed.errors)
         }
-        set({ managerSiteBookings, loading: false })
+        set({
+          managerSiteBookings: retainParsedRows(docs.length, get().managerSiteBookings, managerSiteBookings),
+          loading: false,
+        })
       },
       (error) => set({ error: error.message, loading: false })
     )
@@ -121,6 +125,7 @@ export const useManagerScheduleStore = create<ManagerScheduleState>((set, get) =
   deleteManagerSiteBooking: async (organizationId: string, bookingId: string) => {
     const firestore = requireDb()
     await deleteDoc(doc(firestore, 'organizations', organizationId, 'managerSiteBookings', bookingId))
+    forgetOrgCollectionDoc('managerSiteBookings', organizationId, bookingId)
     set({
       managerSiteBookings: get().managerSiteBookings.filter((booking) => booking.id !== bookingId),
     })

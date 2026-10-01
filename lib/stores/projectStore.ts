@@ -18,6 +18,7 @@ import {
   type ProjectSaveInput,
 } from '@/lib/firebase/projectPayload'
 import { runOrgLoad } from '@/lib/stores/orgLoadCache'
+import { markRowsRemoved, retainScopedRows } from '@/lib/staff/rosterRetain'
 import { trackEvent } from '@/lib/analytics/trackEvent'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { parseFirestoreDate, parseNumber, parseOptionalString, parseString, newUuid } from '@/lib/firebase/firestoreUtils'
@@ -102,6 +103,10 @@ interface ProjectState {
   deleteClient: (organizationId: string, clientId: string) => Promise<void>
 }
 
+let projectsOrgId = ''
+let smallWorksOrgId = ''
+let clientsOrgId = ''
+
 export const useProjectStore = create<ProjectState>((set, get) => ({
   projects: [],
   smallWorks: [],
@@ -123,6 +128,9 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
             mapProjectDoc(entry.id, entry.data() as Record<string, unknown>, organizationId)
           )
           if (!includeInactive) projects = projects.filter((p) => p.isLive)
+          const previous = projectsOrgId === organizationId ? get().projects : []
+          projects = retainScopedRows(`projects:${organizationId}`, previous, projects)
+          projectsOrgId = organizationId
           set({ projects, loading: false })
         } catch (error: unknown) {
           set({
@@ -145,9 +153,12 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         else set({ error: null })
         try {
           const snapshot = await getDocs(collection(db, 'organizations', organizationId, 'smallWorks'))
-          const smallWorks = snapshot.docs.map((entry) =>
+          const mapped = snapshot.docs.map((entry) =>
             mapProjectDoc(entry.id, entry.data() as Record<string, unknown>, organizationId)
           )
+          const previous = smallWorksOrgId === organizationId ? get().smallWorks : []
+          const smallWorks = retainScopedRows(`smallWorks:${organizationId}`, previous, mapped)
+          smallWorksOrgId = organizationId
           set({ smallWorks, loading: false })
         } catch (error: unknown) {
           set({
@@ -173,7 +184,10 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
             const parsed = parseClientDoc(entry.id, entry.data() as Record<string, unknown>, organizationId)
             if (parsed.ok) clients.push(parsed.value)
           }
-          set({ clients })
+          const previous = clientsOrgId === organizationId ? get().clients : []
+          const kept = retainScopedRows(`clients:${organizationId}`, previous, clients)
+          clientsOrgId = organizationId
+          set({ clients: kept })
         } catch (error: unknown) {
           set({ error: error instanceof Error ? error.message : 'Failed to load clients' })
           throw error
@@ -220,6 +234,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 
   deleteProject: async (id, organizationId, collectionName = 'projects') => {
     await deleteDoc(doc(db, 'organizations', organizationId, collectionName, id))
+    markRowsRemoved(`${collectionName === 'smallWorks' ? 'smallWorks' : 'projects'}:${organizationId}`, [id])
     if (collectionName === 'smallWorks') {
       set({ smallWorks: get().smallWorks.filter((p) => p.id !== id) })
     } else {
@@ -278,6 +293,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 
   deleteClient: async (organizationId, clientId) => {
     await deleteDoc(doc(db, 'organizations', organizationId, 'clients', clientId))
+    markRowsRemoved(`clients:${organizationId}`, [clientId])
     set({ clients: get().clients.filter((c) => c.id !== clientId) })
   },
 }))

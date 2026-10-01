@@ -12,6 +12,7 @@ import {
 import { db } from '@/lib/firebase/config'
 import type { MaterialCatalogItem, MaterialLengthUnit, MaterialUnit } from '@/types'
 import { newUuid, parseFirestoreDate, parseOptionalString, parseString, parseUuid } from '@/lib/firebase/firestoreUtils'
+import { markRowsRemoved, retainScopedRows } from '@/lib/staff/rosterRetain'
 
 const MATERIAL_UNITS: MaterialUnit[] = ['Number', 'Box', 'Length', 'Drum', 'Pallet']
 
@@ -84,6 +85,8 @@ interface MaterialCatalogState {
   ) => Promise<void>
 }
 
+let materialCatalogOrgId = ''
+
 export const useMaterialCatalogStore = create<MaterialCatalogState>((set, get) => ({
   items: [],
   loading: false,
@@ -98,7 +101,10 @@ export const useMaterialCatalogStore = create<MaterialCatalogState>((set, get) =
         .map((entry) => mapMaterialCatalogItem(entry.id, entry.data() as Record<string, unknown>))
         .filter((item): item is MaterialCatalogItem => item !== null)
         .sort((a, b) => a.name.localeCompare(b.name))
-      set({ items, loading: false })
+      const previous = materialCatalogOrgId === organizationId ? get().items : []
+      const kept = retainScopedRows(`materialCatalogue:${organizationId}`, previous, items)
+      materialCatalogOrgId = organizationId
+      set({ items: kept, loading: false })
     } catch (error: unknown) {
       set({ error: error instanceof Error ? error.message : 'Failed to load material catalogue', loading: false })
     }
@@ -117,6 +123,7 @@ export const useMaterialCatalogStore = create<MaterialCatalogState>((set, get) =
 
   deleteItem: async (organizationId, id) => {
     await deleteDoc(doc(db, 'organizations', organizationId, 'materialCatalogue', id))
+    markRowsRemoved(`materialCatalogue:${organizationId}`, [id])
     set({ items: get().items.filter((item) => item.id !== id) })
   },
 
