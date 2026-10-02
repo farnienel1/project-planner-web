@@ -5,6 +5,7 @@ import { classifyManageUsersTab } from './manageUsersUtils.ts'
 import {
   markRowsRemoved,
   mergeRetainedRoster,
+  missingOrganizationIdPatch,
   retainLoadedRows,
   retainParsedRows,
   retainScopedRows,
@@ -180,6 +181,20 @@ test('a user document from another organisation is not pulled in by a loose matc
     allowNamedOrg: true,
   })
   assert.equal(named?.organizationId, 'other')
+})
+
+test('a linked user whose document names another organisation stays on this roster', () => {
+  const local = user({ id: 'admin', email: 'ada@site.com', firstName: 'Ada', organizationId: 'org' })
+  const other = user({ id: 'sam', email: 'sam@site.com', firstName: 'Sam', organizationId: 'other-co' })
+  const merged = mergeRetainedRoster([local, other], [local])
+  assert.deepEqual(merged.map((row) => row.id).sort(), ['admin', 'sam'])
+})
+
+test('a missing organizationId is written only for a members-map id', () => {
+  assert.deepEqual(missingOrganizationIdPatch({ email: 'sam@site.com' }, 'org', true), { organizationId: 'org' })
+  assert.equal(missingOrganizationIdPatch({ organizationId: 'other-co' }, 'org', true), null)
+  assert.equal(missingOrganizationIdPatch({ email: 'sam@site.com' }, 'org', false), null)
+  assert.equal(missingOrganizationIdPatch({ organisationId: 'org' }, 'org', true), null)
 })
 
 test('an inactive account stays inactive', () => {

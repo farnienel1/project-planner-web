@@ -348,7 +348,7 @@ const ALL_NAV_ITEMS: DashboardNavItem[] = [
 ]
 
 function canSeeNavItem(item: DashboardNavItem, user: User, orgUsers: User[] = []): boolean {
-  if (user.isSuperAdmin) return item.id !== 'dashboard_my_qualifications'
+  if (user.isSuperAdmin && item.id === 'dashboard_my_qualifications') return false
 
   switch (item.id) {
     case 'dashboard_clients':

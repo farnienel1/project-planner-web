@@ -56,7 +56,7 @@ export function userPatchForActiveOrg(input: {
   permissions?: Record<string, unknown> | null
   accountActive?: boolean
 }): Record<string, unknown> {
-  const isSuperAdmin = input.membershipIsSuperAdmin === true || input.isCreator === true
+  const isSuperAdmin = input.membershipIsSuperAdmin === true
   const permissions = isSuperAdmin
     ? FOUNDER_PERMISSIONS
     : permissionsFromRecord(input.permissions || undefined)
