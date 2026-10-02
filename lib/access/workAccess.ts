@@ -5,7 +5,7 @@
 
 import type { Booking, Manager, Operative, Project, ProjectTask, User } from '@/types'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
-import { isOperativeMode, canManageWorkCatalogue, hasAdminAccess, type WorkCatalogueKind } from '@/lib/permissions'
+import { isOperativeMode, canManageWorkCatalogue, type WorkCatalogueKind } from '@/lib/permissions'
 import { isSmallWorksJobType, normalizeBookingStatus } from '@/lib/ios-parity/enums'
 
 export type JobCatalogue = WorkCatalogueKind
@@ -212,8 +212,19 @@ export function visibleWorks(params: {
     })
   }
 
-  if (isExcludedFromManagerVisibilityHiding(user) || hasAdminAccess(user)) {
-    return scoped
+  if (isExcludedFromManagerVisibilityHiding(user)) {
+    return scoped.filter((project) => {
+      const jobCatalogue: JobCatalogue = isSmallWorksJobType(project.jobType) ? 'smallWorks' : 'projects'
+      if (canManageWorkCatalogue(user, jobCatalogue)) return true
+      return isAssignedOrBookedOnto({
+        project,
+        user,
+        operatives: params.operatives,
+        managers,
+        bookings: params.bookings,
+        managerBookings: params.managerBookings,
+      })
+    })
   }
 
   const notHidden = scoped.filter((project) => !(project.hiddenManagerUserIds ?? []).includes(user.id))

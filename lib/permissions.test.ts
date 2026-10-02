@@ -20,6 +20,8 @@ import {
   hasAdminAccess,
   isOperativeMode,
   canManageWorkCatalogue,
+  canAccessWholesalers,
+  canManageOrganisationQualifications,
   shouldShowTimesheetsDisabledMessage,
   canAccessDeveloperDashboard,
 } from './permissions.ts'
@@ -86,6 +88,33 @@ test('canViewOperatives: manager needs operatives flag', () => {
   assert.equal(canViewOperatives(manager), false)
   const withFlag = user({ role: UserRole.MANAGER, permissions: { manager: true, operatives: true } })
   assert.equal(canViewOperatives(withFlag), true)
+})
+
+test('operatives, projects, wholesalers and qualifications follow the toggle for an admin', () => {
+  const admin = user({
+    role: UserRole.ADMIN,
+    permissions: { adminAccess: true, manager: true, wholesalersOrderHistory: false, qualifications: false },
+  })
+  assert.equal(canViewOperatives(admin), false)
+  assert.equal(canManageWorkCatalogue(admin, 'projects'), false)
+  assert.equal(canManageWorkCatalogue(admin, 'smallWorks'), false)
+  assert.equal(canAccessWholesalers(admin), false)
+  assert.equal(canManageOrganisationQualifications(admin), false)
+  const flagged = user({
+    role: UserRole.ADMIN,
+    permissions: {
+      adminAccess: true,
+      operatives: true,
+      projects: true,
+      smallWorks: true,
+      wholesalersOrderHistory: true,
+      qualifications: true,
+    },
+  })
+  assert.equal(canViewOperatives(flagged), true)
+  assert.equal(canManageWorkCatalogue(flagged, 'projects'), true)
+  assert.equal(canAccessWholesalers(flagged), true)
+  assert.equal(canManageOrganisationQualifications(flagged), true)
 })
 
 test('canManageUsers is admin-only, not manager+operatives', () => {

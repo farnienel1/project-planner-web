@@ -1,12 +1,12 @@
 'use client'
 
 import { create } from 'zustand'
-import { collection, doc, getDoc, getDocs, limit, query, setDoc, Timestamp, where } from 'firebase/firestore'
+import { collection, doc, getDoc, getDocs, limit, query, setDoc, Timestamp, updateDoc, where } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
 import { UserRole, type SiteAudit, type SiteAuditItem, type User } from '@/types'
 import { parseOrgUser } from '@/lib/firebase/parseUser'
 import { dedupeUsersByEmail } from '@/lib/staff/userRosterUtils'
-import { mergeRetainedRoster, retainScopedRows, rosterParseRecord } from '@/lib/staff/rosterRetain'
+import { mergeRetainedRoster, missingOrganizationIdPatch, retainScopedRows, rosterParseRecord } from '@/lib/staff/rosterRetain'
 import { runOrgLoad, invalidateOrgLoad } from '@/lib/stores/orgLoadCache'
 import { newUuid, parseFirestoreDate, parseOptionalString, parseString, parseUuid } from '@/lib/firebase/firestoreUtils'
 
@@ -233,7 +233,7 @@ async function fetchOrganisationRoster(organizationId: string): Promise<{
       try {
         const snapshot = await getDocs(query(collection(db, 'users'), where('email', '==', variant), limit(5)))
         for (const entry of snapshot.docs) {
-          const user = userForThisOrganisation(entry.id, entry.data() as Record<string, unknown>, organizationId)
+          const user = userForThisOrganisation(entry.id, entry.data() as Record<string, unknown>, organizationId, true)
           if (user) return user.id
         }
       } catch {
@@ -274,8 +274,24 @@ async function fetchOrganisationRoster(organizationId: string): Promise<{
     const orgSnap = await getDoc(doc(db, 'organizations', organizationId))
     const members = (orgSnap.data()?.members ?? {}) as Record<string, unknown>
     for (const id of Object.keys(members)) {
-      if (!id || presentIds.has(id)) continue
-      noteUser(await loadUserDocument(id, true))
+      if (!id) continue
+      try {
+        const snap = await getDoc(doc(db, 'users', id))
+        if (!snap.exists()) continue
+        const data = snap.data() as Record<string, unknown>
+        const patch = missingOrganizationIdPatch(data, organizationId, true)
+        if (patch) {
+          try {
+            await updateDoc(doc(db, 'users', id), patch)
+          } catch {
+            /* A rules error or timeout does not confirm the field should stay blank. */
+          }
+        }
+        if (presentIds.has(id)) continue
+        noteUser(userForThisOrganisation(snap.id, patch ? { ...data, ...patch } : data, organizationId, true))
+      } catch {
+        complete = false
+      }
     }
   } catch {
     complete = false
@@ -350,6 +366,7 @@ interface OrgUserState {
 }
 
 let listedUserRevision = 0
+let listedRosterOrgId = ''
 
 function rosterStorageKey(organizationId: string): string {
   return `pp.roster:${organizationId}`
@@ -363,7 +380,7 @@ function readStoredRoster(organizationId: string): User[] {
     const rows = JSON.parse(raw) as User[]
     if (!Array.isArray(rows)) return []
     return rows.flatMap((row) => {
-      if (!row || typeof row.id !== 'string' || row.organizationId !== organizationId) return []
+      if (!row || typeof row.id !== 'string') return []
       const createdAt = new Date(row.createdAt)
       const updatedAt = new Date(row.updatedAt)
       // Invented roster rows used the epoch. They are not user accounts.
@@ -410,7 +427,7 @@ export const useOrgUserStore = create<OrgUserState>((set, get) => ({
       'orgUserStore:users',
       organizationId,
       async () => {
-        const inMemory = get().users.filter((user) => user.organizationId === organizationId)
+        const inMemory = listedRosterOrgId === organizationId ? get().users : []
         const previous = inMemory.length > 0 ? inMemory : readStoredRoster(organizationId)
         if (previous.length === 0) set({ loading: true, error: null })
         else set({ error: null })
@@ -427,6 +444,7 @@ export const useOrgUserStore = create<OrgUserState>((set, get) => ({
             if (a.isSuperAdmin !== b.isSuperAdmin) return a.isSuperAdmin ? -1 : 1
             return a.email.localeCompare(b.email)
           })
+          listedRosterOrgId = organizationId
           writeStoredRoster(organizationId, users)
           set({ users, loading: false, error: null })
         } catch (error: unknown) {

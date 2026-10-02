@@ -44,24 +44,22 @@ export function applyLineManagerFields(
   payload.assignedManagerUserId = list[0]
 }
 
-function resolveRole(user: User): UserRole {
-  if (user.permissions.operativeMode) return UserRole.OPERATIVE
-  if (user.permissions.adminAccess) return UserRole.ADMIN
-  if (user.permissions.manager) return UserRole.MANAGER
-  return user.role
-}
-
 /** Mirrors iOS FirebaseBackend.saveUser flattened user document shape. */
 export function buildSaveUserPayload(user: User): Record<string, unknown> {
   const permissions = permissionsToFirestoreMap(user.permissions)
   const isSuperAdminToSave = user.permissions.operativeMode ? false : user.isSuperAdmin
+  const firstName = user.firstName.trim()
+  const surname = user.surname.trim()
+  const displayName = `${firstName} ${surname}`.trim()
 
   const payload: Record<string, unknown> = {
     email: user.email.toLowerCase().trim(),
-    organizationId: user.organizationId,
-    role: resolveRole(user),
-    firstName: user.firstName.trim(),
-    surname: user.surname.trim(),
+    role: user.role,
+    firstName,
+    surname,
+    lastName: surname,
+    name: displayName,
+    displayName,
     isActive: user.isActive,
     passwordSet: user.passwordSet,
     isSuperAdmin: isSuperAdminToSave,
@@ -76,6 +74,7 @@ export function buildSaveUserPayload(user: User): Record<string, unknown> {
     skills: false,
     qualifications: user.permissions.operativeMode ? false : user.permissions.qualifications,
     materials: user.permissions.operativeMode ? user.permissions.materials : true,
+    siteAudit: user.permissions.operativeMode ? user.permissions.siteAudit : true,
     projects: user.permissions.projects,
     smallWorks: user.permissions.smallWorks,
     operativeMode: user.permissions.operativeMode,

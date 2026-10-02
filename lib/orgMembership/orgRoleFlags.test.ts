@@ -6,17 +6,16 @@ import {
   userPatchForActiveOrg,
 } from './orgRoleFlags.ts'
 
-test('switching to an org you created restores founder admin flags', () => {
+test('being the organisation creator does not make someone super admin', () => {
   const patch = userPatchForActiveOrg({
     organizationId: 'ORG-B',
     isCreator: true,
     permissions: { adminAccess: false, operativeMode: true, manager: false },
   })
   assert.equal(patch.organizationId, 'ORG-B')
-  assert.equal(patch.isSuperAdmin, true)
-  assert.equal(patch.role, 'admin')
-  assert.equal(patch.adminAccess, true)
-  assert.equal(patch.operativeMode, false)
+  assert.equal(patch.isSuperAdmin, false)
+  assert.equal(patch.adminAccess, false)
+  assert.equal(patch.operativeMode, true)
 })
 
 test('switching to an invited org applies that membership, not founder flags', () => {

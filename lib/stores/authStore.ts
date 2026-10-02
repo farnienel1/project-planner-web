@@ -25,7 +25,8 @@ import { withSeededNavigationLabels } from '@/lib/navigation/sharedUiLabels'
 import { parseTeamOnboarding } from '@/lib/orgSetup/teamOnboarding'
 import { topLevelAdminFlagPatch } from '@/lib/orgSetup/repairAdminFlags'
 import { ACCOUNT_UNCONFIRMED_MESSAGE } from '@/lib/orgSetup/accountConfirmation'
-import { ensurePrimaryOrgMembership } from '@/lib/orgMembership/membershipService'
+import { ensurePrimaryOrgMembership, resolveWebSessionOrganization } from '@/lib/orgMembership/membershipService'
+import { applyDeviceOrgMembership } from '@/lib/orgMembership/webActiveOrg'
 import {
   completeEmailSignIn,
   SIGN_IN_SLOW_MESSAGE,
@@ -79,6 +80,7 @@ interface AuthState {
   checkAuth: () => void
   recordLastSeenIfDue: () => Promise<void>
   ensureSignedInProfile: () => Promise<void>
+  reloadSignedInProfile: () => Promise<void>
 }
 
 const LAST_SEEN_THROTTLE_MS = 120_000
@@ -361,10 +363,29 @@ async function loadSignedInProfileInner(firebaseUser: FirebaseUser) {
     user.updatedAt = new Date()
   }
 
+  const documentOrganizationId = user.organizationId
+  let sessionUser = user
+  try {
+    const session = await withTimeout(
+      resolveWebSessionOrganization(firebaseUser.uid, documentOrganizationId),
+      PROFILE_STEP_MS,
+      SIGN_IN_SLOW_MESSAGE
+    )
+    sessionUser = applyDeviceOrgMembership(
+      user,
+      documentOrganizationId,
+      session.organizationId,
+      session.membership,
+      session.listedRole
+    )
+  } catch (sessionError) {
+    console.warn('Device organisation lookup skipped:', sessionError)
+  }
+
   let organization: Organization | null = null
-  if (user.organizationId) {
+  if (sessionUser.organizationId) {
     const orgDoc = await withTimeout(
-      getDoc(doc(db, 'organizations', user.organizationId)),
+      getDoc(doc(db, 'organizations', sessionUser.organizationId)),
       PROFILE_STEP_MS,
       SIGN_IN_SLOW_MESSAGE
     )
@@ -386,15 +407,16 @@ async function loadSignedInProfileInner(firebaseUser: FirebaseUser) {
       void withTimeoutFallback(
         ensurePrimaryOrgMembership(
           firebaseUser.uid,
-          user.organizationId,
-          String(orgData.members?.[firebaseUser.uid] || user.role || 'member')
+          sessionUser.organizationId,
+          String(orgData.members?.[firebaseUser.uid] || sessionUser.role || 'member'),
+          sessionUser.isSuperAdmin ? { isSuperAdmin: true } : undefined
         ),
         PROFILE_STEP_MS,
         undefined
       )
 
-      if (seededLabels.changed && (user.isSuperAdmin || user.permissions.adminAccess)) {
-        void updateDoc(doc(db, 'organizations', user.organizationId), {
+      if (seededLabels.changed && (sessionUser.isSuperAdmin || sessionUser.permissions.adminAccess)) {
+        void updateDoc(doc(db, 'organizations', sessionUser.organizationId), {
           'settings.uiLabels.navigationLabels': seededLabels.navigationLabels,
           updatedAt: new Date(),
         }).catch((seedError) => {
@@ -405,7 +427,7 @@ async function loadSignedInProfileInner(firebaseUser: FirebaseUser) {
   }
 
   useAuthStore.setState({
-    user,
+    user: sessionUser,
     firebaseUser,
     organization,
     loading: false,
@@ -756,6 +778,17 @@ export const useAuthStore = create<AuthState>((set) => {
 
     checkAuth: () => {
       // Auth state is handled by onAuthStateChanged
+    },
+
+    reloadSignedInProfile: async () => {
+      let current: FirebaseUser | null = null
+      try {
+        current = getFirebaseAuth().currentUser
+      } catch {
+        return
+      }
+      if (!current) return
+      await loadProfileWithRetries(current)
     },
 
     ensureSignedInProfile: async () => {

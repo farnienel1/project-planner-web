@@ -1,6 +1,6 @@
 /**
- * Shell "+ New" menu. Operatives see nothing. Managers only see items they
- * can create. Admins see the full list.
+ * Shell "+ New" menu. Operatives see nothing. Projects, small works,
+ * qualifications, and wholesalers follow those toggles for admins too.
  */
 
 import type { PermissionUser } from '@/lib/permissions'
