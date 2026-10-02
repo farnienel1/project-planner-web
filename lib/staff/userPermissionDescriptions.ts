@@ -20,34 +20,36 @@ export const OPERATIVE_PERMISSION_TOGGLES: PermissionToggleDef[] = [
   },
 ]
 
+export const ADMIN_ACCESS_LOCKED_MESSAGE =
+  'Change user type at the bottom of their profile, to enable admin level access.'
+
 export const MANAGER_PERMISSION_TOGGLES: PermissionToggleDef[] = [
   {
     key: 'adminAccess',
     title: 'Admin access',
-    description: 'Can add and manage users.',
+    description: 'Gives Manage Users.',
   },
   {
     key: 'projects',
     title: 'Projects',
-    description:
-      'Can create and manage projects. If unselected, this manager can still schedule operatives and sub contractors.',
+    description: 'Can create, edit, and add projects. Off hides that capability. They may still see assigned jobs.',
   },
   {
     key: 'smallWorks',
     title: 'Small works',
-    description:
-      'Can create and manage small works. If unselected, this manager can still schedule operatives and sub contractors.',
+    description: 'Can create, edit, and add small works. Off hides that capability. They may still see assigned jobs.',
   },
   {
     key: 'operatives',
     title: 'Operatives',
     description:
-      'Can manage operatives and view their details. If turned off, they can still assign operatives to projects and small works, but will not see full operative profiles.',
+      'Can see the Operatives page and add a new operative-only user. Off hides that page. They can still book active operatives on projects and small works.',
   },
   {
     key: 'qualifications',
     title: 'Qualifications',
-    description: 'Can create and alter existing qualifications.',
+    description:
+      'Can add and manage the organisation qualifications list. Off means they cannot manage that list. It does not delete stored qualifications.',
   },
   {
     key: 'subContractors',
@@ -58,31 +60,22 @@ export const MANAGER_PERMISSION_TOGGLES: PermissionToggleDef[] = [
   {
     key: 'weeklyReports',
     title: 'Weekly report',
-    description: 'Can open and pull weekly reports.',
+    description: 'Can view and use the page. Off means the page is not shown.',
   },
   {
     key: 'dailyOverview',
     title: 'Daily overview',
-    description: 'Can open daily overview from the home screen and menus.',
+    description: 'Can view and use the page. Off means the page is not shown.',
   },
   {
     key: 'annualLeaveSelfBook',
     title: 'Annual Leave Management',
-    description: 'Can book their own annual leave. If off, this manager requests leave for approval.',
-  },
-  {
-    key: 'materials',
-    title: 'Materials',
-    description: 'Can access material lists in projects and small works.',
-  },
-  {
-    key: 'siteAudit',
-    title: 'Site audit',
-    description: 'Can view and submit site audits.',
+    description:
+      'On means they book their own leave without a request. Off means they must request and it goes to the line manager.',
   },
   {
     key: 'wholesalersOrderHistory',
-    title: 'Wholesalers (Order & Quote History)',
-    description: 'Can view wholesaler order and quote history.',
+    title: 'Wholesalers',
+    description: 'Can view and manage the wholesalers page. Off means the page is not available.',
   },
 ]

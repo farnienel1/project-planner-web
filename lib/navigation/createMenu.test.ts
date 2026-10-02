@@ -49,22 +49,37 @@ test('operatives do not get a + New menu', () => {
   assert.deepEqual(createMenuItems(op).map((row) => row.id), [])
 })
 
-test('admins see every + New item', () => {
+test('admins see + New items their toggles allow', () => {
   const admin = user({ role: UserRole.ADMIN, permissions: { adminAccess: true, manager: true } })
-  assert.deepEqual(
-    createMenuItems(admin).map((row) => row.id),
-    [
-      'project',
-      'small-works',
-      'user',
-      'client',
-      'qualification',
-      'job-type',
-      'sub-contractor',
-      'wholesaler',
-      'material',
-    ]
-  )
+  assert.deepEqual(createMenuItems(admin).map((row) => row.id), [
+    'user',
+    'client',
+    'job-type',
+    'sub-contractor',
+    'wholesaler',
+    'material',
+  ])
+  const flagged = user({
+    role: UserRole.ADMIN,
+    permissions: {
+      adminAccess: true,
+      projects: true,
+      smallWorks: true,
+      qualifications: true,
+      wholesalersOrderHistory: true,
+    },
+  })
+  assert.deepEqual(createMenuItems(flagged).map((row) => row.id), [
+    'project',
+    'small-works',
+    'user',
+    'client',
+    'qualification',
+    'job-type',
+    'sub-contractor',
+    'wholesaler',
+    'material',
+  ])
 })
 
 test('managers only see items their flags allow', () => {

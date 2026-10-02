@@ -15,6 +15,10 @@ export function AnnualLeaveScreen() {
   const { organization, user } = useAuthStore()
   const { bookings, error, saveBooking, deleteBooking, requestCancellation } = useHolidayStore()
   const isOperative = isOperativeMode(user)
+  const hasLineManager = Boolean(
+    user?.assignedManagerUserId?.trim() || user?.assignedManagerUserIds?.some((id) => id.trim())
+  )
+  const booksOwnLeave = !isOperative && (!hasLineManager || user?.permissions.annualLeaveSelfBook === true)
   const canTeam = !isOperative && canAccessOperativeAnnualLeaveDirectory(user)
   const [tab, setTab] = useState<'mine' | 'team'>('mine')
   const [queueCount, setQueueCount] = useState(0)
@@ -73,7 +77,7 @@ export function AnnualLeaveScreen() {
 
       {tab === 'mine' || !canTeam ? (
         <PersonalLeave
-          mode={isOperative ? 'operative' : 'manager'}
+          mode={booksOwnLeave ? 'manager' : 'operative'}
           myBookings={myBookings}
           organization={organization}
           user={user}

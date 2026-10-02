@@ -49,7 +49,7 @@ function project(id: string, extra: Partial<Project> = {}): Project {
   }
 }
 
-test('admins see every job', () => {
+test('admins with projects on see every job, and projects off leaves assigned jobs', () => {
   const admin: User = {
     id: 'admin',
     email: 'a@x.com',
@@ -60,7 +60,7 @@ test('admins see every job', () => {
     isActive: true,
     passwordSet: true,
     isSuperAdmin: true,
-    permissions: { ...emptyPerms, adminAccess: true },
+    permissions: { ...emptyPerms, adminAccess: true, projects: true },
     policyAccepted: true,
     createdAt: new Date(),
     updatedAt: new Date(),
@@ -74,6 +74,14 @@ test('admins see every job', () => {
     managerBookings: [],
   })
   assert.equal(visible.length, 2)
+  const withoutProjects = visibleWorks({
+    projects: jobs,
+    user: { ...admin, permissions: { ...admin.permissions, projects: false } },
+    operatives: [],
+    bookings: [],
+    managerBookings: [],
+  })
+  assert.equal(withoutProjects.length, 0)
 })
 
 test('operatives only see booked jobs and never hidden ones', () => {

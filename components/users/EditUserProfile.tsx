@@ -25,9 +25,11 @@ import { normalizeEmploymentType } from '@/lib/ios-parity/enums'
 import type { User, UserPermissions } from '@/types'
 import { PermissionToggleList } from '@/components/users/ProfileExpandablePermissionToggle'
 import {
+  ADMIN_ACCESS_LOCKED_MESSAGE,
   MANAGER_PERMISSION_TOGGLES,
   OPERATIVE_PERMISSION_TOGGLES,
 } from '@/lib/staff/userPermissionDescriptions'
+import { SUPER_ADMIN_SUCCESSOR_EMPTY, superAdminSuccessors } from '@/lib/staff/superAdminTransfer'
 import {
   PanelHeader,
   SectionLabel,
@@ -66,6 +68,26 @@ const ACCOUNT_TYPE_OPTIONS: {
     description: 'Full admin access including user management. Saves with the main Save button.',
   },
 ]
+
+function hasLineManager(user: User): boolean {
+  if (user.assignedManagerUserId?.trim()) return true
+  return (user.assignedManagerUserIds || []).some((id) => id.trim())
+}
+
+function permissionLocks(
+  user: User,
+  accountType: 'operative' | 'manager' | 'admin'
+): Partial<Record<keyof UserPermissions, string>> {
+  const locks: Partial<Record<keyof UserPermissions, string>> = {}
+  if (accountType === 'manager' && !user.isSuperAdmin) locks.adminAccess = ADMIN_ACCESS_LOCKED_MESSAGE
+  if (!hasLineManager(user)) locks.annualLeaveSelfBook = ''
+  return locks
+}
+
+function annualLeaveChecked(user: User): Partial<Record<keyof UserPermissions, boolean>> | undefined {
+  if (hasLineManager(user)) return undefined
+  return { annualLeaveSelfBook: true }
+}
 
 function currentAccountType(user: User): 'operative' | 'manager' | 'admin' {
   if (user.isSuperAdmin || user.permissions.adminAccess || user.role === 'admin') return 'admin'
@@ -168,10 +190,10 @@ export function EditUserProfile({
   hubHref?: string
 }) {
   const router = useRouter()
-  const { user: currentUser, organization } = useAuthStore()
+  const { user: currentUser, organization, reloadSignedInProfile } = useAuthStore()
   const { users, loadUsers, setListedUserActive } = useOrgUserStore()
   const { operatives, loadOperatives } = useOperativeStore()
-  const { getUser, saveUser, setUserActive, deleteUser, sendPasswordReset, applyAccountType, syncLinkedOperative } =
+  const { getUser, saveUser, setUserActive, deleteUser, sendPasswordReset, applyAccountType, syncLinkedOperative, transferSuperAdmin } =
     useUserStore()
   const { inviteUser } = useInviteStore()
 
@@ -187,6 +209,9 @@ export function EditUserProfile({
   const [busyAction, setBusyAction] = useState<string | null>(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [confirmAdmin, setConfirmAdmin] = useState(false)
+  const [showTransfer, setShowTransfer] = useState(false)
+  const [transferring, setTransferring] = useState(false)
+  const [lockedNotice, setLockedNotice] = useState<string | null>(null)
   const [baseline, setBaseline] = useState<string | null>(null)
   const [originalDayRate, setOriginalDayRate] = useState<number | undefined>(undefined)
   const [fixEmail, setFixEmail] = useState('')
@@ -253,20 +278,16 @@ export function EditUserProfile({
   const effectiveAccountType = draftAccountType ?? (target ? currentAccountType(target) : 'manager')
 
   const updatePermissions = (patch: Partial<UserPermissions>) => {
-    if (!target) return
-    if (patch.adminAccess === true && currentAccountType(target) !== 'admin') {
-      setConfirmAdmin(true)
+    if (!target || target.isSuperAdmin) return
+    if (patch.adminAccess != null && currentAccountType(target) === 'manager') {
+      setLockedNotice(ADMIN_ACCESS_LOCKED_MESSAGE)
       return
     }
     if (draftTypePermissions) {
-      const next = { ...draftTypePermissions, ...patch }
-      if (patch.adminAccess === true) next.manager = true
-      setDraftTypePermissions(next)
+      setDraftTypePermissions({ ...draftTypePermissions, ...patch })
       return
     }
-    const next = { ...target.permissions, ...patch }
-    if (patch.adminAccess === true) next.manager = true
-    setTarget({ ...target, permissions: next })
+    setTarget({ ...target, permissions: { ...target.permissions, ...patch } })
   }
 
   const handleSave = async (e?: FormEvent) => {
@@ -294,7 +315,7 @@ export function EditUserProfile({
     setSaving(false)
     void (async () => {
       try {
-        await saveUser(toSave)
+        await saveUser(toSave, organization.id, previous.email)
         void setUserActive(toSave.id, toSave.isActive, organization.id).catch(() => undefined)
         void syncLinkedOperative(organization.id, toSave, operatives).catch(() => undefined)
         void loadUsers(organization.id, { force: true }).catch(() => undefined)
@@ -367,7 +388,7 @@ export function EditUserProfile({
   }
 
   const handleToggleActive = async () => {
-    if (!target || !canAdminTools || activeSaving) return
+    if (!target || !canAdminTools || activeSaving || target.isSuperAdmin) return
     const previous = target
     const next = !target.isActive
     const nextUser = { ...target, isActive: next, updatedAt: new Date() }
@@ -393,7 +414,7 @@ export function EditUserProfile({
   }
 
   const handleDelete = async () => {
-    if (!target || !canAdminTools) return
+    if (!target || !canAdminTools || target.isSuperAdmin) return
     setConfirmDelete(false)
     setBusyAction('delete')
     try {
@@ -403,6 +424,25 @@ export function EditUserProfile({
       setError(err instanceof Error ? err.message : 'Failed to delete user')
     } finally {
       setBusyAction(null)
+    }
+  }
+
+  const handleTransfer = async (nextUserId: string) => {
+    if (!currentUser?.isSuperAdmin || !target || target.id !== currentUser.id || !organization?.id || transferring) return
+    setTransferring(true)
+    setError(null)
+    try {
+      await transferSuperAdmin(organization.id, currentUser.id, nextUserId, users)
+      await reloadSignedInProfile()
+      await loadUsers(organization.id, { force: true })
+      const refreshed = await getUser(target.id)
+      if (refreshed) setTarget(refreshed)
+      setShowTransfer(false)
+      setSuccess('Super admin updated.')
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Could not change super admin')
+    } finally {
+      setTransferring(false)
     }
   }
 
@@ -596,17 +636,21 @@ export function EditUserProfile({
                   defs={OPERATIVE_PERMISSION_TOGGLES}
                   permissions={effectivePermissions}
                   onChange={updatePermissions}
-                  disabled={!canEdit}
+                  disabled={!canEdit || target.isSuperAdmin}
                 />
               ) : (
                 <PermissionToggleList
                   defs={MANAGER_PERMISSION_TOGGLES}
                   permissions={effectivePermissions}
                   onChange={updatePermissions}
-                  disabled={!canEdit}
+                  disabled={!canEdit || target.isSuperAdmin}
                   excludeKeys={suppressAdminAccessToggle ? ['adminAccess'] : undefined}
+                  lockedMessages={permissionLocks(target, effectiveAccountType)}
+                  checkedOverrides={annualLeaveChecked(target)}
+                  onLocked={setLockedNotice}
                 />
               )}
+              {lockedNotice ? <p className="px-5 py-3 text-sm text-slate-600">{lockedNotice}</p> : null}
             </div>
           </SettingsCard>
         </>
@@ -981,11 +1025,16 @@ export function EditUserProfile({
                       defs={MANAGER_PERMISSION_TOGGLES}
                       permissions={draftTypePermissions}
                       onChange={(patch) => {
-                        const next = { ...draftTypePermissions, ...patch }
-                        if (patch.adminAccess === true) next.manager = true
-                        setDraftTypePermissions(next)
+                        if (patch.adminAccess != null && effectiveAccountType === 'manager') {
+                          setLockedNotice(ADMIN_ACCESS_LOCKED_MESSAGE)
+                          return
+                        }
+                        setDraftTypePermissions({ ...draftTypePermissions, ...patch })
                       }}
                       excludeKeys={suppressAdminAccessToggle ? ['adminAccess'] : undefined}
+                      lockedMessages={permissionLocks(target, effectiveAccountType)}
+                      checkedOverrides={annualLeaveChecked(target)}
+                      onLocked={setLockedNotice}
                     />
                   </div>
                 )}
@@ -1003,25 +1052,39 @@ export function EditUserProfile({
               </div>
             )}
 
-            <ActionButton
-              title="Change user type"
-              subtitle="Switch between operative, manager, or administrator"
-              tone="purple"
-              onClick={() => setShowChangeType(true)}
-            />
-            <ActionButton
-              title={target.isActive ? 'Deactivate user' : 'Reactivate user'}
-              subtitle={target.isActive ? 'Suspend access, keep history' : 'Restore sign-in access'}
-              tone="amber"
-              busy={activeSaving}
-              onClick={handleToggleActive}
-            />
-            <ActionButton
-              title="Delete user"
-              subtitle="Permanently remove account"
-              tone="red"
-              onClick={() => setConfirmDelete(true)}
-            />
+            {currentUser?.isSuperAdmin && target.id === currentUser.id ? (
+              <ActionButton
+                title="Change Super Admin"
+                subtitle="Pass super admin to another administrator"
+                tone="purple"
+                onClick={() => setShowTransfer(true)}
+              />
+            ) : null}
+            {target.isSuperAdmin ? null : (
+              <ActionButton
+                title="Change user type"
+                subtitle="Switch between operative, manager, or administrator"
+                tone="purple"
+                onClick={() => setShowChangeType(true)}
+              />
+            )}
+            {target.isSuperAdmin ? null : (
+              <ActionButton
+                title={target.isActive ? 'Deactivate user' : 'Reactivate user'}
+                subtitle={target.isActive ? 'Suspend access, keep history' : 'Restore sign-in access'}
+                tone="amber"
+                busy={activeSaving}
+                onClick={handleToggleActive}
+              />
+            )}
+            {target.isSuperAdmin ? null : (
+              <ActionButton
+                title="Delete user"
+                subtitle="Permanently remove account"
+                tone="red"
+                onClick={() => setConfirmDelete(true)}
+              />
+            )}
           </>
         )}
       </div>
@@ -1052,6 +1115,47 @@ export function EditUserProfile({
                 className="rounded-xl bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
               >
                 Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showTransfer && target && currentUser?.isSuperAdmin && target.id === currentUser.id && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          onClick={() => setShowTransfer(false)}
+        >
+          <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <h2 className="text-lg font-bold text-slate-900">Change Super Admin</h2>
+            {superAdminSuccessors(users, currentUser.id).length === 0 ? (
+              <p className="mt-2 text-sm text-slate-600">{SUPER_ADMIN_SUCCESSOR_EMPTY}</p>
+            ) : (
+              <ul className="mt-3 max-h-64 space-y-2 overflow-y-auto">
+                {superAdminSuccessors(users, currentUser.id).map((person) => (
+                  <li key={person.id}>
+                    <button
+                      type="button"
+                      disabled={transferring}
+                      onClick={() => void handleTransfer(person.id)}
+                      className="w-full rounded-xl border border-slate-200 px-4 py-3 text-left hover:bg-slate-50 disabled:opacity-60"
+                    >
+                      <span className="block text-sm font-semibold text-slate-900">
+                        {person.firstName} {person.surname}
+                      </span>
+                      <span className="mt-0.5 block text-xs text-slate-500">{person.email}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <div className="mt-5 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setShowTransfer(false)}
+                className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
+              >
+                Cancel
               </button>
             </div>
           </div>

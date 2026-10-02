@@ -71,8 +71,7 @@ export function canManageUsers(user: PermissionUser): boolean {
 
 export function canViewOperatives(user: PermissionUser): boolean {
   if (!user || isOperativeMode(user)) return false
-  if (hasAdminAccess(user)) return true
-  return flag(user, 'manager') && flag(user, 'operatives')
+  return flag(user, 'operatives')
 }
 
 export function canManageMaterialCatalogue(user: PermissionUser): boolean {
@@ -82,13 +81,11 @@ export function canManageMaterialCatalogue(user: PermissionUser): boolean {
 
 export function canAccessWholesalers(user: PermissionUser): boolean {
   if (!user || isOperativeMode(user)) return false
-  return hasAdminAccess(user) || flag(user, 'manager')
+  return flag(user, 'wholesalersOrderHistory')
 }
 
 export function canViewWholesalerOrderHistory(user: PermissionUser): boolean {
-  if (!user || isOperativeMode(user)) return false
-  if (hasAdminAccess(user)) return true
-  return flag(user, 'manager') && flag(user, 'wholesalersOrderHistory')
+  return canAccessWholesalers(user)
 }
 
 export function canManageSkills(_user?: PermissionUser): boolean {
@@ -97,7 +94,6 @@ export function canManageSkills(_user?: PermissionUser): boolean {
 
 export function canManageOrganisationQualifications(user: PermissionUser): boolean {
   if (!user || isOperativeMode(user)) return false
-  if (hasAdminAccess(user)) return true
   return flag(user, 'qualifications')
 }
 
@@ -130,7 +126,6 @@ export function canViewSiteAudit(user: PermissionUser, profileLoading = false): 
 
 export function canEditProjects(user: PermissionUser): boolean {
   if (!user || isOperativeMode(user)) return false
-  if (hasAdminAccess(user) || user.isSuperAdmin) return true
   return flag(user, 'projects') || flag(user, 'smallWorks')
 }
 
@@ -181,8 +176,6 @@ export function canManageWorkCatalogue(
   kind: WorkCatalogueKind
 ): boolean {
   if (!user || isOperativeMode(user)) return false
-  if (hasAdminAccess(user)) return true
-  if (!flag(user, 'manager')) return false
   if (kind === 'projects') return flag(user, 'projects')
   if (kind === 'smallWorks') return flag(user, 'smallWorks')
   return flag(user, 'projects') && flag(user, 'smallWorks')
@@ -372,6 +365,7 @@ export function canDeleteUser(
   orgCreatorUserId?: string
 ): boolean {
   if (!actor || !target) return false
+  if (target.isSuperAdmin) return false
   if (orgCreatorUserId && target.id === orgCreatorUserId) return false
   if (actor.id === target.id && actor.isSuperAdmin) return false
   if (actor.isSuperAdmin) return true
