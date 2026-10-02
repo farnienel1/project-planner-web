@@ -1,20 +1,22 @@
 'use client'
 
 import { create } from 'zustand'
-import { deleteDoc, doc, getDoc, setDoc, updateDoc, Timestamp } from 'firebase/firestore'
+import { collection, deleteDoc, doc, getDoc, getDocs, limit, query, setDoc, updateDoc, Timestamp, where } from 'firebase/firestore'
 import { sendPasswordResetEmail } from 'firebase/auth'
 import { passwordResetActionSettings } from '@/lib/auth/passwordResetSettings'
-import type { Operative, User, UserPermissions } from '@/types'
+import type { Operative, User } from '@/types'
 import { auth, db } from '@/lib/firebase/config'
 import { buildSaveUserPayload } from '@/lib/firebase/userPayload'
 import { parseOrgUser } from '@/lib/firebase/parseUser'
 import { findOperativeForUser } from '@/lib/operatives/operativeRosterUtils'
+import { applyAccountTypeChange } from '@/lib/staff/accountTypeChange'
 
 interface UserStoreState {
   saving: boolean
   error: string | null
   getUser: (userId: string) => Promise<User | null>
-  saveUser: (user: User) => Promise<void>
+  saveUser: (user: User, organizationId?: string, previousEmail?: string) => Promise<void>
+  transferSuperAdmin: (organizationId: string, fromUserId: string, toUserId: string, roster: User[]) => Promise<void>
   setUserActive: (userId: string, isActive: boolean, organizationId?: string) => Promise<void>
   deleteUser: (userId: string) => Promise<void>
   sendPasswordReset: (email: string) => Promise<void>
@@ -22,50 +24,75 @@ interface UserStoreState {
   syncLinkedOperative: (organizationId: string, user: User, operatives: Operative[]) => Promise<void>
 }
 
-function permissionsForAccountType(accountType: 'operative' | 'manager' | 'admin'): UserPermissions {
-  const base: UserPermissions = {
-    adminAccess: false,
-    manager: false,
-    operatives: false,
-    skills: false,
-    qualifications: false,
-    materials: false,
-    projects: true,
-    smallWorks: true,
-    operativeMode: false,
-    siteAudit: true,
-    subContractors: false,
-    wholesalersOrderHistory: true,
-    annualLeaveSelfBook: false,
-    weeklyReports: false,
-    dailyOverview: true,
+function identityFields(user: User): Record<string, unknown> {
+  const firstName = user.firstName.trim()
+  const surname = user.surname.trim()
+  const displayName = `${firstName} ${surname}`.trim()
+  return {
+    firstName,
+    surname,
+    lastName: surname,
+    name: displayName,
+    displayName,
+    updatedAt: Timestamp.now(),
   }
-
-  if (accountType === 'admin') {
-    return {
-      ...base,
-      adminAccess: true,
-      manager: true,
-      operatives: true,
-      skills: false,
-      qualifications: true,
-      subContractors: true,
-    }
-  }
-
-  if (accountType === 'manager') {
-    return {
-      ...base,
-      manager: true,
-      operatives: true,
-      skills: false,
-      qualifications: true,
-      subContractors: true,
-    }
-  }
-
-  return { ...base, operativeMode: true, materials: true, siteAudit: true }
 }
+
+async function updateSameEmailUsers(user: User, previousEmail?: string): Promise<void> {
+  const emails = [user.email, previousEmail || '']
+    .map((value) => value.trim().toLowerCase())
+    .filter((value, index, all) => value.includes('@') && all.indexOf(value) === index)
+  for (const email of emails) {
+    const snapshot = await getDocs(query(collection(db, 'users'), where('email', '==', email), limit(10)))
+    for (const entry of snapshot.docs) {
+      if (entry.id === user.id) continue
+      await updateDoc(entry.ref, identityFields(user))
+    }
+  }
+}
+
+async function updateLinkedStaffNames(organizationId: string, user: User, previousEmail?: string): Promise<void> {
+  const emails = new Set(
+    [user.email, previousEmail || ''].map((value) => value.trim().toLowerCase()).filter(Boolean)
+  )
+  if (emails.size === 0) return
+  const fields = identityFields(user)
+  for (const collectionName of ['operatives', 'managers'] as const) {
+    const snapshot = await getDocs(collection(db, 'organizations', organizationId, collectionName))
+    for (const entry of snapshot.docs) {
+      const email = String(entry.data().email || '').trim().toLowerCase()
+      if (!emails.has(email)) continue
+      await updateDoc(entry.ref, fields)
+    }
+  }
+}
+
+async function writeMembershipFlags(
+  userId: string,
+  organizationId: string,
+  fields: Record<string, unknown>
+): Promise<void> {
+  const ref = doc(db, 'users', userId, 'orgMemberships', organizationId)
+  try {
+    await updateDoc(ref, fields)
+  } catch (error) {
+    const code = (error as { code?: string }).code || ''
+    if (code !== 'not-found') return
+    const nested: Record<string, unknown> = { ...fields }
+    if (nested['permissions.adminAccess'] === true) {
+      delete nested['permissions.adminAccess']
+      nested.permissions = { adminAccess: true }
+    }
+    await setDoc(ref, nested, { merge: true })
+  }
+}
+
+const roleFields = {
+  isSuperAdmin: false,
+  adminAccess: true,
+  role: 'admin',
+  'permissions.adminAccess': true,
+} as const
 
 export const useUserStore = create<UserStoreState>(() => ({
   saving: false,
@@ -83,14 +110,54 @@ export const useUserStore = create<UserStoreState>(() => ({
     return parseOrgUser(snap.id, { ...data, organizationId: fallback })
   },
 
-  saveUser: async (user) => {
-    await setDoc(doc(db, 'users', user.id), buildSaveUserPayload(user), { merge: true })
-    await setDoc(doc(db, 'organizations', user.organizationId, 'userEmails', user.email.toLowerCase().trim()), {
-      userId: user.id,
-    })
+  saveUser: async (user, organizationId, previousEmail) => {
+    const names = identityFields(user)
+    const payload = buildSaveUserPayload(user)
+    delete payload.organizationId
+    Object.assign(payload, names)
+    await updateDoc(doc(db, 'users', user.id), payload)
+    const orgId = organizationId?.trim() || user.organizationId
+    const email = user.email.toLowerCase().trim()
+    if (orgId && email) {
+      await setDoc(doc(db, 'organizations', orgId, 'userEmails', email), { userId: user.id })
+    }
+    await updateSameEmailUsers(user, previousEmail)
+    if (orgId) await updateLinkedStaffNames(orgId, user, previousEmail)
+  },
+
+  transferSuperAdmin: async (organizationId, fromUserId, toUserId, roster) => {
+    if (!organizationId || !toUserId || fromUserId === toUserId) return
+    const orgSnap = await getDoc(doc(db, 'organizations', organizationId))
+    const previousCreator = orgSnap.exists() ? String(orgSnap.data().creatorUserId || '') : ''
+    const updatedAt = Timestamp.now()
+    await updateDoc(doc(db, 'organizations', organizationId), { creatorUserId: toUserId, updatedAt })
+
+    const demote = new Set<string>()
+    for (const person of roster) {
+      if (person.isSuperAdmin) demote.add(person.id)
+    }
+    if (fromUserId) demote.add(fromUserId)
+    if (previousCreator) demote.add(previousCreator)
+    demote.delete(toUserId)
+
+    const promote = { isSuperAdmin: true, adminAccess: true, role: 'admin', 'permissions.adminAccess': true, updatedAt }
+    await updateDoc(doc(db, 'users', toUserId), promote)
+    await writeMembershipFlags(toUserId, organizationId, promote)
+
+    for (const userId of demote) {
+      const demotion = { ...roleFields, updatedAt }
+      await updateDoc(doc(db, 'users', userId), demotion)
+      await writeMembershipFlags(userId, organizationId, demotion)
+    }
   },
 
   setUserActive: async (userId, isActive, organizationId) => {
+    if (!isActive) {
+      const existing = await getDoc(doc(db, 'users', userId))
+      if (existing.exists() && existing.data().isSuperAdmin === true) {
+        throw new Error('The super admin cannot be deactivated.')
+      }
+    }
     const updatedAt = Timestamp.now()
     await updateDoc(doc(db, 'users', userId), { isActive, updatedAt })
     const orgId = organizationId?.trim()
@@ -107,6 +174,10 @@ export const useUserStore = create<UserStoreState>(() => ({
   },
 
   deleteUser: async (userId) => {
+    const existing = await getDoc(doc(db, 'users', userId))
+    if (existing.exists() && existing.data().isSuperAdmin === true) {
+      throw new Error('The super admin cannot be deleted.')
+    }
     await deleteDoc(doc(db, 'users', userId))
   },
 
@@ -114,11 +185,7 @@ export const useUserStore = create<UserStoreState>(() => ({
     await sendPasswordResetEmail(auth, email.toLowerCase().trim(), passwordResetActionSettings(email))
   },
 
-  applyAccountType: (user, accountType) => ({
-    ...user,
-    permissions: permissionsForAccountType(accountType),
-    isSuperAdmin: accountType === 'admin' ? user.isSuperAdmin : false,
-  }),
+  applyAccountType: (user, accountType) => applyAccountTypeChange(user, accountType),
 
   syncLinkedOperative: async (organizationId, user, operatives) => {
     if (!user.permissions.operativeMode) return

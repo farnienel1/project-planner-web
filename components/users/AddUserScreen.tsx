@@ -208,24 +208,31 @@ export function AddUserScreen() {
   }
 
   function updatePermission(patch: Partial<UserPermissions>) {
-    setPermissions((prev) => {
-      const next = { ...prev, ...patch }
-      if (patch.adminAccess === true) next.manager = true
-      return next
-    })
+    if (accountType === 'admin' && patch.adminAccess === false) return
+    setPermissions((prev) => ({ ...prev, ...patch }))
   }
 
   function permissionChecked(key: keyof UserPermissions): boolean {
-    if (accountType === 'admin') return true
-    return permissions[key] === true
+    if (accountType === 'admin' && key === 'adminAccess') return true
+    return permissions[key] === true || (key === 'dailyOverview' && permissions.dailyOverview !== false)
   }
 
   const invitePermissions = useMemo(() => {
-    if (accountType === 'admin') return permissionsForAccountType('admin')
-    if (operativeInviteOnly || accountType === 'operative') {
-      return { ...permissions, operativeMode: true, manager: false, adminAccess: false }
+    if (accountType === 'admin') {
+      return {
+        ...permissions,
+        adminAccess: true,
+        manager: true,
+        operativeMode: false,
+        skills: false,
+        materials: true,
+        siteAudit: true,
+      }
     }
-    return { ...permissions, manager: true, operativeMode: false, adminAccess: false }
+    if (operativeInviteOnly || accountType === 'operative') {
+      return { ...permissions, operativeMode: true, manager: false, adminAccess: false, skills: false }
+    }
+    return { ...permissions, manager: true, operativeMode: false, adminAccess: false, skills: false, materials: true, siteAudit: true }
   }, [accountType, operativeInviteOnly, permissions])
 
   const handleSubmit = async (e?: FormEvent) => {
@@ -429,9 +436,8 @@ export function AddUserScreen() {
         <FormSection label="Administrator permissions">
           <SettingsCard>
             <div className="border-b border-slate-100 px-4 py-3 text-sm text-slate-600">
-              All permissions are enabled for administrators. The only capability managers do not have is{' '}
-              <strong className="font-semibold text-slate-800">Organisation settings</strong> in Settings — that hub is
-              visible to administrators only and is hidden from managers and operatives.
+              Administrator sets their role. Projects, small works, weekly report, and daily overview stay as chosen
+              here. Materials and site audit stay on.
             </div>
             <div className="divide-y divide-slate-100">
               {adminPermissionDefs.map((def) => (
@@ -439,8 +445,8 @@ export function AddUserScreen() {
                   key={def.key}
                   def={def}
                   checked={permissionChecked(def.key)}
-                  onChange={() => {}}
-                  disabled
+                  onChange={(checked) => updatePermission({ [def.key]: checked } as Partial<UserPermissions>)}
+                  disabled={def.key === 'adminAccess'}
                 />
               ))}
             </div>

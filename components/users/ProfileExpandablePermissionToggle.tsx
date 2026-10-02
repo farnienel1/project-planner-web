@@ -9,11 +9,15 @@ export function ProfileExpandablePermissionToggle({
   checked,
   onChange,
   disabled,
+  lockedMessage,
+  onLocked,
 }: {
   def: PermissionToggleDef
   checked: boolean
   onChange: (checked: boolean) => void
   disabled?: boolean
+  lockedMessage?: string
+  onLocked?: (message: string) => void
 }) {
   const [expanded, setExpanded] = useState(false)
 
@@ -44,8 +48,14 @@ export function ProfileExpandablePermissionToggle({
           type="button"
           role="switch"
           aria-checked={checked}
-          disabled={disabled}
-          onClick={() => !disabled && onChange(!checked)}
+          disabled={disabled && !lockedMessage}
+          onClick={() => {
+            if (lockedMessage) {
+              onLocked?.(lockedMessage)
+              return
+            }
+            if (!disabled) onChange(!checked)
+          }}
           className={`
             relative inline-flex h-[28px] w-[50px] flex-shrink-0 cursor-pointer items-center
             rounded-full border-2 border-transparent transition-colors duration-200
@@ -73,26 +83,41 @@ export function PermissionToggleList({
   onChange,
   disabled,
   excludeKeys,
+  lockedMessages,
+  checkedOverrides,
+  onLocked,
 }: {
   defs: PermissionToggleDef[]
   permissions: UserPermissions
   onChange: (patch: Partial<UserPermissions>) => void
   disabled?: boolean
   excludeKeys?: (keyof UserPermissions)[]
+  lockedMessages?: Partial<Record<keyof UserPermissions, string>>
+  checkedOverrides?: Partial<Record<keyof UserPermissions, boolean>>
+  onLocked?: (message: string) => void
 }) {
   const visible = defs.filter((def) => !excludeKeys?.includes(def.key))
 
   return (
     <>
-      {visible.map((def) => (
-        <ProfileExpandablePermissionToggle
-          key={def.key}
-          def={def}
-          checked={permissions[def.key] === true || (def.key === 'dailyOverview' && permissions.dailyOverview !== false)}
-          onChange={(checked) => onChange({ [def.key]: checked } as Partial<UserPermissions>)}
-          disabled={disabled}
-        />
-      ))}
+      {visible.map((def) => {
+        const rawLock = lockedMessages?.[def.key]
+        const locked = rawLock != null
+        return (
+          <ProfileExpandablePermissionToggle
+            key={def.key}
+            def={def}
+            checked={
+              checkedOverrides?.[def.key] ??
+              (permissions[def.key] === true || (def.key === 'dailyOverview' && permissions.dailyOverview !== false))
+            }
+            onChange={(checked) => onChange({ [def.key]: checked } as Partial<UserPermissions>)}
+            disabled={disabled || locked}
+            lockedMessage={rawLock || undefined}
+            onLocked={onLocked}
+          />
+        )
+      })}
     </>
   )
 }

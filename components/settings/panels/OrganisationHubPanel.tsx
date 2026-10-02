@@ -305,16 +305,14 @@ export function OrganisationHubPanel({
         <SettingsRow
           icon={ICON.trash}
           danger
-          label="Delete organisation"
+          label="Delete Organisation and Cancel Project Planner Membership"
           description="Permanent · cannot be undone"
           chevron
           onClick={() => {
-            if (window.confirm('Are you absolutely sure? This cannot be undone.')) {
-              setFeedback({
-                kind: 'error',
-                msg: 'Organisation deletion is not available in the app. Contact support to close an account.',
-              })
-            }
+            setFeedback({
+              kind: 'error',
+              msg: 'Subscriptions can be turned off via the web app. To delete and organisation entirely, please contact info@projectplanner.us',
+            })
           }}
         />
       </SettingsCard>

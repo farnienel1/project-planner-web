@@ -16,6 +16,7 @@ import {
 import { getFirebaseDb } from '@/lib/firebase/ensureFirebase'
 import { queryWithin } from '@/lib/orgMembership/queryBudget'
 import { permissionsToFirestoreMap } from '@/lib/firebase/userPayload'
+import { readWebActiveOrg, writeWebActiveOrg } from '@/lib/orgMembership/webActiveOrg'
 import type { UserPermissions } from '@/types'
 import type { OrgMembership, UserOrgMembershipRecord } from '@/lib/orgMembership/types'
 import {
@@ -25,15 +26,12 @@ import {
 import {
   FOUNDER_PERMISSIONS,
   membershipSnapshotFromUserDoc,
-  userPatchForActiveOrg,
 } from '@/lib/orgMembership/orgRoleFlags'
 import {
   loginBlockMessage,
   membershipSummary,
   sortMemberships,
 } from '@/lib/orgMembership/organizationTrialPolicy'
-import { membershipAccountIsActive } from '@/lib/auth/deactivatedAccount'
-
 function parseMembershipRecord(
   organizationId: string,
   data: Record<string, unknown>
@@ -318,24 +316,80 @@ export async function switchActiveOrganization(userId: string, organizationId: s
     throw new Error(blockMessage)
   }
 
-  await snapshotCurrentMembership(userId)
+  // This browser remembers the company. The shared user document keeps the company last opened on iOS.
+  writeWebActiveOrg(userId, organizationId)
+}
 
-  const membershipData = membershipSnap.exists()
-    ? (membershipSnap.data() as Record<string, unknown>)
-    : {}
-  const patch = userPatchForActiveOrg({
-    organizationId,
-    role: String(membershipData.role || listedRole || (isCreator ? 'admin' : 'member')),
-    isCreator,
-    membershipIsSuperAdmin: membershipData.isSuperAdmin === true,
-    permissions: (membershipData.permissions as Record<string, unknown>) || membershipData,
-    accountActive: membershipAccountIsActive(membershipData.accountActive),
-  })
+async function membershipForDeviceOrg(
+  userId: string,
+  organizationId: string
+): Promise<{ allowed: boolean; membership: Record<string, unknown> | null; listedRole: string | null }> {
+  const db = getFirebaseDb()
+  let membership: Record<string, unknown> | null = null
+  let membershipExists = false
+  try {
+    const snap = await getDoc(doc(db, 'users', userId, 'orgMemberships', organizationId))
+    membershipExists = snap.exists()
+    if (snap.exists()) membership = snap.data() as Record<string, unknown>
+  } catch {
+    membership = null
+  }
 
-  await updateDoc(doc(db, 'users', userId), {
-    ...patch,
-    updatedAt: Timestamp.now(),
-  })
+  let orgExists = false
+  let listed = false
+  let listedRole: string | null = null
+  let isCreator = false
+  try {
+    const orgSnap = await getDoc(doc(db, 'organizations', organizationId))
+    orgExists = orgSnap.exists()
+    if (orgSnap.exists()) {
+      const data = orgSnap.data() as Record<string, unknown>
+      const members = (data.members as Record<string, unknown> | undefined) ?? {}
+      if (members[userId] != null) {
+        listed = true
+        listedRole = String(members[userId])
+      }
+      isCreator = String(data.creatorUserId || '') === userId
+    }
+  } catch {
+    orgExists = false
+  }
+
+  const pending = membership?.status === 'pending'
+  return {
+    allowed: orgExists && !pending && (membershipExists || listed || isCreator),
+    membership: pending ? null : membership,
+    listedRole,
+  }
+}
+
+/** Company last chosen on this browser. Does not write users/{uid}.organizationId. */
+export async function resolveWebSessionOrganization(
+  userId: string,
+  documentOrganizationId: string
+): Promise<{ organizationId: string; membership: Record<string, unknown> | null; listedRole: string | null }> {
+  const remembered = readWebActiveOrg(userId)
+  const preferred = remembered || documentOrganizationId
+  if (!preferred) return { organizationId: '', membership: null, listedRole: null }
+
+  const chosen = await membershipForDeviceOrg(userId, preferred)
+  if (chosen.allowed) {
+    if (remembered !== preferred) writeWebActiveOrg(userId, preferred)
+    return { organizationId: preferred, membership: chosen.membership, listedRole: chosen.listedRole }
+  }
+
+  if (documentOrganizationId && preferred !== documentOrganizationId) {
+    const fallback = await membershipForDeviceOrg(userId, documentOrganizationId)
+    writeWebActiveOrg(userId, documentOrganizationId)
+    return {
+      organizationId: documentOrganizationId,
+      membership: fallback.membership,
+      listedRole: fallback.listedRole,
+    }
+  }
+
+  if (!remembered && documentOrganizationId) writeWebActiveOrg(userId, documentOrganizationId)
+  return { organizationId: documentOrganizationId, membership: chosen.membership, listedRole: chosen.listedRole }
 }
 
 /** Ensure the primary org membership exists for org creators (backward compat). */
@@ -354,8 +408,7 @@ export async function ensurePrimaryOrgMembership(
   await setDoc(ref, {
     role,
     status: 'active',
-    isSuperAdmin,
-    ...(isSuperAdmin ? { permissions: permissionsToFirestoreMap(FOUNDER_PERMISSIONS) } : {}),
+    ...(isSuperAdmin ? { isSuperAdmin: true, permissions: permissionsToFirestoreMap(FOUNDER_PERMISSIONS) } : {}),
     invitedAt: now,
     acceptedAt: now,
   })

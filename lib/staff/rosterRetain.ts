@@ -87,8 +87,24 @@ export function rosterParseRecord(
 }
 
 /**
+ * organizationId on the user document is the company they last opened.
+ * Write it only when it is missing and this organisation's members map lists them.
+ */
+export function missingOrganizationIdPatch(
+  data: Record<string, unknown>,
+  organizationId: string,
+  onMembersMap: boolean
+): { organizationId: string } | null {
+  if (!onMembersMap || !organizationId) return null
+  const named = textField(data.organizationId) || textField(data.organisationId) || textField(data.orgId)
+  if (named) return null
+  return { organizationId }
+}
+
+/**
  * The organisation user query can come back as only the signed-in admin.
  * Keep everyone already on screen, and add anyone this load did find.
+ * A different organizationId is not a missing person.
  * A person leaves only when `confirmedMissingIds` says their user document is gone.
  */
 export function mergeRetainedRoster(
@@ -96,17 +112,12 @@ export function mergeRetainedRoster(
   incoming: User[],
   confirmedMissingIds: ReadonlySet<string> = new Set()
 ): User[] {
-  const sameOrg = previous[0]?.organizationId
-  const prior =
-    sameOrg && incoming.some((user) => user.organizationId && user.organizationId !== sameOrg)
-      ? previous.filter((user) => user.organizationId === incoming[0]?.organizationId)
-      : previous
-  if (incoming.length === 0 && prior.length > 0) return dedupeUsersByEmail(prior)
+  if (incoming.length === 0 && previous.length > 0) return dedupeUsersByEmail(previous)
 
   const incomingIds = new Set(incoming.map((user) => user.id))
   const incomingEmails = new Set(incoming.map((user) => emailKey(user.email)).filter(Boolean))
   const kept = [...incoming]
-  for (const user of prior) {
+  for (const user of previous) {
     if (confirmedMissingIds.has(user.id)) continue
     const email = emailKey(user.email)
     if (incomingIds.has(user.id) || (email && incomingEmails.has(email))) continue
