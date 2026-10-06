@@ -4,6 +4,7 @@
  * matches the iOS invoice page layout so Print → Save as PDF is the same content.
  */
 import { formatCurrency } from '@/lib/weekly-report/weeklyReportPayroll'
+import { orgDayHours, payLineDisplay, readStoredRates } from '@/lib/timesheets/payBasis'
 import { formatPaymentPeriodLine } from '@/lib/timesheets/paymentRunCopy'
 import { formatStampInZone } from '@/lib/orgTime/zoneTime'
 import type { TimesheetSubject } from '@/lib/timesheets/timesheetWeekUtils'
@@ -34,6 +35,7 @@ export function buildTimesheetInvoiceHtml({
   utrNumber,
   lines,
   timeZone = 'Europe/London',
+  standardDayHours = 8,
   generatedAt = new Date(),
   documentTitle = 'Invoice',
   periodMetaLabel = 'INVOICE PERIOD',
@@ -51,6 +53,7 @@ export function buildTimesheetInvoiceHtml({
   utrNumber?: string
   lines?: TimesheetInvoiceLine[]
   timeZone?: string
+  standardDayHours?: number
   generatedAt?: Date
   documentTitle?: string
   periodMetaLabel?: string
@@ -60,6 +63,18 @@ export function buildTimesheetInvoiceHtml({
   const period = formatPaymentPeriodLine(weekStart, weekEnd, timeZone)
   const generated = formatStampInZone(generatedAt, timeZone)
   const totalText = amount != null ? formatCurrency(amount) : 'Rate not set'
+  const stored = readStoredRates(subject)
+  const standard = orgDayHours(standardDayHours)
+  const fallbackPay = payLineDisplay({
+    payBasis: stored.payBasis === 'hourly' ? 'hourly' : 'day',
+    paidHours: stored.payBasis === 'hourly' ? totalHours : totalDays > 0 ? totalDays * standard : totalHours,
+    standardDayHours: standard,
+    rate:
+      stored.payBasis === 'hourly'
+        ? stored.hourlyRate
+        : stored.dayRate,
+    pay: amount ?? 0,
+  }).equation
   const rows =
     lines && lines.length > 0
       ? lines
@@ -83,7 +98,7 @@ export function buildTimesheetInvoiceHtml({
         <div class="muted">Labour</div>
       </td>
       <td>
-        <div class="project">Hours ${totalHours.toFixed(1)} · Days ${totalDays.toFixed(2)}</div>
+        <div class="project">${escapeHtml(fallbackPay)}</div>
       </td>
       <td class="amount">${amount != null ? escapeHtml(formatCurrency(amount)) : '—'}</td>
     </tr>`

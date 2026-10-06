@@ -80,51 +80,35 @@ export type PayLine = {
   pay: number
 }
 
+/** Kept for older callers. A person is on one basis. Hourly pay stays in hours. */
 export function buildPayLinesForDays(
   totalDays: number,
   dayRate: number | undefined,
   hourlyRate: number | undefined,
   standardHours: number,
-  otMultiplier: number
+  _otMultiplier: number
 ): PayLine[] {
-  if (!dayRate && !hourlyRate) return []
-
-  const rate = dayRate && dayRate > 0 ? dayRate : (hourlyRate || 0) * standardHours
-  if (rate <= 0) return []
-
-  const normalDays = Math.min(totalDays, Math.floor(totalDays))
-  const otDays = Math.round((totalDays - normalDays) * 100) / 100
-  const lines: PayLine[] = []
-
-  if (normalDays > 0) {
-    lines.push({
-      rateType: 'Normal',
-      days: normalDays,
-      rate,
-      pay: Math.round(normalDays * rate * 100) / 100,
-    })
+  const standard = orgDayHours(standardHours)
+  if (!(dayRate != null && dayRate > 0) && hourlyRate != null && hourlyRate > 0) {
+    const hours = totalDays * standard
+    return [
+      {
+        rateType: 'Hourly',
+        days: hours,
+        rate: hourlyRate,
+        pay: roundPennies(hourlyRate * hours),
+      },
+    ]
   }
-
-  if (otDays > 0) {
-    const otRate = Math.round(rate * otMultiplier * 100) / 100
-    lines.push({
-      rateType: `OT x${otMultiplier}`,
-      days: otDays,
-      rate: otRate,
-      pay: Math.round(otDays * otRate * 100) / 100,
-    })
-  }
-
-  if (lines.length === 0 && totalDays > 0) {
-    lines.push({
-      rateType: 'Normal',
+  if (!(dayRate != null && dayRate > 0) || !(totalDays > 0)) return []
+  return [
+    {
+      rateType: 'Day',
       days: totalDays,
-      rate,
-      pay: Math.round(totalDays * rate * 100) / 100,
-    })
-  }
-
-  return lines
+      rate: dayRate,
+      pay: roundPennies(dayRate * totalDays),
+    },
+  ]
 }
 
 export function isWeekendDay(date: Date): boolean {

@@ -123,6 +123,17 @@ export const useUserStore = create<UserStoreState>(() => ({
     }
     await updateSameEmailUsers(user, previousEmail)
     if (orgId) await updateLinkedStaffNames(orgId, user, previousEmail)
+    if (
+      orgId &&
+      (user.permissions.operativeMode ||
+        user.permissions.manager ||
+        user.permissions.adminAccess ||
+        user.isSuperAdmin)
+    ) {
+      const profile: Record<string, unknown> = { userId: user.id, updatedAt: Timestamp.now() }
+      applyExclusiveRateFields(profile, user)
+      await setDoc(doc(db, 'organizations', orgId, 'operativeProfiles', user.id), profile, { merge: true })
+    }
   },
 
   transferSuperAdmin: async (organizationId, fromUserId, toUserId, roster) => {

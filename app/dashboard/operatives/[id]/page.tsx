@@ -82,10 +82,17 @@ export default function OperativeDetailPage() {
                 <dt className="text-sm font-medium text-gray-500">Start Date</dt>
                 <dd className="mt-1 text-sm text-gray-900">{format(new Date(operative.startDate), 'MMMM d, yyyy')}</dd>
               </div>
-              <div>
-                <dt className="text-sm font-medium text-gray-500">Day rate</dt>
-                <dd className="mt-1 text-sm text-gray-900">£{operative.hourlyRate.toFixed(2)}/day</dd>
-              </div>
+              {operative.payBasis === 'hourly' ? (
+                <div>
+                  <dt className="text-sm font-medium text-gray-500">Hourly rate</dt>
+                  <dd className="mt-1 text-sm text-gray-900">£{operative.hourlyRate.toFixed(2)}/hr</dd>
+                </div>
+              ) : operative.payBasis === 'day' && operative.dayRate != null ? (
+                <div>
+                  <dt className="text-sm font-medium text-gray-500">Day rate</dt>
+                  <dd className="mt-1 text-sm text-gray-900">£{operative.dayRate.toFixed(2)}/day</dd>
+                </div>
+              ) : null}
             </dl>
           </div>
 

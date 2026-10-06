@@ -33,7 +33,7 @@ import {
   type LabourPaySlice,
 } from '@/lib/weekly-report/weeklyReportPayroll'
 import { emptyDayRateHistory, type OperativeDayRateHistoryCollection } from '@/lib/timesheets/dayRateHistoryStorage'
-import { roundPennies } from '@/lib/timesheets/payBasis'
+import { orgDayHours, roundPennies } from '@/lib/timesheets/payBasis'
 import {
   additionalScheduleLocation,
   isAdditionalScheduleLocationKind,
@@ -207,7 +207,7 @@ export function buildWeeklyReportData({
   history?: OperativeDayRateHistoryCollection
 }): WeeklyReportData {
   const payroll = orgDetails?.payrollTimePolicy
-  const standardHours = payroll?.standardPaidHours ?? 8
+  const standardHours = orgDayHours(payroll?.standardPaidHours ?? 8)
   const otMultiplier = payroll?.weekdayOutsideStandardMultiplier ?? 1.5
   const timeZone = ianaTimeZoneForCountry(orgDetails?.countryCode)
   const mergedWorks = mergeProjectsAndSmallWorks(projects, smallWorks)
