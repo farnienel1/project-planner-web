@@ -28,6 +28,8 @@ export type InviteUserInput = {
   annualLeaveDaysPerYear?: number
   annualLeaveYearStartMonth?: number
   annualLeaveYearEndMonth?: number
+  annualLeaveCarriesOver?: boolean
+  hasNoLineManager?: boolean
 }
 
 interface InviteState {

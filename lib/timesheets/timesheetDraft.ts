@@ -48,6 +48,8 @@ export type WeeklyReportLabourLine = {
   /** Missing on older snapshots means day rate. */
   payBasis?: 'day' | 'hourly'
   isOvertime: boolean
+  /** Written on new overtime snapshots. Missing on older lines. */
+  otMultiplier?: number | null
   decision: TimesheetManagerDecision
   bookingId: string
 }

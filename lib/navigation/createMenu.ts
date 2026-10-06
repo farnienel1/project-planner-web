@@ -11,6 +11,7 @@ import {
   canManageMaterialCatalogue,
   canManageOrganisationQualifications,
   canManageSubcontractors,
+  canCreateProject,
   canManageWorkCatalogue,
   canViewClients,
   isOperativeMode,
@@ -38,7 +39,7 @@ export function canCreateMenuItem(user: PermissionUser, id: string): boolean {
   if (!user || isOperativeMode(user)) return false
   switch (id) {
     case 'project':
-      return canManageWorkCatalogue(user, 'projects')
+      return canCreateProject(user)
     case 'small-works':
       return canManageWorkCatalogue(user, 'smallWorks')
     case 'user':

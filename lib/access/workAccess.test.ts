@@ -139,7 +139,7 @@ test('operatives only see booked jobs and never hidden ones', () => {
   assert.deepEqual(visible.map((p) => p.id), ['P1'])
 })
 
-test('managers without catalogue flags only see assigned jobs', () => {
+test('managers with the manager flag see non-hidden jobs when Projects is off', () => {
   const mgr: User = {
     id: 'm1',
     email: 'm@x.com',
@@ -174,5 +174,5 @@ test('managers without catalogue flags only see assigned jobs', () => {
     bookings: [],
     managerBookings: [],
   })
-  assert.deepEqual(visible.map((p) => p.id), ['A'])
+  assert.deepEqual(visible.map((p) => p.id).sort(), ['A', 'B'])
 })

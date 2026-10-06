@@ -1,4 +1,14 @@
 import type { UserPermissions } from '@/types'
+import { normalizeEmploymentType } from '@/lib/ios-parity/enums'
+
+/** Operatives, and self-employed managers and administrators, get timesheets. PAYE managers and administrators do not. */
+export function timesheetsEnabledForAccount(
+  accountType: 'operative' | 'manager' | 'admin',
+  employmentType: string | null | undefined
+): boolean {
+  if (accountType === 'operative') return true
+  return normalizeEmploymentType(employmentType) !== 'paye'
+}
 
 export function defaultPermissionsBase(): UserPermissions {
   return {
@@ -26,17 +36,17 @@ export function permissionsForManagerInvite(): UserPermissions {
     manager: true,
     operatives: false,
     skills: false,
-    qualifications: false,
+    qualifications: true,
     materials: true,
     projects: false,
     smallWorks: false,
     operativeMode: false,
     siteAudit: true,
     subContractors: false,
-    wholesalersOrderHistory: false,
+    wholesalersOrderHistory: true,
     annualLeaveSelfBook: false,
     weeklyReports: false,
-    dailyOverview: false,
+    dailyOverview: true,
   }
 }
 
@@ -48,10 +58,10 @@ export function permissionsForOperativeInvite(): UserPermissions {
     skills: false,
     qualifications: false,
     materials: false,
-    projects: false,
-    smallWorks: false,
+    projects: true,
+    smallWorks: true,
     operativeMode: true,
-    siteAudit: false,
+    siteAudit: true,
     subContractors: false,
     wholesalersOrderHistory: false,
     annualLeaveSelfBook: false,
@@ -75,7 +85,7 @@ export function permissionsForAdminInvite(): UserPermissions {
     siteAudit: true,
     subContractors: true,
     wholesalersOrderHistory: true,
-    annualLeaveSelfBook: true,
+    annualLeaveSelfBook: false,
     weeklyReports: true,
     dailyOverview: true,
   }

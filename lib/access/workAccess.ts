@@ -26,10 +26,22 @@ function isExcludedFromManagerVisibilityHiding(user: User): boolean {
   return user.isSuperAdmin || user.permissions.adminAccess || user.role === 'admin'
 }
 
-export function operativeMatching(email: string | undefined, operatives: Operative[]): Operative | undefined {
+export function operativeMatching(
+  email: string | undefined,
+  operatives: Operative[],
+  name?: { firstName?: string; surname?: string }
+): Operative | undefined {
   const needle = normalizedEmail(email)
-  if (!needle) return undefined
-  return operatives.find((op) => normalizedEmail(op.email) === needle)
+  if (needle) {
+    const byEmail = operatives.find((op) => normalizedEmail(op.email) === needle)
+    if (byEmail) return byEmail
+  }
+  const first = name?.firstName?.trim().toLowerCase()
+  const last = name?.surname?.trim().toLowerCase()
+  if (!first || !last) return undefined
+  return operatives.find(
+    (op) => op.firstName.trim().toLowerCase() === first && op.lastName.trim().toLowerCase() === last
+  )
 }
 
 export function managerMatching(email: string | undefined, managers: Manager[]): Manager | undefined {
@@ -41,6 +53,9 @@ export function managerMatching(email: string | undefined, managers: Manager[]):
 function allAssignedOperativeIds(task: ProjectTask): string[] {
   const ids = new Set<string>()
   if (task.assignedOperativeId) ids.add(task.assignedOperativeId)
+  for (const id of task.assignedOperativeIds || []) {
+    if (id) ids.add(id)
+  }
   return [...ids]
 }
 
@@ -112,21 +127,26 @@ export function operativeVisibleProjectIds(params: {
   const ids = new Set<string>()
   if (params.operative) {
     for (const booking of params.bookings) {
+      const status = normalizeBookingStatus(booking.status)
       if (
         booking.operativeId === params.operative.id &&
-        normalizeBookingStatus(booking.status) !== 'Cancelled'
+        (status === 'Confirmed' || status === 'Tentative')
       ) {
         ids.add(booking.projectId)
       }
     }
   }
-  for (const id of taskAssignedProjectIds({
-    currentUser: params.currentUser,
-    tasks: params.tasks,
-    operatives: params.operatives,
-    managers: params.managers,
-  })) {
-    ids.add(id)
+  const named = operativeMatching(params.currentUser?.email, params.operatives, {
+    firstName: params.currentUser?.firstName,
+    surname: params.currentUser?.surname,
+  })
+  if (named && named.id !== params.operative?.id) {
+    for (const booking of params.bookings) {
+      const status = normalizeBookingStatus(booking.status)
+      if (booking.operativeId === named.id && (status === 'Confirmed' || status === 'Tentative')) {
+        ids.add(booking.projectId)
+      }
+    }
   }
   if (params.deadlineAssignedProjectIds) {
     for (const id of params.deadlineAssignedProjectIds) ids.add(id)
@@ -228,6 +248,7 @@ export function visibleWorks(params: {
   }
 
   const notHidden = scoped.filter((project) => !(project.hiddenManagerUserIds ?? []).includes(user.id))
+  if (user.permissions.manager) return notHidden
   return notHidden.filter((project) => {
     const jobCatalogue: JobCatalogue = isSmallWorksJobType(project.jobType) ? 'smallWorks' : 'projects'
     if (canManageWorkCatalogue(user, jobCatalogue)) return true

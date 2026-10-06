@@ -6,7 +6,7 @@ import { useAuthStore } from '@/lib/stores/authStore'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { useInviteStore } from '@/lib/stores/inviteStore'
 import { canInviteOperatives, canManageOperativesOnly, canManageUsers, getAddUserLabel } from '@/lib/navigation/menuPermissions'
-import { permissionsForAccountType } from '@/lib/orgSetup/accountPermissions'
+import { permissionsForAccountType, timesheetsEnabledForAccount } from '@/lib/orgSetup/accountPermissions'
 import { DEFAULT_ANNUAL_LEAVE } from '@/lib/settings/organizationSettings'
 import { STAFF_TRADE_TYPES } from '@/lib/staff/staffTradeTypes'
 import { getManagerUsers } from '@/lib/staff/userRosterUtils'
@@ -150,10 +150,11 @@ export function AddUserScreen() {
     assignedManagerUserIds: [] as string[],
     payBasis: 'day' as 'day' | 'hourly',
     rateAmount: '',
-    tradeTypePreset: '',
+    tradeTypePreset: 'Electrician',
+    hasNoLineManager: false,
     tradeTypeCustom: '',
     employmentType: 'self_employed' as 'paye' | 'self_employed',
-    timesheetsEnabled: false,
+    timesheetsEnabled: true,
     vatNumber: '',
     utrNumber: '',
     annualLeaveEnabled: true,
@@ -253,6 +254,18 @@ export function AddUserScreen() {
       setError('Enter a valid email address.')
       return
     }
+    if ((accountType === 'operative' || accountType === 'manager' || accountType === 'admin') && !form.tradeTypePreset.trim()) {
+      setError('Trade is required.')
+      return
+    }
+    if (accountType === 'operative' && form.assignedManagerUserIds.length === 0) {
+      setError('An operative needs a line manager.')
+      return
+    }
+    if ((accountType === 'manager' || accountType === 'admin') && !form.hasNoLineManager && form.assignedManagerUserIds.length === 0) {
+      setError('Choose a line manager, or No line manager.')
+      return
+    }
 
     setSaving(true)
     setError(null)
@@ -268,14 +281,14 @@ export function AddUserScreen() {
         surname,
         mobileNumber: form.mobileNumber.trim() || undefined,
         permissions: invitePermissions,
-        assignedManagerUserId: form.assignedManagerUserIds[0],
+        assignedManagerUserId: form.hasNoLineManager ? undefined : form.assignedManagerUserIds[0],
         assignedManagerUserIds:
-          form.assignedManagerUserIds.length > 0 ? form.assignedManagerUserIds : undefined,
+          form.hasNoLineManager || form.assignedManagerUserIds.length === 0 ? undefined : form.assignedManagerUserIds,
         ...payChoiceToRates(form.payBasis, form.rateAmount),
         tradeTypePreset: form.tradeTypePreset || undefined,
         tradeTypeCustom: form.tradeTypePreset === 'Other' ? form.tradeTypeCustom.trim() || undefined : undefined,
         employmentType: form.employmentType,
-        timesheetsEnabled: showSetup ? form.timesheetsEnabled : undefined,
+        timesheetsEnabled: timesheetsEnabledForAccount(accountType, form.employmentType),
         vatNumber: form.vatNumber.trim() || undefined,
         utrNumber: form.utrNumber.trim() || undefined,
         annualLeaveEnabled: form.annualLeaveEnabled,
@@ -284,6 +297,8 @@ export function AddUserScreen() {
           : undefined,
         annualLeaveYearStartMonth: form.annualLeaveEnabled ? annualLeaveDefaults.startMonth : undefined,
         annualLeaveYearEndMonth: form.annualLeaveEnabled ? annualLeaveDefaults.endMonth : undefined,
+        annualLeaveCarriesOver: form.annualLeaveEnabled ? annualLeaveDefaults.carriesOver : undefined,
+        hasNoLineManager: accountType !== 'operative' && form.hasNoLineManager,
       })
 
       if (result.inviteType === 'existing_user_org_add') {
@@ -542,14 +557,36 @@ export function AddUserScreen() {
               <div className="space-y-4 p-4">
                 <FormField
                   label="Line managers"
-                  hint="Optional. Select one or more line managers — same as iOS. Leave empty if not applicable."
+                  hint={accountType === 'operative' ? 'Required for an operative.' : 'Required unless No line manager is set.'}
                 >
                   <LineManagerMultiSelect
                     managers={lineManagers}
-                    selectedIds={form.assignedManagerUserIds}
-                    onChange={(assignedManagerUserIds) => setForm({ ...form, assignedManagerUserIds })}
+                    selectedIds={form.hasNoLineManager ? [] : form.assignedManagerUserIds}
+                    onChange={(assignedManagerUserIds) =>
+                      setForm({ ...form, assignedManagerUserIds, hasNoLineManager: false })
+                    }
                   />
                 </FormField>
+                {accountType !== 'operative' ? (
+                  <label className="flex items-center gap-2 text-sm text-slate-800">
+                    <input
+                      type="checkbox"
+                      checked={form.hasNoLineManager}
+                      onChange={(event) => {
+                        const hasNoLineManager = event.target.checked
+                        setForm({
+                          ...form,
+                          hasNoLineManager,
+                          assignedManagerUserIds: hasNoLineManager ? [] : form.assignedManagerUserIds,
+                        })
+                        if (hasNoLineManager) {
+                          setPermissions((current) => ({ ...current, annualLeaveSelfBook: false }))
+                        }
+                      }}
+                    />
+                    No line manager
+                  </label>
+                ) : null}
 
               <div className="grid gap-4 sm:grid-cols-2">
                 <PayBasisFields
@@ -600,18 +637,9 @@ export function AddUserScreen() {
                   <option value="paye">PAYE</option>
                 </Select>
               </FormField>
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <div className="text-sm font-semibold text-slate-900">Timesheets enabled</div>
-                  <p className="mt-0.5 text-xs text-slate-500">
-                    Allow this person to log timesheets and use My Schedule self-booking (managers).
-                  </p>
-                </div>
-                <Toggle
-                  checked={form.timesheetsEnabled}
-                  onChange={(checked) => setForm({ ...form, timesheetsEnabled: checked })}
-                />
-              </div>
+              <p className="text-xs text-slate-500">
+                Timesheets are on for operatives and for self-employed managers and administrators. PAYE managers and administrators do not get timesheets.
+              </p>
               </div>
             </SettingsCard>
           </FormSection>

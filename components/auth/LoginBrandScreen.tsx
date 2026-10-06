@@ -211,7 +211,7 @@ export function LoginBrandScreen() {
               className="btn primary block"
               style={{ height: 52, marginTop: 4 }}
             >
-              {submitting ? 'Signing in…' : 'Sign in'}
+              {submitting ? 'Signing in…' : 'Sign In'}
             </button>
           </form>
 

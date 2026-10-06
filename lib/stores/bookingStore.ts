@@ -13,6 +13,7 @@ import type { Booking } from '@/types'
 interface BookingState {
   bookings: Booking[]
   loading: boolean
+  ready: boolean
   error: string | null
   loadBookings: (organizationId: string, options?: { force?: boolean }) => Promise<void>
   createBooking: (booking: Omit<Booking, 'id' | 'createdAt' | 'updatedAt'> & { id?: string }) => Promise<void>
@@ -31,6 +32,7 @@ function requireDb() {
 export const useBookingStore = create<BookingState>((set, get) => ({
   bookings: [],
   loading: false,
+  ready: false,
   error: null,
 
   loadBookings: async (organizationId: string) => {
@@ -45,7 +47,7 @@ export const useBookingStore = create<BookingState>((set, get) => ({
         if (parsed.ok) bookings.push(parsed.value)
         else logSkippedDocument('bookings', entry.id, parsed.errors)
       }
-      set({ bookings: retainParsedRows(docs.length, get().bookings, bookings), loading: false })
+      set({ bookings: retainParsedRows(docs.length, get().bookings, bookings), loading: false, ready: true })
     }, (error) => {
       set({ error: error.message, loading: false })
     })

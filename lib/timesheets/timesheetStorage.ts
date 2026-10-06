@@ -162,6 +162,7 @@ function mapLabourLine(row: Record<string, unknown>): WeeklyReportLabourLine | n
     amount: finiteNumber(row.amount),
     payBasis: row.payBasis === 'hourly' ? 'hourly' : row.payBasis === 'day' ? 'day' : undefined,
     isOvertime: row.isOvertime === true,
+    otMultiplier: typeof row.otMultiplier === 'number' ? row.otMultiplier : null,
     decision: asDecision(row.decision),
     bookingId,
   }
@@ -219,6 +220,7 @@ export function weeklyReportOverrideToFirestore(override: WeeklyReportOverride):
       amount: line.amount,
       ...(line.payBasis === 'hourly' || line.payBasis === 'day' ? { payBasis: line.payBasis } : {}),
       isOvertime: line.isOvertime,
+      ...(line.isOvertime && line.otMultiplier != null ? { otMultiplier: line.otMultiplier } : {}),
       decision: line.decision,
       bookingId: line.bookingId || '',
     })),
@@ -258,12 +260,11 @@ export function draftFromFirestoreMap(
       ? data.managerSignatureImageBase64.trim()
       : ''
 
-  const submittedAt = parseFirestoreDate(data.submittedAt)
   const approvedAt = parseFirestoreDate(data.approvedAt)
 
   return {
     managerNote: typeof data.managerNote === 'string' ? data.managerNote : '',
-    operativeSignedAt: parseFirestoreDate(data.operativeSignedAt) || submittedAt || null,
+    operativeSignedAt: parseFirestoreDate(data.operativeSignedAt) || null,
     operativeSignedByName: operativeSignedBy || null,
     operativeSignatureImageBase64: operativeSignature || null,
     managerSignedAt: parseFirestoreDate(data.managerSignedAt) || approvedAt || null,

@@ -215,7 +215,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     const id = input.id || newUuid()
     const isNew = ![...get().projects, ...get().smallWorks].some((row) => row.id === id)
     const payload = buildProjectFirestorePayload({ ...input, id })
-    await setDoc(doc(db, 'organizations', input.organizationId, collectionName, id), payload)
+    await setDoc(doc(db, 'organizations', input.organizationId, collectionName, id), payload, { merge: true })
     const saved = mapProjectDoc(id, payload as Record<string, unknown>, input.organizationId)
     if (collectionName === 'smallWorks') {
       const { smallWorks } = get()
