@@ -116,6 +116,78 @@ export function createDefaultOrgSetupSettings(): OrgSetupSettings {
   }
 }
 
+export const DEFAULT_BANK_HOLIDAY_REGION_ID = 'GB-ENG-WLS'
+
+/** iOS stores a 1–3 character document prefix. */
+export function normalizeDocumentAbbreviation(value: string | null | undefined): string | undefined {
+  const cleaned = (value || '').replace(/[^A-Za-z0-9]/g, '').slice(0, 3).toUpperCase()
+  return cleaned || undefined
+}
+
+/**
+ * Bank-holiday region is not the company country. `GB-ENG` (older web picker) maps to iOS `GB-ENG-WLS`.
+ * A missing choice stays England & Wales.
+ */
+export function bankHolidayRegionIdFromSelection(selection: string | null | undefined): string {
+  const raw = (selection || '').trim().toUpperCase()
+  if (!raw || raw === 'GB' || raw === 'GB-ENG' || raw === 'GB-WLS' || raw === 'GB-ENG-WLS') {
+    return DEFAULT_BANK_HOLIDAY_REGION_ID
+  }
+  return raw
+}
+
+export function countryCodeForCompany(selection: string | null | undefined, storedCountry?: string | null): string {
+  const stored = (storedCountry || '').trim().toUpperCase()
+  if (/^[A-Z]{2}$/.test(stored)) return stored
+  const raw = (selection || '').trim().toUpperCase()
+  if (raw.startsWith('GB')) return 'GB'
+  if (/^[A-Z]{2}$/.test(raw)) return raw
+  return 'GB'
+}
+
+/** Flat iOS company fields plus the nested address the web form still edits. */
+export function companyIdentityFirestoreFields(input: {
+  addressLine1?: string
+  addressLine2?: string
+  town?: string
+  county?: string
+  postcode?: string
+  currency?: string
+  companyLogoURL?: string | null
+  documentAbbreviation?: string | null
+  bankHolidayRegionId?: string | null
+  countryCode?: string | null
+  regionSelection?: string | null
+}): Record<string, unknown> {
+  const line1 = (input.addressLine1 || '').trim()
+  const town = (input.town || '').trim()
+  const postcode = (input.postcode || '').trim()
+  const regionId = bankHolidayRegionIdFromSelection(input.bankHolidayRegionId || input.regionSelection)
+  const currency = (input.currency || 'GBP').trim() || 'GBP'
+  const abbreviation = normalizeDocumentAbbreviation(input.documentAbbreviation)
+  const fields: Record<string, unknown> = {
+    countryCode: countryCodeForCompany(input.regionSelection, input.countryCode),
+    currency,
+    currencyCode: currency,
+    bankHolidayRegionId: regionId,
+    officeAddressLine1: line1 || null,
+    officeCity: town || null,
+    officePostcode: postcode || null,
+    officeAddress: line1
+      ? {
+          addressLine1: line1,
+          addressLine2: (input.addressLine2 || '').trim() || null,
+          town: town || null,
+          county: (input.county || '').trim() || null,
+          postcode: postcode || null,
+        }
+      : null,
+  }
+  if (input.companyLogoURL) fields.companyLogoURL = input.companyLogoURL
+  if (abbreviation) fields.documentAbbreviation = abbreviation
+  return fields
+}
+
 /** Fields written to organizations/{id} from guided setup. */
 export function orgSetupSettingsToFirestoreFields(
   settings: OrgSetupSettings,
@@ -124,16 +196,17 @@ export function orgSetupSettingsToFirestoreFields(
   const { identity, features } = settings
   return {
     creatorUserId,
-    countryCode: identity.countryCode,
-    currency: identity.currency,
-    companyLogoURL: identity.companyLogoURL ?? null,
-    officeAddress: {
-      addressLine1: identity.officeAddress.addressLine1.trim(),
-      addressLine2: identity.officeAddress.addressLine2.trim() || null,
-      town: identity.officeAddress.town.trim() || null,
-      county: identity.officeAddress.county.trim() || null,
-      postcode: identity.officeAddress.postcode.trim() || null,
-    },
+    ...companyIdentityFirestoreFields({
+      addressLine1: identity.officeAddress.addressLine1,
+      addressLine2: identity.officeAddress.addressLine2,
+      town: identity.officeAddress.town,
+      county: identity.officeAddress.county,
+      postcode: identity.officeAddress.postcode,
+      currency: identity.currency,
+      companyLogoURL: identity.companyLogoURL,
+      countryCode: identity.countryCode,
+      regionSelection: identity.countryCode,
+    }),
     payrollTimePolicy: payrollPolicyToFirestore(features.payrollTimePolicy),
     annualLeaveDefaults: features.annualLeaveDefaults,
     warningDetection: warningDetectionToFirestore(features.warningDetection),
@@ -141,6 +214,8 @@ export function orgSetupSettingsToFirestoreFields(
     settings: {
       myScheduleOptions: myScheduleOptionsToFirestore(features.myScheduleOptions),
       materialCutOff: features.notificationPreferences,
+      currencyCode: identity.currency,
+      bankHolidayRegionId: bankHolidayRegionIdFromSelection(identity.countryCode),
     },
   }
 }

@@ -6,7 +6,13 @@ import { db } from '@/lib/firebase/config'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { companyLogoPath, uploadFile } from '@/lib/firebase/storageUtils'
 import { loadOrganizationDetails } from '@/lib/settings/organizationSettings'
-import { COUNTRY_OPTIONS, CURRENCY_OPTIONS } from '@/lib/orgSetup/orgSetupSettings'
+import {
+  COUNTRY_OPTIONS,
+  CURRENCY_OPTIONS,
+  bankHolidayRegionIdFromSelection,
+  companyIdentityFirestoreFields,
+  countryCodeForCompany,
+} from '@/lib/orgSetup/orgSetupSettings'
 import { bankHolidayRegionLabel } from '@/lib/settings/bankHolidayRegions'
 import {
   PanelHeader,
@@ -32,6 +38,8 @@ export function CompanyDetailsPanel({ onBack }: { onBack: () => void }) {
   const [county, setCounty] = useState('')
   const [postcode, setPostcode] = useState('')
   const [country, setCountry] = useState('GB')
+  const [regionId, setRegionId] = useState('GB-ENG-WLS')
+  const [abbreviation, setAbbreviation] = useState('')
   const [currency, setCurrency] = useState('GBP')
   const [logoPreview, setLogoPreview] = useState<string | null>(null)
   const [logoFile, setLogoFile] = useState<File | null>(null)
@@ -47,16 +55,20 @@ export function CompanyDetailsPanel({ onBack }: { onBack: () => void }) {
       .then((details) => {
         if (!details) return
         setName(details.name ?? organization.name ?? '')
-        setCountry((details.countryCode ?? 'GB').toUpperCase())
-        setCurrency(details.currency ?? 'GBP')
+        setCountry(countryCodeForCompany(undefined, details.countryCode))
+        setRegionId(details.bankHolidayRegionId || 'GB-ENG-WLS')
+        setAbbreviation(details.documentAbbreviation ?? '')
+        setCurrency(details.currencyCode || details.currency || 'GBP')
         const address = details.officeAddress
-        if (address?.addressLine1 && address?.town) {
+        const line = details.officeAddressLine1 || address?.addressLine1
+        const city = details.officeCity || address?.town
+        if (line && city) {
           setHasOffice(true)
-          setLine1(address.addressLine1)
-          setLine2(address.addressLine2 ?? '')
-          setTown(address.town)
-          setCounty(address.county ?? '')
-          setPostcode(address.postcode ?? '')
+          setLine1(line)
+          setLine2(address?.addressLine2 ?? '')
+          setTown(city)
+          setCounty(address?.county ?? '')
+          setPostcode(details.officePostcode || address?.postcode || '')
         } else {
           setHasOffice(false)
         }
@@ -97,22 +109,26 @@ export function CompanyDetailsPanel({ onBack }: { onBack: () => void }) {
         companyLogoURL = await uploadFile(path, logoFile, logoFile.type || 'image/png')
       }
 
+      const identity = companyIdentityFirestoreFields({
+        addressLine1: hasOffice ? line1 : '',
+        addressLine2: hasOffice ? line2 : '',
+        town: hasOffice ? town : '',
+        county: hasOffice ? county : '',
+        postcode: hasOffice ? postcode : '',
+        currency,
+        companyLogoURL,
+        documentAbbreviation: abbreviation,
+        bankHolidayRegionId: bankHolidayRegionIdFromSelection(regionId),
+        countryCode: country,
+        regionSelection: regionId,
+      })
       const payload: Record<string, unknown> = {
         name: name.trim(),
-        countryCode: country,
-        currency,
-        officeAddress: hasOffice
-          ? {
-              addressLine1: line1.trim(),
-              addressLine2: line2.trim() || null,
-              town: town.trim(),
-              county: county.trim() || null,
-              postcode: postcode.trim() || null,
-            }
-          : null,
+        ...identity,
+        'settings.currencyCode': identity.currencyCode,
+        'settings.bankHolidayRegionId': identity.bankHolidayRegionId,
         updatedAt: Timestamp.now(),
       }
-      if (companyLogoURL) payload.companyLogoURL = companyLogoURL
 
       await updateDoc(doc(db, 'organizations', organization.id), payload)
 
@@ -167,14 +183,24 @@ export function CompanyDetailsPanel({ onBack }: { onBack: () => void }) {
             <Toggle checked={hasOffice} onChange={setHasOffice} />
           </div>
 
-          <FormField label="Country / bank holiday region">
-            <Select value={country} onChange={(e) => setCountry(e.target.value)}>
-              {COUNTRY_OPTIONS.map((option) => (
+          <FormField label="Bank holiday region">
+            <Select value={regionId} onChange={(e) => setRegionId(e.target.value)}>
+              <option value="GB-ENG-WLS">England & Wales</option>
+              {COUNTRY_OPTIONS.filter((option) => option.code !== 'GB-ENG').map((option) => (
                 <option key={option.code} value={option.code}>
                   {bankHolidayRegionLabel(option.code)}
                 </option>
               ))}
             </Select>
+          </FormField>
+
+          <FormField label="Document abbreviation" hint="1–3 characters, shown on iPhone documents">
+            <Input
+              value={abbreviation}
+              maxLength={3}
+              onChange={(e) => setAbbreviation(e.target.value.toUpperCase())}
+              placeholder="e.g. RM"
+            />
           </FormField>
 
           <FormField label="Currency">

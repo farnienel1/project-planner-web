@@ -80,7 +80,9 @@ export function canManageMaterialCatalogue(user: PermissionUser): boolean {
 }
 
 export function canAccessWholesalers(user: PermissionUser): boolean {
-  if (!user || isOperativeMode(user)) return false
+  if (!user) return false
+  if (user.isSuperAdmin) return true
+  if (isOperativeMode(user)) return false
   return flag(user, 'wholesalersOrderHistory')
 }
 
@@ -94,13 +96,11 @@ export function canManageSkills(_user?: PermissionUser): boolean {
 
 export function canManageOrganisationQualifications(user: PermissionUser): boolean {
   if (!user || isOperativeMode(user)) return false
-  return flag(user, 'qualifications')
+  return user.isSuperAdmin === true || flag(user, 'qualifications')
 }
 
 export function canAccessQualificationsHub(user: PermissionUser): boolean {
-  if (!user || isOperativeMode(user)) return false
-  if (hasAdminAccess(user)) return true
-  return flag(user, 'manager') || flag(user, 'qualifications')
+  return canManageOrganisationQualifications(user)
 }
 
 export function canManageQualifications(user: PermissionUser): boolean {
@@ -169,6 +169,14 @@ export function canManageSubcontractors(user: PermissionUser, profileLoading = f
   if (profileLoading || !user) return true
   if (hasAdminAccess(user)) return true
   return flag(user, 'manager') && flag(user, 'subContractors')
+}
+
+/** Create project: super admin, or admin/manager who also have the Projects toggle. */
+export function canCreateProject(user: PermissionUser): boolean {
+  if (!user || isOperativeMode(user)) return false
+  if (user.isSuperAdmin) return true
+  if (!flag(user, 'projects')) return false
+  return hasAdminAccess(user) || flag(user, 'manager')
 }
 
 export function canManageWorkCatalogue(
@@ -291,8 +299,7 @@ export function canAccessOperativeTimesheets(
   orgUsers: Array<NonNullable<PermissionUser>> = []
 ): boolean {
   if (!user) return false
-  const managerLike =
-    hasAdminAccess(user) || flag(user, 'manager') || user.isSuperAdmin || user.role === 'manager' || user.role === 'admin'
+  const managerLike = hasAdminAccess(user) || flag(user, 'manager') || user.isSuperAdmin
   if (!managerLike) return false
   if (profileLoading) return true
   const hasAnyActiveOperative = orgUsers.some(

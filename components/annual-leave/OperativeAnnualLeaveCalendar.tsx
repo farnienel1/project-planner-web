@@ -12,6 +12,8 @@ import {
   type AnnualLeaveDayKind,
 } from '@/lib/annualLeave/dayStatus'
 import { formatLeaveDate, formatLeaveRange } from '@/lib/annualLeave/formatLeaveDays'
+import { leaveDayBlockedReason, leaveSubmitStatus } from '@/lib/annualLeave/leaveRequestDecision'
+import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import type { HolidayBooking, HolidayTimeSlot } from '@/types'
 import { AnnualLeaveLegend, LeaveDayCalendar } from './LeaveDayCalendar'
 import { useOrgBankHolidays } from './useOrgBankHolidays'
@@ -95,6 +97,7 @@ export function OperativeAnnualLeaveCalendar({
   onBack: () => void
 }) {
   const { organization, user } = useAuthStore()
+  const users = useOrgUserStore((state) => state.users)
   const { saveBooking, deleteBooking } = useHolidayStore()
 
   const [month, setMonth] = useState(() => monthOfNextBooking(person, bookings))
@@ -156,6 +159,13 @@ export function OperativeAnnualLeaveCalendar({
 
   const bookLeave = async () => {
     if (!organization?.id || !user || !selectedDay) return
+    const blocked = leaveDayBlockedReason(selectedDay, Boolean(bank.nameOn(selectedDay)))
+    if (blocked) {
+      setMessage(blocked)
+      return
+    }
+    const subject = users.find((row) => row.id === person.userId)
+    const status = subject ? leaveSubmitStatus(subject) : 'pending'
     setSaving(true)
     try {
       await saveBooking(organization.id, {
@@ -165,7 +175,7 @@ export function OperativeAnnualLeaveCalendar({
         operativeId: person.operativeId,
         startDate: selectedDay,
         endDate: selectedDay,
-        status: 'approved',
+        status,
         timeSlot: bookSlot,
         approvedByUserId: user.id,
         approvedAt: new Date(),
@@ -436,7 +446,7 @@ export function OperativeAnnualLeaveCalendar({
       {pendingDelete ? (
         <div className="fixed inset-0 z-50 grid place-items-end bg-black/40 p-4 sm:place-items-center">
           <div className="w-full max-w-sm rounded-2xl bg-white p-4 shadow-xl">
-            <p className="text-base font-bold text-slate-900">Remove this booking?</p>
+            <p className="text-base font-bold text-slate-900">Remove annual leave?</p>
             <p className="mt-1 text-sm text-slate-600">
               {person.displayName} · {fmtRange(pendingDelete)}
             </p>

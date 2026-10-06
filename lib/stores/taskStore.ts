@@ -9,6 +9,7 @@ import { trackEvent } from '@/lib/analytics/trackEvent'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { invalidateOrgLoad, runOrgLoad } from '@/lib/stores/orgLoadCache'
 import { markRowsRemoved, retainScopedRows } from '@/lib/staff/rosterRetain'
+import { completionFileUrls } from '@/lib/tasks/completionFiles'
 
 function mapTask(docId: string, data: Record<string, unknown>, organizationId: string): ProjectTask {
   return {
@@ -35,14 +36,7 @@ function mapTask(docId: string, data: Record<string, unknown>, organizationId: s
     completionImages: Array.isArray(data.completionImages)
       ? (data.completionImages as unknown[]).filter((url): url is string => typeof url === 'string' && Boolean(url))
       : [],
-    completionFiles: Array.isArray(data.completionFiles)
-      ? (data.completionFiles as Record<string, unknown>[])
-          .map((file) => ({
-            name: parseString(file.name) || parseString(file.fileName),
-            url: parseString(file.url) || parseString(file.fileURL),
-          }))
-          .filter((file) => file.url)
-      : [],
+    completionFiles: completionFileUrls(data.completionFiles),
     attachedImageURLs: Array.isArray(data.attachedImageURLs) ? (data.attachedImageURLs as string[]) : [],
     attachedFileURL: parseOptionalString(data.attachedFileURL),
     attachedFileName: parseOptionalString(data.attachedFileName),
@@ -87,10 +81,7 @@ function taskPayload(task: ProjectTask): Record<string, unknown> {
   if (task.completionNotes) data.completionNotes = task.completionNotes
   if (task.completionImages?.length) data.completionImages = task.completionImages
   if (task.completionFiles?.length) {
-    data.completionFiles = task.completionFiles.map((file) => ({
-      name: file.name,
-      url: file.url,
-    }))
+    data.completionFiles = completionFileUrls(task.completionFiles)
   }
   if (task.attachedImageURLs?.length) data.attachedImageURLs = task.attachedImageURLs
   if (task.attachedFileURL) data.attachedFileURL = task.attachedFileURL

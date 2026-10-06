@@ -16,7 +16,7 @@ export function PageHeader({
   actions,
 }: {
   title: string
-  description: string
+  description?: string
   meta?: string
   actions?: React.ReactNode
 }) {
@@ -24,7 +24,7 @@ export function PageHeader({
     <div className="phead">
       <div className="min-w-0">
         <h1>{title}</h1>
-        <p className="sub">{description}</p>
+        {description ? <p className="sub">{description}</p> : null}
         {meta ? <p className="mt-2 text-xs text-[var(--ink3)]">{meta}</p> : null}
       </div>
       {actions ? <div className="acts">{actions}</div> : null}

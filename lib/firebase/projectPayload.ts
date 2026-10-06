@@ -52,16 +52,17 @@ export function buildProjectFirestorePayload(input: ProjectSaveInput): Record<st
     startDate: Timestamp.fromDate(input.startDate),
     endDate: Timestamp.fromDate(input.endDate),
     jobType: input.jobType,
-    manager: 'Custom',
     isLive: input.isLive,
     description: input.description?.trim() || '',
     organizationId: input.organizationId,
     createdAt: Timestamp.fromDate(input.createdAt || new Date()),
     updatedAt: Timestamp.fromDate(input.updatedAt || new Date()),
     usesMapPinForLocation: input.usesMapPinForLocation === true,
-    hiddenManagerUserIds: input.hiddenManagerUserIds ?? [],
-    hiddenOperativeUserIds: input.hiddenOperativeUserIds ?? [],
   }
+  const managerName = input.managerLegacy?.trim()
+  if (managerName && managerName.toLowerCase() !== 'custom') payload.manager = managerName
+  if (input.hiddenManagerUserIds) payload.hiddenManagerUserIds = input.hiddenManagerUserIds
+  if (input.hiddenOperativeUserIds) payload.hiddenOperativeUserIds = input.hiddenOperativeUserIds
 
   if (input.customJobType?.trim()) payload.customJobType = input.customJobType.trim()
   if (input.managerId) payload.managerId = input.managerId
@@ -98,15 +99,18 @@ export function projectToSaveInput(project: Project, organizationId: string): Pr
     customJobType: project.customJobType,
     managerId: project.managerId,
     managerIds: project.managerIds,
-    managerLegacy: project.manager?.name,
+    managerLegacy:
+      project.manager?.name && project.manager.name.trim().toLowerCase() !== 'custom'
+        ? project.manager.name
+        : undefined,
     isLive: project.isLive,
     description: project.description,
     notes: project.notes,
     latitude: project.latitude,
     longitude: project.longitude,
     usesMapPinForLocation: project.usesMapPinForLocation,
-    hiddenManagerUserIds: project.hiddenManagerUserIds ?? [],
-    hiddenOperativeUserIds: project.hiddenOperativeUserIds ?? [],
+    hiddenManagerUserIds: project.hiddenManagerUserIds,
+    hiddenOperativeUserIds: project.hiddenOperativeUserIds,
     createdAt: project.createdAt,
     updatedAt: project.updatedAt,
   }

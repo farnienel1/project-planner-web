@@ -37,8 +37,7 @@ export function resolvePersonTrade(user: User | undefined, operative: Operative 
 
 export function resolvePersonRole(user: User | undefined, operative: Operative | undefined): string {
   if (!user) return operative ? 'Operative' : 'User'
-  if (user.permissions.adminAccess || user.isSuperAdmin) return 'Admin User'
-  if (user.permissions.manager) return 'Manager'
+  if (user.permissions.adminAccess || user.isSuperAdmin || user.permissions.manager) return 'Admin User'
   if (user.permissions.operativeMode || operative) return 'Operative'
   return 'User'
 }
@@ -207,16 +206,18 @@ export function signedLabourSlice(line: {
   amount: number
   isOvertime: boolean
   payBasis?: string | null
-}, standardHours: number, otMultiplier: number): LabourPaySlice {
+  otMultiplier?: number | null
+}, standardHours: number, otMultiplier: number | null): LabourPaySlice {
   const payBasis: PayBasis = line.payBasis === 'hourly' ? 'hourly' : 'day'
   const standard = orgDayHours(standardHours)
   const paidHours = line.paidHours > 0 ? line.paidHours : payBasis === 'day' ? line.days * standard : 0
   const quantity = payBasis === 'hourly' ? paidHours : paidHours / standard
   const rate = quantity > 0.0001 ? roundPennies(line.amount / quantity) : 0
+  const storedMultiplier = line.otMultiplier != null ? line.otMultiplier : line.isOvertime ? otMultiplier : null
   return {
     payBasis,
     isOvertime: line.isOvertime,
-    otMultiplier: line.isOvertime ? otMultiplier : null,
+    otMultiplier: line.isOvertime ? storedMultiplier : null,
     rate,
     paidHours,
     pay: roundPennies(line.amount),

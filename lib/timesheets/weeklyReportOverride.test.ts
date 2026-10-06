@@ -139,6 +139,7 @@ test('a declined labour line stays on the snapshot with zero days and amount', (
     draft: {
       ...emptyTimesheetDraft(),
       operativeSignedAt: day,
+      operativeSignedByName: 'Ada Booked',
       managerSignedAt: day,
       managerSignedByUserId: 'mgr',
       payrollLineReviews: { 'op-b1-normal': { decision: 'declined' } },
@@ -156,6 +157,7 @@ test('later schedule changes do not rebuild stored labour lines', () => {
     draft: {
       ...emptyTimesheetDraft(),
       operativeSignedAt: day,
+      operativeSignedByName: 'Ada Booked',
       managerSignedAt: day,
       managerSignedByName: 'Morgan Manager',
       priceWorkEntries: [
@@ -228,7 +230,8 @@ test('no line manager: own signature is full approval and selfSigned', () => {
 test('clearing approval removes the override', () => {
   const approved = applyWeeklyReportOverride({
     ...base,
-    draft: { ...emptyTimesheetDraft(), operativeSignedAt: day, managerSignedAt: day },
+    draft: { ...emptyTimesheetDraft(), operativeSignedAt: day,
+      operativeSignedByName: 'Ada Booked', managerSignedAt: day },
   })
   const cleared = applyWeeklyReportOverride({
     ...base,
@@ -240,7 +243,8 @@ test('clearing approval removes the override', () => {
 test('firestore map uses the shared weeklyReportOverride field names', () => {
   const approved = applyWeeklyReportOverride({
     ...base,
-    draft: { ...emptyTimesheetDraft(), operativeSignedAt: day, managerSignedAt: day, managerSignedByUserId: 'mgr' },
+    draft: { ...emptyTimesheetDraft(), operativeSignedAt: day,
+      operativeSignedByName: 'Ada Booked', managerSignedAt: day, managerSignedByUserId: 'mgr' },
   })
   const encoded = weeklyReportOverrideToFirestore(approved.weeklyReportOverride!)
   assert.equal(encoded.selfSigned, false)
@@ -269,6 +273,7 @@ test('weekly report replaces live days with the agreed snapshot and includes pri
     draft: {
       ...emptyTimesheetDraft(),
       operativeSignedAt: day,
+      operativeSignedByName: 'Ada Booked',
       managerSignedAt: day,
       priceWorkEntries: [
         {

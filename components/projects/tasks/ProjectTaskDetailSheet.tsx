@@ -14,6 +14,7 @@ import {
   allAssignedOperativeIds,
   personDisplayName,
 } from '@/lib/tasks/projectTaskFilters'
+import { completionFileLabel } from '@/lib/tasks/completionFiles'
 import type { Manager, Operative, ProjectTask, ProjectTaskStatus } from '@/types'
 
 export function ProjectTaskDetailSheet({
@@ -39,7 +40,7 @@ export function ProjectTaskDetailSheet({
   onComplete: (input: {
     completionNotes?: string
     completionImages: string[]
-    completionFiles: { name: string; url: string }[]
+    completionFiles: string[]
   }) => Promise<void>
   onDelete: () => void
   onEdit?: () => void
@@ -244,9 +245,9 @@ export function ProjectTaskDetailSheet({
                   ))}
                 </div>
               ) : null}
-              {task.completionFiles?.map((file) => (
-                <a key={file.url} href={file.url} target="_blank" rel="noreferrer" className="link" style={{ display: 'block', marginTop: 8 }}>
-                  {file.name}
+              {task.completionFiles?.map((url) => (
+                <a key={url} href={url} target="_blank" rel="noreferrer" className="link" style={{ display: 'block', marginTop: 8 }}>
+                  {completionFileLabel(url)}
                 </a>
               ))}
             </section>
@@ -281,7 +282,7 @@ function CompleteTaskForm({
   onSave: (input: {
     completionNotes?: string
     completionImages: string[]
-    completionFiles: { name: string; url: string }[]
+    completionFiles: string[]
   }) => Promise<void>
 }) {
   const [notes, setNotes] = useState(task.completionNotes || '')
@@ -317,7 +318,7 @@ function CompleteTaskForm({
                 file,
                 file.type || 'application/octet-stream'
               )
-              completionFiles.push({ name: file.name, url })
+              completionFiles.push(url)
             }
           }
           await onSave({

@@ -2,15 +2,15 @@ export const DEFAULT_NAVIGATION_LABELS: Record<string, string> = {
   dashboard_home: 'Home',
   dashboard_clients: 'Clients',
   dashboard_projects: 'Projects',
-  dashboard_small_works: 'Small works',
-  dashboard_operatives: 'Operatives',
+  dashboard_small_works: 'Small Works',
+  dashboard_operatives: 'Manage Operatives',
   dashboard_managers: 'Managers',
   dashboard_schedule: 'My Schedule',
   dashboard_daily_overview: 'Daily overview',
   dashboard_weekly_report: 'Weekly report',
   dashboard_warnings: 'Warnings',
   dashboard_tasks: 'Tasks',
-  dashboard_annual_leave: 'Annual leave',
+  dashboard_annual_leave: 'Annual Leave',
   dashboard_site_map: 'Site map',
   dashboard_site_audit: 'Site audit',
   dashboard_timesheets: 'Timesheets',
@@ -19,13 +19,13 @@ export const DEFAULT_NAVIGATION_LABELS: Record<string, string> = {
   dashboard_job_types: 'Job types',
   dashboard_wholesalers: 'Wholesalers',
   dashboard_materials: 'Material catalogue',
-  dashboard_sub_contractors: 'Sub contractor',
+  dashboard_sub_contractors: 'Sub Contractors',
   dashboard_ideas: 'Feedback',
   dashboard_developer: 'Developer',
   dashboard_add_user: 'Add user',
   dashboard_manage_users: 'Manage users',
   dashboard_settings: 'Settings',
-  dashboard_help: 'Help & support',
+  dashboard_help: 'Help',
   dashboard_reset_password: 'Reset password',
   site_audit: 'Site audit',
 }
@@ -50,6 +50,9 @@ export function getNavigationLabel(
 
   const value = settings?.uiLabels?.navigationLabels?.[key]
   if (typeof value === 'string' && value.trim().length > 0) {
+    if (key === 'dashboard_sub_contractors' && value.trim() === 'Sub contractor') {
+      return 'Sub Contractors'
+    }
     return value.trim()
   }
 

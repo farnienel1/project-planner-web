@@ -14,8 +14,8 @@ import { useTaskStore } from '@/lib/stores/taskStore'
 import { useBookingStore } from '@/lib/stores/bookingStore'
 import { useManagerScheduleStore } from '@/lib/stores/managerScheduleStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
-import { canManageWorkCatalogue, isOperativeMode } from '@/lib/permissions'
-import { visibleWorks } from '@/lib/access/workAccess'
+import { canCreateProject, isOperativeMode } from '@/lib/permissions'
+import { operativeMatching, visibleWorks } from '@/lib/access/workAccess'
 import { useDeadlineAssignedProjectIds } from '@/lib/deadlines/useDeadlineAssignedProjectIds'
 import {
   countWorksByTab,
@@ -78,7 +78,10 @@ export function ProjectsListScreen() {
     return searchWorks(byTab, search)
   }, [visible, filter, search])
 
-  const canCreate = canManageWorkCatalogue(user, 'projects')
+  const canCreate = canCreateProject(user)
+  const unmatchedOperative =
+    isOperativeMode(user) &&
+    !operativeMatching(user?.email, operatives, { firstName: user?.firstName, surname: user?.surname })
   const compact = isOperativeMode(user)
   const emptyDueToFilter = visible.length > 0 && filter !== 'all' && filterWorksByTab(visible, filter).length === 0
   const emptySearch = search.trim().length > 0 && filtered.length === 0 && filterWorksByTab(visible, filter).length > 0
@@ -120,8 +123,7 @@ export function ProjectsListScreen() {
       {visible.length === 0 ? (
         <EmptyState
           icon={<FolderIcon className="h-12 w-12" />}
-          title="No projects found"
-          subtitle="Get started by adding your first project"
+          title={unmatchedOperative ? 'Jobs couldn’t be matched to you' : 'Nothing here right now. Tap + to start a project.'}
         />
       ) : (
         <>
@@ -159,10 +161,7 @@ export function ProjectsListScreen() {
           {emptySearch ? (
             <p className="py-10 text-center text-[15px] text-[var(--ink3)]">No projects match your search.</p>
           ) : emptyDueToFilter ? (
-            <EmptyState
-              title="No projects found"
-              subtitle='The current filter hides older or completed jobs. Choose “All” or “Completed” above to see everything.'
-            />
+            <EmptyState title="No projects in this filter" />
           ) : filtered.length === 0 ? (
             <EmptyState title="No projects found" subtitle="Get started by adding your first project" />
           ) : (

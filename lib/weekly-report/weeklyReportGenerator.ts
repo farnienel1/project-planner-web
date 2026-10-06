@@ -1,4 +1,5 @@
 import { format } from 'date-fns'
+import * as XLSX from 'xlsx'
 import { formatReportPeriodLabel } from '@/lib/weekly-report/invoicingPeriodUtils'
 import { formatCurrency, formatDays } from '@/lib/weekly-report/weeklyReportPayroll'
 import type { WeeklyReportData } from '@/lib/weekly-report/weeklyReportData'
@@ -70,12 +71,11 @@ export function buildWeeklyReportHtml(data: WeeklyReportData): string {
 
   const subRows =
     data.subContractorRows.length === 0
-      ? [['—', '—', '—', '—', '—', '—', '—']]
+      ? [['—', '—', '—', '—', '—', '—']]
       : data.subContractorRows.map((row) => [
           escapeHtml(row.projectName),
           escapeHtml(row.jobNumber),
           escapeHtml(row.subContractor),
-          escapeHtml(row.people || '—'),
           escapeHtml(row.type),
           escapeHtml(row.time),
           formatDays(row.days),
@@ -212,11 +212,11 @@ export function buildWeeklyReportHtml(data: WeeklyReportData): string {
 
   <h2>🔧 Sub Contractors</h2>
   ${renderTable(
-    ['Project', 'Job No.', 'Sub Contractor', 'People', 'Type', 'Time', 'Days'],
+    ['Project', 'Job No.', 'Sub Contractor', 'Type', 'Time', 'Days'],
     subRows,
     'No sub contractor bookings'
   )}
-  <table><tbody><tr><td colspan="6"><strong>Sub Contractor</strong></td><td><strong>${formatDays(data.subContractorTotal)}</strong></td></tr></tbody></table>
+  <table><tbody><tr><td colspan="5"><strong>Sub Contractor</strong></td><td><strong>${formatDays(data.subContractorTotal)}</strong></td></tr></tbody></table>
 
   <h2>🌴 Annual Leave</h2>
   ${renderTable(['Person', 'Role', 'Days', 'Type'], leaveRows, 'No annual leave in this period')}
@@ -266,8 +266,23 @@ export function downloadWeeklyReport(html: string, filename: string): void {
   downloadTextFile(html, filename, 'text/html;charset=utf-8')
 }
 
-export function downloadWeeklyReportWorkbook(xml: string, filename: string): void {
-  downloadTextFile(xml, filename, 'application/vnd.ms-excel;charset=utf-8')
+export function buildWeeklyReportXlsx(data: WeeklyReportData): ArrayBuffer {
+  const xml = buildWeeklyReportSpreadsheetXml(data)
+  const parsed = XLSX.read(xml, { type: 'string' })
+  return XLSX.write(parsed, { bookType: 'xlsx', type: 'array' }) as ArrayBuffer
+}
+
+export function downloadWeeklyReportWorkbook(data: WeeklyReportData, filename: string): void {
+  const bytes = buildWeeklyReportXlsx(data)
+  const blob = new Blob([bytes], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename.endsWith('.xlsx') ? filename : `${filename}.xlsx`
+  link.click()
+  URL.revokeObjectURL(url)
 }
 
 function downloadTextFile(contents: string, filename: string, mime: string): void {
@@ -337,17 +352,16 @@ export function buildWeeklyReportSpreadsheetXml(data: WeeklyReportData): string 
 
   const subRows =
     data.subContractorRows.length === 0
-      ? [['—', '—', '—', '—', '—', '—', '—']]
+      ? [['—', '—', '—', '—', '—', '—']]
       : data.subContractorRows.map((row) => [
           row.projectName,
           row.jobNumber,
           row.subContractor,
-          row.people || '—',
           row.type,
           row.time,
           formatDays(row.days),
         ])
-  subRows.push(['', '', '', '', '', 'Sub Contractor total', formatDays(data.subContractorTotal)])
+  subRows.push(['', '', '', '', 'Sub Contractor total', formatDays(data.subContractorTotal)])
 
   const leaveRows =
     data.annualLeaveRows.length === 0
@@ -411,7 +425,7 @@ export function buildWeeklyReportSpreadsheetXml(data: WeeklyReportData): string 
    ${spreadsheetRow([''])}
    ${spreadsheetRow(['Sub Contractors'])}
    ${spreadsheetTable(
-     ['Project', 'Job No.', 'Sub Contractor', 'People', 'Type', 'Time', 'Days'],
+     ['Project', 'Job No.', 'Sub Contractor', 'Type', 'Time', 'Days'],
      subRows
    )}
    ${spreadsheetRow([''])}

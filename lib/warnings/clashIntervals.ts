@@ -55,12 +55,10 @@ export function operativeClashInterval(
   if (clock) return clock
   const window = standardWindow(policy)
   const kind = slotKind(String(booking.timeSlot))
-  if (!window) {
-    if (kind.includes('FULL')) return { start: 0, end: 24 * 60 }
-    return null
-  }
+  if (kind.includes('FULL')) return null
+  if (!window) return null
   const mid = window.start + Math.floor((window.end - window.start) / 2)
-  if (kind.includes('FULL') || kind === 'CUSTOM HOURS' || kind === 'CUSTOM') return window
+  if (kind === 'CUSTOM HOURS' || kind === 'CUSTOM') return window
   if (kind === 'AM' || kind.includes('MORNING')) return { start: window.start, end: mid }
   if (kind === 'PM' || kind.includes('AFTERNOON')) return { start: mid, end: window.end }
   if (kind.includes('EVENING')) {
@@ -84,12 +82,10 @@ export function managerClashInterval(
   if (clock) return clock
   const window = standardWindow(policy)
   const kind = slotKind(String(booking.timeSlot))
-  if (!window) {
-    if (kind.includes('FULL')) return { start: 0, end: 24 * 60 }
-    return null
-  }
+  if (kind.includes('FULL')) return null
+  if (!window) return null
   const mid = window.start + Math.floor((window.end - window.start) / 2)
-  if (kind.includes('FULL') || kind === 'CUSTOM HOURS' || kind === 'CUSTOM') return window
+  if (kind === 'CUSTOM HOURS' || kind === 'CUSTOM') return window
   if (kind === 'AM' || kind.includes('MORNING')) return { start: window.start, end: mid }
   if (kind === 'PM' || kind.includes('AFTERNOON')) return { start: mid, end: window.end }
   return window
@@ -102,12 +98,7 @@ export function bookingsOverlapByInterval(
 ): boolean {
   const ia = operativeClashInterval(a, policy)
   const ib = operativeClashInterval(b, policy)
-  if (!ia || !ib) {
-    const ka = slotKind(String(a.timeSlot))
-    const kb = slotKind(String(b.timeSlot))
-    if (ka.includes('FULL') || kb.includes('FULL')) return true
-    return ka === kb
-  }
+  if (!ia || !ib) return false
   return intervalsOverlap(ia, ib)
 }
 

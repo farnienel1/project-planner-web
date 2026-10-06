@@ -1126,7 +1126,7 @@ export function EditUserProfile({
           onClick={() => setConfirmDelete(false)}
         >
           <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <h2 className="text-lg font-bold text-slate-900">Delete user</h2>
+            <h2 className="text-lg font-bold text-slate-900">Delete user?</h2>
             <p className="mt-2 text-sm text-slate-600">
               Are you sure you want to delete {target.firstName} {target.surname}? This action cannot be undone.
             </p>

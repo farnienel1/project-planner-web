@@ -16,8 +16,9 @@ import { newUuid, parseFirestoreDate, parseOptionalString, parseString, parseUui
 import { markRowsRemoved, retainScopedRows } from '@/lib/staff/rosterRetain'
 
 function parseHolidayStatus(value: unknown): HolidayStatus {
-  const raw = parseString(value, 'pending')
-  return raw === 'approved' || raw === 'rejected' || raw === 'pending' ? raw : 'pending'
+  if (value == null || value === '') return 'approved'
+  const raw = parseString(value, 'approved')
+  return raw === 'approved' || raw === 'rejected' || raw === 'pending' ? raw : 'approved'
 }
 
 function parseHolidayTimeSlot(value: unknown): HolidayTimeSlot {

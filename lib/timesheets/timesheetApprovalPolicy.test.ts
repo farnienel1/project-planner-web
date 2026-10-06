@@ -51,7 +51,7 @@ test('admin with no line manager is fully approved after self-sign', () => {
   assert.equal(requiresLineManagerCounterSign(admin), false)
   const unsigned = emptyTimesheetDraft()
   assert.equal(isTimesheetFullyApproved(unsigned, admin), false)
-  const signed = { ...emptyTimesheetDraft(), operativeSignedAt: new Date() }
+  const signed = { ...emptyTimesheetDraft(), operativeSignedAt: new Date(), operativeSignedByName: 'Test User' }
   assert.equal(isTimesheetFullyApproved(signed, admin), true)
   assert.equal(awaitingManagerSignOff(signed, admin), false)
   assert.match(hoursWarningCopy(admin), /amend your booking schedule/)
@@ -82,7 +82,7 @@ test('operative with a line manager only appears in awaiting after they have sig
   const draft = emptyTimesheetDraft()
   assert.equal(awaitingManagerSignOff(draft, operative), false)
   assert.equal(isTimesheetFullyApproved(draft, operative), false)
-  const signed = { ...draft, operativeSignedAt: new Date() }
+  const signed = { ...draft, operativeSignedAt: new Date(), operativeSignedByName: 'Op One' }
   assert.equal(awaitingManagerSignOff(signed, operative), true)
   assert.equal(isTimesheetFullyApproved(signed, operative), false)
   const countersigned = { ...signed, managerSignedAt: new Date() }
@@ -96,9 +96,27 @@ test('hasNoLineManager wins over leftover assigned manager ids', () => {
   assert.equal(userHasLineManager(founder), false)
 })
 
+test('a bare operativeSignedAt or a date on or before 1 Jan 2020 is not signed', () => {
+  const admin = user({ id: 'admin' })
+  const bare = { ...emptyTimesheetDraft(), operativeSignedAt: new Date() }
+  assert.equal(isTimesheetFullyApproved(bare, admin), false)
+  const old = {
+    ...emptyTimesheetDraft(),
+    operativeSignedAt: new Date('2019-12-31T00:00:00.000Z'),
+    operativeSignedByName: 'Old',
+  }
+  assert.equal(isTimesheetFullyApproved(old, admin), false)
+  const image = {
+    ...emptyTimesheetDraft(),
+    operativeSignedAt: new Date('2026-03-02T09:00:00.000Z'),
+    operativeSignatureImageBase64: 'abc',
+  }
+  assert.equal(isTimesheetFullyApproved(image, admin), true)
+})
+
 test('post-sign extras copy distinguishes line-manager counter-sign', () => {
   const admin = user({ id: 'admin' })
-  const signed = { ...emptyTimesheetDraft(), operativeSignedAt: new Date() }
+  const signed = { ...emptyTimesheetDraft(), operativeSignedAt: new Date(), operativeSignedByName: 'Test User' }
   assert.match(postSignExtraWarningCopy(admin, signed), /sign it again before generating an invoice/)
   const operative = user({ id: 'op', assignedManagerUserIds: ['mgr'] })
   const countersigned = { ...signed, managerSignedAt: new Date() }
