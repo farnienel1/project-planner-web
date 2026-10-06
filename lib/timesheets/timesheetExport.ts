@@ -5,6 +5,8 @@ import type { TimesheetDraft } from '@/lib/timesheets/timesheetDraft'
 import type { TimesheetPayrollSummary } from '@/lib/timesheets/timesheetPayrollCollector'
 import { timesheetLabourDetails } from '@/lib/timesheets/timesheetPayrollCollector'
 import { formatTimesheetHours } from '@/lib/timesheets/timesheetHours'
+import { isClockSpanLabel, orgDayHours, payLineDisplay } from '@/lib/timesheets/payBasis'
+import { signedLabourSlice } from '@/lib/weekly-report/weeklyReportPayroll'
 import { formatAbbreviatedDayInZone, formatStampInZone } from '@/lib/orgTime/zoneTime'
 import { londonDateParts, dayKey } from '@/lib/ios-parity/londonTime'
 import type { Operative, User } from '@/types'
@@ -91,16 +93,42 @@ export type TimesheetInvoiceLine = {
   amount: number
 }
 
+function signedOverrideDetails(
+  line: {
+    paidHours: number
+    days: number
+    amount: number
+    isOvertime: boolean
+    payBasis?: string | null
+    details?: string
+  },
+  standardDayHours: number
+): string {
+  const standard = orgDayHours(standardDayHours)
+  const slice = signedLabourSlice(line, standard, 1)
+  const equation = payLineDisplay({
+    payBasis: slice.payBasis,
+    paidHours: slice.paidHours,
+    standardDayHours: standard,
+    rate: slice.rate,
+    pay: slice.pay,
+  }).equation
+  const clock = line.details && isClockSpanLabel(line.details) ? `${line.details} · ` : ''
+  return `${clock}${equation}`
+}
+
 export function invoiceLinesForTimesheet({
   payroll,
   draft,
   timeZone,
   extrasMode,
+  standardDayHours = 8,
 }: {
   payroll: TimesheetPayrollSummary
   draft: TimesheetDraft
   timeZone: string
   extrasMode: 'raw' | 'export'
+  standardDayHours?: number
 }): TimesheetInvoiceLine[] {
   const override = draft.weeklyReportOverride
   if (override) {
@@ -109,11 +137,7 @@ export function invoiceLinesForTimesheet({
     for (const line of override.lines) {
       if (line.decision === 'declined' || line.amount <= 0.0001) continue
       const live = liveById.get(line.id)
-      const details = live
-        ? timesheetLabourDetails(live)
-        : line.payBasis === 'hourly'
-          ? `${Number(line.paidHours).toFixed(2)} hours = £${line.amount.toFixed(2)}`
-          : `${line.details && /\d{1,2}:\d{2}/.test(line.details) ? `${line.details} · ` : ''}${Number(line.days).toFixed(2)} ${Math.abs(line.days - 1) < 0.001 ? 'day' : 'days'} = £${line.amount.toFixed(2)}`
+      const details = live ? timesheetLabourDetails(live) : signedOverrideDetails(line, standardDayHours)
       const jobNumber = (live?.jobNumber || line.jobNumber || '—').trim() || '—'
       const projectName = live?.projectName || line.projectName
       rows.push({

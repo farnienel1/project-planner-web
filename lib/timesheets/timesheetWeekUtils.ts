@@ -5,6 +5,7 @@ import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtil
 import type { OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 import { dayKey } from '@/lib/ios-parity/londonTime'
 import { hasAdminAccess } from '@/lib/permissions'
+import { orgDayHours, payForHours, readStoredRates } from '@/lib/timesheets/payBasis'
 
 export type TimesheetSubjectKind = 'operative' | 'manager'
 
@@ -16,6 +17,7 @@ export type TimesheetSubject = {
   operativeId?: string
   dayRate?: number
   hourlyRate?: number
+  payBasis?: 'day' | 'hourly' | null
   vatNumber?: string
   utrNumber?: string
   employmentType?: string
@@ -52,6 +54,7 @@ export function subjectForUser(user: User, operatives: Operative[]): TimesheetSu
     operativeId: linked?.id,
     dayRate: user.dayRate ?? linked?.dayRate,
     hourlyRate: user.hourlyRate ?? linked?.hourlyRate,
+    payBasis: user.payBasis ?? linked?.payBasis,
     vatNumber: user.vatNumber,
     utrNumber: user.utrNumber,
     employmentType: user.employmentType,
@@ -205,7 +208,7 @@ export function hoursFromSlot(
       let minutes = end - start
       const breakMinutes = payrollPolicy?.unpaidBreakMinutes ?? 0
       if (breakMinutes > 0) minutes = Math.max(0, minutes - breakMinutes)
-      return Math.round((minutes / 60) * 10) / 10
+      return minutes / 60
     }
   }
   if (normalized.includes('FULL')) return payrollPolicy?.standardPaidHours ?? 8
@@ -226,8 +229,9 @@ export function buildTimesheetSubjects(users: User[], operatives: Operative[]): 
       name: `${operative.firstName} ${operative.lastName}`.trim(),
       operativeId: operative.id,
       userId: linkedUser?.id,
-      dayRate: linkedUser?.dayRate,
-      hourlyRate: linkedUser?.hourlyRate,
+      dayRate: linkedUser?.dayRate ?? operative.dayRate,
+      hourlyRate: linkedUser?.hourlyRate ?? operative.hourlyRate,
+      payBasis: linkedUser?.payBasis ?? operative.payBasis,
       vatNumber: linkedUser?.vatNumber,
       utrNumber: linkedUser?.utrNumber,
       employmentType: linkedUser?.employmentType,
@@ -253,6 +257,7 @@ export function buildTimesheetSubjects(users: User[], operatives: Operative[]): 
       userId: user.id,
       dayRate: user.dayRate,
       hourlyRate: user.hourlyRate,
+      payBasis: user.payBasis,
       vatNumber: user.vatNumber,
       utrNumber: user.utrNumber,
       employmentType: user.employmentType,
@@ -319,7 +324,8 @@ export function collectSubjectDayEntries({
 }
 
 export function totalHours(entries: TimesheetDayEntry[]): number {
-  return Math.round(entries.reduce((sum, entry) => sum + entry.hours, 0) * 10) / 10
+  const sum = entries.reduce((total, entry) => total + entry.hours, 0)
+  return Math.round(sum * 10000) / 10000
 }
 
 export function estimatedDays(entries: TimesheetDayEntry[], standardDayHours = 8): number {
@@ -327,13 +333,18 @@ export function estimatedDays(entries: TimesheetDayEntry[], standardDayHours = 8
   return Math.round((hours / standardDayHours) * 10) / 10
 }
 
-export function estimatedAmount(subject: TimesheetSubject, hours: number): number | null {
-  if (subject.dayRate && subject.dayRate > 0) {
-    const days = hours / 8
-    return Math.round(days * subject.dayRate * 100) / 100
-  }
-  if (subject.hourlyRate && subject.hourlyRate > 0) {
-    return Math.round(hours * subject.hourlyRate * 100) / 100
-  }
-  return null
+export function estimatedAmount(
+  subject: TimesheetSubject,
+  hours: number,
+  standardDayHours = 8
+): number | null {
+  const stored = readStoredRates(subject)
+  if (stored.payBasis == null) return null
+  return payForHours({
+    payBasis: stored.payBasis,
+    dayRate: stored.dayRate,
+    hourlyRate: stored.hourlyRate,
+    paidHours: hours,
+    standardDayHours: orgDayHours(standardDayHours),
+  })
 }

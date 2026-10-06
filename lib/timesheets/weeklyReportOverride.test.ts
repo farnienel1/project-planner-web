@@ -400,6 +400,54 @@ test('export PDF lines skip declined override rows', () => {
   assert.equal(lines[0].amount, 200)
 })
 
+test('a signed hourly line stays in hours at the stored amount', () => {
+  const lines = invoiceLinesForTimesheet({
+    payroll: {
+      totalHours: 24,
+      overtimeHours: 0,
+      shiftCount: 1,
+      baseAmount: 480,
+      overtimeAmount: 0,
+      workAmount: 480,
+      lineItems: [],
+    },
+    timeZone: 'Europe/London',
+    extrasMode: 'raw',
+    standardDayHours: 8,
+    draft: {
+      ...emptyTimesheetDraft(),
+      weeklyReportOverride: {
+        approvedAt: day,
+        approvedByUserId: 'mgr',
+        approvedByName: 'Morgan',
+        selfSigned: false,
+        lines: [
+          {
+            id: 'op-b1-normal',
+            date: day,
+            jobNumber: 'J-1',
+            projectName: 'Site One',
+            locationKind: 'project',
+            details: 'FULL DAY',
+            paidHours: 24,
+            days: 3,
+            amount: 480,
+            payBasis: 'hourly',
+            isOvertime: false,
+            decision: 'approved',
+            bookingId: 'b1',
+          },
+        ],
+        priceWork: [],
+        expenses: [],
+      },
+    },
+  })
+  assert.equal(lines.length, 1)
+  assert.equal(lines[0].details, '24.00 hours × £20.00/hr = £480.00')
+  assert.equal(lines[0].details.includes('day'), false)
+})
+
 test('pay periods overlapping a midweek report stay on that pay run', () => {
   const periods = payPeriodsOverlapping(
     new Date('2026-09-16T12:00:00Z'),

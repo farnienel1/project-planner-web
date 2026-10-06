@@ -483,6 +483,7 @@ export function TimesheetPeriodPage({
       draft,
       timeZone,
       extrasMode: 'raw',
+      standardDayHours: payrollPolicy.standardPaidHours,
     })
     const notes = invoiceRateChangeNotes({
       history,

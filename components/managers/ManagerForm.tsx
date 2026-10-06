@@ -7,6 +7,7 @@ import type { Manager } from '@/types'
 import { STAFF_TRADE_TYPES } from '@/lib/ios-parity/enums'
 import { FormActions, FormInput, FormLabel, FormSelect, FormTextarea } from '@/components/forms/FormShell'
 import { PayBasisFields, payChoiceFromProfile, payChoiceToRates } from '@/components/users/PayBasisFields'
+import { usePaySaveGate } from '@/components/users/PayRateChangeDialogs'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { useUserStore } from '@/lib/stores/userStore'
 import { ErrorBanner } from '@/components/dashboard/PageShell'
@@ -30,6 +31,7 @@ export function ManagerForm({
 
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const { request: requestPaySave, ui: payDialogs } = usePaySaveGate()
   const [form, setForm] = useState({
     firstName: initial?.firstName || '',
     lastName: initial?.lastName || '',
@@ -51,10 +53,20 @@ export function ManagerForm({
       setError('Trade type is required.')
       return
     }
+    const rates = payChoiceToRates(form.payBasis, form.rateAmount)
+    const linkedPreview = users.find((row) => row.email.trim().toLowerCase() === form.email.trim().toLowerCase())
+    const createdAt = initial?.createdAt || new Date()
+    const decision = await requestPaySave({
+      existing: Boolean(initial),
+      employmentType: linkedPreview?.employmentType,
+      previous: initial,
+      next: rates,
+      createdAt,
+    })
+    if (decision === 'cancel') return
     setSaving(true)
     setError(null)
     try {
-      const rates = payChoiceToRates(form.payBasis, form.rateAmount)
       const manager: Manager = {
         id: initial?.id || '',
         firstName: form.firstName.trim(),
@@ -70,7 +82,7 @@ export function ManagerForm({
         dayRate: rates.dayRate,
         hourlyRate: rates.hourlyRate,
         organizationId: organization.id,
-        createdAt: initial?.createdAt || new Date(),
+        createdAt,
         updatedAt: new Date(),
       }
       const id = await saveManager(organization.id, manager)
@@ -99,6 +111,7 @@ export function ManagerForm({
           previousPayBasis: initial?.payBasis,
           nextPayBasis: rates.payBasis,
           createdAt: manager.createdAt,
+          effectiveAt: decision,
           history,
         })
       } catch {
@@ -114,6 +127,7 @@ export function ManagerForm({
 
   return (
     <form onSubmit={handleSubmit} className="card pad stack">
+      {payDialogs}
       {error && <ErrorBanner message={error} />}
       <div className="grid gap-4 md:grid-cols-2">
         <div>

@@ -641,15 +641,15 @@ export function WeeklyReportScreen({
 
           <ReportTable
             title="💷 Pay Summary"
-            headers={['Person', 'Role', 'Rate Type', 'Days', 'Rate', 'Pay']}
+            headers={['Person', 'Role', 'Rate Type', 'Hours / Days', 'Rate', 'Pay']}
             rows={[
               ...report.paySummary.flatMap((person) => [
                 ...person.lines.map((line) => [
                   person.person,
                   person.role,
                   line.rateType,
-                  formatDays(line.days),
-                  formatCurrency(line.rate),
+                  line.quantityText ?? formatDays(line.days),
+                  line.rateText ?? formatCurrency(line.rate),
                   formatCurrency(line.pay),
                 ]),
                 ['', '', `${person.person} total`, '', '', formatCurrency(person.personTotal)],
