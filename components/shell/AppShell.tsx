@@ -22,6 +22,7 @@ import { useAuthStore } from '@/lib/stores/authStore'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { shouldShowTeamOnboardingPrompt } from '@/lib/orgSetup/teamOnboarding'
 import {
+  dashboardPageTitle,
   getDashboardNavBySection,
   getDashboardNavItems,
   isDashboardNavActive,
@@ -182,16 +183,6 @@ function Section({
       </div>
     </div>
   )
-}
-
-function pageTitle(pathname: string, items: DashboardNavItem[]): string {
-  if (pathname === '/dashboard') return 'Home'
-  if (pathname.startsWith('/dashboard/book-labour')) return 'Book labour'
-  const match = items
-    .filter((i) => i.href !== '/dashboard')
-    .sort((a, b) => b.href.length - a.href.length)
-    .find((i) => pathname === i.href || pathname.startsWith(`${i.href}/`))
-  return match?.label || 'Project Planner'
 }
 
 function AppShellInner({ children }: { children: ReactNode }) {
@@ -364,8 +355,7 @@ function AppShellInner({ children }: { children: ReactNode }) {
   const toolsItems = getDashboardNavBySection(user, organization, 'tools', users)
   const teamItems = getDashboardNavBySection(user, organization, 'team', users)
   const accountItems = getDashboardNavBySection(user, organization, 'account', users)
-  const allItems = [...homeItems, ...navigateItems, ...toolsItems, ...teamItems, ...accountItems]
-  const title = pageTitle(pathname, allItems)
+  const title = dashboardPageTitle(pathname)
   const timesheetChild =
     pathname === TIMESHEETS_MINE_PATH ||
     pathname.startsWith(`${TIMESHEETS_MINE_PATH}/`) ||

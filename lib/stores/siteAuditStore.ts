@@ -393,11 +393,19 @@ function readStoredRoster(organizationId: string): User[] {
       const permissions = { ...row.permissions }
       const admin = row.isSuperAdmin || permissions.adminAccess || row.role === 'admin'
       if (admin) permissions.operativeMode = false
+      const revive = (value: unknown): Date | undefined => {
+        if (value == null || value === '') return undefined
+        const parsed = new Date(value as string | number | Date)
+        return Number.isNaN(parsed.getTime()) ? undefined : parsed
+      }
       return [
         {
           ...row,
           createdAt,
           updatedAt,
+          employmentTypeEffectiveAt: revive(row.employmentTypeEffectiveAt),
+          lastSeenAt: revive(row.lastSeenAt),
+          policyAcceptedAt: revive(row.policyAcceptedAt),
           permissions,
           role: admin && row.role === UserRole.OPERATIVE ? UserRole.ADMIN : row.role,
         },
