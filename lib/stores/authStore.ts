@@ -35,8 +35,8 @@ import {
   clearWebIdleActivity,
   isWebIdleExpired,
   markWebIdleExpired,
+  noteWebIdleActivity,
   readWebIdleLastActivity,
-  touchWebIdleActivity,
 } from '@/lib/auth/webIdleSession'
 import { isPlatformOwnerEmail, isPlatformOwnerSentinelOrg, isPlatformOwnerSession, PLATFORM_OWNER_EMAIL } from '@/lib/platform/owner'
 import { platformOwnerProfilePayload, platformOwnerUser } from '@/lib/platform/ownerProfile'
@@ -511,7 +511,7 @@ export const useAuthStore = create<AuthState>((set) => {
           set({ user: null, firebaseUser: null, organization: null, loading: false, error: null })
           return
         }
-        if (readWebIdleLastActivity() == null) touchWebIdleActivity()
+        if (readWebIdleLastActivity() == null) noteWebIdleActivity()
         if (!useAuthStore.getState().user) {
           useAuthStore.setState({ firebaseUser, loading: true, error: null })
         }
@@ -577,7 +577,7 @@ export const useAuthStore = create<AuthState>((set) => {
       const nextPath = safePostMfaPath(opts?.next, opts?.next?.startsWith('/developer') ? '/developer' : '/dashboard')
       signingIn = true
       writeSignedOutFlag(false)
-      touchWebIdleActivity()
+      noteWebIdleActivity()
       try {
         set({
           loading: true,
@@ -697,7 +697,7 @@ export const useAuthStore = create<AuthState>((set) => {
         await setDoc(doc(db, 'users', result.user.uid), platformOwnerProfilePayload(PLATFORM_OWNER_EMAIL), { merge: true })
         await loadSignedInProfileWithWait(result.user)
         await grantMfaSkip()
-        touchWebIdleActivity()
+        noteWebIdleActivity()
         set({ loading: false, mfaPending: false, mfaVerified: true, mfaStatusKnown: true })
       } catch (error: unknown) {
         if (recoverOwnerSession(PLATFORM_OWNER_EMAIL) || useAuthStore.getState().user) {
