@@ -24,6 +24,12 @@ import { AddWeekToCalendarButton } from '@/components/schedule/AddWeekToCalendar
 import { MyScheduleTotalHoursCard, myScheduleClockSubtitle, myScheduleStripeClass } from '@/components/schedule/MyScheduleLooks'
 import type { OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 import { DEFAULT_PAYROLL_POLICY } from '@/lib/settings/organizationSettings'
+import { dayKey } from '@/lib/ios-parity/londonTime'
+
+/** Bookings are stored at London midnight. Group them by that calendar day, not the browser's local midnight. */
+function scheduleDayKey(value: Date): string {
+  return dayKey(value)
+}
 
 type FilterStatus = 'all' | 'confirmed' | 'tentative'
 
@@ -459,7 +465,7 @@ export function ScheduleScreen({
     const map = new Map<string, Booking[]>()
     filteredBookings.forEach((b) => {
       const d = b.date instanceof Date ? b.date : new Date(b.date)
-      const key = startOfDay(d).toISOString()
+      const key = scheduleDayKey(d)
       const list = map.get(key) || []
       list.push({ ...b, date: d })
       map.set(key, list)
@@ -611,7 +617,7 @@ export function ScheduleScreen({
 
         <div className="flex gap-1.5 overflow-x-auto pb-1">
           {weekDays.map((day) => {
-            const key = startOfDay(day).toISOString()
+            const key = scheduleDayKey(day)
             const count = (bookingsByDate.get(key) || []).length
             return (
               <DayPill
@@ -640,7 +646,7 @@ export function ScheduleScreen({
           />
           {selectedDate ? (
             <MyScheduleTotalHoursCard
-              bookings={bookingsByDate.get(startOfDay(selectedDate).toISOString()) || []}
+              bookings={bookingsByDate.get(scheduleDayKey(selectedDate)) || []}
               policy={payrollPolicy || DEFAULT_PAYROLL_POLICY}
             />
           ) : null}
@@ -703,7 +709,7 @@ export function ScheduleScreen({
       ) : (
         <div className="space-y-8">
           {datesToRender.map((date) => {
-            const key = startOfDay(date).toISOString()
+            const key = scheduleDayKey(date)
             const dayBookings = bookingsByDate.get(key) || []
             return (
               <DaySection
