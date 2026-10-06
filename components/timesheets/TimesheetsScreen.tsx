@@ -507,6 +507,7 @@ function MemberRow({
   timeZone?: string
   onClick: () => void
 }) {
+  const role = member.permissions.operativeMode ? 'Operative' : hasAdminAccess(member) ? 'Admin' : 'Manager'
   const lineManager = (() => {
     if (!hasAdminAccess(viewer)) return null
     const managerId = member.assignedManagerUserIds?.[0] || member.assignedManagerUserId
@@ -525,7 +526,7 @@ function MemberRow({
         ) : null}
         <span className="s">
           Hrs {formatQueueHours(summary.hours)} · OT {formatQueueHours(summary.overtimeHours)} · PW £{summary.priceWork.toFixed(2)} · Exp £
-          {summary.expenses.toFixed(2)}
+          {summary.expenses.toFixed(2)} · {role}
         </span>
         {lineManager ? <span className="s">Line manager: {lineManager}</span> : null}
       </span>
