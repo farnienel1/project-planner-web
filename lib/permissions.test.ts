@@ -83,6 +83,15 @@ test('canViewProjects is always true', () => {
   assert.equal(canViewProjects(op), true)
 })
 
+test('canViewOperatives: super admin keeps operatives when the stored flag is off', () => {
+  const founder = user({
+    role: UserRole.ADMIN,
+    isSuperAdmin: true,
+    permissions: { adminAccess: true, manager: true, operatives: false },
+  })
+  assert.equal(canViewOperatives(founder), true)
+})
+
 test('canViewOperatives: manager needs operatives flag', () => {
   const manager = user({ role: UserRole.MANAGER, permissions: { manager: true } })
   assert.equal(canViewOperatives(manager), false)

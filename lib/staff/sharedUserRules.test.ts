@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { UserRole, type User, type UserPermissions } from '../../types/index.ts'
-import { buildSaveUserPayload } from '../firebase/userPayload.ts'
+import { buildSaveUserPayload, displayedLineManagerId, userWithLineManagerChoice } from '../firebase/userPayload.ts'
 import { applyAccountTypeChange } from './accountTypeChange.ts'
 import { applyDeviceOrgMembership } from '../orgMembership/webActiveOrg.ts'
 import { isSuperAdminSuccessor, superAdminSuccessors, SUPER_ADMIN_SUCCESSOR_EMPTY } from './superAdminTransfer.ts'
@@ -58,6 +58,27 @@ test('a name save keeps the stored role and writes the name fields', () => {
   assert.equal(payload.displayName, 'Samantha Stone')
   assert.equal(payload.organizationId, undefined)
   assert.equal(payload.skills, false)
+})
+
+test('no line manager clears a leftover manager id on save', () => {
+  const cleared = userWithLineManagerChoice(
+    user({
+      id: 'mgr',
+      email: 'sam@site.com',
+      assignedManagerUserId: 'boss',
+      assignedManagerUserIds: ['boss'],
+      hasNoLineManager: false,
+    }),
+    ''
+  )
+  assert.equal(cleared.hasNoLineManager, true)
+  assert.equal(cleared.assignedManagerUserId, undefined)
+  assert.deepEqual(cleared.assignedManagerUserIds, [])
+  assert.equal(displayedLineManagerId(cleared), '')
+  const payload = buildSaveUserPayload(cleared)
+  assert.equal(payload.hasNoLineManager, true)
+  assert.equal(Array.isArray(payload.assignedManagerUserIds), false)
+  assert.equal(typeof payload.assignedManagerUserId, 'object')
 })
 
 test('change user type sets role and does not turn the four page toggles on', () => {

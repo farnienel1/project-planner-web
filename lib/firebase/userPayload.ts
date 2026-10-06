@@ -53,6 +53,32 @@ export function applyExclusiveRateFields(
   payload.hourlyRate = deleteField()
 }
 
+/** Choosing “No line manager” clears both id fields. Choosing a person writes both. */
+export function userWithLineManagerChoice(user: User, managerId: string): User {
+  const id = managerId.trim()
+  if (!id) {
+    return {
+      ...user,
+      hasNoLineManager: true,
+      assignedManagerUserId: undefined,
+      assignedManagerUserIds: [],
+    }
+  }
+  return {
+    ...user,
+    hasNoLineManager: false,
+    assignedManagerUserId: id,
+    assignedManagerUserIds: [id],
+  }
+}
+
+export function displayedLineManagerId(user: Pick<User, 'hasNoLineManager' | 'assignedManagerUserId' | 'assignedManagerUserIds'>): string {
+  if (user.hasNoLineManager) return ''
+  const single = user.assignedManagerUserId?.trim()
+  if (single) return single
+  return (user.assignedManagerUserIds ?? []).map((id) => id.trim()).find(Boolean) ?? ''
+}
+
 export function applyLineManagerFields(
   payload: Record<string, unknown>,
   ids?: string[],
@@ -115,10 +141,16 @@ export function buildSaveUserPayload(user: User): Record<string, unknown> {
   const mobile = user.mobileNumber?.trim()
   payload.mobileNumber = mobile ? mobile : deleteField()
 
+  const keepsLineManager =
+    operativeMode ||
+    user.permissions.manager ||
+    user.permissions.adminAccess ||
+    user.role === UserRole.ADMIN ||
+    user.role === UserRole.MANAGER
   if (user.hasNoLineManager) {
     payload.assignedManagerUserId = deleteField()
     payload.assignedManagerUserIds = deleteField()
-  } else if (operativeMode || user.permissions.manager) {
+  } else if (keepsLineManager) {
     applyLineManagerFields(
       payload,
       user.assignedManagerUserIds,
