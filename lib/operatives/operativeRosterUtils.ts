@@ -18,8 +18,23 @@ export function filterRealOperatives(operatives: Operative[]): Operative[] {
   return operatives.filter((operative) => !isPlaceholderOperative(operative))
 }
 
+function profileWeight(operative: Operative): number {
+  const quals = operative.qualifications?.length ?? 0
+  const certs = Object.keys(operative.qualificationCertificateURLs || {}).length
+  const expiries = Object.keys(operative.qualificationExpiryDates || {}).length
+  return quals + certs + expiries
+}
+
+/**
+ * Same email can exist on more than one operative document. Keep the active row
+ * that actually holds qualifications and certificates. A newer empty duplicate
+ * must not hide those files. This choice is display-only.
+ */
 function choosePreferredOperative(a: Operative, b: Operative): Operative {
   if (a.isActive !== b.isActive) return a.isActive ? a : b
+  const aWeight = profileWeight(a)
+  const bWeight = profileWeight(b)
+  if (aWeight !== bWeight) return aWeight > bWeight ? a : b
   const aTime = a.updatedAt?.getTime?.() ?? 0
   const bTime = b.updatedAt?.getTime?.() ?? 0
   return aTime >= bTime ? a : b
