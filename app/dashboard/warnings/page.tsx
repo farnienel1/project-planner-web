@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/lib/stores/authStore'
+import { hasAdminAccess } from '@/lib/permissions'
 import { useProjectStore } from '@/lib/stores/projectStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
 import { useBookingStore } from '@/lib/stores/bookingStore'
@@ -31,6 +32,10 @@ import { WarningsScreen } from '@/components/warnings/WarningsScreen'
 export default function WarningsPage() {
   const router = useRouter()
   const { user, organization, loading } = useAuthStore()
+
+  useEffect(() => {
+    if (user && !hasAdminAccess(user)) router.replace('/dashboard')
+  }, [user, router])
   const { projects, smallWorks, loadProjects, loadSmallWorks } = useProjectStore()
   const { operatives, loadOperatives } = useOperativeStore()
   const { users, loadUsers } = useOrgUserStore()
@@ -270,7 +275,7 @@ export default function WarningsPage() {
     [deleteManagerSiteBooking, organization?.id]
   )
 
-  if (loading || !user) return null
+  if (loading || !user || !hasAdminAccess(user)) return null
 
   return (
     <WarningsScreen

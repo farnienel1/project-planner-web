@@ -173,6 +173,41 @@ test('invoicing-period warnings include past days in the active pay run and stop
   assert.equal(warnings.every((warning) => warning.operativeName === 'Test Operative'), true)
 })
 
+test('a booking on a duplicate operative profile is not unbooked labour', () => {
+  const person = user({
+    id: 'U-OP',
+    email: 'op@site.test',
+    firstName: 'Test',
+    surname: 'Operative',
+    permissions: perms({ operativeMode: true }),
+  })
+  const emptyNewer = operative({
+    id: 'OP-EMPTY',
+    email: 'op@site.test',
+    firstName: 'Test',
+    lastName: 'Operative',
+    updatedAt: new Date('2026-10-05T16:00:00Z'),
+  })
+  const withCerts = operative({
+    id: 'OP-CERT',
+    email: 'op@site.test',
+    firstName: 'Test',
+    lastName: 'Operative',
+    updatedAt: new Date('2026-09-15T12:00:00Z'),
+    qualifications: [{ id: 'SMSTS', name: 'SMSTS', hasEndDate: true, createdAt: WED, updatedAt: WED }],
+  })
+  const warnings = computeUnbookedLabourWarnings({
+    bookings: [booking({ id: 'B1', operativeId: 'OP-CERT', date: WED })],
+    operatives: [emptyNewer, withCerts],
+    users: [person],
+    holidays: [],
+    warningDetection: { ...DEFAULT_WARNING_DETECTION, clashLookaheadMode: 'numberOfDays', clashLookaheadDays: 1 },
+    referenceDate: WED,
+    timeZone: 'Europe/London',
+  })
+  assert.equal(warnings.some((warning) => dayKey(warning.date) === '2026-09-16'), false)
+})
+
 test('numberOfDays coverage starts today and is inclusive', () => {
   const window = computeWarningCoverageWindow(WED, {
     ...DEFAULT_WARNING_DETECTION,

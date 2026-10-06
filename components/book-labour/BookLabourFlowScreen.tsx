@@ -223,8 +223,16 @@ export function BookLabourFlowScreen({
       onClose()
       return
     }
-    if (from === 'warnings') router.push('/dashboard/warnings')
-    else router.push(`/dashboard/daily-overview?date=${dateParam}`)
+    if (from === 'warnings') {
+      router.push('/dashboard/warnings')
+      return
+    }
+    // iOS dismisses the sheet back to the screen that opened it.
+    if (typeof window !== 'undefined' && window.history.length > 1) {
+      router.back()
+      return
+    }
+    router.push(`/dashboard/daily-overview?date=${dateParam}`)
   }
 
   function goBack() {
