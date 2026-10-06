@@ -61,6 +61,18 @@ export function findOperativeForUser(user: User, operatives: Operative[]): Opera
   )
 }
 
+/** Every operative document for this email. Bookings can sit on a duplicate row. */
+export function operativeIdsForEmail(operatives: Operative[], email: string | null | undefined): string[] {
+  const key = normalizeEmail(email || '')
+  if (!key) return []
+  const ids: string[] = []
+  for (const operative of filterRealOperatives(operatives)) {
+    if (!operative.id || normalizeEmail(operative.email) !== key) continue
+    if (!ids.includes(operative.id)) ids.push(operative.id)
+  }
+  return ids
+}
+
 /**
  * iOS ScheduleOperativeView.selectableOperatives — active roster operatives, excluding placeholders.
  */

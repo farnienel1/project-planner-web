@@ -7,7 +7,11 @@ import { useBookingStore } from '@/lib/stores/bookingStore'
 import { useManagerScheduleStore } from '@/lib/stores/managerScheduleStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
 import { useProjectStore } from '@/lib/stores/projectStore'
-import { findOperativeForUser, getActiveOperativesForScheduling } from '@/lib/operatives/operativeRosterUtils'
+import {
+  findOperativeForUser,
+  getActiveOperativesForScheduling,
+  operativeIdsForEmail,
+} from '@/lib/operatives/operativeRosterUtils'
 import { canSelfBookMySchedule, isOperativeMode } from '@/lib/navigation/menuPermissions'
 import { managerSiteBookingToScheduleBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import { loadOrganizationDetails } from '@/lib/settings/organizationSettings'
@@ -73,11 +77,11 @@ function MySchedulePageContent() {
 
   const operativesById = useMemo(() => {
     const map = new Map<string, string>()
-    rosterOperatives.forEach((o) => {
+    operatives.forEach((o) => {
       map.set(o.id, `${o.firstName || ''} ${o.lastName || ''}`.trim() || o.email || o.id)
     })
     return map
-  }, [rosterOperatives])
+  }, [operatives])
 
   const projectsById = useMemo(() => {
     const map = new Map<string, string>()
@@ -87,11 +91,17 @@ function MySchedulePageContent() {
     return map
   }, [projects, smallWorks])
 
+  const linkedOperativeIds = useMemo(
+    () => (user ? operativeIdsForEmail(operatives, user.email) : []),
+    [user, operatives]
+  )
+
   const personalBookings = useMemo(() => {
     const merged: Booking[] = []
+    const ids = new Set(linkedOperativeIds)
 
-    if (linkedOperative) {
-      merged.push(...bookings.filter((b) => b.operativeId === linkedOperative.id))
+    if (ids.size > 0) {
+      merged.push(...bookings.filter((b) => ids.has(b.operativeId)))
     }
 
     if (user?.id) {
@@ -102,7 +112,7 @@ function MySchedulePageContent() {
     }
 
     return merged.sort((a, b) => a.date.getTime() - b.date.getTime())
-  }, [bookings, linkedOperative, managerSiteBookings, projectsById, organization?.id, user?.id])
+  }, [bookings, linkedOperativeIds, managerSiteBookings, projectsById, organization?.id, user?.id])
 
   const canEditBookings = Boolean(user && !isOperativeMode(user))
   const scheduleLoading = bookingsLoading || managerBookingsLoading
