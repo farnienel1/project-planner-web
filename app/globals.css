@@ -680,6 +680,44 @@ a.stat:hover {
   background: rgba(255, 255, 255, 0.25);
   color: #fff;
 }
+/* Dark-mode hues that stay light need dark label text, or the selected chip disappears. */
+:root[data-theme='dark'] [data-hue='warn'] .chip.on,
+:root[data-theme='dark'] [data-hue='sw'] .chip.on,
+:root[data-theme='dark'] [data-hue='leave'] .chip.on,
+:root[data-theme='dark'] [data-hue='lib'] .chip.on,
+:root[data-theme='dark'] [data-hue='proj'] .chip.on,
+:root[data-theme='dark'] [data-hue='hs'] .chip.on,
+:root[data-theme='dark'] [data-hue='ops'] .chip.on,
+:root[data-theme='dark'] [data-hue='sched'] .chip.on,
+.dark [data-hue='warn'] .chip.on,
+.dark [data-hue='sw'] .chip.on,
+.dark [data-hue='leave'] .chip.on,
+.dark [data-hue='lib'] .chip.on,
+.dark [data-hue='proj'] .chip.on,
+.dark [data-hue='hs'] .chip.on,
+.dark [data-hue='ops'] .chip.on,
+.dark [data-hue='sched'] .chip.on {
+  color: #1a1408;
+}
+:root[data-theme='dark'] [data-hue='warn'] .chip.on .n,
+:root[data-theme='dark'] [data-hue='sw'] .chip.on .n,
+:root[data-theme='dark'] [data-hue='leave'] .chip.on .n,
+:root[data-theme='dark'] [data-hue='lib'] .chip.on .n,
+:root[data-theme='dark'] [data-hue='proj'] .chip.on .n,
+:root[data-theme='dark'] [data-hue='hs'] .chip.on .n,
+:root[data-theme='dark'] [data-hue='ops'] .chip.on .n,
+:root[data-theme='dark'] [data-hue='sched'] .chip.on .n,
+.dark [data-hue='warn'] .chip.on .n,
+.dark [data-hue='sw'] .chip.on .n,
+.dark [data-hue='leave'] .chip.on .n,
+.dark [data-hue='lib'] .chip.on .n,
+.dark [data-hue='proj'] .chip.on .n,
+.dark [data-hue='hs'] .chip.on .n,
+.dark [data-hue='ops'] .chip.on .n,
+.dark [data-hue='sched'] .chip.on .n {
+  background: rgba(26, 20, 8, 0.14);
+  color: #1a1408;
+}
 
 .pill {
   display: inline-flex;

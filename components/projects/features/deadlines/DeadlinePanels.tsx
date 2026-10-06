@@ -412,6 +412,10 @@ export function EditorSheet({
       setFormError('Give the deadline a title to continue.')
       return
     }
+    if (file && file.name.length > 180) {
+      setFormError('That file name is too long. Rename the file and try again.')
+      return
+    }
     const dueDate = dateFromDayKey(due)
     if (Number.isNaN(dueDate.getTime())) {
       setFormError('Choose a due date.')
@@ -468,6 +472,10 @@ export function EditorSheet({
     }
     if (hasStart && Number.isNaN(next.start?.getTime())) {
       setFormError('Choose a start date, or turn the start date off.')
+      return
+    }
+    if (hasStart && next.start && dueDate.getTime() < next.start.getTime()) {
+      setFormError('The due date is before the start date.')
       return
     }
     const stamped = existing ? applyEditHistory(existing, next, authorName, new Date()) : applyCreatedHistory(next, authorName, new Date())
