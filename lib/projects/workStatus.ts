@@ -1,4 +1,5 @@
 import type { Project } from '@/types'
+import { isSmallWorksJobType } from '@/lib/ios-parity/enums'
 import { LONDON_TIME_ZONE } from '@/lib/orgTime/zoneTime'
 import { calendarDayOffset, programmeProgressPercent } from '@/lib/projects/programmeDates'
 
@@ -70,7 +71,7 @@ export function dedupeWorksById<T extends { id: string }>(items: T[]): T[] {
 }
 
 function isSmallWorksJob(project: Project): boolean {
-  return /small works/i.test(project.jobType || '')
+  return isSmallWorksJobType(project.jobType || '')
 }
 
 /**
