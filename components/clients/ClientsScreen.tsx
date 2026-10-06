@@ -153,6 +153,11 @@ export function ClientsScreen({ selectedId }: { selectedId?: string }) {
     loadTasks,
   ])
 
+  const orderedClients = useMemo(
+    () => [...clients].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })),
+    [clients]
+  )
+
   const selected = useMemo(
     () => clients.find((c) => c.id === selectedId) || null,
     [clients, selectedId]
@@ -291,7 +296,7 @@ export function ClientsScreen({ selectedId }: { selectedId?: string }) {
           }
         />
       ) : (
-        clients.map((client) => (
+        orderedClients.map((client) => (
           <ClientCard
             key={client.id}
             client={client}

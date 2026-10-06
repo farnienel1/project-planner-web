@@ -341,7 +341,9 @@ export function ProjectForm({ initial, collection = 'projects', backHref, onSave
           <FormLabel required>Client</FormLabel>
           <FormSelect value={form.clientId} onChange={(e) => setForm({ ...form, clientId: e.target.value })} required>
             <option value="">Select client</option>
-            {clients.map((c) => (
+            {[...clients]
+              .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }))
+              .map((c) => (
               <option key={c.id} value={c.id}>{c.name}</option>
             ))}
           </FormSelect>
