@@ -17,6 +17,7 @@ import {
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useMaterialProjectStore } from '@/lib/stores/materialProjectStore'
 import { useWholesalerStore } from '@/lib/stores/wholesalerStore'
+import { formatLengthSpecification } from '@/lib/materials/materialLength'
 import { jsonAuthHeaders } from '@/lib/security/clientAuthHeaders'
 import { newUuid } from '@/lib/firebase/firestoreUtils'
 import { formatSiteAddress } from '@/lib/maps/siteAddress'
@@ -168,7 +169,7 @@ export function MaterialsSendListSheet({
         brand: item.brand,
         productCode: item.productCode,
         notes: item.notes,
-        lengthDisplay: [item.length, item.lengthUnit].filter(Boolean).join(' ') || undefined,
+        lengthDisplay: formatLengthSpecification(item.length, item.lengthUnit) || undefined,
       })),
     })
   }, [
