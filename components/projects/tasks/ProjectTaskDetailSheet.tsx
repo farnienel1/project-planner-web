@@ -345,7 +345,17 @@ function CompleteTaskForm({
           accept="image/*"
           multiple
           hidden
-          onChange={(e) => setImageFiles(Array.from(e.target.files || []))}
+          onChange={(e) => {
+            const picked = Array.from(e.target.files || [])
+            e.target.value = ''
+            const rejected = picked.find((file) => !file.type.startsWith('image/'))
+            if (rejected) {
+              setError('Choose a photo. That file is not an image, so it was not added.')
+              return
+            }
+            setError(null)
+            setImageFiles(picked)
+          }}
         />
       </label>
       {imageFiles.length > 0 ? <p className="muted small">{imageFiles.length} photo(s) selected</p> : null}
