@@ -47,7 +47,7 @@ export function ProjectVisibilityPage({
   const { users, loadUsers } = useOrgUserStore()
   const { saveProject } = useProjectStore()
   const [tab, setTab] = useState<VisibilityTab>('managers')
-  const [segment, setSegment] = useState<VisibilitySegment>('all')
+  const [segment, setSegment] = useState<VisibilitySegment>('active')
   const [showSearch, setShowSearch] = useState(false)
   const [search, setSearch] = useState('')
   const [hiddenManagers, setHiddenManagers] = useState<Set<string>>(
