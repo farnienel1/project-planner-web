@@ -49,6 +49,36 @@ export function canonicalJobTypeName(name: string): string {
   return JOB_TYPE_ALIASES[compact] || name.trim()
 }
 
+/**
+ * Card and workspace badge. Keep a typed custom name such as "De-Carbonisation".
+ * Map enum tokens (`smallWorks`, `catA`) onto the iOS raw value.
+ */
+export function visibleJobTypeLabel(jobType?: string | null, customJobType?: string | null): string {
+  const custom = (customJobType || '').trim()
+  if (custom) {
+    if (!/[\s\-]/.test(custom)) {
+      const compact = custom.replace(/[_]+/g, '').toLowerCase()
+      const alias = JOB_TYPE_ALIASES[compact]
+      if (alias) return alias
+    }
+    return custom
+  }
+  const raw = (jobType || '').trim()
+  if (!raw) return ''
+  return canonicalJobTypeName(raw)
+}
+
+/**
+ * iOS ScheduleOperativeView schedule card: custom type, otherwise "Small works" or "Project".
+ * The stored enum (`CAT A`) is not the label once a custom type is set.
+ */
+export function scheduleWorkKindLabel(project: { jobType?: string | null; customJobType?: string | null }): string {
+  if (canonicalJobTypeName(project.jobType || '') === 'Small Works') return 'Small works'
+  const custom = (project.customJobType || '').trim()
+  if (custom) return custom
+  return 'Project'
+}
+
 export function coerceJobTypeList(raw: unknown): string[] {
   let values: unknown[] = []
   if (Array.isArray(raw)) {

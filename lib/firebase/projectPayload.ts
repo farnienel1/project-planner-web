@@ -1,5 +1,6 @@
 import { Timestamp } from 'firebase/firestore'
 import type { Client, Project } from '@/types'
+import { isSmallWorksJobType } from '@/lib/ios-parity/enums'
 
 export type ProjectSaveInput = {
   id: string
@@ -78,7 +79,7 @@ export function buildProjectFirestorePayload(input: ProjectSaveInput): Record<st
 
 export function projectCollectionName(jobType: string, isSmallWorksCollection?: boolean): 'projects' | 'smallWorks' {
   if (isSmallWorksCollection) return 'smallWorks'
-  if (jobType === 'Small Works' || jobType === 'smallWork') return 'smallWorks'
+  if (isSmallWorksJobType(jobType)) return 'smallWorks'
   return 'projects'
 }
 

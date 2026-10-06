@@ -6,6 +6,7 @@
 
 import Link from 'next/link'
 import type { Project } from '@/types'
+import { visibleJobTypeLabel } from '@/lib/jobTypes/jobTypesStorage'
 import { formatSiteAddress } from '@/lib/maps/siteAddress'
 import {
   daysLeftCaption,
@@ -28,9 +29,7 @@ function formatRange(start: Date, end: Date): string {
 }
 
 function jobTypeLabel(project: Project): string {
-  const custom = project.customJobType?.trim()
-  if (custom) return custom
-  return project.jobType || ''
+  return visibleJobTypeLabel(project.jobType, project.customJobType)
 }
 
 export function WorkCard({
