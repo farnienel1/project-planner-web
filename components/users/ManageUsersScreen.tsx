@@ -11,6 +11,7 @@ import { canManageUsers, getManageUsersLabel } from '@/lib/navigation/menuPermis
 import {
   classifyManageUsersTab,
   filterUsersForManageTabAndSegment,
+  manageUsersListPhase,
   type ManageUsersTab,
 } from '@/lib/staff/manageUsersUtils'
 import { matchesRosterSegment, type RosterSegment } from '@/lib/staff/userRosterUtils'
@@ -75,7 +76,7 @@ function badgesFor(user: User, showAdminBadge: boolean): Badge[] {
 export function ManageUsersScreen() {
   const router = useRouter()
   const { user: currentUser, organization } = useAuthStore()
-  const { users, loadUsers } = useOrgUserStore()
+  const { users, error: rosterError, rosterLoadedOrgId, loadUsers } = useOrgUserStore()
   const { sendPasswordReset } = useUserStore()
   const { inviteUser } = useInviteStore()
 
@@ -123,6 +124,14 @@ export function ManageUsersScreen() {
     }
     return list.sort((a, b) => displayName(a).localeCompare(displayName(b)))
   }, [users, effectiveTab, segment, search])
+
+  const listPhase = manageUsersListPhase({
+    organizationId: organization?.id,
+    rosterLoadedOrgId,
+    userCount: users.length,
+    filteredCount: filtered.length,
+    error: rosterError,
+  })
 
   function flash(kind: 'success' | 'error', msg: string) {
     setToast({ kind, msg })
@@ -236,13 +245,15 @@ export function ManageUsersScreen() {
               }`}
             >
               {segmentTitle}
-              <span
-                className={`rounded-full px-1.5 py-0.5 text-[11px] font-bold ${
-                  selected ? 'bg-white/25 text-white' : 'bg-black/[0.07] text-slate-600'
-                }`}
-              >
-                {counts[key]}
-              </span>
+              {listPhase !== 'loading' && (
+                <span
+                  className={`rounded-full px-1.5 py-0.5 text-[11px] font-bold ${
+                    selected ? 'bg-white/25 text-white' : 'bg-black/[0.07] text-slate-600'
+                  }`}
+                >
+                  {counts[key]}
+                </span>
+              )}
             </button>
           )
         })}
@@ -279,7 +290,16 @@ export function ManageUsersScreen() {
         )}
       </div>
 
-      {filtered.length === 0 ? (
+      {listPhase === 'loading' ? (
+        <div className="flex flex-col items-center justify-center card py-16 text-center">
+          <p className="text-base font-semibold text-slate-600">Loading users...</p>
+        </div>
+      ) : listPhase === 'error' ? (
+        <div className="flex flex-col items-center justify-center card py-16 text-center">
+          <p className="text-base font-semibold text-slate-600">Could not load users</p>
+          <p className="mt-1 max-w-xs text-sm text-slate-400">{rosterError}</p>
+        </div>
+      ) : listPhase === 'empty' ? (
         <div className="flex flex-col items-center justify-center card py-16 text-center">
           <p className="text-base font-semibold text-slate-600">
             No {segment} {section.toLowerCase()}
