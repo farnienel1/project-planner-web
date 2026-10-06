@@ -20,6 +20,7 @@ export async function loadSubcontractorBookings(organizationId: string): Promise
       timeSlot: String(data.timeSlot || 'FULL DAY'),
       workStartTime: data.workStartTime ? String(data.workStartTime) : undefined,
       workEndTime: data.workEndTime ? String(data.workEndTime) : undefined,
+      isBreakRemoved: data.isBreakRemoved === true ? true : undefined,
       status: data.status ? String(data.status) : undefined,
       bookedContactIds: people.bookedContactIds,
       bookedOperativeNames: people.bookedOperativeNames,
