@@ -16,11 +16,10 @@ export function isTaskAssignedToUser(
   if (!email) return false
 
   if (isOperativeMode(user)) {
-    const operative = operatives.find((op) => normalizedEmail(op.email) === email)
-    if (!operative) return false
-    return (
-      task.assignedOperativeId === operative.id ||
-      (task.assignedOperativeIds || []).includes(operative.id)
+    const ids = operatives.filter((op) => normalizedEmail(op.email) === email).map((op) => op.id)
+    if (ids.length === 0) return false
+    return ids.some(
+      (id) => task.assignedOperativeId === id || (task.assignedOperativeIds || []).includes(id)
     )
   }
 
@@ -29,8 +28,12 @@ export function isTaskAssignedToUser(
     return true
   }
 
-  const operative = operatives.find((op) => normalizedEmail(op.email) === email)
-  if (operative && (task.assignedOperativeId === operative.id || (task.assignedOperativeIds || []).includes(operative.id))) {
+  const operativeIds = operatives.filter((op) => normalizedEmail(op.email) === email).map((op) => op.id)
+  if (
+    operativeIds.some(
+      (id) => task.assignedOperativeId === id || (task.assignedOperativeIds || []).includes(id)
+    )
+  ) {
     return true
   }
 
