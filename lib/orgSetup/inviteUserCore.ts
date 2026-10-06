@@ -168,6 +168,8 @@ export async function inviteUserCore(input: InviteUserCoreInput): Promise<Invite
       annualLeaveDaysPerYear: input.annualLeaveDaysPerYear,
       annualLeaveYearStartMonth: input.annualLeaveYearStartMonth,
       annualLeaveYearEndMonth: input.annualLeaveYearEndMonth,
+      annualLeaveCarriesOver: input.annualLeaveCarriesOver,
+      hasNoLineManager: input.hasNoLineManager,
     })
   )
   await setDoc(doc(db, 'organizations', input.organizationId, 'userEmails', emailLower), { userId })

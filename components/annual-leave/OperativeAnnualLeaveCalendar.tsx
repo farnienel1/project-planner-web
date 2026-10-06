@@ -177,8 +177,8 @@ export function OperativeAnnualLeaveCalendar({
         endDate: selectedDay,
         status,
         timeSlot: bookSlot,
-        approvedByUserId: user.id,
-        approvedAt: new Date(),
+        approvedByUserId: status === 'approved' ? user.id : undefined,
+        approvedAt: status === 'approved' ? new Date() : undefined,
         createdAt: new Date(),
         updatedAt: new Date(),
       })

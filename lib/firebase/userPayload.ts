@@ -180,6 +180,8 @@ export function buildInvitedUserPayload(params: {
   annualLeaveDaysPerYear?: number
   annualLeaveYearStartMonth?: number
   annualLeaveYearEndMonth?: number
+  annualLeaveCarriesOver?: boolean
+  hasNoLineManager?: boolean
 }): Record<string, unknown> {
   const { permissions } = params
   let role: UserRole = UserRole.BASIC
@@ -241,6 +243,10 @@ export function buildInvitedUserPayload(params: {
   }
   if (params.annualLeaveYearEndMonth != null) {
     payload.annualLeaveYearEndMonth = params.annualLeaveYearEndMonth
+  }
+  if (params.annualLeaveCarriesOver != null) payload.annualLeaveCarriesOver = params.annualLeaveCarriesOver
+  if (params.hasNoLineManager) {
+    payload.hasNoLineManager = true
   }
 
   return payload
