@@ -1,6 +1,7 @@
 import { Timestamp, deleteField } from 'firebase/firestore'
 import type { User, UserPermissions } from '@/types'
 import { UserRole } from '@/types'
+import { readStoredRates } from '@/lib/timesheets/payBasis'
 
 export function permissionsToFirestoreMap(permissions: UserPermissions): Record<string, boolean> {
   return {
@@ -27,6 +28,29 @@ export function normalizeLineManagerIds(ids?: string[], legacyId?: string): stri
   if (fromArray.length > 0) return fromArray
   const single = legacyId?.trim()
   return single ? [single] : []
+}
+
+/** One basis only. The unused amount is deleted. payBasis is omitted when no rate is set. */
+export function applyExclusiveRateFields(
+  payload: Record<string, unknown>,
+  input: { payBasis?: unknown; dayRate?: unknown; hourlyRate?: unknown }
+): void {
+  const stored = readStoredRates(input)
+  if (stored.payBasis == null || (stored.dayRate == null && stored.hourlyRate == null)) {
+    payload.payBasis = deleteField()
+    payload.dayRate = deleteField()
+    payload.hourlyRate = deleteField()
+    return
+  }
+  if (stored.payBasis === 'hourly') {
+    payload.payBasis = 'hourly'
+    payload.hourlyRate = stored.hourlyRate ?? 0
+    payload.dayRate = deleteField()
+    return
+  }
+  payload.payBasis = 'day'
+  payload.dayRate = stored.dayRate ?? 0
+  payload.hourlyRate = deleteField()
 }
 
 export function applyLineManagerFields(
@@ -94,16 +118,6 @@ export function buildSaveUserPayload(user: User): Record<string, unknown> {
       user.assignedManagerUserId
     )
 
-    const dayRate = user.dayRate
-    const hourlyRate = user.hourlyRate
-    if (dayRate != null && dayRate > 0) {
-      payload.dayRate = dayRate
-      payload.hourlyRate = deleteField()
-    } else if (hourlyRate != null && hourlyRate > 0) {
-      payload.hourlyRate = hourlyRate
-      payload.dayRate = deleteField()
-    }
-
     const preset = user.tradeTypePreset?.trim()
     payload.tradeTypePreset = preset ? preset : deleteField()
     const custom = user.tradeTypeCustom?.trim()
@@ -131,6 +145,7 @@ export function buildSaveUserPayload(user: User): Record<string, unknown> {
   if (user.policyAcceptedAt) payload.policyAcceptedAt = Timestamp.fromDate(user.policyAcceptedAt)
   if (user.profilePhotoURL?.trim()) payload.profilePhotoURL = user.profilePhotoURL.trim()
 
+  applyExclusiveRateFields(payload, user)
   return payload
 }
 
@@ -145,6 +160,8 @@ export function buildInvitedUserPayload(params: {
   assignedManagerUserId?: string
   assignedManagerUserIds?: string[]
   dayRate?: number
+  hourlyRate?: number
+  payBasis?: 'day' | 'hourly'
   tradeTypePreset?: string
   tradeTypeCustom?: string
   employmentType?: 'paye' | 'self_employed' | 'selfEmployed'
@@ -183,8 +200,18 @@ export function buildInvitedUserPayload(params: {
   if (permissions.operativeMode || permissions.manager) {
     applyLineManagerFields(payload, params.assignedManagerUserIds, params.assignedManagerUserId)
   }
-  if ((permissions.operativeMode || permissions.manager) && params.dayRate != null) {
-    payload.dayRate = params.dayRate
+  if (params.payBasis === 'hourly' || params.payBasis === 'day' || params.dayRate != null || params.hourlyRate != null) {
+    const basis = params.payBasis === 'hourly' ? 'hourly' : params.hourlyRate != null && params.dayRate == null ? 'hourly' : 'day'
+    const amount = basis === 'hourly' ? params.hourlyRate ?? params.dayRate : params.dayRate ?? params.hourlyRate
+    if (amount != null) {
+      if (basis === 'hourly') {
+        payload.payBasis = 'hourly'
+        payload.hourlyRate = amount
+      } else {
+        payload.payBasis = 'day'
+        payload.dayRate = amount
+      }
+    }
   }
   if (params.tradeTypePreset?.trim()) payload.tradeTypePreset = params.tradeTypePreset.trim()
   if (params.tradeTypeCustom?.trim()) payload.tradeTypeCustom = params.tradeTypeCustom.trim()

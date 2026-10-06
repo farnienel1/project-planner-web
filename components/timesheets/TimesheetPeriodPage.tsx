@@ -78,6 +78,7 @@ import {
   reportsToManager,
   subjectForUser,
   timesheetReceiptStoredName,
+  userIdsSharingEmail,
 } from '@/lib/timesheets/timesheetWeekUtils'
 import { mergeProjectsAndSmallWorks } from '@/lib/projects/workStatus'
 import { SignaturePad } from '@/components/timesheets/SignaturePad'
@@ -190,9 +191,11 @@ export function TimesheetPeriodPage({
         timeZone,
         history,
         scheduleOptions,
+        aliasUserIds: userIdsSharingEmail(subjectUser, users),
       }),
     [
       subjectUser,
+      users,
       bookings,
       managerSiteBookings,
       operatives,
@@ -1168,7 +1171,9 @@ function PayrollLine({
         <p className={`text-[13px] text-[var(--ink3)] ${removed ? 'line-through' : ''}`}>
           {line.jobNumber} · {line.projectName}
         </p>
-        <p className={`text-[12px] text-[var(--ink3)] ${removed ? 'line-through' : ''}`}>{line.details}</p>
+        {/\d{1,2}:\d{2}/.test(line.details) ? (
+          <p className={`text-[12px] text-[var(--ink3)] ${removed ? 'line-through' : ''}`}>{line.details}</p>
+        ) : null}
         <p className={`text-[12px] font-medium ${orange ? 'text-orange-500' : ''} ${removed ? 'line-through' : ''}`}>
           {timesheetHoursRateLine(line)}
         </p>

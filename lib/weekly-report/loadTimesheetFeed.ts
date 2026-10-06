@@ -86,6 +86,9 @@ export async function loadWeeklyReportTimesheetFeed({
           projects,
           smallWorks,
           history,
+          aliasUserIds: users
+            .filter((row) => row.email.trim().toLowerCase() === user.email.trim().toLowerCase())
+            .map((row) => row.id),
           payrollPolicy,
           payrollPolicyPrior,
           payrollPolicyEffectiveFrom,

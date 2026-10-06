@@ -21,15 +21,16 @@ export type ApprovedTimesheetWeek = {
 
 export function timesheetFeedCovers(
   weeks: ApprovedTimesheetWeek[],
-  userId: string | undefined,
+  userId: string | string[] | undefined,
   day: Date,
   timeZone: string = LONDON_TIME_ZONE
 ): boolean {
-  if (!userId) return false
+  const ids = (Array.isArray(userId) ? userId : userId ? [userId] : []).filter(Boolean)
+  if (ids.length === 0) return false
   const key = dayKey(day, timeZone)
   return weeks.some(
     (week) =>
-      week.userId === userId &&
+      ids.includes(week.userId) &&
       key >= dayKey(week.weekStart, timeZone) &&
       key <= dayKey(week.weekEnd, timeZone)
   )

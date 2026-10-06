@@ -23,12 +23,17 @@ import {
 } from '@/lib/weekly-report/invoicingPeriodUtils'
 import {
   bookingDayUnits,
-  buildPayLinesForDays,
   findUserAndOperative,
+  labourPaySlices,
+  paySliceDisplay,
   resolveDisplayName,
   resolvePersonRole,
   resolvePersonTrade,
+  signedLabourSlice,
+  type LabourPaySlice,
 } from '@/lib/weekly-report/weeklyReportPayroll'
+import { emptyDayRateHistory, type OperativeDayRateHistoryCollection } from '@/lib/timesheets/dayRateHistoryStorage'
+import { roundPennies } from '@/lib/timesheets/payBasis'
 import {
   additionalScheduleLocation,
   isAdditionalScheduleLocationKind,
@@ -95,7 +100,14 @@ export type WeeklyReportManagerScheduleRow = {
 export type WeeklyReportPayPerson = {
   person: string
   role: string
-  lines: { rateType: string; days: number; rate: number; pay: number }[]
+  lines: {
+    rateType: string
+    days: number
+    rate: number
+    pay: number
+    quantityText?: string
+    rateText?: string
+  }[]
   personTotal: number
 }
 
@@ -176,6 +188,7 @@ export function buildWeeklyReportData({
   holidays,
   orgDetails,
   timesheetWeeks = [],
+  history = emptyDayRateHistory(),
 }: {
   organizationName: string
   companyLogoURL?: string
@@ -191,6 +204,7 @@ export function buildWeeklyReportData({
   holidays: HolidayBooking[]
   orgDetails: OrganizationDetails | null
   timesheetWeeks?: ApprovedTimesheetWeek[]
+  history?: OperativeDayRateHistoryCollection
 }): WeeklyReportData {
   const payroll = orgDetails?.payrollTimePolicy
   const standardHours = payroll?.standardPaidHours ?? 8
@@ -215,7 +229,63 @@ export function buildWeeklyReportData({
   )
 
   const projectGroupsMap = new Map<string, WeeklyReportProjectGroup>()
-  const payDaysByPerson = new Map<string, number>()
+  const payBuckets = new Map<
+    string,
+    {
+      person: string
+      role: string
+      slice: LabourPaySlice
+    }
+  >()
+
+  const aliasIdsFor = (userId?: string): string[] => {
+    if (!userId) return []
+    const person = users.find((entry) => entry.id === userId)
+    const email = person?.email.trim().toLowerCase()
+    if (!email) return [userId]
+    const ids = users.filter((entry) => entry.email.trim().toLowerCase() === email).map((entry) => entry.id)
+    return ids.length ? ids : [userId]
+  }
+
+  const addPaySlice = (person: string, role: string, slice: LabourPaySlice) => {
+    if (!(slice.paidHours > 0) && !(slice.pay > 0)) return
+    const rateKey = slice.rate == null ? 'none' : slice.rate.toFixed(2)
+    const key = `${person}|${role}|${slice.payBasis}|${slice.isOvertime ? 'ot' : 'std'}|${rateKey}|${slice.isPaye ? 'paye' : ''}`
+    const existing = payBuckets.get(key)
+    if (!existing) {
+      payBuckets.set(key, { person, role, slice: { ...slice } })
+      return
+    }
+    existing.slice.paidHours = roundPennies(existing.slice.paidHours + slice.paidHours)
+    existing.slice.pay = roundPennies(existing.slice.pay + slice.pay)
+  }
+
+  const addBookingPay = (
+    date: Date,
+    timeSlot: string,
+    workStartTime: string | undefined,
+    workEndTime: string | undefined,
+    isBreakRemoved: boolean | undefined,
+    user: User | undefined,
+    operative: Operative | undefined
+  ) => {
+    const slices = labourPaySlices({
+      date,
+      timeSlot,
+      workStartTime,
+      workEndTime,
+      isBreakRemoved,
+      user,
+      operative,
+      history,
+      aliasUserIds: user ? aliasIdsFor(user.id) : [],
+      payroll,
+      timeZone,
+    })
+    const person = resolveDisplayName(user, operative)
+    const role = resolvePersonRole(user, operative)
+    for (const slice of slices) addPaySlice(person, role, slice)
+  }
 
   const addProjectRow = (
     projectId: string,
@@ -245,22 +315,31 @@ export function buildWeeklyReportData({
     })
     group.projectTotal = Math.round((group.projectTotal + days) * 100) / 100
     projectGroupsMap.set(key, group)
-
-    const payKey = user?.id || operativeId || person
-    payDaysByPerson.set(payKey, Math.round(((payDaysByPerson.get(payKey) || 0) + days) * 100) / 100)
   }
 
-  const userIdForOperative = (operativeId: string | undefined): string | undefined => {
-    if (!operativeId) return undefined
+  const usersForOperative = (operativeId: string | undefined): string[] => {
+    if (!operativeId) return []
     const operative = operatives.find((entry) => entry.id === operativeId)
-    if (!operative) return undefined
-    return users.find((user) => findOperativeForUser(user, [operative])?.id === operative.id)?.id
+    if (!operative) return []
+    const linked = users.filter((user) => findOperativeForUser(user, [operative])?.id === operative.id)
+    const ids = linked.flatMap((user) => aliasIdsFor(user.id))
+    return Array.from(new Set(ids))
   }
 
   for (const booking of periodOperativeBookings) {
-    if (timesheetFeedCovers(timesheetWeeks, userIdForOperative(booking.operativeId), booking.date, timeZone)) {
+    if (timesheetFeedCovers(timesheetWeeks, usersForOperative(booking.operativeId), booking.date, timeZone)) {
       continue
     }
+    const { user, operative } = findUserAndOperative(users, operatives, { operativeId: booking.operativeId })
+    addBookingPay(
+      new Date(booking.date),
+      String(booking.timeSlot),
+      booking.workStartTime,
+      booking.workEndTime,
+      booking.isBreakRemoved,
+      user,
+      operative
+    )
     const days = bookingDayUnits(
       String(booking.timeSlot),
       booking.workStartTime,
@@ -273,7 +352,17 @@ export function buildWeeklyReportData({
   for (const booking of periodManagerBookings) {
     if (booking.locationType !== 'project' && booking.locationType !== 'small_work') continue
     if (!booking.locationId) continue
-    if (timesheetFeedCovers(timesheetWeeks, booking.userId, booking.date, timeZone)) continue
+    if (timesheetFeedCovers(timesheetWeeks, aliasIdsFor(booking.userId), booking.date, timeZone)) continue
+    const { user, operative } = findUserAndOperative(users, operatives, { userId: booking.userId })
+    addBookingPay(
+      new Date(booking.date),
+      String(booking.timeSlot),
+      booking.workStartTime,
+      booking.workEndTime,
+      booking.isBreakRemoved,
+      user,
+      operative
+    )
     const days = bookingDayUnits(
       String(booking.timeSlot),
       booking.workStartTime,
@@ -318,7 +407,17 @@ export function buildWeeklyReportData({
   let managerScheduleTotal = 0
   for (const booking of periodManagerBookings) {
     if (booking.locationType === 'project' || booking.locationType === 'small_work') continue
-    if (timesheetFeedCovers(timesheetWeeks, booking.userId, booking.date, timeZone)) continue
+    if (timesheetFeedCovers(timesheetWeeks, aliasIdsFor(booking.userId), booking.date, timeZone)) continue
+    const linked = findUserAndOperative(users, operatives, { userId: booking.userId })
+    addBookingPay(
+      new Date(booking.date),
+      String(booking.timeSlot),
+      booking.workStartTime,
+      booking.workEndTime,
+      booking.isBreakRemoved,
+      linked.user,
+      linked.operative
+    )
     const { user, operative } = findUserAndOperative(users, operatives, { userId: booking.userId })
     const days = bookingDayUnits(
       String(booking.timeSlot),
@@ -340,8 +439,6 @@ export function buildWeeklyReportData({
       days,
     })
     managerScheduleTotal += days
-    const payKey = booking.userId
-    payDaysByPerson.set(payKey, Math.round(((payDaysByPerson.get(payKey) || 0) + days) * 100) / 100)
   }
   for (const { week, line } of timesheetLabourLines(timesheetWeeks, period.start, period.end, timeZone)) {
     if (line.isOvertime || !isAdditionalScheduleLocationKind(line.locationKind) || line.days <= 0.0001) continue
@@ -514,62 +611,60 @@ export function buildWeeklyReportData({
     }
   }
 
+  for (const { week, line } of timesheetLabourLines(timesheetWeeks, period.start, period.end, timeZone)) {
+    addPaySlice(week.personName, week.role, signedLabourSlice(line, standardHours, otMultiplier))
+  }
+
   const paySummary: WeeklyReportPayPerson[] = []
   let grandTotal = 0
-  for (const user of users) {
-    const operative = findOperativeForUser(user, operatives)
-    const key = user.id
-    const days = payDaysByPerson.get(key)
-    if (!days || days <= 0) continue
-    const lines = buildPayLinesForDays(days, user.dayRate, user.hourlyRate, standardHours, otMultiplier)
-    const personTotal = Math.round(lines.reduce((sum, line) => sum + line.pay, 0) * 100) / 100
-    if (lines.length === 0) continue
-    paySummary.push({
-      person: resolveDisplayName(user, operative),
-      role: resolvePersonRole(user, operative),
-      lines,
-      personTotal,
+  const grouped = new Map<string, WeeklyReportPayPerson>()
+  for (const bucket of payBuckets.values()) {
+    const shown = paySliceDisplay(bucket.slice, standardHours)
+    if (!bucket.slice.isPaye && bucket.slice.rate == null) continue
+    const personKey = `${bucket.person}|${bucket.role}`
+    let summary = grouped.get(personKey)
+    if (!summary) {
+      summary = { person: bucket.person, role: bucket.role, lines: [], personTotal: 0 }
+      grouped.set(personKey, summary)
+    }
+    summary.lines.push({
+      rateType: shown.rateType,
+      days: roundPennies(shown.days),
+      rate: shown.rate,
+      pay: shown.pay,
+      quantityText: shown.quantityText,
+      rateText: shown.rateText,
     })
-    grandTotal += personTotal
+    summary.personTotal = roundPennies(summary.personTotal + shown.pay)
+  }
+  for (const summary of grouped.values()) {
+    paySummary.push(summary)
+    grandTotal += summary.personTotal
   }
 
-  for (const operative of operatives) {
-    const linkedUser = users.find((user) => findOperativeForUser(user, [operative])?.id === operative.id)
-    if (linkedUser) continue
-    const days = payDaysByPerson.get(operative.id)
-    if (!days || days <= 0) continue
-    const lines = buildPayLinesForDays(days, undefined, operative.hourlyRate, standardHours, otMultiplier)
-    const personTotal = Math.round(lines.reduce((sum, line) => sum + line.pay, 0) * 100) / 100
-    if (lines.length === 0) continue
-    paySummary.push({
-      person: resolveDisplayName(undefined, operative),
-      role: 'Operative',
-      lines,
-      personTotal,
-    })
-    grandTotal += personTotal
-  }
-
-  const addAgreedPay = (person: string, role: string, rateType: string, days: number, pay: number) => {
+  const addMoneyPay = (person: string, role: string, rateType: string, pay: number) => {
     if (pay <= 0.0001) return
     let summary = paySummary.find((row) => row.person === person && row.role === role)
     if (!summary) {
       summary = { person, role, lines: [], personTotal: 0 }
       paySummary.push(summary)
     }
-    const rate = days > 0.0001 ? Math.round((pay / days) * 100) / 100 : 0
-    summary.lines.push({ rateType, days: Math.round(days * 100) / 100, rate, pay: Math.round(pay * 100) / 100 })
-    summary.personTotal = Math.round((summary.personTotal + pay) * 100) / 100
+    summary.lines.push({
+      rateType,
+      days: 0,
+      rate: 0,
+      pay: roundPennies(pay),
+      quantityText: '',
+      rateText: '',
+    })
+    summary.personTotal = roundPennies(summary.personTotal + pay)
     grandTotal += pay
   }
-  for (const { week, line } of timesheetLabourLines(timesheetWeeks, period.start, period.end, timeZone)) {
-    addAgreedPay(week.personName, week.role, line.isOvertime ? 'Timesheet OT' : 'Timesheet', line.days, line.amount)
-  }
   for (const { week, line } of timesheetMoneyLines(timesheetWeeks, 'priceWork', period.start, period.end, timeZone)) {
-    addAgreedPay(week.personName, week.role, 'Price work', 0, line.amount)
+    addMoneyPay(week.personName, week.role, 'Price work', line.amount)
   }
   for (const { week, line } of timesheetMoneyLines(timesheetWeeks, 'expenses', period.start, period.end, timeZone)) {
-    addAgreedPay(week.personName, week.role, 'Expenses', 0, line.amount)
+    addMoneyPay(week.personName, week.role, 'Expenses', line.amount)
   }
 
   const projectGroups = Array.from(projectGroupsMap.values()).sort((a, b) =>

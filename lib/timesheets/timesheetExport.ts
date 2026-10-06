@@ -3,7 +3,7 @@
  */
 import type { TimesheetDraft } from '@/lib/timesheets/timesheetDraft'
 import type { TimesheetPayrollSummary } from '@/lib/timesheets/timesheetPayrollCollector'
-import { timesheetHoursRateLine } from '@/lib/timesheets/timesheetPayrollCollector'
+import { timesheetLabourDetails } from '@/lib/timesheets/timesheetPayrollCollector'
 import { formatTimesheetHours } from '@/lib/timesheets/timesheetHours'
 import { formatAbbreviatedDayInZone, formatStampInZone } from '@/lib/orgTime/zoneTime'
 import { londonDateParts, dayKey } from '@/lib/ios-parity/londonTime'
@@ -63,7 +63,7 @@ export function invoiceRateChangeNotes({
   const notes = new Set<string>()
   for (const entry of (history.byUserId[user.id] || []).filter((row) => inPeriod(row.effectiveAt))) {
     notes.add(
-      `Rate updated to £${entry.dayRate.toFixed(2)} from ${formatAbbreviatedDayInZone(entry.effectiveAt, timeZone)}.`
+      `Rate updated to £${entry.dayRate.toFixed(2)}${entry.payBasis === 'hourly' ? '/hr' : '/day'} from ${formatAbbreviatedDayInZone(entry.effectiveAt, timeZone)}.`
     )
   }
   const matched = operatives.filter(
@@ -75,7 +75,7 @@ export function invoiceRateChangeNotes({
   for (const operativeId of ids) {
     for (const entry of (history.byOperativeId[operativeId] || []).filter((row) => inPeriod(row.effectiveAt))) {
       notes.add(
-        `Operative rate updated to £${entry.dayRate.toFixed(2)} from ${formatAbbreviatedDayInZone(entry.effectiveAt, timeZone)}.`
+        `Operative rate updated to £${entry.dayRate.toFixed(2)}${entry.payBasis === 'hourly' ? '/hr' : '/day'} from ${formatAbbreviatedDayInZone(entry.effectiveAt, timeZone)}.`
       )
     }
   }
@@ -110,8 +110,10 @@ export function invoiceLinesForTimesheet({
       if (line.decision === 'declined' || line.amount <= 0.0001) continue
       const live = liveById.get(line.id)
       const details = live
-        ? `${live.details} · ${timesheetHoursRateLine(live)}`
-        : `${line.details} · ${formatTimesheetHours(line.paidHours)}h`
+        ? timesheetLabourDetails(live)
+        : line.payBasis === 'hourly'
+          ? `${Number(line.paidHours).toFixed(2)} hours = £${line.amount.toFixed(2)}`
+          : `${line.details && /\d{1,2}:\d{2}/.test(line.details) ? `${line.details} · ` : ''}${Number(line.days).toFixed(2)} ${Math.abs(line.days - 1) < 0.001 ? 'day' : 'days'} = £${line.amount.toFixed(2)}`
       const jobNumber = (live?.jobNumber || line.jobNumber || '—').trim() || '—'
       const projectName = live?.projectName || line.projectName
       rows.push({
@@ -153,7 +155,7 @@ export function invoiceLinesForTimesheet({
   }
   const rows: TimesheetInvoiceLine[] = []
   for (const line of payroll.lineItems) {
-    const details = `${line.details} · ${timesheetHoursRateLine(line)}`
+    const details = timesheetLabourDetails(line)
     rows.push({
       date: formatAbbreviatedDayInZone(line.date, timeZone),
       jobNumber: line.jobNumber || '—',

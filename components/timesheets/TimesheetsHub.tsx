@@ -46,7 +46,7 @@ import {
   isTimesheetFullyApproved,
 } from '@/lib/timesheets/timesheetApprovalPolicy'
 import { canAccessMyTimesheetsWithPolicy, shouldAppearInOperativeTimesheetRoster } from '@/lib/timesheets/timesheetPayrollPolicy'
-import { teamTimesheetUsers } from '@/lib/timesheets/timesheetWeekUtils'
+import { groupHasLineManager, timesheetRosterGroups } from '@/lib/timesheets/timesheetWeekUtils'
 import {
   TIMESHEETS_HUB_PATH,
   legacyTimesheetRedirect,
@@ -576,13 +576,18 @@ function ManagerTimesheetsTile({
   onClick: () => void
 }) {
   const [stats, setStats] = useState({ awaiting: 0, signed: 0, exported: 0 })
-  const roster = useMemo(
+  const groups = useMemo(
     () =>
-      teamTimesheetUsers(user, users).filter((member) =>
-        shouldAppearInOperativeTimesheetRoster(member, periodStart, periodEnd, invoicing, new Date(), timeZone)
-      ),
+      timesheetRosterGroups(user, users)
+        .map((group) =>
+          group.filter((member) =>
+            shouldAppearInOperativeTimesheetRoster(member, periodStart, periodEnd, invoicing, new Date(), timeZone)
+          )
+        )
+        .filter((group) => group.length > 0),
     [user, users, periodStart, periodEnd, invoicing, timeZone]
   )
+  const roster = useMemo(() => groups.flat(), [groups])
 
   useEffect(() => {
     if (!organizationId || roster.length === 0) {
@@ -601,11 +606,17 @@ function ManagerTimesheetsTile({
       let awaiting = 0
       let signed = 0
       let exported = 0
-      for (const member of roster) {
-        const draft = drafts.get(member.id) || emptyTimesheetDraft()
+      for (const group of groups) {
+        const picked =
+          group.map((member) => ({ member, draft: drafts.get(member.id) })).find((row) => row.draft?.operativeSignedAt) ||
+          group.map((member) => ({ member, draft: drafts.get(member.id) })).find((row) => row.draft)
+        const draft = picked?.draft
+        const member = picked?.member
+        if (!draft || !member) continue
+        const needsManager = groupHasLineManager(group)
         if (draft.exportedAt) exported += 1
-        else if (isTimesheetFullyApproved(draft, member)) signed += 1
-        else if (awaitingManagerSignOff(draft, member)) awaiting += 1
+        else if (draft.operativeSignedAt && (!needsManager || draft.managerSignedAt)) signed += 1
+        else if (draft.operativeSignedAt && needsManager && !draft.managerSignedAt) awaiting += 1
       }
       setStats({ awaiting, signed, exported })
     }).catch(() => {
@@ -614,7 +625,7 @@ function ManagerTimesheetsTile({
     return () => {
       cancelled = true
     }
-  }, [organizationId, roster, periodStart, periodEnd, timeZone])
+  }, [organizationId, roster, groups, periodStart, periodEnd, timeZone])
 
   return (
     <button type="button" className="card pad click" data-hue="ts" onClick={onClick} style={{ border: 0, textAlign: 'left' }}>

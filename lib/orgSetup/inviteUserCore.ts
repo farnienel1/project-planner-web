@@ -19,6 +19,8 @@ export type InviteUserCoreInput = {
   assignedManagerUserId?: string
   assignedManagerUserIds?: string[]
   dayRate?: number
+  hourlyRate?: number
+  payBasis?: 'day' | 'hourly'
   tradeTypePreset?: string
   tradeTypeCustom?: string
   employmentType?: 'paye' | 'self_employed' | 'selfEmployed'
@@ -109,7 +111,11 @@ export async function inviteUserCore(input: InviteUserCoreInput): Promise<Invite
     invitationData.assignedManagerUserIds = lineManagerIds
     invitationData.assignedManagerUserId = lineManagerIds[0]
   }
-  if ((input.permissions.operativeMode || input.permissions.manager) && input.dayRate != null) {
+  if (input.payBasis === 'hourly' && input.hourlyRate != null) {
+    invitationData.payBasis = 'hourly'
+    invitationData.hourlyRate = input.hourlyRate
+  } else if (input.dayRate != null) {
+    invitationData.payBasis = 'day'
     invitationData.dayRate = input.dayRate
   }
   if (input.tradeTypePreset?.trim()) invitationData.tradeTypePreset = input.tradeTypePreset.trim()
@@ -142,6 +148,8 @@ export async function inviteUserCore(input: InviteUserCoreInput): Promise<Invite
       assignedManagerUserId: input.assignedManagerUserId,
       assignedManagerUserIds: input.assignedManagerUserIds,
       dayRate: input.dayRate,
+      hourlyRate: input.hourlyRate,
+      payBasis: input.payBasis,
       tradeTypePreset: input.tradeTypePreset,
       tradeTypeCustom: input.tradeTypeCustom,
       employmentType: input.employmentType,

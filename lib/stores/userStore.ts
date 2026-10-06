@@ -6,7 +6,7 @@ import { sendPasswordResetEmail } from 'firebase/auth'
 import { passwordResetActionSettings } from '@/lib/auth/passwordResetSettings'
 import type { Operative, User } from '@/types'
 import { auth, db } from '@/lib/firebase/config'
-import { buildSaveUserPayload } from '@/lib/firebase/userPayload'
+import { applyExclusiveRateFields, buildSaveUserPayload } from '@/lib/firebase/userPayload'
 import { parseOrgUser } from '@/lib/firebase/parseUser'
 import { findOperativeForUser } from '@/lib/operatives/operativeRosterUtils'
 import { applyAccountTypeChange } from '@/lib/staff/accountTypeChange'
@@ -192,22 +192,17 @@ export const useUserStore = create<UserStoreState>(() => ({
     const linked = findOperativeForUser(user, operatives)
     if (!linked) return
 
-    await setDoc(
-      doc(db, 'organizations', organizationId, 'operatives', linked.id),
-      {
-        firstName: user.firstName.trim(),
-        lastName: user.surname.trim(),
-        name: `${user.firstName} ${user.surname}`.trim(),
-        email: user.email.trim(),
-        isActive: user.isActive,
-        ...(user.dayRate != null && user.dayRate > 0
-          ? { dayRate: user.dayRate, hourlyRate: user.dayRate }
-          : {}),
-        ...(user.tradeTypePreset ? { tradeTypePreset: user.tradeTypePreset } : {}),
-        ...(user.tradeTypeCustom ? { tradeTypeCustom: user.tradeTypeCustom } : {}),
-        updatedAt: Timestamp.now(),
-      },
-      { merge: true }
-    )
+    const payload: Record<string, unknown> = {
+      firstName: user.firstName.trim(),
+      lastName: user.surname.trim(),
+      name: `${user.firstName} ${user.surname}`.trim(),
+      email: user.email.trim(),
+      isActive: user.isActive,
+      ...(user.tradeTypePreset ? { tradeTypePreset: user.tradeTypePreset } : {}),
+      ...(user.tradeTypeCustom ? { tradeTypeCustom: user.tradeTypeCustom } : {}),
+      updatedAt: Timestamp.now(),
+    }
+    applyExclusiveRateFields(payload, user)
+    await setDoc(doc(db, 'organizations', organizationId, 'operatives', linked.id), payload, { merge: true })
   },
 }))

@@ -121,6 +121,50 @@ export function timesheetReceiptStoredName(fileName?: string | null): string {
   return `receipt.${trimmed.slice(dot + 1).toLowerCase()}`
 }
 
+export function userIdsSharingEmail(member: User, users: User[]): string[] {
+  const email = member.email.trim().toLowerCase()
+  if (!email) return [member.id]
+  const ids = users
+    .filter((row) => row.email.trim().toLowerCase() === email)
+    .map((row) => row.id)
+  return ids.length ? ids : [member.id]
+}
+
+export function usersSharingEmail(member: User, users: User[]): User[] {
+  const ids = new Set(userIdsSharingEmail(member, users))
+  const rows = users.filter((row) => ids.has(row.id))
+  return rows.length ? rows : [member]
+}
+
+/** One person per email. A line manager on any document for that email can see the person. */
+export function timesheetRosterGroups(viewer: User, users: User[]): User[][] {
+  const admin = hasAdminAccess(viewer) || viewer.isSuperAdmin
+  const seen = new Set<string>()
+  const groups: User[][] = []
+  for (const member of users) {
+    if (member.isActive === false) continue
+    const key = member.email.trim().toLowerCase() || member.id
+    if (seen.has(key)) continue
+    const group = users.filter((row) => {
+      if (row.isActive === false) return false
+      return (row.email.trim().toLowerCase() || row.id) === key
+    })
+    const visible = admin || group.some((row) => reportsToManager(row, viewer.id))
+    if (!visible) continue
+    seen.add(key)
+    groups.push(group)
+  }
+  return groups
+}
+
+export function groupHasLineManager(group: User[]): boolean {
+  return group.some((member) => {
+    if (member.hasNoLineManager) return false
+    const ids = [...(member.assignedManagerUserIds || []), member.assignedManagerUserId || '']
+    return ids.some((id) => id.trim())
+  })
+}
+
 export function reportsToManager(member: User, managerId: string): boolean {
   const ids = [
     ...(member.assignedManagerUserIds || []),

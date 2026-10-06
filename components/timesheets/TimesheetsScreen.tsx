@@ -13,13 +13,9 @@ import {
   type ExportedTimesheetHistoryRow,
 } from '@/lib/timesheets/timesheetStorage'
 import type { TimesheetDraft } from '@/lib/timesheets/timesheetDraft'
-import {
-  awaitingManagerSignOff,
-  isTimesheetFullyApproved,
-  SIGNED_OFF_EDIT_NOTE,
-} from '@/lib/timesheets/timesheetApprovalPolicy'
+import { SIGNED_OFF_EDIT_NOTE } from '@/lib/timesheets/timesheetApprovalPolicy'
 import { applyWeeklyReportOverride } from '@/lib/timesheets/weeklyReportOverride'
-import { teamTimesheetUsers, subjectForUser } from '@/lib/timesheets/timesheetWeekUtils'
+import { groupHasLineManager, subjectForUser, timesheetRosterGroups, userIdsSharingEmail } from '@/lib/timesheets/timesheetWeekUtils'
 import { formatPaymentPeriodLine, periodStartKey } from '@/lib/timesheets/paymentRunCopy'
 import { collectTimesheetPayroll } from '@/lib/timesheets/timesheetPayrollCollector'
 import {
@@ -108,13 +104,20 @@ export function TimesheetsScreen({
   const [exportMessage, setExportMessage] = useState<string | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
 
-  const roster = useMemo(() => {
-    const base = user ? teamTimesheetUsers(user, users) : []
-    if (teamTab === 'exported') return base
-    return base.filter((member) =>
-      shouldAppearInOperativeTimesheetRoster(member, periodStart, periodEnd, invoicing, new Date(), timeZone)
-    )
+  const groups = useMemo(() => {
+    if (!user) return [] as User[][]
+    return timesheetRosterGroups(user, users)
+      .map((group) =>
+        teamTab === 'exported'
+          ? group
+          : group.filter((member) =>
+              shouldAppearInOperativeTimesheetRoster(member, periodStart, periodEnd, invoicing, new Date(), timeZone)
+            )
+      )
+      .filter((group) => group.length > 0)
   }, [user, users, teamTab, periodStart, periodEnd, invoicing, timeZone])
+
+  const roster = useMemo(() => groups.flat(), [groups])
 
   const reload = useCallback(async () => {
     if (!organization?.id) return
@@ -140,19 +143,35 @@ export function TimesheetsScreen({
     }
   }, [organization?.id, roster, periodStart, periodEnd, timeZone, teamTab])
 
+  const personDraft = (group: User[]) => {
+    const signed = group
+      .map((member) => ({ member, draft: drafts.get(member.id) }))
+      .find((row) => row.draft?.operativeSignedAt)
+    if (signed?.draft) return signed
+    const any = group.map((member) => ({ member, draft: drafts.get(member.id) })).find((row) => row.draft)
+    return any?.draft ? any : null
+  }
+
   useEffect(() => {
     void reload()
   }, [reload])
 
   const visible = useMemo(() => {
-    return roster.filter((member) => {
-      const draft = drafts.get(member.id)
-      if (!draft) return false
-      if (teamTab === 'exported') return false
-      if (teamTab === 'signed') return isTimesheetFullyApproved(draft, member) && !draft.exportedAt
-      return awaitingManagerSignOff(draft, member) && !draft.exportedAt
-    })
-  }, [roster, drafts, teamTab])
+    const rows: User[] = []
+    for (const group of groups) {
+      const picked = personDraft(group)
+      if (!picked?.draft || teamTab === 'exported' || picked.draft.exportedAt) continue
+      const counterSigned = Boolean(picked.draft.managerSignedAt)
+      const personSigned = Boolean(picked.draft.operativeSignedAt)
+      const needsManager = groupHasLineManager(group)
+      if (teamTab === 'signed') {
+        if (personSigned && (!needsManager || counterSigned)) rows.push(picked.member)
+        continue
+      }
+      if (personSigned && needsManager && !counterSigned) rows.push(picked.member)
+    }
+    return rows
+  }, [groups, drafts, teamTab])
 
   const summaryFor = (member: User, draft: TimesheetDraft | undefined, start: Date, end: Date) => {
     const payroll = collectTimesheetPayroll({
@@ -170,6 +189,7 @@ export function TimesheetsScreen({
       timeZone,
       history,
       scheduleOptions,
+      aliasUserIds: userIdsSharingEmail(member, users),
     })
     const priceWork = draft?.priceWorkEntries.reduce((sum, entry) => sum + entry.amount, 0) || 0
     const expenses = draft?.expenseEntries.reduce((sum, entry) => sum + entry.amount, 0) || 0
@@ -210,6 +230,7 @@ export function TimesheetsScreen({
           timeZone,
           history,
           scheduleOptions,
+          aliasUserIds: userIdsSharingEmail(member, users),
         })
         const agreed = applyWeeklyReportOverride({
           draft,

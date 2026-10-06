@@ -7,6 +7,8 @@
  */
 
 import { Timestamp, deleteField } from 'firebase/firestore'
+import { exclusiveRateDocumentFields, readStoredRates } from '@/lib/timesheets/payBasis'
+import { applyExclusiveRateFields } from '@/lib/firebase/userPayload'
 import type {
   Booking,
   Client,
@@ -188,11 +190,11 @@ export function parseAppUserDocument(userId: string, data: Record<string, unknow
   const managerIds =
     assignedManagerUserIds.length > 0 ? assignedManagerUserIds : legacyManager ? [legacyManager] : []
 
-  let dayRate = asNumber(data.dayRate)
-  let hourlyRate = asNumber(data.hourlyRate)
-  if (dayRate != null && dayRate > 0 && hourlyRate != null && hourlyRate > 0) {
-    hourlyRate = undefined
-  }
+  const storedPay = readStoredRates({
+    payBasis: data.payBasis,
+    dayRate: asNumber(data.dayRate),
+    hourlyRate: asNumber(data.hourlyRate),
+  })
 
   return ok({
     id: userId,
@@ -209,8 +211,9 @@ export function parseAppUserDocument(userId: string, data: Record<string, unknow
     assignedManagerUserIds: managerIds.length ? managerIds : undefined,
     assignedManagerUserId: managerIds[0],
     hasNoLineManager: data.hasNoLineManager === true,
-    dayRate: dayRate && dayRate > 0 ? dayRate : undefined,
-    hourlyRate: hourlyRate && hourlyRate > 0 ? hourlyRate : undefined,
+    payBasis: storedPay.payBasis ?? undefined,
+    dayRate: storedPay.payBasis === 'day' && storedPay.dayRate != null ? storedPay.dayRate : undefined,
+    hourlyRate: storedPay.payBasis === 'hourly' && storedPay.hourlyRate != null ? storedPay.hourlyRate : undefined,
     tradeTypePreset: asOptionalString(data.tradeTypePreset),
     tradeTypeCustom: asOptionalString(data.tradeTypeCustom),
     employmentType: normalizeEmploymentType(data.employmentType),
@@ -306,19 +309,14 @@ export function serializeUser(user: User): Record<string, unknown> {
       payload.assignedManagerUserIds = ids
       payload.assignedManagerUserId = ids[0]
     }
-    if (user.dayRate != null && user.dayRate > 0) {
-      payload.dayRate = user.dayRate
-      payload.hourlyRate = deleteField()
-    } else if (user.hourlyRate != null && user.hourlyRate > 0) {
-      payload.hourlyRate = user.hourlyRate
-      payload.dayRate = deleteField()
-    }
     payload.tradeTypePreset = user.tradeTypePreset?.trim() || deleteField()
     payload.tradeTypeCustom = user.tradeTypeCustom?.trim() || deleteField()
     payload.timesheetsEnabled = user.timesheetsEnabled === true
     payload.vatNumber = user.vatNumber?.trim() || deleteField()
     payload.utrNumber = user.utrNumber?.trim() || deleteField()
   }
+
+  applyExclusiveRateFields(payload, user)
 
   if (user.annualLeaveDaysPerYear != null) payload.annualLeaveDaysPerYear = user.annualLeaveDaysPerYear
   if (user.annualLeaveYearStartMonth != null) {
@@ -867,6 +865,19 @@ export function serializeNotification(row: {
   }
 }
 
+function operativePayFields(data: Record<string, unknown>): Pick<Operative, 'hourlyRate' | 'dayRate' | 'payBasis'> {
+  const stored = readStoredRates({
+    payBasis: data.payBasis,
+    dayRate: asNumber(data.dayRate),
+    hourlyRate: asNumber(data.hourlyRate),
+  })
+  return {
+    payBasis: stored.payBasis ?? undefined,
+    dayRate: stored.payBasis === 'day' && stored.dayRate != null ? stored.dayRate : undefined,
+    hourlyRate: stored.payBasis === 'hourly' && stored.hourlyRate != null ? stored.hourlyRate : 0,
+  }
+}
+
 export function parseOperative(
   docId: string,
   data: Record<string, unknown>,
@@ -882,8 +893,7 @@ export function parseOperative(
     email: asString(data.email),
     phone: asOptionalString(data.phone),
     startDate: asDate(data.startDate) || new Date(),
-    hourlyRate: asNumber(data.hourlyRate) ?? 0,
-    dayRate: asNumber(data.dayRate) ?? asNumber(data.hourlyRate) ?? 0,
+    ...operativePayFields(data),
     skills: Array.isArray(data.skills) ? (data.skills as Operative['skills']) : [],
     qualifications: Array.isArray(data.qualifications)
       ? (data.qualifications as Operative['qualifications'])
@@ -956,8 +966,8 @@ export function serializeOperative(
     skills: operative.skills || [],
     qualifications: operative.qualifications || [],
     isActive: operative.isActive !== false,
-    hourlyRate: operative.hourlyRate || 0,
-    dayRate: operative.dayRate ?? operative.hourlyRate ?? 0,
+    hourlyRate: operative.payBasis === 'hourly' ? operative.hourlyRate || 0 : operative.hourlyRate || 0,
+    dayRate: operative.dayRate ?? 0,
     currencySymbol: '£',
     notes: operative.notes?.trim() || '',
     tradeTypePreset: operative.tradeTypePreset?.trim() || '',
@@ -981,10 +991,9 @@ export function serializeOperative(
     skills: (v.skills as (Skill | string)[]).map(serializeAssignedSkill),
     qualifications: (v.qualifications as Qualification[]).map(serializeAssignedQualification),
     isActive: v.isActive,
-    hourlyRate: v.hourlyRate,
     currencySymbol: v.currencySymbol,
     notes: v.notes,
-    dayRate: v.dayRate,
+    ...exclusiveRateDocumentFields(operative),
     tradeTypePreset: v.tradeTypePreset,
     tradeTypeCustom: v.tradeTypeCustom,
     organizationId: v.organizationId,
@@ -999,6 +1008,19 @@ export function serializeOperative(
     ),
     qualificationCertificateURLs: serializeStringMap(operative.qualificationCertificateURLs),
   })
+}
+
+function managerPayFields(data: Record<string, unknown>): Pick<Manager, 'payBasis' | 'dayRate' | 'hourlyRate'> {
+  const stored = readStoredRates({
+    payBasis: data.payBasis,
+    dayRate: asNumber(data.dayRate),
+    hourlyRate: asNumber(data.hourlyRate),
+  })
+  return {
+    payBasis: stored.payBasis ?? undefined,
+    dayRate: stored.payBasis === 'day' && stored.dayRate != null ? stored.dayRate : undefined,
+    hourlyRate: stored.payBasis === 'hourly' && stored.hourlyRate != null ? stored.hourlyRate : undefined,
+  }
 }
 
 export function parseManager(
@@ -1023,6 +1045,7 @@ export function parseManager(
     notes: asOptionalString(data.notes),
     tradeTypePreset: asOptionalString(data.tradeTypePreset),
     tradeTypeCustom: asOptionalString(data.tradeTypeCustom),
+    ...managerPayFields(data),
     organizationId,
     createdAt: asDate(data.createdAt) || new Date(),
     updatedAt: asDate(data.updatedAt) || new Date(),
@@ -1062,6 +1085,7 @@ export function serializeManager(manager: Manager & { organizationId: string }):
     notes: v.notes,
     tradeTypePreset: v.tradeTypePreset,
     tradeTypeCustom: v.tradeTypeCustom,
+    ...exclusiveRateDocumentFields(manager),
     organizationId: v.organizationId,
     createdAt: asTimestamp(v.createdAt),
     updatedAt: asTimestamp(v.updatedAt),
