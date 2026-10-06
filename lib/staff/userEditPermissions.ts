@@ -27,14 +27,16 @@ export function canEditIdentityDetails(current: User | null, target: User): bool
 }
 
 export function roleLabel(user: User): string {
-  if (user.isSuperAdmin || user.permissions.adminAccess || user.role === 'admin') return 'Administrator'
+  if (user.isSuperAdmin) return 'Super Admin'
+  if (user.permissions.adminAccess || user.role === 'admin') return 'Administrator'
   if (user.permissions.operativeMode) return 'Operative'
   if (user.permissions.manager) return 'Manager'
   return 'User'
 }
 
 export function setupSectionTitle(user: User): string {
-  if (user.isSuperAdmin || user.permissions.adminAccess || user.role === 'admin') return 'Administrator setup'
+  if (user.isSuperAdmin) return 'Super Admin setup'
+  if (user.permissions.adminAccess || user.role === 'admin') return 'Administrator setup'
   if (user.permissions.operativeMode) return 'Operative setup'
   if (user.permissions.manager) return 'Manager setup'
   return 'Staff setup'
