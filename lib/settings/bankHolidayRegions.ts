@@ -145,5 +145,6 @@ export const BANK_HOLIDAY_REGIONS: BankHolidayRegion[] = [
 ]
 
 export function bankHolidayRegionLabel(code: string): string {
+  if (code === 'GB-ENG-WLS') return 'England & Wales'
   return BANK_HOLIDAY_REGIONS.find((r) => r.code === code)?.label ?? code
 }
