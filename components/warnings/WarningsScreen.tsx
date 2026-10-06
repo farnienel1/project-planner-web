@@ -2,7 +2,6 @@
 
 import { useMemo, useState } from 'react'
 import Link from 'next/link'
-import { format } from 'date-fns/format'
 import type { OperativeBookingClashWarning } from '@/lib/scheduling/bookingClashUtils'
 import type { ManagerBookingClashWarning } from '@/lib/warnings/managerClashWarnings'
 import type { MissedMaterialOrderWarning } from '@/lib/warnings/materialOrderWarnings'
@@ -15,7 +14,7 @@ import { displayTitle, type ClashTimelineEntry } from '@/lib/warnings/clashTimel
 import { hasAdminAccess } from '@/lib/permissions'
 import type { Operative, User } from '@/types'
 import { initialsFrom } from '@/lib/daily-overview/buildDailyOverview'
-import { dayKey } from '@/lib/ios-parity/londonTime'
+import { dayKey, formatLongDay } from '@/lib/ios-parity/londonTime'
 import { addDoc, collection, serverTimestamp } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
 import { useAuthStore } from '@/lib/stores/authStore'
@@ -35,10 +34,6 @@ function parseUnbookedPerson(raw: string): { name: string; badge: string | null 
   let hours = match[2].replace(/\.0h$/, 'h')
   if (!hours.endsWith('h')) hours += 'h'
   return { name: match[1], badge: `−${hours}` }
-}
-
-function formatLongDay(date: Date): string {
-  return format(date, 'd MMM yyyy')
 }
 
 function Avatar({ name, size = 32 }: { name: string; size?: number }) {

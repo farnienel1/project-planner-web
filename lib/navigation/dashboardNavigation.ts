@@ -416,6 +416,16 @@ function withLabels(items: DashboardNavItem[], organization: Organization | null
   })
 }
 
+/** Shell breadcrumb. Uses the full catalogue so a page you can open still has a name when the sidebar hides it. */
+export function dashboardPageTitle(pathname: string): string {
+  if (pathname === '/dashboard') return 'Home'
+  if (pathname.startsWith('/dashboard/book-labour')) return 'Book labour'
+  const match = ALL_NAV_ITEMS.filter((item) => item.href !== '/dashboard')
+    .sort((a, b) => b.href.length - a.href.length)
+    .find((item) => pathname === item.href || pathname.startsWith(`${item.href}/`))
+  return match?.label || 'Project Planner'
+}
+
 export function getDashboardNavItems(
   user: User,
   organization: Organization | null,

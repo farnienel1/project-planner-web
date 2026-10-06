@@ -11,6 +11,15 @@ export type EmploymentTypeUser = Pick<
   'employmentType' | 'employmentTypeTransitionFrom' | 'employmentTypeEffectiveAt'
 >
 
+function validDay(value: unknown): Date | undefined {
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? undefined : value
+  if (typeof value === 'string' || typeof value === 'number') {
+    const parsed = new Date(value)
+    return Number.isNaN(parsed.getTime()) ? undefined : parsed
+  }
+  return undefined
+}
+
 export function employmentTypeOnDay(
   user: EmploymentTypeUser,
   date: Date,
@@ -18,9 +27,10 @@ export function employmentTypeOnDay(
 ): EmploymentTypeRaw {
   const current = normalizeEmploymentType(user.employmentType)
   const from = user.employmentTypeTransitionFrom
-  const effectiveAt = user.employmentTypeEffectiveAt
-  if (!from || !effectiveAt) return current
-  if (dayKey(date, timeZone) < dayKey(effectiveAt, timeZone)) {
+  const day = validDay(date)
+  const effectiveAt = validDay(user.employmentTypeEffectiveAt)
+  if (!from || !day || !effectiveAt) return current
+  if (dayKey(day, timeZone) < dayKey(effectiveAt, timeZone)) {
     return normalizeEmploymentType(from)
   }
   return current

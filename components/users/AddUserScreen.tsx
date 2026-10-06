@@ -366,7 +366,7 @@ export function AddUserScreen() {
         <p className="text-sm text-slate-500">
           {operativeInviteOnly
             ? 'Invite a new operative to your organisation. They will receive an email to set up their account.'
-            : 'Invite someone to your organisation. They&apos;ll receive an email to set up their account — same flow as the iOS app.'}
+            : "Invite someone to your organisation. They'll receive an email to set up their account — same flow as the iOS app."}
         </p>
 
         {error && <ErrorBanner message={error} />}
