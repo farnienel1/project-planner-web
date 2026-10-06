@@ -14,6 +14,7 @@ import { ErrorBanner, LoadingSpinner } from '@/components/dashboard/PageShell'
 import { MaterialsAddSheet } from '@/components/projects/materials/MaterialsAddSheet'
 import { MaterialsSendListSheet } from '@/components/projects/materials/MaterialsSendListSheet'
 import { materialStatusLabel } from '@/lib/maps/siteLocation'
+import { formatLengthSpecification } from '@/lib/materials/materialLength'
 import type { Project, ProjectMaterialLine } from '@/types'
 import {
   FeatureCard,
@@ -43,7 +44,7 @@ function MaterialLineCard({
     line.brand,
     line.productCode,
     line.size,
-    line.length ? `${line.length}${line.lengthUnit ? ` ${line.lengthUnit}` : ''}` : null,
+    formatLengthSpecification(line.length, line.lengthUnit) || null,
     line.category,
   ]
     .filter(Boolean)
