@@ -71,6 +71,8 @@ export function canManageUsers(user: PermissionUser): boolean {
 
 export function canViewOperatives(user: PermissionUser): boolean {
   if (!user || isOperativeMode(user)) return false
+  // Super admin keeps Operatives. The stored operatives flag is for everyone else.
+  if (user.isSuperAdmin) return true
   return flag(user, 'operatives')
 }
 

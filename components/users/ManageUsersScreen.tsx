@@ -45,7 +45,9 @@ type Badge = { label: string; cls: string }
 
 function badgesFor(user: User, showAdminBadge: boolean): Badge[] {
   const out: Badge[] = []
-  if (user.isSuperAdmin || user.permissions.adminAccess) {
+  if (user.isSuperAdmin) {
+    out.push({ label: 'Super Admin', cls: 'bg-[#FFF4E5] text-[#C2410C]' })
+  } else if (user.permissions.adminAccess) {
     out.push({ label: 'Administrator', cls: 'bg-[#FDECF1] text-[#E11D48]' })
   } else if (user.permissions.manager) {
     out.push({ label: 'Manager', cls: 'bg-[var(--blue-t)] text-[var(--blue)]' })

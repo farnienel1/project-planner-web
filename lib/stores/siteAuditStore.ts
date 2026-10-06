@@ -364,6 +364,7 @@ interface OrgUserState {
   /** Organisation whose roster load has finished. Empty users before this is still loading. */
   rosterLoadedOrgId: string | null
   loadUsers: (organizationId: string, options?: { force?: boolean }) => Promise<void>
+  patchListedUser: (user: User) => void
   setListedUserActive: (userId: string, isActive: boolean) => void
 }
 
@@ -459,7 +460,10 @@ export const useOrgUserStore = create<OrgUserState>((set, get) => ({
           const confirmedMissing = loaded.complete
             ? await confirmMissingUserDocuments(baseline, loaded.presentIds, loaded.presentEmails)
             : new Set<string>()
-          if (generation !== rosterLoadGeneration) throw new OrgLoadNotCached()
+          if (generation !== rosterLoadGeneration || revisionAtStart !== listedUserRevision) {
+            if (generation === rosterLoadGeneration) set({ loading: false })
+            throw new OrgLoadNotCached()
+          }
           const users = mergeRetainedRoster(baseline, loaded.users, confirmedMissing).sort((a, b) => {
             if (a.isSuperAdmin !== b.isSuperAdmin) return a.isSuperAdmin ? -1 : 1
             return a.email.localeCompare(b.email)
@@ -487,6 +491,18 @@ export const useOrgUserStore = create<OrgUserState>((set, get) => ({
     if (get().loading && !isOrgLoadInFlight(ORG_USER_LOAD_KEY, organizationId)) {
       set({ loading: false })
     }
+  },
+
+  patchListedUser: (user) => {
+    listedUserRevision += 1
+    invalidateOrgLoad(ORG_USER_LOAD_KEY)
+    const email = user.email.trim().toLowerCase()
+    const existing = get().users
+    const index = existing.findIndex(
+      (row) => row.id === user.id || (email !== '' && row.email.trim().toLowerCase() === email)
+    )
+    const users = index >= 0 ? existing.map((row, i) => (i === index ? user : row)) : [...existing, user]
+    set({ users, rosterLoadedOrgId: user.organizationId || get().rosterLoadedOrgId })
   },
 
   setListedUserActive: (userId, isActive) => {
