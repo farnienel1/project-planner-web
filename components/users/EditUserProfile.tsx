@@ -528,11 +528,6 @@ export function EditUserProfile({
     profileSnapshot(target, draftAccountType, draftTypePermissions) !== baseline
   const pageTitle = currentAccountType(target) === 'operative' ? 'Edit operative' : 'Edit user'
   const status = rosterStatusLabel(target)
-  const isPendingMgrOrOp =
-    !target.passwordSet &&
-    (target.permissions.manager || target.permissions.operativeMode) &&
-    !target.permissions.adminAccess &&
-    !target.isSuperAdmin
 
   return (
     <form onSubmit={handleSave} className="mx-auto max-w-2xl pb-16">
@@ -941,7 +936,7 @@ export function EditUserProfile({
           />
         ) : (
           <ActionButton
-            title={isPendingMgrOrOp ? 'Resend sign-up email (verification code)' : 'Resend verification email'}
+            title="Resend sign-up email with verification code"
             subtitle="They haven't finished setting a password yet."
             busy={busyAction === 'invite'}
             onClick={handleResendInvite}
