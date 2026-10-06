@@ -159,5 +159,6 @@ export function normalizeMaterialRequestType(raw: unknown): 'Quote' | 'Order' | 
 }
 
 export function isSmallWorksJobType(jobType: string): boolean {
-  return jobType === 'Small Works' || jobType === 'smallWork'
+  const compact = jobType.replace(/[\s_\-]+/g, '').toLowerCase()
+  return compact === 'smallworks' || compact === 'smallwork'
 }

@@ -108,9 +108,9 @@ test('serializeOperative omits undefined qualification fields so Firestore setDo
   assert.equal(json.includes('undefined'), false)
   const quals = op.qualifications as Array<Record<string, unknown>>
   assert.equal(quals[0].name, 'CSCS')
+  assert.equal(quals[0].hasEndDate, false)
   assert.equal('endDate' in quals[0], false)
-  const skills = op.skills as Array<Record<string, unknown>>
-  assert.equal('trade' in skills[0], false)
+  assert.deepEqual(op.skills, ['s1'])
   assert.deepEqual(op.qualificationCertificateURLs, {})
 })
 
@@ -172,7 +172,7 @@ test('parseOperative keeps an iOS hourly rate and treats a zero pair as unset', 
   })
   assert.equal(saved.payBasis, 'hourly')
   assert.equal(saved.hourlyRate, 18.5)
-  assert.equal('dayRate' in saved, false)
+  assert.equal(saved.dayRate, 0)
 })
 
 test('parseOperative reads qualification expiry and certificate maps', () => {

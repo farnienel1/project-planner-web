@@ -7,7 +7,9 @@ import {
   jobTypeFieldsFromRecord,
   jobTypesFromWorkRecords,
   mergeJobTypeCatalogues,
+  scheduleWorkKindLabel,
   validateJobTypeName,
+  visibleJobTypeLabel,
 } from './jobTypesStorage.ts'
 
 test('validateJobTypeName matches iOS empty and exact-duplicate rules', () => {
@@ -15,6 +17,19 @@ test('validateJobTypeName matches iOS empty and exact-duplicate rules', () => {
   assert.equal(validateJobTypeName('CAT A', ['CAT A']), 'This job type already exists')
   assert.equal(validateJobTypeName('cat a', ['CAT A']), null)
   assert.equal(validateJobTypeName('CAT B', ['CAT A']), null)
+})
+
+test('schedule and card labels follow iOS custom type, not the stored CAT A enum', () => {
+  assert.equal(
+    scheduleWorkKindLabel({ jobType: 'CAT A', customJobType: 'De-Carbonisation' }),
+    'De-Carbonisation'
+  )
+  assert.equal(scheduleWorkKindLabel({ jobType: 'CAT A' }), 'Project')
+  assert.equal(scheduleWorkKindLabel({ jobType: 'smallWorks' }), 'Small works')
+  assert.equal(scheduleWorkKindLabel({ jobType: 'Small Works', customJobType: 'Snagging' }), 'Small works')
+  assert.equal(visibleJobTypeLabel('smallWorks'), 'Small Works')
+  assert.equal(visibleJobTypeLabel('CAT A', 'De-Carbonisation'), 'De-Carbonisation')
+  assert.equal(visibleJobTypeLabel('CAT A', 'smallWorks'), 'Small Works')
 })
 
 test('canonicalJobTypeName maps iOS enum aliases', () => {
