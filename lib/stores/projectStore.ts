@@ -17,7 +17,7 @@ import {
   projectCollectionName,
   type ProjectSaveInput,
 } from '@/lib/firebase/projectPayload'
-import { runOrgLoad } from '@/lib/stores/orgLoadCache'
+import { optionsForUnappliedOrg, runOrgLoad } from '@/lib/stores/orgLoadCache'
 import { markRowsRemoved, retainScopedRows } from '@/lib/staff/rosterRetain'
 import { trackEvent } from '@/lib/analytics/trackEvent'
 import { useAuthStore } from '@/lib/stores/authStore'
@@ -120,6 +120,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 
   loadProjects: async (organizationId, includeInactive = false, options?: { force?: boolean }) => {
     const cacheKey = `projectStore:projects:${includeInactive ? 'all' : 'live'}`
+    const loadOptions = optionsForUnappliedOrg(cacheKey, organizationId, projectsOrgId === organizationId, options)
     await runOrgLoad(
       cacheKey,
       organizationId,
@@ -146,11 +147,17 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
           throw error
         }
       },
-      options
+      loadOptions
     )
   },
 
   loadSmallWorks: async (organizationId, options?: { force?: boolean }) => {
+    const loadOptions = optionsForUnappliedOrg(
+      'projectStore:smallWorks',
+      organizationId,
+      smallWorksOrgId === organizationId,
+      options
+    )
     await runOrgLoad(
       'projectStore:smallWorks',
       organizationId,
@@ -176,7 +183,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
           throw error
         }
       },
-      options
+      loadOptions
     )
   },
 
