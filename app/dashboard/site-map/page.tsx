@@ -2,7 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { format, isSameDay } from 'date-fns'
+import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/lib/stores/authStore'
+import { canViewSiteMap } from '@/lib/navigation/menuPermissions'
 import { useProjectStore } from '@/lib/stores/projectStore'
 import { useBookingStore } from '@/lib/stores/bookingStore'
 import { EmptyState, LoadingSpinner } from '@/components/dashboard/PageShell'
@@ -42,7 +44,8 @@ function pinKindForProject(project: Project): SiteMapMarker['pinKind'] {
 }
 
 export default function SiteMapPage() {
-  const { organization } = useAuthStore()
+  const router = useRouter()
+  const { user, organization } = useAuthStore()
   const { projects, smallWorks, loadProjects, loadSmallWorks } = useProjectStore()
   const { bookings, loadBookings } = useBookingStore()
   const [selectedDate, setSelectedDate] = useState(format(new Date(), 'yyyy-MM-dd'))
@@ -52,6 +55,10 @@ export default function SiteMapPage() {
   >({})
   const [geocoding, setGeocoding] = useState(false)
   const geocodedSiteIds = useRef<Set<string>>(new Set())
+
+  useEffect(() => {
+    if (user && !canViewSiteMap(user)) router.replace('/dashboard')
+  }, [user, router])
 
   useEffect(() => {
     if (organization?.id) {
@@ -168,6 +175,7 @@ export default function SiteMapPage() {
     setSelectedPinId(id)
   }, [])
 
+  if (!user || !canViewSiteMap(user)) return null
   if (!organization) return <LoadingSpinner />
 
   return (
