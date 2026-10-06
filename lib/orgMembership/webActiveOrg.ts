@@ -24,6 +24,13 @@ export function writeWebActiveOrg(userId: string, organizationId: string): void 
   }
 }
 
+/** iOS organizationIdsMatch — trim and ignore case. */
+function organizationIdsMatch(lhs?: string | null, rhs?: string | null): boolean {
+  const left = String(lhs || '').trim().toLowerCase()
+  const right = String(rhs || '').trim().toLowerCase()
+  return left.length > 0 && left === right
+}
+
 function roleFrom(value: unknown, fallback: UserRole): UserRole {
   const role = String(value || '')
   if (role === Role.ADMIN) return Role.ADMIN
@@ -57,8 +64,8 @@ function staffPermissions(role: UserRole): UserPermissions {
 }
 
 /**
- * Rights for the company open on this device come from that company's membership.
- * The user document's organizationId stays the company last opened on another device.
+ * Rights for a different company come from that company's membership.
+ * When this browser is in the company on the user document, that document is the profile.
  */
 export function applyDeviceOrgMembership(
   user: User,
@@ -69,7 +76,9 @@ export function applyDeviceOrgMembership(
 ): User {
   const organizationId = activeOrganizationId || documentOrganizationId
   if (!organizationId) return user
-  if (!membership && organizationId === documentOrganizationId) {
+  // iOS loadDeviceSessionProfile: the shared user document is this company's profile.
+  // A membership stub (often just members-map role "admin") must not replace it.
+  if (organizationIdsMatch(organizationId, documentOrganizationId)) {
     return user
   }
   if (!membership) {
