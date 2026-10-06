@@ -364,9 +364,9 @@ export function WarningsScreen({
         <div className="empty card pad">
           {loading ? (
             <>
-              <p className="text-[18px] font-semibold">Check for warnings</p>
+              <p className="text-[18px] font-semibold">Scanning for warnings…</p>
               <p className="mx-auto mt-2 max-w-md text-[14px] text-[var(--ink3)]">
-                Scanning today and tomorrow. Results stay on Home and Weekly Report once they land.
+                Keep this screen open until results appear.
               </p>
             </>
           ) : (

@@ -141,11 +141,7 @@ export function WarningsPanel({ onBack }: { onBack: () => void }) {
   function patch(partial: Partial<OrgWarningDetectionSettings>) {
     dirtyRef.current = true
     setDirty(true)
-    setDraft((current) => {
-      const next = { ...current, ...partial }
-      if (organization?.id) writeCachedWarningDetection(organization.id, next)
-      return next
-    })
+    setDraft((current) => ({ ...current, ...partial }))
   }
 
   const excluded = draft.excludedUserIdsFromUnbookedWarnings ?? []

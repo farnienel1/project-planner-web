@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { UserRole, type Booking, type HolidayBooking, type Operative, type Project, type User } from '../../types/index.ts'
-import { DEFAULT_PAYROLL_POLICY, DEFAULT_WARNING_DETECTION } from '../settings/organizationSettings.ts'
+import { DEFAULT_INVOICING, DEFAULT_PAYROLL_POLICY, DEFAULT_WARNING_DETECTION } from '../settings/organizationSettings.ts'
 import { computeWarningCoverageWindow, formatNumberOfDaysScanSummary } from './warningLookahead.ts'
 import { computeUnbookedLabourWarnings } from './unbookedLabourWarnings.ts'
 import { computeOperativeBookingClashWarnings } from '../scheduling/bookingClashUtils.ts'
@@ -110,6 +110,67 @@ test('Full week coverage is Monday through Sunday, including past days', () => {
   })
   assert.equal(dayKey(window.start), '2026-09-14')
   assert.equal(dayKey(window.end), '2026-09-20')
+})
+
+test('invoicing-period warnings include past days in the active pay run and stop at that run', () => {
+  // Raccord MEP: date ranges 1–16 and 17–31. 6 Oct 2026 is inside 1–16.
+  // iOS OrgWarningDetectionSettings.coverageStart/End for endOfInvoicingPeriod.
+  const tuesday = new Date('2026-10-06T12:00:00+01:00')
+  const detection = {
+    ...DEFAULT_WARNING_DETECTION,
+    clashLookaheadMode: 'endOfInvoicingPeriod' as const,
+    clashLookaheadDays: 12,
+    excludedUserIdsFromUnbookedWarnings: ['admin-1'],
+  }
+  const invoicing = {
+    ...DEFAULT_INVOICING,
+    paymentRunMode: 'date_ranges' as const,
+    paymentRunDateRanges: [
+      { startDay: 1, endDay: 16 },
+      { startDay: 17, endDay: 31 },
+    ],
+  }
+  const window = computeWarningCoverageWindow(tuesday, detection, invoicing)
+  assert.equal(dayKey(window.start), '2026-10-01')
+  assert.equal(dayKey(window.end), '2026-10-16')
+
+  const person = user({
+    id: 'U-OP',
+    email: 'op@site.test',
+    firstName: 'Test',
+    surname: 'Operative',
+    permissions: perms({ operativeMode: true }),
+  })
+  const excluded = user({
+    id: 'admin-1',
+    email: 'admin@site.test',
+    firstName: 'Test',
+    surname: 'Admin',
+    role: UserRole.ADMIN,
+    isSuperAdmin: true,
+    permissions: perms({ adminAccess: true, manager: true, operativeMode: false }),
+  })
+  const warnings = computeUnbookedLabourWarnings({
+    bookings: [],
+    managerSiteBookings: [],
+    operatives: [],
+    users: [person, excluded],
+    holidays: [],
+    warningDetection: detection,
+    invoicing,
+    referenceDate: tuesday,
+    timeZone: 'Europe/London',
+  })
+  const days = [...new Set(warnings.map((warning) => dayKey(warning.date)))]
+  assert.ok(days.includes('2026-10-01'))
+  assert.ok(days.includes('2026-10-02'))
+  assert.ok(days.includes('2026-10-06'))
+  assert.equal(days.includes('2026-10-03'), false)
+  assert.equal(days.includes('2026-10-04'), false)
+  assert.equal(days.includes('2026-10-17'), false)
+  assert.equal(days.includes('2026-10-20'), false)
+  assert.equal(warnings.some((warning) => warning.userId === 'admin-1'), false)
+  assert.equal(warnings.every((warning) => warning.operativeName === 'Test Operative'), true)
 })
 
 test('numberOfDays coverage starts today and is inclusive', () => {

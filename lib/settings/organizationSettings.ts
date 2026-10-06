@@ -554,11 +554,13 @@ export function includesManagerScheduleLocation(
 
 export async function loadOrganizationDetails(
   organizationId: string,
-  options?: { fromServer?: boolean }
+  options?: { fromServer?: boolean; allowCacheFallback?: boolean }
 ): Promise<OrganizationDetails | null> {
   const ref = doc(db, 'organizations', organizationId)
   const snap = options?.fromServer
-    ? await getDocFromServer(ref).catch(() => getDoc(ref))
+    ? options.allowCacheFallback === false
+      ? await getDocFromServer(ref)
+      : await getDocFromServer(ref).catch(() => getDoc(ref))
     : await getDoc(ref)
   if (!snap.exists()) return null
   const data = snap.data()
