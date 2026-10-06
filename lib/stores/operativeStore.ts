@@ -221,7 +221,6 @@ export const useOperativeStore = create<OperativeState>((set, get) => ({
   saveOperative: async (organizationId, operative) => {
     const id = operative.id || newUuid()
     const payload = serializeOperative({ ...operative, id, organizationId })
-    applyExclusiveRateFields(payload, operative)
     operativeMutationEpoch += 1
     await setDoc(doc(db, 'organizations', organizationId, 'operatives', id), payload, { merge: true })
     operativeMutationEpoch += 1

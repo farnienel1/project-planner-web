@@ -107,7 +107,7 @@ export function buildSaveUserPayload(user: User): Record<string, unknown> {
 
   const payload: Record<string, unknown> = {
     email: user.email.toLowerCase().trim(),
-    role: user.role,
+    role: operativeMode ? UserRole.OPERATIVE : user.role,
     firstName,
     surname,
     lastName: surname,
@@ -156,11 +156,16 @@ export function buildSaveUserPayload(user: User): Record<string, unknown> {
       user.assignedManagerUserIds,
       user.assignedManagerUserId
     )
+  }
 
+  if (operativeMode || user.permissions.manager) {
     const preset = user.tradeTypePreset?.trim()
     payload.tradeTypePreset = preset ? preset : deleteField()
     const custom = user.tradeTypeCustom?.trim()
     payload.tradeTypeCustom = custom ? custom : deleteField()
+  } else {
+    payload.tradeTypePreset = deleteField()
+    payload.tradeTypeCustom = deleteField()
   }
 
   if (user.annualLeaveDaysPerYear != null) payload.annualLeaveDaysPerYear = user.annualLeaveDaysPerYear
@@ -183,7 +188,27 @@ export function buildSaveUserPayload(user: User): Record<string, unknown> {
     payload.employmentTypeEffectiveAt = deleteField()
   }
   if (user.policyAcceptedAt) payload.policyAcceptedAt = Timestamp.fromDate(user.policyAcceptedAt)
-  if (user.profilePhotoURL?.trim()) payload.profilePhotoURL = user.profilePhotoURL.trim()
+  else payload.policyAcceptedAt = deleteField()
+  const photo = user.profilePhotoURL?.trim()
+  payload.profilePhotoURL = photo ? photo : deleteField()
+
+  payload.permissions = {
+    adminAccess: payload.adminAccess === true,
+    manager: payload.manager === true,
+    operatives: payload.operatives === true,
+    skills: false,
+    qualifications: payload.qualifications === true,
+    materials: payload.materials === true,
+    projects: payload.projects === true,
+    smallWorks: payload.smallWorks === true,
+    operativeMode: payload.operativeMode === true,
+    annualLeaveSelfBook: payload.annualLeaveSelfBook === true,
+    weeklyReports: payload.weeklyReports === true,
+    dailyOverview: payload.dailyOverview === true,
+    subContractors: payload.subContractors === true,
+    siteAudit: payload.siteAudit === true,
+    wholesalersOrderHistory: payload.wholesalersOrderHistory === true,
+  }
 
   applyExclusiveRateFields(payload, user)
   return payload

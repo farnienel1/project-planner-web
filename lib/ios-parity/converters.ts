@@ -7,7 +7,7 @@
  */
 
 import { Timestamp, deleteField } from 'firebase/firestore'
-import { exclusiveRateDocumentFields, readStoredRates } from '@/lib/timesheets/payBasis'
+import { exclusiveRateDocumentFields, operativeRosterRateFields, readStoredRates } from '@/lib/timesheets/payBasis'
 import { applyExclusiveRateFields } from '@/lib/firebase/userPayload'
 import type {
   Booking,
@@ -949,18 +949,15 @@ function serializeAssignedQualification(row: Qualification): Record<string, unkn
   return payload
 }
 
-function serializeAssignedSkill(skill: Skill | string): string | Record<string, unknown> {
-  if (typeof skill === 'string') return skill
-  const createdAt = skill.createdAt instanceof Date && !Number.isNaN(skill.createdAt.getTime()) ? skill.createdAt : new Date()
-  const updatedAt = skill.updatedAt instanceof Date && !Number.isNaN(skill.updatedAt.getTime()) ? skill.updatedAt : createdAt
-  const payload: Record<string, unknown> = {
-    id: String(skill.id || ''),
-    name: String(skill.name || '').trim(),
-    createdAt: asTimestamp(createdAt),
-    updatedAt: asTimestamp(updatedAt),
-  }
-  if (skill.trade?.trim()) payload.trade = skill.trade.trim()
-  return payload
+/**
+ * iOS Operative.skills is Set<String>. saveOperative writes that array of catalogue ids.
+ * loadOperatives casts `skills` with `as? [String]` and drops the whole list when a row is a map.
+ */
+export function operativeSkillToken(skill: Skill | string): string {
+  if (typeof skill === 'string') return skill.trim()
+  const id = String(skill.id || '').trim()
+  if (id) return id
+  return String(skill.name || '').trim()
 }
 
 function serializeStringMap(raw: Record<string, string> | undefined): Record<string, string> {
@@ -1011,12 +1008,12 @@ export function serializeOperative(
     email: v.email,
     phone: v.phone,
     startDate: asTimestamp(v.startDate),
-    skills: (v.skills as (Skill | string)[]).map(serializeAssignedSkill),
+    skills: (v.skills as (Skill | string)[]).map(operativeSkillToken).filter(Boolean),
     qualifications: (v.qualifications as Qualification[]).map(serializeAssignedQualification),
     isActive: v.isActive,
     currencySymbol: v.currencySymbol,
     notes: v.notes,
-    ...exclusiveRateDocumentFields(operative),
+    ...operativeRosterRateFields(operative),
     tradeTypePreset: v.tradeTypePreset,
     tradeTypeCustom: v.tradeTypeCustom,
     organizationId: v.organizationId,

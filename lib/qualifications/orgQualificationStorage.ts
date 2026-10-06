@@ -98,13 +98,35 @@ export function qualificationNameTaken(name: string, existing: Qualification[], 
   return existing.some((row) => row.id !== ignoreId && row.name.trim().toLowerCase() === needle)
 }
 
+/**
+ * iOS saveQualification always writes name, hasEndDate, createdAt, and updatedAt.
+ * Assigned qualifications are skipped on iOS unless hasEndDate is a Bool and both dates are Timestamps.
+ */
+export function qualificationTemplateFirestoreFields(input: {
+  name: string
+  hasEndDate?: boolean
+  createdAt?: Date
+  updatedAt?: Date
+  endDate?: Date | null
+}): Record<string, unknown> {
+  const now = input.updatedAt || new Date()
+  const createdAt = input.createdAt || now
+  const fields: Record<string, unknown> = {
+    name: input.name.trim(),
+    hasEndDate: input.hasEndDate === true,
+    createdAt: Timestamp.fromDate(createdAt),
+    updatedAt: Timestamp.fromDate(now),
+  }
+  if (input.endDate) fields.endDate = Timestamp.fromDate(input.endDate)
+  return fields
+}
+
 export async function saveOrganisationQualification(
   organizationId: string,
   input: { id?: string; name: string; createdAt?: Date; hasEndDate?: boolean; endDate?: Date | null }
 ): Promise<Qualification> {
   const now = new Date()
   const id = input.id || newUuid()
-  const isNew = !input.id
   const payload: Qualification = {
     id,
     name: input.name.trim(),
@@ -113,13 +135,7 @@ export async function saveOrganisationQualification(
     createdAt: input.createdAt || now,
     updatedAt: now,
   }
-  const fields: Record<string, unknown> = {
-    name: payload.name,
-    updatedAt: Timestamp.fromDate(payload.updatedAt),
-  }
-  if (isNew || input.createdAt) fields.createdAt = Timestamp.fromDate(payload.createdAt)
-  if (isNew || input.hasEndDate !== undefined) fields.hasEndDate = input.hasEndDate === true
-  if (input.endDate) fields.endDate = Timestamp.fromDate(input.endDate)
+  const fields = qualificationTemplateFirestoreFields(payload)
   await setDoc(doc(db, 'organizations', organizationId, 'qualifications', id), fields, { merge: true })
   return payload
 }
