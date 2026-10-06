@@ -412,7 +412,17 @@ export function AddProjectTaskSheet({
                 accept="image/*"
                 multiple
                 className="hidden"
-                onChange={(e) => setImageFiles(Array.from(e.target.files || []))}
+                onChange={(e) => {
+                  const picked = Array.from(e.target.files || [])
+                  e.target.value = ''
+                  const rejected = picked.find((file) => !file.type.startsWith('image/'))
+                  if (rejected) {
+                    setError('Choose a photo. That file is not an image, so it was not added.')
+                    return
+                  }
+                  setError(null)
+                  setImageFiles(picked)
+                }}
               />
             </label>
             <label className="flex cursor-pointer flex-col items-center gap-1 rounded-xl border border-[#EEF0F3] bg-white py-3 text-[10px] text-slate-600">
@@ -423,7 +433,17 @@ export function AddProjectTaskSheet({
                 accept="image/*"
                 capture="environment"
                 className="hidden"
-                onChange={(e) => setImageFiles((prev) => [...prev, ...Array.from(e.target.files || [])])}
+                onChange={(e) => {
+                  const picked = Array.from(e.target.files || [])
+                  e.target.value = ''
+                  const rejected = picked.find((file) => !file.type.startsWith('image/'))
+                  if (rejected) {
+                    setError('Choose a photo. That file is not an image, so it was not added.')
+                    return
+                  }
+                  setError(null)
+                  setImageFiles((prev) => [...prev, ...picked])
+                }}
               />
             </label>
             <label className="flex cursor-pointer flex-col items-center gap-1 rounded-xl border border-[#EEF0F3] bg-white py-3 text-[10px] text-slate-600">
