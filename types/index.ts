@@ -53,6 +53,8 @@ export interface Operative {
   startDate: Date;
   hourlyRate: number;
   dayRate?: number;
+  /** "day" or "hourly". Omit when no rate is set. */
+  payBasis?: 'day' | 'hourly';
   skills: (Skill | string)[];
   qualifications: Qualification[];
   qualificationExpiryDates?: Record<string, Date>;
@@ -78,6 +80,9 @@ export interface Manager {
   notes?: string;
   tradeTypePreset?: string;
   tradeTypeCustom?: string;
+  payBasis?: 'day' | 'hourly';
+  dayRate?: number;
+  hourlyRate?: number;
   createdAt: Date;
   updatedAt: Date;
   organizationId?: string;
@@ -146,6 +151,8 @@ export interface User {
   hasNoLineManager?: boolean;
   dayRate?: number;
   hourlyRate?: number;
+  /** "day" or "hourly". Omit when no rate is set. */
+  payBasis?: 'day' | 'hourly';
   tradeTypePreset?: string;
   tradeTypeCustom?: string;
   employmentType?: string;

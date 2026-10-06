@@ -21,6 +21,7 @@ import {
 } from '@/lib/staff/userEditPermissions'
 import { rosterStatusLabel } from '@/lib/staff/userRosterUtils'
 import { UserAvatar } from '@/components/users/UserAvatar'
+import { PayBasisFields, payChoiceFromProfile, payChoiceToRates } from '@/components/users/PayBasisFields'
 import { normalizeEmploymentType } from '@/lib/ios-parity/enums'
 import type { User, UserPermissions } from '@/types'
 import { PermissionToggleList } from '@/components/users/ProfileExpandablePermissionToggle'
@@ -162,6 +163,7 @@ function profileSnapshot(
     assignedManagerUserId: user.assignedManagerUserId || '',
     dayRate: user.dayRate ?? null,
     hourlyRate: user.hourlyRate ?? null,
+    payBasis: user.payBasis ?? null,
     tradeTypePreset: user.tradeTypePreset || '',
     tradeTypeCustom: user.tradeTypeCustom || '',
     annualLeaveEnabled: user.annualLeaveEnabled !== false,
@@ -214,6 +216,7 @@ export function EditUserProfile({
   const [lockedNotice, setLockedNotice] = useState<string | null>(null)
   const [baseline, setBaseline] = useState<string | null>(null)
   const [originalDayRate, setOriginalDayRate] = useState<number | undefined>(undefined)
+  const [originalPayBasis, setOriginalPayBasis] = useState<'day' | 'hourly' | undefined>(undefined)
   const [fixEmail, setFixEmail] = useState('')
   const [fixNote, setFixNote] = useState('')
   const [fixOpen, setFixOpen] = useState(false)
@@ -229,7 +232,8 @@ export function EditUserProfile({
       .then((row) => {
         if (generation !== profileLoadGen.current) return
         setTarget(row)
-        setOriginalDayRate(row?.dayRate)
+        setOriginalDayRate(row?.payBasis === 'hourly' ? row?.hourlyRate : row?.dayRate)
+        setOriginalPayBasis(row?.payBasis)
         if (row) setBaseline(profileSnapshot(row, null, null))
       })
       .finally(() => {
@@ -328,12 +332,15 @@ export function EditUserProfile({
             organizationId: organization.id,
             userId: toSave.id,
             operativeId: findOperativeForUser(toSave, operatives)?.id,
-            previousDayRate: originalDayRate,
-            nextDayRate: toSave.dayRate ?? null,
+            previousDayRate: originalDayRate ?? null,
+            nextDayRate: (toSave.payBasis === 'hourly' ? toSave.hourlyRate : toSave.dayRate) ?? null,
+            previousPayBasis: originalPayBasis,
+            nextPayBasis: toSave.payBasis,
             createdAt: toSave.createdAt,
             history,
           })
-          setOriginalDayRate(toSave.dayRate)
+          setOriginalDayRate(toSave.payBasis === 'hourly' ? toSave.hourlyRate : toSave.dayRate)
+          setOriginalPayBasis(toSave.payBasis)
         } catch {
           // History write is best-effort so a profile save still succeeds.
         }
@@ -678,27 +685,13 @@ export function EditUserProfile({
                 </FormField>
               )}
 
-              <FormField label="Day rate" hint="Payroll uses either a day rate or an hourly rate, not both.">
-                <div className="relative">
-                  <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-slate-400">
-                    £
-                  </span>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    value={target.dayRate?.toString() || ''}
-                    className="pl-7"
-                    disabled={!canEdit}
-                    onChange={(e) =>
-                      setTarget({
-                        ...target,
-                        dayRate: e.target.value ? Number(e.target.value) : undefined,
-                        hourlyRate: undefined,
-                      })
-                    }
-                  />
-                </div>
-              </FormField>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <PayBasisFields
+                  {...payChoiceFromProfile(target)}
+                  disabled={!canEdit}
+                  onChange={(next) => setTarget({ ...target, ...payChoiceToRates(next.payBasis, next.amount) })}
+                />
+              </div>
 
               <div className="grid gap-4 sm:grid-cols-2">
                 <FormField label="Trade type">

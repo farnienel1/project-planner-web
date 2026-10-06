@@ -159,6 +159,8 @@ export function ManageUsersScreen() {
         permissions: user.permissions,
         assignedManagerUserId: user.assignedManagerUserId,
         dayRate: user.dayRate,
+        hourlyRate: user.hourlyRate,
+        payBasis: user.payBasis,
         tradeTypePreset: user.tradeTypePreset,
         tradeTypeCustom: user.tradeTypeCustom,
       })

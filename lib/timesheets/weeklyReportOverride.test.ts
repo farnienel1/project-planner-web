@@ -316,7 +316,15 @@ test('weekly report replaces live days with the agreed snapshot and includes pri
   assert.equal(report.priceWorkTotal, 40)
   const pay = report.paySummary.find((row) => row.person === 'Ada Booked')
   assert.ok(pay)
-  assert.ok(pay.lines.some((line) => line.rateType === 'Timesheet' && line.pay === 150))
+  assert.ok(
+    pay.lines.some(
+      (line) =>
+        line.rateType === 'Day' &&
+        line.quantityText === '1.00 day' &&
+        line.rateText === '£150.00/day' &&
+        line.pay === 150
+    )
+  )
   assert.ok(pay.lines.some((line) => line.rateType === 'Price work' && line.pay === 40))
   assert.equal(pay.lines.some((line) => line.rateType === 'Normal'), false)
 })
