@@ -17,6 +17,13 @@ type NagerHoliday = {
 
 const rawCache = new Map<string, NagerHoliday[]>()
 
+/** Same-origin proxy. The public Nager API does not send CORS headers, so the browser cannot call it directly. */
+async function browserAuthHeaders(): Promise<Record<string, string>> {
+  if (typeof window === 'undefined') return {}
+  const { getClientAuthHeaders } = await import('@/lib/security/clientAuthHeaders')
+  return getClientAuthHeaders()
+}
+
 export function nagerCountryCode(regionCode: string): string {
   const code = regionCode.trim().toUpperCase()
   if (!code || code === 'UK' || code.startsWith('GB')) return 'GB'
@@ -65,7 +72,10 @@ export async function loadBankHolidays(regionCode: string, years: number[]): Pro
       const cacheKey = `${country}:${year}`
       let raw = rawCache.get(cacheKey)
       if (!raw) {
-        const response = await fetch(`https://date.nager.at/api/v3/PublicHolidays/${year}/${country}`)
+        const headers = await browserAuthHeaders()
+        const response = await fetch(`/api/bank-holidays?year=${year}&country=${encodeURIComponent(country)}`, {
+          headers,
+        })
         if (!response.ok) throw new Error(`Bank holidays for ${year} did not load.`)
         const payload = (await response.json()) as NagerHoliday[]
         raw = payload.filter((row) => Boolean(row.date && (row.localName || row.name)))

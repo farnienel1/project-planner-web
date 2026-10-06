@@ -33,7 +33,9 @@ export function useOrgBankHolidays(rangeStart: Date, rangeEnd: Date) {
     let cancelled = false
     loadOrganizationDetails(organizationId)
       .then((details) => {
-        if (!cancelled && details?.countryCode) setRegion(details.countryCode)
+        if (cancelled) return
+        const region = details?.bankHolidayRegionId || details?.countryCode
+        if (region) setRegion(region)
       })
       .catch(() => {})
     return () => {

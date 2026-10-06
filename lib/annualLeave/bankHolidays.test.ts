@@ -21,6 +21,7 @@ const andrew: Parameters<typeof holidayMatchesRegion>[0] = {
 test('England and a bare GB setting share England and Wales dates', () => {
   assert.equal(holidayMatchesRegion(easter, 'GB'), true)
   assert.equal(holidayMatchesRegion(easter, 'GB-ENG'), true)
+  assert.equal(holidayMatchesRegion(easter, 'GB-ENG-WLS'), true)
   assert.equal(holidayMatchesRegion(andrew, 'GB'), false)
   assert.equal(holidayMatchesRegion(andrew, 'GB-SCT'), true)
   assert.equal(holidayMatchesRegion(easter, 'GB-SCT'), false)
