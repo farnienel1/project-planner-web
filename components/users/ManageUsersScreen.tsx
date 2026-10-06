@@ -358,7 +358,7 @@ export function ManageUsersScreen() {
                         type="button"
                         disabled={busy}
                         onClick={() => resendInvite(user)}
-                        title="Resend sign-up email"
+                        title="Resend sign-up email with verification code"
                         className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--blue-t)] text-[#2563EB] hover:brightness-95 disabled:opacity-50"
                       >
                         <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
