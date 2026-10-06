@@ -1,23 +1,30 @@
 'use client'
 
 import { useEffect, useRef } from 'react'
+import { usePathname } from 'next/navigation'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { isPlatformOwnerSession } from '@/lib/platform/owner'
 import {
   WEB_IDLE_STORAGE_KEY,
+  WEB_IDLE_TIMEOUT_MS,
   isWebIdleExpired,
+  noteWebIdleActivity,
   readWebIdleLastActivity,
-  touchWebIdleActivity,
 } from '@/lib/auth/webIdleSession'
 
-const CHECK_EVERY_MS = 60_000
+/**
+ * Clicks, keys, pointer movement, scrolling, and route changes.
+ * Visibility alone does not count — coming back only checks the deadline.
+ */
+const ACTIVITY_EVENTS = ['pointerdown', 'pointermove', 'mousedown', 'click', 'keydown', 'wheel', 'scroll'] as const
 
 /**
- * Extends the web idle clock on real use (click / key / pointer).
- * A 60s timer plus tab-focus covers leaving a page open unattended.
- * No extra Firebase reads.
+ * Signs out after 30 minutes with no real use.
+ * The deadline is last activity, not the login time. Each activity
+ * re-arms the timer. A hard timeout started at sign-in is not used.
  */
 export function WebIdleSessionGuard() {
+  const pathname = usePathname()
   const signedIn = useAuthStore((state) => Boolean(state.firebaseUser || state.user))
   const mfaPending = useAuthStore((state) => state.mfaPending)
   const ownerEmail = useAuthStore((state) => state.firebaseUser?.email || state.user?.email)
@@ -25,15 +32,18 @@ export function WebIdleSessionGuard() {
   const ownerSession = isPlatformOwnerSession(ownerEmail, ownerOrg)
   const signOut = useAuthStore((state) => state.signOut)
   const signingOut = useRef(false)
+  const armedFor = useRef(0)
+  const rearmRef = useRef<() => void>(() => {})
 
   useEffect(() => {
     if (!signedIn || ownerSession || mfaPending) {
       signingOut.current = false
+      rearmRef.current = () => {}
       return
     }
 
     const logoutIfIdle = () => {
-      if (signingOut.current) return false
+      if (signingOut.current) return true
       if (!isWebIdleExpired(Date.now(), readWebIdleLastActivity())) return false
       signingOut.current = true
       void signOut({ idle: true }).catch(() => {
@@ -42,37 +52,82 @@ export function WebIdleSessionGuard() {
       return true
     }
 
+    let timer = 0
+    let lastArmAt = 0
+
+    const arm = () => {
+      const last = readWebIdleLastActivity() ?? Date.now()
+      const deadline = last + WEB_IDLE_TIMEOUT_MS
+      if (armedFor.current === deadline) return
+      armedFor.current = deadline
+      window.clearTimeout(timer)
+      const delay = Math.max(0, deadline - Date.now())
+      timer = window.setTimeout(() => {
+        armedFor.current = 0
+        if (!logoutIfIdle()) arm()
+      }, delay)
+    }
+
     const onActivity = () => {
+      if (signingOut.current) return
       if (logoutIfIdle()) return
-      touchWebIdleActivity()
+      const now = Date.now()
+      noteWebIdleActivity(now)
+      if (now - lastArmAt < 1000) return
+      lastArmAt = now
+      arm()
     }
 
     const onVisibility = () => {
       if (document.visibilityState !== 'visible') return
-      onActivity()
+      if (logoutIfIdle()) return
+      arm()
     }
 
     const onStorage = (event: StorageEvent) => {
       if (event.key && event.key !== WEB_IDLE_STORAGE_KEY) return
-      logoutIfIdle()
+      if (logoutIfIdle()) return
+      arm()
     }
 
-    if (logoutIfIdle()) return
+    const requestArm = () => {
+      if (signingOut.current) return
+      if (logoutIfIdle()) return
+      arm()
+    }
+    rearmRef.current = requestArm
 
-    document.addEventListener('pointerdown', onActivity, { capture: true, passive: true })
-    document.addEventListener('keydown', onActivity, { capture: true, passive: true })
+    if (readWebIdleLastActivity() == null) noteWebIdleActivity()
+    if (logoutIfIdle()) {
+      rearmRef.current = () => {}
+      return
+    }
+
+    for (const eventName of ACTIVITY_EVENTS) {
+      window.addEventListener(eventName, onActivity, { capture: true, passive: true })
+    }
     document.addEventListener('visibilitychange', onVisibility)
     window.addEventListener('storage', onStorage)
-    const timer = window.setInterval(logoutIfIdle, CHECK_EVERY_MS)
+    arm()
 
     return () => {
-      document.removeEventListener('pointerdown', onActivity, true)
-      document.removeEventListener('keydown', onActivity, true)
+      rearmRef.current = () => {}
+      for (const eventName of ACTIVITY_EVENTS) {
+        window.removeEventListener(eventName, onActivity, true)
+      }
       document.removeEventListener('visibilitychange', onVisibility)
       window.removeEventListener('storage', onStorage)
-      window.clearInterval(timer)
+      window.clearTimeout(timer)
+      armedFor.current = 0
     }
   }, [mfaPending, ownerSession, signedIn, signOut])
+
+  useEffect(() => {
+    if (!signedIn || ownerSession || mfaPending || signingOut.current) return
+    if (isWebIdleExpired(Date.now(), readWebIdleLastActivity())) return
+    noteWebIdleActivity()
+    rearmRef.current()
+  }, [mfaPending, ownerSession, pathname, signedIn])
 
   return null
 }

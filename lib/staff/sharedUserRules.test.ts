@@ -58,6 +58,37 @@ test('a name save keeps the stored role and writes the name fields', () => {
   assert.equal(payload.displayName, 'Samantha Stone')
   assert.equal(payload.organizationId, undefined)
   assert.equal(payload.skills, false)
+  assert.equal(typeof payload.tradeTypePreset, 'object')
+  const nested = payload.permissions as Record<string, boolean>
+  assert.equal(nested.materials, true)
+  assert.equal(nested.siteAudit, true)
+  assert.equal(nested.adminAccess, true)
+  assert.equal(typeof payload.profilePhotoURL, 'object')
+  assert.equal(typeof payload.policyAcceptedAt, 'object')
+})
+
+test('an operative save stores the operative role and keeps a photo', () => {
+  const operative = user({
+    id: 'op',
+    email: 'ollie@site.com',
+    role: UserRole.BASIC,
+    profilePhotoURL: 'https://example.com/photo.jpg',
+    policyAcceptedAt: new Date('2026-02-01T00:00:00.000Z'),
+    tradeTypePreset: 'Electrician',
+    permissions: { ...permissions, manager: false, operativeMode: true, adminAccess: false, materials: false, siteAudit: false },
+  })
+  const payload = buildSaveUserPayload(operative)
+  assert.equal(payload.role, UserRole.OPERATIVE)
+  assert.equal(payload.operativeMode, true)
+  assert.equal(payload.materials, false)
+  assert.equal(payload.siteAudit, false)
+  assert.equal(payload.profilePhotoURL, 'https://example.com/photo.jpg')
+  assert.ok(payload.policyAcceptedAt)
+  assert.equal(payload.tradeTypePreset, 'Electrician')
+  const nested = payload.permissions as Record<string, boolean>
+  assert.equal(nested.operativeMode, true)
+  assert.equal(nested.materials, false)
+  assert.equal(nested.siteAudit, false)
 })
 
 test('no line manager clears a leftover manager id on save', () => {

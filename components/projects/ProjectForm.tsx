@@ -9,6 +9,10 @@ import { DEFAULT_JOB_TYPES } from '@/types'
 import { collectionJobTypeForName, recoverJobTypesFromWork } from '@/lib/jobTypes/jobTypesStorage'
 import { addLondonDays, dateFromDayKey, dayKey } from '@/lib/ios-parity/londonTime'
 import type { ProjectSaveInput } from '@/lib/firebase/projectPayload'
+import {
+  countFilledProjectCreateFields,
+  emptyProjectCreateIdentity,
+} from '@/lib/projects/projectCreateRules'
 import { FormActions, FormInput, FormLabel, FormSelect, FormTextarea } from '@/components/forms/FormShell'
 import { ErrorBanner } from '@/components/dashboard/PageShell'
 import { SitePinPickerSheet } from '@/components/site-map/SitePinPickerSheet'
@@ -44,33 +48,6 @@ function defaultProjectEnd(): string {
   return dayKey(addLondonDays(new Date(), 30))
 }
 
-function requiredProjectFieldCount(form: {
-  jobNumber: string
-  siteName: string
-  addressLine1: string
-  townCity: string
-  postcode: string
-  clientId: string
-  managerIds: string[]
-  useMapPin: boolean
-  latitude: string
-  longitude: string
-}): number {
-  let count = 0
-  if (form.jobNumber.trim()) count += 1
-  if (form.siteName.trim()) count += 1
-  const hasPin = Boolean(form.useMapPin && form.latitude && form.longitude)
-  if (hasPin) count += 3
-  else {
-    if (form.addressLine1.trim()) count += 1
-    if (form.townCity.trim()) count += 1
-    if (form.postcode.trim()) count += 1
-  }
-  if (form.clientId) count += 1
-  if (form.managerIds.length > 0) count += 1
-  return count
-}
-
 export function ProjectForm({ initial, collection = 'projects', backHref, onSaved }: ProjectFormProps) {
   const { organization } = useAuthStore()
   const { clients, loadClients, saveProject, createClient } = useProjectStore()
@@ -84,9 +61,10 @@ export function ProjectForm({ initial, collection = 'projects', backHref, onSave
   const managersFieldRef = useRef<HTMLDivElement>(null)
 
   const [jobTypes, setJobTypes] = useState<string[]>([...DEFAULT_JOB_TYPES])
+  const blankIdentity = emptyProjectCreateIdentity()
   const [form, setForm] = useState({
-    jobNumber: initial?.jobNumber || '',
-    siteName: initial?.siteName || '',
+    jobNumber: initial?.jobNumber || blankIdentity.jobNumber,
+    siteName: initial?.siteName || blankIdentity.siteName,
     addressLine1: initial?.addressLine1 || '',
     addressLine2: initial?.addressLine2 || '',
     townCity: initial?.townCity || '',
@@ -96,14 +74,8 @@ export function ProjectForm({ initial, collection = 'projects', backHref, onSave
     endDate: initial?.endDate ? dayKey(new Date(initial.endDate)) : defaultProjectEnd(),
     jobType: initial
       ? collectionJobTypeForName(initial.customJobType || initial.jobType || 'CAT A', collection)
-      : collection === 'smallWorks'
-        ? 'Small Works'
-        : '',
-    customJobType: initial
-      ? initial.customJobType || initial.jobType || ''
-      : collection === 'smallWorks'
-        ? 'Small Works'
-        : '',
+      : '',
+    customJobType: initial ? initial.customJobType || initial.jobType || '' : '',
     managerIds: initial?.managerIds?.length ? initial.managerIds : initial?.managerId ? [initial.managerId] : [],
     description: initial?.description || '',
     notes: initial?.notes || '',
@@ -228,7 +200,7 @@ export function ProjectForm({ initial, collection = 'projects', backHref, onSave
     const hasAddress = Boolean(form.addressLine1.trim() && form.townCity.trim() && form.postcode.trim())
     const hasPin = Boolean(form.useMapPin && form.latitude && form.longitude)
     if (creating) {
-      const filled = requiredProjectFieldCount(form)
+      const filled = countFilledProjectCreateFields(form)
       const othersReady = Boolean(form.jobNumber.trim() && form.siteName.trim() && (hasAddress || hasPin))
       if (!form.clientId && othersReady && form.managerIds.length > 0) {
         setError('Please select a client')
@@ -285,7 +257,11 @@ export function ProjectForm({ initial, collection = 'projects', backHref, onSave
         client,
         startDate: dateFromDayKey(form.startDate),
         endDate: dateFromDayKey(form.endDate),
-        jobType: form.jobType.trim() ? form.jobType : 'CAT A',
+        jobType: form.jobType.trim()
+          ? form.jobType
+          : collection === 'smallWorks'
+            ? 'Small Works'
+            : 'CAT A',
         customJobType: form.customJobType.trim() && form.customJobType.trim() !== 'CAT A' ? form.customJobType.trim() : undefined,
         managerId: primaryManagerId,
         managerIds: resolvedManagerIds,
@@ -336,7 +312,7 @@ export function ProjectForm({ initial, collection = 'projects', backHref, onSave
           <FormInput value={form.siteName} placeholder="e.g. Lancelot Place" onChange={(e) => setForm({ ...form, siteName: e.target.value })} required />
         </div>
         <div>
-          <FormLabel>{collection === 'projects' && !initial ? 'Job type · Optional' : 'Job type'}</FormLabel>
+          <FormLabel>{!initial ? 'Job type · Optional' : 'Job type'}</FormLabel>
           <FormSelect
             value={form.customJobType || form.jobType}
             onChange={(e) => {
@@ -348,7 +324,7 @@ export function ProjectForm({ initial, collection = 'projects', backHref, onSave
               })
             }}
           >
-            {collection === 'projects' && !initial ? <option value="">Select job type</option> : null}
+            {!initial ? <option value="">Select job type</option> : null}
             {jobTypes.map((t) => (
               <option key={t} value={t}>{t}</option>
             ))}
@@ -422,19 +398,19 @@ export function ProjectForm({ initial, collection = 'projects', backHref, onSave
 
       <div className="grid gap-4 md:grid-cols-2">
         <div>
-          <FormLabel>Address line 1</FormLabel>
+          <FormLabel required={!initial}>Address line 1</FormLabel>
           <FormInput value={form.addressLine1} onChange={(e) => setAddressField({ addressLine1: e.target.value })} />
         </div>
         <div>
-          <FormLabel>Address line 2</FormLabel>
+          <FormLabel>{!initial ? 'Address line 2 · Optional' : 'Address line 2'}</FormLabel>
           <FormInput value={form.addressLine2} onChange={(e) => setAddressField({ addressLine2: e.target.value })} />
         </div>
         <div>
-          <FormLabel>Town / City</FormLabel>
+          <FormLabel required={!initial}>Town / City</FormLabel>
           <FormInput value={form.townCity} onChange={(e) => setAddressField({ townCity: e.target.value })} />
         </div>
         <div>
-          <FormLabel>Postcode</FormLabel>
+          <FormLabel required={!initial}>Postcode</FormLabel>
           <FormInput value={form.postcode} onChange={(e) => setAddressField({ postcode: e.target.value })} />
         </div>
         <div>
@@ -497,7 +473,7 @@ export function ProjectForm({ initial, collection = 'projects', backHref, onSave
 
       <SitePinPickerSheet
         open={pinPickerOpen}
-        siteName={form.siteName || 'New project'}
+        siteName={form.siteName || (collection === 'smallWorks' ? 'New small works' : 'New project')}
         jobNumber={form.jobNumber}
         initial={{
           addressLine1: form.addressLine1,
@@ -527,7 +503,11 @@ export function ProjectForm({ initial, collection = 'projects', backHref, onSave
         <FormTextarea
           rows={3}
           value={form.description}
-          placeholder="Add notes, scope, key contacts or anything else the team should know about this project…"
+          placeholder={
+            collection === 'smallWorks'
+              ? 'Add notes, scope, key contacts or anything else the team should know about this small works job…'
+              : 'Add notes, scope, key contacts or anything else the team should know about this project…'
+          }
           onChange={(e) => setForm({ ...form, description: e.target.value })}
         />
       </div>
@@ -539,8 +519,12 @@ export function ProjectForm({ initial, collection = 'projects', backHref, onSave
         </label>
       ) : null}
 
-      <FormActions saving={saving} submitLabel={initial ? 'Save' : 'Create project'} cancelHref={backHref} />
-      {!initial && requiredProjectFieldCount(form) < 7 ? (
+      <FormActions
+        saving={saving}
+        submitLabel={initial ? 'Save' : collection === 'smallWorks' ? 'Create small works' : 'Create project'}
+        cancelHref={backHref}
+      />
+      {!initial && countFilledProjectCreateFields(form) < 7 ? (
         <p className="muted small">Fill the 7 required fields to continue</p>
       ) : null}
     </form>

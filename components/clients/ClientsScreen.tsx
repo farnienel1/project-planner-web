@@ -23,6 +23,7 @@ import { useTaskStore } from '@/lib/stores/taskStore'
 import { canViewClients, hasAdminAccess, isOperativeMode } from '@/lib/permissions'
 import { consumeCreateQuery } from '@/lib/navigation/createMenu'
 import { visibleWorks } from '@/lib/access/workAccess'
+import { isSmallWorksJobType } from '@/lib/ios-parity/enums'
 import { useDeadlineAssignedProjectIds } from '@/lib/deadlines/useDeadlineAssignedProjectIds'
 import { notifyClientCreated } from '@/lib/firebase/notifyInbox'
 import { EmptyState, IosFormModal, PageHeader } from '@/components/ios/primitives'
@@ -321,7 +322,7 @@ export function ClientsScreen({ selectedId }: { selectedId?: string }) {
                 key={project.id}
                 project={project}
                 href={
-                  /small works/i.test(project.jobType || '')
+                  isSmallWorksJobType(project.jobType || '')
                     ? `/dashboard/small-works/${project.id}`
                     : `/dashboard/projects/${project.id}`
                 }

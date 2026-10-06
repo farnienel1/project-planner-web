@@ -22,6 +22,7 @@ import type { Booking, Project } from '@/types'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import { collection, getDocs } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
+import { scheduleWorkKindLabel } from '@/lib/jobTypes/jobTypesStorage'
 import { asClockHhMm } from '@/lib/ios-parity/firestoreCodec'
 import { coversCalendarDay } from '@/lib/ios-parity/londonTime'
 import { parseFirestoreDate } from '@/lib/firebase/firestoreUtils'
@@ -402,11 +403,9 @@ export function ProjectScheduleWeekOverview({
           {project.client?.name}
           {project.addressLine1 ? ` · ${project.addressLine1}` : ''}
         </p>
-        {project.jobType && (
-          <span className="mt-1 inline-block rounded-md bg-[var(--soft)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--ink2)]">
-            {project.jobType}
-          </span>
-        )}
+        <span className="mt-1 inline-block rounded-md bg-[var(--soft)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--ink2)]">
+          {scheduleWorkKindLabel(project)}
+        </span>
       </div>
       ) : null}
 

@@ -14,6 +14,7 @@ import { db } from '@/lib/firebase/config'
 import { ORG_SETTINGS_JOB_TYPES_DOC } from '@/lib/firebase/orgCollections'
 import { unionUniqueStrings } from '@/lib/catalogues/catalogueWriteGuard'
 import { DEFAULT_JOB_TYPES } from '@/types'
+import { isLegacyPlaceholderDocumentId } from '@/lib/projects/legacyPlaceholderWork'
 
 /** iOS enum names plus custom types this organisation already used that the empty overwrite dropped. */
 export const RESTORED_JOB_TYPES = [...DEFAULT_JOB_TYPES, 'Decarbonisation'] as const
@@ -47,6 +48,36 @@ const JOB_TYPE_ALIASES: Record<string, string> = {
 export function canonicalJobTypeName(name: string): string {
   const compact = name.replace(/[\s_\-]+/g, '').toLowerCase()
   return JOB_TYPE_ALIASES[compact] || name.trim()
+}
+
+/**
+ * Card and workspace badge. Keep a typed custom name such as "De-Carbonisation".
+ * Map enum tokens (`smallWorks`, `catA`) onto the iOS raw value.
+ */
+export function visibleJobTypeLabel(jobType?: string | null, customJobType?: string | null): string {
+  const custom = (customJobType || '').trim()
+  if (custom) {
+    if (!/[\s\-]/.test(custom)) {
+      const compact = custom.replace(/[_]+/g, '').toLowerCase()
+      const alias = JOB_TYPE_ALIASES[compact]
+      if (alias) return alias
+    }
+    return custom
+  }
+  const raw = (jobType || '').trim()
+  if (!raw) return ''
+  return canonicalJobTypeName(raw)
+}
+
+/**
+ * iOS ScheduleOperativeView schedule card: custom type, otherwise "Small works" or "Project".
+ * The stored enum (`CAT A`) is not the label once a custom type is set.
+ */
+export function scheduleWorkKindLabel(project: { jobType?: string | null; customJobType?: string | null }): string {
+  if (canonicalJobTypeName(project.jobType || '') === 'Small Works') return 'Small works'
+  const custom = (project.customJobType || '').trim()
+  if (custom) return custom
+  return 'Project'
 }
 
 export function coerceJobTypeList(raw: unknown): string[] {
@@ -155,9 +186,9 @@ async function loadWorkJobTypeRecords(
       getDocs(collection(db, 'organizations', organizationId, 'projects')),
       getDocs(collection(db, 'organizations', organizationId, 'smallWorks')),
     ])
-    return [...projectsSnap.docs, ...smallSnap.docs].map((entry) =>
-      jobTypeFieldsFromRecord(entry.data() as Record<string, unknown>)
-    )
+    return [...projectsSnap.docs, ...smallSnap.docs]
+      .filter((entry) => !isLegacyPlaceholderDocumentId(entry.id))
+      .map((entry) => jobTypeFieldsFromRecord(entry.data() as Record<string, unknown>))
   } catch {
     return []
   }

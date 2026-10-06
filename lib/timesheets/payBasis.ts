@@ -142,7 +142,28 @@ export function readStoredRates(input: {
   return exclusiveRates({ dayRate: day, hourlyRate: hourly, payBasis: basis })
 }
 
-/** Fields for a full document write. The unused rate is omitted. */
+/**
+ * iOS saveOperative writes both amounts. loadOperatives does
+ * `dayRate: loadedDay ?? loadedHourly`, so a missing dayRate becomes the hourly
+ * amount and payroll then treats that person as day-rate. 0 keeps the fields apart.
+ * `payBasis` is for web reads; iOS ignores it.
+ */
+export function operativeRosterRateFields(input: {
+  payBasis?: unknown
+  dayRate?: unknown
+  hourlyRate?: unknown
+}): Record<string, unknown> {
+  const stored = readStoredRates(input)
+  if (stored.payBasis === 'hourly' && stored.hourlyRate != null) {
+    return { payBasis: 'hourly', hourlyRate: stored.hourlyRate, dayRate: 0 }
+  }
+  if (stored.payBasis === 'day' && stored.dayRate != null) {
+    return { payBasis: 'day', dayRate: stored.dayRate, hourlyRate: 0 }
+  }
+  return { hourlyRate: 0, dayRate: 0 }
+}
+
+/** Fields for a user-document write. iOS saveUser deletes the unused rate. */
 export function exclusiveRateDocumentFields(input: {
   payBasis?: unknown
   dayRate?: unknown

@@ -24,6 +24,7 @@ import {
   timelineProgressPercent,
   workStatusLabel,
 } from '@/lib/projects/workStatus'
+import { visibleJobTypeLabel } from '@/lib/jobTypes/jobTypesStorage'
 import { formatSiteAddress } from '@/lib/maps/siteAddress'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { canBookWork, canManageWorkCatalogue, canViewMaterials, canViewSiteAudit } from '@/lib/permissions'
@@ -101,7 +102,7 @@ export function ProjectWorkspaceChrome({
   const isOperative = isOperativeMode(user)
   const active = tabFromPath(pathname, basePath)
   const hideTabs = hideWorkspaceTabs(pathname)
-  const typeLabel = (project.customJobType?.trim() || project.jobType || '').trim()
+  const typeLabel = visibleJobTypeLabel(project.jobType, project.customJobType)
   const managers = project.manager?.name || '—'
   const catalogue = isSmallWork ? '/dashboard/small-works' : '/dashboard/projects'
   const catalogueLabel = isSmallWork ? 'Small works' : 'Projects'
