@@ -16,6 +16,8 @@ export type InviteUserInput = {
   assignedManagerUserId?: string
   assignedManagerUserIds?: string[]
   dayRate?: number
+  hourlyRate?: number
+  payBasis?: 'day' | 'hourly'
   tradeTypePreset?: string
   tradeTypeCustom?: string
   employmentType?: 'paye' | 'self_employed' | 'selfEmployed'

@@ -22,6 +22,7 @@ import {
   type TimesheetPayrollLineItem,
 } from '@/lib/timesheets/timesheetPayrollCollector'
 import { emptyDayRateHistory, type OperativeDayRateHistoryCollection } from '@/lib/timesheets/dayRateHistoryStorage'
+import { orgDayHours } from '@/lib/timesheets/payBasis'
 import type {
   TimesheetDraft,
   TimesheetManagerDecision,
@@ -42,6 +43,7 @@ export type WeeklyReportOverrideInput = {
   projects: Project[]
   smallWorks: Project[]
   history?: OperativeDayRateHistoryCollection
+  aliasUserIds?: string[]
   payrollPolicy?: OrgPayrollTimePolicy
   payrollPolicyPrior?: OrgPayrollTimePolicy | null
   payrollPolicyEffectiveFrom?: string | null
@@ -65,7 +67,7 @@ function scaledDays(
   effectiveAmount: number,
   standardPaidHours: number
 ): number {
-  const standard = Math.max(standardPaidHours, 0.01)
+  const standard = orgDayHours(standardPaidHours)
   const baseDays = Math.max(0, line.paidHours) / standard
   if (line.amount <= 0.0001) return baseDays
   return baseDays * (effectiveAmount / line.amount)
@@ -104,6 +106,7 @@ function labourLine(
     paidHours: line.paidHours,
     days,
     amount,
+    payBasis: line.payrollBasis === 'hourly' ? 'hourly' : 'day',
     isOvertime: line.isOvertimeLine,
     decision,
     bookingId: bookingIdFromLineId(line.id) || '',
@@ -152,6 +155,7 @@ function makeOverride(input: WeeklyReportOverrideInput): WeeklyReportOverride {
     timeZone: input.timeZone,
     history: input.history || emptyDayRateHistory(),
     scheduleOptions: input.scheduleOptions || DEFAULT_MY_SCHEDULE,
+    aliasUserIds: input.aliasUserIds,
   })
   const managerHasSigned = Boolean(input.draft.managerSignedAt)
   const lines: WeeklyReportLabourLine[] = []

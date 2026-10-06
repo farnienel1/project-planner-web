@@ -1,11 +1,14 @@
 'use client'
 
-import { FormEvent, useState } from 'react'
+import { FormEvent, useEffect, useState } from 'react'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
 import type { Manager } from '@/types'
 import { STAFF_TRADE_TYPES } from '@/lib/ios-parity/enums'
 import { FormActions, FormInput, FormLabel, FormSelect, FormTextarea } from '@/components/forms/FormShell'
+import { PayBasisFields, payChoiceFromProfile, payChoiceToRates } from '@/components/users/PayBasisFields'
+import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
+import { useUserStore } from '@/lib/stores/userStore'
 import { ErrorBanner } from '@/components/dashboard/PageShell'
 
 export function ManagerForm({
@@ -19,6 +22,12 @@ export function ManagerForm({
 }) {
   const { organization } = useAuthStore()
   const { saveManager } = useOperativeStore()
+  const { users, loadUsers } = useOrgUserStore()
+  const { saveUser } = useUserStore()
+  useEffect(() => {
+    if (organization?.id) loadUsers(organization.id)
+  }, [organization?.id, loadUsers])
+
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [form, setForm] = useState({
@@ -31,6 +40,8 @@ export function ManagerForm({
     tradeTypePreset: initial?.tradeTypePreset || '',
     tradeTypeCustom: initial?.tradeTypeCustom || '',
     isActive: initial?.isActive !== false,
+    payBasis: payChoiceFromProfile(initial).payBasis,
+    rateAmount: payChoiceFromProfile(initial).amount,
   })
 
   const handleSubmit = async (e: FormEvent) => {
@@ -43,6 +54,7 @@ export function ManagerForm({
     setSaving(true)
     setError(null)
     try {
+      const rates = payChoiceToRates(form.payBasis, form.rateAmount)
       const manager: Manager = {
         id: initial?.id || '',
         firstName: form.firstName.trim(),
@@ -54,11 +66,44 @@ export function ManagerForm({
         isActive: form.isActive,
         tradeTypePreset: form.tradeTypePreset.trim() || undefined,
         tradeTypeCustom: form.tradeTypePreset === 'Other' ? form.tradeTypeCustom.trim() || undefined : undefined,
+        payBasis: rates.payBasis,
+        dayRate: rates.dayRate,
+        hourlyRate: rates.hourlyRate,
         organizationId: organization.id,
         createdAt: initial?.createdAt || new Date(),
         updatedAt: new Date(),
       }
       const id = await saveManager(organization.id, manager)
+      const linked = users.find((row) => row.email.trim().toLowerCase() === manager.email.trim().toLowerCase())
+      if (linked) {
+        await saveUser(
+          {
+            ...linked,
+            payBasis: rates.payBasis,
+            dayRate: rates.dayRate,
+            hourlyRate: rates.hourlyRate,
+          },
+          organization.id
+        )
+      }
+      try {
+        const { loadOperativeDayRateHistory, recordDayRateChangeIfNeeded } = await import(
+          '@/lib/timesheets/dayRateHistoryStorage'
+        )
+        const history = await loadOperativeDayRateHistory(organization.id)
+        await recordDayRateChangeIfNeeded({
+          organizationId: organization.id,
+          userId: linked?.id,
+          previousDayRate: initial?.payBasis === 'hourly' ? initial?.hourlyRate ?? null : initial?.dayRate ?? null,
+          nextDayRate: rates.payBasis === 'hourly' ? rates.hourlyRate ?? null : rates.dayRate ?? null,
+          previousPayBasis: initial?.payBasis,
+          nextPayBasis: rates.payBasis,
+          createdAt: manager.createdAt,
+          history,
+        })
+      } catch {
+        // History is best-effort so the profile save still succeeds.
+      }
       onSaved(id)
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to save manager')
@@ -112,6 +157,11 @@ export function ManagerForm({
             />
           </div>
         ) : null}
+        <PayBasisFields
+          payBasis={form.payBasis}
+          amount={form.rateAmount}
+          onChange={(next) => setForm({ ...form, payBasis: next.payBasis, rateAmount: next.amount })}
+        />
         <div>
           <FormLabel>Department</FormLabel>
           <FormInput value={form.department} onChange={(e) => setForm({ ...form, department: e.target.value })} />

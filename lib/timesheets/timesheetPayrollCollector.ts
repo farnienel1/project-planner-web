@@ -13,7 +13,7 @@ import {
   type OrgPayrollTimePolicy,
 } from '@/lib/settings/organizationSettings'
 import { findOperativeForUser } from '@/lib/operatives/operativeRosterUtils'
-import { employmentTypeOnDay, isBillableSelfEmployedDay } from '@/lib/ios-parity/employmentType'
+import { employmentTypeOnDay } from '@/lib/ios-parity/employmentType'
 import { emptyDayRateHistory, type OperativeDayRateHistoryCollection } from '@/lib/timesheets/dayRateHistoryStorage'
 import {
   overtimeDisplayRates,
@@ -22,6 +22,7 @@ import {
   resolveForTimesheetDay,
   type PayrollRateBasis,
 } from '@/lib/timesheets/payrollRateResolver'
+import { isClockSpanLabel, orgDayHours, payLineDisplay, quantityText } from '@/lib/timesheets/payBasis'
 import {
   formatTimesheetHours,
   overtimeHoursBeyondPaidStandard,
@@ -43,6 +44,8 @@ export type TimesheetPayrollLineItem = {
   payrollBasis: PayrollRateBasis
   dayRate: number
   hourlyRate?: number | null
+  standardDayHours?: number
+  otMultiplier?: number | null
   amount: number
   isPayeDay: boolean
   isOvertimeLine: boolean
@@ -96,10 +99,26 @@ export function timesheetRateAnnotation(line: TimesheetPayrollLineItem): string 
 }
 
 export function timesheetHoursRateLine(line: TimesheetPayrollLineItem): string {
-  const hours = `${formatTimesheetHours(line.paidHours)}h`
-  const rate = timesheetRateAnnotation(line)
-  if (line.isOvertimeLine) return `${hours} · overtime ${rate}`
-  return `${hours} · ${rate}`
+  const standard = line.standardDayHours && line.standardDayHours > 0 ? line.standardDayHours : orgDayHours(8)
+  if (line.isPayeDay) return `${quantityText(line.paidHours, 'hours')} = £0.00`
+  const hourly = line.payrollBasis === 'hourly'
+  const rate = !line.hasRate ? null : hourly ? (line.hourlyRate ?? 0) : line.dayRate
+  return payLineDisplay({
+    payBasis: hourly ? 'hourly' : 'day',
+    paidHours: line.paidHours,
+    standardDayHours: standard,
+    rate,
+    pay: line.amount,
+    isOvertime: line.isOvertimeLine,
+    otMultiplier: line.otMultiplier ?? null,
+  }).equation
+}
+
+/** Clock span may sit beside the equation. A slot name such as FULL DAY is not the quantity. */
+export function timesheetLabourDetails(line: TimesheetPayrollLineItem): string {
+  const equation = timesheetHoursRateLine(line)
+  if (isClockSpanLabel(line.details)) return `${line.details} · ${equation}`
+  return equation
 }
 
 export function collectTimesheetPayroll({
@@ -117,6 +136,7 @@ export function collectTimesheetPayroll({
   timeZone,
   history = emptyDayRateHistory(),
   scheduleOptions = DEFAULT_MY_SCHEDULE,
+  aliasUserIds = [],
 }: {
   user: User
   bookings: Booking[]
@@ -132,6 +152,7 @@ export function collectTimesheetPayroll({
   timeZone?: string
   history?: OperativeDayRateHistoryCollection
   scheduleOptions?: MyScheduleOptions
+  aliasUserIds?: string[]
 }): TimesheetPayrollSummary {
   const currentPolicy = payrollPolicy || DEFAULT_PAYROLL_POLICY
   const matched = operatives.filter(
@@ -159,7 +180,6 @@ export function collectTimesheetPayroll({
     operative?: Operative | null
   ) => {
     if (!isDateInPeriod(date, periodStart, periodEnd, timeZone)) return
-    if (!isBillableSelfEmployedDay(user, date, timeZone)) return
     const policy = orgPayrollPolicyForDay(
       date,
       currentPolicy,
@@ -167,7 +187,7 @@ export function collectTimesheetPayroll({
       payrollPolicyEffectiveFrom,
       timeZone
     )
-    const standardDayHours = Math.max(policy.standardPaidHours, 0.01)
+    const standardDayHours = orgDayHours(policy.standardPaidHours)
     const paidHours = paidBookedHours(timeSlot, workStartTime, workEndTime, policy, isBreakRemoved)
     const otHours = overtimeHoursBeyondPaidStandard(
       date,
@@ -186,6 +206,7 @@ export function collectTimesheetPayroll({
       history,
       standardDayHours,
       timeZone,
+      aliasUserIds,
     })
     const hasRate = payrollRateHasValue(resolved)
     shiftCount += 1
@@ -204,6 +225,7 @@ export function collectTimesheetPayroll({
       payrollBasis: resolved.basis,
       dayRate: resolved.dayRate ?? 0,
       hourlyRate: resolved.hourlyRate,
+      standardDayHours,
       amount: normalAmount,
       isPayeDay: isPaye,
       isOvertimeLine: false,
@@ -223,6 +245,8 @@ export function collectTimesheetPayroll({
         payrollBasis: resolved.basis,
         dayRate: otRates.dayRate,
         hourlyRate: otRates.hourlyRate,
+        standardDayHours,
+        otMultiplier,
         amount: otAmount,
         isPayeDay: isPaye,
         isOvertimeLine: true,

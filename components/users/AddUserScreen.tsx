@@ -18,6 +18,7 @@ import {
 import { loadOrganizationDetails } from '@/lib/settings/organizationSettings'
 import type { UserPermissions } from '@/types'
 import { LineManagerMultiSelect } from '@/components/users/LineManagerMultiSelect'
+import { PayBasisFields, payChoiceToRates } from '@/components/users/PayBasisFields'
 import {
   PanelHeader,
   SectionLabel,
@@ -147,7 +148,8 @@ export function AddUserScreen() {
     email: '',
     mobileNumber: '',
     assignedManagerUserIds: [] as string[],
-    dayRate: '',
+    payBasis: 'day' as 'day' | 'hourly',
+    rateAmount: '',
     tradeTypePreset: '',
     tradeTypeCustom: '',
     employmentType: 'self_employed' as 'paye' | 'self_employed',
@@ -269,7 +271,7 @@ export function AddUserScreen() {
         assignedManagerUserId: form.assignedManagerUserIds[0],
         assignedManagerUserIds:
           form.assignedManagerUserIds.length > 0 ? form.assignedManagerUserIds : undefined,
-        dayRate: form.dayRate ? Number(form.dayRate) : undefined,
+        ...payChoiceToRates(form.payBasis, form.rateAmount),
         tradeTypePreset: form.tradeTypePreset || undefined,
         tradeTypeCustom: form.tradeTypePreset === 'Other' ? form.tradeTypeCustom.trim() || undefined : undefined,
         employmentType: form.employmentType,
@@ -549,21 +551,13 @@ export function AddUserScreen() {
                   />
                 </FormField>
 
-              <FormField label="Day rate" hint="Optional. Payroll uses either a day rate or hourly rate, not both.">
-                <div className="relative">
-                  <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-slate-400">
-                    £
-                  </span>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    className="pl-7"
-                    value={form.dayRate}
-                    onChange={(e) => setForm({ ...form, dayRate: e.target.value })}
-                  />
-                </div>
-              </FormField>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <PayBasisFields
+                  payBasis={form.payBasis}
+                  amount={form.rateAmount}
+                  onChange={(next) => setForm({ ...form, payBasis: next.payBasis, rateAmount: next.amount })}
+                />
+              </div>
 
               <div className="grid gap-4 sm:grid-cols-2">
                 <FormField label="Trade type">

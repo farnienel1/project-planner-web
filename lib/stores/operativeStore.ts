@@ -16,6 +16,7 @@ import type { Operative, Manager, Skill, Qualification } from '@/types'
 import { filterRealManagers, isPlaceholderManager } from '@/lib/staff/managerRosterUtils'
 import { runOrgLoad, invalidateOrgLoad } from '@/lib/stores/orgLoadCache'
 import { parseManager, parseOperative, serializeManager, serializeOperative } from '@/lib/ios-parity/converters'
+import { readStoredRates } from '@/lib/timesheets/payBasis'
 import { markRowsRemoved, retainScopedRows } from '@/lib/staff/rosterRetain'
 
 const OPERATIVES_KEY = 'operativeStore:operatives'
@@ -169,6 +170,9 @@ export const useOperativeStore = create<OperativeState>((set, get) => ({
     const snap = await getDoc(doc(db, 'organizations', organizationId, 'operatives', id))
     if (!snap.exists()) return null
     const data = snap.data()
+    const parsed = parseOperative(snap.id, data, organizationId)
+    if (parsed.ok) return parsed.value
+    const stored = readStoredRates(data)
     return {
       id: snap.id,
       firstName: data.firstName || '',
@@ -176,7 +180,9 @@ export const useOperativeStore = create<OperativeState>((set, get) => ({
       email: data.email || '',
       phone: data.phone,
       startDate: data.startDate?.toDate() || new Date(),
-      hourlyRate: data.hourlyRate || data.dayRate || 0,
+      payBasis: stored.payBasis ?? undefined,
+      dayRate: stored.payBasis === 'day' && stored.dayRate != null ? stored.dayRate : undefined,
+      hourlyRate: stored.payBasis === 'hourly' && stored.hourlyRate != null ? stored.hourlyRate : 0,
       skills: data.skills || [],
       qualifications: data.qualifications || [],
       isActive: data.isActive !== false,
@@ -190,6 +196,9 @@ export const useOperativeStore = create<OperativeState>((set, get) => ({
     const snap = await getDoc(doc(db, 'organizations', organizationId, 'managers', id))
     if (!snap.exists()) return null
     const data = snap.data()
+    const parsed = parseManager(snap.id, data, organizationId)
+    if (parsed.ok) return parsed.value
+    const stored = readStoredRates(data)
     return {
       id: snap.id,
       firstName: data.firstName || '',
@@ -199,6 +208,9 @@ export const useOperativeStore = create<OperativeState>((set, get) => ({
       mobile: data.mobileNumber || data.mobile,
       department: data.department,
       isActive: data.isActive !== false,
+      payBasis: stored.payBasis ?? undefined,
+      dayRate: stored.payBasis === 'day' && stored.dayRate != null ? stored.dayRate : undefined,
+      hourlyRate: stored.payBasis === 'hourly' && stored.hourlyRate != null ? stored.hourlyRate : undefined,
       organizationId,
       createdAt: data.createdAt?.toDate() || new Date(),
       updatedAt: data.updatedAt?.toDate() || new Date(),

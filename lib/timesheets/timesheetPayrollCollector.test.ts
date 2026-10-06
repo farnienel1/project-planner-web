@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import type { Booking, Operative, Project, User } from '../../types/index.ts'
-import { collectTimesheetPayroll, timesheetRateAnnotation } from './timesheetPayrollCollector.ts'
+import { collectTimesheetPayroll, timesheetHoursRateLine, timesheetRateAnnotation } from './timesheetPayrollCollector.ts'
 import { DEFAULT_PAYROLL_POLICY } from '../settings/organizationSettings.ts'
 import type { OperativeDayRateHistoryCollection } from './dayRateHistoryStorage.ts'
 
@@ -107,7 +107,12 @@ test('payroll skips PAYE days after an employment-type transition', () => {
     timeZone: 'Europe/London',
   })
   assert.equal(summary.lineItems.some((line) => line.id.startsWith('op-b1')), true)
-  assert.equal(summary.lineItems.some((line) => line.id.startsWith('op-b2')), false)
+  const paye = summary.lineItems.find((line) => line.id === 'op-b2-normal')
+  assert.ok(paye)
+  assert.equal(paye.isPayeDay, true)
+  assert.equal(paye.amount, 0)
+  assert.ok(paye.paidHours > 0)
+  assert.match(timesheetHoursRateLine(paye), /hours = £0\.00/)
 })
 
 test('payroll uses historic day rate including explicit £0', () => {
