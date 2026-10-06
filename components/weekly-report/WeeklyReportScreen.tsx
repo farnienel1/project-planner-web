@@ -25,7 +25,7 @@ import { buildWeeklyReportPdf, downloadWeeklyReportPdf } from '@/lib/weekly-repo
 import { formatCurrency, formatDays } from '@/lib/weekly-report/weeklyReportPayroll'
 import { loadWeeklyReportTimesheetFeed } from '@/lib/weekly-report/loadTimesheetFeed'
 import type { ApprovedTimesheetWeek } from '@/lib/weekly-report/timesheetFeed'
-import { loadOperativeDayRateHistory } from '@/lib/timesheets/dayRateHistoryStorage'
+import { emptyDayRateHistory, loadOperativeDayRateHistory, type OperativeDayRateHistoryCollection } from '@/lib/timesheets/dayRateHistoryStorage'
 import type { Booking, HolidayBooking, Operative, Project, Subcontractor, User } from '@/types'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 
@@ -134,6 +134,7 @@ export function WeeklyReportScreen({
   const [generated, setGenerated] = useState(false)
   const [downloadOpen, setDownloadOpen] = useState(false)
   const [timesheetWeeks, setTimesheetWeeks] = useState<ApprovedTimesheetWeek[]>([])
+  const [rateHistory, setRateHistory] = useState<OperativeDayRateHistoryCollection>(emptyDayRateHistory())
 
   const effectiveInvoicingPeriodId = invoicingPeriodId || invoicingOptions[0]?.id || ''
 
@@ -168,6 +169,7 @@ export function WeeklyReportScreen({
       holidays,
       orgDetails,
       timesheetWeeks,
+      history: rateHistory,
     })
   }, [
     period,
@@ -184,6 +186,7 @@ export function WeeklyReportScreen({
     holidays,
     orgDetails,
     timesheetWeeks,
+    rateHistory,
   ])
 
   const handleGenerateReport = async () => {
@@ -191,7 +194,8 @@ export function WeeklyReportScreen({
     setGenerating(true)
     try {
       if (organizationId && invoicing) {
-        const history = await loadOperativeDayRateHistory(organizationId).catch(() => null)
+        const history = await loadOperativeDayRateHistory(organizationId).catch(() => emptyDayRateHistory())
+        setRateHistory(history)
         const weeks = await loadWeeklyReportTimesheetFeed({
           organizationId,
           users,

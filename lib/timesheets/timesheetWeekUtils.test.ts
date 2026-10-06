@@ -9,6 +9,7 @@ import {
   subjectForUser,
   teamTimesheetUsers,
   timesheetReceiptStoredName,
+  timesheetRosterGroups,
 } from './timesheetWeekUtils.ts'
 import type { Booking, Operative, User } from '../../types/index.ts'
 
@@ -95,6 +96,19 @@ test('teamTimesheetUsers keeps other orgs out: managers only see their reports',
     ['r1']
   )
   assert.equal(reportsToManager(other, 'mgr'), false)
+})
+
+test('same email is one person for the line-manager queue', () => {
+  const manager = user({
+    id: 'mgr',
+    email: 'mgr@test.com',
+    permissions: { ...user({ id: 'x', email: 'x' }).permissions, manager: true, operativeMode: false },
+  })
+  const invite = user({ id: 'invite', email: 'ada@test.com', assignedManagerUserId: 'mgr' })
+  const auth = user({ id: 'auth', email: 'ada@test.com', payBasis: 'hourly', hourlyRate: 20 })
+  const groups = timesheetRosterGroups(manager, [invite, auth, manager])
+  assert.equal(groups.length, 1)
+  assert.deepEqual(groups[0].map((row) => row.id).sort(), ['auth', 'invite'])
 })
 
 test('isTimesheetAgreedManagerCandidate matches iOS manager/admin eligibility', () => {

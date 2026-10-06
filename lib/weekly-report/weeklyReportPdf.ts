@@ -307,8 +307,8 @@ export async function buildWeeklyReportPdf(data: WeeklyReportData): Promise<Uint
         person.person,
         person.role,
         line.rateType,
-        formatDays(line.days),
-        formatCurrency(line.rate),
+        line.quantityText ?? formatDays(line.days),
+        line.rateText ?? formatCurrency(line.rate),
         formatCurrency(line.pay),
       ])
     }
@@ -319,7 +319,7 @@ export async function buildWeeklyReportPdf(data: WeeklyReportData): Promise<Uint
     payRows.push(['No pay data for this period', '', '', '', '', ''])
   }
   payRows.push(['', '', '', '', 'Grand Total', formatCurrency(data.grandTotal)])
-  table(draw, ['Person', 'Role', 'Rate Type', 'Days', 'Rate', 'Pay'], payRows)
+  table(draw, ['Person', 'Role', 'Rate Type', 'Hours / Days', 'Rate', 'Pay'], payRows)
 
   return doc.save()
 }

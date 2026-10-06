@@ -138,8 +138,10 @@ export function UserProfileSummary({
             label="Line manager"
             value={lineManager ? `${lineManager.firstName} ${lineManager.surname}`.trim() : 'No line manager'}
           />
-          {target.dayRate != null ? (
-            <SummaryRow label="Day rate" value={`£${Number(target.dayRate).toFixed(2)}`} />
+          {target.payBasis === 'hourly' && target.hourlyRate != null ? (
+            <SummaryRow label="Hourly rate" value={`£${Number(target.hourlyRate).toFixed(2)}/hr`} />
+          ) : target.dayRate != null ? (
+            <SummaryRow label="Day rate" value={`£${Number(target.dayRate).toFixed(2)}/day`} />
           ) : null}
         </dl>
       </section>
