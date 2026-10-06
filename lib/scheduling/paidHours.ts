@@ -100,7 +100,7 @@ export function namedSlotLabel(timeSlot?: string): string {
 }
 
 function halfDayHours(standardPaidHours: number): number {
-  return Math.round((standardPaidHours / 2) * 10) / 10
+  return standardPaidHours / 2
 }
 
 /**
@@ -135,7 +135,7 @@ export function estimatedPaidHours(input: {
       breakWindowStart: input.breakWindowStart,
       breakWindowEnd: input.breakWindowEnd,
     })
-    return Math.max(0, Math.round(((span.minutes - breakMins) / 60) * 10) / 10)
+    return Math.max(0, (span.minutes - breakMins) / 60)
   }
   return standard
 }
@@ -248,7 +248,7 @@ export function overtimeRawHours(input: {
   standardDayEnd?: string
 }): number {
   const ot = overtimeSegments(input).reduce((sum, seg) => sum + (seg.end - seg.start), 0)
-  return Math.max(0, Math.round((ot / 60) * 10) / 10)
+  return Math.max(0, ot / 60)
 }
 
 export function formatOvertimeEquation(rawHours: number, multiplier = FALLBACK_OT_MULTIPLIER): string {

@@ -15,6 +15,7 @@ import { db } from '@/lib/firebase/config'
 import type { Operative, Manager, Skill, Qualification } from '@/types'
 import { filterRealManagers, isPlaceholderManager } from '@/lib/staff/managerRosterUtils'
 import { runOrgLoad, invalidateOrgLoad } from '@/lib/stores/orgLoadCache'
+import { applyExclusiveRateFields } from '@/lib/firebase/userPayload'
 import { parseManager, parseOperative, serializeManager, serializeOperative } from '@/lib/ios-parity/converters'
 import { readStoredRates } from '@/lib/timesheets/payBasis'
 import { markRowsRemoved, retainScopedRows } from '@/lib/staff/rosterRetain'
@@ -220,8 +221,9 @@ export const useOperativeStore = create<OperativeState>((set, get) => ({
   saveOperative: async (organizationId, operative) => {
     const id = operative.id || newUuid()
     const payload = serializeOperative({ ...operative, id, organizationId })
+    applyExclusiveRateFields(payload, operative)
     operativeMutationEpoch += 1
-    await setDoc(doc(db, 'organizations', organizationId, 'operatives', id), payload)
+    await setDoc(doc(db, 'organizations', organizationId, 'operatives', id), payload, { merge: true })
     operativeMutationEpoch += 1
     invalidateOrgLoad(OPERATIVES_KEY)
     const saved = { ...operative, id, organizationId, updatedAt: new Date() }
@@ -266,7 +268,8 @@ export const useOperativeStore = create<OperativeState>((set, get) => ({
   saveManager: async (organizationId, manager) => {
     const id = manager.id || newUuid()
     const payload = serializeManager({ ...manager, id, organizationId })
-    await setDoc(doc(db, 'organizations', organizationId, 'managers', id), payload)
+    applyExclusiveRateFields(payload, manager)
+    await setDoc(doc(db, 'organizations', organizationId, 'managers', id), payload, { merge: true })
     invalidateOrgLoad('operativeStore:managers')
     const saved = { ...manager, id, organizationId, updatedAt: new Date() }
     set({ managers: [...get().managers.filter((m) => m.id !== id), saved] })

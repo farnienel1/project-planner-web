@@ -209,4 +209,19 @@ test('legacy zero pair without a basis is unset, and both positive amounts are a
     dayRate: null,
     hourlyRate: 0,
   })
+  assert.deepEqual(readStoredRates({ dayRate: 0 }), {
+    payBasis: null,
+    dayRate: null,
+    hourlyRate: null,
+  })
+  assert.deepEqual(readStoredRates({ hourlyRate: 18.5 }), {
+    payBasis: 'hourly',
+    dayRate: null,
+    hourlyRate: 18.5,
+  })
+  assert.deepEqual(readStoredRates({ payBasis: 'hourly', hourlyRate: 18.5, dayRate: 200 }), {
+    payBasis: 'hourly',
+    dayRate: null,
+    hourlyRate: 18.5,
+  })
 })

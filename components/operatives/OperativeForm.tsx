@@ -9,6 +9,7 @@ import type { Operative } from '@/types'
 import { STAFF_TRADE_TYPES } from '@/lib/ios-parity/enums'
 import { FormActions, FormInput, FormLabel, FormSelect } from '@/components/forms/FormShell'
 import { PayBasisFields, payChoiceFromProfile, payChoiceToRates } from '@/components/users/PayBasisFields'
+import { usePaySaveGate } from '@/components/users/PayRateChangeDialogs'
 import { ErrorBanner } from '@/components/dashboard/PageShell'
 
 export function OperativeForm({
@@ -26,6 +27,7 @@ export function OperativeForm({
   const { saveUser } = useUserStore()
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const { request: requestPaySave, ui: payDialogs } = usePaySaveGate()
   const [form, setForm] = useState({
     firstName: initial?.firstName || '',
     lastName: initial?.lastName || '',
@@ -67,10 +69,20 @@ export function OperativeForm({
       setError('Trade type is required.')
       return
     }
+    const rates = payChoiceToRates(form.payBasis, form.rateAmount)
+    const linkedPreview = users.find((row) => row.email.trim().toLowerCase() === form.email.trim().toLowerCase())
+    const createdAt = initial?.createdAt || new Date()
+    const decision = await requestPaySave({
+      existing: Boolean(initial),
+      employmentType: linkedPreview?.employmentType,
+      previous: initial,
+      next: rates,
+      createdAt,
+    })
+    if (decision === 'cancel') return
     setSaving(true)
     setError(null)
     try {
-      const rates = payChoiceToRates(form.payBasis, form.rateAmount)
       const operative: Operative = {
         id: initial?.id || '',
         firstName: first,
@@ -87,7 +99,7 @@ export function OperativeForm({
         tradeTypePreset: form.tradeTypePreset.trim() || undefined,
         tradeTypeCustom: form.tradeTypePreset === 'Other' ? form.tradeTypeCustom.trim() || undefined : undefined,
         organizationId: organization.id,
-        createdAt: initial?.createdAt || new Date(),
+        createdAt,
         updatedAt: new Date(),
       }
       const id = await saveOperative(organization.id, operative)
@@ -98,7 +110,7 @@ export function OperativeForm({
             ...linked,
             payBasis: rates.payBasis,
             dayRate: rates.dayRate,
-            hourlyRate: rates.payBasis === 'hourly' ? rates.hourlyRate : undefined,
+            hourlyRate: rates.hourlyRate,
           },
           organization.id
         )
@@ -119,6 +131,7 @@ export function OperativeForm({
           previousPayBasis: previousBasis,
           nextPayBasis: rates.payBasis,
           createdAt: operative.createdAt,
+          effectiveAt: decision,
           history,
         })
       } catch {
@@ -134,6 +147,7 @@ export function OperativeForm({
 
   return (
     <form onSubmit={handleSubmit} className="card pad stack">
+      {payDialogs}
       {error && <ErrorBanner message={error} />}
       <div className="grid gap-4 md:grid-cols-2">
         <div>

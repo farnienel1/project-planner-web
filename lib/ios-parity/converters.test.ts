@@ -114,6 +114,67 @@ test('serializeOperative omits undefined qualification fields so Firestore setDo
   assert.deepEqual(op.qualificationCertificateURLs, {})
 })
 
+test('parseOperative keeps an iOS hourly rate and treats a zero pair as unset', () => {
+  const hourly = parseOperative('OP-H', {
+    firstName: 'Ada',
+    lastName: 'Hour',
+    email: 'ada@x.com',
+    payBasis: 'hourly',
+    hourlyRate: 18.5,
+    dayRate: 200,
+  })
+  assert.equal(hourly.ok, true)
+  if (hourly.ok) {
+    assert.equal(hourly.value.payBasis, 'hourly')
+    assert.equal(hourly.value.hourlyRate, 18.5)
+    assert.equal(hourly.value.dayRate, undefined)
+  }
+  const unset = parseOperative('OP-Z', {
+    firstName: 'Bo',
+    lastName: 'Zero',
+    email: 'bo@x.com',
+    dayRate: 0,
+    hourlyRate: 0,
+  })
+  assert.equal(unset.ok, true)
+  if (unset.ok) {
+    assert.equal(unset.value.payBasis, undefined)
+    assert.equal(unset.value.dayRate, undefined)
+  }
+  const legacy = parseOperative('OP-D', {
+    firstName: 'Cy',
+    lastName: 'Day',
+    email: 'cy@x.com',
+    dayRate: 200,
+    hourlyRate: 200,
+  })
+  assert.equal(legacy.ok, true)
+  if (legacy.ok) {
+    assert.equal(legacy.value.payBasis, 'day')
+    assert.equal(legacy.value.dayRate, 200)
+  }
+  const now = new Date('2026-01-01T00:00:00Z')
+  const saved = serializeOperative({
+    id: 'CCCCCCCC-CCCC-CCCC-CCCC-CCCCCCCCCCCC',
+    firstName: 'Ada',
+    lastName: 'Hour',
+    email: 'ada@x.com',
+    startDate: now,
+    payBasis: 'hourly',
+    hourlyRate: 18.5,
+    dayRate: 200,
+    skills: [],
+    qualifications: [],
+    isActive: true,
+    organizationId: 'org1',
+    createdAt: now,
+    updatedAt: now,
+  })
+  assert.equal(saved.payBasis, 'hourly')
+  assert.equal(saved.hourlyRate, 18.5)
+  assert.equal('dayRate' in saved, false)
+})
+
 test('parseOperative reads qualification expiry and certificate maps', () => {
   const expiry = new Date('2027-03-01T00:00:00Z')
   const result = parseOperative('OP1', {

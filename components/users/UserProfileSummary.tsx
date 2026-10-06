@@ -140,7 +140,7 @@ export function UserProfileSummary({
           />
           {target.payBasis === 'hourly' && target.hourlyRate != null ? (
             <SummaryRow label="Hourly rate" value={`£${Number(target.hourlyRate).toFixed(2)}/hr`} />
-          ) : target.dayRate != null ? (
+          ) : target.payBasis === 'day' && target.dayRate != null ? (
             <SummaryRow label="Day rate" value={`£${Number(target.dayRate).toFixed(2)}/day`} />
           ) : null}
         </dl>

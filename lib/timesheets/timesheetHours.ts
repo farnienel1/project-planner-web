@@ -4,6 +4,7 @@
 import type { OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 import { DEFAULT_PAYROLL_POLICY } from '@/lib/settings/organizationSettings'
 import { londonIsoWeekday, parseHhMm } from '@/lib/ios-parity/londonTime'
+import { orgDayHours } from '@/lib/timesheets/payBasis'
 import { hoursFromSlot } from '@/lib/timesheets/timesheetWeekUtils'
 
 export function scheduleLabel(
@@ -33,7 +34,7 @@ export function paidBookedHours(
       let minutes = end - start
       const breakMinutes = isBreakRemoved ? 0 : payrollPolicy.unpaidBreakMinutes ?? 0
       if (breakMinutes > 0) minutes = Math.max(0, minutes - breakMinutes)
-      return Math.round((minutes / 60) * 10) / 10
+      return minutes / 60
     }
   }
   return hoursFromSlot(timeSlot, workStartTime, workEndTime, payrollPolicy)
@@ -52,11 +53,11 @@ export function overtimeHoursBeyondPaidStandard(
   if (weekday >= 6) {
     const weekend = weekday === 6 ? payrollPolicy.saturday : payrollPolicy.sunday
     if (weekend?.allHoursAtMultiplierMode) return paid
-    const standard = weekend?.countsAsStandardHours ?? payrollPolicy.standardPaidHours
-    return Math.max(0, Math.round((paid - standard) * 10) / 10)
+    const standard = orgDayHours(weekend?.countsAsStandardHours ?? payrollPolicy.standardPaidHours)
+    return Math.max(0, paid - standard)
   }
-  const standard = payrollPolicy.standardPaidHours || 8
-  return Math.max(0, Math.round((paid - standard) * 10) / 10)
+  const standard = orgDayHours(payrollPolicy.standardPaidHours)
+  return Math.max(0, paid - standard)
 }
 
 export function weekdayOtMultiplier(date: Date, payrollPolicy: OrgPayrollTimePolicy): number {
@@ -73,7 +74,7 @@ export function weekdayOtMultiplier(date: Date, payrollPolicy: OrgPayrollTimePol
 }
 
 export function formatTimesheetHours(value: number): string {
-  const rounded = Math.round(value * 2) / 2
-  if (Math.abs(rounded - Math.round(rounded)) < 0.01) return String(Math.round(rounded))
-  return rounded.toFixed(1)
+  const rounded = Math.round(value * 100) / 100
+  if (Math.abs(rounded - Math.round(rounded)) < 0.001) return String(Math.round(rounded))
+  return rounded.toFixed(2)
 }

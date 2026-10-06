@@ -125,7 +125,7 @@ function finiteNumber(value: unknown): number | null {
 }
 
 /**
- * Legacy operative documents with dayRate 0, hourlyRate 0, and no payBasis are unset.
+ * No basis and no amount above 0 is unset, including a lone 0 or both amounts at 0.
  * Both amounts above 0 and no payBasis is a day rate. 0 is real when payBasis is set.
  */
 export function readStoredRates(input: {
@@ -136,14 +136,10 @@ export function readStoredRates(input: {
   const basis = input.payBasis === 'hourly' || input.payBasis === 'day' ? input.payBasis : null
   const day = finiteNumber(input.dayRate)
   const hourly = finiteNumber(input.hourlyRate)
-  if (basis == null && day === 0 && hourly === 0) {
+  if (basis == null && !(day != null && day > 0) && !(hourly != null && hourly > 0)) {
     return { payBasis: null, dayRate: null, hourlyRate: null }
   }
-  const exclusive = exclusiveRates({ dayRate: day, hourlyRate: hourly, payBasis: basis })
-  if (basis == null && exclusive.dayRate == null && exclusive.hourlyRate == null) {
-    return { payBasis: null, dayRate: null, hourlyRate: null }
-  }
-  return exclusive
+  return exclusiveRates({ dayRate: day, hourlyRate: hourly, payBasis: basis })
 }
 
 /** Fields for a full document write. The unused rate is omitted. */

@@ -1,6 +1,7 @@
 import { collection, doc, getDoc, getDocs, query, setDoc, Timestamp, where } from 'firebase/firestore'
 import { getFirebaseDb } from '@/lib/firebase/ensureFirebase'
 import { buildInvitedUserPayload, normalizeLineManagerIds, permissionsToFirestoreMap } from '@/lib/firebase/userPayload'
+import { readStoredRates } from '@/lib/timesheets/payBasis'
 import { newUuid } from '@/lib/firebase/firestoreUtils'
 import {
   addExistingUserToOrganization,
@@ -111,12 +112,13 @@ export async function inviteUserCore(input: InviteUserCoreInput): Promise<Invite
     invitationData.assignedManagerUserIds = lineManagerIds
     invitationData.assignedManagerUserId = lineManagerIds[0]
   }
-  if (input.payBasis === 'hourly' && input.hourlyRate != null) {
+  const invitedRates = readStoredRates(input)
+  if (invitedRates.payBasis === 'hourly' && invitedRates.hourlyRate != null) {
     invitationData.payBasis = 'hourly'
-    invitationData.hourlyRate = input.hourlyRate
-  } else if (input.dayRate != null) {
+    invitationData.hourlyRate = invitedRates.hourlyRate
+  } else if (invitedRates.payBasis === 'day' && invitedRates.dayRate != null) {
     invitationData.payBasis = 'day'
-    invitationData.dayRate = input.dayRate
+    invitationData.dayRate = invitedRates.dayRate
   }
   if (input.tradeTypePreset?.trim()) invitationData.tradeTypePreset = input.tradeTypePreset.trim()
   if (input.tradeTypeCustom?.trim()) invitationData.tradeTypeCustom = input.tradeTypeCustom.trim()
@@ -163,6 +165,19 @@ export async function inviteUserCore(input: InviteUserCoreInput): Promise<Invite
     })
   )
   await setDoc(doc(db, 'organizations', input.organizationId, 'userEmails', emailLower), { userId })
+  if (invitedRates.payBasis === 'hourly' && invitedRates.hourlyRate != null) {
+    await setDoc(
+      doc(db, 'organizations', input.organizationId, 'operativeProfiles', userId),
+      { userId, payBasis: 'hourly', hourlyRate: invitedRates.hourlyRate, updatedAt: Timestamp.now() },
+      { merge: true }
+    )
+  } else if (invitedRates.payBasis === 'day' && invitedRates.dayRate != null) {
+    await setDoc(
+      doc(db, 'organizations', input.organizationId, 'operativeProfiles', userId),
+      { userId, payBasis: 'day', dayRate: invitedRates.dayRate, updatedAt: Timestamp.now() },
+      { merge: true }
+    )
+  }
 
   return { invitationId, userId, inviteType: 'new_user' }
 }
