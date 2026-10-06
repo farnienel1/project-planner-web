@@ -175,7 +175,7 @@ export async function recordDayRateChangeIfNeeded({
   if (next == null) return
   if (!basisChanged && previous === next) return
   const merged = mergedDayRateEntries(history, userId, operativeId)
-  if (merged.length === 0 && previous != null && createdAt) {
+  if (merged.length === 0 && previous != null && previous > 0 && createdAt) {
     await recordOperativeDayRateChange({
       organizationId,
       userId,

@@ -41,10 +41,12 @@ export function SegmentedControl({
   value,
   options,
   onChange,
+  disabled,
 }: {
   value: string
   options: { value: string; label: string }[]
   onChange: (value: string) => void
+  disabled?: boolean
 }) {
   return (
     <div className="inline-flex gap-1 rounded-[14px] bg-[var(--soft2)] p-1" role="tablist">
@@ -54,10 +56,12 @@ export function SegmentedControl({
           type="button"
           role="tab"
           aria-selected={option.value === value}
+          disabled={disabled}
           onClick={() => onChange(option.value)}
           className={cn(
             'inline-flex h-9 items-center gap-1.5 rounded-[10px] px-4 text-sm font-semibold',
-            option.value === value ? 'bg-[var(--card)] text-[var(--ink)] shadow-[var(--sh)]' : 'text-[var(--ink2)]'
+            option.value === value ? 'bg-[var(--card)] text-[var(--ink)] shadow-[var(--sh)]' : 'text-[var(--ink2)]',
+            disabled && 'opacity-60'
           )}
         >
           {option.label}

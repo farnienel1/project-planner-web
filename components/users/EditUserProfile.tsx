@@ -22,6 +22,13 @@ import {
 import { rosterStatusLabel } from '@/lib/staff/userRosterUtils'
 import { UserAvatar } from '@/components/users/UserAvatar'
 import { PayBasisFields, payChoiceFromProfile, payChoiceToRates } from '@/components/users/PayBasisFields'
+import { PreviousRatesList, usePaySaveGate } from '@/components/users/PayRateChangeDialogs'
+import {
+  emptyDayRateHistory,
+  loadOperativeDayRateHistory,
+  mergedDayRateEntries,
+  type OperativeDayRateHistoryCollection,
+} from '@/lib/timesheets/dayRateHistoryStorage'
 import { normalizeEmploymentType } from '@/lib/ios-parity/enums'
 import type { User, UserPermissions } from '@/types'
 import { PermissionToggleList } from '@/components/users/ProfileExpandablePermissionToggle'
@@ -221,6 +228,8 @@ export function EditUserProfile({
   const [fixNote, setFixNote] = useState('')
   const [fixOpen, setFixOpen] = useState(false)
   const [activeSaving, setActiveSaving] = useState(false)
+  const [rateHistory, setRateHistory] = useState<OperativeDayRateHistoryCollection>(emptyDayRateHistory())
+  const { request: requestPaySave, ui: payDialogs } = usePaySaveGate()
   const profileLoadGen = useRef(0)
 
   useEffect(() => {
@@ -228,6 +237,7 @@ export function EditUserProfile({
     const generation = ++profileLoadGen.current
     loadUsers(organization.id)
     loadOperatives(organization.id)
+    void loadOperativeDayRateHistory(organization.id).then(setRateHistory)
     getUser(userId)
       .then((row) => {
         if (generation !== profileLoadGen.current) return
@@ -252,6 +262,16 @@ export function EditUserProfile({
       ),
     [users, target?.id]
   )
+
+  const previousRateEntries = useMemo(() => {
+    if (!target) return []
+    const email = target.email.trim().toLowerCase()
+    const ids = users
+      .filter((row) => row.email.trim().toLowerCase() === email)
+      .map((row) => row.id)
+    if (!ids.includes(target.id)) ids.push(target.id)
+    return mergedDayRateEntries(rateHistory, ids, findOperativeForUser(target, operatives)?.id)
+  }, [target, users, operatives, rateHistory])
 
   const canEdit = target ? canEditTargetUser(currentUser, target) : false
   const canEditIdentity = target ? canEditIdentityDetails(currentUser, target) : false
@@ -300,6 +320,18 @@ export function EditUserProfile({
 
     const previous = target
     const previousBaseline = baseline
+    const decision = await requestPaySave({
+      existing: true,
+      employmentType: target.employmentType,
+      previous: {
+        payBasis: originalPayBasis,
+        dayRate: originalPayBasis === 'hourly' ? undefined : originalDayRate,
+        hourlyRate: originalPayBasis === 'hourly' ? originalDayRate : undefined,
+      },
+      next: target,
+      createdAt: target.createdAt,
+    })
+    if (decision === 'cancel') return
     setError(null)
     setSuccess(null)
     let toSave = { ...target, updatedAt: new Date() }
@@ -337,10 +369,12 @@ export function EditUserProfile({
             previousPayBasis: originalPayBasis,
             nextPayBasis: toSave.payBasis,
             createdAt: toSave.createdAt,
+            effectiveAt: decision,
             history,
           })
           setOriginalDayRate(toSave.payBasis === 'hourly' ? toSave.hourlyRate : toSave.dayRate)
           setOriginalPayBasis(toSave.payBasis)
+          void loadOperativeDayRateHistory(organization.id).then(setRateHistory)
         } catch {
           // History write is best-effort so a profile save still succeeds.
         }
@@ -502,6 +536,7 @@ export function EditUserProfile({
 
   return (
     <form onSubmit={handleSave} className="mx-auto max-w-2xl pb-16">
+      {payDialogs}
       <PanelHeader
         title={pageTitle}
         onBack={() => router.push(backHref)}
@@ -688,9 +723,11 @@ export function EditUserProfile({
               <div className="grid gap-4 sm:grid-cols-2">
                 <PayBasisFields
                   {...payChoiceFromProfile(target)}
+                  placeholder="manage"
                   disabled={!canEdit}
                   onChange={(next) => setTarget({ ...target, ...payChoiceToRates(next.payBasis, next.amount) })}
                 />
+                <PreviousRatesList entries={previousRateEntries} />
               </div>
 
               <div className="grid gap-4 sm:grid-cols-2">

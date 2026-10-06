@@ -2,6 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import type { Booking, Operative, Project, User } from '../../types/index.ts'
 import { collectTimesheetPayroll, timesheetHoursRateLine, timesheetRateAnnotation } from './timesheetPayrollCollector.ts'
+import { paidBookedHours } from './timesheetHours.ts'
 import { DEFAULT_PAYROLL_POLICY } from '../settings/organizationSettings.ts'
 import type { OperativeDayRateHistoryCollection } from './dayRateHistoryStorage.ts'
 
@@ -178,4 +179,11 @@ test('payroll uses prior working-hours policy for days before effectiveFrom', ()
   const nowLine = summary.lineItems.find((item) => item.id === 'op-now-normal')
   assert.equal(oldLine?.paidHours, 8)
   assert.equal(nowLine?.paidHours, 8.5)
+})
+
+test('15 minutes of clock time is 0.25 hours', () => {
+  assert.equal(
+    paidBookedHours('custom', '08:00', '08:15', { ...DEFAULT_PAYROLL_POLICY, unpaidBreakMinutes: 0 }),
+    0.25
+  )
 })

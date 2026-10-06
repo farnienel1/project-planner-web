@@ -17,6 +17,8 @@ export type GuidedSetupData = {
     email: string
     mobile: string
     dayRate: string
+    /** Kept with the draft amount so a later person write stays on one basis. */
+    payBasis?: 'day' | 'hourly'
   }
   operative?: {
     firstName: string
@@ -25,6 +27,8 @@ export type GuidedSetupData = {
     mobile: string
     employmentType: 'PAYE' | 'Self-Employed'
     dayRate: string
+    /** Kept with the draft amount so a later person write stays on one basis. */
+    payBasis?: 'day' | 'hourly'
   }
   project: {
     jobNumber: string

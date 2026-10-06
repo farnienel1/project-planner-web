@@ -255,6 +255,7 @@ export function TimesheetsScreen({
           draft: agreed,
           timeZone,
           extrasMode: 'export',
+          standardDayHours: payrollPolicy.standardPaidHours,
         })
         const pdf = buildTimesheetInvoicePdf({
           organizationName: organization.name || 'Organisation',
