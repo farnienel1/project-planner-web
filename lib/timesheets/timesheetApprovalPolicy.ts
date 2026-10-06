@@ -29,15 +29,24 @@ export function requiresLineManagerCounterSign(user: User): boolean {
   return userHasLineManager(user)
 }
 
+const SIGNED_AFTER = new Date('2020-01-01T00:00:00.000Z')
+
+/** A real operative signature: a date after 1 Jan 2020 plus a name or a signature image. */
+export function isOperativeSigned(draft: TimesheetDraft): boolean {
+  const at = draft.operativeSignedAt
+  if (!at || Number.isNaN(at.getTime()) || at.getTime() <= SIGNED_AFTER.getTime()) return false
+  return Boolean(draft.operativeSignedByName?.trim() || draft.operativeSignatureImageBase64?.trim())
+}
+
 export function isTimesheetFullyApproved(draft: TimesheetDraft, user: User): boolean {
-  if (!draft.operativeSignedAt) return false
+  if (!isOperativeSigned(draft)) return false
   if (requiresLineManagerCounterSign(user)) return Boolean(draft.managerSignedAt)
   return true
 }
 
 /** Awaiting sign-off = operative signed, manager not yet, and a line manager exists. */
 export function awaitingManagerSignOff(draft: TimesheetDraft, user: User): boolean {
-  return requiresLineManagerCounterSign(user) && Boolean(draft.operativeSignedAt) && !draft.managerSignedAt
+  return requiresLineManagerCounterSign(user) && isOperativeSigned(draft) && !draft.managerSignedAt
 }
 
 export function applySelfApprovalIfNoLineManager(draft: TimesheetDraft, user: User): TimesheetDraft {

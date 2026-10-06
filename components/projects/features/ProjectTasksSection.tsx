@@ -182,7 +182,7 @@ function ProjectTasksSectionInner({ project }: { project: Project }) {
     input: {
       completionNotes?: string
       completionImages: string[]
-      completionFiles: { name: string; url: string }[]
+      completionFiles: string[]
     }
   ) => {
     const display = user ? `${user.firstName} ${user.surname}`.trim() || user.email : 'Unknown'

@@ -76,16 +76,33 @@ export async function loadNotificationPreferencesFromFirestore(
   return null
 }
 
+/**
+ * Dotted updates. Firestore merge of a whole `notificationPreferences` map would wipe
+ * bookingConflicts, projectDeadlines, and the other iOS keys.
+ */
+export function notificationPreferenceFieldPatch(prefs: NotificationPreferences): Record<string, unknown> {
+  return {
+    'notificationPreferences.materialOrderCutOff': prefs.materialOrderCutOff,
+    'notificationPreferences.materialCutOffHour': prefs.materialCutOffHour,
+    'notificationPreferences.materialCutOffMinute': prefs.materialCutOffMinute,
+    'notificationPreferences.materialCutOffOnSaturday': prefs.materialCutOffOnSaturday,
+    'notificationPreferences.materialCutOffOnSunday': prefs.materialCutOffOnSunday,
+  }
+}
+
 export async function saveNotificationPreferences(userId: string, prefs: NotificationPreferences): Promise<void> {
   cacheNotificationPreferencesLocally(userId, prefs)
-  await setDoc(
-    doc(db, 'users', userId),
-    {
-      notificationPreferences: prefs,
-      updatedAt: Timestamp.now(),
-    },
-    { merge: true }
-  )
+  const ref = doc(db, 'users', userId)
+  const patch = {
+    ...notificationPreferenceFieldPatch(prefs),
+    updatedAt: Timestamp.now(),
+  }
+  try {
+    const { updateDoc } = await import('firebase/firestore')
+    await updateDoc(ref, patch)
+  } catch {
+    await setDoc(ref, patch, { merge: true })
+  }
 }
 
 /**

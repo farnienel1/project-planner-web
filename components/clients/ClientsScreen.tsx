@@ -285,7 +285,7 @@ export function ClientsScreen({ selectedId }: { selectedId?: string }) {
           hue="blue"
           action={
             <button type="button" onClick={openCreate} className="btn primary">
-              Create client
+              Create client…
             </button>
           }
         />
@@ -360,7 +360,7 @@ export function ClientsScreen({ selectedId }: { selectedId?: string }) {
             onClick={openCreate}
             className="btn primary"
           >
-            New client
+            New Client
           </button>
         }
       />
@@ -383,7 +383,7 @@ export function ClientsScreen({ selectedId }: { selectedId?: string }) {
               disabled={!formValid || saving}
               className="btn primary block"
             >
-              {saving ? 'Creating…' : 'Create Client'}
+              {saving ? 'Creating…' : 'Create client…'}
             </button>
           }
         >

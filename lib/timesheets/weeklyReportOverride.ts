@@ -108,6 +108,7 @@ function labourLine(
     amount,
     payBasis: line.payrollBasis === 'hourly' ? 'hourly' : 'day',
     isOvertime: line.isOvertimeLine,
+    otMultiplier: line.isOvertimeLine ? line.otMultiplier ?? null : null,
     decision,
     bookingId: bookingIdFromLineId(line.id) || '',
   }

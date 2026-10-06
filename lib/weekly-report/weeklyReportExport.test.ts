@@ -58,7 +58,8 @@ test('weekly report spreadsheet includes iOS section titles and named sub contra
   assert.match(xml, /Warnings Summary/)
   assert.match(xml, /Project Breakdown/)
   assert.match(xml, /Sub Contractors/)
-  assert.match(xml, /Jane Smith/)
+  assert.equal(xml.includes('People'), false)
+  assert.equal(xml.includes('Jane Smith'), false)
   assert.match(xml, /Pay Summary/)
   const pay = xml.split('Pay Summary')[1] || ''
   const alice = pay.indexOf('Alice total')

@@ -29,6 +29,7 @@ import { useTaskStore } from '@/lib/stores/taskStore'
 import { useHolidayStore } from '@/lib/stores/holidayStore'
 import { useMaterialProjectStore } from '@/lib/stores/materialProjectStore'
 import { canBookWork, canViewDailyOverview, canViewWeeklyReports, hasAdminAccess, isOperativeMode } from '@/lib/permissions'
+import { countHomeActiveProjects } from '@/lib/projects/homeActiveProjects'
 import { formatHomeDateLine } from '@/lib/ios-parity/londonTime'
 import {
   computeHomeOverviewMetrics,
@@ -91,7 +92,7 @@ export function HomeScreen() {
   const { projects, smallWorks, loadProjects, loadSmallWorks } = useProjectStore()
   const { operatives, managers, loadOperatives, loadManagers } = useOperativeStore()
   const { users, loadUsers } = useOrgUserStore()
-  const { bookings, loadBookings } = useBookingStore()
+  const { bookings, loadBookings, loading: bookingsLoading, ready: bookingsReady } = useBookingStore()
   const { managerSiteBookings, loadManagerSiteBookings } = useManagerScheduleStore()
   const { tasks, loadTasks } = useTaskStore()
   const { bookings: holidays, loadBookings: loadHolidays } = useHolidayStore()
@@ -150,7 +151,13 @@ export function HomeScreen() {
   }, [user?.id, organization?.id, pauseHomeLoads, users])
 
   const merged = useMemo(() => mergeProjectsAndSmallWorks(projects, smallWorks), [projects, smallWorks])
-  const liveCount = merged.filter((p) => p.isLive !== false).length
+  const liveCount = countHomeActiveProjects({
+    projects: merged,
+    user: displayUser,
+    operatives,
+    bookings,
+    now,
+  })
   const operative = isOperativeMode(displayUser)
   const admin = hasAdminAccess(displayUser)
 
@@ -174,6 +181,7 @@ export function HomeScreen() {
 
   const warningCount = useMemo(() => {
     if (!admin) return 0
+    if (!bookingsReady || bookingsLoading) return 0
     try {
       return generateOrgWarnings({
         bookings,
@@ -193,6 +201,8 @@ export function HomeScreen() {
     }
   }, [
     admin,
+    bookingsLoading,
+    bookingsReady,
     bookings,
     managerSiteBookings,
     operatives,

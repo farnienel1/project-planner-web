@@ -70,8 +70,11 @@ export function applyLineManagerFields(
 
 /** Mirrors iOS FirebaseBackend.saveUser flattened user document shape. */
 export function buildSaveUserPayload(user: User): Record<string, unknown> {
-  const permissions = permissionsToFirestoreMap(user.permissions)
-  const isSuperAdminToSave = user.permissions.operativeMode ? false : user.isSuperAdmin
+  const keepAdmin =
+    user.isSuperAdmin === true || user.permissions.adminAccess === true || user.role === 'admin'
+  const operativeMode = keepAdmin ? false : user.permissions.operativeMode === true
+  const permissions = permissionsToFirestoreMap({ ...user.permissions, operativeMode })
+  const isSuperAdminToSave = operativeMode ? false : user.isSuperAdmin
   const firstName = user.firstName.trim()
   const surname = user.surname.trim()
   const displayName = `${firstName} ${surname}`.trim()
@@ -92,16 +95,17 @@ export function buildSaveUserPayload(user: User): Record<string, unknown> {
     updatedAt: Timestamp.now(),
     permissions,
     ...permissions,
-    adminAccess: user.permissions.operativeMode ? false : user.permissions.adminAccess,
-    manager: user.permissions.operativeMode ? false : user.permissions.manager,
-    operatives: user.permissions.operativeMode ? false : user.permissions.operatives,
+    adminAccess: operativeMode ? false : user.permissions.adminAccess,
+    manager: operativeMode ? false : user.permissions.manager,
+    operatives: operativeMode ? false : user.permissions.operatives,
     skills: false,
-    qualifications: user.permissions.operativeMode ? false : user.permissions.qualifications,
-    materials: user.permissions.operativeMode ? user.permissions.materials : true,
-    siteAudit: user.permissions.operativeMode ? user.permissions.siteAudit : true,
+    qualifications: operativeMode ? false : user.permissions.qualifications,
+    materials: operativeMode ? user.permissions.materials : true,
+    siteAudit: operativeMode ? user.permissions.siteAudit : true,
     projects: user.permissions.projects,
     smallWorks: user.permissions.smallWorks,
-    operativeMode: user.permissions.operativeMode,
+    operativeMode,
+    hasNoLineManager: user.hasNoLineManager === true,
     annualLeaveEnabled: user.annualLeaveEnabled !== false,
     annualLeaveCarriesOver: user.annualLeaveCarriesOver === true,
   }
@@ -111,7 +115,10 @@ export function buildSaveUserPayload(user: User): Record<string, unknown> {
   const mobile = user.mobileNumber?.trim()
   payload.mobileNumber = mobile ? mobile : deleteField()
 
-  if (user.permissions.operativeMode || user.permissions.manager) {
+  if (user.hasNoLineManager) {
+    payload.assignedManagerUserId = deleteField()
+    payload.assignedManagerUserIds = deleteField()
+  } else if (operativeMode || user.permissions.manager) {
     applyLineManagerFields(
       payload,
       user.assignedManagerUserIds,
@@ -128,7 +135,7 @@ export function buildSaveUserPayload(user: User): Record<string, unknown> {
   if (user.annualLeaveYearStartMonth != null) payload.annualLeaveYearStartMonth = user.annualLeaveYearStartMonth
   if (user.annualLeaveYearEndMonth != null) payload.annualLeaveYearEndMonth = user.annualLeaveYearEndMonth
 
-  if (user.permissions.operativeMode || user.permissions.manager) {
+  if (operativeMode || user.permissions.manager || user.permissions.adminAccess) {
     payload.timesheetsEnabled = user.timesheetsEnabled === true
     const vat = user.vatNumber?.trim()
     payload.vatNumber = vat ? vat : deleteField()
@@ -136,11 +143,12 @@ export function buildSaveUserPayload(user: User): Record<string, unknown> {
     payload.utrNumber = utr ? utr : deleteField()
   }
 
-  if (user.employmentTypeTransitionFrom) {
+  if (user.employmentTypeTransitionFrom && user.employmentTypeEffectiveAt) {
     payload.employmentTypeTransitionFrom = user.employmentTypeTransitionFrom
-  }
-  if (user.employmentTypeEffectiveAt) {
     payload.employmentTypeEffectiveAt = Timestamp.fromDate(user.employmentTypeEffectiveAt)
+  } else {
+    payload.employmentTypeTransitionFrom = deleteField()
+    payload.employmentTypeEffectiveAt = deleteField()
   }
   if (user.policyAcceptedAt) payload.policyAcceptedAt = Timestamp.fromDate(user.policyAcceptedAt)
   if (user.profilePhotoURL?.trim()) payload.profilePhotoURL = user.profilePhotoURL.trim()
@@ -172,6 +180,8 @@ export function buildInvitedUserPayload(params: {
   annualLeaveDaysPerYear?: number
   annualLeaveYearStartMonth?: number
   annualLeaveYearEndMonth?: number
+  annualLeaveCarriesOver?: boolean
+  hasNoLineManager?: boolean
 }): Record<string, unknown> {
   const { permissions } = params
   let role: UserRole = UserRole.BASIC
@@ -233,6 +243,10 @@ export function buildInvitedUserPayload(params: {
   }
   if (params.annualLeaveYearEndMonth != null) {
     payload.annualLeaveYearEndMonth = params.annualLeaveYearEndMonth
+  }
+  if (params.annualLeaveCarriesOver != null) payload.annualLeaveCarriesOver = params.annualLeaveCarriesOver
+  if (params.hasNoLineManager) {
+    payload.hasNoLineManager = true
   }
 
   return payload

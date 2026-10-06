@@ -600,8 +600,8 @@ export function buildWeeklyReportData({
       timeZone,
     })) {
       warnings.push({
-        status: 'Open',
-        priority: 'Medium',
+        status: 'Active',
+        priority: 'High',
         type: 'Unbooked labour',
         date: format(warning.date, 'd MMM yyyy'),
         description: warning.operativeName,
@@ -612,7 +612,11 @@ export function buildWeeklyReportData({
   }
 
   for (const { week, line } of timesheetLabourLines(timesheetWeeks, period.start, period.end, timeZone)) {
-    addPaySlice(week.personName, week.role, signedLabourSlice(line, standardHours, otMultiplier))
+    addPaySlice(
+      week.personName,
+      week.role,
+      signedLabourSlice(line, standardHours, line.otMultiplier ?? null)
+    )
   }
 
   const paySummary: WeeklyReportPayPerson[] = []

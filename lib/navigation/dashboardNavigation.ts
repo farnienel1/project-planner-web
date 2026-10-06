@@ -78,7 +78,7 @@ const ALL_NAV_ITEMS: DashboardNavItem[] = [
   {
     id: 'dashboard_small_works',
     href: '/dashboard/small-works',
-    label: 'Small works',
+    label: 'Small Works',
     subtitle: 'Reactive and ad-hoc jobs',
     navigationLabelKey: 'dashboard_small_works',
     iconPath: 'M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10',
@@ -88,7 +88,7 @@ const ALL_NAV_ITEMS: DashboardNavItem[] = [
   {
     id: 'dashboard_operatives',
     href: '/dashboard/operatives',
-    label: 'Operatives',
+    label: 'Manage Operatives',
     subtitle: 'People and availability',
     navigationLabelKey: 'dashboard_operatives',
     iconPath: 'M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z',
@@ -158,7 +158,7 @@ const ALL_NAV_ITEMS: DashboardNavItem[] = [
   {
     id: 'dashboard_annual_leave',
     href: '/dashboard/annual-leave',
-    label: 'Annual leave',
+    label: 'Annual Leave',
     subtitle: 'Leave requests and approvals',
     navigationLabelKey: 'dashboard_annual_leave',
     iconPath: 'M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z',
@@ -258,7 +258,7 @@ const ALL_NAV_ITEMS: DashboardNavItem[] = [
   {
     id: 'dashboard_sub_contractors',
     href: '/dashboard/sub-contractors',
-    label: 'Sub contractors',
+    label: 'Sub Contractors',
     subtitle: 'Subcontractor directory',
     navigationLabelKey: 'dashboard_sub_contractors',
     iconPath: 'M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z',
@@ -318,7 +318,7 @@ const ALL_NAV_ITEMS: DashboardNavItem[] = [
   {
     id: 'dashboard_help',
     href: '/dashboard/help',
-    label: 'Help & support',
+    label: 'Help',
     subtitle: 'Guides and contact',
     navigationLabelKey: 'dashboard_help',
     iconPath: 'M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z',
@@ -328,7 +328,7 @@ const ALL_NAV_ITEMS: DashboardNavItem[] = [
   {
     id: 'dashboard_privacy',
     href: '/dashboard/privacy',
-    label: 'Privacy Policy',
+    label: 'Privacy & terms',
     subtitle: 'How we use your data',
     navigationLabelKey: 'dashboard_privacy',
     iconPath: 'M12 11c0 3.517-1.009 6.799-2.753 9.571m-3.44-2.04l.054-.09A13.916 13.916 0 008 11a4 4 0 118 0c0 1.017-.07 2.019-.203 3m-2.118 6.844A21.88 21.88 0 0015.171 17m3.839 1.132c.645-2.266.99-4.659.99-7.132A8 8 0 008 4.07M3 15.364c.64-1.319 1-2.8 1-4.364 0-1.457.39-2.823 1.07-4',

@@ -17,7 +17,6 @@ import { buildWeeklyReportData } from '@/lib/weekly-report/weeklyReportData'
 import type { SubcontractorBookingRow } from '@/lib/weekly-report/weeklyReportData'
 import {
   buildWeeklyReportHtml,
-  buildWeeklyReportSpreadsheetXml,
   downloadWeeklyReportWorkbook,
   printWeeklyReport,
 } from '@/lib/weekly-report/weeklyReportGenerator'
@@ -227,9 +226,8 @@ export function WeeklyReportScreen({
 
   const handleDownload = () => {
     if (!report || !period) return
-    const xml = buildWeeklyReportSpreadsheetXml(report)
-    const filename = `WeeklyReport-${format(period.start, 'yyyyMMdd')}.xls`
-    downloadWeeklyReportWorkbook(xml, filename)
+    const filename = `WeeklyReport-${format(period.start, 'yyyyMMdd')}.xlsx`
+    downloadWeeklyReportWorkbook(report, filename)
   }
 
   const handleDownloadPdf = async () => {
@@ -261,7 +259,7 @@ export function WeeklyReportScreen({
     <div className="stack" data-hue="rep">
       <div className="phead" data-hue="rep">
         <div>
-          <h1>Weekly report</h1>
+          <h1>Weekly Report</h1>
           <div className="sub">Updates as you change the period. Separate from live warnings.</div>
         </div>
         <div className="acts">
@@ -453,7 +451,7 @@ export function WeeklyReportScreen({
               className="btn primary block"
               style={{ marginTop: 16 }}
             >
-              {generating ? 'Generating report…' : 'Generate report'}
+              {generating ? 'Generating report…' : 'Generate Report'}
             </button>
           </section>
 

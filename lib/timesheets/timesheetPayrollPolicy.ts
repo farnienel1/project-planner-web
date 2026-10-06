@@ -50,6 +50,15 @@ export function payPeriodsOverlapping(
   return periods
 }
 
+export function participatesInTimesheets(
+  user: Pick<User, 'timesheetsEnabled' | 'employmentType' | 'employmentTypeTransitionFrom' | 'employmentTypeEffectiveAt'>,
+  referenceDate: Date = new Date(),
+  timeZone: string = LONDON_TIME_ZONE
+): boolean {
+  if (user.timesheetsEnabled === true) return true
+  return employmentTypeOnDay(user, referenceDate, timeZone) === 'self_employed'
+}
+
 export function shouldAppearInOperativeTimesheetRoster(
   user: User,
   periodStart: Date,
@@ -59,14 +68,7 @@ export function shouldAppearInOperativeTimesheetRoster(
   timeZone: string = LONDON_TIME_ZONE
 ): boolean {
   if (!user.isActive) return false
-  const eligible =
-    user.permissions.operativeMode ||
-    user.permissions.manager ||
-    user.permissions.adminAccess ||
-    user.isSuperAdmin ||
-    user.role === 'manager' ||
-    user.role === 'admin'
-  if (!eligible) return false
+  if (participatesInTimesheets(user, referenceDate, timeZone)) return true
   if (employmentTypeOnDay(user, referenceDate, timeZone) === 'self_employed') return true
   const hasSelfEmployedDays = eachLondonDay(periodStart, periodEnd, timeZone).some((day) =>
     isBillableSelfEmployedDay(user, day, timeZone)

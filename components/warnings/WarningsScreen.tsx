@@ -16,6 +16,9 @@ import { hasAdminAccess } from '@/lib/permissions'
 import type { Operative, User } from '@/types'
 import { initialsFrom } from '@/lib/daily-overview/buildDailyOverview'
 import { dayKey } from '@/lib/ios-parity/londonTime'
+import { addDoc, collection, serverTimestamp } from 'firebase/firestore'
+import { db } from '@/lib/firebase/config'
+import { useAuthStore } from '@/lib/stores/authStore'
 
 type FilterChip = 'all' | 'clashes' | 'unbooked' | 'materials' | 'qualifications'
 
@@ -120,6 +123,34 @@ function MaterialsCard({
   warning: MissedMaterialOrderWarning
   smallWorkIds: ReadonlySet<string>
 }) {
+  const organization = useAuthStore((state) => state.organization)
+  const user = useAuthStore((state) => state.user)
+  const [hidden, setHidden] = useState(false)
+  const [dismissing, setDismissing] = useState(false)
+  if (hidden) return null
+
+  async function dismiss() {
+    if (dismissing) return
+    setDismissing(true)
+    const name = [user?.firstName, user?.surname].filter(Boolean).join(' ').trim() || user?.email || 'Someone'
+    if (organization?.id) {
+      try {
+        await addDoc(collection(db, 'organizations', organization.id, 'notifications'), {
+          organizationId: organization.id,
+          type: 'warning_removed',
+          title: `Warning dismissed by ${name}`,
+          message: `${name} dismissed a materials cut-off warning. Dismissed warnings do not reappear.\n\n${warning.message}`,
+          isRead: false,
+          createdAt: serverTimestamp(),
+          requiresPermission: 'hasAdminAccess',
+        })
+      } catch {
+        // The card still leaves this device, matching an iPhone dismiss.
+      }
+    }
+    setHidden(true)
+  }
+
   return (
     <section className="card" data-hue="sw">
       <div className="card-h">
@@ -128,16 +159,21 @@ function MaterialsCard({
             <path strokeLinecap="round" strokeLinejoin="round" d="M21 7.5l-9-4.5L3 7.5m18 0-9 4.5m9-4.5v9l-9 4.5M3 7.5l9 4.5M3 7.5v9l9 4.5m0-9v9" />
           </svg>
         </div>
-        <h2 className="h2 grow">Missed material order</h2>
+        <h2 className="h2 grow">{warning.title}</h2>
         <span className="pill" data-hue="lib">LOW</span>
       </div>
       <div className="card-b stack" style={{ gap: 10 }}>
         <p className="small">{warning.message}</p>
         <p><b>{warning.projectLabel}</b></p>
         <p className="muted small">Managers should confirm material lists with site teams.</p>
-        <Link href={projectMaterialsPath(warning.projectId, smallWorkIds)} className="btn primary">
-          Open materials
-        </Link>
+        <div className="row" style={{ gap: 8 }}>
+          <button type="button" className="btn" onClick={() => void dismiss()} disabled={dismissing}>
+            Dismiss
+          </button>
+          <Link href={projectMaterialsPath(warning.projectId, smallWorkIds)} className="btn primary">
+            Open materials
+          </Link>
+        </div>
       </div>
     </section>
   )
@@ -263,7 +299,7 @@ export function WarningsScreen({
         <div>
           <h1>Warnings</h1>
           <div className="sub">
-            {organizationName} · Live issues from today forward. Separate from the weekly report.
+            {organizationName} · Separate from the weekly report.
           </div>
         </div>
         <div className="acts">
