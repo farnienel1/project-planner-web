@@ -266,6 +266,10 @@ export function subscribeParentVariations(
   return onSnapshot(
     query(variationsCollection(organizationId), where('parentId', '==', parentId)),
     (snap) => {
+      // A denied save still sits in the local cache until the server answers.
+      // Publishing that snapshot makes a failed variation look saved, and a later
+      // empty server snapshot then keeps the failed row instead of the real list.
+      if (snap.metadata.hasPendingWrites) return
       const next = snap.docs.map((entry) => variationFromFirestore(entry.id, entry.data() as Record<string, unknown>))
       const kept = retainLoadedRows(lastVariationRows.get(key) ?? [], next)
       lastVariationRows.set(key, kept)
