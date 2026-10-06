@@ -23,6 +23,10 @@ import { trackEvent } from '@/lib/analytics/trackEvent'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { parseFirestoreDate, parseNumber, parseOptionalString, parseString, newUuid } from '@/lib/firebase/firestoreUtils'
 import { parseClient as parseClientDoc, serializeClient } from '@/lib/ios-parity/converters'
+import {
+  isLegacyPlaceholderDocumentId,
+  withoutLegacyPlaceholderDocuments,
+} from '@/lib/projects/legacyPlaceholderWork'
 
 function parseClient(data: unknown): Client {
   const c = (data || {}) as Record<string, unknown>
@@ -124,12 +128,14 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         else set({ error: null })
         try {
           const snapshot = await getDocs(collection(db, 'organizations', organizationId, 'projects'))
-          let projects = snapshot.docs.map((entry) =>
-            mapProjectDoc(entry.id, entry.data() as Record<string, unknown>, organizationId)
-          )
+          let projects = snapshot.docs
+            .filter((entry) => !isLegacyPlaceholderDocumentId(entry.id))
+            .map((entry) => mapProjectDoc(entry.id, entry.data() as Record<string, unknown>, organizationId))
           if (!includeInactive) projects = projects.filter((p) => p.isLive)
           const previous = projectsOrgId === organizationId ? get().projects : []
-          projects = retainScopedRows(`projects:${organizationId}`, previous, projects)
+          projects = withoutLegacyPlaceholderDocuments(
+            retainScopedRows(`projects:${organizationId}`, previous, projects)
+          )
           projectsOrgId = organizationId
           set({ projects, loading: false })
         } catch (error: unknown) {
@@ -153,11 +159,13 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         else set({ error: null })
         try {
           const snapshot = await getDocs(collection(db, 'organizations', organizationId, 'smallWorks'))
-          const mapped = snapshot.docs.map((entry) =>
-            mapProjectDoc(entry.id, entry.data() as Record<string, unknown>, organizationId)
-          )
+          const mapped = snapshot.docs
+            .filter((entry) => !isLegacyPlaceholderDocumentId(entry.id))
+            .map((entry) => mapProjectDoc(entry.id, entry.data() as Record<string, unknown>, organizationId))
           const previous = smallWorksOrgId === organizationId ? get().smallWorks : []
-          const smallWorks = retainScopedRows(`smallWorks:${organizationId}`, previous, mapped)
+          const smallWorks = withoutLegacyPlaceholderDocuments(
+            retainScopedRows(`smallWorks:${organizationId}`, previous, mapped)
+          )
           smallWorksOrgId = organizationId
           set({ smallWorks, loading: false })
         } catch (error: unknown) {
@@ -181,11 +189,19 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
           const snapshot = await getDocs(collection(db, 'organizations', organizationId, 'clients'))
           const clients: Client[] = []
           for (const entry of snapshot.docs) {
+            if (isLegacyPlaceholderDocumentId(entry.id)) continue
             const parsed = parseClientDoc(entry.id, entry.data() as Record<string, unknown>, organizationId)
-            if (parsed.ok) clients.push(parsed.value)
+            if (!parsed.ok || isLegacyPlaceholderDocumentId(parsed.value.id)) continue
+            clients.push(parsed.value)
           }
           const previous = clientsOrgId === organizationId ? get().clients : []
-          const kept = retainScopedRows(`clients:${organizationId}`, previous, clients)
+          const kept = withoutLegacyPlaceholderDocuments(
+            retainScopedRows(
+              `clients:${organizationId}`,
+              previous,
+              clients.filter((client) => !isLegacyPlaceholderDocumentId(client.id))
+            )
+          )
           clientsOrgId = organizationId
           set({ clients: kept })
         } catch (error: unknown) {
@@ -198,19 +214,23 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   },
 
   getProject: async (organizationId, projectId, collectionName = 'projects') => {
+    if (isLegacyPlaceholderDocumentId(projectId)) return null
     const needle = String(projectId || '').trim().toLowerCase()
     const cachedList = collectionName === 'smallWorks' ? get().smallWorks : get().projects
     const cached = cachedList.find((row) => row.id.toLowerCase() === needle)
     if (cached) return cached
     const snap = await getDoc(doc(db, 'organizations', organizationId, collectionName, projectId))
-    if (!snap.exists()) {
+    if (!snap.exists() || isLegacyPlaceholderDocumentId(snap.id)) {
       const other = collectionName === 'smallWorks' ? get().projects : get().smallWorks
-      return other.find((row) => row.id.toLowerCase() === needle) || null
+      return other.find((row) => row.id.toLowerCase() === needle && !isLegacyPlaceholderDocumentId(row.id)) || null
     }
     return mapProjectDoc(snap.id, snap.data() as Record<string, unknown>, organizationId)
   },
 
   saveProject: async (input, collectionOverride) => {
+    if (isLegacyPlaceholderDocumentId(input.id)) {
+      throw new Error('Cannot save the legacy starter placeholder. Create a project with a job number and site name.')
+    }
     const collectionName = collectionOverride || projectCollectionName(input.jobType)
     const id = input.id || newUuid()
     const isNew = ![...get().projects, ...get().smallWorks].some((row) => row.id === id)

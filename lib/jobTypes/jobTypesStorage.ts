@@ -14,6 +14,7 @@ import { db } from '@/lib/firebase/config'
 import { ORG_SETTINGS_JOB_TYPES_DOC } from '@/lib/firebase/orgCollections'
 import { unionUniqueStrings } from '@/lib/catalogues/catalogueWriteGuard'
 import { DEFAULT_JOB_TYPES } from '@/types'
+import { isLegacyPlaceholderDocumentId } from '@/lib/projects/legacyPlaceholderWork'
 
 /** iOS enum names plus custom types this organisation already used that the empty overwrite dropped. */
 export const RESTORED_JOB_TYPES = [...DEFAULT_JOB_TYPES, 'Decarbonisation'] as const
@@ -185,9 +186,9 @@ async function loadWorkJobTypeRecords(
       getDocs(collection(db, 'organizations', organizationId, 'projects')),
       getDocs(collection(db, 'organizations', organizationId, 'smallWorks')),
     ])
-    return [...projectsSnap.docs, ...smallSnap.docs].map((entry) =>
-      jobTypeFieldsFromRecord(entry.data() as Record<string, unknown>)
-    )
+    return [...projectsSnap.docs, ...smallSnap.docs]
+      .filter((entry) => !isLegacyPlaceholderDocumentId(entry.id))
+      .map((entry) => jobTypeFieldsFromRecord(entry.data() as Record<string, unknown>))
   } catch {
     return []
   }
