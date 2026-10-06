@@ -185,8 +185,9 @@ export function parseAppUserDocument(userId: string, data: Record<string, unknow
   const isSuperAdmin = operativeMode ? false : rawIsSuperAdmin
   const role = operativeMode ? UserRole.OPERATIVE : (roleRaw as UserRole)
 
-  const assignedManagerUserIds = asStringArray(data.assignedManagerUserIds)
-  const legacyManager = asOptionalString(data.assignedManagerUserId)
+  const hasNoLineManager = data.hasNoLineManager === true
+  const assignedManagerUserIds = hasNoLineManager ? [] : asStringArray(data.assignedManagerUserIds)
+  const legacyManager = hasNoLineManager ? undefined : asOptionalString(data.assignedManagerUserId)
   const managerIds =
     assignedManagerUserIds.length > 0 ? assignedManagerUserIds : legacyManager ? [legacyManager] : []
 
@@ -210,7 +211,7 @@ export function parseAppUserDocument(userId: string, data: Record<string, unknow
     permissions,
     assignedManagerUserIds: managerIds.length ? managerIds : undefined,
     assignedManagerUserId: managerIds[0],
-    hasNoLineManager: data.hasNoLineManager === true,
+    hasNoLineManager,
     payBasis: storedPay.payBasis ?? undefined,
     dayRate: storedPay.payBasis === 'day' && storedPay.dayRate != null ? storedPay.dayRate : undefined,
     hourlyRate: storedPay.payBasis === 'hourly' && storedPay.hourlyRate != null ? storedPay.hourlyRate : undefined,

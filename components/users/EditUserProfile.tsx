@@ -38,6 +38,7 @@ import {
   OPERATIVE_PERMISSION_TOGGLES,
 } from '@/lib/staff/userPermissionDescriptions'
 import { SUPER_ADMIN_SUCCESSOR_EMPTY, superAdminSuccessors } from '@/lib/staff/superAdminTransfer'
+import { displayedLineManagerId, userWithLineManagerChoice } from '@/lib/firebase/userPayload'
 import {
   PanelHeader,
   SectionLabel,
@@ -168,6 +169,8 @@ function profileSnapshot(
     mobileNumber: user.mobileNumber || '',
     employmentType: user.employmentType,
     assignedManagerUserId: user.assignedManagerUserId || '',
+    assignedManagerUserIds: user.assignedManagerUserIds ?? [],
+    hasNoLineManager: user.hasNoLineManager === true,
     dayRate: user.dayRate ?? null,
     hourlyRate: user.hourlyRate ?? null,
     payBasis: user.payBasis ?? null,
@@ -200,7 +203,7 @@ export function EditUserProfile({
 }) {
   const router = useRouter()
   const { user: currentUser, organization, reloadSignedInProfile } = useAuthStore()
-  const { users, loadUsers, setListedUserActive } = useOrgUserStore()
+  const { users, loadUsers, setListedUserActive, patchListedUser } = useOrgUserStore()
   const { operatives, loadOperatives } = useOperativeStore()
   const { getUser, saveUser, setUserActive, deleteUser, sendPasswordReset, applyAccountType, syncLinkedOperative, transferSuperAdmin } =
     useUserStore()
@@ -209,6 +212,7 @@ export function EditUserProfile({
   const [target, setTarget] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [typeSaving, setTypeSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
@@ -258,7 +262,7 @@ export function EditUserProfile({
           user.id !== target?.id &&
           !user.permissions.operativeMode &&
           user.isActive &&
-          (user.permissions.manager || user.permissions.adminAccess)
+          (user.isSuperAdmin || user.permissions.manager || user.permissions.adminAccess)
       ),
     [users, target?.id]
   )
@@ -339,22 +343,34 @@ export function EditUserProfile({
       toSave = applyAccountType(toSave, draftAccountType)
       toSave = { ...toSave, permissions: draftTypePermissions }
     }
-    setListedUserActive(toSave.id, toSave.isActive)
-    setTarget(toSave)
-    setDraftAccountType(null)
-    setDraftTypePermissions(null)
-    setShowChangeType(false)
-    setBaseline(profileSnapshot(toSave, null, null))
-    setSaved(true)
-    window.setTimeout(() => setSaved(false), 3000)
-    setSuccess(toSave.isActive ? 'Profile saved.' : 'User deactivated.')
+    setSaving(true)
+    try {
+      await saveUser(toSave, organization.id, previous.email)
+      patchListedUser(toSave)
+      setListedUserActive(toSave.id, toSave.isActive)
+      setTarget(toSave)
+      setDraftAccountType(null)
+      setDraftTypePermissions(null)
+      setShowChangeType(false)
+      setBaseline(profileSnapshot(toSave, null, null))
+      setSaved(true)
+      window.setTimeout(() => setSaved(false), 3000)
+      setSuccess(toSave.isActive ? 'Profile saved.' : 'User deactivated.')
+      void setUserActive(toSave.id, toSave.isActive, organization.id).catch(() => undefined)
+      void syncLinkedOperative(organization.id, toSave, operatives).catch(() => undefined)
+    } catch (err: unknown) {
+      setTarget(previous)
+      setListedUserActive(previous.id, previous.isActive)
+      setBaseline(previousBaseline)
+      setSaved(false)
+      setSuccess(null)
+      setError(err instanceof Error ? err.message : 'Failed to save user')
+      setSaving(false)
+      return
+    }
     setSaving(false)
     void (async () => {
       try {
-        await saveUser(toSave, organization.id, previous.email)
-        void setUserActive(toSave.id, toSave.isActive, organization.id).catch(() => undefined)
-        void syncLinkedOperative(organization.id, toSave, operatives).catch(() => undefined)
-        void loadUsers(organization.id, { force: true }).catch(() => undefined)
         try {
           const { loadOperativeDayRateHistory, recordDayRateChangeIfNeeded } = await import(
             '@/lib/timesheets/dayRateHistoryStorage'
@@ -378,13 +394,8 @@ export function EditUserProfile({
         } catch {
           // History write is best-effort so a profile save still succeeds.
         }
-      } catch (err: unknown) {
-        setTarget(previous)
-        setListedUserActive(previous.id, previous.isActive)
-        setBaseline(previousBaseline)
-        setSaved(false)
-        setSuccess(null)
-        setError(err instanceof Error ? err.message : 'Failed to save user')
+      } catch {
+        // The profile document is already saved. History is best-effort.
       }
     })()
   }
@@ -503,6 +514,28 @@ export function EditUserProfile({
     setSuccess(`Account type set to ${accountType}. Press Save to apply.`)
   }
 
+  const persistAccountType = async (accountType: 'operative' | 'manager' | 'admin') => {
+    if (!target || !organization?.id || typeSaving) return
+    const next = applyAccountType(cloneUser(target), accountType)
+    setTypeSaving(true)
+    setError(null)
+    setSuccess(null)
+    try {
+      await saveUser(next, organization.id, target.email)
+      patchListedUser(next)
+      setTarget(next)
+      setDraftAccountType(null)
+      setDraftTypePermissions(null)
+      setShowChangeType(false)
+      setBaseline(profileSnapshot(next, null, null))
+      setSuccess(accountType === 'admin' ? 'This user is now an administrator.' : `Account type set to ${accountType}.`)
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Could not change account type')
+    } finally {
+      setTypeSaving(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex h-64 items-center justify-center">
@@ -534,16 +567,19 @@ export function EditUserProfile({
       {payDialogs}
       <PanelHeader
         title={pageTitle}
-        onBack={() => router.push(backHref)}
+        onBack={() => {
+          if (saving || typeSaving) return
+          router.push(backHref)
+        }}
         rightAction={
           canEdit && dirty ? (
             <button
               type="button"
-              disabled={saving}
+              disabled={saving || typeSaving}
               onClick={() => handleSave()}
               className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 disabled:opacity-50"
             >
-              {saving ? 'Saving…' : 'Save'}
+              {saving || typeSaving ? 'Saving…' : 'Save'}
             </button>
           ) : canEdit ? (
             <span className="px-2 text-[11px] font-medium text-slate-400">No changes</span>
@@ -563,6 +599,11 @@ export function EditUserProfile({
       {success && !saved && (
         <div className="mt-4">
           <SuccessBanner message={success} />
+        </div>
+      )}
+      {typeSaving && (
+        <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+          Saving account type…
         </div>
       )}
       {draftAccountType && (
@@ -663,7 +704,26 @@ export function EditUserProfile({
       </SettingsCard>
 
       {/* Permissions */}
-      {canEditMatrix && effectivePermissions && (
+      {target.isSuperAdmin ? (
+        <>
+          <SectionLabel label="Permissions" />
+          <SettingsCard>
+            <div className="flex items-start gap-3 p-4">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-orange-50 text-orange-600">
+                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                  <path d="M12 2a5 5 0 0 0-5 5v3H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2h-1V7a5 5 0 0 0-5-5Zm-3 8V7a3 3 0 1 1 6 0v3H9Z" />
+                </svg>
+              </div>
+              <div>
+                <p className="text-[13px] font-semibold text-orange-600">Super Admin</p>
+                <p className="mt-1 text-[11px] leading-relaxed text-slate-500">
+                  The Super Admin&apos;s permissions cannot be changed. Super Admin is passed on with Change Super Admin.
+                </p>
+              </div>
+            </div>
+          </SettingsCard>
+        </>
+      ) : canEditMatrix && effectivePermissions && (
         <>
           <SectionLabel label={`${roleLabel(target)} access`} />
           <SettingsCard>
@@ -698,12 +758,12 @@ export function EditUserProfile({
           <SectionLabel label={setupSectionTitle(target)} />
           <SettingsCard>
             <div className="space-y-4 p-4">
-              {(target.permissions.operativeMode || target.permissions.manager) && (
-                <FormField label="Line manager" hint="Same as iOS — leave as “No line manager” if not applicable.">
+              {(target.permissions.operativeMode || target.permissions.manager || target.permissions.adminAccess) && (
+                <FormField label="Line manager" hint="Same as iOS. Choose No line manager when this person has none.">
                   <Select
-                    value={target.assignedManagerUserId || ''}
-                    disabled={!canEdit}
-                    onChange={(e) => setTarget({ ...target, assignedManagerUserId: e.target.value })}
+                    value={displayedLineManagerId(target)}
+                    disabled={!canEdit || saving || typeSaving}
+                    onChange={(e) => setTarget(userWithLineManagerChoice(target, e.target.value))}
                   >
                     <option value="">No line manager</option>
                     {managers.map((manager) => (
@@ -1195,8 +1255,8 @@ export function EditUserProfile({
           <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
             <h2 className="text-lg font-bold text-slate-900">Make this user an administrator?</h2>
             <p className="mt-2 text-sm text-slate-600">
-              Administrators have full access, including user management, organisation settings, and warnings. This
-              takes effect when you press Save.
+              {target.firstName} {target.surname} will get full administrator access, including user management and
+              organisation settings. Only another administrator can change this later.
             </p>
             <div className="mt-5 flex justify-end gap-2">
               <button
@@ -1210,11 +1270,12 @@ export function EditUserProfile({
                 type="button"
                 onClick={() => {
                   setConfirmAdmin(false)
-                  applyDraftAccountType('admin')
+                  void persistAccountType('admin')
                 }}
-                className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+                disabled={typeSaving}
+                className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
               >
-                Make administrator
+                {typeSaving ? 'Saving…' : 'Yes, make administrator'}
               </button>
             </div>
           </div>
