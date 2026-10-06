@@ -25,6 +25,7 @@ import {
   loadOrganisationQualifications,
   mergeQualificationTemplates,
   assignedQualificationTemplates,
+  qualificationEditCanSave,
   qualificationNameTaken,
   restoreOrganisationQualificationsFromAssignments,
   saveOrganisationQualification,
@@ -280,7 +281,7 @@ export function QualificationsScreen({ initialTab }: { initialTab?: Tab } = {}) 
                 <Input value={name} onChange={(e) => setName(e.target.value)} />
               </Field>
               <div className="mt-6 flex flex-wrap gap-3">
-                <Button variant="primary" disabled={saving || !name.trim()} type="submit">
+                <Button variant="primary" disabled={!qualificationEditCanSave(name, editing.name, saving)} type="submit">
                   Save
                 </Button>
                 <Button variant="danger" onClick={handleDelete}>
