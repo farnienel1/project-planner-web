@@ -13,6 +13,13 @@ import { db } from '@/lib/firebase/config'
 import { newUuid, parseFirestoreDate } from '@/lib/firebase/firestoreUtils'
 import type { Operative, Qualification } from '@/types'
 
+/** iOS EditOrganisationQualificationView.canSave — unchanged trimmed name cannot be saved. */
+export function qualificationEditCanSave(name: string, original: string, saving = false): boolean {
+  const trimmed = name.trim()
+  if (!trimmed || saving) return false
+  return trimmed !== original.trim()
+}
+
 function parseQualificationDoc(id: string, data: Record<string, unknown>): Qualification | null {
   const name = typeof data.name === 'string' ? data.name.trim() : ''
   if (!name) return null
