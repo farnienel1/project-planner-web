@@ -30,3 +30,24 @@ export function filterUsersForManageTabAndSegment(
 export function countUsersForTab(users: User[], tab: ManageUsersTab, segment: RosterSegment): number {
   return filterUsersForManageTabAndSegment(users, tab, segment).length
 }
+
+export type ManageUsersListPhase = 'loading' | 'error' | 'empty' | 'ready'
+
+/**
+ * The roster store starts empty with loading false. That is not an empty company.
+ * Show the empty copy only after a load for this organisation has finished.
+ */
+export function manageUsersListPhase(input: {
+  organizationId: string | null | undefined
+  rosterLoadedOrgId: string | null
+  userCount: number
+  filteredCount: number
+  error: string | null
+}): ManageUsersListPhase {
+  const orgId = input.organizationId ?? null
+  const rosterSettled = Boolean(orgId) && input.rosterLoadedOrgId === orgId
+  if (input.userCount === 0 && !rosterSettled) return 'loading'
+  if (input.userCount === 0 && input.error) return 'error'
+  if (input.filteredCount === 0) return 'empty'
+  return 'ready'
+}

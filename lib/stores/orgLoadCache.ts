@@ -10,6 +10,16 @@ type CacheEntry = {
   orgId: string | null
   loadedAt: number
   inflight: Promise<void> | null
+  /** Org the in-flight promise is loading. Set before `orgId`, which is only recorded after success. */
+  inflightOrgId: string | null
+}
+
+/** The loader finished without applying data. Do not cache that as a successful empty load. */
+export class OrgLoadNotCached extends Error {
+  constructor() {
+    super('Organisation load was not applied')
+    this.name = 'OrgLoadNotCached'
+  }
 }
 
 const entries = new Map<string, CacheEntry>()
@@ -17,7 +27,7 @@ const entries = new Map<string, CacheEntry>()
 function getEntry(key: string): CacheEntry {
   const existing = entries.get(key)
   if (existing) return existing
-  const created: CacheEntry = { orgId: null, loadedAt: 0, inflight: null }
+  const created: CacheEntry = { orgId: null, loadedAt: 0, inflight: null, inflightOrgId: null }
   entries.set(key, created)
   return created
 }
@@ -44,7 +54,9 @@ export async function runOrgLoad(
   if (shouldSkipOrgLoad(key, organizationId, options)) return
 
   const entry = getEntry(key)
-  if (entry.inflight && entry.orgId === organizationId && !options?.force) {
+  // `orgId` is still null while the first load is running. Join that promise anyway,
+  // or a second caller starts a parallel fetch that can finish empty and replace the roster.
+  if (entry.inflight && entry.inflightOrgId === organizationId && !options?.force) {
     await entry.inflight
     return
   }
@@ -60,6 +72,7 @@ export async function runOrgLoad(
         return
       } catch (error) {
         lastError = error
+        if (error instanceof OrgLoadNotCached) return
         entry.loadedAt = 0
         if (attempt === LOAD_ATTEMPTS - 1 || !isRetryableAuthLoadError(error)) break
         await new Promise((resolve) => setTimeout(resolve, authLoadRetryDelayMs(attempt)))
@@ -67,11 +80,20 @@ export async function runOrgLoad(
     }
     console.warn('Organisation data load failed:', lastError)
   })().finally(() => {
-    if (entry.inflight === promise) entry.inflight = null
+    if (entry.inflight === promise) {
+      entry.inflight = null
+      entry.inflightOrgId = null
+    }
   })
 
   entry.inflight = promise
+  entry.inflightOrgId = organizationId
   await promise
+}
+
+export function isOrgLoadInFlight(key: string, organizationId: string): boolean {
+  const entry = entries.get(key)
+  return Boolean(entry?.inflight && entry.inflightOrgId === organizationId)
 }
 
 export function invalidateOrgLoad(key: string): void {

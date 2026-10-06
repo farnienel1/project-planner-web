@@ -7,7 +7,7 @@ import { UserRole, type SiteAudit, type SiteAuditItem, type User } from '@/types
 import { parseOrgUser } from '@/lib/firebase/parseUser'
 import { dedupeUsersByEmail } from '@/lib/staff/userRosterUtils'
 import { mergeRetainedRoster, missingOrganizationIdPatch, retainScopedRows, rosterParseRecord } from '@/lib/staff/rosterRetain'
-import { runOrgLoad, invalidateOrgLoad } from '@/lib/stores/orgLoadCache'
+import { isOrgLoadInFlight, OrgLoadNotCached, runOrgLoad, invalidateOrgLoad, shouldSkipOrgLoad } from '@/lib/stores/orgLoadCache'
 import { newUuid, parseFirestoreDate, parseOptionalString, parseString, parseUuid } from '@/lib/firebase/firestoreUtils'
 
 function parseAuditItems(rows: unknown): SiteAuditItem[] {
@@ -361,12 +361,16 @@ interface OrgUserState {
   users: User[]
   loading: boolean
   error: string | null
+  /** Organisation whose roster load has finished. Empty users before this is still loading. */
+  rosterLoadedOrgId: string | null
   loadUsers: (organizationId: string, options?: { force?: boolean }) => Promise<void>
   setListedUserActive: (userId: string, isActive: boolean) => void
 }
 
 let listedUserRevision = 0
 let listedRosterOrgId = ''
+let rosterLoadGeneration = 0
+const ORG_USER_LOAD_KEY = 'orgUserStore:users'
 
 function rosterStorageKey(organizationId: string): string {
   return `pp.roster:${organizationId}`
@@ -420,48 +424,74 @@ export const useOrgUserStore = create<OrgUserState>((set, get) => ({
   users: [],
   loading: false,
   error: null,
+  rosterLoadedOrgId: null,
 
   loadUsers: async (organizationId, options?: { force?: boolean }) => {
     const revisionAtStart = listedUserRevision
+    const willLoad = !shouldSkipOrgLoad(ORG_USER_LOAD_KEY, organizationId, options)
+    if (willLoad) {
+      const inMemory = listedRosterOrgId === organizationId ? get().users : []
+      const previous = inMemory.length > 0 ? inMemory : readStoredRoster(organizationId)
+      if (inMemory.length === 0 && previous.length > 0) {
+        listedRosterOrgId = organizationId
+        set({ users: previous, loading: true, error: null })
+      } else {
+        set({ loading: true, error: null })
+      }
+    }
+
     await runOrgLoad(
-      'orgUserStore:users',
+      ORG_USER_LOAD_KEY,
       organizationId,
       async () => {
+        const generation = ++rosterLoadGeneration
         const inMemory = listedRosterOrgId === organizationId ? get().users : []
         const previous = inMemory.length > 0 ? inMemory : readStoredRoster(organizationId)
-        if (previous.length === 0) set({ loading: true, error: null })
-        else set({ error: null })
         try {
           const loaded = await fetchOrganisationRoster(organizationId)
-          if (revisionAtStart !== listedUserRevision) {
+          if (generation !== rosterLoadGeneration) throw new OrgLoadNotCached()
+          const live = listedRosterOrgId === organizationId ? get().users : []
+          if (revisionAtStart !== listedUserRevision && live.length > 0) {
             set({ loading: false })
-            return
+            throw new OrgLoadNotCached()
           }
+          const baseline = live.length > previous.length ? live : previous
           const confirmedMissing = loaded.complete
-            ? await confirmMissingUserDocuments(previous, loaded.presentIds, loaded.presentEmails)
+            ? await confirmMissingUserDocuments(baseline, loaded.presentIds, loaded.presentEmails)
             : new Set<string>()
-          const users = mergeRetainedRoster(previous, loaded.users, confirmedMissing).sort((a, b) => {
+          if (generation !== rosterLoadGeneration) throw new OrgLoadNotCached()
+          const users = mergeRetainedRoster(baseline, loaded.users, confirmedMissing).sort((a, b) => {
             if (a.isSuperAdmin !== b.isSuperAdmin) return a.isSuperAdmin ? -1 : 1
             return a.email.localeCompare(b.email)
           })
           listedRosterOrgId = organizationId
           writeStoredRoster(organizationId, users)
-          set({ users, loading: false, error: null })
+          set({ users, loading: false, error: null, rosterLoadedOrgId: organizationId })
         } catch (error: unknown) {
+          if (error instanceof OrgLoadNotCached) {
+            if (generation === rosterLoadGeneration) set({ loading: false })
+            throw error
+          }
+          if (generation !== rosterLoadGeneration) throw new OrgLoadNotCached()
           set({
             error: error instanceof Error ? error.message : 'Failed to load users',
             loading: false,
+            rosterLoadedOrgId: organizationId,
           })
           throw error
         }
       },
       options
     )
+
+    if (get().loading && !isOrgLoadInFlight(ORG_USER_LOAD_KEY, organizationId)) {
+      set({ loading: false })
+    }
   },
 
   setListedUserActive: (userId, isActive) => {
     listedUserRevision += 1
-    invalidateOrgLoad('orgUserStore:users')
+    invalidateOrgLoad(ORG_USER_LOAD_KEY)
     set({
       users: get().users.map((user) =>
         user.id === userId ? { ...user, isActive, updatedAt: new Date() } : user

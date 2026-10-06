@@ -35,7 +35,7 @@ export function ManagersListScreen() {
     loadManagers,
     cleanupLegacyPlaceholderManagers,
   } = useOperativeStore()
-  const { users, loading: usersLoading, loadUsers } = useOrgUserStore()
+  const { users, loading: usersLoading, rosterLoadedOrgId, loadUsers } = useOrgUserStore()
   const [segment, setSegment] = useState<RosterSegment>('active')
   const [search, setSearch] = useState('')
   const [cleaning, setCleaning] = useState(false)
@@ -68,7 +68,8 @@ export function ManagersListScreen() {
     return filterRosterByNameQuery(bySegment, search, phones)
   }, [allManagerUsers, segment, search, phones])
 
-  const loading = usersLoading || managersLoading
+  const rosterPending = users.length === 0 && rosterLoadedOrgId !== organization?.id
+  const loading = usersLoading || managersLoading || rosterPending
   const counts = {
     active: allManagerUsers.filter((entry) => matchesRosterSegment(entry, 'active')).length,
     inactive: allManagerUsers.filter((entry) => matchesRosterSegment(entry, 'inactive')).length,

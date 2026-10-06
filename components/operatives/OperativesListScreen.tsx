@@ -29,7 +29,7 @@ export function OperativesListScreen() {
   const router = useRouter()
   const { organization, user } = useAuthStore()
   const { operatives, loading: operativesLoading, loadOperatives } = useOperativeStore()
-  const { users, loading: usersLoading, loadUsers } = useOrgUserStore()
+  const { users, loading: usersLoading, rosterLoadedOrgId, loadUsers } = useOrgUserStore()
   const [segment, setSegment] = useState<RosterSegment>('active')
   const [search, setSearch] = useState('')
 
@@ -60,7 +60,8 @@ export function OperativesListScreen() {
     return filterRosterByNameQuery(bySegment, search, phones)
   }, [allOperativeUsers, segment, search, phones])
 
-  const loading = operativesLoading || usersLoading
+  const rosterPending = users.length === 0 && rosterLoadedOrgId !== organization?.id
+  const loading = operativesLoading || usersLoading || rosterPending
   const counts = {
     active: allOperativeUsers.filter((entry) => matchesRosterSegment(entry, 'active')).length,
     inactive: allOperativeUsers.filter((entry) => matchesRosterSegment(entry, 'inactive')).length,
