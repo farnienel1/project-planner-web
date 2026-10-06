@@ -410,7 +410,7 @@ export function OperativeAnnualLeaveManagement({
         <div className="fixed inset-0 z-50 grid place-items-end bg-black/40 p-4 sm:place-items-center">
           <div className="w-full max-w-sm rounded-2xl bg-white p-4 shadow-xl">
             <p className="text-base font-bold text-slate-900">
-              Decline request
+              {isCancellationRequest(declineTarget) ? 'Decline this cancellation?' : 'Decline this request?'}
             </p>
             <p className="mt-1 text-sm text-slate-600">
               {resolvePersonName(declineTarget, users, operatives)} · {formatLeaveRange(declineTarget)}

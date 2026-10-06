@@ -123,7 +123,8 @@ export function ProjectsListScreen() {
       {visible.length === 0 ? (
         <EmptyState
           icon={<FolderIcon className="h-12 w-12" />}
-          title={unmatchedOperative ? 'Jobs couldn’t be matched to you' : 'Nothing here right now. Tap + to start a project.'}
+          title={unmatchedOperative ? 'Jobs couldn’t be matched to you' : 'No projects found'}
+          subtitle={unmatchedOperative ? undefined : 'Get started by adding your first project'}
         />
       ) : (
         <>
@@ -161,7 +162,10 @@ export function ProjectsListScreen() {
           {emptySearch ? (
             <p className="py-10 text-center text-[15px] text-[var(--ink3)]">No projects match your search.</p>
           ) : emptyDueToFilter ? (
-            <EmptyState title="No projects in this filter" />
+            <EmptyState
+              title="No projects found"
+              subtitle='The current filter hides older or completed jobs. Choose “All” or “Completed” above to see everything.'
+            />
           ) : filtered.length === 0 ? (
             <EmptyState title="No projects found" subtitle="Get started by adding your first project" />
           ) : (
