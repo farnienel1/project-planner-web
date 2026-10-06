@@ -164,6 +164,7 @@ export function QualificationsScreen({ initialTab }: { initialTab?: Tab } = {}) 
         id: editing.id,
         name,
         createdAt: editing.createdAt,
+        hasEndDate: editing.hasEndDate === true,
       })
       setEditId(null)
       await reloadTemplates()

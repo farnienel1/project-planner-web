@@ -1,11 +1,31 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { assignedQualificationTemplates, mergeQualificationTemplates, qualificationNameTaken } from './orgQualificationStorage.ts'
+import {
+  assignedQualificationTemplates,
+  mergeQualificationTemplates,
+  qualificationNameTaken,
+  qualificationTemplateFirestoreFields,
+} from './orgQualificationStorage.ts'
 import type { Operative, Qualification } from '../../types/index.ts'
 
 const sample: Qualification[] = [
   { id: 'A', name: 'CSCS', hasEndDate: false, createdAt: new Date(), updatedAt: new Date() },
 ]
+
+test('a qualification template write includes the fields iOS requires', () => {
+  const createdAt = new Date('2026-03-01T00:00:00.000Z')
+  const fields = qualificationTemplateFirestoreFields({
+    name: ' CSCS ',
+    hasEndDate: true,
+    createdAt,
+    updatedAt: createdAt,
+  })
+  assert.equal(fields.name, 'CSCS')
+  assert.equal(fields.hasEndDate, true)
+  assert.ok(fields.createdAt)
+  assert.ok(fields.updatedAt)
+  assert.equal('endDate' in fields, false)
+})
 
 test('qualificationNameTaken is case-insensitive and ignores the row being edited', () => {
   assert.equal(qualificationNameTaken('cscs', sample), true)
