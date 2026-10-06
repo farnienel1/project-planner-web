@@ -17,6 +17,7 @@ import {
   FlagIcon,
   ShieldCheckIcon,
   Squares2X2Icon,
+  UserGroupIcon,
 } from '@heroicons/react/24/solid'
 import {
   daysLeftCaption,
@@ -27,7 +28,10 @@ import {
 import { visibleJobTypeLabel } from '@/lib/jobTypes/jobTypesStorage'
 import { formatSiteAddress } from '@/lib/maps/siteAddress'
 import { useAuthStore } from '@/lib/stores/authStore'
-import { canBookWork, canManageWorkCatalogue, canViewMaterials, canViewSiteAudit } from '@/lib/permissions'
+import { canBookWork, canManageWorkCatalogue, canViewMaterials, canViewSiteAudit, hasAdminAccess } from '@/lib/permissions'
+import { canViewProjectActiveUsers } from '@/lib/projects/activeUsers'
+import { useActiveUserBadge } from '@/components/projects/features/ProjectActiveUsersSection'
+import { useOperativeStore } from '@/lib/stores/operativeStore'
 import { isOperativeMode } from '@/lib/navigation/menuPermissions'
 import { jobHubTiles } from '@/lib/projects/jobHubTiles'
 import { canSeeJobVariations } from '@/lib/variations/variationAccess'
@@ -54,6 +58,7 @@ const TAB_META: Record<string, { hue: SectionHue; icon: typeof Squares2X2Icon }>
   'site-audit': { hue: 'daily', icon: CameraIcon },
   location: { hue: 'proj', icon: MapPinIcon },
   variations: { hue: 'warn', icon: DocumentTextIcon },
+  'active-users': { hue: 'user', icon: UserGroupIcon },
 }
 
 function tabFromPath(pathname: string, basePath: string): string {
@@ -68,6 +73,7 @@ function tabFromPath(pathname: string, basePath: string): string {
   if (rest.startsWith('site-audit')) return 'site-audit'
   if (rest.startsWith('location')) return 'location'
   if (rest.startsWith('variations')) return 'variations'
+  if (rest.startsWith('active-users')) return 'active-users'
   return 'overview'
 }
 
@@ -100,6 +106,14 @@ export function ProjectWorkspaceChrome({
   const showBook = canBookWork(user) && !isOperativeMode(user)
   const showViewTile = canConfigureProjectVisibility(user, isSmallWork)
   const isOperative = isOperativeMode(user)
+  const { managers: rosterManagers, loadManagers } = useOperativeStore()
+  const showActiveUsers = canViewProjectActiveUsers(user, rosterManagers, project)
+  const activeUserCount = useActiveUserBadge(project, showActiveUsers)
+
+  useEffect(() => {
+    if (!organization?.id) return
+    if (hasAdminAccess(user) || user?.permissions.manager) void loadManagers(organization.id)
+  }, [organization?.id, user, loadManagers])
   const active = tabFromPath(pathname, basePath)
   const hideTabs = hideWorkspaceTabs(pathname)
   const typeLabel = visibleJobTypeLabel(project.jobType, project.customJobType)
@@ -128,8 +142,13 @@ export function ProjectWorkspaceChrome({
     showViewTile,
     canViewMaterials: canViewMaterials(user),
     canViewSiteAudit: canViewSiteAudit(user),
+    showActiveUsers,
     locationCaption: project.addressLine1 || undefined,
-  }).map((tile) => (tile.href === 'tasks' ? { ...tile, badge: taskCount } : tile))
+  }).map((tile) => {
+    if (tile.href === 'tasks') return { ...tile, badge: taskCount }
+    if (tile.href === 'active-users' && activeUserCount) return { ...tile, badge: activeUserCount }
+    return tile
+  })
 
   const tabs = [
     { href: '', label: 'Overview', key: 'overview', badge: undefined as number | undefined },

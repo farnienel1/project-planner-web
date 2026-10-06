@@ -151,6 +151,7 @@ export type SubcontractorBookingRow = {
   timeSlot: string
   workStartTime?: string
   workEndTime?: string
+  isBreakRemoved?: boolean
   status?: string
   bookedContactIds?: string[]
   bookedOperativeNames?: string[]
