@@ -1,11 +1,11 @@
 import { isActiveBookingStatus } from '@/lib/ios-parity/enums'
 import { addLondonDays, dayKey, londonIsoWeekday, londonMidnight, londonMinutesOfDay } from '@/lib/ios-parity/londonTime'
-import { materialCutoffTimeLabel } from '@/lib/settings/orgHubUtils'
 import type { Booking, MaterialSendRecord, Project, ProjectMaterialLine } from '@/types'
 
 export type MissedMaterialOrderWarning = {
   id: string
   type: 'missed_material_order'
+  title: 'Material order not placed'
   projectId: string
   projectLabel: string
   date: Date
@@ -18,10 +18,8 @@ export function isMaterialLineOrdered(
   line: ProjectMaterialLine,
   sendRecords: MaterialSendRecord[]
 ): boolean {
-  const status = `${line.status || ''}`.toLowerCase()
-  if (status.includes('sent') || status.includes('order')) {
-    return true
-  }
+  const status = `${line.status || ''}`.trim().toLowerCase()
+  if (status === 'ordered') return true
   return sendRecords.some(
     (record) =>
       record.requestType === 'order' &&
@@ -75,7 +73,7 @@ export function computeMissedMaterialOrderWarnings(
 
   const projectsById = new Map(projects.map((project) => [project.id, project]))
   const warnings: MissedMaterialOrderWarning[] = []
-  const cutoffLabel = materialCutoffTimeLabel(cutoff)
+  const cutoffLabel = `${String(Math.floor(cutoff / 60)).padStart(2, '0')}:${String(cutoff % 60).padStart(2, '0')}`
 
   for (const projectId of projectIdsWithTomorrowBookings) {
     const project = projectsById.get(projectId)
@@ -91,13 +89,14 @@ export function computeMissedMaterialOrderWarnings(
     const message =
       tomorrowMaterials.length === 0
         ? `No materials have been ordered for ${jobNumber} tomorrow's work (cut-off ${cutoffLabel}).`
-        : `Materials for ${jobNumber} were not fully ordered by ${cutoffLabel} for tomorrow's work (${unordered.length} line${
+        : `Materials for ${jobNumber} were not fully ordered by the cut-off ${cutoffLabel} for tomorrow's work (${unordered.length} line${
             unordered.length === 1 ? '' : 's'
           } still not ordered).`
 
     warnings.push({
       id: `materials-${projectId}-${tomorrowKey}`,
       type: 'missed_material_order',
+      title: 'Material order not placed',
       projectId,
       projectLabel: `${project.jobNumber} ${project.siteName}`.trim() || jobNumber,
       date: tomorrow,

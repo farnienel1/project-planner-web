@@ -258,14 +258,14 @@ export function WarningsPanel({ onBack }: { onBack: () => void }) {
           />
           <ModeOption
             selected={mode === 'endOfInvoicingPeriod'}
-            label="End of invoicing period"
-            description="Scan through the end of your current billing period. Adjusts automatically each period."
+            label="Invoicing period"
+            description="Scans every past, present, and future day in the active payment run."
             onClick={() => patch({ clashLookaheadMode: 'endOfInvoicingPeriod' })}
           />
           <ModeOption
             selected={mode === 'endOfWorkingWeek'}
-            label="End of working week"
-            description="Scan through Friday of the current working week. Resets each Monday."
+            label="Full week"
+            description="Scans Monday–Sunday, including days already past."
             onClick={() => patch({ clashLookaheadMode: 'endOfWorkingWeek' })}
           />
 
@@ -302,14 +302,13 @@ export function WarningsPanel({ onBack }: { onBack: () => void }) {
 
           {mode === 'endOfInvoicingPeriod' && (
             <div className="flex items-start gap-2.5 rounded-xl border border-blue-200 bg-blue-50 p-3 text-xs text-blue-700">
-              Warnings will scan through the end of your current invoicing period. This window resets automatically when
-              the new period begins.
+              Invoicing period scans every past, present, and future day in the active payment run.
             </div>
           )}
 
           {mode === 'endOfWorkingWeek' && (
             <div className="flex items-start gap-2.5 rounded-xl border border-blue-200 bg-blue-50 p-3 text-xs text-blue-700">
-              Warnings will scan through Friday of the current working week, resetting each Monday.
+              Full week scans Monday–Sunday, including days already past.
             </div>
           )}
         </div>

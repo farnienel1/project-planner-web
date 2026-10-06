@@ -10,13 +10,18 @@ import { ianaTimeZoneForCountry } from '@/lib/orgTime/orgTimeZone'
 export type WeekendPayrollSettings = {
   allHoursAtMultiplierMode: boolean
   allHoursMultiplier: number
-  /** Hours inside the defined window count at standard rate (iOS parity). */
+  /**
+   * In-memory window start. Firestore stores this as `customStandardStart`.
+   * `definedWindowStart` is only read from older web documents.
+   */
   definedWindowStart?: string
+  /** In-memory window end. Firestore stores this as `customStandardEnd`. */
   definedWindowEnd?: string
+  /** In-memory paid hours for the window. Firestore stores this as `countsAsHours`. */
   countsAsStandardHours?: number
-  /** Multiplier for hours outside the defined window on this day (iOS parity). */
+  /** In-memory outside-window multiplier. Firestore stores `outsideStandardWindowMultiplier`. */
   outsideWindowMultiplier?: number
-  /** Sunday only — mirror Saturday settings when enabled. */
+  /** Sunday only, in memory. Firestore stores `sundaySameAsSaturday` on the policy. */
   sameAsSaturday?: boolean
 }
 
@@ -36,6 +41,8 @@ export type OrgPayrollTimePolicy = {
   weekdayOutsideStandardMultiplier: number
   saturday: WeekendPayrollSettings
   sunday: WeekendPayrollSettings
+  /** iOS `breakPaid`. Round-tripped so a web save does not drop it. */
+  breakPaid?: boolean
 }
 
 export type OrgAnnualLeaveDefaults = {
@@ -77,6 +84,12 @@ export type OrganizationDetails = {
   name: string
   countryCode?: string
   currency?: string
+  currencyCode?: string
+  bankHolidayRegionId?: string
+  documentAbbreviation?: string
+  officeAddressLine1?: string
+  officeCity?: string
+  officePostcode?: string
   creatorUserId?: string
   companyLogoURL?: string
   officeAddress?: {
@@ -145,7 +158,7 @@ export const DEFAULT_WARNING_DETECTION: OrgWarningDetectionSettings = {
 }
 
 export const DEFAULT_INVOICING: OrgInvoicingSettings = {
-  paymentRunMode: 'recurring_timeframe',
+  paymentRunMode: 'date_ranges',
   paymentDateMode: 'recurring_date',
   recurringRunStartDay: 'monday',
   recurringRunEndDay: 'sunday',
@@ -164,18 +177,35 @@ export const DEFAULT_MY_SCHEDULE: MyScheduleOptions = {
   customItemEnabled: {},
 }
 
+function firstPresent(data: Record<string, unknown>, keys: string[], fallback: unknown): unknown {
+  for (const key of keys) {
+    if (data[key] != null && data[key] !== '') return data[key]
+  }
+  return fallback
+}
+
 function parseWeekend(data: Record<string, unknown> | undefined, fallback: WeekendPayrollSettings): WeekendPayrollSettings {
   if (!data) return { ...fallback }
   return {
     allHoursAtMultiplierMode: data.allHoursAtMultiplierMode === true,
     allHoursMultiplier: Number(data.allHoursMultiplier ?? fallback.allHoursMultiplier),
-    definedWindowStart: String(data.definedWindowStart ?? fallback.definedWindowStart ?? '07:30'),
-    definedWindowEnd: String(data.definedWindowEnd ?? fallback.definedWindowEnd ?? '16:00'),
-    countsAsStandardHours: Number(data.countsAsStandardHours ?? fallback.countsAsStandardHours ?? 8),
-    outsideWindowMultiplier: Number(
-      data.outsideWindowMultiplier ?? fallback.outsideWindowMultiplier ?? 1.5
+    definedWindowStart: String(
+      firstPresent(data, ['customStandardStart', 'definedWindowStart'], fallback.definedWindowStart ?? '07:30')
     ),
-    sameAsSaturday: data.sameAsSaturday === true,
+    definedWindowEnd: String(
+      firstPresent(data, ['customStandardEnd', 'definedWindowEnd'], fallback.definedWindowEnd ?? '16:00')
+    ),
+    countsAsStandardHours: Number(
+      firstPresent(data, ['countsAsHours', 'countsAsStandardHours'], fallback.countsAsStandardHours ?? 8)
+    ),
+    outsideWindowMultiplier: Number(
+      firstPresent(
+        data,
+        ['outsideStandardWindowMultiplier', 'outsideWindowMultiplier'],
+        fallback.outsideWindowMultiplier ?? 1.5
+      )
+    ),
+    sameAsSaturday: false,
   }
 }
 
@@ -192,7 +222,15 @@ export function parsePayrollPolicy(data: Record<string, unknown> | undefined): O
       data.weekdayOutsideStandardMultiplier ?? DEFAULT_PAYROLL_POLICY.weekdayOutsideStandardMultiplier
     ),
     saturday: parseWeekend(data.saturday as Record<string, unknown> | undefined, DEFAULT_WEEKEND),
-    sunday: parseWeekend(data.sunday as Record<string, unknown> | undefined, DEFAULT_SUNDAY),
+    sunday: (() => {
+      const sunday = parseWeekend(data.sunday as Record<string, unknown> | undefined, DEFAULT_SUNDAY)
+      const sunRaw = data.sunday as Record<string, unknown> | undefined
+      const same =
+        data.sundaySameAsSaturday === true ||
+        (data.sundaySameAsSaturday == null && sunRaw?.sameAsSaturday === true)
+      return { ...sunday, sameAsSaturday: same }
+    })(),
+    breakPaid: data.breakPaid === true,
   }
 }
 
@@ -206,7 +244,9 @@ export function payrollPolicyToFirestore(policy: OrgPayrollTimePolicy): Record<s
     breakWindowEnd: policy.breakWindowEnd,
     weekdayOutsideStandardMultiplier: policy.weekdayOutsideStandardMultiplier,
     saturday: weekendToFirestore(policy.saturday),
-    sunday: weekendToFirestore(policy.sunday),
+    sunday: weekendToFirestore({ ...policy.sunday, sameAsSaturday: false }),
+    sundaySameAsSaturday: policy.sunday.sameAsSaturday === true,
+    breakPaid: policy.breakPaid === true,
   }
 }
 
@@ -241,11 +281,11 @@ function weekendToFirestore(weekend: WeekendPayrollSettings): Record<string, unk
   return {
     allHoursAtMultiplierMode: weekend.allHoursAtMultiplierMode,
     allHoursMultiplier: weekend.allHoursMultiplier,
-    definedWindowStart: weekend.definedWindowStart ?? '07:30',
-    definedWindowEnd: weekend.definedWindowEnd ?? '16:00',
-    countsAsStandardHours: weekend.countsAsStandardHours ?? 8,
-    outsideWindowMultiplier: weekend.outsideWindowMultiplier ?? 1.5,
-    sameAsSaturday: weekend.sameAsSaturday === true,
+    useCustomStandardDayWindow: !weekend.allHoursAtMultiplierMode,
+    customStandardStart: weekend.definedWindowStart ?? '07:30',
+    customStandardEnd: weekend.definedWindowEnd ?? '16:00',
+    countsAsHours: weekend.countsAsStandardHours ?? 8,
+    outsideStandardWindowMultiplier: weekend.outsideWindowMultiplier ?? 1.5,
   }
 }
 
@@ -368,6 +408,22 @@ export function resolveWarningDetectionRaw(
   return merged
 }
 
+function stringIdList(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  return value.map((id) => String(id).trim()).filter(Boolean)
+}
+
+/** iOS key first. Older web documents used several fallback names. */
+export function excludedUnbookedUserIds(record: Record<string, unknown>): string[] {
+  if (Array.isArray(record.excludedUserIdsFromUnbookedWarnings)) {
+    return stringIdList(record.excludedUserIdsFromUnbookedWarnings)
+  }
+  for (const key of ['excludedUserIds', 'excludedUsers', 'excludedUserIdsFromWarnings', 'unbookedWarningExcludedUserIds']) {
+    if (Array.isArray(record[key])) return stringIdList(record[key])
+  }
+  return []
+}
+
 export function parseWarningDetection(data: Record<string, unknown> | undefined): OrgWarningDetectionSettings {
   const record = asSettingsRecord(data)
   if (!record) return { ...DEFAULT_WARNING_DETECTION, excludedUserIdsFromUnbookedWarnings: [] }
@@ -388,9 +444,7 @@ export function parseWarningDetection(data: Record<string, unknown> | undefined)
     ),
     clashLookaheadDays: clampClashLookaheadDays(days),
     includeWeekendsForUnbookedLabour: Boolean(record.includeWeekendsForUnbookedLabour),
-    excludedUserIdsFromUnbookedWarnings: Array.isArray(record.excludedUserIdsFromUnbookedWarnings)
-      ? (record.excludedUserIdsFromUnbookedWarnings as string[])
-      : [],
+    excludedUserIdsFromUnbookedWarnings: excludedUnbookedUserIds(record),
   }
 }
 
@@ -407,7 +461,7 @@ export function warningDetectionToFirestore(settings: OrgWarningDetectionSetting
 export function parseInvoicing(data: Record<string, unknown> | undefined): OrgInvoicingSettings {
   if (!data) return { ...DEFAULT_INVOICING }
   const paymentRunMode =
-    data.paymentRunMode === 'date_ranges' ? 'date_ranges' : 'recurring_timeframe'
+    data.paymentRunMode === 'recurring_timeframe' ? 'recurring_timeframe' : 'date_ranges'
   const paymentDateMode =
     data.paymentDateMode === 'specific_dates' ? 'specific_dates' : 'recurring_date'
   const paymentDates = Array.isArray(data.paymentDates)
@@ -433,8 +487,8 @@ export function invoicingToFirestore(settings: OrgInvoicingSettings): Record<str
     paymentRunMode: settings.paymentRunMode,
     paymentDateMode: settings.paymentDateMode,
     paymentRunDateRanges: settings.paymentRunDateRanges.map((range) => ({
-      startDate: range.startDay,
-      endDate: range.endDay,
+      startDay: range.startDay,
+      endDay: range.endDay,
     })),
     paymentDates: settings.paymentDates.map((d) => Number(d)),
     noteToUsers: settings.noteToUsers,
@@ -517,7 +571,16 @@ export async function loadOrganizationDetails(
     id: snap.id,
     name: String(data.name ?? ''),
     countryCode: data.countryCode as string | undefined,
-    currency: data.currency as string | undefined,
+    currency: (data.currencyCode as string | undefined) || (data.currency as string | undefined),
+    currencyCode: (data.currencyCode as string | undefined) || (settings.currencyCode as string | undefined),
+    bankHolidayRegionId:
+      (data.bankHolidayRegionId as string | undefined) ||
+      (settings.bankHolidayRegionId as string | undefined) ||
+      'GB-ENG-WLS',
+    documentAbbreviation: data.documentAbbreviation as string | undefined,
+    officeAddressLine1: data.officeAddressLine1 as string | undefined,
+    officeCity: data.officeCity as string | undefined,
+    officePostcode: data.officePostcode as string | undefined,
     creatorUserId: data.creatorUserId as string | undefined,
     companyLogoURL: data.companyLogoURL as string | undefined,
     officeAddress: data.officeAddress as OrganizationDetails['officeAddress'],

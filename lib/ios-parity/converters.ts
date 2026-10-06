@@ -386,6 +386,8 @@ export function parseBooking(
     workStartTime: asClockHhMm(data.workStartTime),
     workEndTime: asClockHhMm(data.workEndTime),
     isBreakRemoved: data.isBreakRemoved === true,
+    otMultiplierOverride: asNumber(data.otMultiplierOverride),
+    bookingGroupId: asOptionalString(data.bookingGroupId),
     createdAt: asDate(data.createdAt) || new Date(),
     updatedAt: asDate(data.updatedAt) || new Date(),
     organizationId,
@@ -409,6 +411,8 @@ export function serializeBooking(booking: Booking): Record<string, unknown> {
     workStartTime: booking.workStartTime,
     workEndTime: booking.workEndTime,
     isBreakRemoved: booking.isBreakRemoved === true,
+    otMultiplierOverride: booking.otMultiplierOverride ?? undefined,
+    bookingGroupId: booking.bookingGroupId ?? undefined,
     createdAt: booking.createdAt instanceof Date ? booking.createdAt : new Date(),
     updatedAt: new Date(),
   })
@@ -431,8 +435,18 @@ export function serializeBooking(booking: Booking): Record<string, unknown> {
   }
   payload.workStartTime = v.workStartTime?.trim() ? v.workStartTime : deleteField()
   payload.workEndTime = v.workEndTime?.trim() ? v.workEndTime : deleteField()
-  payload.otMultiplierOverride = v.otMultiplierOverride ?? deleteField()
-  payload.bookingGroupId = v.bookingGroupId?.trim() ? v.bookingGroupId : deleteField()
+  if (booking.otMultiplierOverride == null) {
+    if (booking.otMultiplierOverride === null) payload.otMultiplierOverride = deleteField()
+  } else {
+    payload.otMultiplierOverride = booking.otMultiplierOverride
+  }
+  if (booking.bookingGroupId == null) {
+    if (booking.bookingGroupId === null) payload.bookingGroupId = deleteField()
+  } else if (booking.bookingGroupId.trim()) {
+    payload.bookingGroupId = booking.bookingGroupId.trim()
+  } else {
+    payload.bookingGroupId = deleteField()
+  }
   return payload
 }
 
@@ -514,7 +528,13 @@ export function serializeManagerSiteBooking(
   payload.customLocationName = v.customLocationName?.trim() ? v.customLocationName : deleteField()
   payload.workStartTime = v.workStartTime?.trim() ? v.workStartTime : deleteField()
   payload.workEndTime = v.workEndTime?.trim() ? v.workEndTime : deleteField()
-  payload.bookingGroupId = v.bookingGroupId?.trim() ? v.bookingGroupId : deleteField()
+  if (booking.bookingGroupId == null) {
+    if (booking.bookingGroupId === null) payload.bookingGroupId = deleteField()
+  } else if (booking.bookingGroupId.trim()) {
+    payload.bookingGroupId = booking.bookingGroupId.trim()
+  } else {
+    payload.bookingGroupId = deleteField()
+  }
   return payload
 }
 
@@ -548,7 +568,7 @@ export function parseProject(
     endDate: asDate(data.endDate) || new Date(),
     jobType: asString(data.jobType, 'CAT A'),
     customJobType: asOptionalString(data.customJobType),
-    manager: { name: asString(data.manager, 'Custom'), email: '' },
+    manager: { name: asString(data.manager), email: '' },
     managerId,
     managerIds: managerIds.length ? managerIds : managerId ? [managerId] : [],
     isLive: asBool(data.isLive, true),
@@ -588,6 +608,7 @@ export function serializeProject(input: {
   usesMapPinForLocation?: boolean
   hiddenManagerUserIds?: string[]
   hiddenOperativeUserIds?: string[]
+  managerName?: string
   createdAt?: Date
   updatedAt?: Date
 }): Record<string, unknown> {
@@ -613,13 +634,13 @@ export function serializeProject(input: {
     endDate: input.endDate,
     jobType: input.jobType,
     customJobType: input.customJobType?.trim() || undefined,
-    manager: 'Custom',
+    manager: input.managerName?.trim() || undefined,
     managerId: input.managerId,
     managerIds: input.managerIds,
     isLive: input.isLive,
     description: input.description?.trim() || '',
-    hiddenManagerUserIds: input.hiddenManagerUserIds ?? [],
-    hiddenOperativeUserIds: input.hiddenOperativeUserIds ?? [],
+    hiddenManagerUserIds: input.hiddenManagerUserIds,
+    hiddenOperativeUserIds: input.hiddenOperativeUserIds,
     usesMapPinForLocation: input.usesMapPinForLocation === true,
     latitude: input.latitude,
     longitude: input.longitude,
@@ -643,16 +664,17 @@ export function serializeProject(input: {
     startDate: asTimestamp(v.startDate),
     endDate: asTimestamp(v.endDate),
     jobType: v.jobType,
-    manager: 'Custom',
     isLive: v.isLive,
     description: v.description,
     organizationId: v.organizationId,
     createdAt: asTimestamp(v.createdAt),
     updatedAt: asTimestamp(v.updatedAt),
     usesMapPinForLocation: v.usesMapPinForLocation,
-    hiddenManagerUserIds: v.hiddenManagerUserIds,
-    hiddenOperativeUserIds: v.hiddenOperativeUserIds,
   }
+  const managerName = input.managerName?.trim()
+  if (managerName && managerName.toLowerCase() !== 'custom') payload.manager = managerName
+  if (input.hiddenManagerUserIds) payload.hiddenManagerUserIds = input.hiddenManagerUserIds
+  if (input.hiddenOperativeUserIds) payload.hiddenOperativeUserIds = input.hiddenOperativeUserIds
   if (v.customJobType) payload.customJobType = v.customJobType
   if (v.managerId) payload.managerId = v.managerId
   if (v.managerIds && v.managerIds.length > 0) {

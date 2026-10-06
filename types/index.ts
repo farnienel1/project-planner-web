@@ -106,6 +106,9 @@ export interface Booking {
   workStartTime?: string;
   workEndTime?: string;
   isBreakRemoved?: boolean;
+  /** Present only when the booking document was read. Undefined means the save must not delete the stored value. */
+  otMultiplierOverride?: number | null;
+  bookingGroupId?: string | null;
   createdAt: Date;
   updatedAt: Date;
   organizationId?: string;
@@ -275,6 +278,7 @@ export interface HolidayBooking {
   approvedAt?: Date;
   cancellationRequestedAt?: Date;
   cancellationRequestedByUserId?: string;
+  decisionNote?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -352,7 +356,8 @@ export interface ProjectTask {
   completedAt?: Date
   completionNotes?: string
   completionImages?: string[]
-  completionFiles?: { name: string; url: string }[]
+  /** Firebase Storage URLs. Older web rows may still be `{ name, url }` until the next save. */
+  completionFiles?: string[]
   attachedImageURLs?: string[]
   attachedFileURL?: string
   attachedFileName?: string

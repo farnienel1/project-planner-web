@@ -389,10 +389,35 @@ test('operative clashes use clock intervals and skip manager-admin emails', () =
     permissions: perms({ manager: true, operativeMode: false }),
     role: UserRole.MANAGER,
   })
-  const clashes = computeOperativeBookingClashWarnings(
+  const fullDay = computeOperativeBookingClashWarnings(
     [
       booking({ id: 'A', operativeId: 'OP1', projectId: 'P1', timeSlot: 'FULL DAY' }),
       booking({ id: 'B', operativeId: 'OP1', projectId: 'P2', timeSlot: 'FULL DAY' }),
+    ],
+    [op],
+    [project('P1'), project('P2')],
+    { users: [managerUser], payrollPolicy: DEFAULT_PAYROLL_POLICY }
+  )
+  assert.equal(fullDay.length, 0, 'a full-day slot with no clock interval is not an overlap')
+
+  const clashes = computeOperativeBookingClashWarnings(
+    [
+      booking({
+        id: 'A',
+        operativeId: 'OP1',
+        projectId: 'P1',
+        timeSlot: 'CUSTOM_HOURS',
+        workStartTime: '08:00',
+        workEndTime: '12:00',
+      }),
+      booking({
+        id: 'B',
+        operativeId: 'OP1',
+        projectId: 'P2',
+        timeSlot: 'CUSTOM_HOURS',
+        workStartTime: '10:00',
+        workEndTime: '14:00',
+      }),
       booking({ id: 'C', operativeId: 'OP2', projectId: 'P1', timeSlot: 'FULL DAY' }),
       booking({ id: 'D', operativeId: 'OP2', projectId: 'P2', timeSlot: 'FULL DAY' }),
     ],
@@ -403,8 +428,8 @@ test('operative clashes use clock intervals and skip manager-admin emails', () =
   assert.equal(clashes.length, 1)
   assert.equal(clashes[0].operativeName, 'Ada Op')
   assert.equal(clashes[0].entries.length, 2)
-  assert.equal(clashes[0].entries[0].startMinutes, 7 * 60 + 30)
-  assert.equal(clashes[0].entries[0].endMinutes, 16 * 60)
+  assert.equal(clashes[0].entries[0].startMinutes, 8 * 60)
+  assert.equal(clashes[0].entries[0].endMinutes, 12 * 60)
 })
 
 test('AM and PM on the same day do not clash; manager dual-role merges operative bookings', () => {
@@ -434,6 +459,8 @@ test('AM and PM on the same day do not clash; manager dual-role merges operative
         userId: 'U-MGR',
         date: WED,
         timeSlot: 'FULL_DAY',
+        workStartTime: '08:00',
+        workEndTime: '16:00',
         locationType: 'office',
         createdAt: WED,
         updatedAt: WED,
@@ -442,7 +469,16 @@ test('AM and PM on the same day do not clash; manager dual-role merges operative
     [managerUser],
     [project('P1')],
     {
-      operativeBookings: [booking({ id: 'O1', operativeId: 'OP-BOSS', projectId: 'P1', timeSlot: 'FULL DAY' })],
+      operativeBookings: [
+        booking({
+          id: 'O1',
+          operativeId: 'OP-BOSS',
+          projectId: 'P1',
+          timeSlot: 'CUSTOM_HOURS',
+          workStartTime: '08:00',
+          workEndTime: '16:00',
+        }),
+      ],
       operatives: [mgrOp],
       payrollPolicy: DEFAULT_PAYROLL_POLICY,
     }
@@ -500,6 +536,39 @@ test('materials cutoff uses the configured hour and minute, not a hardcoded 16:0
     }).length,
     0
   )
+})
+
+test('ordered tomorrow lines do not warn, and an unordered line names the saved cut-off', () => {
+  const after = new Date('2026-09-16T16:30:00+01:00')
+  const tomorrow = new Date('2026-09-17T08:00:00+01:00')
+  const works = [project('P1')]
+  const bookings = [booking({ id: 'B1', operativeId: 'OP1', date: tomorrow, projectId: 'P1' })]
+  const line = (status: string) =>
+    ({
+      id: status,
+      projectId: 'P1',
+      date: tomorrow,
+      status,
+      name: 'Cable',
+    }) as never
+
+  const ordered = computeMissedMaterialOrderWarnings([line('ordered')], [], works, bookings, {
+    enabled: true,
+    cutOffHour: 16,
+    cutOffMinute: 30,
+    referenceDate: after,
+  })
+  assert.equal(ordered.length, 0)
+
+  const open = computeMissedMaterialOrderWarnings([line('draft')], [], works, bookings, {
+    enabled: true,
+    cutOffHour: 16,
+    cutOffMinute: 30,
+    referenceDate: after,
+  })
+  assert.equal(open.length, 1)
+  assert.equal(open[0].title, 'Material order not placed')
+  assert.match(open[0].message, /cut-off 16:30/)
 })
 
 test('pending invitees are not unbooked labour, and the card uses the app user name', () => {

@@ -32,6 +32,8 @@ export type InviteUserCoreInput = {
   annualLeaveDaysPerYear?: number
   annualLeaveYearStartMonth?: number
   annualLeaveYearEndMonth?: number
+  annualLeaveCarriesOver?: boolean
+  hasNoLineManager?: boolean
   invitedBy: string
 }
 
@@ -108,9 +110,12 @@ export async function inviteUserCore(input: InviteUserCoreInput): Promise<Invite
     input.assignedManagerUserIds,
     input.assignedManagerUserId
   )
-  if ((input.permissions.operativeMode || input.permissions.manager) && lineManagerIds.length > 0) {
+  if (input.hasNoLineManager) {
+    invitationData.hasNoLineManager = true
+  } else if (lineManagerIds.length > 0) {
     invitationData.assignedManagerUserIds = lineManagerIds
     invitationData.assignedManagerUserId = lineManagerIds[0]
+    invitationData.hasNoLineManager = false
   }
   const invitedRates = readStoredRates(input)
   if (invitedRates.payBasis === 'hourly' && invitedRates.hourlyRate != null) {
@@ -135,6 +140,7 @@ export async function inviteUserCore(input: InviteUserCoreInput): Promise<Invite
   if (input.annualLeaveYearEndMonth != null) {
     invitationData.annualLeaveYearEndMonth = input.annualLeaveYearEndMonth
   }
+  if (input.annualLeaveCarriesOver != null) invitationData.annualLeaveCarriesOver = input.annualLeaveCarriesOver
 
   await setDoc(doc(db, 'invitations', invitationId), invitationData)
   await setDoc(

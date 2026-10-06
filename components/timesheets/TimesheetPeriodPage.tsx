@@ -1445,7 +1445,7 @@ function PaymentRunsBox({ invoicing }: { invoicing: OrgInvoicingSettings }) {
   }
   return (
     <section className="card p-4">
-      <p className="text-[17px] font-semibold">Payment Runs and Payouts</p>
+      <p className="text-[17px] font-semibold">Payment Runs and Timesheets</p>
       {invoicing.paymentRunMode === 'date_ranges' ? (
         invoicing.paymentRunDateRanges.map((range, index) => (
           <div key={`${range.startDay}-${range.endDay}`} className="mt-1 text-[15px]">

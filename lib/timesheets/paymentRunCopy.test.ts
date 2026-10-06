@@ -37,7 +37,10 @@ test('payDateForPeriodEnd skips payment days before period end and rolls to next
 })
 
 test('currentPaymentRunCopy formats recurring runs with this-run pay date', () => {
-  const copy = currentPaymentRunCopy(DEFAULT_INVOICING, new Date(Date.UTC(2026, 8, 21, 12, 0, 0)))
+  const copy = currentPaymentRunCopy(
+    { ...DEFAULT_INVOICING, paymentRunMode: 'recurring_timeframe' },
+    new Date(Date.UTC(2026, 8, 21, 12, 0, 0))
+  )
   assert.match(copy.periodLine, /September 2026/)
   assert.match(copy.paidLine, /^Paid on /)
 })

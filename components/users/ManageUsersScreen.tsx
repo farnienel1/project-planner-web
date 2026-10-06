@@ -259,7 +259,13 @@ export function ManageUsersScreen() {
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search by name or email…"
+          placeholder={
+            tab === 'admins'
+              ? 'Search admins by name'
+              : tab === 'managers'
+                ? 'Search managers by name'
+                : 'Search operatives by name'
+          }
           className="w-full bg-transparent text-sm text-slate-900 placeholder:text-slate-500 focus:outline-none"
         />
       </div>

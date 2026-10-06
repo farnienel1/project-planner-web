@@ -59,6 +59,7 @@ test('invoiceGeneratedAt is not treated as exported — iOS only reads exportedA
   )
   const draft = draftFromFirestoreMap({
     operativeSignedAt: stamp('2026-09-21T09:00:00Z'),
+    operativeSignedByName: 'Ada Admin',
     invoiceGeneratedAt: stamp(generated.toISOString()),
   })
   assert.equal(draft.exportedAt, null)

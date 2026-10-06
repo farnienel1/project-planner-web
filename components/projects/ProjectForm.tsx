@@ -7,6 +7,7 @@ import { useOperativeStore } from '@/lib/stores/operativeStore'
 import type { Project } from '@/types'
 import { DEFAULT_JOB_TYPES } from '@/types'
 import { collectionJobTypeForName, recoverJobTypesFromWork } from '@/lib/jobTypes/jobTypesStorage'
+import { dateFromDayKey, dayKey } from '@/lib/ios-parity/londonTime'
 import type { ProjectSaveInput } from '@/lib/firebase/projectPayload'
 import { FormActions, FormInput, FormLabel, FormSelect, FormTextarea } from '@/components/forms/FormShell'
 import { ErrorBanner } from '@/components/dashboard/PageShell'
@@ -56,8 +57,8 @@ export function ProjectForm({ initial, collection = 'projects', backHref, onSave
     townCity: initial?.townCity || '',
     postcode: initial?.postcode || '',
     clientId: initial?.client?.id || '',
-    startDate: initial?.startDate ? new Date(initial.startDate).toISOString().slice(0, 10) : '',
-    endDate: initial?.endDate ? new Date(initial.endDate).toISOString().slice(0, 10) : '',
+    startDate: initial?.startDate ? dayKey(new Date(initial.startDate)) : '',
+    endDate: initial?.endDate ? dayKey(new Date(initial.endDate)) : '',
     jobType: collectionJobTypeForName(
       initial?.customJobType || initial?.jobType || (collection === 'smallWorks' ? 'Small Works' : 'CAT A'),
       collection
@@ -179,27 +180,46 @@ export function ProjectForm({ initial, collection = 'projects', backHref, onSave
     setError(null)
     setManagerFieldError(false)
 
-    if (!form.jobNumber.trim() || !form.siteName.trim() || !form.clientId || !form.startDate || !form.endDate) {
-      setError('Job number, site name, client, and dates are required.')
+    const creating = !initial
+    if (!form.jobNumber.trim() || !form.siteName.trim() || !form.startDate || !form.endDate) {
+      setError('Project reference, site name, and dates are required.')
       return
     }
-    if (form.managerIds.length === 0) {
-      setError('Select at least one manager.')
+    if (!form.clientId) {
+      setError('Please select a client')
+      return
+    }
+    if (form.endDate < form.startDate) {
+      setError('End date must be on or after start date.')
+      return
+    }
+    const hasAddress = Boolean(form.addressLine1.trim() && form.townCity.trim() && form.postcode.trim())
+    const hasPin = Boolean(form.useMapPin && form.latitude && form.longitude)
+    if (creating && !hasAddress && !hasPin) {
+      setError('Enter address line 1, town, and postcode, or drop a map pin.')
+      return
+    }
+    if (!creating && !hasAddress && !hasPin) {
+      setError('Enter an address or drop a map pin.')
+      return
+    }
+    if (creating && form.managerIds.length === 0) {
+      setError('Please assign at least one manager')
       setManagerFieldError(true)
       scrollToFirstError()
       return
     }
     const client = clients.find((c) => c.id === form.clientId)
     if (!client) {
-      setError('Select a valid client.')
+      setError('Please select a client')
       return
     }
 
     setSaving(true)
     try {
       const resolvedManagerIds = await resolveManagerIds()
-      if (resolvedManagerIds.length === 0) {
-        setError('Select at least one manager.')
+      if (creating && resolvedManagerIds.length === 0) {
+        setError('Please assign at least one manager')
         setManagerFieldError(true)
         scrollToFirstError()
         return
@@ -219,18 +239,22 @@ export function ProjectForm({ initial, collection = 'projects', backHref, onSave
         townCity: form.townCity,
         postcode: form.postcode,
         client,
-        startDate: new Date(form.startDate),
-        endDate: new Date(form.endDate),
-        jobType: form.jobType,
-        customJobType: form.customJobType,
+        startDate: dateFromDayKey(form.startDate),
+        endDate: dateFromDayKey(form.endDate),
+        jobType: form.jobType.trim() ? form.jobType : 'CAT A',
+        customJobType: form.customJobType.trim() && form.customJobType.trim() !== 'CAT A' ? form.customJobType.trim() : undefined,
         managerId: primaryManagerId,
         managerIds: resolvedManagerIds,
         managerLegacy: primaryManager
           ? `${primaryManager.firstName} ${primaryManager.lastName}`.trim()
           : primaryUser
             ? `${primaryUser.firstName} ${primaryUser.surname}`.trim()
-            : 'Project Manager',
-        isLive: form.isLive,
+            : initial?.manager?.name && initial.manager.name.trim().toLowerCase() !== 'custom'
+              ? initial.manager.name
+              : undefined,
+        isLive: creating ? true : form.isLive,
+        hiddenManagerUserIds: initial?.hiddenManagerUserIds,
+        hiddenOperativeUserIds: initial?.hiddenOperativeUserIds,
         description: form.description,
         notes: form.notes,
         latitude: form.useMapPin && form.latitude ? Number(form.latitude) : undefined,
@@ -260,12 +284,12 @@ export function ProjectForm({ initial, collection = 'projects', backHref, onSave
 
       <div className="grid gap-4 md:grid-cols-2">
         <div>
-          <FormLabel required>Job number</FormLabel>
-          <FormInput value={form.jobNumber} onChange={(e) => setForm({ ...form, jobNumber: e.target.value })} required />
+          <FormLabel required>Project reference</FormLabel>
+          <FormInput value={form.jobNumber} placeholder="e.g. C646" onChange={(e) => setForm({ ...form, jobNumber: e.target.value })} required />
         </div>
         <div>
           <FormLabel required>Site name</FormLabel>
-          <FormInput value={form.siteName} onChange={(e) => setForm({ ...form, siteName: e.target.value })} required />
+          <FormInput value={form.siteName} placeholder="e.g. Lancelot Place" onChange={(e) => setForm({ ...form, siteName: e.target.value })} required />
         </div>
         <div>
           <FormLabel>Job type</FormLabel>
@@ -333,7 +357,7 @@ export function ProjectForm({ initial, collection = 'projects', backHref, onSave
           </select>
           {managerFieldError && (
             <p id="managers-error" className="mt-2 text-xs font-semibold text-red-700">
-              Select at least one manager before creating this project.
+              Please assign at least one manager
             </p>
           )}
           {managerOptions.length === 0 && (
@@ -361,7 +385,7 @@ export function ProjectForm({ initial, collection = 'projects', backHref, onSave
           <FormInput value={form.addressLine2} onChange={(e) => setAddressField({ addressLine2: e.target.value })} />
         </div>
         <div>
-          <FormLabel>Town / city</FormLabel>
+          <FormLabel>Town / City</FormLabel>
           <FormInput value={form.townCity} onChange={(e) => setAddressField({ townCity: e.target.value })} />
         </div>
         <div>
@@ -458,12 +482,14 @@ export function ProjectForm({ initial, collection = 'projects', backHref, onSave
         <FormTextarea rows={3} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
       </div>
 
-      <label className="flex items-center gap-2 text-sm text-slate-700">
-        <input type="checkbox" checked={form.isLive} onChange={(e) => setForm({ ...form, isLive: e.target.checked })} />
-        Active / live project
-      </label>
+      {initial ? (
+        <label className="flex items-center gap-2 text-sm text-slate-700">
+          <input type="checkbox" checked={form.isLive} onChange={(e) => setForm({ ...form, isLive: e.target.checked })} />
+          Active / live project
+        </label>
+      ) : null}
 
-      <FormActions saving={saving} submitLabel={initial ? 'Save changes' : 'Create project'} cancelHref={backHref} />
+      <FormActions saving={saving} submitLabel={initial ? 'Save' : 'Create project'} cancelHref={backHref} />
     </form>
   )
 }

@@ -479,6 +479,11 @@ export function TimesheetsScreen({
   )
 }
 
+function formatQueueHours(hours: number): string {
+  const rounded = Math.round(hours * 2) / 2
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1)
+}
+
 function MemberRow({
   member,
   users,
@@ -502,7 +507,6 @@ function MemberRow({
   timeZone?: string
   onClick: () => void
 }) {
-  const role = member.permissions.operativeMode ? 'Operative' : hasAdminAccess(member) ? 'Admin' : 'Manager'
   const lineManager = (() => {
     if (!hasAdminAccess(viewer)) return null
     const managerId = member.assignedManagerUserIds?.[0] || member.assignedManagerUserId
@@ -520,8 +524,8 @@ function MemberRow({
           <span className="s">Exported {formatStampInZone(exportedAt, timeZone)}</span>
         ) : null}
         <span className="s">
-          Hrs {summary.hours.toFixed(1)} · OT {summary.overtimeHours.toFixed(1)} · PW £{summary.priceWork.toFixed(2)} · Exp £
-          {summary.expenses.toFixed(2)} · {role}
+          Hrs {formatQueueHours(summary.hours)} · OT {formatQueueHours(summary.overtimeHours)} · PW £{summary.priceWork.toFixed(2)} · Exp £
+          {summary.expenses.toFixed(2)}
         </span>
         {lineManager ? <span className="s">Line manager: {lineManager}</span> : null}
       </span>

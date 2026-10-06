@@ -259,7 +259,32 @@ test('employmentType writes self_employed and reads selfEmployed', () => {
   assert.equal(normalizeEmploymentType('paye'), 'paye')
 })
 
-test('serializeProject writes manager Custom and omits notes', () => {
+test('serializeProject keeps a stored manager name and omits notes', () => {
+  const payload = serializeProject({
+    id: 'AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA',
+    organizationId: 'ORG',
+    jobNumber: '100',
+    siteName: 'Hall',
+    addressLine1: '1 High St',
+    townCity: 'London',
+    postcode: 'SW1A 1AA',
+    client: { id: 'C', name: 'Acme', createdAt: new Date(), updatedAt: new Date() },
+    startDate: new Date(),
+    endDate: new Date(),
+    jobType: 'CAT A',
+    isLive: true,
+    managerName: 'Farnie',
+    hiddenManagerUserIds: ['mgr-1'],
+    hiddenOperativeUserIds: ['op-1'],
+  })
+  assert.equal(payload.manager, 'Farnie')
+  assert.deepEqual(payload.hiddenManagerUserIds, ['mgr-1'])
+  assert.deepEqual(payload.hiddenOperativeUserIds, ['op-1'])
+  assert.equal('notes' in payload, false)
+  assert.equal('id' in payload, false)
+})
+
+test('serializeProject does not invent Custom or empty hidden lists', () => {
   const payload = serializeProject({
     id: 'AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA',
     organizationId: 'ORG',
@@ -274,7 +299,39 @@ test('serializeProject writes manager Custom and omits notes', () => {
     jobType: 'CAT A',
     isLive: true,
   })
-  assert.equal(payload.manager, 'Custom')
-  assert.equal('notes' in payload, false)
-  assert.equal('id' in payload, false)
+  assert.equal('manager' in payload, false)
+  assert.equal('hiddenManagerUserIds' in payload, false)
+  assert.equal('hiddenOperativeUserIds' in payload, false)
+})
+
+test('serializeBooking keeps group and overtime multiplier and does not delete them when unread', () => {
+  const kept = serializeBooking({
+    id: 'AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA',
+    operativeId: 'BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB',
+    projectId: 'CCCCCCCC-CCCC-CCCC-CCCC-CCCCCCCCCCCC',
+    date: new Date(),
+    timeSlot: 'FULL DAY',
+    bookedBy: 'Farnie',
+    status: 'Confirmed',
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    bookingGroupId: 'GROUP-1',
+    otMultiplierOverride: 1.5,
+  })
+  assert.equal(kept.bookingGroupId, 'GROUP-1')
+  assert.equal(kept.otMultiplierOverride, 1.5)
+
+  const unread = serializeBooking({
+    id: 'AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA',
+    operativeId: 'BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB',
+    projectId: 'CCCCCCCC-CCCC-CCCC-CCCC-CCCCCCCCCCCC',
+    date: new Date(),
+    timeSlot: 'AM',
+    bookedBy: 'Farnie',
+    status: 'Confirmed',
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  })
+  assert.equal('bookingGroupId' in unread, false)
+  assert.equal('otMultiplierOverride' in unread, false)
 })

@@ -100,23 +100,27 @@ export function qualificationNameTaken(name: string, existing: Qualification[], 
 
 export async function saveOrganisationQualification(
   organizationId: string,
-  input: { id?: string; name: string; createdAt?: Date }
+  input: { id?: string; name: string; createdAt?: Date; hasEndDate?: boolean; endDate?: Date | null }
 ): Promise<Qualification> {
   const now = new Date()
   const id = input.id || newUuid()
+  const isNew = !input.id
   const payload: Qualification = {
     id,
     name: input.name.trim(),
-    hasEndDate: false,
+    hasEndDate: input.hasEndDate === true,
+    endDate: input.endDate || undefined,
     createdAt: input.createdAt || now,
     updatedAt: now,
   }
-  await setDoc(doc(db, 'organizations', organizationId, 'qualifications', id), {
+  const fields: Record<string, unknown> = {
     name: payload.name,
-    hasEndDate: false,
-    createdAt: Timestamp.fromDate(payload.createdAt),
     updatedAt: Timestamp.fromDate(payload.updatedAt),
-  })
+  }
+  if (isNew || input.createdAt) fields.createdAt = Timestamp.fromDate(payload.createdAt)
+  if (isNew || input.hasEndDate !== undefined) fields.hasEndDate = input.hasEndDate === true
+  if (input.endDate) fields.endDate = Timestamp.fromDate(input.endDate)
+  await setDoc(doc(db, 'organizations', organizationId, 'qualifications', id), fields, { merge: true })
   return payload
 }
 
