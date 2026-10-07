@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { readWebSessionCookie, WEB_SESSION_COOKIE } from '@/lib/auth/webSession'
 import { rateLimit } from '@/lib/security/rateLimit'
 
 export { clientSafeMessage } from '@/lib/security/sanitize'
@@ -91,11 +92,15 @@ export async function requireFirebaseUser(
 ): Promise<FirebaseAuthUser | NextResponse> {
   const header = request.headers.get('authorization') || ''
   const token = header.startsWith('Bearer ') ? header.slice(7).trim() : ''
-  if (!token) return jsonError('Sign in required', 401)
+  if (token) {
+    const user = await verifyFirebaseIdToken(token)
+    if (user) return user
+    return jsonError('Sign in required', 401)
+  }
 
-  const user = await verifyFirebaseIdToken(token)
-  if (!user) return jsonError('Sign in required', 401)
-  return user
+  const session = await readWebSessionCookie(request.cookies.get(WEB_SESSION_COOKIE)?.value)
+  if (session) return session
+  return jsonError('Sign in required', 401)
 }
 
 export function isFirebaseUser(

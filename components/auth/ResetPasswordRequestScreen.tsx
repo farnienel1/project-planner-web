@@ -28,8 +28,9 @@ export function ResetPasswordRequestScreen({ initialEmail = '' }: { initialEmail
       setSending(true)
       await resetPassword(trimmed)
       setSuccess(true)
-    } catch {
-      setLocalError('Failed to send reset email')
+    } catch (err) {
+      const message = err instanceof Error ? err.message : ''
+      setLocalError(/too many/i.test(message) ? message : 'Failed to send reset email')
     } finally {
       setSending(false)
     }

@@ -11,5 +11,6 @@ export function formatLoginError(error: unknown): string {
     )
   }
   if (message.includes('user profile') || message.includes('Firestore')) return message
+  if (/too many|at least 12|too common|data breach|too long|current password is wrong/i.test(message)) return message
   return 'Sign in failed. Please check your email/password and try again.'
 }

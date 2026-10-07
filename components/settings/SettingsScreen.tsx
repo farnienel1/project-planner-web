@@ -3,7 +3,8 @@
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useEffect, useState, type ChangeEvent, type ReactNode } from 'react'
-import { updatePassword, EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth'
+import { requestPasswordChange } from '@/lib/auth/browserAuthActions'
+import { newPasswordError, PASSWORD_RULE_TEXT } from '@/lib/auth/passwordPolicy'
 import { doc, Timestamp, updateDoc } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
 import { useAuthStore } from '@/lib/stores/authStore'
@@ -187,15 +188,14 @@ function PasswordPanel({ onBack }: { onBack: () => void }) {
   const [showNew, setShowNew] = useState(false)
 
   const changePassword = async () => {
-    if (!firebaseUser?.email || !current || !next || next !== confirm) {
-      setError(next !== confirm ? 'Passwords do not match' : 'Please fill all fields')
+    const policyError = newPasswordError(next)
+    if (!firebaseUser?.email || !current || !next || next !== confirm || policyError) {
+      setError(next !== confirm ? 'Passwords do not match' : policyError || 'Please fill all fields')
       return
     }
     setSaving(true); setError('')
     try {
-      const credential = EmailAuthProvider.credential(firebaseUser.email, current)
-      await reauthenticateWithCredential(firebaseUser as Parameters<typeof reauthenticateWithCredential>[0], credential)
-      await updatePassword(firebaseUser as Parameters<typeof updatePassword>[0], next)
+      await requestPasswordChange(current, next)
       setSaved(true); setCurrent(''); setNext(''); setConfirm('')
       setTimeout(() => setSaved(false), 4000)
     } catch (e: unknown) { setError(e instanceof Error ? e.message : 'Failed to change password') }
@@ -234,6 +234,7 @@ function PasswordPanel({ onBack }: { onBack: () => void }) {
               <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={showNew ? 'M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21' : 'M15 12a3 3 0 11-6 0 3 3 0 016 0zm-3 9A9 9 0 103 12a9 9 0 0018 0z'} /></svg>
             </button>
           </div>
+          <p className="mt-1 text-xs text-slate-500">{PASSWORD_RULE_TEXT}</p>
         </FormField>
         <FormField label="Confirm New Password">
           <Input type="password" value={confirm} onChange={e => setConfirm(e.target.value)} placeholder="Confirm your new password" />
