@@ -10,7 +10,7 @@ alwaysApply: true
 Before adding or changing a booking, warning, invoicing, labour, organisation, or date rule:
 
 1. Search `lib/canonical` and call the existing function.
-2. If the rule is new and both platforms must agree, add it under `lib/canonical/` (`engine.ts` or `warningRows.ts`), export it through `bundleEntry.ts`, and run `npm run build:canonical`. Warning row identity for qualifications, unverified operatives, and unbooked labour is `warningRows.ts`.
+2. If the rule is new and both platforms must agree, add it under `lib/canonical/` (`engine.ts` or `warningRows.ts`), export it through `bundleEntry.ts`, and commit. The pre-commit hook packs the script and refuses the commit when the iOS checkout has an uncommitted packed file. Warning row identity for qualifications, unverified operatives, and unbooked labour is `warningRows.ts`.
 3. Use `adoptCurrentOrganization` and `organizationContextStillCurrent` for organisation-scoped async work. Cache and persistence keys include the organisation id.
 4. If web and iOS disagree, trace the first divergence. Do not change a screen so its number matches the other platform.
 5. Add a regression test in `lib/canonical/canonical.test.ts`.

@@ -1,0 +1,25 @@
+#!/bin/sh
+# Pack the shared rulebook when a commit touches it.
+# The website commit stops if the iPhone copy changed and is not committed yet.
+root=$(git rev-parse --show-toplevel) || exit 1
+cd "$root" || exit 1
+
+staged=$(git diff --cached --name-only)
+if ! printf '%s\n' "$staged" | grep -Eq '^(lib/canonical/|scripts/build-canonical-bundle\.mjs$)'; then
+  exit 0
+fi
+
+node scripts/build-canonical-bundle.mjs || exit 1
+git add lib/canonical/dist/canonical-business.js lib/canonical/dist/canonical-business.sha256
+
+ios="$root/../project-planner-ios"
+if [ ! -d "$ios/.git" ]; then
+  echo "No iOS checkout beside this repo. The iPhone copy of the rulebook was not updated."
+  exit 0
+fi
+
+if ! git -C "$ios" diff --quiet -- "Project Planner/Canonical/canonical-business.js" "Project Planner/Canonical/canonical-business.js.sha256"; then
+  echo "The iPhone copy of the rulebook was updated and is not committed yet."
+  echo "Commit Project Planner/Canonical/canonical-business.js in project-planner-ios, then commit this website change again."
+  exit 1
+fi
