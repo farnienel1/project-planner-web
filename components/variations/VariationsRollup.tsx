@@ -32,7 +32,7 @@ export function VariationsRollup() {
   const admin = hasAdminAccess(user)
 
   useEffect(() => {
-    if (!organization?.id || !db || !user) return
+    if (!organization?.id || !db || !user || !canSeeAnyVariations(user)) return
     if (admin) {
       return onSnapshot(
         collection(db, 'organizations', organization.id, 'variations'),
