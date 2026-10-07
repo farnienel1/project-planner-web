@@ -90,6 +90,9 @@ interface ProjectState {
   projects: Project[]
   smallWorks: Project[]
   clients: Client[]
+  /** Set when a load for that company has finished, including a genuine empty list. */
+  projectsLoadedOrgId: string | null
+  smallWorksLoadedOrgId: string | null
   loading: boolean
   error: string | null
   loadProjects: (organizationId: string, includeInactive?: boolean, options?: { force?: boolean }) => Promise<void>
@@ -115,6 +118,8 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   projects: [],
   smallWorks: [],
   clients: [],
+  projectsLoadedOrgId: null,
+  smallWorksLoadedOrgId: null,
   loading: false,
   error: null,
 
@@ -138,7 +143,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
             retainScopedRows(`projects:${organizationId}`, previous, projects)
           )
           projectsOrgId = organizationId
-          set({ projects, loading: false })
+          set({ projects, loading: false, projectsLoadedOrgId: organizationId })
         } catch (error: unknown) {
           set({
             error: error instanceof Error ? error.message : 'Failed to load projects',
@@ -174,7 +179,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
             retainScopedRows(`smallWorks:${organizationId}`, previous, mapped)
           )
           smallWorksOrgId = organizationId
-          set({ smallWorks, loading: false })
+          set({ smallWorks, loading: false, smallWorksLoadedOrgId: organizationId })
         } catch (error: unknown) {
           set({
             error: error instanceof Error ? error.message : 'Failed to load small works',

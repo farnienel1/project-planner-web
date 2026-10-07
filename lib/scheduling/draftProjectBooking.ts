@@ -1,4 +1,5 @@
-import { format, isSameDay, startOfDay } from 'date-fns'
+import { format, startOfDay } from 'date-fns'
+import { coversCalendarDay } from '@/lib/ios-parity/londonTime'
 import type { Booking, Operative, Project, User } from '@/types'
 import {
   detectOperativeClashes,
@@ -65,7 +66,7 @@ function detectManagerDayClashes({
 
   for (const existing of managerSiteBookings) {
     if (existing.userId !== userId) continue
-    if (!isSameDay(existing.date, slot.date)) continue
+    if (!coversCalendarDay(existing.date, slot.date)) continue
 
     if (
       !timeSlotsOverlap(
@@ -197,7 +198,7 @@ export function isExactDuplicateManagerBooking(
     (booking) =>
       booking.locationId === locationId &&
       booking.userId === userId &&
-      isSameDay(booking.date, slot.date) &&
+      coversCalendarDay(booking.date, slot.date) &&
       String(booking.timeSlot) === firestoreSlot.timeSlot &&
       (booking.workStartTime || '') === (firestoreSlot.workStartTime || '') &&
       (booking.workEndTime || '') === (firestoreSlot.workEndTime || '')

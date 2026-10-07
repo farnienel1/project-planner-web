@@ -28,7 +28,16 @@ import { AddWeekToCalendarButton } from '@/components/schedule/AddWeekToCalendar
 import { myScheduleStripeClass } from '@/components/schedule/MyScheduleLooks'
 import { HoursTimelinePicker } from '@/components/scheduling/HoursTimelinePicker'
 import { countWorksByTab, filterWorksByTab, searchWorks } from '@/lib/projects/workStatus'
+import { coversCalendarDay } from '@/lib/ios-parity/londonTime'
 import type { Project } from '@/types'
+
+/** Labour booked onto this person from Book labour. Shown on the week, not removed from here. */
+export type AssignedScheduleBooking = {
+  id: string
+  date: Date
+  title: string
+  detail: string
+}
 
 type JobFilter = 'all' | 'active' | 'upcoming' | 'completed'
 
@@ -176,11 +185,13 @@ export function MyScheduleSelfBookingScreen({
   organizationId,
   organizationName,
   payrollPolicy = DEFAULT_PAYROLL_POLICY,
+  assignedBookings = [],
 }: {
   userId: string
   organizationId: string
   organizationName: string
   payrollPolicy?: OrgPayrollTimePolicy
+  assignedBookings?: AssignedScheduleBooking[]
 }) {
   const { projects, smallWorks, loadProjects, loadSmallWorks } = useProjectStore()
   const {
@@ -232,7 +243,10 @@ export function MyScheduleSelfBookingScreen({
   )
 
   const myBookingsOn = (day: Date): ManagerSiteBooking[] =>
-    myBookings.filter((b) => isSameDay(startOfDay(b.date), startOfDay(day)))
+    myBookings.filter((b) => coversCalendarDay(b.date, day))
+
+  const assignedOn = (day: Date): AssignedScheduleBooking[] =>
+    assignedBookings.filter((b) => coversCalendarDay(b.date, day))
 
   const projectsById = useMemo(() => {
     const map = new Map<string, string>()
@@ -533,6 +547,7 @@ export function MyScheduleSelfBookingScreen({
           const isSel = multiDay ? selectedDates.some((d) => isSameDay(d, day)) : isSameDay(day, selectedDate)
           const today = isToday(day)
           const dayRows = myBookingsOn(day)
+          const assignedRows = assignedOn(day)
           const weekend = index > 4
           return (
             <div
@@ -547,6 +562,12 @@ export function MyScheduleSelfBookingScreen({
                   {today ? ' · Today' : ''}
                 </span>
               </div>
+              {assignedRows.map((booking) => (
+                <div key={booking.id} className="bk" data-hue="proj">
+                  <b>{booking.title}</b>
+                  <span className="x">{booking.detail}</span>
+                </div>
+              ))}
               {dayRows.length > 0
                 ? dayRows.map((booking) => (
                     <div key={booking.id} className="bk" data-hue={booking.locationType === 'office' ? 'blue' : booking.locationType === 'working_from_home' ? 'daily' : booking.locationType === 'small_work' ? 'sw' : 'proj'}>
@@ -564,7 +585,9 @@ export function MyScheduleSelfBookingScreen({
                       </button>
                     </div>
                   ))
-                : (
+                : assignedRows.length > 0
+                  ? null
+                  : (
                     <button
                       type="button"
                       className="emptyday"

@@ -440,6 +440,74 @@ export function subscribeParentVariations(
   }
 }
 
+const lastOrgVariationRows = new Map<string, Variation[]>()
+
+/**
+ * Company-wide list. iOS stores variations in the collection and in settings
+ * logs (`variations_{parentId}` / `variationItem_{id}`). The collection alone
+ * shows an empty rollup when the log is the copy that actually saved.
+ */
+export function subscribeOrganisationVariations(
+  organizationId: string,
+  onRows: (rows: Variation[]) => void,
+  onError?: (error: Error) => void
+): Unsubscribe {
+  if (!db) {
+    onRows(lastOrgVariationRows.get(organizationId) ?? [])
+    return () => {}
+  }
+  const sources = {
+    collection: [] as Variation[],
+    fallback: [] as Variation[],
+    items: [] as Variation[],
+  }
+  const publish = () => {
+    const next = mergeVariationSources(sources.collection, sources.fallback, sources.items)
+    const kept = retainLoadedRows(lastOrgVariationRows.get(organizationId) ?? [], next)
+    lastOrgVariationRows.set(organizationId, kept)
+    onRows(kept)
+  }
+  const settings = collection(db, 'organizations', organizationId, 'settings')
+  const unsubs = [
+    onSnapshot(
+      variationsCollection(organizationId),
+      (snap) => {
+        if (snap.metadata.hasPendingWrites) return
+        sources.collection = snap.docs.map((entry) =>
+          variationFromFirestore(entry.id, entry.data() as Record<string, unknown>)
+        )
+        publish()
+      },
+      (error) => onError?.(error)
+    ),
+    onSnapshot(
+      query(settings, where('recordType', '==', 'variationLog')),
+      (snap) => {
+        sources.fallback = snap.docs.flatMap((entry) =>
+          variationsFromMaps(fallbackItemMaps(entry.data() as Record<string, unknown>))
+        )
+        publish()
+      },
+      (error) => onError?.(error)
+    ),
+    onSnapshot(
+      query(settings, where('recordType', '==', 'variationItem')),
+      (snap) => {
+        sources.items = snap.docs.flatMap((entry) => {
+          const data = entry.data() as Record<string, unknown>
+          const rawId = (typeof data.id === 'string' && data.id) || entry.id.replace(/^variationItem_/, '')
+          return [variationFromFirestore(rawId, data)]
+        })
+        publish()
+      },
+      (error) => onError?.(error)
+    ),
+  ]
+  return () => {
+    for (const unsub of unsubs) unsub()
+  }
+}
+
 export async function loadVariationTracker(organizationId: string, parentId: string): Promise<VariationTracker> {
   const snap = await getDoc(trackerRef(organizationId, parentId))
   return trackerFromFirestore(parentId, snap.exists() ? (snap.data() as Record<string, unknown>) : undefined)

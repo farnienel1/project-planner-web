@@ -1,12 +1,14 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { format, isSameDay } from 'date-fns'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { canViewSiteMap } from '@/lib/navigation/menuPermissions'
 import { useProjectStore } from '@/lib/stores/projectStore'
 import { useBookingStore } from '@/lib/stores/bookingStore'
+import { useManagerScheduleStore } from '@/lib/stores/managerScheduleStore'
+import { dateFromDayKey, dayKey } from '@/lib/ios-parity/londonTime'
+import { countBookingsOnSiteDay } from '@/lib/site-map/siteDayBookings'
 import { EmptyState, LoadingSpinner } from '@/components/dashboard/PageShell'
 import { mergeProjectsAndSmallWorks } from '@/lib/projects/workStatus'
 import { geocodeSiteProject } from '@/lib/maps/geocoding'
@@ -48,7 +50,8 @@ export default function SiteMapPage() {
   const { user, organization } = useAuthStore()
   const { projects, smallWorks, loadProjects, loadSmallWorks } = useProjectStore()
   const { bookings, loadBookings } = useBookingStore()
-  const [selectedDate, setSelectedDate] = useState(format(new Date(), 'yyyy-MM-dd'))
+  const { managerSiteBookings, loadManagerSiteBookings } = useManagerScheduleStore()
+  const [selectedDate, setSelectedDate] = useState(() => dayKey(new Date()))
   const [selectedPinId, setSelectedPinId] = useState<string | null>(null)
   const [coordinatesBySiteId, setCoordinatesBySiteId] = useState<
     Record<string, { latitude: number; longitude: number }>
@@ -65,10 +68,11 @@ export default function SiteMapPage() {
       loadProjects(organization.id, true)
       loadSmallWorks(organization.id)
       loadBookings(organization.id)
+      loadManagerSiteBookings(organization.id)
     }
-  }, [organization?.id, loadProjects, loadSmallWorks, loadBookings])
+  }, [organization?.id, loadProjects, loadSmallWorks, loadBookings, loadManagerSiteBookings])
 
-  const dateObj = useMemo(() => new Date(selectedDate), [selectedDate])
+  const dateObj = useMemo(() => dateFromDayKey(selectedDate), [selectedDate])
 
   const basePins = useMemo(() => {
     const allSites = mergeProjectsAndSmallWorks(projects, smallWorks).filter((site) => site.isLive)
@@ -80,9 +84,12 @@ export default function SiteMapPage() {
         geocodeFailed: boolean
       } => {
         const address = formatSiteAddress(site)
-        const bookingCount = bookings.filter(
-          (b) => b.projectId === site.id && isSameDay(new Date(b.date), dateObj)
-        ).length
+        const bookingCount = countBookingsOnSiteDay({
+          siteId: site.id,
+          day: dateObj,
+          operativeBookings: bookings,
+          managerBookings: managerSiteBookings,
+        })
         const stored = resolveStoredCoordinates(site)
         const resolved = stored || coordinatesBySiteId[site.id]
 
@@ -105,7 +112,7 @@ export default function SiteMapPage() {
         }
       })
       .sort((a, b) => a.label.localeCompare(b.label))
-  }, [projects, smallWorks, bookings, dateObj, coordinatesBySiteId])
+  }, [projects, smallWorks, bookings, managerSiteBookings, dateObj, coordinatesBySiteId])
 
   useEffect(() => {
     let cancelled = false
@@ -129,11 +136,13 @@ export default function SiteMapPage() {
 
       for (const site of pending) {
         if (cancelled) return
-        const coords = await geocodeSiteProject(site)
-        if (coords) {
-          geocodedSiteIds.current.add(site.id)
-          next[site.id] = coords
-        }
+        const coords = await Promise.race([
+          geocodeSiteProject(site),
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), 8_000)),
+        ])
+        // A miss or a hung lookup must not leave "Locating sites…" up on the next pass.
+        geocodedSiteIds.current.add(site.id)
+        if (coords) next[site.id] = coords
       }
 
       if (!cancelled && Object.keys(next).length > 0) {

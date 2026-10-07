@@ -1,5 +1,6 @@
 import type { Operative, User } from '@/types'
 import { hasAdminAccess } from '@/lib/permissions'
+import { isPendingPerson } from '@/lib/staff/pendingPeople'
 import { lineManagerUserIds } from '@/lib/timesheets/timesheetApprovalPolicy'
 
 export interface AnnualLeavePerson {
@@ -59,6 +60,8 @@ export function buildAnnualLeavePeople(users: User[], operatives: Operative[]): 
 
   for (const user of users) {
     if (!user.isActive) continue
+    // Invitations stay on Manage users. They are not bookable on the team calendar.
+    if (isPendingPerson(user)) continue
     if (user.permissions.annualLeaveSelfBook) continue
     const email = user.email.toLowerCase()
     if (seenEmails.has(email)) continue
@@ -90,6 +93,7 @@ export function buildAnnualLeavePeople(users: User[], operatives: Operative[]): 
     if (!op.isActive) continue
     const email = op.email.toLowerCase()
     const linkedUser = users.find((u) => u.email.toLowerCase() === email)
+    if (linkedUser && isPendingPerson(linkedUser)) continue
     if (linkedUser?.permissions.annualLeaveSelfBook) continue
     if (seenEmails.has(email)) continue
     seenEmails.add(email)

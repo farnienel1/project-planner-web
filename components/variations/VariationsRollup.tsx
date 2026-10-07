@@ -2,14 +2,14 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { collection, onSnapshot, query, where } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useProjectStore } from '@/lib/stores/projectStore'
+import { useOperativeStore } from '@/lib/stores/operativeStore'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { hasAdminAccess } from '@/lib/permissions'
 import { canSeeAnyVariations, canSeeJobVariations } from '@/lib/variations/variationAccess'
-import { variationFromFirestore } from '@/lib/variations/variationStorage'
+import { subscribeOrganisationVariations, subscribeParentVariations } from '@/lib/variations/variationStorage'
 import {
   VARIATION_LIST_FILTERS,
   VARIATION_STATUS_COPY,
@@ -22,6 +22,7 @@ import type { Project } from '@/types'
 export function VariationsRollup() {
   const { user, organization } = useAuthStore()
   const { projects, smallWorks, loadProjects, loadSmallWorks } = useProjectStore()
+  const { managers, loadManagers } = useOperativeStore()
   const { loadUsers } = useOrgUserStore()
   const [rows, setRows] = useState<Variation[]>([])
   const [error, setError] = useState<string | null>(null)
@@ -32,31 +33,33 @@ export function VariationsRollup() {
     loadProjects(organization.id, true)
     loadSmallWorks(organization.id)
     loadUsers(organization.id)
-  }, [organization?.id, user, loadProjects, loadSmallWorks, loadUsers])
+    loadManagers(organization.id)
+  }, [organization?.id, user, loadProjects, loadSmallWorks, loadUsers, loadManagers])
 
   const jobs = [...projects, ...smallWorks]
-  const visibleJobs = jobs.filter((job) => canSeeJobVariations(user, job))
+  const visibleJobs = jobs.filter((job) => canSeeJobVariations(user, job, managers))
   const admin = hasAdminAccess(user)
 
   useEffect(() => {
     if (!organization?.id || !db || !user || !canSeeAnyVariations(user)) return
     if (admin) {
-      return onSnapshot(
-        collection(db, 'organizations', organization.id, 'variations'),
-        (snap) => setRows(snap.docs.map((entry) => variationFromFirestore(entry.id, entry.data() as Record<string, unknown>))),
+      return subscribeOrganisationVariations(
+        organization.id,
+        (next) => {
+          setRows(next)
+          setError(null)
+        },
         () => setError('Variations did not load.')
       )
     }
     const unsubs = visibleJobs.map((job) =>
-      onSnapshot(
-        query(collection(db!, 'organizations', organization.id, 'variations'), where('parentId', '==', job.id)),
-        (snap) => {
+      subscribeParentVariations(
+        organization.id,
+        job.id,
+        (next) => {
           setRows((current) => {
             const others = current.filter((row) => row.parentId !== job.id)
-            return [
-              ...others,
-              ...snap.docs.map((entry) => variationFromFirestore(entry.id, entry.data() as Record<string, unknown>)),
-            ]
+            return [...others, ...next]
           })
         },
         () => setError('Variations did not load.')

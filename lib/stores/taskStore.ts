@@ -103,6 +103,7 @@ interface TaskState {
   tasks: ProjectTask[]
   loading: boolean
   error: string | null
+  tasksLoadedOrgId: string | null
   loadTasks: (organizationId: string) => Promise<void>
   saveTask: (task: ProjectTask) => Promise<void>
   deleteTask: (organizationId: string, taskId: string) => Promise<void>
@@ -114,6 +115,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
   tasks: [],
   loading: false,
   error: null,
+  tasksLoadedOrgId: null,
 
   loadTasks: async (organizationId) => {
     await runOrgLoad(`taskStore:tasks`, organizationId, async () => {
@@ -126,7 +128,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
         const previous = tasksOrgId === organizationId ? get().tasks : []
         const tasks = retainScopedRows(`tasks:${organizationId}`, previous, mapped)
         tasksOrgId = organizationId
-        set({ tasks, loading: false })
+        set({ tasks, loading: false, tasksLoadedOrgId: organizationId })
       } catch (error: unknown) {
         set({ error: error instanceof Error ? error.message : 'Failed to load tasks', loading: false })
         throw error

@@ -42,6 +42,34 @@ function user(partial: Partial<User> & Pick<User, 'id' | 'firstName' | 'surname'
   } as User
 }
 
+test('pending invitations are not toolbox-talk recipients', () => {
+  const pending = user({
+    id: 'invite',
+    firstName: 'Test',
+    surname: 'User',
+    passwordSet: false,
+    role: UserRole.MANAGER,
+    permissions: {
+      adminAccess: false,
+      manager: true,
+      operatives: false,
+      skills: false,
+      qualifications: false,
+      materials: false,
+      projects: false,
+      smallWorks: false,
+      operativeMode: false,
+      annualLeaveSelfBook: false,
+      weeklyReports: false,
+      dailyOverview: false,
+      subContractors: false,
+      siteAudit: false,
+      wholesalersOrderHistory: false,
+    },
+  })
+  assert.equal(isHsRecipient(pending), false)
+})
+
 test('userTradeLabel uses custom Other trade and falls back to General', () => {
   assert.equal(userTradeLabel({ tradeTypePreset: 'Electrician' }), 'Electrician')
   assert.equal(userTradeLabel({ tradeTypePreset: 'Other', tradeTypeCustom: 'Splicer' }), 'Splicer')

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useAuthStore } from '@/lib/stores/authStore'
+import { useOperativeStore } from '@/lib/stores/operativeStore'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { useToast } from '@/components/ui/ToastProvider'
 import { uploadFile, variationEvidencePath } from '@/lib/firebase/storageUtils'
@@ -67,6 +68,7 @@ export function VariationsWorkspace({
   parentType: 'project' | 'smallWork'
 }) {
   const { user, organization } = useAuthStore()
+  const { managers, loadManagers } = useOperativeStore()
   const { users, loadUsers } = useOrgUserStore()
   const toast = useToast()
   const [rows, setRows] = useState<Variation[]>([])
@@ -81,12 +83,12 @@ export function VariationsWorkspace({
   const [trades, setTrades] = useState<string[]>([])
 
   const parentName = parentDisplayName(project.jobNumber, project.siteName)
-  const canEdit = canEditVariationContent(user, project)
-  const canStatus = canChangeVariationStatus(user, project)
+  const canEdit = canEditVariationContent(user, project, managers)
+  const canStatus = canChangeVariationStatus(user, project, managers)
   const canTrack = canManageVariationTracker(user)
   const base = parentType === 'smallWork' ? `/dashboard/small-works/${project.id}` : `/dashboard/projects/${project.id}`
 
-  const allowed = canSeeJobVariations(user, project)
+  const allowed = canSeeJobVariations(user, project, managers)
 
   useEffect(() => {
     if (!allowed || !organization?.id) {
@@ -94,6 +96,7 @@ export function VariationsWorkspace({
       return
     }
     loadUsers(organization.id)
+    loadManagers(organization.id)
     loadCustomTrades(organization.id).then(setTrades).catch(() => {})
     loadVariationTracker(organization.id, project.id).then(setTracker).catch(() => {})
     const unsubRows = subscribeParentVariations(
@@ -113,7 +116,7 @@ export function VariationsWorkspace({
       unsubRows()
       unsubTracker()
     }
-  }, [allowed, organization?.id, project.id, loadUsers])
+  }, [allowed, organization?.id, project.id, loadUsers, loadManagers])
 
   const live = rows.filter((row) => !row.isDeleted)
   const counts = {

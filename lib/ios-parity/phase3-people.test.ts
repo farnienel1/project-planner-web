@@ -6,6 +6,7 @@ import {
   filterRosterByNameQuery,
   getManagerUsers,
   getManagersRosterUsers,
+  lineManagerChoices,
 } from '../staff/userRosterUtils.ts'
 import { coversCalendarDay, dateFromDayKey, dayKey } from './londonTime.ts'
 import { normalizeTimeSlot } from './enums.ts'
@@ -58,6 +59,23 @@ test('getManagersRosterUsers excludes admins; getManagerUsers still includes the
   assert.equal(roster.length, 1)
   assert.equal(roster[0].id, 'm')
   assert.equal(pickers.length, 2)
+})
+
+test('line manager choices omit pending invites', () => {
+  const admin = user({ id: 'admin', email: 'admin@x.com', firstName: 'Test', surname: 'Admin' })
+  const pending = user({
+    id: 'pending',
+    email: 'tes@user.co.uk',
+    firstName: 'Test',
+    surname: 'User',
+    passwordSet: false,
+  })
+  const self = user({ id: 'op', email: 'op@x.com', firstName: 'Test', surname: 'Operative', role: UserRole.OPERATIVE })
+  const choices = lineManagerChoices([admin, pending, self], 'op')
+  assert.deepEqual(
+    choices.map((row) => row.id),
+    ['admin']
+  )
 })
 
 test('filterRosterByNameQuery token-matches name email and phone', () => {
