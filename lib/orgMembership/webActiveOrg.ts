@@ -1,5 +1,6 @@
 import type { User, UserPermissions, UserRole } from '@/types'
 import { UserRole as Role } from '@/types'
+import { withTimeout } from '@/lib/client/withTimeout'
 import { permissionsFromRecord } from '@/lib/orgMembership/orgRoleFlags'
 
 const STORAGE_PREFIX = 'pp.webActiveOrg:'
@@ -33,6 +34,57 @@ export function organizationIdsMatch(lhs?: string | null, rhs?: string | null): 
 
 /** Result of asking Firestore whether this login belongs to a company. */
 export type OrgAccessProbe = 'allowed' | 'denied' | 'unknown'
+
+/** One membership probe. Short enough that a slow read cannot hold the splash. */
+export const SESSION_ORG_PROBE_MS = 2_000
+
+/**
+ * The company to open before membership reads finish.
+ * Explicit switch, then the company this browser remembers, then the user document.
+ */
+export function provisionalWebOrganizationId(input: {
+  explicitOrganizationId?: string | null
+  rememberedOrganizationId?: string | null
+  documentOrganizationId?: string | null
+}): string {
+  for (const value of [input.explicitOrganizationId, input.rememberedOrganizationId, input.documentOrganizationId]) {
+    const organizationId = String(value || '').trim()
+    if (organizationId) return organizationId
+  }
+  return ''
+}
+
+/**
+ * Ask each company at the same time. A read that does not finish is `unknown`
+ * from `unknown()`, which keeps the company the browser already chose.
+ */
+export async function probeSessionOrganizations<T>(
+  organizationIds: readonly (string | null | undefined)[],
+  read: (organizationId: string) => Promise<T>,
+  unknown: () => T,
+  timeoutMs = SESSION_ORG_PROBE_MS
+): Promise<Map<string, T>> {
+  const unique: string[] = []
+  for (const value of organizationIds) {
+    const organizationId = String(value || '').trim()
+    if (!organizationId) continue
+    if (unique.some((existing) => organizationIdsMatch(existing, organizationId))) continue
+    unique.push(organizationId)
+  }
+
+  const rows = await Promise.all(
+    unique.map(async (organizationId) => {
+      const pending = read(organizationId).catch(() => unknown())
+      try {
+        const value = await withTimeout(pending, timeoutMs, 'Organisation membership check timed out')
+        return [organizationId, value] as const
+      } catch {
+        return [organizationId, unknown()] as const
+      }
+    })
+  )
+  return new Map(rows)
+}
 
 /**
  * Pick the company this browser should open.
@@ -224,4 +276,35 @@ export function applyDeviceOrgMembership(
       siteAudit: operativeMode ? permissions.siteAudit : true,
     },
   }
+}
+
+/**
+ * Apply a finished membership read. A slow or failed read keeps the admin menu
+ * and the company already chosen; only a real membership may narrow it.
+ */
+export function sessionUserForOrganizationProbe(
+  user: User,
+  documentOrganizationId: string,
+  session: {
+    organizationId: string
+    membership: Record<string, unknown> | null
+    listedRole?: string | null
+    probe: OrgAccessProbe
+  }
+): User {
+  const organizationId = String(session.organizationId || '').trim()
+  if (!organizationId) return user
+  const unconfirmedElsewhere =
+    session.probe === 'unknown' &&
+    !session.membership &&
+    !session.listedRole &&
+    !organizationIdsMatch(organizationId, documentOrganizationId)
+  if (unconfirmedElsewhere) return { ...user, organizationId }
+  return applyDeviceOrgMembership(
+    user,
+    documentOrganizationId,
+    organizationId,
+    session.membership,
+    session.listedRole
+  )
 }

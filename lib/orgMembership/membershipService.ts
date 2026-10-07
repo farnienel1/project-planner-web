@@ -19,6 +19,7 @@ import { permissionsToFirestoreMap } from '@/lib/firebase/userPayload'
 import {
   chooseWebSessionOrganization,
   organizationIdsMatch,
+  probeSessionOrganizations,
   readWebActiveOrg,
   writeWebActiveOrg,
   type OrgAccessProbe,
@@ -412,19 +413,26 @@ export async function resolveWebSessionOrganization(
   userId: string,
   documentOrganizationId: string,
   explicitOrganizationId?: string | null
-): Promise<{ organizationId: string; membership: Record<string, unknown> | null; listedRole: string | null }> {
+): Promise<{
+  organizationId: string
+  membership: Record<string, unknown> | null
+  listedRole: string | null
+  probe: OrgAccessProbe
+}> {
   const remembered = readWebActiveOrg(userId)
-  const candidates = [explicitOrganizationId, remembered, documentOrganizationId]
+  const checked = await probeSessionOrganizations(
+    [explicitOrganizationId, remembered, documentOrganizationId],
+    (organizationId) => membershipForDeviceOrg(userId, organizationId),
+    () => ({ probe: 'unknown' as const, membership: null, listedRole: null })
+  )
   const probes = new Map<string, OrgAccessProbe>()
-  const details = new Map<string, { membership: Record<string, unknown> | null; listedRole: string | null }>()
-
-  for (const value of candidates) {
-    const organizationId = String(value || '').trim()
-    if (!organizationId) continue
-    if ([...probes.keys()].some((existing) => organizationIdsMatch(existing, organizationId))) continue
-    const checked = await membershipForDeviceOrg(userId, organizationId)
-    probes.set(organizationId, checked.probe)
-    details.set(organizationId, { membership: checked.membership, listedRole: checked.listedRole })
+  const details = new Map<
+    string,
+    { probe: OrgAccessProbe; membership: Record<string, unknown> | null; listedRole: string | null }
+  >()
+  for (const [organizationId, value] of checked) {
+    probes.set(organizationId, value.probe)
+    details.set(organizationId, value)
   }
 
   const choice = chooseWebSessionOrganization({
@@ -433,17 +441,26 @@ export async function resolveWebSessionOrganization(
     documentOrganizationId,
     probes,
   })
-  if (!choice.organizationId) return { organizationId: '', membership: null, listedRole: null }
+  if (!choice.organizationId) return { organizationId: '', membership: null, listedRole: null, probe: 'unknown' }
   if (choice.persistOrganizationId) writeWebActiveOrg(userId, choice.persistOrganizationId)
 
-  let detail = { membership: null as Record<string, unknown> | null, listedRole: null as string | null }
+  let detail = {
+    probe: 'unknown' as OrgAccessProbe,
+    membership: null as Record<string, unknown> | null,
+    listedRole: null as string | null,
+  }
   for (const [organizationId, value] of details) {
     if (organizationIdsMatch(organizationId, choice.organizationId)) {
       detail = value
       break
     }
   }
-  return { organizationId: choice.organizationId, membership: detail.membership, listedRole: detail.listedRole }
+  return {
+    organizationId: choice.organizationId,
+    membership: detail.membership,
+    listedRole: detail.listedRole,
+    probe: detail.probe,
+  }
 }
 
 /** Ensure the primary org membership exists for org creators (backward compat). */
