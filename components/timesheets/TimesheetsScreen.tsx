@@ -163,7 +163,7 @@ export function TimesheetsScreen({
       const canonical = await loadCanonicalTimesheetDrafts(organization.id, userIds, periodStart, timeZone)
       if (stale()) return
       listed = mergeListedTimesheetDrafts(listed, canonical)
-      setDrafts(listed)
+      setDrafts((current) => mergeListedTimesheetDrafts(current, listed))
     } catch {
       if (!stale()) setLoadError('Timesheets did not finish loading. Check the connection and try again.')
       return
