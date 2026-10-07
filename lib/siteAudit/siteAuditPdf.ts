@@ -340,8 +340,6 @@ export function buildSiteAuditPdfHtml(audit: SiteAudit, context: SiteAuditPdfCon
 
     .pdf-item {
       padding: 0 32px 22px;
-      break-inside: avoid;
-      page-break-inside: avoid;
     }
 
     .pdf-item-card {
@@ -375,10 +373,13 @@ export function buildSiteAuditPdfHtml(audit: SiteAudit, context: SiteAuditPdfCon
 
     .pdf-item-title {
       flex: 1;
+      min-width: 0;
       font-size: 13px;
       font-weight: 600;
       color: var(--c-text);
       margin: 0;
+      line-height: 1.35;
+      overflow-wrap: anywhere;
     }
 
     .pdf-item-time {
@@ -417,14 +418,19 @@ export function buildSiteAuditPdfHtml(audit: SiteAudit, context: SiteAuditPdfCon
 
     .pdf-photo-timestamp {
       position: absolute;
-      bottom: 6px;
-      left: 6px;
-      background: rgba(0, 0, 0, 0.75);
+      left: 0;
+      right: 0;
+      bottom: 0;
+      min-height: 62%;
+      display: flex;
+      align-items: flex-end;
+      background: #081020;
       color: #FFFFFF;
       font-size: 9px;
-      padding: 2px 6px;
-      border-radius: 2px;
+      line-height: 1.3;
+      padding: 6px 8px;
       font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      overflow-wrap: anywhere;
     }
 
     .pdf-detail-row { padding: 4px 0; }
@@ -441,8 +447,9 @@ export function buildSiteAuditPdfHtml(audit: SiteAudit, context: SiteAuditPdfCon
       font-size: 11px;
       color: var(--c-text);
       margin: 0;
-      line-height: 1.4;
+      line-height: 1.45;
       white-space: pre-wrap;
+      overflow-wrap: anywhere;
     }
     .pdf-detail-row .v-muted {
       color: var(--c-text-secondary);

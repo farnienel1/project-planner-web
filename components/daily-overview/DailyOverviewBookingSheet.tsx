@@ -1,8 +1,8 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { format } from 'date-fns'
 import { Modal } from '@/components/ui'
+import { LONDON_TIME_ZONE, formatAbbreviatedDayInZone } from '@/lib/orgTime/zoneTime'
 import { FilterChip } from '@/components/ios/primitives'
 import { HoursBreakdownCard } from '@/components/schedule/HoursBreakdownCard'
 import { HoursTimelinePicker } from '@/components/scheduling/HoursTimelinePicker'
@@ -330,7 +330,7 @@ export function DailyOverviewBookingSheet({
       open
       hue="daily"
       title={row.name}
-      subtitle={`Change this booking · ${format(day, 'EEE d MMM')}`}
+      subtitle={`Change this booking · ${formatAbbreviatedDayInZone(day, LONDON_TIME_ZONE)}`}
       onClose={onClose}
       footer={false}
     >

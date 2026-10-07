@@ -192,4 +192,33 @@ test('a device organisation uses that membership and does not copy super admin f
     adminAccess: true,
   })
   assert.equal(sameCompany.isSuperAdmin, true)
+  assert.equal(sameCompany.permissions.projects, true)
+})
+
+test('same-company membership role does not turn an operative into an admin', () => {
+  const operative = user({
+    id: 'op',
+    email: 'op@site.com',
+    organizationId: '2C67391E-D1FE-4F9F-8055-7149ACDE1F96',
+    role: UserRole.OPERATIVE,
+    permissions: {
+      ...permissions,
+      manager: false,
+      operatives: false,
+      adminAccess: false,
+      operativeMode: true,
+      projects: true,
+      materials: true,
+    },
+  })
+  const session = applyDeviceOrgMembership(
+    operative,
+    '2C67391E-D1FE-4F9F-8055-7149ACDE1F96',
+    '2c67391e-d1fe-4f9f-8055-7149acde1f96',
+    { role: 'admin', status: 'active', isSuperAdmin: false }
+  )
+  assert.equal(session.role, UserRole.OPERATIVE)
+  assert.equal(session.permissions.operativeMode, true)
+  assert.equal(session.permissions.adminAccess, false)
+  assert.equal(session.isSuperAdmin, false)
 })

@@ -11,7 +11,7 @@ import {
   EVIDENCE_MAX_FILES,
   VARIATION_HEADER_COPY,
   VARIATION_STATUS_COPY,
-  VARIATION_TRADES,
+  mergedVariationTradeOptions,
   evidenceFileAllowed,
   parentDisplayName,
   type Variation,
@@ -428,7 +428,7 @@ function VariationEditor({
   ) => Promise<void>
 }) {
   const suggested = nextFreeVoNumber(siblings, prefix, padding)
-  const tradeOptions = [...VARIATION_TRADES, ...trades.filter((item) => !VARIATION_TRADES.includes(item as (typeof VARIATION_TRADES)[number]))]
+  const tradeOptions = mergedVariationTradeOptions(trades)
   const initialLabour: LabourLine[] = (existing?.labour || []).map((line) => ({
     id: line.id,
     trade: line.trade,

@@ -47,7 +47,7 @@ export function ProjectVisibilityPage({
   const { users, loadUsers } = useOrgUserStore()
   const { saveProject } = useProjectStore()
   const [tab, setTab] = useState<VisibilityTab>('managers')
-  const [segment, setSegment] = useState<VisibilitySegment>('all')
+  const [segment, setSegment] = useState<VisibilitySegment>('active')
   const [showSearch, setShowSearch] = useState(false)
   const [search, setSearch] = useState('')
   const [hiddenManagers, setHiddenManagers] = useState<Set<string>>(
@@ -149,14 +149,19 @@ export function ProjectVisibilityPage({
         {error && <ErrorBanner message={error} />}
 
         <div className="seg">
-          {(['managers', 'operatives'] as VisibilityTab[]).map((item) => (
+          {(
+            [
+              ['managers', 'Managers'],
+              ['operatives', 'Operatives'],
+            ] as const
+          ).map(([item, label]) => (
             <button
               key={item}
               type="button"
               className={tab === item ? 'on' : ''}
               onClick={() => setTab(item)}
             >
-              {item}
+              {label}
             </button>
           ))}
         </div>

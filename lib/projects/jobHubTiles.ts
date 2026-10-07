@@ -15,6 +15,8 @@ export function jobHubTiles(input: {
   showViewTile: boolean
   canViewMaterials: boolean
   canViewSiteAudit: boolean
+  /** iOS shows Active users only for admins and managers assigned to the job. */
+  showActiveUsers?: boolean
   locationCaption?: string
 }): JobHubTile[] {
   const tiles: JobHubTile[] = []
@@ -38,5 +40,12 @@ export function jobHubTiles(input: {
     label: 'Location',
     desc: input.locationCaption || 'View on map',
   })
+  if (input.showActiveUsers && !input.isOperative) {
+    tiles.push({
+      href: 'active-users',
+      label: 'Active users',
+      desc: 'Operatives, staff and subcontractors booked on this job',
+    })
+  }
   return tiles
 }

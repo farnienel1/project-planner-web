@@ -27,6 +27,8 @@ import {
   sortedDateSlots,
   type ScheduleDateSlot,
 } from '@/lib/scheduling/scheduleUtils'
+import { scheduleWorkKindLabel } from '@/lib/jobTypes/jobTypesStorage'
+import { scheduleBookingClientLine } from '@/lib/maps/siteAddress'
 import { ErrorBanner } from '@/components/dashboard/PageShell'
 import { ScheduleBookingReviewStep } from '@/components/projects/scheduling/ScheduleBookingReviewStep'
 import { ScheduleDatesStep } from '@/components/projects/scheduling/ScheduleDatesStep'
@@ -303,9 +305,8 @@ export function ScheduleOperativeForm({
       <div className="card pad">
         <p className="text-xs font-semibold text-[var(--blue)]">{project.jobNumber}</p>
         <p className="text-lg font-semibold text-[var(--ink)]">{project.siteName}</p>
-        <p className="mt-1 text-sm text-[var(--ink2)]">
-          {project.client?.name} · {[project.addressLine1, project.townCity, project.postcode].filter(Boolean).join(', ')}
-        </p>
+        <p className="mt-1 text-sm text-[var(--ink2)]">{scheduleBookingClientLine(project)}</p>
+        <p className="text-xs text-[var(--ink3)]">{scheduleWorkKindLabel(project)}</p>
       </div>
 
       <div className="flex flex-wrap gap-2">

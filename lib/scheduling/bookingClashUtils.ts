@@ -1,9 +1,18 @@
-import { format } from 'date-fns'
 import type { Booking, Operative, Project, User } from '@/types'
 import { UserRole } from '@/types'
 import type { ScheduleDateSlot } from '@/lib/scheduling/scheduleUtils'
 import { slotToFirestore } from '@/lib/scheduling/scheduleUtils'
 import { dayKey, isSameLondonDay, londonMidnight } from '@/lib/ios-parity/londonTime'
+import { LONDON_TIME_ZONE } from '@/lib/orgTime/zoneTime'
+
+function formatLondonDay(date: Date): string {
+  return new Intl.DateTimeFormat('en-GB', {
+    timeZone: LONDON_TIME_ZONE,
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  }).format(date)
+}
 import { isActiveBookingStatus, isSmallWorksJobType } from '@/lib/ios-parity/enums'
 import type { OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 import { DEFAULT_PAYROLL_POLICY } from '@/lib/settings/organizationSettings'
@@ -220,7 +229,7 @@ export function formatClashSummary(clashes: OperativeBookingClash[]): string {
     .slice(0, 2)
     .map(
       (clash) =>
-        `${format(clash.date, 'd MMM yyyy')} · ${clash.existingTimeSlot} · ${clash.existingProjectLabel}`
+        `${formatLondonDay(clash.date)} · ${clash.existingTimeSlot} · ${clash.existingProjectLabel}`
     )
     .join(' · ')
 }
@@ -282,7 +291,7 @@ export function computeOperativeBookingClashWarnings(
         projectBId: b.projectId,
         projectALabel,
         projectBLabel,
-        message: `${operativeName} is booked in ${place} places on ${format(londonMidnight(a.date), 'd MMM yyyy')}. Approve if it's intentional and it'll be noted on the weekly report.`,
+        message: `${operativeName} is booked in ${place} places on ${formatLondonDay(londonMidnight(a.date))}. Approve if it's intentional and it'll be noted on the weekly report.`,
         entries: sorted.map((booking) =>
           clashEntryFromOperativeBooking(booking, projectsById.get(booking.projectId), payrollPolicy)
         ),

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import {
   assignedQualificationTemplates,
   mergeQualificationTemplates,
+  qualificationEditCanSave,
   qualificationNameTaken,
   qualificationTemplateFirestoreFields,
 } from './orgQualificationStorage.ts'
@@ -25,6 +26,15 @@ test('a qualification template write includes the fields iOS requires', () => {
   assert.ok(fields.createdAt)
   assert.ok(fields.updatedAt)
   assert.equal('endDate' in fields, false)
+})
+
+test('editing a qualification cannot save until the name actually changes', () => {
+  assert.equal(qualificationEditCanSave('NVQ Level 7', 'NVQ Level 7'), false)
+  assert.equal(qualificationEditCanSave('  NVQ Level 7  ', 'NVQ Level 7'), false)
+  assert.equal(qualificationEditCanSave('nvq level 7', 'NVQ Level 7'), true)
+  assert.equal(qualificationEditCanSave('SMSTS', 'NVQ Level 7'), true)
+  assert.equal(qualificationEditCanSave('SMSTS', 'NVQ Level 7', true), false)
+  assert.equal(qualificationEditCanSave('   ', 'NVQ Level 7'), false)
 })
 
 test('qualificationNameTaken is case-insensitive and ignores the row being edited', () => {

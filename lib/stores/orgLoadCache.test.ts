@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { OrgLoadNotCached, runOrgLoad, shouldSkipOrgLoad } from './orgLoadCache.ts'
+import { optionsForUnappliedOrg, OrgLoadNotCached, runOrgLoad, shouldSkipOrgLoad } from './orgLoadCache.ts'
 
 async function flush(): Promise<void> {
   await new Promise((resolve) => setImmediate(resolve))
@@ -41,6 +41,16 @@ test('a load that applies nothing is not cached as an empty company', async () =
   })
   assert.equal(calls, 1)
   assert.equal(shouldSkipOrgLoad(key, 'org-1'), true)
+})
+
+test('a warm load cache still refetches when the store has not applied that organisation', async () => {
+  const key = `unapplied-${Date.now()}`
+  await runOrgLoad(key, 'org-1', async () => {})
+  assert.equal(shouldSkipOrgLoad(key, 'org-1'), true)
+  const forced = optionsForUnappliedOrg(key, 'org-1', false, undefined)
+  assert.equal(forced?.force, true)
+  const kept = optionsForUnappliedOrg(key, 'org-1', true, undefined)
+  assert.equal(kept, undefined)
 })
 
 test('a finished load is reused until the ttl expires', async () => {

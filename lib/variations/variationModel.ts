@@ -127,6 +127,22 @@ export const VARIATION_TRADES = [
   'Labourer',
 ] as const
 
+/** iOS VariationTrades.mergedPickerOptions — standard order, then custom names A–Z. */
+export function mergedVariationTradeOptions(custom: string[]): string[] {
+  const seen = new Set<string>(VARIATION_TRADES.map((trade) => trade.toLowerCase()))
+  const extras: string[] = []
+  for (const trade of custom) {
+    const trimmed = trade.trim()
+    if (!trimmed) continue
+    const key = trimmed.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    extras.push(trimmed)
+  }
+  extras.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+  return [...VARIATION_TRADES, ...extras]
+}
+
 export const CUSTOM_TRADE_OPTION = 'Custom trade…'
 
 export const EVIDENCE_ACCEPT = ['image/jpeg', 'image/png', 'image/heic', 'image/heif', 'application/pdf']

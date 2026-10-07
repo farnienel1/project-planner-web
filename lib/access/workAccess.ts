@@ -75,9 +75,9 @@ export function isTaskAssignedToUser(params: {
   const raw = normalizedEmail(params.userEmail)
   if (!raw) return false
   if (params.isOperativeMode) {
-    const op = params.operatives.find((o) => normalizedEmail(o.email) === raw)
-    if (!op) return false
-    return allAssignedOperativeIds(params.task).includes(op.id)
+    const ids = params.operatives.filter((o) => normalizedEmail(o.email) === raw).map((o) => o.id)
+    const assigned = allAssignedOperativeIds(params.task)
+    return ids.some((id) => assigned.includes(id))
   }
   const mgr = params.managers.find((m) => normalizedEmail(m.email) === raw)
   if (mgr && allAssignedManagerIdsOnTask(params.task).includes(mgr.id)) return true

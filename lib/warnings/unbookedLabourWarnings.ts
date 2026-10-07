@@ -54,6 +54,18 @@ function displayNameForOperative(operative: Operative): string {
   return `${operative.firstName} ${operative.lastName}`.trim() || operative.email || 'Operative'
 }
 
+function profileWeight(operative: Operative): number {
+  return (
+    (operative.qualifications?.length ?? 0) +
+    Object.keys(operative.qualificationCertificateURLs || {}).length +
+    Object.keys(operative.qualificationExpiryDates || {}).length
+  )
+}
+
+function preferOperativeWithProfile(a: Operative, b: Operative): Operative {
+  return profileWeight(a) >= profileWeight(b) ? a : b
+}
+
 function emailKey(value: string | undefined): string {
   return (value || '').trim().toLowerCase()
 }
@@ -242,9 +254,24 @@ export function computeUnbookedLabourWarningsForDateRange({
     Boolean(userId) && managerBookedDays.has(`${userId}|${dayKey(day, timeZone)}`)
 
   const operativesByEmail = new Map<string, Operative>()
+  const operativeIdsByEmail = new Map<string, Set<string>>()
   for (const operative of operatives) {
     const email = emailKey(operative.email)
-    if (email) operativesByEmail.set(email, operative)
+    if (!email) continue
+    const ids = operativeIdsByEmail.get(email) || new Set<string>()
+    if (operative.id) ids.add(operative.id)
+    operativeIdsByEmail.set(email, ids)
+    const existing = operativesByEmail.get(email)
+    operativesByEmail.set(email, existing ? preferOperativeWithProfile(existing, operative) : operative)
+  }
+
+  const hasEmailOperativeBooking = (email: string, day: Date): boolean => {
+    const ids = operativeIdsByEmail.get(email)
+    if (!ids) return false
+    for (const id of ids) {
+      if (hasOperativeBooking(id, day)) return true
+    }
+    return false
   }
 
   const operativeUsers = dedupeFinishedUsers(users.filter(isOperativeModeOnlyUser))
@@ -306,7 +333,10 @@ export function computeUnbookedLabourWarningsForDateRange({
         personKey: user.id,
         name: displayNameForUser(user),
         email: emailKey(user.email),
-        hasBooking: hasOperativeBooking(linked?.id, day) || hasManagerBooking(user.id, day),
+        hasBooking:
+          hasEmailOperativeBooking(emailKey(user.email), day) ||
+          hasOperativeBooking(linked?.id, day) ||
+          hasManagerBooking(user.id, day),
         requiredHours,
         day,
         operativeId: linked?.id || user.id,
@@ -323,7 +353,10 @@ export function computeUnbookedLabourWarningsForDateRange({
         personKey: user.id,
         name: displayNameForUser(user),
         email: emailKey(user.email),
-        hasBooking: hasManagerBooking(user.id, day) || hasOperativeBooking(linked?.id, day),
+        hasBooking:
+          hasEmailOperativeBooking(emailKey(user.email), day) ||
+          hasManagerBooking(user.id, day) ||
+          hasOperativeBooking(linked?.id, day),
         requiredHours,
         day,
         operativeId: linked?.id || user.id,
@@ -347,7 +380,10 @@ export function computeUnbookedLabourWarningsForDateRange({
         personKey: matchedUser?.id || operative.id,
         name: matchedUser ? displayNameForUser(matchedUser) : displayNameForOperative(operative),
         email: email || operative.id,
-        hasBooking: hasOperativeBooking(operative.id, day) || hasManagerBooking(matchedUser?.id, day),
+        hasBooking:
+          hasEmailOperativeBooking(email, day) ||
+          hasOperativeBooking(operative.id, day) ||
+          hasManagerBooking(matchedUser?.id, day),
         requiredHours,
         day,
         operativeId: operative.id,

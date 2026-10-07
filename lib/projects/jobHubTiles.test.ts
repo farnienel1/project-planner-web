@@ -29,3 +29,27 @@ test('managers see Scheduling, optional View, materials and site audit', () => {
   )
   assert.equal(tiles.at(-1)?.desc, '12 High St')
 })
+
+test('Active users is a manager tile and stays hidden in operative mode', () => {
+  const managerTiles = jobHubTiles({
+    isOperative: false,
+    showViewTile: false,
+    canViewMaterials: true,
+    canViewSiteAudit: true,
+    showActiveUsers: true,
+  })
+  assert.equal(managerTiles.at(-1)?.href, 'active-users')
+  assert.equal(managerTiles.at(-1)?.label, 'Active users')
+
+  const operativeTiles = jobHubTiles({
+    isOperative: true,
+    showViewTile: false,
+    canViewMaterials: true,
+    canViewSiteAudit: true,
+    showActiveUsers: true,
+  })
+  assert.equal(
+    operativeTiles.some((tile) => tile.href === 'active-users'),
+    false
+  )
+})

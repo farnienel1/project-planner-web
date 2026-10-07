@@ -63,6 +63,10 @@ export function SiteAuditCreateFlow({ project, onClose, onCreated }: Props) {
     try {
       const next: DraftItem[] = []
       for (const file of Array.from(list)) {
+        if (!file.type.startsWith('image/')) {
+          setError('Choose a photo. PDF and other documents cannot be added as an audit image.')
+          return
+        }
         const prepared = await prepareAuditPhoto(file)
         next.push({
           id: newUuid(),

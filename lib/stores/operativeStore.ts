@@ -14,7 +14,7 @@ import { newUuid } from '@/lib/firebase/firestoreUtils'
 import { db } from '@/lib/firebase/config'
 import type { Operative, Manager, Skill, Qualification } from '@/types'
 import { filterRealManagers, isPlaceholderManager } from '@/lib/staff/managerRosterUtils'
-import { runOrgLoad, invalidateOrgLoad } from '@/lib/stores/orgLoadCache'
+import { invalidateOrgLoad, optionsForUnappliedOrg, runOrgLoad } from '@/lib/stores/orgLoadCache'
 import { applyExclusiveRateFields } from '@/lib/firebase/userPayload'
 import { parseManager, parseOperative, serializeManager, serializeOperative } from '@/lib/ios-parity/converters'
 import { readStoredRates } from '@/lib/timesheets/payBasis'
@@ -61,6 +61,12 @@ export const useOperativeStore = create<OperativeState>((set, get) => ({
   error: null,
   
   loadOperatives: async (organizationId: string, options?: { force?: boolean }) => {
+    const loadOptions = optionsForUnappliedOrg(
+      OPERATIVES_KEY,
+      organizationId,
+      operativesOrgId === organizationId,
+      options
+    )
     await runOrgLoad(
       OPERATIVES_KEY,
       organizationId,
@@ -70,7 +76,7 @@ export const useOperativeStore = create<OperativeState>((set, get) => ({
         const epoch = operativeMutationEpoch
         try {
           const operativesRef = collection(db, 'organizations', organizationId, 'operatives')
-          const snapshot = options?.force
+          const snapshot = loadOptions?.force
             ? await getDocsFromServer(operativesRef).catch(() => getDocs(operativesRef))
             : await getDocs(operativesRef)
           if (epoch !== operativeMutationEpoch) {
@@ -93,7 +99,7 @@ export const useOperativeStore = create<OperativeState>((set, get) => ({
           throw error
         }
       },
-      options
+      loadOptions
     )
   },
   

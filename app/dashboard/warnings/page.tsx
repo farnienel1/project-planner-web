@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/lib/stores/authStore'
+import { hasAdminAccess } from '@/lib/permissions'
 import { useProjectStore } from '@/lib/stores/projectStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
 import { useBookingStore } from '@/lib/stores/bookingStore'
@@ -25,11 +26,16 @@ import {
 } from '@/lib/settings/warningDetectionCache'
 import { loadMaterialCutOffSettings, type NotificationPreferences } from '@/lib/settings/notificationPreferences'
 import { generateOrgWarnings } from '@/lib/warnings/generateOrgWarnings'
+import { warningDetectionForScan, warningsScreenPhase } from '@/lib/warnings/warningsScan'
 import { WarningsScreen } from '@/components/warnings/WarningsScreen'
 
 export default function WarningsPage() {
   const router = useRouter()
   const { user, organization, loading } = useAuthStore()
+
+  useEffect(() => {
+    if (user && !hasAdminAccess(user)) router.replace('/dashboard')
+  }, [user, router])
   const { projects, smallWorks, loadProjects, loadSmallWorks } = useProjectStore()
   const { operatives, loadOperatives } = useOperativeStore()
   const { users, loadUsers } = useOrgUserStore()
@@ -42,6 +48,10 @@ export default function WarningsPage() {
   const [acceptedClashes, setAcceptedClashes] = useState<AcceptedBookingClash[]>([])
   const [orgDetails, setOrgDetails] = useState<OrganizationDetails | null>(null)
   const [notificationPreferences, setNotificationPreferences] = useState<NotificationPreferences | null>(null)
+  const [detectionSettled, setDetectionSettled] = useState(false)
+  const [rosterReady, setRosterReady] = useState(false)
+  const [operativesReady, setOperativesReady] = useState(false)
+  const [projectsReady, setProjectsReady] = useState(false)
   const cachedDetection = organization?.id ? readCachedWarningDetection(organization.id) : null
 
   useEffect(() => {
@@ -50,21 +60,33 @@ export default function WarningsPage() {
 
   useEffect(() => {
     if (organization?.id) {
-      loadProjects(organization.id, true)
-      loadSmallWorks(organization.id)
-      loadOperatives(organization.id)
-      loadUsers(organization.id)
-      loadBookings(organization.id)
-      loadManagerSiteBookings(organization.id)
-      loadAllMaterials(organization.id)
-      loadSendRecords(organization.id)
-      loadHolidayBookings(organization.id)
-      loadAcceptedBookingClashes(organization.id).then(setAcceptedClashes).catch(() => setAcceptedClashes([]))
-      const cached = readCachedWarningDetection(organization.id)
-      loadOrganizationDetails(organization.id, { fromServer: true })
+      const orgId = organization.id
+      let cancelled = false
+      setDetectionSettled(false)
+      setRosterReady(false)
+      setOperativesReady(false)
+      setProjectsReady(false)
+      void loadUsers(orgId).finally(() => {
+        if (!cancelled) setRosterReady(true)
+      })
+      void loadOperatives(orgId).finally(() => {
+        if (!cancelled) setOperativesReady(true)
+      })
+      void Promise.all([loadProjects(orgId, true), loadSmallWorks(orgId)]).finally(() => {
+        if (!cancelled) setProjectsReady(true)
+      })
+      loadBookings(orgId)
+      loadManagerSiteBookings(orgId)
+      loadAllMaterials(orgId)
+      loadSendRecords(orgId)
+      loadHolidayBookings(orgId)
+      loadAcceptedBookingClashes(orgId).then(setAcceptedClashes).catch(() => setAcceptedClashes([]))
+      const cached = readCachedWarningDetection(orgId)
+      loadOrganizationDetails(orgId, { fromServer: true, allowCacheFallback: false })
         .then((details) => {
+          if (cancelled) return
           const loaded = details?.warningDetection
-          const latestCache = readCachedWarningDetection(organization.id) ?? cached
+          const latestCache = readCachedWarningDetection(orgId) ?? cached
           if (
             details &&
             loaded &&
@@ -72,15 +94,23 @@ export default function WarningsPage() {
             warningDetectionLooksLikeFactoryDefault(loaded) &&
             !warningDetectionLooksLikeFactoryDefault(latestCache)
           ) {
-            writeCachedWarningDetection(organization.id, latestCache)
+            writeCachedWarningDetection(orgId, latestCache)
             setOrgDetails({ ...details, warningDetection: latestCache })
-            void saveWarningDetection(organization.id, latestCache).catch(() => {})
+            void saveWarningDetection(orgId, latestCache).catch(() => {})
             return
           }
-          if (loaded) writeCachedWarningDetection(organization.id, loaded)
+          if (loaded) writeCachedWarningDetection(orgId, loaded)
           setOrgDetails(details)
         })
-        .catch(() => setOrgDetails(null))
+        .catch(() => {
+          if (!cancelled) setOrgDetails(null)
+        })
+        .finally(() => {
+          if (!cancelled) setDetectionSettled(true)
+        })
+      return () => {
+        cancelled = true
+      }
     }
   }, [
     organization?.id,
@@ -110,11 +140,16 @@ export default function WarningsPage() {
     [projects, smallWorks]
   )
 
-  const warningDetection = orgDetails?.warningDetection ?? cachedDetection
+  const warningDetection = warningDetectionForScan(
+    orgDetails?.warningDetection,
+    cachedDetection,
+    detectionSettled
+  )
+  const sourcesReady = rosterReady && operativesReady && projectsReady
 
   const generated = useMemo(
     () => {
-      if (!warningDetection) {
+      if (!warningDetection || !sourcesReady) {
         return generateOrgWarnings({
           bookings: [],
           managerSiteBookings: [],
@@ -185,8 +220,24 @@ export default function WarningsPage() {
       notificationPreferences,
       bookingsLoading,
       managerLoading,
+      sourcesReady,
     ]
   )
+
+  const listedCount =
+    generated.clashWarnings.length +
+    generated.managerClashWarnings.length +
+    generated.unbookedWarnings.length +
+    generated.materialWarnings.length +
+    generated.qualificationWarnings.length +
+    generated.unverifiedWarnings.length
+  const scanPhase = warningsScreenPhase({
+    detectionReady: Boolean(warningDetection),
+    rosterReady,
+    operativesReady,
+    projectsReady,
+    warningCount: listedCount,
+  })
 
   const clashWarnings = useMemo(
     () => generated.clashWarnings.filter((w) => !isClashAccepted(w.bookingAId, w.bookingBId, acceptedClashes)),
@@ -224,7 +275,7 @@ export default function WarningsPage() {
     [deleteManagerSiteBooking, organization?.id]
   )
 
-  if (loading || !user) return null
+  if (loading || !user || !hasAdminAccess(user)) return null
 
   return (
     <WarningsScreen
@@ -236,7 +287,7 @@ export default function WarningsPage() {
       qualificationWarnings={generated.qualificationWarnings}
       unverifiedWarnings={generated.unverifiedWarnings}
       loading={
-        !warningDetection ||
+        scanPhase === 'scanning' ||
         (bookingsLoading && bookings.length === 0) ||
         (managerLoading && managerSiteBookings.length === 0)
       }

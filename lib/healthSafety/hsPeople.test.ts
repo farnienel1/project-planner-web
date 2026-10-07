@@ -64,6 +64,14 @@ test('filter and group recipients by trade with search', () => {
   const active = people.filter(isHsRecipient)
   assert.equal(active.length, 3)
   assert.deepEqual(recipientTradeFilters(active), ['All', 'Electrician', 'Plumber'])
+  assert.deepEqual(
+    recipientTradeFilters([
+      user({ id: 'p', firstName: 'Pat', surname: 'Lee', tradeTypePreset: 'Plumber' }),
+      user({ id: 'g', firstName: 'Ada', surname: 'Admin' }),
+      user({ id: 'e', firstName: 'Eve', surname: 'Watts', tradeTypePreset: 'Electrician' }),
+    ]),
+    ['All', 'General', 'Electrician', 'Plumber']
+  )
 
   const electricians = filterHsRecipients(active, '', 'Electrician')
   assert.deepEqual(

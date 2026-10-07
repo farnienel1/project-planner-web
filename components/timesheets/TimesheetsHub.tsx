@@ -99,6 +99,7 @@ export function TimesheetsHub() {
   const { users, loadUsers, loading: usersLoading } = useOrgUserStore()
   const { projects, smallWorks, loadProjects, loadSmallWorks } = useProjectStore()
   const [invoicing, setInvoicing] = useState<OrgInvoicingSettings>(DEFAULT_INVOICING)
+  const [payRunReady, setPayRunReady] = useState(false)
   const [payrollPolicy, setPayrollPolicy] = useState<OrgPayrollTimePolicy>(DEFAULT_PAYROLL_POLICY)
   const [payrollPolicyPrior, setPayrollPolicyPrior] = useState<OrgPayrollTimePolicy | null>(null)
   const [payrollPolicyEffectiveFrom, setPayrollPolicyEffectiveFrom] = useState<string | null>(null)
@@ -119,6 +120,8 @@ export function TimesheetsHub() {
 
   useEffect(() => {
     if (!organization?.id) return
+    let cancelled = false
+    setPayRunReady(false)
     loadBookings(organization.id)
     loadManagerSiteBookings(organization.id)
     loadOperatives(organization.id)
@@ -127,6 +130,7 @@ export function TimesheetsHub() {
     loadSmallWorks(organization.id)
     loadOrganizationDetails(organization.id)
       .then((details) => {
+        if (cancelled) return
         if (details?.payrollTimePolicy) setPayrollPolicy(details.payrollTimePolicy)
         setPayrollPolicyPrior(details?.payrollTimePolicyPrior ?? null)
         setPayrollPolicyEffectiveFrom(details?.payrollTimePolicyEffectiveFrom ?? null)
@@ -135,9 +139,17 @@ export function TimesheetsHub() {
         setTimeZone(ianaTimeZoneForCountry(details?.countryCode))
       })
       .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setPayRunReady(true)
+      })
     loadOperativeDayRateHistory(organization.id)
-      .then(setHistory)
+      .then((rows) => {
+        if (!cancelled) setHistory(rows)
+      })
       .catch(() => {})
+    return () => {
+      cancelled = true
+    }
   }, [organization?.id, loadBookings, loadManagerSiteBookings, loadOperatives, loadUsers, loadProjects, loadSmallWorks])
 
   const runCopy = useMemo(() => currentPaymentRunCopy(invoicing, new Date(), timeZone), [invoicing, timeZone])
@@ -161,6 +173,9 @@ export function TimesheetsHub() {
   const legacyRedirect = pathSurface === 'hub' ? legacyTimesheetRedirect(searchParams.get('surface'), searchParams.toString()) : null
 
   if (!user) return null
+  if (organization?.id && !payRunReady) {
+    return <p className="muted">Loading pay run…</p>
+  }
   if (legacyRedirect) return <p className="muted">Opening timesheets…</p>
   if (!canOpen) {
     return (

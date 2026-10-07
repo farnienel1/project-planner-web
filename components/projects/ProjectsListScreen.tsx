@@ -79,6 +79,9 @@ export function ProjectsListScreen() {
   }, [visible, filter, search])
 
   const canCreate = canCreateProject(user)
+  const emptySubtitle = canCreate
+    ? 'Nothing here right now. Tap + to start a project.'
+    : 'Nothing here right now.'
   const unmatchedOperative =
     isOperativeMode(user) &&
     !operativeMatching(user?.email, operatives, { firstName: user?.firstName, surname: user?.surname })
@@ -124,7 +127,7 @@ export function ProjectsListScreen() {
         <EmptyState
           icon={<FolderIcon className="h-12 w-12" />}
           title={unmatchedOperative ? 'Jobs couldn’t be matched to you' : 'No projects found'}
-          subtitle={unmatchedOperative ? undefined : 'Get started by adding your first project'}
+          subtitle={unmatchedOperative ? undefined : emptySubtitle}
         />
       ) : (
         <>
@@ -167,7 +170,7 @@ export function ProjectsListScreen() {
               subtitle='The current filter hides older or completed jobs. Choose “All” or “Completed” above to see everything.'
             />
           ) : filtered.length === 0 ? (
-            <EmptyState title="No projects found" subtitle="Get started by adding your first project" />
+            <EmptyState title="No projects found" subtitle={emptySubtitle} />
           ) : (
             <div className="grid grid-cols-1 gap-5 lg:grid-cols-2 2xl:grid-cols-3">
               {filtered.map((project) => (

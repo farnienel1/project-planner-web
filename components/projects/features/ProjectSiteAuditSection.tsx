@@ -68,7 +68,7 @@ function AuditListCard({ audit, onSelect }: { audit: SiteAudit; onSelect: () => 
           </div>
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="text-sm font-semibold text-slate-900">{audit.type}</span>
+              <span className="text-sm font-semibold text-slate-900">{audit.customTitle || audit.type}</span>
               <StatusPill label={audit.type} tone={tone} />
             </div>
             <p className="mt-0.5 text-[11px] text-slate-500">
@@ -240,8 +240,8 @@ export function ProjectSiteAuditSection({ project }: { project: Project }) {
                   </p>
                   {item.location && <p className="text-xs text-slate-500">{item.location}</p>}
                   {item.assignee ? <p className="text-xs text-slate-500">{item.assignee}</p> : null}
-                  {item.comments && <p className="mt-1 text-sm text-slate-600">{item.comments}</p>}
-                  {item.annotations ? <p className="mt-1 text-xs text-slate-500">{item.annotations}</p> : null}
+                  {item.comments && <p className="mt-1 whitespace-pre-wrap text-sm text-slate-600">{item.comments}</p>}
+                  {item.annotations ? <p className="mt-1 whitespace-pre-wrap text-xs text-slate-500">{item.annotations}</p> : null}
                   {item.imageURL && (
                     <a href={item.imageURL} target="_blank" rel="noreferrer" className="mt-2 block">
                       <img src={item.imageURL} alt="" className="max-h-40 rounded-lg object-cover" />

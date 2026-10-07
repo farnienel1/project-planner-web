@@ -101,3 +101,20 @@ export function invalidateOrgLoad(key: string): void {
   entry.loadedAt = 0
   entry.orgId = null
 }
+
+/**
+ * A warm load cache means "this tab already applied the snapshot", not "the store
+ * still has it". After a refresh of the store module the cache can still be warm
+ * while users, operatives, and projects are empty. Skipping then leaves Warnings
+ * with nothing to scan. Force one fetch when this store has not applied the org.
+ */
+export function optionsForUnappliedOrg<T extends { force?: boolean } | undefined>(
+  key: string,
+  organizationId: string,
+  applied: boolean,
+  options: T
+): T {
+  if (applied || options?.force) return options
+  if (!shouldSkipOrgLoad(key, organizationId, options)) return options
+  return { ...(options ?? {}), force: true } as T
+}

@@ -11,6 +11,7 @@ import {
   onSnapshot,
   query,
   runTransaction,
+  setDoc,
   updateDoc,
   where,
   writeBatch,
@@ -38,6 +39,12 @@ import {
   type VariationTracker,
 } from '@/lib/variations/variationModel'
 import { formatVoNumber, nextFreeVoNumber, orderForTrackerEnable, voNumberTaken } from '@/lib/variations/variationNumbering'
+import {
+  fallbackItemMaps,
+  mergeVariationSources,
+  variationItemDocId,
+  variationsLogDocId,
+} from '@/lib/variations/variationFallback'
 
 function stamp(value: unknown): Date | null {
   return parseFirestoreDate(value) || null
@@ -220,6 +227,120 @@ function trackerRef(organizationId: string, parentId: string) {
   return doc(db, 'organizations', organizationId, 'variationTrackers', parentId)
 }
 
+function settingsDoc(organizationId: string, docId: string) {
+  if (!db) throw new Error('Firestore is not configured.')
+  return doc(db, 'organizations', organizationId, 'settings', docId)
+}
+
+function variationsFromMaps(rows: Record<string, unknown>[]): Variation[] {
+  return rows.map((row) => variationFromFirestore(typeof row.id === 'string' ? row.id : '', row))
+}
+
+async function readCollectionVariations(organizationId: string, parentId: string): Promise<Variation[]> {
+  try {
+    const snap = await getDocs(query(variationsCollection(organizationId), where('parentId', '==', parentId)))
+    return snap.docs.map((entry) => variationFromFirestore(entry.id, entry.data() as Record<string, unknown>))
+  } catch {
+    return []
+  }
+}
+
+async function readFallbackVariations(organizationId: string, parentId: string): Promise<Variation[]> {
+  try {
+    const snap = await getDoc(settingsDoc(organizationId, variationsLogDocId(parentId)))
+    if (!snap.exists()) return []
+    return variationsFromMaps(fallbackItemMaps(snap.data() as Record<string, unknown>))
+  } catch {
+    return []
+  }
+}
+
+async function readItemDocVariations(organizationId: string, parentId: string): Promise<Variation[]> {
+  try {
+    const snap = await getDocs(
+      query(collection(db!, 'organizations', organizationId, 'settings'), where('recordType', '==', 'variationItem'))
+    )
+    return snap.docs.flatMap((entry) => {
+      const data = entry.data() as Record<string, unknown>
+      if (data.parentId !== parentId) return []
+      const rawId =
+        (typeof data.id === 'string' && data.id) || entry.id.replace(/^variationItem_/, '')
+      return [variationFromFirestore(rawId, data)]
+    })
+  } catch {
+    return []
+  }
+}
+
+async function saveVariationSettingsLog(
+  organizationId: string,
+  variation: Variation,
+  map: Record<string, unknown>
+): Promise<void> {
+  const ref = settingsDoc(organizationId, variationsLogDocId(variation.parentId))
+  let items: Record<string, unknown>[] = []
+  try {
+    const existing = await getDoc(ref)
+    if (existing.exists()) items = fallbackItemMaps(existing.data() as Record<string, unknown>)
+  } catch {
+    items = []
+  }
+  const index = items.findIndex((row) => row.id === variation.id)
+  if (index >= 0) items[index] = map
+  else items.push(map)
+  await setDoc(
+    ref,
+    {
+      parentId: variation.parentId,
+      parentType: variation.parentType,
+      organizationId,
+      recordType: 'variationLog',
+      items,
+      updatedAt: Timestamp.fromDate(new Date()),
+    },
+    { merge: true }
+  )
+}
+
+/** iOS writes the settings log and item doc first. The collection write is best-effort. */
+async function persistVariationDocument(organizationId: string, variation: Variation): Promise<void> {
+  const map = variationToFirestore(variation)
+  const errors: unknown[] = []
+  let wrote = false
+  try {
+    await saveVariationSettingsLog(organizationId, variation, map)
+    wrote = true
+  } catch (error) {
+    errors.push(error)
+  }
+  try {
+    await setDoc(
+      settingsDoc(organizationId, variationItemDocId(variation.id)),
+      {
+        ...map,
+        recordType: 'variationItem',
+        parentId: variation.parentId,
+        parentType: variation.parentType,
+        organizationId,
+      },
+      { merge: true }
+    )
+    wrote = true
+  } catch (error) {
+    errors.push(error)
+  }
+  try {
+    await setDoc(variationRef(organizationId, variation.id), map, { merge: true })
+    wrote = true
+  } catch (error) {
+    errors.push(error)
+  }
+  if (!wrote) {
+    const first = errors[0]
+    throw first instanceof Error ? first : new Error('Could not save this variation.')
+  }
+}
+
 export function emptyTracker(parentId: string, parentType: VariationParentType): VariationTracker {
   return {
     parentId,
@@ -263,16 +384,60 @@ export function subscribeParentVariations(
     return () => {}
   }
   const key = `${organizationId}:${parentId}`
-  return onSnapshot(
-    query(variationsCollection(organizationId), where('parentId', '==', parentId)),
-    (snap) => {
-      const next = snap.docs.map((entry) => variationFromFirestore(entry.id, entry.data() as Record<string, unknown>))
-      const kept = retainLoadedRows(lastVariationRows.get(key) ?? [], next)
-      lastVariationRows.set(key, kept)
-      onRows(kept)
-    },
-    (error) => onError?.(error)
-  )
+  const sources = {
+    collection: [] as Variation[],
+    fallback: [] as Variation[],
+    items: [] as Variation[],
+  }
+  const publish = () => {
+    const next = mergeVariationSources(sources.collection, sources.fallback, sources.items)
+    const kept = retainLoadedRows(lastVariationRows.get(key) ?? [], next)
+    lastVariationRows.set(key, kept)
+    onRows(kept)
+  }
+  const unsubs = [
+    onSnapshot(
+      query(variationsCollection(organizationId), where('parentId', '==', parentId)),
+      (snap) => {
+        // A denied collection write stays in the local cache until the server answers.
+        if (snap.metadata.hasPendingWrites) return
+        sources.collection = snap.docs.map((entry) =>
+          variationFromFirestore(entry.id, entry.data() as Record<string, unknown>)
+        )
+        publish()
+      },
+      () => {
+        sources.collection = []
+        publish()
+      }
+    ),
+    onSnapshot(
+      settingsDoc(organizationId, variationsLogDocId(parentId)),
+      (snap) => {
+        sources.fallback = snap.exists()
+          ? variationsFromMaps(fallbackItemMaps(snap.data() as Record<string, unknown>))
+          : []
+        publish()
+      },
+      (error) => onError?.(error)
+    ),
+    onSnapshot(
+      query(collection(db!, 'organizations', organizationId, 'settings'), where('recordType', '==', 'variationItem')),
+      (snap) => {
+        sources.items = snap.docs.flatMap((entry) => {
+          const data = entry.data() as Record<string, unknown>
+          if (data.parentId !== parentId) return []
+          const rawId = (typeof data.id === 'string' && data.id) || entry.id.replace(/^variationItem_/, '')
+          return [variationFromFirestore(rawId, data)]
+        })
+        publish()
+      },
+      () => publish()
+    ),
+  ]
+  return () => {
+    for (const unsub of unsubs) unsub()
+  }
 }
 
 export async function loadVariationTracker(organizationId: string, parentId: string): Promise<VariationTracker> {
@@ -295,8 +460,12 @@ export function subscribeVariationTracker(
 }
 
 async function listParentVariations(organizationId: string, parentId: string): Promise<Variation[]> {
-  const snap = await getDocs(query(variationsCollection(organizationId), where('parentId', '==', parentId)))
-  return snap.docs.map((entry) => variationFromFirestore(entry.id, entry.data() as Record<string, unknown>))
+  const [collectionRows, fallbackRows, itemDocs] = await Promise.all([
+    readCollectionVariations(organizationId, parentId),
+    readFallbackVariations(organizationId, parentId),
+    readItemDocVariations(organizationId, parentId),
+  ])
+  return mergeVariationSources(collectionRows, fallbackRows, itemDocs)
 }
 
 function withCounters(row: Variation): Variation {
@@ -395,9 +564,7 @@ export async function createVariation(input: {
     statusHistory: [{ status: input.status || 'open', byUid: input.actor.uid, byName: input.actor.name, at: now }],
     isDeleted: false,
   })
-  const batch = writeBatch(db!)
-  batch.set(variationRef(input.organizationId, id), variationToFirestore(draft))
-  await batch.commit()
+  await persistVariationDocument(input.organizationId, draft)
   if (input.users) {
     await notifyCreated({
       organizationId: input.organizationId,
@@ -416,9 +583,7 @@ export async function updateVariation(input: {
   actorUid: string
 }): Promise<void> {
   const next = withCounters({ ...input.variation, updatedByUid: input.actorUid, updatedAt: new Date() })
-  const batch = writeBatch(db!)
-  batch.set(variationRef(input.organizationId, next.id), variationToFirestore(next))
-  await batch.commit()
+  await persistVariationDocument(input.organizationId, next)
 }
 
 export async function setVariationStatus(input: {
@@ -531,24 +696,26 @@ export async function enableTracker(input: {
 }): Promise<void> {
   const rows = (await listParentVariations(input.organizationId, input.parentId)).filter((row) => !row.isDeleted)
   const ordered = orderForTrackerEnable(rows)
-  const batch = writeBatch(db!)
-  ordered.forEach((row, index) => {
+  const now = new Date()
+  for (const [index, row] of ordered.entries()) {
     const locked = row.status === 'submitted' || row.status === 'closed'
-    batch.update(variationRef(input.organizationId, row.id), {
+    await persistVariationDocument(input.organizationId, {
+      ...row,
       sequence: index + 1,
       voNumberLocked: locked || row.voNumberLocked,
-      updatedAt: Timestamp.now(),
+      updatedAt: now,
       updatedByUid: input.actorUid,
     })
-  })
-  const now = Timestamp.now()
+  }
+  const batch = writeBatch(db!)
+  const stamped = Timestamp.fromDate(now)
   batch.set(
     trackerRef(input.organizationId, input.parentId),
     {
       parentId: input.parentId,
       parentType: input.parentType,
       enabled: true,
-      enabledAt: now,
+      enabledAt: stamped,
       enabledByUid: input.actorUid,
       numberingMode: 'lockSubmitted',
       prefix: 'VO-',

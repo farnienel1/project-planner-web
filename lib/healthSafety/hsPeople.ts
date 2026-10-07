@@ -57,8 +57,12 @@ export function groupRecipientsByTrade(users: User[]): HsRecipientGroup[] {
     })
 }
 
+/** iOS HSIssueTalkSheet talk filters: All, General when present, then the other trades A–Z. */
 export function recipientTradeFilters(users: User[]): string[] {
-  const set = new Set<string>(['All'])
-  for (const user of users) set.add(userTradeLabel(user))
-  return Array.from(set)
+  const labels = new Set(users.map((user) => userTradeLabel(user)).filter(Boolean))
+  const hasGeneral = labels.has('General')
+  const rest = Array.from(labels)
+    .filter((label) => label !== 'General')
+    .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+  return ['All', ...(hasGeneral ? ['General'] : []), ...rest]
 }
