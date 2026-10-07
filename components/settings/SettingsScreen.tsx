@@ -359,6 +359,14 @@ export default function SettingsScreen({ initialPanel = 'main' }: { initialPanel
     }
   }, [canAccessOrgHub, panel])
 
+  const blockedOrgPanel = Boolean(user) && !canAccessOrgHub && isOrganisationHubPanel(requestedPanel)
+
+  useEffect(() => {
+    if (blockedOrgPanel) router.replace('/dashboard')
+  }, [blockedOrgPanel, router])
+
+  if (blockedOrgPanel) return null
+
   const goHub = () => router.push('/dashboard/settings')
   const wrap = (active: Panel, node: ReactNode) => (
     <SettingsChrome panel={active} canAccessCompany={canAccessOrgHub}>
