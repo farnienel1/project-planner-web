@@ -9,8 +9,10 @@
     "build": "next build --webpack",
     "start": "next start",
     "lint": "eslint . --ext .js,.jsx,.ts,.tsx --ignore-pattern '.next/**' --ignore-pattern 'node_modules/**'",
-    "test": "node scripts/build-canonical-bundle.mjs && tsx --test lib/*.test.ts lib/**/*.test.ts lib/security/*.test.ts lib/email/*.test.ts",
+    "test": "node scripts/build-canonical-bundle.mjs && node scripts/build-canonical-bundle.mjs --check && tsx --test lib/*.test.ts lib/**/*.test.ts lib/security/*.test.ts lib/email/*.test.ts",
     "build:canonical": "node scripts/build-canonical-bundle.mjs",
+    "check:canonical": "node scripts/build-canonical-bundle.mjs --check",
+    "prepare": "git config core.hooksPath .githooks || true",
     "verify-env": "node scripts/verify-env.mjs",
     "netlify:env": "npx netlify-cli env:import .env.local",
     "netlify:deploy": "npx netlify-cli deploy --build --prod"
