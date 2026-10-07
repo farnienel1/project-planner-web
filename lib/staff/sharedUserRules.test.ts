@@ -195,6 +195,30 @@ test('a device organisation uses that membership and does not copy super admin f
   assert.equal(sameCompany.permissions.projects, true)
 })
 
+test('an admin stub in another company keeps Add user, Manage users, and the admin menu', () => {
+  const founder = user({
+    id: 'ada',
+    email: 'ada@site.com',
+    organizationId: '6b04f81d-a55e-41d2-8676-ecd116ad8450',
+    isSuperAdmin: true,
+    role: UserRole.ADMIN,
+    permissions: { ...permissions, adminAccess: true, projects: true, smallWorks: true, qualifications: true, operatives: true, weeklyReports: true },
+  })
+  const session = applyDeviceOrgMembership(
+    founder,
+    '6b04f81d-a55e-41d2-8676-ecd116ad8450',
+    '2C67391E-D1FE-4F9F-8055-7149ACDE1F96',
+    { role: 'admin', status: 'active' },
+    'admin'
+  )
+  assert.equal(session.organizationId, '2C67391E-D1FE-4F9F-8055-7149ACDE1F96')
+  assert.equal(session.role, UserRole.ADMIN)
+  assert.equal(session.isSuperAdmin, true)
+  assert.equal(session.permissions.adminAccess, true)
+  assert.equal(session.permissions.projects, true)
+  assert.equal(session.permissions.operativeMode, false)
+})
+
 test('same-company membership role does not turn an operative into an admin', () => {
   const operative = user({
     id: 'op',
