@@ -95,6 +95,22 @@ let signingOut = false
 let signingIn = false
 let currentUserWatch: (() => void) | null = null
 
+/** This navigation asked to open a company. Read it once so a later reload uses the saved choice. */
+function takeExplicitSwitchOrganization(): string | null {
+  if (typeof window === 'undefined') return null
+  try {
+    const url = new URL(window.location.href)
+    const organizationId = url.searchParams.get('switchOrg')?.trim() || ''
+    if (!organizationId) return null
+    url.searchParams.delete('switchOrg')
+    const next = `${url.pathname}${url.search}${url.hash}`
+    window.history.replaceState(window.history.state, '', next)
+    return organizationId
+  } catch {
+    return null
+  }
+}
+
 function stopCurrentUserWatch() {
   currentUserWatch?.()
   currentUserWatch = null
@@ -399,11 +415,12 @@ async function loadSignedInProfileInner(firebaseUser: FirebaseUser) {
   }
 
   const documentOrganizationId = user.organizationId
+  const explicitOrganizationId = takeExplicitSwitchOrganization()
   let sessionUser = user
   try {
     const session = await withTimeout(
-      resolveWebSessionOrganization(firebaseUser.uid, documentOrganizationId),
-      PROFILE_STEP_MS,
+      resolveWebSessionOrganization(firebaseUser.uid, documentOrganizationId, explicitOrganizationId),
+      20_000,
       SIGN_IN_SLOW_MESSAGE
     )
     sessionUser = applyDeviceOrgMembership(
@@ -414,6 +431,15 @@ async function loadSignedInProfileInner(firebaseUser: FirebaseUser) {
       session.listedRole
     )
   } catch (sessionError) {
+    if (explicitOrganizationId) {
+      sessionUser = applyDeviceOrgMembership(
+        user,
+        documentOrganizationId,
+        explicitOrganizationId,
+        null,
+        null
+      )
+    }
     console.warn('Device organisation lookup skipped:', sessionError)
   }
 

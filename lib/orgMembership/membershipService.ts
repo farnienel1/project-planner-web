@@ -16,7 +16,13 @@ import {
 import { getFirebaseDb } from '@/lib/firebase/ensureFirebase'
 import { queryWithin } from '@/lib/orgMembership/queryBudget'
 import { permissionsToFirestoreMap } from '@/lib/firebase/userPayload'
-import { readWebActiveOrg, writeWebActiveOrg } from '@/lib/orgMembership/webActiveOrg'
+import {
+  chooseWebSessionOrganization,
+  organizationIdsMatch,
+  readWebActiveOrg,
+  writeWebActiveOrg,
+  type OrgAccessProbe,
+} from '@/lib/orgMembership/webActiveOrg'
 import type { UserPermissions } from '@/types'
 import type { OrgMembership, UserOrgMembershipRecord } from '@/lib/orgMembership/types'
 import {
@@ -28,6 +34,7 @@ import {
   membershipSnapshotFromUserDoc,
 } from '@/lib/orgMembership/orgRoleFlags'
 import {
+  isAccessBlocked,
   loginBlockMessage,
   membershipSummary,
   sortMemberships,
@@ -143,11 +150,11 @@ export async function loadUserOrgMemberships(
     )
   }
 
-  // Collection scans can hang on a missing index. If we already have memberships, do not wait on them.
-  const extraBudgetMs = byId.size > 0 ? 1800 : 6000
+  // One saved membership must not hide every other company. iOS waits for both queries.
+  const discoveryBudgetMs = 12_000
   const [memberSnap, creatorSnap] = await Promise.all([
-    queryWithin(getDocs(query(collection(db, 'organizations'), where(`members.${userId}`, '!=', ''))), extraBudgetMs),
-    queryWithin(getDocs(query(collection(db, 'organizations'), where('creatorUserId', '==', userId))), extraBudgetMs),
+    queryWithin(getDocs(query(collection(db, 'organizations'), where(`members.${userId}`, '!=', ''))), discoveryBudgetMs),
+    queryWithin(getDocs(query(collection(db, 'organizations'), where('creatorUserId', '==', userId))), discoveryBudgetMs),
   ])
 
   if (memberSnap) {
@@ -180,7 +187,16 @@ export async function loadUserOrgMemberships(
     id: row.organizationId,
     name: row.organizationName,
   }))
-  return sortMemberships(rows, activeOrgId).map(({ id: _id, name: _name, ...row }) => row)
+  const sorted = sortMemberships(rows, activeOrgId).map(({ id: _id, name: _name, ...row }) => row)
+  if (!memberSnap || !creatorSnap) {
+    return Object.assign(sorted, { discoveryIncomplete: true as const })
+  }
+  return sorted
+}
+
+/** True when the members or creator query did not finish, so the list may be missing companies. */
+export function membershipListDiscoveryFailed(rows: readonly OrgMembership[]): boolean {
+  return (rows as { discoveryIncomplete?: boolean }).discoveryIncomplete === true
 }
 
 export async function addExistingUserToOrganization(params: {
@@ -312,33 +328,57 @@ export async function switchActiveOrganization(userId: string, organizationId: s
       createdAt: row.createdAt,
     })),
   })
-  if (blockMessage) {
+  if (blockMessage && (!membershipListDiscoveryFailed(memberships) || isAccessBlocked(orgData))) {
     throw new Error(blockMessage)
+  }
+
+  const destinationRole =
+    listedRole ||
+    (membershipSnap.exists() ? String(membershipSnap.data().role || '') : '') ||
+    (isCreator ? 'admin' : 'member')
+  try {
+    await ensurePrimaryOrgMembership(userId, organizationId, destinationRole)
+  } catch {
+    // The browser still remembers the company. The members map can list it next time.
   }
 
   // This browser remembers the company. The shared user document keeps the company last opened on iOS.
   writeWebActiveOrg(userId, organizationId)
 }
 
+function firestoreErrorCode(error: unknown): string {
+  if (!error || typeof error !== 'object' || !('code' in error)) return ''
+  return String((error as { code?: unknown }).code || '')
+}
+
+function probeFromReadError(error: unknown): OrgAccessProbe {
+  const code = firestoreErrorCode(error)
+  if (code === 'permission-denied' || code === 'unauthenticated' || code === 'not-found') return 'denied'
+  return 'unknown'
+}
+
 async function membershipForDeviceOrg(
   userId: string,
   organizationId: string
-): Promise<{ allowed: boolean; membership: Record<string, unknown> | null; listedRole: string | null }> {
+): Promise<{ probe: OrgAccessProbe; membership: Record<string, unknown> | null; listedRole: string | null }> {
   const db = getFirebaseDb()
   let membership: Record<string, unknown> | null = null
   let membershipExists = false
+  let membershipProbe: OrgAccessProbe = 'allowed'
   try {
     const snap = await getDoc(doc(db, 'users', userId, 'orgMemberships', organizationId))
     membershipExists = snap.exists()
     if (snap.exists()) membership = snap.data() as Record<string, unknown>
-  } catch {
+  } catch (error) {
     membership = null
+    membershipProbe = probeFromReadError(error)
   }
 
   let orgExists = false
   let listed = false
   let listedRole: string | null = null
   let isCreator = false
+  let orgProbe: OrgAccessProbe = 'allowed'
   try {
     const orgSnap = await getDoc(doc(db, 'organizations', organizationId))
     orgExists = orgSnap.exists()
@@ -351,45 +391,59 @@ async function membershipForDeviceOrg(
       }
       isCreator = String(data.creatorUserId || '') === userId
     }
-  } catch {
+  } catch (error) {
     orgExists = false
+    orgProbe = probeFromReadError(error)
   }
 
   const pending = membership?.status === 'pending'
-  return {
-    allowed: orgExists && !pending && (membershipExists || listed || isCreator),
-    membership: pending ? null : membership,
-    listedRole,
+  const belongs = !pending && (membershipExists || listed || isCreator)
+  if (orgProbe === 'unknown' || membershipProbe === 'unknown') {
+    return { probe: belongs ? 'allowed' : 'unknown', membership: pending ? null : membership, listedRole }
   }
+  if (!orgExists || pending || !belongs) {
+    return { probe: 'denied', membership: null, listedRole }
+  }
+  return { probe: 'allowed', membership, listedRole }
 }
 
 /** Company last chosen on this browser. Does not write users/{uid}.organizationId. */
 export async function resolveWebSessionOrganization(
   userId: string,
-  documentOrganizationId: string
+  documentOrganizationId: string,
+  explicitOrganizationId?: string | null
 ): Promise<{ organizationId: string; membership: Record<string, unknown> | null; listedRole: string | null }> {
   const remembered = readWebActiveOrg(userId)
-  const preferred = remembered || documentOrganizationId
-  if (!preferred) return { organizationId: '', membership: null, listedRole: null }
+  const candidates = [explicitOrganizationId, remembered, documentOrganizationId]
+  const probes = new Map<string, OrgAccessProbe>()
+  const details = new Map<string, { membership: Record<string, unknown> | null; listedRole: string | null }>()
 
-  const chosen = await membershipForDeviceOrg(userId, preferred)
-  if (chosen.allowed) {
-    if (remembered !== preferred) writeWebActiveOrg(userId, preferred)
-    return { organizationId: preferred, membership: chosen.membership, listedRole: chosen.listedRole }
+  for (const value of candidates) {
+    const organizationId = String(value || '').trim()
+    if (!organizationId) continue
+    if ([...probes.keys()].some((existing) => organizationIdsMatch(existing, organizationId))) continue
+    const checked = await membershipForDeviceOrg(userId, organizationId)
+    probes.set(organizationId, checked.probe)
+    details.set(organizationId, { membership: checked.membership, listedRole: checked.listedRole })
   }
 
-  if (documentOrganizationId && preferred !== documentOrganizationId) {
-    const fallback = await membershipForDeviceOrg(userId, documentOrganizationId)
-    writeWebActiveOrg(userId, documentOrganizationId)
-    return {
-      organizationId: documentOrganizationId,
-      membership: fallback.membership,
-      listedRole: fallback.listedRole,
+  const choice = chooseWebSessionOrganization({
+    explicitOrganizationId,
+    rememberedOrganizationId: remembered,
+    documentOrganizationId,
+    probes,
+  })
+  if (!choice.organizationId) return { organizationId: '', membership: null, listedRole: null }
+  if (choice.persistOrganizationId) writeWebActiveOrg(userId, choice.persistOrganizationId)
+
+  let detail = { membership: null as Record<string, unknown> | null, listedRole: null as string | null }
+  for (const [organizationId, value] of details) {
+    if (organizationIdsMatch(organizationId, choice.organizationId)) {
+      detail = value
+      break
     }
   }
-
-  if (!remembered && documentOrganizationId) writeWebActiveOrg(userId, documentOrganizationId)
-  return { organizationId: documentOrganizationId, membership: chosen.membership, listedRole: chosen.listedRole }
+  return { organizationId: choice.organizationId, membership: detail.membership, listedRole: detail.listedRole }
 }
 
 /** Ensure the primary org membership exists for org creators (backward compat). */

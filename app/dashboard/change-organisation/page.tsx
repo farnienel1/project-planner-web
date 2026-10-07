@@ -12,8 +12,10 @@ import { useAuthStore } from '@/lib/stores/authStore'
 import {
   acceptOrgMembership,
   loadUserOrgMemberships,
+  membershipListDiscoveryFailed,
   switchActiveOrganization,
 } from '@/lib/orgMembership/membershipService'
+import { organizationIdsMatch } from '@/lib/orgMembership/webActiveOrg'
 import { roleDisplayName } from '@/lib/orgMembership/organizationTrialPolicy'
 import {
   formatMembershipCreatedLabel,
@@ -43,6 +45,7 @@ export default function ChangeOrganisationPage() {
   const [switchingId, setSwitchingId] = useState<string | null>(null)
   const [acceptingId, setAcceptingId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [discoveryIncomplete, setDiscoveryIncomplete] = useState(false)
   const [showSwitchSplash, setShowSwitchSplash] = useState(false)
 
   const activeOrgId = organization?.id || user?.organizationId
@@ -61,6 +64,7 @@ export default function ChangeOrganisationPage() {
       try {
         const rows = await loadUserOrgMemberships(firebaseUser.uid, activeOrgId)
         if (!cancelled) {
+          setDiscoveryIncomplete(membershipListDiscoveryFailed(rows))
           if (rows.length === 0 && organization && user) {
             setMemberships([membershipFromCurrentOrg(organization, user)])
           } else if (rows.length > 0) {
@@ -84,6 +88,7 @@ export default function ChangeOrganisationPage() {
   async function reload() {
     if (!firebaseUser?.uid) return
     const rows = await loadUserOrgMemberships(firebaseUser.uid, activeOrgId)
+    setDiscoveryIncomplete(membershipListDiscoveryFailed(rows))
     setMemberships(rows)
   }
 
@@ -103,13 +108,15 @@ export default function ChangeOrganisationPage() {
 
   async function handleSwitch(membership: OrgMembership) {
     if (!firebaseUser?.uid) return
-    if (membership.organizationId === activeOrgId || membership.trialAccessBlocked) return
+    if (organizationIdsMatch(membership.organizationId, activeOrgId) || membership.trialAccessBlocked) return
     setSwitchingId(membership.organizationId)
     setError(null)
     setShowSwitchSplash(true)
     try {
       await switchActiveOrganization(firebaseUser.uid, membership.organizationId)
-      window.location.href = '/dashboard'
+      window.location.assign(
+        `/dashboard?switchOrg=${encodeURIComponent(membership.organizationId)}`
+      )
     } catch (err) {
       setShowSwitchSplash(false)
       setError(err instanceof Error ? err.message : 'Could not switch organisation')
@@ -163,6 +170,12 @@ export default function ChangeOrganisationPage() {
 
       {refreshing ? <p className="muted xs">Checking for other organisations…</p> : null}
 
+      {discoveryIncomplete ? (
+        <p className="muted small">
+          Some organisations did not load. Refresh this page before choosing a company.
+        </p>
+      ) : null}
+
       {error ? <p className="banner" data-hue="red">{error}</p> : null}
 
       {memberships.length === 0 ? (
@@ -173,7 +186,7 @@ export default function ChangeOrganisationPage() {
       ) : (
         <div className="rows">
           {memberships.map((membership) => {
-            const isActive = membership.organizationId === activeOrgId
+            const isActive = organizationIdsMatch(membership.organizationId, activeOrgId)
             const isPending = membership.status === 'pending'
             const locked = membership.trialAccessBlocked === true
             const setupIncomplete = membership.setupIncomplete === true
