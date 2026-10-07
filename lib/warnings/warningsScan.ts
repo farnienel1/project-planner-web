@@ -4,9 +4,10 @@ import { organizationIdsMatch } from '@/lib/orgMembership/webActiveOrg'
 export type WarningsScreenPhase = 'scanning' | 'empty' | 'list'
 
 /**
- * iOS WarningsDetailView (filterChip defaults to .all) stays on the scanning
- * empty state until live detection finishes. Bookings already in memory with an
- * empty roster, operative list, or project list is not "No active warnings".
+ * The scanning empty state stays up only while nothing real has been published.
+ * Rows from a finished source show immediately. A slow roster, materials, or
+ * qualification read must not hide them. Zero rows before those sources finish
+ * is still scanning, not "No active warnings".
  */
 export function warningsScreenPhase(input: {
   detectionReady: boolean
@@ -15,10 +16,115 @@ export function warningsScreenPhase(input: {
   projectsReady: boolean
   warningCount: number
 }): WarningsScreenPhase {
+  if (input.warningCount > 0) return 'list'
   if (!input.detectionReady || !input.rosterReady || !input.operativesReady || !input.projectsReady) {
     return 'scanning'
   }
-  return input.warningCount > 0 ? 'list' : 'empty'
+  return 'empty'
+}
+
+export type WarningScanLanes = {
+  clashes: boolean
+  managerClashes: boolean
+  unbooked: boolean
+  materials: boolean
+  qualifications: boolean
+  unverified: boolean
+}
+
+/** Each warning family publishes when its own reads have finished. */
+export function warningScanLanes(input: {
+  detectionReady: boolean
+  bookingsReady: boolean
+  managerReady: boolean
+  rosterReady: boolean
+  operativesReady: boolean
+  projectsReady: boolean
+  holidaysReady: boolean
+  materialsReady: boolean
+  sendRecordsReady: boolean
+}): WarningScanLanes {
+  return {
+    clashes: input.detectionReady && input.bookingsReady && input.operativesReady,
+    managerClashes: input.detectionReady && input.managerReady && input.bookingsReady,
+    unbooked:
+      input.detectionReady &&
+      input.bookingsReady &&
+      input.managerReady &&
+      input.rosterReady &&
+      input.operativesReady &&
+      input.holidaysReady,
+    materials:
+      input.materialsReady && input.sendRecordsReady && input.projectsReady && input.bookingsReady,
+    qualifications: input.operativesReady,
+    unverified: input.operativesReady && input.rosterReady,
+  }
+}
+
+type WarningLaneResult = {
+  clashWarnings: readonly unknown[]
+  managerClashWarnings: readonly unknown[]
+  unbookedWarnings: readonly unknown[]
+  materialWarnings: readonly unknown[]
+  qualificationWarnings: readonly unknown[]
+  unverifiedWarnings: readonly unknown[]
+  coreCount: number
+  highCount: number
+  mediumCount: number
+  lowCount: number
+}
+
+function countsForLanes<T extends WarningLaneResult>(result: T): T {
+  const highCount = result.clashWarnings.length + result.unbookedWarnings.length
+  const mediumCount = result.managerClashWarnings.length
+  const lowCount =
+    result.materialWarnings.length + result.qualificationWarnings.length + result.unverifiedWarnings.length
+  return {
+    ...result,
+    highCount,
+    mediumCount,
+    lowCount,
+    coreCount: highCount + mediumCount + lowCount,
+  }
+}
+
+function keepLane<T>(ready: boolean, computed: readonly T[], previous: readonly T[] | undefined): readonly T[] {
+  if (ready) return computed
+  return previous ?? []
+}
+
+/**
+ * Publish families whose sources have finished. A family still loading keeps
+ * the rows already shown for it, so an empty partial cannot wipe the list.
+ */
+export function publishReadyWarningLanes<T extends WarningLaneResult>(input: {
+  previous: T | null
+  computed: T
+  lanes: WarningScanLanes
+  sameOrganization: boolean
+}): T {
+  const previous = input.sameOrganization ? input.previous : null
+  return countsForLanes({
+    ...input.computed,
+    clashWarnings: keepLane(input.lanes.clashes, input.computed.clashWarnings, previous?.clashWarnings),
+    managerClashWarnings: keepLane(
+      input.lanes.managerClashes,
+      input.computed.managerClashWarnings,
+      previous?.managerClashWarnings
+    ),
+    unbookedWarnings: keepLane(input.lanes.unbooked, input.computed.unbookedWarnings, previous?.unbookedWarnings),
+    materialWarnings: keepLane(input.lanes.materials, input.computed.materialWarnings, previous?.materialWarnings),
+    qualificationWarnings: keepLane(
+      input.lanes.qualifications,
+      input.computed.qualificationWarnings,
+      previous?.qualificationWarnings
+    ),
+    unverifiedWarnings: keepLane(
+      input.lanes.unverified,
+      input.computed.unverifiedWarnings,
+      previous?.unverifiedWarnings
+    ),
+  })
 }
 
 /**

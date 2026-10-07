@@ -4,6 +4,7 @@ import {
   clampClashLookaheadDays,
   parseWarningDetection,
   resolveWarningDetectionRaw,
+  warningDetectionFirestoreFields,
   warningDetectionLooksLikeFactoryDefault,
   warningDetectionToFirestore,
 } from './organizationSettings.ts'
@@ -43,6 +44,28 @@ test('numeric strings from Firestore still load as 2, not the default 7', () => 
 
 test('missing detection map stays on the documented default of 7', () => {
   assert.equal(parseWarningDetection(undefined).clashLookaheadDays, 7)
+})
+
+test('hub and warnings settings write organizations/{id}.warningDetection only', () => {
+  const fields = warningDetectionFirestoreFields(
+    parseWarningDetection({
+      detectClashes: true,
+      clashLookaheadMode: 'endOfInvoicingPeriod',
+      clashLookaheadDays: 7,
+      includeWeekendsForUnbookedLabour: false,
+      excludedUserIdsFromUnbookedWarnings: ['paye-1'],
+    })
+  )
+  const keys = Object.keys(fields)
+  assert.deepEqual(keys.sort(), [
+    'warningDetection.clashLookaheadDays',
+    'warningDetection.clashLookaheadMode',
+    'warningDetection.detectClashes',
+    'warningDetection.excludedUserIdsFromUnbookedWarnings',
+    'warningDetection.includeWeekendsForUnbookedLabour',
+  ])
+  assert.equal(fields['warningDetection.clashLookaheadMode'], 'endOfInvoicingPeriod')
+  assert.equal(keys.some((key) => key.startsWith('settings.')), false)
 })
 
 test('warning mode is read from top-level warningDetection, not the nested web copy', () => {
