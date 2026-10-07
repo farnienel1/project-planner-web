@@ -1,6 +1,7 @@
 /** Shared TTL + in-flight dedup for org-scoped Firestore loads. */
 
 import { authLoadRetryDelayMs, isRetryableAuthLoadError } from '@/lib/auth/authBoot'
+import { captureOrganizationContext, organizationContextStillCurrent } from '@/lib/canonical'
 import { waitForAuthToken } from '@/lib/firebase/waitForAuthToken'
 
 const DEFAULT_TTL_MS = 60_000
@@ -62,11 +63,17 @@ export async function runOrgLoad(
   }
 
   const promise = (async () => {
+    const captured = captureOrganizationContext()
     let lastError: unknown
     for (let attempt = 0; attempt < LOAD_ATTEMPTS; attempt += 1) {
       try {
         await waitForAuthToken()
         await loader()
+        if (!organizationContextStillCurrent(organizationId, captured)) {
+          entry.loadedAt = 0
+          entry.orgId = null
+          return
+        }
         entry.orgId = organizationId
         entry.loadedAt = Date.now()
         return

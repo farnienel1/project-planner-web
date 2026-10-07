@@ -4,12 +4,11 @@ import type { OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 import { DEFAULT_PAYROLL_POLICY } from '@/lib/settings/organizationSettings'
 import { parseHhMm } from '@/lib/ios-parity/londonTime'
 import { normalizeManagerTimeSlot, normalizeTimeSlot } from '@/lib/ios-parity/enums'
+import { intervalsOverlap } from '@/lib/canonical'
 
 export type MinuteInterval = { start: number; end: number }
 
-export function intervalsOverlap(a: MinuteInterval, b: MinuteInterval): boolean {
-  return a.start < b.end && b.start < a.end
-}
+export { intervalsOverlap }
 
 export function mergeIntervals(intervals: MinuteInterval[]): MinuteInterval[] {
   if (intervals.length === 0) return []
