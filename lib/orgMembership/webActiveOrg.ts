@@ -35,8 +35,8 @@ export function organizationIdsMatch(lhs?: string | null, rhs?: string | null): 
 /** Result of asking Firestore whether this login belongs to a company. */
 export type OrgAccessProbe = 'allowed' | 'denied' | 'unknown'
 
-/** One membership probe. Short enough that a slow read cannot hold the splash. */
-export const SESSION_ORG_PROBE_MS = 2_000
+/** One membership probe. A slow read must not hold the dashboard splash. */
+export const SESSION_ORG_PROBE_MS = 2_500
 
 /**
  * The company to open before membership reads finish.
@@ -213,6 +213,11 @@ export function applyDeviceOrgMembership(
     return user
   }
   if (!membership) {
+    // The membership read has not arrived. Keep this person's rights and only
+    // change the open company. A later read applies the real role.
+    if (!String(listedRole || '').trim()) {
+      return { ...user, organizationId }
+    }
     const listed = roleFrom(listedRole, Role.BASIC)
     const adminHere = listed === Role.ADMIN || (user.isSuperAdmin === true && !listedRole)
     if (adminHere) {

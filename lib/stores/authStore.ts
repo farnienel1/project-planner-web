@@ -102,19 +102,39 @@ let signingIn = false
 let currentUserWatch: (() => void) | null = null
 let organizationHydration = 0
 
-/** This navigation asked to open a company. Read it once so a later reload uses the saved choice. */
-function takeExplicitSwitchOrganization(): string | null {
+/** This navigation asked to open a company. Leave the query in place until that company is open. */
+function readExplicitSwitchOrganization(): string | null {
   if (typeof window === 'undefined') return null
   try {
+    return new URL(window.location.href).searchParams.get('switchOrg')?.trim() || null
+  } catch {
+    return null
+  }
+}
+
+function commitExplicitSwitchOrganization(organizationId: string) {
+  if (typeof window === 'undefined' || !organizationId) return
+  try {
     const url = new URL(window.location.href)
-    const organizationId = url.searchParams.get('switchOrg')?.trim() || ''
-    if (!organizationId) return null
+    const current = url.searchParams.get('switchOrg')?.trim() || ''
+    if (!current || !organizationIdsMatch(current, organizationId)) return
     url.searchParams.delete('switchOrg')
     const next = `${url.pathname}${url.search}${url.hash}`
     window.history.replaceState(window.history.state, '', next)
-    return organizationId
   } catch {
-    return null
+    /* Keep ?switchOrg= so a retry still opens this company. */
+  }
+}
+
+function stubOrganization(organizationId: string): Organization {
+  const now = new Date()
+  return {
+    id: organizationId,
+    name: '',
+    members: {},
+    settings: {},
+    createdAt: now,
+    updatedAt: now,
   }
 }
 
@@ -386,7 +406,8 @@ async function hydrateSignedInOrganization(
       const session = await resolveWebSessionOrganization(
         firebaseUser.uid,
         documentOrganizationId,
-        explicitOrganizationId
+        explicitOrganizationId,
+        { shouldPersist: () => sessionStillOpen(firebaseUser.uid, token) }
       )
       if (!sessionStillOpen(firebaseUser.uid, token)) return
       probe = session.probe
@@ -396,7 +417,9 @@ async function hydrateSignedInOrganization(
         const organization =
           state.organization && organizationIdsMatch(state.organization.id, sessionUser.organizationId)
             ? state.organization
-            : null
+            : sessionUser.organizationId
+              ? stubOrganization(sessionUser.organizationId)
+              : null
         return { user: sessionUser, organization }
       })
     } catch (sessionError) {
@@ -557,7 +580,7 @@ async function loadSignedInProfileInner(firebaseUser: FirebaseUser) {
   }
 
   const documentOrganizationId = user.organizationId
-  const explicitOrganizationId = takeExplicitSwitchOrganization()
+  const explicitOrganizationId = readExplicitSwitchOrganization()
   const provisionalOrganizationId = provisionalWebOrganizationId({
     explicitOrganizationId,
     rememberedOrganizationId: readWebActiveOrg(firebaseUser.uid),
@@ -576,10 +599,13 @@ async function loadSignedInProfileInner(firebaseUser: FirebaseUser) {
     organization:
       currentOrganization && organizationIdsMatch(currentOrganization.id, sessionUser.organizationId)
         ? currentOrganization
-        : null,
+        : sessionUser.organizationId
+          ? stubOrganization(sessionUser.organizationId)
+          : null,
     loading: false,
     error: null,
   })
+  commitExplicitSwitchOrganization(sessionUser.organizationId)
   watchCurrentUserDocument(firebaseUser.uid)
   void hydrateSignedInOrganization(
     firebaseUser,

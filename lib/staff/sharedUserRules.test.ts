@@ -219,6 +219,30 @@ test('an admin stub in another company keeps Add user, Manage users, and the adm
   assert.equal(session.permissions.operativeMode, false)
 })
 
+test('an unread switch keeps an admin menu and only changes the open company', () => {
+  const admin = user({
+    id: 'ada',
+    email: 'ada@site.com',
+    organizationId: '6b04f81d-a55e-41d2-8676-ecd116ad8450',
+    isSuperAdmin: false,
+    role: UserRole.ADMIN,
+    permissions: { ...permissions, adminAccess: true, projects: true, smallWorks: true },
+  })
+  const session = applyDeviceOrgMembership(
+    admin,
+    '6b04f81d-a55e-41d2-8676-ecd116ad8450',
+    '2C67391E-D1FE-4F9F-8055-7149ACDE1F96',
+    null,
+    null
+  )
+  assert.equal(session.organizationId, '2C67391E-D1FE-4F9F-8055-7149ACDE1F96')
+  assert.equal(session.role, UserRole.ADMIN)
+  assert.equal(session.permissions.adminAccess, true)
+  assert.equal(session.permissions.projects, true)
+  assert.equal(session.permissions.smallWorks, true)
+  assert.equal(session.isSuperAdmin, false)
+})
+
 test('same-company membership role does not turn an operative into an admin', () => {
   const operative = user({
     id: 'op',
