@@ -104,6 +104,20 @@ export const VARIATION_STATUS_COPY: Record<VariationStatus, string> = {
   closed: 'Any variations that are no longer required.',
 }
 
+/** iOS VariationsListView picker: All, Open, Submitted, Closed. */
+export const VARIATION_LIST_FILTERS = [
+  { id: 'all', label: 'All' },
+  { id: 'open', label: 'Open' },
+  { id: 'submitted', label: 'Submitted' },
+  { id: 'closed', label: 'Closed' },
+] as const
+
+export type VariationListFilter = (typeof VARIATION_LIST_FILTERS)[number]['id']
+
+export function variationMatchesListFilter(status: VariationStatus, filter: VariationListFilter): boolean {
+  return filter === 'all' || status === filter
+}
+
 export const VARIATION_TRADES = [
   'Electrician',
   'Approved electrician',

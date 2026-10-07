@@ -211,6 +211,7 @@ export function MyScheduleSelfBookingScreen({
   const [smallQuery, setSmallQuery] = useState('')
   const [projectStatus, setProjectStatus] = useState<JobFilter>('active')
   const [smallStatus, setSmallStatus] = useState<JobFilter>('active')
+  const [bookSheetDay, setBookSheetDay] = useState<Date | null>(null)
 
   useEffect(() => {
     loadManagerSiteBookings(organizationId)
@@ -300,6 +301,7 @@ export function MyScheduleSelfBookingScreen({
         flash('success', wrote > 1 ? `Booked across ${wrote} days.` : 'Booking added.')
       }
       setExpandedLoc(null)
+      setBookSheetDay(null)
     } catch (error) {
       flash('error', error instanceof Error ? error.message : 'Could not save booking.')
     } finally {
@@ -342,6 +344,13 @@ export function MyScheduleSelfBookingScreen({
     } finally {
       setBusy(false)
     }
+  }
+
+  function openBookSheet(day: Date) {
+    const next = startOfDay(day)
+    setSelectedDate(next)
+    setBookSheetDay(next)
+    setExpandedLoc(null)
   }
 
   function toggleDayInMulti(day: Date) {
@@ -458,19 +467,6 @@ export function MyScheduleSelfBookingScreen({
     return `${project.jobNumber ?? ''} ${project.siteName ?? ''}`.trim() || 'Project'
   }
 
-  if (loading && myBookings.length === 0) {
-    return (
-      <div className="stack" data-hue="sched">
-        <div className="phead" data-hue="sched">
-          <div>
-            <h1>My Schedule</h1>
-            <div className="sub">Opening your week…</div>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
   return (
     <div className="stack" data-hue="sched">
       <div className="phead" data-hue="sched">
@@ -482,7 +478,9 @@ export function MyScheduleSelfBookingScreen({
         <div>
           <h1>My Schedule</h1>
           <div className="sub">
-            Book yourself into a site, the office, or a custom location. AM, PM, full day or custom hours.
+            {loading && myBookings.length === 0
+              ? 'Opening your week… you can still book a day.'
+              : 'Book yourself into a site, the office, or a custom location. AM, PM, full day or custom hours.'}
           </div>
         </div>
         <div className="acts">
@@ -539,15 +537,7 @@ export function MyScheduleSelfBookingScreen({
           return (
             <div
               key={day.toISOString()}
-              role="button"
-              tabIndex={0}
               onClick={() => (multiDay ? toggleDayInMulti(day) : setSelectedDate(startOfDay(day)))}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' || event.key === ' ') {
-                  event.preventDefault()
-                  multiDay ? toggleDayInMulti(day) : setSelectedDate(startOfDay(day))
-                }
-              }}
               className={`day ${today ? 'today' : ''} ${weekend ? 'wk' : ''} ${isSel ? 'sel' : ''}`}
             >
               <div className="dn">
@@ -574,7 +564,30 @@ export function MyScheduleSelfBookingScreen({
                       </button>
                     </div>
                   ))
-                : <div className="emptyday">{weekend ? 'Weekend' : '+ Book'}</div>}
+                : (
+                    <button
+                      type="button"
+                      className="emptyday"
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        openBookSheet(day)
+                      }}
+                    >
+                      {weekend ? 'Weekend · Book' : '+ Book'}
+                    </button>
+                  )}
+              {dayRows.length > 0 ? (
+                <button
+                  type="button"
+                  className="btn xs ghost"
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    openBookSheet(day)
+                  }}
+                >
+                  + Book
+                </button>
+              ) : null}
             </div>
           )
         })}
@@ -590,7 +603,29 @@ export function MyScheduleSelfBookingScreen({
         payrollPolicy={payrollPolicy}
       />
 
-      <div className="book-cols">
+      {bookSheetDay ? (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center"
+          onClick={() => setBookSheetDay(null)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Book yourself in"
+            className="card pad"
+            style={{ width: '100%', maxWidth: 1100, maxHeight: '88vh', overflow: 'auto' }}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="row" style={{ marginBottom: 12 }}>
+              <div className="grow">
+                <h2 className="h2">Book yourself in</h2>
+                <p className="muted small">{format(bookSheetDay, 'EEEE d MMMM')}</p>
+              </div>
+              <button type="button" className="btn sm ghost" onClick={() => setBookSheetDay(null)}>
+                Close
+              </button>
+            </div>
+            <div className="book-cols">
         <BookColumn title="Other" hue="sched" count={filteredOther.length}>
           <ColumnSearch value={otherQuery} onChange={setOtherQuery} placeholder="Search office, home, survey…" />
           {filteredOther.length === 0 ? (
@@ -641,7 +676,10 @@ export function MyScheduleSelfBookingScreen({
             ))
           )}
         </BookColumn>
-      </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {confirm && (
         <div

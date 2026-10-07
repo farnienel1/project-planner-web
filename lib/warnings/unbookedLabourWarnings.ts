@@ -72,7 +72,7 @@ function emailKey(value: string | undefined): string {
 
 /** Finished signup. Pending invitees (`passwordSet === false`) are not unbooked labour. */
 function hasFinishedSignup(user: User): boolean {
-  return user.passwordSet === true
+  return user.passwordSet === true && user.status !== 'pending'
 }
 
 /**

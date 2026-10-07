@@ -15,6 +15,7 @@ import { useTaskStore } from '@/lib/stores/taskStore'
 import { useDeadlineStore } from '@/lib/stores/deadlineStore'
 import { isOperativeMode } from '@/lib/permissions'
 import { liveUserIdsOnJob } from '@/lib/access/workAccess'
+import { isPendingPerson } from '@/lib/staff/pendingPeople'
 import { healthSafetyFilePath, uploadFile } from '@/lib/firebase/storageUtils'
 import { dateFromDayKey, dayKey } from '@/lib/ios-parity/londonTime'
 import { notifyNewDeadlineAssignees } from '@/lib/deadlines/notify'
@@ -137,7 +138,7 @@ export function ProjectDeadlinesSection({ project, isSmallWorks }: { project: Pr
       users,
     })
     return users
-      .filter((member) => member.isActive !== false)
+      .filter((member) => member.isActive !== false && !isPendingPerson(member))
       .map((member) => ({
         id: member.id,
         name: displayName(member),

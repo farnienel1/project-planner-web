@@ -14,9 +14,12 @@ import {
   mergedVariationTradeOptions,
   evidenceFileAllowed,
   parentDisplayName,
+  VARIATION_LIST_FILTERS,
+  variationMatchesListFilter,
   type Variation,
   type VariationEvidence,
   type VariationLabourLine,
+  type VariationListFilter,
   type VariationMaterialLine,
   type VariationStatus,
   type VariationTracker,
@@ -45,14 +48,7 @@ import {
 } from '@/lib/variations/variationStorage'
 import type { Project } from '@/types'
 
-type Filter = 'all' | VariationStatus
-
-const FILTERS: Array<{ id: Filter; label: string }> = [
-  { id: 'all', label: 'All' },
-  { id: 'open', label: 'Open' },
-  { id: 'submitted', label: 'Submitted' },
-  { id: 'closed', label: 'Closed' },
-]
+type Filter = VariationListFilter
 
 function displayUser(user: { firstName?: string; surname?: string; email?: string } | null): string {
   if (!user) return 'Someone'
@@ -76,6 +72,7 @@ export function VariationsWorkspace({
   const [rows, setRows] = useState<Variation[]>([])
   const [tracker, setTracker] = useState<VariationTracker | null>(null)
   const [filter, setFilter] = useState<Filter>('all')
+  const filters = VARIATION_LIST_FILTERS
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -133,7 +130,7 @@ export function VariationsWorkspace({
     return copy
   }, [live, tracker?.enabled])
   const visible = sorted.filter((row) => {
-    if (filter !== 'all' && row.status !== filter) return false
+    if (!variationMatchesListFilter(row.status, filter)) return false
     const needle = search.trim().toLowerCase()
     if (!needle) return true
     const materials = row.materials.map((line) => line.name).join(' ')
@@ -177,7 +174,7 @@ export function VariationsWorkspace({
       </div>
       <div className="row" style={{ gap: 10, flexWrap: 'wrap' }}>
         <div className="seg">
-          {FILTERS.map((item) => (
+          {filters.map((item) => (
             <button key={item.id} type="button" className={filter === item.id ? 'on' : ''} onClick={() => setFilter(item.id)}>
               {item.label} {counts[item.id]}
             </button>

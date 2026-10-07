@@ -105,7 +105,10 @@ export function ProjectForm({ initial, collection = 'projects', backHref, onSave
     }
   }, [organization, loadClients, loadManagers, loadUsers])
 
-  const managerUsers = useMemo(() => getManagerUsers(users), [users])
+  const managerUsers = useMemo(
+    () => getManagerUsers(users).filter((manager) => manager.status !== 'pending' && manager.passwordSet !== false),
+    [users]
+  )
 
   const managerOptions = useMemo(() => {
     const options: ManagerOption[] = []

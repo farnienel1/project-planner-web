@@ -18,6 +18,12 @@ import {
 import { loadSubcontractorBookings } from '@/lib/weekly-report/loadSubcontractorBookings'
 import type { SubcontractorBookingRow } from '@/lib/weekly-report/weeklyReportData'
 import { WeeklyReportScreen } from '@/components/weekly-report/WeeklyReportScreen'
+import {
+  INVOICING_READ_CAP_MS,
+  readRememberedInvoicing,
+  rememberInvoicingSettings,
+} from '@/lib/weekly-report/invoicingRead'
+import type { OrgInvoicingSettings } from '@/lib/settings/organizationSettings'
 
 export default function WeeklyReportPage() {
   const router = useRouter()
@@ -30,6 +36,8 @@ export default function WeeklyReportPage() {
   const { bookings: holidayBookings, loadBookings: loadHolidayBookings } = useHolidayStore()
   const { subcontractors, loadSubcontractors } = useSubcontractorStore()
   const [orgDetails, setOrgDetails] = useState<OrganizationDetails | null>(null)
+  const [rememberedInvoicing, setRememberedInvoicing] = useState<OrgInvoicingSettings | null>(null)
+  const [invoicingReadFinished, setInvoicingReadFinished] = useState(false)
   const [subcontractorBookings, setSubcontractorBookings] = useState<SubcontractorBookingRow[]>([])
   const [subsLoading, setSubsLoading] = useState(false)
 
@@ -55,12 +63,39 @@ export default function WeeklyReportPage() {
     loadSmallWorks(organization.id)
     loadHolidayBookings(organization.id)
     loadSubcontractors(organization.id)
-    loadOrganizationDetails(organization.id).then(setOrgDetails).catch(() => setOrgDetails(null))
+    const remembered = readRememberedInvoicing(organization.id)
+    setRememberedInvoicing(remembered)
+    setInvoicingReadFinished(Boolean(remembered))
+    let cancelled = false
+    const cap = window.setTimeout(() => {
+      if (cancelled) return
+      const known = readRememberedInvoicing(organization.id)
+      if (known) {
+        setRememberedInvoicing(known)
+        setInvoicingReadFinished(true)
+      }
+    }, INVOICING_READ_CAP_MS)
+    loadOrganizationDetails(organization.id)
+      .then((details) => {
+        if (cancelled) return
+        if (!details) return
+        rememberInvoicingSettings(organization.id, details.invoicing)
+        setRememberedInvoicing(details.invoicing)
+        setOrgDetails((current) => current?.invoicing ? { ...details, invoicing: details.invoicing } : details)
+        setInvoicingReadFinished(true)
+      })
+      .catch(() => {
+        if (!cancelled && readRememberedInvoicing(organization.id)) setInvoicingReadFinished(true)
+      })
     setSubsLoading(true)
     loadSubcontractorBookings(organization.id)
       .then(setSubcontractorBookings)
       .catch(() => setSubcontractorBookings([]))
       .finally(() => setSubsLoading(false))
+    return () => {
+      cancelled = true
+      window.clearTimeout(cap)
+    }
   }, [
     organization?.id,
     loadBookings,
@@ -91,6 +126,8 @@ export default function WeeklyReportPage() {
       smallWorks={smallWorks}
       holidays={holidayBookings}
       orgDetails={orgDetails}
+      fallbackInvoicing={orgDetails?.invoicing ? null : rememberedInvoicing}
+      invoicingReadFinished={invoicingReadFinished || Boolean(rememberedInvoicing)}
       loading={bookingsLoading || managerLoading || subsLoading}
     />
   )

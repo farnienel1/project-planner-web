@@ -27,9 +27,12 @@ import { topLevelAdminFlagPatch } from '@/lib/orgSetup/repairAdminFlags'
 import { ACCOUNT_UNCONFIRMED_MESSAGE } from '@/lib/orgSetup/accountConfirmation'
 import { ensurePrimaryOrgMembership, resolveWebSessionOrganization } from '@/lib/orgMembership/membershipService'
 import {
+  applyRememberedWebOrganization,
+  clearRememberedOrgDenied,
   organizationIdsMatch,
   provisionalWebOrganizationId,
   readWebActiveOrg,
+  rememberedOrgWasDenied,
   sessionUserForOrganizationProbe,
   writeWebActiveOrg,
 } from '@/lib/orgMembership/webActiveOrg'
@@ -126,6 +129,22 @@ function commitExplicitSwitchOrganization(organizationId: string) {
   }
 }
 
+function webOrganizationIdFor(userId: string, currentOrganizationId: string): string {
+  const remembered = readWebActiveOrg(userId)
+  return applyRememberedWebOrganization({
+    userOrganizationId: currentOrganizationId,
+    rememberedOrganizationId: remembered,
+    explicitOrganizationId: readExplicitSwitchOrganization(),
+    rememberedProbe: remembered && rememberedOrgWasDenied(userId, remembered) ? 'denied' : 'unknown',
+  })
+}
+
+function withWebOrganization(user: User): User {
+  const organizationId = webOrganizationIdFor(user.id, user.organizationId)
+  if (!organizationId || organizationIdsMatch(user.organizationId, organizationId)) return user
+  return { ...user, organizationId }
+}
+
 function stubOrganization(organizationId: string): Organization {
   const now = new Date()
   return {
@@ -162,8 +181,16 @@ function watchCurrentUserDocument(uid: string) {
       const state = useAuthStore.getState()
       if (!state.user || state.user.id !== uid || state.mfaPending) return
       const next = sessionUserFromCurrentDocument(state.user, snap.data() as Record<string, unknown>)
-      if (!next) return
-      useAuthStore.setState({ user: next })
+      const base = next ?? state.user
+      const fixed = withWebOrganization(base)
+      if (!next && fixed === base) return
+      const organization =
+        state.organization && organizationIdsMatch(state.organization.id, fixed.organizationId)
+          ? state.organization
+          : fixed.organizationId
+            ? stubOrganization(fixed.organizationId)
+            : state.organization
+      useAuthStore.setState({ user: fixed, organization })
     },
     (error) => {
       console.warn('Current user listener skipped:', error)
@@ -411,7 +438,9 @@ async function hydrateSignedInOrganization(
       )
       if (!sessionStillOpen(firebaseUser.uid, token)) return
       probe = session.probe
-      sessionUser = sessionUserForOrganizationProbe(documentUser, documentOrganizationId, session)
+      sessionUser = withWebOrganization(
+        sessionUserForOrganizationProbe(documentUser, documentOrganizationId, session)
+      )
       useAuthStore.setState((state) => {
         if (token !== organizationHydration || signingOut || state.user?.id !== firebaseUser.uid) return state
         const organization =
@@ -587,10 +616,11 @@ async function loadSignedInProfileInner(firebaseUser: FirebaseUser) {
     rememberedOrganizationId,
     documentOrganizationId,
   })
-  const sessionUser =
+  const sessionUser = withWebOrganization(
     provisionalOrganizationId && !organizationIdsMatch(provisionalOrganizationId, documentOrganizationId)
       ? { ...user, organizationId: provisionalOrganizationId }
       : user
+  )
   // Remember an explicit switch or the company already stored for this browser.
   // Do not copy users/{uid}.organizationId into pp.webActiveOrg.
   const rememberProvisional =
@@ -918,6 +948,8 @@ export const useAuthStore = create<AuthState>((set) => {
       signingOut = true
       invalidateOrganizationHydration()
       stopCurrentUserWatch()
+      const signedOutId = useAuthStore.getState().user?.id
+      if (signedOutId) clearRememberedOrgDenied(signedOutId)
       writeSignedOutFlag(true)
       try {
         if (opts?.idle) markWebIdleExpired()
