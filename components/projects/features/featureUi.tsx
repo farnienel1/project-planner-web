@@ -1,6 +1,7 @@
 'use client'
 
 import { addDays, format, isSameDay, startOfWeek } from 'date-fns'
+import { coversCalendarDay, isSameLondonDay } from '@/lib/ios-parity/londonTime'
 import type { ReactNode } from 'react'
 
 /** Shared tokens aligned with iOS / HTML prototypes */
@@ -77,7 +78,7 @@ export function weekRangeLabel(weekStart: Date): string {
 }
 
 export function countItemsOnDay<T extends { date: Date }>(items: T[], day: Date): number {
-  return items.filter((item) => isSameDay(new Date(item.date), day)).length
+  return items.filter((item) => coversCalendarDay(new Date(item.date), day)).length
 }
 
 export function MaterialsWeekNavigator({
@@ -137,7 +138,7 @@ export function MaterialsDayStrip({
     <div className="mt-3 grid grid-cols-7 gap-1">
       {days.map((day) => {
         const selected = isSameDay(day, selectedDate)
-        const isToday = isSameDay(day, new Date())
+        const isToday = isSameLondonDay(day, new Date())
         const count = countItemsOnDay(materials, day)
         return (
           <button
