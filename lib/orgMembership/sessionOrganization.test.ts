@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { UserRole, type User, type UserPermissions } from '../../types/index.ts'
 import { TimeoutError } from '../client/withTimeout.ts'
-import { accessProbeFromReadError, destinationNeedsTrialScan } from './membershipService.ts'
+import { accessProbeFromReadError, destinationNeedsTrialScan, orgAccessProbeFromReads } from './membershipService.ts'
 import {
   chooseWebSessionOrganization,
   probeSessionOrganizations,
@@ -31,7 +31,19 @@ test('a remembered company is dropped only when the login is not a member', () =
     probes: { [RACCORD]: 'denied', [TEST_PRICING]: 'allowed' },
   })
   assert.equal(choice.organizationId, TEST_PRICING)
-  assert.equal(choice.persistOrganizationId, TEST_PRICING)
+  assert.equal(choice.persistOrganizationId, null)
+})
+
+test('a remembered web company is chosen on login when the user document names a different company', () => {
+  for (const probe of ['unknown', 'allowed'] as const) {
+    const choice = chooseWebSessionOrganization({
+      rememberedOrganizationId: RACCORD,
+      documentOrganizationId: TEST_PRICING,
+      probes: { [RACCORD]: probe, [TEST_PRICING]: 'allowed' },
+    })
+    assert.equal(choice.organizationId, RACCORD)
+    assert.equal(choice.persistOrganizationId, RACCORD)
+  }
 })
 
 test('an explicit company stays selected when its read does not finish', () => {
@@ -43,6 +55,45 @@ test('an explicit company stays selected when its read does not finish', () => {
   })
   assert.equal(choice.organizationId, RACCORD)
   assert.equal(choice.persistOrganizationId, RACCORD)
+})
+
+test('a missing or failed organisation read does not deny the remembered company', () => {
+  assert.equal(
+    orgAccessProbeFromReads({
+      orgRead: 'missing',
+      membershipRead: 'missing',
+      listed: false,
+      isCreator: false,
+    }),
+    'unknown'
+  )
+  assert.equal(
+    orgAccessProbeFromReads({
+      orgRead: 'failed',
+      membershipRead: 'failed',
+      listed: false,
+      isCreator: false,
+    }),
+    'unknown'
+  )
+  assert.equal(
+    orgAccessProbeFromReads({
+      orgRead: 'loaded',
+      membershipRead: 'missing',
+      listed: false,
+      isCreator: false,
+    }),
+    'denied'
+  )
+  assert.equal(
+    orgAccessProbeFromReads({
+      orgRead: 'loaded',
+      membershipRead: 'active',
+      listed: false,
+      isCreator: false,
+    }),
+    'allowed'
+  )
 })
 
 test('a thrown or unavailable organisation read is not a denied membership', () => {
