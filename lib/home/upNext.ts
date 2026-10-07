@@ -104,12 +104,14 @@ export function upcomingRows(params: {
   const projectsById = new Map(params.allProjects.map((p) => [p.id, p.siteName]))
 
   if (emailKey) {
-    const op = params.operatives.find(
-      (o) => o.email.toLowerCase().trim() === emailKey
+    const operativeIds = new Set(
+      params.operatives
+        .filter((o) => o.email.toLowerCase().trim() === emailKey && o.id)
+        .map((o) => o.id)
     )
-    if (op) {
+    if (operativeIds.size > 0) {
       const mine = params.bookings.filter((b) => {
-        if (b.operativeId !== op.id) return false
+        if (!operativeIds.has(b.operativeId)) return false
         const status = normalizeBookingStatus(b.status)
         return status !== 'Cancelled' && status !== 'Completed'
       })

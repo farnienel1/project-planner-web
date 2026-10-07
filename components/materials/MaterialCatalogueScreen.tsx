@@ -14,6 +14,7 @@ import { canManageMaterialCatalogue } from '@/lib/permissions'
 import { consumeCreateQuery } from '@/lib/navigation/createMenu'
 import { newUuid } from '@/lib/firebase/firestoreUtils'
 import { duplicateKey } from '@/lib/materials/materialCatalogSearch'
+import { formatLengthSpecification } from '@/lib/materials/materialLength'
 import {
   CATALOGUE_CSV_FILENAME,
   CATALOGUE_CSV_MAX_BYTES,
@@ -206,7 +207,9 @@ export function MaterialCatalogueScreen() {
                 </button>
                 {open ? (
                   <div className="space-y-2 border-t border-[#E5E5EA] px-3 py-3">
-                    {rows.map((item) => (
+                    {rows.map((item) => {
+                      const lengthLabel = formatLengthSpecification(item.length, item.lengthUnit)
+                      return (
                       <button
                         key={item.id}
                         type="button"
@@ -233,19 +236,19 @@ export function MaterialCatalogueScreen() {
                             </span>
                             {item.size ? (
                               <span className="rounded bg-[var(--soft)] px-1.5 py-0.5 text-[11px] text-[var(--ink3)]">
-                                Size {item.size}
+                                Size: {item.size}
                               </span>
                             ) : null}
-                            {item.length ? (
+                            {lengthLabel ? (
                               <span className="rounded bg-[var(--soft)] px-1.5 py-0.5 text-[11px] text-[var(--ink3)]">
-                                {item.length}
-                                {item.lengthUnit || ''}
+                                Length: {lengthLabel}
                               </span>
                             ) : null}
                           </div>
                         </div>
                       </button>
-                    ))}
+                      )
+                    })}
                   </div>
                 ) : null}
               </div>

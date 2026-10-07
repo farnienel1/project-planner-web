@@ -75,6 +75,9 @@ export function SmallWorksListScreen() {
   }, [visible, filter, search])
 
   const canCreate = canManageWorkCatalogue(user, 'smallWorks')
+  const emptySubtitle = canCreate
+    ? 'Nothing here right now. Tap + to start a small works job.'
+    : 'Nothing here right now.'
   const compact = isOperativeMode(user)
   const emptyDueToFilter = visible.length > 0 && filter !== 'all' && filterWorksByTab(visible, filter).length === 0
   const emptySearch = search.trim().length > 0 && filtered.length === 0 && filterWorksByTab(visible, filter).length > 0
@@ -117,7 +120,7 @@ export function SmallWorksListScreen() {
         <EmptyState
           icon={<WrenchScrewdriverIcon className="h-12 w-12" />}
           title="No small works found"
-          subtitle="Get started by adding your first small works job"
+          subtitle={emptySubtitle}
         />
       ) : (
         <>
@@ -160,7 +163,7 @@ export function SmallWorksListScreen() {
               subtitle='The current filter hides older or completed jobs. Choose “All” or “Completed” above to see everything.'
             />
           ) : filtered.length === 0 ? (
-            <EmptyState title="No small works found" subtitle="Get started by adding your first small works job" />
+            <EmptyState title="No small works found" subtitle={emptySubtitle} />
           ) : (
             <div className="grid grid-cols-1 gap-5 lg:grid-cols-2 2xl:grid-cols-3">
               {filtered.map((project) => (

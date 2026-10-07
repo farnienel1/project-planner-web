@@ -3,7 +3,6 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { format } from 'date-fns'
 import {
   CalendarDaysIcon,
   CameraIcon,
@@ -17,6 +16,7 @@ import {
   FlagIcon,
   ShieldCheckIcon,
   Squares2X2Icon,
+  UserGroupIcon,
 } from '@heroicons/react/24/solid'
 import {
   daysLeftCaption,
@@ -27,14 +27,27 @@ import {
 import { visibleJobTypeLabel } from '@/lib/jobTypes/jobTypesStorage'
 import { formatSiteAddress } from '@/lib/maps/siteAddress'
 import { useAuthStore } from '@/lib/stores/authStore'
-import { canBookWork, canManageWorkCatalogue, canViewMaterials, canViewSiteAudit } from '@/lib/permissions'
+import { canBookWork, canManageWorkCatalogue, canViewMaterials, canViewSiteAudit, hasAdminAccess } from '@/lib/permissions'
+import { canViewProjectActiveUsers } from '@/lib/projects/activeUsers'
+import { useActiveUserBadge } from '@/components/projects/features/ProjectActiveUsersSection'
+import { useOperativeStore } from '@/lib/stores/operativeStore'
 import { isOperativeMode } from '@/lib/navigation/menuPermissions'
 import { jobHubTiles } from '@/lib/projects/jobHubTiles'
 import { canSeeJobVariations } from '@/lib/variations/variationAccess'
 import { subscribeParentVariations } from '@/lib/variations/variationStorage'
+import { LONDON_TIME_ZONE } from '@/lib/orgTime/zoneTime'
 import type { SectionHue } from '@/lib/ui/sectionHue'
 import type { Project, User } from '@/types'
 import { cn } from '@/lib/ui/cn'
+
+function formatLondonDay(date: Date): string {
+  return new Intl.DateTimeFormat('en-GB', {
+    timeZone: LONDON_TIME_ZONE,
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  }).format(date)
+}
 
 function canConfigureProjectVisibility(user: User | null, isSmallWork: boolean): boolean {
   if (!user || user.permissions.operativeMode) return false
@@ -54,6 +67,7 @@ const TAB_META: Record<string, { hue: SectionHue; icon: typeof Squares2X2Icon }>
   'site-audit': { hue: 'daily', icon: CameraIcon },
   location: { hue: 'proj', icon: MapPinIcon },
   variations: { hue: 'warn', icon: DocumentTextIcon },
+  'active-users': { hue: 'user', icon: UserGroupIcon },
 }
 
 function tabFromPath(pathname: string, basePath: string): string {
@@ -68,6 +82,7 @@ function tabFromPath(pathname: string, basePath: string): string {
   if (rest.startsWith('site-audit')) return 'site-audit'
   if (rest.startsWith('location')) return 'location'
   if (rest.startsWith('variations')) return 'variations'
+  if (rest.startsWith('active-users')) return 'active-users'
   return 'overview'
 }
 
@@ -100,6 +115,14 @@ export function ProjectWorkspaceChrome({
   const showBook = canBookWork(user) && !isOperativeMode(user)
   const showViewTile = canConfigureProjectVisibility(user, isSmallWork)
   const isOperative = isOperativeMode(user)
+  const { managers: rosterManagers, loadManagers } = useOperativeStore()
+  const showActiveUsers = canViewProjectActiveUsers(user, rosterManagers, project)
+  const activeUserCount = useActiveUserBadge(project, showActiveUsers)
+
+  useEffect(() => {
+    if (!organization?.id) return
+    if (hasAdminAccess(user) || user?.permissions.manager) void loadManagers(organization.id)
+  }, [organization?.id, user, loadManagers])
   const active = tabFromPath(pathname, basePath)
   const hideTabs = hideWorkspaceTabs(pathname)
   const typeLabel = visibleJobTypeLabel(project.jobType, project.customJobType)
@@ -128,8 +151,13 @@ export function ProjectWorkspaceChrome({
     showViewTile,
     canViewMaterials: canViewMaterials(user),
     canViewSiteAudit: canViewSiteAudit(user),
+    showActiveUsers,
     locationCaption: project.addressLine1 || undefined,
-  }).map((tile) => (tile.href === 'tasks' ? { ...tile, badge: taskCount } : tile))
+  }).map((tile) => {
+    if (tile.href === 'tasks') return { ...tile, badge: taskCount }
+    if (tile.href === 'active-users' && activeUserCount) return { ...tile, badge: activeUserCount }
+    return tile
+  })
 
   const tabs = [
     { href: '', label: 'Overview', key: 'overview', badge: undefined as number | undefined },
@@ -199,7 +227,7 @@ export function ProjectWorkspaceChrome({
           <div className="row small" style={{ opacity: 0.9, marginBottom: 8 }}>
             <b>{progress}% complete</b>
             <span className="grow" />
-            {remaining} · {format(new Date(project.startDate), 'd MMM yyyy')} – {format(new Date(project.endDate), 'd MMM yyyy')}
+            {remaining} · {formatLondonDay(new Date(project.startDate))} – {formatLondonDay(new Date(project.endDate))}
           </div>
           <div style={{ height: 10, borderRadius: 99, background: 'rgba(255,255,255,.18)', overflow: 'hidden' }}>
             <i
@@ -260,7 +288,7 @@ export function ProjectDetailsCard({
     {
       hue: 'sched',
       label: 'Timeline',
-      value: `${format(new Date(project.startDate), 'd MMM yyyy')} – ${format(new Date(project.endDate), 'd MMM yyyy')}`,
+      value: `${formatLondonDay(new Date(project.startDate))} – ${formatLondonDay(new Date(project.endDate))}`,
     },
     {
       hue: 'proj',

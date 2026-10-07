@@ -33,18 +33,20 @@ export default function WeeklyReportPage() {
   const [subcontractorBookings, setSubcontractorBookings] = useState<SubcontractorBookingRow[]>([])
   const [subsLoading, setSubsLoading] = useState(false)
 
+  const allowed = Boolean(user) && canViewWeeklyReports(user!)
+
   useEffect(() => {
     if (!loading && !user) router.push('/login')
   }, [loading, user, router])
 
   useEffect(() => {
-    if (!loading && user && !canViewWeeklyReports(user)) {
+    if (!loading && user && !allowed) {
       router.replace('/dashboard')
     }
-  }, [loading, user, router])
+  }, [loading, user, allowed, router])
 
   useEffect(() => {
-    if (!organization?.id) return
+    if (!allowed || !organization?.id) return
     loadBookings(organization.id)
     loadManagerSiteBookings(organization.id)
     loadOperatives(organization.id)
@@ -69,9 +71,10 @@ export default function WeeklyReportPage() {
     loadSmallWorks,
     loadHolidayBookings,
     loadSubcontractors,
+    allowed,
   ])
 
-  if (loading || !user) return null
+  if (loading || !user || !allowed) return null
 
   return (
     <WeeklyReportScreen

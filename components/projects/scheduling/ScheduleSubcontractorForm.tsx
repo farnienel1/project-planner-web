@@ -14,6 +14,8 @@ import {
   type ScheduleDateSlot,
 } from '@/lib/scheduling/scheduleUtils'
 import { db } from '@/lib/firebase/config'
+import { scheduleWorkKindLabel } from '@/lib/jobTypes/jobTypesStorage'
+import { scheduleBookingClientLine } from '@/lib/maps/siteAddress'
 import { ErrorBanner } from '@/components/dashboard/PageShell'
 import { ScheduleCalendar } from '@/components/projects/scheduling/ScheduleCalendar'
 import { ScheduleQuickSelect } from '@/components/projects/scheduling/ScheduleQuickSelect'
@@ -196,9 +198,8 @@ export function ScheduleSubcontractorForm({
       <div className="card pad">
         <p className="text-xs font-semibold text-violet-700">{project.jobNumber}</p>
         <p className="text-lg font-semibold text-slate-900">{project.siteName}</p>
-        <p className="mt-1 text-sm text-slate-600">
-          {project.client?.name} · {[project.addressLine1, project.townCity, project.postcode].filter(Boolean).join(', ')}
-        </p>
+        <p className="mt-1 text-sm text-slate-600">{scheduleBookingClientLine(project)}</p>
+        <p className="text-xs text-slate-500">{scheduleWorkKindLabel(project)}</p>
       </div>
 
       <section className="space-y-3">

@@ -7,7 +7,14 @@ import { UserRole, type SiteAudit, type SiteAuditItem, type User } from '@/types
 import { parseOrgUser } from '@/lib/firebase/parseUser'
 import { dedupeUsersByEmail } from '@/lib/staff/userRosterUtils'
 import { mergeRetainedRoster, missingOrganizationIdPatch, retainScopedRows, rosterParseRecord } from '@/lib/staff/rosterRetain'
-import { isOrgLoadInFlight, OrgLoadNotCached, runOrgLoad, invalidateOrgLoad, shouldSkipOrgLoad } from '@/lib/stores/orgLoadCache'
+import {
+  isOrgLoadInFlight,
+  optionsForUnappliedOrg,
+  OrgLoadNotCached,
+  runOrgLoad,
+  invalidateOrgLoad,
+  shouldSkipOrgLoad,
+} from '@/lib/stores/orgLoadCache'
 import { newUuid, parseFirestoreDate, parseOptionalString, parseString, parseUuid } from '@/lib/firebase/firestoreUtils'
 
 function parseAuditItems(rows: unknown): SiteAuditItem[] {
@@ -437,7 +444,23 @@ export const useOrgUserStore = create<OrgUserState>((set, get) => ({
 
   loadUsers: async (organizationId, options?: { force?: boolean }) => {
     const revisionAtStart = listedUserRevision
-    const willLoad = !shouldSkipOrgLoad(ORG_USER_LOAD_KEY, organizationId, options)
+    // The org-load cache can still be warm after the in-memory roster was cleared.
+    // Put the last roster back before that skip, or Warnings scans nobody and shows
+    // "No active warnings".
+    if (get().rosterLoadedOrgId !== organizationId && get().users.length === 0) {
+      const stored = readStoredRoster(organizationId)
+      if (stored.length > 0) {
+        listedRosterOrgId = organizationId
+        set({ users: stored, loading: false, error: null, rosterLoadedOrgId: organizationId })
+      }
+    }
+    const loadOptions = optionsForUnappliedOrg(
+      ORG_USER_LOAD_KEY,
+      organizationId,
+      get().rosterLoadedOrgId === organizationId,
+      options
+    )
+    const willLoad = !shouldSkipOrgLoad(ORG_USER_LOAD_KEY, organizationId, loadOptions)
     if (willLoad) {
       const inMemory = listedRosterOrgId === organizationId ? get().users : []
       const previous = inMemory.length > 0 ? inMemory : readStoredRoster(organizationId)
@@ -493,7 +516,7 @@ export const useOrgUserStore = create<OrgUserState>((set, get) => ({
           throw error
         }
       },
-      options
+      loadOptions
     )
 
     if (get().loading && !isOrgLoadInFlight(ORG_USER_LOAD_KEY, organizationId)) {

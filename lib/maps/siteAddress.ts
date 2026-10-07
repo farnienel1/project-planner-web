@@ -2,6 +2,15 @@ import type { Project } from '@/types'
 
 const UNMAPPABLE = ['site location not available', 'n/a', 'tbc', 'tba']
 
+/** iOS schedule booking card: client, then the site line, with no dangling separator. */
+export function scheduleBookingClientLine(
+  project: Parameters<typeof formatSiteAddress>[0] & { client?: { name?: string } | null }
+): string {
+  const client = project.client?.name?.trim() || ''
+  const address = formatSiteAddress(project)
+  return [client, address].filter(Boolean).join(' · ')
+}
+
 export function formatSiteAddress(
   project: Partial<
     Pick<

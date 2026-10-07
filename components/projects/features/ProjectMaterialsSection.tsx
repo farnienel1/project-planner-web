@@ -5,7 +5,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { addDays, format, isSameDay, startOfWeek } from 'date-fns'
+import { addDays, format, isSameDay, startOfDay, startOfWeek } from 'date-fns'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useMaterialProjectStore } from '@/lib/stores/materialProjectStore'
 import { useWholesalerStore } from '@/lib/stores/wholesalerStore'
@@ -14,6 +14,7 @@ import { ErrorBanner, LoadingSpinner } from '@/components/dashboard/PageShell'
 import { MaterialsAddSheet } from '@/components/projects/materials/MaterialsAddSheet'
 import { MaterialsSendListSheet } from '@/components/projects/materials/MaterialsSendListSheet'
 import { materialStatusLabel } from '@/lib/maps/siteLocation'
+import { formatLengthSpecification } from '@/lib/materials/materialLength'
 import type { Project, ProjectMaterialLine } from '@/types'
 import {
   FeatureCard,
@@ -24,6 +25,16 @@ import {
   StatusPill,
   materialStatusTone,
 } from '@/components/projects/features/featureUi'
+
+/** Keep the selected day inside the week strip. iOS `MaterialsWeekNavigation.applyWeekDelta`. */
+function shiftMaterialsWeek(weekStart: Date, selectedDate: Date, weeks: number) {
+  const nextWeek = addDays(weekStart, weeks * 7)
+  const rawOffset = Math.round(
+    (startOfDay(selectedDate).getTime() - startOfDay(weekStart).getTime()) / 86_400_000
+  )
+  const dayOffset = Math.max(0, Math.min(6, rawOffset))
+  return { weekStart: nextWeek, selectedDate: addDays(nextWeek, dayOffset) }
+}
 
 function MaterialLineCard({
   line,
@@ -43,7 +54,7 @@ function MaterialLineCard({
     line.brand,
     line.productCode,
     line.size,
-    line.length ? `${line.length}${line.lengthUnit ? ` ${line.lengthUnit}` : ''}` : null,
+    formatLengthSpecification(line.length, line.lengthUnit) || null,
     line.category,
   ]
     .filter(Boolean)
@@ -149,8 +160,16 @@ export function ProjectMaterialsSection({ project }: { project: Project }) {
       <MaterialsWeekNavigator
         weekStart={weekStart}
         itemCount={weekItemCount}
-        onPrev={() => setWeekStart(addDays(weekStart, -7))}
-        onNext={() => setWeekStart(addDays(weekStart, 7))}
+        onPrev={() => {
+          const next = shiftMaterialsWeek(weekStart, selectedDate, -1)
+          setWeekStart(next.weekStart)
+          setSelectedDate(next.selectedDate)
+        }}
+        onNext={() => {
+          const next = shiftMaterialsWeek(weekStart, selectedDate, 1)
+          setWeekStart(next.weekStart)
+          setSelectedDate(next.selectedDate)
+        }}
       />
 
       <MaterialsDayStrip
