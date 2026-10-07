@@ -6,7 +6,7 @@ Web and iOS are separate repositories and separate languages. They share one exe
 
 | Piece | Path |
 |---|---|
-| Canonical core | `project-planner-web/lib/canonical/` (`engine.ts` is the implementation) |
+| Canonical core | `project-planner-web/lib/canonical/` (`engine.ts` for windows, organisation, and slots; `warningRows.ts` for which qualification, unverified, and unbooked warnings exist) |
 | Web consumption | Import `@/lib/canonical`. Existing modules such as `lib/warnings/warningLookahead.ts`, `lib/orgMembership/webActiveOrg.ts`, and `lib/timesheets/timesheetWeekUtils.ts` call that module instead of keeping a second copy. |
 | iOS consumption | `Project Planner/Canonical/canonical-business.js` is the bundle built from `lib/canonical/bundleEntry.ts`. `Project Planner/Canonical/CanonicalBusinessEngine.swift` evaluates it. Warning scans and invoicing defaults use that result, with `Europe/London` when the script cannot load. |
 | Bundle command | `npm run build:canonical` in the web repo. `npm test` rebuilds it. |
@@ -26,15 +26,16 @@ The canonical module owns:
 - Named booking slots (`FULL DAY` / `FULL_DAY`, `AM`, `PM`)
 - Whether two minute intervals clash
 - Cache key shape `kind:organizationId`
+- Which qualification warnings exist, which operatives are unverified, and which people are unbooked labour (`qualificationExpiryRows`, `unverifiedOperativeRows`, `unbookedLabourRows`)
 
 ## What stays in each app
 
 - SwiftUI and React screens, navigation, and copy
 - Firestore listeners, offline outbox, and local databases
-- The warning row generator (`lib/warnings/generateOrgWarnings.ts` and `Core/WarningsComputation.swift`)
+- Clash timeline math and the material cut-off message (`lib/warnings/generateOrgWarnings.ts` and `Core/WarningsComputation.swift`). Those dates use the London business calendar on iOS
 - Overtime and break payroll (`Core/PayrollHoursEngine.swift` and the web timesheet helpers that are not named slots)
 
-Those generators must call the canonical window and slot rules. Do not add a second coverage window or a second `FULL DAY` hour value. A later change can move the row generator into `lib/canonical` once its inputs are plain data. Until then, a behaviour change in one generator without the other is a defect.
+Do not add a second coverage window, a second unbooked-person loop, or a second `FULL DAY` hour value.
 
 ## Organisation context
 
@@ -65,10 +66,20 @@ Other role gaps inside one company (for example who may edit settings) are liste
 
 ## Where new business logic goes
 
-If both apps must agree, add the function to `lib/canonical/engine.ts`, export it from `lib/canonical/index.ts` and `bundleEntry.ts`, then call it from web and from `CanonicalBusinessEngine`. Run `npm run build:canonical` and commit the generated JavaScript in both places the script writes.
+If both apps must agree, add the function under `lib/canonical/` (`engine.ts` or `warningRows.ts`), export it from `lib/canonical/index.ts` and `bundleEntry.ts`, then call it from web and from `CanonicalBusinessEngine`. Run `npm run build:canonical` and commit the generated JavaScript in both places the script writes.
+
+## Agent windows
+
+UI work can stay in one repository. Shared business rules cannot.
+
+A window that only has the web repo may change screens and may change `lib/canonical`. After a canonical change, run `npm run build:canonical`. The script writes `Project Planner/Canonical/canonical-business.js` only when the iOS checkout is at `../project-planner-ios`. If that checkout is not there, commit `lib/canonical/dist/canonical-business.js` here and copy that file into the iOS repo in a change that has the iOS repo. Do not leave the phone running an older script.
+
+A window that only has the iOS repo may change SwiftUI and data loading. Shared results come from `CanonicalBusinessEngine`. Do not edit `canonical-business.js` by hand, and do not add a second calculator for a rule the script already has. A new shared rule is added in the web `lib/canonical` module, the script is rebuilt, and both copies are committed.
+
+A workspace with both repositories changes the TypeScript, rebuilds, and commits both generated scripts in the same phase.
 
 ## First divergences this architecture closes
 
-Warning counts differed because the scan window was calculated twice. Web used the organisation time zone. iOS used `Calendar.current`, so a person outside the UK could be on a different calendar day, and an empty payment-run list fell back to days 1–2 instead of the half-month default. The shared window is the fix. The count is whatever that window produces from the same data, settings, and time zone. It is not copied from one screen onto the other.
+Warning counts differed because the scan window was calculated twice, and because qualification, unverified, and unbooked rows were selected twice. Web used the organisation time zone. iOS used `Calendar.current`, so a person outside the UK could be on a different calendar day, and an empty payment-run list fell back to days 1–2 instead of the half-month default. The shared window and the shared row functions are the fix. The count is whatever those functions produce from the same data, settings, and time zone. It is not copied from one screen onto the other.
 
 Bookings differed for the same reason when a listener for company A could still publish into the store after a switch to company B, and when local caches were not keyed by organisation.

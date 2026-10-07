@@ -14,3 +14,5 @@ export {
   organizationScopedKey,
   paidHoursForNamedSlot,
 } from './engine'
+
+export { qualificationExpiryRows, unbookedLabourRows, unverifiedOperativeRows } from './warningRows'
