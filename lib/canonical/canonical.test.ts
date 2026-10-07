@@ -17,6 +17,7 @@ import {
   paidHoursForNamedSlot,
   resetOrganizationContextForTests,
 } from './engine.ts'
+import { qualificationExpiryRows, unbookedLabourRows, unverifiedOperativeRows } from './warningRows.ts'
 
 test('organisation ids match after trim and case folding', () => {
   assert.equal(organizationIdsMatch(' Org-A ', 'org-a'), true)
@@ -173,7 +174,12 @@ test('organisation cache keys cannot satisfy another organisation', () => {
 
 test('the iOS JavaScript bundle returns the same warning window as this module', () => {
   const source = readFileSync(new URL('./dist/canonical-business.js', import.meta.url), 'utf8')
-  const sandbox: { ProjectPlannerCanonical?: { coverageWindow: (input: unknown) => { startDayKey: string; endDayKey: string } } } = {}
+  const sandbox: {
+    ProjectPlannerCanonical?: {
+      coverageWindow: (input: unknown) => { startDayKey: string; endDayKey: string }
+      qualificationExpiryRows: (input: unknown) => Array<{ id: string }>
+    }
+  } = {}
   runInContext(source, createContext(sandbox))
   const input = {
     referenceIso: '2026-10-06T11:00:00.000Z',
@@ -189,4 +195,143 @@ test('the iOS JavaScript bundle returns the same warning window as this module',
   const fromModule = coverageWindow(input)
   assert.equal(fromBundle?.startDayKey, fromModule.startDayKey)
   assert.equal(fromBundle?.endDayKey, fromModule.endDayKey)
+  const bundledRows = sandbox.ProjectPlannerCanonical?.qualificationExpiryRows({
+    referenceIso: '2026-09-16T11:00:00.000Z',
+    timeZone: 'Europe/London',
+    operatives: [
+      {
+        id: 'OP-Q',
+        isActive: true,
+        name: 'Ada Qual',
+        expiries: [{ qualificationId: 'Q1', name: 'CSCS', expiryIso: '2026-09-01T11:00:00.000Z' }],
+      },
+    ],
+  })
+  assert.equal(bundledRows?.[0]?.id, 'qual-OP-Q-Q1')
+})
+
+test('qualification rows use the organisation month, including already expired qualifications', () => {
+  const referenceIso = '2026-09-16T11:00:00.000Z'
+  const rows = qualificationExpiryRows({
+    referenceIso,
+    timeZone: 'Europe/London',
+    operatives: [
+      {
+        id: 'OP-Q',
+        isActive: true,
+        name: 'Ada Qual',
+        expiries: [
+          { qualificationId: 'Q-OLD', name: 'CSCS', expiryIso: '2026-09-01T11:00:00.000Z' },
+          { qualificationId: 'Q-SOON', name: 'IPAF', expiryIso: '2026-10-16T11:00:00.000Z' },
+          { qualificationId: 'Q-LATER', name: 'First aid', expiryIso: '2026-10-17T11:00:00.000Z' },
+        ],
+      },
+      {
+        id: 'OP-OFF',
+        isActive: false,
+        name: 'Inactive',
+        expiries: [{ qualificationId: 'Q-OFF', name: 'CSCS', expiryIso: '2026-09-01T11:00:00.000Z' }],
+      },
+    ],
+  })
+  assert.deepEqual(
+    rows.map((row) => row.id),
+    ['qual-OP-Q-Q-OLD', 'qual-OP-Q-Q-SOON']
+  )
+  assert.equal(rows[0].title, 'Qualification expired')
+  assert.equal(rows[1].title, 'Qualification expiry')
+  assert.equal(rows[1].dayKey, '2026-10-16')
+})
+
+test('an operative is unverified only after three working days without a password', () => {
+  const people = [
+    {
+      email: 'pat@site.test',
+      passwordSet: false,
+      createdAtIso: '2026-09-16T11:00:00.000Z',
+      isOperativeMode: true,
+    },
+  ]
+  const operatives = [{ id: 'OP-PAT', email: 'pat@site.test', name: 'Pat Pending' }]
+  const sameDay = unverifiedOperativeRows({
+    referenceIso: '2026-09-16T11:00:00.000Z',
+    operatives,
+    people,
+  })
+  const thirdDay = unverifiedOperativeRows({
+    referenceIso: '2026-09-18T11:00:00.000Z',
+    operatives,
+    people,
+  })
+  assert.equal(sameDay.length, 0)
+  assert.equal(thirdDay.length, 1)
+  assert.equal(thirdDay[0].id, 'unverified-OP-PAT')
+  assert.match(thirdDay[0].message, /has not verified/)
+})
+
+test('unbooked labour skips pending invitees, excluded people, zero-hour weekends, and duplicate booked profiles', () => {
+  const people = [
+    {
+      id: 'U-LIVE',
+      email: 'ada@site.test',
+      name: 'Ada App',
+      isActive: true,
+      passwordSet: true,
+      isOperativeMode: true,
+      isManager: false,
+      isAdmin: false,
+      isSuperAdmin: false,
+    },
+    {
+      id: 'U-PEND',
+      email: 'pat@site.test',
+      name: 'Pat Pending',
+      isActive: true,
+      passwordSet: false,
+      isOperativeMode: true,
+      isManager: false,
+      isAdmin: false,
+      isSuperAdmin: false,
+    },
+    {
+      id: 'U-ADMIN',
+      email: 'boss@site.test',
+      name: 'Boss Admin',
+      isActive: true,
+      passwordSet: true,
+      isOperativeMode: false,
+      isManager: false,
+      isAdmin: true,
+      isSuperAdmin: false,
+    },
+  ]
+  const operatives = [
+    { id: 'OP-ADA', email: 'ada@site.test', name: 'Roster Ada', isActive: true, isPlaceholder: false, profileWeight: 1 },
+    { id: 'OP-ADA-DUP', email: 'ada@site.test', name: 'Duplicate Ada', isActive: true, isPlaceholder: false, profileWeight: 0 },
+    { id: 'OP-PAT', email: 'pat@site.test', name: 'Roster Pat', isActive: true, isPlaceholder: false, profileWeight: 0 },
+    { id: 'OP-BOB', email: 'bob@site.test', name: 'Bob Roster', isActive: true, isPlaceholder: false, profileWeight: 0 },
+    { id: 'OP-BOSS', email: 'boss@site.test', name: 'Boss Roster', isActive: true, isPlaceholder: false, profileWeight: 0 },
+  ]
+  const rows = unbookedLabourRows({
+    timeZone: 'Europe/London',
+    startDayKey: '2026-09-18',
+    endDayKey: '2026-09-20',
+    includeWeekends: true,
+    excludedUserIds: ['U-ADMIN'],
+    standardPaidHours: 8,
+    saturdayCountsAsHours: 0,
+    sundayCountsAsHours: 8,
+    people,
+    operatives,
+    bookings: [{ personId: 'OP-ADA-DUP', dayKey: '2026-09-18', kind: 'operative' }],
+    holidays: [],
+  })
+  assert.deepEqual(
+    rows.map((row) => row.id),
+    ['unbooked-2026-09-18-OP-BOB', 'unbooked-2026-09-20-U-LIVE', 'unbooked-2026-09-20-OP-BOB']
+  )
+  assert.equal(rows[1].operativeName, 'Ada App')
+  assert.equal(rows[1].missingHours, 8)
+  assert.equal(rows.find((row) => row.personKey === 'U-PEND' || row.personKey === 'U-ADMIN'), undefined)
+  assert.equal(rows.find((row) => row.dayKey === '2026-09-19'), undefined)
 })

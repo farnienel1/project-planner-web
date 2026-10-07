@@ -1,18 +1,16 @@
 import type { OrgPayrollTimePolicy, OrgWarningDetectionSettings } from '@/lib/settings/organizationSettings'
 import { DEFAULT_PAYROLL_POLICY } from '@/lib/settings/organizationSettings'
 import { effectiveWeekendSettings } from '@/lib/setup/workingHoursUtils'
+import type { LabourPerson, RosterOperative } from '@/lib/canonical'
+import { unbookedLabourRows } from '@/lib/canonical'
 import type { Booking, HolidayBooking, Operative, User } from '@/types'
 import { UserRole } from '@/types'
 import { isActiveBookingStatus } from '@/lib/ios-parity/enums'
-import { dayKey, londonIsoWeekday, londonMidnight } from '@/lib/ios-parity/londonTime'
+import { dateFromDayKey, dayKey, londonIsoWeekday, londonMidnight } from '@/lib/ios-parity/londonTime'
 import { formatWarningHours } from '@/lib/warnings/clashIntervals'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import { isPlaceholderOperative } from '@/lib/operatives/operativeRosterUtils'
-import {
-  computeWarningCoverageWindow,
-  eachLondonDay,
-  isDateWithinWarningWindow,
-} from '@/lib/warnings/warningLookahead'
+import { computeWarningCoverageWindow, isDateWithinWarningWindow } from '@/lib/warnings/warningLookahead'
 
 export interface UnbookedLabourWarning {
   id: string
@@ -24,114 +22,39 @@ export interface UnbookedLabourWarning {
   missingHours: number
 }
 
-function isManagerOrAdminUser(user: User): boolean {
-  return Boolean(
-    user.isActive &&
-      (user.permissions?.manager ||
-        user.permissions?.adminAccess ||
-        user.isSuperAdmin ||
-        user.role === UserRole.ADMIN)
-  )
+function countsAsHours(day: 'saturday' | 'sunday', payrollPolicy: OrgPayrollTimePolicy): number {
+  const settings = effectiveWeekendSettings(day, payrollPolicy)
+  const countsAs = settings.countsAsStandardHours
+  return typeof countsAs === 'number' && Number.isFinite(countsAs) ? countsAs : payrollPolicy.standardPaidHours
 }
 
-function isOperativeModeOnlyUser(user: User): boolean {
-  return Boolean(
-    user.isActive &&
-      user.permissions?.operativeMode &&
-      !user.permissions?.manager &&
-      !user.permissions?.adminAccess &&
-      !user.isSuperAdmin &&
-      user.role !== UserRole.ADMIN
-  )
-}
-
-function displayNameForUser(user: User): string {
-  const name = `${user.firstName || ''} ${user.surname || ''}`.trim()
-  return name || user.email || user.id
-}
-
-function displayNameForOperative(operative: Operative): string {
-  return `${operative.firstName} ${operative.lastName}`.trim() || operative.email || 'Operative'
-}
-
-function profileWeight(operative: Operative): number {
-  return (
-    (operative.qualifications?.length ?? 0) +
-    Object.keys(operative.qualificationCertificateURLs || {}).length +
-    Object.keys(operative.qualificationExpiryDates || {}).length
-  )
-}
-
-function preferOperativeWithProfile(a: Operative, b: Operative): Operative {
-  return profileWeight(a) >= profileWeight(b) ? a : b
-}
-
-function emailKey(value: string | undefined): string {
-  return (value || '').trim().toLowerCase()
-}
-
-/** Finished signup. Pending invitees (`passwordSet === false`) are not unbooked labour. */
-function hasFinishedSignup(user: User): boolean {
-  return user.passwordSet === true && user.status !== 'pending'
-}
-
-/**
- * When two user docs share an email, keep the finished account.
- * Prefer passwordSet && isActive, then any passwordSet account.
- */
-function preferFinishedAccount(candidates: User[]): User | undefined {
-  return (
-    candidates.find((user) => user.passwordSet && user.isActive) ??
-    candidates.find((user) => user.passwordSet)
-  )
-}
-
-function dedupeFinishedUsers(users: User[]): User[] {
-  const groups = new Map<string, User[]>()
-  const withoutEmail: User[] = []
-  for (const user of users) {
-    if (!hasFinishedSignup(user)) continue
-    const email = emailKey(user.email)
-    if (!email) {
-      withoutEmail.push(user)
-      continue
-    }
-    const list = groups.get(email) || []
-    list.push(user)
-    groups.set(email, list)
+function labourPerson(user: User): LabourPerson {
+  return {
+    id: user.id,
+    email: user.email,
+    name: `${user.firstName || ''} ${user.surname || ''}`.trim() || user.email || user.id,
+    isActive: Boolean(user.isActive),
+    passwordSet: user.passwordSet === true,
+    status: user.status,
+    isOperativeMode: Boolean(user.permissions?.operativeMode),
+    isManager: Boolean(user.permissions?.manager),
+    isAdmin: Boolean(user.permissions?.adminAccess) || user.role === UserRole.ADMIN,
+    isSuperAdmin: Boolean(user.isSuperAdmin),
   }
-  const picked: User[] = []
-  for (const group of groups.values()) {
-    const best = preferFinishedAccount(group)
-    if (best) picked.push(best)
+}
+
+function rosterOperative(operative: Operative): RosterOperative {
+  return {
+    id: operative.id,
+    email: operative.email,
+    name: `${operative.firstName} ${operative.lastName}`.trim() || operative.email || 'Operative',
+    isActive: operative.isActive !== false,
+    isPlaceholder: isPlaceholderOperative(operative),
+    profileWeight:
+      (operative.qualifications?.length ?? 0) +
+      Object.keys(operative.qualificationCertificateURLs || {}).length +
+      Object.keys(operative.qualificationExpiryDates || {}).length,
   }
-  return [...picked, ...withoutEmail]
-}
-
-function holidayCoversDay(
-  holidays: HolidayBooking[],
-  day: Date,
-  userId?: string,
-  operativeId?: string,
-  timeZone?: string
-): boolean {
-  const key = dayKey(day, timeZone)
-  return holidays.some((holiday) => {
-    if (String(holiday.status).toLowerCase() !== 'approved') return false
-    const start = dayKey(holiday.startDate, timeZone)
-    const end = dayKey(holiday.endDate, timeZone)
-    if (key < start || key > end) return false
-    const holidayUser = holiday.userId?.trim()
-    if (userId && holidayUser && holidayUser === userId) return true
-    if (operativeId && holiday.operativeId && holiday.operativeId === operativeId) return true
-    return false
-  })
-}
-
-function isUnbookedLabourWeekday(day: Date, includeWeekends: boolean, timeZone?: string): boolean {
-  if (includeWeekends) return true
-  const iso = londonIsoWeekday(day, timeZone)
-  return iso >= 1 && iso <= 5
 }
 
 /** iOS paidHoursRequired: weekday standard day, or that weekend's counts-as hours. */
@@ -141,22 +64,9 @@ export function paidHoursRequiredForUnbookedDay(
   timeZone?: string
 ): number {
   const iso = londonIsoWeekday(day, timeZone)
-  if (iso === 6 || iso === 7) {
-    const settings = effectiveWeekendSettings(iso === 6 ? 'saturday' : 'sunday', payrollPolicy)
-    const countsAs = settings.countsAsStandardHours
-    const hours = typeof countsAs === 'number' && Number.isFinite(countsAs) ? countsAs : payrollPolicy.standardPaidHours
-    return Math.max(hours, 0)
-  }
+  if (iso === 6) return Math.max(countsAsHours('saturday', payrollPolicy), 0)
+  if (iso === 7) return Math.max(countsAsHours('sunday', payrollPolicy), 0)
   return Math.max(payrollPolicy.standardPaidHours, 0)
-}
-
-function formatUnbookedDay(day: Date, timeZone = 'Europe/London'): string {
-  return new Intl.DateTimeFormat('en-GB', {
-    timeZone,
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-  }).format(day)
 }
 
 export function computeUnbookedLabourWarnings({
@@ -223,181 +133,57 @@ export function computeUnbookedLabourWarningsForDateRange({
 }): UnbookedLabourWarning[] {
   const windowStart = londonMidnight(periodStart, timeZone)
   const windowEnd = londonMidnight(periodEnd, timeZone)
-  const excludedUserIds = new Set(warningDetection.excludedUserIdsFromUnbookedWarnings)
-
-  const coverageBookings = bookings.filter(
-    (booking) =>
-      isActiveBookingStatus(booking.status) &&
-      Boolean(booking.operativeId) &&
-      isDateWithinWarningWindow(booking.date, windowStart, windowEnd, timeZone)
-  )
-  const coverageManager = managerSiteBookings.filter(
-    (booking) =>
-      Boolean(booking.userId) && isDateWithinWarningWindow(booking.date, windowStart, windowEnd, timeZone)
-  )
-  const approvedHolidays = holidays.filter((holiday) => String(holiday.status).toLowerCase() === 'approved')
-
-  const operativeBookedDays = new Set<string>()
-  for (const booking of coverageBookings) {
-    operativeBookedDays.add(`${booking.operativeId}|${dayKey(booking.date, timeZone)}`)
-  }
-
-  const managerBookedDays = new Set<string>()
-  for (const booking of coverageManager) {
-    managerBookedDays.add(`${booking.userId}|${dayKey(booking.date, timeZone)}`)
-  }
-
-  const hasOperativeBooking = (operativeId: string | undefined, day: Date): boolean =>
-    Boolean(operativeId) && operativeBookedDays.has(`${operativeId}|${dayKey(day, timeZone)}`)
-
-  const hasManagerBooking = (userId: string | undefined, day: Date): boolean =>
-    Boolean(userId) && managerBookedDays.has(`${userId}|${dayKey(day, timeZone)}`)
-
-  const operativesByEmail = new Map<string, Operative>()
-  const operativeIdsByEmail = new Map<string, Set<string>>()
-  for (const operative of operatives) {
-    const email = emailKey(operative.email)
-    if (!email) continue
-    const ids = operativeIdsByEmail.get(email) || new Set<string>()
-    if (operative.id) ids.add(operative.id)
-    operativeIdsByEmail.set(email, ids)
-    const existing = operativesByEmail.get(email)
-    operativesByEmail.set(email, existing ? preferOperativeWithProfile(existing, operative) : operative)
-  }
-
-  const hasEmailOperativeBooking = (email: string, day: Date): boolean => {
-    const ids = operativeIdsByEmail.get(email)
-    if (!ids) return false
-    for (const id of ids) {
-      if (hasOperativeBooking(id, day)) return true
-    }
-    return false
-  }
-
-  const operativeUsers = dedupeFinishedUsers(users.filter(isOperativeModeOnlyUser))
-  const managerUsers = dedupeFinishedUsers(users.filter(isManagerOrAdminUser))
-  const managerAdminUserIds = new Set(
-    users.filter(isManagerOrAdminUser).filter(hasFinishedSignup).map((user) => user.id)
-  )
-  const operativeUserEmails = new Set(operativeUsers.map((user) => emailKey(user.email)).filter(Boolean))
-
-  const verifiedUserForEmail = (email: string): User | undefined => {
-    if (!email) return undefined
-    return preferFinishedAccount(users.filter((user) => emailKey(user.email) === email))
-  }
-
-  const rosterOperatives = operatives.filter(
-    (operative) => operative.isActive !== false && !isPlaceholderOperative(operative)
-  )
-  const warnings: UnbookedLabourWarning[] = []
-
-  const appendIfUnbooked = (args: {
-    personKey: string
-    name: string
-    email: string
-    hasBooking: boolean
-    requiredHours: number
-    day: Date
-    operativeId: string
-    userId?: string
-    seenEmails: Set<string>
-  }) => {
-    const emailKeyValue = args.email || args.personKey
-    if (args.seenEmails.has(emailKeyValue)) return
-    args.seenEmails.add(emailKeyValue)
-    if (args.hasBooking) return
-    const date = londonMidnight(args.day, timeZone)
-    warnings.push({
-      id: `unbooked-${dayKey(date, timeZone)}-${args.personKey}`,
-      operativeId: args.operativeId,
-      operativeName: args.name,
-      userId: args.userId,
-      date,
-      missingHours: args.requiredHours,
-      message: `${args.name} is not booked on ${formatUnbookedDay(date, timeZone)}.`,
-    })
-  }
-
-  for (const day of eachLondonDay(windowStart, windowEnd, timeZone)) {
-    if (!isUnbookedLabourWeekday(day, warningDetection.includeWeekendsForUnbookedLabour, timeZone)) continue
-    const requiredHours = paidHoursRequiredForUnbookedDay(day, payrollPolicy, timeZone)
-    // A non-working weekend (counts-as 0) is not unbooked labour.
-    if (requiredHours <= 0.001) continue
-    const seenEmails = new Set<string>()
-
-    for (const user of operativeUsers) {
-      if (excludedUserIds.has(user.id)) continue
-      const linked = operativesByEmail.get(emailKey(user.email))
-      if (holidayCoversDay(approvedHolidays, day, user.id, linked?.id, timeZone)) continue
-      appendIfUnbooked({
-        personKey: user.id,
-        name: displayNameForUser(user),
-        email: emailKey(user.email),
-        hasBooking:
-          hasEmailOperativeBooking(emailKey(user.email), day) ||
-          hasOperativeBooking(linked?.id, day) ||
-          hasManagerBooking(user.id, day),
-        requiredHours,
-        day,
-        operativeId: linked?.id || user.id,
-        userId: user.id,
-        seenEmails,
-      })
-    }
-
-    for (const user of managerUsers) {
-      if (excludedUserIds.has(user.id)) continue
-      const linked = operativesByEmail.get(emailKey(user.email))
-      if (holidayCoversDay(approvedHolidays, day, user.id, linked?.id, timeZone)) continue
-      appendIfUnbooked({
-        personKey: user.id,
-        name: displayNameForUser(user),
-        email: emailKey(user.email),
-        hasBooking:
-          hasEmailOperativeBooking(emailKey(user.email), day) ||
-          hasManagerBooking(user.id, day) ||
-          hasOperativeBooking(linked?.id, day),
-        requiredHours,
-        day,
-        operativeId: linked?.id || user.id,
-        userId: user.id,
-        seenEmails,
-      })
-    }
-
-    for (const operative of rosterOperatives) {
-      const email = emailKey(operative.email)
-      if (email && operativeUserEmails.has(email)) continue
-      const matchedUser = email ? verifiedUserForEmail(email) : undefined
-      if (!matchedUser && email && users.some((user) => emailKey(user.email) === email)) {
-        // Invite sent, signup not finished — not unbooked labour.
-        continue
-      }
-      if (matchedUser && managerAdminUserIds.has(matchedUser.id)) continue
-      if (matchedUser && excludedUserIds.has(matchedUser.id)) continue
-      if (holidayCoversDay(approvedHolidays, day, matchedUser?.id, operative.id, timeZone)) continue
-      appendIfUnbooked({
-        personKey: matchedUser?.id || operative.id,
-        name: matchedUser ? displayNameForUser(matchedUser) : displayNameForOperative(operative),
-        email: email || operative.id,
-        hasBooking:
-          hasEmailOperativeBooking(email, day) ||
-          hasOperativeBooking(operative.id, day) ||
-          hasManagerBooking(matchedUser?.id, day),
-        requiredHours,
-        day,
-        operativeId: operative.id,
-        userId: matchedUser?.id,
-        seenEmails,
-      })
-    }
-  }
-
-  return warnings.sort((a, b) => {
-    const byDate = a.date.getTime() - b.date.getTime()
-    if (byDate !== 0) return byDate
-    return a.operativeName.localeCompare(b.operativeName, undefined, { sensitivity: 'base' })
+  const rows = unbookedLabourRows({
+    timeZone,
+    startDayKey: dayKey(windowStart, timeZone),
+    endDayKey: dayKey(windowEnd, timeZone),
+    includeWeekends: warningDetection.includeWeekendsForUnbookedLabour,
+    excludedUserIds: warningDetection.excludedUserIdsFromUnbookedWarnings,
+    standardPaidHours: payrollPolicy.standardPaidHours,
+    saturdayCountsAsHours: countsAsHours('saturday', payrollPolicy),
+    sundayCountsAsHours: countsAsHours('sunday', payrollPolicy),
+    people: users.map(labourPerson),
+    operatives: operatives.map(rosterOperative),
+    bookings: [
+      ...bookings
+        .filter(
+          (booking) =>
+            isActiveBookingStatus(booking.status) &&
+            Boolean(booking.operativeId) &&
+            isDateWithinWarningWindow(booking.date, windowStart, windowEnd, timeZone)
+        )
+        .map((booking) => ({
+          personId: booking.operativeId,
+          dayKey: dayKey(booking.date, timeZone),
+          kind: 'operative' as const,
+        })),
+      ...managerSiteBookings
+        .filter(
+          (booking) => Boolean(booking.userId) && isDateWithinWarningWindow(booking.date, windowStart, windowEnd, timeZone)
+        )
+        .map((booking) => ({
+          personId: booking.userId,
+          dayKey: dayKey(booking.date, timeZone),
+          kind: 'manager' as const,
+        })),
+    ],
+    holidays: holidays.map((holiday) => ({
+      userId: holiday.userId,
+      operativeId: holiday.operativeId,
+      startDayKey: dayKey(holiday.startDate, timeZone),
+      endDayKey: dayKey(holiday.endDate, timeZone),
+      approved: String(holiday.status).toLowerCase() === 'approved',
+    })),
   })
+  return rows.map((row) => ({
+    id: row.id,
+    operativeId: row.operativeId,
+    operativeName: row.operativeName,
+    userId: row.userId,
+    date: dateFromDayKey(row.dayKey, timeZone),
+    missingHours: row.missingHours,
+    message: row.message,
+  }))
 }
 
 export type UnbookedLabourDayGroup = {
