@@ -93,6 +93,24 @@ test('admin and manager with operative profiles appear once, with their role bad
   assert.equal(people.length, 3)
 })
 
+test('a pending manager invitation is not a person you can schedule', () => {
+  const pending = user({
+    id: 'U-PENDING',
+    email: 'morgan@site.test',
+    firstName: 'Morgan',
+    surname: 'Elliott',
+    role: UserRole.MANAGER,
+    status: 'pending',
+    passwordSet: true,
+    permissions: perms({ manager: true }),
+  })
+  const people = buildSchedulablePeople(
+    [operative({ id: 'OP-PENDING', email: 'morgan@site.test', firstName: 'Morgan', lastName: 'Elliott' })],
+    [pending]
+  )
+  assert.equal(people.some((row) => row.email === 'morgan@site.test'), false)
+})
+
 test('manager filter includes admins; operative filter excludes them', () => {
   const people = buildSchedulablePeople(
     [operative({ id: 'OP-ADMIN', email: 'admin@site.test' })],

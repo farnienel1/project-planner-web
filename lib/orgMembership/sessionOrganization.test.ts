@@ -4,6 +4,7 @@ import { UserRole, type User, type UserPermissions } from '../../types/index.ts'
 import { TimeoutError } from '../client/withTimeout.ts'
 import { accessProbeFromReadError, destinationNeedsTrialScan, orgAccessProbeFromReads } from './membershipService.ts'
 import {
+  applyRememberedWebOrganization,
   chooseWebSessionOrganization,
   probeSessionOrganizations,
   provisionalWebOrganizationId,
@@ -13,6 +14,44 @@ import {
 
 const RACCORD = '2C67391E-D1FE-4F9F-8055-7149ACDE1F96'
 const TEST_PRICING = '6b04f81d-a55e-41d2-8676-ecd116ad8450'
+
+test('a remembered web company wins over the user-document company when the probe is unknown, missing, or throws', () => {
+  const probes = [
+    'unknown' as const,
+    orgAccessProbeFromReads({
+      orgRead: 'missing',
+      membershipRead: 'missing',
+      listed: false,
+      isCreator: false,
+    }),
+    accessProbeFromReadError(new Error('permission-denied')),
+  ]
+  for (const probe of probes) {
+    assert.equal(probe, 'unknown')
+    const choice = chooseWebSessionOrganization({
+      rememberedOrganizationId: RACCORD,
+      documentOrganizationId: TEST_PRICING,
+      probes: { [RACCORD]: probe, [TEST_PRICING]: 'allowed' },
+    })
+    assert.equal(choice.organizationId, RACCORD)
+    assert.equal(choice.persistOrganizationId, RACCORD)
+    assert.equal(
+      applyRememberedWebOrganization({
+        userOrganizationId: TEST_PRICING,
+        rememberedOrganizationId: RACCORD,
+        rememberedProbe: probe,
+      }),
+      RACCORD
+    )
+  }
+  const denied = chooseWebSessionOrganization({
+    rememberedOrganizationId: RACCORD,
+    documentOrganizationId: TEST_PRICING,
+    probes: { [RACCORD]: 'denied', [TEST_PRICING]: 'allowed' },
+  })
+  assert.equal(denied.organizationId, TEST_PRICING)
+  assert.equal(denied.persistOrganizationId, null)
+})
 
 test('a remembered company stays selected when its read does not finish', () => {
   const choice = chooseWebSessionOrganization({

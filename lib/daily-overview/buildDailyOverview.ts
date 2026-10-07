@@ -413,6 +413,7 @@ export function buildDailyOverview(params: {
     return (
       u.isActive &&
       u.passwordSet &&
+      u.status !== 'pending' &&
       p.operativeMode &&
       !p.manager &&
       !p.adminAccess &&
@@ -422,7 +423,12 @@ export function buildDailyOverview(params: {
   })
   const managerUsers = params.users.filter((u) => {
     const p = permsOf(u)
-    return u.isActive && u.passwordSet && (p.manager || p.adminAccess || u.isSuperAdmin || u.role === 'admin')
+    return (
+      u.isActive &&
+      u.passwordSet &&
+      u.status !== 'pending' &&
+      (p.manager || p.adminAccess || u.isSuperAdmin || u.role === 'admin')
+    )
   })
 
   const unbookedNames: string[] = []

@@ -1,7 +1,7 @@
 'use client'
 
 import { create } from 'zustand'
-import { collection, doc, getDoc, getDocs, limit, query, setDoc, Timestamp, updateDoc, where } from 'firebase/firestore'
+import { collection, doc, getDoc, getDocs, limit, query, setDoc, Timestamp, where } from 'firebase/firestore'
 import { withTimeout } from '@/lib/client/withTimeout'
 import { db } from '@/lib/firebase/config'
 import { UserRole, type SiteAudit, type SiteAuditItem, type User } from '@/types'
@@ -207,9 +207,26 @@ async function fetchOrganisationRoster(organizationId: string): Promise<{
   const loadUserDocument = async (id: string, allowNamedOrg = false): Promise<User | null> => {
     if (!id) return null
     try {
-      const snap = await getDoc(doc(db, 'users', id))
+      const [snap, membership] = await Promise.all([
+        getDoc(doc(db, 'users', id)),
+        getDoc(doc(db, 'users', id, 'orgMemberships', organizationId)).catch(() => null),
+      ])
       if (!snap.exists()) return null
-      return userForThisOrganisation(snap.id, snap.data() as Record<string, unknown>, organizationId, allowNamedOrg)
+      const data = snap.data() as Record<string, unknown>
+      const membershipStatus = membership?.exists() ? membership.data()?.status : undefined
+      const status =
+        membershipStatus === 'pending'
+          ? 'pending'
+          : membershipStatus === 'active'
+            ? 'active'
+            : data.status
+      const user = userForThisOrganisation(
+        snap.id,
+        status ? { ...data, status } : data,
+        organizationId,
+        allowNamedOrg
+      )
+      return user
     } catch {
       return null
     }
@@ -305,13 +322,6 @@ async function fetchOrganisationRoster(organizationId: string): Promise<{
         }
         const data = snap.data() as Record<string, unknown>
         const patch = missingOrganizationIdPatch(data, organizationId, true)
-        if (patch) {
-          try {
-            await updateDoc(doc(db, 'users', id), patch)
-          } catch {
-            /* A rules error or timeout does not confirm the field should stay blank. */
-          }
-        }
         memberRows[index] = userForThisOrganisation(snap.id, patch ? { ...data, ...patch } : data, organizationId, true)
       } catch {
         memberRows[index] = 'failed'
