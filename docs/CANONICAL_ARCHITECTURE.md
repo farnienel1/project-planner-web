@@ -66,13 +66,13 @@ Other role gaps inside one company (for example who may edit settings) are liste
 
 ## Where new business logic goes
 
-If both apps must agree, add the function under `lib/canonical/` (`engine.ts` or `warningRows.ts`), export it from `lib/canonical/index.ts` and `bundleEntry.ts`, then call it from web and from `CanonicalBusinessEngine`. Run `npm run build:canonical` and commit the generated JavaScript in both places the script writes.
+If both apps must agree, add the function under `lib/canonical/` (`engine.ts` or `warningRows.ts`), export it from `lib/canonical/index.ts` and `bundleEntry.ts`, then call it from web and from `CanonicalBusinessEngine`. Committing that change packs the script. `.githooks/pre-commit` runs `npm run build:canonical`, stages `lib/canonical/dist/canonical-business.js`, and refuses the commit when the iOS checkout beside this repo has an uncommitted packed file. `npm install` turns the hook on. `npm run check:canonical` fails when a packed file does not match the rulebook.
 
 ## Agent windows
 
 UI work can stay in one repository. Shared business rules cannot.
 
-A window that only has the web repo may change screens and may change `lib/canonical`. After a canonical change, run `npm run build:canonical`. The script writes `Project Planner/Canonical/canonical-business.js` only when the iOS checkout is at `../project-planner-ios`. If that checkout is not there, commit `lib/canonical/dist/canonical-business.js` here and copy that file into the iOS repo in a change that has the iOS repo. Do not leave the phone running an older script.
+A window that only has the web repo may change screens and may change `lib/canonical`. A commit that touches `lib/canonical` packs the script and stages `lib/canonical/dist/canonical-business.js`. The pack is written to `Project Planner/Canonical/canonical-business.js` only when the iOS checkout is at `../project-planner-ios`, and the website commit is refused until that iOS file is committed. If that checkout is not there, commit the web packed file and copy it into the iOS repo in a change that has the iOS repo. Do not leave the phone running an older script.
 
 A window that only has the iOS repo may change SwiftUI and data loading. Shared results come from `CanonicalBusinessEngine`. Do not edit `canonical-business.js` by hand, and do not add a second calculator for a rule the script already has. A new shared rule is added in the web `lib/canonical` module, the script is rebuilt, and both copies are committed.
 
