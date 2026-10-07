@@ -467,19 +467,6 @@ export function MyScheduleSelfBookingScreen({
     return `${project.jobNumber ?? ''} ${project.siteName ?? ''}`.trim() || 'Project'
   }
 
-  if (loading && myBookings.length === 0) {
-    return (
-      <div className="stack" data-hue="sched">
-        <div className="phead" data-hue="sched">
-          <div>
-            <h1>My Schedule</h1>
-            <div className="sub">Opening your week…</div>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
   return (
     <div className="stack" data-hue="sched">
       <div className="phead" data-hue="sched">
@@ -491,7 +478,9 @@ export function MyScheduleSelfBookingScreen({
         <div>
           <h1>My Schedule</h1>
           <div className="sub">
-            Book yourself into a site, the office, or a custom location. AM, PM, full day or custom hours.
+            {loading && myBookings.length === 0
+              ? 'Opening your week… you can still book a day.'
+              : 'Book yourself into a site, the office, or a custom location. AM, PM, full day or custom hours.'}
           </div>
         </div>
         <div className="acts">
