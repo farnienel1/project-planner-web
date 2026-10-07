@@ -1,13 +1,15 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { hasAdminAccess } from '@/lib/navigation/menuPermissions'
 import {
   loadExportedTimesheetHistory,
+  loadPayPeriodTimesheetDrafts,
   loadTimesheetDraft,
   loadTimesheetDrafts,
+  mergeListedTimesheetDrafts,
   saveTimesheetDraft,
   timesheetSourceDocumentId,
   type ExportedTimesheetHistoryRow,
@@ -103,6 +105,9 @@ export function TimesheetsScreen({
   const [exporting, setExporting] = useState(false)
   const [exportMessage, setExportMessage] = useState<string | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
+  const [checkingEarlier, setCheckingEarlier] = useState(false)
+  const paintedListKey = useRef('')
+  const reloadGeneration = useRef(0)
 
   const groups = useMemo(() => {
     if (!user) return [] as User[][]
@@ -121,25 +126,61 @@ export function TimesheetsScreen({
 
   const reload = useCallback(async () => {
     if (!organization?.id) return
+    const generation = ++reloadGeneration.current
+    const stale = () => generation !== reloadGeneration.current
     const userIds = roster.map((row) => row.id)
-    if (userIds.length === 0) {
-      setExportedRows([])
-      setDrafts(new Map())
-      setRecordsLoading(false)
+    if (teamTab === 'exported') {
+      if (userIds.length === 0) {
+        setExportedRows([])
+        setRecordsLoading(false)
+        return
+      }
+      setRecordsLoading(true)
+      setLoadError(null)
+      try {
+        setExportedRows(await loadExportedTimesheetHistory({ organizationId: organization.id, users: roster }))
+      } catch {
+        setLoadError('Timesheets did not finish loading. Check the connection and try again.')
+      } finally {
+        setRecordsLoading(false)
+      }
       return
     }
-    setRecordsLoading(true)
+
+    const listKey = `${organization.id}|${teamTab}|${periodStart.getTime()}|${periodEnd.getTime()}`
+    if (paintedListKey.current !== listKey) {
+      paintedListKey.current = listKey
+      setDrafts(new Map())
+      setRecordsLoading(true)
+    }
     setLoadError(null)
+    let indexedOk = false
     try {
-      if (teamTab === 'exported') {
-        setExportedRows(await loadExportedTimesheetHistory({ organizationId: organization.id, users: roster }))
-      } else {
-        setDrafts(await loadTimesheetDrafts(organization.id, userIds, periodStart, timeZone, periodEnd))
+      const indexed = await loadPayPeriodTimesheetDrafts(organization.id, periodStart, timeZone)
+      if (stale()) return
+      setDrafts((current) => mergeListedTimesheetDrafts(current, indexed))
+      indexedOk = true
+    } catch {
+      if (!stale()) setLoadError('Timesheets did not finish loading. Check the connection and try again.')
+      return
+    } finally {
+      if (!stale()) setRecordsLoading(false)
+    }
+
+    if (!indexedOk || stale() || userIds.length === 0) return
+    setCheckingEarlier(true)
+    try {
+      for (let index = 0; index < userIds.length; index += 8) {
+        if (stale()) return
+        const slice = userIds.slice(index, index + 8)
+        const extra = await loadTimesheetDrafts(organization.id, slice, periodStart, timeZone, periodEnd)
+        if (stale()) return
+        setDrafts((current) => mergeListedTimesheetDrafts(current, extra))
       }
     } catch {
-      setLoadError('Timesheets did not finish loading. Check the connection and try again.')
+      // The pay-period rows already on screen stay. This scan is not allowed to blank the tab.
     } finally {
-      setRecordsLoading(false)
+      if (!stale()) setCheckingEarlier(false)
     }
   }, [organization?.id, roster, periodStart, periodEnd, timeZone, teamTab])
 
@@ -355,7 +396,7 @@ export function TimesheetsScreen({
     }
   }
 
-  if (loading || recordsLoading) return <LoadingSpinner />
+  if ((loading && users.length === 0) || (recordsLoading && visible.length === 0)) return <LoadingSpinner />
 
   if (loadError) {
     return (
@@ -425,6 +466,9 @@ export function TimesheetsScreen({
   }
 
   if (visible.length === 0) {
+    if (checkingEarlier) {
+      return <p className="muted">Checking timesheets…</p>
+    }
     return (
       <div className="empty card pad">
         <h3>{emptyTitle}</h3>

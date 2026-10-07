@@ -145,6 +145,8 @@ export interface User {
   role: UserRole;
   isActive: boolean;
   passwordSet: boolean;
+  /** Invitation not accepted. `pending` stays off scheduling and deadlines. */
+  status?: 'pending' | 'active' | string;
   isSuperAdmin: boolean;
   mobileNumber?: string;
   permissions: UserPermissions;

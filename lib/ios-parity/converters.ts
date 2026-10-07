@@ -206,6 +206,7 @@ export function parseAppUserDocument(userId: string, data: Record<string, unknow
     role,
     isActive: asBool(data.isActive, true),
     passwordSet: passwordSetFromDocument(data.passwordSet),
+    status: typeof data.status === 'string' ? data.status : undefined,
     isSuperAdmin,
     mobileNumber: asOptionalString(data.mobileNumber),
     permissions,

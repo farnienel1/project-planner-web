@@ -18,6 +18,8 @@ import { queryWithin } from '@/lib/orgMembership/queryBudget'
 import { permissionsToFirestoreMap } from '@/lib/firebase/userPayload'
 import {
   chooseWebSessionOrganization,
+  clearRememberedOrgDenied,
+  noteRememberedOrgDenied,
   organizationIdsMatch,
   probeSessionOrganizations,
   readWebActiveOrg,
@@ -389,9 +391,9 @@ export function orgAccessProbeFromReads(input: {
   listed: boolean
   isCreator: boolean
 }): OrgAccessProbe {
-  const pending = input.membershipRead === 'pending'
   const activeMembership = input.membershipRead === 'active'
-  const belongs = !pending && (activeMembership || input.listed || input.isCreator)
+  const belongs = activeMembership || input.listed || input.isCreator
+  // A missing document or a thrown read is not proof they are outside the company.
   if (input.orgRead !== 'loaded' || input.membershipRead === 'failed') {
     return belongs ? 'allowed' : 'unknown'
   }
@@ -427,11 +429,12 @@ async function membershipForDeviceOrg(
     if (orgSnap.exists()) {
       const data = orgSnap.data() as Record<string, unknown>
       const members = (data.members as Record<string, unknown> | undefined) ?? {}
-      if (members[userId] != null) {
+      const memberKey = Object.keys(members).find((key) => key.trim() === userId)
+      if (memberKey != null && members[memberKey] != null) {
         listed = true
-        listedRole = String(members[userId])
+        listedRole = String(members[memberKey])
       }
-      isCreator = String(data.creatorUserId || '') === userId
+      isCreator = String(data.creatorUserId || '').trim() === userId
     }
   } catch (error) {
     orgExists = false
@@ -485,6 +488,12 @@ export async function resolveWebSessionOrganization(
     probes,
   })
   if (!choice.organizationId) return { organizationId: '', membership: null, listedRole: null, probe: 'unknown' }
+  const rememberedProbe = remembered
+    ? (Array.from(probes.entries()).find(([organizationId]) => organizationIdsMatch(organizationId, remembered))?.[1] ??
+      'unknown')
+    : null
+  if (remembered && rememberedProbe === 'denied') noteRememberedOrgDenied(userId, remembered)
+  else if (userId) clearRememberedOrgDenied(userId)
   // A newer sign-in or switch owns the browser choice. This probe must not overwrite it.
   if (choice.persistOrganizationId && options?.shouldPersist?.() !== false) {
     writeWebActiveOrg(userId, choice.persistOrganizationId)

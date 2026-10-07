@@ -10,7 +10,13 @@ import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { hasAdminAccess } from '@/lib/permissions'
 import { canSeeAnyVariations, canSeeJobVariations } from '@/lib/variations/variationAccess'
 import { variationFromFirestore } from '@/lib/variations/variationStorage'
-import type { Variation } from '@/lib/variations/variationModel'
+import {
+  VARIATION_LIST_FILTERS,
+  VARIATION_STATUS_COPY,
+  variationMatchesListFilter,
+  type Variation,
+  type VariationListFilter,
+} from '@/lib/variations/variationModel'
 import type { Project } from '@/types'
 
 export function VariationsRollup() {
@@ -19,6 +25,7 @@ export function VariationsRollup() {
   const { loadUsers } = useOrgUserStore()
   const [rows, setRows] = useState<Variation[]>([])
   const [error, setError] = useState<string | null>(null)
+  const [filter, setFilter] = useState<VariationListFilter>('all')
 
   useEffect(() => {
     if (!organization?.id || !user || !canSeeAnyVariations(user)) return
@@ -67,7 +74,18 @@ export function VariationsRollup() {
     )
   }
 
-  const live = rows.filter((row) => !row.isDeleted && visibleJobs.some((job) => job.id === row.parentId))
+  const live = rows.filter(
+    (row) =>
+      !row.isDeleted &&
+      variationMatchesListFilter(row.status, filter) &&
+      visibleJobs.some((job) => job.id === row.parentId)
+  )
+  const counts = {
+    all: rows.filter((row) => !row.isDeleted && visibleJobs.some((job) => job.id === row.parentId)).length,
+    open: rows.filter((row) => !row.isDeleted && row.status === 'open' && visibleJobs.some((job) => job.id === row.parentId)).length,
+    submitted: rows.filter((row) => !row.isDeleted && row.status === 'submitted' && visibleJobs.some((job) => job.id === row.parentId)).length,
+    closed: rows.filter((row) => !row.isDeleted && row.status === 'closed' && visibleJobs.some((job) => job.id === row.parentId)).length,
+  }
   const groups = new Map<string, { job: Project; rows: Variation[] }>()
   for (const job of visibleJobs) groups.set(job.id, { job, rows: [] })
   for (const row of live) {
@@ -84,13 +102,32 @@ export function VariationsRollup() {
         </div>
       </div>
       {error ? <p className="muted">{error}</p> : null}
-      {Array.from(groups.values()).length === 0 ? (
-        <div className="empty card pad">
-          <h3>No jobs</h3>
-          <p>Variations appear here for jobs you can open.</p>
+      <div className="seg" aria-label="Variation status">
+        {VARIATION_LIST_FILTERS.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            className={filter === item.id ? 'on' : ''}
+            onClick={() => setFilter(item.id)}
+          >
+            {item.label} {counts[item.id]}
+          </button>
+        ))}
+      </div>
+      {filter !== 'all' ? (
+        <div className="card pad">
+          <p>{VARIATION_STATUS_COPY[filter]}</p>
         </div>
       ) : null}
-      {Array.from(groups.values()).map((group) => {
+      {Array.from(groups.values()).filter((group) => filter === 'all' || group.rows.length > 0).length === 0 ? (
+        <div className="empty card pad">
+          <h3>{filter === 'all' ? 'No jobs' : `No ${filter} variations`}</h3>
+          <p>{filter === 'all' ? 'Variations appear here for jobs you can open.' : VARIATION_STATUS_COPY[filter]}</p>
+        </div>
+      ) : null}
+      {Array.from(groups.values())
+        .filter((group) => filter === 'all' || group.rows.length > 0)
+        .map((group) => {
           const open = group.rows.filter((row) => row.status === 'open').length
           const hrefBase = projects.some((job) => job.id === group.job.id)
             ? `/dashboard/projects/${group.job.id}/variations`
