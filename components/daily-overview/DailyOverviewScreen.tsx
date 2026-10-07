@@ -22,6 +22,7 @@ import { dateFromDayKey, dayKey, londonMidnight } from '@/lib/ios-parity/londonT
 import { loadSubcontractorBookings } from '@/lib/weekly-report/loadSubcontractorBookings'
 import {
   buildDailyOverview,
+  dailyOverviewMayPublish,
   initialsFrom,
   overviewFormatHours,
   shiftOverviewDay,
@@ -134,8 +135,13 @@ export function DailyOverviewScreen() {
 
   const canBook = Boolean(user && (hasAdminAccess(user) || user.permissions?.manager))
   const dateParam = dayKey(day)
-  const firstPaint =
-    (bookingsLoading || managerLoading) && bookings.length === 0 && managerSiteBookings.length === 0
+  const mayPublish = dailyOverviewMayPublish({
+    bookingsLoading,
+    bookingCount: bookings.length,
+    managerLoading,
+    managerBookingCount: managerSiteBookings.length,
+  })
+  const firstPaint = !mayPublish && bookings.length === 0 && managerSiteBookings.length === 0
 
   if (user && !canViewDailyOverview(user)) {
     return <p className="muted">Daily overview is not available for this account.</p>
@@ -183,6 +189,7 @@ export function DailyOverviewScreen() {
         </div>
       ) : null}
 
+      {firstPaint ? <p className="muted py-8 text-center">Loading daily overview…</p> : (
       <section className="hero" data-hue="daily">
         <div className="row" style={{ position: 'relative', zIndex: 1 }}>
           <div className="grow">
@@ -209,7 +216,7 @@ export function DailyOverviewScreen() {
             <span>{model.jobsCount === 1 ? 'Job active' : 'Jobs active'}</span>
           </div>
           <div className="st">
-            <b>{model.unbookedCount}</b>
+            <b>{mayPublish ? model.unbookedCount : '…'}</b>
             <span>Unbooked</span>
           </div>
         </div>
@@ -217,7 +224,7 @@ export function DailyOverviewScreen() {
           <div className="row small" style={{ opacity: 0.9, marginBottom: 8 }}>
             <b>Where the team is</b>
             <span className="grow" />
-            {model.bookedPeopleCount} booked · {model.unbookedCount} unbooked
+            {model.bookedPeopleCount} booked · {mayPublish ? model.unbookedCount : '…'} unbooked
           </div>
           <div style={{ display: 'flex', height: 12, borderRadius: 99, overflow: 'hidden', background: 'rgba(255,255,255,.18)' }}>
             {model.officeCount > 0 ? <i style={{ width: `${(100 * model.officeCount) / Math.max(1, model.officeCount + model.wfhCount + model.onSiteCount + model.unbookedCount)}%`, background: '#fff' }} /> : null}
@@ -231,10 +238,9 @@ export function DailyOverviewScreen() {
           </div>
         </div>
       </section>
+      )}
 
-      {firstPaint ? <p className="muted py-8 text-center">Loading daily overview…</p> : null}
-
-      <div className="grid gmain">
+      {firstPaint ? null : <div className="grid gmain">
         <section className="card">
           <div className="card-h">
             <h2 className="h2">By project</h2>
@@ -301,7 +307,7 @@ export function DailyOverviewScreen() {
         </section>
 
         <div className="stack">
-          {model.isWeekday && model.unbookedNames.length > 0 ? (
+          {mayPublish && model.isWeekday && model.unbookedNames.length > 0 ? (
             <section className="card" data-hue="red">
               <div className="card-h">
                 <div className="ico-chip sm" aria-hidden="true">
@@ -377,7 +383,7 @@ export function DailyOverviewScreen() {
             />
           ) : null}
         </div>
-      </div>
+      </div>}
     </div>
     {bookLabourOpen ? (
       <div className="fixed inset-0 z-[80] overflow-y-auto bg-[var(--bg)]">

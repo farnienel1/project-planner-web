@@ -7,7 +7,8 @@ import { canViewSiteMap } from '@/lib/navigation/menuPermissions'
 import { useProjectStore } from '@/lib/stores/projectStore'
 import { useBookingStore } from '@/lib/stores/bookingStore'
 import { useManagerScheduleStore } from '@/lib/stores/managerScheduleStore'
-import { coversCalendarDay, dateFromDayKey, dayKey } from '@/lib/ios-parity/londonTime'
+import { dateFromDayKey, dayKey } from '@/lib/ios-parity/londonTime'
+import { countBookingsOnSiteDay } from '@/lib/site-map/siteDayBookings'
 import { EmptyState, LoadingSpinner } from '@/components/dashboard/PageShell'
 import { mergeProjectsAndSmallWorks } from '@/lib/projects/workStatus'
 import { geocodeSiteProject } from '@/lib/maps/geocoding'
@@ -83,15 +84,12 @@ export default function SiteMapPage() {
         geocodeFailed: boolean
       } => {
         const address = formatSiteAddress(site)
-        const onThisDay = (value: Date) => coversCalendarDay(new Date(value), dateObj)
-        const bookingCount =
-          bookings.filter((b) => b.projectId === site.id && onThisDay(b.date)).length +
-          managerSiteBookings.filter(
-            (b) =>
-              (b.locationType === 'project' || b.locationType === 'small_work') &&
-              b.locationId === site.id &&
-              onThisDay(b.date)
-          ).length
+        const bookingCount = countBookingsOnSiteDay({
+          siteId: site.id,
+          day: dateObj,
+          operativeBookings: bookings,
+          managerBookings: managerSiteBookings,
+        })
         const stored = resolveStoredCoordinates(site)
         const resolved = stored || coordinatesBySiteId[site.id]
 
@@ -138,11 +136,13 @@ export default function SiteMapPage() {
 
       for (const site of pending) {
         if (cancelled) return
-        const coords = await geocodeSiteProject(site)
-        if (coords) {
-          geocodedSiteIds.current.add(site.id)
-          next[site.id] = coords
-        }
+        const coords = await Promise.race([
+          geocodeSiteProject(site),
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), 8_000)),
+        ])
+        // A miss or a hung lookup must not leave "Locating sites…" up on the next pass.
+        geocodedSiteIds.current.add(site.id)
+        if (coords) next[site.id] = coords
       }
 
       if (!cancelled && Object.keys(next).length > 0) {

@@ -24,4 +24,6 @@ test('a later timesheet scan adds rows and does not drop ones already listed', (
   const merged = mergeListedTimesheetDrafts(current, extra)
   assert.equal(merged.get('ada')?.operativeSignedByName, 'Ada')
   assert.equal(merged.get('bo')?.operativeSignedByName, 'Bo')
+  const kept = mergeListedTimesheetDrafts(current, new Map())
+  assert.equal(kept.get('ada')?.operativeSignedByName, 'Ada')
 })
