@@ -648,12 +648,18 @@ export async function saveAnnualLeaveDefaults(organizationId: string, defaults: 
   })
 }
 
+/**
+ * Bank holidays read `bankHolidayRegionId`. Country stays the company country
+ * so a Scotland or England & Wales choice does not change the time zone.
+ */
 export async function saveOrganizationBankHolidayRegion(
   organizationId: string,
-  countryCode: string
+  bankHolidayRegionId: string
 ): Promise<void> {
+  const regionId = bankHolidayRegionId.trim()
   await updateDoc(doc(db, 'organizations', organizationId), {
-    countryCode: countryCode.toUpperCase(),
+    bankHolidayRegionId: regionId,
+    'settings.bankHolidayRegionId': regionId,
     updatedAt: Timestamp.now(),
   })
 }

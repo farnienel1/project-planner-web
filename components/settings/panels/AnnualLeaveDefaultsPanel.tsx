@@ -9,6 +9,7 @@ import {
   saveOrganizationBankHolidayRegion,
   type OrgAnnualLeaveDefaults,
 } from '@/lib/settings/organizationSettings'
+import { bankHolidayRegionIdFromSelection, bankHolidaySelectionFromStored } from '@/lib/orgSetup/orgSetupSettings'
 import {
   BANK_HOLIDAY_REGIONS,
   bankHolidayRegionLabel,
@@ -52,7 +53,7 @@ export function AnnualLeaveDefaultsPanel({ onBack }: { onBack: () => void }) {
         setStartMonth(defaults.startMonth)
         setEndMonth(defaults.endMonth)
         setCarriesOver(defaults.carriesOver)
-        setBankHolidayRegion((details.countryCode ?? 'GB').toUpperCase())
+        setBankHolidayRegion(bankHolidaySelectionFromStored(details.bankHolidayRegionId || details.countryCode))
       })
       .catch(() => {})
   }, [organization?.id])
@@ -75,7 +76,10 @@ export function AnnualLeaveDefaultsPanel({ onBack }: { onBack: () => void }) {
         carriesOver,
       }
       await saveAnnualLeaveDefaults(organization.id, defaults)
-      await saveOrganizationBankHolidayRegion(organization.id, bankHolidayRegion)
+      await saveOrganizationBankHolidayRegion(
+        organization.id,
+        bankHolidayRegionIdFromSelection(bankHolidayRegion)
+      )
       setSaved(true)
       window.setTimeout(() => setSaved(false), 3000)
     } catch (saveError) {
