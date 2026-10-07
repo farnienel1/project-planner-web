@@ -26,7 +26,13 @@ import { parseTeamOnboarding } from '@/lib/orgSetup/teamOnboarding'
 import { topLevelAdminFlagPatch } from '@/lib/orgSetup/repairAdminFlags'
 import { ACCOUNT_UNCONFIRMED_MESSAGE } from '@/lib/orgSetup/accountConfirmation'
 import { ensurePrimaryOrgMembership, resolveWebSessionOrganization } from '@/lib/orgMembership/membershipService'
-import { applyDeviceOrgMembership } from '@/lib/orgMembership/webActiveOrg'
+import {
+  organizationIdsMatch,
+  provisionalWebOrganizationId,
+  readWebActiveOrg,
+  sessionUserForOrganizationProbe,
+  writeWebActiveOrg,
+} from '@/lib/orgMembership/webActiveOrg'
 import { sessionUserFromCurrentDocument } from '@/lib/auth/sessionUserFromCurrentDocument'
 import {
   completeEmailSignIn,
@@ -94,20 +100,41 @@ let inFlightProfile: { uid: string; promise: Promise<void> } | null = null
 let signingOut = false
 let signingIn = false
 let currentUserWatch: (() => void) | null = null
+let organizationHydration = 0
 
-/** This navigation asked to open a company. Read it once so a later reload uses the saved choice. */
-function takeExplicitSwitchOrganization(): string | null {
+/** This navigation asked to open a company. Leave the query in place until that company is open. */
+function readExplicitSwitchOrganization(): string | null {
   if (typeof window === 'undefined') return null
   try {
+    return new URL(window.location.href).searchParams.get('switchOrg')?.trim() || null
+  } catch {
+    return null
+  }
+}
+
+function commitExplicitSwitchOrganization(organizationId: string) {
+  if (typeof window === 'undefined' || !organizationId) return
+  try {
     const url = new URL(window.location.href)
-    const organizationId = url.searchParams.get('switchOrg')?.trim() || ''
-    if (!organizationId) return null
+    const current = url.searchParams.get('switchOrg')?.trim() || ''
+    if (!current || !organizationIdsMatch(current, organizationId)) return
     url.searchParams.delete('switchOrg')
     const next = `${url.pathname}${url.search}${url.hash}`
     window.history.replaceState(window.history.state, '', next)
-    return organizationId
   } catch {
-    return null
+    /* Keep ?switchOrg= so a retry still opens this company. */
+  }
+}
+
+function stubOrganization(organizationId: string): Organization {
+  const now = new Date()
+  return {
+    id: organizationId,
+    name: '',
+    members: {},
+    settings: {},
+    createdAt: now,
+    updatedAt: now,
   }
 }
 
@@ -301,6 +328,143 @@ async function loadProfileWithRetries(firebaseUser: FirebaseUser): Promise<void>
   throw lastError instanceof Error ? lastError : new Error('Could not load your user profile from Firestore.')
 }
 
+function invalidateOrganizationHydration() {
+  organizationHydration += 1
+}
+
+function sessionStillOpen(uid: string, token: number): boolean {
+  if (token !== organizationHydration || signingOut) return false
+  const current = useAuthStore.getState()
+  return current.user?.id === uid || current.firebaseUser?.uid === uid
+}
+
+async function loadOrganizationSnapshot(organizationId: string) {
+  if (!organizationId) return null
+  try {
+    const snap = await getDoc(doc(getFirebaseDb(), 'organizations', organizationId))
+    return snap.exists() ? snap : null
+  } catch (error) {
+    console.warn('Organisation details stayed pending:', error)
+    return null
+  }
+}
+
+function organizationFromSnapshot(orgDoc: NonNullable<Awaited<ReturnType<typeof loadOrganizationSnapshot>>>) {
+  const orgData = orgDoc.data()
+  const seededLabels = withSeededNavigationLabels(orgData.settings || {})
+  const organization: Organization = {
+    id: orgDoc.id,
+    name: orgData.name || '',
+    companyLogoURL: orgData.companyLogoURL || undefined,
+    members: orgData.members || {},
+    settings: seededLabels.settings,
+    teamOnboarding: parseTeamOnboarding(orgData.teamOnboarding) || undefined,
+    billing: parseOrgBilling(orgData as Record<string, unknown>) || undefined,
+    createdAt: orgData.createdAt?.toDate() || new Date(),
+    updatedAt: orgData.updatedAt?.toDate() || new Date(),
+  }
+  return { organization, seededLabels, orgData }
+}
+
+function publishOrganization(
+  uid: string,
+  token: number,
+  organizationId: string,
+  orgDoc: NonNullable<Awaited<ReturnType<typeof loadOrganizationSnapshot>>>
+) {
+  const built = organizationFromSnapshot(orgDoc)
+  useAuthStore.setState((state) => {
+    if (token !== organizationHydration || signingOut) return state
+    if (state.user?.id !== uid || !organizationIdsMatch(state.user.organizationId, organizationId)) return state
+    return { organization: built.organization }
+  })
+  return built
+}
+
+/** Membership and the organisation document finish after the shell is open. */
+async function hydrateSignedInOrganization(
+  firebaseUser: FirebaseUser,
+  documentUser: User,
+  documentOrganizationId: string,
+  explicitOrganizationId: string | null,
+  provisionalOrganizationId: string,
+  token: number
+) {
+  try {
+    const snapPromise = provisionalOrganizationId
+      ? loadOrganizationSnapshot(provisionalOrganizationId)
+      : Promise.resolve(null)
+
+    void snapPromise.then((snap) => {
+      if (!snap || !sessionStillOpen(firebaseUser.uid, token)) return
+      publishOrganization(firebaseUser.uid, token, provisionalOrganizationId, snap)
+    })
+
+    let sessionUser = documentUser
+    let probe: 'allowed' | 'denied' | 'unknown' = 'unknown'
+    try {
+      const session = await resolveWebSessionOrganization(
+        firebaseUser.uid,
+        documentOrganizationId,
+        explicitOrganizationId,
+        { shouldPersist: () => sessionStillOpen(firebaseUser.uid, token) }
+      )
+      if (!sessionStillOpen(firebaseUser.uid, token)) return
+      probe = session.probe
+      sessionUser = sessionUserForOrganizationProbe(documentUser, documentOrganizationId, session)
+      useAuthStore.setState((state) => {
+        if (token !== organizationHydration || signingOut || state.user?.id !== firebaseUser.uid) return state
+        const organization =
+          state.organization && organizationIdsMatch(state.organization.id, sessionUser.organizationId)
+            ? state.organization
+            : sessionUser.organizationId
+              ? stubOrganization(sessionUser.organizationId)
+              : null
+        return { user: sessionUser, organization }
+      })
+    } catch (sessionError) {
+      console.warn('Device organisation lookup skipped:', sessionError)
+      const current = useAuthStore.getState().user
+      if (current?.id === firebaseUser.uid) sessionUser = current
+    }
+
+    if (!sessionStillOpen(firebaseUser.uid, token)) return
+    const organizationId = sessionUser.organizationId
+    if (!organizationId) return
+
+    const snap = organizationIdsMatch(organizationId, provisionalOrganizationId)
+      ? await snapPromise
+      : await loadOrganizationSnapshot(organizationId)
+    if (!snap || !sessionStillOpen(firebaseUser.uid, token)) return
+    const built = publishOrganization(firebaseUser.uid, token, organizationId, snap)
+    const live = useAuthStore.getState().user
+    if (!live || live.id !== firebaseUser.uid || !organizationIdsMatch(live.organizationId, organizationId)) return
+    if (probe !== 'allowed' && !organizationIdsMatch(organizationId, documentOrganizationId)) return
+
+    void withTimeoutFallback(
+      ensurePrimaryOrgMembership(
+        firebaseUser.uid,
+        organizationId,
+        String(built.orgData.members?.[firebaseUser.uid] || live.role || 'member'),
+        live.isSuperAdmin ? { isSuperAdmin: true } : undefined
+      ),
+      PROFILE_STEP_MS,
+      undefined
+    )
+
+    if (built.seededLabels.changed && (live.isSuperAdmin || live.permissions.adminAccess)) {
+      void updateDoc(doc(getFirebaseDb(), 'organizations', organizationId), {
+        'settings.uiLabels.navigationLabels': built.seededLabels.navigationLabels,
+        updatedAt: new Date(),
+      }).catch((seedError) => {
+        console.warn('Navigation label seeding skipped:', seedError)
+      })
+    }
+  } catch (error) {
+    console.warn('Organisation details stayed pending:', error)
+  }
+}
+
 function profileLoadFailed(firebaseUser: FirebaseUser, error: unknown) {
   if (useAuthStore.getState().user?.id === firebaseUser.uid) return
   if (useAuthStore.getState().mfaPending) return
@@ -314,6 +478,7 @@ function profileLoadFailed(firebaseUser: FirebaseUser, error: unknown) {
 }
 
 async function loadSignedInProfileInner(firebaseUser: FirebaseUser) {
+  const token = ++organizationHydration
   await waitForAuthToken()
   const db = getFirebaseDb()
   let userDoc = await loadUserDocumentWithRetry(firebaseUser.uid)
@@ -415,86 +580,41 @@ async function loadSignedInProfileInner(firebaseUser: FirebaseUser) {
   }
 
   const documentOrganizationId = user.organizationId
-  const explicitOrganizationId = takeExplicitSwitchOrganization()
-  let sessionUser = user
-  try {
-    const session = await withTimeout(
-      resolveWebSessionOrganization(firebaseUser.uid, documentOrganizationId, explicitOrganizationId),
-      20_000,
-      SIGN_IN_SLOW_MESSAGE
-    )
-    sessionUser = applyDeviceOrgMembership(
-      user,
-      documentOrganizationId,
-      session.organizationId,
-      session.membership,
-      session.listedRole
-    )
-  } catch (sessionError) {
-    if (explicitOrganizationId) {
-      sessionUser = applyDeviceOrgMembership(
-        user,
-        documentOrganizationId,
-        explicitOrganizationId,
-        null,
-        null
-      )
-    }
-    console.warn('Device organisation lookup skipped:', sessionError)
-  }
+  const explicitOrganizationId = readExplicitSwitchOrganization()
+  const provisionalOrganizationId = provisionalWebOrganizationId({
+    explicitOrganizationId,
+    rememberedOrganizationId: readWebActiveOrg(firebaseUser.uid),
+    documentOrganizationId,
+  })
+  const sessionUser =
+    provisionalOrganizationId && !organizationIdsMatch(provisionalOrganizationId, documentOrganizationId)
+      ? { ...user, organizationId: provisionalOrganizationId }
+      : user
+  if (provisionalOrganizationId) writeWebActiveOrg(firebaseUser.uid, provisionalOrganizationId)
 
-  let organization: Organization | null = null
-  if (sessionUser.organizationId) {
-    const orgDoc = await withTimeout(
-      getDoc(doc(db, 'organizations', sessionUser.organizationId)),
-      PROFILE_STEP_MS,
-      SIGN_IN_SLOW_MESSAGE
-    )
-    if (orgDoc.exists()) {
-      const orgData = orgDoc.data()
-      const seededLabels = withSeededNavigationLabels(orgData.settings || {})
-      organization = {
-        id: orgDoc.id,
-        name: orgData.name || '',
-        companyLogoURL: orgData.companyLogoURL || undefined,
-        members: orgData.members || {},
-        settings: seededLabels.settings,
-        teamOnboarding: parseTeamOnboarding(orgData.teamOnboarding) || undefined,
-        billing: parseOrgBilling(orgData as Record<string, unknown>) || undefined,
-        createdAt: orgData.createdAt?.toDate() || new Date(),
-        updatedAt: orgData.updatedAt?.toDate() || new Date(),
-      }
-
-      void withTimeoutFallback(
-        ensurePrimaryOrgMembership(
-          firebaseUser.uid,
-          sessionUser.organizationId,
-          String(orgData.members?.[firebaseUser.uid] || sessionUser.role || 'member'),
-          sessionUser.isSuperAdmin ? { isSuperAdmin: true } : undefined
-        ),
-        PROFILE_STEP_MS,
-        undefined
-      )
-
-      if (seededLabels.changed && (sessionUser.isSuperAdmin || sessionUser.permissions.adminAccess)) {
-        void updateDoc(doc(db, 'organizations', sessionUser.organizationId), {
-          'settings.uiLabels.navigationLabels': seededLabels.navigationLabels,
-          updatedAt: new Date(),
-        }).catch((seedError) => {
-          console.warn('Navigation label seeding skipped:', seedError)
-        })
-      }
-    }
-  }
-
+  const currentOrganization = useAuthStore.getState().organization
   useAuthStore.setState({
     user: sessionUser,
     firebaseUser,
-    organization,
+    organization:
+      currentOrganization && organizationIdsMatch(currentOrganization.id, sessionUser.organizationId)
+        ? currentOrganization
+        : sessionUser.organizationId
+          ? stubOrganization(sessionUser.organizationId)
+          : null,
     loading: false,
     error: null,
   })
+  commitExplicitSwitchOrganization(sessionUser.organizationId)
   watchCurrentUserDocument(firebaseUser.uid)
+  void hydrateSignedInOrganization(
+    firebaseUser,
+    user,
+    documentOrganizationId,
+    explicitOrganizationId,
+    provisionalOrganizationId,
+    token
+  )
 
   void import('@/lib/analytics/trackEvent').then(({ trackEvent }) => {
     if (isPlatformOwnerEmail(user.email) || isPlatformOwnerSentinelOrg(user.organizationId)) return
@@ -538,6 +658,7 @@ export const useAuthStore = create<AuthState>((set) => {
         signingOut ||
         (readSignedOutFlag() && !useAuthStore.getState().mfaPending && !isMfaGateOpen(firebaseUser?.uid))
       ) {
+        invalidateOrganizationHydration()
         if (firebaseUser) {
           try {
             await firebaseSignOut(getFirebaseAuth())
@@ -571,6 +692,7 @@ export const useAuthStore = create<AuthState>((set) => {
           }
           markWebIdleExpired()
           stopCurrentUserWatch()
+          invalidateOrganizationHydration()
           set({ user: null, firebaseUser: null, organization: null, loading: false, error: null })
           return
         }
@@ -606,6 +728,7 @@ export const useAuthStore = create<AuthState>((set) => {
           return
         }
         stopCurrentUserWatch()
+        invalidateOrganizationHydration()
         set({
           user: null,
           firebaseUser: null,
@@ -785,6 +908,7 @@ export const useAuthStore = create<AuthState>((set) => {
 
     signOut: async (opts) => {
       signingOut = true
+      invalidateOrganizationHydration()
       stopCurrentUserWatch()
       writeSignedOutFlag(true)
       try {

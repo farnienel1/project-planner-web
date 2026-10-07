@@ -19,6 +19,7 @@ import { permissionsToFirestoreMap } from '@/lib/firebase/userPayload'
 import {
   chooseWebSessionOrganization,
   organizationIdsMatch,
+  probeSessionOrganizations,
   readWebActiveOrg,
   writeWebActiveOrg,
   type OrgAccessProbe,
@@ -35,6 +36,7 @@ import {
 } from '@/lib/orgMembership/orgRoleFlags'
 import {
   isAccessBlocked,
+  isTrialOrganization,
   loginBlockMessage,
   membershipSummary,
   sortMemberships,
@@ -296,45 +298,62 @@ export async function snapshotCurrentMembership(userId: string): Promise<string 
   return organizationId
 }
 
+/** Trial and locked companies still need the full membership list. A normal company does not. */
+export function destinationNeedsTrialScan(orgData: Record<string, unknown> | null | undefined): boolean {
+  if (!orgData) return false
+  return isTrialOrganization(orgData) || isAccessBlocked(orgData)
+}
+
 export async function switchActiveOrganization(userId: string, organizationId: string): Promise<void> {
   const db = getFirebaseDb()
   const membershipRef = doc(db, 'users', userId, 'orgMemberships', organizationId)
-  const membershipSnap = await getDoc(membershipRef)
-  const orgSnap = await getDoc(doc(db, 'organizations', organizationId))
-  const orgData = orgSnap.exists() ? (orgSnap.data() as Record<string, unknown>) : {}
+  const [membershipResult, orgResult] = await Promise.allSettled([
+    getDoc(membershipRef),
+    getDoc(doc(db, 'organizations', organizationId)),
+  ])
+  const membershipSnap = membershipResult.status === 'fulfilled' ? membershipResult.value : null
+  const orgSnap = orgResult.status === 'fulfilled' ? orgResult.value : null
+  const orgRead = Boolean(orgSnap?.exists())
+  const orgData = orgRead ? (orgSnap!.data() as Record<string, unknown>) : {}
   const members = (orgData.members as Record<string, string> | undefined) ?? {}
-  const isCreator = String(orgData.creatorUserId || '') === userId
-  const listedRole = members[userId]
+  const isCreator = orgRead && String(orgData.creatorUserId || '') === userId
+  const listedRole = orgRead ? members[userId] : undefined
+  const membershipActive =
+    Boolean(membershipSnap?.exists()) && membershipSnap?.data()?.status !== 'pending'
 
-  if (membershipSnap.exists()) {
-    const status = membershipSnap.data().status
-    if (status === 'pending') {
-      throw new Error('Accept the invitation before switching to this organisation.')
-    }
-  } else if (!isCreator && listedRole == null) {
+  if (membershipSnap?.exists() && membershipSnap.data().status === 'pending') {
+    throw new Error('Accept the invitation before switching to this organisation.')
+  }
+  // A failed read is not proof they are outside the company. Deny only when a
+  // document loaded and it does not list them.
+  if ((membershipSnap || orgSnap?.exists()) && !membershipActive && !isCreator && listedRole == null) {
     throw new Error('You are not a member of that organisation.')
   }
 
-  const memberships = await loadUserOrgMemberships(userId, organizationId)
-  const blockMessage = loginBlockMessage({
-    organizationId,
-    orgData,
-    memberships: memberships.map((row) => ({
-      id: row.organizationId,
-      name: row.organizationName,
-      roleInOrg: row.role,
-      isTrial: row.isTrial === true,
-      trialAccessBlocked: row.trialAccessBlocked === true,
-      createdAt: row.createdAt,
-    })),
-  })
-  if (blockMessage && (!membershipListDiscoveryFailed(memberships) || isAccessBlocked(orgData))) {
-    throw new Error(blockMessage)
+  // A company this login already belongs to can be remembered immediately.
+  // The 12s member/creator scan is only for the trial block.
+  if (destinationNeedsTrialScan(orgRead ? orgData : null)) {
+    const memberships = await loadUserOrgMemberships(userId, organizationId)
+    const blockMessage = loginBlockMessage({
+      organizationId,
+      orgData,
+      memberships: memberships.map((row) => ({
+        id: row.organizationId,
+        name: row.organizationName,
+        roleInOrg: row.role,
+        isTrial: row.isTrial === true,
+        trialAccessBlocked: row.trialAccessBlocked === true,
+        createdAt: row.createdAt,
+      })),
+    })
+    if (blockMessage && (!membershipListDiscoveryFailed(memberships) || isAccessBlocked(orgData))) {
+      throw new Error(blockMessage)
+    }
   }
 
   const destinationRole =
     listedRole ||
-    (membershipSnap.exists() ? String(membershipSnap.data().role || '') : '') ||
+    (membershipSnap?.exists() ? String(membershipSnap.data().role || '') : '') ||
     (isCreator ? 'admin' : 'member')
   try {
     await ensurePrimaryOrgMembership(userId, organizationId, destinationRole)
@@ -346,14 +365,13 @@ export async function switchActiveOrganization(userId: string, organizationId: s
   writeWebActiveOrg(userId, organizationId)
 }
 
-function firestoreErrorCode(error: unknown): string {
-  if (!error || typeof error !== 'object' || !('code' in error)) return ''
-  return String((error as { code?: unknown }).code || '')
-}
-
-function probeFromReadError(error: unknown): OrgAccessProbe {
-  const code = firestoreErrorCode(error)
-  if (code === 'permission-denied' || code === 'unauthenticated' || code === 'not-found') return 'denied'
+/**
+ * A thrown read is not "not a member". Timeout, unavailable, not-found, and
+ * permission-denied stay unknown so the company the user picked is kept.
+ * Denied is only a document that loaded and does not list this login.
+ */
+export function accessProbeFromReadError(error: unknown): OrgAccessProbe {
+  void error
   return 'unknown'
 }
 
@@ -371,7 +389,7 @@ async function membershipForDeviceOrg(
     if (snap.exists()) membership = snap.data() as Record<string, unknown>
   } catch (error) {
     membership = null
-    membershipProbe = probeFromReadError(error)
+    membershipProbe = accessProbeFromReadError(error)
   }
 
   let orgExists = false
@@ -393,7 +411,7 @@ async function membershipForDeviceOrg(
     }
   } catch (error) {
     orgExists = false
-    orgProbe = probeFromReadError(error)
+    orgProbe = accessProbeFromReadError(error)
   }
 
   const pending = membership?.status === 'pending'
@@ -411,20 +429,28 @@ async function membershipForDeviceOrg(
 export async function resolveWebSessionOrganization(
   userId: string,
   documentOrganizationId: string,
-  explicitOrganizationId?: string | null
-): Promise<{ organizationId: string; membership: Record<string, unknown> | null; listedRole: string | null }> {
+  explicitOrganizationId?: string | null,
+  options?: { shouldPersist?: () => boolean }
+): Promise<{
+  organizationId: string
+  membership: Record<string, unknown> | null
+  listedRole: string | null
+  probe: OrgAccessProbe
+}> {
   const remembered = readWebActiveOrg(userId)
-  const candidates = [explicitOrganizationId, remembered, documentOrganizationId]
+  const checked = await probeSessionOrganizations(
+    [explicitOrganizationId, remembered, documentOrganizationId],
+    (organizationId) => membershipForDeviceOrg(userId, organizationId),
+    () => ({ probe: 'unknown' as const, membership: null, listedRole: null })
+  )
   const probes = new Map<string, OrgAccessProbe>()
-  const details = new Map<string, { membership: Record<string, unknown> | null; listedRole: string | null }>()
-
-  for (const value of candidates) {
-    const organizationId = String(value || '').trim()
-    if (!organizationId) continue
-    if ([...probes.keys()].some((existing) => organizationIdsMatch(existing, organizationId))) continue
-    const checked = await membershipForDeviceOrg(userId, organizationId)
-    probes.set(organizationId, checked.probe)
-    details.set(organizationId, { membership: checked.membership, listedRole: checked.listedRole })
+  const details = new Map<
+    string,
+    { probe: OrgAccessProbe; membership: Record<string, unknown> | null; listedRole: string | null }
+  >()
+  for (const [organizationId, value] of checked) {
+    probes.set(organizationId, value.probe)
+    details.set(organizationId, value)
   }
 
   const choice = chooseWebSessionOrganization({
@@ -433,17 +459,29 @@ export async function resolveWebSessionOrganization(
     documentOrganizationId,
     probes,
   })
-  if (!choice.organizationId) return { organizationId: '', membership: null, listedRole: null }
-  if (choice.persistOrganizationId) writeWebActiveOrg(userId, choice.persistOrganizationId)
+  if (!choice.organizationId) return { organizationId: '', membership: null, listedRole: null, probe: 'unknown' }
+  // A newer sign-in or switch owns the browser choice. This probe must not overwrite it.
+  if (choice.persistOrganizationId && options?.shouldPersist?.() !== false) {
+    writeWebActiveOrg(userId, choice.persistOrganizationId)
+  }
 
-  let detail = { membership: null as Record<string, unknown> | null, listedRole: null as string | null }
+  let detail = {
+    probe: 'unknown' as OrgAccessProbe,
+    membership: null as Record<string, unknown> | null,
+    listedRole: null as string | null,
+  }
   for (const [organizationId, value] of details) {
     if (organizationIdsMatch(organizationId, choice.organizationId)) {
       detail = value
       break
     }
   }
-  return { organizationId: choice.organizationId, membership: detail.membership, listedRole: detail.listedRole }
+  return {
+    organizationId: choice.organizationId,
+    membership: detail.membership,
+    listedRole: detail.listedRole,
+    probe: detail.probe,
+  }
 }
 
 /** Ensure the primary org membership exists for org creators (backward compat). */
