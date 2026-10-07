@@ -156,7 +156,7 @@ export function buildBookLabourCandidates(input: {
   const focused = new Set(input.focusedUserIds || [])
   const isWarningFocus = (userId: string, linkedOperativeId?: string) =>
     focused.has(userId) || (linkedOperativeId ? focused.has(linkedOperativeId) : false)
-  const bookable = (user: User) => user.passwordSet || focused.has(user.id)
+  const bookable = (user: User) => user.status !== 'pending' && (user.passwordSet || focused.has(user.id))
   const operativesByEmail = new Map<string, Operative>()
   const operativesByName = new Map<string, Operative>()
   for (const operative of input.operatives) {

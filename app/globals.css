@@ -1201,6 +1201,10 @@ textarea.in {
   font-size: 13px;
   font-weight: 600;
   min-height: 70px;
+  width: 100%;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
 }
 .day:hover .emptyday { border-color: var(--h, var(--blue)); color: var(--h, var(--blue)); }
 

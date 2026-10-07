@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import { addDays, format, startOfWeek } from 'date-fns'
-import type { OrganizationDetails } from '@/lib/settings/organizationSettings'
+import type { OrganizationDetails, OrgInvoicingSettings } from '@/lib/settings/organizationSettings'
 import { formatInvoicingSubtitle } from '@/lib/settings/organizationSettings'
 import { ianaTimeZoneForCountry } from '@/lib/orgTime/orgTimeZone'
 import { dayKey } from '@/lib/ios-parity/londonTime'
@@ -13,6 +13,7 @@ import {
   resolveReportPeriod,
   type WeeklyReportPeriodMode,
 } from '@/lib/weekly-report/invoicingPeriodUtils'
+import { invoicingQuickSelectLabel } from '@/lib/weekly-report/invoicingRead'
 import { buildWeeklyReportData } from '@/lib/weekly-report/weeklyReportData'
 import type { SubcontractorBookingRow } from '@/lib/weekly-report/weeklyReportData'
 import {
@@ -91,6 +92,8 @@ export function WeeklyReportScreen({
   holidays,
   orgDetails,
   loading,
+  invoicingReadFinished = true,
+  fallbackInvoicing = null,
 }: {
   organizationId?: string
   organizationName: string
@@ -106,13 +109,23 @@ export function WeeklyReportScreen({
   holidays: HolidayBooking[]
   orgDetails: OrganizationDetails | null
   loading?: boolean
+  /** False while the organisation invoicing read has not finished and nothing remembered is available. */
+  invoicingReadFinished?: boolean
+  fallbackInvoicing?: OrgInvoicingSettings | null
 }) {
-  const invoicing = orgDetails?.invoicing
+  const invoicing = orgDetails?.invoicing ?? fallbackInvoicing
   const timeZone = ianaTimeZoneForCountry(orgDetails?.countryCode)
   const invoicingOptions = useMemo(
     () => (invoicing ? listInvoicingPeriodOptions(invoicing, new Date(), undefined, timeZone) : []),
     [invoicing, timeZone]
   )
+  const invoicingQuick = invoicingQuickSelectLabel({
+    invoicing,
+    periodLabel: invoicingOptions[0]
+      ? formatReportPeriodLabel(invoicingOptions[0].start, invoicingOptions[0].end, timeZone)
+      : null,
+    readFinished: invoicingReadFinished,
+  })
 
   const thisWeekStart = mondayOf(new Date())
   const lastWeekStart = mondayOf(addDays(new Date(), -7))
@@ -141,7 +154,7 @@ export function WeeklyReportScreen({
     () =>
       resolveReportPeriod({
         mode: periodMode,
-        invoicing,
+        invoicing: invoicing ?? undefined,
         invoicingPeriodId: effectiveInvoicingPeriodId,
         weekStart,
         customStart,
@@ -317,13 +330,9 @@ export function WeeklyReportScreen({
             />
             <QuickRow
               label="Current invoicing period"
-              subLabel={
-                invoicing && invoicingOptions[0]
-                  ? formatReportPeriodLabel(invoicingOptions[0].start, invoicingOptions[0].end)
-                  : 'Set invoicing dates in Organisation settings'
-              }
+              subLabel={invoicingQuick.label}
               selected={periodMode === 'invoicing'}
-              disabled={!invoicing}
+              disabled={!invoicingQuick.enabled}
               onClick={() =>
                 changePeriod(() => {
                   setPeriodMode('invoicing')

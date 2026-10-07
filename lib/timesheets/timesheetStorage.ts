@@ -691,6 +691,43 @@ export type TimesheetStateRow = {
   draft: TimesheetDraft
 }
 
+/**
+ * Timesheet documents for one pay period. This is the list query.
+ * It does not read every person's history.
+ */
+export async function loadPayPeriodTimesheetDrafts(
+  organizationId: string,
+  weekStart: Date,
+  timeZone: string = LONDON_TIME_ZONE
+): Promise<Map<string, TimesheetDraft>> {
+  const results = new Map<string, TimesheetDraft>()
+  const key = dayKey(weekStart, timeZone)
+  const snap = await getDocs(
+    query(collection(db, 'organizations', organizationId, 'settings'), where('weekStartKey', '==', key))
+  )
+  for (const entry of snap.docs) {
+    if (!entry.id.startsWith('timesheet_')) continue
+    const data = entry.data() as Record<string, unknown>
+    const userId = typeof data.userId === 'string' ? data.userId : ''
+    if (!userId || results.has(userId)) continue
+    results.set(userId, rememberSource(draftFromFirestoreMap(data, LIST_DRAFT_OPTIONS), entry.id))
+  }
+  return results
+}
+
+/** Add later rows without dropping timesheets the list already showed. */
+export function mergeListedTimesheetDrafts(
+  current: ReadonlyMap<string, TimesheetDraft>,
+  incoming: ReadonlyMap<string, TimesheetDraft>
+): Map<string, TimesheetDraft> {
+  const next = new Map(current)
+  for (const [userId, draft] of incoming) {
+    if (!draft.operativeSignedAt && !draft.managerSignedAt && !draft.exportedAt) continue
+    next.set(userId, draft)
+  }
+  return next
+}
+
 /** iOS FirebaseBackend.listTimesheetStates — query by userId, sort weekStart desc. */
 export async function listTimesheetStates(
   organizationId: string,

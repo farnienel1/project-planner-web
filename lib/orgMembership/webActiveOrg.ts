@@ -152,6 +152,44 @@ export function chooseWebSessionOrganization(input: {
   }
 }
 
+const deniedRememberedOrg = new Map<string, string>()
+
+/** A confirmed "not a member" for the company this browser remembered. Cleared on the next allowed or unknown probe. */
+export function noteRememberedOrgDenied(userId: string, organizationId: string): void {
+  if (!userId || !organizationId) return
+  deniedRememberedOrg.set(userId, organizationId)
+}
+
+export function clearRememberedOrgDenied(userId: string): void {
+  if (userId) deniedRememberedOrg.delete(userId)
+}
+
+export function rememberedOrgWasDenied(userId: string, organizationId: string): boolean {
+  const denied = deniedRememberedOrg.get(userId)
+  return Boolean(denied && organizationIdsMatch(denied, organizationId))
+}
+
+/**
+ * The company this browser should keep open.
+ * Explicit switch, then pp.webActiveOrg, unless that company was confirmed denied.
+ * Unknown, missing, and thrown probes stay on the remembered company.
+ * This does not write users/{uid}.organizationId.
+ */
+export function applyRememberedWebOrganization(input: {
+  userOrganizationId?: string | null
+  rememberedOrganizationId?: string | null
+  explicitOrganizationId?: string | null
+  rememberedProbe?: OrgAccessProbe | null
+}): string {
+  const explicit = String(input.explicitOrganizationId || '').trim()
+  if (explicit) return explicit
+  const remembered = String(input.rememberedOrganizationId || '').trim()
+  const current = String(input.userOrganizationId || '').trim()
+  if (!remembered) return current
+  if (input.rememberedProbe === 'denied') return current || remembered
+  return remembered
+}
+
 function roleFrom(value: unknown, fallback: UserRole): UserRole {
   const role = String(value || '')
   if (role === Role.ADMIN) return Role.ADMIN
