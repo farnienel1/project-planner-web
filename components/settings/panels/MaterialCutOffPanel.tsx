@@ -5,7 +5,6 @@ import { useAuthStore } from '@/lib/stores/authStore'
 import {
   DEFAULT_NOTIFICATION_PREFERENCES,
   loadMaterialCutOffSettings,
-  loadNotificationPreferencesFromFirestore,
   saveMaterialCutOffSettingsForOrgAndUser,
   type NotificationPreferences,
 } from '@/lib/settings/notificationPreferences'
@@ -35,9 +34,7 @@ export function MaterialCutOffPanel({ onBack }: { onBack: () => void }) {
   useEffect(() => {
     if (!organization?.id) return
     void (async () => {
-      const orgOrShared = await loadMaterialCutOffSettings(organization.id, user?.id)
-      const personal = user?.id ? await loadNotificationPreferencesFromFirestore(user.id) : null
-      setPrefs(personal ?? orgOrShared)
+      setPrefs(await loadMaterialCutOffSettings(organization.id, user?.id))
     })()
   }, [organization?.id, user?.id])
 
