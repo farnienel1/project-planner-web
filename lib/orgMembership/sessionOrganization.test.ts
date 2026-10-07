@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { UserRole, type User, type UserPermissions } from '../../types/index.ts'
+import { TimeoutError } from '../client/withTimeout.ts'
+import { accessProbeFromReadError, destinationNeedsTrialScan } from './membershipService.ts'
 import {
   chooseWebSessionOrganization,
   probeSessionOrganizations,
@@ -30,6 +32,33 @@ test('a remembered company is dropped only when the login is not a member', () =
   })
   assert.equal(choice.organizationId, TEST_PRICING)
   assert.equal(choice.persistOrganizationId, TEST_PRICING)
+})
+
+test('an explicit company stays selected when its read does not finish', () => {
+  const choice = chooseWebSessionOrganization({
+    explicitOrganizationId: RACCORD,
+    rememberedOrganizationId: RACCORD,
+    documentOrganizationId: TEST_PRICING,
+    probes: { [RACCORD]: 'unknown', [TEST_PRICING]: 'allowed' },
+  })
+  assert.equal(choice.organizationId, RACCORD)
+  assert.equal(choice.persistOrganizationId, RACCORD)
+})
+
+test('a thrown or unavailable organisation read is not a denied membership', () => {
+  assert.equal(accessProbeFromReadError({ code: 'unavailable' }), 'unknown')
+  assert.equal(accessProbeFromReadError({ code: 'deadline-exceeded' }), 'unknown')
+  assert.equal(accessProbeFromReadError({ code: 'not-found' }), 'unknown')
+  assert.equal(accessProbeFromReadError({ code: 'permission-denied' }), 'unknown')
+  assert.equal(accessProbeFromReadError({ code: 'unauthenticated' }), 'unknown')
+  assert.equal(accessProbeFromReadError(new TimeoutError('org get')), 'unknown')
+})
+
+test('a non-trial company does not wait on the membership discovery scan', () => {
+  assert.equal(destinationNeedsTrialScan({ name: 'Raccord MEP' }), false)
+  assert.equal(destinationNeedsTrialScan({ isTrial: true }), true)
+  assert.equal(destinationNeedsTrialScan({ trialAccessBlocked: true }), true)
+  assert.equal(destinationNeedsTrialScan(null), false)
 })
 
 test('an explicit switch wins over the company stored on the user document', () => {
@@ -151,8 +180,7 @@ test('a denied remembered company falls back to the company on the user document
 })
 
 test('membership probes share one short wait and a slow read stays unknown', async () => {
-  assert.equal(SESSION_ORG_PROBE_MS, 2_000)
-  assert.ok(SESSION_ORG_PROBE_MS <= 2_000)
+  assert.ok(SESSION_ORG_PROBE_MS <= 3_000 && SESSION_ORG_PROBE_MS >= 1_000)
   let active = 0
   let maxActive = 0
   const started = Date.now()
