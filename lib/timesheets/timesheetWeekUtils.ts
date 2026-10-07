@@ -3,6 +3,7 @@ import type { Booking, Operative, User } from '@/types'
 import { findOperativeForUser } from '@/lib/operatives/operativeRosterUtils'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import type { OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
+import { paidHoursForNamedSlot } from '@/lib/canonical'
 import { dayKey } from '@/lib/ios-parity/londonTime'
 import { hasAdminAccess } from '@/lib/permissions'
 import { orgDayHours, payForHours, readStoredRates } from '@/lib/timesheets/payBasis'
@@ -211,8 +212,8 @@ export function hoursFromSlot(
       return minutes / 60
     }
   }
-  if (normalized.includes('FULL')) return payrollPolicy?.standardPaidHours ?? 8
-  if (normalized === 'AM' || normalized === 'PM') return (payrollPolicy?.standardPaidHours ?? 8) / 2
+  const named = paidHoursForNamedSlot(normalized, payrollPolicy?.standardPaidHours ?? 8)
+  if (named != null) return named
   return payrollPolicy?.standardPaidHours ?? 8
 }
 

@@ -1,37 +1,35 @@
+import { coverageWindow, invoicingPeriod } from '@/lib/canonical'
 import {
   DEFAULT_INVOICING,
   type OrgInvoicingSettings,
   type OrgWarningDetectionSettings,
 } from '@/lib/settings/organizationSettings'
-import { WEEKDAY_OPTIONS } from '@/lib/settings/organizationSettings'
 import {
   LONDON_TIME_ZONE,
   addLondonDays,
+  dateFromDayKey,
   dayKey,
-  daysInLondonMonth,
   endOfLondonWeek,
-  londonDayOfMonth,
-  londonIsoWeekday,
   londonMidnight,
-  startOfLondonWeek,
 } from '@/lib/ios-parity/londonTime'
 
-function isoWeekdayIndex(day: string): number {
-  const normalized = day.trim().toLowerCase()
-  const index = WEEKDAY_OPTIONS.indexOf(normalized as (typeof WEEKDAY_OPTIONS)[number])
-  return index >= 0 ? index + 1 : 5
-}
-
-function weekdayOnOrBefore(reference: Date, isoWeekday: number, timeZone: string): Date {
-  const current = londonIsoWeekday(reference, timeZone)
-  const delta = current >= isoWeekday ? current - isoWeekday : current + 7 - isoWeekday
-  return addLondonDays(londonMidnight(reference, timeZone), -delta, timeZone)
-}
-
-function weekdayOnOrAfter(reference: Date, isoWeekday: number, timeZone: string): Date {
-  const current = londonIsoWeekday(reference, timeZone)
-  const delta = current <= isoWeekday ? isoWeekday - current : 7 - current + isoWeekday
-  return addLondonDays(londonMidnight(reference, timeZone), delta, timeZone)
+function periodFromCanonical(
+  referenceDate: Date,
+  invoicing: OrgInvoicingSettings,
+  timeZone: string
+) {
+  const window = invoicingPeriod({
+    referenceIso: referenceDate.toISOString(),
+    timeZone,
+    paymentRunMode: invoicing.paymentRunMode,
+    ranges: invoicing.paymentRunDateRanges,
+    recurringRunStartDay: invoicing.recurringRunStartDay,
+    recurringRunEndDay: invoicing.recurringRunEndDay,
+  })
+  return {
+    start: dateFromDayKey(window.startDayKey, timeZone),
+    end: dateFromDayKey(window.endDayKey, timeZone),
+  }
 }
 
 /** Sunday of the current London week — iOS Full week coverageEnd. */
@@ -49,83 +47,13 @@ export type WarningCoverageWindow = {
   end: Date
 }
 
-function resolveDateRangeInvoicingPeriod(
-  referenceDate: Date,
-  invoicing: OrgInvoicingSettings,
-  timeZone: string
-): InvoicingPeriodRange {
-  const dayOfMonth = londonDayOfMonth(referenceDate, timeZone)
-  const ranges = invoicing.paymentRunDateRanges.filter((range) => range.startDay > 0 && range.endDay > 0)
-  const monthEnd = daysInLondonMonth(referenceDate, timeZone)
-
-  for (const range of ranges) {
-    if (dayOfMonth >= range.startDay && dayOfMonth <= range.endDay) {
-      const clampedEnd = Math.min(range.endDay, monthEnd)
-      return {
-        start: londonDateWithDay(referenceDate, range.startDay, timeZone),
-        end: londonDateWithDay(referenceDate, clampedEnd, timeZone),
-      }
-    }
-  }
-
-  if (ranges.length > 0) {
-    const fallback = ranges.reduce((latest, range) => (range.endDay > latest.endDay ? range : latest))
-    const clampedEnd = Math.min(fallback.endDay, monthEnd)
-    return {
-      start: londonDateWithDay(referenceDate, fallback.startDay, timeZone),
-      end: londonDateWithDay(referenceDate, clampedEnd, timeZone),
-    }
-  }
-
-  return {
-    start: londonMidnight(referenceDate, timeZone),
-    end: londonDateWithDay(referenceDate, monthEnd, timeZone),
-  }
-}
-
-function londonDateWithDay(reference: Date, day: number, timeZone: string): Date {
-  const key = dayKey(reference, timeZone)
-  const [y, m] = key.split('-').map(Number)
-  const clamped = Math.min(Math.max(day, 1), daysInLondonMonth(reference, timeZone))
-  return londonMidnight(new Date(Date.UTC(y, m - 1, clamped, 12, 0, 0)), timeZone)
-}
-
-function resolveRecurringInvoicingPeriod(
-  referenceDate: Date,
-  invoicing: OrgInvoicingSettings,
-  timeZone: string
-): InvoicingPeriodRange {
-  const startWd = isoWeekdayIndex(invoicing.recurringRunStartDay)
-  const endWd = isoWeekdayIndex(invoicing.recurringRunEndDay)
-  const ref = londonMidnight(referenceDate, timeZone)
-
-  let periodStart = weekdayOnOrBefore(ref, startWd, timeZone)
-  let periodEnd = weekdayOnOrAfter(periodStart, endWd, timeZone)
-  if (dayKey(periodEnd, timeZone) < dayKey(periodStart, timeZone)) {
-    periodEnd = addLondonDays(periodEnd, 7, timeZone)
-  }
-
-  if (dayKey(ref, timeZone) > dayKey(periodEnd, timeZone)) {
-    periodStart = addLondonDays(periodStart, 7, timeZone)
-    periodEnd = weekdayOnOrAfter(periodStart, endWd, timeZone)
-    if (dayKey(periodEnd, timeZone) < dayKey(periodStart, timeZone)) {
-      periodEnd = addLondonDays(periodEnd, 7, timeZone)
-    }
-  }
-
-  return { start: periodStart, end: periodEnd }
-}
-
 /** Current invoicing / payment run period containing the reference date (org-country zone). */
 export function computeInvoicingPeriod(
   referenceDate: Date,
   invoicing: OrgInvoicingSettings,
   timeZone: string = LONDON_TIME_ZONE
 ): InvoicingPeriodRange {
-  const ref = londonMidnight(referenceDate, timeZone)
-  return invoicing.paymentRunMode === 'date_ranges'
-    ? resolveDateRangeInvoicingPeriod(ref, invoicing, timeZone)
-    : resolveRecurringInvoicingPeriod(ref, invoicing, timeZone)
+  return periodFromCanonical(londonMidnight(referenceDate, timeZone), invoicing, timeZone)
 }
 
 /**
@@ -140,19 +68,20 @@ export function computeWarningCoverageWindow(
   invoicing?: OrgInvoicingSettings,
   timeZone: string = LONDON_TIME_ZONE
 ): WarningCoverageWindow {
-  const today = londonMidnight(referenceDate, timeZone)
-
-  switch (warningDetection.clashLookaheadMode) {
-    case 'numberOfDays': {
-      const days = Math.max(1, Math.min(warningDetection.clashLookaheadDays || 1, 366))
-      return { start: today, end: addLondonDays(today, days - 1, timeZone) }
-    }
-    case 'endOfInvoicingPeriod':
-      // A missing pay-run document still uses the half-month ranges, not the ISO week.
-      return computeInvoicingPeriod(today, invoicing ?? DEFAULT_INVOICING, timeZone)
-    case 'endOfWorkingWeek':
-    default:
-      return { start: startOfLondonWeek(today, timeZone), end: endOfLondonWeek(today, timeZone) }
+  const settings = invoicing ?? DEFAULT_INVOICING
+  const window = coverageWindow({
+    referenceIso: referenceDate.toISOString(),
+    timeZone,
+    clashLookaheadMode: warningDetection.clashLookaheadMode,
+    clashLookaheadDays: warningDetection.clashLookaheadDays,
+    paymentRunMode: settings.paymentRunMode,
+    ranges: settings.paymentRunDateRanges,
+    recurringRunStartDay: settings.recurringRunStartDay,
+    recurringRunEndDay: settings.recurringRunEndDay,
+  })
+  return {
+    start: dateFromDayKey(window.startDayKey, timeZone),
+    end: dateFromDayKey(window.endDayKey, timeZone),
   }
 }
 
