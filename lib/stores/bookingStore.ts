@@ -4,6 +4,7 @@ import { create } from 'zustand'
 import { deleteDoc, doc, setDoc } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
 import { forgetOrgCollectionDoc, isOrgCollectionSubscribed, subscribeOrgCollection } from '@/lib/firebase/subscribeOrgCollection'
+import { organizationIdsMatch } from '@/lib/orgMembership/webActiveOrg'
 import { retainParsedRows } from '@/lib/staff/rosterRetain'
 import { newUppercaseUuid } from '@/lib/ios-parity/uuid'
 import { londonMidnight } from '@/lib/ios-parity/londonTime'
@@ -37,8 +38,13 @@ export const useBookingStore = create<BookingState>((set, get) => ({
 
   loadBookings: async (organizationId: string) => {
     if (!organizationId || !db) return
+    const current = get().bookings
+    const foreign =
+      current.length > 0 &&
+      current.every((row) => row.organizationId && !organizationIdsMatch(row.organizationId, organizationId))
     const already = isOrgCollectionSubscribed('bookings', organizationId)
-    if (already || get().bookings.length > 0) set({ loading: false })
+    if (foreign) set({ bookings: [], loading: true, ready: false, error: null })
+    else if (already || current.length > 0) set({ loading: false })
     else set({ loading: true, error: null })
     subscribeOrgCollection('bookings', organizationId, 'bookings', (docs) => {
       const bookings: Booking[] = []
@@ -47,7 +53,10 @@ export const useBookingStore = create<BookingState>((set, get) => ({
         if (parsed.ok) bookings.push(parsed.value)
         else logSkippedDocument('bookings', entry.id, parsed.errors)
       }
-      set({ bookings: retainParsedRows(docs.length, get().bookings, bookings), loading: false, ready: true })
+      const previous = get().bookings.filter(
+        (row) => !row.organizationId || organizationIdsMatch(row.organizationId, organizationId)
+      )
+      set({ bookings: retainParsedRows(docs.length, previous, bookings), loading: false, ready: true })
     }, (error) => {
       set({ error: error.message, loading: false })
     })

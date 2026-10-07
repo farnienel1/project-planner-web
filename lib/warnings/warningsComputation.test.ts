@@ -103,6 +103,17 @@ function project(id = 'P1'): Project {
   } as Project
 }
 
+test('invoicing-period coverage does not collapse to the ISO week when pay runs have not loaded', () => {
+  const wednesday = new Date('2026-10-07T12:00:00+01:00')
+  const window = computeWarningCoverageWindow(wednesday, {
+    ...DEFAULT_WARNING_DETECTION,
+    clashLookaheadMode: 'endOfInvoicingPeriod',
+  })
+  assert.equal(dayKey(window.start), '2026-10-01')
+  assert.equal(dayKey(window.end), '2026-10-15')
+  assert.equal(dayKey(window.start) === '2026-10-05', false)
+})
+
 test('Full week coverage is Monday through Sunday, including past days', () => {
   const window = computeWarningCoverageWindow(WED, {
     ...DEFAULT_WARNING_DETECTION,

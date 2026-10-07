@@ -1,4 +1,8 @@
-import type { OrgInvoicingSettings, OrgWarningDetectionSettings } from '@/lib/settings/organizationSettings'
+import {
+  DEFAULT_INVOICING,
+  type OrgInvoicingSettings,
+  type OrgWarningDetectionSettings,
+} from '@/lib/settings/organizationSettings'
 import { WEEKDAY_OPTIONS } from '@/lib/settings/organizationSettings'
 import {
   LONDON_TIME_ZONE,
@@ -143,12 +147,9 @@ export function computeWarningCoverageWindow(
       const days = Math.max(1, Math.min(warningDetection.clashLookaheadDays || 1, 366))
       return { start: today, end: addLondonDays(today, days - 1, timeZone) }
     }
-    case 'endOfInvoicingPeriod': {
-      if (!invoicing) {
-        return { start: startOfLondonWeek(today, timeZone), end: endOfLondonWeek(today, timeZone) }
-      }
-      return computeInvoicingPeriod(today, invoicing, timeZone)
-    }
+    case 'endOfInvoicingPeriod':
+      // A missing pay-run document still uses the half-month ranges, not the ISO week.
+      return computeInvoicingPeriod(today, invoicing ?? DEFAULT_INVOICING, timeZone)
     case 'endOfWorkingWeek':
     default:
       return { start: startOfLondonWeek(today, timeZone), end: endOfLondonWeek(today, timeZone) }
