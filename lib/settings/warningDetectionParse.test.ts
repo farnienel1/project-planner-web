@@ -45,14 +45,39 @@ test('missing detection map stays on the documented default of 7', () => {
   assert.equal(parseWarningDetection(undefined).clashLookaheadDays, 7)
 })
 
-test('nested settings.warningDetection is used when the top-level map has no days', () => {
+test('warning mode is read from top-level warningDetection, not the nested web copy', () => {
   const raw = resolveWarningDetectionRaw(
-    { detectClashes: true },
-    { clashLookaheadMode: 'numberOfDays', clashLookaheadDays: 2 }
+    {
+      detectClashes: true,
+      clashLookaheadMode: 'endOfInvoicingPeriod',
+      clashLookaheadDays: 7,
+      includeWeekendsForUnbookedLabour: false,
+    },
+    {
+      clashLookaheadMode: 'numberOfDays',
+      clashLookaheadDays: 25,
+      includeWeekendsForUnbookedLabour: true,
+    }
   )
   const parsed = parseWarningDetection(raw)
-  assert.equal(parsed.clashLookaheadDays, 2)
-  assert.equal(parsed.clashLookaheadMode, 'numberOfDays')
+  assert.equal(parsed.clashLookaheadMode, 'endOfInvoicingPeriod')
+  assert.equal(parsed.clashLookaheadDays, 7)
+  assert.equal(parsed.includeWeekendsForUnbookedLabour, false)
+})
+
+test('nested settings.warningDetection only fills excluded users the top-level map left out', () => {
+  const raw = resolveWarningDetectionRaw(
+    { detectClashes: true, clashLookaheadMode: 'endOfInvoicingPeriod' },
+    {
+      clashLookaheadMode: 'numberOfDays',
+      clashLookaheadDays: 2,
+      excludedUserIdsFromUnbookedWarnings: ['paye-1'],
+    }
+  )
+  const parsed = parseWarningDetection(raw)
+  assert.equal(parsed.clashLookaheadMode, 'endOfInvoicingPeriod')
+  assert.equal(parsed.clashLookaheadDays, 7)
+  assert.deepEqual(parsed.excludedUserIdsFromUnbookedWarnings, ['paye-1'])
 })
 
 test('Firestore integerValue wrappers still parse as 2', () => {
