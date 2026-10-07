@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { hasAdminAccess } from '@/lib/navigation/menuPermissions'
 import {
+  loadCanonicalTimesheetDrafts,
   loadExportedTimesheetHistory,
   loadPayPeriodTimesheetDrafts,
   loadTimesheetDraft,
@@ -154,12 +155,15 @@ export function TimesheetsScreen({
       setRecordsLoading(true)
     }
     setLoadError(null)
-    let indexedOk = false
+    let listed = new Map<string, TimesheetDraft>()
     try {
       const indexed = await loadPayPeriodTimesheetDrafts(organization.id, periodStart, timeZone)
       if (stale()) return
-      setDrafts((current) => mergeListedTimesheetDrafts(current, indexed))
-      indexedOk = true
+      listed = mergeListedTimesheetDrafts(listed, indexed)
+      const canonical = await loadCanonicalTimesheetDrafts(organization.id, userIds, periodStart, timeZone)
+      if (stale()) return
+      listed = mergeListedTimesheetDrafts(listed, canonical)
+      setDrafts(listed)
     } catch {
       if (!stale()) setLoadError('Timesheets did not finish loading. Check the connection and try again.')
       return
@@ -167,12 +171,13 @@ export function TimesheetsScreen({
       if (!stale()) setRecordsLoading(false)
     }
 
-    if (!indexedOk || stale() || userIds.length === 0) return
+    const missing = userIds.filter((id) => !listed.has(id))
+    if (stale() || missing.length === 0) return
     setCheckingEarlier(true)
     try {
-      for (let index = 0; index < userIds.length; index += 8) {
+      for (let index = 0; index < missing.length; index += 8) {
         if (stale()) return
-        const slice = userIds.slice(index, index + 8)
+        const slice = missing.slice(index, index + 8)
         const extra = await loadTimesheetDrafts(organization.id, slice, periodStart, timeZone, periodEnd)
         if (stale()) return
         setDrafts((current) => mergeListedTimesheetDrafts(current, extra))
@@ -466,19 +471,18 @@ export function TimesheetsScreen({
   }
 
   if (visible.length === 0) {
-    if (checkingEarlier) {
-      return <p className="muted">Checking timesheets…</p>
-    }
     return (
       <div className="empty card pad">
         <h3>{emptyTitle}</h3>
         <p>{emptyDescription}</p>
+        {checkingEarlier ? <p className="muted">Checking the rest of the team…</p> : null}
       </div>
     )
   }
 
   return (
     <div className="stack" style={{ gap: 12 }}>
+      {checkingEarlier ? <p className="muted">Checking the rest of the team…</p> : null}
       <div className="rows">
         {visible.map((member) => {
           const draft = drafts.get(member.id)

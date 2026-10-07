@@ -695,6 +695,31 @@ export type TimesheetStateRow = {
  * Timesheet documents for one pay period. This is the list query.
  * It does not read every person's history.
  */
+/**
+ * Direct timesheet document ids for this pay period. iOS often omits weekStartKey,
+ * so the indexed list query misses them. This does not read each person's history.
+ */
+export async function loadCanonicalTimesheetDrafts(
+  organizationId: string,
+  userIds: string[],
+  weekStart: Date,
+  timeZone: string = LONDON_TIME_ZONE
+): Promise<Map<string, TimesheetDraft>> {
+  const results = new Map<string, TimesheetDraft>()
+  const hits = await mapInBatches(userIds, 12, async (userId) => {
+    for (const id of candidateTimesheetDocIds(userId, weekStart, timeZone)) {
+      const data = await readDoc(organizationId, id)
+      if (!data) continue
+      return [userId, rememberSource(draftFromFirestoreMap(data, LIST_DRAFT_OPTIONS), id)] as const
+    }
+    return null
+  })
+  for (const hit of hits) {
+    if (hit) results.set(hit[0], hit[1])
+  }
+  return results
+}
+
 export async function loadPayPeriodTimesheetDrafts(
   organizationId: string,
   weekStart: Date,
