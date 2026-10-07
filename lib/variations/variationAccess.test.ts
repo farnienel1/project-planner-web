@@ -57,6 +57,20 @@ test('a manager sees variations only on jobs they are assigned to', () => {
   assert.equal(canManageVariationTracker(assigned), false)
 })
 
+test('a manager matches the roster id stored on the job, not only their sign-in id', () => {
+  const manager = user({ id: 'auth-uid', email: 'farnie@raccordmep.co.uk' })
+  const jobWithRosterId = { managerId: 'roster-mgr', managerIds: ['roster-mgr'] }
+  assert.equal(canSeeJobVariations(manager, jobWithRosterId), false)
+  assert.equal(
+    canSeeJobVariations(manager, jobWithRosterId, [{ id: 'roster-mgr', email: 'farnie@raccordmep.co.uk' }]),
+    true
+  )
+  assert.equal(
+    canSeeJobVariations(manager, jobWithRosterId, [{ id: 'someone-else', email: 'farnie@raccordmep.co.uk' }]),
+    false
+  )
+})
+
 test('operatives never see variations, even if their id is on the manager list', () => {
   const operative = user({
     id: 'mgr-1',

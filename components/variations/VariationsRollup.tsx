@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { db } from '@/lib/firebase/config'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useProjectStore } from '@/lib/stores/projectStore'
+import { useOperativeStore } from '@/lib/stores/operativeStore'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { hasAdminAccess } from '@/lib/permissions'
 import { canSeeAnyVariations, canSeeJobVariations } from '@/lib/variations/variationAccess'
@@ -21,6 +22,7 @@ import type { Project } from '@/types'
 export function VariationsRollup() {
   const { user, organization } = useAuthStore()
   const { projects, smallWorks, loadProjects, loadSmallWorks } = useProjectStore()
+  const { managers, loadManagers } = useOperativeStore()
   const { loadUsers } = useOrgUserStore()
   const [rows, setRows] = useState<Variation[]>([])
   const [error, setError] = useState<string | null>(null)
@@ -31,10 +33,11 @@ export function VariationsRollup() {
     loadProjects(organization.id, true)
     loadSmallWorks(organization.id)
     loadUsers(organization.id)
-  }, [organization?.id, user, loadProjects, loadSmallWorks, loadUsers])
+    loadManagers(organization.id)
+  }, [organization?.id, user, loadProjects, loadSmallWorks, loadUsers, loadManagers])
 
   const jobs = [...projects, ...smallWorks]
-  const visibleJobs = jobs.filter((job) => canSeeJobVariations(user, job))
+  const visibleJobs = jobs.filter((job) => canSeeJobVariations(user, job, managers))
   const admin = hasAdminAccess(user)
 
   useEffect(() => {

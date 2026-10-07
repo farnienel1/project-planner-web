@@ -5,7 +5,8 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { addDays, format, isSameDay, startOfDay, startOfWeek } from 'date-fns'
+import { addDays, format, startOfDay, startOfWeek } from 'date-fns'
+import { coversCalendarDay } from '@/lib/ios-parity/londonTime'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useMaterialProjectStore } from '@/lib/stores/materialProjectStore'
 import { useWholesalerStore } from '@/lib/stores/wholesalerStore'
@@ -135,7 +136,7 @@ export function ProjectMaterialsSection({ project }: { project: Project }) {
   const dayMaterials = useMemo(
     () =>
       projectMaterials
-        .filter((m) => isSameDay(new Date(m.date), selectedDate))
+        .filter((m) => coversCalendarDay(new Date(m.date), selectedDate))
         .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()),
     [projectMaterials, selectedDate]
   )
@@ -144,7 +145,7 @@ export function ProjectMaterialsSection({ project }: { project: Project }) {
     let n = 0
     for (let i = 0; i < 7; i++) {
       const day = addDays(weekStart, i)
-      n += projectMaterials.filter((m) => isSameDay(new Date(m.date), day)).length
+      n += projectMaterials.filter((m) => coversCalendarDay(new Date(m.date), day)).length
     }
     return n
   }, [projectMaterials, weekStart])
