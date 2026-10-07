@@ -19,6 +19,12 @@ export {
   resetOrganizationContextForTests,
 } from './engine'
 
+export {
+  qualificationExpiryRows,
+  unbookedLabourRows,
+  unverifiedOperativeRows,
+} from './warningRows'
+
 export type {
   ClashLookaheadMode,
   CoverageWindowInput,
@@ -30,3 +36,16 @@ export type {
   PaymentRunMode,
   PaymentRunRange,
 } from './engine'
+
+export type {
+  LabourBooking,
+  LabourHoliday,
+  LabourPerson,
+  QualificationExpiryInput,
+  QualificationExpiryRow,
+  RosterOperative,
+  UnbookedLabourInput,
+  UnbookedLabourRow,
+  UnverifiedOperativeInput,
+  UnverifiedOperativeRow,
+} from './warningRows'
