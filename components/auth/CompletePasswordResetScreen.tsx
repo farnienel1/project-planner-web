@@ -3,15 +3,16 @@
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
-import { confirmPasswordReset, verifyPasswordResetCode } from 'firebase/auth'
+import { verifyPasswordResetCode } from 'firebase/auth'
 import { EyeIcon, EyeSlashIcon } from '@heroicons/react/24/outline'
 import { AppLogoMark } from '@/components/ui/AppLogoMark'
 import { getFirebaseAuth } from '@/lib/firebase/ensureFirebase'
+import { requestPasswordConfirm } from '@/lib/auth/browserAuthActions'
+import { newPasswordError, PASSWORD_RULE_TEXT } from '@/lib/auth/passwordPolicy'
 import {
   formatPasswordResetError,
   isPasswordResetAction,
   loginPathForResetEmail,
-  minPasswordLengthForEmail,
   parseEmailActionSearch,
 } from '@/lib/auth/emailAction'
 
@@ -59,13 +60,13 @@ export function CompletePasswordResetScreen() {
   }, [action])
 
   const loginHref = loginPathForResetEmail(email)
-  const minLength = minPasswordLengthForEmail(email)
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
-    if (password.length < minLength) {
-      setError(`Use at least ${minLength} characters.`)
+    const policyError = newPasswordError(password)
+    if (policyError) {
+      setError(policyError)
       return
     }
     if (password !== confirm) {
@@ -74,7 +75,7 @@ export function CompletePasswordResetScreen() {
     }
     try {
       setSaving(true)
-      await confirmPasswordReset(getFirebaseAuth(), action.oobCode, password)
+      await requestPasswordConfirm(action.oobCode, password)
       setDone(true)
     } catch (err) {
       setError(formatPasswordResetError(err))
@@ -136,6 +137,7 @@ export function CompletePasswordResetScreen() {
                         {showPassword ? <EyeIcon className="h-5 w-5" /> : <EyeSlashIcon className="h-5 w-5" />}
                       </button>
                     </span>
+                    <span className="help">{PASSWORD_RULE_TEXT}</span>
                   </label>
                   <label className="f">
                     Confirm password

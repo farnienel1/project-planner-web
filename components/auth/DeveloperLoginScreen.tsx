@@ -10,8 +10,7 @@ import { formatLoginError } from '@/lib/auth/formatLoginError'
 import { PLATFORM_OWNER_EMAIL, isPlatformOwnerEmail } from '@/lib/platform/owner'
 import { LoadingSpinner } from '@/components/dashboard/PageShell'
 import { isMfaGateOpen, isMfaRequiredError, mfaVerifyHref } from '@/lib/auth/mfa/mfaClient'
-
-const MIN_PASSWORD = 10
+import { newPasswordError, PASSWORD_RULE_TEXT } from '@/lib/auth/passwordPolicy'
 
 function codeOf(error: unknown): string {
   if (error && typeof error === 'object' && 'code' in error && typeof (error as { code: unknown }).code === 'string') {
@@ -68,7 +67,10 @@ export function DeveloperLoginScreen() {
   }
 
   const displayError = localError || error
-  const canSubmit = password.length >= MIN_PASSWORD && !submitting
+  const canSubmit =
+    mode === 'create'
+      ? newPasswordError(password) === null && password === confirm && !submitting
+      : password.length > 0 && !submitting
 
   const rejectIfNotOwner = async () => {
     const state = useAuthStore.getState()
@@ -104,8 +106,14 @@ export function DeveloperLoginScreen() {
     e.preventDefault()
     setLocalError('')
     setNotice('')
-    if (password.length < MIN_PASSWORD) {
-      setLocalError(`Use at least ${MIN_PASSWORD} characters.`)
+    if (mode === 'create') {
+      const policyError = newPasswordError(password)
+      if (policyError) {
+        setLocalError(policyError)
+        return
+      }
+    } else if (!password) {
+      setLocalError('Please enter your password.')
       return
     }
     try {
@@ -222,6 +230,7 @@ export function DeveloperLoginScreen() {
                   onChange={(e) => setConfirm(e.target.value)}
                   className="pp-in"
                 />
+                <span className="help">{PASSWORD_RULE_TEXT}</span>
               </label>
             ) : null}
             <button type="submit" disabled={mode === 'reset' ? submitting : !canSubmit} className="btn primary block" style={{ height: 52, marginTop: 4 }}>
