@@ -178,6 +178,23 @@ export function partitionRowsByOrganization<T extends { organizationId?: string 
   return { rows: own, foreign: false }
 }
 
+/**
+ * People for the warning scan.
+ * The roster loader already chose who belongs to this company. A member whose
+ * user document still names another company stays in that list. Dropping them
+ * lets their operative profile back in as unbooked labour, and the exclusion
+ * list never sees their user id.
+ * Partition only when this array was loaded for a different company.
+ */
+export function warningScanUsers<T extends { organizationId?: string | null }>(
+  users: readonly T[],
+  organizationId: string,
+  rosterLoadedForOrganization: boolean
+): { rows: T[]; foreign: boolean } {
+  if (rosterLoadedForOrganization && organizationId) return { rows: [...users], foreign: false }
+  return partitionRowsByOrganization(users, organizationId)
+}
+
 /** True while a scan must not replace warnings already on screen with an empty list. */
 export function warningsScanPartial(input: {
   detectionReady: boolean
