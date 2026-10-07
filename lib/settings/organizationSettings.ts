@@ -453,6 +453,22 @@ export function warningDetectionToFirestore(settings: OrgWarningDetectionSetting
   }
 }
 
+/**
+ * iOS `updateOrganizationWarningDetectionSettings` writes
+ * `organizations/{id}.warningDetection.{key}` and nothing under `settings`.
+ * The org settings hub and the Warnings settings screen both use this map.
+ */
+export function warningDetectionFirestoreFields(
+  settings: OrgWarningDetectionSettings
+): Record<string, unknown> {
+  const payload = warningDetectionToFirestore(settings)
+  const fields: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(payload)) {
+    fields[`warningDetection.${key}`] = value
+  }
+  return fields
+}
+
 export function parseInvoicing(data: Record<string, unknown> | undefined): OrgInvoicingSettings {
   if (!data) return { ...DEFAULT_INVOICING }
   const paymentRunMode =
@@ -645,10 +661,9 @@ export async function saveOrganizationBankHolidayRegion(
 export async function saveWarningDetection(organizationId: string, settings: OrgWarningDetectionSettings): Promise<void> {
   const payload = warningDetectionToFirestore(settings)
   const ref = doc(db, 'organizations', organizationId)
-  const fields: Record<string, unknown> = { updatedAt: Timestamp.now() }
-  for (const [key, value] of Object.entries(payload)) {
-    fields[`warningDetection.${key}`] = value
-    fields[`settings.warningDetection.${key}`] = value
+  const fields: Record<string, unknown> = {
+    ...warningDetectionFirestoreFields(settings),
+    updatedAt: Timestamp.now(),
   }
   try {
     await updateDoc(ref, fields)

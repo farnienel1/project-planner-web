@@ -250,20 +250,33 @@ async function fetchOrganisationRoster(organizationId: string): Promise<{
     return ''
   }
 
-  const attachRosterLink = async (entryId: string, data: Record<string, unknown>, kind?: 'manager') => {
+  const resolveRosterLink = async (entryId: string, data: Record<string, unknown>): Promise<User | null> => {
     const email = text(data.email)
     const linkedIds = [text(data.userId), text(data.userID), text(data.uid), text(data.linkedUserId), entryId].filter(
       (id, index, all) => id !== '' && all.indexOf(id) === index
     )
     for (const id of linkedIds) {
       const user = await loadUserDocument(id, true)
-      if (!user) continue
-      noteUser(user, kind)
-      return
+      if (user) return user
     }
     const userId = await userIdForEmail(email)
-    if (!userId) return
-    noteUser(await loadUserDocument(userId, true), kind)
+    if (!userId) return null
+    return loadUserDocument(userId, true)
+  }
+
+  const readTogether = async <T>(
+    items: readonly T[],
+    read: (item: T, index: number) => Promise<void>
+  ): Promise<void> => {
+    let cursor = 0
+    const workers = Array.from({ length: Math.min(8, items.length) }, async () => {
+      while (cursor < items.length) {
+        const index = cursor
+        cursor += 1
+        await read(items[index], index)
+      }
+    })
+    await Promise.all(workers)
   }
 
   for (const field of ['organizationId', 'organisationId', 'orgId'] as const) {
@@ -280,11 +293,15 @@ async function fetchOrganisationRoster(organizationId: string): Promise<{
   try {
     const orgSnap = await getDoc(doc(db, 'organizations', organizationId))
     const members = (orgSnap.data()?.members ?? {}) as Record<string, unknown>
-    for (const id of Object.keys(members)) {
-      if (!id) continue
+    const memberIds = Object.keys(members).filter(Boolean)
+    const memberRows: Array<User | null | 'failed'> = new Array(memberIds.length)
+    await readTogether(memberIds, async (id, index) => {
       try {
         const snap = await getDoc(doc(db, 'users', id))
-        if (!snap.exists()) continue
+        if (!snap.exists()) {
+          memberRows[index] = null
+          return
+        }
         const data = snap.data() as Record<string, unknown>
         const patch = missingOrganizationIdPatch(data, organizationId, true)
         if (patch) {
@@ -294,11 +311,19 @@ async function fetchOrganisationRoster(organizationId: string): Promise<{
             /* A rules error or timeout does not confirm the field should stay blank. */
           }
         }
-        if (presentIds.has(id)) continue
-        noteUser(userForThisOrganisation(snap.id, patch ? { ...data, ...patch } : data, organizationId, true))
+        memberRows[index] = userForThisOrganisation(snap.id, patch ? { ...data, ...patch } : data, organizationId, true)
       } catch {
-        complete = false
+        memberRows[index] = 'failed'
       }
+    })
+    for (let index = 0; index < memberIds.length; index += 1) {
+      const row = memberRows[index]
+      if (row === 'failed') {
+        complete = false
+        continue
+      }
+      if (!row || presentIds.has(memberIds[index])) continue
+      noteUser(row)
     }
   } catch {
     complete = false
@@ -306,29 +331,44 @@ async function fetchOrganisationRoster(organizationId: string): Promise<{
 
   try {
     const snapshot = await getDocs(collection(db, 'organizations', organizationId, 'userEmails'))
-    for (const entry of snapshot.docs) {
-      const userId = text(entry.data().userId)
-      if (!userId || presentIds.has(userId)) continue
-      noteUser(await loadUserDocument(userId, true))
-    }
+    const emailUserIds = snapshot.docs
+      .map((entry) => text(entry.data().userId))
+      .filter((userId) => userId !== '' && !presentIds.has(userId))
+    const emailUsers: Array<User | null> = new Array(emailUserIds.length)
+    await readTogether(emailUserIds, async (userId, index) => {
+      emailUsers[index] = await loadUserDocument(userId, true)
+    })
+    for (const user of emailUsers) noteUser(user)
   } catch {
     complete = false
   }
 
   try {
     const snapshot = await getDocs(collection(db, 'organizations', organizationId, 'operatives'))
-    for (const entry of snapshot.docs) {
-      await attachRosterLink(entry.id, entry.data() as Record<string, unknown>)
-    }
+    const operativeDocs = snapshot.docs
+    const operativeUsers: Array<User | null> = new Array(operativeDocs.length)
+    await readTogether(operativeDocs, async (entry, index) => {
+      operativeUsers[index] = await resolveRosterLink(
+        entry.id,
+        entry.data() as Record<string, unknown>
+      )
+    })
+    for (const user of operativeUsers) noteUser(user)
   } catch {
     complete = false
   }
 
   try {
     const snapshot = await getDocs(collection(db, 'organizations', organizationId, 'managers'))
-    for (const entry of snapshot.docs) {
-      await attachRosterLink(entry.id, entry.data() as Record<string, unknown>, 'manager')
-    }
+    const managerDocs = snapshot.docs
+    const managerUsers: Array<User | null> = new Array(managerDocs.length)
+    await readTogether(managerDocs, async (entry, index) => {
+      managerUsers[index] = await resolveRosterLink(
+        entry.id,
+        entry.data() as Record<string, unknown>
+      )
+    })
+    for (const user of managerUsers) noteUser(user, 'manager')
   } catch {
     complete = false
   }

@@ -3,8 +3,10 @@ import test from 'node:test'
 import { DEFAULT_WARNING_DETECTION } from '../settings/organizationSettings.ts'
 import {
   partitionRowsByOrganization,
+  publishReadyWarningLanes,
   retainWarningsAfterScan,
   warningDetectionForScan,
+  warningScanLanes,
   warningsScanPartial,
   warningsScreenPhase,
 } from './warningsScan.ts'
@@ -34,6 +36,65 @@ test('bookings in memory and an empty roster is still scanning, not an empty war
     }),
     'scanning'
   )
+})
+
+test('rows already found stay on screen while another source is still scanning', () => {
+  assert.equal(
+    warningsScreenPhase({
+      detectionReady: true,
+      rosterReady: false,
+      operativesReady: true,
+      projectsReady: false,
+      warningCount: 4,
+    }),
+    'list'
+  )
+  const lanes = warningScanLanes({
+    detectionReady: true,
+    bookingsReady: true,
+    managerReady: false,
+    rosterReady: false,
+    operativesReady: true,
+    projectsReady: false,
+    holidaysReady: false,
+    materialsReady: false,
+    sendRecordsReady: false,
+  })
+  assert.equal(lanes.clashes, true)
+  assert.equal(lanes.unbooked, false)
+  assert.equal(lanes.qualifications, true)
+  const published = publishReadyWarningLanes({
+    previous: {
+      clashWarnings: [{ id: 'kept' }],
+      managerClashWarnings: [],
+      unbookedWarnings: [{ id: 'unbooked' }],
+      materialWarnings: [],
+      qualificationWarnings: [],
+      unverifiedWarnings: [],
+      coreCount: 2,
+      highCount: 2,
+      mediumCount: 0,
+      lowCount: 0,
+    },
+    computed: {
+      clashWarnings: [{ id: 'clash' }],
+      managerClashWarnings: [],
+      unbookedWarnings: [],
+      materialWarnings: [],
+      qualificationWarnings: [{ id: 'qual' }],
+      unverifiedWarnings: [],
+      coreCount: 2,
+      highCount: 1,
+      mediumCount: 0,
+      lowCount: 1,
+    },
+    lanes,
+    sameOrganization: true,
+  })
+  assert.equal(published.clashWarnings[0] && (published.clashWarnings[0] as { id: string }).id, 'clash')
+  assert.equal(published.unbookedWarnings[0] && (published.unbookedWarnings[0] as { id: string }).id, 'unbooked')
+  assert.equal(published.qualificationWarnings.length, 1)
+  assert.equal(published.highCount, 2)
 })
 
 test('the default list appears only after detection, roster, operatives, and projects are ready', () => {

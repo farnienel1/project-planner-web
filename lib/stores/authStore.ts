@@ -581,16 +581,24 @@ async function loadSignedInProfileInner(firebaseUser: FirebaseUser) {
 
   const documentOrganizationId = user.organizationId
   const explicitOrganizationId = readExplicitSwitchOrganization()
+  const rememberedOrganizationId = readWebActiveOrg(firebaseUser.uid)
   const provisionalOrganizationId = provisionalWebOrganizationId({
     explicitOrganizationId,
-    rememberedOrganizationId: readWebActiveOrg(firebaseUser.uid),
+    rememberedOrganizationId,
     documentOrganizationId,
   })
   const sessionUser =
     provisionalOrganizationId && !organizationIdsMatch(provisionalOrganizationId, documentOrganizationId)
       ? { ...user, organizationId: provisionalOrganizationId }
       : user
-  if (provisionalOrganizationId) writeWebActiveOrg(firebaseUser.uid, provisionalOrganizationId)
+  // Remember an explicit switch or the company already stored for this browser.
+  // Do not copy users/{uid}.organizationId into pp.webActiveOrg.
+  const rememberProvisional =
+    Boolean(explicitOrganizationId) ||
+    Boolean(rememberedOrganizationId && organizationIdsMatch(provisionalOrganizationId, rememberedOrganizationId))
+  if (provisionalOrganizationId && rememberProvisional) {
+    writeWebActiveOrg(firebaseUser.uid, provisionalOrganizationId)
+  }
 
   const currentOrganization = useAuthStore.getState().organization
   useAuthStore.setState({
