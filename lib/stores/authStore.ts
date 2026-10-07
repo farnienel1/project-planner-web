@@ -11,7 +11,7 @@ import {
   reauthenticateWithCredential,
   updatePassword,
 } from 'firebase/auth'
-import { doc, getDoc, setDoc, updateDoc, Timestamp } from 'firebase/firestore'
+import { doc, getDoc, onSnapshot, setDoc, updateDoc, Timestamp } from 'firebase/firestore'
 import { seedOrgDefaultDashboard } from '@/lib/dashboard/dashboardLayoutStorage'
 import { withTimeout, withTimeoutFallback, isTimeoutError } from '@/lib/client/withTimeout'
 import { getFirebaseAuth, getFirebaseDb } from '@/lib/firebase/ensureFirebase'
@@ -27,6 +27,7 @@ import { topLevelAdminFlagPatch } from '@/lib/orgSetup/repairAdminFlags'
 import { ACCOUNT_UNCONFIRMED_MESSAGE } from '@/lib/orgSetup/accountConfirmation'
 import { ensurePrimaryOrgMembership, resolveWebSessionOrganization } from '@/lib/orgMembership/membershipService'
 import { applyDeviceOrgMembership } from '@/lib/orgMembership/webActiveOrg'
+import { sessionUserFromCurrentDocument } from '@/lib/auth/sessionUserFromCurrentDocument'
 import {
   completeEmailSignIn,
   SIGN_IN_SLOW_MESSAGE,
@@ -92,6 +93,40 @@ let lastSeenWriteAt = 0
 let inFlightProfile: { uid: string; promise: Promise<void> } | null = null
 let signingOut = false
 let signingIn = false
+let currentUserWatch: (() => void) | null = null
+
+function stopCurrentUserWatch() {
+  currentUserWatch?.()
+  currentUserWatch = null
+}
+
+/** iOS observeCurrentUserDocument — permission edits apply without a full reload. */
+function watchCurrentUserDocument(uid: string) {
+  stopCurrentUserWatch()
+  if (typeof window === 'undefined' || !uid) return
+  const db = getFirebaseDb()
+  currentUserWatch = onSnapshot(
+    doc(db, 'users', uid),
+    (snap) => {
+      if (signingOut || !snap.exists()) return
+      let authUser: FirebaseUser | null = null
+      try {
+        authUser = getFirebaseAuth().currentUser
+      } catch {
+        return
+      }
+      if (!authUser || authUser.uid !== uid) return
+      const state = useAuthStore.getState()
+      if (!state.user || state.user.id !== uid || state.mfaPending) return
+      const next = sessionUserFromCurrentDocument(state.user, snap.data() as Record<string, unknown>)
+      if (!next) return
+      useAuthStore.setState({ user: next })
+    },
+    (error) => {
+      console.warn('Current user listener skipped:', error)
+    }
+  )
+}
 let mfaStatusFailures = 0
 const PROFILE_ATTEMPTS = 4
 
@@ -433,6 +468,7 @@ async function loadSignedInProfileInner(firebaseUser: FirebaseUser) {
     loading: false,
     error: null,
   })
+  watchCurrentUserDocument(firebaseUser.uid)
 
   void import('@/lib/analytics/trackEvent').then(({ trackEvent }) => {
     if (isPlatformOwnerEmail(user.email) || isPlatformOwnerSentinelOrg(user.organizationId)) return
@@ -508,6 +544,7 @@ export const useAuthStore = create<AuthState>((set) => {
             console.warn('Idle sign-out skipped:', idleSignOutError)
           }
           markWebIdleExpired()
+          stopCurrentUserWatch()
           set({ user: null, firebaseUser: null, organization: null, loading: false, error: null })
           return
         }
@@ -542,6 +579,7 @@ export const useAuthStore = create<AuthState>((set) => {
           }
           return
         }
+        stopCurrentUserWatch()
         set({
           user: null,
           firebaseUser: null,
@@ -721,6 +759,7 @@ export const useAuthStore = create<AuthState>((set) => {
 
     signOut: async (opts) => {
       signingOut = true
+      stopCurrentUserWatch()
       writeSignedOutFlag(true)
       try {
         if (opts?.idle) markWebIdleExpired()
