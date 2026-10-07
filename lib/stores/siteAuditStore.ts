@@ -2,6 +2,7 @@
 
 import { create } from 'zustand'
 import { collection, doc, getDoc, getDocs, limit, query, setDoc, Timestamp, updateDoc, where } from 'firebase/firestore'
+import { withTimeout } from '@/lib/client/withTimeout'
 import { db } from '@/lib/firebase/config'
 import { UserRole, type SiteAudit, type SiteAuditItem, type User } from '@/types'
 import { parseOrgUser } from '@/lib/firebase/parseUser'
@@ -520,7 +521,11 @@ export const useOrgUserStore = create<OrgUserState>((set, get) => ({
         const inMemory = listedRosterOrgId === organizationId ? get().users : []
         const previous = inMemory.length > 0 ? inMemory : readStoredRoster(organizationId)
         try {
-          const loaded = await fetchOrganisationRoster(organizationId)
+          const loaded = await withTimeout(
+            fetchOrganisationRoster(organizationId),
+            20_000,
+            'The user list did not finish loading.'
+          )
           if (generation !== rosterLoadGeneration) throw new OrgLoadNotCached()
           const live = listedRosterOrgId === organizationId ? get().users : []
           if (revisionAtStart !== listedUserRevision && live.length > 0) {
