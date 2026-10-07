@@ -101,21 +101,45 @@ function staffPermissions(role: UserRole): UserPermissions {
   const manager = role === Role.MANAGER
   return {
     adminAccess: admin,
-    manager: manager,
-    operatives: false,
+    manager: admin || manager,
+    operatives: admin,
     skills: false,
-    qualifications: false,
-    materials: !operative,
-    projects: false,
-    smallWorks: false,
+    qualifications: admin,
+    materials: admin || manager || !operative,
+    projects: admin,
+    smallWorks: admin,
     operativeMode: operative,
     siteAudit: !operative,
-    subContractors: false,
-    wholesalersOrderHistory: false,
+    subContractors: admin,
+    wholesalersOrderHistory: admin || manager,
     annualLeaveSelfBook: false,
-    weeklyReports: false,
-    dailyOverview: false,
+    weeklyReports: admin,
+    dailyOverview: admin || manager || !operative,
   }
+}
+
+function roleToken(value: unknown): string {
+  return String(value || '').trim().toLowerCase()
+}
+
+function isAdminRole(value: unknown): boolean {
+  return roleToken(value).includes('admin')
+}
+
+/** Keys actually stored on a membership. A role-only stub has none. */
+function explicitPermissionKeys(record: Record<string, unknown>): Set<string> {
+  const keys = new Set<string>()
+  const nested =
+    record.permissions && typeof record.permissions === 'object'
+      ? (record.permissions as Record<string, unknown>)
+      : {}
+  for (const key of Object.keys(record)) {
+    if (typeof record[key] === 'boolean') keys.add(key)
+  }
+  for (const key of Object.keys(nested)) {
+    if (typeof nested[key] === 'boolean') keys.add(key)
+  }
+  return keys
 }
 
 /**
@@ -137,21 +161,44 @@ export function applyDeviceOrgMembership(
     return user
   }
   if (!membership) {
-    const role = roleFrom(listedRole, Role.BASIC)
+    const listed = roleFrom(listedRole, Role.BASIC)
+    const adminHere = listed === Role.ADMIN || (user.isSuperAdmin === true && !listedRole)
+    if (adminHere) {
+      return {
+        ...user,
+        organizationId,
+        role: Role.ADMIN,
+        isSuperAdmin: user.isSuperAdmin === true,
+        permissions: staffPermissions(Role.ADMIN),
+      }
+    }
     return {
       ...user,
       organizationId,
-      role,
+      role: listed,
       isSuperAdmin: false,
-      permissions: staffPermissions(role),
+      permissions: staffPermissions(listed),
+    }
+  }
+
+  const membershipRole = membership.role || listedRole
+  const stub = explicitPermissionKeys(membership).size === 0
+  if (stub && (isAdminRole(membershipRole) || user.isSuperAdmin === true)) {
+    return {
+      ...user,
+      organizationId,
+      role: Role.ADMIN,
+      isSuperAdmin: user.isSuperAdmin === true || membership.isSuperAdmin === true,
+      isActive: membership.accountActive !== false,
+      permissions: staffPermissions(Role.ADMIN),
     }
   }
 
   const permissions = permissionsFromRecord(membership)
   const isSuperAdmin =
     membership.isSuperAdmin === true ||
-    (user.isSuperAdmin && organizationId === documentOrganizationId)
-  const keepsAdmin = isSuperAdmin || permissions.adminAccess || String(membership.role || '') === Role.ADMIN
+    (user.isSuperAdmin === true && (isAdminRole(membershipRole) || permissions.adminAccess))
+  const keepsAdmin = isSuperAdmin || permissions.adminAccess || isAdminRole(membershipRole)
   const operativeMode = permissions.operativeMode && !keepsAdmin
   const role = keepsAdmin
     ? Role.ADMIN
