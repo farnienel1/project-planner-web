@@ -1,4 +1,5 @@
 import type { User } from '@/types'
+import { isPendingPerson } from '@/lib/staff/pendingPeople'
 
 export type RosterSegment = 'active' | 'inactive' | 'pending'
 
@@ -87,6 +88,26 @@ export function getVisibilityOperativeUsers(users: User[]): User[] {
       sensitivity: 'base',
     })
   )
+}
+
+/**
+ * People who can be chosen as a line manager.
+ * iOS ManageUsersView.lineManagerCandidates requires an accepted login (passwordSet)
+ * and an active admin or manager. Pending invites stay on Manage users.
+ */
+export function lineManagerChoices(users: User[], excludeId?: string): User[] {
+  return users
+    .filter((user) => {
+      if (excludeId && user.id === excludeId) return false
+      if (user.permissions?.operativeMode) return false
+      if (!user.isActive || isPendingPerson(user)) return false
+      return Boolean(user.isSuperAdmin || user.permissions?.adminAccess || user.permissions?.manager)
+    })
+    .sort((a, b) =>
+      `${a.firstName} ${a.surname}`.localeCompare(`${b.firstName} ${b.surname}`, undefined, {
+        sensitivity: 'base',
+      })
+    )
 }
 
 /** Admins and managers (not operative-mode) — used by pickers / scheduling. */
