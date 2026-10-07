@@ -3,7 +3,6 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { format } from 'date-fns'
 import {
   CalendarDaysIcon,
   CameraIcon,
@@ -36,9 +35,19 @@ import { isOperativeMode } from '@/lib/navigation/menuPermissions'
 import { jobHubTiles } from '@/lib/projects/jobHubTiles'
 import { canSeeJobVariations } from '@/lib/variations/variationAccess'
 import { subscribeParentVariations } from '@/lib/variations/variationStorage'
+import { LONDON_TIME_ZONE } from '@/lib/orgTime/zoneTime'
 import type { SectionHue } from '@/lib/ui/sectionHue'
 import type { Project, User } from '@/types'
 import { cn } from '@/lib/ui/cn'
+
+function formatLondonDay(date: Date): string {
+  return new Intl.DateTimeFormat('en-GB', {
+    timeZone: LONDON_TIME_ZONE,
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  }).format(date)
+}
 
 function canConfigureProjectVisibility(user: User | null, isSmallWork: boolean): boolean {
   if (!user || user.permissions.operativeMode) return false
@@ -218,7 +227,7 @@ export function ProjectWorkspaceChrome({
           <div className="row small" style={{ opacity: 0.9, marginBottom: 8 }}>
             <b>{progress}% complete</b>
             <span className="grow" />
-            {remaining} · {format(new Date(project.startDate), 'd MMM yyyy')} – {format(new Date(project.endDate), 'd MMM yyyy')}
+            {remaining} · {formatLondonDay(new Date(project.startDate))} – {formatLondonDay(new Date(project.endDate))}
           </div>
           <div style={{ height: 10, borderRadius: 99, background: 'rgba(255,255,255,.18)', overflow: 'hidden' }}>
             <i
@@ -279,7 +288,7 @@ export function ProjectDetailsCard({
     {
       hue: 'sched',
       label: 'Timeline',
-      value: `${format(new Date(project.startDate), 'd MMM yyyy')} – ${format(new Date(project.endDate), 'd MMM yyyy')}`,
+      value: `${formatLondonDay(new Date(project.startDate))} – ${formatLondonDay(new Date(project.endDate))}`,
     },
     {
       hue: 'proj',

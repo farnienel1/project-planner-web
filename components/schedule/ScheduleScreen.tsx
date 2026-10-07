@@ -588,7 +588,10 @@ export function ScheduleScreen({
           <div className="flex items-center gap-1">
             <button
               type="button"
-              onClick={() => setWeekStart((w) => subWeeks(w, 1))}
+              onClick={() => {
+                setWeekStart((w) => subWeeks(w, 1))
+                setSelectedDate((day) => (day ? subWeeks(day, 1) : null))
+              }}
               className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 transition hover:bg-slate-50"
               aria-label="Previous week"
             >
@@ -606,7 +609,10 @@ export function ScheduleScreen({
             </button>
             <button
               type="button"
-              onClick={() => setWeekStart((w) => addWeeks(w, 1))}
+              onClick={() => {
+                setWeekStart((w) => addWeeks(w, 1))
+                setSelectedDate((day) => (day ? addWeeks(day, 1) : null))
+              }}
               className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 transition hover:bg-slate-50"
               aria-label="Next week"
             >
@@ -644,7 +650,7 @@ export function ScheduleScreen({
             organizationName={organizationName}
             payrollPolicy={payrollPolicy}
           />
-          {selectedDate ? (
+          {selectedDate && weekDays.some((day) => isSameDay(day, selectedDate)) ? (
             <MyScheduleTotalHoursCard
               bookings={bookingsByDate.get(scheduleDayKey(selectedDate)) || []}
               policy={payrollPolicy || DEFAULT_PAYROLL_POLICY}
