@@ -2,7 +2,7 @@
 
 import { create } from 'zustand'
 import { collection, doc, getDoc, getDocs, limit, query, setDoc, Timestamp, where } from 'firebase/firestore'
-import { withTimeout } from '@/lib/client/withTimeout'
+import { isTimeoutError, withTimeout } from '@/lib/client/withTimeout'
 import { db } from '@/lib/firebase/config'
 import { UserRole, type SiteAudit, type SiteAuditItem, type User } from '@/types'
 import { parseOrgUser } from '@/lib/firebase/parseUser'
@@ -530,12 +530,7 @@ export const useOrgUserStore = create<OrgUserState>((set, get) => ({
         const generation = ++rosterLoadGeneration
         const inMemory = listedRosterOrgId === organizationId ? get().users : []
         const previous = inMemory.length > 0 ? inMemory : readStoredRoster(organizationId)
-        try {
-          const loaded = await withTimeout(
-            fetchOrganisationRoster(organizationId),
-            20_000,
-            'The user list did not finish loading.'
-          )
+        const applyLoaded = async (loaded: Awaited<ReturnType<typeof fetchOrganisationRoster>>) => {
           if (generation !== rosterLoadGeneration) throw new OrgLoadNotCached()
           const live = listedRosterOrgId === organizationId ? get().users : []
           if (revisionAtStart !== listedUserRevision && live.length > 0) {
@@ -557,6 +552,33 @@ export const useOrgUserStore = create<OrgUserState>((set, get) => ({
           listedRosterOrgId = organizationId
           writeStoredRoster(organizationId, users)
           set({ users, loading: false, error: null, rosterLoadedOrgId: organizationId })
+        }
+        try {
+          const rosterPromise = fetchOrganisationRoster(organizationId)
+          let loaded: Awaited<ReturnType<typeof fetchOrganisationRoster>>
+          try {
+            loaded = await withTimeout(rosterPromise, 20_000, 'The user list did not finish loading.')
+          } catch (error: unknown) {
+            if (!isTimeoutError(error) || generation !== rosterLoadGeneration) throw error
+            // Leave the error on screen instead of spinning, then take the list if the read finishes.
+            set({
+              error: error instanceof Error ? error.message : 'The user list did not finish loading.',
+              loading: false,
+              rosterLoadedOrgId: organizationId,
+            })
+            void rosterPromise.then(
+              (late) => {
+                void applyLoaded(late).catch(() => {
+                  /* A newer load owns the list. */
+                })
+              },
+              () => {
+                /* The error already on screen stands. */
+              }
+            )
+            throw new OrgLoadNotCached()
+          }
+          await applyLoaded(loaded)
         } catch (error: unknown) {
           if (error instanceof OrgLoadNotCached) {
             if (generation === rosterLoadGeneration) set({ loading: false })
