@@ -46,7 +46,6 @@ export default function ChangeOrganisationPage() {
   const [acceptingId, setAcceptingId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [discoveryIncomplete, setDiscoveryIncomplete] = useState(false)
-  const [showSwitchSplash, setShowSwitchSplash] = useState(false)
 
   const activeOrgId = organization?.id || user?.organizationId
 
@@ -111,14 +110,12 @@ export default function ChangeOrganisationPage() {
     if (organizationIdsMatch(membership.organizationId, activeOrgId) || membership.trialAccessBlocked) return
     setSwitchingId(membership.organizationId)
     setError(null)
-    setShowSwitchSplash(true)
     try {
       await switchActiveOrganization(firebaseUser.uid, membership.organizationId)
       window.location.assign(
         `/dashboard?switchOrg=${encodeURIComponent(membership.organizationId)}`
       )
     } catch (err) {
-      setShowSwitchSplash(false)
       setError(err instanceof Error ? err.message : 'Could not switch organisation')
       setSwitchingId(null)
     }
@@ -132,15 +129,6 @@ export default function ChangeOrganisationPage() {
 
   if (memberships.length === 0 && refreshing) {
     return <LoadingSpinner label="Loading organisations…" />
-  }
-
-  if (showSwitchSplash) {
-    return (
-      <div className="empty card pad" style={{ minHeight: '50vh', display: 'grid', placeItems: 'center' }}>
-        <div className="brand-logo" style={{ width: 64, height: 64, fontSize: 18 }}>PP</div>
-        <p className="muted">Switching organisation…</p>
-      </div>
-    )
   }
 
   return (

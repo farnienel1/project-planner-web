@@ -380,18 +380,11 @@ export function asSettingsRecord(value: unknown): Record<string, unknown> | unde
   return value as Record<string, unknown>
 }
 
-function warningDaysField(record: Record<string, unknown> | undefined): unknown {
-  if (!record) return undefined
-  return (
-    record.clashLookaheadDays ??
-    record.lookaheadDays ??
-    record.lookAheadDays ??
-    record.numberOfDays ??
-    record.daysAhead
-  )
-}
-
-/** Prefer the map that actually stored a day count (nested settings vs org root). */
+/**
+ * iOS reads organizations/{id}.warningDetection and does not let
+ * settings.warningDetection replace the mode. The nested map only fills
+ * excluded user ids when the top-level map left that key out.
+ */
 export function resolveWarningDetectionRaw(
   topLevel: unknown,
   nested: unknown
@@ -399,11 +392,13 @@ export function resolveWarningDetectionRaw(
   const top = asSettingsRecord(topLevel)
   const nestedRec = asSettingsRecord(nested)
   if (!top && !nestedRec) return undefined
-  const merged: Record<string, unknown> = { ...(nestedRec ?? {}), ...(top ?? {}) }
-  const topDays = warningDaysField(top)
-  const nestedDays = warningDaysField(nestedRec)
-  if ((topDays === undefined || topDays === null) && nestedDays !== undefined && nestedDays !== null) {
-    merged.clashLookaheadDays = nestedDays
+  if (!top) return nestedRec
+  const merged: Record<string, unknown> = { ...top }
+  if (top.excludedUserIdsFromUnbookedWarnings == null && nestedRec) {
+    const nestedIds = nestedRec.excludedUserIdsFromUnbookedWarnings
+    if (Array.isArray(nestedIds) && nestedIds.length > 0) {
+      merged.excludedUserIdsFromUnbookedWarnings = nestedIds
+    }
   }
   return merged
 }
