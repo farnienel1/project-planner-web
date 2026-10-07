@@ -4,6 +4,7 @@ import { create } from 'zustand'
 import { deleteDoc, doc, setDoc } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
 import { forgetOrgCollectionDoc, isOrgCollectionSubscribed, subscribeOrgCollection } from '@/lib/firebase/subscribeOrgCollection'
+import { organizationIdsMatch } from '@/lib/orgMembership/webActiveOrg'
 import { retainParsedRows } from '@/lib/staff/rosterRetain'
 import { newUppercaseUuid } from '@/lib/ios-parity/uuid'
 import { londonMidnight } from '@/lib/ios-parity/londonTime'
@@ -52,8 +53,13 @@ export const useManagerScheduleStore = create<ManagerScheduleState>((set, get) =
 
   loadManagerSiteBookings: async (organizationId: string) => {
     if (!organizationId || !db) return
+    const current = get().managerSiteBookings
+    const foreign =
+      current.length > 0 &&
+      current.every((row) => row.organizationId && !organizationIdsMatch(row.organizationId, organizationId))
     const already = isOrgCollectionSubscribed('managerSiteBookings', organizationId)
-    if (already || get().managerSiteBookings.length > 0) set({ loading: false })
+    if (foreign) set({ managerSiteBookings: [], loading: true, error: null })
+    else if (already || current.length > 0) set({ loading: false })
     else set({ loading: true, error: null })
     subscribeOrgCollection(
       'managerSiteBookings',
@@ -66,8 +72,11 @@ export const useManagerScheduleStore = create<ManagerScheduleState>((set, get) =
           if (parsed.ok) managerSiteBookings.push(parsed.value)
           else logSkippedDocument('managerSiteBookings', entry.id, parsed.errors)
         }
+        const previous = get().managerSiteBookings.filter(
+          (row) => !row.organizationId || organizationIdsMatch(row.organizationId, organizationId)
+        )
         set({
-          managerSiteBookings: retainParsedRows(docs.length, get().managerSiteBookings, managerSiteBookings),
+          managerSiteBookings: retainParsedRows(docs.length, previous, managerSiteBookings),
           loading: false,
         })
       },
