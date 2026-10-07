@@ -2,6 +2,14 @@ import type { User, UserPermissions, UserRole } from '@/types'
 import { UserRole as Role } from '@/types'
 import { withTimeout } from '@/lib/client/withTimeout'
 import { permissionsFromRecord } from '@/lib/orgMembership/orgRoleFlags'
+import {
+  chooseSessionOrganization,
+  organizationIdsMatch,
+  provisionalOrganizationId,
+  type OrgAccessProbe,
+} from '@/lib/canonical'
+
+export { organizationIdsMatch, type OrgAccessProbe }
 
 const STORAGE_PREFIX = 'pp.webActiveOrg:'
 
@@ -25,16 +33,6 @@ export function writeWebActiveOrg(userId: string, organizationId: string): void 
   }
 }
 
-/** iOS organizationIdsMatch — trim and ignore case. */
-export function organizationIdsMatch(lhs?: string | null, rhs?: string | null): boolean {
-  const left = String(lhs || '').trim().toLowerCase()
-  const right = String(rhs || '').trim().toLowerCase()
-  return left.length > 0 && left === right
-}
-
-/** Result of asking Firestore whether this login belongs to a company. */
-export type OrgAccessProbe = 'allowed' | 'denied' | 'unknown'
-
 /** One membership probe. A slow read must not hold the dashboard splash. */
 export const SESSION_ORG_PROBE_MS = 2_500
 
@@ -47,11 +45,7 @@ export function provisionalWebOrganizationId(input: {
   rememberedOrganizationId?: string | null
   documentOrganizationId?: string | null
 }): string {
-  for (const value of [input.explicitOrganizationId, input.rememberedOrganizationId, input.documentOrganizationId]) {
-    const organizationId = String(value || '').trim()
-    if (organizationId) return organizationId
-  }
-  return ''
+  return provisionalOrganizationId(input)
 }
 
 /**
@@ -98,58 +92,7 @@ export function chooseWebSessionOrganization(input: {
   documentOrganizationId?: string | null
   probes: ReadonlyMap<string, OrgAccessProbe> | Readonly<Record<string, OrgAccessProbe>>
 }): { organizationId: string; persistOrganizationId: string | null } {
-  const documentOrganizationId = String(input.documentOrganizationId || '').trim()
-  const ordered = [
-    input.explicitOrganizationId,
-    input.rememberedOrganizationId,
-    documentOrganizationId,
-  ]
-  const candidates: string[] = []
-  for (const value of ordered) {
-    const id = String(value || '').trim()
-    if (!id) continue
-    if (candidates.some((existing) => organizationIdsMatch(existing, id))) continue
-    candidates.push(id)
-  }
-
-  const probeFor = (organizationId: string): OrgAccessProbe => {
-    if (input.probes instanceof Map) {
-      for (const [key, probe] of input.probes) {
-        if (organizationIdsMatch(key, organizationId)) return probe
-      }
-      return 'unknown'
-    }
-    for (const [key, probe] of Object.entries(input.probes)) {
-      if (organizationIdsMatch(key, organizationId)) return probe
-    }
-    return 'unknown'
-  }
-
-  const rememberedOrganizationId = String(input.rememberedOrganizationId || '').trim()
-  const persistFor = (organizationId: string): string | null => {
-    // A denied probe may open the company on the user document for this visit.
-    // Do not copy that id into pp.webActiveOrg over the company this browser remembered.
-    if (
-      rememberedOrganizationId &&
-      organizationIdsMatch(organizationId, documentOrganizationId) &&
-      !organizationIdsMatch(organizationId, rememberedOrganizationId)
-    ) {
-      return null
-    }
-    return organizationId || null
-  }
-
-  for (const organizationId of candidates) {
-    const isDocument = organizationIdsMatch(organizationId, documentOrganizationId)
-    const probe = probeFor(organizationId)
-    if (!isDocument && probe === 'denied') continue
-    return { organizationId, persistOrganizationId: persistFor(organizationId) }
-  }
-
-  return {
-    organizationId: documentOrganizationId,
-    persistOrganizationId: persistFor(documentOrganizationId),
-  }
+  return chooseSessionOrganization(input)
 }
 
 const deniedRememberedOrg = new Map<string, string>()

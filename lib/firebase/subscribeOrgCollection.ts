@@ -83,6 +83,9 @@ export function subscribeOrgCollection(
     docs: { id: string; data: () => Record<string, unknown> }[]
     metadata?: { fromCache: boolean }
   }) => {
+    // A listener started for organisation A must not publish into the callback
+    // that was replaced when the user switched to organisation B.
+    if (orgs.get(key) !== organizationId) return
     const current = activeCallback(key)
     if (!current) return
     const removed = removedDocIds.get(storedKey)

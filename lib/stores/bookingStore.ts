@@ -4,6 +4,7 @@ import { create } from 'zustand'
 import { deleteDoc, doc, setDoc } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
 import { forgetOrgCollectionDoc, isOrgCollectionSubscribed, subscribeOrgCollection } from '@/lib/firebase/subscribeOrgCollection'
+import { captureOrganizationContext, organizationContextStillCurrent } from '@/lib/canonical'
 import { organizationIdsMatch } from '@/lib/orgMembership/webActiveOrg'
 import { retainParsedRows } from '@/lib/staff/rosterRetain'
 import { newUppercaseUuid } from '@/lib/ios-parity/uuid'
@@ -77,7 +78,9 @@ export const useBookingStore = create<BookingState>((set, get) => ({
       organizationId,
     }
     const payload = serializeBooking(booking)
+    const captured = captureOrganizationContext()
     await setDoc(doc(firestore, 'organizations', organizationId, 'bookings', id), payload, { merge: true })
+    if (!organizationContextStillCurrent(organizationId, captured)) return
     const { bookings } = get()
     if (!bookings.some((row) => row.id === id)) {
       set({ bookings: [...bookings, booking] })
@@ -99,9 +102,11 @@ export const useBookingStore = create<BookingState>((set, get) => ({
       updatedAt: new Date(),
     }
     const payload = serializeBooking(next)
+    const captured = captureOrganizationContext()
     await setDoc(doc(firestore, 'organizations', organizationId, 'bookings', id), payload, { merge: true })
+    if (!organizationContextStillCurrent(organizationId, captured)) return
     set({
-      bookings: bookings.map((row) => (row.id === id ? next : row)),
+      bookings: get().bookings.map((row) => (row.id === id ? next : row)),
     })
   },
 
