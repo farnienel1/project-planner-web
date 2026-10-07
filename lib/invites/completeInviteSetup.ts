@@ -1,12 +1,11 @@
-import {
-  createUserWithEmailAndPassword,
-  signInWithEmailAndPassword,
-  type UserCredential,
-} from 'firebase/auth'
+import { signInWithEmailAndPassword, type UserCredential } from 'firebase/auth'
 import { deleteDoc, doc, getDoc, setDoc, Timestamp, updateDoc } from 'firebase/firestore'
+import { requestEmailSignUp } from '@/lib/auth/browserAuthActions'
+import { completeEmailSignIn } from '@/lib/auth/completeEmailSignIn'
 import { getFirebaseAuth, getFirebaseDb } from '@/lib/firebase/ensureFirebase'
 import { isValidUuid } from '@/lib/security/validation'
 import { ensurePrimaryOrgMembership } from '@/lib/orgMembership/membershipService'
+import { isEmailInUseError } from '@/lib/orgSetup/authSetupErrors'
 
 export type InvitationSummary = {
   invitationId: string
@@ -44,14 +43,12 @@ export async function fetchInvitationSummary(invitationId: string): Promise<Invi
 async function authWithPassword(email: string, password: string): Promise<UserCredential> {
   const auth = getFirebaseAuth()
   try {
-    return await createUserWithEmailAndPassword(auth, email, password)
+    await requestEmailSignUp(email, password)
+    return await signInWithEmailAndPassword(auth, email, password)
   } catch (error) {
-    const code =
-      error && typeof error === 'object' && 'code' in error
-        ? String((error as { code?: string }).code)
-        : ''
-    if (code === 'auth/email-already-in-use') {
-      return signInWithEmailAndPassword(auth, email, password)
+    if (isEmailInUseError(error)) {
+      const user = await completeEmailSignIn(auth, email, password)
+      return { user } as UserCredential
     }
     throw error
   }

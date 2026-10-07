@@ -2,10 +2,9 @@
 
 import { create } from 'zustand'
 import { collection, deleteDoc, doc, getDoc, getDocs, limit, query, setDoc, updateDoc, Timestamp, where } from 'firebase/firestore'
-import { sendPasswordResetEmail } from 'firebase/auth'
-import { passwordResetActionSettings } from '@/lib/auth/passwordResetSettings'
+import { requestPasswordReset } from '@/lib/auth/browserAuthActions'
 import type { Operative, User } from '@/types'
-import { auth, db } from '@/lib/firebase/config'
+import { db } from '@/lib/firebase/config'
 import { applyExclusiveRateFields, buildSaveUserPayload } from '@/lib/firebase/userPayload'
 import { parseOrgUser } from '@/lib/firebase/parseUser'
 import { findOperativeForUser } from '@/lib/operatives/operativeRosterUtils'
@@ -193,7 +192,7 @@ export const useUserStore = create<UserStoreState>(() => ({
   },
 
   sendPasswordReset: async (email) => {
-    await sendPasswordResetEmail(auth, email.toLowerCase().trim(), passwordResetActionSettings(email))
+    await requestPasswordReset(email.toLowerCase().trim())
   },
 
   applyAccountType: (user, accountType) => applyAccountTypeChange(user, accountType),

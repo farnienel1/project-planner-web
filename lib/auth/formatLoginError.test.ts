@@ -17,3 +17,7 @@ test('timeouts tell the user sign-in is slow instead of blaming the password', (
 test('wrong password stays a generic sign-in failure', () => {
   assert.match(formatLoginError(new Error('auth/wrong-password')), /email\/password/i)
 })
+
+test('rate limit copy stays visible on the sign-in form', () => {
+  assert.match(formatLoginError(new Error('Too many failed attempts. Try again in 15 minutes.')), /Too many failed attempts/)
+})

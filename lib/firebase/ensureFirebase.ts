@@ -1,5 +1,6 @@
 import { FirebaseApp, getApps, initializeApp } from 'firebase/app'
-import { Auth, getAuth } from 'firebase/auth'
+import { Auth } from 'firebase/auth'
+import { installWebAuth } from '@/lib/firebase/clientAuthPersistence'
 import { Firestore, getFirestore } from 'firebase/firestore'
 import { FirebaseStorage, getStorage } from 'firebase/storage'
 import { getFirebaseConfigError, isFirebaseConfigured } from '@/lib/firebase/env'
@@ -33,7 +34,7 @@ export function ensureFirebaseApp(): FirebaseApp {
 }
 
 export function getFirebaseAuth(): Auth {
-  return getAuth(ensureFirebaseApp())
+  return installWebAuth(ensureFirebaseApp())
 }
 
 export function getFirebaseDb(): Firestore {

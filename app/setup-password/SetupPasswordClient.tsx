@@ -4,7 +4,7 @@ import { FormEvent, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { completeInvitationPasswordSetup, fetchInvitationSummary, type InvitationSummary } from '@/lib/invites/completeInviteSetup'
-import { passwordsMatchAndReady } from '@/lib/legal/scrollUtils'
+import { checkNewPassword, PASSWORD_RULE_TEXT } from '@/lib/auth/passwordPolicy'
 
 export default function SetupPasswordClient() {
   const router = useRouter()
@@ -45,14 +45,15 @@ export default function SetupPasswordClient() {
     }
   }, [invitationId])
 
-  const canContinue = passwordsMatchAndReady(password, confirmPassword) && Boolean(invitation) && !submitting
+  const canContinue = checkNewPassword(password).ok && password === confirmPassword && Boolean(invitation) && !submitting
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault()
     setError(null)
 
-    if (password.length < 8) {
-      setError('Password must be at least 8 characters.')
+    const policyError = checkNewPassword(password)
+    if (!policyError.ok) {
+      setError(policyError.message)
       return
     }
     if (password !== confirmPassword) {
@@ -103,6 +104,7 @@ export default function SetupPasswordClient() {
                 autoComplete="new-password"
                 required
               />
+              <p className="mt-1 text-xs text-slate-500">{PASSWORD_RULE_TEXT}</p>
             </div>
             <div>
               <label className="mb-1 block text-sm font-semibold text-slate-700">Confirm password</label>

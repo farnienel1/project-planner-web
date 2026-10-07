@@ -7,6 +7,7 @@ const ContentSecurityPolicy = [
   "frame-ancestors 'none'",
   "form-action 'self' https://checkout.stripe.com https://js.stripe.com",
   "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://js.stripe.com https://maps.googleapis.com https://maps.gstatic.com https://unpkg.com https://cdnjs.cloudflare.com",
+  "script-src-attr 'none'",
   "style-src 'self' 'unsafe-inline' https://unpkg.com",
   "img-src 'self' data: blob: https:",
   "font-src 'self' data:",
@@ -15,6 +16,10 @@ const ContentSecurityPolicy = [
   "worker-src 'self' blob: https://cdnjs.cloudflare.com",
   "media-src 'self' blob:",
 ]
+
+if (process.env.NODE_ENV === 'production') {
+  ContentSecurityPolicy.push('upgrade-insecure-requests')
+}
 
 const securityHeaders = [
   { key: 'X-DNS-Prefetch-Control', value: 'off' },
@@ -26,6 +31,13 @@ const securityHeaders = [
   { key: 'X-Permitted-Cross-Domain-Policies', value: 'none' },
   { key: 'Content-Security-Policy', value: ContentSecurityPolicy.join('; ') },
 ]
+
+if (process.env.NODE_ENV === 'production') {
+  securityHeaders.push({
+    key: 'Strict-Transport-Security',
+    value: 'max-age=15552000; includeSubDomains',
+  })
+}
 
 const deploymentId = process.env.COMMIT_REF || process.env.NEXT_DEPLOYMENT_ID || ''
 

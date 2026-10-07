@@ -34,6 +34,7 @@ import { saveFounderConfirmEmailPayload } from '@/lib/orgSetup/founderConfirmEma
 import { saveGuidedSetupDraft } from '@/lib/orgSetup/persistGuidedSetup'
 import { jsonAuthHeaders } from '@/lib/security/clientAuthHeaders'
 import { grantMfaSkip } from '@/lib/auth/mfa/mfaClient'
+import { checkNewPassword, PASSWORD_RULE_TEXT } from '@/lib/auth/passwordPolicy'
 import { SetupExplainer } from '@/components/setup/SetupExplainer'
 import { OrganisationDetailsStep } from '@/components/setup/OrganisationDetailsStep'
 import { OrganisationFeaturesStep } from '@/components/setup/OrganisationFeaturesStep'
@@ -360,7 +361,8 @@ export function OrgSetupWizard() {
     if (!email.trim()) return 'Please enter your email address.'
     if (email.trim() && !/^\S+@\S+\.\S+$/.test(email.trim())) return 'Enter a valid email address.'
     if (creatingAdditionalOrg) return null
-    if (password.length < 8) return 'Password must be at least 8 characters.'
+    const policyError = checkNewPassword(password)
+    if (!policyError.ok) return policyError.message
     if (password !== confirmPassword) return 'Passwords do not match.'
     return null
   }
@@ -859,7 +861,7 @@ export function OrgSetupWizard() {
                               <MktIcon name={showPassword ? 'eyeoff' : 'eye'} size={18} />
                             </button>
                           </div>
-                          <span className="help">At least 8 characters</span>
+                          <span className="help">{PASSWORD_RULE_TEXT}</span>
                         </div>
                         <div className="f">
                           <label>
@@ -879,7 +881,7 @@ export function OrgSetupWizard() {
                   {!creatingAdditionalOrg ? (
                     <div
                       className="meter"
-                      data-hue={password.length >= 12 ? 'green' : password.length >= 8 ? 'warn' : 'red'}
+                      data-hue={checkNewPassword(password).ok ? 'green' : password.length >= 8 ? 'warn' : 'red'}
                       aria-hidden
                     >
                       {[4, 8, 12].map((n) => (

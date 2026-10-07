@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { getAuth } from 'firebase/auth'
+import { getFirebaseAuth } from '@/lib/firebase/ensureFirebase'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { billingStatusLabel, formatTrialChargeCopy, hasAccess } from '@/lib/stripe/billing'
 import { ANNUAL_PENCE, MONTHLY_PENCE } from '@/lib/stripe/plans'
@@ -22,7 +22,7 @@ export function BillingPanel({ onBack }: { onBack: () => void }) {
     setBusy(true)
     setError('')
     try {
-      const token = await getAuth().currentUser?.getIdToken()
+      const token = await getFirebaseAuth().currentUser?.getIdToken()
       const response = await fetch('/api/stripe/create-portal-session', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token || ''}` },
