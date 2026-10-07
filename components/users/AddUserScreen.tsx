@@ -9,7 +9,7 @@ import { canInviteOperatives, canManageOperativesOnly, canManageUsers, getAddUse
 import { permissionsForAccountType, timesheetsEnabledForAccount } from '@/lib/orgSetup/accountPermissions'
 import { DEFAULT_ANNUAL_LEAVE } from '@/lib/settings/organizationSettings'
 import { STAFF_TRADE_TYPES } from '@/lib/staff/staffTradeTypes'
-import { getManagerUsers } from '@/lib/staff/userRosterUtils'
+import { lineManagerChoices } from '@/lib/staff/userRosterUtils'
 import {
   MANAGER_PERMISSION_TOGGLES,
   OPERATIVE_PERMISSION_TOGGLES,
@@ -185,7 +185,7 @@ export function AddUserScreen() {
   }, [organization?.id])
 
   const lineManagers = useMemo(
-    () => getManagerUsers(users).filter((entry) => entry.isActive),
+    () => lineManagerChoices(users),
     [users]
   )
 

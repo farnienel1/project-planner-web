@@ -19,7 +19,7 @@ import {
   roleLabel,
   setupSectionTitle,
 } from '@/lib/staff/userEditPermissions'
-import { rosterStatusLabel } from '@/lib/staff/userRosterUtils'
+import { lineManagerChoices, rosterStatusLabel } from '@/lib/staff/userRosterUtils'
 import { UserAvatar } from '@/components/users/UserAvatar'
 import { PayBasisFields, payChoiceFromProfile, payChoiceToRates } from '@/components/users/PayBasisFields'
 import { PreviousRatesList, usePaySaveGate } from '@/components/users/PayRateChangeDialogs'
@@ -255,17 +255,7 @@ export function EditUserProfile({
       })
   }, [organization?.id, userId, getUser, loadUsers, loadOperatives])
 
-  const managers = useMemo(
-    () =>
-      users.filter(
-        (user) =>
-          user.id !== target?.id &&
-          !user.permissions.operativeMode &&
-          user.isActive &&
-          (user.isSuperAdmin || user.permissions.manager || user.permissions.adminAccess)
-      ),
-    [users, target?.id]
-  )
+  const managers = useMemo(() => lineManagerChoices(users, target?.id), [users, target?.id])
 
   const previousRateEntries = useMemo(() => {
     if (!target) return []
