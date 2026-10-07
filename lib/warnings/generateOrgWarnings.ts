@@ -1,5 +1,7 @@
 /**
- * iOS parity: Core/WarningsComputation.swift generate()
+ * Warning rows for one organisation.
+ * The scan window comes from lib/canonical. Do not calculate a second coverage window here.
+ * Which rows qualify still mirrors Core/WarningsComputation.swift until that generation moves into the canonical bundle.
  */
 
 import type { Booking, HolidayBooking, Operative, Project, ProjectMaterialLine, MaterialSendRecord, User } from '@/types'

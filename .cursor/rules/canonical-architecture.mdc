@@ -1,0 +1,19 @@
+---
+description: Business logic shared with iOS lives in lib/canonical
+alwaysApply: true
+---
+
+# Canonical business logic
+
+`lib/canonical/engine.ts` is the business-logic source for this app and for the iOS bundle `canonical-business.js`. `docs/CANONICAL_ARCHITECTURE.md` describes how web, iOS, and Firestore rules use it.
+
+Before adding or changing a booking, warning, invoicing, labour, organisation, or date rule:
+
+1. Search `lib/canonical` and call the existing function.
+2. If the rule is new and both platforms must agree, add it to `lib/canonical/engine.ts`, export it through `bundleEntry.ts`, and run `npm run build:canonical`.
+3. Use `adoptCurrentOrganization` and `organizationContextStillCurrent` for organisation-scoped async work. Cache and persistence keys include the organisation id.
+4. If web and iOS disagree, trace the first divergence. Do not change a screen so its number matches the other platform.
+5. Add a regression test in `lib/canonical/canonical.test.ts`.
+6. Update `docs/CANONICAL_ARCHITECTURE.md` when the boundary changes.
+
+Screens, navigation, and copy stay in the app. The iOS parity rule for nested screens still applies to UI work. It does not mean copying a business calculation into a component.

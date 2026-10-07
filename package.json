@@ -9,7 +9,8 @@
     "build": "next build --webpack",
     "start": "next start",
     "lint": "eslint . --ext .js,.jsx,.ts,.tsx --ignore-pattern '.next/**' --ignore-pattern 'node_modules/**'",
-    "test": "tsx --test lib/*.test.ts lib/**/*.test.ts lib/security/*.test.ts lib/email/*.test.ts",
+    "test": "node scripts/build-canonical-bundle.mjs && tsx --test lib/*.test.ts lib/**/*.test.ts lib/security/*.test.ts lib/email/*.test.ts",
+    "build:canonical": "node scripts/build-canonical-bundle.mjs",
     "verify-env": "node scripts/verify-env.mjs",
     "netlify:env": "npx netlify-cli env:import .env.local",
     "netlify:deploy": "npx netlify-cli deploy --build --prod"
@@ -40,6 +41,7 @@
     "@types/react-big-calendar": "^1.8.7",
     "@types/react-dom": "^18.2.18",
     "autoprefixer": "^10.4.16",
+    "esbuild": "^0.25.10",
     "eslint": "^8.56.0",
     "eslint-config-next": "14.0.4",
     "postcss": "^8.4.32",

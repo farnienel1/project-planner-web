@@ -42,7 +42,14 @@ export function midnightInZone(date: Date, timeZone: string): Date {
   const { y, m, d } = partsInZone(date, timeZone)
   const guess = new Date(Date.UTC(y, m - 1, d, 0, 0, 0))
   const shown = partsInZone(guess, timeZone)
-  const deltaMin = shown.h * 60 + shown.min
+  let deltaMin = shown.h * 60 + shown.min
+  const shownKey = dayKeyInZone(guess, timeZone)
+  const wanted = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+  // A zone behind UTC shows the previous calendar day at UTC midnight.
+  // A zone ahead of UTC can show the next calendar day. Shift by a day so the
+  // result is local midnight of `wanted`, not the device zone.
+  if (shownKey < wanted) deltaMin -= 24 * 60
+  else if (shownKey > wanted) deltaMin += 24 * 60
   return new Date(guess.getTime() - deltaMin * 60_000)
 }
 

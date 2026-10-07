@@ -99,12 +99,7 @@ service cloud.firestore {
   }
 
   function canAccessOrganization(organizationId) {
-    return request.auth != null && (
-      isPlatformOwner() ||
-      isAdminOrSuperAdmin() ||
-      belongsToOrganization(organizationId) ||
-      organizationExists(organizationId)
-    );
+    return isPlatformOwner() || belongsToOrganization(organizationId);
   }
 
   function billingUnchanged() {
@@ -511,7 +506,6 @@ service cloud.firestore {
       // creatorUserId covers legacy orgs that predate a reliable members map.
       allow read: if request.auth != null && (
         isPlatformOwner() ||
-        isAdminOrSuperAdmin() ||
         userOrgIdMatchesPath(organizationId) ||
         (resource != null && 'members' in resource.data && resource.data.members[request.auth.uid] != null) ||
         (resource != null && 'creatorUserId' in resource.data && resource.data.creatorUserId == request.auth.uid)
