@@ -37,6 +37,8 @@ interface OperativeState {
   qualifications: Qualification[]
   loading: boolean
   error: string | null
+  operativesLoadedOrgId: string | null
+  managersLoadedOrgId: string | null
   loadOperatives: (organizationId: string, options?: { force?: boolean }) => Promise<void>
   loadManagers: (organizationId: string) => Promise<void>
   loadSkills: (organizationId: string) => Promise<void>
@@ -59,6 +61,8 @@ export const useOperativeStore = create<OperativeState>((set, get) => ({
   qualifications: [],
   loading: false,
   error: null,
+  operativesLoadedOrgId: null,
+  managersLoadedOrgId: null,
   
   loadOperatives: async (organizationId: string, options?: { force?: boolean }) => {
     const loadOptions = optionsForUnappliedOrg(
@@ -90,7 +94,7 @@ export const useOperativeStore = create<OperativeState>((set, get) => ({
           const previous = operativesOrgId === organizationId ? get().operatives : []
           const operatives = retainScopedRows(`operatives:${organizationId}`, previous, mapped)
           operativesOrgId = organizationId
-          set({ operatives, loading: false })
+          set({ operatives, loading: false, operativesLoadedOrgId: organizationId })
         } catch (error: unknown) {
           set({
             error: error instanceof Error ? error.message : 'Failed to load operatives',
@@ -119,6 +123,7 @@ export const useOperativeStore = create<OperativeState>((set, get) => ({
       set({
         managers,
         placeholderManagerCount: allManagers.filter(isPlaceholderManager).length,
+        managersLoadedOrgId: organizationId,
       })
     } catch (error: unknown) {
       set({ error: error instanceof Error ? error.message : 'Failed to load managers' })

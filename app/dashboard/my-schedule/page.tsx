@@ -14,6 +14,8 @@ import {
 } from '@/lib/operatives/operativeRosterUtils'
 import { canSelfBookMySchedule, isOperativeMode } from '@/lib/navigation/menuPermissions'
 import { managerSiteBookingToScheduleBooking } from '@/lib/scheduling/managerSiteBookingUtils'
+import { normalizeBookingStatus } from '@/lib/ios-parity/enums'
+import type { AssignedScheduleBooking } from '@/components/schedule/MyScheduleSelfBookingScreen'
 import { loadOrganizationDetails } from '@/lib/settings/organizationSettings'
 import { DEFAULT_PAYROLL_POLICY, type OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 import { MyScheduleSelfBookingScreen } from '@/components/schedule/MyScheduleSelfBookingScreen'
@@ -52,15 +54,12 @@ function MySchedulePageContent() {
   useEffect(() => {
     if (!organization?.id) return
     loadManagerSiteBookings(organization.id)
-    if (!selfBooking) {
-      loadBookings(organization.id)
-      loadOperatives(organization.id)
-    }
+    loadBookings(organization.id)
+    loadOperatives(organization.id)
     loadProjects(organization.id, true)
     loadSmallWorks(organization.id)
   }, [
     organization?.id,
-    selfBooking,
     loadBookings,
     loadManagerSiteBookings,
     loadOperatives,
@@ -151,6 +150,24 @@ function MySchedulePageContent() {
     )
   }
 
+  const assignedBookings: AssignedScheduleBooking[] = linkedOperativeIds.flatMap((operativeId) =>
+    bookings
+      .filter((booking) => {
+        if (booking.operativeId !== operativeId) return false
+        const status = normalizeBookingStatus(booking.status)
+        return status !== 'Cancelled' && status !== 'Completed'
+      })
+      .map((booking) => {
+        const project = [...projects, ...smallWorks].find((row) => row.id === booking.projectId)
+        const title = project
+          ? `${project.jobNumber ?? ''} ${project.siteName ?? ''}`.trim() || project.siteName || 'Scheduled work'
+          : 'Scheduled work'
+        const slot = String(booking.timeSlot || 'Full day')
+        const detail = slot === 'FULL_DAY' || slot === 'FULL DAY' ? 'Full day' : slot
+        return { id: booking.id, date: booking.date, title, detail }
+      })
+  )
+
   if (selfBooking) {
     return (
       <MyScheduleSelfBookingScreen
@@ -158,6 +175,7 @@ function MySchedulePageContent() {
         organizationId={organization.id}
         organizationName={organization.name || 'your organisation'}
         payrollPolicy={payrollPolicy}
+        assignedBookings={assignedBookings}
       />
     )
   }

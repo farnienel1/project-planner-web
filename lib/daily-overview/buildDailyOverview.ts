@@ -490,3 +490,18 @@ export function buildDailyOverview(params: {
 export function shiftOverviewDay(day: Date, delta: number): Date {
   return addLondonDays(day, delta)
 }
+
+/**
+ * Unbooked names are "nobody in either booking list". Publishing that list
+ * before a still-empty read finishes marks people who are already booked.
+ */
+export function dailyOverviewMayPublish(input: {
+  bookingsLoading: boolean
+  bookingCount: number
+  managerLoading: boolean
+  managerBookingCount: number
+}): boolean {
+  const operativeStillEmpty = input.bookingsLoading && input.bookingCount === 0
+  const managerStillEmpty = input.managerLoading && input.managerBookingCount === 0
+  return !operativeStillEmpty && !managerStillEmpty
+}

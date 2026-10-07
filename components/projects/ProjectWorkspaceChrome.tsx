@@ -130,7 +130,7 @@ export function ProjectWorkspaceChrome({
   const catalogue = isSmallWork ? '/dashboard/small-works' : '/dashboard/projects'
   const catalogueLabel = isSmallWork ? 'Small works' : 'Projects'
 
-  const showVariations = canSeeJobVariations(user, project)
+  const showVariations = canSeeJobVariations(user, project, rosterManagers)
   const [openVariations, setOpenVariations] = useState(0)
 
   useEffect(() => {

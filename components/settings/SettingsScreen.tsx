@@ -10,6 +10,7 @@ import { useAuthStore } from '@/lib/stores/authStore'
 import { uploadFile, profilePhotoPath } from '@/lib/firebase/storageUtils'
 import { UserAvatar } from '@/components/users/UserAvatar'
 import { canAccessOrganisationSettingsHub, hasAdminAccess } from '@/lib/navigation/menuPermissions'
+import { minPasswordLengthForEmail } from '@/lib/auth/emailAction'
 import {
   loadNotificationPreferences,
   saveNotificationPreferences,
@@ -189,6 +190,11 @@ function PasswordPanel({ onBack }: { onBack: () => void }) {
   const changePassword = async () => {
     if (!firebaseUser?.email || !current || !next || next !== confirm) {
       setError(next !== confirm ? 'Passwords do not match' : 'Please fill all fields')
+      return
+    }
+    const minLength = minPasswordLengthForEmail(firebaseUser.email)
+    if (next.length < minLength) {
+      setError(`Use at least ${minLength} characters.`)
       return
     }
     setSaving(true); setError('')

@@ -30,6 +30,14 @@ import { useHolidayStore } from '@/lib/stores/holidayStore'
 import { useMaterialProjectStore } from '@/lib/stores/materialProjectStore'
 import { canBookWork, canViewDailyOverview, canViewWeeklyReports, hasAdminAccess, isOperativeMode } from '@/lib/permissions'
 import { countHomeActiveProjects } from '@/lib/projects/homeActiveProjects'
+import {
+  activeProjectSubtitle,
+  readRememberedHomeCount,
+  shownHomeCount,
+  warningStatusLabel,
+  writeRememberedHomeCount,
+  type HomeCountKind,
+} from '@/lib/home/homeLoadDisplay'
 import { formatHomeDateLine } from '@/lib/ios-parity/londonTime'
 import {
   computeHomeOverviewMetrics,
@@ -89,13 +97,15 @@ function greetingName(firstName: string, email: string): string {
 export function HomeScreen() {
   const router = useRouter()
   const { user, organization } = useAuthStore()
-  const { projects, smallWorks, loadProjects, loadSmallWorks } = useProjectStore()
-  const { operatives, managers, loadOperatives, loadManagers } = useOperativeStore()
-  const { users, loadUsers } = useOrgUserStore()
+  const { projects, smallWorks, loadProjects, loadSmallWorks, projectsLoadedOrgId, smallWorksLoadedOrgId } =
+    useProjectStore()
+  const { operatives, managers, loadOperatives, loadManagers, operativesLoadedOrgId, managersLoadedOrgId } =
+    useOperativeStore()
+  const { users, loadUsers, rosterLoadedOrgId } = useOrgUserStore()
   const { bookings, loadBookings, loading: bookingsLoading, ready: bookingsReady } = useBookingStore()
   const { managerSiteBookings, loadManagerSiteBookings } = useManagerScheduleStore()
-  const { tasks, loadTasks } = useTaskStore()
-  const { bookings: holidays, loadBookings: loadHolidays } = useHolidayStore()
+  const { tasks, loadTasks, tasksLoadedOrgId } = useTaskStore()
+  const { bookings: holidays, loadBookings: loadHolidays, loadedOrgId: holidaysLoadedOrgId } = useHolidayStore()
   const { materials, sendRecords, loadAllMaterials, loadSendRecords } = useMaterialProjectStore()
   const [customise, setCustomise] = useState(false)
   const [metricsOpen, setMetricsOpen] = useState(false)
@@ -179,9 +189,25 @@ export function HomeScreen() {
     [tasks, displayUser?.email, operative, operatives, managers, bookings, managerSiteBookings, holidays, users, liveCount, now]
   )
 
-  const warningCount = useMemo(() => {
-    if (!admin) return 0
-    if (!bookingsReady || bookingsLoading) return 0
+  const orgId = organization?.id || ''
+  const projectsReady = Boolean(orgId) && projectsLoadedOrgId === orgId && smallWorksLoadedOrgId === orgId
+  const tasksReady = Boolean(orgId) && tasksLoadedOrgId === orgId
+  const warningInputsReady = Boolean(
+    orgId &&
+      bookingsReady &&
+      !bookingsLoading &&
+      rosterLoadedOrgId === orgId &&
+      operativesLoadedOrgId === orgId &&
+      managersLoadedOrgId === orgId &&
+      holidaysLoadedOrgId === orgId &&
+      projectsReady &&
+      orgDetails?.id === orgId
+  )
+  const countStorage = typeof sessionStorage === 'undefined' ? null : sessionStorage
+  const remembered = (kind: HomeCountKind) => readRememberedHomeCount(countStorage, kind, orgId)
+
+  const liveWarningCount = useMemo(() => {
+    if (!admin || !warningInputsReady) return null
     try {
       return generateOrgWarnings({
         bookings,
@@ -197,10 +223,11 @@ export function HomeScreen() {
         referenceDate: now,
       }).coreCount
     } catch {
-      return 0
+      return null
     }
   }, [
     admin,
+    warningInputsReady,
     bookingsLoading,
     bookingsReady,
     bookings,
@@ -223,6 +250,37 @@ export function HomeScreen() {
       : ['tasksDueTodayPersonal', 'tasksDueWeekPersonal', 'outstandingTasksAllUsers']
 
   const pendingTasks = operative ? metrics.tasksOverdue + metrics.tasksDueToday : metrics.outstandingTasksAllUsers
+  const warningCount = shownHomeCount(liveWarningCount, remembered('warnings'))
+  const projectCount = shownHomeCount(projectsReady ? liveCount : null, remembered('projects'))
+  const tasksToday = shownHomeCount(tasksReady ? metrics.tasksDueToday : null, remembered('tasksToday'))
+  const tasksWeek = shownHomeCount(tasksReady ? metrics.tasksDueThisWeek : null, remembered('tasksWeek'))
+  const tasksPending = shownHomeCount(tasksReady ? pendingTasks : null, remembered('tasksPending'))
+
+  useEffect(() => {
+    if (!orgId || liveWarningCount == null) return
+    writeRememberedHomeCount(countStorage, 'warnings', orgId, liveWarningCount)
+  }, [orgId, liveWarningCount, countStorage])
+
+  useEffect(() => {
+    if (!orgId || !projectsReady) return
+    writeRememberedHomeCount(countStorage, 'projects', orgId, liveCount)
+  }, [orgId, projectsReady, liveCount, countStorage])
+
+  useEffect(() => {
+    if (!orgId || !tasksReady) return
+    writeRememberedHomeCount(countStorage, 'tasksToday', orgId, metrics.tasksDueToday)
+    writeRememberedHomeCount(countStorage, 'tasksWeek', orgId, metrics.tasksDueThisWeek)
+    writeRememberedHomeCount(countStorage, 'tasksPending', orgId, pendingTasks)
+  }, [orgId, tasksReady, metrics.tasksDueToday, metrics.tasksDueThisWeek, pendingTasks, countStorage])
+
+  const metricDisplay = (id: HomeOverviewMetricID) => {
+    if (id === 'warnings') return warningCount == null ? '…' : warningCount
+    if (id === 'tasksDueTodayPersonal') return tasksToday == null ? '…' : tasksToday
+    if (id === 'tasksDueWeekPersonal') return tasksWeek == null ? '…' : tasksWeek
+    if (id === 'outstandingTasksAllUsers') return tasksReady ? metrics.outstandingTasksAllUsers : '…'
+    if (!bookingsReady || bookingsLoading) return '…'
+    return metricValue(id, metrics, warningCount ?? 0)
+  }
   const upNext = useMemo(
     () =>
       upcomingDaySections({
@@ -285,17 +343,17 @@ export function HomeScreen() {
         <Hero
           eyebrow={formatHomeDateLine(now)}
           title={<h1>{`Hi, ${greetingName(displayUser.firstName, displayUser.email)}`}</h1>}
-          subtitle={`${liveCount} active project${liveCount === 1 ? '' : 's'}`}
+          subtitle={activeProjectSubtitle(projectCount)}
           stats={
             operative
               ? [
-                  { label: 'Tasks Due Today', value: metrics.tasksDueToday, onClick: () => router.push('/dashboard/tasks') },
-                  { label: 'Tasks Due This Week', value: metrics.tasksDueThisWeek, onClick: () => router.push('/dashboard/tasks') },
-                  { label: 'My Tasks Overdue', value: metrics.tasksOverdue, onClick: () => router.push('/dashboard/tasks') },
+                  { label: 'Tasks Due Today', value: tasksToday == null ? '…' : tasksToday, onClick: () => router.push('/dashboard/tasks') },
+                  { label: 'Tasks Due This Week', value: tasksWeek == null ? '…' : tasksWeek, onClick: () => router.push('/dashboard/tasks') },
+                  { label: 'My Tasks Overdue', value: tasksReady ? metrics.tasksOverdue : '…', onClick: () => router.push('/dashboard/tasks') },
                 ]
               : shownMetrics.map((id) => ({
                   label: HOME_OVERVIEW_PILL_TITLES[id],
-                  value: metricValue(id, metrics, warningCount),
+                  value: metricDisplay(id),
                   onClick: () => {
                     const title = HOME_OVERVIEW_PILL_TITLES[id]
                     if (title.startsWith('Tasks') || title.startsWith('Open')) router.push('/dashboard/tasks')
@@ -344,7 +402,7 @@ export function HomeScreen() {
             <StatCard
               hue="warn"
               label="Warnings"
-              value={warningCount === 0 ? 'All clear' : `${warningCount} active`}
+              value={warningStatusLabel(warningCount)}
               icon={<ExclamationTriangleIcon className="h-6 w-6" />}
               onClick={() => router.push('/dashboard/warnings')}
             />
@@ -352,7 +410,7 @@ export function HomeScreen() {
           <StatCard
             hue="task"
             label="Tasks"
-            value={`${pendingTasks} pending`}
+            value={tasksPending == null ? '…' : `${tasksPending} pending`}
             icon={<ClipboardDocumentCheckIcon className="h-6 w-6" />}
             onClick={() => router.push('/dashboard/tasks')}
           />
@@ -521,7 +579,7 @@ export function HomeScreen() {
               >
                 <span className="grow">
                   <span className="t">{HOME_OVERVIEW_CATALOG_TITLES[id]}</span>
-                  <span className="s">Current: {metricValue(id, metrics, warningCount)}</span>
+                  <span className="s">Current: {metricDisplay(id)}</span>
                 </span>
                 <PlusIcon className="h-5 w-5 text-[var(--blue)]" />
               </button>

@@ -74,6 +74,7 @@ interface HolidayState {
   bookings: HolidayBooking[]
   loading: boolean
   error: string | null
+  loadedOrgId: string | null
   loadBookings: (organizationId: string) => Promise<void>
   saveBooking: (organizationId: string, booking: HolidayBooking) => Promise<void>
   deleteBooking: (organizationId: string, id: string) => Promise<void>
@@ -93,6 +94,7 @@ export const useHolidayStore = create<HolidayState>((set, get) => ({
   bookings: [],
   loading: false,
   error: null,
+  loadedOrgId: null,
 
   loadBookings: async (organizationId) => {
     set({ loading: true, error: null })
@@ -106,9 +108,13 @@ export const useHolidayStore = create<HolidayState>((set, get) => ({
       const previous = holidayOrgId === organizationId ? get().bookings : []
       const kept = retainScopedRows(`holidayBookings:${organizationId}`, previous, bookings)
       holidayOrgId = organizationId
-      set({ bookings: kept, loading: false })
+      set({ bookings: kept, loading: false, loadedOrgId: organizationId })
     } catch (error: unknown) {
-      set({ error: error instanceof Error ? error.message : 'Failed to load holiday bookings', loading: false })
+      set({
+        error: error instanceof Error ? error.message : 'Failed to load holiday bookings',
+        loading: false,
+        loadedOrgId: organizationId,
+      })
     }
   },
 

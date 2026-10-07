@@ -1,4 +1,5 @@
 import { displayTradeType } from '@/lib/staff/staffTradeTypes'
+import { isPendingPerson } from '@/lib/staff/pendingPeople'
 import type { User } from '@/types'
 
 export function userDisplayName(user: Pick<User, 'firstName' | 'surname' | 'email'>): string {
@@ -11,7 +12,7 @@ export function userTradeLabel(user: Pick<User, 'tradeTypePreset' | 'tradeTypeCu
 }
 
 export function isHsRecipient(user: User): boolean {
-  if (!user.isActive) return false
+  if (!user.isActive || isPendingPerson(user)) return false
   return Boolean(
     user.permissions.operativeMode ||
       user.permissions.operatives ||
