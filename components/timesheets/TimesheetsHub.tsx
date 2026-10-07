@@ -7,6 +7,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { CalendarDaysIcon, ClockIcon, UserGroupIcon } from '@heroicons/react/24/solid'
+import { withTimeoutFallback } from '@/lib/client/withTimeout'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useBookingStore } from '@/lib/stores/bookingStore'
 import { useManagerScheduleStore } from '@/lib/stores/managerScheduleStore'
@@ -128,20 +129,23 @@ export function TimesheetsHub() {
     loadUsers(organization.id)
     loadProjects(organization.id, true)
     loadSmallWorks(organization.id)
-    loadOrganizationDetails(organization.id)
-      .then((details) => {
-        if (cancelled) return
-        if (details?.payrollTimePolicy) setPayrollPolicy(details.payrollTimePolicy)
-        setPayrollPolicyPrior(details?.payrollTimePolicyPrior ?? null)
-        setPayrollPolicyEffectiveFrom(details?.payrollTimePolicyEffectiveFrom ?? null)
-        if (details?.invoicing) setInvoicing(details.invoicing)
-        if (details?.myScheduleOptions) setScheduleOptions(details.myScheduleOptions)
-        setTimeZone(ianaTimeZoneForCountry(details?.countryCode))
-      })
+    const detailsPromise = loadOrganizationDetails(organization.id)
+    const applyDetails = (details: Awaited<ReturnType<typeof loadOrganizationDetails>>) => {
+      if (cancelled || !details) return
+      if (details.payrollTimePolicy) setPayrollPolicy(details.payrollTimePolicy)
+      setPayrollPolicyPrior(details.payrollTimePolicyPrior ?? null)
+      setPayrollPolicyEffectiveFrom(details.payrollTimePolicyEffectiveFrom ?? null)
+      if (details.invoicing) setInvoicing(details.invoicing)
+      if (details.myScheduleOptions) setScheduleOptions(details.myScheduleOptions)
+      setTimeZone(ianaTimeZoneForCountry(details.countryCode))
+    }
+    void withTimeoutFallback(detailsPromise, 8_000, null)
+      .then((details) => applyDetails(details))
       .catch(() => {})
       .finally(() => {
         if (!cancelled) setPayRunReady(true)
       })
+    void detailsPromise.then((details) => applyDetails(details)).catch(() => {})
     loadOperativeDayRateHistory(organization.id)
       .then((rows) => {
         if (!cancelled) setHistory(rows)

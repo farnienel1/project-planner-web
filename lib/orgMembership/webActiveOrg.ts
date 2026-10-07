@@ -125,16 +125,30 @@ export function chooseWebSessionOrganization(input: {
     return 'unknown'
   }
 
+  const rememberedOrganizationId = String(input.rememberedOrganizationId || '').trim()
+  const persistFor = (organizationId: string): string | null => {
+    // A denied probe may open the company on the user document for this visit.
+    // Do not copy that id into pp.webActiveOrg over the company this browser remembered.
+    if (
+      rememberedOrganizationId &&
+      organizationIdsMatch(organizationId, documentOrganizationId) &&
+      !organizationIdsMatch(organizationId, rememberedOrganizationId)
+    ) {
+      return null
+    }
+    return organizationId || null
+  }
+
   for (const organizationId of candidates) {
     const isDocument = organizationIdsMatch(organizationId, documentOrganizationId)
     const probe = probeFor(organizationId)
     if (!isDocument && probe === 'denied') continue
-    return { organizationId, persistOrganizationId: organizationId }
+    return { organizationId, persistOrganizationId: persistFor(organizationId) }
   }
 
   return {
     organizationId: documentOrganizationId,
-    persistOrganizationId: documentOrganizationId || null,
+    persistOrganizationId: persistFor(documentOrganizationId),
   }
 }
 

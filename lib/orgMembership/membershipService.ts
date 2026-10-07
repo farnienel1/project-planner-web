@@ -375,6 +375,30 @@ export function accessProbeFromReadError(error: unknown): OrgAccessProbe {
   return 'unknown'
 }
 
+export type OrgDocumentRead = 'loaded' | 'missing' | 'failed'
+export type MembershipDocumentRead = 'active' | 'pending' | 'missing' | 'failed'
+
+/**
+ * Denied only after the organisation document loaded and this login is not a
+ * member, not the creator, and has no active membership. A missing document
+ * or a thrown read (permission-denied, not-found, timeout) stays unknown.
+ */
+export function orgAccessProbeFromReads(input: {
+  orgRead: OrgDocumentRead
+  membershipRead: MembershipDocumentRead
+  listed: boolean
+  isCreator: boolean
+}): OrgAccessProbe {
+  const pending = input.membershipRead === 'pending'
+  const activeMembership = input.membershipRead === 'active'
+  const belongs = !pending && (activeMembership || input.listed || input.isCreator)
+  if (input.orgRead !== 'loaded' || input.membershipRead === 'failed') {
+    return belongs ? 'allowed' : 'unknown'
+  }
+  if (!belongs) return 'denied'
+  return 'allowed'
+}
+
 async function membershipForDeviceOrg(
   userId: string,
   organizationId: string
@@ -415,14 +439,15 @@ async function membershipForDeviceOrg(
   }
 
   const pending = membership?.status === 'pending'
-  const belongs = !pending && (membershipExists || listed || isCreator)
-  if (orgProbe === 'unknown' || membershipProbe === 'unknown') {
-    return { probe: belongs ? 'allowed' : 'unknown', membership: pending ? null : membership, listedRole }
-  }
-  if (!orgExists || pending || !belongs) {
-    return { probe: 'denied', membership: null, listedRole }
-  }
-  return { probe: 'allowed', membership, listedRole }
+  const probe = orgAccessProbeFromReads({
+    orgRead: orgProbe === 'unknown' ? 'failed' : orgExists ? 'loaded' : 'missing',
+    membershipRead:
+      membershipProbe === 'unknown' ? 'failed' : pending ? 'pending' : membershipExists ? 'active' : 'missing',
+    listed,
+    isCreator,
+  })
+  if (probe === 'denied') return { probe, membership: null, listedRole: null }
+  return { probe, membership: pending ? null : membership, listedRole }
 }
 
 /** Company last chosen on this browser. Does not write users/{uid}.organizationId. */
