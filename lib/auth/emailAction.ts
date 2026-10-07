@@ -1,3 +1,4 @@
+import { PASSWORD_RULE_TEXT } from '@/lib/auth/passwordPolicy'
 import { isPlatformOwnerEmail } from '@/lib/platform/owner'
 
 export const EMAIL_ACTION_MODES = ['resetPassword', 'verifyEmail', 'recoverEmail', 'signIn'] as const
@@ -40,8 +41,9 @@ export function formatPasswordResetError(error: unknown): string {
   if (code === 'auth/invalid-action-code' || /invalid-action-code/i.test(message)) {
     return 'This reset link is invalid or has already been used. Request a new one from the sign-in page.'
   }
+  if (/at least 12|too common|data breach|too long|too many failed/i.test(message)) return message
   if (code === 'auth/weak-password' || /weak-password/i.test(message)) {
-    return 'Choose a stronger password (at least 8 characters).'
+    return PASSWORD_RULE_TEXT
   }
   return message || 'Could not update the password. Request a new reset link and try again.'
 }

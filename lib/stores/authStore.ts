@@ -4,12 +4,8 @@ import { create } from 'zustand'
 import {
   signOut as firebaseSignOut,
   onAuthStateChanged,
+  signInWithEmailAndPassword,
   User as FirebaseUser,
-  createUserWithEmailAndPassword,
-  sendPasswordResetEmail,
-  EmailAuthProvider,
-  reauthenticateWithCredential,
-  updatePassword,
 } from 'firebase/auth'
 import { doc, getDoc, onSnapshot, setDoc, updateDoc, Timestamp } from 'firebase/firestore'
 import { seedOrgDefaultDashboard } from '@/lib/dashboard/dashboardLayoutStorage'
@@ -41,7 +37,8 @@ import {
 } from '@/lib/auth/webIdleSession'
 import { isPlatformOwnerEmail, isPlatformOwnerSentinelOrg, isPlatformOwnerSession, PLATFORM_OWNER_EMAIL } from '@/lib/platform/owner'
 import { platformOwnerProfilePayload, platformOwnerUser } from '@/lib/platform/ownerProfile'
-import { passwordResetActionSettings } from '@/lib/auth/passwordResetSettings'
+import { clearWebSession, requestEmailSignUp, requestPasswordChange, requestPasswordReset, syncWebSessionCookie } from '@/lib/auth/browserAuthActions'
+import { scrubAuthTokenStorage } from '@/lib/auth/authTokenStorage'
 import {
   clearMfaCookiesOnly,
   clearMfaSession,
@@ -544,11 +541,15 @@ export const useAuthStore = create<AuthState>((set) => {
             console.warn('Idle sign-out skipped:', idleSignOutError)
           }
           markWebIdleExpired()
+          void clearWebSession()
+          scrubAuthTokenStorage(window.localStorage)
+          scrubAuthTokenStorage(window.sessionStorage)
           stopCurrentUserWatch()
           set({ user: null, firebaseUser: null, organization: null, loading: false, error: null })
           return
         }
         if (readWebIdleLastActivity() == null) noteWebIdleActivity()
+        void syncWebSessionCookie(firebaseUser.uid)
         if (!useAuthStore.getState().user) {
           useAuthStore.setState({ firebaseUser, loading: true, error: null })
         }
@@ -674,7 +675,8 @@ export const useAuthStore = create<AuthState>((set) => {
         set({ loading: true, error: null })
         const auth = getFirebaseAuth()
         const db = getFirebaseDb()
-        const result = await createUserWithEmailAndPassword(auth, email, password)
+        await requestEmailSignUp(email, password)
+        const result = await signInWithEmailAndPassword(auth, email, password)
 
         const orgId = crypto.randomUUID().toUpperCase()
         await setDoc(doc(db, 'organizations', orgId), {
@@ -730,7 +732,8 @@ export const useAuthStore = create<AuthState>((set) => {
         set({ loading: true, error: null })
         const auth = getFirebaseAuth()
         const db = getFirebaseDb()
-        const result = await createUserWithEmailAndPassword(auth, PLATFORM_OWNER_EMAIL, password)
+        await requestEmailSignUp(PLATFORM_OWNER_EMAIL, password)
+        const result = await signInWithEmailAndPassword(auth, PLATFORM_OWNER_EMAIL, password)
         await result.user.getIdToken(true).catch(() => undefined)
         await setDoc(doc(db, 'users', result.user.uid), platformOwnerProfilePayload(PLATFORM_OWNER_EMAIL), { merge: true })
         await loadSignedInProfileWithWait(result.user)
@@ -749,18 +752,21 @@ export const useAuthStore = create<AuthState>((set) => {
     },
 
     changePassword: async (currentPassword: string, nextPassword: string) => {
-      const auth = getFirebaseAuth()
-      const current = auth.currentUser
+      const current = getFirebaseAuth().currentUser
       if (!current?.email) throw new Error('You need to be signed in to change your password.')
-      const credential = EmailAuthProvider.credential(current.email, currentPassword)
-      await reauthenticateWithCredential(current, credential)
-      await updatePassword(current, nextPassword)
+      await requestPasswordChange(currentPassword, nextPassword)
+      await current.getIdToken(true).catch(() => undefined)
     },
 
     signOut: async (opts) => {
       signingOut = true
       stopCurrentUserWatch()
       writeSignedOutFlag(true)
+      if (typeof window !== 'undefined') {
+        scrubAuthTokenStorage(window.localStorage)
+        scrubAuthTokenStorage(window.sessionStorage)
+      }
+      await clearWebSession()
       try {
         if (opts?.idle) markWebIdleExpired()
         else clearWebIdleActivity()
@@ -806,7 +812,7 @@ export const useAuthStore = create<AuthState>((set) => {
     resetPassword: async (email: string) => {
       try {
         set({ loading: true, error: null })
-        await sendPasswordResetEmail(getFirebaseAuth(), email, passwordResetActionSettings(email))
+        await requestPasswordReset(email)
         set({ loading: false })
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : 'Reset failed'

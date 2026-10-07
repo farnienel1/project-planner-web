@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useAnalyticsStore } from '@/lib/analytics/analyticsStore'
 import { DeveloperShell, DeveloperStatus, MetricCard } from '@/components/developer/DeveloperShell'
+import { newPasswordError, PASSWORD_RULE_TEXT } from '@/lib/auth/passwordPolicy'
 import { PLATFORM_OWNER_EMAIL } from '@/lib/platform/owner'
 
 function AccountForm() {
@@ -27,8 +28,9 @@ function AccountForm() {
     e.preventDefault()
     setFormError('')
     setSaved(false)
-    if (nextPassword.length < 10) {
-      setFormError('Use at least 10 characters.')
+    const policyError = newPasswordError(nextPassword)
+    if (policyError) {
+      setFormError(policyError)
       return
     }
     if (nextPassword !== confirm) {
@@ -111,6 +113,7 @@ function AccountForm() {
             value={nextPassword}
             onChange={(e) => setNextPassword(e.target.value)}
           />
+          <span className="help">{PASSWORD_RULE_TEXT}</span>
         </label>
         <label className="f">
           Confirm new password

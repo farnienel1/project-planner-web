@@ -1,4 +1,5 @@
 import { signInWithEmailAndPassword, type Auth, type User } from 'firebase/auth'
+import { requestEmailSignIn } from '@/lib/auth/browserAuthActions'
 import { isTimeoutError, withTimeout } from '@/lib/client/withTimeout'
 
 /** First wait. Firebase Auth often needs longer than 8s on a cold web client. */
@@ -37,6 +38,7 @@ export async function completeEmailSignIn(auth: Auth, email: string, password: s
   const existing = matchingAuthUser(auth, emailLower)
   if (existing) return existing
 
+  await requestEmailSignIn(emailLower, password)
   const pending = signInWithEmailAndPassword(auth, emailLower, password)
   try {
     return (await withTimeout(pending, AUTH_SIGN_IN_MS, SIGN_IN_SLOW_MESSAGE)).user

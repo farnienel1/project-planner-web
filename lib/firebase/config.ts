@@ -1,7 +1,8 @@
 import { initializeApp, getApps, FirebaseApp } from 'firebase/app';
-import { getAuth, Auth } from 'firebase/auth';
+import { Auth } from 'firebase/auth';
 import { getFirestore, Firestore } from 'firebase/firestore';
 import { getStorage, FirebaseStorage } from 'firebase/storage';
+import { installWebAuth } from '@/lib/firebase/clientAuthPersistence';
 import { isFirebaseConfigured } from './env';
 
 const firebaseConfig = {
@@ -24,7 +25,7 @@ function initFirebaseApp(): FirebaseApp | null {
 const app = initFirebaseApp();
 
 // Initialize services only when Firebase env vars are present (avoids SSR crashes).
-export const auth: Auth = app ? getAuth(app) : (null as unknown as Auth);
+export const auth: Auth = app ? installWebAuth(app) : (null as unknown as Auth);
 export const db: Firestore = app ? getFirestore(app) : (null as unknown as Firestore);
 export const storage: FirebaseStorage = app ? getStorage(app) : (null as unknown as FirebaseStorage);
 

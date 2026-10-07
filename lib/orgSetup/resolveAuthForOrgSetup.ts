@@ -1,5 +1,6 @@
-import { createUserWithEmailAndPassword, type Auth } from 'firebase/auth'
+import { signInWithEmailAndPassword, type Auth } from 'firebase/auth'
 import { withTimeout } from '@/lib/client/withTimeout'
+import { requestEmailSignUp } from '@/lib/auth/browserAuthActions'
 import { completeEmailSignIn, waitForAuthSession } from '@/lib/auth/completeEmailSignIn'
 import { getFirebaseAuth } from '@/lib/firebase/ensureFirebase'
 import { isEmailInUseError, shouldAttemptCreateUserAfterSignInFailure } from '@/lib/orgSetup/authSetupErrors'
@@ -44,7 +45,10 @@ export async function resolveAuthUserIdForOrgSetup(
 
     try {
       const created = await withTimeout(
-        createUserWithEmailAndPassword(auth, emailLower, password),
+        (async () => {
+          await requestEmailSignUp(emailLower, password)
+          return signInWithEmailAndPassword(auth, emailLower, password)
+        })(),
         AUTH_CREATE_MS,
         authBusyMessage
       )
