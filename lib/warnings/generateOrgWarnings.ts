@@ -1,7 +1,7 @@
 /**
  * Warning rows for one organisation.
- * The scan window comes from lib/canonical. Do not calculate a second coverage window here.
- * Which rows qualify still mirrors Core/WarningsComputation.swift until that generation moves into the canonical bundle.
+ * The scan window, qualification rows, unverified rows, and unbooked-labour rows come from lib/canonical.
+ * Clash timelines and material cut-off copy stay in this app.
  */
 
 import type { Booking, HolidayBooking, Operative, Project, ProjectMaterialLine, MaterialSendRecord, User } from '@/types'
@@ -16,6 +16,7 @@ import {
   DEFAULT_PAYROLL_POLICY,
   DEFAULT_WARNING_DETECTION,
 } from '@/lib/settings/organizationSettings'
+import { qualificationExpiryRows, unverifiedOperativeRows } from '@/lib/canonical'
 import { ianaTimeZoneForCountry } from '@/lib/orgTime/orgTimeZone'
 import type { NotificationPreferences } from '@/lib/settings/notificationPreferences'
 import { computeOperativeBookingClashWarnings, type OperativeBookingClashWarning } from '@/lib/scheduling/bookingClashUtils'
@@ -26,7 +27,7 @@ import {
   type UnbookedLabourWarning,
 } from '@/lib/warnings/unbookedLabourWarnings'
 import { computeMissedMaterialOrderWarnings, type MissedMaterialOrderWarning } from '@/lib/warnings/materialOrderWarnings'
-import { addLondonDays, dateFromDayKey, dayKey, londonIsoWeekday, londonMidnight } from '@/lib/ios-parity/londonTime'
+import { dateFromDayKey } from '@/lib/ios-parity/londonTime'
 
 export type QualificationExpiryWarning = {
   id: string
@@ -61,78 +62,39 @@ export type OrgWarningsResult = {
   lowCount: number
 }
 
-function workingDaysBetween(start: Date, end: Date): number {
-  let count = 0
-  let cursor = londonMidnight(start)
-  const last = londonMidnight(end)
-  while (dayKey(cursor) <= dayKey(last)) {
-    const iso = londonIsoWeekday(cursor)
-    if (iso >= 1 && iso <= 5) count += 1
-    cursor = addLondonDays(cursor, 1)
-    if (count > 400) break
-  }
-  return count
-}
-
-/** Calendar months in the org zone, matching iOS `Calendar.date(byAdding: .month)`. */
-function addLondonCalendarMonths(date: Date, months: number): Date {
-  const [year, month, day] = dayKey(londonMidnight(date)).split('-').map(Number)
-  const shifted = new Date(Date.UTC(year, month - 1 + months, 1))
-  const yearOut = shifted.getUTCFullYear()
-  const monthOut = shifted.getUTCMonth()
-  const lastDay = new Date(Date.UTC(yearOut, monthOut + 1, 0)).getUTCDate()
-  const dayOut = Math.min(day, lastDay)
-  const key = `${yearOut}-${String(monthOut + 1).padStart(2, '0')}-${String(dayOut).padStart(2, '0')}`
-  return dateFromDayKey(key)
-}
-
-function signedLondonDayDelta(from: Date, to: Date): number {
-  const start = londonMidnight(from).getTime()
-  const end = londonMidnight(to).getTime()
-  return Math.round((end - start) / (24 * 60 * 60 * 1000))
-}
-
 export function computeQualificationExpiryWarnings(
   operatives: Operative[],
   referenceDate = new Date()
 ): QualificationExpiryWarning[] {
-  const today = londonMidnight(referenceDate)
-  const oneMonth = addLondonCalendarMonths(today, 1)
-  const endKey = dayKey(oneMonth)
-  const warnings: QualificationExpiryWarning[] = []
-
-  for (const operative of operatives) {
-    if (!operative.isActive) continue
-    const names = new Map((operative.qualifications || []).map((q) => [q.id, q.name]))
-    const expiries = operative.qualificationExpiryDates || {}
-    const operativeName = `${operative.firstName} ${operative.lastName}`.trim() || operative.email
-    for (const [qualificationId, expiry] of Object.entries(expiries)) {
-      const name = names.get(qualificationId)
-      if (!name || !(expiry instanceof Date) || Number.isNaN(expiry.getTime())) continue
-      const expiryDay = londonMidnight(expiry)
-      if (dayKey(expiryDay) > endKey) continue
-      const daysUntilExpiry = signedLondonDayDelta(today, expiryDay)
-      const ago = Math.abs(daysUntilExpiry)
-      const message =
-        daysUntilExpiry < 0
-          ? `${operativeName}'s ${name} expired ${ago} day${ago === 1 ? '' : 's'} ago`
-          : daysUntilExpiry === 0
-            ? `${operativeName}'s ${name} expires today`
-            : `${operativeName}'s ${name} expires in ${daysUntilExpiry} day${daysUntilExpiry === 1 ? '' : 's'}`
-      warnings.push({
-        id: `qual-${operative.id}-${qualificationId}`,
-        operativeId: operative.id,
-        operativeName,
-        qualificationName: name,
-        date: expiryDay,
-        daysUntilExpiry,
-        severity: 'low',
-        title: daysUntilExpiry < 0 ? 'Qualification expired' : 'Qualification expiry',
-        message,
+  const rows = qualificationExpiryRows({
+    referenceIso: referenceDate.toISOString(),
+    timeZone: 'Europe/London',
+    operatives: operatives.map((operative) => {
+      const names = new Map((operative.qualifications || []).map((qualification) => [qualification.id, qualification.name]))
+      const expiries = Object.entries(operative.qualificationExpiryDates || []).flatMap(([qualificationId, expiry]) => {
+        const name = names.get(qualificationId)
+        if (!name || !(expiry instanceof Date) || Number.isNaN(expiry.getTime())) return []
+        return [{ qualificationId, name, expiryIso: expiry.toISOString() }]
       })
-    }
-  }
-  return warnings
+      return {
+        id: operative.id,
+        isActive: Boolean(operative.isActive),
+        name: `${operative.firstName} ${operative.lastName}`.trim() || operative.email,
+        expiries,
+      }
+    }),
+  })
+  return rows.map((row) => ({
+    id: row.id,
+    operativeId: row.operativeId,
+    operativeName: row.operativeName,
+    qualificationName: row.qualificationName,
+    date: dateFromDayKey(row.dayKey),
+    daysUntilExpiry: row.daysUntilExpiry,
+    severity: row.severity,
+    title: row.title,
+    message: row.message,
+  }))
 }
 
 export function computeUnverifiedOperativeWarnings(
@@ -140,25 +102,28 @@ export function computeUnverifiedOperativeWarnings(
   users: User[],
   referenceDate = new Date()
 ): UnverifiedOperativeWarning[] {
-  const today = londonMidnight(referenceDate)
-  const warnings: UnverifiedOperativeWarning[] = []
-  for (const operative of operatives) {
-    const email = operative.email.trim().toLowerCase()
-    if (!email) continue
-    const operativeUser = users.find(
-      (user) => user.email.trim().toLowerCase() === email && user.permissions?.operativeMode
-    )
-    if (!operativeUser || operativeUser.passwordSet) continue
-    if (workingDaysBetween(operativeUser.createdAt, today) < 3) continue
-    warnings.push({
-      id: `unverified-${operative.id}`,
-      operativeId: operative.id,
-      operativeName: `${operative.firstName} ${operative.lastName}`.trim() || operative.email,
-      email,
-      message: `${`${operative.firstName} ${operative.lastName}`.trim() || operative.email} has not verified their account`,
-    })
-  }
-  return warnings
+  const rows = unverifiedOperativeRows({
+    referenceIso: referenceDate.toISOString(),
+    timeZone: 'Europe/London',
+    operatives: operatives.map((operative) => ({
+      id: operative.id,
+      email: operative.email,
+      name: `${operative.firstName} ${operative.lastName}`.trim() || operative.email,
+    })),
+    people: users.map((user) => ({
+      email: user.email,
+      passwordSet: user.passwordSet === true,
+      createdAtIso: user.createdAt instanceof Date ? user.createdAt.toISOString() : '',
+      isOperativeMode: Boolean(user.permissions?.operativeMode),
+    })),
+  })
+  return rows.map((row) => ({
+    id: row.id,
+    operativeId: row.operativeId,
+    operativeName: row.operativeName,
+    email: row.email,
+    message: row.message,
+  }))
 }
 
 export function generateOrgWarnings(input: {
