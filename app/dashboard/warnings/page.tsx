@@ -38,6 +38,7 @@ import {
   publishReadyWarningLanes,
   warningDetectionForScan,
   warningScanLanes,
+  warningScanUsers,
 } from '@/lib/warnings/warningsScan'
 import type { OrgWarningsResult } from '@/lib/warnings/generateOrgWarnings'
 import { WarningsScreen } from '@/components/warnings/WarningsScreen'
@@ -51,7 +52,7 @@ export default function WarningsPage() {
   }, [user, router])
   const { projects, smallWorks, loadProjects, loadSmallWorks } = useProjectStore()
   const { operatives, loadOperatives } = useOperativeStore()
-  const { users, loadUsers } = useOrgUserStore()
+  const { users, loadUsers, rosterLoadedOrgId } = useOrgUserStore()
   const { bookings, loadBookings, deleteBooking, loading: bookingsLoading, ready: bookingsReady } = useBookingStore()
   const { managerSiteBookings, loadManagerSiteBookings, deleteManagerSiteBooking, loading: managerLoading } =
     useManagerScheduleStore()
@@ -238,7 +239,10 @@ export default function WarningsPage() {
     () => partitionRowsByOrganization(managerSiteBookings, orgId),
     [managerSiteBookings, orgId]
   )
-  const userScope = useMemo(() => partitionRowsByOrganization(users, orgId), [users, orgId])
+  const userScope = useMemo(
+    () => warningScanUsers(users, orgId, Boolean(orgId) && rosterLoadedOrgId === orgId),
+    [users, orgId, rosterLoadedOrgId]
+  )
   const operativeScope = useMemo(() => partitionRowsByOrganization(operatives, orgId), [operatives, orgId])
   const projectScope = useMemo(() => partitionRowsByOrganization(mergedWorks, orgId), [mergedWorks, orgId])
   const detectionReady = Boolean(warningDetection)
