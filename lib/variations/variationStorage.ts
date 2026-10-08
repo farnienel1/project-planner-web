@@ -23,7 +23,8 @@ import { retainLoadedRows } from '@/lib/staff/rosterRetain'
 import { db, storage } from '@/lib/firebase/config'
 import { newUuid, parseFirestoreDate, sanitizeForFirestore } from '@/lib/firebase/firestoreUtils'
 import { saveInboxNotification } from '@/lib/firebase/notifyInbox'
-import { hasAdminAccess } from '@/lib/permissions'
+import { receivesJobNotification } from '@/lib/canonical'
+import { staffAccountRole } from '@/lib/permissions'
 import type { User } from '@/types'
 import {
   TRACKER_ADDED_DESCRIPTION,
@@ -548,14 +549,14 @@ async function notifyCreated(input: {
   creatorId: string
   managerIds: string[]
 }) {
-  const recipients =
-    input.variation.origin === 'tracker'
-      ? input.users.filter(
-          (person) =>
-            person.id !== input.creatorId &&
-            (hasAdminAccess(person) || input.managerIds.includes(person.id))
-        )
-      : input.users.filter((person) => person.id !== input.creatorId && hasAdminAccess(person))
+  // Canonical recipient rule: admins always; a manager only as an assigned
+  // manager of this job. A manager who merely sees the job in the list is not a recipient.
+  const assignedManagerUserIds = input.variation.origin === 'tracker' ? input.managerIds : []
+  const recipients = input.users.filter(
+    (person) =>
+      person.id !== input.creatorId &&
+      receivesJobNotification({ userId: person.id, role: staffAccountRole(person), assignedManagerUserIds })
+  )
   const title = input.variation.origin === 'tracker' ? 'New variation from the QS' : 'New variation added'
   const message =
     input.variation.origin === 'tracker'
