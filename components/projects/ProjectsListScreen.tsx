@@ -14,6 +14,7 @@ import { useTaskStore } from '@/lib/stores/taskStore'
 import { useBookingStore } from '@/lib/stores/bookingStore'
 import { useManagerScheduleStore } from '@/lib/stores/managerScheduleStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
+import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { canCreateProject, isOperativeMode } from '@/lib/permissions'
 import { operativeMatching, visibleWorks } from '@/lib/access/workAccess'
 import { useDeadlineAssignedProjectIds } from '@/lib/deadlines/useDeadlineAssignedProjectIds'
@@ -35,6 +36,7 @@ export function ProjectsListScreen() {
   const { bookings, loadBookings } = useBookingStore()
   const { managerSiteBookings, loadManagerSiteBookings } = useManagerScheduleStore()
   const { operatives, managers, loadOperatives, loadManagers } = useOperativeStore()
+  const users = useOrgUserStore((state) => state.users)
   const deadlineAssignedProjectIds = useDeadlineAssignedProjectIds()
   const [filter, setFilter] = useState<Filter>('active')
   const [search, setSearch] = useState('')
@@ -90,10 +92,7 @@ export function ProjectsListScreen() {
   const emptyDueToFilter = visible.length > 0 && filter !== 'all' && filterWorksByTab(visible, filter).length === 0
   const emptySearch = search.trim().length > 0 && filtered.length === 0 && filterWorksByTab(visible, filter).length > 0
 
-  const managerName = (project: (typeof projects)[number]) => {
-    const label = assignedManagerLabel(project, managers)
-    return label === '—' ? project.manager?.name : label
-  }
+  const managerName = (project: (typeof projects)[number]) => assignedManagerLabel(project, managers, users)
 
   if (loading && projects.length === 0) {
     return (

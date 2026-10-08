@@ -25,4 +25,21 @@ test('a roster id still shows when the stored manager name was never set', () =>
     ['Ben South']
   )
   assert.deepEqual(assignedManagerNames({ manager: { name: '', email: '' } }, roster), [])
+  assert.deepEqual(assignedManagerNames({ manager: { name: 'Project Manager', email: '' } }, roster), [])
+})
+
+test('both managers show when one id differs by case or was saved as a user account', () => {
+  const adaId = 'A1B2C3D4-E5F6-7890-ABCD-EF1234567890'
+  assert.deepEqual(
+    assignedManagerNames(
+      {
+        managerId: adaId.toLowerCase().replace(/-/g, ''),
+        managerIds: [adaId.toLowerCase().replace(/-/g, ''), 'user:acct-2'],
+        manager: { name: 'Ada North', email: '' },
+      },
+      [{ id: adaId, firstName: 'Ada', lastName: 'North' }],
+      [{ id: 'acct-2', firstName: 'Ben', surname: 'South', email: 'ben@example.com' }]
+    ),
+    ['Ada North', 'Ben South']
+  )
 })
