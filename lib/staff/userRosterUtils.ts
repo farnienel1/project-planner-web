@@ -42,6 +42,37 @@ function choosePreferredUser(a: User, b: User): User {
   return a
 }
 
+/**
+ * Every user id that shares an email points at the account dedupe keeps.
+ * A manager booking stored on the other profile must not become a person named "Manager".
+ */
+export function aliasIdsForRoster(users: readonly User[]): Record<string, string> {
+  const kept = dedupeUsersByEmail(users)
+  const keptIdByEmail = new Map<string, string>()
+  for (const user of kept) {
+    const email = normalizeEmail(user.email)
+    if (email) keptIdByEmail.set(email, user.id)
+  }
+  const aliases: Record<string, string> = {}
+  for (const user of users) {
+    const email = normalizeEmail(user.email)
+    aliases[user.id] = (email && keptIdByEmail.get(email)) || user.id
+  }
+  return aliases
+}
+
+export function findUserByAnyId(
+  users: readonly User[],
+  userId: string,
+  aliases?: Record<string, string>
+): User | undefined {
+  const direct = users.find((user) => user.id === userId)
+  if (direct) return direct
+  const keptId = aliases?.[userId]
+  if (!keptId || keptId === userId) return undefined
+  return users.find((user) => user.id === keptId)
+}
+
 /** Deduplicate by email — keeps the best account when duplicates exist in Firebase. */
 export function dedupeUsersByEmail(users: User[]): User[] {
   const byEmail = new Map<string, User>()

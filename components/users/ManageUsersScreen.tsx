@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { useAuthStore } from '@/lib/stores/authStore'
@@ -91,9 +91,26 @@ export function ManageUsersScreen() {
   const canManage = canManageUsers(currentUser)
   const title = getManageUsersLabel(currentUser, organization)
 
+  const emptyRosterRetries = useRef(0)
+
   useEffect(() => {
     if (organization?.id) loadUsers(organization.id)
   }, [organization?.id, loadUsers])
+
+  useEffect(() => {
+    if (!organization?.id) return
+    if (users.length > 0) {
+      emptyRosterRetries.current = 0
+      return
+    }
+    if (rosterLoadedOrgId !== organization.id && !rosterError) return
+    if (emptyRosterRetries.current >= 4) return
+    emptyRosterRetries.current += 1
+    const timer = window.setTimeout(() => {
+      void loadUsers(organization.id, { force: true })
+    }, 600)
+    return () => window.clearTimeout(timer)
+  }, [organization?.id, users.length, rosterLoadedOrgId, rosterError, loadUsers])
 
   useEffect(() => {
     setSegment('active')

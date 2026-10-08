@@ -8,6 +8,7 @@ import { useManagerScheduleStore } from '@/lib/stores/managerScheduleStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
 import { useSubcontractorStore } from '@/lib/stores/subcontractorStore'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
+import { findUserByAnyId } from '@/lib/staff/userRosterUtils'
 import { weekDaysFrom } from '@/lib/scheduling/scheduleUtils'
 import {
   customHoursRangeLabel,
@@ -149,7 +150,7 @@ export function ProjectScheduleWeekOverview({
   const { managerSiteBookings, loadManagerSiteBookings, updateManagerSiteBooking, deleteManagerSiteBooking } =
     useManagerScheduleStore()
   const { operatives, loadOperatives } = useOperativeStore()
-  const { users, loadUsers } = useOrgUserStore()
+  const { users, userIdAliases, loadUsers } = useOrgUserStore()
   const { subcontractors, loadSubcontractors } = useSubcontractorStore()
   const [weekStart, setWeekStart] = useState(startOfWeek(new Date(), { weekStartsOn: 1 }))
   const [subBookings, setSubBookings] = useState<SubBooking[]>([])
@@ -250,13 +251,16 @@ export function ProjectScheduleWeekOverview({
 
       const managerRows: DayRow[] = projectManagerBookings
         .filter((b) => coversCalendarDay(new Date(b.date), day))
-        .map((b) => {
-          const manager = users.find((u) => u.id === b.userId)
-          const name = manager ? `${manager.firstName} ${manager.surname}`.trim() : 'Manager'
+        .flatMap((b) => {
+          const manager = findUserByAnyId(users, b.userId, userIdAliases)
+          const name = manager
+            ? `${manager.firstName} ${manager.surname}`.trim() || manager.email
+            : ''
+          if (!name) return []
           const roleLabel =
             manager?.permissions.adminAccess || manager?.isSuperAdmin ? 'Admin' : 'Mgr'
           const email = manager?.email
-          return {
+          return [{
             id: b.id,
             personKey: email?.trim() ? `email:${email.trim().toLowerCase()}` : `mgr:${b.userId}`,
             name,
@@ -273,7 +277,7 @@ export function ProjectScheduleWeekOverview({
               standardDayEnd: payroll.standardDayEnd,
               overtimeMultiplier: payroll.weekdayOutsideStandardMultiplier,
             }),
-          }
+          }]
         })
 
       const subRows: DayRow[] = subBookings
@@ -308,7 +312,7 @@ export function ProjectScheduleWeekOverview({
 
       return [...opRows, ...managerRows, ...subRows]
     })
-  }, [weekDays, projectBookings, projectManagerBookings, subBookings, operatives, users, subcontractors, payroll])
+  }, [weekDays, projectBookings, projectManagerBookings, subBookings, operatives, users, userIdAliases, subcontractors, payroll])
 
   const people = useMemo((): PersonWeek[] => {
     const order: string[] = []
