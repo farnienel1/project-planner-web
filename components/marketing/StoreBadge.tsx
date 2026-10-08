@@ -22,7 +22,7 @@ export function StoreBadge({
         height: 56,
         padding: '0 16px',
         borderRadius: 14,
-        background: 'var(--ink)',
+        background: '#0F1B2D',
         color: '#fff',
         fontWeight: 700,
         lineHeight: 1.1,
