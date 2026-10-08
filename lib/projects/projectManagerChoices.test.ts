@@ -83,6 +83,7 @@ const roster = [
   { id: 'op-id', firstName: 'Olivia', lastName: 'Operative', email: 'olivia@raccord.test', isActive: true, organizationId: org },
   { id: 'other-id', firstName: 'Oscar', lastName: 'Other', email: 'oscar@elsewhere.test', isActive: true, organizationId: org },
   { id: 'old-id', firstName: 'Ex', lastName: 'Employee', email: 'ex@raccord.test', isActive: false, organizationId: org },
+  { id: 'C24730B1-1D6D-4AB4-BB24-946917F3918D', firstName: 'P', lastName: 'N', email: 'p@ekecteic.con', isActive: true, organizationId: org },
 ]
 
 const users = [admin, manager, inactive, pending, operative, otherOrg]
@@ -96,6 +97,7 @@ test('the project manager picker omits inactive, pending, operative, and other-o
   const labels = projectManagerChoices(roster, users, org).map((choice) => choice.label)
   assert.deepEqual(labels, ['Test Admin', 'Test Manager'])
   assert.equal(assignableProjectManagers(roster, users, org).some((row) => row.email === 'pn@raccord.test'), false)
+  assert.equal(assignableProjectManagers(roster, users, org).some((row) => row.email === 'p@ekecteic.con'), false)
 })
 
 test('a deactivated assignment is dropped and every other assignment is kept', () => {

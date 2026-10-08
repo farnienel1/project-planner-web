@@ -8,9 +8,9 @@ import { isPendingPerson } from '@/lib/staff/pendingPeople'
  * iOS `ProjectManagerPickerSupport.availableManagers` offers active catalogue
  * managers, plus active admins who have finished signup. A catalogue row whose
  * `isActive` flag was never written still decodes as active, so the web also
- * requires the linked user to be an active, accepted manager or admin in this
- * organisation. Inactive, deactivated, pending, operative-only, and other-org
- * accounts are not managers.
+ * requires a linked user who is an active, accepted manager or admin in this
+ * organisation. A catalogue name with no user account is not offered. Inactive,
+ * deactivated, pending, operative-only, and other-org accounts are not managers.
  *
  * iOS stores `managerIds` as `Manager.stableId(forFirestoreDocumentId:)`.
  * That equals the document id when the id is a UUID, and a hash when the
@@ -238,7 +238,10 @@ function catalogueEligible(
     return false
   }
   const linked = accountsForEmail(users, normalizeManagerEmail(row.email))
-  if (linked.length === 0) return true
+  // A catalogue row with no user account is not an active person. iOS still
+  // lists isActive catalogue rows, but a name like "P N" with no account must
+  // not be offered as a project or small-works manager.
+  if (linked.length === 0) return false
   const inOrg = linked.filter((user) => sameOrganisation(user, organizationId))
   if (inOrg.length === 0) return false
   const account = preferredAccount(inOrg, organizationId)
