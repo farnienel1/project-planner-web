@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import type { HSToolboxTalk } from '../../types/index.ts'
-import { isPlaceholderTalkTitle, mergeToolboxTalks, talkFileNameHint } from './mergeToolboxTalks.ts'
+import { displayTalkTitle, isPlaceholderTalkTitle, mergeToolboxTalks, talkFileNameHint } from './mergeToolboxTalks.ts'
 
 function talk(partial: Partial<HSToolboxTalk> & Pick<HSToolboxTalk, 'id' | 'title'>): HSToolboxTalk {
   return {
@@ -27,6 +27,18 @@ test('placeholder titles match the iOS filler list and bare TBT codes', () => {
   }
   assert.equal(isPlaceholderTalkTitle('Working at Height'), false)
   assert.equal(isPlaceholderTalkTitle('TBT for the roof edge'), false)
+})
+
+test('a storage object name is not shown as the talk title', () => {
+  const stored = talk({
+    id: 'upload-audit',
+    title: 'dul1tDjfQfMX6ruXPHb8kJX5P7g2 1789399717 SiteAudit C983 Pre-Start 2Jun26',
+    source: 'uploaded',
+    fileURL: 'https://storage.example/siteAudits/dul1tDjfQfMX6ruXPHb8kJX5P7g2%201789399717%20SiteAudit%20C983%20Pre-Start%202Jun26.pdf',
+  })
+  const merged = mergeToolboxTalks([], [], [stored])
+  assert.equal(merged[0]?.title, 'SiteAudit C983 Pre-Start 2Jun26')
+  assert.equal(displayTalkTitle('Working at Height'), 'Working at Height')
 })
 
 test('file name hint uses the uploaded file name', () => {
