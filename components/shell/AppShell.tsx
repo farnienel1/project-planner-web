@@ -54,6 +54,7 @@ import {
 import type { PaletteItem } from '@/lib/ui/commandPalette'
 import { useProjectStore } from '@/lib/stores/projectStore'
 import { db } from '@/lib/firebase/config'
+import { runWhenIdle } from '@/lib/analytics/runWhenIdle'
 import { doc, setDoc } from 'firebase/firestore'
 import { recoverJobTypesFromWork } from '@/lib/jobTypes/jobTypesStorage'
 import { canBookWork } from '@/lib/permissions'
@@ -229,11 +230,11 @@ function AppShellInner({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!user?.id || !pathname) return
-    void import('@/lib/analytics/trackEvent').then(({ trackEvent }) => {
-      void trackEvent('page_viewed', {
-        userId: user.id,
-        organizationId: organization?.id,
-        metadata: { path: pathname },
+    const userId = user.id
+    const organizationId = organization?.id
+    return runWhenIdle(() => {
+      void import('@/lib/analytics/trackEvent').then(({ trackEvent }) => {
+        void trackEvent('page_viewed', { userId, organizationId, metadata: { path: pathname } })
       })
     })
   }, [pathname, user?.id, organization?.id])
@@ -270,16 +271,25 @@ function AppShellInner({ children }: { children: ReactNode }) {
     return () => window.clearTimeout(timer)
   }, [organization?.id, loadUsers, loadProjects, loadSmallWorks])
 
-  const remoteNavigateSidebar = useAuthStore((s) => s.currentUserDocument?.webNavigateSidebar)
+  // The auth store already holds users/{uid}; no second read of the same document.
+  // Select a string so an unchanged sidebar config does not re-run the effect.
+  const remoteNavigateSidebar = useAuthStore((s) =>
+    s.currentUserDocument?.webNavigateSidebar == null ? '' : JSON.stringify(s.currentUserDocument.webNavigateSidebar)
+  )
   useEffect(() => {
     if (!user?.id) return
     const local = readLocalNavigateConfig(user.id)
     if (local) setNavigateConfig(local)
   }, [user?.id])
   useEffect(() => {
-    // The auth store already holds users/{uid}; no second read of the same document.
-    if (!user?.id) return
-    const remote = parseNavigateConfig(remoteNavigateSidebar)
+    if (!user?.id || !remoteNavigateSidebar) return
+    let raw: unknown = null
+    try {
+      raw = JSON.parse(remoteNavigateSidebar)
+    } catch {
+      return
+    }
+    const remote = parseNavigateConfig(raw)
     if (remote) {
       setNavigateConfig(remote)
       writeLocalNavigateConfig(user.id, remote)

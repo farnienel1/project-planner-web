@@ -6,7 +6,7 @@ import { doc, getDoc, type DocumentSnapshot, type Firestore } from 'firebase/fir
  * read across that burst. The window is short so a settings save followed by a
  * fresh page read still sees the new document.
  */
-const SHARE_WINDOW_MS = 2_500
+const SHARE_WINDOW_MS = 1_500
 
 type Entry = { at: number; promise: Promise<DocumentSnapshot> }
 const entries = new Map<string, Entry>()
