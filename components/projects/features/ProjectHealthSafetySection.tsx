@@ -1106,7 +1106,7 @@ export function ProjectHealthSafetySection({
               <FormInput
                 value={uploadCategory}
                 onChange={(e) => setUploadCategory(e.target.value)}
-                placeholder="General, electrical…"
+                placeholder="general, electrical…"
               />
             </HsFieldCard>
             <HsSectionLabel>Trades</HsSectionLabel>

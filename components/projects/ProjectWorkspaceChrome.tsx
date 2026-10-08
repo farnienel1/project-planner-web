@@ -4,11 +4,9 @@ import { useEffect, useState, type ReactNode } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
-  BuildingOffice2Icon,
   CalendarDaysIcon,
   CameraIcon,
   ClipboardDocumentCheckIcon,
-  ClockIcon,
   CubeIcon,
   EyeIcon,
   MapPinIcon,
@@ -38,7 +36,6 @@ import { jobHubTiles } from '@/lib/projects/jobHubTiles'
 import { canSeeJobVariations } from '@/lib/variations/variationAccess'
 import { subscribeParentVariations } from '@/lib/variations/variationStorage'
 import { LONDON_TIME_ZONE } from '@/lib/orgTime/zoneTime'
-import { assignedManagerLabel, assignedManagerNames } from '@/lib/projects/assignedManagers'
 import type { SectionHue } from '@/lib/ui/sectionHue'
 import type { Project, User } from '@/types'
 import { cn } from '@/lib/ui/cn'
@@ -129,7 +126,7 @@ export function ProjectWorkspaceChrome({
   const active = tabFromPath(pathname, basePath)
   const hideTabs = hideWorkspaceTabs(pathname)
   const typeLabel = visibleJobTypeLabel(project.jobType, project.customJobType)
-  const managers = assignedManagerLabel(project, rosterManagers)
+  const managers = project.manager?.name || '—'
   const catalogue = isSmallWork ? '/dashboard/small-works' : '/dashboard/projects'
   const catalogueLabel = isSmallWork ? 'Small works' : 'Projects'
 
@@ -284,42 +281,22 @@ export function ProjectDetailsCard({
   basePath: string
   canEdit: boolean
 }) {
-  const { organization, user } = useAuthStore()
-  const { managers: rosterManagers, loadManagers } = useOperativeStore()
-  useEffect(() => {
-    if (!organization?.id) return
-    if (hasAdminAccess(user) || user?.permissions.manager) void loadManagers(organization.id)
-  }, [organization?.id, user, loadManagers])
   const address = formatSiteAddress(project)
-  const managerNames = assignedManagerNames(project, rosterManagers)
-  const rows: {
-    hue: SectionHue
-    label: string
-    value: string
-    warn?: boolean
-    icon: typeof BuildingOffice2Icon
-  }[] = [
-    { hue: 'blue', label: 'Client', value: project.client?.name || '—', icon: BuildingOffice2Icon },
-    {
-      hue: 'user',
-      label: managerNames.length > 1 ? 'Managers' : 'Manager',
-      value: managerNames.length > 0 ? managerNames.join(', ') : '—',
-      icon: UserGroupIcon,
-    },
+  const rows: { hue: SectionHue; label: string; value: string; warn?: boolean }[] = [
+    { hue: 'blue', label: 'Client', value: project.client?.name || '—' },
+    { hue: 'user', label: 'Manager', value: project.manager?.name || '—' },
     {
       hue: 'sched',
       label: 'Timeline',
       value: `${formatLondonDay(new Date(project.startDate))} – ${formatLondonDay(new Date(project.endDate))}`,
-      icon: ClockIcon,
     },
     {
       hue: 'proj',
       label: 'Address',
       value: address || 'No address yet. Add one so the team can find site.',
       warn: !address,
-      icon: MapPinIcon,
     },
-    { hue: 'lib', label: 'Description', value: project.description || 'No description added', icon: DocumentTextIcon },
+    { hue: 'lib', label: 'Description', value: project.description || 'No description added' },
   ]
 
   return (
@@ -335,13 +312,9 @@ export function ProjectDetailsCard({
         ) : null}
       </div>
       <div className="card-b space-y-3">
-        {rows.map((row) => {
-          const Icon = row.icon
-          return (
+        {rows.map((row) => (
           <div key={row.label} className="row" data-hue={row.hue} style={{ padding: '4px 0' }}>
-            <span className="ico-chip sm">
-              <Icon className="h-4 w-4" />
-            </span>
+            <span className="ico-chip sm" />
             <div className="grow">
               <div className="eyebrow">{row.label}</div>
               <div className="font-semibold" style={row.warn ? { color: 'var(--warn)' } : undefined}>
@@ -349,8 +322,7 @@ export function ProjectDetailsCard({
               </div>
             </div>
           </div>
-          )
-        })}
+        ))}
         {project.notes ? (
           <div>
             <div className="eyebrow">Notes</div>
