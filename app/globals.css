@@ -1428,8 +1428,10 @@ html {
   .searchbar { width: auto; }
   .searchbar .lbl,
   .searchbar kbd { display: none; }
-  .crumb a,
-  .crumb .sep { display: none; }
+  /* Org name is already hidden below 761px, so the current-page crumb is only
+     the same words as the page h1. Nested pages keep their section link. */
+  .crumb .sep,
+  .crumb b { display: none; }
   .g2,
   .g3,
   .g4,

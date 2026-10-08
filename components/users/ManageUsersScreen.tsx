@@ -91,9 +91,24 @@ export function ManageUsersScreen() {
   const canManage = canManageUsers(currentUser)
   const title = getManageUsersLabel(currentUser, organization)
 
+  const [rosterAttempt, setRosterAttempt] = useState(0)
+
   useEffect(() => {
     if (organization?.id) loadUsers(organization.id)
   }, [organization?.id, loadUsers])
+
+  useEffect(() => {
+    if (!organization?.id) return
+    if (users.length > 0) return
+    // Still waiting on the first read. A settled empty list, or an error, is retried.
+    if (rosterLoadedOrgId !== organization.id && !rosterError) return
+    if (rosterAttempt >= 4) return
+    const timer = window.setTimeout(() => {
+      setRosterAttempt((attempt) => attempt + 1)
+      void loadUsers(organization.id, { force: true })
+    }, 500)
+    return () => window.clearTimeout(timer)
+  }, [organization?.id, users.length, rosterLoadedOrgId, rosterError, rosterAttempt, loadUsers])
 
   useEffect(() => {
     setSegment('active')

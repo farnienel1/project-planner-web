@@ -1,7 +1,7 @@
 import type { Operative, User } from '@/types'
 import { getActiveOperativesForScheduling } from '@/lib/operatives/operativeRosterUtils'
 import { isPendingPerson } from '@/lib/staff/pendingPeople'
-import { getManagerUsers } from '@/lib/staff/userRosterUtils'
+import { getManagerUsers, isRoleOnlyPersonName, rosterDisplayName } from '@/lib/staff/userRosterUtils'
 
 export type SchedulablePersonKind = 'operative' | 'manager'
 
@@ -49,15 +49,21 @@ export function buildSchedulablePeople(
   for (const operative of getActiveOperativesForScheduling(operatives)) {
     const email = emailKey(operative.email)
     if (email && pendingEmails.has(email)) continue
-    if (email) {
-      if (seenEmails.has(email)) continue
-      seenEmails.add(email)
-    }
+    if (email && seenEmails.has(email)) continue
     const linked = email ? usersByEmail.get(email) : undefined
+    // iOS ScheduleBookablePersonBuilder keeps an active operative who has no login.
+    // A manager catalogue row with no account is excluded by the manager picker, not here.
+    const name = rosterDisplayName({
+      firstName: operative.firstName,
+      surname: operative.lastName,
+      email: operative.email,
+    })
+    if (!name) continue
+    if (email) seenEmails.add(email)
     people.push({
       id: operative.id,
       kind: 'operative',
-      name: `${operative.firstName} ${operative.lastName}`.trim() || operative.email,
+      name,
       email: operative.email,
       badge: roleBadge(linked),
     })
@@ -67,10 +73,12 @@ export function buildSchedulablePeople(
     const email = emailKey(user.email)
     if (email && seenEmails.has(email)) continue
     if (email) seenEmails.add(email)
+    const name = rosterDisplayName(user)
+    if (!name || isRoleOnlyPersonName(name)) continue
     people.push({
       id: user.id,
       kind: 'manager',
-      name: `${user.firstName} ${user.surname}`.trim() || user.email,
+      name,
       email: user.email,
       badge: roleBadge(user),
     })

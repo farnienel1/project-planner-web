@@ -2,11 +2,12 @@
 
 import { create } from 'zustand'
 import { collection, doc, getDoc, getDocs, limit, query, setDoc, Timestamp, where } from 'firebase/firestore'
+import { isRetryableAuthLoadError } from '@/lib/auth/authBoot'
 import { isTimeoutError, withTimeout } from '@/lib/client/withTimeout'
 import { db } from '@/lib/firebase/config'
 import { UserRole, type SiteAudit, type SiteAuditItem, type User } from '@/types'
 import { parseOrgUser } from '@/lib/firebase/parseUser'
-import { dedupeUsersByEmail } from '@/lib/staff/userRosterUtils'
+import { aliasIdsForRoster } from '@/lib/staff/userRosterUtils'
 import { mergeRetainedRoster, missingOrganizationIdPatch, retainScopedRows, rosterParseRecord } from '@/lib/staff/rosterRetain'
 import {
   isOrgLoadInFlight,
@@ -189,6 +190,12 @@ async function fetchOrganisationRoster(organizationId: string): Promise<{
   const presentIds = new Set<string>()
   const presentEmails = new Set<string>()
   let complete = true
+  let lastReadError: unknown = null
+  let listedMemberCount = 0
+  const failRead = (error?: unknown) => {
+    complete = false
+    if (error) lastReadError = error
+  }
 
   const remember = (user: User | null) => {
     if (!user) return
@@ -325,8 +332,8 @@ async function fetchOrganisationRoster(organizationId: string): Promise<{
       for (const entry of snapshot.docs) {
         remember(userForThisOrganisation(entry.id, entry.data() as Record<string, unknown>, organizationId, true))
       }
-    } catch {
-      complete = false
+    } catch (error) {
+      failRead(error)
     }
   }
 
@@ -334,6 +341,7 @@ async function fetchOrganisationRoster(organizationId: string): Promise<{
     const orgSnap = await getDoc(doc(db, 'organizations', organizationId))
     const members = (orgSnap.data()?.members ?? {}) as Record<string, unknown>
     const memberIds = Object.keys(members).filter(Boolean)
+    listedMemberCount = memberIds.length
     const memberRows: Array<User | null | 'failed'> = new Array(memberIds.length)
     await readTogether(memberIds, async (id, index) => {
       try {
@@ -345,7 +353,8 @@ async function fetchOrganisationRoster(organizationId: string): Promise<{
         const data = snap.data() as Record<string, unknown>
         const patch = missingOrganizationIdPatch(data, organizationId, true)
         memberRows[index] = userForThisOrganisation(snap.id, patch ? { ...data, ...patch } : data, organizationId, true)
-      } catch {
+      } catch (error) {
+        lastReadError = error
         memberRows[index] = 'failed'
       }
     })
@@ -358,8 +367,8 @@ async function fetchOrganisationRoster(organizationId: string): Promise<{
       if (!row || presentIds.has(memberIds[index])) continue
       noteUser(row)
     }
-  } catch {
-    complete = false
+  } catch (error) {
+    failRead(error)
   }
 
   try {
@@ -372,8 +381,8 @@ async function fetchOrganisationRoster(organizationId: string): Promise<{
       emailUsers[index] = await loadUserDocument(userId, true)
     })
     for (const user of emailUsers) noteUser(user)
-  } catch {
-    complete = false
+  } catch (error) {
+    failRead(error)
   }
 
   try {
@@ -387,8 +396,8 @@ async function fetchOrganisationRoster(organizationId: string): Promise<{
       )
     })
     for (const user of operativeUsers) noteUser(user)
-  } catch {
-    complete = false
+  } catch (error) {
+    failRead(error)
   }
 
   try {
@@ -402,14 +411,19 @@ async function fetchOrganisationRoster(organizationId: string): Promise<{
       )
     })
     for (const user of managerUsers) noteUser(user, 'manager')
-  } catch {
-    complete = false
+  } catch (error) {
+    failRead(error)
   }
 
-  if (collected.length === 0 && !complete) {
-    throw new Error('Failed to load users')
+  // A denied or empty read is not an empty company when this organisation has members.
+  // Throw a retryable error so the first open of Manage users loads again once auth is ready.
+  if (collected.length === 0 && (listedMemberCount > 0 || !complete)) {
+    if (isRetryableAuthLoadError(lastReadError)) throw lastReadError
+    const error = new Error('Failed to load users') as Error & { code?: string }
+    error.code = 'unavailable'
+    throw error
   }
-  return { users: dedupeUsersByEmail(collected), complete, presentIds, presentEmails }
+  return { users: collected, complete, presentIds, presentEmails }
 }
 
 async function confirmMissingUserDocuments(
@@ -443,6 +457,8 @@ interface OrgUserState {
   error: string | null
   /** Organisation whose roster load has finished. Empty users before this is still loading. */
   rosterLoadedOrgId: string | null
+  /** Duplicate profile ids that share an email, pointing at the account kept on the roster. */
+  userIdAliases: Record<string, string>
   loadUsers: (organizationId: string, options?: { force?: boolean }) => Promise<void>
   patchListedUser: (user: User) => void
   setListedUserActive: (userId: string, isActive: boolean) => void
@@ -500,7 +516,7 @@ function writeStoredRoster(organizationId: string, users: User[]): void {
   if (typeof sessionStorage === 'undefined') return
   try {
     if (users.length === 0) {
-      sessionStorage.removeItem(rosterStorageKey(organizationId))
+      // An empty read must not wipe the last roster. The next visit still has people to show.
       return
     }
     sessionStorage.setItem(rosterStorageKey(organizationId), JSON.stringify(users))
@@ -514,6 +530,7 @@ export const useOrgUserStore = create<OrgUserState>((set, get) => ({
   loading: false,
   error: null,
   rosterLoadedOrgId: null,
+  userIdAliases: {},
 
   loadUsers: async (organizationId, options?: { force?: boolean }) => {
     const revisionAtStart = listedUserRevision
@@ -571,9 +588,13 @@ export const useOrgUserStore = create<OrgUserState>((set, get) => ({
             if (a.isSuperAdmin !== b.isSuperAdmin) return a.isSuperAdmin ? -1 : 1
             return a.email.localeCompare(b.email)
           })
+          const userIdAliases = {
+            ...get().userIdAliases,
+            ...aliasIdsForRoster([...baseline, ...loaded.users]),
+          }
           listedRosterOrgId = organizationId
           writeStoredRoster(organizationId, users)
-          set({ users, loading: false, error: null, rosterLoadedOrgId: organizationId })
+          set({ users, userIdAliases, loading: false, error: null, rosterLoadedOrgId: organizationId })
         }
         try {
           const rosterPromise = fetchOrganisationRoster(organizationId)
@@ -586,7 +607,8 @@ export const useOrgUserStore = create<OrgUserState>((set, get) => ({
             set({
               error: error instanceof Error ? error.message : 'The user list did not finish loading.',
               loading: false,
-              rosterLoadedOrgId: organizationId,
+              // An empty timeout is not a finished company. Leave the roster unsettled so the screen keeps loading.
+              ...(get().users.length > 0 ? { rosterLoadedOrgId: organizationId } : {}),
             })
             void rosterPromise.then(
               (late) => {
@@ -610,7 +632,9 @@ export const useOrgUserStore = create<OrgUserState>((set, get) => ({
           set({
             error: error instanceof Error ? error.message : 'Failed to load users',
             loading: false,
-            rosterLoadedOrgId: organizationId,
+            // A failed read must not settle an empty company. Manage users stays on the error
+            // until a retry applies people, and a later visit is not skipped for 60 seconds.
+            ...(get().users.length > 0 ? { rosterLoadedOrgId: organizationId } : {}),
           })
           throw error
         }

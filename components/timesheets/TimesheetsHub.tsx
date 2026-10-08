@@ -120,6 +120,11 @@ export function TimesheetsHub() {
   }, [pathSurface, searchParams, router])
 
   useEffect(() => {
+    if (surface !== 'team' || !user) return
+    if (!canAccessOperativeTimesheets(user, usersLoading, users)) router.replace(TIMESHEETS_HUB_PATH)
+  }, [surface, user, users, usersLoading, router])
+
+  useEffect(() => {
     if (!organization?.id) return
     let cancelled = false
     setPayRunReady(false)
@@ -234,6 +239,7 @@ export function TimesheetsHub() {
   }
 
   if (surface === 'team') {
+    if (user && !showTeam) return null
     const tab = TEAM_TABS.some((item) => item.id === tabParam) ? tabParam : 'awaiting'
     const selectedUser = userParam ? users.find((row) => row.id === userParam) : undefined
     return (
