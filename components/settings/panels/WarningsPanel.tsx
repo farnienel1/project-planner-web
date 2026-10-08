@@ -468,7 +468,7 @@ export function WarningsPanel({ onBack }: { onBack: () => void }) {
           <SeverityRow
             tone="blue"
             title="Low"
-            description="Materials not ordered by the 16:00 cut-off, qualification expiry (including already expired), and unverified accounts."
+            description="Materials not ordered by the company cut-off time, qualification expiry (including already expired), and unverified accounts."
           />
         </div>
       </SettingsCard>

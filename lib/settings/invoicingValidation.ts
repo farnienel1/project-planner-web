@@ -1,9 +1,36 @@
-import type { OrgInvoicingSettings, PaymentRunDateRange } from '@/lib/settings/organizationSettings'
+import {
+  DEFAULT_PAYMENT_RUN_DATE_RANGES,
+  type OrgInvoicingSettings,
+  type PaymentRunDateRange,
+} from '@/lib/settings/organizationSettings'
 
 const MONTH_DAYS = 31
 
 function isValidDay(day: number): boolean {
   return Number.isInteger(day) && day >= 1 && day <= MONTH_DAYS
+}
+
+/**
+ * Choosing the mode that is already selected must keep the saved ranges.
+ * Switching into date ranges keeps ranges that are already stored.
+ */
+export function paymentRunModeChange(
+  current: OrgInvoicingSettings,
+  mode: OrgInvoicingSettings['paymentRunMode']
+): Partial<OrgInvoicingSettings> {
+  if (mode === current.paymentRunMode) return {}
+  if (mode === 'recurring_timeframe') {
+    return { paymentRunMode: mode, paymentDateMode: 'recurring_date' }
+  }
+  return {
+    paymentRunMode: mode,
+    paymentDateMode: 'specific_dates',
+    paymentRunDateRanges:
+      current.paymentRunDateRanges.length >= 2
+        ? current.paymentRunDateRanges
+        : DEFAULT_PAYMENT_RUN_DATE_RANGES.map((range) => ({ ...range })),
+    paymentDates: current.paymentDates.length >= 2 ? current.paymentDates : ['', ''],
+  }
 }
 
 export function validatePaymentRunDateRanges(ranges: PaymentRunDateRange[]): string | null {
