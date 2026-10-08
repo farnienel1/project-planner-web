@@ -292,9 +292,18 @@ export function HomeScreen() {
         managerBookings: managerSiteBookings,
         allProjects: merged,
         organizationUsers: users,
-        payrollTimePolicy: policyForDay(now, organization?.settings),
+        payrollTimePolicy: policyForDay(
+          now,
+          orgDetails?.id === orgId
+            ? {
+                payrollTimePolicy: orgDetails.payrollTimePolicy,
+                payrollTimePolicyPrior: orgDetails.payrollTimePolicyPrior ?? undefined,
+                payrollTimePolicyEffectiveFrom: orgDetails.payrollTimePolicyEffectiveFrom ?? undefined,
+              }
+            : null
+        ),
       }),
-    [now, displayUser?.id, displayUser?.email, operatives, bookings, managerSiteBookings, merged, users, organization?.settings]
+    [now, displayUser?.id, displayUser?.email, operatives, bookings, managerSiteBookings, merged, users, orgDetails, orgId]
   )
 
   const taskLimitProjects = useMemo(() => {
