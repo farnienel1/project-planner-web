@@ -24,6 +24,7 @@ import {
   canManageWorkCatalogue,
   canAccessWholesalers,
   canManageOrganisationQualifications,
+  canAccessQualificationsHub,
   shouldShowTimesheetsDisabledMessage,
   canAccessDeveloperDashboard,
 } from './permissions.ts'
@@ -152,6 +153,36 @@ test('canManageSubcontractors is true while profile is loading', () => {
   assert.equal(canManageSubcontractors(mgr, false), false)
   const withFlag = user({ permissions: { manager: true, subContractors: true } })
   assert.equal(canManageSubcontractors(withFlag, false), true)
+})
+
+test('qualifications hub stays open when the manage toggle is off', () => {
+  const admin = user({
+    role: UserRole.ADMIN,
+    permissions: { adminAccess: true, manager: true, qualifications: false },
+  })
+  const manager = user({ role: UserRole.MANAGER, permissions: { manager: true, qualifications: false } })
+  const operative = user({ role: UserRole.OPERATIVE, permissions: { operativeMode: true, qualifications: true } })
+  assert.equal(canManageOrganisationQualifications(admin), false)
+  assert.equal(canAccessQualificationsHub(admin), true)
+  assert.equal(canAccessQualificationsHub(manager), true)
+  assert.equal(canAccessQualificationsHub(operative), false)
+})
+
+test('project and wholesaler toggles do not apply to a non-staff account', () => {
+  const basic = user({
+    role: UserRole.BASIC,
+    permissions: { projects: true, smallWorks: true, wholesalersOrderHistory: true, operatives: true },
+  })
+  assert.equal(canManageWorkCatalogue(basic, 'projects'), false)
+  assert.equal(canAccessWholesalers(basic), false)
+  assert.equal(canViewOperatives(basic), false)
+  const founder = user({
+    role: UserRole.ADMIN,
+    isSuperAdmin: true,
+    permissions: { adminAccess: true, projects: false, smallWorks: false },
+  })
+  assert.equal(canManageWorkCatalogue(founder, 'projects'), true)
+  assert.equal(canManageWorkCatalogue(founder, 'smallWorks'), true)
 })
 
 test('canViewWeeklyReports is the flag, not admin-always', () => {
