@@ -609,3 +609,78 @@ test('buildDailyOverview resolves sub contractor names when ids omit dashes', ()
   })
   assert.equal(model.projectCards[0].people[0].name, 'Acme Electrical · Jane Smith')
 })
+
+test('buildDailyOverview does not invent a person named Manager for an unknown booking', () => {
+  const day = new Date('2026-10-12T12:00:00Z')
+  const project = {
+    id: 'P1',
+    jobNumber: 'C984',
+    siteName: '71 Broadwick Street',
+    jobType: 'CAT A',
+    client: { id: 'c', name: 'Scott Osborn' },
+    addressLine1: '',
+    townCity: '',
+    postcode: '',
+    startDate: day,
+    endDate: day,
+    isLive: true,
+    manager: { name: '', email: '' },
+    createdAt: day,
+    updatedAt: day,
+  } as Project
+  const kept = user({
+    id: 'signed-in',
+    email: 'farnie@raccordmep.co.uk',
+    firstName: 'Test',
+    surname: 'Manager',
+    permissions: { ...user({ id: 'x', email: 'x@x.com' }).permissions, manager: true, operativeMode: false },
+  })
+  const unknown = buildDailyOverview({
+    day,
+    today: day,
+    projects: [project],
+    bookings: [],
+    managerBookings: [
+      {
+        id: 'M-unknown',
+        userId: 'missing-user',
+        date: day,
+        timeSlot: 'FULL DAY',
+        locationType: 'project',
+        locationId: 'P1',
+        createdAt: day,
+        updatedAt: day,
+      },
+    ],
+    holidays: [] as HolidayBooking[],
+    users: [kept],
+    operatives: [],
+  })
+  assert.equal(
+    unknown.projectCards.some((card) => card.people.some((row) => row.name === 'Manager')),
+    false
+  )
+  const named = buildDailyOverview({
+    day,
+    today: day,
+    projects: [project],
+    bookings: [],
+    managerBookings: [
+      {
+        id: 'M-alias',
+        userId: 'other-profile',
+        date: day,
+        timeSlot: 'FULL DAY',
+        locationType: 'project',
+        locationId: 'P1',
+        createdAt: day,
+        updatedAt: day,
+      },
+    ],
+    holidays: [] as HolidayBooking[],
+    users: [kept],
+    operatives: [],
+    userIdAliases: { 'other-profile': 'signed-in' },
+  })
+  assert.equal(named.projectCards[0].people[0]?.name, 'Test Manager')
+})

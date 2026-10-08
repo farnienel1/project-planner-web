@@ -93,6 +93,54 @@ test('admin and manager with operative profiles appear once, with their role bad
   assert.equal(people.length, 3)
 })
 
+test('a named catalogue operative stays bookable, and a role used as a name does not', () => {
+  const ghost = buildSchedulablePeople(
+    [operative({ id: 'OP-GHOST', email: 'p@ekecteic.con', firstName: 'P', lastName: 'N' })],
+    []
+  )
+  assert.deepEqual(ghost.map((row) => row.name), ['P N'])
+
+  const roleNamed = buildSchedulablePeople(
+    [operative({ id: 'OP-FIELD', email: 'field@site.test', firstName: 'Test', lastName: 'Operative' })],
+    [
+      user({
+        id: 'U-ROLE',
+        email: '',
+        firstName: 'Manager',
+        surname: '',
+        role: UserRole.MANAGER,
+        permissions: perms({ manager: true }),
+      }),
+      user({
+        id: 'U-ADMIN',
+        email: 'admin@site.test',
+        firstName: 'Test',
+        surname: 'Admin',
+        permissions: perms({ adminAccess: true, manager: true }),
+      }),
+      user({
+        id: 'U-MGR',
+        email: 'boss@site.test',
+        firstName: 'Test',
+        surname: 'Manager',
+        role: UserRole.MANAGER,
+        permissions: perms({ manager: true }),
+      }),
+      user({
+        id: 'U-OP',
+        email: 'field@site.test',
+        firstName: 'Test',
+        surname: 'Operative',
+        role: UserRole.OPERATIVE,
+        permissions: perms({ operativeMode: true }),
+      }),
+    ]
+  )
+  const names = roleNamed.map((row) => row.name).sort()
+  assert.deepEqual(names, ['Test Admin', 'Test Manager', 'Test Operative'])
+  assert.equal(roleNamed.some((row) => row.name === 'Manager'), false)
+})
+
 test('a pending manager invitation is not a person you can schedule', () => {
   const pending = user({
     id: 'U-PENDING',
@@ -124,4 +172,26 @@ test('manager filter includes admins; operative filter excludes them', () => {
   )
   assert.equal(filterSchedulablePeople(people, '', 'manager').length, 1)
   assert.equal(filterSchedulablePeople(people, '', 'operative').length, 0)
+})
+
+test('a catalogue operative with no login stays bookable, and a role-only name is not used', () => {
+  const people = buildSchedulablePeople(
+    [
+      operative({ id: 'OP-FIELD', email: 'field@site.test', firstName: 'Fay', lastName: 'Field' }),
+      operative({ id: 'OP-ROLE', email: 'role@site.test', firstName: 'Manager', lastName: '' }),
+    ],
+    [
+      user({
+        id: 'U-ROLE',
+        email: 'role@site.test',
+        firstName: 'Manager',
+        surname: '',
+        role: UserRole.MANAGER,
+        permissions: perms({ manager: true }),
+      }),
+    ]
+  )
+  assert.equal(people.find((row) => row.email === 'field@site.test')?.name, 'Fay Field')
+  assert.equal(people.some((row) => row.name === 'Manager'), false)
+  assert.equal(people.find((row) => row.id === 'OP-ROLE')?.name, 'role@site.test')
 })

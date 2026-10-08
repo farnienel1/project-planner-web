@@ -46,8 +46,8 @@ export function manageUsersListPhase(input: {
 }): ManageUsersListPhase {
   const orgId = input.organizationId ?? null
   const rosterSettled = Boolean(orgId) && input.rosterLoadedOrgId === orgId
-  if (input.userCount === 0 && !rosterSettled) return 'loading'
   if (input.userCount === 0 && input.error) return 'error'
+  if (input.userCount === 0 && !rosterSettled) return 'loading'
   if (input.filteredCount === 0) return 'empty'
   return 'ready'
 }
