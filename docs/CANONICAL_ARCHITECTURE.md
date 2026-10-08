@@ -21,7 +21,8 @@ The canonical module owns:
 - Organisation id matching and which company a session should open
 - The in-process organisation epoch used to drop a late result after a switch or sign-out
 - Invoicing-period bounds, including wrapped payment runs and short months
-- Warning coverage windows (`numberOfDays`, full Monday–Sunday week, invoicing period)
+- Warning coverage windows (`numberOfDays`, full Monday–Friday week, invoicing period)
+- Whether a person covers the organisation standard day (`standardDayCoverage`). A full day covers 07:30–16:00 minus the unpaid break. A shorter booking stays unbooked and the missing hours are the gap. Weekend days are included only when that toggle is on.
 - Organisation time zone for those windows (default `Europe/London`, never the device zone)
 - Named booking slots (`FULL DAY` / `FULL_DAY`, `AM`, `PM`)
 - Whether two minute intervals clash

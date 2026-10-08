@@ -34,6 +34,7 @@ import {
   managerBookingToTarget,
   type OverviewBookingTarget,
 } from '@/components/daily-overview/DailyOverviewBookingSheet'
+import { DEFAULT_PAYROLL_POLICY, loadOrganizationDetails, type OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import type { User } from '@/types'
 
@@ -73,6 +74,8 @@ export function DailyOverviewScreen() {
   const [day, setDay] = useState(() => londonMidnight(new Date()))
   const [bookLabourOpen, setBookLabourOpen] = useState(false)
   const [editingRow, setEditingRow] = useState<OverviewBookingTarget | null>(null)
+  const [payrollPolicy, setPayrollPolicy] = useState<OrgPayrollTimePolicy>(DEFAULT_PAYROLL_POLICY)
+  const [includeWeekendUnbooked, setIncludeWeekendUnbooked] = useState(false)
 
   useEffect(() => {
     const raw = searchParams.get('date')
@@ -91,6 +94,11 @@ export function DailyOverviewScreen() {
     loadSmallWorks(organization.id)
     loadHolidays(organization.id)
     loadSubcontractors(organization.id)
+    void loadOrganizationDetails(organization.id).then((details) => {
+      if (!details || details.id !== organization.id) return
+      setPayrollPolicy(details.payrollTimePolicy)
+      setIncludeWeekendUnbooked(details.warningDetection.includeWeekendsForUnbookedLabour)
+    })
     loadSubcontractorBookings(organization.id)
       .then(setSubcontractorBookings)
       .catch(() => setSubcontractorBookings([]))
@@ -118,6 +126,8 @@ export function DailyOverviewScreen() {
         operatives,
         subcontractorBookings,
         subcontractors,
+        payrollPolicy,
+        includeWeekendUnbooked,
       }),
     [
       day,
@@ -130,6 +140,8 @@ export function DailyOverviewScreen() {
       operatives,
       subcontractorBookings,
       subcontractors,
+      payrollPolicy,
+      includeWeekendUnbooked,
     ]
   )
 

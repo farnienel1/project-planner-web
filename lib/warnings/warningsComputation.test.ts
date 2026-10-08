@@ -114,13 +114,13 @@ test('invoicing-period coverage does not collapse to the ISO week when pay runs 
   assert.equal(dayKey(window.start) === '2026-10-05', false)
 })
 
-test('Full week coverage is Monday through Sunday, including past days', () => {
+test('Full week coverage is Monday through Friday, including past days', () => {
   const window = computeWarningCoverageWindow(WED, {
     ...DEFAULT_WARNING_DETECTION,
     clashLookaheadMode: 'endOfWorkingWeek',
   })
   assert.equal(dayKey(window.start), '2026-09-14')
-  assert.equal(dayKey(window.end), '2026-09-20')
+  assert.equal(dayKey(window.end), '2026-09-18')
 })
 
 test('invoicing-period warnings include past days in the active pay run and stop at that run', () => {
@@ -291,14 +291,16 @@ test('unbooked labour is anyone with no booking that day, including managers and
   const names = warnings.map((w) => w.operativeName).sort()
   assert.ok(names.includes('Morgan Manager'), `managers must be scanned: ${names.join(', ')}`)
   assert.ok(names.includes('Bob Roster'), `unlinked roster must be scanned: ${names.join(', ')}`)
-  assert.ok(!names.includes('Cam Half'), `an AM booking covers the day: ${names.join(', ')}`)
+  const cam = warnings.find((w) => w.operativeName === 'Cam Half')
+  assert.ok(cam, `an AM booking does not cover 07:30–16:00: ${names.join(', ')}`)
+  assert.equal(cam?.missingHours, 3.5)
   assert.ok(!names.includes('Ada Operative'), 'full-day booked operative is not unbooked')
   const morgan = warnings.find((w) => w.operativeName === 'Morgan Manager')
   assert.equal(morgan?.missingHours, 8)
-  assert.match(morgan?.message || '', /is not booked on/)
+  assert.match(morgan?.message || '', /is missing 8h on/)
 })
 
-test('a short clock window or office booking still counts as booked', () => {
+test('a short clock window or morning office booking leaves the standard day uncovered', () => {
   const detection = {
     ...DEFAULT_WARNING_DETECTION,
     clashLookaheadMode: 'numberOfDays' as const,
@@ -349,10 +351,13 @@ test('a short clock window or office booking still counts as booked', () => {
     payrollPolicy: DEFAULT_PAYROLL_POLICY,
     referenceDate: WED,
   })
-  assert.equal(warnings.length, 0)
+  const names = warnings.map((warning) => warning.operativeName).sort()
+  assert.deepEqual(names, ['Ada Operative', 'Morgan Manager'])
+  assert.equal(warnings.find((warning) => warning.operativeName === 'Ada Operative')?.missingHours, 0.5)
+  assert.equal(warnings.find((warning) => warning.operativeName === 'Morgan Manager')?.missingHours, 3.5)
 })
 
-test('tentative operative bookings cover the day; cancelled ones do not', () => {
+test('tentative operative bookings cover the day only when they fill the standard hours; cancelled ones do not', () => {
   const detection = {
     ...DEFAULT_WARNING_DETECTION,
     clashLookaheadMode: 'numberOfDays' as const,
@@ -369,9 +374,15 @@ test('tentative operative bookings cover the day; cancelled ones do not', () => 
   }
   const tentative = computeUnbookedLabourWarnings({
     ...base,
-    bookings: [booking({ id: 'B-TENT', operativeId: 'OP-ADA', status: 'Tentative', timeSlot: 'AM' })],
+    bookings: [booking({ id: 'B-TENT', operativeId: 'OP-ADA', status: 'Tentative', timeSlot: 'FULL DAY' })],
   })
   assert.equal(tentative.length, 0)
+  const tentativeMorning = computeUnbookedLabourWarnings({
+    ...base,
+    bookings: [booking({ id: 'B-AM', operativeId: 'OP-ADA', status: 'Tentative', timeSlot: 'AM' })],
+  })
+  assert.equal(tentativeMorning.length, 1)
+  assert.equal(tentativeMorning[0].missingHours, 3.5)
 
   const cancelled = computeUnbookedLabourWarnings({
     ...base,
@@ -869,10 +880,11 @@ test('active issue count includes qualifications and counts manager overlaps as 
     referenceDate: WED,
   })
   assert.equal(result.managerClashWarnings.length, 1)
-  assert.equal(result.unbookedWarnings.length, 0)
+  assert.equal(result.unbookedWarnings.length, 1)
+  assert.equal(result.unbookedWarnings[0].missingHours, 3.5)
   assert.equal(result.qualificationWarnings.length, 1)
-  assert.equal(result.highCount, 0)
+  assert.equal(result.highCount, 1)
   assert.equal(result.mediumCount, 1)
   assert.equal(result.lowCount, 1)
-  assert.equal(result.coreCount, 2)
+  assert.equal(result.coreCount, 3)
 })

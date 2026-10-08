@@ -39,7 +39,7 @@ test('bookings in memory and an empty roster is still scanning, not an empty war
   )
 })
 
-test('rows already found stay on screen while another source is still scanning', () => {
+test('qualification rows stay hidden until the schedule scan is ready', () => {
   assert.equal(
     warningsScreenPhase({
       detectionReady: true,
@@ -48,7 +48,7 @@ test('rows already found stay on screen while another source is still scanning',
       projectsReady: false,
       warningCount: 4,
     }),
-    'list'
+    'scanning'
   )
   const lanes = warningScanLanes({
     detectionReady: true,
@@ -61,9 +61,9 @@ test('rows already found stay on screen while another source is still scanning',
     materialsReady: false,
     sendRecordsReady: false,
   })
-  assert.equal(lanes.clashes, true)
+  assert.equal(lanes.clashes, false)
   assert.equal(lanes.unbooked, false)
-  assert.equal(lanes.qualifications, true)
+  assert.equal(lanes.qualifications, false)
   const published = publishReadyWarningLanes({
     previous: {
       clashWarnings: [{ id: 'kept' }],
@@ -92,9 +92,9 @@ test('rows already found stay on screen while another source is still scanning',
     lanes,
     sameOrganization: true,
   })
-  assert.equal(published.clashWarnings[0] && (published.clashWarnings[0] as { id: string }).id, 'clash')
+  assert.equal(published.clashWarnings[0] && (published.clashWarnings[0] as { id: string }).id, 'kept')
   assert.equal(published.unbookedWarnings[0] && (published.unbookedWarnings[0] as { id: string }).id, 'unbooked')
-  assert.equal(published.qualificationWarnings.length, 1)
+  assert.equal(published.qualificationWarnings.length, 0)
   assert.equal(published.highCount, 2)
 })
 

@@ -9,6 +9,7 @@ import {
   captureOrganizationContext,
   chooseSessionOrganization,
   coverageWindow,
+  standardDayCoverage,
   intervalsOverlap,
   invoicingPeriod,
   organizationContextStillCurrent,
@@ -145,14 +146,55 @@ test('February clamps a 16–31 payment run to the real month end', () => {
   assert.equal(window.endDayKey, '2026-02-28')
 })
 
-test('full week coverage is Monday through Sunday in the organisation zone', () => {
+test('full week coverage is Monday through Friday in the organisation zone', () => {
   const window = coverageWindow({
     referenceIso: '2026-09-16T12:00:00.000Z',
     timeZone: 'Europe/London',
     clashLookaheadMode: 'endOfWorkingWeek',
   })
   assert.equal(window.startDayKey, '2026-09-14')
-  assert.equal(window.endDayKey, '2026-09-20')
+  assert.equal(window.endDayKey, '2026-09-18')
+})
+
+test('the standard day is 07:30 to 16:00 minus the unpaid break', () => {
+  const full = standardDayCoverage(
+    { standardDayStart: '07:30', standardDayEnd: '16:00', breakWindowStart: '12:00', breakWindowEnd: '12:30' },
+    [{ timeSlot: 'FULL DAY' }]
+  )
+  assert.equal(full.missingHours, 0)
+  assert.equal(full.requiredHours, 8)
+  const morning = standardDayCoverage(
+    { standardDayStart: '07:30', standardDayEnd: '16:00', breakWindowStart: '12:00', breakWindowEnd: '12:30' },
+    [{ timeSlot: 'AM' }]
+  )
+  assert.equal(morning.coveredHours, 4.5)
+  assert.equal(morning.missingHours, 3.5)
+  const short = standardDayCoverage(
+    { standardDayStart: '07:30', standardDayEnd: '16:00', breakWindowStart: '12:00', breakWindowEnd: '12:30' },
+    [{ timeSlot: 'CUSTOM_HOURS', workStart: '07:30', workEnd: '15:30' }]
+  )
+  assert.equal(short.missingHours, 0.5)
+  const afterHours = standardDayCoverage(
+    { standardDayStart: '07:30', standardDayEnd: '16:00', breakWindowStart: '12:00', breakWindowEnd: '12:30' },
+    [{ timeSlot: 'CUSTOM_HOURS', workStart: '16:00', workEnd: '20:00' }]
+  )
+  assert.equal(afterHours.missingHours, 8)
+  const overlap = standardDayCoverage(
+    { standardDayStart: '07:30', standardDayEnd: '16:00', breakWindowStart: '12:00', breakWindowEnd: '12:30' },
+    [
+      { timeSlot: 'CUSTOM_HOURS', workStart: '07:30', workEnd: '12:00' },
+      { timeSlot: 'CUSTOM_HOURS', workStart: '08:00', workEnd: '16:00' },
+    ]
+  )
+  assert.equal(overlap.missingHours, 0)
+  const mornings = standardDayCoverage(
+    { standardDayStart: '07:30', standardDayEnd: '16:00', breakWindowStart: '12:00', breakWindowEnd: '12:30' },
+    [{ timeSlot: 'AM' }, { timeSlot: 'AM' }]
+  )
+  assert.equal(mornings.missingHours, 3.5)
+  const legacy = standardDayCoverage({}, [{}])
+  assert.equal(legacy.missingHours, 0)
+  assert.equal(legacy.requiredHours, 8)
 })
 
 test('named booking slots share one hour meaning', () => {

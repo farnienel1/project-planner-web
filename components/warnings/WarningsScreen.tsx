@@ -11,7 +11,7 @@ import type { QualificationExpiryWarning, UnverifiedOperativeWarning } from '@/l
 import { projectMaterialsPath } from '@/lib/navigation/projectSchedulePaths'
 import { ClashWarningCard } from '@/components/warnings/ClashWarningCard'
 import { displayTitle, type ClashTimelineEntry } from '@/lib/warnings/clashTimeline'
-import { hasAdminAccess } from '@/lib/permissions'
+import { canOpenWarningSettings, hasAdminAccess } from '@/lib/permissions'
 import type { Operative, User } from '@/types'
 import { initialsFrom } from '@/lib/daily-overview/buildDailyOverview'
 import { dayKey, formatLongDay } from '@/lib/ios-parity/londonTime'
@@ -238,7 +238,7 @@ export function WarningsScreen({
   const [filter, setFilter] = useState<FilterChip>('all')
   const [busyId, setBusyId] = useState<string | null>(null)
   const canBook = Boolean(user && (hasAdminAccess(user) || user.permissions?.manager))
-  const isAdmin = Boolean(user && hasAdminAccess(user))
+  const isAdmin = Boolean(user && canOpenWarningSettings(user))
 
   const unbookedGroups = useMemo(() => groupUnbookedWarningsByDay(unbookedWarnings), [unbookedWarnings])
   const clashCount = clashWarnings.length + managerClashWarnings.length

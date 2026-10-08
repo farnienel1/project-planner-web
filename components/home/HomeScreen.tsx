@@ -5,7 +5,7 @@
 
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
@@ -28,7 +28,7 @@ import { useManagerScheduleStore } from '@/lib/stores/managerScheduleStore'
 import { useTaskStore } from '@/lib/stores/taskStore'
 import { useHolidayStore } from '@/lib/stores/holidayStore'
 import { useMaterialProjectStore } from '@/lib/stores/materialProjectStore'
-import { canBookWork, canViewDailyOverview, canViewWeeklyReports, hasAdminAccess, isOperativeMode } from '@/lib/permissions'
+import { canBookWork, canViewDailyOverview, canViewWarnings, canViewWeeklyReports, hasAdminAccess, isOperativeMode } from '@/lib/permissions'
 import { countHomeActiveProjects } from '@/lib/projects/homeActiveProjects'
 import {
   activeProjectSubtitle,
@@ -64,6 +64,7 @@ import { Hero, StatCard } from '@/components/ui'
 import { IosModal } from '@/components/ios/primitives'
 import type { SectionHue } from '@/lib/ui/sectionHue'
 import { generateOrgWarnings } from '@/lib/warnings/generateOrgWarnings'
+import { warningScanLanes } from '@/lib/warnings/warningsScan'
 import { loadOrganizationDetails, type OrganizationDetails } from '@/lib/settings/organizationSettings'
 import { loadMaterialCutOffSettings, type NotificationPreferences } from '@/lib/settings/notificationPreferences'
 import { mergeProjectsAndSmallWorks } from '@/lib/projects/workStatus'
@@ -103,7 +104,7 @@ export function HomeScreen() {
     useOperativeStore()
   const { users, loadUsers, rosterLoadedOrgId } = useOrgUserStore()
   const { bookings, loadBookings, loading: bookingsLoading, ready: bookingsReady } = useBookingStore()
-  const { managerSiteBookings, loadManagerSiteBookings } = useManagerScheduleStore()
+  const { managerSiteBookings, loadManagerSiteBookings, loading: managerBookingsLoading } = useManagerScheduleStore()
   const { tasks, loadTasks, tasksLoadedOrgId } = useTaskStore()
   const { bookings: holidays, loadBookings: loadHolidays, loadedOrgId: holidaysLoadedOrgId } = useHolidayStore()
   const { materials, sendRecords, loadAllMaterials, loadSendRecords } = useMaterialProjectStore()
@@ -116,6 +117,10 @@ export function HomeScreen() {
   const [now] = useState(() => new Date())
   const [orgDetails, setOrgDetails] = useState<OrganizationDetails | null>(null)
   const [notificationPreferences, setNotificationPreferences] = useState<NotificationPreferences | null>(null)
+  const [managerBookingsSettled, setManagerBookingsSettled] = useState(false)
+  const [materialsSettled, setMaterialsSettled] = useState(false)
+  const [sendRecordsSettled, setSendRecordsSettled] = useState(false)
+  const managerSawLoad = useRef(false)
 
   const displayUser = user
   const pauseHomeLoads = shouldShowTeamOnboardingPrompt(
@@ -127,21 +132,44 @@ export function HomeScreen() {
   useEffect(() => {
     const orgId = organization?.id
     if (!orgId || pauseHomeLoads) return
+    let cancelled = false
     loadProjects(orgId, true)
     loadSmallWorks(orgId)
     loadOperatives(orgId)
     loadManagers(orgId)
     loadUsers(orgId)
     loadBookings(orgId)
+    setManagerBookingsSettled(false)
+    managerSawLoad.current = false
     loadManagerSiteBookings(orgId)
+    const managerInFlight = useManagerScheduleStore.getState().loading
+    managerSawLoad.current = managerInFlight
+    if (!managerInFlight) setManagerBookingsSettled(true)
     loadTasks(orgId)
-    loadAllMaterials(orgId)
-    loadSendRecords(orgId)
+    setMaterialsSettled(false)
+    setSendRecordsSettled(false)
+    void loadAllMaterials(orgId).finally(() => {
+      if (!cancelled) setMaterialsSettled(true)
+    })
+    void loadSendRecords(orgId).finally(() => {
+      if (!cancelled) setSendRecordsSettled(true)
+    })
     loadOrganizationDetails(orgId).then(setOrgDetails).catch(() => setOrgDetails(null))
     const t = window.setTimeout(() => loadHolidays(orgId), 400)
-    return () => window.clearTimeout(t)
+    return () => {
+      cancelled = true
+      window.clearTimeout(t)
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- zustand loaders are stable
   }, [organization?.id, pauseHomeLoads])
+
+  useEffect(() => {
+    if (managerBookingsLoading) {
+      managerSawLoad.current = true
+      return
+    }
+    if (managerSawLoad.current) setManagerBookingsSettled(true)
+  }, [managerBookingsLoading])
 
   useEffect(() => {
     if (!user) return
@@ -170,6 +198,7 @@ export function HomeScreen() {
   })
   const operative = isOperativeMode(displayUser)
   const admin = hasAdminAccess(displayUser)
+  const seeWarnings = canViewWarnings(displayUser)
 
   const metrics = useMemo(
     () =>
@@ -192,22 +221,24 @@ export function HomeScreen() {
   const orgId = organization?.id || ''
   const projectsReady = Boolean(orgId) && projectsLoadedOrgId === orgId && smallWorksLoadedOrgId === orgId
   const tasksReady = Boolean(orgId) && tasksLoadedOrgId === orgId
-  const warningInputsReady = Boolean(
-    orgId &&
-      bookingsReady &&
-      !bookingsLoading &&
-      rosterLoadedOrgId === orgId &&
-      operativesLoadedOrgId === orgId &&
-      managersLoadedOrgId === orgId &&
-      holidaysLoadedOrgId === orgId &&
-      projectsReady &&
-      orgDetails?.id === orgId
-  )
+  const warningLanes = warningScanLanes({
+    detectionReady: Boolean(orgId) && orgDetails?.id === orgId,
+    bookingsReady: bookingsReady && !bookingsLoading,
+    managerReady: managerBookingsSettled && !managerBookingsLoading,
+    rosterReady: Boolean(orgId) && rosterLoadedOrgId === orgId,
+    operativesReady: Boolean(orgId) && operativesLoadedOrgId === orgId,
+    projectsReady,
+    holidaysReady: Boolean(orgId) && holidaysLoadedOrgId === orgId,
+    materialsReady: materialsSettled,
+    sendRecordsReady: sendRecordsSettled,
+  })
+  const warningInputsReady = warningLanes.unbooked
+  const materialWarningsReady = warningLanes.materials
   const countStorage = typeof sessionStorage === 'undefined' ? null : sessionStorage
   const remembered = (kind: HomeCountKind) => readRememberedHomeCount(countStorage, kind, orgId)
 
   const liveWarningCount = useMemo(() => {
-    if (!admin || !warningInputsReady) return null
+    if (!seeWarnings || !warningInputsReady) return null
     try {
       return generateOrgWarnings({
         bookings,
@@ -216,8 +247,8 @@ export function HomeScreen() {
         users,
         projects: merged,
         holidays,
-        materials,
-        sendRecords,
+        materials: materialWarningsReady ? materials : [],
+        sendRecords: materialWarningsReady ? sendRecords : [],
         orgDetails,
         notificationPreferences,
         referenceDate: now,
@@ -226,8 +257,9 @@ export function HomeScreen() {
       return null
     }
   }, [
-    admin,
+    seeWarnings,
     warningInputsReady,
+    materialWarningsReady,
     bookingsLoading,
     bookingsReady,
     bookings,
@@ -407,7 +439,7 @@ export function HomeScreen() {
         />
 
         <div className="stack" style={{ gap: 16 }}>
-          {admin ? (
+          {seeWarnings ? (
             <StatCard
               hue="warn"
               label="Warnings"
