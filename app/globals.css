@@ -3,6 +3,7 @@
 @tailwind utilities;
 
 :root {
+  color-scheme: light;
   --bg: #F2F5FA;
   --card: #FFFFFF;
   --soft: #F7F9FC;
@@ -74,6 +75,7 @@
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) {
+    color-scheme: dark;
     --bg: #0b1220;
     --card: #131c2e;
     --soft: #172238;
@@ -122,6 +124,7 @@
 
 :root[data-theme='dark'],
 .dark {
+  color-scheme: dark;
   --bg: #0b1220;
   --card: #131c2e;
   --soft: #172238;
@@ -236,6 +239,22 @@ textarea {
   color: inherit;
 }
 
+/*
+ * A native list (select multiple, or select size) paints each option on the
+ * browser's own white row. Dark mode then inherits light text, so the names
+ * disappear. Pin the row to the theme card and ink, and keep the chosen row
+ * on the blue fill in both themes.
+ */
+select,
+select option {
+  background-color: var(--card);
+  color: var(--ink);
+}
+select option:checked {
+  background-color: var(--blue);
+  color: #fff;
+}
+
 a {
   color: var(--blue);
   text-decoration: none;
@@ -318,6 +337,11 @@ a {
   background: var(--h);
   color: #fff;
   box-shadow: 0 6px 16px color-mix(in srgb, var(--h) 35%, transparent);
+}
+/* Dark mode lightens accent fills, so white label text on those fills disappears. */
+:root[data-theme='dark'] .btn.hue,
+.dark .btn.hue {
+  color: #0b1220;
 }
 .btn.tint {
   background: var(--ht);
