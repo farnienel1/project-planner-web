@@ -48,13 +48,9 @@ export function pdfText(value: string): string {
     .replace(/[^\x09\x0A\x0D\x20-\x7E\xA0-\xFF]/g, '')
 }
 
-export function looksLikeSiteAuditFile(url: string): boolean {
-  return /siteAudits|site-audit|site_audit|SiteAudit/i.test(url)
-}
-
+/** iOS HSToolboxTalk.isCustomUpload — an uploaded file is the talk, including a site audit PDF issued as one. */
 export function isCustomUploadedTalk(talk: Pick<HSToolboxTalk, 'source' | 'fileURL'>): boolean {
-  const fileURL = (talk.fileURL || '').trim()
-  return talk.source === 'uploaded' && fileURL.length > 0 && !looksLikeSiteAuditFile(fileURL)
+  return talk.source === 'uploaded' && (talk.fileURL || '').trim().length > 0
 }
 
 export function toolboxTalkPdfFilename(talk: Pick<HSToolboxTalk, 'title' | 'id'>, now = Date.now()): string {
