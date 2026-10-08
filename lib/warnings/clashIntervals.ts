@@ -54,7 +54,8 @@ export function operativeClashInterval(
   if (clock) return clock
   const window = standardWindow(policy)
   const kind = slotKind(String(booking.timeSlot))
-  if (kind.includes('FULL')) return null
+  // iOS OperativeBookingInterval: a full day with no clocks is the standard window, so two of them overlap.
+  if (kind.includes('FULL')) return window ?? { start: 0, end: 24 * 60 }
   if (!window) return null
   const mid = window.start + Math.floor((window.end - window.start) / 2)
   if (kind === 'CUSTOM HOURS' || kind === 'CUSTOM') return window
@@ -81,7 +82,8 @@ export function managerClashInterval(
   if (clock) return clock
   const window = standardWindow(policy)
   const kind = slotKind(String(booking.timeSlot))
-  if (kind.includes('FULL')) return null
+  // iOS ManagerScheduleInterval: a full day with no clocks covers the standard day and clashes with another full day.
+  if (kind.includes('FULL')) return window ?? { start: 0, end: 24 * 60 }
   if (!window) return null
   const mid = window.start + Math.floor((window.end - window.start) / 2)
   if (kind === 'CUSTOM HOURS' || kind === 'CUSTOM') return window
