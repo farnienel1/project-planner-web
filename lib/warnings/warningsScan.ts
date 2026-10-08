@@ -4,9 +4,9 @@ import { organizationIdsMatch } from '@/lib/orgMembership/webActiveOrg'
 export type WarningsScreenPhase = 'scanning' | 'empty' | 'list'
 
 /**
- * The scanning empty state stays up only while nothing real has been published.
- * Rows from a finished source show immediately. A slow roster, materials, or
- * qualification read must not hide them. Zero rows before those sources finish
+ * The list stays hidden until the schedule scan can be computed together.
+ * Qualification rows must not appear on their own, and a later load must not
+ * wipe rows that were already shown. Zero rows before those sources finish
  * is still scanning, not "No active warnings".
  */
 export function warningsScreenPhase(input: {
@@ -16,10 +16,10 @@ export function warningsScreenPhase(input: {
   projectsReady: boolean
   warningCount: number
 }): WarningsScreenPhase {
-  if (input.warningCount > 0) return 'list'
   if (!input.detectionReady || !input.rosterReady || !input.operativesReady || !input.projectsReady) {
     return 'scanning'
   }
+  if (input.warningCount > 0) return 'list'
   return 'empty'
 }
 
@@ -32,7 +32,13 @@ export type WarningScanLanes = {
   unverified: boolean
 }
 
-/** Each warning family publishes when its own reads have finished. */
+/**
+ * Qualifications, unverified accounts, clashes, and unbooked labour publish as
+ * one schedule snapshot. That snapshot waits until detection, bookings, manager
+ * bookings, the roster, operatives, and holidays have all finished. A source
+ * that is still loading is not ready, even when its array already has rows.
+ * Materials may arrive later and must not wipe the labour rows.
+ */
 export function warningScanLanes(input: {
   detectionReady: boolean
   bookingsReady: boolean
@@ -44,20 +50,21 @@ export function warningScanLanes(input: {
   materialsReady: boolean
   sendRecordsReady: boolean
 }): WarningScanLanes {
+  const schedule =
+    input.detectionReady &&
+    input.bookingsReady &&
+    input.managerReady &&
+    input.rosterReady &&
+    input.operativesReady &&
+    input.holidaysReady
   return {
-    clashes: input.detectionReady && input.bookingsReady && input.operativesReady,
-    managerClashes: input.detectionReady && input.managerReady && input.bookingsReady,
-    unbooked:
-      input.detectionReady &&
-      input.bookingsReady &&
-      input.managerReady &&
-      input.rosterReady &&
-      input.operativesReady &&
-      input.holidaysReady,
+    clashes: schedule,
+    managerClashes: schedule,
+    unbooked: schedule,
+    qualifications: schedule,
+    unverified: schedule,
     materials:
       input.materialsReady && input.sendRecordsReady && input.projectsReady && input.bookingsReady,
-    qualifications: input.operativesReady,
-    unverified: input.operativesReady && input.rosterReady,
   }
 }
 

@@ -46,6 +46,17 @@ function flag(user: PermissionUser, key: keyof UserPermissions): boolean {
   return user?.permissions?.[key] === true
 }
 
+/** Warnings list. Admins and managers. Operatives do not see the company warning scan. */
+export function canViewWarnings(user: PermissionUser): boolean {
+  if (!user || isOperativeMode(user)) return false
+  return hasAdminAccess(user) || flag(user, 'manager') || user.role === 'manager'
+}
+
+/** Warning settings open organisation settings. Admin level only. */
+export function canOpenWarningSettings(user: PermissionUser): boolean {
+  return canAccessOrganisationSettingsHub(user)
+}
+
 /** UserStore.hasAdminAccess — operativeMode flag (not isOperativeMode) blocks. */
 export function hasAdminAccess(user: PermissionUser): boolean {
   if (!user) return false

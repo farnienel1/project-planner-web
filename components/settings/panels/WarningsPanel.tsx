@@ -291,7 +291,7 @@ export function WarningsPanel({ onBack }: { onBack: () => void }) {
           <ModeOption
             selected={mode === 'endOfWorkingWeek'}
             label="Full week"
-            description="Scans Monday–Sunday, including days already past."
+            description="Scans Monday–Friday of this week, including days already past. Weekends stay off unless you include them below."
             onClick={() => patch({ clashLookaheadMode: 'endOfWorkingWeek' })}
           />
 
@@ -334,7 +334,7 @@ export function WarningsPanel({ onBack }: { onBack: () => void }) {
 
           {mode === 'endOfWorkingWeek' && (
             <div className="flex items-start gap-2.5 rounded-xl border border-blue-200 bg-blue-50 p-3 text-xs text-blue-700">
-              Full week scans Monday–Sunday, including days already past.
+              Full week scans Monday–Friday, including days already past. Turn on weekends only if this company works Saturday or Sunday.
             </div>
           )}
         </div>

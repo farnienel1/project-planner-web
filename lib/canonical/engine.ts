@@ -361,10 +361,141 @@ function recurringPeriod(reference: Date, input: InvoicingPeriodInput, timeZone:
   }
 }
 
+export type StandardDayPolicy = {
+  standardDayStart?: string | null
+  standardDayEnd?: string | null
+  breakWindowStart?: string | null
+  breakWindowEnd?: string | null
+}
+
+export type StandardDayBooking = {
+  timeSlot?: string | null
+  workStart?: string | null
+  workEnd?: string | null
+}
+
+export type StandardDayCoverage = {
+  requiredHours: number
+  coveredHours: number
+  missingHours: number
+}
+
+type MinuteSpan = { start: number; end: number }
+
+function parseClockMinutes(value: string | null | undefined): number | null {
+  const match = /^(\d{1,2}):(\d{2})/.exec(String(value || '').trim())
+  if (!match) return null
+  const hours = Number(match[1])
+  const minutes = Number(match[2])
+  if (hours > 23 || minutes > 59) return null
+  return hours * 60 + minutes
+}
+
+function mergeSpans(spans: readonly MinuteSpan[]): MinuteSpan[] {
+  const sorted = spans.filter((span) => span.end > span.start).sort((a, b) => a.start - b.start)
+  const merged: MinuteSpan[] = []
+  for (const span of sorted) {
+    const last = merged[merged.length - 1]
+    if (!last || span.start > last.end) merged.push({ ...span })
+    else last.end = Math.max(last.end, span.end)
+  }
+  return merged
+}
+
+function subtractSpan(base: readonly MinuteSpan[], cut: MinuteSpan | null): MinuteSpan[] {
+  if (!cut || cut.end <= cut.start) return [...base]
+  const out: MinuteSpan[] = []
+  for (const span of base) {
+    if (cut.end <= span.start || cut.start >= span.end) {
+      out.push(span)
+      continue
+    }
+    if (cut.start > span.start) out.push({ start: span.start, end: cut.start })
+    if (cut.end < span.end) out.push({ start: cut.end, end: span.end })
+  }
+  return out
+}
+
+function spanMinutes(spans: readonly MinuteSpan[]): number {
+  return spans.reduce((sum, span) => sum + (span.end - span.start), 0)
+}
+
+function roundCoverageHours(hours: number): number {
+  return Math.round(hours * 100) / 100
+}
+
+function bookingCoverSpan(
+  booking: StandardDayBooking,
+  dayStart: number,
+  dayEnd: number,
+  breakStart: number,
+  breakEnd: number
+): MinuteSpan | null {
+  const slot = String(booking.timeSlot || '')
+    .trim()
+    .toUpperCase()
+    .replace(/_/g, ' ')
+  const clockStart = parseClockMinutes(booking.workStart)
+  const clockEnd = parseClockMinutes(booking.workEnd)
+  const hasClock = clockStart != null && clockEnd != null && clockEnd > clockStart
+  if (!slot || slot.includes('FULL')) return { start: dayStart, end: dayEnd }
+  if (slot === 'AM' || slot.includes('MORNING')) {
+    const end = breakStart > dayStart && breakStart < dayEnd ? breakStart : dayStart + Math.floor((dayEnd - dayStart) / 2)
+    return end > dayStart ? { start: dayStart, end } : null
+  }
+  if (slot === 'PM' || slot.includes('AFTERNOON')) {
+    const start = breakEnd > dayStart && breakEnd < dayEnd ? breakEnd : dayStart + Math.floor((dayEnd - dayStart) / 2)
+    return dayEnd > start ? { start, end: dayEnd } : null
+  }
+  if (hasClock) return { start: clockStart, end: clockEnd }
+  return { start: dayStart, end: dayEnd }
+}
+
+/**
+ * Hours of the organisation standard day a person's bookings cover.
+ * The required window is standardDayStart–standardDayEnd minus the unpaid break
+ * (07:30–16:00 with a 12:00–12:30 break is 8 hours). A full-day slot covers that
+ * window. Morning covers up to the break. Afternoon covers from the end of the
+ * break. Custom clock times count only where they overlap the required window.
+ * Hours outside the standard day do not cover it. Overlapping bookings merge.
+ * A booking with no slot is a full day, so older callers stay compatible.
+ */
+export function standardDayCoverage(
+  policy: StandardDayPolicy,
+  bookings: readonly StandardDayBooking[]
+): StandardDayCoverage {
+  const dayStart = parseClockMinutes(policy.standardDayStart) ?? 7 * 60 + 30
+  const dayEnd = parseClockMinutes(policy.standardDayEnd) ?? 16 * 60
+  const breakStart = parseClockMinutes(policy.breakWindowStart) ?? 12 * 60
+  const breakEnd = parseClockMinutes(policy.breakWindowEnd) ?? 12 * 60 + 30
+  const required =
+    dayEnd > dayStart
+      ? subtractSpan([{ start: dayStart, end: dayEnd }], breakEnd > breakStart ? { start: breakStart, end: breakEnd } : null)
+      : []
+  const requiredHours = roundCoverageHours(spanMinutes(required) / 60)
+  const covered: MinuteSpan[] = []
+  for (const booking of bookings) {
+    const span = bookingCoverSpan(booking, dayStart, dayEnd, breakStart, breakEnd)
+    if (!span) continue
+    const start = Math.max(span.start, dayStart)
+    const end = Math.min(span.end, dayEnd)
+    if (end > start) covered.push({ start, end })
+  }
+  const inside = subtractSpan(mergeSpans(covered), breakEnd > breakStart ? { start: breakStart, end: breakEnd } : null)
+  const coveredHours = roundCoverageHours(Math.min(requiredHours, spanMinutes(inside) / 60))
+  return {
+    requiredHours,
+    coveredHours,
+    missingHours: roundCoverageHours(Math.max(0, requiredHours - coveredHours)),
+  }
+}
+
 /**
  * Inclusive warning scan window.
  * numberOfDays: today through today+(N-1).
- * endOfWorkingWeek: Monday through Sunday of the organisation week.
+ * endOfWorkingWeek: Monday through Friday of the organisation week.
+ * Weekend days are not part of this window. The include-weekends toggle adds them
+ * only for unbooked labour.
  * endOfInvoicingPeriod: the payment-run segment that contains today.
  * Missing ranges use the half-month default, not the device calendar and not a 1–2 placeholder.
  */
@@ -386,7 +517,7 @@ export function coverageWindow(input: CoverageWindowInput): DayWindow {
   const iso = isoWeekdayInZone(today, timeZone)
   return {
     startDayKey: dayKeyInZone(addDaysInZone(today, -(iso - 1), timeZone), timeZone),
-    endDayKey: dayKeyInZone(addDaysInZone(today, 7 - iso, timeZone), timeZone),
+    endDayKey: dayKeyInZone(addDaysInZone(today, 5 - iso, timeZone), timeZone),
   }
 }
 
