@@ -19,7 +19,6 @@ import {
 } from '@/lib/scheduling/paidHours'
 import { DEFAULT_PAYROLL_POLICY, type OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 import { effectiveWeekendSettings } from '@/lib/setup/workingHoursUtils'
-import { rosterDisplayName } from '@/lib/staff/userRosterUtils'
 import type { Booking, HolidayBooking, Operative, Project, User } from '@/types'
 import type { ManagerLocationType, ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import {
