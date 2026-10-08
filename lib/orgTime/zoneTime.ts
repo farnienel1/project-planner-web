@@ -7,30 +7,52 @@
 
 export const LONDON_TIME_ZONE = 'Europe/London'
 
-export function partsInZone(
-  date: Date,
-  timeZone: string
-): { y: number; m: number; d: number; h: number; min: number } {
-  const fmt = new Intl.DateTimeFormat('en-GB', {
-    timeZone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hourCycle: 'h23',
-  })
+export type ZoneParts = { y: number; m: number; d: number; h: number; min: number }
+
+// Constructing an Intl.DateTimeFormat costs far more than formatting with one.
+// Pay-period and coverage maths call partsInZone thousands of times per render,
+// so formatters are kept per zone and recent results are memoised per instant.
+const partsFormatters = new Map<string, Intl.DateTimeFormat>()
+const partsMemo = new Map<string, ZoneParts>()
+const PARTS_MEMO_LIMIT = 4_096
+
+function partsFormatter(timeZone: string): Intl.DateTimeFormat {
+  let fmt = partsFormatters.get(timeZone)
+  if (!fmt) {
+    fmt = new Intl.DateTimeFormat('en-GB', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23',
+    })
+    partsFormatters.set(timeZone, fmt)
+  }
+  return fmt
+}
+
+export function partsInZone(date: Date, timeZone: string): ZoneParts {
+  const memoKey = `${timeZone}|${date.getTime()}`
+  const cached = partsMemo.get(memoKey)
+  if (cached) return cached
   const map: Record<string, string> = {}
-  for (const part of fmt.formatToParts(date)) {
+  for (const part of partsFormatter(timeZone).formatToParts(date)) {
     if (part.type !== 'literal') map[part.type] = part.value
   }
-  return {
+  const parts: ZoneParts = {
     y: Number(map.year),
     m: Number(map.month),
     d: Number(map.day),
     h: Number(map.hour),
     min: Number(map.minute),
   }
+  if (partsMemo.size >= PARTS_MEMO_LIMIT) {
+    partsMemo.delete(partsMemo.keys().next().value as string)
+  }
+  partsMemo.set(memoKey, parts)
+  return parts
 }
 
 export function dayKeyInZone(date: Date, timeZone: string): string {
