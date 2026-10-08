@@ -3,6 +3,7 @@ import test from 'node:test'
 import { DEFAULT_WARNING_DETECTION } from '../settings/organizationSettings.ts'
 import {
   partitionRowsByOrganization,
+  warningScanUsers,
   publishReadyWarningLanes,
   retainWarningsAfterScan,
   warningDetectionForScan,
@@ -166,6 +167,18 @@ test('rows from another company do not count as an empty scan for this one', () 
     }),
     true
   )
+})
+
+test('a roster member whose user document names another company stays in the warning scan', () => {
+  const orgId = '2C67391E-D1FE-4F9F-8055-7149ACDE1F96'
+  const member = { id: 'admin-1', organizationId: '6b04f81d-a55e-41d2-8676-ecd116ad8450' }
+  const colleague = { id: 'manager-1', organizationId: orgId }
+  const kept = warningScanUsers([member, colleague], orgId, true)
+  assert.equal(kept.foreign, false)
+  assert.deepEqual(kept.rows.map((user) => user.id), ['admin-1', 'manager-1'])
+  const otherCompany = warningScanUsers([member], orgId, false)
+  assert.equal(otherCompany.foreign, true)
+  assert.equal(otherCompany.rows.length, 0)
 })
 
 test('an unsaved number-of-days draft does not replace the saved invoicing-period scan', () => {
