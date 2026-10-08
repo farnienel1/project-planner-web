@@ -33,7 +33,7 @@ The canonical module owns:
 
 - SwiftUI and React screens, navigation, and copy
 - Firestore listeners, offline outbox, and local databases
-- Clash timeline math and the material cut-off message (`lib/warnings/generateOrgWarnings.ts` and `Core/WarningsComputation.swift`). Those dates use the London business calendar on iOS
+- Clash timeline math and the material cut-off message (`lib/warnings/generateOrgWarnings.ts` and `Core/WarningsComputation.swift`). Those dates use the London business calendar on iOS. A full-day slot with no clock times uses the organisation standard day for overlap (`07:30`–`16:00` by default), the same window as iOS `ManagerScheduleInterval` and `OperativeBookingInterval`. Two of those on one person and day are a clash. The unbooked-labour exclusion list does not hide that clash. AM and PM still do not overlap.
 - Overtime and break payroll (`Core/PayrollHoursEngine.swift` and the web timesheet helpers that are not named slots)
 
 Do not add a second coverage window, a second unbooked-person loop, or a second `FULL DAY` hour value.
