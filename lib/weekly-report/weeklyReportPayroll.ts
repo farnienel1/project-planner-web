@@ -4,6 +4,7 @@ import type { OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 import { DEFAULT_PAYROLL_POLICY } from '@/lib/settings/organizationSettings'
 import type { Operative, User } from '@/types'
 import { findOperativeForUser } from '@/lib/operatives/operativeRosterUtils'
+import { STAFF_TRADE_PRESETS } from '@/lib/staff/staffTradeTypes'
 import { employmentTypeOnDay } from '@/lib/ios-parity/employmentType'
 import { overtimeHoursBeyondPaidStandard, paidBookedHours, weekdayOtMultiplier } from '@/lib/timesheets/timesheetHours'
 import { emptyDayRateHistory, type OperativeDayRateHistoryCollection } from '@/lib/timesheets/dayRateHistoryStorage'
@@ -24,15 +25,38 @@ export function bookingDayUnits(
   return Math.round((hours / standardHours) * 100) / 100
 }
 
+function readableTrade(value?: string): string | undefined {
+  const trimmed = value?.trim() || ''
+  if (!trimmed || trimmed === '—' || trimmed === 'Other') return undefined
+  if ((STAFF_TRADE_PRESETS as readonly string[]).includes(trimmed)) return trimmed
+  if (/^[A-Za-z0-9_-]{16,}$/.test(trimmed)) return undefined
+  return trimmed
+}
+
 export function resolvePersonTrade(user: User | undefined, operative: Operative | undefined): string {
-  if (user?.tradeTypeCustom?.trim()) return user.tradeTypeCustom.trim()
-  if (user?.tradeTypePreset?.trim()) return user.tradeTypePreset.trim()
-  if (operative?.skills?.length) {
-    const first = operative.skills[0]
-    if (typeof first === 'string') return first
-    if (first && typeof first === 'object' && 'name' in first) return String((first as { name: string }).name)
+  const named = [
+    readableTrade(user?.tradeTypeCustom),
+    readableTrade(user?.tradeTypePreset),
+    readableTrade(operative?.tradeTypeCustom),
+    readableTrade(operative?.tradeTypePreset),
+  ].find(Boolean)
+  if (named) return named
+  for (const skill of operative?.skills || []) {
+    const label = typeof skill === 'string' ? skill : skill && typeof skill === 'object' && 'name' in skill ? String(skill.name) : ''
+    const trade = readableTrade(label)
+    if (trade) return trade
   }
   return 'General'
+}
+
+function preferLinkedUser(matches: User[]): User | undefined {
+  const finished = matches.filter((person) => person.passwordSet && person.isActive !== false)
+  const pool = finished.length ? finished : matches.filter((person) => person.isActive !== false)
+  const ranked = pool.length ? pool : matches
+  return (
+    ranked.find((person) => readableTrade(person.tradeTypeCustom) || readableTrade(person.tradeTypePreset)) ||
+    ranked[0]
+  )
 }
 
 export function resolvePersonRole(user: User | undefined, operative: Operative | undefined): string {
@@ -63,12 +87,13 @@ export function findUserAndOperative(
   operatives: Operative[],
   opts: { userId?: string; operativeId?: string }
 ): { user?: User; operative?: Operative } {
-  const user = opts.userId ? users.find((entry) => entry.id === opts.userId) : undefined
-  const operative = opts.operativeId
-    ? operatives.find((entry) => entry.id === opts.operativeId)
-    : user
-      ? findOperativeForUser(user, operatives)
-      : undefined
+  let user = opts.userId ? users.find((entry) => entry.id === opts.userId) : undefined
+  let operative = opts.operativeId ? operatives.find((entry) => entry.id === opts.operativeId) : undefined
+  if (!user && operative?.email) {
+    const email = operative.email.trim().toLowerCase()
+    user = preferLinkedUser(users.filter((entry) => entry.email.trim().toLowerCase() === email))
+  }
+  if (!operative && user) operative = findOperativeForUser(user, operatives)
   return { user, operative }
 }
 
