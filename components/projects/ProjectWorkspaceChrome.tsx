@@ -133,7 +133,7 @@ export function ProjectWorkspaceChrome({
   const active = tabFromPath(pathname, basePath)
   const hideTabs = hideWorkspaceTabs(pathname)
   const typeLabel = visibleJobTypeLabel(project.jobType, project.customJobType)
-  const managers = assignedManagerLabel(project, rosterManagers, users)
+  const managers = assignedManagerLabel(project, rosterManagers, users, organization?.id)
   const catalogue = isSmallWork ? '/dashboard/small-works' : '/dashboard/projects'
   const catalogueLabel = isSmallWork ? 'Small works' : 'Projects'
 
@@ -289,15 +289,10 @@ export function ProjectDetailsCard({
   canEdit: boolean
 }) {
   const { organization } = useAuthStore()
-  const { managers: rosterManagers, loadManagers } = useOperativeStore()
-  const { users, loadUsers } = useOrgUserStore()
-  useEffect(() => {
-    if (!organization?.id) return
-    void loadManagers(organization.id)
-    void loadUsers(organization.id)
-  }, [organization?.id, loadManagers, loadUsers])
+  const rosterManagers = useOperativeStore((state) => state.managers)
+  const users = useOrgUserStore((state) => state.users)
   const address = formatSiteAddress(project)
-  const managerNames = assignedManagerNames(project, rosterManagers, users)
+  const managerNames = assignedManagerNames(project, rosterManagers, users, organization?.id)
   const rows: {
     hue: SectionHue
     label: string

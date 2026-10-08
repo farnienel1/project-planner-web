@@ -37,6 +37,7 @@ export function ProjectsListScreen() {
   const { managerSiteBookings, loadManagerSiteBookings } = useManagerScheduleStore()
   const { operatives, managers, loadOperatives, loadManagers } = useOperativeStore()
   const users = useOrgUserStore((state) => state.users)
+  const loadUsers = useOrgUserStore((state) => state.loadUsers)
   const deadlineAssignedProjectIds = useDeadlineAssignedProjectIds()
   const [filter, setFilter] = useState<Filter>('active')
   const [search, setSearch] = useState('')
@@ -49,6 +50,7 @@ export function ProjectsListScreen() {
     loadManagerSiteBookings(organization.id)
     loadOperatives(organization.id)
     loadManagers(organization.id)
+    loadUsers(organization.id)
   }, [
     organization?.id,
     loadProjects,
@@ -57,6 +59,7 @@ export function ProjectsListScreen() {
     loadManagerSiteBookings,
     loadOperatives,
     loadManagers,
+    loadUsers,
   ])
 
   const visible = useMemo(
@@ -92,7 +95,8 @@ export function ProjectsListScreen() {
   const emptyDueToFilter = visible.length > 0 && filter !== 'all' && filterWorksByTab(visible, filter).length === 0
   const emptySearch = search.trim().length > 0 && filtered.length === 0 && filterWorksByTab(visible, filter).length > 0
 
-  const managerName = (project: (typeof projects)[number]) => assignedManagerLabel(project, managers, users)
+  const managerName = (project: (typeof projects)[number]) =>
+    assignedManagerLabel(project, managers, users, organization?.id)
 
   if (loading && projects.length === 0) {
     return (

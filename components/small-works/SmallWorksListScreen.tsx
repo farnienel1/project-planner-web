@@ -33,6 +33,7 @@ export function SmallWorksListScreen() {
   const { managerSiteBookings, loadManagerSiteBookings } = useManagerScheduleStore()
   const { operatives, managers, loadOperatives, loadManagers } = useOperativeStore()
   const users = useOrgUserStore((state) => state.users)
+  const loadUsers = useOrgUserStore((state) => state.loadUsers)
   const deadlineAssignedProjectIds = useDeadlineAssignedProjectIds()
   const [filter, setFilter] = useState<Filter>('active')
   const [search, setSearch] = useState('')
@@ -45,6 +46,7 @@ export function SmallWorksListScreen() {
     loadManagerSiteBookings(organization.id)
     loadOperatives(organization.id)
     loadManagers(organization.id)
+    loadUsers(organization.id)
   }, [
     organization?.id,
     loadSmallWorks,
@@ -53,6 +55,7 @@ export function SmallWorksListScreen() {
     loadManagerSiteBookings,
     loadOperatives,
     loadManagers,
+    loadUsers,
   ])
 
   const visible = useMemo(
@@ -85,7 +88,8 @@ export function SmallWorksListScreen() {
   const emptyDueToFilter = visible.length > 0 && filter !== 'all' && filterWorksByTab(visible, filter).length === 0
   const emptySearch = search.trim().length > 0 && filtered.length === 0 && filterWorksByTab(visible, filter).length > 0
 
-  const managerName = (project: (typeof smallWorks)[number]) => assignedManagerLabel(project, managers, users)
+  const managerName = (project: (typeof smallWorks)[number]) =>
+    assignedManagerLabel(project, managers, users, organization?.id)
 
   if (loading && smallWorks.length === 0) {
     return (
