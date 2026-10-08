@@ -5,6 +5,7 @@ import { format } from 'date-fns'
 import {
   ArrowDownTrayIcon,
   BellAlertIcon,
+  ChevronRightIcon,
   EyeIcon,
   PencilSquareIcon,
   UserPlusIcon,
@@ -144,10 +145,8 @@ function HsActionRow({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className={`flex w-full items-center gap-3 rounded-2xl border px-3.5 py-3 text-left disabled:opacity-50 ${
-        primary
-          ? 'border-[#0fae9e] bg-[#0fae9e] text-white hover:bg-[#0c9b8d]'
-          : 'border-slate-200 bg-white text-slate-900 hover:bg-slate-50'
+      className={`flex w-full items-center gap-3 px-4 py-3.5 text-left disabled:opacity-50 ${
+        primary ? 'bg-[#0fae9e] text-white hover:bg-[#0c9b8d]' : 'bg-white text-slate-900 hover:bg-slate-50'
       }`}
     >
       <span
@@ -157,10 +156,11 @@ function HsActionRow({
       >
         <Icon className="h-5 w-5" />
       </span>
-      <span className="min-w-0">
+      <span className="min-w-0 flex-1">
         <span className="block text-sm font-bold">{title}</span>
         <span className={`block text-xs ${primary ? 'text-white/80' : 'text-slate-500'}`}>{detail}</span>
       </span>
+      <ChevronRightIcon className={`h-4 w-4 shrink-0 ${primary ? 'text-white/80' : 'text-slate-400'}`} />
     </button>
   )
 }
@@ -189,7 +189,7 @@ export function HsIssueActions({
   onAddRecipients?: () => void
 }) {
   return (
-    <div className="space-y-2">
+    <div className="divide-y divide-slate-200 overflow-hidden rounded-2xl border border-slate-200 bg-white">
       <HsActionRow icon={EyeIcon} title="View TBT" detail="Open the issued talk" onClick={onView} />
       <HsActionRow
         icon={ArrowDownTrayIcon}
@@ -341,6 +341,7 @@ export function HsIssueDetail({
         Issued {format(issue.issuedAt, 'd MMM yyyy')} · W/C {format(issue.weekCommencing, 'd MMM yyyy')}
       </p>
       <HsSignedProgress signatures={signatures} recipientCount={issue.recipientUserIds.length} />
+      <FeatureSectionLabel>Actions</FeatureSectionLabel>
       <HsIssueActions
         canSign={canSign}
         canViewSigned={canViewSigned}

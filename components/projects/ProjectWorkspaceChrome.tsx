@@ -14,6 +14,7 @@ import {
   MapPinIcon,
   PencilSquareIcon,
   PlusIcon,
+  ChatBubbleLeftRightIcon,
   DocumentTextIcon,
   FlagIcon,
   ShieldCheckIcon,
@@ -29,10 +30,11 @@ import {
 import { visibleJobTypeLabel } from '@/lib/jobTypes/jobTypesStorage'
 import { formatSiteAddress } from '@/lib/maps/siteAddress'
 import { useAuthStore } from '@/lib/stores/authStore'
-import { canBookWork, canManageWorkCatalogue, canViewMaterials, canViewSiteAudit, hasAdminAccess } from '@/lib/permissions'
+import { canBookWork, canManageWorkCatalogue, canViewMaterials, canViewSiteAudit } from '@/lib/permissions'
 import { canViewProjectActiveUsers } from '@/lib/projects/activeUsers'
 import { useActiveUserBadge } from '@/components/projects/features/ProjectActiveUsersSection'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
+import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { isOperativeMode } from '@/lib/navigation/menuPermissions'
 import { jobHubTiles } from '@/lib/projects/jobHubTiles'
 import { canSeeJobVariations } from '@/lib/variations/variationAccess'
@@ -119,17 +121,19 @@ export function ProjectWorkspaceChrome({
   const showViewTile = canConfigureProjectVisibility(user, isSmallWork)
   const isOperative = isOperativeMode(user)
   const { managers: rosterManagers, loadManagers } = useOperativeStore()
+  const { users, loadUsers } = useOrgUserStore()
   const showActiveUsers = canViewProjectActiveUsers(user, rosterManagers, project)
   const activeUserCount = useActiveUserBadge(project, showActiveUsers)
 
   useEffect(() => {
     if (!organization?.id) return
-    if (hasAdminAccess(user) || user?.permissions.manager) void loadManagers(organization.id)
-  }, [organization?.id, user, loadManagers])
+    void loadManagers(organization.id)
+    void loadUsers(organization.id)
+  }, [organization?.id, loadManagers, loadUsers])
   const active = tabFromPath(pathname, basePath)
   const hideTabs = hideWorkspaceTabs(pathname)
   const typeLabel = visibleJobTypeLabel(project.jobType, project.customJobType)
-  const managers = assignedManagerLabel(project, rosterManagers)
+  const managers = assignedManagerLabel(project, rosterManagers, users)
   const catalogue = isSmallWork ? '/dashboard/small-works' : '/dashboard/projects'
   const catalogueLabel = isSmallWork ? 'Small works' : 'Projects'
 
@@ -284,14 +288,16 @@ export function ProjectDetailsCard({
   basePath: string
   canEdit: boolean
 }) {
-  const { organization, user } = useAuthStore()
+  const { organization } = useAuthStore()
   const { managers: rosterManagers, loadManagers } = useOperativeStore()
+  const { users, loadUsers } = useOrgUserStore()
   useEffect(() => {
     if (!organization?.id) return
-    if (hasAdminAccess(user) || user?.permissions.manager) void loadManagers(organization.id)
-  }, [organization?.id, user, loadManagers])
+    void loadManagers(organization.id)
+    void loadUsers(organization.id)
+  }, [organization?.id, loadManagers, loadUsers])
   const address = formatSiteAddress(project)
-  const managerNames = assignedManagerNames(project, rosterManagers)
+  const managerNames = assignedManagerNames(project, rosterManagers, users)
   const rows: {
     hue: SectionHue
     label: string
@@ -352,9 +358,14 @@ export function ProjectDetailsCard({
           )
         })}
         {project.notes ? (
-          <div>
-            <div className="eyebrow">Notes</div>
-            <div className="font-semibold">{project.notes}</div>
+          <div className="row" data-hue="lib" style={{ padding: '4px 0' }}>
+            <span className="ico-chip sm">
+              <ChatBubbleLeftRightIcon className="h-4 w-4" />
+            </span>
+            <div className="grow">
+              <div className="eyebrow">Notes</div>
+              <div className="font-semibold">{project.notes}</div>
+            </div>
           </div>
         ) : null}
         {canEdit ? (
