@@ -17,6 +17,7 @@ import { withTimeout, withTimeoutFallback, isTimeoutError } from '@/lib/client/w
 import { getFirebaseAuth, getFirebaseDb } from '@/lib/firebase/ensureFirebase'
 import { isFirebaseConfigured } from '@/lib/firebase/env'
 import { loadUserDocumentWithRetry } from '@/lib/firebase/loadUserDocument'
+import { readOrganizationDocument } from '@/lib/firebase/orgDocumentCache'
 import { mergePlaceholderUserDocOntoAuthUidIfNeeded } from '@/lib/firebase/mergePlaceholderUser'
 import { parseAppUserDocument } from '@/lib/ios-parity/converters'
 import type { User, Organization } from '@/types'
@@ -74,6 +75,8 @@ interface AuthState {
   user: User | null
   firebaseUser: FirebaseUser | null
   organization: Organization | null
+  /** The signed-in person's users/{uid} document, as last read. Pages read per-user settings from here instead of re-fetching it. */
+  currentUserDocument: Record<string, unknown> | null
   loading: boolean
   error: string | null
   mfaPending: boolean
@@ -181,7 +184,9 @@ function watchCurrentUserDocument(uid: string) {
       if (!authUser || authUser.uid !== uid) return
       const state = useAuthStore.getState()
       if (!state.user || state.user.id !== uid || state.mfaPending) return
-      const next = sessionUserFromCurrentDocument(state.user, snap.data() as Record<string, unknown>)
+      const currentUserDocument = snap.data() as Record<string, unknown>
+      if (state.currentUserDocument !== currentUserDocument) useAuthStore.setState({ currentUserDocument })
+      const next = sessionUserFromCurrentDocument(state.user, currentUserDocument)
       const base = next ?? state.user
       const fixed = withWebOrganization(base)
       if (!next && fixed === base) return
@@ -369,7 +374,7 @@ function sessionStillOpen(uid: string, token: number): boolean {
 async function loadOrganizationSnapshot(organizationId: string) {
   if (!organizationId) return null
   try {
-    const snap = await getDoc(doc(getFirebaseDb(), 'organizations', organizationId))
+    const snap = await readOrganizationDocument(getFirebaseDb(), organizationId)
     return snap.exists() ? snap : null
   } catch (error) {
     console.warn('Organisation details stayed pending:', error)
@@ -430,6 +435,7 @@ async function hydrateSignedInOrganization(
 
     let sessionUser = documentUser
     let probe: 'allowed' | 'denied' | 'unknown' = 'unknown'
+    let membershipKnown = false
     try {
       const session = await resolveWebSessionOrganization(
         firebaseUser.uid,
@@ -439,6 +445,7 @@ async function hydrateSignedInOrganization(
       )
       if (!sessionStillOpen(firebaseUser.uid, token)) return
       probe = session.probe
+      membershipKnown = session.membership != null
       sessionUser = withWebOrganization(
         sessionUserForOrganizationProbe(documentUser, documentOrganizationId, session)
       )
@@ -472,16 +479,19 @@ async function hydrateSignedInOrganization(
     if (!live || live.id !== firebaseUser.uid || !organizationIdsMatch(live.organizationId, organizationId)) return
     if (probe !== 'allowed' && !organizationIdsMatch(organizationId, documentOrganizationId)) return
 
-    void withTimeoutFallback(
-      ensurePrimaryOrgMembership(
-        firebaseUser.uid,
-        organizationId,
-        String(built.orgData.members?.[firebaseUser.uid] || live.role || 'member'),
-        live.isSuperAdmin ? { isSuperAdmin: true } : undefined
-      ),
-      PROFILE_STEP_MS,
-      undefined
-    )
+    // The membership probe just read this document. Only write when it was missing.
+    if (!membershipKnown) {
+      void withTimeoutFallback(
+        ensurePrimaryOrgMembership(
+          firebaseUser.uid,
+          organizationId,
+          String(built.orgData.members?.[firebaseUser.uid] || live.role || 'member'),
+          live.isSuperAdmin ? { isSuperAdmin: true } : undefined
+        ),
+        PROFILE_STEP_MS,
+        undefined
+      )
+    }
 
     if (built.seededLabels.changed && (live.isSuperAdmin || live.permissions.adminAccess)) {
       void updateDoc(doc(getFirebaseDb(), 'organizations', organizationId), {
@@ -637,6 +647,7 @@ async function loadSignedInProfileInner(firebaseUser: FirebaseUser) {
   useAuthStore.setState({
     user: sessionUser,
     firebaseUser,
+    currentUserDocument: raw,
     organization:
       currentOrganization && organizationIdsMatch(currentOrganization.id, sessionUser.organizationId)
         ? currentOrganization
@@ -710,6 +721,7 @@ export const useAuthStore = create<AuthState>((set) => {
         set({
           user: null,
           firebaseUser: null,
+          currentUserDocument: null,
           organization: null,
           loading: false,
           mfaPending: false,
@@ -735,7 +747,7 @@ export const useAuthStore = create<AuthState>((set) => {
           stopCurrentUserWatch()
           invalidateOrganizationHydration()
           adoptCurrentOrganization('', '')
-          set({ user: null, firebaseUser: null, organization: null, loading: false, error: null })
+          set({ user: null, firebaseUser: null, currentUserDocument: null, organization: null, loading: false, error: null })
           return
         }
         if (readWebIdleLastActivity() == null) noteWebIdleActivity()
@@ -774,6 +786,7 @@ export const useAuthStore = create<AuthState>((set) => {
         set({
           user: null,
           firebaseUser: null,
+          currentUserDocument: null,
           organization: null,
           loading: false,
           mfaPending: false,
@@ -788,6 +801,7 @@ export const useAuthStore = create<AuthState>((set) => {
   return {
     user: null,
     firebaseUser: null,
+    currentUserDocument: null,
     organization: null,
     loading: true,
     error: null,
@@ -964,6 +978,7 @@ export const useAuthStore = create<AuthState>((set) => {
         set({
           user: null,
           firebaseUser: null,
+          currentUserDocument: null,
           organization: null,
           mfaPending: false,
           mfaVerified: false,
@@ -981,6 +996,7 @@ export const useAuthStore = create<AuthState>((set) => {
         set({
           user: null,
           firebaseUser: null,
+          currentUserDocument: null,
           organization: null,
           mfaPending: false,
           mfaVerified: false,

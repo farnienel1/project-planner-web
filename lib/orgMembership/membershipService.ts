@@ -14,6 +14,7 @@ import {
   where,
 } from 'firebase/firestore'
 import { getFirebaseDb } from '@/lib/firebase/ensureFirebase'
+import { readOrganizationDocument } from '@/lib/firebase/orgDocumentCache'
 import { queryWithin } from '@/lib/orgMembership/queryBudget'
 import { permissionsToFirestoreMap } from '@/lib/firebase/userPayload'
 import {
@@ -406,16 +407,20 @@ async function membershipForDeviceOrg(
   organizationId: string
 ): Promise<{ probe: OrgAccessProbe; membership: Record<string, unknown> | null; listedRole: string | null }> {
   const db = getFirebaseDb()
+  const [membershipResult, orgResult] = await Promise.allSettled([
+    getDoc(doc(db, 'users', userId, 'orgMemberships', organizationId)),
+    readOrganizationDocument(db, organizationId),
+  ])
   let membership: Record<string, unknown> | null = null
   let membershipExists = false
   let membershipProbe: OrgAccessProbe = 'allowed'
-  try {
-    const snap = await getDoc(doc(db, 'users', userId, 'orgMemberships', organizationId))
+  if (membershipResult.status === 'fulfilled') {
+    const snap = membershipResult.value
     membershipExists = snap.exists()
     if (snap.exists()) membership = snap.data() as Record<string, unknown>
-  } catch (error) {
+  } else {
     membership = null
-    membershipProbe = accessProbeFromReadError(error)
+    membershipProbe = accessProbeFromReadError(membershipResult.reason)
   }
 
   let orgExists = false
@@ -424,7 +429,8 @@ async function membershipForDeviceOrg(
   let isCreator = false
   let orgProbe: OrgAccessProbe = 'allowed'
   try {
-    const orgSnap = await getDoc(doc(db, 'organizations', organizationId))
+    if (orgResult.status === 'rejected') throw orgResult.reason
+    const orgSnap = orgResult.value
     orgExists = orgSnap.exists()
     if (orgSnap.exists()) {
       const data = orgSnap.data() as Record<string, unknown>

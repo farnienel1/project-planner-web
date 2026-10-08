@@ -54,7 +54,7 @@ import {
 import type { PaletteItem } from '@/lib/ui/commandPalette'
 import { useProjectStore } from '@/lib/stores/projectStore'
 import { db } from '@/lib/firebase/config'
-import { doc, getDoc, setDoc } from 'firebase/firestore'
+import { doc, setDoc } from 'firebase/firestore'
 import { recoverJobTypesFromWork } from '@/lib/jobTypes/jobTypesStorage'
 import { canBookWork } from '@/lib/permissions'
 import { createMenuItems } from '@/lib/navigation/createMenu'
@@ -270,21 +270,21 @@ function AppShellInner({ children }: { children: ReactNode }) {
     return () => window.clearTimeout(timer)
   }, [organization?.id, loadUsers, loadProjects, loadSmallWorks])
 
+  const remoteNavigateSidebar = useAuthStore((s) => s.currentUserDocument?.webNavigateSidebar)
   useEffect(() => {
     if (!user?.id) return
     const local = readLocalNavigateConfig(user.id)
     if (local) setNavigateConfig(local)
-    if (!db) return
-    getDoc(doc(db, 'users', user.id))
-      .then((snap) => {
-        const remote = parseNavigateConfig(snap.data()?.webNavigateSidebar)
-        if (remote) {
-          setNavigateConfig(remote)
-          writeLocalNavigateConfig(user.id, remote)
-        }
-      })
-      .catch(() => {})
   }, [user?.id])
+  useEffect(() => {
+    // The auth store already holds users/{uid}; no second read of the same document.
+    if (!user?.id) return
+    const remote = parseNavigateConfig(remoteNavigateSidebar)
+    if (remote) {
+      setNavigateConfig(remote)
+      writeLocalNavigateConfig(user.id, remote)
+    }
+  }, [user?.id, remoteNavigateSidebar])
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
