@@ -51,7 +51,8 @@ export function buildSchedulablePeople(
     if (email && pendingEmails.has(email)) continue
     if (email && seenEmails.has(email)) continue
     const linked = email ? usersByEmail.get(email) : undefined
-    if (!linked) continue
+    // iOS ScheduleBookablePersonBuilder keeps an active operative who has no login.
+    // A manager catalogue row with no account is excluded by the manager picker, not here.
     const name = rosterDisplayName({
       firstName: operative.firstName,
       surname: operative.lastName,

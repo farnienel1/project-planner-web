@@ -101,12 +101,12 @@ test('admin and manager with operative profiles appear once, with their role bad
   assert.equal(people.length, 3)
 })
 
-test('a catalogue row with no account is not bookable, and a role used as a name is not', () => {
+test('a named catalogue operative stays bookable, and a role used as a name is not', () => {
   const ghost = buildSchedulablePeople(
     [operative({ id: 'OP-GHOST', email: 'p@ekecteic.con', firstName: 'P', lastName: 'N' })],
     []
   )
-  assert.deepEqual(ghost.map((row) => row.name), [])
+  assert.deepEqual(ghost.map((row) => row.name), ['P N'])
 
   const roleNamed = buildSchedulablePeople(
     [operative({ id: 'OP-FIELD', email: 'field@site.test', firstName: 'Test', lastName: 'Operative' })],
