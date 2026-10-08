@@ -20,7 +20,6 @@ import { useDeadlineAssignedProjectIds } from '@/lib/deadlines/useDeadlineAssign
 import { countWorksByTab, filterWorksByTab, searchWorks } from '@/lib/projects/workStatus'
 import { EmptyState, FilterChip, PageHeader, SearchField, StatsRow } from '@/components/ios/primitives'
 import { WorkCard } from '@/components/projects/WorkCard'
-import { assignedManagerLabel } from '@/lib/projects/assignedManagers'
 
 type Filter = 'all' | 'active' | 'upcoming' | 'completed'
 
@@ -84,8 +83,12 @@ export function SmallWorksListScreen() {
   const emptySearch = search.trim().length > 0 && filtered.length === 0 && filterWorksByTab(visible, filter).length > 0
 
   const managerName = (project: (typeof smallWorks)[number]) => {
-    const label = assignedManagerLabel(project, managers)
-    return label === '—' ? project.manager?.name : label
+    const id = project.managerId || project.managerIds?.[0]
+    if (id) {
+      const m = managers.find((row) => row.id === id)
+      if (m) return `${m.firstName} ${m.lastName}`.trim()
+    }
+    return project.manager?.name
   }
 
   if (loading && smallWorks.length === 0) {
