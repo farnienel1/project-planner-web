@@ -68,3 +68,42 @@ test('a finished load is reused until the ttl expires', async () => {
   }, { force: true })
   assert.equal(calls, 2)
 })
+
+test('a retryable auth failure runs the loader again and tells it which try is the last', async () => {
+  const key = `retry-${Date.now()}`
+  const attempts: Array<{ index: number; final: boolean }> = []
+  const originalWarn = console.warn
+  console.warn = () => {}
+  try {
+    await runOrgLoad(key, 'org-1', async (attempt) => {
+      attempts.push(attempt)
+      const error = new Error('Missing or insufficient permissions.')
+      Object.assign(error, { code: 'permission-denied' })
+      throw error
+    })
+  } finally {
+    console.warn = originalWarn
+  }
+  assert.deepEqual(attempts, [
+    { index: 0, final: false },
+    { index: 1, final: false },
+    { index: 2, final: true },
+  ])
+  assert.equal(shouldSkipOrgLoad(key, 'org-1'), false)
+})
+
+test('a failure that is not an auth race stops after the first try', async () => {
+  const key = `no-retry-${Date.now()}`
+  const attempts: number[] = []
+  const originalWarn = console.warn
+  console.warn = () => {}
+  try {
+    await runOrgLoad(key, 'org-1', async (attempt) => {
+      attempts.push(attempt.index)
+      throw new Error('invalid document shape')
+    })
+  } finally {
+    console.warn = originalWarn
+  }
+  assert.deepEqual(attempts, [0])
+})
