@@ -17,6 +17,8 @@ import {
   canViewOperatives,
   canViewProjects,
   canViewWeeklyReports,
+  canViewWarnings,
+  canOpenWarningSettings,
   hasAdminAccess,
   isOperativeMode,
   canManageWorkCatalogue,
@@ -76,6 +78,17 @@ test('hasAdminAccess is true for role admin without adminAccess flag', () => {
   const u = user({ role: UserRole.ADMIN })
   assert.equal(hasAdminAccess(u), true)
   assert.equal(isOperativeMode(u), false)
+})
+
+test('managers can open warnings and only organisation admins can open warning settings', () => {
+  const manager = user({ role: UserRole.MANAGER, permissions: { manager: true } })
+  const operativeManager = user({ role: UserRole.MANAGER, permissions: { manager: true, operativeMode: true } })
+  const admin = user({ role: UserRole.ADMIN, permissions: { adminAccess: true } })
+  assert.equal(canViewWarnings(manager), true)
+  assert.equal(canOpenWarningSettings(manager), false)
+  assert.equal(canViewWarnings(operativeManager), false)
+  assert.equal(canViewWarnings(admin), true)
+  assert.equal(canOpenWarningSettings(admin), true)
 })
 
 test('canViewProjects is always true', () => {

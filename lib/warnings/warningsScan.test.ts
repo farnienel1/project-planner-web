@@ -64,6 +64,21 @@ test('qualification rows stay hidden until the schedule scan is ready', () => {
   assert.equal(lanes.clashes, false)
   assert.equal(lanes.unbooked, false)
   assert.equal(lanes.qualifications, false)
+  assert.equal(lanes.unverified, false)
+  const readyWithoutProjects = warningScanLanes({
+    detectionReady: true,
+    bookingsReady: true,
+    managerReady: true,
+    rosterReady: true,
+    operativesReady: true,
+    projectsReady: false,
+    holidaysReady: true,
+    materialsReady: false,
+    sendRecordsReady: false,
+  })
+  assert.equal(readyWithoutProjects.qualifications, true)
+  assert.equal(readyWithoutProjects.unbooked, true)
+  assert.equal(readyWithoutProjects.materials, false)
   const published = publishReadyWarningLanes({
     previous: {
       clashWarnings: [{ id: 'kept' }],
