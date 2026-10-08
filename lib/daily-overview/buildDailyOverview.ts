@@ -7,6 +7,7 @@
  */
 
 import { unbookedLabourRows } from '@/lib/canonical'
+import { findUserByAnyId, rosterDisplayName } from '@/lib/staff/userRosterUtils'
 import { addLondonDays, coversCalendarDay, dayKey, isSameLondonDay } from '@/lib/ios-parity/londonTime'
 import { isPlaceholderOperative } from '@/lib/operatives/operativeRosterUtils'
 import { UserRole } from '@/types'
@@ -18,6 +19,7 @@ import {
 } from '@/lib/scheduling/paidHours'
 import { DEFAULT_PAYROLL_POLICY, type OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 import { effectiveWeekendSettings } from '@/lib/setup/workingHoursUtils'
+import { rosterDisplayName } from '@/lib/staff/userRosterUtils'
 import type { Booking, HolidayBooking, Operative, Project, User } from '@/types'
 import type { ManagerLocationType, ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import {
@@ -67,11 +69,6 @@ export function isLondonWeekday(date: Date): boolean {
 
 export { overviewFormatHours, parseMinutes, estimatedPaidHours }
 
-function displayName(user: User): string {
-  const full = `${user.firstName || ''} ${user.surname || ''}`.trim()
-  return full || user.email.split('@')[0] || user.email
-}
-
 function holidayCovers(booking: HolidayBooking, day: Date): boolean {
   if (booking.status !== 'approved') return false
   const key = dayKey(day)
@@ -102,9 +99,17 @@ function slotSortKey(slot?: string): number {
   return 3
 }
 
-function operativeDisplayName(op: Operative | undefined, fallbackId: string): string {
-  if (!op) return 'Operative'
-  return `${op.firstName || ''} ${op.lastName || ''}`.trim() || op.email || fallbackId
+function operativeDisplayName(
+  op: Operative | undefined,
+  operativeId: string,
+  users: readonly User[],
+  aliases?: Record<string, string>
+): string {
+  const fromCatalogue = op
+    ? rosterDisplayName({ firstName: op.firstName, surname: op.lastName, email: op.email })
+    : ''
+  if (fromCatalogue) return fromCatalogue
+  return rosterDisplayName(findUserByAnyId(users, operativeId, aliases))
 }
 
 export type DailyOverviewModel = {
@@ -298,17 +303,22 @@ export function buildDailyOverview(params: {
       if (slot !== 0) return slot
       const nameA = operativeDisplayName(
         params.operatives.find((o) => o.id === a.operativeId),
-        a.operativeId
+        a.operativeId,
+        params.users,
+        params.userIdAliases
       )
       const nameB = operativeDisplayName(
         params.operatives.find((o) => o.id === b.operativeId),
-        b.operativeId
+        b.operativeId,
+        params.users,
+        params.userIdAliases
       )
       return nameA.localeCompare(nameB)
     })
     for (const b of opBookings) {
       const op = operativeById.get(b.operativeId)
-      const name = operativeDisplayName(op, b.operativeId)
+      const name = operativeDisplayName(op, b.operativeId, params.users, params.userIdAliases)
+      if (!name) continue
       const hours = estimatedPaidHours(b)
       const linkedUser = op
         ? params.users.find((row) => row.email.trim().toLowerCase() === op.email.trim().toLowerCase())
@@ -340,8 +350,9 @@ export function buildDailyOverview(params: {
       )
       .sort((a, b) => slotSortKey(a.timeSlot) - slotSortKey(b.timeSlot))
     for (const b of mgrs) {
-      const user = userById.get(b.userId)
-      const name = user ? displayName(user) : 'Manager'
+      const user = userById.get(b.userId) || findUserByAnyId(params.users, b.userId, params.userIdAliases)
+      const name = rosterDisplayName(user)
+      if (!name) continue
       const hours = estimatedPaidHours(b)
       rows.push({
         id: `mgr-${b.id}`,

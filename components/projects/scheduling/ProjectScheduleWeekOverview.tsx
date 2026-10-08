@@ -7,8 +7,8 @@ import { useBookingStore } from '@/lib/stores/bookingStore'
 import { useManagerScheduleStore } from '@/lib/stores/managerScheduleStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
 import { useSubcontractorStore } from '@/lib/stores/subcontractorStore'
+import { findUserByAnyId, rosterDisplayName } from '@/lib/staff/userRosterUtils'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
-import { findUserByAnyId } from '@/lib/staff/userRosterUtils'
 import { weekDaysFrom } from '@/lib/scheduling/scheduleUtils'
 import {
   customHoursRangeLabel,
@@ -225,11 +225,16 @@ export function ProjectScheduleWeekOverview({
     return weekDays.map((day) => {
       const opRows: DayRow[] = projectBookings
         .filter((b) => coversCalendarDay(new Date(b.date), day))
-        .map((b) => {
-          const op = operatives.find((o) => o.id === b.operativeId)
-          const name = op ? `${op.firstName} ${op.lastName}`.trim() : 'Operative'
-          const email = op?.email
-          return {
+        .flatMap((b) => {
+          const op = operatives.find((o) => idsMatch(o.id, b.operativeId))
+          const linkedUser = findUserByAnyId(users, b.operativeId, userIdAliases)
+          const name =
+            rosterDisplayName(
+              op ? { firstName: op.firstName, surname: op.lastName, email: op.email } : null
+            ) || rosterDisplayName(linkedUser)
+          if (!name) return []
+          const email = op?.email || linkedUser?.email
+          return [{
             id: b.id,
             personKey: email?.trim() ? `email:${email.trim().toLowerCase()}` : `op:${b.operativeId}`,
             name,
@@ -246,16 +251,14 @@ export function ProjectScheduleWeekOverview({
               standardDayEnd: payroll.standardDayEnd,
               overtimeMultiplier: payroll.weekdayOutsideStandardMultiplier,
             }),
-          }
+          }]
         })
 
       const managerRows: DayRow[] = projectManagerBookings
         .filter((b) => coversCalendarDay(new Date(b.date), day))
         .flatMap((b) => {
           const manager = findUserByAnyId(users, b.userId, userIdAliases)
-          const name = manager
-            ? `${manager.firstName} ${manager.surname}`.trim() || manager.email
-            : ''
+          const name = rosterDisplayName(manager)
           if (!name) return []
           const roleLabel =
             manager?.permissions.adminAccess || manager?.isSuperAdmin ? 'Admin' : 'Mgr'

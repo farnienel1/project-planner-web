@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { useAuthStore } from '@/lib/stores/authStore'
@@ -91,7 +91,7 @@ export function ManageUsersScreen() {
   const canManage = canManageUsers(currentUser)
   const title = getManageUsersLabel(currentUser, organization)
 
-  const emptyRosterRetries = useRef(0)
+  const [rosterAttempt, setRosterAttempt] = useState(0)
 
   useEffect(() => {
     if (organization?.id) loadUsers(organization.id)
@@ -99,18 +99,16 @@ export function ManageUsersScreen() {
 
   useEffect(() => {
     if (!organization?.id) return
-    if (users.length > 0) {
-      emptyRosterRetries.current = 0
-      return
-    }
+    if (users.length > 0) return
+    // Still waiting on the first read. A settled empty list, or an error, is retried.
     if (rosterLoadedOrgId !== organization.id && !rosterError) return
-    if (emptyRosterRetries.current >= 4) return
-    emptyRosterRetries.current += 1
+    if (rosterAttempt >= 4) return
     const timer = window.setTimeout(() => {
+      setRosterAttempt((attempt) => attempt + 1)
       void loadUsers(organization.id, { force: true })
-    }, 600)
+    }, 500)
     return () => window.clearTimeout(timer)
-  }, [organization?.id, users.length, rosterLoadedOrgId, rosterError, loadUsers])
+  }, [organization?.id, users.length, rosterLoadedOrgId, rosterError, rosterAttempt, loadUsers])
 
   useEffect(() => {
     setSegment('active')

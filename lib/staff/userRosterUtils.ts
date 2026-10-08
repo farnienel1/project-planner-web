@@ -66,11 +66,57 @@ export function findUserByAnyId(
   userId: string,
   aliases?: Record<string, string>
 ): User | undefined {
-  const direct = users.find((user) => user.id === userId)
+  const needle = userId.trim()
+  if (!needle) return undefined
+  const direct = users.find((user) => user.id === needle || user.id.toLowerCase() === needle.toLowerCase())
   if (direct) return direct
-  const keptId = aliases?.[userId]
-  if (!keptId || keptId === userId) return undefined
-  return users.find((user) => user.id === keptId)
+  const keptId =
+    aliases?.[needle] ||
+    aliases?.[needle.toLowerCase()] ||
+    Object.entries(aliases || {}).find(([alias]) => alias.toLowerCase() === needle.toLowerCase())?.[1]
+  if (!keptId || keptId === needle) return undefined
+  return users.find((user) => user.id === keptId || user.id.toLowerCase() === keptId.toLowerCase())
+}
+
+/** A label that is only a role is not a person's name. */
+export function isRoleOnlyPersonName(value: string): boolean {
+  return /^(manager|admin|operative|user)$/i.test(value.trim())
+}
+
+/** Every profile id that is the same person as `userId`, including the other document that shares the email. */
+export function samePersonIds(
+  userId: string,
+  users: readonly User[],
+  aliases?: Record<string, string>
+): Set<string> {
+  const ids = new Set<string>()
+  if (userId.trim()) ids.add(userId.trim())
+  const user = findUserByAnyId(users, userId, aliases)
+  const email = normalizeEmail(user?.email || '')
+  if (email) {
+    for (const row of users) {
+      if (normalizeEmail(row.email) === email) ids.add(row.id)
+    }
+  }
+  for (const [alias, kept] of Object.entries(aliases || {})) {
+    if (ids.has(alias) || ids.has(kept)) {
+      ids.add(alias)
+      ids.add(kept)
+    }
+  }
+  return ids
+}
+
+/** Name for a roster row. A bare role word is not used in place of a missing name. */
+export function rosterDisplayName(
+  user: Pick<User, 'firstName' | 'surname' | 'email'> | null | undefined
+): string {
+  if (!user) return ''
+  const name = `${user.firstName || ''} ${user.surname || ''}`.trim()
+  if (name && !isRoleOnlyPersonName(name)) return name
+  const email = (user.email || '').trim()
+  if (email && !isRoleOnlyPersonName(email)) return email
+  return ''
 }
 
 /** Deduplicate by email — keeps the best account when duplicates exist in Firebase. */

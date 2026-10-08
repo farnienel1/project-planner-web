@@ -10,6 +10,7 @@ import { UserRole } from '@/types'
 import { isActiveBookingStatus } from '@/lib/ios-parity/enums'
 import { dayKey, londonIsoWeekday, londonMidnight } from '@/lib/ios-parity/londonTime'
 import { displayTradeType } from '@/lib/staff/staffTradeTypes'
+import { rosterDisplayName } from '@/lib/staff/userRosterUtils'
 import type { OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 import { DEFAULT_PAYROLL_POLICY } from '@/lib/settings/organizationSettings'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
@@ -101,11 +102,6 @@ function oneAccountPerEmail(users: User[]): User[] {
     picked.push(best)
   }
   return [...picked, ...withoutEmail]
-}
-
-function displayNameForUser(user: User): string {
-  const name = `${user.firstName || ''} ${user.surname || ''}`.trim()
-  return name || user.email || user.id
 }
 
 function holidayCoversDay(
@@ -324,6 +320,8 @@ export function buildBookLabourCandidates(input: {
     )
     if (!sharesFocusedId(user, linked) && paid >= required) continue
     if (linked) claimedOperativeIds.add(linked.id)
+    const operativeName = rosterDisplayName(user)
+    if (!operativeName) continue
     seen.add(user.id)
     if (email) seenEmails.add(email)
     out.push({
@@ -331,7 +329,7 @@ export function buildBookLabourCandidates(input: {
       user,
       linkedOperative: linked,
       usesOperativeProjectBookings: true,
-      displayName: displayNameForUser(user),
+      displayName: operativeName,
       roleChips: roleChipsFor(user),
       tradeDisplay: tradeFor(user, linked),
       canBookOtherLocations: canBookOtherLocations(user),
@@ -366,12 +364,14 @@ export function buildBookLabourCandidates(input: {
     if (!sharesFocusedId(user, linked) && paid >= required) continue
     if (linked) claimedOperativeIds.add(linked.id)
     if (email) seenEmails.add(email)
+    const managerName = rosterDisplayName(user)
+    if (!managerName) continue
     out.push({
       id: user.id,
       user,
       linkedOperative: linked,
       usesOperativeProjectBookings: false,
-      displayName: displayNameForUser(user),
+      displayName: managerName,
       roleChips: roleChipsFor(user),
       tradeDisplay: tradeFor(user, linked),
       canBookOtherLocations: canBookOtherLocations(user),
