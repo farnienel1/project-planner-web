@@ -227,9 +227,10 @@ export function ProjectScheduleWeekOverview({
         .map((b) => {
           const op = operatives.find((o) => o.id === b.operativeId)
           const name = op ? `${op.firstName} ${op.lastName}`.trim() : 'Operative'
+          const email = op?.email
           return {
             id: b.id,
-            personKey: `op:${b.operativeId}`,
+            personKey: email?.trim() ? `email:${email.trim().toLowerCase()}` : `op:${b.operativeId}`,
             name,
             roleLabel: 'Op',
             roleTone: 'operative' as const,
@@ -254,9 +255,10 @@ export function ProjectScheduleWeekOverview({
           const name = manager ? `${manager.firstName} ${manager.surname}`.trim() : 'Manager'
           const roleLabel =
             manager?.permissions.adminAccess || manager?.isSuperAdmin ? 'Admin' : 'Mgr'
+          const email = manager?.email
           return {
             id: b.id,
-            personKey: `mgr:${b.userId}`,
+            personKey: email?.trim() ? `email:${email.trim().toLowerCase()}` : `mgr:${b.userId}`,
             name,
             roleLabel,
             roleTone: 'manager' as const,
@@ -330,6 +332,10 @@ export function ProjectScheduleWeekOverview({
           person.name = row.name
           person.peopleLabel = row.peopleLabel
           person.firmName = row.firmName
+        }
+        if (person.roleTone === 'operative' && row.roleTone === 'manager') {
+          person.roleLabel = row.roleLabel
+          person.roleTone = row.roleTone
         }
         person.cells[dayIndex].push(row)
       }
