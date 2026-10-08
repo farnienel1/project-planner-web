@@ -13,7 +13,7 @@ import { applyWeeklyReportOverride } from '@/lib/timesheets/weeklyReportOverride
 import { listTimesheetStates, saveTimesheetDraft } from '@/lib/timesheets/timesheetStorage'
 import { emptyDayRateHistory, type OperativeDayRateHistoryCollection } from '@/lib/timesheets/dayRateHistoryStorage'
 import { findUserAndOperative, resolveDisplayName, resolvePersonRole, resolvePersonTrade } from '@/lib/weekly-report/weeklyReportPayroll'
-import type { ApprovedTimesheetWeek } from '@/lib/weekly-report/timesheetFeed'
+import { mergeDuplicatePersonWeeks, type ApprovedTimesheetWeek } from '@/lib/weekly-report/timesheetFeed'
 
 function participatesInTimesheets(user: User): boolean {
   if (user.isActive === false) return false
@@ -118,5 +118,19 @@ export async function loadWeeklyReportTimesheetFeed({
     }
   }
 
-  return weeks
+  const preferredIds = new Set(
+    users
+      .filter((user) => user.passwordSet && user.isActive !== false)
+      .map((user) => user.id)
+  )
+  const ordered = [...weeks].sort((a, b) => {
+    const score = (week: ApprovedTimesheetWeek) =>
+      (preferredIds.has(week.userId) ? 0 : 2) + (week.trade && week.trade !== 'General' ? 0 : 1)
+    return score(a) - score(b)
+  })
+  return mergeDuplicatePersonWeeks(
+    ordered,
+    users.map((user) => ({ id: user.id, email: user.email })),
+    timeZone
+  )
 }
