@@ -268,18 +268,40 @@ async function fetchOrganisationRoster(organizationId: string): Promise<{
     return ''
   }
 
+  const cachedUser = (id: string): User | undefined => collected.find((row) => row.id === id)
+
+  const cachedUserByEmail = (email: string): User | undefined => {
+    const needle = email.trim().toLowerCase()
+    if (!needle) return undefined
+    return collected.find((row) => row.email.trim().toLowerCase() === needle)
+  }
+
+  /**
+   * A project open used to read every manager document and then read that
+   * person's user document again, even when the organisation query had already
+   * returned them. Use the rows already in memory first.
+   */
   const resolveRosterLink = async (entryId: string, data: Record<string, unknown>): Promise<User | null> => {
     const email = text(data.email)
-    const linkedIds = [text(data.userId), text(data.userID), text(data.uid), text(data.linkedUserId), entryId].filter(
+    const explicitIds = [text(data.userId), text(data.userID), text(data.uid), text(data.linkedUserId)].filter(
       (id, index, all) => id !== '' && all.indexOf(id) === index
     )
+    const cachedExplicit = explicitIds.map((id) => cachedUser(id)).find((row): row is User => Boolean(row))
+    if (cachedExplicit) return cachedExplicit
+    const cachedEmail = cachedUserByEmail(email)
+    if (explicitIds.length === 0 && cachedEmail) return cachedEmail
+
+    const linkedIds = [...explicitIds, entryId].filter((id, index, all) => id !== '' && all.indexOf(id) === index)
     for (const id of linkedIds) {
+      const cached = cachedUser(id)
+      if (cached) return cached
       const user = await loadUserDocument(id, true)
       if (user) return user
     }
+    if (cachedEmail) return cachedEmail
     const userId = await userIdForEmail(email)
     if (!userId) return null
-    return loadUserDocument(userId, true)
+    return cachedUser(userId) || loadUserDocument(userId, true)
   }
 
   const readTogether = async <T>(

@@ -224,6 +224,77 @@ test('book labour hides people who are already booked for the day', () => {
   assert.equal(morningOnly.some((row) => row.id === 'U-OP'), true)
 })
 
+test('book labour treats every profile with the same email as one person', () => {
+  const live = user({ id: 'U-OP', email: 'ada@site.test' })
+  const duplicateAccount = user({
+    id: 'U-OP-DUP',
+    email: 'ada@site.test',
+    passwordSet: false,
+  })
+  const emptyProfile = operative({ id: 'OP-EMPTY', email: 'ada@site.test' })
+  const bookedProfile = operative({ id: 'OP-BOOKED', email: 'ada@site.test' })
+  const covered = buildBookLabourCandidates({
+    day: WED,
+    users: [duplicateAccount, live],
+    operatives: [emptyProfile, bookedProfile],
+    bookings: [booking({ id: 'B-OTHER', operativeId: 'OP-BOOKED' })],
+    managerSiteBookings: [],
+    holidays: [],
+    payrollPolicy: DEFAULT_PAYROLL_POLICY,
+  })
+  assert.equal(covered.some((row) => row.email === 'ada@site.test' || row.user.email === 'ada@site.test'), false)
+
+  const partial = buildBookLabourCandidates({
+    day: WED,
+    users: [live, duplicateAccount],
+    operatives: [emptyProfile, bookedProfile],
+    bookings: [booking({ id: 'B-AM', operativeId: 'OP-BOOKED', timeSlot: 'AM' })],
+    managerSiteBookings: [],
+    holidays: [],
+    payrollPolicy: DEFAULT_PAYROLL_POLICY,
+  })
+  assert.equal(partial.length, 1)
+  assert.equal(partial[0]?.id, 'U-OP')
+  assert.equal(partial[0]?.linkedOperative?.id, 'OP-BOOKED')
+
+  const managerLive = user({
+    id: 'U-MGR',
+    email: 'boss@site.test',
+    firstName: 'Boss',
+    surname: 'Mgr',
+    role: UserRole.MANAGER,
+    permissions: perms({ manager: true }),
+  })
+  const managerAlias = user({
+    id: 'U-MGR-ALIAS',
+    email: 'boss@site.test',
+    firstName: 'Boss',
+    surname: 'Alias',
+    role: UserRole.MANAGER,
+    permissions: perms({ manager: true }),
+  })
+  const managerCovered = buildBookLabourCandidates({
+    day: WED,
+    users: [managerLive, managerAlias],
+    operatives: [],
+    bookings: [],
+    managerSiteBookings: [
+      {
+        id: 'M-ALIAS',
+        userId: 'U-MGR-ALIAS',
+        date: WED,
+        timeSlot: 'FULL DAY',
+        locationType: 'office',
+        createdAt: WED,
+        updatedAt: WED,
+      },
+    ],
+    holidays: [],
+    payrollPolicy: DEFAULT_PAYROLL_POLICY,
+  })
+  assert.equal(managerCovered.length, 0)
+})
+
 test('enabledScheduleLocationPicks matches iOS Other locations', () => {
   const picks = enabledScheduleLocationPicks({
     showOffice: true,

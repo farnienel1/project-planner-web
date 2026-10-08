@@ -16,6 +16,7 @@ export {
   organizationScopedKey,
   paidHoursForNamedSlot,
   provisionalOrganizationId,
+  standardDayCoverage,
   resetOrganizationContextForTests,
 } from './engine'
 
@@ -35,6 +36,9 @@ export type {
   OrganizationContextSnapshot,
   PaymentRunMode,
   PaymentRunRange,
+  StandardDayBooking,
+  StandardDayCoverage,
+  StandardDayPolicy,
 } from './engine'
 
 export type {

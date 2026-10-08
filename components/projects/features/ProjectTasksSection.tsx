@@ -11,6 +11,8 @@ import { ClipboardDocumentListIcon } from '@heroicons/react/24/outline'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useTaskStore } from '@/lib/stores/taskStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
+import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
+import { assignableProjectManagers } from '@/lib/projects/projectManagerChoices'
 import { isOperativeMode } from '@/lib/navigation/menuPermissions'
 import { canManageWorkCatalogue, hasAdminAccess } from '@/lib/permissions'
 import { ErrorBanner, LoadingSpinner } from '@/components/dashboard/PageShell'
@@ -50,6 +52,7 @@ function ProjectTasksSectionInner({ project }: { project: Project }) {
   const { organization, user } = useAuthStore()
   const { tasks, loading, error, loadTasks, saveTask, deleteTask } = useTaskStore()
   const { operatives, managers, loadOperatives, loadManagers } = useOperativeStore()
+  const { users, loadUsers } = useOrgUserStore()
   const [showForm, setShowForm] = useState(false)
   const [editing, setEditing] = useState<ProjectTask | null>(null)
   const [openTask, setOpenTask] = useState<ProjectTask | null>(null)
@@ -66,8 +69,14 @@ function ProjectTasksSectionInner({ project }: { project: Project }) {
       loadTasks(organization.id)
       loadOperatives(organization.id)
       loadManagers(organization.id)
+      loadUsers(organization.id)
     }
-  }, [organization, loadTasks, loadOperatives, loadManagers])
+  }, [organization, loadTasks, loadOperatives, loadManagers, loadUsers])
+
+  const assignableManagers = useMemo(
+    () => assignableProjectManagers(managers, users, organization?.id),
+    [managers, users, organization?.id]
+  )
 
   const projectTasks = useMemo(
     () => tasks.filter((t) => t.projectId.toLowerCase() === project.id.toLowerCase()),
@@ -326,7 +335,7 @@ function ProjectTasksSectionInner({ project }: { project: Project }) {
       {showForm && (
         <AddProjectTaskSheet
           project={project}
-          people={{ operatives, managers }}
+          people={{ operatives, managers: assignableManagers }}
           existing={editing}
           onSave={handleSaveForm}
           onClose={() => {
@@ -340,10 +349,10 @@ function ProjectTasksSectionInner({ project }: { project: Project }) {
         <ProjectTaskFilterSheet
           filter={taskFilter}
           operatives={operatives}
-          managers={managers}
+          managers={assignableManagers}
           onApply={(next) => {
             if (next.type === 'operative' && !next.operativeId) next.operativeId = operatives[0]?.id
-            if (next.type === 'manager' && !next.managerId) next.managerId = managers[0]?.id
+            if (next.type === 'manager' && !next.managerId) next.managerId = assignableManagers[0]?.id
             setTaskFilter(next)
           }}
           onClose={() => setShowFilter(false)}

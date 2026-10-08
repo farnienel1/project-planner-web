@@ -20,6 +20,16 @@ export function isPlaceholderTalkTitle(title: string): boolean {
   return lower.startsWith('tbt-') && !lower.includes(' ')
 }
 
+/**
+ * Storage object names are `{uploader id} {unix seconds} {document name}`.
+ * The uploader id is not the talk title.
+ */
+export function displayTalkTitle(title: string): string {
+  const trimmed = title.trim()
+  const stripped = trimmed.replace(/^[A-Za-z0-9]{20,36}\s+\d{9,13}\s+/, '').trim()
+  return stripped || trimmed
+}
+
 /** Last path segment of an uploaded file, without the extension. */
 export function talkFileNameHint(fileURL?: string): string | null {
   const raw = (fileURL || '').trim()
@@ -43,7 +53,7 @@ export function talkFileNameHint(fileURL?: string): string | null {
     .replace(/_/g, ' ')
     .replace(/%20/g, ' ')
     .trim()
-  return name || null
+  return name ? displayTalkTitle(name) : null
 }
 
 function repairedLibraryTalk(stored: HSToolboxTalk, catalog: HSToolboxTalk): HSToolboxTalk {
@@ -70,7 +80,7 @@ function repairedLibraryTalk(stored: HSToolboxTalk, catalog: HSToolboxTalk): HST
 }
 
 function withUploadTitle(talk: HSToolboxTalk): HSToolboxTalk {
-  const uploaded: HSToolboxTalk = { ...talk, source: 'uploaded' }
+  const uploaded: HSToolboxTalk = { ...talk, source: 'uploaded', title: displayTalkTitle(talk.title) }
   if (isPlaceholderTalkTitle(uploaded.title)) {
     const hint = talkFileNameHint(uploaded.fileURL)
     if (hint) uploaded.title = hint
@@ -114,8 +124,9 @@ export function mergeToolboxTalks(
       merged.push(withUploadTitle(talk))
       continue
     }
-    if (isPlaceholderTalkTitle(talk.title)) continue
-    merged.push(talk)
+    const titled = { ...talk, title: displayTalkTitle(talk.title) }
+    if (isPlaceholderTalkTitle(titled.title)) continue
+    merged.push(titled)
   }
 
   const leftovers = Array.from(byId.values()).sort((a, b) => a.id.localeCompare(b.id))

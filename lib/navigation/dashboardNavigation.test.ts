@@ -69,6 +69,40 @@ test('Variations is in the menu for admins and managers, and hidden for operativ
   assert.equal(getDashboardNavItems(admin, null).some((item) => item.id === 'dashboard_variations'), true)
 })
 
+test('the menu follows saved profile toggles', () => {
+  const manager = user({
+    role: UserRole.MANAGER,
+    permissions: {
+      manager: true,
+      projects: true,
+      weeklyReports: false,
+      dailyOverview: false,
+      qualifications: false,
+      wholesalersOrderHistory: false,
+      operatives: false,
+      subContractors: false,
+    },
+  })
+  const ids = getDashboardNavItems(manager, null).map((item) => item.id)
+  assert.equal(ids.includes('dashboard_projects'), true)
+  assert.equal(ids.includes('dashboard_weekly_report'), false)
+  assert.equal(ids.includes('dashboard_daily_overview'), false)
+  assert.equal(ids.includes('dashboard_wholesalers'), false)
+  assert.equal(ids.includes('dashboard_operatives'), false)
+  assert.equal(ids.includes('dashboard_sub_contractors'), false)
+  assert.equal(ids.includes('dashboard_qualifications'), true)
+  assert.equal(ids.includes('dashboard_manage_users'), false)
+  const operative = user({
+    role: UserRole.OPERATIVE,
+    permissions: { operativeMode: true, siteAudit: false, materials: true },
+  })
+  const operativeIds = getDashboardNavItems(operative, null).map((item) => item.id)
+  assert.equal(operativeIds.includes('dashboard_site_audit'), false)
+  assert.equal(operativeIds.includes('dashboard_weekly_report'), false)
+  assert.equal(operativeIds.includes('dashboard_warnings'), false)
+  assert.equal(operativeIds.includes('dashboard_manage_users'), false)
+})
+
 test('Feedback is in the organisation menu; Developer never is', () => {
   const operative = user({ role: UserRole.OPERATIVE, permissions: { operativeMode: true } })
   const manager = user({ role: UserRole.MANAGER, permissions: { manager: true } })

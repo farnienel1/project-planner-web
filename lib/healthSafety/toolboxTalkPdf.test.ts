@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { PDFDocument } from 'pdf-lib'
 import type { HSToolboxTalk } from '../../types/index.ts'
-import { buildToolboxTalkPdf, toolboxTalkPdfFilename } from './toolboxTalkPdf.ts'
+import { buildToolboxTalkPdf, isCustomUploadedTalk, toolboxTalkPdfFilename } from './toolboxTalkPdf.ts'
 
 function pdfPlainText(bytes: Uint8Array): string {
   const raw = Buffer.from(bytes)
@@ -90,6 +90,24 @@ test('toolbox talk download is a PDF named like the iOS share sheet', async () =
   assert.equal(doc.getPageCount(), 1)
   const stamp = new Date('2026-09-23T08:35:00Z').getTime()
   assert.equal(toolboxTalkPdfFilename(talk(), stamp), `ToolboxTalk-Working_at_Height-${Math.floor(stamp / 1000)}.pdf`)
+})
+
+test('an uploaded site audit file is the talk document', () => {
+  assert.equal(
+    isCustomUploadedTalk({
+      source: 'uploaded',
+      fileURL: 'https://storage.example/siteAudits/audit.pdf',
+    }),
+    true
+  )
+  assert.equal(
+    isCustomUploadedTalk({
+      source: 'library',
+      fileURL: 'https://storage.example/siteAudits/audit.pdf',
+    }),
+    false
+  )
+  assert.equal(isCustomUploadedTalk({ source: 'uploaded', fileURL: '  ' }), false)
 })
 
 test('a long talk paginates instead of clipping the sign-off table', async () => {

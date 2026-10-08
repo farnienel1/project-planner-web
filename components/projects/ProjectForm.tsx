@@ -17,7 +17,13 @@ import { FormActions, FormInput, FormLabel, FormSelect, FormTextarea } from '@/c
 import { ErrorBanner } from '@/components/dashboard/PageShell'
 import { SitePinPickerSheet } from '@/components/site-map/SitePinPickerSheet'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
-import { getManagerUsers, matchesRosterSegment } from '@/lib/staff/userRosterUtils'
+import {
+  choiceIdForRoster,
+  managerIdsMatch,
+  projectManagerChoices,
+  projectManagerSelectionIds,
+  stableManagerDocumentId,
+} from '@/lib/projects/projectManagerChoices'
 
 type ProjectFormProps = {
   initial?: Project | null
@@ -26,18 +32,8 @@ type ProjectFormProps = {
   onSaved: (id: string) => void
 }
 
-type ManagerOption = {
-  id: string
-  label: string
-  userId?: string
-}
-
 function normalizeEmail(email: string): string {
   return email.trim().toLowerCase()
-}
-
-function userManagerOptionId(userId: string): string {
-  return `user:${userId}`
 }
 
 function defaultProjectStart(): string {
@@ -51,14 +47,15 @@ function defaultProjectEnd(): string {
 export function ProjectForm({ initial, collection = 'projects', backHref, onSaved }: ProjectFormProps) {
   const { organization } = useAuthStore()
   const { clients, loadClients, saveProject, createClient } = useProjectStore()
-  const { managers, placeholderManagerCount, loadManagers, saveManager } = useOperativeStore()
-  const { users, loadUsers } = useOrgUserStore()
+  const { managers, placeholderManagerCount, managersLoadedOrgId, loadManagers, saveManager } = useOperativeStore()
+  const { users, rosterLoadedOrgId, loadUsers } = useOrgUserStore()
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [managerFieldError, setManagerFieldError] = useState(false)
   const [pinPickerOpen, setPinPickerOpen] = useState(false)
   const [newClientName, setNewClientName] = useState('')
   const managersFieldRef = useRef<HTMLDivElement>(null)
+  const managerSelectionEdited = useRef(false)
 
   const [jobTypes, setJobTypes] = useState<string[]>([...DEFAULT_JOB_TYPES])
   const blankIdentity = emptyProjectCreateIdentity()
@@ -105,37 +102,17 @@ export function ProjectForm({ initial, collection = 'projects', backHref, onSave
     }
   }, [organization, loadClients, loadManagers, loadUsers])
 
-  const managerUsers = useMemo(
-    () => getManagerUsers(users).filter((manager) => manager.status !== 'pending' && manager.passwordSet !== false),
-    [users]
+  const managerOptions = useMemo(
+    () => projectManagerChoices(managers, users, organization?.id),
+    [managers, users, organization?.id]
   )
 
-  const managerOptions = useMemo(() => {
-    const options: ManagerOption[] = []
-    const seenEmails = new Set<string>()
-
-    for (const manager of managers) {
-      const email = normalizeEmail(manager.email)
-      if (email) seenEmails.add(email)
-      options.push({
-        id: manager.id,
-        label: `${manager.firstName} ${manager.lastName}`.trim() || manager.email,
-      })
-    }
-
-    for (const managerUser of managerUsers) {
-      if (!matchesRosterSegment(managerUser, 'active')) continue
-      const email = normalizeEmail(managerUser.email)
-      if (email && seenEmails.has(email)) continue
-      options.push({
-        id: userManagerOptionId(managerUser.id),
-        label: `${managerUser.firstName} ${managerUser.surname}`.trim() || managerUser.email,
-        userId: managerUser.id,
-      })
-    }
-
-    return options.sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base' }))
-  }, [managers, managerUsers])
+  useEffect(() => {
+    if (!initial || managerSelectionEdited.current || !organization?.id) return
+    if (managersLoadedOrgId !== organization.id || rosterLoadedOrgId !== organization.id) return
+    const managerIds = projectManagerSelectionIds(initial, managers, users, organization.id)
+    setForm((current) => ({ ...current, managerIds }))
+  }, [initial, managers, users, organization?.id, managersLoadedOrgId, rosterLoadedOrgId])
 
   const setAddressField = (patch: Partial<Pick<typeof form, 'addressLine1' | 'addressLine2' | 'townCity' | 'postcode'>>) => {
     setForm((current) => ({
@@ -162,13 +139,13 @@ export function ProjectForm({ initial, collection = 'projects', backHref, onSave
       }
 
       const userId = selectedId.slice('user:'.length)
-      const managerUser = managerUsers.find((entry) => entry.id === userId)
+      const managerUser = users.find((entry) => entry.id === userId)
       if (!managerUser) continue
 
       const email = normalizeEmail(managerUser.email)
       const existing = managers.find((entry) => normalizeEmail(entry.email) === email)
       if (existing) {
-        resolved.push(existing.id)
+        resolved.push(choiceIdForRoster(existing.id))
         continue
       }
 
@@ -236,7 +213,12 @@ export function ProjectForm({ initial, collection = 'projects', backHref, onSave
 
     setSaving(true)
     try {
-      const resolvedManagerIds = await resolveManagerIds()
+      const resolvedManagerIds = projectManagerSelectionIds(
+        { managerIds: await resolveManagerIds() },
+        managers,
+        users,
+        organization.id
+      )
       if (creating && resolvedManagerIds.length === 0) {
         setError('Please assign at least one manager')
         setManagerFieldError(true)
@@ -245,8 +227,14 @@ export function ProjectForm({ initial, collection = 'projects', backHref, onSave
       }
 
       const primaryManagerId = resolvedManagerIds[0]
-      const primaryManager = managers.find((m) => m.id === primaryManagerId)
-      const primaryUser = managerUsers.find((u) => userManagerOptionId(u.id) === form.managerIds[0])
+      const primaryManager = managers.find(
+        (manager) =>
+          managerIdsMatch(manager.id, primaryManagerId) ||
+          managerIdsMatch(stableManagerDocumentId(manager.id), primaryManagerId)
+      )
+      const primaryUser = users.find(
+        (user) => managerIdsMatch(user.id, form.managerIds[0]) || managerIdsMatch(`user:${user.id}`, form.managerIds[0])
+      )
 
       const input: ProjectSaveInput = {
         id: initial?.id || '',
@@ -363,6 +351,7 @@ export function ProjectForm({ initial, collection = 'projects', backHref, onSave
             multiple
             value={form.managerIds}
             onChange={(e) => {
+              managerSelectionEdited.current = true
               setManagerFieldError(false)
               setForm({
                 ...form,

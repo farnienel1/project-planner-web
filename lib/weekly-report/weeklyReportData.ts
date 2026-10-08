@@ -308,12 +308,15 @@ export function buildWeeklyReportData({
         projectTotal: 0,
       } satisfies WeeklyReportProjectGroup)
 
-    group.rows.push({
-      person,
-      trade: resolvePersonTrade(user, operative),
-      role: resolvePersonRole(user, operative),
-      days,
-    })
+    const role = resolvePersonRole(user, operative)
+    const trade = resolvePersonTrade(user, operative)
+    const existing = group.rows.find((row) => row.person === person && row.role === role)
+    if (existing) {
+      existing.days = Math.round((existing.days + days) * 100) / 100
+      if (existing.trade === 'General' && trade !== 'General') existing.trade = trade
+    } else {
+      group.rows.push({ person, trade, role, days })
+    }
     group.projectTotal = Math.round((group.projectTotal + days) * 100) / 100
     projectGroupsMap.set(key, group)
   }

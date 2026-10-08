@@ -4,14 +4,17 @@ import { useEffect, useState, type ReactNode } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
+  BuildingOffice2Icon,
   CalendarDaysIcon,
   CameraIcon,
   ClipboardDocumentCheckIcon,
+  ClockIcon,
   CubeIcon,
   EyeIcon,
   MapPinIcon,
   PencilSquareIcon,
   PlusIcon,
+  ChatBubbleLeftRightIcon,
   DocumentTextIcon,
   FlagIcon,
   ShieldCheckIcon,
@@ -27,15 +30,17 @@ import {
 import { visibleJobTypeLabel } from '@/lib/jobTypes/jobTypesStorage'
 import { formatSiteAddress } from '@/lib/maps/siteAddress'
 import { useAuthStore } from '@/lib/stores/authStore'
-import { canBookWork, canManageWorkCatalogue, canViewMaterials, canViewSiteAudit, hasAdminAccess } from '@/lib/permissions'
+import { canBookWork, canManageWorkCatalogue, canViewMaterials, canViewSiteAudit } from '@/lib/permissions'
 import { canViewProjectActiveUsers } from '@/lib/projects/activeUsers'
 import { useActiveUserBadge } from '@/components/projects/features/ProjectActiveUsersSection'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
+import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { isOperativeMode } from '@/lib/navigation/menuPermissions'
 import { jobHubTiles } from '@/lib/projects/jobHubTiles'
 import { canSeeJobVariations } from '@/lib/variations/variationAccess'
 import { subscribeParentVariations } from '@/lib/variations/variationStorage'
 import { LONDON_TIME_ZONE } from '@/lib/orgTime/zoneTime'
+import { assignedManagerLabel, assignedManagerNames } from '@/lib/projects/assignedManagers'
 import type { SectionHue } from '@/lib/ui/sectionHue'
 import type { Project, User } from '@/types'
 import { cn } from '@/lib/ui/cn'
@@ -116,17 +121,19 @@ export function ProjectWorkspaceChrome({
   const showViewTile = canConfigureProjectVisibility(user, isSmallWork)
   const isOperative = isOperativeMode(user)
   const { managers: rosterManagers, loadManagers } = useOperativeStore()
+  const { users, loadUsers } = useOrgUserStore()
   const showActiveUsers = canViewProjectActiveUsers(user, rosterManagers, project)
   const activeUserCount = useActiveUserBadge(project, showActiveUsers)
 
   useEffect(() => {
     if (!organization?.id) return
-    if (hasAdminAccess(user) || user?.permissions.manager) void loadManagers(organization.id)
-  }, [organization?.id, user, loadManagers])
+    void loadManagers(organization.id)
+    void loadUsers(organization.id)
+  }, [organization?.id, loadManagers, loadUsers])
   const active = tabFromPath(pathname, basePath)
   const hideTabs = hideWorkspaceTabs(pathname)
   const typeLabel = visibleJobTypeLabel(project.jobType, project.customJobType)
-  const managers = project.manager?.name || '—'
+  const managers = assignedManagerLabel(project, rosterManagers, users, organization?.id)
   const catalogue = isSmallWork ? '/dashboard/small-works' : '/dashboard/projects'
   const catalogueLabel = isSmallWork ? 'Small works' : 'Projects'
 
@@ -281,22 +288,39 @@ export function ProjectDetailsCard({
   basePath: string
   canEdit: boolean
 }) {
+  const { organization } = useAuthStore()
+  const rosterManagers = useOperativeStore((state) => state.managers)
+  const users = useOrgUserStore((state) => state.users)
   const address = formatSiteAddress(project)
-  const rows: { hue: SectionHue; label: string; value: string; warn?: boolean }[] = [
-    { hue: 'blue', label: 'Client', value: project.client?.name || '—' },
-    { hue: 'user', label: 'Manager', value: project.manager?.name || '—' },
+  const managerNames = assignedManagerNames(project, rosterManagers, users, organization?.id)
+  const rows: {
+    hue: SectionHue
+    label: string
+    value: string
+    warn?: boolean
+    icon: typeof BuildingOffice2Icon
+  }[] = [
+    { hue: 'blue', label: 'Client', value: project.client?.name || '—', icon: BuildingOffice2Icon },
+    {
+      hue: 'user',
+      label: managerNames.length > 1 ? 'Managers' : 'Manager',
+      value: managerNames.length > 0 ? managerNames.join(', ') : '—',
+      icon: UserGroupIcon,
+    },
     {
       hue: 'sched',
       label: 'Timeline',
       value: `${formatLondonDay(new Date(project.startDate))} – ${formatLondonDay(new Date(project.endDate))}`,
+      icon: ClockIcon,
     },
     {
       hue: 'proj',
       label: 'Address',
       value: address || 'No address yet. Add one so the team can find site.',
       warn: !address,
+      icon: MapPinIcon,
     },
-    { hue: 'lib', label: 'Description', value: project.description || 'No description added' },
+    { hue: 'lib', label: 'Description', value: project.description || 'No description added', icon: DocumentTextIcon },
   ]
 
   return (
@@ -312,9 +336,13 @@ export function ProjectDetailsCard({
         ) : null}
       </div>
       <div className="card-b space-y-3">
-        {rows.map((row) => (
+        {rows.map((row) => {
+          const Icon = row.icon
+          return (
           <div key={row.label} className="row" data-hue={row.hue} style={{ padding: '4px 0' }}>
-            <span className="ico-chip sm" />
+            <span className="ico-chip sm">
+              <Icon className="h-4 w-4" />
+            </span>
             <div className="grow">
               <div className="eyebrow">{row.label}</div>
               <div className="font-semibold" style={row.warn ? { color: 'var(--warn)' } : undefined}>
@@ -322,11 +350,17 @@ export function ProjectDetailsCard({
               </div>
             </div>
           </div>
-        ))}
+          )
+        })}
         {project.notes ? (
-          <div>
-            <div className="eyebrow">Notes</div>
-            <div className="font-semibold">{project.notes}</div>
+          <div className="row" data-hue="lib" style={{ padding: '4px 0' }}>
+            <span className="ico-chip sm">
+              <ChatBubbleLeftRightIcon className="h-4 w-4" />
+            </span>
+            <div className="grow">
+              <div className="eyebrow">Notes</div>
+              <div className="font-semibold">{project.notes}</div>
+            </div>
           </div>
         ) : null}
         {canEdit ? (
