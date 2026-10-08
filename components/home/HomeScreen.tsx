@@ -100,8 +100,7 @@ export function HomeScreen() {
   const { user, organization } = useAuthStore()
   const { projects, smallWorks, loadProjects, loadSmallWorks, projectsLoadedOrgId, smallWorksLoadedOrgId } =
     useProjectStore()
-  const { operatives, managers, loadOperatives, loadManagers, operativesLoadedOrgId, managersLoadedOrgId } =
-    useOperativeStore()
+  const { operatives, managers, loadOperatives, loadManagers, operativesLoadedOrgId } = useOperativeStore()
   const { users, loadUsers, rosterLoadedOrgId } = useOrgUserStore()
   const { bookings, loadBookings, loading: bookingsLoading, ready: bookingsReady } = useBookingStore()
   const { managerSiteBookings, loadManagerSiteBookings, loading: managerBookingsLoading } = useManagerScheduleStore()
