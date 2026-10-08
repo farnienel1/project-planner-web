@@ -120,7 +120,7 @@ export function rosterDisplayName(
 }
 
 /** Deduplicate by email — keeps the best account when duplicates exist in Firebase. */
-export function dedupeUsersByEmail(users: User[]): User[] {
+export function dedupeUsersByEmail(users: readonly User[]): User[] {
   const byEmail = new Map<string, User>()
   for (const user of users) {
     const email = normalizeEmail(user.email)
