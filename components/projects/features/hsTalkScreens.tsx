@@ -2,11 +2,17 @@
 
 import { useEffect, useState } from 'react'
 import { format } from 'date-fns'
+import {
+  ArrowDownTrayIcon,
+  BellAlertIcon,
+  EyeIcon,
+  PencilSquareIcon,
+  UserPlusIcon,
+} from '@heroicons/react/24/outline'
 import type { HSToolboxIssue, HSToolboxSignature, HSToolboxTalk, User } from '@/types'
 import { signedPercent } from '@/lib/healthSafety/hsTracking'
 import { buildToolboxTalkPdf, isCustomUploadedTalk } from '@/lib/healthSafety/toolboxTalkPdf'
 import { FeatureCard, FeatureSectionLabel } from '@/components/projects/features/featureUi'
-import { HsPrimaryButton } from '@/components/projects/features/hsUi'
 
 export function HsTalkBody({
   talk,
@@ -116,6 +122,49 @@ export function HsSignedProgress({
   )
 }
 
+function HsActionRow({
+  icon,
+  title,
+  detail,
+  onClick,
+  disabled,
+  tone = 'plain',
+}: {
+  icon: typeof EyeIcon
+  title: string
+  detail: string
+  onClick: () => void
+  disabled?: boolean
+  tone?: 'plain' | 'primary'
+}) {
+  const Icon = icon
+  const primary = tone === 'primary'
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={`flex w-full items-center gap-3 rounded-2xl border px-3.5 py-3 text-left disabled:opacity-50 ${
+        primary
+          ? 'border-[#0fae9e] bg-[#0fae9e] text-white hover:bg-[#0c9b8d]'
+          : 'border-slate-200 bg-white text-slate-900 hover:bg-slate-50'
+      }`}
+    >
+      <span
+        className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${
+          primary ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-700'
+        }`}
+      >
+        <Icon className="h-5 w-5" />
+      </span>
+      <span className="min-w-0">
+        <span className="block text-sm font-bold">{title}</span>
+        <span className={`block text-xs ${primary ? 'text-white/80' : 'text-slate-500'}`}>{detail}</span>
+      </span>
+    </button>
+  )
+}
+
 export function HsIssueActions({
   canSign,
   canViewSigned,
@@ -123,6 +172,10 @@ export function HsIssueActions({
   onSign,
   onDownload,
   downloadBusy,
+  pending = 0,
+  reminding = false,
+  onRemind,
+  onAddRecipients,
 }: {
   canSign: boolean
   canViewSigned: boolean
@@ -130,34 +183,42 @@ export function HsIssueActions({
   onSign: () => void
   onDownload: () => void
   downloadBusy?: boolean
+  pending?: number
+  reminding?: boolean
+  onRemind?: () => void
+  onAddRecipients?: () => void
 }) {
   return (
-    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-      <button
-        type="button"
-        onClick={onView}
-        className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-50"
-      >
-        View TBT
-      </button>
-      <button
-        type="button"
+    <div className="space-y-2">
+      <HsActionRow icon={EyeIcon} title="View TBT" detail="Open the issued talk" onClick={onView} />
+      <HsActionRow
+        icon={ArrowDownTrayIcon}
+        title={downloadBusy ? 'Downloading…' : 'Download talk'}
+        detail="Save a copy of this talk"
         onClick={onDownload}
         disabled={downloadBusy}
-        className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
-      >
-        {downloadBusy ? 'Downloading…' : 'Download talk'}
-      </button>
+      />
       {canSign ? (
-        <HsPrimaryButton onClick={onSign}>Sign now</HsPrimaryButton>
+        <HsActionRow icon={PencilSquareIcon} title="Sign now" detail="Record your signature" onClick={onSign} tone="primary" />
       ) : canViewSigned ? (
-        <button
-          type="button"
-          onClick={onSign}
-          className="rounded-xl bg-slate-100 px-3 py-2.5 text-xs font-bold text-slate-600"
-        >
-          View signed talk
-        </button>
+        <HsActionRow icon={PencilSquareIcon} title="View signed talk" detail="See the copy you signed" onClick={onSign} />
+      ) : null}
+      {onRemind ? (
+        <HsActionRow
+          icon={BellAlertIcon}
+          title={reminding ? 'Sending…' : 'Remind pending'}
+          detail={pending === 0 ? 'Everyone has signed' : `${pending} still to sign`}
+          onClick={onRemind}
+          disabled={pending === 0 || reminding}
+        />
+      ) : null}
+      {onAddRecipients ? (
+        <HsActionRow
+          icon={UserPlusIcon}
+          title="Send to further operatives"
+          detail="Add people who have not had this talk"
+          onClick={onAddRecipients}
+        />
       ) : null}
     </div>
   )
@@ -286,30 +347,11 @@ export function HsIssueDetail({
         onView={onView}
         onSign={onSign}
         onDownload={onDownload}
+        pending={pending}
+        reminding={reminding}
+        onRemind={onRemind}
+        onAddRecipients={onAddRecipients}
       />
-      {onRemind || onAddRecipients ? (
-        <div className="grid grid-cols-2 gap-2">
-          {onRemind ? (
-            <button
-              type="button"
-              onClick={onRemind}
-              disabled={pending === 0 || reminding}
-              className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
-            >
-              {reminding ? 'Sending…' : `Remind pending (${pending})`}
-            </button>
-          ) : null}
-          {onAddRecipients ? (
-            <button
-              type="button"
-              onClick={onAddRecipients}
-              className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-50"
-            >
-              Send to further operatives
-            </button>
-          ) : null}
-        </div>
-      ) : null}
       {downloadError ? <p className="text-sm font-semibold text-[#A32D2D]">{downloadError}</p> : null}
       <FeatureSectionLabel>Signed</FeatureSectionLabel>
       <FeatureCard className="p-4">
