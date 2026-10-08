@@ -205,6 +205,19 @@ export function canCreateProject(user: PermissionUser): boolean {
   return hasAdminAccess(user) || flag(user, 'manager')
 }
 
+/**
+ * Direct create and edit URLs. The job list stays available when this is false.
+ * Super admin is not gated. Admins and managers follow the catalogue toggle.
+ */
+export function canOpenWorkForm(
+  user: PermissionUser,
+  kind: 'projects' | 'smallWorks',
+  mode: 'create' | 'edit'
+): boolean {
+  if (kind === 'projects' && mode === 'create') return canCreateProject(user)
+  return canManageWorkCatalogue(user, kind)
+}
+
 /** iOS UserStore.canManageWorkCatalogue. Super admin ignores the toggles. Admins and managers follow them. */
 export function canManageWorkCatalogue(
   user: PermissionUser,

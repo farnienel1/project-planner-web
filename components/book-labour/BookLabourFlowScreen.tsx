@@ -14,6 +14,7 @@ import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { useProjectStore } from '@/lib/stores/projectStore'
 import { useHolidayStore } from '@/lib/stores/holidayStore'
 import { visibleWorks } from '@/lib/access/workAccess'
+import { canBookWork } from '@/lib/permissions'
 import { useDeadlineAssignedProjectIds } from '@/lib/deadlines/useDeadlineAssignedProjectIds'
 import {
   DEFAULT_MY_SCHEDULE,
@@ -105,6 +106,11 @@ export function BookLabourFlowScreen({
   const { users, loadUsers, loading: usersLoading } = useOrgUserStore()
   const { projects, smallWorks, loadProjects, loadSmallWorks } = useProjectStore()
   const { bookings: holidays, loadBookings: loadHolidays } = useHolidayStore()
+  const mayBook = canBookWork(user)
+
+  useEffect(() => {
+    if (user && !mayBook) router.replace('/dashboard')
+  }, [mayBook, router, user])
 
   const dateParam = dateProp || searchParams.get('date') || dayKey(new Date())
   const from = fromProp || searchParams.get('from')
@@ -542,6 +548,7 @@ export function BookLabourFlowScreen({
 
   const isCustom = phase.kind === 'pickCustomManager' || phase.kind === 'pickCustomOperative'
   const title = isCustom ? 'Custom hours' : 'Book labour'
+  if (user && !mayBook) return null
   const rosterLoading = (usersLoading && users.length === 0) || (operativesLoading && operatives.length === 0)
 
   return (
