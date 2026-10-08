@@ -222,6 +222,19 @@ export function canCreateProject(user: PermissionUser): boolean {
 }
 
 /**
+ * Direct create and edit URLs. The job list stays available when this is false.
+ * Super admin is not gated. Admins and managers follow the catalogue toggle.
+ */
+export function canOpenWorkForm(
+  user: PermissionUser,
+  kind: 'projects' | 'smallWorks',
+  mode: 'create' | 'edit'
+): boolean {
+  if (kind === 'projects' && mode === 'create') return canCreateProject(user)
+  return canManageWorkCatalogue(user, kind)
+}
+
+/**
  * Add or edit a catalogue (canonical `canEditWorkCatalogue`). Super admin ignores the
  * toggles. Admins and managers follow them. A toggle that is off never hides the list;
  * that is `visibleWorks`.

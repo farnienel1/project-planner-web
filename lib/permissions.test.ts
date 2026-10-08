@@ -23,6 +23,10 @@ import {
   hasAdminAccess,
   isOperativeMode,
   canManageWorkCatalogue,
+  canOpenWorkForm,
+  canViewMaterials,
+  canBookWork,
+  canAccessTeamSection,
   canAccessWholesalers,
   canManageOrganisationQualifications,
   canAccessQualificationsHub,
@@ -196,6 +200,41 @@ test('canViewWeeklyReports is the flag, not admin-always', () => {
 test('canViewDailyOverview defaults true', () => {
   const manager = user({ permissions: { manager: true } })
   assert.equal(canViewDailyOverview(manager), true)
+})
+
+test('direct project and small-works forms follow the catalogue toggles', () => {
+  const manager = user({ role: UserRole.MANAGER, permissions: { manager: true, projects: false, smallWorks: false } })
+  assert.equal(canOpenWorkForm(manager, 'projects', 'create'), false)
+  assert.equal(canOpenWorkForm(manager, 'projects', 'edit'), false)
+  assert.equal(canOpenWorkForm(manager, 'smallWorks', 'create'), false)
+  assert.equal(canOpenWorkForm(manager, 'smallWorks', 'edit'), false)
+  const flagged = user({ role: UserRole.ADMIN, permissions: { adminAccess: true, projects: true, smallWorks: true } })
+  assert.equal(canOpenWorkForm(flagged, 'projects', 'create'), true)
+  assert.equal(canOpenWorkForm(flagged, 'smallWorks', 'edit'), true)
+  const founder = user({
+    role: UserRole.ADMIN,
+    isSuperAdmin: true,
+    permissions: { adminAccess: true, projects: false, smallWorks: false },
+  })
+  assert.equal(canOpenWorkForm(founder, 'projects', 'create'), true)
+  assert.equal(canOpenWorkForm(founder, 'projects', 'edit'), true)
+  assert.equal(canOpenWorkForm(founder, 'smallWorks', 'create'), true)
+  const operative = user({ role: UserRole.OPERATIVE, permissions: { operativeMode: true, projects: true, smallWorks: true } })
+  assert.equal(canOpenWorkForm(operative, 'projects', 'create'), false)
+  assert.equal(canOpenWorkForm(operative, 'smallWorks', 'edit'), false)
+})
+
+test('operative material lists, book labour, and manage-operatives follow the gates', () => {
+  const hidden = user({ role: UserRole.OPERATIVE, permissions: { operativeMode: true, materials: false } })
+  const shown = user({ role: UserRole.OPERATIVE, permissions: { operativeMode: true, materials: true } })
+  assert.equal(canViewMaterials(hidden), false)
+  assert.equal(canViewMaterials(shown), true)
+  assert.equal(canBookWork(hidden), false)
+  assert.equal(canViewDailyOverview(hidden), false)
+  assert.equal(canAccessOperativeTimesheets(hidden, false, []), false)
+  const manager = user({ role: UserRole.MANAGER, permissions: { manager: true, operatives: true } })
+  assert.equal(canAccessTeamSection(manager), true)
+  assert.equal(canManageUsers(manager), false)
 })
 
 test('canManageWorkCatalogue uses manager flags', () => {

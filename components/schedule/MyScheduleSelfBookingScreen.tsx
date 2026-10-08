@@ -11,6 +11,8 @@ import {
 } from 'date-fns'
 import { useProjectStore } from '@/lib/stores/projectStore'
 import { useManagerScheduleStore } from '@/lib/stores/managerScheduleStore'
+import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
+import { samePersonIds } from '@/lib/staff/userRosterUtils'
 import {
   DEFAULT_MY_SCHEDULE,
   DEFAULT_PAYROLL_POLICY,
@@ -201,6 +203,7 @@ export function MyScheduleSelfBookingScreen({
     deleteManagerSiteBooking,
     loading,
   } = useManagerScheduleStore()
+  const { users, userIdAliases, loadUsers } = useOrgUserStore()
 
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date(), { weekStartsOn: 1 }))
   const [selectedDate, setSelectedDate] = useState<Date>(() => startOfDay(new Date()))
@@ -226,6 +229,7 @@ export function MyScheduleSelfBookingScreen({
 
   useEffect(() => {
     loadManagerSiteBookings(organizationId)
+    loadUsers(organizationId)
     loadProjects(organizationId, true)
     loadSmallWorks(organizationId)
     loadOrganizationDetails(organizationId)
@@ -233,14 +237,14 @@ export function MyScheduleSelfBookingScreen({
         if (details?.myScheduleOptions) setScheduleOpts(details.myScheduleOptions)
       })
       .catch(() => {})
-  }, [organizationId, loadManagerSiteBookings, loadProjects, loadSmallWorks])
+  }, [organizationId, loadManagerSiteBookings, loadUsers, loadProjects, loadSmallWorks])
 
   const weekDates = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart])
 
-  const myBookings = useMemo(
-    () => uniqueBookings(managerSiteBookings.filter((b) => b.userId === userId)),
-    [managerSiteBookings, userId]
-  )
+  const myBookings = useMemo(() => {
+    const mineIds = samePersonIds(userId, users, userIdAliases)
+    return uniqueBookings(managerSiteBookings.filter((b) => mineIds.has(b.userId)))
+  }, [managerSiteBookings, userId, users, userIdAliases])
 
   const myBookingsOn = (day: Date): ManagerSiteBooking[] =>
     myBookings.filter((b) => coversCalendarDay(b.date, day))

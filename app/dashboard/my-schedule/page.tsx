@@ -6,6 +6,8 @@ import { useAuthStore } from '@/lib/stores/authStore'
 import { useBookingStore } from '@/lib/stores/bookingStore'
 import { useManagerScheduleStore } from '@/lib/stores/managerScheduleStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
+import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
+import { rosterDisplayName, samePersonIds } from '@/lib/staff/userRosterUtils'
 import { useProjectStore } from '@/lib/stores/projectStore'
 import {
   findOperativeForUser,
@@ -33,6 +35,7 @@ function MySchedulePageContent() {
     loading: managerBookingsLoading,
   } = useManagerScheduleStore()
   const { operatives, loadOperatives } = useOperativeStore()
+  const { users, userIdAliases, loadUsers } = useOrgUserStore()
   const { projects, smallWorks, loadProjects, loadSmallWorks } = useProjectStore()
   const [payrollPolicy, setPayrollPolicy] = useState<OrgPayrollTimePolicy>(DEFAULT_PAYROLL_POLICY)
 
@@ -56,6 +59,7 @@ function MySchedulePageContent() {
     loadManagerSiteBookings(organization.id)
     loadBookings(organization.id)
     loadOperatives(organization.id)
+    loadUsers(organization.id)
     loadProjects(organization.id, true)
     loadSmallWorks(organization.id)
   }, [
@@ -63,6 +67,7 @@ function MySchedulePageContent() {
     loadBookings,
     loadManagerSiteBookings,
     loadOperatives,
+    loadUsers,
     loadProjects,
     loadSmallWorks,
   ])
@@ -104,14 +109,28 @@ function MySchedulePageContent() {
     }
 
     if (user?.id) {
-      const mine = managerSiteBookings.filter((b) => b.userId === user.id)
+      const mineIds = samePersonIds(user.id, users, userIdAliases)
+      const mine = managerSiteBookings.filter((b) => mineIds.has(b.userId))
       merged.push(
         ...mine.map((b) => managerSiteBookingToScheduleBooking(b, projectsById, organization?.id))
       )
     }
 
     return merged.sort((a, b) => a.date.getTime() - b.date.getTime())
-  }, [bookings, linkedOperativeIds, managerSiteBookings, projectsById, organization?.id, user?.id])
+  }, [bookings, linkedOperativeIds, managerSiteBookings, projectsById, organization?.id, user?.id, users, userIdAliases])
+
+  const peopleById = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const row of users) {
+      const name = rosterDisplayName(row)
+      if (name) map.set(row.id, name)
+    }
+    for (const [alias, kept] of Object.entries(userIdAliases)) {
+      const name = map.get(kept)
+      if (name) map.set(alias, name)
+    }
+    return map
+  }, [users, userIdAliases])
 
   const canEditBookings = Boolean(user && !isOperativeMode(user))
   const scheduleLoading = bookingsLoading || managerBookingsLoading
@@ -186,6 +205,7 @@ function MySchedulePageContent() {
       organizationId={organization.id}
       bookings={personalBookings}
       operativesById={operativesById}
+      peopleById={peopleById}
       projectsById={projectsById}
       loading={scheduleLoading}
       focusOperativeId={linkedOperative?.id ?? null}

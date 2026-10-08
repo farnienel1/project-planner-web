@@ -25,6 +25,19 @@ test('manage users stays on loading until the roster load for this organisation 
   )
 })
 
+test('a failed load is an error even before the roster is marked settled', () => {
+  assert.equal(
+    manageUsersListPhase({
+      organizationId: 'org-1',
+      rosterLoadedOrgId: null,
+      userCount: 0,
+      filteredCount: 0,
+      error: 'Failed to load users',
+    }),
+    'error'
+  )
+})
+
 test('a settled empty roster is the empty state, and a failed load is an error', () => {
   assert.equal(
     manageUsersListPhase({
