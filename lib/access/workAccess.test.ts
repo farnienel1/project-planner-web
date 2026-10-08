@@ -49,7 +49,7 @@ function project(id: string, extra: Partial<Project> = {}): Project {
   }
 }
 
-test('admins with projects on see every job, and projects off leaves assigned jobs', () => {
+test('admins see every job whether the Projects toggle is on or off', () => {
   const admin: User = {
     id: 'admin',
     email: 'a@x.com',
@@ -81,7 +81,91 @@ test('admins with projects on see every job, and projects off leaves assigned jo
     bookings: [],
     managerBookings: [],
   })
-  assert.equal(withoutProjects.length, 0)
+  assert.equal(withoutProjects.length, 2)
+  const plainAdminToggleOff = visibleWorks({
+    projects: jobs,
+    user: { ...admin, isSuperAdmin: false, permissions: { ...admin.permissions, projects: false, smallWorks: false } },
+    operatives: [],
+    bookings: [],
+    managerBookings: [],
+  })
+  assert.equal(plainAdminToggleOff.length, 2)
+})
+
+test('a manager sees jobs they are not assigned to, with both toggles off, in projects and small works', () => {
+  const mgr: User = {
+    id: 'm1',
+    email: 'm@x.com',
+    firstName: 'M',
+    surname: 'G',
+    organizationId: 'o',
+    role: UserRole.MANAGER,
+    isActive: true,
+    passwordSet: true,
+    isSuperAdmin: false,
+    permissions: { ...emptyPerms, manager: true, projects: false, smallWorks: false },
+    policyAccepted: true,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  }
+  const jobs = [
+    project('assigned', { managerIds: ['roster-m'] }),
+    project('someone-elses', { managerIds: ['roster-other'] }),
+    project('small-job', { jobType: 'Small Works', managerIds: ['roster-other'] }),
+    project('hidden-from-me', { hiddenManagerUserIds: ['m1'] }),
+  ]
+  const input = {
+    projects: jobs,
+    user: mgr,
+    operatives: [],
+    managers: [
+      { id: 'roster-m', firstName: 'M', lastName: 'G', email: 'm@x.com', isActive: true, createdAt: new Date(), updatedAt: new Date() },
+      { id: 'roster-other', firstName: 'O', lastName: 'T', email: 'o@x.com', isActive: true, createdAt: new Date(), updatedAt: new Date() },
+    ],
+    bookings: [],
+    managerBookings: [],
+  }
+  assert.deepEqual(
+    visibleWorks({ ...input, catalogue: 'projects' }).map((p) => p.id).sort(),
+    ['assigned', 'someone-elses']
+  )
+  assert.deepEqual(visibleWorks({ ...input, catalogue: 'smallWorks' }).map((p) => p.id), ['small-job'])
+  // The manager role without the manager flag is still a manager.
+  const roleOnly = { ...mgr, permissions: { ...emptyPerms } }
+  assert.deepEqual(
+    visibleWorks({ ...input, user: roleOnly, catalogue: 'all' }).map((p) => p.id).sort(),
+    ['assigned', 'small-job', 'someone-elses']
+  )
+})
+
+test('an account with no staff role still only sees jobs it is assigned to or booked onto', () => {
+  const basic: User = {
+    id: 'b1',
+    email: 'b@x.com',
+    firstName: 'B',
+    surname: 'A',
+    organizationId: 'o',
+    role: UserRole.BASIC,
+    isActive: true,
+    passwordSet: true,
+    isSuperAdmin: false,
+    permissions: { ...emptyPerms, projects: true },
+    policyAccepted: true,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  }
+  const jobs = [project('mine', { managerIds: ['roster-b'] }), project('other')]
+  const visible = visibleWorks({
+    projects: jobs,
+    user: basic,
+    operatives: [],
+    managers: [
+      { id: 'roster-b', firstName: 'B', lastName: 'A', email: 'b@x.com', isActive: true, createdAt: new Date(), updatedAt: new Date() },
+    ],
+    bookings: [],
+    managerBookings: [],
+  })
+  assert.deepEqual(visible.map((p) => p.id), ['mine'])
 })
 
 test('operatives only see booked jobs and never hidden ones', () => {

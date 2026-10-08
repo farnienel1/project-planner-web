@@ -26,6 +26,21 @@ export {
   unverifiedOperativeRows,
 } from './warningRows'
 
+export {
+  canEditWorkCatalogue,
+  canViewStaffWarnings,
+  isStaffAccount,
+  receivesJobNotification,
+  seesEveryJob,
+} from './staffAccess'
+
+export type {
+  JobNotificationRecipientInput,
+  StaffAccountRole,
+  WorkCatalogue,
+  WorkCatalogueToggles,
+} from './staffAccess'
+
 export type {
   ClashLookaheadMode,
   CoverageWindowInput,

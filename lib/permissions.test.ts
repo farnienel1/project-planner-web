@@ -11,6 +11,7 @@ import {
   canAccessTimesheets,
   canAccessTimesheetsSurface,
   canAccessOperativeTimesheets,
+  canCreateProject,
   canManageSubcontractors,
   canManageUsers,
   canViewDailyOverview,
@@ -201,6 +202,33 @@ test('canManageWorkCatalogue uses manager flags', () => {
   const mgr = user({ permissions: { manager: true, projects: true } })
   assert.equal(canManageWorkCatalogue(mgr, 'projects'), true)
   assert.equal(canManageWorkCatalogue(mgr, 'smallWorks'), false)
+})
+
+test('every admin and manager can open the warning list; operatives cannot', () => {
+  assert.equal(canViewWarnings(user({ role: UserRole.MANAGER })), true)
+  assert.equal(canViewWarnings(user({ permissions: { manager: true } })), true)
+  assert.equal(canViewWarnings(user({ role: UserRole.ADMIN })), true)
+  assert.equal(canViewWarnings(user({ isSuperAdmin: true })), true)
+  assert.equal(canViewWarnings(user({ permissions: { operativeMode: true } })), false)
+  assert.equal(canViewWarnings(user({ role: UserRole.OPERATIVE })), false)
+  assert.equal(canViewWarnings(user({ role: UserRole.BASIC })), false)
+})
+
+test('the Projects and Small works toggles gate add and edit only, and super admin ignores them', () => {
+  const toggledOff = user({ permissions: { manager: true, projects: false, smallWorks: false } })
+  assert.equal(canManageWorkCatalogue(toggledOff, 'projects'), false)
+  assert.equal(canManageWorkCatalogue(toggledOff, 'smallWorks'), false)
+  assert.equal(canCreateProject(toggledOff), false)
+  const roleOnlyManager = user({ role: UserRole.MANAGER, permissions: { smallWorks: true } })
+  assert.equal(canManageWorkCatalogue(roleOnlyManager, 'smallWorks'), true)
+  assert.equal(canManageWorkCatalogue(roleOnlyManager, 'projects'), false)
+  const superAdmin = user({ isSuperAdmin: true, permissions: { projects: false, smallWorks: false } })
+  assert.equal(canManageWorkCatalogue(superAdmin, 'projects'), true)
+  assert.equal(canManageWorkCatalogue(superAdmin, 'smallWorks'), true)
+  assert.equal(canManageWorkCatalogue(superAdmin, 'all'), true)
+  assert.equal(canCreateProject(superAdmin), true)
+  const operative = user({ permissions: { operativeMode: true, projects: true, smallWorks: true } })
+  assert.equal(canManageWorkCatalogue(operative, 'projects'), false)
 })
 
 test('canAccessTimesheetsSurface is true for self-employed', () => {

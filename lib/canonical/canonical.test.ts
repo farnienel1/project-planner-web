@@ -19,6 +19,19 @@ import {
   resetOrganizationContextForTests,
 } from './engine.ts'
 import { qualificationExpiryRows, unbookedLabourRows, unverifiedOperativeRows } from './warningRows.ts'
+import {
+  canEditWorkCatalogue,
+  canViewStaffWarnings,
+  receivesJobNotification,
+  seesEveryJob,
+  type StaffAccountRole,
+} from './staffAccess.ts'
+
+const superAdmin: StaffAccountRole = { isSuperAdmin: true, isAdmin: true, isManager: false, isOperativeMode: false }
+const admin: StaffAccountRole = { isSuperAdmin: false, isAdmin: true, isManager: false, isOperativeMode: false }
+const manager: StaffAccountRole = { isSuperAdmin: false, isAdmin: false, isManager: true, isOperativeMode: false }
+const operative: StaffAccountRole = { isSuperAdmin: false, isAdmin: false, isManager: false, isOperativeMode: true }
+const noRole: StaffAccountRole = { isSuperAdmin: false, isAdmin: false, isManager: false, isOperativeMode: false }
 
 test('organisation ids match after trim and case folding', () => {
   assert.equal(organizationIdsMatch(' Org-A ', 'org-a'), true)
@@ -376,6 +389,81 @@ test('unbooked labour skips pending invitees, excluded people, zero-hour weekend
   assert.equal(rows[1].missingHours, 8)
   assert.equal(rows.find((row) => row.personKey === 'U-PEND' || row.personKey === 'U-ADMIN'), undefined)
   assert.equal(rows.find((row) => row.dayKey === '2026-09-19'), undefined)
+})
+
+test('every admin and manager sees every job and every warning; operatives and role-less accounts do not', () => {
+  for (const role of [superAdmin, admin, manager]) {
+    assert.equal(seesEveryJob(role), true)
+    assert.equal(canViewStaffWarnings(role), true)
+  }
+  for (const role of [operative, noRole]) {
+    assert.equal(seesEveryJob(role), false)
+    assert.equal(canViewStaffWarnings(role), false)
+  }
+  // Operative mode wins over a stale admin or manager flag.
+  assert.equal(seesEveryJob({ ...admin, isOperativeMode: true }), false)
+  assert.equal(seesEveryJob({ ...manager, isOperativeMode: true }), false)
+})
+
+test('the Projects and Small works toggles gate add and edit only, never the list, and super admin ignores them', () => {
+  const off = { projects: false, smallWorks: false }
+  const projectsOnly = { projects: true, smallWorks: false }
+  // The list is still the whole company with both toggles off.
+  assert.equal(seesEveryJob(manager), true)
+  assert.equal(seesEveryJob(admin), true)
+  // Editing follows the toggle for admins and managers.
+  assert.equal(canEditWorkCatalogue(manager, 'projects', off), false)
+  assert.equal(canEditWorkCatalogue(manager, 'smallWorks', off), false)
+  assert.equal(canEditWorkCatalogue(manager, 'projects', projectsOnly), true)
+  assert.equal(canEditWorkCatalogue(manager, 'smallWorks', projectsOnly), false)
+  assert.equal(canEditWorkCatalogue(admin, 'projects', off), false)
+  assert.equal(canEditWorkCatalogue(admin, 'projects', projectsOnly), true)
+  // Super admin adds and edits regardless.
+  assert.equal(canEditWorkCatalogue(superAdmin, 'projects', off), true)
+  assert.equal(canEditWorkCatalogue(superAdmin, 'smallWorks', off), true)
+  // Operatives and role-less accounts never edit, even with the toggle on.
+  assert.equal(canEditWorkCatalogue(operative, 'projects', { projects: true, smallWorks: true }), false)
+  assert.equal(canEditWorkCatalogue(noRole, 'projects', { projects: true, smallWorks: true }), false)
+})
+
+test('a manager receives a job notification only as line manager or assigned project manager', () => {
+  const job = { assignedManagerUserIds: ['pm-1'], lineManagerUserIds: ['lm-1'] }
+  assert.equal(receivesJobNotification({ userId: 'pm-1', role: manager, ...job }), true)
+  assert.equal(receivesJobNotification({ userId: 'lm-1', role: manager, ...job }), true)
+  // Seeing the job in the list does not make this manager a recipient.
+  assert.equal(seesEveryJob(manager), true)
+  assert.equal(receivesJobNotification({ userId: 'other-manager', role: manager, ...job }), false)
+  // Admins and super admins always receive it.
+  assert.equal(receivesJobNotification({ userId: 'adm', role: admin, ...job }), true)
+  assert.equal(receivesJobNotification({ userId: 'root', role: superAdmin, ...job }), true)
+  // Operatives are not on the staff fan-out, even when named.
+  assert.equal(receivesJobNotification({ userId: 'pm-1', role: operative, ...job }), false)
+  assert.equal(receivesJobNotification({ userId: '', role: admin, ...job }), false)
+  assert.equal(receivesJobNotification({ userId: ' pm-1 ', role: manager, assignedManagerUserIds: ['pm-1'] }), true)
+})
+
+test('the iOS JavaScript bundle applies the same staff visibility and recipient rule as this module', () => {
+  const source = readFileSync(new URL('./dist/canonical-business.js', import.meta.url), 'utf8')
+  const sandbox: {
+    ProjectPlannerCanonical?: {
+      seesEveryJob: (role: StaffAccountRole) => boolean
+      canViewStaffWarnings: (role: StaffAccountRole) => boolean
+      canEditWorkCatalogue: (role: StaffAccountRole, catalogue: string, toggles: unknown) => boolean
+      receivesJobNotification: (input: unknown) => boolean
+    }
+  } = {}
+  runInContext(source, createContext(sandbox))
+  const bundle = sandbox.ProjectPlannerCanonical
+  assert.ok(bundle)
+  const off = { projects: false, smallWorks: false }
+  assert.equal(bundle.seesEveryJob(manager), seesEveryJob(manager))
+  assert.equal(bundle.seesEveryJob(operative), seesEveryJob(operative))
+  assert.equal(bundle.canViewStaffWarnings(manager), canViewStaffWarnings(manager))
+  assert.equal(bundle.canEditWorkCatalogue(manager, 'projects', off), canEditWorkCatalogue(manager, 'projects', off))
+  assert.equal(bundle.canEditWorkCatalogue(superAdmin, 'projects', off), canEditWorkCatalogue(superAdmin, 'projects', off))
+  const input = { userId: 'm-2', role: manager, assignedManagerUserIds: ['m-1'], lineManagerUserIds: [] }
+  assert.equal(bundle.receivesJobNotification(input), receivesJobNotification(input))
+  assert.equal(bundle.receivesJobNotification(input), false)
 })
 
 test('unbooked labour counts a manager booking on another account with the same email', () => {
