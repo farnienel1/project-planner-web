@@ -7,8 +7,15 @@ import { db } from '@/lib/firebase/config'
 import { readOrganizationDocument } from '@/lib/firebase/orgDocumentCache'
 import { UserRole, type SiteAudit, type SiteAuditItem, type User } from '@/types'
 import { parseOrgUser } from '@/lib/firebase/parseUser'
+import { isRetryableAuthLoadError } from '@/lib/auth/authBoot'
 import { dedupeUsersByEmail } from '@/lib/staff/userRosterUtils'
 import { mergeRetainedRoster, missingOrganizationIdPatch, retainScopedRows, rosterParseRecord } from '@/lib/staff/rosterRetain'
+import {
+  catalogueRowNeedsRead,
+  explicitAccountIds,
+  rosterLoadFailure,
+  shouldRetryRosterLoad,
+} from '@/lib/staff/rosterWaves'
 import {
   isOrgLoadInFlight,
   optionsForUnappliedOrg,
@@ -180,7 +187,10 @@ function withManagerListHint(user: User): User {
   return { ...user, permissions: { ...user.permissions, manager: true } }
 }
 
-async function fetchOrganisationRoster(organizationId: string): Promise<{
+async function fetchOrganisationRoster(
+  organizationId: string,
+  options?: { finalAttempt?: boolean }
+): Promise<{
   users: User[]
   complete: boolean
   presentIds: Set<string>
@@ -190,6 +200,11 @@ async function fetchOrganisationRoster(organizationId: string): Promise<{
   const presentIds = new Set<string>()
   const presentEmails = new Set<string>()
   let complete = true
+  let firstFailure: unknown = null
+  const noteFailure = (reason: unknown) => {
+    complete = false
+    if (firstFailure == null) firstFailure = reason
+  }
 
   const remember = (user: User | null) => {
     if (!user) return
@@ -334,12 +349,24 @@ async function fetchOrganisationRoster(organizationId: string): Promise<{
     getDocs(collection(db, 'organizations', organizationId, 'managers')),
   ])
 
+  // The first read after sign-in can be refused before Firestore holds the ID
+  // token. Hand that failure back so runOrgLoad retries the whole load instead
+  // of caching a roster built only from the fallbacks (or nothing at all).
+  if (
+    shouldRetryRosterLoad({
+      usersQueryFailure: usersResult.status === 'rejected' ? usersResult.reason : null,
+      finalAttempt: options?.finalAttempt === true,
+    })
+  ) {
+    throw usersResult.status === 'rejected' ? usersResult.reason : new Error('Failed to load users')
+  }
+
   if (usersResult.status === 'fulfilled') {
     for (const entry of usersResult.value.docs) {
       remember(userForThisOrganisation(entry.id, entry.data() as Record<string, unknown>, organizationId, true))
     }
   } else {
-    complete = false
+    noteFailure(usersResult.reason)
   }
 
   const memberIds: string[] = []
@@ -349,7 +376,7 @@ async function fetchOrganisationRoster(organizationId: string): Promise<{
       if (id && !presentIds.has(id)) memberIds.push(id)
     }
   } else {
-    complete = false
+    noteFailure(orgResult.reason)
   }
 
   const emailUserIds: string[] = []
@@ -361,7 +388,7 @@ async function fetchOrganisationRoster(organizationId: string): Promise<{
       }
     }
   } else {
-    complete = false
+    noteFailure(emailsResult.reason)
   }
 
   const catalogue: CatalogueEntry[] = []
@@ -370,14 +397,14 @@ async function fetchOrganisationRoster(organizationId: string): Promise<{
       catalogue.push({ id: entry.id, data: entry.data() as Record<string, unknown> })
     }
   } else {
-    complete = false
+    noteFailure(operativesResult.reason)
   }
   if (managersResult.status === 'fulfilled') {
     for (const entry of managersResult.value.docs) {
       catalogue.push({ id: entry.id, data: entry.data() as Record<string, unknown>, kind: 'manager' })
     }
   } else {
-    complete = false
+    noteFailure(managersResult.reason)
   }
 
   // Wave 2: only the people wave 1 did not already return.
@@ -404,7 +431,7 @@ async function fetchOrganisationRoster(organizationId: string): Promise<{
   ])
   for (const row of memberRows) {
     if (row === 'failed') {
-      complete = false
+      noteFailure(new Error('A member document could not be read'))
       continue
     }
     noteUser(row)
@@ -412,34 +439,42 @@ async function fetchOrganisationRoster(organizationId: string): Promise<{
   for (const user of emailUsers) noteUser(user)
 
   // Catalogue rows (operatives / managers) link to an account by id or email.
-  // When every source above answered, an entry that matches nobody has no
-  // account, so there is nothing more to read for it. Only an incomplete wave
-  // falls back to the per-entry lookups.
+  // When every source above answered, an entry that names no account id and
+  // matches nobody has no account, so there is nothing more to read for it.
+  // An entry that does name an account id is still read: that person's user
+  // document can name another organisation (it records the company they last
+  // opened), and they may be on neither the members map nor userEmails.
+  // An incomplete wave falls back to the full per-entry lookup.
   const catalogueLink = (entry: CatalogueEntry): User | null => {
-    const explicitIds = [text(entry.data.userId), text(entry.data.userID), text(entry.data.uid), text(entry.data.linkedUserId)]
-    for (const id of [...explicitIds, entry.id]) {
+    for (const id of [...explicitAccountIds(entry.data), entry.id]) {
       const cached = id ? cachedUser(id) : undefined
       if (cached) return cached
     }
     return cachedUserByEmail(text(entry.data.email)) ?? null
   }
+  const explicitOnly = async (entry: CatalogueEntry): Promise<User | null> => {
+    for (const id of explicitAccountIds(entry.data)) {
+      const user = cachedUser(id) ?? (await loadUserDocument(id, true))
+      if (user) return user
+    }
+    return null
+  }
   const unresolved: CatalogueEntry[] = []
   for (const entry of catalogue) {
     const linked = catalogueLink(entry)
     if (linked) noteUser(linked, entry.kind)
-    else if (!complete) unresolved.push(entry)
+    else if (catalogueRowNeedsRead({ complete, data: entry.data })) unresolved.push(entry)
   }
   if (unresolved.length > 0) {
     const lateUsers: Array<User | null> = new Array(unresolved.length)
     await readTogether(unresolved, async (entry, index) => {
-      lateUsers[index] = await resolveRosterLink(entry.id, entry.data)
+      lateUsers[index] = complete ? await explicitOnly(entry) : await resolveRosterLink(entry.id, entry.data)
     })
     unresolved.forEach((entry, index) => noteUser(lateUsers[index], entry.kind))
   }
 
-  if (collected.length === 0 && !complete) {
-    throw new Error('Failed to load users')
-  }
+  const failure = rosterLoadFailure({ collectedCount: collected.length, complete, firstFailure })
+  if (failure) throw failure
   return { users: dedupeUsersByEmail(collected), complete, presentIds, presentEmails }
 }
 
@@ -579,7 +614,7 @@ export const useOrgUserStore = create<OrgUserState>((set, get) => ({
     await runOrgLoad(
       ORG_USER_LOAD_KEY,
       organizationId,
-      async () => {
+      async (attempt) => {
         const generation = ++rosterLoadGeneration
         const inMemory = listedRosterOrgId === organizationId ? get().users : []
         const previous = inMemory.length > 0 ? inMemory : readStoredRoster(organizationId)
@@ -607,7 +642,7 @@ export const useOrgUserStore = create<OrgUserState>((set, get) => ({
           set({ users, loading: false, error: null, rosterLoadedOrgId: organizationId })
         }
         try {
-          const rosterPromise = fetchOrganisationRoster(organizationId)
+          const rosterPromise = fetchOrganisationRoster(organizationId, { finalAttempt: attempt.final })
           let loaded: Awaited<ReturnType<typeof fetchOrganisationRoster>>
           try {
             loaded = await withTimeout(rosterPromise, 20_000, 'The user list did not finish loading.')
@@ -638,6 +673,8 @@ export const useOrgUserStore = create<OrgUserState>((set, get) => ({
             throw error
           }
           if (generation !== rosterLoadGeneration) throw new OrgLoadNotCached()
+          // runOrgLoad retries auth-token races; keep "Loading users..." up until the last attempt fails.
+          if (!attempt.final && isRetryableAuthLoadError(error)) throw error
           set({
             error: error instanceof Error ? error.message : 'Failed to load users',
             loading: false,

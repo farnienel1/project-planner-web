@@ -46,10 +46,17 @@ export function shouldSkipOrgLoad(
   return Date.now() - entry.loadedAt < ttl
 }
 
+/**
+ * Which try of the load this is. A loader that can fall back to partial data
+ * should throw a retryable auth error on an early try and keep the fallback
+ * for the final one.
+ */
+export type OrgLoadAttempt = { index: number; final: boolean }
+
 export async function runOrgLoad(
   key: string,
   organizationId: string,
-  loader: () => Promise<void>,
+  loader: (attempt: OrgLoadAttempt) => Promise<void>,
   options?: { force?: boolean; ttlMs?: number }
 ): Promise<void> {
   if (shouldSkipOrgLoad(key, organizationId, options)) return
@@ -68,7 +75,7 @@ export async function runOrgLoad(
     for (let attempt = 0; attempt < LOAD_ATTEMPTS; attempt += 1) {
       try {
         await waitForAuthToken()
-        await loader()
+        await loader({ index: attempt, final: attempt === LOAD_ATTEMPTS - 1 })
         if (!organizationContextStillCurrent(organizationId, captured)) {
           entry.loadedAt = 0
           entry.orgId = null
