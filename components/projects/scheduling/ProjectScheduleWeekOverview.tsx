@@ -7,6 +7,7 @@ import { useBookingStore } from '@/lib/stores/bookingStore'
 import { useManagerScheduleStore } from '@/lib/stores/managerScheduleStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
 import { useSubcontractorStore } from '@/lib/stores/subcontractorStore'
+import { findUserByAnyId, rosterDisplayName } from '@/lib/staff/userRosterUtils'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { weekDaysFrom } from '@/lib/scheduling/scheduleUtils'
 import {
@@ -149,7 +150,7 @@ export function ProjectScheduleWeekOverview({
   const { managerSiteBookings, loadManagerSiteBookings, updateManagerSiteBooking, deleteManagerSiteBooking } =
     useManagerScheduleStore()
   const { operatives, loadOperatives } = useOperativeStore()
-  const { users, loadUsers } = useOrgUserStore()
+  const { users, userIdAliases, loadUsers } = useOrgUserStore()
   const { subcontractors, loadSubcontractors } = useSubcontractorStore()
   const [weekStart, setWeekStart] = useState(startOfWeek(new Date(), { weekStartsOn: 1 }))
   const [subBookings, setSubBookings] = useState<SubBooking[]>([])
@@ -224,11 +225,16 @@ export function ProjectScheduleWeekOverview({
     return weekDays.map((day) => {
       const opRows: DayRow[] = projectBookings
         .filter((b) => coversCalendarDay(new Date(b.date), day))
-        .map((b) => {
-          const op = operatives.find((o) => o.id === b.operativeId)
-          const name = op ? `${op.firstName} ${op.lastName}`.trim() : 'Operative'
-          const email = op?.email
-          return {
+        .flatMap((b) => {
+          const op = operatives.find((o) => idsMatch(o.id, b.operativeId))
+          const linkedUser = findUserByAnyId(users, b.operativeId, userIdAliases)
+          const name =
+            rosterDisplayName(
+              op ? { firstName: op.firstName, surname: op.lastName, email: op.email } : null
+            ) || rosterDisplayName(linkedUser)
+          if (!name) return []
+          const email = op?.email || linkedUser?.email
+          return [{
             id: b.id,
             personKey: email?.trim() ? `email:${email.trim().toLowerCase()}` : `op:${b.operativeId}`,
             name,
@@ -245,18 +251,19 @@ export function ProjectScheduleWeekOverview({
               standardDayEnd: payroll.standardDayEnd,
               overtimeMultiplier: payroll.weekdayOutsideStandardMultiplier,
             }),
-          }
+          }]
         })
 
       const managerRows: DayRow[] = projectManagerBookings
         .filter((b) => coversCalendarDay(new Date(b.date), day))
-        .map((b) => {
-          const manager = users.find((u) => u.id === b.userId)
-          const name = manager ? `${manager.firstName} ${manager.surname}`.trim() : 'Manager'
+        .flatMap((b) => {
+          const manager = findUserByAnyId(users, b.userId, userIdAliases)
+          const name = rosterDisplayName(manager)
+          if (!name) return []
           const roleLabel =
             manager?.permissions.adminAccess || manager?.isSuperAdmin ? 'Admin' : 'Mgr'
           const email = manager?.email
-          return {
+          return [{
             id: b.id,
             personKey: email?.trim() ? `email:${email.trim().toLowerCase()}` : `mgr:${b.userId}`,
             name,
@@ -273,7 +280,7 @@ export function ProjectScheduleWeekOverview({
               standardDayEnd: payroll.standardDayEnd,
               overtimeMultiplier: payroll.weekdayOutsideStandardMultiplier,
             }),
-          }
+          }]
         })
 
       const subRows: DayRow[] = subBookings
@@ -308,7 +315,7 @@ export function ProjectScheduleWeekOverview({
 
       return [...opRows, ...managerRows, ...subRows]
     })
-  }, [weekDays, projectBookings, projectManagerBookings, subBookings, operatives, users, subcontractors, payroll])
+  }, [weekDays, projectBookings, projectManagerBookings, subBookings, operatives, users, userIdAliases, subcontractors, payroll])
 
   const people = useMemo((): PersonWeek[] => {
     const order: string[] = []

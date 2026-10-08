@@ -85,8 +85,14 @@ export function OperativeAnnualLeaveManagement({
 } = {}) {
   const { user, organization } = useAuthStore()
   const { bookings, saveBooking, deleteBooking } = useHolidayStore()
-  const { operatives } = useOperativeStore()
-  const { users } = useOrgUserStore()
+  const { operatives, loadOperatives } = useOperativeStore()
+  const { users, loadUsers } = useOrgUserStore()
+
+  useEffect(() => {
+    if (!organization?.id) return
+    void loadUsers(organization.id)
+    void loadOperatives(organization.id)
+  }, [organization?.id, loadUsers, loadOperatives])
 
   const [activeTab, setActiveTab] = useState<HubTab>('manage')
   const [sortMode, setSortMode] = useState<AnnualLeavePersonSort>('firstName')

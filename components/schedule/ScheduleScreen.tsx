@@ -18,6 +18,7 @@ import {
   differenceInCalendarDays,
   getWeek,
 } from 'date-fns'
+import { isRoleOnlyPersonName } from '@/lib/staff/userRosterUtils'
 import type { Booking } from '@/types'
 import { BookingEditSheet } from '@/components/schedule/BookingEditSheet'
 import { AddWeekToCalendarButton } from '@/components/schedule/AddWeekToCalendarButton'
@@ -25,6 +26,15 @@ import { MyScheduleTotalHoursCard, myScheduleClockSubtitle, myScheduleStripeClas
 import type { OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 import { DEFAULT_PAYROLL_POLICY } from '@/lib/settings/organizationSettings'
 import { dayKey } from '@/lib/ios-parity/londonTime'
+
+/** A role word is not a person. Prefer the looked-up name, then the signed-in name. */
+function personLabel(primary?: string, fallback?: string): string {
+  for (const value of [primary, fallback]) {
+    const name = (value || '').trim()
+    if (name && !isRoleOnlyPersonName(name)) return name
+  }
+  return ''
+}
 
 /** Bookings are stored at London midnight. Group them by that calendar day, not the browser's local midnight. */
 function scheduleDayKey(value: Date): string {
@@ -343,10 +353,10 @@ function DaySection({
               booking={b}
               operativeName={
                 b.source === 'manager' && b.bookedBy
-                  ? peopleById?.get(b.bookedBy) || 'Manager'
+                  ? personLabel(peopleById?.get(b.bookedBy), selfDisplayName)
                   : b.operativeId
-                    ? operativesById.get(b.operativeId) || `Operative ${b.operativeId.slice(0, 6)}`
-                    : selfDisplayName || 'You'
+                    ? personLabel(operativesById.get(b.operativeId), selfDisplayName)
+                    : personLabel(selfDisplayName) || 'You'
               }
               projectName={
                 b.displayTitle ||

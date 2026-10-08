@@ -91,9 +91,24 @@ export function ManageUsersScreen() {
   const canManage = canManageUsers(currentUser)
   const title = getManageUsersLabel(currentUser, organization)
 
+  const [rosterAttempt, setRosterAttempt] = useState(0)
+
   useEffect(() => {
     if (organization?.id) loadUsers(organization.id)
   }, [organization?.id, loadUsers])
+
+  useEffect(() => {
+    if (!organization?.id) return
+    if (users.length > 0) return
+    // Still waiting on the first read. A settled empty list, or an error, is retried.
+    if (rosterLoadedOrgId !== organization.id && !rosterError) return
+    if (rosterAttempt >= 4) return
+    const timer = window.setTimeout(() => {
+      setRosterAttempt((attempt) => attempt + 1)
+      void loadUsers(organization.id, { force: true })
+    }, 500)
+    return () => window.clearTimeout(timer)
+  }, [organization?.id, users.length, rosterLoadedOrgId, rosterError, rosterAttempt, loadUsers])
 
   useEffect(() => {
     setSegment('active')
@@ -216,14 +231,14 @@ export function ManageUsersScreen() {
       )}
 
       {canManage && (
-        <div className="mb-3 inline-flex w-full rounded-xl bg-[#E9E9EC] p-0.5">
+        <div className="mb-3 inline-flex w-full rounded-xl bg-[var(--soft2)] p-0.5">
           {ROLE_TABS.map(({ tab: roleTab, label }) => (
             <button
               key={roleTab}
               type="button"
               onClick={() => setTab(roleTab)}
               className={`flex-1 rounded-[9px] px-4 py-2.5 text-sm font-semibold transition ${
-                tab === roleTab ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-700/80 hover:text-slate-900'
+                tab === roleTab ? 'bg-[var(--card)] text-[var(--ink)] shadow-sm' : 'text-[var(--ink2)] hover:text-[var(--ink)]'
               }`}
             >
               {label}
@@ -261,8 +276,8 @@ export function ManageUsersScreen() {
         })}
       </div>
 
-      <div className="mb-4 flex items-center gap-2 rounded-xl bg-[#E9E9EC] px-3 py-2.5">
-        <svg className="h-4 w-4 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+      <div className="mb-4 flex items-center gap-2 rounded-xl bg-[var(--soft2)] px-3 py-2.5">
+        <svg className="h-4 w-4 text-[var(--ink3)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
           <path
             strokeLinecap="round"
             strokeLinejoin="round"
@@ -279,7 +294,7 @@ export function ManageUsersScreen() {
                 ? 'Search managers by name'
                 : 'Search operatives by name'
           }
-          className="w-full bg-transparent text-sm text-slate-900 placeholder:text-slate-500 focus:outline-none"
+          className="w-full bg-transparent text-sm text-[var(--ink)] placeholder:text-[var(--ink3)] focus:outline-none"
         />
       </div>
 

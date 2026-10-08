@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useProjectStore } from '@/lib/stores/projectStore'
 import { ProjectForm } from '@/components/projects/ProjectForm'
+import { WorkFormGate } from '@/components/projects/WorkFormGate'
 import { FormBackLink } from '@/components/forms/FormShell'
 import { LoadingSpinner, PageHeader } from '@/components/dashboard/PageShell'
 import type { Project } from '@/types'
@@ -25,10 +26,9 @@ export default function EditProjectPage() {
     })
   }, [organization, params.id, getProject])
 
-  if (loading) return <LoadingSpinner />
-  if (!project) return <p className="text-slate-600">Project not found.</p>
-
   return (
+    <WorkFormGate kind="projects" mode="edit" href={`/dashboard/projects/${String(params.id || '')}`}>
+      {loading ? <LoadingSpinner /> : !project ? <p className="text-slate-600">Project not found.</p> : (
     <div className="space-y-6">
       <FormBackLink href={`/dashboard/projects/${project.id}`} label="Back to project" />
       <PageHeader title="Edit project" description={`Job #${project.jobNumber}`} />
@@ -39,5 +39,7 @@ export default function EditProjectPage() {
         onSaved={() => router.push(`/dashboard/projects/${project.id}`)}
       />
     </div>
+      )}
+    </WorkFormGate>
   )
 }

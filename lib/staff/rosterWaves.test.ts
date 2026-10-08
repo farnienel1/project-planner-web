@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { isRetryableAuthLoadError } from '../auth/authBoot.ts'
 import {
   catalogueRowNeedsRead,
   explicitAccountIds,
@@ -39,9 +40,31 @@ test('an empty roster surfaces the first real failure so the retry can see its c
   assert.equal(rosterLoadFailure({ collectedCount: 0, complete: false, firstFailure: null })?.message, 'Failed to load users')
 })
 
+test('an empty roster failure is always retryable, even when the first failure was not', () => {
+  const invalid = firestoreError('invalid-argument')
+  const failure = rosterLoadFailure({ collectedCount: 0, complete: false, firstFailure: invalid }) as Error & {
+    code?: string
+  }
+  assert.notEqual(failure, invalid)
+  assert.equal(failure.code, 'unavailable')
+  assert.equal(isRetryableAuthLoadError(failure), true)
+  assert.equal(
+    (rosterLoadFailure({ collectedCount: 0, complete: false, firstFailure: null }) as Error & { code?: string }).code,
+    'unavailable'
+  )
+})
+
+test('a company that lists members but returned nobody is not an empty company', () => {
+  const failure = rosterLoadFailure({ collectedCount: 0, complete: true, firstFailure: null, listedMemberCount: 4 })
+  assert.equal(failure?.message, 'Failed to load users')
+  assert.equal(isRetryableAuthLoadError(failure), true)
+})
+
 test('a roster with people, or a complete empty company, is not a failure', () => {
   assert.equal(rosterLoadFailure({ collectedCount: 3, complete: false, firstFailure: new Error('x') }), null)
   assert.equal(rosterLoadFailure({ collectedCount: 0, complete: true, firstFailure: null }), null)
+  assert.equal(rosterLoadFailure({ collectedCount: 0, complete: true, firstFailure: null, listedMemberCount: 0 }), null)
+  assert.equal(rosterLoadFailure({ collectedCount: 2, complete: true, firstFailure: null, listedMemberCount: 9 }), null)
 })
 
 test('catalogue rows naming an account are still read when the first wave was complete', () => {

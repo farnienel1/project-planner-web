@@ -31,19 +31,27 @@ export function shouldRetryRosterLoad(input: {
 }
 
 /**
- * Nothing came back and at least one source failed. Surface the first real
- * failure so the caller's retry can see a `permission-denied` or
- * `unauthenticated` code. A generic error here used to hide that code, so the
- * first open after sign-in showed an empty list and only a later visit loaded.
+ * Nothing came back, and either a source failed or the organisation lists
+ * members that no read returned. A denied or empty read is not an empty
+ * company. Surface the first real failure when its code is retryable
+ * (`permission-denied`, `unauthenticated`, …) so the caller's retry can see
+ * it; otherwise hand back a retryable `unavailable` error. A generic error
+ * here used to hide the code, so the first open after sign-in showed an empty
+ * list and only a later visit loaded.
  */
 export function rosterLoadFailure(input: {
   collectedCount: number
   complete: boolean
   firstFailure: unknown | null
+  /** Ids on the organisation's members map, whether or not they were read. */
+  listedMemberCount?: number
 }): Error | null {
-  if (input.collectedCount > 0 || input.complete) return null
-  if (input.firstFailure instanceof Error) return input.firstFailure
-  return new Error('Failed to load users')
+  if (input.collectedCount > 0) return null
+  if (input.complete && (input.listedMemberCount ?? 0) === 0) return null
+  if (input.firstFailure instanceof Error && isRetryableAuthLoadError(input.firstFailure)) return input.firstFailure
+  const error = new Error('Failed to load users') as Error & { code?: string }
+  error.code = 'unavailable'
+  return error
 }
 
 /**
