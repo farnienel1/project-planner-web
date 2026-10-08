@@ -272,8 +272,9 @@ export function collectTimesheetPayroll({
     )
   }
 
+  const managerUserIds = new Set([user.id, ...aliasUserIds])
   for (const booking of managerSiteBookings) {
-    if (booking.userId !== user.id) continue
+    if (!managerUserIds.has(booking.userId)) continue
     if (!includesManagerScheduleLocation(scheduleOptions, booking)) continue
     pushBooking(
       'mgr',

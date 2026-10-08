@@ -227,6 +227,17 @@ export function buildDailyOverview(params: {
   }
   const customGroups = [...customMap.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([name, bookings]) => ({ name, bookings }))
 
+  const operativeById = new Map(params.operatives.map((operative) => [operative.id, operative]))
+  const userById = new Map(params.users.map((user) => [user.id, user]))
+  const personIdentity = (email: string | undefined, fallback: string): string => {
+    const key = (email || '').trim().toLowerCase()
+    return key ? `email:${key}` : fallback
+  }
+  const operativeIdentity = (operativeId: string): string =>
+    personIdentity(operativeById.get(operativeId)?.email, `op:${normalizeWorkId(operativeId)}`)
+  const managerIdentity = (userId: string): string =>
+    personIdentity(userById.get(userId)?.email, `mgr:${normalizeWorkId(userId)}`)
+
   const holidays = params.holidays.filter((h) => holidayCovers(h, day))
 
   const bookingsByProject = new Map<string, Booking[]>()
@@ -291,7 +302,7 @@ export function buildDailyOverview(params: {
       return nameA.localeCompare(nameB)
     })
     for (const b of opBookings) {
-      const op = params.operatives.find((row) => row.id === b.operativeId)
+      const op = operativeById.get(b.operativeId)
       const name = operativeDisplayName(op, b.operativeId)
       const hours = estimatedPaidHours(b)
       const linkedUser = op
@@ -299,7 +310,7 @@ export function buildDailyOverview(params: {
         : undefined
       rows.push({
         id: `op-${b.id}`,
-        personKey: `op:${normalizeWorkId(b.operativeId)}`,
+        personKey: operativeIdentity(b.operativeId),
         name,
         initials: initialsFrom(name),
         subtitle: slotLabel(String(b.timeSlot)),
@@ -324,12 +335,12 @@ export function buildDailyOverview(params: {
       )
       .sort((a, b) => slotSortKey(a.timeSlot) - slotSortKey(b.timeSlot))
     for (const b of mgrs) {
-      const user = params.users.find((row) => row.id === b.userId)
+      const user = userById.get(b.userId)
       const name = user ? displayName(user) : 'Manager'
       const hours = estimatedPaidHours(b)
       rows.push({
         id: `mgr-${b.id}`,
-        personKey: `mgr:${normalizeWorkId(b.userId)}`,
+        personKey: managerIdentity(b.userId),
         name,
         initials: initialsFrom(name),
         subtitle: slotLabel(b.timeSlot),
@@ -391,14 +402,14 @@ export function buildDailyOverview(params: {
     )
 
   const onSiteKeys = new Set<string>()
-  for (const b of dayBookings) onSiteKeys.add(`op:${b.operativeId}`)
+  for (const b of dayBookings) onSiteKeys.add(operativeIdentity(b.operativeId))
   for (const b of dayManager) {
-    if (b.locationType === 'project' || b.locationType === 'small_work') onSiteKeys.add(`u:${b.userId}`)
+    if (b.locationType === 'project' || b.locationType === 'small_work') onSiteKeys.add(managerIdentity(b.userId))
   }
   for (const b of daySubs) onSiteKeys.add(`sub:${b.subcontractorId || b.id}`)
 
   const bookedKeys = new Set(onSiteKeys)
-  for (const b of dayManager) bookedKeys.add(`u:${b.userId}`)
+  for (const b of dayManager) bookedKeys.add(managerIdentity(b.userId))
 
   const overviewDayKey = dayKey(day)
   const payroll = params.payrollPolicy ?? DEFAULT_PAYROLL_POLICY
@@ -498,8 +509,8 @@ export function buildDailyOverview(params: {
     bookedPeopleCount: bookedKeys.size,
     unbookedCount: unbookedNames.length,
     unbookedNames,
-    officeCount: new Set(officeBookings.map((b) => b.userId)).size,
-    wfhCount: new Set(wfhBookings.map((b) => b.userId)).size,
+    officeCount: new Set(officeBookings.map((b) => managerIdentity(b.userId))).size,
+    wfhCount: new Set(wfhBookings.map((b) => managerIdentity(b.userId))).size,
     onSiteCount: onSiteKeys.size,
     officeBookings,
     wfhBookings,

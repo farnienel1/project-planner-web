@@ -346,7 +346,7 @@ function asCoverageBooking(booking: LabourBooking): StandardDayBooking {
 /**
  * People who do not cover the organisation standard day inside the window.
  * Pending invitees are not unbooked. A weekend whose counts-as hours are 0 is not unbooked.
- * Bookings on any operative profile that shares the email count toward that day.
+ * Bookings on any operative profile or user account that shares the email count toward that day.
  * A partial booking stays unbooked and reports the hours still missing.
  * A clash is a separate warning: overlapping time does not create a second gap.
  */
@@ -386,6 +386,15 @@ export function unbookedLabourRows(input: UnbookedLabourInput): UnbookedLabourRo
     }
   }
 
+  const userIdsByEmail = new Map<string, Set<string>>()
+  for (const person of input.people) {
+    const email = emailKey(person.email)
+    if (!email || !person.id) continue
+    const ids = userIdsByEmail.get(email) || new Set<string>()
+    ids.add(person.id)
+    userIdsByEmail.set(email, ids)
+  }
+
   const slotsFor = (email: string, operativeId: string | undefined, userId: string | undefined, dayKey: string): StandardDayBooking[] => {
     const slots: StandardDayBooking[] = []
     const ids = new Set<string>()
@@ -393,19 +402,32 @@ export function unbookedLabourRows(input: UnbookedLabourInput): UnbookedLabourRo
     const linked = operativeIdsByEmail.get(email)
     if (linked) for (const id of linked) ids.add(id)
     for (const id of ids) slots.push(...(operativeBookings.get(`${id}|${dayKey}`) || []))
-    if (userId) slots.push(...(managerBookings.get(`${userId}|${dayKey}`) || []))
+    const userIds = new Set<string>()
+    if (userId) userIds.add(userId)
+    const linkedUsers = userIdsByEmail.get(email)
+    if (linkedUsers) for (const id of linkedUsers) userIds.add(id)
+    for (const id of userIds) slots.push(...(managerBookings.get(`${id}|${dayKey}`) || []))
     return slots
   }
 
   const approvedHolidays = input.holidays.filter((holiday) => holiday.approved)
-  const holidayCovers = (dayKey: string, userId?: string, operativeId?: string): boolean =>
-    approvedHolidays.some((holiday) => {
+  const holidayCovers = (dayKey: string, email: string, userId?: string, operativeId?: string): boolean => {
+    const userIds = new Set<string>()
+    if (userId) userIds.add(userId)
+    const linkedUsers = userIdsByEmail.get(email)
+    if (linkedUsers) for (const id of linkedUsers) userIds.add(id)
+    const operativeIds = new Set<string>()
+    if (operativeId) operativeIds.add(operativeId)
+    const linkedOps = operativeIdsByEmail.get(email)
+    if (linkedOps) for (const id of linkedOps) operativeIds.add(id)
+    return approvedHolidays.some((holiday) => {
       if (dayKey < holiday.startDayKey || dayKey > holiday.endDayKey) return false
       const holidayUser = String(holiday.userId || '').trim()
-      if (userId && holidayUser && holidayUser === userId) return true
-      if (operativeId && holiday.operativeId && holiday.operativeId === operativeId) return true
+      if (holidayUser && userIds.has(holidayUser)) return true
+      if (holiday.operativeId && operativeIds.has(holiday.operativeId)) return true
       return false
     })
+  }
 
   const operativeUsers = dedupeFinishedPeople(input.people.filter(isOperativeModeOnly))
   const managerUsers = dedupeFinishedPeople(input.people.filter(isManagerOrAdmin))
@@ -460,9 +482,9 @@ export function unbookedLabourRows(input: UnbookedLabourInput): UnbookedLabourRo
 
     for (const person of operativeUsers) {
       if (excluded.has(person.id)) continue
-      const linked = operativesByEmail.get(emailKey(person.email))
-      if (holidayCovers(dayKey, person.id, linked?.id)) continue
       const email = emailKey(person.email)
+      const linked = operativesByEmail.get(email)
+      if (holidayCovers(dayKey, email, person.id, linked?.id)) continue
       append({
         personKey: person.id,
         name: person.name,
@@ -474,9 +496,9 @@ export function unbookedLabourRows(input: UnbookedLabourInput): UnbookedLabourRo
 
     for (const person of managerUsers) {
       if (excluded.has(person.id)) continue
-      const linked = operativesByEmail.get(emailKey(person.email))
-      if (holidayCovers(dayKey, person.id, linked?.id)) continue
       const email = emailKey(person.email)
+      const linked = operativesByEmail.get(email)
+      if (holidayCovers(dayKey, email, person.id, linked?.id)) continue
       append({
         personKey: person.id,
         name: person.name,
@@ -493,7 +515,7 @@ export function unbookedLabourRows(input: UnbookedLabourInput): UnbookedLabourRo
       if (!matched && email && input.people.some((person) => emailKey(person.email) === email)) continue
       if (matched && managerAdminUserIds.has(matched.id)) continue
       if (matched && excluded.has(matched.id)) continue
-      if (holidayCovers(dayKey, matched?.id, operative.id)) continue
+      if (holidayCovers(dayKey, email, matched?.id, operative.id)) continue
       append({
         personKey: matched?.id || operative.id,
         name: matched?.name || operative.name,
