@@ -563,7 +563,9 @@ test('operative clashes use clock intervals and skip manager-admin emails', () =
     [project('P1'), project('P2')],
     { users: [managerUser], payrollPolicy: DEFAULT_PAYROLL_POLICY }
   )
-  assert.equal(fullDay.length, 0, 'a full-day slot with no clock interval is not an overlap')
+  assert.equal(fullDay.length, 1, 'two full-day slots on one person cover the standard day and overlap')
+  assert.equal(fullDay[0].entries[0].startMinutes, 7 * 60 + 30)
+  assert.equal(fullDay[0].entries[0].endMinutes, 16 * 60)
 
   const clashes = computeOperativeBookingClashWarnings(
     [
@@ -653,6 +655,94 @@ test('AM and PM on the same day do not clash; manager dual-role merges operative
   assert.equal(merged[0].entries.length, 2)
   assert.ok(merged[0].entries.some((entry) => entry.managerBookingId === 'M1'))
   assert.ok(merged[0].entries.some((entry) => entry.bookingId === 'O1' && !entry.managerBookingId))
+})
+
+test('an admin added back onto warnings still flags two full-day bookings', () => {
+  const admin = user({
+    id: 'U-ADMIN',
+    email: 'admin@site.test',
+    firstName: 'Test',
+    surname: 'Admin',
+    role: UserRole.ADMIN,
+    isSuperAdmin: true,
+    permissions: perms({ adminAccess: true, manager: true, operativeMode: false }),
+  })
+  const detection = {
+    ...DEFAULT_WARNING_DETECTION,
+    clashLookaheadMode: 'numberOfDays' as const,
+    clashLookaheadDays: 7,
+    excludedUserIdsFromUnbookedWarnings: [] as string[],
+  }
+  const managerSiteBookings = [
+    {
+      id: 'M-OFFICE',
+      userId: 'U-ADMIN',
+      date: WED,
+      timeSlot: 'FULL_DAY',
+      locationType: 'office' as const,
+      createdAt: WED,
+      updatedAt: WED,
+    },
+    {
+      id: 'M-SITE',
+      userId: 'U-ADMIN',
+      date: WED,
+      timeSlot: 'FULL_DAY',
+      locationType: 'project' as const,
+      locationId: 'P1',
+      createdAt: WED,
+      updatedAt: WED,
+    },
+  ]
+  const included = generateOrgWarnings({
+    bookings: [],
+    managerSiteBookings,
+    operatives: [],
+    users: [admin],
+    projects: [project('P1')],
+    holidays: [],
+    warningDetection: detection,
+    payrollPolicy: DEFAULT_PAYROLL_POLICY,
+    referenceDate: WED,
+  })
+  assert.equal(included.managerClashWarnings.length, 1)
+  assert.equal(included.managerClashWarnings[0].personName, 'Test Admin')
+  assert.match(included.managerClashWarnings[0].message, /two places/)
+  assert.equal(included.mediumCount, 1)
+
+  const stillExcluded = generateOrgWarnings({
+    bookings: [],
+    managerSiteBookings,
+    operatives: [],
+    users: [admin],
+    projects: [project('P1')],
+    holidays: [],
+    warningDetection: {
+      ...detection,
+      excludedUserIdsFromUnbookedWarnings: ['U-ADMIN'],
+    },
+    payrollPolicy: DEFAULT_PAYROLL_POLICY,
+    referenceDate: WED,
+  })
+  assert.equal(
+    stillExcluded.managerClashWarnings.length,
+    1,
+    'the unbooked exclusion list does not hide a double booking'
+  )
+
+  const officeAndJob = generateOrgWarnings({
+    bookings: [booking({ id: 'OP-DAY', operativeId: 'OP-ADMIN', projectId: 'P1', timeSlot: 'FULL DAY' })],
+    managerSiteBookings: [managerSiteBookings[0]],
+    operatives: [operative({ id: 'OP-ADMIN', email: 'admin@site.test', firstName: 'Test', lastName: 'Admin' })],
+    users: [admin],
+    projects: [project('P1')],
+    holidays: [],
+    warningDetection: detection,
+    payrollPolicy: DEFAULT_PAYROLL_POLICY,
+    referenceDate: WED,
+  })
+  assert.equal(officeAndJob.managerClashWarnings.length, 1)
+  assert.equal(officeAndJob.clashWarnings.length, 0)
 })
 
 test('materials cutoff fires after 16:00 for tomorrow bookings, including empty lists', () => {
