@@ -401,18 +401,21 @@ export function buildDailyOverview(params: {
   for (const b of dayManager) bookedKeys.add(`u:${b.userId}`)
 
   const overviewDayKey = dayKey(day)
+  const payroll = params.payrollPolicy ?? DEFAULT_PAYROLL_POLICY
+  const saturdayHours = effectiveWeekendSettings('saturday', payroll).countsAsStandardHours
+  const sundayHours = effectiveWeekendSettings('sunday', payroll).countsAsStandardHours
   const unbookedRows = unbookedLabourRows({
     timeZone: 'Europe/London',
     startDayKey: overviewDayKey,
     endDayKey: overviewDayKey,
     includeWeekends: Boolean(params.includeWeekendUnbooked),
-    standardPaidHours: params.payrollPolicy?.standardPaidHours ?? 8,
-    saturdayCountsAsHours: params.payrollPolicy?.saturday.countsAsStandardHours ?? 0,
-    sundayCountsAsHours: params.payrollPolicy?.sunday.countsAsStandardHours ?? 0,
-    standardDayStart: params.payrollPolicy?.standardDayStart ?? '07:30',
-    standardDayEnd: params.payrollPolicy?.standardDayEnd ?? '16:00',
-    breakWindowStart: params.payrollPolicy?.breakWindowStart ?? '12:00',
-    breakWindowEnd: params.payrollPolicy?.breakWindowEnd ?? '12:30',
+    standardPaidHours: payroll.standardPaidHours,
+    saturdayCountsAsHours: typeof saturdayHours === 'number' ? saturdayHours : payroll.standardPaidHours,
+    sundayCountsAsHours: typeof sundayHours === 'number' ? sundayHours : payroll.standardPaidHours,
+    standardDayStart: payroll.standardDayStart,
+    standardDayEnd: payroll.standardDayEnd,
+    breakWindowStart: payroll.breakWindowStart,
+    breakWindowEnd: payroll.breakWindowEnd,
     people: params.users.map((user) => ({
       id: user.id,
       email: user.email,
