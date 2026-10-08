@@ -17,6 +17,7 @@ import {
   canViewOperatives,
   canViewProjects,
   canViewDailyOverview,
+  canViewWarnings,
   canViewWeeklyReports,
   canViewMySchedule,
   canViewSchedule,
@@ -367,7 +368,7 @@ function canSeeNavItem(item: DashboardNavItem, user: User, orgUsers: User[] = []
     case 'dashboard_schedule':
       return canViewMySchedule(user)
     case 'dashboard_warnings':
-      return hasAdminAccess(user)
+      return canViewWarnings(user)
     case 'dashboard_tasks':
       return true
     case 'dashboard_annual_leave':

@@ -6,13 +6,18 @@
  * PayrollHoursEngine is section 17.
  */
 
+import { unbookedLabourRows } from '@/lib/canonical'
 import { addLondonDays, coversCalendarDay, dayKey, isSameLondonDay } from '@/lib/ios-parity/londonTime'
+import { isPlaceholderOperative } from '@/lib/operatives/operativeRosterUtils'
+import { UserRole } from '@/types'
 import { isSmallWorksJobType, normalizeBookingStatus } from '@/lib/ios-parity/enums'
 import {
   estimatedPaidHours,
   formatHoursLabel as overviewFormatHours,
   parseMinutes,
 } from '@/lib/scheduling/paidHours'
+import { DEFAULT_PAYROLL_POLICY, type OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
+import { effectiveWeekendSettings } from '@/lib/setup/workingHoursUtils'
 import type { Booking, HolidayBooking, Operative, Project, User } from '@/types'
 import type { ManagerLocationType, ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import {
@@ -62,8 +67,6 @@ export function isLondonWeekday(date: Date): boolean {
 
 export { overviewFormatHours, parseMinutes, estimatedPaidHours }
 
-const STANDARD_PAID_HOURS = 8
-
 function displayName(user: User): string {
   const full = `${user.firstName || ''} ${user.surname || ''}`.trim()
   return full || user.email.split('@')[0] || user.email
@@ -97,10 +100,6 @@ function slotSortKey(slot?: string): number {
   if (s === 'FULL DAY' || s === 'FULLDAY') return 1
   if (s === 'PM' || s.includes('AFTERNOON')) return 2
   return 3
-}
-
-function permsOf(user: User): User['permissions'] {
-  return user.permissions || ({} as User['permissions'])
 }
 
 function operativeDisplayName(op: Operative | undefined, fallbackId: string): string {
@@ -201,6 +200,8 @@ export function buildDailyOverview(params: {
   operatives: Operative[]
   subcontractorBookings?: OverviewSubcontractorBooking[]
   subcontractors?: { id: string; name: string; contacts?: { id: string; name: string }[] }[]
+  payrollPolicy?: OrgPayrollTimePolicy
+  includeWeekendUnbooked?: boolean
 }): DailyOverviewModel {
   const day = params.day
   const today = params.today || new Date()
@@ -225,6 +226,17 @@ export function buildDailyOverview(params: {
     customMap.set(name, list)
   }
   const customGroups = [...customMap.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([name, bookings]) => ({ name, bookings }))
+
+  const operativeById = new Map(params.operatives.map((operative) => [operative.id, operative]))
+  const userById = new Map(params.users.map((user) => [user.id, user]))
+  const personIdentity = (email: string | undefined, fallback: string): string => {
+    const key = (email || '').trim().toLowerCase()
+    return key ? `email:${key}` : fallback
+  }
+  const operativeIdentity = (operativeId: string): string =>
+    personIdentity(operativeById.get(operativeId)?.email, `op:${normalizeWorkId(operativeId)}`)
+  const managerIdentity = (userId: string): string =>
+    personIdentity(userById.get(userId)?.email, `mgr:${normalizeWorkId(userId)}`)
 
   const holidays = params.holidays.filter((h) => holidayCovers(h, day))
 
@@ -290,7 +302,7 @@ export function buildDailyOverview(params: {
       return nameA.localeCompare(nameB)
     })
     for (const b of opBookings) {
-      const op = params.operatives.find((row) => row.id === b.operativeId)
+      const op = operativeById.get(b.operativeId)
       const name = operativeDisplayName(op, b.operativeId)
       const hours = estimatedPaidHours(b)
       const linkedUser = op
@@ -298,7 +310,7 @@ export function buildDailyOverview(params: {
         : undefined
       rows.push({
         id: `op-${b.id}`,
-        personKey: `op:${normalizeWorkId(b.operativeId)}`,
+        personKey: operativeIdentity(b.operativeId),
         name,
         initials: initialsFrom(name),
         subtitle: slotLabel(String(b.timeSlot)),
@@ -323,12 +335,12 @@ export function buildDailyOverview(params: {
       )
       .sort((a, b) => slotSortKey(a.timeSlot) - slotSortKey(b.timeSlot))
     for (const b of mgrs) {
-      const user = params.users.find((row) => row.id === b.userId)
+      const user = userById.get(b.userId)
       const name = user ? displayName(user) : 'Manager'
       const hours = estimatedPaidHours(b)
       rows.push({
         id: `mgr-${b.id}`,
-        personKey: `mgr:${normalizeWorkId(b.userId)}`,
+        personKey: managerIdentity(b.userId),
         name,
         initials: initialsFrom(name),
         subtitle: slotLabel(b.timeSlot),
@@ -390,60 +402,83 @@ export function buildDailyOverview(params: {
     )
 
   const onSiteKeys = new Set<string>()
-  for (const b of dayBookings) onSiteKeys.add(`op:${b.operativeId}`)
+  for (const b of dayBookings) onSiteKeys.add(operativeIdentity(b.operativeId))
   for (const b of dayManager) {
-    if (b.locationType === 'project' || b.locationType === 'small_work') onSiteKeys.add(`u:${b.userId}`)
+    if (b.locationType === 'project' || b.locationType === 'small_work') onSiteKeys.add(managerIdentity(b.userId))
   }
   for (const b of daySubs) onSiteKeys.add(`sub:${b.subcontractorId || b.id}`)
 
   const bookedKeys = new Set(onSiteKeys)
-  for (const b of dayManager) bookedKeys.add(`u:${b.userId}`)
+  for (const b of dayManager) bookedKeys.add(managerIdentity(b.userId))
 
-  const paidByOperative = new Map<string, number>()
-  for (const b of dayBookings) {
-    paidByOperative.set(b.operativeId, (paidByOperative.get(b.operativeId) || 0) + estimatedPaidHours(b))
-  }
-  const paidByUser = new Map<string, number>()
-  for (const b of dayManager) {
-    paidByUser.set(b.userId, (paidByUser.get(b.userId) || 0) + estimatedPaidHours(b))
-  }
-
-  const operativeUsers = params.users.filter((u) => {
-    const p = permsOf(u)
-    return (
-      u.isActive &&
-      u.passwordSet &&
-      u.status !== 'pending' &&
-      p.operativeMode &&
-      !p.manager &&
-      !p.adminAccess &&
-      !u.isSuperAdmin &&
-      u.role !== 'admin'
-    )
+  const overviewDayKey = dayKey(day)
+  const payroll = params.payrollPolicy ?? DEFAULT_PAYROLL_POLICY
+  const saturdayHours = effectiveWeekendSettings('saturday', payroll).countsAsStandardHours
+  const sundayHours = effectiveWeekendSettings('sunday', payroll).countsAsStandardHours
+  const unbookedRows = unbookedLabourRows({
+    timeZone: 'Europe/London',
+    startDayKey: overviewDayKey,
+    endDayKey: overviewDayKey,
+    includeWeekends: Boolean(params.includeWeekendUnbooked),
+    standardPaidHours: payroll.standardPaidHours,
+    saturdayCountsAsHours: typeof saturdayHours === 'number' ? saturdayHours : payroll.standardPaidHours,
+    sundayCountsAsHours: typeof sundayHours === 'number' ? sundayHours : payroll.standardPaidHours,
+    standardDayStart: payroll.standardDayStart,
+    standardDayEnd: payroll.standardDayEnd,
+    breakWindowStart: payroll.breakWindowStart,
+    breakWindowEnd: payroll.breakWindowEnd,
+    people: params.users.map((user) => ({
+      id: user.id,
+      email: user.email,
+      name: `${user.firstName || ''} ${user.surname || ''}`.trim() || user.email || user.id,
+      isActive: Boolean(user.isActive),
+      passwordSet: user.passwordSet === true,
+      status: user.status,
+      isOperativeMode: Boolean(user.permissions?.operativeMode),
+      isManager: Boolean(user.permissions?.manager),
+      isAdmin: Boolean(user.permissions?.adminAccess) || user.role === UserRole.ADMIN,
+      isSuperAdmin: Boolean(user.isSuperAdmin),
+    })),
+    operatives: params.operatives.map((operative) => ({
+      id: operative.id,
+      email: operative.email,
+      name: `${operative.firstName} ${operative.lastName}`.trim() || operative.email || 'Operative',
+      isActive: operative.isActive !== false,
+      isPlaceholder: isPlaceholderOperative(operative),
+      profileWeight:
+        (operative.qualifications?.length ?? 0) +
+        Object.keys(operative.qualificationCertificateURLs || {}).length +
+        Object.keys(operative.qualificationExpiryDates || {}).length,
+    })),
+    bookings: [
+      ...dayBookings.map((booking) => ({
+        personId: booking.operativeId,
+        dayKey: overviewDayKey,
+        kind: 'operative' as const,
+        timeSlot: booking.timeSlot,
+        workStart: booking.workStartTime,
+        workEnd: booking.workEndTime,
+      })),
+      ...dayManager.map((booking) => ({
+        personId: booking.userId,
+        dayKey: overviewDayKey,
+        kind: 'manager' as const,
+        timeSlot: booking.timeSlot,
+        workStart: booking.workStartTime,
+        workEnd: booking.workEndTime,
+      })),
+    ],
+    holidays: holidays.map((holiday) => ({
+      userId: holiday.userId,
+      operativeId: holiday.operativeId,
+      startDayKey: dayKey(holiday.startDate),
+      endDayKey: dayKey(holiday.endDate),
+      approved: true,
+    })),
   })
-  const managerUsers = params.users.filter((u) => {
-    const p = permsOf(u)
-    return (
-      u.isActive &&
-      u.passwordSet &&
-      u.status !== 'pending' &&
-      (p.manager || p.adminAccess || u.isSuperAdmin || u.role === 'admin')
-    )
-  })
-
-  const unbookedNames: string[] = []
-  const pushUnbooked = (user: User) => {
-    const linked = params.operatives.find((o) => o.email.toLowerCase() === user.email.toLowerCase())
-    if (holidays.some((h) => h.userId === user.id || (linked && h.operativeId === linked.id))) return
-    const paid = (linked ? paidByOperative.get(linked.id) || 0 : 0) + (paidByUser.get(user.id) || 0)
-    if (paid >= STANDARD_PAID_HOURS) return
-    const missing = Math.max(0, STANDARD_PAID_HOURS - paid)
-    const name = `${user.firstName || ''} ${user.surname || ''}`.trim() || user.email
-    unbookedNames.push(`${name} (missing ${overviewFormatHours(missing)}h)`)
-  }
-  operativeUsers.forEach(pushUnbooked)
-  managerUsers.forEach(pushUnbooked)
-  unbookedNames.sort()
+  const unbookedNames = unbookedRows.map(
+    (row) => `${row.operativeName} (missing ${overviewFormatHours(row.missingHours)}h)`
+  )
 
   const labourHours = [
     ...dayBookings,
@@ -474,8 +509,8 @@ export function buildDailyOverview(params: {
     bookedPeopleCount: bookedKeys.size,
     unbookedCount: unbookedNames.length,
     unbookedNames,
-    officeCount: new Set(officeBookings.map((b) => b.userId)).size,
-    wfhCount: new Set(wfhBookings.map((b) => b.userId)).size,
+    officeCount: new Set(officeBookings.map((b) => managerIdentity(b.userId))).size,
+    wfhCount: new Set(wfhBookings.map((b) => managerIdentity(b.userId))).size,
     onSiteCount: onSiteKeys.size,
     officeBookings,
     wfhBookings,

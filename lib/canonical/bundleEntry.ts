@@ -13,6 +13,7 @@ export {
   organizationIdsMatch,
   organizationScopedKey,
   paidHoursForNamedSlot,
+  standardDayCoverage,
 } from './engine'
 
 export { qualificationExpiryRows, unbookedLabourRows, unverifiedOperativeRows } from './warningRows'

@@ -83,8 +83,8 @@ export function WarningsSetupSection({ value, onChange }: WarningsSetupSectionPr
           <SetupSectionLabel>Warning detection</SetupSectionLabel>
           <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
             <p className="text-xs leading-relaxed text-slate-500">
-              How far ahead should clashes, missed bookings and material lists be detected. It is set to End of the
-              working week by default.
+              How far ahead should clashes, missed bookings and material lists be detected. A full week is Monday to
+              Friday. Weekends are a separate switch.
             </p>
           </div>
 
@@ -100,7 +100,7 @@ export function WarningsSetupSection({ value, onChange }: WarningsSetupSectionPr
                   }
                   className="max-w-[12rem] border-none bg-transparent text-right text-sm font-semibold text-blue-600"
                 >
-                  <option value="week">End of the working week</option>
+                  <option value="week">Full week (Monday–Friday)</option>
                   <option value="invoicing">End of invoicing period</option>
                   <option value="days">Set number of days</option>
                 </FormSelect>

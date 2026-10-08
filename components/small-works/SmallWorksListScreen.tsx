@@ -14,12 +14,14 @@ import { useTaskStore } from '@/lib/stores/taskStore'
 import { useBookingStore } from '@/lib/stores/bookingStore'
 import { useManagerScheduleStore } from '@/lib/stores/managerScheduleStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
+import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { canManageWorkCatalogue, isOperativeMode } from '@/lib/permissions'
 import { visibleWorks } from '@/lib/access/workAccess'
 import { useDeadlineAssignedProjectIds } from '@/lib/deadlines/useDeadlineAssignedProjectIds'
 import { countWorksByTab, filterWorksByTab, searchWorks } from '@/lib/projects/workStatus'
 import { EmptyState, FilterChip, PageHeader, SearchField, StatsRow } from '@/components/ios/primitives'
 import { WorkCard } from '@/components/projects/WorkCard'
+import { assignedManagerLabel } from '@/lib/projects/assignedManagers'
 
 type Filter = 'all' | 'active' | 'upcoming' | 'completed'
 
@@ -30,6 +32,8 @@ export function SmallWorksListScreen() {
   const { bookings, loadBookings } = useBookingStore()
   const { managerSiteBookings, loadManagerSiteBookings } = useManagerScheduleStore()
   const { operatives, managers, loadOperatives, loadManagers } = useOperativeStore()
+  const users = useOrgUserStore((state) => state.users)
+  const loadUsers = useOrgUserStore((state) => state.loadUsers)
   const deadlineAssignedProjectIds = useDeadlineAssignedProjectIds()
   const [filter, setFilter] = useState<Filter>('active')
   const [search, setSearch] = useState('')
@@ -42,6 +46,7 @@ export function SmallWorksListScreen() {
     loadManagerSiteBookings(organization.id)
     loadOperatives(organization.id)
     loadManagers(organization.id)
+    loadUsers(organization.id)
   }, [
     organization?.id,
     loadSmallWorks,
@@ -50,6 +55,7 @@ export function SmallWorksListScreen() {
     loadManagerSiteBookings,
     loadOperatives,
     loadManagers,
+    loadUsers,
   ])
 
   const visible = useMemo(
@@ -82,14 +88,8 @@ export function SmallWorksListScreen() {
   const emptyDueToFilter = visible.length > 0 && filter !== 'all' && filterWorksByTab(visible, filter).length === 0
   const emptySearch = search.trim().length > 0 && filtered.length === 0 && filterWorksByTab(visible, filter).length > 0
 
-  const managerName = (project: (typeof smallWorks)[number]) => {
-    const id = project.managerId || project.managerIds?.[0]
-    if (id) {
-      const m = managers.find((row) => row.id === id)
-      if (m) return `${m.firstName} ${m.lastName}`.trim()
-    }
-    return project.manager?.name
-  }
+  const managerName = (project: (typeof smallWorks)[number]) =>
+    assignedManagerLabel(project, managers, users, organization?.id)
 
   if (loading && smallWorks.length === 0) {
     return (

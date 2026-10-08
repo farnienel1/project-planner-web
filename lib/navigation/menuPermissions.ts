@@ -8,6 +8,8 @@
 export {
   isOperativeMode,
   hasAdminAccess,
+  canViewWarnings,
+  canOpenWarningSettings,
   canAccessOrganisationSettingsHub,
   canViewProjects,
   canViewOperatives,
