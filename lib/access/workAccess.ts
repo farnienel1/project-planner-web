@@ -5,7 +5,8 @@
 
 import type { Booking, Manager, Operative, Project, ProjectTask, User } from '@/types'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
-import { isOperativeMode, canManageWorkCatalogue, type WorkCatalogueKind } from '@/lib/permissions'
+import { seesEveryJob } from '@/lib/canonical'
+import { isOperativeMode, staffAccountRole, type WorkCatalogueKind } from '@/lib/permissions'
 import { isSmallWorksJobType, normalizeBookingStatus } from '@/lib/ios-parity/enums'
 
 export type JobCatalogue = WorkCatalogueKind
@@ -232,27 +233,19 @@ export function visibleWorks(params: {
     })
   }
 
-  if (isExcludedFromManagerVisibilityHiding(user)) {
-    return scoped.filter((project) => {
-      const jobCatalogue: JobCatalogue = isSmallWorksJobType(project.jobType) ? 'smallWorks' : 'projects'
-      if (canManageWorkCatalogue(user, jobCatalogue)) return true
-      return isAssignedOrBookedOnto({
-        project,
-        user,
-        operatives: params.operatives,
-        managers,
-        bookings: params.bookings,
-        managerBookings: params.managerBookings,
-      })
-    })
+  // Canonical rule: admins and managers see every job, including jobs they are
+  // not assigned to, whether or not the Projects / Small works toggle is on.
+  // The toggles only gate add and edit (canManageWorkCatalogue).
+  if (seesEveryJob(staffAccountRole(user))) {
+    if (isExcludedFromManagerVisibilityHiding(user)) return scoped
+    // A manager still does not see a job an admin hid from them on the View tab.
+    return scoped.filter((project) => !(project.hiddenManagerUserIds ?? []).includes(user.id))
   }
 
+  // An account with no staff role sees only the jobs it is assigned to or booked onto.
   const notHidden = scoped.filter((project) => !(project.hiddenManagerUserIds ?? []).includes(user.id))
-  if (user.permissions.manager) return notHidden
-  return notHidden.filter((project) => {
-    const jobCatalogue: JobCatalogue = isSmallWorksJobType(project.jobType) ? 'smallWorks' : 'projects'
-    if (canManageWorkCatalogue(user, jobCatalogue)) return true
-    return isAssignedOrBookedOnto({
+  return notHidden.filter((project) =>
+    isAssignedOrBookedOnto({
       project,
       user,
       operatives: params.operatives,
@@ -260,7 +253,7 @@ export function visibleWorks(params: {
       bookings: params.bookings,
       managerBookings: params.managerBookings,
     })
-  })
+  )
 }
 
 export function liveUserIdsOnJob(params: {

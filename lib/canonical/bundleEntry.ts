@@ -17,3 +17,11 @@ export {
 } from './engine'
 
 export { qualificationExpiryRows, unbookedLabourRows, unverifiedOperativeRows } from './warningRows'
+
+export {
+  canEditWorkCatalogue,
+  canViewStaffWarnings,
+  isStaffAccount,
+  receivesJobNotification,
+  seesEveryJob,
+} from './staffAccess'

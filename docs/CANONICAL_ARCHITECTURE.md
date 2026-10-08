@@ -6,8 +6,8 @@ Web and iOS are separate repositories and separate languages. They share one exe
 
 | Piece | Path |
 |---|---|
-| Canonical core | `project-planner-web/lib/canonical/` (`engine.ts` for windows, organisation, and slots; `warningRows.ts` for which qualification, unverified, and unbooked warnings exist) |
-| Web consumption | Import `@/lib/canonical`. Existing modules such as `lib/warnings/warningLookahead.ts`, `lib/orgMembership/webActiveOrg.ts`, and `lib/timesheets/timesheetWeekUtils.ts` call that module instead of keeping a second copy. |
+| Canonical core | `project-planner-web/lib/canonical/` (`engine.ts` for windows, organisation, and slots; `warningRows.ts` for which qualification, unverified, and unbooked warnings exist; `staffAccess.ts` for who sees every job and every warning, who may edit a work catalogue, and which managers receive a job notification) |
+| Web consumption | Import `@/lib/canonical`. Existing modules such as `lib/warnings/warningLookahead.ts`, `lib/orgMembership/webActiveOrg.ts`, `lib/timesheets/timesheetWeekUtils.ts`, `lib/permissions.ts`, and `lib/access/workAccess.ts` call that module instead of keeping a second copy. |
 | iOS consumption | `Project Planner/Canonical/canonical-business.js` is the bundle built from `lib/canonical/bundleEntry.ts`. `Project Planner/Canonical/CanonicalBusinessEngine.swift` evaluates it. Warning scans and invoicing defaults use that result, with `Europe/London` when the script cannot load. |
 | Bundle command | `npm run build:canonical` in the web repo. `npm test` rebuilds it. |
 | Backend | There is no Cloud Functions package. Firebase security rules are the server-side organisation boundary: `project-planner-web/firestore.rules` and `project-planner-ios/Project Planner/firestore.rules`. |
@@ -28,6 +28,15 @@ The canonical module owns:
 - Whether two minute intervals clash
 - Cache key shape `kind:organizationId`
 - Which qualification warnings exist, which operatives are unverified, and which people are unbooked labour (`qualificationExpiryRows`, `unverifiedOperativeRows`, `unbookedLabourRows`)
+- Who sees every job and every warning, who may add or edit a work catalogue, and which managers receive a job notification (`seesEveryJob`, `canViewStaffWarnings`, `canEditWorkCatalogue`, `receivesJobNotification`)
+
+## Staff visibility, catalogue toggles, and notification recipients
+
+Each app resolves four flags for the signed-in account (super admin, admin, manager, operative mode) with its own user store and passes them to `staffAccess.ts`. On the web that is `staffAccountRole` in `lib/permissions.ts`; on iOS it is `UserStore`.
+
+- Lists and warnings. Every admin and every manager sees every project, every small works job, and every warning in the company, including jobs and people they are not the project manager or line manager for. They can open those warnings and fix them. Neither list is narrowed to assigned jobs. On the web `visibleWorks` in `lib/access/workAccess.ts` returns the whole catalogue for staff; a manager still does not see a job an admin hid from them on the job's View tab (`hiddenManagerUserIds`). Operatives see only the jobs they are booked onto and never get the staff warning list. An account with no staff role keeps the assigned-or-booked rule.
+- Projects and Small works toggles. The two toggles never hide a list. With a toggle off, an admin or manager still sees every job in that catalogue but cannot add or edit it: create and edit affordances are hidden or disabled (`canEditWorkCatalogue`, web `canManageWorkCatalogue`, and the `ProjectForm` gate for deep links). Super admin ignores both toggles.
+- Notifications stay narrower. A manager receives a notification for a job or a person only as an assigned project manager of that job or as that person's line manager (`receivesJobNotification`). Admins and super admins receive it. Seeing the job in the list does not make a manager a recipient, so widening the lists must not widen fan-out. On the web the recipient rows are written with `userId` set (`lib/firebase/notifyInbox.ts`, `lib/variations/variationStorage.ts`, `lib/timesheets/timesheetNotifications.ts`), and `lib/stores/notificationStore.ts` shows a targeted row only to that user.
 
 ## What stays in each app
 
@@ -67,7 +76,7 @@ Other role gaps inside one company (for example who may edit settings) are liste
 
 ## Where new business logic goes
 
-If both apps must agree, add the function under `lib/canonical/` (`engine.ts` or `warningRows.ts`), export it from `lib/canonical/index.ts` and `bundleEntry.ts`, then call it from web and from `CanonicalBusinessEngine`. Committing that change packs the script. `.githooks/pre-commit` runs `npm run build:canonical`, stages `lib/canonical/dist/canonical-business.js`, and refuses the commit when the iOS checkout beside this repo has an uncommitted packed file. `npm install` turns the hook on. `npm run check:canonical` fails when a packed file does not match the rulebook.
+If both apps must agree, add the function under `lib/canonical/` (`engine.ts`, `warningRows.ts`, or `staffAccess.ts`), export it from `lib/canonical/index.ts` and `bundleEntry.ts`, then call it from web and from `CanonicalBusinessEngine`. Committing that change packs the script. `.githooks/pre-commit` runs `npm run build:canonical`, stages `lib/canonical/dist/canonical-business.js`, and refuses the commit when the iOS checkout beside this repo has an uncommitted packed file. `npm install` turns the hook on. `npm run check:canonical` fails when a packed file does not match the rulebook.
 
 ## Agent windows
 
