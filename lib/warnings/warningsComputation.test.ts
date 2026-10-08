@@ -123,6 +123,53 @@ test('Full week coverage is Monday through Friday, including past days', () => {
   assert.equal(dayKey(window.end), '2026-09-18')
 })
 
+test('full week unbooked labour adds Saturday and Sunday only when include weekends is on', () => {
+  const person = user({
+    id: 'U-OP',
+    email: 'ada@site.test',
+    firstName: 'Ada',
+    surname: 'Operative',
+    permissions: perms({ operativeMode: true }),
+  })
+  const base = {
+    bookings: [] as Booking[],
+    operatives: [],
+    users: [person],
+    holidays: [] as HolidayBooking[],
+    payrollPolicy: DEFAULT_PAYROLL_POLICY,
+    referenceDate: WED,
+  }
+  const off = computeUnbookedLabourWarnings({
+    ...base,
+    warningDetection: {
+      ...DEFAULT_WARNING_DETECTION,
+      clashLookaheadMode: 'endOfWorkingWeek',
+      includeWeekendsForUnbookedLabour: false,
+    },
+  })
+  const offDays = [...new Set(off.map((warning) => dayKey(warning.date)))]
+  assert.ok(offDays.includes('2026-09-14'))
+  assert.ok(offDays.includes('2026-09-18'))
+  assert.equal(offDays.includes('2026-09-19'), false)
+  assert.equal(offDays.includes('2026-09-20'), false)
+
+  const on = computeUnbookedLabourWarnings({
+    ...base,
+    warningDetection: {
+      ...DEFAULT_WARNING_DETECTION,
+      clashLookaheadMode: 'endOfWorkingWeek',
+      includeWeekendsForUnbookedLabour: true,
+    },
+  })
+  const onDays = [...new Set(on.map((warning) => dayKey(warning.date)))]
+  assert.ok(onDays.includes('2026-09-19'))
+  assert.ok(onDays.includes('2026-09-20'))
+  assert.equal(dayKey(computeWarningCoverageWindow(WED, {
+    ...DEFAULT_WARNING_DETECTION,
+    clashLookaheadMode: 'endOfWorkingWeek',
+  }).end), '2026-09-18')
+})
+
 test('invoicing-period warnings include past days in the active pay run and stop at that run', () => {
   // Raccord MEP: date ranges 1–16 and 17–31. 6 Oct 2026 is inside 1–16.
   // iOS OrgWarningDetectionSettings.coverageStart/End for endOfInvoicingPeriod.
