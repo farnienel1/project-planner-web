@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useProjectStore } from '@/lib/stores/projectStore'
 import { ProjectForm } from '@/components/projects/ProjectForm'
+import { WorkFormGate } from '@/components/projects/WorkFormGate'
 import { FormBackLink } from '@/components/forms/FormShell'
 import { LoadingSpinner, PageHeader } from '@/components/dashboard/PageShell'
 import type { Project } from '@/types'
@@ -21,13 +22,15 @@ export default function EditSmallWorkPage() {
     getProject(organization.id, String(params.id), 'smallWorks').then(setWork)
   }, [organization, params.id, getProject])
 
-  if (!work) return <LoadingSpinner />
-
   return (
+    <WorkFormGate kind="smallWorks" mode="edit" href={`/dashboard/small-works/${String(params.id || '')}`}>
+      {!work ? <LoadingSpinner /> : (
     <div className="space-y-6">
       <FormBackLink href={`/dashboard/small-works/${work.id}`} label="Back to small work" />
       <PageHeader title="Edit small work" description={`Job #${work.jobNumber}`} />
       <ProjectForm initial={work} collection="smallWorks" backHref={`/dashboard/small-works/${work.id}`} onSaved={() => router.push(`/dashboard/small-works/${work.id}`)} />
     </div>
+      )}
+    </WorkFormGate>
   )
 }

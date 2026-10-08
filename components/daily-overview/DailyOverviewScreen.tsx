@@ -7,7 +7,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { useSearchParams } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { ChevronLeftIcon, ChevronRightIcon, CalendarDaysIcon, FolderIcon, WrenchScrewdriverIcon } from '@heroicons/react/24/solid'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useBookingStore } from '@/lib/stores/bookingStore'
@@ -65,6 +65,7 @@ function holidayName(
 }
 
 export function DailyOverviewScreen() {
+  const router = useRouter()
   const searchParams = useSearchParams()
   const { user, organization } = useAuthStore()
   const { bookings, loadBookings, loading: bookingsLoading, error: bookingsError } = useBookingStore()
@@ -163,9 +164,11 @@ export function DailyOverviewScreen() {
   })
   const firstPaint = !mayPublish && bookings.length === 0 && managerSiteBookings.length === 0
 
-  if (user && !canViewDailyOverview(user)) {
-    return <p className="muted">Daily overview is not available for this account.</p>
-  }
+  useEffect(() => {
+    if (user && !canViewDailyOverview(user)) router.replace('/dashboard')
+  }, [router, user])
+
+  if (user && !canViewDailyOverview(user)) return null
 
   return (
     <>
