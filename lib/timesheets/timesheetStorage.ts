@@ -476,12 +476,17 @@ async function loadTimesheetCandidatesByUserIds(
 ): Promise<Map<string, TimesheetPeriodCandidate[]>> {
   const grouped = new Map<string, TimesheetPeriodCandidate[]>()
   for (const userId of userIds) grouped.set(userId, [])
+  const chunks: string[][] = []
   for (let index = 0; index < userIds.length; index += USER_ID_QUERY_CHUNK) {
     const chunk = userIds.slice(index, index + USER_ID_QUERY_CHUNK)
-    if (chunk.length === 0) continue
-    const snap = await getDocs(
-      query(collection(db, 'organizations', organizationId, 'settings'), where('userId', 'in', chunk))
+    if (chunk.length > 0) chunks.push(chunk)
+  }
+  const snaps = await Promise.all(
+    chunks.map((chunk) =>
+      getDocs(query(collection(db, 'organizations', organizationId, 'settings'), where('userId', 'in', chunk)))
     )
+  )
+  for (const snap of snaps) {
     for (const entry of snap.docs) {
       const data = entry.data() as Record<string, unknown>
       const userId = typeof data.userId === 'string' ? data.userId : ''
@@ -540,51 +545,57 @@ async function loadTimesheetDraftsOnce(
   const results = new Map<string, TimesheetDraft>()
   if (userIds.length === 0) return results
 
-  try {
-    const key = dayKey(weekStart, timeZone)
-    const snap = await getDocs(
-      query(collection(db, 'organizations', organizationId, 'settings'), where('weekStartKey', '==', key))
-    )
-    for (const entry of snap.docs) {
+  // Wave 1: the weekStartKey query and every person's canonical document id,
+  // together. These used to run one after the other.
+  const key = dayKey(weekStart, timeZone)
+  const canonicalIds = new Map(userIds.map((userId) => [userId, timesheetDocId(userId, weekStart, timeZone)] as const))
+  const [keyed, canonical] = await Promise.all([
+    getDocs(query(collection(db, 'organizations', organizationId, 'settings'), where('weekStartKey', '==', key))).catch(
+      () => null // iOS docs often have no weekStartKey. Direct ids and the userId query cover them.
+    ),
+    Promise.all(
+      userIds.map(async (userId) => {
+        const id = canonicalIds.get(userId)!
+        return { userId, id, data: await readDoc(organizationId, id) }
+      })
+    ),
+  ])
+  if (keyed) {
+    for (const entry of keyed.docs) {
       const data = entry.data() as Record<string, unknown>
       const userId = typeof data.userId === 'string' ? data.userId : ''
       if (!wanted.has(userId) || results.has(userId)) continue
       results.set(userId, rememberSource(draftFromFirestoreMap(data, LIST_DRAFT_OPTIONS), entry.id))
     }
-  } catch {
-    // iOS docs often have no weekStartKey. Direct ids and the userId query follow.
+  }
+  for (const hit of canonical) {
+    if (!hit.data || results.has(hit.userId)) continue
+    results.set(hit.userId, rememberSource(draftFromFirestoreMap(hit.data, LIST_DRAFT_OPTIONS), hit.id))
   }
 
-  let missing = userIds.filter((id) => !results.has(id))
+  // Wave 2: only for people still without a sheet — the other id spellings and
+  // the per-user history query, together.
+  const missing = userIds.filter((id) => !results.has(id))
   if (missing.length > 0) {
-    const canonical = await Promise.all(
-      missing.map(async (userId) => {
-        const id = timesheetDocId(userId, weekStart, timeZone)
-        return { userId, id, data: await readDoc(organizationId, id) }
-      })
-    )
-    for (const hit of canonical) {
-      if (!hit.data) continue
-      results.set(hit.userId, rememberSource(draftFromFirestoreMap(hit.data, LIST_DRAFT_OPTIONS), hit.id))
-    }
-  }
-
-  missing = userIds.filter((id) => !results.has(id))
-  if (missing.length > 0) {
-    const extras = await mapInBatches(missing, 12, async (userId) => {
-      const draft = await loadTimesheetDraftByCandidates(organizationId, userId, weekStart, timeZone, false)
-      return [userId, draft] as const
-    })
+    const end = periodEnd || weekStart
+    const [extras, grouped] = await Promise.all([
+      mapInBatches(missing, 12, async (userId) => {
+        const skip = canonicalIds.get(userId)
+        const unique = [...new Set(candidateTimesheetDocIds(userId, weekStart, timeZone))].filter((id) => id !== skip)
+        const hits = await Promise.all(unique.map(async (id) => ({ id, data: await readDoc(organizationId, id) })))
+        const hit = hits.find((row) => row.data)
+        const draft = hit?.data
+          ? rememberSource(draftFromFirestoreMap(hit.data, LIST_DRAFT_OPTIONS), hit.id)
+          : null
+        return [userId, draft] as const
+      }),
+      loadTimesheetCandidatesByUserIds(organizationId, missing, false),
+    ])
     for (const [userId, draft] of extras) {
       if (draft) results.set(userId, draft)
     }
-  }
-
-  missing = userIds.filter((id) => !results.has(id))
-  if (missing.length > 0) {
-    const grouped = await loadTimesheetCandidatesByUserIds(organizationId, missing, false)
-    const end = periodEnd || weekStart
     for (const userId of missing) {
+      if (results.has(userId)) continue
       const picked = pickTimesheetDraftForPeriod(grouped.get(userId) || [], weekStart, end, timeZone)
       if (picked) results.set(userId, picked.draft)
     }

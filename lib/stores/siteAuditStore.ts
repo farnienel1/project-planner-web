@@ -4,6 +4,7 @@ import { create } from 'zustand'
 import { collection, doc, getDoc, getDocs, limit, query, setDoc, Timestamp, where } from 'firebase/firestore'
 import { isTimeoutError, withTimeout } from '@/lib/client/withTimeout'
 import { db } from '@/lib/firebase/config'
+import { readOrganizationDocument } from '@/lib/firebase/orgDocumentCache'
 import { UserRole, type SiteAudit, type SiteAuditItem, type User } from '@/types'
 import { parseOrgUser } from '@/lib/firebase/parseUser'
 import { dedupeUsersByEmail } from '@/lib/staff/userRosterUtils'
@@ -319,23 +320,71 @@ async function fetchOrganisationRoster(organizationId: string): Promise<{
     await Promise.all(workers)
   }
 
-  for (const field of ['organizationId', 'organisationId', 'orgId'] as const) {
-    try {
-      const snapshot = await getDocs(query(collection(db, 'users'), where(field, '==', organizationId)))
-      for (const entry of snapshot.docs) {
-        remember(userForThisOrganisation(entry.id, entry.data() as Record<string, unknown>, organizationId, true))
-      }
-    } catch {
-      complete = false
+  // Wave 1: every source that does not depend on another read, all at once.
+  // This used to be a chain of a dozen round trips (three users queries, the
+  // organisation document, each member, userEmails, operatives, managers, then
+  // a per-person lookup), so the roster — and every page that waits for it —
+  // took seconds on a cold session.
+  type CatalogueEntry = { id: string; data: Record<string, unknown>; kind?: 'manager' }
+  const [usersResult, orgResult, emailsResult, operativesResult, managersResult] = await Promise.allSettled([
+    getDocs(query(collection(db, 'users'), where('organizationId', '==', organizationId))),
+    readOrganizationDocument(db, organizationId),
+    getDocs(collection(db, 'organizations', organizationId, 'userEmails')),
+    getDocs(collection(db, 'organizations', organizationId, 'operatives')),
+    getDocs(collection(db, 'organizations', organizationId, 'managers')),
+  ])
+
+  if (usersResult.status === 'fulfilled') {
+    for (const entry of usersResult.value.docs) {
+      remember(userForThisOrganisation(entry.id, entry.data() as Record<string, unknown>, organizationId, true))
     }
+  } else {
+    complete = false
   }
 
-  try {
-    const orgSnap = await getDoc(doc(db, 'organizations', organizationId))
-    const members = (orgSnap.data()?.members ?? {}) as Record<string, unknown>
-    const memberIds = Object.keys(members).filter(Boolean)
-    const memberRows: Array<User | null | 'failed'> = new Array(memberIds.length)
-    await readTogether(memberIds, async (id, index) => {
+  const memberIds: string[] = []
+  if (orgResult.status === 'fulfilled') {
+    const members = (orgResult.value.data()?.members ?? {}) as Record<string, unknown>
+    for (const id of Object.keys(members)) {
+      if (id && !presentIds.has(id)) memberIds.push(id)
+    }
+  } else {
+    complete = false
+  }
+
+  const emailUserIds: string[] = []
+  if (emailsResult.status === 'fulfilled') {
+    for (const entry of emailsResult.value.docs) {
+      const userId = text(entry.data().userId)
+      if (userId && !presentIds.has(userId) && !memberIds.includes(userId) && !emailUserIds.includes(userId)) {
+        emailUserIds.push(userId)
+      }
+    }
+  } else {
+    complete = false
+  }
+
+  const catalogue: CatalogueEntry[] = []
+  if (operativesResult.status === 'fulfilled') {
+    for (const entry of operativesResult.value.docs) {
+      catalogue.push({ id: entry.id, data: entry.data() as Record<string, unknown> })
+    }
+  } else {
+    complete = false
+  }
+  if (managersResult.status === 'fulfilled') {
+    for (const entry of managersResult.value.docs) {
+      catalogue.push({ id: entry.id, data: entry.data() as Record<string, unknown>, kind: 'manager' })
+    }
+  } else {
+    complete = false
+  }
+
+  // Wave 2: only the people wave 1 did not already return.
+  const memberRows: Array<User | null | 'failed'> = new Array(memberIds.length)
+  const emailUsers: Array<User | null> = new Array(emailUserIds.length)
+  await Promise.all([
+    readTogether(memberIds, async (id, index) => {
       try {
         const snap = await getDoc(doc(db, 'users', id))
         if (!snap.exists()) {
@@ -348,62 +397,44 @@ async function fetchOrganisationRoster(organizationId: string): Promise<{
       } catch {
         memberRows[index] = 'failed'
       }
-    })
-    for (let index = 0; index < memberIds.length; index += 1) {
-      const row = memberRows[index]
-      if (row === 'failed') {
-        complete = false
-        continue
-      }
-      if (!row || presentIds.has(memberIds[index])) continue
-      noteUser(row)
-    }
-  } catch {
-    complete = false
-  }
-
-  try {
-    const snapshot = await getDocs(collection(db, 'organizations', organizationId, 'userEmails'))
-    const emailUserIds = snapshot.docs
-      .map((entry) => text(entry.data().userId))
-      .filter((userId) => userId !== '' && !presentIds.has(userId))
-    const emailUsers: Array<User | null> = new Array(emailUserIds.length)
-    await readTogether(emailUserIds, async (userId, index) => {
+    }),
+    readTogether(emailUserIds, async (userId, index) => {
       emailUsers[index] = await loadUserDocument(userId, true)
-    })
-    for (const user of emailUsers) noteUser(user)
-  } catch {
-    complete = false
+    }),
+  ])
+  for (const row of memberRows) {
+    if (row === 'failed') {
+      complete = false
+      continue
+    }
+    noteUser(row)
   }
+  for (const user of emailUsers) noteUser(user)
 
-  try {
-    const snapshot = await getDocs(collection(db, 'organizations', organizationId, 'operatives'))
-    const operativeDocs = snapshot.docs
-    const operativeUsers: Array<User | null> = new Array(operativeDocs.length)
-    await readTogether(operativeDocs, async (entry, index) => {
-      operativeUsers[index] = await resolveRosterLink(
-        entry.id,
-        entry.data() as Record<string, unknown>
-      )
-    })
-    for (const user of operativeUsers) noteUser(user)
-  } catch {
-    complete = false
+  // Catalogue rows (operatives / managers) link to an account by id or email.
+  // When every source above answered, an entry that matches nobody has no
+  // account, so there is nothing more to read for it. Only an incomplete wave
+  // falls back to the per-entry lookups.
+  const catalogueLink = (entry: CatalogueEntry): User | null => {
+    const explicitIds = [text(entry.data.userId), text(entry.data.userID), text(entry.data.uid), text(entry.data.linkedUserId)]
+    for (const id of [...explicitIds, entry.id]) {
+      const cached = id ? cachedUser(id) : undefined
+      if (cached) return cached
+    }
+    return cachedUserByEmail(text(entry.data.email)) ?? null
   }
-
-  try {
-    const snapshot = await getDocs(collection(db, 'organizations', organizationId, 'managers'))
-    const managerDocs = snapshot.docs
-    const managerUsers: Array<User | null> = new Array(managerDocs.length)
-    await readTogether(managerDocs, async (entry, index) => {
-      managerUsers[index] = await resolveRosterLink(
-        entry.id,
-        entry.data() as Record<string, unknown>
-      )
+  const unresolved: CatalogueEntry[] = []
+  for (const entry of catalogue) {
+    const linked = catalogueLink(entry)
+    if (linked) noteUser(linked, entry.kind)
+    else if (!complete) unresolved.push(entry)
+  }
+  if (unresolved.length > 0) {
+    const lateUsers: Array<User | null> = new Array(unresolved.length)
+    await readTogether(unresolved, async (entry, index) => {
+      lateUsers[index] = await resolveRosterLink(entry.id, entry.data)
     })
-    for (const user of managerUsers) noteUser(user, 'manager')
-  } catch {
-    complete = false
+    unresolved.forEach((entry, index) => noteUser(lateUsers[index], entry.kind))
   }
 
   if (collected.length === 0 && !complete) {

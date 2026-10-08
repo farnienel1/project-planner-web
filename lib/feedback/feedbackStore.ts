@@ -163,6 +163,15 @@ export const useFeedbackStore = create<FeedbackState>((set, get) => ({
     set({ loading: true, error: null })
     try {
       const uid = auth?.currentUser?.uid
+      const followsPromise: Promise<string[] | null> = uid
+        ? getDocs(query(collection(db, 'productFeedbackFollows'), where('userId', '==', uid)))
+            .then((followSnap) =>
+              followSnap.docs
+                .map((entry) => String((entry.data() as { suggestionId?: string }).suggestionId || entry.id.split('_')[0]))
+                .filter(Boolean)
+            )
+            .catch(() => null)
+        : Promise.resolve(null)
       const [canonical, userLoaded] = await Promise.all([
         loadCanonicalIdeaBoard(db, { includeAllVotes: includeHidden, voterUserId: uid }),
         loadUserDocumentIdeaBoard(db),
@@ -186,19 +195,7 @@ export const useFeedbackStore = create<FeedbackState>((set, get) => ({
           }
         })
       }
-      let follows = get().follows
-      if (uid) {
-        try {
-          const followSnap = await getDocs(
-            query(collection(db, 'productFeedbackFollows'), where('userId', '==', uid))
-          )
-          follows = followSnap.docs
-            .map((entry) => String((entry.data() as { suggestionId?: string }).suggestionId || entry.id.split('_')[0]))
-            .filter(Boolean)
-        } catch {
-          follows = get().follows
-        }
-      }
+      const follows = (await followsPromise) ?? get().follows
       set({
         suggestions,
         votes: merged.votes,
