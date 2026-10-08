@@ -51,6 +51,7 @@ export function buildSchedulablePeople(
     if (email && pendingEmails.has(email)) continue
     if (email && seenEmails.has(email)) continue
     const linked = email ? usersByEmail.get(email) : undefined
+    if (!linked) continue
     const name = rosterDisplayName({
       firstName: operative.firstName,
       surname: operative.lastName,

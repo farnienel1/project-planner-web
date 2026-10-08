@@ -75,13 +75,21 @@ test('admin and manager with operative profiles appear once, with their role bad
     role: UserRole.MANAGER,
     permissions: perms({ manager: true }),
   })
+  const field = user({
+    id: 'U-FIELD',
+    email: 'field@site.test',
+    firstName: 'Fay',
+    surname: 'Field',
+    role: UserRole.OPERATIVE,
+    permissions: perms({ operativeMode: true }),
+  })
   const people = buildSchedulablePeople(
     [
       operative({ id: 'OP-ADMIN', email: 'admin@site.test', firstName: 'Ada', lastName: 'Admin' }),
       operative({ id: 'OP-MGR', email: 'boss@site.test', firstName: 'Morgan', lastName: 'Manager' }),
       operative({ id: 'OP-FIELD', email: 'field@site.test', firstName: 'Fay', lastName: 'Field' }),
     ],
-    [admin, manager]
+    [admin, manager, field]
   )
 
   const emails = people.map((row) => row.email.toLowerCase())
@@ -93,12 +101,12 @@ test('admin and manager with operative profiles appear once, with their role bad
   assert.equal(people.length, 3)
 })
 
-test('a named catalogue operative stays bookable, and a role used as a name does not', () => {
+test('a catalogue row with no account is not bookable, and a role used as a name is not', () => {
   const ghost = buildSchedulablePeople(
     [operative({ id: 'OP-GHOST', email: 'p@ekecteic.con', firstName: 'P', lastName: 'N' })],
     []
   )
-  assert.deepEqual(ghost.map((row) => row.name), ['P N'])
+  assert.deepEqual(ghost.map((row) => row.name), [])
 
   const roleNamed = buildSchedulablePeople(
     [operative({ id: 'OP-FIELD', email: 'field@site.test', firstName: 'Test', lastName: 'Operative' })],
@@ -174,13 +182,21 @@ test('manager filter includes admins; operative filter excludes them', () => {
   assert.equal(filterSchedulablePeople(people, '', 'operative').length, 0)
 })
 
-test('a catalogue operative with no login stays bookable, and a role-only name is not used', () => {
+test('a role-only name is not shown, and the linked account email is used instead', () => {
   const people = buildSchedulablePeople(
     [
       operative({ id: 'OP-FIELD', email: 'field@site.test', firstName: 'Fay', lastName: 'Field' }),
       operative({ id: 'OP-ROLE', email: 'role@site.test', firstName: 'Manager', lastName: '' }),
     ],
     [
+      user({
+        id: 'U-FIELD',
+        email: 'field@site.test',
+        firstName: 'Fay',
+        surname: 'Field',
+        role: UserRole.OPERATIVE,
+        permissions: perms({ operativeMode: true }),
+      }),
       user({
         id: 'U-ROLE',
         email: 'role@site.test',
