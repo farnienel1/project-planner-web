@@ -3,7 +3,7 @@
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/lib/stores/authStore'
-import { canManageUsers } from '@/lib/navigation/menuPermissions'
+import { canAccessTeamSection } from '@/lib/navigation/menuPermissions'
 import { ManageUsersScreen } from '@/components/users/ManageUsersScreen'
 
 export default function ManageUsersPage() {
@@ -11,12 +11,12 @@ export default function ManageUsersPage() {
   const { user } = useAuthStore()
 
   useEffect(() => {
-    if (user && !canManageUsers(user)) {
+    if (user && !canAccessTeamSection(user)) {
       router.replace('/dashboard')
     }
   }, [user, router])
 
-  if (!user || !canManageUsers(user)) {
+  if (!user || !canAccessTeamSection(user)) {
     return (
       <div className="flex h-64 items-center justify-center">
         <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-blue-600" />
