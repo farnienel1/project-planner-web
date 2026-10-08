@@ -377,3 +377,41 @@ test('unbooked labour skips pending invitees, excluded people, zero-hour weekend
   assert.equal(rows.find((row) => row.personKey === 'U-PEND' || row.personKey === 'U-ADMIN'), undefined)
   assert.equal(rows.find((row) => row.dayKey === '2026-09-19'), undefined)
 })
+
+test('unbooked labour counts a manager booking on another account with the same email', () => {
+  const rows = unbookedLabourRows({
+    timeZone: 'Europe/London',
+    startDayKey: '2026-09-18',
+    endDayKey: '2026-09-18',
+    includeWeekends: false,
+    standardPaidHours: 8,
+    people: [
+      {
+        id: 'U-BOSS',
+        email: 'boss@site.test',
+        name: 'Boss Admin',
+        isActive: true,
+        passwordSet: true,
+        isOperativeMode: false,
+        isManager: true,
+        isAdmin: true,
+        isSuperAdmin: false,
+      },
+      {
+        id: 'U-BOSS-ALIAS',
+        email: 'boss@site.test',
+        name: 'Boss Alias',
+        isActive: true,
+        passwordSet: true,
+        isOperativeMode: false,
+        isManager: true,
+        isAdmin: false,
+        isSuperAdmin: false,
+      },
+    ],
+    operatives: [],
+    bookings: [{ personId: 'U-BOSS-ALIAS', dayKey: '2026-09-18', kind: 'manager', timeSlot: 'FULL DAY' }],
+    holidays: [],
+  })
+  assert.deepEqual(rows, [])
+})
