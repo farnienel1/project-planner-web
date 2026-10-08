@@ -364,7 +364,9 @@ function AppShellInner({ children }: { children: ReactNode }) {
   const isHome = pathname === '/dashboard'
   const isBookLabour = pathname.startsWith('/dashboard/book-labour')
   const showHeader = !isBookLabour
-  // Prototype: top bar is breadcrumb only. Every page owns its own h1.
+  // Desktop crumb is "Org / page". Below 761px the org name is hidden, so the
+  // current-page label is omitted and the page h1 is the only copy of that title.
+  // A nested screen keeps a section link here (Timesheets → My Timesheets).
 
   const persistNavigate = (next: NavigateConfig) => {
     setNavigateConfig(next)
