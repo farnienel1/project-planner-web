@@ -2,7 +2,9 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { UserRole, type User, type UserPermissions } from '../../types/index.ts'
 import {
+  aliasIdsForRoster,
   dedupeUsersByEmail,
+  findUserByAnyId,
   getOperativeModeUsers,
   getVisibilityManagerUsers,
   getVisibilityOperativeUsers,
@@ -147,4 +149,29 @@ test('view access lists admins under managers and everyone else under operatives
       .sort(),
     ['op', 'other']
   )
+})
+
+test('a booking stored on the other profile of the same email resolves to the kept person', () => {
+  const kept = user({
+    id: 'signed-in',
+    email: 'farnie@raccordmep.co.uk',
+    firstName: 'Test',
+    surname: 'Manager',
+    updatedAt: new Date('2026-10-01'),
+    permissions: { ...emptyPermissions, manager: true },
+  })
+  const other = user({
+    id: 'other-profile',
+    email: 'Farnie@raccordmep.co.uk',
+    firstName: '',
+    surname: '',
+    updatedAt: new Date('2026-01-01'),
+    permissions: { ...emptyPermissions, manager: true },
+  })
+  const aliases = aliasIdsForRoster([other, kept])
+  const roster = dedupeUsersByEmail([other, kept])
+  const resolved = findUserByAnyId(roster, 'other-profile', aliases)
+  assert.equal(resolved?.id, 'signed-in')
+  assert.equal(`${resolved?.firstName} ${resolved?.surname}`.trim(), 'Test Manager')
+  assert.equal(findUserByAnyId(roster, 'other-profile'), undefined)
 })

@@ -197,6 +197,7 @@ export function buildDailyOverview(params: {
   managerBookings: ManagerSiteBooking[]
   holidays: HolidayBooking[]
   users: User[]
+  userIdAliases?: Record<string, string>
   operatives: Operative[]
   subcontractorBookings?: OverviewSubcontractorBooking[]
   subcontractors?: { id: string; name: string; contacts?: { id: string; name: string }[] }[]
@@ -229,6 +230,10 @@ export function buildDailyOverview(params: {
 
   const operativeById = new Map(params.operatives.map((operative) => [operative.id, operative]))
   const userById = new Map(params.users.map((user) => [user.id, user]))
+  for (const [aliasId, keptId] of Object.entries(params.userIdAliases || {})) {
+    const kept = userById.get(keptId)
+    if (kept && !userById.has(aliasId)) userById.set(aliasId, kept)
+  }
   const personIdentity = (email: string | undefined, fallback: string): string => {
     const key = (email || '').trim().toLowerCase()
     return key ? `email:${key}` : fallback

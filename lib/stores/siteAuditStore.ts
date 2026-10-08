@@ -6,7 +6,7 @@ import { isTimeoutError, withTimeout } from '@/lib/client/withTimeout'
 import { db } from '@/lib/firebase/config'
 import { UserRole, type SiteAudit, type SiteAuditItem, type User } from '@/types'
 import { parseOrgUser } from '@/lib/firebase/parseUser'
-import { dedupeUsersByEmail } from '@/lib/staff/userRosterUtils'
+import { aliasIdsForRoster } from '@/lib/staff/userRosterUtils'
 import { mergeRetainedRoster, missingOrganizationIdPatch, retainScopedRows, rosterParseRecord } from '@/lib/staff/rosterRetain'
 import {
   isOrgLoadInFlight,
@@ -409,7 +409,7 @@ async function fetchOrganisationRoster(organizationId: string): Promise<{
   if (collected.length === 0 && !complete) {
     throw new Error('Failed to load users')
   }
-  return { users: dedupeUsersByEmail(collected), complete, presentIds, presentEmails }
+  return { users: collected, complete, presentIds, presentEmails }
 }
 
 async function confirmMissingUserDocuments(
@@ -443,6 +443,8 @@ interface OrgUserState {
   error: string | null
   /** Organisation whose roster load has finished. Empty users before this is still loading. */
   rosterLoadedOrgId: string | null
+  /** Duplicate profile ids that share an email, pointing at the account kept on the roster. */
+  userIdAliases: Record<string, string>
   loadUsers: (organizationId: string, options?: { force?: boolean }) => Promise<void>
   patchListedUser: (user: User) => void
   setListedUserActive: (userId: string, isActive: boolean) => void
@@ -500,7 +502,7 @@ function writeStoredRoster(organizationId: string, users: User[]): void {
   if (typeof sessionStorage === 'undefined') return
   try {
     if (users.length === 0) {
-      sessionStorage.removeItem(rosterStorageKey(organizationId))
+      // An empty read must not wipe the last roster. The next visit still has people to show.
       return
     }
     sessionStorage.setItem(rosterStorageKey(organizationId), JSON.stringify(users))
@@ -514,6 +516,7 @@ export const useOrgUserStore = create<OrgUserState>((set, get) => ({
   loading: false,
   error: null,
   rosterLoadedOrgId: null,
+  userIdAliases: {},
 
   loadUsers: async (organizationId, options?: { force?: boolean }) => {
     const revisionAtStart = listedUserRevision
@@ -571,9 +574,13 @@ export const useOrgUserStore = create<OrgUserState>((set, get) => ({
             if (a.isSuperAdmin !== b.isSuperAdmin) return a.isSuperAdmin ? -1 : 1
             return a.email.localeCompare(b.email)
           })
+          const userIdAliases = {
+            ...get().userIdAliases,
+            ...aliasIdsForRoster([...baseline, ...loaded.users]),
+          }
           listedRosterOrgId = organizationId
           writeStoredRoster(organizationId, users)
-          set({ users, loading: false, error: null, rosterLoadedOrgId: organizationId })
+          set({ users, userIdAliases, loading: false, error: null, rosterLoadedOrgId: organizationId })
         }
         try {
           const rosterPromise = fetchOrganisationRoster(organizationId)
@@ -586,7 +593,8 @@ export const useOrgUserStore = create<OrgUserState>((set, get) => ({
             set({
               error: error instanceof Error ? error.message : 'The user list did not finish loading.',
               loading: false,
-              rosterLoadedOrgId: organizationId,
+              // An empty timeout is not a finished company. Leave the roster unsettled so the screen keeps loading.
+              ...(get().users.length > 0 ? { rosterLoadedOrgId: organizationId } : {}),
             })
             void rosterPromise.then(
               (late) => {

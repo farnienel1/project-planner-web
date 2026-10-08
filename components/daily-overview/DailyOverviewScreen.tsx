@@ -64,7 +64,7 @@ export function DailyOverviewScreen() {
   const { bookings, loadBookings, loading: bookingsLoading, error: bookingsError } = useBookingStore()
   const { managerSiteBookings, loadManagerSiteBookings, loading: managerLoading } = useManagerScheduleStore()
   const { operatives, loadOperatives } = useOperativeStore()
-  const { users, loadUsers } = useOrgUserStore()
+  const { users, userIdAliases, loadUsers } = useOrgUserStore()
   const { projects, smallWorks, loadProjects, loadSmallWorks } = useProjectStore()
   const { bookings: holidays, loadBookings: loadHolidays } = useHolidayStore()
   const { subcontractors, loadSubcontractors } = useSubcontractorStore()
@@ -123,6 +123,7 @@ export function DailyOverviewScreen() {
         managerBookings: managerSiteBookings,
         holidays,
         users,
+        userIdAliases,
         operatives,
         subcontractorBookings,
         subcontractors,
@@ -137,6 +138,7 @@ export function DailyOverviewScreen() {
       managerSiteBookings,
       holidays,
       users,
+      userIdAliases,
       operatives,
       subcontractorBookings,
       subcontractors,
