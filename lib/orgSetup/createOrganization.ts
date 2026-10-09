@@ -2,6 +2,10 @@ import { collection, doc, getDoc, getDocs, query, setDoc, Timestamp, updateDoc, 
 import { withTimeout } from '@/lib/client/withTimeout'
 import { seedOrgDefaultDashboard } from '@/lib/dashboard/dashboardLayoutStorage'
 import { STARTER_CATALOGUE_VERSION, seedStarterMaterialCatalogue } from '@/lib/materials/starterCatalogue'
+import {
+  STARTER_QUALIFICATION_LIBRARY_VERSION,
+  seedStarterQualificationLibrary,
+} from '@/lib/qualifications/starterLibrary'
 import { newUuid, parseFirestoreDate, sanitizeForFirestore } from '@/lib/firebase/firestoreUtils'
 import { companyLogoPath, uploadFile } from '@/lib/firebase/storageUtils'
 import { getFirebaseDb } from '@/lib/firebase/ensureFirebase'
@@ -248,6 +252,15 @@ export async function createPendingOrganization(
         if (result.skipped) return
         return updateDoc(doc(db, 'organizations', organizationId), {
           starterMaterialCatalogueVersion: STARTER_CATALOGUE_VERSION,
+          updatedAt: Timestamp.now(),
+        })
+      })
+      .catch(() => undefined)
+    void seedStarterQualificationLibrary({ organizationId })
+      .then((result) => {
+        if (result.skipped) return
+        return updateDoc(doc(db, 'organizations', organizationId), {
+          starterQualificationLibraryVersion: STARTER_QUALIFICATION_LIBRARY_VERSION,
           updatedAt: Timestamp.now(),
         })
       })

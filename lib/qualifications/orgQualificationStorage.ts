@@ -20,6 +20,18 @@ export function qualificationEditCanSave(name: string, original: string, saving 
   return trimmed !== original.trim()
 }
 
+function optionalString(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined
+  const trimmed = value.trim()
+  return trimmed || undefined
+}
+
+function optionalNumber(value: unknown): number | null | undefined {
+  if (value == null) return undefined
+  if (typeof value !== 'number' || !Number.isFinite(value)) return undefined
+  return value
+}
+
 function parseQualificationDoc(id: string, data: Record<string, unknown>): Qualification | null {
   const name = typeof data.name === 'string' ? data.name.trim() : ''
   if (!name) return null
@@ -32,6 +44,15 @@ function parseQualificationDoc(id: string, data: Record<string, unknown>): Quali
     endDate: parseFirestoreDate(data.endDate),
     createdAt,
     updatedAt,
+    code: optionalString(data.code) || id,
+    section: optionalString(data.section),
+    subsection: optionalString(data.subsection),
+    awardingBody: optionalString(data.awardingBody),
+    level: optionalNumber(data.level) ?? (data.level === null ? null : undefined),
+    renewYears: optionalNumber(data.renewYears) ?? (data.renewYears === null ? null : undefined),
+    renewalType: optionalString(data.renewalType),
+    status: optionalString(data.status),
+    notes: optionalString(data.notes),
   }
 }
 
@@ -119,6 +140,15 @@ export function qualificationTemplateFirestoreFields(input: {
   createdAt?: Date
   updatedAt?: Date
   endDate?: Date | null
+  code?: string
+  section?: string
+  subsection?: string
+  awardingBody?: string
+  level?: number | null
+  renewYears?: number | null
+  renewalType?: string
+  status?: string
+  notes?: string
 }): Record<string, unknown> {
   const now = input.updatedAt || new Date()
   const createdAt = input.createdAt || now
@@ -129,15 +159,39 @@ export function qualificationTemplateFirestoreFields(input: {
     updatedAt: Timestamp.fromDate(now),
   }
   if (input.endDate) fields.endDate = Timestamp.fromDate(input.endDate)
+  if (input.code?.trim()) fields.code = input.code.trim()
+  if (input.section?.trim()) fields.section = input.section.trim()
+  if (input.subsection?.trim()) fields.subsection = input.subsection.trim()
+  if (input.awardingBody?.trim()) fields.awardingBody = input.awardingBody.trim()
+  if (input.level != null && Number.isFinite(input.level)) fields.level = input.level
+  if (input.renewYears != null && Number.isFinite(input.renewYears)) fields.renewYears = input.renewYears
+  if (input.renewalType?.trim()) fields.renewalType = input.renewalType.trim()
+  if (input.status?.trim()) fields.status = input.status.trim()
+  if (input.notes?.trim()) fields.notes = input.notes.trim()
   return fields
 }
 
 export async function saveOrganisationQualification(
   organizationId: string,
-  input: { id?: string; name: string; createdAt?: Date; hasEndDate?: boolean; endDate?: Date | null }
+  input: {
+    id?: string
+    name: string
+    createdAt?: Date
+    hasEndDate?: boolean
+    endDate?: Date | null
+    code?: string
+    section?: string
+    subsection?: string
+    awardingBody?: string
+    level?: number | null
+    renewYears?: number | null
+    renewalType?: string
+    status?: string
+    notes?: string
+  }
 ): Promise<Qualification> {
   const now = new Date()
-  const id = input.id || newUuid()
+  const id = input.id || input.code?.trim() || newUuid()
   const payload: Qualification = {
     id,
     name: input.name.trim(),
@@ -145,6 +199,15 @@ export async function saveOrganisationQualification(
     endDate: input.endDate || undefined,
     createdAt: input.createdAt || now,
     updatedAt: now,
+    code: input.code?.trim() || undefined,
+    section: input.section?.trim() || undefined,
+    subsection: input.subsection?.trim() || undefined,
+    awardingBody: input.awardingBody?.trim() || undefined,
+    level: input.level,
+    renewYears: input.renewYears,
+    renewalType: input.renewalType?.trim() || undefined,
+    status: input.status?.trim() || undefined,
+    notes: input.notes?.trim() || undefined,
   }
   const fields = qualificationTemplateFirestoreFields(payload)
   await setDoc(doc(db, 'organizations', organizationId, 'qualifications', id), fields, { merge: true })
