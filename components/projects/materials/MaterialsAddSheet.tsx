@@ -48,7 +48,7 @@ export function MaterialsAddSheet({ project, selectedDate, existing, onClose, on
   )
 
   const suggestions = useMemo(
-    () => searchMaterialCatalogue(search, catalogue, projectMaterials, 10),
+    () => searchMaterialCatalogue(search, catalogue, projectMaterials, 80),
     [search, catalogue, projectMaterials]
   )
 
@@ -145,11 +145,21 @@ export function MaterialsAddSheet({ project, selectedDate, existing, onClose, on
               onBlur={() => {
                 blurTimer.current = setTimeout(() => setShowSuggestions(false), 150)
               }}
-              placeholder="Search then tap an item to fill the fields"
+              placeholder="Try 2.5mm LS or a product code"
               autoComplete="off"
             />
+            {showSuggestions && search.trim() && suggestions.length === 0 ? (
+              <p className="mt-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-500">
+                No catalogue items match. Type a title below to add it anyway.
+              </p>
+            ) : null}
             {showSuggestions && suggestions.length > 0 && (
-              <ul className="absolute z-10 mt-1 max-h-48 w-full overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
+              <ul className="absolute z-10 mt-1 max-h-72 w-full overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
+                {search.trim() ? (
+                  <li className="px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                    {suggestions.length} match{suggestions.length === 1 ? '' : 'es'}
+                  </li>
+                ) : null}
                 {suggestions.map((s) => (
                   <li key={s.id}>
                     <button
@@ -162,6 +172,7 @@ export function MaterialsAddSheet({ project, selectedDate, existing, onClose, on
                       <span className="ml-2 text-xs text-slate-500">
                         {s.brand}
                         {s.productCode ? ` · ${s.productCode}` : ''}
+                        {s.category ? ` · ${s.category}` : ''}
                         {s.source === 'catalogue' ? ' · Catalogue' : ' · Recent'}
                       </span>
                     </button>

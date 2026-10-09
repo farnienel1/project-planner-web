@@ -170,6 +170,8 @@ export interface User {
   annualLeaveYearStartMonth?: number;
   annualLeaveYearEndMonth?: number;
   annualLeaveCarriesOver?: boolean;
+  annualLeaveYearAllowance?: number;
+  annualLeaveYearAllowanceKey?: string;
   timesheetsEnabled?: boolean;
   vatNumber?: string;
   utrNumber?: string;

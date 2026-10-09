@@ -46,6 +46,17 @@ import {
   employmentTypeOnDay,
   MANAGER_PERMISSION_TOGGLES,
 } from './userProfile.ts'
+import {
+  annualLeaveBalance,
+  applyRemainingOverride,
+  hasAnnualLeaveAllowance,
+  leaveYearBounds,
+} from './annualLeaveBalance.ts'
+import {
+  materialSearchScore,
+  rankMaterialRecords,
+  tokenizeMaterialSearch,
+} from './materialSearch.ts'
 
 const superAdmin: StaffAccountRole = { isSuperAdmin: true, isAdmin: true, isManager: false, isOperativeMode: false }
 const admin: StaffAccountRole = { isSuperAdmin: false, isAdmin: true, isManager: false, isOperativeMode: false }
@@ -646,6 +657,13 @@ test('the iOS JavaScript bundle exposes the standard-day, leave and dismiss rule
     'applyEmploymentTypeChange',
     'accountKindFromFlags',
     'normalizeEmploymentType',
+    'annualLeaveBalance',
+    'applyRemainingOverride',
+    'hasAnnualLeaveAllowance',
+    'leaveYearBounds',
+    'materialSearchScore',
+    'rankMaterialRecords',
+    'tokenizeMaterialSearch',
   ]) {
     assert.equal(typeof bundle[name], 'function', `${name} is exported from the packed script`)
   }
@@ -674,6 +692,19 @@ test('the iOS JavaScript bundle exposes the standard-day, leave and dismiss rule
   assert.equal(bundledLeave[0].kind, 'leave_cover')
   assert.equal(bundledLeave[0].missingHours, 2.5)
   assert.equal(bundle.qualificationDismissKey('OP-Q', 'Q-OLD', '2026-09-01'), qualificationDismissKey('OP-Q', 'Q-OLD', '2026-09-01'))
+  const balanceArgs = {
+    annualLeaveEnabled: false,
+    orgStartMonth: 1,
+    orgEndMonth: 12,
+    bookings: [{ startDayKey: '2026-06-10', timeSlot: 'AM', status: 'approved' }],
+    onDayKey: '2026-10-09',
+  }
+  assert.deepEqual(plain(bundle.annualLeaveBalance(balanceArgs)), plain(annualLeaveBalance(balanceArgs)))
+  const searchArgs = [
+    '2.5mm LS',
+    [{ name: '2.5mm2 Twin & Earth Cable 6242B LSZH (100m Drum)', productCode: '6242B' }],
+  ] as const
+  assert.deepEqual(plain(bundle.rankMaterialRecords(...searchArgs)), plain(rankMaterialRecords(...searchArgs)))
 })
 
 test('dismissing an expired qualification hides it until the expiry date changes', () => {
@@ -846,4 +877,111 @@ test('employment type on a day uses the scheduled transition, and a future date 
   assert.equal(accountKindFromFlags({ adminAccess: true }), 'admin')
   assert.equal(MANAGER_PERMISSION_TOGGLES[0].key, 'adminAccess')
   assert.equal(MANAGER_PERMISSION_TOGGLES[3].key, 'weeklyReports')
+})
+
+test('the leave year wraps April to March and resets on the first day after the end month', () => {
+  const winter = leaveYearBounds({ startMonth: 4, endMonth: 3, onDayKey: '2026-02-15' })
+  assert.deepEqual(winter, {
+    startDayKey: '2025-04-01',
+    endDayKey: '2026-03-31',
+    yearKey: '2025-04-01',
+  })
+  const spring = leaveYearBounds({ startMonth: 4, endMonth: 3, onDayKey: '2026-04-01' })
+  assert.equal(spring.yearKey, '2026-04-01')
+  const calendar = leaveYearBounds({ startMonth: 1, endMonth: 12, onDayKey: '2026-10-09' })
+  assert.deepEqual(calendar, {
+    startDayKey: '2026-01-01',
+    endDayKey: '2026-12-31',
+    yearKey: '2026-01-01',
+  })
+})
+
+test('turning the allowance off keeps bookings and shows a year count, not remaining days', () => {
+  assert.equal(hasAnnualLeaveAllowance(false), false)
+  assert.equal(hasAnnualLeaveAllowance(undefined), true)
+  const bookings = [
+    { startDayKey: '2026-03-02', timeSlot: 'FULL DAY', status: 'approved' },
+    { startDayKey: '2026-06-10', timeSlot: 'AM', status: 'approved' },
+    { startDayKey: '2025-11-03', timeSlot: 'FULL DAY', status: 'approved' },
+  ]
+  const thisYear = annualLeaveBalance({
+    annualLeaveEnabled: false,
+    orgStartMonth: 1,
+    orgEndMonth: 12,
+    bookings,
+    onDayKey: '2026-10-09',
+  })
+  assert.equal(thisYear.hasAllowance, false)
+  assert.equal(thisYear.remaining, null)
+  assert.equal(thisYear.usedThisYear, 1.5)
+  assert.equal(thisYear.taken, 1.5)
+  const nextYear = annualLeaveBalance({
+    annualLeaveEnabled: false,
+    orgStartMonth: 1,
+    orgEndMonth: 12,
+    bookings,
+    onDayKey: '2027-01-01',
+  })
+  assert.equal(nextYear.usedThisYear, 0)
+})
+
+test('a mid-year remaining override is the pot for this leave year and expires on the next year', () => {
+  const bookings = [{ startDayKey: '2026-11-10', timeSlot: 'AM', status: 'approved' }]
+  const write = applyRemainingOverride({
+    remaining: 0.5,
+    taken: 0,
+    pending: 0,
+    yearKey: '2026-01-01',
+  })
+  assert.equal(write.annualLeaveYearAllowance, 0.5)
+  assert.equal(write.annualLeaveYearAllowanceKey, '2026-01-01')
+  const afterHalf = annualLeaveBalance({
+    annualLeaveEnabled: true,
+    daysPerYear: 25,
+    startMonth: 1,
+    endMonth: 12,
+    yearAllowance: write.annualLeaveYearAllowance,
+    yearAllowanceKey: write.annualLeaveYearAllowanceKey,
+    bookings,
+    onDayKey: '2026-11-20',
+  })
+  assert.equal(afterHalf.remaining, 0)
+  assert.equal(afterHalf.taken, 0.5)
+  const nextYear = annualLeaveBalance({
+    annualLeaveEnabled: true,
+    daysPerYear: 25,
+    startMonth: 1,
+    endMonth: 12,
+    yearAllowance: write.annualLeaveYearAllowance,
+    yearAllowanceKey: write.annualLeaveYearAllowanceKey,
+    bookings,
+    onDayKey: '2027-01-01',
+  })
+  assert.equal(nextYear.remaining, 25)
+  assert.equal(nextYear.yearAllowance, null)
+})
+
+test('2.5mm LS finds 2.5mm2 Twin & Earth Cable 6242B LSZH and ranks it first', () => {
+  assert.deepEqual(tokenizeMaterialSearch('2.5 mm LS'), ['2.5mm', 'ls'])
+  const twinEarth = {
+    name: '2.5mm2 Twin & Earth Cable 6242B LSZH (100m Drum)',
+    brand: 'Prysmian',
+    productCode: '6242B',
+    category: 'Cable',
+    length: '100m',
+  }
+  const fifteen = { name: '1.5mm2 Twin & Earth Cable 6242Y LSZH (100m Drum)', productCode: '6242Y' }
+  const swa = { name: '2.5mm2 SWA Cable LSZH (50m Drum)', productCode: 'SWA25' }
+  const other = { name: 'M6 Coach Screw', brand: 'Fischer', productCode: 'CS-M6' }
+  assert.ok(materialSearchScore('2.5mm LS', twinEarth) > 0)
+  assert.equal(materialSearchScore('2.5mm LS', other), 0)
+  assert.equal(materialSearchScore('2.5mm LS', fifteen), 0)
+  const ranked = rankMaterialRecords('2.5mm LS', [other, fifteen, swa, twinEarth])
+  assert.deepEqual(
+    ranked.map((hit) => hit.index).sort(),
+    [2, 3]
+  )
+  const coded = rankMaterialRecords('2.5mm LS 6242B', [swa, twinEarth])
+  assert.equal(coded[0].index, 1)
+  assert.ok(materialSearchScore('lszh', twinEarth) > 0)
 })

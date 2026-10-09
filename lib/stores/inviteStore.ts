@@ -29,6 +29,8 @@ export type InviteUserInput = {
   annualLeaveYearStartMonth?: number
   annualLeaveYearEndMonth?: number
   annualLeaveCarriesOver?: boolean
+  annualLeaveYearAllowance?: number
+  annualLeaveYearAllowanceKey?: string
   hasNoLineManager?: boolean
 }
 

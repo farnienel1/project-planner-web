@@ -100,8 +100,9 @@ export function isOperativeMode(user: PermissionUser): boolean {
   return flag(user, 'operativeMode') || user.role === 'operative'
 }
 
-export function isAnnualLeaveFeatureEnabled(user: PermissionUser): boolean {
-  return user?.annualLeaveEnabled !== false
+/** Holiday stays available for every account. The user toggle is allowance, not access. */
+export function isAnnualLeaveFeatureEnabled(_user: PermissionUser): boolean {
+  return true
 }
 
 export function canManageUsers(user: PermissionUser): boolean {
