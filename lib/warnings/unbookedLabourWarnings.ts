@@ -94,12 +94,16 @@ export function computeUnbookedLabourWarnings({
 }): UnbookedLabourWarning[] {
   const window = computeWarningCoverageWindow(referenceDate, warningDetection, invoicing, timeZone)
   let periodEnd = window.end
+  let endDayKey = window.endDayKey
   if (
     warningDetection.clashLookaheadMode === 'endOfWorkingWeek' &&
     warningDetection.includeWeekendsForUnbookedLabour
   ) {
     const iso = londonIsoWeekday(window.end, timeZone)
-    if (iso >= 1 && iso <= 5) periodEnd = addLondonDays(window.end, 7 - iso, timeZone)
+    if (iso >= 1 && iso <= 5) {
+      periodEnd = addLondonDays(window.end, 7 - iso, timeZone)
+      endDayKey = dayKey(periodEnd, timeZone)
+    }
   }
   return computeUnbookedLabourWarningsForDateRange({
     bookings,
@@ -111,6 +115,8 @@ export function computeUnbookedLabourWarnings({
     payrollPolicy,
     periodStart: window.start,
     periodEnd,
+    startDayKey: window.startDayKey,
+    endDayKey,
     timeZone,
   })
 }
@@ -126,6 +132,8 @@ export function computeUnbookedLabourWarningsForDateRange({
   payrollPolicy = DEFAULT_PAYROLL_POLICY,
   periodStart,
   periodEnd,
+  startDayKey,
+  endDayKey,
   timeZone,
 }: {
   bookings: Booking[]
@@ -137,14 +145,16 @@ export function computeUnbookedLabourWarningsForDateRange({
   payrollPolicy?: OrgPayrollTimePolicy
   periodStart: Date
   periodEnd: Date
+  startDayKey?: string
+  endDayKey?: string
   timeZone?: string
 }): UnbookedLabourWarning[] {
   const windowStart = londonMidnight(periodStart, timeZone)
   const windowEnd = londonMidnight(periodEnd, timeZone)
   const rows = unbookedLabourRows({
     timeZone,
-    startDayKey: dayKey(windowStart, timeZone),
-    endDayKey: dayKey(windowEnd, timeZone),
+    startDayKey: startDayKey || dayKey(windowStart, timeZone),
+    endDayKey: endDayKey || dayKey(windowEnd, timeZone),
     includeWeekends: warningDetection.includeWeekendsForUnbookedLabour,
     excludedUserIds: warningDetection.excludedUserIdsFromUnbookedWarnings,
     standardPaidHours: payrollPolicy.standardPaidHours,
@@ -236,9 +246,10 @@ export function filterWarningsByLookahead<T extends { date: Date }>(
   timeZone?: string
 ): T[] {
   const window = computeWarningCoverageWindow(referenceDate, warningDetection, invoicing, timeZone)
-  return warnings.filter((warning) =>
-    isDateWithinWarningWindow(warning.date, window.start, window.end, timeZone)
-  )
+  return warnings.filter((warning) => {
+    const key = dayKey(warning.date, timeZone)
+    return key >= window.startDayKey && key <= window.endDayKey
+  })
 }
 
 export function formatUnbookedMissingLabel(missingHours: number): string {

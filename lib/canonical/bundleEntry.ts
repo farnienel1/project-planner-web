@@ -59,6 +59,7 @@ export {
   parseWarningDetection,
   paymentRunRangeToFirestore,
   starterCollectionShouldSeed,
+  missingStarterQualificationCodes,
   validateInvoicingSettings,
   warningDetectionToFirestore,
 } from './organizationSettings'
