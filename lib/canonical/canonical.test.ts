@@ -32,6 +32,7 @@ import {
   unverifiedOperativeRows,
   withoutDismissedQualificationRows,
 } from './warningRows.ts'
+import { eachDayKey } from './dayKeys.ts'
 import { leaveCoverageRows } from './leaveCoverage.ts'
 import {
   canEditWorkCatalogue,
@@ -50,6 +51,7 @@ import {
   parsePaymentRunDateRanges,
   parseWarningDetection,
   starterCollectionShouldSeed,
+  missingStarterQualificationCodes,
 } from './organizationSettings.ts'
 import {
   accountKindFromFlags,
@@ -183,6 +185,51 @@ test('a missing pay-run uses the half-month default', () => {
   })
   assert.equal(window.startDayKey, '2026-10-01')
   assert.equal(window.endDayKey, '2026-10-15')
+})
+
+test('end-of-invoicing-period scan for a 1–15 firm stops on the 15th and never lists the 16th', () => {
+  const window = coverageWindow({
+    referenceIso: '2026-10-09T12:00:00+01:00',
+    timeZone: 'Europe/London',
+    clashLookaheadMode: 'endOfInvoicingPeriod',
+    paymentRunMode: 'date_ranges',
+    ranges: [
+      { startDay: 1, endDay: 15 },
+      { startDay: 16, endDay: 31 },
+    ],
+  })
+  assert.equal(window.startDayKey, '2026-10-01')
+  assert.equal(window.endDayKey, '2026-10-15')
+  const days = eachDayKey(window.startDayKey, window.endDayKey, 'Europe/London')
+  assert.equal(days.includes('2026-10-15'), true)
+  assert.equal(days.includes('2026-10-16'), false)
+  assert.equal(days.at(-1), '2026-10-15')
+  const unbooked = unbookedLabourRows({
+    timeZone: 'Europe/London',
+    startDayKey: window.startDayKey,
+    endDayKey: window.endDayKey,
+    includeWeekends: false,
+    standardPaidHours: 8,
+    people: [
+      {
+        id: 'U-SAM',
+        email: 'sam@site.test',
+        name: 'Sam Booked',
+        isActive: true,
+        passwordSet: true,
+        isOperativeMode: true,
+        isManager: false,
+        isAdmin: false,
+        isSuperAdmin: false,
+      },
+    ],
+    operatives: [],
+    bookings: [],
+    holidays: [],
+  })
+  const unbookedDays = [...new Set(unbooked.map((row) => row.dayKey))]
+  assert.equal(unbookedDays.includes('2026-10-15'), true)
+  assert.equal(unbookedDays.includes('2026-10-16'), false)
 })
 
 test('the invoicing window has no extra day on the default or iOS-saved 1–15 run', () => {
@@ -743,6 +790,7 @@ test('the iOS JavaScript bundle exposes the standard-day, leave and dismiss rule
     'qualificationLibraryFilterChips',
     'qualificationMatchesSection',
     'starterCollectionShouldSeed',
+    'missingStarterQualificationCodes',
   ]) {
     assert.equal(typeof bundle[name], 'function', `${name} is exported from the packed script`)
   }
@@ -1227,10 +1275,21 @@ test('payment run rows write both web and iOS day fields and empty ranges use 1�
   assert.equal(parseInvoicing({}).paymentRunMode, 'date_ranges')
 })
 
-test('starter catalogue and qualification library seed only when the collection is empty', () => {
+test('starter catalogue seeds only when the collection is empty', () => {
   assert.equal(starterCollectionShouldSeed(0), true)
   assert.equal(starterCollectionShouldSeed(1), false)
   assert.equal(starterCollectionShouldSeed(272), false)
+})
+
+test('qualification library merges missing codes and is not blocked by a custom row', () => {
+  const library = ['EL-ECS-IE', 'GAS-GSR', 'PRO-IOSH']
+  assert.deepEqual(missingStarterQualificationCodes([], library), library)
+  assert.deepEqual(missingStarterQualificationCodes(['custom-uuid'], library), library)
+  assert.deepEqual(missingStarterQualificationCodes(['EL-ECS-IE', 'custom-uuid'], library), [
+    'GAS-GSR',
+    'PRO-IOSH',
+  ])
+  assert.deepEqual(missingStarterQualificationCodes(library, library), [])
 })
 
 test('warning detection defaults to seven days and reads the iOS top-level map', () => {

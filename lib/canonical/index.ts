@@ -179,6 +179,7 @@ export {
   OPERATIONAL_COLLECTION_PATHS,
   ORGANIZATION_DOCUMENT_FIELDS,
   starterCollectionShouldSeed,
+  missingStarterQualificationCodes,
   invoicingToFirestore,
   parseInvoicing,
   parsePaymentRunDateRanges,

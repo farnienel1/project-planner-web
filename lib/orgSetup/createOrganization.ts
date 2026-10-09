@@ -256,16 +256,17 @@ export async function createPendingOrganization(
         })
       })
       .catch(() => undefined)
-    void seedStarterQualificationLibrary({ organizationId })
-      .then((result) => {
-        if (result.skipped) return
-        return updateDoc(doc(db, 'organizations', organizationId), {
-          starterQualificationLibraryVersion: STARTER_QUALIFICATION_LIBRARY_VERSION,
-          updatedAt: Timestamp.now(),
-        })
-      })
-      .catch(() => undefined)
   }
+
+  void seedStarterQualificationLibrary({ organizationId })
+    .then((result) => {
+      if (result.skipped) return
+      return updateDoc(doc(db, 'organizations', organizationId), {
+        starterQualificationLibraryVersion: STARTER_QUALIFICATION_LIBRARY_VERSION,
+        updatedAt: Timestamp.now(),
+      })
+    })
+    .catch(() => undefined)
 
   await withTimeout(
     setDoc(doc(db, 'organizations', organizationId, 'userEmails', email), {
