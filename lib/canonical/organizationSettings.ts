@@ -4,7 +4,7 @@
  * live here so a save on the web is the same document iOS decodes.
  */
 
-import { CANONICAL_HALF_MONTH_RANGES } from './engine'
+import { CANONICAL_HALF_MONTH_RANGES, normalizePaymentRunRange } from './engine'
 
 export type WeekendPayrollSettings = {
   allHoursAtMultiplierMode: boolean
@@ -313,8 +313,9 @@ export function payrollPolicyToFirestore(policy: OrgPayrollTimePolicy): Record<s
 }
 
 /**
- * Web `startDay`/`endDay` take precedence. iOS historically wrote
- * `startDate`/`endDate` only. Empty or missing ranges use 1–15 then 16–31.
+ * iOS `startDate`/`endDate` win when both pairs are present and disagree, so a
+ * leftover web 1–16 cannot override a saved 1–15. Web-only `startDay`/`endDay`
+ * (including a saved 1–16) are kept. Empty or missing ranges use 1–15 then 16–31.
  */
 export function parsePaymentRunDateRanges(data: Record<string, unknown> | undefined): PaymentRunDateRange[] {
   const raw = data?.paymentRunDateRanges
@@ -322,11 +323,8 @@ export function parsePaymentRunDateRanges(data: Record<string, unknown> | undefi
     return DEFAULT_PAYMENT_RUN_DATE_RANGES.map((range) => ({ ...range }))
   }
   const ranges = raw.slice(0, 2).map((entry) => {
-    const row = (entry || {}) as Record<string, unknown>
-    return {
-      startDay: parseDayOfMonth(row.startDay ?? row.startDate),
-      endDay: parseDayOfMonth(row.endDay ?? row.endDate),
-    }
+    const normalized = normalizePaymentRunRange((entry || {}) as Record<string, unknown>)
+    return normalized ?? { startDay: 0, endDay: 0 }
   })
   while (ranges.length < 2) ranges.push({ startDay: 0, endDay: 0 })
   return ranges

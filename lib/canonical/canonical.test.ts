@@ -12,6 +12,7 @@ import {
   standardDayCoverage,
   intervalsOverlap,
   invoicingPeriod,
+  normalizePaymentRunRange,
   organizationContextStillCurrent,
   organizationIdsMatch,
   organizationScopedKey,
@@ -184,6 +185,54 @@ test('a missing pay-run uses the half-month default', () => {
   assert.equal(window.endDayKey, '2026-10-15')
 })
 
+test('the invoicing window has no extra day on the default or iOS-saved 1â€“15 run', () => {
+  const oct6 = '2026-10-06T11:00:00.000Z'
+  const empty = invoicingPeriod({
+    referenceIso: oct6,
+    timeZone: 'Europe/London',
+    paymentRunMode: 'date_ranges',
+    ranges: [],
+  })
+  assert.equal(empty.startDayKey, '2026-10-01')
+  assert.equal(empty.endDayKey, '2026-10-15')
+  const fromIosFields = coverageWindow({
+    referenceIso: oct6,
+    timeZone: 'Europe/London',
+    clashLookaheadMode: 'endOfInvoicingPeriod',
+    paymentRunMode: 'date_ranges',
+    ranges: [
+      { startDate: 1, endDate: 15 },
+      { startDate: 16, endDate: 31 },
+    ],
+  })
+  assert.equal(fromIosFields.startDayKey, '2026-10-01')
+  assert.equal(fromIosFields.endDayKey, '2026-10-15')
+  const leftoverWebDefault = invoicingPeriod({
+    referenceIso: oct6,
+    timeZone: 'Europe/London',
+    paymentRunMode: 'date_ranges',
+    ranges: [
+      { startDay: 1, endDay: 16, startDate: 1, endDate: 15 },
+      { startDay: 17, endDay: 31, startDate: 16, endDate: 31 },
+    ],
+  })
+  assert.equal(leftoverWebDefault.endDayKey, '2026-10-15')
+  const savedSixteen = invoicingPeriod({
+    referenceIso: oct6,
+    timeZone: 'Europe/London',
+    paymentRunMode: 'date_ranges',
+    ranges: [
+      { startDay: 1, endDay: 16 },
+      { startDay: 17, endDay: 31 },
+    ],
+  })
+  assert.equal(savedSixteen.endDayKey, '2026-10-16')
+  assert.deepEqual(normalizePaymentRunRange({ startDay: 0, endDay: 0, startDate: 1, endDate: 15 }), {
+    startDay: 1,
+    endDay: 15,
+  })
+})
+
 test('a wrapped payment run crosses the month boundary', () => {
   const window = invoicingPeriod({
     referenceIso: '2026-10-28T12:00:00.000Z',
@@ -226,6 +275,11 @@ test('the standard day is 07:30 to 16:00 minus the unpaid break', () => {
   )
   assert.equal(full.missingHours, 0)
   assert.equal(full.requiredHours, 8)
+  const fullAlias = standardDayCoverage(
+    { standardDayStart: '07:30', standardDayEnd: '16:00', breakWindowStart: '12:00', breakWindowEnd: '12:30' },
+    [{ timeSlot: 'FULL_DAY', workStartTime: '09:00', workEndTime: '10:00' }]
+  )
+  assert.equal(fullAlias.missingHours, 0)
   const morning = standardDayCoverage(
     { standardDayStart: '07:30', standardDayEnd: '16:00', breakWindowStart: '12:00', breakWindowEnd: '12:30' },
     [{ timeSlot: 'AM' }]
@@ -846,6 +900,85 @@ test('the iOS JavaScript bundle applies the same staff visibility and recipient 
   assert.equal(bundle.receivesJobNotification(input), false)
 })
 
+test('a FULL DAY booking that covers the standard day is not unbooked labour', () => {
+  const person = {
+    id: 'U-SAM',
+    email: 'sam@site.test',
+    name: 'Sam Booked',
+    isActive: true,
+    passwordSet: true,
+    isOperativeMode: true,
+    isManager: false,
+    isAdmin: false,
+    isSuperAdmin: false,
+  }
+  const base = {
+    timeZone: 'Europe/London',
+    startDayKey: '2026-10-15',
+    endDayKey: '2026-10-16',
+    includeWeekends: false,
+    standardPaidHours: 8,
+    standardDayStart: '07:30',
+    standardDayEnd: '16:00',
+    breakWindowStart: '12:00',
+    breakWindowEnd: '12:30',
+    people: [person],
+    operatives: [{ id: 'OP-SAM', email: 'sam@site.test', name: 'Sam Booked', isActive: true, isPlaceholder: false, profileWeight: 1 }],
+    holidays: [],
+  }
+  const space = unbookedLabourRows({
+    ...base,
+    bookings: [{ personId: 'OP-SAM', dayKey: '2026-10-15', kind: 'operative', timeSlot: 'FULL DAY' }],
+  })
+  assert.equal(space.find((row) => row.dayKey === '2026-10-15'), undefined)
+  const underscore = unbookedLabourRows({
+    ...base,
+    bookings: [{ personId: 'OP-SAM', dayKey: '2026-10-15', kind: 'operative', timeSlot: 'FULL_DAY' }],
+  })
+  assert.equal(underscore.find((row) => row.dayKey === '2026-10-15'), undefined)
+  const noClock = unbookedLabourRows({
+    ...base,
+    bookings: [
+      {
+        personId: 'U-SAM',
+        dayKey: '2026-10-15',
+        kind: 'operative',
+        timeSlot: 'FULL DAY',
+        workStartTime: '',
+        workEndTime: '',
+      },
+    ],
+  })
+  assert.equal(noClock.find((row) => row.dayKey === '2026-10-15'), undefined)
+  const extraDay = coverageWindow({
+    referenceIso: '2026-10-06T11:00:00.000Z',
+    timeZone: 'Europe/London',
+    clashLookaheadMode: 'endOfInvoicingPeriod',
+    paymentRunMode: 'date_ranges',
+    ranges: [],
+  })
+  assert.equal(extraDay.endDayKey, '2026-10-15')
+  const inDefaultWindow = unbookedLabourRows({
+    ...base,
+    startDayKey: extraDay.startDayKey,
+    endDayKey: extraDay.endDayKey,
+    bookings: [
+      { personId: 'OP-SAM', dayKey: '2026-10-01', kind: 'operative', timeSlot: 'FULL DAY' },
+      { personId: 'OP-SAM', dayKey: '2026-10-02', kind: 'operative', timeSlot: 'FULL DAY' },
+      { personId: 'OP-SAM', dayKey: '2026-10-05', kind: 'operative', timeSlot: 'FULL DAY' },
+      { personId: 'OP-SAM', dayKey: '2026-10-06', kind: 'operative', timeSlot: 'FULL DAY' },
+      { personId: 'OP-SAM', dayKey: '2026-10-07', kind: 'operative', timeSlot: 'FULL DAY' },
+      { personId: 'OP-SAM', dayKey: '2026-10-08', kind: 'operative', timeSlot: 'FULL DAY' },
+      { personId: 'OP-SAM', dayKey: '2026-10-09', kind: 'operative', timeSlot: 'FULL DAY' },
+      { personId: 'OP-SAM', dayKey: '2026-10-12', kind: 'operative', timeSlot: 'FULL DAY' },
+      { personId: 'OP-SAM', dayKey: '2026-10-13', kind: 'operative', timeSlot: 'FULL DAY' },
+      { personId: 'OP-SAM', dayKey: '2026-10-14', kind: 'operative', timeSlot: 'FULL DAY' },
+      { personId: 'OP-SAM', dayKey: '2026-10-15', kind: 'operative', timeSlot: 'FULL DAY' },
+    ],
+  })
+  assert.deepEqual(inDefaultWindow, [])
+})
+
 test('unbooked labour counts a manager booking on another account with the same email', () => {
   const rows = unbookedLabourRows({
     timeZone: 'Europe/London',
@@ -1081,10 +1214,10 @@ test('payment run rows write both web and iOS day fields and empty ranges use 1â
   })
   assert.equal(fromWeb[0].endDay, 16)
   assert.equal(fromWeb[1].startDay, 17)
-  const both = parsePaymentRunDateRanges({
+  const leftover = parsePaymentRunDateRanges({
     paymentRunDateRanges: [{ startDay: 1, endDay: 16, startDate: 1, endDate: 15 }],
   })
-  assert.equal(both[0].endDay, 16)
+  assert.equal(leftover[0].endDay, 15)
   const written = invoicingToFirestore(parseInvoicing({}))
   const row = (written.paymentRunDateRanges as Record<string, number>[])[0]
   assert.equal(row.startDay, 1)

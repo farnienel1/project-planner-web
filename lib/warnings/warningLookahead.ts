@@ -1,4 +1,4 @@
-import { coverageWindow, invoicingPeriod } from '@/lib/canonical'
+import { coverageWindow, invoicingPeriod, parsePaymentRunDateRanges } from '@/lib/canonical'
 import {
   DEFAULT_INVOICING,
   type OrgInvoicingSettings,
@@ -22,7 +22,7 @@ function periodFromCanonical(
     referenceIso: referenceDate.toISOString(),
     timeZone,
     paymentRunMode: invoicing.paymentRunMode,
-    ranges: invoicing.paymentRunDateRanges,
+    ranges: parsePaymentRunDateRanges({ paymentRunDateRanges: invoicing.paymentRunDateRanges }),
     recurringRunStartDay: invoicing.recurringRunStartDay,
     recurringRunEndDay: invoicing.recurringRunEndDay,
   })
@@ -75,7 +75,7 @@ export function computeWarningCoverageWindow(
     clashLookaheadMode: warningDetection.clashLookaheadMode,
     clashLookaheadDays: warningDetection.clashLookaheadDays,
     paymentRunMode: settings.paymentRunMode,
-    ranges: settings.paymentRunDateRanges,
+    ranges: parsePaymentRunDateRanges({ paymentRunDateRanges: settings.paymentRunDateRanges }),
     recurringRunStartDay: settings.recurringRunStartDay,
     recurringRunEndDay: settings.recurringRunEndDay,
   })
