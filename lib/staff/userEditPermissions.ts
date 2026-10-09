@@ -1,5 +1,6 @@
 import type { User } from '@/types'
 import { canManageOperativesOnly, canManageUsers } from '@/lib/navigation/menuPermissions'
+import { canViewOperatives } from '@/lib/permissions'
 
 export function canEditTargetUser(current: User | null, target: User): boolean {
   if (!current) return false
@@ -7,6 +8,17 @@ export function canEditTargetUser(current: User | null, target: User): boolean {
   if (canManageUsers(current)) return true
   if (canManageOperativesOnly(current)) return target.permissions.operativeMode
   return false
+}
+
+/**
+ * Qualification-warning “Open operative”. Managers see every warning, but
+ * without the Operatives toggle they cannot open Edit User. Admins who can
+ * manage users still can, even if that toggle is off.
+ */
+export function canOpenOperativeFromWarning(current: User | null, target?: User | null): boolean {
+  if (!current) return false
+  if (target) return canEditTargetUser(current, target)
+  return canManageUsers(current) || canViewOperatives(current)
 }
 
 export function canUseAdminAccountTools(current: User | null): boolean {

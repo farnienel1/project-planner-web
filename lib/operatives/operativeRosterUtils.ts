@@ -54,6 +54,31 @@ export function dedupeOperativesByEmail(operatives: Operative[]): Operative[] {
   return Array.from(byEmail.values())
 }
 
+/** The user account that owns this roster operative (same email). */
+export function findUserForOperative(operative: Operative | undefined, users: User[]): User | undefined {
+  if (!operative) return undefined
+  const email = normalizeEmail(operative.email)
+  if (!email) return undefined
+  return (
+    users.find((user) => normalizeEmail(user.email) === email && user.permissions.operativeMode) ||
+    users.find((user) => normalizeEmail(user.email) === email)
+  )
+}
+
+/** Full Edit User for a roster operative — same page as Manage Operatives. */
+export function editUserHrefForOperative(
+  operativeId: string,
+  operatives: Operative[],
+  users: User[]
+): string {
+  const operative =
+    operatives.find((row) => row.id === operativeId) ||
+    operatives.find((row) => row.id.toLowerCase() === operativeId.toLowerCase())
+  const user = findUserForOperative(operative, users)
+  if (user) return `/dashboard/users/${user.id}/edit?from=operatives`
+  return `/dashboard/operatives/${operativeId}/edit`
+}
+
 export function findOperativeForUser(user: User, operatives: Operative[]): Operative | undefined {
   const email = normalizeEmail(user.email)
   return dedupeOperativesByEmail(operatives).find(

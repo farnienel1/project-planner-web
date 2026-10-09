@@ -5,6 +5,7 @@ import { buildSaveUserPayload, displayedLineManagerId, userWithLineManagerChoice
 import { applyAccountTypeChange } from './accountTypeChange.ts'
 import { applyDeviceOrgMembership } from '../orgMembership/webActiveOrg.ts'
 import { isSuperAdminSuccessor, superAdminSuccessors, SUPER_ADMIN_SUCCESSOR_EMPTY } from './superAdminTransfer.ts'
+import { canOpenOperativeFromWarning } from './userEditPermissions.ts'
 
 const permissions: UserPermissions = {
   adminAccess: false,
@@ -262,11 +263,39 @@ test('same-company membership role does not turn an operative into an admin', ()
   const session = applyDeviceOrgMembership(
     operative,
     '2C67391E-D1FE-4F9F-8055-7149ACDE1F96',
-    '2c67391e-d1fe-4f9f-8055-7149acde1f96',
+    '2c67391e-d1fe-4f9f-8055-7149ACDE1F96'.toLowerCase(),
     { role: 'admin', status: 'active', isSuperAdmin: false }
   )
   assert.equal(session.role, UserRole.OPERATIVE)
   assert.equal(session.permissions.operativeMode, true)
   assert.equal(session.permissions.adminAccess, false)
   assert.equal(session.isSuperAdmin, false)
+})
+
+test('Open operative on a warning is hidden when a manager has Operatives off', () => {
+  const target = user({
+    id: 'op-1',
+    email: 'op@site.test',
+    role: UserRole.OPERATIVE,
+    permissions: { ...permissions, manager: false, operativeMode: true, operatives: false },
+  })
+  const managerOff = user({
+    id: 'mgr-off',
+    email: 'mgr-off@site.test',
+    permissions: { ...permissions, operatives: false },
+  })
+  const managerOn = user({
+    id: 'mgr-on',
+    email: 'mgr-on@site.test',
+    permissions: { ...permissions, operatives: true },
+  })
+  const admin = user({
+    id: 'adm',
+    email: 'adm@site.test',
+    role: UserRole.ADMIN,
+    permissions: { ...permissions, adminAccess: true, operatives: false },
+  })
+  assert.equal(canOpenOperativeFromWarning(managerOff, target), false)
+  assert.equal(canOpenOperativeFromWarning(managerOn, target), true)
+  assert.equal(canOpenOperativeFromWarning(admin, target), true)
 })
