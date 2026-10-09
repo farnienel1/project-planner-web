@@ -1,12 +1,14 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { DEFAULT_WARNING_DETECTION } from '../settings/organizationSettings.ts'
+import { DEFAULT_INVOICING, DEFAULT_WARNING_DETECTION } from '../settings/organizationSettings.ts'
 import {
+  organizationDetailsForWarningScan,
   partitionRowsByOrganization,
   warningScanUsers,
   publishReadyWarningLanes,
   retainWarningsAfterScan,
   warningDetectionForScan,
+  warningScanInvoicingReady,
   warningScanLanes,
   warningsScanPartial,
   warningsScreenPhase,
@@ -201,4 +203,45 @@ test('an unsaved number-of-days draft does not replace the saved invoicing-perio
   const settled = warningDetectionForScan(invoicingPeriod, unsavedDraft, true)
   assert.equal(settled?.clashLookaheadMode, 'endOfInvoicingPeriod')
   assert.equal(settled?.clashLookaheadDays, 12)
+})
+
+test('end-of-invoicing-period waits for live payment runs before scanning', () => {
+  assert.equal(warningScanInvoicingReady(invoicingPeriod, undefined), false)
+  assert.equal(warningScanInvoicingReady(invoicingPeriod, DEFAULT_INVOICING), true)
+  assert.equal(warningScanInvoicingReady(unsavedDraft, undefined), true)
+})
+
+test('a later factory detection read must not keep a leftover 1–16 payment run', () => {
+  const stale = {
+    id: 'org',
+    name: 'Firm',
+    warningDetection: invoicingPeriod,
+    invoicing: {
+      ...DEFAULT_INVOICING,
+      paymentRunDateRanges: [
+        { startDay: 1, endDay: 16 },
+        { startDay: 17, endDay: 31 },
+      ],
+    },
+  }
+  const live = {
+    id: 'org',
+    name: 'Firm',
+    warningDetection: DEFAULT_WARNING_DETECTION,
+    invoicing: {
+      ...DEFAULT_INVOICING,
+      paymentRunDateRanges: [
+        { startDay: 1, endDay: 15 },
+        { startDay: 16, endDay: 31 },
+      ],
+    },
+  }
+  const merged = organizationDetailsForWarningScan({
+    current: stale as never,
+    loaded: live as never,
+    cachedDetection: invoicingPeriod,
+  })
+  assert.equal(merged.warningDetection.clashLookaheadMode, 'endOfInvoicingPeriod')
+  assert.equal(merged.invoicing.paymentRunDateRanges[0].endDay, 15)
+  assert.equal(merged.invoicing.paymentRunDateRanges[1].startDay, 16)
 })

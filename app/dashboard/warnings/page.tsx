@@ -41,9 +41,11 @@ import { loadMaterialCutOffSettings, type NotificationPreferences } from '@/lib/
 import { generateOrgWarnings } from '@/lib/warnings/generateOrgWarnings'
 import {
   countGeneratedWarnings,
+  organizationDetailsForWarningScan,
   partitionRowsByOrganization,
   publishReadyWarningLanes,
   warningDetectionForScan,
+  warningScanInvoicingReady,
   warningScanLanes,
   warningScanUsers,
 } from '@/lib/warnings/warningsScan'
@@ -72,6 +74,7 @@ export default function WarningsPage() {
   const [orgDetails, setOrgDetails] = useState<OrganizationDetails | null>(null)
   const [notificationPreferences, setNotificationPreferences] = useState<NotificationPreferences | null>(null)
   const [detectionSettled, setDetectionSettled] = useState(false)
+  const [liveOrgReadSettled, setLiveOrgReadSettled] = useState(false)
   const [rosterReady, setRosterReady] = useState(false)
   const [operativesReady, setOperativesReady] = useState(false)
   const [projectsReady, setProjectsReady] = useState(false)
@@ -82,6 +85,7 @@ export default function WarningsPage() {
   const [bookingsSettled, setBookingsSettled] = useState(false)
   const managerSawLoad = useRef(false)
   const bookingsSawLoad = useRef(false)
+  const lastPublished = useRef<{ orgId: string; result: OrgWarningsResult } | null>(null)
   // The cache returns a fresh copy per call, so hold one identity in state
   // rather than re-reading it (and re-running the scan) on every render.
   const [cachedDetection, setCachedDetection] = useState<OrgWarningDetectionSettings | null>(null)
@@ -94,7 +98,9 @@ export default function WarningsPage() {
     if (organization?.id) {
       const orgId = organization.id
       let cancelled = false
+      lastPublished.current = null
       setDetectionSettled(false)
+      setLiveOrgReadSettled(false)
       setRosterReady(false)
       setOperativesReady(false)
       setProjectsReady(false)
@@ -143,41 +149,39 @@ export default function WarningsPage() {
       }
       const applyDetails = (details: OrganizationDetails | null) => {
         if (cancelled || !details || details.id !== orgId) return
-        const loaded = details.warningDetection
         const latestCache = readCachedWarningDetection(orgId) ?? cached
+        const next = organizationDetailsForWarningScan({
+          current: null,
+          loaded: details,
+          cachedDetection: latestCache,
+        })
         if (
-          loaded &&
           latestCache &&
-          warningDetectionLooksLikeFactoryDefault(loaded) &&
+          warningDetectionLooksLikeFactoryDefault(details.warningDetection) &&
           !warningDetectionLooksLikeFactoryDefault(latestCache)
         ) {
           writeCachedWarningDetection(orgId, latestCache)
           setCachedDetection(latestCache)
-          setOrgDetails({ ...details, warningDetection: latestCache })
+          setOrgDetails(next)
           void saveWarningDetection(orgId, latestCache).catch(() => {})
           return
         }
-        if (loaded) {
-          writeCachedWarningDetection(orgId, loaded)
-          setCachedDetection(loaded)
+        if (details.warningDetection) {
+          writeCachedWarningDetection(orgId, next.warningDetection)
+          setCachedDetection(next.warningDetection)
         }
-        setOrgDetails((current) => {
-          if (
-            current?.id === orgId &&
-            current.warningDetection.clashLookaheadMode === 'endOfInvoicingPeriod' &&
-            loaded.clashLookaheadMode !== 'endOfInvoicingPeriod' &&
-            warningDetectionLooksLikeFactoryDefault(loaded)
-          ) {
-            return current
-          }
-          return details
-        })
+        setOrgDetails((current) =>
+          organizationDetailsForWarningScan({
+            current,
+            loaded: details,
+            cachedDetection: latestCache,
+          })
+        )
       }
       const timer = window.setTimeout(settle, 2500)
       void loadOrganizationDetails(orgId)
         .then((details) => {
           applyDetails(details)
-          settle()
         })
         .catch(() => {
           /* The server read can still fill detection. */
@@ -191,6 +195,7 @@ export default function WarningsPage() {
         })
         .finally(() => {
           window.clearTimeout(timer)
+          if (!cancelled) setLiveOrgReadSettled(true)
           settle()
         })
       return () => {
@@ -227,7 +232,14 @@ export default function WarningsPage() {
       loadDismissedWarnings(orgId).then(setDismissedWarnings).catch(() => {})
       void loadOrganizationDetails(orgId, { fromServer: true, allowCacheFallback: true })
         .then((details) => {
-          if (details && details.id === orgId) setOrgDetails(details)
+          if (!details || details.id !== orgId) return
+          setOrgDetails((current) =>
+            organizationDetailsForWarningScan({
+              current,
+              loaded: details,
+              cachedDetection: readCachedWarningDetection(orgId),
+            })
+          )
         })
         .catch(() => {})
     }
@@ -268,6 +280,9 @@ export default function WarningsPage() {
     orgId ? cachedDetection : null,
     detectionSettled
   )
+  const invoicingReady =
+    warningScanInvoicingReady(warningDetection, detailsForScan?.invoicing) &&
+    (warningDetection?.clashLookaheadMode !== 'endOfInvoicingPeriod' || liveOrgReadSettled)
   const bookingScope = useMemo(() => partitionRowsByOrganization(bookings, orgId), [bookings, orgId])
   const managerScope = useMemo(
     () => partitionRowsByOrganization(managerSiteBookings, orgId),
@@ -279,7 +294,7 @@ export default function WarningsPage() {
   )
   const operativeScope = useMemo(() => partitionRowsByOrganization(operatives, orgId), [operatives, orgId])
   const projectScope = useMemo(() => partitionRowsByOrganization(mergedWorks, orgId), [mergedWorks, orgId])
-  const detectionReady = Boolean(warningDetection)
+  const detectionReady = Boolean(warningDetection) && invoicingReady
   const bookingsSourceReady =
     !bookingScope.foreign && !bookingsLoading && (bookingsReady || bookingsSettled)
   const managerSourceReady = !managerScope.foreign && !managerLoading && managerSettled
@@ -348,7 +363,6 @@ export default function WarningsPage() {
     ]
   )
 
-  const lastPublished = useRef<{ orgId: string; result: OrgWarningsResult } | null>(null)
   const visible = useMemo(() => {
     const previous = lastPublished.current && lastPublished.current.orgId === orgId ? lastPublished.current.result : null
     if (!scheduleReady || !generated) return previous

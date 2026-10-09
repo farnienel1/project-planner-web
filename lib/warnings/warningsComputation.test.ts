@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { UserRole, type Booking, type HolidayBooking, type Operative, type Project, type User } from '../../types/index.ts'
 import { DEFAULT_INVOICING, DEFAULT_PAYROLL_POLICY, DEFAULT_WARNING_DETECTION } from '../settings/organizationSettings.ts'
 import { parsePaymentRunDateRanges } from '../canonical/organizationSettings.ts'
-import { computeWarningCoverageWindow, formatNumberOfDaysScanSummary } from './warningLookahead.ts'
+import { computeWarningCoverageWindow, eachLondonDay, formatNumberOfDaysScanSummary } from './warningLookahead.ts'
 import { computeUnbookedLabourWarnings } from './unbookedLabourWarnings.ts'
 import { computeOperativeBookingClashWarnings } from '../scheduling/bookingClashUtils.ts'
 import { computeManagerBookingClashWarnings } from './managerClashWarnings.ts'
@@ -169,6 +169,74 @@ test('full week unbooked labour adds Saturday and Sunday only when include weeke
     ...DEFAULT_WARNING_DETECTION,
     clashLookaheadMode: 'endOfWorkingWeek',
   }).end), '2026-09-18')
+})
+
+test('a 1–15 payment run on 9 Oct does not put the 16th in the invoicing-period day list', () => {
+  const friday = new Date('2026-10-09T12:00:00+01:00')
+  const detection = {
+    ...DEFAULT_WARNING_DETECTION,
+    clashLookaheadMode: 'endOfInvoicingPeriod' as const,
+  }
+  const invoicing = {
+    ...DEFAULT_INVOICING,
+    paymentRunMode: 'date_ranges' as const,
+    paymentRunDateRanges: [
+      { startDay: 1, endDay: 15 },
+      { startDay: 16, endDay: 31 },
+    ],
+  }
+  const window = computeWarningCoverageWindow(friday, detection, invoicing, 'Europe/London')
+  assert.equal(window.startDayKey, '2026-10-01')
+  assert.equal(window.endDayKey, '2026-10-15')
+  assert.equal(dayKey(window.end, 'Europe/London'), '2026-10-15')
+  const days = eachLondonDay(window.start, window.end, 'Europe/London').map((date) => dayKey(date, 'Europe/London'))
+  assert.equal(days.includes('2026-10-15'), true)
+  assert.equal(days.includes('2026-10-16'), false)
+  assert.equal(days.at(-1), '2026-10-15')
+
+  const person = user({
+    id: 'U-OP',
+    email: 'op@site.test',
+    firstName: 'Test',
+    surname: 'Operative',
+    permissions: perms({ operativeMode: true }),
+  })
+  const warnings = generateOrgWarnings({
+    bookings: [],
+    managerSiteBookings: [],
+    operatives: [],
+    users: [person],
+    projects: [],
+    holidays: [],
+    warningDetection: detection,
+    invoicing,
+    referenceDate: friday,
+  })
+  const unbookedDays = [...new Set(warnings.unbookedWarnings.map((warning) => dayKey(warning.date, 'Europe/London')))]
+  assert.equal(unbookedDays.includes('2026-10-15'), true)
+  assert.equal(unbookedDays.includes('2026-10-16'), false)
+
+  const fromSettingsFields = generateOrgWarnings({
+    bookings: [],
+    managerSiteBookings: [],
+    operatives: [],
+    users: [person],
+    projects: [],
+    holidays: [],
+    warningDetection: detection,
+    invoicing: {
+      ...DEFAULT_INVOICING,
+      paymentRunDateRanges: [
+        { startDay: 1, endDay: 16, startDate: 1, endDate: 15 },
+        { startDay: 17, endDay: 31, startDate: 16, endDate: 31 },
+      ] as typeof DEFAULT_INVOICING.paymentRunDateRanges,
+    },
+    referenceDate: friday,
+  })
+  const settingsDays = [
+    ...new Set(fromSettingsFields.unbookedWarnings.map((warning) => dayKey(warning.date, 'Europe/London'))),
+  ]
+  assert.equal(settingsDays.includes('2026-10-16'), false)
 })
 
 test('default invoicing-period warnings stop on the 15th, not an extra 16th', () => {

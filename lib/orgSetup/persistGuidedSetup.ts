@@ -12,6 +12,7 @@ import { getFirebaseDb } from '@/lib/firebase/ensureFirebase'
 import { hasRequiredGuidedProject } from '@/lib/orgSetup/guidedSetupComplete'
 import { buildProjectFirestorePayload } from '@/lib/firebase/projectPayload'
 import { newUuid } from '@/lib/firebase/firestoreUtils'
+import { seedStarterQualificationLibrary } from '@/lib/qualifications/starterLibrary'
 import type { TeamOnboardingState } from '@/lib/orgSetup/teamOnboarding'
 import { ensurePrimaryOrgMembership } from '@/lib/orgMembership/membershipService'
 import type { Subcontractor, SubcontractorContact, Wholesaler, WholesalerContact } from '@/types'
@@ -227,6 +228,12 @@ export async function persistGuidedSetup(
   })
   const collectionName = project.jobType === 'Small Works' ? 'smallWorks' : 'projects'
   await setDoc(doc(db, 'organizations', organizationId, collectionName, projectId), payload)
+
+  try {
+    await seedStarterQualificationLibrary({ organizationId })
+  } catch {
+    // Library seed must not block guided setup. Load-on-org-tab still merges missing codes.
+  }
 
   if (guidedData.qualification.name.trim()) {
     const qualificationId = newUuid()

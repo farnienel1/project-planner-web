@@ -15,6 +15,7 @@ import type {
 import {
   DEFAULT_PAYROLL_POLICY,
   DEFAULT_WARNING_DETECTION,
+  parseInvoicing,
 } from '@/lib/settings/organizationSettings'
 import { qualificationExpiryRows, unverifiedOperativeRows } from '@/lib/canonical'
 import { ianaTimeZoneForCountry } from '@/lib/orgTime/orgTimeZone'
@@ -154,7 +155,9 @@ export function generateOrgWarnings(input: {
   orgDetails?: OrganizationDetails | null
 }): OrgWarningsResult {
   const warningDetection = input.warningDetection ?? input.orgDetails?.warningDetection ?? DEFAULT_WARNING_DETECTION
-  const invoicing = input.invoicing ?? input.orgDetails?.invoicing
+  const invoicing = parseInvoicing(
+    (input.invoicing ?? input.orgDetails?.invoicing) as Record<string, unknown> | undefined
+  )
   const payrollPolicy = input.payrollPolicy ?? input.orgDetails?.payrollTimePolicy ?? DEFAULT_PAYROLL_POLICY
   const now = input.referenceDate ?? new Date()
   const prefs = input.notificationPreferences ?? input.orgDetails?.materialCutOff ?? null

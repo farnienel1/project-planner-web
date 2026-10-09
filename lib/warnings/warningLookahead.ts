@@ -45,6 +45,9 @@ export type InvoicingPeriodRange = {
 export type WarningCoverageWindow = {
   start: Date
   end: Date
+  /** Inclusive. Do not add a day to make this exclusive — the scan already includes this day. */
+  startDayKey: string
+  endDayKey: string
 }
 
 /** Current invoicing / payment run period containing the reference date (org-country zone). */
@@ -82,6 +85,8 @@ export function computeWarningCoverageWindow(
   return {
     start: dateFromDayKey(window.startDayKey, timeZone),
     end: dateFromDayKey(window.endDayKey, timeZone),
+    startDayKey: window.startDayKey,
+    endDayKey: window.endDayKey,
   }
 }
 

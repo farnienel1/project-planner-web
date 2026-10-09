@@ -94,8 +94,8 @@ export function computeLeaveCoverageWarnings({
 
   const rows = leaveCoverageRows({
     timeZone,
-    startDayKey: dayKey(windowStart, timeZone),
-    endDayKey: dayKey(windowEnd, timeZone),
+    startDayKey: window.startDayKey,
+    endDayKey: window.endDayKey,
     day: payrollPolicy,
     includeWeekends: warningDetection.includeWeekendsForUnbookedLabour,
     excludedUserIds: warningDetection.excludedUserIdsFromUnbookedWarnings,
