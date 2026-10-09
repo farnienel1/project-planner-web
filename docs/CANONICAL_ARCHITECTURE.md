@@ -54,6 +54,8 @@ Every account is `users/{uid}`. Both apps read and write the same fields (`USER_
 - Opening an operative from warnings or the roster is the same Edit User page (`/dashboard/users/{id}/edit?from=operatives`), not a second catalogue-only editor. Managers see every warning, but **Open operative** is hidden when their Operatives toggle is off — they cannot edit that profile. Admins who can manage users still see the button.
 - `annualLeaveEnabled` is the paid-allowance toggle, not access to Holiday. Off (typical for self-employed staff without a set entitlement) still books leave. They see days taken in the company leave year (`annualLeaveBalance`); the count resets on the first day of the next year. On shows days per year and remaining. A mid-year joiner is set with `applyRemainingOverride` → `annualLeaveYearAllowance` + `annualLeaveYearAllowanceKey`. That remaining is for this leave year only and returns to Days per year after the year ends.
 
+New organisations created on the web write the starter material catalogue into `organizations/{orgId}/materialCatalogue`. iOS reads that collection; it does not import the CSV again.
+
 ## What stays in each app
 
 - SwiftUI and React screens, navigation, and copy
