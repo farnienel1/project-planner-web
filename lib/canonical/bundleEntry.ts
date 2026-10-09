@@ -45,3 +45,12 @@ export {
   receivesJobNotification,
   seesEveryJob,
 } from './staffAccess'
+
+export {
+  accountKindFromFlags,
+  applyEmploymentTypeChange,
+  employmentEffectiveLabel,
+  employmentTypeOnDay,
+  isBillableSelfEmployedDay,
+  normalizeEmploymentType,
+} from './userProfile'
