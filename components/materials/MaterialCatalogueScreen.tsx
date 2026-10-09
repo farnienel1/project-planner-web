@@ -24,6 +24,7 @@ import {
   exportCatalogueTemplateCsv,
   parseCatalogueCsv,
 } from '@/lib/materials/materialCatalogCSV'
+import { STARTER_CATALOGUE_FILENAME, starterCatalogueCsv } from '@/lib/materials/starterCatalogue'
 import { EmptyState, IosFormModal, PageHeader } from '@/components/ios/primitives'
 import { MATERIAL_CATEGORY_SUGGESTIONS } from '@/lib/materials/materialCategorySuggestions'
 
@@ -604,8 +605,8 @@ function CsvSheet({
             <section>
               <p className="text-[11px] font-semibold uppercase text-[var(--ink3)]">Step 1 · Download</p>
               <p className="mt-1 text-[var(--ink3)]">
-                Download your current catalogue, edit it in a spreadsheet, then save the file as .csv (not Excel or
-                Numbers).
+                Download your current catalogue, the Project Planner starter list, or a blank template. Edit in a
+                spreadsheet, then save as .csv (not Excel or Numbers).
               </p>
               <button
                 type="button"
@@ -615,6 +616,16 @@ function CsvSheet({
                 Download Material Catalogue
               </button>
               <p className="mt-2 text-amber-800">⚠️ CSV Warning — save the file as csv and not .xls (excel) or .numbers.</p>
+              <button
+                type="button"
+                className={`${downloadBtn} border-[1.5px] border-[var(--blue)] bg-white text-[var(--blue)]`}
+                onClick={() => downloadTextFile(STARTER_CATALOGUE_FILENAME, starterCatalogueCsv())}
+              >
+                Download starter catalogue
+              </button>
+              <p className="mt-2 text-[var(--ink3)]">
+                The standard list seeded on new organisations. Update it and upload, or use it to restore the defaults.
+              </p>
               <button
                 type="button"
                 className={`${downloadBtn} border-[1.5px] border-[var(--blue)] bg-white text-[var(--blue)]`}
