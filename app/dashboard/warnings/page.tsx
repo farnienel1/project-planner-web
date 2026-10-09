@@ -457,6 +457,7 @@ export default function WarningsPage() {
       loading={scanning}
       user={user}
       operatives={rosterOperatives}
+      users={userScope.foreign ? [] : userScope.rows}
       smallWorkIds={smallWorkIds}
       onAcceptClash={handleAcceptClash}
       onDismissQualification={handleDismissQualification}

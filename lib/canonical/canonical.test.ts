@@ -39,6 +39,13 @@ import {
   seesEveryJob,
   type StaffAccountRole,
 } from './staffAccess.ts'
+import {
+  accountKindFromFlags,
+  applyEmploymentTypeChange,
+  employmentEffectiveLabel,
+  employmentTypeOnDay,
+  MANAGER_PERMISSION_TOGGLES,
+} from './userProfile.ts'
 
 const superAdmin: StaffAccountRole = { isSuperAdmin: true, isAdmin: true, isManager: false, isOperativeMode: false }
 const admin: StaffAccountRole = { isSuperAdmin: false, isAdmin: true, isManager: false, isOperativeMode: false }
@@ -635,6 +642,10 @@ test('the iOS JavaScript bundle exposes the standard-day, leave and dismiss rule
     'leaveSlotKind',
     'qualificationDismissKey',
     'withoutDismissedQualificationRows',
+    'employmentTypeOnDay',
+    'applyEmploymentTypeChange',
+    'accountKindFromFlags',
+    'normalizeEmploymentType',
   ]) {
     assert.equal(typeof bundle[name], 'function', `${name} is exported from the packed script`)
   }
@@ -802,4 +813,37 @@ test('unbooked labour counts a manager booking on another account with the same 
     holidays: [],
   })
   assert.deepEqual(rows, [])
+})
+
+test('employment type on a day uses the scheduled transition, and a future date keeps the old type', () => {
+  const user = {
+    employmentType: 'paye',
+    employmentTypeTransitionFrom: 'self_employed',
+    employmentTypeEffectiveAt: new Date('2026-10-01T00:00:00Z'),
+  }
+  assert.equal(employmentTypeOnDay(user, new Date('2026-09-30T12:00:00Z'), 'Europe/London'), 'self_employed')
+  assert.equal(employmentTypeOnDay(user, new Date('2026-10-01T12:00:00Z'), 'Europe/London'), 'paye')
+  const tomorrow = applyEmploymentTypeChange({
+    previousType: 'self_employed',
+    nextType: 'paye',
+    effectiveAt: new Date('2026-10-10T12:00:00Z'),
+    now: new Date('2026-10-09T12:00:00Z'),
+    timeZone: 'Europe/London',
+  })
+  assert.equal(tomorrow.employmentType, 'paye')
+  assert.equal(tomorrow.employmentTypeTransitionFrom, 'self_employed')
+  assert.ok(tomorrow.employmentTypeEffectiveAt)
+  const today = applyEmploymentTypeChange({
+    previousType: 'self_employed',
+    nextType: 'paye',
+    effectiveAt: 'immediate',
+    now: new Date('2026-10-09T12:00:00Z'),
+  })
+  assert.equal(today.employmentTypeTransitionFrom, null)
+  assert.equal(today.employmentTypeEffectiveAt, null)
+  assert.equal(employmentEffectiveLabel({ employmentType: 'paye' }), 'Effective immediately')
+  assert.equal(accountKindFromFlags({ operativeMode: true }), 'operative')
+  assert.equal(accountKindFromFlags({ adminAccess: true }), 'admin')
+  assert.equal(MANAGER_PERMISSION_TOGGLES[0].key, 'adminAccess')
+  assert.equal(MANAGER_PERMISSION_TOGGLES[3].key, 'weeklyReports')
 })

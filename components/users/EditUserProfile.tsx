@@ -29,7 +29,13 @@ import {
   mergedDayRateEntries,
   type OperativeDayRateHistoryCollection,
 } from '@/lib/timesheets/dayRateHistoryStorage'
-import { normalizeEmploymentType } from '@/lib/ios-parity/enums'
+import {
+  accountKindFromFlags,
+  applyEmploymentTypeChange,
+  employmentEffectiveLabel,
+  normalizeEmploymentType,
+} from '@/lib/canonical/userProfile'
+import { useEmploymentTypeSaveGate } from '@/components/users/EmploymentTypeChangeDialog'
 import type { User, UserPermissions } from '@/types'
 import { PermissionToggleList } from '@/components/users/ProfileExpandablePermissionToggle'
 import {
@@ -99,9 +105,13 @@ function annualLeaveChecked(user: User): Partial<Record<keyof UserPermissions, b
 }
 
 function currentAccountType(user: User): 'operative' | 'manager' | 'admin' {
-  if (user.isSuperAdmin || user.permissions.adminAccess || user.role === 'admin') return 'admin'
-  if (user.permissions.operativeMode) return 'operative'
-  return 'manager'
+  return accountKindFromFlags({
+    isSuperAdmin: user.isSuperAdmin,
+    role: user.role,
+    adminAccess: user.permissions.adminAccess,
+    manager: user.permissions.manager,
+    operativeMode: user.permissions.operativeMode,
+  })
 }
 
 function cloneUser(user: User): User {
@@ -168,6 +178,8 @@ function profileSnapshot(
     email: user.email,
     mobileNumber: user.mobileNumber || '',
     employmentType: user.employmentType,
+    employmentTypeTransitionFrom: user.employmentTypeTransitionFrom || '',
+    employmentTypeEffectiveAt: user.employmentTypeEffectiveAt?.toISOString?.() || '',
     assignedManagerUserId: user.assignedManagerUserId || '',
     assignedManagerUserIds: user.assignedManagerUserIds ?? [],
     hasNoLineManager: user.hasNoLineManager === true,
@@ -228,12 +240,14 @@ export function EditUserProfile({
   const [baseline, setBaseline] = useState<string | null>(null)
   const [originalDayRate, setOriginalDayRate] = useState<number | undefined>(undefined)
   const [originalPayBasis, setOriginalPayBasis] = useState<'day' | 'hourly' | undefined>(undefined)
+  const [originalEmploymentType, setOriginalEmploymentType] = useState<string | undefined>(undefined)
   const [fixEmail, setFixEmail] = useState('')
   const [fixNote, setFixNote] = useState('')
   const [fixOpen, setFixOpen] = useState(false)
   const [activeSaving, setActiveSaving] = useState(false)
   const [rateHistory, setRateHistory] = useState<OperativeDayRateHistoryCollection>(emptyDayRateHistory())
   const { request: requestPaySave, ui: payDialogs } = usePaySaveGate()
+  const { request: requestEmploymentSave, ui: employmentDialogs } = useEmploymentTypeSaveGate()
   const profileLoadGen = useRef(0)
 
   useEffect(() => {
@@ -248,6 +262,7 @@ export function EditUserProfile({
         setTarget(row)
         setOriginalDayRate(row?.payBasis === 'hourly' ? row?.hourlyRate : row?.dayRate)
         setOriginalPayBasis(row?.payBasis)
+        setOriginalEmploymentType(row?.employmentType)
         if (row) setBaseline(profileSnapshot(row, null, null))
       })
       .finally(() => {
@@ -326,12 +341,30 @@ export function EditUserProfile({
       createdAt: target.createdAt,
     })
     if (decision === 'cancel') return
+    const employmentWhen = await requestEmploymentSave({
+      previous: originalEmploymentType,
+      next: target.employmentType,
+    })
+    if (employmentWhen === 'cancel') return
     setError(null)
     setSuccess(null)
     let toSave = { ...target, updatedAt: new Date() }
     if (draftAccountType && draftTypePermissions) {
       toSave = applyAccountType(toSave, draftAccountType)
       toSave = { ...toSave, permissions: draftTypePermissions }
+    }
+    const employment = applyEmploymentTypeChange({
+      previousType: originalEmploymentType,
+      nextType: toSave.employmentType,
+      previousTransitionFrom: toSave.employmentTypeTransitionFrom,
+      previousEffectiveAt: toSave.employmentTypeEffectiveAt,
+      effectiveAt: employmentWhen === 'immediate' ? 'immediate' : employmentWhen,
+    })
+    toSave = {
+      ...toSave,
+      employmentType: employment.employmentType,
+      employmentTypeTransitionFrom: employment.employmentTypeTransitionFrom || undefined,
+      employmentTypeEffectiveAt: employment.employmentTypeEffectiveAt || undefined,
     }
     setSaving(true)
     try {
@@ -343,6 +376,7 @@ export function EditUserProfile({
       setDraftTypePermissions(null)
       setShowChangeType(false)
       setBaseline(profileSnapshot(toSave, null, null))
+      setOriginalEmploymentType(toSave.employmentType)
       setSaved(true)
       window.setTimeout(() => setSaved(false), 3000)
       setSuccess(toSave.isActive ? 'Profile saved.' : 'User deactivated.')
@@ -555,6 +589,7 @@ export function EditUserProfile({
   return (
     <form onSubmit={handleSave} className="mx-auto max-w-2xl pb-16">
       {payDialogs}
+      {employmentDialogs}
       <PanelHeader
         title={pageTitle}
         onBack={() => {
@@ -635,7 +670,7 @@ export function EditUserProfile({
       </div>
 
       {/* Identity */}
-      <SectionLabel label="Identity" />
+      <SectionLabel label="User details" />
       <SettingsCard>
         <div className="grid grid-cols-1 gap-4 p-4 sm:grid-cols-2">
           <FormField label="First name">
@@ -679,69 +714,35 @@ export function EditUserProfile({
             </FormField>
           )}
           {showEmploymentType && (
-            <FormField label="Employment type">
-              <Select
-                value={normalizeEmploymentType(target.employmentType)}
-                disabled={!canEditMatrix}
-                onChange={(e) => setTarget({ ...target, employmentType: e.target.value })}
+            <>
+              <FormField label="Employment type">
+                <Select
+                  value={normalizeEmploymentType(target.employmentType)}
+                  disabled={!canEditMatrix}
+                  onChange={(e) => setTarget({ ...target, employmentType: e.target.value })}
+                >
+                  <option value="self_employed">Self-Employed</option>
+                  <option value="paye">PAYE</option>
+                </Select>
+              </FormField>
+              <FormField
+                label="Employment date"
+                hint="PAYE and self-employed take effect from the working day you choose when you save a change."
               >
-                <option value="self_employed">Self-Employed</option>
-                <option value="paye">PAYE</option>
-              </Select>
-            </FormField>
+                <Input
+                  value={
+                    normalizeEmploymentType(target.employmentType) !==
+                    normalizeEmploymentType(originalEmploymentType)
+                      ? 'Asked when you save'
+                      : employmentEffectiveLabel(target)
+                  }
+                  disabled
+                />
+              </FormField>
+            </>
           )}
         </div>
       </SettingsCard>
-
-      {/* Permissions */}
-      {target.isSuperAdmin ? (
-        <>
-          <SectionLabel label="Permissions" />
-          <SettingsCard>
-            <div className="flex items-start gap-3 p-4">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-orange-50 text-orange-600">
-                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                  <path d="M12 2a5 5 0 0 0-5 5v3H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2h-1V7a5 5 0 0 0-5-5Zm-3 8V7a3 3 0 1 1 6 0v3H9Z" />
-                </svg>
-              </div>
-              <div>
-                <p className="text-[13px] font-semibold text-orange-600">Super Admin</p>
-                <p className="mt-1 text-[11px] leading-relaxed text-slate-500">
-                  The Super Admin&apos;s permissions cannot be changed. Super Admin is passed on with Change Super Admin.
-                </p>
-              </div>
-            </div>
-          </SettingsCard>
-        </>
-      ) : canEditMatrix && effectivePermissions && (
-        <>
-          <SectionLabel label={`${roleLabel(target)} access`} />
-          <SettingsCard>
-            <div className="divide-y divide-slate-100">
-              {effectiveAccountType === 'operative' ? (
-                <PermissionToggleList
-                  defs={OPERATIVE_PERMISSION_TOGGLES}
-                  permissions={effectivePermissions}
-                  onChange={updatePermissions}
-                  disabled={!canEdit || target.isSuperAdmin}
-                />
-              ) : (
-                <PermissionToggleList
-                  defs={MANAGER_PERMISSION_TOGGLES}
-                  permissions={effectivePermissions}
-                  onChange={updatePermissions}
-                  disabled={!canEdit || target.isSuperAdmin}
-                  excludeKeys={suppressAdminAccessToggle ? ['adminAccess'] : undefined}
-                  lockedMessages={permissionLocks(target, effectiveAccountType)}
-                  checkedOverrides={annualLeaveChecked(target)}
-                  onLocked={setLockedNotice}
-                />
-              )}
-              {lockedNotice ? <p className="px-5 py-3 text-sm text-slate-600">{lockedNotice}</p> : null}
-            </div>
-          </SettingsCard>
-        </>
-      )}
 
       {showSetupCard && (
         <>
@@ -749,7 +750,7 @@ export function EditUserProfile({
           <SettingsCard>
             <div className="space-y-4 p-4">
               {(target.permissions.operativeMode || target.permissions.manager || target.permissions.adminAccess) && (
-                <FormField label="Line manager" hint="Same as iOS. Choose No line manager when this person has none.">
+                <FormField label="Line manager(s)" hint="Choose No line manager when this person has none.">
                   <Select
                     value={displayedLineManagerId(target)}
                     disabled={!canEdit || saving || typeSaving}
@@ -966,6 +967,55 @@ export function EditUserProfile({
           </SettingsCard>
         </>
       )}
+
+      {target.isSuperAdmin ? (
+        <>
+          <SectionLabel label="Permissions" />
+          <SettingsCard>
+            <div className="flex items-start gap-3 p-4">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-orange-50 text-orange-600">
+                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                  <path d="M12 2a5 5 0 0 0-5 5v3H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2h-1V7a5 5 0 0 0-5-5Zm-3 8V7a3 3 0 1 1 6 0v3H9Z" />
+                </svg>
+              </div>
+              <div>
+                <p className="text-[13px] font-semibold text-orange-600">Super Admin</p>
+                <p className="mt-1 text-[11px] leading-relaxed text-slate-500">
+                  The Super Admin&apos;s permissions cannot be changed. Super Admin is passed on with Change Super Admin.
+                </p>
+              </div>
+            </div>
+          </SettingsCard>
+        </>
+      ) : canEditMatrix && effectivePermissions ? (
+        <>
+          <SectionLabel label="Permissions" />
+          <SettingsCard>
+            <div className="divide-y divide-slate-100">
+              {effectiveAccountType === 'operative' ? (
+                <PermissionToggleList
+                  defs={OPERATIVE_PERMISSION_TOGGLES}
+                  permissions={effectivePermissions}
+                  onChange={updatePermissions}
+                  disabled={!canEdit || target.isSuperAdmin}
+                />
+              ) : (
+                <PermissionToggleList
+                  defs={MANAGER_PERMISSION_TOGGLES}
+                  permissions={effectivePermissions}
+                  onChange={updatePermissions}
+                  disabled={!canEdit || target.isSuperAdmin}
+                  excludeKeys={suppressAdminAccessToggle ? ['adminAccess'] : undefined}
+                  lockedMessages={permissionLocks(target, effectiveAccountType)}
+                  checkedOverrides={annualLeaveChecked(target)}
+                  onLocked={setLockedNotice}
+                />
+              )}
+              {lockedNotice ? <p className="px-5 py-3 text-sm text-slate-600">{lockedNotice}</p> : null}
+            </div>
+          </SettingsCard>
+        </>
+      ) : null}
 
       {canEdit && dirty ? (
         <div className="mt-6">

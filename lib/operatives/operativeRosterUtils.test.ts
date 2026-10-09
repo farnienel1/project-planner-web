@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { Operative } from '../../types/index.ts'
-import { findOperativeForUser, operativeIdsForEmail } from './operativeRosterUtils.ts'
+import { editUserHrefForOperative, findOperativeForUser, findUserForOperative, operativeIdsForEmail } from './operativeRosterUtils.ts'
 import { UserRole, type User } from '../../types/index.ts'
 
 function operative(partial: Partial<Operative> & { id: string }): Operative {
@@ -65,4 +65,11 @@ test('duplicate operative emails keep the profile that holds certificates', () =
   const linked = findOperativeForUser(user, [emptyNewer, withCerts])
   assert.equal(linked?.id, 'CERT')
   assert.deepEqual(operativeIdsForEmail([emptyNewer, withCerts], 'op@site.test').sort(), ['CERT', 'EMPTY'])
+})
+
+test('an operative with a login opens the Edit User page used by Manage Operatives', () => {
+  const row = operative({ id: 'OP-1' })
+  assert.equal(findUserForOperative(row, [user])?.id, 'U1')
+  assert.equal(editUserHrefForOperative('OP-1', [row], [user]), '/dashboard/users/U1/edit?from=operatives')
+  assert.equal(editUserHrefForOperative('MISSING', [], []), '/dashboard/operatives/MISSING/edit')
 })
