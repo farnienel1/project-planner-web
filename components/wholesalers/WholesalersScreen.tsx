@@ -15,6 +15,7 @@ import { canAccessWholesalers, canViewWholesalerOrderHistory } from '@/lib/permi
 import { consumeCreateQuery } from '@/lib/navigation/createMenu'
 import { newUuid } from '@/lib/firebase/firestoreUtils'
 import { EmptyState, IosFormModal, PageHeader } from '@/components/ios/primitives'
+import { lineMatchesMaterialQuery } from '@/lib/materials/materialCatalogSearch'
 
 function cityFromAddress(address?: string) {
   if (!address) return ''
@@ -469,13 +470,14 @@ function HistorySheet({
       const key = (record.materialsDate || record.sentAt).toISOString().slice(0, 10)
       if (key !== date) return false
     }
-    const needle = query.trim().toLowerCase()
-    if (!needle) return true
-    return record.lines.some(
-      (line) =>
-        line.name.toLowerCase().includes(needle) ||
-        (line.brand || '').toLowerCase().includes(needle) ||
-        (line.productCode || '').toLowerCase().includes(needle)
+    if (!query.trim()) return true
+    return record.lines.some((line) =>
+      lineMatchesMaterialQuery(query, {
+        name: line.name,
+        brand: line.brand,
+        productCode: line.productCode,
+        lengthDisplay: line.lengthDisplay,
+      })
     )
   })
 

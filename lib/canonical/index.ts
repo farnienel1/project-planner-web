@@ -114,6 +114,15 @@ export {
   snapLeaveDays,
 } from './annualLeaveBalance'
 
+export {
+  catalogueRecordFromItem,
+  materialRecordMatches,
+  materialSearchScore,
+  normalizeMaterialSearchText,
+  rankMaterialRecords,
+  tokenizeMaterialSearch,
+} from './materialSearch'
+
 export type {
   AccountFlags,
   AccountKind,
@@ -131,6 +140,8 @@ export type {
   LeaveYearBounds,
   RemainingOverrideWrite,
 } from './annualLeaveBalance'
+
+export type { MaterialSearchHit, MaterialSearchRecord } from './materialSearch'
 
 export type {
   LeaveBooking,

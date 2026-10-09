@@ -1662,7 +1662,7 @@ Each section below gives the iOS files, who can open the section, the screens an
   - `Core/MaterialCatalogStore.swift`, `Core/MaterialCatalogCSV.swift`, `Core/MaterialCatalogDuplicateDetection.swift`
 - **Access:** `canManageMaterialCatalogue` (admins and managers).
 - **Root screen** ("Material catalogue"; "Done"):
-  - A "CATALOGUE" section with search ("Search by name, brand or code").
+  - A "CATALOGUE" section with token search (`rankMaterialRecords`; "Try 2.5mm LS — name, brand, code or size").
   - Rows show "Size: …" and "Length: …".
   - Empty state: "No catalogue items yet" / "Add materials manually or update the catalogue from a CSV."
 - **Editor:**

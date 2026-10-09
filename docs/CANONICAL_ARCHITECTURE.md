@@ -6,7 +6,7 @@ Web and iOS are separate repositories and separate languages. They share one exe
 
 | Piece | Path |
 |---|---|
-| Canonical core | `project-planner-web/lib/canonical/` (`engine.ts` for windows, organisation, the standard day and its AM/PM halves, and slot intervals; `warningRows.ts` for which qualification, unverified, and unbooked warnings exist and the qualification dismiss key; `leaveCoverage.ts` for annual leave against bookings; `staffAccess.ts` for who sees every job and every warning, who may edit a work catalogue, and which managers receive a job notification; `userProfile.ts` for the `users/{uid}` document, employment-type day, and Edit User permission copy; `annualLeaveBalance.ts` for allowance vs year-count, the leave year, and a one-year remaining override) |
+| Canonical core | `project-planner-web/lib/canonical/` (`engine.ts` for windows, organisation, the standard day and its AM/PM halves, and slot intervals; `warningRows.ts` for which qualification, unverified, and unbooked warnings exist and the qualification dismiss key; `leaveCoverage.ts` for annual leave against bookings; `staffAccess.ts` for who sees every job and every warning, who may edit a work catalogue, and which managers receive a job notification; `userProfile.ts` for the `users/{uid}` document, employment-type day, and Edit User permission copy; `annualLeaveBalance.ts` for allowance vs year-count, the leave year, and a one-year remaining override; `materialSearch.ts` for catalogue search ranking) |
 | Web consumption | Import `@/lib/canonical`. Existing modules such as `lib/warnings/warningLookahead.ts`, `lib/orgMembership/webActiveOrg.ts`, `lib/timesheets/timesheetWeekUtils.ts`, `lib/permissions.ts`, and `lib/access/workAccess.ts` call that module instead of keeping a second copy. |
 | iOS consumption | `Project Planner/Canonical/canonical-business.js` is the bundle built from `lib/canonical/bundleEntry.ts`. `Project Planner/Canonical/CanonicalBusinessEngine.swift` evaluates it. Warning scans and invoicing defaults use that result, with `Europe/London` when the script cannot load. |
 | Bundle command | `npm run build:canonical` in the web repo. `npm test` rebuilds it. |
@@ -34,6 +34,7 @@ The canonical module owns:
 - Who sees every job and every warning, who may add or edit a work catalogue, and which managers receive a job notification (`seesEveryJob`, `canViewStaffWarnings`, `canEditWorkCatalogue`, `receivesJobNotification`)
 - The `users/{uid}` fields both apps must keep in sync, when PAYE ↔ self-employed takes effect, and the Edit User permission list (`USER_DOCUMENT_FIELDS`, `employmentTypeOnDay`, `applyEmploymentTypeChange`, `MANAGER_PERMISSION_TOGGLES`)
 - Whether a person has a paid allowance or only a year-count, the leave-year window, remaining days, and a one-year remaining override (`hasAnnualLeaveAllowance`, `leaveYearBounds`, `annualLeaveBalance`, `applyRemainingOverride`)
+- Material catalogue search (`tokenizeMaterialSearch`, `materialSearchScore`, `rankMaterialRecords`). Every typed token must match name, brand, code, category, size or length as an exact, prefix, or contained piece, so `2.5mm LS` finds `2.5mm2 Twin & Earth … LSZH`. Empty query keeps the original order.
 
 ## Staff visibility, catalogue toggles, and notification recipients
 
