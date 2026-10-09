@@ -146,6 +146,26 @@ export type {
 export type { MaterialSearchHit, MaterialSearchRecord } from './materialSearch'
 
 export {
+  QUALIFICATION_FILTER_ALL,
+  QUALIFICATION_FILTER_OTHER,
+  QUALIFICATION_LIBRARY_SECTIONS,
+  qualificationLibraryFilterChips,
+  qualificationMatchesSection,
+  qualificationRecordMatches,
+  qualificationSearchRecordFromItem,
+  qualificationSearchScore,
+  qualificationSectionChipLabel,
+  rankQualificationRecords,
+  tokenizeQualificationSearch,
+} from './qualificationSearch'
+
+export type {
+  QualificationFilterChip,
+  QualificationSearchHit,
+  QualificationSearchRecord,
+} from './qualificationSearch'
+
+export {
   DEFAULT_ANNUAL_LEAVE,
   DEFAULT_INVOICING,
   DEFAULT_MATERIAL_CUT_OFF,
@@ -155,6 +175,7 @@ export {
   DEFAULT_WARNING_DETECTION,
   OPERATIONAL_COLLECTION_PATHS,
   ORGANIZATION_DOCUMENT_FIELDS,
+  starterCollectionShouldSeed,
   invoicingToFirestore,
   parseInvoicing,
   parsePaymentRunDateRanges,

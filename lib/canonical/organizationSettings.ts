@@ -120,9 +120,18 @@ export const OPERATIONAL_COLLECTION_PATHS = {
   siteAudits: 'organizations/{orgId}/siteAudits',
   materialCatalogue: 'organizations/{orgId}/materialCatalogue',
   materials: 'organizations/{orgId}/materials',
+  qualifications: 'organizations/{orgId}/qualifications',
   healthSafetySettings: 'organizations/{orgId}/settings/healthSafety_{projects|smallWorks}_{parentId}',
   healthSafetyEvidence: 'organizations/{orgId}/healthSafety/{parentId}/variations/{file}',
 } as const
+
+/**
+ * Starter material catalogue and qualification library writes.
+ * Seed only when the collection has no documents. Never delete-all + rewrite.
+ */
+export function starterCollectionShouldSeed(existingDocumentCount: number): boolean {
+  return existingDocumentCount === 0
+}
 
 const DEFAULT_WEEKEND: WeekendPayrollSettings = {
   allHoursAtMultiplierMode: false,

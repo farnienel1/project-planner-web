@@ -1046,6 +1046,17 @@ textarea.in {
 }
 
 .chips { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; max-width: 100%; }
+.chips-scroll {
+  display: flex;
+  gap: 8px;
+  flex-wrap: nowrap;
+  align-items: center;
+  max-width: 100%;
+  overflow-x: auto;
+  padding-bottom: 2px;
+  -webkit-overflow-scrolling: touch;
+}
+.chips-scroll .chip { flex: 0 0 auto; white-space: nowrap; }
 .tag {
   display: inline-flex;
   align-items: center;

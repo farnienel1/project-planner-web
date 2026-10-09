@@ -17,3 +17,5 @@ Before adding or changing a booking, warning, invoicing, labour, organisation, o
 6. Update `docs/CANONICAL_ARCHITECTURE.md` when the boundary changes.
 
 Screens, navigation, and copy stay in the app. The iOS parity rule for nested screens still applies to UI work. It does not mean copying a business calculation into a component.
+
+Operational or shared-rule work: follow `.cursor/rules/shared-operational-change.mdc` and emit its follow-on prompt for the other platform.
