@@ -52,6 +52,11 @@ import {
   hasAnnualLeaveAllowance,
   leaveYearBounds,
 } from './annualLeaveBalance.ts'
+import {
+  materialSearchScore,
+  rankMaterialRecords,
+  tokenizeMaterialSearch,
+} from './materialSearch.ts'
 
 const superAdmin: StaffAccountRole = { isSuperAdmin: true, isAdmin: true, isManager: false, isOperativeMode: false }
 const admin: StaffAccountRole = { isSuperAdmin: false, isAdmin: true, isManager: false, isOperativeMode: false }
@@ -656,6 +661,9 @@ test('the iOS JavaScript bundle exposes the standard-day, leave and dismiss rule
     'applyRemainingOverride',
     'hasAnnualLeaveAllowance',
     'leaveYearBounds',
+    'materialSearchScore',
+    'rankMaterialRecords',
+    'tokenizeMaterialSearch',
   ]) {
     assert.equal(typeof bundle[name], 'function', `${name} is exported from the packed script`)
   }
@@ -692,6 +700,11 @@ test('the iOS JavaScript bundle exposes the standard-day, leave and dismiss rule
     onDayKey: '2026-10-09',
   }
   assert.deepEqual(plain(bundle.annualLeaveBalance(balanceArgs)), plain(annualLeaveBalance(balanceArgs)))
+  const searchArgs = [
+    '2.5mm LS',
+    [{ name: '2.5mm2 Twin & Earth Cable 6242B LSZH (100m Drum)', productCode: '6242B' }],
+  ] as const
+  assert.deepEqual(plain(bundle.rankMaterialRecords(...searchArgs)), plain(rankMaterialRecords(...searchArgs)))
 })
 
 test('dismissing an expired qualification hides it until the expiry date changes', () => {
@@ -946,4 +959,29 @@ test('a mid-year remaining override is the pot for this leave year and expires o
   })
   assert.equal(nextYear.remaining, 25)
   assert.equal(nextYear.yearAllowance, null)
+})
+
+test('2.5mm LS finds 2.5mm2 Twin & Earth Cable 6242B LSZH and ranks it first', () => {
+  assert.deepEqual(tokenizeMaterialSearch('2.5 mm LS'), ['2.5mm', 'ls'])
+  const twinEarth = {
+    name: '2.5mm2 Twin & Earth Cable 6242B LSZH (100m Drum)',
+    brand: 'Prysmian',
+    productCode: '6242B',
+    category: 'Cable',
+    length: '100m',
+  }
+  const fifteen = { name: '1.5mm2 Twin & Earth Cable 6242Y LSZH (100m Drum)', productCode: '6242Y' }
+  const swa = { name: '2.5mm2 SWA Cable LSZH (50m Drum)', productCode: 'SWA25' }
+  const other = { name: 'M6 Coach Screw', brand: 'Fischer', productCode: 'CS-M6' }
+  assert.ok(materialSearchScore('2.5mm LS', twinEarth) > 0)
+  assert.equal(materialSearchScore('2.5mm LS', other), 0)
+  assert.equal(materialSearchScore('2.5mm LS', fifteen), 0)
+  const ranked = rankMaterialRecords('2.5mm LS', [other, fifteen, swa, twinEarth])
+  assert.deepEqual(
+    ranked.map((hit) => hit.index).sort(),
+    [2, 3]
+  )
+  const coded = rankMaterialRecords('2.5mm LS 6242B', [swa, twinEarth])
+  assert.equal(coded[0].index, 1)
+  assert.ok(materialSearchScore('lszh', twinEarth) > 0)
 })

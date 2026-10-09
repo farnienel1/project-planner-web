@@ -1,3 +1,8 @@
+import {
+  catalogueRecordFromItem,
+  materialSearchScore,
+  rankMaterialRecords,
+} from '@/lib/canonical'
 import type { MaterialCatalogItem, ProjectMaterialLine } from '@/types'
 
 export function normalizeMaterialText(value: string): string {
@@ -21,55 +26,75 @@ export type MaterialSuggestion = {
   unit: string
   category?: string
   catalogueItem?: MaterialCatalogItem
+  score: number
 }
+
+const SEARCH_SUGGESTION_LIMIT = 80
 
 export function searchMaterialCatalogue(
   query: string,
   catalogue: MaterialCatalogItem[],
   recentLines: ProjectMaterialLine[],
-  limit = 10
+  limit = SEARCH_SUGGESTION_LIMIT
 ): MaterialSuggestion[] {
-  const q = normalizeMaterialText(query)
-  const browsing = !q
-
+  const browsing = !String(query || '').trim()
   const merged: MaterialSuggestion[] = []
   const seen = new Set<string>()
 
-  const pushRecent = () => {
-    for (const line of recentLines) {
-      const name = line.material
-      const brand = line.brand || 'Custom'
-      const code = line.productCode
-      if (
-        !browsing &&
-        !normalizeMaterialText(name).includes(q) &&
-        !normalizeMaterialText(brand).includes(q) &&
-        !normalizeMaterialCode(code).includes(q)
-      ) {
-        continue
-      }
-      const key = duplicateKey(name, code)
-      if (seen.has(key) || merged.length >= limit) continue
-      seen.add(key)
-      merged.push({
-        id: `recent:${line.id}`,
-        source: 'recent',
-        name,
-        brand,
-        productCode: code,
-        unit: line.unit,
-        category: line.category,
-      })
-    }
+  const push = (row: MaterialSuggestion) => {
+    const key = duplicateKey(row.name, row.productCode)
+    if (seen.has(key) || merged.length >= limit) return
+    seen.add(key)
+    merged.push(row)
   }
 
-  if (browsing) pushRecent()
+  if (browsing) {
+    for (const line of recentLines) {
+      push({
+        id: `recent:${line.id}`,
+        source: 'recent',
+        name: line.material,
+        brand: line.brand || 'Custom',
+        productCode: line.productCode,
+        unit: line.unit,
+        category: line.category,
+        score: 1,
+      })
+    }
+    for (const item of catalogue) {
+      push({
+        id: `cat:${item.id}`,
+        source: 'catalogue',
+        name: item.name,
+        brand: item.brand,
+        productCode: item.productCode,
+        unit: item.defaultUnit,
+        category: item.category,
+        catalogueItem: item,
+        score: 1,
+      })
+    }
+    return merged.slice(0, limit)
+  }
 
-  for (const item of searchMaterialCatalogueItems(q, catalogue, browsing ? limit : 8)) {
-    const key = duplicateKey(item.name, item.productCode)
-    if (seen.has(key) || merged.length >= limit) continue
-    seen.add(key)
-    merged.push({
+  const recentRecords = recentLines.map((line) =>
+    catalogueRecordFromItem({
+      name: line.material,
+      brand: line.brand,
+      productCode: line.productCode,
+      category: line.category,
+      size: line.size,
+      length: line.length,
+    })
+  )
+  const catalogueRecords = catalogue.map((item) => catalogueRecordFromItem(item))
+  const recentHits = rankMaterialRecords(query, recentRecords)
+  const catalogueHits = rankMaterialRecords(query, catalogueRecords)
+
+  const scored: MaterialSuggestion[] = []
+  for (const hit of catalogueHits) {
+    const item = catalogue[hit.index]
+    scored.push({
       id: `cat:${item.id}`,
       source: 'catalogue',
       name: item.name,
@@ -78,23 +103,46 @@ export function searchMaterialCatalogue(
       unit: item.defaultUnit,
       category: item.category,
       catalogueItem: item,
+      score: hit.score,
     })
   }
-
-  if (!browsing) pushRecent()
-
-  return merged.slice(0, limit)
+  for (const hit of recentHits) {
+    const line = recentLines[hit.index]
+    scored.push({
+      id: `recent:${line.id}`,
+      source: 'recent',
+      name: line.material,
+      brand: line.brand || 'Custom',
+      productCode: line.productCode,
+      unit: line.unit,
+      category: line.category,
+      score: hit.score,
+    })
+  }
+  scored.sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score
+    if (a.source !== b.source) return a.source === 'catalogue' ? -1 : 1
+    return a.name.localeCompare(b.name)
+  })
+  for (const row of scored) push(row)
+  return merged
 }
 
-function searchMaterialCatalogueItems(q: string, catalogue: MaterialCatalogItem[], limit: number) {
-  return catalogue
-    .filter((item) => {
-      return (
-        normalizeMaterialText(item.name).includes(q) ||
-        normalizeMaterialText(item.brand).includes(q) ||
-        normalizeMaterialCode(item.productCode).includes(q) ||
-        normalizeMaterialText(item.length || item.size || '').includes(q)
-      )
-    })
-    .slice(0, limit)
+export function filterCatalogueItems(query: string, catalogue: MaterialCatalogItem[]): MaterialCatalogItem[] {
+  if (!String(query || '').trim()) return catalogue
+  return rankMaterialRecords(query, catalogue.map((item) => catalogueRecordFromItem(item))).map(
+    (hit) => catalogue[hit.index]
+  )
+}
+
+export function lineMatchesMaterialQuery(
+  query: string,
+  line: { name?: string; brand?: string; productCode?: string; lengthDisplay?: string }
+): boolean {
+  return materialSearchScore(query, {
+    name: line.name,
+    brand: line.brand,
+    productCode: line.productCode,
+    length: line.lengthDisplay,
+  }) > 0
 }

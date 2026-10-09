@@ -12,6 +12,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
+import { rankMaterialRecords } from '@/lib/canonical';
 
 /* ------------------------------------------------------------------ types */
 
@@ -181,9 +182,12 @@ export function NewVariationSheet({
   const canCommitLabour = Boolean(lc.trade) && lc.operatives >= 1 && lc.hoursEach > 0;
 
   const suggestions = useMemo(() => {
-    const q = mName.trim().toLowerCase();
-    if (q.length < 2) return [];
-    return materialCatalogue.filter((c) => c.name.toLowerCase().includes(q)).slice(0, 3);
+    if (!mName.trim()) return [];
+    return rankMaterialRecords(
+      mName,
+      materialCatalogue.map((item) => ({ name: item.name })),
+      12
+    ).map((hit) => materialCatalogue[hit.index]);
   }, [mName, materialCatalogue]);
 
   const allTrades = useMemo(() => [...extraTrades, ...trades], [extraTrades, trades]);

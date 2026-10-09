@@ -64,3 +64,12 @@ export {
   leaveYearBounds,
   snapLeaveDays,
 } from './annualLeaveBalance'
+
+export {
+  catalogueRecordFromItem,
+  materialRecordMatches,
+  materialSearchScore,
+  normalizeMaterialSearchText,
+  rankMaterialRecords,
+  tokenizeMaterialSearch,
+} from './materialSearch'
