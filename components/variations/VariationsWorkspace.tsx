@@ -6,7 +6,7 @@ import { useAuthStore } from '@/lib/stores/authStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { useToast } from '@/components/ui/ToastProvider'
-import { uploadFile, variationEvidencePath } from '@/lib/firebase/storageUtils'
+import { uploadVariationEvidenceFile, variationEvidencePath } from '@/lib/firebase/storageUtils'
 import { newUuid } from '@/lib/firebase/firestoreUtils'
 import {
   EVIDENCE_MAX_FILES,
@@ -229,33 +229,52 @@ export function VariationsWorkspace({
           onSave={async (draft, files) => {
             if (!organization.id) return
             try {
-              const evidence = await uploadEvidenceFiles(organization.id, project.id, files, user.id)
-              const mergedEvidence = [...(editing === 'new' ? [] : editing.evidence), ...evidence]
-              if (editing === 'new') {
-                await createVariation({
-                  organizationId: organization.id,
-                  parentType,
-                  parentId: project.id,
-                  parentName,
-                  origin: 'app',
-                  voNumber: draft.voNumber,
-                  heading: draft.heading,
-                  description: draft.description,
-                  labour: draft.labour,
-                  materials: draft.materials,
-                  evidence: mergedEvidence,
-                  actor: { uid: user.id, name: displayUser(user) },
-                  users,
-                  managerIds: [project.managerId || '', ...(project.managerIds || [])],
-                })
-                toast('Variation saved as open')
-              } else {
+              const saved =
+                editing === 'new'
+                  ? await createVariation({
+                      organizationId: organization.id,
+                      parentType,
+                      parentId: project.id,
+                      parentName,
+                      origin: 'app',
+                      voNumber: draft.voNumber,
+                      heading: draft.heading,
+                      description: draft.description,
+                      labour: draft.labour,
+                      materials: draft.materials,
+                      evidence: [],
+                      actor: { uid: user.id, name: displayUser(user) },
+                      users,
+                      managerIds: [project.managerId || '', ...(project.managerIds || [])],
+                      existingRows: rows,
+                      tracker: tracker ?? undefined,
+                    })
+                  : { ...editing, ...draft }
+              if (editing !== 'new') {
                 await updateVariation({
                   organizationId: organization.id,
                   actorUid: user.id,
-                  variation: { ...editing, ...draft, evidence: mergedEvidence },
+                  variation: saved,
                 })
-                toast('Variation updated')
+              }
+              if (files.length) {
+                try {
+                  const uploaded = await uploadEvidenceFiles(organization.id, project.id, files, user.id)
+                  await updateVariation({
+                    organizationId: organization.id,
+                    actorUid: user.id,
+                    variation: { ...saved, evidence: [...saved.evidence, ...uploaded] },
+                  })
+                  toast(editing === 'new' ? 'Variation saved as open' : 'Variation updated')
+                } catch {
+                  toast(
+                    editing === 'new'
+                      ? 'Variation saved. Evidence files could not be uploaded — open it and add them again.'
+                      : 'Variation updated. New evidence files could not be uploaded.'
+                  )
+                }
+              } else {
+                toast(editing === 'new' ? 'Variation saved as open' : 'Variation updated')
               }
             } catch (err) {
               throw new Error(readableVariationError(err))
@@ -365,10 +384,10 @@ function readableVariationError(error: unknown): string {
   const code = typeof error === 'object' && error && 'code' in error ? String((error as { code?: string }).code) : ''
   const message = error instanceof Error ? error.message : 'Could not save the variation.'
   if (code === 'storage/unauthorized' || /does not have permission to access/i.test(message)) {
-    return 'The evidence file could not be uploaded. Sign in again, then save the variation. The variation was not saved.'
+    return 'The evidence file could not be uploaded. Sign in again, then add the files on the variation. The variation itself was saved.'
   }
   if (code === 'permission-denied' || /insufficient permissions/i.test(message)) {
-    return 'Missing or insufficient permissions. This account cannot save variations on this job. An organisation admin, or a manager assigned to the job, needs to save it.'
+    return 'Missing or insufficient permissions. An organisation admin or manager needs to save variations.'
   }
   return message
 }
@@ -379,23 +398,26 @@ async function uploadEvidenceFiles(
   files: File[],
   uid: string
 ): Promise<VariationEvidence[]> {
-  const uploaded: VariationEvidence[] = []
-  for (const file of files) {
-    const id = newUuid()
-    const storagePath = variationEvidencePath(organizationId, parentId, file.name)
-    const downloadURL = await uploadFile(storagePath, file, file.type || 'application/octet-stream')
-    uploaded.push({
-      id,
-      fileName: file.name,
-      contentType: file.type,
-      sizeBytes: file.size,
-      storagePath,
-      downloadURL,
-      uploadedByUid: uid,
-      uploadedAt: new Date(),
+  return Promise.all(
+    files.map(async (file) => {
+      const storagePath = variationEvidencePath(organizationId, parentId, file.name)
+      const downloadURL = await uploadVariationEvidenceFile(
+        storagePath,
+        file,
+        file.type || 'application/octet-stream'
+      )
+      return {
+        id: newUuid(),
+        fileName: file.name,
+        contentType: file.type,
+        sizeBytes: file.size,
+        storagePath,
+        downloadURL,
+        uploadedByUid: uid,
+        uploadedAt: new Date(),
+      }
     })
-  }
-  return uploaded
+  )
 }
 
 function VariationEditor({
@@ -580,7 +602,12 @@ function VariationDrawer({
         <div className="grid g2">
           {row.evidence.map((file) => (
             <div key={file.id} className="card pad">
-              <a href={file.downloadURL} target="_blank" rel="noreferrer">{file.fileName}</a>
+              <a href={file.downloadURL} target="_blank" rel="noreferrer">
+                {file.contentType.startsWith('image/') ? (
+                  <img src={file.downloadURL} alt={file.fileName} style={{ width: '100%', borderRadius: 8 }} />
+                ) : null}
+                {file.fileName}
+              </a>
               {canEdit || file.uploadedByUid === viewerId ? (
                 <button type="button" className="btn sm ghost" onClick={() => void onRemoveEvidence(file.id)}>
                   Remove file

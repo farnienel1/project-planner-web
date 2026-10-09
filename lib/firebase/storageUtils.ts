@@ -1,4 +1,4 @@
-import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage'
+import { ref, uploadBytes, uploadBytesResumable, getDownloadURL } from 'firebase/storage'
 import { storage, auth } from '@/lib/firebase/config'
 import { withTimeout } from '@/lib/client/withTimeout'
 
@@ -57,6 +57,17 @@ function uploadOnce(storagePath: string, file: Blob, contentType: string): Promi
  * a 200KB PDF while Storage was still accepting it, so the talk or certificate
  * never got its new URL.
  */
+function isStoragePermissionError(error: unknown): boolean {
+  const code = typeof error === 'object' && error && 'code' in error ? String((error as { code?: string }).code) : ''
+  const message = error instanceof Error ? error.message : String(error || '')
+  return (
+    code === 'storage/unauthorized' ||
+    code === 'storage/unauthenticated' ||
+    /does not have permission to access/i.test(message) ||
+    /insufficient permissions/i.test(message)
+  )
+}
+
 export async function uploadFile(
   storagePath: string,
   file: Blob,
@@ -69,6 +80,7 @@ export async function uploadFile(
   try {
     return await uploadOnce(storagePath, file, contentType)
   } catch (first) {
+    if (isStoragePermissionError(first)) throw first
     await ensureStorageAuth()
     try {
       return await uploadOnce(storagePath, file, contentType)
@@ -76,6 +88,32 @@ export async function uploadFile(
       throw first
     }
   }
+}
+
+/**
+ * Variation evidence: one request, no retry. A denied or hung resumable upload
+ * used to sit on Save for minutes and then still lose the variation.
+ */
+export async function uploadVariationEvidenceFile(
+  storagePath: string,
+  file: Blob,
+  contentType = 'application/octet-stream'
+): Promise<string> {
+  if (!storage) {
+    throw new Error('File storage is not configured.')
+  }
+  await ensureStorageAuth()
+  const storageRef = ref(storage, storagePath)
+  await withTimeout(
+    uploadBytes(storageRef, file, { contentType }),
+    60_000,
+    'The evidence file did not finish uploading. Check the connection and try again.'
+  )
+  return withTimeout(
+    getDownloadURL(storageRef),
+    15_000,
+    'The evidence file uploaded but its link could not be created. Try again.'
+  )
 }
 
 export function sanitizeFileName(name: string): string {
