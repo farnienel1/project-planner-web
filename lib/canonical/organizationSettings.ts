@@ -125,6 +125,14 @@ export const OPERATIONAL_COLLECTION_PATHS = {
   healthSafetyEvidence: 'organizations/{orgId}/healthSafety/{parentId}/variations/{file}',
 } as const
 
+/**
+ * Starter material catalogue and qualification library writes.
+ * Seed only when the collection has no documents. Never delete-all + rewrite.
+ */
+export function starterCollectionShouldSeed(existingDocumentCount: number): boolean {
+  return existingDocumentCount === 0
+}
+
 const DEFAULT_WEEKEND: WeekendPayrollSettings = {
   allHoursAtMultiplierMode: false,
   allHoursMultiplier: 2,

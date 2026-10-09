@@ -1,7 +1,12 @@
 import { collection, doc, getDocs, limit, query, writeBatch } from 'firebase/firestore'
+import {
+  captureOrganizationContext,
+  organizationContextStillCurrent,
+  starterCollectionShouldSeed,
+} from '@/lib/canonical'
 import { getFirebaseDb } from '@/lib/firebase/ensureFirebase'
 import { STARTER_QUALIFICATION_LIBRARY } from './starter/starterQualificationLibrary'
-import { qualificationTemplateFirestoreFields } from './orgQualificationStorage'
+import { loadOrganisationQualifications, qualificationTemplateFirestoreFields } from './orgQualificationStorage'
 import type { Qualification } from '@/types'
 
 export const STARTER_QUALIFICATION_LIBRARY_VERSION = 1
@@ -36,7 +41,7 @@ export async function seedStarterQualificationLibrary(input: {
   const db = getFirebaseDb()
   const ref = collection(db, 'organizations', input.organizationId, 'qualifications')
   const existing = await getDocs(query(ref, limit(1)))
-  if (!existing.empty) return { seeded: 0, skipped: true }
+  if (!starterCollectionShouldSeed(existing.size)) return { seeded: 0, skipped: true }
 
   const items = starterQualificationItems()
   for (let i = 0; i < items.length; i += SEED_BATCH_SIZE) {
@@ -50,6 +55,27 @@ export async function seedStarterQualificationLibrary(input: {
     await batch.commit()
   }
   return { seeded: items.length, skipped: false }
+}
+
+/**
+ * Load org templates, seeding the starter library when the collection is empty.
+ * Call this before restoring names from assignments so those rows cannot block the seed.
+ */
+export async function loadOrganisationQualificationsEnsuringStarter(
+  organizationId: string,
+  options?: { fromServer?: boolean }
+): Promise<Qualification[]> {
+  const captured = captureOrganizationContext()
+  const existing = await loadOrganisationQualifications(organizationId, options)
+  if (!organizationContextStillCurrent(organizationId, captured)) return existing
+  if (!starterCollectionShouldSeed(existing.length)) return existing
+  try {
+    await seedStarterQualificationLibrary({ organizationId })
+  } catch {
+    return existing
+  }
+  if (!organizationContextStillCurrent(organizationId, captured)) return existing
+  return loadOrganisationQualifications(organizationId, options)
 }
 
 export function starterQualificationLibraryFields(item: Qualification): Record<string, unknown> {

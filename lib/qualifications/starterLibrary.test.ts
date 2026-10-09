@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { QUALIFICATION_LIBRARY_SECTIONS } from '../canonical/qualificationSearch.ts'
+import { starterCollectionShouldSeed } from '../canonical/organizationSettings.ts'
 import { STARTER_QUALIFICATION_LIBRARY } from './starter/starterQualificationLibrary.ts'
 import { starterQualificationItems } from './starterLibrary.ts'
 import { qualificationTemplateFirestoreFields } from './orgQualificationStorage.ts'
@@ -41,4 +42,9 @@ test('seeded templates use the code as the id and keep iOS template fields', () 
   assert.equal(fields.renewYears, 3)
   assert.equal(fields.renewalType, 'Required')
   assert.equal('endDate' in fields, false)
+})
+
+test('an existing organisation with an empty qualifications collection still gets the starter library', () => {
+  assert.equal(starterCollectionShouldSeed(0), true)
+  assert.equal(starterCollectionShouldSeed(starterQualificationItems().length), false)
 })
