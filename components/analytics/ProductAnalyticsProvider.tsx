@@ -4,6 +4,7 @@ import { useEffect, useRef } from 'react'
 import { usePathname } from 'next/navigation'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { endSession, startOrTouchSession, trackEvent } from '@/lib/analytics/trackEvent'
+import { runWhenIdle } from '@/lib/analytics/runWhenIdle'
 import type { ProductEventName } from '@/lib/analytics/events'
 
 function eventForPath(pathname: string): ProductEventName | null {
@@ -21,30 +22,27 @@ function eventForPath(pathname: string): ProductEventName | null {
 
 export function ProductAnalyticsProvider({ children }: { children: React.ReactNode }) {
   const pathname = usePathname() || ''
-  const { user, organization } = useAuthStore()
+  const userId = useAuthStore((s) => s.user?.id)
+  const organizationId = useAuthStore((s) => s.organization?.id)
   const lastPath = useRef('')
 
   useEffect(() => {
-    if (!user) return
-    void startOrTouchSession({
-      userId: user.id,
-      organizationId: organization?.id,
-      path: pathname,
+    if (!userId) return
+    return runWhenIdle(() => {
+      void startOrTouchSession({ userId, organizationId, path: pathname })
     })
-  }, [user, organization?.id, pathname])
+  }, [userId, organizationId, pathname])
 
   useEffect(() => {
-    if (!user) return
+    if (!userId) return
     if (lastPath.current === pathname) return
     lastPath.current = pathname
     const eventName = eventForPath(pathname)
     if (!eventName) return
-    void trackEvent(eventName, {
-      userId: user.id,
-      organizationId: organization?.id,
-      metadata: { path: pathname },
+    return runWhenIdle(() => {
+      void trackEvent(eventName, { userId, organizationId, metadata: { path: pathname } })
     })
-  }, [pathname, user, organization?.id])
+  }, [pathname, userId, organizationId])
 
   useEffect(() => {
     const onHide = () => {

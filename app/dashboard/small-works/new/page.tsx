@@ -3,11 +3,13 @@
 import { useRouter } from 'next/navigation'
 import { FormBackLink } from '@/components/forms/FormShell'
 import { ProjectForm } from '@/components/projects/ProjectForm'
+import { WorkFormGate } from '@/components/projects/WorkFormGate'
 import { PageHeader } from '@/components/dashboard/PageShell'
 
 export default function NewSmallWorkPage() {
   const router = useRouter()
   return (
+    <WorkFormGate kind="smallWorks" mode="create" href="/dashboard/small-works">
     <div className="space-y-6">
       <FormBackLink href="/dashboard/small-works" label="Back to small works" />
       <PageHeader
@@ -16,5 +18,6 @@ export default function NewSmallWorkPage() {
       />
       <ProjectForm collection="smallWorks" backHref="/dashboard/small-works" onSaved={(id) => router.push(`/dashboard/small-works/${id}`)} />
     </div>
+    </WorkFormGate>
   )
 }

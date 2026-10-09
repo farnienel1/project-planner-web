@@ -10,6 +10,7 @@ export function MyScheduleReadOnlyScreen({
   organizationId,
   bookings,
   operativesById,
+  peopleById,
   projectsById,
   loading,
   focusOperativeId,
@@ -23,6 +24,7 @@ export function MyScheduleReadOnlyScreen({
   organizationId?: string
   bookings: Booking[]
   operativesById: Map<string, string>
+  peopleById?: Map<string, string>
   projectsById: Map<string, string>
   loading?: boolean
   focusOperativeId?: string | null
@@ -39,6 +41,7 @@ export function MyScheduleReadOnlyScreen({
       organizationId={organizationId}
       bookings={bookings}
       operativesById={operativesById}
+      peopleById={peopleById}
       projectsById={projectsById}
       loading={loading}
       focusOperativeId={focusOperativeId}

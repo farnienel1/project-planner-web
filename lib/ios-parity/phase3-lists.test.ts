@@ -357,6 +357,102 @@ test('buildDailyOverview groups mixed-case project ids and merges a person\'s ho
   assert.equal(bobRow?.pillText, '8h')
 })
 
+test('buildDailyOverview counts one person when profiles share an email', () => {
+  const day = new Date('2026-09-16T12:00:00Z')
+  const project = {
+    id: 'P1',
+    jobNumber: 'J-100',
+    siteName: 'Alpha',
+    jobType: 'CAT A',
+    client: { id: 'c', name: 'Acme' },
+    addressLine1: '',
+    townCity: '',
+    postcode: '',
+    startDate: day,
+    endDate: day,
+    isLive: true,
+    manager: { name: 'Custom', email: '' },
+    createdAt: day,
+    updatedAt: day,
+  } as Project
+  const model = buildDailyOverview({
+    day,
+    today: day,
+    projects: [project],
+    bookings: [
+      {
+        id: 'B-am',
+        operativeId: 'OP-A',
+        projectId: 'P1',
+        date: day,
+        timeSlot: 'AM',
+        bookedBy: 'Ada',
+        status: 'Confirmed',
+        createdAt: day,
+        updatedAt: day,
+      },
+      {
+        id: 'B-full',
+        operativeId: 'OP-B',
+        projectId: 'P1',
+        date: day,
+        timeSlot: 'FULL DAY',
+        bookedBy: 'Ada',
+        status: 'Confirmed',
+        createdAt: day,
+        updatedAt: day,
+      },
+    ],
+    managerBookings: [
+      {
+        id: 'M1',
+        userId: 'U-ADA',
+        date: day,
+        timeSlot: 'FULL DAY',
+        locationType: 'project',
+        locationId: 'P1',
+        createdAt: day,
+        updatedAt: day,
+      },
+    ],
+    holidays: [] as HolidayBooking[],
+    users: [user({ id: 'U-ADA', email: 'ada@x.com', firstName: 'Ada', surname: 'Booked' })],
+    operatives: [
+      {
+        id: 'OP-A',
+        firstName: 'Ada',
+        lastName: 'Booked',
+        email: 'ada@x.com',
+        startDate: day,
+        hourlyRate: 0,
+        skills: [],
+        qualifications: [],
+        isActive: true,
+        createdAt: day,
+        updatedAt: day,
+      },
+      {
+        id: 'OP-B',
+        firstName: 'Ada',
+        lastName: 'Booked',
+        email: 'ada@x.com',
+        startDate: day,
+        hourlyRate: 0,
+        skills: [],
+        qualifications: [],
+        isActive: true,
+        createdAt: day,
+        updatedAt: day,
+      },
+    ],
+  })
+  assert.equal(model.projectCards[0].people.length, 1)
+  assert.equal(model.projectCards[0].people[0].name, 'Ada Booked')
+  assert.equal(model.bookedPeopleCount, 1)
+  assert.equal(model.peopleCount, 1)
+  assert.equal(model.unbookedCount, 0)
+})
+
 test('buildDailyOverview groups dashed and undashed UUID project ids', () => {
   const day = new Date('2026-09-16T12:00:00Z')
   const id = 'AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA'
@@ -512,4 +608,79 @@ test('buildDailyOverview resolves sub contractor names when ids omit dashes', ()
     ],
   })
   assert.equal(model.projectCards[0].people[0].name, 'Acme Electrical · Jane Smith')
+})
+
+test('buildDailyOverview does not invent a person named Manager for an unknown booking', () => {
+  const day = new Date('2026-10-12T12:00:00Z')
+  const project = {
+    id: 'P1',
+    jobNumber: 'C984',
+    siteName: '71 Broadwick Street',
+    jobType: 'CAT A',
+    client: { id: 'c', name: 'Scott Osborn' },
+    addressLine1: '',
+    townCity: '',
+    postcode: '',
+    startDate: day,
+    endDate: day,
+    isLive: true,
+    manager: { name: '', email: '' },
+    createdAt: day,
+    updatedAt: day,
+  } as Project
+  const kept = user({
+    id: 'signed-in',
+    email: 'farnie@raccordmep.co.uk',
+    firstName: 'Test',
+    surname: 'Manager',
+    permissions: { ...user({ id: 'x', email: 'x@x.com' }).permissions, manager: true, operativeMode: false },
+  })
+  const unknown = buildDailyOverview({
+    day,
+    today: day,
+    projects: [project],
+    bookings: [],
+    managerBookings: [
+      {
+        id: 'M-unknown',
+        userId: 'missing-user',
+        date: day,
+        timeSlot: 'FULL DAY',
+        locationType: 'project',
+        locationId: 'P1',
+        createdAt: day,
+        updatedAt: day,
+      },
+    ],
+    holidays: [] as HolidayBooking[],
+    users: [kept],
+    operatives: [],
+  })
+  assert.equal(
+    unknown.projectCards.some((card) => card.people.some((row) => row.name === 'Manager')),
+    false
+  )
+  const named = buildDailyOverview({
+    day,
+    today: day,
+    projects: [project],
+    bookings: [],
+    managerBookings: [
+      {
+        id: 'M-alias',
+        userId: 'other-profile',
+        date: day,
+        timeSlot: 'FULL DAY',
+        locationType: 'project',
+        locationId: 'P1',
+        createdAt: day,
+        updatedAt: day,
+      },
+    ],
+    holidays: [] as HolidayBooking[],
+    users: [kept],
+    operatives: [],
+    userIdAliases: { 'other-profile': 'signed-in' },
+  })
+  assert.equal(named.projectCards[0].people[0]?.name, 'Test Manager')
 })

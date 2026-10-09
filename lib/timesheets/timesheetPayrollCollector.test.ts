@@ -181,6 +181,34 @@ test('payroll uses prior working-hours policy for days before effectiveFrom', ()
   assert.equal(nowLine?.paidHours, 8.5)
 })
 
+test('payroll includes a manager booking stored on another account with the same email', () => {
+  const summary = collectTimesheetPayroll({
+    user: user({ id: 'u1' }),
+    bookings: [],
+    managerSiteBookings: [
+      {
+        id: 'm-alias',
+        userId: 'u-alias',
+        date: new Date('2026-09-21T08:00:00Z'),
+        timeSlot: 'FULL DAY',
+        locationType: 'office',
+        createdAt: new Date('2026-09-21T08:00:00Z'),
+        updatedAt: new Date('2026-09-21T08:00:00Z'),
+      },
+    ],
+    operatives: [operative],
+    projects: [project],
+    smallWorks: [],
+    periodStart: new Date('2026-09-16T00:00:00Z'),
+    periodEnd: new Date('2026-09-30T00:00:00Z'),
+    payrollPolicy: DEFAULT_PAYROLL_POLICY,
+    timeZone: 'Europe/London',
+    aliasUserIds: ['u1', 'u-alias'],
+  })
+  assert.equal(summary.lineItems.some((line) => line.id.startsWith('mgr-m-alias')), true)
+  assert.ok(summary.totalHours >= 8)
+})
+
 test('15 minutes of clock time is 0.25 hours', () => {
   assert.equal(
     paidBookedHours('custom', '08:00', '08:15', { ...DEFAULT_PAYROLL_POLICY, unpaidBreakMinutes: 0 }),

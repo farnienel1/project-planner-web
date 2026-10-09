@@ -114,13 +114,60 @@ test('invoicing-period coverage does not collapse to the ISO week when pay runs 
   assert.equal(dayKey(window.start) === '2026-10-05', false)
 })
 
-test('Full week coverage is Monday through Sunday, including past days', () => {
+test('Full week coverage is Monday through Friday, including past days', () => {
   const window = computeWarningCoverageWindow(WED, {
     ...DEFAULT_WARNING_DETECTION,
     clashLookaheadMode: 'endOfWorkingWeek',
   })
   assert.equal(dayKey(window.start), '2026-09-14')
-  assert.equal(dayKey(window.end), '2026-09-20')
+  assert.equal(dayKey(window.end), '2026-09-18')
+})
+
+test('full week unbooked labour adds Saturday and Sunday only when include weekends is on', () => {
+  const person = user({
+    id: 'U-OP',
+    email: 'ada@site.test',
+    firstName: 'Ada',
+    surname: 'Operative',
+    permissions: perms({ operativeMode: true }),
+  })
+  const base = {
+    bookings: [] as Booking[],
+    operatives: [],
+    users: [person],
+    holidays: [] as HolidayBooking[],
+    payrollPolicy: DEFAULT_PAYROLL_POLICY,
+    referenceDate: WED,
+  }
+  const off = computeUnbookedLabourWarnings({
+    ...base,
+    warningDetection: {
+      ...DEFAULT_WARNING_DETECTION,
+      clashLookaheadMode: 'endOfWorkingWeek',
+      includeWeekendsForUnbookedLabour: false,
+    },
+  })
+  const offDays = [...new Set(off.map((warning) => dayKey(warning.date)))]
+  assert.ok(offDays.includes('2026-09-14'))
+  assert.ok(offDays.includes('2026-09-18'))
+  assert.equal(offDays.includes('2026-09-19'), false)
+  assert.equal(offDays.includes('2026-09-20'), false)
+
+  const on = computeUnbookedLabourWarnings({
+    ...base,
+    warningDetection: {
+      ...DEFAULT_WARNING_DETECTION,
+      clashLookaheadMode: 'endOfWorkingWeek',
+      includeWeekendsForUnbookedLabour: true,
+    },
+  })
+  const onDays = [...new Set(on.map((warning) => dayKey(warning.date)))]
+  assert.ok(onDays.includes('2026-09-19'))
+  assert.ok(onDays.includes('2026-09-20'))
+  assert.equal(dayKey(computeWarningCoverageWindow(WED, {
+    ...DEFAULT_WARNING_DETECTION,
+    clashLookaheadMode: 'endOfWorkingWeek',
+  }).end), '2026-09-18')
 })
 
 test('invoicing-period warnings include past days in the active pay run and stop at that run', () => {
@@ -291,14 +338,16 @@ test('unbooked labour is anyone with no booking that day, including managers and
   const names = warnings.map((w) => w.operativeName).sort()
   assert.ok(names.includes('Morgan Manager'), `managers must be scanned: ${names.join(', ')}`)
   assert.ok(names.includes('Bob Roster'), `unlinked roster must be scanned: ${names.join(', ')}`)
-  assert.ok(!names.includes('Cam Half'), `an AM booking covers the day: ${names.join(', ')}`)
+  const cam = warnings.find((w) => w.operativeName === 'Cam Half')
+  assert.ok(cam, `an AM booking does not cover 07:30–16:00: ${names.join(', ')}`)
+  assert.equal(cam?.missingHours, 3.5)
   assert.ok(!names.includes('Ada Operative'), 'full-day booked operative is not unbooked')
   const morgan = warnings.find((w) => w.operativeName === 'Morgan Manager')
   assert.equal(morgan?.missingHours, 8)
-  assert.match(morgan?.message || '', /is not booked on/)
+  assert.match(morgan?.message || '', /is missing 8h on/)
 })
 
-test('a short clock window or office booking still counts as booked', () => {
+test('a short clock window or morning office booking leaves the standard day uncovered', () => {
   const detection = {
     ...DEFAULT_WARNING_DETECTION,
     clashLookaheadMode: 'numberOfDays' as const,
@@ -349,10 +398,13 @@ test('a short clock window or office booking still counts as booked', () => {
     payrollPolicy: DEFAULT_PAYROLL_POLICY,
     referenceDate: WED,
   })
-  assert.equal(warnings.length, 0)
+  const names = warnings.map((warning) => warning.operativeName).sort()
+  assert.deepEqual(names, ['Ada Operative', 'Morgan Manager'])
+  assert.equal(warnings.find((warning) => warning.operativeName === 'Ada Operative')?.missingHours, 0.5)
+  assert.equal(warnings.find((warning) => warning.operativeName === 'Morgan Manager')?.missingHours, 3.5)
 })
 
-test('tentative operative bookings cover the day; cancelled ones do not', () => {
+test('tentative operative bookings cover the day only when they fill the standard hours; cancelled ones do not', () => {
   const detection = {
     ...DEFAULT_WARNING_DETECTION,
     clashLookaheadMode: 'numberOfDays' as const,
@@ -369,9 +421,15 @@ test('tentative operative bookings cover the day; cancelled ones do not', () => 
   }
   const tentative = computeUnbookedLabourWarnings({
     ...base,
-    bookings: [booking({ id: 'B-TENT', operativeId: 'OP-ADA', status: 'Tentative', timeSlot: 'AM' })],
+    bookings: [booking({ id: 'B-TENT', operativeId: 'OP-ADA', status: 'Tentative', timeSlot: 'FULL DAY' })],
   })
   assert.equal(tentative.length, 0)
+  const tentativeMorning = computeUnbookedLabourWarnings({
+    ...base,
+    bookings: [booking({ id: 'B-AM', operativeId: 'OP-ADA', status: 'Tentative', timeSlot: 'AM' })],
+  })
+  assert.equal(tentativeMorning.length, 1)
+  assert.equal(tentativeMorning[0].missingHours, 3.5)
 
   const cancelled = computeUnbookedLabourWarnings({
     ...base,
@@ -505,7 +563,9 @@ test('operative clashes use clock intervals and skip manager-admin emails', () =
     [project('P1'), project('P2')],
     { users: [managerUser], payrollPolicy: DEFAULT_PAYROLL_POLICY }
   )
-  assert.equal(fullDay.length, 0, 'a full-day slot with no clock interval is not an overlap')
+  assert.equal(fullDay.length, 1, 'two full-day slots on one person cover the standard day and overlap')
+  assert.equal(fullDay[0].entries[0].startMinutes, 7 * 60 + 30)
+  assert.equal(fullDay[0].entries[0].endMinutes, 16 * 60)
 
   const clashes = computeOperativeBookingClashWarnings(
     [
@@ -595,6 +655,94 @@ test('AM and PM on the same day do not clash; manager dual-role merges operative
   assert.equal(merged[0].entries.length, 2)
   assert.ok(merged[0].entries.some((entry) => entry.managerBookingId === 'M1'))
   assert.ok(merged[0].entries.some((entry) => entry.bookingId === 'O1' && !entry.managerBookingId))
+})
+
+test('an admin added back onto warnings still flags two full-day bookings', () => {
+  const admin = user({
+    id: 'U-ADMIN',
+    email: 'admin@site.test',
+    firstName: 'Test',
+    surname: 'Admin',
+    role: UserRole.ADMIN,
+    isSuperAdmin: true,
+    permissions: perms({ adminAccess: true, manager: true, operativeMode: false }),
+  })
+  const detection = {
+    ...DEFAULT_WARNING_DETECTION,
+    clashLookaheadMode: 'numberOfDays' as const,
+    clashLookaheadDays: 7,
+    excludedUserIdsFromUnbookedWarnings: [] as string[],
+  }
+  const managerSiteBookings = [
+    {
+      id: 'M-OFFICE',
+      userId: 'U-ADMIN',
+      date: WED,
+      timeSlot: 'FULL_DAY',
+      locationType: 'office' as const,
+      createdAt: WED,
+      updatedAt: WED,
+    },
+    {
+      id: 'M-SITE',
+      userId: 'U-ADMIN',
+      date: WED,
+      timeSlot: 'FULL_DAY',
+      locationType: 'project' as const,
+      locationId: 'P1',
+      createdAt: WED,
+      updatedAt: WED,
+    },
+  ]
+  const included = generateOrgWarnings({
+    bookings: [],
+    managerSiteBookings,
+    operatives: [],
+    users: [admin],
+    projects: [project('P1')],
+    holidays: [],
+    warningDetection: detection,
+    payrollPolicy: DEFAULT_PAYROLL_POLICY,
+    referenceDate: WED,
+  })
+  assert.equal(included.managerClashWarnings.length, 1)
+  assert.equal(included.managerClashWarnings[0].personName, 'Test Admin')
+  assert.match(included.managerClashWarnings[0].message, /two places/)
+  assert.equal(included.mediumCount, 1)
+
+  const stillExcluded = generateOrgWarnings({
+    bookings: [],
+    managerSiteBookings,
+    operatives: [],
+    users: [admin],
+    projects: [project('P1')],
+    holidays: [],
+    warningDetection: {
+      ...detection,
+      excludedUserIdsFromUnbookedWarnings: ['U-ADMIN'],
+    },
+    payrollPolicy: DEFAULT_PAYROLL_POLICY,
+    referenceDate: WED,
+  })
+  assert.equal(
+    stillExcluded.managerClashWarnings.length,
+    1,
+    'the unbooked exclusion list does not hide a double booking'
+  )
+
+  const officeAndJob = generateOrgWarnings({
+    bookings: [booking({ id: 'OP-DAY', operativeId: 'OP-ADMIN', projectId: 'P1', timeSlot: 'FULL DAY' })],
+    managerSiteBookings: [managerSiteBookings[0]],
+    operatives: [operative({ id: 'OP-ADMIN', email: 'admin@site.test', firstName: 'Test', lastName: 'Admin' })],
+    users: [admin],
+    projects: [project('P1')],
+    holidays: [],
+    warningDetection: detection,
+    payrollPolicy: DEFAULT_PAYROLL_POLICY,
+    referenceDate: WED,
+  })
+  assert.equal(officeAndJob.managerClashWarnings.length, 1)
+  assert.equal(officeAndJob.clashWarnings.length, 0)
 })
 
 test('materials cutoff fires after 16:00 for tomorrow bookings, including empty lists', () => {
@@ -869,10 +1017,11 @@ test('active issue count includes qualifications and counts manager overlaps as 
     referenceDate: WED,
   })
   assert.equal(result.managerClashWarnings.length, 1)
-  assert.equal(result.unbookedWarnings.length, 0)
+  assert.equal(result.unbookedWarnings.length, 1)
+  assert.equal(result.unbookedWarnings[0].missingHours, 3.5)
   assert.equal(result.qualificationWarnings.length, 1)
-  assert.equal(result.highCount, 0)
+  assert.equal(result.highCount, 1)
   assert.equal(result.mediumCount, 1)
   assert.equal(result.lowCount, 1)
-  assert.equal(result.coreCount, 2)
+  assert.equal(result.coreCount, 3)
 })

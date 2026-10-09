@@ -55,7 +55,8 @@ import type { PaletteItem } from '@/lib/ui/commandPalette'
 import { useProjectStore } from '@/lib/stores/projectStore'
 import { refreshAllOrgData } from '@/lib/stores/refreshOrgData'
 import { db } from '@/lib/firebase/config'
-import { doc, getDoc, setDoc } from 'firebase/firestore'
+import { runWhenIdle } from '@/lib/analytics/runWhenIdle'
+import { doc, setDoc } from 'firebase/firestore'
 import { recoverJobTypesFromWork } from '@/lib/jobTypes/jobTypesStorage'
 import { canBookWork } from '@/lib/permissions'
 import { createMenuItems } from '@/lib/navigation/createMenu'
@@ -230,11 +231,11 @@ function AppShellInner({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!user?.id || !pathname) return
-    void import('@/lib/analytics/trackEvent').then(({ trackEvent }) => {
-      void trackEvent('page_viewed', {
-        userId: user.id,
-        organizationId: organization?.id,
-        metadata: { path: pathname },
+    const userId = user.id
+    const organizationId = organization?.id
+    return runWhenIdle(() => {
+      void import('@/lib/analytics/trackEvent').then(({ trackEvent }) => {
+        void trackEvent('page_viewed', { userId, organizationId, metadata: { path: pathname } })
       })
     })
   }, [pathname, user?.id, organization?.id])
@@ -271,21 +272,30 @@ function AppShellInner({ children }: { children: ReactNode }) {
     return () => window.clearTimeout(timer)
   }, [organization?.id, loadUsers, loadProjects, loadSmallWorks])
 
+  // The auth store already holds users/{uid}; no second read of the same document.
+  // Select a string so an unchanged sidebar config does not re-run the effect.
+  const remoteNavigateSidebar = useAuthStore((s) =>
+    s.currentUserDocument?.webNavigateSidebar == null ? '' : JSON.stringify(s.currentUserDocument.webNavigateSidebar)
+  )
   useEffect(() => {
     if (!user?.id) return
     const local = readLocalNavigateConfig(user.id)
     if (local) setNavigateConfig(local)
-    if (!db) return
-    getDoc(doc(db, 'users', user.id))
-      .then((snap) => {
-        const remote = parseNavigateConfig(snap.data()?.webNavigateSidebar)
-        if (remote) {
-          setNavigateConfig(remote)
-          writeLocalNavigateConfig(user.id, remote)
-        }
-      })
-      .catch(() => {})
   }, [user?.id])
+  useEffect(() => {
+    if (!user?.id || !remoteNavigateSidebar) return
+    let raw: unknown = null
+    try {
+      raw = JSON.parse(remoteNavigateSidebar)
+    } catch {
+      return
+    }
+    const remote = parseNavigateConfig(raw)
+    if (remote) {
+      setNavigateConfig(remote)
+      writeLocalNavigateConfig(user.id, remote)
+    }
+  }, [user?.id, remoteNavigateSidebar])
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -365,7 +375,9 @@ function AppShellInner({ children }: { children: ReactNode }) {
   const isHome = pathname === '/dashboard'
   const isBookLabour = pathname.startsWith('/dashboard/book-labour')
   const showHeader = !isBookLabour
-  // Prototype: top bar is breadcrumb only. Every page owns its own h1.
+  // Desktop crumb is "Org / page". Below 761px the org name is hidden, so the
+  // current-page label is omitted and the page h1 is the only copy of that title.
+  // A nested screen keeps a section link here (Timesheets → My Timesheets).
 
   const persistNavigate = (next: NavigateConfig) => {
     setNavigateConfig(next)

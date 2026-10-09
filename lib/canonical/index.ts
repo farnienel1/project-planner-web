@@ -1,5 +1,6 @@
 export {
   CANONICAL_HALF_MONTH_RANGES,
+  CANONICAL_STANDARD_BREAK,
   CANONICAL_STANDARD_DAY,
   CANONICAL_TIME_ZONE,
   MIN_HALF_DAY_MINUTES,
@@ -23,8 +24,10 @@ export {
   paidHoursForNamedSlot,
   parseClockMinutes,
   provisionalOrganizationId,
+  standardDayCoverage,
   resetOrganizationContextForTests,
   slotInterval,
+  standardBreakWindow,
   standardDayWindow,
   subtractMinuteIntervals,
 } from './engine'
@@ -39,6 +42,21 @@ export {
 
 export { leaveCoverageRows, leaveSlotKind } from './leaveCoverage'
 
+export {
+  canEditWorkCatalogue,
+  canViewStaffWarnings,
+  isStaffAccount,
+  receivesJobNotification,
+  seesEveryJob,
+} from './staffAccess'
+
+export type {
+  JobNotificationRecipientInput,
+  StaffAccountRole,
+  WorkCatalogue,
+  WorkCatalogueToggles,
+} from './staffAccess'
+
 export type {
   ClashLookaheadMode,
   CoverageWindowInput,
@@ -52,7 +70,10 @@ export type {
   PaymentRunMode,
   PaymentRunRange,
   SlotIntervalInput,
+  StandardDayBooking,
+  StandardDayCoverage,
   StandardDayInput,
+  StandardDayPolicy,
 } from './engine'
 
 export type {

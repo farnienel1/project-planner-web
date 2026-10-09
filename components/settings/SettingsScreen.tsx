@@ -12,11 +12,6 @@ import { UserAvatar } from '@/components/users/UserAvatar'
 import { canAccessOrganisationSettingsHub, hasAdminAccess } from '@/lib/navigation/menuPermissions'
 import { minPasswordLengthForEmail } from '@/lib/auth/emailAction'
 import {
-  loadNotificationPreferences,
-  saveNotificationPreferences,
-} from '@/lib/settings/notificationPreferences'
-import {
-  Toggle,
   SectionLabel,
   SettingsCard,
   SettingsRow,
@@ -263,55 +258,47 @@ function PasswordPanel({ onBack }: { onBack: () => void }) {
 // ─── Notifications Panel ──────────────────────────────────────────────────────
 function NotificationsPanel({ onBack }: { onBack: () => void }) {
   const { user } = useAuthStore()
-  const [materialCutoff, setMaterialCutoff] = useState(true)
-  const [saved, setSaved] = useState(false)
-
-  useEffect(() => {
-    if (!user?.id) return
-    void loadNotificationPreferences(user.id).then((prefs) => {
-      setMaterialCutoff(prefs.materialOrderCutOff)
-    })
-  }, [user?.id])
-
-  const save = async () => {
-    if (!user?.id) return
-    const existing = await loadNotificationPreferences(user.id)
-    await saveNotificationPreferences(user.id, {
-      ...existing,
-      materialOrderCutOff: materialCutoff,
-    })
-    setSaved(true)
-    setTimeout(() => setSaved(false), 3000)
-  }
+  const canEditCompany = canAccessOrganisationSettingsHub(user)
 
   return (
     <div className="space-y-5">
       <PanelHeader title="My notifications" onBack={onBack} />
       <SettingsCard>
-        <SettingsRow
-          icon="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
-          iconBg="bg-blue-50" iconColor="text-blue-600"
-          label="General app options"
-          description="My schedule list on this device"
-          chevron
-        />
+        {canEditCompany ? (
+          <Link href="/dashboard/settings/schedule-options" className="block">
+            <SettingsRow
+              icon="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+              iconBg="bg-blue-50"
+              iconColor="text-blue-600"
+              label="Schedule options"
+              description="Office, working from home, site survey and custom locations"
+              chevron
+            />
+          </Link>
+        ) : (
+          <SettingsRow
+            icon="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+            iconBg="bg-blue-50"
+            iconColor="text-blue-600"
+            label="Schedule options"
+            description="Office, working from home and custom locations are set for the whole company."
+          />
+        )}
       </SettingsCard>
-      <p className="px-1 text-xs text-slate-500">Controls extra rows in My Schedule (office, WFH, custom labels).</p>
 
       <SettingsCard>
-        <div className="flex items-center justify-between gap-3 px-4 py-4">
-          <div>
-            <p className="text-sm font-semibold text-slate-900">Material order cut-off</p>
-            <p className="text-xs text-slate-500 mt-0.5">
-              Company reminder time is set in Organisation settings → Material cut-off, and syncs with iOS.
-            </p>
-          </div>
-          <Toggle checked={materialCutoff} onChange={setMaterialCutoff} />
+        <div className="px-4 py-4">
+          <p className="text-sm font-semibold text-slate-900">Material order cut-off</p>
+          <p className="mt-0.5 text-xs text-slate-500">
+            The daily reminder is one company time. Warnings use that time. It is not a separate switch on this page.
+          </p>
+          {canEditCompany ? (
+            <Link href="/dashboard/settings/material-cutoff" className="mt-3 inline-block text-sm font-semibold text-blue-700">
+              Open material cut-off
+            </Link>
+          ) : null}
         </div>
       </SettingsCard>
-
-      {saved && <SuccessBanner message="Notifications saved." />}
-      <SaveButton saving={false} saved={saved} onClick={save} />
     </div>
   )
 }

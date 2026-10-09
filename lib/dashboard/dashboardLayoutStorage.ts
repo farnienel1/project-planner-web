@@ -1,5 +1,6 @@
 import { doc, getDoc, setDoc, Timestamp } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
+import { forgetOrganizationDocument, readOrganizationDocument } from '@/lib/firebase/orgDocumentCache'
 import { withTimeout } from '@/lib/client/withTimeout'
 import { sanitizeHeroMetrics } from '@/lib/dashboard/heroMetrics'
 import { PLATFORM_DEFAULT_DASHBOARD } from '@/lib/dashboard/platformDashboardDefault'
@@ -95,7 +96,7 @@ async function loadLegacyOrgUserLayout(userId: string, orgId: string): Promise<D
 
 async function loadOrgDefaultDashboard(orgId: string): Promise<DashboardLayoutConfig | null> {
   try {
-    const snap = await getDoc(doc(db, 'organizations', orgId))
+    const snap = await readOrganizationDocument(db, orgId)
     if (!snap.exists()) return null
     return parseConfig(snap.data()?.defaultWebDashboard)
   } catch {
@@ -149,33 +150,39 @@ export async function seedOrgDefaultDashboard(orgId: string): Promise<DashboardL
       SEED_DASHBOARD_TIMEOUT_MS,
       'Timed out saving the default dashboard.'
     )
+    forgetOrganizationDocument(orgId)
   } catch {
     // New organisations can open with the code default if this write is slow or blocked.
   }
   return platformDefault
 }
 
-export async function loadDashboardLayout(userId: string, orgId: string): Promise<DashboardLayoutConfig> {
+async function loadUserOrgLayout(userId: string, orgId: string): Promise<DashboardLayoutConfig | null> {
   try {
     const snap = await getDoc(doc(db, 'users', userId))
-    if (snap.exists()) {
-      const parsed = readUserOrgLayout(snap.data(), orgId)
-      if (parsed) {
-        cacheLocally(userId, orgId, parsed)
-        return parsed
-      }
-    }
+    return snap.exists() ? readUserOrgLayout(snap.data(), orgId) : null
   } catch {
-    // Fall through.
+    return null
   }
+}
 
-  const legacy = await loadLegacyOrgUserLayout(userId, orgId)
+export async function loadDashboardLayout(userId: string, orgId: string): Promise<DashboardLayoutConfig> {
+  // The three remote sources are read together and applied in priority order.
+  // Reading them one after another made the dashboard home wait three round
+  // trips before it could draw a single tile.
+  const [personal, legacy, orgDefault] = await Promise.all([
+    loadUserOrgLayout(userId, orgId),
+    loadLegacyOrgUserLayout(userId, orgId),
+    loadOrgDefaultDashboard(orgId),
+  ])
+  if (personal) {
+    cacheLocally(userId, orgId, personal)
+    return personal
+  }
   if (legacy) {
     cacheLocally(userId, orgId, legacy)
     return legacy
   }
-
-  const orgDefault = await loadOrgDefaultDashboard(orgId)
   if (orgDefault) {
     return orgDefault
   }
@@ -223,6 +230,7 @@ export async function saveDashboardLayout(
       },
       { merge: true }
     )
+    forgetOrganizationDocument(orgId)
   }
 
   if (options.updatePlatformDefault) {

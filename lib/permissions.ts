@@ -4,6 +4,11 @@
  */
 
 import type { User, UserPermissions } from '@/types'
+import {
+  canEditWorkCatalogue,
+  canViewStaffWarnings,
+  type StaffAccountRole,
+} from '@/lib/canonical'
 import { parseAppUserDocument } from '@/lib/ios-parity/converters'
 import { normalizeEmploymentType } from '@/lib/ios-parity/enums'
 import { isPlatformOwnerEmail } from '@/lib/platform/owner'
@@ -46,6 +51,41 @@ function flag(user: PermissionUser, key: keyof UserPermissions): boolean {
   return user?.permissions?.[key] === true
 }
 
+/** iOS staff check: manager flag, admin flag, or a manager/admin role. Super admin is handled by callers. */
+function isStaffAccount(user: NonNullable<PermissionUser>): boolean {
+  return (
+    flag(user, 'manager') ||
+    flag(user, 'adminAccess') ||
+    user.role === 'admin' ||
+    user.role === 'manager'
+  )
+}
+
+/**
+ * The account flags the canonical staff-access rule works from.
+ * iOS resolves the same four flags from `UserStore` before calling the bundle.
+ */
+export function staffAccountRole(user: PermissionUser): StaffAccountRole {
+  if (!user) return { isSuperAdmin: false, isAdmin: false, isManager: false, isOperativeMode: false }
+  return {
+    isSuperAdmin: user.isSuperAdmin === true,
+    isAdmin: hasAdminAccess(user),
+    isManager: flag(user, 'manager') || user.role === 'manager',
+    isOperativeMode: isOperativeMode(user),
+  }
+}
+
+/** Warnings list. Every admin and manager sees every warning. Operatives do not see the company warning scan. */
+export function canViewWarnings(user: PermissionUser): boolean {
+  if (!user) return false
+  return canViewStaffWarnings(staffAccountRole(user))
+}
+
+/** Warning settings open organisation settings. Admin level only. */
+export function canOpenWarningSettings(user: PermissionUser): boolean {
+  return canAccessOrganisationSettingsHub(user)
+}
+
 /** UserStore.hasAdminAccess — operativeMode flag (not isOperativeMode) blocks. */
 export function hasAdminAccess(user: PermissionUser): boolean {
   if (!user) return false
@@ -71,9 +111,9 @@ export function canManageUsers(user: PermissionUser): boolean {
 
 export function canViewOperatives(user: PermissionUser): boolean {
   if (!user || isOperativeMode(user)) return false
-  // Super admin keeps Operatives. The stored operatives flag is for everyone else.
+  // Super admin keeps Operatives. Everyone else, including admins, follows the Operatives toggle.
   if (user.isSuperAdmin) return true
-  return flag(user, 'operatives')
+  return isStaffAccount(user) && flag(user, 'operatives')
 }
 
 export function canManageMaterialCatalogue(user: PermissionUser): boolean {
@@ -85,7 +125,7 @@ export function canAccessWholesalers(user: PermissionUser): boolean {
   if (!user) return false
   if (user.isSuperAdmin) return true
   if (isOperativeMode(user)) return false
-  return flag(user, 'wholesalersOrderHistory')
+  return isStaffAccount(user) && flag(user, 'wholesalersOrderHistory')
 }
 
 export function canViewWholesalerOrderHistory(user: PermissionUser): boolean {
@@ -101,8 +141,11 @@ export function canManageOrganisationQualifications(user: PermissionUser): boole
   return user.isSuperAdmin === true || flag(user, 'qualifications')
 }
 
+/** iOS QualificationsAccessPolicy.canOpenQualificationsHub. The manage toggle hides the catalogue, not My Qualifications. */
 export function canAccessQualificationsHub(user: PermissionUser): boolean {
-  return canManageOrganisationQualifications(user)
+  if (!user || isOperativeMode(user)) return false
+  if (hasAdminAccess(user)) return true
+  return flag(user, 'manager') || flag(user, 'qualifications')
 }
 
 export function canManageQualifications(user: PermissionUser): boolean {
@@ -175,20 +218,38 @@ export function canManageSubcontractors(user: PermissionUser, profileLoading = f
 
 /** Create project: super admin, or admin/manager who also have the Projects toggle. */
 export function canCreateProject(user: PermissionUser): boolean {
-  if (!user || isOperativeMode(user)) return false
-  if (user.isSuperAdmin) return true
-  if (!flag(user, 'projects')) return false
-  return hasAdminAccess(user) || flag(user, 'manager')
+  return canManageWorkCatalogue(user, 'projects')
 }
 
+/**
+ * Direct create and edit URLs. The job list stays available when this is false.
+ * Super admin is not gated. Admins and managers follow the catalogue toggle.
+ */
+export function canOpenWorkForm(
+  user: PermissionUser,
+  kind: 'projects' | 'smallWorks',
+  mode: 'create' | 'edit'
+): boolean {
+  if (kind === 'projects' && mode === 'create') return canCreateProject(user)
+  return canManageWorkCatalogue(user, kind)
+}
+
+/**
+ * Add or edit a catalogue (canonical `canEditWorkCatalogue`). Super admin ignores the
+ * toggles. Admins and managers follow them. A toggle that is off never hides the list;
+ * that is `visibleWorks`.
+ */
 export function canManageWorkCatalogue(
   user: PermissionUser,
   kind: WorkCatalogueKind
 ): boolean {
-  if (!user || isOperativeMode(user)) return false
-  if (kind === 'projects') return flag(user, 'projects')
-  if (kind === 'smallWorks') return flag(user, 'smallWorks')
-  return flag(user, 'projects') && flag(user, 'smallWorks')
+  if (!user) return false
+  const role = staffAccountRole(user)
+  const toggles = { projects: flag(user, 'projects'), smallWorks: flag(user, 'smallWorks') }
+  if (kind === 'all') {
+    return canEditWorkCatalogue(role, 'projects', toggles) && canEditWorkCatalogue(role, 'smallWorks', toggles)
+  }
+  return canEditWorkCatalogue(role, kind, toggles)
 }
 
 export function canViewWeeklyReports(user: PermissionUser, profileLoading = false): boolean {

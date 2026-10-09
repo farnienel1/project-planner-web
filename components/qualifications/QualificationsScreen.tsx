@@ -78,9 +78,11 @@ export function QualificationsScreen({ initialTab }: { initialTab?: Tab } = {}) 
     if (showSpinner) setLoading(true)
 
     const refresh = async () => {
-      await loadOperatives(orgId, { force: true })
+      const [, existing] = await Promise.all([
+        loadOperatives(orgId, { force: true }),
+        loadOrganisationQualifications(orgId, { fromServer: true }),
+      ])
       if (cancelled) return
-      const existing = await loadOrganisationQualifications(orgId, { fromServer: true })
       const assigned = assignedQualificationTemplates(useOperativeStore.getState().operatives)
       const merged = mergeQualificationTemplates(existing, assigned)
       if (cancelled) return
@@ -89,7 +91,8 @@ export function QualificationsScreen({ initialTab }: { initialTab?: Tab } = {}) 
       try {
         const rows = await restoreOrganisationQualificationsFromAssignments(
           orgId,
-          useOperativeStore.getState().operatives
+          useOperativeStore.getState().operatives,
+          existing
         )
         if (!cancelled) setTemplates(rows)
       } catch {

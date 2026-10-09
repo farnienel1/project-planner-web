@@ -5,6 +5,7 @@
  * The iOS bundle calls these functions instead of a second person-selection loop.
  */
 
+import { standardDayCoverage, type StandardDayBooking } from './engine'
 import {
   addDaysInZone,
   dateFromDayKeyInZone,
@@ -112,6 +113,10 @@ export type LabourBooking = {
   personId: string
   dayKey: string
   kind: 'operative' | 'manager'
+  /** Missing slot means a full standard day, so older callers stay compatible. */
+  timeSlot?: string | null
+  workStart?: string | null
+  workEnd?: string | null
 }
 
 export type LabourHoliday = {
@@ -131,6 +136,11 @@ export type UnbookedLabourInput = {
   standardPaidHours: number
   saturdayCountsAsHours: number
   sundayCountsAsHours: number
+  /** Organisation standard day. Defaults to 07:30–16:00 with a 12:00–12:30 break. */
+  standardDayStart?: string | null
+  standardDayEnd?: string | null
+  breakWindowStart?: string | null
+  breakWindowEnd?: string | null
   people: readonly LabourPerson[]
   operatives: readonly RosterOperative[]
   bookings: readonly LabourBooking[]
@@ -193,6 +203,12 @@ function workingDaysInclusive(startKey: string, endKey: string, timeZone: string
 }
 
 const formatUnbookedDay = formatLongDayKey
+
+function formatCoverageHours(hours: number): string {
+  const rounded = Math.round(hours * 2) / 2
+  if (Math.abs(rounded - Math.trunc(rounded)) < 0.01) return String(Math.trunc(rounded))
+  return rounded.toFixed(1)
+}
 
 function finiteHours(value: number, fallback: number): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback
@@ -317,22 +333,41 @@ function dedupeFinishedPeople(people: readonly LabourPerson[]): LabourPerson[] {
   return [...picked, ...withoutEmail]
 }
 
+function asCoverageBooking(booking: LabourBooking): StandardDayBooking {
+  return {
+    timeSlot: booking.timeSlot,
+    workStart: booking.workStart,
+    workEnd: booking.workEnd,
+  }
+}
+
 /**
- * People with finished signup and no labour booking on a day inside the window.
+ * People who do not cover the organisation standard day inside the window.
  * Pending invitees are not unbooked. A weekend whose counts-as hours are 0 is not unbooked.
- * A booking on any operative profile that shares the email counts as booked.
+ * Bookings on any operative profile or user account that shares the email count toward that day.
+ * A partial booking stays unbooked and reports the hours still missing.
+ * A clash is a separate warning: overlapping time does not create a second gap.
  */
 export function unbookedLabourRows(input: UnbookedLabourInput): UnbookedLabourRow[] {
   const timeZone = zoneOf(input.timeZone)
   const excluded = new Set((input.excludedUserIds || []).map((id) => String(id)))
-  const operativeBooked = new Set<string>()
-  const managerBooked = new Set<string>()
+  const dayPolicy = {
+    standardDayStart: input.standardDayStart,
+    standardDayEnd: input.standardDayEnd,
+    breakWindowStart: input.breakWindowStart,
+    breakWindowEnd: input.breakWindowEnd,
+  }
+  const operativeBookings = new Map<string, StandardDayBooking[]>()
+  const managerBookings = new Map<string, StandardDayBooking[]>()
   for (const booking of input.bookings) {
     const personId = String(booking.personId || '')
     const dayKey = String(booking.dayKey || '')
     if (!personId || !dayKey) continue
-    if (booking.kind === 'manager') managerBooked.add(`${personId}|${dayKey}`)
-    else operativeBooked.add(`${personId}|${dayKey}`)
+    const key = `${personId}|${dayKey}`
+    const target = booking.kind === 'manager' ? managerBookings : operativeBookings
+    const list = target.get(key) || []
+    list.push(asCoverageBooking(booking))
+    target.set(key, list)
   }
 
   const operativesByEmail = new Map<string, RosterOperative>()
@@ -349,30 +384,48 @@ export function unbookedLabourRows(input: UnbookedLabourInput): UnbookedLabourRo
     }
   }
 
-  const hasOperativeBooking = (operativeId: string | undefined, dayKey: string): boolean =>
-    Boolean(operativeId) && operativeBooked.has(`${operativeId}|${dayKey}`)
+  const userIdsByEmail = new Map<string, Set<string>>()
+  for (const person of input.people) {
+    const email = emailKey(person.email)
+    if (!email || !person.id) continue
+    const ids = userIdsByEmail.get(email) || new Set<string>()
+    ids.add(person.id)
+    userIdsByEmail.set(email, ids)
+  }
 
-  const hasManagerBooking = (userId: string | undefined, dayKey: string): boolean =>
-    Boolean(userId) && managerBooked.has(`${userId}|${dayKey}`)
-
-  const hasEmailOperativeBooking = (email: string, dayKey: string): boolean => {
-    const ids = operativeIdsByEmail.get(email)
-    if (!ids) return false
-    for (const id of ids) {
-      if (hasOperativeBooking(id, dayKey)) return true
-    }
-    return false
+  const slotsFor = (email: string, operativeId: string | undefined, userId: string | undefined, dayKey: string): StandardDayBooking[] => {
+    const slots: StandardDayBooking[] = []
+    const ids = new Set<string>()
+    if (operativeId) ids.add(operativeId)
+    const linked = operativeIdsByEmail.get(email)
+    if (linked) for (const id of linked) ids.add(id)
+    for (const id of ids) slots.push(...(operativeBookings.get(`${id}|${dayKey}`) || []))
+    const userIds = new Set<string>()
+    if (userId) userIds.add(userId)
+    const linkedUsers = userIdsByEmail.get(email)
+    if (linkedUsers) for (const id of linkedUsers) userIds.add(id)
+    for (const id of userIds) slots.push(...(managerBookings.get(`${id}|${dayKey}`) || []))
+    return slots
   }
 
   const approvedHolidays = input.holidays.filter((holiday) => holiday.approved)
-  const holidayCovers = (dayKey: string, userId?: string, operativeId?: string): boolean =>
-    approvedHolidays.some((holiday) => {
+  const holidayCovers = (dayKey: string, email: string, userId?: string, operativeId?: string): boolean => {
+    const userIds = new Set<string>()
+    if (userId) userIds.add(userId)
+    const linkedUsers = userIdsByEmail.get(email)
+    if (linkedUsers) for (const id of linkedUsers) userIds.add(id)
+    const operativeIds = new Set<string>()
+    if (operativeId) operativeIds.add(operativeId)
+    const linkedOps = operativeIdsByEmail.get(email)
+    if (linkedOps) for (const id of linkedOps) operativeIds.add(id)
+    return approvedHolidays.some((holiday) => {
       if (dayKey < holiday.startDayKey || dayKey > holiday.endDayKey) return false
       const holidayUser = String(holiday.userId || '').trim()
-      if (userId && holidayUser && holidayUser === userId) return true
-      if (operativeId && holiday.operativeId && holiday.operativeId === operativeId) return true
+      if (holidayUser && userIds.has(holidayUser)) return true
+      if (holiday.operativeId && operativeIds.has(holiday.operativeId)) return true
       return false
     })
+  }
 
   const operativeUsers = dedupeFinishedPeople(input.people.filter(isOperativeModeOnly))
   const managerUsers = dedupeFinishedPeople(input.people.filter(isManagerOrAdmin))
@@ -392,22 +445,27 @@ export function unbookedLabourRows(input: UnbookedLabourInput): UnbookedLabourRo
   for (const dayKey of eachDayKey(input.startDayKey, input.endDayKey, timeZone)) {
     const iso = isoWeekdayInZone(dateFromDayKeyInZone(dayKey, timeZone), timeZone)
     if (!input.includeWeekends && (iso < 1 || iso > 5)) continue
-    const requiredHours = hoursForIsoWeekday(iso, input)
-    if (requiredHours <= 0.001) continue
+    const weekendRequired = hoursForIsoWeekday(iso, input)
+    if (iso >= 6 && weekendRequired <= 0.001) continue
     const seen = new Set<string>()
 
     const append = (args: {
       personKey: string
       name: string
       email: string
-      hasBooking: boolean
       operativeId: string
       userId?: string
     }) => {
       const seenKey = args.email || args.personKey
       if (seen.has(seenKey)) return
       seen.add(seenKey)
-      if (args.hasBooking) return
+      const coverage = standardDayCoverage(dayPolicy, slotsFor(args.email, args.operativeId, args.userId, dayKey))
+      const requiredHours = iso >= 6 ? weekendRequired : coverage.requiredHours
+      if (requiredHours <= 0.001) return
+      const coveredHours = Math.min(coverage.coveredHours, requiredHours)
+      const missingHours = Math.round(Math.max(0, requiredHours - coveredHours) * 100) / 100
+      if (missingHours <= 0.001) return
+      const label = formatCoverageHours(missingHours)
       rows.push({
         id: `unbooked-${dayKey}-${args.personKey}`,
         operativeId: args.operativeId,
@@ -415,21 +473,20 @@ export function unbookedLabourRows(input: UnbookedLabourInput): UnbookedLabourRo
         userId: args.userId,
         personKey: args.personKey,
         dayKey,
-        missingHours: requiredHours,
-        message: `${args.name} is not booked on ${formatUnbookedDay(dayKey, timeZone)}.`,
+        missingHours,
+        message: `${args.name} is missing ${label}h on ${formatUnbookedDay(dayKey, timeZone)}.`,
       })
     }
 
     for (const person of operativeUsers) {
       if (excluded.has(person.id)) continue
-      const linked = operativesByEmail.get(emailKey(person.email))
-      if (holidayCovers(dayKey, person.id, linked?.id)) continue
       const email = emailKey(person.email)
+      const linked = operativesByEmail.get(email)
+      if (holidayCovers(dayKey, email, person.id, linked?.id)) continue
       append({
         personKey: person.id,
         name: person.name,
         email,
-        hasBooking: hasEmailOperativeBooking(email, dayKey) || hasOperativeBooking(linked?.id, dayKey) || hasManagerBooking(person.id, dayKey),
         operativeId: linked?.id || person.id,
         userId: person.id,
       })
@@ -437,14 +494,13 @@ export function unbookedLabourRows(input: UnbookedLabourInput): UnbookedLabourRo
 
     for (const person of managerUsers) {
       if (excluded.has(person.id)) continue
-      const linked = operativesByEmail.get(emailKey(person.email))
-      if (holidayCovers(dayKey, person.id, linked?.id)) continue
       const email = emailKey(person.email)
+      const linked = operativesByEmail.get(email)
+      if (holidayCovers(dayKey, email, person.id, linked?.id)) continue
       append({
         personKey: person.id,
         name: person.name,
         email,
-        hasBooking: hasEmailOperativeBooking(email, dayKey) || hasManagerBooking(person.id, dayKey) || hasOperativeBooking(linked?.id, dayKey),
         operativeId: linked?.id || person.id,
         userId: person.id,
       })
@@ -457,12 +513,11 @@ export function unbookedLabourRows(input: UnbookedLabourInput): UnbookedLabourRo
       if (!matched && email && input.people.some((person) => emailKey(person.email) === email)) continue
       if (matched && managerAdminUserIds.has(matched.id)) continue
       if (matched && excluded.has(matched.id)) continue
-      if (holidayCovers(dayKey, matched?.id, operative.id)) continue
+      if (holidayCovers(dayKey, email, matched?.id, operative.id)) continue
       append({
         personKey: matched?.id || operative.id,
         name: matched?.name || operative.name,
         email: email || operative.id,
-        hasBooking: hasEmailOperativeBooking(email, dayKey) || hasOperativeBooking(operative.id, dayKey) || hasManagerBooking(matched?.id, dayKey),
         operativeId: operative.id,
         userId: matched?.id,
       })

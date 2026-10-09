@@ -244,6 +244,7 @@ export function intervalsOverlap(a: MinuteInterval, b: MinuteInterval): boolean 
 // Rule
 //   1. The standard day is [standardDayStart, standardDayEnd) from organisation
 //      settings. An unparsable or inverted pair falls back to 07:30–16:00.
+//      A break field the organisation has not set falls back to 12:00–12:30.
 //   2. The break window splits the day when it is usable: valid, strictly inside
 //      the day, and leaving at least MIN_HALF_DAY_MINUTES on each side.
 //      AM = [dayStart, breakStart). PM = [breakEnd, dayEnd). The break belongs to
@@ -258,6 +259,7 @@ export function intervalsOverlap(a: MinuteInterval, b: MinuteInterval): boolean 
 //      for clashes and cover; they do not change what a half day pays.
 
 export const CANONICAL_STANDARD_DAY: Readonly<MinuteInterval> = { start: 7 * 60 + 30, end: 16 * 60 }
+export const CANONICAL_STANDARD_BREAK: Readonly<MinuteInterval> = { start: 12 * 60, end: 12 * 60 + 30 }
 export const MIN_HALF_DAY_MINUTES = 60
 
 export type StandardDayInput = {
@@ -307,15 +309,27 @@ export function standardDayWindow(input?: StandardDayInput | null): MinuteInterv
   return { start, end }
 }
 
+/**
+ * The organisation's unpaid break as set, with the 12:00–12:30 default for a
+ * field that was never set. Null when the pair does not form a window. This is
+ * the break pay subtracts; whether it also splits AM from PM is `halfDayWindows`.
+ */
+export function standardBreakWindow(input?: StandardDayInput | null): MinuteInterval | null {
+  const start = input?.breakWindowStart == null ? CANONICAL_STANDARD_BREAK.start : parseClockMinutes(input.breakWindowStart)
+  const end = input?.breakWindowEnd == null ? CANONICAL_STANDARD_BREAK.end : parseClockMinutes(input.breakWindowEnd)
+  if (start == null || end == null || end <= start) return null
+  return { start, end }
+}
+
 /** AM and PM for the organisation. See the rule above. */
 export function halfDayWindows(input?: StandardDayInput | null): HalfDayWindows {
   const day = standardDayWindow(input)
-  const breakStart = parseClockMinutes(input?.breakWindowStart)
-  const breakEnd = parseClockMinutes(input?.breakWindowEnd)
+  const breakWindow = standardBreakWindow(input)
+  const breakStart = breakWindow?.start ?? null
+  const breakEnd = breakWindow?.end ?? null
   const breakUsable =
     breakStart != null &&
     breakEnd != null &&
-    breakEnd > breakStart &&
     breakStart - day.start >= MIN_HALF_DAY_MINUTES &&
     day.end - breakEnd >= MIN_HALF_DAY_MINUTES
   if (breakUsable) {
@@ -543,10 +557,99 @@ function recurringPeriod(reference: Date, input: InvoicingPeriodInput, timeZone:
   }
 }
 
+/** Same shape as `StandardDayInput`; kept as the name `standardDayCoverage` callers use. */
+export type StandardDayPolicy = StandardDayInput
+
+export type StandardDayBooking = {
+  timeSlot?: string | null
+  workStart?: string | null
+  workEnd?: string | null
+}
+
+export type StandardDayCoverage = {
+  requiredHours: number
+  coveredHours: number
+  missingHours: number
+}
+
+function intervalMinutes(intervals: readonly MinuteInterval[]): number {
+  return intervals.reduce((sum, interval) => sum + (interval.end - interval.start), 0)
+}
+
+function roundCoverageHours(hours: number): number {
+  return Math.round(hours * 100) / 100
+}
+
+/** `intervals` with `cut` removed from each. */
+function withoutInterval(intervals: readonly MinuteInterval[], cut: MinuteInterval | null): MinuteInterval[] {
+  if (!cut) return intervals.map((interval) => ({ ...interval }))
+  return intervals.flatMap((interval) => subtractMinuteIntervals(interval, [cut]))
+}
+
+/**
+ * The part of the standard day a booking covers.
+ * A full-day slot, or no slot at all, is the whole day. AM and PM are the
+ * organisation's halves from `halfDayWindows`. Any other slot uses its clock
+ * times when they form a window, otherwise the whole day.
+ */
+function bookingCoverInterval(booking: StandardDayBooking, windows: HalfDayWindows): MinuteInterval | null {
+  switch (namedSlotKind(booking.timeSlot)) {
+    case 'UNKNOWN':
+    case 'FULL_DAY':
+      return { ...windows.day }
+    case 'AM':
+      return windows.am.end > windows.am.start ? { ...windows.am } : null
+    case 'PM':
+      return windows.pm.end > windows.pm.start ? { ...windows.pm } : null
+    default: {
+      const start = parseClockMinutes(booking.workStart)
+      const end = parseClockMinutes(booking.workEnd)
+      if (start != null && end != null && end > start) return { start, end }
+      return { ...windows.day }
+    }
+  }
+}
+
+/**
+ * Hours of the organisation standard day a person's bookings cover.
+ * The required window is the standard day minus the unpaid break
+ * (07:30–16:00 with a 12:00–12:30 break is 8 hours). A full-day slot covers that
+ * window. AM covers the morning half and PM the afternoon half (`halfDayWindows`).
+ * Custom clock times count only where they overlap the required window.
+ * Hours outside the standard day do not cover it. Overlapping bookings merge.
+ * A booking with no slot is a full day, so older callers stay compatible.
+ */
+export function standardDayCoverage(
+  policy: StandardDayPolicy,
+  bookings: readonly StandardDayBooking[]
+): StandardDayCoverage {
+  const windows = halfDayWindows(policy)
+  const unpaidBreak = standardBreakWindow(policy)
+  const required = withoutInterval([windows.day], unpaidBreak)
+  const requiredHours = roundCoverageHours(intervalMinutes(required) / 60)
+  const covered: MinuteInterval[] = []
+  for (const booking of bookings) {
+    const interval = bookingCoverInterval(booking, windows)
+    if (!interval) continue
+    const start = Math.max(interval.start, windows.day.start)
+    const end = Math.min(interval.end, windows.day.end)
+    if (end > start) covered.push({ start, end })
+  }
+  const inside = withoutInterval(mergeMinuteIntervals(covered), unpaidBreak)
+  const coveredHours = roundCoverageHours(Math.min(requiredHours, intervalMinutes(inside) / 60))
+  return {
+    requiredHours,
+    coveredHours,
+    missingHours: roundCoverageHours(Math.max(0, requiredHours - coveredHours)),
+  }
+}
+
 /**
  * Inclusive warning scan window.
  * numberOfDays: today through today+(N-1).
- * endOfWorkingWeek: Monday through Sunday of the organisation week.
+ * endOfWorkingWeek: Monday through Friday of the organisation week.
+ * Weekend days are not part of this window. The include-weekends toggle adds them
+ * only for unbooked labour.
  * endOfInvoicingPeriod: the payment-run segment that contains today.
  * Missing ranges use the half-month default, not the device calendar and not a 1–2 placeholder.
  */
@@ -568,7 +671,7 @@ export function coverageWindow(input: CoverageWindowInput): DayWindow {
   const iso = isoWeekdayInZone(today, timeZone)
   return {
     startDayKey: dayKeyInZone(addDaysInZone(today, -(iso - 1), timeZone), timeZone),
-    endDayKey: dayKeyInZone(addDaysInZone(today, 7 - iso, timeZone), timeZone),
+    endDayKey: dayKeyInZone(addDaysInZone(today, 5 - iso, timeZone), timeZone),
   }
 }
 
