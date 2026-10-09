@@ -6,7 +6,7 @@ Web and iOS are separate repositories and separate languages. They share one exe
 
 | Piece | Path |
 |---|---|
-| Canonical core | `project-planner-web/lib/canonical/` (`engine.ts` for windows, organisation, and slots; `warningRows.ts` for which qualification, unverified, and unbooked warnings exist; `staffAccess.ts` for who sees every job and every warning, who may edit a work catalogue, and which managers receive a job notification) |
+| Canonical core | `project-planner-web/lib/canonical/` (`engine.ts` for windows, organisation, the standard day and its AM/PM halves, and slot intervals; `warningRows.ts` for which qualification, unverified, and unbooked warnings exist and the qualification dismiss key; `leaveCoverage.ts` for annual leave against bookings; `staffAccess.ts` for who sees every job and every warning, who may edit a work catalogue, and which managers receive a job notification) |
 | Web consumption | Import `@/lib/canonical`. Existing modules such as `lib/warnings/warningLookahead.ts`, `lib/orgMembership/webActiveOrg.ts`, `lib/timesheets/timesheetWeekUtils.ts`, `lib/permissions.ts`, and `lib/access/workAccess.ts` call that module instead of keeping a second copy. |
 | iOS consumption | `Project Planner/Canonical/canonical-business.js` is the bundle built from `lib/canonical/bundleEntry.ts`. `Project Planner/Canonical/CanonicalBusinessEngine.swift` evaluates it. Warning scans and invoicing defaults use that result, with `Europe/London` when the script cannot load. |
 | Bundle command | `npm run build:canonical` in the web repo. `npm test` rebuilds it. |
@@ -24,10 +24,13 @@ The canonical module owns:
 - Warning coverage windows (`numberOfDays`, full Monday–Friday week, invoicing period)
 - Whether a person covers the organisation standard day (`standardDayCoverage`). A full day covers 07:30–16:00 minus the unpaid break. A shorter booking stays unbooked and the missing hours are the gap. Weekend days are included only when that toggle is on.
 - Organisation time zone for those windows (default `Europe/London`, never the device zone)
-- Named booking slots (`FULL DAY` / `FULL_DAY`, `AM`, `PM`)
-- Whether two minute intervals clash
+- Named booking slots (`FULL DAY` / `FULL_DAY`, `AM`, `PM`) and their pay (`paidHoursForNamedSlot`)
+- The standard day and its two halves (`standardDayWindow`, `halfDayWindows`), and the clock interval any booking occupies (`slotInterval`). See "Standard day, AM and PM" below
+- Whether two minute intervals clash, and interval merge / subtract (`intervalsOverlap`, `mergeMinuteIntervals`, `subtractMinuteIntervals`)
 - Cache key shape `kind:organizationId`
 - Which qualification warnings exist, which operatives are unverified, and which people are unbooked labour (`qualificationExpiryRows`, `unverifiedOperativeRows`, `unbookedLabourRows`)
+- Which annual-leave warnings exist: a booking inside approved leave, and a half day whose other half is not booked (`leaveCoverageRows`)
+- The key a dismissed expired-qualification warning is stored under (`qualificationDismissKey`, `withoutDismissedQualificationRows`)
 - Who sees every job and every warning, who may add or edit a work catalogue, and which managers receive a job notification (`seesEveryJob`, `canViewStaffWarnings`, `canEditWorkCatalogue`, `receivesJobNotification`)
 
 ## Staff visibility, catalogue toggles, and notification recipients
@@ -45,7 +48,34 @@ Each app resolves four flags for the signed-in account (super admin, admin, mana
 - Clash timeline math and the material cut-off message (`lib/warnings/generateOrgWarnings.ts` and `Core/WarningsComputation.swift`). Those dates use the London business calendar on iOS. A full-day slot with no clock times uses the organisation standard day for overlap (`07:30`–`16:00` by default), the same window as iOS `ManagerScheduleInterval` and `OperativeBookingInterval`. Two of those on one person and day are a clash. The unbooked-labour exclusion list does not hide that clash. AM and PM still do not overlap.
 - Overtime and break payroll (`Core/PayrollHoursEngine.swift` and the web timesheet helpers that are not named slots)
 
-Do not add a second coverage window, a second unbooked-person loop, or a second `FULL DAY` hour value.
+Do not add a second coverage window, a second unbooked-person loop, a second `FULL DAY` hour value, or a second AM/PM midpoint.
+
+## Standard day, AM and PM
+
+One rule decides where the morning ends and the afternoon starts. Clash detection, annual-leave cover, the calendar export, Home "up next", Quick Add, and the iOS clash and leave scans all call `halfDayWindows(payrollTimePolicy)`.
+
+1. The standard day is `[standardDayStart, standardDayEnd)`. An unparsable or inverted pair falls back to 07:30–16:00, so no setting can produce an empty or negative half. A break field the organisation never set falls back to 12:00–12:30 (`standardBreakWindow`); that is the unpaid break `standardDayCoverage` subtracts for unbooked labour, whether or not it also splits the day.
+2. If the break window is valid, strictly inside the day, and leaves at least 60 minutes on each side, it is the split: AM = `[dayStart, breakStart)`, PM = `[breakEnd, dayEnd)`. The break belongs to neither half. Default company: AM 07:30–12:00, PM 12:30–16:00. 07:00–17:00 with a 12:30–13:30 break: AM 07:00–12:30, PM 13:30–17:00.
+3. Otherwise the day splits at its wall-clock midpoint, floored to the minute. A company on 13:00–19:00 that left the break at 12:00–12:30 gets AM 13:00–16:00, PM 16:00–19:00. A break jammed against one edge (08:00–08:30) is ignored for the split for the same reason.
+4. FULL DAY is the whole standard day. Custom hours are the clock times stored on the booking. Evening is the four hours after the day; overtime the two hours after that.
+5. Pay is unchanged: FULL DAY pays `standardPaidHours`, AM and PM each pay half. The windows above decide clashes and cover, not money.
+
+Because AM and PM are disjoint by construction, an AM booking never clashes with PM leave, and a PM booking never clashes with AM leave.
+
+## Annual leave against bookings
+
+`leaveCoverageRows` runs over the same coverage window as the other warnings and only looks at approved leave. Leave is FULL DAY, AM, or PM; anything else stored on a holiday document is treated as FULL DAY.
+
+- **Booked during annual leave** (high). Any booking interval that overlaps the leave window. Full-day leave overlaps every booking that day. The row lists each booking and the overlapping minutes.
+- **Half-day leave not covered** (medium). For AM or PM leave, the other half is the working half. Every booking interval that day is subtracted from it. Whatever is left is reported with clock ranges and hours. PM leave with a 07:30–09:30 custom booking on the default company reports "09:30–12:00 (2.5 hours) is not booked". No booking at all reports the whole half. The row respects `excludedUserIdsFromUnbookedWarnings` and `includeWeekendsForUnbookedLabour`; the clash row does not.
+
+`unbookedLabourRows` already skips a person-day with any approved leave, so a half day produces exactly one warning: the cover row from this rule.
+
+People are matched by account first (`userId`), then by any operative profile sharing the account's email. A roster operative without an account is matched by operative id.
+
+## Dismissed warnings
+
+An expired-qualification warning can be dismissed. The dismissal is `organizations/{orgId}/dismissedWarnings/{dismissKey}` where `dismissKey = qualificationDismissKey(operativeId, qualificationId, expiryDayKey)`. The key includes the expiry day, so saving a renewed certificate with a new date produces a fresh warning. Upcoming (not yet expired) rows are never hidden by a dismissal. Both apps read the collection and filter with `withoutDismissedQualificationRows`.
 
 ## Organisation context
 
@@ -76,7 +106,7 @@ Other role gaps inside one company (for example who may edit settings) are liste
 
 ## Where new business logic goes
 
-If both apps must agree, add the function under `lib/canonical/` (`engine.ts`, `warningRows.ts`, or `staffAccess.ts`), export it from `lib/canonical/index.ts` and `bundleEntry.ts`, then call it from web and from `CanonicalBusinessEngine`. Committing that change packs the script. `.githooks/pre-commit` runs `npm run build:canonical`, stages `lib/canonical/dist/canonical-business.js`, and refuses the commit when the iOS checkout beside this repo has an uncommitted packed file. `npm install` turns the hook on. `npm run check:canonical` fails when a packed file does not match the rulebook.
+If both apps must agree, add the function under `lib/canonical/` (`engine.ts`, `warningRows.ts`, `leaveCoverage.ts`, or `staffAccess.ts`), export it from `lib/canonical/index.ts` and `bundleEntry.ts`, then call it from web and from `CanonicalBusinessEngine`. Committing that change packs the script. `.githooks/pre-commit` runs `npm run build:canonical`, stages `lib/canonical/dist/canonical-business.js`, and refuses the commit when the iOS checkout beside this repo has an uncommitted packed file. `npm install` turns the hook on. `npm run check:canonical` fails when a packed file does not match the rulebook.
 
 ## Agent windows
 

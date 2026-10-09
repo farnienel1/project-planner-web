@@ -18,7 +18,20 @@ import {
   paidHoursForNamedSlot,
   resetOrganizationContextForTests,
 } from './engine.ts'
-import { qualificationExpiryRows, unbookedLabourRows, unverifiedOperativeRows } from './warningRows.ts'
+import {
+  halfDayWindows,
+  slotInterval,
+  standardDayWindow,
+  subtractMinuteIntervals,
+} from './engine.ts'
+import {
+  qualificationDismissKey,
+  qualificationExpiryRows,
+  unbookedLabourRows,
+  unverifiedOperativeRows,
+  withoutDismissedQualificationRows,
+} from './warningRows.ts'
+import { leaveCoverageRows } from './leaveCoverage.ts'
 import {
   canEditWorkCatalogue,
   canViewStaffWarnings,
@@ -389,6 +402,293 @@ test('unbooked labour skips pending invitees, excluded people, zero-hour weekend
   assert.equal(rows[1].missingHours, 8)
   assert.equal(rows.find((row) => row.personKey === 'U-PEND' || row.personKey === 'U-ADMIN'), undefined)
   assert.equal(rows.find((row) => row.dayKey === '2026-09-19'), undefined)
+})
+
+// ─── Standard day, AM and PM ─────────────────────────────────────────────────
+
+const DEFAULT_DAY = {
+  standardDayStart: '07:30',
+  standardDayEnd: '16:00',
+  breakWindowStart: '12:00',
+  breakWindowEnd: '12:30',
+}
+
+test('the break window splits the default day into AM 07:30–12:00 and PM 12:30–16:00', () => {
+  const windows = halfDayWindows(DEFAULT_DAY)
+  assert.equal(windows.pivot, 'break')
+  assert.deepEqual(windows.day, { start: 450, end: 960 })
+  assert.deepEqual(windows.am, { start: 450, end: 720 })
+  assert.deepEqual(windows.pm, { start: 750, end: 960 })
+  assert.equal(intervalsOverlap(windows.am, windows.pm), false)
+})
+
+test('a 07:00–17:00 day with a 60 minute break splits at the break', () => {
+  const windows = halfDayWindows({
+    standardDayStart: '07:00',
+    standardDayEnd: '17:00',
+    breakWindowStart: '12:30',
+    breakWindowEnd: '13:30',
+  })
+  assert.equal(windows.pivot, 'break')
+  assert.deepEqual(windows.am, { start: 420, end: 750 })
+  assert.deepEqual(windows.pm, { start: 810, end: 1020 })
+})
+
+test('a 13:00–19:00 company whose break sits outside the day splits at the midpoint', () => {
+  const windows = halfDayWindows({
+    standardDayStart: '13:00',
+    standardDayEnd: '19:00',
+    breakWindowStart: '12:00',
+    breakWindowEnd: '12:30',
+  })
+  assert.equal(windows.pivot, 'midpoint')
+  assert.deepEqual(windows.am, { start: 780, end: 960 })
+  assert.deepEqual(windows.pm, { start: 960, end: 1140 })
+  assert.equal(intervalsOverlap(windows.am, windows.pm), false)
+})
+
+test('a break too close to either edge of the day does not become the half-day split', () => {
+  const windows = halfDayWindows({
+    standardDayStart: '07:30',
+    standardDayEnd: '16:00',
+    breakWindowStart: '08:00',
+    breakWindowEnd: '08:30',
+  })
+  assert.equal(windows.pivot, 'midpoint')
+  assert.deepEqual(windows.am, { start: 450, end: 705 })
+  assert.deepEqual(windows.pm, { start: 705, end: 960 })
+})
+
+test('invalid or inverted day settings fall back to 07:30–16:00 and never produce an empty half', () => {
+  assert.deepEqual(standardDayWindow({ standardDayStart: '16:00', standardDayEnd: '07:30' }), { start: 450, end: 960 })
+  assert.deepEqual(standardDayWindow({ standardDayStart: 'nine', standardDayEnd: '' }), { start: 450, end: 960 })
+  assert.deepEqual(standardDayWindow(null), { start: 450, end: 960 })
+  const tiny = halfDayWindows({ standardDayStart: '09:00', standardDayEnd: '09:01' })
+  assert.ok(tiny.am.end >= tiny.am.start)
+  assert.ok(tiny.pm.end >= tiny.pm.start)
+})
+
+test('slot intervals: clock times win, named slots use the halves, legacy spellings resolve', () => {
+  assert.deepEqual(slotInterval({ timeSlot: 'CUSTOM_HOURS', workStartTime: '07:30', workEndTime: '09:30' }, DEFAULT_DAY), {
+    start: 450,
+    end: 570,
+  })
+  assert.deepEqual(slotInterval({ timeSlot: 'AM' }, DEFAULT_DAY), { start: 450, end: 720 })
+  assert.deepEqual(slotInterval({ timeSlot: 'Morning' }, DEFAULT_DAY), { start: 450, end: 720 })
+  assert.deepEqual(slotInterval({ timeSlot: 'PM' }, DEFAULT_DAY), { start: 750, end: 960 })
+  assert.deepEqual(slotInterval({ timeSlot: 'FULL_DAY' }, DEFAULT_DAY), { start: 450, end: 960 })
+  assert.deepEqual(slotInterval({ timeSlot: 'FULL DAY' }, DEFAULT_DAY), { start: 450, end: 960 })
+  assert.deepEqual(slotInterval({ timeSlot: 'Evening' }, DEFAULT_DAY), { start: 960, end: 1200 })
+  assert.deepEqual(subtractMinuteIntervals({ start: 450, end: 720 }, [{ start: 450, end: 570 }]), [{ start: 570, end: 720 }])
+})
+
+// ─── Annual leave against bookings ───────────────────────────────────────────
+
+const LEAVE_PEOPLE = [
+  { personKey: 'U-SAM', name: 'Sam Site', userId: 'U-SAM', operativeIds: ['OP-SAM'] },
+  { personKey: 'OP-RAY', name: 'Ray Roster', userId: null, operativeIds: ['OP-RAY'] },
+]
+
+function leaveInput(overrides: Partial<Parameters<typeof leaveCoverageRows>[0]>) {
+  return leaveCoverageRows({
+    timeZone: 'Europe/London',
+    startDayKey: '2026-10-12',
+    endDayKey: '2026-10-16',
+    day: DEFAULT_DAY,
+    includeWeekends: false,
+    people: LEAVE_PEOPLE,
+    leave: [],
+    bookings: [],
+    ...overrides,
+  })
+}
+
+test('AM booking with PM leave is silent; PM booking with AM leave is silent', () => {
+  const pmLeave = leaveInput({
+    leave: [{ id: 'L1', userId: 'U-SAM', startDayKey: '2026-10-12', endDayKey: '2026-10-12', timeSlot: 'PM', approved: true }],
+    bookings: [{ id: 'B1', personId: 'OP-SAM', kind: 'operative', dayKey: '2026-10-12', timeSlot: 'AM', label: 'J100 Site' }],
+  })
+  assert.deepEqual(pmLeave, [])
+  const amLeave = leaveInput({
+    leave: [{ id: 'L2', userId: 'U-SAM', startDayKey: '2026-10-12', endDayKey: '2026-10-12', timeSlot: 'AM', approved: true }],
+    bookings: [{ id: 'B2', personId: 'U-SAM', kind: 'manager', dayKey: '2026-10-12', timeSlot: 'PM', label: 'Office' }],
+  })
+  assert.deepEqual(amLeave, [])
+})
+
+test('PM leave with a 07:30–09:30 custom booking reports the missing 09:30–12:00', () => {
+  const rows = leaveInput({
+    leave: [{ id: 'L1', userId: 'U-SAM', startDayKey: '2026-10-12', endDayKey: '2026-10-12', timeSlot: 'PM', approved: true }],
+    bookings: [
+      {
+        id: 'B1',
+        personId: 'OP-SAM',
+        kind: 'operative',
+        dayKey: '2026-10-12',
+        timeSlot: 'CUSTOM_HOURS',
+        workStartTime: '07:30',
+        workEndTime: '09:30',
+        label: 'J100 Site',
+      },
+    ],
+  })
+  assert.equal(rows.length, 1)
+  const row = rows[0]
+  assert.equal(row.kind, 'leave_cover')
+  assert.equal(row.id, 'leave-cover-2026-10-12-U-SAM-L1')
+  assert.deepEqual(row.workingWindow, { start: 450, end: 720 })
+  assert.deepEqual(row.missing, [{ start: 570, end: 720 }])
+  assert.equal(row.missingHours, 2.5)
+  assert.equal(row.bookedHours, 2)
+  assert.match(row.message, /only booked 07:30–09:30; 09:30–12:00 \(2.5 hours\) is not booked/)
+})
+
+test('half-day leave with no booking at all reports the whole working half', () => {
+  const rows = leaveInput({
+    leave: [{ id: 'L1', operativeId: 'OP-RAY', startDayKey: '2026-10-13', endDayKey: '2026-10-13', timeSlot: 'AM', approved: true }],
+  })
+  assert.equal(rows.length, 1)
+  assert.equal(rows[0].kind, 'leave_cover')
+  assert.equal(rows[0].personKey, 'OP-RAY')
+  assert.deepEqual(rows[0].missing, [{ start: 750, end: 960 }])
+  assert.equal(rows[0].missingHours, 3.5)
+  assert.match(rows[0].message, /not booked for the PM \(12:30–16:00, 3.5 hours\)/)
+})
+
+test('a booking inside the leave window is a clash; full-day leave clashes with any booking', () => {
+  const rows = leaveInput({
+    leave: [
+      { id: 'L1', userId: 'U-SAM', startDayKey: '2026-10-12', endDayKey: '2026-10-12', timeSlot: 'PM', approved: true },
+      { id: 'L2', operativeId: 'OP-RAY', startDayKey: '2026-10-14', endDayKey: '2026-10-14', timeSlot: 'FULL DAY', approved: true },
+    ],
+    bookings: [
+      { id: 'B1', personId: 'OP-SAM', kind: 'operative', dayKey: '2026-10-12', timeSlot: 'FULL DAY', label: 'J100 Site' },
+      { id: 'B2', personId: 'OP-RAY', kind: 'operative', dayKey: '2026-10-14', timeSlot: 'AM', label: 'J200 Site' },
+    ],
+  })
+  assert.deepEqual(
+    rows.map((row) => row.id),
+    ['leave-clash-2026-10-12-U-SAM-L1', 'leave-clash-2026-10-14-OP-RAY-L2']
+  )
+  assert.equal(rows[0].clashes[0].overlapStart, 750)
+  assert.equal(rows[0].clashes[0].overlapEnd, 960)
+  assert.match(rows[0].message, /booked J100 Site 07:30–16:00 on Monday 12 October while on PM annual leave \(12:30–16:00\)/)
+  assert.match(rows[1].message, /while on full-day annual leave/)
+  // The full-day booking fully covers the AM, so there is no separate cover row for Sam.
+  assert.equal(rows.find((row) => row.kind === 'leave_cover'), undefined)
+})
+
+test('pending leave, excluded users (cover only), and weekends (cover only) are respected', () => {
+  const rows = leaveInput({
+    startDayKey: '2026-10-12',
+    endDayKey: '2026-10-18',
+    excludedUserIds: ['U-SAM'],
+    leave: [
+      { id: 'L-PENDING', operativeId: 'OP-RAY', startDayKey: '2026-10-12', endDayKey: '2026-10-12', timeSlot: 'AM', approved: false },
+      { id: 'L-SAM', userId: 'U-SAM', startDayKey: '2026-10-13', endDayKey: '2026-10-13', timeSlot: 'PM', approved: true },
+      { id: 'L-SAT', operativeId: 'OP-RAY', startDayKey: '2026-10-17', endDayKey: '2026-10-17', timeSlot: 'AM', approved: true },
+    ],
+    bookings: [{ id: 'B1', personId: 'OP-SAM', kind: 'operative', dayKey: '2026-10-13', timeSlot: 'PM', label: 'J100 Site' }],
+  })
+  // Sam is excluded from cover warnings but the PM booking during PM leave still clashes.
+  assert.deepEqual(
+    rows.map((row) => row.id),
+    ['leave-clash-2026-10-13-U-SAM-L-SAM']
+  )
+})
+
+test('midpoint companies get consistent AM/PM in leave cover', () => {
+  const rows = leaveCoverageRows({
+    timeZone: 'Europe/London',
+    startDayKey: '2026-10-12',
+    endDayKey: '2026-10-12',
+    day: { standardDayStart: '13:00', standardDayEnd: '19:00', breakWindowStart: '12:00', breakWindowEnd: '12:30' },
+    includeWeekends: false,
+    people: LEAVE_PEOPLE,
+    leave: [{ id: 'L1', userId: 'U-SAM', startDayKey: '2026-10-12', endDayKey: '2026-10-12', timeSlot: 'AM', approved: true }],
+    bookings: [
+      { id: 'B1', personId: 'OP-SAM', kind: 'operative', dayKey: '2026-10-12', timeSlot: 'CUSTOM_HOURS', workStartTime: '16:00', workEndTime: '18:00' },
+    ],
+  })
+  assert.equal(rows.length, 1)
+  assert.deepEqual(rows[0].workingWindow, { start: 960, end: 1140 })
+  assert.deepEqual(rows[0].missing, [{ start: 1080, end: 1140 }])
+  assert.equal(rows[0].missingHours, 1)
+})
+
+// ─── Dismissed qualification warnings ────────────────────────────────────────
+
+test('the iOS JavaScript bundle exposes the standard-day, leave and dismiss rules with the same results', () => {
+  const source = readFileSync(new URL('./dist/canonical-business.js', import.meta.url), 'utf8')
+  const sandbox: { ProjectPlannerCanonical?: Record<string, (...args: unknown[]) => unknown> } = {}
+  runInContext(source, createContext(sandbox))
+  const bundle = sandbox.ProjectPlannerCanonical
+  assert.ok(bundle)
+  for (const name of [
+    'halfDayWindows',
+    'slotInterval',
+    'namedSlotKind',
+    'standardDayWindow',
+    'standardBreakWindow',
+    'subtractMinuteIntervals',
+    'leaveCoverageRows',
+    'leaveSlotKind',
+    'qualificationDismissKey',
+    'withoutDismissedQualificationRows',
+  ]) {
+    assert.equal(typeof bundle[name], 'function', `${name} is exported from the packed script`)
+  }
+  // Objects built inside the sandbox have another realm's prototypes; compare by value.
+  const plain = (value: unknown) => JSON.parse(JSON.stringify(value))
+  assert.deepEqual(plain(bundle.halfDayWindows(DEFAULT_DAY)), plain(halfDayWindows(DEFAULT_DAY)))
+  assert.deepEqual(
+    plain(bundle.halfDayWindows({ standardDayStart: '13:00', standardDayEnd: '19:00' })),
+    plain(halfDayWindows({ standardDayStart: '13:00', standardDayEnd: '19:00' }))
+  )
+  const custom = { timeSlot: 'CUSTOM_HOURS', workStartTime: '07:30', workEndTime: '09:30' }
+  assert.deepEqual(plain(bundle.slotInterval(custom, DEFAULT_DAY)), plain(slotInterval(custom, DEFAULT_DAY)))
+  const leaveArgs = {
+    timeZone: 'Europe/London',
+    startDayKey: '2026-10-12',
+    endDayKey: '2026-10-16',
+    day: DEFAULT_DAY,
+    includeWeekends: false,
+    people: LEAVE_PEOPLE,
+    leave: [{ id: 'L1', userId: 'U-SAM', startDayKey: '2026-10-12', endDayKey: '2026-10-12', timeSlot: 'PM', approved: true }],
+    bookings: [{ id: 'B1', personId: 'OP-SAM', kind: 'operative', dayKey: '2026-10-12', ...custom, label: 'J100 Site' }],
+  }
+  const bundledLeave = plain(bundle.leaveCoverageRows(leaveArgs)) as Array<{ kind: string; missingHours: number }>
+  assert.deepEqual(bundledLeave, plain(leaveCoverageRows(leaveArgs)))
+  assert.equal(bundledLeave.length, 1)
+  assert.equal(bundledLeave[0].kind, 'leave_cover')
+  assert.equal(bundledLeave[0].missingHours, 2.5)
+  assert.equal(bundle.qualificationDismissKey('OP-Q', 'Q-OLD', '2026-09-01'), qualificationDismissKey('OP-Q', 'Q-OLD', '2026-09-01'))
+})
+
+test('dismissing an expired qualification hides it until the expiry date changes', () => {
+  const rows = qualificationExpiryRows({
+    referenceIso: '2026-10-06T11:00:00.000Z',
+    operatives: [
+      {
+        id: 'OP-Q',
+        isActive: true,
+        name: 'Quinn',
+        expiries: [
+          { qualificationId: 'Q-OLD', name: 'First aid', expiryIso: '2026-09-01T11:00:00.000Z' },
+          { qualificationId: 'Q-SOON', name: 'CSCS', expiryIso: '2026-10-16T11:00:00.000Z' },
+        ],
+      },
+    ],
+  })
+  assert.equal(rows[0].dismissKey, qualificationDismissKey('OP-Q', 'Q-OLD', '2026-09-01'))
+  const hidden = withoutDismissedQualificationRows(rows, new Set([rows[0].dismissKey]))
+  assert.deepEqual(hidden.map((row) => row.id), ['qual-OP-Q-Q-SOON'])
+  // A dismissal recorded against a different expiry date does not hide the renewed warning.
+  const stale = withoutDismissedQualificationRows(rows, [qualificationDismissKey('OP-Q', 'Q-OLD', '2025-09-01')])
+  assert.equal(stale.length, 2)
+  // Upcoming expiries are never hidden by a dismissal.
+  const upcoming = withoutDismissedQualificationRows(rows, [rows[1].dismissKey])
+  assert.equal(upcoming.length, 2)
 })
 
 test('every admin and manager sees every job and every warning; operatives and role-less accounts do not', () => {

@@ -6,7 +6,14 @@
  * last snapshot in memory and skip getDocs when a listener is already live.
  */
 
-import { collection, getDocs, onSnapshot, type FirestoreError, type Unsubscribe } from 'firebase/firestore'
+import {
+  collection,
+  getDocs,
+  getDocsFromServer,
+  onSnapshot,
+  type FirestoreError,
+  type Unsubscribe,
+} from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
 import { isRetryableAuthLoadError, authLoadRetryDelayMs } from '@/lib/auth/authBoot'
 import { waitForAuthToken } from '@/lib/firebase/waitForAuthToken'
@@ -16,6 +23,7 @@ export type OrgCollectionDoc = { id: string; data: Record<string, unknown> }
 
 const unsubs = new Map<string, Unsubscribe>()
 const orgs = new Map<string, string>()
+const collectionNames = new Map<string, string>()
 const lastDocs = new Map<string, OrgCollectionDoc[]>()
 const removedDocIds = new Map<string, Set<string>>()
 const listeners = new Map<
@@ -110,6 +118,7 @@ export function subscribeOrgCollection(
   unsubs.get(key)?.()
   unsubs.delete(key)
   orgs.set(key, organizationId)
+  collectionNames.set(key, collectionName)
 
   const listen = (attempt: number) => {
     const fail = (error: FirestoreError) => {
@@ -140,6 +149,42 @@ export function subscribeOrgCollection(
     if (orgs.get(key) !== organizationId) return
     listen(0)
   })
+}
+
+/**
+ * Re-read every live collection for this organisation from the server and publish it.
+ * Used by the global Refresh button: onSnapshot normally keeps these current, but a
+ * listener that stalled or a write from another device that has not arrived yet is
+ * caught up here. Deleted documents recorded with forgetOrgCollectionDoc stay hidden.
+ */
+export async function refreshOrgCollections(organizationId: string): Promise<void> {
+  if (!db || !organizationId) return
+  const firestore = db
+  const work: Promise<void>[] = []
+  for (const [key, subscribedOrg] of orgs) {
+    if (subscribedOrg !== organizationId) continue
+    const collectionName = collectionNames.get(key)
+    const current = activeCallback(key)
+    if (!collectionName || !current) continue
+    const storedKey = cacheKey(key, organizationId)
+    work.push(
+      waitForAuthToken()
+        .then(() => getDocsFromServer(collection(firestore, 'organizations', organizationId, collectionName)))
+        .then((snap) => {
+          if (orgs.get(key) !== organizationId) return
+          const removed = removedDocIds.get(storedKey)
+          const docs = snap.docs
+            .filter((entry) => !removed?.has(entry.id))
+            .map((entry) => ({ id: entry.id, data: entry.data() as Record<string, unknown> }))
+          lastDocs.set(storedKey, docs)
+          activeCallback(key)?.onDocs(docs)
+        })
+        .catch(() => {
+          /* The live listener keeps what it has. */
+        })
+    )
+  }
+  await Promise.all(work)
 }
 
 export function unsubscribeOrgCollection(key: string): void {

@@ -14,6 +14,7 @@ import {
   parseHhMm,
 } from '@/lib/ios-parity/londonTime'
 import { normalizeBookingStatus, normalizeManagerTimeSlot } from '@/lib/ios-parity/enums'
+import { halfDayWindows } from '@/lib/canonical'
 
 export interface HomeUpNextRow {
   id: string
@@ -32,6 +33,8 @@ export interface HomeUpNextDaySection {
 export interface PayrollTimePolicy {
   standardDayStart: string
   standardDayEnd: string
+  breakWindowStart?: string
+  breakWindowEnd?: string
 }
 
 export const DEFAULT_PAYROLL_TIME_POLICY: PayrollTimePolicy = {
@@ -58,9 +61,7 @@ export function sortDateOperativeBooking(
   }
   const slot = String(booking.timeSlot)
   const start = parseHhMm(policy.standardDayStart) ?? 8 * 60
-  const end = parseHhMm(policy.standardDayEnd) ?? 16 * 60
-  const mid = start + Math.floor((end - start) / 2)
-  if (slot === 'PM') return addMinutesToDay(day, mid)
+  if (slot === 'PM') return addMinutesToDay(day, halfDayWindows(policy).pm.start)
   if (slot === 'Evening' || slot === 'Overtime') return addMinutesToDay(day, 17 * 60)
   return addMinutesToDay(day, start)
 }
@@ -81,8 +82,7 @@ export function sortDateManagerBooking(
     if (slot === 'PM') return addMinutesToDay(day, 13 * 60)
     return addMinutesToDay(day, 8 * 60)
   }
-  const mid = ds + Math.floor((de - ds) / 2)
-  if (slot === 'PM') return addMinutesToDay(day, mid)
+  if (slot === 'PM') return addMinutesToDay(day, halfDayWindows(policy).pm.start)
   return addMinutesToDay(day, ds)
 }
 

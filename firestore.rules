@@ -677,6 +677,12 @@ service cloud.firestore {
         allow delete: if isOrganizationAdmin(organizationId);
       }
 
+      // Dismissed warnings (expired qualifications). Document id is the canonical dismiss key.
+      match /dismissedWarnings/{dismissKey} {
+        allow read, create, update: if canAccessOrganization(organizationId);
+        allow delete: if isOrganizationAdmin(organizationId);
+      }
+
       match /dashboardLayouts/{layoutUserId} {
         allow read: if canAccessOrganization(organizationId);
         allow create, update, delete: if canAccessOrganization(organizationId) &&

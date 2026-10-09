@@ -21,14 +21,28 @@ function NavLink({ item, active }: { item: SettingsNavItem; active: boolean }) {
         color: 'var(--ink)',
         fontWeight: active ? 700 : 500,
         background: active ? 'var(--ht)' : 'transparent',
+        flexWrap: 'nowrap',
+        gap: 10,
+        alignItems: 'center',
       }}
     >
-      <span className="ico-chip sm" style={{ width: 30, height: 30 }}>
+      <span className="ico-chip sm" style={{ width: 30, height: 30, flexShrink: 0 }}>
         <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d={item.icon} />
         </svg>
       </span>
-      {item.label}
+      <span
+        style={{
+          minWidth: 0,
+          flex: '1 1 auto',
+          fontSize: 13.5,
+          lineHeight: 1.25,
+          whiteSpace: 'normal',
+          overflowWrap: 'anywhere',
+        }}
+      >
+        {item.label}
+      </span>
     </Link>
   )
 }

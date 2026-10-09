@@ -64,6 +64,7 @@ import { Hero, StatCard } from '@/components/ui'
 import { IosModal } from '@/components/ios/primitives'
 import type { SectionHue } from '@/lib/ui/sectionHue'
 import { generateOrgWarnings } from '@/lib/warnings/generateOrgWarnings'
+import { ORG_DATA_REFRESHED_EVENT } from '@/lib/stores/refreshOrgData'
 import { warningScanLanes } from '@/lib/warnings/warningsScan'
 import { loadOrganizationDetails, type OrganizationDetails } from '@/lib/settings/organizationSettings'
 import { loadMaterialCutOffSettings, type NotificationPreferences } from '@/lib/settings/notificationPreferences'
@@ -155,9 +156,18 @@ export function HomeScreen() {
     })
     loadOrganizationDetails(orgId).then(setOrgDetails).catch(() => setOrgDetails(null))
     const t = window.setTimeout(() => loadHolidays(orgId), 400)
+    const onRefreshed = () => {
+      loadOrganizationDetails(orgId, { fromServer: true, allowCacheFallback: true })
+        .then((details) => {
+          if (!cancelled && details) setOrgDetails(details)
+        })
+        .catch(() => {})
+    }
+    window.addEventListener(ORG_DATA_REFRESHED_EVENT, onRefreshed)
     return () => {
       cancelled = true
       window.clearTimeout(t)
+      window.removeEventListener(ORG_DATA_REFRESHED_EVENT, onRefreshed)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- zustand loaders are stable
   }, [organization?.id, pauseHomeLoads])
@@ -259,8 +269,6 @@ export function HomeScreen() {
     seeWarnings,
     warningInputsReady,
     materialWarningsReady,
-    bookingsLoading,
-    bookingsReady,
     bookings,
     managerSiteBookings,
     operatives,
