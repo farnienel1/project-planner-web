@@ -67,6 +67,14 @@ import {
   rankMaterialRecords,
   tokenizeMaterialSearch,
 } from './materialSearch.ts'
+import {
+  QUALIFICATION_FILTER_ALL,
+  qualificationLibraryFilterChips,
+  qualificationMatchesSection,
+  qualificationSearchScore,
+  rankQualificationRecords,
+  tokenizeQualificationSearch,
+} from './qualificationSearch.ts'
 
 const superAdmin: StaffAccountRole = { isSuperAdmin: true, isAdmin: true, isManager: false, isOperativeMode: false }
 const admin: StaffAccountRole = { isSuperAdmin: false, isAdmin: true, isManager: false, isOperativeMode: false }
@@ -674,6 +682,11 @@ test('the iOS JavaScript bundle exposes the standard-day, leave and dismiss rule
     'materialSearchScore',
     'rankMaterialRecords',
     'tokenizeMaterialSearch',
+    'qualificationSearchScore',
+    'rankQualificationRecords',
+    'tokenizeQualificationSearch',
+    'qualificationLibraryFilterChips',
+    'qualificationMatchesSection',
   ]) {
     assert.equal(typeof bundle[name], 'function', `${name} is exported from the packed script`)
   }
@@ -715,6 +728,11 @@ test('the iOS JavaScript bundle exposes the standard-day, leave and dismiss rule
     [{ name: '2.5mm2 Twin & Earth Cable 6242B LSZH (100m Drum)', productCode: '6242B' }],
   ] as const
   assert.deepEqual(plain(bundle.rankMaterialRecords(...searchArgs)), plain(rankMaterialRecords(...searchArgs)))
+  const qualArgs = [
+    'ccn1',
+    [{ name: 'CCN1 Core Domestic Gas Safety (includes CPA1)', code: 'GAS-CCN1', section: 'Gas' }],
+  ] as const
+  assert.deepEqual(plain(bundle.rankQualificationRecords(...qualArgs)), plain(rankQualificationRecords(...qualArgs)))
 })
 
 test('dismissing an expired qualification hides it until the expiry date changes', () => {
@@ -1002,6 +1020,43 @@ test('2.5mm LS finds 2.5mm2 Twin & Earth Cable 6242B LSZH and ranks it first', (
   const coded = rankMaterialRecords('2.5mm LS 6242B', [swa, twinEarth])
   assert.equal(coded[0].index, 1)
   assert.ok(materialSearchScore('lszh', twinEarth) > 0)
+})
+
+test('qualification search ranks by name and code and still works with a section chip', () => {
+  assert.deepEqual(tokenizeQualificationSearch('ECS Gold'), ['ecs', 'gold'])
+  const gold = {
+    name: 'ECS Installation Electrician (Gold Card)',
+    code: 'EL-ECS-IE',
+    awardingBody: 'ECS / JIB',
+    section: 'Electrical',
+    subsection: 'ECS Cards & JIB Grades',
+  }
+  const ccn1 = {
+    name: 'CCN1 Core Domestic Gas Safety (includes CPA1)',
+    code: 'GAS-CCN1',
+    awardingBody: 'ACS',
+    section: 'Gas',
+  }
+  const custom = { name: 'Site induction', section: '' }
+  assert.ok(qualificationSearchScore('ecs gold', gold) > 0)
+  assert.equal(qualificationSearchScore('ecs gold', ccn1), 0)
+  assert.ok(qualificationSearchScore('GAS-CCN1', ccn1) > 0)
+  const ranked = rankQualificationRecords('ccn1', [gold, ccn1, custom])
+  assert.equal(ranked.length, 1)
+  assert.equal(ranked[0].index, 1)
+  const electrical = rankQualificationRecords('ecs', [gold, ccn1], null, 'Electrical')
+  assert.deepEqual(electrical.map((hit) => hit.index), [0])
+  const allHits = rankQualificationRecords('', [gold, ccn1, custom], null, QUALIFICATION_FILTER_ALL)
+  assert.deepEqual(allHits.map((hit) => hit.index), [0, 1, 2])
+  assert.equal(qualificationMatchesSection(custom, 'Other'), true)
+  assert.equal(qualificationMatchesSection(gold, 'Gas'), false)
+  const chips = qualificationLibraryFilterChips([gold, ccn1, custom])
+  assert.equal(chips[0].key, QUALIFICATION_FILTER_ALL)
+  assert.equal(chips[0].count, 3)
+  assert.deepEqual(
+    chips.slice(1).map((chip) => chip.key),
+    ['Electrical', 'Gas', 'Other']
+  )
 })
 
 test('payment run rows write both web and iOS day fields and empty ranges use 1–15 then 16–31', () => {

@@ -125,6 +125,16 @@ export interface Qualification {
   endDate?: Date;
   createdAt: Date;
   updatedAt: Date;
+  /** Stable library code. Also used as the Firestore document id for seeded rows. */
+  code?: string;
+  section?: string;
+  subsection?: string;
+  awardingBody?: string;
+  level?: number | null;
+  renewYears?: number | null;
+  renewalType?: string;
+  status?: string;
+  notes?: string;
 }
 
 export interface Skill {

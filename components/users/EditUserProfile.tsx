@@ -48,7 +48,15 @@ import {
   type OrgAnnualLeaveDefaults,
 } from '@/lib/settings/organizationSettings'
 import { useEmploymentTypeSaveGate } from '@/components/users/EmploymentTypeChangeDialog'
-import type { User, UserPermissions } from '@/types'
+import type { Qualification, User, UserPermissions } from '@/types'
+import { OperativeQualificationsEditor } from '@/components/qualifications/OperativeQualificationsEditor'
+import {
+  loadOrganisationQualifications,
+  mergeQualificationTemplates,
+  assignedQualificationTemplates,
+} from '@/lib/qualifications/orgQualificationStorage'
+import { canonicalCertificateUrls, formatCertificateSaveError } from '@/lib/qualifications/certificateUpload'
+import { canManageOrganisationQualifications } from '@/lib/permissions'
 import { PermissionToggleList } from '@/components/users/ProfileExpandablePermissionToggle'
 import {
   ADMIN_ACCESS_LOCKED_MESSAGE,
@@ -230,7 +238,7 @@ export function EditUserProfile({
   const router = useRouter()
   const { user: currentUser, organization, reloadSignedInProfile } = useAuthStore()
   const { users, loadUsers, setListedUserActive, patchListedUser } = useOrgUserStore()
-  const { operatives, loadOperatives } = useOperativeStore()
+  const { operatives, loadOperatives, patchOperativeQualifications } = useOperativeStore()
   const { getUser, saveUser, setUserActive, deleteUser, sendPasswordReset, applyAccountType, syncLinkedOperative, transferSuperAdmin } =
     useUserStore()
   const { inviteUser } = useInviteStore()
@@ -264,6 +272,9 @@ export function EditUserProfile({
   const [orgLeaveDefaults, setOrgLeaveDefaults] = useState<OrgAnnualLeaveDefaults>(DEFAULT_ANNUAL_LEAVE)
   const [remainingDraft, setRemainingDraft] = useState('')
   const [remainingTouched, setRemainingTouched] = useState(false)
+  const [qualificationTemplates, setQualificationTemplates] = useState<Qualification[]>([])
+  const [qualSaving, setQualSaving] = useState(false)
+  const [qualError, setQualError] = useState<string | null>(null)
   const { request: requestPaySave, ui: payDialogs } = usePaySaveGate()
   const { request: requestEmploymentSave, ui: employmentDialogs } = useEmploymentTypeSaveGate()
   const profileLoadGen = useRef(0)
@@ -280,6 +291,12 @@ export function EditUserProfile({
       })
       .catch(() => undefined)
     void loadOperativeDayRateHistory(organization.id).then(setRateHistory)
+    void loadOrganisationQualifications(organization.id, { fromServer: true })
+      .then((existing) => {
+        const assigned = assignedQualificationTemplates(useOperativeStore.getState().operatives)
+        setQualificationTemplates(mergeQualificationTemplates(existing, assigned))
+      })
+      .catch(() => undefined)
     getUser(userId)
       .then((row) => {
         if (generation !== profileLoadGen.current) return
@@ -342,6 +359,8 @@ export function EditUserProfile({
     (target.permissions.operativeMode || target.permissions.manager || target.permissions.adminAccess)
 
   const showEmploymentType = target && canEditMatrix && !target.isSuperAdmin
+  const showQualifications = Boolean(target && canEdit)
+  const canManageOrgQuals = canManageOrganisationQualifications(currentUser)
 
   const showPayrollFields =
     target &&
@@ -865,6 +884,42 @@ export function EditUserProfile({
           </SettingsCard>
         </>
       )}
+
+      {showQualifications ? (
+        <>
+          <SectionLabel label="Qualifications" />
+          <SettingsCard>
+            <div className="p-4">
+              {qualError ? <p className="mb-3 text-sm font-medium text-red-600">{qualError}</p> : null}
+              <OperativeQualificationsEditor
+                linked={linkedOperative}
+                templates={qualificationTemplates}
+                saving={qualSaving}
+                organizationId={organization?.id || ''}
+                canManageOrg={canManageOrgQuals}
+                onSave={async (next) => {
+                  if (!organization?.id) return
+                  setQualSaving(true)
+                  setQualError(null)
+                  try {
+                    const urls = canonicalCertificateUrls(next.qualifications, next.qualificationCertificateURLs)
+                    await patchOperativeQualifications(organization.id, {
+                      ...next,
+                      qualificationCertificateURLs: urls,
+                    })
+                  } catch (err: unknown) {
+                    const message = formatCertificateSaveError(err)
+                    setQualError(message)
+                    throw err instanceof Error ? err : new Error(message)
+                  } finally {
+                    setQualSaving(false)
+                  }
+                }}
+              />
+            </div>
+          </SettingsCard>
+        </>
+      ) : null}
 
       {/* Annual leave access */}
       {showAnnualLeave && (

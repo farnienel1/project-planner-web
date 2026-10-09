@@ -87,3 +87,17 @@ export {
   rankMaterialRecords,
   tokenizeMaterialSearch,
 } from './materialSearch'
+
+export {
+  QUALIFICATION_FILTER_ALL,
+  QUALIFICATION_FILTER_OTHER,
+  QUALIFICATION_LIBRARY_SECTIONS,
+  qualificationLibraryFilterChips,
+  qualificationMatchesSection,
+  qualificationRecordMatches,
+  qualificationSearchRecordFromItem,
+  qualificationSearchScore,
+  qualificationSectionChipLabel,
+  rankQualificationRecords,
+  tokenizeQualificationSearch,
+} from './qualificationSearch'
