@@ -72,10 +72,11 @@ test('payment run rows write startDay and endDay and missing mode is date ranges
   assert.equal(parsed.paymentRunDateRanges[0].startDay, 1)
   assert.equal(parsed.paymentRunDateRanges[0].endDay, 15)
   const written = invoicingToFirestore(parsed)
-  const ranges = written.paymentRunDateRanges as { startDay: number; endDay: number }[]
+  const ranges = written.paymentRunDateRanges as { startDay: number; endDay: number; startDate: number; endDate: number }[]
   assert.equal(ranges[0].startDay, 1)
   assert.equal(ranges[0].endDay, 15)
-  assert.equal('startDate' in ranges[0], false)
+  assert.equal(ranges[0].startDate, 1)
+  assert.equal(ranges[0].endDate, 15)
 })
 
 test('company address uses iOS flat fields and does not replace country with the region', () => {

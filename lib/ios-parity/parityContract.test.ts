@@ -245,7 +245,8 @@ test('payment run write uses startDay and endDay, and a missing mode is date ran
   const ranges = written.paymentRunDateRanges as Array<Record<string, unknown>>
   assert.equal(ranges[0].startDay, 1)
   assert.equal(ranges[0].endDay, 15)
-  assert.equal('startDate' in ranges[0], false)
+  assert.equal(ranges[0].startDate, 1)
+  assert.equal(ranges[0].endDate, 15)
   assert.equal(parseInvoicing({}).paymentRunMode, 'date_ranges')
   assert.equal(parseInvoicing({ paymentRunMode: 'recurring_timeframe' }).paymentRunMode, 'recurring_timeframe')
 })

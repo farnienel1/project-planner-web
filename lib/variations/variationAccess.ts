@@ -1,4 +1,5 @@
-import { hasAdminAccess, isOperativeMode } from '@/lib/permissions'
+import { canManageVariationTracker as canManageVariationTrackerRole, canSeeVariations } from '@/lib/canonical'
+import { staffAccountRole } from '@/lib/permissions'
 import type { User } from '@/types'
 
 export type VariationParentAccess = {
@@ -11,34 +12,21 @@ export type VariationManagerProfile = {
   email?: string | null
 }
 
-function isManagerAccount(user: User): boolean {
-  return user.permissions.manager === true || user.role === 'manager'
-}
-
 export function assignedManagerIds(parent: VariationParentAccess): string[] {
   return [parent.managerId || '', ...(parent.managerIds || [])].map((id) => id.trim()).filter(Boolean)
 }
 
 /**
- * Admins see every job. A manager sees a job when their user id or their
- * manager-roster id is on the job. Jobs store the roster id, which is not the
- * sign-in id. Operatives never see variations.
+ * Admins and managers see variations on every job. Operatives never do.
+ * Assignment is only used for who gets a new-variation notification.
  */
 export function canSeeJobVariations(
   user: User | null | undefined,
-  parent: VariationParentAccess,
-  managers: VariationManagerProfile[] = []
+  _parent?: VariationParentAccess,
+  _managers: VariationManagerProfile[] = []
 ): boolean {
-  if (!user || isOperativeMode(user)) return false
-  if (hasAdminAccess(user)) return true
-  if (!isManagerAccount(user)) return false
-  const assigned = new Set(assignedManagerIds(parent))
-  if (assigned.has(user.id)) return true
-  const email = user.email.trim().toLowerCase()
-  if (!email) return false
-  return managers.some(
-    (manager) => manager.id && assigned.has(manager.id) && (manager.email || '').trim().toLowerCase() === email
-  )
+  if (!user) return false
+  return canSeeVariations(staffAccountRole(user))
 }
 
 export function canEditVariationContent(
@@ -59,11 +47,10 @@ export function canChangeVariationStatus(
 
 /** Tracker reorder is an admin tool. There is no QS role on this app yet. */
 export function canManageVariationTracker(user: User | null | undefined): boolean {
-  if (!user || isOperativeMode(user)) return false
-  return hasAdminAccess(user)
+  if (!user) return false
+  return canManageVariationTrackerRole(staffAccountRole(user))
 }
 
 export function canSeeAnyVariations(user: User | null | undefined): boolean {
-  if (!user || isOperativeMode(user)) return false
-  return hasAdminAccess(user) || isManagerAccount(user)
+  return canSeeJobVariations(user)
 }

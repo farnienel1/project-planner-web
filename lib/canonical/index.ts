@@ -44,6 +44,8 @@ export { leaveCoverageRows, leaveSlotKind } from './leaveCoverage'
 
 export {
   canEditWorkCatalogue,
+  canManageVariationTracker,
+  canSeeVariations,
   canViewStaffWarnings,
   isStaffAccount,
   receivesJobNotification,
@@ -142,6 +144,35 @@ export type {
 } from './annualLeaveBalance'
 
 export type { MaterialSearchHit, MaterialSearchRecord } from './materialSearch'
+
+export {
+  DEFAULT_ANNUAL_LEAVE,
+  DEFAULT_INVOICING,
+  DEFAULT_MATERIAL_CUT_OFF,
+  DEFAULT_MY_SCHEDULE,
+  DEFAULT_PAYROLL_POLICY,
+  DEFAULT_PAYMENT_RUN_DATE_RANGES,
+  DEFAULT_WARNING_DETECTION,
+  OPERATIONAL_COLLECTION_PATHS,
+  ORGANIZATION_DOCUMENT_FIELDS,
+  invoicingToFirestore,
+  parseInvoicing,
+  parsePaymentRunDateRanges,
+  parseWarningDetection,
+  paymentRunRangeToFirestore,
+  validateInvoicingSettings,
+  warningDetectionToFirestore,
+} from './organizationSettings'
+
+export type {
+  MaterialCutOffSettings,
+  MyScheduleOptions,
+  OrgAnnualLeaveDefaults,
+  OrgInvoicingSettings,
+  OrgPayrollTimePolicy,
+  OrgWarningDetectionSettings,
+  PaymentRunDateRange,
+} from './organizationSettings'
 
 export type {
   LeaveBooking,
