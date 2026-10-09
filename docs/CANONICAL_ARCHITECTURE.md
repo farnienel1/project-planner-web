@@ -21,10 +21,10 @@ The canonical module owns:
 - Organisation id matching and which company a session should open
 - The in-process organisation epoch used to drop a late result after a switch or sign-out
 - Invoicing-period bounds, including wrapped payment runs and short months
-- Organisation settings defaults and Firestore field names (`organizationSettings.ts`): payment runs write **both** `startDay`/`endDay` (web) and `startDate`/`endDate` (iOS); empty ranges are 1–15 then 16–31; warningDetection is the top-level org map; payroll weekend hours use iOS field names
+- Organisation settings defaults and Firestore field names (`organizationSettings.ts`): payment runs write **both** `startDay`/`endDay` (web) and `startDate`/`endDate` (iOS); read prefers the iOS pair when both exist and disagree (`normalizePaymentRunRange`); empty ranges are 1–15 then 16–31; warningDetection is the top-level org map; payroll weekend hours use iOS field names
 - Who sees variations (`canSeeVariations`): every admin and manager, never an operative
 - Warning coverage windows (`numberOfDays`, full Monday–Friday week, invoicing period)
-- Whether a person covers the organisation standard day (`standardDayCoverage`). A full day covers 07:30–16:00 minus the unpaid break. A shorter booking stays unbooked and the missing hours are the gap. Weekend days are included only when that toggle is on.
+- Whether a person covers the organisation standard day (`standardDayCoverage`). A full day (`FULL DAY` / `FULL_DAY`) covers 07:30–16:00 minus the unpaid break even when clock times are missing. Bookings match the person by user id or operative id. A shorter booking stays unbooked and the missing hours are the gap. Weekend days are included only when that toggle is on.
 - Organisation time zone for those windows (default `Europe/London`, never the device zone)
 - Named booking slots (`FULL DAY` / `FULL_DAY`, `AM`, `PM`) and their pay (`paidHoursForNamedSlot`)
 - The standard day and its two halves (`standardDayWindow`, `halfDayWindows`), and the clock interval any booking occupies (`slotInterval`). See "Standard day, AM and PM" below
@@ -51,7 +51,7 @@ Each app resolves four flags for the signed-in account (super admin, admin, mana
 
 `organizations/{orgId}` is the company settings record. Both apps read and write the same maps (`ORGANIZATION_DOCUMENT_FIELDS`). A save on one device must not drop fields the other still uses.
 
-- Payment runs live on `invoicing.paymentRunDateRanges`. Each row writes **both** `startDay`/`endDay` and `startDate`/`endDate` with the same numbers. Read prefers `startDay` then `startDate`. Missing or empty ranges are 1–15 then 16–31 (`CANONICAL_HALF_MONTH_RANGES`). That split is what warnings use when the scan mode is end of invoicing period. A company that saved 1–16 / 17–31 keeps those days; do not silently rewrite them to 1–15.
+- Payment runs live on `invoicing.paymentRunDateRanges`. Each row writes **both** `startDay`/`endDay` and `startDate`/`endDate` with the same numbers. Read prefers `startDate`/`endDate` (iOS) then `startDay`/`endDay` (web), via `normalizePaymentRunRange`. A leftover web 1–16 cannot override an iOS-saved 1–15. A web-only 1–16 save (no `startDate`) is kept. Missing or empty ranges are 1–15 then 16–31 (`CANONICAL_HALF_MONTH_RANGES`). `invoicingPeriod` / `coverageWindow` parse those same field names — do not pass raw Firestore rows around the normalizer. That split is what warnings use when the scan mode is end of invoicing period.
 - Warning detection is `organizations/{orgId}.warningDetection` (top-level, not `settings.warningDetection`). Default scan is `numberOfDays` = 7. The nested settings map may only fill excluded user ids when the top-level map left that key out.
 - Payroll, annual-leave defaults, schedule options, and material cut-off parse/write through the same module. Material cut-off is company-wide on `settings.materialCutOff`; dual-writing the saver's user prefs must not become the source of truth.
 - Operational collection paths (`OPERATIONAL_COLLECTION_PATHS`) stay iOS-compatible: variations collection plus settings fallback, H&S under `settings/healthSafety_…`, dismissed warnings, bookings, timesheets, tasks, site audits, clients, catalogues.

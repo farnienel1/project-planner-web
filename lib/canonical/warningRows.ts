@@ -117,6 +117,8 @@ export type LabourBooking = {
   timeSlot?: string | null
   workStart?: string | null
   workEnd?: string | null
+  workStartTime?: string | null
+  workEndTime?: string | null
 }
 
 export type LabourHoliday = {
@@ -336,8 +338,8 @@ function dedupeFinishedPeople(people: readonly LabourPerson[]): LabourPerson[] {
 function asCoverageBooking(booking: LabourBooking): StandardDayBooking {
   return {
     timeSlot: booking.timeSlot,
-    workStart: booking.workStart,
-    workEnd: booking.workEnd,
+    workStart: booking.workStart ?? booking.workStartTime,
+    workEnd: booking.workEnd ?? booking.workEndTime,
   }
 }
 
@@ -394,17 +396,20 @@ export function unbookedLabourRows(input: UnbookedLabourInput): UnbookedLabourRo
   }
 
   const slotsFor = (email: string, operativeId: string | undefined, userId: string | undefined, dayKey: string): StandardDayBooking[] => {
-    const slots: StandardDayBooking[] = []
     const ids = new Set<string>()
     if (operativeId) ids.add(operativeId)
+    if (userId) ids.add(userId)
     const linked = operativeIdsByEmail.get(email)
     if (linked) for (const id of linked) ids.add(id)
-    for (const id of ids) slots.push(...(operativeBookings.get(`${id}|${dayKey}`) || []))
-    const userIds = new Set<string>()
-    if (userId) userIds.add(userId)
     const linkedUsers = userIdsByEmail.get(email)
-    if (linkedUsers) for (const id of linkedUsers) userIds.add(id)
-    for (const id of userIds) slots.push(...(managerBookings.get(`${id}|${dayKey}`) || []))
+    if (linkedUsers) for (const id of linkedUsers) ids.add(id)
+    const slots: StandardDayBooking[] = []
+    for (const id of ids) {
+      // A FULL DAY may be stored under the user id or the roster id, as
+      // either an operative booking or a manager site booking.
+      slots.push(...(operativeBookings.get(`${id}|${dayKey}`) || []))
+      slots.push(...(managerBookings.get(`${id}|${dayKey}`) || []))
+    }
     return slots
   }
 
