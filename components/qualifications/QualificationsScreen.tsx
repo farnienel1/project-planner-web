@@ -32,6 +32,7 @@ import {
   restoreOrganisationQualificationsFromAssignments,
   saveOrganisationQualification,
 } from '@/lib/qualifications/orgQualificationStorage'
+import { loadOrganisationQualificationsEnsuringStarter } from '@/lib/qualifications/starterLibrary'
 import { canonicalCertificateUrls, formatCertificateSaveError } from '@/lib/qualifications/certificateUpload'
 
 type Tab = 'organisation' | 'mine'
@@ -70,7 +71,7 @@ export function QualificationsScreen({ initialTab }: { initialTab?: Tab } = {}) 
     const refresh = async () => {
       const [, existing] = await Promise.all([
         loadOperatives(orgId, { force: true }),
-        loadOrganisationQualifications(orgId, { fromServer: true }),
+        loadOrganisationQualificationsEnsuringStarter(orgId, { fromServer: true }),
       ])
       if (cancelled) return
       const assigned = assignedQualificationTemplates(useOperativeStore.getState().operatives)

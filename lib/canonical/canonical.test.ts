@@ -48,6 +48,7 @@ import {
   parseInvoicing,
   parsePaymentRunDateRanges,
   parseWarningDetection,
+  starterCollectionShouldSeed,
 } from './organizationSettings.ts'
 import {
   accountKindFromFlags,
@@ -687,6 +688,7 @@ test('the iOS JavaScript bundle exposes the standard-day, leave and dismiss rule
     'tokenizeQualificationSearch',
     'qualificationLibraryFilterChips',
     'qualificationMatchesSection',
+    'starterCollectionShouldSeed',
   ]) {
     assert.equal(typeof bundle[name], 'function', `${name} is exported from the packed script`)
   }
@@ -1090,6 +1092,12 @@ test('payment run rows write both web and iOS day fields and empty ranges use 1â
   assert.equal(row.startDate, 1)
   assert.equal(row.endDate, 15)
   assert.equal(parseInvoicing({}).paymentRunMode, 'date_ranges')
+})
+
+test('starter catalogue and qualification library seed only when the collection is empty', () => {
+  assert.equal(starterCollectionShouldSeed(0), true)
+  assert.equal(starterCollectionShouldSeed(1), false)
+  assert.equal(starterCollectionShouldSeed(272), false)
 })
 
 test('warning detection defaults to seven days and reads the iOS top-level map', () => {

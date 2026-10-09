@@ -51,10 +51,10 @@ import { useEmploymentTypeSaveGate } from '@/components/users/EmploymentTypeChan
 import type { Qualification, User, UserPermissions } from '@/types'
 import { OperativeQualificationsEditor } from '@/components/qualifications/OperativeQualificationsEditor'
 import {
-  loadOrganisationQualifications,
   mergeQualificationTemplates,
   assignedQualificationTemplates,
 } from '@/lib/qualifications/orgQualificationStorage'
+import { loadOrganisationQualificationsEnsuringStarter } from '@/lib/qualifications/starterLibrary'
 import { canonicalCertificateUrls, formatCertificateSaveError } from '@/lib/qualifications/certificateUpload'
 import { canManageOrganisationQualifications } from '@/lib/permissions'
 import { PermissionToggleList } from '@/components/users/ProfileExpandablePermissionToggle'
@@ -291,7 +291,7 @@ export function EditUserProfile({
       })
       .catch(() => undefined)
     void loadOperativeDayRateHistory(organization.id).then(setRateHistory)
-    void loadOrganisationQualifications(organization.id, { fromServer: true })
+    void loadOrganisationQualificationsEnsuringStarter(organization.id, { fromServer: true })
       .then((existing) => {
         const assigned = assignedQualificationTemplates(useOperativeStore.getState().operatives)
         setQualificationTemplates(mergeQualificationTemplates(existing, assigned))

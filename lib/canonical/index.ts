@@ -175,6 +175,7 @@ export {
   DEFAULT_WARNING_DETECTION,
   OPERATIONAL_COLLECTION_PATHS,
   ORGANIZATION_DOCUMENT_FIELDS,
+  starterCollectionShouldSeed,
   invoicingToFirestore,
   parseInvoicing,
   parsePaymentRunDateRanges,
