@@ -14,7 +14,8 @@ import {
   emptyProjectCreateIdentity,
 } from '@/lib/projects/projectCreateRules'
 import { FormActions, FormInput, FormLabel, FormSelect, FormTextarea } from '@/components/forms/FormShell'
-import { ErrorBanner } from '@/components/dashboard/PageShell'
+import { EmptyState, ErrorBanner } from '@/components/dashboard/PageShell'
+import { canManageWorkCatalogue } from '@/lib/permissions'
 import { SitePinPickerSheet } from '@/components/site-map/SitePinPickerSheet'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import {
@@ -45,7 +46,7 @@ function defaultProjectEnd(): string {
 }
 
 export function ProjectForm({ initial, collection = 'projects', backHref, onSaved }: ProjectFormProps) {
-  const { organization } = useAuthStore()
+  const { user, organization } = useAuthStore()
   const { clients, loadClients, saveProject, createClient } = useProjectStore()
   const { managers, placeholderManagerCount, managersLoadedOrgId, loadManagers, saveManager } = useOperativeStore()
   const { users, rosterLoadedOrgId, loadUsers } = useOrgUserStore()
@@ -287,6 +288,17 @@ export function ProjectForm({ initial, collection = 'projects', backHref, onSave
     const client = await createClient({ name: newClientName.trim(), organizationId: organization.id })
     setForm({ ...form, clientId: client.id })
     setNewClientName('')
+  }
+
+  // The toggle never hides the list; it only turns off add and edit for this catalogue.
+  // Super admin ignores it. A deep link to /new or /edit lands here, so gate the form too.
+  if (user && !canManageWorkCatalogue(user, collection)) {
+    return (
+      <EmptyState
+        title={collection === 'smallWorks' ? 'Small works editing is off for your account' : 'Project editing is off for your account'}
+        description="You can still open every job. Ask an organisation admin to turn the toggle on to add or edit here."
+      />
+    )
   }
 
   return (

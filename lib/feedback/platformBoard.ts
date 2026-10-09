@@ -249,21 +249,19 @@ export async function loadCanonicalIdeaBoard(
   options: { includeAllVotes?: boolean; voterUserId?: string } = {}
 ): Promise<IdeaBoardSnapshot | null> {
   try {
-    const suggestionSnap = await getDocs(collection(db, 'productFeedback'))
-    let votes: FeedbackVote[] = []
-    if (options.includeAllVotes) {
-      const voteSnap = await getDocs(collection(db, 'productFeedbackVotes'))
-      votes = voteSnap.docs.map((entry) => parseVote(entry.id, entry.data() as Record<string, unknown>))
-    } else if (options.voterUserId) {
-      try {
-        const voteSnap = await getDocs(
-          query(collection(db, 'productFeedbackVotes'), where('userId', '==', options.voterUserId))
+    // Suggestions and votes do not depend on each other; read them together.
+    const votesPromise: Promise<FeedbackVote[]> = options.includeAllVotes
+      ? getDocs(collection(db, 'productFeedbackVotes')).then((voteSnap) =>
+          voteSnap.docs.map((entry) => parseVote(entry.id, entry.data() as Record<string, unknown>))
         )
-        votes = voteSnap.docs.map((entry) => parseVote(entry.id, entry.data() as Record<string, unknown>))
-      } catch {
-        votes = []
-      }
-    }
+      : options.voterUserId
+        ? getDocs(query(collection(db, 'productFeedbackVotes'), where('userId', '==', options.voterUserId)))
+            .then((voteSnap) => voteSnap.docs.map((entry) => parseVote(entry.id, entry.data() as Record<string, unknown>)))
+            .catch(() => [] as FeedbackVote[])
+        : Promise.resolve([])
+    votesPromise.catch(() => undefined)
+    const suggestionSnap = await getDocs(collection(db, 'productFeedback'))
+    const votes = await votesPromise
     return {
       suggestions: suggestionSnap.docs.map((entry) => parseSuggestion(entry.id, entry.data() as Record<string, unknown>)),
       votes,

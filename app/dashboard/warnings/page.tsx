@@ -24,6 +24,7 @@ import {
   loadOrganizationDetails,
   saveWarningDetection,
   type OrganizationDetails,
+  type OrgWarningDetectionSettings,
   warningDetectionLooksLikeFactoryDefault,
 } from '@/lib/settings/organizationSettings'
 import {
@@ -73,7 +74,9 @@ export default function WarningsPage() {
   const [bookingsSettled, setBookingsSettled] = useState(false)
   const managerSawLoad = useRef(false)
   const bookingsSawLoad = useRef(false)
-  const cachedDetection = organization?.id ? readCachedWarningDetection(organization.id) : null
+  // The cache returns a fresh copy per call, so hold one identity in state
+  // rather than re-reading it (and re-running the scan) on every render.
+  const [cachedDetection, setCachedDetection] = useState<OrgWarningDetectionSettings | null>(null)
 
   useEffect(() => {
     if (!loading && !user) router.push('/login')
@@ -122,6 +125,7 @@ export default function WarningsPage() {
       })
       loadAcceptedBookingClashes(orgId).then(setAcceptedClashes).catch(() => setAcceptedClashes([]))
       const cached = readCachedWarningDetection(orgId)
+      setCachedDetection(cached)
       let settled = false
       const settle = () => {
         if (cancelled || settled) return
@@ -139,11 +143,15 @@ export default function WarningsPage() {
           !warningDetectionLooksLikeFactoryDefault(latestCache)
         ) {
           writeCachedWarningDetection(orgId, latestCache)
+          setCachedDetection(latestCache)
           setOrgDetails({ ...details, warningDetection: latestCache })
           void saveWarningDetection(orgId, latestCache).catch(() => {})
           return
         }
-        if (loaded) writeCachedWarningDetection(orgId, loaded)
+        if (loaded) {
+          writeCachedWarningDetection(orgId, loaded)
+          setCachedDetection(loaded)
+        }
         setOrgDetails((current) => {
           if (
             current?.id === orgId &&
@@ -278,9 +286,14 @@ export default function WarningsPage() {
     ]
   )
 
+  const scheduleReady = lanes.clashes && lanes.unbooked && lanes.qualifications && lanes.unverified
+  // Nothing computed before the schedule lanes are ready is ever shown, so
+  // skip the scan instead of re-running it as each source arrives.
   const generated = useMemo(
     () =>
-      generateOrgWarnings({
+      !scheduleReady
+        ? null
+        : generateOrgWarnings({
         bookings: bookingScope.foreign ? [] : bookingScope.rows,
         managerSiteBookings: managerScope.foreign ? [] : managerScope.rows,
         operatives: operativeScope.foreign ? [] : operativeScope.rows,
@@ -294,6 +307,7 @@ export default function WarningsPage() {
         notificationPreferences,
       }),
     [
+      scheduleReady,
       warningDetection,
       bookingScope,
       managerScope,
@@ -309,10 +323,9 @@ export default function WarningsPage() {
   )
 
   const lastPublished = useRef<{ orgId: string; result: OrgWarningsResult } | null>(null)
-  const scheduleReady = lanes.clashes && lanes.unbooked && lanes.qualifications && lanes.unverified
   const visible = useMemo(() => {
     const previous = lastPublished.current && lastPublished.current.orgId === orgId ? lastPublished.current.result : null
-    if (!scheduleReady) return previous
+    if (!scheduleReady || !generated) return previous
     const kept = publishReadyWarningLanes({
       previous,
       computed: generated,

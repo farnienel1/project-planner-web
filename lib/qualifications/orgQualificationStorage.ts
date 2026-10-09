@@ -83,20 +83,24 @@ export async function loadOrganisationQualifications(
 /** Re-create org templates from names still assigned on staff. Does not delete anything. */
 export async function restoreOrganisationQualificationsFromAssignments(
   organizationId: string,
-  operatives: Operative[]
+  operatives: Operative[],
+  alreadyLoaded?: Qualification[]
 ): Promise<Qualification[]> {
-  const existing = await loadOrganisationQualifications(organizationId)
+  const existing = alreadyLoaded ?? (await loadOrganisationQualifications(organizationId))
   const assigned = assignedQualificationTemplates(operatives)
   const merged = mergeQualificationTemplates(existing, assigned)
   const existingNames = new Set(existing.map((row) => row.name.trim().toLowerCase()))
-  for (const row of merged) {
-    if (existingNames.has(row.name.trim().toLowerCase())) continue
-    await saveOrganisationQualification(organizationId, {
-      id: row.id,
-      name: row.name,
-      createdAt: row.createdAt,
-    })
-  }
+  const missing = merged.filter((row) => !existingNames.has(row.name.trim().toLowerCase()))
+  if (missing.length === 0) return merged
+  await Promise.all(
+    missing.map((row) =>
+      saveOrganisationQualification(organizationId, {
+        id: row.id,
+        name: row.name,
+        createdAt: row.createdAt,
+      })
+    )
+  )
   return loadOrganisationQualifications(organizationId)
 }
 
