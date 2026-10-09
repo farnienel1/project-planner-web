@@ -16,6 +16,11 @@ import {
   namedSlotLabel,
 } from '@/lib/scheduling/paidHours'
 import { BookingEditSheet } from '@/components/schedule/BookingEditSheet'
+import { QuickAddBookingSheet, type QuickAddBookingValues } from '@/components/schedule/QuickAddBookingSheet'
+import { useAuthStore } from '@/lib/stores/authStore'
+import { ORG_DATA_REFRESHED_EVENT } from '@/lib/stores/refreshOrgData'
+import { canBookWork } from '@/lib/permissions'
+import { UserRole, type User } from '@/types'
 import { SubcontractorBookingEditSheet } from '@/components/projects/scheduling/SubcontractorBookingEditSheet'
 import { managerSiteBookingToScheduleBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import type { Booking, Project } from '@/types'
@@ -81,12 +86,18 @@ type DayRow = {
   range?: string | null
   roleLabel: string
   roleTone: 'operative' | 'manager' | 'subcontractor'
+  quickAdd: QuickAddTarget | null
   booking?: Booking
   managerBooking?: ManagerSiteBooking
   subBooking?: SubBooking
   peopleLabel?: string
   firmName?: string
 }
+
+/** Where a Quick Add for this row is written. Subcontractor rows have none. */
+type QuickAddTarget =
+  | { kind: 'operative'; operativeId: string }
+  | { kind: 'manager'; userId: string }
 
 type PersonWeek = {
   key: string
@@ -95,7 +106,26 @@ type PersonWeek = {
   roleTone: DayRow['roleTone']
   peopleLabel?: string
   firmName?: string
+  quickAdd: QuickAddTarget | null
   cells: DayRow[][]
+}
+
+function emailKey(value: string | undefined | null): string {
+  return String(value || '').trim().toLowerCase()
+}
+
+/**
+ * Colour and label follow the person's account, never the collection the booking sits in.
+ * Admin and manager are always blue, operatives green, subcontractors purple.
+ * An admin with an operative profile is still blue.
+ */
+function roleForUser(user: User | undefined): { label: string; tone: DayRow['roleTone'] } {
+  if (!user) return { label: 'Op', tone: 'operative' }
+  if (user.permissions?.adminAccess || user.isSuperAdmin || user.role === UserRole.ADMIN) {
+    return { label: 'Admin', tone: 'manager' }
+  }
+  if (user.permissions?.manager) return { label: 'Mgr', tone: 'manager' }
+  return { label: 'Op', tone: 'operative' }
 }
 
 function bookingRowFromHours(input: {
@@ -145,9 +175,16 @@ export function ProjectScheduleWeekOverview({
   scheduleBasePath: string
   variant?: 'full' | 'hub'
 }) {
-  const { bookings, loadBookings, updateBooking, deleteBooking } = useBookingStore()
-  const { managerSiteBookings, loadManagerSiteBookings, updateManagerSiteBooking, deleteManagerSiteBooking } =
-    useManagerScheduleStore()
+  const { bookings, loadBookings, createBooking, updateBooking, deleteBooking } = useBookingStore()
+  const {
+    managerSiteBookings,
+    loadManagerSiteBookings,
+    saveManagerSiteBooking,
+    updateManagerSiteBooking,
+    deleteManagerSiteBooking,
+  } = useManagerScheduleStore()
+  const currentUser = useAuthStore((state) => state.user)
+  const canQuickAdd = canBookWork(currentUser)
   const { operatives, loadOperatives } = useOperativeStore()
   const { users, loadUsers } = useOrgUserStore()
   const { subcontractors, loadSubcontractors } = useSubcontractorStore()
@@ -156,6 +193,8 @@ export function ProjectScheduleWeekOverview({
   const [expanded, setExpanded] = useState(variant !== 'hub')
   const [editingRow, setEditingRow] = useState<DayRow | null>(null)
   const [savingEdit, setSavingEdit] = useState(false)
+  const [quickAdd, setQuickAdd] = useState<{ person: PersonWeek; date: Date } | null>(null)
+  const [savingQuickAdd, setSavingQuickAdd] = useState(false)
   const [payroll, setPayroll] = useState<OrgPayrollTimePolicy>(DEFAULT_PAYROLL_POLICY)
 
   useEffect(() => {
@@ -201,6 +240,16 @@ export function ProjectScheduleWeekOverview({
       )
     }
     void load()
+    const onRefreshed = () => {
+      void load()
+      loadOrganizationDetails(organizationId, { fromServer: true, allowCacheFallback: true })
+        .then((details) => {
+          if (details?.payrollTimePolicy) setPayroll(details.payrollTimePolicy)
+        })
+        .catch(() => {})
+    }
+    window.addEventListener(ORG_DATA_REFRESHED_EVENT, onRefreshed)
+    return () => window.removeEventListener(ORG_DATA_REFRESHED_EVENT, onRefreshed)
   }, [organizationId, project.id])
 
   const weekDays = useMemo(() => weekDaysFrom(weekStart), [weekStart])
@@ -220,6 +269,15 @@ export function ProjectScheduleWeekOverview({
     [managerSiteBookings, project.id]
   )
 
+  const usersByEmail = useMemo(() => {
+    const map = new Map<string, User>()
+    for (const user of users) {
+      const key = emailKey(user.email)
+      if (key && !map.has(key)) map.set(key, user)
+    }
+    return map
+  }, [users])
+
   const rowsByDay = useMemo(() => {
     return weekDays.map((day) => {
       const opRows: DayRow[] = projectBookings
@@ -227,12 +285,15 @@ export function ProjectScheduleWeekOverview({
         .map((b) => {
           const op = operatives.find((o) => o.id === b.operativeId)
           const name = op ? `${op.firstName} ${op.lastName}`.trim() : 'Operative'
+          const linkedUser = op ? usersByEmail.get(emailKey(op.email)) : undefined
+          const role = roleForUser(linkedUser)
           return {
             id: b.id,
-            personKey: `op:${b.operativeId}`,
+            personKey: linkedUser ? `user:${linkedUser.id}` : `op:${b.operativeId}`,
             name,
-            roleLabel: 'Op',
-            roleTone: 'operative' as const,
+            roleLabel: role.label,
+            roleTone: role.tone,
+            quickAdd: { kind: 'operative' as const, operativeId: b.operativeId },
             booking: b,
             ...bookingRowFromHours({
               ...b,
@@ -252,14 +313,20 @@ export function ProjectScheduleWeekOverview({
         .map((b) => {
           const manager = users.find((u) => u.id === b.userId)
           const name = manager ? `${manager.firstName} ${manager.surname}`.trim() : 'Manager'
-          const roleLabel =
-            manager?.permissions.adminAccess || manager?.isSuperAdmin ? 'Admin' : 'Mgr'
+          const role = manager ? roleForUser(manager) : { label: 'Mgr', tone: 'manager' as const }
+          const linkedOperative = manager
+            ? operatives.find((o) => emailKey(o.email) && emailKey(o.email) === emailKey(manager.email))
+            : undefined
           return {
             id: b.id,
-            personKey: `mgr:${b.userId}`,
+            personKey: manager ? `user:${manager.id}` : `mgr:${b.userId}`,
             name,
-            roleLabel,
-            roleTone: 'manager' as const,
+            roleLabel: role.label,
+            roleTone: role.tone,
+            // Booking flow books a roster operative through operative bookings; keep Quick Add on the same path.
+            quickAdd: linkedOperative
+              ? { kind: 'operative' as const, operativeId: linkedOperative.id }
+              : { kind: 'manager' as const, userId: b.userId },
             managerBooking: b,
             ...bookingRowFromHours({
               ...b,
@@ -290,6 +357,7 @@ export function ProjectScheduleWeekOverview({
             firmName,
             roleLabel: 'Sub',
             roleTone: 'subcontractor' as const,
+            quickAdd: null,
             subBooking: b,
             ...bookingRowFromHours({
               ...b,
@@ -306,7 +374,7 @@ export function ProjectScheduleWeekOverview({
 
       return [...opRows, ...managerRows, ...subRows]
     })
-  }, [weekDays, projectBookings, projectManagerBookings, subBookings, operatives, users, subcontractors, payroll])
+  }, [weekDays, projectBookings, projectManagerBookings, subBookings, operatives, users, usersByEmail, subcontractors, payroll])
 
   const people = useMemo((): PersonWeek[] => {
     const order: string[] = []
@@ -322,10 +390,13 @@ export function ProjectScheduleWeekOverview({
             roleTone: row.roleTone,
             peopleLabel: row.peopleLabel,
             firmName: row.firmName,
+            quickAdd: row.quickAdd,
             cells: weekDays.map(() => []),
           }
           byKey.set(row.personKey, person)
           order.push(row.personKey)
+        } else if (!person.quickAdd && row.quickAdd) {
+          person.quickAdd = row.quickAdd
         } else if (row.peopleLabel && (!person.peopleLabel || row.peopleLabel.length > person.peopleLabel.length)) {
           person.name = row.name
           person.peopleLabel = row.peopleLabel
@@ -389,6 +460,66 @@ export function ProjectScheduleWeekOverview({
       }
     } finally {
       setSavingEdit(false)
+    }
+  }
+
+  const isSmallWork = scheduleBasePath.includes('/small-works/')
+  const projectLabel = `${project.jobNumber} ${project.siteName}`.trim()
+
+  const existingBookingsForQuickAdd = useMemo(() => {
+    if (!quickAdd) return []
+    const target = quickAdd.person.quickAdd
+    const day = quickAdd.date
+    const labels: string[] = []
+    const personUserId = quickAdd.person.key.startsWith('user:') ? quickAdd.person.key.slice(5) : null
+    for (const b of bookings) {
+      if (!coversCalendarDay(new Date(b.date), day)) continue
+      const sameOperative = target?.kind === 'operative' && b.operativeId === target.operativeId
+      if (!sameOperative) continue
+      labels.push(`${idsMatch(b.projectId, project.id) ? 'This job' : 'Another job'} ${namedSlotLabel(String(b.timeSlot))}`)
+    }
+    for (const b of managerSiteBookings) {
+      if (!coversCalendarDay(new Date(b.date), day)) continue
+      const sameUser = (target?.kind === 'manager' && b.userId === target.userId) || (personUserId && b.userId === personUserId)
+      if (!sameUser) continue
+      labels.push(`${idsMatch(b.locationId || '', project.id) ? 'This job' : 'Elsewhere'} ${namedSlotLabel(String(b.timeSlot))}`)
+    }
+    return labels
+  }, [quickAdd, bookings, managerSiteBookings, project.id])
+
+  const saveQuickAdd = async (values: QuickAddBookingValues) => {
+    if (!quickAdd?.person.quickAdd || !currentUser) return
+    const target = quickAdd.person.quickAdd
+    setSavingQuickAdd(true)
+    try {
+      if (target.kind === 'operative') {
+        await createBooking({
+          operativeId: target.operativeId,
+          projectId: project.id,
+          date: quickAdd.date,
+          timeSlot: values.timeSlot,
+          workStartTime: values.workStartTime,
+          workEndTime: values.workEndTime,
+          isBreakRemoved: values.isBreakRemoved,
+          notes: values.notes || undefined,
+          bookedBy: currentUser.email,
+          status: 'confirmed',
+          organizationId,
+        })
+      } else {
+        await saveManagerSiteBooking(organizationId, {
+          userId: target.userId,
+          date: quickAdd.date,
+          timeSlot: values.timeSlot,
+          locationType: isSmallWork ? 'small_work' : 'project',
+          locationId: project.id,
+          workStartTime: values.workStartTime,
+          workEndTime: values.workEndTime,
+          isBreakRemoved: values.isBreakRemoved,
+        })
+      }
+    } finally {
+      setSavingQuickAdd(false)
     }
   }
 
@@ -465,7 +596,10 @@ export function ProjectScheduleWeekOverview({
         <div className="mb-2 flex items-center justify-between gap-2 px-1">
           <div>
             <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">Week overview</p>
-            <p className="text-xs text-slate-500">Tap a box to see the hours breakdown and edit it.</p>
+            <p className="text-xs text-slate-500">
+              Tap a booking to see the hours breakdown and edit it.
+              {canQuickAdd ? ' Tap an empty box on a person\u2019s row to quick add a booking.' : ''}
+            </p>
           </div>
           <div className="flex rounded-lg border border-slate-200 bg-white p-0.5 text-[11px] font-semibold">
             <button
@@ -532,6 +666,7 @@ export function ProjectScheduleWeekOverview({
                   weekDays={weekDays}
                   expanded={expanded}
                   onEdit={setEditingRow}
+                  onQuickAdd={canQuickAdd ? (target, date) => setQuickAdd({ person: target, date }) : undefined}
                 />
               ))}
             </div>
@@ -540,7 +675,7 @@ export function ProjectScheduleWeekOverview({
 
         <div className="mt-3 flex flex-wrap gap-3 px-1 text-[11px] text-slate-500">
           <span className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm bg-emerald-400" /> Operative</span>
-          <span className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm bg-blue-400" /> Manager</span>
+          <span className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm bg-blue-400" /> Manager / Admin</span>
           <span className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm bg-violet-400" /> Sub contractor</span>
         </div>
       </div>
@@ -561,6 +696,20 @@ export function ProjectScheduleWeekOverview({
             })
             setEditingRow(null)
           }}
+        />
+      ) : null}
+      {quickAdd?.person.quickAdd ? (
+        <QuickAddBookingSheet
+          personName={quickAdd.person.name}
+          roleLabel={quickAdd.person.roleLabel === 'Op' ? 'Operative' : quickAdd.person.roleLabel === 'Mgr' ? 'Manager' : quickAdd.person.roleLabel}
+          projectName={projectLabel}
+          date={quickAdd.date}
+          existingToday={existingBookingsForQuickAdd}
+          showNotes={quickAdd.person.quickAdd.kind === 'operative'}
+          saving={savingQuickAdd}
+          payroll={payroll}
+          onSave={saveQuickAdd}
+          onClose={() => setQuickAdd(null)}
         />
       ) : null}
       {editingRow && editingBooking ? (
@@ -584,11 +733,13 @@ function PersonRow({
   weekDays,
   expanded,
   onEdit,
+  onQuickAdd,
 }: {
   person: PersonWeek
   weekDays: Date[]
   expanded: boolean
   onEdit: (row: DayRow) => void
+  onQuickAdd?: (person: PersonWeek, date: Date) => void
 }) {
   return (
     <>
@@ -615,7 +766,20 @@ function PersonRow({
             className={`border-l border-t border-slate-100 p-1.5 ${isTodayDay ? 'bg-blue-50/40' : 'bg-white'}`}
           >
             {cell.length === 0 ? (
-              <div className={`rounded-lg border border-dashed border-slate-200 ${expanded ? 'min-h-[72px]' : 'min-h-[44px]'}`} />
+              onQuickAdd && person.quickAdd ? (
+                <button
+                  type="button"
+                  onClick={() => onQuickAdd(person, day)}
+                  aria-label={`Quick add booking for ${person.name} on ${format(day, 'EEE d MMM')}`}
+                  className={`group flex w-full items-center justify-center rounded-lg border border-dashed border-slate-200 text-[11px] font-semibold text-slate-400 transition-colors hover:border-slate-300 hover:bg-slate-50 focus-visible:border-slate-300 focus-visible:bg-slate-50 focus-visible:outline-none ${expanded ? 'min-h-[72px]' : 'min-h-[44px]'}`}
+                >
+                  <span className="opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
+                    + Quick add
+                  </span>
+                </button>
+              ) : (
+                <div className={`rounded-lg border border-dashed border-slate-200 ${expanded ? 'min-h-[72px]' : 'min-h-[44px]'}`} />
+              )
             ) : (
               <div className="space-y-1">
                 {cell.map((row) => {

@@ -6,12 +6,12 @@
  */
 
 import {
-  LONDON_TIME_ZONE,
   addDaysInZone,
   dateFromDayKeyInZone,
   dayKeyInZone,
   isoWeekdayInZone,
 } from '../orgTime/zoneTime'
+import { eachDayKey, formatLongDayKey, zoneOrLondon } from './dayKeys'
 
 export type QualificationExpiryInput = {
   referenceIso: string
@@ -39,6 +39,26 @@ export type QualificationExpiryRow = {
   severity: 'low'
   title: 'Qualification expired' | 'Qualification expiry'
   message: string
+  /**
+   * Key a dismissal is stored under (`organizations/{orgId}/dismissedWarnings/{dismissKey}`).
+   * Includes the expiry day, so a renewed certificate with a new date warns again.
+   */
+  dismissKey: string
+}
+
+/** Shared id for a dismissed qualification warning. Both apps store and read the same key. */
+export function qualificationDismissKey(operativeId: string, qualificationId: string, expiryDayKey: string): string {
+  return `qual|${String(operativeId).trim()}|${String(qualificationId).trim()}|${String(expiryDayKey).trim()}`
+}
+
+/** Rows whose dismiss key is not in the dismissed set. Expiry rows still to come are never filtered. */
+export function withoutDismissedQualificationRows<T extends Pick<QualificationExpiryRow, 'dismissKey' | 'daysUntilExpiry'>>(
+  rows: readonly T[],
+  dismissedKeys: ReadonlySet<string> | readonly string[]
+): T[] {
+  const dismissed = dismissedKeys instanceof Set ? dismissedKeys : new Set(dismissedKeys)
+  if (dismissed.size === 0) return [...rows]
+  return rows.filter((row) => !(row.daysUntilExpiry < 0 && dismissed.has(row.dismissKey)))
 }
 
 export type UnverifiedOperativeInput = {
@@ -128,10 +148,7 @@ export type UnbookedLabourRow = {
   message: string
 }
 
-function zoneOf(timeZone?: string | null): string {
-  const value = String(timeZone || '').trim()
-  return value || LONDON_TIME_ZONE
-}
+const zoneOf = zoneOrLondon
 
 function emailKey(value: string | null | undefined): string {
   return String(value || '').trim().toLowerCase()
@@ -162,18 +179,6 @@ function signedDayDelta(fromKey: string, toKey: string): number {
   return Math.round((to - from) / 86_400_000)
 }
 
-function eachDayKey(startKey: string, endKey: string, timeZone: string): string[] {
-  if (!startKey || !endKey || startKey > endKey) return []
-  const keys: string[] = []
-  let cursor = dateFromDayKeyInZone(startKey, timeZone)
-  while (dayKeyInZone(cursor, timeZone) <= endKey) {
-    keys.push(dayKeyInZone(cursor, timeZone))
-    cursor = addDaysInZone(cursor, 1, timeZone)
-    if (keys.length > 400) break
-  }
-  return keys
-}
-
 function workingDaysInclusive(startKey: string, endKey: string, timeZone: string): number {
   if (!startKey || !endKey || startKey > endKey) return 0
   let count = 0
@@ -187,15 +192,7 @@ function workingDaysInclusive(startKey: string, endKey: string, timeZone: string
   return count
 }
 
-function formatUnbookedDay(dayKey: string, timeZone: string): string {
-  const date = dateFromDayKeyInZone(dayKey, timeZone)
-  return new Intl.DateTimeFormat('en-GB', {
-    timeZone,
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-  }).format(date)
-}
+const formatUnbookedDay = formatLongDayKey
 
 function finiteHours(value: number, fallback: number): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback
@@ -242,6 +239,7 @@ export function qualificationExpiryRows(input: QualificationExpiryInput): Qualif
         severity: 'low',
         title: daysUntilExpiry < 0 ? 'Qualification expired' : 'Qualification expiry',
         message,
+        dismissKey: qualificationDismissKey(operative.id, expiry.qualificationId, expiryKey),
       })
     }
   }

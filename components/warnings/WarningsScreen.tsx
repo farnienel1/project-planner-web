@@ -8,6 +8,8 @@ import type { MissedMaterialOrderWarning } from '@/lib/warnings/materialOrderWar
 import { groupUnbookedWarningsByDay, type UnbookedLabourWarning } from '@/lib/warnings/unbookedLabourWarnings'
 import { formatWarningHours } from '@/lib/warnings/clashIntervals'
 import type { QualificationExpiryWarning, UnverifiedOperativeWarning } from '@/lib/warnings/generateOrgWarnings'
+import type { LeaveCoverageWarning } from '@/lib/warnings/leaveCoverageWarnings'
+import { formatClockMinutes } from '@/lib/canonical'
 import { projectMaterialsPath } from '@/lib/navigation/projectSchedulePaths'
 import { ClashWarningCard } from '@/components/warnings/ClashWarningCard'
 import { displayTitle, type ClashTimelineEntry } from '@/lib/warnings/clashTimeline'
@@ -19,7 +21,7 @@ import { addDoc, collection, serverTimestamp } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
 import { useAuthStore } from '@/lib/stores/authStore'
 
-type FilterChip = 'all' | 'clashes' | 'unbooked' | 'materials' | 'qualifications'
+type FilterChip = 'all' | 'clashes' | 'unbooked' | 'leave' | 'materials' | 'qualifications'
 
 const AVATAR_COLORS = ['#2C5BBF', '#4B7A5C', '#7A4B8C', '#B35614', '#2563EB', '#9E2A2A']
 
@@ -174,6 +176,125 @@ function MaterialsCard({
   )
 }
 
+function LeaveCard({ warning, canBook }: { warning: LeaveCoverageWarning; canBook: boolean }) {
+  const isClash = warning.kind === 'leave_clash'
+  const hue = isClash ? 'red' : 'warn'
+  const range = (interval: { start: number; end: number }) =>
+    `${formatClockMinutes(interval.start)}–${formatClockMinutes(interval.end)}`
+  return (
+    <section className="card" data-hue={hue}>
+      <div className="card-h">
+        <div className="ico-chip sm">
+          <svg className="h-[18px] w-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364-.707-.707M6.343 6.343l-.707-.707m12.728 0-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+          </svg>
+        </div>
+        <h2 className="h2 grow">{warning.title}</h2>
+        <span className="pill" data-hue={hue}>
+          {isClash ? 'HIGH' : 'MEDIUM'}
+        </span>
+      </div>
+      <div className="card-b stack" style={{ gap: 10 }}>
+        <div className="ritem accent" data-hue={hue} style={{ cursor: 'default' }}>
+          <Avatar name={warning.personName} />
+          <span className="grow">
+            <span className="t">{warning.personName}</span>
+            <span className="s">
+              {warning.leaveLabel} annual leave · {formatLongDay(warning.date)}
+            </span>
+          </span>
+          {!isClash ? (
+            <span className="pill solid" data-hue="red">
+              −{formatWarningHours(warning.missingHours)}h
+            </span>
+          ) : null}
+        </div>
+        <p className="small">{warning.message}</p>
+        {isClash ? (
+          <ul className="small" style={{ paddingLeft: 18, margin: 0 }}>
+            {warning.clashes.map((clash) => (
+              <li key={clash.bookingId}>
+                <b>{clash.label}</b> {range(clash)} overlaps leave {range({ start: clash.overlapStart, end: clash.overlapEnd })}
+              </li>
+            ))}
+          </ul>
+        ) : warning.workingWindow ? (
+          <p className="muted small">
+            Working half: {range(warning.workingWindow)} · Not booked: {warning.missing.map(range).join(', ')}
+          </p>
+        ) : null}
+        <div className="row wrap" style={{ paddingTop: 2 }}>
+          {canBook && !isClash ? (
+            <Link
+              href={`/dashboard/book-labour?date=${warning.dayKey}&from=warnings&focus=${encodeURIComponent(
+                warning.userId || warning.operativeId || ''
+              )}`}
+              className="btn primary"
+            >
+              Book the {warning.leaveSlot === 'PM' ? 'AM' : 'PM'}
+            </Link>
+          ) : null}
+          <Link href={`/dashboard/daily-overview?date=${warning.dayKey}`} className="btn">
+            Open daily overview
+          </Link>
+          <Link href="/dashboard/annual-leave" className="btn">
+            Annual leave
+          </Link>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function QualificationCard({
+  warning,
+  onDismiss,
+}: {
+  warning: QualificationExpiryWarning
+  onDismiss?: (warning: QualificationExpiryWarning) => Promise<void>
+}) {
+  const [busy, setBusy] = useState(false)
+  const expired = warning.daysUntilExpiry < 0
+  const dismiss = async () => {
+    if (!onDismiss || busy) return
+    setBusy(true)
+    try {
+      await onDismiss(warning)
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <section className="card" data-hue="lib">
+      <div className="card-h">
+        <div className="ico-chip sm">
+          <svg className="h-[18px] w-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+          </svg>
+        </div>
+        <h2 className="h2 grow">{warning.title}</h2>
+        <span className="pill" data-hue="lib">LOW</span>
+      </div>
+      <div className="card-b stack" style={{ gap: 10 }}>
+        <p>{warning.message}</p>
+        <div className="row" style={{ gap: 8 }}>
+          {expired && onDismiss ? (
+            <button type="button" className="btn" onClick={() => void dismiss()} disabled={busy}>
+              {busy ? 'Dismissing…' : 'Dismiss'}
+            </button>
+          ) : null}
+          <Link href={`/dashboard/operatives/${warning.operativeId}`} className="btn primary">
+            Open operative
+          </Link>
+        </div>
+        {expired ? (
+          <p className="muted small">Dismissing hides this on web and iOS until a new expiry date is saved.</p>
+        ) : null}
+      </div>
+    </section>
+  )
+}
+
 function LegacyCard({
   title,
   message,
@@ -209,6 +330,7 @@ export function WarningsScreen({
   clashWarnings,
   managerClashWarnings,
   unbookedWarnings,
+  leaveWarnings = [],
   materialWarnings,
   qualificationWarnings = [],
   unverifiedWarnings = [],
@@ -217,6 +339,7 @@ export function WarningsScreen({
   operatives: _operatives,
   smallWorkIds,
   onAcceptClash,
+  onDismissQualification,
   onDeleteBooking,
   onDeleteManagerBooking,
 }: {
@@ -224,6 +347,7 @@ export function WarningsScreen({
   clashWarnings: OperativeBookingClashWarning[]
   managerClashWarnings: ManagerBookingClashWarning[]
   unbookedWarnings: UnbookedLabourWarning[]
+  leaveWarnings?: LeaveCoverageWarning[]
   materialWarnings: MissedMaterialOrderWarning[]
   qualificationWarnings?: QualificationExpiryWarning[]
   unverifiedWarnings?: UnverifiedOperativeWarning[]
@@ -232,6 +356,7 @@ export function WarningsScreen({
   operatives: Operative[]
   smallWorkIds: ReadonlySet<string>
   onAcceptClash: (clash: { id: string; bookingAId: string; bookingBId: string }) => Promise<void>
+  onDismissQualification?: (warning: QualificationExpiryWarning) => Promise<void>
   onDeleteBooking: (bookingId: string) => Promise<void>
   onDeleteManagerBooking: (bookingId: string) => Promise<void>
 }) {
@@ -241,10 +366,12 @@ export function WarningsScreen({
   const isAdmin = Boolean(user && hasAdminAccess(user))
 
   const unbookedGroups = useMemo(() => groupUnbookedWarningsByDay(unbookedWarnings), [unbookedWarnings])
+  const leaveClashCount = leaveWarnings.filter((warning) => warning.kind === 'leave_clash').length
+  const leaveCoverCount = leaveWarnings.length - leaveClashCount
   const clashCount = clashWarnings.length + managerClashWarnings.length
   const qualificationCount = qualificationWarnings.length + unverifiedWarnings.length
-  const highCount = clashWarnings.length + unbookedWarnings.length
-  const mediumCount = managerClashWarnings.length
+  const highCount = clashWarnings.length + unbookedWarnings.length + leaveClashCount
+  const mediumCount = managerClashWarnings.length + leaveCoverCount
   const lowCount = materialWarnings.length + qualificationCount
   const allCount = highCount + mediumCount + lowCount
 
@@ -252,12 +379,14 @@ export function WarningsScreen({
     { value: 'all', label: 'All', count: allCount },
     { value: 'clashes', label: 'Clashes', count: clashCount },
     { value: 'unbooked', label: 'Unbooked', count: unbookedWarnings.length },
+    { value: 'leave', label: 'Annual leave', count: leaveWarnings.length },
     { value: 'materials', label: 'Materials', count: materialWarnings.length },
     { value: 'qualifications', label: 'Qualifications', count: qualificationCount },
   ]
 
   const showClashes = filter === 'all' || filter === 'clashes'
   const showUnbooked = filter === 'all' || filter === 'unbooked'
+  const showLeave = filter === 'all' || filter === 'leave'
   const showMaterials = filter === 'all' || filter === 'materials'
   const showQualifications = filter === 'all' || filter === 'qualifications'
 
@@ -314,8 +443,8 @@ export function WarningsScreen({
                 <p className="eb">Active issues</p>
                 <div className="big" style={{ fontSize: 28 }}>{allCount} need attention</div>
                 <p className="small" style={{ marginTop: 8, maxWidth: 640 }}>
-                  High: operative booking clashes &amp; unbooked labour · Medium: manager/admin overlaps · Low:
-                  materials and qualifications
+                  High: operative booking clashes, unbooked labour &amp; bookings during annual leave · Medium:
+                  manager/admin overlaps &amp; half-day leave not covered · Low: materials and qualifications
                 </p>
               </div>
               {canBook ? (
@@ -328,12 +457,12 @@ export function WarningsScreen({
               <button type="button" className="st" onClick={() => setFilter('all')}>
                 <b>{highCount}</b>
                 <span>High</span>
-                <div className="xs" style={{ opacity: 0.75, marginTop: 2 }}>Operative booking clashes & unbooked labour</div>
+                <div className="xs" style={{ opacity: 0.75, marginTop: 2 }}>Clashes, unbooked labour & leave clashes</div>
               </button>
               <button type="button" className="st" onClick={() => setFilter('clashes')}>
                 <b>{mediumCount}</b>
                 <span>Medium</span>
-                <div className="xs" style={{ opacity: 0.75, marginTop: 2 }}>Manager/admin overlaps</div>
+                <div className="xs" style={{ opacity: 0.75, marginTop: 2 }}>Manager/admin overlaps & half-day leave cover</div>
               </button>
               <button type="button" className="st" onClick={() => setFilter('all')}>
                 <b>{lowCount}</b>
@@ -374,8 +503,8 @@ export function WarningsScreen({
               <p className="text-[40px] text-[#0F6E56]">✓</p>
               <p className="mt-2 text-[18px] font-semibold">No active warnings</p>
               <p className="mx-auto mt-2 max-w-md text-[14px] text-[var(--ink3)]">
-                High: operative booking clashes and unbooked labour. Medium: manager/admin overlaps (tick for weekly
-                report). Low: materials and qualifications.
+                High: operative booking clashes, unbooked labour and bookings during annual leave. Medium:
+                manager/admin overlaps and half-day leave not covered. Low: materials and qualifications.
               </p>
             </>
           )}
@@ -388,6 +517,10 @@ export function WarningsScreen({
           ))
         : null}
 
+      {showLeave
+        ? leaveWarnings.map((warning) => <LeaveCard key={warning.id} warning={warning} canBook={canBook} />)
+        : null}
+
       {showMaterials
         ? materialWarnings.map((warning) => (
             <MaterialsCard key={warning.id} warning={warning} smallWorkIds={smallWorkIds} />
@@ -396,12 +529,7 @@ export function WarningsScreen({
 
       {showQualifications
         ? qualificationWarnings.map((warning) => (
-            <LegacyCard
-              key={warning.id}
-              title={warning.title}
-              message={warning.message}
-              severity={warning.severity}
-            />
+            <QualificationCard key={warning.id} warning={warning} onDismiss={onDismissQualification} />
           ))
         : null}
 

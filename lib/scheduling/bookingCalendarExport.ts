@@ -4,6 +4,7 @@ import {
   DEFAULT_PAYROLL_POLICY,
   type OrgPayrollTimePolicy,
 } from '@/lib/settings/organizationSettings'
+import { halfDayWindows } from '@/lib/canonical'
 
 export type CalendarEventInput = {
   uid: string
@@ -41,17 +42,17 @@ function clashIntervalMinutes(booking: Booking, policy: OrgPayrollTimePolicy): [
     return null
   }
 
-  const mid = dayStart + Math.floor((dayEnd - dayStart) / 2)
+  const halves = halfDayWindows(policy)
   switch (normalizeSlot(String(booking.timeSlot))) {
     case 'FULL_DAY':
     case 'CUSTOM_HOURS':
       return [dayStart, dayEnd]
     case 'AM':
     case 'MORNING':
-      return [dayStart, mid]
+      return [halves.am.start, halves.am.end]
     case 'PM':
     case 'AFTERNOON':
-      return [mid, dayEnd]
+      return [halves.pm.start, halves.pm.end]
     case 'EVENING': {
       const end = Math.min(dayEnd + 240, 24 * 60)
       return end > dayEnd ? [dayEnd, end] : null
