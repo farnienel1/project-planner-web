@@ -54,3 +54,13 @@ export {
   isBillableSelfEmployedDay,
   normalizeEmploymentType,
 } from './userProfile'
+
+export {
+  ANNUAL_LEAVE_ALLOWANCE_COPY,
+  DEFAULT_ANNUAL_LEAVE_DAYS,
+  annualLeaveBalance,
+  applyRemainingOverride,
+  hasAnnualLeaveAllowance,
+  leaveYearBounds,
+  snapLeaveDays,
+} from './annualLeaveBalance'

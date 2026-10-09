@@ -171,6 +171,10 @@ export function buildSaveUserPayload(user: User): Record<string, unknown> {
   if (user.annualLeaveDaysPerYear != null) payload.annualLeaveDaysPerYear = user.annualLeaveDaysPerYear
   if (user.annualLeaveYearStartMonth != null) payload.annualLeaveYearStartMonth = user.annualLeaveYearStartMonth
   if (user.annualLeaveYearEndMonth != null) payload.annualLeaveYearEndMonth = user.annualLeaveYearEndMonth
+  if (user.annualLeaveYearAllowance != null) payload.annualLeaveYearAllowance = user.annualLeaveYearAllowance
+  if (user.annualLeaveYearAllowanceKey) {
+    payload.annualLeaveYearAllowanceKey = user.annualLeaveYearAllowanceKey
+  }
 
   if (operativeMode || user.permissions.manager || user.permissions.adminAccess) {
     payload.timesheetsEnabled = user.timesheetsEnabled === true
@@ -238,6 +242,8 @@ export function buildInvitedUserPayload(params: {
   annualLeaveYearStartMonth?: number
   annualLeaveYearEndMonth?: number
   annualLeaveCarriesOver?: boolean
+  annualLeaveYearAllowance?: number
+  annualLeaveYearAllowanceKey?: string
   hasNoLineManager?: boolean
 }): Record<string, unknown> {
   const { permissions } = params
@@ -302,6 +308,12 @@ export function buildInvitedUserPayload(params: {
     payload.annualLeaveYearEndMonth = params.annualLeaveYearEndMonth
   }
   if (params.annualLeaveCarriesOver != null) payload.annualLeaveCarriesOver = params.annualLeaveCarriesOver
+  if (params.annualLeaveYearAllowance != null) {
+    payload.annualLeaveYearAllowance = params.annualLeaveYearAllowance
+  }
+  if (params.annualLeaveYearAllowanceKey) {
+    payload.annualLeaveYearAllowanceKey = params.annualLeaveYearAllowanceKey
+  }
   if (params.hasNoLineManager) {
     payload.hasNoLineManager = true
   }

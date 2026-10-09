@@ -7,6 +7,14 @@ import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { useInviteStore } from '@/lib/stores/inviteStore'
 import { canInviteOperatives, canManageOperativesOnly, canManageUsers, getAddUserLabel } from '@/lib/navigation/menuPermissions'
 import { permissionsForAccountType, timesheetsEnabledForAccount } from '@/lib/orgSetup/accountPermissions'
+import {
+  ANNUAL_LEAVE_ALLOWANCE_COPY,
+  applyRemainingOverride,
+  CANONICAL_TIME_ZONE,
+  leaveYearBounds,
+  snapLeaveDays,
+} from '@/lib/canonical'
+import { dayKeyInZone } from '@/lib/orgTime/zoneTime'
 import { DEFAULT_ANNUAL_LEAVE } from '@/lib/settings/organizationSettings'
 import { STAFF_TRADE_TYPES } from '@/lib/staff/staffTradeTypes'
 import { lineManagerChoices } from '@/lib/staff/userRosterUtils'
@@ -159,6 +167,8 @@ export function AddUserScreen() {
     utrNumber: '',
     annualLeaveEnabled: true,
     annualLeaveDaysPerYear: String(DEFAULT_ANNUAL_LEAVE.daysPerYear),
+    remainingDays: String(DEFAULT_ANNUAL_LEAVE.daysPerYear),
+    remainingTouched: false,
   })
   const [annualLeaveDefaults, setAnnualLeaveDefaults] = useState(DEFAULT_ANNUAL_LEAVE)
   const [saving, setSaving] = useState(false)
@@ -179,6 +189,7 @@ export function AddUserScreen() {
         setForm((prev) => ({
           ...prev,
           annualLeaveDaysPerYear: String(defaults.daysPerYear),
+          remainingDays: prev.remainingTouched ? prev.remainingDays : String(defaults.daysPerYear),
         }))
       })
       .catch(() => {})
@@ -298,6 +309,18 @@ export function AddUserScreen() {
         annualLeaveYearStartMonth: form.annualLeaveEnabled ? annualLeaveDefaults.startMonth : undefined,
         annualLeaveYearEndMonth: form.annualLeaveEnabled ? annualLeaveDefaults.endMonth : undefined,
         annualLeaveCarriesOver: form.annualLeaveEnabled ? annualLeaveDefaults.carriesOver : undefined,
+        ...(form.annualLeaveEnabled && form.remainingTouched
+          ? applyRemainingOverride({
+              remaining: snapLeaveDays(Number(form.remainingDays)),
+              taken: 0,
+              pending: 0,
+              yearKey: leaveYearBounds({
+                startMonth: annualLeaveDefaults.startMonth,
+                endMonth: annualLeaveDefaults.endMonth,
+                onDayKey: dayKeyInZone(new Date(), CANONICAL_TIME_ZONE),
+              }).yearKey,
+            })
+          : {}),
         hasNoLineManager: accountType !== 'operative' && form.hasNoLineManager,
       })
 
@@ -515,9 +538,9 @@ export function AddUserScreen() {
         <div className="space-y-4 p-4">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <div className="text-sm font-semibold text-slate-900">Annual leave enabled</div>
+              <div className="text-sm font-semibold text-slate-900">{ANNUAL_LEAVE_ALLOWANCE_COPY.toggleTitle}</div>
               <p className="mt-0.5 text-xs text-slate-500">
-                Turn off for self-employed staff who do not use paid annual leave.
+                {ANNUAL_LEAVE_ALLOWANCE_COPY.toggleDescription}
               </p>
             </div>
             <Toggle
@@ -525,18 +548,42 @@ export function AddUserScreen() {
               onChange={(checked) => setForm({ ...form, annualLeaveEnabled: checked })}
             />
           </div>
+          <p className="text-xs text-slate-400">{ANNUAL_LEAVE_ALLOWANCE_COPY.toggleNote}</p>
           {form.annualLeaveEnabled && (
-            <FormField
-              label="Days per year"
-              hint={`Organisation default is ${annualLeaveDefaults.daysPerYear} days (leave year ${annualLeaveDefaults.startMonth} → ${annualLeaveDefaults.endMonth}).`}
-            >
-              <Input
-                type="number"
-                min="0"
-                value={form.annualLeaveDaysPerYear}
-                onChange={(e) => setForm({ ...form, annualLeaveDaysPerYear: e.target.value })}
-              />
-            </FormField>
+            <>
+              <FormField
+                label="Days per year"
+                hint={`Organisation default is ${annualLeaveDefaults.daysPerYear} days (leave year ${annualLeaveDefaults.startMonth} → ${annualLeaveDefaults.endMonth}).`}
+              >
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.5"
+                  value={form.annualLeaveDaysPerYear}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      annualLeaveDaysPerYear: e.target.value,
+                      remainingDays: form.remainingTouched ? form.remainingDays : e.target.value,
+                    })
+                  }
+                />
+              </FormField>
+              <FormField
+                label={ANNUAL_LEAVE_ALLOWANCE_COPY.remainingTitle}
+                hint={ANNUAL_LEAVE_ALLOWANCE_COPY.remainingNote}
+              >
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.5"
+                  value={form.remainingDays}
+                  onChange={(e) =>
+                    setForm({ ...form, remainingDays: e.target.value, remainingTouched: true })
+                  }
+                />
+              </FormField>
+            </>
           )}
         </div>
       </SettingsCard>
