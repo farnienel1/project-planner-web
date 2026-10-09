@@ -51,6 +51,20 @@ export function canViewStaffWarnings(role: StaffAccountRole): boolean {
 }
 
 /**
+ * Variations, evidence, and the company rollup. Every admin and manager sees
+ * every job. Operatives never do. Assignment only affects who is notified.
+ */
+export function canSeeVariations(role: StaffAccountRole): boolean {
+  return isStaffAccount(role)
+}
+
+/** Tracker reorder is an admin tool. There is no QS role on this app yet. */
+export function canManageVariationTracker(role: StaffAccountRole): boolean {
+  if (role.isOperativeMode) return false
+  return role.isSuperAdmin || role.isAdmin
+}
+
+/**
  * Add or edit a catalogue. Super admin ignores the toggles. Admins and managers
  * follow the toggle for that catalogue. Operatives never edit.
  */

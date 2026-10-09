@@ -34,11 +34,21 @@ import {
 import { leaveCoverageRows } from './leaveCoverage.ts'
 import {
   canEditWorkCatalogue,
+  canManageVariationTracker,
+  canSeeVariations,
   canViewStaffWarnings,
   receivesJobNotification,
   seesEveryJob,
   type StaffAccountRole,
 } from './staffAccess.ts'
+import {
+  DEFAULT_PAYMENT_RUN_DATE_RANGES,
+  DEFAULT_WARNING_DETECTION,
+  invoicingToFirestore,
+  parseInvoicing,
+  parsePaymentRunDateRanges,
+  parseWarningDetection,
+} from './organizationSettings.ts'
 import {
   accountKindFromFlags,
   applyEmploymentTypeChange,
@@ -737,14 +747,19 @@ test('every admin and manager sees every job and every warning; operatives and r
   for (const role of [superAdmin, admin, manager]) {
     assert.equal(seesEveryJob(role), true)
     assert.equal(canViewStaffWarnings(role), true)
+    assert.equal(canSeeVariations(role), true)
   }
   for (const role of [operative, noRole]) {
     assert.equal(seesEveryJob(role), false)
     assert.equal(canViewStaffWarnings(role), false)
+    assert.equal(canSeeVariations(role), false)
   }
   // Operative mode wins over a stale admin or manager flag.
   assert.equal(seesEveryJob({ ...admin, isOperativeMode: true }), false)
   assert.equal(seesEveryJob({ ...manager, isOperativeMode: true }), false)
+  assert.equal(canSeeVariations({ ...manager, isOperativeMode: true }), false)
+  assert.equal(canManageVariationTracker(admin), true)
+  assert.equal(canManageVariationTracker(manager), false)
 })
 
 test('the Projects and Small works toggles gate add and edit only, never the list, and super admin ignores them', () => {
@@ -790,6 +805,7 @@ test('the iOS JavaScript bundle applies the same staff visibility and recipient 
     ProjectPlannerCanonical?: {
       seesEveryJob: (role: StaffAccountRole) => boolean
       canViewStaffWarnings: (role: StaffAccountRole) => boolean
+      canSeeVariations: (role: StaffAccountRole) => boolean
       canEditWorkCatalogue: (role: StaffAccountRole, catalogue: string, toggles: unknown) => boolean
       receivesJobNotification: (input: unknown) => boolean
     }
@@ -801,6 +817,8 @@ test('the iOS JavaScript bundle applies the same staff visibility and recipient 
   assert.equal(bundle.seesEveryJob(manager), seesEveryJob(manager))
   assert.equal(bundle.seesEveryJob(operative), seesEveryJob(operative))
   assert.equal(bundle.canViewStaffWarnings(manager), canViewStaffWarnings(manager))
+  assert.equal(bundle.canSeeVariations(manager), canSeeVariations(manager))
+  assert.equal(bundle.canSeeVariations(operative), canSeeVariations(operative))
   assert.equal(bundle.canEditWorkCatalogue(manager, 'projects', off), canEditWorkCatalogue(manager, 'projects', off))
   assert.equal(bundle.canEditWorkCatalogue(superAdmin, 'projects', off), canEditWorkCatalogue(superAdmin, 'projects', off))
   const input = { userId: 'm-2', role: manager, assignedManagerUserIds: ['m-1'], lineManagerUserIds: [] }
@@ -984,4 +1002,48 @@ test('2.5mm LS finds 2.5mm2 Twin & Earth Cable 6242B LSZH and ranks it first', (
   const coded = rankMaterialRecords('2.5mm LS 6242B', [swa, twinEarth])
   assert.equal(coded[0].index, 1)
   assert.ok(materialSearchScore('lszh', twinEarth) > 0)
+})
+
+test('payment run rows write both web and iOS day fields and empty ranges use 1–15 then 16–31', () => {
+  assert.deepEqual(DEFAULT_PAYMENT_RUN_DATE_RANGES, [
+    { startDay: 1, endDay: 15 },
+    { startDay: 16, endDay: 31 },
+  ])
+  const fromIos = parsePaymentRunDateRanges({
+    paymentRunDateRanges: [
+      { startDate: 1, endDate: 15 },
+      { startDate: 16, endDate: 31 },
+    ],
+  })
+  assert.deepEqual(fromIos, DEFAULT_PAYMENT_RUN_DATE_RANGES)
+  const fromWeb = parsePaymentRunDateRanges({
+    paymentRunDateRanges: [
+      { startDay: 1, endDay: 16 },
+      { startDay: 17, endDay: 31 },
+    ],
+  })
+  assert.equal(fromWeb[0].endDay, 16)
+  assert.equal(fromWeb[1].startDay, 17)
+  const both = parsePaymentRunDateRanges({
+    paymentRunDateRanges: [{ startDay: 1, endDay: 16, startDate: 1, endDate: 15 }],
+  })
+  assert.equal(both[0].endDay, 16)
+  const written = invoicingToFirestore(parseInvoicing({}))
+  const row = (written.paymentRunDateRanges as Record<string, number>[])[0]
+  assert.equal(row.startDay, 1)
+  assert.equal(row.endDay, 15)
+  assert.equal(row.startDate, 1)
+  assert.equal(row.endDate, 15)
+  assert.equal(parseInvoicing({}).paymentRunMode, 'date_ranges')
+})
+
+test('warning detection defaults to seven days and reads the iOS top-level map', () => {
+  assert.equal(DEFAULT_WARNING_DETECTION.clashLookaheadMode, 'numberOfDays')
+  assert.equal(DEFAULT_WARNING_DETECTION.clashLookaheadDays, 7)
+  const parsed = parseWarningDetection({
+    clashLookaheadMode: 'endOfInvoicingPeriod',
+    excludedUserIds: ['U1'],
+  })
+  assert.equal(parsed.clashLookaheadMode, 'endOfInvoicingPeriod')
+  assert.deepEqual(parsed.excludedUserIdsFromUnbookedWarnings, ['U1'])
 })

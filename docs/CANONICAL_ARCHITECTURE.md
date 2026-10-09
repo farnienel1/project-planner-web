@@ -6,7 +6,7 @@ Web and iOS are separate repositories and separate languages. They share one exe
 
 | Piece | Path |
 |---|---|
-| Canonical core | `project-planner-web/lib/canonical/` (`engine.ts` for windows, organisation, the standard day and its AM/PM halves, and slot intervals; `warningRows.ts` for which qualification, unverified, and unbooked warnings exist and the qualification dismiss key; `leaveCoverage.ts` for annual leave against bookings; `staffAccess.ts` for who sees every job and every warning, who may edit a work catalogue, and which managers receive a job notification; `userProfile.ts` for the `users/{uid}` document, employment-type day, and Edit User permission copy; `annualLeaveBalance.ts` for allowance vs year-count, the leave year, and a one-year remaining override; `materialSearch.ts` for catalogue search ranking) |
+| Canonical core | `project-planner-web/lib/canonical/` (`engine.ts` for windows, organisation, the standard day and its AM/PM halves, and slot intervals; `organizationSettings.ts` for org-wide defaults, payment-run field names, warningDetection, payroll, leave defaults, schedule options, and material cut-off; `warningRows.ts` for which qualification, unverified, and unbooked warnings exist and the qualification dismiss key; `leaveCoverage.ts` for annual leave against bookings; `staffAccess.ts` for who sees every job, every warning, and every variation, who may edit a work catalogue, and which managers receive a job notification; `userProfile.ts` for the `users/{uid}` document, employment-type day, and Edit User permission copy; `annualLeaveBalance.ts` for allowance vs year-count, the leave year, and a one-year remaining override; `materialSearch.ts` for catalogue search ranking) |
 | Web consumption | Import `@/lib/canonical`. Existing modules such as `lib/warnings/warningLookahead.ts`, `lib/orgMembership/webActiveOrg.ts`, `lib/timesheets/timesheetWeekUtils.ts`, `lib/permissions.ts`, and `lib/access/workAccess.ts` call that module instead of keeping a second copy. |
 | iOS consumption | `Project Planner/Canonical/canonical-business.js` is the bundle built from `lib/canonical/bundleEntry.ts`. `Project Planner/Canonical/CanonicalBusinessEngine.swift` evaluates it. Warning scans and invoicing defaults use that result, with `Europe/London` when the script cannot load. |
 | Bundle command | `npm run build:canonical` in the web repo. `npm test` rebuilds it. |
@@ -21,6 +21,8 @@ The canonical module owns:
 - Organisation id matching and which company a session should open
 - The in-process organisation epoch used to drop a late result after a switch or sign-out
 - Invoicing-period bounds, including wrapped payment runs and short months
+- Organisation settings defaults and Firestore field names (`organizationSettings.ts`): payment runs write **both** `startDay`/`endDay` (web) and `startDate`/`endDate` (iOS); empty ranges are 1–15 then 16–31; warningDetection is the top-level org map; payroll weekend hours use iOS field names
+- Who sees variations (`canSeeVariations`): every admin and manager, never an operative
 - Warning coverage windows (`numberOfDays`, full Monday–Friday week, invoicing period)
 - Whether a person covers the organisation standard day (`standardDayCoverage`). A full day covers 07:30–16:00 minus the unpaid break. A shorter booking stays unbooked and the missing hours are the gap. Weekend days are included only when that toggle is on.
 - Organisation time zone for those windows (default `Europe/London`, never the device zone)
@@ -40,9 +42,18 @@ The canonical module owns:
 
 Each app resolves four flags for the signed-in account (super admin, admin, manager, operative mode) with its own user store and passes them to `staffAccess.ts`. On the web that is `staffAccountRole` in `lib/permissions.ts`; on iOS it is `UserStore`.
 
-- Lists and warnings. Every admin and every manager sees every project, every small works job, and every warning in the company, including jobs and people they are not the project manager or line manager for. They can open those warnings and fix them. Neither list is narrowed to assigned jobs. On the web `visibleWorks` in `lib/access/workAccess.ts` returns the whole catalogue for staff; a manager still does not see a job an admin hid from them on the job's View tab (`hiddenManagerUserIds`). Operatives see only the jobs they are booked onto and never get the staff warning list. An account with no staff role keeps the assigned-or-booked rule.
+- Lists, warnings, and variations. Every admin and every manager sees every project, every small works job, every warning, and every variation in the company, including jobs and people they are not the project manager or line manager for. They can open those warnings and fix them. Neither list is narrowed to assigned jobs. On the web `visibleWorks` in `lib/access/workAccess.ts` returns the whole catalogue for staff; a manager still does not see a job an admin hid from them on the job's View tab (`hiddenManagerUserIds`). Operatives see only the jobs they are booked onto and never get the staff warning list or variations. An account with no staff role keeps the assigned-or-booked rule. `canSeeVariations` is the variation gate; tracker reorder stays admin-only (`canManageVariationTracker`).
 - Projects and Small works toggles. The two toggles never hide a list. With a toggle off, an admin or manager still sees every job in that catalogue but cannot add or edit it: create and edit affordances are hidden or disabled (`canEditWorkCatalogue`, web `canManageWorkCatalogue`, and the `ProjectForm` gate for deep links). Super admin ignores both toggles.
 - Notifications stay narrower. A manager receives a notification for a job or a person only as an assigned project manager of that job or as that person's line manager (`receivesJobNotification`). Admins and super admins receive it. Seeing the job in the list does not make a manager a recipient, so widening the lists must not widen fan-out. On the web the recipient rows are written with `userId` set (`lib/firebase/notifyInbox.ts`, `lib/variations/variationStorage.ts`, `lib/timesheets/timesheetNotifications.ts`), and `lib/stores/notificationStore.ts` shows a targeted row only to that user.
+
+## Organisation settings document
+
+`organizations/{orgId}` is the company settings record. Both apps read and write the same maps (`ORGANIZATION_DOCUMENT_FIELDS`). A save on one device must not drop fields the other still uses.
+
+- Payment runs live on `invoicing.paymentRunDateRanges`. Each row writes **both** `startDay`/`endDay` and `startDate`/`endDate` with the same numbers. Read prefers `startDay` then `startDate`. Missing or empty ranges are 1–15 then 16–31 (`CANONICAL_HALF_MONTH_RANGES`). That split is what warnings use when the scan mode is end of invoicing period. A company that saved 1–16 / 17–31 keeps those days; do not silently rewrite them to 1–15.
+- Warning detection is `organizations/{orgId}.warningDetection` (top-level, not `settings.warningDetection`). Default scan is `numberOfDays` = 7. The nested settings map may only fill excluded user ids when the top-level map left that key out.
+- Payroll, annual-leave defaults, schedule options, and material cut-off parse/write through the same module. Material cut-off is company-wide on `settings.materialCutOff`; dual-writing the saver's user prefs must not become the source of truth.
+- Operational collection paths (`OPERATIONAL_COLLECTION_PATHS`) stay iOS-compatible: variations collection plus settings fallback, H&S under `settings/healthSafety_…`, dismissed warnings, bookings, timesheets, tasks, site audits, clients, catalogues.
 
 ## User profile document
 
@@ -121,7 +132,7 @@ Other role gaps inside one company (for example who may edit settings) are liste
 
 ## Where new business logic goes
 
-If both apps must agree, add the function under `lib/canonical/` (`engine.ts`, `warningRows.ts`, `leaveCoverage.ts`, `staffAccess.ts`, or `userProfile.ts`), export it from `lib/canonical/index.ts` and `bundleEntry.ts`, then call it from web and from `CanonicalBusinessEngine`. Committing that change packs the script. `.githooks/pre-commit` runs `npm run build:canonical`, stages `lib/canonical/dist/canonical-business.js`, and refuses the commit when the iOS checkout beside this repo has an uncommitted packed file. `npm install` turns the hook on. `npm run check:canonical` fails when a packed file does not match the rulebook.
+If both apps must agree, add the function under `lib/canonical/` (`engine.ts`, `organizationSettings.ts`, `warningRows.ts`, `leaveCoverage.ts`, `staffAccess.ts`, or `userProfile.ts`), export it from `lib/canonical/index.ts` and `bundleEntry.ts`, then call it from web and from `CanonicalBusinessEngine`. Committing that change packs the script. `.githooks/pre-commit` runs `npm run build:canonical`, stages `lib/canonical/dist/canonical-business.js`, and refuses the commit when the iOS checkout beside this repo has an uncommitted packed file. `npm install` turns the hook on. `npm run check:canonical` fails when a packed file does not match the rulebook.
 
 ## Agent windows
 
