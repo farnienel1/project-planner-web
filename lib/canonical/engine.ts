@@ -236,6 +236,188 @@ export function intervalsOverlap(a: MinuteInterval, b: MinuteInterval): boolean 
   return a.start < b.end && b.start < a.end
 }
 
+// ─── Standard day, AM and PM ─────────────────────────────────────────────────
+//
+// One definition of the working day and of its two halves, used by booking
+// clashes, annual-leave checks, half-day pay, and every screen that draws AM/PM.
+//
+// Rule
+//   1. The standard day is [standardDayStart, standardDayEnd) from organisation
+//      settings. An unparsable or inverted pair falls back to 07:30–16:00.
+//   2. The break window splits the day when it is usable: valid, strictly inside
+//      the day, and leaving at least MIN_HALF_DAY_MINUTES on each side.
+//      AM = [dayStart, breakStart). PM = [breakEnd, dayEnd). The break belongs to
+//      neither half, so an AM booking and a PM booking never touch.
+//   3. Otherwise the day is split at its wall-clock midpoint (floored to the
+//      minute). AM = [dayStart, mid). PM = [mid, dayEnd). A company on
+//      13:00–19:00 with the default 12:00–12:30 break gets AM 13:00–16:00 and
+//      PM 16:00–19:00.
+//   4. FULL DAY is the whole standard day.
+//   5. Pay for a named slot stays `paidHoursForNamedSlot`: FULL DAY is the
+//      standard paid hours, AM and PM are each half. The clock windows above are
+//      for clashes and cover; they do not change what a half day pays.
+
+export const CANONICAL_STANDARD_DAY: Readonly<MinuteInterval> = { start: 7 * 60 + 30, end: 16 * 60 }
+export const MIN_HALF_DAY_MINUTES = 60
+
+export type StandardDayInput = {
+  standardDayStart?: string | null
+  standardDayEnd?: string | null
+  breakWindowStart?: string | null
+  breakWindowEnd?: string | null
+}
+
+export type HalfDayWindows = {
+  day: MinuteInterval
+  am: MinuteInterval
+  pm: MinuteInterval
+  /** Which rule produced the split. */
+  pivot: 'break' | 'midpoint'
+  /** The break that separates AM from PM, when `pivot` is `break`. */
+  breakWindow: MinuteInterval | null
+}
+
+/** "HH:mm" or "H:mm" to minutes since midnight. Anything else is null. */
+export function parseClockMinutes(value: string | number | null | undefined): number | null {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) && value >= 0 && value <= 24 * 60 ? Math.round(value) : null
+  }
+  const text = String(value ?? '').trim()
+  const match = /^(\d{1,2}):(\d{2})$/.exec(text)
+  if (!match) return null
+  const hours = Number(match[1])
+  const minutes = Number(match[2])
+  if (hours > 24 || minutes > 59) return null
+  const total = hours * 60 + minutes
+  return total <= 24 * 60 ? total : null
+}
+
+export function formatClockMinutes(minutes: number): string {
+  const clamped = Math.max(0, Math.min(Math.round(minutes), 24 * 60))
+  const hours = Math.floor(clamped / 60)
+  const mins = clamped % 60
+  return `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}`
+}
+
+/** The organisation's standard day. Invalid settings fall back to 07:30–16:00. */
+export function standardDayWindow(input?: StandardDayInput | null): MinuteInterval {
+  const start = parseClockMinutes(input?.standardDayStart)
+  const end = parseClockMinutes(input?.standardDayEnd)
+  if (start == null || end == null || end <= start) return { ...CANONICAL_STANDARD_DAY }
+  return { start, end }
+}
+
+/** AM and PM for the organisation. See the rule above. */
+export function halfDayWindows(input?: StandardDayInput | null): HalfDayWindows {
+  const day = standardDayWindow(input)
+  const breakStart = parseClockMinutes(input?.breakWindowStart)
+  const breakEnd = parseClockMinutes(input?.breakWindowEnd)
+  const breakUsable =
+    breakStart != null &&
+    breakEnd != null &&
+    breakEnd > breakStart &&
+    breakStart - day.start >= MIN_HALF_DAY_MINUTES &&
+    day.end - breakEnd >= MIN_HALF_DAY_MINUTES
+  if (breakUsable) {
+    return {
+      day,
+      am: { start: day.start, end: breakStart },
+      pm: { start: breakEnd, end: day.end },
+      pivot: 'break',
+      breakWindow: { start: breakStart, end: breakEnd },
+    }
+  }
+  const mid = day.start + Math.floor((day.end - day.start) / 2)
+  return {
+    day,
+    am: { start: day.start, end: mid },
+    pm: { start: mid, end: day.end },
+    pivot: 'midpoint',
+    breakWindow: null,
+  }
+}
+
+export type NamedSlotKind = 'FULL_DAY' | 'AM' | 'PM' | 'CUSTOM' | 'EVENING' | 'OVERTIME' | 'UNKNOWN'
+
+/** Normalises every spelling both apps have stored: FULL DAY, FULL_DAY, Morning, Afternoon, CUSTOM_HOURS. */
+export function namedSlotKind(timeSlot: string | null | undefined): NamedSlotKind {
+  const normalized = String(timeSlot || '').trim().toUpperCase().replace(/_/g, ' ')
+  if (!normalized) return 'UNKNOWN'
+  if (normalized.includes('FULL')) return 'FULL_DAY'
+  if (normalized === 'AM' || normalized.includes('MORNING')) return 'AM'
+  if (normalized === 'PM' || normalized.includes('AFTERNOON')) return 'PM'
+  if (normalized.includes('CUSTOM')) return 'CUSTOM'
+  if (normalized.includes('EVENING')) return 'EVENING'
+  if (normalized.includes('OVERTIME')) return 'OVERTIME'
+  return 'UNKNOWN'
+}
+
+export type SlotIntervalInput = {
+  timeSlot?: string | null
+  workStartTime?: string | null
+  workEndTime?: string | null
+}
+
+/**
+ * The clock interval a booking occupies.
+ * Explicit work times win. Named slots use the organisation's day and halves.
+ * A custom slot without times, and an unknown slot, occupy the whole day.
+ * Evening is the four hours after the day; overtime is the two hours after that.
+ */
+export function slotInterval(booking: SlotIntervalInput, dayInput?: StandardDayInput | null): MinuteInterval | null {
+  const start = parseClockMinutes(booking.workStartTime)
+  const end = parseClockMinutes(booking.workEndTime)
+  if (start != null && end != null && end > start) return { start, end }
+  const windows = halfDayWindows(dayInput)
+  switch (namedSlotKind(booking.timeSlot)) {
+    case 'AM':
+      return { ...windows.am }
+    case 'PM':
+      return { ...windows.pm }
+    case 'EVENING': {
+      const eveningEnd = Math.min(windows.day.end + 240, 24 * 60)
+      return eveningEnd > windows.day.end ? { start: windows.day.end, end: eveningEnd } : null
+    }
+    case 'OVERTIME': {
+      const overtimeStart = Math.min(windows.day.end + 240, 24 * 60)
+      const overtimeEnd = Math.min(windows.day.end + 360, 24 * 60)
+      return overtimeEnd > overtimeStart ? { start: overtimeStart, end: overtimeEnd } : null
+    }
+    default:
+      return { ...windows.day }
+  }
+}
+
+/** Sorted, merged copy of the intervals. Touching intervals join. */
+export function mergeMinuteIntervals(intervals: readonly MinuteInterval[]): MinuteInterval[] {
+  const sorted = intervals
+    .filter((interval) => interval.end > interval.start)
+    .map((interval) => ({ ...interval }))
+    .sort((a, b) => a.start - b.start)
+  const merged: MinuteInterval[] = []
+  for (const interval of sorted) {
+    const last = merged[merged.length - 1]
+    if (last && interval.start <= last.end) last.end = Math.max(last.end, interval.end)
+    else merged.push(interval)
+  }
+  return merged
+}
+
+/** The parts of `window` that none of `covered` reaches. */
+export function subtractMinuteIntervals(window: MinuteInterval, covered: readonly MinuteInterval[]): MinuteInterval[] {
+  const gaps: MinuteInterval[] = []
+  let cursor = window.start
+  for (const interval of mergeMinuteIntervals(covered)) {
+    if (interval.end <= cursor) continue
+    if (interval.start >= window.end) break
+    if (interval.start > cursor) gaps.push({ start: cursor, end: Math.min(interval.start, window.end) })
+    cursor = Math.max(cursor, interval.end)
+    if (cursor >= window.end) break
+  }
+  if (cursor < window.end) gaps.push({ start: cursor, end: window.end })
+  return gaps
+}
+
 /**
  * Named booking slots. FULL DAY and FULL_DAY are the same business day.
  * AM and PM are each half of the organisation's standard paid day.

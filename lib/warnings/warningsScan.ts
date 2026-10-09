@@ -27,6 +27,7 @@ export type WarningScanLanes = {
   clashes: boolean
   managerClashes: boolean
   unbooked: boolean
+  leave: boolean
   materials: boolean
   qualifications: boolean
   unverified: boolean
@@ -54,6 +55,13 @@ export function warningScanLanes(input: {
       input.rosterReady &&
       input.operativesReady &&
       input.holidaysReady,
+    leave:
+      input.detectionReady &&
+      input.bookingsReady &&
+      input.managerReady &&
+      input.rosterReady &&
+      input.operativesReady &&
+      input.holidaysReady,
     materials:
       input.materialsReady && input.sendRecordsReady && input.projectsReady && input.bookingsReady,
     qualifications: input.operativesReady,
@@ -65,6 +73,7 @@ type WarningLaneResult = {
   clashWarnings: readonly unknown[]
   managerClashWarnings: readonly unknown[]
   unbookedWarnings: readonly unknown[]
+  leaveWarnings: ReadonlyArray<{ kind: 'leave_clash' | 'leave_cover' }>
   materialWarnings: readonly unknown[]
   qualificationWarnings: readonly unknown[]
   unverifiedWarnings: readonly unknown[]
@@ -75,8 +84,10 @@ type WarningLaneResult = {
 }
 
 function countsForLanes<T extends WarningLaneResult>(result: T): T {
-  const highCount = result.clashWarnings.length + result.unbookedWarnings.length
-  const mediumCount = result.managerClashWarnings.length
+  const leaveClashCount = result.leaveWarnings.filter((warning) => warning.kind === 'leave_clash').length
+  const leaveCoverCount = result.leaveWarnings.length - leaveClashCount
+  const highCount = result.clashWarnings.length + result.unbookedWarnings.length + leaveClashCount
+  const mediumCount = result.managerClashWarnings.length + leaveCoverCount
   const lowCount =
     result.materialWarnings.length + result.qualificationWarnings.length + result.unverifiedWarnings.length
   return {
@@ -113,6 +124,7 @@ export function publishReadyWarningLanes<T extends WarningLaneResult>(input: {
       previous?.managerClashWarnings
     ),
     unbookedWarnings: keepLane(input.lanes.unbooked, input.computed.unbookedWarnings, previous?.unbookedWarnings),
+    leaveWarnings: keepLane(input.lanes.leave, input.computed.leaveWarnings, previous?.leaveWarnings),
     materialWarnings: keepLane(input.lanes.materials, input.computed.materialWarnings, previous?.materialWarnings),
     qualificationWarnings: keepLane(
       input.lanes.qualifications,
@@ -147,6 +159,7 @@ export function countGeneratedWarnings(result: {
   clashWarnings: readonly unknown[]
   managerClashWarnings: readonly unknown[]
   unbookedWarnings: readonly unknown[]
+  leaveWarnings?: readonly unknown[]
   materialWarnings: readonly unknown[]
   qualificationWarnings: readonly unknown[]
   unverifiedWarnings: readonly unknown[]
@@ -155,6 +168,7 @@ export function countGeneratedWarnings(result: {
     result.clashWarnings.length +
     result.managerClashWarnings.length +
     result.unbookedWarnings.length +
+    (result.leaveWarnings?.length ?? 0) +
     result.materialWarnings.length +
     result.qualificationWarnings.length +
     result.unverifiedWarnings.length

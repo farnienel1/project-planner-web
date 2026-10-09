@@ -27,18 +27,24 @@ import {
   type UnbookedLabourWarning,
 } from '@/lib/warnings/unbookedLabourWarnings'
 import { computeMissedMaterialOrderWarnings, type MissedMaterialOrderWarning } from '@/lib/warnings/materialOrderWarnings'
+import { computeLeaveCoverageWarnings, type LeaveCoverageWarning } from '@/lib/warnings/leaveCoverageWarnings'
 import { dateFromDayKey } from '@/lib/ios-parity/londonTime'
 
 export type QualificationExpiryWarning = {
   id: string
   operativeId: string
   operativeName: string
+  qualificationId: string
   qualificationName: string
   date: Date
+  /** Expiry day in the organisation zone. */
+  dayKey: string
   daysUntilExpiry: number
   severity: 'low'
   title: 'Qualification expired' | 'Qualification expiry'
   message: string
+  /** Shared dismiss key; see lib/canonical/warningRows.ts. */
+  dismissKey: string
 }
 
 export type UnverifiedOperativeWarning = {
@@ -53,6 +59,8 @@ export type OrgWarningsResult = {
   clashWarnings: OperativeBookingClashWarning[]
   managerClashWarnings: ManagerBookingClashWarning[]
   unbookedWarnings: UnbookedLabourWarning[]
+  /** Approved annual leave with a booking inside it, or a half day whose other half is not covered. */
+  leaveWarnings: LeaveCoverageWarning[]
   materialWarnings: MissedMaterialOrderWarning[]
   qualificationWarnings: QualificationExpiryWarning[]
   unverifiedWarnings: UnverifiedOperativeWarning[]
@@ -88,12 +96,15 @@ export function computeQualificationExpiryWarnings(
     id: row.id,
     operativeId: row.operativeId,
     operativeName: row.operativeName,
+    qualificationId: row.qualificationId,
     qualificationName: row.qualificationName,
     date: dateFromDayKey(row.dayKey),
+    dayKey: row.dayKey,
     daysUntilExpiry: row.daysUntilExpiry,
     severity: row.severity,
     title: row.title,
     message: row.message,
+    dismissKey: row.dismissKey,
   }))
 }
 
@@ -189,6 +200,20 @@ export function generateOrgWarnings(input: {
     timeZone,
   })
 
+  const leaveWarnings = computeLeaveCoverageWarnings({
+    bookings: input.bookings,
+    managerSiteBookings: input.managerSiteBookings,
+    operatives: input.operatives,
+    users: input.users,
+    projects: input.projects,
+    holidays: input.holidays,
+    warningDetection,
+    invoicing,
+    payrollPolicy,
+    referenceDate: now,
+    timeZone,
+  })
+
   const materialWarnings = computeMissedMaterialOrderWarnings(
     input.materials || [],
     input.sendRecords || [],
@@ -207,8 +232,10 @@ export function generateOrgWarnings(input: {
   const qualificationWarnings = computeQualificationExpiryWarnings(input.operatives, now)
   const unverifiedWarnings = computeUnverifiedOperativeWarnings(input.operatives, input.users, now)
 
-  const highCount = clashWarnings.length + unbookedWarnings.length
-  const mediumCount = managerClashWarnings.length
+  const leaveClashCount = leaveWarnings.filter((warning) => warning.kind === 'leave_clash').length
+  const leaveCoverCount = leaveWarnings.length - leaveClashCount
+  const highCount = clashWarnings.length + unbookedWarnings.length + leaveClashCount
+  const mediumCount = managerClashWarnings.length + leaveCoverCount
   const lowCount = materialWarnings.length + qualificationWarnings.length + unverifiedWarnings.length
   const coreCount = highCount + mediumCount + lowCount
 
@@ -216,6 +243,7 @@ export function generateOrgWarnings(input: {
     clashWarnings,
     managerClashWarnings,
     unbookedWarnings,
+    leaveWarnings,
     materialWarnings,
     qualificationWarnings,
     unverifiedWarnings,

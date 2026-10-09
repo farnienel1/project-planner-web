@@ -53,6 +53,7 @@ import {
 } from '@/lib/timesheets/timesheetRoutes'
 import type { PaletteItem } from '@/lib/ui/commandPalette'
 import { useProjectStore } from '@/lib/stores/projectStore'
+import { refreshAllOrgData } from '@/lib/stores/refreshOrgData'
 import { db } from '@/lib/firebase/config'
 import { doc, getDoc, setDoc } from 'firebase/firestore'
 import { recoverJobTypesFromWork } from '@/lib/jobTypes/jobTypesStorage'
@@ -385,10 +386,20 @@ function AppShellInner({ children }: { children: ReactNode }) {
   }
 
   const refresh = async () => {
+    if (refreshing) return
     setRefreshing(true)
-    router.refresh()
-    toast('Data refreshed')
-    window.setTimeout(() => setRefreshing(false), 600)
+    try {
+      // Every organisation store re-reads from Firestore; warnings, schedules, and
+      // counts recompute from the fresh rows. router.refresh() alone only re-rendered
+      // server components and left the client stores as they were.
+      if (organization?.id) await refreshAllOrgData(organization.id)
+      router.refresh()
+      toast('Data refreshed')
+    } catch {
+      toast('Refresh did not finish. Showing the last loaded data.')
+    } finally {
+      setRefreshing(false)
+    }
   }
 
   const confirmSignOut = async () => {
