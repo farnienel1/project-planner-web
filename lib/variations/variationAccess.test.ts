@@ -49,25 +49,21 @@ test('admins see variations on every job, including ones they are not assigned t
   assert.equal(canManageVariationTracker(admin), true)
 })
 
-test('a manager sees variations only on jobs they are assigned to', () => {
+test('a manager sees variations on every job, including ones they are not assigned to', () => {
   const assigned = user({ id: 'mgr-2' })
   const other = user({ id: 'mgr-9' })
   assert.equal(canSeeJobVariations(assigned, job), true)
-  assert.equal(canSeeJobVariations(other, job), false)
+  assert.equal(canSeeJobVariations(other, job), true)
   assert.equal(canManageVariationTracker(assigned), false)
 })
 
-test('a manager matches the roster id stored on the job, not only their sign-in id', () => {
+test('a manager still sees variations when the job only stores a roster id', () => {
   const manager = user({ id: 'auth-uid', email: 'farnie@raccordmep.co.uk' })
   const jobWithRosterId = { managerId: 'roster-mgr', managerIds: ['roster-mgr'] }
-  assert.equal(canSeeJobVariations(manager, jobWithRosterId), false)
+  assert.equal(canSeeJobVariations(manager, jobWithRosterId), true)
   assert.equal(
     canSeeJobVariations(manager, jobWithRosterId, [{ id: 'roster-mgr', email: 'farnie@raccordmep.co.uk' }]),
     true
-  )
-  assert.equal(
-    canSeeJobVariations(manager, jobWithRosterId, [{ id: 'someone-else', email: 'farnie@raccordmep.co.uk' }]),
-    false
   )
 })
 

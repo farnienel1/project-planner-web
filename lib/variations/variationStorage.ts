@@ -306,16 +306,9 @@ async function saveVariationSettingsLog(
 /** iOS writes the settings log and item doc first. The collection write is best-effort. */
 async function persistVariationDocument(organizationId: string, variation: Variation): Promise<void> {
   const map = variationToFirestore(variation)
-  const errors: unknown[] = []
-  let wrote = false
-  try {
-    await saveVariationSettingsLog(organizationId, variation, map)
-    wrote = true
-  } catch (error) {
-    errors.push(error)
-  }
-  try {
-    await setDoc(
+  const results = await Promise.allSettled([
+    saveVariationSettingsLog(organizationId, variation, map),
+    setDoc(
       settingsDoc(organizationId, variationItemDocId(variation.id)),
       {
         ...map,
@@ -325,19 +318,11 @@ async function persistVariationDocument(organizationId: string, variation: Varia
         organizationId,
       },
       { merge: true }
-    )
-    wrote = true
-  } catch (error) {
-    errors.push(error)
-  }
-  try {
-    await setDoc(variationRef(organizationId, variation.id), map, { merge: true })
-    wrote = true
-  } catch (error) {
-    errors.push(error)
-  }
-  if (!wrote) {
-    const first = errors[0]
+    ),
+    setDoc(variationRef(organizationId, variation.id), map, { merge: true }),
+  ])
+  if (results.every((result) => result.status === 'rejected')) {
+    const first = results[0].status === 'rejected' ? results[0].reason : null
     throw first instanceof Error ? first : new Error('Could not save this variation.')
   }
 }
@@ -592,10 +577,12 @@ export async function createVariation(input: {
   actor: { uid: string; name: string }
   users?: User[]
   managerIds?: string[]
+  existingRows?: Variation[]
+  tracker?: VariationTracker
 }): Promise<Variation> {
-  const allRows = await listParentVariations(input.organizationId, input.parentId)
+  const allRows = input.existingRows ?? (await listParentVariations(input.organizationId, input.parentId))
   const existing = allRows.filter((row) => !row.isDeleted)
-  const tracker = await loadVariationTracker(input.organizationId, input.parentId)
+  const tracker = input.tracker ?? (await loadVariationTracker(input.organizationId, input.parentId))
   const voNumber =
     input.origin === 'tracker' || tracker.enabled
       ? nextFreeVoNumber(allRows, tracker.prefix, tracker.padding)
@@ -635,7 +622,7 @@ export async function createVariation(input: {
   })
   await persistVariationDocument(input.organizationId, draft)
   if (input.users) {
-    await notifyCreated({
+    void notifyCreated({
       organizationId: input.organizationId,
       variation: draft,
       users: input.users,

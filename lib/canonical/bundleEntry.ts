@@ -40,11 +40,25 @@ export { leaveCoverageRows, leaveSlotKind } from './leaveCoverage'
 
 export {
   canEditWorkCatalogue,
+  canManageVariationTracker,
+  canSeeVariations,
   canViewStaffWarnings,
   isStaffAccount,
   receivesJobNotification,
   seesEveryJob,
 } from './staffAccess'
+
+export {
+  DEFAULT_PAYMENT_RUN_DATE_RANGES,
+  DEFAULT_WARNING_DETECTION,
+  invoicingToFirestore,
+  parseInvoicing,
+  parsePaymentRunDateRanges,
+  parseWarningDetection,
+  paymentRunRangeToFirestore,
+  validateInvoicingSettings,
+  warningDetectionToFirestore,
+} from './organizationSettings'
 
 export {
   accountKindFromFlags,

@@ -274,6 +274,41 @@ service cloud.firestore {
     );
   }
 
+  // Variations: every admin and manager in the org. Never an operative.
+  // Do not look up the job's assigned-manager list here — that extra get() made
+  // every variation read/write slow and denied managers who can already see the job.
+  function variationCallerIsOperative() {
+    return exists(/databases/(default)/documents/users/$(request.auth.uid)) && (
+      (
+        'operativeMode' in get(/databases/(default)/documents/users/$(request.auth.uid)).data &&
+        truthyBool(get(/databases/(default)/documents/users/$(request.auth.uid)).data.operativeMode)
+      ) ||
+      (
+        'permissions' in get(/databases/(default)/documents/users/$(request.auth.uid)).data &&
+        get(/databases/(default)/documents/users/$(request.auth.uid)).data.permissions is map &&
+        'operativeMode' in get(/databases/(default)/documents/users/$(request.auth.uid)).data.permissions &&
+        truthyBool(get(/databases/(default)/documents/users/$(request.auth.uid)).data.permissions.operativeMode)
+      ) ||
+      (
+        'role' in get(/databases/(default)/documents/users/$(request.auth.uid)).data &&
+        get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'operative'
+      )
+    );
+  }
+
+  function canAdminVariations(organizationId) {
+    return isOrganizationAdmin(organizationId) ||
+      isOrgAdminViaMembersMap(organizationId) ||
+      isPlatformOwner();
+  }
+
+  function canAccessVariationsStaff(organizationId) {
+    return canAdminVariations(organizationId) || (
+      isOrganizationMaterialManager(organizationId) &&
+      !variationCallerIsOperative()
+    );
+  }
+
   // Managers with operative-management access may edit limited operative profile fields on users docs.
   function canManagerUpdateOperativeProfile(targetUserId) {
     return request.auth != null &&
@@ -583,9 +618,15 @@ service cloud.firestore {
       }
       
       // Job types and other org settings (only jobTypes doc is used today). Org members need to sync job types when creating work.
+      // Variation log / item docs live here as the iOS fallback. Operatives must not read them.
       match /settings/{settingId} {
-        allow read: if canAccessOrganization(organizationId);
-        allow write: if canAccessOrganization(organizationId);
+        function isVariationSettingsDoc() {
+          return settingId.matches('^variations_.*') || settingId.matches('^variationItem_.*');
+        }
+        allow read: if canAccessOrganization(organizationId) &&
+          (!isVariationSettingsDoc() || canAccessVariationsStaff(organizationId));
+        allow write: if canAccessOrganization(organizationId) &&
+          (!isVariationSettingsDoc() || canAccessVariationsStaff(organizationId));
       }
       
       match /tasks/{taskId} {
@@ -690,73 +731,22 @@ service cloud.firestore {
       }
 
       // Variations are not covered by the read-only catch-all below.
-      // Admins read every job. Managers read and write only jobs they are assigned to.
-      // Operatives never read or write. Hard delete is denied; rows are soft-deleted.
-      function variationCallerIsOperative() {
-        return exists(/databases/(default)/documents/users/$(request.auth.uid)) && (
-          (
-            'operativeMode' in get(/databases/(default)/documents/users/$(request.auth.uid)).data &&
-            truthyBool(get(/databases/(default)/documents/users/$(request.auth.uid)).data.operativeMode)
-          ) ||
-          (
-            'permissions' in get(/databases/(default)/documents/users/$(request.auth.uid)).data &&
-            get(/databases/(default)/documents/users/$(request.auth.uid)).data.permissions is map &&
-            'operativeMode' in get(/databases/(default)/documents/users/$(request.auth.uid)).data.permissions &&
-            truthyBool(get(/databases/(default)/documents/users/$(request.auth.uid)).data.permissions.operativeMode)
-          ) ||
-          (
-            'role' in get(/databases/(default)/documents/users/$(request.auth.uid)).data &&
-            get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'operative'
-          )
-        );
-      }
-
-      function variationJobHasManager(data) {
-        return ('managerId' in data && data.managerId == request.auth.uid) ||
-          ('managerIds' in data && data.managerIds is list && request.auth.uid in data.managerIds);
-      }
-
-      function variationAssignedToJob(organizationId, parentId) {
-        return (
-          exists(/databases/(default)/documents/organizations/$(organizationId)/projects/$(parentId)) &&
-          variationJobHasManager(get(/databases/(default)/documents/organizations/$(organizationId)/projects/$(parentId)).data)
-        ) || (
-          exists(/databases/(default)/documents/organizations/$(organizationId)/smallWorks/$(parentId)) &&
-          variationJobHasManager(get(/databases/(default)/documents/organizations/$(organizationId)/smallWorks/$(parentId)).data)
-        );
-      }
-
-      // Admins are never treated as operatives here. A leftover operativeMode flag
-      // on an admin account used to deny the write while the app still showed Save.
-      // Members-map admins match the other organisation writes (web bootstrap).
-      function canAdminVariations(organizationId) {
-        return isOrganizationAdmin(organizationId) ||
-          isOrgAdminViaMembersMap(organizationId) ||
-          isPlatformOwner();
-      }
-
-      function canAccessJobVariations(organizationId, parentId) {
-        return canAdminVariations(organizationId) || (
-          isOrganizationMaterialManager(organizationId) &&
-          !variationCallerIsOperative() &&
-          variationAssignedToJob(organizationId, parentId)
-        );
-      }
-
+      // Admins and managers read and write every job. Operatives never do.
+      // Hard delete is denied; rows are soft-deleted.
       match /variations/{variationId} {
         allow read: if resource.data.parentId is string &&
-          canAccessJobVariations(organizationId, resource.data.parentId);
+          canAccessVariationsStaff(organizationId);
         allow create: if request.resource.data.parentId is string &&
           request.resource.data.isDeleted == false &&
-          canAccessJobVariations(organizationId, request.resource.data.parentId);
+          canAccessVariationsStaff(organizationId);
         allow update: if resource.data.parentId is string &&
           request.resource.data.parentId == resource.data.parentId &&
-          canAccessJobVariations(organizationId, resource.data.parentId);
+          canAccessVariationsStaff(organizationId);
         allow delete: if false;
       }
 
       match /variationTrackers/{parentId} {
-        allow read: if canAccessJobVariations(organizationId, parentId);
+        allow read: if canAccessVariationsStaff(organizationId);
         allow create, update: if canAdminVariations(organizationId);
         allow delete: if false;
       }

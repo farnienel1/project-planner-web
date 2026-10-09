@@ -274,6 +274,8 @@ export function VariationTrackerScreen({
                   actor: { uid: user.id, name: `${user.firstName} ${user.surname}`.trim() },
                   users,
                   managerIds: assignedManagerIds(project),
+                  existingRows: rows,
+                  tracker: tracker ?? undefined,
                 })
                 setHeading('')
                 setOrder(null)
