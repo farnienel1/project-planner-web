@@ -15,6 +15,8 @@ import { ClashWarningCard } from '@/components/warnings/ClashWarningCard'
 import { displayTitle, type ClashTimelineEntry } from '@/lib/warnings/clashTimeline'
 import { canOpenWarningSettings, hasAdminAccess } from '@/lib/permissions'
 import type { Operative, User } from '@/types'
+import { editUserHrefForOperative, findUserForOperative } from '@/lib/operatives/operativeRosterUtils'
+import { canOpenOperativeFromWarning } from '@/lib/staff/userEditPermissions'
 import { initialsFrom } from '@/lib/daily-overview/buildDailyOverview'
 import { dayKey, formatLongDay } from '@/lib/ios-parity/londonTime'
 import { addDoc, collection, serverTimestamp } from 'firebase/firestore'
@@ -249,9 +251,13 @@ function LeaveCard({ warning, canBook }: { warning: LeaveCoverageWarning; canBoo
 function QualificationCard({
   warning,
   onDismiss,
+  operativeHref,
+  showOpenOperative,
 }: {
   warning: QualificationExpiryWarning
   onDismiss?: (warning: QualificationExpiryWarning) => Promise<void>
+  operativeHref: string
+  showOpenOperative: boolean
 }) {
   const [busy, setBusy] = useState(false)
   const expired = warning.daysUntilExpiry < 0
@@ -283,9 +289,11 @@ function QualificationCard({
               {busy ? 'Dismissing…' : 'Dismiss'}
             </button>
           ) : null}
-          <Link href={`/dashboard/operatives/${warning.operativeId}`} className="btn primary">
-            Open operative
-          </Link>
+          {showOpenOperative ? (
+            <Link href={operativeHref} className="btn primary">
+              Open operative
+            </Link>
+          ) : null}
         </div>
         {expired ? (
           <p className="muted small">Dismissing hides this on web and iOS until a new expiry date is saved.</p>
@@ -336,7 +344,8 @@ export function WarningsScreen({
   unverifiedWarnings = [],
   loading,
   user,
-  operatives: _operatives,
+  operatives,
+  users = [],
   smallWorkIds,
   onAcceptClash,
   onDismissQualification,
@@ -354,6 +363,7 @@ export function WarningsScreen({
   loading?: boolean
   user: User | null
   operatives: Operative[]
+  users?: User[]
   smallWorkIds: ReadonlySet<string>
   onAcceptClash: (clash: { id: string; bookingAId: string; bookingBId: string }) => Promise<void>
   onDismissQualification?: (warning: QualificationExpiryWarning) => Promise<void>
@@ -529,7 +539,19 @@ export function WarningsScreen({
 
       {showQualifications
         ? qualificationWarnings.map((warning) => (
-            <QualificationCard key={warning.id} warning={warning} onDismiss={onDismissQualification} />
+            <QualificationCard
+              key={warning.id}
+              warning={warning}
+              onDismiss={onDismissQualification}
+              operativeHref={editUserHrefForOperative(warning.operativeId, operatives, users)}
+              showOpenOperative={canOpenOperativeFromWarning(
+                user,
+                findUserForOperative(
+                  operatives.find((operative) => operative.id === warning.operativeId),
+                  users
+                )
+              )}
+            />
           ))
         : null}
 

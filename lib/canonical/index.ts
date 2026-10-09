@@ -50,6 +50,21 @@ export {
   seesEveryJob,
 } from './staffAccess'
 
+export {
+  ADMIN_ACCESS_LOCKED_MESSAGE,
+  MANAGER_PERMISSION_TOGGLES,
+  OPERATIVE_PERMISSION_TOGGLES,
+  USER_DOCUMENT_FIELDS,
+  USER_PERMISSION_FIELDS,
+  accountKindFromFlags,
+  applyEmploymentTypeChange,
+  employmentEffectiveLabel,
+  employmentTypeLabel,
+  employmentTypeOnDay,
+  isBillableSelfEmployedDay,
+  normalizeEmploymentType,
+} from './userProfile'
+
 export type {
   JobNotificationRecipientInput,
   StaffAccountRole,
@@ -88,6 +103,16 @@ export type {
   UnverifiedOperativeInput,
   UnverifiedOperativeRow,
 } from './warningRows'
+
+export type {
+  AccountFlags,
+  AccountKind,
+  EmploymentType,
+  EmploymentTypeChange,
+  EmploymentTypeUser,
+  PermissionToggleDef,
+  UserPermissionField,
+} from './userProfile'
 
 export type {
   LeaveBooking,

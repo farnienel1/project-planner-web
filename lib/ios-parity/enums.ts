@@ -138,11 +138,7 @@ export function normalizeManagerTimeSlot(raw: unknown): ManagerTimeSlotRaw | nul
   return null
 }
 
-export function normalizeEmploymentType(raw: unknown): EmploymentTypeRaw {
-  if (raw === 'paye') return 'paye'
-  if (raw === 'self_employed' || raw === 'selfEmployed') return 'self_employed'
-  return 'self_employed'
-}
+export { normalizeEmploymentType } from '@/lib/canonical/userProfile'
 
 export function normalizeUserRole(raw: unknown): UserRoleRaw {
   if (typeof raw === 'string' && (USER_ROLES as readonly string[]).includes(raw)) {
