@@ -1,6 +1,7 @@
 import { collection, doc, getDoc, getDocs, query, setDoc, Timestamp, updateDoc, where } from 'firebase/firestore'
 import { withTimeout } from '@/lib/client/withTimeout'
 import { seedOrgDefaultDashboard } from '@/lib/dashboard/dashboardLayoutStorage'
+import { STARTER_CATALOGUE_VERSION, seedStarterMaterialCatalogue } from '@/lib/materials/starterCatalogue'
 import { newUuid, parseFirestoreDate, sanitizeForFirestore } from '@/lib/firebase/firestoreUtils'
 import { companyLogoPath, uploadFile } from '@/lib/firebase/storageUtils'
 import { getFirebaseDb } from '@/lib/firebase/ensureFirebase'
@@ -237,6 +238,20 @@ export async function createPendingOrganization(
     } catch {
       // Dashboard layout can be seeded later; do not block org creation.
     }
+    const founderName = `${input.firstName} ${input.surname}`.trim() || email
+    void seedStarterMaterialCatalogue({
+      organizationId,
+      createdByUserId: userId,
+      createdByName: founderName,
+    })
+      .then((result) => {
+        if (result.skipped) return
+        return updateDoc(doc(db, 'organizations', organizationId), {
+          starterMaterialCatalogueVersion: STARTER_CATALOGUE_VERSION,
+          updatedAt: Timestamp.now(),
+        })
+      })
+      .catch(() => undefined)
   }
 
   await withTimeout(

@@ -1662,7 +1662,7 @@ Each section below gives the iOS files, who can open the section, the screens an
   - `Core/MaterialCatalogStore.swift`, `Core/MaterialCatalogCSV.swift`, `Core/MaterialCatalogDuplicateDetection.swift`
 - **Access:** `canManageMaterialCatalogue` (admins and managers).
 - **Root screen** ("Material catalogue"; "Done"):
-  - A "CATALOGUE" section with search ("Search by name, brand or code").
+  - A "CATALOGUE" section with token search (`rankMaterialRecords`; "Try 2.5mm LS — name, brand, code or size").
   - Rows show "Size: …" and "Length: …".
   - Empty state: "No catalogue items yet" / "Add materials manually or update the catalogue from a CSV."
 - **Editor:**
@@ -1792,8 +1792,8 @@ Each section below gives the iOS files, who can open the section, the screens an
   - **"User details":** name, email, mobile; day rate **or** hourly rate (with the note "Payroll uses either a day rate or an hourly rate, not both…"); "Previous day rates"; trade; line managers; Qualifications.
   - **Operative setup section.**
   - **"Billing details":** VAT and UTR.
-  - **"Annual leave in app":** "Annual leave enabled" ("Turn off for self-employed staff who do not use paid annual leave").
-  - **"Annual leave":** entitlement editor.
+  - **"Annual leave in app":** "Annual leave allowance" (copy from `ANNUAL_LEAVE_ALLOWANCE_COPY`). Off hides days-per-year, not the Holiday tab.
+  - **"Annual leave":** entitlement editor plus remaining override for this leave year.
   - **"Permissions":**
     - The toggles depend on the user's type (see Add user).
     - The organisation creator is shown as "Super Admin": "This user is the organization creator. Core permissions cannot be changed."

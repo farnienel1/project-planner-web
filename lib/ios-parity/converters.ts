@@ -235,6 +235,8 @@ export function parseAppUserDocument(userId: string, data: Record<string, unknow
         ? Math.trunc(data.annualLeaveYearEndMonth)
         : undefined,
     annualLeaveCarriesOver: data.annualLeaveCarriesOver === true,
+    annualLeaveYearAllowance: asNumber(data.annualLeaveYearAllowance) ?? undefined,
+    annualLeaveYearAllowanceKey: asOptionalString(data.annualLeaveYearAllowanceKey),
     timesheetsEnabled: data.timesheetsEnabled === true,
     vatNumber: asOptionalString(data.vatNumber),
     utrNumber: asOptionalString(data.utrNumber),
@@ -326,6 +328,12 @@ export function serializeUser(user: User): Record<string, unknown> {
   }
   if (user.annualLeaveYearEndMonth != null) {
     payload.annualLeaveYearEndMonth = Math.trunc(user.annualLeaveYearEndMonth)
+  }
+  if (user.annualLeaveYearAllowance != null) {
+    payload.annualLeaveYearAllowance = user.annualLeaveYearAllowance
+  }
+  if (user.annualLeaveYearAllowanceKey?.trim()) {
+    payload.annualLeaveYearAllowanceKey = user.annualLeaveYearAllowanceKey.trim()
   }
   if (user.employmentTypeTransitionFrom) {
     payload.employmentTypeTransitionFrom = user.employmentTypeTransitionFrom

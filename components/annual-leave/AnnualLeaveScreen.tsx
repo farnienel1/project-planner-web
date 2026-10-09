@@ -1,8 +1,9 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useHolidayStore } from '@/lib/stores/holidayStore'
+import { DEFAULT_ANNUAL_LEAVE, loadOrganizationDetails, type OrgAnnualLeaveDefaults } from '@/lib/settings/organizationSettings'
 import {
   canAccessOperativeAnnualLeaveDirectory,
   isOperativeMode,
@@ -22,6 +23,16 @@ export function AnnualLeaveScreen() {
   const canTeam = !isOperative && canAccessOperativeAnnualLeaveDirectory(user)
   const [tab, setTab] = useState<'mine' | 'team'>('mine')
   const [queueCount, setQueueCount] = useState(0)
+  const [orgLeaveDefaults, setOrgLeaveDefaults] = useState<OrgAnnualLeaveDefaults>(DEFAULT_ANNUAL_LEAVE)
+
+  useEffect(() => {
+    if (!organization?.id) return
+    loadOrganizationDetails(organization.id)
+      .then((details) => {
+        if (details?.annualLeaveDefaults) setOrgLeaveDefaults(details.annualLeaveDefaults)
+      })
+      .catch(() => undefined)
+  }, [organization?.id])
 
   const myBookings = useMemo(
     () =>
@@ -30,17 +41,6 @@ export function AnnualLeaveScreen() {
         .sort((a, b) => b.startDate.getTime() - a.startDate.getTime()),
     [bookings, user]
   )
-
-  if (user?.annualLeaveEnabled === false) {
-    return (
-      <div className="mx-auto max-w-xl pb-10">
-        <h1>Annual leave</h1>
-        <p className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-600">
-          Annual leave is not enabled for your account. Contact your manager if you need this turned on.
-        </p>
-      </div>
-    )
-  }
 
   return (
     <div className="mx-auto max-w-xl space-y-4 pb-10">
@@ -81,6 +81,7 @@ export function AnnualLeaveScreen() {
           myBookings={myBookings}
           organization={organization}
           user={user}
+          orgLeaveDefaults={orgLeaveDefaults}
           saveBooking={saveBooking}
           deleteBooking={deleteBooking}
           requestCancellation={requestCancellation}

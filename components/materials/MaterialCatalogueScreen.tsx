@@ -13,7 +13,7 @@ import { MATERIAL_UNITS, useMaterialCatalogStore } from '@/lib/stores/materialCa
 import { canManageMaterialCatalogue } from '@/lib/permissions'
 import { consumeCreateQuery } from '@/lib/navigation/createMenu'
 import { newUuid } from '@/lib/firebase/firestoreUtils'
-import { duplicateKey } from '@/lib/materials/materialCatalogSearch'
+import { duplicateKey, filterCatalogueItems } from '@/lib/materials/materialCatalogSearch'
 import { formatLengthSpecification } from '@/lib/materials/materialLength'
 import {
   CATALOGUE_CSV_FILENAME,
@@ -24,6 +24,7 @@ import {
   exportCatalogueTemplateCsv,
   parseCatalogueCsv,
 } from '@/lib/materials/materialCatalogCSV'
+import { STARTER_CATALOGUE_FILENAME, starterCatalogueCsv } from '@/lib/materials/starterCatalogue'
 import { EmptyState, IosFormModal, PageHeader } from '@/components/ios/primitives'
 import { MATERIAL_CATEGORY_SUGGESTIONS } from '@/lib/materials/materialCategorySuggestions'
 
@@ -80,17 +81,8 @@ export function MaterialCatalogueScreen() {
     if (organization?.id) loadItems(organization.id)
   }, [organization?.id, loadItems])
 
-  const filtered = useMemo(() => {
-    const query = search.trim().toLowerCase()
-    return items.filter((item) => {
-      if (!query) return true
-      return (
-        item.name.toLowerCase().includes(query) ||
-        item.brand.toLowerCase().includes(query) ||
-        (item.productCode || '').toLowerCase().includes(query)
-      )
-    })
-  }, [items, search])
+  const filtered = useMemo(() => filterCatalogueItems(search, items), [items, search])
+  const searching = Boolean(search.trim())
 
   const grouped = useMemo(() => {
     const map = new Map<string, MaterialCatalogItem[]>()
@@ -172,7 +164,7 @@ export function MaterialCatalogueScreen() {
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search by name, brand or code"
+          placeholder="Try 2.5mm LS — name, brand, code or size"
           className="mt-4 w-full rounded-xl border-0 px-4 py-2.5 text-[15px] text-[var(--ink)]"
         />
       </div>
@@ -181,9 +173,63 @@ export function MaterialCatalogueScreen() {
         <div className="rounded-2xl bg-white p-6 shadow-sm">
           <EmptyState
             icon={<CubeIcon className="h-[60px] w-[60px] text-gray-400" />}
-            title="No catalogue items yet"
-            subtitle="Add materials manually or update the catalogue from a CSV."
+            title={searching ? 'No items match' : 'No catalogue items yet'}
+            subtitle={
+              searching
+                ? 'Try a shorter token such as 2.5mm or LS, or a product code.'
+                : 'Add materials manually or update the catalogue from a CSV.'
+            }
           />
+        </div>
+      ) : searching ? (
+        <div className="overflow-hidden rounded-2xl bg-white shadow-[0_1px_2px_rgba(0,0,0,0.10)]">
+          <div className="px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.4px] text-[var(--ink3)]">
+            {filtered.length} match{filtered.length === 1 ? '' : 'es'}
+          </div>
+          <div className="space-y-2 border-t border-[#E5E5EA] px-3 py-3">
+            {filtered.map((item) => {
+              const lengthLabel = formatLengthSpecification(item.length, item.lengthUnit)
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  className="flex w-full items-start gap-3 rounded-xl px-2 py-2 text-left hover:bg-slate-50"
+                  onClick={() => {
+                    setExistingId(item.id)
+                    setEditor({ ...item })
+                  }}
+                >
+                  <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px] bg-[var(--blue-t)] text-[var(--blue)]">
+                    <CubeIcon className="h-4 w-4" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[15px] font-medium">{item.name}</p>
+                    <p className="text-[13px] text-[var(--ink3)]">{item.brand || 'Custom'}</p>
+                    <div className="mt-1 flex flex-wrap gap-1.5">
+                      {item.productCode ? (
+                        <span className="rounded bg-[var(--blue-t)] px-1.5 py-0.5 font-mono text-[11px] font-medium text-[var(--blue)]">
+                          {item.productCode}
+                        </span>
+                      ) : null}
+                      <span className="rounded bg-[var(--soft)] px-1.5 py-0.5 text-[11px] font-medium text-[var(--ink3)]">
+                        {item.defaultUnit}
+                      </span>
+                      {item.size ? (
+                        <span className="rounded bg-[var(--soft)] px-1.5 py-0.5 text-[11px] text-[var(--ink3)]">
+                          Size: {item.size}
+                        </span>
+                      ) : null}
+                      {lengthLabel ? (
+                        <span className="rounded bg-[var(--soft)] px-1.5 py-0.5 text-[11px] text-[var(--ink3)]">
+                          Length: {lengthLabel}
+                        </span>
+                      ) : null}
+                    </div>
+                  </div>
+                </button>
+              )
+            })}
+          </div>
         </div>
       ) : (
         <div className="space-y-3">
@@ -559,8 +605,8 @@ function CsvSheet({
             <section>
               <p className="text-[11px] font-semibold uppercase text-[var(--ink3)]">Step 1 · Download</p>
               <p className="mt-1 text-[var(--ink3)]">
-                Download your current catalogue, edit it in a spreadsheet, then save the file as .csv (not Excel or
-                Numbers).
+                Download your current catalogue, the Project Planner starter list, or a blank template. Edit in a
+                spreadsheet, then save as .csv (not Excel or Numbers).
               </p>
               <button
                 type="button"
@@ -570,6 +616,16 @@ function CsvSheet({
                 Download Material Catalogue
               </button>
               <p className="mt-2 text-amber-800">⚠️ CSV Warning — save the file as csv and not .xls (excel) or .numbers.</p>
+              <button
+                type="button"
+                className={`${downloadBtn} border-[1.5px] border-[var(--blue)] bg-white text-[var(--blue)]`}
+                onClick={() => downloadTextFile(STARTER_CATALOGUE_FILENAME, starterCatalogueCsv())}
+              >
+                Download starter catalogue
+              </button>
+              <p className="mt-2 text-[var(--ink3)]">
+                The standard list seeded on new organisations. Update it and upload, or use it to restore the defaults.
+              </p>
               <button
                 type="button"
                 className={`${downloadBtn} border-[1.5px] border-[var(--blue)] bg-white text-[var(--blue)]`}

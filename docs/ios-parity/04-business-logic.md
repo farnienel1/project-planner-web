@@ -65,7 +65,7 @@ From Blueprint §5.3 / §7 (details ❓ until Swift is read):
 
 ## 4. Annual leave
 
-- Feature flag `annualLeaveEnabled` (default true). Off → “Annual leave is turned off” copy (full text in 3A).
+- Feature flag `annualLeaveEnabled` (default true) is the **paid allowance** toggle, not Holiday access. Off → Holiday stays; show days taken this company leave year (resets after the last day of the year). On → days per year and remaining. Mid-year remaining is `annualLeaveYearAllowance` + `annualLeaveYearAllowanceKey` via `applyRemainingOverride`.
 - Entitlement: `annualLeaveDaysPerYear` in **0.5 steps**; year `startMonth`–`endMonth` (1–12) **can wrap**; `carriesOver` optional.
 - Org defaults for new users: 25 days, Jan–Dec, no carry (`annualLeaveDefaults`).
 - Half day = 0.5. Calendar: Monday-first; marks weekend, bank holiday, taken (green), pending (red), half (orange).

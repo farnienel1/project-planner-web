@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { endOfWeek, format, isWithinInterval, startOfWeek, subWeeks } from 'date-fns'
 import type { TileId } from '@/lib/stores/dashboardStore'
+import { bookingsForPerson, userLeaveBalance } from '@/lib/annualLeave/leaveBalance'
 import { deriveWorkStatus, timelineProgressPercent } from '@/lib/projects/workStatus'
 import { isTaskOverdue } from '@/lib/tasks/taskUtils'
 import type {
@@ -131,17 +132,11 @@ function slotHours(slot: string): number {
   return 8
 }
 
-function leaveDaysForUser(bookings: HolidayBooking[], userId: string | undefined): {
-  taken: number
-  pending: number
-  remaining: number
-  allowance: number
-} {
-  if (!userId) return { taken: 0, pending: 0, remaining: 0, allowance: 0 }
-  const mine = bookings.filter((b) => b.userId === userId)
-  const taken = mine.filter((b) => b.status === 'approved' && !b.cancellationRequestedAt).length
-  const pending = mine.filter((b) => b.status === 'pending' || b.cancellationRequestedAt != null).length
-  return { taken, pending, remaining: 0, allowance: 0 }
+function leaveDaysForUser(bookings: HolidayBooking[], user: User | null) {
+  return userLeaveBalance({
+    user,
+    bookings: bookingsForPerson(bookings, user?.id),
+  })
 }
 
 function TileTasksOpen({ tasks }: { tasks: ProjectTask[] }) {
@@ -367,18 +362,27 @@ function TileLeavePending({ count }: { count: number }) {
 }
 
 function TileLeaveCalendar({ user, holidayBookings }: { user: User | null; holidayBookings: HolidayBooking[] }) {
-  const stats = leaveDaysForUser(holidayBookings, user?.id)
-  const allowance = user?.annualLeaveDaysPerYear && user.annualLeaveDaysPerYear > 0 ? user.annualLeaveDaysPerYear : 28
-  const remaining = Math.max(0, allowance - stats.taken)
-  const max = Math.max(allowance, 1)
+  const stats = leaveDaysForUser(holidayBookings, user)
+  const remaining = stats.remaining ?? 0
+  const max = Math.max(stats.hasAllowance ? stats.daysPerYear + stats.carriedForward : stats.taken || 1, 1)
+  const bars = stats.hasAllowance
+    ? [
+        { label: 'Taken', value: stats.taken, color: 'bg-orange-400', pct: (stats.taken / max) * 100 },
+        { label: 'Pending', value: stats.pending, color: 'bg-amber-400', pct: (stats.pending / max) * 100 },
+        { label: 'Remaining', value: remaining, color: 'bg-green-400', pct: (Math.max(0, remaining) / max) * 100 },
+      ]
+    : [
+        { label: 'Taken', value: stats.taken, color: 'bg-orange-400', pct: (stats.taken / max) * 100 },
+        { label: 'Pending', value: stats.pending, color: 'bg-amber-400', pct: (stats.pending / max) * 100 },
+      ]
   return (
-    <Widget label="Leave — taken vs allowance" wide link="/dashboard/annual-leave">
-      <div className="mt-2 grid grid-cols-3 gap-3">
-        {[
-          { label: 'Taken', value: stats.taken, color: 'bg-orange-400', pct: (stats.taken / max) * 100 },
-          { label: 'Pending', value: stats.pending, color: 'bg-amber-400', pct: (stats.pending / max) * 100 },
-          { label: 'Remaining', value: remaining, color: 'bg-green-400', pct: (remaining / max) * 100 },
-        ].map((s) => (
+    <Widget
+      label={stats.hasAllowance ? 'Leave — taken vs allowance' : 'Leave — taken this year'}
+      wide
+      link="/dashboard/annual-leave"
+    >
+      <div className={`mt-2 grid gap-3 ${stats.hasAllowance ? 'grid-cols-3' : 'grid-cols-2'}`}>
+        {bars.map((s) => (
           <div key={s.label}>
             <div className="mb-1 flex items-end justify-between">
               <span className="text-[10px] text-slate-500">{s.label}</span>
