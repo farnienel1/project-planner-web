@@ -4,7 +4,7 @@ import type { OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 import { DEFAULT_PAYROLL_POLICY } from '@/lib/settings/organizationSettings'
 import { parseHhMm } from '@/lib/ios-parity/londonTime'
 import { normalizeManagerTimeSlot, normalizeTimeSlot } from '@/lib/ios-parity/enums'
-import { intervalsOverlap } from '@/lib/canonical'
+import { halfDayWindows, intervalsOverlap } from '@/lib/canonical'
 
 export type MinuteInterval = { start: number; end: number }
 
@@ -57,10 +57,11 @@ export function operativeClashInterval(
   // iOS OperativeBookingInterval: a full day with no clocks is the standard window, so two of them overlap.
   if (kind.includes('FULL')) return window ?? { start: 0, end: 24 * 60 }
   if (!window) return null
-  const mid = window.start + Math.floor((window.end - window.start) / 2)
+  // AM / PM come from the shared rulebook so clashes, leave cover, and iOS agree on the split.
+  const halves = halfDayWindows(policy)
   if (kind === 'CUSTOM HOURS' || kind === 'CUSTOM') return window
-  if (kind === 'AM' || kind.includes('MORNING')) return { start: window.start, end: mid }
-  if (kind === 'PM' || kind.includes('AFTERNOON')) return { start: mid, end: window.end }
+  if (kind === 'AM' || kind.includes('MORNING')) return { ...halves.am }
+  if (kind === 'PM' || kind.includes('AFTERNOON')) return { ...halves.pm }
   if (kind.includes('EVENING')) {
     const end = Math.min(window.end + 240, 24 * 60)
     return end > window.end ? { start: window.end, end } : null
@@ -85,10 +86,10 @@ export function managerClashInterval(
   // iOS ManagerScheduleInterval: a full day with no clocks covers the standard day and clashes with another full day.
   if (kind.includes('FULL')) return window ?? { start: 0, end: 24 * 60 }
   if (!window) return null
-  const mid = window.start + Math.floor((window.end - window.start) / 2)
+  const halves = halfDayWindows(policy)
   if (kind === 'CUSTOM HOURS' || kind === 'CUSTOM') return window
-  if (kind === 'AM' || kind.includes('MORNING')) return { start: window.start, end: mid }
-  if (kind === 'PM' || kind.includes('AFTERNOON')) return { start: mid, end: window.end }
+  if (kind === 'AM' || kind.includes('MORNING')) return { ...halves.am }
+  if (kind === 'PM' || kind.includes('AFTERNOON')) return { ...halves.pm }
   return window
 }
 

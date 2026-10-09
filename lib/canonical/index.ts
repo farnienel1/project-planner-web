@@ -1,6 +1,9 @@
 export {
   CANONICAL_HALF_MONTH_RANGES,
+  CANONICAL_STANDARD_BREAK,
+  CANONICAL_STANDARD_DAY,
   CANONICAL_TIME_ZONE,
+  MIN_HALF_DAY_MINUTES,
   adoptCurrentOrganization,
   bookingBelongsToOrganization,
   captureOrganizationContext,
@@ -8,23 +11,36 @@ export {
   coverageWindow,
   currentOrganizationId,
   dayKeyInOrganizationZone,
+  formatClockMinutes,
+  halfDayWindows,
   intervalsOverlap,
   invoicingPeriod,
+  mergeMinuteIntervals,
+  namedSlotKind,
   organizationContextStillCurrent,
   organizationIdFromValue,
   organizationIdsMatch,
   organizationScopedKey,
   paidHoursForNamedSlot,
+  parseClockMinutes,
   provisionalOrganizationId,
   standardDayCoverage,
   resetOrganizationContextForTests,
+  slotInterval,
+  standardBreakWindow,
+  standardDayWindow,
+  subtractMinuteIntervals,
 } from './engine'
 
 export {
+  qualificationDismissKey,
   qualificationExpiryRows,
   unbookedLabourRows,
   unverifiedOperativeRows,
+  withoutDismissedQualificationRows,
 } from './warningRows'
+
+export { leaveCoverageRows, leaveSlotKind } from './leaveCoverage'
 
 export {
   canEditWorkCatalogue,
@@ -45,14 +61,18 @@ export type {
   ClashLookaheadMode,
   CoverageWindowInput,
   DayWindow,
+  HalfDayWindows,
   InvoicingPeriodInput,
   MinuteInterval,
+  NamedSlotKind,
   OrgAccessProbe,
   OrganizationContextSnapshot,
   PaymentRunMode,
   PaymentRunRange,
+  SlotIntervalInput,
   StandardDayBooking,
   StandardDayCoverage,
+  StandardDayInput,
   StandardDayPolicy,
 } from './engine'
 
@@ -68,3 +88,13 @@ export type {
   UnverifiedOperativeInput,
   UnverifiedOperativeRow,
 } from './warningRows'
+
+export type {
+  LeaveBooking,
+  LeaveClashEntry,
+  LeaveCoverageInput,
+  LeaveCoverageRow,
+  LeavePerson,
+  LeaveRecord,
+  LeaveSlot,
+} from './leaveCoverage'

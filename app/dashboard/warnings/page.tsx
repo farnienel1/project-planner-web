@@ -20,6 +20,12 @@ import {
   type AcceptedBookingClash,
 } from '@/lib/warnings/acceptedClashStorage'
 import {
+  dismissQualificationWarning,
+  loadDismissedWarnings,
+  type DismissedWarning,
+} from '@/lib/warnings/dismissedWarningStorage'
+import { withoutDismissedQualificationRows } from '@/lib/canonical'
+import {
   DEFAULT_WARNING_DETECTION,
   loadOrganizationDetails,
   saveWarningDetection,
@@ -43,6 +49,7 @@ import {
 } from '@/lib/warnings/warningsScan'
 import type { OrgWarningsResult } from '@/lib/warnings/generateOrgWarnings'
 import { WarningsScreen } from '@/components/warnings/WarningsScreen'
+import { ORG_DATA_REFRESHED_EVENT } from '@/lib/stores/refreshOrgData'
 
 export default function WarningsPage() {
   const router = useRouter()
@@ -61,6 +68,7 @@ export default function WarningsPage() {
     useMaterialProjectStore()
   const { bookings: holidayBookings, loadBookings: loadHolidayBookings } = useHolidayStore()
   const [acceptedClashes, setAcceptedClashes] = useState<AcceptedBookingClash[]>([])
+  const [dismissedWarnings, setDismissedWarnings] = useState<DismissedWarning[]>([])
   const [orgDetails, setOrgDetails] = useState<OrganizationDetails | null>(null)
   const [notificationPreferences, setNotificationPreferences] = useState<NotificationPreferences | null>(null)
   const [detectionSettled, setDetectionSettled] = useState(false)
@@ -124,6 +132,7 @@ export default function WarningsPage() {
         if (!cancelled) setHolidaysReady(true)
       })
       loadAcceptedBookingClashes(orgId).then(setAcceptedClashes).catch(() => setAcceptedClashes([]))
+      loadDismissedWarnings(orgId).then(setDismissedWarnings).catch(() => setDismissedWarnings([]))
       const cached = readCachedWarningDetection(orgId)
       setCachedDetection(cached)
       let settled = false
@@ -208,6 +217,23 @@ export default function WarningsPage() {
       .then(setNotificationPreferences)
       .catch(() => setNotificationPreferences(null))
   }, [user?.id, organization?.id])
+
+  // Global Refresh: stores reload themselves; this page also re-reads what it keeps locally.
+  useEffect(() => {
+    const orgId = organization?.id
+    if (!orgId) return
+    const onRefreshed = () => {
+      loadAcceptedBookingClashes(orgId).then(setAcceptedClashes).catch(() => {})
+      loadDismissedWarnings(orgId).then(setDismissedWarnings).catch(() => {})
+      void loadOrganizationDetails(orgId, { fromServer: true, allowCacheFallback: true })
+        .then((details) => {
+          if (details && details.id === orgId) setOrgDetails(details)
+        })
+        .catch(() => {})
+    }
+    window.addEventListener(ORG_DATA_REFRESHED_EVENT, onRefreshed)
+    return () => window.removeEventListener(ORG_DATA_REFRESHED_EVENT, onRefreshed)
+  }, [organization?.id])
 
   useEffect(() => {
     const inFlight = useManagerScheduleStore.getState().loading
@@ -340,6 +366,7 @@ export default function WarningsPage() {
     clashWarnings: [],
     managerClashWarnings: [],
     unbookedWarnings: [],
+    leaveWarnings: [],
     materialWarnings: [],
     qualificationWarnings: [],
     unverifiedWarnings: [],
@@ -359,6 +386,34 @@ export default function WarningsPage() {
     () =>
       shown.managerClashWarnings.filter((w) => !isClashAccepted(w.bookingAId, w.bookingBId, acceptedClashes)),
     [shown.managerClashWarnings, acceptedClashes]
+  )
+
+  const dismissedKeys = useMemo(
+    () => new Set(dismissedWarnings.map((warning) => warning.dismissKey)),
+    [dismissedWarnings]
+  )
+  const qualificationWarnings = useMemo(
+    () => withoutDismissedQualificationRows(shown.qualificationWarnings, dismissedKeys),
+    [shown.qualificationWarnings, dismissedKeys]
+  )
+
+  const handleDismissQualification = useCallback(
+    async (warning: { dismissKey: string; operativeId: string; qualificationId: string; dayKey: string }) => {
+      if (!organization?.id || !user?.id) return
+      await dismissQualificationWarning({
+        organizationId: organization.id,
+        dismissKey: warning.dismissKey,
+        operativeId: warning.operativeId,
+        qualificationId: warning.qualificationId,
+        expiryDayKey: warning.dayKey,
+        dismissedByUserId: user.id,
+      })
+      setDismissedWarnings((current) => [
+        ...current.filter((entry) => entry.dismissKey !== warning.dismissKey),
+        { dismissKey: warning.dismissKey, kind: 'qualification_expired', dismissedAt: new Date(), dismissedByUserId: user.id },
+      ])
+    },
+    [organization?.id, user?.id]
   )
 
   const handleAcceptClash = useCallback(
@@ -395,14 +450,16 @@ export default function WarningsPage() {
       clashWarnings={clashWarnings}
       managerClashWarnings={managerClashWarnings}
       unbookedWarnings={shown.unbookedWarnings}
+      leaveWarnings={shown.leaveWarnings}
       materialWarnings={shown.materialWarnings}
-      qualificationWarnings={shown.qualificationWarnings}
+      qualificationWarnings={qualificationWarnings}
       unverifiedWarnings={shown.unverifiedWarnings}
       loading={scanning}
       user={user}
       operatives={rosterOperatives}
       smallWorkIds={smallWorkIds}
       onAcceptClash={handleAcceptClash}
+      onDismissQualification={handleDismissQualification}
       onDeleteBooking={handleDeleteBooking}
       onDeleteManagerBooking={handleDeleteManagerBooking}
     />
