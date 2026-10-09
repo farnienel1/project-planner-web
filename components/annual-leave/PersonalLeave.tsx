@@ -1,10 +1,11 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { endOfMonth, format, isSameDay, startOfDay } from 'date-fns'
+import { format, isSameDay, startOfDay } from 'date-fns'
 import { newHolidayId } from '@/lib/stores/holidayStore'
 import { getBookingForDay, getDayKindForBookings } from '@/lib/annualLeave/dayStatus'
-import { computeCarriedForwardDays } from '@/lib/annualLeave/carryOver'
+import { bookingsForPerson, userLeaveBalance } from '@/lib/annualLeave/leaveBalance'
+import { DEFAULT_ANNUAL_LEAVE, type OrgAnnualLeaveDefaults } from '@/lib/settings/organizationSettings'
 import {
   bookingDayCount,
   daysLabel,
@@ -18,42 +19,30 @@ import { AnnualLeaveLegend, LeaveDayCalendar } from './LeaveDayCalendar'
 
 type DayPick = { day: Date; slot: HolidayTimeSlot }
 
-function leaveYearRange(user: User | null) {
-  const now = new Date()
-  const startMonth = (user?.annualLeaveYearStartMonth ?? 1) - 1
-  let year = now.getFullYear()
-  if (now.getMonth() < startMonth) year -= 1
-  const start = new Date(year, startMonth, 1)
-  const endMonth = user?.annualLeaveYearEndMonth ?? 12
-  const endYear = endMonth <= startMonth ? year + 1 : year
-  return { start, end: endOfMonth(new Date(endYear, endMonth - 1, 1)) }
-}
-
-function allowanceForUser(user: User | null): number {
-  if (user?.annualLeaveDaysPerYear && user.annualLeaveDaysPerYear > 0) return user.annualLeaveDaysPerYear
-  return 28
-}
-
 function LeaveSummary({
+  hasAllowance,
   allowance,
+  remaining,
   taken,
   pending,
   carriedForward,
   leaveYearStart,
   leaveYearEnd,
 }: {
+  hasAllowance: boolean
   allowance: number
+  remaining: number | null
   taken: number
   pending: number
   carriedForward?: number
   leaveYearStart: Date
   leaveYearEnd: Date
 }) {
-  const remaining = allowance + (carriedForward ?? 0) - taken - pending
   const totalAllowance = allowance + (carriedForward ?? 0)
   const used = Math.max(0, taken + pending)
-  const ratio = totalAllowance > 0 ? Math.min(1, used / totalAllowance) : 0
+  const ratio = hasAllowance && totalAllowance > 0 ? Math.min(1, used / totalAllowance) : taken > 0 ? 1 : 0
   const circumference = 2 * Math.PI * 28
+  const over = hasAllowance && remaining != null && remaining < 0
 
   return (
     <div className="rounded-2xl border border-slate-200 bg-[var(--card)] p-4 shadow-sm">
@@ -78,21 +67,28 @@ function LeaveSummary({
           />
         </svg>
         <div>
-          <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">Days remaining</p>
-          <p className={`text-3xl font-bold leading-none ${remaining < 0 ? 'text-[var(--red)]' : 'text-slate-900'}`}>
-            {remaining < 0
-              ? `${formatLeaveCount(remaining)} ${Math.abs(remaining) === 1 ? 'day' : 'days'} over`
-              : formatLeaveCount(remaining)}
+          <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">
+            {hasAllowance ? 'Days remaining' : 'Days taken this leave year'}
+          </p>
+          <p className={`text-3xl font-bold leading-none ${over ? 'text-[var(--red)]' : 'text-slate-900'}`}>
+            {over
+              ? `${formatLeaveCount(remaining ?? 0)} ${Math.abs(remaining ?? 0) === 1 ? 'day' : 'days'} over`
+              : formatLeaveCount(hasAllowance ? remaining ?? 0 : taken)}
           </p>
         </div>
       </div>
-      <div className="mt-4 grid grid-cols-3 gap-2 text-center">
+      <div className={`mt-4 grid gap-2 text-center ${hasAllowance ? 'grid-cols-3' : 'grid-cols-2'}`}>
         <Tile label="Taken" value={formatLeaveCount(taken)} />
         <Tile label="Awaiting approval" value={formatLeaveCount(pending)} />
-        <Tile label="Allowance" value={formatLeaveCount(totalAllowance)} />
+        {hasAllowance ? <Tile label="Allowance" value={formatLeaveCount(totalAllowance)} /> : null}
       </div>
-      {carriedForward ? (
+      {hasAllowance && carriedForward ? (
         <p className="mt-2 text-[11px] text-slate-500">Includes {formatLeaveCount(carriedForward)} carried forward</p>
+      ) : null}
+      {!hasAllowance ? (
+        <p className="mt-2 text-[11px] text-slate-500">
+          This account has no paid allowance. The count resets at the end of the company leave year.
+        </p>
       ) : null}
     </div>
   )
@@ -113,11 +109,17 @@ function Tile({ label, value }: { label: string; value: string }) {
   )
 }
 
+function dateFromDayKey(key: string): Date {
+  const [year, month, day] = key.split('-').map(Number)
+  return new Date(year, (month || 1) - 1, day || 1)
+}
+
 export function PersonalLeave({
   mode,
   myBookings,
   organization,
   user,
+  orgLeaveDefaults,
   saveBooking,
   deleteBooking,
   requestCancellation,
@@ -126,6 +128,7 @@ export function PersonalLeave({
   myBookings: HolidayBooking[]
   organization: { id: string } | null
   user: User | null
+  orgLeaveDefaults?: OrgAnnualLeaveDefaults | null
   saveBooking: (orgId: string, booking: HolidayBooking) => Promise<void>
   deleteBooking?: (orgId: string, id: string) => Promise<void>
   requestCancellation?: (orgId: string, booking: HolidayBooking, userId: string) => Promise<void>
@@ -144,23 +147,23 @@ export function PersonalLeave({
     run: () => Promise<void>
   } | null>(null)
 
-  const leaveYear = leaveYearRange(user)
-  const bank = useOrgBankHolidays(leaveYear.start, leaveYear.end)
-  const allowance = allowanceForUser(user)
-  const approved = myBookings.filter((booking) => booking.status === 'approved')
-  const awaiting = myBookings.filter((booking) => booking.status === 'pending' || booking.cancellationRequestedAt)
-  const taken = approved.reduce((sum, booking) => sum + bookingDayCount(booking), 0)
-  const pending = myBookings
-    .filter((booking) => booking.status === 'pending')
-    .reduce((sum, booking) => sum + bookingDayCount(booking), 0)
-  const carriedForward = computeCarriedForwardDays({
-    carriesOver: user?.annualLeaveCarriesOver === true,
-    allowance,
-    startMonth: user?.annualLeaveYearStartMonth ?? 1,
-    endMonth: user?.annualLeaveYearEndMonth ?? 12,
-    bookings: myBookings,
+  const balance = userLeaveBalance({
+    user,
+    bookings: bookingsForPerson(myBookings, user?.id),
+    orgDefaults: orgLeaveDefaults ?? DEFAULT_ANNUAL_LEAVE,
   })
-  const remaining = allowance + (carriedForward ?? 0) - taken - pending
+  const leaveYear = {
+    start: dateFromDayKey(balance.startDayKey),
+    end: dateFromDayKey(balance.endDayKey),
+  }
+  const bank = useOrgBankHolidays(leaveYear.start, leaveYear.end)
+  const allowance = balance.daysPerYear
+  const awaiting = myBookings.filter((booking) => booking.status === 'pending' || booking.cancellationRequestedAt)
+  const taken = balance.taken
+  const pending = balance.pending
+  const carriedForward = balance.carriedForward
+  const remaining = balance.remaining ?? 0
+  const hasAllowance = balance.hasAllowance
   const selectedUnits = picks.reduce((sum, pick) => sum + leaveDayUnits(pick.slot), 0)
   const remainingAfter = remaining - selectedUnits
   const editBooking = editDay ? getBookingForDay(editDay, myBookings, 'approved') : null
@@ -250,7 +253,9 @@ export function PersonalLeave({
   return (
     <div className="space-y-5">
       <LeaveSummary
+        hasAllowance={hasAllowance}
         allowance={allowance}
+        remaining={balance.remaining}
         taken={taken}
         pending={pending}
         carriedForward={carriedForward}
@@ -284,14 +289,18 @@ export function PersonalLeave({
         </div>
 
         {picks.length > 0 ? (
-          <div className={`rounded-2xl border p-3 ${remainingAfter < 0 ? 'border-red-200 bg-red-50' : 'border-slate-200 bg-slate-50'}`}>
+          <div className={`rounded-2xl border p-3 ${hasAllowance && remainingAfter < 0 ? 'border-red-200 bg-red-50' : 'border-slate-200 bg-slate-50'}`}>
             <div className="mb-2 flex items-center justify-between text-sm">
               <span className="font-semibold text-slate-800">{daysLabel(selectedUnits)} selected</span>
-              <span className={remainingAfter < 0 ? 'font-semibold text-[var(--red)]' : 'text-slate-600'}>
-                Remaining after {formatLeaveCount(remainingAfter)}
-              </span>
+              {hasAllowance ? (
+                <span className={remainingAfter < 0 ? 'font-semibold text-[var(--red)]' : 'text-slate-600'}>
+                  Remaining after {formatLeaveCount(remainingAfter)}
+                </span>
+              ) : (
+                <span className="text-slate-600">Taken after {formatLeaveCount(taken + pending + selectedUnits)}</span>
+              )}
             </div>
-            {remainingAfter < 0 ? (
+            {hasAllowance && remainingAfter < 0 ? (
               <p className="mb-2 text-xs text-[var(--red)]">
                 This request is over the allowance. You can still send it, and a manager can allow it.
               </p>

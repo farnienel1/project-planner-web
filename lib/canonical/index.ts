@@ -104,6 +104,16 @@ export type {
   UnverifiedOperativeRow,
 } from './warningRows'
 
+export {
+  ANNUAL_LEAVE_ALLOWANCE_COPY,
+  DEFAULT_ANNUAL_LEAVE_DAYS,
+  annualLeaveBalance,
+  applyRemainingOverride,
+  hasAnnualLeaveAllowance,
+  leaveYearBounds,
+  snapLeaveDays,
+} from './annualLeaveBalance'
+
 export type {
   AccountFlags,
   AccountKind,
@@ -113,6 +123,14 @@ export type {
   PermissionToggleDef,
   UserPermissionField,
 } from './userProfile'
+
+export type {
+  AnnualLeaveBalance,
+  AnnualLeaveBalanceInput,
+  LeaveDayRecord,
+  LeaveYearBounds,
+  RemainingOverrideWrite,
+} from './annualLeaveBalance'
 
 export type {
   LeaveBooking,

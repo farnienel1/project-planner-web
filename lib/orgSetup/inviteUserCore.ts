@@ -33,6 +33,8 @@ export type InviteUserCoreInput = {
   annualLeaveYearStartMonth?: number
   annualLeaveYearEndMonth?: number
   annualLeaveCarriesOver?: boolean
+  annualLeaveYearAllowance?: number
+  annualLeaveYearAllowanceKey?: string
   hasNoLineManager?: boolean
   invitedBy: string
 }
@@ -141,6 +143,12 @@ export async function inviteUserCore(input: InviteUserCoreInput): Promise<Invite
     invitationData.annualLeaveYearEndMonth = input.annualLeaveYearEndMonth
   }
   if (input.annualLeaveCarriesOver != null) invitationData.annualLeaveCarriesOver = input.annualLeaveCarriesOver
+  if (input.annualLeaveYearAllowance != null) {
+    invitationData.annualLeaveYearAllowance = input.annualLeaveYearAllowance
+  }
+  if (input.annualLeaveYearAllowanceKey) {
+    invitationData.annualLeaveYearAllowanceKey = input.annualLeaveYearAllowanceKey
+  }
 
   await setDoc(doc(db, 'invitations', invitationId), invitationData)
   await setDoc(
@@ -169,6 +177,8 @@ export async function inviteUserCore(input: InviteUserCoreInput): Promise<Invite
       annualLeaveYearStartMonth: input.annualLeaveYearStartMonth,
       annualLeaveYearEndMonth: input.annualLeaveYearEndMonth,
       annualLeaveCarriesOver: input.annualLeaveCarriesOver,
+      annualLeaveYearAllowance: input.annualLeaveYearAllowance,
+      annualLeaveYearAllowanceKey: input.annualLeaveYearAllowanceKey,
       hasNoLineManager: input.hasNoLineManager,
     })
   )

@@ -35,6 +35,18 @@ import {
   employmentEffectiveLabel,
   normalizeEmploymentType,
 } from '@/lib/canonical/userProfile'
+import { ANNUAL_LEAVE_ALLOWANCE_COPY, snapLeaveDays } from '@/lib/canonical'
+import { useHolidayStore } from '@/lib/stores/holidayStore'
+import {
+  bookingsForPerson,
+  remainingOverrideFromBalance,
+  userLeaveBalance,
+} from '@/lib/annualLeave/leaveBalance'
+import {
+  DEFAULT_ANNUAL_LEAVE,
+  loadOrganizationDetails,
+  type OrgAnnualLeaveDefaults,
+} from '@/lib/settings/organizationSettings'
 import { useEmploymentTypeSaveGate } from '@/components/users/EmploymentTypeChangeDialog'
 import type { User, UserPermissions } from '@/types'
 import { PermissionToggleList } from '@/components/users/ProfileExpandablePermissionToggle'
@@ -193,6 +205,8 @@ function profileSnapshot(
     annualLeaveYearStartMonth: user.annualLeaveYearStartMonth ?? null,
     annualLeaveYearEndMonth: user.annualLeaveYearEndMonth ?? null,
     annualLeaveCarriesOver: user.annualLeaveCarriesOver === true,
+    annualLeaveYearAllowance: user.annualLeaveYearAllowance ?? null,
+    annualLeaveYearAllowanceKey: user.annualLeaveYearAllowanceKey || '',
     timesheetsEnabled: user.timesheetsEnabled === true,
     vatNumber: user.vatNumber || '',
     utrNumber: user.utrNumber || '',
@@ -220,6 +234,7 @@ export function EditUserProfile({
   const { getUser, saveUser, setUserActive, deleteUser, sendPasswordReset, applyAccountType, syncLinkedOperative, transferSuperAdmin } =
     useUserStore()
   const { inviteUser } = useInviteStore()
+  const { bookings: holidayBookings, loadBookings: loadHolidays } = useHolidayStore()
 
   const [target, setTarget] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
@@ -246,6 +261,9 @@ export function EditUserProfile({
   const [fixOpen, setFixOpen] = useState(false)
   const [activeSaving, setActiveSaving] = useState(false)
   const [rateHistory, setRateHistory] = useState<OperativeDayRateHistoryCollection>(emptyDayRateHistory())
+  const [orgLeaveDefaults, setOrgLeaveDefaults] = useState<OrgAnnualLeaveDefaults>(DEFAULT_ANNUAL_LEAVE)
+  const [remainingDraft, setRemainingDraft] = useState('')
+  const [remainingTouched, setRemainingTouched] = useState(false)
   const { request: requestPaySave, ui: payDialogs } = usePaySaveGate()
   const { request: requestEmploymentSave, ui: employmentDialogs } = useEmploymentTypeSaveGate()
   const profileLoadGen = useRef(0)
@@ -255,6 +273,12 @@ export function EditUserProfile({
     const generation = ++profileLoadGen.current
     loadUsers(organization.id)
     loadOperatives(organization.id)
+    void loadHolidays(organization.id)
+    void loadOrganizationDetails(organization.id)
+      .then((details) => {
+        if (details?.annualLeaveDefaults) setOrgLeaveDefaults(details.annualLeaveDefaults)
+      })
+      .catch(() => undefined)
     void loadOperativeDayRateHistory(organization.id).then(setRateHistory)
     getUser(userId)
       .then((row) => {
@@ -264,11 +288,30 @@ export function EditUserProfile({
         setOriginalPayBasis(row?.payBasis)
         setOriginalEmploymentType(row?.employmentType)
         if (row) setBaseline(profileSnapshot(row, null, null))
+        setRemainingTouched(false)
       })
       .finally(() => {
         if (generation === profileLoadGen.current) setLoading(false)
       })
-  }, [organization?.id, userId, getUser, loadUsers, loadOperatives])
+  }, [organization?.id, userId, getUser, loadUsers, loadOperatives, loadHolidays])
+
+  const linkedOperative = target ? findOperativeForUser(target, operatives) : undefined
+  const leaveBalance = useMemo(
+    () =>
+      userLeaveBalance({
+        user: target,
+        bookings: bookingsForPerson(holidayBookings, target?.id, linkedOperative?.id),
+        orgDefaults: orgLeaveDefaults,
+      }),
+    [target, holidayBookings, linkedOperative?.id, orgLeaveDefaults]
+  )
+
+  useEffect(() => {
+    if (!target || remainingTouched) return
+    setRemainingDraft(
+      leaveBalance.remaining == null ? '' : String(leaveBalance.remaining)
+    )
+  }, [target, leaveBalance.remaining, remainingTouched])
 
   const managers = useMemo(() => lineManagerChoices(users, target?.id), [users, target?.id])
 
@@ -366,6 +409,14 @@ export function EditUserProfile({
       employmentTypeTransitionFrom: employment.employmentTypeTransitionFrom || undefined,
       employmentTypeEffectiveAt: employment.employmentTypeEffectiveAt || undefined,
     }
+    if (toSave.annualLeaveEnabled !== false && remainingTouched && remainingDraft !== '') {
+      const override = remainingOverrideFromBalance(snapLeaveDays(Number(remainingDraft)), leaveBalance)
+      toSave = {
+        ...toSave,
+        annualLeaveYearAllowance: override.annualLeaveYearAllowance,
+        annualLeaveYearAllowanceKey: override.annualLeaveYearAllowanceKey,
+      }
+    }
     setSaving(true)
     try {
       await saveUser(toSave, organization.id, previous.email)
@@ -377,6 +428,7 @@ export function EditUserProfile({
       setShowChangeType(false)
       setBaseline(profileSnapshot(toSave, null, null))
       setOriginalEmploymentType(toSave.employmentType)
+      setRemainingTouched(false)
       setSaved(true)
       window.setTimeout(() => setSaved(false), 3000)
       setSuccess(toSave.isActive ? 'Profile saved.' : 'User deactivated.')
@@ -582,7 +634,8 @@ export function EditUserProfile({
   const dirty =
     Boolean(target) &&
     baseline != null &&
-    profileSnapshot(target, draftAccountType, draftTypePermissions) !== baseline
+    (remainingTouched ||
+      profileSnapshot(target, draftAccountType, draftTypePermissions) !== baseline)
   const pageTitle = currentAccountType(target) === 'operative' ? 'Edit operative' : 'Edit user'
   const status = rosterStatusLabel(target)
 
@@ -821,20 +874,23 @@ export function EditUserProfile({
             <div className="p-4">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <div className="text-sm font-semibold text-[var(--ink)]">Annual leave enabled</div>
+                  <div className="text-sm font-semibold text-[var(--ink)]">
+                    {ANNUAL_LEAVE_ALLOWANCE_COPY.toggleTitle}
+                  </div>
                   <p className="mt-0.5 text-xs text-[var(--ink3)]">
-                    Turn off for self-employed staff who do not use paid annual leave.
+                    {ANNUAL_LEAVE_ALLOWANCE_COPY.toggleDescription}
                   </p>
                 </div>
                 <Toggle
                   checked={target.annualLeaveEnabled !== false}
                   disabled={!canEdit}
-                  onChange={(checked) => setTarget({ ...target, annualLeaveEnabled: checked })}
+                  onChange={(checked) => {
+                    setTarget({ ...target, annualLeaveEnabled: checked })
+                    setRemainingTouched(false)
+                  }}
                 />
               </div>
-              <p className="mt-2 text-xs text-slate-400">
-                When off, their Holiday tab and annual leave entry points are hidden until turned back on here.
-              </p>
+              <p className="mt-2 text-xs text-slate-400">{ANNUAL_LEAVE_ALLOWANCE_COPY.toggleNote}</p>
             </div>
           </SettingsCard>
         </>
@@ -849,7 +905,9 @@ export function EditUserProfile({
               <FormField label="Days per year">
                 <Input
                   type="number"
-                  value={target.annualLeaveDaysPerYear?.toString() || '28'}
+                  min="0"
+                  step="0.5"
+                  value={target.annualLeaveDaysPerYear?.toString() || String(orgLeaveDefaults.daysPerYear)}
                   disabled={!canEdit}
                   onChange={(e) =>
                     setTarget({ ...target, annualLeaveDaysPerYear: Number(e.target.value) || undefined })
@@ -903,6 +961,22 @@ export function EditUserProfile({
                   onChange={(checked) => setTarget({ ...target, annualLeaveCarriesOver: checked })}
                 />
               </div>
+              <FormField
+                label={ANNUAL_LEAVE_ALLOWANCE_COPY.remainingTitle}
+                hint={`${ANNUAL_LEAVE_ALLOWANCE_COPY.remainingNote} Currently ${leaveBalance.taken} taken and ${leaveBalance.pending} awaiting approval this leave year.`}
+              >
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.5"
+                  value={remainingDraft}
+                  disabled={!canEdit}
+                  onChange={(e) => {
+                    setRemainingDraft(e.target.value)
+                    setRemainingTouched(true)
+                  }}
+                />
+              </FormField>
             </div>
           </SettingsCard>
         </>
