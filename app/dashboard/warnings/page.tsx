@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/lib/stores/authStore'
-import { hasAdminAccess } from '@/lib/permissions'
+import { canViewWarnings } from '@/lib/permissions'
 import { useProjectStore } from '@/lib/stores/projectStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
 import { useBookingStore } from '@/lib/stores/bookingStore'
@@ -30,6 +30,7 @@ import {
   loadOrganizationDetails,
   saveWarningDetection,
   type OrganizationDetails,
+  type OrgWarningDetectionSettings,
   warningDetectionLooksLikeFactoryDefault,
 } from '@/lib/settings/organizationSettings'
 import {
@@ -44,6 +45,7 @@ import {
   publishReadyWarningLanes,
   warningDetectionForScan,
   warningScanLanes,
+  warningScanUsers,
 } from '@/lib/warnings/warningsScan'
 import type { OrgWarningsResult } from '@/lib/warnings/generateOrgWarnings'
 import { WarningsScreen } from '@/components/warnings/WarningsScreen'
@@ -54,11 +56,11 @@ export default function WarningsPage() {
   const { user, organization, loading } = useAuthStore()
 
   useEffect(() => {
-    if (user && !hasAdminAccess(user)) router.replace('/dashboard')
+    if (user && !canViewWarnings(user)) router.replace('/dashboard')
   }, [user, router])
   const { projects, smallWorks, loadProjects, loadSmallWorks } = useProjectStore()
   const { operatives, loadOperatives } = useOperativeStore()
-  const { users, loadUsers } = useOrgUserStore()
+  const { users, loadUsers, rosterLoadedOrgId } = useOrgUserStore()
   const { bookings, loadBookings, deleteBooking, loading: bookingsLoading, ready: bookingsReady } = useBookingStore()
   const { managerSiteBookings, loadManagerSiteBookings, deleteManagerSiteBooking, loading: managerLoading } =
     useManagerScheduleStore()
@@ -80,7 +82,9 @@ export default function WarningsPage() {
   const [bookingsSettled, setBookingsSettled] = useState(false)
   const managerSawLoad = useRef(false)
   const bookingsSawLoad = useRef(false)
-  const cachedDetection = organization?.id ? readCachedWarningDetection(organization.id) : null
+  // The cache returns a fresh copy per call, so hold one identity in state
+  // rather than re-reading it (and re-running the scan) on every render.
+  const [cachedDetection, setCachedDetection] = useState<OrgWarningDetectionSettings | null>(null)
 
   useEffect(() => {
     if (!loading && !user) router.push('/login')
@@ -130,6 +134,7 @@ export default function WarningsPage() {
       loadAcceptedBookingClashes(orgId).then(setAcceptedClashes).catch(() => setAcceptedClashes([]))
       loadDismissedWarnings(orgId).then(setDismissedWarnings).catch(() => setDismissedWarnings([]))
       const cached = readCachedWarningDetection(orgId)
+      setCachedDetection(cached)
       let settled = false
       const settle = () => {
         if (cancelled || settled) return
@@ -147,11 +152,15 @@ export default function WarningsPage() {
           !warningDetectionLooksLikeFactoryDefault(latestCache)
         ) {
           writeCachedWarningDetection(orgId, latestCache)
+          setCachedDetection(latestCache)
           setOrgDetails({ ...details, warningDetection: latestCache })
           void saveWarningDetection(orgId, latestCache).catch(() => {})
           return
         }
-        if (loaded) writeCachedWarningDetection(orgId, loaded)
+        if (loaded) {
+          writeCachedWarningDetection(orgId, loaded)
+          setCachedDetection(loaded)
+        }
         setOrgDetails((current) => {
           if (
             current?.id === orgId &&
@@ -264,15 +273,19 @@ export default function WarningsPage() {
     () => partitionRowsByOrganization(managerSiteBookings, orgId),
     [managerSiteBookings, orgId]
   )
-  const userScope = useMemo(() => partitionRowsByOrganization(users, orgId), [users, orgId])
+  const userScope = useMemo(
+    () => warningScanUsers(users, orgId, Boolean(orgId) && rosterLoadedOrgId === orgId),
+    [users, orgId, rosterLoadedOrgId]
+  )
   const operativeScope = useMemo(() => partitionRowsByOrganization(operatives, orgId), [operatives, orgId])
   const projectScope = useMemo(() => partitionRowsByOrganization(mergedWorks, orgId), [mergedWorks, orgId])
   const detectionReady = Boolean(warningDetection)
-  const bookingsSourceReady = !bookingScope.foreign && (bookingsReady || bookingsSettled) && !(bookingsLoading && bookingScope.rows.length === 0)
-  const managerSourceReady = !managerScope.foreign && (managerSettled || managerScope.rows.length > 0)
-  const rosterSourceReady = !userScope.foreign && (rosterReady || userScope.rows.length > 0)
-  const operativesSourceReady = !operativeScope.foreign && (operativesReady || operativeScope.rows.length > 0)
-  const projectsSourceReady = !projectScope.foreign && (projectsReady || projectScope.rows.length > 0)
+  const bookingsSourceReady =
+    !bookingScope.foreign && !bookingsLoading && (bookingsReady || bookingsSettled)
+  const managerSourceReady = !managerScope.foreign && !managerLoading && managerSettled
+  const rosterSourceReady = !userScope.foreign && rosterReady
+  const operativesSourceReady = !operativeScope.foreign && operativesReady
+  const projectsSourceReady = !projectScope.foreign && projectsReady
   const lanes = useMemo(
     () =>
       warningScanLanes({
@@ -299,9 +312,14 @@ export default function WarningsPage() {
     ]
   )
 
+  const scheduleReady = lanes.clashes && lanes.unbooked && lanes.qualifications && lanes.unverified
+  // Nothing computed before the schedule lanes are ready is ever shown, so
+  // skip the scan instead of re-running it as each source arrives.
   const generated = useMemo(
     () =>
-      generateOrgWarnings({
+      !scheduleReady
+        ? null
+        : generateOrgWarnings({
         bookings: bookingScope.foreign ? [] : bookingScope.rows,
         managerSiteBookings: managerScope.foreign ? [] : managerScope.rows,
         operatives: operativeScope.foreign ? [] : operativeScope.rows,
@@ -315,6 +333,7 @@ export default function WarningsPage() {
         notificationPreferences,
       }),
     [
+      scheduleReady,
       warningDetection,
       bookingScope,
       managerScope,
@@ -332,6 +351,7 @@ export default function WarningsPage() {
   const lastPublished = useRef<{ orgId: string; result: OrgWarningsResult } | null>(null)
   const visible = useMemo(() => {
     const previous = lastPublished.current && lastPublished.current.orgId === orgId ? lastPublished.current.result : null
+    if (!scheduleReady || !generated) return previous
     const kept = publishReadyWarningLanes({
       previous,
       computed: generated,
@@ -340,19 +360,32 @@ export default function WarningsPage() {
     })
     if (orgId) lastPublished.current = { orgId, result: kept }
     return kept
-  }, [generated, lanes, orgId])
+  }, [generated, lanes, orgId, scheduleReady])
 
-  const listedCount = countGeneratedWarnings(visible)
-  const scanning = listedCount === 0 && Object.values(lanes).some((ready) => !ready)
+  const shown = visible ?? {
+    clashWarnings: [],
+    managerClashWarnings: [],
+    unbookedWarnings: [],
+    leaveWarnings: [],
+    materialWarnings: [],
+    qualificationWarnings: [],
+    unverifiedWarnings: [],
+    coreCount: 0,
+    highCount: 0,
+    mediumCount: 0,
+    lowCount: 0,
+  }
+  const listedCount = countGeneratedWarnings(shown)
+  const scanning = !scheduleReady && listedCount === 0
 
   const clashWarnings = useMemo(
-    () => visible.clashWarnings.filter((w) => !isClashAccepted(w.bookingAId, w.bookingBId, acceptedClashes)),
-    [visible.clashWarnings, acceptedClashes]
+    () => shown.clashWarnings.filter((w) => !isClashAccepted(w.bookingAId, w.bookingBId, acceptedClashes)),
+    [shown.clashWarnings, acceptedClashes]
   )
   const managerClashWarnings = useMemo(
     () =>
-      visible.managerClashWarnings.filter((w) => !isClashAccepted(w.bookingAId, w.bookingBId, acceptedClashes)),
-    [visible.managerClashWarnings, acceptedClashes]
+      shown.managerClashWarnings.filter((w) => !isClashAccepted(w.bookingAId, w.bookingBId, acceptedClashes)),
+    [shown.managerClashWarnings, acceptedClashes]
   )
 
   const dismissedKeys = useMemo(
@@ -360,8 +393,8 @@ export default function WarningsPage() {
     [dismissedWarnings]
   )
   const qualificationWarnings = useMemo(
-    () => withoutDismissedQualificationRows(visible.qualificationWarnings, dismissedKeys),
-    [visible.qualificationWarnings, dismissedKeys]
+    () => withoutDismissedQualificationRows(shown.qualificationWarnings, dismissedKeys),
+    [shown.qualificationWarnings, dismissedKeys]
   )
 
   const handleDismissQualification = useCallback(
@@ -409,18 +442,18 @@ export default function WarningsPage() {
     [deleteManagerSiteBooking, organization?.id]
   )
 
-  if (loading || !user || !hasAdminAccess(user)) return null
+  if (loading || !user || !canViewWarnings(user)) return null
 
   return (
     <WarningsScreen
       organizationName={organization?.name || 'your organisation'}
       clashWarnings={clashWarnings}
       managerClashWarnings={managerClashWarnings}
-      unbookedWarnings={visible.unbookedWarnings}
-      leaveWarnings={visible.leaveWarnings}
-      materialWarnings={visible.materialWarnings}
+      unbookedWarnings={shown.unbookedWarnings}
+      leaveWarnings={shown.leaveWarnings}
+      materialWarnings={shown.materialWarnings}
       qualificationWarnings={qualificationWarnings}
-      unverifiedWarnings={visible.unverifiedWarnings}
+      unverifiedWarnings={shown.unverifiedWarnings}
       loading={scanning}
       user={user}
       operatives={rosterOperatives}

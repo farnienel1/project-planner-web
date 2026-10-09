@@ -13,6 +13,7 @@ import {
 } from '@/lib/settings/organizationSettings'
 import {
   DAY_OF_MONTH_OPTIONS,
+  paymentRunModeChange,
   validateInvoicingSettings,
 } from '@/lib/settings/invoicingValidation'
 import {
@@ -68,16 +69,9 @@ export function PaymentRunsPanel({ onBack }: { onBack: () => void }) {
   }
 
   function setPaymentRunMode(mode: OrgInvoicingSettings['paymentRunMode']) {
-    if (mode === 'recurring_timeframe') {
-      patch({ paymentRunMode: mode, paymentDateMode: 'recurring_date' })
-      return
-    }
-    patch({
-      paymentRunMode: mode,
-      paymentDateMode: 'specific_dates',
-      paymentRunDateRanges: DEFAULT_PAYMENT_RUN_DATE_RANGES.map((range) => ({ ...range })),
-      paymentDates: draft.paymentDates.length >= 2 ? draft.paymentDates : ['', ''],
-    })
+    const next = paymentRunModeChange(draft, mode)
+    if (Object.keys(next).length === 0) return
+    patch(next)
   }
 
   const ranges =

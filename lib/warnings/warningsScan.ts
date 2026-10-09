@@ -4,9 +4,9 @@ import { organizationIdsMatch } from '@/lib/orgMembership/webActiveOrg'
 export type WarningsScreenPhase = 'scanning' | 'empty' | 'list'
 
 /**
- * The scanning empty state stays up only while nothing real has been published.
- * Rows from a finished source show immediately. A slow roster, materials, or
- * qualification read must not hide them. Zero rows before those sources finish
+ * The list stays hidden until the schedule scan can be computed together.
+ * Qualification rows must not appear on their own, and a later load must not
+ * wipe rows that were already shown. Zero rows before those sources finish
  * is still scanning, not "No active warnings".
  */
 export function warningsScreenPhase(input: {
@@ -16,10 +16,10 @@ export function warningsScreenPhase(input: {
   projectsReady: boolean
   warningCount: number
 }): WarningsScreenPhase {
-  if (input.warningCount > 0) return 'list'
   if (!input.detectionReady || !input.rosterReady || !input.operativesReady || !input.projectsReady) {
     return 'scanning'
   }
+  if (input.warningCount > 0) return 'list'
   return 'empty'
 }
 
@@ -33,7 +33,13 @@ export type WarningScanLanes = {
   unverified: boolean
 }
 
-/** Each warning family publishes when its own reads have finished. */
+/**
+ * Qualifications, unverified accounts, clashes, and unbooked labour publish as
+ * one schedule snapshot. That snapshot waits until detection, bookings, manager
+ * bookings, the roster, operatives, and holidays have all finished. A source
+ * that is still loading is not ready, even when its array already has rows.
+ * Materials may arrive later and must not wipe the labour rows.
+ */
 export function warningScanLanes(input: {
   detectionReady: boolean
   bookingsReady: boolean
@@ -45,27 +51,22 @@ export function warningScanLanes(input: {
   materialsReady: boolean
   sendRecordsReady: boolean
 }): WarningScanLanes {
+  const schedule =
+    input.detectionReady &&
+    input.bookingsReady &&
+    input.managerReady &&
+    input.rosterReady &&
+    input.operativesReady &&
+    input.holidaysReady
   return {
-    clashes: input.detectionReady && input.bookingsReady && input.operativesReady,
-    managerClashes: input.detectionReady && input.managerReady && input.bookingsReady,
-    unbooked:
-      input.detectionReady &&
-      input.bookingsReady &&
-      input.managerReady &&
-      input.rosterReady &&
-      input.operativesReady &&
-      input.holidaysReady,
-    leave:
-      input.detectionReady &&
-      input.bookingsReady &&
-      input.managerReady &&
-      input.rosterReady &&
-      input.operativesReady &&
-      input.holidaysReady,
+    clashes: schedule,
+    managerClashes: schedule,
+    unbooked: schedule,
+    leave: schedule,
+    qualifications: schedule,
+    unverified: schedule,
     materials:
       input.materialsReady && input.sendRecordsReady && input.projectsReady && input.bookingsReady,
-    qualifications: input.operativesReady,
-    unverified: input.operativesReady && input.rosterReady,
   }
 }
 
@@ -190,6 +191,23 @@ export function partitionRowsByOrganization<T extends { organizationId?: string 
   }
   if (foreignCount > 0 && own.length === 0) return { rows: [], foreign: true }
   return { rows: own, foreign: false }
+}
+
+/**
+ * People for the warning scan.
+ * The roster loader already chose who belongs to this company. A member whose
+ * user document still names another company stays in that list. Dropping them
+ * lets their operative profile back in as unbooked labour, and the exclusion
+ * list never sees their user id.
+ * Partition only when this array was loaded for a different company.
+ */
+export function warningScanUsers<T extends { organizationId?: string | null }>(
+  users: readonly T[],
+  organizationId: string,
+  rosterLoadedForOrganization: boolean
+): { rows: T[]; foreign: boolean } {
+  if (rosterLoadedForOrganization && organizationId) return { rows: [...users], foreign: false }
+  return partitionRowsByOrganization(users, organizationId)
 }
 
 /** True while a scan must not replace warnings already on screen with an empty list. */

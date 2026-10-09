@@ -6,7 +6,7 @@ import { unbookedLabourRows } from '@/lib/canonical'
 import type { Booking, HolidayBooking, Operative, User } from '@/types'
 import { UserRole } from '@/types'
 import { isActiveBookingStatus } from '@/lib/ios-parity/enums'
-import { dateFromDayKey, dayKey, londonIsoWeekday, londonMidnight } from '@/lib/ios-parity/londonTime'
+import { addLondonDays, dateFromDayKey, dayKey, londonIsoWeekday, londonMidnight } from '@/lib/ios-parity/londonTime'
 import { formatWarningHours } from '@/lib/warnings/clashIntervals'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import { isPlaceholderOperative } from '@/lib/operatives/operativeRosterUtils'
@@ -93,6 +93,14 @@ export function computeUnbookedLabourWarnings({
   timeZone?: string
 }): UnbookedLabourWarning[] {
   const window = computeWarningCoverageWindow(referenceDate, warningDetection, invoicing, timeZone)
+  let periodEnd = window.end
+  if (
+    warningDetection.clashLookaheadMode === 'endOfWorkingWeek' &&
+    warningDetection.includeWeekendsForUnbookedLabour
+  ) {
+    const iso = londonIsoWeekday(window.end, timeZone)
+    if (iso >= 1 && iso <= 5) periodEnd = addLondonDays(window.end, 7 - iso, timeZone)
+  }
   return computeUnbookedLabourWarningsForDateRange({
     bookings,
     managerSiteBookings,
@@ -102,7 +110,7 @@ export function computeUnbookedLabourWarnings({
     warningDetection,
     payrollPolicy,
     periodStart: window.start,
-    periodEnd: window.end,
+    periodEnd,
     timeZone,
   })
 }
@@ -142,6 +150,10 @@ export function computeUnbookedLabourWarningsForDateRange({
     standardPaidHours: payrollPolicy.standardPaidHours,
     saturdayCountsAsHours: countsAsHours('saturday', payrollPolicy),
     sundayCountsAsHours: countsAsHours('sunday', payrollPolicy),
+    standardDayStart: payrollPolicy.standardDayStart,
+    standardDayEnd: payrollPolicy.standardDayEnd,
+    breakWindowStart: payrollPolicy.breakWindowStart,
+    breakWindowEnd: payrollPolicy.breakWindowEnd,
     people: users.map(labourPerson),
     operatives: operatives.map(rosterOperative),
     bookings: [
@@ -156,6 +168,9 @@ export function computeUnbookedLabourWarningsForDateRange({
           personId: booking.operativeId,
           dayKey: dayKey(booking.date, timeZone),
           kind: 'operative' as const,
+          timeSlot: booking.timeSlot,
+          workStart: booking.workStartTime,
+          workEnd: booking.workEndTime,
         })),
       ...managerSiteBookings
         .filter(
@@ -165,6 +180,9 @@ export function computeUnbookedLabourWarningsForDateRange({
           personId: booking.userId,
           dayKey: dayKey(booking.date, timeZone),
           kind: 'manager' as const,
+          timeSlot: booking.timeSlot,
+          workStart: booking.workStartTime,
+          workEnd: booking.workEndTime,
         })),
     ],
     holidays: holidays.map((holiday) => ({

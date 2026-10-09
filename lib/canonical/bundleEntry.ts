@@ -4,6 +4,7 @@
  * the iOS engine keeps its own copy inside this JavaScript context.
  */
 export {
+  CANONICAL_STANDARD_BREAK,
   CANONICAL_STANDARD_DAY,
   MIN_HALF_DAY_MINUTES,
   bookingBelongsToOrganization,
@@ -21,6 +22,8 @@ export {
   paidHoursForNamedSlot,
   parseClockMinutes,
   slotInterval,
+  standardDayCoverage,
+  standardBreakWindow,
   standardDayWindow,
   subtractMinuteIntervals,
 } from './engine'
@@ -34,3 +37,11 @@ export {
 } from './warningRows'
 
 export { leaveCoverageRows, leaveSlotKind } from './leaveCoverage'
+
+export {
+  canEditWorkCatalogue,
+  canViewStaffWarnings,
+  isStaffAccount,
+  receivesJobNotification,
+  seesEveryJob,
+} from './staffAccess'

@@ -9,7 +9,7 @@ import {
   addLondonDays,
   dateFromDayKey,
   dayKey,
-  endOfLondonWeek,
+  startOfLondonWeek,
   londonMidnight,
 } from '@/lib/ios-parity/londonTime'
 
@@ -32,9 +32,9 @@ function periodFromCanonical(
   }
 }
 
-/** Sunday of the current London week — iOS Full week coverageEnd. */
+/** Friday of the current organisation week. Saturday and Sunday are the include-weekends toggle. */
 export function endOfWorkingWeek(referenceDate: Date): Date {
-  return endOfLondonWeek(referenceDate)
+  return addLondonDays(startOfLondonWeek(referenceDate), 4)
 }
 
 export type InvoicingPeriodRange = {
@@ -59,7 +59,7 @@ export function computeInvoicingPeriod(
 /**
  * Inclusive scan window matching iOS OrgWarningDetectionSettings.coverageStart/End.
  * - numberOfDays: today … today+(N-1)
- * - Full week: Monday … Sunday of the current week (past days included)
+ * - Full week: Monday … Friday of the current week (past days included). Weekends stay off unless include-weekends is on.
  * - Invoicing period: payment-run segment containing today (past days included)
  */
 export function computeWarningCoverageWindow(

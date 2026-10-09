@@ -7,13 +7,14 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { useSearchParams } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { ChevronLeftIcon, ChevronRightIcon, CalendarDaysIcon, FolderIcon, WrenchScrewdriverIcon } from '@heroicons/react/24/solid'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useBookingStore } from '@/lib/stores/bookingStore'
 import { useManagerScheduleStore } from '@/lib/stores/managerScheduleStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
 import { useProjectStore } from '@/lib/stores/projectStore'
+import { findUserByAnyId, rosterDisplayName } from '@/lib/staff/userRosterUtils'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { useHolidayStore } from '@/lib/stores/holidayStore'
 import { useSubcontractorStore } from '@/lib/stores/subcontractorStore'
@@ -34,36 +35,43 @@ import {
   managerBookingToTarget,
   type OverviewBookingTarget,
 } from '@/components/daily-overview/DailyOverviewBookingSheet'
+import { DEFAULT_PAYROLL_POLICY, loadOrganizationDetails, type OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import type { User } from '@/types'
 
-function personName(userId: string, users: User[]): string {
-  const u = users.find((row) => row.id === userId)
-  if (!u) return 'Manager'
-  const full = `${u.firstName || ''} ${u.surname || ''}`.trim()
-  return full || u.email
+function personName(userId: string, users: User[], aliases?: Record<string, string>): string {
+  const user = findUserByAnyId(users, userId, aliases)
+  return rosterDisplayName(user)
 }
 
 function holidayName(
   booking: { userId?: string; operativeId?: string },
   users: User[],
-  operatives: { id: string; firstName: string; lastName: string }[]
+  operatives: { id: string; firstName: string; lastName: string }[],
+  aliases?: Record<string, string>
 ): string {
-  if (booking.userId) return personName(booking.userId, users)
+  if (booking.userId) {
+    const named = personName(booking.userId, users, aliases)
+    if (named) return named
+  }
   if (booking.operativeId) {
     const op = operatives.find((row) => row.id === booking.operativeId)
-    if (op) return `${op.firstName} ${op.lastName}`.trim()
+    if (op) {
+      const named = rosterDisplayName({ firstName: op.firstName, surname: op.lastName, email: '' })
+      if (named) return named
+    }
   }
   return 'Team member'
 }
 
 export function DailyOverviewScreen() {
+  const router = useRouter()
   const searchParams = useSearchParams()
   const { user, organization } = useAuthStore()
   const { bookings, loadBookings, loading: bookingsLoading, error: bookingsError } = useBookingStore()
   const { managerSiteBookings, loadManagerSiteBookings, loading: managerLoading } = useManagerScheduleStore()
   const { operatives, loadOperatives } = useOperativeStore()
-  const { users, loadUsers } = useOrgUserStore()
+  const { users, userIdAliases, loadUsers } = useOrgUserStore()
   const { projects, smallWorks, loadProjects, loadSmallWorks } = useProjectStore()
   const { bookings: holidays, loadBookings: loadHolidays } = useHolidayStore()
   const { subcontractors, loadSubcontractors } = useSubcontractorStore()
@@ -73,6 +81,8 @@ export function DailyOverviewScreen() {
   const [day, setDay] = useState(() => londonMidnight(new Date()))
   const [bookLabourOpen, setBookLabourOpen] = useState(false)
   const [editingRow, setEditingRow] = useState<OverviewBookingTarget | null>(null)
+  const [payrollPolicy, setPayrollPolicy] = useState<OrgPayrollTimePolicy>(DEFAULT_PAYROLL_POLICY)
+  const [includeWeekendUnbooked, setIncludeWeekendUnbooked] = useState(false)
 
   useEffect(() => {
     const raw = searchParams.get('date')
@@ -91,6 +101,11 @@ export function DailyOverviewScreen() {
     loadSmallWorks(organization.id)
     loadHolidays(organization.id)
     loadSubcontractors(organization.id)
+    void loadOrganizationDetails(organization.id).then((details) => {
+      if (!details || details.id !== organization.id) return
+      setPayrollPolicy(details.payrollTimePolicy)
+      setIncludeWeekendUnbooked(details.warningDetection.includeWeekendsForUnbookedLabour)
+    })
     loadSubcontractorBookings(organization.id)
       .then(setSubcontractorBookings)
       .catch(() => setSubcontractorBookings([]))
@@ -115,9 +130,12 @@ export function DailyOverviewScreen() {
         managerBookings: managerSiteBookings,
         holidays,
         users,
+        userIdAliases,
         operatives,
         subcontractorBookings,
         subcontractors,
+        payrollPolicy,
+        includeWeekendUnbooked,
       }),
     [
       day,
@@ -127,9 +145,12 @@ export function DailyOverviewScreen() {
       managerSiteBookings,
       holidays,
       users,
+      userIdAliases,
       operatives,
       subcontractorBookings,
       subcontractors,
+      payrollPolicy,
+      includeWeekendUnbooked,
     ]
   )
 
@@ -143,9 +164,11 @@ export function DailyOverviewScreen() {
   })
   const firstPaint = !mayPublish && bookings.length === 0 && managerSiteBookings.length === 0
 
-  if (user && !canViewDailyOverview(user)) {
-    return <p className="muted">Daily overview is not available for this account.</p>
-  }
+  useEffect(() => {
+    if (user && !canViewDailyOverview(user)) router.replace('/dashboard')
+  }, [router, user])
+
+  if (user && !canViewDailyOverview(user)) return null
 
   return (
     <>
@@ -352,7 +375,7 @@ export function DailyOverviewScreen() {
                 {model.holidays.map((row) => (
                   <div key={row.id} className="ritem" style={{ cursor: 'default' }}>
                     <span className="grow">
-                      <span className="t">{holidayName(row, users, operatives)}</span>
+                      <span className="t">{holidayName(row, users, operatives, userIdAliases)}</span>
                       <span className="s">Annual leave</span>
                     </span>
                     <span className="pill" data-hue="leave">
@@ -370,7 +393,8 @@ export function DailyOverviewScreen() {
               wfh={model.wfhBookings}
               custom={model.customGroups}
               users={users}
-              onOpen={(booking) => setEditingRow(managerBookingToTarget(booking, personName(booking.userId, users)))}
+              aliases={userIdAliases}
+              onOpen={(booking) => setEditingRow(managerBookingToTarget(booking, personName(booking.userId, users, userIdAliases)))}
             />
           ) : null}
 
@@ -379,7 +403,8 @@ export function DailyOverviewScreen() {
               title="Site survey"
               bookings={model.siteSurveyBookings}
               users={users}
-              onOpen={(booking) => setEditingRow(managerBookingToTarget(booking, personName(booking.userId, users)))}
+              aliases={userIdAliases}
+              onOpen={(booking) => setEditingRow(managerBookingToTarget(booking, personName(booking.userId, users, userIdAliases)))}
             />
           ) : null}
         </div>
@@ -446,11 +471,13 @@ function ManagerCard({
   title,
   bookings,
   users,
+  aliases,
   onOpen,
 }: {
   title: string
   bookings: ManagerSiteBooking[]
   users: User[]
+  aliases?: Record<string, string>
   onOpen?: (booking: ManagerSiteBooking) => void
 }) {
   return (
@@ -460,10 +487,12 @@ function ManagerCard({
       </div>
       <div className="card-b rows">
         {bookings.map((b) => {
+          const name = personName(b.userId, users, aliases)
+          if (!name) return null
           const inner = (
             <>
               <span className="grow">
-                <span className="t">{personName(b.userId, users)}</span>
+                <span className="t">{name}</span>
               </span>
               <span className="pill" data-hue="sched">
                 {b.timeSlot}
@@ -480,7 +509,7 @@ function ManagerCard({
                 event.stopPropagation()
                 onOpen(b)
               }}
-              aria-label={`Change booking for ${personName(b.userId, users)}`}
+              aria-label={`Change booking for ${name}`}
             >
               {inner}
               <span className="muted xs" style={{ fontWeight: 700 }}>
@@ -503,12 +532,14 @@ function OtherBlock({
   wfh,
   custom,
   users,
+  aliases,
   onOpen,
 }: {
   office: ManagerSiteBooking[]
   wfh: ManagerSiteBooking[]
   custom: { name: string; bookings: ManagerSiteBooking[] }[]
   users: User[]
+  aliases?: Record<string, string>
   onOpen?: (booking: ManagerSiteBooking) => void
 }) {
   const people = new Set([...office, ...wfh, ...custom.flatMap((g) => g.bookings)].map((b) => b.userId))
@@ -523,10 +554,10 @@ function OtherBlock({
         </div>
       </div>
       <div className="card-b stack" style={{ gap: 12 }}>
-        {office.length > 0 ? <ManagerCard title="Office" bookings={office} users={users} onOpen={onOpen} /> : null}
-        {wfh.length > 0 ? <ManagerCard title="Working from home" bookings={wfh} users={users} onOpen={onOpen} /> : null}
+        {office.length > 0 ? <ManagerCard title="Office" bookings={office} users={users} aliases={aliases} onOpen={onOpen} /> : null}
+        {wfh.length > 0 ? <ManagerCard title="Working from home" bookings={wfh} users={users} aliases={aliases} onOpen={onOpen} /> : null}
         {custom.map((g) => (
-          <ManagerCard key={g.name} title={g.name} bookings={g.bookings} users={users} onOpen={onOpen} />
+          <ManagerCard key={g.name} title={g.name} bookings={g.bookings} users={users} aliases={aliases} onOpen={onOpen} />
         ))}
       </div>
     </section>

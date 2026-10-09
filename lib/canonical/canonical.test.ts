@@ -9,6 +9,7 @@ import {
   captureOrganizationContext,
   chooseSessionOrganization,
   coverageWindow,
+  standardDayCoverage,
   intervalsOverlap,
   invoicingPeriod,
   organizationContextStillCurrent,
@@ -31,6 +32,19 @@ import {
   withoutDismissedQualificationRows,
 } from './warningRows.ts'
 import { leaveCoverageRows } from './leaveCoverage.ts'
+import {
+  canEditWorkCatalogue,
+  canViewStaffWarnings,
+  receivesJobNotification,
+  seesEveryJob,
+  type StaffAccountRole,
+} from './staffAccess.ts'
+
+const superAdmin: StaffAccountRole = { isSuperAdmin: true, isAdmin: true, isManager: false, isOperativeMode: false }
+const admin: StaffAccountRole = { isSuperAdmin: false, isAdmin: true, isManager: false, isOperativeMode: false }
+const manager: StaffAccountRole = { isSuperAdmin: false, isAdmin: false, isManager: true, isOperativeMode: false }
+const operative: StaffAccountRole = { isSuperAdmin: false, isAdmin: false, isManager: false, isOperativeMode: true }
+const noRole: StaffAccountRole = { isSuperAdmin: false, isAdmin: false, isManager: false, isOperativeMode: false }
 
 test('organisation ids match after trim and case folding', () => {
   assert.equal(organizationIdsMatch(' Org-A ', 'org-a'), true)
@@ -158,14 +172,55 @@ test('February clamps a 16–31 payment run to the real month end', () => {
   assert.equal(window.endDayKey, '2026-02-28')
 })
 
-test('full week coverage is Monday through Sunday in the organisation zone', () => {
+test('full week coverage is Monday through Friday in the organisation zone', () => {
   const window = coverageWindow({
     referenceIso: '2026-09-16T12:00:00.000Z',
     timeZone: 'Europe/London',
     clashLookaheadMode: 'endOfWorkingWeek',
   })
   assert.equal(window.startDayKey, '2026-09-14')
-  assert.equal(window.endDayKey, '2026-09-20')
+  assert.equal(window.endDayKey, '2026-09-18')
+})
+
+test('the standard day is 07:30 to 16:00 minus the unpaid break', () => {
+  const full = standardDayCoverage(
+    { standardDayStart: '07:30', standardDayEnd: '16:00', breakWindowStart: '12:00', breakWindowEnd: '12:30' },
+    [{ timeSlot: 'FULL DAY' }]
+  )
+  assert.equal(full.missingHours, 0)
+  assert.equal(full.requiredHours, 8)
+  const morning = standardDayCoverage(
+    { standardDayStart: '07:30', standardDayEnd: '16:00', breakWindowStart: '12:00', breakWindowEnd: '12:30' },
+    [{ timeSlot: 'AM' }]
+  )
+  assert.equal(morning.coveredHours, 4.5)
+  assert.equal(morning.missingHours, 3.5)
+  const short = standardDayCoverage(
+    { standardDayStart: '07:30', standardDayEnd: '16:00', breakWindowStart: '12:00', breakWindowEnd: '12:30' },
+    [{ timeSlot: 'CUSTOM_HOURS', workStart: '07:30', workEnd: '15:30' }]
+  )
+  assert.equal(short.missingHours, 0.5)
+  const afterHours = standardDayCoverage(
+    { standardDayStart: '07:30', standardDayEnd: '16:00', breakWindowStart: '12:00', breakWindowEnd: '12:30' },
+    [{ timeSlot: 'CUSTOM_HOURS', workStart: '16:00', workEnd: '20:00' }]
+  )
+  assert.equal(afterHours.missingHours, 8)
+  const overlap = standardDayCoverage(
+    { standardDayStart: '07:30', standardDayEnd: '16:00', breakWindowStart: '12:00', breakWindowEnd: '12:30' },
+    [
+      { timeSlot: 'CUSTOM_HOURS', workStart: '07:30', workEnd: '12:00' },
+      { timeSlot: 'CUSTOM_HOURS', workStart: '08:00', workEnd: '16:00' },
+    ]
+  )
+  assert.equal(overlap.missingHours, 0)
+  const mornings = standardDayCoverage(
+    { standardDayStart: '07:30', standardDayEnd: '16:00', breakWindowStart: '12:00', breakWindowEnd: '12:30' },
+    [{ timeSlot: 'AM' }, { timeSlot: 'AM' }]
+  )
+  assert.equal(mornings.missingHours, 3.5)
+  const legacy = standardDayCoverage({}, [{}])
+  assert.equal(legacy.missingHours, 0)
+  assert.equal(legacy.requiredHours, 8)
 })
 
 test('named booking slots share one hour meaning', () => {
@@ -563,6 +618,53 @@ test('midpoint companies get consistent AM/PM in leave cover', () => {
 
 // ─── Dismissed qualification warnings ────────────────────────────────────────
 
+test('the iOS JavaScript bundle exposes the standard-day, leave and dismiss rules with the same results', () => {
+  const source = readFileSync(new URL('./dist/canonical-business.js', import.meta.url), 'utf8')
+  const sandbox: { ProjectPlannerCanonical?: Record<string, (...args: unknown[]) => unknown> } = {}
+  runInContext(source, createContext(sandbox))
+  const bundle = sandbox.ProjectPlannerCanonical
+  assert.ok(bundle)
+  for (const name of [
+    'halfDayWindows',
+    'slotInterval',
+    'namedSlotKind',
+    'standardDayWindow',
+    'standardBreakWindow',
+    'subtractMinuteIntervals',
+    'leaveCoverageRows',
+    'leaveSlotKind',
+    'qualificationDismissKey',
+    'withoutDismissedQualificationRows',
+  ]) {
+    assert.equal(typeof bundle[name], 'function', `${name} is exported from the packed script`)
+  }
+  // Objects built inside the sandbox have another realm's prototypes; compare by value.
+  const plain = (value: unknown) => JSON.parse(JSON.stringify(value))
+  assert.deepEqual(plain(bundle.halfDayWindows(DEFAULT_DAY)), plain(halfDayWindows(DEFAULT_DAY)))
+  assert.deepEqual(
+    plain(bundle.halfDayWindows({ standardDayStart: '13:00', standardDayEnd: '19:00' })),
+    plain(halfDayWindows({ standardDayStart: '13:00', standardDayEnd: '19:00' }))
+  )
+  const custom = { timeSlot: 'CUSTOM_HOURS', workStartTime: '07:30', workEndTime: '09:30' }
+  assert.deepEqual(plain(bundle.slotInterval(custom, DEFAULT_DAY)), plain(slotInterval(custom, DEFAULT_DAY)))
+  const leaveArgs = {
+    timeZone: 'Europe/London',
+    startDayKey: '2026-10-12',
+    endDayKey: '2026-10-16',
+    day: DEFAULT_DAY,
+    includeWeekends: false,
+    people: LEAVE_PEOPLE,
+    leave: [{ id: 'L1', userId: 'U-SAM', startDayKey: '2026-10-12', endDayKey: '2026-10-12', timeSlot: 'PM', approved: true }],
+    bookings: [{ id: 'B1', personId: 'OP-SAM', kind: 'operative', dayKey: '2026-10-12', ...custom, label: 'J100 Site' }],
+  }
+  const bundledLeave = plain(bundle.leaveCoverageRows(leaveArgs)) as Array<{ kind: string; missingHours: number }>
+  assert.deepEqual(bundledLeave, plain(leaveCoverageRows(leaveArgs)))
+  assert.equal(bundledLeave.length, 1)
+  assert.equal(bundledLeave[0].kind, 'leave_cover')
+  assert.equal(bundledLeave[0].missingHours, 2.5)
+  assert.equal(bundle.qualificationDismissKey('OP-Q', 'Q-OLD', '2026-09-01'), qualificationDismissKey('OP-Q', 'Q-OLD', '2026-09-01'))
+})
+
 test('dismissing an expired qualification hides it until the expiry date changes', () => {
   const rows = qualificationExpiryRows({
     referenceIso: '2026-10-06T11:00:00.000Z',
@@ -587,4 +689,117 @@ test('dismissing an expired qualification hides it until the expiry date changes
   // Upcoming expiries are never hidden by a dismissal.
   const upcoming = withoutDismissedQualificationRows(rows, [rows[1].dismissKey])
   assert.equal(upcoming.length, 2)
+})
+
+test('every admin and manager sees every job and every warning; operatives and role-less accounts do not', () => {
+  for (const role of [superAdmin, admin, manager]) {
+    assert.equal(seesEveryJob(role), true)
+    assert.equal(canViewStaffWarnings(role), true)
+  }
+  for (const role of [operative, noRole]) {
+    assert.equal(seesEveryJob(role), false)
+    assert.equal(canViewStaffWarnings(role), false)
+  }
+  // Operative mode wins over a stale admin or manager flag.
+  assert.equal(seesEveryJob({ ...admin, isOperativeMode: true }), false)
+  assert.equal(seesEveryJob({ ...manager, isOperativeMode: true }), false)
+})
+
+test('the Projects and Small works toggles gate add and edit only, never the list, and super admin ignores them', () => {
+  const off = { projects: false, smallWorks: false }
+  const projectsOnly = { projects: true, smallWorks: false }
+  // The list is still the whole company with both toggles off.
+  assert.equal(seesEveryJob(manager), true)
+  assert.equal(seesEveryJob(admin), true)
+  // Editing follows the toggle for admins and managers.
+  assert.equal(canEditWorkCatalogue(manager, 'projects', off), false)
+  assert.equal(canEditWorkCatalogue(manager, 'smallWorks', off), false)
+  assert.equal(canEditWorkCatalogue(manager, 'projects', projectsOnly), true)
+  assert.equal(canEditWorkCatalogue(manager, 'smallWorks', projectsOnly), false)
+  assert.equal(canEditWorkCatalogue(admin, 'projects', off), false)
+  assert.equal(canEditWorkCatalogue(admin, 'projects', projectsOnly), true)
+  // Super admin adds and edits regardless.
+  assert.equal(canEditWorkCatalogue(superAdmin, 'projects', off), true)
+  assert.equal(canEditWorkCatalogue(superAdmin, 'smallWorks', off), true)
+  // Operatives and role-less accounts never edit, even with the toggle on.
+  assert.equal(canEditWorkCatalogue(operative, 'projects', { projects: true, smallWorks: true }), false)
+  assert.equal(canEditWorkCatalogue(noRole, 'projects', { projects: true, smallWorks: true }), false)
+})
+
+test('a manager receives a job notification only as line manager or assigned project manager', () => {
+  const job = { assignedManagerUserIds: ['pm-1'], lineManagerUserIds: ['lm-1'] }
+  assert.equal(receivesJobNotification({ userId: 'pm-1', role: manager, ...job }), true)
+  assert.equal(receivesJobNotification({ userId: 'lm-1', role: manager, ...job }), true)
+  // Seeing the job in the list does not make this manager a recipient.
+  assert.equal(seesEveryJob(manager), true)
+  assert.equal(receivesJobNotification({ userId: 'other-manager', role: manager, ...job }), false)
+  // Admins and super admins always receive it.
+  assert.equal(receivesJobNotification({ userId: 'adm', role: admin, ...job }), true)
+  assert.equal(receivesJobNotification({ userId: 'root', role: superAdmin, ...job }), true)
+  // Operatives are not on the staff fan-out, even when named.
+  assert.equal(receivesJobNotification({ userId: 'pm-1', role: operative, ...job }), false)
+  assert.equal(receivesJobNotification({ userId: '', role: admin, ...job }), false)
+  assert.equal(receivesJobNotification({ userId: ' pm-1 ', role: manager, assignedManagerUserIds: ['pm-1'] }), true)
+})
+
+test('the iOS JavaScript bundle applies the same staff visibility and recipient rule as this module', () => {
+  const source = readFileSync(new URL('./dist/canonical-business.js', import.meta.url), 'utf8')
+  const sandbox: {
+    ProjectPlannerCanonical?: {
+      seesEveryJob: (role: StaffAccountRole) => boolean
+      canViewStaffWarnings: (role: StaffAccountRole) => boolean
+      canEditWorkCatalogue: (role: StaffAccountRole, catalogue: string, toggles: unknown) => boolean
+      receivesJobNotification: (input: unknown) => boolean
+    }
+  } = {}
+  runInContext(source, createContext(sandbox))
+  const bundle = sandbox.ProjectPlannerCanonical
+  assert.ok(bundle)
+  const off = { projects: false, smallWorks: false }
+  assert.equal(bundle.seesEveryJob(manager), seesEveryJob(manager))
+  assert.equal(bundle.seesEveryJob(operative), seesEveryJob(operative))
+  assert.equal(bundle.canViewStaffWarnings(manager), canViewStaffWarnings(manager))
+  assert.equal(bundle.canEditWorkCatalogue(manager, 'projects', off), canEditWorkCatalogue(manager, 'projects', off))
+  assert.equal(bundle.canEditWorkCatalogue(superAdmin, 'projects', off), canEditWorkCatalogue(superAdmin, 'projects', off))
+  const input = { userId: 'm-2', role: manager, assignedManagerUserIds: ['m-1'], lineManagerUserIds: [] }
+  assert.equal(bundle.receivesJobNotification(input), receivesJobNotification(input))
+  assert.equal(bundle.receivesJobNotification(input), false)
+})
+
+test('unbooked labour counts a manager booking on another account with the same email', () => {
+  const rows = unbookedLabourRows({
+    timeZone: 'Europe/London',
+    startDayKey: '2026-09-18',
+    endDayKey: '2026-09-18',
+    includeWeekends: false,
+    standardPaidHours: 8,
+    people: [
+      {
+        id: 'U-BOSS',
+        email: 'boss@site.test',
+        name: 'Boss Admin',
+        isActive: true,
+        passwordSet: true,
+        isOperativeMode: false,
+        isManager: true,
+        isAdmin: true,
+        isSuperAdmin: false,
+      },
+      {
+        id: 'U-BOSS-ALIAS',
+        email: 'boss@site.test',
+        name: 'Boss Alias',
+        isActive: true,
+        passwordSet: true,
+        isOperativeMode: false,
+        isManager: true,
+        isAdmin: false,
+        isSuperAdmin: false,
+      },
+    ],
+    operatives: [],
+    bookings: [{ personId: 'U-BOSS-ALIAS', dayKey: '2026-09-18', kind: 'manager', timeSlot: 'FULL DAY' }],
+    holidays: [],
+  })
+  assert.deepEqual(rows, [])
 })

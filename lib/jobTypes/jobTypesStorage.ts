@@ -11,6 +11,7 @@
  */
 import { collection, doc, getDoc, getDocs, setDoc, Timestamp } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
+import { readOrganizationDocument } from '@/lib/firebase/orgDocumentCache'
 import { ORG_SETTINGS_JOB_TYPES_DOC } from '@/lib/firebase/orgCollections'
 import { unionUniqueStrings } from '@/lib/catalogues/catalogueWriteGuard'
 import { DEFAULT_JOB_TYPES } from '@/types'
@@ -159,7 +160,7 @@ export async function loadJobTypes(organizationId: string): Promise<string[]> {
   try {
     const [snap, orgSnap] = await Promise.all([
       getDoc(doc(db, 'organizations', organizationId, 'settings', ORG_SETTINGS_JOB_TYPES_DOC)),
-      getDoc(doc(db, 'organizations', organizationId)),
+      readOrganizationDocument(db, organizationId),
     ])
     const orgData = orgSnap.data() as Record<string, unknown> | undefined
     const nestedSettings =

@@ -19,6 +19,113 @@ export type ApprovedTimesheetWeek = {
   override: WeeklyReportOverride
 }
 
+type WeekPerson = {
+  id: string
+  email?: string
+}
+
+function personKey(userId: string, people: WeekPerson[]): string {
+  const person = people.find((entry) => entry.id === userId)
+  const email = person?.email?.trim().toLowerCase() || ''
+  return email || userId
+}
+
+function labourIdentity(line: WeeklyReportLabourLine, timeZone: string): string {
+  const bookingId = line.bookingId.trim()
+  if (bookingId) return `booking:${bookingId}`
+  return [
+    'row',
+    dayKey(line.date, timeZone),
+    line.locationKind,
+    line.jobNumber,
+    line.projectName,
+    line.paidHours,
+    line.days,
+    line.amount,
+    line.isOvertime ? 'ot' : 'std',
+    line.details,
+  ].join('|')
+}
+
+function moneyIdentity(line: WeeklyReportMoneyLine, timeZone: string): string {
+  const id = line.id.trim()
+  if (id) return `money:${id}`
+  return ['money', dayKey(line.date, timeZone), line.jobNumber, line.title, line.amount, line.details].join('|')
+}
+
+function unionByIdentity<T>(groups: T[][], identity: (line: T) => string): T[] {
+  const maxCount = new Map<string, number>()
+  for (const group of groups) {
+    const seen = new Map<string, number>()
+    for (const line of group) {
+      const key = identity(line)
+      seen.set(key, (seen.get(key) || 0) + 1)
+    }
+    for (const [key, count] of seen) {
+      maxCount.set(key, Math.max(maxCount.get(key) || 0, count))
+    }
+  }
+  const taken = new Map<string, number>()
+  const merged: T[] = []
+  for (const group of groups) {
+    for (const line of group) {
+      const key = identity(line)
+      const used = taken.get(key) || 0
+      if (used >= (maxCount.get(key) || 0)) continue
+      taken.set(key, used + 1)
+      merged.push(line)
+    }
+  }
+  return merged
+}
+
+/**
+ * Two user documents can share an email, and each approved week now includes
+ * the other account's hours. Keep one week per person: identical booking lines
+ * are counted once, and hours that exist on only one account stay.
+ */
+export function mergeDuplicatePersonWeeks(
+  weeks: ApprovedTimesheetWeek[],
+  people: WeekPerson[],
+  timeZone: string = LONDON_TIME_ZONE
+): ApprovedTimesheetWeek[] {
+  const groups = new Map<string, ApprovedTimesheetWeek[]>()
+  for (const week of weeks) {
+    const key = `${personKey(week.userId, people)}|${dayKey(week.weekStart, timeZone)}`
+    const group = groups.get(key) || []
+    group.push(week)
+    groups.set(key, group)
+  }
+  const merged: ApprovedTimesheetWeek[] = []
+  for (const group of groups.values()) {
+    const primary = group[0]
+    if (!primary) continue
+    if (group.length === 1) {
+      merged.push(primary)
+      continue
+    }
+    merged.push({
+      ...primary,
+      override: {
+        ...primary.override,
+        lines: unionByIdentity(
+          group.map((week) => week.override.lines),
+          (line) => labourIdentity(line, timeZone)
+        ),
+        priceWork: unionByIdentity(
+          group.map((week) => week.override.priceWork),
+          (line) => moneyIdentity(line, timeZone)
+        ),
+        expenses: unionByIdentity(
+          group.map((week) => week.override.expenses),
+          (line) => moneyIdentity(line, timeZone)
+        ),
+      },
+    })
+  }
+  return merged
+}
+
 export function timesheetFeedCovers(
   weeks: ApprovedTimesheetWeek[],
   userId: string | string[] | undefined,

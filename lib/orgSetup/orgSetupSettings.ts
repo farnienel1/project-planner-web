@@ -136,6 +136,13 @@ export function bankHolidayRegionIdFromSelection(selection: string | null | unde
   return raw
 }
 
+/** Value for the annual-leave region menu. England & Wales is stored as GB-ENG-WLS. */
+export function bankHolidaySelectionFromStored(stored: string | null | undefined): string {
+  const raw = (stored || '').trim().toUpperCase()
+  if (!raw || raw === 'GB' || raw === 'GB-WLS' || raw === 'GB-ENG-WLS') return 'GB-ENG'
+  return raw
+}
+
 export function countryCodeForCompany(selection: string | null | undefined, storedCountry?: string | null): string {
   const stored = (storedCountry || '').trim().toUpperCase()
   if (/^[A-Z]{2}$/.test(stored)) return stored

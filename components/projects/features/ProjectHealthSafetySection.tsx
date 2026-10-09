@@ -34,6 +34,7 @@ import {
   combineLocalDateAndTime,
   defaultScheduleDate,
   defaultScheduleTime,
+  canonicalTalkCategory,
   filterToolboxTalks,
   groupTalksByCategory,
   nextRamsVersion,
@@ -132,7 +133,7 @@ export function ProjectHealthSafetySection({
   const [blankTemplateOpen, setBlankTemplateOpen] = useState(false)
   const [uploadTitle, setUploadTitle] = useState('')
   const [uploadPurpose, setUploadPurpose] = useState('')
-  const [uploadCategory, setUploadCategory] = useState('general')
+  const [uploadCategory, setUploadCategory] = useState('General')
   const [uploadTrades, setUploadTrades] = useState<string[]>([])
   const [uploadIsGeneral, setUploadIsGeneral] = useState(true)
   const [uploadKeyPoints, setUploadKeyPoints] = useState<string[]>([''])
@@ -322,7 +323,7 @@ export function ProjectHealthSafetySection({
       }
       await addToolboxTalk(organization.id, project.id, isSmallWorks, {
         title: uploadTitle.trim(),
-        category: uploadCategory.trim() || 'general',
+        category: canonicalTalkCategory(uploadCategory.trim() || 'General'),
         isGeneral: uploadIsGeneral || uploadTrades.length === 0,
         trades: uploadIsGeneral ? [] : uploadTrades,
         purpose: uploadPurpose.trim(),
@@ -335,7 +336,7 @@ export function ProjectHealthSafetySection({
       setShowUploadTalk(false)
       setUploadTitle('')
       setUploadPurpose('')
-      setUploadCategory('general')
+      setUploadCategory('General')
       setUploadTrades([])
       setUploadIsGeneral(true)
       setUploadKeyPoints([''])
@@ -1106,7 +1107,7 @@ export function ProjectHealthSafetySection({
               <FormInput
                 value={uploadCategory}
                 onChange={(e) => setUploadCategory(e.target.value)}
-                placeholder="general, electrical…"
+                placeholder="General, electrical…"
               />
             </HsFieldCard>
             <HsSectionLabel>Trades</HsSectionLabel>
@@ -1168,7 +1169,7 @@ export function ProjectHealthSafetySection({
                 void readBlankTalkFile(file).then((parsed) => {
                   if (!parsed) return
                   if (parsed.title) setUploadTitle(parsed.title)
-                  if (parsed.category) setUploadCategory(parsed.category)
+                  if (parsed.category) setUploadCategory(canonicalTalkCategory(parsed.category))
                   if (parsed.trades) {
                     const trades = parsed.trades.split(',').map((trade) => trade.trim()).filter(Boolean)
                     setUploadTrades(trades)

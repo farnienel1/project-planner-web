@@ -11,17 +11,25 @@ import {
   canAccessTimesheets,
   canAccessTimesheetsSurface,
   canAccessOperativeTimesheets,
+  canCreateProject,
   canManageSubcontractors,
   canManageUsers,
   canViewDailyOverview,
   canViewOperatives,
   canViewProjects,
   canViewWeeklyReports,
+  canViewWarnings,
+  canOpenWarningSettings,
   hasAdminAccess,
   isOperativeMode,
   canManageWorkCatalogue,
+  canOpenWorkForm,
+  canViewMaterials,
+  canBookWork,
+  canAccessTeamSection,
   canAccessWholesalers,
   canManageOrganisationQualifications,
+  canAccessQualificationsHub,
   shouldShowTimesheetsDisabledMessage,
   canAccessDeveloperDashboard,
 } from './permissions.ts'
@@ -76,6 +84,17 @@ test('hasAdminAccess is true for role admin without adminAccess flag', () => {
   const u = user({ role: UserRole.ADMIN })
   assert.equal(hasAdminAccess(u), true)
   assert.equal(isOperativeMode(u), false)
+})
+
+test('managers can open warnings and only organisation admins can open warning settings', () => {
+  const manager = user({ role: UserRole.MANAGER, permissions: { manager: true } })
+  const operativeManager = user({ role: UserRole.MANAGER, permissions: { manager: true, operativeMode: true } })
+  const admin = user({ role: UserRole.ADMIN, permissions: { adminAccess: true } })
+  assert.equal(canViewWarnings(manager), true)
+  assert.equal(canOpenWarningSettings(manager), false)
+  assert.equal(canViewWarnings(operativeManager), false)
+  assert.equal(canViewWarnings(admin), true)
+  assert.equal(canOpenWarningSettings(admin), true)
 })
 
 test('canViewProjects is always true', () => {
@@ -141,6 +160,36 @@ test('canManageSubcontractors is true while profile is loading', () => {
   assert.equal(canManageSubcontractors(withFlag, false), true)
 })
 
+test('qualifications hub stays open when the manage toggle is off', () => {
+  const admin = user({
+    role: UserRole.ADMIN,
+    permissions: { adminAccess: true, manager: true, qualifications: false },
+  })
+  const manager = user({ role: UserRole.MANAGER, permissions: { manager: true, qualifications: false } })
+  const operative = user({ role: UserRole.OPERATIVE, permissions: { operativeMode: true, qualifications: true } })
+  assert.equal(canManageOrganisationQualifications(admin), false)
+  assert.equal(canAccessQualificationsHub(admin), true)
+  assert.equal(canAccessQualificationsHub(manager), true)
+  assert.equal(canAccessQualificationsHub(operative), false)
+})
+
+test('project and wholesaler toggles do not apply to a non-staff account', () => {
+  const basic = user({
+    role: UserRole.BASIC,
+    permissions: { projects: true, smallWorks: true, wholesalersOrderHistory: true, operatives: true },
+  })
+  assert.equal(canManageWorkCatalogue(basic, 'projects'), false)
+  assert.equal(canAccessWholesalers(basic), false)
+  assert.equal(canViewOperatives(basic), false)
+  const founder = user({
+    role: UserRole.ADMIN,
+    isSuperAdmin: true,
+    permissions: { adminAccess: true, projects: false, smallWorks: false },
+  })
+  assert.equal(canManageWorkCatalogue(founder, 'projects'), true)
+  assert.equal(canManageWorkCatalogue(founder, 'smallWorks'), true)
+})
+
 test('canViewWeeklyReports is the flag, not admin-always', () => {
   const admin = user({ role: UserRole.ADMIN, permissions: { adminAccess: true } })
   assert.equal(canViewWeeklyReports(admin), false)
@@ -153,10 +202,72 @@ test('canViewDailyOverview defaults true', () => {
   assert.equal(canViewDailyOverview(manager), true)
 })
 
+test('direct project and small-works forms follow the catalogue toggles', () => {
+  const manager = user({ role: UserRole.MANAGER, permissions: { manager: true, projects: false, smallWorks: false } })
+  assert.equal(canOpenWorkForm(manager, 'projects', 'create'), false)
+  assert.equal(canOpenWorkForm(manager, 'projects', 'edit'), false)
+  assert.equal(canOpenWorkForm(manager, 'smallWorks', 'create'), false)
+  assert.equal(canOpenWorkForm(manager, 'smallWorks', 'edit'), false)
+  const flagged = user({ role: UserRole.ADMIN, permissions: { adminAccess: true, projects: true, smallWorks: true } })
+  assert.equal(canOpenWorkForm(flagged, 'projects', 'create'), true)
+  assert.equal(canOpenWorkForm(flagged, 'smallWorks', 'edit'), true)
+  const founder = user({
+    role: UserRole.ADMIN,
+    isSuperAdmin: true,
+    permissions: { adminAccess: true, projects: false, smallWorks: false },
+  })
+  assert.equal(canOpenWorkForm(founder, 'projects', 'create'), true)
+  assert.equal(canOpenWorkForm(founder, 'projects', 'edit'), true)
+  assert.equal(canOpenWorkForm(founder, 'smallWorks', 'create'), true)
+  const operative = user({ role: UserRole.OPERATIVE, permissions: { operativeMode: true, projects: true, smallWorks: true } })
+  assert.equal(canOpenWorkForm(operative, 'projects', 'create'), false)
+  assert.equal(canOpenWorkForm(operative, 'smallWorks', 'edit'), false)
+})
+
+test('operative material lists, book labour, and manage-operatives follow the gates', () => {
+  const hidden = user({ role: UserRole.OPERATIVE, permissions: { operativeMode: true, materials: false } })
+  const shown = user({ role: UserRole.OPERATIVE, permissions: { operativeMode: true, materials: true } })
+  assert.equal(canViewMaterials(hidden), false)
+  assert.equal(canViewMaterials(shown), true)
+  assert.equal(canBookWork(hidden), false)
+  assert.equal(canViewDailyOverview(hidden), false)
+  assert.equal(canAccessOperativeTimesheets(hidden, false, []), false)
+  const manager = user({ role: UserRole.MANAGER, permissions: { manager: true, operatives: true } })
+  assert.equal(canAccessTeamSection(manager), true)
+  assert.equal(canManageUsers(manager), false)
+})
+
 test('canManageWorkCatalogue uses manager flags', () => {
   const mgr = user({ permissions: { manager: true, projects: true } })
   assert.equal(canManageWorkCatalogue(mgr, 'projects'), true)
   assert.equal(canManageWorkCatalogue(mgr, 'smallWorks'), false)
+})
+
+test('every admin and manager can open the warning list; operatives cannot', () => {
+  assert.equal(canViewWarnings(user({ role: UserRole.MANAGER })), true)
+  assert.equal(canViewWarnings(user({ permissions: { manager: true } })), true)
+  assert.equal(canViewWarnings(user({ role: UserRole.ADMIN })), true)
+  assert.equal(canViewWarnings(user({ isSuperAdmin: true })), true)
+  assert.equal(canViewWarnings(user({ permissions: { operativeMode: true } })), false)
+  assert.equal(canViewWarnings(user({ role: UserRole.OPERATIVE })), false)
+  assert.equal(canViewWarnings(user({ role: UserRole.BASIC })), false)
+})
+
+test('the Projects and Small works toggles gate add and edit only, and super admin ignores them', () => {
+  const toggledOff = user({ permissions: { manager: true, projects: false, smallWorks: false } })
+  assert.equal(canManageWorkCatalogue(toggledOff, 'projects'), false)
+  assert.equal(canManageWorkCatalogue(toggledOff, 'smallWorks'), false)
+  assert.equal(canCreateProject(toggledOff), false)
+  const roleOnlyManager = user({ role: UserRole.MANAGER, permissions: { smallWorks: true } })
+  assert.equal(canManageWorkCatalogue(roleOnlyManager, 'smallWorks'), true)
+  assert.equal(canManageWorkCatalogue(roleOnlyManager, 'projects'), false)
+  const superAdmin = user({ isSuperAdmin: true, permissions: { projects: false, smallWorks: false } })
+  assert.equal(canManageWorkCatalogue(superAdmin, 'projects'), true)
+  assert.equal(canManageWorkCatalogue(superAdmin, 'smallWorks'), true)
+  assert.equal(canManageWorkCatalogue(superAdmin, 'all'), true)
+  assert.equal(canCreateProject(superAdmin), true)
+  const operative = user({ permissions: { operativeMode: true, projects: true, smallWorks: true } })
+  assert.equal(canManageWorkCatalogue(operative, 'projects'), false)
 })
 
 test('canAccessTimesheetsSurface is true for self-employed', () => {

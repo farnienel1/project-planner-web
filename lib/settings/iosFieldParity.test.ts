@@ -9,6 +9,7 @@ import {
 } from './organizationSettings.ts'
 import {
   bankHolidayRegionIdFromSelection,
+  bankHolidaySelectionFromStored,
   companyIdentityFirestoreFields,
   countryCodeForCompany,
 } from '../orgSetup/orgSetupSettings.ts'
@@ -96,6 +97,9 @@ test('company address uses iOS flat fields and does not replace country with the
   assert.equal(fields.documentAbbreviation, 'RM')
   assert.equal(countryCodeForCompany('GB-SCT', 'GB'), 'GB')
   assert.equal(bankHolidayRegionIdFromSelection('GB-SCT'), 'GB-SCT')
+  assert.equal(bankHolidaySelectionFromStored('GB-ENG-WLS'), 'GB-ENG')
+  assert.equal(bankHolidayRegionIdFromSelection(bankHolidaySelectionFromStored('GB-ENG-WLS')), 'GB-ENG-WLS')
+  assert.equal(bankHolidaySelectionFromStored('GB-SCT'), 'GB-SCT')
 })
 
 test('notification save patches material keys and leaves other preference keys alone', () => {

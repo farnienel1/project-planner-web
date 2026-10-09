@@ -3,6 +3,7 @@ import test from 'node:test'
 import { DEFAULT_WARNING_DETECTION } from '../settings/organizationSettings.ts'
 import {
   partitionRowsByOrganization,
+  warningScanUsers,
   publishReadyWarningLanes,
   retainWarningsAfterScan,
   warningDetectionForScan,
@@ -38,7 +39,7 @@ test('bookings in memory and an empty roster is still scanning, not an empty war
   )
 })
 
-test('rows already found stay on screen while another source is still scanning', () => {
+test('qualification rows stay hidden until the schedule scan is ready', () => {
   assert.equal(
     warningsScreenPhase({
       detectionReady: true,
@@ -47,7 +48,7 @@ test('rows already found stay on screen while another source is still scanning',
       projectsReady: false,
       warningCount: 4,
     }),
-    'list'
+    'scanning'
   )
   const lanes = warningScanLanes({
     detectionReady: true,
@@ -60,9 +61,24 @@ test('rows already found stay on screen while another source is still scanning',
     materialsReady: false,
     sendRecordsReady: false,
   })
-  assert.equal(lanes.clashes, true)
+  assert.equal(lanes.clashes, false)
   assert.equal(lanes.unbooked, false)
-  assert.equal(lanes.qualifications, true)
+  assert.equal(lanes.qualifications, false)
+  assert.equal(lanes.unverified, false)
+  const readyWithoutProjects = warningScanLanes({
+    detectionReady: true,
+    bookingsReady: true,
+    managerReady: true,
+    rosterReady: true,
+    operativesReady: true,
+    projectsReady: false,
+    holidaysReady: true,
+    materialsReady: false,
+    sendRecordsReady: false,
+  })
+  assert.equal(readyWithoutProjects.qualifications, true)
+  assert.equal(readyWithoutProjects.unbooked, true)
+  assert.equal(readyWithoutProjects.materials, false)
   const published = publishReadyWarningLanes({
     previous: {
       clashWarnings: [{ id: 'kept' }],
@@ -91,9 +107,9 @@ test('rows already found stay on screen while another source is still scanning',
     lanes,
     sameOrganization: true,
   })
-  assert.equal(published.clashWarnings[0] && (published.clashWarnings[0] as { id: string }).id, 'clash')
+  assert.equal(published.clashWarnings[0] && (published.clashWarnings[0] as { id: string }).id, 'kept')
   assert.equal(published.unbookedWarnings[0] && (published.unbookedWarnings[0] as { id: string }).id, 'unbooked')
-  assert.equal(published.qualificationWarnings.length, 1)
+  assert.equal(published.qualificationWarnings.length, 0)
   assert.equal(published.highCount, 2)
 })
 
@@ -166,6 +182,18 @@ test('rows from another company do not count as an empty scan for this one', () 
     }),
     true
   )
+})
+
+test('a roster member whose user document names another company stays in the warning scan', () => {
+  const orgId = '2C67391E-D1FE-4F9F-8055-7149ACDE1F96'
+  const member = { id: 'admin-1', organizationId: '6b04f81d-a55e-41d2-8676-ecd116ad8450' }
+  const colleague = { id: 'manager-1', organizationId: orgId }
+  const kept = warningScanUsers([member, colleague], orgId, true)
+  assert.equal(kept.foreign, false)
+  assert.deepEqual(kept.rows.map((user) => user.id), ['admin-1', 'manager-1'])
+  const otherCompany = warningScanUsers([member], orgId, false)
+  assert.equal(otherCompany.foreign, true)
+  assert.equal(otherCompany.rows.length, 0)
 })
 
 test('an unsaved number-of-days draft does not replace the saved invoicing-period scan', () => {
