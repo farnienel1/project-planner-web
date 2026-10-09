@@ -16,6 +16,8 @@ export {
   invoicingPeriod,
   mergeMinuteIntervals,
   namedSlotKind,
+  normalizePaymentRunRange,
+  paymentRunMonthDay,
   organizationIdFromValue,
   organizationIdsMatch,
   organizationScopedKey,

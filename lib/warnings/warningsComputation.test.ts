@@ -2,6 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { UserRole, type Booking, type HolidayBooking, type Operative, type Project, type User } from '../../types/index.ts'
 import { DEFAULT_INVOICING, DEFAULT_PAYROLL_POLICY, DEFAULT_WARNING_DETECTION } from '../settings/organizationSettings.ts'
+import { parsePaymentRunDateRanges } from '../canonical/organizationSettings.ts'
 import { computeWarningCoverageWindow, formatNumberOfDaysScanSummary } from './warningLookahead.ts'
 import { computeUnbookedLabourWarnings } from './unbookedLabourWarnings.ts'
 import { computeOperativeBookingClashWarnings } from '../scheduling/bookingClashUtils.ts'
@@ -168,6 +169,36 @@ test('full week unbooked labour adds Saturday and Sunday only when include weeke
     ...DEFAULT_WARNING_DETECTION,
     clashLookaheadMode: 'endOfWorkingWeek',
   }).end), '2026-09-18')
+})
+
+test('default invoicing-period warnings stop on the 15th, not an extra 16th', () => {
+  const tuesday = new Date('2026-10-06T12:00:00+01:00')
+  const detection = {
+    ...DEFAULT_WARNING_DETECTION,
+    clashLookaheadMode: 'endOfInvoicingPeriod' as const,
+  }
+  const window = computeWarningCoverageWindow(tuesday, detection, DEFAULT_INVOICING)
+  assert.equal(dayKey(window.start), '2026-10-01')
+  assert.equal(dayKey(window.end), '2026-10-15')
+  const leftoverIosSave = computeWarningCoverageWindow(tuesday, detection, {
+    ...DEFAULT_INVOICING,
+    paymentRunDateRanges: [
+      { startDay: 1, endDay: 16 },
+      { startDay: 17, endDay: 31 },
+    ],
+  })
+  // Explicit 1–16 is kept. The extra day is only wrong when the org saved 1–15.
+  assert.equal(dayKey(leftoverIosSave.end), '2026-10-16')
+  const savedFifteen = computeWarningCoverageWindow(tuesday, detection, {
+    ...DEFAULT_INVOICING,
+    paymentRunDateRanges: parsePaymentRunDateRanges({
+      paymentRunDateRanges: [
+        { startDay: 1, endDay: 16, startDate: 1, endDate: 15 },
+        { startDay: 17, endDay: 31, startDate: 16, endDate: 31 },
+      ],
+    }),
+  })
+  assert.equal(dayKey(savedFifteen.end), '2026-10-15')
 })
 
 test('invoicing-period warnings include past days in the active pay run and stop at that run', () => {

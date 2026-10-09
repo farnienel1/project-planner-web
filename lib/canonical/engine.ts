@@ -36,9 +36,22 @@ export type PaymentRunRange = {
   endDay: number
 }
 
+/**
+ * One payment-run row as stored or passed in.
+ * Web writes `startDay`/`endDay`. iOS historically wrote `startDate`/`endDate`.
+ * Dual-write keeps both pairs equal. A leftover web 1–16 must not override an
+ * iOS-saved 1–15: when both pairs are valid and disagree, the iOS pair wins.
+ */
+export type PaymentRunRangeInput = {
+  startDay?: number | string | null
+  endDay?: number | string | null
+  startDate?: number | string | null
+  endDate?: number | string | null
+}
+
 export type InvoicingPeriodInput = {
   paymentRunMode?: PaymentRunMode | string | null
-  ranges?: readonly PaymentRunRange[] | null
+  ranges?: readonly PaymentRunRangeInput[] | null
   recurringRunStartDay?: string | null
   recurringRunEndDay?: string | null
 }
@@ -482,8 +495,33 @@ function shiftMonth(reference: Date, offset: number, timeZone: string): Date {
   return midnightInZone(new Date(Date.UTC(y, m - 1 + offset, 1, 12, 0, 0)), timeZone)
 }
 
-function usableRanges(ranges: readonly PaymentRunRange[] | null | undefined): PaymentRunRange[] {
-  return (ranges ?? []).filter((range) => range.startDay > 0 && range.endDay > 0).slice(0, 2)
+/** Day-of-month 1–31. 0, blank, and anything else are missing. */
+export function paymentRunMonthDay(value: unknown): number {
+  const n = Number(value)
+  return Number.isInteger(n) && n >= 1 && n <= 31 ? n : 0
+}
+
+/**
+ * Resolve one payment-run row to `startDay`/`endDay`.
+ * Prefer `startDate`/`endDate` when they are valid so a leftover web 1–16
+ * cannot override an iOS-saved 1–15. Fall back to `startDay`/`endDay` when
+ * the iOS pair is missing. A web-only 1–16 save is kept.
+ */
+export function normalizePaymentRunRange(
+  row: PaymentRunRangeInput | null | undefined
+): PaymentRunRange | null {
+  if (!row) return null
+  const startDay = paymentRunMonthDay(row.startDate) || paymentRunMonthDay(row.startDay)
+  const endDay = paymentRunMonthDay(row.endDate) || paymentRunMonthDay(row.endDay)
+  if (startDay <= 0 || endDay <= 0) return null
+  return { startDay, endDay }
+}
+
+function usableRanges(ranges: readonly PaymentRunRangeInput[] | null | undefined): PaymentRunRange[] {
+  return (ranges ?? [])
+    .map((range) => normalizePaymentRunRange(range))
+    .filter((range): range is PaymentRunRange => range != null)
+    .slice(0, 2)
 }
 
 function rangeContainsDay(range: PaymentRunRange, dayOfMonth: number): boolean {
@@ -526,7 +564,11 @@ export function invoicingPeriod(input: CoverageWindowInput): DayWindow {
   return dateRangePeriod(reference, input.ranges, timeZone)
 }
 
-function dateRangePeriod(reference: Date, ranges: readonly PaymentRunRange[] | null | undefined, timeZone: string): DayWindow {
+function dateRangePeriod(
+  reference: Date,
+  ranges: readonly PaymentRunRangeInput[] | null | undefined,
+  timeZone: string
+): DayWindow {
   const parsed = usableRanges(ranges)
   const effective = parsed.length > 0 ? parsed : CANONICAL_HALF_MONTH_RANGES
   const dayOfMonth = dayOfMonthInZone(reference, timeZone)
@@ -564,6 +606,9 @@ export type StandardDayBooking = {
   timeSlot?: string | null
   workStart?: string | null
   workEnd?: string | null
+  /** iOS / Firestore booking clock fields. Same meaning as `workStart` / `workEnd`. */
+  workStartTime?: string | null
+  workEndTime?: string | null
 }
 
 export type StandardDayCoverage = {
@@ -602,8 +647,8 @@ function bookingCoverInterval(booking: StandardDayBooking, windows: HalfDayWindo
     case 'PM':
       return windows.pm.end > windows.pm.start ? { ...windows.pm } : null
     default: {
-      const start = parseClockMinutes(booking.workStart)
-      const end = parseClockMinutes(booking.workEnd)
+      const start = parseClockMinutes(booking.workStart ?? booking.workStartTime)
+      const end = parseClockMinutes(booking.workEnd ?? booking.workEndTime)
       if (start != null && end != null && end > start) return { start, end }
       return { ...windows.day }
     }
