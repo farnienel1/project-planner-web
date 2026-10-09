@@ -5,10 +5,17 @@ import { collection, doc, getDoc, getDocs, limit, query, setDoc, Timestamp, wher
 import { isRetryableAuthLoadError } from '@/lib/auth/authBoot'
 import { isTimeoutError, withTimeout } from '@/lib/client/withTimeout'
 import { db } from '@/lib/firebase/config'
+import { readOrganizationDocument } from '@/lib/firebase/orgDocumentCache'
 import { UserRole, type SiteAudit, type SiteAuditItem, type User } from '@/types'
 import { parseOrgUser } from '@/lib/firebase/parseUser'
 import { aliasIdsForRoster } from '@/lib/staff/userRosterUtils'
 import { mergeRetainedRoster, missingOrganizationIdPatch, retainScopedRows, rosterParseRecord } from '@/lib/staff/rosterRetain'
+import {
+  catalogueRowNeedsRead,
+  explicitAccountIds,
+  rosterLoadFailure,
+  shouldRetryRosterLoad,
+} from '@/lib/staff/rosterWaves'
 import {
   isOrgLoadInFlight,
   optionsForUnappliedOrg,
@@ -180,7 +187,10 @@ function withManagerListHint(user: User): User {
   return { ...user, permissions: { ...user.permissions, manager: true } }
 }
 
-async function fetchOrganisationRoster(organizationId: string): Promise<{
+async function fetchOrganisationRoster(
+  organizationId: string,
+  options?: { finalAttempt?: boolean }
+): Promise<{
   users: User[]
   complete: boolean
   presentIds: Set<string>
@@ -190,11 +200,11 @@ async function fetchOrganisationRoster(organizationId: string): Promise<{
   const presentIds = new Set<string>()
   const presentEmails = new Set<string>()
   let complete = true
-  let lastReadError: unknown = null
+  let firstFailure: unknown = null
   let listedMemberCount = 0
-  const failRead = (error?: unknown) => {
+  const noteFailure = (reason: unknown) => {
     complete = false
-    if (error) lastReadError = error
+    if (firstFailure == null) firstFailure = reason
   }
 
   const remember = (user: User | null) => {
@@ -326,24 +336,86 @@ async function fetchOrganisationRoster(organizationId: string): Promise<{
     await Promise.all(workers)
   }
 
-  for (const field of ['organizationId', 'organisationId', 'orgId'] as const) {
-    try {
-      const snapshot = await getDocs(query(collection(db, 'users'), where(field, '==', organizationId)))
-      for (const entry of snapshot.docs) {
-        remember(userForThisOrganisation(entry.id, entry.data() as Record<string, unknown>, organizationId, true))
-      }
-    } catch (error) {
-      failRead(error)
-    }
+  // Wave 1: every source that does not depend on another read, all at once.
+  // This used to be a chain of a dozen round trips (three users queries, the
+  // organisation document, each member, userEmails, operatives, managers, then
+  // a per-person lookup), so the roster — and every page that waits for it —
+  // took seconds on a cold session.
+  type CatalogueEntry = { id: string; data: Record<string, unknown>; kind?: 'manager' }
+  const [usersResult, orgResult, emailsResult, operativesResult, managersResult] = await Promise.allSettled([
+    getDocs(query(collection(db, 'users'), where('organizationId', '==', organizationId))),
+    readOrganizationDocument(db, organizationId),
+    getDocs(collection(db, 'organizations', organizationId, 'userEmails')),
+    getDocs(collection(db, 'organizations', organizationId, 'operatives')),
+    getDocs(collection(db, 'organizations', organizationId, 'managers')),
+  ])
+
+  // The first read after sign-in can be refused before Firestore holds the ID
+  // token. Hand that failure back so runOrgLoad retries the whole load instead
+  // of caching a roster built only from the fallbacks (or nothing at all).
+  if (
+    shouldRetryRosterLoad({
+      usersQueryFailure: usersResult.status === 'rejected' ? usersResult.reason : null,
+      finalAttempt: options?.finalAttempt === true,
+    })
+  ) {
+    throw usersResult.status === 'rejected' ? usersResult.reason : new Error('Failed to load users')
   }
 
-  try {
-    const orgSnap = await getDoc(doc(db, 'organizations', organizationId))
-    const members = (orgSnap.data()?.members ?? {}) as Record<string, unknown>
-    const memberIds = Object.keys(members).filter(Boolean)
-    listedMemberCount = memberIds.length
-    const memberRows: Array<User | null | 'failed'> = new Array(memberIds.length)
-    await readTogether(memberIds, async (id, index) => {
+  if (usersResult.status === 'fulfilled') {
+    for (const entry of usersResult.value.docs) {
+      remember(userForThisOrganisation(entry.id, entry.data() as Record<string, unknown>, organizationId, true))
+    }
+  } else {
+    noteFailure(usersResult.reason)
+  }
+
+  const memberIds: string[] = []
+  if (orgResult.status === 'fulfilled') {
+    const members = (orgResult.value.data()?.members ?? {}) as Record<string, unknown>
+    const listedIds = Object.keys(members).filter(Boolean)
+    listedMemberCount = listedIds.length
+    for (const id of listedIds) {
+      if (!presentIds.has(id)) memberIds.push(id)
+    }
+  } else {
+    noteFailure(orgResult.reason)
+  }
+
+  const emailUserIds: string[] = []
+  if (emailsResult.status === 'fulfilled') {
+    for (const entry of emailsResult.value.docs) {
+      const userId = text(entry.data().userId)
+      if (userId && !presentIds.has(userId) && !memberIds.includes(userId) && !emailUserIds.includes(userId)) {
+        emailUserIds.push(userId)
+      }
+    }
+  } else {
+    noteFailure(emailsResult.reason)
+  }
+
+  const catalogue: CatalogueEntry[] = []
+  if (operativesResult.status === 'fulfilled') {
+    for (const entry of operativesResult.value.docs) {
+      catalogue.push({ id: entry.id, data: entry.data() as Record<string, unknown> })
+    }
+  } else {
+    noteFailure(operativesResult.reason)
+  }
+  if (managersResult.status === 'fulfilled') {
+    for (const entry of managersResult.value.docs) {
+      catalogue.push({ id: entry.id, data: entry.data() as Record<string, unknown>, kind: 'manager' })
+    }
+  } else {
+    noteFailure(managersResult.reason)
+  }
+
+  // Wave 2: only the people wave 1 did not already return.
+  const memberRows: Array<User | null | 'failed'> = new Array(memberIds.length)
+  let memberReadFailure: unknown = null
+  const emailUsers: Array<User | null> = new Array(emailUserIds.length)
+  await Promise.all([
+    readTogether(memberIds, async (id, index) => {
       try {
         const snap = await getDoc(doc(db, 'users', id))
         if (!snap.exists()) {
@@ -354,75 +426,64 @@ async function fetchOrganisationRoster(organizationId: string): Promise<{
         const patch = missingOrganizationIdPatch(data, organizationId, true)
         memberRows[index] = userForThisOrganisation(snap.id, patch ? { ...data, ...patch } : data, organizationId, true)
       } catch (error) {
-        lastReadError = error
+        if (memberReadFailure == null) memberReadFailure = error
         memberRows[index] = 'failed'
       }
-    })
-    for (let index = 0; index < memberIds.length; index += 1) {
-      const row = memberRows[index]
-      if (row === 'failed') {
-        complete = false
-        continue
-      }
-      if (!row || presentIds.has(memberIds[index])) continue
-      noteUser(row)
-    }
-  } catch (error) {
-    failRead(error)
-  }
-
-  try {
-    const snapshot = await getDocs(collection(db, 'organizations', organizationId, 'userEmails'))
-    const emailUserIds = snapshot.docs
-      .map((entry) => text(entry.data().userId))
-      .filter((userId) => userId !== '' && !presentIds.has(userId))
-    const emailUsers: Array<User | null> = new Array(emailUserIds.length)
-    await readTogether(emailUserIds, async (userId, index) => {
+    }),
+    readTogether(emailUserIds, async (userId, index) => {
       emailUsers[index] = await loadUserDocument(userId, true)
+    }),
+  ])
+  for (const row of memberRows) {
+    if (row === 'failed') {
+      noteFailure(memberReadFailure ?? new Error('A member document could not be read'))
+      continue
+    }
+    noteUser(row)
+  }
+  for (const user of emailUsers) noteUser(user)
+
+  // Catalogue rows (operatives / managers) link to an account by id or email.
+  // When every source above answered, an entry that names no account id and
+  // matches nobody has no account, so there is nothing more to read for it.
+  // An entry that does name an account id is still read: that person's user
+  // document can name another organisation (it records the company they last
+  // opened), and they may be on neither the members map nor userEmails.
+  // An incomplete wave falls back to the full per-entry lookup.
+  const catalogueLink = (entry: CatalogueEntry): User | null => {
+    for (const id of [...explicitAccountIds(entry.data), entry.id]) {
+      const cached = id ? cachedUser(id) : undefined
+      if (cached) return cached
+    }
+    return cachedUserByEmail(text(entry.data.email)) ?? null
+  }
+  const explicitOnly = async (entry: CatalogueEntry): Promise<User | null> => {
+    for (const id of explicitAccountIds(entry.data)) {
+      const user = cachedUser(id) ?? (await loadUserDocument(id, true))
+      if (user) return user
+    }
+    return null
+  }
+  const unresolved: CatalogueEntry[] = []
+  for (const entry of catalogue) {
+    const linked = catalogueLink(entry)
+    if (linked) noteUser(linked, entry.kind)
+    else if (catalogueRowNeedsRead({ complete, data: entry.data })) unresolved.push(entry)
+  }
+  if (unresolved.length > 0) {
+    const lateUsers: Array<User | null> = new Array(unresolved.length)
+    await readTogether(unresolved, async (entry, index) => {
+      lateUsers[index] = complete ? await explicitOnly(entry) : await resolveRosterLink(entry.id, entry.data)
     })
-    for (const user of emailUsers) noteUser(user)
-  } catch (error) {
-    failRead(error)
+    unresolved.forEach((entry, index) => noteUser(lateUsers[index], entry.kind))
   }
 
-  try {
-    const snapshot = await getDocs(collection(db, 'organizations', organizationId, 'operatives'))
-    const operativeDocs = snapshot.docs
-    const operativeUsers: Array<User | null> = new Array(operativeDocs.length)
-    await readTogether(operativeDocs, async (entry, index) => {
-      operativeUsers[index] = await resolveRosterLink(
-        entry.id,
-        entry.data() as Record<string, unknown>
-      )
-    })
-    for (const user of operativeUsers) noteUser(user)
-  } catch (error) {
-    failRead(error)
-  }
-
-  try {
-    const snapshot = await getDocs(collection(db, 'organizations', organizationId, 'managers'))
-    const managerDocs = snapshot.docs
-    const managerUsers: Array<User | null> = new Array(managerDocs.length)
-    await readTogether(managerDocs, async (entry, index) => {
-      managerUsers[index] = await resolveRosterLink(
-        entry.id,
-        entry.data() as Record<string, unknown>
-      )
-    })
-    for (const user of managerUsers) noteUser(user, 'manager')
-  } catch (error) {
-    failRead(error)
-  }
-
-  // A denied or empty read is not an empty company when this organisation has members.
-  // Throw a retryable error so the first open of Manage users loads again once auth is ready.
-  if (collected.length === 0 && (listedMemberCount > 0 || !complete)) {
-    if (isRetryableAuthLoadError(lastReadError)) throw lastReadError
-    const error = new Error('Failed to load users') as Error & { code?: string }
-    error.code = 'unavailable'
-    throw error
-  }
+  // A denied or empty read is not an empty company when this organisation has
+  // members. The failure is retryable so the first open of Manage users loads
+  // again once auth is ready. Profiles that share an email are all kept; the
+  // store maps the duplicates with aliasIdsForRoster.
+  const failure = rosterLoadFailure({ collectedCount: collected.length, complete, firstFailure, listedMemberCount })
+  if (failure) throw failure
   return { users: collected, complete, presentIds, presentEmails }
 }
 
@@ -565,7 +626,7 @@ export const useOrgUserStore = create<OrgUserState>((set, get) => ({
     await runOrgLoad(
       ORG_USER_LOAD_KEY,
       organizationId,
-      async () => {
+      async (attempt) => {
         const generation = ++rosterLoadGeneration
         const inMemory = listedRosterOrgId === organizationId ? get().users : []
         const previous = inMemory.length > 0 ? inMemory : readStoredRoster(organizationId)
@@ -597,7 +658,7 @@ export const useOrgUserStore = create<OrgUserState>((set, get) => ({
           set({ users, userIdAliases, loading: false, error: null, rosterLoadedOrgId: organizationId })
         }
         try {
-          const rosterPromise = fetchOrganisationRoster(organizationId)
+          const rosterPromise = fetchOrganisationRoster(organizationId, { finalAttempt: attempt.final })
           let loaded: Awaited<ReturnType<typeof fetchOrganisationRoster>>
           try {
             loaded = await withTimeout(rosterPromise, 20_000, 'The user list did not finish loading.')
@@ -629,6 +690,8 @@ export const useOrgUserStore = create<OrgUserState>((set, get) => ({
             throw error
           }
           if (generation !== rosterLoadGeneration) throw new OrgLoadNotCached()
+          // runOrgLoad retries auth-token races; keep "Loading users..." up until the last attempt fails.
+          if (!attempt.final && isRetryableAuthLoadError(error)) throw error
           set({
             error: error instanceof Error ? error.message : 'Failed to load users',
             loading: false,

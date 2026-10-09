@@ -13,6 +13,9 @@ import { db } from '@/lib/firebase/config'
 import type { Subcontractor, SubcontractorContact } from '@/types'
 import { newUuid, parseFirestoreDate, parseOptionalString, parseString, parseUuid } from '@/lib/firebase/firestoreUtils'
 import { markRowsRemoved, retainScopedRows } from '@/lib/staff/rosterRetain'
+import { invalidateOrgLoad, optionsForUnappliedOrg, runOrgLoad } from '@/lib/stores/orgLoadCache'
+
+const SUBCONTRACTOR_LOAD_KEY = 'subcontractorStore:subcontractors'
 
 function parseContacts(rows: unknown): SubcontractorContact[] {
   if (!Array.isArray(rows)) return []
@@ -97,27 +100,43 @@ export const useSubcontractorStore = create<SubcontractorState>((set, get) => ({
   error: null,
 
   loadSubcontractors: async (organizationId) => {
-    set({ loading: true, error: null })
-    try {
-      const ref = collection(db, 'organizations', organizationId, 'subcontractors')
-      const snapshot = await getDocs(ref)
-      const subcontractors = snapshot.docs
-        .map((entry) => mapSubcontractor(entry.id, entry.data() as Record<string, unknown>))
-        .filter((item): item is Subcontractor => item !== null)
-        .sort((a, b) => a.name.localeCompare(b.name))
-      const previous = subcontractorOrgId === organizationId ? get().subcontractors : []
-      const kept = retainScopedRows(`subcontractors:${organizationId}`, previous, subcontractors)
-      subcontractorOrgId = organizationId
-      set({ subcontractors: kept, loading: false })
-    } catch (error: unknown) {
-      set({ error: error instanceof Error ? error.message : 'Failed to load subcontractors', loading: false })
-    }
+    const loadOptions = optionsForUnappliedOrg(
+      SUBCONTRACTOR_LOAD_KEY,
+      organizationId,
+      subcontractorOrgId === organizationId,
+      undefined
+    )
+    await runOrgLoad(
+      SUBCONTRACTOR_LOAD_KEY,
+      organizationId,
+      async () => {
+        if (get().subcontractors.length === 0) set({ loading: true, error: null })
+        else set({ error: null })
+        try {
+          const ref = collection(db, 'organizations', organizationId, 'subcontractors')
+          const snapshot = await getDocs(ref)
+          const subcontractors = snapshot.docs
+            .map((entry) => mapSubcontractor(entry.id, entry.data() as Record<string, unknown>))
+            .filter((item): item is Subcontractor => item !== null)
+            .sort((a, b) => a.name.localeCompare(b.name))
+          const previous = subcontractorOrgId === organizationId ? get().subcontractors : []
+          const kept = retainScopedRows(`subcontractors:${organizationId}`, previous, subcontractors)
+          subcontractorOrgId = organizationId
+          set({ subcontractors: kept, loading: false })
+        } catch (error: unknown) {
+          set({ error: error instanceof Error ? error.message : 'Failed to load subcontractors', loading: false })
+          throw error
+        }
+      },
+      loadOptions
+    )
   },
 
   saveSubcontractor: async (organizationId, subcontractor) => {
     const id = subcontractor.id || newUuid()
     const payload = subcontractorPayload({ ...subcontractor, id, updatedAt: new Date() })
     await setDoc(doc(db, 'organizations', organizationId, 'subcontractors', id), payload)
+    invalidateOrgLoad(SUBCONTRACTOR_LOAD_KEY)
     const mapped = mapSubcontractor(id, payload as unknown as Record<string, unknown>)
     if (!mapped) return
     const { subcontractors } = get()
@@ -130,6 +149,7 @@ export const useSubcontractorStore = create<SubcontractorState>((set, get) => ({
 
   deleteSubcontractor: async (organizationId, id) => {
     await deleteDoc(doc(db, 'organizations', organizationId, 'subcontractors', id))
+    invalidateOrgLoad(SUBCONTRACTOR_LOAD_KEY)
     markRowsRemoved(`subcontractors:${organizationId}`, [id])
     set({ subcontractors: get().subcontractors.filter((s) => s.id !== id) })
   },

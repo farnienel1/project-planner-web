@@ -4,6 +4,11 @@
  */
 
 import type { User, UserPermissions } from '@/types'
+import {
+  canEditWorkCatalogue,
+  canViewStaffWarnings,
+  type StaffAccountRole,
+} from '@/lib/canonical'
 import { parseAppUserDocument } from '@/lib/ios-parity/converters'
 import { normalizeEmploymentType } from '@/lib/ios-parity/enums'
 import { isPlatformOwnerEmail } from '@/lib/platform/owner'
@@ -56,10 +61,24 @@ function isStaffAccount(user: NonNullable<PermissionUser>): boolean {
   )
 }
 
-/** Warnings list. Admins and managers. Operatives do not see the company warning scan. */
+/**
+ * The account flags the canonical staff-access rule works from.
+ * iOS resolves the same four flags from `UserStore` before calling the bundle.
+ */
+export function staffAccountRole(user: PermissionUser): StaffAccountRole {
+  if (!user) return { isSuperAdmin: false, isAdmin: false, isManager: false, isOperativeMode: false }
+  return {
+    isSuperAdmin: user.isSuperAdmin === true,
+    isAdmin: hasAdminAccess(user),
+    isManager: flag(user, 'manager') || user.role === 'manager',
+    isOperativeMode: isOperativeMode(user),
+  }
+}
+
+/** Warnings list. Every admin and manager sees every warning. Operatives do not see the company warning scan. */
 export function canViewWarnings(user: PermissionUser): boolean {
-  if (!user || isOperativeMode(user)) return false
-  return hasAdminAccess(user) || flag(user, 'manager') || user.role === 'manager'
+  if (!user) return false
+  return canViewStaffWarnings(staffAccountRole(user))
 }
 
 /** Warning settings open organisation settings. Admin level only. */
@@ -199,10 +218,7 @@ export function canManageSubcontractors(user: PermissionUser, profileLoading = f
 
 /** Create project: super admin, or admin/manager who also have the Projects toggle. */
 export function canCreateProject(user: PermissionUser): boolean {
-  if (!user || isOperativeMode(user)) return false
-  if (user.isSuperAdmin) return true
-  if (!flag(user, 'projects')) return false
-  return hasAdminAccess(user) || flag(user, 'manager')
+  return canManageWorkCatalogue(user, 'projects')
 }
 
 /**
@@ -218,17 +234,22 @@ export function canOpenWorkForm(
   return canManageWorkCatalogue(user, kind)
 }
 
-/** iOS UserStore.canManageWorkCatalogue. Super admin ignores the toggles. Admins and managers follow them. */
+/**
+ * Add or edit a catalogue (canonical `canEditWorkCatalogue`). Super admin ignores the
+ * toggles. Admins and managers follow them. A toggle that is off never hides the list;
+ * that is `visibleWorks`.
+ */
 export function canManageWorkCatalogue(
   user: PermissionUser,
   kind: WorkCatalogueKind
 ): boolean {
-  if (!user || isOperativeMode(user)) return false
-  if (user.isSuperAdmin) return true
-  if (!isStaffAccount(user)) return false
-  if (kind === 'projects') return flag(user, 'projects')
-  if (kind === 'smallWorks') return flag(user, 'smallWorks')
-  return flag(user, 'projects') && flag(user, 'smallWorks')
+  if (!user) return false
+  const role = staffAccountRole(user)
+  const toggles = { projects: flag(user, 'projects'), smallWorks: flag(user, 'smallWorks') }
+  if (kind === 'all') {
+    return canEditWorkCatalogue(role, 'projects', toggles) && canEditWorkCatalogue(role, 'smallWorks', toggles)
+  }
+  return canEditWorkCatalogue(role, kind, toggles)
 }
 
 export function canViewWeeklyReports(user: PermissionUser, profileLoading = false): boolean {
