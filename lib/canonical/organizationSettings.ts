@@ -126,11 +126,27 @@ export const OPERATIONAL_COLLECTION_PATHS = {
 } as const
 
 /**
- * Starter material catalogue and qualification library writes.
+ * Starter material catalogue writes.
  * Seed only when the collection has no documents. Never delete-all + rewrite.
  */
 export function starterCollectionShouldSeed(existingDocumentCount: number): boolean {
   return existingDocumentCount === 0
+}
+
+/**
+ * Qualification library writes. Merge any starter codes that are not already
+ * document ids. A custom or guided-setup row must not block the library.
+ * Never delete-all + rewrite.
+ */
+export function missingStarterQualificationCodes(
+  existingDocumentIds: readonly string[],
+  libraryCodes: readonly string[]
+): string[] {
+  const have = new Set(existingDocumentIds.map((id) => String(id || '').trim()).filter(Boolean))
+  return libraryCodes.filter((code) => {
+    const id = String(code || '').trim()
+    return Boolean(id) && !have.has(id)
+  })
 }
 
 const DEFAULT_WEEKEND: WeekendPayrollSettings = {

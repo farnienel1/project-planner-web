@@ -1,4 +1,9 @@
-import type { OrgWarningDetectionSettings } from '@/lib/settings/organizationSettings'
+import type {
+  OrganizationDetails,
+  OrgInvoicingSettings,
+  OrgWarningDetectionSettings,
+} from '@/lib/settings/organizationSettings'
+import { warningDetectionLooksLikeFactoryDefault } from '@/lib/settings/organizationSettings'
 import { organizationIdsMatch } from '@/lib/orgMembership/webActiveOrg'
 
 export type WarningsScreenPhase = 'scanning' | 'empty' | 'list'
@@ -154,6 +159,46 @@ export function warningDetectionForScan(
   if (!serverSettled) return null
   if (server) return server
   return cached ?? null
+}
+
+/** End-of-invoicing-period scans must wait for the live payment-run ranges. */
+export function warningScanInvoicingReady(
+  detection: OrgWarningDetectionSettings | null | undefined,
+  invoicing: OrgInvoicingSettings | null | undefined
+): boolean {
+  if (!detection) return false
+  if (detection.clashLookaheadMode !== 'endOfInvoicingPeriod') return true
+  return Boolean(invoicing)
+}
+
+/**
+ * Keep a saved look-ahead mode when a later read looks like the factory default.
+ * Payment runs always come from the live organisation document — never from the
+ * previous React state, which can still hold a leftover 1–16 window.
+ */
+export function organizationDetailsForWarningScan(input: {
+  current: OrganizationDetails | null
+  loaded: OrganizationDetails
+  cachedDetection?: OrgWarningDetectionSettings | null
+}): OrganizationDetails {
+  const { current, loaded, cachedDetection } = input
+  const keepCachedDetection =
+    Boolean(cachedDetection) &&
+    warningDetectionLooksLikeFactoryDefault(loaded.warningDetection) &&
+    !warningDetectionLooksLikeFactoryDefault(cachedDetection as OrgWarningDetectionSettings)
+  if (keepCachedDetection) {
+    return { ...loaded, warningDetection: cachedDetection as OrgWarningDetectionSettings }
+  }
+  const keepCurrentDetection =
+    Boolean(current) &&
+    current?.id === loaded.id &&
+    current?.warningDetection.clashLookaheadMode === 'endOfInvoicingPeriod' &&
+    loaded.warningDetection.clashLookaheadMode !== 'endOfInvoicingPeriod' &&
+    warningDetectionLooksLikeFactoryDefault(loaded.warningDetection)
+  if (keepCurrentDetection && current) {
+    return { ...loaded, warningDetection: current.warningDetection }
+  }
+  return loaded
 }
 
 export function countGeneratedWarnings(result: {
