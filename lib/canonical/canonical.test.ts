@@ -79,6 +79,14 @@ import {
   rankQualificationRecords,
   tokenizeQualificationSearch,
 } from './qualificationSearch.ts'
+import {
+  assignedQualificationWriteFields,
+  mergeOperativeQualificationWrite,
+  mergeQualificationCertificateUrls,
+  qualificationCertificateStoragePath,
+  qualificationCertificateUrl,
+  removedQualificationCertificateIds,
+} from './operativeQualifications.ts'
 
 const superAdmin: StaffAccountRole = { isSuperAdmin: true, isAdmin: true, isManager: false, isOperativeMode: false }
 const admin: StaffAccountRole = { isSuperAdmin: false, isAdmin: true, isManager: false, isOperativeMode: false }
@@ -791,6 +799,10 @@ test('the iOS JavaScript bundle exposes the standard-day, leave and dismiss rule
     'qualificationMatchesSection',
     'starterCollectionShouldSeed',
     'missingStarterQualificationCodes',
+    'assignedQualificationWriteFields',
+    'mergeOperativeQualificationWrite',
+    'mergeQualificationCertificateUrls',
+    'qualificationCertificateStoragePath',
   ]) {
     assert.equal(typeof bundle[name], 'function', `${name} is exported from the packed script`)
   }
@@ -1290,6 +1302,89 @@ test('qualification library merges missing codes and is not blocked by a custom 
     'PRO-IOSH',
   ])
   assert.deepEqual(missingStarterQualificationCodes(library, library), [])
+})
+
+test('assigned qualification write keeps iOS fields and strips library extras', () => {
+  const created = '2026-01-02T00:00:00.000Z'
+  const write = assignedQualificationWriteFields({
+    id: 'EL-ECS-IE',
+    name: 'ECS Gold Card',
+    hasEndDate: false,
+    createdAtIso: created,
+    updatedAtIso: created,
+  })
+  assert.deepEqual(write, {
+    id: 'EL-ECS-IE',
+    name: 'ECS Gold Card',
+    hasEndDate: false,
+    createdAtIso: created,
+    updatedAtIso: created,
+  })
+  assert.equal(assignedQualificationWriteFields({ id: '', name: 'CSCS' }), null)
+  assert.equal(assignedQualificationWriteFields({ id: 'Q1', name: '' }), null)
+})
+
+test('operative qualification merge writes a new assignment without dropping other quals or certificate URLs', () => {
+  const created = '2026-01-02T00:00:00.000Z'
+  const merged = mergeOperativeQualificationWrite({
+    previous: {
+      qualifications: [
+        { id: 'Q-OLD', name: 'CSCS', hasEndDate: false, createdAtIso: created, updatedAtIso: created },
+      ],
+      qualificationExpiryDates: { 'Q-OLD': '2026-09-01T00:00:00.000Z' },
+      qualificationCertificateURLs: { 'Q-OLD': 'https://files.example/cscs.pdf' },
+    },
+    next: {
+      qualifications: [
+        { id: 'Q-NEW', name: 'First aid', hasEndDate: false, createdAtIso: created, updatedAtIso: created },
+      ],
+      qualificationExpiryDates: { 'Q-NEW': '2027-03-01T00:00:00.000Z' },
+      qualificationCertificateURLs: { 'Q-NEW': 'https://files.example/first-aid.pdf' },
+    },
+  })
+  assert.equal(merged.qualifications.length, 2)
+  assert.equal(merged.qualifications.find((row) => row.id === 'Q-OLD')?.name, 'CSCS')
+  assert.equal(merged.qualifications.find((row) => row.id === 'Q-NEW')?.name, 'First aid')
+  assert.equal(merged.qualificationExpiryDates['Q-OLD'], '2026-09-01T00:00:00.000Z')
+  assert.equal(merged.qualificationExpiryDates['Q-NEW'], '2027-03-01T00:00:00.000Z')
+  assert.equal(merged.qualificationCertificateURLs['Q-OLD'], 'https://files.example/cscs.pdf')
+  assert.equal(merged.qualificationCertificateURLs['Q-NEW'], 'https://files.example/first-aid.pdf')
+})
+
+test('certificate URL merge keeps prior files and only removes an id this save cleared', () => {
+  assert.deepEqual(
+    mergeQualificationCertificateUrls({ q1: 'a', q2: 'b' }, { q3: 'c' }),
+    { q1: 'a', q2: 'b', q3: 'c' }
+  )
+  assert.deepEqual(
+    mergeQualificationCertificateUrls({ q1: 'a', q2: 'b' }, {}, ['q2']),
+    { q1: 'a' }
+  )
+  assert.equal(qualificationCertificateUrl({ 'ABC-1': 'https://files.example/old.pdf' }, 'abc-1'), 'https://files.example/old.pdf')
+  assert.deepEqual(
+    removedQualificationCertificateIds({ q1: 'a', q2: 'b' }, { q1: 'a' }, ['q1', 'q2']),
+    ['q2']
+  )
+  assert.deepEqual(
+    removedQualificationCertificateIds({ q1: 'a', OTHER: 'keep' }, { q1: 'a' }, ['q1']),
+    []
+  )
+})
+
+test('qualification certificate storage path matches the iOS object prefix', () => {
+  assert.equal(
+    qualificationCertificateStoragePath({
+      organizationId: 'ORG1',
+      operativeId: 'OP1',
+      qualificationId: 'Q1',
+      fileName: 'uid_1_cscs.pdf',
+    }),
+    'organizations/ORG1/operatives/OP1/qualifications/Q1/certificates/uid_1_cscs.pdf'
+  )
+  assert.equal(
+    qualificationCertificateStoragePath({ organizationId: '', operativeId: 'OP1', qualificationId: 'Q1', fileName: 'a.pdf' }),
+    null
+  )
 })
 
 test('warning detection defaults to seven days and reads the iOS top-level map', () => {

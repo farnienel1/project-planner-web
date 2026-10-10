@@ -114,6 +114,47 @@ test('serializeOperative omits undefined qualification fields so Firestore setDo
   assert.deepEqual(op.qualificationCertificateURLs, {})
 })
 
+test('serializeOperative writes assigned qualification fields and drops library extras', () => {
+  const now = new Date('2026-01-01T00:00:00Z')
+  const op = serializeOperative({
+    id: 'AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA',
+    firstName: 'Ada',
+    lastName: 'Booked',
+    email: 'ada@x.com',
+    startDate: now,
+    hourlyRate: 12,
+    dayRate: 100,
+    skills: [],
+    qualifications: [
+      {
+        id: 'EL-ECS-IE',
+        name: 'ECS Gold Card',
+        hasEndDate: false,
+        createdAt: now,
+        updatedAt: now,
+        code: 'EL-ECS-IE',
+        section: 'Electrical',
+        awardingBody: 'ECS',
+        level: 3,
+        notes: 'library only',
+      },
+    ],
+    isActive: true,
+    organizationId: 'org1',
+    createdAt: now,
+    updatedAt: now,
+  })
+  const row = (op.qualifications as Array<Record<string, unknown>>)[0]
+  assert.equal(row.id, 'EL-ECS-IE')
+  assert.equal(row.name, 'ECS Gold Card')
+  assert.equal(row.hasEndDate, false)
+  assert.equal('code' in row, false)
+  assert.equal('section' in row, false)
+  assert.equal('awardingBody' in row, false)
+  assert.equal('level' in row, false)
+  assert.equal('notes' in row, false)
+})
+
 test('parseOperative keeps an iOS hourly rate and treats a zero pair as unset', () => {
   const hourly = parseOperative('OP-H', {
     firstName: 'Ada',

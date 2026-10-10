@@ -105,3 +105,13 @@ export {
   rankQualificationRecords,
   tokenizeQualificationSearch,
 } from './qualificationSearch'
+
+export {
+  QUALIFICATION_CERTIFICATE_STORAGE_PATH,
+  assignedQualificationWriteFields,
+  mergeOperativeQualificationWrite,
+  mergeQualificationCertificateUrls,
+  qualificationCertificateStoragePath,
+  qualificationCertificateUrl,
+  removedQualificationCertificateIds,
+} from './operativeQualifications'
