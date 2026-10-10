@@ -2,7 +2,14 @@
  * My Qualifications certificate pick/save helpers.
  * iOS: OperativeQualificationsEditorView — PDF/JPEG max 10MB, persist on Save
  * to qualificationCertificateURLs / qualificationExpiryDates on the operative.
+ *
+ * Assignment write shape and URL merge live in lib/canonical/operativeQualifications.
+ * Save the assignment first; upload must not block that write.
  */
+import {
+  mergeQualificationCertificateUrls,
+  qualificationCertificateUrl,
+} from '@/lib/canonical/operativeQualifications'
 
 export const QUALIFICATION_CERT_MAX_BYTES = 10 * 1024 * 1024
 
@@ -52,7 +59,7 @@ export function mergeCertificateUrls(
   existing: Record<string, string> | undefined,
   uploaded: Record<string, string>
 ): Record<string, string> {
-  return { ...(existing || {}), ...uploaded }
+  return mergeQualificationCertificateUrls(existing, uploaded)
 }
 
 /** iOS keys this map by qualification UUID. Match ignoring case so a stored URL still shows. */
@@ -60,12 +67,7 @@ export function certificateUrlForQualification(
   urls: Record<string, string> | undefined,
   qualificationId: string
 ): string | undefined {
-  if (!urls || !qualificationId) return undefined
-  const direct = urls[qualificationId]
-  if (typeof direct === 'string' && direct.trim()) return direct
-  const target = qualificationId.toLowerCase()
-  const found = Object.entries(urls).find(([key, value]) => key.toLowerCase() === target && value.trim())
-  return found?.[1]
+  return qualificationCertificateUrl(urls, qualificationId)
 }
 
 /**
@@ -98,13 +100,38 @@ export async function uploadPendingCertificates<T extends NamedFile>(args: {
   existingUrls?: Record<string, string>
   uploadOne: (qualificationId: string, file: T) => Promise<string>
 }): Promise<Record<string, string>> {
-  const next = { ...(args.existingUrls || {}) }
+  const uploaded: Record<string, string> = {}
   for (const [qualificationId, file] of Object.entries(args.pending)) {
     const error = qualificationCertificateFileError(file)
     if (error) throw new Error(error)
-    next[qualificationId] = await args.uploadOne(qualificationId, file)
+    uploaded[qualificationId] = await args.uploadOne(qualificationId, file)
   }
-  return next
+  return mergeQualificationCertificateUrls(args.existingUrls, uploaded)
+}
+
+/**
+ * Persist the assignment first. Certificate upload runs after and must not
+ * prevent that write. A failed upload leaves pending files for retry.
+ */
+export async function persistQualificationsThenCertificates<T extends NamedFile>(args: {
+  pending: Record<string, T>
+  existingUrls?: Record<string, string>
+  saveAssignment: () => Promise<void>
+  uploadOne: (qualificationId: string, file: T) => Promise<string>
+  saveCertificateUrls: (urls: Record<string, string>) => Promise<void>
+}): Promise<{ certificateUrls: Record<string, string> }> {
+  await args.saveAssignment()
+  const existing = mergeQualificationCertificateUrls(args.existingUrls, {})
+  if (Object.keys(args.pending).length === 0) {
+    return { certificateUrls: existing }
+  }
+  const certificateUrls = await uploadPendingCertificates({
+    pending: args.pending,
+    existingUrls: existing,
+    uploadOne: args.uploadOne,
+  })
+  await args.saveCertificateUrls(certificateUrls)
+  return { certificateUrls }
 }
 
 export function localDateInputValue(date?: Date | null): string {

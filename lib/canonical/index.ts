@@ -169,6 +169,23 @@ export type {
 } from './qualificationSearch'
 
 export {
+  QUALIFICATION_CERTIFICATE_STORAGE_PATH,
+  assignedQualificationWriteFields,
+  mergeOperativeQualificationWrite,
+  mergeQualificationCertificateUrls,
+  qualificationCertificateStoragePath,
+  qualificationCertificateUrl,
+  removedQualificationCertificateIds,
+} from './operativeQualifications'
+
+export type {
+  AssignedQualificationInput,
+  AssignedQualificationWrite,
+  OperativeQualificationMapsInput,
+  OperativeQualificationWrite,
+} from './operativeQualifications'
+
+export {
   DEFAULT_ANNUAL_LEAVE,
   DEFAULT_INVOICING,
   DEFAULT_MATERIAL_CUT_OFF,

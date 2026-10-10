@@ -13,9 +13,9 @@ import {
   dateFromLocalInputValue,
   formatCertificateSaveError,
   localDateInputValue,
+  persistQualificationsThenCertificates,
   qualificationCertificateContentType,
   qualificationCertificateFileError,
-  uploadPendingCertificates,
 } from '@/lib/qualifications/certificateUpload'
 import { QualificationLibraryBrowser } from './QualificationLibraryBrowser'
 
@@ -187,16 +187,17 @@ export function OperativeQualificationsEditor({
     setLocalError(null)
     setUploading(true)
     try {
-      const uploadedUrls = await uploadPendingCertificates({
+      const { certificateUrls } = await persistQualificationsThenCertificates({
         pending: pendingFiles,
         existingUrls: draft.qualificationCertificateURLs,
+        saveAssignment: () => onSave(draft),
         uploadOne: async (qualificationId, file) => {
           const path = qualificationCertificatePath(organizationId, draft.id, qualificationId, file.name)
           return uploadFile(path, file, qualificationCertificateContentType(file))
         },
+        saveCertificateUrls: (urls) => onSave({ ...draft, qualificationCertificateURLs: urls }),
       })
-      const next = { ...draft, qualificationCertificateURLs: uploadedUrls }
-      await onSave(next)
+      const next = { ...draft, qualificationCertificateURLs: certificateUrls }
       setDraft(next)
       setPendingFiles({})
       setDirty(false)

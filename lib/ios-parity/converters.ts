@@ -7,6 +7,7 @@
  */
 
 import { Timestamp, deleteField } from 'firebase/firestore'
+import { assignedQualificationWriteFields } from '@/lib/canonical/operativeQualifications'
 import { exclusiveRateDocumentFields, operativeRosterRateFields, readStoredRates } from '@/lib/timesheets/payBasis'
 import { applyExclusiveRateFields } from '@/lib/firebase/userPayload'
 import type {
@@ -942,19 +943,24 @@ export function parseOperative(
   })
 }
 
-function serializeAssignedQualification(row: Qualification): Record<string, unknown> {
-  const createdAt = row.createdAt instanceof Date && !Number.isNaN(row.createdAt.getTime()) ? row.createdAt : new Date()
-  const updatedAt = row.updatedAt instanceof Date && !Number.isNaN(row.updatedAt.getTime()) ? row.updatedAt : createdAt
+function serializeAssignedQualification(row: Qualification): Record<string, unknown> | null {
+  const write = assignedQualificationWriteFields({
+    id: row.id,
+    name: row.name,
+    hasEndDate: row.hasEndDate,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+    endDate: row.endDate,
+  })
+  if (!write) return null
   const payload: Record<string, unknown> = {
-    id: String(row.id || ''),
-    name: String(row.name || '').trim(),
-    hasEndDate: row.hasEndDate === true,
-    createdAt: asTimestamp(createdAt),
-    updatedAt: asTimestamp(updatedAt),
+    id: write.id,
+    name: write.name,
+    hasEndDate: write.hasEndDate,
+    createdAt: asTimestamp(new Date(write.createdAtIso)),
+    updatedAt: asTimestamp(new Date(write.updatedAtIso)),
   }
-  if (row.endDate instanceof Date && !Number.isNaN(row.endDate.getTime())) {
-    payload.endDate = asTimestamp(row.endDate)
-  }
+  if (write.endDateIso) payload.endDate = asTimestamp(new Date(write.endDateIso))
   return payload
 }
 
@@ -1018,7 +1024,9 @@ export function serializeOperative(
     phone: v.phone,
     startDate: asTimestamp(v.startDate),
     skills: (v.skills as (Skill | string)[]).map(operativeSkillToken).filter(Boolean),
-    qualifications: (v.qualifications as Qualification[]).map(serializeAssignedQualification),
+    qualifications: (v.qualifications as Qualification[])
+      .map(serializeAssignedQualification)
+      .filter((row): row is Record<string, unknown> => row !== null),
     isActive: v.isActive,
     currencySymbol: v.currencySymbol,
     notes: v.notes,
