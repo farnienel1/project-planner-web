@@ -9,6 +9,7 @@ import {
   canonicalCertificateUrls,
   certificateUrlForQualification,
   mergeCertificateUrls,
+  persistQualificationsThenCertificates,
   qualificationCertificateContentType,
   qualificationCertificateFileError,
   uploadPendingCertificates,
@@ -65,6 +66,72 @@ test('uploadPendingCertificates uploads each picked file then merges onto existi
     q1: 'https://example.com/old.pdf',
     q2: 'https://cdn.example/q2/first-aid.jpg',
   })
+})
+
+test('persistQualificationsThenCertificates writes the assignment before a certificate upload', async () => {
+  const order: string[] = []
+  const result = await persistQualificationsThenCertificates({
+    pending: { q2: file({ name: 'first-aid.jpg' }) },
+    existingUrls: { q1: 'https://example.com/old.pdf' },
+    saveAssignment: async () => {
+      order.push('assignment')
+    },
+    uploadOne: async (id, picked) => {
+      order.push(`upload:${id}`)
+      return `https://cdn.example/${id}/${picked.name}`
+    },
+    saveCertificateUrls: async () => {
+      order.push('urls')
+    },
+  })
+  assert.deepEqual(order, ['assignment', 'upload:q2', 'urls'])
+  assert.deepEqual(result.certificateUrls, {
+    q1: 'https://example.com/old.pdf',
+    q2: 'https://cdn.example/q2/first-aid.jpg',
+  })
+})
+
+test('persistQualificationsThenCertificates keeps the assignment when upload throws', async () => {
+  const order: string[] = []
+  await assert.rejects(
+    () =>
+      persistQualificationsThenCertificates({
+        pending: { q2: file({ name: 'first-aid.jpg' }) },
+        existingUrls: { q1: 'https://example.com/old.pdf' },
+        saveAssignment: async () => {
+          order.push('assignment')
+        },
+        uploadOne: async () => {
+          order.push('upload')
+          throw new Error('storage/unauthorized')
+        },
+        saveCertificateUrls: async () => {
+          order.push('urls')
+        },
+      }),
+    /storage\/unauthorized/
+  )
+  assert.deepEqual(order, ['assignment', 'upload'])
+})
+
+test('persistQualificationsThenCertificates does not upload when nothing is pending', async () => {
+  const order: string[] = []
+  const result = await persistQualificationsThenCertificates({
+    pending: {},
+    existingUrls: { q1: 'https://example.com/old.pdf' },
+    saveAssignment: async () => {
+      order.push('assignment')
+    },
+    uploadOne: async () => {
+      order.push('upload')
+      return 'https://example.com/should-not-save'
+    },
+    saveCertificateUrls: async () => {
+      order.push('urls')
+    },
+  })
+  assert.deepEqual(order, ['assignment'])
+  assert.deepEqual(result.certificateUrls, { q1: 'https://example.com/old.pdf' })
 })
 
 test('uploadPendingCertificates does not mark a URL when the file is invalid', async () => {
