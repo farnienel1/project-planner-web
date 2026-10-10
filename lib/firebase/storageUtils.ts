@@ -1,4 +1,5 @@
 import { ref, uploadBytes, uploadBytesResumable, getDownloadURL } from 'firebase/storage'
+import { qualificationCertificateStoragePath } from '@/lib/canonical/operativeQualifications'
 import { storage, auth } from '@/lib/firebase/config'
 import { withTimeout } from '@/lib/client/withTimeout'
 
@@ -188,5 +189,14 @@ export function qualificationCertificatePath(
 ): string {
   const uid = requireStorageUid()
   const timestamp = Date.now()
-  return `organizations/${organizationId}/operatives/${operativeId}/qualifications/${qualificationId}/certificates/${uid}_${timestamp}_${sanitizeFileName(fileName)}`
+  const path = qualificationCertificateStoragePath({
+    organizationId,
+    operativeId,
+    qualificationId,
+    fileName: `${uid}_${timestamp}_${sanitizeFileName(fileName)}`,
+  })
+  if (!path) {
+    throw new Error('Could not save the certificate. Organisation or qualification is missing.')
+  }
+  return path
 }

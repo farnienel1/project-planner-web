@@ -16,6 +16,10 @@ import type { Operative, Manager, Skill, Qualification } from '@/types'
 import { filterRealManagers, isPlaceholderManager } from '@/lib/staff/managerRosterUtils'
 import { invalidateOrgLoad, optionsForUnappliedOrg, runOrgLoad } from '@/lib/stores/orgLoadCache'
 import { applyExclusiveRateFields } from '@/lib/firebase/userPayload'
+import {
+  mergeOperativeQualificationWrite,
+  removedQualificationCertificateIds,
+} from '@/lib/canonical/operativeQualifications'
 import { parseManager, parseOperative, serializeManager, serializeOperative } from '@/lib/ios-parity/converters'
 import { readStoredRates } from '@/lib/timesheets/payBasis'
 import { markRowsRemoved, retainScopedRows } from '@/lib/staff/rosterRetain'
@@ -245,11 +249,50 @@ export const useOperativeStore = create<OperativeState>((set, get) => ({
    * Qualification edits merge into the operative document.
    * A full rewrite would drop fields iOS stores on the same record.
    * The certificate map stays qualification UUID → download URL, which is what iOS reads.
+   * Assignment write shape and map merge are lib/canonical/operativeQualifications.
    */
   patchOperativeQualifications: async (organizationId, operative) => {
     const id = operative.id
     if (!id) throw new Error('Operative profile is missing.')
-    const payload = serializeOperative({ ...operative, id, organizationId })
+    const existing = get().operatives.find((row) => row.id === id)
+    const nextIds = (operative.qualifications || []).map((row) => String(row.id || '').trim()).filter(Boolean)
+    const merged = mergeOperativeQualificationWrite({
+      previous: {
+        qualifications: existing?.qualifications,
+        qualificationExpiryDates: existing?.qualificationExpiryDates,
+        qualificationCertificateURLs: existing?.qualificationCertificateURLs,
+      },
+      next: {
+        qualifications: operative.qualifications,
+        qualificationExpiryDates: operative.qualificationExpiryDates,
+        qualificationCertificateURLs: operative.qualificationCertificateURLs,
+        removedCertificateIds: removedQualificationCertificateIds(
+          existing?.qualificationCertificateURLs,
+          operative.qualificationCertificateURLs,
+          nextIds
+        ),
+      },
+    })
+    const mergedOperative: Operative = {
+      ...existing,
+      ...operative,
+      id,
+      organizationId,
+      qualifications: merged.qualifications.map((row) => ({
+        id: row.id,
+        name: row.name,
+        hasEndDate: row.hasEndDate,
+        createdAt: new Date(row.createdAtIso),
+        updatedAt: new Date(row.updatedAtIso),
+        endDate: row.endDateIso ? new Date(row.endDateIso) : undefined,
+      })),
+      qualificationExpiryDates: Object.fromEntries(
+        Object.entries(merged.qualificationExpiryDates).map(([key, iso]) => [key, new Date(iso)])
+      ),
+      qualificationCertificateURLs: merged.qualificationCertificateURLs,
+      updatedAt: new Date(),
+    }
+    const payload = serializeOperative({ ...mergedOperative, organizationId })
     operativeMutationEpoch += 1
     await setDoc(
       doc(db, 'organizations', organizationId, 'operatives', id),
@@ -263,15 +306,7 @@ export const useOperativeStore = create<OperativeState>((set, get) => ({
     )
     operativeMutationEpoch += 1
     invalidateOrgLoad(OPERATIVES_KEY)
-    const existing = get().operatives.find((row) => row.id === id)
-    const saved = {
-      ...existing,
-      ...operative,
-      id,
-      organizationId,
-      updatedAt: new Date(),
-    }
-    set({ operatives: [...get().operatives.filter((row) => row.id !== id), saved] })
+    set({ operatives: [...get().operatives.filter((row) => row.id !== id), mergedOperative] })
     return id
   },
 
