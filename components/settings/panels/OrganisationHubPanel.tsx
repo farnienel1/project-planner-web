@@ -11,6 +11,7 @@ import {
   formatInvoicingSubtitle,
   formatPayrollSubtitle,
   formatScheduleOptionsSubtitle,
+  coalesceOrganizationName,
   displayOrganizationName,
   loadOrganizationDetails,
   type OrganizationDetails,
@@ -90,7 +91,7 @@ export function OrganisationHubPanel({
   }, [organization?.id])
 
   const country = orgCountryLabel(details?.countryCode)
-  const orgName = displayOrganizationName(details?.name || organization?.name)
+  const orgName = displayOrganizationName(coalesceOrganizationName(details?.name, organization?.name))
 
   const owner = useMemo(() => {
     const creatorId = details?.creatorUserId
