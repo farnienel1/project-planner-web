@@ -58,6 +58,21 @@ export function canSeeVariations(role: StaffAccountRole): boolean {
   return isStaffAccount(role)
 }
 
+/**
+ * User Timesheets (Awaiting / Signed off / Exported). Staff open the list.
+ * Operatives stay on My Timesheets. Whose rows a manager sees is still the
+ * line-manager filter in each app — this is not `seesEveryJob`.
+ */
+export function canReviewUserTimesheets(role: StaffAccountRole): boolean {
+  return isStaffAccount(role)
+}
+
+/** Admins see every person's timesheet. Managers see only their reports. */
+export function seesEveryUserTimesheet(role: StaffAccountRole): boolean {
+  if (role.isOperativeMode) return false
+  return role.isSuperAdmin || role.isAdmin
+}
+
 /** Tracker reorder is an admin tool. There is no QS role on this app yet. */
 export function canManageVariationTracker(role: StaffAccountRole): boolean {
   if (role.isOperativeMode) return false

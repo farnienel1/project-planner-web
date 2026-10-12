@@ -12,6 +12,13 @@ import { LONDON_TIME_ZONE, unixStartOfDay, dayKey } from '@/lib/ios-parity/londo
 import { weekStartKey } from '@/lib/timesheets/timesheetWeekUtils'
 import { periodStartKey } from '@/lib/timesheets/paymentRunCopy'
 import {
+  parseTimesheetStatusFields,
+  pickTimesheetRowForPeriod,
+  resolveTimesheetExportedAtMs,
+  timesheetPeriodWriteFields,
+  timesheetStoredStartDayKey,
+} from '@/lib/canonical'
+import {
   emptyTimesheetDraft,
   type TimesheetDraft,
   type TimesheetExpenseEntry,
@@ -72,19 +79,9 @@ function parseFirestoreDate(value: unknown): Date | undefined {
  * Older web builds wrote `invoiceGeneratedAt` and (briefly) copied it onto `exportedAt`.
  * Treat near-simultaneous stamps as leftover generate, not a manager email export.
  */
-const INVOICE_EXPORT_LEFTOVER_MS = 60_000
-
 export function resolveTimesheetExportedAt(data: Record<string, unknown>): Date | null {
-  const exportedAt = parseFirestoreDate(data.exportedAt) || null
-  if (!exportedAt) return null
-  const invoiceGeneratedAt = parseFirestoreDate(data.invoiceGeneratedAt)
-  if (
-    invoiceGeneratedAt &&
-    Math.abs(exportedAt.getTime() - invoiceGeneratedAt.getTime()) <= INVOICE_EXPORT_LEFTOVER_MS
-  ) {
-    return null
-  }
-  return exportedAt
+  const ms = resolveTimesheetExportedAtMs(data)
+  return ms == null ? null : new Date(ms)
 }
 
 function asDecision(value: unknown): TimesheetManagerDecision {
@@ -247,31 +244,18 @@ export function draftFromFirestoreMap(
   options?: { includeSignatures?: boolean }
 ): TimesheetDraft {
   const includeSignatures = options?.includeSignatures !== false
-  const operativeSignedBy = typeof data.operativeSignedByName === 'string' ? data.operativeSignedByName.trim() : ''
-  const operativeSignature =
-    includeSignatures && typeof data.operativeSignatureImageBase64 === 'string'
-      ? data.operativeSignatureImageBase64.trim()
-      : ''
-  const managerSignedBy = typeof data.managerSignedByName === 'string' ? data.managerSignedByName.trim() : ''
-  const managerSignedByUserId =
-    typeof data.managerSignedByUserId === 'string' ? data.managerSignedByUserId.trim() : ''
-  const managerSignature =
-    includeSignatures && typeof data.managerSignatureImageBase64 === 'string'
-      ? data.managerSignatureImageBase64.trim()
-      : ''
-
-  const approvedAt = parseFirestoreDate(data.approvedAt)
+  const status = parseTimesheetStatusFields(data)
 
   return {
     managerNote: typeof data.managerNote === 'string' ? data.managerNote : '',
-    operativeSignedAt: parseFirestoreDate(data.operativeSignedAt) || null,
-    operativeSignedByName: operativeSignedBy || null,
-    operativeSignatureImageBase64: operativeSignature || null,
-    managerSignedAt: parseFirestoreDate(data.managerSignedAt) || approvedAt || null,
-    managerSignedByName: managerSignedBy || (typeof data.approvedByName === 'string' ? data.approvedByName : null),
-    managerSignedByUserId: managerSignedByUserId || null,
-    managerSignatureImageBase64: managerSignature || null,
-    exportedAt: resolveTimesheetExportedAt(data),
+    operativeSignedAt: status.operativeSignedAtMs ? new Date(status.operativeSignedAtMs) : null,
+    operativeSignedByName: status.operativeSignedByName || null,
+    operativeSignatureImageBase64: includeSignatures ? status.operativeSignatureImageBase64 || null : null,
+    managerSignedAt: status.managerSignedAtMs ? new Date(status.managerSignedAtMs) : null,
+    managerSignedByName: status.managerSignedByName || null,
+    managerSignedByUserId: status.managerSignedByUserId || null,
+    managerSignatureImageBase64: includeSignatures ? status.managerSignatureImageBase64 || null : null,
+    exportedAt: status.exportedAtMs ? new Date(status.exportedAtMs) : null,
     expenseEntries: Array.isArray(data.expenseEntries)
       ? data.expenseEntries
           .map((row) => mapExpense((row || {}) as Record<string, unknown>))
@@ -297,6 +281,8 @@ export function draftToFirestoreMap(draft: TimesheetDraft): Record<string, unkno
     managerSignedByName: draft.managerSignedByName || '',
     managerSignedByUserId: draft.managerSignedByUserId || '',
     managerSignatureImageBase64: draft.managerSignatureImageBase64 || '',
+    approvedAt: draft.managerSignedAt ? Timestamp.fromDate(draft.managerSignedAt) : null,
+    approvedByName: draft.managerSignedByName || '',
     exportedAt: draft.exportedAt ? Timestamp.fromDate(draft.exportedAt) : null,
     expenseEntries: draft.expenseEntries.map((entry) => ({
       id: entry.id,
@@ -375,6 +361,7 @@ export function timesheetDraftHasActivity(draft: TimesheetDraft): boolean {
 
 export type TimesheetPeriodCandidate = {
   weekStart: Date
+  endDayKey?: string | null
   draft: TimesheetDraft
   documentId?: string
 }
@@ -391,21 +378,16 @@ export function pickTimesheetDraftForPeriod(
   timeZone: string
 ): TimesheetPeriodCandidate | null {
   if (rows.length === 0) return null
-  const exact = rows.filter((row) => samePayPeriodStart(row.weekStart, periodStart, timeZone))
-  const signedExact = exact.find((row) => timesheetDraftHasActivity(row.draft))
-  if (signedExact) return signedExact
-  const startKey = dayKey(periodStart, timeZone)
-  const endKey = dayKey(periodEnd, timeZone)
-  const inside = rows
-    .filter((row) => {
-      const key = dayKey(row.weekStart, timeZone)
-      return key >= startKey && key <= endKey
-    })
-    .sort((a, b) => b.weekStart.getTime() - a.weekStart.getTime())
-  const signedInside = inside.find((row) => timesheetDraftHasActivity(row.draft))
-  if (signedInside) return signedInside
-  if (exact[0]) return exact[0]
-  return inside[0] || null
+  const period = { startDayKey: dayKey(periodStart, timeZone), endDayKey: dayKey(periodEnd, timeZone) }
+  const index = pickTimesheetRowForPeriod(
+    rows.map((row) => ({
+      startDayKey: timesheetStoredStartDayKey(row.weekStart, timeZone) || dayKey(row.weekStart, timeZone),
+      endDayKey: row.endDayKey || null,
+      hasActivity: timesheetDraftHasActivity(row.draft),
+    })),
+    period
+  )
+  return index >= 0 ? rows[index] || null : null
 }
 
 function weekStartMatches(data: Record<string, unknown>, weekStart: Date, timeZone: string): boolean {
@@ -451,10 +433,17 @@ async function loadTimesheetDraftByCandidates(
   return hit?.data ? rememberSource(draftFromFirestoreMap(hit.data, { includeSignatures }), hit.id) : null
 }
 
+function storedEndDayKey(data: Record<string, unknown>, timeZone: string): string | null {
+  if (typeof data.weekEndKey === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(data.weekEndKey)) return data.weekEndKey
+  const weekEnd = parseFirestoreDate(data.weekEnd)
+  return weekEnd ? dayKey(weekEnd, timeZone) : null
+}
+
 function timesheetStateFromDoc(
   documentId: string,
   data: Record<string, unknown>,
-  includeSignatures: boolean
+  includeSignatures: boolean,
+  timeZone: string = LONDON_TIME_ZONE
 ): TimesheetPeriodCandidate | null {
   if (!documentId.startsWith('timesheet_')) return null
   const weekStart = parseFirestoreDate(data.weekStart)
@@ -462,6 +451,7 @@ function timesheetStateFromDoc(
   return {
     documentId,
     weekStart,
+    endDayKey: storedEndDayKey(data, timeZone),
     draft: rememberSource(draftFromFirestoreMap(data, { includeSignatures }), documentId),
   }
 }
@@ -491,7 +481,7 @@ async function loadTimesheetCandidatesByUserIds(
       const data = entry.data() as Record<string, unknown>
       const userId = typeof data.userId === 'string' ? data.userId : ''
       if (!grouped.has(userId)) continue
-      const row = timesheetStateFromDoc(entry.id, data, includeSignatures)
+      const row = timesheetStateFromDoc(entry.id, data, includeSignatures, LONDON_TIME_ZONE)
       if (row) grouped.get(userId)?.push(row)
     }
   }
@@ -669,6 +659,7 @@ export async function saveTimesheetDraft({
   draft,
   timeZone = LONDON_TIME_ZONE,
   documentId = null,
+  weekEnd = null,
 }: {
   organizationId: string
   userId: string
@@ -676,6 +667,7 @@ export async function saveTimesheetDraft({
   draft: TimesheetDraft
   timeZone?: string
   documentId?: string | null
+  weekEnd?: Date | null
 }): Promise<void> {
   const canonicalId = timesheetDocId(userId, weekStart, timeZone)
   const ids = Array.from(
@@ -683,11 +675,18 @@ export async function saveTimesheetDraft({
       [canonicalId, documentId || timesheetSourceDocumentId(draft)].filter((id): id is string => Boolean(id))
     )
   )
+  const end = weekEnd || weekStart
+  const periodFields = timesheetPeriodWriteFields({
+    userId,
+    startDayKey: dayKey(weekStart, timeZone),
+    endDayKey: dayKey(end, timeZone),
+  })
   const payload = sanitizeForFirestore({
     ...draftToFirestoreMap(draft),
+    ...periodFields,
     userId,
     weekStart: Timestamp.fromDate(weekStart),
-    weekStartKey: dayKey(weekStart, timeZone),
+    weekEnd: Timestamp.fromDate(end),
     updatedAt: Timestamp.now(),
   }) as Record<string, unknown>
   await Promise.all(
@@ -699,6 +698,7 @@ export type TimesheetStateRow = {
   documentId: string
   userId: string
   weekStart: Date
+  endDayKey?: string | null
   draft: TimesheetDraft
 }
 
@@ -784,6 +784,7 @@ export async function listTimesheetStates(
         documentId: entry.id,
         userId,
         weekStart,
+        endDayKey: storedEndDayKey(data, LONDON_TIME_ZONE),
         draft: draftFromFirestoreMap(data, LIST_DRAFT_OPTIONS),
       })
     }
@@ -798,6 +799,7 @@ export type ExportedTimesheetHistoryRow = {
   id: string
   user: import('@/types').User
   weekStart: Date
+  endDayKey?: string | null
   draft: TimesheetDraft
 }
 
@@ -805,11 +807,12 @@ function ingestExportedRow(
   byId: Map<string, ExportedTimesheetHistoryRow>,
   member: import('@/types').User,
   weekStart: Date,
-  draft: TimesheetDraft
+  draft: TimesheetDraft,
+  endDayKey?: string | null
 ) {
   if (!draft.exportedAt) return
   const id = `${member.id}|${Math.floor(weekStart.getTime() / 1000)}`
-  byId.set(id, { id, user: member, weekStart, draft })
+  byId.set(id, { id, user: member, weekStart, endDayKey, draft })
 }
 
 export async function loadExportedTimesheetHistory({
@@ -824,7 +827,13 @@ export async function loadExportedTimesheetHistory({
   const byUserId = new Map(users.map((user) => [user.id, user]))
 
   const ingestData = (member: import('@/types').User, weekStart: Date, data: Record<string, unknown>) => {
-    ingestExportedRow(byId, member, weekStart, draftFromFirestoreMap(data, LIST_DRAFT_OPTIONS))
+    ingestExportedRow(
+      byId,
+      member,
+      weekStart,
+      draftFromFirestoreMap(data, LIST_DRAFT_OPTIONS),
+      storedEndDayKey(data, LONDON_TIME_ZONE)
+    )
   }
 
   try {
@@ -859,7 +868,7 @@ export async function loadExportedTimesheetHistory({
     return { member, rows }
   })
   for (const { member, rows } of batches) {
-    for (const row of rows) ingestExportedRow(byId, member, row.weekStart, row.draft)
+    for (const row of rows) ingestExportedRow(byId, member, row.weekStart, row.draft, row.endDayKey)
   }
 
   return Array.from(byId.values()).sort((a, b) => {

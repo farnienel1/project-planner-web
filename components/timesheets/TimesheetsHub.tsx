@@ -32,12 +32,13 @@ import {
 import {
   currentPaymentRunCopy,
   formatPaymentPeriodLine,
-  listPreviousPayPeriods,
+  listSelectablePayPeriods,
   periodStartKey,
 } from '@/lib/timesheets/paymentRunCopy'
 import { TimesheetsScreen, type TeamTimesheetTab } from '@/components/timesheets/TimesheetsScreen'
 import { TimesheetPeriodPage } from '@/components/timesheets/TimesheetPeriodPage'
-import { dateFromDayKey } from '@/lib/ios-parity/londonTime'
+import { dateFromDayKey, dayKey } from '@/lib/ios-parity/londonTime'
+import { resolveTimesheetPeriod, timesheetListBucket, timesheetPeriodFromInvoicing } from '@/lib/canonical'
 import { ianaTimeZoneForCountry } from '@/lib/orgTime/orgTimeZone'
 import { computeInvoicingPeriod } from '@/lib/warnings/warningLookahead'
 import { loadTimesheetDrafts, loadTimesheetDraftsForStarts, listTimesheetStates } from '@/lib/timesheets/timesheetStorage'
@@ -52,7 +53,7 @@ import {
   TIMESHEETS_HUB_PATH,
   legacyTimesheetRedirect,
   timesheetSurfaceFromPath,
-  timesheetLinkShouldHardReset,
+  timesheetNestedParentHref,
   timesheetsMineHref,
   timesheetsTeamHref,
 } from '@/lib/timesheets/timesheetRoutes'
@@ -91,6 +92,7 @@ export function TimesheetsHub() {
   const pathSurface = timesheetSurfaceFromPath(pathname)
   const surface = pathSurface === 'hub' ? null : pathSurface
   const periodParam = searchParams.get('period')
+  const periodEndParam = searchParams.get('periodEnd')
   const userParam = searchParams.get('user')
   const tabParam = (searchParams.get('tab') as TeamTimesheetTab | null) || 'awaiting'
   const { user, organization } = useAuthStore()
@@ -121,6 +123,7 @@ export function TimesheetsHub() {
 
   useEffect(() => {
     if (surface !== 'team' || !user) return
+    if (usersLoading || users.length === 0) return
     if (!canAccessOperativeTimesheets(user, usersLoading, users)) router.replace(TIMESHEETS_HUB_PATH)
   }, [surface, user, users, usersLoading, router])
 
@@ -167,17 +170,29 @@ export function TimesheetsHub() {
     [invoicing, timeZone]
   )
   const pastPeriods = useMemo(
-    () => listPreviousPayPeriods(invoicing, new Date(), 120, timeZone),
-    [invoicing, timeZone]
+    () =>
+      listSelectablePayPeriods(invoicing, new Date(), 120, timeZone).filter(
+        (period) =>
+          `${periodStartKey(period.start, timeZone)}|${dayKey(period.end, timeZone)}` !==
+          `${periodStartKey(currentPeriod.start, timeZone)}|${dayKey(currentPeriod.end, timeZone)}`
+      ),
+    [invoicing, timeZone, currentPeriod]
   )
   const selectedPeriod = useMemo(() => {
     if (!periodParam) return currentPeriod
+    if (periodEndParam) {
+      return { start: dateFromDayKey(periodParam, timeZone), end: dateFromDayKey(periodEndParam, timeZone) }
+    }
+    const match = [currentPeriod, ...pastPeriods].find(
+      (period) => periodStartKey(period.start, timeZone) === periodParam
+    )
+    if (match) return match
     try {
       return computeInvoicingPeriod(dateFromDayKey(periodParam, timeZone), invoicing, timeZone)
     } catch {
       return currentPeriod
     }
-  }, [periodParam, invoicing, currentPeriod, timeZone])
+  }, [periodParam, periodEndParam, invoicing, currentPeriod, pastPeriods, timeZone])
 
   const legacyRedirect = pathSurface === 'hub' ? legacyTimesheetRedirect(searchParams.get('surface'), searchParams.toString()) : null
 
@@ -217,7 +232,7 @@ export function TimesheetsHub() {
     return (
       <div className="space-y-5 pb-10">
         <TimesheetsNavBar
-          href={periodParam ? timesheetsMineHref() : TIMESHEETS_HUB_PATH}
+          href={timesheetNestedParentHref({ surface: 'mine', hasDetail: Boolean(periodParam) })}
           title={periodParam ? 'Timesheet' : 'My Timesheets'}
           backLabel={periodParam ? 'My Timesheets' : undefined}
         />
@@ -245,7 +260,7 @@ export function TimesheetsHub() {
     return (
       <div className="space-y-5 pb-10">
         <TimesheetsNavBar
-          href={userParam ? timesheetsTeamHref({ tab }) : TIMESHEETS_HUB_PATH}
+          href={timesheetNestedParentHref({ surface: 'team', hasDetail: Boolean(userParam), tab })}
           title={selectedUser ? 'Review Timesheet' : hasAdminAccess(user) ? 'User Timesheets' : 'Operative Timesheets'}
           backLabel={
             userParam ? (hasAdminAccess(user) ? 'User Timesheets' : 'Operative Timesheets') : undefined
@@ -407,19 +422,36 @@ function MineTimesheetsList({
     setDiscoveredPast(pastPeriods)
   }, [pastPeriods])
 
+  const periodKey = (period: { start: Date; end: Date }) =>
+    `${periodStartKey(period.start, timeZone)}|${dayKey(period.end, timeZone)}`
+
   useEffect(() => {
     if (!organizationId) return
     let cancelled = false
-    const currentKey = periodStartKey(currentPeriod.start, timeZone)
+    const currentKey = periodKey(currentPeriod)
     listTimesheetStates(organizationId, subject.id, 400).then(async (rows) => {
       if (cancelled) return
       const byKey = new Map<string, { start: Date; end: Date }>()
-      for (const period of pastPeriods) {
-        byKey.set(periodStartKey(period.start, timeZone), period)
-      }
+      for (const period of pastPeriods) byKey.set(periodKey(period), period)
+      const live = timesheetPeriodFromInvoicing({
+        paymentRunMode: invoicing.paymentRunMode,
+        ranges: invoicing.paymentRunDateRanges,
+        recurringRunStartDay: invoicing.recurringRunStartDay,
+        recurringRunEndDay: invoicing.recurringRunEndDay,
+        referenceDayKey: dayKey(new Date(), timeZone),
+        timeZone,
+      })
       for (const row of rows) {
-        const period = computeInvoicingPeriod(row.weekStart, invoicing, timeZone)
-        const key = periodStartKey(period.start, timeZone)
+        const resolved = resolveTimesheetPeriod({
+          storedStartDayKey: dayKey(row.weekStart, timeZone),
+          storedEndDayKey: row.endDayKey,
+          currentPeriod: live,
+        })
+        const period = {
+          start: dateFromDayKey(resolved.startDayKey, timeZone),
+          end: dateFromDayKey(resolved.endDayKey, timeZone),
+        }
+        const key = periodKey(period)
         if (key === currentKey) continue
         if (!byKey.has(key)) byKey.set(key, period)
       }
@@ -427,7 +459,7 @@ function MineTimesheetsList({
       setDiscoveredPast(merged)
       const next = new Map<string, TimesheetDraft>()
       next.set(currentKey, emptyTimesheetDraft())
-      for (const period of merged) next.set(periodStartKey(period.start, timeZone), emptyTimesheetDraft())
+      for (const period of merged) next.set(periodKey(period), emptyTimesheetDraft())
       if (rows.length === 0) {
         const loaded = await loadTimesheetDraftsForStarts(
           organizationId,
@@ -436,13 +468,20 @@ function MineTimesheetsList({
           timeZone
         )
         if (cancelled) return
-        for (const [key, draft] of loaded) next.set(key, draft)
+        for (const [startKey, draft] of loaded) {
+          const match = [currentPeriod, ...merged].find((period) => periodStartKey(period.start, timeZone) === startKey)
+          if (match) next.set(periodKey(match), draft)
+        }
         setDrafts(next)
         return
       }
       for (const row of rows) {
-        const period = computeInvoicingPeriod(row.weekStart, invoicing, timeZone)
-        const key = periodStartKey(period.start, timeZone)
+        const resolved = resolveTimesheetPeriod({
+          storedStartDayKey: dayKey(row.weekStart, timeZone),
+          storedEndDayKey: row.endDayKey,
+          currentPeriod: live,
+        })
+        const key = `${resolved.startDayKey}|${resolved.endDayKey}`
         if (!next.has(key)) continue
         next.set(key, row.draft)
       }
@@ -454,11 +493,11 @@ function MineTimesheetsList({
   }, [organizationId, subject.id, currentPeriod, pastPeriods, invoicing, timeZone])
 
   const pending = [currentPeriod, ...discoveredPast].filter((period) => {
-    const draft = drafts.get(periodStartKey(period.start, timeZone))
+    const draft = drafts.get(periodKey(period))
     return draft ? awaitingManagerSignOff(draft, subject) : false
   })
-  const pendingKeys = new Set(pending.map((period) => periodStartKey(period.start, timeZone)))
-  const pastVisible = discoveredPast.filter((period) => !pendingKeys.has(periodStartKey(period.start, timeZone)))
+  const pendingKeys = new Set(pending.map((period) => periodKey(period)))
+  const pastVisible = discoveredPast.filter((period) => !pendingKeys.has(periodKey(period)))
 
   return (
     <div className="space-y-4">
@@ -469,7 +508,9 @@ function MineTimesheetsList({
         detail="Review bookings, add extras, and sign your timesheet."
         tint="text-[var(--blue)] bg-[var(--blue-t)]"
         onClick={() =>
-          router.push(timesheetsMineHref(periodStartKey(currentPeriod.start, timeZone)))
+          router.push(
+            timesheetsMineHref(periodStartKey(currentPeriod.start, timeZone), dayKey(currentPeriod.end, timeZone))
+          )
         }
       />
       {pending.length > 0 ? (
@@ -477,14 +518,14 @@ function MineTimesheetsList({
           <p className="px-1 text-[11px] font-bold uppercase tracking-[0.4px] text-[var(--ink3)]">Pending timesheets</p>
           {pending.map((period) => (
             <HubCard
-              key={`pending-${periodStartKey(period.start, timeZone)}`}
+              key={`pending-${periodKey(period)}`}
               icon={<ClockIcon className="h-6 w-6" />}
               title={formatPaymentPeriodLine(period.start, period.end, timeZone)}
               subtitle="Timesheet pending manager signature"
               detail="You signed — waiting for your line manager to counter-sign."
               tint="text-amber-600 bg-amber-50"
               onClick={() =>
-                router.push(timesheetsMineHref(periodStartKey(period.start, timeZone)))
+                router.push(timesheetsMineHref(periodStartKey(period.start, timeZone), dayKey(period.end, timeZone)))
               }
             />
           ))}
@@ -494,17 +535,17 @@ function MineTimesheetsList({
         <div className="space-y-2">
           <p className="px-1 text-[11px] font-bold uppercase tracking-[0.4px] text-[var(--ink3)]">Past timesheets</p>
           {pastVisible.map((period) => {
-            const draft = drafts.get(periodStartKey(period.start, timeZone))
+            const draft = drafts.get(periodKey(period))
             return (
               <HubCard
-                key={periodStartKey(period.start, timeZone)}
+                key={periodKey(period)}
                 icon={<ClockIcon className="h-6 w-6" />}
                 title={formatPaymentPeriodLine(period.start, period.end, timeZone)}
                 subtitle={pastSubtitle(draft, subject)}
                 detail="View breakdown, signatures, and generate invoice again."
                 tint="text-slate-500 bg-slate-100"
                 onClick={() =>
-                  router.push(timesheetsMineHref(periodStartKey(period.start, timeZone)))
+                  router.push(timesheetsMineHref(periodStartKey(period.start, timeZone), dayKey(period.end, timeZone)))
                 }
               />
             )
@@ -531,12 +572,7 @@ function TimesheetsNavBar({
         <button
           type="button"
           onClick={() => {
-            if (timesheetLinkShouldHardReset(window.location.pathname, window.location.search, href)) {
-              const target = new URL(href, window.location.origin)
-              window.location.assign(`${target.pathname}${target.search}`)
-              return
-            }
-            router.push(href)
+            router.replace(href)
           }}
           className="btn sm ghost"
         >
@@ -638,10 +674,22 @@ function ManagerTimesheetsTile({
         const draft = picked?.draft
         const member = picked?.member
         if (!draft || !member) continue
-        const needsManager = groupHasLineManager(group)
-        if (draft.exportedAt) exported += 1
-        else if (draft.operativeSignedAt && (!needsManager || draft.managerSignedAt)) signed += 1
-        else if (draft.operativeSignedAt && needsManager && !draft.managerSignedAt) awaiting += 1
+        const bucket = timesheetListBucket(
+          {
+            operativeSignedAtMs: draft.operativeSignedAt?.getTime() ?? null,
+            operativeSignedByName: draft.operativeSignedByName || '',
+            operativeSignatureImageBase64: draft.operativeSignatureImageBase64 || '',
+            managerSignedAtMs: draft.managerSignedAt?.getTime() ?? null,
+            managerSignedByName: draft.managerSignedByName || '',
+            managerSignedByUserId: draft.managerSignedByUserId || '',
+            managerSignatureImageBase64: draft.managerSignatureImageBase64 || '',
+            exportedAtMs: draft.exportedAt?.getTime() ?? null,
+          },
+          groupHasLineManager(group)
+        )
+        if (bucket === 'exported') exported += 1
+        else if (bucket === 'signed') signed += 1
+        else if (bucket === 'awaiting') awaiting += 1
       }
       setStats({ awaiting, signed, exported })
     }).catch(() => {

@@ -66,11 +66,13 @@ export { leaveCoverageRows, leaveSlotKind } from './leaveCoverage'
 export {
   canEditWorkCatalogue,
   canManageVariationTracker,
+  canReviewUserTimesheets,
   canSeeVariations,
   canViewStaffWarnings,
   isStaffAccount,
   receivesJobNotification,
   seesEveryJob,
+  seesEveryUserTimesheet,
 } from './staffAccess'
 
 export {
@@ -163,22 +165,29 @@ export type {
 
 export {
   DEFAULT_USER_NOTIFICATION_PREFERENCES,
+  DEVICE_PUSH_NOTIFICATION_TYPES,
   LEGACY_NOTIFICATION_PREFERENCE_ALIASES,
+  NOTIFICATION_ICON_BADGE_CLEARS_ON_FOREGROUND,
   NOTIFICATION_PREFERENCE_KEYS,
+  devicePushNotificationTypes,
+  notificationDeliversDevicePush,
   notificationDestination,
   notificationPreferenceAllowsDelivery,
   notificationPreferenceKeyForType,
   parseUserNotificationPreferences,
+  unreadNotificationBadgeCount,
   userNotificationPreferenceFieldPatch,
   userNotificationPreferencesToFirestore,
 } from './notificationPreferences'
 
 export type {
+  DevicePushNotificationType,
   NotificationDestination,
   NotificationDestinationInput,
   NotificationDestinationKind,
   NotificationPreferenceKey,
   NotificationWorkCatalogue,
+  UnreadNotificationBadgeRow,
   UserNotificationPreferences,
 } from './notificationPreferences'
 
@@ -324,3 +333,52 @@ export type {
   TimesheetSubmissionSettings,
   TimesheetSubmissionWeekday,
 } from './timesheetSubmission'
+
+export {
+  TIMESHEET_DOCUMENT_FIELDS,
+  TIMESHEET_DOCUMENT_PREFIX,
+  TIMESHEET_EXPORT_STORAGE_FOLDER,
+  TIMESHEET_INVOICE_EXPORT_LEFTOVER_MS,
+  TIMESHEET_LIST_BUCKETS,
+  TIMESHEET_SETTINGS_COLLECTION,
+  TIMESHEET_SIGNED_AFTER_MS,
+  isTimesheetAwaitingSignOff,
+  isTimesheetExported,
+  isTimesheetFullySigned,
+  isTimesheetManagerSigned,
+  isTimesheetOperativeSigned,
+  parsePaymentRunHistory,
+  parseTimesheetStatusFields,
+  paymentRunHistoryAfterChange,
+  paymentRunHistoryToFirestore,
+  pickTimesheetRowForPeriod,
+  resolveTimesheetExportedAtMs,
+  resolveTimesheetPeriod,
+  selectableTimesheetPaymentRunPeriods,
+  timesheetBelongsToOrganization,
+  timesheetDocumentId,
+  timesheetExportStoragePath,
+  timesheetExportWriteFields,
+  timesheetListBucket,
+  timesheetPaymentRunPeriodsFromWindow,
+  timesheetPeriodContainsDay,
+  timesheetPeriodFromInvoicing,
+  timesheetPeriodKey,
+  timesheetPeriodMatches,
+  timesheetPeriodWriteFields,
+  timesheetRequiresManagerCounterSign,
+  timesheetSignOffWriteFields,
+  timesheetStatusWriteFields,
+  timesheetStoredStartDayKey,
+  timesheetTimestampMs,
+} from './timesheetPeriod'
+
+export type {
+  PaymentRunHistoryWindow,
+  TimesheetListBucket,
+  TimesheetPaymentRunPeriod,
+  TimesheetPaymentRunWindow,
+  TimesheetPeriodCandidateRow,
+  TimesheetPeriodIdentity,
+  TimesheetStatusFields,
+} from './timesheetPeriod'

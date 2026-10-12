@@ -2,10 +2,12 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   TIMESHEETS_HUB_PATH,
+  TIMESHEETS_MINE_PATH,
   legacyTimesheetRedirect,
   timesheetSurfaceFromPath,
   timesheetLinkShouldHardReset,
   timesheetsMineHref,
+  timesheetNestedParentHref,
   timesheetsTeamHref,
 } from './timesheetRoutes.ts'
 
@@ -20,6 +22,12 @@ test('timesheet paths keep the hub distinct from user timesheets', () => {
     '/dashboard/timesheets/team?tab=awaiting&user=op-1&period=2026-09-01'
   )
   assert.equal(timesheetsTeamHref({ tab: 'awaiting' }), '/dashboard/timesheets/team?tab=awaiting')
+  assert.equal(
+    timesheetNestedParentHref({ surface: 'team', hasDetail: true, tab: 'signed' }),
+    '/dashboard/timesheets/team?tab=signed'
+  )
+  assert.equal(timesheetNestedParentHref({ surface: 'team', hasDetail: false }), TIMESHEETS_HUB_PATH)
+  assert.equal(timesheetNestedParentHref({ surface: 'mine', hasDetail: true }), TIMESHEETS_MINE_PATH)
 })
 
 test('legacy surface query redirects onto the nested path and drops surface', () => {

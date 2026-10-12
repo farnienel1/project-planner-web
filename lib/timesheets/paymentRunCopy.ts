@@ -10,6 +10,7 @@ import { capitalizeDay, WEEKDAY_OPTIONS } from '@/lib/settings/organizationSetti
 import {
   LONDON_TIME_ZONE,
   addLondonDays,
+  dateFromDayKey,
   dayKey,
   daysInLondonMonth,
   londonDateParts,
@@ -18,6 +19,7 @@ import {
   formatLongDay,
 } from '@/lib/ios-parity/londonTime'
 import { computeInvoicingPeriod } from '@/lib/warnings/warningLookahead'
+import { selectableTimesheetPaymentRunPeriods } from '@/lib/canonical'
 
 export type PaymentRunCardCopy = {
   periodLine: string
@@ -106,6 +108,34 @@ export function listPreviousPayPeriods(
 
 export function periodStartKey(date: Date, timeZone: string = LONDON_TIME_ZONE): string {
   return dayKey(date, timeZone)
+}
+
+export function listSelectablePayPeriods(
+  invoicing: OrgInvoicingSettings,
+  referenceDate: Date = new Date(),
+  count = 120,
+  timeZone: string = LONDON_TIME_ZONE,
+  observedPeriods: Array<{ start: Date; end: Date }> = []
+): Array<{ start: Date; end: Date }> {
+  return selectableTimesheetPaymentRunPeriods({
+    current: {
+      paymentRunMode: invoicing.paymentRunMode,
+      ranges: invoicing.paymentRunDateRanges,
+      recurringRunStartDay: invoicing.recurringRunStartDay,
+      recurringRunEndDay: invoicing.recurringRunEndDay,
+    },
+    historicalWindows: invoicing.paymentRunHistory,
+    observedPeriods: observedPeriods.map((period) => ({
+      startDayKey: dayKey(period.start, timeZone),
+      endDayKey: dayKey(period.end, timeZone),
+    })),
+    referenceDayKey: dayKey(referenceDate, timeZone),
+    lookbackCount: count,
+    timeZone,
+  }).map((period) => ({
+    start: dateFromDayKey(period.startDayKey, timeZone),
+    end: dateFromDayKey(period.endDayKey, timeZone),
+  }))
 }
 
 function paymentDayNumbers(dates: string[]): number[] {

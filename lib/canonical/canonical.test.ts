@@ -50,10 +50,12 @@ import { leaveCoverageRows } from './leaveCoverage.ts'
 import {
   canEditWorkCatalogue,
   canManageVariationTracker,
+  canReviewUserTimesheets,
   canSeeVariations,
   canViewStaffWarnings,
   receivesJobNotification,
   seesEveryJob,
+  seesEveryUserTimesheet,
   type StaffAccountRole,
 } from './staffAccess.ts'
 import {
@@ -81,9 +83,13 @@ import {
 } from './userProfile.ts'
 import {
   DEFAULT_USER_NOTIFICATION_PREFERENCES,
+  NOTIFICATION_ICON_BADGE_CLEARS_ON_FOREGROUND,
+  devicePushNotificationTypes,
+  notificationDeliversDevicePush,
   notificationDestination,
   notificationPreferenceAllowsDelivery,
   parseUserNotificationPreferences,
+  unreadNotificationBadgeCount,
   userNotificationPreferenceFieldPatch,
   userNotificationPreferencesToFirestore,
 } from './notificationPreferences.ts'
@@ -134,6 +140,23 @@ import {
   timesheetSubmissionNoticeCopy,
   weekdayOffsetBefore,
 } from './timesheetSubmission.ts'
+import {
+  isTimesheetAwaitingSignOff,
+  isTimesheetFullySigned,
+  parseTimesheetStatusFields,
+  paymentRunHistoryAfterChange,
+  pickTimesheetRowForPeriod,
+  resolveTimesheetExportedAtMs,
+  resolveTimesheetPeriod,
+  selectableTimesheetPaymentRunPeriods,
+  timesheetDocumentId,
+  timesheetExportStoragePath,
+  timesheetListBucket,
+  timesheetPeriodContainsDay,
+  timesheetPeriodFromInvoicing,
+  timesheetPeriodMatches,
+  timesheetSignOffWriteFields,
+} from './timesheetPeriod.ts'
 
 const superAdmin: StaffAccountRole = { isSuperAdmin: true, isAdmin: true, isManager: false, isOperativeMode: false }
 const admin: StaffAccountRole = { isSuperAdmin: false, isAdmin: true, isManager: false, isOperativeMode: false }
@@ -1062,6 +1085,14 @@ test('the iOS JavaScript bundle exposes the standard-day, leave and dismiss rule
     'sessionMembershipIds',
     'shouldClearRememberedOrganization',
     'webSessionOrganizationStorageKey',
+    'selectableTimesheetPaymentRunPeriods',
+    'timesheetListBucket',
+    'timesheetDocumentId',
+    'parseTimesheetStatusFields',
+    'paymentRunHistoryAfterChange',
+    'pickTimesheetRowForPeriod',
+    'canReviewUserTimesheets',
+    'seesEveryUserTimesheet',
   ]) {
     assert.equal(typeof bundle[name], 'function', `${name} is exported from the packed script`)
   }
@@ -1148,12 +1179,18 @@ test('every admin and manager sees every job and every warning; operatives and r
     assert.equal(seesEveryJob(role), true)
     assert.equal(canViewStaffWarnings(role), true)
     assert.equal(canSeeVariations(role), true)
+    assert.equal(canReviewUserTimesheets(role), true)
   }
   for (const role of [operative, noRole]) {
     assert.equal(seesEveryJob(role), false)
     assert.equal(canViewStaffWarnings(role), false)
     assert.equal(canSeeVariations(role), false)
+    assert.equal(canReviewUserTimesheets(role), false)
+    assert.equal(seesEveryUserTimesheet(role), false)
   }
+  assert.equal(seesEveryUserTimesheet(admin), true)
+  assert.equal(seesEveryUserTimesheet(superAdmin), true)
+  assert.equal(seesEveryUserTimesheet(manager), false)
   // Operative mode wins over a stale admin or manager flag.
   assert.equal(seesEveryJob({ ...admin, isOperativeMode: true }), false)
   assert.equal(seesEveryJob({ ...manager, isOperativeMode: true }), false)
@@ -1975,6 +2012,13 @@ test('the iOS JavaScript bundle applies the same warning date order as this modu
         role: string
       }) => { kind: string; relatedId?: string; dayKey?: string }
       parseUserNotificationPreferences: (raw: Record<string, unknown> | undefined) => { bookingClashes: boolean }
+      notificationDeliversDevicePush: (type: string) => boolean
+      devicePushNotificationTypes: () => string[]
+      unreadNotificationBadgeCount: (
+        notifications: ReadonlyArray<{ userId?: string; isRead?: boolean }>,
+        userId: string
+      ) => number
+      NOTIFICATION_ICON_BADGE_CLEARS_ON_FOREGROUND: boolean
     }
   } = {}
   runInContext(source, createContext(sandbox))
@@ -2016,6 +2060,20 @@ test('the iOS JavaScript bundle applies the same warning date order as this modu
     }).kind,
     'dailyOverviewDay'
   )
+  assert.equal(bundle.notificationDeliversDevicePush('booking_created'), true)
+  assert.equal(bundle.notificationDeliversDevicePush('material_order_cut_off'), false)
+  assert.ok(bundle.devicePushNotificationTypes().includes('timesheet_submission_reminder'))
+  assert.equal(
+    bundle.unreadNotificationBadgeCount(
+      [
+        { userId: 'u1', isRead: false },
+        { userId: 'u2', isRead: false },
+      ],
+      'u1'
+    ),
+    1
+  )
+  assert.equal(bundle.NOTIFICATION_ICON_BADGE_CLEARS_ON_FOREGROUND, true)
 })
 
 test('user notification preferences parse defaults, aliases, and dotted writes', () => {
@@ -2097,4 +2155,247 @@ test('a booking without a related id falls back, and an unknown type opens notif
     notificationDestination({ type: 'timesheet_submission_reminder', dayKey: '2026-10-17', role: 'operative' }),
     { kind: 'timesheetMine', dayKey: '2026-10-17' }
   )
+})
+
+test('device push uses existing inbox types and leaves on-device clocks local', () => {
+  const push = devicePushNotificationTypes()
+  for (const type of [
+    'booking_created',
+    'booked_onto_job',
+    'booking_clash',
+    'task_created',
+    'task_completed',
+    'deadline_assigned',
+    'holiday_request_submitted',
+    'holiday_request_approved',
+    'holiday_request_declined',
+    'timesheet_pending_manager_signoff',
+    'timesheet_signed_by_manager',
+    'toolbox_talk_issued',
+    'hs_toolbox_reminder',
+    'material_order_placed',
+    'material_order_created',
+    'variation',
+    'warning_removed',
+    'operative_created',
+    'manager_created',
+    'client_created',
+    'project_created',
+    'small_works_created',
+    'timesheet_submission_reminder',
+  ]) {
+    assert.equal(notificationDeliversDevicePush(type), true, type)
+    assert.ok(push.includes(type), type)
+  }
+  for (const type of [
+    'material_order_cut_off',
+    'qualification_expiry',
+    'deadline_reminder',
+    'deadline_due',
+  ]) {
+    assert.equal(notificationDeliversDevicePush(type), false, type)
+    assert.equal(push.includes(type), false, type)
+  }
+  assert.equal(notificationDeliversDevicePush('line_manager_peer_update'), false)
+  assert.equal(notificationDeliversDevicePush('not_a_real_type'), false)
+  assert.equal(NOTIFICATION_ICON_BADGE_CLEARS_ON_FOREGROUND, true)
+})
+
+test('unread notification badge counts only that user and leaves read rows out', () => {
+  const rows = [
+    { userId: 'u1', isRead: false },
+    { userId: 'u1', isRead: true },
+    { userId: 'u2', isRead: false },
+    { userId: '', isRead: false },
+    { userId: 'u1' },
+  ]
+  assert.equal(unreadNotificationBadgeCount(rows, 'u1'), 3)
+  assert.equal(unreadNotificationBadgeCount(rows, 'u2'), 2)
+  assert.equal(unreadNotificationBadgeCount(rows, ''), 0)
+  assert.equal(unreadNotificationBadgeCount(undefined, 'u1'), 0)
+})
+
+test('timesheet status is signed only after a real operative sign and manager counter-sign when required', () => {
+  const unsigned = parseTimesheetStatusFields({})
+  assert.equal(timesheetListBucket(unsigned, true), 'unsigned')
+  const awaiting = parseTimesheetStatusFields({
+    operativeSignedAt: '2026-10-02T09:00:00.000Z',
+    operativeSignedByName: 'Ada',
+  })
+  assert.equal(isTimesheetAwaitingSignOff(awaiting, true), true)
+  assert.equal(isTimesheetFullySigned(awaiting, true), false)
+  assert.equal(timesheetListBucket(awaiting, true), 'awaiting')
+  const signed = parseTimesheetStatusFields({
+    operativeSignedAt: '2026-10-02T09:00:00.000Z',
+    operativeSignedByName: 'Ada',
+    managerSignedAt: '2026-10-03T09:00:00.000Z',
+    managerSignedByName: 'Pat',
+  })
+  assert.equal(timesheetListBucket(signed, true), 'signed')
+  const exported = parseTimesheetStatusFields({
+    operativeSignedAt: '2026-10-02T09:00:00.000Z',
+    operativeSignedByName: 'Ada',
+    managerSignedAt: '2026-10-03T09:00:00.000Z',
+    managerSignedByName: 'Pat',
+    exportedAt: '2026-10-04T09:00:00.000Z',
+  })
+  assert.equal(timesheetListBucket(exported, true), 'exported')
+  const selfSigned = parseTimesheetStatusFields({
+    operativeSignedAt: '2026-10-02T09:00:00.000Z',
+    operativeSignedByName: 'Ada',
+  })
+  assert.equal(isTimesheetFullySigned(selfSigned, false), true)
+  assert.equal(timesheetListBucket(selfSigned, false), 'signed')
+  assert.equal(timesheetListBucket(parseTimesheetStatusFields({ operativeSignedAt: '2019-12-31T00:00:00.000Z', operativeSignedByName: 'Old' }), false), 'unsigned')
+})
+
+test('web managerSignedAt and iOS approvedAt are the same signed-off status', () => {
+  const fromWeb = parseTimesheetStatusFields({
+    operativeSignedAt: '2026-10-02T09:00:00.000Z',
+    operativeSignedByName: 'Ada',
+    managerSignedAt: '2026-10-03T10:00:00.000Z',
+    managerSignedByName: 'Pat',
+  })
+  const fromIosAlias = parseTimesheetStatusFields({
+    operativeSignedAt: '2026-10-02T09:00:00.000Z',
+    operativeSignedByName: 'Ada',
+    approvedAt: '2026-10-03T10:00:00.000Z',
+    approvedByName: 'Pat',
+  })
+  assert.equal(timesheetListBucket(fromWeb, true), 'signed')
+  assert.equal(timesheetListBucket(fromIosAlias, true), 'signed')
+  assert.equal(fromWeb.managerSignedAtMs, fromIosAlias.managerSignedAtMs)
+  const written = timesheetSignOffWriteFields({
+    role: 'manager',
+    signedAtMs: Date.parse('2026-10-03T10:00:00.000Z'),
+    signedByName: 'Pat',
+    signedByUserId: 'mgr',
+  })
+  assert.equal(written.managerSignedAtMs, written.approvedAtMs)
+  assert.equal(written.approvedByName, 'Pat')
+})
+
+test('invoiceGeneratedAt leftover is not exported; a later exportedAt is', () => {
+  const generated = Date.parse('2026-10-03T10:00:00.000Z')
+  assert.equal(resolveTimesheetExportedAtMs({ invoiceGeneratedAt: generated }), null)
+  assert.equal(
+    resolveTimesheetExportedAtMs({ exportedAt: generated, invoiceGeneratedAt: generated }),
+    null
+  )
+  assert.equal(
+    resolveTimesheetExportedAtMs({
+      exportedAt: Date.parse('2026-10-03T12:00:00.000Z'),
+      invoiceGeneratedAt: generated,
+    }),
+    Date.parse('2026-10-03T12:00:00.000Z')
+  )
+})
+
+test('timesheet period identity stays on the stored window after a pay-run mode change', () => {
+  const firstToSeventh = timesheetPeriodFromInvoicing({
+    paymentRunMode: 'date_ranges',
+    ranges: [
+      { startDay: 1, endDay: 7, startDate: 1, endDate: 7 },
+      { startDay: 8, endDay: 31, startDate: 8, endDate: 31 },
+    ],
+    referenceDayKey: '2026-10-03',
+    timeZone: 'Europe/London',
+  })
+  assert.deepEqual(firstToSeventh, { startDayKey: '2026-10-01', endDayKey: '2026-10-07' })
+  const liveHalfMonth = timesheetPeriodFromInvoicing({
+    paymentRunMode: 'date_ranges',
+    ranges: [
+      { startDay: 1, endDay: 15, startDate: 1, endDate: 15 },
+      { startDay: 16, endDay: 31, startDate: 16, endDate: 31 },
+    ],
+    referenceDayKey: '2026-10-03',
+    timeZone: 'Europe/London',
+  })
+  assert.deepEqual(liveHalfMonth, { startDayKey: '2026-10-01', endDayKey: '2026-10-15' })
+  const kept = resolveTimesheetPeriod({
+    storedStartDayKey: '2026-10-01',
+    storedEndDayKey: '2026-10-07',
+    currentPeriod: liveHalfMonth,
+  })
+  assert.deepEqual(kept, firstToSeventh)
+  assert.equal(timesheetPeriodMatches(kept, firstToSeventh), true)
+  assert.equal(timesheetPeriodMatches(kept, liveHalfMonth), false)
+  assert.equal(timesheetPeriodContainsDay(firstToSeventh, '2026-10-07'), true)
+  assert.equal(timesheetPeriodContainsDay(firstToSeventh, '2026-10-08'), false)
+  assert.equal(
+    pickTimesheetRowForPeriod(
+      [
+        { startDayKey: '2026-10-01', endDayKey: '2026-10-07', hasActivity: true },
+        { startDayKey: '2026-10-01', endDayKey: '2026-10-15', hasActivity: false },
+      ],
+      liveHalfMonth
+    ),
+    1
+  )
+  assert.equal(
+    pickTimesheetRowForPeriod(
+      [{ startDayKey: '2026-10-07', endDayKey: '2026-10-13', hasActivity: true }],
+      liveHalfMonth
+    ),
+    -1
+  )
+  assert.ok(timesheetDocumentId('u1', '2026-10-01', 'Europe/London').startsWith('timesheet_u1_'))
+  assert.equal(
+    timesheetExportStoragePath('org-1', 'Ada Booked timesheet.pdf', 1_775_000_000),
+    'organizations/org-1/timesheetExports/1775000000_Ada_Booked_timesheet.pdf'
+  )
+})
+
+test('selectable payment runs keep the old window after a mode or range change', () => {
+  const current = {
+    paymentRunMode: 'date_ranges' as const,
+    ranges: [
+      { startDay: 1, endDay: 15, startDate: 1, endDate: 15 },
+      { startDay: 16, endDay: 31, startDate: 16, endDate: 31 },
+    ],
+  }
+  const previous = {
+    paymentRunMode: 'date_ranges' as const,
+    ranges: [
+      { startDay: 1, endDay: 7, startDate: 1, endDate: 7 },
+      { startDay: 8, endDay: 31, startDate: 8, endDate: 31 },
+    ],
+  }
+  const history = paymentRunHistoryAfterChange({
+    previous,
+    next: current,
+    existingHistory: [],
+    recordedAtDayKey: '2026-10-12',
+  })
+  assert.equal(history.length, 1)
+  assert.deepEqual(history[0].ranges, [
+    { startDay: 1, endDay: 7 },
+    { startDay: 8, endDay: 31 },
+  ])
+  const selectable = selectableTimesheetPaymentRunPeriods({
+    current,
+    historicalWindows: history,
+    observedPeriods: [{ startDayKey: '2026-09-01', endDayKey: '2026-09-07' }],
+    referenceDayKey: '2026-10-12',
+    lookbackCount: 6,
+    timeZone: 'Europe/London',
+  })
+  const keys = selectable.map((row) => `${row.startDayKey}|${row.endDayKey}`)
+  assert.ok(keys.includes('2026-10-01|2026-10-15'), 'new 1–15 window appears')
+  assert.ok(keys.includes('2026-10-01|2026-10-07'), 'historical 1–7 window remains')
+  assert.ok(keys.includes('2026-09-01|2026-09-07'), 'observed stored period remains')
+  const recurringHistory = paymentRunHistoryAfterChange({
+    previous: { paymentRunMode: 'recurring_timeframe', recurringRunStartDay: 'monday', recurringRunEndDay: 'sunday' },
+    next: current,
+    existingHistory: history,
+    recordedAtDayKey: '2026-10-12',
+  })
+  const afterRecurring = selectableTimesheetPaymentRunPeriods({
+    current,
+    historicalWindows: recurringHistory,
+    referenceDayKey: '2026-10-12',
+    lookbackCount: 4,
+    timeZone: 'Europe/London',
+  })
+  assert.ok(afterRecurring.some((row) => row.startDayKey === '2026-10-05' && row.endDayKey === '2026-10-11'))
 })

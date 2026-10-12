@@ -1,13 +1,17 @@
 /**
- * User-level notification toggles and inbox destinations.
+ * User-level notification toggles, inbox destinations, and device-push rules.
  *
  * Screens stay in each app. Both apps read and write
  * `users/{uid}.notificationPreferences` with these keys, and both call
  * `notificationDestination` then map the kind to a native route. Do not keep a
- * second toggle list or a second deep-link map in a screen.
+ * second toggle list, a second deep-link map, or a second unread counter in a
+ * screen. Device-push allow-list and the in-app / APNs badge number live here.
  *
  * Who is on the fan-out for a job or booking stays `receivesJobNotification`.
  * A toggle that is on does not add recipients.
+ *
+ * Web never sends a browser or OS notification. A closed iPhone is reached by
+ * one FCM send on create of `organizations/{orgId}/notifications/{id}`.
  */
 
 import type { AccountKind } from './userProfile'
@@ -227,6 +231,81 @@ export function notificationPreferenceAllowsDelivery(
   const key = notificationPreferenceKeyForType(type)
   if (!key) return true
   return prefs[key] !== false
+}
+
+/**
+ * Inbox types that send one FCM / APNs alert when the row is first created.
+ * On-device clocks stay local and must not get a second server push:
+ * `material_order_cut_off`, `qualification_expiry`, `deadline_reminder`,
+ * `deadline_due`.
+ */
+export const DEVICE_PUSH_NOTIFICATION_TYPES = [
+  'booking_created',
+  'booked_onto_job',
+  'booking_clash',
+  'task_created',
+  'task_completed',
+  'deadline_assigned',
+  'holiday_request_submitted',
+  'holiday_request_approved',
+  'holiday_request_declined',
+  'timesheet_pending_manager_signoff',
+  'timesheet_signed_by_manager',
+  'toolbox_talk_issued',
+  'hs_toolbox_reminder',
+  'material_order_placed',
+  'material_order_created',
+  'variation',
+  'warning_removed',
+  'operative_created',
+  'manager_created',
+  'client_created',
+  'project_created',
+  'small_works_created',
+  TIMESHEET_SUBMISSION_NOTICE_TYPE,
+] as const
+
+export type DevicePushNotificationType = (typeof DEVICE_PUSH_NOTIFICATION_TYPES)[number]
+
+const DEVICE_PUSH_TYPE_SET = new Set<string>(DEVICE_PUSH_NOTIFICATION_TYPES)
+
+/** Opening the iPhone app clears the red icon number. The in-app count stays. */
+export const NOTIFICATION_ICON_BADGE_CLEARS_ON_FOREGROUND = true
+
+export function devicePushNotificationTypes(): readonly string[] {
+  return DEVICE_PUSH_NOTIFICATION_TYPES
+}
+
+export function notificationDeliversDevicePush(type: string): boolean {
+  return DEVICE_PUSH_TYPE_SET.has(trimmed(type))
+}
+
+export type UnreadNotificationBadgeRow = {
+  userId?: string | null
+  isRead?: boolean | null
+}
+
+/**
+ * Unread rows the notification centre lists for `userId`.
+ * A blank `userId` on a row is visible to every member (same as the inbox).
+ * Explicit `isRead: true` is read; missing or false is unread.
+ */
+export function unreadNotificationBadgeCount(
+  notifications: ReadonlyArray<UnreadNotificationBadgeRow> | null | undefined,
+  userId: string
+): number {
+  const uid = trimmed(userId)
+  if (!uid) return 0
+  const rows = Array.isArray(notifications) ? notifications : []
+  let count = 0
+  for (const row of rows) {
+    if (!row || typeof row !== 'object') continue
+    const owner = trimmed(row.userId)
+    if (owner && owner !== uid) continue
+    if (row.isRead === true) continue
+    count += 1
+  }
+  return count
 }
 
 function bookingDestination(

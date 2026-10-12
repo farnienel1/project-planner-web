@@ -266,6 +266,7 @@ export function TimesheetPeriodPage({
         organizationId: organization.id,
         userId: subjectUser.id,
         weekStart: periodStart,
+        weekEnd: periodEnd,
         draft: withOverride,
         timeZone,
         documentId: sourceDocumentId.current,

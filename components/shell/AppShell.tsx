@@ -44,7 +44,11 @@ import { NotificationsPopover } from '@/components/shell/NotificationsPopover'
 import { ToastProvider, useToast } from '@/components/ui/ToastProvider'
 import { Button, IconChip } from '@/components/ui'
 import { useNotificationStore } from '@/lib/stores/notificationStore'
-import { DEFAULT_USER_NOTIFICATION_PREFERENCES, notificationPreferenceAllowsDelivery } from '@/lib/canonical'
+import {
+  DEFAULT_USER_NOTIFICATION_PREFERENCES,
+  notificationPreferenceAllowsDelivery,
+  unreadNotificationBadgeCount,
+} from '@/lib/canonical'
 import { loadUserNotificationPreferences } from '@/lib/settings/notificationPreferences'
 import { hueForCreateId, hueForNavId, type SectionHue } from '@/lib/ui/sectionHue'
 import {
@@ -266,7 +270,7 @@ function AppShellInner({ children }: { children: ReactNode }) {
     () => notifications.filter((row) => notificationPreferenceAllowsDelivery(notificationPrefs, row.type)),
     [notifications, notificationPrefs]
   )
-  const unreadCount = visibleNotifications.filter((row) => !row.isRead).length
+  const unreadCount = unreadNotificationBadgeCount(visibleNotifications, user?.id ?? '')
 
   useEffect(() => {
     if (!user || prefetchedNav.current) return
@@ -667,7 +671,9 @@ function AppShellInner({ children }: { children: ReactNode }) {
                   >
                     <BellIcon className="h-5 w-5" />
                     {unreadCount > 0 ? (
-                      <span className="absolute right-[11px] top-2.5 h-[9px] w-[9px] rounded-full border-2 border-[var(--card)] bg-[var(--red)]" />
+                      <span className="absolute -right-1 -top-1 min-w-[18px] rounded-full bg-[var(--red)] px-1 text-center text-[10px] font-bold leading-[18px] text-white">
+                        {unreadCount > 99 ? '99+' : unreadCount}
+                      </span>
                     ) : null}
                   </button>
                   <NotificationsPopover

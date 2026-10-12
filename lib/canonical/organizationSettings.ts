@@ -10,8 +10,14 @@ import {
   timesheetSubmissionToFirestore,
   type TimesheetSubmissionSettings,
 } from './timesheetSubmission'
+import {
+  parsePaymentRunHistory,
+  paymentRunHistoryToFirestore,
+  type PaymentRunHistoryWindow,
+} from './timesheetPeriod'
 
 export type { TimesheetSubmissionSettings }
+export type { PaymentRunHistoryWindow }
 
 export type WeekendPayrollSettings = {
   allHoursAtMultiplierMode: boolean
@@ -69,6 +75,11 @@ export type OrgInvoicingSettings = {
   noteToUsers: string
   /** One block per date-range payment date, or one block for a recurring run. */
   timesheetSubmission: TimesheetSubmissionSettings[]
+  /**
+   * Snapshots of previous payment-run windows. A 1–7 run stays selectable on
+   * timesheets after payroll becomes 1–15 or switches to recurring.
+   */
+  paymentRunHistory?: PaymentRunHistoryWindow[]
 }
 
 export type MyScheduleOptions = {
@@ -218,6 +229,7 @@ export const DEFAULT_INVOICING: OrgInvoicingSettings = {
   noteToUsers:
     "If your timesheet displays 0 against your rate, then your day/hourly rate hasn't been set by your line manager",
   timesheetSubmission: [],
+  paymentRunHistory: [],
 }
 
 /**
@@ -582,6 +594,7 @@ export function parseInvoicing(data: Record<string, unknown> | undefined): OrgIn
     paymentDates,
     noteToUsers: String(data.noteToUsers ?? DEFAULT_INVOICING.noteToUsers),
     timesheetSubmission,
+    paymentRunHistory: parsePaymentRunHistory(data.paymentRunHistory),
   }
 }
 
@@ -607,6 +620,7 @@ export function invoicingToFirestore(settings: OrgInvoicingSettings): Record<str
     recurringRunEndDay: settings.recurringRunEndDay,
     recurringPaymentDay: settings.recurringPaymentDay,
     timesheetSubmission,
+    paymentRunHistory: paymentRunHistoryToFirestore(settings.paymentRunHistory ?? []),
   }
   if (settings.paymentRunMode === 'recurring_timeframe' && timesheetSubmission[0]) {
     const recurring = timesheetSubmission[0]
