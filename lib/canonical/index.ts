@@ -43,6 +43,15 @@ export {
   withoutDismissedQualificationRows,
 } from './warningRows'
 
+export {
+  DEFAULT_WARNINGS_SORT_DIRECTION,
+  WARNINGS_SORT_DIRECTIONS,
+  compareWarningDayKeys,
+  parseWarningsSortDirection,
+  sortWarningsByDate,
+  warningDayKeyIsDated,
+} from './warningSort'
+
 export { leaveCoverageRows, leaveSlotKind } from './leaveCoverage'
 
 export {
@@ -109,6 +118,8 @@ export type {
   UnverifiedOperativeInput,
   UnverifiedOperativeRow,
 } from './warningRows'
+
+export type { WarningsSortDirection } from './warningSort'
 
 export {
   ANNUAL_LEAVE_ALLOWANCE_COPY,
@@ -226,3 +237,18 @@ export type {
   LeaveRecord,
   LeaveSlot,
 } from './leaveCoverage'
+
+export {
+  DEFAULT_MATERIAL_DELIVERY_CLOCK,
+  DEFAULT_MATERIAL_DELIVERY_HOUR,
+  DEFAULT_MATERIAL_DELIVERY_MINUTE,
+  DEFAULT_MATERIAL_DELIVERY_MINUTES,
+  clockMinutesFromDeliveryInstant,
+  defaultMaterialDeliveryDayKey,
+  defaultMaterialDeliveryRequiredAt,
+  formatMaterialDeliveryRequired,
+  materialDeliveryInstant,
+  materialOrderIncludesDeliveryRequired,
+} from './materialDelivery'
+
+export type { MaterialSendKind } from './materialDelivery'

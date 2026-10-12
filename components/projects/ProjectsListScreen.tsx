@@ -23,7 +23,7 @@ import {
   filterWorksByTab,
   searchWorks,
 } from '@/lib/projects/workStatus'
-import { EmptyState, FilterChip, PageHeader, SearchField, StatsRow } from '@/components/ios/primitives'
+import { EmptyState, PageHeader, SearchField, StatsRow } from '@/components/ios/primitives'
 import { WorkCard } from '@/components/projects/WorkCard'
 import { assignedManagerLabel } from '@/lib/projects/assignedManagers'
 
@@ -107,7 +107,7 @@ export function ProjectsListScreen() {
   }
 
   return (
-    <div className="stack" data-hue="proj">
+    <div className="stack work-list" data-hue="proj">
       <PageHeader
         title="Projects"
         subtitle="Main project pipeline"
@@ -133,37 +133,41 @@ export function ProjectsListScreen() {
         <>
           <StatsRow
             items={[
-              { value: counts.active, label: 'Active', hue: 'proj' },
-              { value: counts.upcoming, label: 'Upcoming', hue: 'blue' },
-              { value: counts.completed, label: 'Completed', hue: 'lib' },
+              {
+                value: counts.all,
+                label: 'All',
+                hue: 'lib',
+                selected: filter === 'all',
+                onClick: () => setFilter('all'),
+              },
+              {
+                value: counts.active,
+                label: 'Active',
+                hue: 'proj',
+                selected: filter === 'active',
+                onClick: () => setFilter('active'),
+              },
+              {
+                value: counts.upcoming,
+                label: 'Upcoming',
+                hue: 'blue',
+                selected: filter === 'upcoming',
+                onClick: () => setFilter('upcoming'),
+              },
+              {
+                value: counts.completed,
+                label: 'Completed',
+                hue: 'lib',
+                selected: filter === 'completed',
+                onClick: () => setFilter('completed'),
+              },
             ]}
           />
 
           <SearchField value={search} onChange={setSearch} placeholder="Search projects, addresses…" />
 
-          <div className="chips">
-            <FilterChip title={`All · ${counts.all}`} selected={filter === 'all'} onClick={() => setFilter('all')} />
-            <FilterChip
-              title={`Active · ${counts.active}`}
-              selected={filter === 'active'}
-              onClick={() => setFilter('active')}
-            />
-            <FilterChip
-              title={`Upcoming · ${counts.upcoming}`}
-              selected={filter === 'upcoming'}
-              onClick={() => setFilter('upcoming')}
-              selectedClass="bg-[#FFF6E1] text-[#854F0B]"
-            />
-            <FilterChip
-              title={`Completed · ${counts.completed}`}
-              selected={filter === 'completed'}
-              onClick={() => setFilter('completed')}
-              selectedClass="bg-[#F2F3F5] text-[#6B7280]"
-            />
-          </div>
-
           {emptySearch ? (
-            <p className="py-10 text-center text-[15px] text-[var(--ink3)]">No projects match your search.</p>
+            <p className="py-8 text-center text-[15px] text-[var(--ink3)]">No projects match your search.</p>
           ) : emptyDueToFilter ? (
             <EmptyState
               title="No projects found"
@@ -172,7 +176,7 @@ export function ProjectsListScreen() {
           ) : filtered.length === 0 ? (
             <EmptyState title="No projects found" subtitle={emptySubtitle} />
           ) : (
-            <div className="grid grid-cols-1 gap-5 lg:grid-cols-2 2xl:grid-cols-3">
+            <div className="work-grid grid grid-cols-1 gap-3 lg:grid-cols-2 2xl:grid-cols-3">
               {filtered.map((project) => (
                 <WorkCard
                   key={project.id}

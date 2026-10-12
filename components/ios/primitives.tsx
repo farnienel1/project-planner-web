@@ -164,18 +164,45 @@ function splitChipTitle(title: string): [string, string | undefined] {
 export function StatsRow({
   items,
 }: {
-  items: { value: number; label: string; valueClass?: string; hue?: SectionHue }[]
+  items: {
+    value: number
+    label: string
+    valueClass?: string
+    hue?: SectionHue
+    selected?: boolean
+    onClick?: () => void
+  }[]
 }) {
+  const columns = items.length >= 4 ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-3'
   return (
-    <div className="grid grid-cols-3 gap-2.5">
-      {items.map((item) => (
-        <div key={item.label} className="stat" data-hue={item.hue || 'blue'} style={{ cursor: 'default' }}>
+    <div className={`grid ${columns} gap-2`}>
+      {items.map((item) => {
+        const inner = (
           <div>
             <b className={item.valueClass}>{item.value}</b>
             <span>{item.label}</span>
           </div>
-        </div>
-      ))}
+        )
+        if (item.onClick) {
+          return (
+            <button
+              key={item.label}
+              type="button"
+              onClick={item.onClick}
+              className={cn('stat', item.selected && 'on')}
+              data-hue={item.hue || 'blue'}
+              aria-pressed={item.selected === true}
+            >
+              {inner}
+            </button>
+          )
+        }
+        return (
+          <div key={item.label} className="stat" data-hue={item.hue || 'blue'} style={{ cursor: 'default' }}>
+            {inner}
+          </div>
+        )
+      })}
     </div>
   )
 }

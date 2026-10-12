@@ -9,7 +9,8 @@ import { groupUnbookedWarningsByDay, type UnbookedLabourWarning } from '@/lib/wa
 import { formatWarningHours } from '@/lib/warnings/clashIntervals'
 import type { QualificationExpiryWarning, UnverifiedOperativeWarning } from '@/lib/warnings/generateOrgWarnings'
 import type { LeaveCoverageWarning } from '@/lib/warnings/leaveCoverageWarnings'
-import { formatClockMinutes } from '@/lib/canonical'
+import { formatClockMinutes, type WarningsSortDirection } from '@/lib/canonical'
+import { orderWarningListItems } from '@/lib/warnings/warningListOrder'
 import { projectMaterialsPath } from '@/lib/navigation/projectSchedulePaths'
 import { ClashWarningCard } from '@/components/warnings/ClashWarningCard'
 import { displayTitle, type ClashTimelineEntry } from '@/lib/warnings/clashTimeline'
@@ -351,6 +352,8 @@ export function WarningsScreen({
   onDismissQualification,
   onDeleteBooking,
   onDeleteManagerBooking,
+  sortDirection,
+  onSortDirectionChange,
 }: {
   organizationName: string
   clashWarnings: OperativeBookingClashWarning[]
@@ -369,6 +372,8 @@ export function WarningsScreen({
   onDismissQualification?: (warning: QualificationExpiryWarning) => Promise<void>
   onDeleteBooking: (bookingId: string) => Promise<void>
   onDeleteManagerBooking: (bookingId: string) => Promise<void>
+  sortDirection: WarningsSortDirection
+  onSortDirectionChange: (direction: WarningsSortDirection) => void
 }) {
   const [filter, setFilter] = useState<FilterChip>('all')
   const [busyId, setBusyId] = useState<string | null>(null)
@@ -399,6 +404,34 @@ export function WarningsScreen({
   const showLeave = filter === 'all' || filter === 'leave'
   const showMaterials = filter === 'all' || filter === 'materials'
   const showQualifications = filter === 'all' || filter === 'qualifications'
+  const listed = useMemo(
+    () =>
+      orderWarningListItems({
+        unbookedGroups: showUnbooked ? unbookedGroups : [],
+        leaveWarnings: showLeave ? leaveWarnings : [],
+        materialWarnings: showMaterials ? materialWarnings : [],
+        qualificationWarnings: showQualifications ? qualificationWarnings : [],
+        unverifiedWarnings: showQualifications ? unverifiedWarnings : [],
+        managerClashWarnings: showClashes ? managerClashWarnings : [],
+        clashWarnings: showClashes ? clashWarnings : [],
+        direction: sortDirection,
+      }),
+    [
+      showUnbooked,
+      showLeave,
+      showMaterials,
+      showQualifications,
+      showClashes,
+      unbookedGroups,
+      leaveWarnings,
+      materialWarnings,
+      qualificationWarnings,
+      unverifiedWarnings,
+      managerClashWarnings,
+      clashWarnings,
+      sortDirection,
+    ]
+  )
 
   const handleAccept = async (clash: { id: string; bookingAId: string; bookingBId: string }) => {
     setBusyId(clash.id)
@@ -442,6 +475,28 @@ export function WarningsScreen({
               Warning settings
             </Link>
           ) : null}
+        </div>
+      </div>
+
+      <div className="row wrap" style={{ alignItems: 'center', gap: 10 }}>
+        <span className="small" style={{ fontWeight: 700 }}>
+          Sort
+        </span>
+        <div className="seg" role="group" aria-label="Sort warnings by date">
+          <button
+            type="button"
+            className={sortDirection === 'oldest' ? 'on' : ''}
+            onClick={() => onSortDirectionChange('oldest')}
+          >
+            Oldest
+          </button>
+          <button
+            type="button"
+            className={sortDirection === 'newest' ? 'on' : ''}
+            onClick={() => onSortDirectionChange('newest')}
+          >
+            Newest
+          </button>
         </div>
       </div>
 
@@ -521,85 +576,88 @@ export function WarningsScreen({
         </div>
       ) : null}
 
-      {showUnbooked
-        ? unbookedGroups.map((group) => (
-            <UnbookedDayCard key={group.id} date={group.date} people={group.people} canBook={canBook} />
-          ))
-        : null}
-
-      {showLeave
-        ? leaveWarnings.map((warning) => <LeaveCard key={warning.id} warning={warning} canBook={canBook} />)
-        : null}
-
-      {showMaterials
-        ? materialWarnings.map((warning) => (
-            <MaterialsCard key={warning.id} warning={warning} smallWorkIds={smallWorkIds} />
-          ))
-        : null}
-
-      {showQualifications
-        ? qualificationWarnings.map((warning) => (
+      {listed.map((item) => {
+        if (item.kind === 'unbooked') {
+          return (
+            <UnbookedDayCard
+              key={`unbooked:${item.group.id}`}
+              date={item.group.date}
+              people={item.group.people}
+              canBook={canBook}
+            />
+          )
+        }
+        if (item.kind === 'leave') {
+          return <LeaveCard key={item.warning.id} warning={item.warning} canBook={canBook} />
+        }
+        if (item.kind === 'material') {
+          return (
+            <MaterialsCard key={item.warning.id} warning={item.warning} smallWorkIds={smallWorkIds} />
+          )
+        }
+        if (item.kind === 'qualification') {
+          return (
             <QualificationCard
-              key={warning.id}
-              warning={warning}
+              key={item.warning.id}
+              warning={item.warning}
               onDismiss={onDismissQualification}
-              operativeHref={editUserHrefForOperative(warning.operativeId, operatives, users)}
+              operativeHref={editUserHrefForOperative(item.warning.operativeId, operatives, users)}
               showOpenOperative={canOpenOperativeFromWarning(
                 user,
                 findUserForOperative(
-                  operatives.find((operative) => operative.id === warning.operativeId),
+                  operatives.find((operative) => operative.id === item.warning.operativeId),
                   users
                 )
               )}
             />
-          ))
-        : null}
-
-      {showQualifications
-        ? unverifiedWarnings.map((warning) => (
+          )
+        }
+        if (item.kind === 'unverified') {
+          return (
             <LegacyCard
-              key={warning.id}
+              key={item.warning.id}
               title="Unverified operative"
-              message={warning.message}
+              message={item.warning.message}
               severity="low"
             />
-          ))
-        : null}
-
-      {showClashes
-        ? managerClashWarnings.map((warning) => (
+          )
+        }
+        if (item.kind === 'managerClash') {
+          return (
             <ClashWarningCard
-              key={warning.id}
+              key={item.warning.id}
               title="Manager booking clash"
               severity="medium"
-              personName={warning.personName}
-              date={warning.date}
-              entries={warning.entries}
+              personName={item.warning.personName}
+              date={item.warning.date}
+              entries={item.warning.entries}
               busy={
-                busyId === warning.id ||
-                busyId === warning.bookingAId ||
-                busyId === warning.bookingBId
+                busyId === item.warning.id ||
+                busyId === item.warning.bookingAId ||
+                busyId === item.warning.bookingBId
               }
-              onApprove={() => handleAccept(warning)}
+              onApprove={() => handleAccept(item.warning)}
               onRemove={handleRemoveEntry}
             />
-          ))
-        : null}
-
-      {showClashes
-        ? clashWarnings.map((clash) => (
-            <ClashWarningCard
-              key={clash.id}
-              title="Operative booking clash"
-              personName={clash.operativeName}
-              date={clash.date}
-              entries={clash.entries}
-              busy={busyId === clash.id || busyId === clash.bookingAId || busyId === clash.bookingBId}
-              onApprove={() => handleAccept(clash)}
-              onRemove={handleRemoveEntry}
-            />
-          ))
-        : null}
+          )
+        }
+        return (
+          <ClashWarningCard
+            key={item.warning.id}
+            title="Operative booking clash"
+            personName={item.warning.operativeName}
+            date={item.warning.date}
+            entries={item.warning.entries}
+            busy={
+              busyId === item.warning.id ||
+              busyId === item.warning.bookingAId ||
+              busyId === item.warning.bookingBId
+            }
+            onApprove={() => handleAccept(item.warning)}
+            onRemove={handleRemoveEntry}
+          />
+        )
+      })}
     </div>
   )
 }

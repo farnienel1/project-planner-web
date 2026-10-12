@@ -2,6 +2,11 @@ import { NextRequest } from 'next/server'
 import { sendProjectPlannerEmail } from '@/lib/email/resendClient'
 import { buildMaterialRequestEmail } from '@/lib/email/materialRequestEmail'
 import {
+  defaultMaterialDeliveryRequiredAt,
+  formatMaterialDeliveryRequired,
+  materialOrderIncludesDeliveryRequired,
+} from '@/lib/canonical'
+import {
   clientSafeMessage,
   enforceRateLimit,
   isFirebaseUser,
@@ -37,6 +42,7 @@ type SendBody = {
   companyLogoURL?: string
   recipients?: RecipientBody[]
   materials?: MaterialBody[]
+  deliveryRequiredAt?: string
 }
 
 function parseMaterials(rows: MaterialBody[] | undefined) {
@@ -105,8 +111,18 @@ export async function POST(request: NextRequest) {
   const sendAsPlainText = Boolean(body.value.sendAsPlainText)
   const isQuote = requestType === 'quote'
   const sentAt = new Date()
+  const parsedRequired = Date.parse(String(body.value.deliveryRequiredAt || ''))
+  const deliveryRequiredAt = materialOrderIncludesDeliveryRequired(requestType)
+    ? Number.isFinite(parsedRequired)
+      ? new Date(parsedRequired)
+      : defaultMaterialDeliveryRequiredAt(sentAt.toISOString())
+    : null
+  const deliveryRequiredLabel = deliveryRequiredAt
+    ? formatMaterialDeliveryRequired(deliveryRequiredAt)
+    : undefined
   const failed: string[] = []
   let sent = 0
+  let copies = 0
 
   for (const recipient of recipients) {
     const { subject, html } = buildMaterialRequestEmail({
@@ -122,6 +138,7 @@ export async function POST(request: NextRequest) {
         companyLogoURL: clampString(body.value.companyLogoURL, 500),
         materials,
         sentAt,
+        deliveryRequiredLabel,
       },
       isQuote,
       sendAsPlainText,
@@ -133,7 +150,6 @@ export async function POST(request: NextRequest) {
         to: recipient.email,
         subject,
         html,
-        cc: senderEmail.toLowerCase(),
         replyTo: senderEmail.toLowerCase(),
         fromName: `${senderName} (via Project Planner)`,
       })
@@ -141,6 +157,20 @@ export async function POST(request: NextRequest) {
     } catch (error) {
       console.error('[materials/send-request-email]', recipient.email, error)
       failed.push(recipient.email)
+      continue
+    }
+
+    try {
+      await sendProjectPlannerEmail({
+        to: senderEmail.toLowerCase(),
+        subject: `Copy: ${subject}`,
+        html,
+        replyTo: senderEmail.toLowerCase(),
+        fromName: `${senderName} (via Project Planner)`,
+      })
+      copies += 1
+    } catch (error) {
+      console.error('[materials/send-request-email] user copy', senderEmail, error)
     }
   }
 
@@ -148,5 +178,11 @@ export async function POST(request: NextRequest) {
     return jsonError(clientSafeMessage(new Error('All recipient emails failed'), 'Failed to send material list'), 500)
   }
 
-  return Response.json({ ok: true, sent, failed })
+  return Response.json({
+    ok: true,
+    sent,
+    copies,
+    failed,
+    deliveryRequiredAt: deliveryRequiredAt?.toISOString() ?? null,
+  })
 }
