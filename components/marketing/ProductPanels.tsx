@@ -1,106 +1,8 @@
 'use client'
 
 import { ClashDemo } from '@/components/marketing/ClashDemo'
+import { HsSnap, MaterialsSnap, WarningsSnap } from '@/components/marketing/DemoSnapshots'
 import { MktIcon } from '@/components/marketing/icons'
-import { mktToast } from '@/components/marketing/toast'
-
-export function HeroMock() {
-  return (
-    <div className="mock reveal vis">
-      <div className="win" role="img" aria-label="The Project Planner dashboard">
-        <div className="win-bar">
-          <i />
-          <i />
-          <i />
-        </div>
-        <div className="win-body">
-          <div className="win-side">
-            {(
-              [
-                ['home', 'blue', true],
-                ['daily', 'daily', false],
-                ['folder', 'proj', false],
-                ['wrench', 'sw', false],
-                ['cal', 'sched', false],
-                ['alert', 'warn', false],
-                ['clock', 'ts', false],
-                ['shield', 'hs', false],
-              ] as const
-            ).map(([icon, hue, on]) => (
-              <span key={icon} data-hue={hue} className={on ? 'on' : undefined}>
-                <MktIcon name={icon} size={17} />
-              </span>
-            ))}
-          </div>
-          <div className="win-main">
-            <div className="bp">
-              <div className="xs" style={{ opacity: 0.8, fontWeight: 600 }}>
-                Monday 21 September
-              </div>
-              <b style={{ fontSize: 22 }}>Good morning, Dave</b>
-              <div className="mstat">
-                <div>
-                  <b>12</b>
-                  <span>On site</span>
-                </div>
-                <div>
-                  <b>3</b>
-                  <span>Unbooked</span>
-                </div>
-                <div>
-                  <b>1</b>
-                  <span>Clash</span>
-                </div>
-              </div>
-            </div>
-            <ClashDemo compact />
-            <div className="mrow">
-              <span className="ico-chip sm" data-hue="proj">
-                <MktIcon name="folder" size={17} />
-              </span>
-              <div className="grow">
-                <b>C1042 · 12 High Street</b>
-                <div style={{ height: 6, borderRadius: 9, background: 'var(--soft2)', marginTop: 6, overflow: 'hidden' }}>
-                  <i style={{ display: 'block', width: '37%', height: '100%', background: 'var(--proj)' }} />
-                </div>
-              </div>
-              <span className="xs muted" style={{ fontWeight: 700 }}>
-                37%
-              </span>
-            </div>
-            <div className="mrow">
-              <span className="ico-chip sm" data-hue="sw">
-                <MktIcon name="box" size={17} />
-              </span>
-              <div className="grow">
-                <b>3no 100m drums of 2.5mm² T&E ordered</b>
-                <span className="muted xs">Before the 15:30 cut-off · Prysmian</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-      <div className="float" style={{ left: -40, bottom: -18 }}>
-        <span className="ico-chip sm" data-hue="green">
-          <MktIcon name="check" size={17} />
-        </span>
-        <div>
-          <b>Timesheet signed</b>
-          <span className="xs muted">40h + 3h OT · ready for payroll</span>
-        </div>
-      </div>
-      <div className="float" style={{ right: -24, top: 40, animationDelay: '-2.5s' }}>
-        <span className="ico-chip sm" data-hue="sched">
-          <MktIcon name="cal" size={17} />
-        </span>
-        <div>
-          <b>5 days booked</b>
-          <span className="xs muted">Mon–Fri · 07:30–16:00</span>
-        </div>
-      </div>
-    </div>
-  )
-}
 
 type Cell = { t: string; s: string; h: string; k?: string } | null
 
@@ -245,71 +147,37 @@ export function WarnPanel() {
         <div className="xs" style={{ opacity: 0.85, fontWeight: 600 }}>
           Active issues
         </div>
-        <b style={{ fontSize: 26 }}>3 need attention</b>
+        <b style={{ fontSize: 26 }}>4 need attention</b>
+        <div className="mstat" style={{ marginTop: 10 }}>
+          <div><b>2</b><span>High</span></div>
+          <div><b>0</b><span>Medium</span></div>
+          <div><b>2</b><span>Low</span></div>
+        </div>
       </div>
       <div style={{ marginBottom: 9 }}>
         <ClashDemo />
       </div>
       {(
         [
-          ['warn', 'Unbooked labour', 'Sam Khan, Mia Reid · Mon 21 Sep · 8h short each'],
-          ['sw', 'Materials not ordered', 'C1057 Riverside Court · cut-off 15:30'],
+          ['warn', 'High', 'Unbooked labour', 'Sam Belfort, Mia Reid · Mon 21 Sep · 8h short each', 'alert'],
+          ['red', 'Low', 'Qualification expired', 'Mia Reid · SMSTS expired 16 days ago', 'cert'],
+          ['sw', 'Low', 'Materials not ordered', 'C1057 Riverside Court · cut-off 15:30', 'alert'],
         ] as const
-      ).map(([hue, title, sub]) => (
+      ).map(([hue, level, title, sub, icon]) => (
         <div key={title} className="mrow acc" data-hue={hue} style={{ marginBottom: 9 }}>
           <span className="ico-chip sm" data-hue={hue}>
-            <MktIcon name="alert" size={16} />
+            <MktIcon name={icon} size={16} />
           </span>
           <div className="grow">
             <b>{title}</b>
             <span className="muted xs">{sub}</span>
           </div>
+          <span className={`sev-tag ${level.toLowerCase()}`}>{level}</span>
         </div>
       ))}
       <p className="muted xs" style={{ marginTop: 6 }}>
         Try it: approve the clash for the weekly report, or delete one of Joe&apos;s bookings.
       </p>
-    </div>
-  )
-}
-
-export function HsPanel() {
-  return (
-    <div className="panel">
-      <div className="row" style={{ marginBottom: 14 }}>
-        <span className="ico-chip" data-hue="hs">
-          <MktIcon name="shield" size={22} />
-        </span>
-        <div className="grow">
-          <b style={{ fontFamily: 'var(--head)', fontSize: 17 }}>Working at height</b>
-          <div className="muted small">Issued Mon 21 Sep · C1042</div>
-        </div>
-        <b style={{ fontFamily: 'var(--head)', fontSize: 24, color: 'var(--hs)' }}>9/11</b>
-      </div>
-      <div style={{ height: 10, borderRadius: 9, background: 'var(--soft2)', overflow: 'hidden', marginBottom: 14 }}>
-        <i style={{ display: 'block', height: '100%', width: '82%', background: 'var(--hs)' }} />
-      </div>
-      <div className="row wr" style={{ gap: 8 }}>
-        {['JB', 'SK', 'MR', 'DH', 'PM', 'AL', 'TW', 'RK', 'GC'].map((initials) => (
-          <span key={initials} className="pill" data-hue="green">
-            <MktIcon name="check" size={13} />
-            {initials}
-          </span>
-        ))}
-        <span className="pill" data-hue="warn">
-          2 pending
-        </span>
-      </div>
-      <div className="row" style={{ marginTop: 16 }}>
-        <button type="button" className="btn sm" onClick={() => mktToast('Sample: PDF generated')}>
-          <MktIcon name="pdf" size={16} />
-          Generate PDF
-        </button>
-        <button type="button" className="btn sm tint" data-hue="warn" onClick={() => mktToast('Sample: reminder sent')}>
-          <MktIcon name="bell" size={16} />
-          Chase 2
-        </button>
-      </div>
     </div>
   )
 }
@@ -343,41 +211,6 @@ export function TimesheetPanel() {
           </div>
           <span className="pill" data-hue={row[4]} style={{ height: 24, fontSize: 11.5 }}>
             {row[3]}
-          </span>
-        </div>
-      ))}
-    </div>
-  )
-}
-
-export function MaterialsPanel() {
-  return (
-    <div className="panel">
-      <div className="row" style={{ marginBottom: 12 }}>
-        <b style={{ fontFamily: 'var(--head)', fontSize: 17 }}>Materials · Mon 21</b>
-        <span className="grow" />
-        <span className="pill" data-hue="warn">
-          <MktIcon name="clock" size={13} />
-          Cut-off 15:30
-        </span>
-      </div>
-      {(
-        [
-          ['2.5mm² T&E LSF', '3no 100m drums · Prysmian', 'Ordered', 'green'],
-          ['300mm tray', '12 lengths · Legrand', 'Draft', 'lib'],
-          ['GU10 3000K dimmable', '40 · Bell', 'Ordered', 'green'],
-        ] as const
-      ).map((row) => (
-        <div key={row[0]} className="mrow" style={{ marginBottom: 9 }}>
-          <span className="ico-chip sm" data-hue="sw">
-            <MktIcon name="box" size={16} />
-          </span>
-          <div className="grow">
-            <b>{row[0]}</b>
-            <span className="muted xs">{row[1]}</span>
-          </div>
-          <span className="pill" data-hue={row[3]} style={{ height: 24, fontSize: 11.5 }}>
-            {row[2]}
           </span>
         </div>
       ))}
@@ -497,10 +330,16 @@ export function PeoplePanel() {
 
 export function FeaturePanel({ id }: { id: string }) {
   if (id === 'scheduling') return <SchedulePanel />
-  if (id === 'warnings') return <WarnPanel />
-  if (id === 'hs') return <HsPanel />
+  if (id === 'warnings')
+    return (
+      <div className="stack" style={{ gap: 18 }}>
+        <WarningsSnap />
+        <WarnPanel />
+      </div>
+    )
+  if (id === 'hs') return <HsSnap />
   if (id === 'timesheets') return <TimesheetPanel />
-  if (id === 'materials') return <MaterialsPanel />
+  if (id === 'materials') return <MaterialsSnap />
   if (id === 'projects') return <ProjectsPanel />
   if (id === 'reports') return <ReportsPanel />
   if (id === 'people') return <PeoplePanel />

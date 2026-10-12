@@ -48,7 +48,7 @@ const MODULES = [
 const FAQ = [
   ['When does it launch?', "We're finishing the last pieces now and opening to registered companies first. Register and we'll tell you the date before it goes public — you'll hear it from us, not from an advert."],
   ['What does registering commit me to?', "Nothing at all. No card, no contract. You're telling us you want to see it, and we'll come back to you when there's something worth showing."],
-  ['Is it built for MEP specifically?', "Yes. It was built inside a working MEP contractor for its own jobs — trades, RAMS, variations, CAT A and CAT B, decarbonisation, maintenance. That's why it fits rather than nearly fits."],
+  ['Is it built for MEP specifically?', "No, it isn't. It was built by an MEP contractor, but it works for every trade."],
   ['Do my operatives need training?', "They get the phone app and use three screens: their schedule, their tasks and their timesheet. If it needed training we'd have built it wrong."],
   ['What happens to our spreadsheets?', "Send them over before your setup call and we'll bring across your people, jobs and leave balances, so you start with your own data rather than an empty system."],
   ['Where is our data?', "In the UK/EU on Google Cloud, with role-based access so operatives only see their own work. The privacy policy is linked below and we'll answer anything else on the call."],
