@@ -65,10 +65,13 @@ import {
   displayOrganizationName,
   invoicingToFirestore,
   organizationNameToFirestore,
+  formatMaterialCutOffClock,
   parseInvoicing,
+  parseMaterialCutOff,
   parseOrganizationName,
   parsePaymentRunDateRanges,
   parseWarningDetection,
+  resolveMaterialCutOffClock,
   paymentRunShowsMonthCoverage,
   starterCollectionShouldSeed,
   missingStarterQualificationCodes,
@@ -1086,6 +1089,9 @@ test('the iOS JavaScript bundle exposes the standard-day, leave and dismiss rule
     'shouldClearRememberedOrganization',
     'webSessionOrganizationStorageKey',
     'selectableTimesheetPaymentRunPeriods',
+    'resolveMaterialCutOffClock',
+    'parseMaterialCutOff',
+    'formatMaterialCutOffClock',
     'timesheetListBucket',
     'timesheetDocumentId',
     'parseTimesheetStatusFields',
@@ -1096,6 +1102,12 @@ test('the iOS JavaScript bundle exposes the standard-day, leave and dismiss rule
   ]) {
     assert.equal(typeof bundle[name], 'function', `${name} is exported from the packed script`)
   }
+  const packedClock = bundle.resolveMaterialCutOffClock({
+    organizationMaterialCutOff: { materialCutOffHour: 15, materialCutOffMinute: 30 },
+    userNotificationPreferences: { materialCutOffHour: 16, materialCutOffMinute: 0 },
+  }) as { materialCutOffHour: number; materialCutOffMinute: number }
+  assert.equal(packedClock.materialCutOffHour, 15)
+  assert.equal(packedClock.materialCutOffMinute, 30)
   // Objects built inside the sandbox have another realm's prototypes; compare by value.
   const plain = (value: unknown) => JSON.parse(JSON.stringify(value))
   assert.deepEqual(plain(bundle.halfDayWindows(DEFAULT_DAY)), plain(halfDayWindows(DEFAULT_DAY)))
@@ -1601,6 +1613,57 @@ test('organisation name round-trips on the shared name field', () => {
   assert.equal(displayOrganizationName(''), 'Organisation')
   assert.equal(displayOrganizationName('  '), 'Organisation')
   assert.equal(displayOrganizationName('Acme'), 'Acme')
+})
+
+test('organisation materialCutOff is the only cut-off clock', () => {
+  const saved = resolveMaterialCutOffClock({
+    organizationMaterialCutOff: { materialCutOffHour: 15, materialCutOffMinute: 30 },
+    userNotificationPreferences: { materialCutOffHour: 16, materialCutOffMinute: 0 },
+  })
+  assert.equal(saved.materialCutOffHour, 15)
+  assert.equal(saved.materialCutOffMinute, 30)
+  assert.equal(formatMaterialCutOffClock(saved), '15:30')
+
+  const missingHour = resolveMaterialCutOffClock({
+    organizationMaterialCutOff: { materialCutOffMinute: 0, materialOrderCutOff: true },
+    userNotificationPreferences: { materialCutOffHour: 14, materialCutOffMinute: 30 },
+  })
+  assert.equal(missingHour.materialCutOffHour, 16)
+  assert.equal(missingHour.materialCutOffMinute, 0)
+
+  const weekends = resolveMaterialCutOffClock({
+    organizationMaterialCutOff: {
+      materialCutOffHour: 15,
+      materialCutOffMinute: 30,
+      materialCutOffOnSaturday: true,
+      materialCutOffOnSunday: false,
+    },
+    userNotificationPreferences: {
+      materialCutOffOnSaturday: false,
+      materialCutOffOnSunday: true,
+    },
+  })
+  assert.equal(weekends.materialCutOffOnSaturday, true)
+  assert.equal(weekends.materialCutOffOnSunday, false)
+
+  const empty = parseMaterialCutOff(undefined)
+  assert.equal(empty.materialCutOffHour, 16)
+  assert.equal(empty.materialCutOffMinute, 0)
+  assert.equal(empty.materialCutOffOnSaturday, false)
+  assert.equal(empty.materialCutOffOnSunday, false)
+
+  const fromSettings = resolveMaterialCutOffClock({
+    organizationSettings: {
+      materialCutOff: {
+        materialCutOffHour: 15,
+        materialCutOffMinute: 30,
+        materialCutOffOnSaturday: true,
+      },
+    },
+    userNotificationPreferences: { materialCutOffHour: 16 },
+  })
+  assert.equal(fromSettings.materialCutOffHour, 15)
+  assert.equal(fromSettings.materialCutOffOnSaturday, true)
 })
 
 test('parseInvoicing does not coerce date-range firms onto recurring pay', () => {

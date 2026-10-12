@@ -32,10 +32,12 @@ import {
   clockMinutesFromDeliveryInstant,
   defaultMaterialDeliveryRequiredAt,
   formatClockMinutes,
+  formatMaterialCutOffClock,
   formatMaterialDeliveryRequired,
   materialDeliveryInstant,
   materialOrderIncludesDeliveryRequired,
   parseClockMinutes,
+  resolveMaterialCutOffClock,
 } from '@/lib/canonical'
 import { dayKeyInZone } from '@/lib/orgTime/zoneTime'
 import {
@@ -100,6 +102,7 @@ export function MaterialsSendListSheet({
     recipientCount: number
   } | null>(null)
   const [countryCode, setCountryCode] = useState('GB')
+  const [cutOffLabel, setCutOffLabel] = useState(() => formatMaterialCutOffClock(resolveMaterialCutOffClock({})))
   const [whatsAppOpen, setWhatsAppOpen] = useState(false)
   const [whatsAppType, setWhatsAppType] = useState<MaterialSendRequestType>('order')
   const [whatsAppRecipientId, setWhatsAppRecipientId] = useState('')
@@ -116,6 +119,13 @@ export function MaterialsSendListSheet({
     if (!organization?.id) return
     void loadOrganizationDetails(organization.id).then((details) => {
       if (details?.countryCode) setCountryCode(details.countryCode)
+      setCutOffLabel(
+        formatMaterialCutOffClock(
+          resolveMaterialCutOffClock({
+            organizationMaterialCutOff: details?.materialCutOff ?? null,
+          })
+        )
+      )
     })
   }, [organization?.id])
 
@@ -729,7 +739,7 @@ export function MaterialsSendListSheet({
             <span className="text-slate-500">
               {selectedMaterialIds.size} items · {recipientCount} recipients
             </span>
-            <span className="font-medium text-[var(--blue)]">Cut-off 16:00</span>
+            <span className="font-medium text-[var(--blue)]">Cut-off {cutOffLabel}</span>
           </div>
           <div className="mt-3 grid grid-cols-2 gap-2">
             <button

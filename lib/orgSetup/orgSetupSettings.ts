@@ -16,6 +16,7 @@ import {
   type OrgWarningDetectionSettings,
 } from '@/lib/settings/organizationSettings'
 import { BANK_HOLIDAY_REGIONS, bankHolidayRegionLabel } from '@/lib/settings/bankHolidayRegions'
+import { DEFAULT_MATERIAL_CUT_OFF } from '@/lib/canonical'
 import type { NotificationPreferences } from '@/lib/settings/notificationPreferences'
 
 export type OrgOfficeAddress = {
@@ -94,13 +95,7 @@ export function createDefaultFeaturesSetup(): OrganisationFeaturesSetup {
     annualLeaveDefaults: { ...DEFAULT_ANNUAL_LEAVE },
     myScheduleOptions: { ...DEFAULT_MY_SCHEDULE, customItemEnabled: {} },
     warningDetection: { ...DEFAULT_WARNING_DETECTION, excludedUserIdsFromUnbookedWarnings: [] },
-    notificationPreferences: {
-      materialOrderCutOff: true,
-      materialCutOffHour: 16,
-      materialCutOffMinute: 0,
-      materialCutOffOnSaturday: false,
-      materialCutOffOnSunday: false,
-    },
+    notificationPreferences: { ...DEFAULT_MATERIAL_CUT_OFF },
     invoicing: {
       ...DEFAULT_INVOICING,
       paymentRunDateRanges: DEFAULT_PAYMENT_RUN_DATE_RANGES.map((r) => ({ ...r })),
