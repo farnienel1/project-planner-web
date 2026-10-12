@@ -1,5 +1,6 @@
 import { isActiveBookingStatus } from '@/lib/ios-parity/enums'
 import { addLondonDays, dayKey, londonIsoWeekday, londonMidnight, londonMinutesOfDay } from '@/lib/ios-parity/londonTime'
+import { formatMaterialCutOffClock, materialCutOffClockMinutes, resolveMaterialCutOffClock } from '@/lib/canonical'
 import type { Booking, MaterialSendRecord, Project, ProjectMaterialLine } from '@/types'
 
 export type MissedMaterialOrderWarning = {
@@ -36,10 +37,15 @@ export type MaterialCutoffOptions = {
   referenceDate?: Date
 }
 
-function cutoffMinutes(options: MaterialCutoffOptions): number {
-  const hour = options.cutOffHour ?? 16
-  const minute = options.cutOffMinute ?? 0
-  return Math.max(0, Math.min(23, hour)) * 60 + Math.max(0, Math.min(59, minute))
+function cutoffClock(options: MaterialCutoffOptions) {
+  return resolveMaterialCutOffClock({
+    organizationMaterialCutOff: {
+      materialCutOffHour: options.cutOffHour,
+      materialCutOffMinute: options.cutOffMinute,
+      materialCutOffOnSaturday: options.cutOffOnSaturday,
+      materialCutOffOnSunday: options.cutOffOnSunday,
+    },
+  })
 }
 
 /**
@@ -55,7 +61,8 @@ export function computeMissedMaterialOrderWarnings(
 ): MissedMaterialOrderWarning[] {
   const now = options.referenceDate ?? new Date()
   if (options.enabled === false) return []
-  const cutoff = cutoffMinutes(options)
+  const clock = cutoffClock(options)
+  const cutoff = materialCutOffClockMinutes(clock)
   if (londonMinutesOfDay(now) < cutoff) return []
 
   const today = londonMidnight(now)
@@ -73,7 +80,7 @@ export function computeMissedMaterialOrderWarnings(
 
   const projectsById = new Map(projects.map((project) => [project.id, project]))
   const warnings: MissedMaterialOrderWarning[] = []
-  const cutoffLabel = `${String(Math.floor(cutoff / 60)).padStart(2, '0')}:${String(cutoff % 60).padStart(2, '0')}`
+  const cutoffLabel = formatMaterialCutOffClock(clock)
 
   for (const projectId of projectIdsWithTomorrowBookings) {
     const project = projectsById.get(projectId)

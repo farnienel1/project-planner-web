@@ -4,7 +4,7 @@
  * live here so a save on the web is the same document iOS decodes.
  */
 
-import { CANONICAL_HALF_MONTH_RANGES, normalizePaymentRunRange } from './engine'
+import { CANONICAL_HALF_MONTH_RANGES, formatClockMinutes, normalizePaymentRunRange } from './engine'
 import {
   parseTimesheetSubmissionList,
   timesheetSubmissionToFirestore,
@@ -96,6 +96,20 @@ export type MaterialCutOffSettings = {
   materialCutOffMinute: number
   materialCutOffOnSaturday: boolean
   materialCutOffOnSunday: boolean
+}
+
+/**
+ * Inputs for the organisation cut-off clock.
+ * `users/{uid}.notificationPreferences.materialCutOffHour` is accepted only so
+ * callers cannot treat it as the clock — those fields are ignored.
+ */
+export type MaterialCutOffClockSource = {
+  /** `organizations/{orgId}.settings.materialCutOff` */
+  organizationMaterialCutOff?: Record<string, unknown> | MaterialCutOffSettings | null
+  /** Organisation `settings` map; reads `settings.materialCutOff`. */
+  organizationSettings?: Record<string, unknown> | null
+  /** User-doc leftover. Clock hour / minute / weekend flags here never win. */
+  userNotificationPreferences?: Record<string, unknown> | null
 }
 
 /** Top-level keys on `organizations/{orgId}` both apps must keep. */
@@ -663,15 +677,60 @@ export function myScheduleOptionsToFirestore(options: MyScheduleOptions): Record
   }
 }
 
-export function parseMaterialCutOff(data: Record<string, unknown> | undefined): MaterialCutOffSettings {
-  if (!data) return { ...DEFAULT_MATERIAL_CUT_OFF }
+function cutOffClockNumber(value: unknown, fallback: number, min: number, max: number): number {
+  if (value == null || value === '') return fallback
+  const n = Number(value)
+  if (!Number.isFinite(n)) return fallback
+  return Math.max(min, Math.min(max, Math.trunc(n)))
+}
+
+/**
+ * Parse `organizations/{orgId}.settings.materialCutOff`.
+ * A missing hour defaults to 16. A saved 15 and 30 stay 15:30.
+ * This is the only cut-off clock — do not read the user-pref hour.
+ */
+export function parseMaterialCutOff(
+  data: Record<string, unknown> | MaterialCutOffSettings | undefined | null
+): MaterialCutOffSettings {
+  const raw = asSettingsRecord(data)
+  if (!raw) return { ...DEFAULT_MATERIAL_CUT_OFF }
   return {
-    materialOrderCutOff: data.materialOrderCutOff !== false,
-    materialCutOffHour: Number(data.materialCutOffHour ?? DEFAULT_MATERIAL_CUT_OFF.materialCutOffHour),
-    materialCutOffMinute: Number(data.materialCutOffMinute ?? DEFAULT_MATERIAL_CUT_OFF.materialCutOffMinute),
-    materialCutOffOnSaturday: data.materialCutOffOnSaturday === true,
-    materialCutOffOnSunday: data.materialCutOffOnSunday === true,
+    materialOrderCutOff: raw.materialOrderCutOff !== false,
+    materialCutOffHour: cutOffClockNumber(
+      raw.materialCutOffHour,
+      DEFAULT_MATERIAL_CUT_OFF.materialCutOffHour,
+      0,
+      23
+    ),
+    materialCutOffMinute: cutOffClockNumber(
+      raw.materialCutOffMinute,
+      DEFAULT_MATERIAL_CUT_OFF.materialCutOffMinute,
+      0,
+      59
+    ),
+    materialCutOffOnSaturday: raw.materialCutOffOnSaturday === true,
+    materialCutOffOnSunday: raw.materialCutOffOnSunday === true,
   }
+}
+
+/**
+ * Organisation `settings.materialCutOff` is the only cut-off clock.
+ * User `notificationPreferences.materialCutOffHour` is never consulted.
+ */
+export function resolveMaterialCutOffClock(input: MaterialCutOffClockSource = {}): MaterialCutOffSettings {
+  const settings = asSettingsRecord(input.organizationSettings)
+  const fromOrg =
+    asSettingsRecord(input.organizationMaterialCutOff) ??
+    (settings ? asSettingsRecord(settings.materialCutOff) : undefined)
+  return parseMaterialCutOff(fromOrg)
+}
+
+export function materialCutOffClockMinutes(clock: MaterialCutOffSettings): number {
+  return clock.materialCutOffHour * 60 + clock.materialCutOffMinute
+}
+
+export function formatMaterialCutOffClock(clock: MaterialCutOffSettings): string {
+  return formatClockMinutes(materialCutOffClockMinutes(clock))
 }
 
 export function materialCutOffToFirestore(prefs: MaterialCutOffSettings): Record<string, unknown> {
