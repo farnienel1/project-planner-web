@@ -389,6 +389,7 @@ export interface MaterialSendRecord {
   requestType: 'quote' | 'order'
   sentAt: Date
   materialsDate?: Date
+  deliveryRequiredAt?: Date
   sentBy: string
   recipients: { name: string; email: string; wholesalerName?: string }[]
   lines: {

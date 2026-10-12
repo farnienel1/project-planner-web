@@ -1,4 +1,4 @@
-import { format } from 'date-fns'
+import { formatMaterialDeliveryRequired, materialOrderIncludesDeliveryRequired } from '@/lib/canonical'
 import { quantityLabel, supplierGreeting } from '@/lib/materials/sendListLogic'
 import { buildWhatsAppClickToChatUrl, toWhatsAppDigits } from '@/lib/phone/whatsappE164'
 
@@ -33,7 +33,7 @@ function trim(value?: string | null): string {
 
 export function formatWhatsAppDeliveryDate(date?: Date | null): string {
   if (!date || Number.isNaN(date.getTime())) return 'To be confirmed'
-  return format(date, 'EEEE, d MMMM yyyy')
+  return formatMaterialDeliveryRequired(date)
 }
 
 export function formatWhatsAppOrderItems(materials: WhatsAppOrderLine[]): string {
@@ -80,7 +80,9 @@ export function buildMaterialWhatsAppMessage(context: WhatsAppOrderContext): str
     lines.push(address)
   }
   if (trim(context.supplierName)) lines.push(`Supplier: ${trim(context.supplierName)}`)
-  lines.push(`Required delivery: ${formatWhatsAppDeliveryDate(context.deliveryDate)}`)
+  if (materialOrderIncludesDeliveryRequired(context.requestType) && context.deliveryDate) {
+    lines.push(`Required delivery: ${formatWhatsAppDeliveryDate(context.deliveryDate)}`)
+  }
   lines.push('')
   lines.push('ORDER DETAILS')
   lines.push(formatWhatsAppOrderItems(context.materials))

@@ -16,6 +16,7 @@ import { MaterialsAddSheet } from '@/components/projects/materials/MaterialsAddS
 import { MaterialsSendListSheet } from '@/components/projects/materials/MaterialsSendListSheet'
 import { materialStatusLabel } from '@/lib/maps/siteLocation'
 import { formatLengthSpecification } from '@/lib/materials/materialLength'
+import { formatMaterialDeliveryRequired } from '@/lib/canonical'
 import type { Project, ProjectMaterialLine } from '@/types'
 import {
   FeatureCard,
@@ -322,6 +323,11 @@ export function ProjectMaterialsSection({ project }: { project: Project }) {
                     <p className="mt-1 text-xs text-slate-500">
                       {format(record.sentAt, 'd MMM yyyy HH:mm')} · {record.sentBy.split('@')[0]}
                     </p>
+                    {record.requestType === 'order' && record.deliveryRequiredAt ? (
+                      <p className="mt-0.5 text-xs text-slate-500">
+                        Required {formatMaterialDeliveryRequired(record.deliveryRequiredAt)}
+                      </p>
+                    ) : null}
                     <p className="mt-0.5 text-xs text-slate-400">
                       {record.recipients.map((r) => r.wholesalerName || r.email).join(', ')}
                     </p>

@@ -26,20 +26,21 @@ test('order message uses material-order wording and live line items', () => {
   assert.match(message, /Project: Alpha House/)
   assert.match(message, /• 10 × 2\.5mm Twin & Earth Cable/)
   assert.match(message, /• 5 × 20A RCBO — Schneider · Code A9F/)
+  assert.match(message, /Required delivery: Tuesday 22 September at/)
   assert.doesNotMatch(message, /undefined|null|\{/)
   assert.doesNotMatch(message, /View the full order/)
 })
 
-test('missing delivery date is To be confirmed and quote copy stays a request', () => {
+test('quotes omit required delivery and stay a request', () => {
   const message = buildMaterialWhatsAppMessage({
     ...base,
     requestType: 'quote',
-    deliveryDate: null,
+    deliveryDate: new Date('2026-10-13T08:00:00'),
     projectAddress: '',
   })
   assert.match(message, /QUOTE REQUEST/)
-  assert.match(message, /Required delivery: To be confirmed/)
   assert.match(message, /only a quote request/)
+  assert.doesNotMatch(message, /Required delivery/)
   assert.doesNotMatch(message, /Project address/)
 })
 
