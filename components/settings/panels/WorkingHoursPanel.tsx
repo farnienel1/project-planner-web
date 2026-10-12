@@ -9,19 +9,25 @@ import {
   type OrgPayrollTimePolicy,
   type WeekendPayrollSettings,
 } from '@/lib/settings/organizationSettings'
+import { settingsHeader } from '@/lib/settings/settingsHeader'
 import {
   PanelHeader,
   SectionLabel,
   SettingsCard,
-  Toggle,
   Input,
   FormField,
   SaveButton,
   SuccessBanner,
   ErrorBanner,
+  ToggleRow,
+  Segmented,
+  Stepper,
+  MultiplierInput,
+  SaveBar,
 } from '@/components/settings/primitives'
 
 type WeekendKey = 'saturday' | 'sunday'
+type WeekendMode = 'all' | 'window'
 
 const HM_RE = /^\d{1,2}:\d{2}$/
 
@@ -37,76 +43,74 @@ function minutesOf(value: string): number {
   return hours * 60 + minutes
 }
 
-function Stepper({
-  label,
-  value,
-  onChange,
-  min,
-  max,
-  step,
-  format = (v) => String(v),
-}: {
-  label: string
-  value: number
-  onChange: (v: number) => void
-  min: number
-  max: number
-  step: number
-  format?: (v: number) => string
-}) {
+function TimeInput({ value, placeholder, onChange, label }: { value: string; placeholder: string; onChange: (value: string) => void; label: string }) {
   return (
-    <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2.5">
-      <span className="text-sm text-slate-900">
-        {label}: <span className="font-semibold">{format(value)}</span>
-      </span>
-      <div className="flex items-center gap-1">
-        <button
-          type="button"
-          onClick={() => onChange(Math.max(min, +(value - step).toFixed(2)))}
-          className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50"
-          aria-label="Decrease"
-        >
-          −
-        </button>
-        <button
-          type="button"
-          onClick={() => onChange(Math.min(max, +(value + step).toFixed(2)))}
-          className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50"
-          aria-label="Increase"
-        >
-          +
-        </button>
+    <Input
+      value={value}
+      placeholder={placeholder}
+      inputMode="numeric"
+      maxLength={5}
+      aria-label={label}
+      className="tabular-nums"
+      onChange={(e) => onChange(e.target.value)}
+    />
+  )
+}
+
+/** Visual of the Mon–Fri day: overtime either side, the standard window, and the unpaid break. */
+function DayTimeline({ policy }: { policy: OrgPayrollTimePolicy }) {
+  const valid =
+    isValidHM(policy.standardDayStart) &&
+    isValidHM(policy.standardDayEnd) &&
+    isValidHM(policy.breakWindowStart) &&
+    isValidHM(policy.breakWindowEnd) &&
+    minutesOf(policy.standardDayEnd) > minutesOf(policy.standardDayStart)
+  if (!valid) {
+    return <p className="text-[13px] text-[var(--ink3)]">Enter valid 24h times to see the day.</p>
+  }
+  const from = 5 * 60
+  const to = 21 * 60
+  const span = to - from
+  const pct = (minutes: number) => `${Math.min(100, Math.max(0, ((minutes - from) / span) * 100))}%`
+  const dayStart = minutesOf(policy.standardDayStart)
+  const dayEnd = minutesOf(policy.standardDayEnd)
+  const breakStart = minutesOf(policy.breakWindowStart)
+  const breakEnd = minutesOf(policy.breakWindowEnd)
+  const width = (a: number, b: number) => `calc(${pct(b)} - ${pct(a)})`
+  return (
+    <div>
+      <div className="relative h-9 overflow-hidden rounded-lg bg-[var(--warn-t)]" aria-hidden>
+        <div className="absolute inset-y-0 rounded-md bg-[var(--blue)]" style={{ left: pct(dayStart), width: width(dayStart, dayEnd) }} />
+        <div
+          className="absolute inset-y-0 bg-[var(--card)] opacity-80"
+          style={{ left: pct(breakStart), width: width(breakStart, breakEnd) }}
+        />
+      </div>
+      <div className="mt-1.5 flex justify-between text-[11.5px] font-semibold tabular-nums text-[var(--ink3)]" aria-hidden>
+        <span>05:00</span>
+        <span>09:00</span>
+        <span>13:00</span>
+        <span>17:00</span>
+        <span>21:00</span>
+      </div>
+      <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5 text-[12.5px] text-[var(--ink2)]">
+        <span className="inline-flex items-center gap-1.5">
+          <i className="h-2.5 w-2.5 rounded-sm bg-[var(--blue)]" /> Standard day {policy.standardDayStart}–{policy.standardDayEnd}
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <i className="h-2.5 w-2.5 rounded-sm bg-[var(--line2)]" /> Unpaid break {policy.unpaidBreakMinutes} min ({policy.breakWindowStart}–{policy.breakWindowEnd})
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <i className="h-2.5 w-2.5 rounded-sm bg-[var(--warn)]" /> Overtime ×{policy.weekdayOutsideStandardMultiplier}
+        </span>
       </div>
     </div>
   )
 }
 
-function MultiplierField({
-  label,
-  value,
-  onChange,
-}: {
-  label: string
-  value: number
-  onChange: (v: number) => void
-}) {
-  return (
-    <div className="flex items-center justify-between gap-3">
-      <span className="text-sm text-slate-900">{label}</span>
-      <div className="flex items-center gap-1">
-        <input
-          type="number"
-          inputMode="decimal"
-          step="0.1"
-          min="0"
-          value={Number.isFinite(value) ? value : ''}
-          onChange={(e) => onChange(parseFloat(e.target.value) || 0)}
-          className="w-20 rounded-lg border border-slate-200 px-2 py-1.5 text-right text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-        />
-        <span className="text-sm text-slate-400">×</span>
-      </div>
-    </div>
-  )
+function weekendSummary(settings: WeekendPayrollSettings): string {
+  if (settings.allHoursAtMultiplierMode) return `All hours at ×${settings.allHoursMultiplier}`
+  return `${settings.definedWindowStart ?? '—'}–${settings.definedWindowEnd ?? '—'} standard, outside ×${settings.outsideWindowMultiplier ?? 1.5}`
 }
 
 export function WorkingHoursPanel({ onBack }: { onBack: () => void }) {
@@ -115,6 +119,7 @@ export function WorkingHoursPanel({ onBack }: { onBack: () => void }) {
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState('')
+  const header = settingsHeader('working-hours')
 
   useEffect(() => {
     if (!organization?.id) return
@@ -135,6 +140,20 @@ export function WorkingHoursPanel({ onBack }: { onBack: () => void }) {
 
   function weekend(key: WeekendKey): WeekendPayrollSettings {
     return draft[key]
+  }
+
+  /** Same behaviour as the old "All hours at multiplier" switch. */
+  function setWeekendMode(key: WeekendKey, mode: WeekendMode) {
+    const settings = weekend(key)
+    if (mode === 'all') {
+      patchWeekend(key, { allHoursAtMultiplierMode: true })
+    } else {
+      patchWeekend(key, {
+        allHoursAtMultiplierMode: false,
+        definedWindowStart: settings.definedWindowStart ?? draft.standardDayStart,
+        definedWindowEnd: settings.definedWindowEnd ?? '13:00',
+      })
+    }
   }
 
   function validate(): string | null {
@@ -201,35 +220,118 @@ export function WorkingHoursPanel({ onBack }: { onBack: () => void }) {
     }
   }
 
+  function weekendFields(key: WeekendKey) {
+    const settings = weekend(key)
+    const name = key === 'saturday' ? 'Saturday' : 'Sunday'
+    const mode: WeekendMode = settings.allHoursAtMultiplierMode ? 'all' : 'window'
+    return (
+      <div className="space-y-4">
+        <Segmented<WeekendMode>
+          ariaLabel={`${name} pay`}
+          value={mode}
+          onChange={(next) => setWeekendMode(key, next)}
+          options={[
+            { value: 'all', label: 'All hours at one rate' },
+            { value: 'window', label: 'Standard window + overtime' },
+          ]}
+        />
+        {mode === 'all' ? (
+          <MultiplierInput
+            label={`Rate for all ${name} hours`}
+            hint={`Paid time still assumes a ${draft.unpaidBreakMinutes}-minute unpaid break unless it's removed on a booking.`}
+            value={settings.allHoursMultiplier}
+            onChange={(value) => patchWeekend(key, { allHoursMultiplier: value })}
+          />
+        ) : (
+          <>
+            <div className="[display:grid] grid-cols-2 gap-3">
+              <FormField label="Window start">
+                <TimeInput
+                  label={`${name} window start`}
+                  value={settings.definedWindowStart ?? ''}
+                  placeholder="07:30"
+                  onChange={(value) => patchWeekend(key, { definedWindowStart: value })}
+                />
+              </FormField>
+              <FormField label="Window end">
+                <TimeInput
+                  label={`${name} window end`}
+                  value={settings.definedWindowEnd ?? ''}
+                  placeholder="13:00"
+                  onChange={(value) => patchWeekend(key, { definedWindowEnd: value })}
+                />
+              </FormField>
+            </div>
+            <MultiplierInput
+              label="Rate outside the window"
+              hint="Hours inside the window count as standard hours."
+              value={settings.outsideWindowMultiplier ?? 1.5}
+              onChange={(value) => patchWeekend(key, { outsideWindowMultiplier: value })}
+            />
+          </>
+        )}
+      </div>
+    )
+  }
+
+  const sunday = weekend('sunday')
+
   return (
-    <div className="mx-auto max-w-2xl pb-12">
-      <PanelHeader title="Working hours" onBack={onBack} />
+    <div className="mx-auto max-w-3xl">
+      <PanelHeader
+        title={header.title}
+        description="Your standard day, unpaid break and overtime rates. Timesheets and pay use these rules."
+        iconPath={header.iconPath}
+        hue={header.hue}
+        onBack={onBack}
+      />
 
       {error && (
-        <div className="mt-4">
+        <div className="mb-4">
           <ErrorBanner message={error} />
         </div>
       )}
       {saved && (
-        <div className="mt-4">
+        <div className="mb-4">
           <SuccessBanner message="Working hours saved" />
         </div>
       )}
 
-      <SectionLabel label="Standard day (Mon–Fri reference)" />
       <SettingsCard>
-        <div className="space-y-4 p-4">
-          <div className="grid grid-cols-2 gap-3">
-            <FormField label="Start time">
-              <Input value={draft.standardDayStart} placeholder="07:30" onChange={(e) => patch({ standardDayStart: e.target.value })} />
-            </FormField>
-            <FormField label="End time">
-              <Input value={draft.standardDayEnd} placeholder="16:00" onChange={(e) => patch({ standardDayEnd: e.target.value })} />
-            </FormField>
-          </div>
+        <div className="p-5">
+          <DayTimeline policy={draft} />
+        </div>
+      </SettingsCard>
 
+      <SectionLabel label="Standard working day" description="Monday to Friday. Clock times use 24h format, e.g. 07:30." />
+      <SettingsCard>
+        <div className="[display:grid] grid-cols-2 gap-4 p-5">
+          <FormField label="Start time">
+            <TimeInput label="Start time" value={draft.standardDayStart} placeholder="07:30" onChange={(value) => patch({ standardDayStart: value })} />
+          </FormField>
+          <FormField label="End time">
+            <TimeInput label="End time" value={draft.standardDayEnd} placeholder="16:00" onChange={(value) => patch({ standardDayEnd: value })} />
+          </FormField>
+        </div>
+        <div className="p-5">
           <Stepper
-            label="Unpaid break"
+            label="Standard paid hours"
+            hint="Hours paid for a full day"
+            value={draft.standardPaidHours}
+            onChange={(value) => patch({ standardPaidHours: value })}
+            min={1}
+            max={12}
+            step={0.5}
+            format={(value) => `${value.toFixed(1)} h`}
+          />
+        </div>
+      </SettingsCard>
+
+      <SectionLabel label="Unpaid break" description="Taken off paid time on every booking unless removed." />
+      <SettingsCard>
+        <div className="p-5">
+          <Stepper
+            label="Break length"
             value={draft.unpaidBreakMinutes}
             onChange={(value) => patch({ unpaidBreakMinutes: value })}
             min={0}
@@ -237,136 +339,56 @@ export function WorkingHoursPanel({ onBack }: { onBack: () => void }) {
             step={5}
             format={(value) => `${value} min`}
           />
-
-          <div className="grid grid-cols-2 gap-3">
-            <FormField label="Break window start">
-              <Input value={draft.breakWindowStart} placeholder="12:00" onChange={(e) => patch({ breakWindowStart: e.target.value })} />
-            </FormField>
-            <FormField label="Break window end">
-              <Input value={draft.breakWindowEnd} placeholder="12:30" onChange={(e) => patch({ breakWindowEnd: e.target.value })} />
-            </FormField>
-          </div>
-
-          <Stepper
-            label="Standard paid hours (full day)"
-            value={draft.standardPaidHours}
-            onChange={(value) => patch({ standardPaidHours: value })}
-            min={1}
-            max={12}
-            step={0.5}
-            format={(value) => value.toFixed(1)}
-          />
-
-          <p className="text-xs text-slate-500">
-            Clock times use 24h format (e.g. 07:30). Mon–Fri hours outside this window are treated as overtime at the
-            weekday multiplier below.
-          </p>
+        </div>
+        <div className="[display:grid] grid-cols-2 gap-4 p-5">
+          <FormField label="Break window start">
+            <TimeInput label="Break window start" value={draft.breakWindowStart} placeholder="12:00" onChange={(value) => patch({ breakWindowStart: value })} />
+          </FormField>
+          <FormField label="Break window end">
+            <TimeInput label="Break window end" value={draft.breakWindowEnd} placeholder="12:30" onChange={(value) => patch({ breakWindowEnd: value })} />
+          </FormField>
         </div>
       </SettingsCard>
 
-      <SectionLabel label="Weekday overtime" />
+      <SectionLabel label="Weekday overtime" description="Monday to Friday hours worked outside the standard day." />
       <SettingsCard>
-        <div className="space-y-2 p-4">
-          <MultiplierField
-            label="Weekday OT (outside standard window)"
+        <div className="p-5">
+          <MultiplierInput
+            label="Overtime rate"
+            hint="e.g. 1.5 = time and a half"
             value={draft.weekdayOutsideStandardMultiplier}
             onChange={(value) => patch({ weekdayOutsideStandardMultiplier: value })}
           />
-          <p className="text-xs text-slate-500">Applies Monday–Friday to time worked outside the standard day window.</p>
         </div>
       </SettingsCard>
 
-      {(['saturday', 'sunday'] as WeekendKey[]).map((key) => {
-        const settings = weekend(key)
-        const name = key === 'saturday' ? 'Saturday' : 'Sunday'
-        const allMode = settings.allHoursAtMultiplierMode
-        return (
-          <div key={key}>
-            <SectionLabel label={name} />
-            <SettingsCard>
-              <div className="space-y-4 p-4">
-                {key === 'sunday' && (
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="text-sm text-slate-900">Same as Saturday</span>
-                    <Toggle
-                      checked={!!settings.sameAsSaturday}
-                      onChange={(on) => {
-                        if (on) {
-                          patchWeekend('sunday', { ...draft.saturday, sameAsSaturday: true })
-                        } else {
-                          patchWeekend('sunday', { sameAsSaturday: false })
-                        }
-                      }}
-                    />
-                  </div>
-                )}
+      <SectionLabel label="Saturday" description={weekendSummary(weekend('saturday'))} />
+      <SettingsCard>
+        <div className="p-5">{weekendFields('saturday')}</div>
+      </SettingsCard>
 
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="text-sm font-medium text-slate-900">All hours at multiplier</div>
-                    {allMode && (
-                      <p className="mt-1 text-xs text-slate-500">
-                        All hours on {name} will be at the multiplier rate. Paid time still assumes a{' '}
-                        {draft.unpaidBreakMinutes}-minute unpaid break unless removed on a booking.
-                      </p>
-                    )}
-                  </div>
-                  <Toggle
-                    checked={allMode}
-                    onChange={(on) => {
-                      if (on) {
-                        patchWeekend(key, { allHoursAtMultiplierMode: true })
-                      } else {
-                        patchWeekend(key, {
-                          allHoursAtMultiplierMode: false,
-                          definedWindowStart: settings.definedWindowStart ?? draft.standardDayStart,
-                          definedWindowEnd: settings.definedWindowEnd ?? '13:00',
-                        })
-                      }
-                    }}
-                  />
-                </div>
+      <SectionLabel label="Sunday" description={sunday.sameAsSaturday ? 'Follows Saturday' : weekendSummary(sunday)} />
+      <SettingsCard>
+        <div className="p-5">
+          <ToggleRow
+            title="Same as Saturday"
+            description={sunday.sameAsSaturday ? `Sunday uses Saturday's rules: ${weekendSummary(weekend('saturday'))}.` : 'Turn on to pay Sunday exactly like Saturday.'}
+            checked={!!sunday.sameAsSaturday}
+            onChange={(on) => {
+              if (on) {
+                patchWeekend('sunday', { ...draft.saturday, sameAsSaturday: true })
+              } else {
+                patchWeekend('sunday', { sameAsSaturday: false })
+              }
+            }}
+          />
+        </div>
+        {!sunday.sameAsSaturday ? <div className="p-5">{weekendFields('sunday')}</div> : null}
+      </SettingsCard>
 
-                <MultiplierField
-                  label="Multiplier"
-                  value={settings.allHoursMultiplier}
-                  onChange={(value) => patchWeekend(key, { allHoursMultiplier: value })}
-                />
-
-                {!allMode && (
-                  <>
-                    <div className="grid grid-cols-2 gap-3">
-                      <FormField label="Window start">
-                        <Input
-                          value={settings.definedWindowStart ?? ''}
-                          placeholder="07:30"
-                          onChange={(e) => patchWeekend(key, { definedWindowStart: e.target.value })}
-                        />
-                      </FormField>
-                      <FormField label="Window end">
-                        <Input
-                          value={settings.definedWindowEnd ?? ''}
-                          placeholder="13:00"
-                          onChange={(e) => patchWeekend(key, { definedWindowEnd: e.target.value })}
-                        />
-                      </FormField>
-                    </div>
-                    <MultiplierField
-                      label="Outside window · multiplier"
-                      value={settings.outsideWindowMultiplier ?? 1.5}
-                      onChange={(value) => patchWeekend(key, { outsideWindowMultiplier: value })}
-                    />
-                  </>
-                )}
-              </div>
-            </SettingsCard>
-          </div>
-        )
-      })}
-
-      <div className="mt-6">
+      <SaveBar>
         <SaveButton saving={saving} saved={saved} onClick={save} />
-      </div>
+      </SaveBar>
     </div>
   )
 }

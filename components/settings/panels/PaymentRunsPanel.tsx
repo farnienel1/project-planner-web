@@ -16,15 +16,20 @@ import {
   paymentRunModeChange,
   validateInvoicingSettings,
 } from '@/lib/settings/invoicingValidation'
+import { ordinalDay, settingsHeader } from '@/lib/settings/settingsHeader'
 import {
   PanelHeader,
   SectionLabel,
   SettingsCard,
   Select,
   Textarea,
+  FormField,
   SaveButton,
   SuccessBanner,
   ErrorBanner,
+  ChoiceCard,
+  Segmented,
+  SaveBar,
 } from '@/components/settings/primitives'
 import { TimesheetSubmissionSection } from '@/components/settings/TimesheetSubmissionSection'
 import {
@@ -33,29 +38,86 @@ import {
   withRecurringPaymentDay,
 } from '@/lib/settings/timesheetSubmissionDraft'
 
-function RadioCard({ selected, title, onClick }: { selected: boolean; title: string; onClick: () => void }) {
+type DateMode = OrgInvoicingSettings['paymentDateMode']
+
+/** Days 1–31 coloured by run, so gaps and overlaps are obvious before saving. */
+function MonthCoverage({ ranges }: { ranges: Array<{ startDay: number; endDay: number }> }) {
+  const inRun = (index: number, day: number) => {
+    const range = ranges[index]
+    return !!range && range.startDay > 0 && range.endDay > 0 && day >= range.startDay && day <= range.endDay
+  }
+  const days = DAY_OF_MONTH_OPTIONS.map((day) => {
+    const one = inRun(0, day)
+    const two = inRun(1, day)
+    return { day, state: one && two ? 'overlap' : one ? 'one' : two ? 'two' : 'gap' }
+  })
+  const gaps = days.filter((d) => d.state === 'gap').length
+  const overlaps = days.filter((d) => d.state === 'overlap').length
+  const cell: Record<string, string> = {
+    one: 'bg-[var(--blue)] text-white',
+    two: 'bg-[var(--ops)] text-white',
+    overlap: 'bg-[var(--red)] text-white',
+    gap: 'bg-[var(--card)] text-[var(--ink3)] shadow-[inset_0_0_0_1.5px_var(--line2)] [background-image:repeating-linear-gradient(135deg,var(--soft2)_0_3px,transparent_3px_6px)]',
+  }
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`flex w-full items-center gap-3 rounded-xl border px-3.5 py-3 text-left transition ${
-        selected ? 'border-blue-500 bg-blue-50' : 'border-slate-200 bg-white hover:bg-slate-50'
-      }`}
-    >
-      <span
-        className={`flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full border-2 ${
-          selected ? 'border-blue-600' : 'border-slate-300'
-        }`}
-      >
-        {selected && <span className="h-2 w-2 rounded-full bg-blue-600" />}
-      </span>
-      <span className={`text-sm font-medium ${selected ? 'text-blue-700' : 'text-slate-900'}`}>{title}</span>
-    </button>
+    <div>
+      <div className="[display:grid] grid-cols-[repeat(16,minmax(0,1fr))] gap-1 sm:grid-cols-[repeat(31,minmax(0,1fr))]" aria-hidden>
+        {days.map(({ day, state }) => (
+          <span key={day} className={`grid h-7 place-items-center rounded-[5px] text-[10.5px] font-bold tabular-nums ${cell[state]}`}>
+            {day}
+          </span>
+        ))}
+      </div>
+      <div className="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[12.5px] text-[var(--ink2)]">
+        <span className="inline-flex items-center gap-1.5">
+          <i className="h-2.5 w-2.5 rounded-sm bg-[var(--blue)]" /> Run 1
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <i className="h-2.5 w-2.5 rounded-sm bg-[var(--ops)]" /> Run 2
+        </span>
+        {gaps === 0 && overlaps === 0 ? (
+          <span className="font-semibold text-[var(--green)]">✓ Every day covered once</span>
+        ) : (
+          <span className="font-semibold text-[var(--red)]">
+            {[gaps ? `${gaps} day${gaps === 1 ? '' : 's'} not covered` : '', overlaps ? `${overlaps} day${overlaps === 1 ? '' : 's'} in both runs` : '']
+              .filter(Boolean)
+              .join(' · ')}
+          </span>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function DaySelect({ value, onChange, placeholder, label }: { value: string; onChange: (value: number) => void; placeholder: string; label: string }) {
+  return (
+    <Select value={value} aria-label={label} onChange={(e) => onChange(Number(e.target.value))}>
+      <option value="">{placeholder}</option>
+      {DAY_OF_MONTH_OPTIONS.map((day) => (
+        <option key={day} value={day}>
+          {ordinalDay(day)}
+        </option>
+      ))}
+    </Select>
+  )
+}
+
+function WeekdaySelect({ value, onChange, label, prefix = '' }: { value: string; onChange: (value: string) => void; label: string; prefix?: string }) {
+  return (
+    <Select value={value} aria-label={label} onChange={(e) => onChange(e.target.value)}>
+      {WEEKDAY_OPTIONS.map((day) => (
+        <option key={day} value={day}>
+          {prefix}
+          {capitalizeDay(day)}
+        </option>
+      ))}
+    </Select>
   )
 }
 
 export function PaymentRunsPanel({ onBack }: { onBack: () => void }) {
   const { organization } = useAuthStore()
+  const header = settingsHeader('payment-runs')
   const [draft, setDraft] = useState<OrgInvoicingSettings>(DEFAULT_INVOICING)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -126,204 +188,200 @@ export function PaymentRunsPanel({ onBack }: { onBack: () => void }) {
   const runMode = draft.paymentRunMode
   const dateMode = draft.paymentDateMode
 
+  const paidOn = (index: number) => {
+    const day = Number(draft.paymentDates[index]) || 0
+    return day ? `paid on the ${ordinalDay(day)}` : 'pay date not set'
+  }
+  const summary =
+    runMode === 'date_ranges'
+      ? ranges.map((range, index) => {
+          const span = range.startDay && range.endDay ? `${ordinalDay(range.startDay)}–${ordinalDay(range.endDay)}` : 'not set'
+          return `Run ${index + 1}: work from the ${span}, ${dateMode === 'specific_dates' ? paidOn(index) : 'pay date not set'}`
+        })
+      : [
+          `Weekly in arrears: ${capitalizeDay(draft.recurringRunStartDay)} to ${capitalizeDay(draft.recurringRunEndDay)} of the previous week`,
+          dateMode === 'recurring_date'
+            ? `Paid every ${capitalizeDay(draft.recurringPaymentDay)}`
+            : `Paid on ${draft.paymentDates.filter((d) => Number(d) > 0).map((d) => `the ${ordinalDay(Number(d))}`).join(' and ') || 'dates not set'}`,
+        ]
+
   return (
-    <div className="mx-auto max-w-2xl pb-12">
-      <PanelHeader title="Payment Runs and Timesheets" onBack={onBack} />
+    <div className="mx-auto max-w-3xl">
+      <PanelHeader
+        title={header.title}
+        description="When each pay period runs, when people are paid, and when timesheets are due."
+        iconPath={header.iconPath}
+        hue={header.hue}
+        onBack={onBack}
+      />
 
       {error && (
-        <div className="mt-4">
+        <div className="mb-4">
           <ErrorBanner message={error} />
         </div>
       )}
       {saved && (
-        <div className="mt-4">
+        <div className="mb-4">
           <SuccessBanner message="Payment run settings saved" />
         </div>
       )}
 
-      <div className="mt-4 rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3">
-        <p className="text-sm font-semibold text-blue-900">How payment runs should be configured</p>
-        <p className="mt-1 text-xs leading-relaxed text-blue-700">
-          Set your payment run periods first, then choose payment day/dates. Warnings can use end of invoicing period for
-          detection.
+      <div className="card p-4">
+        <div className="text-[12px] font-semibold text-[var(--ink3)]">At a glance</div>
+        <ul className="mt-1.5 space-y-1">
+          {summary.map((line) => (
+            <li key={line} className="flex gap-2 text-[14px] text-[var(--ink)]">
+              <span className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--blue)]" aria-hidden />
+              {line}
+            </li>
+          ))}
+        </ul>
+        <p className="mt-2 text-[12.5px] text-[var(--ink3)]">
+          Set your pay periods first, then the pay day. Warnings can use the end of the pay period for detection.
         </p>
       </div>
 
-      <p className="mt-4 px-1 text-xs text-slate-500">
-        Date ranges should cover the full month (days 1–31). Both runs together must cover every day without gaps or
-        overlaps — e.g. run 1: days 1–15, run 2: days 16–31.
-      </p>
+      <SectionLabel step={1} label="How you run pay" description="Pick how your pay periods are set up." />
+      <div role="radiogroup" aria-label="Payment runs" className="[display:grid] gap-2.5 sm:grid-cols-2">
+        <ChoiceCard
+          selected={runMode === 'date_ranges'}
+          title="Set payment run date ranges"
+          description="Two runs a month on fixed days of the month."
+          example="e.g. 1st–15th and 16th–31st"
+          onClick={() => setPaymentRunMode('date_ranges')}
+        />
+        <ChoiceCard
+          selected={runMode === 'recurring_timeframe'}
+          title="Choose recurring timeframe"
+          description="A weekly run, paid in arrears for the previous week."
+          example="e.g. Monday to Sunday, paid Friday"
+          onClick={() => setPaymentRunMode('recurring_timeframe')}
+        />
+      </div>
 
-      <SectionLabel label="Payment runs" />
+      <SectionLabel
+        step={2}
+        label="Pay periods"
+        description={
+          runMode === 'date_ranges'
+            ? 'Both runs together must cover days 1–31 with no gaps or overlaps, e.g. run 1: 1–15, run 2: 16–31.'
+            : 'The working week each payment covers.'
+        }
+      />
       <SettingsCard>
-        <div className="space-y-3 p-4">
-          <RadioCard
-            selected={runMode === 'date_ranges'}
-            title="Set payment run date ranges"
-            onClick={() => setPaymentRunMode('date_ranges')}
-          />
-          <RadioCard
-            selected={runMode === 'recurring_timeframe'}
-            title="Choose recurring timeframe"
-            onClick={() => setPaymentRunMode('recurring_timeframe')}
-          />
-
-          {runMode === 'date_ranges' ? (
-            <div className="space-y-4 pt-1">
-              {ranges.map((range, index) => (
-                <div key={index} className="space-y-2 rounded-xl border border-slate-200 p-3">
-                  <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Payment run date range {index + 1}
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <span className="mb-1 block text-xs text-slate-500">Start day</span>
-                      <Select
-                        value={String(range.startDay || '')}
-                        onChange={(e) => setRange(index, 'startDay', Number(e.target.value))}
-                      >
-                        <option value="">Select</option>
-                        {DAY_OF_MONTH_OPTIONS.map((day) => (
-                          <option key={day} value={day}>
-                            {day}
-                          </option>
-                        ))}
-                      </Select>
-                    </div>
-                    <div>
-                      <span className="mb-1 block text-xs text-slate-500">End day</span>
-                      <Select
-                        value={String(range.endDay || '')}
-                        onChange={(e) => setRange(index, 'endDay', Number(e.target.value))}
-                      >
-                        <option value="">Select</option>
-                        {DAY_OF_MONTH_OPTIONS.map((day) => (
-                          <option key={day} value={day}>
-                            {day}
-                          </option>
-                        ))}
-                      </Select>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="space-y-3 pt-1">
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-sm text-slate-900">Start day</span>
-                <Select
-                  value={draft.recurringRunStartDay}
-                  onChange={(e) => patch({ recurringRunStartDay: e.target.value })}
+        {runMode === 'date_ranges' ? (
+          <>
+            {ranges.map((range, index) => (
+              <div key={index} className="[display:grid] grid-cols-[auto_1fr_1fr] items-end gap-3 p-5">
+                <span
+                  className={`mb-1.5 grid h-7 min-w-[52px] place-items-center rounded-md px-2 text-[12px] font-bold text-white ${
+                    index === 0 ? 'bg-[var(--blue)]' : 'bg-[var(--ops)]'
+                  }`}
                 >
-                  {WEEKDAY_OPTIONS.map((day) => (
-                    <option key={day} value={day}>
-                      {capitalizeDay(day)}
-                    </option>
-                  ))}
-                </Select>
+                  Run {index + 1}
+                </span>
+                <FormField label="Start day">
+                  <DaySelect
+                    label={`Payment run ${index + 1} start day`}
+                    placeholder="Select"
+                    value={String(range.startDay || '')}
+                    onChange={(value) => setRange(index, 'startDay', value)}
+                  />
+                </FormField>
+                <FormField label="End day">
+                  <DaySelect
+                    label={`Payment run ${index + 1} end day`}
+                    placeholder="Select"
+                    value={String(range.endDay || '')}
+                    onChange={(value) => setRange(index, 'endDay', value)}
+                  />
+                </FormField>
               </div>
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-sm text-slate-900">End day</span>
-                <Select value={draft.recurringRunEndDay} onChange={(e) => patch({ recurringRunEndDay: e.target.value })}>
-                  {WEEKDAY_OPTIONS.map((day) => (
-                    <option key={day} value={day}>
-                      {capitalizeDay(day)}
-                    </option>
-                  ))}
-                </Select>
-              </div>
-              <p className="text-xs text-slate-400">
-                In arrears: {capitalizeDay(draft.recurringRunStartDay)} to {capitalizeDay(draft.recurringRunEndDay)} (of
-                the previous week)
-              </p>
+            ))}
+            <div className="bg-[var(--soft)] p-5">
+              <MonthCoverage ranges={ranges} />
             </div>
-          )}
-        </div>
+          </>
+        ) : (
+          <div className="space-y-3 p-5">
+            <div className="[display:grid] grid-cols-[1fr_auto_1fr] items-end gap-3">
+              <FormField label="Start day">
+                <WeekdaySelect label="Start day" value={draft.recurringRunStartDay} onChange={(value) => patch({ recurringRunStartDay: value })} />
+              </FormField>
+              <span className="pb-2.5 text-[var(--ink3)]" aria-hidden>
+                →
+              </span>
+              <FormField label="End day">
+                <WeekdaySelect label="End day" value={draft.recurringRunEndDay} onChange={(value) => patch({ recurringRunEndDay: value })} />
+              </FormField>
+            </div>
+            <p className="inline-flex rounded-lg bg-[var(--soft2)] px-2.5 py-1 text-[12.5px] font-semibold text-[var(--ink2)]">
+              In arrears: {capitalizeDay(draft.recurringRunStartDay)} to {capitalizeDay(draft.recurringRunEndDay)} (of the previous week)
+            </p>
+          </div>
+        )}
       </SettingsCard>
 
-      <SectionLabel label="Payment day / dates" />
+      <SectionLabel step={3} label="Pay day" description="When operatives are paid for each run." />
       <SettingsCard>
-        <div className="space-y-4 p-4">
-          <div className="inline-flex rounded-xl border border-slate-200 bg-slate-50 p-1">
-            {(
-              [
-                ['specific_dates', 'Set payment date/s'],
-                ['recurring_date', 'Recurring payment date'],
-              ] as const
-            ).map(([mode, label]) => (
-              <button
-                key={mode}
-                type="button"
-                disabled={runMode === 'recurring_timeframe' && mode === 'specific_dates'}
-                onClick={() => patch({ paymentDateMode: mode })}
-                className={`rounded-lg px-3 py-1.5 text-sm font-medium transition disabled:opacity-40 ${
-                  dateMode === mode ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-                }`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-
+        <div className="space-y-4 p-5">
+          <Segmented<DateMode>
+            ariaLabel="Payment day / dates"
+            value={dateMode}
+            onChange={(mode) => patch({ paymentDateMode: mode })}
+            options={[
+              { value: 'specific_dates', label: 'Set payment date/s', disabled: runMode === 'recurring_timeframe' },
+              { value: 'recurring_date', label: 'Recurring payment date' },
+            ]}
+          />
           {dateMode === 'specific_dates' ? (
-            <div className="space-y-3">
+            <div className="[display:grid] gap-3 sm:grid-cols-2">
               {ranges.map((_, index) => (
-                <div key={index}>
-                  <span className="mb-1 block text-xs text-slate-500">Payment date {index + 1}</span>
-                  <Select
-                    value={draft.paymentDates[index] || ''}
-                    onChange={(e) => setPaymentDate(index, Number(e.target.value))}
-                  >
-                    <option value="">Select day</option>
-                    {DAY_OF_MONTH_OPTIONS.map((day) => (
-                      <option key={day} value={day}>
-                        {day}
-                      </option>
-                    ))}
-                  </Select>
-                </div>
+                <FormField key={index} label={`Payment date ${index + 1}`}>
+                  <DaySelect
+                    label={`Payment date ${index + 1}`}
+                    placeholder="Select day"
+                    value={String(draft.paymentDates[index] || '')}
+                    onChange={(value) => setPaymentDate(index, value)}
+                  />
+                </FormField>
               ))}
             </div>
           ) : (
-            <div className="flex items-center justify-between gap-3">
-              <span className="text-sm text-slate-900">Recurring payment date</span>
-              <Select
+            <FormField label="Recurring payment date">
+              <WeekdaySelect
+                label="Recurring payment date"
+                prefix="Every "
                 value={draft.recurringPaymentDay}
-                onChange={(e) => patch(withRecurringPaymentDay(draft, e.target.value))}
-              >
-                {WEEKDAY_OPTIONS.map((day) => (
-                  <option key={day} value={day}>
-                    Every {capitalizeDay(day)}
-                  </option>
-                ))}
-              </Select>
-            </div>
+                onChange={(value) => patch(withRecurringPaymentDay(draft, value))}
+              />
+            </FormField>
           )}
         </div>
       </SettingsCard>
 
-      <TimesheetSubmissionSection draft={draft} onChange={patch} />
+      <TimesheetSubmissionSection draft={draft} onChange={patch} step={4} />
 
-      <SectionLabel label="Note to user" />
+      <SectionLabel
+        step={5}
+        label="Note to operatives"
+        description="Shown on operative timesheet pages. Add anything specific, e.g. submit price work by Thursday."
+      />
       <SettingsCard>
-        <div className="p-4">
+        <div className="p-5">
           <Textarea
             value={draft.noteToUsers}
             onChange={(e) => patch({ noteToUsers: e.target.value })}
             rows={5}
+            aria-label="Note to operatives"
             placeholder="Explain how payment runs and timesheet requirements work…"
           />
-          <p className="mt-2 text-xs text-slate-500">
-            Detail any specific requirements (e.g. submit price work by Thursday). These notes appear on operative
-            timesheet pages.
-          </p>
         </div>
       </SettingsCard>
 
-      <div className="mt-6">
+      <SaveBar>
         <SaveButton saving={saving} saved={saved} onClick={save} />
-      </div>
+      </SaveBar>
     </div>
   )
 }
