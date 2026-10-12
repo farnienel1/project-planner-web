@@ -16,16 +16,34 @@ export function timesheetSurfaceFromPath(pathname: string): TimesheetRouteSurfac
   return 'hub'
 }
 
-export function timesheetsMineHref(period?: string | null): string {
+export function timesheetsMineHref(period?: string | null, periodEnd?: string | null): string {
   if (!period) return TIMESHEETS_MINE_PATH
-  return `${TIMESHEETS_MINE_PATH}?period=${encodeURIComponent(period)}`
+  const params = new URLSearchParams({ period })
+  if (periodEnd) params.set('periodEnd', periodEnd)
+  return `${TIMESHEETS_MINE_PATH}?${params.toString()}`
 }
 
-export function timesheetsTeamHref(options?: { tab?: string | null; user?: string | null; period?: string | null }): string {
+/** Period detail goes to its list. The list goes to the hub. */
+export function timesheetNestedParentHref(input: {
+  surface: 'mine' | 'team'
+  hasDetail: boolean
+  tab?: string | null
+}): string {
+  if (input.surface === 'mine') return input.hasDetail ? TIMESHEETS_MINE_PATH : TIMESHEETS_HUB_PATH
+  return input.hasDetail ? timesheetsTeamHref({ tab: input.tab || 'awaiting' }) : TIMESHEETS_HUB_PATH
+}
+
+export function timesheetsTeamHref(options?: {
+  tab?: string | null
+  user?: string | null
+  period?: string | null
+  periodEnd?: string | null
+}): string {
   const params = new URLSearchParams()
   if (options?.tab) params.set('tab', options.tab)
   if (options?.user) params.set('user', options.user)
   if (options?.period) params.set('period', options.period)
+  if (options?.periodEnd) params.set('periodEnd', options.periodEnd)
   const query = params.toString()
   return query ? `${TIMESHEETS_TEAM_PATH}?${query}` : TIMESHEETS_TEAM_PATH
 }

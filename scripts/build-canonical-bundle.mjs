@@ -16,6 +16,7 @@ const webRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const outDir = path.join(webRoot, 'lib/canonical/dist')
 const outFile = path.join(outDir, 'canonical-business.js')
 const hashFile = path.join(outDir, 'canonical-business.sha256')
+const functionsOut = path.join(webRoot, 'functions/canonical-business.js')
 const iosRepo = path.resolve(webRoot, '../project-planner-ios')
 const iosOut = path.join(iosRepo, 'Project Planner/Canonical/canonical-business.js')
 const iosHashFile = `${iosOut}.sha256`
@@ -52,6 +53,9 @@ if (checkOnly) {
   if (!sameFile(outFile, source) || !sameFile(hashFile, Buffer.from(hashText))) {
     stale.push(outFile)
   }
+  if (!sameFile(functionsOut, source)) {
+    stale.push(functionsOut)
+  }
   if (iosCheckout && (!sameFile(iosOut, source) || !sameFile(iosHashFile, Buffer.from(hashText)))) {
     stale.push(iosOut)
   }
@@ -67,6 +71,8 @@ if (checkOnly) {
 
 writeFileSync(outFile, source)
 writeFileSync(hashFile, hashText)
+mkdirSync(path.dirname(functionsOut), { recursive: true })
+writeFileSync(functionsOut, source)
 rmSync(scratch, { force: true })
 
 if (iosCheckout) {
