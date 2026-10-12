@@ -15,14 +15,18 @@ import {
   DEFAULT_WARNING_DETECTION,
   clampClashLookaheadDays,
   copyWarningDetection,
+  displayOrganizationName,
   excludedUnbookedUserIds,
   invoicingToFirestore,
   myScheduleOptionsToFirestore,
+  organizationNameToFirestore,
   parseAnnualLeaveDefaults,
   parseInvoicing,
   parseMyScheduleOptions,
+  parseOrganizationName,
   parsePayrollPolicy,
   parseWarningDetection,
+  paymentRunShowsMonthCoverage,
   payrollPolicyToFirestore,
   resolveWarningDetectionRaw,
   warningDetectionEquals,
@@ -60,13 +64,17 @@ export {
   clampClashLookaheadDays,
   copyWarningDetection,
   excludedUnbookedUserIds,
+  displayOrganizationName,
   invoicingToFirestore,
   myScheduleOptionsToFirestore,
+  organizationNameToFirestore,
   parseAnnualLeaveDefaults,
   parseInvoicing,
   parseMyScheduleOptions,
+  parseOrganizationName,
   parsePayrollPolicy,
   parseWarningDetection,
+  paymentRunShowsMonthCoverage,
   payrollPolicyToFirestore,
   resolveWarningDetectionRaw,
   warningDetectionEquals,
@@ -182,7 +190,7 @@ export async function loadOrganizationDetails(
   const warningRaw = resolveWarningDetectionRaw(data.warningDetection, settings.warningDetection)
   return {
     id: snap.id,
-    name: String(data.name ?? ''),
+    name: parseOrganizationName(data as Record<string, unknown>),
     countryCode: data.countryCode as string | undefined,
     currency: (data.currencyCode as string | undefined) || (data.currency as string | undefined),
     currencyCode: (data.currencyCode as string | undefined) || (settings.currencyCode as string | undefined),
@@ -287,8 +295,11 @@ export async function saveWarningDetection(organizationId: string, settings: Org
 }
 
 export async function saveInvoicingSettings(organizationId: string, settings: OrgInvoicingSettings): Promise<void> {
-  await updateDoc(doc(db, 'organizations', organizationId), {
-    invoicing: invoicingToFirestore(settings),
+  const ref = doc(db, 'organizations', organizationId)
+  const snap = await getDoc(ref)
+  const existing = asSettingsRecord(snap.data()?.invoicing) ?? {}
+  await updateDoc(ref, {
+    invoicing: { ...existing, ...invoicingToFirestore(settings) },
     updatedAt: Timestamp.now(),
   })
 }

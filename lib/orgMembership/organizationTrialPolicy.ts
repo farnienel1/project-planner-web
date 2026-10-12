@@ -3,6 +3,8 @@
  * Spec: docs/ios-parity/sections/26-switch-organisation.md
  */
 
+import { parseOrganizationName } from '@/lib/canonical'
+
 export type OrgMembershipSummary = {
   id: string
   name: string
@@ -55,7 +57,7 @@ export function membershipSummary(
   orgData: Record<string, unknown>,
   roleInOrg: string
 ): OrgMembershipSummary {
-  const name = String(orgData.name || '').trim()
+  const name = parseOrganizationName(orgData)
   return {
     id: organizationId,
     name: name || 'Organisation',

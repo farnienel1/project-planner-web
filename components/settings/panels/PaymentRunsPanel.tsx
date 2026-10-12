@@ -8,9 +8,12 @@ import {
   WEEKDAY_OPTIONS,
   capitalizeDay,
   loadOrganizationDetails,
+  paymentRunShowsMonthCoverage,
   saveInvoicingSettings,
   type OrgInvoicingSettings,
 } from '@/lib/settings/organizationSettings'
+import { settingsDraftIsDirty } from '@/lib/settings/settingsDirty'
+import { useSettingsDirty, useSettingsLeave } from '@/components/settings/SettingsDirty'
 import {
   DAY_OF_MONTH_OPTIONS,
   paymentRunModeChange,
@@ -117,21 +120,27 @@ function WeekdaySelect({ value, onChange, label, prefix = '' }: { value: string;
 
 export function PaymentRunsPanel({ onBack }: { onBack: () => void }) {
   const { organization } = useAuthStore()
+  const requestLeave = useSettingsLeave()
   const header = settingsHeader('payment-runs')
   const [draft, setDraft] = useState<OrgInvoicingSettings>(DEFAULT_INVOICING)
+  const [baseline, setBaseline] = useState<OrgInvoicingSettings | null>(null)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState('')
+  const dirty = Boolean(baseline) && settingsDraftIsDirty(baseline, draft)
+  useSettingsDirty(dirty)
 
   useEffect(() => {
     if (!organization?.id) return
     loadOrganizationDetails(organization.id)
       .then((details) => {
         if (details?.invoicing) {
-          setDraft({
+          const next = {
             ...details.invoicing,
             timesheetSubmission: syncedTimesheetSubmission(details.invoicing),
-          })
+          }
+          setDraft(next)
+          setBaseline(next)
         }
       })
       .catch(() => {})
@@ -176,6 +185,12 @@ export function PaymentRunsPanel({ onBack }: { onBack: () => void }) {
         ...draft,
         timesheetSubmission: syncedTimesheetSubmission(draft),
       })
+      const savedDraft = {
+        ...draft,
+        timesheetSubmission: syncedTimesheetSubmission(draft),
+      }
+      setDraft(savedDraft)
+      setBaseline(savedDraft)
       setSaved(true)
       window.setTimeout(() => setSaved(false), 3000)
     } catch (saveError) {
@@ -187,6 +202,7 @@ export function PaymentRunsPanel({ onBack }: { onBack: () => void }) {
 
   const runMode = draft.paymentRunMode
   const dateMode = draft.paymentDateMode
+  const showMonthCoverage = paymentRunShowsMonthCoverage(draft)
 
   const paidOn = (index: number) => {
     const day = Number(draft.paymentDates[index]) || 0
@@ -212,7 +228,7 @@ export function PaymentRunsPanel({ onBack }: { onBack: () => void }) {
         description="When each pay period runs, when people are paid, and when timesheets are due."
         iconPath={header.iconPath}
         hue={header.hue}
-        onBack={onBack}
+        onBack={() => requestLeave(onBack)}
       />
 
       {error && (
@@ -298,9 +314,11 @@ export function PaymentRunsPanel({ onBack }: { onBack: () => void }) {
                 </FormField>
               </div>
             ))}
-            <div className="bg-[var(--soft)] p-5">
-              <MonthCoverage ranges={ranges} />
-            </div>
+            {showMonthCoverage ? (
+              <div className="bg-[var(--soft)] p-5">
+                <MonthCoverage ranges={ranges} />
+              </div>
+            ) : null}
           </>
         ) : (
           <div className="space-y-3 p-5">
@@ -331,7 +349,7 @@ export function PaymentRunsPanel({ onBack }: { onBack: () => void }) {
             onChange={(mode) => patch({ paymentDateMode: mode })}
             options={[
               { value: 'specific_dates', label: 'Set payment date/s', disabled: runMode === 'recurring_timeframe' },
-              { value: 'recurring_date', label: 'Recurring payment date' },
+              { value: 'recurring_date', label: 'Recurring payment date', disabled: runMode === 'date_ranges' },
             ]}
           />
           {dateMode === 'specific_dates' ? (
@@ -379,8 +397,8 @@ export function PaymentRunsPanel({ onBack }: { onBack: () => void }) {
         </div>
       </SettingsCard>
 
-      <SaveBar>
-        <SaveButton saving={saving} saved={saved} onClick={save} />
+      <SaveBar dirty={dirty}>
+        <SaveButton saving={saving} saved={saved} dirty={dirty} onClick={save} />
       </SaveBar>
     </div>
   )

@@ -198,18 +198,21 @@ export type OrgDocumentRead = 'loaded' | 'missing' | 'failed'
 export type MembershipDocumentRead = 'active' | 'pending' | 'missing' | 'failed'
 
 /**
- * Denied only after the organisation document loaded and this login is not a
- * member, not the creator, and has no active membership. A missing document
- * or a thrown read (permission-denied, not-found, timeout) stays unknown.
+ * Denied only after the organisation document loaded from a confirmed read
+ * and this login is not a member, not the creator, and has no active
+ * membership. A missing document, a thrown read (permission-denied,
+ * not-found, timeout), or an unconfirmed first-tick / cache-only read stays
+ * unknown so a remount cannot throw away the remembered company.
  */
 export function orgAccessProbeFromReads(input: {
   orgRead: OrgDocumentRead
   membershipRead: MembershipDocumentRead
   listed: boolean
   isCreator: boolean
+  unconfirmed?: boolean
 }): OrgAccessProbe {
   const belongs = input.membershipRead === 'active' || input.listed || input.isCreator
-  if (input.orgRead !== 'loaded' || input.membershipRead === 'failed') {
+  if (input.unconfirmed || input.orgRead !== 'loaded' || input.membershipRead === 'failed') {
     return belongs ? 'allowed' : 'unknown'
   }
   if (!belongs) return 'denied'
@@ -253,15 +256,16 @@ export function chooseSessionOrganization(input: {
   }
 
   const rememberedOrganizationId = String(input.rememberedOrganizationId || '').trim()
+  const explicitOrganizationId = String(input.explicitOrganizationId || '').trim()
   const persistFor = (organizationId: string): string | null => {
-    if (
-      rememberedOrganizationId &&
-      organizationIdsMatch(organizationId, documentOrganizationId) &&
-      !organizationIdsMatch(organizationId, rememberedOrganizationId)
-    ) {
-      return null
-    }
-    return organizationId || null
+    if (!organizationId) return null
+    const chosenIsDocument = organizationIdsMatch(organizationId, documentOrganizationId)
+    const chosenIsRemembered = organizationIdsMatch(organizationId, rememberedOrganizationId)
+    const chosenIsExplicit = organizationIdsMatch(organizationId, explicitOrganizationId)
+    // Never persist the user-document fallback. A remount that missed this
+    // device's key (empty remembered) must not write that company over it.
+    if (chosenIsDocument && !chosenIsRemembered && !chosenIsExplicit) return null
+    return organizationId
   }
 
   for (const organizationId of candidates) {

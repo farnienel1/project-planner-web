@@ -5,7 +5,9 @@ import { updateDoc, doc, Timestamp } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { companyLogoPath, uploadFile } from '@/lib/firebase/storageUtils'
-import { loadOrganizationDetails } from '@/lib/settings/organizationSettings'
+import { loadOrganizationDetails, organizationNameToFirestore } from '@/lib/settings/organizationSettings'
+import { settingsDraftIsDirty } from '@/lib/settings/settingsDirty'
+import { useSettingsDirty, useSettingsLeave } from '@/components/settings/SettingsDirty'
 import {
   COUNTRY_OPTIONS,
   CURRENCY_OPTIONS,
@@ -25,10 +27,27 @@ import {
   SaveButton,
   SuccessBanner,
   ErrorBanner,
+  SaveBar,
 } from '@/components/settings/primitives'
+
+type CompanyDraft = {
+  name: string
+  hasOffice: boolean
+  line1: string
+  line2: string
+  town: string
+  county: string
+  postcode: string
+  country: string
+  regionId: string
+  abbreviation: string
+  currency: string
+  logoPreview: string | null
+}
 
 export function CompanyDetailsPanel({ onBack }: { onBack: () => void }) {
   const { organization } = useAuthStore()
+  const requestLeave = useSettingsLeave()
 
   const [name, setName] = useState('')
   const [hasOffice, setHasOffice] = useState(true)
@@ -48,31 +67,64 @@ export function CompanyDetailsPanel({ onBack }: { onBack: () => void }) {
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState('')
+  const [baseline, setBaseline] = useState<CompanyDraft | null>(null)
+
+  const draft: CompanyDraft = {
+    name,
+    hasOffice,
+    line1,
+    line2,
+    town,
+    county,
+    postcode,
+    country,
+    regionId,
+    abbreviation,
+    currency,
+    logoPreview,
+  }
+  const dirty = Boolean(baseline) && (settingsDraftIsDirty(baseline, draft) || Boolean(logoFile))
+  useSettingsDirty(dirty)
+
+  function applyLoaded(next: CompanyDraft) {
+    setName(next.name)
+    setHasOffice(next.hasOffice)
+    setLine1(next.line1)
+    setLine2(next.line2)
+    setTown(next.town)
+    setCounty(next.county)
+    setPostcode(next.postcode)
+    setCountry(next.country)
+    setRegionId(next.regionId)
+    setAbbreviation(next.abbreviation)
+    setCurrency(next.currency)
+    setLogoPreview(next.logoPreview)
+    setBaseline(next)
+  }
 
   useEffect(() => {
     if (!organization?.id) return
     loadOrganizationDetails(organization.id)
       .then((details) => {
         if (!details) return
-        setName(details.name ?? organization.name ?? '')
-        setCountry(countryCodeForCompany(undefined, details.countryCode))
-        setRegionId(details.bankHolidayRegionId || 'GB-ENG-WLS')
-        setAbbreviation(details.documentAbbreviation ?? '')
-        setCurrency(details.currencyCode || details.currency || 'GBP')
         const address = details.officeAddress
-        const line = details.officeAddressLine1 || address?.addressLine1
-        const city = details.officeCity || address?.town
-        if (line && city) {
-          setHasOffice(true)
-          setLine1(line)
-          setLine2(address?.addressLine2 ?? '')
-          setTown(city)
-          setCounty(address?.county ?? '')
-          setPostcode(details.officePostcode || address?.postcode || '')
-        } else {
-          setHasOffice(false)
-        }
-        setLogoPreview(details.companyLogoURL ?? organization.companyLogoURL ?? null)
+        const line = details.officeAddressLine1 || address?.addressLine1 || ''
+        const city = details.officeCity || address?.town || ''
+        const hasOfficeAddress = Boolean(line && city)
+        applyLoaded({
+          name: details.name || organization.name || '',
+          hasOffice: hasOfficeAddress,
+          line1: hasOfficeAddress ? line : '',
+          line2: hasOfficeAddress ? address?.addressLine2 ?? '' : '',
+          town: hasOfficeAddress ? city : '',
+          county: hasOfficeAddress ? address?.county ?? '' : '',
+          postcode: hasOfficeAddress ? details.officePostcode || address?.postcode || '' : '',
+          country: countryCodeForCompany(undefined, details.countryCode),
+          regionId: details.bankHolidayRegionId || 'GB-ENG-WLS',
+          abbreviation: details.documentAbbreviation ?? '',
+          currency: details.currencyCode || details.currency || 'GBP',
+          logoPreview: details.companyLogoURL ?? organization.companyLogoURL ?? null,
+        })
       })
       .catch(() => {})
   }, [organization?.id, organization?.name, organization?.companyLogoURL])
@@ -123,7 +175,7 @@ export function CompanyDetailsPanel({ onBack }: { onBack: () => void }) {
         regionSelection: regionId,
       })
       const payload: Record<string, unknown> = {
-        name: name.trim(),
+        ...organizationNameToFirestore(name),
         ...identity,
         'settings.currencyCode': identity.currencyCode,
         'settings.bankHolidayRegionId': identity.bankHolidayRegionId,
@@ -142,6 +194,12 @@ export function CompanyDetailsPanel({ onBack }: { onBack: () => void }) {
           : state.organization,
       }))
 
+      setLogoFile(null)
+      setBaseline({
+        ...draft,
+        name: name.trim(),
+        logoPreview: companyLogoURL ?? draft.logoPreview,
+      })
       setSaved(true)
       window.setTimeout(() => setSaved(false), 3000)
     } catch (saveError) {
@@ -153,7 +211,7 @@ export function CompanyDetailsPanel({ onBack }: { onBack: () => void }) {
 
   return (
     <div className="mx-auto max-w-2xl pb-12">
-      <PanelHeader title="Company details" onBack={onBack} />
+      <PanelHeader title="Company details" onBack={() => requestLeave(onBack)} />
 
       {error && (
         <div className="mt-4">
@@ -282,9 +340,9 @@ export function CompanyDetailsPanel({ onBack }: { onBack: () => void }) {
         <p className="px-4 pb-4 text-xs text-slate-500">Shown on Home and the Site Audit report header.</p>
       </SettingsCard>
 
-      <div className="mt-6">
-        <SaveButton saving={saving} saved={saved} onClick={save} />
-      </div>
+      <SaveBar dirty={dirty}>
+        <SaveButton saving={saving} saved={saved} dirty={dirty} onClick={save} />
+      </SaveBar>
     </div>
   )
 }

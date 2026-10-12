@@ -21,7 +21,11 @@ import {
   SettingsRow,
   SuccessBanner,
   Toggle,
+  SaveBar,
+  SaveButton,
 } from '@/components/settings/primitives'
+import { settingsDraftIsDirty } from '@/lib/settings/settingsDirty'
+import { useSettingsDirty, useSettingsLeave } from '@/components/settings/SettingsDirty'
 
 const TOGGLE_COPY: Record<NotificationPreferenceKey, { label: string; description: string }> = {
   materialOrderCutOff: {
@@ -103,35 +107,50 @@ const BELL_ICON =
 
 export function MyNotificationsPanel({ onBack }: { onBack: () => void }) {
   const { user } = useAuthStore()
+  const requestLeave = useSettingsLeave()
   const canEditCompany = canAccessOrganisationSettingsHub(user)
   const [prefs, setPrefs] = useState<UserNotificationPreferences>(DEFAULT_USER_NOTIFICATION_PREFERENCES)
+  const [baseline, setBaseline] = useState<UserNotificationPreferences | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
   const [feedback, setFeedback] = useState<{ kind: 'success' | 'error'; msg: string } | null>(null)
+  const dirty = Boolean(baseline) && settingsDraftIsDirty(baseline, prefs)
+  useSettingsDirty(dirty)
 
   useEffect(() => {
     if (!user?.id) return
-    void loadUserNotificationPreferences(user.id).then(setPrefs)
+    void loadUserNotificationPreferences(user.id).then((loaded) => {
+      setPrefs(loaded)
+      setBaseline(loaded)
+    })
   }, [user?.id])
 
-  async function persist(next: UserNotificationPreferences) {
+  async function save() {
     if (!user?.id) return
-    const previous = prefs
-    setPrefs(next)
+    setSaving(true)
+    setFeedback(null)
     try {
-      await saveUserNotificationPreferences(user.id, next)
+      await saveUserNotificationPreferences(user.id, prefs)
+      setBaseline(prefs)
+      setSaved(true)
       setFeedback({ kind: 'success', msg: 'Saved' })
-      window.setTimeout(() => setFeedback(null), 2000)
+      window.setTimeout(() => {
+        setFeedback(null)
+        setSaved(false)
+      }, 2000)
     } catch (error) {
-      setPrefs(previous)
       setFeedback({
         kind: 'error',
         msg: error instanceof Error ? error.message : 'Could not save preferences',
       })
+    } finally {
+      setSaving(false)
     }
   }
 
   return (
     <div className="space-y-5">
-      <PanelHeader title="My notifications" onBack={onBack} />
+      <PanelHeader title="My notifications" onBack={() => requestLeave(onBack)} />
       {feedback?.kind === 'success' ? <SuccessBanner message={feedback.msg} /> : null}
       {feedback?.kind === 'error' ? <ErrorBanner message={feedback.msg} /> : null}
 
@@ -147,7 +166,7 @@ export function MyNotificationsPanel({ onBack }: { onBack: () => void }) {
           >
             <Toggle
               checked={prefs[key] !== false}
-              onChange={(value) => void persist({ ...prefs, [key]: value })}
+              onChange={(value) => setPrefs({ ...prefs, [key]: value })}
             />
           </SettingsRow>
         ))}
@@ -182,6 +201,10 @@ export function MyNotificationsPanel({ onBack }: { onBack: () => void }) {
           </Link>
         </SettingsCard>
       ) : null}
+
+      <SaveBar dirty={dirty}>
+        <SaveButton saving={saving} saved={saved} dirty={dirty} onClick={save} />
+      </SaveBar>
     </div>
   )
 }

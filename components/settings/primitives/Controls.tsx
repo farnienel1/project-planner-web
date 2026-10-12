@@ -223,11 +223,22 @@ export function Callout({ title, children }: { title?: string; children: ReactNo
 }
 
 /** Sticky bar at the bottom of a panel holding the Save button. */
-export function SaveBar({ children, hint = 'Changes are only saved when you press Save.' }: { children: ReactNode; hint?: string }) {
+export function SaveBar({
+  children,
+  hint,
+  dirty,
+}: {
+  children: ReactNode
+  hint?: string
+  dirty?: boolean
+}) {
+  const copy =
+    hint ??
+    (dirty ? 'Save your changes, or they will be lost if you leave.' : 'Changes are only saved when you press Save.')
   return (
     <div className="sticky bottom-0 z-10 -mx-1 mt-8 bg-[color-mix(in_srgb,var(--bg)_88%,transparent)] px-1 pb-4 pt-3 backdrop-blur-[6px]">
       <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <p className="text-[12.5px] text-[var(--ink3)]">{hint}</p>
+        <p className="text-[12.5px] text-[var(--ink3)]">{copy}</p>
         <div className="sm:w-[220px]">{children}</div>
       </div>
     </div>
