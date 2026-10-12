@@ -1,9 +1,6 @@
 import { doc, getDoc, getDocFromServer, setDoc, Timestamp, updateDoc } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
-import {
-  parseNotificationPreferences,
-  type NotificationPreferences,
-} from '@/lib/settings/notificationPreferences'
+import { type NotificationPreferences } from '@/lib/settings/notificationPreferences'
 import { dayKey } from '@/lib/ios-parity/londonTime'
 import { paymentRunHistoryAfterChange } from '@/lib/canonical'
 import { ianaTimeZoneForCountry } from '@/lib/orgTime/orgTimeZone'
@@ -23,6 +20,8 @@ import {
   organizationNameToFirestore,
   parseAnnualLeaveDefaults,
   parseInvoicing,
+  materialCutOffToFirestore,
+  parseMaterialCutOff,
   parseMyScheduleOptions,
   parseOrganizationName,
   parsePayrollPolicy,
@@ -37,6 +36,7 @@ import {
   type MyScheduleOptions,
   type OrgAnnualLeaveDefaults,
   type OrgInvoicingSettings,
+  type MaterialCutOffSettings,
   type OrgPayrollTimePolicy,
   type OrgWarningDetectionSettings,
   type PaymentRunDateRange,
@@ -45,6 +45,7 @@ import {
 } from '@/lib/canonical/organizationSettings'
 
 export type {
+  MaterialCutOffSettings,
   MyScheduleOptions,
   OrgAnnualLeaveDefaults,
   OrgInvoicingSettings,
@@ -111,8 +112,8 @@ export type OrganizationDetails = {
   warningDetection: OrgWarningDetectionSettings
   invoicing: OrgInvoicingSettings
   myScheduleOptions: MyScheduleOptions
-  /** Company-wide material cut-off (also dual-written to the saving user's iOS prefs). */
-  materialCutOff?: NotificationPreferences | null
+  /** Company-wide material cut-off. Organisation map is the only clock. */
+  materialCutOff: MaterialCutOffSettings
 }
 
 /** iOS PayrollTimePolicyCatalog.policy(for:organization:) — prior rules before effectiveFrom. */
@@ -215,7 +216,7 @@ export async function loadOrganizationDetails(
     warningDetection: parseWarningDetection(warningRaw),
     invoicing: parseInvoicing(data.invoicing as Record<string, unknown> | undefined),
     myScheduleOptions: parseMyScheduleOptions(settings),
-    materialCutOff: materialRaw ? parseNotificationPreferences(materialRaw) : null,
+    materialCutOff: parseMaterialCutOff(materialRaw),
   }
 }
 
@@ -224,13 +225,7 @@ export async function saveMaterialCutOffSettings(
   prefs: NotificationPreferences
 ): Promise<void> {
   await updateDoc(doc(db, 'organizations', organizationId), {
-    'settings.materialCutOff': {
-      materialOrderCutOff: prefs.materialOrderCutOff,
-      materialCutOffHour: prefs.materialCutOffHour,
-      materialCutOffMinute: prefs.materialCutOffMinute,
-      materialCutOffOnSaturday: prefs.materialCutOffOnSaturday,
-      materialCutOffOnSunday: prefs.materialCutOffOnSunday,
-    },
+    'settings.materialCutOff': materialCutOffToFirestore(prefs),
     updatedAt: Timestamp.now(),
   })
 }

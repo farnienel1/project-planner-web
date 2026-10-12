@@ -73,17 +73,23 @@ export {
 } from './staffAccess'
 
 export {
+  DEFAULT_MATERIAL_CUT_OFF,
   DEFAULT_PAYMENT_RUN_DATE_RANGES,
   DEFAULT_WARNING_DETECTION,
   displayOrganizationName,
+  formatMaterialCutOffClock,
   invoicingToFirestore,
+  materialCutOffClockMinutes,
+  materialCutOffToFirestore,
   organizationNameToFirestore,
   parseInvoicing,
+  parseMaterialCutOff,
   parseOrganizationName,
   parsePaymentRunDateRanges,
   parseWarningDetection,
   paymentRunRangeToFirestore,
   paymentRunShowsMonthCoverage,
+  resolveMaterialCutOffClock,
   starterCollectionShouldSeed,
   missingStarterQualificationCodes,
   validateInvoicingSettings,

@@ -67,7 +67,6 @@ import { generateOrgWarnings } from '@/lib/warnings/generateOrgWarnings'
 import { ORG_DATA_REFRESHED_EVENT } from '@/lib/stores/refreshOrgData'
 import { warningScanLanes } from '@/lib/warnings/warningsScan'
 import { loadOrganizationDetails, type OrganizationDetails } from '@/lib/settings/organizationSettings'
-import { loadMaterialCutOffSettings, type NotificationPreferences } from '@/lib/settings/notificationPreferences'
 import { mergeProjectsAndSmallWorks } from '@/lib/projects/workStatus'
 import { shouldShowTeamOnboardingPrompt } from '@/lib/orgSetup/teamOnboarding'
 
@@ -116,7 +115,6 @@ export function HomeScreen() {
   const [actionIds, setActionIds] = useState<string[]>([])
   const [now] = useState(() => new Date())
   const [orgDetails, setOrgDetails] = useState<OrganizationDetails | null>(null)
-  const [notificationPreferences, setNotificationPreferences] = useState<NotificationPreferences | null>(null)
   const [managerBookingsSettled, setManagerBookingsSettled] = useState(false)
   const [materialsSettled, setMaterialsSettled] = useState(false)
   const [sendRecordsSettled, setSendRecordsSettled] = useState(false)
@@ -184,18 +182,13 @@ export function HomeScreen() {
     if (!user) return
     setMetricIds(loadSavedOverviewMetrics(user.id))
     setActionIds(loadSavedQuickActionOrder(user.id, displayUser || user, users))
-    if (organization?.id && !pauseHomeLoads) {
-      loadMaterialCutOffSettings(organization.id, user.id)
-        .then(setNotificationPreferences)
-        .catch(() => setNotificationPreferences(null))
-    }
     try {
       setHint(!localStorage.getItem(quickActionHintStorageKey(user.id)))
     } catch {
       /* ignore */
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- displayUser is derived from user.id
-  }, [user?.id, organization?.id, pauseHomeLoads, users])
+  }, [user?.id, users])
 
   const merged = useMemo(() => mergeProjectsAndSmallWorks(projects, smallWorks), [projects, smallWorks])
   const liveCount = countHomeActiveProjects({
@@ -259,7 +252,6 @@ export function HomeScreen() {
         materials: materialWarningsReady ? materials : [],
         sendRecords: materialWarningsReady ? sendRecords : [],
         orgDetails,
-        notificationPreferences,
         referenceDate: now,
       }).coreCount
     } catch {
@@ -278,7 +270,6 @@ export function HomeScreen() {
     materials,
     sendRecords,
     orgDetails,
-    notificationPreferences,
     now,
   ])
 

@@ -1,7 +1,12 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { UserRole, type Booking, type HolidayBooking, type Operative, type Project, type User } from '../../types/index.ts'
-import { DEFAULT_INVOICING, DEFAULT_PAYROLL_POLICY, DEFAULT_WARNING_DETECTION } from '../settings/organizationSettings.ts'
+import {
+  DEFAULT_INVOICING,
+  DEFAULT_PAYROLL_POLICY,
+  DEFAULT_WARNING_DETECTION,
+  type OrganizationDetails,
+} from '../settings/organizationSettings.ts'
 import { parsePaymentRunDateRanges } from '../canonical/organizationSettings.ts'
 import { computeWarningCoverageWindow, eachLondonDay, formatNumberOfDaysScanSummary } from './warningLookahead.ts'
 import { computeUnbookedLabourWarnings } from './unbookedLabourWarnings.ts'
@@ -863,6 +868,38 @@ test('materials cutoff fires after 16:00 for tomorrow bookings, including empty 
     referenceDate: beforeCutoff,
   })
   assert.equal(tooEarly.length, 0)
+})
+
+test('generateOrgWarnings uses the organisation cut-off, not the user pref hour', () => {
+  const tomorrow = new Date('2026-09-17T08:00:00+01:00')
+  const afterOrgClock = new Date('2026-09-16T15:30:00+01:00')
+  const beforeOrgClock = new Date('2026-09-16T15:00:00+01:00')
+  const orgClock = {
+    materialOrderCutOff: true,
+    materialCutOffHour: 15,
+    materialCutOffMinute: 30,
+    materialCutOffOnSaturday: false,
+    materialCutOffOnSunday: false,
+  }
+  const userPrefs = {
+    materialOrderCutOff: true,
+    materialCutOffHour: 16,
+    materialCutOffMinute: 0,
+    materialCutOffOnSaturday: false,
+    materialCutOffOnSunday: false,
+  }
+  const input = {
+    bookings: [booking({ id: 'B1', operativeId: 'OP1', date: tomorrow, projectId: 'P1' })],
+    managerSiteBookings: [],
+    operatives: [],
+    users: [],
+    projects: [project('P1')],
+    holidays: [],
+    orgDetails: { materialCutOff: orgClock } as OrganizationDetails,
+    notificationPreferences: userPrefs,
+  }
+  assert.equal(generateOrgWarnings({ ...input, referenceDate: afterOrgClock }).materialWarnings.length, 1)
+  assert.equal(generateOrgWarnings({ ...input, referenceDate: beforeOrgClock }).materialWarnings.length, 0)
 })
 
 test('materials cutoff uses the configured hour and minute, not a hardcoded 16:00', () => {
