@@ -91,6 +91,68 @@ export function organizationIdsMatch(lhs?: string | null, rhs?: string | null): 
   return left.length > 0 && left === right
 }
 
+/** Deduplicate organisation ids after trim. Order is kept. */
+export function uniqueOrganizationIds(values: readonly (string | null | undefined)[] = []): string[] {
+  const ids: string[] = []
+  for (const value of values) {
+    const organizationId = String(value || '').trim()
+    if (!organizationId) continue
+    if (ids.some((existing) => organizationIdsMatch(existing, organizationId))) continue
+    ids.push(organizationId)
+  }
+  return ids
+}
+
+/** Web localStorage prefix. iOS already uses `cached_organizationId` — do not invent a second phone key. */
+export const WEB_SESSION_ORGANIZATION_STORAGE_PREFIX = 'pp.webActiveOrg:'
+export const IOS_SESSION_ORGANIZATION_STORAGE_KEY = 'cached_organizationId'
+
+export function webSessionOrganizationStorageKey(userId: string): string {
+  const id = String(userId || '').trim()
+  return id ? `${WEB_SESSION_ORGANIZATION_STORAGE_PREFIX}${id}` : ''
+}
+
+/**
+ * Same-user sign-out must keep this device's company so the next login reopens it.
+ * Clear only when a different account is about to use the same slot.
+ */
+export function shouldClearRememberedOrganization(input: {
+  signedOutUserId?: string | null
+  nextUserId?: string | null
+}): boolean {
+  const previous = String(input.signedOutUserId || '').trim()
+  const next = String(input.nextUserId || '').trim()
+  return Boolean(previous && next && previous !== next)
+}
+
+export function rememberedOrganizationSurvivesSignOut(): boolean {
+  return !shouldClearRememberedOrganization({ signedOutUserId: 'same', nextUserId: '' })
+}
+
+/**
+ * Switcher ids. A finished discovery is the query result.
+ * A slow or failed members/creator/orgMemberships read must keep companies
+ * this device already knows (remembered, user document, explicit, last list).
+ */
+export function sessionMembershipIds(input: {
+  discoveredIds?: readonly (string | null | undefined)[]
+  previousIds?: readonly (string | null | undefined)[]
+  rememberedOrganizationId?: string | null
+  documentOrganizationId?: string | null
+  explicitOrganizationId?: string | null
+  discoveryIncomplete?: boolean
+}): string[] {
+  const discovered = uniqueOrganizationIds(input.discoveredIds)
+  if (!input.discoveryIncomplete) return discovered
+  return uniqueOrganizationIds([
+    ...discovered,
+    ...(input.previousIds ?? []),
+    input.explicitOrganizationId,
+    input.rememberedOrganizationId,
+    input.documentOrganizationId,
+  ])
+}
+
 /** Firestore may store an organisation id as a string or a path ending in the id. */
 export function organizationIdFromValue(value: unknown): string {
   if (typeof value === 'string') {
@@ -132,6 +194,32 @@ export function provisionalOrganizationId(input: {
 }
 
 export type OrgAccessProbe = 'allowed' | 'denied' | 'unknown'
+export type OrgDocumentRead = 'loaded' | 'missing' | 'failed'
+export type MembershipDocumentRead = 'active' | 'pending' | 'missing' | 'failed'
+
+/**
+ * Denied only after the organisation document loaded and this login is not a
+ * member, not the creator, and has no active membership. A missing document
+ * or a thrown read (permission-denied, not-found, timeout) stays unknown.
+ */
+export function orgAccessProbeFromReads(input: {
+  orgRead: OrgDocumentRead
+  membershipRead: MembershipDocumentRead
+  listed: boolean
+  isCreator: boolean
+}): OrgAccessProbe {
+  const belongs = input.membershipRead === 'active' || input.listed || input.isCreator
+  if (input.orgRead !== 'loaded' || input.membershipRead === 'failed') {
+    return belongs ? 'allowed' : 'unknown'
+  }
+  if (!belongs) return 'denied'
+  return 'allowed'
+}
+
+/** A thrown read is never proof they are outside the company. */
+export function accessProbeFromReadError(_error?: unknown): OrgAccessProbe {
+  return 'unknown'
+}
 
 /**
  * Explicit switch, then remembered company, then the user document.
@@ -145,13 +233,11 @@ export function chooseSessionOrganization(input: {
   probes: ReadonlyMap<string, OrgAccessProbe> | Readonly<Record<string, OrgAccessProbe>>
 }): { organizationId: string; persistOrganizationId: string | null } {
   const documentOrganizationId = String(input.documentOrganizationId || '').trim()
-  const candidates: string[] = []
-  for (const value of [input.explicitOrganizationId, input.rememberedOrganizationId, documentOrganizationId]) {
-    const id = String(value || '').trim()
-    if (!id) continue
-    if (candidates.some((existing) => organizationIdsMatch(existing, id))) continue
-    candidates.push(id)
-  }
+  const candidates = uniqueOrganizationIds([
+    input.explicitOrganizationId,
+    input.rememberedOrganizationId,
+    documentOrganizationId,
+  ])
 
   const probeFor = (organizationId: string): OrgAccessProbe => {
     if (input.probes instanceof Map) {

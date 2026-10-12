@@ -33,6 +33,7 @@ import { AnnualLeaveDefaultsPanel } from '@/components/settings/panels/AnnualLea
 import { ScheduleOptionsPanel } from '@/components/settings/panels/ScheduleOptionsPanel'
 import { CompanyDetailsPanel } from '@/components/settings/panels/CompanyDetailsPanel'
 import { BillingPanel } from '@/components/settings/panels/BillingPanel'
+import { MyNotificationsPanel } from '@/components/settings/panels/MyNotificationsPanel'
 import { SettingsChrome } from '@/components/settings/SettingsChrome'
 import {
   COMPANY_SETTINGS,
@@ -255,53 +256,6 @@ function PasswordPanel({ onBack }: { onBack: () => void }) {
   )
 }
 
-// ─── Notifications Panel ──────────────────────────────────────────────────────
-function NotificationsPanel({ onBack }: { onBack: () => void }) {
-  const { user } = useAuthStore()
-  const canEditCompany = canAccessOrganisationSettingsHub(user)
-
-  return (
-    <div className="space-y-5">
-      <PanelHeader title="My notifications" onBack={onBack} />
-      <SettingsCard>
-        {canEditCompany ? (
-          <Link href="/dashboard/settings/schedule-options" className="block">
-            <SettingsRow
-              icon="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
-              iconBg="bg-blue-50"
-              iconColor="text-blue-600"
-              label="Schedule options"
-              description="Office, working from home, site survey and custom locations"
-              chevron
-            />
-          </Link>
-        ) : (
-          <SettingsRow
-            icon="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
-            iconBg="bg-blue-50"
-            iconColor="text-blue-600"
-            label="Schedule options"
-            description="Office, working from home and custom locations are set for the whole company."
-          />
-        )}
-      </SettingsCard>
-
-      <SettingsCard>
-        <div className="px-4 py-4">
-          <p className="text-sm font-semibold text-slate-900">Material order cut-off</p>
-          <p className="mt-0.5 text-xs text-slate-500">
-            The daily reminder is one company time. Warnings use that time. It is not a separate switch on this page.
-          </p>
-          {canEditCompany ? (
-            <Link href="/dashboard/settings/material-cutoff" className="mt-3 inline-block text-sm font-semibold text-blue-700">
-              Open material cut-off
-            </Link>
-          ) : null}
-        </div>
-      </SettingsCard>
-    </div>
-  )
-}
 
 // ─── Roles Panel ──────────────────────────────────────────────────────────────
 function RolesPanel({ onBack }: { onBack: () => void }) {
@@ -369,7 +323,7 @@ export default function SettingsScreen({ initialPanel = 'main' }: { initialPanel
 
   if (panel === 'profile') return wrap('profile', <ProfilePanel onBack={goHub} />)
   if (panel === 'password') return wrap('password', <PasswordPanel onBack={goHub} />)
-  if (panel === 'notifications') return wrap('notifications', <NotificationsPanel onBack={goHub} />)
+  if (panel === 'notifications') return wrap('notifications', <MyNotificationsPanel onBack={goHub} />)
   if (panel === 'organisation' && canAccessOrgHub) {
     return wrap(
       'company-details',

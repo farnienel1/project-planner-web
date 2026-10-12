@@ -4,12 +4,14 @@ export {
   CANONICAL_STANDARD_DAY,
   CANONICAL_TIME_ZONE,
   MIN_HALF_DAY_MINUTES,
+  accessProbeFromReadError,
   adoptCurrentOrganization,
   bookingBelongsToOrganization,
   captureOrganizationContext,
   chooseSessionOrganization,
   coverageWindow,
   currentOrganizationId,
+  IOS_SESSION_ORGANIZATION_STORAGE_KEY,
   dayKeyInOrganizationZone,
   formatClockMinutes,
   halfDayWindows,
@@ -19,6 +21,7 @@ export {
   namedSlotKind,
   normalizePaymentRunRange,
   paymentRunMonthDay,
+  orgAccessProbeFromReads,
   organizationContextStillCurrent,
   organizationIdFromValue,
   organizationIdsMatch,
@@ -26,6 +29,12 @@ export {
   paidHoursForNamedSlot,
   parseClockMinutes,
   provisionalOrganizationId,
+  rememberedOrganizationSurvivesSignOut,
+  sessionMembershipIds,
+  shouldClearRememberedOrganization,
+  uniqueOrganizationIds,
+  WEB_SESSION_ORGANIZATION_STORAGE_PREFIX,
+  webSessionOrganizationStorageKey,
   standardDayCoverage,
   resetOrganizationContextForTests,
   slotInterval,
@@ -94,7 +103,9 @@ export type {
   InvoicingPeriodInput,
   MinuteInterval,
   NamedSlotKind,
+  MembershipDocumentRead,
   OrgAccessProbe,
+  OrgDocumentRead,
   OrganizationContextSnapshot,
   PaymentRunMode,
   PaymentRunRange,
@@ -149,6 +160,27 @@ export type {
   PermissionToggleDef,
   UserPermissionField,
 } from './userProfile'
+
+export {
+  DEFAULT_USER_NOTIFICATION_PREFERENCES,
+  LEGACY_NOTIFICATION_PREFERENCE_ALIASES,
+  NOTIFICATION_PREFERENCE_KEYS,
+  notificationDestination,
+  notificationPreferenceAllowsDelivery,
+  notificationPreferenceKeyForType,
+  parseUserNotificationPreferences,
+  userNotificationPreferenceFieldPatch,
+  userNotificationPreferencesToFirestore,
+} from './notificationPreferences'
+
+export type {
+  NotificationDestination,
+  NotificationDestinationInput,
+  NotificationDestinationKind,
+  NotificationPreferenceKey,
+  NotificationWorkCatalogue,
+  UserNotificationPreferences,
+} from './notificationPreferences'
 
 export type {
   AnnualLeaveBalance,

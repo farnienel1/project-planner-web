@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { loadUserOrgMemberships, switchActiveOrganization } from '@/lib/orgMembership/membershipService'
+import { readWebActiveOrg } from '@/lib/orgMembership/webActiveOrg'
 import {
   DEACTIVATED_ACCOUNT_MESSAGE,
   otherOrganisations,
@@ -24,7 +25,10 @@ export function DeactivatedAccountScreen() {
     async function load() {
       if (!firebaseUser?.uid || !activeOrgId) return
       try {
-        const rows = await loadUserOrgMemberships(firebaseUser.uid, activeOrgId)
+        const rows = await loadUserOrgMemberships(firebaseUser.uid, activeOrgId, [
+          activeOrgId,
+          readWebActiveOrg(firebaseUser.uid),
+        ])
         if (cancelled) return
         setOthers(
           otherOrganisations(

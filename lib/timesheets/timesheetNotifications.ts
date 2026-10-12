@@ -3,6 +3,7 @@
  * notifyTimesheetSignedByManager / notifyLineManagerPeerAction
  */
 import { saveInboxNotification } from '@/lib/firebase/notifyInbox'
+import { notificationDestination } from '@/lib/canonical'
 import { syntheticUuidFromKey } from '@/lib/ios-parity/uuid'
 import { dayKey, unixStartOfDay } from '@/lib/ios-parity/londonTime'
 import { timesheetsMineHref, timesheetsTeamHref } from '@/lib/timesheets/timesheetRoutes'
@@ -96,18 +97,20 @@ export function timesheetNotificationHref(
   row: { type: string; deepLinkUserId?: string; deepLinkWeekStart?: Date },
   timeZone?: string
 ): string | null {
-  const periodKey = row.deepLinkWeekStart ? dayKey(row.deepLinkWeekStart, timeZone) : ''
-  if (row.type === 'timesheet_pending_manager_signoff' && row.deepLinkUserId) {
-    return timesheetsTeamHref({ tab: 'awaiting', user: row.deepLinkUserId, period: periodKey || null })
+  const dest = notificationDestination({
+    type: row.type,
+    dayKey: row.deepLinkWeekStart ? dayKey(row.deepLinkWeekStart, timeZone) : null,
+    role: 'manager',
+    deepLinkUserId: row.deepLinkUserId,
+  })
+  if (dest.kind === 'timesheetTeamAwaiting') {
+    return timesheetsTeamHref({ tab: 'awaiting', user: dest.userId || null, period: dest.dayKey || null })
   }
-  if (row.type === 'timesheet_signed_by_manager') {
-    return timesheetsMineHref(periodKey || null)
+  if (dest.kind === 'timesheetMine') {
+    return timesheetsMineHref(dest.dayKey || null)
   }
-  if (row.type === 'line_manager_peer_update' && row.deepLinkUserId) {
-    return timesheetsTeamHref({ tab: 'signed', user: row.deepLinkUserId, period: periodKey || null })
-  }
-  if (row.type === 'timesheet_submission_reminder') {
-    return timesheetsMineHref(periodKey || null)
+  if (dest.kind === 'timesheetTeamSigned') {
+    return timesheetsTeamHref({ tab: 'signed', user: dest.userId || null, period: dest.dayKey || null })
   }
   return null
 }
