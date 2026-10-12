@@ -204,10 +204,31 @@ service cloud.firestore {
   }
 
   function isOrganizationMaterialManager(organizationId) {
-    return request.auth != null && 
+    return request.auth != null &&
            exists(/databases/(default)/documents/users/$(request.auth.uid)) &&
-           userOrgIdMatchesPath(organizationId) &&
+           canAccessOrganization(organizationId) &&
            materialManagerLikeUser(get(/databases/(default)/documents/users/$(request.auth.uid)).data);
+  }
+
+  function isOperativeLikeUser(userData) {
+    return ('operativeMode' in userData && truthyBool(userData.operativeMode)) ||
+           ('role' in userData && userData.role == 'operative');
+  }
+
+  // Staff who can open Send (not operatives). Membership is enough — do not
+  // require users/{uid}.organizationId to be this company (multi-org / stale
+  // primary org used to fail the send-history write after the email went out).
+  function canWriteMaterialSendRecord(organizationId) {
+    return request.auth != null &&
+           exists(/databases/(default)/documents/users/$(request.auth.uid)) &&
+           canAccessOrganization(organizationId) &&
+           !isOperativeLikeUser(get(/databases/(default)/documents/users/$(request.auth.uid)).data);
+  }
+
+  function isStaffMaterialStatusWrite(organizationId) {
+    return canWriteMaterialSendRecord(organizationId) &&
+           request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['status', 'lastSentAt', 'lastSentRequestType', 'updatedAt']);
   }
 
   // Admin of org by members map (works before users/{uid} profile exists — web org bootstrap).
@@ -652,7 +673,8 @@ service cloud.firestore {
         allow create: if isOrganizationMaterialManager(organizationId) || canCreateOwnMaterial(organizationId);
         allow update: if isOrganizationMaterialManager(organizationId) ||
           canUpdateOwnMaterial(organizationId) ||
-          isOnlyClaimingLegacyOwnMaterial(organizationId);
+          isOnlyClaimingLegacyOwnMaterial(organizationId) ||
+          isStaffMaterialStatusWrite(organizationId);
         allow delete: if isOrganizationMaterialManager(organizationId) || canDeleteOwnMaterial(organizationId);
       }
 
@@ -665,7 +687,7 @@ service cloud.firestore {
         allow read: if belongsToOrganization(organizationId) &&
           exists(/databases/(default)/documents/users/$(request.auth.uid)) &&
           canReadMaterialSendHistory(get(/databases/(default)/documents/users/$(request.auth.uid)).data);
-        allow create: if isOrganizationMaterialManager(organizationId);
+        allow create: if canWriteMaterialSendRecord(organizationId);
         allow update, delete: if isOrganizationAdmin(organizationId);
       }
 

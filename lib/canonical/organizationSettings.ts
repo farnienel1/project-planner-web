@@ -122,6 +122,7 @@ export const OPERATIONAL_COLLECTION_PATHS = {
   siteAudits: 'organizations/{orgId}/siteAudits',
   materialCatalogue: 'organizations/{orgId}/materialCatalogue',
   materials: 'organizations/{orgId}/materials',
+  materialSendRecords: 'organizations/{orgId}/materialSendRecords',
   qualifications: 'organizations/{orgId}/qualifications',
   healthSafetySettings: 'organizations/{orgId}/settings/healthSafety_{projects|smallWorks}_{parentId}',
   healthSafetyEvidence: 'organizations/{orgId}/healthSafety/{parentId}/variations/{file}',

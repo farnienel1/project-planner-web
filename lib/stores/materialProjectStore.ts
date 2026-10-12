@@ -49,6 +49,7 @@ function mapSendRecord(docId: string, data: Record<string, unknown>): MaterialSe
     sentAt,
     materialsDate: parseFirestoreDate(data.materialsDate),
     sentBy: parseString(data.sentBy),
+    deliveryRequiredAt: parseFirestoreDate(data.deliveryRequiredAt),
     recipients: Array.isArray(data.recipients)
       ? (data.recipients as Record<string, unknown>[]).map((r) => ({
           name: parseString(r.name),
@@ -301,6 +302,7 @@ export const useMaterialProjectStore = create<MaterialProjectState>((set, get) =
       })),
     }
     if (record.materialsDate) payload.materialsDate = Timestamp.fromDate(record.materialsDate)
+    if (record.deliveryRequiredAt) payload.deliveryRequiredAt = Timestamp.fromDate(record.deliveryRequiredAt)
     await setDoc(doc(db, 'organizations', organizationId, 'materialSendRecords', id), payload)
     const mapped = mapSendRecord(id, payload as Record<string, unknown>)
     if (mapped) {
