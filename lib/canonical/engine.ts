@@ -130,9 +130,10 @@ export function rememberedOrganizationSurvivesSignOut(): boolean {
 }
 
 /**
- * Switcher ids. A finished discovery is the query result.
- * A slow or failed members/creator/orgMemberships read must keep companies
- * this device already knows (remembered, user document, explicit, last list).
+ * Switcher ids. Known companies always stay: remembered, user document,
+ * explicit switch, and the last list. A members/creator query that
+ * "finishes" can still omit a company this device already knows — that
+ * must not hide it. `discoveryIncomplete` is kept so the app can warn.
  */
 export function sessionMembershipIds(input: {
   discoveredIds?: readonly (string | null | undefined)[]
@@ -142,10 +143,9 @@ export function sessionMembershipIds(input: {
   explicitOrganizationId?: string | null
   discoveryIncomplete?: boolean
 }): string[] {
-  const discovered = uniqueOrganizationIds(input.discoveredIds)
-  if (!input.discoveryIncomplete) return discovered
+  void input.discoveryIncomplete
   return uniqueOrganizationIds([
-    ...discovered,
+    ...(input.discoveredIds ?? []),
     ...(input.previousIds ?? []),
     input.explicitOrganizationId,
     input.rememberedOrganizationId,

@@ -16,6 +16,7 @@ import {
   switchActiveOrganization,
 } from '@/lib/orgMembership/membershipService'
 import { organizationIdsMatch, readWebActiveOrg } from '@/lib/orgMembership/webActiveOrg'
+import { displayOrganizationName, uniqueOrganizationIds } from '@/lib/canonical'
 import { roleDisplayName } from '@/lib/orgMembership/organizationTrialPolicy'
 import {
   formatMembershipCreatedLabel,
@@ -28,7 +29,7 @@ import { LoadingSpinner } from '@/components/dashboard/PageShell'
 function membershipFromCurrentOrg(organization: Organization, user: User): OrgMembership {
   return {
     organizationId: organization.id,
-    organizationName: organization.name,
+    organizationName: displayOrganizationName(organization.name),
     role: user.role || 'admin',
     status: 'active',
     invitedAt: organization.createdAt,
@@ -36,10 +37,30 @@ function membershipFromCurrentOrg(organization: Organization, user: User): OrgMe
   }
 }
 
+function seedKnownMemberships(
+  organization: Organization | null,
+  user: User | null,
+  rememberedId: string | null
+): OrgMembership[] {
+  const current = organization && user ? membershipFromCurrentOrg(organization, user) : null
+  const ids = uniqueOrganizationIds([organization?.id, user?.organizationId, rememberedId])
+  return ids.map((organizationId) => {
+    if (current && organizationIdsMatch(current.organizationId, organizationId)) return current
+    return {
+      organizationId,
+      organizationName: displayOrganizationName(''),
+      role: 'member',
+      status: 'active',
+      invitedAt: new Date(),
+    }
+  })
+}
+
 export default function ChangeOrganisationPage() {
   const router = useRouter()
   const { user, firebaseUser, organization, loading: authLoading } = useAuthStore()
-  const seeded = organization && user ? [membershipFromCurrentOrg(organization, user)] : []
+  const rememberedId = firebaseUser?.uid ? readWebActiveOrg(firebaseUser.uid) : null
+  const seeded = seedKnownMemberships(organization, user, rememberedId)
   const [memberships, setMemberships] = useState<OrgMembership[]>(seeded)
   const [refreshing, setRefreshing] = useState(seeded.length === 0)
   const [switchingId, setSwitchingId] = useState<string | null>(null)
