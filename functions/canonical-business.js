@@ -25,6 +25,7 @@ var ProjectPlannerCanonical = (() => {
     CANONICAL_STANDARD_BREAK: () => CANONICAL_STANDARD_BREAK,
     CANONICAL_STANDARD_DAY: () => CANONICAL_STANDARD_DAY,
     DEFAULT_ANNUAL_LEAVE_DAYS: () => DEFAULT_ANNUAL_LEAVE_DAYS,
+    DEFAULT_MATERIAL_CUT_OFF: () => DEFAULT_MATERIAL_CUT_OFF,
     DEFAULT_MATERIAL_DELIVERY_CLOCK: () => DEFAULT_MATERIAL_DELIVERY_CLOCK,
     DEFAULT_MATERIAL_DELIVERY_HOUR: () => DEFAULT_MATERIAL_DELIVERY_HOUR,
     DEFAULT_MATERIAL_DELIVERY_MINUTE: () => DEFAULT_MATERIAL_DELIVERY_MINUTE,
@@ -87,6 +88,7 @@ var ProjectPlannerCanonical = (() => {
     employmentEffectiveLabel: () => employmentEffectiveLabel,
     employmentTypeOnDay: () => employmentTypeOnDay,
     formatClockMinutes: () => formatClockMinutes,
+    formatMaterialCutOffClock: () => formatMaterialCutOffClock,
     formatMaterialDeliveryRequired: () => formatMaterialDeliveryRequired,
     halfDayWindows: () => halfDayWindows,
     hasAnnualLeaveAllowance: () => hasAnnualLeaveAllowance,
@@ -103,6 +105,8 @@ var ProjectPlannerCanonical = (() => {
     leaveCoverageRows: () => leaveCoverageRows,
     leaveSlotKind: () => leaveSlotKind,
     leaveYearBounds: () => leaveYearBounds,
+    materialCutOffClockMinutes: () => materialCutOffClockMinutes,
+    materialCutOffToFirestore: () => materialCutOffToFirestore,
     materialDeliveryInstant: () => materialDeliveryInstant,
     materialOrderIncludesDeliveryRequired: () => materialOrderIncludesDeliveryRequired,
     materialRecordMatches: () => materialRecordMatches,
@@ -130,6 +134,7 @@ var ProjectPlannerCanonical = (() => {
     paidHoursForNamedSlot: () => paidHoursForNamedSlot,
     parseClockMinutes: () => parseClockMinutes,
     parseInvoicing: () => parseInvoicing,
+    parseMaterialCutOff: () => parseMaterialCutOff,
     parseOrganizationName: () => parseOrganizationName,
     parsePaymentRunDateRanges: () => parsePaymentRunDateRanges,
     parsePaymentRunHistory: () => parsePaymentRunHistory,
@@ -162,6 +167,7 @@ var ProjectPlannerCanonical = (() => {
     receivesJobNotification: () => receivesJobNotification,
     rememberedOrganizationSurvivesSignOut: () => rememberedOrganizationSurvivesSignOut,
     removedQualificationCertificateIds: () => removedQualificationCertificateIds,
+    resolveMaterialCutOffClock: () => resolveMaterialCutOffClock,
     resolveTimesheetExportedAtMs: () => resolveTimesheetExportedAtMs,
     resolveTimesheetPeriod: () => resolveTimesheetPeriod,
     seesEveryJob: () => seesEveryJob,
@@ -2156,6 +2162,13 @@ var ProjectPlannerCanonical = (() => {
     if (paymentRunMode === "date_ranges") return "specific_dates";
     return String(value || "").trim() === "specific_dates" ? "specific_dates" : "recurring_date";
   }
+  var DEFAULT_MATERIAL_CUT_OFF = {
+    materialOrderCutOff: true,
+    materialCutOffHour: 16,
+    materialCutOffMinute: 0,
+    materialCutOffOnSaturday: false,
+    materialCutOffOnSunday: false
+  };
   var MONTH_DAYS = 31;
   function asSettingsRecord(value) {
     if (!value || typeof value !== "object" || Array.isArray(value)) return void 0;
@@ -2305,6 +2318,53 @@ var ProjectPlannerCanonical = (() => {
       payload.notifyCustomised = recurring.notifyCustomised;
     }
     return payload;
+  }
+  function cutOffClockNumber(value, fallback, min, max) {
+    if (value == null || value === "") return fallback;
+    const n = Number(value);
+    if (!Number.isFinite(n)) return fallback;
+    return Math.max(min, Math.min(max, Math.trunc(n)));
+  }
+  function parseMaterialCutOff(data) {
+    const raw = asSettingsRecord(data);
+    if (!raw) return { ...DEFAULT_MATERIAL_CUT_OFF };
+    return {
+      materialOrderCutOff: raw.materialOrderCutOff !== false,
+      materialCutOffHour: cutOffClockNumber(
+        raw.materialCutOffHour,
+        DEFAULT_MATERIAL_CUT_OFF.materialCutOffHour,
+        0,
+        23
+      ),
+      materialCutOffMinute: cutOffClockNumber(
+        raw.materialCutOffMinute,
+        DEFAULT_MATERIAL_CUT_OFF.materialCutOffMinute,
+        0,
+        59
+      ),
+      materialCutOffOnSaturday: raw.materialCutOffOnSaturday === true,
+      materialCutOffOnSunday: raw.materialCutOffOnSunday === true
+    };
+  }
+  function resolveMaterialCutOffClock(input = {}) {
+    const settings = asSettingsRecord(input.organizationSettings);
+    const fromOrg = asSettingsRecord(input.organizationMaterialCutOff) ?? (settings ? asSettingsRecord(settings.materialCutOff) : void 0);
+    return parseMaterialCutOff(fromOrg);
+  }
+  function materialCutOffClockMinutes(clock) {
+    return clock.materialCutOffHour * 60 + clock.materialCutOffMinute;
+  }
+  function formatMaterialCutOffClock(clock) {
+    return formatClockMinutes(materialCutOffClockMinutes(clock));
+  }
+  function materialCutOffToFirestore(prefs) {
+    return {
+      materialOrderCutOff: prefs.materialOrderCutOff,
+      materialCutOffHour: prefs.materialCutOffHour,
+      materialCutOffMinute: prefs.materialCutOffMinute,
+      materialCutOffOnSaturday: prefs.materialCutOffOnSaturday,
+      materialCutOffOnSunday: prefs.materialCutOffOnSunday
+    };
   }
   function isValidDay(day) {
     return Number.isInteger(day) && day >= 1 && day <= MONTH_DAYS;

@@ -37,7 +37,6 @@ import {
   readCachedWarningDetection,
   writeCachedWarningDetection,
 } from '@/lib/settings/warningDetectionCache'
-import { loadMaterialCutOffSettings, type NotificationPreferences } from '@/lib/settings/notificationPreferences'
 import { generateOrgWarnings } from '@/lib/warnings/generateOrgWarnings'
 import {
   countGeneratedWarnings,
@@ -74,7 +73,6 @@ export default function WarningsPage() {
   const [acceptedClashes, setAcceptedClashes] = useState<AcceptedBookingClash[]>([])
   const [dismissedWarnings, setDismissedWarnings] = useState<DismissedWarning[]>([])
   const [orgDetails, setOrgDetails] = useState<OrganizationDetails | null>(null)
-  const [notificationPreferences, setNotificationPreferences] = useState<NotificationPreferences | null>(null)
   const [detectionSettled, setDetectionSettled] = useState(false)
   const [liveOrgReadSettled, setLiveOrgReadSettled] = useState(false)
   const [rosterReady, setRosterReady] = useState(false)
@@ -218,13 +216,6 @@ export default function WarningsPage() {
     loadHolidayBookings,
   ])
 
-  useEffect(() => {
-    if (!user?.id || !organization?.id) return
-    loadMaterialCutOffSettings(organization.id, user.id)
-      .then(setNotificationPreferences)
-      .catch(() => setNotificationPreferences(null))
-  }, [user?.id, organization?.id])
-
   // Global Refresh: stores reload themselves; this page also re-reads what it keeps locally.
   useEffect(() => {
     const orgId = organization?.id
@@ -347,7 +338,6 @@ export default function WarningsPage() {
         sendRecords,
         orgDetails: detailsForScan,
         warningDetection: warningDetection ?? DEFAULT_WARNING_DETECTION,
-        notificationPreferences,
       }),
     [
       scheduleReady,
@@ -361,7 +351,6 @@ export default function WarningsPage() {
       materials,
       sendRecords,
       detailsForScan,
-      notificationPreferences,
     ]
   )
 

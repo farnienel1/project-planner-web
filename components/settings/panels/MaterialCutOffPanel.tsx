@@ -8,6 +8,7 @@ import {
   saveMaterialCutOffSettingsForOrgAndUser,
   type NotificationPreferences,
 } from '@/lib/settings/notificationPreferences'
+import { materialCutOffClockMinutes } from '@/lib/canonical'
 import { MATERIAL_CUTOFF_TIME_OPTIONS, materialCutoffTimeLabel } from '@/lib/settings/orgHubUtils'
 import {
   PanelHeader,
@@ -51,7 +52,7 @@ export function MaterialCutOffPanel({ onBack }: { onBack: () => void }) {
   }, [organization?.id, user?.id])
 
   const cutOffOn = prefs.materialOrderCutOff
-  const cutOffMinutes = prefs.materialCutOffHour * 60 + prefs.materialCutOffMinute
+  const cutOffMinutes = materialCutOffClockMinutes(prefs)
   const timeLabel = materialCutoffTimeLabel(cutOffMinutes)
   const helperText = !cutOffOn
     ? 'Turn on the notification to choose a time.'
@@ -97,7 +98,7 @@ export function MaterialCutOffPanel({ onBack }: { onBack: () => void }) {
 
       <p className="text-[15px] leading-6 text-slate-500">
         Remind all managers when materials still need ordering before the daily cut-off. The time is stored on the
-        organisation and on your profile so iOS and the web app stay in sync.
+        organisation — that clock is what both apps use.
       </p>
 
       <div>

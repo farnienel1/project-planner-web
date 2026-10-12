@@ -15,10 +15,7 @@ import {
   loadOrganizationDetails,
   type OrganizationDetails,
 } from '@/lib/settings/organizationSettings'
-import {
-  loadMaterialCutOffSettings,
-  type NotificationPreferences,
-} from '@/lib/settings/notificationPreferences'
+import { materialCutOffClockMinutes, resolveMaterialCutOffClock } from '@/lib/canonical'
 import {
   materialCutoffTimeLabel,
   orgCountryLabel,
@@ -81,7 +78,6 @@ export function OrganisationHubPanel({
   const { users, loadUsers } = useOrgUserStore()
 
   const [details, setDetails] = useState<OrganizationDetails | null>(null)
-  const [notif, setNotif] = useState<NotificationPreferences | null>(null)
   const [feedback, setFeedback] = useState<{ kind: 'success' | 'error'; msg: string } | null>(null)
 
   useEffect(() => {
@@ -92,11 +88,6 @@ export function OrganisationHubPanel({
     if (!organization?.id) return
     loadOrganizationDetails(organization.id).then(setDetails).catch(() => {})
   }, [organization?.id])
-
-  useEffect(() => {
-    if (!organization?.id) return
-    loadMaterialCutOffSettings(organization.id, user?.id).then(setNotif).catch(() => {})
-  }, [organization?.id, user?.id])
 
   const country = orgCountryLabel(details?.countryCode)
   const orgName = displayOrganizationName(details?.name || organization?.name)
@@ -144,8 +135,11 @@ export function OrganisationHubPanel({
     ? formatInvoicingSubtitle(details.invoicing)
     : formatInvoicingSubtitle(DEFAULT_INVOICING)
 
-  const cutOffOn = !!notif?.materialOrderCutOff
-  const cutOffMinutes = (notif?.materialCutOffHour ?? 16) * 60 + (notif?.materialCutOffMinute ?? 0)
+  const cutOff = resolveMaterialCutOffClock({
+    organizationMaterialCutOff: details?.materialCutOff ?? null,
+  })
+  const cutOffOn = cutOff.materialOrderCutOff
+  const cutOffMinutes = materialCutOffClockMinutes(cutOff)
   const reminderSubtitle = cutOffOn
     ? `Daily at ${materialCutoffTimeLabel(cutOffMinutes)}`
     : 'Material cut-off notifications off'

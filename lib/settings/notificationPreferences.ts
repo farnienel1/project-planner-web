@@ -1,27 +1,20 @@
 import { doc, getDoc, setDoc, Timestamp } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
 import {
+  DEFAULT_MATERIAL_CUT_OFF,
   DEFAULT_USER_NOTIFICATION_PREFERENCES,
+  formatMaterialCutOffClock,
+  parseMaterialCutOff,
   parseUserNotificationPreferences,
+  resolveMaterialCutOffClock,
   userNotificationPreferenceFieldPatch,
+  type MaterialCutOffSettings,
   type UserNotificationPreferences,
 } from '@/lib/canonical'
 
-export type NotificationPreferences = {
-  materialOrderCutOff: boolean
-  materialCutOffHour: number
-  materialCutOffMinute: number
-  materialCutOffOnSaturday: boolean
-  materialCutOffOnSunday: boolean
-}
+export type NotificationPreferences = MaterialCutOffSettings
 
-export const DEFAULT_NOTIFICATION_PREFERENCES: NotificationPreferences = {
-  materialOrderCutOff: true,
-  materialCutOffHour: 16,
-  materialCutOffMinute: 0,
-  materialCutOffOnSaturday: false,
-  materialCutOffOnSunday: false,
-}
+export const DEFAULT_NOTIFICATION_PREFERENCES: NotificationPreferences = { ...DEFAULT_MATERIAL_CUT_OFF }
 
 const DEFAULTS = DEFAULT_NOTIFICATION_PREFERENCES
 
@@ -46,14 +39,7 @@ function cacheNotificationPreferencesLocally(userId: string, prefs: Notification
 }
 
 export function parseNotificationPreferences(raw: Record<string, unknown> | undefined): NotificationPreferences {
-  if (!raw) return { ...DEFAULTS }
-  return {
-    materialOrderCutOff: raw.materialOrderCutOff !== false,
-    materialCutOffHour: Number(raw.materialCutOffHour ?? DEFAULTS.materialCutOffHour),
-    materialCutOffMinute: Number(raw.materialCutOffMinute ?? DEFAULTS.materialCutOffMinute),
-    materialCutOffOnSaturday: raw.materialCutOffOnSaturday === true,
-    materialCutOffOnSunday: raw.materialCutOffOnSunday === true,
-  }
+  return parseMaterialCutOff(raw)
 }
 
 export async function loadNotificationPreferences(userId: string): Promise<NotificationPreferences> {
@@ -112,22 +98,22 @@ export async function saveNotificationPreferences(userId: string, prefs: Notific
 }
 
 /**
- * Org hub material cut-off: organisation settings (shared) with the current user's
- * `notificationPreferences` as the iOS-compatible dual-write / fallback.
+ * Organisation `settings.materialCutOff` is the only cut-off clock.
+ * `userId` is unused for the time — a leftover user-pref hour must not win.
  */
 export async function loadMaterialCutOffSettings(
   organizationId: string,
-  userId?: string
+  _userId?: string
 ): Promise<NotificationPreferences> {
   const { loadOrganizationDetails } = await import('@/lib/settings/organizationSettings')
   try {
     const details = await loadOrganizationDetails(organizationId)
-    if (details?.materialCutOff) return details.materialCutOff
+    return resolveMaterialCutOffClock({
+      organizationMaterialCutOff: details?.materialCutOff ?? null,
+    })
   } catch {
-    // Fall through to the iOS user-doc source.
+    return resolveMaterialCutOffClock({})
   }
-  if (userId) return loadNotificationPreferences(userId)
-  return { ...DEFAULTS }
 }
 
 export async function saveMaterialCutOffSettingsForOrgAndUser(
@@ -195,7 +181,7 @@ export async function saveUserNotificationPreferences(
 }
 
 export function formatCutoffTime(hour: number, minute: number): string {
-  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`
+  return formatMaterialCutOffClock(parseMaterialCutOff({ materialCutOffHour: hour, materialCutOffMinute: minute }))
 }
 
 export function parseCutoffTime(value: string): { hour: number; minute: number } {

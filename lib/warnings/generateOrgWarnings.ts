@@ -17,7 +17,7 @@ import {
   DEFAULT_WARNING_DETECTION,
   parseInvoicing,
 } from '@/lib/settings/organizationSettings'
-import { qualificationExpiryRows, unverifiedOperativeRows } from '@/lib/canonical'
+import { qualificationExpiryRows, resolveMaterialCutOffClock, unverifiedOperativeRows } from '@/lib/canonical'
 import { ianaTimeZoneForCountry } from '@/lib/orgTime/orgTimeZone'
 import type { NotificationPreferences } from '@/lib/settings/notificationPreferences'
 import { computeOperativeBookingClashWarnings, type OperativeBookingClashWarning } from '@/lib/scheduling/bookingClashUtils'
@@ -150,6 +150,7 @@ export function generateOrgWarnings(input: {
   warningDetection?: OrgWarningDetectionSettings
   invoicing?: OrgInvoicingSettings
   payrollPolicy?: OrgPayrollTimePolicy
+  /** Ignored for the clock. Organisation `settings.materialCutOff` is the only time. */
   notificationPreferences?: NotificationPreferences | null
   referenceDate?: Date
   orgDetails?: OrganizationDetails | null
@@ -160,7 +161,10 @@ export function generateOrgWarnings(input: {
   )
   const payrollPolicy = input.payrollPolicy ?? input.orgDetails?.payrollTimePolicy ?? DEFAULT_PAYROLL_POLICY
   const now = input.referenceDate ?? new Date()
-  const prefs = input.notificationPreferences ?? input.orgDetails?.materialCutOff ?? null
+  const cutOff = resolveMaterialCutOffClock({
+    organizationMaterialCutOff: input.orgDetails?.materialCutOff ?? null,
+    userNotificationPreferences: input.notificationPreferences ?? null,
+  })
   const timeZone = ianaTimeZoneForCountry(input.orgDetails?.countryCode)
 
   const clashWarnings = warningDetection.detectClashes
@@ -223,11 +227,11 @@ export function generateOrgWarnings(input: {
     input.projects,
     input.bookings,
     {
-      enabled: prefs ? prefs.materialOrderCutOff !== false : true,
-      cutOffOnSaturday: prefs?.materialCutOffOnSaturday === true,
-      cutOffOnSunday: prefs?.materialCutOffOnSunday === true,
-      cutOffHour: prefs?.materialCutOffHour,
-      cutOffMinute: prefs?.materialCutOffMinute,
+      enabled: cutOff.materialOrderCutOff !== false,
+      cutOffOnSaturday: cutOff.materialCutOffOnSaturday,
+      cutOffOnSunday: cutOff.materialCutOffOnSunday,
+      cutOffHour: cutOff.materialCutOffHour,
+      cutOffMinute: cutOff.materialCutOffMinute,
       referenceDate: now,
     }
   )
