@@ -3,6 +3,10 @@
  *
  * Plain data only. Web wrappers map app types in and out.
  * The iOS bundle calls these functions instead of a second person-selection loop.
+ *
+ * Unbooked labour (`unbookedLabourRows`) is the shared person-day list for both
+ * Warnings and Daily Overview. Weekend days and excluded users come from
+ * `organizations/{orgId}.warningDetection` — never from a screen-local weekday gate.
  */
 
 import { standardDayCoverage, type StandardDayBooking } from './engine'
@@ -133,7 +137,16 @@ export type UnbookedLabourInput = {
   timeZone?: string | null
   startDayKey: string
   endDayKey: string
+  /**
+   * `organizations/{orgId}.warningDetection.includeWeekendsForUnbookedLabour`.
+   * Off skips Saturday and Sunday. On lists weekend unbooked people the same
+   * way weekdays do, on Warnings and on Daily Overview.
+   */
   includeWeekends: boolean
+  /**
+   * `organizations/{orgId}.warningDetection.excludedUserIdsFromUnbookedWarnings`.
+   * Those `users/{uid}` ids are never unbooked on Warnings or Daily Overview.
+   */
   excludedUserIds?: readonly string[] | null
   standardPaidHours: number
   saturdayCountsAsHours: number
@@ -349,6 +362,11 @@ function asCoverageBooking(booking: LabourBooking): StandardDayBooking {
  * Bookings on any operative profile or user account that shares the email count toward that day.
  * A partial booking stays unbooked and reports the hours still missing.
  * A clash is a separate warning: overlapping time does not create a second gap.
+ *
+ * Warnings and Daily Overview both call this function (Daily Overview through
+ * `unbookedLabourRowsOnDay` for the viewed day). `includeWeekends` and
+ * `excludedUserIds` are the `warningDetection` fields above. Do not add a
+ * weekday-only loop on either screen.
  */
 export function unbookedLabourRows(input: UnbookedLabourInput): UnbookedLabourRow[] {
   const timeZone = zoneOf(input.timeZone)
@@ -532,5 +550,20 @@ export function unbookedLabourRows(input: UnbookedLabourInput): UnbookedLabourRo
   return rows.sort((a, b) => {
     if (a.dayKey !== b.dayKey) return a.dayKey < b.dayKey ? -1 : 1
     return a.operativeName.localeCompare(b.operativeName, undefined, { sensitivity: 'base' })
+  })
+}
+
+/**
+ * Daily Overview's list for one calendar day — the same rows as Warnings, not a
+ * second person-selection loop. Saturday/Sunday appear only when
+ * `includeWeekends` is true. Excluded user ids never appear.
+ */
+export function unbookedLabourRowsOnDay(
+  input: Omit<UnbookedLabourInput, 'startDayKey' | 'endDayKey'> & { dayKey: string }
+): UnbookedLabourRow[] {
+  return unbookedLabourRows({
+    ...input,
+    startDayKey: input.dayKey,
+    endDayKey: input.dayKey,
   })
 }

@@ -29,6 +29,7 @@ import {
   qualificationDismissKey,
   qualificationExpiryRows,
   unbookedLabourRows,
+  unbookedLabourRowsOnDay,
   unverifiedOperativeRows,
   withoutDismissedQualificationRows,
 } from './warningRows.ts'
@@ -550,6 +551,97 @@ test('unbooked labour skips pending invitees, excluded people, zero-hour weekend
   assert.equal(rows.find((row) => row.dayKey === '2026-09-19'), undefined)
 })
 
+test('weekend unbooked rows appear only when the org toggle is on; excluded users never appear', () => {
+  const people = [
+    {
+      id: 'U-SAM',
+      email: 'sam@site.test',
+      name: 'Sam Site',
+      isActive: true,
+      passwordSet: true,
+      isOperativeMode: true,
+      isManager: false,
+      isAdmin: false,
+      isSuperAdmin: false,
+    },
+    {
+      id: 'U-EX',
+      email: 'ex@site.test',
+      name: 'Excluded User',
+      isActive: true,
+      passwordSet: true,
+      isOperativeMode: true,
+      isManager: false,
+      isAdmin: false,
+      isSuperAdmin: false,
+    },
+  ]
+  const saturday = {
+    timeZone: 'Europe/London' as const,
+    standardPaidHours: 8,
+    saturdayCountsAsHours: 8,
+    sundayCountsAsHours: 8,
+    people,
+    operatives: [] as const,
+    bookings: [] as const,
+    holidays: [] as const,
+  }
+  const toggleOff = unbookedLabourRows({
+    ...saturday,
+    startDayKey: '2026-10-17',
+    endDayKey: '2026-10-17',
+    includeWeekends: false,
+  })
+  assert.deepEqual(toggleOff, [])
+
+  const toggleOn = unbookedLabourRows({
+    ...saturday,
+    startDayKey: '2026-10-17',
+    endDayKey: '2026-10-17',
+    includeWeekends: true,
+  })
+  assert.deepEqual(
+    toggleOn.map((row) => row.personKey),
+    ['U-EX', 'U-SAM']
+  )
+  assert.ok(toggleOn.every((row) => row.dayKey === '2026-10-17'))
+
+  const overviewDay = unbookedLabourRowsOnDay({
+    ...saturday,
+    dayKey: '2026-10-17',
+    includeWeekends: true,
+  })
+  assert.deepEqual(
+    overviewDay.map((row) => row.id),
+    toggleOn.map((row) => row.id)
+  )
+
+  const excludedWeekend = unbookedLabourRowsOnDay({
+    ...saturday,
+    dayKey: '2026-10-17',
+    includeWeekends: true,
+    excludedUserIds: ['U-EX'],
+  })
+  assert.deepEqual(
+    excludedWeekend.map((row) => row.personKey),
+    ['U-SAM']
+  )
+  assert.equal(excludedWeekend.find((row) => row.personKey === 'U-EX' || row.userId === 'U-EX'), undefined)
+
+  const excludedWeekday = unbookedLabourRows({
+    ...saturday,
+    startDayKey: '2026-10-12',
+    endDayKey: '2026-10-12',
+    includeWeekends: false,
+    excludedUserIds: ['U-EX'],
+  })
+  assert.deepEqual(
+    excludedWeekday.map((row) => row.personKey),
+    ['U-SAM']
+  )
+  assert.equal(excludedWeekday.find((row) => row.personKey === 'U-EX'), undefined)
+})
+
 // ─── Standard day, AM and PM ─────────────────────────────────────────────────
 
 const DEFAULT_DAY = {
@@ -780,6 +872,8 @@ test('the iOS JavaScript bundle exposes the standard-day, leave and dismiss rule
     'leaveCoverageRows',
     'leaveSlotKind',
     'qualificationDismissKey',
+    'unbookedLabourRows',
+    'unbookedLabourRowsOnDay',
     'withoutDismissedQualificationRows',
     'employmentTypeOnDay',
     'applyEmploymentTypeChange',

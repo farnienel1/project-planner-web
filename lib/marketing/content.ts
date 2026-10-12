@@ -59,7 +59,7 @@ export const MODULES: MarketingModule[] = [
       'Unbooked labour against your standard paid day',
       'Clash detection with approve-for-report',
       'Look ahead to end of week, end of invoicing period or any number of days',
-      'Past, Today, Soon and Upcoming severity',
+      'High, medium and low severity, including expired qualifications',
     ],
     splitTitle: 'Know what needs fixing before 8am.',
   },
@@ -81,11 +81,11 @@ export const MODULES: MarketingModule[] = [
     hue: 'sw',
     icon: 'box',
     name: 'Materials & wholesalers',
-    short: 'Order from your catalogue to site by day, with a daily cut-off so nothing arrives late.',
+    short: 'Operatives add what they need, the site manager sends it, the wholesaler gets a proper order request.',
     ticks: [
-      'Company material catalogue with CSV import',
-      'Orders by day with quote and order history',
-      'Wholesalers with primary contacts and send history',
+      'Operatives add materials from your company catalogue',
+      'Send as a quote or an order by email, or via WhatsApp',
+      'Quote and order history kept against every job',
       'Cut-off reminders to every manager, weekends optional',
     ],
   },
@@ -96,7 +96,7 @@ export const MODULES: MarketingModule[] = [
     name: 'Health & safety',
     short: 'Issue toolbox talks, collect signatures on phones, and keep RAMS with the job.',
     ticks: [
-      'A ready-made toolbox talk library by trade, plus your own uploads',
+      '571 toolbox talks included. Talks by trade, including COSHH, plus you are able to upload your own H&S docs',
       'Signature tracking with chase reminders and PDF export',
       'RAMS and other H&S documents per project',
       'Site audits with photos: pre-start, snags, variations',
@@ -210,13 +210,14 @@ export function gbp(amount: number): string {
   return amount.toLocaleString('en-GB')
 }
 
-export const NAV_LINKS = [
+export const NAV_LINKS: ReadonlyArray<{ href: string; label: string; cta?: boolean }> = [
   { href: '/features', label: 'Features' },
+  { href: '/register-interest', label: 'Register interest', cta: true },
   { href: '/pricing', label: 'Pricing' },
   { href: '/download', label: 'Download' },
   { href: '/about', label: 'About' },
   { href: '/support', label: 'Support' },
-] as const
+]
 
 export const PAGE_META: Record<string, { title: string; description: string }> = {
   home: {

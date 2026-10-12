@@ -105,7 +105,7 @@ export function MarketingShell({
               <Link
                 key={link.href}
                 href={link.href}
-                className={route === link.href || route.startsWith(`${link.href}/`) ? 'on' : ''}
+                className={[route === link.href || route.startsWith(`${link.href}/`) ? 'on' : '', link.cta ? 'reg' : ''].filter(Boolean).join(' ')}
               >
                 {link.label}
               </Link>
