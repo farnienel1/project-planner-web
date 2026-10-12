@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useHolidayStore } from '@/lib/stores/holidayStore'
 import { DEFAULT_ANNUAL_LEAVE, loadOrganizationDetails, type OrgAnnualLeaveDefaults } from '@/lib/settings/organizationSettings'
@@ -21,9 +22,15 @@ export function AnnualLeaveScreen() {
   )
   const booksOwnLeave = !isOperative && (!hasLineManager || user?.permissions.annualLeaveSelfBook === true)
   const canTeam = !isOperative && canAccessOperativeAnnualLeaveDirectory(user)
-  const [tab, setTab] = useState<'mine' | 'team'>('mine')
+  const searchParams = useSearchParams()
+  const requestedTab = searchParams.get('tab') === 'team' ? 'team' : 'mine'
+  const [tab, setTab] = useState<'mine' | 'team'>(requestedTab)
   const [queueCount, setQueueCount] = useState(0)
   const [orgLeaveDefaults, setOrgLeaveDefaults] = useState<OrgAnnualLeaveDefaults>(DEFAULT_ANNUAL_LEAVE)
+
+  useEffect(() => {
+    setTab(requestedTab)
+  }, [requestedTab])
 
   useEffect(() => {
     if (!organization?.id) return

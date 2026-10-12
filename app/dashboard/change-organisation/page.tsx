@@ -15,7 +15,7 @@ import {
   membershipListDiscoveryFailed,
   switchActiveOrganization,
 } from '@/lib/orgMembership/membershipService'
-import { organizationIdsMatch } from '@/lib/orgMembership/webActiveOrg'
+import { organizationIdsMatch, readWebActiveOrg } from '@/lib/orgMembership/webActiveOrg'
 import { roleDisplayName } from '@/lib/orgMembership/organizationTrialPolicy'
 import {
   formatMembershipCreatedLabel,
@@ -61,7 +61,8 @@ export default function ChangeOrganisationPage() {
       if (!firebaseUser?.uid) return
       if (!organization) setRefreshing(true)
       try {
-        const rows = await loadUserOrgMemberships(firebaseUser.uid, activeOrgId)
+        const known = [activeOrgId, user?.organizationId, readWebActiveOrg(firebaseUser.uid)]
+        const rows = await loadUserOrgMemberships(firebaseUser.uid, activeOrgId, known)
         if (!cancelled) {
           setDiscoveryIncomplete(membershipListDiscoveryFailed(rows))
           if (rows.length === 0 && organization && user) {
@@ -86,9 +87,15 @@ export default function ChangeOrganisationPage() {
 
   async function reload() {
     if (!firebaseUser?.uid) return
-    const rows = await loadUserOrgMemberships(firebaseUser.uid, activeOrgId)
+    const known = [
+      activeOrgId,
+      user?.organizationId,
+      readWebActiveOrg(firebaseUser.uid),
+      ...memberships.map((row) => row.organizationId),
+    ]
+    const rows = await loadUserOrgMemberships(firebaseUser.uid, activeOrgId, known)
     setDiscoveryIncomplete(membershipListDiscoveryFailed(rows))
-    setMemberships(rows)
+    setMemberships(rows.length > 0 ? rows : memberships)
   }
 
   async function handleAccept(membership: OrgMembership) {

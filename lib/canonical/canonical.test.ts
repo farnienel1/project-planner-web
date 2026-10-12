@@ -9,6 +9,12 @@ import {
   captureOrganizationContext,
   chooseSessionOrganization,
   coverageWindow,
+  IOS_SESSION_ORGANIZATION_STORAGE_KEY,
+  orgAccessProbeFromReads,
+  rememberedOrganizationSurvivesSignOut,
+  sessionMembershipIds,
+  shouldClearRememberedOrganization,
+  webSessionOrganizationStorageKey,
   standardDayCoverage,
   intervalsOverlap,
   invoicingPeriod,
@@ -67,7 +73,16 @@ import {
   employmentEffectiveLabel,
   employmentTypeOnDay,
   MANAGER_PERMISSION_TOGGLES,
+  USER_DOCUMENT_FIELDS,
 } from './userProfile.ts'
+import {
+  DEFAULT_USER_NOTIFICATION_PREFERENCES,
+  notificationDestination,
+  notificationPreferenceAllowsDelivery,
+  parseUserNotificationPreferences,
+  userNotificationPreferenceFieldPatch,
+  userNotificationPreferencesToFirestore,
+} from './notificationPreferences.ts'
 import {
   annualLeaveBalance,
   applyRemainingOverride,
@@ -146,6 +161,74 @@ test('a denied remembered company does not open when it is not the user document
     probes: { 'org-b': 'denied', 'org-a': 'allowed' },
   })
   assert.equal(choice.organizationId, 'org-a')
+  assert.equal(choice.persistOrganizationId, null)
+})
+
+test('a remembered company wins over a different user-document company', () => {
+  for (const probe of ['allowed', 'unknown'] as const) {
+    const choice = chooseSessionOrganization({
+      rememberedOrganizationId: 'org-phone',
+      documentOrganizationId: 'org-other',
+      probes: { 'org-phone': probe, 'org-other': 'allowed' },
+    })
+    assert.equal(choice.organizationId, 'org-phone')
+    assert.equal(choice.persistOrganizationId, 'org-phone')
+  }
+})
+
+test('a slow or unknown membership read does not drop the remembered company', () => {
+  const unknown = orgAccessProbeFromReads({
+    orgRead: 'failed',
+    membershipRead: 'failed',
+    listed: false,
+    isCreator: false,
+  })
+  assert.equal(unknown, 'unknown')
+  const choice = chooseSessionOrganization({
+    rememberedOrganizationId: 'org-remembered',
+    documentOrganizationId: 'org-document',
+    probes: { 'org-remembered': unknown, 'org-document': 'allowed' },
+  })
+  assert.equal(choice.organizationId, 'org-remembered')
+  assert.equal(choice.persistOrganizationId, 'org-remembered')
+})
+
+test('an explicit switch persists that company as the remembered key', () => {
+  const choice = chooseSessionOrganization({
+    explicitOrganizationId: 'org-b',
+    rememberedOrganizationId: 'org-a',
+    documentOrganizationId: 'org-a',
+    probes: { 'org-b': 'allowed', 'org-a': 'allowed' },
+  })
+  assert.equal(choice.organizationId, 'org-b')
+  assert.equal(choice.persistOrganizationId, 'org-b')
+})
+
+test('same-user sign-out keeps the remembered company; a different account does not inherit it', () => {
+  assert.equal(rememberedOrganizationSurvivesSignOut(), true)
+  assert.equal(shouldClearRememberedOrganization({ signedOutUserId: 'user-1', nextUserId: '' }), false)
+  assert.equal(shouldClearRememberedOrganization({ signedOutUserId: 'user-1', nextUserId: 'user-1' }), false)
+  assert.equal(shouldClearRememberedOrganization({ signedOutUserId: 'user-1', nextUserId: 'user-2' }), true)
+  assert.equal(webSessionOrganizationStorageKey('user-1'), 'pp.webActiveOrg:user-1')
+  assert.equal(IOS_SESSION_ORGANIZATION_STORAGE_KEY, 'cached_organizationId')
+})
+
+test('an incomplete membership discovery keeps the remembered company on the switcher list', () => {
+  const complete = sessionMembershipIds({
+    discoveredIds: ['org-document'],
+    rememberedOrganizationId: 'org-remembered',
+    documentOrganizationId: 'org-document',
+    discoveryIncomplete: false,
+  })
+  assert.deepEqual(complete, ['org-document'])
+  const incomplete = sessionMembershipIds({
+    discoveredIds: ['org-document'],
+    previousIds: ['org-document'],
+    rememberedOrganizationId: 'org-remembered',
+    documentOrganizationId: 'org-document',
+    discoveryIncomplete: true,
+  })
+  assert.deepEqual(incomplete, ['org-document', 'org-remembered'])
 })
 
 test('switching organisation invalidates an in-flight result from the previous company', () => {
@@ -930,6 +1013,12 @@ test('the iOS JavaScript bundle exposes the standard-day, leave and dismiss rule
     'dueTimesheetSubmissionNotices',
     'monthDayOffsetBefore',
     'paymentDateAfterPeriodEnd',
+    'chooseSessionOrganization',
+    'provisionalOrganizationId',
+    'orgAccessProbeFromReads',
+    'sessionMembershipIds',
+    'shouldClearRememberedOrganization',
+    'webSessionOrganizationStorageKey',
   ]) {
     assert.equal(typeof bundle[name], 'function', `${name} is exported from the packed script`)
   }
@@ -976,6 +1065,13 @@ test('the iOS JavaScript bundle exposes the standard-day, leave and dismiss rule
     [{ name: 'CCN1 Core Domestic Gas Safety (includes CPA1)', code: 'GAS-CCN1', section: 'Gas' }],
   ] as const
   assert.deepEqual(plain(bundle.rankQualificationRecords(...qualArgs)), plain(rankQualificationRecords(...qualArgs)))
+  const sessionChoice = {
+    rememberedOrganizationId: 'org-phone',
+    documentOrganizationId: 'org-other',
+    probes: { 'org-phone': 'unknown', 'org-other': 'allowed' },
+  }
+  assert.deepEqual(plain(bundle.chooseSessionOrganization(sessionChoice)), plain(chooseSessionOrganization(sessionChoice)))
+  assert.equal(bundle.webSessionOrganizationStorageKey('user-1'), 'pp.webActiveOrg:user-1')
 })
 
 test('dismissing an expired qualification hides it until the expiry date changes', () => {
@@ -1773,6 +1869,14 @@ test('the iOS JavaScript bundle applies the same warning date order as this modu
       materialOrderIncludesDeliveryRequired: (requestType: string | null | undefined) => boolean
       formatMaterialDeliveryRequired: (at: Date, timeZone?: string | null) => string
       defaultMaterialDeliveryRequiredAt: (referenceIso: string, timeZone?: string | null) => Date
+      notificationDestination: (input: {
+        type: string
+        relatedId?: string
+        dayKey?: string
+        catalogue?: string
+        role: string
+      }) => { kind: string; relatedId?: string; dayKey?: string }
+      parseUserNotificationPreferences: (raw: Record<string, unknown> | undefined) => { bookingClashes: boolean }
     }
   } = {}
   runInContext(source, createContext(sandbox))
@@ -1802,5 +1906,97 @@ test('the iOS JavaScript bundle applies the same warning date order as this modu
   assert.equal(
     bundle.formatMaterialDeliveryRequired(bundle.defaultMaterialDeliveryRequiredAt('2026-10-10T09:30:00+01:00')),
     formatMaterialDeliveryRequired(defaultMaterialDeliveryRequiredAt('2026-10-10T09:30:00+01:00'))
+  )
+  assert.equal(bundle.parseUserNotificationPreferences(undefined).bookingClashes, true)
+  assert.equal(
+    bundle.notificationDestination({
+      type: 'booking_created',
+      relatedId: 'JOB-1',
+      dayKey: '2026-10-12',
+      catalogue: 'projects',
+      role: 'admin',
+    }).kind,
+    'dailyOverviewDay'
+  )
+})
+
+test('user notification preferences parse defaults, aliases, and dotted writes', () => {
+  assert.ok(USER_DOCUMENT_FIELDS.includes('notificationPreferences'))
+  const empty = parseUserNotificationPreferences(undefined)
+  assert.equal(empty.bookingClashes, true)
+  assert.equal(empty.timesheetSubmissionReminder, true)
+  assert.equal(empty.materialOrderCutOff, true)
+  const fromLegacy = parseUserNotificationPreferences({ bookingConflicts: false })
+  assert.equal(fromLegacy.bookingClashes, false)
+  const explicitWins = parseUserNotificationPreferences({
+    bookingConflicts: false,
+    bookingClashes: true,
+    timesheetSignOff: false,
+  })
+  assert.equal(explicitWins.bookingClashes, true)
+  assert.equal(explicitWins.timesheetSignOff, false)
+  const written = userNotificationPreferencesToFirestore(DEFAULT_USER_NOTIFICATION_PREFERENCES)
+  assert.equal(written.timesheetSubmissionReminder, true)
+  assert.equal('bookingConflicts' in written, false)
+  const patch = userNotificationPreferenceFieldPatch({ bookingClashes: false })
+  assert.equal(patch['notificationPreferences.bookingClashes'], false)
+  assert.equal('notificationPreferences' in patch, false)
+  assert.equal(Object.keys(patch).some((key) => key.includes('bookingConflicts')), false)
+  assert.equal(Object.keys(patch).length, 1)
+})
+
+test('a preference only gates its own inbox types and never widens fan-out', () => {
+  const off = parseUserNotificationPreferences({ bookedOntoJob: false, timesheetSubmissionReminder: false })
+  assert.equal(notificationPreferenceAllowsDelivery(off, 'booking_created'), false)
+  assert.equal(notificationPreferenceAllowsDelivery(off, 'timesheet_submission_reminder'), false)
+  assert.equal(notificationPreferenceAllowsDelivery(off, 'client_created'), true)
+  assert.equal(notificationPreferenceAllowsDelivery(off, 'variation'), true)
+  assert.equal(notificationPreferenceAllowsDelivery(DEFAULT_USER_NOTIFICATION_PREFERENCES, 'booking_created'), true)
+})
+
+test('booking destinations follow admin Daily Overview vs manager scheduling', () => {
+  const day = { type: 'booking_created', relatedId: 'JOB-1', dayKey: '2026-10-12', catalogue: 'projects' as const }
+  assert.deepEqual(notificationDestination({ ...day, role: 'admin' }), {
+    kind: 'dailyOverviewDay',
+    dayKey: '2026-10-12',
+  })
+  assert.deepEqual(notificationDestination({ ...day, role: 'manager' }), {
+    kind: 'projectScheduling',
+    relatedId: 'JOB-1',
+    dayKey: '2026-10-12',
+  })
+  assert.deepEqual(
+    notificationDestination({
+      type: 'booking_created',
+      relatedId: 'SW-9',
+      dayKey: '2026-10-12',
+      catalogue: 'smallWorks',
+      role: 'manager',
+    }),
+    { kind: 'smallWorksScheduling', relatedId: 'SW-9', dayKey: '2026-10-12' }
+  )
+  assert.deepEqual(notificationDestination({ ...day, role: 'operative' }), {
+    kind: 'mySchedule',
+    dayKey: '2026-10-12',
+  })
+})
+
+test('a booking without a related id falls back, and an unknown type opens notifications', () => {
+  assert.deepEqual(
+    notificationDestination({ type: 'booking_created', dayKey: '2026-10-12', role: 'manager' }),
+    { kind: 'dailyOverviewDay', dayKey: '2026-10-12' }
+  )
+  assert.deepEqual(
+    notificationDestination({ type: 'project_created', role: 'admin' }),
+    { kind: 'projectsList' }
+  )
+  assert.deepEqual(
+    notificationDestination({ type: 'small_works_created', relatedId: 'SW-1', role: 'manager' }),
+    { kind: 'smallWorksDetail', relatedId: 'SW-1' }
+  )
+  assert.deepEqual(notificationDestination({ type: 'not_a_real_type', role: 'admin' }), { kind: 'notifications' })
+  assert.deepEqual(
+    notificationDestination({ type: 'timesheet_submission_reminder', dayKey: '2026-10-17', role: 'operative' }),
+    { kind: 'timesheetMine', dayKey: '2026-10-17' }
   )
 })

@@ -1,5 +1,11 @@
 import { doc, getDoc, setDoc, Timestamp } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
+import {
+  DEFAULT_USER_NOTIFICATION_PREFERENCES,
+  parseUserNotificationPreferences,
+  userNotificationPreferenceFieldPatch,
+  type UserNotificationPreferences,
+} from '@/lib/canonical'
 
 export type NotificationPreferences = {
   materialOrderCutOff: boolean
@@ -132,6 +138,60 @@ export async function saveMaterialCutOffSettingsForOrgAndUser(
   const { saveMaterialCutOffSettings } = await import('@/lib/settings/organizationSettings')
   await saveMaterialCutOffSettings(organizationId, prefs)
   if (userId) await saveNotificationPreferences(userId, prefs)
+}
+
+const USER_TOGGLE_STORAGE_KEY = (userId: string) => `pp.userNotificationPreferences.${userId}`
+
+function cacheUserNotificationPreferences(userId: string, prefs: UserNotificationPreferences): void {
+  if (typeof window === 'undefined') return
+  window.localStorage.setItem(USER_TOGGLE_STORAGE_KEY(userId), JSON.stringify(prefs))
+}
+
+function loadUserNotificationPreferencesFromLocalStorage(userId: string): UserNotificationPreferences {
+  if (typeof window === 'undefined') return { ...DEFAULT_USER_NOTIFICATION_PREFERENCES }
+  try {
+    const raw = window.localStorage.getItem(USER_TOGGLE_STORAGE_KEY(userId))
+    if (!raw) return { ...DEFAULT_USER_NOTIFICATION_PREFERENCES }
+    return parseUserNotificationPreferences(JSON.parse(raw) as Record<string, unknown>)
+  } catch {
+    return { ...DEFAULT_USER_NOTIFICATION_PREFERENCES }
+  }
+}
+
+export async function loadUserNotificationPreferences(userId: string): Promise<UserNotificationPreferences> {
+  try {
+    const snap = await getDoc(doc(db, 'users', userId))
+    if (snap.exists()) {
+      const raw = snap.data()?.notificationPreferences as Record<string, unknown> | undefined
+      if (raw) {
+        const prefs = parseUserNotificationPreferences(raw)
+        cacheUserNotificationPreferences(userId, prefs)
+        return prefs
+      }
+    }
+  } catch {
+    // Fall through.
+  }
+  return loadUserNotificationPreferencesFromLocalStorage(userId)
+}
+
+/** Dotted user-toggle writes. Does not replace the map or drop cut-off clock keys. */
+export async function saveUserNotificationPreferences(
+  userId: string,
+  prefs: UserNotificationPreferences
+): Promise<void> {
+  cacheUserNotificationPreferences(userId, prefs)
+  const ref = doc(db, 'users', userId)
+  const patch = {
+    ...userNotificationPreferenceFieldPatch(prefs),
+    updatedAt: Timestamp.now(),
+  }
+  try {
+    const { updateDoc } = await import('firebase/firestore')
+    await updateDoc(ref, patch)
+  } catch {
+    await setDoc(ref, patch, { merge: true })
+  }
 }
 
 export function formatCutoffTime(hour: number, minute: number): string {

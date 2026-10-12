@@ -2,17 +2,23 @@
 
 import Link from 'next/link'
 import type { AppInboxNotification } from '@/lib/ios-parity/converters'
+import type { User } from '@/types'
+import { inboxNotificationHref } from '@/lib/notifications/notificationHref'
 
 export function NotificationsPopover({
   open,
   onClose,
   notifications,
   onMarkAllRead,
+  user,
+  timeZone,
 }: {
   open: boolean
   onClose: () => void
   notifications: AppInboxNotification[]
   onMarkAllRead: () => void
+  user?: User | null
+  timeZone?: string
 }) {
   if (!open) return null
   const recent = notifications.slice(0, 8)
@@ -34,12 +40,20 @@ export function NotificationsPopover({
           <p className="px-2.5 py-6 text-center text-[13px] text-[var(--ink3)]">You&apos;re all caught up.</p>
         ) : (
           <div className="max-h-[360px] overflow-auto">
-            {recent.map((row) => (
-              <div key={row.id} className="rounded-[14px] px-2.5 py-2">
-                <p className="truncate text-[14px] font-semibold">{row.title}</p>
-                <p className="line-clamp-2 text-[12.5px] text-[var(--ink3)]">{row.message}</p>
-              </div>
-            ))}
+            {recent.map((row) => {
+              const href = inboxNotificationHref(row, user, timeZone)
+              return (
+                <Link
+                  key={row.id}
+                  href={href}
+                  onClick={onClose}
+                  className="block rounded-[14px] px-2.5 py-2 hover:bg-[var(--soft)]"
+                >
+                  <p className="truncate text-[14px] font-semibold text-[var(--blue)]">{row.title}</p>
+                  <p className="line-clamp-2 text-[12.5px] text-[var(--ink3)]">{row.message}</p>
+                </Link>
+              )
+            })}
           </div>
         )}
         <Link

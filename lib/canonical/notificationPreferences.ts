@@ -1,0 +1,318 @@
+/**
+ * User-level notification toggles and inbox destinations.
+ *
+ * Screens stay in each app. Both apps read and write
+ * `users/{uid}.notificationPreferences` with these keys, and both call
+ * `notificationDestination` then map the kind to a native route. Do not keep a
+ * second toggle list or a second deep-link map in a screen.
+ *
+ * Who is on the fan-out for a job or booking stays `receivesJobNotification`.
+ * A toggle that is on does not add recipients.
+ */
+
+import type { AccountKind } from './userProfile'
+import { TIMESHEET_SUBMISSION_NOTICE_TYPE } from './timesheetSubmission'
+
+export const NOTIFICATION_PREFERENCE_KEYS = [
+  'materialOrderCutOff',
+  'annualLeaveRequested',
+  'annualLeaveDecision',
+  'projectCreated',
+  'smallWorksCreated',
+  'bookingClashes',
+  'materialOrderPlaced',
+  'bookedOntoJob',
+  'operativeCreated',
+  'managerCreated',
+  'clientCreated',
+  'warningDismissed',
+  'tasksAssignedOrCompleted',
+  'toolboxTalkIssued',
+  'timesheetSignOff',
+  'qualificationExpiry',
+  'lineManagerPeerUpdates',
+  'timesheetSubmissionReminder',
+] as const
+
+export type NotificationPreferenceKey = (typeof NOTIFICATION_PREFERENCE_KEYS)[number]
+
+export type UserNotificationPreferences = Record<NotificationPreferenceKey, boolean>
+
+/** Every toggle defaults on. A missing key is on; only an explicit false is off. */
+export const DEFAULT_USER_NOTIFICATION_PREFERENCES: UserNotificationPreferences = {
+  materialOrderCutOff: true,
+  annualLeaveRequested: true,
+  annualLeaveDecision: true,
+  projectCreated: true,
+  smallWorksCreated: true,
+  bookingClashes: true,
+  materialOrderPlaced: true,
+  bookedOntoJob: true,
+  operativeCreated: true,
+  managerCreated: true,
+  clientCreated: true,
+  warningDismissed: true,
+  tasksAssignedOrCompleted: true,
+  toolboxTalkIssued: true,
+  timesheetSignOff: true,
+  qualificationExpiry: true,
+  lineManagerPeerUpdates: true,
+  timesheetSubmissionReminder: true,
+}
+
+/**
+ * Older iOS keys on the same map. Read them when the current key is absent.
+ * A save must not delete these keys.
+ */
+export const LEGACY_NOTIFICATION_PREFERENCE_ALIASES: Readonly<
+  Record<string, NotificationPreferenceKey>
+> = {
+  bookingConflicts: 'bookingClashes',
+}
+
+const TYPE_TO_PREFERENCE: Record<string, NotificationPreferenceKey> = {
+  material_order_cut_off: 'materialOrderCutOff',
+  holiday_request_submitted: 'annualLeaveRequested',
+  holiday_request_approved: 'annualLeaveDecision',
+  holiday_request_declined: 'annualLeaveDecision',
+  project_created: 'projectCreated',
+  small_works_created: 'smallWorksCreated',
+  booking_clash: 'bookingClashes',
+  material_order_placed: 'materialOrderPlaced',
+  material_order_created: 'materialOrderPlaced',
+  booking_created: 'bookedOntoJob',
+  booked_onto_job: 'bookedOntoJob',
+  operative_created: 'operativeCreated',
+  manager_created: 'managerCreated',
+  client_created: 'clientCreated',
+  warning_removed: 'warningDismissed',
+  task_created: 'tasksAssignedOrCompleted',
+  task_completed: 'tasksAssignedOrCompleted',
+  deadline_assigned: 'tasksAssignedOrCompleted',
+  deadline_reminder: 'tasksAssignedOrCompleted',
+  deadline_due: 'tasksAssignedOrCompleted',
+  toolbox_talk_issued: 'toolboxTalkIssued',
+  hs_toolbox_reminder: 'toolboxTalkIssued',
+  timesheet_pending_manager_signoff: 'timesheetSignOff',
+  timesheet_signed_by_manager: 'timesheetSignOff',
+  qualification_expiry: 'qualificationExpiry',
+  line_manager_peer_update: 'lineManagerPeerUpdates',
+  [TIMESHEET_SUBMISSION_NOTICE_TYPE]: 'timesheetSubmissionReminder',
+}
+
+export type NotificationWorkCatalogue = 'projects' | 'smallWorks'
+
+export type NotificationDestinationKind =
+  | 'dailyOverviewDay'
+  | 'projectScheduling'
+  | 'smallWorksScheduling'
+  | 'mySchedule'
+  | 'annualLeave'
+  | 'annualLeavePending'
+  | 'projectDetail'
+  | 'projectsList'
+  | 'smallWorksDetail'
+  | 'smallWorksList'
+  | 'warnings'
+  | 'materialOrders'
+  | 'clients'
+  | 'manageUsers'
+  | 'userEdit'
+  | 'tasks'
+  | 'healthSafety'
+  | 'timesheetMine'
+  | 'timesheetTeamAwaiting'
+  | 'timesheetTeamSigned'
+  | 'qualifications'
+  | 'notifications'
+  | 'home'
+
+export type NotificationDestination = {
+  kind: NotificationDestinationKind
+  relatedId?: string
+  dayKey?: string
+  userId?: string
+}
+
+export type NotificationDestinationInput = {
+  type: string
+  relatedId?: string | null
+  dayKey?: string | null
+  catalogue?: NotificationWorkCatalogue | string | null
+  role: AccountKind
+  deepLinkUserId?: string | null
+}
+
+function trimmed(value: string | null | undefined): string {
+  return String(value ?? '').trim()
+}
+
+function asDayKey(value: string | null | undefined): string | undefined {
+  const key = trimmed(value)
+  return /^\d{4}-\d{2}-\d{2}$/.test(key) ? key : undefined
+}
+
+function asCatalogue(value: string | null | undefined): NotificationWorkCatalogue | undefined {
+  if (value === 'projects' || value === 'smallWorks') return value
+  return undefined
+}
+
+function flagOn(raw: unknown): boolean {
+  return raw !== false
+}
+
+/**
+ * Read `users/{uid}.notificationPreferences`. Missing keys default on.
+ * `bookingConflicts` fills `bookingClashes` when the new key is absent.
+ */
+export function parseUserNotificationPreferences(
+  raw: Record<string, unknown> | undefined | null
+): UserNotificationPreferences {
+  const source = raw && typeof raw === 'object' ? raw : {}
+  const prefs = { ...DEFAULT_USER_NOTIFICATION_PREFERENCES }
+  for (const [legacy, current] of Object.entries(LEGACY_NOTIFICATION_PREFERENCE_ALIASES)) {
+    if (!(current in source) && legacy in source) {
+      prefs[current] = flagOn(source[legacy])
+    }
+  }
+  for (const key of NOTIFICATION_PREFERENCE_KEYS) {
+    if (key in source) prefs[key] = flagOn(source[key])
+  }
+  return prefs
+}
+
+/**
+ * Nested map values only. Do not `set` this object over the Firestore map —
+ * that would drop legacy keys and any field this list does not name.
+ */
+export function userNotificationPreferencesToFirestore(
+  prefs: UserNotificationPreferences
+): Record<string, boolean> {
+  const out: Record<string, boolean> = {}
+  for (const key of NOTIFICATION_PREFERENCE_KEYS) {
+    out[key] = prefs[key] !== false
+  }
+  return out
+}
+
+/**
+ * Dotted updates for `updateDoc`. Only the keys in `prefs` are written.
+ * A full replace of `notificationPreferences` is never returned.
+ */
+export function userNotificationPreferenceFieldPatch(
+  prefs: Partial<UserNotificationPreferences>
+): Record<string, boolean> {
+  const patch: Record<string, boolean> = {}
+  for (const key of NOTIFICATION_PREFERENCE_KEYS) {
+    if (Object.prototype.hasOwnProperty.call(prefs, key)) {
+      patch[`notificationPreferences.${key}`] = prefs[key] !== false
+    }
+  }
+  return patch
+}
+
+export function notificationPreferenceKeyForType(type: string): NotificationPreferenceKey | null {
+  return TYPE_TO_PREFERENCE[trimmed(type)] ?? null
+}
+
+/**
+ * Whether this account should receive a notice of `type`.
+ * Types with no toggle (variations, ideas) stay allowed.
+ * A toggle that is on does not add the user to a fan-out they are not already on.
+ */
+export function notificationPreferenceAllowsDelivery(
+  prefs: UserNotificationPreferences,
+  type: string
+): boolean {
+  const key = notificationPreferenceKeyForType(type)
+  if (!key) return true
+  return prefs[key] !== false
+}
+
+function bookingDestination(
+  role: AccountKind,
+  relatedId: string | undefined,
+  dayKey: string | undefined,
+  catalogue: NotificationWorkCatalogue | undefined
+): NotificationDestination {
+  if (role === 'operative') return { kind: 'mySchedule', dayKey }
+  if (role === 'manager' && relatedId) {
+    if (catalogue === 'smallWorks') return { kind: 'smallWorksScheduling', relatedId, dayKey }
+    if (catalogue === 'projects') return { kind: 'projectScheduling', relatedId, dayKey }
+  }
+  return { kind: 'dailyOverviewDay', dayKey }
+}
+
+/**
+ * Shared inbox destination. Each app maps `kind` to its own route.
+ * Booking: admin → Daily Overview on that day; manager → that job’s scheduling
+ * page when the record names a catalogue; operative → My Schedule.
+ * Missing record id falls back to the section hub or Daily Overview.
+ * Unknown type → the notifications list.
+ */
+export function notificationDestination(input: NotificationDestinationInput): NotificationDestination {
+  const type = trimmed(input.type)
+  const relatedId = trimmed(input.relatedId) || undefined
+  const dayKey = asDayKey(input.dayKey) || asDayKey(relatedId)
+  const catalogue = asCatalogue(input.catalogue)
+  const role: AccountKind =
+    input.role === 'admin' || input.role === 'operative' || input.role === 'manager' ? input.role : 'manager'
+  const userId = trimmed(input.deepLinkUserId) || undefined
+
+  switch (type) {
+    case 'booking_created':
+    case 'booked_onto_job':
+      return bookingDestination(role, relatedId, dayKey, catalogue)
+    case 'booking_clash':
+      if (role === 'admin') return { kind: 'dailyOverviewDay', dayKey }
+      if (role === 'manager' && relatedId && catalogue === 'smallWorks') {
+        return { kind: 'smallWorksScheduling', relatedId, dayKey }
+      }
+      if (role === 'manager' && relatedId && catalogue === 'projects') {
+        return { kind: 'projectScheduling', relatedId, dayKey }
+      }
+      return { kind: 'warnings', dayKey }
+    case 'holiday_request_submitted':
+      return { kind: 'annualLeavePending', relatedId }
+    case 'holiday_request_approved':
+    case 'holiday_request_declined':
+      return { kind: 'annualLeave', relatedId }
+    case 'project_created':
+      return relatedId ? { kind: 'projectDetail', relatedId } : { kind: 'projectsList' }
+    case 'small_works_created':
+      return relatedId ? { kind: 'smallWorksDetail', relatedId } : { kind: 'smallWorksList' }
+    case 'material_order_cut_off':
+      return { kind: 'warnings' }
+    case 'material_order_placed':
+    case 'material_order_created':
+      return { kind: 'materialOrders', relatedId }
+    case 'operative_created':
+    case 'manager_created':
+      return relatedId ? { kind: 'userEdit', relatedId } : { kind: 'manageUsers' }
+    case 'client_created':
+      return { kind: 'clients', relatedId }
+    case 'warning_removed':
+    case 'qualification_expiry':
+      return { kind: 'warnings', relatedId, dayKey }
+    case 'task_created':
+    case 'task_completed':
+    case 'deadline_assigned':
+    case 'deadline_reminder':
+    case 'deadline_due':
+      return { kind: 'tasks', relatedId }
+    case 'toolbox_talk_issued':
+    case 'hs_toolbox_reminder':
+      return { kind: 'healthSafety', relatedId }
+    case 'timesheet_pending_manager_signoff':
+      return { kind: 'timesheetTeamAwaiting', userId, dayKey }
+    case 'timesheet_signed_by_manager':
+      return { kind: 'timesheetMine', userId, dayKey }
+    case 'line_manager_peer_update':
+      if (userId || dayKey) return { kind: 'timesheetTeamSigned', userId, dayKey }
+      return { kind: 'annualLeave' }
+    case TIMESHEET_SUBMISSION_NOTICE_TYPE:
+      return { kind: 'timesheetMine', dayKey }
+    default:
+      return { kind: 'notifications' }
+  }
+}

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect } from 'react'
+import { Suspense, useEffect } from 'react'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useHolidayStore } from '@/lib/stores/holidayStore'
 import { LoadingSpinner } from '@/components/dashboard/PageShell'
@@ -16,5 +16,9 @@ export default function AnnualLeavePage() {
 
   if (loading) return <LoadingSpinner />
 
-  return <AnnualLeaveScreen />
+  return (
+    <Suspense fallback={<LoadingSpinner />}>
+      <AnnualLeaveScreen />
+    </Suspense>
+  )
 }

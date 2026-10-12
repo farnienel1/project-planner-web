@@ -336,18 +336,7 @@ Where the web already has an equivalent route, reuse it. Confirm the final route
 
 ### 2.4 Notification deep links (`Navigation/NotificationDeepLink.swift`)
 
-| `type` | Opens |
-|---|---|
-| `booking_created` | Operatives: My Schedule. Everyone else: Daily overview. |
-| `operative_created`, `manager_created`, `line_manager_peer_update` | Manage users |
-| `client_created` | Clients |
-| `project_created` | That project's detail page (via `relatedId`). With no `relatedId`: the Projects list. |
-| `small_works_created` | That small works job's detail page (via `relatedId`). With no `relatedId`, iOS opens New small works. |
-| `booking_clash`, `warning_removed`, `qualification_expiry`, `material_order_cut_off` | Warnings |
-| `task_completed`, `task_created`, `deadline_assigned`, `deadline_reminder`, `deadline_due` | Tasks |
-| `holiday_request_submitted` | Annual leave, on the Pending requests tab |
-| `holiday_request_approved`, `holiday_request_declined` | Annual leave |
-| `timesheet_pending_manager_signoff`, `timesheet_signed_by_manager` | Timesheet review for `deepLinkUserId` and `deepLinkWeekStart` |
+Call `CanonicalBusinessEngine.notificationDestination` with `type`, `relatedId`, `dayKey`, `catalogue` (`projects` / `smallWorks`), and account kind (`admin` / `manager` / `operative`). Map the returned `kind` to a Swift destination. Do not keep a second table in the view. Booking: admin → Daily Overview on that day; manager → that job’s scheduling page; operative → My Schedule. Missing id falls back to the section hub. Unknown type → the notifications list. Optional inbox fields: `dayKey`, `catalogue`.
 
 ---
 
@@ -866,11 +855,7 @@ For any symbol not in this table, add a row as you meet it.
 | Annual leave | `annualLeaveEnabled` (bool); `annualLeaveDaysPerYear` (Double, 0.5 steps); `annualLeaveYearStartMonth`, `annualLeaveYearEndMonth` (Int 1–12); `annualLeaveCarriesOver` (bool) |
 | Other | `profilePhotoURL`; `pushTokens` (array, arrayUnion); `pushTokenUpdatedAt`; `notificationPreferences` (map, below) |
 
-`notificationPreferences` contains:
-
-- `bookingConflicts`, `projectDeadlines`, `operativeAvailability`, `dailyReports`, `materialOrderCutOff` (bool)
-- `materialCutOffHour`, `materialCutOffMinute` (Int)
-- `materialCutOffOnSaturday`, `materialCutOffOnSunday` (bool)
+`notificationPreferences` user toggles are the canonical `NOTIFICATION_PREFERENCE_KEYS` (see `docs/CANONICAL_ARCHITECTURE.md`). Clock dual-write on the same map: `materialCutOffHour`, `materialCutOffMinute`, `materialCutOffOnSaturday`, `materialCutOffOnSunday`. Dotted updates only. Inbox tap uses `notificationDestination`, not a screen-local map.
 
 **Rules when saving a user:**
 

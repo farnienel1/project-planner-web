@@ -1142,6 +1142,8 @@ export interface AppInboxNotification {
   requiresPermission?: string
   deepLinkUserId?: string
   deepLinkWeekStart?: Date
+  dayKey?: string
+  catalogue?: 'projects' | 'smallWorks'
 }
 
 export function parseNotification(
@@ -1172,6 +1174,8 @@ export function parseNotification(
     return fail(issuesFromZod(checked.error))
   }
   const v = checked.data
+  const catalogue = data.catalogue === 'projects' || data.catalogue === 'smallWorks' ? data.catalogue : undefined
+  const dayKey = asOptionalString(data.dayKey)
   return ok({
     id: docId,
     organizationId: v.organizationId,
@@ -1185,6 +1189,8 @@ export function parseNotification(
     requiresPermission: v.requiresPermission || undefined,
     deepLinkUserId: v.deepLinkUserId || undefined,
     deepLinkWeekStart: v.deepLinkWeekStart instanceof Date ? v.deepLinkWeekStart : undefined,
+    dayKey: dayKey || undefined,
+    catalogue,
   })
 }
 
