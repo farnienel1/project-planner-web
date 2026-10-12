@@ -177,7 +177,20 @@ test('one saved membership does not shorten the search for other companies', asy
   assert.equal(source.includes('byId.size > 0 ? 1800'), false)
   assert.match(source, /discoveryBudgetMs = 12_000/)
   assert.match(source, /probeSessionOrganizations\(/)
+  assert.match(source, /sessionMembershipIds\(/)
   assert.equal(source.includes('await membershipForDeviceOrg'), false)
+})
+
+test('sign-out does not clear this browser’s remembered company', async () => {
+  const auth = await import('node:fs/promises').then((fs) =>
+    fs.readFile(new URL('../stores/authStore.ts', import.meta.url), 'utf8')
+  )
+  const membership = await import('node:fs/promises').then((fs) =>
+    fs.readFile(new URL('./membershipService.ts', import.meta.url), 'utf8')
+  )
+  assert.match(auth, /Keep pp\.webActiveOrg/)
+  assert.equal(/localStorage\.removeItem\(\s*['"]pp\.webActiveOrg/.test(auth), false)
+  assert.match(membership, /writeWebActiveOrg\(userId, organizationId\)/)
 })
 
 const adminPermissions: UserPermissions = {

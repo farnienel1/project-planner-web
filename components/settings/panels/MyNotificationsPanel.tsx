@@ -1,0 +1,187 @@
+'use client'
+
+import { useEffect, useState } from 'react'
+import Link from 'next/link'
+import { useAuthStore } from '@/lib/stores/authStore'
+import { canAccessOrganisationSettingsHub } from '@/lib/navigation/menuPermissions'
+import {
+  DEFAULT_USER_NOTIFICATION_PREFERENCES,
+  NOTIFICATION_PREFERENCE_KEYS,
+  type NotificationPreferenceKey,
+  type UserNotificationPreferences,
+} from '@/lib/canonical'
+import {
+  loadUserNotificationPreferences,
+  saveUserNotificationPreferences,
+} from '@/lib/settings/notificationPreferences'
+import {
+  ErrorBanner,
+  PanelHeader,
+  SettingsCard,
+  SettingsRow,
+  SuccessBanner,
+  Toggle,
+} from '@/components/settings/primitives'
+
+const TOGGLE_COPY: Record<NotificationPreferenceKey, { label: string; description: string }> = {
+  materialOrderCutOff: {
+    label: 'Material order cut-off',
+    description: 'Daily reminder at the time set in organisation settings.',
+  },
+  annualLeaveRequested: {
+    label: 'Annual leave requested',
+    description: 'When someone you manage requests annual leave.',
+  },
+  annualLeaveDecision: {
+    label: 'Annual leave approved or declined',
+    description: 'When your annual leave is approved or declined.',
+  },
+  projectCreated: {
+    label: 'New project created',
+    description: 'When a project is added.',
+  },
+  smallWorksCreated: {
+    label: 'New small works',
+    description: 'When new small works is added.',
+  },
+  bookingClashes: {
+    label: 'Booking clashes',
+    description: 'When two bookings overlap.',
+  },
+  materialOrderPlaced: {
+    label: 'New material order',
+    description: 'When a material order is placed.',
+  },
+  bookedOntoJob: {
+    label: "You've been booked",
+    description: 'When you are booked onto a job.',
+  },
+  operativeCreated: {
+    label: 'New operative created',
+    description: 'When a new operative is added.',
+  },
+  managerCreated: {
+    label: 'New manager created',
+    description: 'When a new manager is added.',
+  },
+  clientCreated: {
+    label: 'New client created',
+    description: 'When a new client is added.',
+  },
+  warningDismissed: {
+    label: 'Warning dismissed',
+    description: 'When someone dismisses a warning.',
+  },
+  tasksAssignedOrCompleted: {
+    label: 'Tasks assigned or completed',
+    description: 'When a task is assigned to you or marked complete.',
+  },
+  toolboxTalkIssued: {
+    label: 'Toolbox talk issued',
+    description: 'When a toolbox talk is issued to you.',
+  },
+  timesheetSignOff: {
+    label: 'Timesheet sign-off',
+    description: 'When a timesheet needs your sign-off or has been signed.',
+  },
+  qualificationExpiry: {
+    label: 'Qualification expiry',
+    description: 'Reminders before qualifications expire.',
+  },
+  lineManagerPeerUpdates: {
+    label: 'Line manager peer updates',
+    description: 'When another line manager actions a shared request.',
+  },
+  timesheetSubmissionReminder: {
+    label: 'Timesheet submission reminder',
+    description: 'Reminder to submit before the payment-run deadline.',
+  },
+}
+
+const BELL_ICON =
+  'M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9'
+
+export function MyNotificationsPanel({ onBack }: { onBack: () => void }) {
+  const { user } = useAuthStore()
+  const canEditCompany = canAccessOrganisationSettingsHub(user)
+  const [prefs, setPrefs] = useState<UserNotificationPreferences>(DEFAULT_USER_NOTIFICATION_PREFERENCES)
+  const [feedback, setFeedback] = useState<{ kind: 'success' | 'error'; msg: string } | null>(null)
+
+  useEffect(() => {
+    if (!user?.id) return
+    void loadUserNotificationPreferences(user.id).then(setPrefs)
+  }, [user?.id])
+
+  async function persist(next: UserNotificationPreferences) {
+    if (!user?.id) return
+    const previous = prefs
+    setPrefs(next)
+    try {
+      await saveUserNotificationPreferences(user.id, next)
+      setFeedback({ kind: 'success', msg: 'Saved' })
+      window.setTimeout(() => setFeedback(null), 2000)
+    } catch (error) {
+      setPrefs(previous)
+      setFeedback({
+        kind: 'error',
+        msg: error instanceof Error ? error.message : 'Could not save preferences',
+      })
+    }
+  }
+
+  return (
+    <div className="space-y-5">
+      <PanelHeader title="My notifications" onBack={onBack} />
+      {feedback?.kind === 'success' ? <SuccessBanner message={feedback.msg} /> : null}
+      {feedback?.kind === 'error' ? <ErrorBanner message={feedback.msg} /> : null}
+
+      <SettingsCard>
+        {NOTIFICATION_PREFERENCE_KEYS.map((key) => (
+          <SettingsRow
+            key={key}
+            icon={BELL_ICON}
+            iconBg="bg-blue-50"
+            iconColor="text-blue-600"
+            label={TOGGLE_COPY[key].label}
+            description={TOGGLE_COPY[key].description}
+          >
+            <Toggle
+              checked={prefs[key] !== false}
+              onChange={(value) => void persist({ ...prefs, [key]: value })}
+            />
+          </SettingsRow>
+        ))}
+      </SettingsCard>
+
+      <p className="px-1 text-[13px] leading-5 text-[var(--ink3)]">
+        Turn off any reminder you do not want. Organisation cut-off time is set in organisation settings.
+        My Schedule extra locations are managed in Organisation Settings Hub → Schedule options.
+      </p>
+
+      {canEditCompany ? (
+        <SettingsCard>
+          <Link href="/dashboard/settings/material-cutoff" className="block">
+            <SettingsRow
+              icon="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+              iconBg="bg-blue-50"
+              iconColor="text-blue-600"
+              label="Organisation cut-off time"
+              description="Company-wide reminder time and Saturday / Sunday"
+              chevron
+            />
+          </Link>
+          <Link href="/dashboard/settings/schedule-options" className="block">
+            <SettingsRow
+              icon="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+              iconBg="bg-blue-50"
+              iconColor="text-blue-600"
+              label="Schedule options"
+              description="Office, working from home, site survey and custom locations"
+              chevron
+            />
+          </Link>
+        </SettingsCard>
+      ) : null}
+    </div>
+  )
+}

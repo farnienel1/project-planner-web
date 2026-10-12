@@ -6,18 +6,18 @@ import {
   chooseSessionOrganization,
   organizationIdsMatch,
   provisionalOrganizationId,
+  webSessionOrganizationStorageKey,
   type OrgAccessProbe,
 } from '@/lib/canonical'
 
 export { organizationIdsMatch, type OrgAccessProbe }
 
-const STORAGE_PREFIX = 'pp.webActiveOrg:'
-
-/** The company this browser last opened. iOS keeps its own choice on the user document. */
+/** The company this browser last opened. iOS keeps its own choice in `cached_organizationId`. */
 export function readWebActiveOrg(userId: string): string | null {
-  if (typeof localStorage === 'undefined' || !userId) return null
+  const key = webSessionOrganizationStorageKey(userId)
+  if (typeof localStorage === 'undefined' || !key) return null
   try {
-    const value = localStorage.getItem(STORAGE_PREFIX + userId)?.trim()
+    const value = localStorage.getItem(key)?.trim()
     return value || null
   } catch {
     return null
@@ -25,9 +25,10 @@ export function readWebActiveOrg(userId: string): string | null {
 }
 
 export function writeWebActiveOrg(userId: string, organizationId: string): void {
-  if (typeof localStorage === 'undefined' || !userId || !organizationId) return
+  const key = webSessionOrganizationStorageKey(userId)
+  if (typeof localStorage === 'undefined' || !key || !organizationId) return
   try {
-    localStorage.setItem(STORAGE_PREFIX + userId, organizationId)
+    localStorage.setItem(key, organizationId)
   } catch {
     /* This page still uses the organisation it already loaded. */
   }
@@ -124,13 +125,14 @@ export function applyRememberedWebOrganization(input: {
   explicitOrganizationId?: string | null
   rememberedProbe?: OrgAccessProbe | null
 }): string {
-  const explicit = String(input.explicitOrganizationId || '').trim()
-  if (explicit) return explicit
   const remembered = String(input.rememberedOrganizationId || '').trim()
-  const current = String(input.userOrganizationId || '').trim()
-  if (!remembered) return current
-  if (input.rememberedProbe === 'denied') return current || remembered
-  return remembered
+  const probes = remembered ? { [remembered]: input.rememberedProbe ?? 'unknown' } : {}
+  return chooseSessionOrganization({
+    explicitOrganizationId: input.explicitOrganizationId,
+    rememberedOrganizationId: remembered,
+    documentOrganizationId: input.userOrganizationId,
+    probes,
+  }).organizationId
 }
 
 function roleFrom(value: unknown, fallback: UserRole): UserRole {

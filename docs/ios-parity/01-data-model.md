@@ -273,7 +273,7 @@ Path: `users/{uid}` · ID: Auth UID (placeholder = uppercase UUID) · Written by
 | pushTokenUpdatedAt | same | Date | Timestamp | Date | | | |
 | notificationPreferences | `notificationPreferences` | map | map | object | | | keys below |
 
-`notificationPreferences`: `bookingConflicts`, `projectDeadlines`, `operativeAvailability`, `dailyReports`, `materialOrderCutOff` (bool); `materialCutOffHour`, `materialCutOffMinute` (Int); `materialCutOffOnSaturday`, `materialCutOffOnSunday` (bool).
+`notificationPreferences` user toggles (canonical `NOTIFICATION_PREFERENCE_KEYS`, all default on): `materialOrderCutOff`, `annualLeaveRequested`, `annualLeaveDecision`, `projectCreated`, `smallWorksCreated`, `bookingClashes` (legacy read: `bookingConflicts`), `materialOrderPlaced`, `bookedOntoJob`, `operativeCreated`, `managerCreated`, `clientCreated`, `warningDismissed`, `tasksAssignedOrCompleted`, `toolboxTalkIssued`, `timesheetSignOff`, `qualificationExpiry`, `lineManagerPeerUpdates`, `timesheetSubmissionReminder`. Clock dual-write on the same map: `materialCutOffHour`, `materialCutOffMinute`, `materialCutOffOnSaturday`, `materialCutOffOnSunday`. Dotted updates only — do not replace the map. Inbox destination is `notificationDestination` in the rulebook.
 
 Save rules: if `operativeMode`: role=`operative`, isSuperAdmin false, adminAccess/manager/operatives/qualifications false. If not operative: `materials` written true. When reading an operative: `projects` and `smallWorks` treated true.
 
