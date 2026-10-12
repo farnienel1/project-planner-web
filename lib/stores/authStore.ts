@@ -27,7 +27,7 @@ import { parseTeamOnboarding } from '@/lib/orgSetup/teamOnboarding'
 import { topLevelAdminFlagPatch } from '@/lib/orgSetup/repairAdminFlags'
 import { ACCOUNT_UNCONFIRMED_MESSAGE } from '@/lib/orgSetup/accountConfirmation'
 import { ensurePrimaryOrgMembership, resolveWebSessionOrganization } from '@/lib/orgMembership/membershipService'
-import { adoptCurrentOrganization } from '@/lib/canonical'
+import { adoptCurrentOrganization, parseOrganizationName } from '@/lib/canonical'
 import {
   applyRememberedWebOrganization,
   clearRememberedOrgDenied,
@@ -188,8 +188,14 @@ function watchCurrentUserDocument(uid: string) {
       if (state.currentUserDocument !== currentUserDocument) useAuthStore.setState({ currentUserDocument })
       const next = sessionUserFromCurrentDocument(state.user, currentUserDocument)
       const base = next ?? state.user
-      const fixed = withWebOrganization(base)
-      if (!next && fixed === base) return
+      // Keep the company this browser already opened. The snapshot's
+      // users/{uid}.organizationId is the last iOS switch, not this session.
+      const openOrganizationId = state.user.organizationId
+      const pinned = organizationIdsMatch(base.organizationId, openOrganizationId)
+        ? base
+        : { ...base, organizationId: openOrganizationId }
+      const fixed = withWebOrganization(pinned)
+      if (!next && fixed === pinned) return
       const organization =
         state.organization && organizationIdsMatch(state.organization.id, fixed.organizationId)
           ? state.organization
@@ -387,7 +393,7 @@ function organizationFromSnapshot(orgDoc: NonNullable<Awaited<ReturnType<typeof 
   const seededLabels = withSeededNavigationLabels(orgData.settings || {})
   const organization: Organization = {
     id: orgDoc.id,
-    name: orgData.name || '',
+    name: parseOrganizationName(orgData as Record<string, unknown>),
     companyLogoURL: orgData.companyLogoURL || undefined,
     members: orgData.members || {},
     settings: seededLabels.settings,

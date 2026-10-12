@@ -15,6 +15,8 @@ import {
   bankHolidayRegionLabel,
 } from '@/lib/settings/bankHolidayRegions'
 import { settingsHeader } from '@/lib/settings/settingsHeader'
+import { settingsDraftIsDirty } from '@/lib/settings/settingsDirty'
+import { useSettingsDirty, useSettingsLeave } from '@/components/settings/SettingsDirty'
 import {
   PanelHeader,
   SectionLabel,
@@ -53,6 +55,7 @@ function leaveYearSummary(startMonth: number, endMonth: number): string {
 
 export function AnnualLeaveDefaultsPanel({ onBack }: { onBack: () => void }) {
   const { organization } = useAuthStore()
+  const requestLeave = useSettingsLeave()
   const header = settingsHeader('annual-leave-defaults')
 
   const [daysText, setDaysText] = useState(String(DEFAULT_ANNUAL_LEAVE.daysPerYear))
@@ -60,10 +63,14 @@ export function AnnualLeaveDefaultsPanel({ onBack }: { onBack: () => void }) {
   const [endMonth, setEndMonth] = useState(DEFAULT_ANNUAL_LEAVE.endMonth)
   const [carriesOver, setCarriesOver] = useState(DEFAULT_ANNUAL_LEAVE.carriesOver)
   const [bankHolidayRegion, setBankHolidayRegion] = useState('GB')
+  const [baseline, setBaseline] = useState<string | null>(null)
 
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState('')
+  const snapshot = JSON.stringify({ daysText, startMonth, endMonth, carriesOver, bankHolidayRegion })
+  const dirty = Boolean(baseline) && settingsDraftIsDirty(baseline, snapshot)
+  useSettingsDirty(dirty)
 
   useEffect(() => {
     if (!organization?.id) return
@@ -72,11 +79,22 @@ export function AnnualLeaveDefaultsPanel({ onBack }: { onBack: () => void }) {
         const defaults = details?.annualLeaveDefaults
         if (!defaults) return
         const days = defaults.daysPerYear
-        setDaysText(Number.isInteger(days) ? String(days) : days.toFixed(1))
+        const nextDays = Number.isInteger(days) ? String(days) : days.toFixed(1)
+        const nextRegion = bankHolidaySelectionFromStored(details.bankHolidayRegionId || details.countryCode)
+        setDaysText(nextDays)
         setStartMonth(defaults.startMonth)
         setEndMonth(defaults.endMonth)
         setCarriesOver(defaults.carriesOver)
-        setBankHolidayRegion(bankHolidaySelectionFromStored(details.bankHolidayRegionId || details.countryCode))
+        setBankHolidayRegion(nextRegion)
+        setBaseline(
+          JSON.stringify({
+            daysText: nextDays,
+            startMonth: defaults.startMonth,
+            endMonth: defaults.endMonth,
+            carriesOver: defaults.carriesOver,
+            bankHolidayRegion: nextRegion,
+          })
+        )
       })
       .catch(() => {})
   }, [organization?.id])
@@ -103,6 +121,7 @@ export function AnnualLeaveDefaultsPanel({ onBack }: { onBack: () => void }) {
         organization.id,
         bankHolidayRegionIdFromSelection(bankHolidayRegion)
       )
+      setBaseline(snapshot)
       setSaved(true)
       window.setTimeout(() => setSaved(false), 3000)
     } catch (saveError) {
@@ -119,7 +138,7 @@ export function AnnualLeaveDefaultsPanel({ onBack }: { onBack: () => void }) {
         description="The allowance, leave year and bank holidays new users start with."
         iconPath={header.iconPath}
         hue={header.hue}
-        onBack={onBack}
+        onBack={() => requestLeave(onBack)}
       />
 
       {error && (
@@ -223,8 +242,8 @@ export function AnnualLeaveDefaultsPanel({ onBack }: { onBack: () => void }) {
         </div>
       </SettingsCard>
 
-      <SaveBar>
-        <SaveButton saving={saving} saved={saved} onClick={save} />
+      <SaveBar dirty={dirty}>
+        <SaveButton saving={saving} saved={saved} dirty={dirty} onClick={save} />
       </SaveBar>
     </div>
   )

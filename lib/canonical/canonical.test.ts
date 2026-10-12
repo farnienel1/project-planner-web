@@ -60,10 +60,14 @@ import {
   DEFAULT_INVOICING,
   DEFAULT_PAYMENT_RUN_DATE_RANGES,
   DEFAULT_WARNING_DETECTION,
+  displayOrganizationName,
   invoicingToFirestore,
+  organizationNameToFirestore,
   parseInvoicing,
+  parseOrganizationName,
   parsePaymentRunDateRanges,
   parseWarningDetection,
+  paymentRunShowsMonthCoverage,
   starterCollectionShouldSeed,
   missingStarterQualificationCodes,
 } from './organizationSettings.ts'
@@ -174,6 +178,45 @@ test('a remembered company wins over a different user-document company', () => {
     assert.equal(choice.organizationId, 'org-phone')
     assert.equal(choice.persistOrganizationId, 'org-phone')
   }
+})
+
+test('a remount with remembered A and user-document B keeps A and does not persist B', () => {
+  const choice = chooseSessionOrganization({
+    rememberedOrganizationId: 'org-a',
+    documentOrganizationId: 'org-b',
+    probes: { 'org-a': 'unknown', 'org-b': 'allowed' },
+  })
+  assert.equal(choice.organizationId, 'org-a')
+  assert.equal(choice.persistOrganizationId, 'org-a')
+  assert.notEqual(choice.persistOrganizationId, 'org-b')
+})
+
+test('a first-tick miss of the remember key does not persist the user-document fallback', () => {
+  const choice = chooseSessionOrganization({
+    rememberedOrganizationId: '',
+    documentOrganizationId: 'org-b',
+    probes: { 'org-b': 'allowed' },
+  })
+  assert.equal(choice.organizationId, 'org-b')
+  assert.equal(choice.persistOrganizationId, null)
+})
+
+test('an unconfirmed first-tick membership read is unknown, not denied', () => {
+  const probe = orgAccessProbeFromReads({
+    orgRead: 'loaded',
+    membershipRead: 'missing',
+    listed: false,
+    isCreator: false,
+    unconfirmed: true,
+  })
+  assert.equal(probe, 'unknown')
+  const denied = orgAccessProbeFromReads({
+    orgRead: 'loaded',
+    membershipRead: 'missing',
+    listed: false,
+    isCreator: false,
+  })
+  assert.equal(denied, 'denied')
 })
 
 test('a slow or unknown membership read does not drop the remembered company', () => {
@@ -1508,6 +1551,61 @@ test('payment run rows write both web and iOS day fields and empty ranges use 1â
   assert.equal(row.startDate, 1)
   assert.equal(row.endDate, 15)
   assert.equal(parseInvoicing({}).paymentRunMode, 'date_ranges')
+  assert.equal(parseInvoicing({}).paymentDateMode, 'specific_dates')
+})
+
+test('organisation name round-trips on the shared name field', () => {
+  assert.equal(parseOrganizationName({ name: 'Raccord MEP' }), 'Raccord MEP')
+  assert.equal(parseOrganizationName({ organizationName: 'Alias Ltd' }), 'Alias Ltd')
+  assert.equal(parseOrganizationName({ name: '  ', companyName: 'From companyName' }), 'From companyName')
+  assert.equal(parseOrganizationName({ settings: { name: 'Nested' } }), 'Nested')
+  assert.equal(parseOrganizationName({ name: 'Shared', organizationName: 'Other' }), 'Shared')
+  assert.deepEqual(organizationNameToFirestore('  Acme  '), { name: 'Acme' })
+  assert.equal(displayOrganizationName(''), 'Organisation')
+  assert.equal(displayOrganizationName('  '), 'Organisation')
+  assert.equal(displayOrganizationName('Acme'), 'Acme')
+})
+
+test('parseInvoicing does not coerce date-range firms onto recurring pay', () => {
+  const leftover = parseInvoicing({
+    paymentRunMode: 'date_ranges',
+    paymentDateMode: 'recurring_date',
+    paymentDates: [20, 5],
+    paymentRunDateRanges: [
+      { startDate: 1, endDate: 15 },
+      { startDate: 16, endDate: 31 },
+    ],
+  })
+  assert.equal(leftover.paymentRunMode, 'date_ranges')
+  assert.equal(leftover.paymentDateMode, 'specific_dates')
+  assert.equal(paymentRunShowsMonthCoverage(leftover), true)
+  assert.deepEqual(leftover.paymentRunDateRanges, [
+    { startDay: 1, endDay: 15 },
+    { startDay: 16, endDay: 31 },
+  ])
+
+  const missingMode = parseInvoicing({
+    paymentRunDateRanges: [
+      { startDay: 1, endDay: 15 },
+      { startDay: 16, endDay: 31 },
+    ],
+    paymentDates: ['20', '5'],
+  })
+  assert.equal(missingMode.paymentRunMode, 'date_ranges')
+  assert.equal(missingMode.paymentDateMode, 'specific_dates')
+  assert.equal(paymentRunShowsMonthCoverage(missingMode), true)
+
+  const recurring = parseInvoicing({
+    paymentRunMode: 'recurring_timeframe',
+    paymentDateMode: 'recurring_date',
+    recurringRunStartDay: 'monday',
+    recurringRunEndDay: 'sunday',
+    recurringPaymentDay: 'friday',
+  })
+  assert.equal(recurring.paymentRunMode, 'recurring_timeframe')
+  assert.equal(recurring.paymentDateMode, 'recurring_date')
+  assert.equal(paymentRunShowsMonthCoverage(recurring), false)
+  assert.equal(DEFAULT_INVOICING.paymentDateMode, 'specific_dates')
 })
 
 test('starter catalogue seeds only when the collection is empty', () => {

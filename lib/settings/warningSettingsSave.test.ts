@@ -27,30 +27,22 @@ test('Save stays on the screen and the control becomes Saved', () => {
   assert.equal(steps[2].leave, false)
 })
 
-test('Back with unsaved edits saves, shows Saved, and leaves only after that', () => {
-  const steps = run([{ type: 'edit' }, { type: 'back' }, { type: 'saveSucceeded' }, { type: 'savedShown' }])
-  assert.equal(warningSettingsSaveLabel(steps[1].state.phase), 'Saving…')
-  assert.equal(steps[1].persist, true)
+test('Back with unsaved edits stays on the page and does not write', () => {
+  const steps = run([{ type: 'edit' }, { type: 'back' }])
+  assert.equal(steps[1].persist, false)
   assert.equal(steps[1].leave, false)
-  assert.equal(warningSettingsSaveLabel(steps[2].state.phase), 'Saved')
-  assert.equal(steps[2].leave, false)
-  assert.equal(steps[2].state.leaveWhenSaved, true)
-  assert.equal(steps[3].leave, true)
-  assert.equal(warningSettingsSaveLabel(steps[3].state.phase), 'Saved')
+  assert.equal(steps[1].state.phase, 'dirty')
 })
 
-test('Back during Saving does not leave until the control says Saved', () => {
-  const steps = run([{ type: 'edit' }, { type: 'save' }, { type: 'back' }, { type: 'saveSucceeded' }, { type: 'savedShown' }])
+test('Back during Saving stays on the page', () => {
+  const steps = run([{ type: 'edit' }, { type: 'save' }, { type: 'back' }])
   assert.equal(steps[2].leave, false)
   assert.equal(warningSettingsSaveLabel(steps[2].state.phase), 'Saving…')
-  assert.equal(steps[2].state.leaveWhenSaved, true)
-  assert.equal(steps[3].leave, false)
-  assert.equal(warningSettingsSaveLabel(steps[3].state.phase), 'Saved')
-  assert.equal(steps[4].leave, true)
+  assert.equal(steps[2].persist, false)
 })
 
 test('a failed save stays on the screen and does not say Saved', () => {
-  const steps = run([{ type: 'edit' }, { type: 'back' }, { type: 'saveFailed' }])
+  const steps = run([{ type: 'edit' }, { type: 'save' }, { type: 'saveFailed' }])
   assert.equal(steps[2].leave, false)
   assert.equal(steps[2].state.phase, 'error')
   assert.equal(warningSettingsSaveLabel(steps[2].state.phase), 'Save')

@@ -495,12 +495,16 @@ async function membershipForDeviceOrg(
   }
 
   const pending = membership?.status === 'pending'
+  const membershipFromCache =
+    membershipResult.status === 'fulfilled' && membershipResult.value.metadata.fromCache
+  const orgFromCache = orgResult.status === 'fulfilled' && orgResult.value.metadata.fromCache
   const probe = orgAccessProbeFromReads({
     orgRead: orgProbe === 'unknown' ? 'failed' : orgExists ? 'loaded' : 'missing',
     membershipRead:
       membershipProbe === 'unknown' ? 'failed' : pending ? 'pending' : membershipExists ? 'active' : 'missing',
     listed,
     isCreator,
+    unconfirmed: Boolean(membershipFromCache || orgFromCache),
   })
   if (probe === 'denied') return { probe, membership: null, listedRole: null }
   return { probe, membership: pending ? null : membership, listedRole }
