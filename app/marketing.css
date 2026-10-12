@@ -114,3 +114,324 @@ html:has(.mkt){scroll-behavior:smooth;scroll-padding-top:calc(84px + env(safe-ar
 .mkt .mkt-toast{position:fixed;left:50%;bottom:calc(26px + env(safe-area-inset-bottom,0px));transform:translate(-50%,24px);background:var(--ink);color:var(--card);padding:13px 18px;border-radius:16px;display:flex;gap:10px;align-items:center;font-weight:700;z-index:80;opacity:0;pointer-events:none;transition:opacity .18s,transform .18s;box-shadow:var(--sh-pop)}
 .mkt .mkt-toast.show{opacity:1;transform:translate(-50%,0)}
 .mkt button.ftile{color:inherit;font:inherit}
+
+/* =====================================================================
+   MARKETING REFRESH — append this whole block to the END of app/marketing.css
+   1. Calmer theme   2. Register interest button   3. Demo snapshots (ds-*)
+   4. Materials flow (mf-*)   5. Every-trade strip   6. Mobile fixes
+   ===================================================================== */
+
+/* ---------- 1. Calmer theme: one brand blue, neutral icon tiles, hairline cards ---------- */
+.mkt .ico-chip,
+.mkt .ico-chip.sm,
+.mkt .ico-chip.lg { background: var(--card); color: var(--blue); box-shadow: inset 0 0 0 1px var(--line); }
+.mkt .kicker { color: var(--blue); }
+.mkt .eyebrow i { background: var(--soft2); color: var(--blue); }
+.mkt .ticks li i { background: var(--card); color: var(--blue); box-shadow: inset 0 0 0 1px var(--line); }
+.mkt .ftile .more { color: var(--blue); }
+.mkt .btn.tint { background: var(--card); color: var(--blue); box-shadow: inset 0 0 0 1px var(--line); }
+.mkt .btn.primary { background: var(--blue); box-shadow: 0 1px 2px rgba(15, 27, 45, .2); }
+.mkt .btn.primary:hover { background: color-mix(in srgb, var(--blue) 88%, #000); }
+.mkt .hero {
+  background:
+    linear-gradient(color-mix(in srgb, var(--ink) 4%, transparent) 1px, transparent 1px) 0 0 / 32px 32px,
+    linear-gradient(90deg, color-mix(in srgb, var(--ink) 4%, transparent) 1px, transparent 1px) 0 0 / 32px 32px,
+    var(--bg);
+}
+.mkt .hero h1 em { background: none; -webkit-background-clip: border-box; background-clip: border-box; color: var(--ink); }
+.mkt .card,
+.mkt .ftile,
+.mkt .panel,
+.mkt .band { box-shadow: 0 0 0 1px var(--line), 0 1px 2px rgba(15, 27, 45, .04); }
+.mkt .bp,
+.mkt .bp[data-hue],
+.mkt .cta {
+  background:
+    linear-gradient(rgba(255, 255, 255, .045) 1px, transparent 1px) 0 0 / 24px 24px,
+    linear-gradient(90deg, rgba(255, 255, 255, .045) 1px, transparent 1px) 0 0 / 24px 24px,
+    linear-gradient(135deg, #0C2350 0%, #143E83 100%);
+}
+.mkt .cta::after { display: none; }
+.mkt .plan .badge { background: var(--ink); color: var(--card); }
+.mkt .prog i { background: var(--blue); }
+.mkt .infog .pill { background: var(--card); color: var(--ink2); box-shadow: inset 0 0 0 1px var(--line); }
+.mkt .infog .pill svg { color: var(--blue); }
+
+/* ---------- 2. Register interest in the top bar ---------- */
+.mkt .links a.reg { color: var(--blue); box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--blue) 35%, var(--line)); }
+.mkt .links a.reg:hover,
+.mkt .links a.reg.on { background: var(--blue); color: #fff; box-shadow: none; }
+.mkt .mnav a[href="/register-interest"] { color: var(--blue); font-weight: 800; }
+
+/* ---------- 3. Demo snapshots: the app in light mode, on purpose ---------- */
+.mkt .ds-snap {
+  --a-bg: #F2F5FA; --a-card: #FFFFFF; --a-soft: #F7F9FC; --a-soft2: #EEF2F8; --a-line: #E4E9F1;
+  --a-ink: #0F1B2D; --a-ink2: #46546A; --a-ink3: #8391A7; --a-blue: #1E5AA8; --a-blue-t: #E6EFFC;
+  --a-red: #D23636; --a-red-t: #FDE6E6; --a-warn: #B87700; --a-warn-t: #FFF1CF; --a-teal: #0FAE9E;
+  position: relative;
+  background: var(--a-bg);
+  color: var(--a-ink);
+  border-radius: 18px;
+  overflow: hidden;
+  font: 400 13px/1.45 var(--body);
+  text-align: left;
+  box-shadow: 0 0 0 1px rgba(15, 27, 45, .08), 0 30px 70px rgba(12, 35, 80, .18), 0 6px 16px rgba(12, 35, 80, .08);
+}
+.mkt .ds-bar { display: flex; align-items: center; gap: 10px; height: 48px; padding: 0 16px; background: var(--a-card); border-bottom: 1px solid var(--a-line); }
+.mkt .ds-crumb { font-size: 12.5px; color: var(--a-ink3); white-space: nowrap; }
+.mkt .ds-crumb b { color: var(--a-ink); font-weight: 600; }
+.mkt .ds-search { margin-left: auto; display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 10px; border-radius: 9px; background: var(--a-soft); color: var(--a-ink3); font-size: 12px; box-shadow: inset 0 0 0 1px var(--a-line); white-space: nowrap; }
+.mkt .ds-search kbd { font: 600 10px var(--body); background: var(--a-soft2); border-radius: 4px; padding: 1px 4px; color: var(--a-ink2); }
+.mkt .ds-new { height: 30px; padding: 0 11px; border-radius: 9px; background: var(--a-blue); color: #fff; font-weight: 700; font-size: 12px; display: inline-flex; align-items: center; gap: 5px; }
+.mkt .ds-av { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; background: var(--a-blue); color: #fff; font: 700 11px var(--body); flex: none; }
+.mkt .ds-av.g { background: #3E7A5C; }
+.mkt .ds-av.r { background: #A8323A; }
+.mkt .ds-av.p { background: #6A45E6; }
+.mkt .ds-body { display: grid; grid-template-columns: 168px minmax(0, 1fr); }
+.mkt .ds-side { background: var(--a-card); border-right: 1px solid var(--a-line); padding: 12px 8px; display: flex; flex-direction: column; gap: 1px; }
+.mkt .ds-org { display: flex; gap: 8px; align-items: center; padding: 2px 6px 12px; }
+.mkt .ds-org i { width: 26px; height: 26px; border-radius: 8px; background: #0C2350; display: grid; place-items: center; }
+.mkt .ds-org b { display: block; font-size: 12px; line-height: 1.1; }
+.mkt .ds-org span { font-size: 10.5px; color: var(--a-ink3); }
+.mkt .ds-nav { display: flex; align-items: center; gap: 8px; padding: 5px 8px; border-radius: 8px; color: var(--a-ink2); font-size: 12px; font-weight: 500; }
+.mkt .ds-nav svg { color: var(--a-ink3); flex: none; }
+.mkt .ds-nav.on { background: var(--a-blue-t); color: var(--a-ink); font-weight: 700; }
+.mkt .ds-nav.on svg { color: var(--a-blue); }
+.mkt .ds-lbl { font-size: 10px; font-weight: 700; color: var(--a-ink3); padding: 8px 8px 3px; text-transform: uppercase; letter-spacing: .05em; }
+.mkt .ds-main { padding: 16px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.mkt .ds-hero {
+  position: relative; overflow: hidden; border-radius: 14px; color: #fff; padding: 16px 18px;
+  background:
+    linear-gradient(rgba(255, 255, 255, .05) 1px, transparent 1px) 0 0 / 22px 22px,
+    linear-gradient(90deg, rgba(255, 255, 255, .05) 1px, transparent 1px) 0 0 / 22px 22px,
+    linear-gradient(135deg, #0C2350 0%, #164A98 100%);
+}
+.mkt .ds-hero.red {
+  background:
+    linear-gradient(rgba(255, 255, 255, .06) 1px, transparent 1px) 0 0 / 22px 22px,
+    linear-gradient(90deg, rgba(255, 255, 255, .06) 1px, transparent 1px) 0 0 / 22px 22px,
+    linear-gradient(135deg, #A61E24 0%, #D23636 100%);
+}
+.mkt .ds-hero.blue { background: linear-gradient(135deg, #2F6BFF 0%, #1E4FD8 100%); }
+.mkt .ds-hero.compact { padding: 12px 14px; }
+.mkt .ds-hero.compact .ds-big { font-size: 15px; }
+.mkt .ds-eb { font-size: 11px; font-weight: 600; opacity: .8; }
+.mkt .ds-big { font: 800 22px/1.15 var(--head); margin-top: 2px; color: #fff; }
+.mkt .ds-sub { font-size: 12px; opacity: .82; margin-top: 2px; }
+.mkt .ds-sts { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+.mkt .ds-st { min-width: 92px; padding: 8px 11px; border-radius: 10px; background: rgba(255, 255, 255, .1); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .18); }
+.mkt .ds-st b { display: block; font: 800 19px/1.1 var(--head); }
+.mkt .ds-st span { font-size: 10.5px; opacity: .88; }
+.mkt .ds-hacts { display: flex; gap: 6px; margin-top: 12px; flex-wrap: wrap; }
+.mkt .ds-hacts span { height: 28px; padding: 0 10px; border-radius: 8px; display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 700; background: rgba(255, 255, 255, .12); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .2); }
+.mkt .ds-hacts span.w { background: #fff; color: var(--a-ink); box-shadow: none; }
+.mkt .ds-card { background: var(--a-card); border-radius: 12px; box-shadow: 0 0 0 1px var(--a-line); }
+.mkt .ds-row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.mkt .ds-stat { display: flex; gap: 10px; align-items: center; padding: 10px 12px; }
+.mkt .ds-stat b { display: block; font: 800 17px/1.1 var(--head); }
+.mkt .ds-stat span { font-size: 11px; color: var(--a-ink3); }
+.mkt .ds-ico { width: 32px; height: 32px; border-radius: 9px; display: grid; place-items: center; flex: none; background: var(--a-soft); box-shadow: inset 0 0 0 1px var(--a-line); color: var(--a-blue); }
+.mkt .ds-ico.sm { width: 26px; height: 26px; }
+.mkt .ds-ico.warn { color: var(--a-warn); }
+.mkt .ds-ico.red { color: var(--a-red); }
+.mkt .ds-sec { display: flex; justify-content: space-between; align-items: baseline; font: 700 13px var(--head); }
+.mkt .ds-sec span { font: 700 11.5px var(--body); color: var(--a-blue); }
+.mkt .ds-qa { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.mkt .ds-qa > div { background: var(--a-card); border-radius: 11px; box-shadow: 0 0 0 1px var(--a-line); padding: 10px 6px 9px; display: flex; flex-direction: column; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; text-align: center; }
+.mkt .ds-pill { display: inline-flex; align-items: center; height: 20px; padding: 0 7px; border-radius: 6px; font-size: 10px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
+.mkt .ds-pill.high { background: var(--a-red-t); color: var(--a-red); }
+.mkt .ds-pill.low { background: var(--a-soft2); color: var(--a-ink2); }
+.mkt .ds-pill.draft { background: #FFF1CF; color: #B87700; text-transform: none; letter-spacing: 0; font-weight: 700; margin-left: auto; }
+.mkt .ds-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.mkt .ds-chip { height: 26px; padding: 0 10px; border-radius: 999px; display: inline-flex; align-items: center; font-size: 11.5px; font-weight: 600; background: var(--a-card); box-shadow: 0 0 0 1px var(--a-line); color: var(--a-ink2); }
+.mkt .ds-chip.on { background: var(--a-warn); color: #fff; box-shadow: none; }
+.mkt .ds-chip.teal { background: var(--a-teal); color: #fff; box-shadow: none; }
+.mkt .ds-wcard { padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
+.mkt .ds-wcard .h { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 13px; }
+.mkt .ds-wcard .h .ds-pill { margin-left: auto; }
+.mkt .ds-btns { display: flex; gap: 6px; flex-wrap: wrap; }
+.mkt .ds-btns span { height: 28px; padding: 0 11px; border-radius: 8px; display: inline-flex; align-items: center; font-size: 11.5px; font-weight: 700; box-shadow: 0 0 0 1px var(--a-line); }
+.mkt .ds-btns span.b { background: var(--a-blue); color: #fff; box-shadow: none; }
+.mkt .ds-person { display: flex; align-items: center; gap: 9px; padding: 8px 10px; border-radius: 10px; background: var(--a-card); box-shadow: inset 3px 0 0 var(--a-warn), 0 0 0 1px var(--a-line); }
+.mkt .ds-person b { display: block; font-size: 12.5px; }
+.mkt .ds-person span { font-size: 11px; color: var(--a-ink3); }
+.mkt .ds-hrs { margin-left: auto; background: var(--a-red); color: #fff !important; font-weight: 800; font-size: 11px !important; border-radius: 6px; padding: 2px 7px; }
+.mkt .ds-muted { color: var(--a-ink3); font-size: 12px; }
+.mkt .ds-muted b { color: var(--a-ink); }
+.mkt .ds-tabs { display: flex; background: var(--a-soft2); border-radius: 10px; padding: 3px; gap: 2px; }
+.mkt .ds-tabs span { flex: 1; text-align: center; padding: 6px 0; border-radius: 8px; font-size: 11.5px; font-weight: 700; color: var(--a-ink2); }
+.mkt .ds-tabs span.on { background: var(--a-card); color: var(--a-ink); box-shadow: 0 1px 2px rgba(15, 27, 45, .08); }
+.mkt .ds-trk { padding: 10px 12px; }
+.mkt .ds-trk .t { display: flex; justify-content: space-between; gap: 8px; font-weight: 700; font-size: 12.5px; }
+.mkt .ds-trk .t em { font-style: normal; color: var(--a-teal); font-weight: 800; }
+.mkt .ds-trk .m { font-size: 10.5px; color: var(--a-ink3); }
+.mkt .ds-prog { height: 5px; background: var(--a-soft2); border-radius: 3px; margin: 7px 0 4px; overflow: hidden; }
+.mkt .ds-prog i { display: block; height: 100%; background: var(--a-teal); border-radius: 3px; }
+.mkt .ds-signed { font-size: 10.5px; font-weight: 700; color: var(--a-ink2); display: flex; align-items: center; gap: 6px; }
+.mkt .ds-signed .avs { display: flex; margin-left: auto; }
+.mkt .ds-signed .ds-av { width: 20px; height: 20px; font-size: 8px; margin-left: -5px; box-shadow: 0 0 0 2px #fff; }
+.mkt .ds-lib { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-bottom: 1px solid var(--a-line); }
+.mkt .ds-lib:last-child { border-bottom: 0; }
+.mkt .ds-lib.hl { background: #F4FBFA; }
+.mkt .ds-lib b { display: block; font-size: 12.5px; }
+.mkt .ds-lib span { font-size: 10.5px; color: var(--a-ink3); }
+.mkt .ds-lib .acts { margin-left: auto; display: flex; gap: 5px; }
+.mkt .ds-lib .acts i { font-style: normal; height: 24px; padding: 0 9px; border-radius: 7px; display: inline-flex; align-items: center; font-size: 11px; font-weight: 700; box-shadow: 0 0 0 1px var(--a-line); }
+.mkt .ds-lib .acts i.b { background: #2F73F0; color: #fff; box-shadow: none; }
+.mkt .ds-stack { position: relative; padding: 0 0 40px 48px; }
+.mkt .ds-stack .back { position: absolute; left: 0; top: 0; width: 80%; opacity: .92; }
+.mkt .ds-stack .front { position: relative; margin-top: 70px; }
+.mkt .ds-heroshot { position: relative; }
+.mkt .ds-float { position: absolute; z-index: 3; display: flex; gap: 10px; align-items: center; background: #fff; color: #0F1B2D; border-radius: 14px; padding: 10px 13px; box-shadow: 0 0 0 1px rgba(15, 27, 45, .06), 0 18px 40px rgba(12, 35, 80, .18); font: 400 12px/1.35 var(--body); animation: mkt-ds-bob 5s ease-in-out infinite; }
+.mkt .ds-float b { display: block; font-size: 13px; }
+.mkt .ds-float span { color: #8391A7; }
+.mkt .ds-float i { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; background: #F7F9FC; box-shadow: inset 0 0 0 1px #E4E9F1; }
+@keyframes mkt-ds-bob { 50% { transform: translateY(-7px); } }
+
+/* sheets: add material, send list */
+.mkt .ds-sheet { background: #fff; color: #0F1B2D; border-radius: 18px; overflow: hidden; font: 400 13px/1.45 var(--body); text-align: left; box-shadow: 0 0 0 1px rgba(15, 27, 45, .08), 0 30px 70px rgba(12, 35, 80, .18); }
+.mkt .ds-sh { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid #EEF0F3; font-weight: 700; }
+.mkt .ds-sh .lnk { font-weight: 500; color: #1E5AA8; font-size: 12.5px; }
+.mkt .ds-sb { padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; background: #F7F9FC; }
+.mkt .ds-fl { font-size: 11px; font-weight: 700; color: #46546A; margin-bottom: 4px; }
+.mkt .ds-in { height: 34px; border-radius: 9px; border: 1.5px solid #D5DCE7; background: #fff; padding: 0 10px; display: flex; align-items: center; font-size: 12.5px; }
+.mkt .ds-in.focus { border-color: #1E5AA8; box-shadow: 0 0 0 3px #E6EFFC; }
+.mkt .ds-drop { background: #fff; border-radius: 10px; box-shadow: 0 0 0 1px #E4E9F1, 0 10px 24px rgba(15, 27, 45, .1); overflow: hidden; }
+.mkt .ds-drop small { display: block; padding: 6px 10px; font-size: 9.5px; font-weight: 700; color: #8391A7; letter-spacing: .06em; }
+.mkt .ds-drop div { padding: 7px 10px; border-top: 1px solid #EEF2F8; font-size: 12px; }
+.mkt .ds-drop div.hl { background: #E6EFFC; }
+.mkt .ds-drop div span { display: block; color: #8391A7; font-size: 10.5px; }
+.mkt .ds-two { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.mkt .ds-fbtn { display: flex; gap: 8px; }
+.mkt .ds-fbtn span { flex: 1; text-align: center; padding: 9px; border-radius: 10px; font-weight: 700; font-size: 12.5px; }
+.mkt .ds-fbtn .p { background: #1E5AA8; color: #fff; }
+.mkt .ds-fbtn .g { background: #fff; box-shadow: 0 0 0 1px #E4E9F1; flex: 0 0 auto; padding: 9px 14px; }
+.mkt .ds-grp { background: #fff; border-radius: 12px; box-shadow: 0 0 0 1px #E4E9F1; overflow: hidden; }
+.mkt .ds-grp > div { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-top: 1px solid #EEF2F8; }
+.mkt .ds-grp > div:first-child { border-top: 0; }
+.mkt .ds-grp > div.sub { padding-left: 50px; background: #FBFCFE; }
+.mkt .ds-grp b { display: block; font-size: 12.5px; }
+.mkt .ds-grp span { font-size: 10.5px; color: #8391A7; }
+.mkt .ds-grp .ds-job { color: #1E5AA8; font-size: inherit; }
+.mkt .ds-wl { width: 28px; height: 28px; border-radius: 8px; background: #2563EB; color: #fff !important; font: 700 10px var(--body) !important; display: grid; place-items: center; flex: none; }
+.mkt .ds-chk { margin-left: auto; width: 18px; height: 18px; border-radius: 5px; box-shadow: inset 0 0 0 1.5px #C5CDD9; display: grid; place-items: center; }
+.mkt .ds-chk.on { background: #1E5AA8; box-shadow: none; color: #fff !important; }
+.mkt .ds-lab { font-size: 10px; font-weight: 700; letter-spacing: .06em; color: #8391A7; text-transform: uppercase; }
+.mkt .ds-acts3 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.mkt .ds-acts3 span { text-align: center; padding: 9px; border-radius: 10px; font-weight: 700; font-size: 12.5px; }
+.mkt .ds-acts3 .q { background: #fff; box-shadow: inset 0 0 0 1.5px #1E5AA8; color: #1E5AA8; }
+.mkt .ds-acts3 .o { background: #116149; color: #fff; }
+.mkt .ds-acts3 .wa { grid-column: 1 / -1; background: #128C7E; color: #fff; }
+.mkt .ds-foot { font-size: 10.5px; color: #8391A7; text-align: center; }
+
+/* order email */
+.mkt .ds-mail { background: #fff; color: #0b1220; border-radius: 16px; overflow: hidden; font: 400 13px/1.45 -apple-system, 'Segoe UI', Roboto, Arial, sans-serif; text-align: left; box-shadow: 0 0 0 1px rgba(15, 27, 45, .08), 0 30px 70px rgba(12, 35, 80, .18); }
+.mkt .ds-mail .mh { background: #0b1220; padding: 14px 18px; }
+.mkt .ds-mail .job { display: inline-block; background: #f97316; color: #fff; font-size: 9.5px; font-weight: 800; letter-spacing: .08em; padding: 4px 9px; border-radius: 999px; }
+.mkt .ds-mail .brand { display: flex; align-items: center; gap: 8px; margin-top: 10px; color: #fff; font-weight: 800; font-size: 12px; letter-spacing: .06em; }
+.mkt .ds-mail .brand em { font-style: normal; color: #0ea5e9; }
+.mkt .ds-mail .brand small { display: block; font-weight: 400; letter-spacing: .02em; color: #9fb0c9; font-size: 10px; }
+.mkt .ds-mail .mb { padding: 16px 18px; display: flex; flex-direction: column; gap: 10px; }
+.mkt .ds-mail .hi { color: #475569; }
+.mkt .ds-mail h4 { margin: 0; font: 800 17px/1.25 -apple-system, 'Segoe UI', Roboto, Arial, sans-serif; color: #0b1220; }
+.mkt .ds-mail .meta { display: grid; grid-template-columns: 1fr 1fr; background: #f5f8fc; border: 1px solid #e3e8ef; border-radius: 10px; }
+.mkt .ds-mail .meta div { padding: 9px 11px; }
+.mkt .ds-mail .meta div + div { border-left: 1px solid #e3e8ef; }
+.mkt .ds-mail .meta small { display: block; font-size: 9px; font-weight: 700; letter-spacing: .08em; color: #7c8aa0; text-transform: uppercase; }
+.mkt .ds-mail .meta b { font-size: 12px; }
+.mkt .ds-mail table { width: 100%; border-collapse: collapse; border: 1px solid #e3e8ef; }
+.mkt .ds-mail th { background: #0b1220; color: #fff; font-size: 9.5px; letter-spacing: .08em; text-transform: uppercase; text-align: left; padding: 7px 10px; }
+.mkt .ds-mail th:last-child,
+.mkt .ds-mail td:last-child { text-align: right; }
+.mkt .ds-mail td { padding: 8px 10px; border-top: 1px solid #eef1f6; font-size: 12px; }
+.mkt .ds-mail td small { display: block; color: #7c8aa0; font-size: 10.5px; }
+.mkt .ds-mail td span { background: #e6f0fc; color: #185fa5; font-weight: 800; font-size: 10.5px; padding: 3px 8px; border-radius: 999px; white-space: nowrap; }
+.mkt .ds-mail .mfoot { height: 3px; background: #0ea5e9; }
+
+/* ---------- 4. Materials flow ---------- */
+.mkt .mf-track { position: relative; display: grid; grid-template-columns: repeat(3, 1fr); max-width: 1000px; margin: 0 auto 30px; }
+.mkt .mf-line { position: absolute; left: 16.6%; right: 16.6%; top: 27px; height: 3px; background: repeating-linear-gradient(90deg, var(--line2) 0 10px, transparent 10px 18px); }
+.mkt .mf-token { position: absolute; top: 50%; left: 0; width: 34px; height: 34px; margin: -17px 0 0 -17px; border-radius: 10px; background: var(--blue); color: #fff; display: grid; place-items: center; box-shadow: 0 6px 16px rgba(30, 90, 168, .35); animation: mkt-mf-travel 6s cubic-bezier(.65, 0, .35, 1) infinite; }
+@keyframes mkt-mf-travel { 0%, 12% { left: 0; } 42%, 54% { left: 50%; } 84%, 100% { left: 100%; } }
+.mkt .mf-node { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.mkt .mf-dot { width: 56px; height: 56px; border-radius: 16px; display: grid; place-items: center; background: var(--card); color: var(--ink2); box-shadow: 0 0 0 1px var(--line); animation: mkt-mf-light 6s ease-in-out infinite; }
+.mkt .mf-node.n2 .mf-dot { animation-delay: 2.5s; }
+.mkt .mf-node.n3 .mf-dot { animation-delay: 5s; }
+@keyframes mkt-mf-light {
+  0%, 22%, 100% { background: var(--card); color: var(--ink2); }
+  4%, 16% { background: var(--blue); color: #fff; box-shadow: 0 0 0 6px color-mix(in srgb, var(--blue) 18%, transparent); }
+}
+.mkt .mf-who { font-size: 12px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--ink3); text-align: center; }
+.mkt .mf-steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; align-items: start; }
+.mkt .mf-steps li { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.mkt .mf-h { display: flex; gap: 10px; align-items: flex-start; }
+.mkt .mf-num { flex: none; width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; background: var(--ink); color: var(--bg); font: 800 14px var(--head); }
+.mkt .mf-steps h3 { font-size: 18px; line-height: 1.3; margin-top: 2px; }
+.mkt .mf-steps p { font-size: 15px; color: var(--ink2); min-height: 72px; }
+.mkt .mf-why { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.mkt .mf-whyc { display: flex; gap: 14px; padding: 18px; border-radius: 14px; background: var(--card); box-shadow: 0 0 0 1px var(--line); }
+.mkt .mf-whyc i { flex: none; width: 38px; height: 38px; border-radius: 10px; display: grid; place-items: center; color: var(--blue); box-shadow: inset 0 0 0 1px var(--line); }
+.mkt .mf-whyc h3 { font-size: 16.5px; margin-bottom: 3px; }
+.mkt .mf-whyc p { font-size: 14.5px; color: var(--ink2); }
+.mkt .mf-wa { display: grid; grid-template-columns: 1.05fr .95fr; gap: 56px; align-items: center; margin-top: 88px; }
+.mkt .mf-wa h2 { font-size: 36px; font-weight: 800; margin: 10px 0 12px; }
+.mkt .mf-chat { border-radius: 22px; overflow: hidden; background: #ECE5DD; color: #111B21; max-width: 430px; justify-self: center; width: 100%; font-size: 13.5px; line-height: 1.45; box-shadow: 0 0 0 1px rgba(15, 27, 45, .08), 0 30px 70px rgba(12, 35, 80, .16); }
+.mkt .mf-chat .ch { display: flex; gap: 12px; align-items: center; padding: 13px 16px; background: #075E54; color: #fff; }
+.mkt .mf-chat .ch b { display: block; }
+.mkt .mf-chat .ch span { font-size: 12px; opacity: .8; }
+.mkt .mf-chat .av2 { width: 36px; height: 36px; border-radius: 50%; background: #128C7E; display: grid; place-items: center; font-weight: 800; font-size: 13px; opacity: 1 !important; }
+.mkt .mf-chat .cb { padding: 16px 12px; display: flex; flex-direction: column; gap: 10px; }
+.mkt .mf-chat .m { position: relative; align-self: flex-end; background: #D9FDD3; border-radius: 12px; padding: 9px 12px 18px; max-width: 92%; box-shadow: 0 1px 1px rgba(0, 0, 0, .08); }
+.mkt .mf-chat .m ul { margin: 6px 0; padding-left: 18px; }
+.mkt .mf-chat .r { position: relative; align-self: flex-start; background: #fff; border-radius: 12px; padding: 9px 12px 18px; box-shadow: 0 1px 1px rgba(0, 0, 0, .08); }
+.mkt .mf-chat em { position: absolute; right: 10px; bottom: 3px; font-style: normal; font-size: 10.5px; color: #667781; }
+.mkt .mf-chat .cf { padding: 9px 14px; background: #F0F2F5; color: #54656F; font-size: 12px; text-align: center; }
+
+/* ---------- 5. Every-trade strip ---------- */
+.mkt .trades { display: flex; flex-direction: column; align-items: center; gap: 14px; margin-top: 34px; text-align: center; }
+.mkt .trades-lead { font-weight: 700; color: var(--ink2); font-size: 15px; }
+.mkt .trades-row { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; max-width: 920px; }
+.mkt .trades-row span { padding: 6px 12px; border-radius: 8px; background: var(--card); box-shadow: inset 0 0 0 1px var(--line); font-size: 13.5px; font-weight: 600; color: var(--ink2); }
+
+/* warnings demo severity tags (features page) */
+.mkt .sev-tag { font-size: 10.5px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; padding: 3px 7px; border-radius: 5px; flex: none; }
+.mkt .sev-tag.high { background: var(--red-t); color: var(--red); }
+.mkt .sev-tag.low { background: var(--soft2); color: var(--ink2); }
+
+/* ---------- 6. Mobile and layout fixes ---------- */
+/* Wide mock-ups (the schedule grid) scroll inside their panel instead of widening the page. */
+.mkt .split > * { min-width: 0; }
+@media (max-width: 1100px) {
+  .mkt .mf-steps,
+  .mkt .mf-why { grid-template-columns: 1fr; max-width: 560px; margin-inline: auto; }
+  .mkt .mf-steps p { min-height: 0; }
+  .mkt .mf-wa { grid-template-columns: 1fr; gap: 32px; }
+}
+@media (max-width: 640px) {
+  .mkt .ds-body { grid-template-columns: 1fr; }
+  .mkt .ds-side { display: none; }
+  .mkt .ds-search span { display: none; }
+  .mkt .ds-qa { grid-template-columns: repeat(2, 1fr); }
+  .mkt .ds-float { display: none; }
+  .mkt .ds-stack { padding: 0; }
+  .mkt .ds-stack .back { display: none; }
+  .mkt .ds-stack .front { margin-top: 0; }
+  .mkt .mf-who { font-size: 10px; }
+  .mkt .mf-wa h2 { font-size: 28px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mkt .ds-float,
+  .mkt .mf-token,
+  .mkt .mf-dot { animation: none; }
+  .mkt .mf-token { left: 50%; }
+}
+
+/* features page: materials pair (Add material behind, Send list in front) */
+.mkt .ds-stack .front.narrow { width: 64%; margin: 56px 0 0 auto; }
+@media (max-width: 640px) { .mkt .ds-stack .front.narrow { width: 100%; margin: 0; } }
+
+/* hero: give the dashboard snapshot more room on wide screens */
+@media (min-width: 1101px) {
+  .mkt .hero .wrap { grid-template-columns: .9fr 1.1fr; }
+  .mkt .ds-heroshot { margin-right: -72px; }
+}
