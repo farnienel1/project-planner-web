@@ -11,6 +11,7 @@ import {
   formatInvoicingSubtitle,
   formatPayrollSubtitle,
   formatScheduleOptionsSubtitle,
+  displayOrganizationName,
   loadOrganizationDetails,
   type OrganizationDetails,
 } from '@/lib/settings/organizationSettings'
@@ -98,7 +99,7 @@ export function OrganisationHubPanel({
   }, [organization?.id, user?.id])
 
   const country = orgCountryLabel(details?.countryCode)
-  const orgName = organization?.name ?? 'Organisation'
+  const orgName = displayOrganizationName(details?.name || organization?.name)
 
   const owner = useMemo(() => {
     const creatorId = details?.creatorUserId

@@ -17,7 +17,11 @@ import {
   Toggle,
   SuccessBanner,
   ErrorBanner,
+  SaveBar,
+  SaveButton,
 } from '@/components/settings/primitives'
+import { settingsDraftIsDirty } from '@/lib/settings/settingsDirty'
+import { useSettingsDirty, useSettingsLeave } from '@/components/settings/SettingsDirty'
 
 const ICON = {
   bell: 'M14.857 17.082a23.848 23.848 0 0 0 5.454-1.31A8.967 8.967 0 0 1 18 9.75V9A6 6 0 0 0 6 9v.75a8.967 8.967 0 0 1-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 0 1-5.714 0m5.714 0a3 3 0 1 1-5.714 0',
@@ -28,13 +32,21 @@ const ICON = {
 
 export function MaterialCutOffPanel({ onBack }: { onBack: () => void }) {
   const { user, organization } = useAuthStore()
+  const requestLeave = useSettingsLeave()
   const [prefs, setPrefs] = useState<NotificationPreferences>(DEFAULT_NOTIFICATION_PREFERENCES)
+  const [baseline, setBaseline] = useState<NotificationPreferences | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
   const [feedback, setFeedback] = useState<{ kind: 'success' | 'error'; msg: string } | null>(null)
+  const dirty = Boolean(baseline) && settingsDraftIsDirty(baseline, prefs)
+  useSettingsDirty(dirty)
 
   useEffect(() => {
     if (!organization?.id) return
     void (async () => {
-      setPrefs(await loadMaterialCutOffSettings(organization.id, user?.id))
+      const loaded = await loadMaterialCutOffSettings(organization.id, user?.id)
+      setPrefs(loaded)
+      setBaseline(loaded)
     })()
   }, [organization?.id, user?.id])
 
@@ -45,25 +57,31 @@ export function MaterialCutOffPanel({ onBack }: { onBack: () => void }) {
     ? 'Turn on the notification to choose a time.'
     : `Managers are reminded daily at ${timeLabel}.`
 
-  async function persist(next: NotificationPreferences) {
+  async function save() {
     if (!organization?.id) return
-    const previous = prefs
-    setPrefs(next)
+    setSaving(true)
+    setFeedback(null)
     try {
-      await saveMaterialCutOffSettingsForOrgAndUser(organization.id, user?.id, next)
+      await saveMaterialCutOffSettingsForOrgAndUser(organization.id, user?.id, prefs)
+      setBaseline(prefs)
+      setSaved(true)
       setFeedback({ kind: 'success', msg: 'Settings saved' })
-      window.setTimeout(() => setFeedback(null), 2500)
+      window.setTimeout(() => {
+        setFeedback(null)
+        setSaved(false)
+      }, 2500)
     } catch (error) {
-      setPrefs(previous)
       setFeedback({
         kind: 'error',
         msg: error instanceof Error ? error.message : 'Could not save settings',
       })
+    } finally {
+      setSaving(false)
     }
   }
 
   function setCutOffMinutes(total: number) {
-    void persist({
+    setPrefs({
       ...prefs,
       materialCutOffHour: Math.floor(total / 60),
       materialCutOffMinute: total % 60,
@@ -72,7 +90,7 @@ export function MaterialCutOffPanel({ onBack }: { onBack: () => void }) {
 
   return (
     <div className="mx-auto max-w-xl space-y-6 pb-12">
-      <PanelHeader title="Material cut-off" onBack={onBack} />
+      <PanelHeader title="Material cut-off" onBack={() => requestLeave(onBack)} />
 
       {feedback?.kind === 'success' && <SuccessBanner message={feedback.msg} />}
       {feedback?.kind === 'error' && <ErrorBanner message={feedback.msg} />}
@@ -94,7 +112,7 @@ export function MaterialCutOffPanel({ onBack }: { onBack: () => void }) {
           >
             <Toggle
               checked={cutOffOn}
-              onChange={(value) => void persist({ ...prefs, materialOrderCutOff: value })}
+              onChange={(value) => setPrefs({ ...prefs, materialOrderCutOff: value })}
             />
           </SettingsRow>
         </SettingsCard>
@@ -139,7 +157,7 @@ export function MaterialCutOffPanel({ onBack }: { onBack: () => void }) {
             <Toggle
               checked={prefs.materialCutOffOnSaturday}
               disabled={!cutOffOn}
-              onChange={(value) => void persist({ ...prefs, materialCutOffOnSaturday: value })}
+              onChange={(value) => setPrefs({ ...prefs, materialCutOffOnSaturday: value })}
             />
           </SettingsRow>
           <SettingsRow
@@ -152,11 +170,15 @@ export function MaterialCutOffPanel({ onBack }: { onBack: () => void }) {
             <Toggle
               checked={prefs.materialCutOffOnSunday}
               disabled={!cutOffOn}
-              onChange={(value) => void persist({ ...prefs, materialCutOffOnSunday: value })}
+              onChange={(value) => setPrefs({ ...prefs, materialCutOffOnSunday: value })}
             />
           </SettingsRow>
         </SettingsCard>
       </div>
+
+      <SaveBar dirty={dirty}>
+        <SaveButton saving={saving} saved={saved} dirty={dirty} onClick={save} />
+      </SaveBar>
     </div>
   )
 }

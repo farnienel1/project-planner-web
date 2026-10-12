@@ -6,9 +6,11 @@ import { useAuthStore } from '@/lib/stores/authStore'
 import { billingStatusLabel, formatTrialChargeCopy, hasAccess } from '@/lib/stripe/billing'
 import { ANNUAL_PENCE, MONTHLY_PENCE } from '@/lib/stripe/plans'
 import { PanelHeader, SettingsCard, ErrorBanner, SuccessBanner } from '@/components/settings/primitives'
+import { useSettingsLeave } from '@/components/settings/SettingsDirty'
 
 export function BillingPanel({ onBack }: { onBack: () => void }) {
   const { organization, user } = useAuthStore()
+  const requestLeave = useSettingsLeave()
   const billing = organization?.billing
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -40,7 +42,7 @@ export function BillingPanel({ onBack }: { onBack: () => void }) {
 
   return (
     <div className="space-y-4">
-      <PanelHeader title="Billing" onBack={onBack} />
+      <PanelHeader title="Billing" onBack={() => requestLeave(onBack)} />
       {notice ? <SuccessBanner message={notice} /> : null}
       {error ? <ErrorBanner message={error} /> : null}
       {!open ? (

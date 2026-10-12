@@ -23,7 +23,11 @@ import {
   Select,
   Textarea,
   PanelHeader,
+  SaveBar,
 } from '@/components/settings/primitives'
+import { displayOrganizationName } from '@/lib/settings/organizationSettings'
+import { settingsDraftIsDirty } from '@/lib/settings/settingsDirty'
+import { useSettingsDirty, useSettingsLeave } from '@/components/settings/SettingsDirty'
 import { OrganisationHubPanel, type OrganisationHubDestination } from '@/components/settings/panels/OrganisationHubPanel'
 import { WarningsPanel } from '@/components/settings/panels/WarningsPanel'
 import { MaterialCutOffPanel } from '@/components/settings/panels/MaterialCutOffPanel'
@@ -66,13 +70,25 @@ function isOrganisationHubPanel(panel: Panel): boolean {
 // ─── Profile Panel ────────────────────────────────────────────────────────────
 function ProfilePanel({ onBack }: { onBack: () => void }) {
   const { user, organization } = useAuthStore()
+  const requestLeave = useSettingsLeave()
   const [firstName, setFirstName] = useState(user?.firstName || '')
   const [surname, setSurname] = useState(user?.surname || '')
   const [mobile, setMobile] = useState(user?.mobileNumber || '')
+  const [baseline, setBaseline] = useState(() =>
+    JSON.stringify({
+      firstName: user?.firstName || '',
+      surname: user?.surname || '',
+      mobile: user?.mobileNumber || '',
+    })
+  )
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState('')
   const [uploadingPhoto, setUploadingPhoto] = useState(false)
+  const snapshot = JSON.stringify({ firstName, surname, mobile })
+  const dirty = settingsDraftIsDirty(baseline, snapshot)
+  useSettingsDirty(dirty)
+  const orgName = displayOrganizationName(organization?.name)
 
   const save = async () => {
     if (!user?.id) return
@@ -90,6 +106,7 @@ function ProfilePanel({ onBack }: { onBack: () => void }) {
           },
         })
       }
+      setBaseline(JSON.stringify({ firstName: firstName.trim(), surname: surname.trim(), mobile: mobile.trim() }))
       setSaved(true); setTimeout(() => setSaved(false), 3000)
     } catch (e: unknown) { setError(e instanceof Error ? e.message : 'Save failed') }
     finally { setSaving(false) }
@@ -122,7 +139,7 @@ function ProfilePanel({ onBack }: { onBack: () => void }) {
 
   return (
     <div className="space-y-5">
-      <PanelHeader title="My profile" onBack={onBack} />
+      <PanelHeader title="My profile" onBack={() => requestLeave(onBack)} />
 
       <div className="card pad">
         <p className="eyebrow" style={{ marginBottom: 12 }}>Profile image</p>
@@ -154,7 +171,7 @@ function ProfilePanel({ onBack }: { onBack: () => void }) {
         <div className="px-4 py-3 space-y-1">
           <div className="flex items-center justify-between py-1"><span className="text-sm text-[var(--ink3)]">Name</span><span className="text-sm font-semibold text-[var(--ink)]">{user?.firstName} {user?.surname}</span></div>
           <div className="flex items-center justify-between py-1"><span className="text-sm text-[var(--ink3)]">Email</span><span className="text-sm font-semibold text-[var(--ink)]">{user?.email}</span></div>
-          <div className="flex items-center justify-between py-1"><span className="text-sm text-[var(--ink3)]">Organisation</span><span className="text-sm font-semibold text-[var(--ink)]">{organization?.name}</span></div>
+          <div className="flex items-center justify-between py-1"><span className="text-sm text-[var(--ink3)]">Organisation</span><span className="text-sm font-semibold text-[var(--ink)]">{orgName}</span></div>
         </div>
       </SettingsCard>
 
@@ -166,7 +183,9 @@ function ProfilePanel({ onBack }: { onBack: () => void }) {
 
       {error && <ErrorBanner message={error} />}
       {saved && <SuccessBanner message="Profile updated." />}
-      <SaveButton saving={saving} saved={saved} onClick={save} />
+      <SaveBar dirty={dirty}>
+        <SaveButton saving={saving} saved={saved} dirty={dirty} onClick={save} />
+      </SaveBar>
     </div>
   )
 }
@@ -174,6 +193,7 @@ function ProfilePanel({ onBack }: { onBack: () => void }) {
 // ─── Password Panel ───────────────────────────────────────────────────────────
 function PasswordPanel({ onBack }: { onBack: () => void }) {
   const { firebaseUser } = useAuthStore() as { firebaseUser: { email?: string | null } | null }
+  const requestLeave = useSettingsLeave()
   const [current, setCurrent] = useState('')
   const [next, setNext] = useState('')
   const [confirm, setConfirm] = useState('')
@@ -182,6 +202,8 @@ function PasswordPanel({ onBack }: { onBack: () => void }) {
   const [error, setError] = useState('')
   const [showCurrent, setShowCurrent] = useState(false)
   const [showNew, setShowNew] = useState(false)
+  const dirty = Boolean(current || next || confirm)
+  useSettingsDirty(dirty)
 
   const changePassword = async () => {
     if (!firebaseUser?.email || !current || !next || next !== confirm) {
@@ -206,7 +228,7 @@ function PasswordPanel({ onBack }: { onBack: () => void }) {
 
   return (
     <div className="space-y-5">
-      <PanelHeader title="Sign-in & password" onBack={onBack} />
+      <PanelHeader title="Sign-in & password" onBack={() => requestLeave(onBack)} />
 
       <div className="flex flex-col items-center gap-3 py-4">
         <div className="flex h-16 w-16 items-center justify-center rounded-full bg-blue-50">
@@ -244,14 +266,15 @@ function PasswordPanel({ onBack }: { onBack: () => void }) {
 
       {error && <ErrorBanner message={error} />}
       {saved && <SuccessBanner message="Password changed successfully." />}
-      <button
-        type="button"
-        onClick={changePassword}
-        disabled={saving || !current || !next || !confirm}
-        className="w-full rounded-2xl bg-blue-600 py-3.5 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-40 transition-all"
-      >
-        {saving ? 'Changing…' : 'Change password'}
-      </button>
+      <SaveBar dirty={dirty} hint={dirty ? 'Change your password, or leave to discard what you typed.' : 'Enter your current password and a new one.'}>
+        <SaveButton
+          saving={saving}
+          saved={saved}
+          dirty={dirty}
+          label="Change password"
+          onClick={changePassword}
+        />
+      </SaveBar>
     </div>
   )
 }
@@ -259,9 +282,10 @@ function PasswordPanel({ onBack }: { onBack: () => void }) {
 
 // ─── Roles Panel ──────────────────────────────────────────────────────────────
 function RolesPanel({ onBack }: { onBack: () => void }) {
+  const requestLeave = useSettingsLeave()
   return (
     <div className="space-y-5">
-      <PanelHeader title="Roles & permissions" onBack={onBack} />
+      <PanelHeader title="Roles & permissions" onBack={() => requestLeave(onBack)} />
       <SettingsCard>
         <Link href="/dashboard/settings/users" className="block">
           <SettingsRow
@@ -288,6 +312,7 @@ export default function SettingsScreen({ initialPanel = 'main' }: { initialPanel
   const router = useRouter()
   const pathname = usePathname()
   const { user, organization, signOut } = useAuthStore()
+  const orgName = displayOrganizationName(organization?.name)
   const canAccessOrgHub = canAccessOrganisationSettingsHub(user)
   const pathPanel = settingsPanelFromPath(pathname)
   const requestedPanel = pathPanel || initialPanel
@@ -390,7 +415,7 @@ export default function SettingsScreen({ initialPanel = 'main' }: { initialPanel
             <div className="big" style={{ fontSize: 26 }}>
               {user?.firstName} {user?.surname}
             </div>
-            <div className="opacity-85">{organization?.name}</div>
+            <div className="opacity-85">{orgName}</div>
             {isAdmin ? (
               <span className="mt-2 inline-flex pill" style={{ background: 'rgba(255,255,255,.18)', color: '#fff' }}>
                 Admin
@@ -413,7 +438,7 @@ export default function SettingsScreen({ initialPanel = 'main' }: { initialPanel
                 iconBg="bg-blue-50"
                 iconColor="text-blue-600"
                 label="Switch organisation"
-                description={organization?.name || 'No organisation linked'}
+                description={organization?.name?.trim() || 'No organisation linked'}
                 chevron
               />
             </Link>
@@ -455,7 +480,7 @@ export default function SettingsScreen({ initialPanel = 'main' }: { initialPanel
               ))}
             </SettingsCard>
             <p className="muted small" style={{ margin: '10px 6px' }}>
-              These settings affect everyone in {organization?.name}.
+              These settings affect everyone in {orgName}.
             </p>
           </section>
         ) : null}

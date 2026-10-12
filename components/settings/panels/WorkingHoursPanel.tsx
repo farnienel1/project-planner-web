@@ -10,6 +10,8 @@ import {
   type WeekendPayrollSettings,
 } from '@/lib/settings/organizationSettings'
 import { settingsHeader } from '@/lib/settings/settingsHeader'
+import { settingsDraftIsDirty } from '@/lib/settings/settingsDirty'
+import { useSettingsDirty, useSettingsLeave } from '@/components/settings/SettingsDirty'
 import {
   PanelHeader,
   SectionLabel,
@@ -115,17 +117,24 @@ function weekendSummary(settings: WeekendPayrollSettings): string {
 
 export function WorkingHoursPanel({ onBack }: { onBack: () => void }) {
   const { organization } = useAuthStore()
+  const requestLeave = useSettingsLeave()
   const [draft, setDraft] = useState<OrgPayrollTimePolicy>(DEFAULT_PAYROLL_POLICY)
+  const [baseline, setBaseline] = useState<OrgPayrollTimePolicy | null>(null)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState('')
   const header = settingsHeader('working-hours')
+  const dirty = Boolean(baseline) && settingsDraftIsDirty(baseline, draft)
+  useSettingsDirty(dirty)
 
   useEffect(() => {
     if (!organization?.id) return
     loadOrganizationDetails(organization.id)
       .then((details) => {
-        if (details?.payrollTimePolicy) setDraft(details.payrollTimePolicy)
+        if (details?.payrollTimePolicy) {
+          setDraft(details.payrollTimePolicy)
+          setBaseline(details.payrollTimePolicy)
+        }
       })
       .catch(() => {})
   }, [organization?.id])
@@ -211,6 +220,7 @@ export function WorkingHoursPanel({ onBack }: { onBack: () => void }) {
     setError('')
     try {
       await savePayrollPolicy(organization.id, draft)
+      setBaseline(draft)
       setSaved(true)
       window.setTimeout(() => setSaved(false), 3000)
     } catch (saveError) {
@@ -283,7 +293,7 @@ export function WorkingHoursPanel({ onBack }: { onBack: () => void }) {
         description="Your standard day, unpaid break and overtime rates. Timesheets and pay use these rules."
         iconPath={header.iconPath}
         hue={header.hue}
-        onBack={onBack}
+        onBack={() => requestLeave(onBack)}
       />
 
       {error && (
@@ -386,8 +396,8 @@ export function WorkingHoursPanel({ onBack }: { onBack: () => void }) {
         {!sunday.sameAsSaturday ? <div className="p-5">{weekendFields('sunday')}</div> : null}
       </SettingsCard>
 
-      <SaveBar>
-        <SaveButton saving={saving} saved={saved} onClick={save} />
+      <SaveBar dirty={dirty}>
+        <SaveButton saving={saving} saved={saved} dirty={dirty} onClick={save} />
       </SaveBar>
     </div>
   )
