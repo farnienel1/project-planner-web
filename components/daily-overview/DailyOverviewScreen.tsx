@@ -82,7 +82,8 @@ export function DailyOverviewScreen() {
   const [bookLabourOpen, setBookLabourOpen] = useState(false)
   const [editingRow, setEditingRow] = useState<OverviewBookingTarget | null>(null)
   const [payrollPolicy, setPayrollPolicy] = useState<OrgPayrollTimePolicy>(DEFAULT_PAYROLL_POLICY)
-  const [includeWeekendUnbooked, setIncludeWeekendUnbooked] = useState(false)
+  const [includeWeekendsForUnbookedLabour, setIncludeWeekendsForUnbookedLabour] = useState(false)
+  const [excludedUserIdsFromUnbookedWarnings, setExcludedUserIdsFromUnbookedWarnings] = useState<string[]>([])
 
   useEffect(() => {
     const raw = searchParams.get('date')
@@ -104,7 +105,8 @@ export function DailyOverviewScreen() {
     void loadOrganizationDetails(organization.id).then((details) => {
       if (!details || details.id !== organization.id) return
       setPayrollPolicy(details.payrollTimePolicy)
-      setIncludeWeekendUnbooked(details.warningDetection.includeWeekendsForUnbookedLabour)
+      setIncludeWeekendsForUnbookedLabour(details.warningDetection.includeWeekendsForUnbookedLabour)
+      setExcludedUserIdsFromUnbookedWarnings(details.warningDetection.excludedUserIdsFromUnbookedWarnings ?? [])
     })
     loadSubcontractorBookings(organization.id)
       .then(setSubcontractorBookings)
@@ -135,7 +137,8 @@ export function DailyOverviewScreen() {
         subcontractorBookings,
         subcontractors,
         payrollPolicy,
-        includeWeekendUnbooked,
+        includeWeekendsForUnbookedLabour,
+        excludedUserIdsFromUnbookedWarnings,
       }),
     [
       day,
@@ -150,7 +153,8 @@ export function DailyOverviewScreen() {
       subcontractorBookings,
       subcontractors,
       payrollPolicy,
-      includeWeekendUnbooked,
+      includeWeekendsForUnbookedLabour,
+      excludedUserIdsFromUnbookedWarnings,
     ]
   )
 
@@ -330,7 +334,7 @@ export function DailyOverviewScreen() {
         </section>
 
         <div className="stack">
-          {mayPublish && model.isWeekday && model.unbookedNames.length > 0 ? (
+          {mayPublish && model.unbookedNames.length > 0 ? (
             <section className="card" data-hue="red">
               <div className="card-h">
                 <div className="ico-chip sm" aria-hidden="true">

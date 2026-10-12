@@ -6,7 +6,7 @@
  * PayrollHoursEngine is section 17.
  */
 
-import { unbookedLabourRows } from '@/lib/canonical'
+import { unbookedLabourRowsOnDay } from '@/lib/canonical'
 import { findUserByAnyId, rosterDisplayName } from '@/lib/staff/userRosterUtils'
 import { addLondonDays, coversCalendarDay, dayKey, isSameLondonDay } from '@/lib/ios-parity/londonTime'
 import { isPlaceholderOperative } from '@/lib/operatives/operativeRosterUtils'
@@ -206,7 +206,10 @@ export function buildDailyOverview(params: {
   subcontractorBookings?: OverviewSubcontractorBooking[]
   subcontractors?: { id: string; name: string; contacts?: { id: string; name: string }[] }[]
   payrollPolicy?: OrgPayrollTimePolicy
-  includeWeekendUnbooked?: boolean
+  /** `organizations/{orgId}.warningDetection.includeWeekendsForUnbookedLabour` */
+  includeWeekendsForUnbookedLabour?: boolean
+  /** `organizations/{orgId}.warningDetection.excludedUserIdsFromUnbookedWarnings` */
+  excludedUserIdsFromUnbookedWarnings?: readonly string[] | null
 }): DailyOverviewModel {
   const day = params.day
   const today = params.today || new Date()
@@ -430,11 +433,11 @@ export function buildDailyOverview(params: {
   const payroll = params.payrollPolicy ?? DEFAULT_PAYROLL_POLICY
   const saturdayHours = effectiveWeekendSettings('saturday', payroll).countsAsStandardHours
   const sundayHours = effectiveWeekendSettings('sunday', payroll).countsAsStandardHours
-  const unbookedRows = unbookedLabourRows({
+  const unbookedRows = unbookedLabourRowsOnDay({
     timeZone: 'Europe/London',
-    startDayKey: overviewDayKey,
-    endDayKey: overviewDayKey,
-    includeWeekends: Boolean(params.includeWeekendUnbooked),
+    dayKey: overviewDayKey,
+    includeWeekends: Boolean(params.includeWeekendsForUnbookedLabour),
+    excludedUserIds: params.excludedUserIdsFromUnbookedWarnings,
     standardPaidHours: payroll.standardPaidHours,
     saturdayCountsAsHours: typeof saturdayHours === 'number' ? saturdayHours : payroll.standardPaidHours,
     sundayCountsAsHours: typeof sundayHours === 'number' ? sundayHours : payroll.standardPaidHours,
