@@ -39,6 +39,14 @@ export {
   withoutDismissedQualificationRows,
 } from './warningRows'
 
+export {
+  DEFAULT_WARNINGS_SORT_DIRECTION,
+  compareWarningDayKeys,
+  parseWarningsSortDirection,
+  sortWarningsByDate,
+  warningDayKeyIsDated,
+} from './warningSort'
+
 export { leaveCoverageRows, leaveSlotKind } from './leaveCoverage'
 
 export {
@@ -116,3 +124,16 @@ export {
   qualificationCertificateUrl,
   removedQualificationCertificateIds,
 } from './operativeQualifications'
+
+export {
+  DEFAULT_MATERIAL_DELIVERY_CLOCK,
+  DEFAULT_MATERIAL_DELIVERY_HOUR,
+  DEFAULT_MATERIAL_DELIVERY_MINUTE,
+  DEFAULT_MATERIAL_DELIVERY_MINUTES,
+  clockMinutesFromDeliveryInstant,
+  defaultMaterialDeliveryDayKey,
+  defaultMaterialDeliveryRequiredAt,
+  formatMaterialDeliveryRequired,
+  materialDeliveryInstant,
+  materialOrderIncludesDeliveryRequired,
+} from './materialDelivery'

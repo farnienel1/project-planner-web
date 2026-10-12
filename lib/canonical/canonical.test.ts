@@ -33,6 +33,12 @@ import {
   unverifiedOperativeRows,
   withoutDismissedQualificationRows,
 } from './warningRows.ts'
+import {
+  DEFAULT_WARNINGS_SORT_DIRECTION,
+  compareWarningDayKeys,
+  parseWarningsSortDirection,
+  sortWarningsByDate,
+} from './warningSort.ts'
 import { eachDayKey } from './dayKeys.ts'
 import { leaveCoverageRows } from './leaveCoverage.ts'
 import {
@@ -88,6 +94,14 @@ import {
   qualificationCertificateUrl,
   removedQualificationCertificateIds,
 } from './operativeQualifications.ts'
+import {
+  DEFAULT_MATERIAL_DELIVERY_CLOCK,
+  DEFAULT_MATERIAL_DELIVERY_MINUTES,
+  defaultMaterialDeliveryDayKey,
+  defaultMaterialDeliveryRequiredAt,
+  formatMaterialDeliveryRequired,
+  materialOrderIncludesDeliveryRequired,
+} from './materialDelivery.ts'
 
 const superAdmin: StaffAccountRole = { isSuperAdmin: true, isAdmin: true, isManager: false, isOperativeMode: false }
 const admin: StaffAccountRole = { isSuperAdmin: false, isAdmin: true, isManager: false, isOperativeMode: false }
@@ -1490,4 +1504,100 @@ test('warning detection defaults to seven days and reads the iOS top-level map',
   })
   assert.equal(parsed.clashLookaheadMode, 'endOfInvoicingPeriod')
   assert.deepEqual(parsed.excludedUserIdsFromUnbookedWarnings, ['U1'])
+})
+
+test('sortWarningsByDate orders by coverage dayKey and keeps every row', () => {
+  assert.equal(DEFAULT_WARNINGS_SORT_DIRECTION, 'oldest')
+  assert.equal(parseWarningsSortDirection(undefined), 'oldest')
+  assert.equal(parseWarningsSortDirection('newest'), 'newest')
+  assert.equal(parseWarningsSortDirection('created-at'), 'oldest')
+
+  const rows = [
+    { id: 'later-clash', dayKey: '2026-10-12' },
+    { id: 'earlier-unbooked', dayKey: '2026-10-10' },
+    { id: 'same-day-leave', dayKey: '2026-10-10' },
+    { id: 'expiry', dayKey: '2026-09-01' },
+    { id: 'unverified', dayKey: '' },
+    { id: 'invalid', dayKey: 'not-a-day' },
+  ]
+
+  const oldest = sortWarningsByDate(rows, 'oldest')
+  assert.deepEqual(
+    oldest.map((row) => row.id),
+    ['expiry', 'earlier-unbooked', 'same-day-leave', 'later-clash', 'unverified', 'invalid']
+  )
+  const newest = sortWarningsByDate(rows, 'newest')
+  assert.deepEqual(
+    newest.map((row) => row.id),
+    ['later-clash', 'earlier-unbooked', 'same-day-leave', 'expiry', 'unverified', 'invalid']
+  )
+  assert.equal(oldest.length, rows.length)
+  assert.equal(newest.length, rows.length)
+  assert.equal(compareWarningDayKeys('2026-10-10', '2026-10-12', 'oldest') < 0, true)
+  assert.equal(compareWarningDayKeys('2026-10-10', '2026-10-12', 'newest') > 0, true)
+})
+
+test('material order defaults to tomorrow 08:00 and Monday 08:00 on a weekend send', () => {
+  assert.equal(materialOrderIncludesDeliveryRequired('order'), true)
+  assert.equal(materialOrderIncludesDeliveryRequired('Order'), true)
+  assert.equal(materialOrderIncludesDeliveryRequired('quote'), false)
+  assert.equal(materialOrderIncludesDeliveryRequired('Quote'), false)
+  assert.equal(DEFAULT_MATERIAL_DELIVERY_CLOCK, '08:00')
+  assert.equal(DEFAULT_MATERIAL_DELIVERY_MINUTES, 8 * 60)
+
+  assert.equal(defaultMaterialDeliveryDayKey('2026-10-09T15:00:00+01:00'), '2026-10-10')
+  assert.equal(defaultMaterialDeliveryDayKey('2026-10-10T09:30:00+01:00'), '2026-10-12')
+  assert.equal(defaultMaterialDeliveryDayKey('2026-10-11T22:00:00+01:00'), '2026-10-12')
+  assert.equal(defaultMaterialDeliveryDayKey('2026-10-12T07:00:00+01:00'), '2026-10-13')
+
+  const mondayFromSaturday = defaultMaterialDeliveryRequiredAt('2026-10-10T09:30:00+01:00')
+  assert.equal(formatMaterialDeliveryRequired(mondayFromSaturday), 'Monday 12 October at 08:00')
+  const tomorrowFromFriday = defaultMaterialDeliveryRequiredAt('2026-10-09T15:00:00+01:00')
+  assert.equal(formatMaterialDeliveryRequired(tomorrowFromFriday), 'Saturday 10 October at 08:00')
+})
+
+test('the iOS JavaScript bundle applies the same warning date order as this module', () => {
+  const source = readFileSync(new URL('./dist/canonical-business.js', import.meta.url), 'utf8')
+  const sandbox: {
+    ProjectPlannerCanonical?: {
+      DEFAULT_WARNINGS_SORT_DIRECTION: string
+      parseWarningsSortDirection: (value: unknown) => string
+      sortWarningsByDate: (rows: ReadonlyArray<{ id: string; dayKey: string }>, direction: unknown) => Array<{
+        id: string
+        dayKey: string
+      }>
+      defaultMaterialDeliveryDayKey: (referenceIso: string, timeZone?: string | null) => string
+      materialOrderIncludesDeliveryRequired: (requestType: string | null | undefined) => boolean
+      formatMaterialDeliveryRequired: (at: Date, timeZone?: string | null) => string
+      defaultMaterialDeliveryRequiredAt: (referenceIso: string, timeZone?: string | null) => Date
+    }
+  } = {}
+  runInContext(source, createContext(sandbox))
+  const bundle = sandbox.ProjectPlannerCanonical
+  assert.ok(bundle)
+  const rows = [
+    { id: 'b', dayKey: '2026-10-12' },
+    { id: 'a', dayKey: '2026-10-10' },
+    { id: 'undated', dayKey: '' },
+  ]
+  assert.equal(bundle.DEFAULT_WARNINGS_SORT_DIRECTION, DEFAULT_WARNINGS_SORT_DIRECTION)
+  assert.equal(bundle.parseWarningsSortDirection('newest'), 'newest')
+  assert.deepEqual(
+    bundle.sortWarningsByDate(rows, 'oldest').map((row) => row.id),
+    sortWarningsByDate(rows, 'oldest').map((row) => row.id)
+  )
+  assert.deepEqual(
+    bundle.sortWarningsByDate(rows, 'newest').map((row) => row.id),
+    sortWarningsByDate(rows, 'newest').map((row) => row.id)
+  )
+  assert.equal(bundle.materialOrderIncludesDeliveryRequired('order'), true)
+  assert.equal(bundle.materialOrderIncludesDeliveryRequired('quote'), false)
+  assert.equal(
+    bundle.defaultMaterialDeliveryDayKey('2026-10-10T09:30:00+01:00'),
+    defaultMaterialDeliveryDayKey('2026-10-10T09:30:00+01:00')
+  )
+  assert.equal(
+    bundle.formatMaterialDeliveryRequired(bundle.defaultMaterialDeliveryRequiredAt('2026-10-10T09:30:00+01:00')),
+    formatMaterialDeliveryRequired(defaultMaterialDeliveryRequiredAt('2026-10-10T09:30:00+01:00'))
+  )
 })

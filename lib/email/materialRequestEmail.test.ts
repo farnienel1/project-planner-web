@@ -64,6 +64,33 @@ test('HTML email greets the first name and lists manufacturer', () => {
   assert.match(html, /2 Drums/)
 })
 
+test('order emails include the required delivery; quotes never do', () => {
+  const order = buildMaterialRequestEmail({
+    context: { ...context, deliveryRequiredLabel: 'Monday 12 October at 08:00' },
+    isQuote: false,
+    sendAsPlainText: false,
+    contactName: 'Alex Smith',
+  })
+  assert.match(order.html, /Required delivery/)
+  assert.match(order.html, /Monday 12 October at 08:00/)
+
+  const quote = buildMaterialRequestEmail({
+    context: { ...context, deliveryRequiredLabel: 'Monday 12 October at 08:00' },
+    isQuote: true,
+    sendAsPlainText: false,
+    contactName: 'Alex Smith',
+  })
+  assert.doesNotMatch(quote.html, /Required delivery/)
+  assert.doesNotMatch(quote.html, /Monday 12 October at 08:00/)
+
+  const plainOrder = buildPlainTextEmail(
+    { ...context, deliveryRequiredLabel: 'Monday 12 October at 08:00' },
+    false
+  )
+  assert.match(plainOrder, /Required delivery: Monday 12 October at 08:00/)
+  assert.doesNotMatch(buildPlainTextEmail({ ...context, deliveryRequiredLabel: 'Monday 12 October at 08:00' }, true), /Required delivery/)
+})
+
 test('plain-text option wraps the list in a pre block', () => {
   const { html } = buildMaterialRequestEmail({
     context,

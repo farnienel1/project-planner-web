@@ -29,6 +29,8 @@ export type MaterialRequestEmailContext = {
   companyLogoURL?: string | null
   materials: MaterialRequestLine[]
   sentAt: Date
+  /** Orders only. Quotes leave this empty — the template asks them to confirm time. */
+  deliveryRequiredLabel?: string | null
 }
 
 function trim(value?: string | null): string {
@@ -171,6 +173,8 @@ export function buildPlainTextEmail(context: MaterialRequestEmailContext, isQuot
   const thankYou = isQuote
     ? 'Thank you for taking the time to quote these materials.'
     : 'Thank you for processing this order.'
+  const required = !isQuote ? trim(context.deliveryRequiredLabel) : ''
+  const requiredLines = required ? [`Required delivery: ${required}`, ''] : []
 
   return [
     `Hi ${contact},`,
@@ -179,6 +183,7 @@ export function buildPlainTextEmail(context: MaterialRequestEmailContext, isQuot
     '',
     siteLine,
     '',
+    ...requiredLines,
     confirm,
     '',
     `Job number: ${context.jobNumber}`,
@@ -235,6 +240,17 @@ export function buildStyledEmail(context: MaterialRequestEmailContext, isQuote: 
         <div style="font-size:11px;font-weight:700;letter-spacing:.08em;color:#7c8aa0;text-transform:uppercase;">Deliver to</div>
         <div style="font-size:14px;color:#0b1220;margin-top:4px;line-height:20px;font-weight:600;">${escapeHtml(address)}</div>
       </td>`
+  const requiredLabel = !isQuote ? trim(context.deliveryRequiredLabel) : ''
+  const requiredPanel = requiredLabel
+    ? `<tr><td class="px" style="padding:10px 32px 0 32px;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#eef8f4;border:1px solid #cce8dc;border-radius:12px;">
+          <tr><td style="padding:16px 18px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+            <div style="font-size:11px;font-weight:700;letter-spacing:.08em;color:#0f6e56;text-transform:uppercase;">Required delivery</div>
+            <div style="font-size:16px;color:#0b1220;margin-top:4px;line-height:22px;font-weight:800;">${escapeHtml(requiredLabel)}</div>
+          </td></tr>
+        </table>
+      </td></tr>`
+    : ''
   const quoteDeliver =
     isQuote && address
       ? `<tr><td class="px" style="padding:10px 32px 0 32px;">
@@ -297,6 +313,7 @@ export function buildStyledEmail(context: MaterialRequestEmailContext, isQuote: 
           </tr>
         </table>
       </td></tr>
+      ${requiredPanel}
       ${quoteDeliver}
       <tr><td class="px" style="padding:22px 32px 10px 32px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>

@@ -28,6 +28,17 @@ import { FormInput } from '@/components/forms/FormShell'
 import { FeatureCard, StatusPill, materialStatusTone } from '@/components/projects/features/featureUi'
 import { useToast } from '@/components/ui/ToastProvider'
 import {
+  CANONICAL_TIME_ZONE,
+  clockMinutesFromDeliveryInstant,
+  defaultMaterialDeliveryRequiredAt,
+  formatClockMinutes,
+  formatMaterialDeliveryRequired,
+  materialDeliveryInstant,
+  materialOrderIncludesDeliveryRequired,
+  parseClockMinutes,
+} from '@/lib/canonical'
+import { dayKeyInZone } from '@/lib/orgTime/zoneTime'
+import {
   MULTIPLE_WHOLESALER_ORDER_MESSAGE,
   buildRecipientSnapshots,
   orderBlockedForMultipleWholesalers,
@@ -95,6 +106,7 @@ export function MaterialsSendListSheet({
   const [whatsAppPhone, setWhatsAppPhone] = useState('')
   const [whatsAppCopyHint, setWhatsAppCopyHint] = useState<string | null>(null)
   const [savingContactPhone, setSavingContactPhone] = useState(false)
+  const [deliveryAt, setDeliveryAt] = useState(() => defaultMaterialDeliveryRequiredAt(new Date().toISOString()))
 
   useEffect(() => {
     setSelectedMaterialIds(new Set(materials.map((item) => item.id)))
@@ -161,7 +173,7 @@ export function MaterialsSendListSheet({
       jobNumber: project.jobNumber,
       projectName: project.siteName,
       projectAddress: siteAddress,
-      deliveryDate: materialsDay,
+      deliveryDate: materialOrderIncludesDeliveryRequired(whatsAppType) ? deliveryAt : undefined,
       materials: selectedMaterials.map((item) => ({
         material: item.material,
         quantity: item.quantity,
@@ -181,7 +193,7 @@ export function MaterialsSendListSheet({
     project.jobNumber,
     project.siteName,
     siteAddress,
-    materialsDay,
+    deliveryAt,
     selectedMaterials,
   ])
 
@@ -295,43 +307,54 @@ export function MaterialsSendListSheet({
             productCode: item.productCode,
             notes: item.notes,
           })),
+          deliveryRequiredAt: materialOrderIncludesDeliveryRequired(type) ? deliveryAt.toISOString() : undefined,
         }),
       })
-      const payload = (await response.json().catch(() => ({}))) as { error?: string }
+      const payload = (await response.json().catch(() => ({}))) as { error?: string; sent?: number }
       if (!response.ok) {
         throw new Error(payload.error || 'Failed to send material list')
       }
 
-      await saveSendRecord(organization.id, {
-        id: newUuid(),
-        projectId: project.id,
-        requestType: type,
-        sentAt: new Date(),
-        materialsDate: materialsDay,
-        sentBy: senderName,
-        recipients: recipients.map((row) => ({
-          name: row.name,
-          email: row.email,
-          wholesalerName: row.wholesalerName,
-        })),
-        lines: items.map((item) => ({
-          materialId: item.id,
-          name: item.material,
-          quantity: item.quantity,
-          unit: item.unit,
-          brand: item.brand,
-          productCode: item.productCode,
-        })),
-      })
-      await updateMaterialWorkflowStatuses(
-        organization.id,
-        items.map((item) => item.id),
-        type === 'order' ? 'ordered' : 'sentForQuote',
-        type
-      )
+      try {
+        await saveSendRecord(organization.id, {
+          id: newUuid(),
+          projectId: project.id,
+          requestType: type,
+          sentAt: new Date(),
+          materialsDate: materialsDay,
+          deliveryRequiredAt: materialOrderIncludesDeliveryRequired(type) ? deliveryAt : undefined,
+          sentBy: senderName,
+          recipients: recipients.map((row) => ({
+            name: row.name,
+            email: row.email,
+            wholesalerName: row.wholesalerName,
+          })),
+          lines: items.map((item) => ({
+            materialId: item.id,
+            name: item.material,
+            quantity: item.quantity,
+            unit: item.unit,
+            brand: item.brand,
+            productCode: item.productCode,
+          })),
+        })
+        await updateMaterialWorkflowStatuses(
+          organization.id,
+          items.map((item) => item.id),
+          type === 'order' ? 'ordered' : 'sentForQuote',
+          type
+        )
+      } catch (persistErr: unknown) {
+        console.error('[materials/send] email sent; history write failed', persistErr)
+      }
       setConfirmation({ requestType: type, itemCount: items.length, recipientCount: recipients.length })
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to send material list')
+      const message = err instanceof Error ? err.message : 'Failed to send material list'
+      if (/insufficient permissions|permission-denied/i.test(message)) {
+        setError('Could not send this list. Check you are signed in to this organisation and try again.')
+      } else {
+        setError(message)
+      }
     } finally {
       setIsSending(false)
     }
@@ -508,6 +531,49 @@ export function MaterialsSendListSheet({
                 })}
               </div>
             )}
+          </FeatureCard>
+
+          <FeatureCard className="space-y-3 p-3">
+            <div>
+              <p className="text-sm font-semibold text-slate-900">What day and time is the material delivery required</p>
+              <p className="mt-1 text-[11px] text-slate-500">
+                Used on orders only. Quotes ask the wholesaler to confirm availability and time.
+              </p>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <label className="block text-[11px] font-medium text-slate-600">
+                Day
+                <input
+                  type="date"
+                  value={dayKeyInZone(deliveryAt, CANONICAL_TIME_ZONE)}
+                  onChange={(event) => {
+                    const nextDay = event.target.value
+                    if (!nextDay) return
+                    setDeliveryAt(materialDeliveryInstant(nextDay, clockMinutesFromDeliveryInstant(deliveryAt)))
+                  }}
+                  className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900"
+                />
+              </label>
+              <label className="block text-[11px] font-medium text-slate-600">
+                Time
+                <input
+                  type="time"
+                  value={formatClockMinutes(clockMinutesFromDeliveryInstant(deliveryAt))}
+                  onChange={(event) => {
+                    const minutes = parseClockMinutes(event.target.value)
+                    if (minutes == null) return
+                    setDeliveryAt(
+                      materialDeliveryInstant(dayKeyInZone(deliveryAt, CANONICAL_TIME_ZONE), minutes)
+                    )
+                  }}
+                  className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900"
+                />
+              </label>
+            </div>
+            <p className="text-[11px] text-slate-500">
+              Defaults to {formatMaterialDeliveryRequired(defaultMaterialDeliveryRequiredAt(new Date().toISOString()))}.
+              Weekend send opens on Monday 08:00.
+            </p>
           </FeatureCard>
 
           <div>

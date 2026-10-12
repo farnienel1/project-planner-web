@@ -51,11 +51,13 @@ import {
 } from '@/lib/warnings/warningsScan'
 import type { OrgWarningsResult } from '@/lib/warnings/generateOrgWarnings'
 import { WarningsScreen } from '@/components/warnings/WarningsScreen'
+import { useWarningsSortDirection } from '@/lib/warnings/useWarningsSortDirection'
 import { ORG_DATA_REFRESHED_EVENT } from '@/lib/stores/refreshOrgData'
 
 export default function WarningsPage() {
   const router = useRouter()
   const { user, organization, loading } = useAuthStore()
+  const { sortDirection, setSortDirection } = useWarningsSortDirection(user?.id || '')
 
   useEffect(() => {
     if (user && !canViewWarnings(user)) router.replace('/dashboard')
@@ -477,6 +479,8 @@ export default function WarningsPage() {
       onDismissQualification={handleDismissQualification}
       onDeleteBooking={handleDeleteBooking}
       onDeleteManagerBooking={handleDeleteManagerBooking}
+      sortDirection={sortDirection}
+      onSortDirectionChange={setSortDirection}
     />
   )
 }
