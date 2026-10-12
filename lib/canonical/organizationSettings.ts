@@ -45,7 +45,9 @@ export type OrgWarningDetectionSettings = {
   detectClashes: boolean
   clashLookaheadMode: 'endOfWorkingWeek' | 'numberOfDays' | 'endOfInvoicingPeriod'
   clashLookaheadDays: number
+  /** Warnings and Daily Overview. Weekend person-days are unbooked only when true. */
   includeWeekendsForUnbookedLabour: boolean
+  /** `users/{uid}` ids never listed as unbooked on Warnings or Daily Overview. */
   excludedUserIdsFromUnbookedWarnings: string[]
 }
 

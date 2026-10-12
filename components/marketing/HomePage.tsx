@@ -6,8 +6,9 @@ import { MODULES, PRICE_NOTE } from '@/lib/marketing/content'
 import { AppsInfographic } from '@/components/marketing/AppsInfographic'
 import { ClashDemoProvider } from '@/components/marketing/ClashDemo'
 import { CtaBand } from '@/components/marketing/MarketingShell'
-import { HeroMock } from '@/components/marketing/ProductPanels'
-import { HsPanel, SchedulePanel, WarnPanel } from '@/components/marketing/ProductPanels'
+import { HeroSnapshot, HsSnap, WarningsSnap } from '@/components/marketing/DemoSnapshots'
+import { MaterialsFlow } from '@/components/marketing/MaterialsFlow'
+import { SchedulePanel } from '@/components/marketing/ProductPanels'
 import { MktIcon } from '@/components/marketing/icons'
 import { PlanCards } from '@/components/marketing/PlanCards'
 import { Platforms } from '@/components/marketing/Platforms'
@@ -24,7 +25,7 @@ export function HomePage() {
                 <i>
                   <MktIcon name="hardhat" size={13} />
                 </i>
-                Built by an MEP contractor, for subcontractors
+                Built by an MEP contractor, for every trade
               </span>
               <h1>
                 <span>Every job. Every operative.</span> <em>Every hour.</em>
@@ -60,7 +61,7 @@ export function HomePage() {
                 </span>
               </div>
             </div>
-            <HeroMock />
+            <HeroSnapshot />
           </div>
         </section>
 
@@ -79,6 +80,15 @@ export function HomePage() {
                 <span>{label}</span>
               </div>
             ))}
+          </Reveal>
+          <Reveal className="trades">
+            <span className="trades-lead">Built by an MEP contractor. Works for every trade.</span>
+            <div className="trades-row">
+              {['Electrical', 'Mechanical', 'Plumbing & heating', 'Fire & security', 'Groundworks', 'Drylining',
+                'Carpentry & joinery', 'Roofing', 'Scaffolding', 'Painting & decorating', 'Flooring', 'Maintenance'].map((t) => (
+                <span key={t}>{t}</span>
+              ))}
+            </div>
           </Reveal>
         </div>
 
@@ -140,8 +150,9 @@ export function HomePage() {
         </section>
 
         <HomeSplit moduleId="scheduling" panel={<SchedulePanel />} reverse={false} />
-        <HomeSplit moduleId="warnings" panel={<WarnPanel />} reverse />
-        <HomeSplit moduleId="hs" panel={<HsPanel />} reverse={false} />
+        <HomeSplit moduleId="warnings" panel={<WarningsSnap />} reverse />
+        <HomeSplit moduleId="hs" panel={<HsSnap />} reverse={false} />
+        <MaterialsFlow />
 
         <section className="s">
           <div className="wrap">

@@ -24,13 +24,13 @@ The canonical module owns:
 - Organisation settings defaults and Firestore field names (`organizationSettings.ts`): payment runs write **both** `startDay`/`endDay` (web) and `startDate`/`endDate` (iOS); read prefers the iOS pair when both exist and disagree (`normalizePaymentRunRange`); empty ranges are 1–15 then 16–31; warningDetection is the top-level org map; payroll weekend hours use iOS field names
 - Who sees variations (`canSeeVariations`): every admin and manager, never an operative
 - Warning coverage windows (`numberOfDays`, full Monday–Friday week, invoicing period)
-- Whether a person covers the organisation standard day (`standardDayCoverage`). A full day (`FULL DAY` / `FULL_DAY`) covers 07:30–16:00 minus the unpaid break even when clock times are missing. Bookings match the person by user id or operative id. A shorter booking stays unbooked and the missing hours are the gap. Weekend days are included only when that toggle is on.
+- Whether a person covers the organisation standard day (`standardDayCoverage`). A full day (`FULL DAY` / `FULL_DAY`) covers 07:30–16:00 minus the unpaid break even when clock times are missing. Bookings match the person by user id or operative id. A shorter booking stays unbooked and the missing hours are the gap. Weekend days are included only when `warningDetection.includeWeekendsForUnbookedLabour` is on. That toggle and `warningDetection.excludedUserIdsFromUnbookedWarnings` apply to **both** the Warnings list and Daily Overview — Daily Overview must not keep a weekday-only unbooked gate.
 - Organisation time zone for those windows (default `Europe/London`, never the device zone)
 - Named booking slots (`FULL DAY` / `FULL_DAY`, `AM`, `PM`) and their pay (`paidHoursForNamedSlot`)
 - The standard day and its two halves (`standardDayWindow`, `halfDayWindows`), and the clock interval any booking occupies (`slotInterval`). See "Standard day, AM and PM" below
 - Whether two minute intervals clash, and interval merge / subtract (`intervalsOverlap`, `mergeMinuteIntervals`, `subtractMinuteIntervals`)
 - Cache key shape `kind:organizationId`
-- Which qualification warnings exist, which operatives are unverified, and which people are unbooked labour (`qualificationExpiryRows`, `unverifiedOperativeRows`, `unbookedLabourRows`)
+- Which qualification warnings exist, which operatives are unverified, and which people are unbooked labour (`qualificationExpiryRows`, `unverifiedOperativeRows`, `unbookedLabourRows`). Daily Overview's "today" list is `unbookedLabourRowsOnDay` — the same rows for one day, not a second person loop. `includeWeekendsForUnbookedLabour` and `excludedUserIdsFromUnbookedWarnings` on `organizations/{orgId}.warningDetection` apply to Warnings **and** Daily Overview.
 - Which annual-leave warnings exist: a booking inside approved leave, and a half day whose other half is not booked (`leaveCoverageRows`)
 - The key a dismissed expired-qualification warning is stored under (`qualificationDismissKey`, `withoutDismissedQualificationRows`)
 - Who sees every job and every warning, who may add or edit a work catalogue, and which managers receive a job notification (`seesEveryJob`, `canViewStaffWarnings`, `canEditWorkCatalogue`, `receivesJobNotification`)
@@ -53,7 +53,7 @@ Each app resolves four flags for the signed-in account (super admin, admin, mana
 `organizations/{orgId}` is the company settings record. Both apps read and write the same maps (`ORGANIZATION_DOCUMENT_FIELDS`). A save on one device must not drop fields the other still uses.
 
 - Payment runs live on `invoicing.paymentRunDateRanges`. Each row writes **both** `startDay`/`endDay` and `startDate`/`endDate` with the same numbers. Read prefers `startDate`/`endDate` (iOS) then `startDay`/`endDay` (web), via `normalizePaymentRunRange`. A leftover web 1–16 cannot override an iOS-saved 1–15. A web-only 1–16 save (no `startDate`) is kept. Missing or empty ranges are 1–15 then 16–31 (`CANONICAL_HALF_MONTH_RANGES`). `invoicingPeriod` / `coverageWindow` parse those same field names — do not pass raw Firestore rows around the normalizer. That split is what warnings use when the scan mode is end of invoicing period.
-- Warning detection is `organizations/{orgId}.warningDetection` (top-level, not `settings.warningDetection`). Default scan is `numberOfDays` = 7. The nested settings map may only fill excluded user ids when the top-level map left that key out.
+- Warning detection is `organizations/{orgId}.warningDetection` (top-level, not `settings.warningDetection`). Default scan is `numberOfDays` = 7. The nested settings map may only fill excluded user ids when the top-level map left that key out. `includeWeekendsForUnbookedLabour` and `excludedUserIdsFromUnbookedWarnings` are the inputs to `unbookedLabourRows` / `unbookedLabourRowsOnDay`. Both the Warnings list (and its count) and Daily Overview's unbooked people for the viewed day — including Saturday/Sunday when the toggle is on — come from that function. Excluded `users/{uid}` ids never appear as unbooked on either screen.
 - Payroll, annual-leave defaults, schedule options, and material cut-off parse/write through the same module. Material cut-off is company-wide on `settings.materialCutOff`; dual-writing the saver's user prefs must not become the source of truth.
 - Operational collection paths (`OPERATIONAL_COLLECTION_PATHS`) stay iOS-compatible: variations collection plus settings fallback, H&S under `settings/healthSafety_…`, dismissed warnings, bookings, timesheets, tasks, site audits, clients, catalogues.
 
@@ -76,7 +76,7 @@ New organisations created on the web write the starter material catalogue into `
 - Clash timeline math and the material cut-off message (`lib/warnings/generateOrgWarnings.ts` and `Core/WarningsComputation.swift`). Those dates use the London business calendar on iOS. A full-day slot with no clock times uses the organisation standard day for overlap (`07:30`–`16:00` by default), the same window as iOS `ManagerScheduleInterval` and `OperativeBookingInterval`. Two of those on one person and day are a clash. The unbooked-labour exclusion list does not hide that clash. AM and PM still do not overlap.
 - Overtime and break payroll (`Core/PayrollHoursEngine.swift` and the web timesheet helpers that are not named slots)
 
-Do not add a second coverage window, a second unbooked-person loop, a second `FULL DAY` hour value, or a second AM/PM midpoint.
+Do not add a second coverage window, a second unbooked-person loop, a second `FULL DAY` hour value, or a second AM/PM midpoint. Daily Overview must not invent a weekday-only unbooked list; it calls `unbookedLabourRows` / `unbookedLabourRowsOnDay` with the same `warningDetection` fields as Warnings.
 
 ## Standard day, AM and PM
 

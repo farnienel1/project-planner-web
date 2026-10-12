@@ -30,7 +30,7 @@ export function FeaturesPage({ moduleId }: { moduleId?: MarketingModuleId }) {
               </i>
               Features
             </span>
-            <h1>Built around how MEP jobs actually run.</h1>
+            <h1>Built on real jobs. Works for every trade.</h1>
             <p>Eight modules, one login. Every one designed with the people who book labour, sign timesheets and stand on site.</p>
             <div className="row" style={{ justifyContent: 'center', marginTop: 28, flexWrap: 'wrap' }}>
               <Link href="/setup" className="btn primary lg">

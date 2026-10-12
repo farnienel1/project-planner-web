@@ -7,7 +7,7 @@
 ## Layout
 Date navigator (prev / “EEEE, d MMMM yyyy” / next). “Today · Tap to change”.
 Hero “TODAY AT A GLANCE” / “DAY AT A GLANCE”: hours, people, unbooked capsule, Standard hrs / OT / Jobs active, **WHERE THE TEAM IS** bar, Office / WFH / On site.
-Weekdays only: **Unbooked labour** (“n people”, chips with initials, **Book labour** if admin or manager).
+**Unbooked labour** (“n people”, chips with initials, **Book labour** if admin or manager) uses `unbookedLabourRowsOnDay` with `organizations/{orgId}.warningDetection.includeWeekendsForUnbookedLabour` and `excludedUserIdsFromUnbookedWarnings`. Saturday/Sunday unbooked people appear only when that toggle is on. Excluded users never appear. Do not hide the list behind a weekday-only gate.
 **Annual leave** (approved covering the day; subtitle “Annual leave”).
 **Other**: Office, Working from home, custom locations.
 **Site survey**.

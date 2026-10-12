@@ -164,6 +164,48 @@ test('buildDailyOverview groups jobs and weekday unbooked labour', () => {
   assert.equal(model.empty, false)
 })
 
+test('buildDailyOverview weekend unbooked follows warningDetection and skips excluded users', () => {
+  const saturday = new Date('2026-10-17T12:00:00Z')
+  assert.equal(isLondonWeekday(saturday), false)
+  const users = [
+    user({ id: 'U-SAM', email: 'sam@x.com', firstName: 'Sam', surname: 'Site' }),
+    user({ id: 'U-EX', email: 'ex@x.com', firstName: 'Excluded', surname: 'User' }),
+  ]
+  const emptyDay = {
+    day: saturday,
+    today: saturday,
+    projects: [] as Project[],
+    bookings: [] as Booking[],
+    managerBookings: [],
+    holidays: [] as HolidayBooking[],
+    users,
+    operatives: [],
+  }
+  const toggleOff = buildDailyOverview(emptyDay)
+  assert.equal(toggleOff.unbookedCount, 0)
+  assert.deepEqual(toggleOff.unbookedNames, [])
+
+  const toggleOn = buildDailyOverview({
+    ...emptyDay,
+    includeWeekendsForUnbookedLabour: true,
+  })
+  assert.equal(toggleOn.unbookedCount, 2)
+  assert.ok(toggleOn.unbookedNames.some((name) => name.startsWith('Sam Site')))
+  assert.ok(toggleOn.unbookedNames.some((name) => name.startsWith('Excluded User')))
+
+  const excluded = buildDailyOverview({
+    ...emptyDay,
+    includeWeekendsForUnbookedLabour: true,
+    excludedUserIdsFromUnbookedWarnings: ['U-EX'],
+  })
+  assert.equal(excluded.unbookedCount, 1)
+  assert.ok(excluded.unbookedNames.some((name) => name.startsWith('Sam Site')))
+  assert.equal(
+    excluded.unbookedNames.some((name) => name.includes('Excluded')),
+    false
+  )
+})
+
 test('buildDailyOverview does not double-count the same booking id', () => {
   const day = new Date('2026-09-16T12:00:00Z')
   const project = {

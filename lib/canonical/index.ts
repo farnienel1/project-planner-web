@@ -38,6 +38,7 @@ export {
   qualificationDismissKey,
   qualificationExpiryRows,
   unbookedLabourRows,
+  unbookedLabourRowsOnDay,
   unverifiedOperativeRows,
   withoutDismissedQualificationRows,
 } from './warningRows'
