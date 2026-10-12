@@ -5,6 +5,13 @@
  */
 
 import { CANONICAL_HALF_MONTH_RANGES, normalizePaymentRunRange } from './engine'
+import {
+  parseTimesheetSubmissionList,
+  timesheetSubmissionToFirestore,
+  type TimesheetSubmissionSettings,
+} from './timesheetSubmission'
+
+export type { TimesheetSubmissionSettings }
 
 export type WeekendPayrollSettings = {
   allHoursAtMultiplierMode: boolean
@@ -60,6 +67,8 @@ export type OrgInvoicingSettings = {
   paymentRunDateRanges: PaymentRunDateRange[]
   paymentDates: string[]
   noteToUsers: string
+  /** One block per date-range payment date, or one block for a recurring run. */
+  timesheetSubmission: TimesheetSubmissionSettings[]
 }
 
 export type MyScheduleOptions = {
@@ -208,6 +217,7 @@ export const DEFAULT_INVOICING: OrgInvoicingSettings = {
   paymentDates: [],
   noteToUsers:
     "If your timesheet displays 0 against your rate, then your day/hourly rate hasn't been set by your line manager",
+  timesheetSubmission: [],
 }
 
 export const DEFAULT_MY_SCHEDULE: MyScheduleOptions = {
@@ -496,6 +506,15 @@ export function parseInvoicing(data: Record<string, unknown> | undefined): OrgIn
         .filter(Boolean)
     : []
 
+  const timesheetSubmission = parseTimesheetSubmissionList({
+    paymentRunMode,
+    paymentDates,
+    recurringPaymentDay: String(data.recurringPaymentDay ?? DEFAULT_INVOICING.recurringPaymentDay),
+    timesheetSubmission: data.timesheetSubmission,
+    paymentRunDateRanges: data.paymentRunDateRanges,
+    invoicingRoot: data,
+  })
+
   return {
     paymentRunMode,
     paymentDateMode,
@@ -505,6 +524,7 @@ export function parseInvoicing(data: Record<string, unknown> | undefined): OrgIn
     paymentRunDateRanges: parsePaymentRunDateRanges(data),
     paymentDates,
     noteToUsers: String(data.noteToUsers ?? DEFAULT_INVOICING.noteToUsers),
+    timesheetSubmission,
   }
 }
 
@@ -514,17 +534,34 @@ export function capitalizeWeekday(day: string): string {
 }
 
 export function invoicingToFirestore(settings: OrgInvoicingSettings): Record<string, unknown> {
-  return {
+  const timesheetSubmission = settings.timesheetSubmission.map(timesheetSubmissionToFirestore)
+  const payload: Record<string, unknown> = {
     paymentRunMode: settings.paymentRunMode,
     paymentDateMode: settings.paymentDateMode,
-    paymentRunDateRanges: settings.paymentRunDateRanges.map(paymentRunRangeToFirestore),
+    paymentRunDateRanges: settings.paymentRunDateRanges.map((range, index) => {
+      const row = paymentRunRangeToFirestore(range)
+      const timesheet = timesheetSubmission[index]
+      return timesheet ? { ...row, ...timesheet } : row
+    }),
     paymentDates: settings.paymentDates.map((d) => Number(d)),
     noteToUsers: settings.noteToUsers,
     recurringPaymentRunSummary: `In arrears: ${capitalizeWeekday(settings.recurringRunStartDay)} to ${capitalizeWeekday(settings.recurringRunEndDay)} (of the previous week)`,
     recurringRunStartDay: settings.recurringRunStartDay,
     recurringRunEndDay: settings.recurringRunEndDay,
     recurringPaymentDay: settings.recurringPaymentDay,
+    timesheetSubmission,
   }
+  if (settings.paymentRunMode === 'recurring_timeframe' && timesheetSubmission[0]) {
+    const recurring = timesheetSubmission[0]
+    payload.timesheetDeadlineWeekday = recurring.timesheetDeadlineWeekday
+    payload.timesheetDeadlineHour = recurring.timesheetDeadlineHour
+    payload.timesheetDeadlineMinute = recurring.timesheetDeadlineMinute
+    payload.notifyWeekday = recurring.notifyWeekday
+    payload.notifyHour = recurring.notifyHour
+    payload.notifyMinute = recurring.notifyMinute
+    payload.notifyCustomised = recurring.notifyCustomised
+  }
+  return payload
 }
 
 export function parseMyScheduleOptions(settings: Record<string, unknown> | undefined): MyScheduleOptions {

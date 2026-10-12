@@ -79,6 +79,32 @@ test('payment run rows write startDay and endDay and missing mode is date ranges
   assert.equal(ranges[0].endDate, 15)
 })
 
+test('payment-run save writes timesheet deadline and notify-at without dropping invoicing fields', () => {
+  const parsed = parseInvoicing({
+    paymentRunMode: 'date_ranges',
+    paymentDates: [20, 5],
+    paymentRunDateRanges: [
+      { startDate: 1, endDate: 15 },
+      { startDate: 16, endDate: 31 },
+    ],
+    noteToUsers: 'Keep this note',
+  })
+  const written = invoicingToFirestore(parsed)
+  assert.equal(written.noteToUsers, 'Keep this note')
+  assert.equal(written.paymentDateMode, 'recurring_date')
+  const rows = written.timesheetSubmission as Array<Record<string, unknown>>
+  assert.equal(rows[0].notifyDay, 17)
+  assert.equal(rows[0].timesheetDeadlineDay, 19)
+  assert.equal(rows[0].notifyHour, 8)
+  assert.equal(rows[0].timesheetDeadlineHour, 17)
+  assert.equal(rows[1].notifyDay, 2)
+  assert.equal(rows[1].timesheetDeadlineDay, 4)
+  const range = (written.paymentRunDateRanges as Array<Record<string, unknown>>)[0]
+  assert.equal(range.startDay, 1)
+  assert.equal(range.startDate, 1)
+  assert.equal(range.notifyDay, 17)
+})
+
 test('company address uses iOS flat fields and does not replace country with the region', () => {
   const fields = companyIdentityFirestoreFields({
     addressLine1: '1 High Street',

@@ -39,6 +39,15 @@ test('peer line-manager updates open the signed timesheet', () => {
   )
 })
 
+test('submission reminders open My Timesheets', () => {
+  const weekStart = new Date('2026-10-20T00:00:00Z')
+  const href = timesheetNotificationHref({
+    type: 'timesheet_submission_reminder',
+    deepLinkWeekStart: weekStart,
+  })
+  assert.equal(href, `/dashboard/timesheets/mine?period=${dayKey(weekStart)}`)
+})
+
 test('other notification types do not deep-link into timesheets', () => {
   assert.equal(timesheetNotificationHref({ type: 'client_created' }), null)
 })
