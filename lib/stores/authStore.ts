@@ -27,7 +27,7 @@ import { parseTeamOnboarding } from '@/lib/orgSetup/teamOnboarding'
 import { topLevelAdminFlagPatch } from '@/lib/orgSetup/repairAdminFlags'
 import { ACCOUNT_UNCONFIRMED_MESSAGE } from '@/lib/orgSetup/accountConfirmation'
 import { ensurePrimaryOrgMembership, resolveWebSessionOrganization } from '@/lib/orgMembership/membershipService'
-import { adoptCurrentOrganization, parseOrganizationName } from '@/lib/canonical'
+import { adoptCurrentOrganization, coalesceOrganizationName, parseOrganizationName } from '@/lib/canonical'
 import {
   applyRememberedWebOrganization,
   clearRememberedOrgDenied,
@@ -149,7 +149,10 @@ function withWebOrganization(user: User): User {
   return { ...user, organizationId }
 }
 
-function stubOrganization(organizationId: string): Organization {
+function stubOrganization(organizationId: string, previous?: Organization | null): Organization {
+  if (previous && organizationIdsMatch(previous.id, organizationId) && coalesceOrganizationName(previous.name)) {
+    return previous
+  }
   const now = new Date()
   return {
     id: organizationId,
@@ -200,7 +203,7 @@ function watchCurrentUserDocument(uid: string) {
         state.organization && organizationIdsMatch(state.organization.id, fixed.organizationId)
           ? state.organization
           : fixed.organizationId
-            ? stubOrganization(fixed.organizationId)
+            ? stubOrganization(fixed.organizationId, state.organization)
             : state.organization
       useAuthStore.setState({ user: fixed, organization })
     },
@@ -388,12 +391,18 @@ async function loadOrganizationSnapshot(organizationId: string) {
   }
 }
 
-function organizationFromSnapshot(orgDoc: NonNullable<Awaited<ReturnType<typeof loadOrganizationSnapshot>>>) {
+function organizationFromSnapshot(
+  orgDoc: NonNullable<Awaited<ReturnType<typeof loadOrganizationSnapshot>>>,
+  previous?: Organization | null
+) {
   const orgData = orgDoc.data()
   const seededLabels = withSeededNavigationLabels(orgData.settings || {})
+  const parsedName = parseOrganizationName(orgData as Record<string, unknown>)
+  const keptName =
+    previous && organizationIdsMatch(previous.id, orgDoc.id) ? previous.name : ''
   const organization: Organization = {
     id: orgDoc.id,
-    name: parseOrganizationName(orgData as Record<string, unknown>),
+    name: coalesceOrganizationName(parsedName, keptName),
     companyLogoURL: orgData.companyLogoURL || undefined,
     members: orgData.members || {},
     settings: seededLabels.settings,
@@ -411,7 +420,8 @@ function publishOrganization(
   organizationId: string,
   orgDoc: NonNullable<Awaited<ReturnType<typeof loadOrganizationSnapshot>>>
 ) {
-  const built = organizationFromSnapshot(orgDoc)
+  const previous = useAuthStore.getState().organization
+  const built = organizationFromSnapshot(orgDoc, previous)
   useAuthStore.setState((state) => {
     if (token !== organizationHydration || signingOut) return state
     if (state.user?.id !== uid || !organizationIdsMatch(state.user.organizationId, organizationId)) return state
@@ -462,7 +472,7 @@ async function hydrateSignedInOrganization(
           state.organization && organizationIdsMatch(state.organization.id, sessionUser.organizationId)
             ? state.organization
             : sessionUser.organizationId
-              ? stubOrganization(sessionUser.organizationId)
+              ? stubOrganization(sessionUser.organizationId, state.organization)
               : null
         return { user: sessionUser, organization }
       })
@@ -658,7 +668,7 @@ async function loadSignedInProfileInner(firebaseUser: FirebaseUser) {
       currentOrganization && organizationIdsMatch(currentOrganization.id, sessionUser.organizationId)
         ? currentOrganization
         : sessionUser.organizationId
-          ? stubOrganization(sessionUser.organizationId)
+          ? stubOrganization(sessionUser.organizationId, currentOrganization)
           : null,
     loading: false,
     error: null,

@@ -5,7 +5,11 @@ import { updateDoc, doc, Timestamp } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { companyLogoPath, uploadFile } from '@/lib/firebase/storageUtils'
-import { loadOrganizationDetails, organizationNameToFirestore } from '@/lib/settings/organizationSettings'
+import {
+  coalesceOrganizationName,
+  loadOrganizationDetails,
+  organizationNameWriteFields,
+} from '@/lib/settings/organizationSettings'
 import { settingsDraftIsDirty } from '@/lib/settings/settingsDirty'
 import { useSettingsDirty, useSettingsLeave } from '@/components/settings/SettingsDirty'
 import {
@@ -112,7 +116,7 @@ export function CompanyDetailsPanel({ onBack }: { onBack: () => void }) {
         const city = details.officeCity || address?.town || ''
         const hasOfficeAddress = Boolean(line && city)
         applyLoaded({
-          name: details.name || organization.name || '',
+          name: coalesceOrganizationName(details.name, organization.name),
           hasOffice: hasOfficeAddress,
           line1: hasOfficeAddress ? line : '',
           line2: hasOfficeAddress ? address?.addressLine2 ?? '' : '',
@@ -175,7 +179,7 @@ export function CompanyDetailsPanel({ onBack }: { onBack: () => void }) {
         regionSelection: regionId,
       })
       const payload: Record<string, unknown> = {
-        ...organizationNameToFirestore(name),
+        ...organizationNameWriteFields(name, coalesceOrganizationName(organization.name)),
         ...identity,
         'settings.currencyCode': identity.currencyCode,
         'settings.bankHolidayRegionId': identity.bankHolidayRegionId,

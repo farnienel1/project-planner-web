@@ -62,9 +62,11 @@ import {
   DEFAULT_INVOICING,
   DEFAULT_PAYMENT_RUN_DATE_RANGES,
   DEFAULT_WARNING_DETECTION,
+  coalesceOrganizationName,
   displayOrganizationName,
   invoicingToFirestore,
   organizationNameToFirestore,
+  organizationNameWriteFields,
   formatMaterialCutOffClock,
   parseInvoicing,
   parseMaterialCutOff,
@@ -282,14 +284,14 @@ test('same-user sign-out keeps the remembered company; a different account does 
   assert.equal(IOS_SESSION_ORGANIZATION_STORAGE_KEY, 'cached_organizationId')
 })
 
-test('an incomplete membership discovery keeps the remembered company on the switcher list', () => {
+test('a finished membership query still keeps the remembered company on the switcher list', () => {
   const complete = sessionMembershipIds({
     discoveredIds: ['org-document'],
     rememberedOrganizationId: 'org-remembered',
     documentOrganizationId: 'org-document',
     discoveryIncomplete: false,
   })
-  assert.deepEqual(complete, ['org-document'])
+  assert.deepEqual(complete, ['org-document', 'org-remembered'])
   const incomplete = sessionMembershipIds({
     discoveredIds: ['org-document'],
     previousIds: ['org-document'],
@@ -1086,6 +1088,10 @@ test('the iOS JavaScript bundle exposes the standard-day, leave and dismiss rule
     'provisionalOrganizationId',
     'orgAccessProbeFromReads',
     'sessionMembershipIds',
+    'organizationNameToFirestore',
+    'organizationNameWriteFields',
+    'coalesceOrganizationName',
+    'parseOrganizationName',
     'shouldClearRememberedOrganization',
     'webSessionOrganizationStorageKey',
     'selectableTimesheetPaymentRunPeriods',
@@ -1157,6 +1163,18 @@ test('the iOS JavaScript bundle exposes the standard-day, leave and dismiss rule
     probes: { 'org-phone': 'unknown', 'org-other': 'allowed' },
   }
   assert.deepEqual(plain(bundle.chooseSessionOrganization(sessionChoice)), plain(chooseSessionOrganization(sessionChoice)))
+  assert.deepEqual(
+    plain(
+      bundle.sessionMembershipIds({
+        discoveredIds: ['org-document'],
+        rememberedOrganizationId: 'org-remembered',
+        documentOrganizationId: 'org-document',
+        discoveryIncomplete: false,
+      })
+    ),
+    ['org-document', 'org-remembered']
+  )
+  assert.deepEqual(plain(bundle.organizationNameToFirestore('')), {})
   assert.equal(bundle.webSessionOrganizationStorageKey('user-1'), 'pp.webActiveOrg:user-1')
 })
 
@@ -1610,6 +1628,12 @@ test('organisation name round-trips on the shared name field', () => {
   assert.equal(parseOrganizationName({ settings: { name: 'Nested' } }), 'Nested')
   assert.equal(parseOrganizationName({ name: 'Shared', organizationName: 'Other' }), 'Shared')
   assert.deepEqual(organizationNameToFirestore('  Acme  '), { name: 'Acme' })
+  assert.deepEqual(organizationNameToFirestore(''), {})
+  assert.deepEqual(organizationNameToFirestore('   '), {})
+  assert.deepEqual(organizationNameWriteFields('', 'Raccord MEP'), {})
+  assert.deepEqual(organizationNameWriteFields('  Acme  ', 'Raccord MEP'), { name: 'Acme' })
+  assert.equal(coalesceOrganizationName('', '  ', 'Raccord MEP'), 'Raccord MEP')
+  assert.equal(coalesceOrganizationName('', ''), '')
   assert.equal(displayOrganizationName(''), 'Organisation')
   assert.equal(displayOrganizationName('  '), 'Organisation')
   assert.equal(displayOrganizationName('Acme'), 'Acme')
