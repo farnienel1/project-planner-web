@@ -17,9 +17,10 @@ import {
 } from '@/lib/timesheets/timesheetStorage'
 import type { TimesheetDraft } from '@/lib/timesheets/timesheetDraft'
 import { SIGNED_OFF_EDIT_NOTE } from '@/lib/timesheets/timesheetApprovalPolicy'
+import { resolveTimesheetPeriod, timesheetListBucket } from '@/lib/canonical'
 import { applyWeeklyReportOverride } from '@/lib/timesheets/weeklyReportOverride'
 import { groupHasLineManager, subjectForUser, timesheetRosterGroups, userIdsSharingEmail } from '@/lib/timesheets/timesheetWeekUtils'
-import { formatPaymentPeriodLine, periodStartKey } from '@/lib/timesheets/paymentRunCopy'
+import { formatPaymentPeriodLine, listSelectablePayPeriods, periodStartKey } from '@/lib/timesheets/paymentRunCopy'
 import { collectTimesheetPayroll } from '@/lib/timesheets/timesheetPayrollCollector'
 import {
   invoiceLinesForTimesheet,
@@ -43,7 +44,7 @@ import {
 import type { Booking, Operative, Project, User } from '@/types'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import { LoadingSpinner } from '@/components/dashboard/PageShell'
-import { LONDON_TIME_ZONE } from '@/lib/ios-parity/londonTime'
+import { dateFromDayKey, dayKey, LONDON_TIME_ZONE } from '@/lib/ios-parity/londonTime'
 import { timesheetsTeamHref } from '@/lib/timesheets/timesheetRoutes'
 import { computeInvoicingPeriod } from '@/lib/warnings/warningLookahead'
 import { formatStampInZone } from '@/lib/orgTime/zoneTime'
@@ -107,6 +108,9 @@ export function TimesheetsScreen({
   const [exportMessage, setExportMessage] = useState<string | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [checkingEarlier, setCheckingEarlier] = useState(false)
+  const [exportedSearch, setExportedSearch] = useState('')
+  const [exportedSort, setExportedSort] = useState<'firstName' | 'lastName' | 'dateNewest' | 'dateOldest'>('dateNewest')
+  const [exportedRunKey, setExportedRunKey] = useState('all')
   const paintedListKey = useRef('')
   const reloadGeneration = useRef(0)
 
@@ -206,15 +210,21 @@ export function TimesheetsScreen({
     const rows: User[] = []
     for (const group of groups) {
       const picked = personDraft(group)
-      if (!picked?.draft || teamTab === 'exported' || picked.draft.exportedAt) continue
-      const counterSigned = Boolean(picked.draft.managerSignedAt)
-      const personSigned = Boolean(picked.draft.operativeSignedAt)
-      const needsManager = groupHasLineManager(group)
-      if (teamTab === 'signed') {
-        if (personSigned && (!needsManager || counterSigned)) rows.push(picked.member)
-        continue
-      }
-      if (personSigned && needsManager && !counterSigned) rows.push(picked.member)
+      if (!picked?.draft || teamTab === 'exported') continue
+      const bucket = timesheetListBucket(
+        {
+          operativeSignedAtMs: picked.draft.operativeSignedAt?.getTime() ?? null,
+          operativeSignedByName: picked.draft.operativeSignedByName || '',
+          operativeSignatureImageBase64: picked.draft.operativeSignatureImageBase64 || '',
+          managerSignedAtMs: picked.draft.managerSignedAt?.getTime() ?? null,
+          managerSignedByName: picked.draft.managerSignedByName || '',
+          managerSignedByUserId: picked.draft.managerSignedByUserId || '',
+          managerSignatureImageBase64: picked.draft.managerSignatureImageBase64 || '',
+          exportedAtMs: picked.draft.exportedAt?.getTime() ?? null,
+        },
+        groupHasLineManager(group)
+      )
+      if (bucket === teamTab) rows.push(picked.member)
     }
     return rows
   }, [groups, drafts, teamTab])
@@ -242,13 +252,48 @@ export function TimesheetsScreen({
     return { hours: payroll.totalHours, overtimeHours: payroll.overtimeHours, priceWork, expenses }
   }
 
+  const persistExportedFlag = async (exportedAt: Date) => {
+    if (!organization?.id || !user) return
+    for (const member of visible) {
+      const listed = drafts.get(member.id)
+      if (!listed) continue
+      const full = await loadTimesheetDraft(organization.id, member.id, periodStart, timeZone, periodEnd)
+      const documentId = timesheetSourceDocumentId(full)
+      const source = full.operativeSignedAt ? full : listed
+      if (!source.operativeSignedAt) continue
+      const agreed = applyWeeklyReportOverride({
+        draft: { ...source, exportedAt },
+        user: member,
+        viewer: user,
+        weekStart: periodStart,
+        weekEnd: periodEnd,
+        bookings,
+        managerSiteBookings,
+        operatives,
+        projects,
+        smallWorks,
+        history,
+        payrollPolicy,
+        payrollPolicyPrior,
+        payrollPolicyEffectiveFrom,
+        scheduleOptions,
+        timeZone,
+      })
+      await saveTimesheetDraft({
+        organizationId: organization.id,
+        userId: member.id,
+        weekStart: periodStart,
+        weekEnd: periodEnd,
+        draft: agreed,
+        timeZone,
+        documentId,
+      })
+    }
+  }
+
   const exportSigned = async () => {
     if (!organization?.id || !user || visible.length === 0) return
     const recipientEmail = user.email?.trim()
-    if (!recipientEmail) {
-      setExportMessage('Your account needs an email address to receive the export.')
-      return
-    }
     setExporting(true)
     setExportMessage(null)
     const stamp = paymentRunDateStamp(periodStart, periodEnd, timeZone)
@@ -256,7 +301,9 @@ export function TimesheetsScreen({
     const downloadLinks: Array<{ fileName: string; url: string }> = []
     const pdfAttachments: Array<{ fileName: string; content: string }> = []
     const failed: string[] = []
+    const exportedAt = new Date()
     try {
+      await persistExportedFlag(exportedAt)
       for (const member of visible) {
         const draft = drafts.get(member.id)
         if (!draft) continue
@@ -279,7 +326,7 @@ export function TimesheetsScreen({
           aliasUserIds: userIdsSharingEmail(member, users),
         })
         const agreed = applyWeeklyReportOverride({
-          draft,
+          draft: { ...draft, exportedAt },
           user: member,
           viewer: user,
           weekStart: periodStart,
@@ -332,67 +379,38 @@ export function TimesheetsScreen({
           failed.push(name)
         }
       }
-      if (pdfAttachments.length === 0) {
-        setExportMessage(failed.length ? `Could not build exports: ${failed.join(', ')}` : 'No timesheets could be exported.')
-        return
-      }
-      const response = await fetch('/api/timesheets/export-email', {
-        method: 'POST',
-        headers: await jsonAuthHeaders(),
-        body: JSON.stringify({
-          recipientEmail,
-          recipientName: `${user.firstName} ${user.surname}`.trim() || user.email,
-          organizationName: organization.name || 'Organisation',
-          weekTitle: periodLine,
-          paymentRunStamp: stamp,
-          timesheetCount: pdfAttachments.length,
-          attachmentNames: pdfAttachments.map((row) => row.fileName),
-          downloadLinks,
-          pdfAttachments,
-        }),
-      })
-      const payload = (await response.json().catch(() => ({}))) as { error?: string }
-      if (!response.ok) {
-        setExportMessage(payload.error || 'Email delivery failed.')
-        return
-      }
-      for (const member of visible) {
-        if (!drafts.get(member.id)) continue
-        const full = await loadTimesheetDraft(organization.id, member.id, periodStart, timeZone, periodEnd)
-        const documentId = timesheetSourceDocumentId(full)
-        if (!full.operativeSignedAt) continue
-        const agreed = applyWeeklyReportOverride({
-          draft: { ...full, exportedAt: new Date() },
-          user: member,
-          viewer: user,
-          weekStart: periodStart,
-          weekEnd: periodEnd,
-          bookings,
-          managerSiteBookings,
-          operatives,
-          projects,
-          smallWorks,
-          history,
-          payrollPolicy,
-          payrollPolicyPrior,
-          payrollPolicyEffectiveFrom,
-          scheduleOptions,
-          timeZone,
+      if (recipientEmail && pdfAttachments.length > 0) {
+        const response = await fetch('/api/timesheets/export-email', {
+          method: 'POST',
+          headers: await jsonAuthHeaders(),
+          body: JSON.stringify({
+            recipientEmail,
+            recipientName: `${user.firstName} ${user.surname}`.trim() || user.email,
+            organizationName: organization.name || 'Organisation',
+            weekTitle: periodLine,
+            paymentRunStamp: stamp,
+            timesheetCount: pdfAttachments.length,
+            attachmentNames: pdfAttachments.map((row) => row.fileName),
+            downloadLinks,
+            pdfAttachments,
+          }),
         })
-        await saveTimesheetDraft({
-          organizationId: organization.id,
-          userId: member.id,
-          weekStart: periodStart,
-          draft: agreed,
-          timeZone,
-          documentId,
-        })
+        const payload = (await response.json().catch(() => ({}))) as { error?: string }
+        if (!response.ok) {
+          setExportMessage(payload.error || 'Timesheets were exported. Email delivery failed.')
+          router.replace(timesheetsTeamHref({ tab: 'exported' }))
+          return
+        }
+        setExportMessage(
+          failed.length
+            ? `Emailed ${pdfAttachments.length} to ${recipientEmail}. Storage backup skipped: ${failed.join(', ')}.`
+            : `Emailed ${pdfAttachments.length} timesheet${pdfAttachments.length === 1 ? '' : 's'} to ${recipientEmail} for filing.`
+        )
+      } else if (!recipientEmail) {
+        setExportMessage('Timesheets were exported. Add an email address to receive the filing copy.')
+      } else {
+        setExportMessage(failed.length ? `Exported. Storage backup skipped: ${failed.join(', ')}.` : 'Timesheets exported.')
       }
-      setExportMessage(
-        failed.length
-          ? `Emailed ${pdfAttachments.length} to ${recipientEmail}. Storage backup skipped: ${failed.join(', ')}.`
-          : `Emailed ${pdfAttachments.length} timesheet${pdfAttachments.length === 1 ? '' : 's'} to ${recipientEmail} for filing.`
-      )
       router.replace(timesheetsTeamHref({ tab: 'exported' }))
     } catch (error) {
       setExportMessage(error instanceof Error ? error.message : 'Export failed.')
@@ -429,44 +447,33 @@ export function TimesheetsScreen({
         : 'People appear here only after they have signed their own timesheet. Unsigned booked hours stay on My Timesheets until they sign.'
 
   if (teamTab === 'exported') {
-    if (exportedRows.length === 0) {
-      return (
-        <div className="empty card pad">
-          <h3>{emptyTitle}</h3>
-          <p>{emptyDescription}</p>
-        </div>
-      )
-    }
     return (
-      <div className="rows">
-        {exportedRows.map((row) => {
-          const period = computeInvoicingPeriod(row.weekStart, invoicing, timeZone)
-          const summary = summaryFor(row.user, row.draft, period.start, period.end)
-          return (
-            <MemberRow
-              key={row.id}
-              member={row.user}
-              users={users}
-              viewer={user}
-              pill="Exported"
-              pillHue="lib"
-              summary={summary}
-              periodLine={formatPaymentPeriodLine(period.start, period.end, timeZone)}
-              exportedAt={row.draft.exportedAt}
-              timeZone={timeZone}
-              onClick={() =>
-                router.push(
-                  timesheetsTeamHref({
-                    tab: 'exported',
-                    user: row.user.id,
-                    period: periodStartKey(period.start, timeZone),
-                  })
-                )
-              }
-            />
+      <ExportedTimesheetsList
+        rows={exportedRows}
+        invoicing={invoicing}
+        timeZone={timeZone}
+        search={exportedSearch}
+        sort={exportedSort}
+        runKey={exportedRunKey}
+        onSearch={setExportedSearch}
+        onSort={setExportedSort}
+        onRunKey={setExportedRunKey}
+        emptyTitle={emptyTitle}
+        emptyDescription={emptyDescription}
+        summaryFor={summaryFor}
+        users={users}
+        viewer={user}
+        onOpen={(row, period) =>
+          router.push(
+            timesheetsTeamHref({
+              tab: 'exported',
+              user: row.user.id,
+              period: periodStartKey(period.start, timeZone),
+              periodEnd: dayKey(period.end, timeZone),
+            })
           )
-        })}
-      </div>
+        }
+      />
     )
   }
 
@@ -502,6 +509,7 @@ export function TimesheetsScreen({
                     tab: teamTab,
                     user: member.id,
                     period: periodStartKey(periodStart, timeZone),
+                    periodEnd: dayKey(periodEnd, timeZone),
                   })
                 )
               }
@@ -582,5 +590,167 @@ function MemberRow({
         {pill}
       </span>
     </button>
+  )
+}
+
+function exportedRowPeriod(
+  row: ExportedTimesheetHistoryRow,
+  invoicing: OrgInvoicingSettings,
+  timeZone: string
+): { start: Date; end: Date } {
+  const live = computeInvoicingPeriod(row.weekStart, invoicing, timeZone)
+  const resolved = resolveTimesheetPeriod({
+    storedStartDayKey: dayKey(row.weekStart, timeZone),
+    storedEndDayKey: row.endDayKey,
+    currentPeriod: { startDayKey: dayKey(live.start, timeZone), endDayKey: dayKey(live.end, timeZone) },
+  })
+  return {
+    start: dateFromDayKey(resolved.startDayKey, timeZone),
+    end: dateFromDayKey(resolved.endDayKey, timeZone),
+  }
+}
+
+function ExportedTimesheetsList({
+  rows,
+  invoicing,
+  timeZone,
+  search,
+  sort,
+  runKey,
+  onSearch,
+  onSort,
+  onRunKey,
+  emptyTitle,
+  emptyDescription,
+  summaryFor,
+  users,
+  viewer,
+  onOpen,
+}: {
+  rows: ExportedTimesheetHistoryRow[]
+  invoicing: OrgInvoicingSettings
+  timeZone: string
+  search: string
+  sort: 'firstName' | 'lastName' | 'dateNewest' | 'dateOldest'
+  runKey: string
+  onSearch: (value: string) => void
+  onSort: (value: 'firstName' | 'lastName' | 'dateNewest' | 'dateOldest') => void
+  onRunKey: (value: string) => void
+  emptyTitle: string
+  emptyDescription: string
+  summaryFor: (member: User, draft: TimesheetDraft | undefined, start: Date, end: Date) => {
+    hours: number
+    overtimeHours: number
+    priceWork: number
+    expenses: number
+  }
+  users: User[]
+  viewer: User | null
+  onOpen: (row: ExportedTimesheetHistoryRow, period: { start: Date; end: Date }) => void
+}) {
+  const observed = rows.map((row) => exportedRowPeriod(row, invoicing, timeZone))
+  const runs = listSelectablePayPeriods(invoicing, new Date(), 120, timeZone, observed)
+  const needle = search.trim().toLowerCase()
+  const filtered = rows
+    .map((row) => ({ row, period: exportedRowPeriod(row, invoicing, timeZone) }))
+    .filter(({ row, period }) => {
+      if (runKey !== 'all') {
+        const key = `${periodStartKey(period.start, timeZone)}|${dayKey(period.end, timeZone)}`
+        if (key !== runKey) return false
+      }
+      if (!needle) return true
+      const name = `${row.user.firstName} ${row.user.surname} ${row.user.email}`.toLowerCase()
+      const periodLine = formatPaymentPeriodLine(period.start, period.end, timeZone).toLowerCase()
+      return name.includes(needle) || periodLine.includes(needle)
+    })
+    .sort((left, right) => {
+      if (sort === 'firstName') return left.row.user.firstName.localeCompare(right.row.user.firstName)
+      if (sort === 'lastName') return left.row.user.surname.localeCompare(right.row.user.surname)
+      const leftAt = left.row.draft.exportedAt?.getTime() || 0
+      const rightAt = right.row.draft.exportedAt?.getTime() || 0
+      return sort === 'dateOldest' ? leftAt - rightAt : rightAt - leftAt
+    })
+
+  return (
+    <div className="stack" style={{ gap: 12 }}>
+      <div className="card pad" data-hue="ts">
+        <label className="muted small" htmlFor="exported-search">
+          Search
+        </label>
+        <input
+          id="exported-search"
+          type="search"
+          value={search}
+          onChange={(event) => onSearch(event.target.value)}
+          placeholder="Name or payment run"
+          className="pp-in"
+          style={{ width: '100%', marginTop: 6 }}
+        />
+        <p className="muted small" style={{ marginTop: 12 }}>
+          Filter
+        </p>
+        <div className="seg" role="group" aria-label="Sort exported timesheets">
+          {(
+            [
+              ['firstName', 'First name'],
+              ['lastName', 'Last name'],
+              ['dateNewest', 'Date newest'],
+              ['dateOldest', 'Date oldest'],
+            ] as const
+          ).map(([id, label]) => (
+            <button key={id} type="button" className={sort === id ? 'on' : ''} onClick={() => onSort(id)}>
+              {label}
+            </button>
+          ))}
+        </div>
+        <label className="muted small" htmlFor="exported-run" style={{ display: 'block', marginTop: 12 }}>
+          Payment run
+        </label>
+        <select
+          id="exported-run"
+          value={runKey}
+          onChange={(event) => onRunKey(event.target.value)}
+          className="pp-in"
+          style={{ width: '100%', marginTop: 6 }}
+        >
+          <option value="all">All payment runs</option>
+          {runs.map((period) => {
+            const key = `${periodStartKey(period.start, timeZone)}|${dayKey(period.end, timeZone)}`
+            return (
+              <option key={key} value={key}>
+                {formatPaymentPeriodLine(period.start, period.end, timeZone)}
+              </option>
+            )
+          })}
+        </select>
+      </div>
+      {filtered.length === 0 ? (
+        <div className="empty card pad">
+          <h3>{rows.length === 0 ? emptyTitle : 'No matching exported timesheets'}</h3>
+          <p>{rows.length === 0 ? emptyDescription : 'Try another name, sort, or payment run.'}</p>
+        </div>
+      ) : (
+        <div className="rows">
+          {filtered.map(({ row, period }) => {
+            const summary = summaryFor(row.user, row.draft, period.start, period.end)
+            return (
+              <MemberRow
+                key={row.id}
+                member={row.user}
+                users={users}
+                viewer={viewer}
+                pill="Exported"
+                pillHue="lib"
+                summary={summary}
+                periodLine={formatPaymentPeriodLine(period.start, period.end, timeZone)}
+                exportedAt={row.draft.exportedAt}
+                timeZone={timeZone}
+                onClick={() => onOpen(row, period)}
+              />
+            )
+          })}
+        </div>
+      )}
+    </div>
   )
 }

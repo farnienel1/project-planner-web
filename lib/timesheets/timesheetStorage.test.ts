@@ -117,7 +117,7 @@ test('true exportedAt without invoiceGeneratedAt still counts as exported', () =
   assert.equal(draft.exportedAt?.toISOString(), emailed.toISOString())
 })
 
-test('a signed sheet stored inside the pay run is used when the period-start doc is empty', () => {
+test('a historical 1–7 sheet is not promoted into a live 1–15 period', () => {
   const periodStart = new Date('2026-09-01T00:00:00.000Z')
   const periodEnd = new Date('2026-09-15T00:00:00.000Z')
   const signed = {
@@ -127,15 +127,19 @@ test('a signed sheet stored inside the pay run is used when the period-start doc
   }
   const picked = pickTimesheetDraftForPeriod(
     [
-      { weekStart: periodStart, draft: emptyTimesheetDraft(), documentId: 'empty' },
-      { weekStart: new Date('2026-09-07T00:00:00.000Z'), draft: signed, documentId: 'signed' },
+      { weekStart: periodStart, endDayKey: '2026-09-15', draft: emptyTimesheetDraft(), documentId: 'current' },
+      {
+        weekStart: periodStart,
+        endDayKey: '2026-09-07',
+        draft: signed,
+        documentId: 'historical',
+      },
     ],
     periodStart,
     periodEnd,
     'UTC'
   )
-  assert.equal(picked?.documentId, 'signed')
-  assert.equal(picked?.draft.operativeSignedByName, 'Operative')
+  assert.equal(picked?.documentId, 'current')
 })
 
 test('same pay-period start matches London midnight and the UTC instant of that midnight', () => {

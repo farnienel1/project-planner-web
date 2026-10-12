@@ -11,6 +11,9 @@ fi
 
 node scripts/build-canonical-bundle.mjs || exit 1
 git add lib/canonical/dist/canonical-business.js lib/canonical/dist/canonical-business.sha256
+if [ -f functions/canonical-business.js ]; then
+  git add functions/canonical-business.js
+fi
 
 ios="$root/../project-planner-ios"
 if [ ! -d "$ios/.git" ]; then
