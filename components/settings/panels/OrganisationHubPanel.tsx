@@ -261,13 +261,13 @@ export function OrganisationHubPanel({
         />
       </SettingsCard>
 
-      <SectionLabel label="Payment runs and timesheets" />
+      <SectionLabel label="Payment runs & timesheets" />
       <SettingsCard>
         <SettingsRow
           icon={ICON.document}
           iconBg="bg-[var(--blue)]/10"
           iconColor="text-[var(--blue)]"
-          label="Payment Runs and Timesheets"
+          label="Payment runs & timesheets"
           description={paymentSubtitle}
           chevron
           onClick={() => onNavigate('payment-runs')}

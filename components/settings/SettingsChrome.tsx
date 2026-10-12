@@ -14,37 +14,31 @@ function NavLink({ item, active }: { item: SettingsNavItem; active: boolean }) {
     <Link
       href={item.href}
       data-hue={item.hue}
-      className="row"
-      style={{
-        padding: '8px 10px',
-        borderRadius: 12,
-        color: 'var(--ink)',
-        fontWeight: active ? 700 : 500,
-        background: active ? 'var(--ht)' : 'transparent',
-        flexWrap: 'nowrap',
-        gap: 10,
-        alignItems: 'center',
-      }}
+      aria-current={active ? 'page' : undefined}
+      className={`relative flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13.5px] leading-tight transition ${
+        active
+          ? 'bg-[var(--blue-t)] font-semibold text-[var(--ink)]'
+          : 'font-medium text-[var(--ink2)] hover:bg-[var(--soft)] hover:text-[var(--ink)]'
+      }`}
     >
-      <span className="ico-chip sm" style={{ width: 30, height: 30, flexShrink: 0 }}>
+      {active ? <span className="absolute inset-y-1.5 left-0 w-[3px] rounded-r bg-[var(--blue)]" aria-hidden /> : null}
+      <span
+        className={`grid h-7 w-7 shrink-0 place-items-center rounded-md ${
+          active ? 'text-[var(--blue)]' : 'text-[var(--ink3)]'
+        }`}
+        aria-hidden
+      >
         <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d={item.icon} />
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.6} d={item.icon} />
         </svg>
       </span>
-      <span
-        style={{
-          minWidth: 0,
-          flex: '1 1 auto',
-          fontSize: 13.5,
-          lineHeight: 1.25,
-          whiteSpace: 'normal',
-          overflowWrap: 'anywhere',
-        }}
-      >
-        {item.label}
-      </span>
+      <span className="min-w-0 flex-1 [overflow-wrap:anywhere]">{item.label}</span>
     </Link>
   )
+}
+
+function GroupLabel({ children }: { children: ReactNode }) {
+  return <div className="px-2.5 pb-1 pt-4 text-[12px] font-semibold text-[var(--ink3)]">{children}</div>
 }
 
 export function SettingsChrome({
@@ -61,25 +55,24 @@ export function SettingsChrome({
 
   return (
     <div className="page" style={{ maxWidth: 1100 }}>
-      <p className="muted small" style={{ marginBottom: 12 }}>
-        Click through sections freely. Press Save only when you have changed something.
-      </p>
       <div className="settings-split">
-        <nav className="card" style={{ padding: 8 }}>
-          <Link href="/dashboard/settings" className="btn sm ghost" style={{ margin: '4px 6px 8px' }}>
+        <nav className="card self-start p-2 lg:sticky lg:top-[84px]" aria-label="Settings">
+          <Link
+            href="/dashboard/settings"
+            className="flex items-center gap-2 rounded-lg px-2.5 py-2 text-[13.5px] font-semibold text-[var(--ink)] transition hover:bg-[var(--soft)]"
+          >
+            <svg className="h-4 w-4 text-[var(--ink3)]" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
             All settings
           </Link>
-          <div className="eyebrow" style={{ padding: '10px 10px 4px' }}>
-            PERSONAL
-          </div>
+          <GroupLabel>Personal</GroupLabel>
           {personal.map((item) => (
             <NavLink key={item.id} item={item} active={item.id === panel} />
           ))}
           {company.length > 0 ? (
             <>
-              <div className="eyebrow" style={{ padding: '14px 10px 4px' }}>
-                COMPANY-WIDE
-              </div>
+              <GroupLabel>Company-wide</GroupLabel>
               {company.map((item) => (
                 <NavLink key={item.id} item={item} active={item.id === panel} />
               ))}
