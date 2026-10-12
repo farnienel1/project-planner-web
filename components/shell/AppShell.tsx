@@ -53,6 +53,7 @@ import {
 } from '@/lib/timesheets/timesheetRoutes'
 import type { PaletteItem } from '@/lib/ui/commandPalette'
 import { useProjectStore } from '@/lib/stores/projectStore'
+import { deliverDueTimesheetSubmissionReminders } from '@/lib/timesheets/deliverTimesheetSubmissionReminders'
 import { refreshAllOrgData } from '@/lib/stores/refreshOrgData'
 import { db } from '@/lib/firebase/config'
 import { runWhenIdle } from '@/lib/analytics/runWhenIdle'
@@ -260,6 +261,11 @@ function AppShellInner({ children }: { children: ReactNode }) {
     const hrefs = getDashboardNavItems(user, organization, users).map((item) => item.href)
     for (const href of hrefs) router.prefetch(href)
   }, [user, organization, users, router])
+
+  useEffect(() => {
+    if (!organization?.id || users.length === 0) return
+    void deliverDueTimesheetSubmissionReminders(organization.id, users).catch(() => {})
+  }, [organization?.id, users])
 
   useEffect(() => {
     if (!organization?.id) return

@@ -26,6 +26,12 @@ import {
   SuccessBanner,
   ErrorBanner,
 } from '@/components/settings/primitives'
+import { TimesheetSubmissionSection } from '@/components/settings/TimesheetSubmissionSection'
+import {
+  syncedTimesheetSubmission,
+  withPaymentDateAt,
+  withRecurringPaymentDay,
+} from '@/lib/settings/timesheetSubmissionDraft'
 
 function RadioCard({ selected, title, onClick }: { selected: boolean; title: string; onClick: () => void }) {
   return (
@@ -59,7 +65,12 @@ export function PaymentRunsPanel({ onBack }: { onBack: () => void }) {
     if (!organization?.id) return
     loadOrganizationDetails(organization.id)
       .then((details) => {
-        if (details?.invoicing) setDraft(details.invoicing)
+        if (details?.invoicing) {
+          setDraft({
+            ...details.invoicing,
+            timesheetSubmission: syncedTimesheetSubmission(details.invoicing),
+          })
+        }
       })
       .catch(() => {})
   }, [organization?.id])
@@ -86,9 +97,7 @@ export function PaymentRunsPanel({ onBack }: { onBack: () => void }) {
   }
 
   function setPaymentDate(index: number, day: number) {
-    const dates = [...(draft.paymentDates.length >= 2 ? draft.paymentDates : ['', ''])]
-    dates[index] = String(day)
-    patch({ paymentDates: dates })
+    patch(withPaymentDateAt(draft, index, day))
   }
 
   async function save() {
@@ -101,7 +110,10 @@ export function PaymentRunsPanel({ onBack }: { onBack: () => void }) {
     }
     setSaving(true)
     try {
-      await saveInvoicingSettings(organization.id, draft)
+      await saveInvoicingSettings(organization.id, {
+        ...draft,
+        timesheetSubmission: syncedTimesheetSubmission(draft),
+      })
       setSaved(true)
       window.setTimeout(() => setSaved(false), 3000)
     } catch (saveError) {
@@ -278,7 +290,7 @@ export function PaymentRunsPanel({ onBack }: { onBack: () => void }) {
               <span className="text-sm text-slate-900">Recurring payment date</span>
               <Select
                 value={draft.recurringPaymentDay}
-                onChange={(e) => patch({ recurringPaymentDay: e.target.value })}
+                onChange={(e) => patch(withRecurringPaymentDay(draft, e.target.value))}
               >
                 {WEEKDAY_OPTIONS.map((day) => (
                   <option key={day} value={day}>
@@ -290,6 +302,8 @@ export function PaymentRunsPanel({ onBack }: { onBack: () => void }) {
           )}
         </div>
       </SettingsCard>
+
+      <TimesheetSubmissionSection draft={draft} onChange={patch} />
 
       <SectionLabel label="Note to user" />
       <SettingsCard>

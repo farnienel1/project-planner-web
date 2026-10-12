@@ -18,6 +18,8 @@ import {
   type OrgInvoicingSettings,
   type PaymentRunDateRange,
 } from '@/lib/settings/organizationSettings'
+import { TimesheetSubmissionSection } from '@/components/settings/TimesheetSubmissionSection'
+import { withPaymentDateAt, withRecurringPaymentDay } from '@/lib/settings/timesheetSubmissionDraft'
 
 type PaymentRunsSetupSectionProps = {
   value: OrgInvoicingSettings
@@ -62,9 +64,7 @@ export function PaymentRunsSetupSection({
   }
 
   function patchPaymentDate(index: number, day: number) {
-    const dates = [...(value.paymentDates.length >= 2 ? value.paymentDates : ['', ''])]
-    dates[index] = String(day)
-    patch({ paymentDates: dates })
+    patch(withPaymentDateAt(value, index, day))
   }
 
   const ranges =
@@ -240,7 +240,7 @@ export function PaymentRunsSetupSection({
                   <span className="text-sm font-medium text-slate-700">Recurring payment date</span>
                   <FormSelect
                     value={value.recurringPaymentDay}
-                    onChange={(e) => patch({ recurringPaymentDay: e.target.value })}
+                    onChange={(e) => patch(withRecurringPaymentDay(value, e.target.value))}
                     className="w-auto border-none bg-transparent text-right text-sm font-semibold text-blue-600"
                   >
                     {WEEKDAY_OPTIONS.map((day) => (
@@ -273,6 +273,8 @@ export function PaymentRunsSetupSection({
           )}
         </div>
       </SetupCard>
+
+      <TimesheetSubmissionSection draft={value} onChange={patch} />
 
       <SetupCard>
         <div className="space-y-2 p-4">
