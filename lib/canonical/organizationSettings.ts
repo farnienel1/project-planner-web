@@ -271,9 +271,40 @@ export function parseOrganizationName(data: Record<string, unknown> | undefined)
   return ''
 }
 
-/** Write the shared `name` field only. Do not add a parallel company-name key. */
+/**
+ * Write the shared `name` field only when it has a value.
+ * A blank must not persist — that is how Company details went empty after
+ * a stub or the other company painted the form.
+ */
 export function organizationNameToFirestore(name: string): Record<string, unknown> {
-  return { name: name.trim() }
+  const trimmed = String(name || '').trim()
+  return trimmed ? { name: trimmed } : {}
+}
+
+/**
+ * Incoming blank omits `name` so a stub or the other company cannot persist
+ * empty over a known company. `existingName` is the already-parsed value —
+ * it stays in Firestore because this write does not touch the field.
+ */
+export function organizationNameWriteFields(
+  nextName: string | null | undefined,
+  existingName?: string | null
+): Record<string, unknown> {
+  const next = String(nextName || '').trim()
+  if (next) return { name: next }
+  void existingName
+  return {}
+}
+
+/** First non-empty parsed or in-memory name. A stub `''` must not hide a known name. */
+export function coalesceOrganizationName(
+  ...candidates: Array<string | null | undefined>
+): string {
+  for (const value of candidates) {
+    const trimmed = String(value || '').trim()
+    if (trimmed) return trimmed
+  }
+  return ''
 }
 
 export function displayOrganizationName(name: string | null | undefined, fallback = 'Organisation'): string {
