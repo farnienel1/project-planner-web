@@ -18,6 +18,15 @@ import { readOrganizationDocument } from '@/lib/firebase/orgDocumentCache'
 import { queryWithin } from '@/lib/orgMembership/queryBudget'
 import { permissionsToFirestoreMap } from '@/lib/firebase/userPayload'
 import {
+  accessProbeFromReadError,
+  orgAccessProbeFromReads,
+  sessionMembershipIds,
+  uniqueOrganizationIds,
+  type MembershipDocumentRead,
+  type OrgAccessProbe,
+  type OrgDocumentRead,
+} from '@/lib/canonical'
+import {
   chooseWebSessionOrganization,
   clearRememberedOrgDenied,
   noteRememberedOrgDenied,
@@ -25,8 +34,10 @@ import {
   probeSessionOrganizations,
   readWebActiveOrg,
   writeWebActiveOrg,
-  type OrgAccessProbe,
 } from '@/lib/orgMembership/webActiveOrg'
+
+export { accessProbeFromReadError, orgAccessProbeFromReads }
+export type { MembershipDocumentRead, OrgAccessProbe, OrgDocumentRead }
 import type { UserPermissions } from '@/types'
 import type { OrgMembership, UserOrgMembershipRecord } from '@/lib/orgMembership/types'
 import {
@@ -127,55 +138,86 @@ function membershipFromOrgDoc(
   }
 }
 
+function listedRoleFromMembers(orgData: Record<string, unknown>, userId: string): string | null {
+  const members = (orgData.members as Record<string, unknown> | undefined) ?? {}
+  const memberKey = Object.keys(members).find((key) => key.trim() === userId)
+  if (memberKey == null || members[memberKey] == null) return null
+  return String(members[memberKey])
+}
+
+function belongsToOrganization(
+  orgData: Record<string, unknown>,
+  userId: string,
+  membership?: UserOrgMembershipRecord
+): boolean {
+  const listed = listedRoleFromMembers(orgData, userId) != null
+  const isCreator = String(orgData.creatorUserId || '').trim() === userId
+  return listed || isCreator || Boolean(membership)
+}
+
 export async function loadUserOrgMemberships(
   userId: string,
-  activeOrgId?: string
+  activeOrgId?: string,
+  knownOrganizationIds?: readonly (string | null | undefined)[]
 ): Promise<OrgMembership[]> {
   const db = getFirebaseDb()
   const byId = new Map<string, OrgMembership>()
+  const membershipRecords = new Map<string, UserOrgMembershipRecord>()
+  const knownIds = uniqueOrganizationIds(knownOrganizationIds)
+  const discoveryBudgetMs = 12_000
 
-  const snap = await getDocs(collection(db, 'users', userId, 'orgMemberships'))
-  const orgSnaps = await Promise.all(
-    snap.docs.map(async (entry) => {
-      const orgSnap = await getDoc(doc(db, 'organizations', entry.id))
-      return { entry, orgSnap }
-    })
+  const [membershipSnap, memberSnap, creatorSnap, ...knownSnaps] = await Promise.all([
+    queryWithin(getDocs(collection(db, 'users', userId, 'orgMemberships')), discoveryBudgetMs),
+    queryWithin(getDocs(query(collection(db, 'organizations'), where(`members.${userId}`, '!=', ''))), discoveryBudgetMs),
+    queryWithin(getDocs(query(collection(db, 'organizations'), where('creatorUserId', '==', userId))), discoveryBudgetMs),
+    ...knownIds.map((organizationId) => queryWithin(readOrganizationDocument(db, organizationId), discoveryBudgetMs)),
+  ])
+
+  if (membershipSnap) {
+    for (const entry of membershipSnap.docs) {
+      membershipRecords.set(entry.id, parseMembershipRecord(entry.id, entry.data() as Record<string, unknown>))
+    }
+  }
+
+  const missingMembershipIds = Array.from(membershipRecords.keys()).filter(
+    (organizationId) => !knownIds.some((known) => organizationIdsMatch(known, organizationId))
   )
-  for (const { entry, orgSnap } of orgSnaps) {
-    const data = entry.data() as Record<string, unknown>
-    const orgData = orgSnap.exists() ? (orgSnap.data() as Record<string, unknown>) : {}
-    const record = parseMembershipRecord(entry.id, data)
+  const extraSnaps = await Promise.all(
+    missingMembershipIds.map((organizationId) => queryWithin(readOrganizationDocument(db, organizationId), discoveryBudgetMs))
+  )
+
+  const put = (
+    organizationId: string,
+    orgData: Record<string, unknown>,
+    role: string,
+    extras?: Partial<OrgMembership>
+  ) => {
+    const existing = byId.get(organizationId)
+    const record = membershipRecords.get(organizationId)
     byId.set(
-      entry.id,
-      membershipFromOrgDoc(entry.id, orgData, record.role, {
-        status: record.status,
-        invitedAt: record.invitedAt,
-        acceptedAt: record.acceptedAt,
+      organizationId,
+      membershipFromOrgDoc(organizationId, orgData, role, {
+        status: extras?.status || existing?.status || record?.status || 'active',
+        invitedAt: extras?.invitedAt || existing?.invitedAt || record?.invitedAt,
+        acceptedAt: extras?.acceptedAt || existing?.acceptedAt || record?.acceptedAt,
       })
     )
   }
 
-  // One saved membership must not hide every other company. iOS waits for both queries.
-  const discoveryBudgetMs = 12_000
-  const [memberSnap, creatorSnap] = await Promise.all([
-    queryWithin(getDocs(query(collection(db, 'organizations'), where(`members.${userId}`, '!=', ''))), discoveryBudgetMs),
-    queryWithin(getDocs(query(collection(db, 'organizations'), where('creatorUserId', '==', userId))), discoveryBudgetMs),
-  ])
+  for (const snap of extraSnaps) {
+    if (!snap?.exists()) continue
+    const orgData = snap.data() as Record<string, unknown>
+    const record = membershipRecords.get(snap.id)
+    const role = listedRoleFromMembers(orgData, userId) || record?.role || 'member'
+    put(snap.id, orgData, role)
+  }
 
   if (memberSnap) {
     for (const orgDoc of memberSnap.docs) {
       const orgData = orgDoc.data() as Record<string, unknown>
-      const members = (orgData.members as Record<string, string> | undefined) ?? {}
-      const existing = byId.get(orgDoc.id)
-      const role = members[userId] || existing?.role || 'member'
-      byId.set(
-        orgDoc.id,
-        membershipFromOrgDoc(orgDoc.id, orgData, role, {
-          status: existing?.status || 'active',
-          invitedAt: existing?.invitedAt,
-          acceptedAt: existing?.acceptedAt,
-        })
-      )
+      const record = membershipRecords.get(orgDoc.id)
+      const role = listedRoleFromMembers(orgData, userId) || record?.role || 'member'
+      put(orgDoc.id, orgData, role)
     }
   }
 
@@ -183,8 +225,46 @@ export async function loadUserOrgMemberships(
     for (const orgDoc of creatorSnap.docs) {
       if (byId.has(orgDoc.id)) continue
       const orgData = orgDoc.data() as Record<string, unknown>
-      byId.set(orgDoc.id, membershipFromOrgDoc(orgDoc.id, orgData, 'admin'))
+      put(orgDoc.id, orgData, 'admin')
     }
+  }
+
+  for (let index = 0; index < knownIds.length; index += 1) {
+    const organizationId = knownIds[index]
+    const snap = knownSnaps[index]
+    const record = membershipRecords.get(organizationId)
+    if (snap?.exists()) {
+      const orgData = snap.data() as Record<string, unknown>
+      if (!belongsToOrganization(orgData, userId, record) && memberSnap && creatorSnap && membershipSnap) {
+        continue
+      }
+      const role = listedRoleFromMembers(orgData, userId) || record?.role || (byId.get(organizationId)?.role ?? 'member')
+      put(organizationId, orgData, role)
+      continue
+    }
+    if (record) {
+      put(organizationId, {}, record.role, {
+        status: record.status,
+        invitedAt: record.invitedAt,
+        acceptedAt: record.acceptedAt,
+      })
+    }
+  }
+
+  const incomplete = !membershipSnap || !memberSnap || !creatorSnap
+  const keepIds = sessionMembershipIds({
+    discoveredIds: Array.from(byId.keys()),
+    previousIds: knownIds,
+    discoveryIncomplete: incomplete,
+  })
+  for (const organizationId of keepIds) {
+    if (byId.has(organizationId)) continue
+    const record = membershipRecords.get(organizationId)
+    put(organizationId, {}, record?.role || 'member', {
+      status: record?.status || 'active',
+      invitedAt: record?.invitedAt,
+      acceptedAt: record?.acceptedAt,
+    })
   }
 
   const rows = Array.from(byId.values()).map((row) => ({
@@ -193,7 +273,7 @@ export async function loadUserOrgMemberships(
     name: row.organizationName,
   }))
   const sorted = sortMemberships(rows, activeOrgId).map(({ id: _id, name: _name, ...row }) => row)
-  if (!memberSnap || !creatorSnap) {
+  if (incomplete) {
     return Object.assign(sorted, { discoveryIncomplete: true as const })
   }
   return sorted
@@ -364,42 +444,9 @@ export async function switchActiveOrganization(userId: string, organizationId: s
     // The browser still remembers the company. The members map can list it next time.
   }
 
-  // This browser remembers the company. The shared user document keeps the company last opened on iOS.
+  // This browser remembers the company. Do not write users/{uid}.organizationId —
+  // that field is the last company opened on iOS, not this device.
   writeWebActiveOrg(userId, organizationId)
-}
-
-/**
- * A thrown read is not "not a member". Timeout, unavailable, not-found, and
- * permission-denied stay unknown so the company the user picked is kept.
- * Denied is only a document that loaded and does not list this login.
- */
-export function accessProbeFromReadError(error: unknown): OrgAccessProbe {
-  void error
-  return 'unknown'
-}
-
-export type OrgDocumentRead = 'loaded' | 'missing' | 'failed'
-export type MembershipDocumentRead = 'active' | 'pending' | 'missing' | 'failed'
-
-/**
- * Denied only after the organisation document loaded and this login is not a
- * member, not the creator, and has no active membership. A missing document
- * or a thrown read (permission-denied, not-found, timeout) stays unknown.
- */
-export function orgAccessProbeFromReads(input: {
-  orgRead: OrgDocumentRead
-  membershipRead: MembershipDocumentRead
-  listed: boolean
-  isCreator: boolean
-}): OrgAccessProbe {
-  const activeMembership = input.membershipRead === 'active'
-  const belongs = activeMembership || input.listed || input.isCreator
-  // A missing document or a thrown read is not proof they are outside the company.
-  if (input.orgRead !== 'loaded' || input.membershipRead === 'failed') {
-    return belongs ? 'allowed' : 'unknown'
-  }
-  if (!belongs) return 'denied'
-  return 'allowed'
 }
 
 async function membershipForDeviceOrg(

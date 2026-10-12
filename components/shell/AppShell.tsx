@@ -44,6 +44,8 @@ import { NotificationsPopover } from '@/components/shell/NotificationsPopover'
 import { ToastProvider, useToast } from '@/components/ui/ToastProvider'
 import { Button, IconChip } from '@/components/ui'
 import { useNotificationStore } from '@/lib/stores/notificationStore'
+import { DEFAULT_USER_NOTIFICATION_PREFERENCES, notificationPreferenceAllowsDelivery } from '@/lib/canonical'
+import { loadUserNotificationPreferences } from '@/lib/settings/notificationPreferences'
 import { hueForCreateId, hueForNavId, type SectionHue } from '@/lib/ui/sectionHue'
 import {
   TIMESHEETS_HUB_PATH,
@@ -194,10 +196,10 @@ function AppShellInner({ children }: { children: ReactNode }) {
   const toast = useToast()
   const { user, organization, signOut, recordLastSeenIfDue } = useAuthStore()
   const { users, loadUsers } = useOrgUserStore()
-  const unreadCount = useNotificationStore((s) => s.unreadCount)
   const notifications = useNotificationStore((s) => s.notifications)
   const loadNotifications = useNotificationStore((s) => s.loadNotifications)
   const markAllAsRead = useNotificationStore((s) => s.markAllAsRead)
+  const [notificationPrefs, setNotificationPrefs] = useState(DEFAULT_USER_NOTIFICATION_PREFERENCES)
   const [online, setOnline] = useState(true)
   const [menuOpen, setMenuOpen] = useState(false)
   const [newOpen, setNewOpen] = useState(false)
@@ -254,6 +256,17 @@ function AppShellInner({ children }: { children: ReactNode }) {
     }
     loadNotifications(organization.id, user.id)
   }, [organization?.id, organization?.teamOnboarding, user?.id, user?.permissions.adminAccess, user?.isSuperAdmin, loadNotifications])
+
+  useEffect(() => {
+    if (!user?.id) return
+    void loadUserNotificationPreferences(user.id).then(setNotificationPrefs)
+  }, [user?.id])
+
+  const visibleNotifications = useMemo(
+    () => notifications.filter((row) => notificationPreferenceAllowsDelivery(notificationPrefs, row.type)),
+    [notifications, notificationPrefs]
+  )
+  const unreadCount = visibleNotifications.filter((row) => !row.isRead).length
 
   useEffect(() => {
     if (!user || prefetchedNav.current) return
@@ -660,7 +673,8 @@ function AppShellInner({ children }: { children: ReactNode }) {
                   <NotificationsPopover
                     open={notifOpen}
                     onClose={() => setNotifOpen(false)}
-                    notifications={notifications}
+                    notifications={visibleNotifications}
+                    user={user}
                     onMarkAllRead={() => {
                       if (organization?.id) void markAllAsRead(organization.id)
                     }}

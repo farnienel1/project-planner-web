@@ -18,6 +18,8 @@ export async function saveInboxNotification(input: {
   requiresPermission?: string | null
   deepLinkUserId?: string | null
   deepLinkWeekStart?: Date | null
+  dayKey?: string | null
+  catalogue?: 'projects' | 'smallWorks' | null
   id?: string
 }): Promise<void> {
   if (!db) return
@@ -35,6 +37,9 @@ export async function saveInboxNotification(input: {
     isRead: false,
     createdAt: new Date(),
   })
+  const dayKey = String(input.dayKey ?? '').trim()
+  if (dayKey) payload.dayKey = dayKey
+  if (input.catalogue === 'projects' || input.catalogue === 'smallWorks') payload.catalogue = input.catalogue
   await setDoc(doc(db, 'organizations', input.organizationId, 'notifications', id), payload)
 }
 

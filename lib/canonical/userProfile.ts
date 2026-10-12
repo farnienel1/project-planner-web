@@ -62,6 +62,9 @@ export const USER_DOCUMENT_FIELDS = [
   'utrNumber',
   'lastSeenAt',
   'profilePhotoURL',
+  'pushTokens',
+  'pushTokenUpdatedAt',
+  'notificationPreferences',
 ] as const
 
 export const USER_PERMISSION_FIELDS = [

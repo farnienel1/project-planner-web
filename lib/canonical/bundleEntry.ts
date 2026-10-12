@@ -18,9 +18,20 @@ export {
   namedSlotKind,
   normalizePaymentRunRange,
   paymentRunMonthDay,
+  accessProbeFromReadError,
+  chooseSessionOrganization,
+  IOS_SESSION_ORGANIZATION_STORAGE_KEY,
+  orgAccessProbeFromReads,
   organizationIdFromValue,
   organizationIdsMatch,
   organizationScopedKey,
+  provisionalOrganizationId,
+  rememberedOrganizationSurvivesSignOut,
+  sessionMembershipIds,
+  shouldClearRememberedOrganization,
+  uniqueOrganizationIds,
+  WEB_SESSION_ORGANIZATION_STORAGE_PREFIX,
+  webSessionOrganizationStorageKey,
   paidHoursForNamedSlot,
   parseClockMinutes,
   slotInterval,
@@ -74,6 +85,7 @@ export {
 } from './organizationSettings'
 
 export {
+  USER_DOCUMENT_FIELDS,
   accountKindFromFlags,
   applyEmploymentTypeChange,
   employmentEffectiveLabel,
@@ -81,6 +93,18 @@ export {
   isBillableSelfEmployedDay,
   normalizeEmploymentType,
 } from './userProfile'
+
+export {
+  DEFAULT_USER_NOTIFICATION_PREFERENCES,
+  LEGACY_NOTIFICATION_PREFERENCE_ALIASES,
+  NOTIFICATION_PREFERENCE_KEYS,
+  notificationDestination,
+  notificationPreferenceAllowsDelivery,
+  notificationPreferenceKeyForType,
+  parseUserNotificationPreferences,
+  userNotificationPreferenceFieldPatch,
+  userNotificationPreferencesToFirestore,
+} from './notificationPreferences'
 
 export {
   ANNUAL_LEAVE_ALLOWANCE_COPY,

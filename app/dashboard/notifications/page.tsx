@@ -6,9 +6,15 @@ import { BellSlashIcon } from '@heroicons/react/24/outline'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useNotificationStore } from '@/lib/stores/notificationStore'
 import { EmptyState } from '@/components/ios/primitives'
-import { timesheetNotificationHref } from '@/lib/timesheets/timesheetNotifications'
+import { inboxNotificationHref } from '@/lib/notifications/notificationHref'
 import { loadOrganizationDetails } from '@/lib/settings/organizationSettings'
 import { ianaTimeZoneForCountry } from '@/lib/orgTime/orgTimeZone'
+import {
+  DEFAULT_USER_NOTIFICATION_PREFERENCES,
+  notificationPreferenceAllowsDelivery,
+} from '@/lib/canonical'
+import { loadUserNotificationPreferences } from '@/lib/settings/notificationPreferences'
+import type { UserNotificationPreferences } from '@/lib/canonical'
 
 type FilterOption = 'Newest' | 'Oldest' | 'Date'
 
@@ -17,11 +23,17 @@ export default function NotificationsPage() {
   const { notifications, loading, loadNotifications, markAllAsRead } = useNotificationStore()
   const [filter, setFilter] = useState<FilterOption>('Newest')
   const [timeZone, setTimeZone] = useState(ianaTimeZoneForCountry('GB'))
+  const [prefs, setPrefs] = useState<UserNotificationPreferences>(DEFAULT_USER_NOTIFICATION_PREFERENCES)
 
   useEffect(() => {
     if (!organization?.id || !user?.id) return
     loadNotifications(organization.id, user.id)
   }, [organization?.id, user?.id, loadNotifications])
+
+  useEffect(() => {
+    if (!user?.id) return
+    void loadUserNotificationPreferences(user.id).then(setPrefs)
+  }, [user?.id])
 
   useEffect(() => {
     if (!organization?.id) return
@@ -30,17 +42,22 @@ export default function NotificationsPage() {
       .catch(() => {})
   }, [organization?.id])
 
+  const visible = useMemo(
+    () => notifications.filter((row) => notificationPreferenceAllowsDelivery(prefs, row.type)),
+    [notifications, prefs]
+  )
+
   useEffect(() => {
-    if (!organization?.id || loading || notifications.length === 0) return
+    if (!organization?.id || loading || visible.length === 0) return
     void markAllAsRead(organization.id)
-  }, [organization?.id, loading, notifications.length, markAllAsRead])
+  }, [organization?.id, loading, visible.length, markAllAsRead])
 
   const rows = useMemo(() => {
-    const sorted = [...notifications]
+    const sorted = [...visible]
     if (filter === 'Oldest') sorted.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
     else sorted.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
     return sorted.slice(0, 100)
-  }, [notifications, filter])
+  }, [visible, filter])
 
   return (
     <div className="stack" data-hue="blue">
@@ -79,21 +96,14 @@ export default function NotificationsPage() {
       ) : (
         <div className="rows">
           {rows.map((row) => {
-            const href = timesheetNotificationHref(row, timeZone)
+            const href = inboxNotificationHref(row, user, timeZone)
             return (
-              <article key={row.id} className="ritem" style={{ cursor: href ? 'pointer' : 'default' }}>
-                {href ? (
-                  <Link href={href} className="block">
-                    <h2 className="text-[17px] font-semibold text-[var(--blue)]">{row.title}</h2>
-                    <p className="mt-1 whitespace-pre-wrap text-[15px] text-[var(--ink3)]">{row.message}</p>
-                    <p className="mt-2 text-[12px] font-semibold text-[var(--blue)]">Open timesheet</p>
-                  </Link>
-                ) : (
-                  <>
-                    <h2 className="text-[17px] font-semibold">{row.title}</h2>
-                    <p className="mt-1 whitespace-pre-wrap text-[15px] text-[var(--ink3)]">{row.message}</p>
-                  </>
-                )}
+              <article key={row.id} className="ritem">
+                <Link href={href} className="block">
+                  <h2 className="text-[17px] font-semibold text-[var(--blue)]">{row.title}</h2>
+                  <p className="mt-1 whitespace-pre-wrap text-[15px] text-[var(--ink3)]">{row.message}</p>
+                  <p className="mt-2 text-[12px] font-semibold text-[var(--blue)]">Open</p>
+                </Link>
                 <p className="mt-2 text-[12px] text-[var(--ink3)]">
                   {row.createdAt.toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })}
                 </p>

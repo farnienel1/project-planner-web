@@ -90,18 +90,7 @@ Boot order after shell (Blueprint §1.2): projects+small works + operatives/mana
 
 ## 4. Notification deep links
 
-| `type` | Opens |
-|---|---|
-| `booking_created` | Operatives: My Schedule. Else: Daily overview |
-| `operative_created`, `manager_created`, `line_manager_peer_update` | Manage users |
-| `client_created` | Clients |
-| `project_created` | Project detail (`relatedId`) or Projects list |
-| `small_works_created` | Small works detail, or New small works if no id |
-| `booking_clash`, `warning_removed`, `qualification_expiry`, `material_order_cut_off` | Warnings |
-| `task_completed`, `task_created`, `deadline_assigned`, `deadline_reminder`, `deadline_due` | Tasks |
-| `holiday_request_submitted` | Annual leave, Pending tab |
-| `holiday_request_approved`, `holiday_request_declined` | Annual leave |
-| `timesheet_pending_manager_signoff`, `timesheet_signed_by_manager` | Timesheet review `?user=&weekStart=` |
+Do not keep a second map here. Call `CanonicalBusinessEngine.notificationDestination` (web: `notificationDestination`) with `type`, `relatedId`, `dayKey`, `catalogue`, and account kind, then map the returned `kind`. Booking: admin → Daily Overview on that day; manager → that job’s scheduling page; operative → My Schedule. Unknown type → the notifications list.
 
 ## 5. Proposed web route map
 
