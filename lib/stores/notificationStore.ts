@@ -5,6 +5,7 @@ import { doc, updateDoc } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
 import { isOrgCollectionSubscribed, subscribeOrgCollection } from '@/lib/firebase/subscribeOrgCollection'
 import { retainParsedRows } from '@/lib/staff/rosterRetain'
+import { unreadNotificationBadgeCount } from '@/lib/canonical'
 import {
   logSkippedDocument,
   parseNotification,
@@ -59,7 +60,7 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
             : notifications
         set({
           notifications: kept,
-          unreadCount: kept.filter((row) => !row.isRead).length,
+          unreadCount: unreadNotificationBadgeCount(kept, userId),
           loading: false,
         })
       },

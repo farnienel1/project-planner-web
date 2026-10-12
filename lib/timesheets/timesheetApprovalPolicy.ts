@@ -1,9 +1,19 @@
 /**
  * iOS parity: Views/InvoicingView.swift TimesheetApprovalPolicy,
  * Core/LineManagerSupport.swift
+ *
+ * Status math lives in `lib/canonical/timesheetPeriod.ts`. This file only
+ * adapts the web User / TimesheetDraft shapes.
  */
 import type { User } from '@/types'
 import type { TimesheetDraft } from '@/lib/timesheets/timesheetDraft'
+import {
+  isTimesheetAwaitingSignOff,
+  isTimesheetFullySigned,
+  isTimesheetOperativeSigned,
+  timesheetRequiresManagerCounterSign,
+  timesheetTimestampMs,
+} from '@/lib/canonical'
 
 export function lineManagerUserIds(user: User): string[] {
   const ids = [
@@ -26,27 +36,34 @@ export function userHasLineManager(user: User): boolean {
 }
 
 export function requiresLineManagerCounterSign(user: User): boolean {
-  return userHasLineManager(user)
+  return timesheetRequiresManagerCounterSign(userHasLineManager(user))
 }
 
-const SIGNED_AFTER = new Date('2020-01-01T00:00:00.000Z')
+function statusFields(draft: TimesheetDraft) {
+  return {
+    operativeSignedAtMs: timesheetTimestampMs(draft.operativeSignedAt),
+    operativeSignedByName: draft.operativeSignedByName || '',
+    operativeSignatureImageBase64: draft.operativeSignatureImageBase64 || '',
+    managerSignedAtMs: timesheetTimestampMs(draft.managerSignedAt),
+    managerSignedByName: draft.managerSignedByName || '',
+    managerSignedByUserId: draft.managerSignedByUserId || '',
+    managerSignatureImageBase64: draft.managerSignatureImageBase64 || '',
+    exportedAtMs: timesheetTimestampMs(draft.exportedAt),
+  }
+}
 
 /** A real operative signature: a date after 1 Jan 2020 plus a name or a signature image. */
 export function isOperativeSigned(draft: TimesheetDraft): boolean {
-  const at = draft.operativeSignedAt
-  if (!at || Number.isNaN(at.getTime()) || at.getTime() <= SIGNED_AFTER.getTime()) return false
-  return Boolean(draft.operativeSignedByName?.trim() || draft.operativeSignatureImageBase64?.trim())
+  return isTimesheetOperativeSigned(statusFields(draft))
 }
 
 export function isTimesheetFullyApproved(draft: TimesheetDraft, user: User): boolean {
-  if (!isOperativeSigned(draft)) return false
-  if (requiresLineManagerCounterSign(user)) return Boolean(draft.managerSignedAt)
-  return true
+  return isTimesheetFullySigned(statusFields(draft), requiresLineManagerCounterSign(user))
 }
 
 /** Awaiting sign-off = operative signed, manager not yet, and a line manager exists. */
 export function awaitingManagerSignOff(draft: TimesheetDraft, user: User): boolean {
-  return requiresLineManagerCounterSign(user) && isOperativeSigned(draft) && !draft.managerSignedAt
+  return isTimesheetAwaitingSignOff(statusFields(draft), requiresLineManagerCounterSign(user))
 }
 
 export function applySelfApprovalIfNoLineManager(draft: TimesheetDraft, user: User): TimesheetDraft {

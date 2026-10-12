@@ -5,6 +5,7 @@ import {
   type NotificationPreferences,
 } from '@/lib/settings/notificationPreferences'
 import { dayKey } from '@/lib/ios-parity/londonTime'
+import { paymentRunHistoryAfterChange } from '@/lib/canonical'
 import { ianaTimeZoneForCountry } from '@/lib/orgTime/orgTimeZone'
 import {
   DEFAULT_ANNUAL_LEAVE,
@@ -298,8 +299,26 @@ export async function saveInvoicingSettings(organizationId: string, settings: Or
   const ref = doc(db, 'organizations', organizationId)
   const snap = await getDoc(ref)
   const existing = asSettingsRecord(snap.data()?.invoicing) ?? {}
+  const previous = parseInvoicing(existing)
+  const recordedAtDayKey = dayKey(new Date())
+  const paymentRunHistory = paymentRunHistoryAfterChange({
+    previous: {
+      paymentRunMode: previous.paymentRunMode,
+      ranges: previous.paymentRunDateRanges,
+      recurringRunStartDay: previous.recurringRunStartDay,
+      recurringRunEndDay: previous.recurringRunEndDay,
+    },
+    next: {
+      paymentRunMode: settings.paymentRunMode,
+      ranges: settings.paymentRunDateRanges,
+      recurringRunStartDay: settings.recurringRunStartDay,
+      recurringRunEndDay: settings.recurringRunEndDay,
+    },
+    existingHistory: settings.paymentRunHistory ?? previous.paymentRunHistory ?? [],
+    recordedAtDayKey,
+  })
   await updateDoc(ref, {
-    invoicing: { ...existing, ...invoicingToFirestore(settings) },
+    invoicing: { ...existing, ...invoicingToFirestore({ ...settings, paymentRunHistory }) },
     updatedAt: Timestamp.now(),
   })
 }
