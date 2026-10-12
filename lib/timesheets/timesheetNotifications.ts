@@ -106,5 +106,8 @@ export function timesheetNotificationHref(
   if (row.type === 'line_manager_peer_update' && row.deepLinkUserId) {
     return timesheetsTeamHref({ tab: 'signed', user: row.deepLinkUserId, period: periodKey || null })
   }
+  if (row.type === 'timesheet_submission_reminder') {
+    return timesheetsMineHref(periodKey || null)
+  }
   return null
 }

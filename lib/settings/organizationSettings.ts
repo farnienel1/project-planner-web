@@ -35,6 +35,7 @@ import {
   type OrgPayrollTimePolicy,
   type OrgWarningDetectionSettings,
   type PaymentRunDateRange,
+  type TimesheetSubmissionSettings,
   type WeekendPayrollSettings,
 } from '@/lib/canonical/organizationSettings'
 
@@ -45,6 +46,7 @@ export type {
   OrgPayrollTimePolicy,
   OrgWarningDetectionSettings,
   PaymentRunDateRange,
+  TimesheetSubmissionSettings,
   WeekendPayrollSettings,
 }
 

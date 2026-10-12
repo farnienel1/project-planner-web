@@ -51,6 +51,7 @@ import {
   type StaffAccountRole,
 } from './staffAccess.ts'
 import {
+  DEFAULT_INVOICING,
   DEFAULT_PAYMENT_RUN_DATE_RANGES,
   DEFAULT_WARNING_DETECTION,
   invoicingToFirestore,
@@ -102,6 +103,18 @@ import {
   formatMaterialDeliveryRequired,
   materialOrderIncludesDeliveryRequired,
 } from './materialDelivery.ts'
+import {
+  TIMESHEET_CLOSE_OF_PLAY_HOUR,
+  TIMESHEET_NOTIFY_HOUR,
+  defaultTimesheetSubmissionFromPaymentDay,
+  defaultTimesheetSubmissionFromPaymentWeekday,
+  dueTimesheetSubmissionNotices,
+  monthDayOffsetBefore,
+  paymentDateAfterPeriodEnd,
+  timesheetSubmissionAfterPaymentDayChange,
+  timesheetSubmissionNoticeCopy,
+  weekdayOffsetBefore,
+} from './timesheetSubmission.ts'
 
 const superAdmin: StaffAccountRole = { isSuperAdmin: true, isAdmin: true, isManager: false, isOperativeMode: false }
 const admin: StaffAccountRole = { isSuperAdmin: false, isAdmin: true, isManager: false, isOperativeMode: false }
@@ -911,6 +924,12 @@ test('the iOS JavaScript bundle exposes the standard-day, leave and dismiss rule
     'mergeOperativeQualificationWrite',
     'mergeQualificationCertificateUrls',
     'qualificationCertificateStoragePath',
+    'defaultTimesheetSubmissionFromPaymentDay',
+    'defaultTimesheetSubmissionFromPaymentWeekday',
+    'timesheetSubmissionNoticeCopy',
+    'dueTimesheetSubmissionNotices',
+    'monthDayOffsetBefore',
+    'paymentDateAfterPeriodEnd',
   ]) {
     assert.equal(typeof bundle[name], 'function', `${name} is exported from the packed script`)
   }
@@ -1535,6 +1554,190 @@ test('sortWarningsByDate orders by coverage dayKey and keeps every row', () => {
   assert.equal(newest.length, rows.length)
   assert.equal(compareWarningDayKeys('2026-10-10', '2026-10-12', 'oldest') < 0, true)
   assert.equal(compareWarningDayKeys('2026-10-10', '2026-10-12', 'newest') > 0, true)
+})
+
+test('timesheet submission defaults are 3 days before pay at 08:00 and close of play the day before', () => {
+  const pay20 = defaultTimesheetSubmissionFromPaymentDay(20)
+  assert.equal(pay20.notifyDay, 17)
+  assert.equal(pay20.notifyHour, TIMESHEET_NOTIFY_HOUR)
+  assert.equal(pay20.notifyMinute, 0)
+  assert.equal(pay20.timesheetDeadlineDay, 19)
+  assert.equal(pay20.timesheetDeadlineHour, TIMESHEET_CLOSE_OF_PLAY_HOUR)
+  assert.equal(pay20.timesheetDeadlineMinute, 0)
+  assert.equal(pay20.notifyCustomised, false)
+
+  const pay5 = defaultTimesheetSubmissionFromPaymentDay(5)
+  assert.equal(pay5.notifyDay, 2)
+  assert.equal(pay5.timesheetDeadlineDay, 4)
+
+  assert.equal(monthDayOffsetBefore(1, 1), 31)
+  assert.equal(monthDayOffsetBefore(2, 3), 30)
+  assert.equal(paymentDateAfterPeriodEnd('2026-10-31', [5], 'Europe/London'), '2026-11-05')
+  assert.equal(paymentDateAfterPeriodEnd('2026-02-28', [31], 'Europe/London'), '2026-02-28')
+  assert.equal(paymentDateAfterPeriodEnd('2026-02-15', [31], 'Europe/London'), '2026-02-28')
+
+  const customised = { ...pay20, notifyDay: 10, notifyCustomised: true }
+  assert.equal(timesheetSubmissionAfterPaymentDayChange(customised, 5).notifyDay, 10)
+  assert.equal(timesheetSubmissionAfterPaymentDayChange(pay20, 5).notifyDay, 2)
+
+  assert.equal(
+    timesheetSubmissionNoticeCopy({
+      mode: 'date_ranges',
+      deadlineDay: 19,
+      paymentDay: 20,
+    }),
+    'Timesheets need to be submitted by close of play on the 19th for payment on the 20th.'
+  )
+  assert.equal(
+    timesheetSubmissionNoticeCopy({
+      mode: 'date_ranges',
+      deadlineDay: 4,
+      paymentDay: 5,
+    }),
+    'Timesheets need to be submitted by close of play on the 4th for payment on the 5th.'
+  )
+
+  const mondayFriday = defaultTimesheetSubmissionFromPaymentWeekday('friday')
+  assert.equal(mondayFriday.notifyWeekday, 'tuesday')
+  assert.equal(mondayFriday.timesheetDeadlineWeekday, 'thursday')
+  assert.equal(weekdayOffsetBefore('friday', 3), 'tuesday')
+  assert.equal(weekdayOffsetBefore('friday', 1), 'thursday')
+  assert.equal(
+    timesheetSubmissionNoticeCopy({
+      mode: 'recurring_timeframe',
+      deadlineWeekday: 'thursday',
+      paymentWeekday: 'friday',
+    }),
+    'Please issue timesheets for the previous payment run by close of play Thursday, to be paid on Friday.'
+  )
+  assert.equal(
+    timesheetSubmissionNoticeCopy({
+      mode: 'recurring_timeframe',
+      deadlineWeekday: 'tuesday',
+      paymentWeekday: 'friday',
+    }),
+    'Please issue timesheets for the previous payment run by close of play Tuesday, to be paid on Friday.'
+  )
+
+  const halfMonth = {
+    paymentRunMode: 'date_ranges' as const,
+    paymentRunDateRanges: [
+      { startDay: 1, endDay: 15 },
+      { startDay: 16, endDay: 31 },
+    ],
+    paymentDates: [20, 5],
+    timesheetSubmission: [pay20, pay5],
+  }
+  const midOctober = dueTimesheetSubmissionNotices({
+    ...halfMonth,
+    referenceIso: '2026-10-17T08:00:00+01:00',
+    timeZone: 'Europe/London',
+  })
+  const octoberPay20 = midOctober.find((row) => row.paymentDayKey === '2026-10-20')
+  assert.ok(octoberPay20)
+  assert.equal(octoberPay20.notifyDayKey, '2026-10-17')
+  assert.equal(octoberPay20.deadlineDayKey, '2026-10-19')
+  assert.equal(
+    octoberPay20.message,
+    'Timesheets need to be submitted by close of play on the 19th for payment on the 20th.'
+  )
+
+  const tooEarly = dueTimesheetSubmissionNotices({
+    ...halfMonth,
+    referenceIso: '2026-10-17T07:59:00+01:00',
+    timeZone: 'Europe/London',
+  })
+  assert.equal(
+    tooEarly.some((row) => row.paymentDayKey === '2026-10-20'),
+    false
+  )
+
+  const afterMonthWrap = dueTimesheetSubmissionNotices({
+    ...halfMonth,
+    referenceIso: '2026-11-02T08:00:00+00:00',
+    timeZone: 'Europe/London',
+  })
+  const novemberPay5 = afterMonthWrap.find((row) => row.paymentDayKey === '2026-11-05')
+  assert.ok(novemberPay5)
+  assert.equal(novemberPay5.notifyDayKey, '2026-11-02')
+  assert.equal(novemberPay5.deadlineDayKey, '2026-11-04')
+  assert.equal(
+    novemberPay5.message,
+    'Timesheets need to be submitted by close of play on the 4th for payment on the 5th.'
+  )
+
+  const shortMonth = dueTimesheetSubmissionNotices({
+    paymentRunMode: 'date_ranges',
+    paymentRunDateRanges: [{ startDay: 1, endDay: 31 }],
+    paymentDates: [31],
+    timesheetSubmission: [defaultTimesheetSubmissionFromPaymentDay(31)],
+    referenceIso: '2026-02-25T08:00:00+00:00',
+    timeZone: 'Europe/London',
+  })
+  const febPay = shortMonth.find((row) => row.paymentDayKey === '2026-02-28')
+  assert.ok(febPay)
+  assert.equal(febPay.notifyDayKey, '2026-02-25')
+  assert.equal(febPay.deadlineDayKey, '2026-02-27')
+
+  const recurringFriday = dueTimesheetSubmissionNotices({
+    paymentRunMode: 'recurring_timeframe',
+    recurringRunStartDay: 'monday',
+    recurringRunEndDay: 'sunday',
+    recurringPaymentDay: 'friday',
+    timesheetSubmission: [mondayFriday],
+    referenceIso: '2026-10-13T08:00:00+01:00',
+    timeZone: 'Europe/London',
+  })
+  const fridayPay = recurringFriday.find((row) => row.paymentDayKey === '2026-10-16')
+  assert.ok(fridayPay)
+  assert.equal(fridayPay.notifyDayKey, '2026-10-13')
+  assert.equal(fridayPay.deadlineDayKey, '2026-10-15')
+
+  const wedTue = dueTimesheetSubmissionNotices({
+    paymentRunMode: 'recurring_timeframe',
+    recurringRunStartDay: 'wednesday',
+    recurringRunEndDay: 'tuesday',
+    recurringPaymentDay: 'friday',
+    timesheetSubmission: [
+      {
+        ...mondayFriday,
+        notifyWeekday: 'monday',
+        timesheetDeadlineWeekday: 'tuesday',
+        notifyCustomised: true,
+      },
+    ],
+    referenceIso: '2026-10-12T08:00:00+01:00',
+    timeZone: 'Europe/London',
+  })
+  const customRecurring = wedTue.find((row) => row.paymentDayKey === '2026-10-16')
+  assert.ok(customRecurring)
+  assert.equal(customRecurring.notifyDayKey, '2026-10-12')
+  assert.equal(customRecurring.deadlineDayKey, '2026-10-13')
+  assert.equal(
+    customRecurring.message,
+    'Please issue timesheets for the previous payment run by close of play Tuesday, to be paid on Friday.'
+  )
+
+  const written = invoicingToFirestore(
+    parseInvoicing({
+      paymentRunMode: 'date_ranges',
+      paymentDates: [20, 5],
+      paymentRunDateRanges: [
+        { startDay: 1, endDay: 15, startDate: 1, endDate: 15 },
+        { startDay: 16, endDay: 31, startDate: 16, endDate: 31 },
+      ],
+    })
+  )
+  assert.equal(written.noteToUsers, DEFAULT_INVOICING.noteToUsers)
+  assert.equal(written.paymentRunMode, 'date_ranges')
+  const firstRange = (written.paymentRunDateRanges as Record<string, unknown>[])[0]
+  assert.equal(firstRange.startDay, 1)
+  assert.equal(firstRange.startDate, 1)
+  assert.equal(firstRange.notifyDay, 17)
+  assert.equal(firstRange.timesheetDeadlineDay, 19)
+  const saved = written.timesheetSubmission as Record<string, unknown>[]
+  assert.equal(saved[0].notifyDay, 17)
+  assert.equal(saved[1].notifyDay, 2)
 })
 
 test('material order defaults to tomorrow 08:00 and Monday 08:00 on a weekend send', () => {
