@@ -16,13 +16,18 @@ import {
   Input,
   SuccessBanner,
   ErrorBanner,
+  SaveBar,
+  SaveButton,
 } from '@/components/settings/primitives'
+import { settingsDraftIsDirty } from '@/lib/settings/settingsDirty'
+import { useSettingsDirty, useSettingsLeave } from '@/components/settings/SettingsDirty'
 
 const ICON_CALENDAR =
   'M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25m-18 0A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75m-18 0v-7.5A2.25 2.25 0 0 1 5.25 9h13.5A2.25 2.25 0 0 1 21 11.25v7.5'
 
 export function ScheduleOptionsPanel({ onBack }: { onBack: () => void }) {
   const { organization } = useAuthStore()
+  const requestLeave = useSettingsLeave()
   const [opts, setOpts] = useState<MyScheduleOptions>({
     showOffice: true,
     showWorkingFromHome: true,
@@ -30,29 +35,43 @@ export function ScheduleOptionsPanel({ onBack }: { onBack: () => void }) {
     customItems: [],
     customItemEnabled: {},
   })
+  const [baseline, setBaseline] = useState<MyScheduleOptions | null>(null)
   const [newItem, setNewItem] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
   const [feedback, setFeedback] = useState<{ kind: 'success' | 'error'; msg: string } | null>(null)
+  const dirty = Boolean(baseline) && settingsDraftIsDirty(baseline, opts)
+  useSettingsDirty(dirty)
 
   useEffect(() => {
     if (!organization?.id) return
     loadOrganizationDetails(organization.id)
       .then((details) => {
-        if (details?.myScheduleOptions) setOpts(details.myScheduleOptions)
+        if (details?.myScheduleOptions) {
+          setOpts(details.myScheduleOptions)
+          setBaseline(details.myScheduleOptions)
+        }
       })
       .catch(() => {})
   }, [organization?.id])
 
-  async function persist(next: MyScheduleOptions) {
+  async function save() {
     if (!organization?.id) return
-    const previous = opts
-    setOpts(next)
+    setSaving(true)
+    setFeedback(null)
     try {
-      await saveMyScheduleOptions(organization.id, next)
+      await saveMyScheduleOptions(organization.id, opts)
+      setBaseline(opts)
+      setSaved(true)
       setFeedback({ kind: 'success', msg: 'Schedule options saved' })
-      window.setTimeout(() => setFeedback(null), 2500)
+      window.setTimeout(() => {
+        setFeedback(null)
+        setSaved(false)
+      }, 2500)
     } catch (error) {
-      setOpts(previous)
       setFeedback({ kind: 'error', msg: error instanceof Error ? error.message : 'Could not save options' })
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -68,21 +87,21 @@ export function ScheduleOptionsPanel({ onBack }: { onBack: () => void }) {
     const items = [...existing, trimmed].sort((a, b) => a.localeCompare(b))
     const enabled = { ...(opts.customItemEnabled ?? {}), [trimmed]: true }
     setNewItem('')
-    void persist({ ...opts, customItems: items, customItemEnabled: enabled })
+    setOpts({ ...opts, customItems: items, customItemEnabled: enabled })
   }
 
   function removeItem(name: string) {
     const items = (opts.customItems ?? []).filter((item) => item !== name)
     const enabled = { ...(opts.customItemEnabled ?? {}) }
     delete enabled[name]
-    void persist({ ...opts, customItems: items, customItemEnabled: enabled })
+    setOpts({ ...opts, customItems: items, customItemEnabled: enabled })
   }
 
   const customItems = opts.customItems ?? []
 
   return (
     <div className="mx-auto max-w-2xl pb-12">
-      <PanelHeader title="Schedule options" onBack={onBack} />
+      <PanelHeader title="Schedule options" onBack={() => requestLeave(onBack)} />
 
       {feedback?.kind === 'success' && (
         <div className="mt-4">
@@ -103,16 +122,16 @@ export function ScheduleOptionsPanel({ onBack }: { onBack: () => void }) {
       <SectionLabel label="Additional options" />
       <SettingsCard>
         <SettingsRow icon={ICON_CALENDAR} iconBg="bg-[#FBEAF0]" iconColor="text-[#993556]" label="Office">
-          <Toggle checked={!!opts.showOffice} onChange={(value) => void persist({ ...opts, showOffice: value })} />
+          <Toggle checked={!!opts.showOffice} onChange={(value) => setOpts({ ...opts, showOffice: value })} />
         </SettingsRow>
         <SettingsRow icon={ICON_CALENDAR} iconBg="bg-[#FBEAF0]" iconColor="text-[#993556]" label="Working From Home">
           <Toggle
             checked={!!opts.showWorkingFromHome}
-            onChange={(value) => void persist({ ...opts, showWorkingFromHome: value })}
+            onChange={(value) => setOpts({ ...opts, showWorkingFromHome: value })}
           />
         </SettingsRow>
         <SettingsRow icon={ICON_CALENDAR} iconBg="bg-[#FBEAF0]" iconColor="text-[#993556]" label="Site Survey">
-          <Toggle checked={!!opts.showSiteSurvey} onChange={(value) => void persist({ ...opts, showSiteSurvey: value })} />
+          <Toggle checked={!!opts.showSiteSurvey} onChange={(value) => setOpts({ ...opts, showSiteSurvey: value })} />
         </SettingsRow>
       </SettingsCard>
 
@@ -156,7 +175,7 @@ export function ScheduleOptionsPanel({ onBack }: { onBack: () => void }) {
                       onChange={(value) => {
                         const enabled = { ...(opts.customItemEnabled ?? {}), [item]: value }
                         if (!value) {
-                          void persist({
+                          setOpts({
                             ...opts,
                             customItems: opts.customItems.filter((entry) => entry !== item),
                             customItemEnabled: Object.fromEntries(
@@ -165,7 +184,7 @@ export function ScheduleOptionsPanel({ onBack }: { onBack: () => void }) {
                           })
                           return
                         }
-                        void persist({ ...opts, customItemEnabled: enabled })
+                        setOpts({ ...opts, customItemEnabled: enabled })
                       }}
                     />
                     <button
@@ -185,6 +204,10 @@ export function ScheduleOptionsPanel({ onBack }: { onBack: () => void }) {
           )}
         </div>
       </SettingsCard>
+
+      <SaveBar dirty={dirty}>
+        <SaveButton saving={saving} saved={saved} dirty={dirty} onClick={save} />
+      </SaveBar>
     </div>
   )
 }

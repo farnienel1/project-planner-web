@@ -16,6 +16,7 @@ import {
 import { notificationPreferenceFieldPatch } from './notificationPreferences.ts'
 import { completionFileUrls } from '../tasks/completionFiles.ts'
 import { DEFAULT_NOTIFICATION_PREFERENCES } from './notificationPreferences.ts'
+import { userNotificationPreferenceFieldPatch } from '../canonical/notificationPreferences.ts'
 
 test('weekend hours save uses iOS payroll field names', () => {
   const policy = {
@@ -91,7 +92,7 @@ test('payment-run save writes timesheet deadline and notify-at without dropping 
   })
   const written = invoicingToFirestore(parsed)
   assert.equal(written.noteToUsers, 'Keep this note')
-  assert.equal(written.paymentDateMode, 'recurring_date')
+  assert.equal(written.paymentDateMode, 'specific_dates')
   const rows = written.timesheetSubmission as Array<Record<string, unknown>>
   assert.equal(rows[0].notifyDay, 17)
   assert.equal(rows[0].timesheetDeadlineDay, 19)
@@ -133,7 +134,23 @@ test('notification save patches material keys and leaves other preference keys a
   const patch = notificationPreferenceFieldPatch(DEFAULT_NOTIFICATION_PREFERENCES)
   assert.equal(patch['notificationPreferences.materialOrderCutOff'], true)
   assert.equal('notificationPreferences' in patch, false)
+  assert.equal('organizationId' in patch, false)
   assert.equal(Object.keys(patch).some((key) => key.includes('bookingConflicts')), false)
+})
+
+test('user notification and cut-off saves never write organizationId or push tokens', async () => {
+  const toggles = userNotificationPreferenceFieldPatch({ bookingClashes: false })
+  assert.equal(toggles['notificationPreferences.bookingClashes'], false)
+  assert.equal('organizationId' in toggles, false)
+  assert.equal('pushTokens' in toggles, false)
+  assert.equal('pushTokenUpdatedAt' in toggles, false)
+  const source = await import('node:fs/promises').then((fs) =>
+    fs.readFile(new URL('./notificationPreferences.ts', import.meta.url), 'utf8')
+  )
+  assert.match(source, /userNotificationPreferenceFieldPatch/)
+  assert.match(source, /notificationPreferenceFieldPatch/)
+  assert.equal(/patch\.organizationId|organizationId:\s*user/.test(source), false)
+  assert.equal(source.includes('pushTokens'), false)
 })
 
 test('completion files round-trip as URL strings', () => {

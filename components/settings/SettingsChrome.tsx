@@ -1,20 +1,32 @@
 'use client'
 
 import Link from 'next/link'
-import type { ReactNode } from 'react'
+import { useRouter } from 'next/navigation'
+import type { MouseEvent, ReactNode } from 'react'
 import {
   COMPANY_SETTINGS,
   PERSONAL_SETTINGS,
   type SettingsNavItem,
   type SettingsPanel,
 } from '@/lib/settings/settingsNav'
+import { SettingsDirtyProvider, useSettingsLeave } from '@/components/settings/SettingsDirty'
 
 function NavLink({ item, active }: { item: SettingsNavItem; active: boolean }) {
+  const router = useRouter()
+  const requestLeave = useSettingsLeave()
+
+  function onClick(event: MouseEvent<HTMLAnchorElement>) {
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return
+    event.preventDefault()
+    requestLeave(() => router.push(item.href))
+  }
+
   return (
     <Link
       href={item.href}
       data-hue={item.hue}
       aria-current={active ? 'page' : undefined}
+      onClick={onClick}
       className={`relative flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13.5px] leading-tight transition ${
         active
           ? 'bg-[var(--blue-t)] font-semibold text-[var(--ink)]'
@@ -54,11 +66,39 @@ export function SettingsChrome({
   const company = canAccessCompany ? COMPANY_SETTINGS : []
 
   return (
+    <SettingsDirtyProvider>
+    <SettingsChromeInner panel={panel} personal={personal} company={company}>
+      {children}
+    </SettingsChromeInner>
+    </SettingsDirtyProvider>
+  )
+}
+
+function SettingsChromeInner({
+  panel,
+  personal,
+  company,
+  children,
+}: {
+  panel: SettingsPanel
+  personal: SettingsNavItem[]
+  company: SettingsNavItem[]
+  children: ReactNode
+}) {
+  const router = useRouter()
+  const requestLeave = useSettingsLeave()
+
+  return (
     <div className="page" style={{ maxWidth: 1100 }}>
       <div className="settings-split">
         <nav className="card self-start p-2 lg:sticky lg:top-[84px]" aria-label="Settings">
           <Link
             href="/dashboard/settings"
+            onClick={(event) => {
+              if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return
+              event.preventDefault()
+              requestLeave(() => router.push('/dashboard/settings'))
+            }}
             className="flex items-center gap-2 rounded-lg px-2.5 py-2 text-[13.5px] font-semibold text-[var(--ink)] transition hover:bg-[var(--soft)]"
           >
             <svg className="h-4 w-4 text-[var(--ink3)]" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>

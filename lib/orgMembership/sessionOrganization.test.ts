@@ -8,12 +8,87 @@ import {
   chooseWebSessionOrganization,
   probeSessionOrganizations,
   provisionalWebOrganizationId,
+  readWebActiveOrg,
   SESSION_ORG_PROBE_MS,
   sessionUserForOrganizationProbe,
+  writeWebActiveOrg,
 } from './webActiveOrg.ts'
 
 const RACCORD = '2C67391E-D1FE-4F9F-8055-7149ACDE1F96'
 const TEST_PRICING = '6b04f81d-a55e-41d2-8676-ecd116ad8450'
+
+function withMockLocalStorage(run: () => void) {
+  const store = new Map<string, string>()
+  const previous = (globalThis as { localStorage?: Storage }).localStorage
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    value: {
+      getItem: (key: string) => store.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        store.set(key, String(value))
+      },
+      removeItem: (key: string) => {
+        store.delete(key)
+      },
+    },
+  })
+  try {
+    run()
+  } finally {
+    if (previous === undefined) {
+      delete (globalThis as { localStorage?: Storage }).localStorage
+    } else {
+      Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: previous })
+    }
+  }
+}
+
+test('a remount that misses the remember key does not persist the user-document company over A', () => {
+  withMockLocalStorage(() => {
+    writeWebActiveOrg('user-1', RACCORD)
+    assert.equal(readWebActiveOrg('user-1'), RACCORD)
+    const choice = chooseWebSessionOrganization({
+      rememberedOrganizationId: null,
+      documentOrganizationId: TEST_PRICING,
+      probes: { [TEST_PRICING]: 'allowed' },
+    })
+    assert.equal(choice.organizationId, TEST_PRICING)
+    assert.equal(choice.persistOrganizationId, null)
+    if (choice.persistOrganizationId) writeWebActiveOrg('user-1', choice.persistOrganizationId)
+    assert.equal(readWebActiveOrg('user-1'), RACCORD)
+  })
+})
+
+test('a remount with remembered A and user-document B keeps A and does not persist B', () => {
+  withMockLocalStorage(() => {
+    writeWebActiveOrg('user-1', RACCORD)
+    const choice = chooseWebSessionOrganization({
+      rememberedOrganizationId: readWebActiveOrg('user-1'),
+      documentOrganizationId: TEST_PRICING,
+      probes: { [RACCORD]: 'unknown', [TEST_PRICING]: 'allowed' },
+    })
+    assert.equal(choice.organizationId, RACCORD)
+    assert.equal(choice.persistOrganizationId, RACCORD)
+    if (choice.persistOrganizationId) writeWebActiveOrg('user-1', choice.persistOrganizationId)
+    assert.equal(readWebActiveOrg('user-1'), RACCORD)
+  })
+})
+
+test('a first-tick unknown probe does not overwrite the remember key with the user-document company', () => {
+  withMockLocalStorage(() => {
+    writeWebActiveOrg('user-1', RACCORD)
+    const choice = chooseWebSessionOrganization({
+      rememberedOrganizationId: RACCORD,
+      documentOrganizationId: TEST_PRICING,
+      probes: { [RACCORD]: 'unknown', [TEST_PRICING]: 'allowed' },
+    })
+    assert.equal(choice.organizationId, RACCORD)
+    assert.equal(choice.persistOrganizationId, RACCORD)
+    assert.notEqual(choice.persistOrganizationId, TEST_PRICING)
+    if (choice.persistOrganizationId) writeWebActiveOrg('user-1', choice.persistOrganizationId)
+    assert.equal(readWebActiveOrg('user-1'), RACCORD)
+  })
+})
 
 test('a remembered web company wins over the user-document company when the probe is unknown, missing, or throws', () => {
   const probes = [
@@ -191,6 +266,10 @@ test('sign-out does not clear this browser’s remembered company', async () => 
   assert.match(auth, /Keep pp\.webActiveOrg/)
   assert.equal(/localStorage\.removeItem\(\s*['"]pp\.webActiveOrg/.test(auth), false)
   assert.match(membership, /writeWebActiveOrg\(userId, organizationId\)/)
+  assert.match(membership, /choice\.persistOrganizationId/)
+  assert.match(membership, /unconfirmed: Boolean\(membershipFromCache \|\| orgFromCache\)/)
+  assert.match(auth, /users\/\{uid\}\.organizationId is the last iOS switch/)
+  assert.match(auth, /Do not copy users\/\{uid\}\.organizationId into pp\.webActiveOrg/)
 })
 
 const adminPermissions: UserPermissions = {

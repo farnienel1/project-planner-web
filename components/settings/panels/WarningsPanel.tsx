@@ -21,7 +21,6 @@ import { formatNumberOfDaysScanSummary } from '@/lib/warnings/warningLookahead'
 import {
   initialWarningSettingsSaveState,
   stepWarningSettingsSave,
-  warningSettingsSaveLabel,
   type WarningSettingsSaveEvent,
   type WarningSettingsSaveState,
 } from '@/lib/settings/warningSettingsSave'
@@ -34,7 +33,9 @@ import {
   SaveButton,
   SuccessBanner,
   ErrorBanner,
+  SaveBar,
 } from '@/components/settings/primitives'
+import { useSettingsDirty, useSettingsLeave } from '@/components/settings/SettingsDirty'
 
 function ModeOption({
   selected,
@@ -90,6 +91,7 @@ function SeverityRow({ title, description, tone }: { title: string; description:
 export function WarningsPanel({ onBack }: { onBack: () => void }) {
   const { organization } = useAuthStore()
   const { users, loadUsers } = useOrgUserStore()
+  const requestLeave = useSettingsLeave()
 
   const [draft, setDraft] = useState<OrgWarningDetectionSettings>(() =>
     copyWarningDetection(DEFAULT_WARNING_DETECTION)
@@ -107,10 +109,10 @@ export function WarningsPanel({ onBack }: { onBack: () => void }) {
   flowRef.current = flow
   onBackRef.current = onBack
   dirtyRef.current = flow.phase === 'dirty' || flow.phase === 'saving' || flow.phase === 'error'
-  const saveLabel = warningSettingsSaveLabel(flow.phase)
   const saving = flow.phase === 'saving'
   const saved = flow.phase === 'saved'
   const canSave = flow.phase === 'dirty' || flow.phase === 'error'
+  useSettingsDirty(canSave)
 
   useEffect(() => {
     if (organization?.id) loadUsers(organization.id)
@@ -213,9 +215,8 @@ export function WarningsPanel({ onBack }: { onBack: () => void }) {
   }
 
   function handleBack() {
-    const step = applySaveFlow({ type: 'back' })
-    if (step.persist) void persistDraft()
-    if (step.leave) onBackRef.current()
+    if (flowRef.current.phase === 'saving') return
+    requestLeave(() => onBackRef.current())
   }
 
   useEffect(() => {
@@ -237,22 +238,7 @@ export function WarningsPanel({ onBack }: { onBack: () => void }) {
 
   return (
     <div className="mx-auto max-w-2xl pb-12">
-      <PanelHeader
-        title="Warnings"
-        onBack={handleBack}
-        rightAction={
-          <button
-            type="button"
-            onClick={requestSave}
-            disabled={saving || !canSave}
-            className={`min-w-[3.25rem] text-sm font-semibold ${
-              canSave && !saving ? 'text-blue-600' : 'text-slate-400'
-            }`}
-          >
-            {saveLabel}
-          </button>
-        }
-      />
+      <PanelHeader title="Warnings" onBack={handleBack} />
 
       {error && (
         <div className="mt-4">
@@ -473,9 +459,9 @@ export function WarningsPanel({ onBack }: { onBack: () => void }) {
         </div>
       </SettingsCard>
 
-      <div className="mt-6">
-        <SaveButton saving={saving} saved={saved} onClick={requestSave} />
-      </div>
+      <SaveBar dirty={canSave}>
+        <SaveButton saving={saving} saved={saved} dirty={canSave} onClick={requestSave} />
+      </SaveBar>
     </div>
   )
 }

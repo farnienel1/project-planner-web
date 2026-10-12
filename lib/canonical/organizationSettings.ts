@@ -209,7 +209,7 @@ export const DEFAULT_WARNING_DETECTION: OrgWarningDetectionSettings = {
 
 export const DEFAULT_INVOICING: OrgInvoicingSettings = {
   paymentRunMode: 'date_ranges',
-  paymentDateMode: 'recurring_date',
+  paymentDateMode: 'specific_dates',
   recurringRunStartDay: 'monday',
   recurringRunEndDay: 'sunday',
   recurringPaymentDay: 'friday',
@@ -218,6 +218,60 @@ export const DEFAULT_INVOICING: OrgInvoicingSettings = {
   noteToUsers:
     "If your timesheet displays 0 against your rate, then your day/hourly rate hasn't been set by your line manager",
   timesheetSubmission: [],
+}
+
+/**
+ * Shared company name on `organizations/{orgId}`. Both apps write `name`.
+ * Read prefers that field, then leftover aliases so a document that only has
+ * an older key still displays — a save then stores `name` and does not invent
+ * a second writer.
+ */
+export function parseOrganizationName(data: Record<string, unknown> | undefined): string {
+  if (!data) return ''
+  const settings = asSettingsRecord(data.settings)
+  const candidates = [
+    data.name,
+    data.organizationName,
+    data.organisationName,
+    data.companyName,
+    settings?.name,
+    settings?.organizationName,
+    settings?.organisationName,
+    settings?.companyName,
+  ]
+  for (const value of candidates) {
+    if (typeof value === 'string' && value.trim()) return value.trim()
+  }
+  return ''
+}
+
+/** Write the shared `name` field only. Do not add a parallel company-name key. */
+export function organizationNameToFirestore(name: string): Record<string, unknown> {
+  return { name: name.trim() }
+}
+
+export function displayOrganizationName(name: string | null | undefined, fallback = 'Organisation'): string {
+  const trimmed = String(name || '').trim()
+  return trimmed || fallback
+}
+
+/** Days-covered 1–31 strip is date-range runs only. Recurring hides it by design. */
+export function paymentRunShowsMonthCoverage(
+  settings: Pick<OrgInvoicingSettings, 'paymentRunMode'>
+): boolean {
+  return settings.paymentRunMode === 'date_ranges'
+}
+
+function parsePaymentRunMode(value: unknown): OrgInvoicingSettings['paymentRunMode'] {
+  return String(value || '').trim() === 'recurring_timeframe' ? 'recurring_timeframe' : 'date_ranges'
+}
+
+function parsePaymentDateMode(
+  value: unknown,
+  paymentRunMode: OrgInvoicingSettings['paymentRunMode']
+): OrgInvoicingSettings['paymentDateMode'] {
+  if (paymentRunMode === 'date_ranges') return 'specific_dates'
+  return String(value || '').trim() === 'specific_dates' ? 'specific_dates' : 'recurring_date'
 }
 
 export const DEFAULT_MY_SCHEDULE: MyScheduleOptions = {
@@ -495,11 +549,14 @@ export function warningDetectionFirestoreFields(settings: OrgWarningDetectionSet
 }
 
 export function parseInvoicing(data: Record<string, unknown> | undefined): OrgInvoicingSettings {
-  if (!data) return { ...DEFAULT_INVOICING, paymentRunDateRanges: DEFAULT_PAYMENT_RUN_DATE_RANGES.map((range) => ({ ...range })) }
-  const paymentRunMode =
-    data.paymentRunMode === 'recurring_timeframe' ? 'recurring_timeframe' : 'date_ranges'
-  const paymentDateMode =
-    data.paymentDateMode === 'specific_dates' ? 'specific_dates' : 'recurring_date'
+  if (!data) {
+    return {
+      ...DEFAULT_INVOICING,
+      paymentRunDateRanges: DEFAULT_PAYMENT_RUN_DATE_RANGES.map((range) => ({ ...range })),
+    }
+  }
+  const paymentRunMode = parsePaymentRunMode(data.paymentRunMode)
+  const paymentDateMode = parsePaymentDateMode(data.paymentDateMode, paymentRunMode)
   const paymentDates = Array.isArray(data.paymentDates)
     ? (data.paymentDates as unknown[])
         .map((d) => String(parseDayOfMonth(d) || Number(d) || ''))

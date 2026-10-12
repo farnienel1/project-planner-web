@@ -1,14 +1,14 @@
 /**
- * Save / Back for warning settings.
- * A write may finish before React paints, so Back must not leave while the
- * control still says Saving. Leave only after the status is Saved.
+ * Save control for warning settings.
+ * Back with unsaved edits stays on the page — the settings dirty dialog
+ * asks Cancel (stay) or Continue (discard). Do not auto-save on leave.
  */
 
 export type WarningSettingsSavePhase = 'clean' | 'dirty' | 'saving' | 'saved' | 'error'
 
 export type WarningSettingsSaveState = {
   phase: WarningSettingsSavePhase
-  /** Back was pressed. Leave only after the control shows Saved. */
+  /** Kept for the save-button Saved flash. Leave is handled by the dirty dialog. */
   leaveWhenSaved: boolean
 }
 
@@ -65,10 +65,10 @@ export function stepWarningSettingsSave(
       return hold({ phase: 'error', leaveWhenSaved: false })
     case 'back':
       if (state.phase === 'saving') {
-        return hold({ phase: 'saving', leaveWhenSaved: true })
+        return hold({ phase: 'saving', leaveWhenSaved: false })
       }
       if (state.phase === 'dirty' || state.phase === 'error') {
-        return hold({ phase: 'saving', leaveWhenSaved: true }, true)
+        return hold(state)
       }
       return { state, persist: false, leave: true }
     case 'savedShown':
