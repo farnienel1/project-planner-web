@@ -1,30 +1,35 @@
 'use client'
 
 import { useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { LoadingSpinner } from '@/components/dashboard/PageShell'
+import { shouldSendUnconfirmedFounderToCheckEmail } from '@/lib/orgSetup/setupAuthGuardPolicy'
 
 /**
- * Lets signed-in users create another organisation. Unconfirmed founders are
- * sent to check-email instead of repeating setup.
+ * Wait for auth on /setup. Do not unmount the wizard when the new founder
+ * document is written with accountConfirmed: false — that aborted Stripe.
+ * Check-email after pay is `/setup/success`; the dashboard still blocks.
  */
 export function SetupAuthGuard({ children }: { children: React.ReactNode }) {
   const router = useRouter()
+  const pathname = usePathname()
   const { user, loading } = useAuthStore()
+  const sendToCheckEmail = shouldSendUnconfirmedFounderToCheckEmail({
+    accountConfirmed: user?.accountConfirmed,
+    path: pathname,
+  })
 
   useEffect(() => {
-    if (loading) return
-    if (user && user.accountConfirmed === false) {
-      router.replace('/setup/check-email')
-    }
-  }, [loading, user, router])
+    if (loading || !sendToCheckEmail) return
+    router.replace('/setup/check-email')
+  }, [loading, sendToCheckEmail, router])
 
   if (loading) {
     return <LoadingSpinner label="Loading…" />
   }
 
-  if (user && user.accountConfirmed === false) {
+  if (sendToCheckEmail) {
     return <LoadingSpinner label="Redirecting…" />
   }
 
