@@ -18,6 +18,10 @@ import {
   type AnnualLeavePersonSort,
 } from '@/lib/annualLeave/annualLeavePerson'
 import { isCancellationRequest } from '@/lib/annualLeave/holidayApprovalUtils'
+import {
+  holidayDecisionActorName,
+  notifyHolidayRequestDecisionToUser,
+} from '@/lib/annualLeave/notifyHolidayRequestDecision'
 import { bookingDayCount, daysLabel, formatLeaveRange } from '@/lib/annualLeave/formatLeaveDays'
 import { getDayKindForBookings } from '@/lib/annualLeave/dayStatus'
 import type { HolidayBooking } from '@/types'
@@ -190,6 +194,14 @@ export function OperativeAnnualLeaveManagement({
       status,
       approvedByUserId: user.id,
       approvedAt: new Date(),
+    })
+    await notifyHolidayRequestDecisionToUser({
+      organizationId: organization.id,
+      booking,
+      approved: status === 'approved',
+      decidedByName: holidayDecisionActorName(user),
+      users,
+      operatives,
     })
   }
 

@@ -370,20 +370,49 @@ service cloud.firestore {
            ]);
   }
 
-  // Emergency fallback: allow patching only operative profile metadata fields.
-  function canPatchOperativeProfileMetadataOnly() {
-    return request.auth != null &&
-           request.resource.data.diff(resource.data).changedKeys().hasOnly([
-             'assignedManagerUserId',
-             'assignedManagerUserIds',
-             'dayRate',
-             'hourlyRate',
-             'payBasis',
-             'employmentType',
-             'employmentTypeTransitionFrom',
-             'employmentTypeEffectiveAt',
-             'updatedAt'
-           ]);
+  function flagOn(data, key) {
+    return data != null && key in data && truthyBool(data[key]);
+  }
+
+  function alreadyPrivilegedAdmin(data) {
+    return flagOn(data, 'isSuperAdmin') ||
+           flagOn(data, 'adminAccess') ||
+           ('role' in data && data.role == 'admin') ||
+           ('permissions' in data && data.permissions is map && flagOn(data.permissions, 'adminAccess'));
+  }
+
+  // Self-update may repair missing top-level admin flags on an existing admin.
+  // It must not let an operative set adminAccess, isSuperAdmin, role, or organizationId.
+  function userSelfUpdateKeepsPrivileges() {
+    return resource != null &&
+           (!('organizationId' in request.resource.data) ||
+            ('organizationId' in resource.data &&
+             orgIdsMatch(request.resource.data.organizationId, resource.data.organizationId))) &&
+           (!('role' in request.resource.data) ||
+            ('role' in resource.data && request.resource.data.role == resource.data.role) ||
+            (alreadyPrivilegedAdmin(resource.data) && request.resource.data.role == 'admin')) &&
+           (!flagOn(request.resource.data, 'adminAccess') || alreadyPrivilegedAdmin(resource.data)) &&
+           (!flagOn(request.resource.data, 'isSuperAdmin') || flagOn(resource.data, 'isSuperAdmin')) &&
+           (
+             !('permissions' in request.resource.data) ||
+             !(request.resource.data.permissions is map) ||
+             !flagOn(request.resource.data.permissions, 'adminAccess') ||
+             alreadyPrivilegedAdmin(resource.data)
+           );
+  }
+
+  function canReadUserDocument(userId) {
+    return request.auth != null && (
+      isPlatformOwner() ||
+      request.auth.uid == userId ||
+      (resource != null &&
+       resource.data.email is string &&
+       request.auth.token.email is string &&
+       resource.data.email.lower() == request.auth.token.email.lower()) ||
+      (resource != null &&
+       'organizationId' in resource.data &&
+       canAccessOrganization(resource.data.organizationId))
+    );
   }
   
   // Helper function to validate organizationId exists
@@ -393,11 +422,39 @@ service cloud.firestore {
   
   match /databases/{database}/documents {
     // Invitees open /setup-password?token=<id> before they have an account, so get-by-id
-    // stays public. Listing every invitation (emails, org ids) must not be public.
+    // stays public. List/create/delete are the inviting org's admin or manager, or the
+    // platform owner — not any signed-in user. Update also allows the invitee to mark
+    // isUsed after they set a password (same field lock as accountConfirmations).
     match /invitations/{invitationId} {
+      function invitationOrgId() {
+        return request.method == 'create'
+          ? request.resource.data.organizationId
+          : resource.data.organizationId;
+      }
+
+      function canAdministerInvitation() {
+        return invitationOrgId() is string &&
+          invitationOrgId().size() > 0 && (
+            isPlatformOwner() ||
+            isOrganizationAdmin(invitationOrgId()) ||
+            isOrgAdminViaMembersMap(invitationOrgId()) ||
+            (isManagerWithOperativesAccess() && canAccessOrganization(invitationOrgId()))
+          );
+      }
+
+      function canMarkInvitationUsed() {
+        return request.auth != null &&
+          resource.data.isUsed != true &&
+          request.resource.data.isUsed == true &&
+          request.resource.data.diff(resource.data).changedKeys().hasOnly(['isUsed', 'usedAt']) &&
+          resource.data.email is string &&
+          request.auth.token.email is string &&
+          resource.data.email.lower() == request.auth.token.email.lower();
+      }
+
       allow get: if true;
-      allow list: if request.auth != null;
-      allow create, update, delete: if request.auth != null;
+      allow list, create, delete: if canAdministerInvitation();
+      allow update: if canAdministerInvitation() || canMarkInvitationUsed();
     }
 
     // Founder confirm-account email tokens. Get-by-id is public so the emailed link can mark the token used.
@@ -419,8 +476,8 @@ service cloud.firestore {
     // Add user presets; pending holiday *requests* are deleted client-side when switching onto the
     // self-book path. Approved bookings are never deleted by that transition.
     match /users/{userId} {
-      allow read: if request.auth != null;
-      allow list: if request.auth != null;
+      allow get: if canReadUserDocument(userId);
+      allow list: if canReadUserDocument(userId);
       
       // Allow create if:
       // 1. User is creating themselves (by email match - for signup flow), OR
@@ -466,29 +523,22 @@ service cloud.firestore {
       );
       
       // Allow update if:
-      // 1. User updating themselves (always allow - they can update their own document including organizationId), OR
+      // 1. User updating themselves without escalating admin / role / organizationId, OR
       // 2. Admin/Super Admin updating other users (for user management)
       allow update: if isPlatformOwner() || (request.auth != null && (
-        // User updating themselves - always allow (most permissive - can update anything including organizationId)
-        request.auth.uid == userId ||
-        // User updating themselves by email match
+        (request.auth.uid == userId && userSelfUpdateKeepsPrivileges()) ||
         (resource.data.email is string &&
          request.auth.token.email is string &&
-         resource.data.email.lower() == request.auth.token.email.lower() && 
+         resource.data.email.lower() == request.auth.token.email.lower() &&
          request.resource.data.email is string &&
-         request.resource.data.email.lower() == request.auth.token.email.lower()) ||
-        // Admin/Super Admin updating other users
+         request.resource.data.email.lower() == request.auth.token.email.lower() &&
+         userSelfUpdateKeepsPrivileges()) ||
         isAdminOrSuperAdmin() ||
-        canManagerUpdateOperativeProfile(userId) ||
-        canPatchOperativeProfileMetadataOnly()
+        canManagerUpdateOperativeProfile(userId)
       ) && (
-        // If user is updating themselves, allow any update (including organizationId)
-        // If admin is updating others, validate organizationId changes
         request.auth.uid == userId ||
-        canPatchOperativeProfileMetadataOnly() ||
         !('organizationId' in request.resource.data) ||
         (('organizationId' in resource.data && orgIdsMatch(request.resource.data.organizationId, resource.data.organizationId)) ||
-         // Allow setting organizationId if organization exists (for manual linking)
          (organizationExists(request.resource.data.organizationId) && isAdminOrSuperAdmin()))
       ));
       
@@ -546,7 +596,10 @@ service cloud.firestore {
     match /organizations/{organizationId} {
       // One user per email per org (must stay above the catch-all so writes are not widened by {collection}/**)
       match /userEmails/{emailKey} {
-        allow read: if request.auth != null;
+        allow read: if request.auth != null && (
+          canAccessOrganization(organizationId) ||
+          (resource != null && resource.data.userId == request.auth.uid)
+        );
         allow create, update: if request.auth != null && (
           isPlatformOwner() ||
           isAdminOrSuperAdmin() ||
@@ -575,11 +628,7 @@ service cloud.firestore {
       allow update: if (isPlatformOwner() ||
                      isOrganizationAdmin(organizationId) ||
                      isOrgAdminViaMembersMap(organizationId) ||
-                     isOrgCreatorViaParentGet(organizationId) ||
-                     (request.auth != null &&
-                      'members' in request.resource.data &&
-                      request.resource.data.members[request.auth.uid] != null &&
-                      organizationExists(organizationId)))
+                     isOrgCreatorViaParentGet(organizationId))
                      && billingUnchanged();
       
       allow delete: if false;
@@ -644,10 +693,35 @@ service cloud.firestore {
         function isVariationSettingsDoc() {
           return settingId.matches('^variations_.*') || settingId.matches('^variationItem_.*');
         }
+        function isTimesheetSettingsDoc() {
+          return settingId.matches('^timesheet_.*');
+        }
+        // Doc id is timesheet_{userId}_{unix} (userId may itself contain underscores).
+        // Prefer stored userId; fall back to id prefix timesheet_{auth.uid}_.
+        // matches() is whole-string — the .* is required.
+        function isOwnTimesheetSettings() {
+          return request.auth != null && (
+            (resource != null && 'userId' in resource.data && resource.data.userId == request.auth.uid) ||
+            (request.method == 'create' &&
+             'userId' in request.resource.data &&
+             request.resource.data.userId == request.auth.uid) ||
+            settingId.matches('^timesheet_' + request.auth.uid + '_.*')
+          );
+        }
+        function canWriteTimesheetSettings() {
+          return isOwnTimesheetSettings() ||
+            isOrganizationAdmin(organizationId) ||
+            isOrgAdminViaMembersMap(organizationId) ||
+            isOrganizationMaterialManager(organizationId) ||
+            isPlatformOwner();
+        }
         allow read: if canAccessOrganization(organizationId) &&
           (!isVariationSettingsDoc() || canAccessVariationsStaff(organizationId));
-        allow write: if canAccessOrganization(organizationId) &&
-          (!isVariationSettingsDoc() || canAccessVariationsStaff(organizationId));
+        allow write: if canAccessOrganization(organizationId) && (
+          isTimesheetSettingsDoc()
+            ? canWriteTimesheetSettings()
+            : (!isVariationSettingsDoc() || canAccessVariationsStaff(organizationId))
+        );
       }
       
       match /tasks/{taskId} {
@@ -663,9 +737,23 @@ service cloud.firestore {
       }
       
       match /notifications/{notificationId} {
-        allow read: if canAccessOrganization(organizationId);
-        allow create, update: if canAccessOrganization(organizationId);
-        allow delete: if isOrganizationAdmin(organizationId);
+        function isOwnNotification() {
+          return resource != null &&
+            'userId' in resource.data &&
+            resource.data.userId == request.auth.uid;
+        }
+        function canAdminNotifications() {
+          return isOrganizationAdmin(organizationId) ||
+            isOrgAdminViaMembersMap(organizationId) ||
+            isPlatformOwner();
+        }
+        // Inbox queries userId == signed-in user. Fan-out create stays org-member.
+        allow read: if canAccessOrganization(organizationId) &&
+          (isOwnNotification() || canAdminNotifications());
+        allow create: if canAccessOrganization(organizationId);
+        allow update: if canAccessOrganization(organizationId) &&
+          (isOwnNotification() || canAdminNotifications());
+        allow delete: if canAdminNotifications();
       }
 
       match /materials/{materialId} {
@@ -715,8 +803,15 @@ service cloud.firestore {
       }
       
       match /holidayBookings/{bookingId} {
-        // Temporary: allow any signed-in user to use holiday flow while broader org ACL is stabilized.
-        allow read, create, update, delete: if request.auth != null;
+        allow read, create, update: if canAccessOrganization(organizationId);
+        allow delete: if canAccessOrganization(organizationId) && (
+          isPlatformOwner() ||
+          isOrganizationAdmin(organizationId) ||
+          isOrgAdminViaMembersMap(organizationId) ||
+          isOrganizationMaterialManager(organizationId) ||
+          ('userId' in resource.data && resource.data.userId == request.auth.uid) ||
+          ('operativeId' in resource.data && resource.data.operativeId == request.auth.uid)
+        );
       }
 
       match /operativeProfiles/{userId} {
@@ -778,13 +873,9 @@ service cloud.firestore {
       match /{collection}/{document=**} {
         allow read: if canAccessOrganization(organizationId) &&
           collection != 'variations' &&
-          collection != 'variationTrackers';
+          collection != 'variationTrackers' &&
+          collection != 'notifications';
       }
-    }
-
-    match /platformConfig/{docId} {
-      allow read: if request.auth != null;
-      allow write: if isAdminOrSuperAdmin();
     }
 
     // Shared product ideas board — every signed-in organisation can read and submit.
@@ -916,7 +1007,7 @@ service cloud.firestore {
     }
 
     match /platformConfig/{id} {
-      allow read: if isPlatformOwner();
+      allow read: if request.auth != null;
       allow write: if isPlatformOwner();
     }
 

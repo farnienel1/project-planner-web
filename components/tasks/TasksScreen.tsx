@@ -15,6 +15,10 @@ import {
 } from '@/lib/annualLeave/holidayApprovalUtils'
 import { resolvePersonName } from '@/lib/annualLeave/annualLeavePerson'
 import {
+  holidayDecisionActorName,
+  notifyHolidayRequestDecisionToUser,
+} from '@/lib/annualLeave/notifyHolidayRequestDecision'
+import {
   filterTasksForView,
   getTaskProjectHref,
   getTaskDetailHref,
@@ -250,6 +254,14 @@ export function TasksScreen() {
           approvedAt: new Date(),
           updatedAt: new Date(),
         })
+        await notifyHolidayRequestDecisionToUser({
+          organizationId: organization.id,
+          booking: request,
+          approved: true,
+          decidedByName: holidayDecisionActorName(user),
+          users,
+          operatives,
+        })
       }
     } finally {
       setActionId(null)
@@ -274,6 +286,14 @@ export function TasksScreen() {
           approvedByUserId: user.id,
           approvedAt: new Date(),
           updatedAt: new Date(),
+        })
+        await notifyHolidayRequestDecisionToUser({
+          organizationId: organization.id,
+          booking: request,
+          approved: false,
+          decidedByName: holidayDecisionActorName(user),
+          users,
+          operatives,
         })
       }
     } finally {

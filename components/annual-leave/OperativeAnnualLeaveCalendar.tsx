@@ -13,6 +13,11 @@ import {
 } from '@/lib/annualLeave/dayStatus'
 import { formatLeaveDate, formatLeaveRange } from '@/lib/annualLeave/formatLeaveDays'
 import { leaveDayBlockedReason, leaveSubmitStatus } from '@/lib/annualLeave/leaveRequestDecision'
+import {
+  holidayDecisionActorName,
+  notifyHolidayRequestDecisionToUser,
+} from '@/lib/annualLeave/notifyHolidayRequestDecision'
+import { useOperativeStore } from '@/lib/stores/operativeStore'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import type { HolidayBooking, HolidayTimeSlot } from '@/types'
 import { AnnualLeaveLegend, LeaveDayCalendar } from './LeaveDayCalendar'
@@ -98,6 +103,7 @@ export function OperativeAnnualLeaveCalendar({
 }) {
   const { organization, user } = useAuthStore()
   const users = useOrgUserStore((state) => state.users)
+  const operatives = useOperativeStore((state) => state.operatives)
   const { saveBooking, deleteBooking } = useHolidayStore()
 
   const [month, setMonth] = useState(() => monthOfNextBooking(person, bookings))
@@ -225,6 +231,14 @@ export function OperativeAnnualLeaveCalendar({
         approvedAt: new Date(),
         updatedAt: new Date(),
       })
+      await notifyHolidayRequestDecisionToUser({
+        organizationId: organization.id,
+        booking: pendingBooking,
+        approved: true,
+        decidedByName: holidayDecisionActorName(user),
+        users,
+        operatives,
+      })
       setMessage('Request approved.')
       setSelectedDay(null)
       setTimeout(() => setMessage(null), 3000)
@@ -258,6 +272,14 @@ export function OperativeAnnualLeaveCalendar({
         approvedByUserId: user.id,
         approvedAt: new Date(),
         updatedAt: new Date(),
+      })
+      await notifyHolidayRequestDecisionToUser({
+        organizationId: organization.id,
+        booking: pendingBooking,
+        approved: false,
+        decidedByName: holidayDecisionActorName(user),
+        users,
+        operatives,
       })
       setMessage('Request declined.')
       setSelectedDay(null)
