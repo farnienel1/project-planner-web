@@ -17,10 +17,6 @@ export const PLAN_KEYS: SubscriptionPlanKey[] = ['month', 'year']
 
 export const STRIPE_LOOKUP_MONTHLY = 'projectplanner_monthly_gbp'
 export const STRIPE_LOOKUP_ANNUAL = 'projectplanner_annual_gbp'
-export const STRIPE_PRODUCT_ID_DEFAULT = 'prod_VJRTsDgwXEkoIS'
-export const STRIPE_PRICE_MONTHLY_DEFAULT = 'price_1UIoarDAbu1xyzaBw0yZNCnJ'
-export const STRIPE_PRICE_ANNUAL_DEFAULT = 'price_1UIoasDAbu1xyzaB80igg3WU'
-export const STRIPE_PORTAL_CONFIG_DEFAULT = 'bpc_1UIochDAbu1xyzaBGLeMkVKW'
 export const TRIAL_DAYS = 30
 export const MONTHLY_PENCE = 14_900
 export const ANNUAL_PENCE = 149_000
@@ -67,21 +63,17 @@ export function normalizePlanKey(value?: string | null): SubscriptionPlanKey {
 
 export function getStripePriceId(planKey: SubscriptionPlanKey = 'month'): string | undefined {
   if (planKey === 'year') {
-    return process.env.STRIPE_PRICE_ANNUAL?.trim() || STRIPE_PRICE_ANNUAL_DEFAULT
+    return process.env.STRIPE_PRICE_ANNUAL?.trim() || undefined
   }
-  return (
-    process.env.STRIPE_PRICE_MONTHLY?.trim() ||
-    process.env.STRIPE_PRICE_ID?.trim() ||
-    STRIPE_PRICE_MONTHLY_DEFAULT
-  )
+  return process.env.STRIPE_PRICE_MONTHLY?.trim() || process.env.STRIPE_PRICE_ID?.trim() || undefined
 }
 
-export function getStripeProductId(): string {
-  return process.env.STRIPE_PRODUCT_ID?.trim() || STRIPE_PRODUCT_ID_DEFAULT
+export function getStripeProductId(): string | undefined {
+  return process.env.STRIPE_PRODUCT_ID?.trim() || undefined
 }
 
 export function getStripePortalConfigurationId(): string | undefined {
-  return process.env.STRIPE_PORTAL_CONFIGURATION_ID?.trim() || STRIPE_PORTAL_CONFIG_DEFAULT
+  return process.env.STRIPE_PORTAL_CONFIGURATION_ID?.trim() || undefined
 }
 
 export function requireStripePriceId(planKey: SubscriptionPlanKey = 'month'): string {
