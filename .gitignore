@@ -17,17 +17,23 @@
 
 # misc
 .DS_Store
-*.pem
 
 # debug
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# local env files
-.env*.local
-.env*.rtf
+# secrets and local env — never commit
 .env
+.env.*
+*.env
+.env*.save
+.env.txt
+.env*.rtf
+*.pem
+serviceAccount*.json
+*-firebase-adminsdk-*.json
+!.env.example
 
 # vercel
 .vercel
