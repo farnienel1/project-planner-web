@@ -38,17 +38,23 @@ import {
 import { TimesheetsScreen, type TeamTimesheetTab } from '@/components/timesheets/TimesheetsScreen'
 import { TimesheetPeriodPage } from '@/components/timesheets/TimesheetPeriodPage'
 import { dateFromDayKey, dayKey } from '@/lib/ios-parity/londonTime'
-import { resolveTimesheetPeriod, timesheetListBucket, timesheetPeriodFromInvoicing } from '@/lib/canonical'
+import { resolveTimesheetPeriod, timesheetPeriodFromInvoicing } from '@/lib/canonical'
 import { ianaTimeZoneForCountry } from '@/lib/orgTime/orgTimeZone'
 import { computeInvoicingPeriod } from '@/lib/warnings/warningLookahead'
-import { loadTimesheetDrafts, loadTimesheetDraftsForStarts, listTimesheetStates } from '@/lib/timesheets/timesheetStorage'
+import {
+  loadExportedTimesheetHistory,
+  loadTimesheetDrafts,
+  loadTimesheetDraftsForStarts,
+  listTimesheetStates,
+} from '@/lib/timesheets/timesheetStorage'
+import { timesheetReviewerHubStats } from '@/lib/timesheets/timesheetHubStats'
 import { emptyTimesheetDraft, type TimesheetDraft } from '@/lib/timesheets/timesheetDraft'
 import {
   awaitingManagerSignOff,
   isTimesheetFullyApproved,
 } from '@/lib/timesheets/timesheetApprovalPolicy'
 import { canAccessMyTimesheetsWithPolicy, shouldAppearInOperativeTimesheetRoster } from '@/lib/timesheets/timesheetPayrollPolicy'
-import { groupHasLineManager, timesheetRosterGroups } from '@/lib/timesheets/timesheetWeekUtils'
+import { timesheetRosterGroups } from '@/lib/timesheets/timesheetWeekUtils'
 import {
   TIMESHEETS_HUB_PATH,
   legacyTimesheetRedirect,
@@ -102,7 +108,6 @@ export function TimesheetsHub() {
   const { users, loadUsers, loading: usersLoading } = useOrgUserStore()
   const { projects, smallWorks, loadProjects, loadSmallWorks } = useProjectStore()
   const [invoicing, setInvoicing] = useState<OrgInvoicingSettings>(DEFAULT_INVOICING)
-  const [payRunReady, setPayRunReady] = useState(false)
   const [payrollPolicy, setPayrollPolicy] = useState<OrgPayrollTimePolicy>(DEFAULT_PAYROLL_POLICY)
   const [payrollPolicyPrior, setPayrollPolicyPrior] = useState<OrgPayrollTimePolicy | null>(null)
   const [payrollPolicyEffectiveFrom, setPayrollPolicyEffectiveFrom] = useState<string | null>(null)
@@ -130,13 +135,7 @@ export function TimesheetsHub() {
   useEffect(() => {
     if (!organization?.id) return
     let cancelled = false
-    setPayRunReady(false)
-    loadBookings(organization.id)
-    loadManagerSiteBookings(organization.id)
-    loadOperatives(organization.id)
     loadUsers(organization.id)
-    loadProjects(organization.id, true)
-    loadSmallWorks(organization.id)
     const detailsPromise = loadOrganizationDetails(organization.id)
     const applyDetails = (details: Awaited<ReturnType<typeof loadOrganizationDetails>>) => {
       if (cancelled || !details) return
@@ -147,13 +146,23 @@ export function TimesheetsHub() {
       if (details.myScheduleOptions) setScheduleOptions(details.myScheduleOptions)
       setTimeZone(ianaTimeZoneForCountry(details.countryCode))
     }
-    void withTimeoutFallback(detailsPromise, 8_000, null)
-      .then((details) => applyDetails(details))
-      .catch(() => {})
-      .finally(() => {
-        if (!cancelled) setPayRunReady(true)
-      })
+    void withTimeoutFallback(detailsPromise, 8_000, null).then((details) => applyDetails(details)).catch(() => {})
     void detailsPromise.then((details) => applyDetails(details)).catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [organization?.id, loadUsers])
+
+  const needsNestedCatalogue = surface === 'mine' || surface === 'team'
+
+  useEffect(() => {
+    if (!organization?.id || !needsNestedCatalogue) return
+    let cancelled = false
+    loadBookings(organization.id)
+    loadManagerSiteBookings(organization.id)
+    loadOperatives(organization.id)
+    loadProjects(organization.id, true)
+    loadSmallWorks(organization.id)
     loadOperativeDayRateHistory(organization.id)
       .then((rows) => {
         if (!cancelled) setHistory(rows)
@@ -162,7 +171,15 @@ export function TimesheetsHub() {
     return () => {
       cancelled = true
     }
-  }, [organization?.id, loadBookings, loadManagerSiteBookings, loadOperatives, loadUsers, loadProjects, loadSmallWorks])
+  }, [
+    organization?.id,
+    needsNestedCatalogue,
+    loadBookings,
+    loadManagerSiteBookings,
+    loadOperatives,
+    loadProjects,
+    loadSmallWorks,
+  ])
 
   const runCopy = useMemo(() => currentPaymentRunCopy(invoicing, new Date(), timeZone), [invoicing, timeZone])
   const currentPeriod = useMemo(
@@ -197,9 +214,6 @@ export function TimesheetsHub() {
   const legacyRedirect = pathSurface === 'hub' ? legacyTimesheetRedirect(searchParams.get('surface'), searchParams.toString()) : null
 
   if (!user) return null
-  if (organization?.id && !payRunReady) {
-    return <p className="muted">Loading pay run…</p>
-  }
   if (legacyRedirect) return <p className="muted">Opening timesheets…</p>
   if (!canOpen) {
     return (
@@ -636,69 +650,57 @@ function ManagerTimesheetsTile({
   timeZone: string
   onClick: () => void
 }) {
-  const [stats, setStats] = useState({ awaiting: 0, signed: 0, exported: 0 })
-  const groups = useMemo(
+  const [stats, setStats] = useState<{ awaiting: number; signed: number; exported: number } | null>(null)
+  const reviewGroups = useMemo(() => timesheetRosterGroups(user, users), [user, users])
+  const currentGroups = useMemo(
     () =>
-      timesheetRosterGroups(user, users)
+      reviewGroups
         .map((group) =>
           group.filter((member) =>
             shouldAppearInOperativeTimesheetRoster(member, periodStart, periodEnd, invoicing, new Date(), timeZone)
           )
         )
         .filter((group) => group.length > 0),
-    [user, users, periodStart, periodEnd, invoicing, timeZone]
+    [reviewGroups, periodStart, periodEnd, invoicing, timeZone]
   )
-  const roster = useMemo(() => groups.flat(), [groups])
+  const currentRosterIds = useMemo(() => currentGroups.flat().map((member) => member.id), [currentGroups])
+  const exportedRoster = useMemo(() => reviewGroups.flat(), [reviewGroups])
 
   useEffect(() => {
-    if (!organizationId || roster.length === 0) {
+    if (!organizationId || users.length === 0) {
+      setStats(null)
+      return
+    }
+    if (currentRosterIds.length === 0 && exportedRoster.length === 0) {
       setStats({ awaiting: 0, signed: 0, exported: 0 })
       return
     }
     let cancelled = false
-    loadTimesheetDrafts(
-      organizationId,
-      roster.map((member) => member.id),
-      periodStart,
-      timeZone,
-      periodEnd
-    ).then((drafts) => {
-      if (cancelled) return
-      let awaiting = 0
-      let signed = 0
-      let exported = 0
-      for (const group of groups) {
-        const picked =
-          group.map((member) => ({ member, draft: drafts.get(member.id) })).find((row) => row.draft?.operativeSignedAt) ||
-          group.map((member) => ({ member, draft: drafts.get(member.id) })).find((row) => row.draft)
-        const draft = picked?.draft
-        const member = picked?.member
-        if (!draft || !member) continue
-        const bucket = timesheetListBucket(
-          {
-            operativeSignedAtMs: draft.operativeSignedAt?.getTime() ?? null,
-            operativeSignedByName: draft.operativeSignedByName || '',
-            operativeSignatureImageBase64: draft.operativeSignatureImageBase64 || '',
-            managerSignedAtMs: draft.managerSignedAt?.getTime() ?? null,
-            managerSignedByName: draft.managerSignedByName || '',
-            managerSignedByUserId: draft.managerSignedByUserId || '',
-            managerSignatureImageBase64: draft.managerSignatureImageBase64 || '',
-            exportedAtMs: draft.exportedAt?.getTime() ?? null,
-          },
-          groupHasLineManager(group)
+    Promise.all([
+      currentRosterIds.length > 0
+        ? loadTimesheetDrafts(organizationId, currentRosterIds, periodStart, timeZone, periodEnd)
+        : Promise.resolve(new Map<string, TimesheetDraft>()),
+      exportedRoster.length > 0
+        ? loadExportedTimesheetHistory({ organizationId, users: exportedRoster })
+        : Promise.resolve([]),
+    ])
+      .then(([drafts, exportedRows]) => {
+        if (cancelled) return
+        setStats(
+          timesheetReviewerHubStats({
+            groups: currentGroups,
+            currentPeriodDrafts: drafts,
+            exportedHistoryCount: exportedRows.length,
+          })
         )
-        if (bucket === 'exported') exported += 1
-        else if (bucket === 'signed') signed += 1
-        else if (bucket === 'awaiting') awaiting += 1
-      }
-      setStats({ awaiting, signed, exported })
-    }).catch(() => {
-      if (!cancelled) setStats({ awaiting: 0, signed: 0, exported: 0 })
-    })
+      })
+      .catch(() => {
+        if (!cancelled) setStats({ awaiting: 0, signed: 0, exported: 0 })
+      })
     return () => {
       cancelled = true
     }
-  }, [organizationId, roster, groups, periodStart, periodEnd, timeZone])
+  }, [organizationId, users.length, currentRosterIds, currentGroups, exportedRoster, periodStart, periodEnd, timeZone])
 
   return (
     <button type="button" className="card pad click" data-hue="ts" onClick={onClick} style={{ border: 0, textAlign: 'left' }}>
@@ -719,19 +721,19 @@ function ManagerTimesheetsTile({
       </div>
       <div className="grid g3" style={{ marginTop: 18, gap: 10 }}>
         <div data-hue="warn" style={{ background: 'var(--ht)', borderRadius: 14, padding: 10, textAlign: 'center' }}>
-          <b style={{ fontFamily: 'var(--head)', fontSize: 22, color: 'var(--h)' }}>{stats.awaiting}</b>
+          <b style={{ fontFamily: 'var(--head)', fontSize: 22, color: 'var(--h)' }}>{stats?.awaiting ?? '–'}</b>
           <div className="xs" style={{ fontWeight: 600, color: 'var(--h)' }}>
             Awaiting sign-off
           </div>
         </div>
         <div data-hue="green" style={{ background: 'var(--ht)', borderRadius: 14, padding: 10, textAlign: 'center' }}>
-          <b style={{ fontFamily: 'var(--head)', fontSize: 22, color: 'var(--h)' }}>{stats.signed}</b>
+          <b style={{ fontFamily: 'var(--head)', fontSize: 22, color: 'var(--h)' }}>{stats?.signed ?? '–'}</b>
           <div className="xs" style={{ fontWeight: 600, color: 'var(--h)' }}>
             Signed off
           </div>
         </div>
         <div data-hue="lib" style={{ background: 'var(--ht)', borderRadius: 14, padding: 10, textAlign: 'center' }}>
-          <b style={{ fontFamily: 'var(--head)', fontSize: 22, color: 'var(--h)' }}>{stats.exported}</b>
+          <b style={{ fontFamily: 'var(--head)', fontSize: 22, color: 'var(--h)' }}>{stats?.exported ?? '–'}</b>
           <div className="xs" style={{ fontWeight: 600, color: 'var(--h)' }}>
             Exported
           </div>

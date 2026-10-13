@@ -5,11 +5,11 @@ import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { hasAdminAccess } from '@/lib/navigation/menuPermissions'
 import {
-  loadCanonicalTimesheetDrafts,
+  forgetExportedTimesheetHistory,
   loadExportedTimesheetHistory,
   loadPayPeriodTimesheetDrafts,
   loadTimesheetDraft,
-  loadTimesheetDrafts,
+  loadTimesheetDraftsByUserHistory,
   mergeListedTimesheetDrafts,
   saveTimesheetDraft,
   timesheetSourceDocumentId,
@@ -17,9 +17,10 @@ import {
 } from '@/lib/timesheets/timesheetStorage'
 import type { TimesheetDraft } from '@/lib/timesheets/timesheetDraft'
 import { SIGNED_OFF_EDIT_NOTE } from '@/lib/timesheets/timesheetApprovalPolicy'
-import { resolveTimesheetPeriod, timesheetListBucket } from '@/lib/canonical'
+import { resolveTimesheetPeriod } from '@/lib/canonical'
+import { currentPeriodTimesheetMembers } from '@/lib/timesheets/timesheetHubStats'
 import { applyWeeklyReportOverride } from '@/lib/timesheets/weeklyReportOverride'
-import { groupHasLineManager, subjectForUser, timesheetRosterGroups, userIdsSharingEmail } from '@/lib/timesheets/timesheetWeekUtils'
+import { subjectForUser, timesheetRosterGroups, userIdsSharingEmail } from '@/lib/timesheets/timesheetWeekUtils'
 import { formatPaymentPeriodLine, listSelectablePayPeriods, periodStartKey } from '@/lib/timesheets/paymentRunCopy'
 import { collectTimesheetPayroll } from '@/lib/timesheets/timesheetPayrollCollector'
 import {
@@ -164,9 +165,6 @@ export function TimesheetsScreen({
       const indexed = await loadPayPeriodTimesheetDrafts(organization.id, periodStart, timeZone)
       if (stale()) return
       listed = mergeListedTimesheetDrafts(listed, indexed)
-      const canonical = await loadCanonicalTimesheetDrafts(organization.id, userIds, periodStart, timeZone)
-      if (stale()) return
-      listed = mergeListedTimesheetDrafts(listed, canonical)
       setDrafts((current) => mergeListedTimesheetDrafts(current, listed))
     } catch {
       if (!stale()) setLoadError('Timesheets did not finish loading. Check the connection and try again.')
@@ -179,13 +177,9 @@ export function TimesheetsScreen({
     if (stale() || missing.length === 0) return
     setCheckingEarlier(true)
     try {
-      for (let index = 0; index < missing.length; index += 8) {
-        if (stale()) return
-        const slice = missing.slice(index, index + 8)
-        const extra = await loadTimesheetDrafts(organization.id, slice, periodStart, timeZone, periodEnd)
-        if (stale()) return
-        setDrafts((current) => mergeListedTimesheetDrafts(current, extra))
-      }
+      const extra = await loadTimesheetDraftsByUserHistory(organization.id, missing, periodStart, timeZone, periodEnd)
+      if (stale()) return
+      setDrafts((current) => mergeListedTimesheetDrafts(current, extra))
     } catch {
       // The pay-period rows already on screen stay. This scan is not allowed to blank the tab.
     } finally {
@@ -193,41 +187,14 @@ export function TimesheetsScreen({
     }
   }, [organization?.id, roster, periodStart, periodEnd, timeZone, teamTab])
 
-  const personDraft = (group: User[]) => {
-    const signed = group
-      .map((member) => ({ member, draft: drafts.get(member.id) }))
-      .find((row) => row.draft?.operativeSignedAt)
-    if (signed?.draft) return signed
-    const any = group.map((member) => ({ member, draft: drafts.get(member.id) })).find((row) => row.draft)
-    return any?.draft ? any : null
-  }
-
   useEffect(() => {
     void reload()
   }, [reload])
 
-  const visible = useMemo(() => {
-    const rows: User[] = []
-    for (const group of groups) {
-      const picked = personDraft(group)
-      if (!picked?.draft || teamTab === 'exported') continue
-      const bucket = timesheetListBucket(
-        {
-          operativeSignedAtMs: picked.draft.operativeSignedAt?.getTime() ?? null,
-          operativeSignedByName: picked.draft.operativeSignedByName || '',
-          operativeSignatureImageBase64: picked.draft.operativeSignatureImageBase64 || '',
-          managerSignedAtMs: picked.draft.managerSignedAt?.getTime() ?? null,
-          managerSignedByName: picked.draft.managerSignedByName || '',
-          managerSignedByUserId: picked.draft.managerSignedByUserId || '',
-          managerSignatureImageBase64: picked.draft.managerSignatureImageBase64 || '',
-          exportedAtMs: picked.draft.exportedAt?.getTime() ?? null,
-        },
-        groupHasLineManager(group)
-      )
-      if (bucket === teamTab) rows.push(picked.member)
-    }
-    return rows
-  }, [groups, drafts, teamTab])
+  const visible = useMemo(
+    () => (teamTab === 'exported' ? [] : currentPeriodTimesheetMembers(groups, drafts, teamTab)),
+    [groups, drafts, teamTab]
+  )
 
   const summaryFor = (member: User, draft: TimesheetDraft | undefined, start: Date, end: Date) => {
     const payroll = collectTimesheetPayroll({
@@ -304,6 +271,7 @@ export function TimesheetsScreen({
     const exportedAt = new Date()
     try {
       await persistExportedFlag(exportedAt)
+      forgetExportedTimesheetHistory()
       for (const member of visible) {
         const draft = drafts.get(member.id)
         if (!draft) continue
