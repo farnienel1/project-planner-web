@@ -44,7 +44,7 @@ Before starting, make sure you have:
 
 2. **Open `.env.local` in a text editor** and fill in your Firebase config:
    ```env
-   NEXT_PUBLIC_FIREBASE_API_KEY=AIzaSyCPafzxnt3q2Q_xQ4N6BYrhNyUOJSiL1Yc
+   NEXT_PUBLIC_FIREBASE_API_KEY=
    NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=project-planner-f986c.firebaseapp.com
    NEXT_PUBLIC_FIREBASE_PROJECT_ID=project-planner-f986c
    NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=project-planner-f986c.appspot.com
@@ -181,7 +181,7 @@ Netlify should **auto-detect** Next.js, but verify:
 
 2. **Add each Firebase config variable:**
    ```
-   NEXT_PUBLIC_FIREBASE_API_KEY = AIzaSyCPafzxnt3q2Q_xQ4N6BYrhNyUOJSiL1Yc
+   NEXT_PUBLIC_FIREBASE_API_KEY = 
    NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN = project-planner-f986c.firebaseapp.com
    NEXT_PUBLIC_FIREBASE_PROJECT_ID = project-planner-f986c
    NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET = project-planner-f986c.appspot.com

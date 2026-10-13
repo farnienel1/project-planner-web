@@ -1,6 +1,5 @@
 import type { SubscriptionPlan } from '@/lib/stripe/plans'
 import {
-  getStripePriceId,
   getSubscriptionPlans,
   lookupKeyForPlan,
   normalizePlanKey,
@@ -91,7 +90,7 @@ export async function getResolvedSubscriptionPlan(planKey: string) {
 }
 
 export function isStripePriceConfigured(): boolean {
-  return Boolean(getStripePriceId('month') && process.env.STRIPE_SECRET_KEY?.trim())
+  return Boolean(process.env.STRIPE_SECRET_KEY?.trim())
 }
 
 export { PLAN_KEYS }

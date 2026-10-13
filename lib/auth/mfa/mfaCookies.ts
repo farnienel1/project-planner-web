@@ -24,13 +24,20 @@ export type MfaOk = {
   exp: number
 }
 
+export function resolveMfaSigningSecret(input: { secret?: string; nodeEnv?: string }): string {
+  const secret = (input.secret || '').trim()
+  if (secret) return secret
+  if ((input.nodeEnv || '').trim() === 'production') {
+    throw new Error('MFA_SIGNING_SECRET is not configured')
+  }
+  return 'project-planner-mfa-dev'
+}
+
 function signingSecret(): string {
-  return (
-    process.env.MFA_SIGNING_SECRET?.trim() ||
-    process.env.EMAIL_FUNCTION_URL?.trim() ||
-    process.env.NEXT_PUBLIC_FIREBASE_API_KEY?.trim() ||
-    'project-planner-mfa-dev'
-  )
+  return resolveMfaSigningSecret({
+    secret: process.env.MFA_SIGNING_SECRET,
+    nodeEnv: process.env.NODE_ENV,
+  })
 }
 
 function sign(payload: string): string {
