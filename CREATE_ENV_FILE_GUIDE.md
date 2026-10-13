@@ -33,7 +33,7 @@ Type this command and press Enter:
 
 ```bash
 cat > .env.local << 'EOF'
-NEXT_PUBLIC_FIREBASE_API_KEY=AIzaSyCPafzxnt3q2Q_xQ4N6BYrhNyUOJSiL1Yc
+NEXT_PUBLIC_FIREBASE_API_KEY=
 NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=project-planner-f986c.firebaseapp.com
 NEXT_PUBLIC_FIREBASE_PROJECT_ID=project-planner-f986c
 NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=project-planner-f986c.appspot.com
@@ -58,7 +58,7 @@ EOF
 
 ### Step 3: Paste this content:
 ```
-NEXT_PUBLIC_FIREBASE_API_KEY=AIzaSyCPafzxnt3q2Q_xQ4N6BYrhNyUOJSiL1Yc
+NEXT_PUBLIC_FIREBASE_API_KEY=
 NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=project-planner-f986c.firebaseapp.com
 NEXT_PUBLIC_FIREBASE_PROJECT_ID=project-planner-f986c
 NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=project-planner-f986c.appspot.com
@@ -90,7 +90,7 @@ NEXT_PUBLIC_FIREBASE_APP_ID=1:980527300983:web:89bd0c7a69881d1b1be172
 
 ### Step 3: Paste this content:
 ```
-NEXT_PUBLIC_FIREBASE_API_KEY=AIzaSyCPafzxnt3q2Q_xQ4N6BYrhNyUOJSiL1Yc
+NEXT_PUBLIC_FIREBASE_API_KEY=
 NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=project-planner-f986c.firebaseapp.com
 NEXT_PUBLIC_FIREBASE_PROJECT_ID=project-planner-f986c
 NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=project-planner-f986c.appspot.com
@@ -172,7 +172,7 @@ You should see: `.env.local`
 Here's the exact content for your `.env.local` file:
 
 ```
-NEXT_PUBLIC_FIREBASE_API_KEY=AIzaSyCPafzxnt3q2Q_xQ4N6BYrhNyUOJSiL1Yc
+NEXT_PUBLIC_FIREBASE_API_KEY=
 NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=project-planner-f986c.firebaseapp.com
 NEXT_PUBLIC_FIREBASE_PROJECT_ID=project-planner-f986c
 NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=project-planner-f986c.appspot.com

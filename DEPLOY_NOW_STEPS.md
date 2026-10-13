@@ -78,7 +78,7 @@ git push -u origin main
 
    ```
    NEXT_PUBLIC_FIREBASE_API_KEY
-   Value: AIzaSyCPafzxnt3q2Q_xQ4N6BYrhNyUOJSiL1Yc
+   Value: 
    ```
 
    ```
