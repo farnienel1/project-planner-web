@@ -524,6 +524,39 @@ export async function loadTimesheetDraft(
   return fromCandidates || emptyTimesheetDraft()
 }
 
+function applyKeyedTimesheetDocs(
+  results: Map<string, TimesheetDraft>,
+  wanted: Set<string>,
+  snap: Awaited<ReturnType<typeof getDocs>> | null
+) {
+  if (!snap) return
+  for (const entry of snap.docs) {
+    const data = entry.data() as Record<string, unknown>
+    const userId = typeof data.userId === 'string' ? data.userId : ''
+    if (!wanted.has(userId) || results.has(userId)) continue
+    results.set(userId, rememberSource(draftFromFirestoreMap(data, LIST_DRAFT_OPTIONS), entry.id))
+  }
+}
+
+/** Current pay-run sheets from each person's history — one batched userId query, no per-user getDoc waterfall. */
+export async function loadTimesheetDraftsByUserHistory(
+  organizationId: string,
+  userIds: string[],
+  weekStart: Date,
+  timeZone: string,
+  periodEnd?: Date
+): Promise<Map<string, TimesheetDraft>> {
+  const results = new Map<string, TimesheetDraft>()
+  if (userIds.length === 0) return results
+  const grouped = await loadTimesheetCandidatesByUserIds(organizationId, userIds, false)
+  const end = periodEnd || weekStart
+  for (const userId of userIds) {
+    const picked = pickTimesheetDraftForPeriod(grouped.get(userId) || [], weekStart, end, timeZone)
+    if (picked) results.set(userId, picked.draft)
+  }
+  return results
+}
+
 async function loadTimesheetDraftsOnce(
   organizationId: string,
   userIds: string[],
@@ -535,59 +568,34 @@ async function loadTimesheetDraftsOnce(
   const results = new Map<string, TimesheetDraft>()
   if (userIds.length === 0) return results
 
-  // Wave 1: the weekStartKey query and every person's canonical document id,
-  // together. These used to run one after the other.
+  // Wave 1: this period's weekStartKey plus one userId-in history query.
+  // Do not getDoc every canonical / candidate id up front — that was the hub N+1.
   const key = dayKey(weekStart, timeZone)
-  const canonicalIds = new Map(userIds.map((userId) => [userId, timesheetDocId(userId, weekStart, timeZone)] as const))
-  const [keyed, canonical] = await Promise.all([
+  const end = periodEnd || weekStart
+  const [keyed, grouped] = await Promise.all([
     getDocs(query(collection(db, 'organizations', organizationId, 'settings'), where('weekStartKey', '==', key))).catch(
-      () => null // iOS docs often have no weekStartKey. Direct ids and the userId query cover them.
+      () => null // iOS docs often have no weekStartKey. The userId query covers them.
     ),
-    Promise.all(
-      userIds.map(async (userId) => {
-        const id = canonicalIds.get(userId)!
-        return { userId, id, data: await readDoc(organizationId, id) }
-      })
-    ),
+    loadTimesheetCandidatesByUserIds(organizationId, userIds, false).catch(() => null),
   ])
-  if (keyed) {
-    for (const entry of keyed.docs) {
-      const data = entry.data() as Record<string, unknown>
-      const userId = typeof data.userId === 'string' ? data.userId : ''
-      if (!wanted.has(userId) || results.has(userId)) continue
-      results.set(userId, rememberSource(draftFromFirestoreMap(data, LIST_DRAFT_OPTIONS), entry.id))
-    }
-  }
-  for (const hit of canonical) {
-    if (!hit.data || results.has(hit.userId)) continue
-    results.set(hit.userId, rememberSource(draftFromFirestoreMap(hit.data, LIST_DRAFT_OPTIONS), hit.id))
-  }
-
-  // Wave 2: only for people still without a sheet — the other id spellings and
-  // the per-user history query, together.
-  const missing = userIds.filter((id) => !results.has(id))
-  if (missing.length > 0) {
-    const end = periodEnd || weekStart
-    const [extras, grouped] = await Promise.all([
-      mapInBatches(missing, 12, async (userId) => {
-        const skip = canonicalIds.get(userId)
-        const unique = [...new Set(candidateTimesheetDocIds(userId, weekStart, timeZone))].filter((id) => id !== skip)
-        const hits = await Promise.all(unique.map(async (id) => ({ id, data: await readDoc(organizationId, id) })))
-        const hit = hits.find((row) => row.data)
-        const draft = hit?.data
-          ? rememberSource(draftFromFirestoreMap(hit.data, LIST_DRAFT_OPTIONS), hit.id)
-          : null
-        return [userId, draft] as const
-      }),
-      loadTimesheetCandidatesByUserIds(organizationId, missing, false),
-    ])
-    for (const [userId, draft] of extras) {
-      if (draft) results.set(userId, draft)
-    }
-    for (const userId of missing) {
+  applyKeyedTimesheetDocs(results, wanted, keyed)
+  if (grouped) {
+    for (const userId of userIds) {
       if (results.has(userId)) continue
       const picked = pickTimesheetDraftForPeriod(grouped.get(userId) || [], weekStart, end, timeZone)
       if (picked) results.set(userId, picked.draft)
+    }
+  }
+
+  // Wave 2: only when the batched history query failed — probe other id spellings.
+  const missing = userIds.filter((id) => !results.has(id))
+  if (missing.length > 0 && !grouped) {
+    const extras = await mapInBatches(missing, 12, async (userId) => {
+      const draft = await loadTimesheetDraftByCandidates(organizationId, userId, weekStart, timeZone, false)
+      return [userId, draft] as const
+    })
+    for (const [userId, draft] of extras) {
+      if (draft) results.set(userId, draft)
     }
   }
 
@@ -803,6 +811,17 @@ export type ExportedTimesheetHistoryRow = {
   draft: TimesheetDraft
 }
 
+const EXPORTED_HISTORY_TTL_MS = 20_000
+let exportedHistoryMemo: { key: string; rows: ExportedTimesheetHistoryRow[]; at: number } | null = null
+
+function exportedHistoryCacheKey(organizationId: string, users: Array<{ id: string }>): string {
+  return `${organizationId}|${users.map((user) => user.id).slice().sort().join(',')}`
+}
+
+export function forgetExportedTimesheetHistory(): void {
+  exportedHistoryMemo = null
+}
+
 function ingestExportedRow(
   byId: Map<string, ExportedTimesheetHistoryRow>,
   member: import('@/types').User,
@@ -822,8 +841,13 @@ export async function loadExportedTimesheetHistory({
   organizationId: string
   users: import('@/types').User[]
 }): Promise<ExportedTimesheetHistoryRow[]> {
-  const byId = new Map<string, ExportedTimesheetHistoryRow>()
   if (users.length === 0) return []
+  const cacheKey = exportedHistoryCacheKey(organizationId, users)
+  const now = Date.now()
+  if (exportedHistoryMemo && exportedHistoryMemo.key === cacheKey && now - exportedHistoryMemo.at < EXPORTED_HISTORY_TTL_MS) {
+    return exportedHistoryMemo.rows
+  }
+  const byId = new Map<string, ExportedTimesheetHistoryRow>()
   const byUserId = new Map(users.map((user) => [user.id, user]))
 
   const ingestData = (member: import('@/types').User, weekStart: Date, data: Record<string, unknown>) => {
@@ -850,7 +874,7 @@ export async function loadExportedTimesheetHistory({
       ingestData(member, weekStart, data)
     }
     if (byId.size > 0) {
-      return Array.from(byId.values()).sort((a, b) => {
+      const rows = Array.from(byId.values()).sort((a, b) => {
         const left = a.draft.exportedAt?.getTime() || 0
         const right = b.draft.exportedAt?.getTime() || 0
         if (left !== right) return right - left
@@ -858,6 +882,8 @@ export async function loadExportedTimesheetHistory({
         const bn = `${b.user.firstName} ${b.user.surname}`.trim()
         return an.localeCompare(bn)
       })
+      exportedHistoryMemo = { key: cacheKey, rows, at: now }
+      return rows
     }
   } catch {
     // Missing index or rules — fall back to per-user list.
@@ -871,7 +897,7 @@ export async function loadExportedTimesheetHistory({
     for (const row of rows) ingestExportedRow(byId, member, row.weekStart, row.draft, row.endDayKey)
   }
 
-  return Array.from(byId.values()).sort((a, b) => {
+  const rows = Array.from(byId.values()).sort((a, b) => {
     const left = a.draft.exportedAt?.getTime() || 0
     const right = b.draft.exportedAt?.getTime() || 0
     if (left !== right) return right - left
@@ -879,4 +905,6 @@ export async function loadExportedTimesheetHistory({
     const bn = `${b.user.firstName} ${b.user.surname}`.trim()
     return an.localeCompare(bn)
   })
+  exportedHistoryMemo = { key: cacheKey, rows, at: now }
+  return rows
 }
