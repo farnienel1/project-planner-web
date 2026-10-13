@@ -1,0 +1,296 @@
+/**
+ * Wave 1 + Wave 2 Firestore rules. Runs against the emulator only.
+ *
+ *   npm run test:rules
+ */
+import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+import test from 'node:test'
+import {
+  assertFails,
+  assertSucceeds,
+  initializeTestEnvironment,
+  type RulesTestEnvironment,
+} from '@firebase/rules-unit-testing'
+import {
+  collection,
+  deleteDoc,
+  doc,
+  getDoc,
+  getDocs,
+  query,
+  setDoc,
+  updateDoc,
+  where,
+} from 'firebase/firestore'
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+const rules = readFileSync(path.join(root, 'firestore.rules'), 'utf8')
+
+const ORG_A = 'org-a'
+const ORG_B = 'org-b'
+const ADMIN_A = 'admin-a'
+const OP_A = 'op-a'
+const ADMIN_B = 'admin-b'
+const OP_B = 'op-b'
+
+let env: RulesTestEnvironment
+
+function authDb(uid: string, email: string) {
+  return env.authenticatedContext(uid, { email }).firestore()
+}
+
+test.before(async () => {
+  env = await initializeTestEnvironment({
+    projectId: 'demo-project-planner-rules',
+    firestore: { rules, host: '127.0.0.1', port: 8080 },
+  })
+
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore()
+    await setDoc(doc(db, 'organizations', ORG_A), {
+      name: 'Company A',
+      members: { [ADMIN_A]: 'admin', [OP_A]: 'member' },
+      creatorUserId: ADMIN_A,
+    })
+    await setDoc(doc(db, 'organizations', ORG_B), {
+      name: 'Company B',
+      members: { [ADMIN_B]: 'admin', [OP_B]: 'member' },
+      creatorUserId: ADMIN_B,
+    })
+    await setDoc(doc(db, 'users', ADMIN_A), {
+      email: 'admin-a@test.com',
+      organizationId: ORG_A,
+      role: 'admin',
+      adminAccess: true,
+      firstName: 'Ada',
+    })
+    await setDoc(doc(db, 'users', OP_A), {
+      email: 'op-a@test.com',
+      organizationId: ORG_A,
+      role: 'operative',
+      adminAccess: false,
+      isSuperAdmin: false,
+      operativeMode: true,
+      firstName: 'Ollie',
+    })
+    await setDoc(doc(db, 'users', ADMIN_B), {
+      email: 'admin-b@test.com',
+      organizationId: ORG_B,
+      role: 'admin',
+      adminAccess: true,
+      firstName: 'Bea',
+    })
+    await setDoc(doc(db, 'users', OP_B), {
+      email: 'op-b@test.com',
+      organizationId: ORG_B,
+      role: 'operative',
+      adminAccess: false,
+      operativeMode: true,
+      firstName: 'Ben',
+    })
+    await setDoc(doc(db, 'organizations', ORG_A, 'bookings', 'book-a'), {
+      organizationId: ORG_A,
+      userId: OP_A,
+    })
+    await setDoc(doc(db, 'organizations', ORG_B, 'bookings', 'book-b'), {
+      organizationId: ORG_B,
+      userId: OP_B,
+    })
+    await setDoc(doc(db, 'organizations', ORG_A, 'materials', 'mat-a'), {
+      organizationId: ORG_A,
+      addedByUserId: ADMIN_A,
+    })
+    await setDoc(doc(db, 'organizations', ORG_B, 'materials', 'mat-b'), {
+      organizationId: ORG_B,
+      addedByUserId: ADMIN_B,
+    })
+    await setDoc(doc(db, 'organizations', ORG_B, 'settings', `timesheet_${OP_B}_1000`), {
+      userId: OP_B,
+    })
+    await setDoc(doc(db, 'organizations', ORG_A, 'holidayBookings', 'hol-a'), {
+      userId: OP_A,
+      organizationId: ORG_A,
+    })
+    await setDoc(doc(db, 'organizations', ORG_B, 'holidayBookings', 'hol-b'), {
+      userId: OP_B,
+      organizationId: ORG_B,
+    })
+    await setDoc(doc(db, 'invitations', 'invite-a'), {
+      organizationId: ORG_A,
+      email: 'new-a@test.com',
+      isUsed: false,
+    })
+    await setDoc(doc(db, 'invitations', 'invite-b'), {
+      organizationId: ORG_B,
+      email: 'new-b@test.com',
+      isUsed: false,
+    })
+    await setDoc(doc(db, 'organizations', ORG_A, 'notifications', 'note-a'), {
+      userId: ADMIN_A,
+      isRead: false,
+      type: 'holiday_request_approved',
+    })
+    await setDoc(doc(db, 'organizations', ORG_A, 'notifications', 'note-op-a'), {
+      userId: OP_A,
+      isRead: false,
+      type: 'holiday_request_approved',
+    })
+    await setDoc(doc(db, 'organizations', ORG_B, 'notifications', 'note-b'), {
+      userId: ADMIN_B,
+      isRead: false,
+    })
+    await setDoc(doc(db, 'organizations', ORG_A, 'settings', `timesheet_${ADMIN_A}_2000`), {
+      userId: ADMIN_A,
+    })
+    await setDoc(doc(db, 'organizations', ORG_A, 'settings', `timesheet_${OP_A}_1000`), {
+      userId: OP_A,
+    })
+  })
+})
+
+test.after(async () => {
+  await env.cleanup()
+})
+
+test('company A cannot read company B bookings', async () => {
+  const db = authDb(ADMIN_A, 'admin-a@test.com')
+  await assertFails(getDoc(doc(db, 'organizations', ORG_B, 'bookings', 'book-b')))
+})
+
+test('company A cannot read company B timesheet settings', async () => {
+  const db = authDb(ADMIN_A, 'admin-a@test.com')
+  await assertFails(getDoc(doc(db, 'organizations', ORG_B, 'settings', `timesheet_${OP_B}_1000`)))
+})
+
+test('company A cannot read a company B user document', async () => {
+  const db = authDb(ADMIN_A, 'admin-a@test.com')
+  await assertFails(getDoc(doc(db, 'users', OP_B)))
+  await assertFails(getDoc(doc(db, 'users', ADMIN_B)))
+})
+
+test('company A cannot read company B materials', async () => {
+  const db = authDb(ADMIN_A, 'admin-a@test.com')
+  await assertFails(getDoc(doc(db, 'organizations', ORG_B, 'materials', 'mat-b')))
+})
+
+test('company A cannot read company B holidays', async () => {
+  const db = authDb(ADMIN_A, 'admin-a@test.com')
+  await assertFails(getDoc(doc(db, 'organizations', ORG_B, 'holidayBookings', 'hol-b')))
+})
+
+test('an operative cannot make themselves admin', async () => {
+  const db = authDb(OP_A, 'op-a@test.com')
+  await assertFails(updateDoc(doc(db, 'users', OP_A), { adminAccess: true }))
+  await assertFails(updateDoc(doc(db, 'users', OP_A), { role: 'admin' }))
+  await assertFails(updateDoc(doc(db, 'users', OP_A), { isSuperAdmin: true }))
+  await assertFails(updateDoc(doc(db, 'users', OP_A), { 'permissions.adminAccess': true }))
+})
+
+test('an outsider cannot join another company by rewriting members', async () => {
+  const db = authDb(ADMIN_A, 'admin-a@test.com')
+  await assertFails(
+    updateDoc(doc(db, 'organizations', ORG_B), {
+      members: { [ADMIN_B]: 'admin', [OP_B]: 'member', [ADMIN_A]: 'admin' },
+    })
+  )
+})
+
+test('company A can still read its own bookings and materials', async () => {
+  const db = authDb(ADMIN_A, 'admin-a@test.com')
+  const booking = await assertSucceeds(getDoc(doc(db, 'organizations', ORG_A, 'bookings', 'book-a')))
+  const material = await assertSucceeds(getDoc(doc(db, 'organizations', ORG_A, 'materials', 'mat-a')))
+  const colleague = await assertSucceeds(getDoc(doc(db, 'users', OP_A)))
+  assert.equal(booking.exists(), true)
+  assert.equal(material.exists(), true)
+  assert.equal(colleague.exists(), true)
+})
+
+test('an operative can still update their own name', async () => {
+  const db = authDb(OP_A, 'op-a@test.com')
+  await assertSucceeds(updateDoc(doc(db, 'users', OP_A), { firstName: 'Oliver' }))
+})
+
+test('invite get-by-id stays public', async () => {
+  const db = env.unauthenticatedContext().firestore()
+  const snap = await assertSucceeds(getDoc(doc(db, 'invitations', 'invite-b')))
+  assert.equal(snap.exists(), true)
+})
+
+test('company A cannot list company B invitations', async () => {
+  const db = authDb(ADMIN_A, 'admin-a@test.com')
+  await assertFails(getDocs(query(collection(db, 'invitations'), where('organizationId', '==', ORG_B))))
+})
+
+test('company A cannot create or change a company B invitation', async () => {
+  const db = authDb(ADMIN_A, 'admin-a@test.com')
+  await assertFails(
+    setDoc(doc(db, 'invitations', 'invite-from-a'), {
+      organizationId: ORG_B,
+      email: 'x@test.com',
+      isUsed: false,
+    })
+  )
+  await assertFails(updateDoc(doc(db, 'invitations', 'invite-b'), { firstName: 'Nope' }))
+  await assertFails(deleteDoc(doc(db, 'invitations', 'invite-b')))
+})
+
+test('admin A can list and create invitations for company A', async () => {
+  const db = authDb(ADMIN_A, 'admin-a@test.com')
+  const listed = await assertSucceeds(
+    getDocs(query(collection(db, 'invitations'), where('organizationId', '==', ORG_A)))
+  )
+  assert.ok(listed.size >= 1)
+  await assertSucceeds(
+    setDoc(doc(db, 'invitations', 'invite-a-new'), {
+      organizationId: ORG_A,
+      email: 'another-a@test.com',
+      isUsed: false,
+    })
+  )
+})
+
+test('invitee can mark their invitation used', async () => {
+  const db = authDb('invitee-a', 'new-a@test.com')
+  await assertSucceeds(updateDoc(doc(db, 'invitations', 'invite-a'), { isUsed: true }))
+})
+
+test('company A cannot read a company B notification', async () => {
+  const db = authDb(ADMIN_A, 'admin-a@test.com')
+  await assertFails(getDoc(doc(db, 'organizations', ORG_B, 'notifications', 'note-b')))
+})
+
+test('an operative cannot read another person\'s notification', async () => {
+  const db = authDb(OP_A, 'op-a@test.com')
+  await assertFails(getDoc(doc(db, 'organizations', ORG_A, 'notifications', 'note-a')))
+})
+
+test('a user can read their own notification', async () => {
+  const db = authDb(ADMIN_A, 'admin-a@test.com')
+  const snap = await assertSucceeds(getDoc(doc(db, 'organizations', ORG_A, 'notifications', 'note-a')))
+  assert.equal(snap.exists(), true)
+})
+
+test('an operative cannot write another person\'s timesheet settings', async () => {
+  const db = authDb(OP_A, 'op-a@test.com')
+  await assertFails(
+    setDoc(
+      doc(db, 'organizations', ORG_A, 'settings', `timesheet_${ADMIN_A}_2000`),
+      { userId: ADMIN_A, signed: true },
+      { merge: true }
+    )
+  )
+})
+
+test('admin A can write their own timesheet settings', async () => {
+  const db = authDb(ADMIN_A, 'admin-a@test.com')
+  await assertSucceeds(
+    setDoc(
+      doc(db, 'organizations', ORG_A, 'settings', `timesheet_${ADMIN_A}_2000`),
+      { userId: ADMIN_A, hours: 8 },
+      { merge: true }
+    )
+  )
+})
