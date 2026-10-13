@@ -1,0 +1,36 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function userData() {
+      return firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function callerOrgMatches(orgId) {
+      return signedIn()
+        && firestore.exists(/databases/(default)/documents/users/$(request.auth.uid))
+        && (
+          (userData().organizationId is string
+            && userData().organizationId.lower() == orgId.lower())
+          || userData().organizationId == /databases/(default)/documents/organizations/$(orgId)
+        );
+    }
+
+    function callerIsMember(orgId) {
+      return signedIn()
+        && firestore.exists(/databases/(default)/documents/organizations/$(orgId))
+        && firestore.get(/databases/(default)/documents/organizations/$(orgId)).data.members[request.auth.uid] != null;
+    }
+
+    match /organizations/{orgId}/{allPaths=**} {
+      allow read, write: if callerOrgMatches(orgId) || callerIsMember(orgId);
+    }
+
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
