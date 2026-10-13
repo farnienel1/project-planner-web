@@ -83,7 +83,13 @@ export default function ChangeOrganisationPage() {
       if (!organization) setRefreshing(true)
       try {
         const known = [activeOrgId, user?.organizationId, readWebActiveOrg(firebaseUser.uid)]
-        const rows = await loadUserOrgMemberships(firebaseUser.uid, activeOrgId, known)
+        const rows = await loadUserOrgMemberships(firebaseUser.uid, activeOrgId, known, {
+          onKnown: (knownRows) => {
+            if (cancelled || knownRows.length === 0) return
+            setMemberships(knownRows)
+            setRefreshing(false)
+          },
+        })
         if (!cancelled) {
           setDiscoveryIncomplete(membershipListDiscoveryFailed(rows))
           if (rows.length === 0 && organization && user) {
@@ -114,7 +120,12 @@ export default function ChangeOrganisationPage() {
       readWebActiveOrg(firebaseUser.uid),
       ...memberships.map((row) => row.organizationId),
     ]
-    const rows = await loadUserOrgMemberships(firebaseUser.uid, activeOrgId, known)
+    const rows = await loadUserOrgMemberships(firebaseUser.uid, activeOrgId, known, {
+      onKnown: (knownRows) => {
+        if (knownRows.length === 0) return
+        setMemberships(knownRows)
+      },
+    })
     setDiscoveryIncomplete(membershipListDiscoveryFailed(rows))
     setMemberships(rows.length > 0 ? rows : memberships)
   }

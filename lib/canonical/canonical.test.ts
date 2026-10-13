@@ -89,7 +89,9 @@ import {
 import {
   DEFAULT_USER_NOTIFICATION_PREFERENCES,
   NOTIFICATION_ICON_BADGE_CLEARS_ON_FOREGROUND,
+  compareInboxNotificationsByCreatedAt,
   devicePushNotificationTypes,
+  inboxNotificationVisibleToUser,
   notificationDeliversDevicePush,
   notificationDestination,
   notificationPreferenceAllowsDelivery,
@@ -1105,6 +1107,9 @@ test('the iOS JavaScript bundle exposes the standard-day, leave and dismiss rule
     'pickTimesheetRowForPeriod',
     'canReviewUserTimesheets',
     'seesEveryUserTimesheet',
+    'inboxNotificationVisibleToUser',
+    'compareInboxNotificationsByCreatedAt',
+    'unreadNotificationBadgeCount',
   ]) {
     assert.equal(typeof bundle[name], 'function', `${name} is exported from the packed script`)
   }
@@ -2296,10 +2301,17 @@ test('unread notification badge counts only that user and leaves read rows out',
     { userId: '', isRead: false },
     { userId: 'u1' },
   ]
+  assert.equal(inboxNotificationVisibleToUser({ userId: 'u1' }, 'u1'), true)
+  assert.equal(inboxNotificationVisibleToUser({ userId: 'u2' }, 'u1'), false)
+  assert.equal(inboxNotificationVisibleToUser({ userId: '' }, 'u1'), true)
   assert.equal(unreadNotificationBadgeCount(rows, 'u1'), 3)
   assert.equal(unreadNotificationBadgeCount(rows, 'u2'), 2)
   assert.equal(unreadNotificationBadgeCount(rows, ''), 0)
   assert.equal(unreadNotificationBadgeCount(undefined, 'u1'), 0)
+  const newest = { createdAt: new Date('2026-10-13T10:00:00.000Z') }
+  const oldest = { createdAt: new Date('2026-10-12T10:00:00.000Z') }
+  assert.ok(compareInboxNotificationsByCreatedAt(newest, oldest) < 0)
+  assert.deepEqual([oldest, newest].sort(compareInboxNotificationsByCreatedAt), [newest, oldest])
 })
 
 test('timesheet status is signed only after a real operative sign and manager counter-sign when required', () => {

@@ -148,7 +148,8 @@ function listedRoleFromMembers(orgData: Record<string, unknown>, userId: string)
 export async function loadUserOrgMemberships(
   userId: string,
   activeOrgId?: string,
-  knownOrganizationIds?: readonly (string | null | undefined)[]
+  knownOrganizationIds?: readonly (string | null | undefined)[],
+  options?: { onKnown?: (rows: OrgMembership[]) => void }
 ): Promise<OrgMembership[]> {
   const db = getFirebaseDb()
   const byId = new Map<string, OrgMembership>()
@@ -156,29 +157,6 @@ export async function loadUserOrgMemberships(
   const knownIds = uniqueOrganizationIds(knownOrganizationIds)
   const knownBudgetMs = 4_000
   const discoveryBudgetMs = 12_000
-
-  // Known companies first. Do not block them on the members/creator collection scan.
-  const [membershipSnap, ...knownSnaps] = await Promise.all([
-    queryWithin(getDocs(collection(db, 'users', userId, 'orgMemberships')), knownBudgetMs),
-    ...knownIds.map((organizationId) => queryWithin(readOrganizationDocument(db, organizationId), knownBudgetMs)),
-  ])
-
-  if (membershipSnap) {
-    for (const entry of membershipSnap.docs) {
-      membershipRecords.set(entry.id, parseMembershipRecord(entry.id, entry.data() as Record<string, unknown>))
-    }
-  }
-
-  const missingMembershipIds = Array.from(membershipRecords.keys()).filter(
-    (organizationId) => !knownIds.some((known) => organizationIdsMatch(known, organizationId))
-  )
-  const [memberSnap, creatorSnap, ...extraSnaps] = await Promise.all([
-    queryWithin(getDocs(query(collection(db, 'organizations'), where(`members.${userId}`, '!=', ''))), discoveryBudgetMs),
-    queryWithin(getDocs(query(collection(db, 'organizations'), where('creatorUserId', '==', userId))), discoveryBudgetMs),
-    ...missingMembershipIds.map((organizationId) =>
-      queryWithin(readOrganizationDocument(db, organizationId), knownBudgetMs)
-    ),
-  ])
 
   const put = (
     organizationId: string,
@@ -197,6 +175,74 @@ export async function loadUserOrgMemberships(
       })
     )
   }
+
+  const finish = (incomplete: boolean): OrgMembership[] => {
+    const keepIds = sessionMembershipIds({
+      discoveredIds: Array.from(byId.keys()),
+      previousIds: knownIds,
+      documentOrganizationId: activeOrgId,
+      discoveryIncomplete: incomplete,
+    })
+    for (const organizationId of keepIds) {
+      if (byId.has(organizationId)) continue
+      const record = membershipRecords.get(organizationId)
+      put(organizationId, {}, record?.role || 'member', {
+        status: record?.status || 'active',
+        invitedAt: record?.invitedAt,
+        acceptedAt: record?.acceptedAt,
+      })
+    }
+    const rows = Array.from(byId.values()).map((row) => ({
+      ...row,
+      id: row.organizationId,
+      name: row.organizationName,
+    }))
+    const sorted = sortMemberships(rows, activeOrgId).map(({ id: _id, name: _name, ...row }) => row)
+    return incomplete ? Object.assign(sorted, { discoveryIncomplete: true as const }) : sorted
+  }
+
+  // Known companies first. Paint them before the members/creator collection scan.
+  const [membershipSnap, ...knownSnaps] = await Promise.all([
+    queryWithin(getDocs(collection(db, 'users', userId, 'orgMemberships')), knownBudgetMs),
+    ...knownIds.map((organizationId) => queryWithin(readOrganizationDocument(db, organizationId), knownBudgetMs)),
+  ])
+
+  if (membershipSnap) {
+    for (const entry of membershipSnap.docs) {
+      membershipRecords.set(entry.id, parseMembershipRecord(entry.id, entry.data() as Record<string, unknown>))
+    }
+  }
+
+  for (let index = 0; index < knownIds.length; index += 1) {
+    const organizationId = knownIds[index]
+    const snap = knownSnaps[index]
+    const record = membershipRecords.get(organizationId)
+    if (snap?.exists()) {
+      const orgData = snap.data() as Record<string, unknown>
+      const role = listedRoleFromMembers(orgData, userId) || record?.role || 'member'
+      put(organizationId, orgData, role)
+      continue
+    }
+    if (record) {
+      put(organizationId, {}, record.role, {
+        status: record.status,
+        invitedAt: record.invitedAt,
+        acceptedAt: record.acceptedAt,
+      })
+    }
+  }
+  options?.onKnown?.(finish(true))
+
+  const missingMembershipIds = Array.from(membershipRecords.keys()).filter(
+    (organizationId) => !knownIds.some((known) => organizationIdsMatch(known, organizationId))
+  )
+  const [memberSnap, creatorSnap, ...extraSnaps] = await Promise.all([
+    queryWithin(getDocs(query(collection(db, 'organizations'), where(`members.${userId}`, '!=', ''))), discoveryBudgetMs),
+    queryWithin(getDocs(query(collection(db, 'organizations'), where('creatorUserId', '==', userId))), discoveryBudgetMs),
+    ...missingMembershipIds.map((organizationId) =>
+      queryWithin(readOrganizationDocument(db, organizationId), knownBudgetMs)
+    ),
+  ])
 
   for (const snap of extraSnaps) {
     if (!snap?.exists()) continue
@@ -223,52 +269,7 @@ export async function loadUserOrgMemberships(
     }
   }
 
-  for (let index = 0; index < knownIds.length; index += 1) {
-    const organizationId = knownIds[index]
-    const snap = knownSnaps[index]
-    const record = membershipRecords.get(organizationId)
-    if (snap?.exists()) {
-      const orgData = snap.data() as Record<string, unknown>
-      const role = listedRoleFromMembers(orgData, userId) || record?.role || (byId.get(organizationId)?.role ?? 'member')
-      put(organizationId, orgData, role)
-      continue
-    }
-    if (record) {
-      put(organizationId, {}, record.role, {
-        status: record.status,
-        invitedAt: record.invitedAt,
-        acceptedAt: record.acceptedAt,
-      })
-    }
-  }
-
-  const incomplete = !membershipSnap || !memberSnap || !creatorSnap
-  const keepIds = sessionMembershipIds({
-    discoveredIds: Array.from(byId.keys()),
-    previousIds: knownIds,
-    documentOrganizationId: activeOrgId,
-    discoveryIncomplete: incomplete,
-  })
-  for (const organizationId of keepIds) {
-    if (byId.has(organizationId)) continue
-    const record = membershipRecords.get(organizationId)
-    put(organizationId, {}, record?.role || 'member', {
-      status: record?.status || 'active',
-      invitedAt: record?.invitedAt,
-      acceptedAt: record?.acceptedAt,
-    })
-  }
-
-  const rows = Array.from(byId.values()).map((row) => ({
-    ...row,
-    id: row.organizationId,
-    name: row.organizationName,
-  }))
-  const sorted = sortMemberships(rows, activeOrgId).map(({ id: _id, name: _name, ...row }) => row)
-  if (incomplete) {
-    return Object.assign(sorted, { discoveryIncomplete: true as const })
-  }
-  return sorted
+  return finish(!membershipSnap || !memberSnap || !creatorSnap)
 }
 
 /** True when the members or creator query did not finish, so the list may be missing companies. */
