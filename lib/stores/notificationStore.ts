@@ -1,11 +1,14 @@
 'use client'
 
 import { create } from 'zustand'
-import { doc, updateDoc } from 'firebase/firestore'
+import { collection, onSnapshot, query, updateDoc, where, doc, type Unsubscribe } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
-import { isOrgCollectionSubscribed, subscribeOrgCollection } from '@/lib/firebase/subscribeOrgCollection'
 import { retainParsedRows } from '@/lib/staff/rosterRetain'
-import { unreadNotificationBadgeCount } from '@/lib/canonical'
+import {
+  compareInboxNotificationsByCreatedAt,
+  inboxNotificationVisibleToUser,
+  unreadNotificationBadgeCount,
+} from '@/lib/canonical'
 import {
   logSkippedDocument,
   parseNotification,
@@ -21,10 +24,9 @@ interface NotificationState {
   markAllAsRead: (organizationId: string) => Promise<void>
 }
 
-function visibleToUser(row: AppInboxNotification, userId: string): boolean {
-  if (!row.userId) return true
-  return row.userId === userId
-}
+let inboxUnsub: Unsubscribe | null = null
+let inboxOrgId = ''
+let inboxUserId = ''
 
 export const useNotificationStore = create<NotificationState>((set, get) => ({
   notifications: [],
@@ -33,30 +35,38 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
   error: null,
 
   loadNotifications: (organizationId, userId) => {
-    if (!organizationId || !db) return
-    const already = isOrgCollectionSubscribed('notifications', organizationId)
+    if (!organizationId || !userId || !db) return
+    const already = inboxOrgId === organizationId && inboxUserId === userId && inboxUnsub
     if (already || get().notifications.length > 0) set({ loading: false })
     else set({ loading: true, error: null })
-    subscribeOrgCollection(
-      'notifications',
-      organizationId,
-      'notifications',
-      (docs) => {
+    if (already) return
+
+    inboxUnsub?.()
+    inboxOrgId = organizationId
+    inboxUserId = userId
+    const inbox = query(
+      collection(db, 'organizations', organizationId, 'notifications'),
+      where('userId', '==', userId)
+    )
+    inboxUnsub = onSnapshot(
+      inbox,
+      (snap) => {
+        if (inboxOrgId !== organizationId || inboxUserId !== userId) return
         const notifications: AppInboxNotification[] = []
         let failed = 0
-        for (const entry of docs) {
-          const parsed = parseNotification(entry.id, entry.data, organizationId)
+        for (const entry of snap.docs) {
+          const parsed = parseNotification(entry.id, entry.data() as Record<string, unknown>, organizationId)
           if (!parsed.ok) {
             failed += 1
             logSkippedDocument('notifications', entry.id, parsed.errors)
             continue
           }
-          if (visibleToUser(parsed.value, userId)) notifications.push(parsed.value)
+          if (inboxNotificationVisibleToUser(parsed.value, userId)) notifications.push(parsed.value)
         }
-        notifications.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+        notifications.sort(compareInboxNotificationsByCreatedAt)
         const kept =
-          docs.length > 0 && failed === docs.length
-            ? retainParsedRows(docs.length, get().notifications, notifications)
+          snap.docs.length > 0 && failed === snap.docs.length
+            ? retainParsedRows(snap.docs.length, get().notifications, notifications)
             : notifications
         set({
           notifications: kept,
@@ -64,7 +74,10 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
           loading: false,
         })
       },
-      (error) => set({ error: error.message, loading: false })
+      (error) => {
+        if (inboxOrgId !== organizationId || inboxUserId !== userId) return
+        set({ error: error.message, loading: false })
+      }
     )
   },
 

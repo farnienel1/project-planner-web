@@ -253,6 +253,7 @@ test('one saved membership does not shorten the search for other companies', asy
   assert.match(source, /discoveryBudgetMs = 12_000/)
   assert.match(source, /probeSessionOrganizations\(/)
   assert.match(source, /sessionMembershipIds\(/)
+  assert.match(source, /onKnown/)
   assert.equal(source.includes('await membershipForDeviceOrg'), false)
 })
 

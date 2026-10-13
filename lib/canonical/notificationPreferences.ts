@@ -283,11 +283,47 @@ export function notificationDeliversDevicePush(type: string): boolean {
 export type UnreadNotificationBadgeRow = {
   userId?: string | null
   isRead?: boolean | null
+  createdAt?: Date | { getTime?: () => number } | number | null
+}
+
+/**
+ * The notification centre lists a row for this signed-in user when the
+ * stored `userId` matches, or when the row has no owner (legacy broadcast).
+ * A row addressed to someone else is never listed. Who was written onto
+ * the row stays `receivesJobNotification` at create time.
+ */
+export function inboxNotificationVisibleToUser(
+  row: Pick<UnreadNotificationBadgeRow, 'userId'> | null | undefined,
+  userId: string
+): boolean {
+  const uid = trimmed(userId)
+  if (!uid || !row || typeof row !== 'object') return false
+  const owner = trimmed(row.userId)
+  return !owner || owner === uid
+}
+
+/** Newest createdAt first. Both apps sort the centre this way. */
+export function compareInboxNotificationsByCreatedAt(
+  left: Pick<UnreadNotificationBadgeRow, 'createdAt'> | null | undefined,
+  right: Pick<UnreadNotificationBadgeRow, 'createdAt'> | null | undefined
+): number {
+  return inboxCreatedAtMs(right) - inboxCreatedAtMs(left)
+}
+
+function inboxCreatedAtMs(row: Pick<UnreadNotificationBadgeRow, 'createdAt'> | null | undefined): number {
+  const value = row?.createdAt
+  if (value instanceof Date) return value.getTime()
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (value && typeof value === 'object' && typeof value.getTime === 'function') {
+    const ms = value.getTime()
+    return Number.isFinite(ms) ? ms : 0
+  }
+  return 0
 }
 
 /**
  * Unread rows the notification centre lists for `userId`.
- * A blank `userId` on a row is visible to every member (same as the inbox).
+ * Same visibility as `inboxNotificationVisibleToUser`.
  * Explicit `isRead: true` is read; missing or false is unread.
  */
 export function unreadNotificationBadgeCount(
@@ -299,9 +335,7 @@ export function unreadNotificationBadgeCount(
   const rows = Array.isArray(notifications) ? notifications : []
   let count = 0
   for (const row of rows) {
-    if (!row || typeof row !== 'object') continue
-    const owner = trimmed(row.userId)
-    if (owner && owner !== uid) continue
+    if (!inboxNotificationVisibleToUser(row, uid)) continue
     if (row.isRead === true) continue
     count += 1
   }
