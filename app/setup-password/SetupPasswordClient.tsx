@@ -5,6 +5,8 @@ import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { completeInvitationPasswordSetup, fetchInvitationSummary, type InvitationSummary } from '@/lib/invites/completeInviteSetup'
 import { passwordsMatchAndReady } from '@/lib/legal/scrollUtils'
+import { HoneypotField } from '@/components/security/HoneypotField'
+import { postPublicForm } from '@/lib/security/publicFormClient'
 
 export default function SetupPasswordClient() {
   const router = useRouter()
@@ -18,6 +20,7 @@ export default function SetupPasswordClient() {
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [website, setWebsite] = useState('')
 
   useEffect(() => {
     if (!invitationId) {
@@ -62,6 +65,20 @@ export default function SetupPasswordClient() {
 
     setSubmitting(true)
     try {
+      const gated = await postPublicForm('/api/auth/public-gate', {
+        form: 'invite-setup',
+        invitationId,
+        website,
+      })
+      if (!gated.ok) {
+        setError(gated.error)
+        setSubmitting(false)
+        return
+      }
+      if (!gated.proceed) {
+        setSubmitting(false)
+        return
+      }
       await completeInvitationPasswordSetup({ invitationId, password })
       router.push('/dashboard')
     } catch (err) {
@@ -86,7 +103,8 @@ export default function SetupPasswordClient() {
             <div className="h-10 w-10 animate-spin rounded-full border-b-2 border-blue-600" />
           </div>
         ) : (
-          <form onSubmit={(e) => void handleSubmit(e)} className="mt-8 space-y-4">
+          <form onSubmit={(e) => void handleSubmit(e)} className="relative mt-8 space-y-4">
+            <HoneypotField id="invite-website" value={website} onChange={setWebsite} />
             {error && (
               <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
                 {error}

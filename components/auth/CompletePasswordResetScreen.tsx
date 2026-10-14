@@ -7,6 +7,8 @@ import { confirmPasswordReset, verifyPasswordResetCode } from 'firebase/auth'
 import { EyeIcon, EyeSlashIcon } from '@heroicons/react/24/outline'
 import { AppLogoMark } from '@/components/ui/AppLogoMark'
 import { getFirebaseAuth } from '@/lib/firebase/ensureFirebase'
+import { HoneypotField } from '@/components/security/HoneypotField'
+import { postPublicForm } from '@/lib/security/publicFormClient'
 import {
   formatPasswordResetError,
   isPasswordResetAction,
@@ -31,6 +33,7 @@ export function CompletePasswordResetScreen() {
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
   const [done, setDone] = useState(false)
+  const [website, setWebsite] = useState('')
 
   useEffect(() => {
     if (!isPasswordResetAction(action)) {
@@ -74,6 +77,12 @@ export function CompletePasswordResetScreen() {
     }
     try {
       setSaving(true)
+      const gated = await postPublicForm('/api/auth/public-gate', { form: 'reset-complete', website })
+      if (!gated.ok) {
+        setError(gated.error)
+        return
+      }
+      if (!gated.proceed) return
       await confirmPasswordReset(getFirebaseAuth(), action.oobCode, password)
       setDone(true)
     } catch (err) {
@@ -117,6 +126,7 @@ export function CompletePasswordResetScreen() {
               ) : null}
               {email ? (
                 <form className="form mt-6" style={{ gridTemplateColumns: '1fr' }} onSubmit={(e) => void submit(e)}>
+                  <HoneypotField id="reset-complete-website" value={website} onChange={setWebsite} />
                   <label className="f">
                     New password
                     <span className="relative">

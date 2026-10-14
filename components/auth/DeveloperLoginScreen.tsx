@@ -10,6 +10,8 @@ import { formatLoginError } from '@/lib/auth/formatLoginError'
 import { PLATFORM_OWNER_EMAIL, isPlatformOwnerEmail } from '@/lib/platform/owner'
 import { LoadingSpinner } from '@/components/dashboard/PageShell'
 import { isMfaGateOpen, isMfaRequiredError, mfaVerifyHref } from '@/lib/auth/mfa/mfaClient'
+import { HoneypotField } from '@/components/security/HoneypotField'
+import { postPublicForm } from '@/lib/security/publicFormClient'
 
 const MIN_PASSWORD = 10
 
@@ -30,6 +32,7 @@ export function DeveloperLoginScreen() {
   const [localError, setLocalError] = useState('')
   const [notice, setNotice] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [website, setWebsite] = useState('')
 
   const signedInOwner = isPlatformOwnerEmail(firebaseUser?.email || user?.email)
 
@@ -77,7 +80,17 @@ export function DeveloperLoginScreen() {
     throw new Error('This login is only for the Project Planner owner. Organisation accounts use the main Sign in page.')
   }
 
+  async function gateOwnerForm(): Promise<boolean> {
+    const gated = await postPublicForm('/api/auth/public-gate', { form: 'developer-login', website })
+    if (!gated.ok) {
+      setLocalError(gated.error)
+      return false
+    }
+    return gated.proceed
+  }
+
   const handleSignIn = async () => {
+    if (!(await gateOwnerForm())) return
     await signIn(PLATFORM_OWNER_EMAIL, password, { next: '/developer' })
   }
 
@@ -86,6 +99,7 @@ export function DeveloperLoginScreen() {
       setLocalError('Passwords do not match.')
       return
     }
+    if (!(await gateOwnerForm())) return
     try {
       await signUpOwner(password)
     } catch (err) {
@@ -133,6 +147,7 @@ export function DeveloperLoginScreen() {
     setNotice('')
     try {
       setSubmitting(true)
+      if (!(await gateOwnerForm())) return
       await resetPassword(PLATFORM_OWNER_EMAIL)
       setNotice(`If the owner account exists, a reset link has been emailed to ${PLATFORM_OWNER_EMAIL}. Open it on this site to choose a new password. Check spam if it is not in the inbox.`)
       setMode('sign-in')
@@ -182,6 +197,7 @@ export function DeveloperLoginScreen() {
           ) : null}
 
           <form onSubmit={mode === 'reset' ? (e) => { e.preventDefault(); void handleReset() } : handleSubmit} className="form mt-6" style={{ gridTemplateColumns: '1fr' }}>
+            <HoneypotField id="developer-website" value={website} onChange={setWebsite} />
             <label className="f">
               Email
               <input type="email" value={PLATFORM_OWNER_EMAIL} readOnly className="pp-in bg-[var(--soft)]" autoComplete="username" />
