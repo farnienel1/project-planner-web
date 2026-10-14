@@ -1,14 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import {
-  cookieOptions,
   decodeSigned,
   encodeSigned,
   hashMfaCode,
   codesMatch,
-  MFA_CHALLENGE_COOKIE,
   MFA_MAX_ATTEMPTS,
-  MFA_OK_COOKIE,
   MFA_OK_TTL_MS,
+  readMfaCookie,
+  writeMfaCookie,
   type MfaChallenge,
   type MfaOk,
 } from '@/lib/auth/mfa/mfaCookies'
@@ -27,17 +26,17 @@ export async function POST(request: NextRequest) {
   const code = extractMfaCode(String(body.value.code || ''))
   if (!/^\d{6}$/.test(code)) return jsonError('Enter the 6-digit code from your email.', 400)
 
-  const raw = request.cookies.get(MFA_CHALLENGE_COOKIE)?.value
+  const raw = readMfaCookie(request, 'challenge')
   const challenge = decodeSigned<MfaChallenge>(raw)
   if (!challenge || challenge.exp < Date.now()) {
     const response = jsonError('That code has expired. Sign in again to receive a new one.', 401)
-    response.cookies.delete(MFA_CHALLENGE_COOKIE)
+    writeMfaCookie(response.cookies, request, 'challenge', '', 0)
     return response
   }
 
   if (challenge.attempts >= MFA_MAX_ATTEMPTS) {
     const response = jsonError('Too many incorrect attempts. Sign in again to receive a new code.', 429)
-    response.cookies.delete(MFA_CHALLENGE_COOKIE)
+    writeMfaCookie(response.cookies, request, 'challenge', '', 0)
     return response
   }
 
@@ -46,19 +45,19 @@ export async function POST(request: NextRequest) {
     const next: MfaChallenge = { ...challenge, attempts: challenge.attempts + 1 }
     if (next.attempts >= MFA_MAX_ATTEMPTS) {
       const response = jsonError('Too many incorrect attempts. Sign in again to receive a new code.', 429)
-      response.cookies.delete(MFA_CHALLENGE_COOKIE)
+      writeMfaCookie(response.cookies, request, 'challenge', '', 0)
       return response
     }
     const remaining = MFA_MAX_ATTEMPTS - next.attempts
     const response = jsonError(`That code was not recognised. ${remaining} attempt${remaining === 1 ? '' : 's'} left.`, 401)
-    response.cookies.set(MFA_CHALLENGE_COOKIE, encodeSigned(next), cookieOptions(Math.max(1_000, challenge.exp - Date.now())))
+    writeMfaCookie(response.cookies, request, 'challenge', encodeSigned(next), Math.max(1_000, challenge.exp - Date.now()))
     return response
   }
 
   const ok: MfaOk = { uid: challenge.uid, exp: Date.now() + MFA_OK_TTL_MS }
   const next = challenge.next || ''
   const response = NextResponse.json({ ok: true, next })
-  response.cookies.set(MFA_CHALLENGE_COOKIE, '', { ...cookieOptions(0), maxAge: 0 })
-  response.cookies.set(MFA_OK_COOKIE, encodeSigned(ok), cookieOptions(MFA_OK_TTL_MS))
+  writeMfaCookie(response.cookies, request, 'challenge', '', 0)
+  writeMfaCookie(response.cookies, request, 'ok', encodeSigned(ok), MFA_OK_TTL_MS)
   return response
 }
