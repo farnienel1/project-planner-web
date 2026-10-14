@@ -14,6 +14,7 @@ import { PLATFORM_OWNER_EMAIL } from '@/lib/platform/owner'
 import { bearerToken, firestoreGet, readString } from '@/lib/owner/firestoreRest'
 import { requireOrgAccessForUser } from '@/lib/security/requireOrgAccess'
 import { LOGIN_EMAIL_FIX_INBOX, loginEmailFixMessage } from '@/lib/support/loginEmailFix'
+import { escapeHtml } from '@/lib/security/htmlEscape'
 
 export const runtime = 'nodejs'
 
@@ -97,7 +98,7 @@ export async function POST(request: NextRequest) {
     await sendProjectPlannerEmail({
       to: LOGIN_EMAIL_FIX_INBOX || PLATFORM_OWNER_EMAIL,
       subject: message.subject,
-      html: `${message.html}<p><a href="${deepLink}">Open in the owner console</a></p>`,
+      html: `${message.html}<p><a href="${escapeHtml(deepLink)}">Open in the owner console</a></p>`,
     })
     return NextResponse.json({ ok: true })
   } catch (error) {

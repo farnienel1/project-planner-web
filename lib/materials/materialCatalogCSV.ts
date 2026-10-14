@@ -4,6 +4,7 @@
  */
 import type { MaterialCatalogItem, MaterialLengthUnit, MaterialUnit } from '@/types'
 import { duplicateKey } from '@/lib/materials/materialCatalogSearch'
+import { csvEscapeCell } from '@/lib/security/spreadsheetCell'
 
 export const CATALOGUE_CSV_HEADER =
   'Catalogue ID,Name,Category,Manufacturer/Brand,Product Code,Default Type (Length Drum Box Pallet or Number),Size,Length,Length Unit (M or MM)'
@@ -58,8 +59,7 @@ function splitCsvLine(line: string): string[] {
 }
 
 function csvCell(value: string): string {
-  if (/[",\n]/.test(value)) return `"${value.replace(/"/g, '""')}"`
-  return value
+  return csvEscapeCell(value)
 }
 
 function parseUnit(value: string): MaterialUnit {

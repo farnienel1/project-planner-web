@@ -8,6 +8,7 @@ import {
   readJsonBody,
 } from '@/lib/security/apiGuard'
 import { clampString, isValidEmail } from '@/lib/security/validation'
+import { sanitizeEmailHeader } from '@/lib/security/htmlEscape'
 import { requireOrgAccess } from '@/lib/security/requireOrgAccess'
 
 export const runtime = 'nodejs'
@@ -104,9 +105,9 @@ export async function POST(request: NextRequest) {
   })
   const mail = {
     to: recipientEmail.toLowerCase(),
-    subject: `Signed timesheets for filing — ${paymentRunStamp} — ${organizationName}`,
+    subject: sanitizeEmailHeader(`Signed timesheets for filing — ${paymentRunStamp} — ${organizationName}`, 180),
     html,
-    fromName: organizationName,
+    fromName: sanitizeEmailHeader(organizationName, 80) || 'Project Planner',
   }
 
   try {

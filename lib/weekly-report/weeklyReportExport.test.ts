@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { buildWeeklyReportSpreadsheetXml } from './weeklyReportGenerator.ts'
+import { buildWeeklyReportHtml, buildWeeklyReportSpreadsheetXml } from './weeklyReportGenerator.ts'
 import { buildWeeklyReportPdf } from './weeklyReportPdf.ts'
 import type { WeeklyReportData } from './weeklyReportData.ts'
 
@@ -97,4 +97,56 @@ test('weekly report pdf downloads as a coloured PDF document', async () => {
   const bytes = await buildWeeklyReportPdf(data)
   assert.equal(String.fromCharCode(...bytes.slice(0, 5)), '%PDF-')
   assert.ok(bytes.byteLength > 1000)
+})
+
+test('weekly report HTML escapes price work and expenses; spreadsheet prefixes formulas', () => {
+  const data: WeeklyReportData = {
+    organizationName: 'Raccord MEP',
+    reportPeriod: {
+      start: new Date('2026-09-14T00:00:00Z'),
+      end: new Date('2026-09-20T00:00:00Z'),
+      label: '14–20 Sep 2026',
+    },
+    invoicingPeriodLabel: 'Sep 2026',
+    generatedAt: new Date('2026-09-21T12:00:00Z'),
+    warnings: [],
+    projectGroups: [],
+    allProjectWorkTotal: 0,
+    subContractorRows: [],
+    subContractorTotal: 0,
+    annualLeaveRows: [],
+    annualLeaveTotal: 0,
+    managerScheduleRows: [],
+    managerScheduleTotal: 0,
+    priceWorkRows: [
+      {
+        person: '<script>Ada</script>',
+        title: 'Extra',
+        jobNumber: 'C1',
+        date: '14 Sep',
+        details: '=1+1',
+        amount: 10,
+      },
+    ],
+    priceWorkTotal: 10,
+    expenseRows: [
+      {
+        person: 'Bob',
+        title: 'Van',
+        jobNumber: 'C1',
+        date: '14 Sep',
+        details: '<img src=x>',
+        amount: 5,
+      },
+    ],
+    expenseTotal: 5,
+    paySummary: [],
+    grandTotal: 0,
+  }
+  const html = buildWeeklyReportHtml(data)
+  assert.doesNotMatch(html, /<script>Ada/)
+  assert.match(html, /&lt;script&gt;Ada&lt;\/script&gt;/)
+  assert.match(html, /&lt;img src=x&gt;/)
+  const xml = buildWeeklyReportSpreadsheetXml(data)
+  assert.match(xml, /'=1\+1/)
 })

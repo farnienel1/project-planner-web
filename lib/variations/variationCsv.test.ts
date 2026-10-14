@@ -43,3 +43,14 @@ test('csv has one row per labour line and per material line', () => {
   assert.match(lines[2], /material,Tray,,9m,Ada/)
   assert.match(lines[1], /C1042 · 12 High Street/)
 })
+
+test('variation csv prefixes a formula in a material name', () => {
+  const csv = variationsToCsv([
+    {
+      ...row(),
+      materials: [{ id: 'm1', name: '=cmd|\'/c calc\'!A0', quantity: '1' }],
+      labour: [],
+    },
+  ])
+  assert.match(csv, /'=cmd\|/)
+})

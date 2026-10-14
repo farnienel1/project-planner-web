@@ -1,9 +1,8 @@
 import type { Variation } from '@/lib/variations/variationModel'
+import { csvEscapeCell } from '@/lib/security/spreadsheetCell'
 
 function cell(value: string | number): string {
-  const text = String(value ?? '')
-  if (/[",\n]/.test(text)) return `"${text.replace(/"/g, '""')}"`
-  return text
+  return csvEscapeCell(value)
 }
 
 export function variationsToCsv(rows: Variation[]): string {

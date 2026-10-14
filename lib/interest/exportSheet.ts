@@ -1,4 +1,9 @@
 import type { InterestRegistration } from '@/lib/interest/record'
+import { neutralizeSpreadsheetFormula } from '@/lib/security/spreadsheetCell'
+
+function sheetText(value: string): string {
+  return neutralizeSpreadsheetFormula(value)
+}
 
 export const REGISTRATION_HEADERS = [
   'First name',
@@ -25,23 +30,23 @@ export function registrationSheetRows(rows: InterestRegistration[]): (string | D
     const when = row.createdAt
     const notes = row.notes.map((note) => `${note.authorName}: ${note.body}`).join('\n')
     return [
-      row.firstName,
-      row.lastName,
-      row.company,
-      row.role,
-      row.teamSize,
-      row.email,
-      row.phone,
-      row.sectors.join(', '),
-      row.currentTools,
-      row.message,
-      row.status,
-      row.source,
-      row.campaign,
-      row.referrer,
+      sheetText(row.firstName),
+      sheetText(row.lastName),
+      sheetText(row.company),
+      sheetText(row.role),
+      sheetText(row.teamSize),
+      sheetText(row.email),
+      sheetText(row.phone),
+      sheetText(row.sectors.join(', ')),
+      sheetText(row.currentTools),
+      sheetText(row.message),
+      sheetText(row.status),
+      sheetText(row.source),
+      sheetText(row.campaign),
+      sheetText(row.referrer),
       when ? new Date(when.getFullYear(), when.getMonth(), when.getDate()) : '',
       when ? when.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : '',
-      notes,
+      sheetText(notes),
     ]
   })
 }
@@ -60,11 +65,11 @@ export function summarySheetRows(rows: InterestRegistration[]): (string | number
     ['Source', 'Count'],
   ]
   for (const [source, count] of [...bySource.entries()].sort((a, b) => b[1] - a[1])) {
-    lines.push([source, count])
+    lines.push([sheetText(source), count])
   }
   lines.push([], ['Status', 'Count'])
   for (const [status, count] of [...byStatus.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
-    lines.push([status, count])
+    lines.push([sheetText(status), count])
   }
   return lines
 }
