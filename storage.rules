@@ -9,6 +9,16 @@ service firebase.storage {
       return firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data;
     }
 
+    function userDocExists() {
+      return signedIn()
+        && firestore.exists(/databases/(default)/documents/users/$(request.auth.uid));
+    }
+
+    function truthyBool(v) {
+      return v == true || v == 1;
+    }
+
+    // Same membership as today's blanket org prefix. No public read.
     function callerOrgMatches(orgId) {
       return signedIn()
         && firestore.exists(/databases/(default)/documents/users/$(request.auth.uid))
@@ -22,11 +32,185 @@ service firebase.storage {
     function callerIsMember(orgId) {
       return signedIn()
         && firestore.exists(/databases/(default)/documents/organizations/$(orgId))
-        && firestore.get(/databases/(default)/documents/organizations/$(orgId)).data.members[request.auth.uid] != null;
+        && 'members' in firestore.get(/databases/(default)/documents/organizations/$(orgId)).data
+        && request.auth.uid in firestore.get(/databases/(default)/documents/organizations/$(orgId)).data.members;
     }
 
-    match /organizations/{orgId}/{allPaths=**} {
-      allow read, write: if callerOrgMatches(orgId) || callerIsMember(orgId);
+    function orgMember(orgId) {
+      return callerOrgMatches(orgId) || callerIsMember(orgId);
+    }
+
+    // members[uid] == 'admin' covers org-setup logo upload before users/{uid} has adminAccess.
+    function callerIsAdminMember(orgId) {
+      return signedIn()
+        && firestore.exists(/databases/(default)/documents/organizations/$(orgId))
+        && 'members' in firestore.get(/databases/(default)/documents/organizations/$(orgId)).data
+        && request.auth.uid in firestore.get(/databases/(default)/documents/organizations/$(orgId)).data.members
+        && firestore.get(/databases/(default)/documents/organizations/$(orgId)).data.members[request.auth.uid] == 'admin';
+    }
+
+    function adminLike(orgId) {
+      return callerIsAdminMember(orgId) || (
+        userDocExists() && (
+          ('isSuperAdmin' in userData() && truthyBool(userData().isSuperAdmin))
+          || ('adminAccess' in userData() && truthyBool(userData().adminAccess))
+          || ('role' in userData() && userData().role == 'admin')
+          || ('permissions' in userData() && userData().permissions is map
+            && 'adminAccess' in userData().permissions
+            && truthyBool(userData().permissions.adminAccess))
+        )
+      );
+    }
+
+    function isOperativeUser() {
+      return userDocExists() && (
+        ('operativeMode' in userData() && truthyBool(userData().operativeMode))
+        || ('role' in userData() && userData().role == 'operative')
+      );
+    }
+
+    function managerLike() {
+      return userDocExists() && (
+        ('manager' in userData() && truthyBool(userData().manager))
+        || ('role' in userData() && userData().role == 'manager')
+        || ('permissions' in userData() && userData().permissions is map
+          && 'manager' in userData().permissions
+          && truthyBool(userData().permissions.manager))
+      );
+    }
+
+    // Staff = not operative, and admin or manager. Used only for logo/export role gates.
+    function staffLike(orgId) {
+      return orgMember(orgId)
+        && !isOperativeUser()
+        && (adminLike(orgId) || managerLike());
+    }
+
+    function sized(maxBytes) {
+      return request.resource.size <= maxBytes;
+    }
+
+    function contentTypeString() {
+      return request.resource.contentType is string;
+    }
+
+    function isImageContent() {
+      return contentTypeString() && request.resource.contentType.matches('image/.*');
+    }
+
+    function isPdf() {
+      return contentTypeString() && request.resource.contentType == 'application/pdf';
+    }
+
+    function isCertificateType() {
+      return contentTypeString() && (
+        request.resource.contentType == 'application/pdf'
+        || request.resource.contentType == 'image/jpeg'
+        || request.resource.contentType == 'image/jpg'
+        || request.resource.contentType == 'image/pjpeg'
+      );
+    }
+
+    // Tasks / H&S / variation evidence: types the apps already send, including
+    // octet-stream (web fallback + iOS putFile with nil metadata).
+    function isWorkFileType() {
+      return contentTypeString() && (
+        request.resource.contentType.matches('image/.*')
+        || request.resource.contentType == 'application/pdf'
+        || request.resource.contentType == 'application/octet-stream'
+        || request.resource.contentType == 'application/vnd.ms-excel'
+        || request.resource.contentType == 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        || request.resource.contentType == 'application/msword'
+        || request.resource.contentType == 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        || request.resource.contentType == 'application/vnd.ms-excel.sheet.macroenabled.12'
+        || request.resource.contentType == 'text/csv'
+        || request.resource.contentType == 'application/zip'
+        || request.resource.contentType == 'application/x-zip-compressed'
+      );
+    }
+
+    function memberSizedWrite(orgId, maxBytes, typed) {
+      return orgMember(orgId) && sized(maxBytes) && typed;
+    }
+
+    // Profile photo. Web + iOS: .../userProfiles/{userId}/profile.jpg
+    match /organizations/{orgId}/userProfiles/{userId}/profile.jpg {
+      allow read: if orgMember(orgId);
+      allow delete: if orgMember(orgId) && (request.auth.uid == userId || adminLike(orgId));
+      allow create, update: if orgMember(orgId)
+        && (request.auth.uid == userId || adminLike(orgId))
+        && sized(2 * 1024 * 1024)
+        && isImageContent();
+    }
+
+    // Company logo. Web + iOS: .../branding/company_logo/{file}
+    match /organizations/{orgId}/branding/company_logo/{fileName} {
+      allow read: if orgMember(orgId);
+      allow delete: if orgMember(orgId) && adminLike(orgId);
+      allow create, update: if orgMember(orgId)
+        && adminLike(orgId)
+        && sized(5 * 1024 * 1024)
+        && (isImageContent() || isPdf());
+    }
+
+    // Timesheet export PDFs. iOS operatives do not getDownloadURL these objects.
+    match /organizations/{orgId}/timesheetExports/{fileName} {
+      allow read: if staffLike(orgId);
+      allow delete: if staffLike(orgId);
+      allow create, update: if staffLike(orgId)
+        && sized(10 * 1024 * 1024)
+        && isPdf();
+    }
+
+    // Qualification certificates. Member + size/type only — do not staff-lock.
+    match /organizations/{orgId}/operatives/{operativeId}/qualifications/{qualificationId}/certificates/{fileName} {
+      allow read: if orgMember(orgId);
+      allow delete: if orgMember(orgId);
+      allow create, update: if memberSizedWrite(orgId, 10 * 1024 * 1024, isCertificateType());
+    }
+
+    // Variation evidence — web path (20MB; iOS client already allows 20MB).
+    match /organizations/{orgId}/healthSafety/{parentId}/variations/{fileName} {
+      allow read: if orgMember(orgId);
+      allow delete: if orgMember(orgId);
+      allow create, update: if memberSizedWrite(orgId, 20 * 1024 * 1024, isWorkFileType());
+    }
+
+    // Variation evidence — iOS primary path.
+    match /organizations/{orgId}/healthSafety/{parentId}/variationEvidence/{fileName} {
+      allow read: if orgMember(orgId);
+      allow delete: if orgMember(orgId);
+      allow create, update: if memberSizedWrite(orgId, 20 * 1024 * 1024, isWorkFileType());
+    }
+
+    // Variation evidence — iOS fallback path.
+    match /organizations/{orgId}/variations/{variationId}/{fileName} {
+      allow read: if orgMember(orgId);
+      allow delete: if orgMember(orgId);
+      allow create, update: if memberSizedWrite(orgId, 20 * 1024 * 1024, isWorkFileType());
+    }
+
+    // Site audit images. Member + size/type only — do not staff-lock.
+    match /organizations/{orgId}/siteAudits/{allPaths=**} {
+      allow read: if orgMember(orgId);
+      allow delete: if orgMember(orgId);
+      allow create, update: if memberSizedWrite(orgId, 10 * 1024 * 1024, isImageContent());
+    }
+
+    // Tasks: web flat .../tasks/{taskId}/{file}; iOS .../files/ and .../images/.
+    // Member + size/type only — do not staff-lock.
+    match /organizations/{orgId}/tasks/{allPaths=**} {
+      allow read: if orgMember(orgId);
+      allow delete: if orgMember(orgId);
+      allow create, update: if memberSizedWrite(orgId, 10 * 1024 * 1024, isWorkFileType());
+    }
+
+    // H&S talks/RAMS/other/deadlines. More-specific variation matches above win via OR.
+    // Member + size/type only — do not staff-lock.
+    match /organizations/{orgId}/healthSafety/{allPaths=**} {
+      allow read: if orgMember(orgId);
+      allow delete: if orgMember(orgId);
+      allow create, update: if memberSizedWrite(orgId, 10 * 1024 * 1024, isWorkFileType());
     }
 
     match /{allPaths=**} {
