@@ -294,3 +294,29 @@ test('admin A can write their own timesheet settings', async () => {
     )
   )
 })
+
+test('clients cannot create interest registrations', async () => {
+  const guest = env.unauthenticatedContext().firestore()
+  const member = authDb(ADMIN_A, 'admin-a@test.com')
+  const payload = {
+    firstName: 'Ada',
+    lastName: 'Lovelace',
+    company: 'Analytical Engines',
+    email: 'ada@example.com',
+    phone: '',
+    role: '',
+    teamSize: '',
+    sectors: [],
+    currentTools: '',
+    message: '',
+    consent: true,
+    status: 'new',
+    source: 'direct',
+    campaign: '',
+    referrer: '',
+    pagePath: '/register-interest',
+    userAgent: 'test',
+  }
+  await assertFails(setDoc(doc(guest, 'interestRegistrations', 'interest-guest'), payload))
+  await assertFails(setDoc(doc(member, 'interestRegistrations', 'interest-member'), payload))
+})

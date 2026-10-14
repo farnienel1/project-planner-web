@@ -4,6 +4,8 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { AppLogoMark } from '@/components/ui/AppLogoMark'
+import { HoneypotField } from '@/components/security/HoneypotField'
+import { postPublicForm } from '@/lib/security/publicFormClient'
 
 const EMAIL_RE = /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,64}$/i
 
@@ -13,6 +15,7 @@ export function ResetPasswordRequestScreen({ initialEmail = '' }: { initialEmail
   const [localError, setLocalError] = useState('')
   const [success, setSuccess] = useState(false)
   const [sending, setSending] = useState(false)
+  const [website, setWebsite] = useState('')
 
   const trimmed = email.trim()
   const canSend = EMAIL_RE.test(trimmed) && !sending
@@ -26,6 +29,19 @@ export function ResetPasswordRequestScreen({ initialEmail = '' }: { initialEmail
     }
     try {
       setSending(true)
+      const gated = await postPublicForm('/api/auth/public-gate', {
+        form: 'reset-request',
+        email: trimmed,
+        website,
+      })
+      if (!gated.ok) {
+        setLocalError(gated.error)
+        return
+      }
+      if (!gated.proceed) {
+        setSuccess(true)
+        return
+      }
       await resetPassword(trimmed)
       setSuccess(true)
     } catch {
@@ -69,6 +85,7 @@ export function ResetPasswordRequestScreen({ initialEmail = '' }: { initialEmail
                 </p>
               ) : null}
               <form className="form mt-6" style={{ gridTemplateColumns: '1fr' }} onSubmit={handleSubmit}>
+                <HoneypotField id="reset-website" value={website} onChange={setWebsite} />
                 <label className="f">
                   Email
                   <input

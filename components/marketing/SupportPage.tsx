@@ -5,6 +5,8 @@ import { SUPPORT_EMAIL, SUPPORT_FAQ } from '@/lib/marketing/content'
 import { FaqList } from '@/components/marketing/FaqList'
 import { MktIcon } from '@/components/marketing/icons'
 import { mktToast } from '@/components/marketing/toast'
+import { HoneypotField } from '@/components/security/HoneypotField'
+import { postPublicForm } from '@/lib/security/publicFormClient'
 
 export function SupportPage() {
   const [query, setQuery] = useState('')
@@ -12,7 +14,9 @@ export function SupportPage() {
   const [email, setEmail] = useState('')
   const [topic, setTopic] = useState('General question')
   const [message, setMessage] = useState('')
+  const [website, setWebsite] = useState('')
   const [emailError, setEmailError] = useState(false)
+  const [sending, setSending] = useState(false)
 
   const faqs = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -20,17 +24,35 @@ export function SupportPage() {
     return SUPPORT_FAQ.filter(([question, answer]) => `${question} ${answer}`.toLowerCase().includes(q))
   }, [query])
 
-  function sendContact() {
+  async function sendContact() {
     const bad = !/^\S+@\S+\.\S+$/.test(email)
     setEmailError(bad)
     if (bad) return
-    const subject = encodeURIComponent(`Project Planner support: ${topic}`)
-    const body = encodeURIComponent(`Name: ${name}\nEmail: ${email}\nTopic: ${topic}\n\n${message}`)
-    window.location.href = `mailto:${SUPPORT_EMAIL}?subject=${subject}&body=${body}`
-    mktToast('Message opened in your email app. We will reply within one working day')
-    setName('')
-    setEmail('')
-    setMessage('')
+    if (!name.trim() || !message.trim()) {
+      mktToast('Add your name and a message.')
+      return
+    }
+    setSending(true)
+    try {
+      const result = await postPublicForm('/api/support/contact', {
+        name: name.trim(),
+        email: email.trim(),
+        topic,
+        message: message.trim(),
+        website,
+      })
+      if (!result.ok) {
+        mktToast(result.error)
+        return
+      }
+      mktToast('Message sent. We will reply within one working day')
+      setName('')
+      setEmail('')
+      setMessage('')
+      setWebsite('')
+    } finally {
+      setSending(false)
+    }
   }
 
   return (
@@ -119,10 +141,11 @@ export function SupportPage() {
                     <label htmlFor="cM">Message</label>
                     <textarea className="in" id="cM" value={message} onChange={(e) => setMessage(e.target.value)} />
                   </div>
+                  <HoneypotField id="support-website" value={website} onChange={setWebsite} />
                 </div>
-                <button type="button" className="btn primary block" style={{ marginTop: 16 }} onClick={sendContact}>
+                <button type="button" className="btn primary block" style={{ marginTop: 16 }} onClick={() => void sendContact()} disabled={sending}>
                   <MktIcon name="send" size={18} />
-                  Send message
+                  {sending ? 'Sending…' : 'Send message'}
                 </button>
               </div>
             </div>

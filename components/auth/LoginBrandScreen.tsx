@@ -16,6 +16,8 @@ import { consumeWebIdleExpiredFlag } from '@/lib/auth/webIdleSession'
 import { hasCustomerOrganisation, isPlatformOwnerEmail } from '@/lib/platform/owner'
 import { LoadingSpinner } from '@/components/dashboard/PageShell'
 import { isMfaGateOpen, isMfaRequiredError, mfaVerifyHref, safePostMfaPath } from '@/lib/auth/mfa/mfaClient'
+import { HoneypotField } from '@/components/security/HoneypotField'
+import { postPublicForm } from '@/lib/security/publicFormClient'
 
 export function LoginBrandScreen() {
   const router = useRouter()
@@ -28,6 +30,7 @@ export function LoginBrandScreen() {
   const [showPassword, setShowPassword] = useState(false)
   const [localError, setLocalError] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [website, setWebsite] = useState('')
   const [idleNotice] = useState(() => consumeWebIdleExpiredFlag())
 
   useEffect(() => {
@@ -87,6 +90,16 @@ export function LoginBrandScreen() {
     }
     try {
       setSubmitting(true)
+      const gated = await postPublicForm('/api/auth/public-gate', {
+        form: 'login',
+        email: trimmedEmail,
+        website,
+      })
+      if (!gated.ok) {
+        setLocalError(gated.error)
+        return
+      }
+      if (!gated.proceed) return
       await signIn(trimmedEmail, password, { next: nextPath })
     } catch (err) {
       if (isMfaRequiredError(err)) {
@@ -163,6 +176,7 @@ export function LoginBrandScreen() {
           ) : null}
 
           <form onSubmit={handleSubmit} className="form mt-6" style={{ gridTemplateColumns: '1fr' }}>
+            <HoneypotField id="login-website" value={website} onChange={setWebsite} />
             <label className="f">
               Email
               <input

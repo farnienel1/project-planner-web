@@ -3,37 +3,39 @@ import { InterestAdminUnavailable } from '@/lib/interest/adminStore'
 import { saveInterestRegistration } from '@/lib/interest/repository'
 import { sendInterestEmails } from '@/lib/interest/notifyEmail'
 import { buildInterestDraft } from '@/lib/interest/registration'
-import { enforceRateLimit, jsonError, readJsonBody } from '@/lib/security/apiGuard'
+import { jsonError } from '@/lib/security/apiGuard'
+import { guardPublicForm } from '@/lib/security/publicFormGuard'
+import { interestRegisterBodySchema } from '@/lib/security/publicFormSchemas'
 
 export const runtime = 'nodejs'
 
-function text(value: unknown): string {
-  return typeof value === 'string' ? value : ''
-}
-
 export async function POST(request: NextRequest) {
-  const limited = enforceRateLimit(request, 'interest-register', 8, 60 * 60 * 1000)
-  if (limited) return limited
-  const body = await readJsonBody<Record<string, unknown>>(request)
-  if (!body.ok) return body.response
+  const guarded = await guardPublicForm(request, interestRegisterBodySchema, {
+    scope: 'interest-register',
+    limit: 8,
+    windowMs: 60 * 60 * 1000,
+  })
+  if (!guarded.ok) return guarded.response
+  if (guarded.silent) return NextResponse.json({ ok: true })
+
   const built = buildInterestDraft({
-    firstName: text(body.value.firstName),
-    lastName: text(body.value.lastName),
-    company: text(body.value.company),
-    email: text(body.value.email),
-    phone: text(body.value.phone),
-    role: text(body.value.role),
-    teamSize: text(body.value.teamSize),
-    sectors: Array.isArray(body.value.sectors) ? body.value.sectors.filter((item): item is string => typeof item === 'string') : [],
-    currentTools: text(body.value.currentTools),
-    message: text(body.value.message),
-    consent: body.value.consent === true,
-    honeypot: text(body.value.website),
-    source: text(body.value.source),
-    campaign: text(body.value.campaign),
-    referrer: text(body.value.referrer),
-    pagePath: text(body.value.pagePath),
-    userAgent: text(body.value.userAgent),
+    firstName: guarded.value.firstName,
+    lastName: guarded.value.lastName,
+    company: guarded.value.company,
+    email: guarded.value.email,
+    phone: guarded.value.phone,
+    role: guarded.value.role,
+    teamSize: guarded.value.teamSize,
+    sectors: guarded.value.sectors,
+    currentTools: guarded.value.currentTools,
+    message: guarded.value.message,
+    consent: guarded.value.consent,
+    honeypot: guarded.value.website,
+    source: guarded.value.source,
+    campaign: guarded.value.campaign,
+    referrer: guarded.value.referrer,
+    pagePath: guarded.value.pagePath,
+    userAgent: guarded.value.userAgent,
   })
   if (!built.ok) return jsonError('Check the form and try again.', 400)
   if (built.silent) return NextResponse.json({ ok: true })

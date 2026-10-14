@@ -1,12 +1,11 @@
 'use client'
 
 import { useEffect, useRef, useState, type FormEvent } from 'react'
-import { addDoc, collection, serverTimestamp } from 'firebase/firestore'
-import { db } from '@/lib/firebase/config'
 import { INTEREST_INBOX } from '@/lib/interest/inbox'
 import { trackEvent } from '@/lib/analytics/trackEvent'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { buildInterestDraft, type InterestDraft, type InterestFieldErrors } from '@/lib/interest/registration'
+import { postPublicForm } from '@/lib/security/publicFormClient'
 
 const ROLES = [
   'Owner / Director',
@@ -33,19 +32,9 @@ const CURRENT_TOOLS = [
 const SUBMIT_KEY = 'pp_interest_submitted_at'
 const COOLDOWN_MS = 60_000
 
-async function saveInterestRegistration(draft: InterestDraft): Promise<boolean> {
-  const response = await fetch('/api/interest/register', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(draft),
-  })
-  if (response.ok) return true
-  if (response.status !== 503 || !db) return false
-  await addDoc(collection(db, 'interestRegistrations'), {
-    ...draft,
-    createdAt: serverTimestamp(),
-  })
-  return true
+async function saveInterestRegistration(draft: InterestDraft, website: string): Promise<boolean> {
+  const result = await postPublicForm('/api/interest/register', { ...draft, website })
+  return result.ok
 }
 
 const field =
@@ -137,7 +126,7 @@ export function RegisterInterestForm() {
     }
     setSending(true)
     try {
-      const saved = await saveInterestRegistration(built.draft)
+      const saved = await saveInterestRegistration(built.draft, read('website'))
       if (!saved) {
         setFailed(true)
         return

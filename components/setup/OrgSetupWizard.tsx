@@ -33,6 +33,8 @@ import { requestFounderConfirmEmail } from '@/lib/orgSetup/requestFounderConfirm
 import { saveFounderConfirmEmailPayload } from '@/lib/orgSetup/founderConfirmEmail'
 import { saveGuidedSetupDraft } from '@/lib/orgSetup/persistGuidedSetup'
 import { jsonAuthHeaders } from '@/lib/security/clientAuthHeaders'
+import { HoneypotField } from '@/components/security/HoneypotField'
+import { postPublicForm } from '@/lib/security/publicFormClient'
 import { grantMfaSkip } from '@/lib/auth/mfa/mfaClient'
 import { SetupExplainer } from '@/components/setup/SetupExplainer'
 import { OrganisationDetailsStep } from '@/components/setup/OrganisationDetailsStep'
@@ -145,6 +147,7 @@ export function OrgSetupWizard() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
+  const [website, setWebsite] = useState('')
   const [organizationName, setOrganizationName] = useState('')
   const [planKey, setPlanKey] = useState<SubscriptionPlanKey>('month')
 
@@ -355,6 +358,20 @@ export function OrgSetupWizard() {
     }
   }
 
+  async function assertSignupGate(): Promise<string | null> {
+    const gated = await postPublicForm('/api/auth/public-gate', {
+      form: 'signup',
+      email: email.trim(),
+      firstName: firstName.trim(),
+      lastName: surname.trim(),
+      mobileNumber: mobileNumber.trim(),
+      website,
+    })
+    if (!gated.ok) return gated.error
+    if (!gated.proceed) return 'Check the form and try again.'
+    return null
+  }
+
   function validateAccountStep(): string | null {
     if (!firstName.trim() || !surname.trim()) return 'Please enter your first and last name.'
     if (!email.trim()) return 'Please enter your email address.'
@@ -387,6 +404,11 @@ export function OrgSetupWizard() {
         return
       }
       if (!creatingAdditionalOrg) {
+        const gateError = await assertSignupGate()
+        if (gateError) {
+          setError(gateError)
+          return
+        }
         const taken = await emailAlreadyHasLogin(email)
         if (taken) {
           setExistingLogin({ email: email.trim(), signedIn: false, isAdmin: false })
@@ -431,13 +453,21 @@ export function OrgSetupWizard() {
     setOrgSetupSettings((prev) => ({ ...prev, ...patch }))
   }
 
-  function skipToReview() {
+  async function skipToReview() {
     setError('')
     const accountError = validateAccountStep()
     if (accountError) {
       setError(accountError)
       goToStep('account')
       return
+    }
+    if (!creatingAdditionalOrg) {
+      const gateError = await assertSignupGate()
+      if (gateError) {
+        setError(gateError)
+        goToStep('account')
+        return
+      }
     }
     const orgError = validateOrganizationStep()
     if (orgError) {
@@ -451,6 +481,10 @@ export function OrgSetupWizard() {
   async function createOrganizationRecord(options?: { skipOptionalAssets?: boolean }) {
     const auth = getFirebaseAuth()
     const signedIn = Boolean(auth.currentUser)
+    if (!signedIn && !creatingAdditionalOrg) {
+      const gateError = await assertSignupGate()
+      if (gateError) throw new Error(gateError)
+    }
     return createPendingOrganization({
       email: (auth.currentUser?.email || firebaseUser?.email || email).trim(),
       ...(signedIn ? {} : { password }),
@@ -841,6 +875,7 @@ export function OrgSetupWizard() {
                       </label>
                       <input className="in" value={mobileNumber} onChange={(e) => setMobileNumber(e.target.value)} autoComplete="tel" placeholder="07…" />
                     </div>
+                    <HoneypotField id="signup-website" value={website} onChange={setWebsite} />
                     {!creatingAdditionalOrg ? (
                       <>
                         <div className="f">
