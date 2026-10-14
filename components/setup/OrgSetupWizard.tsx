@@ -519,7 +519,7 @@ export function OrgSetupWizard() {
 
       if (!created.needsEmailConfirmation) {
         didNavigate = true
-        await grantMfaSkip().catch(() => undefined)
+        await grantMfaSkip({ organizationId: created.organizationId }).catch(() => undefined)
         window.location.href = '/dashboard'
         return
       }

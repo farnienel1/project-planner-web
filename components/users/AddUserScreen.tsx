@@ -331,6 +331,7 @@ export function AddUserScreen() {
             method: 'POST',
             headers: await jsonAuthHeaders(),
             body: JSON.stringify({
+              organizationId: organization.id,
               organizationName: organization.name,
               firstName,
               to: email,
@@ -348,6 +349,7 @@ export function AddUserScreen() {
         try {
           const { requestInviteSetupEmail } = await import('@/lib/invites/requestSetupEmail')
           await requestInviteSetupEmail({
+            organizationId: organization.id,
             invitationId: result.invitationId,
             organizationName: organization.name,
             firstName,

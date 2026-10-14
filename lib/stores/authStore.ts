@@ -937,7 +937,7 @@ export const useAuthStore = create<AuthState>((set) => {
           updatedAt: new Date(),
         })
 
-        await grantMfaSkip()
+        await grantMfaSkip({ organizationId: orgId })
         set({ loading: false, mfaPending: false, mfaVerified: true, mfaStatusKnown: true })
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : 'Sign up failed'

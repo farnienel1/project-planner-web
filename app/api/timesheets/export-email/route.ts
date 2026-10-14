@@ -4,12 +4,11 @@ import { managerExportEmailHTML } from '@/lib/timesheets/timesheetExport'
 import {
   clientSafeMessage,
   enforceRateLimit,
-  isFirebaseUser,
   jsonError,
   readJsonBody,
-  requireFirebaseUser,
 } from '@/lib/security/apiGuard'
 import { clampString, isValidEmail } from '@/lib/security/validation'
+import { requireOrgAccess } from '@/lib/security/requireOrgAccess'
 
 export const runtime = 'nodejs'
 
@@ -17,6 +16,7 @@ type DownloadLink = { fileName?: string; url?: string }
 type PdfAttachment = { fileName?: string; filename?: string; content?: string }
 
 type ExportBody = {
+  organizationId?: string
   recipientEmail?: string
   recipientName?: string
   organizationName?: string
@@ -55,11 +55,11 @@ export async function POST(request: NextRequest) {
   const limited = enforceRateLimit(request, 'timesheet-export-email', 12, 10 * 60 * 1000)
   if (limited) return limited
 
-  const user = await requireFirebaseUser(request)
-  if (!isFirebaseUser(user)) return user
-
   const body = await readJsonBody<ExportBody>(request, 8_000_000)
   if (!body.ok) return body.response
+
+  const access = await requireOrgAccess(request, body.value.organizationId, 'staff')
+  if (!access.ok) return access.response
 
   const recipientEmail = clampString(body.value.recipientEmail, 254)
   const recipientName = clampString(body.value.recipientName, 120) || 'there'

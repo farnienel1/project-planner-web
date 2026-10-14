@@ -161,12 +161,16 @@ export async function resendEmailMfa(): Promise<{ retryAfterSec?: number; sent?:
   return { sent: true, retryAfterSec: data.retryAfterSec }
 }
 
-export async function grantMfaSkip(): Promise<void> {
+export async function grantMfaSkip(context?: { invitationId?: string; organizationId?: string }): Promise<void> {
   writeSignedOutFlag(false)
   await fetch('/api/auth/mfa/grant-setup', {
     ...FETCH_OPTS,
     method: 'POST',
     headers: await jsonAuthHeaders(),
+    body: JSON.stringify({
+      invitationId: context?.invitationId || undefined,
+      organizationId: context?.organizationId || undefined,
+    }),
   })
 }
 

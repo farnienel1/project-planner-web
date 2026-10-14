@@ -3,7 +3,7 @@ import { InterestAdminUnavailable } from '@/lib/interest/adminStore'
 import { removeInterestRegistration, updateInterestNote, updateInterestStatus } from '@/lib/interest/repository'
 import { INTEREST_STATUSES, type InterestStatus } from '@/lib/interest/registration'
 import { requireOwner } from '@/lib/owner/requireOwner'
-import { isFirebaseUser, jsonError, readJsonBody } from '@/lib/security/apiGuard'
+import { enforceRateLimit, isFirebaseUser, jsonError, readJsonBody } from '@/lib/security/apiGuard'
 
 export const runtime = 'nodejs'
 
@@ -12,6 +12,8 @@ function cleanId(id: string): string | null {
 }
 
 export async function PATCH(request: NextRequest, context: { params: Promise<{ id: string }> }) {
+  const limited = enforceRateLimit(request, 'owner-interest-update', 40, 10 * 60 * 1000)
+  if (limited) return limited
   const owner = await requireOwner(request)
   if (!isFirebaseUser(owner)) return owner
   const id = cleanId((await context.params).id)
@@ -39,6 +41,8 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
 }
 
 export async function DELETE(request: NextRequest, context: { params: Promise<{ id: string }> }) {
+  const limited = enforceRateLimit(request, 'owner-interest-delete', 20, 10 * 60 * 1000)
+  if (limited) return limited
   const owner = await requireOwner(request)
   if (!isFirebaseUser(owner)) return owner
   const id = cleanId((await context.params).id)

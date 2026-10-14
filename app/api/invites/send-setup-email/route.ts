@@ -4,16 +4,17 @@ import { sendProjectPlannerEmail } from '@/lib/email/resendClient'
 import {
   clientSafeMessage,
   enforceRateLimit,
-  isFirebaseUser,
   jsonError,
   readJsonBody,
-  requireFirebaseUser,
 } from '@/lib/security/apiGuard'
 import { clampString, isValidEmail, isValidUuid } from '@/lib/security/validation'
+import { requireOrgAccess } from '@/lib/security/requireOrgAccess'
+import { bearerToken, firestoreGet, readString } from '@/lib/owner/firestoreRest'
 
 export const runtime = 'nodejs'
 
 type SendBody = {
+  organizationId?: string
   invitationId?: string
   organizationName?: string
   firstName?: string
@@ -27,11 +28,11 @@ export async function POST(request: NextRequest) {
   const limited = enforceRateLimit(request, 'invite-setup-email', 8, 10 * 60 * 1000)
   if (limited) return limited
 
-  const user = await requireFirebaseUser(request)
-  if (!isFirebaseUser(user)) return user
-
   const body = await readJsonBody<SendBody>(request)
   if (!body.ok) return body.response
+
+  const access = await requireOrgAccess(request, body.value.organizationId, 'staff')
+  if (!access.ok) return access.response
 
   const invitationId = clampString(body.value.invitationId, 80)
   const organizationName = clampString(body.value.organizationName, 200)
@@ -44,6 +45,18 @@ export async function POST(request: NextRequest) {
   }
   if (!ROLES.has(role) || !isValidEmail(to)) {
     return jsonError('Invalid invite details', 400)
+  }
+
+  try {
+    const invitation = await firestoreGet(bearerToken(request), `invitations/${invitationId}`)
+    if (!invitation) return jsonError('Invitation not found', 404)
+    const invitationOrg = readString(invitation.fields, 'organizationId')
+    const invitationEmail = readString(invitation.fields, 'email').toLowerCase()
+    if (invitationOrg !== access.organizationId || invitationEmail !== to.trim().toLowerCase()) {
+      return jsonError('Invitation does not belong to this organisation', 403)
+    }
+  } catch {
+    return jsonError('Invitation not found', 404)
   }
 
   const email = to.trim().toLowerCase()

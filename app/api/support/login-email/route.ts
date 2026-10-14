@@ -12,6 +12,7 @@ import { clampString, isValidEmail } from '@/lib/security/validation'
 import { getAppBaseUrl } from '@/lib/email/resendClient'
 import { PLATFORM_OWNER_EMAIL } from '@/lib/platform/owner'
 import { bearerToken, firestoreGet, readString } from '@/lib/owner/firestoreRest'
+import { requireOrgAccessForUser } from '@/lib/security/requireOrgAccess'
 import { LOGIN_EMAIL_FIX_INBOX, loginEmailFixMessage } from '@/lib/support/loginEmailFix'
 
 export const runtime = 'nodejs'
@@ -41,6 +42,9 @@ export async function POST(request: NextRequest) {
   if (!orgId || !targetUid || !isValidEmail(suggestedEmail)) {
     return jsonError('orgId, targetUid and a valid suggestedEmail are required', 400)
   }
+
+  const access = await requireOrgAccessForUser(request, user, orgId, 'admin')
+  if (!access.ok) return access.response
 
   const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID
   const token = bearerToken(request)

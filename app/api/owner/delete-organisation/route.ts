@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server'
-import { isFirebaseUser, jsonError, readJsonBody } from '@/lib/security/apiGuard'
+import { enforceRateLimit, isFirebaseUser, jsonError, readJsonBody } from '@/lib/security/apiGuard'
 import { requireOwner, writeAuditLog } from '@/lib/owner/requireOwner'
 import { isPlatformOwnerSentinelOrg } from '@/lib/platform/owner'
 import { clientIp } from '@/lib/security/apiGuard'
@@ -7,6 +7,8 @@ import { clientIp } from '@/lib/security/apiGuard'
 export const runtime = 'nodejs'
 
 export async function POST(request: NextRequest) {
+  const limited = enforceRateLimit(request, 'owner-delete-org', 10, 10 * 60 * 1000)
+  if (limited) return limited
   const owner = await requireOwner(request)
   if (!isFirebaseUser(owner)) return owner
   const body = await readJsonBody<{ orgId?: string }>(request)

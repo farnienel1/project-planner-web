@@ -13,6 +13,7 @@ import {
   requireFirebaseUser,
 } from '@/lib/security/apiGuard'
 import { clampString, isValidEmail, isValidUuid } from '@/lib/security/validation'
+import { bearerToken, firestoreGet, readString } from '@/lib/owner/firestoreRest'
 
 export const runtime = 'nodejs'
 
@@ -36,14 +37,23 @@ export async function POST(request: NextRequest) {
   const confirmationToken = clampString(body.value.confirmationToken, 80)
   const organizationName = clampString(body.value.organizationName, 200) || 'your organisation'
   const firstName = clampString(body.value.firstName, 100) || 'there'
-  const requestedTo = clampString(body.value.to, 254)
-  const email = (user.email || requestedTo || '').trim().toLowerCase()
+  const email = (user.email || '').trim().toLowerCase()
 
   if (!confirmationToken || !isValidUuid(confirmationToken) || !email) {
     return jsonError('confirmationToken and a signed-in email are required', 400)
   }
   if (!isValidEmail(email)) {
     return jsonError('Invalid email', 400)
+  }
+
+  try {
+    const userDoc = await firestoreGet(bearerToken(request), `users/${user.uid}`)
+    const storedToken = userDoc ? readString(userDoc.fields, 'accountConfirmToken') : ''
+    if (!storedToken || storedToken !== confirmationToken) {
+      return jsonError('Confirmation details do not match this account', 403)
+    }
+  } catch {
+    return jsonError('Confirmation details do not match this account', 403)
   }
 
   try {

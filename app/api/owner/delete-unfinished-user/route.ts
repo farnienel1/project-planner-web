@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { clientIp, isFirebaseUser, jsonError, readJsonBody } from '@/lib/security/apiGuard'
+import { clientIp, enforceRateLimit, isFirebaseUser, jsonError, readJsonBody } from '@/lib/security/apiGuard'
 import { requireOwner, writeAuditLog } from '@/lib/owner/requireOwner'
 import { bearerToken, firestoreDelete, firestoreGet, readString } from '@/lib/owner/firestoreRest'
 import { isPlatformOwnerEmail } from '@/lib/platform/owner'
@@ -8,6 +8,8 @@ import { abandonedSignupCutoff } from '@/lib/owner/unfinishedSetup'
 export const runtime = 'nodejs'
 
 export async function POST(request: NextRequest) {
+  const limited = enforceRateLimit(request, 'owner-delete-user', 20, 10 * 60 * 1000)
+  if (limited) return limited
   const owner = await requireOwner(request)
   if (!isFirebaseUser(owner)) return owner
   const body = await readJsonBody<{ uid?: string }>(request)

@@ -12,7 +12,7 @@ import {
   type MfaChallenge,
   type MfaOk,
 } from '@/lib/auth/mfa/mfaCookies'
-import { jsonError, readJsonBody } from '@/lib/security/apiGuard'
+import { enforceRateLimit, jsonError, readJsonBody } from '@/lib/security/apiGuard'
 import { extractMfaCode } from '@/lib/auth/mfa/mfaCode'
 
 export const runtime = 'nodejs'
@@ -20,6 +20,8 @@ export const runtime = 'nodejs'
 type VerifyBody = { code?: string }
 
 export async function POST(request: NextRequest) {
+  const limited = enforceRateLimit(request, 'mfa-verify', 30, 10 * 60 * 1000)
+  if (limited) return limited
   const body = await readJsonBody<VerifyBody>(request)
   if (!body.ok) return body.response
   const code = extractMfaCode(String(body.value.code || ''))

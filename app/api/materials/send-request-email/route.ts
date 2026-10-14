@@ -9,12 +9,11 @@ import {
 import {
   clientSafeMessage,
   enforceRateLimit,
-  isFirebaseUser,
   jsonError,
   readJsonBody,
-  requireFirebaseUser,
 } from '@/lib/security/apiGuard'
 import { clampString, isValidEmail } from '@/lib/security/validation'
+import { requireOrgAccess } from '@/lib/security/requireOrgAccess'
 
 export const runtime = 'nodejs'
 
@@ -30,6 +29,7 @@ type MaterialBody = {
 }
 
 type SendBody = {
+  organizationId?: string
   requestType?: 'quote' | 'order'
   sendAsPlainText?: boolean
   jobNumber?: string
@@ -83,11 +83,11 @@ export async function POST(request: NextRequest) {
   const limited = enforceRateLimit(request, 'material-send-email', 20, 10 * 60 * 1000)
   if (limited) return limited
 
-  const user = await requireFirebaseUser(request)
-  if (!isFirebaseUser(user)) return user
-
   const body = await readJsonBody<SendBody>(request, 400_000)
   if (!body.ok) return body.response
+
+  const access = await requireOrgAccess(request, body.value.organizationId, 'member')
+  if (!access.ok) return access.response
 
   const requestType = body.value.requestType
   if (requestType !== 'quote' && requestType !== 'order') {
