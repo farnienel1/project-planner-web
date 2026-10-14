@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
-import { MFA_OK_COOKIE, mfaVerifyHref, safePostMfaPath } from '@/lib/auth/mfa/mfaConstants'
+import { mfaVerifyHref, safePostMfaPath } from '@/lib/auth/mfa/mfaConstants'
+import { readMfaCookie } from '@/lib/auth/mfa/mfaCookiePolicy'
+import { verifySignedMfaOk } from '@/lib/auth/mfa/mfaCookieVerify'
 
 function isFirebaseAuthActionPath(pathname: string): boolean {
   return (
@@ -19,7 +21,7 @@ function requiresMfaCookie(pathname: string): boolean {
   )
 }
 
-export function middleware(request: NextRequest) {
+export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
   if (isFirebaseAuthActionPath(pathname)) {
     const url = request.nextUrl.clone()
@@ -27,15 +29,18 @@ export function middleware(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
-  if (requiresMfaCookie(pathname) && !request.cookies.get(MFA_OK_COOKIE)?.value) {
-    const url = request.nextUrl.clone()
-    const next = safePostMfaPath(pathname, pathname.startsWith('/developer') ? '/developer' : '/dashboard')
-    const [path, search] = mfaVerifyHref(next).split('?')
-    url.pathname = path
-    url.search = search ? `?${search}` : ''
-    const response = NextResponse.redirect(url)
-    response.headers.set('Cache-Control', 'no-store')
-    return response
+  if (requiresMfaCookie(pathname)) {
+    const ok = await verifySignedMfaOk(readMfaCookie(request, 'ok'))
+    if (!ok) {
+      const url = request.nextUrl.clone()
+      const next = safePostMfaPath(pathname, pathname.startsWith('/developer') ? '/developer' : '/dashboard')
+      const [path, search] = mfaVerifyHref(next).split('?')
+      url.pathname = path
+      url.search = search ? `?${search}` : ''
+      const response = NextResponse.redirect(url)
+      response.headers.set('Cache-Control', 'no-store')
+      return response
+    }
   }
 
   return NextResponse.next()

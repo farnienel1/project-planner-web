@@ -6,7 +6,7 @@ import {
   readJsonBody,
   requireFirebaseUser,
 } from '@/lib/security/apiGuard'
-import { cookieOptions, encodeSigned, MFA_CHALLENGE_COOKIE, MFA_OK_COOKIE, MFA_OK_TTL_MS, type MfaOk } from '@/lib/auth/mfa/mfaCookies'
+import { encodeSigned, MFA_OK_TTL_MS, writeMfaCookie, type MfaOk } from '@/lib/auth/mfa/mfaCookies'
 import { bearerToken, firestoreGet, readBool, restFieldsToPlain } from '@/lib/owner/firestoreRest'
 import { isPlatformOwnerEmail } from '@/lib/platform/owner'
 import { clampString, isValidUuid } from '@/lib/security/validation'
@@ -101,7 +101,7 @@ export async function POST(request: NextRequest) {
 
   const ok: MfaOk = { uid: user.uid, exp: Date.now() + MFA_OK_TTL_MS }
   const response = NextResponse.json({ ok: true, skipped: true })
-  response.cookies.set(MFA_CHALLENGE_COOKIE, '', { ...cookieOptions(0), maxAge: 0 })
-  response.cookies.set(MFA_OK_COOKIE, encodeSigned(ok), cookieOptions(MFA_OK_TTL_MS))
+  writeMfaCookie(response.cookies, request, 'challenge', '', 0)
+  writeMfaCookie(response.cookies, request, 'ok', encodeSigned(ok), MFA_OK_TTL_MS)
   return response
 }

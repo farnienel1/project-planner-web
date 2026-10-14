@@ -3,8 +3,8 @@ import { clearMfaCookies } from '@/lib/auth/mfa/mfaCookies'
 
 export const runtime = 'nodejs'
 
-export async function POST(_request: NextRequest) {
+export async function POST(request: NextRequest) {
   const response = NextResponse.json({ ok: true })
-  clearMfaCookies(response.cookies)
+  clearMfaCookies(response.cookies, request)
   return response
 }

@@ -1,5 +1,3 @@
-export const MFA_CHALLENGE_COOKIE = 'pp_mfa_challenge'
-export const MFA_OK_COOKIE = 'pp_mfa_ok'
 export const MFA_GATE_KEY = 'pp.mfa.gate'
 export const MFA_SIGNED_OUT_KEY = 'pp.signedOut'
 
@@ -17,16 +15,6 @@ export function mfaGateMatches(gateUid?: string | null, uid?: string | null): bo
 
 export function postSignOutHref(pathname?: string | null): '/login' | '/developer-login' {
   return (pathname || '').startsWith('/developer') ? '/developer-login' : '/login'
-}
-
-export function expireMfaCookieOptions() {
-  return {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax' as const,
-    path: '/',
-    maxAge: 0,
-  }
 }
 
 export function safePostMfaPath(next: string | undefined | null, fallback: PostAuthPath = '/dashboard'): PostAuthPath {

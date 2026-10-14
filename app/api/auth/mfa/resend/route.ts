@@ -9,15 +9,14 @@ import {
 } from '@/lib/security/apiGuard'
 import { buildMfaEmailHtml, mfaEmailSubject } from '@/lib/auth/mfa/mfaEmail'
 import {
-  cookieOptions,
   decodeSigned,
   encodeSigned,
   generateMfaCode,
   hashMfaCode,
-  MFA_CHALLENGE_COOKIE,
   MFA_CODE_TTL_MS,
-  MFA_OK_COOKIE,
   MFA_RESEND_MS,
+  readMfaCookie,
+  writeMfaCookie,
   type MfaChallenge,
 } from '@/lib/auth/mfa/mfaCookies'
 
@@ -31,7 +30,7 @@ export async function POST(request: NextRequest) {
   const uid = isFirebaseUser(signedIn) ? signedIn.uid : ''
   const email = isFirebaseUser(signedIn) ? (signedIn.email || '').toLowerCase() : ''
 
-  const challenge = decodeSigned<MfaChallenge>(request.cookies.get(MFA_CHALLENGE_COOKIE)?.value)
+  const challenge = decodeSigned<MfaChallenge>(readMfaCookie(request, 'challenge'))
   const active = challenge && challenge.exp > Date.now() ? challenge : null
   if (!active && !email) {
     return jsonError('Sign in again to receive a new verification code.', 401)
@@ -66,8 +65,8 @@ export async function POST(request: NextRequest) {
       next: active?.next,
     }
     const response = NextResponse.json({ ok: true, sent: true })
-    response.cookies.set(MFA_CHALLENGE_COOKIE, encodeSigned(next), cookieOptions(MFA_CODE_TTL_MS))
-    response.cookies.set(MFA_OK_COOKIE, '', { ...cookieOptions(0), maxAge: 0 })
+    writeMfaCookie(response.cookies, request, 'challenge', encodeSigned(next), MFA_CODE_TTL_MS)
+    writeMfaCookie(response.cookies, request, 'ok', '', 0)
     return response
   } catch (error) {
     console.error('[auth/mfa/resend]', error)

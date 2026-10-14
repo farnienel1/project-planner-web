@@ -1,8 +1,30 @@
 import { createHmac, randomInt, timingSafeEqual } from 'node:crypto'
 
-import { expireMfaCookieOptions, MFA_CHALLENGE_COOKIE, MFA_OK_COOKIE } from '@/lib/auth/mfa/mfaConstants'
+import { resolveMfaSigningSecret, mfaSigningSecret } from '@/lib/auth/mfa/mfaSigningSecret'
+import {
+  clearMfaCookies,
+  cookieOptions,
+  expireMfaCookieOptions,
+  MFA_CHALLENGE_COOKIE_HOST,
+  MFA_CHALLENGE_COOKIE_LEGACY,
+  MFA_OK_COOKIE_HOST,
+  MFA_OK_COOKIE_LEGACY,
+  readMfaCookie,
+  writeMfaCookie,
+} from '@/lib/auth/mfa/mfaCookiePolicy'
 
-export { expireMfaCookieOptions, MFA_CHALLENGE_COOKIE, MFA_OK_COOKIE }
+export { resolveMfaSigningSecret }
+export {
+  clearMfaCookies,
+  cookieOptions,
+  expireMfaCookieOptions,
+  MFA_CHALLENGE_COOKIE_HOST,
+  MFA_CHALLENGE_COOKIE_LEGACY,
+  MFA_OK_COOKIE_HOST,
+  MFA_OK_COOKIE_LEGACY,
+  readMfaCookie,
+  writeMfaCookie,
+}
 
 export const MFA_CODE_TTL_MS = 10 * 60 * 1000
 export const MFA_RESEND_MS = 8 * 1000
@@ -24,24 +46,8 @@ export type MfaOk = {
   exp: number
 }
 
-export function resolveMfaSigningSecret(input: { secret?: string; nodeEnv?: string }): string {
-  const secret = (input.secret || '').trim()
-  if (secret) return secret
-  if ((input.nodeEnv || '').trim() === 'production') {
-    throw new Error('MFA_SIGNING_SECRET is not configured')
-  }
-  return 'project-planner-mfa-dev'
-}
-
-function signingSecret(): string {
-  return resolveMfaSigningSecret({
-    secret: process.env.MFA_SIGNING_SECRET,
-    nodeEnv: process.env.NODE_ENV,
-  })
-}
-
 function sign(payload: string): string {
-  return createHmac('sha256', signingSecret()).update(payload).digest('base64url')
+  return createHmac('sha256', mfaSigningSecret()).update(payload).digest('base64url')
 }
 
 export function encodeSigned(value: object): string {
@@ -65,7 +71,7 @@ export function decodeSigned<T>(raw?: string | null): T | null {
 }
 
 export function hashMfaCode(code: string, uid: string): string {
-  return createHmac('sha256', signingSecret()).update(`${uid}:${code}`).digest('hex')
+  return createHmac('sha256', mfaSigningSecret()).update(`${uid}:${code}`).digest('hex')
 }
 
 export function generateMfaCode(): string {
@@ -77,24 +83,6 @@ export function codesMatch(left: string, right: string): boolean {
   const b = Buffer.from(right)
   if (a.length !== b.length) return false
   return timingSafeEqual(a, b)
-}
-
-export function cookieOptions(maxAgeMs: number) {
-  const maxAge = Math.max(0, Math.floor(maxAgeMs / 1000))
-  return {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax' as const,
-    path: '/',
-    maxAge,
-    expires: new Date(Date.now() + Math.max(0, maxAgeMs)),
-  }
-}
-
-export function clearMfaCookies(cookies: { set: (name: string, value: string, options: ReturnType<typeof cookieOptions>) => void }) {
-  const expired = { ...cookieOptions(0), maxAge: 0 }
-  cookies.set(MFA_CHALLENGE_COOKIE, '', expired)
-  cookies.set(MFA_OK_COOKIE, '', expired)
 }
 
 export function readFirestoreBoolean(fields: Record<string, unknown> | undefined, key: string): boolean | undefined {

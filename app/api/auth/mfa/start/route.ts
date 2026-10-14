@@ -12,15 +12,14 @@ import {
 import { buildMfaEmailHtml, mfaEmailSubject } from '@/lib/auth/mfa/mfaEmail'
 import { safePostMfaPath } from '@/lib/auth/mfa/mfaConstants'
 import {
-  cookieOptions,
   decodeSigned,
   encodeSigned,
   generateMfaCode,
   hashMfaCode,
-  MFA_CHALLENGE_COOKIE,
   MFA_CODE_TTL_MS,
-  MFA_OK_COOKIE,
   MFA_RESEND_MS,
+  readMfaCookie,
+  writeMfaCookie,
   type MfaChallenge,
   type MfaOk,
 } from '@/lib/auth/mfa/mfaCookies'
@@ -43,7 +42,7 @@ export async function POST(request: NextRequest) {
     return jsonError('This account has no email address, so a verification code cannot be sent. Sign in again.', 400)
   }
 
-  const alreadyOk = decodeSigned<MfaOk>(request.cookies.get(MFA_OK_COOKIE)?.value)
+  const alreadyOk = decodeSigned<MfaOk>(readMfaCookie(request, 'ok'))
   if (alreadyOk && alreadyOk.uid === user.uid && alreadyOk.exp > Date.now()) {
     return NextResponse.json({
       ok: true,
@@ -54,7 +53,7 @@ export async function POST(request: NextRequest) {
     })
   }
 
-  const existing = decodeSigned<MfaChallenge>(request.cookies.get(MFA_CHALLENGE_COOKIE)?.value)
+  const existing = decodeSigned<MfaChallenge>(readMfaCookie(request, 'challenge'))
   if (existing && existing.uid === user.uid && existing.exp > Date.now() && Date.now() - existing.lastSentAt < MFA_RESEND_MS) {
     const retryAfterSec = Math.max(1, Math.ceil((MFA_RESEND_MS - (Date.now() - existing.lastSentAt)) / 1000))
     return NextResponse.json({
@@ -91,7 +90,7 @@ export async function POST(request: NextRequest) {
     next: nextPath,
   }
   const response = NextResponse.json({ ok: true, required: true, sent: true, next: nextPath })
-  response.cookies.set(MFA_CHALLENGE_COOKIE, encodeSigned(challenge), cookieOptions(MFA_CODE_TTL_MS))
-  response.cookies.set(MFA_OK_COOKIE, '', { ...cookieOptions(0), maxAge: 0 })
+  writeMfaCookie(response.cookies, request, 'challenge', encodeSigned(challenge), MFA_CODE_TTL_MS)
+  writeMfaCookie(response.cookies, request, 'ok', '', 0)
   return response
 }
