@@ -3,6 +3,7 @@ import { Auth, getAuth } from 'firebase/auth'
 import { Firestore, getFirestore } from 'firebase/firestore'
 import { FirebaseStorage, getStorage } from 'firebase/storage'
 import { getFirebaseConfigError, isFirebaseConfigured } from '@/lib/firebase/env'
+import { ensureAppCheck } from '@/lib/firebase/appCheck'
 
 let app: FirebaseApp | null = null
 
@@ -28,6 +29,7 @@ export function ensureFirebaseApp(): FirebaseApp {
 
   if (!app) {
     app = getApps().length > 0 ? getApps()[0]! : initializeApp(firebaseConfig())
+    ensureAppCheck(app)
   }
   return app
 }

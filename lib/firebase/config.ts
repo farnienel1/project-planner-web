@@ -3,6 +3,7 @@ import { getAuth, Auth } from 'firebase/auth';
 import { getFirestore, Firestore } from 'firebase/firestore';
 import { getStorage, FirebaseStorage } from 'firebase/storage';
 import { isFirebaseConfigured } from './env';
+import { ensureAppCheck } from './appCheck';
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -15,10 +16,9 @@ const firebaseConfig = {
 
 function initFirebaseApp(): FirebaseApp | null {
   if (!isFirebaseConfigured()) return null;
-  if (getApps().length === 0) {
-    return initializeApp(firebaseConfig);
-  }
-  return getApps()[0] ?? null;
+  const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0] ?? null;
+  if (app) ensureAppCheck(app);
+  return app;
 }
 
 const app = initFirebaseApp();
