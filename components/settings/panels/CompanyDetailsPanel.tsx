@@ -18,6 +18,7 @@ import {
   bankHolidayRegionIdFromSelection,
   companyIdentityFirestoreFields,
   countryCodeForCompany,
+  validateLogoFile,
 } from '@/lib/orgSetup/orgSetupSettings'
 import { bankHolidayRegionLabel } from '@/lib/settings/bankHolidayRegions'
 import {
@@ -135,7 +136,14 @@ export function CompanyDetailsPanel({ onBack }: { onBack: () => void }) {
 
   function onPickLogo(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0]
+    event.target.value = ''
     if (!file) return
+    const validationError = validateLogoFile(file)
+    if (validationError) {
+      setError(validationError)
+      return
+    }
+    setError('')
     setLogoFile(file)
     setLogoPreview(URL.createObjectURL(file))
   }
@@ -161,6 +169,11 @@ export function CompanyDetailsPanel({ onBack }: { onBack: () => void }) {
     try {
       let companyLogoURL: string | undefined
       if (logoFile) {
+        const validationError = validateLogoFile(logoFile)
+        if (validationError) {
+          setError(validationError)
+          return
+        }
         const path = companyLogoPath(organization.id, logoFile.name)
         companyLogoURL = await uploadFile(path, logoFile, logoFile.type || 'image/png')
       }
@@ -319,7 +332,13 @@ export function CompanyDetailsPanel({ onBack }: { onBack: () => void }) {
             )}
           </div>
           <div className="flex flex-col gap-2">
-            <input ref={fileInput} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={onPickLogo} />
+            <input
+              ref={fileInput}
+              type="file"
+              accept="image/jpeg,image/jpg,image/png,image/pjpeg,image/webp,application/pdf,.jpg,.jpeg,.png,.pdf"
+              className="hidden"
+              onChange={onPickLogo}
+            />
             <button
               type="button"
               onClick={() => fileInput.current?.click()}
@@ -341,7 +360,9 @@ export function CompanyDetailsPanel({ onBack }: { onBack: () => void }) {
             )}
           </div>
         </div>
-        <p className="px-4 pb-4 text-xs text-slate-500">Shown on Home and the Site Audit report header.</p>
+        <p className="px-4 pb-4 text-xs text-slate-500">
+          JPEG, PNG or PDF up to 5 MB. Shown on Home and the Site Audit report header.
+        </p>
       </SettingsCard>
 
       <SaveBar dirty={dirty}>

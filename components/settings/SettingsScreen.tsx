@@ -8,6 +8,7 @@ import { doc, Timestamp, updateDoc } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { uploadFile, profilePhotoPath } from '@/lib/firebase/storageUtils'
+import { PROFILE_PHOTO_ACCEPT, validateProfilePhotoFile } from '@/lib/settings/profilePhotoUpload'
 import { UserAvatar } from '@/components/users/UserAvatar'
 import { canAccessOrganisationSettingsHub, hasAdminAccess } from '@/lib/navigation/menuPermissions'
 import { minPasswordLengthForEmail } from '@/lib/auth/emailAction'
@@ -116,6 +117,11 @@ function ProfilePanel({ onBack }: { onBack: () => void }) {
     const file = event.target.files?.[0]
     event.target.value = ''
     if (!file || !user?.id) return
+    const validationError = validateProfilePhotoFile(file)
+    if (validationError) {
+      setError(validationError)
+      return
+    }
     setUploadingPhoto(true)
     setError('')
     try {
@@ -151,13 +157,13 @@ function ProfilePanel({ onBack }: { onBack: () => void }) {
           )}
           <div className="flex-1">
             <p className="text-sm font-bold text-[var(--ink)]">Profile photo</p>
-            <p className="text-xs text-[var(--ink3)]">Used across Home and Settings. Same photo as iOS.</p>
+            <p className="text-xs text-[var(--ink3)]">Used across Home and Settings. Image only · max 2MB. Same photo as iOS.</p>
           </div>
           <label className={`btn sm ${uploadingPhoto ? 'opacity-50' : ''}`}>
             {uploadingPhoto ? 'Uploading…' : 'Change photo'}
             <input
               type="file"
-              accept="image/*"
+              accept={PROFILE_PHOTO_ACCEPT}
               className="sr-only"
               disabled={uploadingPhoto}
               onChange={onPhoto}
