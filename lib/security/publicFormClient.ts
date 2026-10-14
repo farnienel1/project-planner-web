@@ -1,11 +1,14 @@
+import { initializedAppCheck } from '@/lib/firebase/appCheck'
 import { ensureFirebaseApp } from '@/lib/firebase/ensureFirebase'
 
 export async function appCheckRequestHeaders(): Promise<Record<string, string>> {
   if (typeof window === 'undefined') return {}
   try {
     ensureFirebaseApp()
-    const { getAppCheck, getToken } = await import('firebase/app-check')
-    const { token } = await getToken(getAppCheck(), false)
+    const appCheck = initializedAppCheck()
+    if (!appCheck) return {}
+    const { getToken } = await import('firebase/app-check')
+    const { token } = await getToken(appCheck, false)
     return token ? { 'X-Firebase-AppCheck': token } : {}
   } catch {
     return {}

@@ -1,4 +1,4 @@
-import { createPublicKey, verify } from 'node:crypto'
+import { createPublicKey, verify, type JsonWebKey as CryptoJwk } from 'node:crypto'
 import { jsonError } from '@/lib/security/apiGuard'
 import type { NextRequest, NextResponse } from 'next/server'
 
@@ -78,7 +78,7 @@ export async function verifyAppCheckJwt(
   const jwk = keys.find((key) => key.kid && key.kid === claims.header.kid) || keys[0]
   if (!jwk) return false
   try {
-    const key = createPublicKey({ key: jwk, format: 'jwk' })
+    const key = createPublicKey({ key: jwk as unknown as CryptoJwk, format: 'jwk' })
     const [header, payload, signature] = token.split('.')
     return verify(
       'sha256',

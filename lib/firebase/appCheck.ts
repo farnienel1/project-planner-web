@@ -1,7 +1,8 @@
 import type { FirebaseApp } from 'firebase/app'
-import { initializeAppCheck, ReCaptchaEnterpriseProvider } from 'firebase/app-check'
+import { initializeAppCheck, ReCaptchaEnterpriseProvider, type AppCheck } from 'firebase/app-check'
 
 let started = false
+let instance: AppCheck | null = null
 
 export function recaptchaEnterpriseSiteKey(): string {
   return (process.env.NEXT_PUBLIC_RECAPTCHA_ENTERPRISE_SITE_KEY || '').trim()
@@ -20,8 +21,12 @@ export function ensureAppCheck(app: FirebaseApp): void {
   if (shouldUseAppCheckDebugToken()) {
     ;(self as typeof self & { FIREBASE_APPCHECK_DEBUG_TOKEN?: boolean }).FIREBASE_APPCHECK_DEBUG_TOKEN = true
   }
-  initializeAppCheck(app, {
+  instance = initializeAppCheck(app, {
     provider: new ReCaptchaEnterpriseProvider(siteKey),
     isTokenAutoRefreshEnabled: true,
   })
+}
+
+export function initializedAppCheck(): AppCheck | null {
+  return instance
 }
