@@ -63,7 +63,8 @@ export const COUNTRY_OPTIONS = BANK_HOLIDAY_REGIONS
 
 export { bankHolidayRegionLabel }
 
-export const LOGO_MAX_BYTES = 10 * 1024 * 1024
+/** Must match storage.rules company logo write: sized(5 * 1024 * 1024). */
+export const LOGO_MAX_BYTES = 5 * 1024 * 1024
 
 export function createEmptyOfficeAddress(): OrgOfficeAddress {
   return {
@@ -222,7 +223,9 @@ export function orgSetupSettingsToFirestoreFields(
   }
 }
 
-export function validateLogoFile(file: File): string | null {
+type NamedFile = { name: string; type?: string; size: number }
+
+export function validateLogoFile(file: NamedFile): string | null {
   const name = file.name.toLowerCase()
   const type = (file.type || '').toLowerCase()
   const isImage =
@@ -232,7 +235,7 @@ export function validateLogoFile(file: File): string | null {
   if (!isImage && !isPdf) {
     return 'Logo must be a JPEG, PNG or PDF file.'
   }
-  if (file.size > LOGO_MAX_BYTES) return 'Logo must be 10 MB or smaller.'
+  if (file.size > LOGO_MAX_BYTES) return 'Logo must be 5 MB or smaller.'
   return null
 }
 
