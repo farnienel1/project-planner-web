@@ -19,6 +19,7 @@ import {
 } from '@/lib/security/apiGuard'
 import { clampString, isValidEmail, isValidUuid } from '@/lib/security/validation'
 import { bearerToken, firestoreGet, firestorePatch, readString, restFieldsToPlain } from '@/lib/owner/firestoreRest'
+import { requireOrgAccessForUser } from '@/lib/security/requireOrgAccess'
 import { parseOrgBilling } from '@/lib/stripe/billing'
 import { firestoreValue } from '@/lib/stripe/writeOrgBilling'
 
@@ -73,13 +74,15 @@ export async function POST(request: NextRequest) {
       return jsonError('Checkout email must match the signed-in account', 403)
     }
 
+    const access = await requireOrgAccessForUser(request, user, organizationId, 'admin')
+    if (!access.ok) {
+      if (access.response.status === 403) return jsonError('Only the organisation admin can start checkout', 403)
+      return access.response
+    }
     const token = bearerToken(request)
     const orgDoc = await firestoreGet(token, `organizations/${organizationId}`)
     if (!orgDoc) return jsonError('Organisation not found', 404)
     const orgData = restFieldsToPlain(orgDoc.fields)
-    const members = (orgData.members || {}) as Record<string, unknown>
-    const isAdmin = members[user.uid] === 'admin' || readString(orgDoc.fields, 'creatorUserId') === user.uid
-    if (!isAdmin) return jsonError('Only the organisation admin can start checkout', 403)
 
     const billing = parseOrgBilling(orgData)
     const stripe = getStripe()

@@ -1,6 +1,12 @@
 import { NextRequest } from 'next/server'
 import { getStripe } from '@/lib/stripe/stripe'
-import { clientSafeMessage, enforceRateLimit, jsonError } from '@/lib/security/apiGuard'
+import {
+  clientSafeMessage,
+  enforceRateLimit,
+  isFirebaseUser,
+  jsonError,
+  requireFirebaseUser,
+} from '@/lib/security/apiGuard'
 import { isStripeCheckoutSessionId } from '@/lib/security/validation'
 import { organizationIdFromStripeObject, syncSubscriptionToOrg } from '@/lib/stripe/syncOrgBilling'
 import { billingFromSubscription } from '@/lib/stripe/writeOrgBilling'
@@ -11,6 +17,9 @@ export const runtime = 'nodejs'
 export async function GET(request: NextRequest) {
   const limited = enforceRateLimit(request, 'stripe-verify', 20, 10 * 60 * 1000)
   if (limited) return limited
+
+  const user = await requireFirebaseUser(request)
+  if (!isFirebaseUser(user)) return user
 
   try {
     const sessionId = request.nextUrl.searchParams.get('session_id')?.trim()
@@ -42,6 +51,9 @@ export async function GET(request: NextRequest) {
 
     if (!organizationId || !userId) {
       return jsonError('Checkout session is missing organization metadata', 400)
+    }
+    if (userId !== user.uid) {
+      return jsonError('Checkout session does not belong to this account', 403)
     }
 
     const customerId = typeof session.customer === 'string' ? session.customer : session.customer?.id

@@ -45,11 +45,6 @@ async function saveInterestRegistration(draft: InterestDraft): Promise<boolean> 
     ...draft,
     createdAt: serverTimestamp(),
   })
-  void fetch('/api/interest/notify', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(draft),
-  }).catch(() => {})
   return true
 }
 

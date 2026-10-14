@@ -1,3 +1,4 @@
+import { onAuthStateChanged } from 'firebase/auth'
 import { authLoadRetryDelayMs, isRetryableAuthLoadError } from '@/lib/auth/authBoot'
 import { withTimeout } from '@/lib/client/withTimeout'
 import { getFirebaseAuth } from '@/lib/firebase/ensureFirebase'
@@ -16,6 +17,26 @@ export async function waitForAuthToken(): Promise<void> {
   } catch {
     /* The read itself will retry if the token is still settling. */
   }
+}
+
+/** Stripe and first-load routes must not call a locked API before Auth restores the session. */
+export function waitForSignedInUser(timeoutMs = TOKEN_WAIT_MS): Promise<boolean> {
+  const auth = getFirebaseAuth()
+  if (auth.currentUser) return Promise.resolve(true)
+  return new Promise((resolve) => {
+    let settled = false
+    const finish = (ok: boolean) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      unsub()
+      resolve(ok)
+    }
+    const timer = setTimeout(() => finish(Boolean(auth.currentUser)), timeoutMs)
+    const unsub = onAuthStateChanged(auth, (user) => {
+      if (user) finish(true)
+    })
+  })
 }
 
 /** Run a Firestore read after the ID token exists, and retry the first-login race. */

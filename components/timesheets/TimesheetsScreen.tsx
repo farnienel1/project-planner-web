@@ -352,6 +352,7 @@ export function TimesheetsScreen({
           method: 'POST',
           headers: await jsonAuthHeaders(),
           body: JSON.stringify({
+            organizationId: organization.id,
             recipientEmail,
             recipientName: `${user.firstName} ${user.surname}`.trim() || user.email,
             organizationName: organization.name || 'Organisation',

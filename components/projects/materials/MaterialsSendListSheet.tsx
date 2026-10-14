@@ -298,6 +298,7 @@ export function MaterialsSendListSheet({
         method: 'POST',
         headers,
         body: JSON.stringify({
+          organizationId: organization.id,
           requestType: type,
           sendAsPlainText,
           jobNumber: project.jobNumber,

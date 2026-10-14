@@ -2,6 +2,7 @@ import { jsonAuthHeaders } from '@/lib/security/clientAuthHeaders'
 
 /** Client helper — asks the server to send an invite via the iOS Outlook Cloud Function. */
 export async function requestInviteSetupEmail(params: {
+  organizationId: string
   invitationId: string
   organizationName: string
   firstName: string

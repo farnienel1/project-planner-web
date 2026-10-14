@@ -151,5 +151,5 @@ export async function completeInvitationPasswordSetup(params: {
     usedAt: Timestamp.now(),
   })
   const { grantMfaSkip } = await import('@/lib/auth/mfa/mfaClient')
-  await grantMfaSkip()
+  await grantMfaSkip({ invitationId: params.invitationId })
 }

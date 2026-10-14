@@ -4,16 +4,16 @@ import { sendProjectPlannerEmail } from '@/lib/email/resendClient'
 import {
   clientSafeMessage,
   enforceRateLimit,
-  isFirebaseUser,
   jsonError,
   readJsonBody,
-  requireFirebaseUser,
 } from '@/lib/security/apiGuard'
 import { clampString, isValidEmail } from '@/lib/security/validation'
+import { requireOrgAccess } from '@/lib/security/requireOrgAccess'
 
 export const runtime = 'nodejs'
 
 type SendBody = {
+  organizationId?: string
   organizationName?: string
   firstName?: string
   to?: string
@@ -23,11 +23,11 @@ export async function POST(request: NextRequest) {
   const limited = enforceRateLimit(request, 'org-addition-email', 8, 10 * 60 * 1000)
   if (limited) return limited
 
-  const user = await requireFirebaseUser(request)
-  if (!isFirebaseUser(user)) return user
-
   const body = await readJsonBody<SendBody>(request)
   if (!body.ok) return body.response
+
+  const access = await requireOrgAccess(request, body.value.organizationId, 'staff')
+  if (!access.ok) return access.response
 
   const organizationName = clampString(body.value.organizationName, 200)
   const firstName = clampString(body.value.firstName, 100)

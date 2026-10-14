@@ -11,6 +11,8 @@ import { doc, getDoc } from 'firebase/firestore'
 import { requestFounderConfirmEmail } from '@/lib/orgSetup/requestFounderConfirmEmail'
 import { saveFounderConfirmEmailPayload } from '@/lib/orgSetup/founderConfirmEmail'
 import { grantMfaSkip } from '@/lib/auth/mfa/mfaClient'
+import { jsonAuthHeaders } from '@/lib/security/clientAuthHeaders'
+import { waitForSignedInUser } from '@/lib/firebase/waitForAuthToken'
 
 type VerifiedSession = {
   organizationId: string
@@ -50,8 +52,13 @@ export default function SetupSuccessClient() {
 
     async function verifyAndActivate() {
       try {
+        const signedIn = await waitForSignedInUser()
+        if (!signedIn) {
+          throw new Error('Sign in again to confirm this payment. You have not been charged twice.')
+        }
         const response = await fetch(
-          `/api/stripe/verify-session?session_id=${encodeURIComponent(verifiedSessionId)}`
+          `/api/stripe/verify-session?session_id=${encodeURIComponent(verifiedSessionId)}`,
+          { headers: await jsonAuthHeaders() }
         )
         const data = (await response.json()) as VerifiedSession & { error?: string }
 
@@ -134,7 +141,7 @@ export default function SetupSuccessClient() {
           setStatus('success')
           setMessage('Payment confirmed. Opening your new organisation…')
           window.setTimeout(() => {
-            void grantMfaSkip()
+            void grantMfaSkip({ organizationId: data.organizationId })
               .catch(() => undefined)
               .finally(() => {
                 window.location.href = '/dashboard'
@@ -156,7 +163,7 @@ export default function SetupSuccessClient() {
   }, [sessionId, router])
 
   async function goToDashboard() {
-    await grantMfaSkip().catch(() => undefined)
+    await grantMfaSkip({ organizationId: choice?.newOrganizationId }).catch(() => undefined)
     window.location.href = '/dashboard'
   }
 
