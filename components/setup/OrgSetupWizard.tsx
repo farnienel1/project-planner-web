@@ -44,6 +44,7 @@ import {
   createDefaultOrgSetupSettings,
   type OrgSetupSettings,
 } from '@/lib/orgSetup/orgSetupSettings'
+import { LegalLinks } from '@/components/legal/LegalLinks'
 
 type WizardStep =
   | 'account'
@@ -922,6 +923,10 @@ export function OrgSetupWizard() {
                       ))}
                     </div>
                   ) : null}
+                  <p className="muted small" style={{ marginTop: 18 }}>
+                    Privacy Policy and Terms of Service apply before you create this account.{' '}
+                    <LegalLinks />
+                  </p>
                 </div>
               ) : null}
 

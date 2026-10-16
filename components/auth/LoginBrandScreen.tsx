@@ -18,6 +18,7 @@ import { LoadingSpinner } from '@/components/dashboard/PageShell'
 import { isMfaGateOpen, isMfaRequiredError, mfaVerifyHref, safePostMfaPath } from '@/lib/auth/mfa/mfaClient'
 import { HoneypotField } from '@/components/security/HoneypotField'
 import { postPublicForm } from '@/lib/security/publicFormClient'
+import { LegalLinks } from '@/components/legal/LegalLinks'
 
 export function LoginBrandScreen() {
   const router = useRouter()
@@ -234,6 +235,9 @@ export function LoginBrandScreen() {
             <Link href="/setup" className="link">
               Set up an organisation
             </Link>
+          </p>
+          <p className="muted small mt-3 text-center">
+            <LegalLinks />
           </p>
           <Link href="/developer-login" className="btn sm ghost mt-4 block text-center" style={{ height: 44 }}>
             Developer login

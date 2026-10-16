@@ -253,6 +253,10 @@ export const PAGE_META: Record<string, { title: string; description: string }> =
     title: 'Terms of Service | Project Planner',
     description: 'The customer terms that govern use of the Project Planner platform.',
   },
+  processors: {
+    title: 'Processors | Project Planner',
+    description: 'The processors and related services currently used to operate Project Planner.',
+  },
 }
 
 export const RATES_FAQ: [string, string][] = [

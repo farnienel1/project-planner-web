@@ -1,11 +1,13 @@
 'use client'
 
 import { useMemo, useState } from 'react'
+import Link from 'next/link'
 import {
   LEGAL_ENTITY,
   LEGAL_PACK_DOCUMENTS,
   type LegalDocumentId,
 } from '@/lib/legal/customerLegalPack'
+import { PROCESSORS_PATH } from '@/lib/legal/processors'
 import { LegalDocumentBody } from '@/components/legal/ScrollAcceptDocument'
 
 export function PrivacyPolicyContent() {
@@ -22,6 +24,13 @@ export function PrivacyPolicyContent() {
         <p className="mt-3 text-[15px] leading-relaxed text-slate-700">
           These are the same documents accepted at first sign-up: the SaaS Agreement, Data Processing Agreement,
           Acceptable Use Policy, and Privacy Policy. They apply to every organisation using ProjectPlanner.
+        </p>
+        <p className="mt-2 text-[15px] leading-relaxed text-slate-700">
+          Named processors:{' '}
+          <Link href={PROCESSORS_PATH} className="font-semibold text-[var(--blue)]">
+            /processors
+          </Link>
+          .
         </p>
       </header>
 

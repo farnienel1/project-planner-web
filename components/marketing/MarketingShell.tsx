@@ -191,6 +191,7 @@ export function MarketingShell({
               <h4>Legal</h4>
               <Link href="/privacy">Privacy Policy</Link>
               <Link href="/terms">Terms of Service</Link>
+              <Link href="/processors">Processors</Link>
             </div>
           </div>
           <div className="legal">

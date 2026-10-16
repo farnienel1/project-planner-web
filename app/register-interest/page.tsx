@@ -51,7 +51,7 @@ const FAQ = [
   ['Is it built for MEP specifically?', "No, it isn't. It was built by an MEP contractor, but it works for every trade."],
   ['Do my operatives need training?', "They get the phone app and use three screens: their schedule, their tasks and their timesheet. If it needed training we'd have built it wrong."],
   ['What happens to our spreadsheets?', "Send them over before your setup call and we'll bring across your people, jobs and leave balances, so you start with your own data rather than an empty system."],
-  ['Where is our data?', "In the UK/EU on Google Cloud, with role-based access so operatives only see their own work. The privacy policy is linked below and we'll answer anything else on the call."],
+  ['Where is our data?', "Customer records sit in Google Firebase (Auth, Firestore and Storage). Transactional email and device-push fan-out run on Google Cloud Functions in us-central1 in the United States. Role-based access means operatives only see their own work. The privacy policy and processor list are linked below, and we'll answer anything else on the call."],
 ] as const
 
 export default function RegisterInterestPage() {
@@ -166,6 +166,12 @@ export default function RegisterInterestPage() {
           <span className="flex-1" />
           <Link href="/privacy" className="text-[var(--ink2)]">
             Privacy
+          </Link>
+          <Link href="/terms" className="text-[var(--ink2)]">
+            Terms
+          </Link>
+          <Link href="/processors" className="text-[var(--ink2)]">
+            Processors
           </Link>
           <a href="mailto:info@projectplanner.us" className="text-[var(--ink2)]">
             info@projectplanner.us

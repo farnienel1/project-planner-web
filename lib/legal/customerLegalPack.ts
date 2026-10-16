@@ -1,5 +1,7 @@
 /** Customer legal pack v1.0 — customer-facing text only (implementation notes omitted). */
 
+import { PROCESSORS_PUBLIC_URL } from './processors'
+
 export const LEGAL_ENTITY = {
   name: "ProjectPlanner Systems Ltd",
   tradingName: 'ProjectPlanner',
@@ -205,7 +207,7 @@ export const LEGAL_PACK_DOCUMENTS: LegalDocument[] = [
         title: "8. Sub-processors",
         paragraphs: [
           "The Customer gives general authorisation for the Provider to use sub-processors reasonably required to operate the Platform, including hosting, database, authentication, email, monitoring, support and backup providers. The Provider will maintain a current list of material sub-processors and will provide reasonable notice of material changes where required by law. The Customer may object on reasonable data-protection grounds. The Provider will impose appropriate data protection obligations on sub-processors and remains responsible for their performance to the extent required by applicable law.",
-          "A current list of material sub-processors is published at https://projectplanner.us.",
+          `A current list of material sub-processors is published at ${PROCESSORS_PUBLIC_URL}.`,
         ],
       },
       {
@@ -371,6 +373,7 @@ export const LEGAL_PACK_DOCUMENTS: LegalDocument[] = [
         title: "5. Sharing Personal Information",
         paragraphs: [
           "We may share personal information with service providers that help us operate ProjectPlanner, such as hosting, infrastructure, authentication, email, payment, analytics, security, support and professional service providers. We may also disclose information where required by law, to protect rights or safety, or in connection with a business sale, restructuring or financing, subject to applicable law.",
+          `A named list of the processors we currently use is published at ${PROCESSORS_PUBLIC_URL}.`,
         ],
       },
       {

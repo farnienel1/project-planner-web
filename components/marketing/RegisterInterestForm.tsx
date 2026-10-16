@@ -279,6 +279,10 @@ export function RegisterInterestForm() {
             <a href="/privacy" className="font-semibold text-[var(--blue)]">
               Privacy policy
             </a>
+            {' · '}
+            <a href="/terms" className="font-semibold text-[var(--blue)]">
+              Terms of service
+            </a>
             .
           </label>
         </div>
