@@ -36,6 +36,7 @@ import {
   normalizeEmploymentType,
 } from '@/lib/canonical/userProfile'
 import { ANNUAL_LEAVE_ALLOWANCE_COPY, snapLeaveDays } from '@/lib/canonical'
+import { LEAVE_DAYS_SAVE_MAX, parseBoundedNumber } from '@/lib/security/boundedValue'
 import { useHolidayStore } from '@/lib/stores/holidayStore'
 import {
   bookingsForPerson,
@@ -429,7 +430,12 @@ export function EditUserProfile({
       employmentTypeEffectiveAt: employment.employmentTypeEffectiveAt || undefined,
     }
     if (toSave.annualLeaveEnabled !== false && remainingTouched && remainingDraft !== '') {
-      const override = remainingOverrideFromBalance(snapLeaveDays(Number(remainingDraft)), leaveBalance)
+      const remaining = parseBoundedNumber(remainingDraft, { min: 0, max: LEAVE_DAYS_SAVE_MAX })
+      if (remaining == null) {
+        setError('Enter remaining leave days between 0 and 365.')
+        return
+      }
+      const override = remainingOverrideFromBalance(snapLeaveDays(remaining), leaveBalance)
       toSave = {
         ...toSave,
         annualLeaveYearAllowance: override.annualLeaveYearAllowance,
@@ -965,7 +971,11 @@ export function EditUserProfile({
                   value={target.annualLeaveDaysPerYear?.toString() || String(orgLeaveDefaults.daysPerYear)}
                   disabled={!canEdit}
                   onChange={(e) =>
-                    setTarget({ ...target, annualLeaveDaysPerYear: Number(e.target.value) || undefined })
+                    setTarget({
+                      ...target,
+                      annualLeaveDaysPerYear:
+                        parseBoundedNumber(e.target.value, { min: 0, max: LEAVE_DAYS_SAVE_MAX }) ?? undefined,
+                    })
                   }
                 />
               </FormField>

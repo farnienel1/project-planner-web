@@ -10,8 +10,9 @@ import {
   mergeQualificationCertificateUrls,
   qualificationCertificateUrl,
 } from '@/lib/canonical/operativeQualifications'
+import { QUALIFICATION_CERT_MAX_BYTES, uploadLimitError } from '@/lib/security/uploadLimits'
 
-export const QUALIFICATION_CERT_MAX_BYTES = 10 * 1024 * 1024
+export { QUALIFICATION_CERT_MAX_BYTES }
 
 /** Broad enough for OS file pickers; the file is still validated as PDF/JPEG. */
 export const QUALIFICATION_CERT_ACCEPT =
@@ -45,9 +46,7 @@ export function isQualificationCertificatePdf(file: NamedFile): boolean {
 }
 
 export function qualificationCertificateFileError(file: NamedFile): string | null {
-  if (file.size > QUALIFICATION_CERT_MAX_BYTES) return QUALIFICATION_CERT_HINT
-  if (isQualificationCertificatePdf(file) || isQualificationCertificateJpeg(file)) return null
-  return QUALIFICATION_CERT_HINT
+  return uploadLimitError(file, 'certificate')
 }
 
 export function qualificationCertificateContentType(file: NamedFile): string {

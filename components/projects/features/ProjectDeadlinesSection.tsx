@@ -17,6 +17,7 @@ import { isOperativeMode } from '@/lib/permissions'
 import { liveUserIdsOnJob } from '@/lib/access/workAccess'
 import { isPendingPerson } from '@/lib/staff/pendingPeople'
 import { healthSafetyFilePath, uploadFile } from '@/lib/firebase/storageUtils'
+import { prepareClientUpload } from '@/lib/security/stripPhotoLocation'
 import { dateFromDayKey, dayKey } from '@/lib/ios-parity/londonTime'
 import { notifyNewDeadlineAssignees } from '@/lib/deadlines/notify'
 import {
@@ -180,8 +181,10 @@ export function ProjectDeadlinesSection({ project, isSmallWorks }: { project: Pr
     if (file) {
       try {
         setBanner('Uploading the attachment…')
-        const path = healthSafetyFilePath(organization.id, project.id, 'deadlines', file.name)
-        const url = await uploadFile(path, file, file.type || 'application/octet-stream')
+        const prepared = await prepareClientUpload(file, 'work')
+        if (prepared.error) throw new Error(prepared.error)
+        const path = healthSafetyFilePath(organization.id, project.id, 'deadlines', prepared.file.name)
+        const url = await uploadFile(path, prepared.file, prepared.file.type || 'application/octet-stream')
         next = withFileAttached(next, file.name, url, authorName, new Date())
         setBanner(null)
       } catch (err: unknown) {

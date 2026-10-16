@@ -27,6 +27,7 @@ import { loadOrganizationDetails } from '@/lib/settings/organizationSettings'
 import type { UserPermissions } from '@/types'
 import { LineManagerMultiSelect } from '@/components/users/LineManagerMultiSelect'
 import { PayBasisFields, payChoiceToRates } from '@/components/users/PayBasisFields'
+import { LEAVE_DAYS_SAVE_MAX, parseBoundedNumber } from '@/lib/security/boundedValue'
 import {
   PanelHeader,
   SectionLabel,
@@ -304,14 +305,17 @@ export function AddUserScreen() {
         utrNumber: form.utrNumber.trim() || undefined,
         annualLeaveEnabled: form.annualLeaveEnabled,
         annualLeaveDaysPerYear: form.annualLeaveEnabled
-          ? Number(form.annualLeaveDaysPerYear) || annualLeaveDefaults.daysPerYear
+          ? parseBoundedNumber(form.annualLeaveDaysPerYear, { min: 0, max: LEAVE_DAYS_SAVE_MAX }) ??
+            annualLeaveDefaults.daysPerYear
           : undefined,
         annualLeaveYearStartMonth: form.annualLeaveEnabled ? annualLeaveDefaults.startMonth : undefined,
         annualLeaveYearEndMonth: form.annualLeaveEnabled ? annualLeaveDefaults.endMonth : undefined,
         annualLeaveCarriesOver: form.annualLeaveEnabled ? annualLeaveDefaults.carriesOver : undefined,
         ...(form.annualLeaveEnabled && form.remainingTouched
           ? applyRemainingOverride({
-              remaining: snapLeaveDays(Number(form.remainingDays)),
+              remaining: snapLeaveDays(
+                parseBoundedNumber(form.remainingDays, { min: 0, max: LEAVE_DAYS_SAVE_MAX }) ?? 0
+              ),
               taken: 0,
               pending: 0,
               yearKey: leaveYearBounds({

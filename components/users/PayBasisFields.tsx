@@ -2,6 +2,7 @@
 
 import { FormInput } from '@/components/forms/FormShell'
 import { SegmentedControl } from '@/components/ui/controls'
+import { MONEY_SAVE_MAX, parseBoundedNumber } from '@/lib/security/boundedValue'
 import { readStoredRates } from '@/lib/timesheets/payBasis'
 
 const DAY_HELP =
@@ -81,8 +82,8 @@ export function payChoiceToRates(payBasis: 'day' | 'hourly', amount: string): {
 } {
   const trimmed = amount.trim()
   if (!trimmed) return { payBasis: undefined, dayRate: undefined, hourlyRate: undefined }
-  const value = Number(trimmed)
-  if (!Number.isFinite(value)) return { payBasis: undefined, dayRate: undefined, hourlyRate: undefined }
+  const value = parseBoundedNumber(trimmed, { min: 0, max: MONEY_SAVE_MAX })
+  if (value == null) return { payBasis: undefined, dayRate: undefined, hourlyRate: undefined }
   if (payBasis === 'hourly') return { payBasis: 'hourly', hourlyRate: value, dayRate: undefined }
   return { payBasis: 'day', dayRate: value, hourlyRate: undefined }
 }

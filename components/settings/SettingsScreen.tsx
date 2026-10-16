@@ -9,6 +9,7 @@ import { db } from '@/lib/firebase/config'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { uploadFile, profilePhotoPath } from '@/lib/firebase/storageUtils'
 import { PROFILE_PHOTO_ACCEPT, validateProfilePhotoFile } from '@/lib/settings/profilePhotoUpload'
+import { prepareClientUpload } from '@/lib/security/stripPhotoLocation'
 import { UserAvatar } from '@/components/users/UserAvatar'
 import { canAccessOrganisationSettingsHub, hasAdminAccess } from '@/lib/navigation/menuPermissions'
 import { minPasswordLengthForEmail } from '@/lib/auth/emailAction'
@@ -126,10 +127,15 @@ function ProfilePanel({ onBack }: { onBack: () => void }) {
     setError('')
     try {
       if (!organization?.id) throw new Error('Missing organisation for profile photo')
+      const prepared = await prepareClientUpload(file, 'profile')
+      if (prepared.error) {
+        setError(prepared.error)
+        return
+      }
       const url = await uploadFile(
         profilePhotoPath(organization.id, user.id),
-        file,
-        file.type || 'image/jpeg'
+        prepared.file,
+        prepared.file.type || 'image/jpeg'
       )
       await updateDoc(doc(db, 'users', user.id), { profilePhotoURL: url, updatedAt: Timestamp.now() })
       const current = useAuthStore.getState().user

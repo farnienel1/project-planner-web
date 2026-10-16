@@ -51,3 +51,6 @@ next-env.d.ts
 
 # Local Netlify folder
 .netlify
+
+# Copied from pdfjs-dist at Next startup — do not hand-edit
+/public/pdfjs/pdf.worker.min.mjs

@@ -6,7 +6,8 @@ import { useSearchParams } from 'next/navigation'
 import { confirmPasswordReset, verifyPasswordResetCode } from 'firebase/auth'
 import { EyeIcon, EyeSlashIcon } from '@heroicons/react/24/outline'
 import { AppLogoMark } from '@/components/ui/AppLogoMark'
-import { getFirebaseAuth } from '@/lib/firebase/ensureFirebase'
+import { awaitAppCheckToken, ensureAppCheck, initializedAppCheck } from '@/lib/firebase/appCheck'
+import { ensureFirebaseApp, getFirebaseAuth } from '@/lib/firebase/ensureFirebase'
 import { HoneypotField } from '@/components/security/HoneypotField'
 import { postPublicForm } from '@/lib/security/publicFormClient'
 import {
@@ -43,19 +44,24 @@ export function CompletePasswordResetScreen() {
     }
     let cancelled = false
     setChecking(true)
-    verifyPasswordResetCode(getFirebaseAuth(), action.oobCode)
-      .then((resolvedEmail) => {
+    void (async () => {
+      try {
+        const app = ensureFirebaseApp()
+        ensureAppCheck(app)
+        await awaitAppCheckToken(initializedAppCheck())
+        if (cancelled) return
+        const resolvedEmail = await verifyPasswordResetCode(getFirebaseAuth(), action.oobCode)
         if (!cancelled) {
           setEmail(resolvedEmail)
           setChecking(false)
         }
-      })
-      .catch((err) => {
+      } catch (err) {
         if (!cancelled) {
           setError(formatPasswordResetError(err))
           setChecking(false)
         }
-      })
+      }
+    })()
     return () => {
       cancelled = true
     }
@@ -83,6 +89,7 @@ export function CompletePasswordResetScreen() {
         return
       }
       if (!gated.proceed) return
+      await awaitAppCheckToken(initializedAppCheck())
       await confirmPasswordReset(getFirebaseAuth(), action.oobCode, password)
       setDone(true)
     } catch (err) {

@@ -10,6 +10,8 @@ import { SITE_AUDIT_TYPES } from '@/components/projects/features/featureUi'
 import { newUuid } from '@/lib/firebase/firestoreUtils'
 import { prepareAuditPhoto } from '@/lib/siteAudit/prepareAuditPhoto'
 import type { Project } from '@/types'
+import { isPlausibleDayKey } from '@/lib/security/boundedValue'
+import { uploadLimitError } from '@/lib/security/uploadLimits'
 
 type DraftItem = {
   id: string
@@ -67,7 +69,17 @@ export function SiteAuditCreateFlow({ project, onClose, onCreated }: Props) {
           setError('Choose a photo. PDF and other documents cannot be added as an audit image.')
           return
         }
+        const sizeError = uploadLimitError(file, 'siteAudit')
+        if (sizeError) {
+          setError(sizeError)
+          return
+        }
         const prepared = await prepareAuditPhoto(file)
+        const afterError = uploadLimitError(prepared.file, 'siteAudit')
+        if (afterError) {
+          setError(afterError)
+          return
+        }
         next.push({
           id: newUuid(),
           title: '',
@@ -140,6 +152,10 @@ export function SiteAuditCreateFlow({ project, onClose, onCreated }: Props) {
     if (missing) {
       cardRefs.current[missing.id]?.scrollIntoView({ behavior: 'smooth', block: 'start' })
       setError('Each photo needs a title before the audit can be saved.')
+      return
+    }
+    if (!isPlausibleDayKey(auditDate)) {
+      setError('Enter a valid audit date.')
       return
     }
 

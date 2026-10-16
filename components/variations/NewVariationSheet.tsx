@@ -13,6 +13,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { rankMaterialRecords } from '@/lib/canonical';
+import { evidenceFileAllowed } from '@/lib/variations/variationModel';
 
 /* ------------------------------------------------------------------ types */
 
@@ -368,6 +369,12 @@ export function NewVariationSheet({
     if (!list?.length) return;
     const picked = Array.from(list);
     if (fileRef.current) fileRef.current.value = '';
+    const blocked = picked.find((file) => evidenceFileAllowed(file));
+    if (blocked) {
+      setError(evidenceFileAllowed(blocked));
+      return;
+    }
+    setError(null);
     setEvidence((prev) => {
       const room = MAX_EVIDENCE - savedEvidenceCount - prev.length;
       if (room <= 0) {
@@ -544,12 +551,12 @@ export function NewVariationSheet({
                       <button type="button" aria-label="Fewer operatives" disabled={lc.operatives <= 1} onClick={() => setLc((c) => ({ ...c, operatives: Math.max(1, c.operatives - 1) }))} className={stepBtn}>−</button>
                       <input
                         value={lc.operatives}
-                        onChange={(e) => setLc((c) => ({ ...c, operatives: Math.max(1, parseInt(e.target.value || '1', 10) || 1) }))}
+                        onChange={(e) => setLc((c) => ({ ...c, operatives: Math.min(999, Math.max(1, parseInt(e.target.value || '1', 10) || 1)) }))}
                         inputMode="numeric"
                         aria-label="Number of operatives"
                         className="min-w-0 flex-1 bg-transparent text-center font-semibold text-[17px] font-extrabold tabular-nums outline-none"
                       />
-                      <button type="button" aria-label="More operatives" onClick={() => setLc((c) => ({ ...c, operatives: c.operatives + 1 }))} className={stepBtn}>+</button>
+                      <button type="button" aria-label="More operatives" onClick={() => setLc((c) => ({ ...c, operatives: Math.min(999, c.operatives + 1) }))} className={stepBtn}>+</button>
                     </div>
                   </div>
 
@@ -560,13 +567,13 @@ export function NewVariationSheet({
                       <input
                         ref={hoursRef}
                         value={lc.hoursEach || ''}
-                        onChange={(e) => setLc((c) => ({ ...c, hoursEach: Math.max(0, Number(e.target.value.replace(',', '.')) || 0) }))}
+                        onChange={(e) => setLc((c) => ({ ...c, hoursEach: Math.min(10000, Math.max(0, Number(e.target.value.replace(',', '.')) || 0)) }))}
                         inputMode="decimal"
                         placeholder="0"
                         aria-label="Hours per operative"
                         className="min-w-0 flex-1 bg-transparent text-center font-semibold text-[17px] font-extrabold tabular-nums outline-none"
                       />
-                      <button type="button" aria-label="More hours" onClick={() => setLc((c) => ({ ...c, hoursEach: Math.round((c.hoursEach + 0.5) * 2) / 2 }))} className={stepBtn}>+</button>
+                      <button type="button" aria-label="More hours" onClick={() => setLc((c) => ({ ...c, hoursEach: Math.min(10000, Math.round((c.hoursEach + 0.5) * 2) / 2) }))} className={stepBtn}>+</button>
                     </div>
                   </div>
                 </div>

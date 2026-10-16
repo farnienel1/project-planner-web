@@ -2,6 +2,7 @@ import { ref, uploadBytes, uploadBytesResumable, getDownloadURL } from 'firebase
 import { qualificationCertificateStoragePath } from '@/lib/canonical/operativeQualifications'
 import { storage, auth } from '@/lib/firebase/config'
 import { withTimeout } from '@/lib/client/withTimeout'
+import { generatedStorageFileName } from '@/lib/security/uploadLimits'
 
 const UPLOAD_TIMEOUT_MS = 180_000
 
@@ -121,14 +122,17 @@ export function sanitizeFileName(name: string): string {
   return name.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 80)
 }
 
+function generatedObjectName(originalName: string, uid: string): string {
+  return generatedStorageFileName(originalName, uid)
+}
+
 export function siteAuditImagePath(
   organizationId: string,
   auditId: string,
   imageName: string
 ): string {
   const uid = auth.currentUser?.uid || 'web'
-  const timestamp = Date.now()
-  return `organizations/${organizationId}/siteAudits/${auditId}/images/${uid}_${timestamp}_${sanitizeFileName(imageName)}`
+  return `organizations/${organizationId}/siteAudits/${auditId}/images/${generatedObjectName(imageName, uid)}`
 }
 
 /** Evidence sits under healthSafety, the prefix other job files already upload to. */
@@ -138,8 +142,7 @@ export function variationEvidencePath(
   fileName: string
 ): string {
   const uid = requireStorageUid()
-  const timestamp = Date.now()
-  return `organizations/${organizationId}/healthSafety/${parentId}/variations/${uid}_${timestamp}_${sanitizeFileName(fileName)}`
+  return `organizations/${organizationId}/healthSafety/${parentId}/variations/${generatedObjectName(fileName, uid)}`
 }
 
 export function healthSafetyFilePath(
@@ -149,14 +152,12 @@ export function healthSafetyFilePath(
   fileName: string
 ): string {
   const uid = auth.currentUser?.uid || 'web'
-  const timestamp = Date.now()
-  return `organizations/${organizationId}/healthSafety/${projectId}/${category}/${uid}_${timestamp}_${sanitizeFileName(fileName)}`
+  return `organizations/${organizationId}/healthSafety/${projectId}/${category}/${generatedObjectName(fileName, uid)}`
 }
 
 export function companyLogoPath(organizationId: string, fileName: string): string {
   const uid = auth.currentUser?.uid || 'web'
-  const timestamp = Date.now()
-  return `organizations/${organizationId}/branding/company_logo/${uid}_${timestamp}_${sanitizeFileName(fileName)}`
+  return `organizations/${organizationId}/branding/company_logo/${generatedObjectName(fileName, uid)}`
 }
 
 /** iOS: organizations/{orgId}/userProfiles/{uid}/profile.jpg */
@@ -176,11 +177,10 @@ export function taskAttachmentPath(
   fileName: string
 ): string {
   const uid = auth.currentUser?.uid || 'web'
-  const timestamp = Date.now()
-  return `organizations/${organizationId}/tasks/${taskId}/${uid}_${timestamp}_${sanitizeFileName(fileName)}`
+  return `organizations/${organizationId}/tasks/${taskId}/${generatedObjectName(fileName, uid)}`
 }
 
-/** iOS: organizations/{orgId}/operatives/{operativeId}/qualifications/{qualificationId}/certificates/{uid}_{ts}_{name} */
+/** iOS: organizations/{orgId}/operatives/{operativeId}/qualifications/{qualificationId}/certificates/{uid}_{ts}.{ext} */
 export function qualificationCertificatePath(
   organizationId: string,
   operativeId: string,
@@ -188,12 +188,11 @@ export function qualificationCertificatePath(
   fileName: string
 ): string {
   const uid = requireStorageUid()
-  const timestamp = Date.now()
   const path = qualificationCertificateStoragePath({
     organizationId,
     operativeId,
     qualificationId,
-    fileName: `${uid}_${timestamp}_${sanitizeFileName(fileName)}`,
+    fileName: generatedObjectName(fileName, uid),
   })
   if (!path) {
     throw new Error('Could not save the certificate. Organisation or qualification is missing.')

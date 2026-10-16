@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from 'react'
 import type { FormEvent, ReactNode } from 'react'
 import { newUuid } from '@/lib/firebase/firestoreUtils'
 import { dateFromDayKey, dayKey } from '@/lib/ios-parity/londonTime'
+import { isPlausibleDayKey } from '@/lib/security/boundedValue'
+import { uploadLimitError } from '@/lib/security/uploadLimits'
 import {
   applyCreatedHistory,
   applyEditHistory,
@@ -416,6 +418,17 @@ export function EditorSheet({
       setFormError('That file name is too long. Rename the file and try again.')
       return
     }
+    if (file) {
+      const blocked = uploadLimitError(file, 'work')
+      if (blocked) {
+        setFormError(blocked)
+        return
+      }
+    }
+    if (!isPlausibleDayKey(due)) {
+      setFormError('Choose a due date.')
+      return
+    }
     const dueDate = dateFromDayKey(due)
     if (Number.isNaN(dueDate.getTime())) {
       setFormError('Choose a due date.')
@@ -459,7 +472,7 @@ export function EditorSheet({
       location: location.trim() || null,
       trade,
       detail: detail.trim() || null,
-      start: hasStart ? dateFromDayKey(start) : null,
+      start: hasStart && isPlausibleDayKey(start) ? dateFromDayKey(start) : null,
       due: dueDate,
       isCritical: critical,
       reminderDaysBefore: reminder ? 2 : null,
@@ -669,10 +682,10 @@ export function RescheduleSheet({
   const [date, setDate] = useState(dayKey(item.due))
   const [picked, setPicked] = useState<string | null>(null)
   const [detail, setDetail] = useState('')
-  const next = dateFromDayKey(date)
-  const movedDays = daysRemaining({ due: next }, item.due)
+  const next = isPlausibleDayKey(date) ? dateFromDayKey(date) : new Date(NaN)
+  const movedDays = Number.isNaN(next.getTime()) ? 0 : daysRemaining({ due: next }, item.due)
   const reason = [picked, detail.trim() || null].filter(Boolean).join(' — ')
-  const canSave = movedDays !== 0 && reason.length > 0
+  const canSave = isPlausibleDayKey(date) && movedDays !== 0 && reason.length > 0
   const knockOn = dependents(items, item)
   return (
     <Sheet

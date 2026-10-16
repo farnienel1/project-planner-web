@@ -4,6 +4,8 @@
  * The document id is the identity. voNumber is a display label only.
  */
 
+import { VARIATION_EVIDENCE_MAX_BYTES, uploadLimitError } from '@/lib/security/uploadLimits'
+
 export const VARIATION_STATUSES = ['open', 'submitted', 'closed'] as const
 export type VariationStatus = (typeof VARIATION_STATUSES)[number]
 
@@ -162,7 +164,7 @@ export const CUSTOM_TRADE_OPTION = 'Custom trade…'
 export const EVIDENCE_ACCEPT = ['image/jpeg', 'image/png', 'image/heic', 'image/heif', 'application/pdf']
 export const EVIDENCE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'heic', 'heif', 'pdf']
 export const EVIDENCE_MAX_FILES = 10
-export const EVIDENCE_MAX_BYTES = 20 * 1024 * 1024
+export const EVIDENCE_MAX_BYTES = VARIATION_EVIDENCE_MAX_BYTES
 export const TRACKER_LOCK_MS = 5 * 60 * 1000
 export const TRACKER_ADDED_DESCRIPTION = 'Added from the tracker. Site needs to confirm the scope and add hours and materials.'
 
@@ -180,11 +182,7 @@ export function variationCounters(input: {
 }
 
 export function evidenceFileAllowed(file: { name: string; type: string; size: number }): string | null {
-  const ext = file.name.split('.').pop()?.toLowerCase() || ''
-  const typeOk = EVIDENCE_ACCEPT.includes(file.type) || EVIDENCE_EXTENSIONS.includes(ext)
-  if (!typeOk) return 'Upload a JPG, PNG, HEIC or PDF.'
-  if (file.size > EVIDENCE_MAX_BYTES) return 'Each file must be 20 MB or smaller.'
-  return null
+  return uploadLimitError(file, 'variation')
 }
 
 export function parentDisplayName(jobNumber: string, siteName: string): string {

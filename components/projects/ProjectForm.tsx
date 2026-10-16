@@ -25,6 +25,11 @@ import {
   projectManagerSelectionIds,
   stableManagerDocumentId,
 } from '@/lib/projects/projectManagerChoices'
+import {
+  isPlausibleDayKey,
+  parseBoundedLatitude,
+  parseBoundedLongitude,
+} from '@/lib/security/boundedValue'
 
 type ProjectFormProps = {
   initial?: Project | null
@@ -174,12 +179,26 @@ export function ProjectForm({ initial, collection = 'projects', backHref, onSave
     setManagerFieldError(false)
 
     const creating = !initial
+    if (!isPlausibleDayKey(form.startDate)) {
+      setError('Enter a valid start date.')
+      return
+    }
+    if (!isPlausibleDayKey(form.endDate)) {
+      setError('Enter a valid end date.')
+      return
+    }
     if (form.startDate && form.endDate && form.endDate < form.startDate) {
       setError('End date must be on or after start date.')
       return
     }
+    const pinLat = parseBoundedLatitude(form.latitude)
+    const pinLng = parseBoundedLongitude(form.longitude)
+    if (form.useMapPin && (form.latitude || form.longitude) && (pinLat == null || pinLng == null)) {
+      setError('Map pin must be a real latitude and longitude.')
+      return
+    }
     const hasAddress = Boolean(form.addressLine1.trim() && form.townCity.trim() && form.postcode.trim())
-    const hasPin = Boolean(form.useMapPin && form.latitude && form.longitude)
+    const hasPin = Boolean(form.useMapPin && pinLat != null && pinLng != null)
     if (creating) {
       const filled = countFilledProjectCreateFields(form)
       const othersReady = Boolean(form.jobNumber.trim() && form.siteName.trim() && (hasAddress || hasPin))
@@ -269,9 +288,13 @@ export function ProjectForm({ initial, collection = 'projects', backHref, onSave
         hiddenOperativeUserIds: initial?.hiddenOperativeUserIds,
         description: form.description,
         notes: form.notes,
-        latitude: form.useMapPin && form.latitude ? Number(form.latitude) : undefined,
-        longitude: form.useMapPin && form.longitude ? Number(form.longitude) : undefined,
-        usesMapPinForLocation: Boolean(form.useMapPin && form.latitude && form.longitude),
+        latitude: form.useMapPin ? parseBoundedLatitude(form.latitude) ?? undefined : undefined,
+        longitude: form.useMapPin ? parseBoundedLongitude(form.longitude) ?? undefined : undefined,
+        usesMapPinForLocation: Boolean(
+          form.useMapPin &&
+            parseBoundedLatitude(form.latitude) != null &&
+            parseBoundedLongitude(form.longitude) != null
+        ),
         createdAt: initial?.createdAt,
       }
       const id = await saveProject(input, collection)

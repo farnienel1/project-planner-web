@@ -6,6 +6,7 @@
  */
 
 import type { ReactNode } from 'react'
+import { MULTIPLIER_SAVE_MAX, parseBoundedNumber } from '@/lib/security/boundedValue'
 import { Toggle } from './Toggle'
 
 /** A whole row you can click to flip a switch, with a title and helper text. */
@@ -198,7 +199,10 @@ export function MultiplierInput({
           min="0"
           aria-label={label}
           value={Number.isFinite(value) ? value : ''}
-          onChange={(e) => onChange(parseFloat(e.target.value) || 0)}
+          onChange={(e) => {
+            const next = parseBoundedNumber(e.target.value, { min: 0, max: MULTIPLIER_SAVE_MAX })
+            onChange(next ?? 0)
+          }}
           className="w-[72px] bg-transparent py-2 pl-3 text-right text-[15px] font-bold tabular-nums text-[var(--ink)] outline-none"
         />
         <span className="pl-1 text-[14px] font-semibold text-[var(--ink3)]">×</span>

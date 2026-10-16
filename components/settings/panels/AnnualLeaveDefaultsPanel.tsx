@@ -14,6 +14,7 @@ import {
   BANK_HOLIDAY_REGIONS,
   bankHolidayRegionLabel,
 } from '@/lib/settings/bankHolidayRegions'
+import { LEAVE_DAYS_SAVE_MAX, parseBoundedNumber } from '@/lib/security/boundedValue'
 import { settingsHeader } from '@/lib/settings/settingsHeader'
 import { settingsDraftIsDirty } from '@/lib/settings/settingsDirty'
 import { useSettingsDirty, useSettingsLeave } from '@/components/settings/SettingsDirty'
@@ -102,9 +103,9 @@ export function AnnualLeaveDefaultsPanel({ onBack }: { onBack: () => void }) {
   async function save() {
     if (!organization?.id) return
     const normalized = daysText.replace(',', '.').trim()
-    const parsed = parseFloat(normalized)
-    if (!Number.isFinite(parsed) || parsed <= 0) {
-      setError('Enter a valid annual leave allowance (a positive number of days).')
+    const parsed = parseBoundedNumber(normalized, { min: Number.MIN_VALUE, max: LEAVE_DAYS_SAVE_MAX })
+    if (parsed == null) {
+      setError('Enter a valid annual leave allowance (a positive number of days, up to 365).')
       return
     }
     setSaving(true)
