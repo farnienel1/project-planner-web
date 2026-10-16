@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { enforceRateLimit, jsonError, readJsonBody } from '@/lib/security/apiGuard'
 import { firstZodError, honeypotFilled, publicGateBodySchema } from '@/lib/security/publicFormSchemas'
-import { enforceAppCheck } from '@/lib/security/verifyAppCheckToken'
+import { enforceAppCheckOnAuthGate } from '@/lib/security/verifyAppCheckToken'
 
 export const runtime = 'nodejs'
 
@@ -15,7 +15,7 @@ const LIMITS: Record<string, { scope: string; limit: number; windowMs: number }>
 }
 
 export async function POST(request: NextRequest) {
-  const checked = await enforceAppCheck(request)
+  const checked = await enforceAppCheckOnAuthGate(request)
   if (checked) return checked
 
   const body = await readJsonBody<unknown>(request)
