@@ -2,6 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { LEGAL_ENTITY, LEGAL_PACK_DOCUMENTS } from './customerLegalPack.ts'
+import { PROCESSORS_PUBLIC_URL } from './processors.ts'
 import { isScrolledToBottom, passwordsMatchAndReady } from './scrollUtils.ts'
 
 test('legal pack uses ProjectPlanner Systems Ltd and info@projectplanner.us', () => {
@@ -15,6 +16,14 @@ test('legal pack uses ProjectPlanner Systems Ltd and info@projectplanner.us', ()
   assert.equal(blob.includes('[PRIVACY EMAIL'), false)
   assert.equal(blob.includes('[SUPPORT/SECURITY'), false)
   assert.equal(blob.includes('IMPLEMENTATION NOTES'), false)
+})
+
+test('DPA §8 and Privacy point at the www processors list, not the homepage', () => {
+  const dpa = JSON.stringify(LEGAL_PACK_DOCUMENTS.find((doc) => doc.id === 'dpa'))
+  const privacy = JSON.stringify(LEGAL_PACK_DOCUMENTS.find((doc) => doc.id === 'privacy'))
+  assert.match(dpa, new RegExp(PROCESSORS_PUBLIC_URL.replace(/\./g, '\\.')))
+  assert.equal(dpa.includes('published at https://projectplanner.us.'), false)
+  assert.match(privacy, new RegExp(PROCESSORS_PUBLIC_URL.replace(/\./g, '\\.')))
 })
 
 test('pack has SaaS, DPA, AUP and Privacy with privacy as acknowledgement', () => {
@@ -40,6 +49,7 @@ test('Legal policies page lists every sign-up pack document', () => {
   const source = readFileSync(new URL('../../components/auth/PrivacyPolicyContent.tsx', import.meta.url), 'utf8')
   assert.match(source, /LEGAL_PACK_DOCUMENTS/)
   assert.match(source, /Legal policies/)
+  assert.match(source, /PROCESSORS_PATH/)
 })
 
 test('isScrolledToBottom is true when content fits or the user reaches the end', () => {
