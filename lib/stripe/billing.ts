@@ -1,3 +1,7 @@
+import { PAYMENT_GRACE_MS, hasAccess as organizationHasAccess } from '@/lib/canonical'
+
+export { PAYMENT_GRACE_MS }
+
 export type OrgBillingStatus =
   | 'trialing'
   | 'active'
@@ -28,9 +32,6 @@ export type OrgBilling = {
   updatedAt?: Date
   lastStripeEventId?: string
 }
-
-export const PAYMENT_GRACE_MS = 7 * 24 * 60 * 60 * 1000
-const LIVE_STATUSES: OrgBillingStatus[] = ['trialing', 'active']
 
 function asDate(value: unknown): Date | null {
   if (!value) return null
@@ -116,16 +117,10 @@ export function parseOrgBilling(data: Record<string, unknown> | null | undefined
 /**
  * Full access while trialing/active, or past_due within 7 days of lastPaymentFailedAt.
  * Missing billing (legacy orgs that pre-date Stripe) and pending setup stay writable.
+ * Rule lives in `lib/canonical/billingAccess.ts` — do not copy it here.
  */
 export function hasAccess(billing: OrgBilling | null | undefined, now = Date.now()): boolean {
-  if (!billing) return true
-  if (billing.status === 'none' || billing.status === 'pending') return true
-  if (LIVE_STATUSES.includes(billing.status)) return true
-  if (billing.status === 'past_due') {
-    if (!billing.lastPaymentFailedAt) return true
-    return now - billing.lastPaymentFailedAt.getTime() < PAYMENT_GRACE_MS
-  }
-  return false
+  return organizationHasAccess(billing, now)
 }
 
 export function billingLabel(billing: OrgBilling | null | undefined): string {

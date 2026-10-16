@@ -392,3 +392,7 @@ export type {
   TimesheetPeriodIdentity,
   TimesheetStatusFields,
 } from './timesheetPeriod'
+
+export { PAYMENT_GRACE_MS, hasAccess } from './billingAccess'
+
+export type { OrgBillingAccessInput } from './billingAccess'

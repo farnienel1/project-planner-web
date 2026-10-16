@@ -1,6 +1,6 @@
 'use client'
 
-import { hasAccess } from '@/lib/stripe/billing'
+import { hasAccess } from '@/lib/canonical'
 import { useAuthStore } from '@/lib/stores/authStore'
 import Link from 'next/link'
 import { hasAdminAccess } from '@/lib/navigation/menuPermissions'
