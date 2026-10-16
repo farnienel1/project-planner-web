@@ -19,3 +19,18 @@ test('login email fix email names the organisation, person, both emails and the 
   assert.match(message.html, /new@site\.co\.uk/)
   assert.match(message.html, /Typed the wrong address/)
 })
+
+test('login email fix subject cannot carry a second header', () => {
+  const message = loginEmailFixMessage({
+    organizationName: 'North\r\nBcc: attacker@example.com',
+    organizationId: 'ORG-1',
+    userName: 'Sam',
+    userId: 'USER-1',
+    oldEmail: 'old@site.co.uk',
+    newEmail: 'new@site.co.uk',
+    note: '<b>note</b>',
+  })
+  assert.equal(message.subject.includes('\n'), false)
+  assert.equal(message.subject.includes('\r'), false)
+  assert.match(message.html, /&lt;b&gt;note&lt;\/b&gt;/)
+})

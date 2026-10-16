@@ -3,14 +3,8 @@ import * as XLSX from 'xlsx'
 import { formatReportPeriodLabel } from '@/lib/weekly-report/invoicingPeriodUtils'
 import { formatCurrency, formatDays } from '@/lib/weekly-report/weeklyReportPayroll'
 import type { WeeklyReportData } from '@/lib/weekly-report/weeklyReportData'
-
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-}
+import { escapeHtml } from '@/lib/security/htmlEscape'
+import { neutralizeSpreadsheetFormula } from '@/lib/security/spreadsheetCell'
 
 function renderTable(headers: string[], rows: string[][], emptyMessage: string): string {
   if (rows.length === 0) {
@@ -228,12 +222,12 @@ export function buildWeeklyReportHtml(data: WeeklyReportData): string {
   ${renderTable(
     ['Person', 'Title', 'Job No.', 'Date', 'Details', 'Amount'],
     data.priceWorkRows.map((row) => [
-      row.person,
-      row.title,
-      row.jobNumber,
-      row.date,
-      row.details,
-      formatCurrency(row.amount),
+      escapeHtml(row.person),
+      escapeHtml(row.title),
+      escapeHtml(row.jobNumber),
+      escapeHtml(row.date),
+      escapeHtml(row.details),
+      escapeHtml(formatCurrency(row.amount)),
     ]),
     'No price work in this period'
   )}
@@ -243,12 +237,12 @@ export function buildWeeklyReportHtml(data: WeeklyReportData): string {
   ${renderTable(
     ['Person', 'Title', 'Job No.', 'Date', 'Details', 'Amount'],
     data.expenseRows.map((row) => [
-      row.person,
-      row.title,
-      row.jobNumber,
-      row.date,
-      row.details,
-      formatCurrency(row.amount),
+      escapeHtml(row.person),
+      escapeHtml(row.title),
+      escapeHtml(row.jobNumber),
+      escapeHtml(row.date),
+      escapeHtml(row.details),
+      escapeHtml(formatCurrency(row.amount)),
     ]),
     'No expenses in this period'
   )}
@@ -305,7 +299,7 @@ function escapeXml(value: string): string {
 
 function spreadsheetRow(cells: string[]): string {
   return `<Row>${cells
-    .map((cell) => `<Cell><Data ss:Type="String">${escapeXml(cell)}</Data></Cell>`)
+    .map((cell) => `<Cell><Data ss:Type="String">${escapeXml(neutralizeSpreadsheetFormula(cell))}</Data></Cell>`)
     .join('')}</Row>`
 }
 

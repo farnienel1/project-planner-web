@@ -23,6 +23,7 @@ import { isTestRecord, useConsolePrefs } from '@/lib/analytics/consolePrefs'
 import { loadSignedTimesheetValueTotals, type SignedTimesheetValueTotals } from '@/lib/owner/signedTimesheetValue'
 import { billingLabel, billingStatusLabel } from '@/lib/stripe/billing'
 import { ANNUAL_PENCE, MONTHLY_PENCE } from '@/lib/stripe/plans'
+import { csvEscapeCell } from '@/lib/security/spreadsheetCell'
 
 const PRESETS: { id: DateRangePreset; label: string }[] = [
   { id: 'all_time', label: 'All time' },
@@ -377,8 +378,8 @@ export function DeveloperOverviewScreen() {
             type="button"
             className="btn sm ghost"
             onClick={() => {
-              const header = ['Metric', ...scoreboard.columns.map((col) => col.label)].join(',')
-              const lines = scoreboard.rows.map((row) => [row.label, ...row.values].join(','))
+              const header = ['Metric', ...scoreboard.columns.map((col) => col.label)].map(csvEscapeCell).join(',')
+              const lines = scoreboard.rows.map((row) => [row.label, ...row.values].map(csvEscapeCell).join(','))
               const blob = new Blob([[header, ...lines].join('\n')], { type: 'text/csv' })
               const url = URL.createObjectURL(blob)
               const link = document.createElement('a')

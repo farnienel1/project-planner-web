@@ -31,6 +31,11 @@ test('exportCatalogueCsv uses the exact iOS header and no category notes', () =>
   assert.equal(csv.includes('Project Planner category guide'), false)
 })
 
+test('exportCatalogueCsv prefixes a formula in the name', () => {
+  const csv = exportCatalogueCsv([{ ...item, name: '=1+1' }])
+  assert.match(csv, /'=1\+1/)
+})
+
 test('exportCatalogueTemplateCsv is headers only', () => {
   assert.equal(exportCatalogueTemplateCsv(), `${CATALOGUE_CSV_HEADER}\n`)
 })
