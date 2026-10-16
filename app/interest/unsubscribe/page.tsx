@@ -46,7 +46,7 @@ const COPY: Record<PageState, { title: string; body: string }> = {
 export default async function InterestUnsubscribePage({
   searchParams,
 }: {
-  searchParams: Promise<{ token?: string }> | { token?: string }
+  searchParams: Promise<{ token?: string }>
 }) {
   const params = await searchParams
   const state = await unsubscribeState(typeof params.token === 'string' ? params.token : undefined)
