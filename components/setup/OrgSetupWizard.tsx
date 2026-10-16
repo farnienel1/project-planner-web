@@ -14,7 +14,12 @@ import {
   stripeNotConfiguredMessage,
 } from '@/lib/stripe/plans'
 import { MARKETING_PLANS } from '@/lib/marketing/content'
-import { formatTrialChargeCopy } from '@/lib/stripe/billing'
+import {
+  formatTrialChargeCopy,
+  REVIEW_PAY_TRIAL_CTA,
+  SUBSCRIPTION_RENEWAL_CONSENT,
+} from '@/lib/stripe/billing'
+import { SubscriptionDisclosure } from '@/components/marketing/SubscriptionDisclosure'
 import { MarketingShell } from '@/components/marketing/MarketingShell'
 import { PlanCards } from '@/components/marketing/PlanCards'
 import { MktIcon } from '@/components/marketing/icons'
@@ -151,6 +156,7 @@ export function OrgSetupWizard() {
   const [website, setWebsite] = useState('')
   const [organizationName, setOrganizationName] = useState('')
   const [planKey, setPlanKey] = useState<SubscriptionPlanKey>('month')
+  const [renewConsent, setRenewConsent] = useState(false)
 
   const [orgSetupSettings, setOrgSetupSettings] = useState<OrgSetupSettings>(createDefaultOrgSetupSettings())
   const [featuresStepIndex, setFeaturesStepIndex] = useState(0)
@@ -183,6 +189,7 @@ export function OrgSetupWizard() {
     if (searchParams.get('cancelled') === '1') {
       setPaymentCancelled(true)
       setStep('review')
+      setRenewConsent(false)
     }
   }, [draftReady, searchParams])
 
@@ -605,6 +612,11 @@ export function OrgSetupWizard() {
 
   async function handleCheckout() {
     setError('')
+    if (!renewConsent) {
+      setError('Tick the box to confirm you understand the subscription renews until you cancel.')
+      wizardTopRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      return
+    }
     const accountError = validateAccountStep()
     const orgError = validateOrganizationStep()
     const planError = validatePlanStep(true)
@@ -1119,6 +1131,21 @@ export function OrgSetupWizard() {
                       <div className="small ink2">{stripeNotConfiguredMessage()}</div>
                     </div>
                   )}
+
+                  <SubscriptionDisclosure />
+                  <div className="row" style={{ alignItems: 'flex-start', gap: 12, marginTop: 8 }}>
+                    <input
+                      type="checkbox"
+                      id="renew-consent"
+                      checked={renewConsent}
+                      onChange={(event) => setRenewConsent(event.target.checked)}
+                      disabled={submitting}
+                      className="mt-0.5 h-[22px] w-[22px] shrink-0 accent-[var(--blue)]"
+                    />
+                    <label htmlFor="renew-consent" className="small ink2" style={{ fontWeight: 600 }}>
+                      {SUBSCRIPTION_RENEWAL_CONSENT}
+                    </label>
+                  </div>
                 </div>
               ) : null}
 
@@ -1164,14 +1191,15 @@ export function OrgSetupWizard() {
                           type="button"
                           className="btn primary"
                           onClick={() => void handleCheckout()}
-                          disabled={submitting}
+                          disabled={submitting || !renewConsent}
+                          style={{ whiteSpace: 'normal', height: 'auto', minHeight: 48, paddingTop: 12, paddingBottom: 12 }}
                         >
                           {submitting ? (
                             <>
                               <span className="spin" /> Preparing checkout…
                             </>
                           ) : (
-                            'Continue to Stripe payment'
+                            REVIEW_PAY_TRIAL_CTA
                           )}
                         </button>
                       ) : null}

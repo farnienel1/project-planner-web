@@ -17,6 +17,10 @@ test('confirm-account email HTML escapes names and org titles', () => {
   assert.equal(html.includes('Acme &amp; Co'), true)
   assert.equal(html.includes('/confirm-account?token='), true)
   assert.equal(html.includes('Confirm my account'), true)
+  assert.equal(html.includes('£149 a month or £1,490 a year'), true)
+  assert.equal(html.includes('VAT is not charged'), true)
+  assert.equal(html.includes('renews automatically'), true)
+  assert.equal(html.includes('Settings → Billing'), true)
 })
 
 test('confirm-account subject cannot carry injected headers', () => {

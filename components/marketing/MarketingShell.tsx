@@ -10,6 +10,8 @@ import { LogoMark } from '@/components/marketing/LogoMark'
 import { Reveal } from '@/components/marketing/Reveal'
 import { StoreBadge } from '@/components/marketing/StoreBadge'
 import { AnalyticsConsentHost, CookieSettingsButton } from '@/components/analytics/AnalyticsConsentHost'
+import { SubscriptionDisclosure } from '@/components/marketing/SubscriptionDisclosure'
+import { PRICING_TRIAL_CTA } from '@/lib/stripe/billing'
 
 const ANNC_KEY = 'pp.annc.android.dismissed'
 
@@ -233,14 +235,24 @@ export function CtaBand({ ratesLabel = 'See our pricing' }: { ratesLabel?: strin
             that fits your team.
           </p>
           <div className="row" style={{ justifyContent: 'center', flexWrap: 'wrap', position: 'relative', zIndex: 1 }}>
-            <Link href="/setup" className="btn white lg">
+            <Link href="/setup" className="btn white lg" style={{ whiteSpace: 'normal', height: 'auto', minHeight: 48, paddingTop: 12, paddingBottom: 12 }}>
               <MktIcon name="rocket" size={20} />
-              Start free trial
+              {PRICING_TRIAL_CTA}
             </Link>
             <Link href="/pricing" className="btn glass lg">
               {ratesLabel}
             </Link>
           </div>
+          <SubscriptionDisclosure
+            className="xs"
+            style={{
+              marginTop: 14,
+              color: 'rgba(255,255,255,.82)',
+              maxWidth: 640,
+              marginLeft: 'auto',
+              marginRight: 'auto',
+            }}
+          />
         </Reveal>
       </div>
     </section>

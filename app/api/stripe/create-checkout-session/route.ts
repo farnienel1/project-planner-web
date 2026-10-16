@@ -20,7 +20,7 @@ import {
 import { clampString, isValidEmail, isValidUuid } from '@/lib/security/validation'
 import { bearerToken, firestoreGet, firestorePatch, readString, restFieldsToPlain } from '@/lib/owner/firestoreRest'
 import { requireOrgAccessForUser } from '@/lib/security/requireOrgAccess'
-import { parseOrgBilling } from '@/lib/stripe/billing'
+import { CHECKOUT_SUBMIT_MESSAGE, checkoutPurchaseEmailKind, parseOrgBilling } from '@/lib/stripe/billing'
 import { firestoreValue } from '@/lib/stripe/writeOrgBilling'
 
 export const runtime = 'nodejs'
@@ -137,6 +137,12 @@ export async function POST(request: NextRequest) {
     const requiresCard = trialRequiresCard()
     const baseUrl = getAppBaseUrl()
     const bucket = Math.floor(Date.now() / (15 * 60 * 1000))
+    const buyerDoc = await firestoreGet(token, `users/${user.uid}`).catch(() => null)
+    const confirmedField = buyerDoc?.fields?.accountConfirmed as { booleanValue?: boolean } | undefined
+    const purchaseEmail = checkoutPurchaseEmailKind({
+      userFound: Boolean(buyerDoc),
+      accountConfirmed: typeof confirmedField?.booleanValue === 'boolean' ? confirmedField.booleanValue : undefined,
+    })
 
     const session = await stripe.checkout.sessions.create(
       {
@@ -150,11 +156,15 @@ export async function POST(request: NextRequest) {
         customer_update: { address: 'auto', name: 'auto' },
         automatic_tax: { enabled: automaticTaxEnabled() },
         payment_method_collection: requiresCard ? 'always' : 'if_required',
+        custom_text: {
+          submit: { message: CHECKOUT_SUBMIT_MESSAGE },
+        },
         metadata: {
           organizationId,
           organization_id: organizationId,
           userId: user.uid,
           planKey,
+          purchaseEmail,
         },
         subscription_data: {
           trial_period_days: trialUsed ? undefined : TRIAL_DAYS,

@@ -7,6 +7,8 @@ import { CtaBand } from '@/components/marketing/MarketingShell'
 import { FaqList } from '@/components/marketing/FaqList'
 import { MktIcon } from '@/components/marketing/icons'
 import { PlanCards } from '@/components/marketing/PlanCards'
+import { SubscriptionDisclosure } from '@/components/marketing/SubscriptionDisclosure'
+import { PRICING_TRIAL_CTA } from '@/lib/stripe/billing'
 
 export function PricingPage({ scrollToCompare = false }: { scrollToCompare?: boolean }) {
   useEffect(() => {
@@ -80,9 +82,10 @@ export function PricingPage({ scrollToCompare = false }: { scrollToCompare?: boo
               ))}
             </ul>
             <div style={{ marginTop: 22 }}>
-              <Link href="/setup" className="btn primary">
-                Start your 30-day free trial
+              <Link href="/setup" className="btn primary" style={{ whiteSpace: 'normal', height: 'auto', minHeight: 48, paddingTop: 12, paddingBottom: 12 }}>
+                {PRICING_TRIAL_CTA}
               </Link>
+              <SubscriptionDisclosure style={{ marginTop: 10 }} />
             </div>
           </div>
         </div>

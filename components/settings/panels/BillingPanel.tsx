@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { getAuth } from 'firebase/auth'
 import { useAuthStore } from '@/lib/stores/authStore'
-import { billingStatusLabel, formatTrialChargeCopy, hasAccess } from '@/lib/stripe/billing'
+import { BILLING_PANEL_RENEWAL_COPY, billingStatusLabel, formatTrialChargeCopy, hasAccess } from '@/lib/stripe/billing'
 import { ANNUAL_PENCE, MONTHLY_PENCE } from '@/lib/stripe/plans'
 import { PanelHeader, SettingsCard, ErrorBanner, SuccessBanner } from '@/components/settings/primitives'
 import { useSettingsLeave } from '@/components/settings/SettingsDirty'
@@ -60,6 +60,9 @@ export function BillingPanel({ onBack }: { onBack: () => void }) {
             Next charge {amount === ANNUAL_PENCE ? '£1,490 a year' : '£149 a month'}
             {billing?.currentPeriodEnd ? ` on ${billing.currentPeriodEnd.toLocaleDateString('en-GB')}` : ''}. VAT is not charged.
           </p>
+          {billing?.status === 'canceled' ? null : (
+            <p className="text-sm text-slate-600">{BILLING_PANEL_RENEWAL_COPY}</p>
+          )}
           {billing?.status === 'trialing' || billing?.status === 'pending' ? (
             <p className="text-xs text-slate-500">{formatTrialChargeCopy(billing?.trialStart || undefined)}</p>
           ) : null}
