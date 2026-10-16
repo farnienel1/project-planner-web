@@ -2,6 +2,7 @@
 
 import { useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
+import { openAnalyticsConsentSettings } from '@/lib/analytics/analyticsConsent'
 import {
   CalendarDaysIcon,
   ClockIcon,
@@ -494,6 +495,15 @@ const TOPICS: Topic[] = [
         ],
       },
       {
+        id: 'cookies',
+        title: 'Cookie settings',
+        summary: 'Turn first-party usage events on or off.',
+        body: [
+          'After you sign in you can Accept or Reject first-party usage events. Those events store user and organisation ids and the page path — not names or emails.',
+          'Open Cookie settings from the account menu or Settings to change your mind. Reject still lets you use the product. Sign-in, MFA, App Check, idle session, organisation and theme stay on.',
+        ],
+      },
+      {
         id: 'password',
         title: 'Password',
         summary: 'Reset while signed in.',
@@ -674,7 +684,15 @@ export function HelpSupportScreen() {
           <a className="font-semibold text-[var(--blue)]" href="mailto:info@projectplanner.us">
             info@projectplanner.us
           </a>{' '}
-          for product support.
+          for product support. Open{' '}
+          <button
+            type="button"
+            className="font-semibold text-[var(--blue)]"
+            onClick={() => openAnalyticsConsentSettings()}
+          >
+            Cookie settings
+          </button>{' '}
+          to change usage-event consent.
         </p>
       </div>
     </div>

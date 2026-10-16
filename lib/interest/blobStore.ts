@@ -99,6 +99,22 @@ export async function deleteInterestBlob(id: string): Promise<void> {
   await store.delete(id)
 }
 
+export async function markInterestBlobsUnsubscribedByEmail(email: string): Promise<number> {
+  const target = email.trim().toLowerCase()
+  const store = openStore()
+  const rows = await listInterestBlobs()
+  let marked = 0
+  const unsubscribedAt = new Date().toISOString()
+  for (const row of rows) {
+    if (row.email !== target || row.unsubscribedAt) continue
+    const current = (await store.get(row.id, { type: 'json' })) as Record<string, unknown> | null
+    if (!current) continue
+    await store.setJSON(row.id, { ...current, unsubscribedAt, updatedAt: unsubscribedAt })
+    marked += 1
+  }
+  return marked
+}
+
 export async function deleteInterestBlobsByEmail(email: string): Promise<number> {
   const target = email.trim().toLowerCase()
   const rows = await listInterestBlobs()

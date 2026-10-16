@@ -1,3 +1,4 @@
+// Transactional: no marketing content
 import { escapeHtml, sanitizeEmailHeader } from '@/lib/security/htmlEscape'
 import type { SupportContactBody } from '@/lib/security/publicFormSchemas'
 

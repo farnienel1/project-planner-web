@@ -34,6 +34,40 @@ test('sendProjectPlannerEmail posts to the iOS Cloud Function, not Resend', asyn
   assert.equal(calls[0].body.replyTo, 'info@projectplanner.us')
 })
 
+test('sendProjectPlannerEmail forwards optional headers without changing callers that omit them', async () => {
+  const calls: Array<{ body: Record<string, unknown> }> = []
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
+    calls.push({ body: JSON.parse(String(init?.body || '{}')) as Record<string, unknown> })
+    return new Response('ok', { status: 200 })
+  }) as typeof fetch
+
+  try {
+    await sendProjectPlannerEmail({
+      to: 'ada@example.com',
+      subject: "You're on the Project Planner list",
+      html: '<p>Hello</p>',
+      headers: {
+        'List-Unsubscribe': '<https://projectplanner.us/api/interest/unsubscribe?token=abc>',
+        'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+      },
+    })
+    await sendProjectPlannerEmail({
+      to: 'info@projectplanner.us',
+      subject: 'New interest',
+      html: '<p>Ping</p>',
+    })
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+
+  assert.deepEqual(calls[0].body.headers, {
+    'List-Unsubscribe': '<https://projectplanner.us/api/interest/unsubscribe?token=abc>',
+    'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+  })
+  assert.equal('headers' in calls[1].body, false)
+})
+
 test('sendProjectPlannerEmail forwards cc, replyTo and fromName like iOS', async () => {
   const calls: Array<{ body: Record<string, unknown> }> = []
   const originalFetch = globalThis.fetch

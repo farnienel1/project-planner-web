@@ -12,6 +12,7 @@ import {
   UserCircleIcon,
   MoonIcon,
   SunIcon,
+  AdjustmentsHorizontalIcon,
 } from '@heroicons/react/24/solid'
 import type { User } from '@/types'
 import { UserAvatar } from '@/components/users/UserAvatar'
@@ -19,6 +20,7 @@ import { applyTheme, persistTheme, readStoredTheme, systemTheme, themeToggleCopy
 import { IconChip } from '@/components/ui/IconChip'
 import { Pill } from '@/components/ui/controls'
 import { hasAdminAccess, isOperativeMode } from '@/lib/permissions'
+import { openAnalyticsConsentSettings } from '@/lib/analytics/analyticsConsent'
 
 function roleLabel(user: User): string {
   if (user.isSuperAdmin) return 'Super admin'
@@ -108,6 +110,18 @@ export function AccountMenu({
             <IconChip hue="lib" size="sm"><ShieldCheckIcon className="h-4 w-4" /></IconChip>
             Privacy Policy
           </Link>
+          <button
+            type="button"
+            onClick={() => {
+              setOpen(false)
+              openAnalyticsConsentSettings()
+            }}
+            className="flex w-full items-center gap-3 rounded-xl px-2.5 py-2 text-left text-[14.5px] hover:bg-[var(--soft)]"
+            data-hue="lib"
+          >
+            <IconChip hue="lib" size="sm"><AdjustmentsHorizontalIcon className="h-4 w-4" /></IconChip>
+            Cookie settings
+          </button>
           <button
             type="button"
             onClick={toggleTheme}

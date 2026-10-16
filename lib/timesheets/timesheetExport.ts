@@ -227,6 +227,7 @@ export function invoiceLinesTotal(lines: TimesheetInvoiceLine[]): number {
   return lines.reduce((sum, line) => sum + line.amount, 0)
 }
 
+// Transactional: no marketing content
 export function managerExportEmailHTML({
   recipientName,
   weekTitle,

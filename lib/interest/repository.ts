@@ -4,6 +4,7 @@ import {
   createInterestRegistration,
   deleteInterestRegistrationAdmin,
   listInterestRegistrations,
+  markInterestUnsubscribedByEmailAdmin,
   setInterestStatusAdmin,
 } from '@/lib/interest/adminStore'
 import {
@@ -12,8 +13,10 @@ import {
   deleteInterestBlob,
   hasInterestBlob,
   listInterestBlobs,
+  markInterestBlobsUnsubscribedByEmail,
   setInterestBlobStatus,
 } from '@/lib/interest/blobStore'
+import { normalizeInterestEmail } from '@/lib/interest/unsubscribeToken'
 import type { InterestRegistration } from '@/lib/interest/record'
 import type { InterestDraft, InterestStatus } from '@/lib/interest/registration'
 
@@ -75,4 +78,24 @@ export async function removeInterestRegistration(id: string): Promise<void> {
     return
   }
   await deleteInterestRegistrationAdmin(id)
+}
+
+export async function markInterestRegistrationsUnsubscribed(email: string): Promise<void> {
+  const normalized = normalizeInterestEmail(email)
+  let firestoreReady = false
+  try {
+    await markInterestUnsubscribedByEmailAdmin(normalized)
+    firestoreReady = true
+  } catch (error) {
+    if (!(error instanceof InterestAdminUnavailable)) throw error
+  }
+  try {
+    await markInterestBlobsUnsubscribedByEmail(normalized)
+  } catch (error) {
+    if (error instanceof InterestAdminUnavailable) {
+      if (!firestoreReady) throw error
+    } else if (!firestoreReady) {
+      throw error
+    }
+  }
 }

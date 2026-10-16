@@ -1,9 +1,10 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { usePathname } from 'next/navigation'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { endSession, startOrTouchSession, trackEvent } from '@/lib/analytics/trackEvent'
+import { hasGrantedAnalyticsConsent, subscribeAnalyticsConsent } from '@/lib/analytics/analyticsConsent'
 import { runWhenIdle } from '@/lib/analytics/runWhenIdle'
 import type { ProductEventName } from '@/lib/analytics/events'
 
@@ -25,16 +26,26 @@ export function ProductAnalyticsProvider({ children }: { children: React.ReactNo
   const userId = useAuthStore((s) => s.user?.id)
   const organizationId = useAuthStore((s) => s.organization?.id)
   const lastPath = useRef('')
+  const [allowed, setAllowed] = useState(false)
 
   useEffect(() => {
-    if (!userId) return
+    setAllowed(hasGrantedAnalyticsConsent())
+    return subscribeAnalyticsConsent(() => setAllowed(hasGrantedAnalyticsConsent()))
+  }, [])
+
+  useEffect(() => {
+    if (!allowed) lastPath.current = ''
+  }, [allowed])
+
+  useEffect(() => {
+    if (!userId || !allowed) return
     return runWhenIdle(() => {
       void startOrTouchSession({ userId, organizationId, path: pathname })
     })
-  }, [userId, organizationId, pathname])
+  }, [userId, organizationId, pathname, allowed])
 
   useEffect(() => {
-    if (!userId) return
+    if (!userId || !allowed) return
     if (lastPath.current === pathname) return
     lastPath.current = pathname
     const eventName = eventForPath(pathname)
@@ -42,7 +53,7 @@ export function ProductAnalyticsProvider({ children }: { children: React.ReactNo
     return runWhenIdle(() => {
       void trackEvent(eventName, { userId, organizationId, metadata: { path: pathname } })
     })
-  }, [pathname, userId, organizationId])
+  }, [pathname, userId, organizationId, allowed])
 
   useEffect(() => {
     const onHide = () => {

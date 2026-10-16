@@ -72,6 +72,10 @@ const nextConfig = {
         source: '/reset-password',
         headers: [{ key: 'Cache-Control', value: 'private, no-store, must-revalidate' }],
       },
+      {
+        source: '/interest/unsubscribe',
+        headers: [{ key: 'Cache-Control', value: 'private, no-store, must-revalidate' }],
+      },
     ]
   },
   async rewrites() {

@@ -1,3 +1,4 @@
+// Transactional: no marketing content
 /** Email sent to info@projectplanner.us when an admin asks for a login email change. */
 
 import { escapeHtml, sanitizeEmailHeader } from '@/lib/security/htmlEscape'

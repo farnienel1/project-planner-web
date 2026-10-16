@@ -30,6 +30,7 @@ export type InterestRegistration = {
   notes: InterestNote[]
   createdAt: Date | null
   updatedAt: Date | null
+  unsubscribedAt: Date | null
 }
 
 function statusOf(value: string): InterestStatus {
@@ -78,6 +79,7 @@ export function interestFromFirestore(id: string, data: Record<string, unknown>)
     notes,
     createdAt: parseFirestoreDate(data.createdAt) ?? null,
     updatedAt: parseFirestoreDate(data.updatedAt) ?? null,
+    unsubscribedAt: parseFirestoreDate(data.unsubscribedAt) ?? null,
   }
 }
 

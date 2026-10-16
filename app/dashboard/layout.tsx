@@ -6,6 +6,7 @@ import { useAuthStore } from '@/lib/stores/authStore'
 import { AppShell } from '@/components/shell/AppShell'
 import { BillingReadOnlyBanner } from '@/components/billing/BillingReadOnlyBanner'
 import { ProductAnalyticsProvider } from '@/components/analytics/ProductAnalyticsProvider'
+import { AnalyticsConsentHost } from '@/components/analytics/AnalyticsConsentHost'
 import { SplashScreen } from '@/components/auth/SplashScreen'
 import { PolicyGate } from '@/components/auth/PolicyGate'
 import { CheckEmailScreen } from '@/components/auth/CheckEmailScreen'
@@ -80,6 +81,7 @@ export default function DashboardLayout({
   return (
     <AppShell>
       <BillingReadOnlyBanner />
+      <AnalyticsConsentHost autoPrompt />
       <ProductAnalyticsProvider>{children}</ProductAnalyticsProvider>
     </AppShell>
   )

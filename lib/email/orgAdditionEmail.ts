@@ -1,3 +1,4 @@
+// Transactional: no marketing content
 import { getAppBaseUrl } from '@/lib/email/resendClient'
 import { escapeHtml, sanitizeEmailHeader } from '@/lib/security/htmlEscape'
 

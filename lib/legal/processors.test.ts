@@ -68,4 +68,5 @@ test('login, setup and register-interest expose /privacy and /terms', () => {
   assert.match(footer, /\/privacy/)
   assert.match(footer, /\/terms/)
   assert.match(footer, /\/processors/)
+  assert.match(footer, /Cookie settings/)
 })
