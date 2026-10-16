@@ -4,9 +4,20 @@ import { getAppBaseUrl, getStripe } from '@/lib/stripe/stripe'
 import { organizationIdFromStripeObject, syncSubscriptionToOrg } from '@/lib/stripe/syncOrgBilling'
 import { adminFirestoreCreateNamed, adminFirestoreGet, firestoreValue } from '@/lib/stripe/writeOrgBilling'
 import { sendProjectPlannerEmail } from '@/lib/email/resendClient'
+import {
+  billingPurchaseEmailSubject,
+  buildBillingPurchaseEmailHtml,
+  buildTrialWillEndEmailHtml,
+} from '@/lib/email/billingPurchaseEmail'
 import { createBillingPortalSession } from '@/lib/stripe/billingPortal'
 import { escapeHtml } from '@/lib/security/htmlEscape'
 import { readString } from '@/lib/owner/firestoreRest'
+import {
+  billingIntervalFromPlanKey,
+  billingIntervalFromStripeSubscription,
+  checkoutPurchaseEmailKind,
+  shouldSendCheckoutPurchaseEmail,
+} from '@/lib/stripe/billing'
 
 export const runtime = 'nodejs'
 
@@ -57,6 +68,47 @@ async function sendBillingEmail(organizationId: string, subject: string, html: s
   if (!to) return
   await sendProjectPlannerEmail({ to, subject, html }).catch((error) => {
     console.warn('[stripe webhook] email failed', error)
+  })
+}
+
+async function sendCheckoutPurchaseEmail(session: Stripe.Checkout.Session, organizationId: string | null) {
+  const metadataKind = session.metadata?.purchaseEmail
+  let kind = metadataKind === 'billing' || metadataKind === 'founder' ? metadataKind : null
+  if (!kind) {
+    const userId = session.metadata?.userId
+    const user = userId ? await adminFirestoreGet(`users/${userId}`).catch(() => null) : null
+    const confirmedField = user?.fields?.accountConfirmed as { booleanValue?: boolean } | undefined
+    kind = checkoutPurchaseEmailKind({
+      userFound: Boolean(user),
+      accountConfirmed: typeof confirmedField?.booleanValue === 'boolean' ? confirmedField.booleanValue : undefined,
+    })
+  }
+  if (!shouldSendCheckoutPurchaseEmail(kind) || !organizationId) return
+
+  const org = await adminFirestoreGet(`organizations/${organizationId}`).catch(() => null)
+  const organizationName = readString(org?.fields, 'name') || 'your organisation'
+  const userId = session.metadata?.userId
+  const user = userId ? await adminFirestoreGet(`users/${userId}`).catch(() => null) : null
+  const firstName = readString(user?.fields, 'firstName') || 'there'
+  const to =
+    session.customer_details?.email ||
+    session.customer_email ||
+    readString(user?.fields, 'email') ||
+    (await orgAdminEmail(organizationId).catch(() => null))
+  if (!to) return
+
+  const interval = billingIntervalFromPlanKey(session.metadata?.planKey)
+  await sendProjectPlannerEmail({
+    to,
+    subject: billingPurchaseEmailSubject(organizationName),
+    html: buildBillingPurchaseEmailHtml({
+      to,
+      firstName,
+      organizationName,
+      interval,
+    }),
+  }).catch((error) => {
+    console.warn('[stripe webhook] purchase email failed', error)
   })
 }
 
@@ -113,6 +165,7 @@ export async function POST(request: NextRequest) {
           lastStripeEventId: event.id,
         })
       }
+      await sendCheckoutPurchaseEmail(session, organizationId)
     }
 
     if (
@@ -132,17 +185,22 @@ export async function POST(request: NextRequest) {
       const subscription = event.data.object as Stripe.Subscription
       const organizationId = organizationIdFromStripeObject(subscription)
       const end = subscription.trial_end ? new Date(subscription.trial_end * 1000).toLocaleDateString('en-GB') : 'soon'
+      const interval =
+        billingIntervalFromStripeSubscription(subscription) ||
+        billingIntervalFromPlanKey(subscription.metadata?.planKey)
       if (organizationId) {
         await sendBillingEmail(
           organizationId,
           'Your Project Planner trial ends in 3 days',
           // Transactional: no marketing content
-          `<p>Your 30-day Project Planner trial ends on ${escapeHtml(end)}.</p><p>If a card is on file we will charge then. You can update billing or cancel from Settings → Billing.</p>`
+          buildTrialWillEndEmailHtml(end, interval)
         )
       }
     }
 
     if (event.type === 'invoice.paid') {
+      // Sync only. Purchase confirmation is checkout.session.completed (additional orgs)
+      // or the founder confirm email. Do not email on every recurring invoice.
       const invoice = event.data.object as Stripe.Invoice
       const subscriptionId = subscriptionIdFromEvent(event)
       const paidAt = invoice.status_transitions?.paid_at

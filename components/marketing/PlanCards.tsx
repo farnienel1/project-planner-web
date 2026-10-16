@@ -4,8 +4,9 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { MARKETING_PLANS, setupPathForPlan, type MarketingPlan } from '@/lib/marketing/content'
 import { MktIcon } from '@/components/marketing/icons'
-import { formatTrialChargeCopy } from '@/lib/stripe/billing'
+import { PRICING_TRIAL_CTA } from '@/lib/stripe/billing'
 import type { SubscriptionPlanKey } from '@/lib/stripe/plans'
+import { SubscriptionDisclosure } from '@/components/marketing/SubscriptionDisclosure'
 
 export function PlanCards({
   plans = MARKETING_PLANS,
@@ -74,15 +75,15 @@ export function PlanCards({
         </div>
       </div>
       {onSelect ? (
-        <span className={`btn ${selected ? 'primary' : ''} block`}>
-          {selected ? 'Selected' : ctaMode === 'choose' ? 'Choose this plan' : 'Start your 30-day free trial'}
+        <span className={`btn ${selected ? 'primary' : ''} block`} style={{ whiteSpace: 'normal', height: 'auto', minHeight: 48, paddingTop: 12, paddingBottom: 12, textAlign: 'center' }}>
+          {selected ? 'Selected' : ctaMode === 'choose' ? 'Choose this plan' : PRICING_TRIAL_CTA}
         </span>
       ) : (
-        <span className="btn primary block">
-          {ctaMode === 'choose' ? 'Choose this plan' : 'Start your 30-day free trial'}
+        <span className="btn primary block" style={{ whiteSpace: 'normal', height: 'auto', minHeight: 48, paddingTop: 12, paddingBottom: 12, textAlign: 'center' }}>
+          {ctaMode === 'choose' ? 'Choose this plan' : PRICING_TRIAL_CTA}
         </span>
       )}
-      <p className="muted xs">{formatTrialChargeCopy()}</p>
+      <SubscriptionDisclosure />
       <ul>
         {plan.features.map((feature) => (
           <li key={feature}>

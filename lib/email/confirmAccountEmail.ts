@@ -1,5 +1,6 @@
 // Transactional: no marketing content
 import { getAppBaseUrl } from '@/lib/email/resendClient'
+import { billingTermsParagraphHtml } from '@/lib/email/billingPurchaseEmail'
 import { escapeHtml, sanitizeEmailHeader } from '@/lib/security/htmlEscape'
 
 export type ConfirmAccountEmailParams = {
@@ -28,6 +29,7 @@ export function buildConfirmAccountEmailHtml(params: ConfirmAccountEmailParams):
         Your organisation <strong>${safeOrg}</strong> is set up and your subscription is active.
         Click the button below to confirm this email address and open your Project Planner account.
       </p>
+      ${billingTermsParagraphHtml()}
       <p>Until you confirm, you will not be able to sign in on the web or the mobile apps.</p>
       <p style="margin: 28px 0;">
         <a href="${safeUrl}" style="background: #2563eb; color: #fff; text-decoration: none; padding: 12px 20px; border-radius: 12px; font-weight: 700; display: inline-block;">

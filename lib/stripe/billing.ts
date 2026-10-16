@@ -169,3 +169,49 @@ export function trialChargeDate(from = new Date(), days = 30): Date {
 export function formatTrialChargeCopy(from = new Date()): string {
   return `Your 30-day free trial starts today. You won't be charged until ${trialChargeDate(from).toLocaleDateString('en-GB')}. Cancel any time before then.`
 }
+
+/** Legal subscribe/pay disclosure. Amounts stay £149 / £1,490 — do not read live Stripe prices here. */
+export const SUBSCRIPTION_PRICE_DISCLOSURE =
+  '£149 a month or £1,490 a year. VAT is not charged. After the 30-day free trial this renews automatically at that price until you cancel. Cancel any time from Settings → Billing → Manage billing. No email or phone needed.'
+
+export const SUBSCRIPTION_RENEWAL_CONSENT =
+  'I understand this subscription renews automatically after the trial until I cancel from Settings → Billing.'
+
+export const PRICING_TRIAL_CTA = 'Start 30-day trial — renews until cancelled'
+
+export const REVIEW_PAY_TRIAL_CTA = 'Start trial — renews until cancelled'
+
+export const BILLING_PANEL_RENEWAL_COPY =
+  'This renews automatically until you cancel. To cancel: Manage billing → cancel the plan. Access continues until the period end shown above.'
+
+export const CHECKOUT_SUBMIT_MESSAGE =
+  'After the 30-day free trial this renews automatically at that price until you cancel. Cancel any time from Settings → Billing → Manage billing.'
+
+export function priceLabelForBillingInterval(interval?: 'month' | 'year' | null): string {
+  return interval === 'year' ? '£1,490 a year' : '£149 a month'
+}
+
+export function checkoutPurchaseEmailKind(input: {
+  userFound: boolean
+  accountConfirmed?: boolean | null
+}): 'billing' | 'founder' {
+  if (!input.userFound) return 'founder'
+  return input.accountConfirmed === false ? 'founder' : 'billing'
+}
+
+export function shouldSendCheckoutPurchaseEmail(kind: 'billing' | 'founder' | string | null | undefined): boolean {
+  return kind === 'billing'
+}
+
+export function billingIntervalFromPlanKey(planKey?: string | null): 'month' | 'year' {
+  return planKey === 'year' || planKey === 'annual' || planKey === 'yearly' ? 'year' : 'month'
+}
+
+export function billingIntervalFromStripeSubscription(subscription: {
+  items?: { data?: Array<{ price?: { recurring?: { interval?: string | null } | null } | null }> }
+}): 'month' | 'year' | null {
+  const interval = subscription.items?.data?.[0]?.price?.recurring?.interval
+  if (interval === 'year') return 'year'
+  if (interval === 'month') return 'month'
+  return null
+}

@@ -1,6 +1,15 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { hasAccess, parseOrgBilling, billingLabel } from './billing'
+import {
+  hasAccess,
+  parseOrgBilling,
+  billingLabel,
+  checkoutPurchaseEmailKind,
+  shouldSendCheckoutPurchaseEmail,
+  SUBSCRIPTION_PRICE_DISCLOSURE,
+  CHECKOUT_SUBMIT_MESSAGE,
+  priceLabelForBillingInterval,
+} from './billing'
 import { normalizePlanKey, mrrPenceForInterval, TRIAL_DAYS } from './plans'
 import { assertStripeTestKey } from './stripe'
 
@@ -40,6 +49,26 @@ test('plan keys and MRR match the sandbox catalogue', () => {
   assert.equal(mrrPenceForInterval('month'), 14900)
   assert.equal(mrrPenceForInterval('year'), Math.round(149000 / 12))
   assert.equal(TRIAL_DAYS, 30)
+})
+
+test('subscribe disclosure keeps published prices and the Settings → Billing cancel path', () => {
+  assert.equal(SUBSCRIPTION_PRICE_DISCLOSURE.includes('£149 a month'), true)
+  assert.equal(SUBSCRIPTION_PRICE_DISCLOSURE.includes('£1,490 a year'), true)
+  assert.equal(SUBSCRIPTION_PRICE_DISCLOSURE.includes('VAT is not charged'), true)
+  assert.equal(SUBSCRIPTION_PRICE_DISCLOSURE.includes('Settings → Billing → Manage billing'), true)
+  assert.equal(CHECKOUT_SUBMIT_MESSAGE.includes('renews automatically'), true)
+  assert.equal(CHECKOUT_SUBMIT_MESSAGE.includes('Settings → Billing'), true)
+  assert.equal(priceLabelForBillingInterval('month'), '£149 a month')
+  assert.equal(priceLabelForBillingInterval('year'), '£1,490 a year')
+})
+
+test('checkout purchase email is billing-only for additional orgs, not founders', () => {
+  assert.equal(checkoutPurchaseEmailKind({ userFound: true, accountConfirmed: false }), 'founder')
+  assert.equal(checkoutPurchaseEmailKind({ userFound: true, accountConfirmed: true }), 'billing')
+  assert.equal(checkoutPurchaseEmailKind({ userFound: true, accountConfirmed: undefined }), 'billing')
+  assert.equal(checkoutPurchaseEmailKind({ userFound: false }), 'founder')
+  assert.equal(shouldSendCheckoutPurchaseEmail('billing'), true)
+  assert.equal(shouldSendCheckoutPurchaseEmail('founder'), false)
 })
 
 test('test-mode guard refuses live secret keys', () => {
