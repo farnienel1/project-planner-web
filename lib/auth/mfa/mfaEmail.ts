@@ -1,3 +1,4 @@
+// Transactional: no marketing content
 import { escapeHtml } from '@/lib/security/htmlEscape'
 
 export function buildMfaEmailHtml(code: string): string {

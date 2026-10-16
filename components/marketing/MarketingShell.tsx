@@ -9,6 +9,7 @@ import { MktIcon } from '@/components/marketing/icons'
 import { LogoMark } from '@/components/marketing/LogoMark'
 import { Reveal } from '@/components/marketing/Reveal'
 import { StoreBadge } from '@/components/marketing/StoreBadge'
+import { AnalyticsConsentHost, CookieSettingsButton } from '@/components/analytics/AnalyticsConsentHost'
 
 const ANNC_KEY = 'pp.annc.android.dismissed'
 
@@ -192,6 +193,7 @@ export function MarketingShell({
               <Link href="/privacy">Privacy Policy</Link>
               <Link href="/terms">Terms of Service</Link>
               <Link href="/processors">Processors</Link>
+              <CookieSettingsButton className="flink">Cookie settings</CookieSettingsButton>
             </div>
           </div>
           <div className="legal">
@@ -205,6 +207,7 @@ export function MarketingShell({
           </div>
         </div>
       </footer>
+      <AnalyticsConsentHost />
       <div className={`mkt-toast${toast ? ' show' : ''}`} role="status" aria-live="polite">
         {toast ? (
           <>

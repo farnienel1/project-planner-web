@@ -50,7 +50,7 @@ import {
   noteWebIdleActivity,
   readWebIdleLastActivity,
 } from '@/lib/auth/webIdleSession'
-import { isPlatformOwnerEmail, isPlatformOwnerSentinelOrg, isPlatformOwnerSession, PLATFORM_OWNER_EMAIL } from '@/lib/platform/owner'
+import { isPlatformOwnerEmail, isPlatformOwnerSession, PLATFORM_OWNER_EMAIL } from '@/lib/platform/owner'
 import { platformOwnerProfilePayload, platformOwnerUser } from '@/lib/platform/ownerProfile'
 import { passwordResetActionSettings } from '@/lib/auth/passwordResetSettings'
 import {
@@ -684,18 +684,12 @@ async function loadSignedInProfileInner(firebaseUser: FirebaseUser) {
     token
   )
 
-  void import('@/lib/analytics/trackEvent').then(({ trackEvent }) => {
-    if (isPlatformOwnerEmail(user.email) || isPlatformOwnerSentinelOrg(user.organizationId)) return
-    if (typeof window !== 'undefined') {
-      try {
-        if (window.sessionStorage.getItem('pp.loginTracked') === '1') return
-        window.sessionStorage.setItem('pp.loginTracked', '1')
-      } catch {
-        /* private mode */
-      }
-    }
-    void trackEvent('user_logged_in', { userId: user.id, organizationId: user.organizationId })
-    void trackEvent('login', { userId: user.id, organizationId: user.organizationId, metadata: { source: 'web' } })
+  void import('@/lib/analytics/trackEvent').then(({ maybeTrackSignedInEvents }) => {
+    maybeTrackSignedInEvents({
+      userId: user.id,
+      organizationId: user.organizationId,
+      email: user.email,
+    })
   })
 
   if (Object.keys(patch).length > 0) {

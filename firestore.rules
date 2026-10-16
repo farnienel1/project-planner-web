@@ -1016,5 +1016,11 @@ service cloud.firestore {
       allow create: if false;
       allow read, update, delete: if isPlatformOwner();
     }
+
+    // Marketing suppression list. Admin API only — no client reads or writes.
+    // There is no root catch-all; this match is explicit so the collection is never world-readable.
+    match /emailSuppressions/{email} {
+      allow read, write: if false;
+    }
   }
 }

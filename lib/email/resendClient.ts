@@ -38,6 +38,13 @@ export async function sendProjectPlannerEmail(params: {
   replyTo?: string
   fromName?: string
   attachments?: ProjectPlannerEmailAttachment[]
+  /**
+   * Optional extra SMTP/API headers (e.g. List-Unsubscribe). Existing callers omit this.
+   * The Cloud Function source is NOT in this repo. If that function ignores unknown
+   * fields, these headers will not land until the function is updated. Marketing
+   * mail must still include a visible unsubscribe URL in HTML.
+   */
+  headers?: Record<string, string>
 }): Promise<void> {
   const payload: Record<string, unknown> = {
     to: params.to,
@@ -47,6 +54,7 @@ export async function sendProjectPlannerEmail(params: {
     replyTo: params.replyTo?.trim() || replyTo() || 'info@projectplanner.us',
   }
   if (params.cc?.trim()) payload.cc = params.cc.trim()
+  if (params.headers && Object.keys(params.headers).length) payload.headers = params.headers
   if (params.attachments?.length) {
     payload.attachments = params.attachments.map((attachment) => ({
       filename: attachment.filename,

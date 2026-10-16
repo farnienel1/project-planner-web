@@ -320,3 +320,31 @@ test('clients cannot create interest registrations', async () => {
   await assertFails(setDoc(doc(guest, 'interestRegistrations', 'interest-guest'), payload))
   await assertFails(setDoc(doc(member, 'interestRegistrations', 'interest-member'), payload))
 })
+
+test('clients cannot read or write email suppressions', async () => {
+  const guest = env.unauthenticatedContext().firestore()
+  const member = authDb(ADMIN_A, 'admin-a@test.com')
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'emailSuppressions', 'ada@example.com'), {
+      email: 'ada@example.com',
+      source: 'interest',
+      tokenId: 'token-1',
+    })
+  })
+  await assertFails(getDoc(doc(guest, 'emailSuppressions', 'ada@example.com')))
+  await assertFails(getDoc(doc(member, 'emailSuppressions', 'ada@example.com')))
+  await assertFails(
+    setDoc(doc(guest, 'emailSuppressions', 'guest@example.com'), {
+      email: 'guest@example.com',
+      source: 'interest',
+      tokenId: 'x',
+    })
+  )
+  await assertFails(
+    setDoc(doc(member, 'emailSuppressions', 'member@example.com'), {
+      email: 'member@example.com',
+      source: 'manual',
+      tokenId: 'x',
+    })
+  )
+})

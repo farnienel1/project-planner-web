@@ -1,3 +1,4 @@
+// Transactional: no marketing content
 /**
  * iOS parity source: Core/MaterialRequestEmailBuilder.swift
  * Spec: docs/ios-parity/sections/16-job-tiles.md

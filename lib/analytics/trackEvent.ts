@@ -3,25 +3,49 @@ import { db } from '@/lib/firebase/config'
 import { omitUndefinedDeep } from '@/lib/ios-parity/firestoreCodec'
 import type { ProductEventName } from '@/lib/analytics/events'
 import { sanitizeEventMetadata } from '@/lib/analytics/sanitizeEventMetadata'
-
-const SESSION_KEY = 'pp.productSessionId'
+import {
+  hasGrantedAnalyticsConsent,
+  LOGIN_TRACKED_KEY,
+  PRODUCT_SESSION_ID_KEY,
+} from '@/lib/analytics/analyticsConsent'
+import { isPlatformOwnerEmail, isPlatformOwnerSentinelOrg } from '@/lib/platform/owner'
 
 export function currentSessionId(): string | undefined {
   if (typeof window === 'undefined') return undefined
   try {
-    return window.sessionStorage.getItem(SESSION_KEY) || undefined
+    return window.sessionStorage.getItem(PRODUCT_SESSION_ID_KEY) || undefined
   } catch {
     return undefined
   }
 }
 
 export function rememberSessionId(id: string): void {
+  if (!hasGrantedAnalyticsConsent()) return
   if (typeof window === 'undefined') return
   try {
-    window.sessionStorage.setItem(SESSION_KEY, id)
+    window.sessionStorage.setItem(PRODUCT_SESSION_ID_KEY, id)
   } catch {
     /* private mode */
   }
+}
+
+export function maybeTrackSignedInEvents(input: {
+  userId: string
+  organizationId?: string
+  email?: string
+}): void {
+  if (!hasGrantedAnalyticsConsent()) return
+  if (isPlatformOwnerEmail(input.email) || isPlatformOwnerSentinelOrg(input.organizationId)) return
+  if (typeof window !== 'undefined') {
+    try {
+      if (window.sessionStorage.getItem(LOGIN_TRACKED_KEY) === '1') return
+      window.sessionStorage.setItem(LOGIN_TRACKED_KEY, '1')
+    } catch {
+      /* private mode */
+    }
+  }
+  void trackEvent('user_logged_in', { userId: input.userId, organizationId: input.organizationId })
+  void trackEvent('login', { userId: input.userId, organizationId: input.organizationId, metadata: { source: 'web' } })
 }
 
 export async function trackEvent(
@@ -32,6 +56,7 @@ export async function trackEvent(
     metadata?: Record<string, string | number | boolean>
   } = {}
 ): Promise<void> {
+  if (!hasGrantedAnalyticsConsent()) return
   if (!db || !input.userId) return
   const payload = omitUndefinedDeep({
     userId: input.userId,
@@ -56,6 +81,7 @@ export async function startOrTouchSession(input: {
   organizationId?: string
   path?: string
 }): Promise<string | null> {
+  if (!hasGrantedAnalyticsConsent()) return null
   if (!db) return null
   const existing = currentSessionId()
   const now = Timestamp.now()
@@ -92,6 +118,7 @@ export async function startOrTouchSession(input: {
 }
 
 export async function endSession(): Promise<void> {
+  if (!hasGrantedAnalyticsConsent()) return
   if (!db) return
   const existing = currentSessionId()
   if (!existing) return

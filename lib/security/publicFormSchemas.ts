@@ -29,6 +29,12 @@ export const interestRegisterBodySchema = z.object({
   userAgent: z.string().max(1200).optional().default(''),
 })
 
+export const interestUnsubscribeBodySchema = z.object({
+  token: z.string().trim().max(2000).optional(),
+  email: z.string().trim().max(254).optional(),
+  website,
+})
+
 export const supportContactBodySchema = z.object({
   name: z.string().trim().min(1, 'Please add your name.').max(120),
   email,
@@ -58,6 +64,7 @@ export const publicGateBodySchema = z.discriminatedUnion('form', [
 ])
 
 export type InterestRegisterBody = z.infer<typeof interestRegisterBodySchema>
+export type InterestUnsubscribeBody = z.infer<typeof interestUnsubscribeBodySchema>
 export type SupportContactBody = z.infer<typeof supportContactBodySchema>
 export type PublicGateBody = z.infer<typeof publicGateBodySchema>
 

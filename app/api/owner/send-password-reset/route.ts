@@ -79,6 +79,7 @@ export async function POST(request: NextRequest) {
         await sendProjectPlannerEmail({
           to: email,
           subject: 'Reset your Project Planner password',
+          // Transactional: no marketing content
           html: `<p>A password reset was requested by Project Planner support.</p><p><a href="${escapeHtml(link)}">Choose a new password</a></p><p>This link expires after one hour.</p>`,
         })
         sent = true

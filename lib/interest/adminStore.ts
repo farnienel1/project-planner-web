@@ -23,7 +23,7 @@ function emulatorOrigin(): string | null {
   return host.startsWith('http') ? host.replace(/\/$/, '') : `http://${host}`
 }
 
-async function documentsRoot(): Promise<{ root: string; headers: Record<string, string> }> {
+export async function interestAdminDocuments(): Promise<{ root: string; headers: Record<string, string> }> {
   const emulator = emulatorOrigin()
   if (emulator) {
     return {
@@ -63,7 +63,7 @@ async function readError(response: Response): Promise<string> {
 }
 
 export async function createInterestRegistration(draft: InterestDraft): Promise<string> {
-  const { root, headers } = await documentsRoot()
+  const { root, headers } = await interestAdminDocuments()
   const response = await fetch(`${root}/${COLLECTION}`, {
     method: 'POST',
     headers,
@@ -79,7 +79,7 @@ export async function createInterestRegistration(draft: InterestDraft): Promise<
 }
 
 export async function listInterestRegistrations(): Promise<InterestRegistration[]> {
-  const { root, headers } = await documentsRoot()
+  const { root, headers } = await interestAdminDocuments()
   const rows: InterestRegistration[] = []
   let pageToken = ''
   do {
@@ -103,7 +103,7 @@ export async function listInterestRegistrations(): Promise<InterestRegistration[
 }
 
 async function readRegistration(id: string): Promise<InterestRegistration | null> {
-  const { root, headers } = await documentsRoot()
+  const { root, headers } = await interestAdminDocuments()
   const response = await fetch(`${root}/${COLLECTION}/${encodeURIComponent(id)}`, { headers, cache: 'no-store' })
   if (response.status === 404) return null
   if (!response.ok) throw new Error(await readError(response))
@@ -112,7 +112,7 @@ async function readRegistration(id: string): Promise<InterestRegistration | null
 }
 
 async function patchRegistration(id: string, fields: Record<string, unknown>, fieldPaths: string[]): Promise<void> {
-  const { root, headers } = await documentsRoot()
+  const { root, headers } = await interestAdminDocuments()
   const url = new URL(`${root}/${COLLECTION}/${encodeURIComponent(id)}`)
   for (const name of fieldPaths) url.searchParams.append('updateMask.fieldPaths', name)
   const response = await fetch(url, {
@@ -157,12 +157,56 @@ export async function addInterestNoteAdmin(id: string, body: string, authorName:
 }
 
 export async function deleteInterestRegistrationAdmin(id: string): Promise<void> {
-  const { root, headers } = await documentsRoot()
+  const { root, headers } = await interestAdminDocuments()
   const response = await fetch(`${root}/${COLLECTION}/${encodeURIComponent(id)}`, {
     method: 'DELETE',
     headers,
   })
   if (!response.ok && response.status !== 404) throw new Error(await readError(response))
+}
+
+export function interestUnsubscribedAtFields(unsubscribedAt = new Date()): {
+  fields: Record<string, unknown>
+} {
+  const encoded = firestoreValue({ unsubscribedAt, updatedAt: unsubscribedAt }) as {
+    mapValue?: { fields?: Record<string, unknown> }
+  }
+  return { fields: encoded.mapValue?.fields || {} }
+}
+
+export async function listInterestRegistrationIdsByEmail(email: string): Promise<string[]> {
+  const { root, headers } = await interestAdminDocuments()
+  const response = await fetch(`${root}:runQuery`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      structuredQuery: {
+        from: [{ collectionId: COLLECTION }],
+        where: {
+          fieldFilter: {
+            field: { fieldPath: 'email' },
+            op: 'EQUAL',
+            value: { stringValue: email.trim().toLowerCase() },
+          },
+        },
+      },
+    }),
+  })
+  if (!response.ok) throw new Error(await readError(response))
+  const rows = (await response.json().catch(() => [])) as { document?: { name?: string } }[]
+  if (!Array.isArray(rows)) return []
+  return rows
+    .map((row) => idFromName(row.document?.name || ''))
+    .filter(Boolean)
+}
+
+export async function markInterestUnsubscribedByEmailAdmin(email: string): Promise<number> {
+  const ids = await listInterestRegistrationIdsByEmail(email)
+  const { fields } = interestUnsubscribedAtFields()
+  for (const id of ids) {
+    await patchRegistration(id, fields, ['unsubscribedAt', 'updatedAt'])
+  }
+  return ids.length
 }
 
 export function serializeInterestRegistration(row: InterestRegistration): Record<string, unknown> {
@@ -192,5 +236,6 @@ export function serializeInterestRegistration(row: InterestRegistration): Record
     })),
     createdAt: row.createdAt ? row.createdAt.toISOString() : null,
     updatedAt: row.updatedAt ? row.updatedAt.toISOString() : null,
+    unsubscribedAt: row.unsubscribedAt ? row.unsubscribedAt.toISOString() : null,
   }
 }

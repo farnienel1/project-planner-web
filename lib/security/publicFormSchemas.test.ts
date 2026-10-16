@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import {
   honeypotFilled,
   interestRegisterBodySchema,
+  interestUnsubscribeBodySchema,
   publicGateBodySchema,
   supportContactBodySchema,
 } from './publicFormSchemas.ts'
@@ -24,6 +25,13 @@ test('interest schema requires consent and an email-shaped address', () => {
     consent: true,
   })
   assert.equal(bad.success, false)
+})
+
+test('unsubscribe schema accepts a token and does not require an email', () => {
+  const parsed = interestUnsubscribeBodySchema.safeParse({ token: 'abc.def' })
+  assert.equal(parsed.success, true)
+  const empty = interestUnsubscribeBodySchema.safeParse({})
+  assert.equal(empty.success, true)
 })
 
 test('a filled honeypot is detected', () => {

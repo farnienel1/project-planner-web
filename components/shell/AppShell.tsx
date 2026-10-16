@@ -63,6 +63,7 @@ import { deliverDueTimesheetSubmissionReminders } from '@/lib/timesheets/deliver
 import { refreshAllOrgData } from '@/lib/stores/refreshOrgData'
 import { db } from '@/lib/firebase/config'
 import { runWhenIdle } from '@/lib/analytics/runWhenIdle'
+import { hasGrantedAnalyticsConsent, subscribeAnalyticsConsent } from '@/lib/analytics/analyticsConsent'
 import { doc, setDoc } from 'firebase/firestore'
 import { recoverJobTypesFromWork } from '@/lib/jobTypes/jobTypesStorage'
 import { canBookWork } from '@/lib/permissions'
@@ -212,6 +213,7 @@ function AppShellInner({ children }: { children: ReactNode }) {
   const [refreshing, setRefreshing] = useState(false)
   const [customiseOpen, setCustomiseOpen] = useState(false)
   const [navigateConfig, setNavigateConfig] = useState<NavigateConfig | null>(null)
+  const [analyticsAllowed, setAnalyticsAllowed] = useState(false)
   const { projects, smallWorks, loadProjects, loadSmallWorks } = useProjectStore()
   const prefetchedNav = useRef(false)
 
@@ -237,7 +239,12 @@ function AppShellInner({ children }: { children: ReactNode }) {
   }, [user?.id, recordLastSeenIfDue])
 
   useEffect(() => {
-    if (!user?.id || !pathname) return
+    setAnalyticsAllowed(hasGrantedAnalyticsConsent())
+    return subscribeAnalyticsConsent(() => setAnalyticsAllowed(hasGrantedAnalyticsConsent()))
+  }, [])
+
+  useEffect(() => {
+    if (!user?.id || !pathname || !analyticsAllowed) return
     const userId = user.id
     const organizationId = organization?.id
     return runWhenIdle(() => {
@@ -245,7 +252,7 @@ function AppShellInner({ children }: { children: ReactNode }) {
         void trackEvent('page_viewed', { userId, organizationId, metadata: { path: pathname } })
       })
     })
-  }, [pathname, user?.id, organization?.id])
+  }, [pathname, user?.id, organization?.id, analyticsAllowed])
 
   useEffect(() => {
     if (!organization?.id || !user?.id) return

@@ -136,6 +136,7 @@ export async function POST(request: NextRequest) {
         await sendBillingEmail(
           organizationId,
           'Your Project Planner trial ends in 3 days',
+          // Transactional: no marketing content
           `<p>Your 30-day Project Planner trial ends on ${escapeHtml(end)}.</p><p>If a card is on file we will charge then. You can update billing or cancel from Settings → Billing.</p>`
         )
       }
@@ -171,6 +172,7 @@ export async function POST(request: NextRequest) {
           await sendBillingEmail(
             synced.organizationId,
             'Project Planner payment failed',
+            // Transactional: no marketing content
             `<p>We could not take the latest Project Planner payment.</p><p><a href="${escapeHtml(link)}">Update your payment method</a></p><p>Access stays open for 7 days.</p>`
           )
         }
