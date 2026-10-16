@@ -17,6 +17,15 @@ export function shouldRequireAppCheck(nodeEnv = process.env.NODE_ENV): boolean {
   return nodeEnv === 'production'
 }
 
+/**
+ * Login / signup / reset / invite / owner gates. Firebase App Check enforcement
+ * is off — a missing or invalid token must not block password auth. Public
+ * marketing forms still use `shouldRequireAppCheck` / `enforceAppCheck`.
+ */
+export function shouldRequireAppCheckOnAuthGate(): boolean {
+  return false
+}
+
 export function appCheckProjectNumber(): string {
   return (process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || '').trim()
 }
@@ -99,4 +108,13 @@ export async function enforceAppCheck(request: NextRequest, nodeEnv = process.en
   const valid = await verifyAppCheckJwt(token)
   if (valid) return null
   return required ? jsonError('App Check is required.', 401) : null
+}
+
+/** Never fail-closed while `shouldRequireAppCheckOnAuthGate` is false. */
+export async function enforceAppCheckOnAuthGate(
+  request: NextRequest,
+  nodeEnv = process.env.NODE_ENV
+): Promise<NextResponse | null> {
+  if (!shouldRequireAppCheckOnAuthGate()) return null
+  return enforceAppCheck(request, nodeEnv)
 }
