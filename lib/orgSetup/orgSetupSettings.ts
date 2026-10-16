@@ -18,6 +18,7 @@ import {
 import { BANK_HOLIDAY_REGIONS, bankHolidayRegionLabel } from '@/lib/settings/bankHolidayRegions'
 import { DEFAULT_MATERIAL_CUT_OFF } from '@/lib/canonical'
 import type { NotificationPreferences } from '@/lib/settings/notificationPreferences'
+import { COMPANY_LOGO_MAX_BYTES, uploadLimitError } from '@/lib/security/uploadLimits'
 
 export type OrgOfficeAddress = {
   addressLine1: string
@@ -64,7 +65,7 @@ export const COUNTRY_OPTIONS = BANK_HOLIDAY_REGIONS
 export { bankHolidayRegionLabel }
 
 /** Must match storage.rules company logo write: sized(5 * 1024 * 1024). */
-export const LOGO_MAX_BYTES = 5 * 1024 * 1024
+export const LOGO_MAX_BYTES = COMPANY_LOGO_MAX_BYTES
 
 export function createEmptyOfficeAddress(): OrgOfficeAddress {
   return {
@@ -226,17 +227,7 @@ export function orgSetupSettingsToFirestoreFields(
 type NamedFile = { name: string; type?: string; size: number }
 
 export function validateLogoFile(file: NamedFile): string | null {
-  const name = file.name.toLowerCase()
-  const type = (file.type || '').toLowerCase()
-  const isImage =
-    type.startsWith('image/') ||
-    /\.(jpe?g|png)$/i.test(name)
-  const isPdf = type === 'application/pdf' || name.endsWith('.pdf')
-  if (!isImage && !isPdf) {
-    return 'Logo must be a JPEG, PNG or PDF file.'
-  }
-  if (file.size > LOGO_MAX_BYTES) return 'Logo must be 5 MB or smaller.'
-  return null
+  return uploadLimitError(file, 'logo')
 }
 
 export function isLogoCropCandidate(file: File): boolean {

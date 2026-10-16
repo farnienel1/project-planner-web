@@ -11,6 +11,7 @@ import { FormActions, FormInput, FormLabel, FormSelect } from '@/components/form
 import { PayBasisFields, payChoiceFromProfile, payChoiceToRates } from '@/components/users/PayBasisFields'
 import { usePaySaveGate } from '@/components/users/PayRateChangeDialogs'
 import { ErrorBanner } from '@/components/dashboard/PageShell'
+import { isPlausibleDayKey } from '@/lib/security/boundedValue'
 
 export function OperativeForm({
   initial,
@@ -67,6 +68,10 @@ export function OperativeForm({
     }
     if (!form.tradeTypePreset.trim() && !form.tradeTypeCustom.trim()) {
       setError('Trade type is required.')
+      return
+    }
+    if (!isPlausibleDayKey(form.startDate)) {
+      setError('Enter a valid start date.')
       return
     }
     const rates = payChoiceToRates(form.payBasis, form.rateAmount)

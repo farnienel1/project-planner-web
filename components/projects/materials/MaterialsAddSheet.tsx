@@ -8,6 +8,7 @@ import { searchMaterialCatalogue, type MaterialSuggestion } from '@/lib/material
 import { FormInput, FormLabel, FormSelect, FormTextarea } from '@/components/forms/FormShell'
 import { ErrorBanner } from '@/components/dashboard/PageShell'
 import type { Project, ProjectMaterialLine } from '@/types'
+import { QUANTITY_SAVE_MAX, parseBoundedNumber } from '@/lib/security/boundedValue'
 
 const UNITS = ['Number', 'Box', 'Length', 'Drum', 'Pallet', 'm', 'mm', 'kg']
 
@@ -78,6 +79,11 @@ export function MaterialsAddSheet({ project, selectedDate, existing, onClose, on
       setLocalError('Enter a material name')
       return
     }
+    const parsedQuantity = parseBoundedNumber(quantity, { min: -Infinity, max: QUANTITY_SAVE_MAX })
+    if (quantity.trim() && parsedQuantity == null) {
+      setLocalError('Enter a quantity up to 1,000,000.')
+      return
+    }
     setSaving(true)
     setLocalError(null)
     try {
@@ -87,7 +93,7 @@ export function MaterialsAddSheet({ project, selectedDate, existing, onClose, on
         user.email.split('@')[0]
       await saveMaterialLine(organization.id, {
         id: existing?.id,
-        quantity: Number(quantity) || 1,
+        quantity: parsedQuantity && parsedQuantity > 0 ? parsedQuantity : 1,
         unit,
         material: materialName,
         addedBy: displayName,

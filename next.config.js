@@ -1,4 +1,12 @@
+const fs = require('fs')
 const path = require('path')
+
+const pdfWorkerSrc = path.join(__dirname, 'node_modules/pdfjs-dist/build/pdf.worker.min.mjs')
+const pdfWorkerDest = path.join(__dirname, 'public/pdfjs/pdf.worker.min.mjs')
+if (fs.existsSync(pdfWorkerSrc)) {
+  fs.mkdirSync(path.dirname(pdfWorkerDest), { recursive: true })
+  fs.copyFileSync(pdfWorkerSrc, pdfWorkerDest)
+}
 
 const ContentSecurityPolicy = [
   "default-src 'self'",
@@ -6,13 +14,13 @@ const ContentSecurityPolicy = [
   "object-src 'none'",
   "frame-ancestors 'none'",
   "form-action 'self' https://checkout.stripe.com https://js.stripe.com",
-  "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://js.stripe.com https://maps.googleapis.com https://maps.gstatic.com https://www.google.com https://www.gstatic.com https://unpkg.com https://cdnjs.cloudflare.com",
-  "style-src 'self' 'unsafe-inline' https://unpkg.com",
+  "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://js.stripe.com https://maps.googleapis.com https://maps.gstatic.com https://www.google.com https://www.gstatic.com",
+  "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: https:",
   "font-src 'self' data:",
-  "connect-src 'self' https://*.googleapis.com https://*.gstatic.com https://*.firebaseio.com wss://*.firebaseio.com https://*.firebasestorage.app https://*.firebaseapp.com https://*.cloudfunctions.net https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://firestore.googleapis.com https://firebasestorage.googleapis.com https://content-firebaseappcheck.googleapis.com https://firebaseappcheck.googleapis.com https://www.google.com https://www.gstatic.com https://api.stripe.com https://*.stripe.com https://*.stripe.network https://maps.googleapis.com https://photon.komoot.io https://nominatim.openstreetmap.org https://*.tile.openstreetmap.org https://unpkg.com https://cdnjs.cloudflare.com",
+  "connect-src 'self' https://*.googleapis.com https://*.gstatic.com https://*.firebaseio.com wss://*.firebaseio.com https://*.firebasestorage.app https://*.firebaseapp.com https://*.cloudfunctions.net https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://firestore.googleapis.com https://firebasestorage.googleapis.com https://content-firebaseappcheck.googleapis.com https://firebaseappcheck.googleapis.com https://www.google.com https://www.gstatic.com https://api.stripe.com https://*.stripe.com https://*.stripe.network https://maps.googleapis.com https://photon.komoot.io https://nominatim.openstreetmap.org https://*.tile.openstreetmap.org",
   "frame-src 'self' https://js.stripe.com https://checkout.stripe.com https://hooks.stripe.com https://*.firebaseapp.com https://www.google.com https://www.gstatic.com https://recaptcha.google.com",
-  "worker-src 'self' blob: https://cdnjs.cloudflare.com",
+  "worker-src 'self' blob:",
   "media-src 'self' blob:",
 ]
 
@@ -24,6 +32,10 @@ const securityHeaders = [
   { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=(self), payment=(self), usb=()' },
   { key: 'Cross-Origin-Opener-Policy', value: 'same-origin-allow-popups' },
   { key: 'X-Permitted-Cross-Domain-Policies', value: 'none' },
+  {
+    key: 'Strict-Transport-Security',
+    value: 'max-age=63072000; includeSubDomains; preload',
+  },
   { key: 'Content-Security-Policy', value: ContentSecurityPolicy.join('; ') },
 ]
 

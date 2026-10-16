@@ -12,6 +12,7 @@ import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { isOperativeMode } from '@/lib/navigation/menuPermissions'
 import { newUuid } from '@/lib/firebase/firestoreUtils'
 import { uploadFile as uploadHsFile, healthSafetyFilePath } from '@/lib/firebase/storageUtils'
+import { prepareClientUpload } from '@/lib/security/stripPhotoLocation'
 import { loadPlatformToolboxLibrary, mergeToolboxTalkLibraries } from '@/lib/healthSafety/toolboxLibrary'
 import { blankToolboxTalkTemplate } from '@/lib/healthSafety/mergeToolboxTalks'
 import { downloadBlankTalkExcel, readBlankTalkFile } from '@/lib/healthSafety/blankTalkWorkbook'
@@ -314,11 +315,13 @@ export function ProjectHealthSafetySection({
     try {
       let fileURL: string | undefined
       if (uploadTalkFile) {
-        const path = healthSafetyFilePath(organization.id, project.id, 'talks', uploadTalkFile.name)
+        const prepared = await prepareClientUpload(uploadTalkFile, 'work')
+        if (prepared.error) throw new Error(prepared.error)
+        const path = healthSafetyFilePath(organization.id, project.id, 'talks', prepared.file.name)
         fileURL = await uploadHsFile(
           path,
-          uploadTalkFile,
-          uploadTalkFile.type || 'application/pdf'
+          prepared.file,
+          prepared.file.type || 'application/pdf'
         )
       }
       await addToolboxTalk(organization.id, project.id, isSmallWorks, {
@@ -384,8 +387,10 @@ export function ProjectHealthSafetySection({
     try {
       let fileURL: string | undefined
       if (ramsFile) {
-        const path = healthSafetyFilePath(organization.id, project.id, 'rams', ramsFile.name)
-        fileURL = await uploadHsFile(path, ramsFile, ramsFile.type || 'application/pdf')
+        const prepared = await prepareClientUpload(ramsFile, 'work')
+        if (prepared.error) throw new Error(prepared.error)
+        const path = healthSafetyFilePath(organization.id, project.id, 'rams', prepared.file.name)
+        fileURL = await uploadHsFile(path, prepared.file, prepared.file.type || 'application/pdf')
       }
       const version = nextRamsVersion(data.ramsDocuments, ramsTitle)
       await save(organization.id, project.id, isSmallWorks, {
@@ -423,8 +428,10 @@ export function ProjectHealthSafetySection({
     try {
       let fileURL: string | undefined
       if (otherFile) {
-        const path = healthSafetyFilePath(organization.id, project.id, 'other', otherFile.name)
-        fileURL = await uploadHsFile(path, otherFile, otherFile.type || 'application/pdf')
+        const prepared = await prepareClientUpload(otherFile, 'work')
+        if (prepared.error) throw new Error(prepared.error)
+        const path = healthSafetyFilePath(organization.id, project.id, 'other', prepared.file.name)
+        fileURL = await uploadHsFile(path, prepared.file, prepared.file.type || 'application/pdf')
       }
       await save(organization.id, project.id, isSmallWorks, {
         ...data,

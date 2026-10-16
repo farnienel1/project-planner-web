@@ -17,7 +17,7 @@ type LogoCropModalProps = {
 async function loadPdfJs() {
   // Use the package main build path (works across pdfjs-dist 4.x installs).
   const pdfjs = await import('pdfjs-dist/build/pdf.mjs' as 'pdfjs-dist')
-  pdfjs.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.mjs`
+  pdfjs.GlobalWorkerOptions.workerSrc = '/pdfjs/pdf.worker.min.mjs'
   return pdfjs
 }
 

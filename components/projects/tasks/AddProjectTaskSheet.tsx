@@ -30,6 +30,8 @@ import { peopleForTaskPicker } from '@/lib/tasks/taskAssigneePeople'
 import { compressTaskAttachment } from '@/lib/tasks/compressTaskAttachment'
 import { withTimeout } from '@/lib/client/withTimeout'
 import type { Manager, Operative, Project, ProjectTask, ProjectTaskItem, ProjectTaskPriority } from '@/types'
+import { isPlausibleDayKey } from '@/lib/security/boundedValue'
+import { uploadLimitError } from '@/lib/security/uploadLimits'
 
 type PeopleRoute = 'managers' | 'operatives' | 'combined'
 
@@ -147,7 +149,12 @@ export function AddProjectTaskSheet({
     selfOperativeId,
   ])
 
-  const canSave = Boolean(title.trim() && (assignment.managers.length || assignment.operatives.length) && dueDate && !saving)
+  const canSave = Boolean(
+    title.trim() &&
+      (assignment.managers.length || assignment.operatives.length) &&
+      isPlausibleDayKey(dueDate) &&
+      !saving
+  )
 
   const openPicker = () => {
     if (includeManagers && includeOperatives) setPeopleRoute('combined')
@@ -169,6 +176,10 @@ export function AddProjectTaskSheet({
 
   const handleSave = async () => {
     if (!canSave || !organization?.id) return
+    if (!isPlausibleDayKey(dueDate)) {
+      setError('Enter a valid due date.')
+      return
+    }
     setSaving(true)
     setError(null)
     try {
@@ -176,7 +187,11 @@ export function AddProjectTaskSheet({
       const attachedImageURLs = [...(existing?.attachedImageURLs || [])]
       const uploaded = await Promise.all(
         imageFiles.map(async (file) => {
+          const blocked = uploadLimitError(file, 'work')
+          if (blocked) throw new Error(blocked)
           const body = await compressTaskAttachment(file)
+          const blockedAfter = uploadLimitError({ name: file.name, type: body.type, size: body.size }, 'work')
+          if (blockedAfter) throw new Error(blockedAfter)
           return withTimeout(
             uploadFile(taskAttachmentPath(organization.id, taskId, file.name), body, body.type || 'image/jpeg'),
             45_000,
@@ -188,6 +203,8 @@ export function AddProjectTaskSheet({
       let attachedFileURL = existing?.attachedFileURL
       let attachedFileName = existing?.attachedFileName
       if (docFile) {
+        const blocked = uploadLimitError(docFile, 'work')
+        if (blocked) throw new Error(blocked)
         attachedFileURL = await withTimeout(
           uploadFile(
             taskAttachmentPath(organization.id, taskId, docFile.name),
@@ -415,9 +432,9 @@ export function AddProjectTaskSheet({
                 onChange={(e) => {
                   const picked = Array.from(e.target.files || [])
                   e.target.value = ''
-                  const rejected = picked.find((file) => !file.type.startsWith('image/'))
+                  const rejected = picked.find((file) => !file.type.startsWith('image/') || uploadLimitError(file, 'work'))
                   if (rejected) {
-                    setError('Choose a photo. That file is not an image, so it was not added.')
+                    setError(uploadLimitError(rejected, 'work') || 'Choose a photo. That file is not an image, so it was not added.')
                     return
                   }
                   setError(null)
@@ -436,9 +453,9 @@ export function AddProjectTaskSheet({
                 onChange={(e) => {
                   const picked = Array.from(e.target.files || [])
                   e.target.value = ''
-                  const rejected = picked.find((file) => !file.type.startsWith('image/'))
+                  const rejected = picked.find((file) => !file.type.startsWith('image/') || uploadLimitError(file, 'work'))
                   if (rejected) {
-                    setError('Choose a photo. That file is not an image, so it was not added.')
+                    setError(uploadLimitError(rejected, 'work') || 'Choose a photo. That file is not an image, so it was not added.')
                     return
                   }
                   setError(null)
@@ -452,7 +469,21 @@ export function AddProjectTaskSheet({
               <input
                 type="file"
                 className="hidden"
-                onChange={(e) => setDocFile(e.target.files?.[0] || null)}
+                onChange={(e) => {
+                  const next = e.target.files?.[0] || null
+                  e.target.value = ''
+                  if (!next) {
+                    setDocFile(null)
+                    return
+                  }
+                  const blocked = uploadLimitError(next, 'work')
+                  if (blocked) {
+                    setError(blocked)
+                    return
+                  }
+                  setError(null)
+                  setDocFile(next)
+                }}
               />
             </label>
             <button

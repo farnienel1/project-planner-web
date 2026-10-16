@@ -7,6 +7,7 @@ import { useOperativeStore } from '@/lib/stores/operativeStore'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { useToast } from '@/components/ui/ToastProvider'
 import { uploadVariationEvidenceFile, variationEvidencePath } from '@/lib/firebase/storageUtils'
+import { prepareClientUpload } from '@/lib/security/stripPhotoLocation'
 import { newUuid } from '@/lib/firebase/firestoreUtils'
 import {
   EVIDENCE_MAX_FILES,
@@ -400,11 +401,13 @@ async function uploadEvidenceFiles(
 ): Promise<VariationEvidence[]> {
   return Promise.all(
     files.map(async (file) => {
-      const storagePath = variationEvidencePath(organizationId, parentId, file.name)
+      const prepared = await prepareClientUpload(file, 'variation')
+      if (prepared.error) throw new Error(prepared.error)
+      const storagePath = variationEvidencePath(organizationId, parentId, prepared.file.name)
       const downloadURL = await uploadVariationEvidenceFile(
         storagePath,
-        file,
-        file.type || 'application/octet-stream'
+        prepared.file,
+        prepared.file.type || 'application/octet-stream'
       )
       return {
         id: newUuid(),

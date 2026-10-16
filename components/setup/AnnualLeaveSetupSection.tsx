@@ -14,6 +14,7 @@ import {
   SetupWarningNote,
 } from '@/components/setup/setupFormPrimitives'
 import type { OrgAnnualLeaveDefaults } from '@/lib/settings/organizationSettings'
+import { LEAVE_DAYS_SAVE_MAX, parseBoundedInteger, parseBoundedNumber } from '@/lib/security/boundedValue'
 
 type AnnualLeaveSetupSectionProps = {
   value: OrgAnnualLeaveDefaults
@@ -51,7 +52,10 @@ export function AnnualLeaveSetupSection({
               min={0}
               max={365}
               value={value.daysPerYear}
-              onChange={(e) => patch({ daysPerYear: Number(e.target.value) })}
+              onChange={(e) => {
+                const next = parseBoundedNumber(e.target.value, { min: 0, max: LEAVE_DAYS_SAVE_MAX })
+                if (next != null) patch({ daysPerYear: next })
+              }}
             />
             <p className="mt-1 text-xs text-slate-400">
               The standard allowance applied when you add a new manager or operative to your organisation.
@@ -68,7 +72,10 @@ export function AnnualLeaveSetupSection({
                 <FormLabel>Starts</FormLabel>
                 <FormSelect
                   value={value.startMonth}
-                  onChange={(e) => patch({ startMonth: Number(e.target.value) })}
+                  onChange={(e) => {
+                    const next = parseBoundedInteger(e.target.value, { min: 1, max: 12 })
+                    if (next != null) patch({ startMonth: next })
+                  }}
                 >
                   {MONTHS.map((month, index) => (
                     <option key={month} value={index + 1}>
@@ -82,7 +89,10 @@ export function AnnualLeaveSetupSection({
                 <FormLabel>Ends</FormLabel>
                 <FormSelect
                   value={value.endMonth}
-                  onChange={(e) => patch({ endMonth: Number(e.target.value) })}
+                  onChange={(e) => {
+                    const next = parseBoundedInteger(e.target.value, { min: 1, max: 12 })
+                    if (next != null) patch({ endMonth: next })
+                  }}
                 >
                   {MONTHS.map((month, index) => (
                     <option key={month} value={index + 1}>

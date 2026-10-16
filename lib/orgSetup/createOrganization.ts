@@ -8,6 +8,7 @@ import {
 } from '@/lib/qualifications/starterLibrary'
 import { newUuid, parseFirestoreDate, sanitizeForFirestore } from '@/lib/firebase/firestoreUtils'
 import { companyLogoPath, uploadFile } from '@/lib/firebase/storageUtils'
+import { prepareClientUpload } from '@/lib/security/stripPhotoLocation'
 import { getFirebaseDb } from '@/lib/firebase/ensureFirebase'
 import { permissionsToFirestoreMap } from '@/lib/firebase/userPayload'
 import { FOUNDER_PERMISSIONS } from '@/lib/orgMembership/orgRoleFlags'
@@ -221,9 +222,11 @@ export async function createPendingOrganization(
   const logoFile = skipOptional ? null : input.orgSetupSettings?.identity.logoFile
   if (logoFile) {
     try {
-      const storagePath = companyLogoPath(organizationId, logoFile.name)
+      const prepared = await prepareClientUpload(logoFile, 'logo')
+      if (prepared.error) throw new Error(prepared.error)
+      const storagePath = companyLogoPath(organizationId, prepared.file.name)
       const companyLogoURL = await withTimeout(
-        uploadFile(storagePath, logoFile, logoFile.type || 'image/png'),
+        uploadFile(storagePath, prepared.file, prepared.file.type || 'image/png'),
         8000,
         'Logo upload is taking too long.'
       )

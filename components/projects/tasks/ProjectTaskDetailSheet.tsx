@@ -9,6 +9,8 @@ import { format } from 'date-fns'
 import { Modal } from '@/components/ui'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { taskAttachmentPath, uploadFile } from '@/lib/firebase/storageUtils'
+import { prepareClientUpload } from '@/lib/security/stripPhotoLocation'
+import { uploadLimitError } from '@/lib/security/uploadLimits'
 import {
   allAssignedManagerIds,
   allAssignedOperativeIds,
@@ -305,18 +307,22 @@ function CompleteTaskForm({
           const completionFiles = [...(task.completionFiles || [])]
           if (organizationId) {
             for (const file of imageFiles) {
+              const prepared = await prepareClientUpload(file, 'work')
+              if (prepared.error) throw new Error(prepared.error)
               const url = await uploadFile(
-                taskAttachmentPath(organizationId, task.id, file.name),
-                file,
-                file.type || 'image/jpeg'
+                taskAttachmentPath(organizationId, task.id, prepared.file.name),
+                prepared.file,
+                prepared.file.type || 'image/jpeg'
               )
               completionImages.push(url)
             }
             for (const file of docFiles) {
+              const prepared = await prepareClientUpload(file, 'work')
+              if (prepared.error) throw new Error(prepared.error)
               const url = await uploadFile(
-                taskAttachmentPath(organizationId, task.id, file.name),
-                file,
-                file.type || 'application/octet-stream'
+                taskAttachmentPath(organizationId, task.id, prepared.file.name),
+                prepared.file,
+                prepared.file.type || 'application/octet-stream'
               )
               completionFiles.push(url)
             }
@@ -348,9 +354,9 @@ function CompleteTaskForm({
           onChange={(e) => {
             const picked = Array.from(e.target.files || [])
             e.target.value = ''
-            const rejected = picked.find((file) => !file.type.startsWith('image/'))
+            const rejected = picked.find((file) => !file.type.startsWith('image/') || uploadLimitError(file, 'work'))
             if (rejected) {
-              setError('Choose a photo. That file is not an image, so it was not added.')
+              setError(uploadLimitError(rejected, 'work') || 'Choose a photo. That file is not an image, so it was not added.')
               return
             }
             setError(null)
@@ -365,7 +371,17 @@ function CompleteTaskForm({
           type="file"
           multiple
           hidden
-          onChange={(e) => setDocFiles(Array.from(e.target.files || []))}
+          onChange={(e) => {
+            const picked = Array.from(e.target.files || [])
+            e.target.value = ''
+            const blocked = picked.find((file) => uploadLimitError(file, 'work'))
+            if (blocked) {
+              setError(uploadLimitError(blocked, 'work'))
+              return
+            }
+            setError(null)
+            setDocFiles(picked)
+          }}
         />
       </label>
       {docFiles.length > 0 ? <p className="muted small">{docFiles.length} file(s) selected</p> : null}

@@ -15,3 +15,8 @@ test('parseTimesheetManagerAmount allows zero like the iOS amount sheet', () => 
   assert.equal(parseTimesheetManagerAmount('12.50'), 12.5)
   assert.equal(parseTimesheetManagerAmount('-1'), null)
 })
+
+test('timesheet money parsers refuse an out-of-range amount', () => {
+  assert.equal(parseTimesheetMoneyAmount('1e20'), null)
+  assert.equal(parseTimesheetManagerAmount('1e20'), null)
+})

@@ -6,6 +6,7 @@ import { findOperativeForUser } from '@/lib/operatives/operativeRosterUtils'
 import { IosFormModal } from '@/components/ios/primitives'
 import { Button } from '@/components/ui'
 import { qualificationCertificatePath, uploadFile } from '@/lib/firebase/storageUtils'
+import { prepareClientUpload } from '@/lib/security/stripPhotoLocation'
 import {
   QUALIFICATION_CERT_ACCEPT,
   QUALIFICATION_CERT_HINT,
@@ -192,8 +193,10 @@ export function OperativeQualificationsEditor({
         existingUrls: draft.qualificationCertificateURLs,
         saveAssignment: () => onSave(draft),
         uploadOne: async (qualificationId, file) => {
-          const path = qualificationCertificatePath(organizationId, draft.id, qualificationId, file.name)
-          return uploadFile(path, file, qualificationCertificateContentType(file))
+          const prepared = await prepareClientUpload(file, 'certificate')
+          if (prepared.error) throw new Error(prepared.error)
+          const path = qualificationCertificatePath(organizationId, draft.id, qualificationId, prepared.file.name)
+          return uploadFile(path, prepared.file, qualificationCertificateContentType(prepared.file))
         },
         saveCertificateUrls: (urls) => onSave({ ...draft, qualificationCertificateURLs: urls }),
       })

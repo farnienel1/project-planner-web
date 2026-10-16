@@ -5,6 +5,7 @@ import { updateDoc, doc, Timestamp } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { companyLogoPath, uploadFile } from '@/lib/firebase/storageUtils'
+import { prepareClientUpload } from '@/lib/security/stripPhotoLocation'
 import {
   coalesceOrganizationName,
   loadOrganizationDetails,
@@ -174,8 +175,13 @@ export function CompanyDetailsPanel({ onBack }: { onBack: () => void }) {
           setError(validationError)
           return
         }
-        const path = companyLogoPath(organization.id, logoFile.name)
-        companyLogoURL = await uploadFile(path, logoFile, logoFile.type || 'image/png')
+        const prepared = await prepareClientUpload(logoFile, 'logo')
+        if (prepared.error) {
+          setError(prepared.error)
+          return
+        }
+        const path = companyLogoPath(organization.id, prepared.file.name)
+        companyLogoURL = await uploadFile(path, prepared.file, prepared.file.type || 'image/png')
       }
 
       const identity = companyIdentityFirestoreFields({
