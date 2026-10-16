@@ -159,3 +159,65 @@ export async function adminUpdateAuthEmail(uid: string, email: string): Promise<
     throw new Error(data.error?.message || 'Could not update the Firebase login email.')
   }
 }
+
+function identityError(data: { error?: { message?: string } }): string {
+  return data.error?.message || ''
+}
+
+export async function verifyAuthPassword(email: string, password: string): Promise<boolean> {
+  const apiKey = process.env.NEXT_PUBLIC_FIREBASE_API_KEY
+  if (!apiKey || !email || !password) return false
+  const response = await fetch(
+    `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${encodeURIComponent(apiKey)}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password, returnSecureToken: true }),
+    }
+  )
+  if (!response.ok) return false
+  const data = (await response.json().catch(() => ({}))) as { localId?: string }
+  return Boolean(data.localId)
+}
+
+export async function adminRevokeRefreshTokens(uid: string): Promise<void> {
+  const { token, projectId } = await googleAccessToken([
+    'https://www.googleapis.com/auth/identitytoolkit',
+    'https://www.googleapis.com/auth/firebase',
+  ])
+  if (!projectId) throw new Error('Firebase project id is missing.')
+  const response = await fetch(
+    `https://identitytoolkit.googleapis.com/v2/projects/${encodeURIComponent(projectId)}/accounts:revokeRefreshTokens`,
+    {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ localId: uid }),
+    }
+  )
+  const data = (await response.json().catch(() => ({}))) as { error?: { message?: string } }
+  const message = identityError(data)
+  if (!response.ok && !message.includes('USER_NOT_FOUND')) {
+    throw new Error(data.error?.message || 'Could not revoke refresh tokens.')
+  }
+}
+
+export async function adminDeleteAuthUser(uid: string): Promise<void> {
+  const { token, projectId } = await googleAccessToken([
+    'https://www.googleapis.com/auth/identitytoolkit',
+    'https://www.googleapis.com/auth/firebase',
+  ])
+  if (!projectId) throw new Error('Firebase project id is missing.')
+  const response = await fetch(
+    `https://identitytoolkit.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/accounts:delete`,
+    {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ localId: uid }),
+    }
+  )
+  const data = (await response.json().catch(() => ({}))) as { error?: { message?: string } }
+  const message = identityError(data)
+  if (!response.ok && !message.includes('USER_NOT_FOUND')) {
+    throw new Error(data.error?.message || 'Could not delete the Firebase login.')
+  }
+}

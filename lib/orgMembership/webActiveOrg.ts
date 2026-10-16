@@ -34,6 +34,17 @@ export function writeWebActiveOrg(userId: string, organizationId: string): void 
   }
 }
 
+/** Account delete only. Same-user sign-out must keep this key. */
+export function clearWebActiveOrg(userId: string): void {
+  const key = webSessionOrganizationStorageKey(userId)
+  if (typeof localStorage === 'undefined' || !key) return
+  try {
+    localStorage.removeItem(key)
+  } catch {
+    /* private mode */
+  }
+}
+
 /** One membership probe. A slow read must not hold the dashboard splash. */
 export const SESSION_ORG_PROBE_MS = 2_500
 

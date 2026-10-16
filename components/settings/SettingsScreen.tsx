@@ -49,6 +49,7 @@ import {
   type SettingsPanel,
 } from '@/lib/settings/settingsNav'
 import { openAnalyticsConsentSettings } from '@/lib/analytics/analyticsConsent'
+import { DeleteAccountRow } from '@/components/settings/DeleteAccountDialog'
 
 // ─── Subpanels ────────────────────────────────────────────────────────────────
 type Panel = SettingsPanel
@@ -467,6 +468,7 @@ export default function SettingsScreen({ initialPanel = 'main' }: { initialPanel
                 />
               </Link>
             ))}
+            <DeleteAccountRow />
           </SettingsCard>
         </section>
 
