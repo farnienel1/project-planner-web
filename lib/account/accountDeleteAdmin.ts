@@ -1,0 +1,512 @@
+import { restFieldsToPlain } from '@/lib/owner/firestoreRest'
+import {
+  adminDeleteAuthUser,
+  adminGoogleAccessToken,
+  adminRevokeRefreshTokens,
+  firebaseAdminConfigured,
+} from '@/lib/owner/identityToolkitAdmin'
+import { firestoreValue } from '@/lib/stripe/writeOrgBilling'
+import {
+  ACCOUNT_DELETE_JOB_TYPE,
+  DELETED_PRODUCT_EVENT_USER_ID,
+  DELETED_USER_DISPLAY_NAME,
+  adminLikeFromUserFields,
+  collectMembershipIds,
+  commentAnonymisePatch,
+  findSoleAdminBlock,
+  ideaAuthorAnonymisePatch,
+  pickCreatorSuccessor,
+  rosterAnonymisePatch,
+  timesheetSnapshotShouldStay,
+  unsignedTimesheetAnonymisePatch,
+  type OrgDeleteSnapshot,
+  type SoleAdminBlock,
+} from '@/lib/account/accountDelete'
+
+type AdminSession = {
+  token: string
+  projectId: string
+  root: string
+  headers: Record<string, string>
+}
+
+type RestDocument = {
+  path: string
+  fields: Record<string, unknown>
+  plain: Record<string, unknown>
+}
+
+function projectFallback(): string {
+  return process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || ''
+}
+
+function idFromName(name: string): string {
+  const parts = name.split('/')
+  return decodeURIComponent(parts[parts.length - 1] || '')
+}
+
+function pathFromName(name: string): string {
+  const marker = '/documents/'
+  const index = name.indexOf(marker)
+  return index >= 0 ? name.slice(index + marker.length) : ''
+}
+
+async function datastoreSession(): Promise<AdminSession> {
+  const { token, projectId } = await adminGoogleAccessToken(['https://www.googleapis.com/auth/datastore'])
+  const project = projectId || projectFallback()
+  if (!project) throw new Error('Firebase project id is missing.')
+  return {
+    token,
+    projectId: project,
+    root: `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(project)}/databases/(default)/documents`,
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+  }
+}
+
+async function readError(response: Response): Promise<string> {
+  const text = await response.text()
+  return text.slice(0, 500) || `Firestore request failed (${response.status})`
+}
+
+async function adminGet(session: AdminSession, path: string): Promise<RestDocument | null> {
+  const response = await fetch(`${session.root}/${path}`, { headers: session.headers, cache: 'no-store' })
+  if (response.status === 404) return null
+  if (!response.ok) throw new Error(await readError(response))
+  const document = (await response.json()) as { name?: string; fields?: Record<string, unknown> }
+  return {
+    path,
+    fields: document.fields || {},
+    plain: restFieldsToPlain(document.fields),
+  }
+}
+
+async function adminDelete(session: AdminSession, path: string): Promise<void> {
+  const response = await fetch(`${session.root}/${path}`, { method: 'DELETE', headers: session.headers })
+  if (!response.ok && response.status !== 404) throw new Error(await readError(response))
+}
+
+async function adminPatch(
+  session: AdminSession,
+  path: string,
+  plain: Record<string, unknown>,
+  fieldPaths: string[]
+): Promise<void> {
+  const encoded = firestoreValue(plain) as { mapValue?: { fields?: Record<string, unknown> } }
+  const url = new URL(`${session.root}/${path}`)
+  for (const name of fieldPaths) url.searchParams.append('updateMask.fieldPaths', name)
+  const response = await fetch(url, {
+    method: 'PATCH',
+    headers: session.headers,
+    body: JSON.stringify({ fields: encoded.mapValue?.fields || {} }),
+  })
+  if (!response.ok) throw new Error(await readError(response))
+}
+
+async function adminCreateNamed(
+  session: AdminSession,
+  collectionPath: string,
+  documentId: string,
+  plain: Record<string, unknown>
+): Promise<'created' | 'exists'> {
+  const encoded = firestoreValue(plain) as { mapValue?: { fields?: Record<string, unknown> } }
+  const url = `${session.root}/${collectionPath}?documentId=${encodeURIComponent(documentId)}`
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: session.headers,
+    body: JSON.stringify({ fields: encoded.mapValue?.fields || {} }),
+  })
+  if (response.status === 409) return 'exists'
+  if (!response.ok) {
+    const text = await response.text()
+    if (text.includes('ALREADY_EXISTS')) return 'exists'
+    throw new Error(text.slice(0, 500) || `Could not create ${collectionPath}/${documentId}`)
+  }
+  return 'created'
+}
+
+async function adminList(session: AdminSession, collectionPath: string): Promise<RestDocument[]> {
+  const rows: RestDocument[] = []
+  let pageToken = ''
+  do {
+    const url = new URL(`${session.root}/${collectionPath}`)
+    url.searchParams.set('pageSize', '200')
+    if (pageToken) url.searchParams.set('pageToken', pageToken)
+    const response = await fetch(url, { headers: session.headers, cache: 'no-store' })
+    if (response.status === 404) return rows
+    if (!response.ok) throw new Error(await readError(response))
+    const body = (await response.json()) as {
+      documents?: { name?: string; fields?: Record<string, unknown> }[]
+      nextPageToken?: string
+    }
+    for (const document of body.documents || []) {
+      const path = pathFromName(document.name || '')
+      if (!path) continue
+      rows.push({ path, fields: document.fields || {}, plain: restFieldsToPlain(document.fields) })
+    }
+    pageToken = body.nextPageToken || ''
+  } while (pageToken && rows.length < 2000)
+  return rows
+}
+
+async function adminQueryEqual(
+  session: AdminSession,
+  parentPath: string,
+  collectionId: string,
+  field: string,
+  value: string
+): Promise<RestDocument[]> {
+  const parent = parentPath ? `${session.root}/${parentPath}` : session.root
+  const rows: RestDocument[] = []
+  let guard = 0
+  while (guard < 20) {
+    guard += 1
+    const response = await fetch(`${parent}:runQuery`, {
+      method: 'POST',
+      headers: session.headers,
+      body: JSON.stringify({
+        structuredQuery: {
+          from: [{ collectionId }],
+          where: {
+            fieldFilter: {
+              field: { fieldPath: field },
+              op: 'EQUAL',
+              value: { stringValue: value },
+            },
+          },
+          limit: 300,
+        },
+      }),
+    })
+    if (!response.ok) throw new Error(await readError(response))
+    const hits = (await response.json().catch(() => [])) as { document?: { name?: string; fields?: Record<string, unknown> } }[]
+    let added = 0
+    for (const row of hits) {
+      const path = pathFromName(row.document?.name || '')
+      if (!path) continue
+      rows.push({
+        path,
+        fields: row.document?.fields || {},
+        plain: restFieldsToPlain(row.document?.fields),
+      })
+      added += 1
+    }
+    if (added < 300) break
+    if (collectionId === 'productEvents') {
+      for (const row of rows.slice(-added)) {
+        await adminPatch(session, row.path, { userId: DELETED_PRODUCT_EVENT_USER_ID }, ['userId'])
+      }
+      continue
+    }
+    break
+  }
+  return rows
+}
+
+async function deleteStorageObject(path: string): Promise<void> {
+  const bucket = (process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || '').trim()
+  if (!bucket || !path) return
+  try {
+    const { token } = await adminGoogleAccessToken(['https://www.googleapis.com/auth/devstorage.full_control'])
+    const response = await fetch(
+      `https://firebasestorage.googleapis.com/v0/b/${encodeURIComponent(bucket)}/o/${encodeURIComponent(path)}`,
+      { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } }
+    )
+    if (!response.ok && response.status !== 404) {
+      console.warn('[account/delete] storage', path, response.status)
+    }
+  } catch (error) {
+    console.warn('[account/delete] storage', path, error)
+  }
+}
+
+function orgNameOf(plain: Record<string, unknown>): string {
+  return typeof plain.name === 'string' && plain.name.trim() ? plain.name.trim() : ''
+}
+
+function membersMap(plain: Record<string, unknown>): Record<string, string> {
+  const raw = plain.members
+  if (!raw || typeof raw !== 'object') return {}
+  return Object.fromEntries(
+    Object.entries(raw as Record<string, unknown>).map(([key, value]) => [key, String(value || '')])
+  )
+}
+
+async function loadOrgSnapshot(
+  session: AdminSession,
+  orgId: string,
+  uid: string
+): Promise<OrgDeleteSnapshot | null> {
+  const org = await adminGet(session, `organizations/${orgId}`)
+  if (!org) return null
+  const members = membersMap(org.plain)
+  const memberFlags = []
+  const seen = new Set<string>()
+  for (const memberUid of Object.keys(members)) {
+    seen.add(memberUid)
+    const user = await adminGet(session, `users/${memberUid}`)
+    memberFlags.push({
+      uid: memberUid,
+      flags: adminLikeFromUserFields(user?.plain || {}, members[memberUid]),
+    })
+  }
+  if (!seen.has(uid)) {
+    const user = await adminGet(session, `users/${uid}`)
+    memberFlags.push({
+      uid,
+      flags: adminLikeFromUserFields(user?.plain || {}, members[uid] || ''),
+    })
+  }
+  return {
+    orgId,
+    orgName: orgNameOf(org.plain),
+    creatorUserId: typeof org.plain.creatorUserId === 'string' ? org.plain.creatorUserId : '',
+    members,
+    memberFlags,
+  }
+}
+
+async function discoverOrgIds(session: AdminSession, uid: string, userOrganizationId: string): Promise<string[]> {
+  const memberships = await adminList(session, `users/${uid}/orgMemberships`)
+  const asMember: string[] = []
+  for (const role of ['admin', 'manager', 'operative'] as const) {
+    try {
+      const hits = await adminQueryEqual(session, '', 'organizations', `members.${uid}`, role)
+      for (const row of hits) asMember.push(idFromName(row.path))
+    } catch (error) {
+      console.warn('[account/delete] members map query', role, error)
+    }
+  }
+  const created = await adminQueryEqual(session, '', 'organizations', 'creatorUserId', uid).catch((error) => {
+    console.warn('[account/delete] creator query', error)
+    return [] as RestDocument[]
+  })
+  return collectMembershipIds({
+    membershipDocIds: memberships.map((row) => idFromName(row.path)),
+    userOrganizationId,
+    memberMapOrgIds: asMember,
+    creatorOrgIds: created.map((row) => idFromName(row.path)),
+  })
+}
+
+async function anonymiseRosterDocs(
+  session: AdminSession,
+  orgId: string,
+  uid: string,
+  email: string
+): Promise<void> {
+  const collections = ['operatives', 'managers'] as const
+  for (const collectionId of collections) {
+    const seen = new Set<string>()
+    const candidates: RestDocument[] = []
+    const byId = await adminGet(session, `organizations/${orgId}/${collectionId}/${uid}`)
+    if (byId) candidates.push(byId)
+    if (email) {
+      for (const row of await adminQueryEqual(session, `organizations/${orgId}`, collectionId, 'email', email)) {
+        candidates.push(row)
+      }
+    }
+    for (const row of await adminQueryEqual(session, `organizations/${orgId}`, collectionId, 'userId', uid)) {
+      candidates.push(row)
+    }
+    for (const row of candidates) {
+      if (seen.has(row.path)) continue
+      seen.add(row.path)
+      const patch = rosterAnonymisePatch(row.plain)
+      if (Object.keys(patch).length === 0) continue
+      await adminPatch(session, row.path, patch, Object.keys(patch))
+    }
+  }
+}
+
+async function anonymiseUnsignedTimesheets(session: AdminSession, orgId: string, uid: string): Promise<void> {
+  const rows = await adminQueryEqual(session, `organizations/${orgId}`, 'settings', 'userId', uid)
+  for (const row of rows) {
+    if (!idFromName(row.path).startsWith('timesheet_')) continue
+    if (timesheetSnapshotShouldStay(row.plain)) continue
+    const patch = unsignedTimesheetAnonymisePatch(row.plain)
+    if (Object.keys(patch).length === 0) continue
+    await adminPatch(session, row.path, patch, Object.keys(patch))
+  }
+}
+
+async function anonymiseVariations(session: AdminSession, orgId: string, uid: string): Promise<void> {
+  const rows = await adminQueryEqual(session, `organizations/${orgId}`, 'variations', 'createdByUid', uid)
+  for (const row of rows) {
+    if (!('createdByName' in row.plain)) continue
+    if (row.plain.createdByName === DELETED_USER_DISPLAY_NAME) continue
+    await adminPatch(session, row.path, { createdByName: DELETED_USER_DISPLAY_NAME }, ['createdByName'])
+  }
+}
+
+async function deleteQueryMatches(
+  session: AdminSession,
+  parentPath: string,
+  collectionId: string,
+  field: string,
+  value: string
+): Promise<void> {
+  const rows = await adminQueryEqual(session, parentPath, collectionId, field, value)
+  await Promise.all(rows.map((row) => adminDelete(session, row.path)))
+}
+
+async function leaveOrganisation(
+  session: AdminSession,
+  uid: string,
+  email: string,
+  snapshot: OrgDeleteSnapshot
+): Promise<void> {
+  const { orgId } = snapshot
+  await anonymiseRosterDocs(session, orgId, uid, email)
+  await anonymiseUnsignedTimesheets(session, orgId, uid)
+  await anonymiseVariations(session, orgId, uid)
+  await deleteQueryMatches(session, `organizations/${orgId}`, 'notifications', 'userId', uid)
+  if (email) await adminDelete(session, `organizations/${orgId}/userEmails/${encodeURIComponent(email)}`)
+  await adminDelete(session, `organizations/${orgId}/operativeProfiles/${uid}`)
+  await adminDelete(session, `organizations/${orgId}/dashboardLayouts/${uid}`)
+  await deleteStorageObject(`organizations/${orgId}/userProfiles/${uid}/profile.jpg`)
+  if (snapshot.members[uid] != null) {
+    await adminPatch(session, `organizations/${orgId}`, {}, [`members.${uid}`])
+  }
+  const successor = pickCreatorSuccessor(uid, snapshot)
+  if (successor) {
+    await adminPatch(session, `organizations/${orgId}`, { creatorUserId: successor }, ['creatorUserId'])
+  }
+  await adminDelete(session, `users/${uid}/orgMemberships/${orgId}`)
+}
+
+async function deleteUnusedInvitations(session: AdminSession, uid: string, email: string): Promise<void> {
+  const rows = [
+    ...(await adminQueryEqual(session, '', 'invitations', 'invitedBy', uid)),
+    ...(email ? await adminQueryEqual(session, '', 'invitations', 'email', email) : []),
+  ]
+  const seen = new Set<string>()
+  for (const row of rows) {
+    if (seen.has(row.path)) continue
+    seen.add(row.path)
+    if (row.plain.isUsed === true) continue
+    await adminDelete(session, row.path)
+  }
+}
+
+async function anonymiseProductFeedback(session: AdminSession, uid: string): Promise<void> {
+  await deleteQueryMatches(session, '', 'productFeedbackVotes', 'userId', uid)
+  const comments = await adminQueryEqual(session, '', 'productFeedbackComments', 'authorUserId', uid)
+  for (const row of comments) {
+    const patch = commentAnonymisePatch(row.plain)
+    if (Object.keys(patch).length === 0) continue
+    await adminPatch(session, row.path, patch, Object.keys(patch))
+  }
+  const ideas = await adminQueryEqual(session, '', 'productFeedback', 'authorUserId', uid)
+  for (const row of ideas) {
+    const patch = ideaAuthorAnonymisePatch(row.plain)
+    if (Object.keys(patch).length === 0) continue
+    await adminPatch(session, row.path, patch, Object.keys(patch))
+  }
+}
+
+async function anonymiseProductEvents(session: AdminSession, uid: string): Promise<void> {
+  const rows = await adminQueryEqual(session, '', 'productEvents', 'userId', uid)
+  for (const row of rows) {
+    if (row.plain.userId === DELETED_PRODUCT_EVENT_USER_ID) continue
+    await adminPatch(session, row.path, { userId: DELETED_PRODUCT_EVENT_USER_ID }, ['userId'])
+  }
+}
+
+async function writeAccountDeleteAudit(
+  session: AdminSession,
+  entry: { uid: string; orgIds: string[]; ip?: string }
+): Promise<void> {
+  const encoded = firestoreValue({
+    action: 'accountDelete',
+    actorUid: entry.uid,
+    targetUserId: entry.uid,
+    at: new Date(),
+    reason: `self-serve account delete · orgs ${entry.orgIds.join(',') || 'none'}`,
+    ip: entry.ip || '',
+  }) as { mapValue?: { fields?: Record<string, unknown> } }
+  const response = await fetch(`${session.root}/adminAuditLog`, {
+    method: 'POST',
+    headers: session.headers,
+    body: JSON.stringify({ fields: encoded.mapValue?.fields || {} }),
+  })
+  if (!response.ok) console.warn('[account/delete] audit', await readError(response))
+}
+
+export async function evaluateAccountOrgs(
+  uid: string,
+  userOrganizationId?: string
+): Promise<{ block: SoleAdminBlock } | { snapshots: OrgDeleteSnapshot[] }> {
+  if (!firebaseAdminConfigured()) throw new Error('FIREBASE_SERVICE_ACCOUNT_JSON is not set on the server.')
+  const session = await datastoreSession()
+  const user = await adminGet(session, `users/${uid}`)
+  const fromDoc =
+    userOrganizationId ||
+    (typeof user?.plain.organizationId === 'string' ? user.plain.organizationId : '')
+  const orgIds = await discoverOrgIds(session, uid, fromDoc)
+  const snapshots: OrgDeleteSnapshot[] = []
+  for (const orgId of orgIds) {
+    const snapshot = await loadOrgSnapshot(session, orgId, uid)
+    if (snapshot) snapshots.push(snapshot)
+  }
+  const block = findSoleAdminBlock(uid, snapshots)
+  if (block) return { block }
+  return { snapshots }
+}
+
+export async function executeAccountDelete(input: {
+  uid: string
+  email: string
+  snapshots: OrgDeleteSnapshot[]
+  ip?: string
+}): Promise<'completed' | 'already'> {
+  if (!firebaseAdminConfigured()) throw new Error('FIREBASE_SERVICE_ACCOUNT_JSON is not set on the server.')
+  const session = await datastoreSession()
+  const jobPath = `adminJobs/${input.uid}`
+  const existing = await adminGet(session, jobPath)
+  const created = existing
+    ? 'exists'
+    : await adminCreateNamed(session, 'adminJobs', input.uid, {
+        type: ACCOUNT_DELETE_JOB_TYPE,
+        status: 'running',
+        uid: input.uid,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      })
+  const job = existing || (created === 'exists' ? await adminGet(session, jobPath) : null)
+  if (job?.plain.status === 'completed' && job.plain.type === ACCOUNT_DELETE_JOB_TYPE) {
+    await adminRevokeRefreshTokens(input.uid).catch(() => undefined)
+    await adminDeleteAuthUser(input.uid)
+    return 'already'
+  }
+
+  const user = await adminGet(session, `users/${input.uid}`)
+  const email = (input.email || (typeof user?.plain.email === 'string' ? user.plain.email : '')).trim().toLowerCase()
+  if (user) {
+    const patch = rosterAnonymisePatch(user.plain)
+    if (Object.keys(patch).length > 0) await adminPatch(session, user.path, patch, Object.keys(patch))
+  }
+
+  for (const snapshot of input.snapshots) {
+    await leaveOrganisation(session, input.uid, email, snapshot)
+  }
+  await deleteUnusedInvitations(session, input.uid, email)
+  await anonymiseProductFeedback(session, input.uid)
+  await deleteQueryMatches(session, '', 'productSessions', 'userId', input.uid)
+  await anonymiseProductEvents(session, input.uid)
+  await adminDelete(session, `users/${input.uid}`)
+
+  await adminPatch(
+    session,
+    jobPath,
+    { type: ACCOUNT_DELETE_JOB_TYPE, status: 'completed', uid: input.uid, updatedAt: new Date(), completedAt: new Date() },
+    ['type', 'status', 'uid', 'updatedAt', 'completedAt']
+  )
+  await writeAccountDeleteAudit(session, {
+    uid: input.uid,
+    orgIds: input.snapshots.map((row) => row.orgId),
+    ip: input.ip,
+  })
+  await adminRevokeRefreshTokens(input.uid).catch(() => undefined)
+  await adminDeleteAuthUser(input.uid)
+  return 'completed'
+}
