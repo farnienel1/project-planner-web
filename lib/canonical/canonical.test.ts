@@ -164,6 +164,7 @@ import {
   timesheetPeriodMatches,
   timesheetSignOffWriteFields,
 } from './timesheetPeriod.ts'
+import { PAYMENT_GRACE_MS, hasAccess } from './billingAccess.ts'
 
 const superAdmin: StaffAccountRole = { isSuperAdmin: true, isAdmin: true, isManager: false, isOperativeMode: false }
 const admin: StaffAccountRole = { isSuperAdmin: false, isAdmin: true, isManager: false, isOperativeMode: false }
@@ -1110,6 +1111,7 @@ test('the iOS JavaScript bundle exposes the standard-day, leave and dismiss rule
     'inboxNotificationVisibleToUser',
     'compareInboxNotificationsByCreatedAt',
     'unreadNotificationBadgeCount',
+    'hasAccess',
   ]) {
     assert.equal(typeof bundle[name], 'function', `${name} is exported from the packed script`)
   }
@@ -2497,4 +2499,68 @@ test('selectable payment runs keep the old window after a mode or range change',
     timeZone: 'Europe/London',
   })
   assert.ok(afterRecurring.some((row) => row.startDayKey === '2026-10-05' && row.endDayKey === '2026-10-11'))
+})
+
+test('hasAccess opens missing/none/pending/trialing/active and past_due within 7 days, including cancel-at-period-end', () => {
+  const source = readFileSync(new URL('./dist/canonical-business.js', import.meta.url), 'utf8')
+  const sandbox: {
+    ProjectPlannerCanonical?: {
+      PAYMENT_GRACE_MS: number
+      hasAccess: (billing: unknown, now?: number) => boolean
+    }
+  } = {}
+  runInContext(source, createContext(sandbox))
+  const packed = sandbox.ProjectPlannerCanonical
+  assert.ok(packed)
+  assert.equal(typeof packed.hasAccess, 'function')
+  assert.equal(packed.PAYMENT_GRACE_MS, PAYMENT_GRACE_MS)
+  assert.equal(PAYMENT_GRACE_MS, 7 * 24 * 60 * 60 * 1000)
+
+  const now = Date.parse('2026-10-16T12:00:00.000Z')
+  const withinGrace = new Date(now - 2 * 24 * 60 * 60 * 1000)
+  const afterGrace = new Date(now - 8 * 24 * 60 * 60 * 1000)
+  const periodEnd = new Date(now + 10 * 24 * 60 * 60 * 1000)
+
+  const cases: Array<{ billing: unknown; expected: boolean; label: string }> = [
+    { billing: null, expected: true, label: 'missing' },
+    { billing: undefined, expected: true, label: 'undefined' },
+    { billing: { status: 'none' }, expected: true, label: 'none' },
+    { billing: { status: 'pending' }, expected: true, label: 'pending' },
+    { billing: { status: 'trialing' }, expected: true, label: 'trialing' },
+    { billing: { status: 'active' }, expected: true, label: 'active' },
+    { billing: { status: 'active', billingInterval: 'month' }, expected: true, label: 'active monthly' },
+    { billing: { status: 'active', billingInterval: 'year' }, expected: true, label: 'active annual' },
+    {
+      billing: { status: 'active', cancelAtPeriodEnd: true, currentPeriodEnd: periodEnd, billingInterval: 'month' },
+      expected: true,
+      label: 'cancel-at-period-end monthly still active',
+    },
+    {
+      billing: { status: 'active', cancelAtPeriodEnd: true, currentPeriodEnd: periodEnd, billingInterval: 'year' },
+      expected: true,
+      label: 'cancel-at-period-end annual still active',
+    },
+    { billing: { status: 'past_due' }, expected: true, label: 'past_due without lastPaymentFailedAt' },
+    { billing: { status: 'past_due', lastPaymentFailedAt: withinGrace }, expected: true, label: 'past_due within 7 days' },
+    {
+      billing: { status: 'past_due', lastPaymentFailedAt: withinGrace.getTime() },
+      expected: true,
+      label: 'past_due within 7 days (ms)',
+    },
+    { billing: { status: 'past_due', lastPaymentFailedAt: afterGrace }, expected: false, label: 'past_due after 7 days' },
+    { billing: { status: 'canceled' }, expected: false, label: 'canceled' },
+    {
+      billing: { status: 'canceled', cancelAtPeriodEnd: true, currentPeriodEnd: periodEnd },
+      expected: false,
+      label: 'canceled after period end',
+    },
+    { billing: { status: 'unpaid' }, expected: false, label: 'unpaid' },
+    { billing: { status: 'paused' }, expected: false, label: 'paused' },
+    { billing: { status: 'incomplete' }, expected: false, label: 'incomplete' },
+  ]
+
+  for (const row of cases) {
+    assert.equal(hasAccess(row.billing as never, now), row.expected, `module ${row.label}`)
+    assert.equal(packed.hasAccess(row.billing, now), row.expected, `packed ${row.label}`)
+  }
 })

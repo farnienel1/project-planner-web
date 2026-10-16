@@ -211,6 +211,8 @@ export {
   weekdayOffsetBefore,
 } from './timesheetSubmission'
 
+export { PAYMENT_GRACE_MS, hasAccess } from './billingAccess'
+
 export {
   TIMESHEET_DOCUMENT_PREFIX,
   TIMESHEET_EXPORT_STORAGE_FOLDER,
