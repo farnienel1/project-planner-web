@@ -365,6 +365,30 @@ test('book labour skips pending users unless a warning focuses that user', () =>
   )
 })
 
+test('an anonymised Deleted user is not a book-labour candidate', () => {
+  const deleted = user({
+    id: 'QAlPe29vLLP4spK554UtpaBLW7N2',
+    email: '',
+    firstName: 'Deleted',
+    surname: 'user',
+  })
+  const live = user({ id: 'U-LIVE', email: 'ada@site.test' })
+  const rows = buildBookLabourCandidates({
+    day: WED,
+    users: [deleted, live],
+    operatives: [
+      operative({ id: 'OP-DEL', email: '', firstName: 'Deleted', lastName: 'user' }),
+      operative({ id: 'OP-ADA', email: 'ada@site.test' }),
+    ],
+    bookings: [],
+    managerSiteBookings: [],
+    holidays: [],
+    payrollPolicy: DEFAULT_PAYROLL_POLICY,
+  })
+  assert.equal(rows.some((row) => row.displayName === 'Deleted user' || row.id === deleted.id), false)
+  assert.equal(rows.some((row) => row.id === 'U-LIVE'), true)
+})
+
 test('default Other custom items do not seed Training', () => {
   assert.deepEqual(DEFAULT_MY_SCHEDULE.customItems, [])
   const picks = enabledScheduleLocationPicks({

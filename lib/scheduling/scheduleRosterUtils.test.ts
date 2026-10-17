@@ -149,6 +149,32 @@ test('a named catalogue operative stays bookable, and a role used as a name is n
   assert.equal(roleNamed.some((row) => row.name === 'Manager'), false)
 })
 
+test('an anonymised Deleted user is not a person you can schedule', () => {
+  const people = buildSchedulablePeople(
+    [operative({ id: 'OP-DEL', email: '', firstName: 'Deleted', lastName: 'user' })],
+    [
+      user({
+        id: 'QAlPe29vLLP4spK554UtpaBLW7N2',
+        email: '',
+        firstName: 'Deleted',
+        surname: 'user',
+        role: UserRole.OPERATIVE,
+        permissions: perms({ operativeMode: true }),
+      }),
+      user({
+        id: 'U-MGR',
+        email: '',
+        firstName: 'Deleted',
+        surname: 'user',
+        role: UserRole.MANAGER,
+        permissions: perms({ manager: true }),
+      }),
+    ]
+  )
+  assert.equal(people.some((row) => row.name === 'Deleted user'), false)
+  assert.equal(people.length, 0)
+})
+
 test('a pending manager invitation is not a person you can schedule', () => {
   const pending = user({
     id: 'U-PENDING',

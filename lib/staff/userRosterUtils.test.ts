@@ -11,6 +11,8 @@ import {
   getManagersRosterUsers,
   getVisibilityManagerUsers,
   getVisibilityOperativeUsers,
+  isCurrentLabourNamedPerson,
+  isCurrentLabourUser,
   listedUsersForRoster,
   matchesRosterSegment,
 } from './userRosterUtils.ts'
@@ -175,6 +177,12 @@ test('an empty-email Deleted user is kept by dedupe and is Inactive, not Active 
   assert.equal(matchesRosterSegment(kept[0], 'inactive'), true)
   assert.equal(matchesRosterSegment(kept[0], 'active'), false)
   assert.equal(matchesRosterSegment(kept[0], 'pending'), false)
+  assert.equal(isCurrentLabourUser(kept[0]), false)
+  assert.equal(
+    isCurrentLabourNamedPerson({ email: '', firstName: 'Deleted', lastName: 'user' }),
+    false
+  )
+  assert.equal(listedUsersForRoster([deleted], []).length, 1)
 })
 
 test('a freshly deactivated account wins over an older active duplicate', () => {

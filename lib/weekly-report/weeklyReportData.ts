@@ -9,6 +9,7 @@ import type { OrganizationDetails } from '@/lib/settings/organizationSettings'
 import { includesManagerScheduleLocation } from '@/lib/settings/organizationSettings'
 import { ianaTimeZoneForCountry } from '@/lib/orgTime/orgTimeZone'
 import { computeManagerBookingClashWarnings } from '@/lib/warnings/managerClashWarnings'
+import { isAnonymisedDeletedProfile } from '@/lib/canonical'
 import { computeUnbookedLabourWarningsForDateRange } from '@/lib/warnings/unbookedLabourWarnings'
 import type { Booking, HolidayBooking, Operative, Project, User } from '@/types'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
@@ -560,6 +561,7 @@ export function buildWeeklyReportData({
       }),
       period
     )) {
+      if (isAnonymisedDeletedProfile({ name: clash.operativeName })) continue
       warnings.push({
         status: 'Open',
         priority: 'High',
@@ -578,6 +580,7 @@ export function buildWeeklyReportData({
       }),
       period
     )) {
+      if (isAnonymisedDeletedProfile({ name: clash.personName })) continue
       warnings.push({
         status: 'Open',
         priority: 'Medium',

@@ -1,5 +1,5 @@
 import type { Operative, User } from '@/types'
-import { getOperativeModeUsers } from '@/lib/staff/userRosterUtils'
+import { getOperativeModeUsers, isCurrentLabourNamedPerson } from '@/lib/staff/userRosterUtils'
 
 export { getOperativeModeUsers }
 
@@ -102,7 +102,7 @@ export function operativeIdsForEmail(operatives: Operative[], email: string | nu
  * iOS ScheduleOperativeView.selectableOperatives — active roster operatives, excluding placeholders.
  */
 export function getActiveOperativesForScheduling(operatives: Operative[]): Operative[] {
-  const realOperatives = dedupeOperativesByEmail(operatives)
+  const realOperatives = dedupeOperativesByEmail(operatives).filter(isCurrentLabourNamedPerson)
   const active = realOperatives.filter((operative) => operative.isActive !== false)
   return active.length > 0 ? active : realOperatives
 }

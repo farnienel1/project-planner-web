@@ -218,6 +218,7 @@ export {
   DELETED_USER_DISPLAY_NAME,
   isAnonymisedDeletedProfile,
   isIdentifiablePendingLeftover,
+  listedCurrentLabourPeople,
   listedRosterUsers,
   matchesRosterSegment,
   matchesUserRosterSegment,

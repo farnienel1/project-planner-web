@@ -17,7 +17,7 @@ import {
   DEFAULT_WARNING_DETECTION,
   parseInvoicing,
 } from '@/lib/settings/organizationSettings'
-import { qualificationExpiryRows, resolveMaterialCutOffClock, unverifiedOperativeRows } from '@/lib/canonical'
+import { isAnonymisedDeletedProfile, qualificationExpiryRows, resolveMaterialCutOffClock, unverifiedOperativeRows } from '@/lib/canonical'
 import { ianaTimeZoneForCountry } from '@/lib/orgTime/orgTimeZone'
 import type { NotificationPreferences } from '@/lib/settings/notificationPreferences'
 import { computeOperativeBookingClashWarnings, type OperativeBookingClashWarning } from '@/lib/scheduling/bookingClashUtils'
@@ -89,6 +89,7 @@ export function computeQualificationExpiryWarnings(
         id: operative.id,
         isActive: Boolean(operative.isActive),
         name: `${operative.firstName} ${operative.lastName}`.trim() || operative.email,
+        email: operative.email,
         expiries,
       }
     }),
@@ -107,6 +108,10 @@ export function computeQualificationExpiryWarnings(
     message: row.message,
     dismissKey: row.dismissKey,
   }))
+}
+
+function isAnonymisedWarningSubject(name: string, email?: string): boolean {
+  return isAnonymisedDeletedProfile({ email: email || '', name })
 }
 
 export function computeUnverifiedOperativeWarnings(
@@ -177,7 +182,7 @@ export function generateOrgWarnings(input: {
         invoicing,
         now,
         timeZone
-      )
+      ).filter((warning) => !isAnonymisedWarningSubject(warning.operativeName))
     : []
 
   const managerClashWarnings = warningDetection.detectClashes
@@ -191,7 +196,7 @@ export function generateOrgWarnings(input: {
         invoicing,
         now,
         timeZone
-      )
+      ).filter((warning) => !isAnonymisedWarningSubject(warning.personName))
     : []
 
   const unbookedWarnings = computeUnbookedLabourWarnings({
@@ -219,7 +224,7 @@ export function generateOrgWarnings(input: {
     payrollPolicy,
     referenceDate: now,
     timeZone,
-  })
+  }).filter((warning) => !isAnonymisedWarningSubject(warning.personName))
 
   const materialWarnings = computeMissedMaterialOrderWarnings(
     input.materials || [],

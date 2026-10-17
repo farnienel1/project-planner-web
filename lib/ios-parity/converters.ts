@@ -7,6 +7,7 @@
  */
 
 import { Timestamp, deleteField } from 'firebase/firestore'
+import { isAnonymisedDeletedProfile } from '@/lib/canonical/userRosterSegment'
 import { assignedQualificationWriteFields } from '@/lib/canonical/operativeQualifications'
 import { exclusiveRateDocumentFields, operativeRosterRateFields, readStoredRates } from '@/lib/timesheets/payBasis'
 import { applyExclusiveRateFields } from '@/lib/firebase/userPayload'
@@ -152,7 +153,10 @@ function readFlag(data: Record<string, unknown>, key: string): boolean | undefin
 export function parseAppUserDocument(userId: string, data: Record<string, unknown>): ParseResult<User> {
   const email = asString(data.email)
   const organizationId = asString(data.organizationId)
-  if (!email || !organizationId) {
+  if (!organizationId) {
+    return fail(['email and organizationId are required'])
+  }
+  if (!email && !isAnonymisedDeletedProfile(data)) {
     return fail(['email and organizationId are required'])
   }
 
