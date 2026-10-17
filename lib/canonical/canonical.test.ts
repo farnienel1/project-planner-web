@@ -173,6 +173,7 @@ import {
   matchesRosterSegment,
   rosterSegment,
 } from './userRosterSegment.ts'
+import { inviteEmailHasLiveClaim, resolveInviteEmailClaim } from './inviteEmailClaim.ts'
 
 const superAdmin: StaffAccountRole = { isSuperAdmin: true, isAdmin: true, isManager: false, isOperativeMode: false }
 const admin: StaffAccountRole = { isSuperAdmin: false, isAdmin: true, isManager: false, isOperativeMode: false }
@@ -1126,6 +1127,8 @@ test('the iOS JavaScript bundle exposes the standard-day, leave and dismiss rule
     'isIdentifiablePendingLeftover',
     'listedRosterUsers',
     'listedCurrentLabourPeople',
+    'resolveInviteEmailClaim',
+    'inviteEmailHasLiveClaim',
   ]) {
     assert.equal(typeof bundle[name], 'function', `${name} is exported from the packed script`)
   }
@@ -2776,4 +2779,168 @@ test('the packed roster-segment functions match this module', () => {
   const leftover = { email: 'farnienel@hotmail.com', firstName: 'Test', surname: 'Operative', passwordSet: false }
   assert.deepEqual(packed.listedRosterUsers([leftover], []), [])
   assert.equal(packed.listedRosterUsers([leftover], ['farnienel@hotmail.com']).length, 1)
+})
+
+test('re-invite is blocked only by a live email claim, not a leftover or tombstone', () => {
+  const inviteEmail = 'farnienel@hotmail.com'
+  const leftover = {
+    userId: '57CC31FC-1111-4222-8333-ABCDEF123456',
+    email: inviteEmail,
+    firstName: 'Test',
+    surname: 'Operative',
+    passwordSet: false,
+    mobileNumber: '07700900123',
+  }
+  const tombstone = {
+    userId: 'QAlPe29vLLP4spK554UtpaBLW7N2',
+    email: '',
+    firstName: 'Deleted',
+    surname: 'user',
+    name: 'Deleted user',
+    passwordSet: true,
+    isActive: true,
+  }
+  const liveMember = {
+    userId: 'auth-live',
+    email: inviteEmail,
+    firstName: 'Pat',
+    surname: 'Live',
+    passwordSet: true,
+    isActive: true,
+  }
+  const pendingClaimed = {
+    userId: 'UUID-PENDING',
+    email: inviteEmail,
+    firstName: 'New',
+    surname: 'Invite',
+    passwordSet: false,
+  }
+
+  assert.deepEqual(
+    resolveInviteEmailClaim({
+      inviteEmail,
+      existingUsers: [leftover, tombstone],
+      emailPointer: { exists: false },
+    }),
+    { action: 'allow', reuseUserId: leftover.userId }
+  )
+  assert.equal(
+    inviteEmailHasLiveClaim({
+      inviteEmail,
+      existingUsers: [leftover, tombstone],
+      emailPointer: { exists: false },
+    }),
+    false
+  )
+
+  assert.deepEqual(
+    resolveInviteEmailClaim({
+      inviteEmail,
+      existingUsers: [tombstone],
+      emailPointer: {
+        exists: true,
+        pointedUserId: tombstone.userId,
+        pointedUser: tombstone,
+      },
+    }),
+    { action: 'allow' }
+  )
+
+  assert.deepEqual(
+    resolveInviteEmailClaim({
+      inviteEmail,
+      existingUsers: [],
+      emailPointer: { exists: true, pointedUserId: 'dead-placeholder', pointedUser: null },
+    }),
+    { action: 'allow', reuseUserId: 'dead-placeholder' }
+  )
+
+  assert.deepEqual(
+    resolveInviteEmailClaim({
+      inviteEmail,
+      existingUsers: [],
+      emailPointer: { exists: false },
+    }),
+    { action: 'allow' }
+  )
+
+  assert.deepEqual(
+    resolveInviteEmailClaim({
+      inviteEmail,
+      existingUsers: [liveMember],
+      emailPointer: { exists: false },
+    }),
+    { action: 'block' }
+  )
+
+  assert.deepEqual(
+    resolveInviteEmailClaim({
+      inviteEmail,
+      existingUsers: [pendingClaimed],
+      emailPointer: {
+        exists: true,
+        pointedUserId: pendingClaimed.userId,
+        pointedUser: pendingClaimed,
+      },
+    }),
+    { action: 'block' }
+  )
+
+  assert.deepEqual(
+    resolveInviteEmailClaim({
+      inviteEmail,
+      existingUsers: [{ userId: 'other', email: 'other@site.com', passwordSet: true }],
+      emailPointer: {
+        exists: true,
+        pointedUserId: 'other',
+        pointedUser: { userId: 'other', email: 'other@site.com', passwordSet: true },
+      },
+    }),
+    { action: 'allow' }
+  )
+
+  assert.deepEqual(
+    resolveInviteEmailClaim({
+      inviteEmail,
+      existingUsers: [leftover],
+      emailPointer: null,
+    }),
+    { action: 'block' }
+  )
+})
+
+test('the packed invite-email claim matches this module', () => {
+  const source = readFileSync(new URL('./dist/canonical-business.js', import.meta.url), 'utf8')
+  const sandbox: {
+    ProjectPlannerCanonical?: {
+      resolveInviteEmailClaim: (input: unknown) => { action: string; reuseUserId?: string }
+      inviteEmailHasLiveClaim: (input: unknown) => boolean
+    }
+  } = {}
+  runInContext(source, createContext(sandbox))
+  const packed = sandbox.ProjectPlannerCanonical
+  assert.ok(packed)
+  const leftover = {
+    userId: '57CC31FC-1111-4222-8333-ABCDEF123456',
+    email: 'farnienel@hotmail.com',
+    firstName: 'Test',
+    surname: 'Operative',
+    passwordSet: false,
+  }
+  const input = {
+    inviteEmail: 'farnienel@hotmail.com',
+    existingUsers: [leftover],
+    emailPointer: { exists: false },
+  }
+  const plain = (value: unknown) => JSON.parse(JSON.stringify(value))
+  assert.deepEqual(plain(packed.resolveInviteEmailClaim(input)), resolveInviteEmailClaim(input))
+  assert.equal(packed.inviteEmailHasLiveClaim(input), false)
+  assert.equal(
+    packed.inviteEmailHasLiveClaim({
+      inviteEmail: 'farnienel@hotmail.com',
+      existingUsers: [{ ...leftover, passwordSet: true }],
+      emailPointer: { exists: false },
+    }),
+    true
+  )
 })

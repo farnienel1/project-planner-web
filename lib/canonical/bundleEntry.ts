@@ -229,6 +229,8 @@ export {
   userRosterSegment,
 } from './userRosterSegment'
 
+export { inviteEmailHasLiveClaim, resolveInviteEmailClaim } from './inviteEmailClaim'
+
 export {
   TIMESHEET_DOCUMENT_PREFIX,
   TIMESHEET_EXPORT_STORAGE_FOLDER,

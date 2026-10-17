@@ -416,3 +416,12 @@ export {
 } from './userRosterSegment'
 
 export type { RosterPerson, RosterSegment, RosterSegmentProfile } from './userRosterSegment'
+
+export { inviteEmailHasLiveClaim, resolveInviteEmailClaim } from './inviteEmailClaim'
+
+export type {
+  InviteEmailClaimDecision,
+  InviteEmailClaimInput,
+  InviteEmailClaimPointer,
+  InviteEmailClaimUser,
+} from './inviteEmailClaim'
