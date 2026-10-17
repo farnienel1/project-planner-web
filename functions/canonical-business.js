@@ -60,6 +60,7 @@ var ProjectPlannerCanonical = (() => {
     TIMESHEET_SUBMISSION_NOTICE_TITLE: () => TIMESHEET_SUBMISSION_NOTICE_TITLE,
     TIMESHEET_SUBMISSION_NOTICE_TYPE: () => TIMESHEET_SUBMISSION_NOTICE_TYPE,
     USER_DOCUMENT_FIELDS: () => USER_DOCUMENT_FIELDS,
+    USER_SELF_CREATE_AGE_FIELDS: () => USER_SELF_CREATE_AGE_FIELDS,
     WEB_SESSION_ORGANIZATION_STORAGE_PREFIX: () => WEB_SESSION_ORGANIZATION_STORAGE_PREFIX,
     accessProbeFromReadError: () => accessProbeFromReadError,
     accountKindFromFlags: () => accountKindFromFlags,
@@ -101,6 +102,8 @@ var ProjectPlannerCanonical = (() => {
     inboxNotificationVisibleToUser: () => inboxNotificationVisibleToUser,
     intervalsOverlap: () => intervalsOverlap,
     inviteEmailHasLiveClaim: () => inviteEmailHasLiveClaim,
+    inviteEmailOrgLookupConstraints: () => inviteEmailOrgLookupConstraints,
+    invitePlaceholderUserWriteFields: () => invitePlaceholderUserWriteFields,
     invoicingPeriod: () => invoicingPeriod,
     invoicingToFirestore: () => invoicingToFirestore,
     isAnonymisedDeletedProfile: () => isAnonymisedDeletedProfile,
@@ -231,6 +234,7 @@ var ProjectPlannerCanonical = (() => {
     uniqueOrganizationIds: () => uniqueOrganizationIds,
     unreadNotificationBadgeCount: () => unreadNotificationBadgeCount,
     unverifiedOperativeRows: () => unverifiedOperativeRows,
+    userCreateRequiresAgeConfirmation: () => userCreateRequiresAgeConfirmation,
     userNotificationPreferenceFieldPatch: () => userNotificationPreferenceFieldPatch,
     userNotificationPreferencesToFirestore: () => userNotificationPreferencesToFirestore,
     userRosterSegment: () => userRosterSegment,
@@ -2592,6 +2596,16 @@ var ProjectPlannerCanonical = (() => {
     "pushTokenUpdatedAt",
     "notificationPreferences"
   ];
+  var USER_SELF_CREATE_AGE_FIELDS = [
+    "ageConfirmed",
+    "ageConfirmedAt",
+    "ageConfirmedYears"
+  ];
+  function userCreateRequiresAgeConfirmation(input) {
+    const creator = typeof input.creatorUserId === "string" ? input.creatorUserId.trim() : "";
+    const target = typeof input.targetUserId === "string" ? input.targetUserId.trim() : "";
+    return creator.length > 0 && creator === target;
+  }
   function normalizeEmploymentType(raw) {
     if (raw === "paye") return "paye";
     if (raw === "self_employed" || raw === "selfEmployed") return "self_employed";
@@ -3631,6 +3645,20 @@ var ProjectPlannerCanonical = (() => {
   }
   function inviteEmailHasLiveClaim(input) {
     return resolveInviteEmailClaim(input).action === "block";
+  }
+  function inviteEmailOrgLookupConstraints(organizationId, email) {
+    return {
+      organizationId: typeof organizationId === "string" ? organizationId.trim() : "",
+      email: normalizeEmail2(email)
+    };
+  }
+  function invitePlaceholderUserWriteFields() {
+    return {
+      passwordSet: false,
+      isActive: true,
+      isSuperAdmin: false,
+      policyAccepted: false
+    };
   }
   return __toCommonJS(bundleEntry_exports);
 })();

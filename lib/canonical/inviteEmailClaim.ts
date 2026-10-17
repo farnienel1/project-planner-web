@@ -98,3 +98,33 @@ export function resolveInviteEmailClaim(input: InviteEmailClaimInput): InviteEma
 export function inviteEmailHasLiveClaim(input: InviteEmailClaimInput): boolean {
   return resolveInviteEmailClaim(input).action === 'block'
 }
+
+/**
+ * In-org Add User may only look up this email inside this organisation.
+ * A collection-wide `users` query or Auth enumeration is not this lookup —
+ * company isolation denies it, and it is what hung Save on a brand-new email.
+ */
+export function inviteEmailOrgLookupConstraints(
+  organizationId: string,
+  email: string
+): { organizationId: string; email: string } {
+  return {
+    organizationId: typeof organizationId === 'string' ? organizationId.trim() : '',
+    email: normalizeEmail(email),
+  }
+}
+
+/** Pending invite placeholder flags. Do not copy self-create age fields onto this map. */
+export function invitePlaceholderUserWriteFields(): {
+  passwordSet: false
+  isActive: true
+  isSuperAdmin: false
+  policyAccepted: false
+} {
+  return {
+    passwordSet: false,
+    isActive: true,
+    isSuperAdmin: false,
+    policyAccepted: false,
+  }
+}

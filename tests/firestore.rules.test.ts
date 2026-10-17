@@ -401,6 +401,63 @@ test('admin invite placeholder create is allowed without age confirmation', asyn
   )
 })
 
+test('admin cannot list users by another email across every organisation', async () => {
+  const db = authDb(ADMIN_A, 'admin-a@test.com')
+  await assertFails(
+    getDocs(query(collection(db, 'users'), where('email', '==', 'brand-new@test.com'), where('passwordSet', '==', true)))
+  )
+  await assertFails(getDocs(query(collection(db, 'users'), where('email', '==', 'op-b@test.com'))))
+})
+
+test('admin can list this organisation\'s users by email and organizationId', async () => {
+  const db = authDb(ADMIN_A, 'admin-a@test.com')
+  const listed = await assertSucceeds(
+    getDocs(
+      query(collection(db, 'users'), where('email', '==', 'op-a@test.com'), where('organizationId', '==', ORG_A))
+    )
+  )
+  assert.equal(listed.size, 1)
+})
+
+test('admin invite can reclaim userEmails and overwrite a leftover UUID without age fields', async () => {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore()
+    await setDoc(doc(db, 'users', 'leftover-uuid-1'), {
+      email: 'leftover-invite@test.com',
+      organizationId: ORG_A,
+      firstName: 'Old',
+      surname: 'Placeholder',
+      passwordSet: false,
+      isActive: true,
+    })
+    await setDoc(doc(db, 'organizations', ORG_A, 'userEmails', 'leftover-invite@test.com'), {
+      userId: 'leftover-uuid-1',
+    })
+  })
+  const db = authDb(ADMIN_A, 'admin-a@test.com')
+  await assertSucceeds(
+    setDoc(doc(db, 'users', 'leftover-uuid-1'), {
+      email: 'leftover-invite@test.com',
+      organizationId: ORG_A,
+      firstName: 'Reinvited',
+      surname: 'Person',
+      role: 'operative',
+      passwordSet: false,
+      isActive: true,
+    })
+  )
+  await assertSucceeds(
+    setDoc(doc(db, 'organizations', ORG_A, 'userEmails', 'leftover-invite@test.com'), {
+      userId: 'leftover-uuid-1',
+    })
+  )
+  await assertSucceeds(
+    setDoc(doc(db, 'organizations', ORG_A, 'userEmails', 'brand-new-invite@test.com'), {
+      userId: 'invite-placeholder-new',
+    })
+  )
+})
+
 test('invitee can mark their invitation used', async () => {
   const db = authDb('invitee-a', 'new-a@test.com')
   await assertSucceeds(updateDoc(doc(db, 'invitations', 'invite-a'), { isUsed: true }))

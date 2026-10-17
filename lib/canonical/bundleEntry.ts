@@ -100,12 +100,14 @@ export {
 
 export {
   USER_DOCUMENT_FIELDS,
+  USER_SELF_CREATE_AGE_FIELDS,
   accountKindFromFlags,
   applyEmploymentTypeChange,
   employmentEffectiveLabel,
   employmentTypeOnDay,
   isBillableSelfEmployedDay,
   normalizeEmploymentType,
+  userCreateRequiresAgeConfirmation,
 } from './userProfile'
 
 export {
@@ -229,7 +231,12 @@ export {
   userRosterSegment,
 } from './userRosterSegment'
 
-export { inviteEmailHasLiveClaim, resolveInviteEmailClaim } from './inviteEmailClaim'
+export {
+  inviteEmailHasLiveClaim,
+  inviteEmailOrgLookupConstraints,
+  invitePlaceholderUserWriteFields,
+  resolveInviteEmailClaim,
+} from './inviteEmailClaim'
 
 export {
   TIMESHEET_DOCUMENT_PREFIX,

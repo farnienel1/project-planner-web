@@ -2,6 +2,7 @@ import { Timestamp, deleteField } from 'firebase/firestore'
 import type { User, UserPermissions } from '@/types'
 import { UserRole } from '@/types'
 import { readStoredRates } from '@/lib/timesheets/payBasis'
+import { invitePlaceholderUserWriteFields } from '@/lib/canonical/inviteEmailClaim'
 
 export function permissionsToFirestoreMap(permissions: UserPermissions): Record<string, boolean> {
   return {
@@ -258,10 +259,7 @@ export function buildInvitedUserPayload(params: {
     role: role,
     firstName: params.firstName.trim(),
     surname: params.surname.trim(),
-    isActive: true,
-    passwordSet: false,
-    isSuperAdmin: false,
-    policyAccepted: false,
+    ...invitePlaceholderUserWriteFields(),
     employmentType: params.employmentType === 'paye' ? 'paye' : 'self_employed',
     createdAt: Timestamp.now(),
     updatedAt: Timestamp.now(),

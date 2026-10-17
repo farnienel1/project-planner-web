@@ -81,6 +81,7 @@ export {
   OPERATIVE_PERMISSION_TOGGLES,
   USER_DOCUMENT_FIELDS,
   USER_PERMISSION_FIELDS,
+  USER_SELF_CREATE_AGE_FIELDS,
   accountKindFromFlags,
   applyEmploymentTypeChange,
   employmentEffectiveLabel,
@@ -88,6 +89,7 @@ export {
   employmentTypeOnDay,
   isBillableSelfEmployedDay,
   normalizeEmploymentType,
+  userCreateRequiresAgeConfirmation,
 } from './userProfile'
 
 export type {
@@ -417,7 +419,12 @@ export {
 
 export type { RosterPerson, RosterSegment, RosterSegmentProfile } from './userRosterSegment'
 
-export { inviteEmailHasLiveClaim, resolveInviteEmailClaim } from './inviteEmailClaim'
+export {
+  inviteEmailHasLiveClaim,
+  inviteEmailOrgLookupConstraints,
+  invitePlaceholderUserWriteFields,
+  resolveInviteEmailClaim,
+} from './inviteEmailClaim'
 
 export type {
   InviteEmailClaimDecision,
