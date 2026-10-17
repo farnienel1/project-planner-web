@@ -173,6 +173,42 @@ export function rosterAnonymisePatch(existing: Record<string, unknown>): Record<
   return patch
 }
 
+/** Fields whose stored value is already the anonymised value. Rewriting them is a no-op. */
+export function changedAnonymisePatch(
+  existing: Record<string, unknown>,
+  patch: Record<string, unknown>
+): Record<string, unknown> {
+  const changed: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(patch)) {
+    if (!Object.is(existing[key], value)) changed[key] = value
+  }
+  return changed
+}
+
+/**
+ * A previous delete already cleared the login identity.
+ * Contact fields that are still present must already be empty; a leftover phone means cleanup is unfinished.
+ */
+export function profileAlreadyAnonymised(existing: Record<string, unknown>): boolean {
+  if (existing.email !== '') return false
+  if (existing.name !== DELETED_USER_DISPLAY_NAME && existing.displayName !== DELETED_USER_DISPLAY_NAME) {
+    return false
+  }
+  for (const key of ROSTER_CLEAR_FIELDS) {
+    if (key in existing && existing[key] !== '') return false
+  }
+  return true
+}
+
+/** Membership is already gone and the profile is already the deleted-user shape. Do not scan the org again. */
+export function retryFinishesWithoutOrgScan(input: {
+  profile: Record<string, unknown> | null
+  membershipCount: number
+}): boolean {
+  if (!input.profile || input.membershipCount > 0) return false
+  return profileAlreadyAnonymised(input.profile)
+}
+
 export function timesheetSnapshotShouldStay(data: Record<string, unknown>): boolean {
   const fields = parseTimesheetStatusFields(data)
   return (

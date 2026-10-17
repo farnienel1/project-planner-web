@@ -15,7 +15,10 @@ import {
   isAdminLike,
   ownerAccountDeleteBlock,
   parseAccountDeleteBody,
+  changedAnonymisePatch,
   pickCreatorSuccessor,
+  profileAlreadyAnonymised,
+  retryFinishesWithoutOrgScan,
   rosterAnonymisePatch,
   timesheetSnapshotShouldStay,
   unsignedTimesheetAnonymisePatch,
@@ -169,6 +172,38 @@ test('roster anonymise uses Deleted user and clears contact fields that already 
   assert.equal(patch.vatNumber, '')
   assert.equal(patch.utrNumber, '')
   assert.equal('dayRate' in patch, false)
+})
+
+test('an already anonymised profile with no memberships does not need another org scan', () => {
+  const scrubbed = {
+    email: '',
+    name: 'Deleted user',
+    displayName: 'Deleted user',
+    firstName: 'Deleted',
+    isActive: true,
+    passwordSet: true,
+    role: 'operative',
+    organizationId: '2C67391E-D1FE-4F9F-8055-7149ACDE1F96',
+  }
+  assert.equal(profileAlreadyAnonymised(scrubbed), true)
+  assert.equal(retryFinishesWithoutOrgScan({ profile: scrubbed, membershipCount: 0 }), true)
+  assert.equal(retryFinishesWithoutOrgScan({ profile: scrubbed, membershipCount: 1 }), false)
+  const withSurname = { ...scrubbed, surname: 'user' }
+  assert.deepEqual(changedAnonymisePatch(withSurname, rosterAnonymisePatch(withSurname)), {})
+
+  const stillNamed = {
+    email: 'farnienel@hotmail.com',
+    name: 'Test Operative',
+    displayName: 'Test Operative',
+    firstName: 'Test',
+    role: 'operative',
+  }
+  assert.equal(profileAlreadyAnonymised(stillNamed), false)
+  assert.equal(retryFinishesWithoutOrgScan({ profile: stillNamed, membershipCount: 0 }), false)
+  assert.equal(retryFinishesWithoutOrgScan({ profile: null, membershipCount: 0 }), false)
+
+  const phoneLeft = { ...scrubbed, mobileNumber: '07700' }
+  assert.equal(profileAlreadyAnonymised(phoneLeft), false)
 })
 
 test('unsigned timesheet drafts anonymise; signed and exported snapshots stay', () => {

@@ -12,10 +12,12 @@ import {
   DELETED_USER_DISPLAY_NAME,
   adminLikeFromUserFields,
   collectMembershipIds,
+  changedAnonymisePatch,
   commentAnonymisePatch,
   findSoleAdminBlock,
   ideaAuthorAnonymisePatch,
   pickCreatorSuccessor,
+  retryFinishesWithoutOrgScan,
   rosterAnonymisePatch,
   timesheetSnapshotShouldStay,
   unsignedTimesheetAnonymisePatch,
@@ -156,50 +158,64 @@ async function adminQueryEqual(
   value: string
 ): Promise<RestDocument[]> {
   const parent = parentPath ? `${session.root}/${parentPath}` : session.root
-  const rows: RestDocument[] = []
-  let guard = 0
-  while (guard < 20) {
-    guard += 1
-    const response = await fetch(`${parent}:runQuery`, {
-      method: 'POST',
-      headers: session.headers,
-      body: JSON.stringify({
-        structuredQuery: {
-          from: [{ collectionId }],
-          where: {
-            fieldFilter: {
-              field: { fieldPath: field },
-              op: 'EQUAL',
-              value: { stringValue: value },
-            },
+  const response = await fetch(`${parent}:runQuery`, {
+    method: 'POST',
+    headers: session.headers,
+    body: JSON.stringify({
+      structuredQuery: {
+        from: [{ collectionId }],
+        where: {
+          fieldFilter: {
+            field: { fieldPath: field },
+            op: 'EQUAL',
+            value: { stringValue: value },
           },
-          limit: 300,
         },
-      }),
+        limit: 300,
+      },
+    }),
+  })
+  if (!response.ok) throw new Error(await readError(response))
+  const hits = (await response.json().catch(() => [])) as { document?: { name?: string; fields?: Record<string, unknown> } }[]
+  const rows: RestDocument[] = []
+  for (const row of hits) {
+    const path = pathFromName(row.document?.name || '')
+    if (!path) continue
+    rows.push({
+      path,
+      fields: row.document?.fields || {},
+      plain: restFieldsToPlain(row.document?.fields),
     })
-    if (!response.ok) throw new Error(await readError(response))
-    const hits = (await response.json().catch(() => [])) as { document?: { name?: string; fields?: Record<string, unknown> } }[]
-    let added = 0
-    for (const row of hits) {
-      const path = pathFromName(row.document?.name || '')
-      if (!path) continue
-      rows.push({
-        path,
-        fields: row.document?.fields || {},
-        plain: restFieldsToPlain(row.document?.fields),
-      })
-      added += 1
-    }
-    if (added < 300) break
-    if (collectionId === 'productEvents') {
-      for (const row of rows.slice(-added)) {
-        await adminPatch(session, row.path, { userId: DELETED_PRODUCT_EVENT_USER_ID }, ['userId'])
-      }
-      continue
-    }
-    break
   }
   return rows
+}
+
+async function adminCommitUpdates(
+  session: AdminSession,
+  updates: { path: string; plain: Record<string, unknown>; fieldPaths: string[] }[]
+): Promise<void> {
+  const chunkSize = 400
+  for (let index = 0; index < updates.length; index += chunkSize) {
+    const writes = updates.slice(index, index + chunkSize).map((update) => {
+      const encoded = firestoreValue(update.plain) as { mapValue?: { fields?: Record<string, unknown> } }
+      return {
+        update: {
+          name: `projects/${session.projectId}/databases/(default)/documents/${update.path}`,
+          fields: encoded.mapValue?.fields || {},
+        },
+        updateMask: { fieldPaths: update.fieldPaths },
+      }
+    })
+    const response = await fetch(
+      `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(session.projectId)}/databases/(default)/documents:commit`,
+      {
+        method: 'POST',
+        headers: session.headers,
+        body: JSON.stringify({ writes }),
+      }
+    )
+    if (!response.ok) throw new Error(await readError(response))
+  }
 }
 
 async function deleteStorageObject(path: string): Promise<void> {
@@ -311,7 +327,7 @@ async function anonymiseRosterDocs(
     for (const row of candidates) {
       if (seen.has(row.path)) continue
       seen.add(row.path)
-      const patch = rosterAnonymisePatch(row.plain)
+      const patch = changedAnonymisePatch(row.plain, rosterAnonymisePatch(row.plain))
       if (Object.keys(patch).length === 0) continue
       await adminPatch(session, row.path, patch, Object.keys(patch))
     }
@@ -323,7 +339,7 @@ async function anonymiseUnsignedTimesheets(session: AdminSession, orgId: string,
   for (const row of rows) {
     if (!idFromName(row.path).startsWith('timesheet_')) continue
     if (timesheetSnapshotShouldStay(row.plain)) continue
-    const patch = unsignedTimesheetAnonymisePatch(row.plain)
+    const patch = changedAnonymisePatch(row.plain, unsignedTimesheetAnonymisePatch(row.plain))
     if (Object.keys(patch).length === 0) continue
     await adminPatch(session, row.path, patch, Object.keys(patch))
   }
@@ -392,23 +408,34 @@ async function anonymiseProductFeedback(session: AdminSession, uid: string): Pro
   await deleteQueryMatches(session, '', 'productFeedbackVotes', 'userId', uid)
   const comments = await adminQueryEqual(session, '', 'productFeedbackComments', 'authorUserId', uid)
   for (const row of comments) {
-    const patch = commentAnonymisePatch(row.plain)
+    const patch = changedAnonymisePatch(row.plain, commentAnonymisePatch(row.plain))
     if (Object.keys(patch).length === 0) continue
     await adminPatch(session, row.path, patch, Object.keys(patch))
   }
   const ideas = await adminQueryEqual(session, '', 'productFeedback', 'authorUserId', uid)
   for (const row of ideas) {
-    const patch = ideaAuthorAnonymisePatch(row.plain)
+    const patch = changedAnonymisePatch(row.plain, ideaAuthorAnonymisePatch(row.plain))
     if (Object.keys(patch).length === 0) continue
     await adminPatch(session, row.path, patch, Object.keys(patch))
   }
 }
 
 async function anonymiseProductEvents(session: AdminSession, uid: string): Promise<void> {
-  const rows = await adminQueryEqual(session, '', 'productEvents', 'userId', uid)
-  for (const row of rows) {
-    if (row.plain.userId === DELETED_PRODUCT_EVENT_USER_ID) continue
-    await adminPatch(session, row.path, { userId: DELETED_PRODUCT_EVENT_USER_ID }, ['userId'])
+  let guard = 0
+  while (guard < 20) {
+    guard += 1
+    const rows = await adminQueryEqual(session, '', 'productEvents', 'userId', uid)
+    const pending = rows.filter((row) => row.plain.userId !== DELETED_PRODUCT_EVENT_USER_ID)
+    if (pending.length === 0) return
+    await adminCommitUpdates(
+      session,
+      pending.map((row) => ({
+        path: row.path,
+        plain: { userId: DELETED_PRODUCT_EVENT_USER_ID },
+        fieldPaths: ['userId'],
+      }))
+    )
+    if (rows.length < 300) return
   }
 }
 
@@ -432,6 +459,74 @@ async function writeAccountDeleteAudit(
   if (!response.ok) console.warn('[account/delete] audit', await readError(response))
 }
 
+async function anonymiseRosterDocById(
+  session: AdminSession,
+  orgId: string,
+  collectionId: 'operatives' | 'managers',
+  uid: string
+): Promise<void> {
+  const row = await adminGet(session, `organizations/${orgId}/${collectionId}/${uid}`)
+  if (!row) return
+  const patch = changedAnonymisePatch(row.plain, rosterAnonymisePatch(row.plain))
+  if (Object.keys(patch).length === 0) return
+  await adminPatch(session, row.path, patch, Object.keys(patch))
+}
+
+/** Point deletes for one org. Does not list other people, bookings, qualifications, or events. */
+async function unlinkScrubbedOrg(session: AdminSession, uid: string, email: string, orgId: string): Promise<void> {
+  const org = await adminGet(session, `organizations/${orgId}`)
+  const tasks: Promise<unknown>[] = [
+    adminDelete(session, `organizations/${orgId}/operativeProfiles/${uid}`),
+    adminDelete(session, `organizations/${orgId}/dashboardLayouts/${uid}`),
+    adminDelete(session, `users/${uid}/orgMemberships/${orgId}`),
+    anonymiseRosterDocById(session, orgId, 'operatives', uid),
+    anonymiseRosterDocById(session, orgId, 'managers', uid),
+    deleteStorageObject(`organizations/${orgId}/userProfiles/${uid}/profile.jpg`),
+  ]
+  if (email) {
+    tasks.push(adminDelete(session, `organizations/${orgId}/userEmails/${encodeURIComponent(email)}`))
+  }
+  if (org && membersMap(org.plain)[uid] != null) {
+    tasks.push(adminPatch(session, `organizations/${orgId}`, {}, [`members.${uid}`]))
+  }
+  await Promise.all(tasks)
+}
+
+async function markAccountDeleteCompleted(session: AdminSession, uid: string): Promise<void> {
+  const jobPath = `adminJobs/${uid}`
+  const fields = {
+    type: ACCOUNT_DELETE_JOB_TYPE,
+    status: 'completed',
+    uid,
+    updatedAt: new Date(),
+    completedAt: new Date(),
+  }
+  const existing = await adminGet(session, jobPath)
+  if (existing) {
+    await adminPatch(session, jobPath, fields, ['type', 'status', 'uid', 'updatedAt', 'completedAt'])
+    return
+  }
+  await adminCreateNamed(session, 'adminJobs', uid, { ...fields, createdAt: new Date() })
+}
+
+async function finishAlreadyScrubbedAccount(
+  session: AdminSession,
+  input: { uid: string; email: string; ip?: string },
+  user: RestDocument
+): Promise<void> {
+  const organizationId = typeof user.plain.organizationId === 'string' ? user.plain.organizationId : ''
+  const orgIds = await discoverOrgIds(session, input.uid, organizationId)
+  const email = input.email.trim().toLowerCase()
+  for (const orgId of orgIds) {
+    await unlinkScrubbedOrg(session, input.uid, email, orgId)
+  }
+  await adminDelete(session, `users/${input.uid}`)
+  await markAccountDeleteCompleted(session, input.uid)
+  await writeAccountDeleteAudit(session, { uid: input.uid, orgIds, ip: input.ip })
+  await adminRevokeRefreshTokens(input.uid).catch(() => undefined)
+  await adminDeleteAuthUser(input.uid)
+}
+
 export async function evaluateAccountOrgs(
   uid: string,
   userOrganizationId?: string
@@ -439,6 +534,10 @@ export async function evaluateAccountOrgs(
   if (!firebaseAdminConfigured()) throw new Error('FIREBASE_SERVICE_ACCOUNT_JSON is not set on the server.')
   const session = await datastoreSession()
   const user = await adminGet(session, `users/${uid}`)
+  const memberships = await adminList(session, `users/${uid}/orgMemberships`)
+  if (user && retryFinishesWithoutOrgScan({ profile: user.plain, membershipCount: memberships.length })) {
+    return { snapshots: [] }
+  }
   const fromDoc =
     userOrganizationId ||
     (typeof user?.plain.organizationId === 'string' ? user.plain.organizationId : '')
@@ -463,26 +562,31 @@ export async function executeAccountDelete(input: {
   const session = await datastoreSession()
   const jobPath = `adminJobs/${input.uid}`
   const existing = await adminGet(session, jobPath)
-  const created = existing
-    ? 'exists'
-    : await adminCreateNamed(session, 'adminJobs', input.uid, {
-        type: ACCOUNT_DELETE_JOB_TYPE,
-        status: 'running',
-        uid: input.uid,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      })
-  const job = existing || (created === 'exists' ? await adminGet(session, jobPath) : null)
-  if (job?.plain.status === 'completed' && job.plain.type === ACCOUNT_DELETE_JOB_TYPE) {
+  if (existing?.plain.status === 'completed' && existing.plain.type === ACCOUNT_DELETE_JOB_TYPE) {
     await adminRevokeRefreshTokens(input.uid).catch(() => undefined)
     await adminDeleteAuthUser(input.uid)
     return 'already'
   }
 
   const user = await adminGet(session, `users/${input.uid}`)
+  const memberships = await adminList(session, `users/${input.uid}/orgMemberships`)
+  if (user && retryFinishesWithoutOrgScan({ profile: user.plain, membershipCount: memberships.length })) {
+    await finishAlreadyScrubbedAccount(session, input, user)
+    return 'already'
+  }
+
+  if (!existing) {
+    await adminCreateNamed(session, 'adminJobs', input.uid, {
+      type: ACCOUNT_DELETE_JOB_TYPE,
+      status: 'running',
+      uid: input.uid,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    })
+  }
   const email = (input.email || (typeof user?.plain.email === 'string' ? user.plain.email : '')).trim().toLowerCase()
   if (user) {
-    const patch = rosterAnonymisePatch(user.plain)
+    const patch = changedAnonymisePatch(user.plain, rosterAnonymisePatch(user.plain))
     if (Object.keys(patch).length > 0) await adminPatch(session, user.path, patch, Object.keys(patch))
   }
 
