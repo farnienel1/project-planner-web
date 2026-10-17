@@ -19,6 +19,8 @@ import {
   pickCreatorSuccessor,
   profileAlreadyAnonymised,
   retryFinishesWithoutOrgScan,
+  isUnusedInvitePlaceholder,
+  unusedInvitationShouldDelete,
   rosterAnonymisePatch,
   timesheetSnapshotShouldStay,
   unsignedTimesheetAnonymisePatch,
@@ -204,6 +206,62 @@ test('an already anonymised profile with no memberships does not need another or
 
   const phoneLeft = { ...scrubbed, mobileNumber: '07700' }
   assert.equal(profileAlreadyAnonymised(phoneLeft), false)
+})
+
+test('unused invite placeholders are the passwordSet false users/{uuid} still holding the live email', () => {
+  const email = 'farnienel@hotmail.com'
+  assert.equal(
+    isUnusedInvitePlaceholder({
+      userId: 'AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE',
+      deletingUid: 'QAlPe29vLLP4spK554UtpaBLW7N2',
+      email,
+      userEmail: 'Farnienel@Hotmail.com',
+      passwordSet: false,
+    }),
+    true
+  )
+  assert.equal(
+    isUnusedInvitePlaceholder({
+      userId: 'QAlPe29vLLP4spK554UtpaBLW7N2',
+      deletingUid: 'QAlPe29vLLP4spK554UtpaBLW7N2',
+      email,
+      userEmail: email,
+      passwordSet: false,
+    }),
+    false
+  )
+  assert.equal(
+    isUnusedInvitePlaceholder({
+      userId: 'AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE',
+      deletingUid: 'QAlPe29vLLP4spK554UtpaBLW7N2',
+      email,
+      userEmail: email,
+      passwordSet: true,
+    }),
+    false
+  )
+  assert.equal(
+    isUnusedInvitePlaceholder({
+      userId: 'QAlPe29vLLP4spK554UtpaBLW7N2',
+      deletingUid: 'other-auth-uid',
+      email,
+      userEmail: email,
+      passwordSet: false,
+    }),
+    false
+  )
+  assert.equal(
+    isUnusedInvitePlaceholder({
+      userId: 'AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE',
+      deletingUid: 'QAlPe29vLLP4spK554UtpaBLW7N2',
+      email,
+      userEmail: email,
+      passwordSet: undefined,
+    }),
+    false
+  )
+  assert.equal(unusedInvitationShouldDelete({ email, isUsed: false }), true)
+  assert.equal(unusedInvitationShouldDelete({ email, isUsed: true }), false)
 })
 
 test('unsigned timesheet drafts anonymise; signed and exported snapshots stay', () => {

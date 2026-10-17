@@ -18,6 +18,8 @@ import {
   ideaAuthorAnonymisePatch,
   pickCreatorSuccessor,
   retryFinishesWithoutOrgScan,
+  isUnusedInvitePlaceholder,
+  unusedInvitationShouldDelete,
   rosterAnonymisePatch,
   timesheetSnapshotShouldStay,
   unsignedTimesheetAnonymisePatch,
@@ -390,17 +392,80 @@ async function leaveOrganisation(
   await adminDelete(session, `users/${uid}/orgMemberships/${orgId}`)
 }
 
-async function deleteUnusedInvitations(session: AdminSession, uid: string, email: string): Promise<void> {
+async function deleteUnusedInvitations(
+  session: AdminSession,
+  uid: string,
+  email: string
+): Promise<string[]> {
   const rows = [
     ...(await adminQueryEqual(session, '', 'invitations', 'invitedBy', uid)),
     ...(email ? await adminQueryEqual(session, '', 'invitations', 'email', email) : []),
   ]
   const seen = new Set<string>()
+  const orgIds: string[] = []
   for (const row of rows) {
     if (seen.has(row.path)) continue
     seen.add(row.path)
-    if (row.plain.isUsed === true) continue
+    if (!unusedInvitationShouldDelete(row.plain)) continue
+    const inviteEmail = typeof row.plain.email === 'string' ? row.plain.email.trim().toLowerCase() : ''
+    const orgId = typeof row.plain.organizationId === 'string' ? row.plain.organizationId.trim() : ''
+    if (email && inviteEmail === email && orgId) orgIds.push(orgId)
     await adminDelete(session, row.path)
+  }
+  return orgIds
+}
+
+async function scrubInvitePlaceholder(
+  session: AdminSession,
+  placeholderId: string,
+  email: string,
+  orgId: string
+): Promise<void> {
+  if (orgId) {
+    await anonymiseRosterDocs(session, orgId, placeholderId, email)
+    await anonymiseUnsignedTimesheets(session, orgId, placeholderId)
+    await anonymiseVariations(session, orgId, placeholderId)
+    await deleteQueryMatches(session, `organizations/${orgId}`, 'notifications', 'userId', placeholderId)
+    await unlinkScrubbedOrg(session, placeholderId, email, orgId)
+  }
+  const user = await adminGet(session, `users/${placeholderId}`)
+  if (user) {
+    const patch = changedAnonymisePatch(user.plain, rosterAnonymisePatch(user.plain))
+    if (Object.keys(patch).length > 0) await adminPatch(session, user.path, patch, Object.keys(patch))
+  }
+  await adminDelete(session, `users/${placeholderId}`)
+}
+
+/** Unused invitations + passwordSet:false users/{uuid} that still hold this email. */
+async function deleteUnusedInvitesAndPlaceholders(
+  session: AdminSession,
+  uid: string,
+  email: string
+): Promise<void> {
+  const inviteOrgIds = await deleteUnusedInvitations(session, uid, email)
+  if (!email) return
+  const placeholders = await adminQueryEqual(session, '', 'users', 'email', email)
+  const seenOrgs = new Set<string>()
+  for (const row of placeholders) {
+    const placeholderId = idFromName(row.path)
+    if (
+      !isUnusedInvitePlaceholder({
+        userId: placeholderId,
+        deletingUid: uid,
+        email,
+        userEmail: row.plain.email,
+        passwordSet: row.plain.passwordSet,
+      })
+    ) {
+      continue
+    }
+    const orgId = typeof row.plain.organizationId === 'string' ? row.plain.organizationId.trim() : ''
+    if (orgId) seenOrgs.add(orgId)
+    await scrubInvitePlaceholder(session, placeholderId, email, orgId)
+  }
+  for (const orgId of inviteOrgIds) {
+    if (!orgId || seenOrgs.has(orgId)) continue
+    await adminDelete(session, `organizations/${orgId}/userEmails/${encodeURIComponent(email)}`)
   }
 }
 
@@ -520,6 +585,7 @@ async function finishAlreadyScrubbedAccount(
   for (const orgId of orgIds) {
     await unlinkScrubbedOrg(session, input.uid, email, orgId)
   }
+  await deleteUnusedInvitesAndPlaceholders(session, input.uid, email)
   await adminDelete(session, `users/${input.uid}`)
   await markAccountDeleteCompleted(session, input.uid)
   await writeAccountDeleteAudit(session, { uid: input.uid, orgIds, ip: input.ip })
@@ -563,6 +629,7 @@ export async function executeAccountDelete(input: {
   const jobPath = `adminJobs/${input.uid}`
   const existing = await adminGet(session, jobPath)
   if (existing?.plain.status === 'completed' && existing.plain.type === ACCOUNT_DELETE_JOB_TYPE) {
+    await deleteUnusedInvitesAndPlaceholders(session, input.uid, (input.email || '').trim().toLowerCase())
     await adminRevokeRefreshTokens(input.uid).catch(() => undefined)
     await adminDeleteAuthUser(input.uid)
     return 'already'
@@ -593,7 +660,7 @@ export async function executeAccountDelete(input: {
   for (const snapshot of input.snapshots) {
     await leaveOrganisation(session, input.uid, email, snapshot)
   }
-  await deleteUnusedInvitations(session, input.uid, email)
+  await deleteUnusedInvitesAndPlaceholders(session, input.uid, email)
   await anonymiseProductFeedback(session, input.uid)
   await deleteQueryMatches(session, '', 'productSessions', 'userId', input.uid)
   await anonymiseProductEvents(session, input.uid)
