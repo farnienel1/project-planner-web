@@ -100,6 +100,7 @@ var ProjectPlannerCanonical = (() => {
     hasAnnualLeaveAllowance: () => hasAnnualLeaveAllowance,
     inboxNotificationVisibleToUser: () => inboxNotificationVisibleToUser,
     intervalsOverlap: () => intervalsOverlap,
+    inviteEmailHasLiveClaim: () => inviteEmailHasLiveClaim,
     invoicingPeriod: () => invoicingPeriod,
     invoicingToFirestore: () => invoicingToFirestore,
     isAnonymisedDeletedProfile: () => isAnonymisedDeletedProfile,
@@ -182,6 +183,7 @@ var ProjectPlannerCanonical = (() => {
     receivesJobNotification: () => receivesJobNotification,
     rememberedOrganizationSurvivesSignOut: () => rememberedOrganizationSurvivesSignOut,
     removedQualificationCertificateIds: () => removedQualificationCertificateIds,
+    resolveInviteEmailClaim: () => resolveInviteEmailClaim,
     resolveMaterialCutOffClock: () => resolveMaterialCutOffClock,
     resolveTimesheetExportedAtMs: () => resolveTimesheetExportedAtMs,
     resolveTimesheetPeriod: () => resolveTimesheetPeriod,
@@ -3590,6 +3592,45 @@ var ProjectPlannerCanonical = (() => {
       return now - failedAt < PAYMENT_GRACE_MS;
     }
     return false;
+  }
+
+  // lib/canonical/inviteEmailClaim.ts
+  function normalizeEmail2(value) {
+    return typeof value === "string" ? value.trim().toLowerCase() : "";
+  }
+  function trimmedId(value) {
+    return typeof value === "string" ? value.trim() : "";
+  }
+  function pointedOwnsInviteEmail(pointed, inviteEmail) {
+    if (!pointed) return false;
+    if (isAnonymisedDeletedProfile(pointed)) return false;
+    return normalizeEmail2(pointed.email) === inviteEmail;
+  }
+  function resolveInviteEmailClaim(input) {
+    const inviteEmail = normalizeEmail2(input.inviteEmail);
+    if (!inviteEmail) return { action: "allow" };
+    const pointer = input.emailPointer;
+    const pointedUser = pointer?.pointedUser ?? null;
+    const livePointer = pointer != null && pointer.exists === true && pointedOwnsInviteEmail(pointedUser, inviteEmail);
+    if (livePointer) return { action: "block" };
+    const claimedEmails = pointer == null ? null : [];
+    let reuseUserId = "";
+    for (const user of input.existingUsers ?? []) {
+      if (isAnonymisedDeletedProfile(user)) continue;
+      if (normalizeEmail2(user.email) !== inviteEmail) continue;
+      if (user.passwordSet === true) return { action: "block" };
+      if (!isIdentifiablePendingLeftover(user, claimedEmails)) return { action: "block" };
+      const id = trimmedId(user.userId);
+      if (id && !reuseUserId) reuseUserId = id;
+    }
+    if (!reuseUserId && pointer?.exists === true && !pointedUser) {
+      const pointedId = trimmedId(pointer.pointedUserId);
+      if (pointedId) reuseUserId = pointedId;
+    }
+    return reuseUserId ? { action: "allow", reuseUserId } : { action: "allow" };
+  }
+  function inviteEmailHasLiveClaim(input) {
+    return resolveInviteEmailClaim(input).action === "block";
   }
   return __toCommonJS(bundleEntry_exports);
 })();

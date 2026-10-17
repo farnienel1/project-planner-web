@@ -7,7 +7,8 @@ import {
   addExistingUserToOrganization,
   findExistingAuthUserByEmail,
 } from '@/lib/orgMembership/membershipService'
-import { orgEmailPointerUserId, shouldReclaimOrgEmailPointer } from '@/lib/orgSetup/staleOrgEmailPointer'
+import { resolveInviteEmailClaim, type InviteEmailClaimUser } from '@/lib/canonical/inviteEmailClaim'
+import { orgEmailPointerUserId } from '@/lib/orgSetup/staleOrgEmailPointer'
 import type { UserPermissions } from '@/types'
 
 export type InviteUserCoreInput = {
@@ -52,6 +53,26 @@ function roleFromPermissions(permissions: UserPermissions): string {
   return 'operative'
 }
 
+function inviteClaimUserFromDoc(
+  userId: string,
+  data: Record<string, unknown> | undefined
+): InviteEmailClaimUser {
+  return {
+    userId,
+    email: typeof data?.email === 'string' ? data.email : '',
+    firstName: typeof data?.firstName === 'string' ? data.firstName : '',
+    surname: typeof data?.surname === 'string' ? data.surname : '',
+    lastName: typeof data?.lastName === 'string' ? data.lastName : '',
+    name: typeof data?.name === 'string' ? data.name : '',
+    displayName: typeof data?.displayName === 'string' ? data.displayName : '',
+    passwordSet: data?.passwordSet === true ? true : data?.passwordSet === false ? false : undefined,
+    isActive: data?.isActive === true ? true : data?.isActive === false ? false : undefined,
+    mobileNumber: typeof data?.mobileNumber === 'string' ? data.mobileNumber : '',
+    mobile: typeof data?.mobile === 'string' ? data.mobile : '',
+    phone: typeof data?.phone === 'string' ? data.phone : '',
+  }
+}
+
 export async function inviteUserCore(input: InviteUserCoreInput): Promise<InviteUserCoreResult> {
   const db = getFirebaseDb()
   const emailLower = input.email.toLowerCase().trim()
@@ -63,7 +84,34 @@ export async function inviteUserCore(input: InviteUserCoreInput): Promise<Invite
       where('organizationId', '==', input.organizationId)
     )
   )
-  if (!existingInOrg.empty) {
+  const orgEmailSnap = await getDoc(
+    doc(db, 'organizations', input.organizationId, 'userEmails', emailLower)
+  )
+  const pointedId = orgEmailSnap.exists()
+    ? orgEmailPointerUserId(orgEmailSnap.data() as Record<string, unknown>)
+    : ''
+  const pointedUserSnap = pointedId ? await getDoc(doc(db, 'users', pointedId)) : null
+  const existingUsers = existingInOrg.docs.map((row) =>
+    inviteClaimUserFromDoc(row.id, row.data() as Record<string, unknown>)
+  )
+  if (pointedUserSnap?.exists() && !existingUsers.some((user) => user.userId === pointedId)) {
+    existingUsers.push(
+      inviteClaimUserFromDoc(pointedId, pointedUserSnap.data() as Record<string, unknown>)
+    )
+  }
+
+  const decision = resolveInviteEmailClaim({
+    inviteEmail: emailLower,
+    existingUsers,
+    emailPointer: {
+      exists: orgEmailSnap.exists(),
+      pointedUserId: pointedId || undefined,
+      pointedUser: pointedUserSnap?.exists()
+        ? inviteClaimUserFromDoc(pointedId, pointedUserSnap.data() as Record<string, unknown>)
+        : null,
+    },
+  })
+  if (decision.action === 'block') {
     throw new Error(`A user with email ${emailLower} already exists in this organisation.`)
   }
 
@@ -85,24 +133,7 @@ export async function inviteUserCore(input: InviteUserCoreInput): Promise<Invite
     }
   }
 
-  const orgEmailSnap = await getDoc(
-    doc(db, 'organizations', input.organizationId, 'userEmails', emailLower)
-  )
-  let userId = newUuid()
-  if (orgEmailSnap.exists()) {
-    const pointedId = orgEmailPointerUserId(orgEmailSnap.data() as Record<string, unknown>)
-    const pointedUser = pointedId ? await getDoc(doc(db, 'users', pointedId)) : null
-    if (
-      !shouldReclaimOrgEmailPointer({
-        pointedUserExists: Boolean(pointedUser?.exists()),
-        pointedEmail: pointedUser?.exists() ? String(pointedUser.data()?.email || '') : '',
-        inviteEmail: emailLower,
-      })
-    ) {
-      throw new Error(`A user with email ${emailLower} already exists in this organisation.`)
-    }
-    if (pointedId) userId = pointedId
-  }
+  const userId = decision.reuseUserId || newUuid()
 
   const invitationId = newUuid()
 
