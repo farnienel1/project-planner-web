@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { fetchSignInMethodsForEmail } from 'firebase/auth'
 import { doc, getDoc } from 'firebase/firestore'
 import { useAuthStore } from '@/lib/stores/authStore'
 import type { SubscriptionPlanKey } from '@/lib/stripe/plans'
@@ -29,9 +28,11 @@ import { reloadOnceOnStaleChunk } from '@/lib/client/chunkLoadError'
 import { withTimeout } from '@/lib/client/withTimeout'
 import { formatSetupError } from '@/lib/orgSetup/formatSetupError'
 import { createPendingOrganization } from '@/lib/orgSetup/createOrganization'
-import { isEmailInUseError } from '@/lib/orgSetup/authSetupErrors'
 import { existingLoginSignInHref, isExistingProjectPlannerLoginError } from '@/lib/orgSetup/existingLogin'
 import { ExistingLoginModal } from '@/components/setup/ExistingLoginModal'
+import { LiveOrgSetupModal } from '@/components/setup/LiveOrgSetupModal'
+import { isLiveOrgAlreadyMemberError } from '@/lib/orgSetup/liveOrgLookup'
+import { requestLiveOrgLookup } from '@/lib/orgSetup/liveOrgLookupClient'
 import { activateOrganizationSubscription } from '@/lib/orgSetup/activateSubscription'
 import { switchActiveOrganization } from '@/lib/orgMembership/membershipService'
 import { requestFounderConfirmEmail } from '@/lib/orgSetup/requestFounderConfirmEmail'
@@ -146,6 +147,8 @@ export function OrgSetupWizard() {
   const [existingLogin, setExistingLogin] = useState<{ email: string; signedIn: boolean; isAdmin: boolean } | null>(
     null
   )
+  const [liveOrgEmail, setLiveOrgEmail] = useState<string | null>(null)
+  const [checkingEmail, setCheckingEmail] = useState(false)
   const [paymentCancelled, setPaymentCancelled] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const [farthestIndex, setFarthestIndex] = useState(0)
@@ -357,17 +360,18 @@ export function OrgSetupWizard() {
     setError('')
   }
 
-  function isExistingLoginFailure(err: unknown): boolean {
-    return isExistingProjectPlannerLoginError(err) || isEmailInUseError(err)
-  }
-
-  async function emailAlreadyHasLogin(value: string): Promise<boolean> {
-    try {
-      const methods = await fetchSignInMethodsForEmail(getFirebaseAuth(), value.trim().toLowerCase())
-      return methods.length > 0
-    } catch {
-      return false
+  async function checkSignedOutSetupEmail(): Promise<'ok' | 'stopped'> {
+    const lookup = await requestLiveOrgLookup(email, website)
+    if (!lookup.ok) {
+      setError(lookup.error)
+      return 'stopped'
     }
+    if (lookup.result.hasLiveOrg) {
+      setLiveOrgEmail(email.trim())
+      setError('')
+      return 'stopped'
+    }
+    return 'ok'
   }
 
   async function assertSignupGate(): Promise<string | null> {
@@ -424,10 +428,11 @@ export function OrgSetupWizard() {
           setError(gateError)
           return
         }
-        const taken = await emailAlreadyHasLogin(email)
-        if (taken) {
-          setExistingLogin({ email: email.trim(), signedIn: false, isAdmin: false })
-          return
+        setCheckingEmail(true)
+        try {
+          if ((await checkSignedOutSetupEmail()) === 'stopped') return
+        } finally {
+          setCheckingEmail(false)
         }
       }
       goToStep('organization')
@@ -482,6 +487,15 @@ export function OrgSetupWizard() {
         setError(gateError)
         goToStep('account')
         return
+      }
+      setCheckingEmail(true)
+      try {
+        if ((await checkSignedOutSetupEmail()) === 'stopped') {
+          goToStep('account')
+          return
+        }
+      } finally {
+        setCheckingEmail(false)
       }
     }
     const orgError = validateOrganizationStep()
@@ -603,7 +617,12 @@ export function OrgSetupWizard() {
       router.push('/setup/check-email')
     } catch (err) {
       if (reloadOnceOnStaleChunk(err)) return
-      if (isExistingLoginFailure(err)) {
+      if (isLiveOrgAlreadyMemberError(err)) {
+        setLiveOrgEmail(email.trim())
+        setError('')
+        return
+      }
+      if (isExistingProjectPlannerLoginError(err)) {
         showExistingLogin(err, email)
         return
       }
@@ -671,7 +690,14 @@ export function OrgSetupWizard() {
       )
     } catch (err) {
       if (reloadOnceOnStaleChunk(err)) return
-      if (isExistingLoginFailure(err)) {
+      if (isLiveOrgAlreadyMemberError(err)) {
+        setLiveOrgEmail(email.trim())
+        setError('')
+        setSubmitting(false)
+        setSubmittingStatus('')
+        return
+      }
+      if (isExistingProjectPlannerLoginError(err)) {
         showExistingLogin(err, email)
         setSubmitting(false)
         setSubmittingStatus('')
@@ -1182,14 +1208,19 @@ export function OrgSetupWizard() {
                     </Link>
                   )}
                   {step !== 'account' && step !== 'review' ? (
-                    <button type="button" className="btn ghost" onClick={skipToReview} disabled={submitting}>
+                    <button type="button" className="btn ghost" onClick={skipToReview} disabled={submitting || checkingEmail}>
                       Skip extra setup and activate
                     </button>
                   ) : null}
                   <span className="grow" />
                   {step !== 'review' ? (
-                    <button type="button" className="btn primary" onClick={() => void goNext()}>
-                      Continue
+                    <button
+                      type="button"
+                      className="btn primary"
+                      onClick={() => void goNext()}
+                      disabled={submitting || checkingEmail}
+                    >
+                      {checkingEmail ? 'Checking…' : 'Continue'}
                     </button>
                   ) : (
                     <>
@@ -1237,6 +1268,9 @@ export function OrgSetupWizard() {
           </div>
         </div>
       </section>
+      {liveOrgEmail ? (
+        <LiveOrgSetupModal email={liveOrgEmail} onClose={() => setLiveOrgEmail(null)} />
+      ) : null}
       {existingLogin ? (
         <ExistingLoginModal
           email={existingLogin.email}

@@ -43,6 +43,11 @@ export const supportContactBodySchema = z.object({
   website,
 })
 
+export const liveOrgLookupBodySchema = z.object({
+  email,
+  website,
+})
+
 export const publicGateBodySchema = z.discriminatedUnion('form', [
   z.object({ form: z.literal('login'), email, website }),
   z.object({
@@ -66,6 +71,7 @@ export const publicGateBodySchema = z.discriminatedUnion('form', [
 export type InterestRegisterBody = z.infer<typeof interestRegisterBodySchema>
 export type InterestUnsubscribeBody = z.infer<typeof interestUnsubscribeBodySchema>
 export type SupportContactBody = z.infer<typeof supportContactBodySchema>
+export type LiveOrgLookupBody = z.infer<typeof liveOrgLookupBodySchema>
 export type PublicGateBody = z.infer<typeof publicGateBodySchema>
 
 export function honeypotFilled(value: unknown): boolean {
