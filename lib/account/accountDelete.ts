@@ -1,4 +1,5 @@
 import { parseTimesheetStatusFields } from '@/lib/canonical'
+import { isInvitePlaceholderId } from '@/lib/owner/collapseDirectoryUsers'
 import { isPlatformOwnerEmail } from '@/lib/platform/owner'
 
 export const ACCOUNT_DELETE_CONFIRMATION = 'DELETE'
@@ -207,6 +208,34 @@ export function retryFinishesWithoutOrgScan(input: {
 }): boolean {
   if (!input.profile || input.membershipCount > 0) return false
   return profileAlreadyAnonymised(input.profile)
+}
+
+/** Unused invite rows. A used invitation is left as an audit record. */
+export function unusedInvitationShouldDelete(plain: Record<string, unknown>): boolean {
+  return plain.isUsed !== true
+}
+
+/**
+ * Invite placeholder: another users/{uuid} still holding this email because the
+ * invite was never accepted (passwordSet false). Missing passwordSet is a live
+ * account. Not the Auth uid being deleted.
+ */
+export function isUnusedInvitePlaceholder(input: {
+  userId: string
+  deletingUid: string
+  email: string
+  userEmail: unknown
+  passwordSet: unknown
+}): boolean {
+  const userId = String(input.userId || '').trim()
+  const deletingUid = String(input.deletingUid || '').trim()
+  if (!userId || !deletingUid || userId === deletingUid) return false
+  if (!isInvitePlaceholderId(userId)) return false
+  if (input.passwordSet !== false) return false
+  const target = input.email.trim().toLowerCase()
+  if (!target) return false
+  const userEmail = typeof input.userEmail === 'string' ? input.userEmail.trim().toLowerCase() : ''
+  return userEmail === target
 }
 
 export function timesheetSnapshotShouldStay(data: Record<string, unknown>): boolean {

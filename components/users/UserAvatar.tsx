@@ -7,20 +7,37 @@
 
 import { useEffect, useState } from 'react'
 import { getDownloadURL, ref } from 'firebase/storage'
-import { storage } from '@/lib/firebase/config'
+import { withTimeout } from '@/lib/client/withTimeout'
+import { auth, storage } from '@/lib/firebase/config'
 import type { User } from '@/types'
+
+const PHOTO_URL_TIMEOUT_MS = 8_000
+const PHOTO_LOAD_MS = 15_000
 
 function initialsOf(user: Pick<User, 'firstName' | 'surname' | 'email'>): string {
   const initials = `${user.firstName?.[0] ?? ''}${user.surname?.[0] ?? ''}`.toUpperCase()
   return initials.trim() || user.email.slice(0, 2).toUpperCase()
 }
 
-function storagePathFromPhotoUrl(url: string): string | null {
+export function storagePathFromPhotoUrl(url: string): string | null {
   if (url.startsWith('gs://')) return url.replace(/^gs:\/\/[^/]+\//, '')
   if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:') || url.startsWith('blob:')) {
     return null
   }
   return url.replace(/^\/+/, '')
+}
+
+async function downloadPhotoUrl(path: string): Promise<string | null> {
+  if (!storage) return null
+  try {
+    const user = auth?.currentUser
+    if (user) {
+      await withTimeout(user.getIdToken(), PHOTO_URL_TIMEOUT_MS, 'photo-token').catch(() => undefined)
+    }
+    return await withTimeout(getDownloadURL(ref(storage, path)), PHOTO_URL_TIMEOUT_MS, 'photo-url')
+  } catch {
+    return null
+  }
 }
 
 function useResolvedPhotoUrl(url?: string) {
@@ -40,15 +57,10 @@ function useResolvedPhotoUrl(url?: string) {
       setResolved(value)
       return
     }
-    if (!storage) return
     let cancelled = false
-    getDownloadURL(ref(storage, path))
-      .then((next) => {
-        if (!cancelled) setResolved(next)
-      })
-      .catch(() => {
-        if (!cancelled) setResolved(null)
-      })
+    void downloadPhotoUrl(path).then((next) => {
+      if (!cancelled) setResolved(next)
+    })
     return () => {
       cancelled = true
     }
@@ -69,8 +81,20 @@ export function UserAvatar({
   gradient?: string
 }) {
   const [failed, setFailed] = useState(false)
+  const [loaded, setLoaded] = useState(false)
   const resolved = useResolvedPhotoUrl(user.profilePhotoURL)
   const showPhoto = Boolean(resolved) && !failed
+
+  useEffect(() => {
+    setFailed(false)
+    setLoaded(false)
+  }, [user.profilePhotoURL, resolved])
+
+  useEffect(() => {
+    if (!resolved || loaded) return
+    const timer = window.setTimeout(() => setFailed(true), PHOTO_LOAD_MS)
+    return () => window.clearTimeout(timer)
+  }, [resolved, loaded])
 
   return (
     <span
@@ -83,6 +107,11 @@ export function UserAvatar({
           src={resolved || ''}
           alt=""
           className="h-full w-full object-cover"
+          decoding="async"
+          onLoad={() => {
+            setLoaded(true)
+            setFailed(false)
+          }}
           onError={() => setFailed(true)}
         />
       ) : (
