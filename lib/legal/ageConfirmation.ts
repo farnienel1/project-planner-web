@@ -25,15 +25,23 @@ export function validateAccountStep(input: {
   email: string
   password: string
   confirmPassword: string
+  /** True additional-org: users/{uid} already exists. Skip password and the age tick. */
   creatingAdditionalOrg: boolean
   ageConfirmed: boolean
+  /**
+   * Leftover Auth with no users/{uid}. Skip password (Auth already exists) but still
+   * require the age tick — self-create rules need ageConfirmed / At / Years.
+   */
+  signedInWithoutProfile?: boolean
 }): string | null {
   if (!input.firstName.trim() || !input.surname.trim()) return 'Please enter your first and last name.'
   if (!input.email.trim()) return 'Please enter your email address.'
   if (input.email.trim() && !/^\S+@\S+\.\S+$/.test(input.email.trim())) return 'Enter a valid email address.'
   if (input.creatingAdditionalOrg) return null
-  if (input.password.length < 8) return 'Password must be at least 8 characters.'
-  if (input.password !== input.confirmPassword) return 'Passwords do not match.'
+  if (!input.signedInWithoutProfile) {
+    if (input.password.length < 8) return 'Password must be at least 8 characters.'
+    if (input.password !== input.confirmPassword) return 'Passwords do not match.'
+  }
   if (!input.ageConfirmed) return AGE_CONFIRMATION_REQUIRED_MESSAGE
   return null
 }

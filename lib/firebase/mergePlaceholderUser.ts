@@ -7,18 +7,21 @@
 
 import { collection, deleteDoc, doc, getDocs, limit, query, setDoc, Timestamp, where } from 'firebase/firestore'
 import { getFirebaseDb } from '@/lib/firebase/ensureFirebase'
+import { ageConfirmationWriteFields } from '@/lib/legal/ageConfirmation'
 
 export function placeholderMergeFields(
   placeholderData: Record<string, unknown>,
   authEmail: string,
   organizationId: string
 ): Record<string, unknown> {
+  const now = Timestamp.now()
   return {
     ...placeholderData,
     email: authEmail.toLowerCase().trim(),
     organizationId,
-    updatedAt: Timestamp.now(),
+    updatedAt: now,
     passwordSet: true,
+    ...ageConfirmationWriteFields(now),
   }
 }
 
@@ -40,12 +43,13 @@ export async function mergePlaceholderUserDocOntoAuthUidIfNeeded(
       const orgId = typeof data.organizationId === 'string' ? data.organizationId.trim() : ''
       if (!orgId) continue
       const merged = placeholderMergeFields(data, email, orgId)
-      await setDoc(doc(db, 'users', authUid), merged, { merge: true })
+      // Self-create is allowed only when this email pointer is missing or already this uid.
       await setDoc(
         doc(db, 'organizations', orgId, 'userEmails', email.toLowerCase()),
         { userId: authUid },
         { merge: true }
       )
+      await setDoc(doc(db, 'users', authUid), merged, { merge: true })
       try {
         await deleteDoc(placeholder.ref)
       } catch (error) {

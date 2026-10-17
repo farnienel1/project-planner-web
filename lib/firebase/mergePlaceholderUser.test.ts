@@ -18,4 +18,7 @@ test('placeholder merge copies fields, lowercases email and sets passwordSet', (
   assert.equal(merged.passwordSet, true)
   assert.equal(merged.organizationId, 'ORG')
   assert.equal(merged.firstName, 'Pat')
+  assert.equal(merged.ageConfirmed, true)
+  assert.equal(merged.ageConfirmedYears, 16)
+  assert.ok(merged.ageConfirmedAt)
 })

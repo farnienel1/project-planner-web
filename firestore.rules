@@ -630,6 +630,9 @@ service cloud.firestore {
       
       allow list: if request.auth != null;
       
+      // Signed-in bootstrap (first setup or leftover Auth with no users/{uid}): any
+      // authenticated user may create an organisation if they list themselves as admin.
+      // Do not require an existing profile. Path 3 on users/{uid} then writes that profile.
       allow create: if request.auth != null && 
                      request.resource.data.members[request.auth.uid] == 'admin';
       

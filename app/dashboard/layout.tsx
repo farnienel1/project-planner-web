@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { AppShell } from '@/components/shell/AppShell'
@@ -13,6 +14,7 @@ import { CheckEmailScreen } from '@/components/auth/CheckEmailScreen'
 import { hasCustomerOrganisation, isPlatformOwnerEmail } from '@/lib/platform/owner'
 import { DeactivatedAccountScreen } from '@/components/auth/DeactivatedAccountScreen'
 import { isMfaGateOpen, mfaVerifyHref } from '@/lib/auth/mfa/mfaClient'
+import { MISSING_USER_PROFILE_SETUP_HREF } from '@/lib/auth/missingProfile'
 
 export default function DashboardLayout({
   children,
@@ -57,16 +59,22 @@ export default function DashboardLayout({
         <div className="w-full max-w-md text-center">
           <p className="text-lg font-semibold text-slate-900">Signing in did not finish loading</p>
           <p className="mt-2 text-sm text-slate-600">{error}</p>
-          <button
-            type="button"
-            className="btn primary mt-6"
-            onClick={() => {
-              profileRetryStarted.current = false
-              void ensureSignedInProfile()
-            }}
-          >
-            Try again
-          </button>
+          <div className="mt-6 flex flex-col items-center gap-3">
+            <button
+              type="button"
+              className="btn primary"
+              onClick={() => {
+                profileRetryStarted.current = false
+                void ensureSignedInProfile()
+              }}
+            >
+              Try again
+            </button>
+            <Link href={MISSING_USER_PROFILE_SETUP_HREF} className="btn">
+              Set up an organisation
+            </Link>
+            <p className="text-xs text-slate-500">If you were invited back, open the link in that email instead.</p>
+          </div>
         </div>
       </div>
     )

@@ -128,7 +128,9 @@ export function OrgSetupWizard() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const { user: signedInUser, firebaseUser } = useAuthStore()
-  const creatingAdditionalOrg = Boolean(firebaseUser)
+  const hasAuthSession = Boolean(firebaseUser)
+  const creatingAdditionalOrg = Boolean(signedInUser)
+  const signedInWithoutProfile = hasAuthSession && !creatingAdditionalOrg
   const resumeOrgId = (searchParams.get('resumeOrgId') || '').trim()
   const wizardTopRef = useRef<HTMLDivElement>(null)
   const activationRunRef = useRef(0)
@@ -391,6 +393,7 @@ export function OrgSetupWizard() {
       confirmPassword,
       creatingAdditionalOrg,
       ageConfirmed,
+      signedInWithoutProfile,
     })
   }
 
@@ -415,7 +418,7 @@ export function OrgSetupWizard() {
         setError(validationError)
         return
       }
-      if (!creatingAdditionalOrg) {
+      if (!hasAuthSession) {
         const gateError = await assertSignupGate()
         if (gateError) {
           setError(gateError)
@@ -473,7 +476,7 @@ export function OrgSetupWizard() {
       goToStep('account')
       return
     }
-    if (!creatingAdditionalOrg) {
+    if (!hasAuthSession) {
       const gateError = await assertSignupGate()
       if (gateError) {
         setError(gateError)
@@ -493,7 +496,7 @@ export function OrgSetupWizard() {
   async function createOrganizationRecord(options?: { skipOptionalAssets?: boolean }) {
     const auth = getFirebaseAuth()
     const signedIn = Boolean(auth.currentUser)
-    if (!signedIn && !creatingAdditionalOrg) {
+    if (!signedIn && !hasAuthSession) {
       const gateError = await assertSignupGate()
       if (gateError) throw new Error(gateError)
     }
@@ -882,7 +885,7 @@ export function OrgSetupWizard() {
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
                         autoComplete="email"
-                        disabled={creatingAdditionalOrg}
+                        disabled={hasAuthSession}
                         placeholder="you@company.co.uk"
                       />
                     </div>
@@ -893,7 +896,7 @@ export function OrgSetupWizard() {
                       <input className="in" value={mobileNumber} onChange={(e) => setMobileNumber(e.target.value)} autoComplete="tel" placeholder="07…" />
                     </div>
                     <HoneypotField id="signup-website" value={website} onChange={setWebsite} />
-                    {!creatingAdditionalOrg ? (
+                    {!hasAuthSession ? (
                       <>
                         <div className="f">
                           <label>
@@ -928,7 +931,7 @@ export function OrgSetupWizard() {
                       </>
                     ) : null}
                   </div>
-                  {!creatingAdditionalOrg ? (
+                  {!hasAuthSession ? (
                     <div
                       className="meter"
                       data-hue={password.length >= 12 ? 'green' : password.length >= 8 ? 'warn' : 'red'}

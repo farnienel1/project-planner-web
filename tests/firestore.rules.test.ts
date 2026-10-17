@@ -214,6 +214,14 @@ test('an operative can still update their own name', async () => {
   await assertSucceeds(updateDoc(doc(db, 'users', OP_A), { firstName: 'Oliver' }))
 })
 
+test('existing users without age confirmation can read and update their own profile', async () => {
+  const db = authDb(ADMIN_A, 'admin-a@test.com')
+  const snap = await assertSucceeds(getDoc(doc(db, 'users', ADMIN_A)))
+  assert.equal(snap.exists(), true)
+  assert.equal(snap.data()?.ageConfirmed, undefined)
+  await assertSucceeds(updateDoc(doc(db, 'users', ADMIN_A), { firstName: 'Ada-existing' }))
+})
+
 test('invite get-by-id stays public', async () => {
   const db = env.unauthenticatedContext().firestore()
   const snap = await assertSucceeds(getDoc(doc(db, 'invitations', 'invite-b')))
@@ -249,6 +257,39 @@ test('admin A can list and create invitations for company A', async () => {
       organizationId: ORG_A,
       email: 'another-a@test.com',
       isUsed: false,
+    })
+  )
+})
+
+test('leftover Auth can create an organisation then self-create only with age confirmation', async () => {
+  const uid = 'leftover-auth'
+  const email = 'leftover@test.com'
+  const orgId = 'org-leftover'
+  const db = authDb(uid, email)
+  await assertSucceeds(
+    setDoc(doc(db, 'organizations', orgId), {
+      name: 'Leftover Co',
+      members: { [uid]: 'admin' },
+      creatorUserId: uid,
+    })
+  )
+  await assertFails(
+    setDoc(doc(db, 'users', uid), {
+      email,
+      organizationId: orgId,
+      firstName: 'Left',
+      role: 'admin',
+    })
+  )
+  await assertSucceeds(
+    setDoc(doc(db, 'users', uid), {
+      email,
+      organizationId: orgId,
+      firstName: 'Left',
+      role: 'admin',
+      ageConfirmed: true,
+      ageConfirmedYears: 16,
+      ageConfirmedAt: Timestamp.now(),
     })
   )
 })
@@ -298,6 +339,46 @@ test('self-create with age confirmation is allowed', async () => {
       email,
       organizationId: ORG_A,
       firstName: 'New',
+      role: 'admin',
+      ageConfirmed: true,
+      ageConfirmedYears: 16,
+      ageConfirmedAt: Timestamp.now(),
+    })
+  )
+})
+
+test('existing user without ageConfirmed can read and self-update', async () => {
+  const db = authDb(ADMIN_A, 'admin-a@test.com')
+  const snap = await assertSucceeds(getDoc(doc(db, 'users', ADMIN_A)))
+  assert.equal(snap.data()?.ageConfirmed, undefined)
+  await assertSucceeds(updateDoc(doc(db, 'users', ADMIN_A), { lastSeenAt: Timestamp.now() }))
+})
+
+test('returning login can reclaim a stale email pointer then self-create with age confirmation', async () => {
+  const uid = 'returning-uid'
+  const email = 'returning@test.com'
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore()
+    await setDoc(doc(db, 'organizations', ORG_A, 'userEmails', email), { userId: 'dead-placeholder' })
+  })
+  const db = authDb(uid, email)
+  await assertFails(
+    setDoc(doc(db, 'users', uid), {
+      email,
+      organizationId: ORG_A,
+      firstName: 'Back',
+      role: 'admin',
+      ageConfirmed: true,
+      ageConfirmedYears: 16,
+      ageConfirmedAt: Timestamp.now(),
+    })
+  )
+  await assertSucceeds(setDoc(doc(db, 'organizations', ORG_A, 'userEmails', email), { userId: uid }))
+  await assertSucceeds(
+    setDoc(doc(db, 'users', uid), {
+      email,
+      organizationId: ORG_A,
+      firstName: 'Back',
       role: 'admin',
       ageConfirmed: true,
       ageConfirmedYears: 16,
