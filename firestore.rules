@@ -89,6 +89,13 @@ service cloud.firestore {
            get(/databases/(default)/documents/organizations/$(request.resource.data.organizationId)).data.members[request.auth.uid] == 'admin';
   }
 
+  // Self-create only (request.auth.uid == userId). Admin/manager invite placeholders omit these.
+  function selfCreateHasAgeConfirmation() {
+    return request.resource.data.ageConfirmed == true &&
+           request.resource.data.ageConfirmedYears is number &&
+           request.resource.data.ageConfirmedAt is timestamp;
+  }
+
   // For subcollections under organizations/{organizationId}/… only (parent get is not the resource being read).
   function belongsToOrganization(organizationId) {
     return request.auth != null && (
@@ -501,7 +508,8 @@ service cloud.firestore {
          request.resource.data.email.lower() == request.auth.token.email.lower() &&
          'organizationId' in request.resource.data &&
          (exists(/databases/(default)/documents/organizations/$(request.resource.data.organizationId)/userEmails/$(request.resource.data.email.lower())) == false ||
-          get(/databases/(default)/documents/organizations/$(request.resource.data.organizationId)/userEmails/$(request.resource.data.email.lower())).data.userId == request.auth.uid)) ||
+          get(/databases/(default)/documents/organizations/$(request.resource.data.organizationId)/userEmails/$(request.resource.data.email.lower())).data.userId == request.auth.uid) &&
+         selfCreateHasAgeConfirmation()) ||
         // Path 2: Admin creation (admin/super admin creating other users e.g. invite)
         (exists(/databases/(default)/documents/users/$(request.auth.uid)) &&
          (('isSuperAdmin' in get(/databases/(default)/documents/users/$(request.auth.uid)).data &&
@@ -515,7 +523,7 @@ service cloud.firestore {
           ('role' in get(/databases/(default)/documents/users/$(request.auth.uid)).data &&
            get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'admin'))) ||
         // Path 3: Web org setup bootstrap (org exists, caller is admin in members map, writing own profile)
-        isOrgBootstrapAdminProfileCreate(userId) ||
+        (isOrgBootstrapAdminProfileCreate(userId) && selfCreateHasAgeConfirmation()) ||
         // Path 4: Manager with operatives permission inviting a new operative
         managerCanCreateOperativeUser() ||
         // Path 5: Platform owner creating their own non-tenant profile

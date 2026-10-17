@@ -7,6 +7,7 @@ import { deleteDoc, doc, getDoc, setDoc, Timestamp, updateDoc } from 'firebase/f
 import { getFirebaseAuth, getFirebaseDb } from '@/lib/firebase/ensureFirebase'
 import { isValidUuid } from '@/lib/security/validation'
 import { ensurePrimaryOrgMembership } from '@/lib/orgMembership/membershipService'
+import { ageConfirmationWriteFields } from '@/lib/legal/ageConfirmation'
 
 export type InvitationSummary = {
   invitationId: string
@@ -71,12 +72,14 @@ async function migrateInvitedUserRecord(params: {
   }
 
   const userData = oldSnap.data()
+  const now = Timestamp.now()
   const nextUser = {
     ...userData,
     email: params.email.toLowerCase().trim(),
-        passwordSet: true,
-        accountConfirmed: true,
-        updatedAt: Timestamp.now(),
+    passwordSet: true,
+    accountConfirmed: true,
+    updatedAt: now,
+    ...ageConfirmationWriteFields(now),
   }
 
   await setDoc(doc(db, 'users', params.authUid), nextUser)
@@ -130,6 +133,7 @@ export async function completeInvitationPasswordSetup(params: {
       email,
     })
   } else {
+    const now = Timestamp.now()
     await setDoc(
       doc(db, 'users', authUid),
       {
@@ -140,7 +144,8 @@ export async function completeInvitationPasswordSetup(params: {
         passwordSet: true,
         isActive: true,
         accountConfirmed: true,
-        updatedAt: Timestamp.now(),
+        updatedAt: now,
+        ...ageConfirmationWriteFields(now),
       },
       { merge: true }
     )
