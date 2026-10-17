@@ -44,7 +44,7 @@ export function ProjectVisibilityPage({
   collection: 'projects' | 'smallWorks'
 }) {
   const { organization } = useAuthStore()
-  const { users, loadUsers } = useOrgUserStore()
+  const { users, claimedEmails, loadUsers } = useOrgUserStore()
   const { saveProject } = useProjectStore()
   const [tab, setTab] = useState<VisibilityTab>('managers')
   const [segment, setSegment] = useState<VisibilitySegment>('active')
@@ -74,12 +74,15 @@ export function ProjectVisibilityPage({
     !sameIds(hiddenOperatives, project.hiddenOperativeUserIds)
 
   const roster = useMemo(() => {
-    const base = tab === 'managers' ? getVisibilityManagerUsers(users) : getVisibilityOperativeUsers(users)
+    const base =
+      tab === 'managers'
+        ? getVisibilityManagerUsers(users, claimedEmails)
+        : getVisibilityOperativeUsers(users, claimedEmails)
     return base.filter((user) => {
       if (segment === 'all') return true
       return matchesRosterSegment(user, segment)
     })
-  }, [users, tab, segment])
+  }, [users, claimedEmails, tab, segment])
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()

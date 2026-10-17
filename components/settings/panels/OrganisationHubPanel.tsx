@@ -76,7 +76,7 @@ export function OrganisationHubPanel({
   onNavigate: (destination: OrganisationHubDestination) => void
 }) {
   const { user, organization } = useAuthStore()
-  const { users, loadUsers } = useOrgUserStore()
+  const { users, claimedEmails, loadUsers } = useOrgUserStore()
 
   const [details, setDetails] = useState<OrganizationDetails | null>(null)
   const [feedback, setFeedback] = useState<{ kind: 'success' | 'error'; msg: string } | null>(null)
@@ -107,12 +107,12 @@ export function OrganisationHubPanel({
 
   const rolesSubtitle = useMemo(() => {
     const adminCount = users.filter((entry) => entry.isSuperAdmin || entry.permissions.adminAccess).length
-    const managerCount = getManagerUsers(users).filter(
+    const managerCount = getManagerUsers(users, claimedEmails).filter(
       (entry) => !entry.permissions.adminAccess && !entry.isSuperAdmin
     ).length
-    const operativeCount = getOperativeModeUsers(users).length
+    const operativeCount = getOperativeModeUsers(users, claimedEmails).length
     return `${pluralize(adminCount, 'admin')} · ${pluralize(managerCount, 'manager')} · ${pluralize(operativeCount, 'op', 'ops')}`
-  }, [users])
+  }, [users, claimedEmails])
 
   const hoursSubtitle = details
     ? formatPayrollSubtitle(details.payrollTimePolicy)

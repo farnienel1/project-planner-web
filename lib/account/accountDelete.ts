@@ -6,6 +6,7 @@ export const ACCOUNT_DELETE_CONFIRMATION = 'DELETE'
 export const DELETED_USER_DISPLAY_NAME = 'Deleted user'
 export const DELETED_PRODUCT_EVENT_USER_ID = 'deleted'
 export const ACCOUNT_DELETE_JOB_TYPE = 'accountDelete'
+export const ACCOUNT_DELETE_JOB_EMAIL_FIELD = 'email'
 export const SOLE_ADMIN_CODE = 'sole_admin'
 export const SUPPORT_EMAIL = 'info@projectplanner.us'
 
@@ -102,6 +103,23 @@ export function parseAccountDeleteBody(body: unknown): AccountDeleteBodyOk | Acc
   return { ok: true, confirmation: ACCOUNT_DELETE_CONFIRMATION, password }
 }
 
+export function normalizeAccountDeleteEmail(value: unknown): string {
+  return typeof value === 'string' ? value.trim().toLowerCase() : ''
+}
+
+/** Auth email, then the value stored on the admin job, then the profile field. */
+export function resolveAccountDeleteEmail(input: {
+  authEmail?: unknown
+  storedEmail?: unknown
+  profileEmail?: unknown
+}): string {
+  return (
+    normalizeAccountDeleteEmail(input.authEmail) ||
+    normalizeAccountDeleteEmail(input.storedEmail) ||
+    normalizeAccountDeleteEmail(input.profileEmail)
+  )
+}
+
 export function ownerAccountDeleteBlock(email: string | null | undefined): AccountDeleteBodyError | null {
   if (!isPlatformOwnerEmail(email)) return null
   return { ok: false, status: 403, error: 'The owner account cannot be deleted.' }
@@ -172,6 +190,24 @@ export function rosterAnonymisePatch(existing: Record<string, unknown>): Record<
     if (key in existing) patch[key] = ''
   }
   return patch
+}
+
+/**
+ * Placeholder delete failed. Clearing only a uid field is not enough — write
+ * the full anonymised shape so the row cannot stay Pending with a real name.
+ */
+export function placeholderDeleteFallbackPatch(existing: Record<string, unknown>): Record<string, unknown> {
+  return rosterAnonymisePatch({
+    ...existing,
+    email: existing.email ?? '',
+    firstName: existing.firstName ?? '',
+    surname: existing.surname ?? '',
+    name: existing.name ?? '',
+    displayName: existing.displayName ?? '',
+    mobileNumber: existing.mobileNumber ?? '',
+    mobile: existing.mobile ?? '',
+    phone: existing.phone ?? '',
+  })
 }
 
 /** Fields whose stored value is already the anonymised value. Rewriting them is a no-op. */

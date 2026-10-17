@@ -1,7 +1,14 @@
 import type { User } from '@/types'
+import {
+  listedRosterUsers,
+  matchesRosterSegment as canonicalMatchesRosterSegment,
+  rosterStatusLabel as canonicalRosterStatusLabel,
+  type RosterSegment,
+  type RosterSegmentProfile,
+} from '@/lib/canonical'
 import { isPendingPerson } from '@/lib/staff/pendingPeople'
 
-export type RosterSegment = 'active' | 'inactive' | 'pending'
+export type { RosterSegment }
 
 export type OperativeFilterField = 'firstName' | 'surname' | 'email'
 export type ManagerFilterField = 'firstName' | 'surname' | 'email' | 'mobileNumber'
@@ -10,22 +17,35 @@ function normalizeEmail(email: string): string {
   return email.trim().toLowerCase()
 }
 
-/** iOS UserRosterSegment.matches */
-export function matchesRosterSegment(user: User, segment: RosterSegment): boolean {
-  switch (segment) {
-    case 'active':
-      return user.passwordSet && user.isActive
-    case 'inactive':
-      return user.passwordSet && !user.isActive
-    case 'pending':
-      return !user.passwordSet
+function rosterProfile(user: User): RosterSegmentProfile {
+  return {
+    email: user.email,
+    firstName: user.firstName,
+    surname: user.surname,
+    passwordSet: user.passwordSet,
+    isActive: user.isActive,
+    mobileNumber: user.mobileNumber,
   }
 }
 
+/** Canonical UserRosterSegment.matches — do not keep a second passwordSet calculator. */
+export function matchesRosterSegment(user: User, segment: RosterSegment): boolean {
+  return canonicalMatchesRosterSegment(rosterProfile(user), segment)
+}
+
 export function rosterStatusLabel(user: User): 'Active' | 'Inactive' | 'Pending' {
-  if (!user.passwordSet) return 'Pending'
-  if (!user.isActive) return 'Inactive'
-  return 'Active'
+  return canonicalRosterStatusLabel(rosterProfile(user))
+}
+
+export function listedUsersForRoster(
+  users: readonly User[],
+  claimedEmails?: readonly string[] | null
+): User[] {
+  return listedRosterUsers(users, claimedEmails)
+}
+
+function listedDedupe(users: readonly User[], claimedEmails?: readonly string[] | null): User[] {
+  return listedRosterUsers(dedupeUsersByEmail(users), claimedEmails)
 }
 
 function directoryAdmin(user: User): boolean {
@@ -132,13 +152,17 @@ export function dedupeUsersByEmail(users: readonly User[]): User[] {
 }
 
 /** iOS OperativesView — operative-mode app users, plus accounts with no admin or manager role. */
-export function getOperativeModeUsers(users: User[]): User[] {
-  return dedupeUsersByEmail(
+export function getOperativeModeUsers(
+  users: User[],
+  claimedEmails?: readonly string[] | null
+): User[] {
+  return listedDedupe(
     users.filter((user) => {
       if (directoryAdmin(user)) return false
       if (user.permissions?.manager && !user.permissions?.operativeMode) return false
       return true
-    })
+    }),
+    claimedEmails
   ).sort((a, b) =>
     `${a.firstName} ${a.surname}`.localeCompare(`${b.firstName} ${b.surname}`, undefined, {
       sensitivity: 'base',
@@ -147,9 +171,13 @@ export function getOperativeModeUsers(users: User[]): User[] {
 }
 
 /** Admins and managers for job View access — admins stay in Managers even if they also have operative mode. */
-export function getVisibilityManagerUsers(users: User[]): User[] {
-  return dedupeUsersByEmail(
-    users.filter((user) => user.permissions?.adminAccess || user.isSuperAdmin || user.permissions?.manager)
+export function getVisibilityManagerUsers(
+  users: User[],
+  claimedEmails?: readonly string[] | null
+): User[] {
+  return listedDedupe(
+    users.filter((user) => user.permissions?.adminAccess || user.isSuperAdmin || user.permissions?.manager),
+    claimedEmails
   ).sort((a, b) =>
     `${a.firstName} ${a.surname}`.localeCompare(`${b.firstName} ${b.surname}`, undefined, {
       sensitivity: 'base',
@@ -158,9 +186,15 @@ export function getVisibilityManagerUsers(users: User[]): User[] {
 }
 
 /** Everyone who is not in the Managers tab — so View lists the whole organisation. */
-export function getVisibilityOperativeUsers(users: User[]): User[] {
-  const managerIds = new Set(getVisibilityManagerUsers(users).map((user) => user.id))
-  return dedupeUsersByEmail(users.filter((user) => !managerIds.has(user.id))).sort((a, b) =>
+export function getVisibilityOperativeUsers(
+  users: User[],
+  claimedEmails?: readonly string[] | null
+): User[] {
+  const managerIds = new Set(getVisibilityManagerUsers(users, claimedEmails).map((user) => user.id))
+  return listedDedupe(
+    users.filter((user) => !managerIds.has(user.id)),
+    claimedEmails
+  ).sort((a, b) =>
     `${a.firstName} ${a.surname}`.localeCompare(`${b.firstName} ${b.surname}`, undefined, {
       sensitivity: 'base',
     })
@@ -188,12 +222,16 @@ export function lineManagerChoices(users: User[], excludeId?: string): User[] {
 }
 
 /** Admins and managers (not operative-mode) — used by pickers / scheduling. */
-export function getManagerUsers(users: User[]): User[] {
-  return dedupeUsersByEmail(
+export function getManagerUsers(
+  users: User[],
+  claimedEmails?: readonly string[] | null
+): User[] {
+  return listedDedupe(
     users.filter((user) => {
       if (user.permissions?.operativeMode) return false
       return user.permissions?.adminAccess || user.isSuperAdmin || user.permissions?.manager
-    })
+    }),
+    claimedEmails
   ).sort((a, b) =>
     `${a.firstName} ${a.surname}`.localeCompare(`${b.firstName} ${b.surname}`, undefined, {
       sensitivity: 'base',
@@ -202,15 +240,19 @@ export function getManagerUsers(users: User[]): User[] {
 }
 
 /** iOS ManagersView — manager users, excluding admins / super-admins / operative-mode. */
-export function getManagersRosterUsers(users: User[]): User[] {
-  return dedupeUsersByEmail(
+export function getManagersRosterUsers(
+  users: User[],
+  claimedEmails?: readonly string[] | null
+): User[] {
+  return listedDedupe(
     users.filter((user) => {
       const p = user.permissions
       if (!p) return false
       if (p.operativeMode) return false
       if (p.adminAccess || user.isSuperAdmin) return false
       return p.manager === true
-    })
+    }),
+    claimedEmails
   ).sort((a, b) =>
     `${a.firstName} ${a.surname}`.localeCompare(`${b.firstName} ${b.surname}`, undefined, {
       sensitivity: 'base',

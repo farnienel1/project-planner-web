@@ -17,7 +17,9 @@ import {
   parseAccountDeleteBody,
   changedAnonymisePatch,
   pickCreatorSuccessor,
+  placeholderDeleteFallbackPatch,
   profileAlreadyAnonymised,
+  resolveAccountDeleteEmail,
   retryFinishesWithoutOrgScan,
   isUnusedInvitePlaceholder,
   unusedInvitationShouldDelete,
@@ -317,6 +319,45 @@ test('membership walk unions orgMemberships, user doc, members map, and creator'
     }),
     ['org-a', 'org-b', 'org-c', 'org-d', 'org-e']
   )
+})
+
+test('retry email prefers Auth, then the stored job email, then the profile', () => {
+  assert.equal(
+    resolveAccountDeleteEmail({
+      authEmail: ' Auth@Site.com ',
+      storedEmail: 'stored@site.com',
+      profileEmail: 'profile@site.com',
+    }),
+    'auth@site.com'
+  )
+  assert.equal(
+    resolveAccountDeleteEmail({
+      authEmail: '',
+      storedEmail: 'stored@site.com',
+      profileEmail: 'profile@site.com',
+    }),
+    'stored@site.com'
+  )
+  assert.equal(resolveAccountDeleteEmail({ authEmail: '', storedEmail: '', profileEmail: 'Ada@Site.com' }), 'ada@site.com')
+  assert.equal(resolveAccountDeleteEmail({ authEmail: '', storedEmail: '', profileEmail: '' }), '')
+})
+
+test('placeholder delete fallback writes Deleted user and clears email and phone', () => {
+  const patch = placeholderDeleteFallbackPatch({
+    firstName: 'Test',
+    surname: 'Operative',
+    email: 'farnienel@hotmail.com',
+    mobileNumber: '07700',
+  })
+  assert.equal(patch.email, '')
+  assert.equal(patch.firstName, 'Deleted')
+  assert.equal(patch.surname, 'user')
+  assert.equal(patch.mobileNumber, '')
+
+  const missingKeys = placeholderDeleteFallbackPatch({ passwordSet: false })
+  assert.equal(missingKeys.email, '')
+  assert.equal(missingKeys.name, DELETED_USER_DISPLAY_NAME)
+  assert.equal(missingKeys.mobileNumber, '')
 })
 
 test('confirm copy states login is deleted, records stay as Deleted user, subscription is not cancelled', () => {

@@ -29,7 +29,7 @@ export function OperativesListScreen() {
   const router = useRouter()
   const { organization, user } = useAuthStore()
   const { operatives, loading: operativesLoading, loadOperatives } = useOperativeStore()
-  const { users, loading: usersLoading, rosterLoadedOrgId, loadUsers } = useOrgUserStore()
+  const { users, loading: usersLoading, rosterLoadedOrgId, claimedEmails, loadUsers } = useOrgUserStore()
   const [segment, setSegment] = useState<RosterSegment>('active')
   const [search, setSearch] = useState('')
 
@@ -45,7 +45,10 @@ export function OperativesListScreen() {
     loadUsers(organization.id)
   }, [organization?.id, loadOperatives, loadUsers])
 
-  const allOperativeUsers = useMemo(() => getOperativeModeUsers(users), [users])
+  const allOperativeUsers = useMemo(
+    () => getOperativeModeUsers(users, claimedEmails),
+    [users, claimedEmails]
+  )
   const phones = useMemo(() => {
     const map: Record<string, string> = {}
     for (const row of allOperativeUsers) {

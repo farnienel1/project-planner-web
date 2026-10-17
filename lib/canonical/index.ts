@@ -396,3 +396,22 @@ export type {
 export { PAYMENT_GRACE_MS, hasAccess } from './billingAccess'
 
 export type { OrgBillingAccessInput } from './billingAccess'
+
+export {
+  ANONYMISED_DELETED_USER_NAME,
+  DELETED_USER_DISPLAY_NAME,
+  ROSTER_SEGMENTS,
+  isAnonymisedDeletedProfile,
+  isIdentifiablePendingLeftover,
+  listedRosterUsers,
+  matchesRosterSegment,
+  matchesUserRosterSegment,
+  normalizeClaimedEmails,
+  rosterPersonDisplayName,
+  rosterPersonName,
+  rosterSegment,
+  rosterStatusLabel,
+  userRosterSegment,
+} from './userRosterSegment'
+
+export type { RosterPerson, RosterSegment, RosterSegmentProfile } from './userRosterSegment'

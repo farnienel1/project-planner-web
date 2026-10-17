@@ -1,5 +1,5 @@
 import type { User } from '@/types'
-import { dedupeUsersByEmail } from '@/lib/staff/userRosterUtils'
+import { listedUsersForRoster, dedupeUsersByEmail } from '@/lib/staff/userRosterUtils'
 import { matchesRosterSegment, type RosterSegment } from '@/lib/staff/userRosterUtils'
 
 export type ManageUsersTab = 'admins' | 'managers' | 'operatives'
@@ -14,21 +14,33 @@ export function classifyManageUsersTab(user: User): ManageUsersTab | null {
   return 'operatives'
 }
 
-export function filterUsersForManageTab(users: User[], tab: ManageUsersTab): User[] {
-  const deduped = dedupeUsersByEmail(users)
+export function filterUsersForManageTab(
+  users: User[],
+  tab: ManageUsersTab,
+  claimedEmails?: readonly string[] | null
+): User[] {
+  const deduped = listedUsersForRoster(dedupeUsersByEmail(users), claimedEmails)
   return deduped.filter((user) => classifyManageUsersTab(user) === tab)
 }
 
 export function filterUsersForManageTabAndSegment(
   users: User[],
   tab: ManageUsersTab,
-  segment: RosterSegment
+  segment: RosterSegment,
+  claimedEmails?: readonly string[] | null
 ): User[] {
-  return filterUsersForManageTab(users, tab).filter((user) => matchesRosterSegment(user, segment))
+  return filterUsersForManageTab(users, tab, claimedEmails).filter((user) =>
+    matchesRosterSegment(user, segment)
+  )
 }
 
-export function countUsersForTab(users: User[], tab: ManageUsersTab, segment: RosterSegment): number {
-  return filterUsersForManageTabAndSegment(users, tab, segment).length
+export function countUsersForTab(
+  users: User[],
+  tab: ManageUsersTab,
+  segment: RosterSegment,
+  claimedEmails?: readonly string[] | null
+): number {
+  return filterUsersForManageTabAndSegment(users, tab, segment, claimedEmails).length
 }
 
 export type ManageUsersListPhase = 'loading' | 'error' | 'empty' | 'ready'
