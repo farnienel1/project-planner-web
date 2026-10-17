@@ -22,6 +22,7 @@ var ProjectPlannerCanonical = (() => {
   var bundleEntry_exports = {};
   __export(bundleEntry_exports, {
     ANNUAL_LEAVE_ALLOWANCE_COPY: () => ANNUAL_LEAVE_ALLOWANCE_COPY,
+    ANONYMISED_DELETED_USER_NAME: () => ANONYMISED_DELETED_USER_NAME,
     CANONICAL_STANDARD_BREAK: () => CANONICAL_STANDARD_BREAK,
     CANONICAL_STANDARD_DAY: () => CANONICAL_STANDARD_DAY,
     DEFAULT_ANNUAL_LEAVE_DAYS: () => DEFAULT_ANNUAL_LEAVE_DAYS,
@@ -34,6 +35,7 @@ var ProjectPlannerCanonical = (() => {
     DEFAULT_USER_NOTIFICATION_PREFERENCES: () => DEFAULT_USER_NOTIFICATION_PREFERENCES,
     DEFAULT_WARNINGS_SORT_DIRECTION: () => DEFAULT_WARNINGS_SORT_DIRECTION,
     DEFAULT_WARNING_DETECTION: () => DEFAULT_WARNING_DETECTION,
+    DELETED_USER_DISPLAY_NAME: () => DELETED_USER_DISPLAY_NAME,
     DEVICE_PUSH_NOTIFICATION_TYPES: () => DEVICE_PUSH_NOTIFICATION_TYPES,
     IOS_SESSION_ORGANIZATION_STORAGE_KEY: () => IOS_SESSION_ORGANIZATION_STORAGE_KEY,
     LEGACY_NOTIFICATION_PREFERENCE_ALIASES: () => LEGACY_NOTIFICATION_PREFERENCE_ALIASES,
@@ -100,7 +102,9 @@ var ProjectPlannerCanonical = (() => {
     intervalsOverlap: () => intervalsOverlap,
     invoicingPeriod: () => invoicingPeriod,
     invoicingToFirestore: () => invoicingToFirestore,
+    isAnonymisedDeletedProfile: () => isAnonymisedDeletedProfile,
     isBillableSelfEmployedDay: () => isBillableSelfEmployedDay,
+    isIdentifiablePendingLeftover: () => isIdentifiablePendingLeftover,
     isStaffAccount: () => isStaffAccount,
     isTimesheetAwaitingSignOff: () => isTimesheetAwaitingSignOff,
     isTimesheetExported: () => isTimesheetExported,
@@ -110,6 +114,9 @@ var ProjectPlannerCanonical = (() => {
     leaveCoverageRows: () => leaveCoverageRows,
     leaveSlotKind: () => leaveSlotKind,
     leaveYearBounds: () => leaveYearBounds,
+    listedRosterUsers: () => listedRosterUsers,
+    matchesRosterSegment: () => matchesRosterSegment,
+    matchesUserRosterSegment: () => matchesUserRosterSegment,
     materialCutOffClockMinutes: () => materialCutOffClockMinutes,
     materialCutOffToFirestore: () => materialCutOffToFirestore,
     materialDeliveryInstant: () => materialDeliveryInstant,
@@ -123,6 +130,7 @@ var ProjectPlannerCanonical = (() => {
     monthDayOffsetBefore: () => monthDayOffsetBefore,
     monthDayOrdinal: () => monthDayOrdinal,
     namedSlotKind: () => namedSlotKind,
+    normalizeClaimedEmails: () => normalizeClaimedEmails,
     normalizeEmploymentType: () => normalizeEmploymentType,
     normalizeMaterialSearchText: () => normalizeMaterialSearchText,
     normalizePaymentRunRange: () => normalizePaymentRunRange,
@@ -176,6 +184,9 @@ var ProjectPlannerCanonical = (() => {
     resolveMaterialCutOffClock: () => resolveMaterialCutOffClock,
     resolveTimesheetExportedAtMs: () => resolveTimesheetExportedAtMs,
     resolveTimesheetPeriod: () => resolveTimesheetPeriod,
+    rosterPersonName: () => rosterPersonName,
+    rosterSegment: () => rosterSegment,
+    rosterStatusLabel: () => rosterStatusLabel,
     seesEveryJob: () => seesEveryJob,
     seesEveryUserTimesheet: () => seesEveryUserTimesheet,
     selectableTimesheetPaymentRunPeriods: () => selectableTimesheetPaymentRunPeriods,
@@ -219,6 +230,7 @@ var ProjectPlannerCanonical = (() => {
     unverifiedOperativeRows: () => unverifiedOperativeRows,
     userNotificationPreferenceFieldPatch: () => userNotificationPreferenceFieldPatch,
     userNotificationPreferencesToFirestore: () => userNotificationPreferencesToFirestore,
+    userRosterSegment: () => userRosterSegment,
     validateInvoicingSettings: () => validateInvoicingSettings,
     warningDayKeyIsDated: () => warningDayKeyIsDated,
     warningDetectionToFirestore: () => warningDetectionToFirestore,
@@ -357,13 +369,13 @@ var ProjectPlannerCanonical = (() => {
   }
   function organizationIdFromValue(value) {
     if (typeof value === "string") {
-      const trimmed3 = value.trim();
-      if (!trimmed3) return "";
-      if (trimmed3.includes("/")) {
-        const parts = trimmed3.split("/").filter(Boolean);
+      const trimmed4 = value.trim();
+      if (!trimmed4) return "";
+      if (trimmed4.includes("/")) {
+        const parts = trimmed4.split("/").filter(Boolean);
         return parts[parts.length - 1] || "";
       }
-      return trimmed3;
+      return trimmed4;
     }
     if (value && typeof value === "object" && "id" in value) {
       return organizationIdFromValue(value.id);
@@ -2151,8 +2163,8 @@ var ProjectPlannerCanonical = (() => {
     return "";
   }
   function organizationNameToFirestore(name) {
-    const trimmed3 = String(name || "").trim();
-    return trimmed3 ? { name: trimmed3 } : {};
+    const trimmed4 = String(name || "").trim();
+    return trimmed4 ? { name: trimmed4 } : {};
   }
   function organizationNameWriteFields(nextName, existingName) {
     const next = String(nextName || "").trim();
@@ -2162,14 +2174,14 @@ var ProjectPlannerCanonical = (() => {
   }
   function coalesceOrganizationName(...candidates) {
     for (const value of candidates) {
-      const trimmed3 = String(value || "").trim();
-      if (trimmed3) return trimmed3;
+      const trimmed4 = String(value || "").trim();
+      if (trimmed4) return trimmed4;
     }
     return "";
   }
   function displayOrganizationName(name, fallback = "Organisation") {
-    const trimmed3 = String(name || "").trim();
-    return trimmed3 || fallback;
+    const trimmed4 = String(name || "").trim();
+    return trimmed4 || fallback;
   }
   function paymentRunShowsMonthCoverage(settings) {
     return settings.paymentRunMode === "date_ranges";
@@ -3502,5 +3514,73 @@ var ProjectPlannerCanonical = (() => {
     }
     return false;
   }
+
+  // lib/canonical/userRosterSegment.ts
+  var ANONYMISED_DELETED_USER_NAME = "Deleted user";
+  function trimmed3(value) {
+    return typeof value === "string" ? value.trim() : "";
+  }
+  function normalizeEmail(value) {
+    return trimmed3(value).toLowerCase();
+  }
+  function namesEqualDeletedUser(value) {
+    return value.toLowerCase() === ANONYMISED_DELETED_USER_NAME.toLowerCase();
+  }
+  function rosterPersonName(profile) {
+    const first = trimmed3(profile.firstName);
+    const surname = trimmed3(profile.surname) || trimmed3(profile.lastName);
+    const combined = `${first} ${surname}`.trim();
+    if (combined) return combined;
+    return trimmed3(profile.name) || trimmed3(profile.displayName);
+  }
+  function rosterPhone(profile) {
+    return trimmed3(profile.mobileNumber) || trimmed3(profile.mobile) || trimmed3(profile.phone);
+  }
+  function isAnonymisedDeletedProfile(profile) {
+    if (!profile) return false;
+    if (normalizeEmail(profile.email)) return false;
+    if (namesEqualDeletedUser(rosterPersonName(profile))) return true;
+    if (namesEqualDeletedUser(trimmed3(profile.name))) return true;
+    if (namesEqualDeletedUser(trimmed3(profile.displayName))) return true;
+    return false;
+  }
+  function rosterSegment(profile) {
+    if (isAnonymisedDeletedProfile(profile)) return "inactive";
+    if (profile.passwordSet === true) return profile.isActive === true ? "active" : "inactive";
+    return "pending";
+  }
+  function matchesRosterSegment(profile, segment) {
+    return rosterSegment(profile) === segment;
+  }
+  function rosterStatusLabel(profile) {
+    const segment = rosterSegment(profile);
+    if (segment === "active") return "Active";
+    if (segment === "inactive") return "Inactive";
+    return "Pending";
+  }
+  function normalizeClaimedEmails(claimedEmails) {
+    if (claimedEmails == null) return null;
+    return claimedEmails.map((email) => normalizeEmail(email)).filter(Boolean);
+  }
+  function isIdentifiablePendingLeftover(profile, claimedEmails) {
+    if (profile.passwordSet === true) return false;
+    if (isAnonymisedDeletedProfile(profile)) return false;
+    const email = normalizeEmail(profile.email);
+    const name = rosterPersonName(profile);
+    const phone = rosterPhone(profile);
+    const namedPerson = Boolean(name) && !namesEqualDeletedUser(name);
+    const identifiable = Boolean(email) || namedPerson || Boolean(phone);
+    if (!identifiable) return false;
+    if (!email) return true;
+    const claimed = normalizeClaimedEmails(claimedEmails);
+    if (claimed == null) return false;
+    return !claimed.includes(email);
+  }
+  function listedRosterUsers(users, claimedEmails) {
+    return users.filter((user) => !isIdentifiablePendingLeftover(user, claimedEmails));
+  }
+  var DELETED_USER_DISPLAY_NAME = ANONYMISED_DELETED_USER_NAME;
+  var userRosterSegment = rosterSegment;
+  var matchesUserRosterSegment = matchesRosterSegment;
   return __toCommonJS(bundleEntry_exports);
 })();

@@ -214,6 +214,21 @@ export {
 export { PAYMENT_GRACE_MS, hasAccess } from './billingAccess'
 
 export {
+  ANONYMISED_DELETED_USER_NAME,
+  DELETED_USER_DISPLAY_NAME,
+  isAnonymisedDeletedProfile,
+  isIdentifiablePendingLeftover,
+  listedRosterUsers,
+  matchesRosterSegment,
+  matchesUserRosterSegment,
+  normalizeClaimedEmails,
+  rosterPersonName,
+  rosterSegment,
+  rosterStatusLabel,
+  userRosterSegment,
+} from './userRosterSegment'
+
+export {
   TIMESHEET_DOCUMENT_PREFIX,
   TIMESHEET_EXPORT_STORAGE_FOLDER,
   TIMESHEET_INVOICE_EXPORT_LEFTOVER_MS,

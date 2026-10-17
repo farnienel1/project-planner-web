@@ -35,7 +35,7 @@ export function ManagersListScreen() {
     loadManagers,
     cleanupLegacyPlaceholderManagers,
   } = useOperativeStore()
-  const { users, loading: usersLoading, rosterLoadedOrgId, loadUsers } = useOrgUserStore()
+  const { users, loading: usersLoading, rosterLoadedOrgId, claimedEmails, loadUsers } = useOrgUserStore()
   const [segment, setSegment] = useState<RosterSegment>('active')
   const [search, setSearch] = useState('')
   const [cleaning, setCleaning] = useState(false)
@@ -53,7 +53,10 @@ export function ManagersListScreen() {
     loadManagers(organization.id)
   }, [organization?.id, loadUsers, loadManagers])
 
-  const allManagerUsers = useMemo(() => getManagersRosterUsers(users), [users])
+  const allManagerUsers = useMemo(
+    () => getManagersRosterUsers(users, claimedEmails),
+    [users, claimedEmails]
+  )
   const phones = useMemo(() => {
     const map: Record<string, string> = {}
     for (const row of allManagerUsers) {

@@ -10,8 +10,13 @@ import {
 } from '@/lib/security/apiGuard'
 import { enforceAppCheckOnAuthGate } from '@/lib/security/verifyAppCheckToken'
 import { firebaseAdminConfigured, verifyAuthPassword } from '@/lib/owner/identityToolkitAdmin'
-import { ownerAccountDeleteBlock, parseAccountDeleteBody, soleAdminErrorBody } from '@/lib/account/accountDelete'
-import { evaluateAccountOrgs, executeAccountDelete } from '@/lib/account/accountDeleteAdmin'
+import {
+  ownerAccountDeleteBlock,
+  parseAccountDeleteBody,
+  resolveAccountDeleteEmail,
+  soleAdminErrorBody,
+} from '@/lib/account/accountDelete'
+import { evaluateAccountOrgs, executeAccountDelete, readAccountDeleteJobEmail } from '@/lib/account/accountDeleteAdmin'
 import { clearMfaCookies } from '@/lib/auth/mfa/mfaCookies'
 
 export const runtime = 'nodejs'
@@ -34,7 +39,10 @@ export async function POST(request: NextRequest) {
   const parsed = parseAccountDeleteBody(body.value)
   if (!parsed.ok) return jsonError(parsed.error, parsed.status)
 
-  const email = (user.email || '').trim().toLowerCase()
+  let email = resolveAccountDeleteEmail({ authEmail: user.email })
+  if (!email && firebaseAdminConfigured()) {
+    email = await readAccountDeleteJobEmail(user.uid)
+  }
   if (!email) return jsonError('Type DELETE and enter your password to delete your account.', 400)
   const passwordOk = await verifyAuthPassword(email, parsed.password)
   if (!passwordOk) return jsonError('Password is incorrect.', 401)

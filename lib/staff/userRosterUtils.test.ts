@@ -8,8 +8,10 @@ import {
   rosterDisplayName,
   samePersonIds,
   getOperativeModeUsers,
+  getManagersRosterUsers,
   getVisibilityManagerUsers,
   getVisibilityOperativeUsers,
+  listedUsersForRoster,
   matchesRosterSegment,
 } from './userRosterUtils.ts'
 
@@ -114,6 +116,65 @@ test('a person with no email address is still kept on the roster', () => {
   ])
   assert.equal(kept.length, 1)
   assert.equal(kept[0].id, 'op')
+})
+
+test('a claimed invite stays Pending; a leftover with real name and email is dropped once userEmails is gone', () => {
+  const invite = user({
+    id: 'invite-uuid',
+    email: 'new.operative@site.com',
+    firstName: 'New',
+    surname: 'Operative',
+    passwordSet: false,
+    permissions: { ...emptyPermissions, operativeMode: true },
+  })
+  const leftover = user({
+    id: 'leftover-uuid',
+    email: 'farnienel@hotmail.com',
+    firstName: 'Test',
+    surname: 'Operative',
+    passwordSet: false,
+    permissions: { ...emptyPermissions, operativeMode: true },
+  })
+  const claimed = ['new.operative@site.com']
+
+  const listed = listedUsersForRoster([invite, leftover], claimed)
+  assert.deepEqual(listed.map((row) => row.email), ['new.operative@site.com'])
+  assert.equal(matchesRosterSegment(listed[0], 'pending'), true)
+  assert.equal(listed.some((row) => row.firstName === 'Test'), false)
+
+  const operatives = getOperativeModeUsers([invite, leftover], claimed)
+  assert.deepEqual(operatives.map((row) => row.email), ['new.operative@site.com'])
+  assert.equal(matchesRosterSegment(operatives[0], 'pending'), true)
+
+  const leftoverManager = user({
+    id: 'leftover-manager',
+    email: 'farnienel@hotmail.com',
+    firstName: 'Test',
+    surname: 'Manager',
+    passwordSet: false,
+    permissions: { ...emptyPermissions, manager: true },
+  })
+  assert.deepEqual(getManagersRosterUsers([leftoverManager], []), [])
+  assert.deepEqual(listedUsersForRoster([leftover], []), [])
+  assert.equal(matchesRosterSegment(leftover, 'pending'), true)
+})
+
+test('an empty-email Deleted user is kept by dedupe and is Inactive, not Active or Pending', () => {
+  const deleted = user({
+    id: 'QAlPe29vLLP4spK554UtpaBLW7N2',
+    email: '',
+    firstName: 'Deleted',
+    surname: 'user',
+    passwordSet: true,
+    isActive: true,
+    permissions: { ...emptyPermissions, operativeMode: true },
+  })
+  const kept = dedupeUsersByEmail([deleted])
+  assert.equal(kept.length, 1)
+  assert.equal(kept[0].id, deleted.id)
+  assert.equal(matchesRosterSegment(kept[0], 'inactive'), true)
+  assert.equal(matchesRosterSegment(kept[0], 'active'), false)
+  assert.equal(matchesRosterSegment(kept[0], 'pending'), false)
 })
 
 test('a freshly deactivated account wins over an older active duplicate', () => {

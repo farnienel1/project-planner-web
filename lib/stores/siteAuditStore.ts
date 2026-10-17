@@ -195,6 +195,8 @@ async function fetchOrganisationRoster(
   complete: boolean
   presentIds: Set<string>
   presentEmails: Set<string>
+  /** `userEmails` document ids after a successful read. Null when that read failed. */
+  claimedEmails: string[] | null
 }> {
   const collected: User[] = []
   const presentIds = new Set<string>()
@@ -383,8 +385,12 @@ async function fetchOrganisationRoster(
   }
 
   const emailUserIds: string[] = []
+  let claimedEmails: string[] | null = null
   if (emailsResult.status === 'fulfilled') {
+    claimedEmails = []
     for (const entry of emailsResult.value.docs) {
+      const claim = entry.id.trim().toLowerCase()
+      if (claim) claimedEmails.push(claim)
       const userId = text(entry.data().userId)
       if (userId && !presentIds.has(userId) && !memberIds.includes(userId) && !emailUserIds.includes(userId)) {
         emailUserIds.push(userId)
@@ -484,7 +490,7 @@ async function fetchOrganisationRoster(
   // store maps the duplicates with aliasIdsForRoster.
   const failure = rosterLoadFailure({ collectedCount: collected.length, complete, firstFailure, listedMemberCount })
   if (failure) throw failure
-  return { users: collected, complete, presentIds, presentEmails }
+  return { users: collected, complete, presentIds, presentEmails, claimedEmails }
 }
 
 async function confirmMissingUserDocuments(
@@ -518,6 +524,12 @@ interface OrgUserState {
   error: string | null
   /** Organisation whose roster load has finished. Empty users before this is still loading. */
   rosterLoadedOrgId: string | null
+  /**
+   * Document ids from `organizations/{orgId}/userEmails` after a successful
+   * collection read. Null when that read has not finished or failed — people
+   * lists must then keep a pending invite rather than drop it.
+   */
+  claimedEmails: string[] | null
   /** Duplicate profile ids that share an email, pointing at the account kept on the roster. */
   userIdAliases: Record<string, string>
   loadUsers: (organizationId: string, options?: { force?: boolean }) => Promise<void>
@@ -591,6 +603,7 @@ export const useOrgUserStore = create<OrgUserState>((set, get) => ({
   loading: false,
   error: null,
   rosterLoadedOrgId: null,
+  claimedEmails: null,
   userIdAliases: {},
 
   loadUsers: async (organizationId, options?: { force?: boolean }) => {
@@ -602,7 +615,13 @@ export const useOrgUserStore = create<OrgUserState>((set, get) => ({
       const stored = readStoredRoster(organizationId)
       if (stored.length > 0) {
         listedRosterOrgId = organizationId
-        set({ users: stored, loading: false, error: null, rosterLoadedOrgId: organizationId })
+        set({
+          users: stored,
+          loading: false,
+          error: null,
+          rosterLoadedOrgId: organizationId,
+          claimedEmails: null,
+        })
       }
     }
     const loadOptions = optionsForUnappliedOrg(
@@ -655,7 +674,14 @@ export const useOrgUserStore = create<OrgUserState>((set, get) => ({
           }
           listedRosterOrgId = organizationId
           writeStoredRoster(organizationId, users)
-          set({ users, userIdAliases, loading: false, error: null, rosterLoadedOrgId: organizationId })
+          set({
+            users,
+            userIdAliases,
+            claimedEmails: loaded.claimedEmails,
+            loading: false,
+            error: null,
+            rosterLoadedOrgId: organizationId,
+          })
         }
         try {
           const rosterPromise = fetchOrganisationRoster(organizationId, { finalAttempt: attempt.final })

@@ -165,6 +165,13 @@ import {
   timesheetSignOffWriteFields,
 } from './timesheetPeriod.ts'
 import { PAYMENT_GRACE_MS, hasAccess } from './billingAccess.ts'
+import {
+  isAnonymisedDeletedProfile,
+  isIdentifiablePendingLeftover,
+  listedRosterUsers,
+  matchesRosterSegment,
+  rosterSegment,
+} from './userRosterSegment.ts'
 
 const superAdmin: StaffAccountRole = { isSuperAdmin: true, isAdmin: true, isManager: false, isOperativeMode: false }
 const admin: StaffAccountRole = { isSuperAdmin: false, isAdmin: true, isManager: false, isOperativeMode: false }
@@ -1112,6 +1119,11 @@ test('the iOS JavaScript bundle exposes the standard-day, leave and dismiss rule
     'compareInboxNotificationsByCreatedAt',
     'unreadNotificationBadgeCount',
     'hasAccess',
+    'isAnonymisedDeletedProfile',
+    'rosterSegment',
+    'matchesRosterSegment',
+    'isIdentifiablePendingLeftover',
+    'listedRosterUsers',
   ]) {
     assert.equal(typeof bundle[name], 'function', `${name} is exported from the packed script`)
   }
@@ -2563,4 +2575,109 @@ test('hasAccess opens missing/none/pending/trialing/active and past_due within 7
     assert.equal(hasAccess(row.billing as never, now), row.expected, `module ${row.label}`)
     assert.equal(packed.hasAccess(row.billing, now), row.expected, `packed ${row.label}`)
   }
+})
+
+test('an anonymised Deleted user is Inactive even when passwordSet and isActive are true', () => {
+  const deleted = {
+    email: '',
+    firstName: 'Deleted',
+    surname: 'user',
+    name: 'Deleted user',
+    displayName: 'Deleted user',
+    passwordSet: true,
+    isActive: true,
+  }
+  assert.equal(isAnonymisedDeletedProfile(deleted), true)
+  assert.equal(rosterSegment(deleted), 'inactive')
+  assert.equal(matchesRosterSegment(deleted, 'inactive'), true)
+  assert.equal(matchesRosterSegment(deleted, 'active'), false)
+  assert.equal(matchesRosterSegment(deleted, 'pending'), false)
+
+  const singleName = { email: '  ', firstName: 'Deleted user', passwordSet: true, isActive: true }
+  assert.equal(isAnonymisedDeletedProfile(singleName), true)
+  assert.equal(rosterSegment(singleName), 'inactive')
+
+  const namedEmptyEmail = { email: '', firstName: 'Pat', surname: 'Stone', passwordSet: true, isActive: true }
+  assert.equal(isAnonymisedDeletedProfile(namedEmptyEmail), false)
+  assert.equal(rosterSegment(namedEmptyEmail), 'active')
+
+  const homonym = {
+    email: 'deleted.user@site.com',
+    firstName: 'Deleted',
+    surname: 'user',
+    passwordSet: true,
+    isActive: true,
+  }
+  assert.equal(isAnonymisedDeletedProfile(homonym), false)
+  assert.equal(rosterSegment(homonym), 'active')
+})
+
+test('a UUID placeholder stays Pending only while userEmails still claims the live email', () => {
+  const placeholder = {
+    email: 'new.operative@site.com',
+    firstName: 'New',
+    surname: 'Operative',
+    passwordSet: false,
+    mobileNumber: '07700900456',
+  }
+  const leftover = {
+    email: 'farnienel@hotmail.com',
+    firstName: 'Test',
+    surname: 'Operative',
+    passwordSet: false,
+    mobileNumber: '07700900123',
+  }
+  const deleted = {
+    email: '',
+    firstName: 'Deleted',
+    surname: 'user',
+    passwordSet: true,
+    isActive: true,
+  }
+  const claimed = ['new.operative@site.com']
+
+  assert.equal(rosterSegment(placeholder), 'pending')
+  assert.equal(isIdentifiablePendingLeftover(placeholder, claimed), false)
+  assert.equal(isIdentifiablePendingLeftover(leftover, claimed), true)
+  assert.equal(isIdentifiablePendingLeftover(leftover, null), false)
+
+  const listed = listedRosterUsers([deleted, leftover, placeholder], claimed)
+  assert.deepEqual(listed.map((row) => row.email), ['', 'new.operative@site.com'])
+  assert.equal(listed.some((row) => row.firstName === 'Test' && row.surname === 'Operative'), false)
+  assert.equal(listed.some((row) => rosterSegment(row) === 'pending' && row.firstName === 'Test'), false)
+  assert.equal(listed.filter((row) => rosterSegment(row) === 'inactive').length, 1)
+
+  const afterDelete = listedRosterUsers([leftover], [])
+  assert.deepEqual(afterDelete, [])
+  assert.equal(isIdentifiablePendingLeftover(leftover, []), true)
+
+  const phoneOnly = { email: '', firstName: 'Test', surname: 'Operative', passwordSet: false, mobileNumber: '07700' }
+  assert.equal(isIdentifiablePendingLeftover(phoneOnly, null), true)
+  assert.deepEqual(listedRosterUsers([phoneOnly], null), [])
+})
+
+test('the packed roster-segment functions match this module', () => {
+  const source = readFileSync(new URL('./dist/canonical-business.js', import.meta.url), 'utf8')
+  const sandbox: {
+    ProjectPlannerCanonical?: {
+      rosterSegment: (profile: unknown) => string
+      matchesRosterSegment: (profile: unknown, segment: string) => boolean
+      listedRosterUsers: (users: unknown[], claimed?: string[] | null) => Array<{ email?: string }>
+    }
+  } = {}
+  runInContext(source, createContext(sandbox))
+  const packed = sandbox.ProjectPlannerCanonical
+  assert.ok(packed)
+  const deleted = {
+    email: '',
+    firstName: 'Deleted',
+    surname: 'user',
+    passwordSet: true,
+    isActive: true,
+  }
+  assert.equal(packed.rosterSegment(deleted), 'inactive')
+  assert.equal(packed.matchesRosterSegment(deleted, 'active'), false)
+  const leftover = { email: 'farnienel@hotmail.com', firstName: 'Test', surname: 'Operative', passwordSet: false }
+  assert.deepEqual(packed.listedRosterUsers([leftover], []), [])
+  assert.equal(packed.listedRosterUsers([leftover], ['farnienel@hotmail.com']).length, 1)
 })

@@ -7,6 +7,7 @@ import {
 } from '@/lib/owner/identityToolkitAdmin'
 import { firestoreValue } from '@/lib/stripe/writeOrgBilling'
 import {
+  ACCOUNT_DELETE_JOB_EMAIL_FIELD,
   ACCOUNT_DELETE_JOB_TYPE,
   DELETED_PRODUCT_EVENT_USER_ID,
   DELETED_USER_DISPLAY_NAME,
@@ -17,8 +18,10 @@ import {
   findSoleAdminBlock,
   ideaAuthorAnonymisePatch,
   pickCreatorSuccessor,
+  placeholderDeleteFallbackPatch,
   retryFinishesWithoutOrgScan,
   isUnusedInvitePlaceholder,
+  resolveAccountDeleteEmail,
   unusedInvitationShouldDelete,
   rosterAnonymisePatch,
   timesheetSnapshotShouldStay,
@@ -433,7 +436,15 @@ async function scrubInvitePlaceholder(
     const patch = changedAnonymisePatch(user.plain, rosterAnonymisePatch(user.plain))
     if (Object.keys(patch).length > 0) await adminPatch(session, user.path, patch, Object.keys(patch))
   }
-  await adminDelete(session, `users/${placeholderId}`)
+  try {
+    await adminDelete(session, `users/${placeholderId}`)
+  } catch (error) {
+    console.warn('[account/delete] placeholder delete', placeholderId, error)
+    const leftover = await adminGet(session, `users/${placeholderId}`)
+    if (!leftover) return
+    const patch = changedAnonymisePatch(leftover.plain, placeholderDeleteFallbackPatch(leftover.plain))
+    if (Object.keys(patch).length > 0) await adminPatch(session, leftover.path, patch, Object.keys(patch))
+  }
 }
 
 /** Unused invitations + passwordSet:false users/{uuid} that still hold this email. */
@@ -557,21 +568,41 @@ async function unlinkScrubbedOrg(session: AdminSession, uid: string, email: stri
   await Promise.all(tasks)
 }
 
-async function markAccountDeleteCompleted(session: AdminSession, uid: string): Promise<void> {
-  const jobPath = `adminJobs/${uid}`
-  const fields = {
+async function persistAccountDeleteJob(
+  session: AdminSession,
+  input: { uid: string; email: string; status: 'running' | 'completed'; existing: RestDocument | null }
+): Promise<void> {
+  const jobPath = `adminJobs/${input.uid}`
+  const fields: Record<string, unknown> = {
     type: ACCOUNT_DELETE_JOB_TYPE,
-    status: 'completed',
-    uid,
+    status: input.status,
+    uid: input.uid,
+    [ACCOUNT_DELETE_JOB_EMAIL_FIELD]: input.email,
     updatedAt: new Date(),
-    completedAt: new Date(),
   }
-  const existing = await adminGet(session, jobPath)
-  if (existing) {
-    await adminPatch(session, jobPath, fields, ['type', 'status', 'uid', 'updatedAt', 'completedAt'])
+  const fieldPaths = ['type', 'status', 'uid', ACCOUNT_DELETE_JOB_EMAIL_FIELD, 'updatedAt']
+  if (input.status === 'completed') {
+    fields.completedAt = new Date()
+    fieldPaths.push('completedAt')
+  }
+  if (input.existing) {
+    await adminPatch(session, jobPath, fields, fieldPaths)
     return
   }
-  await adminCreateNamed(session, 'adminJobs', uid, { ...fields, createdAt: new Date() })
+  await adminCreateNamed(session, 'adminJobs', input.uid, { ...fields, createdAt: new Date() })
+}
+
+async function markAccountDeleteCompleted(session: AdminSession, uid: string, email: string): Promise<void> {
+  const jobPath = `adminJobs/${uid}`
+  const existing = await adminGet(session, jobPath)
+  await persistAccountDeleteJob(session, { uid, email, status: 'completed', existing })
+}
+
+export async function readAccountDeleteJobEmail(uid: string): Promise<string> {
+  const session = await datastoreSession()
+  const job = await adminGet(session, `adminJobs/${uid}`)
+  if (!job || job.plain.type !== ACCOUNT_DELETE_JOB_TYPE) return ''
+  return resolveAccountDeleteEmail({ storedEmail: job.plain[ACCOUNT_DELETE_JOB_EMAIL_FIELD] })
 }
 
 async function finishAlreadyScrubbedAccount(
@@ -581,13 +612,18 @@ async function finishAlreadyScrubbedAccount(
 ): Promise<void> {
   const organizationId = typeof user.plain.organizationId === 'string' ? user.plain.organizationId : ''
   const orgIds = await discoverOrgIds(session, input.uid, organizationId)
-  const email = input.email.trim().toLowerCase()
+  const job = await adminGet(session, `adminJobs/${input.uid}`)
+  const email = resolveAccountDeleteEmail({
+    authEmail: input.email,
+    storedEmail: job?.plain.type === ACCOUNT_DELETE_JOB_TYPE ? job.plain[ACCOUNT_DELETE_JOB_EMAIL_FIELD] : '',
+    profileEmail: user.plain.email,
+  })
   for (const orgId of orgIds) {
     await unlinkScrubbedOrg(session, input.uid, email, orgId)
   }
   await deleteUnusedInvitesAndPlaceholders(session, input.uid, email)
   await adminDelete(session, `users/${input.uid}`)
-  await markAccountDeleteCompleted(session, input.uid)
+  await markAccountDeleteCompleted(session, input.uid, email)
   await writeAccountDeleteAudit(session, { uid: input.uid, orgIds, ip: input.ip })
   await adminRevokeRefreshTokens(input.uid).catch(() => undefined)
   await adminDeleteAuthUser(input.uid)
@@ -628,21 +664,34 @@ export async function executeAccountDelete(input: {
   const session = await datastoreSession()
   const jobPath = `adminJobs/${input.uid}`
   const existing = await adminGet(session, jobPath)
+  const user = await adminGet(session, `users/${input.uid}`)
+  const storedEmail =
+    existing?.plain.type === ACCOUNT_DELETE_JOB_TYPE ? existing.plain[ACCOUNT_DELETE_JOB_EMAIL_FIELD] : ''
+  const email = resolveAccountDeleteEmail({
+    authEmail: input.email,
+    storedEmail,
+    profileEmail: user?.plain.email,
+  })
+
+  if (email) {
+    const status = existing?.plain.status === 'completed' ? 'completed' : 'running'
+    await persistAccountDeleteJob(session, { uid: input.uid, email, status, existing })
+  }
+
   if (existing?.plain.status === 'completed' && existing.plain.type === ACCOUNT_DELETE_JOB_TYPE) {
-    await deleteUnusedInvitesAndPlaceholders(session, input.uid, (input.email || '').trim().toLowerCase())
+    await deleteUnusedInvitesAndPlaceholders(session, input.uid, email)
     await adminRevokeRefreshTokens(input.uid).catch(() => undefined)
     await adminDeleteAuthUser(input.uid)
     return 'already'
   }
 
-  const user = await adminGet(session, `users/${input.uid}`)
   const memberships = await adminList(session, `users/${input.uid}/orgMemberships`)
   if (user && retryFinishesWithoutOrgScan({ profile: user.plain, membershipCount: memberships.length })) {
-    await finishAlreadyScrubbedAccount(session, input, user)
+    await finishAlreadyScrubbedAccount(session, { uid: input.uid, email, ip: input.ip }, user)
     return 'already'
   }
 
-  if (!existing) {
+  if (!existing && !email) {
     await adminCreateNamed(session, 'adminJobs', input.uid, {
       type: ACCOUNT_DELETE_JOB_TYPE,
       status: 'running',
@@ -651,7 +700,7 @@ export async function executeAccountDelete(input: {
       updatedAt: new Date(),
     })
   }
-  const email = (input.email || (typeof user?.plain.email === 'string' ? user.plain.email : '')).trim().toLowerCase()
+
   if (user) {
     const patch = changedAnonymisePatch(user.plain, rosterAnonymisePatch(user.plain))
     if (Object.keys(patch).length > 0) await adminPatch(session, user.path, patch, Object.keys(patch))
@@ -666,12 +715,12 @@ export async function executeAccountDelete(input: {
   await anonymiseProductEvents(session, input.uid)
   await adminDelete(session, `users/${input.uid}`)
 
-  await adminPatch(
-    session,
-    jobPath,
-    { type: ACCOUNT_DELETE_JOB_TYPE, status: 'completed', uid: input.uid, updatedAt: new Date(), completedAt: new Date() },
-    ['type', 'status', 'uid', 'updatedAt', 'completedAt']
-  )
+  await persistAccountDeleteJob(session, {
+    uid: input.uid,
+    email,
+    status: 'completed',
+    existing: (await adminGet(session, jobPath)) || existing,
+  })
   await writeAccountDeleteAudit(session, {
     uid: input.uid,
     orgIds: input.snapshots.map((row) => row.orgId),

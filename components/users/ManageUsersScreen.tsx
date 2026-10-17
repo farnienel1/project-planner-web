@@ -9,7 +9,7 @@ import { useUserStore } from '@/lib/stores/userStore'
 import { useInviteStore } from '@/lib/stores/inviteStore'
 import { canManageUsers, getManageUsersLabel } from '@/lib/navigation/menuPermissions'
 import {
-  classifyManageUsersTab,
+  filterUsersForManageTab,
   filterUsersForManageTabAndSegment,
   manageUsersListPhase,
   type ManageUsersTab,
@@ -78,7 +78,7 @@ function badgesFor(user: User, showAdminBadge: boolean): Badge[] {
 export function ManageUsersScreen() {
   const router = useRouter()
   const { user: currentUser, organization } = useAuthStore()
-  const { users, error: rosterError, rosterLoadedOrgId, loadUsers } = useOrgUserStore()
+  const { users, error: rosterError, rosterLoadedOrgId, claimedEmails, loadUsers } = useOrgUserStore()
   const { sendPasswordReset } = useUserStore()
   const { inviteUser } = useInviteStore()
 
@@ -119,8 +119,8 @@ export function ManageUsersScreen() {
   const section = ROLE_TABS.find((item) => item.tab === effectiveTab)?.section ?? 'Users'
 
   const tabUsers = useMemo(
-    () => users.filter((user) => classifyManageUsersTab(user) === effectiveTab),
-    [users, effectiveTab]
+    () => filterUsersForManageTab(users, effectiveTab, claimedEmails),
+    [users, effectiveTab, claimedEmails]
   )
 
   const counts = useMemo(() => {
@@ -133,14 +133,14 @@ export function ManageUsersScreen() {
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
-    let list = filterUsersForManageTabAndSegment(users, effectiveTab, segment)
+    let list = filterUsersForManageTabAndSegment(users, effectiveTab, segment, claimedEmails)
     if (q) {
       list = list.filter(
         (user) => displayName(user).toLowerCase().includes(q) || user.email.toLowerCase().includes(q)
       )
     }
     return list.sort((a, b) => displayName(a).localeCompare(displayName(b)))
-  }, [users, effectiveTab, segment, search])
+  }, [users, effectiveTab, segment, search, claimedEmails])
 
   const listPhase = manageUsersListPhase({
     organizationId: organization?.id,

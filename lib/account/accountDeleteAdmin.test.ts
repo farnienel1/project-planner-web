@@ -336,3 +336,210 @@ test('unused invitations and passwordSet false placeholders lose the live email;
     }
   }
 })
+
+test('a scrubbed retry uses the email stored on the admin job', async () => {
+  const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 })
+  const previousEnv = {
+    FIREBASE_SERVICE_ACCOUNT_JSON: process.env.FIREBASE_SERVICE_ACCOUNT_JSON,
+    GOOGLE_APPLICATION_CREDENTIALS: process.env.GOOGLE_APPLICATION_CREDENTIALS,
+    NEXT_PUBLIC_FIREBASE_PROJECT_ID: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+    NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
+  }
+  const previousFetch = globalThis.fetch
+  const calls: Call[] = []
+  const email = 'farnienel@hotmail.com'
+  const placeholderId = 'AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE'
+
+  process.env.FIREBASE_SERVICE_ACCOUNT_JSON = JSON.stringify({
+    client_email: 'delete-test@demo-project.iam.gserviceaccount.com',
+    private_key: privateKey.export({ type: 'pkcs8', format: 'pem' }).toString(),
+    project_id: projectId,
+  })
+  delete process.env.GOOGLE_APPLICATION_CREDENTIALS
+  process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID = projectId
+  delete process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET
+
+  globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input)
+    const method = init?.method || 'GET'
+    const body = typeof init?.body === 'string' ? init.body : ''
+    calls.push({ method, url, body })
+    if (url.startsWith('https://oauth2.googleapis.com/token')) {
+      return jsonResponse(200, { access_token: 'ya29.test' })
+    }
+    if (url.includes('/accounts:revokeRefreshTokens') || url.includes('/accounts:delete')) {
+      return jsonResponse(200, {})
+    }
+    if (url.includes(':runQuery')) {
+      const filter = queryFilter(body)
+      if (filter.collectionId === 'users' && filter.field === 'email' && filter.value === email) {
+        return jsonResponse(200, [
+          queryHit(`users/${placeholderId}`, {
+            email: { stringValue: email },
+            organizationId: { stringValue: orgId },
+            passwordSet: { booleanValue: false },
+            firstName: { stringValue: 'Test' },
+            surname: { stringValue: 'Operative' },
+          }),
+        ])
+      }
+      return jsonResponse(200, [])
+    }
+    if (method === 'GET' && url.includes(`/documents/users/${uid}`) && !url.includes('/orgMemberships')) {
+      return jsonResponse(200, userDocument())
+    }
+    if (method === 'GET' && url.includes(`/documents/users/${uid}/orgMemberships`)) {
+      return jsonResponse(200, { documents: [] })
+    }
+    if (method === 'GET' && url.includes(`/documents/adminJobs/${uid}`)) {
+      return jsonResponse(200, {
+        name: `projects/${projectId}/databases/(default)/documents/adminJobs/${uid}`,
+        fields: {
+          type: { stringValue: 'accountDelete' },
+          status: { stringValue: 'running' },
+          uid: { stringValue: uid },
+          email: { stringValue: email },
+        },
+      })
+    }
+    if (method === 'GET' && url.includes(`/documents/users/${placeholderId}`)) {
+      return jsonResponse(200, {
+        name: `projects/${projectId}/databases/(default)/documents/users/${placeholderId}`,
+        fields: {
+          email: { stringValue: email },
+          passwordSet: { booleanValue: false },
+          firstName: { stringValue: 'Test' },
+          surname: { stringValue: 'Operative' },
+        },
+      })
+    }
+    if (method === 'GET') return jsonResponse(404, {})
+    if (method === 'DELETE' || method === 'PATCH' || method === 'POST') return jsonResponse(200, {})
+    return jsonResponse(500, { error: { message: `unexpected ${method} ${url}` } })
+  }
+
+  try {
+    const result = await executeAccountDelete({ uid, email: '', snapshots: [] })
+    assert.equal(result, 'already')
+    const queries = calls.filter((call) => call.url.includes(':runQuery')).map((call) => queryFilter(call.body))
+    assert.equal(
+      queries.some((query) => query.collectionId === 'users' && query.field === 'email' && query.value === email),
+      true
+    )
+    assert.equal(
+      queries.some((query) => query.collectionId === 'invitations' && query.field === 'email' && query.value === email),
+      true
+    )
+    assert.equal(
+      calls.some((call) => call.method === 'DELETE' && call.url.includes(`/users/${placeholderId}`)),
+      true
+    )
+  } finally {
+    globalThis.fetch = previousFetch
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value == null) delete process.env[key]
+      else process.env[key] = value
+    }
+  }
+})
+
+test('a failed placeholder delete anonymises that row in the same attempt', async () => {
+  const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 })
+  const previousEnv = {
+    FIREBASE_SERVICE_ACCOUNT_JSON: process.env.FIREBASE_SERVICE_ACCOUNT_JSON,
+    GOOGLE_APPLICATION_CREDENTIALS: process.env.GOOGLE_APPLICATION_CREDENTIALS,
+    NEXT_PUBLIC_FIREBASE_PROJECT_ID: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+    NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
+  }
+  const previousFetch = globalThis.fetch
+  const calls: Call[] = []
+  const placeholderId = 'AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE'
+  const email = 'farnienel@hotmail.com'
+
+  process.env.FIREBASE_SERVICE_ACCOUNT_JSON = JSON.stringify({
+    client_email: 'delete-test@demo-project.iam.gserviceaccount.com',
+    private_key: privateKey.export({ type: 'pkcs8', format: 'pem' }).toString(),
+    project_id: projectId,
+  })
+  delete process.env.GOOGLE_APPLICATION_CREDENTIALS
+  process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID = projectId
+  delete process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET
+
+  globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input)
+    const method = init?.method || 'GET'
+    const body = typeof init?.body === 'string' ? init.body : ''
+    calls.push({ method, url, body })
+    if (url.startsWith('https://oauth2.googleapis.com/token')) {
+      return jsonResponse(200, { access_token: 'ya29.test' })
+    }
+    if (url.includes('/accounts:revokeRefreshTokens') || url.includes('/accounts:delete')) {
+      return jsonResponse(200, {})
+    }
+    if (url.includes(':runQuery')) {
+      const filter = queryFilter(body)
+      if (filter.collectionId === 'users' && filter.field === 'email' && filter.value === email) {
+        return jsonResponse(200, [
+          queryHit(`users/${placeholderId}`, {
+            email: { stringValue: email },
+            passwordSet: { booleanValue: false },
+            firstName: { stringValue: 'Test' },
+            surname: { stringValue: 'Operative' },
+            mobileNumber: { stringValue: '07700' },
+          }),
+        ])
+      }
+      return jsonResponse(200, [])
+    }
+    if (method === 'GET' && url.includes(`/documents/users/${placeholderId}`)) {
+      return jsonResponse(200, {
+        name: `projects/${projectId}/databases/(default)/documents/users/${placeholderId}`,
+        fields: {
+          email: { stringValue: email },
+          passwordSet: { booleanValue: false },
+          firstName: { stringValue: 'Test' },
+          surname: { stringValue: 'Operative' },
+          mobileNumber: { stringValue: '07700' },
+        },
+      })
+    }
+    if (method === 'GET' && url.includes(`/documents/users/${uid}`) && !url.includes('/orgMemberships')) {
+      return jsonResponse(200, {
+        name: `projects/${projectId}/databases/(default)/documents/users/${uid}`,
+        fields: {
+          email: { stringValue: email },
+          name: { stringValue: 'Test Operative' },
+          displayName: { stringValue: 'Test Operative' },
+          firstName: { stringValue: 'Test' },
+          passwordSet: { booleanValue: true },
+        },
+      })
+    }
+    if (method === 'GET' && url.includes(`/documents/users/${uid}/orgMemberships`)) {
+      return jsonResponse(200, { documents: [] })
+    }
+    if (method === 'GET') return jsonResponse(404, {})
+    if (method === 'DELETE' && url.includes(`/users/${placeholderId}`)) {
+      return jsonResponse(500, { error: { message: 'placeholder locked' } })
+    }
+    if (method === 'DELETE' || method === 'PATCH' || method === 'POST') return jsonResponse(200, {})
+    return jsonResponse(500, { error: { message: `unexpected ${method} ${url}` } })
+  }
+
+  try {
+    const result = await executeAccountDelete({ uid, email, snapshots: [] })
+    assert.equal(result, 'completed')
+    const placeholderPatch = calls.find(
+      (call) => call.method === 'PATCH' && call.url.includes(`/documents/users/${placeholderId}`)
+    )
+    assert.ok(placeholderPatch)
+    assert.match(placeholderPatch!.body, /Deleted user|Deleted/)
+    assert.match(placeholderPatch!.body, /""|"email"/)
+  } finally {
+    globalThis.fetch = previousFetch
+    for (const [key, value] of Object.entries(previousEnv)) {
+      if (value == null) delete process.env[key]
+      else process.env[key] = value
+    }
+  }
+})
