@@ -31,6 +31,7 @@ import {
   shouldBlockPublicSetupForExistingLogin,
 } from '@/lib/orgSetup/existingLogin'
 import type { SubscriptionPlanKey } from '@/lib/stripe/plans'
+import { ageConfirmationWriteFields } from '@/lib/legal/ageConfirmation'
 
 export type CreateOrganizationInput = {
   email: string
@@ -332,6 +333,7 @@ export async function createPendingOrganization(
           ...founderFields,
           policyAccepted: false,
           policyAcceptedAt: null,
+          ...ageConfirmationWriteFields(Timestamp.fromDate(now)),
           ...leaveFields,
           ...(notificationPreferences ? { notificationPreferences } : {}),
           createdAt: now,

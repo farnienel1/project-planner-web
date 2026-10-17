@@ -50,6 +50,7 @@ import {
   type OrgSetupSettings,
 } from '@/lib/orgSetup/orgSetupSettings'
 import { LegalLinks } from '@/components/legal/LegalLinks'
+import { AGE_CONFIRMATION_LABEL, validateAccountStep as validateSetupAccountStep } from '@/lib/legal/ageConfirmation'
 
 type WizardStep =
   | 'account'
@@ -157,6 +158,7 @@ export function OrgSetupWizard() {
   const [organizationName, setOrganizationName] = useState('')
   const [planKey, setPlanKey] = useState<SubscriptionPlanKey>('month')
   const [renewConsent, setRenewConsent] = useState(false)
+  const [ageConfirmed, setAgeConfirmed] = useState(false)
 
   const [orgSetupSettings, setOrgSetupSettings] = useState<OrgSetupSettings>(createDefaultOrgSetupSettings())
   const [featuresStepIndex, setFeaturesStepIndex] = useState(0)
@@ -381,13 +383,15 @@ export function OrgSetupWizard() {
   }
 
   function validateAccountStep(): string | null {
-    if (!firstName.trim() || !surname.trim()) return 'Please enter your first and last name.'
-    if (!email.trim()) return 'Please enter your email address.'
-    if (email.trim() && !/^\S+@\S+\.\S+$/.test(email.trim())) return 'Enter a valid email address.'
-    if (creatingAdditionalOrg) return null
-    if (password.length < 8) return 'Password must be at least 8 characters.'
-    if (password !== confirmPassword) return 'Passwords do not match.'
-    return null
+    return validateSetupAccountStep({
+      firstName,
+      surname,
+      email,
+      password,
+      confirmPassword,
+      creatingAdditionalOrg,
+      ageConfirmed,
+    })
   }
 
   function validateOrganizationStep(): string | null {
@@ -933,6 +937,20 @@ export function OrgSetupWizard() {
                       {[4, 8, 12].map((n) => (
                         <i key={n} className={password.length >= n ? 'on' : ''} />
                       ))}
+                    </div>
+                  ) : null}
+                  {!creatingAdditionalOrg ? (
+                    <div className="row" style={{ alignItems: 'flex-start', gap: 12, marginTop: 18 }}>
+                      <input
+                        type="checkbox"
+                        id="age-confirmation"
+                        checked={ageConfirmed}
+                        onChange={(event) => setAgeConfirmed(event.target.checked)}
+                        className="mt-0.5 h-[22px] w-[22px] shrink-0 accent-[var(--blue)]"
+                      />
+                      <label htmlFor="age-confirmation" className="small ink2" style={{ fontWeight: 600 }}>
+                        {AGE_CONFIRMATION_LABEL}
+                      </label>
                     </div>
                   ) : null}
                   <p className="muted small" style={{ marginTop: 18 }}>

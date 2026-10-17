@@ -36,6 +36,17 @@ test('pack has SaaS, DPA, AUP and Privacy with privacy as acknowledgement', () =
   assert.equal(privacy?.acceptLabel.includes('acknowledge'), true)
 })
 
+test('SaaS §3 requires authorised users to be 16 or over without collecting dates of birth', () => {
+  const saas = LEGAL_PACK_DOCUMENTS.find((doc) => doc.id === 'saas')
+  const section = saas?.sections.find((row) => row.title.startsWith('3.'))
+  assert.match(
+    section?.paragraphs.join(' ') || '',
+    /Authorised Users must be 16 or over\. ProjectPlanner does not collect dates of birth; each user confirms that age when they create or accept an account\./
+  )
+  assert.equal(LEGAL_ENTITY.version, '1.0')
+  assert.equal(LEGAL_ENTITY.effectiveDate, '18 September 2026')
+})
+
 test('sign-up policy includes the toolbox talks disclaimer', () => {
   const aup = LEGAL_PACK_DOCUMENTS.find((doc) => doc.id === 'aup')
   const blob = JSON.stringify(aup)

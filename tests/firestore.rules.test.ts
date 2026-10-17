@@ -22,6 +22,7 @@ import {
   getDocs,
   query,
   setDoc,
+  Timestamp,
   updateDoc,
   where,
 } from 'firebase/firestore'
@@ -248,6 +249,73 @@ test('admin A can list and create invitations for company A', async () => {
       organizationId: ORG_A,
       email: 'another-a@test.com',
       isUsed: false,
+    })
+  )
+})
+
+test('self-create without age confirmation is denied', async () => {
+  const uid = 'founder-no-age'
+  const email = 'founder-no-age@test.com'
+  const db = authDb(uid, email)
+  await assertFails(
+    setDoc(doc(db, 'users', uid), {
+      email,
+      organizationId: ORG_A,
+      firstName: 'New',
+      role: 'admin',
+    })
+  )
+  await assertFails(
+    setDoc(doc(db, 'users', uid), {
+      email,
+      organizationId: ORG_A,
+      firstName: 'New',
+      role: 'admin',
+      ageConfirmed: false,
+      ageConfirmedYears: 16,
+      ageConfirmedAt: Timestamp.now(),
+    })
+  )
+  await assertFails(
+    setDoc(doc(db, 'users', uid), {
+      email,
+      organizationId: ORG_A,
+      firstName: 'New',
+      role: 'admin',
+      ageConfirmed: true,
+      ageConfirmedYears: '16',
+      ageConfirmedAt: Timestamp.now(),
+    })
+  )
+})
+
+test('self-create with age confirmation is allowed', async () => {
+  const uid = 'founder-ok'
+  const email = 'founder-ok@test.com'
+  const db = authDb(uid, email)
+  await assertSucceeds(
+    setDoc(doc(db, 'users', uid), {
+      email,
+      organizationId: ORG_A,
+      firstName: 'New',
+      role: 'admin',
+      ageConfirmed: true,
+      ageConfirmedYears: 16,
+      ageConfirmedAt: Timestamp.now(),
+    })
+  )
+})
+
+test('admin invite placeholder create is allowed without age confirmation', async () => {
+  const db = authDb(ADMIN_A, 'admin-a@test.com')
+  await assertSucceeds(
+    setDoc(doc(db, 'users', 'invite-placeholder-1'), {
+      email: 'invited-placeholder@test.com',
+      organizationId: ORG_A,
+      firstName: 'Invited',
+      role: 'operative',
+      passwordSet: false,
+      isActive: true,
     })
   )
 })

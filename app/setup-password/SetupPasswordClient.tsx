@@ -4,7 +4,12 @@ import { FormEvent, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { completeInvitationPasswordSetup, fetchInvitationSummary, type InvitationSummary } from '@/lib/invites/completeInviteSetup'
-import { passwordsMatchAndReady } from '@/lib/legal/scrollUtils'
+import {
+  AGE_CONFIRMATION_LABEL,
+  invitePasswordSetupCanContinue,
+  validateInvitePasswordSetup,
+} from '@/lib/legal/ageConfirmation'
+import { LegalLinks } from '@/components/legal/LegalLinks'
 import { HoneypotField } from '@/components/security/HoneypotField'
 import { postPublicForm } from '@/lib/security/publicFormClient'
 
@@ -21,6 +26,7 @@ export default function SetupPasswordClient() {
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [website, setWebsite] = useState('')
+  const [ageConfirmed, setAgeConfirmed] = useState(false)
 
   useEffect(() => {
     if (!invitationId) {
@@ -48,18 +54,21 @@ export default function SetupPasswordClient() {
     }
   }, [invitationId])
 
-  const canContinue = passwordsMatchAndReady(password, confirmPassword) && Boolean(invitation) && !submitting
+  const canContinue = invitePasswordSetupCanContinue({
+    password,
+    confirmPassword,
+    ageConfirmed,
+    hasInvitation: Boolean(invitation),
+    submitting,
+  })
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault()
     setError(null)
 
-    if (password.length < 8) {
-      setError('Password must be at least 8 characters.')
-      return
-    }
-    if (password !== confirmPassword) {
-      setError('Passwords do not match.')
+    const validationError = validateInvitePasswordSetup({ password, confirmPassword, ageConfirmed })
+    if (validationError) {
+      setError(validationError)
       return
     }
 
@@ -133,6 +142,25 @@ export default function SetupPasswordClient() {
                 required
               />
             </div>
+
+            <div className="flex items-start gap-3">
+              <input
+                type="checkbox"
+                id="age-confirmation"
+                checked={ageConfirmed}
+                onChange={(event) => setAgeConfirmed(event.target.checked)}
+                required
+                className="mt-0.5 h-[22px] w-[22px] shrink-0 accent-blue-600"
+              />
+              <label htmlFor="age-confirmation" className="text-sm font-semibold text-slate-700">
+                {AGE_CONFIRMATION_LABEL}
+              </label>
+            </div>
+
+            <p className="text-sm text-slate-500">
+              Privacy Policy and Terms of Service apply before you create this account.{' '}
+              <LegalLinks />
+            </p>
 
             <button
               type="submit"
