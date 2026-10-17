@@ -85,6 +85,8 @@ import {
   employmentTypeOnDay,
   MANAGER_PERMISSION_TOGGLES,
   USER_DOCUMENT_FIELDS,
+  USER_SELF_CREATE_AGE_FIELDS,
+  userCreateRequiresAgeConfirmation,
 } from './userProfile.ts'
 import {
   DEFAULT_USER_NOTIFICATION_PREFERENCES,
@@ -173,7 +175,12 @@ import {
   matchesRosterSegment,
   rosterSegment,
 } from './userRosterSegment.ts'
-import { inviteEmailHasLiveClaim, resolveInviteEmailClaim } from './inviteEmailClaim.ts'
+import {
+  inviteEmailHasLiveClaim,
+  inviteEmailOrgLookupConstraints,
+  invitePlaceholderUserWriteFields,
+  resolveInviteEmailClaim,
+} from './inviteEmailClaim.ts'
 
 const superAdmin: StaffAccountRole = { isSuperAdmin: true, isAdmin: true, isManager: false, isOperativeMode: false }
 const admin: StaffAccountRole = { isSuperAdmin: false, isAdmin: true, isManager: false, isOperativeMode: false }
@@ -1129,6 +1136,9 @@ test('the iOS JavaScript bundle exposes the standard-day, leave and dismiss rule
     'listedCurrentLabourPeople',
     'resolveInviteEmailClaim',
     'inviteEmailHasLiveClaim',
+    'inviteEmailOrgLookupConstraints',
+    'invitePlaceholderUserWriteFields',
+    'userCreateRequiresAgeConfirmation',
   ]) {
     assert.equal(typeof bundle[name], 'function', `${name} is exported from the packed script`)
   }
@@ -2909,12 +2919,42 @@ test('re-invite is blocked only by a live email claim, not a leftover or tombsto
   )
 })
 
+test('admin invite placeholders omit age confirmation and only look up the email in this org', () => {
+  assert.equal(
+    userCreateRequiresAgeConfirmation({ creatorUserId: 'admin-uid', targetUserId: 'placeholder-uuid' }),
+    false
+  )
+  assert.equal(
+    userCreateRequiresAgeConfirmation({ creatorUserId: 'self-uid', targetUserId: 'self-uid' }),
+    true
+  )
+  assert.equal(userCreateRequiresAgeConfirmation({ creatorUserId: '', targetUserId: 'self-uid' }), false)
+  assert.deepEqual(USER_SELF_CREATE_AGE_FIELDS, ['ageConfirmed', 'ageConfirmedAt', 'ageConfirmedYears'])
+  assert.equal(USER_DOCUMENT_FIELDS.includes('ageConfirmed'), false)
+  const placeholder = invitePlaceholderUserWriteFields()
+  assert.equal(placeholder.passwordSet, false)
+  assert.equal(placeholder.isActive, true)
+  assert.equal(placeholder.isSuperAdmin, false)
+  assert.equal(placeholder.policyAccepted, false)
+  assert.equal('ageConfirmed' in placeholder, false)
+  assert.deepEqual(inviteEmailOrgLookupConstraints(' Org-1 ', 'Pat@Site.COM'), {
+    organizationId: 'Org-1',
+    email: 'pat@site.com',
+  })
+})
+
 test('the packed invite-email claim matches this module', () => {
   const source = readFileSync(new URL('./dist/canonical-business.js', import.meta.url), 'utf8')
   const sandbox: {
     ProjectPlannerCanonical?: {
       resolveInviteEmailClaim: (input: unknown) => { action: string; reuseUserId?: string }
       inviteEmailHasLiveClaim: (input: unknown) => boolean
+      inviteEmailOrgLookupConstraints: (
+        organizationId: string,
+        email: string
+      ) => { organizationId: string; email: string }
+      invitePlaceholderUserWriteFields: () => { passwordSet: boolean }
+      userCreateRequiresAgeConfirmation: (input: unknown) => boolean
     }
   } = {}
   runInContext(source, createContext(sandbox))
@@ -2942,5 +2982,14 @@ test('the packed invite-email claim matches this module', () => {
       emailPointer: { exists: false },
     }),
     true
+  )
+  assert.deepEqual(
+    plain(packed.inviteEmailOrgLookupConstraints('org-a', 'Pat@Site.com')),
+    inviteEmailOrgLookupConstraints('org-a', 'Pat@Site.com')
+  )
+  assert.equal(packed.invitePlaceholderUserWriteFields().passwordSet, false)
+  assert.equal(
+    packed.userCreateRequiresAgeConfirmation({ creatorUserId: 'admin', targetUserId: leftover.userId }),
+    false
   )
 })

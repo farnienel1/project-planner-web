@@ -3,13 +3,17 @@ import { getFirebaseDb } from '@/lib/firebase/ensureFirebase'
 import { buildInvitedUserPayload, normalizeLineManagerIds, permissionsToFirestoreMap } from '@/lib/firebase/userPayload'
 import { readStoredRates } from '@/lib/timesheets/payBasis'
 import { newUuid } from '@/lib/firebase/firestoreUtils'
+import { withTimeout } from '@/lib/client/withTimeout'
 import {
-  addExistingUserToOrganization,
-  findExistingAuthUserByEmail,
-} from '@/lib/orgMembership/membershipService'
-import { resolveInviteEmailClaim, type InviteEmailClaimUser } from '@/lib/canonical/inviteEmailClaim'
+  inviteEmailOrgLookupConstraints,
+  resolveInviteEmailClaim,
+  type InviteEmailClaimUser,
+} from '@/lib/canonical/inviteEmailClaim'
+import { userCreateRequiresAgeConfirmation } from '@/lib/canonical/userProfile'
 import { orgEmailPointerUserId } from '@/lib/orgSetup/staleOrgEmailPointer'
 import type { UserPermissions } from '@/types'
+
+const INVITE_LOOKUP_TIMEOUT_MS = 8000
 
 export type InviteUserCoreInput = {
   email: string
@@ -47,12 +51,6 @@ export type InviteUserCoreResult = {
   inviteType: 'new_user' | 'existing_user_org_add'
 }
 
-function roleFromPermissions(permissions: UserPermissions): string {
-  if (permissions.adminAccess) return 'admin'
-  if (permissions.manager && !permissions.operativeMode) return 'manager'
-  return 'operative'
-}
-
 function inviteClaimUserFromDoc(
   userId: string,
   data: Record<string, unknown> | undefined
@@ -73,67 +71,98 @@ function inviteClaimUserFromDoc(
   }
 }
 
+async function loadInviteClaimState(
+  organizationId: string,
+  emailLower: string
+): Promise<{
+  existingUsers: InviteEmailClaimUser[]
+  emailPointer: {
+    exists: boolean
+    pointedUserId?: string
+    pointedUser: InviteEmailClaimUser | null
+  }
+}> {
+  const db = getFirebaseDb()
+  const lookup = inviteEmailOrgLookupConstraints(organizationId, emailLower)
+  if (!lookup.organizationId || !lookup.email) {
+    throw new Error('Organisation and email are required to invite a user.')
+  }
+
+  try {
+    const existingInOrg = await withTimeout(
+      getDocs(
+        query(
+          collection(db, 'users'),
+          where('email', '==', lookup.email),
+          where('organizationId', '==', lookup.organizationId)
+        )
+      ),
+      INVITE_LOOKUP_TIMEOUT_MS,
+      'invite-org-email-lookup'
+    )
+    const orgEmailSnap = await withTimeout(
+      getDoc(doc(db, 'organizations', lookup.organizationId, 'userEmails', lookup.email)),
+      INVITE_LOOKUP_TIMEOUT_MS,
+      'invite-org-email-pointer'
+    )
+    const pointedId = orgEmailSnap.exists()
+      ? orgEmailPointerUserId(orgEmailSnap.data() as Record<string, unknown>)
+      : ''
+    const pointedUserSnap = pointedId
+      ? await withTimeout(
+          getDoc(doc(db, 'users', pointedId)),
+          INVITE_LOOKUP_TIMEOUT_MS,
+          'invite-pointed-user'
+        )
+      : null
+    const existingUsers = existingInOrg.docs.map((row) =>
+      inviteClaimUserFromDoc(row.id, row.data() as Record<string, unknown>)
+    )
+    const pointedUser = pointedUserSnap?.exists()
+      ? inviteClaimUserFromDoc(pointedId, pointedUserSnap.data() as Record<string, unknown>)
+      : null
+    if (pointedUser && !existingUsers.some((user) => user.userId === pointedId)) {
+      existingUsers.push(pointedUser)
+    }
+    return {
+      existingUsers,
+      emailPointer: {
+        exists: orgEmailSnap.exists(),
+        pointedUserId: pointedId || undefined,
+        pointedUser,
+      },
+    }
+  } catch (error) {
+    if (error instanceof Error && error.name === 'TimeoutError') {
+      throw new Error('Checking who already has this email took too long. Try again.')
+    }
+    throw error
+  }
+}
+
 export async function inviteUserCore(input: InviteUserCoreInput): Promise<InviteUserCoreResult> {
   const db = getFirebaseDb()
   const emailLower = input.email.toLowerCase().trim()
-
-  const existingInOrg = await getDocs(
-    query(
-      collection(db, 'users'),
-      where('email', '==', emailLower),
-      where('organizationId', '==', input.organizationId)
-    )
-  )
-  const orgEmailSnap = await getDoc(
-    doc(db, 'organizations', input.organizationId, 'userEmails', emailLower)
-  )
-  const pointedId = orgEmailSnap.exists()
-    ? orgEmailPointerUserId(orgEmailSnap.data() as Record<string, unknown>)
-    : ''
-  const pointedUserSnap = pointedId ? await getDoc(doc(db, 'users', pointedId)) : null
-  const existingUsers = existingInOrg.docs.map((row) =>
-    inviteClaimUserFromDoc(row.id, row.data() as Record<string, unknown>)
-  )
-  if (pointedUserSnap?.exists() && !existingUsers.some((user) => user.userId === pointedId)) {
-    existingUsers.push(
-      inviteClaimUserFromDoc(pointedId, pointedUserSnap.data() as Record<string, unknown>)
-    )
-  }
+  const claim = await loadInviteClaimState(input.organizationId, emailLower)
 
   const decision = resolveInviteEmailClaim({
     inviteEmail: emailLower,
-    existingUsers,
-    emailPointer: {
-      exists: orgEmailSnap.exists(),
-      pointedUserId: pointedId || undefined,
-      pointedUser: pointedUserSnap?.exists()
-        ? inviteClaimUserFromDoc(pointedId, pointedUserSnap.data() as Record<string, unknown>)
-        : null,
-    },
+    existingUsers: claim.existingUsers,
+    emailPointer: claim.emailPointer,
   })
   if (decision.action === 'block') {
     throw new Error(`A user with email ${emailLower} already exists in this organisation.`)
   }
 
-  const existingAuthUser = await findExistingAuthUserByEmail(emailLower)
-  if (existingAuthUser && existingAuthUser.organizationId !== input.organizationId) {
-    const role = roleFromPermissions(input.permissions)
-    const { invitationId } = await addExistingUserToOrganization({
-      authUserId: existingAuthUser.userId,
-      organizationId: input.organizationId,
-      organizationName: input.organizationName || 'Organisation',
-      role,
-      permissions: input.permissions,
-      invitedBy: input.invitedBy,
-    })
-    return {
-      invitationId,
-      userId: existingAuthUser.userId,
-      inviteType: 'existing_user_org_add',
-    }
-  }
-
   const userId = decision.reuseUserId || newUuid()
+  if (
+    userCreateRequiresAgeConfirmation({
+      creatorUserId: input.invitedBy,
+      targetUserId: userId,
+    })
+  ) {
+    throw new Error('Invite placeholders must not use the self-create path.')
+  }
 
   const invitationId = newUuid()
 

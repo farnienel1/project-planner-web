@@ -67,6 +67,30 @@ export const USER_DOCUMENT_FIELDS = [
   'notificationPreferences',
 ] as const
 
+/**
+ * Self-create only (`request.auth.uid == userId`). Admin/manager invite
+ * placeholders must omit these — Path 2/4 in firestore.rules do not require them.
+ */
+export const USER_SELF_CREATE_AGE_FIELDS = [
+  'ageConfirmed',
+  'ageConfirmedAt',
+  'ageConfirmedYears',
+] as const
+
+/**
+ * Age confirmation is required only when the signed-in user is creating
+ * `users/{their uid}`. An admin invite of a different placeholder id is not
+ * self-create.
+ */
+export function userCreateRequiresAgeConfirmation(input: {
+  creatorUserId?: string | null
+  targetUserId?: string | null
+}): boolean {
+  const creator = typeof input.creatorUserId === 'string' ? input.creatorUserId.trim() : ''
+  const target = typeof input.targetUserId === 'string' ? input.targetUserId.trim() : ''
+  return creator.length > 0 && creator === target
+}
+
 export const USER_PERMISSION_FIELDS = [
   'adminAccess',
   'manager',

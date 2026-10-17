@@ -136,8 +136,13 @@ test('age confirmation is create-time only; existing profiles load without those
     /allow create: if request\.auth != null &&\s+request\.resource\.data\.members\[request\.auth\.uid\] == 'admin';/
   )
   assert.match(rules, /isOrgBootstrapAdminProfileCreate\(userId\) && selfCreateHasAgeConfirmation\(\)/)
-  const userFields = readFileSync(new URL('../canonical/userProfile.ts', import.meta.url), 'utf8')
-  assert.equal(userFields.includes("'ageConfirmed'"), false)
+  const userProfile = readFileSync(new URL('../canonical/userProfile.ts', import.meta.url), 'utf8')
+  const documentFieldsBlock = userProfile.slice(
+    userProfile.indexOf('export const USER_DOCUMENT_FIELDS'),
+    userProfile.indexOf('export const USER_SELF_CREATE_AGE_FIELDS')
+  )
+  assert.equal(documentFieldsBlock.includes("'ageConfirmed'"), false)
+  assert.match(userProfile, /userCreateRequiresAgeConfirmation/)
   const parsed = parseAppUserDocument('existing-uid', {
     email: 'existing@site.com',
     organizationId: 'org',
