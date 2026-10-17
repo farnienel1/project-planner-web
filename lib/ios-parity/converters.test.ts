@@ -9,6 +9,33 @@ import { parseAppUserDocument, parseBooking, parseOperative, serializeBooking, s
 import { IosWriteValidationError } from './firestoreCodec.ts'
 import { normalizeBookingStatus, normalizeEmploymentType } from './enums.ts'
 
+test('an anonymised Deleted user parses with an empty email', () => {
+  const parsed = parseAppUserDocument('QAlPe29vLLP4spK554UtpaBLW7N2', {
+    email: '',
+    organizationId: '2C67391E-D1FE-4F9F-8055-7149ACDE1F96',
+    firstName: 'Deleted',
+    surname: 'user',
+    name: 'Deleted user',
+    displayName: 'Deleted user',
+    passwordSet: true,
+    isActive: true,
+  })
+  assert.equal(parsed.ok, true)
+  if (!parsed.ok) return
+  assert.equal(parsed.value.email, '')
+  assert.equal(parsed.value.firstName, 'Deleted')
+  assert.equal(parsed.value.surname, 'user')
+  assert.equal(parsed.value.organizationId, '2C67391E-D1FE-4F9F-8055-7149ACDE1F96')
+
+  const unnamed = parseAppUserDocument('no-email', {
+    email: '',
+    organizationId: 'org',
+    firstName: 'Pat',
+    surname: 'Stone',
+  })
+  assert.equal(unnamed.ok, false)
+})
+
 test('existing user documents parse without age confirmation fields', () => {
   const parsed = parseAppUserDocument('legacy-uid', {
     email: 'legacy@site.com',

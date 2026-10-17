@@ -1,5 +1,6 @@
 import type { Manager, Operative } from '@/types'
 import { dedupeOperativesByEmail } from '@/lib/operatives/operativeRosterUtils'
+import { isCurrentLabourNamedPerson } from '@/lib/staff/userRosterUtils'
 
 function emailKey(value: string | undefined): string {
   return (value || '').trim().toLowerCase()
@@ -27,11 +28,18 @@ export function peopleForTaskPicker(
   operatives: Operative[],
   route: 'managers' | 'operatives' | 'combined'
 ): { managers: Manager[]; operatives: Operative[] } {
-  const uniqueManagers = dedupeManagersByEmail(managers)
-  const uniqueOperatives = dedupeOperativesByEmail(operatives)
+  const uniqueManagers = dedupeManagersByEmail(managers).filter(isCurrentLabourNamedPerson)
+  const uniqueOperatives = dedupeOperativesByEmail(operatives).filter(isCurrentLabourNamedPerson)
   const managerEmails = new Set(uniqueManagers.map((row) => emailKey(row.email)).filter(Boolean))
   const operativesWithoutManagers = uniqueOperatives.filter((row) => !managerEmails.has(emailKey(row.email)))
   if (route === 'managers') return { managers: uniqueManagers, operatives: [] }
   if (route === 'operatives') return { managers: [], operatives: uniqueOperatives }
   return { managers: uniqueManagers, operatives: operativesWithoutManagers }
+}
+
+/** Active catalogue rows for a new assignment. Historic task rows keep the stored name. */
+export function activePeopleForAssignment<T extends { email?: string; firstName?: string; lastName?: string; name?: string; isActive?: boolean }>(
+  rows: readonly T[]
+): T[] {
+  return rows.filter((row) => row.isActive !== false && isCurrentLabourNamedPerson(row))
 }

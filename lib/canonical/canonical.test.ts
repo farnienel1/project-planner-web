@@ -168,6 +168,7 @@ import { PAYMENT_GRACE_MS, hasAccess } from './billingAccess.ts'
 import {
   isAnonymisedDeletedProfile,
   isIdentifiablePendingLeftover,
+  listedCurrentLabourPeople,
   listedRosterUsers,
   matchesRosterSegment,
   rosterSegment,
@@ -1124,6 +1125,7 @@ test('the iOS JavaScript bundle exposes the standard-day, leave and dismiss rule
     'matchesRosterSegment',
     'isIdentifiablePendingLeftover',
     'listedRosterUsers',
+    'listedCurrentLabourPeople',
   ]) {
     assert.equal(typeof bundle[name], 'function', `${name} is exported from the packed script`)
   }
@@ -2612,6 +2614,98 @@ test('an anonymised Deleted user is Inactive even when passwordSet and isActive 
   assert.equal(rosterSegment(homonym), 'active')
 })
 
+test('an anonymised Deleted user is never a current labour or warning candidate', () => {
+  const deleted = {
+    id: 'QAlPe29vLLP4spK554UtpaBLW7N2',
+    email: '',
+    firstName: 'Deleted',
+    surname: 'user',
+    name: 'Deleted user',
+    displayName: 'Deleted user',
+    passwordSet: true,
+    isActive: true,
+    isOperativeMode: true,
+    isManager: false,
+    isAdmin: false,
+    isSuperAdmin: false,
+  }
+  assert.equal(rosterSegment(deleted), 'inactive')
+  assert.deepEqual(listedCurrentLabourPeople([deleted]), [])
+  assert.equal(listedRosterUsers([deleted], []).length, 1)
+
+  const live = {
+    id: 'U-LIVE',
+    email: 'ada@site.test',
+    name: 'Ada App',
+    isActive: true,
+    passwordSet: true,
+    isOperativeMode: true,
+    isManager: false,
+    isAdmin: false,
+    isSuperAdmin: false,
+  }
+  const unbooked = unbookedLabourRows({
+    timeZone: 'Europe/London',
+    startDayKey: '2026-10-12',
+    endDayKey: '2026-10-12',
+    includeWeekends: false,
+    standardPaidHours: 8,
+    saturdayCountsAsHours: 0,
+    sundayCountsAsHours: 0,
+    people: [deleted, live],
+    operatives: [
+      {
+        id: 'OP-DEL',
+        email: '',
+        name: 'Deleted user',
+        isActive: true,
+        isPlaceholder: false,
+        profileWeight: 1,
+      },
+    ],
+    bookings: [],
+    holidays: [],
+  })
+  assert.deepEqual(
+    unbooked.map((row) => row.personKey),
+    ['U-LIVE']
+  )
+  assert.equal(
+    unbooked.some((row) => row.operativeName === 'Deleted user' || row.personKey === deleted.id),
+    false
+  )
+
+  const unverified = unverifiedOperativeRows({
+    referenceIso: '2026-10-16T11:00:00.000Z',
+    timeZone: 'Europe/London',
+    operatives: [{ id: 'OP-DEL', email: '', name: 'Deleted user' }],
+    people: [
+      {
+        email: '',
+        passwordSet: false,
+        createdAtIso: '2026-10-01T11:00:00.000Z',
+        isOperativeMode: true,
+      },
+    ],
+  })
+  assert.deepEqual(unverified, [])
+
+  const quals = qualificationExpiryRows({
+    referenceIso: '2026-10-16T11:00:00.000Z',
+    timeZone: 'Europe/London',
+    operatives: [
+      {
+        id: 'OP-DEL',
+        isActive: true,
+        name: 'Deleted user',
+        email: '',
+        expiries: [{ qualificationId: 'Q1', name: 'CSCS', expiryIso: '2026-10-01T11:00:00.000Z' }],
+      },
+    ],
+  })
+  assert.deepEqual(quals, [])
+})
+
 test('a UUID placeholder stays Pending only while userEmails still claims the live email', () => {
   const placeholder = {
     email: 'new.operative@site.com',
@@ -2663,6 +2757,7 @@ test('the packed roster-segment functions match this module', () => {
       rosterSegment: (profile: unknown) => string
       matchesRosterSegment: (profile: unknown, segment: string) => boolean
       listedRosterUsers: (users: unknown[], claimed?: string[] | null) => Array<{ email?: string }>
+      listedCurrentLabourPeople: (users: unknown[]) => unknown[]
     }
   } = {}
   runInContext(source, createContext(sandbox))
@@ -2677,6 +2772,7 @@ test('the packed roster-segment functions match this module', () => {
   }
   assert.equal(packed.rosterSegment(deleted), 'inactive')
   assert.equal(packed.matchesRosterSegment(deleted, 'active'), false)
+  assert.deepEqual(packed.listedCurrentLabourPeople([deleted]), [])
   const leftover = { email: 'farnienel@hotmail.com', firstName: 'Test', surname: 'Operative', passwordSet: false }
   assert.deepEqual(packed.listedRosterUsers([leftover], []), [])
   assert.equal(packed.listedRosterUsers([leftover], ['farnienel@hotmail.com']).length, 1)

@@ -10,7 +10,7 @@ import { UserRole } from '@/types'
 import { isActiveBookingStatus } from '@/lib/ios-parity/enums'
 import { dayKey, londonIsoWeekday, londonMidnight } from '@/lib/ios-parity/londonTime'
 import { displayTradeType } from '@/lib/staff/staffTradeTypes'
-import { rosterDisplayName } from '@/lib/staff/userRosterUtils'
+import { isCurrentLabourUser, rosterDisplayName } from '@/lib/staff/userRosterUtils'
 import type { OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 import { DEFAULT_PAYROLL_POLICY } from '@/lib/settings/organizationSettings'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
@@ -258,7 +258,8 @@ export function buildBookLabourCandidates(input: {
       input.operatives.some((operative) => emailKey(operative.email) === email && focused.has(operative.id))
     )
   }
-  const bookable = (user: User) => user.status !== 'pending' && (user.passwordSet || focused.has(user.id))
+  const bookable = (user: User) =>
+    isCurrentLabourUser(user) && user.status !== 'pending' && (user.passwordSet || focused.has(user.id))
   const operativesByName = new Map<string, Operative>()
   for (const operative of input.operatives) {
     const name = nameKey(operative.firstName, operative.lastName)

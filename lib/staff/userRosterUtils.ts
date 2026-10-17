@@ -1,5 +1,6 @@
 import type { User } from '@/types'
 import {
+  isAnonymisedDeletedProfile,
   listedRosterUsers,
   matchesRosterSegment as canonicalMatchesRosterSegment,
   rosterStatusLabel as canonicalRosterStatusLabel,
@@ -31,6 +32,28 @@ function rosterProfile(user: User): RosterSegmentProfile {
 /** Canonical UserRosterSegment.matches — do not keep a second passwordSet calculator. */
 export function matchesRosterSegment(user: User, segment: RosterSegment): boolean {
   return canonicalMatchesRosterSegment(rosterProfile(user), segment)
+}
+
+/** Current warnings / Daily Overview / scheduling pickers. People lists still show Inactive. */
+export function isCurrentLabourUser(user: User): boolean {
+  return !isAnonymisedDeletedProfile(rosterProfile(user))
+}
+
+export function isCurrentLabourNamedPerson(person: {
+  email?: string | null
+  firstName?: string | null
+  surname?: string | null
+  lastName?: string | null
+  name?: string | null
+  displayName?: string | null
+}): boolean {
+  return !isAnonymisedDeletedProfile({
+    email: person.email,
+    firstName: person.firstName,
+    surname: person.surname || person.lastName,
+    name: person.name,
+    displayName: person.displayName,
+  })
 }
 
 export function rosterStatusLabel(user: User): 'Active' | 'Inactive' | 'Pending' {

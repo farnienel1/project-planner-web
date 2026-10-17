@@ -7,8 +7,11 @@
  * Unbooked labour (`unbookedLabourRows`) is the shared person-day list for both
  * Warnings and Daily Overview. Weekend days and excluded users come from
  * `organizations/{orgId}.warningDetection` — never from a screen-local weekday gate.
+ * Anonymised deleted profiles (`isAnonymisedDeletedProfile`) are never current
+ * warning or Daily Overview unbooked rows. Historic bookings keep the stored name.
  */
 
+import { isAnonymisedDeletedProfile, listedCurrentLabourPeople } from './userRosterSegment'
 import { standardDayCoverage, type StandardDayBooking } from './engine'
 import {
   addDaysInZone,
@@ -25,6 +28,7 @@ export type QualificationExpiryInput = {
     id: string
     isActive: boolean
     name: string
+    email?: string | null
     expiries: ReadonlyArray<{
       qualificationId: string
       name: string
@@ -246,6 +250,7 @@ export function qualificationExpiryRows(input: QualificationExpiryInput): Qualif
 
   for (const operative of input.operatives) {
     if (!operative.isActive) continue
+    if (isAnonymisedDeletedProfile({ email: operative.email, name: operative.name })) continue
     const operativeName = String(operative.name || '').trim() || operative.id
     for (const expiry of operative.expiries) {
       const name = String(expiry.name || '').trim()
@@ -285,6 +290,7 @@ export function unverifiedOperativeRows(input: UnverifiedOperativeInput): Unveri
   const rows: UnverifiedOperativeRow[] = []
 
   for (const operative of input.operatives) {
+    if (isAnonymisedDeletedProfile({ email: operative.email, name: operative.name })) continue
     const email = emailKey(operative.email)
     if (!email) continue
     const person = input.people.find((candidate) => emailKey(candidate.email) === email && candidate.isOperativeMode)
@@ -366,10 +372,13 @@ function asCoverageBooking(booking: LabourBooking): StandardDayBooking {
  * Warnings and Daily Overview both call this function (Daily Overview through
  * `unbookedLabourRowsOnDay` for the viewed day). `includeWeekends` and
  * `excludedUserIds` are the `warningDetection` fields above. Do not add a
- * weekday-only loop on either screen.
+ * weekday-only loop on either screen. Anonymised deleted profiles are removed
+ * by `listedCurrentLabourPeople` before the person-day loop.
  */
 export function unbookedLabourRows(input: UnbookedLabourInput): UnbookedLabourRow[] {
   const timeZone = zoneOf(input.timeZone)
+  const people = listedCurrentLabourPeople(input.people)
+  const operatives = listedCurrentLabourPeople(input.operatives)
   const excluded = new Set((input.excludedUserIds || []).map((id) => String(id)))
   const dayPolicy = {
     standardDayStart: input.standardDayStart,
@@ -392,7 +401,7 @@ export function unbookedLabourRows(input: UnbookedLabourInput): UnbookedLabourRo
 
   const operativesByEmail = new Map<string, RosterOperative>()
   const operativeIdsByEmail = new Map<string, Set<string>>()
-  for (const operative of input.operatives) {
+  for (const operative of operatives) {
     const email = emailKey(operative.email)
     if (!email) continue
     const ids = operativeIdsByEmail.get(email) || new Set<string>()
@@ -405,7 +414,7 @@ export function unbookedLabourRows(input: UnbookedLabourInput): UnbookedLabourRo
   }
 
   const userIdsByEmail = new Map<string, Set<string>>()
-  for (const person of input.people) {
+  for (const person of people) {
     const email = emailKey(person.email)
     if (!email || !person.id) continue
     const ids = userIdsByEmail.get(email) || new Set<string>()
@@ -450,19 +459,19 @@ export function unbookedLabourRows(input: UnbookedLabourInput): UnbookedLabourRo
     })
   }
 
-  const operativeUsers = dedupeFinishedPeople(input.people.filter(isOperativeModeOnly))
-  const managerUsers = dedupeFinishedPeople(input.people.filter(isManagerOrAdmin))
+  const operativeUsers = dedupeFinishedPeople(people.filter(isOperativeModeOnly))
+  const managerUsers = dedupeFinishedPeople(people.filter(isManagerOrAdmin))
   const managerAdminUserIds = new Set(
-    input.people.filter(isManagerOrAdmin).filter(hasFinishedSignup).map((person) => person.id)
+    people.filter(isManagerOrAdmin).filter(hasFinishedSignup).map((person) => person.id)
   )
   const operativeUserEmails = new Set(operativeUsers.map((person) => emailKey(person.email)).filter(Boolean))
 
   const verifiedUserForEmail = (email: string): LabourPerson | undefined => {
     if (!email) return undefined
-    return preferFinishedAccount(input.people.filter((person) => emailKey(person.email) === email))
+    return preferFinishedAccount(people.filter((person) => emailKey(person.email) === email))
   }
 
-  const roster = input.operatives.filter((operative) => operative.isActive !== false && !operative.isPlaceholder)
+  const roster = operatives.filter((operative) => operative.isActive !== false && !operative.isPlaceholder)
   const rows: UnbookedLabourRow[] = []
 
   for (const dayKey of eachDayKey(input.startDayKey, input.endDayKey, timeZone)) {
@@ -533,7 +542,7 @@ export function unbookedLabourRows(input: UnbookedLabourInput): UnbookedLabourRo
       const email = emailKey(operative.email)
       if (email && operativeUserEmails.has(email)) continue
       const matched = email ? verifiedUserForEmail(email) : undefined
-      if (!matched && email && input.people.some((person) => emailKey(person.email) === email)) continue
+      if (!matched && email && people.some((person) => emailKey(person.email) === email)) continue
       if (matched && managerAdminUserIds.has(matched.id)) continue
       if (matched && excluded.has(matched.id)) continue
       if (holidayCovers(dayKey, email, matched?.id, operative.id)) continue

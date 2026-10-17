@@ -1,7 +1,7 @@
 import type { Operative, User } from '@/types'
 import { getActiveOperativesForScheduling } from '@/lib/operatives/operativeRosterUtils'
 import { isPendingPerson } from '@/lib/staff/pendingPeople'
-import { getManagerUsers, isRoleOnlyPersonName, rosterDisplayName } from '@/lib/staff/userRosterUtils'
+import { getManagerUsers, isCurrentLabourNamedPerson, isCurrentLabourUser, isRoleOnlyPersonName, rosterDisplayName } from '@/lib/staff/userRosterUtils'
 
 export type SchedulablePersonKind = 'operative' | 'manager'
 
@@ -47,6 +47,7 @@ export function buildSchedulablePeople(
   const people: SchedulablePerson[] = []
 
   for (const operative of getActiveOperativesForScheduling(operatives)) {
+    if (!isCurrentLabourNamedPerson(operative)) continue
     const email = emailKey(operative.email)
     if (email && pendingEmails.has(email)) continue
     if (email && seenEmails.has(email)) continue
@@ -69,7 +70,7 @@ export function buildSchedulablePeople(
     })
   }
 
-  for (const user of getManagerUsers(accepted).filter((row) => row.passwordSet && row.isActive)) {
+  for (const user of getManagerUsers(accepted).filter((row) => isCurrentLabourUser(row) && row.passwordSet && row.isActive)) {
     const email = emailKey(user.email)
     if (email && seenEmails.has(email)) continue
     if (email) seenEmails.add(email)

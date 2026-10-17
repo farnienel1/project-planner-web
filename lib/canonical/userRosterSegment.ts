@@ -120,6 +120,17 @@ export function listedRosterUsers<T extends RosterSegmentProfile>(
   return users.filter((user) => !isIdentifiablePendingLeftover(user, claimedEmails))
 }
 
+/**
+ * People who may appear in current warnings, Daily Overview unbooked rows,
+ * new weekly-report warnings, and scheduling / book-labour pickers.
+ * Historic bookings keep the stored name. Re-invite is a new row.
+ */
+export function listedCurrentLabourPeople<T extends RosterSegmentProfile>(
+  people: readonly T[]
+): T[] {
+  return people.filter((person) => !isAnonymisedDeletedProfile(person))
+}
+
 export const DELETED_USER_DISPLAY_NAME = ANONYMISED_DELETED_USER_NAME
 export const userRosterSegment = rosterSegment
 export const matchesUserRosterSegment = matchesRosterSegment

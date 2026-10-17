@@ -26,7 +26,7 @@ import { taskAttachmentPath, uploadFile } from '@/lib/firebase/storageUtils'
 import { FormInput } from '@/components/forms/FormShell'
 import { ErrorBanner } from '@/components/dashboard/PageShell'
 import { personDisplayName } from '@/lib/tasks/projectTaskFilters'
-import { peopleForTaskPicker } from '@/lib/tasks/taskAssigneePeople'
+import { activePeopleForAssignment, peopleForTaskPicker } from '@/lib/tasks/taskAssigneePeople'
 import { compressTaskAttachment } from '@/lib/tasks/compressTaskAttachment'
 import { withTimeout } from '@/lib/client/withTimeout'
 import type { Manager, Operative, Project, ProjectTask, ProjectTaskItem, ProjectTaskPriority } from '@/types'
@@ -522,8 +522,8 @@ export function AddProjectTaskSheet({
       {peopleRoute && (
         <PeoplePicker
           route={peopleRoute}
-          managers={people.managers.filter((row) => row.isActive !== false)}
-          operatives={people.operatives.filter((row) => row.isActive !== false)}
+          managers={activePeopleForAssignment(people.managers)}
+          operatives={activePeopleForAssignment(people.operatives)}
           selectedManagers={selectedManagers}
           selectedOperatives={selectedOperatives}
           onChangeManagers={setSelectedManagers}

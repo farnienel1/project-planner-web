@@ -403,6 +403,7 @@ export {
   ROSTER_SEGMENTS,
   isAnonymisedDeletedProfile,
   isIdentifiablePendingLeftover,
+  listedCurrentLabourPeople,
   listedRosterUsers,
   matchesRosterSegment,
   matchesUserRosterSegment,

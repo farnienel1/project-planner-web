@@ -20,6 +20,7 @@
  * Plain data in, plain data out. Web wrappers and the iOS engine map their own types.
  */
 
+import { isAnonymisedDeletedProfile } from './userRosterSegment'
 import {
   formatClockMinutes,
   halfDayWindows,
@@ -157,6 +158,7 @@ export function leaveCoverageRows(input: LeaveCoverageInput): LeaveCoverageRow[]
   const peopleByUserId = new Map<string, LeavePerson>()
   const peopleByOperativeId = new Map<string, LeavePerson>()
   for (const person of input.people) {
+    if (isAnonymisedDeletedProfile({ name: person.name })) continue
     const userId = String(person.userId || '').trim()
     if (userId && !peopleByUserId.has(userId)) peopleByUserId.set(userId, person)
     for (const operativeId of person.operativeIds || []) {
