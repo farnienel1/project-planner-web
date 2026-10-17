@@ -3,6 +3,12 @@ import { isChunkLoadError } from '@/lib/client/chunkLoadError'
 import { isTimeoutError } from '@/lib/client/withTimeout'
 import { authErrorCode, errorMessageOf, isExistingAccountSignInError } from '@/lib/orgSetup/authSetupErrors'
 import { isExistingProjectPlannerLoginError } from '@/lib/orgSetup/existingLogin'
+import {
+  LEFTOVER_LOGIN_SETUP_COPY,
+  LIVE_ORG_SETUP_BODY,
+  LIVE_ORG_SETUP_TITLE,
+  isLiveOrgAlreadyMemberError,
+} from '@/lib/orgSetup/liveOrgLookup'
 
 export function formatSetupError(err: unknown): string {
   const code = authErrorCode(err)
@@ -20,11 +26,19 @@ export function formatSetupError(err: unknown): string {
     )
   }
 
-  if (isExistingProjectPlannerLoginError(err) || isExistingAccountSignInError(err)) {
+  if (isLiveOrgAlreadyMemberError(err)) {
+    return `${LIVE_ORG_SETUP_TITLE}. ${LIVE_ORG_SETUP_BODY}`
+  }
+
+  if (isExistingProjectPlannerLoginError(err)) {
     return (
       'This email already has a Project Planner login. Sign in, then open Switch organisation and choose ' +
       'Set up a new organisation to pay for another firm. You stay in whichever organisation you last switched to.'
     )
+  }
+
+  if (isExistingAccountSignInError(err)) {
+    return LEFTOVER_LOGIN_SETUP_COPY
   }
 
   if (

@@ -4,6 +4,7 @@ import {
   honeypotFilled,
   interestRegisterBodySchema,
   interestUnsubscribeBodySchema,
+  liveOrgLookupBodySchema,
   publicGateBodySchema,
   supportContactBodySchema,
 } from './publicFormSchemas.ts'
@@ -69,6 +70,13 @@ test('login gate accepts an email and rejects a password field as unknown form s
   assert.equal(signup.success, true)
   const missing = publicGateBodySchema.safeParse({ form: 'login' })
   assert.equal(missing.success, false)
+})
+
+test('live-org lookup accepts only an email and optional honeypot', () => {
+  const parsed = liveOrgLookupBodySchema.safeParse({ email: 'ada@example.com' })
+  assert.equal(parsed.success, true)
+  const bad = liveOrgLookupBodySchema.safeParse({ email: 'not-an-email' })
+  assert.equal(bad.success, false)
 })
 
 test('invite-setup requires a uuid', () => {

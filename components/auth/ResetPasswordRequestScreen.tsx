@@ -10,7 +10,7 @@ import { postPublicForm } from '@/lib/security/publicFormClient'
 const EMAIL_RE = /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,64}$/i
 
 export function ResetPasswordRequestScreen({ initialEmail = '' }: { initialEmail?: string }) {
-  const { resetPassword, error } = useAuthStore()
+  const { resetPassword } = useAuthStore()
   const [email, setEmail] = useState(initialEmail)
   const [localError, setLocalError] = useState('')
   const [success, setSuccess] = useState(false)
@@ -79,9 +79,9 @@ export function ResetPasswordRequestScreen({ initialEmail = '' }: { initialEmail
               <p className="muted mt-1.5">
                 Enter your email and we&apos;ll send a reset link. Check spam if you don&apos;t see it.
               </p>
-              {(error || localError) ? (
+              {localError ? (
                 <p className="banner mt-4" data-hue="red">
-                  {error || localError}
+                  {localError}
                 </p>
               ) : null}
               <form className="form mt-6" style={{ gridTemplateColumns: '1fr' }} onSubmit={handleSubmit}>

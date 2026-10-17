@@ -88,6 +88,31 @@ export async function adminLookupAuthEmail(uid: string): Promise<string | null> 
   return email ? email.trim().toLowerCase() : null
 }
 
+export async function adminLookupAuthUserByEmail(email: string): Promise<{ uid: string } | null> {
+  const emailLower = email.trim().toLowerCase()
+  if (!emailLower) return null
+  const { token, projectId } = await googleAccessToken([
+    'https://www.googleapis.com/auth/identitytoolkit',
+    'https://www.googleapis.com/auth/firebase',
+  ])
+  if (!projectId) throw new Error('Firebase project id is missing.')
+  const response = await fetch(
+    `https://identitytoolkit.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/accounts:lookup`,
+    {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: [emailLower] }),
+    }
+  )
+  const data = (await response.json().catch(() => ({}))) as {
+    users?: { localId?: string }[]
+    error?: { message?: string }
+  }
+  if (!response.ok) return null
+  const uid = data.users?.[0]?.localId
+  return uid ? { uid } : null
+}
+
 export async function adminPasswordResetLink(email: string, continueUrl: string): Promise<string> {
   const { token, projectId } = await googleAccessToken([
     'https://www.googleapis.com/auth/identitytoolkit',

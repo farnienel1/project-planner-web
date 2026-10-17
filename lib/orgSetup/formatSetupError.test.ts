@@ -3,33 +3,44 @@ import assert from 'node:assert/strict'
 import { TimeoutError } from '../client/withTimeout.ts'
 import { formatSetupError } from './formatSetupError.ts'
 import { ExistingProjectPlannerLoginError } from './existingLogin.ts'
+import { LiveOrgAlreadyMemberError } from './liveOrgLookup.ts'
 
-test('email-already-in-use sends the user to Switch organisation instead of a second password', () => {
+test('email-already-in-use is leftover login copy, not the live-org paragraph', () => {
   const message = formatSetupError({ code: 'auth/email-already-in-use', message: 'auth/email-already-in-use' })
-  assert.match(message, /already has a Project Planner login/i)
-  assert.match(message, /Switch organisation/)
-  assert.match(message, /last switched/i)
+  assert.match(message, /already has a login/i)
+  assert.match(message, /Sign in, then open Set up an organisation/)
+  assert.doesNotMatch(message, /already part of an organisation/i)
+  assert.doesNotMatch(message, /Switch organisation/)
   assert.doesNotMatch(message, /Use the password for that login/)
 })
 
-test('legacy already-exists copy is rewritten to the same guidance', () => {
+test('legacy already-exists copy is rewritten to leftover sign-in guidance', () => {
   const message = formatSetupError({
     message: 'An account with this email already exists. Sign in instead, or use a different email.',
   })
-  assert.match(message, /already has a Project Planner login/i)
+  assert.match(message, /already has a login/i)
   assert.doesNotMatch(message, /use a different email/i)
+  assert.doesNotMatch(message, /already part of an organisation/i)
 })
 
-test('wrong password on setup still points at the existing login, not a new account', () => {
+test('wrong password on setup points at leftover sign-in, not the live-org paragraph', () => {
   const message = formatSetupError({ code: 'auth/invalid-credential' })
-  assert.match(message, /already has a Project Planner login/i)
-  assert.match(message, /Switch organisation/)
+  assert.match(message, /already has a login/i)
+  assert.doesNotMatch(message, /already part of an organisation/i)
+  assert.doesNotMatch(message, /Switch organisation/)
 })
 
 test('custom existing-login error uses the Switch organisation copy', () => {
   const message = formatSetupError(new ExistingProjectPlannerLoginError({ signedIn: true, isAdmin: true }))
   assert.match(message, /Switch organisation/)
   assert.doesNotMatch(message, /Use the password/)
+})
+
+test('live-org member error uses the Settings / switch organisation paragraph', () => {
+  const message = formatSetupError(new LiveOrgAlreadyMemberError())
+  assert.match(message, /already part of an organisation/i)
+  assert.match(message, /Settings/)
+  assert.match(message, /switch organisation/i)
 })
 
 test('stale Next chunk errors tell the user to refresh and retry Activate', () => {
