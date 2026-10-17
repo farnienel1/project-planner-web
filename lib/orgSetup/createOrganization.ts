@@ -316,6 +316,9 @@ export async function createPendingOrganization(
       'Could not update your account. Refresh this page, then click Activate again.'
     )
   } else if (!existingUser) {
+    // First users/{uid} for this Auth account (new signup or leftover Auth with a deleted
+    // profile). Self-create rules require ageConfirmed / At / Years. Additional-org
+    // updateDoc above must not rewrite those fields.
     await withTimeout(
       setDoc(
         doc(db, 'users', userId),

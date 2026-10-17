@@ -63,29 +63,42 @@ async function migrateInvitedUserRecord(params: {
   existingUserId: string
   authUid: string
   email: string
+  firstName: string
+  surname: string
 }) {
   const db = getFirebaseDb()
   const oldRef = doc(db, 'users', params.existingUserId)
   const oldSnap = await getDoc(oldRef)
-  if (!oldSnap.exists()) {
-    throw new Error('Invited user record was not found. Ask your admin to re-send the invitation.')
-  }
-
-  const userData = oldSnap.data()
   const now = Timestamp.now()
-  const nextUser = {
-    ...userData,
-    email: params.email.toLowerCase().trim(),
-    passwordSet: true,
-    accountConfirmed: true,
-    updatedAt: now,
-    ...ageConfirmationWriteFields(now),
-  }
+  const email = params.email.toLowerCase().trim()
 
-  await setDoc(doc(db, 'users', params.authUid), nextUser)
-  await setDoc(doc(db, 'organizations', params.organizationId, 'userEmails', params.email.toLowerCase().trim()), {
+  // Self-create is allowed only when this pointer is missing or already this uid.
+  await setDoc(doc(db, 'organizations', params.organizationId, 'userEmails', email), {
     userId: params.authUid,
   })
+
+  const nextUser = oldSnap.exists()
+    ? {
+        ...oldSnap.data(),
+        email,
+        passwordSet: true,
+        accountConfirmed: true,
+        updatedAt: now,
+        ...ageConfirmationWriteFields(now),
+      }
+    : {
+        email,
+        firstName: params.firstName,
+        surname: params.surname,
+        organizationId: params.organizationId,
+        passwordSet: true,
+        isActive: true,
+        accountConfirmed: true,
+        updatedAt: now,
+        ...ageConfirmationWriteFields(now),
+      }
+
+  await setDoc(doc(db, 'users', params.authUid), nextUser)
 
   const orgRef = doc(db, 'organizations', params.organizationId)
   const orgSnap = await getDoc(orgRef)
@@ -99,11 +112,11 @@ async function migrateInvitedUserRecord(params: {
     }
   }
 
-  if (params.existingUserId !== params.authUid) {
+  if (params.existingUserId !== params.authUid && oldSnap.exists()) {
     await deleteDoc(oldRef)
   }
 
-  const role = typeof userData.role === 'string' ? userData.role : 'member'
+  const role = oldSnap.exists() && typeof oldSnap.data().role === 'string' ? oldSnap.data().role : 'member'
   await ensurePrimaryOrgMembership(params.authUid, params.organizationId, role)
 }
 
@@ -131,9 +144,14 @@ export async function completeInvitationPasswordSetup(params: {
       existingUserId,
       authUid,
       email,
+      firstName: summary.firstName,
+      surname: summary.surname,
     })
   } else {
     const now = Timestamp.now()
+    await setDoc(doc(db, 'organizations', summary.organizationId, 'userEmails', email), {
+      userId: authUid,
+    })
     await setDoc(
       doc(db, 'users', authUid),
       {

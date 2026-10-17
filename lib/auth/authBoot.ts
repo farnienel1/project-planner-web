@@ -18,6 +18,16 @@ export function firestoreErrorCode(error: unknown): string {
     .trim()
 }
 
+/** FirebaseError can fail `instanceof Error` across bundles; still surface its message. */
+export function authProfileLoadErrorMessage(error: unknown): string {
+  if (error instanceof Error && error.message.trim()) return error.message
+  if (error && typeof error === 'object' && 'message' in error) {
+    const message = String((error as { message: unknown }).message || '').trim()
+    if (message) return message
+  }
+  return 'Could not load your user profile from Firestore.'
+}
+
 /**
  * The first Firestore read after sign-in often runs before Auth has handed the
  * ID token to Firestore. That looks like permission-denied or a timeout, and a

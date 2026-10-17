@@ -18,7 +18,7 @@ interface UserStoreState {
   saveUser: (user: User, organizationId?: string, previousEmail?: string) => Promise<void>
   transferSuperAdmin: (organizationId: string, fromUserId: string, toUserId: string, roster: User[]) => Promise<void>
   setUserActive: (userId: string, isActive: boolean, organizationId?: string) => Promise<void>
-  deleteUser: (userId: string) => Promise<void>
+  deleteUser: (userId: string, opts?: { organizationId?: string; email?: string }) => Promise<void>
   sendPasswordReset: (email: string) => Promise<void>
   applyAccountType: (user: User, accountType: 'operative' | 'manager' | 'admin') => User
   syncLinkedOperative: (organizationId: string, user: User, operatives: Operative[]) => Promise<void>
@@ -184,12 +184,36 @@ export const useUserStore = create<UserStoreState>(() => ({
     }
   },
 
-  deleteUser: async (userId) => {
+  deleteUser: async (userId, opts) => {
     const existing = await getDoc(doc(db, 'users', userId))
     if (existing.exists() && existing.data().isSuperAdmin === true) {
       throw new Error('The super admin cannot be deleted.')
     }
+    const orgId = (opts?.organizationId || (existing.exists() ? String(existing.data().organizationId || '') : '')).trim()
+    const email = (
+      opts?.email || (existing.exists() ? String(existing.data().email || '') : '')
+    )
+      .trim()
+      .toLowerCase()
     await deleteDoc(doc(db, 'users', userId))
+    if (orgId && email) {
+      await deleteDoc(doc(db, 'organizations', orgId, 'userEmails', email)).catch(() => undefined)
+    }
+    if (orgId) {
+      await deleteDoc(doc(db, 'users', userId, 'orgMemberships', orgId)).catch(() => undefined)
+      try {
+        const orgSnap = await getDoc(doc(db, 'organizations', orgId))
+        if (orgSnap.exists()) {
+          const members = { ...((orgSnap.data().members as Record<string, string> | undefined) ?? {}) }
+          if (members[userId] != null) {
+            delete members[userId]
+            await updateDoc(doc(db, 'organizations', orgId), { members, updatedAt: Timestamp.now() })
+          }
+        }
+      } catch {
+        /* members map can be repaired on the next invite */
+      }
+    }
   },
 
   sendPasswordReset: async (email) => {

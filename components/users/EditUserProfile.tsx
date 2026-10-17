@@ -571,7 +571,7 @@ export function EditUserProfile({
     setConfirmDelete(false)
     setBusyAction('delete')
     try {
-      await deleteUser(target.id)
+      await deleteUser(target.id, { organizationId: organization?.id, email: target.email })
       router.push(hubHref || backHref)
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to delete user')

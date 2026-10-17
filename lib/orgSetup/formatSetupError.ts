@@ -41,10 +41,11 @@ export function formatSetupError(err: unknown): string {
 
   if (code === 'permission-denied' || message.includes('Missing or insufficient permissions')) {
     return (
-      'Firestore blocked this setup (permission denied). Your Firebase security rules need to allow a ' +
-      'signed-in user to create organizations/{id} and users/{their uid}. ' +
-      'Copy firestore.rules from this repo into Firebase Console → Firestore → Rules → Publish, ' +
-      'or run: firebase deploy --only firestore:rules (see DEPLOY_FIRESTORE_RULES.md).'
+      'Firestore blocked this setup (permission denied). A leftover login with no user profile must ' +
+      'write ageConfirmed, ageConfirmedAt, and ageConfirmedYears when creating users/{your uid}. ' +
+      'If that write is already present and this still fails, publish firestore.rules so a signed-in ' +
+      'user can create organizations/{id} and users/{their uid} ' +
+      '(firebase deploy --only firestore:rules — see DEPLOY_FIRESTORE_RULES.md).'
     )
   }
 

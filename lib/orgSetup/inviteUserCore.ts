@@ -7,6 +7,7 @@ import {
   addExistingUserToOrganization,
   findExistingAuthUserByEmail,
 } from '@/lib/orgMembership/membershipService'
+import { orgEmailPointerUserId, shouldReclaimOrgEmailPointer } from '@/lib/orgSetup/staleOrgEmailPointer'
 import type { UserPermissions } from '@/types'
 
 export type InviteUserCoreInput = {
@@ -66,13 +67,6 @@ export async function inviteUserCore(input: InviteUserCoreInput): Promise<Invite
     throw new Error(`A user with email ${emailLower} already exists in this organisation.`)
   }
 
-  const orgEmailSnap = await getDoc(
-    doc(db, 'organizations', input.organizationId, 'userEmails', emailLower)
-  )
-  if (orgEmailSnap.exists()) {
-    throw new Error(`A user with email ${emailLower} already exists in this organisation.`)
-  }
-
   const existingAuthUser = await findExistingAuthUserByEmail(emailLower)
   if (existingAuthUser && existingAuthUser.organizationId !== input.organizationId) {
     const role = roleFromPermissions(input.permissions)
@@ -91,8 +85,26 @@ export async function inviteUserCore(input: InviteUserCoreInput): Promise<Invite
     }
   }
 
+  const orgEmailSnap = await getDoc(
+    doc(db, 'organizations', input.organizationId, 'userEmails', emailLower)
+  )
+  let userId = newUuid()
+  if (orgEmailSnap.exists()) {
+    const pointedId = orgEmailPointerUserId(orgEmailSnap.data() as Record<string, unknown>)
+    const pointedUser = pointedId ? await getDoc(doc(db, 'users', pointedId)) : null
+    if (
+      !shouldReclaimOrgEmailPointer({
+        pointedUserExists: Boolean(pointedUser?.exists()),
+        pointedEmail: pointedUser?.exists() ? String(pointedUser.data()?.email || '') : '',
+        inviteEmail: emailLower,
+      })
+    ) {
+      throw new Error(`A user with email ${emailLower} already exists in this organisation.`)
+    }
+    if (pointedId) userId = pointedId
+  }
+
   const invitationId = newUuid()
-  const userId = newUuid()
 
   const invitationData: Record<string, unknown> = {
     email: emailLower,

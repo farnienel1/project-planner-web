@@ -48,6 +48,13 @@ test('activation timeouts surface the timed-out step instead of hanging silently
   assert.match(message, /Activate/)
 })
 
+test('permission-denied mentions leftover-auth age writes, not only deploying rules', () => {
+  const message = formatSetupError({ code: 'permission-denied', message: 'Missing or insufficient permissions.' })
+  assert.match(message, /ageConfirmed/)
+  assert.match(message, /leftover login/i)
+  assert.match(message, /firestore\.rules/)
+})
+
 test('email send failures still tell the user to resend from Check your email', () => {
   const message = formatSetupError(new Error('RESEND_API_KEY is not configured'))
   assert.match(message, /organisation was created/i)

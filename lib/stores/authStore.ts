@@ -68,8 +68,14 @@ import {
   writeSignedOutFlag,
 } from '@/lib/auth/mfa/mfaClient'
 import { postSignOutHref, safePostMfaPath } from '@/lib/auth/mfa/mfaConstants'
-import { authLoadRetryDelayMs, isRetryableAuthLoadError, shouldHoldSignedOutCallback } from '@/lib/auth/authBoot'
+import {
+  authLoadRetryDelayMs,
+  authProfileLoadErrorMessage,
+  isRetryableAuthLoadError,
+  shouldHoldSignedOutCallback,
+} from '@/lib/auth/authBoot'
 import { waitForAuthToken } from '@/lib/firebase/waitForAuthToken'
+import { MISSING_USER_PROFILE_MESSAGE } from '@/lib/auth/missingProfile'
 
 interface AuthState {
   user: User | null
@@ -367,7 +373,7 @@ async function loadProfileWithRetries(firebaseUser: FirebaseUser): Promise<void>
     if (attempt === PROFILE_ATTEMPTS - 1 || !isRetryableAuthLoadError(lastError)) break
     await new Promise((resolve) => setTimeout(resolve, authLoadRetryDelayMs(attempt)))
   }
-  throw lastError instanceof Error ? lastError : new Error('Could not load your user profile from Firestore.')
+  throw lastError instanceof Error ? lastError : new Error(authProfileLoadErrorMessage(lastError))
 }
 
 function invalidateOrganizationHydration() {
@@ -530,7 +536,7 @@ function profileLoadFailed(firebaseUser: FirebaseUser, error: unknown) {
     firebaseUser,
     organization: null,
     loading: false,
-    error: error instanceof Error ? error.message : 'Could not load your user profile from Firestore.',
+    error: authProfileLoadErrorMessage(error),
   })
 }
 
@@ -566,7 +572,7 @@ async function loadSignedInProfileInner(firebaseUser: FirebaseUser) {
       organization: null,
       loading: false,
       error:
-        'Your account was created but the user profile is not in Firestore yet. Refresh the page or contact support.',
+        MISSING_USER_PROFILE_MESSAGE,
     })
     return
   }

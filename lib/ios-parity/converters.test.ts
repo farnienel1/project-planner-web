@@ -5,9 +5,22 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { parseBooking, parseOperative, serializeBooking, serializeManager, serializeOperative, serializeProject } from './converters.ts'
+import { parseAppUserDocument, parseBooking, parseOperative, serializeBooking, serializeManager, serializeOperative, serializeProject } from './converters.ts'
 import { IosWriteValidationError } from './firestoreCodec.ts'
 import { normalizeBookingStatus, normalizeEmploymentType } from './enums.ts'
+
+test('existing user documents parse without age confirmation fields', () => {
+  const parsed = parseAppUserDocument('legacy-uid', {
+    email: 'legacy@site.com',
+    organizationId: 'org',
+    firstName: 'Lee',
+    surname: 'Gacy',
+  })
+  assert.equal(parsed.ok, true)
+  if (!parsed.ok) return
+  assert.equal(parsed.value.email, 'legacy@site.com')
+  assert.equal('ageConfirmed' in parsed.value, false)
+})
 
 test('parseBooking skips lowercase status that is not aliased? wait — aliases confirmed → Confirmed', () => {
   const result = parseBooking('ID', {
