@@ -72,16 +72,21 @@ export async function POST(request: NextRequest) {
   } catch {
     organization = undefined
   }
+  const fallbackFirstName = clampString(body.value.firstName, 100) ?? ''
+  const fallbackOrganizationName = clampString(body.value.organizationName, 200) ?? ''
   const identity = resolveInviteSetupIdentity({
     invitationFirstName,
-    fallbackFirstName: clampString(body.value.firstName, 100),
+    fallbackFirstName,
     organization,
-    fallbackOrganizationName: clampString(body.value.organizationName, 200),
+    fallbackOrganizationName,
   })
   if (!identity) {
     return jsonError('Invitee name and organisation name are required', 400)
   }
   const { firstName, organizationName } = identity
+  if (!firstName || !organizationName) {
+    return jsonError('Invitee name and organisation name are required', 400)
+  }
 
   const email = to.trim().toLowerCase()
   const mail = {
