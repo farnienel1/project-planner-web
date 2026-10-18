@@ -61,3 +61,33 @@ test('a Deleted-user tombstone is not the invite placeholder', () => {
     ''
   )
 })
+
+test('Continue order: Auth, own-email claim read, placeholder read, users/{authUid}, claim to authUid, placeholder delete, invitation used', () => {
+  const body = source.slice(source.indexOf('export async function completeInvitationPasswordSetup'))
+  const steps = [
+    'authWithPassword(email',
+    'claimedUserIdAfterSignIn(record.organizationId, email)',
+    'loadPlaceholderIfOwnInvite(hintedId)',
+    "setDoc(doc(db, 'users', authUid), nextUser)",
+    "setDoc(doc(db, 'organizations', record.organizationId, 'userEmails', email)",
+    "deleteDoc(doc(db, 'users', placeholderId))",
+    'ensurePrimaryOrgMembership(',
+    "updateDoc(doc(db, 'invitations'",
+  ].map((needle) => ({ needle, at: body.indexOf(needle) }))
+  for (const step of steps) assert.ok(step.at > 0, `missing: ${step.needle}`)
+  for (let i = 1; i < steps.length; i += 1) {
+    assert.ok(steps[i].at > steps[i - 1].at, `${steps[i].needle} must come after ${steps[i - 1].needle}`)
+  }
+})
+
+test('a denied own-email claim read is surfaced, not treated as no claim', () => {
+  const start = source.indexOf('async function claimedUserIdAfterSignIn')
+  const fn = source.slice(start, source.indexOf('async function loadOwnUserIfSetUp'))
+  assert.equal(fn.includes('catch'), false)
+})
+
+test('placeholder is read by id, never found by email, and the invitation write stays isUsed/usedAt', () => {
+  assert.equal(source.includes('getDocs'), false)
+  assert.equal(source.includes('query('), false)
+  assert.match(source, /isUsed: true,\s+usedAt: Timestamp\.now\(\),\s+\}\)/)
+})

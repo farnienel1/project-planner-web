@@ -120,15 +120,24 @@ async function authWithPassword(email: string, password: string): Promise<UserCr
   }
 }
 
+/**
+ * Own-email claim only, read after Auth exists. A denied read is not "no claim":
+ * falling through would write a profile without the placeholder, so let it surface.
+ */
 async function claimedUserIdAfterSignIn(organizationId: string, email: string): Promise<string> {
   const db = getFirebaseDb()
-  try {
-    const snap = await getDoc(doc(db, 'organizations', organizationId, 'userEmails', email))
-    if (!snap.exists()) return ''
-    return String((snap.data() as { userId?: string }).userId || '').trim()
-  } catch {
-    return ''
-  }
+  const snap = await getDoc(doc(db, 'organizations', organizationId, 'userEmails', email))
+  if (!snap.exists()) return ''
+  return String((snap.data() as { userId?: string }).userId || '').trim()
+}
+
+/** users/{authUid} from an earlier Continue that failed after the profile write. */
+async function loadOwnUserIfSetUp(authUid: string): Promise<Record<string, unknown> | null> {
+  const db = getFirebaseDb()
+  const snap = await getDoc(doc(db, 'users', authUid))
+  if (!snap.exists()) return null
+  const data = asRecord(snap.data())
+  return data.passwordSet === true ? data : null
 }
 
 async function loadPlaceholderIfOwnInvite(userId: string): Promise<Record<string, unknown> | null> {
@@ -138,7 +147,8 @@ async function loadPlaceholderIfOwnInvite(userId: string): Promise<Record<string
     const snap = await getDoc(doc(db, 'users', userId))
     if (!snap.exists()) return null
     return asRecord(snap.data())
-  } catch {
+  } catch (error) {
+    console.warn('Invite placeholder could not be read; profile built from the invitation', userId, error)
     return null
   }
 }
@@ -186,35 +196,45 @@ export async function completeInvitationPasswordSetup(params: {
   const db = getFirebaseDb()
   const now = Timestamp.now()
 
+  // 1. Auth exists. 2. Read only this email's claim (rules: emailKey == token email).
   const claimedUserId = await claimedUserIdAfterSignIn(record.organizationId, email)
-  const hintedId = record.claimedUserId || claimedUserId
+  // The claim is authoritative; the invitation only hints when the claim already moved to authUid.
+  const hintedId = claimedUserId && claimedUserId !== authUid ? claimedUserId : record.claimedUserId || claimedUserId
+  // 3. Read the placeholder the claim names (rules: its email must be this token email).
   const claimedUser = hintedId && hintedId !== authUid ? await loadPlaceholderIfOwnInvite(hintedId) : null
   const placeholderId = invitePlaceholderIdToMigrate({
     claimedUserId: hintedId,
     authUid,
     claimedUser,
   })
+  const migrating = Boolean(placeholderId && claimedUser && !isAnonymisedDeletedProfile(claimedUser))
 
+  // 4. Copy the placeholder onto users/{authUid} (self-create; rules accept a claim that
+  //    still names this invite's pending placeholder). Skip when a previous Continue
+  //    already wrote it so a retry does not overwrite a finished profile.
+  const ownUser = await loadOwnUserIfSetUp(authUid)
+  const nextUser = migrating && claimedUser
+    ? {
+        ...claimedUser,
+        email,
+        organizationId: record.organizationId,
+        passwordSet: true,
+        accountConfirmed: true,
+        updatedAt: now,
+        ...ageConfirmationWriteFields(now),
+      }
+    : userDocFromInvitation(record, now)
+  if (!ownUser) {
+    await setDoc(doc(db, 'users', authUid), nextUser)
+  }
+
+  // 5. Point the claim at authUid.
   await setDoc(doc(db, 'organizations', record.organizationId, 'userEmails', email), {
     userId: authUid,
   })
 
-  const nextUser =
-    placeholderId && claimedUser && !isAnonymisedDeletedProfile(claimedUser)
-      ? {
-          ...claimedUser,
-          email,
-          organizationId: record.organizationId,
-          passwordSet: true,
-          accountConfirmed: true,
-          updatedAt: now,
-          ...ageConfirmationWriteFields(now),
-        }
-      : userDocFromInvitation(record, now)
-
-  await setDoc(doc(db, 'users', authUid), nextUser)
-
-  if (placeholderId && claimedUser && !isAnonymisedDeletedProfile(claimedUser)) {
+  // 6. Remove the placeholder (best effort; it is not an Auth uid).
+  if (migrating) {
     try {
       await deleteDoc(doc(db, 'users', placeholderId))
     } catch (error) {
@@ -222,12 +242,11 @@ export async function completeInvitationPasswordSetup(params: {
     }
   }
 
-  const role =
-    (typeof nextUser.role === 'string' && nextUser.role) ||
-    record.role ||
-    'member'
+  const profile = ownUser ?? nextUser
+  const role = (typeof profile.role === 'string' && profile.role) || record.role || 'member'
   await ensurePrimaryOrgMembership(authUid, record.organizationId, role)
 
+  // 7. Mark the invitation used last.
   await updateDoc(doc(db, 'invitations', params.invitationId), {
     isUsed: true,
     usedAt: Timestamp.now(),

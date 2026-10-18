@@ -96,6 +96,25 @@ service cloud.firestore {
            request.resource.data.ageConfirmedAt is timestamp;
   }
 
+  // Invite accept: organizations/{org}/userEmails/{email} still points at the UUID placeholder
+  // Add User wrote (not an Auth uid). The placeholder must be pending (passwordSet not true),
+  // in this org, and hold this same email — so a live member or the Deleted-user tombstone
+  // (email '', passwordSet true) never qualifies. Lets the invitee create users/{authUid}
+  // before the claim moves to authUid.
+  function inviteClaimIsPendingPlaceholder(organizationId, emailKey) {
+    return exists(/databases/(default)/documents/organizations/$(organizationId)/userEmails/$(emailKey)) &&
+           get(/databases/(default)/documents/organizations/$(organizationId)/userEmails/$(emailKey)).data.userId is string &&
+           exists(/databases/(default)/documents/users/$(get(/databases/(default)/documents/organizations/$(organizationId)/userEmails/$(emailKey)).data.userId)) &&
+           get(/databases/(default)/documents/users/$(get(/databases/(default)/documents/organizations/$(organizationId)/userEmails/$(emailKey)).data.userId)).data.passwordSet != true &&
+           get(/databases/(default)/documents/users/$(get(/databases/(default)/documents/organizations/$(organizationId)/userEmails/$(emailKey)).data.userId)).data.email is string &&
+           get(/databases/(default)/documents/users/$(get(/databases/(default)/documents/organizations/$(organizationId)/userEmails/$(emailKey)).data.userId)).data.email.lower() == emailKey &&
+           'organizationId' in get(/databases/(default)/documents/users/$(get(/databases/(default)/documents/organizations/$(organizationId)/userEmails/$(emailKey)).data.userId)).data &&
+           userDocOrganizationMatches(
+             get(/databases/(default)/documents/users/$(get(/databases/(default)/documents/organizations/$(organizationId)/userEmails/$(emailKey)).data.userId)).data,
+             organizationId
+           );
+  }
+
   // For subcollections under organizations/{organizationId}/… only (parent get is not the resource being read).
   function belongsToOrganization(organizationId) {
     return request.auth != null && (
@@ -508,7 +527,9 @@ service cloud.firestore {
          request.resource.data.email.lower() == request.auth.token.email.lower() &&
          'organizationId' in request.resource.data &&
          (exists(/databases/(default)/documents/organizations/$(request.resource.data.organizationId)/userEmails/$(request.resource.data.email.lower())) == false ||
-          get(/databases/(default)/documents/organizations/$(request.resource.data.organizationId)/userEmails/$(request.resource.data.email.lower())).data.userId == request.auth.uid) &&
+          get(/databases/(default)/documents/organizations/$(request.resource.data.organizationId)/userEmails/$(request.resource.data.email.lower())).data.userId == request.auth.uid ||
+          // Invite accept: claim still points at this invite's pending placeholder (moved to authUid afterwards).
+          inviteClaimIsPendingPlaceholder(request.resource.data.organizationId, request.resource.data.email.lower())) &&
          selfCreateHasAgeConfirmation()) ||
         // Path 2: Admin creation (admin/super admin creating other users e.g. invite)
         (exists(/databases/(default)/documents/users/$(request.auth.uid)) &&

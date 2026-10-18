@@ -34,6 +34,8 @@ export async function sendProjectPlannerEmail(params: {
   to: string
   subject: string
   html: string
+  /** Optional plaintext alternative. Existing callers omit this; the Cloud Function may ignore it. */
+  text?: string
   cc?: string
   replyTo?: string
   fromName?: string
@@ -53,6 +55,7 @@ export async function sendProjectPlannerEmail(params: {
     fromName: params.fromName?.trim() || fromName(),
     replyTo: params.replyTo?.trim() || replyTo() || 'info@projectplanner.us',
   }
+  if (params.text?.trim()) payload.text = params.text
   if (params.cc?.trim()) payload.cc = params.cc.trim()
   if (params.headers && Object.keys(params.headers).length) payload.headers = params.headers
   if (params.attachments?.length) {

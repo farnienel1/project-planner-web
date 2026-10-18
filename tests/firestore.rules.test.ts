@@ -515,36 +515,74 @@ test('invitee can finish password setup: own email claim, placeholder get, then 
   await assertFails(getDoc(doc(db, 'users', OP_A)))
   await assertFails(getDocs(collection(db, 'users')))
 
-  await assertFails(
-    setDoc(doc(db, 'users', authUid), {
-      email,
-      organizationId: ORG_A,
-      firstName: 'Pat',
-      surname: 'Lee',
-      passwordSet: true,
-      ageConfirmed: true,
-      ageConfirmedYears: 16,
-      ageConfirmedAt: Timestamp.now(),
-    })
-  )
+  // The age fields are the invitee's own 16+ tick on the setup page (self-create), not on the placeholder.
+  const selfProfile = () => ({
+    email,
+    organizationId: ORG_A,
+    firstName: 'Pat',
+    surname: 'Lee',
+    passwordSet: true,
+    isActive: true,
+    ageConfirmed: true,
+    ageConfirmedYears: 16,
+    ageConfirmedAt: Timestamp.now(),
+  })
+
+  // Claim still names the placeholder: self-create is allowed (pending placeholder, same email, same org).
+  await assertFails(setDoc(doc(db, 'users', authUid), { ...selfProfile(), ageConfirmed: false }))
+  await assertSucceeds(setDoc(doc(db, 'users', authUid), selfProfile()))
+  // Then the claim moves to authUid, then the placeholder goes.
   await assertSucceeds(setDoc(doc(db, 'organizations', ORG_A, 'userEmails', email), { userId: authUid }))
-  await assertSucceeds(
-    setDoc(doc(db, 'users', authUid), {
-      email,
-      organizationId: ORG_A,
-      firstName: 'Pat',
-      surname: 'Lee',
-      passwordSet: true,
-      isActive: true,
-      ageConfirmed: true,
-      ageConfirmedYears: 16,
-      ageConfirmedAt: Timestamp.now(),
-    })
-  )
   await assertSucceeds(deleteDoc(doc(db, 'users', placeholderId)))
+  const moved = await assertSucceeds(getDoc(doc(db, 'organizations', ORG_A, 'userEmails', email)))
+  assert.equal(moved.data()?.userId, authUid)
   await assertFails(
     updateDoc(doc(db, 'users', 'QAlPe29vLLP4spK554UtpaBLW7N2'), { passwordSet: true })
   )
+})
+
+test('self-create is refused when the email claim names a live member or the Deleted-user tombstone', async () => {
+  const tombstoneId = 'QAlPe29vLLP4spK554UtpaBLW7N2'
+  const liveEmail = 'live-member@test.com'
+  const blankEmail = 'tombstone-claim@test.com'
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore()
+    await setDoc(doc(db, 'users', 'live-member-uid'), {
+      email: liveEmail,
+      organizationId: ORG_A,
+      passwordSet: true,
+      isActive: true,
+    })
+    await setDoc(doc(db, 'organizations', ORG_A, 'userEmails', liveEmail), { userId: 'live-member-uid' })
+    await setDoc(doc(db, 'users', tombstoneId), {
+      email: '',
+      name: 'Deleted user',
+      firstName: 'Deleted',
+      surname: 'user',
+      passwordSet: true,
+      isActive: true,
+      organizationId: ORG_A,
+    })
+    await setDoc(doc(db, 'organizations', ORG_A, 'userEmails', blankEmail), { userId: tombstoneId })
+  })
+  for (const [uid, email] of [
+    ['live-claimant-uid', liveEmail],
+    ['tombstone-claimant-uid', blankEmail],
+  ] as const) {
+    await assertFails(
+      setDoc(doc(authDb(uid, email), 'users', uid), {
+        email,
+        organizationId: ORG_A,
+        firstName: 'X',
+        surname: 'Y',
+        passwordSet: true,
+        ageConfirmed: true,
+        ageConfirmedYears: 16,
+        ageConfirmedAt: Timestamp.now(),
+      })
+    )
+  }
+  await assertFails(getDoc(doc(authDb('live-claimant-uid', liveEmail), 'users', tombstoneId)))
 })
 
 test('company A cannot read a company B notification', async () => {
