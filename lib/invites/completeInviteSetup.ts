@@ -8,6 +8,7 @@ import { getFirebaseAuth, getFirebaseDb } from '@/lib/firebase/ensureFirebase'
 import { isValidUuid } from '@/lib/security/validation'
 import { ensurePrimaryOrgMembership } from '@/lib/orgMembership/membershipService'
 import { ageConfirmationWriteFields } from '@/lib/legal/ageConfirmation'
+import { isAnonymisedDeletedProfile } from '@/lib/canonical/userRosterSegment'
 
 export type InvitationSummary = {
   invitationId: string
@@ -17,7 +18,52 @@ export type InvitationSummary = {
   organizationId: string
 }
 
+type InvitationRecord = InvitationSummary & {
+  claimedUserId?: string
+  permissions?: Record<string, boolean>
+  role?: string
+  employmentType?: string
+  payBasis?: string
+  dayRate?: number
+  hourlyRate?: number
+}
+
+function asRecord(data: unknown): Record<string, unknown> {
+  return data && typeof data === 'object' ? (data as Record<string, unknown>) : {}
+}
+
+function stringField(data: Record<string, unknown>, key: string): string {
+  return typeof data[key] === 'string' ? data[key].trim() : ''
+}
+
+/**
+ * The userEmails claim is this invite's placeholder, not the Auth uid.
+ * A Deleted-user tombstone is never the invite and must not be migrated.
+ */
+export function invitePlaceholderIdToMigrate(params: {
+  claimedUserId?: string | null
+  authUid: string
+  claimedUser?: Parameters<typeof isAnonymisedDeletedProfile>[0]
+}): string {
+  const claimed = typeof params.claimedUserId === 'string' ? params.claimedUserId.trim() : ''
+  const authUid = params.authUid.trim()
+  if (!claimed || !authUid || claimed === authUid) return ''
+  if (isAnonymisedDeletedProfile(params.claimedUser ?? null)) return ''
+  return claimed
+}
+
 export async function fetchInvitationSummary(invitationId: string): Promise<InvitationSummary> {
+  const record = await loadInvitationRecord(invitationId)
+  return {
+    invitationId: record.invitationId,
+    email: record.email,
+    firstName: record.firstName,
+    surname: record.surname,
+    organizationId: record.organizationId,
+  }
+}
+
+async function loadInvitationRecord(invitationId: string): Promise<InvitationRecord> {
   if (!isValidUuid(invitationId)) {
     throw new Error('Invitation not found')
   }
@@ -28,17 +74,33 @@ export async function fetchInvitationSummary(invitationId: string): Promise<Invi
     throw new Error('Invitation not found')
   }
 
-  const invitation = snap.data()
+  const invitation = asRecord(snap.data())
   if (invitation.isUsed === true) {
     throw new Error('This invitation has already been used')
   }
 
+  const permissions =
+    invitation.permissions && typeof invitation.permissions === 'object'
+      ? (invitation.permissions as Record<string, boolean>)
+      : undefined
+  const claimedUserId =
+    stringField(invitation, 'userId') ||
+    stringField(invitation, 'invitedUserId') ||
+    stringField(invitation, 'placeholderUserId')
+
   return {
     invitationId,
-    email: String(invitation.email || ''),
-    firstName: String(invitation.firstName || ''),
-    surname: String(invitation.surname || ''),
-    organizationId: String(invitation.organizationId || ''),
+    email: stringField(invitation, 'email'),
+    firstName: stringField(invitation, 'firstName'),
+    surname: stringField(invitation, 'surname'),
+    organizationId: stringField(invitation, 'organizationId'),
+    claimedUserId: claimedUserId || undefined,
+    permissions,
+    role: stringField(invitation, 'role') || undefined,
+    employmentType: stringField(invitation, 'employmentType') || undefined,
+    payBasis: stringField(invitation, 'payBasis') || undefined,
+    dayRate: typeof invitation.dayRate === 'number' ? invitation.dayRate : undefined,
+    hourlyRate: typeof invitation.hourlyRate === 'number' ? invitation.hourlyRate : undefined,
   }
 }
 
@@ -58,116 +120,113 @@ async function authWithPassword(email: string, password: string): Promise<UserCr
   }
 }
 
-async function migrateInvitedUserRecord(params: {
-  organizationId: string
-  existingUserId: string
-  authUid: string
-  email: string
-  firstName: string
-  surname: string
-}) {
+async function claimedUserIdAfterSignIn(organizationId: string, email: string): Promise<string> {
   const db = getFirebaseDb()
-  const oldRef = doc(db, 'users', params.existingUserId)
-  const oldSnap = await getDoc(oldRef)
-  const now = Timestamp.now()
-  const email = params.email.toLowerCase().trim()
-
-  // Self-create is allowed only when this pointer is missing or already this uid.
-  await setDoc(doc(db, 'organizations', params.organizationId, 'userEmails', email), {
-    userId: params.authUid,
-  })
-
-  const nextUser = oldSnap.exists()
-    ? {
-        ...oldSnap.data(),
-        email,
-        passwordSet: true,
-        accountConfirmed: true,
-        updatedAt: now,
-        ...ageConfirmationWriteFields(now),
-      }
-    : {
-        email,
-        firstName: params.firstName,
-        surname: params.surname,
-        organizationId: params.organizationId,
-        passwordSet: true,
-        isActive: true,
-        accountConfirmed: true,
-        updatedAt: now,
-        ...ageConfirmationWriteFields(now),
-      }
-
-  await setDoc(doc(db, 'users', params.authUid), nextUser)
-
-  const orgRef = doc(db, 'organizations', params.organizationId)
-  const orgSnap = await getDoc(orgRef)
-  if (orgSnap.exists()) {
-    const members = (orgSnap.data().members as Record<string, string> | undefined) ?? {}
-    if (members[params.existingUserId]) {
-      const role = members[params.existingUserId]
-      const nextMembers = { ...members, [params.authUid]: role }
-      delete nextMembers[params.existingUserId]
-      await updateDoc(orgRef, { members: nextMembers, updatedAt: Timestamp.now() })
-    }
+  try {
+    const snap = await getDoc(doc(db, 'organizations', organizationId, 'userEmails', email))
+    if (!snap.exists()) return ''
+    return String((snap.data() as { userId?: string }).userId || '').trim()
+  } catch {
+    return ''
   }
+}
 
-  if (params.existingUserId !== params.authUid && oldSnap.exists()) {
-    await deleteDoc(oldRef)
+async function loadPlaceholderIfOwnInvite(userId: string): Promise<Record<string, unknown> | null> {
+  if (!userId) return null
+  const db = getFirebaseDb()
+  try {
+    const snap = await getDoc(doc(db, 'users', userId))
+    if (!snap.exists()) return null
+    return asRecord(snap.data())
+  } catch {
+    return null
   }
+}
 
-  const role = oldSnap.exists() && typeof oldSnap.data().role === 'string' ? oldSnap.data().role : 'member'
-  await ensurePrimaryOrgMembership(params.authUid, params.organizationId, role)
+function userDocFromInvitation(record: InvitationRecord, now: Timestamp): Record<string, unknown> {
+  const payload: Record<string, unknown> = {
+    email: record.email.toLowerCase().trim(),
+    firstName: record.firstName,
+    surname: record.surname,
+    organizationId: record.organizationId,
+    passwordSet: true,
+    isActive: true,
+    accountConfirmed: true,
+    updatedAt: now,
+    ...ageConfirmationWriteFields(now),
+  }
+  if (record.permissions) {
+    payload.permissions = record.permissions
+    Object.assign(payload, record.permissions)
+  }
+  if (record.role) payload.role = record.role
+  if (record.employmentType) payload.employmentType = record.employmentType
+  if (record.payBasis === 'hourly' && record.hourlyRate != null) {
+    payload.payBasis = 'hourly'
+    payload.hourlyRate = record.hourlyRate
+  } else if (record.payBasis === 'day' && record.dayRate != null) {
+    payload.payBasis = 'day'
+    payload.dayRate = record.dayRate
+  }
+  return payload
 }
 
 export async function completeInvitationPasswordSetup(params: {
   invitationId: string
   password: string
 }): Promise<void> {
-  const summary = await fetchInvitationSummary(params.invitationId)
-  const email = summary.email.toLowerCase().trim()
-  const db = getFirebaseDb()
-
-  const emailMapSnap = await getDoc(
-    doc(db, 'organizations', summary.organizationId, 'userEmails', email)
-  )
-  const existingUserId = emailMapSnap.exists()
-    ? String((emailMapSnap.data() as { userId?: string }).userId || '')
-    : ''
+  const record = await loadInvitationRecord(params.invitationId)
+  const email = record.email.toLowerCase().trim()
+  if (!email || !record.organizationId) {
+    throw new Error('Invitation not found')
+  }
 
   const authResult = await authWithPassword(email, params.password)
   const authUid = authResult.user.uid
+  const db = getFirebaseDb()
+  const now = Timestamp.now()
 
-  if (existingUserId) {
-    await migrateInvitedUserRecord({
-      organizationId: summary.organizationId,
-      existingUserId,
-      authUid,
-      email,
-      firstName: summary.firstName,
-      surname: summary.surname,
-    })
-  } else {
-    const now = Timestamp.now()
-    await setDoc(doc(db, 'organizations', summary.organizationId, 'userEmails', email), {
-      userId: authUid,
-    })
-    await setDoc(
-      doc(db, 'users', authUid),
-      {
-        email,
-        firstName: summary.firstName,
-        surname: summary.surname,
-        organizationId: summary.organizationId,
-        passwordSet: true,
-        isActive: true,
-        accountConfirmed: true,
-        updatedAt: now,
-        ...ageConfirmationWriteFields(now),
-      },
-      { merge: true }
-    )
+  const claimedUserId = await claimedUserIdAfterSignIn(record.organizationId, email)
+  const hintedId = record.claimedUserId || claimedUserId
+  const claimedUser = hintedId && hintedId !== authUid ? await loadPlaceholderIfOwnInvite(hintedId) : null
+  const placeholderId = invitePlaceholderIdToMigrate({
+    claimedUserId: hintedId,
+    authUid,
+    claimedUser,
+  })
+
+  await setDoc(doc(db, 'organizations', record.organizationId, 'userEmails', email), {
+    userId: authUid,
+  })
+
+  const nextUser =
+    placeholderId && claimedUser && !isAnonymisedDeletedProfile(claimedUser)
+      ? {
+          ...claimedUser,
+          email,
+          organizationId: record.organizationId,
+          passwordSet: true,
+          accountConfirmed: true,
+          updatedAt: now,
+          ...ageConfirmationWriteFields(now),
+        }
+      : userDocFromInvitation(record, now)
+
+  await setDoc(doc(db, 'users', authUid), nextUser)
+
+  if (placeholderId && claimedUser && !isAnonymisedDeletedProfile(claimedUser)) {
+    try {
+      await deleteDoc(doc(db, 'users', placeholderId))
+    } catch (error) {
+      console.warn('Invite placeholder left in place after password setup', placeholderId, error)
+    }
   }
+
+  const role =
+    (typeof nextUser.role === 'string' && nextUser.role) ||
+    record.role ||
+    'member'
+  await ensurePrimaryOrgMembership(authUid, record.organizationId, role)
 
   await updateDoc(doc(db, 'invitations', params.invitationId), {
     isUsed: true,

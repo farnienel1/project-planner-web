@@ -128,3 +128,13 @@ export function invitePlaceholderUserWriteFields(): {
     policyAccepted: false,
   }
 }
+
+/**
+ * Invite day/hourly rates belong on `users/{uid}` (`payBasis`, `dayRate`,
+ * `hourlyRate`). Do not create `organizations/{orgId}/operativeProfiles/{newUserId}`
+ * at invite time. That collection is a later fallback when a manager cannot
+ * write the user document — not part of Add User.
+ */
+export function inviteWritesOperativeProfile(): false {
+  return false
+}

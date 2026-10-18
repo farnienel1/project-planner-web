@@ -423,6 +423,7 @@ export {
   inviteEmailHasLiveClaim,
   inviteEmailOrgLookupConstraints,
   invitePlaceholderUserWriteFields,
+  inviteWritesOperativeProfile,
   resolveInviteEmailClaim,
 } from './inviteEmailClaim'
 

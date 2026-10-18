@@ -179,6 +179,7 @@ import {
   inviteEmailHasLiveClaim,
   inviteEmailOrgLookupConstraints,
   invitePlaceholderUserWriteFields,
+  inviteWritesOperativeProfile,
   resolveInviteEmailClaim,
 } from './inviteEmailClaim.ts'
 
@@ -1138,6 +1139,7 @@ test('the iOS JavaScript bundle exposes the standard-day, leave and dismiss rule
     'inviteEmailHasLiveClaim',
     'inviteEmailOrgLookupConstraints',
     'invitePlaceholderUserWriteFields',
+    'inviteWritesOperativeProfile',
     'userCreateRequiresAgeConfirmation',
   ]) {
     assert.equal(typeof bundle[name], 'function', `${name} is exported from the packed script`)
@@ -2941,6 +2943,7 @@ test('admin invite placeholders omit age confirmation and only look up the email
     organizationId: 'Org-1',
     email: 'pat@site.com',
   })
+  assert.equal(inviteWritesOperativeProfile(), false)
 })
 
 test('the packed invite-email claim matches this module', () => {
@@ -2954,6 +2957,7 @@ test('the packed invite-email claim matches this module', () => {
         email: string
       ) => { organizationId: string; email: string }
       invitePlaceholderUserWriteFields: () => { passwordSet: boolean }
+      inviteWritesOperativeProfile: () => boolean
       userCreateRequiresAgeConfirmation: (input: unknown) => boolean
     }
   } = {}
@@ -2988,6 +2992,7 @@ test('the packed invite-email claim matches this module', () => {
     inviteEmailOrgLookupConstraints('org-a', 'Pat@Site.com')
   )
   assert.equal(packed.invitePlaceholderUserWriteFields().passwordSet, false)
+  assert.equal(packed.inviteWritesOperativeProfile(), false)
   assert.equal(
     packed.userCreateRequiresAgeConfirmation({ creatorUserId: 'admin', targetUserId: leftover.userId }),
     false

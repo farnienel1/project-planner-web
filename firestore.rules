@@ -604,9 +604,14 @@ service cloud.firestore {
     match /organizations/{organizationId} {
       // One user per email per org (must stay above the catch-all so writes are not widened by {collection}/**)
       match /userEmails/{emailKey} {
+        // Invitee may read the claim for their own email after they create Auth.
+        // That id is the pending placeholder, not request.auth.uid. List of this
+        // collection stays closed: emailKey == token email is only true for one doc.
         allow read: if request.auth != null && (
           canAccessOrganization(organizationId) ||
-          (resource != null && resource.data.userId == request.auth.uid)
+          (resource != null && resource.data.userId == request.auth.uid) ||
+          (request.auth.token.email is string &&
+           emailKey == request.auth.token.email.lower())
         );
         allow create, update: if request.auth != null && (
           isPlatformOwner() ||
