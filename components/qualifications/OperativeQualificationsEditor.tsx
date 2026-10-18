@@ -1,8 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import type { Qualification } from '@/types'
-import { findOperativeForUser } from '@/lib/operatives/operativeRosterUtils'
+import type { Operative, Qualification } from '@/types'
 import { IosFormModal } from '@/components/ios/primitives'
 import { Button } from '@/components/ui'
 import { qualificationCertificatePath, uploadFile } from '@/lib/firebase/storageUtils'
@@ -20,7 +19,7 @@ import {
 } from '@/lib/qualifications/certificateUpload'
 import { QualificationLibraryBrowser } from './QualificationLibraryBrowser'
 
-type LinkedOperative = NonNullable<ReturnType<typeof findOperativeForUser>>
+type LinkedOperative = Operative
 
 export function OperativeQualificationsEditor({
   linked,

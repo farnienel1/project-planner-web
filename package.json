@@ -9,7 +9,7 @@
     "build": "next build --webpack",
     "start": "next start",
     "lint": "eslint . --ext .js,.jsx,.ts,.tsx --ignore-pattern '.next/**' --ignore-pattern 'node_modules/**'",
-    "test": "node scripts/build-canonical-bundle.mjs && node scripts/build-canonical-bundle.mjs --check && tsx --test lib/*.test.ts lib/**/*.test.ts lib/security/*.test.ts lib/email/*.test.ts",
+    "test": "node scripts/build-canonical-bundle.mjs && node scripts/build-canonical-bundle.mjs --check && tsx --test lib/*.test.ts lib/**/*.test.ts lib/security/*.test.ts lib/email/*.test.ts && node --test functions/prunePushTokens.test.js",
     "test:rules": "PATH=\"/opt/homebrew/opt/openjdk@21/bin:$PATH\" JAVA_HOME=\"${JAVA_HOME:-/opt/homebrew/opt/openjdk@21}\" firebase emulators:exec --only firestore --project demo-project-planner-rules \"tsx --test tests/firestore.rules.test.ts\"",
     "test:rules:storage": "PATH=\"/opt/homebrew/opt/openjdk@21/bin:$PATH\" JAVA_HOME=\"${JAVA_HOME:-/opt/homebrew/opt/openjdk@21}\" firebase emulators:exec --only firestore,storage --project demo-project-planner-rules \"tsx --test tests/storage.rules.test.ts\"",
     "build:canonical": "node scripts/build-canonical-bundle.mjs",

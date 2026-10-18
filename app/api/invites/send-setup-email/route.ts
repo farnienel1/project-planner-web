@@ -1,5 +1,10 @@
 import { NextRequest } from 'next/server'
-import { inviteSetupEmailSubject, buildInviteSetupEmailHtml } from '@/lib/email/inviteSetupEmail'
+import {
+  inviteSetupEmailSubject,
+  buildInviteSetupEmailHtml,
+  buildInviteSetupEmailText,
+} from '@/lib/email/inviteSetupEmail'
+import { resolveInviteSetupIdentity } from '@/lib/email/inviteSetupEmailFields'
 import { sendProjectPlannerEmail } from '@/lib/email/resendClient'
 import {
   clientSafeMessage,
@@ -9,7 +14,7 @@ import {
 } from '@/lib/security/apiGuard'
 import { clampString, isValidEmail, isValidUuid } from '@/lib/security/validation'
 import { requireOrgAccess } from '@/lib/security/requireOrgAccess'
-import { bearerToken, firestoreGet, readString } from '@/lib/owner/firestoreRest'
+import { bearerToken, firestoreGet, readString, restFieldsToPlain } from '@/lib/owner/firestoreRest'
 
 export const runtime = 'nodejs'
 
@@ -35,23 +40,24 @@ export async function POST(request: NextRequest) {
   if (!access.ok) return access.response
 
   const invitationId = clampString(body.value.invitationId, 80)
-  const organizationName = clampString(body.value.organizationName, 200)
-  const firstName = clampString(body.value.firstName, 100)
   const role = body.value.role
   const to = clampString(body.value.to, 254)
 
-  if (!invitationId || !isValidUuid(invitationId) || !organizationName || !firstName || !role || !to) {
-    return jsonError('invitationId, organizationName, firstName, role, and to are required', 400)
+  if (!invitationId || !isValidUuid(invitationId) || !role || !to) {
+    return jsonError('invitationId, role, and to are required', 400)
   }
   if (!ROLES.has(role) || !isValidEmail(to)) {
     return jsonError('Invalid invite details', 400)
   }
 
+  const token = bearerToken(request)
+  let invitationFirstName = ''
   try {
-    const invitation = await firestoreGet(bearerToken(request), `invitations/${invitationId}`)
+    const invitation = await firestoreGet(token, `invitations/${invitationId}`)
     if (!invitation) return jsonError('Invitation not found', 404)
     const invitationOrg = readString(invitation.fields, 'organizationId')
     const invitationEmail = readString(invitation.fields, 'email').toLowerCase()
+    invitationFirstName = readString(invitation.fields, 'firstName').trim()
     if (invitationOrg !== access.organizationId || invitationEmail !== to.trim().toLowerCase()) {
       return jsonError('Invitation does not belong to this organisation', 403)
     }
@@ -59,19 +65,39 @@ export async function POST(request: NextRequest) {
     return jsonError('Invitation not found', 404)
   }
 
+  let organization: Record<string, unknown> | undefined
+  try {
+    const orgDoc = await firestoreGet(token, `organizations/${access.organizationId}`)
+    organization = restFieldsToPlain(orgDoc?.fields)
+  } catch {
+    organization = undefined
+  }
+  const identity = resolveInviteSetupIdentity({
+    invitationFirstName,
+    fallbackFirstName: clampString(body.value.firstName, 100),
+    organization,
+    fallbackOrganizationName: clampString(body.value.organizationName, 200),
+  })
+  if (!identity) {
+    return jsonError('Invitee name and organisation name are required', 400)
+  }
+  const { firstName, organizationName } = identity
+
   const email = to.trim().toLowerCase()
+  const mail = {
+    to: email,
+    firstName,
+    organizationName,
+    invitationId,
+    role,
+  }
 
   try {
     await sendProjectPlannerEmail({
       to: email,
       subject: inviteSetupEmailSubject(organizationName),
-      html: buildInviteSetupEmailHtml({
-        to: email,
-        firstName,
-        organizationName,
-        invitationId,
-        role,
-      }),
+      html: buildInviteSetupEmailHtml(mail),
+      text: buildInviteSetupEmailText(mail),
     })
 
     return Response.json({ ok: true })

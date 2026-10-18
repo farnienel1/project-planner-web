@@ -19,20 +19,52 @@ function parseChoice(value: string | null): AnalyticsConsentChoice | null {
   return value === 'granted' || value === 'denied' ? value : null
 }
 
+function rememberedChoice(): AnalyticsConsentChoice | null {
+  return memory === 'granted' || memory === 'denied' ? memory : null
+}
+
+function persistChoice(choice: AnalyticsConsentChoice): void {
+  if (!canUseWindow()) return
+  try {
+    window.localStorage.setItem(ANALYTICS_CONSENT_STORAGE_KEY, choice)
+  } catch {
+    /* private mode — memory still holds the choice for this page */
+  }
+}
+
 function notifyAnalyticsConsentChanged(): void {
   if (!canUseWindow()) return
   window.dispatchEvent(new Event(ANALYTICS_CONSENT_CHANGE_EVENT))
 }
 
 export function getAnalyticsConsent(): AnalyticsConsentChoice | null {
-  if (!canUseWindow()) return null
+  if (!canUseWindow()) return rememberedChoice()
   try {
-    const choice = parseChoice(window.localStorage.getItem(ANALYTICS_CONSENT_STORAGE_KEY))
-    memory = choice
-    return choice
+    const stored = parseChoice(window.localStorage.getItem(ANALYTICS_CONSENT_STORAGE_KEY))
+    if (stored) {
+      memory = stored
+      return stored
+    }
   } catch {
-    return memory === 'granted' || memory === 'denied' ? memory : null
+    return rememberedChoice()
   }
+  const remembered = rememberedChoice()
+  if (remembered) {
+    persistChoice(remembered)
+    return remembered
+  }
+  memory = null
+  return null
+}
+
+/** Dashboard remount / login. A recorded Accept or Reject must not prompt again. */
+export function shouldAutoPromptAnalyticsConsent(input: {
+  autoPrompt: boolean
+  choice: AnalyticsConsentChoice | null
+  ready: boolean
+  dialogOpen?: boolean
+}): boolean {
+  return input.autoPrompt && input.ready && input.choice == null && !input.dialogOpen
 }
 
 export function hasGrantedAnalyticsConsent(): boolean {
@@ -57,13 +89,7 @@ export function setAnalyticsConsent(choice: AnalyticsConsentChoice): void {
   if (choice !== 'granted' && choice !== 'denied') return
   memory = choice
   if (choice === 'denied') clearProductAnalyticsRuntime()
-  if (canUseWindow()) {
-    try {
-      window.localStorage.setItem(ANALYTICS_CONSENT_STORAGE_KEY, choice)
-    } catch {
-      /* private mode */
-    }
-  }
+  persistChoice(choice)
   notifyAnalyticsConsentChanged()
 }
 
@@ -82,12 +108,16 @@ export function clearAnalyticsConsent(): void {
 
 export function subscribeAnalyticsConsent(onChange: (choice: AnalyticsConsentChoice | null) => void): () => void {
   if (!canUseWindow()) return () => undefined
-  const handler = () => onChange(getAnalyticsConsent())
-  window.addEventListener(ANALYTICS_CONSENT_CHANGE_EVENT, handler)
-  window.addEventListener('storage', handler)
+  const onConsent = () => onChange(getAnalyticsConsent())
+  const onStorage = (event: StorageEvent) => {
+    if (event.key != null && event.key !== ANALYTICS_CONSENT_STORAGE_KEY) return
+    onConsent()
+  }
+  window.addEventListener(ANALYTICS_CONSENT_CHANGE_EVENT, onConsent)
+  window.addEventListener('storage', onStorage)
   return () => {
-    window.removeEventListener(ANALYTICS_CONSENT_CHANGE_EVENT, handler)
-    window.removeEventListener('storage', handler)
+    window.removeEventListener(ANALYTICS_CONSENT_CHANGE_EVENT, onConsent)
+    window.removeEventListener('storage', onStorage)
   }
 }
 

@@ -1,5 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import {
   ANALYTICS_CONSENT_STORAGE_KEY,
   LOGIN_TRACKED_KEY,
@@ -10,6 +11,7 @@ import {
   hasGrantedAnalyticsConsent,
   resetAnalyticsConsentMemoryForTests,
   setAnalyticsConsent,
+  shouldAutoPromptAnalyticsConsent,
 } from './analyticsConsent.ts'
 
 function storage(map: Map<string, string>) {
@@ -108,4 +110,64 @@ test('consent helpers do not throw without window', () => {
     if (previousWindow === undefined) delete (globalThis as { window?: unknown }).window
     else (globalThis as { window?: unknown }).window = previousWindow
   }
+})
+
+test('accept and reject survive a remount and a simulated same-browser login', () => {
+  for (const recorded of ['granted', 'denied'] as const) {
+    const local = new Map<string, string>()
+    const session = new Map<string, string>()
+    withBrowser(local, session, () => {
+      assert.equal(
+        shouldAutoPromptAnalyticsConsent({ autoPrompt: true, choice: getAnalyticsConsent(), ready: true }),
+        true
+      )
+      setAnalyticsConsent(recorded)
+      assert.equal(local.get(ANALYTICS_CONSENT_STORAGE_KEY), recorded)
+      assert.equal(
+        shouldAutoPromptAnalyticsConsent({ autoPrompt: true, choice: getAnalyticsConsent(), ready: true }),
+        false
+      )
+
+      resetAnalyticsConsentMemoryForTests()
+      const remounted = getAnalyticsConsent()
+      assert.equal(remounted, recorded)
+      assert.equal(
+        shouldAutoPromptAnalyticsConsent({ autoPrompt: true, choice: remounted, ready: true }),
+        false
+      )
+
+      session.set(PRODUCT_SESSION_ID_KEY, 'sess-login')
+      session.set(LOGIN_TRACKED_KEY, '1')
+      clearProductAnalyticsRuntime()
+      resetAnalyticsConsentMemoryForTests()
+      const afterLogin = getAnalyticsConsent()
+      assert.equal(afterLogin, recorded)
+      assert.equal(local.get(ANALYTICS_CONSENT_STORAGE_KEY), recorded)
+      assert.equal(session.has(PRODUCT_SESSION_ID_KEY), false)
+      assert.equal(
+        shouldAutoPromptAnalyticsConsent({ autoPrompt: true, choice: afterLogin, ready: true }),
+        false
+      )
+    })
+  }
+})
+
+test('an in-session choice is rewritten when localStorage was empty', () => {
+  const local = new Map<string, string>()
+  withBrowser(local, new Map(), () => {
+    setAnalyticsConsent('denied')
+    local.delete(ANALYTICS_CONSENT_STORAGE_KEY)
+    assert.equal(getAnalyticsConsent(), 'denied')
+    assert.equal(local.get(ANALYTICS_CONSENT_STORAGE_KEY), 'denied')
+  })
+})
+
+test('same-user sign-out must not clear analytics consent or the web org key', () => {
+  const auth = readFileSync(new URL('../stores/authStore.ts', import.meta.url), 'utf8')
+  const signOut = auth.slice(auth.indexOf('signOut: async (opts)'), auth.indexOf('resetPassword:'))
+  assert.match(signOut, /Keep pp\.webActiveOrg/)
+  assert.match(signOut, /Keep pp\.analyticsConsent\.v1/)
+  assert.equal(signOut.includes('clearAnalyticsConsent'), false)
+  assert.equal(signOut.includes('clearWebActiveOrg'), false)
+  assert.equal(ANALYTICS_CONSENT_STORAGE_KEY, 'pp.analyticsConsent.v1')
 })

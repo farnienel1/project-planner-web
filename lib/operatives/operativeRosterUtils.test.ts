@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { Operative } from '../../types/index.ts'
-import { editUserHrefForOperative, findOperativeForUser, findUserForOperative, operativeIdsForEmail } from './operativeRosterUtils.ts'
+import { editUserHrefForOperative, findOperativeForUser, findUserForOperative, operativeIdsForEmail, operativeRecordForUser } from './operativeRosterUtils.ts'
 import { UserRole, type User } from '../../types/index.ts'
 
 function operative(partial: Partial<Operative> & { id: string }): Operative {
@@ -65,6 +65,30 @@ test('duplicate operative emails keep the profile that holds certificates', () =
   const linked = findOperativeForUser(user, [emptyNewer, withCerts])
   assert.equal(linked?.id, 'CERT')
   assert.deepEqual(operativeIdsForEmail([emptyNewer, withCerts], 'op@site.test').sort(), ['CERT', 'EMPTY'])
+})
+
+test('a re-invited login with no catalogue row still hosts qualifications', () => {
+  const host = operativeRecordForUser(user, [])
+  assert.equal(host?.id, 'U1')
+  assert.equal(host?.email, 'op@site.test')
+  assert.deepEqual(host?.qualifications, [])
+  const savedOnUserId = operative({
+    id: 'U1',
+    email: '',
+    qualifications: [{ id: 'SMSTS', name: 'SMSTS', hasEndDate: true, createdAt: new Date(), updatedAt: new Date() }],
+  })
+  assert.equal(operativeRecordForUser(user, [savedOnUserId])?.qualifications[0]?.id, 'SMSTS')
+  const tombstone = operativeRecordForUser(
+    {
+      ...user,
+      email: '',
+      firstName: 'Deleted',
+      surname: 'user',
+      name: 'Deleted user',
+    } as User,
+    []
+  )
+  assert.equal(tombstone, undefined)
 })
 
 test('an operative with a login opens the Edit User page used by Manage Operatives', () => {

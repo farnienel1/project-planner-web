@@ -8,7 +8,7 @@ import type { Operative, User } from '@/types'
 import { auth, db } from '@/lib/firebase/config'
 import { applyExclusiveRateFields, buildSaveUserPayload } from '@/lib/firebase/userPayload'
 import { parseOrgUser } from '@/lib/firebase/parseUser'
-import { findOperativeForUser } from '@/lib/operatives/operativeRosterUtils'
+import { operativeRecordForUser } from '@/lib/operatives/operativeRosterUtils'
 import { applyAccountTypeChange } from '@/lib/staff/accountTypeChange'
 
 interface UserStoreState {
@@ -224,7 +224,7 @@ export const useUserStore = create<UserStoreState>(() => ({
 
   syncLinkedOperative: async (organizationId, user, operatives) => {
     if (!user.permissions.operativeMode) return
-    const linked = findOperativeForUser(user, operatives)
+    const linked = operativeRecordForUser(user, operatives)
     if (!linked) return
 
     const payload: Record<string, unknown> = {

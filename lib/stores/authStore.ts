@@ -986,6 +986,7 @@ export const useAuthStore = create<AuthState>((set) => {
       const signedOutId = useAuthStore.getState().user?.id
       if (signedOutId) clearRememberedOrgDenied(signedOutId)
       // Keep pp.webActiveOrg:{userId}. Same-user login must reopen this company.
+      // Keep pp.analyticsConsent.v1. Same-browser login must not re-prompt Accept/Reject.
       writeSignedOutFlag(true)
       try {
         if (opts?.idle) markWebIdleExpired()

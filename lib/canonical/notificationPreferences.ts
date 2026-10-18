@@ -15,6 +15,14 @@
  */
 
 import type { AccountKind } from './userProfile'
+import {
+  canEditWorkCatalogue,
+  canReviewUserTimesheets,
+  canViewStaffWarnings,
+  isStaffAccount,
+  type StaffAccountRole,
+  type WorkCatalogueToggles,
+} from './staffAccess'
 import { TIMESHEET_SUBMISSION_NOTICE_TYPE } from './timesheetSubmission'
 
 export const NOTIFICATION_PREFERENCE_KEYS = [
@@ -217,6 +225,113 @@ export function userNotificationPreferenceFieldPatch(
 
 export function notificationPreferenceKeyForType(type: string): NotificationPreferenceKey | null {
   return TYPE_TO_PREFERENCE[trimmed(type)] ?? null
+}
+
+/**
+ * Who may see a My notifications toggle. Fan-out stays
+ * `receivesJobNotification` — hiding a toggle does not add recipients.
+ */
+export type NotificationPreferenceAudience = {
+  role: StaffAccountRole
+  catalogue: WorkCatalogueToggles
+  canManagePeople?: boolean
+  canManageClients?: boolean
+  canManageMaterials?: boolean
+}
+
+export type NotificationPreferenceCopy = {
+  label: string
+  description: string
+}
+
+const PREFERENCE_LABELS: Record<NotificationPreferenceKey, string> = {
+  materialOrderCutOff: 'Material order cut-off',
+  annualLeaveRequested: 'Annual leave requested',
+  annualLeaveDecision: 'Annual leave approved or declined',
+  projectCreated: 'New project created',
+  smallWorksCreated: 'New small works',
+  bookingClashes: 'Booking clashes',
+  materialOrderPlaced: 'New material order',
+  bookedOntoJob: "You've been booked",
+  operativeCreated: 'New operative created',
+  managerCreated: 'New manager created',
+  clientCreated: 'New client created',
+  warningDismissed: 'Warning dismissed',
+  tasksAssignedOrCompleted: 'Tasks assigned or completed',
+  toolboxTalkIssued: 'Toolbox talk issued',
+  timesheetSignOff: 'Timesheet sign-off',
+  qualificationExpiry: 'Qualification expiry',
+  lineManagerPeerUpdates: 'Line manager peer updates',
+  timesheetSubmissionReminder: 'Timesheet submission reminder',
+}
+
+/**
+ * User-level copy. Operatives do not see manager/admin rows, so they never
+ * get “someone you manage” text. Annual leave decision is always the
+ * person’s own request.
+ */
+export function notificationPreferenceCopy(
+  key: NotificationPreferenceKey,
+  audience?: NotificationPreferenceAudience | null
+): NotificationPreferenceCopy {
+  const descriptions: Record<NotificationPreferenceKey, string> = {
+    materialOrderCutOff: 'Daily reminder at the time set in organisation settings.',
+    annualLeaveRequested: 'When someone you manage requests annual leave.',
+    annualLeaveDecision: 'When your annual leave is approved or declined.',
+    projectCreated: 'When a project is added.',
+    smallWorksCreated: 'When new small works is added.',
+    bookingClashes: 'When two bookings overlap.',
+    materialOrderPlaced: 'When a material order is placed.',
+    bookedOntoJob: 'When you are booked onto a job.',
+    operativeCreated: 'When a new operative is added.',
+    managerCreated: 'When a new manager is added.',
+    clientCreated: 'When a new client is added.',
+    warningDismissed: 'When someone dismisses a warning.',
+    tasksAssignedOrCompleted: 'When a task is assigned to you or marked complete.',
+    toolboxTalkIssued: 'When a toolbox talk is issued to you.',
+    timesheetSignOff: 'When a timesheet needs your sign-off or has been signed.',
+    qualificationExpiry: 'Reminders before qualifications expire.',
+    lineManagerPeerUpdates: 'When another line manager actions a shared request.',
+    timesheetSubmissionReminder: 'Reminder to submit before the payment-run deadline.',
+  }
+  return { label: PREFERENCE_LABELS[key], description: descriptions[key] }
+}
+
+export function notificationPreferenceIsVisible(
+  key: NotificationPreferenceKey,
+  audience: NotificationPreferenceAudience
+): boolean {
+  const role = audience.role
+  const staff = isStaffAccount(role)
+  switch (key) {
+    case 'projectCreated':
+      return canEditWorkCatalogue(role, 'projects', audience.catalogue)
+    case 'smallWorksCreated':
+      return canEditWorkCatalogue(role, 'smallWorks', audience.catalogue)
+    case 'annualLeaveRequested':
+    case 'bookingClashes':
+    case 'lineManagerPeerUpdates':
+    case 'managerCreated':
+      return staff
+    case 'materialOrderPlaced':
+      return staff && audience.canManageMaterials !== false
+    case 'operativeCreated':
+      return staff && audience.canManagePeople !== false
+    case 'clientCreated':
+      return staff && audience.canManageClients !== false
+    case 'warningDismissed':
+      return canViewStaffWarnings(role)
+    case 'timesheetSignOff':
+      return canReviewUserTimesheets(role)
+    default:
+      return true
+  }
+}
+
+export function visibleNotificationPreferenceKeys(
+  audience: NotificationPreferenceAudience
+): NotificationPreferenceKey[] {
+  return NOTIFICATION_PREFERENCE_KEYS.filter((key) => notificationPreferenceIsVisible(key, audience))
 }
 
 /**

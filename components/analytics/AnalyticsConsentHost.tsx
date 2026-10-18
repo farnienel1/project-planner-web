@@ -7,6 +7,7 @@ import {
   getAnalyticsConsent,
   openAnalyticsConsentSettings,
   setAnalyticsConsent,
+  shouldAutoPromptAnalyticsConsent,
   subscribeAnalyticsConsent,
   subscribeAnalyticsConsentSettings,
   type AnalyticsConsentChoice,
@@ -42,7 +43,9 @@ function statusCopy(choice: AnalyticsConsentChoice | null): string {
 }
 
 export function AnalyticsConsentHost({ autoPrompt = false }: { autoPrompt?: boolean }) {
-  const [choice, setChoice] = useState<AnalyticsConsentChoice | null>(null)
+  const [choice, setChoice] = useState<AnalyticsConsentChoice | null>(() =>
+    typeof window === 'undefined' ? null : getAnalyticsConsent()
+  )
   const [ready, setReady] = useState(false)
   const [dialogOpen, setDialogOpen] = useState(false)
 
@@ -76,7 +79,7 @@ export function AnalyticsConsentHost({ autoPrompt = false }: { autoPrompt?: bool
     setDialogOpen(false)
   }
 
-  const showBar = autoPrompt && ready && choice === null && !dialogOpen
+  const showBar = shouldAutoPromptAnalyticsConsent({ autoPrompt, choice, ready, dialogOpen })
 
   return (
     <>

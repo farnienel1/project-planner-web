@@ -1,7 +1,14 @@
 import type { Operative, User } from '@/types'
 import { getActiveOperativesForScheduling } from '@/lib/operatives/operativeRosterUtils'
 import { isPendingPerson } from '@/lib/staff/pendingPeople'
-import { getManagerUsers, isCurrentLabourNamedPerson, isCurrentLabourUser, isRoleOnlyPersonName, rosterDisplayName } from '@/lib/staff/userRosterUtils'
+import {
+  getManagerUsers,
+  getOperativeModeUsers,
+  isCurrentLabourNamedPerson,
+  isCurrentLabourUser,
+  isRoleOnlyPersonName,
+  rosterDisplayName,
+} from '@/lib/staff/userRosterUtils'
 
 export type SchedulablePersonKind = 'operative' | 'manager'
 
@@ -25,8 +32,21 @@ function roleBadge(user: User | undefined): string {
 }
 
 /**
+ * Operatives-list user documents (`getOperativeModeUsers`) that can be booked:
+ * a current person (never an anonymised Deleted user) who is active. `passwordSet`
+ * is not required — a pending invite is a real person on the Operatives list, and
+ * Add User does not write `operativeProfiles` (`inviteWritesOperativeProfile` is false).
+ */
+function schedulableOperativeListUsers(users: User[]): User[] {
+  return getOperativeModeUsers(users).filter((user) => isCurrentLabourUser(user) && user.isActive)
+}
+
+/**
  * iOS ScheduleBookablePersonBuilder: one row per email.
  * Roster operatives come first (badge Admin/Manager/Operative from the linked user).
+ * Operatives-list user documents with no operative record sharing that email follow,
+ * including a pending invite (`passwordSet` false). Their bookings use the user document id,
+ * the same host id `operativeRecordForUser` uses when no catalogue row exists.
  * Manager/admin app users without a roster profile are appended once.
  */
 export function buildSchedulablePeople(
@@ -34,8 +54,14 @@ export function buildSchedulablePeople(
   users: User[]
 ): SchedulablePerson[] {
   const accepted = users.filter((user) => !isPendingPerson(user))
+  const operativeListUsers = schedulableOperativeListUsers(users)
+  const operativeListIds = new Set(operativeListUsers.map((user) => user.id))
+  // A pending manager/admin invite is still not schedulable. A pending operative-list user is.
   const pendingEmails = new Set(
-    users.filter((user) => isPendingPerson(user)).map((user) => emailKey(user.email)).filter(Boolean)
+    users
+      .filter((user) => isPendingPerson(user) && !operativeListIds.has(user.id))
+      .map((user) => emailKey(user.email))
+      .filter(Boolean)
   )
   const usersByEmail = new Map<string, User>()
   for (const user of accepted) {
@@ -67,6 +93,21 @@ export function buildSchedulablePeople(
       name,
       email: operative.email,
       badge: roleBadge(linked),
+    })
+  }
+
+  for (const user of operativeListUsers) {
+    const email = emailKey(user.email)
+    if (email && seenEmails.has(email)) continue
+    const name = rosterDisplayName(user)
+    if (!name || isRoleOnlyPersonName(name)) continue
+    if (email) seenEmails.add(email)
+    people.push({
+      id: user.id,
+      kind: 'operative',
+      name,
+      email: user.email,
+      badge: roleBadge(user),
     })
   }
 
