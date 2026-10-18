@@ -97,6 +97,8 @@ import {
   notificationDeliversDevicePush,
   notificationDestination,
   notificationPreferenceAllowsDelivery,
+  notificationPreferenceCopy,
+  visibleNotificationPreferenceKeys,
   parseUserNotificationPreferences,
   unreadNotificationBadgeCount,
   userNotificationPreferenceFieldPatch,
@@ -2135,6 +2137,14 @@ test('the iOS JavaScript bundle applies the same warning date order as this modu
         role: string
       }) => { kind: string; relatedId?: string; dayKey?: string }
       parseUserNotificationPreferences: (raw: Record<string, unknown> | undefined) => { bookingClashes: boolean }
+      visibleNotificationPreferenceKeys: (audience: {
+        role: { isSuperAdmin: boolean; isAdmin: boolean; isManager: boolean; isOperativeMode: boolean }
+        catalogue: { projects: boolean; smallWorks: boolean }
+        canManagePeople?: boolean
+        canManageClients?: boolean
+        canManageMaterials?: boolean
+      }) => string[]
+      notificationPreferenceCopy: (key: string) => { label: string; description: string }
       notificationDeliversDevicePush: (type: string) => boolean
       devicePushNotificationTypes: () => string[]
       unreadNotificationBadgeCount: (
@@ -2197,6 +2207,19 @@ test('the iOS JavaScript bundle applies the same warning date order as this modu
     1
   )
   assert.equal(bundle.NOTIFICATION_ICON_BADGE_CLEARS_ON_FOREGROUND, true)
+  const operativeAudience = {
+    role: { isSuperAdmin: false, isAdmin: false, isManager: false, isOperativeMode: true },
+    catalogue: { projects: true, smallWorks: true },
+    canManagePeople: false,
+    canManageClients: false,
+    canManageMaterials: true,
+  }
+  assert.equal(bundle.visibleNotificationPreferenceKeys(operativeAudience).includes('projectCreated'), false)
+  assert.equal(bundle.visibleNotificationPreferenceKeys(operativeAudience).includes('annualLeaveDecision'), true)
+  assert.equal(
+    bundle.notificationPreferenceCopy('annualLeaveDecision').description,
+    'When your annual leave is approved or declined.'
+  )
 })
 
 test('user notification preferences parse defaults, aliases, and dotted writes', () => {
@@ -2222,6 +2245,59 @@ test('user notification preferences parse defaults, aliases, and dotted writes',
   assert.equal('notificationPreferences' in patch, false)
   assert.equal(Object.keys(patch).some((key) => key.includes('bookingConflicts')), false)
   assert.equal(Object.keys(patch).length, 1)
+})
+
+test('My notifications rows follow role and catalogue toggles', () => {
+  const operative = {
+    role: { isSuperAdmin: false, isAdmin: false, isManager: false, isOperativeMode: true },
+    catalogue: { projects: true, smallWorks: true },
+    canManagePeople: false,
+    canManageClients: false,
+    canManageMaterials: true,
+  }
+  const managerProjectsOnly = {
+    role: { isSuperAdmin: false, isAdmin: false, isManager: true, isOperativeMode: false },
+    catalogue: { projects: true, smallWorks: false },
+    canManagePeople: false,
+    canManageClients: true,
+    canManageMaterials: true,
+  }
+  const managerBothCatalogues = {
+    ...managerProjectsOnly,
+    catalogue: { projects: true, smallWorks: true },
+    canManagePeople: true,
+  }
+  const hiddenFromOperative = [
+    'annualLeaveRequested',
+    'projectCreated',
+    'smallWorksCreated',
+    'bookingClashes',
+    'materialOrderPlaced',
+    'operativeCreated',
+    'managerCreated',
+    'clientCreated',
+    'lineManagerPeerUpdates',
+    'warningDismissed',
+    'timesheetSignOff',
+  ]
+  const operativeKeys = visibleNotificationPreferenceKeys(operative)
+  for (const key of hiddenFromOperative) {
+    assert.equal(operativeKeys.includes(key as (typeof operativeKeys)[number]), false, key)
+  }
+  assert.ok(operativeKeys.includes('annualLeaveDecision'))
+  assert.ok(operativeKeys.includes('bookedOntoJob'))
+  assert.ok(operativeKeys.includes('timesheetSubmissionReminder'))
+  assert.equal(
+    notificationPreferenceCopy('annualLeaveDecision', operative).description,
+    'When your annual leave is approved or declined.'
+  )
+  const managerKeys = visibleNotificationPreferenceKeys(managerProjectsOnly)
+  assert.equal(managerKeys.includes('projectCreated'), true)
+  assert.equal(managerKeys.includes('smallWorksCreated'), false)
+  assert.equal(managerKeys.includes('operativeCreated'), false)
+  assert.equal(managerKeys.includes('annualLeaveRequested'), true)
+  assert.equal(visibleNotificationPreferenceKeys(managerBothCatalogues).includes('smallWorksCreated'), true)
+  assert.equal(visibleNotificationPreferenceKeys(managerBothCatalogues).includes('operativeCreated'), true)
 })
 
 test('a preference only gates its own inbox types and never widens fan-out', () => {

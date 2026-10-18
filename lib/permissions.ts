@@ -7,6 +7,7 @@ import type { User, UserPermissions } from '@/types'
 import {
   canEditWorkCatalogue,
   canViewStaffWarnings,
+  type NotificationPreferenceAudience,
   type StaffAccountRole,
 } from '@/lib/canonical'
 import { parseAppUserDocument } from '@/lib/ios-parity/converters'
@@ -72,6 +73,18 @@ export function staffAccountRole(user: PermissionUser): StaffAccountRole {
     isAdmin: hasAdminAccess(user),
     isManager: flag(user, 'manager') || user.role === 'manager',
     isOperativeMode: isOperativeMode(user),
+  }
+}
+
+/** Flags My notifications visibility reads. Hide/show stays in `visibleNotificationPreferenceKeys`. */
+export function notificationPreferenceAudience(user: PermissionUser): NotificationPreferenceAudience | null {
+  if (!user) return null
+  return {
+    role: staffAccountRole(user),
+    catalogue: { projects: flag(user, 'projects'), smallWorks: flag(user, 'smallWorks') },
+    canManagePeople: canViewOperatives(user),
+    canManageClients: canViewClients(user),
+    canManageMaterials: canManageMaterialCatalogue(user),
   }
 }
 

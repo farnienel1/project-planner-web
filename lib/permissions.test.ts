@@ -32,7 +32,9 @@ import {
   canAccessQualificationsHub,
   shouldShowTimesheetsDisabledMessage,
   canAccessDeveloperDashboard,
+  notificationPreferenceAudience,
 } from './permissions.ts'
+import { visibleNotificationPreferenceKeys } from './canonical/index.ts'
 
 function perms(partial: Partial<UserPermissions>): UserPermissions {
   return {
@@ -330,6 +332,29 @@ test('developer dashboard is the platform owner email only, never organisation r
   assert.equal(canAccessDeveloperDashboard(superAdmin), false)
   assert.equal(canAccessDeveloperDashboard(owner), true)
   assert.equal(canAccessDeveloperDashboard(ownerCased), true)
+})
+
+test('My notifications audience hides staff rows from operatives and catalogue-off managers', () => {
+  const operative = user({
+    role: UserRole.OPERATIVE,
+    permissions: { operativeMode: true, materials: true, projects: true, smallWorks: true },
+  })
+  const manager = user({
+    role: UserRole.MANAGER,
+    permissions: { manager: true, projects: true, smallWorks: false, operatives: false },
+  })
+  const operativeAudience = notificationPreferenceAudience(operative)
+  const managerAudience = notificationPreferenceAudience(manager)
+  assert.ok(operativeAudience)
+  assert.ok(managerAudience)
+  const operativeKeys = visibleNotificationPreferenceKeys(operativeAudience)
+  assert.equal(operativeKeys.includes('projectCreated'), false)
+  assert.equal(operativeKeys.includes('materialOrderPlaced'), false)
+  assert.equal(operativeKeys.includes('annualLeaveRequested'), false)
+  assert.equal(operativeKeys.includes('annualLeaveDecision'), true)
+  assert.equal(visibleNotificationPreferenceKeys(managerAudience).includes('projectCreated'), true)
+  assert.equal(visibleNotificationPreferenceKeys(managerAudience).includes('smallWorksCreated'), false)
+  assert.equal(visibleNotificationPreferenceKeys(managerAudience).includes('operativeCreated'), false)
 })
 
 test('PAYE users with remaining My Timesheets do not see the disabled card copy', () => {
