@@ -8,6 +8,10 @@
  * Email HTTP `sendProjectPlannerEmail` already lives on this Firebase project
  * (us-central1). This package is codebase `inbox-push` so a deploy here does
  * not replace that function.
+ *
+ * After sendEachForMulticast, pruneDeadPushTokens drops only tokens whose
+ * result is invalid APNs credential, unregistered, or invalid registration
+ * token. Accepted tokens stay. One failure must not clear the array.
  */
 
 const { initializeApp } = require('firebase-admin/app')
@@ -16,6 +20,7 @@ const { getMessaging } = require('firebase-admin/messaging')
 const { onDocumentCreated } = require('firebase-functions/v2/firestore')
 const { logger } = require('firebase-functions')
 const canonical = require('./loadCanonical')
+const { pruneDeadPushTokens } = require('./prunePushTokens')
 
 initializeApp()
 
@@ -87,7 +92,7 @@ exports.sendDevicePushOnNotificationCreate = onDocumentCreated(
     const message = trimmed(data.message)
     const relatedId = trimmed(data.relatedId)
     try {
-      await getMessaging().sendEachForMulticast({
+      const batch = await getMessaging().sendEachForMulticast({
         tokens,
         notification: {
           title,
@@ -108,6 +113,17 @@ exports.sendDevicePushOnNotificationCreate = onDocumentCreated(
           },
         },
       })
+      try {
+        await pruneDeadPushTokens({
+          db,
+          userId,
+          tokens,
+          responses: batch.responses,
+          logger,
+        })
+      } catch (error) {
+        logger.error('push token prune failed', { notificationId, orgId, userId, error })
+      }
     } catch (error) {
       logger.error('device push failed', { notificationId, orgId, userId, error })
     }
