@@ -28,12 +28,33 @@ test('invite identity prefers invitation first name and organization document na
     firstName: 'Morgan',
     organizationName: 'Acme Construction Ltd',
   })
+  assert.deepEqual(
+    resolveInviteSetupIdentity({
+      invitationFirstName: 'Morgan',
+      fallbackFirstName: null,
+      organization: { name: 'Acme Construction Ltd' },
+      fallbackOrganizationName: null,
+    }),
+    {
+      firstName: 'Morgan',
+      organizationName: 'Acme Construction Ltd',
+    }
+  )
   assert.equal(
     resolveInviteSetupIdentity({
       invitationFirstName: '',
       fallbackFirstName: '',
       organization: { name: '  ' },
       fallbackOrganizationName: '',
+    }),
+    null
+  )
+  assert.equal(
+    resolveInviteSetupIdentity({
+      invitationFirstName: '',
+      fallbackFirstName: null,
+      organization: { name: '  ' },
+      fallbackOrganizationName: null,
     }),
     null
   )
