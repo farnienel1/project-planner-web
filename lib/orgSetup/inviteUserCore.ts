@@ -6,6 +6,7 @@ import { newUuid } from '@/lib/firebase/firestoreUtils'
 import { withTimeout } from '@/lib/client/withTimeout'
 import {
   inviteEmailOrgLookupConstraints,
+  inviteWritesOperativeProfile,
   resolveInviteEmailClaim,
   type InviteEmailClaimUser,
 } from '@/lib/canonical/inviteEmailClaim'
@@ -255,18 +256,8 @@ export async function inviteUserCore(input: InviteUserCoreInput): Promise<Invite
     })
   )
   await setDoc(doc(db, 'organizations', input.organizationId, 'userEmails', emailLower), { userId })
-  if (invitedRates.payBasis === 'hourly' && invitedRates.hourlyRate != null) {
-    await setDoc(
-      doc(db, 'organizations', input.organizationId, 'operativeProfiles', userId),
-      { userId, payBasis: 'hourly', hourlyRate: invitedRates.hourlyRate, updatedAt: Timestamp.now() },
-      { merge: true }
-    )
-  } else if (invitedRates.payBasis === 'day' && invitedRates.dayRate != null) {
-    await setDoc(
-      doc(db, 'organizations', input.organizationId, 'operativeProfiles', userId),
-      { userId, payBasis: 'day', dayRate: invitedRates.dayRate, updatedAt: Timestamp.now() },
-      { merge: true }
-    )
+  if (inviteWritesOperativeProfile()) {
+    throw new Error('inviteWritesOperativeProfile must stay false; rates belong on users/{uid}')
   }
 
   return { invitationId, userId, inviteType: 'new_user' }

@@ -463,6 +463,90 @@ test('invitee can mark their invitation used', async () => {
   await assertSucceeds(updateDoc(doc(db, 'invitations', 'invite-a'), { isUsed: true }))
 })
 
+test('signed-out visitor cannot read userEmails or users', async () => {
+  const db = env.unauthenticatedContext().firestore()
+  await assertFails(getDoc(doc(db, 'organizations', ORG_A, 'userEmails', 'new-a@test.com')))
+  await assertFails(getDoc(doc(db, 'users', ADMIN_A)))
+  await assertFails(getDocs(collection(db, 'users')))
+  await assertFails(getDocs(collection(db, 'invitations')))
+})
+
+test('invitee can finish password setup: own email claim, placeholder get, then users/{authUid}', async () => {
+  const placeholderId = '7A27FFF5-65FD-4563-8A0D-D074647C2739'
+  const authUid = 'invitee-auth-uid'
+  const email = 'invited-finish@test.com'
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore()
+    await setDoc(doc(db, 'users', placeholderId), {
+      email,
+      organizationId: ORG_A,
+      firstName: 'Pat',
+      surname: 'Lee',
+      passwordSet: false,
+      isActive: true,
+      isSuperAdmin: false,
+      policyAccepted: false,
+    })
+    await setDoc(doc(db, 'organizations', ORG_A, 'userEmails', email), { userId: placeholderId })
+    await setDoc(doc(db, 'users', 'QAlPe29vLLP4spK554UtpaBLW7N2'), {
+      email: '',
+      name: 'Deleted user',
+      displayName: 'Deleted user',
+      firstName: 'Deleted',
+      surname: 'user',
+      passwordSet: true,
+      isActive: true,
+      organizationId: ORG_A,
+    })
+  })
+
+  const signedOut = env.unauthenticatedContext().firestore()
+  await assertFails(getDoc(doc(signedOut, 'organizations', ORG_A, 'userEmails', email)))
+
+  const db = authDb(authUid, email)
+  const claim = await assertSucceeds(getDoc(doc(db, 'organizations', ORG_A, 'userEmails', email)))
+  assert.equal(claim.data()?.userId, placeholderId)
+  await assertFails(getDoc(doc(db, 'organizations', ORG_A, 'userEmails', 'op-a@test.com')))
+  await assertFails(getDocs(collection(db, 'organizations', ORG_A, 'userEmails')))
+
+  const placeholder = await assertSucceeds(getDoc(doc(db, 'users', placeholderId)))
+  assert.equal(placeholder.data()?.passwordSet, false)
+  await assertFails(getDoc(doc(db, 'users', 'QAlPe29vLLP4spK554UtpaBLW7N2')))
+  await assertFails(getDoc(doc(db, 'users', OP_A)))
+  await assertFails(getDocs(collection(db, 'users')))
+
+  await assertFails(
+    setDoc(doc(db, 'users', authUid), {
+      email,
+      organizationId: ORG_A,
+      firstName: 'Pat',
+      surname: 'Lee',
+      passwordSet: true,
+      ageConfirmed: true,
+      ageConfirmedYears: 16,
+      ageConfirmedAt: Timestamp.now(),
+    })
+  )
+  await assertSucceeds(setDoc(doc(db, 'organizations', ORG_A, 'userEmails', email), { userId: authUid }))
+  await assertSucceeds(
+    setDoc(doc(db, 'users', authUid), {
+      email,
+      organizationId: ORG_A,
+      firstName: 'Pat',
+      surname: 'Lee',
+      passwordSet: true,
+      isActive: true,
+      ageConfirmed: true,
+      ageConfirmedYears: 16,
+      ageConfirmedAt: Timestamp.now(),
+    })
+  )
+  await assertSucceeds(deleteDoc(doc(db, 'users', placeholderId)))
+  await assertFails(
+    updateDoc(doc(db, 'users', 'QAlPe29vLLP4spK554UtpaBLW7N2'), { passwordSet: true })
+  )
+})
+
 test('company A cannot read a company B notification', async () => {
   const db = authDb(ADMIN_A, 'admin-a@test.com')
   await assertFails(getDoc(doc(db, 'organizations', ORG_B, 'notifications', 'note-b')))
