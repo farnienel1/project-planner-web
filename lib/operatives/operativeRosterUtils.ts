@@ -1,4 +1,5 @@
 import type { Operative, User } from '@/types'
+import { isAnonymisedDeletedProfile } from '@/lib/canonical/userRosterSegment'
 import { getOperativeModeUsers, isCurrentLabourNamedPerson } from '@/lib/staff/userRosterUtils'
 
 export { getOperativeModeUsers }
@@ -84,6 +85,41 @@ export function findOperativeForUser(user: User, operatives: Operative[]): Opera
   return dedupeOperativesByEmail(operatives).find(
     (operative) => normalizeEmail(operative.email) === email
   )
+}
+
+/**
+ * Qualifications host for this login. After delete, the catalogue row is gone
+ * and invite does not write operativeProfiles. Use the user document id so
+ * My qualifications can add rows. A Deleted-user tombstone is not a host.
+ */
+export function operativeRecordForUser(user: User, operatives: Operative[]): Operative | undefined {
+  const linked = findOperativeForUser(user, operatives)
+  if (linked) return linked
+  const byId = operatives.find((row) => row.id === user.id)
+  if (byId) return byId
+  if (isAnonymisedDeletedProfile(user) || !normalizeEmail(user.email) || !user.id.trim()) return undefined
+  const now = new Date()
+  return {
+    id: user.id,
+    firstName: user.firstName,
+    lastName: user.surname,
+    email: user.email,
+    phone: user.mobileNumber,
+    startDate: user.createdAt || now,
+    hourlyRate: user.hourlyRate ?? 0,
+    dayRate: user.dayRate,
+    payBasis: user.payBasis,
+    skills: [],
+    qualifications: [],
+    qualificationExpiryDates: {},
+    qualificationCertificateURLs: {},
+    isActive: user.isActive !== false,
+    tradeTypePreset: user.tradeTypePreset,
+    tradeTypeCustom: user.tradeTypeCustom,
+    createdAt: user.createdAt || now,
+    updatedAt: now,
+    organizationId: user.organizationId,
+  }
 }
 
 /** Every operative document for this email. Bookings can sit on a duplicate row. */

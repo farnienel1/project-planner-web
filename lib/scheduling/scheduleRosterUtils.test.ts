@@ -237,3 +237,118 @@ test('a role-only name is not shown, and the linked account email is used instea
   assert.equal(people.some((row) => row.name === 'Manager'), false)
   assert.equal(people.find((row) => row.id === 'OP-ROLE')?.name, 'role@site.test')
 })
+
+test('a pending operative invite with no operative record can be scheduled, and the Deleted user cannot', () => {
+  const pending = user({
+    id: '57CC31FC-1111-4222-8333-ABCDEF123456',
+    email: 'farnienel@hotmail.com',
+    firstName: 'Test',
+    surname: 'Operative',
+    role: UserRole.OPERATIVE,
+    passwordSet: false,
+    isActive: true,
+    permissions: perms({ operativeMode: true }),
+  })
+  const tombstone = user({
+    id: 'QAlPe29vLLP4spK554UtpaBLW7N2',
+    email: '',
+    firstName: 'Deleted',
+    surname: 'user',
+    role: UserRole.OPERATIVE,
+    passwordSet: true,
+    isActive: true,
+    permissions: perms({ operativeMode: true }),
+  })
+  const people = buildSchedulablePeople([], [pending, tombstone])
+  assert.deepEqual(
+    people.map((row) => ({ id: row.id, kind: row.kind, name: row.name, badge: row.badge })),
+    [{ id: pending.id, kind: 'operative', name: 'Test Operative', badge: 'Operative' }]
+  )
+  assert.equal(people.some((row) => row.id === tombstone.id), false)
+})
+
+test('an accepted operative-list user with no operative record is schedulable, an inactive one is not', () => {
+  const people = buildSchedulablePeople(
+    [],
+    [
+      user({
+        id: 'U-LIVE',
+        email: 'live@site.test',
+        firstName: 'Lee',
+        surname: 'Live',
+        role: UserRole.OPERATIVE,
+        permissions: perms({ operativeMode: true }),
+      }),
+      user({
+        id: 'U-OFF',
+        email: 'off@site.test',
+        firstName: 'Olly',
+        surname: 'Off',
+        role: UserRole.OPERATIVE,
+        isActive: false,
+        permissions: perms({ operativeMode: true }),
+      }),
+    ]
+  )
+  assert.deepEqual(people.map((row) => row.id), ['U-LIVE'])
+})
+
+test('a user and an operative that share an email are one row, whether pending or accepted', () => {
+  for (const passwordSet of [false, true]) {
+    const people = buildSchedulablePeople(
+      [operative({ id: 'OP-PAT', email: 'Pat@Site.test', firstName: 'Pat', lastName: 'Op' })],
+      [
+        user({
+          id: 'U-PAT',
+          email: 'pat@site.test',
+          firstName: 'Pat',
+          surname: 'Op',
+          role: UserRole.OPERATIVE,
+          passwordSet,
+          permissions: perms({ operativeMode: true }),
+        }),
+      ]
+    )
+    assert.deepEqual(people.map((row) => row.id), ['OP-PAT'])
+  }
+})
+
+test('a leftover Deleted-user operative record does not hide a re-added pending operative', () => {
+  const people = buildSchedulablePeople(
+    [operative({ id: 'OP-DEL', email: '', firstName: 'Deleted', lastName: 'user' })],
+    [
+      user({
+        id: 'U-NEW',
+        email: 'new@site.test',
+        firstName: 'New',
+        surname: 'Starter',
+        role: UserRole.OPERATIVE,
+        passwordSet: false,
+        permissions: perms({ operativeMode: true }),
+      }),
+    ]
+  )
+  assert.deepEqual(people.map((row) => row.id), ['U-NEW'])
+})
+
+test('a pending admin or manager-only invite is still not schedulable', () => {
+  const people = buildSchedulablePeople(
+    [],
+    [
+      user({
+        id: 'U-PEND-MGR',
+        email: 'm@site.test',
+        role: UserRole.MANAGER,
+        passwordSet: false,
+        permissions: perms({ manager: true }),
+      }),
+      user({
+        id: 'U-PEND-ADM',
+        email: 'a@site.test',
+        passwordSet: false,
+        permissions: perms({ adminAccess: true, manager: true }),
+      }),
+    ]
+  )
+  assert.equal(people.length, 0)
+})

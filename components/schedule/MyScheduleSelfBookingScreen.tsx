@@ -1,6 +1,13 @@
 'use client'
 
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import {
+  useEffect,
+  useMemo,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
+  type ReactNode,
+} from 'react'
 import {
   addDays,
   format,
@@ -12,7 +19,7 @@ import {
 import { useProjectStore } from '@/lib/stores/projectStore'
 import { useManagerScheduleStore } from '@/lib/stores/managerScheduleStore'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
-import { samePersonIds } from '@/lib/staff/userRosterUtils'
+import { rosterDisplayName, samePersonIds } from '@/lib/staff/userRosterUtils'
 import {
   DEFAULT_MY_SCHEDULE,
   DEFAULT_PAYROLL_POLICY,
@@ -29,9 +36,10 @@ import {
 import { AddWeekToCalendarButton } from '@/components/schedule/AddWeekToCalendarButton'
 import { myScheduleStripeClass } from '@/components/schedule/MyScheduleLooks'
 import { HoursTimelinePicker } from '@/components/scheduling/HoursTimelinePicker'
+import { BookingEditSheet } from '@/components/schedule/BookingEditSheet'
 import { countWorksByTab, filterWorksByTab, searchWorks } from '@/lib/projects/workStatus'
 import { coversCalendarDay } from '@/lib/ios-parity/londonTime'
-import type { Project } from '@/types'
+import type { Booking, Project } from '@/types'
 
 /** Labour booked onto this person from Book labour. Shown on the week, not removed from here. */
 export type AssignedScheduleBooking = {
@@ -188,18 +196,22 @@ export function MyScheduleSelfBookingScreen({
   organizationName,
   payrollPolicy = DEFAULT_PAYROLL_POLICY,
   assignedBookings = [],
+  canEditBookings = false,
 }: {
   userId: string
   organizationId: string
   organizationName: string
   payrollPolicy?: OrgPayrollTimePolicy
   assignedBookings?: AssignedScheduleBooking[]
+  /** Same gate as Daily Overview editing (`canBookWork`). Opens the shared BookingEditSheet. */
+  canEditBookings?: boolean
 }) {
   const { projects, smallWorks, loadProjects, loadSmallWorks } = useProjectStore()
   const {
     managerSiteBookings,
     loadManagerSiteBookings,
     saveManagerSiteBooking,
+    updateManagerSiteBooking,
     deleteManagerSiteBooking,
     loading,
   } = useManagerScheduleStore()
@@ -226,6 +238,8 @@ export function MyScheduleSelfBookingScreen({
   const [projectStatus, setProjectStatus] = useState<JobFilter>('active')
   const [smallStatus, setSmallStatus] = useState<JobFilter>('active')
   const [bookSheetDay, setBookSheetDay] = useState<Date | null>(null)
+  const [editingBookingId, setEditingBookingId] = useState<string | null>(null)
+  const [savingEdit, setSavingEdit] = useState(false)
 
   useEffect(() => {
     loadManagerSiteBookings(organizationId)
@@ -361,6 +375,41 @@ export function MyScheduleSelfBookingScreen({
       flash('error', error instanceof Error ? error.message : 'Could not remove booking.')
     } finally {
       setBusy(false)
+    }
+  }
+
+  const editingManagerBooking = useMemo(
+    () => (editingBookingId ? myBookings.find((b) => b.id === editingBookingId) ?? null : null),
+    [editingBookingId, myBookings]
+  )
+  const selfName = useMemo(() => {
+    const row = users.find((u) => u.id === userId)
+    return (row && rosterDisplayName(row)) || 'You'
+  }, [users, userId])
+
+  /** Same write BookingEditSheet already makes for a manager booking in the project week overview. */
+  async function saveEditedBooking(booking: ManagerSiteBooking, updates: Partial<Booking>) {
+    setSavingEdit(true)
+    try {
+      await updateManagerSiteBooking(organizationId, booking.id, {
+        timeSlot: String(updates.timeSlot || booking.timeSlot),
+        workStartTime: updates.workStartTime,
+        workEndTime: updates.workEndTime,
+        isBreakRemoved: updates.isBreakRemoved,
+      })
+      flash('success', 'Booking updated.')
+    } finally {
+      setSavingEdit(false)
+    }
+  }
+
+  async function deleteEditedBooking(booking: ManagerSiteBooking) {
+    setSavingEdit(true)
+    try {
+      await deleteManagerSiteBooking(organizationId, booking.id)
+      flash('success', 'Booking removed.')
+    } finally {
+      setSavingEdit(false)
     }
   }
 
@@ -574,7 +623,30 @@ export function MyScheduleSelfBookingScreen({
               ))}
               {dayRows.length > 0
                 ? dayRows.map((booking) => (
-                    <div key={booking.id} className="bk" data-hue={booking.locationType === 'office' ? 'blue' : booking.locationType === 'working_from_home' ? 'daily' : booking.locationType === 'small_work' ? 'sw' : 'proj'}>
+                    <div
+                      key={booking.id}
+                      className="bk"
+                      data-hue={booking.locationType === 'office' ? 'blue' : booking.locationType === 'working_from_home' ? 'daily' : booking.locationType === 'small_work' ? 'sw' : 'proj'}
+                      {...(canEditBookings
+                        ? {
+                            role: 'button',
+                            tabIndex: 0,
+                            'aria-label': `Edit booking: ${locationName(booking)}, ${slotLabel(booking)}`,
+                            style: { cursor: 'pointer' },
+                            onClick: (event: ReactMouseEvent) => {
+                              event.stopPropagation()
+                              setEditingBookingId(booking.id)
+                            },
+                            onKeyDown: (event: ReactKeyboardEvent) => {
+                              if (event.target !== event.currentTarget) return
+                              if (event.key === 'Enter' || event.key === ' ') {
+                                event.preventDefault()
+                                setEditingBookingId(booking.id)
+                              }
+                            },
+                          }
+                        : {})}
+                    >
                       <b>{locationName(booking)}</b>
                       <span className="x">{slotLabel(booking)}</span>
                       <button
@@ -706,6 +778,20 @@ export function MyScheduleSelfBookingScreen({
             </div>
           </div>
         </div>
+      ) : null}
+
+      {canEditBookings && editingManagerBooking ? (
+        <BookingEditSheet
+          key={editingManagerBooking.id}
+          booking={managerSiteBookingToScheduleBooking(editingManagerBooking, projectsById, organizationId)}
+          operativeName={selfName}
+          projectName={locationName(editingManagerBooking)}
+          saving={savingEdit}
+          payroll={payrollPolicy}
+          onSave={(updates) => saveEditedBooking(editingManagerBooking, updates)}
+          onDelete={() => deleteEditedBooking(editingManagerBooking)}
+          onClose={() => setEditingBookingId(null)}
+        />
       ) : null}
 
       {confirm && (

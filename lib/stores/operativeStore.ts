@@ -296,12 +296,14 @@ export const useOperativeStore = create<OperativeState>((set, get) => ({
     operativeMutationEpoch += 1
     await setDoc(
       doc(db, 'organizations', organizationId, 'operatives', id),
-      {
-        qualifications: payload.qualifications,
-        qualificationExpiryDates: payload.qualificationExpiryDates,
-        qualificationCertificateURLs: payload.qualificationCertificateURLs,
-        updatedAt: payload.updatedAt,
-      },
+      existing
+        ? {
+            qualifications: payload.qualifications,
+            qualificationExpiryDates: payload.qualificationExpiryDates,
+            qualificationCertificateURLs: payload.qualificationCertificateURLs,
+            updatedAt: payload.updatedAt,
+          }
+        : payload,
       { merge: true }
     )
     operativeMutationEpoch += 1

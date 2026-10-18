@@ -16,7 +16,7 @@ import {
   canViewMyQualifications,
 } from '@/lib/permissions'
 import { consumeCreateQuery } from '@/lib/navigation/createMenu'
-import { findOperativeForUser } from '@/lib/operatives/operativeRosterUtils'
+import { operativeRecordForUser } from '@/lib/operatives/operativeRosterUtils'
 import { IosFormModal } from '@/components/ios/primitives'
 import { PageHeader, EmptyState, Button, IconChip } from '@/components/ui'
 import { SegmentedControl, Field, Input } from '@/components/ui/controls'
@@ -113,7 +113,7 @@ export function QualificationsScreen({ initialTab }: { initialTab?: Tab } = {}) 
     }
   }, [organization?.id, loadOperatives])
 
-  const linked = useMemo(() => (user ? findOperativeForUser(user, operatives) : undefined), [user, operatives])
+  const linked = useMemo(() => (user ? operativeRecordForUser(user, operatives) : undefined), [user, operatives])
   const editing = templates.find((row) => row.id === editId) || null
 
   if (!user || !canOpenHub) return null

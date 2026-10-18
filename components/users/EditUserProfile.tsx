@@ -9,7 +9,7 @@ import { useOperativeStore } from '@/lib/stores/operativeStore'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { useUserStore } from '@/lib/stores/userStore'
 import { useInviteStore } from '@/lib/stores/inviteStore'
-import { findOperativeForUser } from '@/lib/operatives/operativeRosterUtils'
+import { findOperativeForUser, operativeRecordForUser } from '@/lib/operatives/operativeRosterUtils'
 import { displayTradeType, STAFF_TRADE_TYPES } from '@/lib/staff/staffTradeTypes'
 import {
   canEditIdentityDetails,
@@ -313,7 +313,7 @@ export function EditUserProfile({
       })
   }, [organization?.id, userId, getUser, loadUsers, loadOperatives, loadHolidays])
 
-  const linkedOperative = target ? findOperativeForUser(target, operatives) : undefined
+  const linkedOperative = target ? operativeRecordForUser(target, operatives) : undefined
   const leaveBalance = useMemo(
     () =>
       userLeaveBalance({

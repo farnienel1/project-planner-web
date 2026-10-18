@@ -15,6 +15,7 @@ import {
   operativeIdsForEmail,
 } from '@/lib/operatives/operativeRosterUtils'
 import { canSelfBookMySchedule, isOperativeMode } from '@/lib/navigation/menuPermissions'
+import { canBookWork } from '@/lib/permissions'
 import { managerSiteBookingToScheduleBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import { normalizeBookingStatus } from '@/lib/ios-parity/enums'
 import type { AssignedScheduleBooking } from '@/components/schedule/MyScheduleSelfBookingScreen'
@@ -195,6 +196,7 @@ function MySchedulePageContent() {
         organizationName={organization.name || 'your organisation'}
         payrollPolicy={payrollPolicy}
         assignedBookings={assignedBookings}
+        canEditBookings={canBookWork(user)}
       />
     )
   }
