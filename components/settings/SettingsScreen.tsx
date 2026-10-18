@@ -9,6 +9,8 @@ import { db } from '@/lib/firebase/config'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { uploadFile, profilePhotoPath } from '@/lib/firebase/storageUtils'
 import { PROFILE_PHOTO_ACCEPT, validateProfilePhotoFile } from '@/lib/settings/profilePhotoUpload'
+import { ProfilePhotoCropModal } from '@/components/settings/ProfilePhotoCropModal'
+import { withTimeout } from '@/lib/client/withTimeout'
 import { prepareClientUpload } from '@/lib/security/stripPhotoLocation'
 import { UserAvatar } from '@/components/users/UserAvatar'
 import { canAccessOrganisationSettingsHub, hasAdminAccess } from '@/lib/navigation/menuPermissions'
@@ -89,6 +91,7 @@ function ProfilePanel({ onBack }: { onBack: () => void }) {
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState('')
   const [uploadingPhoto, setUploadingPhoto] = useState(false)
+  const [photoToCrop, setPhotoToCrop] = useState<File | null>(null)
   const snapshot = JSON.stringify({ firstName, surname, mobile })
   const dirty = settingsDraftIsDirty(baseline, snapshot)
   useSettingsDirty(dirty)
@@ -125,6 +128,12 @@ function ProfilePanel({ onBack }: { onBack: () => void }) {
       setError(validationError)
       return
     }
+    setPhotoToCrop(file)
+  }
+
+  const uploadCroppedPhoto = async (file: File) => {
+    if (!user?.id) return
+    setPhotoToCrop(null)
     setUploadingPhoto(true)
     setError('')
     try {
@@ -134,10 +143,14 @@ function ProfilePanel({ onBack }: { onBack: () => void }) {
         setError(prepared.error)
         return
       }
-      const url = await uploadFile(
-        profilePhotoPath(organization.id, user.id),
-        prepared.file,
-        prepared.file.type || 'image/jpeg'
+      const url = await withTimeout(
+        uploadFile(
+          profilePhotoPath(organization.id, user.id),
+          prepared.file,
+          prepared.file.type || 'image/jpeg'
+        ),
+        45_000,
+        'The photo did not finish uploading. Check the connection and try a smaller image.'
       )
       await updateDoc(doc(db, 'users', user.id), { profilePhotoURL: url, updatedAt: Timestamp.now() })
       const current = useAuthStore.getState().user
@@ -179,6 +192,13 @@ function ProfilePanel({ onBack }: { onBack: () => void }) {
           </label>
         </div>
       </div>
+      {photoToCrop ? (
+        <ProfilePhotoCropModal
+          file={photoToCrop}
+          onCancel={() => setPhotoToCrop(null)}
+          onConfirm={(cropped) => void uploadCroppedPhoto(cropped)}
+        />
+      ) : null}
 
       {/* Fields */}
       <SettingsCard>
