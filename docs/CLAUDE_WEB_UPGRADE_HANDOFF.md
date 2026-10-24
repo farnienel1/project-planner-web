@@ -3,7 +3,7 @@
 **Repo:** `https://github.com/farnienel1/project-planner-web`  
 **Firebase project:** `project-planner-f986c` (shared with iOS TestFlight + web localhost when env matches)  
 **Stack:** Next.js 16 App Router · React 18 · TypeScript · Tailwind CSS 3.4 · Zustand · Firebase (Auth + Firestore + Storage)  
-**iOS parity docs:** `docs/IOS_FIRESTORE_PARITY.md` · `docs/audit.md` · `docs/LINK_IOS_AND_WEB_IN_CURSOR.md`
+**iOS parity docs:** `docs/IOS_FIRESTORE_PARITY.md` · `docs/audit.md`
 
 ---
 
@@ -189,7 +189,7 @@ Sub-panels use `PanelHeader` + `onBack()` — no URL change.
 
 ### Deliverable convention
 
-When producing TSX for the user to paste into Cursor:
+When adding a web feature:
 
 1. Put feature UI in `components/<feature>/`
 2. Wire via thin `app/dashboard/.../page.tsx` OR add a new `Panel` to `SettingsScreen`
@@ -472,7 +472,7 @@ When porting iOS screens, don't regress:
 
 ## 11. iOS source reference
 
-**iOS app path (read-only):** `/Users/farnienel/Desktop/Project Planner/Project Planner/`
+**iOS app path (read-only):** `../project-planner-ios/Project Planner/`
 
 | iOS | Web equivalent |
 |-----|----------------|
@@ -485,7 +485,7 @@ When porting iOS screens, don't regress:
 | `MyScheduleView` | `app/dashboard/my-schedule/page.tsx` |
 | `OrgSitesMapView` | `app/dashboard/site-map/page.tsx` |
 
-Use multi-root Cursor workspace — see `docs/LINK_IOS_AND_WEB_IN_CURSOR.md`.
+The iOS repo is checked out beside this one at `../project-planner-ios`; read the Swift files there directly.
 
 ---
 

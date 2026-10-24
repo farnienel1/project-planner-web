@@ -56,7 +56,6 @@ Both modes are covered, and theme switching works exactly as it does today:
 | File | What it is |
 |---|---|
 | `README.md` | This explanation |
-| `CURSOR_PROMPT.md` | The prompt to paste into Cursor |
 | `touch-up.css` | One CSS block to append to the end of `app/globals.css` |
 | `COMPONENT_EDITS.md` | The small `className` edits for the few places the CSS can't reach, plus the leftover-pastel file list |
 | `screenshots/` | The real app with the touch-up applied (local only, git-ignored) |
