@@ -2,6 +2,8 @@
 
 Use this for fundamental operational or rule work (bookings, warnings, invoicing, labour, organisation, leave, timesheets, variations, Firestore shape). Skip it for a CSS, copy, or layout-only tweak.
 
+This file is also the start prompt for the iOS repo: when shared work begins there, paste this file as the first message, then describe the change.
+
 Web and iOS do **not** call each other at runtime. They share:
 
 1. Rulebook source: web `lib/canonical` (TypeScript). A commit that touches it packs `lib/canonical/dist/canonical-business.js`. iOS commits that file to `Project Planner/Canonical/` and calls `CanonicalBusinessEngine`.
