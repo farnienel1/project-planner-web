@@ -1,8 +1,3 @@
----
-description: iOS web-parity upgrades must include sub-pages and behaviour, not hub-only
-alwaysApply: true
----
-
 # iOS parity upgrades — hubs are not enough
 
 When the web app is upgraded to match iOS, **do not stop at the hub / landing screen**.

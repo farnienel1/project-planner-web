@@ -21,7 +21,7 @@ Branch: `cursor/timesheets-quals-catalogues-fix-6b85`
 - Subcontractor/material loads no longer drop docs for missing timestamps.
 
 ### Rule
-`.cursor/rules/ios-parity-upgrades.mdc` — iOS web upgrades must include nested screens and behaviour, not hub-only.
+`docs/agent-rules/ios-parity-upgrades.md` — iOS web upgrades must include nested screens and behaviour, not hub-only.
 
 ## Not in this slice
 - Full timesheet extras / signature pad / invoice PDF engine.

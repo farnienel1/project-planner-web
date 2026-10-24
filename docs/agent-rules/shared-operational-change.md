@@ -1,9 +1,3 @@
----
-description: Shared operational/rule changes start from the rulebook + Firebase, then emit a paste-ready prompt for the other platform
-globs: lib/canonical/**,lib/settings/**,lib/variations/**,lib/warnings/**,lib/scheduling/**,lib/timesheets/**,lib/annualLeave/**,lib/orgSetup/**,lib/firebase/**,lib/orgMembership/**,firestore.rules,docs/CANONICAL_ARCHITECTURE.md,app/dashboard/settings/**,app/dashboard/timesheets/**,app/dashboard/warnings/**,app/dashboard/annual-leave/**,app/dashboard/variations/**,app/dashboard/schedule/**,app/dashboard/book-labour/**
-alwaysApply: false
----
-
 # Shared operational change (web ↔ iOS)
 
 Use this for fundamental operational or rule work (bookings, warnings, invoicing, labour, organisation, leave, timesheets, variations, Firestore shape). Skip it for a CSS, copy, or layout-only tweak.
