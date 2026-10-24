@@ -1,8 +1,3 @@
----
-description: Business logic shared with iOS lives in lib/canonical
-alwaysApply: true
----
-
 # Canonical business logic
 
 `lib/canonical/engine.ts` is the business-logic source for this app and for the iOS bundle `canonical-business.js`. `docs/CANONICAL_ARCHITECTURE.md` describes how web, iOS, and Firestore rules use it.
@@ -20,4 +15,4 @@ Before adding or changing a booking, warning, invoicing, labour, organisation, o
 
 Screens, navigation, and copy stay in the app. The iOS parity rule for nested screens still applies to UI work. It does not mean copying a business calculation into a component.
 
-Operational or shared-rule work: follow `.cursor/rules/shared-operational-change.mdc` and emit its follow-on prompt for the other platform.
+Operational or shared-rule work: follow `docs/agent-rules/shared-operational-change.md` and emit its follow-on prompt for the other platform.

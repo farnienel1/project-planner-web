@@ -60,8 +60,8 @@ Both modes are covered, and theme switching works exactly as it does today:
 | `touch-up.css` | One CSS block to append to the end of `app/globals.css` |
 | `COMPONENT_EDITS.md` | The small `className` edits for the few places the CSS can't reach, plus the leftover-pastel file list |
 | `screenshots/` | The real app with the touch-up applied (local only, git-ignored) |
-| `../../.cursor/rules/ui-touch-up.mdc` | A Cursor rule that keeps the agent to UI-only edits |
+| `../agent-rules/ui-touch-up.md` | The agent rule that keeps edits UI-only |
 
 ## Note on the iOS parity rule
 
-`.cursor/rules/ios-parity-upgrades.mdc` (behaviour parity) **doesn't apply** to this touch-up. This is visual polish only.
+`docs/agent-rules/ios-parity-upgrades.md` (behaviour parity) **doesn't apply** to this touch-up. This is visual polish only.

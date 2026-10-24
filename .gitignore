@@ -55,5 +55,8 @@ next-env.d.ts
 # Copied from pdfjs-dist at Next startup — do not hand-edit
 /public/pdfjs/pdf.worker.min.mjs
 
+# Local editor state. Agent rules live in docs/agent-rules.
+.cursor/
+
 # UI touch-up screenshots show live organisation data; keep them local
 docs/ui-touch-up/screenshots/
