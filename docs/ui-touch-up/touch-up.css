@@ -1,0 +1,148 @@
+/* =====================================================================
+   UI TOUCH-UP (UI ONLY)
+   Append this whole file to the END of app/globals.css.
+   Keeps the existing palette, fonts, layout and wording. It removes
+   the pastel icon tiles, tightens edges and shadows, and gives every
+   hero banner the same calm navy.
+   ===================================================================== */
+
+/* ---------- 1. Tokens: crisper edges, calmer tints ---------- */
+:root {
+  --sh: 0 0 0 1px var(--line), 0 1px 2px rgba(15, 27, 45, 0.04);
+  --sh-hover: 0 0 0 1px var(--line2), 0 4px 14px rgba(15, 27, 45, 0.07);
+  --sh-pop: 0 0 0 1px var(--line), 0 16px 40px rgba(15, 27, 45, 0.16);
+  --r: 14px;
+  --tint: 9%;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --sh: 0 0 0 1px var(--line);
+    --sh-hover: 0 0 0 1px var(--line2), 0 6px 18px rgba(0, 0, 0, 0.35);
+    --sh-pop: 0 0 0 1px var(--line2), 0 20px 50px rgba(0, 0, 0, 0.55);
+    --tint: 14%;
+  }
+}
+:root[data-theme='dark'],
+.dark {
+  --sh: 0 0 0 1px var(--line);
+  --sh-hover: 0 0 0 1px var(--line2), 0 6px 18px rgba(0, 0, 0, 0.35);
+  --sh-pop: 0 0 0 1px var(--line2), 0 20px 50px rgba(0, 0, 0, 0.55);
+  --tint: 14%;
+}
+
+/* Section tints are mixed from the section colour instead of candy pastels.
+   Same hue names, so every existing data-hue keeps working. */
+[data-hue] { --ht: color-mix(in srgb, var(--h) var(--tint), var(--card)); }
+
+/* ---------- 2. Icon tiles: neutral tile, brand-blue glyph ---------- */
+.ico-chip,
+.phead .badge-ico,
+.empty .ico-chip {
+  background: var(--card);
+  color: var(--blue);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.tile .ico-chip { background: var(--soft); }
+.tile:hover .ico-chip { background: var(--blue); color: #fff; box-shadow: none; }
+
+/* Status icons keep their meaning colour (warnings amber, errors red, etc.) */
+.stat .ico-chip,
+.banner .ico-chip { color: var(--h, var(--blue)); background: var(--soft); }
+
+/* Banners: white card with a coloured edge, not a pastel slab */
+.banner {
+  background: var(--card);
+  box-shadow: inset 3px 0 0 var(--h), var(--sh);
+}
+.banner .ico-chip {
+  background: transparent;
+  box-shadow: none;
+  width: 32px;
+  height: 32px;
+}
+
+/* ---------- 3. Heroes: one consistent navy, no glow, no circle ---------- */
+.hero,
+.hero:not([data-hue]),
+.hero[data-hue] {
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.045) 1px, transparent 1px) 0 0 / 28px 28px,
+    linear-gradient(90deg, rgba(255, 255, 255, 0.045) 1px, transparent 1px) 0 0 / 28px 28px,
+    linear-gradient(135deg, #0C2350 0%, #143E83 100%);
+  box-shadow: 0 1px 2px rgba(12, 35, 80, 0.12), 0 8px 24px rgba(12, 35, 80, 0.14);
+}
+.hero::after { display: none; }
+/* The section colour survives as a small marker on the eyebrow */
+.hero[data-hue] .eb::before {
+  content: '';
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  margin-right: 8px;
+  background: color-mix(in srgb, var(--h) 70%, #fff);
+  vertical-align: 1px;
+}
+.hero .st,
+.hero:not([data-hue]) .st {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(255, 255, 255, 0.14);
+  backdrop-filter: none;
+  box-shadow: none;
+  border-radius: 12px;
+}
+.hero .st:hover,
+.hero:not([data-hue]) .st:hover { background: rgba(255, 255, 255, 0.12); }
+.hero .hbtn { border-radius: 11px; }
+
+/* ---------- 4. Buttons & chips: solid, no coloured glow ---------- */
+.btn.primary {
+  background: var(--blue);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 1px 2px rgba(15, 27, 45, 0.18);
+}
+.btn.primary:hover {
+  background: color-mix(in srgb, var(--blue) 88%, #000);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 2px 6px rgba(15, 27, 45, 0.2);
+}
+.btn.hue { box-shadow: 0 1px 2px rgba(15, 27, 45, 0.18); }
+.chip.on { box-shadow: none; }
+.ptabs a.on { box-shadow: none; }
+.ptabs a .ico-chip { background: transparent; box-shadow: none; }
+.ptabs a.on .ico-chip { background: transparent; color: #fff; }
+
+/* Pills and tags: quieter tint with a hairline */
+.pill,
+.tag { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--h, var(--ink3)) 18%, transparent); }
+
+/* ---------- 5. Cards & lists: less float ---------- */
+button.stat:hover,
+a.stat:hover,
+.tile:hover,
+.pcard:hover,
+.day:hover,
+.click:hover { transform: translateY(-1px); }
+.ritem:hover { transform: none; }
+
+.pcard .top {
+  background: var(--soft);
+  border-bottom: 1px solid var(--line);
+}
+.bk,
+.slot { background: color-mix(in srgb, var(--h) 6%, var(--card)); border-left-width: 3px; }
+.day.today { background: var(--card); }
+
+/* ---------- 6. Type: a notch lighter, tabular figures ---------- */
+.phead h1,
+.hero .big { font-weight: 700; letter-spacing: -0.02em; }
+.stat b,
+.hero .st b,
+.day .dn b { font-weight: 700; font-variant-numeric: tabular-nums; }
+
+/* ---------- 7. Odds and ends ---------- */
+.map {
+  background:
+    linear-gradient(color-mix(in srgb, var(--blue) 7%, transparent) 1px, transparent 1px) 0 0 / 40px 40px,
+    linear-gradient(90deg, color-mix(in srgb, var(--blue) 7%, transparent) 1px, transparent 1px) 0 0 / 40px 40px,
+    var(--soft);
+}
+.optcard.on { background: var(--card); box-shadow: inset 0 0 0 1px var(--h, var(--blue)); }
