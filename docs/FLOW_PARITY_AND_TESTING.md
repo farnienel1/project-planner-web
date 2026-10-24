@@ -2,26 +2,9 @@
 
 Use this with the iOS repo linked **read-only** so agents can compare Swift ↔ web without you clicking through every screen.
 
-## Link the iOS repo in Cursor (read-only)
+## Reading the iOS repo (read-only)
 
-You already have instructions in `docs/IOS_FIRESTORE_PARITY.md`. Quickest options:
-
-### Option A — Multi-root workspace (best)
-
-1. **File → Add Folder to Workspace…**
-2. Add your iOS folder, e.g.  
-   `/Users/farnienel/Desktop/Project Planner/Project Planner`
-3. Save as `Project Planner.code-workspace` with both `web-app` and iOS folders.
-
-Then in chat: *“Compare web daily overview to iOS `DailyOverviewView.swift`”* and `@` the Swift file.
-
-### Option B — Paste the iOS path in chat
-
-Send the absolute path to the iOS `Project Planner` folder. Agents can read Swift files directly (no edits to iOS).
-
-### Option C — GitHub link
-
-If iOS is on GitHub, paste the repo URL. Clone is not required if the folder is already on disk.
+The iOS repo is checked out beside this one at `../project-planner-ios`. Agents read Swift files there directly, for example *"Compare web daily overview to iOS `Project Planner/Views/DailyOverviewView.swift`"*. Web work does not edit iOS code.
 
 **Important:** Web and iOS share the **same Firestore** when `projectId` matches — parity is about **UI + which collections each screen reads/writes**, not separate test data.
 

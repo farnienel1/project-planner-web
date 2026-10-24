@@ -1,41 +1,14 @@
 # iOS ↔ Web parity reference
 
 **iOS source (read-only for web work):**  
-`/Users/farnienel/Desktop/Project Planner/Project Planner/`
+`../project-planner-ios/Project Planner/` (the iOS repo checked out beside this one)
 
 **Menu source of truth:** `Navigation/MainMenuCatalog.swift`  
 **Firestore source of truth:** `FirebaseBackend.swift` + `Core/*Store.swift`
 
-## Cursor workspace — link iOS without changing iOS code
+## Reading the iOS code
 
-Pick one:
-
-### Option A — Multi-root workspace (recommended)
-
-1. **File → Add Folder to Workspace…**
-2. Add: `/Users/farnienel/Desktop/Project Planner/Project Planner`
-3. Save workspace (optional): `Project Planner.code-workspace` at repo root with:
-
-```json
-{
-  "folders": [
-    { "path": "web-app", "name": "Web" },
-    { "path": "Project Planner", "name": "iOS" }
-  ]
-}
-```
-
-Agents can then `@` iOS files directly (e.g. `MainMenuCatalog.swift`, `FirebaseBackend.swift`).
-
-### Option B — Open parent folder
-
-Open `/Users/farnienel/Desktop/Project Planner` as the workspace root (contains `web-app/`, `Project Planner/`, `.xcodeproj`).
-
-### Option C — No workspace change
-
-Terminal and agents can still read iOS via **absolute paths** (as in this doc). Linking is mainly for convenience and `@` references.
-
-**Do not** symlink iOS into `web-app/` unless you want it in git — use multi-root instead.
+Agents read Swift files in `../project-planner-ios` directly. Web work does not edit iOS code, and iOS is not symlinked into this repo.
 
 ---
 
@@ -105,10 +78,9 @@ Terminal and agents can still read iOS via **absolute paths** (as in this doc). 
 
 **Same Firebase project:** localhost and TestFlight use the same Firestore when env points at the same `projectId`. TestFlight is only iOS distribution — not a separate database.
 
-**Deploy rules** (from the iOS app folder — `firebase.json` lives next to `firestore.rules`):
+**Deploy rules** only from this web repo (the iOS copy is a mirror and is not deployed):
 
 ```bash
-cd "/Users/farnienel/Desktop/Project Planner/Project Planner"
 firebase deploy --only firestore:rules
 ```
 

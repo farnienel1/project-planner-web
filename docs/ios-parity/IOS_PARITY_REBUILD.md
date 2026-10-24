@@ -1,6 +1,6 @@
 # Project Planner: iOS → Web Parity Rebuild
 
-> These are the master instructions for Cursor Agent. Save this file in the web app at `docs/ios-parity/IOS_PARITY_REBUILD.md`, then follow it exactly, one phase at a time.
+> These are the master instructions for the coding agent. Save this file in the web app at `docs/ios-parity/IOS_PARITY_REBUILD.md`, then follow it exactly, one phase at a time.
 >
 > **Companion file:** `docs/ios-parity/IOS_APP_BLUEPRINT.md` was built from the real iOS source. It maps the app's structure, flows, Firestore schema, design tokens and permission rules, and sets out the **desktop-first layout rules**. Read both files before starting. In this document, "Blueprint §x" means a section of that file.
 
@@ -8,7 +8,7 @@
 
 | Key | Value |
 |---|---|
-| `IOS_ROOT` | `<<IOS_PROJECT_PATH>>`: the Xcode project folder on the Desktop (e.g. `~/Desktop/Project Planner`). The app source is the `Project Planner/` folder inside it, the one containing `ContentView.swift`, `FirebaseBackend.swift`, `Core/`, `Models/`, `Navigation/` and `Views/`. |
+| `IOS_ROOT` | `<<IOS_PROJECT_PATH>>`: the iOS repo checked out beside this one (`~/Developer/project-planner-ios`). The app source is the `Project Planner/` folder inside it, the one containing `ContentView.swift`, `FirebaseBackend.swift`, `Core/`, `Models/`, `Navigation/` and `Views/`. |
 | `WEB_ROOT` | This web app (Next.js · TypeScript · Tailwind · Firebase · Zustand), hosted at `https://project-planner-f986c.web.app` |
 | `DOCS` | `docs/ios-parity/` inside `WEB_ROOT` |
 | `BLUEPRINT` | `docs/ios-parity/IOS_APP_BLUEPRINT.md` |
@@ -258,9 +258,8 @@ Enforce these rules in code: one converter per model, plus a runtime validator t
 
 1. Confirm that you can list `IOS_ROOT` and find the `.xcodeproj`, `GoogleService-Info.plist` and the `@main` app file. Count all `.swift` files, excluding the skipped folders. If `IOS_ROOT` still shows the placeholder, look through the workspace folders for the one that contains a `.xcodeproj`, use it, and tell Farnie to update the placeholder.
 2. If you can't reach the iOS project, **stop** and give Farnie these steps:
-   - Add the iOS folder to this workspace with *File → Add Folder to Workspace…*, then *File → Save Workspace As…*.
-   - Allow Cursor to access the Desktop if macOS asks.
-   - If the Desktop syncs with iCloud, make sure the folder is fully downloaded.
+   - Check the iOS repo is checked out beside this one at `../project-planner-ios`.
+   - If it is somewhere else, give the agent its absolute path.
 3. Identify the web stack from `WEB_ROOT`: `package.json`; the lockfile, which tells you the package manager; the Next.js version and whether it uses the App Router or Pages Router; the Firebase SDK version; Zustand; UI primitives; the icon library; and the test and lint scripts.
 4. If `WEB_ROOT` is a git repo, create and switch to a branch called `ios-parity-rebuild`, unless you're already on it. Commit (don't push) at the end of each phase and section.
 5. Create `DOCS/` and `DOCS/sections/`, then start `DOCS/PROGRESS.md` from the template in §12.
