@@ -54,3 +54,6 @@ next-env.d.ts
 
 # Copied from pdfjs-dist at Next startup — do not hand-edit
 /public/pdfjs/pdf.worker.min.mjs
+
+# UI touch-up screenshots show live organisation data; keep them local
+docs/ui-touch-up/screenshots/
