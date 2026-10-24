@@ -2,6 +2,15 @@
 
 Business rules that the iOS app must also follow live in `lib/canonical/`. Read `docs/CANONICAL_ARCHITECTURE.md` before changing bookings, warnings, invoicing, labour, organisation context, or dates.
 
+## Rule 0: the rulebook comes first
+
+The canonical rulebook (`lib/canonical`, packed for iOS as `canonical-business.js` and called there through `CanonicalBusinessEngine`) is the single source of business behaviour for both apps. Before any change that decides who sees what, what is counted, what is written to Firestore, or how a date, booking, warning, timesheet, invite, notification, or permission behaves:
+
+- Name the rulebook function the change calls, or state that none exists.
+- If none exists, the rule is added to `lib/canonical` first, with a test in `lib/canonical/canonical.test.ts`, and the iOS script is rebuilt with `npm run build:canonical`. A page, hook, store, API route, or Cloud Function never gets its own version, not even as a stopgap.
+- A page, hook, or store only passes inputs to the rulebook and shows its result.
+- A plan, review, or hand-off that touches business behaviour names the rulebook functions it relies on.
+
 ## Rules
 
 1. Canonical business logic. Search `lib/canonical` before adding or changing a business rule. Do not implement that rule again in a page, store, or hook.

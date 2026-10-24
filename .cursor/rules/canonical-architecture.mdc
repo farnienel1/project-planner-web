@@ -7,6 +7,8 @@ alwaysApply: true
 
 `lib/canonical/engine.ts` is the business-logic source for this app and for the iOS bundle `canonical-business.js`. `docs/CANONICAL_ARCHITECTURE.md` describes how web, iOS, and Firestore rules use it.
 
+Rule 0 in `AGENTS.md` applies to every change: name the rulebook function a change relies on, or state that none exists and add it to `lib/canonical` first. Both apps follow that one rulebook.
+
 Before adding or changing a booking, warning, invoicing, labour, organisation, or date rule:
 
 1. Search `lib/canonical` and call the existing function.
