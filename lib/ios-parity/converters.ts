@@ -9,6 +9,7 @@
 import { Timestamp, deleteField } from 'firebase/firestore'
 import { isAnonymisedDeletedProfile } from '@/lib/canonical/userRosterSegment'
 import { assignedQualificationWriteFields } from '@/lib/canonical/operativeQualifications'
+import { parseFormerUserIds } from '@/lib/canonical/userProfile'
 import { bookingWriteFields, parseBookingDocument } from '@/lib/canonical/bookings'
 import { exclusiveRateDocumentFields, operativeRosterRateFields, readStoredRates } from '@/lib/timesheets/payBasis'
 import { applyExclusiveRateFields } from '@/lib/firebase/userPayload'
@@ -196,6 +197,7 @@ export function parseAppUserDocument(userId: string, data: Record<string, unknow
   const managerIds =
     assignedManagerUserIds.length > 0 ? assignedManagerUserIds : legacyManager ? [legacyManager] : []
 
+  const formerUserIds = parseFormerUserIds(data)
   const storedPay = readStoredRates({
     payBasis: data.payBasis,
     dayRate: asNumber(data.dayRate),
@@ -218,6 +220,7 @@ export function parseAppUserDocument(userId: string, data: Record<string, unknow
     assignedManagerUserIds: managerIds.length ? managerIds : undefined,
     assignedManagerUserId: managerIds[0],
     hasNoLineManager,
+    formerUserIds: formerUserIds.length > 0 ? formerUserIds : undefined,
     payBasis: storedPay.payBasis ?? undefined,
     dayRate: storedPay.payBasis === 'day' && storedPay.dayRate != null ? storedPay.dayRate : undefined,
     hourlyRate: storedPay.payBasis === 'hourly' && storedPay.hourlyRate != null ? storedPay.hourlyRate : undefined,

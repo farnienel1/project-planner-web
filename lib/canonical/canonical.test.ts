@@ -32,6 +32,10 @@ import {
   subtractMinuteIntervals,
 } from './engine.ts'
 import {
+  bookingOccupiesDay,
+  formerIdAliases,
+  labourBookingKind,
+  labourPersonIds,
   qualificationDismissKey,
   qualificationExpiryRows,
   unbookedLabourRows,
@@ -85,7 +89,10 @@ import {
   employmentTypeOnDay,
   MANAGER_PERMISSION_TOGGLES,
   USER_DOCUMENT_FIELDS,
+  USER_FORMER_IDS_FIELD,
   USER_SELF_CREATE_AGE_FIELDS,
+  inviteMigrationFormerIdWriteFields,
+  parseFormerUserIds,
   userCreateRequiresAgeConfirmation,
 } from './userProfile.ts'
 import {
@@ -3191,6 +3198,144 @@ test('the iOS JavaScript bundle builds the same file report fields', () => {
     fileReportWriteFields(input)
   )
 })
+
+// ─── Scheduling → Daily Overview → Warnings share one booking identity ───────
+
+const labourBase = {
+  isActive: true,
+  passwordSet: true,
+  isOperativeMode: false,
+  isManager: false,
+  isAdmin: false,
+  isSuperAdmin: false,
+}
+
+function oneDayUnbooked(input: {
+  people: Parameters<typeof unbookedLabourRows>[0]['people']
+  bookings?: Parameters<typeof unbookedLabourRows>[0]['bookings']
+  holidays?: Parameters<typeof unbookedLabourRows>[0]['holidays']
+  excludedUserIds?: string[]
+}) {
+  return unbookedLabourRows({
+    timeZone: 'Europe/London',
+    startDayKey: '2026-10-27',
+    endDayKey: '2026-10-27',
+    includeWeekends: false,
+    excludedUserIds: input.excludedUserIds,
+    standardPaidHours: 8,
+    saturdayCountsAsHours: 8,
+    sundayCountsAsHours: 8,
+    people: input.people,
+    operatives: [],
+    bookings: input.bookings ?? [],
+    holidays: input.holidays ?? [],
+  })
+}
+
+test('a booking made while the person was a pending invite still covers them after sign-up', () => {
+  const placeholder = 'A1B2C3D4-0000-4000-8000-000000000001'
+  const person = {
+    ...labourBase,
+    id: 'authUidAfterSignUp',
+    email: 'pat@site.test',
+    name: 'Pat Invited',
+    isOperativeMode: true,
+    formerIds: [placeholder],
+  }
+  const booked = oneDayUnbooked({
+    people: [person],
+    bookings: [{ personId: placeholder, dayKey: '2026-10-27', kind: 'operative', timeSlot: 'FULL DAY' }],
+  })
+  assert.deepEqual(booked, [])
+  // Without the former id the same booking matches nobody and Pat is flagged.
+  const orphaned = oneDayUnbooked({
+    people: [{ ...person, formerIds: [] }],
+    bookings: [{ personId: placeholder, dayKey: '2026-10-27', kind: 'operative', timeSlot: 'FULL DAY' }],
+  })
+  assert.equal(orphaned.length, 1)
+  // Leave and an exclusion saved under the placeholder id also follow the person.
+  assert.deepEqual(
+    oneDayUnbooked({
+      people: [person],
+      holidays: [{ userId: placeholder, startDayKey: '2026-10-27', endDayKey: '2026-10-27', approved: true }],
+    }),
+    []
+  )
+  assert.deepEqual(oneDayUnbooked({ people: [person], excludedUserIds: [placeholder] }), [])
+  assert.deepEqual(formerIdAliases([person]), { [placeholder]: 'authUidAfterSignUp' })
+  assert.deepEqual(labourPersonIds(person), ['authUidAfterSignUp', placeholder])
+})
+
+test('who can be booked is who can be flagged as unbooked labour', () => {
+  const people = [
+    { ...labourBase, id: 'op', email: 'op@site.test', name: 'Op', isOperativeMode: true },
+    { ...labourBase, id: 'mgr', email: 'mgr@site.test', name: 'Mgr', isManager: true },
+    { ...labourBase, id: 'admin', email: 'admin@site.test', name: 'Admin', isAdmin: true },
+    { ...labourBase, id: 'owner', email: 'owner@site.test', name: 'Owner', isSuperAdmin: true },
+    { ...labourBase, id: 'plain', email: 'plain@site.test', name: 'Plain' },
+    { ...labourBase, id: 'gone', email: 'gone@site.test', name: 'Gone', isOperativeMode: true, isActive: false },
+  ]
+  assert.deepEqual(
+    people.map((person) => labourBookingKind(person)),
+    ['operative', 'manager', 'manager', 'manager', null, null]
+  )
+  const flagged = new Set(oneDayUnbooked({ people }).map((row) => row.personKey))
+  const bookable = new Set(people.filter((person) => labourBookingKind(person) !== null).map((person) => person.id))
+  assert.deepEqual([...flagged].sort(), [...bookable].sort())
+})
+
+test('a completed booking still occupies the day; a cancelled one does not', () => {
+  assert.equal(bookingOccupiesDay('Confirmed'), true)
+  assert.equal(bookingOccupiesDay('Tentative'), true)
+  assert.equal(bookingOccupiesDay('confirmed'), true)
+  assert.equal(bookingOccupiesDay('Completed'), true)
+  assert.equal(bookingOccupiesDay('Cancelled'), false)
+  assert.equal(bookingOccupiesDay('canceled'), false)
+  assert.equal(bookingOccupiesDay(undefined), false)
+})
+
+test('accepting an invite records the placeholder id on users/{authUid}.formerUserIds', () => {
+  assert.equal(USER_FORMER_IDS_FIELD, 'formerUserIds')
+  assert.equal((USER_DOCUMENT_FIELDS as readonly string[]).includes('formerUserIds'), true)
+  assert.deepEqual(
+    inviteMigrationFormerIdWriteFields({ placeholderId: 'PLACEHOLDER-1', authUid: 'auth-1', existing: {} }),
+    { formerUserIds: ['PLACEHOLDER-1'] }
+  )
+  assert.deepEqual(
+    inviteMigrationFormerIdWriteFields({
+      placeholderId: 'PLACEHOLDER-2',
+      authUid: 'auth-1',
+      existing: { formerUserIds: ['PLACEHOLDER-1', ' ', 7] },
+    }),
+    { formerUserIds: ['PLACEHOLDER-1', 'PLACEHOLDER-2'] }
+  )
+  assert.deepEqual(inviteMigrationFormerIdWriteFields({ placeholderId: 'auth-1', authUid: 'auth-1' }), {})
+  assert.deepEqual(parseFormerUserIds({ formerUserIds: 'not-a-list' }), [])
+})
+
+test('the iOS bundle exposes the booking identity rules', () => {
+  const source = readFileSync(new URL('./dist/canonical-business.js', import.meta.url), 'utf8')
+  const sandbox: { ProjectPlannerCanonical?: Record<string, (...args: unknown[]) => unknown> } = {}
+  runInContext(source, createContext(sandbox))
+  const bundle = sandbox.ProjectPlannerCanonical
+  assert.ok(bundle)
+  for (const name of [
+    'bookingOccupiesDay',
+    'labourBookingKind',
+    'labourPersonIds',
+    'formerIdAliases',
+    'inviteMigrationFormerIdWriteFields',
+    'parseFormerUserIds',
+  ]) {
+    assert.equal(typeof bundle[name], 'function', name)
+  }
+  assert.equal(bundle.bookingOccupiesDay('Completed'), true)
+  assert.equal(
+    bundle.labourBookingKind({ ...labourBase, id: 'plain', email: '', name: 'Plain' }),
+    null
+  )
+})
+
 const BK_OP = '11111111-2222-4333-8444-555555555555'
 const BK_JOB = 'AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE'
 const BK_DATE = { seconds: Date.UTC(2026, 9, 26) / 1000 - 3600, nanoseconds: 0 }

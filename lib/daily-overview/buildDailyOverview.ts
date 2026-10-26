@@ -6,12 +6,11 @@
  * PayrollHoursEngine is section 17.
  */
 
-import { unbookedLabourRowsOnDay } from '@/lib/canonical'
+import { bookingOccupiesDay, formerIdAliases, unbookedLabourRowsOnDay } from '@/lib/canonical'
+import { labourPersonFromUser, labourRosterOperative } from '@/lib/warnings/unbookedLabourWarnings'
 import { findUserByAnyId, rosterDisplayName } from '@/lib/staff/userRosterUtils'
 import { addLondonDays, coversCalendarDay, dayKey, isSameLondonDay } from '@/lib/ios-parity/londonTime'
-import { isPlaceholderOperative } from '@/lib/operatives/operativeRosterUtils'
-import { UserRole } from '@/types'
-import { isSmallWorksJobType, normalizeBookingStatus } from '@/lib/ios-parity/enums'
+import { isSmallWorksJobType } from '@/lib/ios-parity/enums'
 import {
   estimatedPaidHours,
   formatHoursLabel as overviewFormatHours,
@@ -60,6 +59,9 @@ export type OverviewPersonRow = {
   workStartTime?: string
   workEndTime?: string
 }
+
+/** Shown when a booking's person id matches no user or operative. The booking still appears. */
+export const UNKNOWN_BOOKED_PERSON = 'Unknown person'
 
 export function isLondonWeekday(date: Date): boolean {
   const wd = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/London', weekday: 'short' }).format(date)
@@ -213,10 +215,9 @@ export function buildDailyOverview(params: {
 }): DailyOverviewModel {
   const day = params.day
   const today = params.today || new Date()
-  const dayBookings = uniqueById(params.bookings).filter((b) => {
-    const status = normalizeBookingStatus(b.status)
-    return coversCalendarDay(b.date, day) && (status === 'Confirmed' || status === 'Tentative')
-  })
+  const dayBookings = uniqueById(params.bookings).filter(
+    (b) => coversCalendarDay(b.date, day) && bookingOccupiesDay(b.status)
+  )
   const dayManager = uniqueById(params.managerBookings).filter((b) => coversCalendarDay(b.date, day))
   const daySubs = (params.subcontractorBookings || []).filter((b) => {
     if (!coversCalendarDay(b.date, day)) return false
@@ -235,9 +236,12 @@ export function buildDailyOverview(params: {
   }
   const customGroups = [...customMap.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([name, bookings]) => ({ name, bookings }))
 
+  const labourPeople = params.users.map(labourPersonFromUser)
+  // A booking saved under an invite placeholder id still names the person after sign-up.
+  const userIdAliases = { ...formerIdAliases(labourPeople), ...(params.userIdAliases || {}) }
   const operativeById = new Map(params.operatives.map((operative) => [operative.id, operative]))
   const userById = new Map(params.users.map((user) => [user.id, user]))
-  for (const [aliasId, keptId] of Object.entries(params.userIdAliases || {})) {
+  for (const [aliasId, keptId] of Object.entries(userIdAliases)) {
     const kept = userById.get(keptId)
     if (kept && !userById.has(aliasId)) userById.set(aliasId, kept)
   }
@@ -246,7 +250,10 @@ export function buildDailyOverview(params: {
     return key ? `email:${key}` : fallback
   }
   const operativeIdentity = (operativeId: string): string =>
-    personIdentity(operativeById.get(operativeId)?.email, `op:${normalizeWorkId(operativeId)}`)
+    personIdentity(
+      operativeById.get(operativeId)?.email || userById.get(operativeId)?.email,
+      `op:${normalizeWorkId(operativeId)}`
+    )
   const managerIdentity = (userId: string): string =>
     personIdentity(userById.get(userId)?.email, `mgr:${normalizeWorkId(userId)}`)
 
@@ -307,24 +314,24 @@ export function buildDailyOverview(params: {
         params.operatives.find((o) => o.id === a.operativeId),
         a.operativeId,
         params.users,
-        params.userIdAliases
+        userIdAliases
       )
       const nameB = operativeDisplayName(
         params.operatives.find((o) => o.id === b.operativeId),
         b.operativeId,
         params.users,
-        params.userIdAliases
+        userIdAliases
       )
       return nameA.localeCompare(nameB)
     })
     for (const b of opBookings) {
       const op = operativeById.get(b.operativeId)
-      const name = operativeDisplayName(op, b.operativeId, params.users, params.userIdAliases)
-      if (!name) continue
+      // A booking is never hidden because its person cannot be named.
+      const name = operativeDisplayName(op, b.operativeId, params.users, userIdAliases) || UNKNOWN_BOOKED_PERSON
       const hours = estimatedPaidHours(b)
       const linkedUser = op
         ? params.users.find((row) => row.email.trim().toLowerCase() === op.email.trim().toLowerCase())
-        : undefined
+        : userById.get(b.operativeId)
       rows.push({
         id: `op-${b.id}`,
         personKey: operativeIdentity(b.operativeId),
@@ -352,9 +359,8 @@ export function buildDailyOverview(params: {
       )
       .sort((a, b) => slotSortKey(a.timeSlot) - slotSortKey(b.timeSlot))
     for (const b of mgrs) {
-      const user = userById.get(b.userId) || findUserByAnyId(params.users, b.userId, params.userIdAliases)
-      const name = rosterDisplayName(user)
-      if (!name) continue
+      const user = userById.get(b.userId) || findUserByAnyId(params.users, b.userId, userIdAliases)
+      const name = rosterDisplayName(user) || UNKNOWN_BOOKED_PERSON
       const hours = estimatedPaidHours(b)
       rows.push({
         id: `mgr-${b.id}`,
@@ -445,29 +451,8 @@ export function buildDailyOverview(params: {
     standardDayEnd: payroll.standardDayEnd,
     breakWindowStart: payroll.breakWindowStart,
     breakWindowEnd: payroll.breakWindowEnd,
-    people: params.users.map((user) => ({
-      id: user.id,
-      email: user.email,
-      name: `${user.firstName || ''} ${user.surname || ''}`.trim() || user.email || user.id,
-      isActive: Boolean(user.isActive),
-      passwordSet: user.passwordSet === true,
-      status: user.status,
-      isOperativeMode: Boolean(user.permissions?.operativeMode),
-      isManager: Boolean(user.permissions?.manager),
-      isAdmin: Boolean(user.permissions?.adminAccess) || user.role === UserRole.ADMIN,
-      isSuperAdmin: Boolean(user.isSuperAdmin),
-    })),
-    operatives: params.operatives.map((operative) => ({
-      id: operative.id,
-      email: operative.email,
-      name: `${operative.firstName} ${operative.lastName}`.trim() || operative.email || 'Operative',
-      isActive: operative.isActive !== false,
-      isPlaceholder: isPlaceholderOperative(operative),
-      profileWeight:
-        (operative.qualifications?.length ?? 0) +
-        Object.keys(operative.qualificationCertificateURLs || {}).length +
-        Object.keys(operative.qualificationExpiryDates || {}).length,
-    })),
+    people: labourPeople,
+    operatives: params.operatives.map(labourRosterOperative),
     bookings: [
       ...dayBookings.map((booking) => ({
         personId: booking.operativeId,

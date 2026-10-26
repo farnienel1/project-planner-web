@@ -75,6 +75,7 @@ var ProjectPlannerCanonical = (() => {
     TIMESHEET_SUBMISSION_NOTICE_TITLE: () => TIMESHEET_SUBMISSION_NOTICE_TITLE,
     TIMESHEET_SUBMISSION_NOTICE_TYPE: () => TIMESHEET_SUBMISSION_NOTICE_TYPE,
     USER_DOCUMENT_FIELDS: () => USER_DOCUMENT_FIELDS,
+    USER_FORMER_IDS_FIELD: () => USER_FORMER_IDS_FIELD,
     USER_SELF_CREATE_AGE_FIELDS: () => USER_SELF_CREATE_AGE_FIELDS,
     WEB_SESSION_ORGANIZATION_STORAGE_PREFIX: () => WEB_SESSION_ORGANIZATION_STORAGE_PREFIX,
     accessProbeFromReadError: () => accessProbeFromReadError,
@@ -89,6 +90,7 @@ var ProjectPlannerCanonical = (() => {
     bookingHealthRows: () => bookingHealthRows,
     bookingJobLabel: () => bookingJobLabel,
     bookingJobState: () => bookingJobState,
+    bookingOccupiesDay: () => bookingOccupiesDay,
     bookingWriteFields: () => bookingWriteFields,
     bookingsToRemoveOnOperativeDelete: () => bookingsToRemoveOnOperativeDelete,
     bookingsToRemoveOnProjectDelete: () => bookingsToRemoveOnProjectDelete,
@@ -129,6 +131,7 @@ var ProjectPlannerCanonical = (() => {
     formatClockMinutes: () => formatClockMinutes,
     formatMaterialCutOffClock: () => formatMaterialCutOffClock,
     formatMaterialDeliveryRequired: () => formatMaterialDeliveryRequired,
+    formerIdAliases: () => formerIdAliases,
     halfDayWindows: () => halfDayWindows,
     hasAccess: () => hasAccess,
     hasAnnualLeaveAllowance: () => hasAnnualLeaveAllowance,
@@ -136,6 +139,7 @@ var ProjectPlannerCanonical = (() => {
     intervalsOverlap: () => intervalsOverlap,
     inviteEmailHasLiveClaim: () => inviteEmailHasLiveClaim,
     inviteEmailOrgLookupConstraints: () => inviteEmailOrgLookupConstraints,
+    inviteMigrationFormerIdWriteFields: () => inviteMigrationFormerIdWriteFields,
     invitePlaceholderUserWriteFields: () => invitePlaceholderUserWriteFields,
     inviteWritesOperativeProfile: () => inviteWritesOperativeProfile,
     invoicingPeriod: () => invoicingPeriod,
@@ -152,6 +156,8 @@ var ProjectPlannerCanonical = (() => {
     isTimesheetFullySigned: () => isTimesheetFullySigned,
     isTimesheetManagerSigned: () => isTimesheetManagerSigned,
     isTimesheetOperativeSigned: () => isTimesheetOperativeSigned,
+    labourBookingKind: () => labourBookingKind,
+    labourPersonIds: () => labourPersonIds,
     leaveCoverageRows: () => leaveCoverageRows,
     leaveSlotKind: () => leaveSlotKind,
     leaveYearBounds: () => leaveYearBounds,
@@ -196,6 +202,7 @@ var ProjectPlannerCanonical = (() => {
     paidHoursForNamedSlot: () => paidHoursForNamedSlot,
     parseBookingDocument: () => parseBookingDocument,
     parseClockMinutes: () => parseClockMinutes,
+    parseFormerUserIds: () => parseFormerUserIds,
     parseInvoicing: () => parseInvoicing,
     parseMaterialCutOff: () => parseMaterialCutOff,
     parseOrganizationName: () => parseOrganizationName,
@@ -1031,16 +1038,43 @@ var ProjectPlannerCanonical = (() => {
     }
     return rows;
   }
+  function bookingOccupiesDay(status) {
+    const value = String(status ?? "").trim().toLowerCase();
+    return value === "confirmed" || value === "tentative" || value === "pending" || value === "completed";
+  }
+  function labourBookingKind(person) {
+    if (!person.isActive) return null;
+    const admin = Boolean(person.isAdmin || person.isSuperAdmin);
+    if (person.isOperativeMode && !person.isManager && !admin) return "operative";
+    if (person.isManager || admin) return "manager";
+    return null;
+  }
+  function labourPersonIds(person) {
+    const ids = /* @__PURE__ */ new Set();
+    if (person.id) ids.add(String(person.id));
+    for (const id of person.formerIds || []) {
+      const trimmed5 = String(id || "").trim();
+      if (trimmed5) ids.add(trimmed5);
+    }
+    return [...ids];
+  }
+  function formerIdAliases(people) {
+    const aliases = {};
+    for (const person of people) {
+      for (const id of labourPersonIds(person)) {
+        if (id !== person.id && !(id in aliases)) aliases[id] = person.id;
+      }
+    }
+    return aliases;
+  }
   function hasFinishedSignup(person) {
     return person.passwordSet === true && person.status !== "pending";
   }
   function isManagerOrAdmin(person) {
-    return Boolean(person.isActive && (person.isManager || person.isAdmin || person.isSuperAdmin));
+    return labourBookingKind(person) === "manager";
   }
   function isOperativeModeOnly(person) {
-    return Boolean(
-      person.isActive && person.isOperativeMode && !person.isManager && !person.isAdmin && !person.isSuperAdmin
-    );
+    return labourBookingKind(person) === "operative";
   }
   function preferFinishedAccount(candidates) {
     return candidates.find((person) => person.passwordSet && person.isActive) ?? candidates.find((person) => person.passwordSet);
@@ -1077,7 +1111,8 @@ var ProjectPlannerCanonical = (() => {
     const timeZone = zoneOf2(input.timeZone);
     const people = listedCurrentLabourPeople(input.people);
     const operatives = listedCurrentLabourPeople(input.operatives);
-    const excluded = new Set((input.excludedUserIds || []).map((id) => String(id)));
+    const excludedIds = new Set((input.excludedUserIds || []).map((id) => String(id)));
+    const isExcluded = (person) => labourPersonIds(person).some((id) => excludedIds.has(id));
     const dayPolicy = {
       standardDayStart: input.standardDayStart,
       standardDayEnd: input.standardDayEnd,
@@ -1110,17 +1145,23 @@ var ProjectPlannerCanonical = (() => {
       }
     }
     const userIdsByEmail = /* @__PURE__ */ new Map();
+    const idsByUserId = /* @__PURE__ */ new Map();
     for (const person of people) {
+      if (person.id) idsByUserId.set(person.id, labourPersonIds(person));
       const email = emailKey(person.email);
       if (!email || !person.id) continue;
       const ids = userIdsByEmail.get(email) || /* @__PURE__ */ new Set();
-      ids.add(person.id);
+      for (const id of labourPersonIds(person)) ids.add(id);
       userIdsByEmail.set(email, ids);
     }
+    const withFormerIds = (target, userId) => {
+      if (!userId) return;
+      for (const id of idsByUserId.get(userId) || [userId]) target.add(id);
+    };
     const slotsFor = (email, operativeId, userId, dayKey) => {
       const ids = /* @__PURE__ */ new Set();
       if (operativeId) ids.add(operativeId);
-      if (userId) ids.add(userId);
+      withFormerIds(ids, userId);
       const linked = operativeIdsByEmail.get(email);
       if (linked) for (const id of linked) ids.add(id);
       const linkedUsers = userIdsByEmail.get(email);
@@ -1135,7 +1176,7 @@ var ProjectPlannerCanonical = (() => {
     const approvedHolidays = input.holidays.filter((holiday) => holiday.approved);
     const holidayCovers = (dayKey, email, userId, operativeId) => {
       const userIds = /* @__PURE__ */ new Set();
-      if (userId) userIds.add(userId);
+      withFormerIds(userIds, userId);
       const linkedUsers = userIdsByEmail.get(email);
       if (linkedUsers) for (const id of linkedUsers) userIds.add(id);
       const operativeIds = /* @__PURE__ */ new Set();
@@ -1191,7 +1232,7 @@ var ProjectPlannerCanonical = (() => {
         });
       };
       for (const person of operativeUsers) {
-        if (excluded.has(person.id)) continue;
+        if (isExcluded(person)) continue;
         const email = emailKey(person.email);
         const linked = operativesByEmail.get(email);
         if (holidayCovers(dayKey, email, person.id, linked?.id)) continue;
@@ -1204,7 +1245,7 @@ var ProjectPlannerCanonical = (() => {
         });
       }
       for (const person of managerUsers) {
-        if (excluded.has(person.id)) continue;
+        if (isExcluded(person)) continue;
         const email = emailKey(person.email);
         const linked = operativesByEmail.get(email);
         if (holidayCovers(dayKey, email, person.id, linked?.id)) continue;
@@ -1222,7 +1263,7 @@ var ProjectPlannerCanonical = (() => {
         const matched = email ? verifiedUserForEmail(email) : void 0;
         if (!matched && email && people.some((person) => emailKey(person.email) === email)) continue;
         if (matched && managerAdminUserIds.has(matched.id)) continue;
-        if (matched && excluded.has(matched.id)) continue;
+        if (matched && isExcluded(matched)) continue;
         if (holidayCovers(dayKey, email, matched?.id, operative.id)) continue;
         append({
           personKey: matched?.id || operative.id,
@@ -2641,8 +2682,26 @@ var ProjectPlannerCanonical = (() => {
     "profilePhotoURL",
     "pushTokens",
     "pushTokenUpdatedAt",
-    "notificationPreferences"
+    "notificationPreferences",
+    "formerUserIds"
   ];
+  var USER_FORMER_IDS_FIELD = "formerUserIds";
+  function parseFormerUserIds(data) {
+    const raw = data?.[USER_FORMER_IDS_FIELD];
+    if (!Array.isArray(raw)) return [];
+    const ids = /* @__PURE__ */ new Set();
+    for (const value of raw) {
+      const id = typeof value === "string" ? value.trim() : "";
+      if (id) ids.add(id);
+    }
+    return [...ids];
+  }
+  function inviteMigrationFormerIdWriteFields(input) {
+    const ids = parseFormerUserIds(input.existing);
+    const placeholder = String(input.placeholderId || "").trim();
+    if (placeholder && placeholder !== input.authUid.trim() && !ids.includes(placeholder)) ids.push(placeholder);
+    return ids.length > 0 ? { [USER_FORMER_IDS_FIELD]: ids } : {};
+  }
   var USER_SELF_CREATE_AGE_FIELDS = [
     "ageConfirmed",
     "ageConfirmedAt",

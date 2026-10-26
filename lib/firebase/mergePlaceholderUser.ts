@@ -8,15 +8,25 @@
 import { collection, deleteDoc, doc, getDocs, limit, query, setDoc, Timestamp, where } from 'firebase/firestore'
 import { getFirebaseDb } from '@/lib/firebase/ensureFirebase'
 import { ageConfirmationWriteFields } from '@/lib/legal/ageConfirmation'
+import { inviteMigrationFormerIdWriteFields } from '@/lib/canonical/userProfile'
 
 export function placeholderMergeFields(
   placeholderData: Record<string, unknown>,
   authEmail: string,
-  organizationId: string
+  organizationId: string,
+  /** The placeholder and account ids. Bookings saved under the placeholder id stay with this person. */
+  ids?: { placeholderId: string; authUid: string }
 ): Record<string, unknown> {
   const now = Timestamp.now()
   return {
     ...placeholderData,
+    ...(ids
+      ? inviteMigrationFormerIdWriteFields({
+          placeholderId: ids.placeholderId,
+          authUid: ids.authUid,
+          existing: placeholderData,
+        })
+      : {}),
     email: authEmail.toLowerCase().trim(),
     organizationId,
     updatedAt: now,
@@ -42,7 +52,7 @@ export async function mergePlaceholderUserDocOntoAuthUidIfNeeded(
       const data = placeholder.data() as Record<string, unknown>
       const orgId = typeof data.organizationId === 'string' ? data.organizationId.trim() : ''
       if (!orgId) continue
-      const merged = placeholderMergeFields(data, email, orgId)
+      const merged = placeholderMergeFields(data, email, orgId, { placeholderId: placeholder.id, authUid })
       // Self-create is allowed only when this email pointer is missing or already this uid.
       await setDoc(
         doc(db, 'organizations', orgId, 'userEmails', email.toLowerCase()),

@@ -164,6 +164,8 @@ export interface User {
   assignedManagerUserIds?: string[];
   /** iOS `hasNoLineManager` — admin/founder with no counter-sign. */
   hasNoLineManager?: boolean;
+  /** `formerUserIds`: invite placeholder ids from before sign-up (`parseFormerUserIds`). */
+  formerUserIds?: string[];
   dayRate?: number;
   hourlyRate?: number;
   /** "day" or "hourly". Omit when no rate is set. */

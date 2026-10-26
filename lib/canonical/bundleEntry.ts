@@ -42,6 +42,10 @@ export {
 } from './engine'
 
 export {
+  bookingOccupiesDay,
+  formerIdAliases,
+  labourBookingKind,
+  labourPersonIds,
   qualificationDismissKey,
   qualificationExpiryRows,
   unbookedLabourRows,
@@ -100,13 +104,16 @@ export {
 
 export {
   USER_DOCUMENT_FIELDS,
+  USER_FORMER_IDS_FIELD,
   USER_SELF_CREATE_AGE_FIELDS,
   accountKindFromFlags,
   applyEmploymentTypeChange,
   employmentEffectiveLabel,
   employmentTypeOnDay,
+  inviteMigrationFormerIdWriteFields,
   isBillableSelfEmployedDay,
   normalizeEmploymentType,
+  parseFormerUserIds,
   userCreateRequiresAgeConfirmation,
 } from './userProfile'
 
