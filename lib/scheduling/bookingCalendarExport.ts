@@ -5,6 +5,7 @@ import {
   type OrgPayrollTimePolicy,
 } from '@/lib/settings/organizationSettings'
 import { halfDayWindows } from '@/lib/canonical'
+import { bookingJobLabel } from '@/lib/canonical'
 
 export type CalendarEventInput = {
   uid: string
@@ -108,7 +109,7 @@ export function bookingsToCalendarEvents(
 ): CalendarEventInput[] {
   return bookings.map((booking) => {
     const { start, end } = bookingCalendarBlock(booking, policy)
-    const location = booking.displayTitle || projectsById.get(booking.projectId) || 'Booking'
+    const location = booking.displayTitle || bookingJobLabel(projectsById.get(booking.projectId))
     return {
       uid: `pp-booking-${booking.id}@projectplanner`,
       title: `${location} – ${scheduleLabel(booking)}`,

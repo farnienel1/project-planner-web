@@ -48,6 +48,7 @@ import {
   formatSubcontractorBookingLabel,
   resolveSubcontractorBookingPeople,
 } from '@/lib/subcontractors/bookingPeople'
+import { bookingJobLabel } from '@/lib/canonical'
 
 export type WeeklyReportWarningRow = {
   status: string
@@ -295,16 +296,16 @@ export function buildWeeklyReportData({
     operativeId: string | undefined,
     days: number
   ) => {
+    // A booking whose job was deleted still counts, under "Deleted job" (rulebook).
     const project = projectsById.get(projectId)
-    if (!project) return
     const { user, operative } = findUserAndOperative(users, operatives, { userId, operativeId })
     const person = resolveDisplayName(user, operative)
-    const key = project.id
+    const key = project?.id ?? `deleted:${projectId}`
     const group =
       projectGroupsMap.get(key) ||
       ({
-        projectName: project.siteName || project.jobNumber,
-        jobNumber: project.jobNumber,
+        projectName: bookingJobLabel(project ? project.siteName || project.jobNumber : null),
+        jobNumber: project?.jobNumber || '—',
         rows: [],
         projectTotal: 0,
       } satisfies WeeklyReportProjectGroup)
@@ -505,7 +506,7 @@ export function buildWeeklyReportData({
       payroll
     )
     return {
-      projectName: project?.siteName || project?.jobNumber || 'Project',
+      projectName: bookingJobLabel(project?.siteName || project?.jobNumber),
       jobNumber: project?.jobNumber || '—',
       subContractor: formatSubcontractorBookingLabel(sub?.name || 'Sub contractor', []),
       people: people.join(', ') || '—',

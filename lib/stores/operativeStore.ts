@@ -23,6 +23,7 @@ import {
 import { parseManager, parseOperative, serializeManager, serializeOperative } from '@/lib/ios-parity/converters'
 import { readStoredRates } from '@/lib/timesheets/payBasis'
 import { markRowsRemoved, retainScopedRows } from '@/lib/staff/rosterRetain'
+import { removeFutureBookingsForPerson } from '@/lib/bookings/removeBookingsOnDelete'
 
 const OPERATIVES_KEY = 'operativeStore:operatives'
 let operativesOrgId = ''
@@ -326,6 +327,7 @@ export const useOperativeStore = create<OperativeState>((set, get) => ({
   deleteOperative: async (id, organizationId) => {
     const { operatives } = get()
     try {
+      await removeFutureBookingsForPerson(db, { organizationId, operativeIds: [id] })
       const operativeRef = doc(db, 'organizations', organizationId, 'operatives', id)
       await deleteDoc(operativeRef)
       markRowsRemoved(`operatives:${organizationId}`, [id])

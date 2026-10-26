@@ -1,5 +1,6 @@
 /**
- * Dev-only read sample of each collection. Never writes.
+ * Data Health. Admins get the full read-only bookings scan in every build.
+ * The 25-document sample of each collection stays development-only. Never writes.
  * Spec: docs/ios-parity/IOS_PARITY_REBUILD.md Phase 2 item 10
  */
 
@@ -9,6 +10,8 @@ import { useEffect, useState } from 'react'
 import { collection, getDocs, limit, query } from 'firebase/firestore'
 import { getFirebaseDb } from '@/lib/firebase/ensureFirebase'
 import { useAuthStore } from '@/lib/stores/authStore'
+import { hasAdminAccess } from '@/lib/permissions'
+import { BookingHealthScan } from '@/components/dataHealth/BookingHealthScan'
 import {
   parseAppUserDocument,
   parseBooking,
@@ -105,12 +108,16 @@ export default function DataHealthPage() {
     }
   }, [organization?.id, user])
 
+  const isAdmin = hasAdminAccess(user)
+  const scan = isAdmin && organization?.id ? <BookingHealthScan organizationId={organization.id} /> : null
+
   if (!isDev) {
-    return <p className="text-sm text-[var(--ink3)]">Data health is only available in development builds.</p>
+    return scan ?? <p className="text-sm text-[var(--ink3)]">Data health is for admins.</p>
   }
 
   return (
     <div className="space-y-4">
+      {scan}
       <p className="banner" data-hue="warn">
         Development only. Reads up to 25 documents per collection. Never writes.
       </p>

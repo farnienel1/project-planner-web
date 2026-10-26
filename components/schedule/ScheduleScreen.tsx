@@ -26,6 +26,7 @@ import { MyScheduleTotalHoursCard, myScheduleClockSubtitle, myScheduleStripeClas
 import type { OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 import { DEFAULT_PAYROLL_POLICY } from '@/lib/settings/organizationSettings'
 import { dayKey } from '@/lib/ios-parity/londonTime'
+import { bookingJobLabel } from '@/lib/canonical'
 
 /** A role word is not a person. Prefer the looked-up name, then the signed-in name. */
 function personLabel(primary?: string, fallback?: string): string {
@@ -359,9 +360,7 @@ function DaySection({
                     : personLabel(selfDisplayName) || 'You'
               }
               projectName={
-                b.displayTitle ||
-                projectsById.get(b.projectId) ||
-                (b.projectId ? `Project ${b.projectId.slice(0, 6)}` : 'Booking')
+                b.displayTitle || bookingJobLabel(projectsById.get(b.projectId))
               }
               isHighlighted={highlightBookingId === b.id}
               canEdit={canEditBookings && b.source !== 'manager'}
