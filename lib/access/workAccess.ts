@@ -177,7 +177,7 @@ export function isAssignedOrBookedOnto(params: {
   if (
     params.managerBookings.some(
       (booking) =>
-        booking.userId === params.user.id &&
+        (booking.userId === params.user.id || (params.user.formerUserIds ?? []).includes(booking.userId)) &&
         (booking.locationType === 'project' || booking.locationType === 'small_work') &&
         booking.locationId === params.project.id
     )
@@ -185,14 +185,21 @@ export function isAssignedOrBookedOnto(params: {
     return true
   }
 
+  // Every id this person's bookings may carry (`bookingIdsForAccount`), not only the catalogue row on their email.
+  const bookingIds = new Set(
+    bookingIdsForAccount(
+      { id: params.user.id, email: params.user.email, formerIds: params.user.formerUserIds ?? [] },
+      params.operatives
+    ).map((id) => id.toLowerCase())
+  )
   const operative = operativeMatching(params.user.email, params.operatives)
+  if (operative) bookingIds.add(operative.id.toLowerCase())
   if (
-    operative &&
     params.bookings.some(
       (b) =>
-        b.operativeId === operative.id &&
+        bookingIds.has(String(b.operativeId || '').toLowerCase()) &&
         b.projectId === params.project.id &&
-        normalizeBookingStatus(b.status) !== 'Cancelled'
+        bookingOccupiesDay(normalizeBookingStatus(b.status) ?? b.status)
     )
   ) {
     return true

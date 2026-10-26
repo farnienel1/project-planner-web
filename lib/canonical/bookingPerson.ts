@@ -111,3 +111,28 @@ export function bookingPersonKey(operativeId: unknown, input: BookingPersonInput
   if (person.operativeId) return `operative:${idKey(person.operativeId)}`
   return `id:${idKey(operativeId)}`
 }
+
+/**
+ * Every stored id that names the same person as `operativeId`: the id itself, its catalogue row, and when an
+ * account is found, that account's `bookingIdsForAccount`. Overlap, duplicate and hours-already-booked checks use
+ * it, so a booking under a re-added person's other ids still counts as theirs.
+ */
+export function bookingIdsForPerson(operativeId: unknown, input: BookingPersonInput): string[] {
+  const first = typeof operativeId === 'string' ? operativeId.trim() : ''
+  if (!first) return []
+  const ids: string[] = []
+  const seen = new Set<string>()
+  const add = (raw: string | null | undefined) => {
+    const id = (raw || '').trim()
+    if (!id || seen.has(id.toLowerCase())) return
+    seen.add(id.toLowerCase())
+    ids.push(id)
+  }
+  add(first)
+  const person = resolveBookingPerson(first, input)
+  add(person.operativeId)
+  const account = person.accountId ? input.accounts.find((row) => row.id === person.accountId) : undefined
+  if (account) for (const id of bookingIdsForAccount(account, input.operatives)) add(id)
+  return ids
+}
+

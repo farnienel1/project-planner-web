@@ -3587,7 +3587,7 @@ test('the iOS JavaScript bundle masks and resolves tax identifiers the same way'
 
 // --- Booking person: one answer to "whose booking is this" for every screen, web and iOS ---
 
-import { bookingIdsForAccount, bookingPersonKey, resolveBookingPerson } from './bookingPerson.ts'
+import { bookingIdsForAccount, bookingIdsForPerson, bookingPersonKey, resolveBookingPerson } from './bookingPerson.ts'
 import { normalizeManagerBookingTimeSlot, parseManagerSiteBookingDocument } from './bookings.ts'
 
 const BP_CATALOGUE_OLD = 'F05FE02E-0F7C-4F44-A3A8-FCF6F43D2995'
@@ -3665,7 +3665,7 @@ test('the iOS bundle exposes the booking person and manager booking rules', () =
   runInContext(source, createContext(sandbox))
   const bundle = sandbox.ProjectPlannerCanonical
   assert.ok(bundle)
-  for (const name of ['bookingIdsForAccount', 'bookingPersonKey', 'resolveBookingPerson', 'parseManagerSiteBookingDocument', 'parseBookingDocument']) {
+  for (const name of ['bookingIdsForAccount', 'bookingIdsForPerson', 'bookingPersonKey', 'resolveBookingPerson', 'parseManagerSiteBookingDocument', 'parseBookingDocument']) {
     assert.equal(typeof bundle[name], 'function', name)
   }
 })
@@ -3691,3 +3691,11 @@ test('organisation setup placeholder bookings are not bookings on either app', (
     { ok: false, errors: ['legacy_placeholder'] }
   )
 })
+
+test("picking any of a re-added person's ids finds all of them", () => {
+  const all = [BP_CATALOGUE_OLD, BP_AUTH, BP_PLACEHOLDER, 'oldSameEmailUid0001']
+  for (const start of all) assert.deepEqual(new Set(bookingIdsForPerson(start, bpInput)), new Set(all), start)
+  assert.deepEqual(bookingIdsForPerson('nobodyUid', bpInput), ['nobodyUid'])
+  assert.deepEqual(bookingIdsForPerson('', bpInput), [])
+})
+

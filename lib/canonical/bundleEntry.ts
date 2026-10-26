@@ -327,7 +327,7 @@ export {
   parseManagerSiteBookingDocument,
 } from './bookings'
 
-export { bookingIdsForAccount, bookingPersonKey, resolveBookingPerson } from './bookingPerson'
+export { bookingIdsForAccount, bookingIdsForPerson, bookingPersonKey, resolveBookingPerson } from './bookingPerson'
 export { LEGACY_PLACEHOLDER_DOCUMENT_ID, isLegacyPlaceholderDocumentId } from './bookings'
 
 export { legalPackNeedsAcceptance } from './legalPack'
