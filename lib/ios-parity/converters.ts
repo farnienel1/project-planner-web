@@ -9,6 +9,7 @@
 import { Timestamp, deleteField } from 'firebase/firestore'
 import { isAnonymisedDeletedProfile } from '@/lib/canonical/userRosterSegment'
 import { assignedQualificationWriteFields } from '@/lib/canonical/operativeQualifications'
+import { bookingWriteFields, parseBookingDocument } from '@/lib/canonical/bookings'
 import { exclusiveRateDocumentFields, operativeRosterRateFields, readStoredRates } from '@/lib/timesheets/payBasis'
 import { applyExclusiveRateFields } from '@/lib/firebase/userPayload'
 import type {
@@ -52,7 +53,6 @@ import {
   omitUndefinedDeep,
 } from './firestoreCodec'
 import {
-  bookingWriteSchema,
   clientWriteSchema,
   holidayWriteSchema,
   managerSiteBookingWriteSchema,
@@ -374,93 +374,68 @@ export function parseBooking(
   data: Record<string, unknown>,
   organizationId?: string
 ): ParseResult<Booking> {
-  const operativeId = asString(data.operativeId) || asString(data.operativeID)
-  const projectId = asString(data.projectId) || asString(data.projectID)
-  const date = asDate(data.date)
-  const timeSlot = normalizeTimeSlot(data.timeSlot) || (asString(data.timeSlot) ? null : 'FULL DAY')
-  const bookedBy = asString(data.bookedBy)
-  const status = normalizeBookingStatus(data.status)
-  if (!operativeId || !projectId || !date || !timeSlot || !status) {
-    return fail([
-      !operativeId ? 'operativeId missing/invalid' : '',
-      !projectId ? 'projectId missing/invalid' : '',
-      !date ? 'date missing/invalid Timestamp' : '',
-      !timeSlot ? `timeSlot invalid (${String(data.timeSlot)})` : '',
-      !status ? `status invalid (${String(data.status)})` : '',
-    ].filter(Boolean))
-  }
+  // Rulebook reader shared with iOS (lib/canonical/bookings.ts).
+  const result = parseBookingDocument(docId, data)
+  if (!result.ok) return fail(result.errors)
+  const row = result.booking
   return ok({
-    id: docId,
-    operativeId,
-    projectId,
-    date,
-    timeSlot: timeSlot as TimeSlotRaw,
-    bookedBy,
-    notes: asString(data.notes),
-    status: status as BookingStatusRaw,
-    workStartTime: asClockHhMm(data.workStartTime),
-    workEndTime: asClockHhMm(data.workEndTime),
-    isBreakRemoved: data.isBreakRemoved === true,
-    otMultiplierOverride: asNumber(data.otMultiplierOverride),
-    bookingGroupId: asOptionalString(data.bookingGroupId),
-    createdAt: asDate(data.createdAt) || new Date(),
-    updatedAt: asDate(data.updatedAt) || new Date(),
+    id: row.id,
+    operativeId: row.operativeId,
+    projectId: row.projectId,
+    date: new Date(row.dateMs),
+    timeSlot: row.timeSlot,
+    bookedBy: row.bookedBy,
+    notes: row.notes,
+    status: row.status,
+    workStartTime: row.workStartTime,
+    workEndTime: row.workEndTime,
+    isBreakRemoved: row.isBreakRemoved,
+    otMultiplierOverride: row.otMultiplierOverride,
+    bookingGroupId: row.bookingGroupId,
+    createdAt: row.createdAtMs != null ? new Date(row.createdAtMs) : new Date(),
+    updatedAt: row.updatedAtMs != null ? new Date(row.updatedAtMs) : new Date(),
     organizationId,
   })
 }
 
-/** iOS saveBooking ~L5169, merge, uppercase UUID doc id + denormalised id. */
+/** iOS saveBooking ~L5169, merge, uppercase UUID doc id + denormalised id. Shape: bookingWriteFields. */
 export function serializeBooking(booking: Booking): Record<string, unknown> {
-  const status = normalizeBookingStatus(booking.status)
-  const timeSlot = normalizeTimeSlot(booking.timeSlot)
-  const id = booking.id?.trim() || newUppercaseUuid()
-  const parsed = bookingWriteSchema.safeParse({
-    id,
+  const date = booking.date instanceof Date ? booking.date : new Date(booking.date)
+  const createdAt = booking.createdAt instanceof Date ? booking.createdAt : new Date()
+  const written = bookingWriteFields({
+    id: booking.id?.trim() || newUppercaseUuid(),
     operativeId: booking.operativeId,
     projectId: booking.projectId,
-    date: booking.date instanceof Date ? booking.date : new Date(booking.date),
-    timeSlot,
+    dateMs: date.getTime(),
+    timeSlot: String(booking.timeSlot ?? ''),
+    status: String(booking.status ?? ''),
     bookedBy: booking.bookedBy,
     notes: booking.notes ?? '',
-    status,
     workStartTime: booking.workStartTime,
     workEndTime: booking.workEndTime,
     isBreakRemoved: booking.isBreakRemoved === true,
     otMultiplierOverride: booking.otMultiplierOverride ?? undefined,
     bookingGroupId: booking.bookingGroupId ?? undefined,
-    createdAt: booking.createdAt instanceof Date ? booking.createdAt : new Date(),
-    updatedAt: new Date(),
+    createdAtMs: createdAt.getTime(),
+    updatedAtMs: Date.now(),
   })
-  if (!parsed.success) {
-    throw new IosWriteValidationError('Invalid booking write (iOS would skip this record)', issuesFromZod(parsed.error))
+  if (!written.ok) {
+    throw new IosWriteValidationError('Invalid booking write (iOS would skip this record)', written.errors)
   }
-  const v = parsed.data
+  const f = written.fields
   const payload: Record<string, unknown> = {
-    id: v.id,
-    operativeId: v.operativeId,
-    projectId: v.projectId,
-    date: asTimestamp(v.date),
-    timeSlot: v.timeSlot,
-    bookedBy: v.bookedBy,
-    notes: v.notes,
-    status: v.status,
-    createdAt: asTimestamp(v.createdAt),
-    updatedAt: asTimestamp(v.updatedAt),
-    isBreakRemoved: v.isBreakRemoved,
+    ...f,
+    date: asTimestamp(new Date(Number(f.date))),
+    createdAt: asTimestamp(new Date(Number(f.createdAt))),
+    updatedAt: asTimestamp(new Date(Number(f.updatedAt))),
   }
-  payload.workStartTime = v.workStartTime?.trim() ? v.workStartTime : deleteField()
-  payload.workEndTime = v.workEndTime?.trim() ? v.workEndTime : deleteField()
-  if (booking.otMultiplierOverride == null) {
+  if (!('workStartTime' in f)) payload.workStartTime = deleteField()
+  if (!('workEndTime' in f)) payload.workEndTime = deleteField()
+  if (!('otMultiplierOverride' in f)) {
     if (booking.otMultiplierOverride === null) payload.otMultiplierOverride = deleteField()
-  } else {
-    payload.otMultiplierOverride = booking.otMultiplierOverride
   }
-  if (booking.bookingGroupId == null) {
-    if (booking.bookingGroupId === null) payload.bookingGroupId = deleteField()
-  } else if (booking.bookingGroupId.trim()) {
-    payload.bookingGroupId = booking.bookingGroupId.trim()
-  } else {
-    payload.bookingGroupId = deleteField()
+  if (!('bookingGroupId' in f)) {
+    if (booking.bookingGroupId === null || typeof booking.bookingGroupId === 'string') payload.bookingGroupId = deleteField()
   }
   return payload
 }

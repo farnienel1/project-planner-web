@@ -17,6 +17,7 @@ import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtil
 import { managerSiteBookingDisplayTitle } from '@/lib/scheduling/managerSiteBookingUtils'
 import type { ClashTimelineEntry } from '@/lib/warnings/clashTimeline'
 import { clashEntryFromOperativeBooking } from '@/lib/scheduling/bookingClashUtils'
+import { ORPHAN_BOOKING_LABEL } from '@/lib/canonical'
 
 export interface ManagerBookingClashWarning {
   id: string
@@ -85,7 +86,7 @@ function personName(userId: string, usersById: Map<string, User>): string {
 }
 
 function projectLabel(project: Project | undefined): string {
-  if (!project) return 'Project'
+  if (!project) return ORPHAN_BOOKING_LABEL
   return `${project.jobNumber} ${project.siteName}`.trim()
 }
 

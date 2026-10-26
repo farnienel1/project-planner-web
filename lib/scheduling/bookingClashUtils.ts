@@ -24,6 +24,7 @@ import {
   paidHoursForOperativeBooking,
 } from '@/lib/warnings/clashIntervals'
 import type { ClashTimelineEntry } from '@/lib/warnings/clashTimeline'
+import { ORPHAN_BOOKING_LABEL } from '@/lib/canonical'
 
 export interface OperativeBookingClash {
   operativeId: string
@@ -123,7 +124,7 @@ export function bookingsOverlapWithSlot(
 
 function projectLabel(projectId: string, projectsById: Map<string, Project>): string {
   const project = projectsById.get(projectId)
-  if (!project) return 'Another job'
+  if (!project) return ORPHAN_BOOKING_LABEL
   return `${project.jobNumber} ${project.siteName}`.trim()
 }
 

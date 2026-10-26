@@ -23,6 +23,8 @@ var ProjectPlannerCanonical = (() => {
   __export(bundleEntry_exports, {
     ANNUAL_LEAVE_ALLOWANCE_COPY: () => ANNUAL_LEAVE_ALLOWANCE_COPY,
     ANONYMISED_DELETED_USER_NAME: () => ANONYMISED_DELETED_USER_NAME,
+    BOOKING_STATUSES: () => BOOKING_STATUSES,
+    BOOKING_TIME_SLOTS: () => BOOKING_TIME_SLOTS,
     CANONICAL_STANDARD_BREAK: () => CANONICAL_STANDARD_BREAK,
     CANONICAL_STANDARD_DAY: () => CANONICAL_STANDARD_DAY,
     DEFAULT_ANNUAL_LEAVE_DAYS: () => DEFAULT_ANNUAL_LEAVE_DAYS,
@@ -49,6 +51,7 @@ var ProjectPlannerCanonical = (() => {
     MIN_HALF_DAY_MINUTES: () => MIN_HALF_DAY_MINUTES,
     NOTIFICATION_ICON_BADGE_CLEARS_ON_FOREGROUND: () => NOTIFICATION_ICON_BADGE_CLEARS_ON_FOREGROUND,
     NOTIFICATION_PREFERENCE_KEYS: () => NOTIFICATION_PREFERENCE_KEYS,
+    ORPHAN_BOOKING_LABEL: () => ORPHAN_BOOKING_LABEL,
     PAYMENT_GRACE_MS: () => PAYMENT_GRACE_MS,
     QUALIFICATION_CERTIFICATE_STORAGE_PATH: () => QUALIFICATION_CERTIFICATE_STORAGE_PATH,
     QUALIFICATION_FILTER_ALL: () => QUALIFICATION_FILTER_ALL,
@@ -76,6 +79,14 @@ var ProjectPlannerCanonical = (() => {
     applyRemainingOverride: () => applyRemainingOverride,
     assignedQualificationWriteFields: () => assignedQualificationWriteFields,
     bookingBelongsToOrganization: () => bookingBelongsToOrganization,
+    bookingClock: () => bookingClock,
+    bookingDateMs: () => bookingDateMs,
+    bookingHealthRows: () => bookingHealthRows,
+    bookingJobLabel: () => bookingJobLabel,
+    bookingJobState: () => bookingJobState,
+    bookingWriteFields: () => bookingWriteFields,
+    bookingsToRemoveOnOperativeDelete: () => bookingsToRemoveOnOperativeDelete,
+    bookingsToRemoveOnProjectDelete: () => bookingsToRemoveOnProjectDelete,
     canEditWorkCatalogue: () => canEditWorkCatalogue,
     canManageVariationTracker: () => canManageVariationTracker,
     canReviewFileReports: () => canReviewFileReports,
@@ -124,6 +135,7 @@ var ProjectPlannerCanonical = (() => {
     invoicingToFirestore: () => invoicingToFirestore,
     isAnonymisedDeletedProfile: () => isAnonymisedDeletedProfile,
     isBillableSelfEmployedDay: () => isBillableSelfEmployedDay,
+    isBookingUuid: () => isBookingUuid,
     isFileReportReason: () => isFileReportReason,
     isFileReportSurface: () => isFileReportSurface,
     isIdentifiablePendingLeftover: () => isIdentifiablePendingLeftover,
@@ -153,6 +165,8 @@ var ProjectPlannerCanonical = (() => {
     monthDayOffsetBefore: () => monthDayOffsetBefore,
     monthDayOrdinal: () => monthDayOrdinal,
     namedSlotKind: () => namedSlotKind,
+    normalizeBookingStatus: () => normalizeBookingStatus,
+    normalizeBookingTimeSlot: () => normalizeBookingTimeSlot,
     normalizeClaimedEmails: () => normalizeClaimedEmails,
     normalizeEmploymentType: () => normalizeEmploymentType,
     normalizeMaterialSearchText: () => normalizeMaterialSearchText,
@@ -171,6 +185,7 @@ var ProjectPlannerCanonical = (() => {
     organizationNameWriteFields: () => organizationNameWriteFields,
     organizationScopedKey: () => organizationScopedKey,
     paidHoursForNamedSlot: () => paidHoursForNamedSlot,
+    parseBookingDocument: () => parseBookingDocument,
     parseClockMinutes: () => parseClockMinutes,
     parseInvoicing: () => parseInvoicing,
     parseMaterialCutOff: () => parseMaterialCutOff,
@@ -480,8 +495,8 @@ var ProjectPlannerCanonical = (() => {
     if (typeof value === "number") {
       return Number.isFinite(value) && value >= 0 && value <= 24 * 60 ? Math.round(value) : null;
     }
-    const text = String(value ?? "").trim();
-    const match = /^(\d{1,2}):(\d{2})$/.exec(text);
+    const text2 = String(value ?? "").trim();
+    const match = /^(\d{1,2}):(\d{2})$/.exec(text2);
     if (!match) return null;
     const hours = Number(match[1]);
     const minutes = Number(match[2]);
@@ -756,12 +771,12 @@ var ProjectPlannerCanonical = (() => {
   function coverageWindow(input) {
     const timeZone = zoneOf(input.timeZone);
     const today = midnightInZone(new Date(input.referenceIso), timeZone);
-    const todayKey = dayKeyInZone(today, timeZone);
+    const todayKey2 = dayKeyInZone(today, timeZone);
     const mode = String(input.clashLookaheadMode || "endOfWorkingWeek");
     if (mode === "numberOfDays") {
       const days = Math.max(1, Math.min(Number(input.clashLookaheadDays) || 1, 366));
       return {
-        startDayKey: todayKey,
+        startDayKey: todayKey2,
         endDayKey: dayKeyInZone(addDaysInZone(today, days - 1, timeZone), timeZone)
       };
     }
@@ -947,9 +962,9 @@ var ProjectPlannerCanonical = (() => {
   }
   function qualificationExpiryRows(input) {
     const timeZone = zoneOf2(input.timeZone);
-    const todayKey = dayKeyFromIso(input.referenceIso, timeZone);
-    if (!todayKey) return [];
-    const endKey = addCalendarMonths(todayKey, 1);
+    const todayKey2 = dayKeyFromIso(input.referenceIso, timeZone);
+    if (!todayKey2) return [];
+    const endKey = addCalendarMonths(todayKey2, 1);
     const rows = [];
     for (const operative of input.operatives) {
       if (!operative.isActive) continue;
@@ -959,7 +974,7 @@ var ProjectPlannerCanonical = (() => {
         const name = String(expiry.name || "").trim();
         const expiryKey = dayKeyFromIso(expiry.expiryIso, timeZone);
         if (!name || !expiry.qualificationId || !expiryKey || expiryKey > endKey) continue;
-        const daysUntilExpiry = signedDayDelta(todayKey, expiryKey);
+        const daysUntilExpiry = signedDayDelta(todayKey2, expiryKey);
         const ago = Math.abs(daysUntilExpiry);
         const message = daysUntilExpiry < 0 ? `${operativeName}'s ${name} expired ${ago} day${ago === 1 ? "" : "s"} ago` : daysUntilExpiry === 0 ? `${operativeName}'s ${name} expires today` : `${operativeName}'s ${name} expires in ${daysUntilExpiry} day${daysUntilExpiry === 1 ? "" : "s"}`;
         rows.push({
@@ -981,8 +996,8 @@ var ProjectPlannerCanonical = (() => {
   }
   function unverifiedOperativeRows(input) {
     const timeZone = zoneOf2(input.timeZone);
-    const todayKey = dayKeyFromIso(input.referenceIso, timeZone);
-    if (!todayKey) return [];
+    const todayKey2 = dayKeyFromIso(input.referenceIso, timeZone);
+    if (!todayKey2) return [];
     const rows = [];
     for (const operative of input.operatives) {
       if (isAnonymisedDeletedProfile({ email: operative.email, name: operative.name })) continue;
@@ -991,7 +1006,7 @@ var ProjectPlannerCanonical = (() => {
       const person = input.people.find((candidate) => emailKey(candidate.email) === email && candidate.isOperativeMode);
       if (!person || person.passwordSet) continue;
       const createdKey = dayKeyFromIso(person.createdAtIso, timeZone);
-      if (!createdKey || workingDaysInclusive(createdKey, todayKey, timeZone) < 3) continue;
+      if (!createdKey || workingDaysInclusive(createdKey, todayKey2, timeZone) < 3) continue;
       const operativeName = String(operative.name || "").trim() || operative.email;
       rows.push({
         id: `unverified-${operative.id}`,
@@ -1265,8 +1280,8 @@ var ProjectPlannerCanonical = (() => {
   }
   function formatHours(hours) {
     const rounded = Math.round(hours * 4) / 4;
-    const text = Number.isInteger(rounded) ? String(rounded) : String(rounded).replace(/0+$/, "");
-    return `${text} hour${rounded === 1 ? "" : "s"}`;
+    const text2 = Number.isInteger(rounded) ? String(rounded) : String(rounded).replace(/0+$/, "");
+    return `${text2} hour${rounded === 1 ? "" : "s"}`;
   }
   function joinRanges(intervals) {
     const labels = intervals.map(rangeLabel);
@@ -2673,12 +2688,12 @@ var ProjectPlannerCanonical = (() => {
       };
     }
     const zone = zoneOrLondon(input.timeZone);
-    const todayKey = dayKeyInZone(input.now ?? /* @__PURE__ */ new Date(), zone);
+    const todayKey2 = dayKeyInZone(input.now ?? /* @__PURE__ */ new Date(), zone);
     if (input.effectiveAt === "immediate") {
       return { employmentType: next, employmentTypeTransitionFrom: null, employmentTypeEffectiveAt: null };
     }
     const when = validDay(input.effectiveAt);
-    if (!when || dayKeyInZone(when, zone) <= todayKey) {
+    if (!when || dayKeyInZone(when, zone) <= todayKey2) {
       return { employmentType: next, employmentTypeTransitionFrom: null, employmentTypeEffectiveAt: null };
     }
     return {
@@ -3886,6 +3901,253 @@ var ProjectPlannerCanonical = (() => {
   function canReviewFileReports(role) {
     if (role.isOperativeMode) return false;
     return role.isSuperAdmin || role.isAdmin;
+  }
+
+  // lib/canonical/bookings.ts
+  var BOOKING_STATUSES = ["Confirmed", "Tentative", "Cancelled", "Completed"];
+  var BOOKING_TIME_SLOTS = ["AM", "PM", "FULL DAY", "Evening", "Overtime", "CUSTOM_HOURS"];
+  var ORPHAN_BOOKING_LABEL = "Deleted job";
+  var STATUS_ALIASES = {
+    confirmed: "Confirmed",
+    tentative: "Tentative",
+    pending: "Tentative",
+    cancelled: "Cancelled",
+    canceled: "Cancelled",
+    completed: "Completed"
+  };
+  var UUID_PATTERN = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+  function text(value) {
+    return typeof value === "string" ? value.trim() : "";
+  }
+  function finiteNumber(value) {
+    return typeof value === "number" && Number.isFinite(value) ? value : void 0;
+  }
+  function isBookingUuid(value) {
+    return UUID_PATTERN.test(text(value));
+  }
+  function normalizeBookingStatus(raw) {
+    const value = text(raw);
+    if (!value) return null;
+    if (BOOKING_STATUSES.includes(value)) return value;
+    return STATUS_ALIASES[value.toLowerCase()] ?? null;
+  }
+  function normalizeBookingTimeSlot(raw) {
+    const value = text(raw);
+    if (!value) return null;
+    if (BOOKING_TIME_SLOTS.includes(value)) return value;
+    const compact = value.replace(/[_-]+/g, " ").replace(/\s+/g, " ").toUpperCase();
+    if (compact === "FULL DAY" || compact === "FULLDAY") return "FULL DAY";
+    if (compact === "CUSTOM" || compact === "CUSTOM HOURS" || compact === "CUSTOMHOURS") return "CUSTOM_HOURS";
+    if (compact === "AM" || compact === "MORNING") return "AM";
+    if (compact === "PM" || compact === "AFTERNOON") return "PM";
+    if (compact === "EVENING") return "Evening";
+    if (compact === "OVERTIME") return "Overtime";
+    return null;
+  }
+  function bookingDateMs(raw) {
+    if (raw == null || raw === "") return null;
+    if (typeof raw === "number") return Number.isFinite(raw) ? raw : null;
+    if (raw instanceof Date) return Number.isNaN(raw.getTime()) ? null : raw.getTime();
+    if (typeof raw === "string") {
+      const ms = Date.parse(raw.trim());
+      return Number.isNaN(ms) ? null : ms;
+    }
+    if (typeof raw === "object") {
+      const row = raw;
+      const seconds = finiteNumber(row.seconds) ?? finiteNumber(row._seconds);
+      if (seconds == null) return null;
+      const nanos = finiteNumber(row.nanoseconds) ?? finiteNumber(row._nanoseconds) ?? 0;
+      return seconds * 1e3 + Math.floor(nanos / 1e6);
+    }
+    return null;
+  }
+  function isTimestampShape(raw) {
+    if (!raw || typeof raw !== "object") return false;
+    const row = raw;
+    return finiteNumber(row.seconds) != null || finiteNumber(row._seconds) != null;
+  }
+  function bookingClock(raw, timeZone) {
+    if (raw != null && typeof raw !== "string") {
+      const ms = bookingDateMs(raw);
+      if (ms == null) return void 0;
+      const parts = partsInZone(new Date(ms), zoneOrLondon(timeZone));
+      return formatClockMinutes(parts.h * 60 + parts.min);
+    }
+    const value = text(raw);
+    if (!value) return void 0;
+    const ampm = value.match(/^(\d{1,2})(?::(\d{2}))?(?::\d{2})?\s*(AM|PM)$/i);
+    if (ampm) {
+      let hours = Number(ampm[1]);
+      const minutes2 = Number(ampm[2] || "0");
+      const pm = ampm[3].toUpperCase() === "PM";
+      if (hours === 12) hours = pm ? 12 : 0;
+      else if (pm) hours += 12;
+      if (hours > 23 || minutes2 > 59) return void 0;
+      return formatClockMinutes(hours * 60 + minutes2);
+    }
+    const withSeconds = value.match(/^(\d{1,2}:\d{2})(?::\d{2})?$/);
+    const minutes = withSeconds ? parseClockMinutes(withSeconds[1]) : null;
+    return minutes == null ? void 0 : formatClockMinutes(minutes);
+  }
+  function parseBookingDocument(docId, data, options) {
+    const row = data && typeof data === "object" ? data : {};
+    const repairs = [];
+    const errors = [];
+    let operativeId = text(row.operativeId);
+    if (!operativeId && text(row.operativeID)) {
+      operativeId = text(row.operativeID);
+      repairs.push("operative_id_alias");
+    }
+    let projectId = text(row.projectId);
+    if (!projectId && text(row.projectID)) {
+      projectId = text(row.projectID);
+      repairs.push("project_id_alias");
+    }
+    const dateMs = bookingDateMs(row.date);
+    if (dateMs != null && !isTimestampShape(row.date)) repairs.push("date_not_timestamp");
+    const rawStatus = text(row.status);
+    const status = normalizeBookingStatus(row.status);
+    if (status && status !== rawStatus) repairs.push("status_alias");
+    const rawSlot = text(row.timeSlot);
+    let timeSlot = normalizeBookingTimeSlot(row.timeSlot);
+    if (!rawSlot) {
+      timeSlot = "FULL DAY";
+      repairs.push("slot_missing_full_day");
+    } else if (timeSlot && timeSlot !== rawSlot) {
+      repairs.push("slot_alias");
+    }
+    const bookedBy = text(row.bookedBy);
+    if (!bookedBy) repairs.push("booked_by_missing");
+    if (!operativeId) errors.push("missing_operative_id");
+    if (!projectId) errors.push("missing_project_id");
+    if (dateMs == null) errors.push("missing_date");
+    if (!status) errors.push("bad_status");
+    if (!timeSlot) errors.push("bad_time_slot");
+    if (errors.length > 0 || dateMs == null || !status || !timeSlot) return { ok: false, errors };
+    const booking = {
+      id: text(docId),
+      operativeId,
+      projectId,
+      dateMs,
+      timeSlot,
+      status,
+      bookedBy,
+      notes: text(row.notes),
+      isBreakRemoved: row.isBreakRemoved === true,
+      operativeIdIsUuid: isBookingUuid(operativeId),
+      projectIdIsUuid: isBookingUuid(projectId)
+    };
+    const workStartTime = bookingClock(row.workStartTime, options?.timeZone);
+    const workEndTime = bookingClock(row.workEndTime, options?.timeZone);
+    const otMultiplierOverride = finiteNumber(row.otMultiplierOverride);
+    const bookingGroupId = text(row.bookingGroupId);
+    const createdAtMs = bookingDateMs(row.createdAt);
+    const updatedAtMs = bookingDateMs(row.updatedAt);
+    if (workStartTime) booking.workStartTime = workStartTime;
+    if (workEndTime) booking.workEndTime = workEndTime;
+    if (otMultiplierOverride != null) booking.otMultiplierOverride = otMultiplierOverride;
+    if (bookingGroupId) booking.bookingGroupId = bookingGroupId;
+    if (createdAtMs != null) booking.createdAtMs = createdAtMs;
+    if (updatedAtMs != null) booking.updatedAtMs = updatedAtMs;
+    return { ok: true, booking, repairs };
+  }
+  function bookingWriteFields(input) {
+    const errors = [];
+    const id = text(input.id);
+    const operativeId = text(input.operativeId);
+    const projectId = text(input.projectId);
+    const bookedBy = text(input.bookedBy);
+    const status = normalizeBookingStatus(input.status);
+    const timeSlot = normalizeBookingTimeSlot(input.timeSlot);
+    const dateMs = finiteNumber(input.dateMs);
+    if (!id) errors.push("missing_id");
+    if (!operativeId) errors.push("missing_operative_id");
+    if (!projectId) errors.push("missing_project_id");
+    if (dateMs == null) errors.push("missing_date");
+    if (!timeSlot) errors.push("bad_time_slot");
+    if (!bookedBy) errors.push("missing_booked_by");
+    if (!status) errors.push("bad_status");
+    if (errors.length > 0 || dateMs == null || !status || !timeSlot) return { ok: false, errors };
+    const fields = {
+      id,
+      operativeId,
+      projectId,
+      date: dateMs,
+      timeSlot,
+      bookedBy,
+      notes: text(input.notes),
+      status,
+      isBreakRemoved: input.isBreakRemoved === true,
+      createdAt: finiteNumber(input.createdAtMs) ?? dateMs,
+      updatedAt: finiteNumber(input.updatedAtMs) ?? dateMs
+    };
+    const workStartTime = bookingClock(input.workStartTime);
+    const workEndTime = bookingClock(input.workEndTime);
+    const otMultiplierOverride = finiteNumber(input.otMultiplierOverride);
+    const bookingGroupId = text(input.bookingGroupId);
+    if (workStartTime) fields.workStartTime = workStartTime;
+    if (workEndTime) fields.workEndTime = workEndTime;
+    if (otMultiplierOverride != null) fields.otMultiplierOverride = otMultiplierOverride;
+    if (bookingGroupId) fields.bookingGroupId = bookingGroupId;
+    return { ok: true, fields };
+  }
+  function todayKey(nowIso, timeZone) {
+    const zone = zoneOrLondon(timeZone);
+    const now = new Date(nowIso);
+    return dayKeyInZone(Number.isNaN(now.getTime()) ? /* @__PURE__ */ new Date() : now, zone);
+  }
+  function onOrAfterToday(dateMs, today, timeZone) {
+    if (!Number.isFinite(dateMs)) return false;
+    return dayKeyInZone(new Date(dateMs), zoneOrLondon(timeZone)) >= today;
+  }
+  function bookingsToRemoveOnOperativeDelete(input) {
+    const ids = new Set(input.operativeIds.map((id) => text(id).toUpperCase()).filter(Boolean));
+    if (ids.size === 0) return [];
+    const today = todayKey(input.nowIso, input.timeZone);
+    return input.bookings.filter((row) => ids.has(text(row.operativeId).toUpperCase()) && onOrAfterToday(row.dateMs, today, input.timeZone)).map((row) => row.id);
+  }
+  function bookingsToRemoveOnProjectDelete(input) {
+    const projectId = text(input.projectId).toUpperCase();
+    if (!projectId) return [];
+    const today = todayKey(input.nowIso, input.timeZone);
+    return input.bookings.filter((row) => text(row.projectId).toUpperCase() === projectId && onOrAfterToday(row.dateMs, today, input.timeZone)).map((row) => row.id);
+  }
+  function bookingJobState(projectId, liveProjectIds) {
+    const id = text(projectId).toUpperCase();
+    if (!id) return "deleted_job";
+    const ids = Array.isArray(liveProjectIds) ? liveProjectIds : Array.from(liveProjectIds);
+    return ids.some((row) => text(row).toUpperCase() === id) ? "live" : "deleted_job";
+  }
+  function bookingJobLabel(projectName) {
+    return text(projectName) || ORPHAN_BOOKING_LABEL;
+  }
+  function bookingHealthRows(input) {
+    const people = new Set([...input.operativeIds, ...input.userIds].map((id) => text(id).toUpperCase()).filter(Boolean));
+    const jobs = new Set(input.projectIds.map((id) => text(id).toUpperCase()).filter(Boolean));
+    const rows = [];
+    for (const doc of input.docs) {
+      const parsed = parseBookingDocument(doc.id, doc.data);
+      if (!parsed.ok) {
+        rows.push({ id: doc.id, kind: "refused", detail: parsed.errors.join(", ") });
+        continue;
+      }
+      const booking = parsed.booking;
+      if (parsed.repairs.length > 0) rows.push({ id: doc.id, kind: "repaired", detail: parsed.repairs.join(", ") });
+      if (!people.has(booking.operativeId.toUpperCase())) {
+        rows.push({ id: doc.id, kind: "missing_operative", detail: booking.operativeId });
+      }
+      if (!jobs.has(booking.projectId.toUpperCase())) {
+        rows.push({ id: doc.id, kind: "missing_job", detail: booking.projectId });
+      }
+      if (!booking.operativeIdIsUuid || !booking.projectIdIsUuid) {
+        rows.push({
+          id: doc.id,
+          kind: "ios_cannot_read",
+          detail: !booking.operativeIdIsUuid ? `operativeId ${booking.operativeId}` : `projectId ${booking.projectId}`
+        });
+      }
+    }
+    return rows;
   }
   return __toCommonJS(bundleEntry_exports);
 })();

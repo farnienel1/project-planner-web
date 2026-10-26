@@ -5,7 +5,6 @@
 
 import { z } from 'zod'
 import {
-  BOOKING_STATUSES,
   DEADLINE_STATUSES,
   EMPLOYMENT_TYPES,
   HOLIDAY_STATUSES,
@@ -20,14 +19,11 @@ import {
   SITE_AUDIT_TYPES,
   TASK_PRIORITIES,
   TASK_STATUSES,
-  TIME_SLOTS,
   USER_ROLES,
 } from './enums'
 
 export const userRoleSchema = z.enum(USER_ROLES)
 export const employmentTypeSchema = z.enum(EMPLOYMENT_TYPES)
-export const bookingStatusSchema = z.enum(BOOKING_STATUSES)
-export const timeSlotSchema = z.enum(TIME_SLOTS)
 export const managerTimeSlotSchema = z.enum(MANAGER_TIME_SLOTS)
 export const managerLocationTypeSchema = z.enum(MANAGER_LOCATION_TYPES)
 export const holidayStatusSchema = z.enum(HOLIDAY_STATUSES)
@@ -61,23 +57,7 @@ export const userPermissionsSchema = z.object({
   developerAccess: z.boolean().optional(),
 })
 
-export const bookingWriteSchema = z.object({
-  id: z.string().min(1),
-  operativeId: z.string().min(1),
-  projectId: z.string().min(1),
-  date: z.date(),
-  timeSlot: timeSlotSchema,
-  bookedBy: z.string().min(1),
-  notes: z.string(),
-  status: bookingStatusSchema,
-  workStartTime: z.string().optional(),
-  workEndTime: z.string().optional(),
-  isBreakRemoved: z.boolean(),
-  otMultiplierOverride: z.number().optional(),
-  bookingGroupId: z.string().optional(),
-  createdAt: z.date(),
-  updatedAt: z.date(),
-})
+// The booking write shape is bookingWriteFields in lib/canonical/bookings.ts.
 
 export const managerSiteBookingWriteSchema = z.object({
   id: z.string().min(1),

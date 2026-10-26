@@ -9,6 +9,7 @@ import {
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import { slotKey, slotToFirestore, type ScheduleDateSlot } from '@/lib/scheduling/scheduleUtils'
 import type { SchedulablePerson, SchedulablePersonKind } from '@/lib/scheduling/scheduleRosterUtils'
+import { ORPHAN_BOOKING_LABEL } from '@/lib/canonical'
 
 export type DayBookingState = 'free' | 'clash_pending' | 'clash_accepted' | 'removed'
 
@@ -30,7 +31,7 @@ function emailKey(value: string | undefined): string {
 
 function projectLabel(projectId: string, projects: Project[]): string {
   const project = projects.find((p) => p.id === projectId)
-  if (!project) return 'Another job'
+  if (!project) return ORPHAN_BOOKING_LABEL
   return `${project.jobNumber} ${project.siteName}`.trim()
 }
 
