@@ -65,7 +65,43 @@ export const USER_DOCUMENT_FIELDS = [
   'pushTokens',
   'pushTokenUpdatedAt',
   'notificationPreferences',
+  'formerUserIds',
 ] as const
+
+/**
+ * `users/{authUid}.formerUserIds`: invite placeholder ids this account used
+ * before sign-up. Bookings, leave, and warning exclusions saved under a
+ * placeholder stay with the person after the placeholder document is deleted.
+ */
+export const USER_FORMER_IDS_FIELD = 'formerUserIds'
+
+/** Read `formerUserIds` as a clean id list. */
+export function parseFormerUserIds(data: Record<string, unknown> | null | undefined): string[] {
+  const raw = data?.[USER_FORMER_IDS_FIELD]
+  if (!Array.isArray(raw)) return []
+  const ids = new Set<string>()
+  for (const value of raw) {
+    const id = typeof value === 'string' ? value.trim() : ''
+    if (id) ids.add(id)
+  }
+  return [...ids]
+}
+
+/**
+ * Fields to write on `users/{authUid}` when an invite placeholder is copied onto it.
+ * Keeps every id already recorded and adds the placeholder id. Writing the
+ * account's own id, or a blank id, changes nothing.
+ */
+export function inviteMigrationFormerIdWriteFields(input: {
+  placeholderId: string | null | undefined
+  authUid: string
+  existing?: Record<string, unknown> | null
+}): Record<string, string[]> {
+  const ids = parseFormerUserIds(input.existing)
+  const placeholder = String(input.placeholderId || '').trim()
+  if (placeholder && placeholder !== input.authUid.trim() && !ids.includes(placeholder)) ids.push(placeholder)
+  return ids.length > 0 ? { [USER_FORMER_IDS_FIELD]: ids } : {}
+}
 
 /**
  * Self-create only (`request.auth.uid == userId`). Admin/manager invite

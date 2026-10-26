@@ -1,4 +1,6 @@
 import type { Operative, User } from '@/types'
+import { labourBookingKind } from '@/lib/canonical'
+import { labourPersonFromUser } from '@/lib/warnings/unbookedLabourWarnings'
 import { getActiveOperativesForScheduling } from '@/lib/operatives/operativeRosterUtils'
 import { isPendingPerson } from '@/lib/staff/pendingPeople'
 import {
@@ -31,6 +33,10 @@ function roleBadge(user: User | undefined): string {
   return 'Operative'
 }
 
+function bookingKindOf(user: User) {
+  return labourBookingKind(labourPersonFromUser(user))
+}
+
 /**
  * Operatives-list user documents (`getOperativeModeUsers`) that can be booked:
  * a current person (never an anonymised Deleted user) who is active. `passwordSet`
@@ -38,7 +44,11 @@ function roleBadge(user: User | undefined): string {
  * Add User does not write `operativeProfiles` (`inviteWritesOperativeProfile` is false).
  */
 function schedulableOperativeListUsers(users: User[]): User[] {
-  return getOperativeModeUsers(users).filter((user) => isCurrentLabourUser(user) && user.isActive)
+  // `labourBookingKind` is the same split `unbookedLabourRows` uses, so a user who is never
+  // flagged as unbooked labour is not offered here either.
+  return getOperativeModeUsers(users).filter(
+    (user) => isCurrentLabourUser(user) && user.isActive && bookingKindOf(user) === 'operative'
+  )
 }
 
 /**
@@ -111,7 +121,12 @@ export function buildSchedulablePeople(
     })
   }
 
-  for (const user of getManagerUsers(accepted).filter((row) => isCurrentLabourUser(row) && row.passwordSet && row.isActive)) {
+  // Managers list first, then any other account the rulebook books as a manager (an admin by role
+  // with no adminAccess flag is still flagged as unbooked, so it must be bookable).
+  const managerCandidates = [...getManagerUsers(accepted), ...accepted].filter(
+    (row) => isCurrentLabourUser(row) && row.passwordSet && row.isActive && bookingKindOf(row) === 'manager'
+  )
+  for (const user of managerCandidates) {
     const email = emailKey(user.email)
     if (email && seenEmails.has(email)) continue
     if (email) seenEmails.add(email)

@@ -9,6 +9,7 @@ import { isValidUuid } from '@/lib/security/validation'
 import { ensurePrimaryOrgMembership } from '@/lib/orgMembership/membershipService'
 import { ageConfirmationWriteFields } from '@/lib/legal/ageConfirmation'
 import { isAnonymisedDeletedProfile } from '@/lib/canonical/userRosterSegment'
+import { inviteMigrationFormerIdWriteFields } from '@/lib/canonical/userProfile'
 
 export type InvitationSummary = {
   invitationId: string
@@ -222,6 +223,12 @@ export async function completeInvitationPasswordSetup(params: {
         accountConfirmed: true,
         updatedAt: now,
         ...ageConfirmationWriteFields(now),
+        // Bookings, leave, and warning exclusions saved under the placeholder id stay with this person.
+        ...inviteMigrationFormerIdWriteFields({
+          placeholderId,
+          authUid,
+          existing: claimedUser,
+        }),
       }
     : userDocFromInvitation(record, now)
   if (!ownUser) {

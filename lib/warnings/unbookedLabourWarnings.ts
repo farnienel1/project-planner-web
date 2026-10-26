@@ -2,10 +2,9 @@ import type { OrgPayrollTimePolicy, OrgWarningDetectionSettings } from '@/lib/se
 import { DEFAULT_PAYROLL_POLICY } from '@/lib/settings/organizationSettings'
 import { effectiveWeekendSettings } from '@/lib/setup/workingHoursUtils'
 import type { LabourPerson, RosterOperative } from '@/lib/canonical'
-import { unbookedLabourRows } from '@/lib/canonical'
+import { bookingOccupiesDay, unbookedLabourRows } from '@/lib/canonical'
 import type { Booking, HolidayBooking, Operative, User } from '@/types'
 import { UserRole } from '@/types'
-import { isActiveBookingStatus } from '@/lib/ios-parity/enums'
 import { addLondonDays, dateFromDayKey, dayKey, londonIsoWeekday, londonMidnight } from '@/lib/ios-parity/londonTime'
 import { formatWarningHours } from '@/lib/warnings/clashIntervals'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
@@ -28,7 +27,8 @@ function countsAsHours(day: 'saturday' | 'sunday', payrollPolicy: OrgPayrollTime
   return typeof countsAs === 'number' && Number.isFinite(countsAs) ? countsAs : payrollPolicy.standardPaidHours
 }
 
-function labourPerson(user: User): LabourPerson {
+/** Web `User` → the rulebook's `LabourPerson`. Warnings, Daily Overview, and the scheduling picker all map through here. */
+export function labourPersonFromUser(user: User): LabourPerson {
   return {
     id: user.id,
     email: user.email,
@@ -40,10 +40,12 @@ function labourPerson(user: User): LabourPerson {
     isManager: Boolean(user.permissions?.manager),
     isAdmin: Boolean(user.permissions?.adminAccess) || user.role === UserRole.ADMIN,
     isSuperAdmin: Boolean(user.isSuperAdmin),
+    formerIds: user.formerUserIds ?? [],
   }
 }
 
-function rosterOperative(operative: Operative): RosterOperative {
+/** Web `Operative` → the rulebook's `RosterOperative`. */
+export function labourRosterOperative(operative: Operative): RosterOperative {
   return {
     id: operative.id,
     email: operative.email,
@@ -164,13 +166,13 @@ export function computeUnbookedLabourWarningsForDateRange({
     standardDayEnd: payrollPolicy.standardDayEnd,
     breakWindowStart: payrollPolicy.breakWindowStart,
     breakWindowEnd: payrollPolicy.breakWindowEnd,
-    people: users.map(labourPerson),
-    operatives: operatives.map(rosterOperative),
+    people: users.map(labourPersonFromUser),
+    operatives: operatives.map(labourRosterOperative),
     bookings: [
       ...bookings
         .filter(
           (booking) =>
-            isActiveBookingStatus(booking.status) &&
+            bookingOccupiesDay(booking.status) &&
             Boolean(booking.operativeId) &&
             isDateWithinWarningWindow(booking.date, windowStart, windowEnd, timeZone)
         )
