@@ -519,3 +519,6 @@ export type {
   SensitiveProfileField,
   SensitiveProfileWriteResult,
 } from './sensitiveProfile'
+
+export { PAYE_PAY_CELL_LABEL, reportPayCell, reportPayTotal, reportPersonPayCell } from './reportPay'
+export type { ReportPayCell, ReportPayLineInput } from './reportPay'

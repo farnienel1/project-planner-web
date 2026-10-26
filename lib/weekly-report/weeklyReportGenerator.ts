@@ -111,7 +111,7 @@ export function buildWeeklyReportHtml(data: WeeklyReportData): string {
         escapeHtml(line.rateType),
         escapeHtml(line.quantityText ?? formatDays(line.days)),
         escapeHtml(line.rateText ?? formatCurrency(line.rate)),
-        formatCurrency(line.pay),
+        line.payLabel ?? formatCurrency(line.pay),
       ])
     }
     payRows.push([
@@ -120,7 +120,7 @@ export function buildWeeklyReportHtml(data: WeeklyReportData): string {
       '',
       '',
       '',
-      `<strong>${formatCurrency(person.personTotal)}</strong>`,
+      `<strong>${person.personTotalLabel ?? formatCurrency(person.personTotal)}</strong>`,
     ])
     payRows.push(['', '', '', '', '', ''])
   }
@@ -388,10 +388,10 @@ export function buildWeeklyReportSpreadsheetXml(data: WeeklyReportData): string 
         line.rateType,
         line.quantityText ?? formatDays(line.days),
         line.rateText ?? formatCurrency(line.rate),
-        formatCurrency(line.pay),
+        line.payLabel ?? formatCurrency(line.pay),
       ])
     }
-    payRows.push([`${person.person} total`, '', '', '', '', formatCurrency(person.personTotal)])
+    payRows.push([`${person.person} total`, '', '', '', '', person.personTotalLabel ?? formatCurrency(person.personTotal)])
     payRows.push(['', '', '', '', '', ''])
   }
   payRows.push(['', '', '', '', 'Grand Total', formatCurrency(data.grandTotal)])

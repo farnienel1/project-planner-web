@@ -9,7 +9,7 @@ import type { OrganizationDetails } from '@/lib/settings/organizationSettings'
 import { includesManagerScheduleLocation } from '@/lib/settings/organizationSettings'
 import { ianaTimeZoneForCountry } from '@/lib/orgTime/orgTimeZone'
 import { computeManagerBookingClashWarnings } from '@/lib/warnings/managerClashWarnings'
-import { isAnonymisedDeletedProfile } from '@/lib/canonical'
+import { employmentTypeOnDay, isAnonymisedDeletedProfile, reportPayCell, reportPayTotal, reportPersonPayCell } from '@/lib/canonical'
 import { computeUnbookedLabourWarningsForDateRange } from '@/lib/warnings/unbookedLabourWarnings'
 import type { Booking, HolidayBooking, Operative, Project, User } from '@/types'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
@@ -109,8 +109,14 @@ export type WeeklyReportPayPerson = {
     pay: number
     quantityText?: string
     rateText?: string
+    /** True for a PAYE line: hours count, pay is not shown or totalled (`reportPayCell`). */
+    isPaye?: boolean
+    /** `PAYE` when the pay cell shows that instead of a figure. */
+    payLabel?: string | null
   }[]
   personTotal: number
+  /** `PAYE` when every line is PAYE (`reportPersonPayCell`). */
+  personTotalLabel?: string | null
 }
 
 export type WeeklyReportMoneyRow = {
@@ -620,10 +626,12 @@ export function buildWeeklyReportData({
   }
 
   for (const { week, line } of timesheetLabourLines(timesheetWeeks, period.start, period.end, timeZone)) {
+    const weekUser = users.find((entry) => entry.id === week.userId)
+    const isPaye = Boolean(weekUser && employmentTypeOnDay(weekUser, line.date, timeZone) === 'paye')
     addPaySlice(
       week.personName,
       week.role,
-      signedLabourSlice(line, standardHours, line.otMultiplier ?? null)
+      signedLabourSlice(line, standardHours, line.otMultiplier ?? null, isPaye)
     )
   }
 
@@ -639,19 +647,26 @@ export function buildWeeklyReportData({
       summary = { person: bucket.person, role: bucket.role, lines: [], personTotal: 0 }
       grouped.set(personKey, summary)
     }
+    const cell = reportPayCell({ isPaye: bucket.slice.isPaye, pay: shown.pay })
     summary.lines.push({
       rateType: shown.rateType,
       days: roundPennies(shown.days),
       rate: shown.rate,
-      pay: shown.pay,
+      pay: cell.pay ?? 0,
       quantityText: shown.quantityText,
       rateText: shown.rateText,
+      isPaye: bucket.slice.isPaye,
+      payLabel: cell.label,
     })
-    summary.personTotal = roundPennies(summary.personTotal + shown.pay)
+  }
+  const settlePerson = (summary: WeeklyReportPayPerson) => {
+    const cell = reportPersonPayCell(summary.lines.map((line) => ({ isPaye: line.isPaye === true, pay: line.pay })))
+    summary.personTotal = cell.pay ?? 0
+    summary.personTotalLabel = cell.label
   }
   for (const summary of grouped.values()) {
+    settlePerson(summary)
     paySummary.push(summary)
-    grandTotal += summary.personTotal
   }
 
   const addMoneyPay = (person: string, role: string, rateType: string, pay: number) => {
@@ -669,8 +684,7 @@ export function buildWeeklyReportData({
       quantityText: '',
       rateText: '',
     })
-    summary.personTotal = roundPennies(summary.personTotal + pay)
-    grandTotal += pay
+    settlePerson(summary)
   }
   for (const { week, line } of timesheetMoneyLines(timesheetWeeks, 'priceWork', period.start, period.end, timeZone)) {
     addMoneyPay(week.personName, week.role, 'Price work', line.amount)
@@ -678,6 +692,10 @@ export function buildWeeklyReportData({
   for (const { week, line } of timesheetMoneyLines(timesheetWeeks, 'expenses', period.start, period.end, timeZone)) {
     addMoneyPay(week.personName, week.role, 'Expenses', line.amount)
   }
+
+  grandTotal = reportPayTotal(
+    paySummary.flatMap((summary) => summary.lines.map((line) => ({ isPaye: line.isPaye === true, pay: line.pay })))
+  )
 
   const projectGroups = Array.from(projectGroupsMap.values()).sort((a, b) =>
     a.projectName.localeCompare(b.projectName)

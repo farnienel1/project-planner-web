@@ -225,6 +225,7 @@ export function labourPaySlices({
   return slices
 }
 
+/** `isPaye` is `employmentTypeOnDay` for the line's day; a PAYE line keeps its hours and shows no pay (`reportPayCell`). */
 export function signedLabourSlice(line: {
   paidHours: number
   days: number
@@ -232,7 +233,7 @@ export function signedLabourSlice(line: {
   isOvertime: boolean
   payBasis?: string | null
   otMultiplier?: number | null
-}, standardHours: number, otMultiplier: number | null): LabourPaySlice {
+}, standardHours: number, otMultiplier: number | null, isPaye = false): LabourPaySlice {
   const payBasis: PayBasis = line.payBasis === 'hourly' ? 'hourly' : 'day'
   const standard = orgDayHours(standardHours)
   const paidHours = line.paidHours > 0 ? line.paidHours : payBasis === 'day' ? line.days * standard : 0
@@ -245,8 +246,8 @@ export function signedLabourSlice(line: {
     otMultiplier: line.isOvertime ? storedMultiplier : null,
     rate,
     paidHours,
-    pay: roundPennies(line.amount),
-    isPaye: false,
+    pay: isPaye ? 0 : roundPennies(line.amount),
+    isPaye,
   }
 }
 

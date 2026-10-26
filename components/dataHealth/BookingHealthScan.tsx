@@ -33,7 +33,7 @@ const KIND_COPY: Record<BookingHealthKind, string> = {
   repaired: 'Legacy spelling — readable, re-save to fix',
   missing_operative: 'Person no longer exists',
   missing_job: 'Job deleted — shows as “Deleted job”',
-  ios_cannot_read: 'Id iOS cannot hold — hidden on iOS',
+  ios_cannot_read: 'Id is not a UUID — iOS keeps it as a stored id',
 }
 
 async function allIds(orgId: string, name: string): Promise<string[]> {

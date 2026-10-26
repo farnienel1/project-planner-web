@@ -318,6 +318,8 @@ export {
 
 export { legalPackNeedsAcceptance } from './legalPack'
 
+export { PAYE_PAY_CELL_LABEL, reportPayCell, reportPayTotal, reportPersonPayCell } from './reportPay'
+
 export {
   SENSITIVE_EXPORT_OPTION_LABEL,
   SENSITIVE_HELD_BY_ADMIN_COPY,

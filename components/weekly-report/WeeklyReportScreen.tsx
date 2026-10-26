@@ -657,9 +657,9 @@ export function WeeklyReportScreen({
                   line.rateType,
                   line.quantityText ?? formatDays(line.days),
                   line.rateText ?? formatCurrency(line.rate),
-                  formatCurrency(line.pay),
+                  line.payLabel ?? formatCurrency(line.pay),
                 ]),
-                ['', '', `${person.person} total`, '', '', formatCurrency(person.personTotal)],
+                ['', '', `${person.person} total`, '', '', person.personTotalLabel ?? formatCurrency(person.personTotal)],
               ]),
               ['', '', '', '', 'Grand Total', formatCurrency(report.grandTotal)],
             ]}

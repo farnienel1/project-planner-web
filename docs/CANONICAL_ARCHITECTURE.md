@@ -102,6 +102,16 @@ One rule decides where the morning ends and the afternoon starts. Clash detectio
 
 Because AM and PM are disjoint by construction, an AM booking never clashes with PM leave, and a PM booking never clashes with AM leave.
 
+## Stored bookings on iOS
+
+iOS now reads every booking document through `parseBookingDocument` (batched by `CanonicalBusinessEngine.parseBookingDocuments`), the same reader as `lib/ios-parity/converters.ts` `parseBooking`. A booking whose `operativeId` or `projectId` is not a UUID (an Operatives-list person booked under their `users/{uid}` id by `buildSchedulablePeople`) is no longer hidden on iOS: Swift keeps the stored string beside a stable UUID and sends the stored string to `unbookedLabourRows`, `unbookedLabourRowsOnDay`, and `leaveCoverageRows`. The Data Health `ios_cannot_read` row now means "an id iOS holds as a stored string", not "hidden on iOS". Coverage ids are compared as exact strings in `unbookedLabourRows`, so a `users/{uid}` id that is a lowercase UUID still will not match an uppercase operative id; both apps write uppercase UUIDs.
+
+## Weekly report pay
+
+`reportPayCell`, `reportPersonPayCell`, `reportPayTotal`, and `PAYE_PAY_CELL_LABEL` are `lib/canonical/reportPay.ts`. A PAYE line (`employmentTypeOnDay` is `paye` on that day) keeps its bookings, days, and hours; its pay cell reads `PAYE`, not £0, and it adds nothing to a person total or the grand total. A person who is PAYE on every line reads `PAYE` on the total row; a mid-period change totals only the self-employed lines. A line with no rate shows no figure and is not labelled PAYE. `buildWeeklyReportData` sets `payLabel` / `isPaye` on each pay line and `personTotalLabel` on each person, and the screen, HTML print, XLSX, and PDF render `payLabel ?? formatCurrency(pay)`. Approved timesheet lines on a PAYE day (`signedLabourSlice(..., isPaye)`) keep their hours and carry no pay. iOS calls the same three functions from `WeeklyReportView`.
+
+Open: weekly-report hours are still two calculators, `lib/timesheets/timesheetHours.ts` (web, wall clock minus break, overtime is paid − standard) and `PayrollHoursEngine` (iOS, overtime is time outside the standard window, weighted by the multiplier). They agree on a plain weekday overtime day and can differ on weekend custom windows and early starts. Moving them into the rulebook touches Timesheets, which needs the owner's go-ahead.
+
 ## Annual leave against bookings
 
 `leaveCoverageRows` runs over the same coverage window as the other warnings and only looks at approved leave. Leave is FULL DAY, AM, or PM; anything else stored on a holiday document is treated as FULL DAY.
