@@ -1161,3 +1161,22 @@ test('active issue count includes qualifications and counts manager overlaps as 
   assert.equal(result.lowCount, 1)
   assert.equal(result.coreCount, 3)
 })
+
+test('a re-added person booked twice on one day under an old and a new id is a clash', () => {
+  const oldRow = operative({ id: 'OP-OLD', email: 'rehired@site.test', firstName: 'Re', lastName: 'Hired' })
+  const rehired = user({ id: 'uid-rehired', email: 'rehired@site.test', firstName: 'Re', surname: 'Hired', formerUserIds: ['PLACEHOLDER-1'] })
+  const solo = user({ id: 'uid-solo', email: 'solo@site.test', firstName: 'Solo', surname: 'Person', formerUserIds: ['PLACEHOLDER-2'] })
+  const clashes = computeOperativeBookingClashWarnings(
+    [
+      booking({ id: 'A', operativeId: 'OP-OLD', projectId: 'P1', timeSlot: 'FULL DAY' }),
+      booking({ id: 'B', operativeId: 'uid-rehired', projectId: 'P2', timeSlot: 'FULL DAY' }),
+      booking({ id: 'C', operativeId: 'PLACEHOLDER-2', projectId: 'P1', timeSlot: 'AM', date: new Date('2026-10-22T00:00:00Z') }),
+      booking({ id: 'D', operativeId: 'uid-solo', projectId: 'P2', timeSlot: 'AM', date: new Date('2026-10-22T00:00:00Z') }),
+    ],
+    [oldRow],
+    [project('P1'), project('P2')],
+    { users: [rehired, solo], payrollPolicy: DEFAULT_PAYROLL_POLICY }
+  )
+  assert.deepEqual(clashes.map((clash) => clash.id).sort(), ['A|B', 'C|D'])
+  assert.equal(clashes.find((clash) => clash.id === 'C|D')?.operativeName, 'Solo Person', 'no catalogue row: named from the account')
+})

@@ -1,4 +1,5 @@
 import { format } from 'date-fns'
+import { bookingOccupiesDay } from '@/lib/canonical'
 import { getDayKindForBookings } from '@/lib/annualLeave/dayStatus'
 import { findOperativeForUser } from '@/lib/operatives/operativeRosterUtils'
 import { mergeProjectsAndSmallWorks } from '@/lib/projects/workStatus'
@@ -221,7 +222,10 @@ export function buildWeeklyReportData({
     ? computeInvoicingPeriod(period.end, orgDetails.invoicing, timeZone)
     : null
 
-  const periodOperativeBookings = bookings.filter((booking) => isDateWithinReportPeriod(booking.date, period))
+  // Cancelled bookings are not work: `bookingOccupiesDay`, the same rule iOS and the other screens use.
+  const periodOperativeBookings = bookings.filter(
+    (booking) => isDateWithinReportPeriod(booking.date, period) && bookingOccupiesDay(booking.status)
+  )
   const periodManagerBookings = managerSiteBookings.filter((booking) => {
     if (!isDateWithinReportPeriod(booking.date, period)) return false
     const options = orgDetails?.myScheduleOptions
@@ -326,9 +330,13 @@ export function buildWeeklyReportData({
   const usersForOperative = (operativeId: string | undefined): string[] => {
     if (!operativeId) return []
     const operative = operatives.find((entry) => entry.id === operativeId)
-    if (!operative) return []
-    const linked = users.filter((user) => findOperativeForUser(user, [operative])?.id === operative.id)
-    const ids = linked.flatMap((user) => aliasIdsFor(user.id))
+    const linked = operative
+      ? users.filter((user) => findOperativeForUser(user, [operative])?.id === operative.id)
+      : []
+    // A booking under a users id or former invite id has no catalogue row; its timesheet must still cover it.
+    const { user } = findUserAndOperative(users, operatives, { operativeId })
+    if (user && !linked.some((row) => row.id === user.id)) linked.push(user)
+    const ids = linked.flatMap((row) => aliasIdsFor(row.id))
     return Array.from(new Set(ids))
   }
 

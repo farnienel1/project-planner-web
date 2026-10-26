@@ -491,7 +491,20 @@ export {
   normalizeBookingStatus,
   normalizeBookingTimeSlot,
   parseBookingDocument,
+  MANAGER_LOCATION_TYPES,
+  MANAGER_TIME_SLOTS,
+  normalizeManagerBookingTimeSlot,
+  parseManagerSiteBookingDocument,
 } from './bookings'
+
+export { bookingIdsForAccount, bookingPersonKey, resolveBookingPerson } from './bookingPerson'
+export type {
+  BookingPersonAccount,
+  BookingPersonInput,
+  BookingPersonOperative,
+  ResolvedBookingPerson,
+} from './bookingPerson'
+export type { CanonicalManagerSiteBooking, ManagerBookingLocationType, ManagerBookingTimeSlot, ManagerSiteBookingParseResult } from './bookings'
 
 export type {
   BookingHealthKind,
