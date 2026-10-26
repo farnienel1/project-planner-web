@@ -32,6 +32,7 @@ import {
 } from '@/lib/deadlines/types'
 import type { Deadline, DeadlineUrgency } from '@/lib/deadlines/types'
 import type { SiteAudit } from '@/types'
+import { ReportFileLink } from '@/components/fileReports/ReportFileLink'
 
 export type DeadlinePerson = { id: string; name: string; subtitle: string; isLive: boolean }
 
@@ -238,12 +239,15 @@ export function DetailSheet({
             <h3 className="mb-2 text-[11px] font-bold tracking-[0.08em] text-[var(--ink3)]">ATTACHED</h3>
             <div className="card divide-y divide-[var(--line)]">
               {item.fileURL ? (
-                <a className="block px-4 py-3 text-sm font-semibold" href={item.fileURL} target="_blank" rel="noreferrer">
-                  {item.fileName || 'Attached file'}
-                  {/\.(png|jpe?g|webp|gif|heic)$/i.test(item.fileName || item.fileURL) ? (
-                    <img src={item.fileURL} alt="" className="mt-2 max-h-48 rounded-lg object-cover" />
-                  ) : null}
-                </a>
+                <div className="px-4 py-3">
+                  <a className="block text-sm font-semibold" href={item.fileURL} target="_blank" rel="noreferrer">
+                    {item.fileName || 'Attached file'}
+                    {/\.(png|jpe?g|webp|gif|heic)$/i.test(item.fileName || item.fileURL) ? (
+                      <img src={item.fileURL} alt="" className="mt-2 max-h-48 rounded-lg object-cover" />
+                    ) : null}
+                  </a>
+                  <ReportFileLink fileRef={item.fileURL} surface="deadline" parentId={item.id} fileName={item.fileName} />
+                </div>
               ) : item.fileName ? (
                 <p className="px-4 py-3 text-sm font-semibold">{item.fileName}</p>
               ) : null}
@@ -261,9 +265,12 @@ export function DetailSheet({
                           {entry.location ? <p className="text-xs text-[var(--ink3)]">{entry.location}</p> : null}
                           {entry.comments ? <p className="mt-1 text-sm">{entry.comments}</p> : null}
                           {entry.imageURL ? (
-                            <a href={entry.imageURL} target="_blank" rel="noreferrer" className="mt-2 block">
-                              <img src={entry.imageURL} alt="" className="max-h-40 rounded-lg object-cover" />
-                            </a>
+                            <>
+                              <a href={entry.imageURL} target="_blank" rel="noreferrer" className="mt-2 block">
+                                <img src={entry.imageURL} alt="" className="max-h-40 rounded-lg object-cover" />
+                              </a>
+                              <ReportFileLink fileRef={entry.imageURL} surface="site_audit" parentId={audit.id} />
+                            </>
                           ) : null}
                         </div>
                       ))}

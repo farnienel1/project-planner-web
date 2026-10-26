@@ -14,6 +14,8 @@ import { withTimeout } from '@/lib/client/withTimeout'
 import { prepareClientUpload } from '@/lib/security/stripPhotoLocation'
 import { UserAvatar } from '@/components/users/UserAvatar'
 import { canAccessOrganisationSettingsHub, hasAdminAccess } from '@/lib/navigation/menuPermissions'
+import { staffAccountRole } from '@/lib/permissions'
+import { canReviewFileReports } from '@/lib/canonical'
 import { minPasswordLengthForEmail } from '@/lib/auth/emailAction'
 import {
   SectionLabel,
@@ -42,6 +44,7 @@ import { ScheduleOptionsPanel } from '@/components/settings/panels/ScheduleOptio
 import { CompanyDetailsPanel } from '@/components/settings/panels/CompanyDetailsPanel'
 import { BillingPanel } from '@/components/settings/panels/BillingPanel'
 import { MyNotificationsPanel } from '@/components/settings/panels/MyNotificationsPanel'
+import { ReportedFilesPanel } from '@/components/settings/panels/ReportedFilesPanel'
 import { SettingsChrome } from '@/components/settings/SettingsChrome'
 import {
   COMPANY_SETTINGS,
@@ -67,6 +70,7 @@ const ORGANISATION_HUB_PANELS: Panel[] = [
   'payment-runs',
   'roles',
   'billing',
+  'reported-files',
 ]
 
 function isOrganisationHubPanel(panel: Panel): boolean {
@@ -348,6 +352,7 @@ export default function SettingsScreen({ initialPanel = 'main' }: { initialPanel
   const { user, organization, signOut } = useAuthStore()
   const orgName = displayOrganizationName(organization?.name)
   const canAccessOrgHub = canAccessOrganisationSettingsHub(user)
+  const canReviewReports = canReviewFileReports(staffAccountRole(user))
   const pathPanel = settingsPanelFromPath(pathname)
   const requestedPanel = pathPanel || initialPanel
   const safeInitialPanel =
@@ -375,7 +380,7 @@ export default function SettingsScreen({ initialPanel = 'main' }: { initialPanel
 
   const goHub = () => router.push('/dashboard/settings')
   const wrap = (active: Panel, node: ReactNode) => (
-    <SettingsChrome panel={active} canAccessCompany={canAccessOrgHub}>
+    <SettingsChrome panel={active} canAccessCompany={canAccessOrgHub} canReviewReports={canReviewReports}>
       {node}
     </SettingsChrome>
   )
@@ -426,6 +431,9 @@ export default function SettingsScreen({ initialPanel = 'main' }: { initialPanel
   }
   if (panel === 'roles' && canAccessOrgHub) return wrap('roles', <RolesPanel onBack={goHub} />)
   if (panel === 'billing' && canAccessOrgHub) return wrap('billing', <BillingPanel onBack={goHub} />)
+  if (panel === 'reported-files' && canAccessOrgHub && canReviewReports) {
+    return wrap('reported-files', <ReportedFilesPanel onBack={goHub} />)
+  }
 
   return (
     <div className="mx-auto max-w-[1100px] space-y-5 pb-10">
@@ -501,7 +509,7 @@ export default function SettingsScreen({ initialPanel = 'main' }: { initialPanel
               </span>
             </div>
             <SettingsCard>
-              {COMPANY_SETTINGS.map((item) => (
+              {COMPANY_SETTINGS.filter((item) => item.id !== 'reported-files' || canReviewReports).map((item) => (
                 <Link key={item.id} href={item.href}>
                   <SettingsRow
                     icon={item.icon}

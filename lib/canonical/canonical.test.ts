@@ -140,6 +140,15 @@ import {
   materialOrderIncludesDeliveryRequired,
 } from './materialDelivery.ts'
 import {
+  FILE_REPORT_DETAILS_MAX,
+  canReviewFileReports,
+  fileReportCollectionPath,
+  fileReportReasonCopy,
+  fileReportReviewWriteFields,
+  fileReportStoragePath,
+  fileReportWriteFields,
+} from './fileReports.ts'
+import {
   TIMESHEET_CLOSE_OF_PLAY_HOUR,
   TIMESHEET_NOTIFY_HOUR,
   defaultTimesheetSubmissionFromPaymentDay,
@@ -3072,5 +3081,94 @@ test('the packed invite-email claim matches this module', () => {
   assert.equal(
     packed.userCreateRequiresAgeConfirmation({ creatorUserId: 'admin', targetUserId: leftover.userId }),
     false
+  )
+})
+
+const REPORT_ORG = 'ORG-REPORT'
+const REPORT_PATH = `organizations/${REPORT_ORG}/siteAudits/AUDIT-1/photo 1.jpg`
+
+test('a file report stores the Storage path from a download URL, never the token', () => {
+  const url =
+    'https://firebasestorage.googleapis.com/v0/b/project-planner-f986c.appspot.com/o/' +
+    encodeURIComponent(REPORT_PATH) +
+    '?alt=media&token=SECRET-TOKEN'
+  assert.equal(fileReportStoragePath(url), REPORT_PATH)
+  assert.equal(fileReportStoragePath(`gs://project-planner-f986c.appspot.com/${REPORT_PATH}`), REPORT_PATH)
+  assert.equal(fileReportStoragePath(REPORT_PATH), REPORT_PATH)
+  assert.equal(fileReportStoragePath('https://example.com/file.jpg'), null)
+  assert.equal(fileReportStoragePath(''), null)
+})
+
+test('a file report is open, scoped to this organisation, and caps details', () => {
+  const result = fileReportWriteFields({
+    organizationId: REPORT_ORG,
+    storagePath: REPORT_PATH,
+    surface: 'site_audit',
+    parentId: 'AUDIT-1',
+    reason: 'copyright',
+    reportedByUserId: 'USER-1',
+    details: `  ${'x'.repeat(FILE_REPORT_DETAILS_MAX + 50)}  `,
+  })
+  assert.equal(result.ok, true)
+  if (!result.ok) return
+  assert.equal(result.fields.status, 'open')
+  assert.equal(result.fields.fileName, 'photo 1.jpg')
+  assert.equal(result.fields.details.length, FILE_REPORT_DETAILS_MAX)
+  assert.equal(Object.keys(result.fields).includes('createdAt'), false)
+  assert.equal(fileReportCollectionPath(REPORT_ORG), 'organizations/ORG-REPORT/fileReports')
+})
+
+test('a file report refuses another organisation’s path, an unknown reason, or a missing parent', () => {
+  const base = {
+    organizationId: REPORT_ORG,
+    storagePath: REPORT_PATH,
+    surface: 'site_audit',
+    parentId: 'AUDIT-1',
+    reason: 'offensive',
+    reportedByUserId: 'USER-1',
+  }
+  assert.deepEqual(fileReportWriteFields({ ...base, storagePath: 'organizations/OTHER/siteAudits/a.jpg' }), {
+    ok: false,
+    error: 'bad_path',
+  })
+  assert.deepEqual(fileReportWriteFields({ ...base, storagePath: `organizations/${REPORT_ORG}/../x` }), {
+    ok: false,
+    error: 'bad_path',
+  })
+  assert.deepEqual(fileReportWriteFields({ ...base, reason: 'spam' }), { ok: false, error: 'bad_reason' })
+  assert.deepEqual(fileReportWriteFields({ ...base, surface: 'profile_photo' }), { ok: false, error: 'bad_surface' })
+  assert.deepEqual(fileReportWriteFields({ ...base, parentId: ' ' }), { ok: false, error: 'missing_parent' })
+  assert.equal(fileReportReasonCopy('spam'), fileReportReasonCopy('other'))
+})
+
+test('only admins and super admins review file reports', () => {
+  const role = { isSuperAdmin: false, isAdmin: false, isManager: false, isOperativeMode: false }
+  assert.equal(canReviewFileReports({ ...role, isAdmin: true }), true)
+  assert.equal(canReviewFileReports({ ...role, isSuperAdmin: true }), true)
+  assert.equal(canReviewFileReports({ ...role, isManager: true }), false)
+  assert.equal(canReviewFileReports({ ...role, isAdmin: true, isOperativeMode: true }), false)
+  assert.deepEqual(fileReportReviewWriteFields({ status: 'removed', reviewedByUserId: 'ADMIN' }), {
+    status: 'removed',
+    reviewedByUserId: 'ADMIN',
+  })
+  assert.equal(fileReportReviewWriteFields({ status: 'open', reviewedByUserId: 'ADMIN' }), null)
+})
+
+test('the iOS JavaScript bundle builds the same file report fields', () => {
+  const source = readFileSync(new URL('./dist/canonical-business.js', import.meta.url), 'utf8')
+  const sandbox: { ProjectPlannerCanonical?: Record<string, (...args: unknown[]) => unknown> } = {}
+  runInContext(source, createContext(sandbox))
+  const input = {
+    organizationId: REPORT_ORG,
+    storagePath: REPORT_PATH,
+    surface: 'task_attachment',
+    parentId: 'TASK-1',
+    reason: 'personal_data',
+    reportedByUserId: 'USER-1',
+    details: 'Shows a passport',
+  }
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(sandbox.ProjectPlannerCanonical?.fileReportWriteFields(input))),
+    fileReportWriteFields(input)
   )
 })

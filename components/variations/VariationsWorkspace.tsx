@@ -49,6 +49,7 @@ import {
   updateVariation,
 } from '@/lib/variations/variationStorage'
 import type { Project } from '@/types'
+import { ReportFileLink } from '@/components/fileReports/ReportFileLink'
 
 type Filter = VariationListFilter
 
@@ -611,6 +612,11 @@ function VariationDrawer({
                 ) : null}
                 {file.fileName}
               </a>
+              {file.uploadedByUid !== viewerId ? (
+                <div>
+                  <ReportFileLink fileRef={file.storagePath || file.downloadURL} surface="variation_evidence" parentId={row.id} fileName={file.fileName} />
+                </div>
+              ) : null}
               {canEdit || file.uploadedByUid === viewerId ? (
                 <button type="button" className="btn sm ghost" onClick={() => void onRemoveEvidence(file.id)}>
                   Remove file

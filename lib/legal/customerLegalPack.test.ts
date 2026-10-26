@@ -43,8 +43,8 @@ test('SaaS §3 requires authorised users to be 16 or over without collecting dat
     section?.paragraphs.join(' ') || '',
     /Authorised Users must be 16 or over\. ProjectPlanner does not collect dates of birth; each user confirms that age when they create or accept an account\./
   )
-  assert.equal(LEGAL_ENTITY.version, '1.0')
-  assert.equal(LEGAL_ENTITY.effectiveDate, '18 September 2026')
+  assert.equal(LEGAL_ENTITY.version, '1.1')
+  assert.equal(LEGAL_ENTITY.effectiveDate, '26 October 2026')
 })
 
 test('sign-up policy includes the toolbox talks disclaimer', () => {
@@ -73,4 +73,13 @@ test('passwordsMatchAndReady requires length and a match', () => {
   assert.equal(passwordsMatchAndReady('short', 'short'), false)
   assert.equal(passwordsMatchAndReady('longenough', 'different1'), false)
   assert.equal(passwordsMatchAndReady('longenough', 'longenough'), true)
+})
+
+test('terms carry a content and copyright section with a takedown contact and a repeat-infringer line', () => {
+  const saas = LEGAL_PACK_DOCUMENTS.find((doc) => doc.id === 'saas')
+  const section = saas?.sections.find((row) => row.title === '20. Content and Copyright')
+  const text = section?.paragraphs.join(' ') || ''
+  assert.match(text, /info@projectplanner\.us/)
+  assert.match(text, /Report a problem with this file/)
+  assert.match(text, /repeatedly infringe/)
 })

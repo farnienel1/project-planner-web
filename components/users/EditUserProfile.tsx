@@ -903,6 +903,7 @@ export function EditUserProfile({
                 saving={qualSaving}
                 organizationId={organization?.id || ''}
                 canManageOrg={canManageOrgQuals}
+                showReportLink={Boolean(target && currentUser && target.id !== currentUser.id)}
                 onSave={async (next) => {
                   if (!organization?.id) return
                   setQualSaving(true)

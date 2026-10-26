@@ -14,6 +14,7 @@ import {
   openSiteAuditPdf,
 } from '@/lib/siteAudit/siteAuditPdf'
 import type { Project, SiteAudit } from '@/types'
+import { ReportFileLink } from '@/components/fileReports/ReportFileLink'
 
 const AUDIT_TYPES = ['All', 'Pre-Start', 'General', 'Variations', 'Snags', 'Other'] as const
 type AuditTypeFilter = (typeof AUDIT_TYPES)[number]
@@ -207,9 +208,12 @@ function AuditDetail({ audit, onClose }: { audit: SiteAudit; onClose: () => void
                         style={{ maxHeight: imgExpanded === item.id ? 'none' : '200px' }}
                         onClick={() => setImgExpanded(imgExpanded === item.id ? null : item.id)}
                       />
-                      <p className="px-4 py-2 text-[11px] text-slate-400">
-                        {imgExpanded === item.id ? 'Click to collapse' : 'Click to expand'}
-                      </p>
+                      <div className="flex items-center justify-between gap-3 px-4 py-2">
+                        <p className="text-[11px] text-slate-400">
+                          {imgExpanded === item.id ? 'Click to collapse' : 'Click to expand'}
+                        </p>
+                        <ReportFileLink fileRef={item.imageURL} surface="site_audit" parentId={audit.id} />
+                      </div>
                     </div>
                   )}
                 </div>
@@ -226,11 +230,19 @@ function AuditDetail({ audit, onClose }: { audit: SiteAudit; onClose: () => void
           role="presentation"
         >
           {audit.items.find((i) => i.id === imgExpanded)?.imageURL && (
-            <img
-              src={audit.items.find((i) => i.id === imgExpanded)!.imageURL!}
-              alt="Expanded"
-              className="max-h-full max-w-full rounded-xl"
-            />
+            <div className="flex max-h-full max-w-full flex-col items-center gap-3">
+              <img
+                src={audit.items.find((i) => i.id === imgExpanded)!.imageURL!}
+                alt="Expanded"
+                className="max-h-[85vh] max-w-full rounded-xl"
+              />
+              <ReportFileLink
+                fileRef={audit.items.find((i) => i.id === imgExpanded)!.imageURL}
+                surface="site_audit"
+                parentId={audit.id}
+                className="text-xs font-medium text-white/80 underline-offset-2 hover:text-white hover:underline"
+              />
+            </div>
           )}
         </div>
       )}

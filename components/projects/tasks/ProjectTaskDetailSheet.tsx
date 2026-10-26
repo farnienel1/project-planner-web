@@ -18,6 +18,7 @@ import {
 } from '@/lib/tasks/projectTaskFilters'
 import { completionFileLabel } from '@/lib/tasks/completionFiles'
 import type { Manager, Operative, ProjectTask, ProjectTaskStatus } from '@/types'
+import { ReportFileLink } from '@/components/fileReports/ReportFileLink'
 
 export function ProjectTaskDetailSheet({
   task,
@@ -199,18 +200,29 @@ export function ProjectTaskDetailSheet({
             {task.attachedImageURLs && task.attachedImageURLs.length > 0 ? (
               <div className="grid g3" style={{ gap: 8, marginBottom: 8 }}>
                 {task.attachedImageURLs.map((url) => (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img key={url} src={url} alt="" className="h-24 w-full rounded-xl object-cover" />
+                  <div key={url} className="flex flex-col gap-1">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={url} alt="" className="h-24 w-full rounded-xl object-cover" />
+                    <ReportFileLink fileRef={url} surface="task_attachment" parentId={task.id} />
+                  </div>
                 ))}
               </div>
             ) : null}
             {task.attachedFileName && task.attachedFileURL ? (
-              <a href={task.attachedFileURL} target="_blank" rel="noreferrer" className="ritem" data-hue="lib">
-                <span className="grow">
-                  <span className="t">{task.attachedFileName}</span>
-                  <span className="s">File</span>
-                </span>
-              </a>
+              <>
+                <a href={task.attachedFileURL} target="_blank" rel="noreferrer" className="ritem" data-hue="lib">
+                  <span className="grow">
+                    <span className="t">{task.attachedFileName}</span>
+                    <span className="s">File</span>
+                  </span>
+                </a>
+                <ReportFileLink
+                  fileRef={task.attachedFileURL}
+                  surface="task_attachment"
+                  parentId={task.id}
+                  fileName={task.attachedFileName}
+                />
+              </>
             ) : task.attachedFileName ? (
               <p className="muted small">File: {task.attachedFileName}</p>
             ) : null}
@@ -242,15 +254,21 @@ export function ProjectTaskDetailSheet({
               {task.completionImages && task.completionImages.length > 0 ? (
                 <div className="grid g3" style={{ gap: 8, marginTop: 10 }}>
                   {task.completionImages.map((url) => (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img key={url} src={url} alt="" className="h-24 w-full rounded-xl object-cover" />
+                    <div key={url} className="flex flex-col gap-1">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={url} alt="" className="h-24 w-full rounded-xl object-cover" />
+                      <ReportFileLink fileRef={url} surface="task_attachment" parentId={task.id} />
+                    </div>
                   ))}
                 </div>
               ) : null}
               {task.completionFiles?.map((url) => (
-                <a key={url} href={url} target="_blank" rel="noreferrer" className="link" style={{ display: 'block', marginTop: 8 }}>
-                  {completionFileLabel(url)}
-                </a>
+                <div key={url} style={{ marginTop: 8 }}>
+                  <a href={url} target="_blank" rel="noreferrer" className="link" style={{ display: 'block' }}>
+                    {completionFileLabel(url)}
+                  </a>
+                  <ReportFileLink fileRef={url} surface="task_attachment" parentId={task.id} fileName={completionFileLabel(url)} />
+                </div>
               ))}
             </section>
           ) : null}

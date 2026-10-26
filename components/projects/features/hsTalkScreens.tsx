@@ -14,6 +14,7 @@ import type { HSToolboxIssue, HSToolboxSignature, HSToolboxTalk, User } from '@/
 import { signedPercent } from '@/lib/healthSafety/hsTracking'
 import { buildToolboxTalkPdf, isCustomUploadedTalk } from '@/lib/healthSafety/toolboxTalkPdf'
 import { FeatureCard, FeatureSectionLabel } from '@/components/projects/features/featureUi'
+import { ReportFileLink } from '@/components/fileReports/ReportFileLink'
 
 export function HsTalkBody({
   talk,
@@ -95,6 +96,11 @@ export function HsTalkBody({
         >
           Open original file
         </a>
+      ) : null}
+      {customFile ? (
+        <div>
+          <ReportFileLink fileRef={customFile} surface="health_safety" parentId={talk.id} fileName={talk.title} />
+        </div>
       ) : null}
     </div>
   )

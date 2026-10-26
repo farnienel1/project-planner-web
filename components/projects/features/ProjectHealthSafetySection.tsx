@@ -945,6 +945,7 @@ export function ProjectHealthSafetySection({
                   status={doc.status}
                   statusTone={doc.status === 'Active' ? 'green' : 'amber'}
                   fileURL={doc.fileURL}
+                  reportParentId={doc.id}
                 />
               ))}
             </FeatureCard>
@@ -974,6 +975,7 @@ export function ProjectHealthSafetySection({
                   title={doc.title}
                   meta={`${doc.category}${doc.trade ? ` · ${doc.trade}` : ''} · ${format(doc.uploadedAt, 'd MMM yyyy')}`}
                   fileURL={doc.fileURL}
+                  reportParentId={doc.id}
                 />
               ))}
             </FeatureCard>

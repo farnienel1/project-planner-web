@@ -21,6 +21,7 @@ import {
   getDoc,
   getDocs,
   query,
+  serverTimestamp,
   setDoc,
   Timestamp,
   updateDoc,
@@ -988,4 +989,61 @@ test('a manager with operatives access can still invite an operative in their ow
       adminAccess: true,
     })
   )
+})
+
+function fileReport(overrides: Record<string, unknown> = {}) {
+  return {
+    organizationId: ORG_A,
+    storagePath: `organizations/${ORG_A}/siteAudits/AUDIT-1/photo.jpg`,
+    surface: 'site_audit',
+    parentId: 'AUDIT-1',
+    fileName: 'photo.jpg',
+    reason: 'copyright',
+    details: '',
+    reportedByUserId: OP_A,
+    status: 'open',
+    createdAt: serverTimestamp(),
+    ...overrides,
+  }
+}
+
+test('anyone in the company can report a file as themselves', async () => {
+  const db = authDb(OP_A, 'op-a@test.com')
+  await assertSucceeds(setDoc(doc(db, 'organizations', ORG_A, 'fileReports', 'REPORT-OK'), fileReport()))
+})
+
+test('a file report cannot be filed for someone else, another company, or already closed', async () => {
+  const db = authDb(OP_A, 'op-a@test.com')
+  const ref = (id: string) => doc(db, 'organizations', ORG_A, 'fileReports', id)
+  await assertFails(setDoc(ref('R-OTHER-USER'), fileReport({ reportedByUserId: ADMIN_A })))
+  await assertFails(setDoc(ref('R-OTHER-PATH'), fileReport({ storagePath: `organizations/${ORG_B}/siteAudits/x.jpg` })))
+  await assertFails(setDoc(ref('R-DOTS'), fileReport({ storagePath: `organizations/${ORG_A}/../${ORG_B}/x.jpg` })))
+  await assertFails(setDoc(ref('R-CLOSED'), fileReport({ status: 'removed' })))
+  await assertFails(setDoc(ref('R-REASON'), fileReport({ reason: 'spam' })))
+  await assertFails(setDoc(ref('R-EXTRA'), fileReport({ downloadURL: 'https://example.com/x?token=1' })))
+  await assertFails(setDoc(ref('R-LONG'), fileReport({ details: 'x'.repeat(1001) })))
+  await assertFails(
+    setDoc(doc(db, 'organizations', ORG_B, 'fileReports', 'R-ORG-B'), fileReport({ organizationId: ORG_B }))
+  )
+})
+
+test('only admins read and close file reports, and nobody deletes them', async () => {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'organizations', ORG_A, 'fileReports', 'REPORT-SEED'), {
+      ...fileReport(),
+      createdAt: Timestamp.now(),
+    })
+  })
+  const op = authDb(OP_A, 'op-a@test.com')
+  const admin = authDb(ADMIN_A, 'admin-a@test.com')
+  const otherAdmin = authDb(ADMIN_B, 'admin-b@test.com')
+  await assertFails(getDoc(doc(op, 'organizations', ORG_A, 'fileReports', 'REPORT-SEED')))
+  await assertFails(getDocs(collection(op, 'organizations', ORG_A, 'fileReports')))
+  await assertFails(getDoc(doc(otherAdmin, 'organizations', ORG_A, 'fileReports', 'REPORT-SEED')))
+  await assertSucceeds(getDocs(collection(admin, 'organizations', ORG_A, 'fileReports')))
+  const seeded = doc(admin, 'organizations', ORG_A, 'fileReports', 'REPORT-SEED')
+  await assertFails(updateDoc(seeded, { status: 'removed', reviewedByUserId: ADMIN_A, reviewedAt: serverTimestamp(), reason: 'other' }))
+  await assertFails(updateDoc(doc(op, 'organizations', ORG_A, 'fileReports', 'REPORT-SEED'), { status: 'reviewed', reviewedByUserId: OP_A, reviewedAt: serverTimestamp() }))
+  await assertSucceeds(updateDoc(seeded, { status: 'removed', reviewedByUserId: ADMIN_A, reviewedAt: serverTimestamp() }))
+  await assertFails(deleteDoc(seeded))
 })

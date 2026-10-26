@@ -16,7 +16,8 @@ import {
   loadOrganizationDetails,
   type OrganizationDetails,
 } from '@/lib/settings/organizationSettings'
-import { materialCutOffClockMinutes, resolveMaterialCutOffClock } from '@/lib/canonical'
+import { canReviewFileReports, materialCutOffClockMinutes, resolveMaterialCutOffClock } from '@/lib/canonical'
+import { staffAccountRole } from '@/lib/permissions'
 import {
   materialCutoffTimeLabel,
   orgCountryLabel,
@@ -47,6 +48,7 @@ export type OrganisationHubDestination =
   | 'payment-runs'
   | 'roles'
   | 'billing'
+  | 'reported-files'
 
 const ICON = {
   building:
@@ -281,6 +283,17 @@ export function OrganisationHubPanel({
           chevron
           onClick={() => onNavigate('billing')}
         />
+        {canReviewFileReports(staffAccountRole(user)) ? (
+          <SettingsRow
+            icon={ICON.warning}
+            iconBg="bg-[var(--blue)]/10"
+            iconColor="text-[var(--blue)]"
+            label="Reported files"
+            description="Files people reported for review"
+            chevron
+            onClick={() => onNavigate('reported-files')}
+          />
+        ) : null}
       </SettingsCard>
 
       <SectionLabel label="Team" />

@@ -3,6 +3,7 @@
 import { addDays, format, isSameDay, startOfWeek } from 'date-fns'
 import { coversCalendarDay, isSameLondonDay } from '@/lib/ios-parity/londonTime'
 import type { ReactNode } from 'react'
+import { ReportFileLink } from '@/components/fileReports/ReportFileLink'
 
 /** Shared tokens aligned with iOS / HTML prototypes */
 export const featurePageBg = 'bg-[var(--bg)]'
@@ -261,12 +262,15 @@ export function DocListRow({
   status,
   statusTone,
   fileURL,
+  reportParentId,
 }: {
   title: string
   meta: string
   status?: string
   statusTone?: 'green' | 'amber' | 'red' | 'blue'
   fileURL?: string
+  /** Health & safety document id; shows "Report a problem with this file". */
+  reportParentId?: string
 }) {
   return (
     <div className="flex items-center gap-3 border-t border-[#EEF1F5] px-4 py-3.5 first:border-t-0">
@@ -284,6 +288,11 @@ export function DocListRow({
             <StatusPill label={status} tone={statusTone} />
           </span>
         )}
+        {fileURL && reportParentId ? (
+          <div className="mt-1">
+            <ReportFileLink fileRef={fileURL} surface="health_safety" parentId={reportParentId} fileName={title} />
+          </div>
+        ) : null}
       </div>
       {fileURL && (
         <a
