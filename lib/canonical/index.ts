@@ -497,3 +497,5 @@ export type {
   CanonicalBooking,
   CanonicalBookingInput,
 } from './bookings'
+
+export { legalPackNeedsAcceptance } from './legalPack'

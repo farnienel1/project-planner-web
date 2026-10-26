@@ -315,3 +315,5 @@ export {
   normalizeBookingTimeSlot,
   parseBookingDocument,
 } from './bookings'
+
+export { legalPackNeedsAcceptance } from './legalPack'

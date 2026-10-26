@@ -139,6 +139,7 @@ import {
   formatMaterialDeliveryRequired,
   materialOrderIncludesDeliveryRequired,
 } from './materialDelivery.ts'
+import { legalPackNeedsAcceptance } from './legalPack.ts'
 import {
   FILE_REPORT_DETAILS_MAX,
   canReviewFileReports,
@@ -3361,4 +3362,11 @@ test('booking clocks stored as instants read in the organisation zone', () => {
   assert.equal(result.booking.workEndTime, '16:30')
   const utc = parseBookingDocument('B', bookingDoc({ workStartTime: start }), { timeZone: 'UTC' })
   assert.equal(utc.ok && utc.booking.workStartTime, '06:00')
+})
+
+test('a new legal pack version asks everyone to accept again', () => {
+  assert.equal(legalPackNeedsAcceptance({ policyAccepted: false, acceptedVersion: '1.1', currentVersion: '1.1' }), true)
+  assert.equal(legalPackNeedsAcceptance({ policyAccepted: true, acceptedVersion: '1.0', currentVersion: '1.1' }), true)
+  assert.equal(legalPackNeedsAcceptance({ policyAccepted: true, acceptedVersion: undefined, currentVersion: '1.1' }), true)
+  assert.equal(legalPackNeedsAcceptance({ policyAccepted: true, acceptedVersion: ' 1.1 ', currentVersion: '1.1' }), false)
 })

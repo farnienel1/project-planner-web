@@ -56,7 +56,7 @@ export function LegalPackGate() {
         updatedAt: now,
       })
       useAuthStore.setState({
-        user: { ...user, policyAccepted: true, policyAcceptedAt: new Date() },
+        user: { ...user, policyAccepted: true, policyAcceptedAt: new Date(), legalPackVersion: LEGAL_ENTITY.version },
       })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Please try again.')

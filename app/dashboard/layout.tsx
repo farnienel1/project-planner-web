@@ -15,6 +15,8 @@ import { hasCustomerOrganisation, isPlatformOwnerEmail } from '@/lib/platform/ow
 import { DeactivatedAccountScreen } from '@/components/auth/DeactivatedAccountScreen'
 import { isMfaGateOpen, mfaVerifyHref } from '@/lib/auth/mfa/mfaClient'
 import { MISSING_USER_PROFILE_SETUP_HREF } from '@/lib/auth/missingProfile'
+import { legalPackNeedsAcceptance } from '@/lib/canonical'
+import { LEGAL_ENTITY } from '@/lib/legal/customerLegalPack'
 
 export default function DashboardLayout({
   children,
@@ -84,7 +86,15 @@ export default function DashboardLayout({
   if (!mfaVerified) return <SplashScreen />
   if (user.isActive === false && !isPlatformOwnerEmail(user.email)) return <DeactivatedAccountScreen />
   if (user.accountConfirmed === false) return <CheckEmailScreen email={user.email} />
-  if (!user.policyAccepted) return <PolicyGate />
+  if (
+    legalPackNeedsAcceptance({
+      policyAccepted: user.policyAccepted,
+      acceptedVersion: user.legalPackVersion,
+      currentVersion: LEGAL_ENTITY.version,
+    })
+  ) {
+    return <PolicyGate />
+  }
 
   return (
     <AppShell>
