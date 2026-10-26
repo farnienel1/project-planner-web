@@ -106,6 +106,12 @@ export type LabourPerson = {
   isManager: boolean
   isAdmin: boolean
   isSuperAdmin: boolean
+  /**
+   * `users/{uid}.formerUserIds`: the invite placeholder id(s) this account had
+   * before sign-up moved it to `users/{authUid}`. Bookings, leave, and
+   * exclusions saved under a former id still belong to this person.
+   */
+  formerIds?: readonly string[] | null
 }
 
 export type RosterOperative = {
@@ -310,22 +316,66 @@ export function unverifiedOperativeRows(input: UnverifiedOperativeInput): Unveri
   return rows
 }
 
+/**
+ * Booking statuses that put a person on a job that day. A completed booking
+ * was worked; a cancelled one was not. Daily Overview, Warnings, and the
+ * weekly report use this instead of a screen-local status list.
+ */
+export function bookingOccupiesDay(status: unknown): boolean {
+  const value = String(status ?? '').trim().toLowerCase()
+  return value === 'confirmed' || value === 'tentative' || value === 'pending' || value === 'completed'
+}
+
+export type LabourBookingKind = 'operative' | 'manager'
+
+/**
+ * Who is labour, and which booking collection holds their day.
+ * `operative`: an operative-mode account, booked in `organizations/{orgId}/bookings`.
+ * `manager`: a manager or admin, booked in `organizations/{orgId}/managerSiteBookings`.
+ * `null`: not labour — never offered by the scheduling picker and never unbooked.
+ * The scheduling picker and `unbookedLabourRows` use this same split, so anyone
+ * who can be flagged as unbooked can also be booked.
+ */
+export function labourBookingKind(person: LabourPerson): LabourBookingKind | null {
+  if (!person.isActive) return null
+  const admin = Boolean(person.isAdmin || person.isSuperAdmin)
+  if (person.isOperativeMode && !person.isManager && !admin) return 'operative'
+  if (person.isManager || admin) return 'manager'
+  return null
+}
+
+/** Every id a person's bookings, leave, and exclusions may be stored under. */
+export function labourPersonIds(person: Pick<LabourPerson, 'id' | 'formerIds'>): string[] {
+  const ids = new Set<string>()
+  if (person.id) ids.add(String(person.id))
+  for (const id of person.formerIds || []) {
+    const trimmed = String(id || '').trim()
+    if (trimmed) ids.add(trimmed)
+  }
+  return [...ids]
+}
+
+/** Former id → current `users/{uid}` id, so a booking stored under an invite placeholder still names the person. */
+export function formerIdAliases(people: readonly Pick<LabourPerson, 'id' | 'formerIds'>[]): Record<string, string> {
+  const aliases: Record<string, string> = {}
+  for (const person of people) {
+    for (const id of labourPersonIds(person)) {
+      if (id !== person.id && !(id in aliases)) aliases[id] = person.id
+    }
+  }
+  return aliases
+}
+
 function hasFinishedSignup(person: LabourPerson): boolean {
   return person.passwordSet === true && person.status !== 'pending'
 }
 
 function isManagerOrAdmin(person: LabourPerson): boolean {
-  return Boolean(person.isActive && (person.isManager || person.isAdmin || person.isSuperAdmin))
+  return labourBookingKind(person) === 'manager'
 }
 
 function isOperativeModeOnly(person: LabourPerson): boolean {
-  return Boolean(
-    person.isActive &&
-      person.isOperativeMode &&
-      !person.isManager &&
-      !person.isAdmin &&
-      !person.isSuperAdmin
-  )
+  return labourBookingKind(person) === 'operative'
 }
 
 function preferFinishedAccount(candidates: readonly LabourPerson[]): LabourPerson | undefined {
@@ -365,7 +415,9 @@ function asCoverageBooking(booking: LabourBooking): StandardDayBooking {
 /**
  * People who do not cover the organisation standard day inside the window.
  * Pending invitees are not unbooked. A weekend whose counts-as hours are 0 is not unbooked.
- * Bookings on any operative profile or user account that shares the email count toward that day.
+ * Bookings on any operative profile or user account that shares the email count toward that day,
+ * and so do bookings under that account's `formerIds` (an invite placeholder id from before sign-up).
+ * An exclusion saved under a former id still excludes the person.
  * A partial booking stays unbooked and reports the hours still missing.
  * A clash is a separate warning: overlapping time does not create a second gap.
  *
@@ -379,7 +431,8 @@ export function unbookedLabourRows(input: UnbookedLabourInput): UnbookedLabourRo
   const timeZone = zoneOf(input.timeZone)
   const people = listedCurrentLabourPeople(input.people)
   const operatives = listedCurrentLabourPeople(input.operatives)
-  const excluded = new Set((input.excludedUserIds || []).map((id) => String(id)))
+  const excludedIds = new Set((input.excludedUserIds || []).map((id) => String(id)))
+  const isExcluded = (person: LabourPerson): boolean => labourPersonIds(person).some((id) => excludedIds.has(id))
   const dayPolicy = {
     standardDayStart: input.standardDayStart,
     standardDayEnd: input.standardDayEnd,
@@ -414,18 +467,24 @@ export function unbookedLabourRows(input: UnbookedLabourInput): UnbookedLabourRo
   }
 
   const userIdsByEmail = new Map<string, Set<string>>()
+  const idsByUserId = new Map<string, string[]>()
   for (const person of people) {
+    if (person.id) idsByUserId.set(person.id, labourPersonIds(person))
     const email = emailKey(person.email)
     if (!email || !person.id) continue
     const ids = userIdsByEmail.get(email) || new Set<string>()
-    ids.add(person.id)
+    for (const id of labourPersonIds(person)) ids.add(id)
     userIdsByEmail.set(email, ids)
+  }
+  const withFormerIds = (target: Set<string>, userId: string | undefined) => {
+    if (!userId) return
+    for (const id of idsByUserId.get(userId) || [userId]) target.add(id)
   }
 
   const slotsFor = (email: string, operativeId: string | undefined, userId: string | undefined, dayKey: string): StandardDayBooking[] => {
     const ids = new Set<string>()
     if (operativeId) ids.add(operativeId)
-    if (userId) ids.add(userId)
+    withFormerIds(ids, userId)
     const linked = operativeIdsByEmail.get(email)
     if (linked) for (const id of linked) ids.add(id)
     const linkedUsers = userIdsByEmail.get(email)
@@ -443,7 +502,7 @@ export function unbookedLabourRows(input: UnbookedLabourInput): UnbookedLabourRo
   const approvedHolidays = input.holidays.filter((holiday) => holiday.approved)
   const holidayCovers = (dayKey: string, email: string, userId?: string, operativeId?: string): boolean => {
     const userIds = new Set<string>()
-    if (userId) userIds.add(userId)
+    withFormerIds(userIds, userId)
     const linkedUsers = userIdsByEmail.get(email)
     if (linkedUsers) for (const id of linkedUsers) userIds.add(id)
     const operativeIds = new Set<string>()
@@ -511,7 +570,7 @@ export function unbookedLabourRows(input: UnbookedLabourInput): UnbookedLabourRo
     }
 
     for (const person of operativeUsers) {
-      if (excluded.has(person.id)) continue
+      if (isExcluded(person)) continue
       const email = emailKey(person.email)
       const linked = operativesByEmail.get(email)
       if (holidayCovers(dayKey, email, person.id, linked?.id)) continue
@@ -525,7 +584,7 @@ export function unbookedLabourRows(input: UnbookedLabourInput): UnbookedLabourRo
     }
 
     for (const person of managerUsers) {
-      if (excluded.has(person.id)) continue
+      if (isExcluded(person)) continue
       const email = emailKey(person.email)
       const linked = operativesByEmail.get(email)
       if (holidayCovers(dayKey, email, person.id, linked?.id)) continue
@@ -544,7 +603,7 @@ export function unbookedLabourRows(input: UnbookedLabourInput): UnbookedLabourRo
       const matched = email ? verifiedUserForEmail(email) : undefined
       if (!matched && email && people.some((person) => emailKey(person.email) === email)) continue
       if (matched && managerAdminUserIds.has(matched.id)) continue
-      if (matched && excluded.has(matched.id)) continue
+      if (matched && isExcluded(matched)) continue
       if (holidayCovers(dayKey, email, matched?.id, operative.id)) continue
       append({
         personKey: matched?.id || operative.id,
