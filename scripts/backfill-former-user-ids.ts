@@ -81,7 +81,20 @@ async function listCollection(api: Awaited<ReturnType<typeof documentsRoot>>, pa
   return rows
 }
 
+/**
+ * Documents whose `organizationId` names this company. Company ids are compared
+ * without case (`organizationIdsMatch`), and both spellings are stored, so query each.
+ */
 async function queryByOrganization(api: Awaited<ReturnType<typeof documentsRoot>>, collectionId: string, organizationId: string) {
+  const spellings = [...new Set([organizationId, organizationId.toUpperCase(), organizationId.toLowerCase()])]
+  const seen = new Map<string, { id: string; data: Plain }>()
+  for (const spelling of spellings) {
+    for (const row of await queryOneSpelling(api, collectionId, spelling)) seen.set(row.id, row)
+  }
+  return [...seen.values()]
+}
+
+async function queryOneSpelling(api: Awaited<ReturnType<typeof documentsRoot>>, collectionId: string, organizationId: string) {
   const response = await fetch(`${api.root}:runQuery`, {
     method: 'POST',
     headers: api.headers,
