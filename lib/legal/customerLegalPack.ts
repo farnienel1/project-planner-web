@@ -1,4 +1,4 @@
-/** Customer legal pack v1.0 — customer-facing text only (implementation notes omitted). */
+/** Customer legal pack v1.1 — customer-facing text only (implementation notes omitted). */
 
 import { PROCESSORS_PUBLIC_URL } from './processors'
 
@@ -9,8 +9,8 @@ export const LEGAL_ENTITY = {
   website: 'https://projectplanner.us',
   privacyEmail: "info@projectplanner.us",
   supportEmail: "info@projectplanner.us",
-  version: '1.0',
-  effectiveDate: '18 September 2026',
+  version: '1.1',
+  effectiveDate: '26 October 2026',
 } as const
 
 export type LegalDocumentId = 'saas' | 'dpa' | 'aup' | 'privacy'
@@ -150,6 +150,13 @@ export const LEGAL_PACK_DOCUMENTS: LegalDocument[] = [
         title: "19. Governing Law and Jurisdiction",
         paragraphs: [
           "This Agreement is governed by the law of England and Wales. The courts of England and Wales have exclusive jurisdiction, subject to any mandatory rights or jurisdiction that cannot lawfully be excluded.",
+        ],
+      },
+      {
+        title: "20. Content and Copyright",
+        paragraphs: [
+          "Authorised Users must only upload content they have the right to share. Anyone who believes content on the Platform infringes their copyright or other rights, or is unlawful, may use “Report a problem with this file” in the app or email info@projectplanner.us with the location of the file, the right concerned and their contact details. The Provider will review notices promptly and may remove or disable access to the content.",
+          "The Provider will suspend or terminate the accounts of users who repeatedly infringe the rights of others.",
         ],
       },
     ],
@@ -309,6 +316,7 @@ export const LEGAL_PACK_DOCUMENTS: LegalDocument[] = [
         title: "6. Reporting",
         paragraphs: [
           "Suspected security issues, abuse or unlawful use should be reported to info@projectplanner.us. Reports should include enough information for the Provider to investigate.",
+          "A file shown to other users can also be reported with “Report a problem with this file” in the app. Reports go to the Customer’s administrators for review.",
         ],
       },
       {

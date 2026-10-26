@@ -56,14 +56,18 @@ function GroupLabel({ children }: { children: ReactNode }) {
 export function SettingsChrome({
   panel,
   canAccessCompany,
+  canReviewReports,
   children,
 }: {
   panel: SettingsPanel
   canAccessCompany: boolean
+  canReviewReports?: boolean
   children: ReactNode
 }) {
   const personal = PERSONAL_SETTINGS
-  const company = canAccessCompany ? COMPANY_SETTINGS : []
+  const company = canAccessCompany
+    ? COMPANY_SETTINGS.filter((item) => item.id !== 'reported-files' || canReviewReports)
+    : []
 
   return (
     <SettingsDirtyProvider>

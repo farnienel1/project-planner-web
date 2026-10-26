@@ -18,6 +18,7 @@ import {
   qualificationCertificateFileError,
 } from '@/lib/qualifications/certificateUpload'
 import { QualificationLibraryBrowser } from './QualificationLibraryBrowser'
+import { ReportFileLink } from '@/components/fileReports/ReportFileLink'
 
 type LinkedOperative = Operative
 
@@ -28,6 +29,7 @@ export function OperativeQualificationsEditor({
   onSave,
   organizationId,
   canManageOrg,
+  showReportLink = false,
 }: {
   linked?: LinkedOperative
   templates: Qualification[]
@@ -35,6 +37,8 @@ export function OperativeQualificationsEditor({
   onSave: (next: LinkedOperative) => Promise<void>
   organizationId: string
   canManageOrg: boolean
+  /** Someone else's certificates (Edit User). Off on My Qualifications. */
+  showReportLink?: boolean
 }) {
   const [draft, setDraft] = useState(linked)
   const [dirty, setDirty] = useState(false)
@@ -288,6 +292,9 @@ export function OperativeQualificationsEditor({
                   <a href={cert} target="_blank" rel="noreferrer" className="font-semibold text-[var(--blue)]">
                     View certificate
                   </a>
+                  {showReportLink && draft?.id ? (
+                    <ReportFileLink fileRef={cert} surface="qualification_certificate" parentId={draft.id} fileName={qual.name} />
+                  ) : null}
                   <button
                     type="button"
                     className="font-semibold text-red-600"

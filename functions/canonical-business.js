@@ -37,6 +37,13 @@ var ProjectPlannerCanonical = (() => {
     DEFAULT_WARNING_DETECTION: () => DEFAULT_WARNING_DETECTION,
     DELETED_USER_DISPLAY_NAME: () => DELETED_USER_DISPLAY_NAME,
     DEVICE_PUSH_NOTIFICATION_TYPES: () => DEVICE_PUSH_NOTIFICATION_TYPES,
+    FILE_REPORT_DETAILS_MAX: () => FILE_REPORT_DETAILS_MAX,
+    FILE_REPORT_FILE_NAME_MAX: () => FILE_REPORT_FILE_NAME_MAX,
+    FILE_REPORT_LINK_LABEL: () => FILE_REPORT_LINK_LABEL,
+    FILE_REPORT_REASONS: () => FILE_REPORT_REASONS,
+    FILE_REPORT_SENT_COPY: () => FILE_REPORT_SENT_COPY,
+    FILE_REPORT_STATUSES: () => FILE_REPORT_STATUSES,
+    FILE_REPORT_SURFACES: () => FILE_REPORT_SURFACES,
     IOS_SESSION_ORGANIZATION_STORAGE_KEY: () => IOS_SESSION_ORGANIZATION_STORAGE_KEY,
     LEGACY_NOTIFICATION_PREFERENCE_ALIASES: () => LEGACY_NOTIFICATION_PREFERENCE_ALIASES,
     MIN_HALF_DAY_MINUTES: () => MIN_HALF_DAY_MINUTES,
@@ -71,6 +78,7 @@ var ProjectPlannerCanonical = (() => {
     bookingBelongsToOrganization: () => bookingBelongsToOrganization,
     canEditWorkCatalogue: () => canEditWorkCatalogue,
     canManageVariationTracker: () => canManageVariationTracker,
+    canReviewFileReports: () => canReviewFileReports,
     canReviewUserTimesheets: () => canReviewUserTimesheets,
     canSeeVariations: () => canSeeVariations,
     canViewStaffWarnings: () => canViewStaffWarnings,
@@ -93,6 +101,13 @@ var ProjectPlannerCanonical = (() => {
     dueTimesheetSubmissionNotices: () => dueTimesheetSubmissionNotices,
     employmentEffectiveLabel: () => employmentEffectiveLabel,
     employmentTypeOnDay: () => employmentTypeOnDay,
+    fileReportCollectionPath: () => fileReportCollectionPath,
+    fileReportFileName: () => fileReportFileName,
+    fileReportReasonCopy: () => fileReportReasonCopy,
+    fileReportReviewWriteFields: () => fileReportReviewWriteFields,
+    fileReportStatusCopy: () => fileReportStatusCopy,
+    fileReportStoragePath: () => fileReportStoragePath,
+    fileReportWriteFields: () => fileReportWriteFields,
     formatClockMinutes: () => formatClockMinutes,
     formatMaterialCutOffClock: () => formatMaterialCutOffClock,
     formatMaterialDeliveryRequired: () => formatMaterialDeliveryRequired,
@@ -109,6 +124,8 @@ var ProjectPlannerCanonical = (() => {
     invoicingToFirestore: () => invoicingToFirestore,
     isAnonymisedDeletedProfile: () => isAnonymisedDeletedProfile,
     isBillableSelfEmployedDay: () => isBillableSelfEmployedDay,
+    isFileReportReason: () => isFileReportReason,
+    isFileReportSurface: () => isFileReportSurface,
     isIdentifiablePendingLeftover: () => isIdentifiablePendingLeftover,
     isStaffAccount: () => isStaffAccount,
     isTimesheetAwaitingSignOff: () => isTimesheetAwaitingSignOff,
@@ -380,13 +397,13 @@ var ProjectPlannerCanonical = (() => {
   }
   function organizationIdFromValue(value) {
     if (typeof value === "string") {
-      const trimmed4 = value.trim();
-      if (!trimmed4) return "";
-      if (trimmed4.includes("/")) {
-        const parts = trimmed4.split("/").filter(Boolean);
+      const trimmed5 = value.trim();
+      if (!trimmed5) return "";
+      if (trimmed5.includes("/")) {
+        const parts = trimmed5.split("/").filter(Boolean);
         return parts[parts.length - 1] || "";
       }
-      return trimmed4;
+      return trimmed5;
     }
     if (value && typeof value === "object" && "id" in value) {
       return organizationIdFromValue(value.id);
@@ -2250,8 +2267,8 @@ var ProjectPlannerCanonical = (() => {
     return "";
   }
   function organizationNameToFirestore(name) {
-    const trimmed4 = String(name || "").trim();
-    return trimmed4 ? { name: trimmed4 } : {};
+    const trimmed5 = String(name || "").trim();
+    return trimmed5 ? { name: trimmed5 } : {};
   }
   function organizationNameWriteFields(nextName, existingName) {
     const next = String(nextName || "").trim();
@@ -2261,14 +2278,14 @@ var ProjectPlannerCanonical = (() => {
   }
   function coalesceOrganizationName(...candidates) {
     for (const value of candidates) {
-      const trimmed4 = String(value || "").trim();
-      if (trimmed4) return trimmed4;
+      const trimmed5 = String(value || "").trim();
+      if (trimmed5) return trimmed5;
     }
     return "";
   }
   function displayOrganizationName(name, fallback = "Organisation") {
-    const trimmed4 = String(name || "").trim();
-    return trimmed4 || fallback;
+    const trimmed5 = String(name || "").trim();
+    return trimmed5 || fallback;
   }
   function paymentRunShowsMonthCoverage(settings) {
     return settings.paymentRunMode === "date_ranges";
@@ -3739,6 +3756,136 @@ var ProjectPlannerCanonical = (() => {
   }
   function inviteWritesOperativeProfile() {
     return false;
+  }
+
+  // lib/canonical/fileReports.ts
+  var FILE_REPORT_REASONS = [
+    "copyright",
+    "personal_data",
+    "offensive",
+    "wrong_file",
+    "other"
+  ];
+  var FILE_REPORT_SURFACES = [
+    "site_audit",
+    "task_attachment",
+    "health_safety",
+    "deadline",
+    "variation_evidence",
+    "qualification_certificate"
+  ];
+  var FILE_REPORT_STATUSES = ["open", "reviewed", "removed"];
+  var FILE_REPORT_DETAILS_MAX = 1e3;
+  var FILE_REPORT_FILE_NAME_MAX = 200;
+  var FILE_REPORT_LINK_LABEL = "Report a problem with this file";
+  var FILE_REPORT_SENT_COPY = "Thanks \u2014 an admin will review this.";
+  var REASON_COPY = {
+    copyright: "Copyright or someone else\u2019s work",
+    personal_data: "Personal information that should not be shared",
+    offensive: "Offensive or inappropriate",
+    wrong_file: "Wrong file or wrong job",
+    other: "Something else"
+  };
+  var STATUS_COPY = {
+    open: "Open",
+    reviewed: "Reviewed \u2014 no action",
+    removed: "File removed"
+  };
+  function trimmed4(value) {
+    return String(value ?? "").trim();
+  }
+  function fileReportCollectionPath(organizationId) {
+    return `organizations/${trimmed4(organizationId)}/fileReports`;
+  }
+  function isFileReportReason(value) {
+    return FILE_REPORT_REASONS.includes(trimmed4(value));
+  }
+  function isFileReportSurface(value) {
+    return FILE_REPORT_SURFACES.includes(trimmed4(value));
+  }
+  function fileReportReasonCopy(reason) {
+    return isFileReportReason(reason) ? REASON_COPY[trimmed4(reason)] : REASON_COPY.other;
+  }
+  function fileReportStatusCopy(status) {
+    const value = trimmed4(status);
+    return FILE_REPORT_STATUSES.includes(value) ? STATUS_COPY[value] : STATUS_COPY.open;
+  }
+  function fileReportStoragePath(fileRef) {
+    const raw = trimmed4(fileRef);
+    if (!raw) return null;
+    if (raw.startsWith("gs://")) {
+      const rest = raw.slice("gs://".length);
+      const slash = rest.indexOf("/");
+      return slash > 0 && slash < rest.length - 1 ? rest.slice(slash + 1) : null;
+    }
+    if (/^https?:\/\//i.test(raw)) {
+      const firebase = raw.match(/\/v0\/b\/[^/]+\/o\/([^?#]+)/);
+      if (firebase) {
+        try {
+          return decodeURIComponent(firebase[1]);
+        } catch {
+          return null;
+        }
+      }
+      const gcs = raw.match(/^https?:\/\/storage\.googleapis\.com\/[^/]+\/([^?#]+)/i);
+      if (gcs) {
+        try {
+          return decodeURIComponent(gcs[1]);
+        } catch {
+          return null;
+        }
+      }
+      return null;
+    }
+    if (raw.includes("://") || raw.startsWith("/")) return null;
+    return raw;
+  }
+  function fileReportFileName(storagePath) {
+    const path = trimmed4(storagePath);
+    const last = path.split("/").pop() || "";
+    return last.slice(0, FILE_REPORT_FILE_NAME_MAX);
+  }
+  function fileReportWriteFields(input) {
+    const organizationId = trimmed4(input.organizationId);
+    const reportedByUserId = trimmed4(input.reportedByUserId);
+    const storagePath = trimmed4(input.storagePath);
+    const surface = trimmed4(input.surface);
+    const parentId = trimmed4(input.parentId);
+    const reason = trimmed4(input.reason);
+    if (!organizationId) return { ok: false, error: "missing_organization" };
+    if (!reportedByUserId) return { ok: false, error: "missing_user" };
+    if (!storagePath.startsWith(`organizations/${organizationId}/`) || storagePath.includes("..")) {
+      return { ok: false, error: "bad_path" };
+    }
+    if (!isFileReportSurface(surface)) return { ok: false, error: "bad_surface" };
+    if (!parentId) return { ok: false, error: "missing_parent" };
+    if (!isFileReportReason(reason)) return { ok: false, error: "bad_reason" };
+    const fileName = (trimmed4(input.fileName) || fileReportFileName(storagePath)).slice(0, FILE_REPORT_FILE_NAME_MAX);
+    return {
+      ok: true,
+      fields: {
+        organizationId,
+        storagePath,
+        surface,
+        parentId,
+        fileName,
+        reason,
+        details: trimmed4(input.details).slice(0, FILE_REPORT_DETAILS_MAX),
+        reportedByUserId,
+        status: "open"
+      }
+    };
+  }
+  function fileReportReviewWriteFields(input) {
+    const status = trimmed4(input.status);
+    const reviewedByUserId = trimmed4(input.reviewedByUserId);
+    if (status !== "reviewed" && status !== "removed") return null;
+    if (!reviewedByUserId) return null;
+    return { status, reviewedByUserId };
+  }
+  function canReviewFileReports(role) {
+    if (role.isOperativeMode) return false;
+    return role.isSuperAdmin || role.isAdmin;
   }
   return __toCommonJS(bundleEntry_exports);
 })();

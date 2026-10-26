@@ -954,6 +954,39 @@ service cloud.firestore {
         allow delete: if isOrganizationAdmin(organizationId);
       }
 
+      // Report a problem with this file (lib/canonical/fileReports.ts).
+      // Anyone in the organisation files a report as themselves; only admins and
+      // the platform owner read and close them. Reports are never deleted.
+      match /fileReports/{reportId} {
+        allow create: if canAccessOrganization(organizationId) &&
+          request.resource.data.keys().hasOnly(['organizationId', 'storagePath', 'surface', 'parentId', 'fileName', 'reason', 'details', 'reportedByUserId', 'status', 'createdAt']) &&
+          request.resource.data.keys().hasAll(['organizationId', 'storagePath', 'surface', 'parentId', 'fileName', 'reason', 'details', 'reportedByUserId', 'status', 'createdAt']) &&
+          request.resource.data.organizationId == organizationId &&
+          request.resource.data.reportedByUserId == request.auth.uid &&
+          request.resource.data.status == 'open' &&
+          request.resource.data.createdAt == request.time &&
+          request.resource.data.reason in ['copyright', 'personal_data', 'offensive', 'wrong_file', 'other'] &&
+          request.resource.data.surface in ['site_audit', 'task_attachment', 'health_safety', 'deadline', 'variation_evidence', 'qualification_certificate'] &&
+          request.resource.data.storagePath is string &&
+          request.resource.data.storagePath.size() <= 1024 &&
+          request.resource.data.storagePath.matches('^organizations/' + organizationId + '/.+') &&
+          !request.resource.data.storagePath.matches('.*[.][.].*') &&
+          request.resource.data.parentId is string &&
+          request.resource.data.parentId.size() > 0 &&
+          request.resource.data.parentId.size() <= 200 &&
+          request.resource.data.fileName is string &&
+          request.resource.data.fileName.size() <= 200 &&
+          request.resource.data.details is string &&
+          request.resource.data.details.size() <= 1000;
+        allow read: if isOrganizationAdmin(organizationId) || isPlatformOwner();
+        allow update: if (isOrganizationAdmin(organizationId) || isPlatformOwner()) &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'reviewedByUserId', 'reviewedAt']) &&
+          request.resource.data.status in ['reviewed', 'removed'] &&
+          request.resource.data.reviewedByUserId == request.auth.uid &&
+          request.resource.data.reviewedAt == request.time;
+        allow delete: if false;
+      }
+
       match /dashboardLayouts/{layoutUserId} {
         allow read: if canAccessOrganization(organizationId);
         allow create, update, delete: if canAccessOrganization(organizationId) &&
@@ -987,7 +1020,8 @@ service cloud.firestore {
         allow read: if canAccessOrganization(organizationId) &&
           collection != 'variations' &&
           collection != 'variationTrackers' &&
-          collection != 'notifications';
+          collection != 'notifications' &&
+          collection != 'fileReports';
       }
     }
 
