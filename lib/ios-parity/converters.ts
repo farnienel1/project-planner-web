@@ -322,8 +322,6 @@ export function serializeUser(user: User): Record<string, unknown> {
     payload.tradeTypePreset = user.tradeTypePreset?.trim() || deleteField()
     payload.tradeTypeCustom = user.tradeTypeCustom?.trim() || deleteField()
     payload.timesheetsEnabled = user.timesheetsEnabled === true
-    payload.vatNumber = user.vatNumber?.trim() || deleteField()
-    payload.utrNumber = user.utrNumber?.trim() || deleteField()
   }
 
   applyExclusiveRateFields(payload, user)

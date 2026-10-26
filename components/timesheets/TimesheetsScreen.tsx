@@ -17,7 +17,14 @@ import {
 } from '@/lib/timesheets/timesheetStorage'
 import type { TimesheetDraft } from '@/lib/timesheets/timesheetDraft'
 import { SIGNED_OFF_EDIT_NOTE } from '@/lib/timesheets/timesheetApprovalPolicy'
-import { resolveTimesheetPeriod } from '@/lib/canonical'
+import {
+  SENSITIVE_EXPORT_OPTION_LABEL,
+  canViewSensitiveProfile,
+  exportIncludesSensitiveFields,
+  resolveTimesheetPeriod,
+} from '@/lib/canonical'
+import { staffAccountRole } from '@/lib/permissions'
+import { loadTaxIds } from '@/lib/sensitiveProfile/taxIdsService'
 import { currentPeriodTimesheetMembers } from '@/lib/timesheets/timesheetHubStats'
 import { applyWeeklyReportOverride } from '@/lib/timesheets/weeklyReportOverride'
 import { subjectForUser, timesheetRosterGroups, userIdsSharingEmail } from '@/lib/timesheets/timesheetWeekUtils'
@@ -106,6 +113,8 @@ export function TimesheetsScreen({
   const [exportedRows, setExportedRows] = useState<ExportedTimesheetHistoryRow[]>([])
   const [recordsLoading, setRecordsLoading] = useState(false)
   const [exporting, setExporting] = useState(false)
+  // Exports leave UTR and VAT out unless an admin ticks the box (rulebook).
+  const [exportTaxIds, setExportTaxIds] = useState(false)
   const [exportMessage, setExportMessage] = useState<string | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [checkingEarlier, setCheckingEarlier] = useState(false)
@@ -318,14 +327,23 @@ export function TimesheetsScreen({
           extrasMode: 'export',
           standardDayHours: payrollPolicy.standardPaidHours,
         })
+        const includeTaxIds = exportIncludesSensitiveFields({
+          requested: exportTaxIds,
+          canView: canViewSensitiveProfile({
+            viewerRole: staffAccountRole(user),
+            viewerUserId: user.id,
+            subjectUserId: member.id,
+          }),
+        })
+        const taxIds = includeTaxIds ? await loadTaxIds(member.id, member).catch(() => null) : null
         const pdf = buildTimesheetInvoicePdf({
           organizationName: organization.name || 'Organisation',
           subject: subjectForUser(member, operatives),
           weekStart: periodStart,
           weekEnd: periodEnd,
           amount: invoiceLinesTotal(lines),
-          vatNumber: member.vatNumber,
-          utrNumber: member.utrNumber,
+          vatNumber: taxIds?.vatNumber || undefined,
+          utrNumber: taxIds?.utrNumber || undefined,
           timeZone,
           lines,
           notes: signatureNotes(draft, timeZone),
@@ -489,6 +507,12 @@ export function TimesheetsScreen({
       {teamTab === 'signed' ? (
         <div className="stack" style={{ gap: 8 }}>
           <p className="muted small">{SIGNED_OFF_EDIT_NOTE}</p>
+          {user && canViewSensitiveProfile({ viewerRole: staffAccountRole(user), viewerUserId: user.id, subjectUserId: '' }) ? (
+            <label className="flex items-center gap-2 text-[14px] text-[var(--ink2)]">
+              <input type="checkbox" checked={exportTaxIds} onChange={(e) => setExportTaxIds(e.target.checked)} />
+              {SENSITIVE_EXPORT_OPTION_LABEL}
+            </label>
+          ) : null}
           <button
             type="button"
             disabled={exporting}

@@ -179,10 +179,7 @@ export function buildSaveUserPayload(user: User): Record<string, unknown> {
 
   if (operativeMode || user.permissions.manager || user.permissions.adminAccess) {
     payload.timesheetsEnabled = user.timesheetsEnabled === true
-    const vat = user.vatNumber?.trim()
-    payload.vatNumber = vat ? vat : deleteField()
-    const utr = user.utrNumber?.trim()
-    payload.utrNumber = utr ? utr : deleteField()
+    // UTR and VAT number are saved to users/{uid}/private/taxIds (saveTaxIds), never here.
   }
 
   if (user.employmentTypeTransitionFrom && user.employmentTypeEffectiveAt) {
@@ -290,8 +287,6 @@ export function buildInvitedUserPayload(params: {
     payload.timesheetsEnabled = params.timesheetsEnabled === true
   }
 
-  if (params.vatNumber?.trim()) payload.vatNumber = params.vatNumber.trim()
-  if (params.utrNumber?.trim()) payload.utrNumber = params.utrNumber.trim()
 
   if (params.annualLeaveEnabled != null) {
     payload.annualLeaveEnabled = params.annualLeaveEnabled !== false

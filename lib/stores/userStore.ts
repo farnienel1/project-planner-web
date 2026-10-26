@@ -11,6 +11,7 @@ import { parseOrgUser } from '@/lib/firebase/parseUser'
 import { operativeRecordForUser } from '@/lib/operatives/operativeRosterUtils'
 import { applyAccountTypeChange } from '@/lib/staff/accountTypeChange'
 import { removeFutureBookingsForPerson } from '@/lib/bookings/removeBookingsOnDelete'
+import { deleteTaxIds } from '@/lib/sensitiveProfile/taxIdsService'
 
 interface UserStoreState {
   saving: boolean
@@ -207,6 +208,7 @@ export const useUserStore = create<UserStoreState>(() => ({
       }
       await removeFutureBookingsForPerson(db, { organizationId: orgId, operativeIds })
     }
+    await deleteTaxIds(userId)
     await deleteDoc(doc(db, 'users', userId))
     if (orgId && email) {
       await deleteDoc(doc(db, 'organizations', orgId, 'userEmails', email)).catch(() => undefined)

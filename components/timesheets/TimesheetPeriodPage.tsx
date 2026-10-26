@@ -29,7 +29,13 @@ import {
   userHasLineManager,
 } from '@/lib/timesheets/timesheetApprovalPolicy'
 import { applyWeeklyReportOverride } from '@/lib/timesheets/weeklyReportOverride'
-import { hasAdminAccess } from '@/lib/permissions'
+import { hasAdminAccess, staffAccountRole } from '@/lib/permissions'
+import {
+  SENSITIVE_EXPORT_OPTION_LABEL,
+  canViewSensitiveProfile,
+  exportIncludesSensitiveFields,
+} from '@/lib/canonical'
+import { loadTaxIds } from '@/lib/sensitiveProfile/taxIdsService'
 import {
   notifyTimesheetPendingManagerSignoff,
   notifyTimesheetSignedByManager,
@@ -170,6 +176,9 @@ export function TimesheetPeriodPage({
   const [pendingExtraMode, setPendingExtraMode] = useState<'priceWork' | 'expense' | null>(null)
   const [extrasReviewAlert, setExtrasReviewAlert] = useState(false)
   const [utrWarningOpen, setUtrWarningOpen] = useState(false)
+  // Tax ids stay off the invoice unless the person or an admin ticks the box (rulebook).
+  const [includeTaxIds, setIncludeTaxIds] = useState(false)
+  const [invoiceTaxIds, setInvoiceTaxIds] = useState<{ utrNumber?: string; vatNumber?: string }>({})
   const [invoiceHtml, setInvoiceHtml] = useState<string | null>(null)
   const [invoicePdf, setInvoicePdf] = useState<Uint8Array | null>(null)
 
@@ -476,7 +485,7 @@ export function TimesheetPeriodPage({
   }
 
   // Download only — iOS Generate Invoice does not set exportedAt. Email and export does.
-  const runInvoiceGeneration = () => {
+  const runInvoiceGeneration = (taxIds: { utrNumber?: string; vatNumber?: string } = invoiceTaxIds) => {
     if (!organization || !fullyApproved) return
     const subject = subjectForUser(subjectUser, operatives)
     const lines = invoiceLinesForTimesheet({
@@ -502,8 +511,8 @@ export function TimesheetPeriodPage({
       totalHours: payroll.totalHours,
       totalDays: payroll.totalHours / Math.max(payrollPolicy.standardPaidHours, 0.01),
       amount: invoiceLinesTotal(lines),
-      vatNumber: subjectUser.vatNumber,
-      utrNumber: subjectUser.utrNumber,
+      vatNumber: taxIds.vatNumber,
+      utrNumber: taxIds.utrNumber,
       timeZone,
       lines,
       notes,
@@ -514,8 +523,8 @@ export function TimesheetPeriodPage({
       weekStart: periodStart,
       weekEnd: periodEnd,
       amount: invoiceLinesTotal(lines),
-      vatNumber: subjectUser.vatNumber,
-      utrNumber: subjectUser.utrNumber,
+      vatNumber: taxIds.vatNumber,
+      utrNumber: taxIds.utrNumber,
       timeZone,
       lines,
       notes,
@@ -524,13 +533,34 @@ export function TimesheetPeriodPage({
     setInvoicePdf(pdf)
   }
 
-  const handleInvoice = () => {
+  const canViewSubjectTaxIds = Boolean(
+    viewer &&
+      canViewSensitiveProfile({
+        viewerRole: staffAccountRole(viewer),
+        viewerUserId: viewer.id,
+        subjectUserId: subjectUser.id,
+      })
+  )
+
+  const handleInvoice = async () => {
     if (!organization || !fullyApproved) return
-    if (!subjectUser.utrNumber?.trim()) {
-      setUtrWarningOpen(true)
-      return
+    let taxIds: { utrNumber?: string; vatNumber?: string } = {}
+    if (exportIncludesSensitiveFields({ requested: includeTaxIds, canView: canViewSubjectTaxIds })) {
+      try {
+        const loaded = await loadTaxIds(subjectUser.id, subjectUser)
+        taxIds = { utrNumber: loaded.utrNumber || undefined, vatNumber: loaded.vatNumber || undefined }
+      } catch {
+        taxIds = {}
+      }
+      setInvoiceTaxIds(taxIds)
+      if (!taxIds.utrNumber) {
+        setUtrWarningOpen(true)
+        return
+      }
+    } else {
+      setInvoiceTaxIds({})
     }
-    runInvoiceGeneration()
+    runInvoiceGeneration(taxIds)
   }
 
   const setLineDecision = (lineId: string, decision: TimesheetManagerDecision, revisedAmount?: number | null) => {
@@ -778,10 +808,16 @@ export function TimesheetPeriodPage({
             {needsCounterSign ? (
               <p className="text-[13px] text-[var(--ink3)]">{SIGNED_OFF_EDIT_NOTE}</p>
             ) : null}
+            {canViewSubjectTaxIds ? (
+              <label className="flex items-center gap-2 text-[14px] text-[var(--ink2)]">
+                <input type="checkbox" checked={includeTaxIds} onChange={(e) => setIncludeTaxIds(e.target.checked)} />
+                {SENSITIVE_EXPORT_OPTION_LABEL}
+              </label>
+            ) : null}
             <button
               type="button"
               disabled={busy}
-              onClick={handleInvoice}
+              onClick={() => void handleInvoice()}
               className="w-full rounded-xl bg-[#16A34A] py-3.5 text-[16px] font-semibold text-white disabled:opacity-60"
             >
               Generate Invoice
@@ -972,7 +1008,7 @@ export function TimesheetPeriodPage({
             </button>
             <p className="mt-3 text-[17px] font-semibold">Before you invoice</p>
             <p className="mt-3 text-[15px] text-[var(--ink3)]">
-              Your UTR number is currently blank. Please fill this in via My Profile in Settings to ensure prompt payment.
+              The UTR number is blank. Ask an admin to add it on Edit user so invoices are paid promptly.
             </p>
             <button
               type="button"

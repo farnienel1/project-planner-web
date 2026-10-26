@@ -19,8 +19,6 @@ export type TimesheetSubject = {
   dayRate?: number
   hourlyRate?: number
   payBasis?: 'day' | 'hourly' | null
-  vatNumber?: string
-  utrNumber?: string
   employmentType?: string
 }
 
@@ -56,8 +54,6 @@ export function subjectForUser(user: User, operatives: Operative[]): TimesheetSu
     dayRate: user.dayRate ?? linked?.dayRate,
     hourlyRate: user.hourlyRate ?? linked?.hourlyRate,
     payBasis: user.payBasis ?? linked?.payBasis,
-    vatNumber: user.vatNumber,
-    utrNumber: user.utrNumber,
     employmentType: user.employmentType,
   }
 }
@@ -233,8 +229,6 @@ export function buildTimesheetSubjects(users: User[], operatives: Operative[]): 
       dayRate: linkedUser?.dayRate ?? operative.dayRate,
       hourlyRate: linkedUser?.hourlyRate ?? operative.hourlyRate,
       payBasis: linkedUser?.payBasis ?? operative.payBasis,
-      vatNumber: linkedUser?.vatNumber,
-      utrNumber: linkedUser?.utrNumber,
       employmentType: linkedUser?.employmentType,
     })
   }
@@ -259,8 +253,6 @@ export function buildTimesheetSubjects(users: User[], operatives: Operative[]): 
       dayRate: user.dayRate,
       hourlyRate: user.hourlyRate,
       payBasis: user.payBasis,
-      vatNumber: user.vatNumber,
-      utrNumber: user.utrNumber,
       employmentType: user.employmentType,
     })
   }
