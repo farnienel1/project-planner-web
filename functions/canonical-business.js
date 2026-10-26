@@ -148,6 +148,7 @@ var ProjectPlannerCanonical = (() => {
     leaveCoverageRows: () => leaveCoverageRows,
     leaveSlotKind: () => leaveSlotKind,
     leaveYearBounds: () => leaveYearBounds,
+    legalPackNeedsAcceptance: () => legalPackNeedsAcceptance,
     listedCurrentLabourPeople: () => listedCurrentLabourPeople,
     listedRosterUsers: () => listedRosterUsers,
     matchesRosterSegment: () => matchesRosterSegment,
@@ -495,8 +496,8 @@ var ProjectPlannerCanonical = (() => {
     if (typeof value === "number") {
       return Number.isFinite(value) && value >= 0 && value <= 24 * 60 ? Math.round(value) : null;
     }
-    const text2 = String(value ?? "").trim();
-    const match = /^(\d{1,2}):(\d{2})$/.exec(text2);
+    const text3 = String(value ?? "").trim();
+    const match = /^(\d{1,2}):(\d{2})$/.exec(text3);
     if (!match) return null;
     const hours = Number(match[1]);
     const minutes = Number(match[2]);
@@ -1280,8 +1281,8 @@ var ProjectPlannerCanonical = (() => {
   }
   function formatHours(hours) {
     const rounded = Math.round(hours * 4) / 4;
-    const text2 = Number.isInteger(rounded) ? String(rounded) : String(rounded).replace(/0+$/, "");
-    return `${text2} hour${rounded === 1 ? "" : "s"}`;
+    const text3 = Number.isInteger(rounded) ? String(rounded) : String(rounded).replace(/0+$/, "");
+    return `${text3} hour${rounded === 1 ? "" : "s"}`;
   }
   function joinRanges(intervals) {
     const labels = intervals.map(rangeLabel);
@@ -4148,6 +4149,17 @@ var ProjectPlannerCanonical = (() => {
       }
     }
     return rows;
+  }
+
+  // lib/canonical/legalPack.ts
+  function text2(value) {
+    return typeof value === "string" ? value.trim() : "";
+  }
+  function legalPackNeedsAcceptance(input) {
+    if (input.policyAccepted !== true) return true;
+    const current = text2(input.currentVersion);
+    if (!current) return false;
+    return text2(input.acceptedVersion) !== current;
   }
   return __toCommonJS(bundleEntry_exports);
 })();
