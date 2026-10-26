@@ -498,6 +498,7 @@ export {
 } from './bookings'
 
 export { bookingIdsForAccount, bookingPersonKey, resolveBookingPerson } from './bookingPerson'
+export { LEGACY_PLACEHOLDER_DOCUMENT_ID, isLegacyPlaceholderDocumentId } from './bookings'
 export type {
   BookingPersonAccount,
   BookingPersonInput,

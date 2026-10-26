@@ -88,7 +88,11 @@ export function findUserAndOperative(
   operatives: Operative[],
   opts: { userId?: string; operativeId?: string }
 ): { user?: User; operative?: Operative } {
-  let user = opts.userId ? users.find((entry) => entry.id === opts.userId) : undefined
+  let user = opts.userId
+    ? users.find((entry) => entry.id === opts.userId) ||
+      // A manager booking saved under an invite id the account later replaced.
+      users.find((entry) => (entry.formerUserIds ?? []).includes(opts.userId as string))
+    : undefined
   let operative = opts.operativeId ? operatives.find((entry) => entry.id === opts.operativeId) : undefined
   if (!user && operative?.email) {
     const email = operative.email.trim().toLowerCase()

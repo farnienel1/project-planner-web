@@ -3679,3 +3679,15 @@ test('every id a re-added person has had groups under one person key', () => {
   assert.equal(bookingPersonKey('DE1D3201-7929-4843-B5C8-883ED49FFC43', bpInput), 'operative:de1d3201-7929-4843-b5c8-883ed49ffc43')
   assert.equal(bookingPersonKey('nobodyUid', bpInput), 'id:nobodyuid')
 })
+
+test('organisation setup placeholder bookings are not bookings on either app', () => {
+  const date = { seconds: Date.UTC(2025, 10, 3) / 1000, nanoseconds: 0 }
+  assert.deepEqual(
+    parseBookingDocument('INITIAL-PLACEHOLDER', { operativeId: 'x', projectId: 'y', date, timeSlot: 'morning', status: 'tentative' }),
+    { ok: false, errors: ['legacy_placeholder'] }
+  )
+  assert.deepEqual(
+    parseManagerSiteBookingDocument('initial-placeholder', { userId: 'u', date, timeSlot: 'AM' }),
+    { ok: false, errors: ['legacy_placeholder'] }
+  )
+})

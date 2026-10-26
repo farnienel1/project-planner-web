@@ -43,7 +43,18 @@ export type BookingRepair =
   | 'booked_by_missing'
   | 'date_not_timestamp'
 
+/**
+ * Early organisation setup wrote rows with this document id in jobs, clients and bookings. They are not
+ * real records: no list shows them and no save writes them back.
+ */
+export const LEGACY_PLACEHOLDER_DOCUMENT_ID = 'INITIAL-PLACEHOLDER'
+
+export function isLegacyPlaceholderDocumentId(id: string | null | undefined): boolean {
+  return (id || '').trim().toUpperCase() === LEGACY_PLACEHOLDER_DOCUMENT_ID
+}
+
 export type BookingParseError =
+  | 'legacy_placeholder'
   | 'missing_operative_id'
   | 'missing_project_id'
   | 'missing_date'
@@ -172,6 +183,7 @@ export function parseBookingDocument(
   data: Record<string, unknown> | null | undefined,
   options?: { timeZone?: string | null }
 ): BookingParseResult {
+  if (isLegacyPlaceholderDocumentId(docId)) return { ok: false, errors: ['legacy_placeholder'] }
   const row = data && typeof data === 'object' ? data : {}
   const repairs: BookingRepair[] = []
   const errors: BookingParseError[] = []
@@ -481,6 +493,7 @@ export function parseManagerSiteBookingDocument(
   data: Record<string, unknown> | null | undefined,
   options?: { timeZone?: string | null }
 ): ManagerSiteBookingParseResult {
+  if (isLegacyPlaceholderDocumentId(docId)) return { ok: false, errors: ['legacy_placeholder'] }
   const row = data && typeof data === 'object' ? data : {}
   const errors: string[] = []
   const repairs: string[] = []
