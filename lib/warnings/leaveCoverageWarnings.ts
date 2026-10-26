@@ -13,6 +13,7 @@ import { isActiveBookingStatus } from '@/lib/ios-parity/enums'
 import { dateFromDayKey, dayKey, londonMidnight } from '@/lib/ios-parity/londonTime'
 import { isPlaceholderOperative } from '@/lib/operatives/operativeRosterUtils'
 import { computeWarningCoverageWindow, isDateWithinWarningWindow } from '@/lib/warnings/warningLookahead'
+import { bookingJobLabel } from '@/lib/canonical'
 
 export type LeaveCoverageWarning = LeaveCoverageRow & {
   date: Date
@@ -125,7 +126,7 @@ export function computeLeaveCoverageWarnings({
           timeSlot: String(booking.timeSlot),
           workStartTime: booking.workStartTime,
           workEndTime: booking.workEndTime,
-          label: projectsById.get(booking.projectId) || 'Job',
+          label: bookingJobLabel(projectsById.get(booking.projectId)),
         })),
       ...managerSiteBookings
         .filter(

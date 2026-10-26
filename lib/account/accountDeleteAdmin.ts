@@ -437,6 +437,7 @@ async function scrubInvitePlaceholder(
     if (Object.keys(patch).length > 0) await adminPatch(session, user.path, patch, Object.keys(patch))
   }
   try {
+    await adminDelete(session, `users/${placeholderId}/private/taxIds`)
     await adminDelete(session, `users/${placeholderId}`)
   } catch (error) {
     console.warn('[account/delete] placeholder delete', placeholderId, error)
@@ -622,6 +623,7 @@ async function finishAlreadyScrubbedAccount(
     await unlinkScrubbedOrg(session, input.uid, email, orgId)
   }
   await deleteUnusedInvitesAndPlaceholders(session, input.uid, email)
+  await adminDelete(session, `users/${input.uid}/private/taxIds`)
   await adminDelete(session, `users/${input.uid}`)
   await markAccountDeleteCompleted(session, input.uid, email)
   await writeAccountDeleteAudit(session, { uid: input.uid, orgIds, ip: input.ip })
@@ -713,6 +715,7 @@ export async function executeAccountDelete(input: {
   await anonymiseProductFeedback(session, input.uid)
   await deleteQueryMatches(session, '', 'productSessions', 'userId', input.uid)
   await anonymiseProductEvents(session, input.uid)
+  await adminDelete(session, `users/${input.uid}/private/taxIds`)
   await adminDelete(session, `users/${input.uid}`)
 
   await persistAccountDeleteJob(session, {

@@ -304,3 +304,37 @@ export {
   isFileReportReason,
   isFileReportSurface,
 } from './fileReports'
+
+export {
+  BOOKING_STATUSES,
+  BOOKING_TIME_SLOTS,
+  ORPHAN_BOOKING_LABEL,
+  bookingClock,
+  bookingDateMs,
+  bookingHealthRows,
+  bookingJobLabel,
+  bookingJobState,
+  bookingWriteFields,
+  bookingsToRemoveOnOperativeDelete,
+  bookingsToRemoveOnProjectDelete,
+  isBookingUuid,
+  normalizeBookingStatus,
+  normalizeBookingTimeSlot,
+  parseBookingDocument,
+} from './bookings'
+
+export { legalPackNeedsAcceptance } from './legalPack'
+
+export {
+  SENSITIVE_EXPORT_OPTION_LABEL,
+  SENSITIVE_HELD_BY_ADMIN_COPY,
+  SENSITIVE_PROFILE_DOC_ID,
+  SENSITIVE_PROFILE_FIELDS,
+  SENSITIVE_VALUE_MAX,
+  canViewSensitiveProfile,
+  exportIncludesSensitiveFields,
+  maskSensitiveValue,
+  resolveSensitiveProfile,
+  sensitiveProfileDocPath,
+  sensitiveProfileWriteFields,
+} from './sensitiveProfile'

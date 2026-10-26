@@ -189,6 +189,8 @@ export interface User {
   utrNumber?: string;
   policyAccepted: boolean;
   policyAcceptedAt?: Date;
+  /** Customer legal pack version last accepted (users/{uid}.legalPackVersion). */
+  legalPackVersion?: string;
   /** Explicit false = founder has not clicked the confirm-account email. Missing means legacy (treated as confirmed). */
   accountConfirmed?: boolean;
   accountConfirmToken?: string;

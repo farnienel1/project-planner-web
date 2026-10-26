@@ -45,6 +45,7 @@ import {
 import { HoursTimelinePicker } from '@/components/scheduling/HoursTimelinePicker'
 import { CustomOtherLocationField } from '@/components/scheduling/CustomOtherLocationField'
 import { PanelHeader } from '@/components/settings/primitives'
+import { ORPHAN_BOOKING_LABEL } from '@/lib/canonical'
 
 type BookToTab = 'other' | 'projects' | 'smallWorks'
 type ManagerSlot = 'FULL_DAY' | 'AM' | 'PM' | 'CUSTOM_HOURS'
@@ -374,7 +375,7 @@ export function BookLabourFlowScreen({
     if (overlapping.length === 0) return null
     return overlapping.map((booking) => {
       const project = allWorks.find((p) => p.id === booking.projectId)
-      const label = project ? `${project.jobNumber} ${project.siteName}` : 'Another job'
+      const label = project ? `${project.jobNumber} ${project.siteName}` : ORPHAN_BOOKING_LABEL
       return `${booking.timeSlot} · ${label}`
     })
   }

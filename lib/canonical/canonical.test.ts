@@ -147,6 +147,15 @@ import {
   materialOrderIncludesDeliveryRequired,
 } from './materialDelivery.ts'
 import {
+  canViewSensitiveProfile,
+  exportIncludesSensitiveFields,
+  maskSensitiveValue,
+  resolveSensitiveProfile,
+  sensitiveProfileDocPath,
+  sensitiveProfileWriteFields,
+} from './sensitiveProfile.ts'
+import { legalPackNeedsAcceptance } from './legalPack.ts'
+import {
   FILE_REPORT_DETAILS_MAX,
   canReviewFileReports,
   fileReportCollectionPath,
@@ -155,6 +164,16 @@ import {
   fileReportStoragePath,
   fileReportWriteFields,
 } from './fileReports.ts'
+import {
+  ORPHAN_BOOKING_LABEL,
+  bookingHealthRows,
+  bookingJobLabel,
+  bookingJobState,
+  bookingWriteFields,
+  bookingsToRemoveOnOperativeDelete,
+  bookingsToRemoveOnProjectDelete,
+  parseBookingDocument,
+} from './bookings.ts'
 import {
   TIMESHEET_CLOSE_OF_PLAY_HOUR,
   TIMESHEET_NOTIFY_HOUR,
@@ -3314,5 +3333,254 @@ test('the iOS bundle exposes the booking identity rules', () => {
   assert.equal(
     bundle.labourBookingKind({ ...labourBase, id: 'plain', email: '', name: 'Plain' }),
     null
+  )
+})
+
+const BK_OP = '11111111-2222-4333-8444-555555555555'
+const BK_JOB = 'AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE'
+const BK_DATE = { seconds: Date.UTC(2026, 9, 26) / 1000 - 3600, nanoseconds: 0 }
+
+function bookingDoc(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    operativeId: BK_OP,
+    projectId: BK_JOB,
+    date: BK_DATE,
+    timeSlot: 'FULL DAY',
+    bookedBy: 'Ada Admin',
+    status: 'Confirmed',
+    notes: '',
+    ...overrides,
+  }
+}
+
+function readBooking(overrides: Record<string, unknown> = {}) {
+  const result = parseBookingDocument('BOOKING-1', bookingDoc(overrides))
+  assert.equal(result.ok, true, JSON.stringify(result))
+  if (!result.ok) throw new Error('refused')
+  return result
+}
+
+test('a clean booking reads with no repairs', () => {
+  const result = readBooking()
+  assert.deepEqual(result.repairs, [])
+  assert.equal(result.booking.dateMs, BK_DATE.seconds * 1000)
+  assert.equal(result.booking.operativeIdIsUuid, true)
+})
+
+test('booking aliases read and each is reported as a repair', () => {
+  const cases: Array<[Record<string, unknown>, string, string, unknown]> = [
+    [{ status: 'confirmed' }, 'status_alias', 'status', 'Confirmed'],
+    [{ status: 'pending' }, 'status_alias', 'status', 'Tentative'],
+    [{ status: 'canceled' }, 'status_alias', 'status', 'Cancelled'],
+    [{ timeSlot: undefined }, 'slot_missing_full_day', 'timeSlot', 'FULL DAY'],
+    [{ timeSlot: 'FULL_DAY' }, 'slot_alias', 'timeSlot', 'FULL DAY'],
+    [{ timeSlot: 'MORNING' }, 'slot_alias', 'timeSlot', 'AM'],
+    [{ timeSlot: 'evening' }, 'slot_alias', 'timeSlot', 'Evening'],
+    [{ operativeId: undefined, operativeID: BK_OP }, 'operative_id_alias', 'operativeId', BK_OP],
+    [{ projectId: undefined, projectID: BK_JOB }, 'project_id_alias', 'projectId', BK_JOB],
+    [{ bookedBy: undefined }, 'booked_by_missing', 'bookedBy', ''],
+    [{ date: BK_DATE.seconds * 1000 }, 'date_not_timestamp', 'dateMs', BK_DATE.seconds * 1000],
+    [{ date: new Date(BK_DATE.seconds * 1000).toISOString() }, 'date_not_timestamp', 'dateMs', BK_DATE.seconds * 1000],
+    [{ date: { _seconds: BK_DATE.seconds, _nanoseconds: 0 } }, '', 'dateMs', BK_DATE.seconds * 1000],
+  ]
+  for (const [overrides, repair, field, expected] of cases) {
+    const result = readBooking(overrides)
+    if (repair) assert.ok(result.repairs.includes(repair as never), `${JSON.stringify(overrides)} → ${repair}`)
+    else assert.deepEqual(result.repairs, [])
+    assert.equal((result.booking as unknown as Record<string, unknown>)[field], expected, JSON.stringify(overrides))
+  }
+})
+
+test('a booking is refused, with the reason, when a required field is missing or unknown', () => {
+  const cases: Array<[Record<string, unknown>, string]> = [
+    [{ operativeId: '' }, 'missing_operative_id'],
+    [{ projectId: undefined }, 'missing_project_id'],
+    [{ date: undefined }, 'missing_date'],
+    [{ date: 'not a date' }, 'missing_date'],
+    [{ status: 'Booked' }, 'bad_status'],
+    [{ timeSlot: 'Lunch' }, 'bad_time_slot'],
+  ]
+  for (const [overrides, error] of cases) {
+    const result = parseBookingDocument('BOOKING-1', bookingDoc(overrides))
+    assert.equal(result.ok, false, JSON.stringify(overrides))
+    if (!result.ok) assert.ok(result.errors.includes(error as never), `${JSON.stringify(overrides)} → ${error}`)
+  }
+})
+
+test('a non-UUID operative id still reads but is flagged for iOS', () => {
+  const result = readBooking({ operativeId: 'firebaseUid123' })
+  assert.equal(result.booking.operativeIdIsUuid, false)
+})
+
+test('the booking write shape reads back as the same booking', () => {
+  const dateMs = BK_DATE.seconds * 1000
+  const written = bookingWriteFields({
+    id: 'BOOKING-1',
+    operativeId: BK_OP,
+    projectId: BK_JOB,
+    dateMs,
+    timeSlot: 'full_day',
+    status: 'pending',
+    bookedBy: 'Ada Admin',
+    workStartTime: '7:30 AM',
+    workEndTime: '16:00:00',
+    createdAtMs: dateMs,
+    updatedAtMs: dateMs,
+  })
+  assert.equal(written.ok, true)
+  if (!written.ok) return
+  assert.equal(written.fields.timeSlot, 'FULL DAY')
+  assert.equal(written.fields.status, 'Tentative')
+  assert.equal(written.fields.workStartTime, '07:30')
+  const read = parseBookingDocument('BOOKING-1', written.fields)
+  assert.equal(read.ok, true)
+  if (!read.ok) return
+  assert.deepEqual(read.repairs, ['date_not_timestamp'])
+  assert.equal(read.booking.dateMs, dateMs)
+  assert.equal(read.booking.workEndTime, '16:00')
+  assert.deepEqual(bookingWriteFields({ ...written.fields, id: '', dateMs, createdAtMs: dateMs, updatedAtMs: dateMs } as never).ok, false)
+})
+
+test('deleting a person removes only their bookings from today on, matched by id not name', () => {
+  const now = '2026-10-26T09:00:00.000Z'
+  const londonMidnight = (y: number, m: number, d: number) => Date.UTC(y, m - 1, d) - 3600 * 1000
+  const bookings = [
+    { id: 'past', operativeId: BK_OP, dateMs: londonMidnight(2026, 10, 25) },
+    { id: 'today', operativeId: BK_OP, dateMs: Date.UTC(2026, 9, 26) },
+    { id: 'future', operativeId: BK_OP.toLowerCase(), dateMs: Date.UTC(2026, 10, 3) },
+    { id: 'alias', operativeId: 'USER-UID', dateMs: Date.UTC(2026, 10, 3) },
+    { id: 'someone-else', operativeId: 'OTHER', dateMs: Date.UTC(2026, 10, 3) },
+  ]
+  assert.deepEqual(
+    bookingsToRemoveOnOperativeDelete({ bookings, operativeIds: [BK_OP, 'USER-UID'], nowIso: now, timeZone: 'Europe/London' }),
+    ['today', 'future', 'alias']
+  )
+  assert.deepEqual(bookingsToRemoveOnOperativeDelete({ bookings, operativeIds: [], nowIso: now }), [])
+})
+
+test('the delete boundary is London midnight across the clock change', () => {
+  // BST ends on Sunday 25 October 2026: London midnight that day is 23:00 UTC on the 24th.
+  const saturdayLateBst = Date.UTC(2026, 9, 24, 22, 59)
+  const sundayMidnightBst = Date.UTC(2026, 9, 24, 23, 0)
+  const bookings = [
+    { id: 'sat', projectId: BK_JOB, dateMs: saturdayLateBst },
+    { id: 'sun', projectId: BK_JOB, dateMs: sundayMidnightBst },
+  ]
+  assert.deepEqual(
+    bookingsToRemoveOnProjectDelete({ bookings, projectId: BK_JOB, nowIso: '2026-10-25T08:00:00.000Z', timeZone: 'Europe/London' }),
+    ['sun']
+  )
+})
+
+test('a booking whose job is gone is shown as Deleted job, not skipped', () => {
+  assert.equal(bookingJobState(BK_JOB, [BK_JOB.toLowerCase()]), 'live')
+  assert.equal(bookingJobState(BK_JOB, new Set(['OTHER'])), 'deleted_job')
+  assert.equal(bookingJobLabel(undefined), ORPHAN_BOOKING_LABEL)
+  assert.equal(bookingJobLabel(' 71 Broadwick St '), '71 Broadwick St')
+})
+
+test('booking health lists refused, repaired, orphaned and iOS-unreadable rows', () => {
+  const rows = bookingHealthRows({
+    docs: [
+      { id: 'ok', data: bookingDoc() },
+      { id: 'refused', data: bookingDoc({ status: 'Booked' }) },
+      { id: 'repaired', data: bookingDoc({ status: 'pending' }) },
+      { id: 'no-person', data: bookingDoc({ operativeId: '99999999-2222-4333-8444-555555555555' }) },
+      { id: 'no-job', data: bookingDoc({ projectId: '99999999-BBBB-4CCC-8DDD-EEEEEEEEEEEE' }) },
+      { id: 'uid', data: bookingDoc({ operativeId: 'firebaseUid123' }) },
+    ],
+    operativeIds: [BK_OP],
+    userIds: ['firebaseUid123'],
+    projectIds: [BK_JOB],
+  })
+  const kinds = rows.map((row) => `${row.id}:${row.kind}`)
+  assert.deepEqual(kinds, ['refused:refused', 'repaired:repaired', 'no-person:missing_operative', 'no-job:missing_job', 'uid:ios_cannot_read'])
+})
+
+test('the iOS JavaScript bundle reads a booking the same way', () => {
+  const source = readFileSync(new URL('./dist/canonical-business.js', import.meta.url), 'utf8')
+  const sandbox: { ProjectPlannerCanonical?: Record<string, (...args: unknown[]) => unknown> } = {}
+  runInContext(source, createContext(sandbox))
+  const data = bookingDoc({ status: 'pending', timeSlot: 'FULL_DAY', operativeID: BK_OP, operativeId: undefined })
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(sandbox.ProjectPlannerCanonical?.parseBookingDocument('BOOKING-1', data))),
+    JSON.parse(JSON.stringify(parseBookingDocument('BOOKING-1', data)))
+  )
+})
+
+test('booking clocks stored as instants read in the organisation zone', () => {
+  const start = { seconds: Date.UTC(2026, 8, 16, 6, 0) / 1000, nanoseconds: 0 }
+  const result = readBooking({ timeSlot: 'CUSTOM_HOURS', workStartTime: start, workEndTime: '4:30 PM' })
+  assert.equal(result.booking.workStartTime, '07:00')
+  assert.equal(result.booking.workEndTime, '16:30')
+  const utc = parseBookingDocument('B', bookingDoc({ workStartTime: start }), { timeZone: 'UTC' })
+  assert.equal(utc.ok && utc.booking.workStartTime, '06:00')
+})
+
+test('a new legal pack version asks everyone to accept again', () => {
+  assert.equal(legalPackNeedsAcceptance({ policyAccepted: false, acceptedVersion: '1.1', currentVersion: '1.1' }), true)
+  assert.equal(legalPackNeedsAcceptance({ policyAccepted: true, acceptedVersion: '1.0', currentVersion: '1.1' }), true)
+  assert.equal(legalPackNeedsAcceptance({ policyAccepted: true, acceptedVersion: undefined, currentVersion: '1.1' }), true)
+  assert.equal(legalPackNeedsAcceptance({ policyAccepted: true, acceptedVersion: ' 1.1 ', currentVersion: '1.1' }), false)
+})
+
+const ROLE_NONE = { isSuperAdmin: false, isAdmin: false, isManager: false, isOperativeMode: false }
+
+test('only the person and admins see tax identifiers', () => {
+  const subject = 'USER-1'
+  assert.equal(canViewSensitiveProfile({ viewerRole: { ...ROLE_NONE, isOperativeMode: true }, viewerUserId: subject, subjectUserId: subject }), true)
+  assert.equal(canViewSensitiveProfile({ viewerRole: { ...ROLE_NONE, isAdmin: true }, viewerUserId: 'ADMIN', subjectUserId: subject }), true)
+  assert.equal(canViewSensitiveProfile({ viewerRole: { ...ROLE_NONE, isSuperAdmin: true }, viewerUserId: 'OWNER', subjectUserId: subject }), true)
+  assert.equal(canViewSensitiveProfile({ viewerRole: { ...ROLE_NONE, isManager: true }, viewerUserId: 'MANAGER', subjectUserId: subject }), false)
+  assert.equal(canViewSensitiveProfile({ viewerRole: { ...ROLE_NONE, isOperativeMode: true }, viewerUserId: 'OP-2', subjectUserId: subject }), false)
+  assert.equal(canViewSensitiveProfile({ viewerRole: { ...ROLE_NONE, isAdmin: true, isOperativeMode: true }, viewerUserId: 'X', subjectUserId: subject }), false)
+  assert.equal(sensitiveProfileDocPath(' USER-1 '), 'users/USER-1/private/taxIds')
+})
+
+test('tax identifiers mask to the last four characters', () => {
+  assert.equal(maskSensitiveValue('12345 67890'), '•••• 7890')
+  assert.equal(maskSensitiveValue('GB123456789'), '•••• 6789')
+  assert.equal(maskSensitiveValue('1234'), '••••')
+  assert.equal(maskSensitiveValue('  '), '')
+})
+
+test('the private tax document wins over the legacy user fields, even when cleared', () => {
+  assert.deepEqual(resolveSensitiveProfile({ privateDoc: { utrNumber: '', vatNumber: 'GB1' }, legacyUser: { utrNumber: '999' } }), {
+    utrNumber: '',
+    vatNumber: 'GB1',
+    source: 'private',
+  })
+  assert.deepEqual(resolveSensitiveProfile({ privateDoc: null, legacyUser: { utrNumber: ' 1234567890 ' } }), {
+    utrNumber: '1234567890',
+    vatNumber: '',
+    source: 'legacy',
+  })
+  assert.equal(resolveSensitiveProfile({}).source, 'none')
+})
+
+test('tax identifier writes trim, cap length and need the writer', () => {
+  assert.deepEqual(sensitiveProfileWriteFields({ utrNumber: ' 123 ', vatNumber: null, updatedByUserId: 'ADMIN' }), {
+    ok: true,
+    fields: { utrNumber: '123', vatNumber: '', updatedByUserId: 'ADMIN' },
+  })
+  assert.deepEqual(sensitiveProfileWriteFields({ utrNumber: 'x'.repeat(21), updatedByUserId: 'ADMIN' }), { ok: false, error: 'too_long' })
+  assert.deepEqual(sensitiveProfileWriteFields({ utrNumber: '1', updatedByUserId: ' ' }), { ok: false, error: 'missing_user' })
+})
+
+test('exports leave tax identifiers out unless asked for by someone who may see them', () => {
+  assert.equal(exportIncludesSensitiveFields({ canView: true }), false)
+  assert.equal(exportIncludesSensitiveFields({ requested: true, canView: false }), false)
+  assert.equal(exportIncludesSensitiveFields({ requested: true, canView: true }), true)
+})
+
+test('the iOS JavaScript bundle masks and resolves tax identifiers the same way', () => {
+  const source = readFileSync(new URL('./dist/canonical-business.js', import.meta.url), 'utf8')
+  const sandbox: { ProjectPlannerCanonical?: Record<string, (...args: unknown[]) => unknown> } = {}
+  runInContext(source, createContext(sandbox))
+  assert.equal(sandbox.ProjectPlannerCanonical?.maskSensitiveValue('1234567890'), maskSensitiveValue('1234567890'))
+  const input = { privateDoc: null, legacyUser: { vatNumber: 'GB123456789' } }
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(sandbox.ProjectPlannerCanonical?.resolveSensitiveProfile(input))),
+    resolveSensitiveProfile(input)
   )
 })

@@ -474,3 +474,56 @@ export type {
   FileReportSurface,
   FileReportWriteResult,
 } from './fileReports'
+
+export {
+  BOOKING_STATUSES,
+  BOOKING_TIME_SLOTS,
+  ORPHAN_BOOKING_LABEL,
+  bookingClock,
+  bookingDateMs,
+  bookingHealthRows,
+  bookingJobLabel,
+  bookingJobState,
+  bookingWriteFields,
+  bookingsToRemoveOnOperativeDelete,
+  bookingsToRemoveOnProjectDelete,
+  isBookingUuid,
+  normalizeBookingStatus,
+  normalizeBookingTimeSlot,
+  parseBookingDocument,
+} from './bookings'
+
+export type {
+  BookingHealthKind,
+  BookingHealthRow,
+  BookingParseError,
+  BookingParseResult,
+  BookingRepair,
+  BookingStatus,
+  BookingTimeSlot,
+  BookingWriteResult,
+  CanonicalBooking,
+  CanonicalBookingInput,
+} from './bookings'
+
+export { legalPackNeedsAcceptance } from './legalPack'
+
+export {
+  SENSITIVE_EXPORT_OPTION_LABEL,
+  SENSITIVE_HELD_BY_ADMIN_COPY,
+  SENSITIVE_PROFILE_DOC_ID,
+  SENSITIVE_PROFILE_FIELDS,
+  SENSITIVE_VALUE_MAX,
+  canViewSensitiveProfile,
+  exportIncludesSensitiveFields,
+  maskSensitiveValue,
+  resolveSensitiveProfile,
+  sensitiveProfileDocPath,
+  sensitiveProfileWriteFields,
+} from './sensitiveProfile'
+
+export type {
+  SensitiveProfile,
+  SensitiveProfileField,
+  SensitiveProfileWriteResult,
+} from './sensitiveProfile'

@@ -676,6 +676,46 @@ service cloud.firestore {
         )
       );
 
+      // Tax identifiers (UTR, VAT number): lib/canonical/sensitiveProfile.ts.
+      // Only the person, an admin of their company and the platform owner read or write.
+      // The invitee may read and remove the placeholder's copy while finishing an invite
+      // (same email check the placeholder user document uses).
+      match /private/{privateDocId} {
+        function subjectUserData() {
+          return get(/databases/$(database)/documents/users/$(userId)).data;
+        }
+        function subjectExists() {
+          return exists(/databases/$(database)/documents/users/$(userId));
+        }
+        function adminOfSubject() {
+          return subjectExists() &&
+            subjectUserData().organizationId is string &&
+            isOrganizationAdmin(subjectUserData().organizationId);
+        }
+        function inviteeOfPlaceholder() {
+          return subjectExists() &&
+            subjectUserData().email is string &&
+            request.auth.token.email is string &&
+            subjectUserData().email.lower() == request.auth.token.email.lower();
+        }
+        function validTaxIds() {
+          return request.resource.data.keys().hasOnly(['utrNumber', 'vatNumber', 'updatedByUserId', 'updatedAt']) &&
+            request.resource.data.utrNumber is string && request.resource.data.utrNumber.size() <= 20 &&
+            request.resource.data.vatNumber is string && request.resource.data.vatNumber.size() <= 20 &&
+            request.resource.data.updatedByUserId == request.auth.uid &&
+            request.resource.data.updatedAt == request.time;
+        }
+        allow read: if request.auth != null && privateDocId == 'taxIds' && (
+          request.auth.uid == userId || isPlatformOwner() || adminOfSubject() || inviteeOfPlaceholder()
+        );
+        allow create, update: if request.auth != null && privateDocId == 'taxIds' && validTaxIds() && (
+          request.auth.uid == userId || isPlatformOwner() || adminOfSubject()
+        );
+        allow delete: if request.auth != null && privateDocId == 'taxIds' && (
+          request.auth.uid == userId || isPlatformOwner() || adminOfSubject() || inviteeOfPlaceholder()
+        );
+      }
+
       // Multi-org memberships (web Change organisation + cross-org invites)
       match /orgMemberships/{membershipOrgId} {
         allow read: if request.auth != null && request.auth.uid == userId;

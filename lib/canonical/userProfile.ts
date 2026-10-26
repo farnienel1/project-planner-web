@@ -58,8 +58,7 @@ export const USER_DOCUMENT_FIELDS = [
   'annualLeaveYearAllowance',
   'annualLeaveYearAllowanceKey',
   'timesheetsEnabled',
-  'vatNumber',
-  'utrNumber',
+  // vatNumber and utrNumber live at users/{uid}/private/taxIds (sensitiveProfile.ts).
   'lastSeenAt',
   'profilePhotoURL',
   'pushTokens',

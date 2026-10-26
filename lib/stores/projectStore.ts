@@ -27,6 +27,7 @@ import {
   isLegacyPlaceholderDocumentId,
   withoutLegacyPlaceholderDocuments,
 } from '@/lib/projects/legacyPlaceholderWork'
+import { removeFutureBookingsForProject } from '@/lib/bookings/removeBookingsOnDelete'
 
 function parseClient(data: unknown): Client {
   const c = (data || {}) as Record<string, unknown>
@@ -265,6 +266,8 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   },
 
   deleteProject: async (id, organizationId, collectionName = 'projects') => {
+    // Rulebook: bookings from today on go with the job; past ones stay as "Deleted job".
+    await removeFutureBookingsForProject(db, { organizationId, projectId: id })
     await deleteDoc(doc(db, 'organizations', organizationId, collectionName, id))
     markRowsRemoved(`${collectionName === 'smallWorks' ? 'smallWorks' : 'projects'}:${organizationId}`, [id])
     if (collectionName === 'smallWorks') {

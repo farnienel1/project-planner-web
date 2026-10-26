@@ -10,6 +10,8 @@ import { applyExclusiveRateFields, buildSaveUserPayload } from '@/lib/firebase/u
 import { parseOrgUser } from '@/lib/firebase/parseUser'
 import { operativeRecordForUser } from '@/lib/operatives/operativeRosterUtils'
 import { applyAccountTypeChange } from '@/lib/staff/accountTypeChange'
+import { removeFutureBookingsForPerson } from '@/lib/bookings/removeBookingsOnDelete'
+import { deleteTaxIds } from '@/lib/sensitiveProfile/taxIdsService'
 
 interface UserStoreState {
   saving: boolean
@@ -195,6 +197,18 @@ export const useUserStore = create<UserStoreState>(() => ({
     )
       .trim()
       .toLowerCase()
+    if (orgId) {
+      // Rulebook: remove this person's bookings from today on; past bookings stay.
+      const operativeIds = [userId]
+      if (email) {
+        const linked = await getDocs(
+          query(collection(db, 'organizations', orgId, 'operatives'), where('email', '==', email))
+        ).catch(() => null)
+        linked?.docs.forEach((row) => operativeIds.push(row.id))
+      }
+      await removeFutureBookingsForPerson(db, { organizationId: orgId, operativeIds })
+    }
+    await deleteTaxIds(userId)
     await deleteDoc(doc(db, 'users', userId))
     if (orgId && email) {
       await deleteDoc(doc(db, 'organizations', orgId, 'userEmails', email)).catch(() => undefined)

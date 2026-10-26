@@ -66,7 +66,7 @@ import { runWhenIdle } from '@/lib/analytics/runWhenIdle'
 import { hasGrantedAnalyticsConsent, subscribeAnalyticsConsent } from '@/lib/analytics/analyticsConsent'
 import { doc, setDoc } from 'firebase/firestore'
 import { recoverJobTypesFromWork } from '@/lib/jobTypes/jobTypesStorage'
-import { canBookWork } from '@/lib/permissions'
+import { canBookWork, hasAdminAccess } from '@/lib/permissions'
 import { createMenuItems } from '@/lib/navigation/createMenu'
 import { cn } from '@/lib/ui/cn'
 import { UserAvatar } from '@/components/users/UserAvatar'
@@ -526,7 +526,7 @@ function AppShellInner({ children }: { children: ReactNode }) {
           Sign out
         </button>
         <p className="px-3 pt-2 text-[11px] text-[var(--ink3)]">v1.0.0 · Project Planner</p>
-        {process.env.NODE_ENV !== 'production' ? (
+        {process.env.NODE_ENV !== 'production' || hasAdminAccess(user) ? (
           <Link href="/dashboard/data-health" className="block px-3 pt-1 text-[11px] text-[var(--blue)]">
             Data health
           </Link>

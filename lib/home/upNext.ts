@@ -15,6 +15,7 @@ import {
 } from '@/lib/ios-parity/londonTime'
 import { normalizeBookingStatus, normalizeManagerTimeSlot } from '@/lib/ios-parity/enums'
 import { halfDayWindows } from '@/lib/canonical'
+import { bookingJobLabel } from '@/lib/canonical'
 
 export interface HomeUpNextRow {
   id: string
@@ -119,7 +120,7 @@ export function upcomingRows(params: {
         const start = sortDateOperativeBooking(b, policy)
         if (start < params.now) continue
         const proj = params.allProjects.find((p) => p.id === b.projectId)
-        const site = proj?.siteName || 'Scheduled work'
+        const site = bookingJobLabel(proj ? proj.siteName || 'Scheduled work' : null)
         const timeStr = formatShortTime(start)
         const booker = displayName(b.bookedBy, params.organizationUsers)
         const job = proj?.jobNumber

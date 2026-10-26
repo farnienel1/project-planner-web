@@ -7,10 +7,12 @@ import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { useInviteStore } from '@/lib/stores/inviteStore'
 import { canInviteOperatives, canManageOperativesOnly, canManageUsers, getAddUserLabel } from '@/lib/navigation/menuPermissions'
 import { permissionsForAccountType, timesheetsEnabledForAccount } from '@/lib/orgSetup/accountPermissions'
+import { staffAccountRole } from '@/lib/permissions'
 import {
   ANNUAL_LEAVE_ALLOWANCE_COPY,
   applyRemainingOverride,
   CANONICAL_TIME_ZONE,
+  canViewSensitiveProfile,
   leaveYearBounds,
   snapLeaveDays,
 } from '@/lib/canonical'
@@ -138,6 +140,10 @@ function PermToggleRow({
 export function AddUserScreen() {
   const router = useRouter()
   const { user, organization } = useAuthStore()
+  // Tax ids go to the new person's private document, which only admins may write.
+  const canEnterTaxIds = Boolean(
+    user && canViewSensitiveProfile({ viewerRole: staffAccountRole(user), viewerUserId: user.id, subjectUserId: '' })
+  )
   const { users, loadUsers } = useOrgUserStore()
   const { inviteUser } = useInviteStore()
 
@@ -301,8 +307,8 @@ export function AddUserScreen() {
         tradeTypeCustom: form.tradeTypePreset === 'Other' ? form.tradeTypeCustom.trim() || undefined : undefined,
         employmentType: form.employmentType,
         timesheetsEnabled: timesheetsEnabledForAccount(accountType, form.employmentType),
-        vatNumber: form.vatNumber.trim() || undefined,
-        utrNumber: form.utrNumber.trim() || undefined,
+        vatNumber: canEnterTaxIds ? form.vatNumber.trim() || undefined : undefined,
+        utrNumber: canEnterTaxIds ? form.utrNumber.trim() || undefined : undefined,
         annualLeaveEnabled: form.annualLeaveEnabled,
         annualLeaveDaysPerYear: form.annualLeaveEnabled
           ? parseBoundedNumber(form.annualLeaveDaysPerYear, { min: 0, max: LEAVE_DAYS_SAVE_MAX }) ??
@@ -520,17 +526,20 @@ export function AddUserScreen() {
         </FormSection>
       )}
 
+      {canEnterTaxIds ? (
       <FormSection label="Tax details">
         <SettingsCard>
         <div className="grid grid-cols-1 gap-4 p-4 sm:grid-cols-2">
-          <FormField label="VAT number" hint="Optional. Same as iOS invite setup.">
+          <FormField label="VAT number" hint="Optional. Only admins and this person can see it.">
             <Input
+              autoComplete="off"
               value={form.vatNumber}
               onChange={(e) => setForm({ ...form, vatNumber: e.target.value })}
             />
           </FormField>
-          <FormField label="UTR number" hint="Optional. Same as iOS invite setup.">
+          <FormField label="UTR number" hint="Optional. Only admins and this person can see it.">
             <Input
+              autoComplete="off"
               value={form.utrNumber}
               onChange={(e) => setForm({ ...form, utrNumber: e.target.value })}
             />
@@ -538,6 +547,7 @@ export function AddUserScreen() {
         </div>
       </SettingsCard>
       </FormSection>
+      ) : null}
 
       <FormSection label="Annual leave">
         <SettingsCard>

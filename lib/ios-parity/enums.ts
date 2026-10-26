@@ -9,11 +9,10 @@ export type UserRoleRaw = (typeof USER_ROLES)[number]
 export const EMPLOYMENT_TYPES = ['paye', 'self_employed'] as const
 export type EmploymentTypeRaw = (typeof EMPLOYMENT_TYPES)[number]
 
-export const BOOKING_STATUSES = ['Confirmed', 'Tentative', 'Cancelled', 'Completed'] as const
-export type BookingStatusRaw = (typeof BOOKING_STATUSES)[number]
-
-export const TIME_SLOTS = ['AM', 'PM', 'FULL DAY', 'Evening', 'Overtime', 'CUSTOM_HOURS'] as const
-export type TimeSlotRaw = (typeof TIME_SLOTS)[number]
+// Booking statuses and slots are the rulebook's (lib/canonical/bookings.ts). Do not list them here.
+export { BOOKING_STATUSES } from '@/lib/canonical/bookings'
+export type { BookingStatus as BookingStatusRaw, BookingTimeSlot as TimeSlotRaw } from '@/lib/canonical/bookings'
+export { BOOKING_TIME_SLOTS as TIME_SLOTS } from '@/lib/canonical/bookings'
 
 export const MANAGER_TIME_SLOTS = ['AM', 'PM', 'FULL_DAY', 'CUSTOM_HOURS'] as const
 export type ManagerTimeSlotRaw = (typeof MANAGER_TIME_SLOTS)[number]
@@ -87,43 +86,15 @@ export const STAFF_TRADE_TYPES = [
   'Other',
 ] as const
 
-const BOOKING_STATUS_ALIASES: Record<string, BookingStatusRaw> = {
-  confirmed: 'Confirmed',
-  tentative: 'Tentative',
-  pending: 'Tentative',
-  cancelled: 'Cancelled',
-  canceled: 'Cancelled',
-  completed: 'Completed',
-}
-
-export function normalizeBookingStatus(raw: unknown): BookingStatusRaw | null {
-  if (typeof raw !== 'string') return null
-  const trimmed = raw.trim()
-  if ((BOOKING_STATUSES as readonly string[]).includes(trimmed)) {
-    return trimmed as BookingStatusRaw
-  }
-  return BOOKING_STATUS_ALIASES[trimmed.toLowerCase()] ?? null
-}
+import { normalizeBookingStatus } from '@/lib/canonical/bookings'
+export { normalizeBookingStatus }
 
 export function isActiveBookingStatus(raw: unknown): boolean {
   const status = normalizeBookingStatus(raw)
   return status === 'Confirmed' || status === 'Tentative'
 }
 
-export function normalizeTimeSlot(raw: unknown): TimeSlotRaw | null {
-  if (typeof raw !== 'string') return null
-  const trimmed = raw.trim()
-  if ((TIME_SLOTS as readonly string[]).includes(trimmed)) return trimmed as TimeSlotRaw
-  const compact = trimmed.replace(/[_\-]+/g, ' ').replace(/\s+/g, ' ').toUpperCase()
-  if (compact === 'FULL DAY' || compact === 'FULLDAY') return 'FULL DAY'
-  if (compact === 'CUSTOM' || compact === 'CUSTOM HOURS' || compact === 'CUSTOMHOURS') return 'CUSTOM_HOURS'
-  if (compact === 'MORNING') return 'AM'
-  if (compact === 'AFTERNOON') return 'PM'
-  if (compact === 'AM' || compact === 'PM' || compact === 'EVENING' || compact === 'OVERTIME') {
-    return compact as TimeSlotRaw
-  }
-  return null
-}
+export { normalizeBookingTimeSlot as normalizeTimeSlot } from '@/lib/canonical/bookings'
 
 export function normalizeManagerTimeSlot(raw: unknown): ManagerTimeSlotRaw | null {
   if (typeof raw !== 'string') return null
