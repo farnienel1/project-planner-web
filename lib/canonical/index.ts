@@ -16,6 +16,7 @@ export {
   formatClockMinutes,
   halfDayWindows,
   intervalsOverlap,
+  overlappingIntervalGroups,
   invoicingPeriod,
   mergeMinuteIntervals,
   namedSlotKind,
@@ -530,3 +531,5 @@ export type {
 
 export { PAYE_PAY_CELL_LABEL, reportPayCell, reportPayTotal, reportPersonPayCell } from './reportPay'
 export type { ReportPayCell, ReportPayLineInput } from './reportPay'
+export { payrollHoursResult, payrollOutsideMultiplier, reportDayValue, subcontractorDayValue } from './payrollHours'
+export type { PayrollHoursBooking, PayrollHoursInput, PayrollHoursResult, PayrollHoursSegment } from './payrollHours'

@@ -63,11 +63,11 @@ function minsToClock(mins: number): string {
 }
 
 export function myScheduleClockSubtitle(
-  input: { timeSlot?: string; workStartTime?: string; workEndTime?: string },
+  input: { timeSlot?: string; workStartTime?: string; workEndTime?: string; isBreakRemoved?: boolean; date?: Date },
   policy?: OrgPayrollTimePolicy
 ): string {
   const range = slotClockRange(input.timeSlot, input.workStartTime, input.workEndTime, policy)
-  const hours = estimatedPaidHours(input)
+  const hours = estimatedPaidHours({ ...input, policy })
   return `${range.label} · ${overviewFormatHours(hours)} hrs`
 }
 
@@ -138,7 +138,7 @@ export function MyScheduleTotalHoursCard({
   policy: OrgPayrollTimePolicy
   annualLeaveLabel?: string | null
 }) {
-  const paid = bookings.reduce((sum, b) => sum + estimatedPaidHours(b), 0)
+  const paid = bookings.reduce((sum, b) => sum + estimatedPaidHours({ ...b, policy }), 0)
   const std = policy.standardPaidHours || 8
   const ot = Math.max(0, paid - std)
   const ticks = ['6:00', '9:00', '12:00', '15:00', '18:00']

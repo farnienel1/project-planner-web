@@ -2,8 +2,8 @@
  * iOS parity source: Views/DailyOverviewView.swift grouping + unbooked labour
  * Spec: docs/ios-parity/sections/22-daily-overview.md
  *
- * Paid hours here use wall-clock / slot estimates (8h full day). The full
- * PayrollHoursEngine is section 17.
+ * Paid hours are the rulebook's `payrollHoursResult` for the viewed day,
+ * the same figure the iOS Daily Overview shows.
  */
 
 import { bookingOccupiesDay, formerIdAliases, unbookedLabourRowsOnDay } from '@/lib/canonical'
@@ -328,7 +328,7 @@ export function buildDailyOverview(params: {
       const op = operativeById.get(b.operativeId)
       // A booking is never hidden because its person cannot be named.
       const name = operativeDisplayName(op, b.operativeId, params.users, userIdAliases) || UNKNOWN_BOOKED_PERSON
-      const hours = estimatedPaidHours(b)
+      const hours = estimatedPaidHours({ ...b, policy: params.payrollPolicy ?? DEFAULT_PAYROLL_POLICY, date: params.day })
       const linkedUser = op
         ? params.users.find((row) => row.email.trim().toLowerCase() === op.email.trim().toLowerCase())
         : userById.get(b.operativeId)
@@ -361,7 +361,7 @@ export function buildDailyOverview(params: {
     for (const b of mgrs) {
       const user = userById.get(b.userId) || findUserByAnyId(params.users, b.userId, userIdAliases)
       const name = rosterDisplayName(user) || UNKNOWN_BOOKED_PERSON
-      const hours = estimatedPaidHours(b)
+      const hours = estimatedPaidHours({ ...b, policy: params.payrollPolicy ?? DEFAULT_PAYROLL_POLICY, date: params.day })
       rows.push({
         id: `mgr-${b.id}`,
         personKey: managerIdentity(b.userId),
@@ -387,7 +387,7 @@ export function buildDailyOverview(params: {
       const firm = findSubcontractorFirm(params.subcontractors, b.subcontractorId)
       const people = resolveSubcontractorBookingPeople(b, firm)
       const name = formatSubcontractorBookingLabel(firm?.name || 'Subcontractor', people)
-      const hours = estimatedPaidHours(b)
+      const hours = estimatedPaidHours({ ...b, policy: params.payrollPolicy ?? DEFAULT_PAYROLL_POLICY, date: params.day })
       rows.push({
         id: `sub-${b.id}`,
         personKey: `sub:${normalizeWorkId(b.subcontractorId)}`,
@@ -487,7 +487,7 @@ export function buildDailyOverview(params: {
     ...dayBookings,
     ...dayManager.filter((b) => b.locationType === 'project' || b.locationType === 'small_work'),
     ...daySubs,
-  ].reduce((sum, b) => sum + estimatedPaidHours(b), 0)
+  ].reduce((sum, b) => sum + estimatedPaidHours({ ...b, policy: params.payrollPolicy ?? DEFAULT_PAYROLL_POLICY, date: params.day }), 0)
 
   const hasOther = officeBookings.length > 0 || wfhBookings.length > 0 || customGroups.length > 0
   const empty =

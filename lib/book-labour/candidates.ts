@@ -7,7 +7,7 @@
 
 import type { Booking, HolidayBooking, Operative, User } from '@/types'
 import { UserRole } from '@/types'
-import { isActiveBookingStatus } from '@/lib/ios-parity/enums'
+import { bookingOccupiesDay, standardDayCoverage } from '@/lib/canonical'
 import { dayKey, londonIsoWeekday, londonMidnight } from '@/lib/ios-parity/londonTime'
 import { displayTradeType } from '@/lib/staff/staffTradeTypes'
 import { isCurrentLabourUser, rosterDisplayName } from '@/lib/staff/userRosterUtils'
@@ -149,7 +149,7 @@ function sameDay(date: Date, day: Date): boolean {
 }
 
 function slotPaidHours(
-  booking: { timeSlot?: string; workStartTime?: string; workEndTime?: string; isBreakRemoved?: boolean },
+  booking: { timeSlot?: string; workStartTime?: string; workEndTime?: string; isBreakRemoved?: boolean; date?: Date | string },
   policy: OrgPayrollTimePolicy
 ): number {
   return estimatedPaidHours({
@@ -157,8 +157,8 @@ function slotPaidHours(
     workStartTime: booking.workStartTime,
     workEndTime: booking.workEndTime,
     isBreakRemoved: booking.isBreakRemoved,
-    unpaidBreakMinutes: policy.unpaidBreakMinutes,
-    standardPaidHours: policy.standardPaidHours,
+    policy,
+    date: booking.date ? new Date(booking.date) : undefined,
   })
 }
 
@@ -173,7 +173,7 @@ function operativePaidHours(
       (booking) =>
         booking.operativeId === operativeId &&
         sameDay(booking.date, day) &&
-        isActiveBookingStatus(booking.status)
+        bookingOccupiesDay(booking.status)
     )
     .reduce((sum, booking) => sum + slotPaidHours(booking, policy), 0)
 }
@@ -201,8 +201,12 @@ function identityIds(
   return { email, userIds, operativeIds }
 }
 
-/** Hours on every user and operative profile that share this email. */
-function paidHoursForPerson(
+/**
+ * True when the person's bookings that day cover the standard day (`standardDayCoverage`),
+ * across every user and operative profile that shares the email. The same rule as
+ * `unbookedLabourRowsOnDay`, so nobody is offered here who Daily Overview shows as booked.
+ */
+function coversStandardDay(
   user: User,
   linked: Operative | undefined,
   bookings: Booking[],
@@ -211,24 +215,20 @@ function paidHoursForPerson(
   operatives: Operative[],
   day: Date,
   policy: OrgPayrollTimePolicy
-): number {
+): boolean {
   const { userIds, operativeIds } = identityIds(user, linked, users, operatives)
-  let paid = 0
-  for (const operativeId of operativeIds) paid += operativePaidHours(bookings, operativeId, day, policy)
-  for (const userId of userIds) paid += managerPaidHours(managerSiteBookings, userId, day, policy)
-  return paid
-}
-
-/** Every same-day manager booking counts, including office, home, site survey and custom locations. */
-function managerPaidHours(
-  managerSiteBookings: ManagerSiteBooking[],
-  userId: string,
-  day: Date,
-  policy: OrgPayrollTimePolicy
-): number {
-  return managerSiteBookings
-    .filter((booking) => booking.userId === userId && sameDay(booking.date, day))
-    .reduce((sum, booking) => sum + slotPaidHours(booking, policy), 0)
+  const slots = [
+    ...bookings.filter(
+      (booking) => operativeIds.has(booking.operativeId) && sameDay(booking.date, day) && bookingOccupiesDay(booking.status)
+    ),
+    ...managerSiteBookings.filter((booking) => userIds.has(booking.userId) && sameDay(booking.date, day)),
+  ].map((booking) => ({
+    timeSlot: String(booking.timeSlot ?? ''),
+    workStart: booking.workStartTime,
+    workEnd: booking.workEndTime,
+  }))
+  if (slots.length === 0) return false
+  return standardDayCoverage(policy, slots).missingHours <= 0.001
 }
 
 export function buildBookLabourCandidates(input: {
@@ -247,7 +247,6 @@ export function buildBookLabourCandidates(input: {
   if (weekday < 1 || weekday > 5) return []
 
   const policy = input.payrollPolicy ?? DEFAULT_PAYROLL_POLICY
-  const required = Math.max(policy.standardPaidHours, 0)
   const focused = new Set(input.focusedUserIds || [])
   const sharesFocusedId = (user: User, linked?: Operative) => {
     if (focused.has(user.id) || (linked ? focused.has(linked.id) : false)) return true
@@ -309,7 +308,7 @@ export function buildBookLabourCandidates(input: {
     )
     const ids = identityIds(user, linked, input.users, input.operatives)
     if (holidayCoversDay(input.holidays, day, ids.userIds, ids.operativeIds)) continue
-    const paid = paidHoursForPerson(
+    const covered = coversStandardDay(
       user,
       linked,
       input.bookings,
@@ -319,7 +318,7 @@ export function buildBookLabourCandidates(input: {
       day,
       policy
     )
-    if (!sharesFocusedId(user, linked) && paid >= required) continue
+    if (!sharesFocusedId(user, linked) && covered) continue
     if (linked) claimedOperativeIds.add(linked.id)
     const operativeName = rosterDisplayName(user)
     if (!operativeName) continue
@@ -352,7 +351,7 @@ export function buildBookLabourCandidates(input: {
     if (seen.has(user.id)) continue
     const ids = identityIds(user, linked, input.users, input.operatives)
     if (holidayCoversDay(input.holidays, day, ids.userIds, ids.operativeIds)) continue
-    const paid = paidHoursForPerson(
+    const covered = coversStandardDay(
       user,
       linked,
       input.bookings,
@@ -362,7 +361,7 @@ export function buildBookLabourCandidates(input: {
       day,
       policy
     )
-    if (!sharesFocusedId(user, linked) && paid >= required) continue
+    if (!sharesFocusedId(user, linked) && covered) continue
     if (linked) claimedOperativeIds.add(linked.id)
     if (email) seenEmails.add(email)
     const managerName = rosterDisplayName(user)

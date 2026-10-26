@@ -9,7 +9,7 @@ import type { OrganizationDetails } from '@/lib/settings/organizationSettings'
 import { includesManagerScheduleLocation } from '@/lib/settings/organizationSettings'
 import { ianaTimeZoneForCountry } from '@/lib/orgTime/orgTimeZone'
 import { computeManagerBookingClashWarnings } from '@/lib/warnings/managerClashWarnings'
-import { employmentTypeOnDay, isAnonymisedDeletedProfile, reportPayCell, reportPayTotal, reportPersonPayCell } from '@/lib/canonical'
+import { employmentTypeOnDay, isAnonymisedDeletedProfile, reportPayCell, reportPayTotal, reportPersonPayCell, subcontractorDayValue } from '@/lib/canonical'
 import { computeUnbookedLabourWarningsForDateRange } from '@/lib/warnings/unbookedLabourWarnings'
 import type { Booking, HolidayBooking, Operative, Project, User } from '@/types'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
@@ -276,7 +276,8 @@ export function buildWeeklyReportData({
     workEndTime: string | undefined,
     isBreakRemoved: boolean | undefined,
     user: User | undefined,
-    operative: Operative | undefined
+    operative: Operative | undefined,
+    otMultiplierOverride?: number | null
   ) => {
     const slices = labourPaySlices({
       date,
@@ -284,6 +285,7 @@ export function buildWeeklyReportData({
       workStartTime,
       workEndTime,
       isBreakRemoved,
+      otMultiplierOverride,
       user,
       operative,
       history,
@@ -350,13 +352,17 @@ export function buildWeeklyReportData({
       booking.workEndTime,
       booking.isBreakRemoved,
       user,
-      operative
+      operative,
+      booking.otMultiplierOverride
     )
     const days = bookingDayUnits(
       String(booking.timeSlot),
       booking.workStartTime,
       booking.workEndTime,
-      payroll
+      payroll,
+      new Date(booking.date),
+      booking.isBreakRemoved,
+      booking.otMultiplierOverride
     )
     addProjectRow(booking.projectId, undefined, booking.operativeId, days)
   }
@@ -379,7 +385,9 @@ export function buildWeeklyReportData({
       String(booking.timeSlot),
       booking.workStartTime,
       booking.workEndTime,
-      payroll
+      payroll,
+      new Date(booking.date),
+      booking.isBreakRemoved
     )
     addProjectRow(booking.locationId, booking.userId, undefined, days)
   }
@@ -435,7 +443,9 @@ export function buildWeeklyReportData({
       String(booking.timeSlot),
       booking.workStartTime,
       booking.workEndTime,
-      payroll
+      payroll,
+      new Date(booking.date),
+      booking.isBreakRemoved
     )
     const location = managerSiteBookingDisplayTitle(
       booking,
@@ -505,12 +515,7 @@ export function buildWeeklyReportData({
     const project = projectsById.get(booking.projectId)
     const sub = subcontractors.find((entry) => entry.id === booking.subcontractorId)
     const people = resolveSubcontractorBookingPeople(booking, sub)
-    const days = bookingDayUnits(
-      booking.timeSlot,
-      booking.workStartTime,
-      booking.workEndTime,
-      payroll
-    )
+    const days = subcontractorDayValue(booking.timeSlot)
     return {
       projectName: bookingJobLabel(project?.siteName || project?.jobNumber),
       jobNumber: project?.jobNumber || '—',

@@ -3,7 +3,7 @@ import type { Booking, Operative, User } from '@/types'
 import { findOperativeForUser } from '@/lib/operatives/operativeRosterUtils'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import type { OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
-import { paidHoursForNamedSlot } from '@/lib/canonical'
+import { bookingPayrollHours } from '@/lib/scheduling/paidHours'
 import { dayKey } from '@/lib/ios-parity/londonTime'
 import { hasAdminAccess } from '@/lib/permissions'
 import { orgDayHours, payForHours, readStoredRates } from '@/lib/timesheets/payBasis'
@@ -184,33 +184,16 @@ export function teamTimesheetUsers(viewer: User, users: User[]): User[] {
   })
 }
 
-function parseMinutes(value?: string): number | null {
-  if (!value) return null
-  const [h, m] = value.split(':').map(Number)
-  if (Number.isNaN(h) || Number.isNaN(m)) return null
-  return h * 60 + m
-}
-
+/** Paid hours for a booking on its day (`payrollHoursResult.totalPaidHours`). */
 export function hoursFromSlot(
   timeSlot: string,
   workStartTime?: string,
   workEndTime?: string,
-  payrollPolicy?: OrgPayrollTimePolicy
+  payrollPolicy?: OrgPayrollTimePolicy,
+  date?: Date,
+  isBreakRemoved?: boolean
 ): number {
-  const normalized = (timeSlot || '').toUpperCase()
-  if (workStartTime && workEndTime) {
-    const start = parseMinutes(workStartTime)
-    const end = parseMinutes(workEndTime)
-    if (start != null && end != null && end > start) {
-      let minutes = end - start
-      const breakMinutes = payrollPolicy?.unpaidBreakMinutes ?? 0
-      if (breakMinutes > 0) minutes = Math.max(0, minutes - breakMinutes)
-      return minutes / 60
-    }
-  }
-  const named = paidHoursForNamedSlot(normalized, payrollPolicy?.standardPaidHours ?? 8)
-  if (named != null) return named
-  return payrollPolicy?.standardPaidHours ?? 8
+  return bookingPayrollHours({ timeSlot, workStartTime, workEndTime, isBreakRemoved, policy: payrollPolicy, date }).totalPaidHours
 }
 
 export function buildTimesheetSubjects(users: User[], operatives: Operative[]): TimesheetSubject[] {
@@ -287,7 +270,9 @@ export function collectSubjectDayEntries({
           String(booking.timeSlot),
           booking.workStartTime,
           booking.workEndTime,
-          payrollPolicy
+          payrollPolicy,
+          date,
+          booking.isBreakRemoved
         ),
         source: 'operative',
       })
@@ -306,7 +291,9 @@ export function collectSubjectDayEntries({
           String(booking.timeSlot),
           booking.workStartTime,
           booking.workEndTime,
-          payrollPolicy
+          payrollPolicy,
+          date,
+          booking.isBreakRemoved
         ),
         source: 'manager',
       })

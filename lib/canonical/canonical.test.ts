@@ -220,6 +220,9 @@ import {
   resolveInviteEmailClaim,
 } from './inviteEmailClaim.ts'
 import { PAYE_PAY_CELL_LABEL, reportPayCell, reportPayTotal, reportPersonPayCell } from './reportPay.ts'
+import { payrollHoursResult, reportDayValue, subcontractorDayValue } from './payrollHours.ts'
+import { overlappingIntervalGroups } from './engine.ts'
+import { DEFAULT_PAYROLL_POLICY, parsePayrollPolicy } from './organizationSettings.ts'
 
 const superAdmin: StaffAccountRole = { isSuperAdmin: true, isAdmin: true, isManager: false, isOperativeMode: false }
 const admin: StaffAccountRole = { isSuperAdmin: false, isAdmin: true, isManager: false, isOperativeMode: false }
@@ -3750,4 +3753,87 @@ test('the iOS JavaScript bundle gives the same booking-chain and PAYE answers', 
   assert.deepEqual(json(bundle.reportPayCell({ isPaye: true, pay: 0 })), reportPayCell({ isPaye: true, pay: 0 }))
   assert.equal(bundle.reportPayTotal([{ isPaye: false, pay: 150 }, { isPaye: true, pay: 120 }]), 150)
   assert.deepEqual(json(bundle.reportPersonPayCell([{ isPaye: true, pay: 0 }])), reportPersonPayCell([{ isPaye: true, pay: 0 }]))
+})
+
+// ---------------------------------------------------------------------------
+// Paid hours: one calculation for Daily Overview, the weekly report, timesheets and invoicing.
+// Values are the iOS PayrollHoursEngine answers for the same bookings.
+
+const WED = '2026-10-21'
+const SAT = '2026-10-24'
+const SUN = '2026-10-25'
+const hoursOn = (dayKey: string, booking: Record<string, unknown>, policy = parsePayrollPolicy(undefined)) =>
+  payrollHoursResult({ dayKey, booking, policy, timeZone: 'Europe/London' })
+
+test('weekday paid hours: standard window less the break, outside hours at the multiplier', () => {
+  const full = hoursOn(WED, { timeSlot: 'CUSTOM_HOURS', workStartTime: '07:30', workEndTime: '16:00' })
+  assert.deepEqual([full.totalPaidHours, full.standardHours, full.outsideHours], [8, 8, 0])
+  const late = hoursOn(WED, { timeSlot: 'CUSTOM_HOURS', workStartTime: '07:30', workEndTime: '18:00' })
+  assert.deepEqual([late.totalPaidHours, late.standardHours, late.outsideHours, late.outsideMultiplier], [11, 8, 2, 1.5])
+  // The 21/10 web Daily Overview booking: 06:00–17:45 custom hours.
+  const early = hoursOn(WED, { timeSlot: 'CUSTOM_HOURS', workStartTime: '06:00', workEndTime: '17:45' })
+  assert.deepEqual([early.standardHours, early.outsideHours], [8, 3.25])
+  assert.equal(early.totalPaidHours, 8 + 3.25 * 1.5)
+  const noBreak = hoursOn(WED, { timeSlot: 'CUSTOM_HOURS', workStartTime: '07:30', workEndTime: '16:00', isBreakRemoved: true })
+  assert.equal(noBreak.totalPaidHours, 8.5)
+  const override = hoursOn(WED, { timeSlot: 'CUSTOM_HOURS', workStartTime: '07:30', workEndTime: '18:00', otMultiplierOverride: 2 })
+  assert.equal(override.totalPaidHours, 12)
+})
+
+test('named slots: AM and PM pay half the standard day, FULL DAY the whole day, custom near a half pays the half', () => {
+  assert.equal(hoursOn(WED, { timeSlot: 'AM' }).totalPaidHours, 4)
+  assert.equal(hoursOn(WED, { timeSlot: 'PM' }).totalPaidHours, 4)
+  assert.equal(hoursOn(WED, { timeSlot: 'FULL DAY' }).totalPaidHours, 8)
+  assert.equal(hoursOn(WED, { timeSlot: 'FULL_DAY' }).totalPaidHours, 8)
+  assert.equal(hoursOn(WED, { timeSlot: 'CUSTOM_HOURS', workStartTime: '07:40', workEndTime: '12:00' }).totalPaidHours, 4)
+  assert.equal(hoursOn(WED, { timeSlot: 'AM' }).totalPaidHours + hoursOn(WED, { timeSlot: 'PM' }).totalPaidHours, 8)
+})
+
+test('weekend paid hours follow that day\'s rule; overnight runs past midnight', () => {
+  const policy = {
+    ...DEFAULT_PAYROLL_POLICY,
+    saturday: { allHoursAtMultiplierMode: false, allHoursMultiplier: 2, definedWindowStart: '07:30', definedWindowEnd: '13:00', countsAsStandardHours: 8, outsideWindowMultiplier: 2 },
+    sunday: { allHoursAtMultiplierMode: true, allHoursMultiplier: 2, sameAsSaturday: false },
+  }
+  const sat = hoursOn(SAT, { timeSlot: 'CUSTOM_HOURS', workStartTime: '07:30', workEndTime: '13:00' }, policy)
+  assert.deepEqual([sat.totalPaidHours, sat.standardHours], [8, 8])
+  const satLate = hoursOn(SAT, { timeSlot: 'CUSTOM_HOURS', workStartTime: '07:30', workEndTime: '15:00' }, policy)
+  assert.deepEqual([satLate.standardHours, satLate.outsideHours, satLate.totalPaidHours], [8, 2, 12])
+  const satPart = hoursOn(SAT, { timeSlot: 'CUSTOM_HOURS', workStartTime: '10:15', workEndTime: '13:00' }, policy)
+  assert.equal(satPart.standardHours, 4)
+  const sun = hoursOn(SUN, { timeSlot: 'CUSTOM_HOURS', workStartTime: '08:00', workEndTime: '12:00' }, policy)
+  assert.deepEqual([sun.outsideHours, sun.totalPaidHours, sun.standardHours], [4, 8, 0])
+  const night = hoursOn(WED, { timeSlot: 'CUSTOM_HOURS', workStartTime: '22:00', workEndTime: '02:00' })
+  assert.equal(night.totalPaidHours, 4)
+})
+
+test('weekly-report day units: weighted hours over the standard day, capped at 1.5; subcontractors 1 or 0.5', () => {
+  assert.equal(reportDayValue({ totalPaidHours: 4, standardPaidHours: 8 }), 0.5)
+  assert.equal(reportDayValue({ totalPaidHours: 8, standardPaidHours: 8 }), 1)
+  assert.equal(reportDayValue({ totalPaidHours: 11, standardPaidHours: 8 }), 1.375)
+  assert.equal(reportDayValue({ totalPaidHours: 20, standardPaidHours: 8 }), 1.5)
+  assert.equal(subcontractorDayValue('FULL DAY'), 1)
+  assert.equal(subcontractorDayValue('AM'), 0.5)
+  assert.equal(subcontractorDayValue('CUSTOM_HOURS'), 0.5)
+})
+
+test('the iOS JavaScript bundle returns the same paid hours', () => {
+  const source = readFileSync(new URL('./dist/canonical-business.js', import.meta.url), 'utf8')
+  const sandbox: { ProjectPlannerCanonical?: Record<string, (...args: unknown[]) => unknown> } = {}
+  runInContext(source, createContext(sandbox))
+  const bundle = sandbox.ProjectPlannerCanonical!
+  const policy = JSON.parse(JSON.stringify(bundle.parsePayrollPolicy({ standardDayStart: '07:30' })))
+  const input = { dayKey: WED, booking: { timeSlot: 'CUSTOM_HOURS', workStartTime: '06:00', workEndTime: '17:45' }, policy }
+  assert.deepEqual(JSON.parse(JSON.stringify(bundle.payrollHoursResult(input))), JSON.parse(JSON.stringify(payrollHoursResult(input))))
+  assert.equal(bundle.bookingOccupiesDay('Completed'), true)
+  assert.equal(bundle.bookingOccupiesDay('Cancelled'), false)
+})
+
+test('clash groups: overlap chains join, back-to-back does not clash, order is stable', () => {
+  const am = { start: 450, end: 720 }
+  const pm = { start: 720, end: 960 }
+  const middle = { start: 660, end: 780 }
+  assert.deepEqual(overlappingIntervalGroups([am, pm]), [])
+  assert.deepEqual(overlappingIntervalGroups([am, pm, middle]), [[0, 1, 2]])
+  assert.deepEqual(overlappingIntervalGroups([pm, null, { start: 900, end: 1000 }, am, { start: 500, end: 600 }]), [[0, 2], [3, 4]])
 })

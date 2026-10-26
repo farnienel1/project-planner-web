@@ -7,7 +7,6 @@ import type { OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 import { DEFAULT_PAYROLL_POLICY } from '@/lib/settings/organizationSettings'
 import {
   formatWarningHours,
-  intervalsOverlap,
   managerClashInterval,
   operativeClashInterval,
   overlappingClusters,
@@ -164,10 +163,7 @@ export function computeManagerBookingClashWarnings(
 
   for (const [, items] of itemsByPersonDay) {
     if (items.length < 2) continue
-    const clusters = overlappingClusters(items, (a, b) => {
-      if (!a.interval || !b.interval) return false
-      return intervalsOverlap(a.interval, b.interval)
-    })
+    const clusters = overlappingClusters(items, (item) => item.interval)
     for (const cluster of clusters) {
       const sorted = [...cluster].sort((a, b) => a.sortKey.localeCompare(b.sortKey))
       const pairKey = sorted.map((item) => item.sortKey).join('|')

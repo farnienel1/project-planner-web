@@ -1629,7 +1629,7 @@ function EditHoursSheet({
   onSave: () => void
 }) {
   if (!line) return null
-  const paid = paidBookedHours('customHours', start, end, policy, breakRemoved)
+  const paid = paidBookedHours('customHours', start, end, policy, breakRemoved, line.date)
   const ot = overtimeHoursBeyondPaidStandard(line.date, 'customHours', start, end, policy, breakRemoved)
   const amount = revisedPayrollAmount({
     row: line,

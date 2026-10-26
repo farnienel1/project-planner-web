@@ -10,6 +10,10 @@
  * the previous custom span.
  */
 
+import { payrollHoursResult, type PayrollHoursResult } from '@/lib/canonical'
+import { DEFAULT_PAYROLL_POLICY, type OrgPayrollTimePolicy } from '@/lib/canonical/organizationSettings'
+import { dayKey as londonDayKey } from '@/lib/ios-parity/londonTime'
+
 const FALLBACK_STANDARD_PAID_HOURS = 8
 const FALLBACK_UNPAID_BREAK_MINUTES = 30
 const FALLBACK_BREAK_START = '12:00'
@@ -99,45 +103,72 @@ export function namedSlotLabel(timeSlot?: string): string {
   }
 }
 
-function halfDayHours(standardPaidHours: number): number {
-  return standardPaidHours / 2
-}
+/** A Wednesday: callers that do not know the booking's day get the weekday rule. */
+const WEEKDAY_FALLBACK_KEY = '2026-01-07'
 
-/**
- * Paid hours for a booking.
- * AM / PM / full day ignore leftover custom clock times so the editor and
- * week grid show half-day or full-day hours after you switch away from custom.
- */
-export function estimatedPaidHours(input: {
+export type BookingHoursInput = {
   timeSlot?: string
   workStartTime?: string
   workEndTime?: string
   isBreakRemoved?: boolean
+  otMultiplierOverride?: number | null
   unpaidBreakMinutes?: number
   breakWindowStart?: string
   breakWindowEnd?: string
   standardPaidHours?: number
-}): number {
-  const standard = input.standardPaidHours ?? FALLBACK_STANDARD_PAID_HOURS
-  const kind = namedSlotKind(input.timeSlot)
-  if (kind === 'am' || kind === 'pm' || kind === 'evening') return halfDayHours(standard)
-  if (kind === 'full') return standard
+  standardDayStart?: string
+  standardDayEnd?: string
+  overtimeMultiplier?: number
+  /** Organisation payroll policy; the loose fields above override it when given. */
+  policy?: OrgPayrollTimePolicy
+  /** Booking day. Saturday and Sunday use that day's weekend rule. */
+  date?: Date
+  dayKey?: string
+}
 
-  const start = parseMinutes(input.workStartTime)
-  const end = parseMinutes(input.workEndTime)
-  if (start != null && end != null && end !== start) {
-    const span = workSpan(start, end)
-    const breakMins = unpaidBreakOverlapMinutes({
-      start: span.start,
-      spanEnd: span.end,
-      isBreakRemoved: input.isBreakRemoved,
-      unpaidBreakMinutes: input.unpaidBreakMinutes,
-      breakWindowStart: input.breakWindowStart,
-      breakWindowEnd: input.breakWindowEnd,
-    })
-    return Math.max(0, (span.minutes - breakMins) / 60)
+function clock(value?: string | null): string | undefined {
+  const minutes = parseMinutes(value)
+  return minutes == null ? undefined : formatClockFromMinutes(minutes)
+}
+
+/** The organisation policy with any loose fields the caller passed laid over it. */
+function policyFrom(input: BookingHoursInput): OrgPayrollTimePolicy {
+  const base: OrgPayrollTimePolicy = {
+    ...DEFAULT_PAYROLL_POLICY,
+    ...(input.policy ?? {}),
+    saturday: input.policy?.saturday ?? DEFAULT_PAYROLL_POLICY.saturday,
+    sunday: input.policy?.sunday ?? DEFAULT_PAYROLL_POLICY.sunday,
   }
-  return standard
+  return {
+    ...base,
+    unpaidBreakMinutes: input.unpaidBreakMinutes ?? base.unpaidBreakMinutes,
+    breakWindowStart: input.breakWindowStart ?? base.breakWindowStart,
+    breakWindowEnd: input.breakWindowEnd ?? base.breakWindowEnd,
+    standardPaidHours: input.standardPaidHours ?? base.standardPaidHours,
+    standardDayStart: input.standardDayStart ?? base.standardDayStart,
+    standardDayEnd: input.standardDayEnd ?? base.standardDayEnd,
+    weekdayOutsideStandardMultiplier: input.overtimeMultiplier ?? base.weekdayOutsideStandardMultiplier,
+  }
+}
+
+/** The rulebook's `payrollHoursResult` for one booking. Every web hours figure comes from this. */
+export function bookingPayrollHours(input: BookingHoursInput): PayrollHoursResult {
+  return payrollHoursResult({
+    booking: {
+      timeSlot: input.timeSlot,
+      workStartTime: clock(input.workStartTime),
+      workEndTime: clock(input.workEndTime),
+      isBreakRemoved: input.isBreakRemoved === true,
+      otMultiplierOverride: input.otMultiplierOverride ?? undefined,
+    },
+    dayKey: input.dayKey ?? (input.date ? londonDayKey(input.date) : WEEKDAY_FALLBACK_KEY),
+    policy: policyFrom(input),
+  })
+}
+
+/** Paid hours for a booking (`payrollHoursResult.totalPaidHours`), the figure iOS shows too. */
+export function estimatedPaidHours(input: BookingHoursInput): number {
+  return bookingPayrollHours(input).totalPaidHours
 }
 
 export function formatClockFromMinutes(minutes: number): string {
@@ -283,29 +314,18 @@ export type HoursBreakdown = {
   lines: HoursBreakdownLine[]
 }
 
-export function hoursBreakdown(input: {
-  timeSlot?: string
-  workStartTime?: string
-  workEndTime?: string
-  isBreakRemoved?: boolean
-  unpaidBreakMinutes?: number
-  breakWindowStart?: string
-  breakWindowEnd?: string
-  standardPaidHours?: number
-  standardDayStart?: string
-  standardDayEnd?: string
-  overtimeMultiplier?: number
-}): HoursBreakdown {
-  const standard = input.standardPaidHours ?? FALLBACK_STANDARD_PAID_HOURS
-  const multiplier = input.overtimeMultiplier ?? FALLBACK_OT_MULTIPLIER
+export function hoursBreakdown(input: BookingHoursInput): HoursBreakdown {
+  const standard = input.standardPaidHours ?? input.policy?.standardPaidHours ?? FALLBACK_STANDARD_PAID_HOURS
+  const paid = bookingPayrollHours(input)
+  const multiplier = paid.outsideMultiplier || input.overtimeMultiplier || FALLBACK_OT_MULTIPLIER
   const kind = namedSlotKind(input.timeSlot)
   const slotLabel = namedSlotLabel(input.timeSlot)
-  const clockPaidHours = estimatedPaidHours({ ...input, standardPaidHours: standard })
+  const clockPaidHours = Math.round((paid.standardHours + paid.outsideHours) * 100) / 100
   const rangeLabel = customHoursRangeLabel(input)
   const dayStart = input.standardDayStart || FALLBACK_DAY_START
   const dayEnd = input.standardDayEnd || FALLBACK_DAY_END
   const standardWindowLabel = `${dayStart} - ${dayEnd}`
-  const rawOt = overtimeRawHours(input)
+  const rawOt = Math.round(paid.outsideHours * 100) / 100
   const equivalent = Math.round(rawOt * multiplier * 100) / 100
   const overtimeEquation = rawOt > 0 ? formatOvertimeEquation(rawOt, multiplier) : null
   const segmentsLabel = overtimeSegmentsLabel(input)
@@ -368,11 +388,10 @@ export function hoursBreakdown(input: {
       breakWindowEnd: input.breakWindowEnd,
     })
     breakHours = Math.round((breakMins / 60) * 10) / 10
-    const standardClock = Math.round((standardOverlap / 60) * 10) / 10
-    standardPaid = Math.max(0, Math.round((standardClock - breakHours) * 10) / 10)
   }
+  standardPaid = Math.round(paid.standardHours * 100) / 100
 
-  const totalPaidHours = Math.round((standardPaid + equivalent) * 100) / 100
+  const totalPaidHours = Math.round(paid.totalPaidHours * 100) / 100
   const lines: HoursBreakdownLine[] = []
   if (workingRangeLabel && workingRangeLabel !== 'Custom hours') {
     lines.push({ kind: 'working', label: 'Working hours', value: workingRangeLabel })

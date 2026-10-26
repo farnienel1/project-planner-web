@@ -13,6 +13,7 @@ export {
   formatClockMinutes,
   halfDayWindows,
   intervalsOverlap,
+  overlappingIntervalGroups,
   invoicingPeriod,
   mergeMinuteIntervals,
   namedSlotKind,
@@ -324,6 +325,9 @@ export {
 } from './bookings'
 
 export { legalPackNeedsAcceptance } from './legalPack'
+
+export { payrollHoursResult, payrollOutsideMultiplier, reportDayValue, subcontractorDayValue } from './payrollHours'
+export { parsePayrollPolicy } from './organizationSettings'
 
 export { PAYE_PAY_CELL_LABEL, reportPayCell, reportPayTotal, reportPersonPayCell } from './reportPay'
 
