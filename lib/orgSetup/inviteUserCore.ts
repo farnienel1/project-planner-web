@@ -13,6 +13,7 @@ import {
 import { userCreateRequiresAgeConfirmation } from '@/lib/canonical/userProfile'
 import { orgEmailPointerUserId } from '@/lib/orgSetup/staleOrgEmailPointer'
 import type { UserPermissions } from '@/types'
+import { saveTaxIds } from '@/lib/sensitiveProfile/taxIdsService'
 
 const INVITE_LOOKUP_TIMEOUT_MS = 8000
 
@@ -205,8 +206,7 @@ export async function inviteUserCore(input: InviteUserCoreInput): Promise<Invite
   if (input.permissions.manager || input.permissions.operativeMode) {
     invitationData.timesheetsEnabled = input.timesheetsEnabled === true
   }
-  if (input.vatNumber?.trim()) invitationData.vatNumber = input.vatNumber.trim()
-  if (input.utrNumber?.trim()) invitationData.utrNumber = input.utrNumber.trim()
+  // UTR and VAT number never go on the invitation (it is readable by link): see saveTaxIds below.
   if (input.annualLeaveEnabled != null) invitationData.annualLeaveEnabled = input.annualLeaveEnabled
   if (input.annualLeaveDaysPerYear != null) invitationData.annualLeaveDaysPerYear = input.annualLeaveDaysPerYear
   if (input.annualLeaveYearStartMonth != null) {
@@ -243,8 +243,6 @@ export async function inviteUserCore(input: InviteUserCoreInput): Promise<Invite
       tradeTypeCustom: input.tradeTypeCustom,
       employmentType: input.employmentType,
       timesheetsEnabled: input.timesheetsEnabled,
-      vatNumber: input.vatNumber,
-      utrNumber: input.utrNumber,
       annualLeaveEnabled: input.annualLeaveEnabled,
       annualLeaveDaysPerYear: input.annualLeaveDaysPerYear,
       annualLeaveYearStartMonth: input.annualLeaveYearStartMonth,
@@ -256,6 +254,11 @@ export async function inviteUserCore(input: InviteUserCoreInput): Promise<Invite
     })
   )
   await setDoc(doc(db, 'organizations', input.organizationId, 'userEmails', emailLower), { userId })
+  if (input.utrNumber?.trim() || input.vatNumber?.trim()) {
+    await saveTaxIds(userId, { utrNumber: input.utrNumber, vatNumber: input.vatNumber }, input.invitedBy, {
+      stripLegacy: false,
+    })
+  }
   if (inviteWritesOperativeProfile()) {
     throw new Error('inviteWritesOperativeProfile must stay false; rates belong on users/{uid}')
   }

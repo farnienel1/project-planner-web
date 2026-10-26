@@ -1047,3 +1047,59 @@ test('only admins read and close file reports, and nobody deletes them', async (
   await assertSucceeds(updateDoc(seeded, { status: 'removed', reviewedByUserId: ADMIN_A, reviewedAt: serverTimestamp() }))
   await assertFails(deleteDoc(seeded))
 })
+
+function taxIds(by: string, overrides: Record<string, unknown> = {}) {
+  return { utrNumber: '1234567890', vatNumber: 'GB123456789', updatedByUserId: by, updatedAt: serverTimestamp(), ...overrides }
+}
+
+test('tax identifiers: the person and their admin read and write; colleagues, managers and other admins cannot', async () => {
+  const managerId = 'tax-manager-a'
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore()
+    await setDoc(doc(db, 'users', managerId), {
+      email: 'tax-manager-a@test.com',
+      organizationId: ORG_A,
+      role: 'manager',
+      adminAccess: false,
+      permissions: { manager: true, operatives: true },
+      firstName: 'Max',
+    })
+    await setDoc(doc(db, 'users', OP_A, 'private', 'taxIds'), { utrNumber: '1111111111', vatNumber: '', updatedByUserId: OP_A, updatedAt: Timestamp.now() })
+  })
+  const own = authDb(OP_A, 'op-a@test.com')
+  const admin = authDb(ADMIN_A, 'admin-a@test.com')
+  const manager = authDb(managerId, 'tax-manager-a@test.com')
+  const otherAdmin = authDb(ADMIN_B, 'admin-b@test.com')
+  const colleague = authDb(OP_B, 'op-b@test.com')
+  const ref = (db: ReturnType<typeof authDb>) => doc(db, 'users', OP_A, 'private', 'taxIds')
+
+  await assertSucceeds(getDoc(ref(own)))
+  await assertSucceeds(getDoc(ref(admin)))
+  await assertFails(getDoc(ref(manager)))
+  await assertFails(getDoc(ref(otherAdmin)))
+  await assertFails(getDoc(ref(colleague)))
+
+  await assertSucceeds(setDoc(ref(own), taxIds(OP_A)))
+  await assertSucceeds(setDoc(ref(admin), taxIds(ADMIN_A)))
+  await assertFails(setDoc(ref(manager), taxIds(managerId)))
+  await assertFails(setDoc(ref(admin), taxIds(OP_A)))
+  await assertFails(setDoc(ref(admin), taxIds(ADMIN_A, { utrNumber: 'x'.repeat(21) })))
+  await assertFails(setDoc(ref(admin), taxIds(ADMIN_A, { niNumber: 'AB123456C' })))
+  await assertFails(setDoc(doc(admin, 'users', OP_A, 'private', 'other'), taxIds(ADMIN_A)))
+})
+
+test('tax identifiers: an invitee reads and removes the placeholder copy but cannot write it', async () => {
+  const placeholderId = 'PLACEHOLDER-TAX-1'
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore()
+    await setDoc(doc(db, 'users', placeholderId), { email: 'new-tax@test.com', organizationId: ORG_A, passwordSet: false })
+    await setDoc(doc(db, 'users', placeholderId, 'private', 'taxIds'), { utrNumber: '2222222222', vatNumber: '', updatedByUserId: ADMIN_A, updatedAt: Timestamp.now() })
+  })
+  const invitee = authDb('invitee-auth-uid', 'new-tax@test.com')
+  const stranger = authDb('stranger-uid', 'someone@test.com')
+  const ref = (db: ReturnType<typeof authDb>) => doc(db, 'users', placeholderId, 'private', 'taxIds')
+  await assertFails(getDoc(ref(stranger)))
+  await assertSucceeds(getDoc(ref(invitee)))
+  await assertFails(setDoc(ref(invitee), taxIds('invitee-auth-uid')))
+  await assertSucceeds(deleteDoc(ref(invitee)))
+})

@@ -9,6 +9,7 @@ import { isValidUuid } from '@/lib/security/validation'
 import { ensurePrimaryOrgMembership } from '@/lib/orgMembership/membershipService'
 import { ageConfirmationWriteFields } from '@/lib/legal/ageConfirmation'
 import { isAnonymisedDeletedProfile } from '@/lib/canonical/userRosterSegment'
+import { moveTaxIds } from '@/lib/sensitiveProfile/taxIdsService'
 
 export type InvitationSummary = {
   invitationId: string
@@ -226,6 +227,15 @@ export async function completeInvitationPasswordSetup(params: {
     : userDocFromInvitation(record, now)
   if (!ownUser) {
     await setDoc(doc(db, 'users', authUid), nextUser)
+  }
+
+  // 4b. Move the placeholder's tax ids (users/{id}/private/taxIds) before the placeholder goes.
+  if (migrating) {
+    try {
+      await moveTaxIds(placeholderId, authUid)
+    } catch (error) {
+      console.warn('Invite tax ids were not moved; an admin can re-enter them', error instanceof Error ? error.message : 'unknown')
+    }
   }
 
   // 5. Point the claim at authUid.

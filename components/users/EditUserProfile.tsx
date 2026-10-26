@@ -35,7 +35,15 @@ import {
   employmentEffectiveLabel,
   normalizeEmploymentType,
 } from '@/lib/canonical/userProfile'
-import { ANNUAL_LEAVE_ALLOWANCE_COPY, snapLeaveDays } from '@/lib/canonical'
+import {
+  ANNUAL_LEAVE_ALLOWANCE_COPY,
+  SENSITIVE_HELD_BY_ADMIN_COPY,
+  canViewSensitiveProfile,
+  maskSensitiveValue,
+  snapLeaveDays,
+  type SensitiveProfile,
+} from '@/lib/canonical'
+import { loadTaxIds, saveTaxIds } from '@/lib/sensitiveProfile/taxIdsService'
 import { LEAVE_DAYS_SAVE_MAX, parseBoundedNumber } from '@/lib/security/boundedValue'
 import { useHolidayStore } from '@/lib/stores/holidayStore'
 import {
@@ -57,7 +65,7 @@ import {
 } from '@/lib/qualifications/orgQualificationStorage'
 import { loadOrganisationQualificationsEnsuringStarter } from '@/lib/qualifications/starterLibrary'
 import { canonicalCertificateUrls, formatCertificateSaveError } from '@/lib/qualifications/certificateUpload'
-import { canManageOrganisationQualifications } from '@/lib/permissions'
+import { canManageOrganisationQualifications, staffAccountRole } from '@/lib/permissions'
 import { PermissionToggleList } from '@/components/users/ProfileExpandablePermissionToggle'
 import {
   ADMIN_ACCESS_LOCKED_MESSAGE,
@@ -217,8 +225,6 @@ function profileSnapshot(
     annualLeaveYearAllowance: user.annualLeaveYearAllowance ?? null,
     annualLeaveYearAllowanceKey: user.annualLeaveYearAllowanceKey || '',
     timesheetsEnabled: user.timesheetsEnabled === true,
-    vatNumber: user.vatNumber || '',
-    utrNumber: user.utrNumber || '',
     isActive: user.isActive,
     permissions: draftTypePermissions ?? user.permissions,
     draftAccountType,
@@ -262,6 +268,13 @@ export function EditUserProfile({
   const [transferring, setTransferring] = useState(false)
   const [lockedNotice, setLockedNotice] = useState<string | null>(null)
   const [baseline, setBaseline] = useState<string | null>(null)
+  // Tax ids live at users/{uid}/private/taxIds. Draft null = unchanged, '' = remove.
+  const [taxIds, setTaxIds] = useState<SensitiveProfile | null>(null)
+  const [taxDraft, setTaxDraft] = useState<{ utrNumber: string | null; vatNumber: string | null }>({
+    utrNumber: null,
+    vatNumber: null,
+  })
+  const [showTaxIds, setShowTaxIds] = useState(false)
   const [originalDayRate, setOriginalDayRate] = useState<number | undefined>(undefined)
   const [originalPayBasis, setOriginalPayBasis] = useState<'day' | 'hourly' | undefined>(undefined)
   const [originalEmploymentType, setOriginalEmploymentType] = useState<string | undefined>(undefined)
@@ -362,6 +375,36 @@ export function EditUserProfile({
   const showEmploymentType = target && canEditMatrix && !target.isSuperAdmin
   const showQualifications = Boolean(target && canEdit)
   const canManageOrgQuals = canManageOrganisationQualifications(currentUser)
+  const canViewTaxIds = Boolean(
+    target &&
+      currentUser &&
+      canViewSensitiveProfile({
+        viewerRole: staffAccountRole(currentUser),
+        viewerUserId: currentUser.id,
+        subjectUserId: target.id,
+      })
+  )
+  const taxSubjectId = target?.id
+  useEffect(() => {
+    setTaxIds(null)
+    setTaxDraft({ utrNumber: null, vatNumber: null })
+    setShowTaxIds(false)
+    if (!taxSubjectId || !canViewTaxIds) return
+    let cancelled = false
+    const legacy = target ? { utrNumber: target.utrNumber, vatNumber: target.vatNumber } : null
+    loadTaxIds(taxSubjectId, legacy)
+      .then((value) => {
+        if (!cancelled) setTaxIds(value)
+      })
+      .catch(() => {
+        if (!cancelled) setTaxIds({ utrNumber: '', vatNumber: '', source: 'none' })
+      })
+    return () => {
+      cancelled = true
+    }
+    // Reload only when the person or the viewer's access changes, not on every field edit.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [taxSubjectId, canViewTaxIds])
 
   const showPayrollFields =
     target &&
@@ -445,6 +488,15 @@ export function EditUserProfile({
     setSaving(true)
     try {
       await saveUser(toSave, organization.id, previous.email)
+      if (canViewTaxIds && taxDirty && currentUser?.id) {
+        const next = {
+          utrNumber: taxDraft.utrNumber ?? taxIds?.utrNumber ?? '',
+          vatNumber: taxDraft.vatNumber ?? taxIds?.vatNumber ?? '',
+        }
+        await saveTaxIds(toSave.id, next, currentUser.id)
+        setTaxIds({ ...next, source: 'private' })
+        setTaxDraft({ utrNumber: null, vatNumber: null })
+      }
       patchListedUser(toSave)
       setListedUserActive(toSave.id, toSave.isActive)
       setTarget(toSave)
@@ -656,10 +708,12 @@ export function EditUserProfile({
     )
   }
 
+  const taxDirty = taxDraft.utrNumber !== null || taxDraft.vatNumber !== null
   const dirty =
     Boolean(target) &&
     baseline != null &&
     (remainingTouched ||
+      taxDirty ||
       profileSnapshot(target, draftAccountType, draftTypePermissions) !== baseline)
   const pageTitle = currentAccountType(target) === 'operative' ? 'Edit operative' : 'Edit user'
   const status = rosterStatusLabel(target)
@@ -1065,22 +1119,65 @@ export function EditUserProfile({
                   onChange={(checked) => setTarget({ ...target, timesheetsEnabled: checked })}
                 />
               </div>
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <FormField label="VAT number" hint="Optional.">
-                  <Input
-                    value={target.vatNumber || ''}
-                    disabled={!canEdit}
-                    onChange={(e) => setTarget({ ...target, vatNumber: e.target.value })}
-                  />
-                </FormField>
-                <FormField label="UTR number" hint="Optional.">
-                  <Input
-                    value={target.utrNumber || ''}
-                    disabled={!canEdit}
-                    onChange={(e) => setTarget({ ...target, utrNumber: e.target.value })}
-                  />
-                </FormField>
-              </div>
+              {canViewTaxIds ? (
+                <div className="space-y-2">
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    {(['vatNumber', 'utrNumber'] as const).map((field) => {
+                      const saved = taxIds?.[field] ?? ''
+                      const draft = taxDraft[field]
+                      const shown = showTaxIds ? saved : maskSensitiveValue(saved)
+                      return (
+                        <FormField
+                          key={field}
+                          label={field === 'vatNumber' ? 'VAT number' : 'UTR number'}
+                          hint={
+                            taxIds == null
+                              ? 'Loading…'
+                              : draft === ''
+                                ? 'Will be removed when you save.'
+                                : saved
+                                  ? `Saved: ${shown} — type to replace.`
+                                  : 'Optional.'
+                          }
+                        >
+                          <div className="flex gap-2">
+                            <Input
+                              value={draft ?? ''}
+                              autoComplete="off"
+                              placeholder={saved ? shown : ''}
+                              disabled={!canEdit || taxIds == null}
+                              onChange={(e) => setTaxDraft((current) => ({ ...current, [field]: e.target.value || null }))}
+                            />
+                            {saved && canEdit ? (
+                              <button
+                                type="button"
+                                className="btn sm ghost"
+                                onClick={() => setTaxDraft((current) => ({ ...current, [field]: '' }))}
+                              >
+                                Remove
+                              </button>
+                            ) : null}
+                          </div>
+                        </FormField>
+                      )
+                    })}
+                  </div>
+                  {taxIds && (taxIds.utrNumber || taxIds.vatNumber) ? (
+                    <button type="button" className="text-xs font-semibold text-[var(--blue)]" onClick={() => setShowTaxIds((v) => !v)}>
+                      {showTaxIds ? 'Hide' : 'Show'} saved numbers
+                    </button>
+                  ) : null}
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <FormField label="VAT number">
+                    <Input value={SENSITIVE_HELD_BY_ADMIN_COPY} disabled readOnly />
+                  </FormField>
+                  <FormField label="UTR number">
+                    <Input value={SENSITIVE_HELD_BY_ADMIN_COPY} disabled readOnly />
+                  </FormField>
+                </div>
+              )}
             </div>
           </SettingsCard>
         </>

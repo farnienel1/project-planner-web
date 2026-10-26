@@ -499,3 +499,23 @@ export type {
 } from './bookings'
 
 export { legalPackNeedsAcceptance } from './legalPack'
+
+export {
+  SENSITIVE_EXPORT_OPTION_LABEL,
+  SENSITIVE_HELD_BY_ADMIN_COPY,
+  SENSITIVE_PROFILE_DOC_ID,
+  SENSITIVE_PROFILE_FIELDS,
+  SENSITIVE_VALUE_MAX,
+  canViewSensitiveProfile,
+  exportIncludesSensitiveFields,
+  maskSensitiveValue,
+  resolveSensitiveProfile,
+  sensitiveProfileDocPath,
+  sensitiveProfileWriteFields,
+} from './sensitiveProfile'
+
+export type {
+  SensitiveProfile,
+  SensitiveProfileField,
+  SensitiveProfileWriteResult,
+} from './sensitiveProfile'

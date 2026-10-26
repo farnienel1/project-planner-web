@@ -139,6 +139,14 @@ import {
   formatMaterialDeliveryRequired,
   materialOrderIncludesDeliveryRequired,
 } from './materialDelivery.ts'
+import {
+  canViewSensitiveProfile,
+  exportIncludesSensitiveFields,
+  maskSensitiveValue,
+  resolveSensitiveProfile,
+  sensitiveProfileDocPath,
+  sensitiveProfileWriteFields,
+} from './sensitiveProfile.ts'
 import { legalPackNeedsAcceptance } from './legalPack.ts'
 import {
   FILE_REPORT_DETAILS_MAX,
@@ -3369,4 +3377,65 @@ test('a new legal pack version asks everyone to accept again', () => {
   assert.equal(legalPackNeedsAcceptance({ policyAccepted: true, acceptedVersion: '1.0', currentVersion: '1.1' }), true)
   assert.equal(legalPackNeedsAcceptance({ policyAccepted: true, acceptedVersion: undefined, currentVersion: '1.1' }), true)
   assert.equal(legalPackNeedsAcceptance({ policyAccepted: true, acceptedVersion: ' 1.1 ', currentVersion: '1.1' }), false)
+})
+
+const ROLE_NONE = { isSuperAdmin: false, isAdmin: false, isManager: false, isOperativeMode: false }
+
+test('only the person and admins see tax identifiers', () => {
+  const subject = 'USER-1'
+  assert.equal(canViewSensitiveProfile({ viewerRole: { ...ROLE_NONE, isOperativeMode: true }, viewerUserId: subject, subjectUserId: subject }), true)
+  assert.equal(canViewSensitiveProfile({ viewerRole: { ...ROLE_NONE, isAdmin: true }, viewerUserId: 'ADMIN', subjectUserId: subject }), true)
+  assert.equal(canViewSensitiveProfile({ viewerRole: { ...ROLE_NONE, isSuperAdmin: true }, viewerUserId: 'OWNER', subjectUserId: subject }), true)
+  assert.equal(canViewSensitiveProfile({ viewerRole: { ...ROLE_NONE, isManager: true }, viewerUserId: 'MANAGER', subjectUserId: subject }), false)
+  assert.equal(canViewSensitiveProfile({ viewerRole: { ...ROLE_NONE, isOperativeMode: true }, viewerUserId: 'OP-2', subjectUserId: subject }), false)
+  assert.equal(canViewSensitiveProfile({ viewerRole: { ...ROLE_NONE, isAdmin: true, isOperativeMode: true }, viewerUserId: 'X', subjectUserId: subject }), false)
+  assert.equal(sensitiveProfileDocPath(' USER-1 '), 'users/USER-1/private/taxIds')
+})
+
+test('tax identifiers mask to the last four characters', () => {
+  assert.equal(maskSensitiveValue('12345 67890'), '•••• 7890')
+  assert.equal(maskSensitiveValue('GB123456789'), '•••• 6789')
+  assert.equal(maskSensitiveValue('1234'), '••••')
+  assert.equal(maskSensitiveValue('  '), '')
+})
+
+test('the private tax document wins over the legacy user fields, even when cleared', () => {
+  assert.deepEqual(resolveSensitiveProfile({ privateDoc: { utrNumber: '', vatNumber: 'GB1' }, legacyUser: { utrNumber: '999' } }), {
+    utrNumber: '',
+    vatNumber: 'GB1',
+    source: 'private',
+  })
+  assert.deepEqual(resolveSensitiveProfile({ privateDoc: null, legacyUser: { utrNumber: ' 1234567890 ' } }), {
+    utrNumber: '1234567890',
+    vatNumber: '',
+    source: 'legacy',
+  })
+  assert.equal(resolveSensitiveProfile({}).source, 'none')
+})
+
+test('tax identifier writes trim, cap length and need the writer', () => {
+  assert.deepEqual(sensitiveProfileWriteFields({ utrNumber: ' 123 ', vatNumber: null, updatedByUserId: 'ADMIN' }), {
+    ok: true,
+    fields: { utrNumber: '123', vatNumber: '', updatedByUserId: 'ADMIN' },
+  })
+  assert.deepEqual(sensitiveProfileWriteFields({ utrNumber: 'x'.repeat(21), updatedByUserId: 'ADMIN' }), { ok: false, error: 'too_long' })
+  assert.deepEqual(sensitiveProfileWriteFields({ utrNumber: '1', updatedByUserId: ' ' }), { ok: false, error: 'missing_user' })
+})
+
+test('exports leave tax identifiers out unless asked for by someone who may see them', () => {
+  assert.equal(exportIncludesSensitiveFields({ canView: true }), false)
+  assert.equal(exportIncludesSensitiveFields({ requested: true, canView: false }), false)
+  assert.equal(exportIncludesSensitiveFields({ requested: true, canView: true }), true)
+})
+
+test('the iOS JavaScript bundle masks and resolves tax identifiers the same way', () => {
+  const source = readFileSync(new URL('./dist/canonical-business.js', import.meta.url), 'utf8')
+  const sandbox: { ProjectPlannerCanonical?: Record<string, (...args: unknown[]) => unknown> } = {}
+  runInContext(source, createContext(sandbox))
+  assert.equal(sandbox.ProjectPlannerCanonical?.maskSensitiveValue('1234567890'), maskSensitiveValue('1234567890'))
+  const input = { privateDoc: null, legacyUser: { vatNumber: 'GB123456789' } }
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(sandbox.ProjectPlannerCanonical?.resolveSensitiveProfile(input))),
+    resolveSensitiveProfile(input)
+  )
 })
