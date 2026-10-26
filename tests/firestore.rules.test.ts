@@ -330,21 +330,23 @@ test('self-create without age confirmation is denied', async () => {
   )
 })
 
-test('self-create with age confirmation is allowed', async () => {
-  const uid = 'founder-ok'
-  const email = 'founder-ok@test.com'
+test('hole 1: a stranger cannot self-create into a company that never invited them', async () => {
+  const uid = 'stranger-1'
+  const email = 'stranger-1@test.com'
   const db = authDb(uid, email)
-  await assertSucceeds(
-    setDoc(doc(db, 'users', uid), {
-      email,
-      organizationId: ORG_A,
-      firstName: 'New',
-      role: 'admin',
-      ageConfirmed: true,
-      ageConfirmedYears: 16,
-      ageConfirmedAt: Timestamp.now(),
-    })
-  )
+  const profile = {
+    email,
+    organizationId: ORG_A,
+    firstName: 'New',
+    ageConfirmed: true,
+    ageConfirmedYears: 16,
+    ageConfirmedAt: Timestamp.now(),
+  }
+  await assertFails(setDoc(doc(db, 'users', uid), { ...profile, role: 'admin', adminAccess: true }))
+  await assertFails(setDoc(doc(db, 'users', uid), { ...profile, isSuperAdmin: true }))
+  // Not even as an operative: company A has no claim or membership for this account.
+  await assertFails(setDoc(doc(db, 'users', uid), { ...profile, role: 'operative', operativeMode: true }))
+  await assertFails(getDoc(doc(db, 'organizations', ORG_A, 'bookings', 'book-a')))
 })
 
 test('existing user without ageConfirmed can read and self-update', async () => {
@@ -354,7 +356,7 @@ test('existing user without ageConfirmed can read and self-update', async () => 
   await assertSucceeds(updateDoc(doc(db, 'users', ADMIN_A), { lastSeenAt: Timestamp.now() }))
 })
 
-test('returning login can reclaim a stale email pointer then self-create with age confirmation', async () => {
+test('a stale email pointer can be reclaimed, but that alone does not let a non-member join', async () => {
   const uid = 'returning-uid'
   const email = 'returning@test.com'
   await env.withSecurityRulesDisabled(async (ctx) => {
@@ -362,24 +364,59 @@ test('returning login can reclaim a stale email pointer then self-create with ag
     await setDoc(doc(db, 'organizations', ORG_A, 'userEmails', email), { userId: 'dead-placeholder' })
   })
   const db = authDb(uid, email)
-  await assertFails(
-    setDoc(doc(db, 'users', uid), {
-      email,
-      organizationId: ORG_A,
-      firstName: 'Back',
-      role: 'admin',
-      ageConfirmed: true,
-      ageConfirmedYears: 16,
-      ageConfirmedAt: Timestamp.now(),
-    })
-  )
+  const profile = {
+    email,
+    organizationId: ORG_A,
+    firstName: 'Back',
+    ageConfirmed: true,
+    ageConfirmedYears: 16,
+    ageConfirmedAt: Timestamp.now(),
+  }
+  await assertFails(setDoc(doc(db, 'users', uid), { ...profile, role: 'admin' }))
   await assertSucceeds(setDoc(doc(db, 'organizations', ORG_A, 'userEmails', email), { userId: uid }))
+  // The claim now names this account, but company A's members map does not list it.
+  await assertFails(setDoc(doc(db, 'users', uid), { ...profile, role: 'admin' }))
+  await assertFails(setDoc(doc(db, 'users', uid), profile))
+})
+
+test('a returning member listed in the members map can self-create, without raising their own privileges', async () => {
+  const uid = 'returning-member'
+  const email = 'returning-member@test.com'
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore()
+    await updateDoc(doc(db, 'organizations', ORG_A), { [`members.${uid}`]: 'member' })
+    await setDoc(doc(db, 'organizations', ORG_A, 'userEmails', email), { userId: uid })
+  })
+  const db = authDb(uid, email)
+  const profile = {
+    email,
+    organizationId: ORG_A,
+    firstName: 'Back',
+    ageConfirmed: true,
+    ageConfirmedYears: 16,
+    ageConfirmedAt: Timestamp.now(),
+  }
+  await assertFails(setDoc(doc(db, 'users', uid), { ...profile, role: 'admin', adminAccess: true }))
+  await assertFails(setDoc(doc(db, 'users', uid), { ...profile, manager: true }))
+  await assertSucceeds(setDoc(doc(db, 'users', uid), { ...profile, role: 'operative', operativeMode: true }))
+})
+
+test('a returning admin listed as admin in the members map can self-create as admin', async () => {
+  const uid = 'returning-admin'
+  const email = 'returning-admin@test.com'
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore()
+    await updateDoc(doc(db, 'organizations', ORG_A), { [`members.${uid}`]: 'admin' })
+    await setDoc(doc(db, 'organizations', ORG_A, 'userEmails', email), { userId: uid })
+  })
+  const db = authDb(uid, email)
   await assertSucceeds(
     setDoc(doc(db, 'users', uid), {
       email,
       organizationId: ORG_A,
-      firstName: 'Back',
+      firstName: 'Boss',
       role: 'admin',
+      adminAccess: true,
       ageConfirmed: true,
       ageConfirmedYears: 16,
       ageConfirmedAt: Timestamp.now(),
@@ -673,6 +710,282 @@ test('clients cannot read or write email suppressions', async () => {
       email: 'member@example.com',
       source: 'manual',
       tokenId: 'x',
+    })
+  )
+})
+
+// ---------------------------------------------------------------------------
+// Tenant isolation: holes 1–5 from the October 2026 rules review, and the
+// legitimate flows the fixes must keep working.
+// ---------------------------------------------------------------------------
+
+const ageFields = () => ({
+  ageConfirmed: true,
+  ageConfirmedYears: 16,
+  ageConfirmedAt: Timestamp.now(),
+})
+
+test('hole 1b: deleting your own profile and re-creating it does not move you into another company', async () => {
+  const uid = 'mover-op'
+  const email = 'mover-op@test.com'
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'users', uid), {
+      email,
+      organizationId: ORG_B,
+      role: 'operative',
+      operativeMode: true,
+    })
+  })
+  const db = authDb(uid, email)
+  await assertFails(updateDoc(doc(db, 'users', uid), { organizationId: ORG_A }))
+  await assertSucceeds(deleteDoc(doc(db, 'users', uid)))
+  await assertFails(
+    setDoc(doc(db, 'users', uid), { email, organizationId: ORG_A, role: 'admin', adminAccess: true, ...ageFields() })
+  )
+  await assertFails(setDoc(doc(db, 'users', uid), { email, organizationId: ORG_A, ...ageFields() }))
+})
+
+test('hole 2: an admin of company B cannot create a user in company A', async () => {
+  const db = authDb(ADMIN_B, 'admin-b@test.com')
+  await assertFails(
+    setDoc(doc(db, 'users', 'b-sock-puppet'), {
+      email: 'puppet@test.com',
+      organizationId: ORG_A,
+      role: 'admin',
+      adminAccess: true,
+    })
+  )
+  await assertFails(
+    setDoc(doc(db, 'users', 'b-sock-puppet-2'), {
+      email: 'puppet2@test.com',
+      organizationId: ORG_A,
+      role: 'operative',
+      operativeMode: true,
+    })
+  )
+  // B can still create placeholders in its own company.
+  await assertSucceeds(
+    setDoc(doc(db, 'users', 'b-placeholder'), {
+      email: 'b-new@test.com',
+      organizationId: ORG_B,
+      role: 'operative',
+      passwordSet: false,
+      isActive: true,
+    })
+  )
+})
+
+test('hole 3: an admin of company B cannot edit or move users in company A', async () => {
+  const db = authDb(ADMIN_B, 'admin-b@test.com')
+  await assertFails(updateDoc(doc(db, 'users', OP_A), { adminAccess: true }))
+  await assertFails(updateDoc(doc(db, 'users', OP_A), { firstName: 'Hacked' }))
+  await assertFails(updateDoc(doc(db, 'users', OP_A), { organizationId: ORG_B }))
+  await assertFails(updateDoc(doc(db, 'users', ADMIN_A), { email: 'b-owns-you@test.com' }))
+})
+
+test('hole 3b: an admin cannot move their own profile into a company they do not run', async () => {
+  const db = authDb(ADMIN_B, 'admin-b@test.com')
+  await assertFails(updateDoc(doc(db, 'users', ADMIN_B), { organizationId: ORG_A }))
+  // Their own profile otherwise still saves.
+  await assertSucceeds(updateDoc(doc(db, 'users', ADMIN_B), { firstName: 'Beatrice' }))
+})
+
+test('admin A can still edit users in company A', async () => {
+  const db = authDb(ADMIN_A, 'admin-a@test.com')
+  await assertSucceeds(updateDoc(doc(db, 'users', OP_A), { firstName: 'Ollie-edited', dayRate: 180 }))
+})
+
+test('hole 4: a signed-in user cannot list every company', async () => {
+  const db = authDb(OP_B, 'op-b@test.com')
+  await assertFails(getDocs(collection(db, 'organizations')))
+  await assertFails(getDocs(query(collection(db, 'organizations'), where('name', '==', 'Company A'))))
+  await assertFails(getDocs(query(collection(db, 'organizations'), where(`members.${ADMIN_A}`, '!=', ''))))
+  await assertFails(getDocs(query(collection(db, 'organizations'), where('creatorUserId', '==', ADMIN_A))))
+})
+
+test('both apps can still list their own companies by membership and by creator', async () => {
+  const db = authDb(ADMIN_A, 'admin-a@test.com')
+  const byMember = await assertSucceeds(
+    getDocs(query(collection(db, 'organizations'), where(`members.${ADMIN_A}`, '!=', '')))
+  )
+  assert.ok(byMember.docs.some((d) => d.id === ORG_A))
+  assert.ok(byMember.docs.every((d) => d.id !== ORG_B))
+  const byCreator = await assertSucceeds(
+    getDocs(query(collection(db, 'organizations'), where('creatorUserId', '==', ADMIN_A)))
+  )
+  assert.ok(byCreator.docs.some((d) => d.id === ORG_A))
+})
+
+test('hole 5: nobody can take over another account\'s email claim or claim an email that is not theirs', async () => {
+  const db = authDb(OP_B, 'op-b@test.com')
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'organizations', ORG_A, 'userEmails', 'op-a@test.com'), { userId: OP_A })
+  })
+  // Someone else's email.
+  await assertFails(setDoc(doc(db, 'organizations', ORG_A, 'userEmails', 'op-a@test.com'), { userId: OP_B }))
+  await assertFails(setDoc(doc(db, 'organizations', ORG_A, 'userEmails', 'unclaimed@test.com'), { userId: OP_B }))
+  // An admin of company B cannot rewrite or delete company A's claims.
+  const adminB = authDb(ADMIN_B, 'admin-b@test.com')
+  await assertFails(setDoc(doc(adminB, 'organizations', ORG_A, 'userEmails', 'op-a@test.com'), { userId: ADMIN_B }))
+  await assertFails(deleteDoc(doc(adminB, 'organizations', ORG_A, 'userEmails', 'op-a@test.com')))
+})
+
+test('hole 5b: a live claim on your own email for another account is not taken over', async () => {
+  const email = 'shared-email@test.com'
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore()
+    await setDoc(doc(db, 'users', 'live-owner'), { email, organizationId: ORG_A, passwordSet: true })
+    await setDoc(doc(db, 'organizations', ORG_A, 'userEmails', email), { userId: 'live-owner' })
+  })
+  const db = authDb('second-account', email)
+  await assertFails(setDoc(doc(db, 'organizations', ORG_A, 'userEmails', email), { userId: 'second-account' }))
+})
+
+test('founder: create a company, claim the email, then self-create as its admin', async () => {
+  const uid = 'founder-new'
+  const email = 'founder-new@test.com'
+  const orgId = 'org-founder-new'
+  const db = authDb(uid, email)
+  await assertSucceeds(
+    setDoc(doc(db, 'organizations', orgId), {
+      name: 'Founder Co',
+      members: { [uid]: 'admin' },
+      creatorUserId: uid,
+    })
+  )
+  await assertSucceeds(setDoc(doc(db, 'organizations', orgId, 'userEmails', email), { userId: uid }))
+  await assertSucceeds(
+    setDoc(doc(db, 'users', uid), {
+      email,
+      organizationId: orgId,
+      firstName: 'Fay',
+      role: 'admin',
+      adminAccess: true,
+      isSuperAdmin: true,
+      ...ageFields(),
+    })
+  )
+  const own = await assertSucceeds(getDoc(doc(db, 'organizations', orgId)))
+  assert.equal(own.exists(), true)
+})
+
+test('invite accept: an admin invited as admin copies the admin placeholder', async () => {
+  const placeholderId = 'B1C2D3E4-0000-4000-8000-ADMININVITE1'
+  const authUid = 'invited-admin-auth'
+  const email = 'invited-admin@test.com'
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore()
+    await setDoc(doc(db, 'users', placeholderId), {
+      email,
+      organizationId: ORG_A,
+      firstName: 'Ida',
+      role: 'admin',
+      adminAccess: true,
+      manager: true,
+      operatives: true,
+      isSuperAdmin: false,
+      passwordSet: false,
+      isActive: true,
+      permissions: { adminAccess: true, manager: true, operatives: true },
+    })
+    await setDoc(doc(db, 'organizations', ORG_A, 'userEmails', email), { userId: placeholderId })
+  })
+  const db = authDb(authUid, email)
+  const placeholder = await assertSucceeds(getDoc(doc(db, 'users', placeholderId)))
+  await assertSucceeds(
+    setDoc(doc(db, 'users', authUid), {
+      ...placeholder.data(),
+      email,
+      organizationId: ORG_A,
+      passwordSet: true,
+      ...ageFields(),
+    })
+  )
+  await assertSucceeds(setDoc(doc(db, 'organizations', ORG_A, 'userEmails', email), { userId: authUid }))
+  await assertSucceeds(deleteDoc(doc(db, 'users', placeholderId)))
+})
+
+test('invite accept: an invitee cannot add privileges the placeholder does not have', async () => {
+  const placeholderId = 'B1C2D3E4-0000-4000-8000-OPINVITE0001'
+  const authUid = 'invited-op-auth'
+  const email = 'invited-op@test.com'
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore()
+    await setDoc(doc(db, 'users', placeholderId), {
+      email,
+      organizationId: ORG_A,
+      firstName: 'Opal',
+      role: 'operative',
+      operativeMode: true,
+      adminAccess: false,
+      isSuperAdmin: false,
+      passwordSet: false,
+      isActive: true,
+      permissions: { operativeMode: true, adminAccess: false },
+    })
+    await setDoc(doc(db, 'organizations', ORG_A, 'userEmails', email), { userId: placeholderId })
+  })
+  const db = authDb(authUid, email)
+  const base = {
+    email,
+    organizationId: ORG_A,
+    firstName: 'Opal',
+    role: 'operative',
+    operativeMode: true,
+    passwordSet: true,
+    isActive: true,
+    ...ageFields(),
+  }
+  await assertFails(setDoc(doc(db, 'users', authUid), { ...base, adminAccess: true }))
+  await assertFails(setDoc(doc(db, 'users', authUid), { ...base, isSuperAdmin: true }))
+  await assertFails(setDoc(doc(db, 'users', authUid), { ...base, role: 'admin' }))
+  await assertFails(setDoc(doc(db, 'users', authUid), { ...base, permissions: { adminAccess: true } }))
+  await assertFails(setDoc(doc(db, 'users', authUid), { ...base, manager: true }))
+  // Dropping operative mode turns an operative into staff.
+  await assertFails(setDoc(doc(db, 'users', authUid), { ...base, operativeMode: false, role: 'member' }))
+  await assertSucceeds(setDoc(doc(db, 'users', authUid), base))
+})
+
+test('a manager with operatives access can still invite an operative in their own company only', async () => {
+  const managerId = 'manager-a'
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'users', managerId), {
+      email: 'manager-a@test.com',
+      organizationId: ORG_A,
+      role: 'manager',
+      manager: true,
+      operatives: true,
+      operativeMode: false,
+    })
+  })
+  const db = authDb(managerId, 'manager-a@test.com')
+  await assertSucceeds(
+    setDoc(doc(db, 'users', 'manager-invited-op'), {
+      email: 'mgr-op@test.com',
+      organizationId: ORG_A,
+      role: 'operative',
+      operativeMode: true,
+      passwordSet: false,
+      isActive: true,
+    })
+  )
+  await assertSucceeds(
+    setDoc(doc(db, 'organizations', ORG_A, 'userEmails', 'mgr-op@test.com'), { userId: 'manager-invited-op' })
+  )
+  await assertFails(
+    setDoc(doc(db, 'users', 'manager-invited-b'), {
+      email: 'mgr-b@test.com',
+      organizationId: ORG_B,
+      role: 'operative',
+      operativeMode: true,
+    })
+  )
+  await assertFails(
+    setDoc(doc(db, 'users', 'manager-invited-admin'), {
+      email: 'mgr-admin@test.com',
+      organizationId: ORG_A,
+      role: 'admin',
+      adminAccess: true,
     })
   )
 })

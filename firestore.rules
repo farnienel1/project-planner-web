@@ -115,6 +115,83 @@ service cloud.firestore {
            );
   }
 
+  // Fields that decide what an account may do. A self-created profile may not choose its own.
+  function permissionValue(data, key) {
+    return data.get('permissions', {}) is map ? data.get('permissions', {}).get(key, null) : null;
+  }
+
+  // A flag counts when it is on at the top level or inside `permissions`.
+  function staffFlag(data, key) {
+    return truthyBool(data.get(key, false)) || truthyBool(permissionValue(data, key));
+  }
+
+  function isOperativeProfile(data) {
+    return staffFlag(data, 'operativeMode') || data.get('role', '') == 'operative';
+  }
+
+  // `next` has no privilege `source` lacks. Missing and false are the same; an operative stays one.
+  function noMorePrivilegeThan(next, source) {
+    return (!staffFlag(next, 'isSuperAdmin') || staffFlag(source, 'isSuperAdmin')) &&
+           (!staffFlag(next, 'adminAccess') || staffFlag(source, 'adminAccess')) &&
+           (!staffFlag(next, 'manager') || staffFlag(source, 'manager')) &&
+           (!staffFlag(next, 'operatives') || staffFlag(source, 'operatives')) &&
+           (!(next.get('role', '') in ['admin', 'manager']) || next.get('role', '') == source.get('role', '')) &&
+           (!isOperativeProfile(source) || isOperativeProfile(next));
+  }
+
+  function raisesPrivileges(next) {
+    return staffFlag(next, 'isSuperAdmin') ||
+           staffFlag(next, 'adminAccess') ||
+           staffFlag(next, 'manager') ||
+           staffFlag(next, 'operatives') ||
+           next.get('role', '') in ['admin', 'manager'];
+  }
+
+  // Self-create (users/{authUid}) into an existing company. Either the invitee copies the pending
+  // placeholder an admin wrote (no privilege it lacks), or a returning member whose email claim
+  // already names this account and who is in the company's members map. Admin flags need an
+  // 'admin' entry in that map. A company that never invited or listed this account is refused.
+  function selfCreateJoinsCompany(organizationId, emailKey) {
+    let claimPath = /databases/(default)/documents/organizations/$(organizationId)/userEmails/$(emailKey);
+    return (
+      inviteClaimIsPendingPlaceholder(organizationId, emailKey) &&
+      noMorePrivilegeThan(
+        request.resource.data,
+        get(/databases/(default)/documents/users/$(get(claimPath).data.userId)).data
+      )
+    ) || (
+      exists(claimPath) &&
+      get(claimPath).data.userId == request.auth.uid &&
+      isOrgMemberViaParentGet(organizationId) &&
+      (
+        !raisesPrivileges(request.resource.data) ||
+        get(/databases/(default)/documents/organizations/$(organizationId)).data.members[request.auth.uid] == 'admin'
+      )
+    );
+  }
+
+  // Admin of this company: users/{uid}.organizationId plus admin flags, or 'admin' in its members map.
+  function isAdminOfCompany(organizationId) {
+    // Members map first: one get. isOrganizationAdmin runs the long organizationId match.
+    return organizationId is string &&
+           (isOrgAdminViaMembersMap(organizationId) || isOrganizationAdmin(organizationId));
+  }
+
+  // The claim for the signed-in email, pointed at the signed-in account. Allowed when the claim
+  // is new, already names this account, names this invite's pending placeholder, or names a
+  // users document that no longer exists. A live claim for another account is not taken over.
+  function isOwnEmailClaimWrite(organizationId, emailKey) {
+    return request.resource.data.userId == request.auth.uid &&
+           request.auth.token.email is string &&
+           emailKey == request.auth.token.email.lower() &&
+           (
+             resource == null ||
+             resource.data.userId == request.auth.uid ||
+             inviteClaimIsPendingPlaceholder(organizationId, emailKey) ||
+             !exists(/databases/(default)/documents/users/$(resource.data.userId))
+           );
+  }
+
   // For subcollections under organizations/{organizationId}/… only (parent get is not the resource being read).
   function belongsToOrganization(organizationId) {
     return request.auth != null && (
@@ -519,30 +596,21 @@ service cloud.firestore {
       // because functions can be unreliable during CREATE operations.
       // This directly checks the user document in the rule itself.
       allow create: if request.auth != null && (
-        // Path 1: Self-creation (user creating their own account)
-        // Email matches, and either no claim for this email in org or claim already points to this user (prevents duplicate accounts)
+        // Path 1: Self-creation into a company that invited or lists this account.
+        // A new company's founder uses Path 3. An email with no claim does not open any company.
         (request.auth.uid == userId &&
          request.resource.data.email is string &&
          request.auth.token.email is string &&
          request.resource.data.email.lower() == request.auth.token.email.lower() &&
          'organizationId' in request.resource.data &&
-         (exists(/databases/(default)/documents/organizations/$(request.resource.data.organizationId)/userEmails/$(request.resource.data.email.lower())) == false ||
-          get(/databases/(default)/documents/organizations/$(request.resource.data.organizationId)/userEmails/$(request.resource.data.email.lower())).data.userId == request.auth.uid ||
-          // Invite accept: claim still points at this invite's pending placeholder (moved to authUid afterwards).
-          inviteClaimIsPendingPlaceholder(request.resource.data.organizationId, request.resource.data.email.lower())) &&
-         selfCreateHasAgeConfirmation()) ||
-        // Path 2: Admin creation (admin/super admin creating other users e.g. invite)
-        (exists(/databases/(default)/documents/users/$(request.auth.uid)) &&
-         (('isSuperAdmin' in get(/databases/(default)/documents/users/$(request.auth.uid)).data &&
-           get(/databases/(default)/documents/users/$(request.auth.uid)).data.isSuperAdmin == true) ||
-          ('adminAccess' in get(/databases/(default)/documents/users/$(request.auth.uid)).data &&
-           get(/databases/(default)/documents/users/$(request.auth.uid)).data.adminAccess == true) ||
-          ('permissions' in get(/databases/(default)/documents/users/$(request.auth.uid)).data &&
-           get(/databases/(default)/documents/users/$(request.auth.uid)).data.permissions is map &&
-           'adminAccess' in get(/databases/(default)/documents/users/$(request.auth.uid)).data.permissions &&
-           get(/databases/(default)/documents/users/$(request.auth.uid)).data.permissions.adminAccess == true) ||
-          ('role' in get(/databases/(default)/documents/users/$(request.auth.uid)).data &&
-           get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'admin'))) ||
+         request.resource.data.organizationId is string &&
+         selfCreateHasAgeConfirmation() &&
+         selfCreateJoinsCompany(request.resource.data.organizationId, request.resource.data.email.lower())) ||
+        // Path 2: Admin of the target company creating another user there (e.g. invite placeholder).
+        // Not their own profile: that is Path 1 or Path 3, which require age confirmation.
+        (request.auth.uid != userId &&
+         'organizationId' in request.resource.data &&
+         isAdminOfCompany(request.resource.data.organizationId)) ||
         // Path 3: Web org setup bootstrap (org exists, caller is admin in members map, writing own profile)
         (isOrgBootstrapAdminProfileCreate(userId) && selfCreateHasAgeConfirmation()) ||
         // Path 4: Manager with operatives permission inviting a new operative
@@ -562,13 +630,16 @@ service cloud.firestore {
          request.resource.data.email is string &&
          request.resource.data.email.lower() == request.auth.token.email.lower() &&
          userSelfUpdateKeepsPrivileges()) ||
-        isAdminOrSuperAdmin() ||
+        ('organizationId' in resource.data && isAdminOfCompany(resource.data.organizationId)) ||
         canManagerUpdateOperativeProfile(userId)
       ) && (
-        request.auth.uid == userId ||
+        // No shortcut for the account's own document: an admin moving their own profile
+        // into another company must be an admin of that company too.
         !('organizationId' in request.resource.data) ||
         (('organizationId' in resource.data && orgIdsMatch(request.resource.data.organizationId, resource.data.organizationId)) ||
-         (organizationExists(request.resource.data.organizationId) && isAdminOrSuperAdmin()))
+         (request.resource.data.organizationId is string &&
+          organizationExists(request.resource.data.organizationId) &&
+          isAdminOfCompany(request.resource.data.organizationId)))
       ));
       
       // Allow delete if:
@@ -636,25 +707,30 @@ service cloud.firestore {
         );
         allow create, update: if request.auth != null && (
           isPlatformOwner() ||
-          isAdminOrSuperAdmin() ||
-          isOrgAdminViaMembersMap(organizationId) ||
-          request.resource.data.userId == request.auth.uid ||
+          isAdminOfCompany(organizationId) ||
+          isOwnEmailClaimWrite(organizationId, emailKey) ||
           (isManagerWithOperativesAccess() && userOrgIdMatchesPath(organizationId))
         );
-        allow delete: if request.auth != null && (isPlatformOwner() || isAdminOrSuperAdmin() || isOrgAdminViaMembersMap(organizationId));
+        allow delete: if request.auth != null && (isPlatformOwner() || isAdminOfCompany(organizationId));
       }
       
       // Org root document: must not call get(organizations/{organizationId}) inside the rule (same doc → circular deny).
       // Use resource.data.members for membership; userOrgIdMatchesPath for users/{uid}.organizationId.
       // creatorUserId covers legacy orgs that predate a reliable members map.
-      allow read: if request.auth != null && (
+      allow get: if request.auth != null && (
         isPlatformOwner() ||
         userOrgIdMatchesPath(organizationId) ||
         (resource != null && 'members' in resource.data && resource.data.members[request.auth.uid] != null) ||
         (resource != null && 'creatorUserId' in resource.data && resource.data.creatorUserId == request.auth.uid)
       );
-      
-      allow list: if request.auth != null;
+
+      // Lists only the companies this account belongs to or created: the two queries both apps run
+      // (`members.{uid} != ''` and `creatorUserId == uid`). Listing every company is refused.
+      allow list: if request.auth != null && (
+        isPlatformOwner() ||
+        resource.data.members[request.auth.uid] != '' ||
+        resource.data.creatorUserId == request.auth.uid
+      );
       
       // Signed-in bootstrap (first setup or leftover Auth with no users/{uid}): any
       // authenticated user may create an organisation if they list themselves as admin.
