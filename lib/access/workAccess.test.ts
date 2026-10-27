@@ -260,3 +260,47 @@ test('managers with the manager flag see non-hidden jobs when Projects is off', 
   })
   assert.deepEqual(visible.map((p) => p.id).sort(), ['A', 'B'])
 })
+
+test('an operative with no catalogue row sees jobs booked under their users id or former invite id', () => {
+  const rehired: User = {
+    id: 'rehiredUid0001',
+    email: 'rehired@x.com',
+    firstName: 'Re',
+    surname: 'Hired',
+    organizationId: 'o',
+    role: UserRole.OPERATIVE,
+    isActive: true,
+    passwordSet: true,
+    isSuperAdmin: false,
+    permissions: { ...emptyPerms, operativeMode: true },
+    policyAccepted: true,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    formerUserIds: ['PLACEHOLDER-0001'],
+  }
+  const booked = (id: string, projectId: string, operativeId: string, status: Booking['status']): Booking => ({
+    id,
+    operativeId,
+    projectId,
+    date: new Date('2026-10-20T08:00:00Z'),
+    timeSlot: 'FULL DAY',
+    bookedBy: 'Admin',
+    status,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  })
+  const visible = visibleWorks({
+    projects: [project('by-uid'), project('by-placeholder'), project('completed'), project('cancelled'), project('other')],
+    user: rehired,
+    operatives: [],
+    bookings: [
+      booked('1', 'by-uid', 'rehiredUid0001', 'Confirmed'),
+      booked('2', 'by-placeholder', 'PLACEHOLDER-0001', 'Tentative'),
+      booked('3', 'completed', 'rehiredUid0001', 'Completed'),
+      booked('4', 'cancelled', 'rehiredUid0001', 'Cancelled'),
+      booked('5', 'other', 'someoneElse', 'Confirmed'),
+    ],
+    managerBookings: [],
+  })
+  assert.deepEqual(visible.map((p) => p.id).sort(), ['by-placeholder', 'by-uid', 'completed'])
+})

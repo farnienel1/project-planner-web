@@ -164,7 +164,9 @@ test('an in-session choice is rewritten when localStorage was empty', () => {
 
 test('same-user sign-out must not clear analytics consent or the web org key', () => {
   const auth = readFileSync(new URL('../stores/authStore.ts', import.meta.url), 'utf8')
-  const signOut = auth.slice(auth.indexOf('signOut: async (opts)'), auth.indexOf('resetPassword:'))
+  // The store's type also names resetPassword earlier in the file, so look for the implementation after signOut.
+  const start = auth.indexOf('signOut: async (opts)')
+  const signOut = auth.slice(start, auth.indexOf('resetPassword:', start))
   assert.match(signOut, /Keep pp\.webActiveOrg/)
   assert.match(signOut, /Keep pp\.analyticsConsent\.v1/)
   assert.equal(signOut.includes('clearAnalyticsConsent'), false)

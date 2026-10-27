@@ -4,11 +4,9 @@
  * refuses to write it. The client row uses the same id; iOS drops it because it is not a UUID.
  * These are not jobs. Do not list them and do not write them back.
  */
-export const LEGACY_PLACEHOLDER_DOCUMENT_ID = 'INITIAL-PLACEHOLDER'
+import { isLegacyPlaceholderDocumentId } from '@/lib/canonical'
 
-export function isLegacyPlaceholderDocumentId(id: string | null | undefined): boolean {
-  return (id || '').trim().toUpperCase() === LEGACY_PLACEHOLDER_DOCUMENT_ID
-}
+export { LEGACY_PLACEHOLDER_DOCUMENT_ID, isLegacyPlaceholderDocumentId } from '@/lib/canonical'
 
 export function withoutLegacyPlaceholderDocuments<T extends { id: string }>(rows: readonly T[]): T[] {
   return rows.filter((row) => !isLegacyPlaceholderDocumentId(row.id))

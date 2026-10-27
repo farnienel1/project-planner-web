@@ -215,3 +215,55 @@ test('15 minutes of clock time is 0.25 hours', () => {
     0.25
   )
 })
+
+test('a re-added person is paid for bookings under their users id, former invite id and old catalogue row', () => {
+  const rehired = user({ id: 'rehiredUid0001', formerUserIds: ['PLACEHOLDER-0001'] })
+  const base = booking('x', new Date('2026-10-20T08:00:00Z'))
+  const summary = collectTimesheetPayroll({
+    user: rehired,
+    bookings: [
+      { ...base, id: 'under-uid', operativeId: 'rehiredUid0001', date: new Date('2026-10-20T08:00:00Z') },
+      { ...base, id: 'under-placeholder', operativeId: 'PLACEHOLDER-0001', date: new Date('2026-10-21T08:00:00Z') },
+      { ...base, id: 'under-catalogue', operativeId: 'op1', date: new Date('2026-10-22T08:00:00Z') },
+      { ...base, id: 'someone-else', operativeId: 'otherUid0001', date: new Date('2026-10-23T08:00:00Z') },
+    ],
+    managerSiteBookings: [],
+    operatives: [operative],
+    projects: [project],
+    smallWorks: [],
+    periodStart: new Date('2026-10-16T00:00:00Z'),
+    periodEnd: new Date('2026-10-31T00:00:00Z'),
+    payrollPolicy: DEFAULT_PAYROLL_POLICY,
+    timeZone: 'Europe/London',
+  })
+  const ids = summary.lineItems.map((line) => line.id)
+  for (const id of ['under-uid', 'under-placeholder', 'under-catalogue']) {
+    assert.ok(ids.some((line) => line.startsWith(`op-${id}`)), id)
+  }
+  assert.equal(ids.some((line) => line.startsWith('op-someone-else')), false)
+})
+
+test('timesheets count Completed bookings and skip Cancelled ones, as bookingOccupiesDay does', () => {
+  const subject = user({ id: 'u1' })
+  const base = booking('x', new Date('2026-10-20T08:00:00Z'))
+  const summary = collectTimesheetPayroll({
+    user: subject,
+    bookings: [
+      { ...base, id: 'done', status: 'Completed' },
+      { ...base, id: 'off', status: 'Cancelled', date: new Date('2026-10-21T08:00:00Z') },
+      { ...base, id: 'lower', status: 'confirmed' as Booking['status'], date: new Date('2026-10-22T08:00:00Z') },
+    ],
+    managerSiteBookings: [],
+    operatives: [operative],
+    projects: [project],
+    smallWorks: [],
+    periodStart: new Date('2026-10-16T00:00:00Z'),
+    periodEnd: new Date('2026-10-31T00:00:00Z'),
+    payrollPolicy: DEFAULT_PAYROLL_POLICY,
+    timeZone: 'Europe/London',
+  })
+  const ids = summary.lineItems.map((line) => line.id)
+  assert.ok(ids.some((line) => line.startsWith('op-done')))
+  assert.ok(ids.some((line) => line.startsWith('op-lower')))
+  assert.equal(ids.some((line) => line.startsWith('op-off')), false)
+})

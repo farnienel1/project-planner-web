@@ -27,6 +27,8 @@ import {
   type ScheduleLocationPick,
 } from '@/lib/settings/organizationSettings'
 import { isSmallWorksJobType, normalizeBookingStatus } from '@/lib/ios-parity/enums'
+import { bookingOccupiesDay } from '@/lib/canonical'
+import { samePersonBookingIds } from '@/lib/bookings/bookingPeople'
 import { dateFromDayKey, dayKey, parseHhMm } from '@/lib/ios-parity/londonTime'
 import { IosWriteValidationError } from '@/lib/ios-parity/firestoreCodec'
 import { initialsFrom } from '@/lib/daily-overview/buildDailyOverview'
@@ -320,9 +322,11 @@ export function BookLabourFlowScreen({
     workEnd?: string,
     breakOff?: boolean
   ) {
+    // A booking under any id this person has had counts (`bookingIdsForPerson`).
+    const personIds = samePersonBookingIds(operativeId, users, operatives)
     return bookings.some(
       (existing) =>
-        existing.operativeId === operativeId &&
+        personIds.has(String(existing.operativeId || '').toLowerCase()) &&
         dayKey(existing.date) === dayKey(day) &&
         existing.projectId === projectId &&
         existing.timeSlot === slot &&
@@ -357,12 +361,12 @@ export function BookLabourFlowScreen({
     workEnd?: string,
     breakOff?: boolean
   ): string[] | null {
+    const personIds = samePersonBookingIds(operativeId, users, operatives)
     const existing = bookings.filter(
       (booking) =>
-        booking.operativeId === operativeId &&
+        personIds.has(String(booking.operativeId || '').toLowerCase()) &&
         dayKey(booking.date) === dayKey(day) &&
-        normalizeBookingStatus(booking.status) !== 'Cancelled' &&
-        normalizeBookingStatus(booking.status) !== 'Completed'
+        bookingOccupiesDay(normalizeBookingStatus(booking.status) ?? booking.status)
     )
     if (existing.length === 0) return null
     const probe: Pick<Booking, 'timeSlot' | 'workStartTime' | 'workEndTime' | 'isBreakRemoved'> = {

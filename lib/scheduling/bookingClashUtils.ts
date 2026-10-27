@@ -23,7 +23,7 @@ import {
   paidHoursForOperativeBooking,
 } from '@/lib/warnings/clashIntervals'
 import type { ClashTimelineEntry } from '@/lib/warnings/clashTimeline'
-import { ORPHAN_BOOKING_LABEL } from '@/lib/canonical'
+import { ORPHAN_BOOKING_LABEL, bookingPersonKey, resolveBookingPerson, type BookingPersonInput } from '@/lib/canonical'
 
 export interface OperativeBookingClash {
   operativeId: string
@@ -253,9 +253,24 @@ export function computeOperativeBookingClashWarnings(
   const warnings: OperativeBookingClashWarning[] = []
   const seen = new Set<string>()
 
+  // One person per key (`bookingPersonKey`): a re-added person's bookings under an old and a new id clash too.
+  const users = options?.users || []
+  const people: BookingPersonInput = {
+    accounts: users.map((user) => ({ id: user.id, email: user.email, formerIds: user.formerUserIds ?? [] })),
+    operatives: operatives.map((operative) => ({ id: operative.id, email: operative.email })),
+  }
+  const personKeys = new Map<string, string>()
+  const personKey = (operativeId: string) => {
+    let key = personKeys.get(operativeId)
+    if (key == null) {
+      key = bookingPersonKey(operativeId, people)
+      personKeys.set(operativeId, key)
+    }
+    return key
+  }
   const byOperativeDay = new Map<string, Booking[]>()
   for (const booking of active) {
-    const key = `${booking.operativeId}|${dayKey(booking.date)}`
+    const key = `${personKey(booking.operativeId)}|${dayKey(booking.date)}`
     const list = byOperativeDay.get(key) || []
     list.push(booking)
     byOperativeDay.set(key, list)
@@ -263,8 +278,12 @@ export function computeOperativeBookingClashWarnings(
 
   for (const [, dayBookings] of byOperativeDay) {
     if (dayBookings.length < 2) continue
-    const operative = operativesById.get(dayBookings[0].operativeId)
-    if (operative && managerAdminEmails.has(operative.email.trim().toLowerCase())) continue
+    const person = resolveBookingPerson(dayBookings[0].operativeId, people)
+    const operative =
+      operativesById.get(dayBookings[0].operativeId) ||
+      (person.operativeId ? operativesById.get(person.operativeId) : undefined)
+    const account = person.accountId ? users.find((user) => user.id === person.accountId) : undefined
+    if (person.email && managerAdminEmails.has(person.email)) continue
 
     const clusters = overlappingClusters(dayBookings, (booking) => operativeClashInterval(booking, payrollPolicy))
     for (const cluster of clusters) {
@@ -274,7 +293,9 @@ export function computeOperativeBookingClashWarnings(
       seen.add(pairKey)
       const operativeName = operative
         ? `${operative.firstName} ${operative.lastName}`.trim() || operative.email
-        : 'Operative'
+        : account
+          ? `${account.firstName} ${account.surname}`.trim() || account.email
+          : 'Operative'
       const a = sorted[0]
       const b = sorted[1]
       const projectALabel = projectLabel(a.projectId, projectsById)

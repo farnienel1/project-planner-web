@@ -7,7 +7,7 @@
 
 import type { Booking, HolidayBooking, Operative, User } from '@/types'
 import { UserRole } from '@/types'
-import { bookingOccupiesDay, standardDayCoverage } from '@/lib/canonical'
+import { bookingIdsForAccount, bookingOccupiesDay, standardDayCoverage } from '@/lib/canonical'
 import { dayKey, londonIsoWeekday, londonMidnight } from '@/lib/ios-parity/londonTime'
 import { displayTradeType } from '@/lib/staff/staffTradeTypes'
 import { isCurrentLabourUser, rosterDisplayName } from '@/lib/staff/userRosterUtils'
@@ -196,8 +196,13 @@ function identityIds(
   const email = emailKey(user.email)
   const userIds = idsSharingEmail(users, email)
   userIds.add(user.id)
+  for (const former of user.formerUserIds ?? []) userIds.add(former)
   const operativeIds = idsSharingEmail(operatives, email)
   if (linked) operativeIds.add(linked.id)
+  // Operative bookings may be stored under the users id or a former invite id too (`bookingIdsForAccount`).
+  for (const id of bookingIdsForAccount({ id: user.id, email: user.email, formerIds: user.formerUserIds ?? [] }, operatives)) {
+    operativeIds.add(id)
+  }
   return { email, userIds, operativeIds }
 }
 

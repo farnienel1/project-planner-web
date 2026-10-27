@@ -1,5 +1,6 @@
 'use client'
 
+import { samePersonBookingIds } from '@/lib/bookings/bookingPeople'
 import Link from 'next/link'
 import { addDays, endOfWeek, format, isToday as dateFnsIsToday, startOfWeek } from 'date-fns'
 import { useEffect, useMemo, useState } from 'react'
@@ -498,9 +499,11 @@ export function ProjectScheduleWeekOverview({
     const day = quickAdd.date
     const labels: string[] = []
     const personUserId = quickAdd.person.key.startsWith('user:') ? quickAdd.person.key.slice(5) : null
+    // Bookings under any id this person has had (`bookingIdsForPerson`).
+    const personIds = target?.kind === 'operative' ? samePersonBookingIds(target.operativeId, users, operatives) : new Set<string>()
     for (const b of bookings) {
       if (!coversCalendarDay(new Date(b.date), day)) continue
-      const sameOperative = target?.kind === 'operative' && b.operativeId === target.operativeId
+      const sameOperative = personIds.has(String(b.operativeId || '').toLowerCase())
       if (!sameOperative) continue
       labels.push(`${idsMatch(b.projectId, project.id) ? 'This job' : 'Another job'} ${namedSlotLabel(String(b.timeSlot))}`)
     }
@@ -511,7 +514,7 @@ export function ProjectScheduleWeekOverview({
       labels.push(`${idsMatch(b.locationId || '', project.id) ? 'This job' : 'Elsewhere'} ${namedSlotLabel(String(b.timeSlot))}`)
     }
     return labels
-  }, [quickAdd, bookings, managerSiteBookings, project.id])
+  }, [quickAdd, bookings, managerSiteBookings, project.id, users, operatives])
 
   const saveQuickAdd = async (values: QuickAddBookingValues) => {
     if (!quickAdd?.person.quickAdd || !currentUser) return

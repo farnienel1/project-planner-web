@@ -1,5 +1,5 @@
 import { getISODay } from 'date-fns'
-import { reportDayValue } from '@/lib/canonical'
+import { reportDayValue, resolveBookingPerson } from '@/lib/canonical'
 import type { OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 import { DEFAULT_PAYROLL_POLICY } from '@/lib/settings/organizationSettings'
 import type { Operative, User } from '@/types'
@@ -88,11 +88,24 @@ export function findUserAndOperative(
   operatives: Operative[],
   opts: { userId?: string; operativeId?: string }
 ): { user?: User; operative?: Operative } {
-  let user = opts.userId ? users.find((entry) => entry.id === opts.userId) : undefined
+  let user = opts.userId
+    ? users.find((entry) => entry.id === opts.userId) ||
+      // A manager booking saved under an invite id the account later replaced.
+      users.find((entry) => (entry.formerUserIds ?? []).includes(opts.userId as string))
+    : undefined
   let operative = opts.operativeId ? operatives.find((entry) => entry.id === opts.operativeId) : undefined
   if (!user && operative?.email) {
     const email = operative.email.trim().toLowerCase()
     user = preferLinkedUser(users.filter((entry) => entry.email.trim().toLowerCase() === email))
+  }
+  if (!user && opts.operativeId) {
+    // A booking stored under a users id, a former invite id or a same-email alias (web #189).
+    const person = resolveBookingPerson(opts.operativeId, {
+      accounts: users.map((entry) => ({ id: entry.id, email: entry.email, formerIds: entry.formerUserIds ?? [] })),
+      operatives,
+    })
+    if (person.accountId) user = users.find((entry) => entry.id === person.accountId)
+    if (!operative && person.operativeId) operative = operatives.find((entry) => entry.id === person.operativeId)
   }
   if (!operative && user) operative = findOperativeForUser(user, operatives)
   return { user, operative }

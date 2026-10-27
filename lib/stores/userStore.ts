@@ -11,6 +11,7 @@ import { parseOrgUser } from '@/lib/firebase/parseUser'
 import { operativeRecordForUser } from '@/lib/operatives/operativeRosterUtils'
 import { applyAccountTypeChange } from '@/lib/staff/accountTypeChange'
 import { removeFutureBookingsForPerson } from '@/lib/bookings/removeBookingsOnDelete'
+import { parseFormerUserIds } from '@/lib/canonical'
 import { deleteTaxIds } from '@/lib/sensitiveProfile/taxIdsService'
 
 interface UserStoreState {
@@ -199,7 +200,8 @@ export const useUserStore = create<UserStoreState>(() => ({
       .toLowerCase()
     if (orgId) {
       // Rulebook: remove this person's bookings from today on; past bookings stay.
-      const operativeIds = [userId]
+      // Every id the person's bookings may carry: user id, former invite ids, catalogue rows on the email.
+      const operativeIds = [userId, ...parseFormerUserIds(existing.exists() ? existing.data().formerUserIds : undefined)]
       if (email) {
         const linked = await getDocs(
           query(collection(db, 'organizations', orgId, 'operatives'), where('email', '==', email))

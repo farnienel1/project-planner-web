@@ -33,6 +33,8 @@ export type PayrollHoursSegment = {
   multiplier: number
   /** `baseHours × multiplier`. */
   paidHours: number
+  /** Hours actually worked in this segment, with no multiplier and no weekend credit. */
+  workedHours: number
 }
 
 export type PayrollHoursBooking = {
@@ -61,6 +63,11 @@ export type PayrollHoursResult = {
   outsideHours: number
   /** Multiplier for `outsideHours` on this day for this booking. */
   outsideMultiplier: number
+  /**
+   * Hours worked, never multiplied: what Daily Overview and My Schedule show.
+   * Pay screens (Weekly Report, timesheets, invoices) use `totalPaidHours`.
+   */
+  workedHours: number
   segments: PayrollHoursSegment[]
 }
 
@@ -100,22 +107,31 @@ export function payrollOutsideMultiplier(booking: PayrollHoursBooking, isoWeekda
   return policy.weekdayOutsideStandardMultiplier
 }
 
-function segment(kind: PayrollHoursSegmentKind, baseHours: number, multiplier: number, start?: number | string, end?: number | string): PayrollHoursSegment {
+function segment(
+  kind: PayrollHoursSegmentKind,
+  baseHours: number,
+  multiplier: number,
+  start?: number | string,
+  end?: number | string,
+  workedHours: number = baseHours
+): PayrollHoursSegment {
   const clock = (value: number | string | undefined) =>
     value == null ? undefined : typeof value === 'number' ? formatClockMinutes(Math.min(value, 24 * 60 - 1)) : value
-  return { kind, clockStart: clock(start), clockEnd: clock(end), baseHours, multiplier, paidHours: baseHours * multiplier }
+  return { kind, clockStart: clock(start), clockEnd: clock(end), baseHours, multiplier, paidHours: baseHours * multiplier, workedHours }
 }
 
 function result(segments: PayrollHoursSegment[], outsideMultiplier: number): PayrollHoursResult {
   let total = 0
   let standard = 0
   let outside = 0
+  let worked = 0
   for (const row of segments) {
     total += row.paidHours
+    worked += row.workedHours
     if (row.kind === 'standardWindow') standard += row.baseHours
     else outside += row.baseHours
   }
-  return { totalPaidHours: total, standardHours: standard, outsideHours: outside, outsideMultiplier, segments }
+  return { totalPaidHours: total, standardHours: standard, outsideHours: outside, outsideMultiplier, workedHours: worked, segments }
 }
 
 function interval(booking: PayrollHoursBooking, policy: OrgPayrollTimePolicy): MinuteInterval | null {
@@ -252,7 +268,8 @@ function weekendDay(booking: PayrollHoursBooking, policy: OrgPayrollTimePolicy, 
   const overlapEnd = Math.min(span.end, we)
   if (overlapEnd > overlapStart) {
     const credited = overlapStart <= ws && overlapEnd >= we ? credit : credit * ((overlapEnd - overlapStart) / (we - ws))
-    rows.push(segment('standardWindow', credited, 1, overlapStart, overlapEnd))
+    // A weekend window credits a set number of hours; the time worked is the clock time.
+    rows.push(segment('standardWindow', credited, 1, overlapStart, overlapEnd, (overlapEnd - overlapStart) / 60))
   }
   rows.push(...outsideSegments(span, ws, we, multiplier))
   if (rows.length === 0) return legacySlot(booking, policy, multiplier)

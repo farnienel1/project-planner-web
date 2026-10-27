@@ -166,9 +166,14 @@ export function bookingPayrollHours(input: BookingHoursInput): PayrollHoursResul
   })
 }
 
-/** Paid hours for a booking (`payrollHoursResult.totalPaidHours`), the figure iOS shows too. */
+/** Paid hours for a booking (`payrollHoursResult.totalPaidHours`): Weekly Report, timesheets and invoices. */
 export function estimatedPaidHours(input: BookingHoursInput): number {
   return bookingPayrollHours(input).totalPaidHours
+}
+
+/** Hours worked on a booking (`payrollHoursResult.workedHours`, no multiplier): Daily Overview and My Schedule. */
+export function estimatedWorkedHours(input: BookingHoursInput): number {
+  return bookingPayrollHours(input).workedHours
 }
 
 export function formatClockFromMinutes(minutes: number): string {

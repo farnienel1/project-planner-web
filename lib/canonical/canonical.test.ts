@@ -3765,6 +3765,19 @@ const SUN = '2026-10-25'
 const hoursOn = (dayKey: string, booking: Record<string, unknown>, policy = parsePayrollPolicy(undefined)) =>
   payrollHoursResult({ dayKey, booking, policy, timeZone: 'Europe/London' })
 
+test('hours worked are never multiplied: Daily Overview and My Schedule show them, pay screens show paid hours', () => {
+  const late = hoursOn(WED, { timeSlot: 'CUSTOM_HOURS', workStartTime: '07:30', workEndTime: '18:00' })
+  assert.deepEqual([late.totalPaidHours, late.workedHours], [11, 10])
+  const allHours = parsePayrollPolicy({ saturday: { allHoursAtMultiplierMode: true, allHoursMultiplier: 1.5 } })
+  const saturday = hoursOn(SAT, { timeSlot: 'CUSTOM_HOURS', workStartTime: '08:00', workEndTime: '16:00' }, allHours)
+  assert.deepEqual([saturday.totalPaidHours, saturday.workedHours], [12, 8])
+  // A defined weekend window credits 8 standard hours; the time worked is the clock time.
+  const window = hoursOn(SAT, { timeSlot: 'CUSTOM_HOURS', workStartTime: '07:30', workEndTime: '16:00' })
+  assert.deepEqual([window.standardHours, window.workedHours], [8, 8.5])
+  const am = hoursOn(WED, { timeSlot: 'AM' })
+  assert.equal(am.workedHours, am.totalPaidHours)
+})
+
 test('weekday paid hours: standard window less the break, outside hours at the multiplier', () => {
   const full = hoursOn(WED, { timeSlot: 'CUSTOM_HOURS', workStartTime: '07:30', workEndTime: '16:00' })
   assert.deepEqual([full.totalPaidHours, full.standardHours, full.outsideHours], [8, 8, 0])
@@ -3837,3 +3850,118 @@ test('clash groups: overlap chains join, back-to-back does not clash, order is s
   assert.deepEqual(overlappingIntervalGroups([am, pm, middle]), [[0, 1, 2]])
   assert.deepEqual(overlappingIntervalGroups([pm, null, { start: 900, end: 1000 }, am, { start: 500, end: 600 }]), [[0, 2], [3, 4]])
 })
+
+// --- Booking person: one answer to "whose booking is this" for every screen, web and iOS ---
+
+import { bookingIdsForAccount, bookingIdsForPerson, bookingPersonKey, resolveBookingPerson } from './bookingPerson.ts'
+import { normalizeManagerBookingTimeSlot, parseManagerSiteBookingDocument } from './bookings.ts'
+
+const BP_CATALOGUE_OLD = 'F05FE02E-0F7C-4F44-A3A8-FCF6F43D2995'
+const BP_PLACEHOLDER = '7A27FFF5-65FD-4563-8A0D-D074647C2739'
+const BP_AUTH = 'rehiredOperativeUid0001'
+
+const bpRehired = {
+  id: BP_AUTH,
+  email: 'Rehired@Test.com',
+  formerIds: [BP_PLACEHOLDER],
+  aliasIds: ['oldSameEmailUid0001'],
+}
+const bpInput = {
+  accounts: [bpRehired, { id: 'adminUid0001', email: 'admin@test.com' }],
+  operatives: [
+    { id: BP_CATALOGUE_OLD, email: 'rehired@test.com' },
+    { id: 'DE1D3201-7929-4843-B5C8-883ED49FFC43', email: '' },
+  ],
+}
+
+test('a deleted then re-added person owns bookings under every id they have had', () => {
+  const ids = bookingIdsForAccount(bpRehired, bpInput.operatives)
+  assert.deepEqual(ids, [BP_AUTH, BP_PLACEHOLDER, 'oldSameEmailUid0001', BP_CATALOGUE_OLD])
+  for (const stored of [BP_AUTH, BP_PLACEHOLDER, 'oldsameemailuid0001', BP_CATALOGUE_OLD.toLowerCase()]) {
+    const person = resolveBookingPerson(stored, bpInput)
+    assert.equal(person.accountId, BP_AUTH, stored)
+    assert.equal(person.operativeId, BP_CATALOGUE_OLD, stored)
+    assert.equal(person.email, 'rehired@test.com', stored)
+  }
+})
+
+test('an anonymised catalogue row with no email never names a live account', () => {
+  const person = resolveBookingPerson('DE1D3201-7929-4843-B5C8-883ED49FFC43', bpInput)
+  assert.equal(person.accountId, null)
+  assert.equal(person.operativeId, 'DE1D3201-7929-4843-B5C8-883ED49FFC43')
+  assert.equal(person.email, null)
+})
+
+test('an unknown or blank operative id resolves to nobody', () => {
+  assert.deepEqual(resolveBookingPerson('nobody', bpInput), { accountId: null, operativeId: null, email: null })
+  assert.deepEqual(resolveBookingPerson('  ', bpInput), { accountId: null, operativeId: null, email: null })
+})
+
+test('a user-only account with no catalogue row still owns its own bookings', () => {
+  const lone = { id: 'loneUid0001', email: 'lone@test.com' }
+  assert.deepEqual(bookingIdsForAccount(lone, []), ['loneUid0001'])
+  assert.deepEqual(resolveBookingPerson('loneUid0001', { accounts: [lone], operatives: [] }), {
+    accountId: 'loneUid0001',
+    operativeId: null,
+    email: 'lone@test.com',
+  })
+})
+
+test('manager site bookings read the same on web and iOS', () => {
+  const date = { seconds: Date.UTC(2026, 9, 21) / 1000 - 3600, nanoseconds: 0 }
+  const ok = parseManagerSiteBookingDocument('MGR-1', { userId: 'u1', date, timeSlot: 'FULL DAY' })
+  assert.equal(ok.ok, true)
+  if (ok.ok) {
+    assert.equal(ok.booking.timeSlot, 'FULL_DAY')
+    assert.equal(ok.booking.locationType, 'project')
+    assert.ok(ok.repairs.includes('location_type_missing'))
+    assert.ok(ok.repairs.includes('slot_alias'))
+  }
+  const text = parseManagerSiteBookingDocument('MGR-2', { userId: 'u1', date: '2026-10-21T00:00:00Z', timeSlot: 'AM', locationType: 'office' })
+  assert.equal(text.ok, true)
+  if (text.ok) assert.ok(text.repairs.includes('date_not_timestamp'))
+  assert.deepEqual(parseManagerSiteBookingDocument('MGR-3', { date, timeSlot: 'AM' }), { ok: false, errors: ['missing_user_id'] })
+  assert.equal(normalizeManagerBookingTimeSlot('custom hours'), 'CUSTOM_HOURS')
+  assert.equal(normalizeManagerBookingTimeSlot('Evening'), null)
+})
+
+test('the iOS bundle exposes the booking person and manager booking rules', () => {
+  const source = readFileSync(new URL('./dist/canonical-business.js', import.meta.url), 'utf8')
+  const sandbox: { ProjectPlannerCanonical?: Record<string, (...args: unknown[]) => unknown> } = {}
+  runInContext(source, createContext(sandbox))
+  const bundle = sandbox.ProjectPlannerCanonical
+  assert.ok(bundle)
+  for (const name of ['bookingIdsForAccount', 'bookingIdsForPerson', 'bookingPersonKey', 'resolveBookingPerson', 'parseManagerSiteBookingDocument', 'parseBookingDocument']) {
+    assert.equal(typeof bundle[name], 'function', name)
+  }
+})
+
+test('every id a re-added person has had groups under one person key', () => {
+  const key = bookingPersonKey(BP_AUTH, bpInput)
+  assert.equal(key, `account:${BP_AUTH.toLowerCase()}`)
+  for (const stored of [BP_PLACEHOLDER, BP_CATALOGUE_OLD, BP_CATALOGUE_OLD.toLowerCase(), 'oldSameEmailUid0001']) {
+    assert.equal(bookingPersonKey(stored, bpInput), key, stored)
+  }
+  assert.equal(bookingPersonKey('DE1D3201-7929-4843-B5C8-883ED49FFC43', bpInput), 'operative:de1d3201-7929-4843-b5c8-883ed49ffc43')
+  assert.equal(bookingPersonKey('nobodyUid', bpInput), 'id:nobodyuid')
+})
+
+test('organisation setup placeholder bookings are not bookings on either app', () => {
+  const date = { seconds: Date.UTC(2025, 10, 3) / 1000, nanoseconds: 0 }
+  assert.deepEqual(
+    parseBookingDocument('INITIAL-PLACEHOLDER', { operativeId: 'x', projectId: 'y', date, timeSlot: 'morning', status: 'tentative' }),
+    { ok: false, errors: ['legacy_placeholder'] }
+  )
+  assert.deepEqual(
+    parseManagerSiteBookingDocument('initial-placeholder', { userId: 'u', date, timeSlot: 'AM' }),
+    { ok: false, errors: ['legacy_placeholder'] }
+  )
+})
+
+test("picking any of a re-added person's ids finds all of them", () => {
+  const all = [BP_CATALOGUE_OLD, BP_AUTH, BP_PLACEHOLDER, 'oldSameEmailUid0001']
+  for (const start of all) assert.deepEqual(new Set(bookingIdsForPerson(start, bpInput)), new Set(all), start)
+  assert.deepEqual(bookingIdsForPerson('nobodyUid', bpInput), ['nobodyUid'])
+  assert.deepEqual(bookingIdsForPerson('', bpInput), [])
+})
+
