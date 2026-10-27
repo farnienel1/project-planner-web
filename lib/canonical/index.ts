@@ -72,6 +72,7 @@ export {
   canManageVariationTracker,
   canReviewUserTimesheets,
   canSeeVariations,
+  canViewMaterialOrderHistory,
   canViewStaffWarnings,
   isStaffAccount,
   receivesJobNotification,

@@ -106,7 +106,11 @@ interface MaterialProjectState {
    * Materials screen is open (lines added on iOS or another browser appear
    * without a reload). Returns the unsubscribe.
    */
-  watchProjectMaterials: (organizationId: string, projectId: string) => () => void
+  watchProjectMaterials: (
+    organizationId: string,
+    projectId: string,
+    options?: { includeSendRecords?: boolean }
+  ) => () => void
   saveMaterialLine: (organizationId: string, line: SaveMaterialLineInput) => Promise<void>
   deleteMaterialLine: (organizationId: string, materialId: string) => Promise<void>
   saveSendRecord: (organizationId: string, record: MaterialSendRecord) => Promise<void>
@@ -136,6 +140,10 @@ async function fetchProjectMaterials(organizationId: string, projectId: string):
 }
 
 let materialsOrgId = ''
+
+function isPermissionDenied(error: unknown): boolean {
+  return Boolean(error && typeof error === 'object' && (error as { code?: unknown }).code === 'permission-denied')
+}
 
 function keepMaterialRows(
   organizationId: string,
@@ -228,15 +236,20 @@ export const useMaterialProjectStore = create<MaterialProjectState>((set, get) =
       let sendRecords = snapshot.docs
         .map((entry) => mapSendRecord(entry.id, entry.data() as Record<string, unknown>))
         .filter((r): r is MaterialSendRecord => r !== null)
-      if (projectId) sendRecords = sendRecords.filter((r) => r.projectId === projectId)
+      if (projectId) sendRecords = sendRecords.filter((r) => r.projectId.toLowerCase() === projectId.toLowerCase())
       sendRecords.sort((a, b) => b.sentAt.getTime() - a.sentAt.getTime())
       set({ sendRecords })
     } catch (error: unknown) {
+      // Operatives never read history (`canViewMaterialOrderHistory` / Firestore `canReadMaterialSendHistory`).
+      if (isPermissionDenied(error)) {
+        set({ sendRecords: [] })
+        return
+      }
       set({ error: error instanceof Error ? error.message : 'Failed to load send history' })
     }
   },
 
-  watchProjectMaterials: (organizationId, projectId) => {
+  watchProjectMaterials: (organizationId, projectId, options) => {
     const captured = captureOrganizationContext()
     const projectKey = projectId.toLowerCase()
     const inProject = (row: ProjectMaterialLine) => row.projectId.toLowerCase() === projectKey
@@ -266,6 +279,11 @@ export const useMaterialProjectStore = create<MaterialProjectState>((set, get) =
         void get().loadProjectMaterials(organizationId, projectId).catch(() => {})
       }
     )
+
+    // Quote and order history only for viewers who may read it (`canViewMaterialOrderHistory`).
+    if (options?.includeSendRecords === false) {
+      return unsubscribeMaterials
+    }
 
     const unsubscribeSends = onSnapshot(
       query(collection(db, 'organizations', organizationId, 'materialSendRecords'), where('projectId', '==', projectId)),

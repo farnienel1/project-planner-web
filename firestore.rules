@@ -29,10 +29,10 @@ service cloud.firestore {
            ('role' in userData && userData.role == 'manager');
   }
 
+  // Job quote and order history (`canViewMaterialOrderHistory`): every admin and manager in the
+  // organisation, never operative mode. The Wholesalers toggle (`wholesalersOrderHistory`) does not apply.
   function canReadMaterialSendHistory(userData) {
-    return adminLikeUser(userData) ||
-           (materialManagerLikeUser(userData) &&
-            (!('wholesalersOrderHistory' in userData) || truthyBool(userData.wholesalersOrderHistory)));
+    return materialManagerLikeUser(userData) && !isOperativeProfile(userData);
   }
   
   // True if users/{auth.uid}.organizationId matches this org (string case-insensitive, DocumentReference exact path,
@@ -1061,6 +1061,7 @@ service cloud.firestore {
           collection != 'variations' &&
           collection != 'variationTrackers' &&
           collection != 'notifications' &&
+          collection != 'materialSendRecords' &&
           collection != 'fileReports';
       }
     }

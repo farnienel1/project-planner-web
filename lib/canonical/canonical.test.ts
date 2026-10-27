@@ -3934,3 +3934,19 @@ test('the iOS bundle answers userTimesheetSubjects, materialWhatsAppRows and mat
   }
   assert.deepEqual(bundle('materialOrderRecipients', recipientsInput), [{ userId: 'pat' }])
 })
+
+import { canViewMaterialOrderHistory } from './staffAccess.ts'
+
+test('job quote and order history is every admin and manager, never operative mode, and not the Wholesalers toggle', () => {
+  assert.equal(canViewMaterialOrderHistory(UT_ADMIN), true)
+  assert.equal(canViewMaterialOrderHistory({ ...UT_OPERATIVE, isOperativeMode: false, isSuperAdmin: true }), true)
+  // The role input carries no wholesalersOrderHistory flag: a manager without that toggle still sees it.
+  assert.equal(canViewMaterialOrderHistory(UT_MANAGER), true)
+  assert.equal(canViewMaterialOrderHistory(UT_OPERATIVE), false)
+  assert.equal(canViewMaterialOrderHistory({ ...UT_ADMIN, isOperativeMode: true }), false)
+  const source = readFileSync(new URL('./dist/canonical-business.js', import.meta.url), 'utf8')
+  const sandbox: { ProjectPlannerCanonical?: Record<string, (input: unknown) => unknown> } = {}
+  runInContext(source, createContext(sandbox))
+  assert.equal(sandbox.ProjectPlannerCanonical?.canViewMaterialOrderHistory(UT_MANAGER), true)
+  assert.equal(sandbox.ProjectPlannerCanonical?.canViewMaterialOrderHistory(UT_OPERATIVE), false)
+})
