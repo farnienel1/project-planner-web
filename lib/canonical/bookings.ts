@@ -12,7 +12,7 @@
 
 import { dayKeyInZone, partsInZone } from '../orgTime/zoneTime'
 import { zoneOrLondon } from './dayKeys'
-import { formatClockMinutes, parseClockMinutes } from './engine'
+import { formatClockMinutes, namedSlotKind, parseClockMinutes } from './engine'
 
 export const BOOKING_STATUSES = ['Confirmed', 'Tentative', 'Cancelled', 'Completed'] as const
 export type BookingStatus = (typeof BOOKING_STATUSES)[number]
@@ -43,7 +43,18 @@ export type BookingRepair =
   | 'booked_by_missing'
   | 'date_not_timestamp'
 
+/**
+ * Early organisation setup wrote rows with this document id in jobs, clients and bookings. They are not
+ * real records: no list shows them and no save writes them back.
+ */
+export const LEGACY_PLACEHOLDER_DOCUMENT_ID = 'INITIAL-PLACEHOLDER'
+
+export function isLegacyPlaceholderDocumentId(id: string | null | undefined): boolean {
+  return (id || '').trim().toUpperCase() === LEGACY_PLACEHOLDER_DOCUMENT_ID
+}
+
 export type BookingParseError =
+  | 'legacy_placeholder'
   | 'missing_operative_id'
   | 'missing_project_id'
   | 'missing_date'
@@ -172,6 +183,7 @@ export function parseBookingDocument(
   data: Record<string, unknown> | null | undefined,
   options?: { timeZone?: string | null }
 ): BookingParseResult {
+  if (isLegacyPlaceholderDocumentId(docId)) return { ok: false, errors: ['legacy_placeholder'] }
   const row = data && typeof data === 'object' ? data : {}
   const repairs: BookingRepair[] = []
   const errors: BookingParseError[] = []
@@ -415,4 +427,115 @@ export function bookingHealthRows(input: {
     }
   }
   return rows
+}
+
+// --- Manager site bookings -------------------------------------------------
+
+export const MANAGER_TIME_SLOTS = ['AM', 'PM', 'FULL_DAY', 'CUSTOM_HOURS'] as const
+export type ManagerBookingTimeSlot = (typeof MANAGER_TIME_SLOTS)[number]
+
+export const MANAGER_LOCATION_TYPES = [
+  'project',
+  'small_work',
+  'office',
+  'working_from_home',
+  'site_survey',
+  'custom',
+] as const
+export type ManagerBookingLocationType = (typeof MANAGER_LOCATION_TYPES)[number]
+
+/** `FULL_DAY`, `AM`, `PM` or `CUSTOM_HOURS` from any stored spelling; null when it is not a manager slot. */
+export function normalizeManagerBookingTimeSlot(raw: unknown): ManagerBookingTimeSlot | null {
+  const value = text(raw)
+  if (!value) return null
+  if ((MANAGER_TIME_SLOTS as readonly string[]).includes(value)) return value as ManagerBookingTimeSlot
+  switch (namedSlotKind(value)) {
+    case 'FULL_DAY':
+      return 'FULL_DAY'
+    case 'AM':
+      return 'AM'
+    case 'PM':
+      return 'PM'
+    case 'CUSTOM':
+      return 'CUSTOM_HOURS'
+    default:
+      return null
+  }
+}
+
+export type CanonicalManagerSiteBooking = {
+  id: string
+  userId: string
+  dateMs: number
+  timeSlot: ManagerBookingTimeSlot
+  locationType: ManagerBookingLocationType
+  locationId?: string
+  customLocationName?: string
+  workStartTime?: string
+  workEndTime?: string
+  isBreakRemoved: boolean
+  bookingGroupId?: string
+  createdAtMs?: number
+  updatedAtMs?: number
+}
+
+export type ManagerSiteBookingParseResult =
+  | { ok: true; booking: CanonicalManagerSiteBooking; repairs: string[] }
+  | { ok: false; errors: string[] }
+
+/**
+ * Reads `organizations/{orgId}/managerSiteBookings/{id}`. userId, a readable date and a manager
+ * slot are required. A missing or unknown locationType is read as `project` (reported in repairs),
+ * so web and iOS keep the same rows.
+ */
+export function parseManagerSiteBookingDocument(
+  docId: string,
+  data: Record<string, unknown> | null | undefined,
+  options?: { timeZone?: string | null }
+): ManagerSiteBookingParseResult {
+  if (isLegacyPlaceholderDocumentId(docId)) return { ok: false, errors: ['legacy_placeholder'] }
+  const row = data && typeof data === 'object' ? data : {}
+  const errors: string[] = []
+  const repairs: string[] = []
+  const userId = text(row.userId)
+  const dateMs = bookingDateMs(row.date)
+  if (dateMs != null && !isTimestampShape(row.date)) repairs.push('date_not_timestamp')
+  const timeSlot = normalizeManagerBookingTimeSlot(row.timeSlot)
+  if (timeSlot && timeSlot !== text(row.timeSlot)) repairs.push('slot_alias')
+  if (!userId) errors.push('missing_user_id')
+  if (dateMs == null) errors.push('missing_date')
+  if (!timeSlot) errors.push('bad_time_slot')
+  if (errors.length > 0 || dateMs == null || !timeSlot) return { ok: false, errors }
+
+  const rawLocation = text(row.locationType)
+  let locationType: ManagerBookingLocationType = 'project'
+  if ((MANAGER_LOCATION_TYPES as readonly string[]).includes(rawLocation)) {
+    locationType = rawLocation as ManagerBookingLocationType
+  } else {
+    repairs.push(rawLocation ? 'location_type_unknown' : 'location_type_missing')
+  }
+
+  const booking: CanonicalManagerSiteBooking = {
+    id: text(docId),
+    userId,
+    dateMs,
+    timeSlot,
+    locationType,
+    isBreakRemoved: row.isBreakRemoved === true,
+  }
+  const locationId = text(row.locationId)
+  const customLocationName = text(row.customLocationName)
+  const workStartTime = bookingClock(row.workStartTime, options?.timeZone)
+  const workEndTime = bookingClock(row.workEndTime, options?.timeZone)
+  const bookingGroupId = text(row.bookingGroupId)
+  const createdAtMs = bookingDateMs(row.createdAt)
+  const updatedAtMs = bookingDateMs(row.updatedAt)
+  if (locationId) booking.locationId = locationId
+  if (customLocationName) booking.customLocationName = customLocationName
+  if (workStartTime) booking.workStartTime = workStartTime
+  if (workEndTime) booking.workEndTime = workEndTime
+  if (bookingGroupId) booking.bookingGroupId = bookingGroupId
+  if (createdAtMs != null) booking.createdAtMs = createdAtMs
+  if (updatedAtMs != null) booking.updatedAtMs = updatedAtMs
+  return { ok: true, booking, repairs }
 }

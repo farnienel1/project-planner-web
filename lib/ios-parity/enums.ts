@@ -87,11 +87,12 @@ export const STAFF_TRADE_TYPES = [
 ] as const
 
 import { normalizeBookingStatus } from '@/lib/canonical/bookings'
+import { bookingOccupiesDay } from '@/lib/canonical/warningRows'
 export { normalizeBookingStatus }
 
+/** A booking fills its day: the rulebook's `bookingOccupiesDay` (Completed counts, Cancelled does not). */
 export function isActiveBookingStatus(raw: unknown): boolean {
-  const status = normalizeBookingStatus(raw)
-  return status === 'Confirmed' || status === 'Tentative'
+  return bookingOccupiesDay(normalizeBookingStatus(raw) ?? raw)
 }
 
 export { normalizeBookingTimeSlot as normalizeTimeSlot } from '@/lib/canonical/bookings'

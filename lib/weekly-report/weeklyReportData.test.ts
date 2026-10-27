@@ -109,3 +109,31 @@ test('a person with two bookings on one job is one project row', () => {
   assert.equal(group?.rows[0]?.days, 2)
   assert.equal(group?.projectTotal, 2)
 })
+
+test('cancelled bookings are not counted, and bookings under a users id or former invite id are named', () => {
+  const rehired: User = { ...person(), id: 'rehiredUid0001', email: 'rehired@x.com', firstName: 'Re', surname: 'Hired', formerUserIds: ['PLACEHOLDER-0001'] }
+  const report = buildWeeklyReportData({
+    organizationName: 'Acme',
+    period: { start: new Date('2026-10-05T00:00:00Z'), end: new Date('2026-10-11T00:00:00Z'), label: 'week' },
+    bookings: [
+      booking('kept', day),
+      { ...booking('cancelled', next), status: 'Cancelled' },
+      { ...booking('by-uid', day), operativeId: 'rehiredUid0001' },
+      { ...booking('by-placeholder', next), operativeId: 'PLACEHOLDER-0001' },
+    ],
+    managerSiteBookings: [],
+    subcontractorBookings: [],
+    subcontractors: [],
+    operatives: [operative],
+    users: [person(), rehired],
+    projects: [project],
+    smallWorks: [],
+    holidays: [],
+    orgDetails: null,
+  })
+  const rows = report.projectGroups[0]?.rows ?? []
+  const ada = rows.find((row) => row.person === 'Ada Booked')
+  const re = rows.find((row) => row.person === 'Re Hired')
+  assert.equal(ada?.days, 1)
+  assert.equal(re?.days, 2)
+})

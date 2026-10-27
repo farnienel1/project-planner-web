@@ -321,7 +321,14 @@ export {
   normalizeBookingStatus,
   normalizeBookingTimeSlot,
   parseBookingDocument,
+  MANAGER_LOCATION_TYPES,
+  MANAGER_TIME_SLOTS,
+  normalizeManagerBookingTimeSlot,
+  parseManagerSiteBookingDocument,
 } from './bookings'
+
+export { bookingIdsForAccount, bookingIdsForPerson, bookingPersonKey, resolveBookingPerson } from './bookingPerson'
+export { LEGACY_PLACEHOLDER_DOCUMENT_ID, isLegacyPlaceholderDocumentId } from './bookings'
 
 export { legalPackNeedsAcceptance } from './legalPack'
 

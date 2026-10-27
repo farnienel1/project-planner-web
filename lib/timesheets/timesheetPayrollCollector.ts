@@ -13,6 +13,7 @@ import {
   type OrgPayrollTimePolicy,
 } from '@/lib/settings/organizationSettings'
 import { findOperativeForUser } from '@/lib/operatives/operativeRosterUtils'
+import { bookingIdsForAccount, bookingOccupiesDay } from '@/lib/canonical'
 import { employmentTypeOnDay } from '@/lib/ios-parity/employmentType'
 import { emptyDayRateHistory, type OperativeDayRateHistoryCollection } from '@/lib/timesheets/dayRateHistoryStorage'
 import {
@@ -159,8 +160,14 @@ export function collectTimesheetPayroll({
     (operative) => operative.email.trim().toLowerCase() === user.email.trim().toLowerCase()
   )
   const linked = findOperativeForUser(user, operatives)
-  const operativeIds = new Set(matched.map((row) => row.id))
-  if (linked) operativeIds.add(linked.id)
+  // Catalogue rows on this email, the account id, former invite ids and same-email aliases (web #189).
+  const operativeIds = new Set(
+    bookingIdsForAccount(
+      { id: user.id, email: user.email, formerIds: user.formerUserIds ?? [], aliasIds: aliasUserIds },
+      operatives
+    ).map((id) => id.toLowerCase())
+  )
+  if (linked) operativeIds.add(linked.id.toLowerCase())
   const lineItems: TimesheetPayrollLineItem[] = []
   let shiftCount = 0
   let totalHours = 0
@@ -256,8 +263,8 @@ export function collectTimesheetPayroll({
   }
 
   for (const booking of bookings) {
-    if (String(booking.status).toLowerCase() === 'cancelled') continue
-    if (!booking.operativeId || !operativeIds.has(booking.operativeId)) continue
+    if (!bookingOccupiesDay(booking.status)) continue
+    if (!booking.operativeId || !operativeIds.has(booking.operativeId.toLowerCase())) continue
     const matchedOperative = matched.find((row) => row.id === booking.operativeId) || linked
     pushBooking(
       'op',
@@ -272,7 +279,7 @@ export function collectTimesheetPayroll({
     )
   }
 
-  const managerUserIds = new Set([user.id, ...aliasUserIds])
+  const managerUserIds = new Set([user.id, ...aliasUserIds, ...(user.formerUserIds ?? [])])
   for (const booking of managerSiteBookings) {
     if (!managerUserIds.has(booking.userId)) continue
     if (!includesManagerScheduleLocation(scheduleOptions, booking)) continue

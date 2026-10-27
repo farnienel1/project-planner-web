@@ -4,6 +4,7 @@
  */
 
 import type { Booking, Manager, Operative, Project, ProjectTask, User } from '@/types'
+import { bookingIdsForAccount, bookingOccupiesDay } from '@/lib/canonical'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import { seesEveryJob } from '@/lib/canonical'
 import { isOperativeMode, staffAccountRole, type WorkCatalogueKind } from '@/lib/permissions'
@@ -126,28 +127,29 @@ export function operativeVisibleProjectIds(params: {
   deadlineAssignedProjectIds?: Set<string>
 }): Set<string> {
   const ids = new Set<string>()
-  if (params.operative) {
-    for (const booking of params.bookings) {
-      const status = normalizeBookingStatus(booking.status)
-      if (
-        booking.operativeId === params.operative.id &&
-        (status === 'Confirmed' || status === 'Tentative')
-      ) {
-        ids.add(booking.projectId)
-      }
-    }
-  }
   const named = operativeMatching(params.currentUser?.email, params.operatives, {
     firstName: params.currentUser?.firstName,
     surname: params.currentUser?.surname,
   })
-  if (named && named.id !== params.operative?.id) {
-    for (const booking of params.bookings) {
-      const status = normalizeBookingStatus(booking.status)
-      if (booking.operativeId === named.id && (status === 'Confirmed' || status === 'Tentative')) {
-        ids.add(booking.projectId)
-      }
+  // Every id this person's bookings may carry: catalogue rows, the users id and former invite ids (web #189).
+  const bookingIds = new Set<string>()
+  if (params.currentUser) {
+    for (const id of bookingIdsForAccount(
+      {
+        id: params.currentUser.id,
+        email: params.currentUser.email,
+        formerIds: params.currentUser.formerUserIds ?? [],
+      },
+      params.operatives
+    )) {
+      bookingIds.add(id.toLowerCase())
     }
+  }
+  if (params.operative) bookingIds.add(params.operative.id.toLowerCase())
+  if (named) bookingIds.add(named.id.toLowerCase())
+  for (const booking of params.bookings) {
+    if (!booking.operativeId || !bookingIds.has(booking.operativeId.toLowerCase())) continue
+    if (bookingOccupiesDay(normalizeBookingStatus(booking.status) ?? booking.status)) ids.add(booking.projectId)
   }
   if (params.deadlineAssignedProjectIds) {
     for (const id of params.deadlineAssignedProjectIds) ids.add(id)
@@ -175,7 +177,7 @@ export function isAssignedOrBookedOnto(params: {
   if (
     params.managerBookings.some(
       (booking) =>
-        booking.userId === params.user.id &&
+        (booking.userId === params.user.id || (params.user.formerUserIds ?? []).includes(booking.userId)) &&
         (booking.locationType === 'project' || booking.locationType === 'small_work') &&
         booking.locationId === params.project.id
     )
@@ -183,14 +185,21 @@ export function isAssignedOrBookedOnto(params: {
     return true
   }
 
+  // Every id this person's bookings may carry (`bookingIdsForAccount`), not only the catalogue row on their email.
+  const bookingIds = new Set(
+    bookingIdsForAccount(
+      { id: params.user.id, email: params.user.email, formerIds: params.user.formerUserIds ?? [] },
+      params.operatives
+    ).map((id) => id.toLowerCase())
+  )
   const operative = operativeMatching(params.user.email, params.operatives)
+  if (operative) bookingIds.add(operative.id.toLowerCase())
   if (
-    operative &&
     params.bookings.some(
       (b) =>
-        b.operativeId === operative.id &&
+        bookingIds.has(String(b.operativeId || '').toLowerCase()) &&
         b.projectId === params.project.id &&
-        normalizeBookingStatus(b.status) !== 'Cancelled'
+        bookingOccupiesDay(normalizeBookingStatus(b.status) ?? b.status)
     )
   ) {
     return true

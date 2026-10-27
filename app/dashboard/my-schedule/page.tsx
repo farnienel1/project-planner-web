@@ -9,6 +9,7 @@ import { useOperativeStore } from '@/lib/stores/operativeStore'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { rosterDisplayName, samePersonIds } from '@/lib/staff/userRosterUtils'
 import { useProjectStore } from '@/lib/stores/projectStore'
+import { bookingIdsForAccount } from '@/lib/canonical'
 import {
   findOperativeForUser,
   getActiveOperativesForScheduling,
@@ -96,17 +97,27 @@ function MySchedulePageContent() {
     return map
   }, [projects, smallWorks])
 
+  // Every id this person's bookings may carry: catalogue rows on the email, the users id and former invite ids
+  // (`bookingIdsForAccount`), so a re-added person sees days booked under any of them.
   const linkedOperativeIds = useMemo(
-    () => (user ? operativeIdsForEmail(operatives, user.email) : []),
+    () =>
+      user
+        ? Array.from(
+            new Set([
+              ...operativeIdsForEmail(operatives, user.email),
+              ...bookingIdsForAccount({ id: user.id, email: user.email, formerIds: user.formerUserIds ?? [] }, operatives),
+            ])
+          )
+        : [],
     [user, operatives]
   )
 
   const personalBookings = useMemo(() => {
     const merged: Booking[] = []
-    const ids = new Set(linkedOperativeIds)
+    const ids = new Set(linkedOperativeIds.map((id) => id.toLowerCase()))
 
     if (ids.size > 0) {
-      merged.push(...bookings.filter((b) => ids.has(b.operativeId)))
+      merged.push(...bookings.filter((b) => ids.has(String(b.operativeId || '').toLowerCase())))
     }
 
     if (user?.id) {
@@ -173,7 +184,7 @@ function MySchedulePageContent() {
   const assignedBookings: AssignedScheduleBooking[] = linkedOperativeIds.flatMap((operativeId) =>
     bookings
       .filter((booking) => {
-        if (booking.operativeId !== operativeId) return false
+        if (String(booking.operativeId || '').toLowerCase() !== operativeId.toLowerCase()) return false
         const status = normalizeBookingStatus(booking.status)
         return status !== 'Cancelled' && status !== 'Completed'
       })

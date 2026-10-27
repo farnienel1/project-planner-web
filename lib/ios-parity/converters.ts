@@ -10,7 +10,7 @@ import { Timestamp, deleteField } from 'firebase/firestore'
 import { isAnonymisedDeletedProfile } from '@/lib/canonical/userRosterSegment'
 import { assignedQualificationWriteFields } from '@/lib/canonical/operativeQualifications'
 import { parseFormerUserIds } from '@/lib/canonical/userProfile'
-import { bookingWriteFields, parseBookingDocument } from '@/lib/canonical/bookings'
+import { bookingWriteFields, parseBookingDocument, parseManagerSiteBookingDocument } from '@/lib/canonical/bookings'
 import { exclusiveRateDocumentFields, operativeRosterRateFields, readStoredRates } from '@/lib/timesheets/payBasis'
 import { applyExclusiveRateFields } from '@/lib/firebase/userPayload'
 import type {
@@ -447,36 +447,24 @@ export function parseManagerSiteBooking(
   data: Record<string, unknown>,
   organizationId?: string
 ): ParseResult<ManagerSiteBooking> {
-  const userId = asString(data.userId)
-  const date = asDate(data.date)
-  const timeSlot = normalizeManagerTimeSlot(data.timeSlot)
-  if (!userId || !date || !timeSlot) {
-    return fail(['userId, date Timestamp and manager timeSlot are required'])
-  }
-  const locationTypeRaw = asString(data.locationType, 'project')
-  const locationType =
-    locationTypeRaw === 'project' ||
-    locationTypeRaw === 'small_work' ||
-    locationTypeRaw === 'office' ||
-    locationTypeRaw === 'working_from_home' ||
-    locationTypeRaw === 'site_survey' ||
-    locationTypeRaw === 'custom'
-      ? locationTypeRaw
-      : 'project'
+  // Rulebook reader shared with iOS (lib/canonical/bookings.ts).
+  const result = parseManagerSiteBookingDocument(docId, data)
+  if (!result.ok) return fail(result.errors)
+  const row = result.booking
   return ok({
     id: docId,
-    userId,
-    date,
-    timeSlot,
-    locationType,
-    locationId: asOptionalString(data.locationId),
-    customLocationName: asOptionalString(data.customLocationName),
-    workStartTime: asClockHhMm(data.workStartTime),
-    workEndTime: asClockHhMm(data.workEndTime),
-    isBreakRemoved: data.isBreakRemoved === true,
-    bookingGroupId: asOptionalString(data.bookingGroupId),
-    createdAt: asDate(data.createdAt) || new Date(),
-    updatedAt: asDate(data.updatedAt) || new Date(),
+    userId: row.userId,
+    date: new Date(row.dateMs),
+    timeSlot: row.timeSlot,
+    locationType: row.locationType,
+    locationId: row.locationId,
+    customLocationName: row.customLocationName,
+    workStartTime: row.workStartTime,
+    workEndTime: row.workEndTime,
+    isBreakRemoved: row.isBreakRemoved,
+    bookingGroupId: row.bookingGroupId,
+    createdAt: row.createdAtMs != null ? new Date(row.createdAtMs) : new Date(),
+    updatedAt: row.updatedAtMs != null ? new Date(row.updatedAtMs) : new Date(),
     organizationId,
   })
 }
