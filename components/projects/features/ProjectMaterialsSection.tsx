@@ -16,7 +16,8 @@ import { MaterialsAddSheet } from '@/components/projects/materials/MaterialsAddS
 import { MaterialsSendListSheet } from '@/components/projects/materials/MaterialsSendListSheet'
 import { materialStatusLabel } from '@/lib/maps/siteLocation'
 import { formatLengthSpecification } from '@/lib/materials/materialLength'
-import { formatMaterialDeliveryRequired } from '@/lib/canonical'
+import { canViewMaterialOrderHistory, formatMaterialDeliveryRequired } from '@/lib/canonical'
+import { staffAccountRole } from '@/lib/permissions'
 import type { Project, ProjectMaterialLine } from '@/types'
 import {
   FeatureCard,
@@ -106,8 +107,7 @@ function MaterialLineCard({
 
 export function ProjectMaterialsSection({ project }: { project: Project }) {
   const { organization, user } = useAuthStore()
-  const { materials, sendRecords, loading, error, loadProjectMaterials, loadSendRecords, deleteMaterialLine } =
-    useMaterialProjectStore()
+  const { materials, sendRecords, loading, error, watchProjectMaterials, deleteMaterialLine } = useMaterialProjectStore()
   const { wholesalers, loadWholesalers } = useWholesalerStore()
 
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date(), { weekStartsOn: 1 }))
@@ -120,14 +120,30 @@ export function ProjectMaterialsSection({ project }: { project: Project }) {
 
   const isOperative = isOperativeMode(user)
   const canSend = !isOperative
+  // Standard for every admin and manager, never operative mode. Not the Wholesalers toggle.
+  const canViewHistory = canViewMaterialOrderHistory(staffAccountRole(user))
+
+  // Live while the screen is open: a line added on iOS or another browser appears without a reload.
+  const organizationId = organization?.id
+  useEffect(() => {
+    if (!organizationId) return
+    return watchProjectMaterials(organizationId, project.id, { includeSendRecords: canViewHistory })
+  }, [organizationId, project.id, watchProjectMaterials, canViewHistory])
+
+  // Every send for this job from either app, newest first.
+  const jobSendRecords = useMemo(
+    () =>
+      canViewHistory
+        ? sendRecords
+            .filter((record) => record.projectId.toLowerCase() === project.id.toLowerCase())
+            .sort((a, b) => b.sentAt.getTime() - a.sentAt.getTime())
+        : [],
+    [canViewHistory, sendRecords, project.id]
+  )
 
   useEffect(() => {
-    if (organization?.id) {
-      loadProjectMaterials(organization.id, project.id)
-      loadSendRecords(organization.id, project.id)
-      if (canSend) loadWholesalers(organization.id)
-    }
-  }, [organization, project.id, loadProjectMaterials, loadSendRecords, loadWholesalers, canSend])
+    if (organizationId && canSend) loadWholesalers(organizationId)
+  }, [organizationId, loadWholesalers, canSend])
 
   const projectMaterials = useMemo(
     () => materials.filter((m) => m.projectId.toLowerCase() === project.id.toLowerCase()),
@@ -187,7 +203,7 @@ export function ProjectMaterialsSection({ project }: { project: Project }) {
           {format(selectedDate, 'd MMM')} · {dayMaterials.length} item{dayMaterials.length !== 1 ? 's' : ''}
         </p>
         <div className="flex flex-wrap items-center gap-2">
-          {canSend && sendRecords.length > 0 && (
+          {canViewHistory && (
             <button
               type="button"
               onClick={() => setShowHistory((v) => !v)}
@@ -300,11 +316,17 @@ export function ProjectMaterialsSection({ project }: { project: Project }) {
         </FeatureCard>
       )}
 
-      {showHistory && sendRecords.length > 0 && (
+      {canViewHistory && showHistory && (
         <div className="mt-4">
           <FeatureSectionLabel>Quote &amp; order history</FeatureSectionLabel>
+          {jobSendRecords.length === 0 ? (
+            <FeatureCard className="px-4 py-3">
+              <p className="text-sm font-semibold text-slate-800">No quotes or orders for this job yet</p>
+              <p className="mt-1 text-xs text-slate-500">When you send a quote or order to a wholesaler, it appears here.</p>
+            </FeatureCard>
+          ) : null}
           <div className="space-y-2">
-            {sendRecords.map((record) => {
+            {jobSendRecords.map((record) => {
               const open = historyRecordId === record.id
               return (
                 <button

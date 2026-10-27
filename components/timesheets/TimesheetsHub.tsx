@@ -19,6 +19,7 @@ import {
   canAccessTimesheetsSurface,
   hasAdminAccess,
   shouldShowTimesheetsDisabledMessage,
+  userTimesheetSubjectIds,
 } from '@/lib/permissions'
 import {
   DEFAULT_INVOICING,
@@ -270,7 +271,11 @@ export function TimesheetsHub() {
   if (surface === 'team') {
     if (user && !showTeam) return null
     const tab = TEAM_TABS.some((item) => item.id === tabParam) ? tabParam : 'awaiting'
-    const selectedUser = userParam ? users.find((row) => row.id === userParam) : undefined
+    // Only someone on this viewer's User Timesheets (`userTimesheetSubjects`) opens from the link.
+    const selectedUser =
+      userParam && userTimesheetSubjectIds(user, users).includes(userParam)
+        ? users.find((row) => row.id === userParam)
+        : undefined
     return (
       <div className="space-y-5 pb-10">
         <TimesheetsNavBar

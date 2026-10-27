@@ -10,9 +10,9 @@ var ProjectPlannerCanonical = (() => {
   };
   var __copyProps = (to, from, except, desc) => {
     if (from && typeof from === "object" || typeof from === "function") {
-      for (let key of __getOwnPropNames(from))
-        if (!__hasOwnProp.call(to, key) && key !== except)
-          __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
+      for (let key2 of __getOwnPropNames(from))
+        if (!__hasOwnProp.call(to, key2) && key2 !== except)
+          __defProp(to, key2, { get: () => from[key2], enumerable: !(desc = __getOwnPropDesc(from, key2)) || desc.enumerable });
     }
     return to;
   };
@@ -51,6 +51,7 @@ var ProjectPlannerCanonical = (() => {
     LEGACY_PLACEHOLDER_DOCUMENT_ID: () => LEGACY_PLACEHOLDER_DOCUMENT_ID,
     MANAGER_LOCATION_TYPES: () => MANAGER_LOCATION_TYPES,
     MANAGER_TIME_SLOTS: () => MANAGER_TIME_SLOTS,
+    MATERIAL_WHATSAPP_ITEM_LIMIT: () => MATERIAL_WHATSAPP_ITEM_LIMIT,
     MIN_HALF_DAY_MINUTES: () => MIN_HALF_DAY_MINUTES,
     NOTIFICATION_ICON_BADGE_CLEARS_ON_FOREGROUND: () => NOTIFICATION_ICON_BADGE_CLEARS_ON_FOREGROUND,
     NOTIFICATION_PREFERENCE_KEYS: () => NOTIFICATION_PREFERENCE_KEYS,
@@ -103,9 +104,11 @@ var ProjectPlannerCanonical = (() => {
     bookingsToRemoveOnProjectDelete: () => bookingsToRemoveOnProjectDelete,
     canEditWorkCatalogue: () => canEditWorkCatalogue,
     canManageVariationTracker: () => canManageVariationTracker,
+    canOpenUserTimesheets: () => canOpenUserTimesheets,
     canReviewFileReports: () => canReviewFileReports,
     canReviewUserTimesheets: () => canReviewUserTimesheets,
     canSeeVariations: () => canSeeVariations,
+    canViewMaterialOrderHistory: () => canViewMaterialOrderHistory,
     canViewSensitiveProfile: () => canViewSensitiveProfile,
     canViewStaffWarnings: () => canViewStaffWarnings,
     capitalizeTimesheetWeekday: () => capitalizeTimesheetWeekday,
@@ -179,8 +182,11 @@ var ProjectPlannerCanonical = (() => {
     materialCutOffToFirestore: () => materialCutOffToFirestore,
     materialDeliveryInstant: () => materialDeliveryInstant,
     materialOrderIncludesDeliveryRequired: () => materialOrderIncludesDeliveryRequired,
+    materialOrderRecipients: () => materialOrderRecipients,
+    materialQuantityLabel: () => materialQuantityLabel,
     materialRecordMatches: () => materialRecordMatches,
     materialSearchScore: () => materialSearchScore,
+    materialWhatsAppRows: () => materialWhatsAppRows,
     mergeMinuteIntervals: () => mergeMinuteIntervals,
     mergeOperativeQualificationWrite: () => mergeOperativeQualificationWrite,
     mergeQualificationCertificateUrls: () => mergeQualificationCertificateUrls,
@@ -312,6 +318,7 @@ var ProjectPlannerCanonical = (() => {
     userNotificationPreferenceFieldPatch: () => userNotificationPreferenceFieldPatch,
     userNotificationPreferencesToFirestore: () => userNotificationPreferencesToFirestore,
     userRosterSegment: () => userRosterSegment,
+    userTimesheetSubjects: () => userTimesheetSubjects,
     validateInvoicingSettings: () => validateInvoicingSettings,
     visibleNotificationPreferenceKeys: () => visibleNotificationPreferenceKeys,
     warningDayKeyIsDated: () => warningDayKeyIsDated,
@@ -395,8 +402,8 @@ var ProjectPlannerCanonical = (() => {
   function dayOfMonthInZone(date, timeZone) {
     return partsInZone(date, timeZone).d;
   }
-  function dateFromDayKeyInZone(key, timeZone) {
-    const [y, m, d] = key.split("-").map(Number);
+  function dateFromDayKeyInZone(key2, timeZone) {
+    const [y, m, d] = key2.split("-").map(Number);
     return midnightInZone(new Date(Date.UTC(y, m - 1, d, 12, 0, 0)), timeZone);
   }
   function unixStartOfDayInZone(date, timeZone) {
@@ -494,13 +501,13 @@ var ProjectPlannerCanonical = (() => {
     ]);
     const probeFor = (organizationId) => {
       if (input.probes instanceof Map) {
-        for (const [key, probe] of input.probes) {
-          if (organizationIdsMatch(key, organizationId)) return probe;
+        for (const [key2, probe] of input.probes) {
+          if (organizationIdsMatch(key2, organizationId)) return probe;
         }
         return "unknown";
       }
-      for (const [key, probe] of Object.entries(input.probes)) {
-        if (organizationIdsMatch(key, organizationId)) return probe;
+      for (const [key2, probe] of Object.entries(input.probes)) {
+        if (organizationIdsMatch(key2, organizationId)) return probe;
       }
       return "unknown";
     };
@@ -1179,11 +1186,11 @@ var ProjectPlannerCanonical = (() => {
       const personId = String(booking.personId || "");
       const dayKey = String(booking.dayKey || "");
       if (!personId || !dayKey) continue;
-      const key = `${personId}|${dayKey}`;
+      const key2 = `${personId}|${dayKey}`;
       const target = booking.kind === "manager" ? managerBookings : operativeBookings;
-      const list = target.get(key) || [];
+      const list = target.get(key2) || [];
       list.push(asCoverageBooking(booking));
-      target.set(key, list);
+      target.set(key2, list);
     }
     const operativesByEmail = /* @__PURE__ */ new Map();
     const operativeIdsByEmail = /* @__PURE__ */ new Map();
@@ -1408,8 +1415,8 @@ var ProjectPlannerCanonical = (() => {
       const userId = String(person.userId || "").trim();
       if (userId && !peopleByUserId.has(userId)) peopleByUserId.set(userId, person);
       for (const operativeId of person.operativeIds || []) {
-        const key = String(operativeId || "").trim();
-        if (key && !peopleByOperativeId.has(key)) peopleByOperativeId.set(key, person);
+        const key2 = String(operativeId || "").trim();
+        if (key2 && !peopleByOperativeId.has(key2)) peopleByOperativeId.set(key2, person);
       }
     }
     const personForLeave = (record) => {
@@ -1425,10 +1432,10 @@ var ProjectPlannerCanonical = (() => {
       if (!personId || !booking.dayKey) continue;
       const person = booking.kind === "manager" ? peopleByUserId.get(personId) : peopleByOperativeId.get(personId);
       if (!person) continue;
-      const key = `${person.personKey}|${booking.dayKey}`;
-      const list = bookingsByPersonDay.get(key) || [];
+      const key2 = `${person.personKey}|${booking.dayKey}`;
+      const list = bookingsByPersonDay.get(key2) || [];
       list.push(booking);
-      bookingsByPersonDay.set(key, list);
+      bookingsByPersonDay.set(key2, list);
     }
     const rows = [];
     const seen = /* @__PURE__ */ new Set();
@@ -1547,6 +1554,9 @@ var ProjectPlannerCanonical = (() => {
   function seesEveryUserTimesheet(role) {
     if (role.isOperativeMode) return false;
     return role.isSuperAdmin || role.isAdmin;
+  }
+  function canViewMaterialOrderHistory(role) {
+    return isStaffAccount(role);
   }
   function canManageVariationTracker(role) {
     if (role.isOperativeMode) return false;
@@ -2235,9 +2245,9 @@ var ProjectPlannerCanonical = (() => {
     const periods = [];
     const add = (period, source) => {
       if (!isDayKey(period.startDayKey) || !isDayKey(period.endDayKey)) return;
-      const key = timesheetPeriodKey(period);
-      if (seen.has(key)) return;
-      seen.add(key);
+      const key2 = timesheetPeriodKey(period);
+      if (seen.has(key2)) return;
+      seen.add(key2);
       periods.push({ startDayKey: period.startDayKey, endDayKey: period.endDayKey, source });
     };
     for (const period of timesheetPaymentRunPeriodsFromWindow({
@@ -2428,8 +2438,8 @@ var ProjectPlannerCanonical = (() => {
   };
   var MONTH_DAYS = 31;
   function firstPresent(data, keys, fallback) {
-    for (const key of keys) {
-      if (data[key] != null && data[key] !== "") return data[key];
+    for (const key2 of keys) {
+      if (data[key2] != null && data[key2] !== "") return data[key2];
     }
     return fallback;
   }
@@ -2535,8 +2545,8 @@ var ProjectPlannerCanonical = (() => {
     if (Array.isArray(record.excludedUserIdsFromUnbookedWarnings)) {
       return stringIdList(record.excludedUserIdsFromUnbookedWarnings);
     }
-    for (const key of ["excludedUserIds", "excludedUsers", "excludedUserIdsFromWarnings", "unbookedWarningExcludedUserIds"]) {
-      if (Array.isArray(record[key])) return stringIdList(record[key]);
+    for (const key2 of ["excludedUserIds", "excludedUsers", "excludedUserIdsFromWarnings", "unbookedWarningExcludedUserIds"]) {
+      if (Array.isArray(record[key2])) return stringIdList(record[key2]);
     }
     return [];
   }
@@ -2967,8 +2977,8 @@ var ProjectPlannerCanonical = (() => {
     return String(value ?? "").trim();
   }
   function asDayKey(value) {
-    const key = trimmed3(value);
-    return /^\d{4}-\d{2}-\d{2}$/.test(key) ? key : void 0;
+    const key2 = trimmed3(value);
+    return /^\d{4}-\d{2}-\d{2}$/.test(key2) ? key2 : void 0;
   }
   function asCatalogue(value) {
     if (value === "projects" || value === "smallWorks") return value;
@@ -2985,23 +2995,23 @@ var ProjectPlannerCanonical = (() => {
         prefs[current] = flagOn(source[legacy]);
       }
     }
-    for (const key of NOTIFICATION_PREFERENCE_KEYS) {
-      if (key in source) prefs[key] = flagOn(source[key]);
+    for (const key2 of NOTIFICATION_PREFERENCE_KEYS) {
+      if (key2 in source) prefs[key2] = flagOn(source[key2]);
     }
     return prefs;
   }
   function userNotificationPreferencesToFirestore(prefs) {
     const out = {};
-    for (const key of NOTIFICATION_PREFERENCE_KEYS) {
-      out[key] = prefs[key] !== false;
+    for (const key2 of NOTIFICATION_PREFERENCE_KEYS) {
+      out[key2] = prefs[key2] !== false;
     }
     return out;
   }
   function userNotificationPreferenceFieldPatch(prefs) {
     const patch = {};
-    for (const key of NOTIFICATION_PREFERENCE_KEYS) {
-      if (Object.prototype.hasOwnProperty.call(prefs, key)) {
-        patch[`notificationPreferences.${key}`] = prefs[key] !== false;
+    for (const key2 of NOTIFICATION_PREFERENCE_KEYS) {
+      if (Object.prototype.hasOwnProperty.call(prefs, key2)) {
+        patch[`notificationPreferences.${key2}`] = prefs[key2] !== false;
       }
     }
     return patch;
@@ -3029,7 +3039,7 @@ var ProjectPlannerCanonical = (() => {
     lineManagerPeerUpdates: "Line manager peer updates",
     timesheetSubmissionReminder: "Timesheet submission reminder"
   };
-  function notificationPreferenceCopy(key, audience) {
+  function notificationPreferenceCopy(key2, audience) {
     const descriptions = {
       materialOrderCutOff: "Daily reminder at the time set in organisation settings.",
       annualLeaveRequested: "When someone you manage requests annual leave.",
@@ -3050,12 +3060,12 @@ var ProjectPlannerCanonical = (() => {
       lineManagerPeerUpdates: "When another line manager actions a shared request.",
       timesheetSubmissionReminder: "Reminder to submit before the payment-run deadline."
     };
-    return { label: PREFERENCE_LABELS[key], description: descriptions[key] };
+    return { label: PREFERENCE_LABELS[key2], description: descriptions[key2] };
   }
-  function notificationPreferenceIsVisible(key, audience) {
+  function notificationPreferenceIsVisible(key2, audience) {
     const role = audience.role;
     const staff = isStaffAccount(role);
-    switch (key) {
+    switch (key2) {
       case "projectCreated":
         return canEditWorkCatalogue(role, "projects", audience.catalogue);
       case "smallWorksCreated":
@@ -3080,12 +3090,12 @@ var ProjectPlannerCanonical = (() => {
     }
   }
   function visibleNotificationPreferenceKeys(audience) {
-    return NOTIFICATION_PREFERENCE_KEYS.filter((key) => notificationPreferenceIsVisible(key, audience));
+    return NOTIFICATION_PREFERENCE_KEYS.filter((key2) => notificationPreferenceIsVisible(key2, audience));
   }
   function notificationPreferenceAllowsDelivery(prefs, type) {
-    const key = notificationPreferenceKeyForType(type);
-    if (!key) return true;
-    return prefs[key] !== false;
+    const key2 = notificationPreferenceKeyForType(type);
+    if (!key2) return true;
+    return prefs[key2] !== false;
   }
   var DEVICE_PUSH_NOTIFICATION_TYPES = [
     "booking_created",
@@ -3717,24 +3727,24 @@ var ProjectPlannerCanonical = (() => {
     const direct = urls[id];
     if (typeof direct === "string" && direct.trim()) return direct;
     const target = id.toLowerCase();
-    for (const [key, value] of Object.entries(urls)) {
-      if (key.toLowerCase() === target && typeof value === "string" && value.trim()) return value;
+    for (const [key2, value] of Object.entries(urls)) {
+      if (key2.toLowerCase() === target && typeof value === "string" && value.trim()) return value;
     }
     return void 0;
   }
   function mergeQualificationCertificateUrls(existing, uploaded, removedIds) {
     const next = {};
-    for (const [key, value] of Object.entries(existing || {})) {
-      if (typeof value === "string" && value.trim()) next[key] = value;
+    for (const [key2, value] of Object.entries(existing || {})) {
+      if (typeof value === "string" && value.trim()) next[key2] = value;
     }
-    for (const [key, value] of Object.entries(uploaded || {})) {
-      if (typeof value === "string" && value.trim()) next[key] = value;
+    for (const [key2, value] of Object.entries(uploaded || {})) {
+      if (typeof value === "string" && value.trim()) next[key2] = value;
     }
     for (const id of removedIds || []) {
       const target = trimId(id).toLowerCase();
       if (!target) continue;
-      for (const key of Object.keys(next)) {
-        if (key.toLowerCase() === target) delete next[key];
+      for (const key2 of Object.keys(next)) {
+        if (key2.toLowerCase() === target) delete next[key2];
       }
     }
     return next;
@@ -3742,29 +3752,29 @@ var ProjectPlannerCanonical = (() => {
   function removedQualificationCertificateIds(previousUrls, nextUrls, assignedIds) {
     const removed = [];
     for (const id of assignedIds) {
-      const key = trimId(id);
-      if (!key) continue;
-      if (qualificationCertificateUrl(previousUrls, key) && !qualificationCertificateUrl(nextUrls, key)) {
-        removed.push(key);
+      const key2 = trimId(id);
+      if (!key2) continue;
+      if (qualificationCertificateUrl(previousUrls, key2) && !qualificationCertificateUrl(nextUrls, key2)) {
+        removed.push(key2);
       }
     }
     return removed;
   }
   function mergeExpiryDates(previous, next, nextAssignmentIds) {
     const expiry = {};
-    for (const [key, value] of Object.entries(previous || {})) {
+    for (const [key2, value] of Object.entries(previous || {})) {
       const iso = isoFromUnknown(value);
-      if (iso) expiry[key] = iso;
+      if (iso) expiry[key2] = iso;
     }
     for (const id of nextAssignmentIds) {
       const target = id.toLowerCase();
-      for (const key of Object.keys(expiry)) {
-        if (key.toLowerCase() === target) delete expiry[key];
+      for (const key2 of Object.keys(expiry)) {
+        if (key2.toLowerCase() === target) delete expiry[key2];
       }
     }
-    for (const [key, value] of Object.entries(next || {})) {
+    for (const [key2, value] of Object.entries(next || {})) {
       const iso = isoFromUnknown(value);
-      if (iso) expiry[key] = iso;
+      if (iso) expiry[key2] = iso;
     }
     return expiry;
   }
@@ -3849,6 +3859,331 @@ var ProjectPlannerCanonical = (() => {
       month: "long"
     }).format(at);
     return `${day} at ${formatClockMinutes(clockMinutesFromDeliveryInstant(at, zone))}`;
+  }
+
+  // lib/canonical/materialWhatsApp.ts
+  var MATERIAL_WHATSAPP_ITEM_LIMIT = 30;
+  var CALLING_CODES = {
+    GB: "44",
+    UK: "44",
+    "GB-ENG": "44",
+    "GB-SCT": "44",
+    "GB-NIR": "44",
+    IE: "353",
+    IM: "44",
+    JE: "44",
+    GG: "44",
+    AD: "376",
+    AL: "355",
+    AM: "374",
+    AO: "244",
+    AR: "54",
+    AT: "43",
+    AU: "61",
+    AW: "297",
+    AX: "358",
+    BA: "387",
+    BB: "1246",
+    BD: "880",
+    BE: "32",
+    BG: "359",
+    BJ: "229",
+    BO: "591",
+    BR: "55",
+    BS: "1242",
+    BW: "267",
+    BY: "375",
+    BZ: "501",
+    CA: "1",
+    CD: "243",
+    CG: "242",
+    CH: "41",
+    CL: "56",
+    CN: "86",
+    CO: "57",
+    CR: "506",
+    CU: "53",
+    CY: "357",
+    CZ: "420",
+    DE: "49",
+    DK: "45",
+    DM: "1767",
+    DO: "1809",
+    EC: "593",
+    EE: "372",
+    EG: "20",
+    ES: "34",
+    FI: "358",
+    FO: "298",
+    FR: "33",
+    GA: "241",
+    GD: "1473",
+    GE: "995",
+    GH: "233",
+    GI: "350",
+    GL: "299",
+    GM: "220",
+    GP: "590",
+    GR: "30",
+    GT: "502",
+    GY: "592",
+    HK: "852",
+    HN: "504",
+    HR: "385",
+    HT: "509",
+    HU: "36",
+    ID: "62",
+    IN: "91",
+    IS: "354",
+    IT: "39",
+    JM: "1876",
+    JP: "81",
+    KE: "254",
+    KR: "82",
+    KY: "1345",
+    KZ: "7",
+    LC: "1758",
+    LI: "423",
+    LS: "266",
+    LT: "370",
+    LU: "352",
+    LV: "371",
+    MA: "212",
+    MC: "377",
+    MD: "373",
+    ME: "382",
+    MG: "261",
+    MK: "389",
+    MN: "976",
+    MQ: "596",
+    MS: "1664",
+    MT: "356",
+    MX: "52",
+    MZ: "258",
+    NA: "264",
+    NE: "227",
+    NG: "234",
+    NI: "505",
+    NL: "31",
+    NO: "47",
+    NZ: "64",
+    PA: "507",
+    PE: "51",
+    PG: "675",
+    PH: "63",
+    PL: "48",
+    PR: "1",
+    PT: "351",
+    PY: "595",
+    RO: "40",
+    RS: "381",
+    RU: "7",
+    SC: "248",
+    SE: "46",
+    SG: "65",
+    SI: "386",
+    SJ: "47",
+    SK: "421",
+    SM: "378",
+    SR: "597",
+    SV: "503",
+    TN: "216",
+    TR: "90",
+    UA: "380",
+    UG: "256",
+    US: "1",
+    UY: "598",
+    VA: "379",
+    VE: "58",
+    VN: "84",
+    ZA: "27",
+    ZW: "263"
+  };
+  var MIN_E164_LEN = 8;
+  var MAX_E164_LEN = 15;
+  function trim(value) {
+    return typeof value === "string" ? value.trim() : "";
+  }
+  function callingCodeForCountry(countryCode) {
+    const code = (trim(countryCode) || "GB").toUpperCase();
+    return CALLING_CODES[code] || "44";
+  }
+  function materialQuantityLabel(unit, quantity) {
+    const raw = trim(unit) || "Number";
+    const key2 = raw.toLowerCase();
+    const plural = Math.abs(quantity) !== 1;
+    if (key2 === "number") return plural ? "Numbers" : "Number";
+    if (key2 === "box") return plural ? "Boxes" : "Box";
+    if (key2 === "length") return plural ? "Lengths" : "Length";
+    if (key2 === "drum") return plural ? "Drums" : "Drum";
+    if (key2 === "pallet") return plural ? "Pallets" : "Pallet";
+    return raw;
+  }
+  function whatsAppNumber(raw, countryCode) {
+    const trimmed5 = trim(raw);
+    if (!trimmed5) return { ok: false, reason: "No mobile number is saved for this contact." };
+    let working = trimmed5.replace(/[^\d+]/g, "");
+    if (working.startsWith("00")) working = `+${working.slice(2)}`;
+    const orgCalling = callingCodeForCountry(countryCode);
+    let digits;
+    if (working.startsWith("+")) digits = working.slice(1).replace(/^0+/, "");
+    else if (working.startsWith("0")) digits = `${orgCalling}${working.replace(/^0+/, "")}`;
+    else if (working.startsWith(orgCalling)) digits = working;
+    else digits = `${orgCalling}${working}`;
+    digits = digits.replace(/\D/g, "");
+    if (digits.length < MIN_E164_LEN) return { ok: false, reason: "This number is too short to open WhatsApp." };
+    if (digits.length > MAX_E164_LEN) return { ok: false, reason: "This number is too long to open WhatsApp." };
+    if (digits.startsWith("44") && digits.length >= 3 && digits[2] !== "7") {
+      return { ok: false, reason: "This looks like a landline. WhatsApp needs a mobile number." };
+    }
+    return { ok: true, digits };
+  }
+  function orderItemLines(materials) {
+    if (materials.length === 0) return "\u2022 (No materials listed)";
+    const shown = materials.slice(0, MATERIAL_WHATSAPP_ITEM_LIMIT);
+    const lines = shown.map((item) => {
+      const qty = `${item.quantity} \xD7 ${item.material}`;
+      const extras = [
+        trim(item.brand),
+        trim(item.productCode) ? `Code ${trim(item.productCode)}` : "",
+        trim(item.lengthDisplay),
+        trim(item.notes)
+      ].filter(Boolean);
+      const unit = materialQuantityLabel(item.unit, item.quantity);
+      const unitBit = unit && unit.toLowerCase() !== "number" && unit.toLowerCase() !== "numbers" ? ` (${unit})` : "";
+      return extras.length ? `\u2022 ${qty}${unitBit} \u2014 ${extras.join(" \xB7 ")}` : `\u2022 ${qty}${unitBit}`;
+    });
+    const remaining = materials.length - shown.length;
+    if (remaining > 0) {
+      lines.push(`\u2022 \u2026and ${remaining} more item${remaining === 1 ? "" : "s"}. We can send the full list by email.`);
+    }
+    return lines.join("\n");
+  }
+  function deliveryDate(value) {
+    if (value == null || value === "") return null;
+    const date = value instanceof Date ? value : new Date(value);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+  function whatsAppMessage(input, recipient) {
+    const isQuote = String(input.requestType).toLowerCase() === "quote";
+    const contact = trim(recipient.name) || "there";
+    const orgName = trim(input.organisationName);
+    const org = orgName || "our company";
+    const lead = isQuote ? `Please see the following quote request from ${org}.` : `Please see the following material order from ${org}.`;
+    const confirm = isQuote ? "Please can you confirm availability, pricing and the expected delivery date? This is only a quote request." : "Please can you confirm availability and the expected delivery date?";
+    const lines = [`Hi ${contact},`, "", lead, "", isQuote ? "QUOTE REQUEST" : "MATERIAL ORDER"];
+    if (trim(input.jobNumber)) lines.push(`Job: ${trim(input.jobNumber)}`);
+    if (trim(input.projectName)) lines.push(`Project: ${trim(input.projectName)}`);
+    const address = trim(input.projectAddress);
+    if (address) {
+      lines.push("Project address:");
+      lines.push(address);
+    }
+    if (trim(recipient.wholesalerName)) lines.push(`Supplier: ${trim(recipient.wholesalerName)}`);
+    const delivery = deliveryDate(input.deliveryAt);
+    if (materialOrderIncludesDeliveryRequired(isQuote ? "quote" : "order") && delivery) {
+      lines.push(`Required delivery: ${formatMaterialDeliveryRequired(delivery, input.timeZone)}`);
+    }
+    lines.push("", "ORDER DETAILS", orderItemLines(input.materials), "", confirm, "", "Thanks,");
+    lines.push(trim(input.requestingUserName) || "Project Planner");
+    if (orgName) lines.push(orgName);
+    return lines.join("\n");
+  }
+  function materialWhatsAppRows(input) {
+    return (input.recipients ?? []).map((recipient) => {
+      const message = whatsAppMessage(input, recipient);
+      const number = whatsAppNumber(recipient.phone, input.countryCode);
+      if (!number.ok) {
+        return { recipientId: recipient.id, message, ok: false, digits: null, reason: number.reason, url: null };
+      }
+      return {
+        recipientId: recipient.id,
+        message,
+        ok: true,
+        digits: number.digits,
+        reason: null,
+        url: `https://wa.me/${number.digits}?text=${encodeURIComponent(message)}`
+      };
+    });
+  }
+
+  // lib/canonical/materialOrderRecipients.ts
+  function key(value) {
+    return typeof value === "string" ? value.trim().toLowerCase() : "";
+  }
+  function accountKeys(account) {
+    return [account.id, ...account.formerIds ?? [], ...account.aliasIds ?? []].map(key).filter(Boolean);
+  }
+  function materialOrderRecipients(input) {
+    const jobIds = new Set((input.jobManagerIds ?? []).map(key).filter(Boolean));
+    if (jobIds.size === 0) return [];
+    const jobEmails = new Set(
+      (input.managers ?? []).filter((row) => jobIds.has(key(row.id))).map((row) => key(row.email)).filter(Boolean)
+    );
+    const adder = new Set((input.adderIds ?? []).map(key).filter(Boolean));
+    const seen = /* @__PURE__ */ new Set();
+    const rows = [];
+    for (const account of input.accounts ?? []) {
+      const id = key(account.id);
+      if (!id || seen.has(id)) continue;
+      if (account.isActive === false || !isStaffAccount(account.role)) continue;
+      const ids = accountKeys(account);
+      if (ids.some((value) => adder.has(value))) continue;
+      const named = ids.some((value) => jobIds.has(value)) || key(account.email) !== "" && jobEmails.has(key(account.email));
+      if (!named) continue;
+      seen.add(id);
+      rows.push({ userId: account.id });
+    }
+    return rows;
+  }
+
+  // lib/canonical/userTimesheetAccess.ts
+  function idKey(value) {
+    return typeof value === "string" ? value.trim().toLowerCase() : "";
+  }
+  function memberIsActive(member) {
+    return member.isActive !== false;
+  }
+  function isTimesheetUser(role) {
+    return role.isOperativeMode || role.isManager || role.isAdmin || role.isSuperAdmin;
+  }
+  function lineManagerKeys(member) {
+    if (member.hasNoLineManager === true) return [];
+    const listed = (member.assignedManagerUserIds ?? []).map(idKey).filter(Boolean);
+    if (listed.length > 0) return listed;
+    const legacy = idKey(member.assignedManagerUserId);
+    return legacy ? [legacy] : [];
+  }
+  function userTimesheetSubjects(input) {
+    const { viewer, members } = input;
+    if (!viewer || !idKey(viewer.id)) return [];
+    if (!canReviewUserTimesheets(viewer.role)) return [];
+    const active = members.filter((member) => idKey(member.id) && memberIsActive(member));
+    if (seesEveryUserTimesheet(viewer.role)) {
+      return active.filter((member) => isTimesheetUser(member.role)).map((member) => ({ userId: member.id }));
+    }
+    const viewerKeys = new Set(
+      [viewer.id, ...viewer.formerIds ?? [], ...viewer.aliasIds ?? []].map(idKey).filter(Boolean)
+    );
+    const reportsToViewer = (member) => lineManagerKeys(member).some((key2) => viewerKeys.has(key2));
+    const managedEmails = /* @__PURE__ */ new Set();
+    for (const member of active) {
+      const email = idKey(member.email);
+      if (email && reportsToViewer(member)) managedEmails.add(email);
+    }
+    return active.filter((member) => {
+      if (reportsToViewer(member)) return true;
+      const email = idKey(member.email);
+      return Boolean(email) && managedEmails.has(email);
+    }).map((member) => ({ userId: member.id }));
+  }
+  function canOpenUserTimesheets(input) {
+    const { viewer } = input;
+    if (!viewer || !idKey(viewer.id)) return false;
+    if (!canReviewUserTimesheets(viewer.role)) return false;
+    if (seesEveryUserTimesheet(viewer.role)) return true;
+    if (input.rosterLoading === true) return true;
+    return userTimesheetSubjects(input).length > 0;
   }
 
   // lib/canonical/billingAccess.ts
@@ -4405,7 +4740,7 @@ var ProjectPlannerCanonical = (() => {
   }
 
   // lib/canonical/bookingPerson.ts
-  function idKey(value) {
+  function idKey2(value) {
     return typeof value === "string" ? value.trim().toLowerCase() : "";
   }
   function emailKey2(value) {
@@ -4416,9 +4751,9 @@ var ProjectPlannerCanonical = (() => {
     const seen = /* @__PURE__ */ new Set();
     const add = (raw) => {
       const id = typeof raw === "string" ? raw.trim() : "";
-      const key = id.toLowerCase();
-      if (!id || seen.has(key)) return;
-      seen.add(key);
+      const key2 = id.toLowerCase();
+      if (!id || seen.has(key2)) return;
+      seen.add(key2);
       ids.push(id);
     };
     for (const id of labourPersonIds({ id: account.id, formerIds: account.formerIds ? [...account.formerIds] : [] })) add(id);
@@ -4432,10 +4767,10 @@ var ProjectPlannerCanonical = (() => {
     return ids;
   }
   function resolveBookingPerson(operativeId, input) {
-    const needle = idKey(operativeId);
+    const needle = idKey2(operativeId);
     if (!needle) return { accountId: null, operativeId: null, email: null };
-    const operative = input.operatives.find((row) => idKey(row.id) === needle) || null;
-    let account = input.accounts.find((row) => idKey(row.id) === needle) || input.accounts.find((row) => (row.formerIds || []).some((id) => idKey(id) === needle)) || input.accounts.find((row) => (row.aliasIds || []).some((id) => idKey(id) === needle)) || null;
+    const operative = input.operatives.find((row) => idKey2(row.id) === needle) || null;
+    let account = input.accounts.find((row) => idKey2(row.id) === needle) || input.accounts.find((row) => (row.formerIds || []).some((id) => idKey2(id) === needle)) || input.accounts.find((row) => (row.aliasIds || []).some((id) => idKey2(id) === needle)) || null;
     const operativeEmail = emailKey2(operative?.email);
     if (!account && operativeEmail) {
       account = input.accounts.find((row) => emailKey2(row.email) === operativeEmail) || null;
@@ -4451,9 +4786,9 @@ var ProjectPlannerCanonical = (() => {
   }
   function bookingPersonKey(operativeId, input) {
     const person = resolveBookingPerson(operativeId, input);
-    if (person.accountId) return `account:${idKey(person.accountId)}`;
-    if (person.operativeId) return `operative:${idKey(person.operativeId)}`;
-    return `id:${idKey(operativeId)}`;
+    if (person.accountId) return `account:${idKey2(person.accountId)}`;
+    if (person.operativeId) return `operative:${idKey2(person.operativeId)}`;
+    return `id:${idKey2(operativeId)}`;
   }
   function bookingIdsForPerson(operativeId, input) {
     const first = typeof operativeId === "string" ? operativeId.trim() : "";

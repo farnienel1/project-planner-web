@@ -1103,3 +1103,47 @@ test('tax identifiers: an invitee reads and removes the placeholder copy but can
   await assertFails(setDoc(ref(invitee), taxIds('invitee-auth-uid')))
   await assertSucceeds(deleteDoc(ref(invitee)))
 })
+
+test('job quote and order history: every admin and manager reads it without the Wholesalers toggle, operatives never', async () => {
+  const MANAGER_A = 'manager-a-history'
+  const ADMIN_OP_A = 'admin-op-a-history'
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore()
+    await setDoc(doc(db, 'users', MANAGER_A), {
+      email: 'manager-a-history@test.com',
+      organizationId: ORG_A,
+      role: 'manager',
+      adminAccess: false,
+      isSuperAdmin: false,
+      operativeMode: false,
+      wholesalersOrderHistory: false,
+      permissions: { manager: true, wholesalersOrderHistory: false, operativeMode: false },
+      firstName: 'Mo',
+    })
+    await setDoc(doc(db, 'users', ADMIN_OP_A), {
+      email: 'admin-op-a-history@test.com',
+      organizationId: ORG_A,
+      role: 'admin',
+      permissions: { adminAccess: true, operativeMode: true },
+      firstName: 'Ola',
+    })
+    await setDoc(doc(db, 'organizations', ORG_A, 'materialSendRecords', 'SEND-HISTORY-1'), {
+      id: 'SEND-HISTORY-1',
+      projectId: 'job-1',
+      requestType: 'Order',
+      sentAt: Timestamp.now(),
+      sentBy: 'Ada',
+      recipients: [],
+      lines: [],
+    })
+  })
+  const ref = (uid: string, email: string) => doc(authDb(uid, email), 'organizations', ORG_A, 'materialSendRecords', 'SEND-HISTORY-1')
+  await assertSucceeds(getDoc(ref(MANAGER_A, 'manager-a-history@test.com')))
+  await assertSucceeds(getDoc(ref(ADMIN_A, 'admin-a@test.com')))
+  await assertSucceeds(
+    getDocs(query(collection(authDb(MANAGER_A, 'manager-a-history@test.com'), 'organizations', ORG_A, 'materialSendRecords'), where('projectId', '==', 'job-1')))
+  )
+  await assertFails(getDoc(ref(OP_A, 'op-a@test.com')))
+  await assertFails(getDoc(ref(ADMIN_OP_A, 'admin-op-a-history@test.com')))
+  await assertFails(getDoc(doc(authDb(ADMIN_B, 'admin-b@test.com'), 'organizations', ORG_A, 'materialSendRecords', 'SEND-HISTORY-1')))
+})

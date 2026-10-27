@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { useAuthStore } from '@/lib/stores/authStore'
+import { notifyMaterialOrderPlaced } from '@/lib/materials/materialOrderNotifications'
 import { useMaterialCatalogStore } from '@/lib/stores/materialCatalogStore'
 import { useMaterialProjectStore } from '@/lib/stores/materialProjectStore'
 import { searchMaterialCatalogue, type MaterialSuggestion } from '@/lib/materials/materialCatalogSearch'
@@ -111,6 +112,16 @@ export function MaterialsAddSheet({ project, selectedDate, existing, onClose, on
         category: category.trim() || undefined,
         websiteURL: websiteURL.trim() || undefined,
       })
+      if (!existing) {
+        // The job's managers (`materialOrderRecipients`). The line is saved; the inbox rows follow.
+        void notifyMaterialOrderPlaced({
+          organizationId: organization.id,
+          project,
+          materialName,
+          addedByName: displayName,
+          adder: user,
+        }).catch(() => {})
+      }
       onSaved()
       onClose()
     } catch (err: unknown) {

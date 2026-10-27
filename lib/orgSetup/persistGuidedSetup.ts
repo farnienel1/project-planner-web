@@ -125,6 +125,7 @@ function wholesalerPayload(wholesaler: Wholesaler) {
       name: contact.name.trim(),
       email: contact.email.trim(),
       isPrimary: contact.isPrimary,
+      phone: contact.phone?.trim() || null,
       createdAt: Timestamp.fromDate(contact.createdAt),
     })),
     createdAt: Timestamp.fromDate(wholesaler.createdAt),

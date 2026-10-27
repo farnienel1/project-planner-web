@@ -4,6 +4,7 @@
  */
 
 import type { ProjectMaterialLine, Wholesaler } from '@/types'
+import { materialQuantityLabel } from '@/lib/canonical'
 
 export type MaterialSendRequestType = 'quote' | 'order'
 
@@ -37,16 +38,9 @@ export function isDraftStatus(status: string): boolean {
   return status.trim().toLowerCase().includes('draft') || (!isQuotedStatus(status) && !isOrderedStatus(status))
 }
 
+/** Unit name the email prints, from the rulebook (`materialQuantityLabel`, also used by `materialWhatsAppRows`). */
 export function quantityLabel(unit: string, quantity: number): string {
-  const raw = unit.trim() || 'Number'
-  const key = raw.toLowerCase()
-  const plural = Math.abs(quantity) !== 1
-  if (key === 'number') return plural ? 'Numbers' : 'Number'
-  if (key === 'box') return plural ? 'Boxes' : 'Box'
-  if (key === 'length') return plural ? 'Lengths' : 'Length'
-  if (key === 'drum') return plural ? 'Drums' : 'Drum'
-  if (key === 'pallet') return plural ? 'Pallets' : 'Pallet'
-  return raw
+  return materialQuantityLabel(unit, quantity)
 }
 
 export function wholesalerIdsForSelectedContacts(
