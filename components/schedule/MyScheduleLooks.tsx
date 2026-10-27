@@ -4,7 +4,7 @@
 
 'use client'
 
-import { estimatedPaidHours, overviewFormatHours, parseMinutes } from '@/lib/daily-overview/buildDailyOverview'
+import { estimatedWorkedHours, overviewFormatHours, parseMinutes } from '@/lib/daily-overview/buildDailyOverview'
 import { formatOvertimeEquation } from '@/lib/scheduling/paidHours'
 import type { ManagerLocationType, ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import type { OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
@@ -63,11 +63,11 @@ function minsToClock(mins: number): string {
 }
 
 export function myScheduleClockSubtitle(
-  input: { timeSlot?: string; workStartTime?: string; workEndTime?: string },
+  input: { timeSlot?: string; workStartTime?: string; workEndTime?: string; isBreakRemoved?: boolean; date?: Date },
   policy?: OrgPayrollTimePolicy
 ): string {
   const range = slotClockRange(input.timeSlot, input.workStartTime, input.workEndTime, policy)
-  const hours = estimatedPaidHours(input)
+  const hours = estimatedWorkedHours({ ...input, policy })
   return `${range.label} · ${overviewFormatHours(hours)} hrs`
 }
 
@@ -138,9 +138,9 @@ export function MyScheduleTotalHoursCard({
   policy: OrgPayrollTimePolicy
   annualLeaveLabel?: string | null
 }) {
-  const paid = bookings.reduce((sum, b) => sum + estimatedPaidHours(b), 0)
+  const worked = bookings.reduce((sum, b) => sum + estimatedWorkedHours({ ...b, policy }), 0)
   const std = policy.standardPaidHours || 8
-  const ot = Math.max(0, paid - std)
+  const ot = Math.max(0, worked - std)
   const ticks = ['6:00', '9:00', '12:00', '15:00', '18:00']
 
   return (
@@ -156,8 +156,8 @@ export function MyScheduleTotalHoursCard({
           <span className="rounded-full bg-[#FAEED9] px-2 py-1 text-[10px] font-semibold text-[#9E3B12]">Annual Leave</span>
         ) : (
           <div className="text-right">
-            <p className="text-[18px] font-medium text-[var(--ink)]">{overviewFormatHours(paid)}</p>
-            <p className="text-[10px] font-medium text-[var(--ink3)]">hrs paid</p>
+            <p className="text-[18px] font-medium text-[var(--ink)]">{overviewFormatHours(worked)}</p>
+            <p className="text-[10px] font-medium text-[var(--ink3)]">hrs worked</p>
             {ot > 0.05 ? (
               <p className="text-[10px] font-semibold text-[#854F0B]">
                 OT {formatOvertimeEquation(ot, policy.weekdayOutsideStandardMultiplier || 1.5)}

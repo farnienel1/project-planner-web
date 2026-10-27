@@ -75,7 +75,7 @@ test('collectSubjectDayEntries includes a single booked day inside a half-month 
       start: new Date(Date.UTC(2026, 8, 16, 12, 0, 0)),
       end: new Date(Date.UTC(2026, 8, 30, 12, 0, 0)),
     },
-    payrollPolicy: { standardPaidHours: 8, unpaidBreakMinutes: 0 } as never,
+    payrollPolicy: { standardPaidHours: 8, unpaidBreakMinutes: 30 } as never,
   })
   assert.equal(entries.length, 1)
   assert.equal(entries[0].hours, 8)

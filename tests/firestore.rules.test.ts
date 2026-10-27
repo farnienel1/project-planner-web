@@ -564,6 +564,8 @@ test('invitee can finish password setup: own email claim, placeholder get, then 
     ageConfirmed: true,
     ageConfirmedYears: 16,
     ageConfirmedAt: Timestamp.now(),
+    // inviteMigrationFormerIdWriteFields: bookings made while pending keep counting.
+    formerUserIds: [placeholderId],
   })
 
   // Claim still names the placeholder: self-create is allowed (pending placeholder, same email, same org).
@@ -574,6 +576,10 @@ test('invitee can finish password setup: own email claim, placeholder get, then 
   await assertSucceeds(deleteDoc(doc(db, 'users', placeholderId)))
   const moved = await assertSucceeds(getDoc(doc(db, 'organizations', ORG_A, 'userEmails', email)))
   assert.equal(moved.data()?.userId, authUid)
+  // iOS mergePlaceholderUserDocOntoAuthUidIfNeeded appends to formerUserIds on the account's own document.
+  await assertSucceeds(
+    setDoc(doc(db, 'users', authUid), { formerUserIds: [placeholderId, 'OLDER-PLACEHOLDER-ID'] }, { merge: true })
+  )
   await assertFails(
     updateDoc(doc(db, 'users', 'QAlPe29vLLP4spK554UtpaBLW7N2'), { passwordSet: true })
   )

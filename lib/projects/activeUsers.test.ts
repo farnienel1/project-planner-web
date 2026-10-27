@@ -194,7 +194,8 @@ test('Active users lists booked people, skips cancelled and missing roster rows,
   assert.equal(zara.subtitle, 'Operative')
   assert.equal(zara.bookingCount, 2)
   assert.equal(zara.initials, 'ZJ')
-  assert.equal(formatActiveUserHours(zara.totalHours), '5.5')
+  // 08:00–10:00 does not reach the 12:00 break, so no break comes off (payrollHoursResult).
+  assert.equal(formatActiveUserHours(zara.totalHours), '6')
   assert.equal(rows[0].subtitle, 'Manager / staff')
   assert.equal(rows[1].subtitle, 'Brickwork')
   assert.equal(

@@ -1,29 +1,29 @@
 import { getISODay } from 'date-fns'
-import { resolveBookingPerson } from '@/lib/canonical'
-import { hoursFromSlot } from '@/lib/timesheets/timesheetWeekUtils'
+import { reportDayValue, resolveBookingPerson } from '@/lib/canonical'
 import type { OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 import { DEFAULT_PAYROLL_POLICY } from '@/lib/settings/organizationSettings'
 import type { Operative, User } from '@/types'
 import { findOperativeForUser } from '@/lib/operatives/operativeRosterUtils'
 import { STAFF_TRADE_PRESETS } from '@/lib/staff/staffTradeTypes'
 import { employmentTypeOnDay } from '@/lib/ios-parity/employmentType'
-import { overtimeHoursBeyondPaidStandard, paidBookedHours, weekdayOtMultiplier } from '@/lib/timesheets/timesheetHours'
+import { bookingHoursOnDay } from '@/lib/timesheets/timesheetHours'
 import { emptyDayRateHistory, type OperativeDayRateHistoryCollection } from '@/lib/timesheets/dayRateHistoryStorage'
 import { payForHours, resolvePayrollRate } from '@/lib/timesheets/payrollRateResolver'
 import { orgDayHours, payLineDisplay, quantityText, roundPennies, type PayBasis } from '@/lib/timesheets/payBasis'
 
+/** Day units for a staff booking (`reportDayValue` of `payrollHoursResult`), as on iOS. */
 export function bookingDayUnits(
   timeSlot: string,
   workStartTime?: string,
   workEndTime?: string,
-  payrollPolicy?: OrgPayrollTimePolicy
+  payrollPolicy?: OrgPayrollTimePolicy,
+  date?: Date,
+  isBreakRemoved?: boolean,
+  otMultiplierOverride?: number | null
 ): number {
-  const normalized = (timeSlot || '').toUpperCase()
-  const standardHours = payrollPolicy?.standardPaidHours ?? 8
-  if (normalized === 'AM' || normalized === 'PM') return 0.5
-  if (normalized.includes('FULL')) return 1
-  const hours = hoursFromSlot(timeSlot, workStartTime, workEndTime, payrollPolicy)
-  return Math.round((hours / standardHours) * 100) / 100
+  const policy = payrollPolicy || DEFAULT_PAYROLL_POLICY
+  const hours = bookingHoursOnDay(date, timeSlot, workStartTime, workEndTime, policy, isBreakRemoved, otMultiplierOverride)
+  return reportDayValue({ totalPaidHours: hours.totalPaidHours, standardPaidHours: policy.standardPaidHours })
 }
 
 function readableTrade(value?: string): string | undefined {
@@ -178,6 +178,7 @@ export function labourPaySlices({
   workStartTime,
   workEndTime,
   isBreakRemoved,
+  otMultiplierOverride,
   user,
   operative,
   history = emptyDayRateHistory(),
@@ -190,6 +191,7 @@ export function labourPaySlices({
   workStartTime?: string
   workEndTime?: string
   isBreakRemoved?: boolean
+  otMultiplierOverride?: number | null
   user?: User
   operative?: Operative
   history?: OperativeDayRateHistoryCollection
@@ -199,10 +201,11 @@ export function labourPaySlices({
 }): LabourPaySlice[] {
   const policy = payroll || DEFAULT_PAYROLL_POLICY
   const standard = orgDayHours(policy.standardPaidHours)
-  const paid = paidBookedHours(timeSlot, workStartTime, workEndTime, policy, isBreakRemoved)
-  const otHours = overtimeHoursBeyondPaidStandard(date, timeSlot, workStartTime, workEndTime, policy, isBreakRemoved)
-  const normalHours = Math.max(0, roundPennies(paid - otHours))
-  const otMultiplier = weekdayOtMultiplier(date, policy)
+  // `payrollHoursResult`: the same normal hours, overtime hours and multiplier iOS uses.
+  const hours = bookingHoursOnDay(date, timeSlot, workStartTime, workEndTime, policy, isBreakRemoved, otMultiplierOverride)
+  const otHours = hours.outsideHours
+  const normalHours = Math.max(0, roundPennies(hours.standardHours))
+  const otMultiplier = hours.outsideMultiplier
   const resolved = resolvePayrollRate({
     user,
     operative,
@@ -239,6 +242,7 @@ export function labourPaySlices({
   return slices
 }
 
+/** `isPaye` is `employmentTypeOnDay` for the line's day; a PAYE line keeps its hours and shows no pay (`reportPayCell`). */
 export function signedLabourSlice(line: {
   paidHours: number
   days: number
@@ -246,7 +250,7 @@ export function signedLabourSlice(line: {
   isOvertime: boolean
   payBasis?: string | null
   otMultiplier?: number | null
-}, standardHours: number, otMultiplier: number | null): LabourPaySlice {
+}, standardHours: number, otMultiplier: number | null, isPaye = false): LabourPaySlice {
   const payBasis: PayBasis = line.payBasis === 'hourly' ? 'hourly' : 'day'
   const standard = orgDayHours(standardHours)
   const paidHours = line.paidHours > 0 ? line.paidHours : payBasis === 'day' ? line.days * standard : 0
@@ -259,8 +263,8 @@ export function signedLabourSlice(line: {
     otMultiplier: line.isOvertime ? storedMultiplier : null,
     rate,
     paidHours,
-    pay: roundPennies(line.amount),
-    isPaye: false,
+    pay: isPaye ? 0 : roundPennies(line.amount),
+    isPaye,
   }
 }
 

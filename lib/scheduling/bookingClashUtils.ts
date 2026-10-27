@@ -17,7 +17,6 @@ import { isActiveBookingStatus, isSmallWorksJobType } from '@/lib/ios-parity/enu
 import type { OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 import { DEFAULT_PAYROLL_POLICY } from '@/lib/settings/organizationSettings'
 import {
-  bookingsOverlapByInterval,
   formatWarningHours,
   operativeClashInterval,
   overlappingClusters,
@@ -286,7 +285,7 @@ export function computeOperativeBookingClashWarnings(
     const account = person.accountId ? users.find((user) => user.id === person.accountId) : undefined
     if (person.email && managerAdminEmails.has(person.email)) continue
 
-    const clusters = overlappingClusters(dayBookings, (a, b) => bookingsOverlapByInterval(a, b, payrollPolicy))
+    const clusters = overlappingClusters(dayBookings, (booking) => operativeClashInterval(booking, payrollPolicy))
     for (const cluster of clusters) {
       const sorted = [...cluster].sort((a, b) => a.id.localeCompare(b.id))
       const pairKey = sorted.map((booking) => booking.id).join('|')

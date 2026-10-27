@@ -13,6 +13,7 @@ export {
   formatClockMinutes,
   halfDayWindows,
   intervalsOverlap,
+  overlappingIntervalGroups,
   invoicingPeriod,
   mergeMinuteIntervals,
   namedSlotKind,
@@ -326,6 +327,7 @@ export {
   bookingsToRemoveOnProjectDelete,
   isBookingUuid,
   normalizeBookingStatus,
+  isOpenBookingStatus,
   normalizeBookingTimeSlot,
   parseBookingDocument,
   MANAGER_LOCATION_TYPES,
@@ -338,6 +340,11 @@ export { bookingIdsForAccount, bookingIdsForPerson, bookingPersonKey, resolveBoo
 export { LEGACY_PLACEHOLDER_DOCUMENT_ID, isLegacyPlaceholderDocumentId } from './bookings'
 
 export { legalPackNeedsAcceptance } from './legalPack'
+
+export { payrollHoursResult, payrollOutsideMultiplier, reportDayValue, subcontractorDayValue } from './payrollHours'
+export { parsePayrollPolicy } from './organizationSettings'
+
+export { PAYE_PAY_CELL_LABEL, reportPayCell, reportPayTotal, reportPersonPayCell } from './reportPay'
 
 export {
   SENSITIVE_EXPORT_OPTION_LABEL,

@@ -58,13 +58,8 @@ export function BookingEditSheet({
       workStartTime: slot === 'CUSTOM' ? firestoreSlot.workStartTime || workStartTime : undefined,
       workEndTime: slot === 'CUSTOM' ? firestoreSlot.workEndTime || workEndTime : undefined,
       isBreakRemoved: slot === 'CUSTOM' ? breakRemoved : undefined,
-      unpaidBreakMinutes: payroll.unpaidBreakMinutes,
-      breakWindowStart: payroll.breakWindowStart,
-      breakWindowEnd: payroll.breakWindowEnd,
-      standardPaidHours: payroll.standardPaidHours,
-      standardDayStart: payroll.standardDayStart,
-      standardDayEnd: payroll.standardDayEnd,
-      overtimeMultiplier: payroll.weekdayOutsideStandardMultiplier,
+      policy: payroll,
+      date: new Date(booking.date),
     })
   }, [booking.date, slot, workStartTime, workEndTime, breakRemoved, payroll])
 
@@ -146,6 +141,7 @@ export function BookingEditSheet({
               end={workEndTime}
               breakRemoved={breakRemoved}
               policy={payroll}
+              date={new Date(booking.date)}
               showBreak
               onStart={setWorkStartTime}
               onEnd={setWorkEndTime}

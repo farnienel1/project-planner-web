@@ -309,10 +309,10 @@ export async function buildWeeklyReportPdf(data: WeeklyReportData): Promise<Uint
         line.rateType,
         line.quantityText ?? formatDays(line.days),
         line.rateText ?? formatCurrency(line.rate),
-        formatCurrency(line.pay),
+        line.payLabel ?? formatCurrency(line.pay),
       ])
     }
-    payRows.push([`${person.person} total`, '', '', '', '', formatCurrency(person.personTotal)])
+    payRows.push([`${person.person} total`, '', '', '', '', person.personTotalLabel ?? formatCurrency(person.personTotal)])
     payRows.push(['', '', '', '', '', ''])
   }
   if (data.paySummary.length === 0) {

@@ -9,7 +9,7 @@
 import type { Booking } from '@/types'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import type { OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
-import { overtimeHoursBeyondPaidStandard, paidBookedHours } from '@/lib/timesheets/timesheetHours'
+import { bookingHoursOnDay } from '@/lib/timesheets/timesheetHours'
 import type { TimesheetPayrollLineItem } from '@/lib/timesheets/timesheetPayrollCollector'
 
 export type PayrollHoursChoice = {
@@ -77,16 +77,8 @@ export function revisedPayrollAmount(input: {
   policy: OrgPayrollTimePolicy
 }): number {
   const { row, startTime, endTime, breakRemoved, policy } = input
-  const paid = paidBookedHours('customHours', startTime, endTime, policy, breakRemoved)
-  const ot = overtimeHoursBeyondPaidStandard(
-    row.date,
-    'customHours',
-    startTime,
-    endTime,
-    policy,
-    breakRemoved
-  )
-  const relevantHours = row.isOvertimeLine ? ot : Math.max(0, paid - ot)
+  const hours = bookingHoursOnDay(row.date, 'customHours', startTime, endTime, policy, breakRemoved)
+  const relevantHours = row.isOvertimeLine ? hours.outsideHours : Math.max(0, hours.standardHours)
   if (row.paidHours <= 0.01) return row.amount
   return row.amount * (relevantHours / row.paidHours)
 }

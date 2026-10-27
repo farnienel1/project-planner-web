@@ -16,6 +16,7 @@ export {
   formatClockMinutes,
   halfDayWindows,
   intervalsOverlap,
+  overlappingIntervalGroups,
   invoicingPeriod,
   mergeMinuteIntervals,
   namedSlotKind,
@@ -262,6 +263,8 @@ export {
   DEFAULT_MATERIAL_CUT_OFF,
   DEFAULT_MY_SCHEDULE,
   DEFAULT_PAYROLL_POLICY,
+  DEFAULT_SATURDAY_PAYROLL,
+  DEFAULT_SUNDAY_PAYROLL,
   DEFAULT_PAYMENT_RUN_DATE_RANGES,
   DEFAULT_WARNING_DETECTION,
   OPERATIONAL_COLLECTION_PATHS,
@@ -522,6 +525,7 @@ export {
   bookingsToRemoveOnProjectDelete,
   isBookingUuid,
   normalizeBookingStatus,
+  isOpenBookingStatus,
   normalizeBookingTimeSlot,
   parseBookingDocument,
   MANAGER_LOCATION_TYPES,
@@ -574,3 +578,8 @@ export type {
   SensitiveProfileField,
   SensitiveProfileWriteResult,
 } from './sensitiveProfile'
+
+export { PAYE_PAY_CELL_LABEL, reportPayCell, reportPayTotal, reportPersonPayCell } from './reportPay'
+export type { ReportPayCell, ReportPayLineInput } from './reportPay'
+export { payrollHoursResult, payrollOutsideMultiplier, reportDayValue, subcontractorDayValue } from './payrollHours'
+export type { PayrollHoursBooking, PayrollHoursInput, PayrollHoursResult, PayrollHoursSegment } from './payrollHours'

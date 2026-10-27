@@ -137,3 +137,37 @@ test('cancelled bookings are not counted, and bookings under a users id or forme
   assert.equal(ada?.days, 1)
   assert.equal(re?.days, 2)
 })
+
+test('a PAYE person keeps their bookings and hours but shows PAYE instead of pay, and is not in the pay total', () => {
+  const paye = { ...person(), id: 'u2', email: 'pat@x.com', firstName: 'Pat', surname: 'Paye', employmentType: 'paye' } as User
+  const payeOperative: Operative = { ...operative, id: 'op2', firstName: 'Pat', lastName: 'Paye', email: 'pat@x.com' }
+  const payeBooking = { ...booking('b3', day), operativeId: 'op2' }
+  const input = {
+    organizationName: 'Acme',
+    period: { start: new Date('2026-10-05T00:00:00Z'), end: new Date('2026-10-11T00:00:00Z'), label: 'week' },
+    bookings: [booking('b1', day), booking('b2', next), payeBooking],
+    managerSiteBookings: [],
+    subcontractorBookings: [],
+    subcontractors: [],
+    operatives: [operative, payeOperative],
+    users: [person(), paye],
+    projects: [project],
+    smallWorks: [],
+    holidays: [],
+    orgDetails: null,
+  }
+  const report = buildWeeklyReportData(input)
+  const pat = report.paySummary.find((row) => row.person === 'Pat Paye')
+  assert.ok(pat, 'PAYE person stays on the report')
+  assert.equal(pat?.lines[0]?.payLabel, 'PAYE')
+  assert.equal(pat?.lines[0]?.isPaye, true)
+  assert.ok((pat?.lines[0]?.days ?? 0) > 0, 'PAYE hours are still shown')
+  assert.equal(pat?.personTotalLabel, 'PAYE')
+  const ada = report.paySummary.find((row) => row.person === 'Ada Booked')
+  assert.equal(ada?.personTotal, 400)
+  assert.equal(ada?.personTotalLabel, null)
+  assert.equal(report.grandTotal, 400)
+  // The PAYE booking is still a project row with its day.
+  const rows = report.projectGroups[0]?.rows ?? []
+  assert.equal(rows.find((row) => row.person === 'Pat Paye')?.days, 1)
+})

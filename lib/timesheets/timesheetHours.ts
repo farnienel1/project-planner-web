@@ -1,11 +1,14 @@
 /**
- * iOS parity: Booking.paidBookedHours / overtimeHoursBeyondPaidStandard (simplified).
+ * Booking hours for timesheets, the weekly report, and active users. Every
+ * figure is the rulebook's `payrollHoursResult` (`lib/canonical/payrollHours.ts`),
+ * the same calculation iOS runs: standard-window hours, hours outside it, the
+ * multiplier, and the weighted total.
  */
 import type { OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 import { DEFAULT_PAYROLL_POLICY } from '@/lib/settings/organizationSettings'
-import { londonIsoWeekday, parseHhMm } from '@/lib/ios-parity/londonTime'
-import { orgDayHours } from '@/lib/timesheets/payBasis'
-import { hoursFromSlot } from '@/lib/timesheets/timesheetWeekUtils'
+import { payrollOutsideMultiplier, type PayrollHoursResult } from '@/lib/canonical'
+import { londonIsoWeekday } from '@/lib/ios-parity/londonTime'
+import { bookingPayrollHours } from '@/lib/scheduling/paidHours'
 
 export function scheduleLabel(
   timeSlot: string,
@@ -20,26 +23,40 @@ export function scheduleLabel(
   return slot || 'Booking'
 }
 
+/** The full rulebook result for one booking on its day. */
+export function bookingHoursOnDay(
+  date: Date | undefined,
+  timeSlot: string,
+  workStartTime: string | undefined,
+  workEndTime: string | undefined,
+  payrollPolicy: OrgPayrollTimePolicy = DEFAULT_PAYROLL_POLICY,
+  isBreakRemoved?: boolean,
+  otMultiplierOverride?: number | null
+): PayrollHoursResult {
+  return bookingPayrollHours({
+    timeSlot,
+    workStartTime,
+    workEndTime,
+    isBreakRemoved,
+    otMultiplierOverride,
+    policy: payrollPolicy,
+    date,
+  })
+}
+
+/** Weighted paid hours (`totalPaidHours`). Pass the booking date so weekends use their own rule. */
 export function paidBookedHours(
   timeSlot: string,
   workStartTime: string | undefined,
   workEndTime: string | undefined,
   payrollPolicy: OrgPayrollTimePolicy = DEFAULT_PAYROLL_POLICY,
-  isBreakRemoved?: boolean
+  isBreakRemoved?: boolean,
+  date?: Date
 ): number {
-  if (workStartTime && workEndTime) {
-    const start = parseHhMm(workStartTime)
-    const end = parseHhMm(workEndTime)
-    if (start != null && end != null && end > start) {
-      let minutes = end - start
-      const breakMinutes = isBreakRemoved ? 0 : payrollPolicy.unpaidBreakMinutes ?? 0
-      if (breakMinutes > 0) minutes = Math.max(0, minutes - breakMinutes)
-      return minutes / 60
-    }
-  }
-  return hoursFromSlot(timeSlot, workStartTime, workEndTime, payrollPolicy)
+  return bookingHoursOnDay(date, timeSlot, workStartTime, workEndTime, payrollPolicy, isBreakRemoved).totalPaidHours
 }
 
+/** Hours outside the standard window (`outsideHours`), before the multiplier. */
 export function overtimeHoursBeyondPaidStandard(
   date: Date,
   timeSlot: string,
@@ -48,29 +65,12 @@ export function overtimeHoursBeyondPaidStandard(
   payrollPolicy: OrgPayrollTimePolicy = DEFAULT_PAYROLL_POLICY,
   isBreakRemoved?: boolean
 ): number {
-  const paid = paidBookedHours(timeSlot, workStartTime, workEndTime, payrollPolicy, isBreakRemoved)
-  const weekday = londonIsoWeekday(date)
-  if (weekday >= 6) {
-    const weekend = weekday === 6 ? payrollPolicy.saturday : payrollPolicy.sunday
-    if (weekend?.allHoursAtMultiplierMode) return paid
-    const standard = orgDayHours(weekend?.countsAsStandardHours ?? payrollPolicy.standardPaidHours)
-    return Math.max(0, paid - standard)
-  }
-  const standard = orgDayHours(payrollPolicy.standardPaidHours)
-  return Math.max(0, paid - standard)
+  return bookingHoursOnDay(date, timeSlot, workStartTime, workEndTime, payrollPolicy, isBreakRemoved).outsideHours
 }
 
+/** Multiplier for outside hours on that day (`payrollOutsideMultiplier`). */
 export function weekdayOtMultiplier(date: Date, payrollPolicy: OrgPayrollTimePolicy): number {
-  const weekday = londonIsoWeekday(date)
-  if (weekday === 6) return payrollPolicy.saturday?.outsideWindowMultiplier ?? payrollPolicy.weekdayOutsideStandardMultiplier
-  if (weekday === 7) {
-    const sunday = payrollPolicy.sunday
-    if (sunday?.sameAsSaturday) {
-      return payrollPolicy.saturday?.outsideWindowMultiplier ?? payrollPolicy.weekdayOutsideStandardMultiplier
-    }
-    return sunday?.outsideWindowMultiplier ?? payrollPolicy.weekdayOutsideStandardMultiplier
-  }
-  return payrollPolicy.weekdayOutsideStandardMultiplier || 1.5
+  return payrollOutsideMultiplier({}, londonIsoWeekday(date), payrollPolicy)
 }
 
 export function formatTimesheetHours(value: number): string {

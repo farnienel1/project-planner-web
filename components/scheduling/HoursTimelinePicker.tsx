@@ -42,6 +42,7 @@ export function HoursTimelinePicker({
   end,
   breakRemoved,
   policy = DEFAULT_PAYROLL_POLICY,
+  date,
   onStart,
   onEnd,
   onBreak,
@@ -51,6 +52,8 @@ export function HoursTimelinePicker({
   end: string
   breakRemoved: boolean
   policy?: OrgPayrollTimePolicy
+  /** Booking day, so Saturday and Sunday use that day's rule. */
+  date?: Date
   onStart: (value: string) => void
   onEnd: (value: string) => void
   onBreak: (value: boolean) => void
@@ -88,13 +91,8 @@ export function HoursTimelinePicker({
     workStartTime: start,
     workEndTime: end,
     isBreakRemoved: breakRemoved,
-    unpaidBreakMinutes: policy.unpaidBreakMinutes,
-    breakWindowStart: policy.breakWindowStart,
-    breakWindowEnd: policy.breakWindowEnd,
-    standardPaidHours: policy.standardPaidHours,
-    standardDayStart: policy.standardDayStart,
-    standardDayEnd: policy.standardDayEnd,
-    overtimeMultiplier: policy.weekdayOutsideStandardMultiplier,
+    policy,
+    date,
   })
 
   function minutesFromClientX(clientX: number, rect: DOMRect): number {

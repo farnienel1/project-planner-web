@@ -4,7 +4,8 @@ import type { OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 import { DEFAULT_PAYROLL_POLICY } from '@/lib/settings/organizationSettings'
 import { parseHhMm } from '@/lib/ios-parity/londonTime'
 import { normalizeManagerTimeSlot, normalizeTimeSlot } from '@/lib/ios-parity/enums'
-import { halfDayWindows, intervalsOverlap } from '@/lib/canonical'
+import { formatClockMinutes, intervalsOverlap, overlappingIntervalGroups, slotInterval } from '@/lib/canonical'
+import { bookingPayrollHours } from '@/lib/scheduling/paidHours'
 
 export type MinuteInterval = { start: number; end: number }
 
@@ -38,59 +39,32 @@ function standardWindow(policy: OrgPayrollTimePolicy): MinuteInterval | null {
   return { start, end }
 }
 
-function clockInterval(start?: string, end?: string): MinuteInterval | null {
-  const sm = parseHhMm(start)
-  const em = parseHhMm(end)
-  if (sm == null || em == null || em <= sm) return null
-  return { start: sm, end: em }
+function clockText(value?: string): string | undefined {
+  const minutes = parseHhMm(value)
+  return minutes == null ? undefined : formatClockMinutes(minutes)
 }
 
-/** iOS OperativeBookingInterval.clashInterval */
+/** The interval a booking occupies for clashes: the rulebook's `slotInterval`, as on iOS. */
 export function operativeClashInterval(
   booking: Pick<Booking, 'timeSlot' | 'workStartTime' | 'workEndTime'>,
   policy: OrgPayrollTimePolicy = DEFAULT_PAYROLL_POLICY
 ): MinuteInterval | null {
-  const clock = clockInterval(booking.workStartTime, booking.workEndTime)
-  if (clock) return clock
-  const window = standardWindow(policy)
-  const kind = slotKind(String(booking.timeSlot))
-  // iOS OperativeBookingInterval: a full day with no clocks is the standard window, so two of them overlap.
-  if (kind.includes('FULL')) return window ?? { start: 0, end: 24 * 60 }
-  if (!window) return null
-  // AM / PM come from the shared rulebook so clashes, leave cover, and iOS agree on the split.
-  const halves = halfDayWindows(policy)
-  if (kind === 'CUSTOM HOURS' || kind === 'CUSTOM') return window
-  if (kind === 'AM' || kind.includes('MORNING')) return { ...halves.am }
-  if (kind === 'PM' || kind.includes('AFTERNOON')) return { ...halves.pm }
-  if (kind.includes('EVENING')) {
-    const end = Math.min(window.end + 240, 24 * 60)
-    return end > window.end ? { start: window.end, end } : null
-  }
-  if (kind.includes('OVERTIME')) {
-    const start = Math.min(window.end + 240, 24 * 60)
-    const end = Math.min(window.end + 360, 24 * 60)
-    return end > start ? { start, end } : null
-  }
-  return window
+  return slotInterval(
+    {
+      timeSlot: String(booking.timeSlot ?? ''),
+      workStartTime: clockText(booking.workStartTime),
+      workEndTime: clockText(booking.workEndTime),
+    },
+    policy
+  )
 }
 
-/** iOS ManagerScheduleInterval.clashInterval */
+/** Manager schedule interval for clashes: the same `slotInterval`. */
 export function managerClashInterval(
   booking: Pick<ManagerSiteBooking, 'timeSlot' | 'workStartTime' | 'workEndTime'>,
   policy: OrgPayrollTimePolicy = DEFAULT_PAYROLL_POLICY
 ): MinuteInterval | null {
-  const clock = clockInterval(booking.workStartTime, booking.workEndTime)
-  if (clock) return clock
-  const window = standardWindow(policy)
-  const kind = slotKind(String(booking.timeSlot))
-  // iOS ManagerScheduleInterval: a full day with no clocks covers the standard day and clashes with another full day.
-  if (kind.includes('FULL')) return window ?? { start: 0, end: 24 * 60 }
-  if (!window) return null
-  const halves = halfDayWindows(policy)
-  if (kind === 'CUSTOM HOURS' || kind === 'CUSTOM') return window
-  if (kind === 'AM' || kind.includes('MORNING')) return { ...halves.am }
-  if (kind === 'PM' || kind.includes('AFTERNOON')) return { ...halves.pm }
-  return window
+  return operativeClashInterval(booking as Pick<Booking, 'timeSlot' | 'workStartTime' | 'workEndTime'>, policy)
 }
 
 export function bookingsOverlapByInterval(
@@ -104,24 +78,21 @@ export function bookingsOverlapByInterval(
   return intervalsOverlap(ia, ib)
 }
 
+/** Paid hours shown on a clash row: the rulebook's `payrollHoursResult` for the booking's day. */
 export function paidHoursForOperativeBooking(
-  booking: Pick<Booking, 'timeSlot' | 'workStartTime' | 'workEndTime' | 'isBreakRemoved'>,
+  booking: Pick<Booking, 'timeSlot' | 'workStartTime' | 'workEndTime' | 'isBreakRemoved'> &
+    Partial<Pick<Booking, 'date' | 'otMultiplierOverride'>>,
   policy: OrgPayrollTimePolicy = DEFAULT_PAYROLL_POLICY
 ): number {
-  const standard = Math.max(policy.standardPaidHours, 0)
-  const clock = clockInterval(booking.workStartTime, booking.workEndTime)
-  if (clock) {
-    let hours = (clock.end - clock.start) / 60
-    if (!booking.isBreakRemoved) {
-      hours = Math.max(0, hours - (policy.unpaidBreakMinutes || 0) / 60)
-    }
-    return hours
-  }
-  const kind = slotKind(String(booking.timeSlot))
-  if (kind === 'AM' || kind === 'PM' || kind.includes('MORNING') || kind.includes('AFTERNOON')) {
-    return standard / 2
-  }
-  return standard
+  return bookingPayrollHours({
+    timeSlot: String(booking.timeSlot ?? ''),
+    workStartTime: booking.workStartTime,
+    workEndTime: booking.workEndTime,
+    isBreakRemoved: booking.isBreakRemoved,
+    otMultiplierOverride: booking.otMultiplierOverride,
+    policy,
+    date: booking.date ? new Date(booking.date) : undefined,
+  }).totalPaidHours
 }
 
 export function isLegacyFullDaySlot(timeSlot: string | undefined, workStartTime?: string, workEndTime?: string): boolean {
@@ -130,73 +101,9 @@ export function isLegacyFullDaySlot(timeSlot: string | undefined, workStartTime?
   return kind.includes('FULL') && !hasClock
 }
 
-/** iOS ManagerScheduleInterval.combinedPaidHoursFromIntervals */
-export function combinedPaidHoursFromIntervals(
-  intervals: MinuteInterval[],
-  options: {
-    anyBreakRemoved: boolean
-    includesLegacyFullDay: boolean
-    policy: OrgPayrollTimePolicy
-  }
-): number {
-  const standard = Math.max(options.policy.standardPaidHours, 0)
-  if (options.includesLegacyFullDay) return standard
-  if (intervals.length === 0) return 0
-  const merged = mergeIntervals(intervals)
-  const window = standardWindow(options.policy)
-  if (window) {
-    const unionStart = Math.min(...merged.map((iv) => iv.start))
-    const unionEnd = Math.max(...merged.map((iv) => iv.end))
-    if (unionStart <= window.start && unionEnd >= window.end) return standard
-  }
-  const totalMinutes = merged.reduce((sum, iv) => sum + Math.max(0, iv.end - iv.start), 0)
-  let wallHours = totalMinutes / 60
-  if (!options.anyBreakRemoved) {
-    wallHours = Math.max(0, wallHours - (options.policy.unpaidBreakMinutes || 0) / 60)
-  }
-  return wallHours
-}
-
-/** Connected components of overlapping items — one warning per person-day cluster (iOS). */
-export function overlappingClusters<T>(items: T[], overlap: (a: T, b: T) => boolean): T[][] {
-  const n = items.length
-  if (n < 2) return []
-  const parent = Array.from({ length: n }, (_, i) => i)
-  const find = (i: number): number => {
-    let x = i
-    while (parent[x] !== x) x = parent[x]
-    let y = i
-    while (parent[y] !== y) {
-      const next = parent[y]
-      parent[y] = x
-      y = next
-    }
-    return x
-  }
-  const union = (a: number, b: number) => {
-    const ra = find(a)
-    const rb = find(b)
-    if (ra !== rb) parent[ra] = rb
-  }
-  const hasEdge = Array(n).fill(false)
-  for (let i = 0; i < n; i++) {
-    for (let j = i + 1; j < n; j++) {
-      if (overlap(items[i], items[j])) {
-        union(i, j)
-        hasEdge[i] = true
-        hasEdge[j] = true
-      }
-    }
-  }
-  const groups = new Map<number, T[]>()
-  for (let i = 0; i < n; i++) {
-    if (!hasEdge[i]) continue
-    const root = find(i)
-    const list = groups.get(root) || []
-    list.push(items[i])
-    groups.set(root, list)
-  }
-  return [...groups.values()].filter((group) => group.length >= 2)
+/** Clash groups for one person-day: the rulebook's `overlappingIntervalGroups`, in its order. */
+export function overlappingClusters<T>(items: T[], intervalOf: (item: T) => MinuteInterval | null | undefined): T[][] {
+  return overlappingIntervalGroups(items.map(intervalOf)).map((group) => group.map((index) => items[index]))
 }
 
 /** iOS WarningsComputation.formatHours — nearest 0.5, drop trailing .0 */

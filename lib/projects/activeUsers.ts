@@ -7,6 +7,7 @@
 import { isOperativeMode } from '@/lib/permissions'
 import { idsMatch } from '@/lib/subcontractors/bookingPeople'
 import { normalizeBookingStatus } from '@/lib/ios-parity/enums'
+import { isOpenBookingStatus } from '@/lib/canonical'
 import { paidBookedHours, scheduleLabel } from '@/lib/timesheets/timesheetHours'
 import { DEFAULT_PAYROLL_POLICY, type OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 import type { Manager, Project, User } from '@/types'
@@ -115,11 +116,6 @@ function isCancelled(status: string | undefined): boolean {
   return normalizeBookingStatus(status) === 'Cancelled'
 }
 
-function isOpenSubcontractorStatus(status: string | undefined): boolean {
-  const normalized = normalizeBookingStatus(status)
-  return normalized === 'Confirmed' || normalized === 'Tentative'
-}
-
 function summarize(input: {
   id: string
   kind: ActiveUserKind
@@ -212,7 +208,7 @@ export function buildProjectActiveUsers(input: {
 
   const subGroups = new Map<string, SubcontractorBookingRow[]>()
   for (const booking of input.subcontractorBookings) {
-    if (!idsMatch(booking.projectId, input.projectId) || !isOpenSubcontractorStatus(booking.status)) continue
+    if (!idsMatch(booking.projectId, input.projectId) || !isOpenBookingStatus(booking.status)) continue
     const key = booking.subcontractorId.trim()
     if (!key) continue
     const group = subGroups.get(key) || []
@@ -258,7 +254,7 @@ export function countProjectActiveUsers(input: {
   }
   const subs = new Set<string>()
   for (const booking of input.subcontractorBookings) {
-    if (!idsMatch(booking.projectId, input.projectId) || !isOpenSubcontractorStatus(booking.status)) continue
+    if (!idsMatch(booking.projectId, input.projectId) || !isOpenBookingStatus(booking.status)) continue
     const id = booking.subcontractorId.trim()
     if (id) subs.add(id.toLowerCase())
   }
@@ -291,7 +287,7 @@ export function activeUserDayRows(
     const subcontractorId = summaryId.slice(4)
     for (const booking of input.subcontractorBookings) {
       if (!idsMatch(booking.subcontractorId, subcontractorId)) continue
-      if (!idsMatch(booking.projectId, input.projectId) || !isOpenSubcontractorStatus(booking.status)) continue
+      if (!idsMatch(booking.projectId, input.projectId) || !isOpenBookingStatus(booking.status)) continue
       rows.push(dayRow(booking, policy))
     }
   }

@@ -90,7 +90,7 @@ import { normalizeBookingStatus } from '@/lib/canonical/bookings'
 import { bookingOccupiesDay } from '@/lib/canonical/warningRows'
 export { normalizeBookingStatus }
 
-/** A booking fills its day: the rulebook's `bookingOccupiesDay` (Completed counts, Cancelled does not). */
+/** Whether a booking puts the person on a job that day: the rulebook's `bookingOccupiesDay`. */
 export function isActiveBookingStatus(raw: unknown): boolean {
   return bookingOccupiesDay(normalizeBookingStatus(raw) ?? raw)
 }

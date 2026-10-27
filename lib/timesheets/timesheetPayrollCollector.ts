@@ -24,13 +24,7 @@ import {
   type PayrollRateBasis,
 } from '@/lib/timesheets/payrollRateResolver'
 import { isClockSpanLabel, orgDayHours, payLineDisplay, quantityText } from '@/lib/timesheets/payBasis'
-import {
-  formatTimesheetHours,
-  overtimeHoursBeyondPaidStandard,
-  paidBookedHours,
-  scheduleLabel,
-  weekdayOtMultiplier,
-} from '@/lib/timesheets/timesheetHours'
+import { bookingHoursOnDay, formatTimesheetHours, scheduleLabel } from '@/lib/timesheets/timesheetHours'
 import { dayKey } from '@/lib/ios-parity/londonTime'
 
 export type { PayrollRateBasis }
@@ -184,7 +178,8 @@ export function collectTimesheetPayroll({
     workEndTime: string | undefined,
     isBreakRemoved: boolean | undefined,
     labels: { jobNumber: string; siteName: string },
-    operative?: Operative | null
+    operative?: Operative | null,
+    otMultiplierOverride?: number | null
   ) => {
     if (!isDateInPeriod(date, periodStart, periodEnd, timeZone)) return
     const policy = orgPayrollPolicyForDay(
@@ -195,17 +190,12 @@ export function collectTimesheetPayroll({
       timeZone
     )
     const standardDayHours = orgDayHours(policy.standardPaidHours)
-    const paidHours = paidBookedHours(timeSlot, workStartTime, workEndTime, policy, isBreakRemoved)
-    const otHours = overtimeHoursBeyondPaidStandard(
-      date,
-      timeSlot,
-      workStartTime,
-      workEndTime,
-      policy,
-      isBreakRemoved
-    )
-    const normalHours = Math.max(0, paidHours - otHours)
-    const otMultiplier = weekdayOtMultiplier(date, policy)
+    // One rulebook result (`payrollHoursResult`), the same figures the iOS collector uses.
+    const hours = bookingHoursOnDay(date, timeSlot, workStartTime, workEndTime, policy, isBreakRemoved, otMultiplierOverride)
+    const paidHours = hours.totalPaidHours
+    const otHours = hours.outsideHours
+    const normalHours = Math.max(0, hours.standardHours)
+    const otMultiplier = hours.outsideMultiplier
     const resolved = resolveForTimesheetDay({
       user,
       operative: operative || linked || matched[0],
@@ -275,7 +265,8 @@ export function collectTimesheetPayroll({
       booking.workEndTime,
       booking.isBreakRemoved,
       projectLabel(booking.projectId, projects, smallWorks),
-      matchedOperative
+      matchedOperative,
+      booking.otMultiplierOverride
     )
   }
 

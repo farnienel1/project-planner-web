@@ -48,7 +48,8 @@ test('custom hours never fall back to a flat 8h when start and end are present',
       workStartTime: '06:00',
       workEndTime: '18:00',
     }),
-    11.5
+    // payrollHoursResult: 8h standard + 3.5h outside × 1.5, the figure iOS shows.
+    13.25
   )
   assert.equal(formatHoursLabel(11.5), '11.5')
   assert.equal(formatHoursLabel(19.25), '19.25')
@@ -59,7 +60,7 @@ test('custom hours never fall back to a flat 8h when start and end are present',
   )
 })
 
-test('AM/PM slots stay at 4h and full day at 8h even with leftover custom times', () => {
+test('AM/PM slots stay at 4h with leftover custom times; a FULL DAY with stored clocks pays those clocks', () => {
   assert.equal(estimatedPaidHours({ timeSlot: 'AM' }), 4)
   assert.equal(estimatedPaidHours({ timeSlot: 'FULL DAY' }), 8)
   assert.equal(
@@ -84,7 +85,8 @@ test('AM/PM slots stay at 4h and full day at 8h even with leftover custom times'
       workStartTime: '06:00',
       workEndTime: '18:00',
     }),
-    8
+    // `slotInterval`: stored clock times win over the named slot, on web and iOS alike.
+    13.25
   )
   assert.equal(
     customHoursRangeLabel({ timeSlot: 'AM', workStartTime: '07:30', workEndTime: '16:00' }),

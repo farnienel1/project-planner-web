@@ -339,6 +339,48 @@ export function intervalsOverlap(a: MinuteInterval, b: MinuteInterval): boolean 
   return a.start < b.end && b.start < a.end
 }
 
+/**
+ * One person's bookings on one day that clash: groups of two or more whose
+ * intervals overlap, directly or through another booking (A–B and B–C is one
+ * group of three). Returns indexes into `intervals`, each group ascending,
+ * groups ordered by their first index, so both apps number clash rows the
+ * same way. A null interval never clashes; touching intervals do not clash.
+ */
+export function overlappingIntervalGroups(intervals: ReadonlyArray<MinuteInterval | null | undefined>): number[][] {
+  const n = intervals.length
+  const parent = Array.from({ length: n }, (_, i) => i)
+  const find = (i: number): number => {
+    while (parent[i] !== i) {
+      parent[i] = parent[parent[i]]
+      i = parent[i]
+    }
+    return i
+  }
+  const linked = new Array<boolean>(n).fill(false)
+  for (let i = 0; i < n; i++) {
+    const a = intervals[i]
+    if (!a) continue
+    for (let j = i + 1; j < n; j++) {
+      const b = intervals[j]
+      if (!b || !intervalsOverlap(a, b)) continue
+      linked[i] = true
+      linked[j] = true
+      const ra = find(i)
+      const rb = find(j)
+      if (ra !== rb) parent[Math.max(ra, rb)] = Math.min(ra, rb)
+    }
+  }
+  const groups = new Map<number, number[]>()
+  for (let i = 0; i < n; i++) {
+    if (!linked[i]) continue
+    const root = find(i)
+    const list = groups.get(root) || []
+    list.push(i)
+    groups.set(root, list)
+  }
+  return [...groups.values()].filter((group) => group.length >= 2).sort((a, b) => a[0] - b[0])
+}
+
 // ─── Standard day, AM and PM ─────────────────────────────────────────────────
 //
 // One definition of the working day and of its two halves, used by booking
