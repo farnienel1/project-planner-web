@@ -4260,3 +4260,18 @@ test('an open booking is Confirmed or Tentative; Cancelled, Completed and unread
   assert.equal(sandbox.ProjectPlannerCanonical?.isOpenBookingStatus('Tentative'), true)
   assert.equal(sandbox.ProjectPlannerCanonical?.isOpenBookingStatus('Completed'), false)
 })
+
+import { rosterAliasIdsFor } from './bookingPerson.ts'
+
+test('roster aliases: the other same-email profile ids folded into an account become its aliasIds', () => {
+  const aliases = { kept: 'kept', 'DUP-1': 'KEPT', dup2: 'kept', other: 'other' }
+  assert.deepEqual(rosterAliasIdsFor('kept', aliases), ['DUP-1', 'dup2'])
+  assert.deepEqual(rosterAliasIdsFor('other', aliases), [])
+  assert.deepEqual(rosterAliasIdsFor('kept', undefined), [])
+  const accounts = [{ id: 'kept', email: 'tm@x.com', aliasIds: rosterAliasIdsFor('kept', aliases) }]
+  assert.equal(resolveBookingPerson('dup-1', { accounts, operatives: [] }).accountId, 'kept')
+  const source = readFileSync(new URL('./dist/canonical-business.js', import.meta.url), 'utf8')
+  const sandbox: { ProjectPlannerCanonical?: Record<string, (...args: unknown[]) => unknown> } = {}
+  runInContext(source, createContext(sandbox))
+  assert.deepEqual(JSON.parse(JSON.stringify(sandbox.ProjectPlannerCanonical?.rosterAliasIdsFor('kept', aliases))), ['DUP-1', 'dup2'])
+})

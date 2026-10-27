@@ -1,5 +1,5 @@
 import { getISODay } from 'date-fns'
-import { reportDayValue, resolveBookingPerson } from '@/lib/canonical'
+import { reportDayValue, resolveBookingPerson, rosterAliasIdsFor } from '@/lib/canonical'
 import type { OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 import { DEFAULT_PAYROLL_POLICY } from '@/lib/settings/organizationSettings'
 import type { Operative, User } from '@/types'
@@ -86,12 +86,25 @@ export function resolveDisplayName(
 export function findUserAndOperative(
   users: User[],
   operatives: Operative[],
-  opts: { userId?: string; operativeId?: string }
+  opts: {
+    userId?: string
+    operativeId?: string
+    /** The roster's same-email profile map (web `userIdAliases`): other users document id → the id it kept. */
+    aliases?: Readonly<Record<string, string>>
+  }
 ): { user?: User; operative?: Operative } {
+  const accounts = () =>
+    users.map((entry) => ({
+      id: entry.id,
+      email: entry.email,
+      formerIds: entry.formerUserIds ?? [],
+      aliasIds: rosterAliasIdsFor(entry.id, opts.aliases),
+    }))
   let user = opts.userId
     ? users.find((entry) => entry.id === opts.userId) ||
-      // A manager booking saved under an invite id the account later replaced.
-      users.find((entry) => (entry.formerUserIds ?? []).includes(opts.userId as string))
+      // A manager booking saved under an invite id the account later replaced, or on the other same-email profile.
+      users.find((entry) => (entry.formerUserIds ?? []).includes(opts.userId as string)) ||
+      users.find((entry) => rosterAliasIdsFor(entry.id, opts.aliases).includes(opts.userId as string))
     : undefined
   let operative = opts.operativeId ? operatives.find((entry) => entry.id === opts.operativeId) : undefined
   if (!user && operative?.email) {
@@ -100,10 +113,7 @@ export function findUserAndOperative(
   }
   if (!user && opts.operativeId) {
     // A booking stored under a users id, a former invite id or a same-email alias (web #189).
-    const person = resolveBookingPerson(opts.operativeId, {
-      accounts: users.map((entry) => ({ id: entry.id, email: entry.email, formerIds: entry.formerUserIds ?? [] })),
-      operatives,
-    })
+    const person = resolveBookingPerson(opts.operativeId, { accounts: accounts(), operatives })
     if (person.accountId) user = users.find((entry) => entry.id === person.accountId)
     if (!operative && person.operativeId) operative = operatives.find((entry) => entry.id === person.operativeId)
   }

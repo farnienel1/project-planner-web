@@ -87,6 +87,7 @@ export function WeeklyReportScreen({
   subcontractors,
   operatives,
   users,
+  userIdAliases,
   projects,
   smallWorks,
   holidays,
@@ -104,6 +105,8 @@ export function WeeklyReportScreen({
   subcontractors: Subcontractor[]
   operatives: Operative[]
   users: User[]
+  /** Same-email profile id → kept id, from the roster (as Daily Overview passes it). */
+  userIdAliases?: Record<string, string>
   projects: Project[]
   smallWorks: Project[]
   holidays: HolidayBooking[]
@@ -182,6 +185,7 @@ export function WeeklyReportScreen({
       orgDetails,
       timesheetWeeks,
       history: rateHistory,
+      userIdAliases,
     })
   }, [
     period,
@@ -193,6 +197,7 @@ export function WeeklyReportScreen({
     subcontractors,
     operatives,
     users,
+    userIdAliases,
     projects,
     smallWorks,
     holidays,
