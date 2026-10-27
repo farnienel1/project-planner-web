@@ -24,3 +24,32 @@ export function safePostMfaPath(next: string | undefined | null, fallback: PostA
   if (path === '/dashboard' || path.startsWith('/dashboard/')) return '/dashboard'
   return fallback === '/developer' ? '/developer' : fallback === '/dashboard/change-organisation' ? '/dashboard/change-organisation' : '/dashboard'
 }
+
+export type MfaStartResult = { required: boolean; skipped?: boolean; sent?: boolean; retryAfterSec?: number }
+
+/**
+ * Read a /api/auth/mfa/start reply. The route answers an active cooldown with 200 + retryAfterSec,
+ * so a 429 there is only the rate limiter: no code was emailed and the screen must not say it was.
+ */
+export function mfaStartResult(
+  status: number,
+  data: { error?: string; required?: boolean; skipped?: boolean; sent?: boolean; retryAfterSec?: number }
+): MfaStartResult {
+  if (status === 429) {
+    const wait = data.retryAfterSec && data.retryAfterSec > 0 ? ` Try again in ${data.retryAfterSec} seconds.` : ''
+    const error = new Error(`Too many verification codes were requested, so no new code was sent.${wait}`) as Error & {
+      retryAfterSec?: number
+    }
+    error.retryAfterSec = data.retryAfterSec
+    throw error
+  }
+  if (status < 200 || status >= 300) {
+    throw new Error(data.error || 'Could not send a verification code. Sign in again to retry.')
+  }
+  return {
+    required: data.required !== false && !data.skipped,
+    skipped: data.skipped === true,
+    sent: data.sent === true,
+    retryAfterSec: data.retryAfterSec,
+  }
+}

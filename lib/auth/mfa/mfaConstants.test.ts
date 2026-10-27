@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mfaGateMatches, mfaVerifyHref, postSignOutHref, safePostMfaPath } from './mfaConstants.ts'
+import { mfaGateMatches, mfaStartResult, mfaVerifyHref, postSignOutHref, safePostMfaPath } from './mfaConstants.ts'
 
 test('honours developer vs organisation destinations and rejects open redirects', () => {
   assert.equal(safePostMfaPath('/developer', '/dashboard'), '/developer')
@@ -28,4 +28,19 @@ test('developer login next is not rewritten to the organisation dashboard', () =
   assert.equal(postSignOutHref('/developer'), '/developer-login')
   assert.equal(postSignOutHref('/developer/organisations'), '/developer-login')
   assert.equal(postSignOutHref('/dashboard'), '/login')
+})
+
+test('a rate-limited start is an error, never "code sent"', () => {
+  assert.throws(
+    () => mfaStartResult(429, { error: 'Too many requests. Please try again shortly.', retryAfterSec: 412 }),
+    (error: Error & { retryAfterSec?: number }) => error.retryAfterSec === 412 && /no new code was sent/.test(error.message)
+  )
+  assert.throws(() => mfaStartResult(502, { error: 'Resend down' }), /Resend down/)
+  assert.deepEqual(mfaStartResult(200, { required: true, sent: true, retryAfterSec: 5 }), {
+    required: true,
+    skipped: false,
+    sent: true,
+    retryAfterSec: 5,
+  })
+  assert.equal(mfaStartResult(200, { required: false, skipped: true }).required, false)
 })

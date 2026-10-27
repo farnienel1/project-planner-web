@@ -1,5 +1,13 @@
 import { jsonAuthHeaders } from '@/lib/security/clientAuthHeaders'
-import { MFA_GATE_KEY, MFA_SIGNED_OUT_KEY, mfaGateMatches, mfaVerifyHref, safePostMfaPath } from '@/lib/auth/mfa/mfaConstants'
+import {
+  MFA_GATE_KEY,
+  MFA_SIGNED_OUT_KEY,
+  mfaGateMatches,
+  mfaStartResult,
+  mfaVerifyHref,
+  safePostMfaPath,
+  type MfaStartResult,
+} from '@/lib/auth/mfa/mfaConstants'
 import { extractMfaCode } from '@/lib/auth/mfa/mfaCode'
 
 export { MFA_GATE_KEY, MFA_SIGNED_OUT_KEY, mfaGateMatches, mfaVerifyHref, safePostMfaPath }
@@ -80,14 +88,9 @@ async function readError(response: Response): Promise<{ error: string; retryAfte
   }
 }
 
-let startInflight: Promise<{ required: boolean; skipped?: boolean; sent?: boolean; retryAfterSec?: number }> | null = null
+let startInflight: Promise<MfaStartResult> | null = null
 
-export async function startEmailMfa(nextPath?: string): Promise<{
-  required: boolean
-  skipped?: boolean
-  sent?: boolean
-  retryAfterSec?: number
-}> {
+export async function startEmailMfa(nextPath?: string): Promise<MfaStartResult> {
   if (startInflight) return startInflight
   startInflight = (async () => {
     const response = await fetch('/api/auth/mfa/start', {
@@ -96,25 +99,8 @@ export async function startEmailMfa(nextPath?: string): Promise<{
       headers: await jsonAuthHeaders(),
       body: JSON.stringify({ next: nextPath || readMfaGate()?.next || '' }),
     })
-    const data = (await response.json().catch(() => ({}))) as {
-      error?: string
-      required?: boolean
-      skipped?: boolean
-      sent?: boolean
-      retryAfterSec?: number
-    }
-    if (response.status === 429) {
-      return { required: true, sent: true, retryAfterSec: data.retryAfterSec }
-    }
-    if (!response.ok) {
-      throw new Error(data.error || 'Could not send a verification code. Sign in again to retry.')
-    }
-    return {
-      required: data.required !== false && !data.skipped,
-      skipped: data.skipped === true,
-      sent: data.sent === true,
-      retryAfterSec: data.retryAfterSec,
-    }
+    const data = (await response.json().catch(() => ({}))) as Parameters<typeof mfaStartResult>[1]
+    return mfaStartResult(response.status, data)
   })().finally(() => {
     startInflight = null
   })
