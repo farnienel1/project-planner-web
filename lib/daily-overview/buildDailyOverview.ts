@@ -6,12 +6,14 @@
  * hours worked, never multiplied. Paid hours belong to pay screens.
  */
 
-import { bookingOccupiesDay, formerIdAliases, unbookedLabourRowsOnDay } from '@/lib/canonical'
+import { bookingOccupiesDay, formerIdAliases, payrollOutsideMultiplier, unbookedLabourRowsOnDay, workedHoursSplit } from '@/lib/canonical'
+import { isoWeekdayInZone } from '@/lib/orgTime/zoneTime'
 import { labourPersonFromUser, labourRosterOperative } from '@/lib/warnings/unbookedLabourWarnings'
 import { findUserByAnyId, rosterDisplayName } from '@/lib/staff/userRosterUtils'
 import { addLondonDays, coversCalendarDay, dayKey, isSameLondonDay } from '@/lib/ios-parity/londonTime'
 import { isSmallWorksJobType } from '@/lib/ios-parity/enums'
 import {
+  bookingPayrollHours,
   estimatedPaidHours,
   estimatedWorkedHours,
   formatHoursLabel as overviewFormatHours,
@@ -120,6 +122,12 @@ export type DailyOverviewModel = {
   isToday: boolean
   isWeekday: boolean
   labourHours: number
+  /** Of `labourHours`, hours worked inside the standard window (`workedHoursSplit`). */
+  standardWorkedHours: number
+  /** Of `labourHours`, hours worked outside it, before any multiplier. */
+  overtimeWorkedHours: number
+  /** That day's multiplier for the overtime hours (`payrollOutsideMultiplier`, or the booking's own). */
+  overtimeMultiplier: number
   peopleCount: number
   jobsCount: number
   bookedPeopleCount: number
@@ -484,11 +492,23 @@ export function buildDailyOverview(params: {
     (row) => `${row.operativeName} (missing ${overviewFormatHours(row.missingHours)}h)`
   )
 
-  const labourHours = [
+  const policy = params.payrollPolicy ?? DEFAULT_PAYROLL_POLICY
+  const labourResults = [
     ...dayBookings,
     ...dayManager.filter((b) => b.locationType === 'project' || b.locationType === 'small_work'),
     ...daySubs,
-  ].reduce((sum, b) => sum + estimatedWorkedHours({ ...b, policy: params.payrollPolicy ?? DEFAULT_PAYROLL_POLICY, date: params.day }), 0)
+  ].map((b) => bookingPayrollHours({ ...b, policy, date: params.day }))
+  const labourHours = labourResults.reduce((sum, r) => sum + r.workedHours, 0)
+  let standardWorkedHours = 0
+  let overtimeWorkedHours = 0
+  for (const r of labourResults) {
+    const split = workedHoursSplit(r)
+    standardWorkedHours += split.standardWorkedHours
+    overtimeWorkedHours += split.outsideWorkedHours
+  }
+  const overtimeMultiplier =
+    labourResults.filter((r) => r.outsideHours > 0).reduce((max, r) => Math.max(max, r.outsideMultiplier), 0) ||
+    payrollOutsideMultiplier({}, isoWeekdayInZone(params.day, 'Europe/London'), policy)
 
   const hasOther = officeBookings.length > 0 || wfhBookings.length > 0 || customGroups.length > 0
   const empty =
@@ -508,6 +528,9 @@ export function buildDailyOverview(params: {
     isToday: isSameLondonDay(day, today),
     isWeekday: isLondonWeekday(day),
     labourHours,
+    standardWorkedHours,
+    overtimeWorkedHours,
+    overtimeMultiplier,
     peopleCount: Math.max(onSiteKeys.size, bookedKeys.size),
     jobsCount: projectCards.length,
     bookedPeopleCount: bookedKeys.size,

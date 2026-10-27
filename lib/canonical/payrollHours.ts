@@ -97,6 +97,23 @@ function dayInput(policy: OrgPayrollTimePolicy) {
 }
 
 /** Multiplier for outside hours: the booking override, else the weekend day's, else the weekday one. */
+/**
+ * Hours worked inside and outside the standard window, never multiplied: Daily Overview's
+ * Standard and Overtime figures. An all-hours weekend day is all outside. The two add up to `workedHours`.
+ */
+export function workedHoursSplit(result: Pick<PayrollHoursResult, 'segments'>): {
+  standardWorkedHours: number
+  outsideWorkedHours: number
+} {
+  let standard = 0
+  let outside = 0
+  for (const row of result.segments) {
+    if (row.kind === 'standardWindow') standard += row.workedHours
+    else outside += row.workedHours
+  }
+  return { standardWorkedHours: standard, outsideWorkedHours: outside }
+}
+
 export function payrollOutsideMultiplier(booking: PayrollHoursBooking, isoWeekday: number, policy: OrgPayrollTimePolicy): number {
   const override = Number(booking.otMultiplierOverride)
   if (Number.isFinite(override) && override > 0) return override

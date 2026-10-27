@@ -31,7 +31,7 @@ export default function WeeklyReportPage() {
   const { bookings, loadBookings, loading: bookingsLoading } = useBookingStore()
   const { managerSiteBookings, loadManagerSiteBookings, loading: managerLoading } = useManagerScheduleStore()
   const { operatives, loadOperatives } = useOperativeStore()
-  const { users, loadUsers } = useOrgUserStore()
+  const { users, userIdAliases, loadUsers } = useOrgUserStore()
   const { projects, smallWorks, loadProjects, loadSmallWorks } = useProjectStore()
   const { bookings: holidayBookings, loadBookings: loadHolidayBookings } = useHolidayStore()
   const { subcontractors, loadSubcontractors } = useSubcontractorStore()
@@ -122,6 +122,7 @@ export default function WeeklyReportPage() {
       subcontractors={subcontractors}
       operatives={operatives}
       users={users}
+      userIdAliases={userIdAliases}
       projects={projects}
       smallWorks={smallWorks}
       holidays={holidayBookings}

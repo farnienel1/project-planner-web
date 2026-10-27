@@ -4260,3 +4260,35 @@ test('an open booking is Confirmed or Tentative; Cancelled, Completed and unread
   assert.equal(sandbox.ProjectPlannerCanonical?.isOpenBookingStatus('Tentative'), true)
   assert.equal(sandbox.ProjectPlannerCanonical?.isOpenBookingStatus('Completed'), false)
 })
+
+import { rosterAliasIdsFor } from './bookingPerson.ts'
+
+test('roster aliases: the other same-email profile ids folded into an account become its aliasIds', () => {
+  const aliases = { kept: 'kept', 'DUP-1': 'KEPT', dup2: 'kept', other: 'other' }
+  assert.deepEqual(rosterAliasIdsFor('kept', aliases), ['DUP-1', 'dup2'])
+  assert.deepEqual(rosterAliasIdsFor('other', aliases), [])
+  assert.deepEqual(rosterAliasIdsFor('kept', undefined), [])
+  const accounts = [{ id: 'kept', email: 'tm@x.com', aliasIds: rosterAliasIdsFor('kept', aliases) }]
+  assert.equal(resolveBookingPerson('dup-1', { accounts, operatives: [] }).accountId, 'kept')
+  const source = readFileSync(new URL('./dist/canonical-business.js', import.meta.url), 'utf8')
+  const sandbox: { ProjectPlannerCanonical?: Record<string, (...args: unknown[]) => unknown> } = {}
+  runInContext(source, createContext(sandbox))
+  assert.deepEqual(JSON.parse(JSON.stringify(sandbox.ProjectPlannerCanonical?.rosterAliasIdsFor('kept', aliases))), ['DUP-1', 'dup2'])
+})
+
+import { workedHoursSplit } from './payrollHours.ts'
+
+test('worked hours split into inside and outside the standard window, adding up to workedHours', () => {
+  const late = hoursOn(WED, { timeSlot: 'CUSTOM_HOURS', workStartTime: '06:00', workEndTime: '17:45' })
+  assert.deepEqual(workedHoursSplit(late), { standardWorkedHours: 8, outsideWorkedHours: 3.25 })
+  assert.equal(late.workedHours, 11.25)
+  const sunday = hoursOn(SUN, { timeSlot: 'CUSTOM_HOURS', workStartTime: '08:00', workEndTime: '12:00' })
+  assert.deepEqual(workedHoursSplit(sunday), { standardWorkedHours: 0, outsideWorkedHours: 4 })
+  const source = readFileSync(new URL('./dist/canonical-business.js', import.meta.url), 'utf8')
+  const sandbox: { ProjectPlannerCanonical?: Record<string, (...args: unknown[]) => unknown> } = {}
+  runInContext(source, createContext(sandbox))
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(sandbox.ProjectPlannerCanonical?.workedHoursSplit(JSON.parse(JSON.stringify(late))))),
+    { standardWorkedHours: 8, outsideWorkedHours: 3.25 }
+  )
+})

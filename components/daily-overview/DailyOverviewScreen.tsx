@@ -231,12 +231,12 @@ export function DailyOverviewScreen() {
         </div>
         <div className="stats">
           <div className="st">
-            <b>{overviewFormatHours(model.labourHours)}</b>
+            <b>{overviewFormatHours(model.standardWorkedHours)}</b>
             <span>Standard hrs</span>
           </div>
           <div className="st">
-            <b>0</b>
-            <span>Overtime 1.5×</span>
+            <b>{overviewFormatHours(model.overtimeWorkedHours)}</b>
+            <span>Overtime {model.overtimeMultiplier}×</span>
           </div>
           <div className="st">
             <b>{model.jobsCount}</b>

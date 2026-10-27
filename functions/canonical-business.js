@@ -268,6 +268,7 @@ var ProjectPlannerCanonical = (() => {
     resolveSensitiveProfile: () => resolveSensitiveProfile,
     resolveTimesheetExportedAtMs: () => resolveTimesheetExportedAtMs,
     resolveTimesheetPeriod: () => resolveTimesheetPeriod,
+    rosterAliasIdsFor: () => rosterAliasIdsFor,
     rosterPersonName: () => rosterPersonName,
     rosterSegment: () => rosterSegment,
     rosterStatusLabel: () => rosterStatusLabel,
@@ -326,7 +327,8 @@ var ProjectPlannerCanonical = (() => {
     warningDetectionToFirestore: () => warningDetectionToFirestore,
     webSessionOrganizationStorageKey: () => webSessionOrganizationStorageKey,
     weekdayOffsetBefore: () => weekdayOffsetBefore,
-    withoutDismissedQualificationRows: () => withoutDismissedQualificationRows
+    withoutDismissedQualificationRows: () => withoutDismissedQualificationRows,
+    workedHoursSplit: () => workedHoursSplit
   });
 
   // lib/orgTime/zoneTime.ts
@@ -4766,6 +4768,19 @@ var ProjectPlannerCanonical = (() => {
   function emailKey2(value) {
     return typeof value === "string" ? value.trim().toLowerCase() : "";
   }
+  function rosterAliasIdsFor(accountId, aliases) {
+    const kept = idKey2(accountId);
+    if (!kept || !aliases) return [];
+    const ids = [];
+    const seen = /* @__PURE__ */ new Set([kept]);
+    for (const [alias, keptId] of Object.entries(aliases)) {
+      const key2 = idKey2(alias);
+      if (!key2 || seen.has(key2) || idKey2(keptId) !== kept) continue;
+      seen.add(key2);
+      ids.push(alias.trim());
+    }
+    return ids;
+  }
   function bookingIdsForAccount(account, operatives) {
     const ids = [];
     const seen = /* @__PURE__ */ new Set();
@@ -4860,6 +4875,15 @@ var ProjectPlannerCanonical = (() => {
       breakWindowStart: policy.breakWindowStart,
       breakWindowEnd: policy.breakWindowEnd
     };
+  }
+  function workedHoursSplit(result2) {
+    let standard = 0;
+    let outside = 0;
+    for (const row of result2.segments) {
+      if (row.kind === "standardWindow") standard += row.workedHours;
+      else outside += row.workedHours;
+    }
+    return { standardWorkedHours: standard, outsideWorkedHours: outside };
   }
   function payrollOutsideMultiplier(booking, isoWeekday, policy) {
     const override = Number(booking.otMultiplierOverride);

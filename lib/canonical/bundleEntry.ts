@@ -336,12 +336,12 @@ export {
   parseManagerSiteBookingDocument,
 } from './bookings'
 
-export { bookingIdsForAccount, bookingIdsForPerson, bookingPersonKey, resolveBookingPerson } from './bookingPerson'
+export { bookingIdsForAccount, bookingIdsForPerson, bookingPersonKey, resolveBookingPerson, rosterAliasIdsFor } from './bookingPerson'
 export { LEGACY_PLACEHOLDER_DOCUMENT_ID, isLegacyPlaceholderDocumentId } from './bookings'
 
 export { legalPackNeedsAcceptance } from './legalPack'
 
-export { payrollHoursResult, payrollOutsideMultiplier, reportDayValue, subcontractorDayValue } from './payrollHours'
+export { payrollHoursResult, payrollOutsideMultiplier, reportDayValue, subcontractorDayValue, workedHoursSplit } from './payrollHours'
 export { parsePayrollPolicy } from './organizationSettings'
 
 export { PAYE_PAY_CELL_LABEL, reportPayCell, reportPayTotal, reportPersonPayCell } from './reportPay'

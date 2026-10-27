@@ -1,5 +1,5 @@
 import { format } from 'date-fns'
-import { bookingOccupiesDay } from '@/lib/canonical'
+import { bookingOccupiesDay, rosterAliasIdsFor } from '@/lib/canonical'
 import { getDayKindForBookings } from '@/lib/annualLeave/dayStatus'
 import { findOperativeForUser } from '@/lib/operatives/operativeRosterUtils'
 import { mergeProjectsAndSmallWorks } from '@/lib/projects/workStatus'
@@ -199,6 +199,7 @@ export function buildWeeklyReportData({
   orgDetails,
   timesheetWeeks = [],
   history = emptyDayRateHistory(),
+  userIdAliases = {},
 }: {
   organizationName: string
   companyLogoURL?: string
@@ -215,6 +216,8 @@ export function buildWeeklyReportData({
   orgDetails: OrganizationDetails | null
   timesheetWeeks?: ApprovedTimesheetWeek[]
   history?: OperativeDayRateHistoryCollection
+  /** The roster's same-email profile map (`useOrgUserStore().userIdAliases`), the one Daily Overview uses. */
+  userIdAliases?: Readonly<Record<string, string>>
 }): WeeklyReportData {
   const payroll = orgDetails?.payrollTimePolicy
   const standardHours = orgDayHours(payroll?.standardPaidHours ?? 8)
@@ -255,9 +258,8 @@ export function buildWeeklyReportData({
     if (!userId) return []
     const person = users.find((entry) => entry.id === userId)
     const email = person?.email.trim().toLowerCase()
-    if (!email) return [userId]
-    const ids = users.filter((entry) => entry.email.trim().toLowerCase() === email).map((entry) => entry.id)
-    return ids.length ? ids : [userId]
+    const sameEmail = email ? users.filter((entry) => entry.email.trim().toLowerCase() === email).map((entry) => entry.id) : []
+    return Array.from(new Set([userId, ...sameEmail, ...rosterAliasIdsFor(userId, userIdAliases)]))
   }
 
   const addPaySlice = (person: string, role: string, slice: LabourPaySlice) => {
@@ -310,7 +312,7 @@ export function buildWeeklyReportData({
   ) => {
     // A booking whose job was deleted still counts, under "Deleted job" (rulebook).
     const project = projectsById.get(projectId)
-    const { user, operative } = findUserAndOperative(users, operatives, { userId, operativeId })
+    const { user, operative } = findUserAndOperative(users, operatives, { userId, operativeId, aliases: userIdAliases })
     const person = resolveDisplayName(user, operative)
     const key = project?.id ?? `deleted:${projectId}`
     const group =
@@ -342,7 +344,7 @@ export function buildWeeklyReportData({
       ? users.filter((user) => findOperativeForUser(user, [operative])?.id === operative.id)
       : []
     // A booking under a users id or former invite id has no catalogue row; its timesheet must still cover it.
-    const { user } = findUserAndOperative(users, operatives, { operativeId })
+    const { user } = findUserAndOperative(users, operatives, { operativeId, aliases: userIdAliases })
     if (user && !linked.some((row) => row.id === user.id)) linked.push(user)
     const ids = linked.flatMap((row) => aliasIdsFor(row.id))
     return Array.from(new Set(ids))
@@ -352,7 +354,7 @@ export function buildWeeklyReportData({
     if (timesheetFeedCovers(timesheetWeeks, usersForOperative(booking.operativeId), booking.date, timeZone)) {
       continue
     }
-    const { user, operative } = findUserAndOperative(users, operatives, { operativeId: booking.operativeId })
+    const { user, operative } = findUserAndOperative(users, operatives, { operativeId: booking.operativeId, aliases: userIdAliases })
     addBookingPay(
       new Date(booking.date),
       String(booking.timeSlot),
@@ -379,7 +381,7 @@ export function buildWeeklyReportData({
     if (booking.locationType !== 'project' && booking.locationType !== 'small_work') continue
     if (!booking.locationId) continue
     if (timesheetFeedCovers(timesheetWeeks, aliasIdsFor(booking.userId), booking.date, timeZone)) continue
-    const { user, operative } = findUserAndOperative(users, operatives, { userId: booking.userId })
+    const { user, operative } = findUserAndOperative(users, operatives, { userId: booking.userId, aliases: userIdAliases })
     addBookingPay(
       new Date(booking.date),
       String(booking.timeSlot),
@@ -436,7 +438,7 @@ export function buildWeeklyReportData({
   for (const booking of periodManagerBookings) {
     if (booking.locationType === 'project' || booking.locationType === 'small_work') continue
     if (timesheetFeedCovers(timesheetWeeks, aliasIdsFor(booking.userId), booking.date, timeZone)) continue
-    const linked = findUserAndOperative(users, operatives, { userId: booking.userId })
+    const linked = findUserAndOperative(users, operatives, { userId: booking.userId, aliases: userIdAliases })
     addBookingPay(
       new Date(booking.date),
       String(booking.timeSlot),
@@ -446,7 +448,7 @@ export function buildWeeklyReportData({
       linked.user,
       linked.operative
     )
-    const { user, operative } = findUserAndOperative(users, operatives, { userId: booking.userId })
+    const { user, operative } = findUserAndOperative(users, operatives, { userId: booking.userId, aliases: userIdAliases })
     const days = bookingDayUnits(
       String(booking.timeSlot),
       booking.workStartTime,

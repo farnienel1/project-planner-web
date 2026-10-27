@@ -171,3 +171,31 @@ test('a PAYE person keeps their bookings and hours but shows PAYE instead of pay
   const rows = report.projectGroups[0]?.rows ?? []
   assert.equal(rows.find((row) => row.person === 'Pat Paye')?.days, 1)
 })
+
+test('a booking under the other same-email profile is named through the roster aliases, as on Daily Overview', () => {
+  const manager: User = { ...person(), id: 'keptManagerUid', email: 'tm@x.com', firstName: 'Test', surname: 'Manager' }
+  const input = {
+    organizationName: 'Acme',
+    period: { start: new Date('2026-10-05T00:00:00Z'), end: new Date('2026-10-11T00:00:00Z'), label: 'week' },
+    // The roster lists only the kept account; the duplicate profile id is in its alias map.
+    bookings: [{ ...booking('dup', day), operativeId: 'DUPLICATE-PROFILE-ID' }],
+    managerSiteBookings: [],
+    subcontractorBookings: [],
+    subcontractors: [],
+    operatives: [],
+    users: [manager],
+    projects: [project],
+    smallWorks: [],
+    holidays: [],
+    orgDetails: null,
+  }
+  assert.equal(buildWeeklyReportData(input).projectGroups[0]?.rows[0]?.person, 'Unknown')
+  const named = buildWeeklyReportData({
+    ...input,
+    userIdAliases: { keptManagerUid: 'keptManagerUid', 'duplicate-profile-id': 'keptManagerUid' },
+  })
+  assert.deepEqual(
+    named.projectGroups[0]?.rows.map((row) => [row.person, row.days]),
+    [['Test Manager', 1]]
+  )
+})

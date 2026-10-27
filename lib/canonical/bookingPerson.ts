@@ -46,6 +46,28 @@ function emailKey(value: unknown): string {
   return typeof value === 'string' ? value.trim().toLowerCase() : ''
 }
 
+/**
+ * The other users document ids the roster folded into `accountId` because they share its email.
+ * `aliases` is the roster's map of every listed id to the id it kept (web `userIdAliases`). Ids compare
+ * without case; the account's own id is left out. Pass the result as `aliasIds` on the account.
+ */
+export function rosterAliasIdsFor(
+  accountId: unknown,
+  aliases: Readonly<Record<string, string>> | null | undefined
+): string[] {
+  const kept = idKey(accountId)
+  if (!kept || !aliases) return []
+  const ids: string[] = []
+  const seen = new Set<string>([kept])
+  for (const [alias, keptId] of Object.entries(aliases)) {
+    const key = idKey(alias)
+    if (!key || seen.has(key) || idKey(keptId) !== kept) continue
+    seen.add(key)
+    ids.push(alias.trim())
+  }
+  return ids
+}
+
 /** Every id this account's bookings may be stored under: its own id, former ids, same-email aliases, and catalogue rows on its email. */
 export function bookingIdsForAccount(
   account: BookingPersonAccount,

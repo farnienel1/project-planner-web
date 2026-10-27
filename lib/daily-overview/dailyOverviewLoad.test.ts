@@ -99,3 +99,31 @@ test('a booking saved under an invite placeholder still shows on Daily Overview 
   const completed = build([{ ...user, formerUserIds: [] }], [booking('authUidAfterSignUp', 'Completed')])
   assert.deepEqual(completed.unbookedNames, [])
 })
+
+test('the Standard and Overtime tiles split the hours worked; overtime is not always 0', async () => {
+  const { buildDailyOverview } = await import('./buildDailyOverview.ts')
+  const { dateFromDayKey } = await import('../ios-parity/londonTime.ts')
+  const build = (dayKey: string, workStartTime: string, workEndTime: string) => {
+    const day = dateFromDayKey(dayKey)
+    return buildDailyOverview({
+      day,
+      today: day,
+      projects: [{ id: 'P1', jobNumber: 'J1', siteName: 'Site', jobType: 'CAT A' } as never],
+      bookings: [
+        { id: 'B1', operativeId: 'op', projectId: 'P1', date: day, timeSlot: 'CUSTOM_HOURS', workStartTime, workEndTime, status: 'Confirmed', bookedBy: 'a', createdAt: day, updatedAt: day },
+      ] as never,
+      managerBookings: [],
+      holidays: [],
+      users: [],
+      operatives: [],
+    })
+  }
+  // Wed 21 Oct 2026 on Raccord MEP: 06:00–17:45 custom hours showed 11.25h with Overtime 0.
+  const wed = build('2026-10-21', '06:00', '17:45')
+  assert.deepEqual([wed.labourHours, wed.standardWorkedHours, wed.overtimeWorkedHours, wed.overtimeMultiplier], [11.25, 8, 3.25, 1.5])
+  // Sunday with no saved rule: every hour at 2×, none standard.
+  const sun = build('2026-10-25', '08:00', '12:00')
+  assert.deepEqual([sun.standardWorkedHours, sun.overtimeWorkedHours, sun.overtimeMultiplier], [0, 4, 2])
+  const empty = build('2026-10-22', '07:30', '16:00')
+  assert.deepEqual([empty.standardWorkedHours, empty.overtimeWorkedHours, empty.overtimeMultiplier], [8, 0, 1.5])
+})
