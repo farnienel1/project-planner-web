@@ -3699,3 +3699,254 @@ test("picking any of a re-added person's ids finds all of them", () => {
   assert.deepEqual(bookingIdsForPerson('', bpInput), [])
 })
 
+
+import { canOpenUserTimesheets, userTimesheetSubjects, type UserTimesheetMember } from './userTimesheetAccess.ts'
+import { MATERIAL_WHATSAPP_ITEM_LIMIT, materialQuantityLabel, materialWhatsAppRows } from './materialWhatsApp.ts'
+import { materialOrderRecipients } from './materialOrderRecipients.ts'
+import { notificationDeliversDevicePush as deliversPush, notificationPreferenceKeyForType } from './notificationPreferences.ts'
+
+const UT_ADMIN = { isSuperAdmin: false, isAdmin: true, isManager: false, isOperativeMode: false }
+const UT_MANAGER = { isSuperAdmin: false, isAdmin: false, isManager: true, isOperativeMode: false }
+const UT_OPERATIVE = { isSuperAdmin: false, isAdmin: false, isManager: false, isOperativeMode: true }
+
+function utMember(id: string, extra: Partial<UserTimesheetMember> = {}): UserTimesheetMember {
+  return { id, email: `${id}@test.com`, isActive: true, role: UT_OPERATIVE, ...extra }
+}
+
+test('User Timesheets: a manager sees the active people they line-manage, under any of their ids', () => {
+  const viewer = { id: 'manager-1', formerIds: ['manager-old'], aliasIds: ['manager-alias'], role: UT_MANAGER }
+  const members = [
+    utMember('op-1', { assignedManagerUserIds: ['manager-1'] }),
+    utMember('op-gone', { isActive: false, assignedManagerUserIds: ['manager-1'] }),
+    utMember('op-other', { assignedManagerUserIds: ['manager-2'] }),
+    utMember('op-former', { assignedManagerUserIds: ['MANAGER-OLD'] }),
+    utMember('op-legacy', { assignedManagerUserId: 'manager-alias' }),
+    utMember('op-none', { assignedManagerUserIds: ['manager-1'], hasNoLineManager: true }),
+    // The reported iOS fault: a report not in operative mode.
+    utMember('staff-1', { role: UT_MANAGER, assignedManagerUserIds: ['manager-1'] }),
+  ]
+  assert.deepEqual(
+    userTimesheetSubjects({ viewer, members }).map((row) => row.userId),
+    ['op-1', 'op-former', 'op-legacy', 'staff-1']
+  )
+  assert.equal(canOpenUserTimesheets({ viewer, members }), true)
+})
+
+test('User Timesheets: the legacy single line manager counts only when the list is empty', () => {
+  const viewer = { id: 'm1', role: UT_MANAGER }
+  const members = [utMember('op-1', { assignedManagerUserIds: ['m2'], assignedManagerUserId: 'm1' })]
+  assert.deepEqual(userTimesheetSubjects({ viewer, members }), [])
+})
+
+test('User Timesheets: a same-email document named by the manager brings in the other document', () => {
+  const viewer = { id: 'mgr', role: UT_MANAGER }
+  const members = [
+    utMember('invite', { email: 'ada@test.com', assignedManagerUserId: 'mgr' }),
+    utMember('auth', { email: 'ADA@test.com ' }),
+    utMember('stranger', { email: '' }),
+  ]
+  assert.deepEqual(
+    userTimesheetSubjects({ viewer, members }).map((row) => row.userId),
+    ['invite', 'auth']
+  )
+})
+
+test('User Timesheets: admins see every active timesheet user and always have the screen', () => {
+  const viewer = { id: 'admin-1', role: UT_ADMIN }
+  const members = [
+    utMember('op-1'),
+    utMember('mgr-1', { role: UT_MANAGER }),
+    utMember('op-gone', { isActive: false }),
+    utMember('no-role', { role: { isSuperAdmin: false, isAdmin: false, isManager: false, isOperativeMode: false } }),
+    { id: 'legacy-active', role: UT_OPERATIVE },
+  ]
+  assert.deepEqual(
+    userTimesheetSubjects({ viewer, members }).map((row) => row.userId),
+    ['op-1', 'mgr-1', 'legacy-active']
+  )
+  assert.equal(canOpenUserTimesheets({ viewer, members: [] }), true)
+  assert.equal(canOpenUserTimesheets({ viewer: { id: 'sa', role: { ...UT_MANAGER, isSuperAdmin: true } }, members: [] }), true)
+})
+
+test('User Timesheets: operatives never get the screen; a manager keeps it while the roster loads', () => {
+  const operative = { id: 'op-1', role: UT_OPERATIVE }
+  assert.deepEqual(userTimesheetSubjects({ viewer: operative, members: [utMember('op-2', { assignedManagerUserId: 'op-1' })] }), [])
+  assert.equal(canOpenUserTimesheets({ viewer: operative, members: [], rosterLoading: true }), false)
+  const manager = { id: 'm1', role: UT_MANAGER }
+  assert.equal(canOpenUserTimesheets({ viewer: manager, members: [] }), false)
+  assert.equal(canOpenUserTimesheets({ viewer: manager, members: [], rosterLoading: true }), true)
+  assert.equal(canOpenUserTimesheets({ viewer: { id: '', role: UT_ADMIN }, members: [] }), false)
+})
+
+const WA_BASE = {
+  requestType: 'order',
+  organisationName: 'TEST-Org',
+  requestingUserName: 'TEST-User',
+  jobNumber: 'J-1',
+  projectName: 'TEST-Kitchen refit',
+  projectAddress: '1 Test Street',
+  deliveryAt: '2026-10-28T08:00:00.000Z',
+  countryCode: 'GB',
+  materials: [{ material: 'Pipe', quantity: 2, unit: 'Length', brand: null, productCode: 'P1', notes: null, lengthDisplay: '3 m' }],
+  recipients: [{ id: 'c1', name: 'Sam Smith', wholesalerName: 'TEST-Supplies', phone: '07700 900123' }],
+}
+
+test('materialWhatsAppRows writes the order message and the wa.me number per recipient', () => {
+  const [row] = materialWhatsAppRows(WA_BASE)
+  assert.equal(row.recipientId, 'c1')
+  assert.equal(row.ok, true)
+  assert.equal(row.digits, '447700900123')
+  assert.equal(row.reason, null)
+  assert.equal(
+    row.message,
+    [
+      'Hi Sam Smith,',
+      '',
+      'Please see the following material order from TEST-Org.',
+      '',
+      'MATERIAL ORDER',
+      'Job: J-1',
+      'Project: TEST-Kitchen refit',
+      'Project address:',
+      '1 Test Street',
+      'Supplier: TEST-Supplies',
+      'Required delivery: Wednesday 28 October at 08:00',
+      '',
+      'ORDER DETAILS',
+      '• 2 × Pipe (Lengths) — Code P1 · 3 m',
+      '',
+      'Please can you confirm availability and the expected delivery date?',
+      '',
+      'Thanks,',
+      'TEST-User',
+      'TEST-Org',
+    ].join('\n')
+  )
+  assert.equal(row.url, `https://wa.me/447700900123?text=${encodeURIComponent(row.message)}`)
+})
+
+test('materialWhatsAppRows: a quote never names a delivery day; numbers follow the organisation country', () => {
+  const rows = materialWhatsAppRows({
+    ...WA_BASE,
+    requestType: 'quote',
+    countryCode: 'IE',
+    recipients: [
+      { id: 'ie', name: '', phone: '087 123 4567' },
+      { id: 'intl', name: 'Al', phone: '+1 (415) 555-2671' },
+      { id: 'zeros', name: 'Zed', phone: '0044 7700 900123' },
+      { id: 'none', name: 'No', phone: '' },
+      { id: 'short', name: 'Sh', phone: '+12 34' },
+    ],
+  })
+  assert.ok(rows[0].message.startsWith('Hi there,'))
+  assert.ok(rows[0].message.includes('QUOTE REQUEST'))
+  assert.ok(!rows[0].message.includes('Required delivery'))
+  assert.equal(rows[0].digits, '353871234567')
+  assert.equal(rows[1].digits, '14155552671')
+  assert.equal(rows[2].digits, '447700900123')
+  assert.deepEqual([rows[3].ok, rows[3].reason, rows[3].url], [false, 'No mobile number is saved for this contact.', null])
+  assert.equal(rows[4].reason, 'This number is too short to open WhatsApp.')
+})
+
+test('materialWhatsAppRows refuses a UK landline and summarises a long list', () => {
+  const materials = Array.from({ length: MATERIAL_WHATSAPP_ITEM_LIMIT + 2 }, (_, index) => ({
+    material: `Item ${index}`,
+    quantity: 1,
+    unit: 'Number',
+  }))
+  const [row] = materialWhatsAppRows({
+    ...WA_BASE,
+    deliveryAt: null,
+    materials,
+    recipients: [{ id: 'c1', name: 'Sam', phone: '020 7946 0958' }],
+  })
+  assert.equal(row.ok, false)
+  assert.equal(row.reason, 'This looks like a landline. WhatsApp needs a mobile number.')
+  assert.ok(!row.message.includes('Required delivery'))
+  assert.ok(row.message.includes('• 1 × Item 0\n'))
+  assert.ok(row.message.includes('• …and 2 more items. We can send the full list by email.'))
+  assert.equal(materialQuantityLabel('box', 2), 'Boxes')
+  assert.equal(materialQuantityLabel('', 1), 'Number')
+})
+
+test('a new material line is the pushed material_order_placed type with its own toggle', () => {
+  assert.equal(deliversPush('material_order_placed'), true)
+  assert.equal(notificationPreferenceKeyForType('material_order_placed'), 'materialOrderPlaced')
+  assert.equal(deliversPush('material_added'), false)
+})
+
+test("materialOrderRecipients notifies the job's active managers, never the adder or other admins", () => {
+  const rows = materialOrderRecipients({
+    jobManagerIds: ['MGR-ROW-1', 'acct-direct'],
+    managers: [
+      { id: 'mgr-row-1', email: 'Pat@Test.com' },
+      { id: 'mgr-row-2', email: 'other@test.com' },
+    ],
+    accounts: [
+      { id: 'admin-1', email: 'admin@test.com', role: UT_ADMIN },
+      { id: 'pat', email: 'pat@test.com', role: UT_MANAGER },
+      { id: 'acct', formerIds: ['acct-direct'], role: UT_MANAGER },
+      { id: 'other', email: 'other@test.com', role: UT_MANAGER },
+      { id: 'gone', email: 'pat@test.com', isActive: false, role: UT_MANAGER },
+      { id: 'op', email: 'pat@test.com', role: UT_OPERATIVE },
+    ],
+    adderIds: [],
+  })
+  assert.deepEqual(rows.map((row) => row.userId), ['pat', 'acct'])
+  const withoutAdder = materialOrderRecipients({
+    jobManagerIds: ['mgr-row-1'],
+    managers: [{ id: 'mgr-row-1', email: 'pat@test.com' }],
+    accounts: [{ id: 'pat', email: 'pat@test.com', aliasIds: ['pat-old'], role: UT_MANAGER }],
+    adderIds: ['pat-old'],
+  })
+  assert.deepEqual(withoutAdder, [])
+  assert.deepEqual(materialOrderRecipients({ jobManagerIds: [], managers: [], accounts: [], adderIds: null }), [])
+})
+
+test('the iOS bundle answers userTimesheetSubjects, materialWhatsAppRows and materialOrderRecipients like this module', () => {
+  const source = readFileSync(new URL('./dist/canonical-business.js', import.meta.url), 'utf8')
+  const sandbox: { ProjectPlannerCanonical?: Record<string, (input: unknown) => unknown> } = {}
+  runInContext(source, createContext(sandbox))
+  const sandboxBundle = sandbox.ProjectPlannerCanonical
+  assert.ok(sandboxBundle)
+  // Results cross the script boundary as JSON, as iOS reads them.
+  const bundle = (name: string, input: unknown) => JSON.parse(JSON.stringify(sandboxBundle[name](input)))
+  // iOS sends JSON: nulls, Bool isActive, capitalised ids.
+  const timesheetInput = JSON.parse(
+    JSON.stringify({
+      viewer: { id: 'manager-1', formerIds: ['manager-old'], aliasIds: [], role: UT_MANAGER },
+      members: [
+        { ...utMember('op-1'), assignedManagerUserIds: ['manager-old'], assignedManagerUserId: null, hasNoLineManager: false },
+        { ...utMember('op-2'), assignedManagerUserIds: [], assignedManagerUserId: null, hasNoLineManager: false },
+      ],
+    })
+  )
+  assert.deepEqual(bundle('userTimesheetSubjects', timesheetInput), userTimesheetSubjects(timesheetInput))
+  assert.deepEqual(bundle('userTimesheetSubjects', timesheetInput), [{ userId: 'op-1' }])
+  assert.equal(bundle('canOpenUserTimesheets', timesheetInput), true)
+  const whatsAppInput = JSON.parse(JSON.stringify(WA_BASE))
+  assert.deepEqual(bundle('materialWhatsAppRows', whatsAppInput), materialWhatsAppRows(whatsAppInput))
+  const recipientsInput = {
+    jobManagerIds: ['row'],
+    managers: [{ id: 'row', email: 'pat@test.com' }],
+    accounts: [{ id: 'pat', email: 'pat@test.com', isActive: true, formerIds: [], aliasIds: [], role: UT_MANAGER }],
+    adderIds: ['op-1'],
+  }
+  assert.deepEqual(bundle('materialOrderRecipients', recipientsInput), [{ userId: 'pat' }])
+})
+
+import { canViewMaterialOrderHistory } from './staffAccess.ts'
+
+test('job quote and order history is every admin and manager, never operative mode, and not the Wholesalers toggle', () => {
+  assert.equal(canViewMaterialOrderHistory(UT_ADMIN), true)
+  assert.equal(canViewMaterialOrderHistory({ ...UT_OPERATIVE, isOperativeMode: false, isSuperAdmin: true }), true)
+  // The role input carries no wholesalersOrderHistory flag: a manager without that toggle still sees it.
+  assert.equal(canViewMaterialOrderHistory(UT_MANAGER), true)
+  assert.equal(canViewMaterialOrderHistory(UT_OPERATIVE), false)
+  assert.equal(canViewMaterialOrderHistory({ ...UT_ADMIN, isOperativeMode: true }), false)
+  const source = readFileSync(new URL('./dist/canonical-business.js', import.meta.url), 'utf8')
+  const sandbox: { ProjectPlannerCanonical?: Record<string, (input: unknown) => unknown> } = {}
+  runInContext(source, createContext(sandbox))
+  assert.equal(sandbox.ProjectPlannerCanonical?.canViewMaterialOrderHistory(UT_MANAGER), true)
+  assert.equal(sandbox.ProjectPlannerCanonical?.canViewMaterialOrderHistory(UT_OPERATIVE), false)
+})

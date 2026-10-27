@@ -5,7 +5,7 @@ import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtil
 import type { OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 import { paidHoursForNamedSlot } from '@/lib/canonical'
 import { dayKey } from '@/lib/ios-parity/londonTime'
-import { hasAdminAccess } from '@/lib/permissions'
+import { userTimesheetSubjectIds } from '@/lib/permissions'
 import { orgDayHours, payForHours, readStoredRates } from '@/lib/timesheets/payBasis'
 
 export type TimesheetSubjectKind = 'operative' | 'manager'
@@ -136,23 +136,21 @@ export function usersSharingEmail(member: User, users: User[]): User[] {
   return rows.length ? rows : [member]
 }
 
-/** One person per email. A line manager on any document for that email can see the person. */
+/**
+ * User Timesheets rows, one group per email. Who is listed is the rulebook's
+ * `userTimesheetSubjects` (via `userTimesheetSubjectIds`); this only groups the
+ * same-email documents of each listed person.
+ */
 export function timesheetRosterGroups(viewer: User, users: User[]): User[][] {
-  const admin = hasAdminAccess(viewer) || viewer.isSuperAdmin
+  const subjects = new Set(userTimesheetSubjectIds(viewer, users))
+  const listed = users.filter((member) => subjects.has(member.id))
   const seen = new Set<string>()
   const groups: User[][] = []
-  for (const member of users) {
-    if (member.isActive === false) continue
+  for (const member of listed) {
     const key = member.email.trim().toLowerCase() || member.id
     if (seen.has(key)) continue
-    const group = users.filter((row) => {
-      if (row.isActive === false) return false
-      return (row.email.trim().toLowerCase() || row.id) === key
-    })
-    const visible = admin || group.some((row) => reportsToManager(row, viewer.id))
-    if (!visible) continue
     seen.add(key)
-    groups.push(group)
+    groups.push(listed.filter((row) => (row.email.trim().toLowerCase() || row.id) === key))
   }
   return groups
 }
@@ -162,25 +160,6 @@ export function groupHasLineManager(group: User[]): boolean {
     if (member.hasNoLineManager) return false
     const ids = [...(member.assignedManagerUserIds || []), member.assignedManagerUserId || '']
     return ids.some((id) => id.trim())
-  })
-}
-
-export function reportsToManager(member: User, managerId: string): boolean {
-  const ids = [
-    ...(member.assignedManagerUserIds || []),
-    member.assignedManagerUserId || '',
-  ]
-    .map((id) => id.trim())
-    .filter(Boolean)
-  return ids.includes(managerId)
-}
-
-export function teamTimesheetUsers(viewer: User, users: User[]): User[] {
-  const admin = hasAdminAccess(viewer) || viewer.isSuperAdmin
-  return users.filter((member) => {
-    if (member.isActive === false) return false
-    if (admin) return true
-    return reportsToManager(member, viewer.id)
   })
 }
 

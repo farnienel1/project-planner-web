@@ -11,6 +11,7 @@ import {
   canAccessTimesheets,
   canAccessTimesheetsSurface,
   canAccessOperativeTimesheets,
+  userTimesheetSubjectIds,
   canCreateProject,
   canManageSubcontractors,
   canManageUsers,
@@ -300,18 +301,28 @@ test('managers with the operatives flag still need assigned reports for Operativ
   assert.equal(canAccessTimesheets(noFlag, false, [report]), true)
 })
 
-test('admins only see User Timesheets when the org has an active operative', () => {
+test('admins always have User Timesheets, even with no one to review yet (canOpenUserTimesheets)', () => {
   const admin = user({
     role: UserRole.ADMIN,
     permissions: { adminAccess: true },
   })
-  assert.equal(canAccessOperativeTimesheets(admin, false, []), false)
-  const operative = user({
-    id: 'op1',
-    permissions: { operativeMode: true },
-  })
-  assert.equal(canAccessOperativeTimesheets(admin, false, [operative]), true)
+  assert.equal(canAccessOperativeTimesheets(admin, false, []), true)
   assert.equal(canAccessOperativeTimesheets(admin, true, []), true)
+})
+
+test('a manager of a non-operative report, or of a report saved under a former id, has User Timesheets', () => {
+  const manager = user({
+    id: 'mgr',
+    email: 'mgr@test.com',
+    role: UserRole.MANAGER,
+    permissions: { manager: true },
+    formerUserIds: ['mgr-invite'],
+  })
+  const staffReport = user({ id: 'staff', email: 'staff@test.com', permissions: { manager: true }, assignedManagerUserIds: ['mgr'] })
+  assert.equal(canAccessOperativeTimesheets(manager, false, [staffReport]), true)
+  const formerReport = user({ id: 'op', email: 'op@test.com', permissions: { operativeMode: true }, assignedManagerUserId: 'mgr-invite' })
+  assert.deepEqual(userTimesheetSubjectIds(manager, [formerReport, manager]), ['op'])
+  assert.equal(canAccessOperativeTimesheets(manager, true, []), true)
 })
 
 test('developer dashboard is the platform owner email only, never organisation roles', () => {

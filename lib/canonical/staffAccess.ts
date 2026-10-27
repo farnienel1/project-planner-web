@@ -73,6 +73,16 @@ export function seesEveryUserTimesheet(role: StaffAccountRole): boolean {
   return role.isSuperAdmin || role.isAdmin
 }
 
+/**
+ * Quote and order history on a job's Materials: every admin and manager, never
+ * operative mode. It is not the Wholesalers toggle (`wholesalersOrderHistory`),
+ * which only gates the Wholesalers screen. Firestore `canReadMaterialSendHistory`
+ * gives the same answer for reads of `materialSendRecords`.
+ */
+export function canViewMaterialOrderHistory(role: StaffAccountRole): boolean {
+  return isStaffAccount(role)
+}
+
 /** Tracker reorder is an admin tool. There is no QS role on this app yet. */
 export function canManageVariationTracker(role: StaffAccountRole): boolean {
   if (role.isOperativeMode) return false
