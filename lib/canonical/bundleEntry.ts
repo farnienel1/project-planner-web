@@ -341,7 +341,7 @@ export { LEGACY_PLACEHOLDER_DOCUMENT_ID, isLegacyPlaceholderDocumentId } from '.
 
 export { legalPackNeedsAcceptance } from './legalPack'
 
-export { payrollHoursResult, payrollOutsideMultiplier, reportDayValue, subcontractorDayValue } from './payrollHours'
+export { payrollHoursResult, payrollOutsideMultiplier, reportDayValue, subcontractorDayValue, workedHoursSplit } from './payrollHours'
 export { parsePayrollPolicy } from './organizationSettings'
 
 export { PAYE_PAY_CELL_LABEL, reportPayCell, reportPayTotal, reportPersonPayCell } from './reportPay'

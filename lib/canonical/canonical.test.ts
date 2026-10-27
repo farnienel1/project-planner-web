@@ -4275,3 +4275,20 @@ test('roster aliases: the other same-email profile ids folded into an account be
   runInContext(source, createContext(sandbox))
   assert.deepEqual(JSON.parse(JSON.stringify(sandbox.ProjectPlannerCanonical?.rosterAliasIdsFor('kept', aliases))), ['DUP-1', 'dup2'])
 })
+
+import { workedHoursSplit } from './payrollHours.ts'
+
+test('worked hours split into inside and outside the standard window, adding up to workedHours', () => {
+  const late = hoursOn(WED, { timeSlot: 'CUSTOM_HOURS', workStartTime: '06:00', workEndTime: '17:45' })
+  assert.deepEqual(workedHoursSplit(late), { standardWorkedHours: 8, outsideWorkedHours: 3.25 })
+  assert.equal(late.workedHours, 11.25)
+  const sunday = hoursOn(SUN, { timeSlot: 'CUSTOM_HOURS', workStartTime: '08:00', workEndTime: '12:00' })
+  assert.deepEqual(workedHoursSplit(sunday), { standardWorkedHours: 0, outsideWorkedHours: 4 })
+  const source = readFileSync(new URL('./dist/canonical-business.js', import.meta.url), 'utf8')
+  const sandbox: { ProjectPlannerCanonical?: Record<string, (...args: unknown[]) => unknown> } = {}
+  runInContext(source, createContext(sandbox))
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(sandbox.ProjectPlannerCanonical?.workedHoursSplit(JSON.parse(JSON.stringify(late))))),
+    { standardWorkedHours: 8, outsideWorkedHours: 3.25 }
+  )
+})
