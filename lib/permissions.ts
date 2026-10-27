@@ -6,9 +6,12 @@
 import type { User, UserPermissions } from '@/types'
 import {
   canEditWorkCatalogue,
+  canOpenUserTimesheets,
   canViewStaffWarnings,
+  userTimesheetSubjects,
   type NotificationPreferenceAudience,
   type StaffAccountRole,
+  type UserTimesheetSubjectsInput,
 } from '@/lib/canonical'
 import { parseAppUserDocument } from '@/lib/ios-parity/converters'
 import { normalizeEmploymentType } from '@/lib/ios-parity/enums'
@@ -370,30 +373,45 @@ export function canAccessMyTimesheets(user: PermissionUser): boolean {
   return normalizeEmploymentType(user.employmentType) === 'self_employed'
 }
 
+function userTimesheetAccessInput(
+  user: NonNullable<PermissionUser>,
+  orgUsers: Array<NonNullable<PermissionUser>>
+): UserTimesheetSubjectsInput {
+  const email = user.email?.trim().toLowerCase() || ''
+  const aliasIds = email
+    ? orgUsers.filter((row) => row.id !== user.id && row.email?.trim().toLowerCase() === email).map((row) => row.id)
+    : []
+  return {
+    viewer: { id: user.id, formerIds: user.formerUserIds ?? [], aliasIds, role: staffAccountRole(user) },
+    members: orgUsers.map((member) => ({
+      id: member.id,
+      email: member.email,
+      isActive: member.isActive !== false,
+      role: staffAccountRole(member),
+      assignedManagerUserIds: member.assignedManagerUserIds ?? [],
+      assignedManagerUserId: member.assignedManagerUserId ?? null,
+      hasNoLineManager: member.hasNoLineManager === true,
+    })),
+  }
+}
+
+/** People on User Timesheets for this viewer, in roster order (`userTimesheetSubjects`). */
+export function userTimesheetSubjectIds(
+  user: PermissionUser,
+  orgUsers: Array<NonNullable<PermissionUser>> = []
+): string[] {
+  if (!user) return []
+  return userTimesheetSubjects(userTimesheetAccessInput(user, orgUsers)).map((row) => row.userId)
+}
+
+/** The User Timesheets screen (`canOpenUserTimesheets`). `profileLoading` is the roster still loading. */
 export function canAccessOperativeTimesheets(
   user: PermissionUser,
   profileLoading = false,
   orgUsers: Array<NonNullable<PermissionUser>> = []
 ): boolean {
   if (!user) return false
-  const managerLike = hasAdminAccess(user) || flag(user, 'manager') || user.isSuperAdmin
-  if (!managerLike) return false
-  if (profileLoading) return true
-  const hasAnyActiveOperative = orgUsers.some(
-    (member) => Boolean(member?.permissions?.operativeMode) && member.isActive !== false
-  )
-  if (hasAdminAccess(user) || user.isSuperAdmin || user.role === 'admin') return hasAnyActiveOperative
-  return orgUsers.some((member) => {
-    if (!member || member.isActive === false) return false
-    if (!member.permissions?.operativeMode) return false
-    const ids = [
-      ...(member.assignedManagerUserIds || []),
-      member.assignedManagerUserId || '',
-    ]
-      .map((id) => id.trim())
-      .filter(Boolean)
-    return ids.includes(user.id)
-  })
+  return canOpenUserTimesheets({ ...userTimesheetAccessInput(user, orgUsers), rosterLoading: profileLoading })
 }
 
 /** iOS UserStore.shouldShowTimesheetsDisabledMessage — PAYE with no remaining My Timesheets. */

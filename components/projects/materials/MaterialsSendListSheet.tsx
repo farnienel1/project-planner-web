@@ -36,6 +36,7 @@ import {
   formatMaterialDeliveryRequired,
   materialDeliveryInstant,
   materialOrderIncludesDeliveryRequired,
+  materialWhatsAppRows,
   parseClockMinutes,
   resolveMaterialCutOffClock,
 } from '@/lib/canonical'
@@ -51,11 +52,6 @@ import {
   type MaterialSendRequestType,
   type OneOffRecipient,
 } from '@/lib/materials/sendListLogic'
-import {
-  buildMaterialWhatsAppMessage,
-  openWhatsAppClickToChat,
-  toWhatsAppDigits,
-} from '@/lib/materials/whatsappOrder'
 import type { Project, ProjectMaterialLine, Wholesaler } from '@/types'
 
 type Props = {
@@ -171,19 +167,19 @@ export function MaterialsSendListSheet({
   const activeWhatsAppRecipient =
     whatsAppRecipients.find((row) => (row.id || row.email) === whatsAppRecipientId) || whatsAppRecipients[0] || null
 
-  const whatsAppMessage = useMemo(() => {
-    if (!whatsAppOpen) return ''
+  // `materialWhatsAppRows`: the message, the wa.me number and any landline refusal come from the rulebook.
+  const whatsAppRow = useMemo(() => {
+    if (!whatsAppOpen || !activeWhatsAppRecipient) return null
     const senderName = `${user?.firstName || ''} ${user?.surname || ''}`.trim() || user?.email || ''
-    return buildMaterialWhatsAppMessage({
+    const [row] = materialWhatsAppRows({
       requestType: whatsAppType,
       organisationName: organization?.name || '',
       requestingUserName: senderName,
-      contactName: activeWhatsAppRecipient?.name || '',
-      supplierName: activeWhatsAppRecipient?.wholesalerName,
       jobNumber: project.jobNumber,
       projectName: project.siteName,
       projectAddress: siteAddress,
-      deliveryDate: materialOrderIncludesDeliveryRequired(whatsAppType) ? deliveryAt : undefined,
+      deliveryAt: deliveryAt ?? null,
+      countryCode,
       materials: selectedMaterials.map((item) => ({
         material: item.material,
         quantity: item.quantity,
@@ -193,7 +189,16 @@ export function MaterialsSendListSheet({
         notes: item.notes,
         lengthDisplay: formatLengthSpecification(item.length, item.lengthUnit) || undefined,
       })),
+      recipients: [
+        {
+          id: activeWhatsAppRecipient.id || activeWhatsAppRecipient.email,
+          name: activeWhatsAppRecipient.name,
+          wholesalerName: activeWhatsAppRecipient.wholesalerName,
+          phone: whatsAppPhone,
+        },
+      ],
     })
+    return row ?? null
   }, [
     whatsAppOpen,
     whatsAppType,
@@ -204,10 +209,11 @@ export function MaterialsSendListSheet({
     project.siteName,
     siteAddress,
     deliveryAt,
+    countryCode,
     selectedMaterials,
+    whatsAppPhone,
   ])
-
-  const whatsAppNumber = toWhatsAppDigits(whatsAppPhone, countryCode)
+  const whatsAppMessage = whatsAppRow?.message ?? ''
 
   const beginWhatsApp = () => {
     if (selectedMaterials.length === 0) return
@@ -235,12 +241,12 @@ export function MaterialsSendListSheet({
   }
 
   const openPreparedWhatsApp = () => {
-    if (!whatsAppNumber.ok) {
-      setWhatsAppCopyHint(whatsAppNumber.reason)
+    if (!whatsAppRow?.ok || !whatsAppRow.url) {
+      setWhatsAppCopyHint(whatsAppRow?.reason || 'No mobile number is saved for this contact.')
       return
     }
-    const result = openWhatsAppClickToChat(whatsAppNumber.digits, whatsAppMessage)
-    if (result.opened) {
+    const popup = typeof window === 'undefined' ? null : window.open(whatsAppRow.url, '_blank', 'noopener,noreferrer')
+    if (popup) {
       toast('WhatsApp opened with your order message prepared.')
       setWhatsAppCopyHint('WhatsApp opened with your order message prepared. Press Send in WhatsApp yourself — this does not mark the order as sent.')
     } else {
@@ -860,9 +866,9 @@ export function MaterialsSendListSheet({
                   placeholder="07700 900123 or +353…"
                 />
               </label>
-              {!whatsAppNumber.ok ? (
+              {!whatsAppRow?.ok ? (
                 <p className="text-xs text-red-600">
-                  {whatsAppNumber.reason}{' '}
+                  {whatsAppRow?.reason}{' '}
                   {activeWhatsAppRecipient?.wholesalerId ? (
                     <Link href={`/dashboard/wholesalers/${activeWhatsAppRecipient.wholesalerId}`} className="font-semibold text-[var(--blue)]">
                       Add mobile number
@@ -870,7 +876,7 @@ export function MaterialsSendListSheet({
                   ) : null}
                 </p>
               ) : (
-                <p className="text-[11px] text-slate-500">WhatsApp will open a chat with +{whatsAppNumber.digits}</p>
+                <p className="text-[11px] text-slate-500">WhatsApp will open a chat with +{whatsAppRow.digits}</p>
               )}
               {activeWhatsAppRecipient?.wholesalerId &&
               whatsAppPhone.trim() &&
@@ -902,7 +908,7 @@ export function MaterialsSendListSheet({
               </button>
               <button
                 type="button"
-                disabled={!whatsAppNumber.ok}
+                disabled={!whatsAppRow?.ok}
                 onClick={openPreparedWhatsApp}
                 className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#128C7E] px-3 py-2.5 text-sm font-semibold text-white disabled:opacity-40"
               >

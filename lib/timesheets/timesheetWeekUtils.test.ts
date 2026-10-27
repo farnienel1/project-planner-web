@@ -6,9 +6,7 @@ import {
   extraFormJobSuggestions,
   extraFormManagerSuggestions,
   isTimesheetAgreedManagerCandidate,
-  reportsToManager,
   subjectForUser,
-  teamTimesheetUsers,
   timesheetReceiptStoredName,
   timesheetRosterGroups,
 } from './timesheetWeekUtils.ts'
@@ -83,26 +81,27 @@ test('collectSubjectDayEntries includes a single booked day inside a half-month 
   assert.equal(entries[0].hours, 8)
 })
 
-test('teamTimesheetUsers keeps other orgs out: managers only see their reports', () => {
+test('timesheetRosterGroups keeps other people out: managers only see their reports', () => {
   const manager = user({
     id: 'mgr',
     email: 'mgr@test.com',
+    role: 'manager',
     permissions: { ...user({ id: 'x', email: 'x' }).permissions, manager: true, operativeMode: false },
   })
   const report = user({ id: 'r1', email: 'r1@test.com', assignedManagerUserId: 'mgr' })
   const other = user({ id: 'r2', email: 'r2@test.com', assignedManagerUserId: 'someone-else' })
-  const roster = teamTimesheetUsers(manager, [report, other, manager])
+  const groups = timesheetRosterGroups(manager, [report, other, manager])
   assert.deepEqual(
-    roster.map((row) => row.id),
-    ['r1']
+    groups.map((group) => group.map((row) => row.id)),
+    [['r1']]
   )
-  assert.equal(reportsToManager(other, 'mgr'), false)
 })
 
 test('same email is one person for the line-manager queue', () => {
   const manager = user({
     id: 'mgr',
     email: 'mgr@test.com',
+    role: 'manager',
     permissions: { ...user({ id: 'x', email: 'x' }).permissions, manager: true, operativeMode: false },
   })
   const invite = user({ id: 'invite', email: 'ada@test.com', assignedManagerUserId: 'mgr' })

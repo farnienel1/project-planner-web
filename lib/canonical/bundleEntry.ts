@@ -195,6 +195,12 @@ export {
   materialOrderIncludesDeliveryRequired,
 } from './materialDelivery'
 
+export { MATERIAL_WHATSAPP_ITEM_LIMIT, materialQuantityLabel, materialWhatsAppRows } from './materialWhatsApp'
+
+export { materialOrderRecipients } from './materialOrderRecipients'
+
+export { canOpenUserTimesheets, userTimesheetSubjects } from './userTimesheetAccess'
+
 export {
   TIMESHEET_CLOSE_OF_PLAY_HOUR,
   TIMESHEET_CLOSE_OF_PLAY_MINUTE,

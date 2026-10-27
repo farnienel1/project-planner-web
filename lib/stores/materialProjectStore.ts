@@ -1,7 +1,8 @@
 'use client'
 
 import { create } from 'zustand'
-import { collection, deleteDoc, doc, getDocs, query, setDoc, Timestamp, where } from 'firebase/firestore'
+import { collection, deleteDoc, doc, getDocs, onSnapshot, query, setDoc, Timestamp, where } from 'firebase/firestore'
+import { captureOrganizationContext, organizationContextStillCurrent } from '@/lib/canonical'
 import { db } from '@/lib/firebase/config'
 import { withAuthReadRetry } from '@/lib/firebase/waitForAuthToken'
 import type { MaterialSendRecord, ProjectMaterialLine } from '@/types'
@@ -100,6 +101,12 @@ interface MaterialProjectState {
   loadProjectMaterials: (organizationId: string, projectId: string) => Promise<void>
   loadAllMaterials: (organizationId: string) => Promise<void>
   loadSendRecords: (organizationId: string, projectId?: string) => Promise<void>
+  /**
+   * Keep one job's material lines and quote/order history current while its
+   * Materials screen is open (lines added on iOS or another browser appear
+   * without a reload). Returns the unsubscribe.
+   */
+  watchProjectMaterials: (organizationId: string, projectId: string) => () => void
   saveMaterialLine: (organizationId: string, line: SaveMaterialLineInput) => Promise<void>
   deleteMaterialLine: (organizationId: string, materialId: string) => Promise<void>
   saveSendRecord: (organizationId: string, record: MaterialSendRecord) => Promise<void>
@@ -226,6 +233,61 @@ export const useMaterialProjectStore = create<MaterialProjectState>((set, get) =
       set({ sendRecords })
     } catch (error: unknown) {
       set({ error: error instanceof Error ? error.message : 'Failed to load send history' })
+    }
+  },
+
+  watchProjectMaterials: (organizationId, projectId) => {
+    const captured = captureOrganizationContext()
+    const projectKey = projectId.toLowerCase()
+    const inProject = (row: ProjectMaterialLine) => row.projectId.toLowerCase() === projectKey
+    const current = () => organizationContextStillCurrent(organizationId, captured)
+    if (!get().materials.some(inProject) || materialsOrgId !== organizationId) set({ loading: true, error: null })
+
+    const unsubscribeMaterials = onSnapshot(
+      query(collection(db, 'organizations', organizationId, 'materials'), where('projectId', '==', projectId)),
+      (snapshot) => {
+        if (!current()) return
+        const loaded = snapshot.docs
+          .map((entry) => mapMaterialLine(entry.id, entry.data() as Record<string, unknown>))
+          .filter(inProject)
+        const scoped = materialsOrgId === organizationId ? get().materials : []
+        const previous = scoped.filter(inProject)
+        // A server snapshot is the job's list, even when another device removed the last line.
+        // A cache snapshot must not blank lines already on screen.
+        const rows = snapshot.metadata.fromCache
+          ? retainScopedRows(`materials:${organizationId}`, previous, loaded)
+          : loaded
+        materialsOrgId = organizationId
+        set({ materials: [...scoped.filter((row) => !inProject(row)), ...rows], loading: false, error: null })
+      },
+      () => {
+        if (!current()) return
+        // The listener was refused: fall back to the one-off read.
+        void get().loadProjectMaterials(organizationId, projectId).catch(() => {})
+      }
+    )
+
+    const unsubscribeSends = onSnapshot(
+      query(collection(db, 'organizations', organizationId, 'materialSendRecords'), where('projectId', '==', projectId)),
+      (snapshot) => {
+        if (!current()) return
+        const sendRecords = snapshot.docs
+          .map((entry) => mapSendRecord(entry.id, entry.data() as Record<string, unknown>))
+          .filter((record): record is MaterialSendRecord => record !== null)
+          .sort((a, b) => b.sentAt.getTime() - a.sentAt.getTime())
+        const shown = get().sendRecords.some((record) => record.projectId === projectId)
+        if (snapshot.metadata.fromCache && sendRecords.length === 0 && shown) return
+        set({ sendRecords })
+      },
+      () => {
+        if (!current()) return
+        void get().loadSendRecords(organizationId, projectId)
+      }
+    )
+
+    return () => {
+      unsubscribeMaterials()
+      unsubscribeSends()
     }
   },
 

@@ -29,7 +29,7 @@ import {
   userHasLineManager,
 } from '@/lib/timesheets/timesheetApprovalPolicy'
 import { applyWeeklyReportOverride } from '@/lib/timesheets/weeklyReportOverride'
-import { hasAdminAccess, staffAccountRole } from '@/lib/permissions'
+import { staffAccountRole, userTimesheetSubjectIds } from '@/lib/permissions'
 import {
   SENSITIVE_EXPORT_OPTION_LABEL,
   canViewSensitiveProfile,
@@ -81,7 +81,6 @@ import {
   extraFormJobSuggestions,
   extraFormManagerSuggestions,
   isTimesheetAgreedManagerCandidate,
-  reportsToManager,
   subjectForUser,
   timesheetReceiptStoredName,
   userIdsSharingEmail,
@@ -224,10 +223,10 @@ export function TimesheetPeriodPage({
   const needsCounterSign = requiresLineManagerCounterSign(subjectUser)
   const canManagerReview = (() => {
     if (mode !== 'review' || !viewer) return false
-    const isAdmin = hasAdminAccess(viewer) || viewer.isSuperAdmin || viewer.role === 'admin'
-    const isLineManager = reportsToManager(subjectUser, viewer.id)
     if (draft.exportedAt) {
-      return (isAdmin || isLineManager) && isTimesheetFullyApproved(draft, subjectUser)
+      // `userTimesheetSubjects`: admins see everyone, a manager the people they line-manage under any of their ids.
+      const inScope = userTimesheetSubjectIds(viewer, users).includes(subjectUser.id)
+      return inScope && isTimesheetFullyApproved(draft, subjectUser)
     }
     return userHasLineManager(subjectUser) && !draft.managerSignedAt && Boolean(draft.operativeSignedAt)
   })()

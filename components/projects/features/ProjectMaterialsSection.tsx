@@ -106,8 +106,7 @@ function MaterialLineCard({
 
 export function ProjectMaterialsSection({ project }: { project: Project }) {
   const { organization, user } = useAuthStore()
-  const { materials, sendRecords, loading, error, loadProjectMaterials, loadSendRecords, deleteMaterialLine } =
-    useMaterialProjectStore()
+  const { materials, sendRecords, loading, error, watchProjectMaterials, deleteMaterialLine } = useMaterialProjectStore()
   const { wholesalers, loadWholesalers } = useWholesalerStore()
 
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date(), { weekStartsOn: 1 }))
@@ -121,13 +120,16 @@ export function ProjectMaterialsSection({ project }: { project: Project }) {
   const isOperative = isOperativeMode(user)
   const canSend = !isOperative
 
+  // Live while the screen is open: a line added on iOS or another browser appears without a reload.
+  const organizationId = organization?.id
   useEffect(() => {
-    if (organization?.id) {
-      loadProjectMaterials(organization.id, project.id)
-      loadSendRecords(organization.id, project.id)
-      if (canSend) loadWholesalers(organization.id)
-    }
-  }, [organization, project.id, loadProjectMaterials, loadSendRecords, loadWholesalers, canSend])
+    if (!organizationId) return
+    return watchProjectMaterials(organizationId, project.id)
+  }, [organizationId, project.id, watchProjectMaterials])
+
+  useEffect(() => {
+    if (organizationId && canSend) loadWholesalers(organizationId)
+  }, [organizationId, loadWholesalers, canSend])
 
   const projectMaterials = useMemo(
     () => materials.filter((m) => m.projectId.toLowerCase() === project.id.toLowerCase()),
