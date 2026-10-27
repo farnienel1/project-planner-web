@@ -186,7 +186,8 @@ export function missingStarterQualificationCodes(
   })
 }
 
-const DEFAULT_WEEKEND: WeekendPayrollSettings = {
+/** A saved weekend day map that leaves a field out (iOS `OrgWeekendDayPayrollSettings.fromFirestore`). */
+const WEEKEND_FIELD_FALLBACK: WeekendPayrollSettings = {
   allHoursAtMultiplierMode: false,
   allHoursMultiplier: 2,
   definedWindowStart: '07:30',
@@ -196,9 +197,29 @@ const DEFAULT_WEEKEND: WeekendPayrollSettings = {
   sameAsSaturday: false,
 }
 
-const DEFAULT_SUNDAY: WeekendPayrollSettings = {
-  ...DEFAULT_WEEKEND,
-  sameAsSaturday: true,
+/**
+ * Saturday when the company never saved one (iOS `defaultSaturday`):
+ * 07:30–13:00 counts as 8 hours, time outside it at 2×.
+ */
+export const DEFAULT_SATURDAY_PAYROLL: WeekendPayrollSettings = {
+  allHoursAtMultiplierMode: false,
+  allHoursMultiplier: 2,
+  definedWindowStart: '07:30',
+  definedWindowEnd: '13:00',
+  countsAsStandardHours: 8,
+  outsideWindowMultiplier: 2,
+  sameAsSaturday: false,
+}
+
+/** Sunday when the company never saved one (iOS `defaultSunday`): every hour at 2×. */
+export const DEFAULT_SUNDAY_PAYROLL: WeekendPayrollSettings = {
+  allHoursAtMultiplierMode: true,
+  allHoursMultiplier: 2,
+  definedWindowStart: '07:30',
+  definedWindowEnd: '16:00',
+  countsAsStandardHours: 8,
+  outsideWindowMultiplier: 2,
+  sameAsSaturday: false,
 }
 
 export const DEFAULT_PAYROLL_POLICY: OrgPayrollTimePolicy = {
@@ -209,8 +230,8 @@ export const DEFAULT_PAYROLL_POLICY: OrgPayrollTimePolicy = {
   breakWindowStart: '12:00',
   breakWindowEnd: '12:30',
   weekdayOutsideStandardMultiplier: 1.5,
-  saturday: { ...DEFAULT_WEEKEND },
-  sunday: { ...DEFAULT_SUNDAY },
+  saturday: { ...DEFAULT_SATURDAY_PAYROLL },
+  sunday: { ...DEFAULT_SUNDAY_PAYROLL },
 }
 
 export const DEFAULT_PAYMENT_RUN_DATE_RANGES: PaymentRunDateRange[] = CANONICAL_HALF_MONTH_RANGES.map((range) => ({
@@ -372,8 +393,10 @@ function stringIdList(value: unknown): string[] {
   return value.map((id) => String(id).trim()).filter(Boolean)
 }
 
-function parseWeekend(data: Record<string, unknown> | undefined, fallback: WeekendPayrollSettings): WeekendPayrollSettings {
-  if (!data) return { ...fallback }
+/** A missing day map is that day's default; a saved map fills a missing field from `WEEKEND_FIELD_FALLBACK`. */
+function parseWeekend(data: Record<string, unknown> | undefined, dayDefault: WeekendPayrollSettings): WeekendPayrollSettings {
+  if (!data || typeof data !== 'object') return { ...dayDefault }
+  const fallback = WEEKEND_FIELD_FALLBACK
   return {
     allHoursAtMultiplierMode: data.allHoursAtMultiplierMode === true,
     allHoursMultiplier: Number(data.allHoursMultiplier ?? fallback.allHoursMultiplier),
@@ -411,7 +434,7 @@ function weekendToFirestore(weekend: WeekendPayrollSettings): Record<string, unk
 
 export function parsePayrollPolicy(data: Record<string, unknown> | undefined): OrgPayrollTimePolicy {
   if (!data) {
-    return { ...DEFAULT_PAYROLL_POLICY, saturday: { ...DEFAULT_WEEKEND }, sunday: { ...DEFAULT_SUNDAY } }
+    return { ...DEFAULT_PAYROLL_POLICY, saturday: { ...DEFAULT_SATURDAY_PAYROLL }, sunday: { ...DEFAULT_SUNDAY_PAYROLL } }
   }
   return {
     standardDayStart: String(data.standardDayStart ?? DEFAULT_PAYROLL_POLICY.standardDayStart),
@@ -423,9 +446,9 @@ export function parsePayrollPolicy(data: Record<string, unknown> | undefined): O
     weekdayOutsideStandardMultiplier: Number(
       data.weekdayOutsideStandardMultiplier ?? DEFAULT_PAYROLL_POLICY.weekdayOutsideStandardMultiplier
     ),
-    saturday: parseWeekend(data.saturday as Record<string, unknown> | undefined, DEFAULT_WEEKEND),
+    saturday: parseWeekend(data.saturday as Record<string, unknown> | undefined, DEFAULT_SATURDAY_PAYROLL),
     sunday: (() => {
-      const sunday = parseWeekend(data.sunday as Record<string, unknown> | undefined, DEFAULT_SUNDAY)
+      const sunday = parseWeekend(data.sunday as Record<string, unknown> | undefined, DEFAULT_SUNDAY_PAYROLL)
       const sunRaw = data.sunday as Record<string, unknown> | undefined
       const same =
         data.sundaySameAsSaturday === true ||

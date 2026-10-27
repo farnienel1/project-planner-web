@@ -161,6 +161,7 @@ var ProjectPlannerCanonical = (() => {
     isFileReportSurface: () => isFileReportSurface,
     isIdentifiablePendingLeftover: () => isIdentifiablePendingLeftover,
     isLegacyPlaceholderDocumentId: () => isLegacyPlaceholderDocumentId,
+    isOpenBookingStatus: () => isOpenBookingStatus,
     isStaffAccount: () => isStaffAccount,
     isTimesheetAwaitingSignOff: () => isTimesheetAwaitingSignOff,
     isTimesheetExported: () => isTimesheetExported,
@@ -2334,7 +2335,7 @@ var ProjectPlannerCanonical = (() => {
       return Boolean(id) && !have.has(id);
     });
   }
-  var DEFAULT_WEEKEND = {
+  var WEEKEND_FIELD_FALLBACK = {
     allHoursAtMultiplierMode: false,
     allHoursMultiplier: 2,
     definedWindowStart: "07:30",
@@ -2343,9 +2344,23 @@ var ProjectPlannerCanonical = (() => {
     outsideWindowMultiplier: 1.5,
     sameAsSaturday: false
   };
-  var DEFAULT_SUNDAY = {
-    ...DEFAULT_WEEKEND,
-    sameAsSaturday: true
+  var DEFAULT_SATURDAY_PAYROLL = {
+    allHoursAtMultiplierMode: false,
+    allHoursMultiplier: 2,
+    definedWindowStart: "07:30",
+    definedWindowEnd: "13:00",
+    countsAsStandardHours: 8,
+    outsideWindowMultiplier: 2,
+    sameAsSaturday: false
+  };
+  var DEFAULT_SUNDAY_PAYROLL = {
+    allHoursAtMultiplierMode: true,
+    allHoursMultiplier: 2,
+    definedWindowStart: "07:30",
+    definedWindowEnd: "16:00",
+    countsAsStandardHours: 8,
+    outsideWindowMultiplier: 2,
+    sameAsSaturday: false
   };
   var DEFAULT_PAYROLL_POLICY = {
     standardDayStart: "07:30",
@@ -2355,8 +2370,8 @@ var ProjectPlannerCanonical = (() => {
     breakWindowStart: "12:00",
     breakWindowEnd: "12:30",
     weekdayOutsideStandardMultiplier: 1.5,
-    saturday: { ...DEFAULT_WEEKEND },
-    sunday: { ...DEFAULT_SUNDAY }
+    saturday: { ...DEFAULT_SATURDAY_PAYROLL },
+    sunday: { ...DEFAULT_SUNDAY_PAYROLL }
   };
   var DEFAULT_PAYMENT_RUN_DATE_RANGES = CANONICAL_HALF_MONTH_RANGES.map((range) => ({
     ...range
@@ -2456,8 +2471,9 @@ var ProjectPlannerCanonical = (() => {
     if (!Array.isArray(value)) return [];
     return value.map((id) => String(id).trim()).filter(Boolean);
   }
-  function parseWeekend(data, fallback) {
-    if (!data) return { ...fallback };
+  function parseWeekend(data, dayDefault) {
+    if (!data || typeof data !== "object") return { ...dayDefault };
+    const fallback = WEEKEND_FIELD_FALLBACK;
     return {
       allHoursAtMultiplierMode: data.allHoursAtMultiplierMode === true,
       allHoursMultiplier: Number(data.allHoursMultiplier ?? fallback.allHoursMultiplier),
@@ -2482,7 +2498,7 @@ var ProjectPlannerCanonical = (() => {
   }
   function parsePayrollPolicy(data) {
     if (!data) {
-      return { ...DEFAULT_PAYROLL_POLICY, saturday: { ...DEFAULT_WEEKEND }, sunday: { ...DEFAULT_SUNDAY } };
+      return { ...DEFAULT_PAYROLL_POLICY, saturday: { ...DEFAULT_SATURDAY_PAYROLL }, sunday: { ...DEFAULT_SUNDAY_PAYROLL } };
     }
     return {
       standardDayStart: String(data.standardDayStart ?? DEFAULT_PAYROLL_POLICY.standardDayStart),
@@ -2494,9 +2510,9 @@ var ProjectPlannerCanonical = (() => {
       weekdayOutsideStandardMultiplier: Number(
         data.weekdayOutsideStandardMultiplier ?? DEFAULT_PAYROLL_POLICY.weekdayOutsideStandardMultiplier
       ),
-      saturday: parseWeekend(data.saturday, DEFAULT_WEEKEND),
+      saturday: parseWeekend(data.saturday, DEFAULT_SATURDAY_PAYROLL),
       sunday: (() => {
-        const sunday = parseWeekend(data.sunday, DEFAULT_SUNDAY);
+        const sunday = parseWeekend(data.sunday, DEFAULT_SUNDAY_PAYROLL);
         const sunRaw = data.sunday;
         const same = data.sundaySameAsSaturday === true || data.sundaySameAsSaturday == null && sunRaw?.sameAsSaturday === true;
         return { ...sunday, sameAsSaturday: same };
@@ -4447,6 +4463,10 @@ var ProjectPlannerCanonical = (() => {
     if (!value) return null;
     if (BOOKING_STATUSES.includes(value)) return value;
     return STATUS_ALIASES[value.toLowerCase()] ?? null;
+  }
+  function isOpenBookingStatus(raw) {
+    const status = normalizeBookingStatus(raw);
+    return status === "Confirmed" || status === "Tentative";
   }
   function normalizeBookingTimeSlot(raw) {
     const value = text(raw);

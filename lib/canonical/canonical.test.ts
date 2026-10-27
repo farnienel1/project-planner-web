@@ -4216,3 +4216,47 @@ test('job quote and order history is every admin and manager, never operative mo
   assert.equal(sandbox.ProjectPlannerCanonical?.canViewMaterialOrderHistory(UT_MANAGER), true)
   assert.equal(sandbox.ProjectPlannerCanonical?.canViewMaterialOrderHistory(UT_OPERATIVE), false)
 })
+
+import { DEFAULT_SATURDAY_PAYROLL, DEFAULT_SUNDAY_PAYROLL } from './organizationSettings.ts'
+import { isOpenBookingStatus } from './bookings.ts'
+
+test('a weekend day the company never saved uses the iOS default: Saturday 07:30–13:00 then 2×, Sunday every hour 2×', () => {
+  for (const policy of [parsePayrollPolicy(undefined), parsePayrollPolicy({ standardDayStart: '07:30' }), DEFAULT_PAYROLL_POLICY]) {
+    assert.deepEqual(
+      [policy.saturday.definedWindowEnd, policy.saturday.countsAsStandardHours, policy.saturday.outsideWindowMultiplier],
+      ['13:00', 8, 2]
+    )
+    assert.deepEqual([policy.sunday.allHoursAtMultiplierMode, policy.sunday.allHoursMultiplier, policy.sunday.sameAsSaturday], [true, 2, false])
+    const sunday = hoursOn(SUN, { timeSlot: 'CUSTOM_HOURS', workStartTime: '08:00', workEndTime: '12:00' }, policy)
+    assert.equal(sunday.totalPaidHours, 8)
+    const saturday = hoursOn(SAT, { timeSlot: 'CUSTOM_HOURS', workStartTime: '07:30', workEndTime: '15:00' }, policy)
+    assert.deepEqual([saturday.standardHours, saturday.outsideHours, saturday.totalPaidHours], [8, 2, 12])
+  }
+  // A saved day map that leaves a field out reads it like iOS OrgWeekendDayPayrollSettings.fromFirestore.
+  const partial = parsePayrollPolicy({ sunday: { allHoursAtMultiplierMode: false } })
+  assert.deepEqual([partial.sunday.allHoursAtMultiplierMode, partial.sunday.definedWindowEnd, partial.sunday.outsideWindowMultiplier], [false, '16:00', 1.5])
+  // Sunday same as Saturday still follows the saved flag.
+  assert.equal(parsePayrollPolicy({ sundaySameAsSaturday: true }).sunday.sameAsSaturday, true)
+  assert.deepEqual(DEFAULT_PAYROLL_POLICY.saturday, DEFAULT_SATURDAY_PAYROLL)
+  assert.deepEqual(DEFAULT_PAYROLL_POLICY.sunday, DEFAULT_SUNDAY_PAYROLL)
+  const source = readFileSync(new URL('./dist/canonical-business.js', import.meta.url), 'utf8')
+  const sandbox: { ProjectPlannerCanonical?: Record<string, (input: unknown) => unknown> } = {}
+  runInContext(source, createContext(sandbox))
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(sandbox.ProjectPlannerCanonical?.parsePayrollPolicy(undefined))),
+    JSON.parse(JSON.stringify(parsePayrollPolicy(undefined)))
+  )
+})
+
+test('an open booking is Confirmed or Tentative; Cancelled, Completed and unreadable are not', () => {
+  assert.equal(isOpenBookingStatus('Confirmed'), true)
+  assert.equal(isOpenBookingStatus('tentative'), true)
+  assert.equal(isOpenBookingStatus('Cancelled'), false)
+  assert.equal(isOpenBookingStatus('Completed'), false)
+  assert.equal(isOpenBookingStatus(undefined), false)
+  const source = readFileSync(new URL('./dist/canonical-business.js', import.meta.url), 'utf8')
+  const sandbox: { ProjectPlannerCanonical?: Record<string, (input: unknown) => unknown> } = {}
+  runInContext(source, createContext(sandbox))
+  assert.equal(sandbox.ProjectPlannerCanonical?.isOpenBookingStatus('Tentative'), true)
+  assert.equal(sandbox.ProjectPlannerCanonical?.isOpenBookingStatus('Completed'), false)
+})

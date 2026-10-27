@@ -320,20 +320,21 @@ export type HoursBreakdown = {
 }
 
 export function hoursBreakdown(input: BookingHoursInput): HoursBreakdown {
-  const standard = input.standardPaidHours ?? input.policy?.standardPaidHours ?? FALLBACK_STANDARD_PAID_HOURS
+  const policy = policyFrom(input)
+  const standard = policy.standardPaidHours ?? FALLBACK_STANDARD_PAID_HOURS
   const paid = bookingPayrollHours(input)
-  const multiplier = paid.outsideMultiplier || input.overtimeMultiplier || FALLBACK_OT_MULTIPLIER
+  const multiplier = paid.outsideMultiplier || policy.weekdayOutsideStandardMultiplier || FALLBACK_OT_MULTIPLIER
   const kind = namedSlotKind(input.timeSlot)
   const slotLabel = namedSlotLabel(input.timeSlot)
   const clockPaidHours = Math.round((paid.standardHours + paid.outsideHours) * 100) / 100
   const rangeLabel = customHoursRangeLabel(input)
-  const dayStart = input.standardDayStart || FALLBACK_DAY_START
-  const dayEnd = input.standardDayEnd || FALLBACK_DAY_END
+  const dayStart = policy.standardDayStart || FALLBACK_DAY_START
+  const dayEnd = policy.standardDayEnd || FALLBACK_DAY_END
   const standardWindowLabel = `${dayStart} - ${dayEnd}`
   const rawOt = Math.round(paid.outsideHours * 100) / 100
   const equivalent = Math.round(rawOt * multiplier * 100) / 100
   const overtimeEquation = rawOt > 0 ? formatOvertimeEquation(rawOt, multiplier) : null
-  const segmentsLabel = overtimeSegmentsLabel(input)
+  const segmentsLabel = overtimeSegmentsLabel({ ...input, standardDayStart: dayStart, standardDayEnd: dayEnd })
   const overtimeLine =
     overtimeEquation && segmentsLabel ? `${segmentsLabel} = ${overtimeEquation}` : overtimeEquation
 
@@ -388,9 +389,9 @@ export function hoursBreakdown(input: BookingHoursInput): HoursBreakdown {
       start: span.start,
       spanEnd: span.end,
       isBreakRemoved: input.isBreakRemoved,
-      unpaidBreakMinutes: input.unpaidBreakMinutes,
-      breakWindowStart: input.breakWindowStart,
-      breakWindowEnd: input.breakWindowEnd,
+      unpaidBreakMinutes: policy.unpaidBreakMinutes,
+      breakWindowStart: policy.breakWindowStart,
+      breakWindowEnd: policy.breakWindowEnd,
     })
     breakHours = Math.round((breakMins / 60) * 10) / 10
   }
@@ -407,7 +408,7 @@ export function hoursBreakdown(input: BookingHoursInput): HoursBreakdown {
   if (input.isBreakRemoved) {
     lines.push({ kind: 'break', label: 'Break', value: 'unpaid break removed' })
   } else if (breakHours > 0) {
-    const breakMins = input.unpaidBreakMinutes ?? FALLBACK_UNPAID_BREAK_MINUTES
+    const breakMins = policy.unpaidBreakMinutes ?? FALLBACK_UNPAID_BREAK_MINUTES
     lines.push({
       kind: 'break',
       label: `Minus ${breakMins} minute break`,

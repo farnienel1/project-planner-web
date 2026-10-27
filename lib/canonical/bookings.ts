@@ -106,6 +106,12 @@ export function normalizeBookingStatus(raw: unknown): BookingStatus | null {
   return STATUS_ALIASES[value.toLowerCase()] ?? null
 }
 
+/** Still on the job: Confirmed or Tentative. Cancelled, Completed and an unreadable status are not. */
+export function isOpenBookingStatus(raw: unknown): boolean {
+  const status = normalizeBookingStatus(raw)
+  return status === 'Confirmed' || status === 'Tentative'
+}
+
 /** Canonical slot, or null. FULL_DAY, MORNING, AFTERNOON, CUSTOM and any case read. */
 export function normalizeBookingTimeSlot(raw: unknown): BookingTimeSlot | null {
   const value = text(raw)

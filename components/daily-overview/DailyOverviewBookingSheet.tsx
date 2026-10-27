@@ -205,15 +205,10 @@ export function DailyOverviewBookingSheet({
         workStartTime,
         workEndTime,
         isBreakRemoved: breakRemoved,
-        unpaidBreakMinutes: payroll.unpaidBreakMinutes,
-        breakWindowStart: payroll.breakWindowStart,
-        breakWindowEnd: payroll.breakWindowEnd,
-        standardPaidHours: payroll.standardPaidHours,
-        standardDayStart: payroll.standardDayStart,
-        standardDayEnd: payroll.standardDayEnd,
-        overtimeMultiplier: payroll.weekdayOutsideStandardMultiplier,
+        policy: payroll,
+        date: day,
       }),
-    [workStartTime, workEndTime, breakRemoved, payroll]
+    [workStartTime, workEndTime, breakRemoved, payroll, day]
   )
 
   const hoursFields = () => ({
@@ -426,6 +421,7 @@ export function DailyOverviewBookingSheet({
             end={workEndTime}
             breakRemoved={breakRemoved}
             policy={payroll}
+            date={day}
             showBreak
             onStart={(value) => {
               hoursTouched.current = true

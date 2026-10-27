@@ -101,33 +101,6 @@ export function isLegacyFullDaySlot(timeSlot: string | undefined, workStartTime?
   return kind.includes('FULL') && !hasClock
 }
 
-/** iOS ManagerScheduleInterval.combinedPaidHoursFromIntervals */
-export function combinedPaidHoursFromIntervals(
-  intervals: MinuteInterval[],
-  options: {
-    anyBreakRemoved: boolean
-    includesLegacyFullDay: boolean
-    policy: OrgPayrollTimePolicy
-  }
-): number {
-  const standard = Math.max(options.policy.standardPaidHours, 0)
-  if (options.includesLegacyFullDay) return standard
-  if (intervals.length === 0) return 0
-  const merged = mergeIntervals(intervals)
-  const window = standardWindow(options.policy)
-  if (window) {
-    const unionStart = Math.min(...merged.map((iv) => iv.start))
-    const unionEnd = Math.max(...merged.map((iv) => iv.end))
-    if (unionStart <= window.start && unionEnd >= window.end) return standard
-  }
-  const totalMinutes = merged.reduce((sum, iv) => sum + Math.max(0, iv.end - iv.start), 0)
-  let wallHours = totalMinutes / 60
-  if (!options.anyBreakRemoved) {
-    wallHours = Math.max(0, wallHours - (options.policy.unpaidBreakMinutes || 0) / 60)
-  }
-  return wallHours
-}
-
 /** Clash groups for one person-day: the rulebook's `overlappingIntervalGroups`, in its order. */
 export function overlappingClusters<T>(items: T[], intervalOf: (item: T) => MinuteInterval | null | undefined): T[][] {
   return overlappingIntervalGroups(items.map(intervalOf)).map((group) => group.map((index) => items[index]))

@@ -51,15 +51,10 @@ export function SubcontractorBookingEditSheet({
         workStartTime,
         workEndTime,
         isBreakRemoved: true,
-        unpaidBreakMinutes: payroll.unpaidBreakMinutes,
-        breakWindowStart: payroll.breakWindowStart,
-        breakWindowEnd: payroll.breakWindowEnd,
-        standardPaidHours: payroll.standardPaidHours,
-        standardDayStart: payroll.standardDayStart,
-        standardDayEnd: payroll.standardDayEnd,
-        overtimeMultiplier: payroll.weekdayOutsideStandardMultiplier,
+        policy: payroll,
+        date: booking.date,
       }),
-    [workStartTime, workEndTime, payroll]
+    [workStartTime, workEndTime, payroll, booking.date]
   )
 
   const hoursValid = useMemo(() => {
@@ -171,6 +166,7 @@ export function SubcontractorBookingEditSheet({
               end={workEndTime}
               breakRemoved
               policy={payroll}
+              date={booking.date}
               showBreak={false}
               onStart={setWorkStartTime}
               onEnd={setWorkEndTime}

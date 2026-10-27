@@ -16,6 +16,7 @@ import {
   formatHoursLabel,
   hoursBreakdown,
   namedSlotLabel,
+  type BookingHoursInput,
 } from '@/lib/scheduling/paidHours'
 import { BookingEditSheet } from '@/components/schedule/BookingEditSheet'
 import { QuickAddBookingSheet, type QuickAddBookingValues } from '@/components/schedule/QuickAddBookingSheet'
@@ -130,19 +131,7 @@ function roleForUser(user: User | undefined): { label: string; tone: DayRow['rol
   return { label: 'Op', tone: 'operative' }
 }
 
-function bookingRowFromHours(input: {
-  timeSlot?: string
-  workStartTime?: string
-  workEndTime?: string
-  isBreakRemoved?: boolean
-  unpaidBreakMinutes?: number
-  breakWindowStart?: string
-  breakWindowEnd?: string
-  standardPaidHours?: number
-  standardDayStart?: string
-  standardDayEnd?: string
-  overtimeMultiplier?: number
-}): Pick<DayRow, 'hours' | 'overtimeEquation' | 'range' | 'slot'> {
+function bookingRowFromHours(input: BookingHoursInput): Pick<DayRow, 'hours' | 'overtimeEquation' | 'range' | 'slot'> {
   const breakdown = hoursBreakdown(input)
   const range = customHoursRangeLabel(input)
   const slotStr = range && range !== 'Custom hours' ? range : namedSlotLabel(input.timeSlot)
@@ -307,13 +296,8 @@ export function ProjectScheduleWeekOverview({
             booking: b,
             ...bookingRowFromHours({
               ...b,
-              unpaidBreakMinutes: payroll.unpaidBreakMinutes,
-              breakWindowStart: payroll.breakWindowStart,
-              breakWindowEnd: payroll.breakWindowEnd,
-              standardPaidHours: payroll.standardPaidHours,
-              standardDayStart: payroll.standardDayStart,
-              standardDayEnd: payroll.standardDayEnd,
-              overtimeMultiplier: payroll.weekdayOutsideStandardMultiplier,
+              policy: payroll,
+              date: day,
             }),
           }]
         })
@@ -342,13 +326,8 @@ export function ProjectScheduleWeekOverview({
             managerBooking: b,
             ...bookingRowFromHours({
               ...b,
-              unpaidBreakMinutes: payroll.unpaidBreakMinutes,
-              breakWindowStart: payroll.breakWindowStart,
-              breakWindowEnd: payroll.breakWindowEnd,
-              standardPaidHours: payroll.standardPaidHours,
-              standardDayStart: payroll.standardDayStart,
-              standardDayEnd: payroll.standardDayEnd,
-              overtimeMultiplier: payroll.weekdayOutsideStandardMultiplier,
+              policy: payroll,
+              date: day,
             }),
           }]
         })
@@ -373,13 +352,8 @@ export function ProjectScheduleWeekOverview({
             subBooking: b,
             ...bookingRowFromHours({
               ...b,
-              unpaidBreakMinutes: payroll.unpaidBreakMinutes,
-              breakWindowStart: payroll.breakWindowStart,
-              breakWindowEnd: payroll.breakWindowEnd,
-              standardPaidHours: payroll.standardPaidHours,
-              standardDayStart: payroll.standardDayStart,
-              standardDayEnd: payroll.standardDayEnd,
-              overtimeMultiplier: payroll.weekdayOutsideStandardMultiplier,
+              policy: payroll,
+              date: day,
             }),
           }
         })

@@ -327,6 +327,7 @@ export {
   bookingsToRemoveOnProjectDelete,
   isBookingUuid,
   normalizeBookingStatus,
+  isOpenBookingStatus,
   normalizeBookingTimeSlot,
   parseBookingDocument,
   MANAGER_LOCATION_TYPES,

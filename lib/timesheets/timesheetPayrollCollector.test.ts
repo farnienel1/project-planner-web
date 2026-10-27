@@ -163,7 +163,7 @@ test('payroll uses prior working-hours policy for days before effectiveFrom', ()
   const prior = { ...DEFAULT_PAYROLL_POLICY, unpaidBreakMinutes: 30, standardPaidHours: 8 }
   const summary = collectTimesheetPayroll({
     user: user({ id: 'u1' }),
-    bookings: [withTimes('old', new Date('2026-09-20T08:00:00Z')), withTimes('now', new Date('2026-09-21T08:00:00Z'))],
+    bookings: [withTimes('old', new Date('2026-09-18T08:00:00Z')), withTimes('now', new Date('2026-09-21T08:00:00Z'))],
     managerSiteBookings: [],
     operatives: [operative],
     projects: [project],

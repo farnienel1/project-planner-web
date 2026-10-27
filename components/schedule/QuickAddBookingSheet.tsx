@@ -71,13 +71,8 @@ export function QuickAddBookingSheet({
       workStartTime: slot === 'CUSTOM' ? firestoreSlot.workStartTime || workStartTime : undefined,
       workEndTime: slot === 'CUSTOM' ? firestoreSlot.workEndTime || workEndTime : undefined,
       isBreakRemoved: slot === 'CUSTOM' ? breakRemoved : undefined,
-      unpaidBreakMinutes: payroll.unpaidBreakMinutes,
-      breakWindowStart: payroll.breakWindowStart,
-      breakWindowEnd: payroll.breakWindowEnd,
-      standardPaidHours: payroll.standardPaidHours,
-      standardDayStart: payroll.standardDayStart,
-      standardDayEnd: payroll.standardDayEnd,
-      overtimeMultiplier: payroll.weekdayOutsideStandardMultiplier,
+      policy: payroll,
+      date,
     })
   }, [date, slot, workStartTime, workEndTime, breakRemoved, payroll])
 
@@ -152,6 +147,7 @@ export function QuickAddBookingSheet({
               end={workEndTime}
               breakRemoved={breakRemoved}
               policy={payroll}
+              date={date}
               showBreak
               onStart={setWorkStartTime}
               onEnd={setWorkEndTime}
