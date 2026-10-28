@@ -4308,6 +4308,8 @@ const SCHEDULE_SOURCE_FUNCTIONS = [
   'isClashAccepted',
   'acceptedClashWriteFields',
   'warningResolutionWriteFields',
+  'resolvedWarningKeys',
+  'isWarningActive',
 ]
 
 function parityCases(): ParityCase[] {
@@ -4385,4 +4387,24 @@ test('acceptedClashWriteFields keeps the pair key the web already saved', () => 
   assert.equal(write?.documentId, ['B', 'A'].sort().join('|'))
   assert.equal(scheduleSources.isClashAccepted('a', 'b', [write!.documentId]), true)
   assert.equal(scheduleSources.warningResolutionWriteFields({ resolutionKey: 'k', status: 'dismissed', resolvedByUserId: '' }), null)
+})
+
+test('isWarningActive: the warning total counts only rows no device approved, removed or accepted', () => {
+  const resolvedKeys = scheduleSources.resolvedWarningKeys([
+    { id: 'unbooked-2026-10-22-u1', status: 'dismissed' },
+    { id: 'ignored', status: 'pending' },
+  ])
+  const decisions = { resolvedKeys, acceptedClashes: [{ id: 'x', bookingAId: 'b2', bookingBId: 'b1' }] }
+  const rows = [
+    { resolutionKey: 'unbooked-2026-10-22-u1' },
+    { resolutionKey: 'unbooked-2026-10-22-u2' },
+    { resolutionKey: 'mgr-clash-m-2026-10-22-0', bookingAId: 'b1', bookingBId: 'b2' },
+    { resolutionKey: 'mgr-clash-m-2026-10-23-0', bookingAId: 'b3', bookingBId: 'b4' },
+  ]
+  assert.deepEqual(
+    rows.filter((row) => scheduleSources.isWarningActive(row, decisions)).map((row) => row.resolutionKey),
+    ['unbooked-2026-10-22-u2', 'mgr-clash-m-2026-10-23-0']
+  )
+  assert.equal(scheduleSources.isWarningActive(null, decisions), false)
+  assert.equal(scheduleSources.isWarningActive({ resolutionKey: 'k' }, null), true)
 })

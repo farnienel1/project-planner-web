@@ -173,6 +173,7 @@ var ProjectPlannerCanonical = (() => {
     isTimesheetFullySigned: () => isTimesheetFullySigned,
     isTimesheetManagerSigned: () => isTimesheetManagerSigned,
     isTimesheetOperativeSigned: () => isTimesheetOperativeSigned,
+    isWarningActive: () => isWarningActive,
     isWorkLiveOn: () => isWorkLiveOn,
     labourBookingKind: () => labourBookingKind,
     labourPersonIds: () => labourPersonIds,
@@ -276,6 +277,7 @@ var ProjectPlannerCanonical = (() => {
     resolveSensitiveProfile: () => resolveSensitiveProfile,
     resolveTimesheetExportedAtMs: () => resolveTimesheetExportedAtMs,
     resolveTimesheetPeriod: () => resolveTimesheetPeriod,
+    resolvedWarningKeys: () => resolvedWarningKeys,
     rosterAliasIdsFor: () => rosterAliasIdsFor,
     rosterDocumentRank: () => rosterDocumentRank,
     rosterPeople: () => rosterPeople,
@@ -5403,6 +5405,26 @@ var ProjectPlannerCanonical = (() => {
       documentId: resolutionKey,
       fields: { resolutionKey, status, resolvedByUserId: by }
     };
+  }
+  function resolvedWarningKeys(records) {
+    const keys = /* @__PURE__ */ new Set();
+    for (const record of records || []) {
+      if (!record) continue;
+      const status = typeof record.status === "string" ? record.status.trim().toLowerCase() : "";
+      if (!WARNING_RESOLUTION_STATUSES.includes(status)) continue;
+      const key2 = idText(record.resolutionKey) || idText(record.id);
+      if (key2) keys.add(key2);
+    }
+    return [...keys].sort(compareText);
+  }
+  function isWarningActive(row, decisions) {
+    if (!row) return false;
+    const key2 = idText(row.resolutionKey);
+    if (key2 && (decisions?.resolvedKeys || []).includes(key2)) return false;
+    if (idText(row.bookingAId) && idText(row.bookingBId)) {
+      return !isClashAccepted(row.bookingAId, row.bookingBId, decisions?.acceptedClashes);
+    }
+    return true;
   }
   return __toCommonJS(bundleEntry_exports);
 })();

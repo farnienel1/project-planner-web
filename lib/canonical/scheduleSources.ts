@@ -481,3 +481,46 @@ export function warningResolutionWriteFields(input: {
     fields: { resolutionKey, status: status as WarningResolutionStatus, resolvedByUserId: by },
   }
 }
+
+export type WarningResolutionRecord = { id?: unknown; resolutionKey?: unknown; status?: unknown } | null | undefined
+
+/**
+ * Keys of `warningResolutions` documents that hide a warning: status `approved` or `dismissed` (any case).
+ * The key is the document's `resolutionKey`, else its document id. Unknown statuses are ignored.
+ */
+export function resolvedWarningKeys(records: readonly WarningResolutionRecord[] | null | undefined): string[] {
+  const keys = new Set<string>()
+  for (const record of records || []) {
+    if (!record) continue
+    const status = typeof record.status === 'string' ? record.status.trim().toLowerCase() : ''
+    if (!(WARNING_RESOLUTION_STATUSES as readonly string[]).includes(status)) continue
+    const key = idText(record.resolutionKey) || idText(record.id)
+    if (key) keys.add(key)
+  }
+  return [...keys].sort(compareText)
+}
+
+export type WarningDecisions = {
+  /** From `resolvedWarningKeys`. */
+  resolvedKeys?: readonly string[] | null
+  /** `acceptedBookingClashes` rows. */
+  acceptedClashes?: readonly AcceptedClashRecord[] | null
+}
+
+/**
+ * Whether a computed warning row still counts and is listed. A row is hidden when its resolution key was
+ * approved or dismissed in `warningResolutions`, or, for a clash row (both booking ids), when that pair is in
+ * `acceptedBookingClashes`. The warning total on both apps is the number of rows this keeps.
+ */
+export function isWarningActive(
+  row: { resolutionKey?: unknown; bookingAId?: unknown; bookingBId?: unknown } | null | undefined,
+  decisions: WarningDecisions | null | undefined
+): boolean {
+  if (!row) return false
+  const key = idText(row.resolutionKey)
+  if (key && (decisions?.resolvedKeys || []).includes(key)) return false
+  if (idText(row.bookingAId) && idText(row.bookingBId)) {
+    return !isClashAccepted(row.bookingAId, row.bookingBId, decisions?.acceptedClashes)
+  }
+  return true
+}

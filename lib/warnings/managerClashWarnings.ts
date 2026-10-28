@@ -19,6 +19,8 @@ import { ORPHAN_BOOKING_LABEL, managerClashGroups, rosterAliasIdsFor, type Booki
 
 export interface ManagerBookingClashWarning {
   id: string
+  /** The rulebook's `managerClashGroups` key, shared with iOS for `warningResolutions`. */
+  resolutionKey: string
   userId: string
   personName: string
   date: Date
@@ -170,6 +172,7 @@ export function computeManagerBookingClashWarnings(
       const day = londonMidnight(rows[0].date)
       return {
         id: group.pairKey,
+        resolutionKey: group.resolutionKey,
         userId: group.userId,
         personName: name,
         date: day,

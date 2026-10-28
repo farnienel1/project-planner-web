@@ -63,7 +63,10 @@ import { type ChipTint } from '@/components/ios/IconChip'
 import { Hero, StatCard } from '@/components/ui'
 import { IosModal } from '@/components/ios/primitives'
 import type { SectionHue } from '@/lib/ui/sectionHue'
-import { generateOrgWarnings } from '@/lib/warnings/generateOrgWarnings'
+import { activeOrgWarnings, generateOrgWarnings, type WarningDecisionInputs } from '@/lib/warnings/generateOrgWarnings'
+import { loadAcceptedBookingClashes } from '@/lib/warnings/acceptedClashStorage'
+import { loadDismissedWarnings } from '@/lib/warnings/dismissedWarningStorage'
+import { loadResolvedWarningKeys } from '@/lib/warnings/warningResolutionStorage'
 import { ORG_DATA_REFRESHED_EVENT } from '@/lib/stores/refreshOrgData'
 import { warningScanLanes } from '@/lib/warnings/warningsScan'
 import { loadOrganizationDetails, type OrganizationDetails } from '@/lib/settings/organizationSettings'
@@ -101,7 +104,7 @@ export function HomeScreen() {
   const { projects, smallWorks, loadProjects, loadSmallWorks, projectsLoadedOrgId, smallWorksLoadedOrgId } =
     useProjectStore()
   const { operatives, managers, loadOperatives, loadManagers, operativesLoadedOrgId } = useOperativeStore()
-  const { users, loadUsers, rosterLoadedOrgId } = useOrgUserStore()
+  const { users, userIdAliases, loadUsers, rosterLoadedOrgId } = useOrgUserStore()
   const { bookings, loadBookings, loading: bookingsLoading, ready: bookingsReady } = useBookingStore()
   const { managerSiteBookings, loadManagerSiteBookings, loading: managerBookingsLoading } = useManagerScheduleStore()
   const { tasks, loadTasks, tasksLoadedOrgId } = useTaskStore()
@@ -118,6 +121,8 @@ export function HomeScreen() {
   const [managerBookingsSettled, setManagerBookingsSettled] = useState(false)
   const [materialsSettled, setMaterialsSettled] = useState(false)
   const [sendRecordsSettled, setSendRecordsSettled] = useState(false)
+  // Approvals and removals from any device, so the tile counts what the Warnings page lists.
+  const [warningDecisions, setWarningDecisions] = useState<(WarningDecisionInputs & { orgId: string }) | null>(null)
   const managerSawLoad = useRef(false)
 
   const displayUser = user
@@ -154,7 +159,23 @@ export function HomeScreen() {
     })
     loadOrganizationDetails(orgId).then(setOrgDetails).catch(() => setOrgDetails(null))
     const t = window.setTimeout(() => loadHolidays(orgId), 400)
+    const loadDecisions = () =>
+      void Promise.all([
+        loadResolvedWarningKeys(orgId).catch(() => []),
+        loadAcceptedBookingClashes(orgId).catch(() => []),
+        loadDismissedWarnings(orgId).catch(() => []),
+      ]).then(([resolvedKeys, acceptedClashes, dismissed]) => {
+        if (cancelled) return
+        setWarningDecisions({
+          orgId,
+          resolvedKeys,
+          acceptedClashes,
+          dismissedQualificationKeys: new Set(dismissed.map((warning) => warning.dismissKey)),
+        })
+      })
+    loadDecisions()
     const onRefreshed = () => {
+      loadDecisions()
       loadOrganizationDetails(orgId, { fromServer: true, allowCacheFallback: true })
         .then((details) => {
           if (!cancelled && details) setOrgDetails(details)
@@ -239,27 +260,32 @@ export function HomeScreen() {
   const countStorage = typeof sessionStorage === 'undefined' ? null : sessionStorage
   const remembered = (kind: HomeCountKind) => readRememberedHomeCount(countStorage, kind, orgId)
 
+  const decisions = warningDecisions?.orgId === orgId ? warningDecisions : null
   const liveWarningCount = useMemo(() => {
-    if (!seeWarnings || !warningInputsReady) return null
+    if (!seeWarnings || !warningInputsReady || !decisions) return null
     try {
-      return generateOrgWarnings({
+      const generated = generateOrgWarnings({
         bookings,
         managerSiteBookings,
         operatives,
         users,
+        userIdAliases,
         projects: merged,
         holidays,
         materials: materialWarningsReady ? materials : [],
         sendRecords: materialWarningsReady ? sendRecords : [],
         orgDetails,
         referenceDate: now,
-      }).coreCount
+      })
+      return activeOrgWarnings(generated, decisions).coreCount
     } catch {
       return null
     }
   }, [
     seeWarnings,
     warningInputsReady,
+    decisions,
+    userIdAliases,
     materialWarningsReady,
     bookings,
     managerSiteBookings,

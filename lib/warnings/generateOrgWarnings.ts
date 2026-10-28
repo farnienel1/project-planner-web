@@ -17,7 +17,15 @@ import {
   DEFAULT_WARNING_DETECTION,
   parseInvoicing,
 } from '@/lib/settings/organizationSettings'
-import { isAnonymisedDeletedProfile, qualificationExpiryRows, resolveMaterialCutOffClock, unverifiedOperativeRows } from '@/lib/canonical'
+import {
+  isAnonymisedDeletedProfile,
+  isWarningActive,
+  qualificationExpiryRows,
+  resolveMaterialCutOffClock,
+  unverifiedOperativeRows,
+  withoutDismissedQualificationRows,
+  type AcceptedClashRecord,
+} from '@/lib/canonical'
 import { ianaTimeZoneForCountry } from '@/lib/orgTime/orgTimeZone'
 import type { NotificationPreferences } from '@/lib/settings/notificationPreferences'
 import { computeOperativeBookingClashWarnings, type OperativeBookingClashWarning } from '@/lib/scheduling/bookingClashUtils'
@@ -248,14 +256,7 @@ export function generateOrgWarnings(input: {
   const qualificationWarnings = computeQualificationExpiryWarnings(input.operatives, now)
   const unverifiedWarnings = computeUnverifiedOperativeWarnings(input.operatives, input.users, now)
 
-  const leaveClashCount = leaveWarnings.filter((warning) => warning.kind === 'leave_clash').length
-  const leaveCoverCount = leaveWarnings.length - leaveClashCount
-  const highCount = clashWarnings.length + unbookedWarnings.length + leaveClashCount
-  const mediumCount = managerClashWarnings.length + leaveCoverCount
-  const lowCount = materialWarnings.length + qualificationWarnings.length + unverifiedWarnings.length
-  const coreCount = highCount + mediumCount + lowCount
-
-  return {
+  return withWarningCounts({
     clashWarnings,
     managerClashWarnings,
     unbookedWarnings,
@@ -263,9 +264,49 @@ export function generateOrgWarnings(input: {
     materialWarnings,
     qualificationWarnings,
     unverifiedWarnings,
-    coreCount,
-    highCount,
-    mediumCount,
-    lowCount,
-  }
+  })
+}
+
+type WarningRows = Omit<OrgWarningsResult, 'coreCount' | 'highCount' | 'mediumCount' | 'lowCount'>
+
+function withWarningCounts(rows: WarningRows): OrgWarningsResult {
+  const leaveClashCount = rows.leaveWarnings.filter((warning) => warning.kind === 'leave_clash').length
+  const leaveCoverCount = rows.leaveWarnings.length - leaveClashCount
+  const highCount = rows.clashWarnings.length + rows.unbookedWarnings.length + leaveClashCount
+  const mediumCount = rows.managerClashWarnings.length + leaveCoverCount
+  const lowCount = rows.materialWarnings.length + rows.qualificationWarnings.length + rows.unverifiedWarnings.length
+  return { ...rows, coreCount: highCount + mediumCount + lowCount, highCount, mediumCount, lowCount }
+}
+
+export type WarningDecisionInputs = {
+  /** `organizations/{orgId}/warningResolutions`, through `resolvedWarningKeys`. */
+  resolvedKeys: readonly string[]
+  /** `organizations/{orgId}/acceptedBookingClashes`. */
+  acceptedClashes: readonly AcceptedClashRecord[]
+  /** `organizations/{orgId}/dismissedWarnings` keys (expired qualifications). */
+  dismissedQualificationKeys: ReadonlySet<string>
+}
+
+/**
+ * The rows that still count, and their totals: the rulebook's `isWarningActive` (approved, removed or
+ * accepted on any device) and `withoutDismissedQualificationRows`. The Warnings page and the Home tile
+ * both show this, so they give the same number as each other and as iOS.
+ */
+export function activeOrgWarnings(result: OrgWarningsResult, decisions: WarningDecisionInputs): OrgWarningsResult {
+  const active = (row: { resolutionKey?: string; bookingAId?: string; bookingBId?: string }) =>
+    isWarningActive(row, decisions)
+  return withWarningCounts({
+    clashWarnings: result.clashWarnings.filter((w) => active({ bookingAId: w.bookingAId, bookingBId: w.bookingBId })),
+    managerClashWarnings: result.managerClashWarnings.filter((w) =>
+      active({ resolutionKey: w.resolutionKey, bookingAId: w.bookingAId, bookingBId: w.bookingBId })
+    ),
+    unbookedWarnings: result.unbookedWarnings.filter((w) => active({ resolutionKey: w.id })),
+    leaveWarnings: result.leaveWarnings.filter((w) => active({ resolutionKey: w.id })),
+    materialWarnings: result.materialWarnings.filter((w) => active({ resolutionKey: w.id })),
+    qualificationWarnings: withoutDismissedQualificationRows(
+      result.qualificationWarnings,
+      decisions.dismissedQualificationKeys
+    ).filter((w) => active({ resolutionKey: w.id })),
+    unverifiedWarnings: result.unverifiedWarnings.filter((w) => active({ resolutionKey: w.id })),
+  })
 }

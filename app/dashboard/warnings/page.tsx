@@ -15,7 +15,6 @@ import { mergeProjectsAndSmallWorks } from '@/lib/projects/workStatus'
 import { getActiveOperativesForScheduling } from '@/lib/operatives/operativeRosterUtils'
 import {
   acceptBookingClash,
-  isClashAccepted,
   loadAcceptedBookingClashes,
   type AcceptedBookingClash,
 } from '@/lib/warnings/acceptedClashStorage'
@@ -24,7 +23,6 @@ import {
   loadDismissedWarnings,
   type DismissedWarning,
 } from '@/lib/warnings/dismissedWarningStorage'
-import { withoutDismissedQualificationRows } from '@/lib/canonical'
 import {
   DEFAULT_WARNING_DETECTION,
   loadOrganizationDetails,
@@ -37,9 +35,9 @@ import {
   readCachedWarningDetection,
   writeCachedWarningDetection,
 } from '@/lib/settings/warningDetectionCache'
-import { generateOrgWarnings } from '@/lib/warnings/generateOrgWarnings'
+import { activeOrgWarnings, generateOrgWarnings } from '@/lib/warnings/generateOrgWarnings'
+import { loadResolvedWarningKeys } from '@/lib/warnings/warningResolutionStorage'
 import {
-  countGeneratedWarnings,
   organizationDetailsForWarningScan,
   partitionRowsByOrganization,
   publishReadyWarningLanes,
@@ -72,6 +70,9 @@ export default function WarningsPage() {
   const { bookings: holidayBookings, loadBookings: loadHolidayBookings } = useHolidayStore()
   const [acceptedClashes, setAcceptedClashes] = useState<AcceptedBookingClash[]>([])
   const [dismissedWarnings, setDismissedWarnings] = useState<DismissedWarning[]>([])
+  const [resolvedKeys, setResolvedKeys] = useState<string[]>([])
+  // Approvals and removals from any device: the list waits for them so the total never shows rows they hide.
+  const [decisionsOrgId, setDecisionsOrgId] = useState<string | null>(null)
   const [orgDetails, setOrgDetails] = useState<OrganizationDetails | null>(null)
   const [detectionSettled, setDetectionSettled] = useState(false)
   const [liveOrgReadSettled, setLiveOrgReadSettled] = useState(false)
@@ -137,8 +138,14 @@ export default function WarningsPage() {
       void loadHolidayBookings(orgId).finally(() => {
         if (!cancelled) setHolidaysReady(true)
       })
-      loadAcceptedBookingClashes(orgId).then(setAcceptedClashes).catch(() => setAcceptedClashes([]))
-      loadDismissedWarnings(orgId).then(setDismissedWarnings).catch(() => setDismissedWarnings([]))
+      setDecisionsOrgId(null)
+      void Promise.all([
+        loadAcceptedBookingClashes(orgId).then(setAcceptedClashes).catch(() => setAcceptedClashes([])),
+        loadDismissedWarnings(orgId).then(setDismissedWarnings).catch(() => setDismissedWarnings([])),
+        loadResolvedWarningKeys(orgId).then(setResolvedKeys).catch(() => setResolvedKeys([])),
+      ]).finally(() => {
+        if (!cancelled) setDecisionsOrgId(orgId)
+      })
       const cached = readCachedWarningDetection(orgId)
       setCachedDetection(cached)
       let settled = false
@@ -223,6 +230,7 @@ export default function WarningsPage() {
     const onRefreshed = () => {
       loadAcceptedBookingClashes(orgId).then(setAcceptedClashes).catch(() => {})
       loadDismissedWarnings(orgId).then(setDismissedWarnings).catch(() => {})
+      loadResolvedWarningKeys(orgId).then(setResolvedKeys).catch(() => {})
       void loadOrganizationDetails(orgId, { fromServer: true, allowCacheFallback: true })
         .then((details) => {
           if (!details || details.id !== orgId) return
@@ -369,7 +377,20 @@ export default function WarningsPage() {
     return kept
   }, [generated, lanes, orgId, scheduleReady])
 
-  const shown = visible ?? {
+  const decisionsReady = Boolean(orgId) && decisionsOrgId === orgId
+  const dismissedKeys = useMemo(
+    () => new Set(dismissedWarnings.map((warning) => warning.dismissKey)),
+    [dismissedWarnings]
+  )
+  const active = useMemo(
+    () =>
+      visible && decisionsReady
+        ? activeOrgWarnings(visible, { resolvedKeys, acceptedClashes, dismissedQualificationKeys: dismissedKeys })
+        : null,
+    [visible, decisionsReady, resolvedKeys, acceptedClashes, dismissedKeys]
+  )
+
+  const shown = active ?? {
     clashWarnings: [],
     managerClashWarnings: [],
     unbookedWarnings: [],
@@ -382,27 +403,7 @@ export default function WarningsPage() {
     mediumCount: 0,
     lowCount: 0,
   }
-  const listedCount = countGeneratedWarnings(shown)
-  const scanning = !scheduleReady && listedCount === 0
-
-  const clashWarnings = useMemo(
-    () => shown.clashWarnings.filter((w) => !isClashAccepted(w.bookingAId, w.bookingBId, acceptedClashes)),
-    [shown.clashWarnings, acceptedClashes]
-  )
-  const managerClashWarnings = useMemo(
-    () =>
-      shown.managerClashWarnings.filter((w) => !isClashAccepted(w.bookingAId, w.bookingBId, acceptedClashes)),
-    [shown.managerClashWarnings, acceptedClashes]
-  )
-
-  const dismissedKeys = useMemo(
-    () => new Set(dismissedWarnings.map((warning) => warning.dismissKey)),
-    [dismissedWarnings]
-  )
-  const qualificationWarnings = useMemo(
-    () => withoutDismissedQualificationRows(shown.qualificationWarnings, dismissedKeys),
-    [shown.qualificationWarnings, dismissedKeys]
-  )
+  const scanning = !active || (!scheduleReady && shown.coreCount === 0)
 
   const handleDismissQualification = useCallback(
     async (warning: { dismissKey: string; operativeId: string; qualificationId: string; dayKey: string }) => {
@@ -454,12 +455,12 @@ export default function WarningsPage() {
   return (
     <WarningsScreen
       organizationName={organization?.name || 'your organisation'}
-      clashWarnings={clashWarnings}
-      managerClashWarnings={managerClashWarnings}
+      clashWarnings={shown.clashWarnings}
+      managerClashWarnings={shown.managerClashWarnings}
       unbookedWarnings={shown.unbookedWarnings}
       leaveWarnings={shown.leaveWarnings}
       materialWarnings={shown.materialWarnings}
-      qualificationWarnings={qualificationWarnings}
+      qualificationWarnings={shown.qualificationWarnings}
       unverifiedWarnings={shown.unverifiedWarnings}
       loading={scanning}
       user={user}
