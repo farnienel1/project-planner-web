@@ -1,0 +1,802 @@
+{
+  "version": 1,
+  "note": "Shared by web (lib/canonical/canonical.test.ts) and iOS. Each case calls the named rulebook function with args and must return expected exactly.",
+  "cases": [
+    {
+      "name": "Same email, two users documents: the signed-in one is kept and the invite id is folded into it",
+      "function": "rosterPeople",
+      "args": [
+        [
+          {
+            "id": "463952DE-0375-435D-8AB3-67570C902C56",
+            "email": "Test-Manager@example.com",
+            "passwordSet": false,
+            "isActive": true,
+            "firstName": "TEST",
+            "surname": "Manager",
+            "listed": true,
+            "updatedAtMs": 1761000000000,
+            "formerUserIds": [],
+            "sameEmailUserIds": []
+          },
+          {
+            "id": "rWoccK8LDZVJjBj3UCbqay8bPyf2",
+            "email": "test-manager@example.com",
+            "passwordSet": true,
+            "isActive": true,
+            "firstName": "TEST",
+            "surname": "Manager",
+            "listed": true,
+            "updatedAtMs": 1760000000000,
+            "formerUserIds": [
+              "OLD-INVITE-1"
+            ],
+            "sameEmailUserIds": []
+          },
+          {
+            "id": "blank-1",
+            "email": "",
+            "passwordSet": false,
+            "isActive": true,
+            "firstName": "",
+            "surname": "",
+            "listed": false
+          },
+          {
+            "id": "blank-2",
+            "email": "  ",
+            "passwordSet": false,
+            "isActive": true,
+            "firstName": "",
+            "surname": "",
+            "listed": false
+          },
+          {
+            "id": "rWoccK8LDZVJjBj3UCbqay8bPyf2",
+            "email": "test-manager@example.com",
+            "passwordSet": false
+          }
+        ]
+      ],
+      "expected": {
+        "people": [
+          {
+            "id": "rWoccK8LDZVJjBj3UCbqay8bPyf2",
+            "email": "test-manager@example.com",
+            "passwordSet": true,
+            "isActive": true,
+            "firstName": "TEST",
+            "surname": "Manager",
+            "listed": true,
+            "updatedAtMs": 1760000000000,
+            "formerUserIds": [
+              "OLD-INVITE-1"
+            ],
+            "sameEmailUserIds": [
+              "463952DE-0375-435D-8AB3-67570C902C56"
+            ]
+          },
+          {
+            "id": "blank-1",
+            "email": "",
+            "passwordSet": false,
+            "isActive": true,
+            "firstName": "",
+            "surname": "",
+            "listed": false,
+            "sameEmailUserIds": [],
+            "formerUserIds": []
+          },
+          {
+            "id": "blank-2",
+            "email": "  ",
+            "passwordSet": false,
+            "isActive": true,
+            "firstName": "",
+            "surname": "",
+            "listed": false,
+            "sameEmailUserIds": [],
+            "formerUserIds": []
+          }
+        ],
+        "userIdAliases": {
+          "463952DE-0375-435D-8AB3-67570C902C56": "rWoccK8LDZVJjBj3UCbqay8bPyf2"
+        }
+      }
+    },
+    {
+      "name": "Same email, same rank: the newer document is kept",
+      "function": "rosterPeople",
+      "args": [
+        [
+          {
+            "id": "B-OLD",
+            "email": "op@example.com",
+            "passwordSet": true,
+            "isActive": true,
+            "firstName": "Op",
+            "surname": "One",
+            "listed": true,
+            "updatedAtMs": 100
+          },
+          {
+            "id": "A-NEW",
+            "email": "op@example.com",
+            "passwordSet": true,
+            "isActive": true,
+            "firstName": "Op",
+            "surname": "One",
+            "listed": true,
+            "updatedAtMs": 200
+          }
+        ]
+      ],
+      "expected": {
+        "people": [
+          {
+            "id": "A-NEW",
+            "email": "op@example.com",
+            "passwordSet": true,
+            "isActive": true,
+            "firstName": "Op",
+            "surname": "One",
+            "listed": true,
+            "updatedAtMs": 200,
+            "sameEmailUserIds": [
+              "B-OLD"
+            ],
+            "formerUserIds": []
+          }
+        ],
+        "userIdAliases": {
+          "B-OLD": "A-NEW"
+        }
+      }
+    },
+    {
+      "name": "Same email: the admin document is kept over a newer operative document",
+      "function": "rosterPeople",
+      "args": [
+        [
+          {
+            "id": "op-copy",
+            "email": "ada@site.com",
+            "passwordSet": true,
+            "isActive": true,
+            "firstName": "Ada",
+            "listed": true,
+            "admin": false,
+            "updatedAtMs": 2000
+          },
+          {
+            "id": "admin",
+            "email": "ada@site.com",
+            "passwordSet": true,
+            "isActive": true,
+            "firstName": "Ada",
+            "listed": true,
+            "admin": true,
+            "updatedAtMs": 1000
+          }
+        ]
+      ],
+      "expected": {
+        "people": [
+          {
+            "id": "admin",
+            "email": "ada@site.com",
+            "passwordSet": true,
+            "isActive": true,
+            "firstName": "Ada",
+            "listed": true,
+            "admin": true,
+            "updatedAtMs": 1000,
+            "sameEmailUserIds": [
+              "op-copy"
+            ],
+            "formerUserIds": []
+          }
+        ],
+        "userIdAliases": {
+          "op-copy": "admin"
+        }
+      }
+    },
+    {
+      "name": "Same email: a person deactivated a moment ago stays inactive",
+      "function": "rosterPeople",
+      "args": [
+        [
+          {
+            "id": "old",
+            "email": "sam@site.com",
+            "passwordSet": false,
+            "isActive": true,
+            "firstName": "Sam",
+            "listed": true,
+            "updatedAtMs": 1000
+          },
+          {
+            "id": "new",
+            "email": "sam@site.com",
+            "passwordSet": false,
+            "isActive": false,
+            "firstName": "Sam",
+            "listed": true,
+            "updatedAtMs": 2000
+          }
+        ]
+      ],
+      "expected": {
+        "people": [
+          {
+            "id": "new",
+            "email": "sam@site.com",
+            "passwordSet": false,
+            "isActive": false,
+            "firstName": "Sam",
+            "listed": true,
+            "updatedAtMs": 2000,
+            "sameEmailUserIds": [
+              "old"
+            ],
+            "formerUserIds": []
+          }
+        ],
+        "userIdAliases": {
+          "old": "new"
+        }
+      }
+    },
+    {
+      "name": "First download covers the earlier of the warning window and this week",
+      "function": "bookingLoadStart",
+      "args": [
+        {
+          "loadedFromDayKey": null,
+          "neededDayKeys": [
+            "2026-10-26",
+            "2026-10-16"
+          ]
+        }
+      ],
+      "expected": {
+        "startDayKey": "2026-10-16",
+        "reload": false
+      }
+    },
+    {
+      "name": "An invoicing-period window that starts before the download moves it back and reloads",
+      "function": "bookingLoadStart",
+      "args": [
+        {
+          "loadedFromDayKey": "2026-10-26",
+          "neededDayKeys": [
+            "2026-10-16"
+          ]
+        }
+      ],
+      "expected": {
+        "startDayKey": "2026-10-16",
+        "reload": true
+      }
+    },
+    {
+      "name": "A window inside the download needs no reload",
+      "function": "bookingLoadStart",
+      "args": [
+        {
+          "loadedFromDayKey": "2026-10-16",
+          "neededDayKeys": [
+            "2026-10-26",
+            "not-a-day"
+          ]
+        }
+      ],
+      "expected": {
+        "startDayKey": "2026-10-16",
+        "reload": false
+      }
+    },
+    {
+      "name": "The whole collection is already loaded",
+      "function": "bookingLoadStart",
+      "args": [
+        {
+          "loadedFromDayKey": "2026-10-26",
+          "fullHistory": true,
+          "neededDayKeys": [
+            "2020-01-01"
+          ]
+        }
+      ],
+      "expected": {
+        "startDayKey": null,
+        "reload": false
+      }
+    },
+    {
+      "name": "Two jobs numbered C646 are both kept; an exact duplicate id and the placeholder are not",
+      "function": "workDocuments",
+      "args": [
+        [
+          {
+            "id": "AAAA-1",
+            "jobNumber": "C646",
+            "siteName": "First"
+          },
+          {
+            "id": "INITIAL-PLACEHOLDER",
+            "jobNumber": "0"
+          },
+          {
+            "id": "aaaa-1",
+            "jobNumber": "C646",
+            "siteName": "First again"
+          }
+        ],
+        [
+          {
+            "id": "BBBB-2",
+            "jobNumber": "C646",
+            "siteName": "Second"
+          }
+        ]
+      ],
+      "expected": [
+        {
+          "id": "AAAA-1",
+          "jobNumber": "C646",
+          "siteName": "First"
+        },
+        {
+          "id": "BBBB-2",
+          "jobNumber": "C646",
+          "siteName": "Second"
+        }
+      ]
+    },
+    {
+      "name": "A job ending today still runs today",
+      "function": "isWorkLiveOn",
+      "args": [
+        {
+          "isLive": true,
+          "startDayKey": "2026-10-01",
+          "endDayKey": "2026-10-22"
+        },
+        "2026-10-22"
+      ],
+      "expected": true
+    },
+    {
+      "name": "A job is not live the day after it ends",
+      "function": "isWorkLiveOn",
+      "args": [
+        {
+          "isLive": true,
+          "startDayKey": "2026-10-01",
+          "endDayKey": "2026-10-22"
+        },
+        "2026-10-23"
+      ],
+      "expected": false
+    },
+    {
+      "name": "A job is not live before it starts",
+      "function": "isWorkLiveOn",
+      "args": [
+        {
+          "isLive": true,
+          "startDayKey": "2026-10-23",
+          "endDayKey": "2026-11-30"
+        },
+        "2026-10-22"
+      ],
+      "expected": false
+    },
+    {
+      "name": "A job switched off is not live",
+      "function": "isWorkLiveOn",
+      "args": [
+        {
+          "isLive": false,
+          "startDayKey": "2026-10-01",
+          "endDayKey": "2026-11-30"
+        },
+        "2026-10-22"
+      ],
+      "expected": false
+    },
+    {
+      "name": "Job status on a day",
+      "function": "workStatusOn",
+      "args": [
+        {
+          "isLive": true,
+          "startDayKey": "2026-10-23",
+          "endDayKey": "2026-11-30"
+        },
+        "2026-10-22"
+      ],
+      "expected": "upcoming"
+    },
+    {
+      "name": "22 Oct: a manager's bookings under their folded sign-in uid are theirs",
+      "function": "personDayItems",
+      "args": [
+        {
+          "managerIds": [
+            "463952DE-0375-435D-8AB3-67570C902C56"
+          ],
+          "people": {
+            "accounts": [
+              {
+                "id": "463952DE-0375-435D-8AB3-67570C902C56",
+                "email": "test-manager@example.com",
+                "formerIds": [],
+                "aliasIds": [
+                  "rWoccK8LDZVJjBj3UCbqay8bPyf2"
+                ]
+              },
+              {
+                "id": "u-op-1",
+                "email": "op@example.com",
+                "formerIds": [],
+                "aliasIds": []
+              }
+            ],
+            "operatives": [
+              {
+                "id": "OP-CAT-1",
+                "email": "op@example.com"
+              }
+            ]
+          },
+          "day": {
+            "standardDayStart": "08:00",
+            "standardDayEnd": "17:00"
+          },
+          "managerBookings": [
+            {
+              "id": "MB-1",
+              "userId": "rWoccK8LDZVJjBj3UCbqay8bPyf2",
+              "dayKey": "2026-10-22",
+              "timeSlot": "AM"
+            },
+            {
+              "id": "MB-2",
+              "userId": "463952DE-0375-435D-8AB3-67570C902C56",
+              "dayKey": "2026-10-24",
+              "timeSlot": "AM"
+            },
+            {
+              "id": "MB-3",
+              "userId": "463952de-0375-435d-8ab3-67570c902c56",
+              "dayKey": "2026-10-24",
+              "timeSlot": "PM"
+            },
+            {
+              "id": "MB-4",
+              "userId": "someone-else",
+              "dayKey": "2026-10-22",
+              "timeSlot": "FULL_DAY"
+            }
+          ],
+          "operativeBookings": [
+            {
+              "id": "OB-1",
+              "operativeId": "rWoccK8LDZVJjBj3UCbqay8bPyf2",
+              "dayKey": "2026-10-22",
+              "timeSlot": "CUSTOM_HOURS",
+              "workStartTime": "07:30",
+              "workEndTime": "19:15",
+              "status": "Confirmed"
+            },
+            {
+              "id": "OB-2",
+              "operativeId": "OP-CAT-1",
+              "dayKey": "2026-10-22",
+              "timeSlot": "FULL DAY",
+              "status": "Confirmed"
+            },
+            {
+              "id": "OB-3",
+              "operativeId": "463952DE-0375-435D-8AB3-67570C902C56",
+              "dayKey": "2026-10-23",
+              "timeSlot": "PM",
+              "status": "Cancelled"
+            }
+          ]
+        }
+      ],
+      "expected": [
+        {
+          "userId": "463952DE-0375-435D-8AB3-67570C902C56",
+          "dayKey": "2026-10-22",
+          "items": [
+            {
+              "kind": "manager",
+              "bookingId": "MB-1",
+              "pairId": "m-MB-1",
+              "index": 0
+            },
+            {
+              "kind": "operative",
+              "bookingId": "OB-1",
+              "pairId": "o-OB-1",
+              "index": 0
+            }
+          ]
+        },
+        {
+          "userId": "463952DE-0375-435D-8AB3-67570C902C56",
+          "dayKey": "2026-10-24",
+          "items": [
+            {
+              "kind": "manager",
+              "bookingId": "MB-2",
+              "pairId": "m-MB-2",
+              "index": 1
+            },
+            {
+              "kind": "manager",
+              "bookingId": "MB-3",
+              "pairId": "m-MB-3",
+              "index": 2
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "22 Oct: the manager double booking is a clash; AM then PM is not",
+      "function": "managerClashGroups",
+      "args": [
+        {
+          "managerIds": [
+            "463952DE-0375-435D-8AB3-67570C902C56"
+          ],
+          "people": {
+            "accounts": [
+              {
+                "id": "463952DE-0375-435D-8AB3-67570C902C56",
+                "email": "test-manager@example.com",
+                "formerIds": [],
+                "aliasIds": [
+                  "rWoccK8LDZVJjBj3UCbqay8bPyf2"
+                ]
+              },
+              {
+                "id": "u-op-1",
+                "email": "op@example.com",
+                "formerIds": [],
+                "aliasIds": []
+              }
+            ],
+            "operatives": [
+              {
+                "id": "OP-CAT-1",
+                "email": "op@example.com"
+              }
+            ]
+          },
+          "day": {
+            "standardDayStart": "08:00",
+            "standardDayEnd": "17:00"
+          },
+          "managerBookings": [
+            {
+              "id": "MB-1",
+              "userId": "rWoccK8LDZVJjBj3UCbqay8bPyf2",
+              "dayKey": "2026-10-22",
+              "timeSlot": "AM"
+            },
+            {
+              "id": "MB-2",
+              "userId": "463952DE-0375-435D-8AB3-67570C902C56",
+              "dayKey": "2026-10-24",
+              "timeSlot": "AM"
+            },
+            {
+              "id": "MB-3",
+              "userId": "463952de-0375-435d-8ab3-67570c902c56",
+              "dayKey": "2026-10-24",
+              "timeSlot": "PM"
+            },
+            {
+              "id": "MB-4",
+              "userId": "someone-else",
+              "dayKey": "2026-10-22",
+              "timeSlot": "FULL_DAY"
+            }
+          ],
+          "operativeBookings": [
+            {
+              "id": "OB-1",
+              "operativeId": "rWoccK8LDZVJjBj3UCbqay8bPyf2",
+              "dayKey": "2026-10-22",
+              "timeSlot": "CUSTOM_HOURS",
+              "workStartTime": "07:30",
+              "workEndTime": "19:15",
+              "status": "Confirmed"
+            },
+            {
+              "id": "OB-2",
+              "operativeId": "OP-CAT-1",
+              "dayKey": "2026-10-22",
+              "timeSlot": "FULL DAY",
+              "status": "Confirmed"
+            },
+            {
+              "id": "OB-3",
+              "operativeId": "463952DE-0375-435D-8AB3-67570C902C56",
+              "dayKey": "2026-10-23",
+              "timeSlot": "PM",
+              "status": "Cancelled"
+            }
+          ]
+        }
+      ],
+      "expected": [
+        {
+          "userId": "463952DE-0375-435D-8AB3-67570C902C56",
+          "dayKey": "2026-10-22",
+          "items": [
+            {
+              "kind": "manager",
+              "bookingId": "MB-1",
+              "pairId": "m-MB-1",
+              "index": 0,
+              "interval": {
+                "start": 480,
+                "end": 720
+              }
+            },
+            {
+              "kind": "operative",
+              "bookingId": "OB-1",
+              "pairId": "o-OB-1",
+              "index": 0,
+              "interval": {
+                "start": 450,
+                "end": 1155
+              }
+            }
+          ],
+          "pairKey": "m-MB-1|o-OB-1",
+          "bookingAId": "MB-1",
+          "bookingBId": "OB-1",
+          "resolutionKey": "mgr-clash-463952DE-0375-435D-8AB3-67570C902C56-2026-10-22-0"
+        }
+      ]
+    },
+    {
+      "name": "Pair key sorts the two ids",
+      "function": "clashPairKey",
+      "args": [
+        "o-ZZ",
+        "m-AA"
+      ],
+      "expected": "m-AA|o-ZZ"
+    },
+    {
+      "name": "A saved pair accepts the clash in either order and without case",
+      "function": "isClashAccepted",
+      "args": [
+        "mb-1",
+        "OB-1",
+        [
+          {
+            "id": "MB-1|OB-1",
+            "bookingAId": "MB-1",
+            "bookingBId": "OB-1"
+          }
+        ]
+      ],
+      "expected": true
+    },
+    {
+      "name": "A row naming the two bookings accepts the clash even with another id",
+      "function": "isClashAccepted",
+      "args": [
+        "OB-1",
+        "MB-1",
+        [
+          {
+            "id": "legacy",
+            "bookingAId": "OB-1",
+            "bookingBId": "MB-1"
+          }
+        ]
+      ],
+      "expected": true
+    },
+    {
+      "name": "Another pair does not accept this clash",
+      "function": "isClashAccepted",
+      "args": [
+        "MB-1",
+        "OB-1",
+        [
+          "MB-1|OB-2"
+        ]
+      ],
+      "expected": false
+    },
+    {
+      "name": "Accepting a clash writes the pair key document",
+      "function": "acceptedClashWriteFields",
+      "args": [
+        {
+          "bookingAId": "OB-1",
+          "bookingBId": "MB-1",
+          "acceptedByUserId": "admin-1"
+        }
+      ],
+      "expected": {
+        "documentId": "MB-1|OB-1",
+        "fields": {
+          "bookingAId": "OB-1",
+          "bookingBId": "MB-1",
+          "acceptedByUserId": "admin-1"
+        }
+      }
+    },
+    {
+      "name": "A clash needs two different bookings and a signed-in user",
+      "function": "acceptedClashWriteFields",
+      "args": [
+        {
+          "bookingAId": "MB-1",
+          "bookingBId": "mb-1",
+          "acceptedByUserId": "admin-1"
+        }
+      ],
+      "expected": null
+    },
+    {
+      "name": "Approving a warning writes its resolution key document",
+      "function": "warningResolutionWriteFields",
+      "args": [
+        {
+          "resolutionKey": "mgr-clash-463952DE-0375-435D-8AB3-67570C902C56-2026-10-22-0",
+          "status": "Approved",
+          "resolvedByUserId": "admin-1"
+        }
+      ],
+      "expected": {
+        "documentId": "mgr-clash-463952DE-0375-435D-8AB3-67570C902C56-2026-10-22-0",
+        "fields": {
+          "resolutionKey": "mgr-clash-463952DE-0375-435D-8AB3-67570C902C56-2026-10-22-0",
+          "status": "approved",
+          "resolvedByUserId": "admin-1"
+        }
+      }
+    },
+    {
+      "name": "A resolution key with a slash cannot be a document id",
+      "function": "warningResolutionWriteFields",
+      "args": [
+        {
+          "resolutionKey": "a/b",
+          "status": "dismissed",
+          "resolvedByUserId": "admin-1"
+        }
+      ],
+      "expected": null
+    },
+    {
+      "name": "An unknown resolution status is refused",
+      "function": "warningResolutionWriteFields",
+      "args": [
+        {
+          "resolutionKey": "unbooked-x",
+          "status": "snoozed",
+          "resolvedByUserId": "admin-1"
+        }
+      ],
+      "expected": null
+    }
+  ]
+}

@@ -23,7 +23,7 @@ import {
   paidHoursForOperativeBooking,
 } from '@/lib/warnings/clashIntervals'
 import type { ClashTimelineEntry } from '@/lib/warnings/clashTimeline'
-import { ORPHAN_BOOKING_LABEL, bookingPersonKey, resolveBookingPerson, type BookingPersonInput } from '@/lib/canonical'
+import { ORPHAN_BOOKING_LABEL, bookingPersonKey, resolveBookingPerson, rosterAliasIdsFor, type BookingPersonInput } from '@/lib/canonical'
 
 export interface OperativeBookingClash {
   operativeId: string
@@ -238,7 +238,12 @@ export function computeOperativeBookingClashWarnings(
   bookings: Booking[],
   operatives: Operative[],
   projects: Project[],
-  options?: { users?: User[]; payrollPolicy?: OrgPayrollTimePolicy }
+  options?: {
+    users?: User[]
+    payrollPolicy?: OrgPayrollTimePolicy
+    /** Folded same-email `users` id → the id the roster kept. */
+    userIdAliases?: Readonly<Record<string, string>> | null
+  }
 ): OperativeBookingClashWarning[] {
   const projectsById = new Map(projects.map((p) => [p.id, p]))
   const operativesById = new Map(operatives.map((o) => [o.id, o]))
@@ -256,7 +261,12 @@ export function computeOperativeBookingClashWarnings(
   // One person per key (`bookingPersonKey`): a re-added person's bookings under an old and a new id clash too.
   const users = options?.users || []
   const people: BookingPersonInput = {
-    accounts: users.map((user) => ({ id: user.id, email: user.email, formerIds: user.formerUserIds ?? [] })),
+    accounts: users.map((user) => ({
+      id: user.id,
+      email: user.email,
+      formerIds: user.formerUserIds ?? [],
+      aliasIds: rosterAliasIdsFor(user.id, options?.userIdAliases),
+    })),
     operatives: operatives.map((operative) => ({ id: operative.id, email: operative.email })),
   }
   const personKeys = new Map<string, string>()

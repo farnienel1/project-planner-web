@@ -1,22 +1,28 @@
 import type { Project } from '@/types'
-import { isSmallWorksJobType } from '@/lib/ios-parity/enums'
-import { LONDON_TIME_ZONE } from '@/lib/orgTime/zoneTime'
+import { workDocuments, workStatusOn } from '@/lib/canonical'
+import { dayKeyInZone, LONDON_TIME_ZONE } from '@/lib/orgTime/zoneTime'
 import { calendarDayOffset, programmeProgressPercent } from '@/lib/projects/programmeDates'
 
 export type WorkStatus = 'active' | 'upcoming' | 'completed' | 'inactive'
 
-/** Mirrors iOS `Project.status` — past end date is completed, not overdue. */
+function validDate(value: unknown): value is Date {
+  return value instanceof Date && !Number.isNaN(value.getTime())
+}
+
+/** The rulebook's `workStatusOn` for today in the organisation zone — past end date is completed, not overdue. */
 export function deriveWorkStatus(
   project: Pick<Project, 'isLive' | 'startDate' | 'endDate'>,
   now = new Date(),
   timeZone = LONDON_TIME_ZONE
 ): WorkStatus {
-  if (!project.isLive) return 'inactive'
-  const startOffset = calendarDayOffset(project.startDate, now, timeZone)
-  const endOffset = calendarDayOffset(project.endDate, now, timeZone)
-  if (startOffset > 0) return 'upcoming'
-  if (endOffset < 0) return 'completed'
-  return 'active'
+  return workStatusOn(
+    {
+      isLive: project.isLive,
+      startDayKey: validDate(project.startDate) ? dayKeyInZone(project.startDate, timeZone) : null,
+      endDayKey: validDate(project.endDate) ? dayKeyInZone(project.endDate, timeZone) : null,
+    },
+    dayKeyInZone(now, timeZone)
+  )
 }
 
 export function workStatusLabel(status: WorkStatus): string {
@@ -70,37 +76,12 @@ export function dedupeWorksById<T extends { id: string }>(items: T[]): T[] {
   return out
 }
 
-function isSmallWorksJob(project: Project): boolean {
-  return isSmallWorksJobType(project.jobType || '')
-}
-
 /**
- * Merge projects + small works for map/audit pickers without duplicate pins.
- * Dedupes by id, then by job number (keeps small-works row or newer updatedAt).
+ * Every project and small works document once: the rulebook's `workDocuments`. Two documents with the
+ * same job number (two "C646"s) both stay, because bookings point at either.
  */
 export function mergeProjectsAndSmallWorks(projects: Project[], smallWorks: Project[]): Project[] {
-  const byId = dedupeWorksById([...projects, ...smallWorks])
-  const byJob = new Map<string, Project>()
-
-  for (const project of byId) {
-    const key = project.jobNumber?.trim().toLowerCase() || project.id
-    const existing = byJob.get(key)
-    if (!existing) {
-      byJob.set(key, project)
-      continue
-    }
-    const projectIsSmall = isSmallWorksJob(project)
-    const existingIsSmall = isSmallWorksJob(existing)
-    if (projectIsSmall && !existingIsSmall) {
-      byJob.set(key, project)
-    } else if (!projectIsSmall && existingIsSmall) {
-      continue
-    } else if (new Date(project.updatedAt).getTime() >= new Date(existing.updatedAt).getTime()) {
-      byJob.set(key, project)
-    }
-  }
-
-  return Array.from(byJob.values())
+  return workDocuments(projects, smallWorks)
 }
 
 /** ProjectsView.swift ~L216 — job number, site name, address, client name. */

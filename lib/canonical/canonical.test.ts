@@ -4292,3 +4292,97 @@ test('worked hours split into inside and outside the standard window, adding up 
     { standardWorkedHours: 8, outsideWorkedHours: 3.25 }
   )
 })
+
+import * as scheduleSources from './scheduleSources.ts'
+
+type ParityCase = { name: string; function: string; args: unknown[]; expected: unknown }
+
+const SCHEDULE_SOURCE_FUNCTIONS = [
+  'rosterPeople',
+  'bookingLoadStart',
+  'workDocuments',
+  'isWorkLiveOn',
+  'personDayItems',
+  'managerClashGroups',
+  'clashPairKey',
+  'isClashAccepted',
+  'acceptedClashWriteFields',
+  'warningResolutionWriteFields',
+]
+
+function parityCases(): ParityCase[] {
+  const fixture = JSON.parse(readFileSync(new URL('./parity-fixture.json', import.meta.url), 'utf8'))
+  assert.equal(fixture.version, 1)
+  return fixture.cases as ParityCase[]
+}
+
+function plain(value: unknown): unknown {
+  return value === undefined ? undefined : JSON.parse(JSON.stringify(value))
+}
+
+test('the shared parity fixture passes on this module and covers every schedule-source function', () => {
+  const cases = parityCases()
+  for (const name of SCHEDULE_SOURCE_FUNCTIONS) {
+    assert.ok(cases.some((entry) => entry.function === name), `${name} has a parity case`)
+  }
+  const functions = scheduleSources as unknown as Record<string, (...args: unknown[]) => unknown>
+  for (const entry of cases) {
+    assert.equal(typeof functions[entry.function], 'function', `${entry.function} exists`)
+    assert.deepEqual(plain(functions[entry.function](...(plain(entry.args) as unknown[]))), entry.expected, entry.name)
+  }
+})
+
+test('the shared parity fixture passes through the packed iOS script', () => {
+  const source = readFileSync(new URL('./dist/canonical-business.js', import.meta.url), 'utf8')
+  const sandbox: { ProjectPlannerCanonical?: Record<string, (...args: unknown[]) => unknown> } = {}
+  runInContext(source, createContext(sandbox))
+  const bundle = sandbox.ProjectPlannerCanonical
+  assert.ok(bundle)
+  for (const entry of parityCases()) {
+    assert.equal(typeof bundle[entry.function], 'function', `${entry.function} is exported from the packed script`)
+    assert.deepEqual(plain(bundle[entry.function](...(plain(entry.args) as unknown[]))), entry.expected, entry.name)
+  }
+})
+
+test('22 Oct: a manager booked twice under their folded sign-in uid is one clash (web missed it)', () => {
+  const kept = 'INVITED-ID'
+  const signIn = 'signInUid'
+  const groups = scheduleSources.managerClashGroups({
+    managerIds: [kept],
+    people: {
+      accounts: [{ id: kept, email: 'm@example.com', aliasIds: [signIn] }],
+      operatives: [],
+    },
+    managerBookings: [{ id: 'MB', userId: signIn, dayKey: '2026-10-22', timeSlot: 'AM' }],
+    operativeBookings: [
+      { id: 'OB', operativeId: signIn, dayKey: '2026-10-22', timeSlot: 'CUSTOM_HOURS', workStartTime: '07:30', workEndTime: '19:15', status: 'Confirmed' },
+    ],
+  })
+  assert.equal(groups.length, 1)
+  assert.equal(groups[0].userId, kept)
+  assert.deepEqual([groups[0].bookingAId, groups[0].bookingBId], ['MB', 'OB'])
+  // Without the folded id on the account, neither booking is theirs: the old web result.
+  const before = scheduleSources.managerClashGroups({
+    managerIds: [kept],
+    people: { accounts: [{ id: kept, email: 'm@example.com' }], operatives: [] },
+    managerBookings: [{ id: 'MB', userId: signIn, dayKey: '2026-10-22', timeSlot: 'AM' }],
+    operativeBookings: [{ id: 'OB', operativeId: signIn, dayKey: '2026-10-22', timeSlot: 'FULL DAY' }],
+  })
+  assert.equal(before.length, 0)
+})
+
+test('rosterPeople keeps a former invite id on the person and two same-email documents on one row', () => {
+  const { people, userIdAliases } = scheduleSources.rosterPeople([
+    { id: 'stub', email: 'a@example.com', passwordSet: false },
+    { id: 'real', email: 'A@example.com', passwordSet: true, formerUserIds: ['old'] },
+  ])
+  assert.deepEqual(people.map((row) => [row.id, row.sameEmailUserIds, row.formerUserIds]), [['real', ['stub'], ['old']]])
+  assert.deepEqual(userIdAliases, { stub: 'real' })
+})
+
+test('acceptedClashWriteFields keeps the pair key the web already saved', () => {
+  const write = scheduleSources.acceptedClashWriteFields({ bookingAId: 'B', bookingBId: 'A', acceptedByUserId: 'u' })
+  assert.equal(write?.documentId, ['B', 'A'].sort().join('|'))
+  assert.equal(scheduleSources.isClashAccepted('a', 'b', [write!.documentId]), true)
+  assert.equal(scheduleSources.warningResolutionWriteFields({ resolutionKey: 'k', status: 'dismissed', resolvedByUserId: '' }), null)
+})

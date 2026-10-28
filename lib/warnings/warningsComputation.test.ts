@@ -1180,3 +1180,64 @@ test('a re-added person booked twice on one day under an old and a new id is a c
   assert.deepEqual(clashes.map((clash) => clash.id).sort(), ['A|B', 'C|D'])
   assert.equal(clashes.find((clash) => clash.id === 'C|D')?.operativeName, 'Solo Person', 'no catalogue row: named from the account')
 })
+
+test('22 Oct: a manager booked on a site and in labour under their folded sign-in uid shows one warning', () => {
+  // The roster keeps one row per email. Both bookings were saved under the other users document id
+  // (the sign-in uid), which has no operatives catalogue row. Web dropped both before this change.
+  const kept = user({
+    id: 'INVITED-ID',
+    email: 'test-manager@example.com',
+    firstName: 'TEST',
+    surname: 'Manager',
+    role: UserRole.MANAGER,
+    permissions: perms({ manager: true }),
+  })
+  const day = new Date('2026-10-22T09:00:00+01:00')
+  const detection = {
+    ...DEFAULT_WARNING_DETECTION,
+    clashLookaheadMode: 'numberOfDays' as const,
+    clashLookaheadDays: 7,
+    excludedUserIdsFromUnbookedWarnings: [] as string[],
+  }
+  const c646a = { ...project('C646-A'), jobNumber: 'C646', siteName: 'First' }
+  const c646b = { ...project('C646-B'), jobNumber: 'C646', siteName: 'Second' }
+  const input = {
+    bookings: [
+      booking({
+        id: 'OB-1',
+        operativeId: 'signInUid',
+        projectId: 'C646-B',
+        date: day,
+        timeSlot: 'CUSTOM_HOURS',
+        workStartTime: '07:30',
+        workEndTime: '19:15',
+      }),
+    ],
+    managerSiteBookings: [
+      {
+        id: 'MB-1',
+        userId: 'signInUid',
+        date: day,
+        timeSlot: 'AM',
+        locationType: 'project' as const,
+        locationId: 'C646-A',
+        createdAt: day,
+        updatedAt: day,
+      },
+    ],
+    operatives: [],
+    users: [kept],
+    projects: [c646a, c646b],
+    holidays: [],
+    warningDetection: detection,
+    payrollPolicy: DEFAULT_PAYROLL_POLICY,
+    referenceDate: new Date('2026-10-21T12:00:00+01:00'),
+  }
+  assert.equal(generateOrgWarnings(input).managerClashWarnings.length, 0, 'without the roster alias map nobody is named')
+  const result = generateOrgWarnings({ ...input, userIdAliases: { signInUid: 'INVITED-ID' } })
+  assert.equal(result.managerClashWarnings.length, 1)
+  const [warning] = result.managerClashWarnings
+  assert.equal(warning.personName, 'TEST Manager')
+  assert.equal(dayKey(warning.date), '2026-10-22')
+  assert.deepEqual([warning.locationALabel, warning.locationBLabel], ['C646 First', 'C646 Second'])
+})

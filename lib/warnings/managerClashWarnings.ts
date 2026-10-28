@@ -2,21 +2,20 @@ import { format } from 'date-fns'
 import type { Booking, Operative, Project, User } from '@/types'
 import { UserRole } from '@/types'
 import { dayKey, londonMidnight } from '@/lib/ios-parity/londonTime'
-import { isActiveBookingStatus, isSmallWorksJobType } from '@/lib/ios-parity/enums'
+import { isSmallWorksJobType } from '@/lib/ios-parity/enums'
 import type { OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 import { DEFAULT_PAYROLL_POLICY } from '@/lib/settings/organizationSettings'
 import {
+  clockText,
   formatWarningHours,
   managerClashInterval,
-  operativeClashInterval,
-  overlappingClusters,
   paidHoursForOperativeBooking,
 } from '@/lib/warnings/clashIntervals'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import { managerSiteBookingDisplayTitle } from '@/lib/scheduling/managerSiteBookingUtils'
 import type { ClashTimelineEntry } from '@/lib/warnings/clashTimeline'
 import { clashEntryFromOperativeBooking } from '@/lib/scheduling/bookingClashUtils'
-import { ORPHAN_BOOKING_LABEL } from '@/lib/canonical'
+import { ORPHAN_BOOKING_LABEL, managerClashGroups, rosterAliasIdsFor, type BookingPersonInput } from '@/lib/canonical'
 
 export interface ManagerBookingClashWarning {
   id: string
@@ -29,16 +28,6 @@ export interface ManagerBookingClashWarning {
   locationBLabel: string
   message: string
   entries: ClashTimelineEntry[]
-}
-
-type PersonDayItem = {
-  userId: string
-  date: Date
-  sortKey: string
-  bookingId: string
-  locationLabel: string
-  interval: { start: number; end: number } | null
-  entry: ClashTimelineEntry
 }
 
 export function clashEntryFromManagerBooking(
@@ -90,8 +79,29 @@ function projectLabel(project: Project | undefined): string {
 }
 
 /**
- * iOS managerPersonDayItems: manager/admin users' site bookings plus any
- * operative bookings linked by email, clustered by clock interval overlap.
+ * Who a booking belongs to, for the rulebook: each roster account with its former invite ids and the
+ * same-email ids the roster folded into it (`userIdAliases`), plus the operatives catalogue.
+ */
+export function bookingPeopleForRoster(
+  users: readonly User[],
+  operatives: readonly Operative[],
+  userIdAliases?: Readonly<Record<string, string>> | null
+): BookingPersonInput {
+  return {
+    accounts: users.map((user) => ({
+      id: user.id,
+      email: user.email,
+      formerIds: user.formerUserIds ?? [],
+      aliasIds: rosterAliasIdsFor(user.id, userIdAliases),
+    })),
+    operatives: operatives.map((operative) => ({ id: operative.id, email: operative.email })),
+  }
+}
+
+/**
+ * Manager and admin double bookings: the rulebook's `managerClashGroups` (its `personDayItems` reads each
+ * stored id through `resolveBookingPerson`, so a booking under a folded same-email id, a sign-in uid with
+ * no catalogue row, or a former invite id is theirs). Rows, labels and timelines stay here.
  */
 export function computeManagerBookingClashWarnings(
   managerSiteBookings: ManagerSiteBooking[],
@@ -101,90 +111,75 @@ export function computeManagerBookingClashWarnings(
     operativeBookings?: Booking[]
     operatives?: Operative[]
     payrollPolicy?: OrgPayrollTimePolicy
+    /** Folded same-email `users` id → the id the roster kept. */
+    userIdAliases?: Readonly<Record<string, string>> | null
   }
 ): ManagerBookingClashWarning[] {
   const usersById = new Map(users.map((u) => [u.id, u]))
   const projectsById = new Map(projects.map((p) => [p.id, p]))
   const projectTitles = new Map(projects.map((p) => [p.id, projectLabel(p)]))
   const payrollPolicy = options?.payrollPolicy ?? DEFAULT_PAYROLL_POLICY
-  const managerAdminUsers = users.filter(isManagerOrAdminUser)
-  const managerAdminUserIds = new Set(managerAdminUsers.map((user) => user.id))
-  const emailToUserId = new Map<string, string>()
-  for (const user of managerAdminUsers) {
-    const email = user.email.trim().toLowerCase()
-    if (email) emailToUserId.set(email, user.id)
-  }
-  const operativesById = new Map((options?.operatives || []).map((operative) => [operative.id, operative]))
+  const operativeBookings = options?.operativeBookings || []
 
-  const itemsByPersonDay = new Map<string, PersonDayItem[]>()
-  const pushItem = (item: PersonDayItem) => {
-    const key = `${item.userId}|${dayKey(item.date)}`
-    const list = itemsByPersonDay.get(key) || []
-    list.push(item)
-    itemsByPersonDay.set(key, list)
-  }
-
-  for (const booking of managerSiteBookings) {
-    if (!managerAdminUserIds.has(booking.userId)) continue
-    const interval = managerClashInterval(booking, payrollPolicy)
-    const locationLabel = managerSiteBookingDisplayTitle(booking, projectTitles)
-    const project = booking.locationId ? projectsById.get(booking.locationId) : undefined
-    pushItem({
+  const groups = managerClashGroups({
+    managerIds: users.filter(isManagerOrAdminUser).map((user) => user.id),
+    people: bookingPeopleForRoster(users, options?.operatives || [], options?.userIdAliases),
+    day: payrollPolicy,
+    managerBookings: managerSiteBookings.map((booking) => ({
+      id: booking.id,
       userId: booking.userId,
-      date: booking.date,
-      sortKey: `m-${booking.id}`,
-      bookingId: booking.id,
-      locationLabel,
-      interval,
-      entry: clashEntryFromManagerBooking(booking, project, locationLabel, payrollPolicy),
-    })
-  }
+      dayKey: dayKey(booking.date),
+      timeSlot: String(booking.timeSlot ?? ''),
+      workStartTime: clockText(booking.workStartTime),
+      workEndTime: clockText(booking.workEndTime),
+    })),
+    operativeBookings: operativeBookings.map((booking) => ({
+      id: booking.id,
+      operativeId: booking.operativeId,
+      dayKey: dayKey(booking.date),
+      timeSlot: String(booking.timeSlot ?? ''),
+      workStartTime: clockText(booking.workStartTime),
+      workEndTime: clockText(booking.workEndTime),
+      status: String(booking.status ?? ''),
+    })),
+  })
 
-  for (const booking of options?.operativeBookings || []) {
-    if (!isActiveBookingStatus(booking.status)) continue
-    const operative = operativesById.get(booking.operativeId)
-    if (!operative) continue
-    const userId = emailToUserId.get(operative.email.trim().toLowerCase())
-    if (!userId) continue
-    const project = projectsById.get(booking.projectId)
-    pushItem({
-      userId,
-      date: booking.date,
-      sortKey: `o-${booking.id}`,
-      bookingId: booking.id,
-      locationLabel: projectLabel(project),
-      interval: operativeClashInterval(booking, payrollPolicy),
-      entry: clashEntryFromOperativeBooking(booking, project, payrollPolicy),
-    })
-  }
-
-  const warnings: ManagerBookingClashWarning[] = []
-  const seen = new Set<string>()
-
-  for (const [, items] of itemsByPersonDay) {
-    if (items.length < 2) continue
-    const clusters = overlappingClusters(items, (item) => item.interval)
-    for (const cluster of clusters) {
-      const sorted = [...cluster].sort((a, b) => a.sortKey.localeCompare(b.sortKey))
-      const pairKey = sorted.map((item) => item.sortKey).join('|')
-      if (seen.has(pairKey)) continue
-      seen.add(pairKey)
-      const name = personName(sorted[0].userId, usersById)
-      const place = sorted.length === 2 ? 'two' : String(sorted.length)
-      warnings.push({
-        id: pairKey,
-        userId: sorted[0].userId,
-        personName: name,
-        date: londonMidnight(sorted[0].date),
-        bookingAId: sorted[0].bookingId,
-        bookingBId: sorted[1].bookingId,
-        locationALabel: sorted[0].locationLabel,
-        locationBLabel: sorted[1].locationLabel,
-        message: `${name} is booked in ${place} places on ${format(londonMidnight(sorted[0].date), 'd MMM yyyy')}. Approve if it's intentional and it'll be noted on the weekly report.`,
-        entries: sorted.map((item) => item.entry),
+  return groups
+    .map((group) => {
+      const rows = group.items.map((item) => {
+        if (item.kind === 'manager') {
+          const booking = managerSiteBookings[item.index]
+          const locationLabel = managerSiteBookingDisplayTitle(booking, projectTitles)
+          const project = booking.locationId ? projectsById.get(booking.locationId) : undefined
+          return {
+            date: booking.date,
+            locationLabel,
+            entry: clashEntryFromManagerBooking(booking, project, locationLabel, payrollPolicy),
+          }
+        }
+        const booking = operativeBookings[item.index]
+        const project = projectsById.get(booking.projectId)
+        return {
+          date: booking.date,
+          locationLabel: projectLabel(project),
+          entry: clashEntryFromOperativeBooking(booking, project, payrollPolicy),
+        }
       })
-    }
-  }
-
-  return warnings.sort((a, b) => a.date.getTime() - b.date.getTime())
+      const name = personName(group.userId, usersById)
+      const place = rows.length === 2 ? 'two' : String(rows.length)
+      const day = londonMidnight(rows[0].date)
+      return {
+        id: group.pairKey,
+        userId: group.userId,
+        personName: name,
+        date: day,
+        bookingAId: group.bookingAId,
+        bookingBId: group.bookingBId,
+        locationALabel: rows[0].locationLabel,
+        locationBLabel: rows[1].locationLabel,
+        message: `${name} is booked in ${place} places on ${format(day, 'd MMM yyyy')}. Approve if it's intentional and it'll be noted on the weekly report.`,
+        entries: rows.map((row) => row.entry),
+      }
+    })
+    .sort((a, b) => a.date.getTime() - b.date.getTime())
 }

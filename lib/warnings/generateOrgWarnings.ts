@@ -148,6 +148,8 @@ export function generateOrgWarnings(input: {
   managerSiteBookings: ManagerSiteBooking[]
   operatives: Operative[]
   users: User[]
+  /** Folded same-email `users` id → the id the roster kept (org user store `userIdAliases`). */
+  userIdAliases?: Readonly<Record<string, string>> | null
   projects: Project[]
   holidays: HolidayBooking[]
   materials?: ProjectMaterialLine[]
@@ -177,6 +179,7 @@ export function generateOrgWarnings(input: {
         computeOperativeBookingClashWarnings(input.bookings, input.operatives, input.projects, {
           users: input.users,
           payrollPolicy,
+          userIdAliases: input.userIdAliases,
         }),
         warningDetection,
         invoicing,
@@ -191,6 +194,7 @@ export function generateOrgWarnings(input: {
           operativeBookings: input.bookings,
           operatives: input.operatives,
           payrollPolicy,
+          userIdAliases: input.userIdAliases,
         }),
         warningDetection,
         invoicing,

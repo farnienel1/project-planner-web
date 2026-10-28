@@ -21,8 +21,15 @@ if [ ! -d "$ios/.git" ]; then
   exit 0
 fi
 
-if ! git -C "$ios" diff --quiet -- "Project Planner/Canonical/canonical-business.js" "Project Planner/Canonical/canonical-business.js.sha256"; then
+if ! git -C "$ios" diff --quiet -- "Project Planner/Canonical/canonical-business.js" "Project Planner/Canonical/canonical-business.js.sha256" "ProjectPlannerTests/CanonicalParityFixture.json"; then
   echo "The iPhone copy of the rulebook was updated and is not committed yet."
-  echo "Commit Project Planner/Canonical/canonical-business.js in project-planner-ios, then commit this website change again."
+  echo "Commit Project Planner/Canonical/canonical-business.js (and ProjectPlannerTests/CanonicalParityFixture.json) in project-planner-ios, then commit this website change again."
+  exit 1
+fi
+
+fixture="ProjectPlannerTests/CanonicalParityFixture.json"
+if [ -f "$ios/$fixture" ] && ! git -C "$ios" ls-files --error-unmatch "$fixture" >/dev/null 2>&1; then
+  echo "The iPhone copy of the parity fixture is new and not committed yet."
+  echo "Commit $fixture in project-planner-ios, then commit this website change again."
   exit 1
 fi
