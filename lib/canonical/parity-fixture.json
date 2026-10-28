@@ -797,6 +797,87 @@
         }
       ],
       "expected": null
+    },
+    {
+      "name": "Approved and dismissed resolutions hide their keys; other statuses do not",
+      "function": "resolvedWarningKeys",
+      "args": [
+        [
+          {
+            "id": "unbooked-2026-10-22-u1",
+            "resolutionKey": "unbooked-2026-10-22-u1",
+            "status": "dismissed"
+          },
+          {
+            "id": "mgr-clash-m1-2026-10-22-0",
+            "status": "Approved"
+          },
+          {
+            "id": "qual-o1-q1",
+            "resolutionKey": "qual-o1-q1",
+            "status": "snoozed"
+          },
+          null
+        ]
+      ],
+      "expected": [
+        "mgr-clash-m1-2026-10-22-0",
+        "unbooked-2026-10-22-u1"
+      ]
+    },
+    {
+      "name": "A warning removed on another device is not active",
+      "function": "isWarningActive",
+      "args": [
+        {
+          "resolutionKey": "unbooked-2026-10-22-u1"
+        },
+        {
+          "resolvedKeys": [
+            "unbooked-2026-10-22-u1"
+          ],
+          "acceptedClashes": []
+        }
+      ],
+      "expected": false
+    },
+    {
+      "name": "A clash whose pair was accepted is not active",
+      "function": "isWarningActive",
+      "args": [
+        {
+          "resolutionKey": "mgr-clash-m1-2026-10-22-0",
+          "bookingAId": "OB",
+          "bookingBId": "MB"
+        },
+        {
+          "resolvedKeys": [],
+          "acceptedClashes": [
+            "MB|OB"
+          ]
+        }
+      ],
+      "expected": false
+    },
+    {
+      "name": "A warning with no decision stays active",
+      "function": "isWarningActive",
+      "args": [
+        {
+          "resolutionKey": "leave-cover-2026-10-22-u1-h1",
+          "bookingAId": "",
+          "bookingBId": ""
+        },
+        {
+          "resolvedKeys": [
+            "other"
+          ],
+          "acceptedClashes": [
+            "A|B"
+          ]
+        }
+      ],
+      "expected": true
     }
   ]
 }

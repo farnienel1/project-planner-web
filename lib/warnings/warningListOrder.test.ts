@@ -87,6 +87,7 @@ function unverified(id: string): UnverifiedOperativeWarning {
 function managerClash(id: string, day: string): ManagerBookingClashWarning {
   return {
     id,
+    resolutionKey: id,
     userId: id,
     personName: id,
     date: dateFromDayKey(day),
