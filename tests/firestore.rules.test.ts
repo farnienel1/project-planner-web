@@ -1153,3 +1153,25 @@ test('job quote and order history: every admin and manager reads it without the 
   await assertFails(getDoc(ref(ADMIN_OP_A, 'admin-op-a-history@test.com')))
   await assertFails(getDoc(doc(authDb(ADMIN_B, 'admin-b@test.com'), 'organizations', ORG_A, 'materialSendRecords', 'SEND-HISTORY-1')))
 })
+
+test('warningResolutions: a member writes their own approval in their company only; admins or the resolver delete it', async () => {
+  const key = 'mgr-clash-INVITED-ID-2026-10-22-0'
+  const opRef = doc(authDb(OP_A, 'op-a@test.com'), 'organizations', ORG_A, 'warningResolutions', key)
+  const fields = { resolutionKey: key, status: 'approved', resolvedByUserId: OP_A, resolvedAt: serverTimestamp() }
+  await assertSucceeds(setDoc(opRef, fields))
+  await assertSucceeds(getDoc(opRef))
+  // Wrong shape, wrong status, wrong key, someone else's name, or an extra field is refused.
+  await assertFails(setDoc(opRef, { ...fields, status: 'snoozed' }))
+  await assertFails(setDoc(opRef, { ...fields, resolutionKey: 'other' }))
+  await assertFails(setDoc(opRef, { ...fields, resolvedByUserId: ADMIN_A }))
+  await assertFails(setDoc(opRef, { ...fields, note: 'x' }))
+  await assertFails(setDoc(opRef, { resolutionKey: key, status: 'approved', resolvedByUserId: OP_A }))
+  // Another company cannot read or write it.
+  const foreign = doc(authDb(ADMIN_B, 'admin-b@test.com'), 'organizations', ORG_A, 'warningResolutions', key)
+  await assertFails(getDoc(foreign))
+  await assertFails(setDoc(foreign, { ...fields, resolvedByUserId: ADMIN_B }))
+  // The resolver can undo it; an admin can delete anyone's.
+  await assertSucceeds(deleteDoc(opRef))
+  await assertSucceeds(setDoc(opRef, fields))
+  await assertSucceeds(deleteDoc(doc(authDb(ADMIN_A, 'admin-a@test.com'), 'organizations', ORG_A, 'warningResolutions', key)))
+})

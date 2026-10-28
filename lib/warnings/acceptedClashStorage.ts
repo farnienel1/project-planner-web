@@ -1,5 +1,10 @@
 import { collection, doc, getDocs, setDoc, Timestamp } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
+import {
+  acceptedClashWriteFields,
+  clashPairKey,
+  isClashAccepted as canonicalIsClashAccepted,
+} from '@/lib/canonical'
 
 export type AcceptedBookingClash = {
   id: string
@@ -9,9 +14,7 @@ export type AcceptedBookingClash = {
   acceptedByUserId: string
 }
 
-export function clashPairKey(bookingAId: string, bookingBId: string): string {
-  return [bookingAId, bookingBId].sort().join('|')
-}
+export { clashPairKey }
 
 export async function loadAcceptedBookingClashes(organizationId: string): Promise<AcceptedBookingClash[]> {
   const snapshot = await getDocs(
@@ -29,26 +32,26 @@ export async function loadAcceptedBookingClashes(organizationId: string): Promis
   })
 }
 
+/** `organizations/{orgId}/acceptedBookingClashes/{clashPairKey}`, shaped by the rulebook's `acceptedClashWriteFields`. */
 export async function acceptBookingClash(
   organizationId: string,
   bookingAId: string,
   bookingBId: string,
   acceptedByUserId: string
 ): Promise<void> {
-  const id = clashPairKey(bookingAId, bookingBId)
-  await setDoc(doc(db, 'organizations', organizationId, 'acceptedBookingClashes', id), {
-    bookingAId,
-    bookingBId,
+  const write = acceptedClashWriteFields({ bookingAId, bookingBId, acceptedByUserId })
+  if (!write) throw new Error('This clash cannot be approved.')
+  await setDoc(doc(db, 'organizations', organizationId, 'acceptedBookingClashes', write.documentId), {
+    ...write.fields,
     acceptedAt: Timestamp.now(),
-    acceptedByUserId,
   })
 }
 
+/** The rulebook's `isClashAccepted`: the saved id or the two saved booking ids, in either order, without case. */
 export function isClashAccepted(
   bookingAId: string,
   bookingBId: string,
   accepted: AcceptedBookingClash[]
 ): boolean {
-  const key = clashPairKey(bookingAId, bookingBId)
-  return accepted.some((a) => a.id === key)
+  return canonicalIsClashAccepted(bookingAId, bookingBId, accepted)
 }

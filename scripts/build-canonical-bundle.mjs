@@ -20,6 +20,9 @@ const functionsOut = path.join(webRoot, 'functions/canonical-business.js')
 const iosRepo = path.resolve(webRoot, '../project-planner-ios')
 const iosOut = path.join(iosRepo, 'Project Planner/Canonical/canonical-business.js')
 const iosHashFile = `${iosOut}.sha256`
+// Shared parity cases both apps must pass (lib/canonical/canonical.test.ts on web, ProjectPlannerTests on iOS).
+const fixtureFile = path.join(webRoot, 'lib/canonical/parity-fixture.json')
+const iosFixture = path.join(iosRepo, 'ProjectPlannerTests/CanonicalParityFixture.json')
 const checkOnly = process.argv.includes('--check')
 const iosCheckout = existsSync(path.join(iosRepo, '.git'))
 const scratch = path.join(tmpdir(), `canonical-business-${process.pid}.js`)
@@ -59,6 +62,9 @@ if (checkOnly) {
   if (iosCheckout && (!sameFile(iosOut, source) || !sameFile(iosHashFile, Buffer.from(hashText)))) {
     stale.push(iosOut)
   }
+  if (iosCheckout && !sameFile(iosFixture, readFileSync(fixtureFile))) {
+    stale.push(iosFixture)
+  }
   if (stale.length > 0) {
     console.error('The packed rulebook does not match lib/canonical.')
     for (const file of stale) console.error(`  stale: ${file}`)
@@ -79,6 +85,8 @@ if (iosCheckout) {
   mkdirSync(path.dirname(iosOut), { recursive: true })
   writeFileSync(iosOut, source)
   writeFileSync(iosHashFile, hashText)
+  mkdirSync(path.dirname(iosFixture), { recursive: true })
+  writeFileSync(iosFixture, readFileSync(fixtureFile))
   console.log(`canonical bundle ${hash}`)
 } else {
   console.log(`canonical bundle ${hash}`)

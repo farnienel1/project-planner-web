@@ -3,7 +3,9 @@ import {
   isAnonymisedDeletedProfile,
   listedRosterUsers,
   matchesRosterSegment as canonicalMatchesRosterSegment,
+  rosterPeople,
   rosterStatusLabel as canonicalRosterStatusLabel,
+  type RosterDocument,
   type RosterSegment,
   type RosterSegmentProfile,
 } from '@/lib/canonical'
@@ -75,14 +77,24 @@ function directoryAdmin(user: User): boolean {
   return user.isSuperAdmin === true || user.permissions?.adminAccess === true || user.role === 'admin'
 }
 
-function choosePreferredUser(a: User, b: User): User {
-  const adminA = directoryAdmin(a)
-  const adminB = directoryAdmin(b)
-  if (adminA !== adminB) return adminA ? a : b
-  if (a.passwordSet !== b.passwordSet) return a.passwordSet ? a : b
-  if (a.updatedAt.getTime() !== b.updatedAt.getTime()) return a.updatedAt >= b.updatedAt ? a : b
-  if (a.isActive !== b.isActive) return a.isActive ? a : b
-  return a
+function rosterDocument(user: User): RosterDocument {
+  return {
+    id: user.id,
+    email: user.email,
+    passwordSet: user.passwordSet,
+    isActive: user.isActive,
+    firstName: user.firstName,
+    surname: user.surname,
+    admin: directoryAdmin(user),
+    listed: Boolean(directoryAdmin(user) || user.permissions?.manager || user.permissions?.operativeMode),
+    updatedAtMs: user.updatedAt instanceof Date ? user.updatedAt.getTime() : null,
+    formerUserIds: user.formerUserIds ?? [],
+  }
+}
+
+/** The rulebook's `rosterPeople` over these profiles: which id each email keeps, and every folded id. */
+function foldedRoster(users: readonly User[]) {
+  return rosterPeople(users.map(rosterDocument))
 }
 
 /**
@@ -90,17 +102,9 @@ function choosePreferredUser(a: User, b: User): User {
  * A manager booking stored on the other profile must not become a person named "Manager".
  */
 export function aliasIdsForRoster(users: readonly User[]): Record<string, string> {
-  const kept = dedupeUsersByEmail(users)
-  const keptIdByEmail = new Map<string, string>()
-  for (const user of kept) {
-    const email = normalizeEmail(user.email)
-    if (email) keptIdByEmail.set(email, user.id)
-  }
+  const { userIdAliases } = foldedRoster(users)
   const aliases: Record<string, string> = {}
-  for (const user of users) {
-    const email = normalizeEmail(user.email)
-    aliases[user.id] = (email && keptIdByEmail.get(email)) || user.id
-  }
+  for (const user of users) aliases[user.id] = userIdAliases[user.id] || user.id
   return aliases
 }
 
@@ -162,16 +166,17 @@ export function rosterDisplayName(
   return ''
 }
 
-/** Deduplicate by email — keeps the best account when duplicates exist in Firebase. */
+/**
+ * One profile per email: the rulebook's `rosterPeople` chooses which document is kept (signed in, listed,
+ * named, active, then newest). The kept profile is returned unchanged; its folded ids are in `aliasIdsForRoster`.
+ */
 export function dedupeUsersByEmail(users: readonly User[]): User[] {
-  const byEmail = new Map<string, User>()
-  for (const user of users) {
-    const email = normalizeEmail(user.email)
-    const key = email || `id:${user.id}`
-    const existing = byEmail.get(key)
-    byEmail.set(key, existing ? choosePreferredUser(existing, user) : user)
-  }
-  return Array.from(byEmail.values())
+  const byId = new Map<string, User>()
+  for (const user of users) if (!byId.has(user.id)) byId.set(user.id, user)
+  return foldedRoster(users).people.flatMap((row) => {
+    const user = byId.get(row.id)
+    return user ? [user] : []
+  })
 }
 
 /** iOS OperativesView — operative-mode app users, plus accounts with no admin or manager role. */

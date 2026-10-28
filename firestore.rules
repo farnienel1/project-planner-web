@@ -988,6 +988,21 @@ service cloud.firestore {
         allow delete: if isOrganizationAdmin(organizationId);
       }
 
+      // Approved or dismissed warnings (lib/canonical/scheduleSources.ts warningResolutionWriteFields).
+      // Document id is the warning's resolution key. Undoing an approval deletes it.
+      match /warningResolutions/{resolutionKey} {
+        allow read: if canAccessOrganization(organizationId);
+        allow create, update: if canAccessOrganization(organizationId) &&
+          request.resource.data.keys().hasOnly(['resolutionKey', 'status', 'resolvedByUserId', 'resolvedAt']) &&
+          request.resource.data.keys().hasAll(['resolutionKey', 'status', 'resolvedByUserId', 'resolvedAt']) &&
+          request.resource.data.resolutionKey == resolutionKey &&
+          request.resource.data.status in ['approved', 'dismissed'] &&
+          request.resource.data.resolvedByUserId == request.auth.uid &&
+          request.resource.data.resolvedAt is timestamp;
+        allow delete: if isOrganizationAdmin(organizationId) ||
+          (canAccessOrganization(organizationId) && resource.data.resolvedByUserId == request.auth.uid);
+      }
+
       // Dismissed warnings (expired qualifications). Document id is the canonical dismiss key.
       match /dismissedWarnings/{dismissKey} {
         allow read, create, update: if canAccessOrganization(organizationId);

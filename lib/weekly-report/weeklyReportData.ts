@@ -580,6 +580,7 @@ export function buildWeeklyReportData({
       computeOperativeBookingClashWarnings(bookings, rosterOperatives, mergedWorks, {
         users,
         payrollPolicy: payroll,
+        userIdAliases,
       }),
       period
     )) {
@@ -599,6 +600,7 @@ export function buildWeeklyReportData({
         operativeBookings: bookings,
         operatives,
         payrollPolicy: payroll,
+        userIdAliases,
       }),
       period
     )) {

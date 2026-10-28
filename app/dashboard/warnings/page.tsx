@@ -63,7 +63,7 @@ export default function WarningsPage() {
   }, [user, router])
   const { projects, smallWorks, loadProjects, loadSmallWorks } = useProjectStore()
   const { operatives, loadOperatives } = useOperativeStore()
-  const { users, loadUsers, rosterLoadedOrgId } = useOrgUserStore()
+  const { users, userIdAliases, loadUsers, rosterLoadedOrgId } = useOrgUserStore()
   const { bookings, loadBookings, deleteBooking, loading: bookingsLoading, ready: bookingsReady } = useBookingStore()
   const { managerSiteBookings, loadManagerSiteBookings, deleteManagerSiteBooking, loading: managerLoading } =
     useManagerScheduleStore()
@@ -332,6 +332,7 @@ export default function WarningsPage() {
         managerSiteBookings: managerScope.foreign ? [] : managerScope.rows,
         operatives: operativeScope.foreign ? [] : operativeScope.rows,
         users: userScope.foreign ? [] : userScope.rows,
+        userIdAliases: userScope.foreign ? {} : userIdAliases,
         projects: projectScope.foreign ? [] : projectScope.rows,
         holidays: holidayBookings,
         materials,
@@ -346,6 +347,7 @@ export default function WarningsPage() {
       managerScope,
       operativeScope,
       userScope,
+      userIdAliases,
       projectScope,
       holidayBookings,
       materials,

@@ -39,8 +39,9 @@ function standardWindow(policy: OrgPayrollTimePolicy): MinuteInterval | null {
   return { start, end }
 }
 
-function clockText(value?: string): string | undefined {
-  const minutes = parseHhMm(value)
+/** A stored clock (`7:30`, `07:30:00`) as the rulebook's `HH:mm`, or undefined. */
+export function clockText(value?: string | null): string | undefined {
+  const minutes = parseHhMm(value ?? undefined)
   return minutes == null ? undefined : formatClockMinutes(minutes)
 }
 
