@@ -1,4 +1,6 @@
-import { collection, getDocs } from 'firebase/firestore'
+import { collection, doc, getDoc, getDocs } from 'firebase/firestore'
+import { organizationTimeZone } from '@/lib/canonical/organizationTimeZone'
+import { dayKeyInZone } from '@/lib/orgTime/zoneTime'
 import { db } from '@/lib/firebase/config'
 import { withTimeoutFallback } from '@/lib/client/withTimeout'
 import { parseFirestoreDate } from '@/lib/firebase/firestoreUtils'
@@ -77,6 +79,10 @@ export async function loadSignedTimesheetValueTotals(input: {
             null
           )
           if (!settingsDocs) return
+          // Day keys use the organisation's business zone (`organizationTimeZone`), never UTC.
+          const orgDoc = await withTimeoutFallback(getDoc(doc(db!, 'organizations', organizationId)), 8000, null)
+          const country = orgDoc?.exists() ? (orgDoc.data() as Record<string, unknown>).countryCode : null
+          const timeZone = organizationTimeZone(typeof country === 'string' ? country : null)
           const orgUsers = usersByOrg.get(organizationId) || []
           const { byId } = usersForSheet(orgUsers)
 
@@ -99,7 +105,8 @@ export async function loadSignedTimesheetValueTotals(input: {
             const valued = penceForSignedTimesheet({
               storedValuePence: asPence(data.valuePence),
               extrasPounds,
-              hoursByDate: storedHours > 0 ? [{ date: (signedAt || new Date()).toISOString().slice(0, 10), hours: storedHours }] : [],
+              hoursByDate:
+                storedHours > 0 ? [{ date: dayKeyInZone(signedAt || new Date(), timeZone), hours: storedHours }] : [],
               dayRatePence: undefined,
               hourlyRatePence: undefined,
             })

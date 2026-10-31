@@ -1,11 +1,14 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { addDays, format, startOfWeek } from 'date-fns'
 import type { OrganizationDetails, OrgInvoicingSettings } from '@/lib/settings/organizationSettings'
 import { formatInvoicingSubtitle } from '@/lib/settings/organizationSettings'
-import { ianaTimeZoneForCountry } from '@/lib/orgTime/orgTimeZone'
-import { dayKey } from '@/lib/ios-parity/londonTime'
+import { formatMoney, organizationTimeZone, type AcceptedClashRecord } from '@/lib/canonical'
+import { addLondonDays, dateFromDayKey, dayKey, startOfLondonWeek } from '@/lib/ios-parity/londonTime'
+import { useAuthStore } from '@/lib/stores/authStore'
+import { hasAdminAccess } from '@/lib/permissions'
+import { loadAcceptedBookingClashes, unapproveBookingClash } from '@/lib/warnings/acceptedClashStorage'
+import { loadResolvedWarningKeys } from '@/lib/warnings/warningResolutionStorage'
 import {
   formatInvoicingPeriodDescription,
   formatReportPeriodLabel,
@@ -15,14 +18,19 @@ import {
 } from '@/lib/weekly-report/invoicingPeriodUtils'
 import { invoicingQuickSelectLabel } from '@/lib/weekly-report/invoicingRead'
 import { buildWeeklyReportData } from '@/lib/weekly-report/weeklyReportData'
-import type { SubcontractorBookingRow } from '@/lib/weekly-report/weeklyReportData'
+import type {
+  SubcontractorBookingRow,
+  WeeklyReportApprovedClashRow,
+  WeeklyReportWarningDecisions,
+} from '@/lib/weekly-report/weeklyReportData'
 import {
+  APPROVED_CLASH_HEADERS,
   buildWeeklyReportHtml,
   downloadWeeklyReportWorkbook,
   printWeeklyReport,
 } from '@/lib/weekly-report/weeklyReportGenerator'
 import { buildWeeklyReportPdf, downloadWeeklyReportPdf } from '@/lib/weekly-report/weeklyReportPdf'
-import { formatCurrency, formatDays } from '@/lib/weekly-report/weeklyReportPayroll'
+import { formatDays } from '@/lib/weekly-report/weeklyReportPayroll'
 import { loadWeeklyReportTimesheetFeed } from '@/lib/weekly-report/loadTimesheetFeed'
 import type { ApprovedTimesheetWeek } from '@/lib/weekly-report/timesheetFeed'
 import { emptyDayRateHistory, loadOperativeDayRateHistory, type OperativeDayRateHistoryCollection } from '@/lib/timesheets/dayRateHistoryStorage'
@@ -73,8 +81,19 @@ function ReportTable({
   )
 }
 
-function mondayOf(date: Date): Date {
-  return startOfWeek(date, { weekStartsOn: 1 })
+/** Monday (organisation zone) of the week containing `date`. Weeks start on Monday. */
+function mondayOf(date: Date, timeZone: string): Date {
+  return startOfLondonWeek(date, timeZone)
+}
+
+/** `d MMM` or `d MMM yyyy` in the organisation zone, never the browser zone. */
+function formatOrgDay(date: Date, timeZone: string, withYear = false): string {
+  return new Intl.DateTimeFormat('en-GB', {
+    timeZone,
+    day: 'numeric',
+    month: 'short',
+    ...(withYear ? { year: 'numeric' as const } : {}),
+  }).format(date)
 }
 
 export function WeeklyReportScreen({
@@ -117,7 +136,9 @@ export function WeeklyReportScreen({
   fallbackInvoicing?: OrgInvoicingSettings | null
 }) {
   const invoicing = orgDetails?.invoicing ?? fallbackInvoicing
-  const timeZone = ianaTimeZoneForCountry(orgDetails?.countryCode)
+  const timeZone = organizationTimeZone(orgDetails?.countryCode)
+  const viewer = useAuthStore((state) => state.user)
+  const canUnapprove = Boolean(viewer && hasAdminAccess(viewer))
   const invoicingOptions = useMemo(
     () => (invoicing ? listInvoicingPeriodOptions(invoicing, new Date(), undefined, timeZone) : []),
     [invoicing, timeZone]
@@ -130,15 +151,15 @@ export function WeeklyReportScreen({
     readFinished: invoicingReadFinished,
   })
 
-  const thisWeekStart = mondayOf(new Date())
-  const lastWeekStart = mondayOf(addDays(new Date(), -7))
-  const defaultWeekStart = format(thisWeekStart, 'yyyy-MM-dd')
+  const thisWeekStart = mondayOf(new Date(), timeZone)
+  const lastWeekStart = addLondonDays(thisWeekStart, -7, timeZone)
+  const defaultWeekStart = dayKey(thisWeekStart, timeZone)
   const defaultCustomStart = invoicingOptions[0]
     ? dayKey(invoicingOptions[0].start, timeZone)
     : defaultWeekStart
   const defaultCustomEnd = invoicingOptions[0]
     ? dayKey(invoicingOptions[0].end, timeZone)
-    : format(addDays(thisWeekStart, 6), 'yyyy-MM-dd')
+    : dayKey(addLondonDays(thisWeekStart, 6, timeZone), timeZone)
 
   const [periodMode, setPeriodMode] = useState<WeeklyReportPeriodMode>('week')
   const [invoicingPeriodId, setInvoicingPeriodId] = useState<string>('')
@@ -150,6 +171,10 @@ export function WeeklyReportScreen({
   const [downloadOpen, setDownloadOpen] = useState(false)
   const [timesheetWeeks, setTimesheetWeeks] = useState<ApprovedTimesheetWeek[]>([])
   const [rateHistory, setRateHistory] = useState<OperativeDayRateHistoryCollection>(emptyDayRateHistory())
+  // Clash approvals from both collections, read on Generate. Reports are built live and never stored.
+  const [warningDecisions, setWarningDecisions] = useState<WeeklyReportWarningDecisions | null>(null)
+  const [unapprovingKey, setUnapprovingKey] = useState<string | null>(null)
+  const [unapproveError, setUnapproveError] = useState('')
 
   const effectiveInvoicingPeriodId = invoicingPeriodId || invoicingOptions[0]?.id || ''
 
@@ -186,6 +211,7 @@ export function WeeklyReportScreen({
       timesheetWeeks,
       history: rateHistory,
       userIdAliases,
+      warningDecisions,
     })
   }, [
     period,
@@ -204,12 +230,41 @@ export function WeeklyReportScreen({
     orgDetails,
     timesheetWeeks,
     rateHistory,
+    warningDecisions,
   ])
+
+  const loadWarningDecisions = async (): Promise<WeeklyReportWarningDecisions | null> => {
+    if (!organizationId) return null
+    const [resolvedKeys, acceptedClashes] = await Promise.all([
+      loadResolvedWarningKeys(organizationId).catch(() => [] as string[]),
+      loadAcceptedBookingClashes(organizationId).catch(() => [] as AcceptedClashRecord[]),
+    ])
+    return { resolvedKeys, acceptedClashes }
+  }
+
+  const handleUnapprove = async (row: WeeklyReportApprovedClashRow) => {
+    if (!organizationId) return
+    setUnapproveError('')
+    setUnapprovingKey(row.resolutionKey)
+    try {
+      await unapproveBookingClash(organizationId, {
+        bookingAId: row.bookingAId,
+        bookingBId: row.bookingBId,
+        resolutionKey: row.resolutionKey,
+      })
+      setWarningDecisions(await loadWarningDecisions())
+    } catch (error) {
+      setUnapproveError(error instanceof Error ? error.message : 'Could not remove this approval.')
+    } finally {
+      setUnapprovingKey(null)
+    }
+  }
 
   const handleGenerateReport = async () => {
     if (!period) return
     setGenerating(true)
     try {
+      setWarningDecisions(await loadWarningDecisions())
       if (organizationId && invoicing) {
         const history = await loadOperativeDayRateHistory(organizationId).catch(() => emptyDayRateHistory())
         setRateHistory(history)
@@ -244,14 +299,14 @@ export function WeeklyReportScreen({
 
   const handleDownload = () => {
     if (!report || !period) return
-    const filename = `WeeklyReport-${format(period.start, 'yyyyMMdd')}.xlsx`
+    const filename = `WeeklyReport-${dayKey(period.start, timeZone).replace(/-/g, '')}.xlsx`
     downloadWeeklyReportWorkbook(report, filename)
   }
 
   const handleDownloadPdf = async () => {
     if (!report || !period) return
     const bytes = await buildWeeklyReportPdf(report)
-    downloadWeeklyReportPdf(bytes, `WeeklyReport-${format(period.start, 'yyyyMMdd')}.pdf`)
+    downloadWeeklyReportPdf(bytes, `WeeklyReport-${dayKey(period.start, timeZone).replace(/-/g, '')}.pdf`)
   }
 
   const changePeriod = (next: () => void) => {
@@ -262,16 +317,19 @@ export function WeeklyReportScreen({
 
   const shiftWeek = (direction: -1 | 1) => {
     changePeriod(() => {
-      const next = addDays(new Date(weekStart), direction * 7)
-      setWeekStart(format(mondayOf(next), 'yyyy-MM-dd'))
+      const next = addLondonDays(dateFromDayKey(weekStart, timeZone), direction * 7, timeZone)
+      setWeekStart(dayKey(mondayOf(next, timeZone), timeZone))
       setPeriodMode('week')
     })
   }
 
-  const thisWeekRange = `${format(thisWeekStart, 'd MMM')} – ${format(addDays(thisWeekStart, 6), 'd MMM yyyy')}`
-  const lastWeekRange = `${format(lastWeekStart, 'd MMM')} – ${format(addDays(lastWeekStart, 6), 'd MMM yyyy')}`
-  const thisWeekSelected = periodMode === 'week' && weekStart === format(thisWeekStart, 'yyyy-MM-dd')
-  const lastWeekSelected = periodMode === 'week' && weekStart === format(lastWeekStart, 'yyyy-MM-dd')
+  const thisWeekKey = dayKey(thisWeekStart, timeZone)
+  const lastWeekKey = dayKey(lastWeekStart, timeZone)
+  const thisWeekRange = `${formatOrgDay(thisWeekStart, timeZone)} – ${formatOrgDay(addLondonDays(thisWeekStart, 6, timeZone), timeZone, true)}`
+  const lastWeekRange = `${formatOrgDay(lastWeekStart, timeZone)} – ${formatOrgDay(addLondonDays(lastWeekStart, 6, timeZone), timeZone, true)}`
+  const thisWeekSelected = periodMode === 'week' && weekStart === thisWeekKey
+  const lastWeekSelected = periodMode === 'week' && weekStart === lastWeekKey
+  const money = (amount: number) => formatMoney(amount, report?.currencyCode)
 
   return (
     <div className="stack" data-hue="rep">
@@ -297,7 +355,7 @@ export function WeeklyReportScreen({
       <section className="hero" data-hue="rep">
         <div className="relative z-[1]">
           <p className="eb">{organizationName}</p>
-          <div className="big">{period ? formatReportPeriodLabel(period.start, period.end) : 'Choose a period'}</div>
+          <div className="big">{period ? formatReportPeriodLabel(period.start, period.end, timeZone) : 'Choose a period'}</div>
           <p className="mt-1.5 opacity-85">Weekly report</p>
         </div>
       </section>
@@ -318,7 +376,7 @@ export function WeeklyReportScreen({
               onClick={() =>
                 changePeriod(() => {
                   setPeriodMode('week')
-                  setWeekStart(format(thisWeekStart, 'yyyy-MM-dd'))
+                  setWeekStart(thisWeekKey)
                 })
               }
             />
@@ -329,7 +387,7 @@ export function WeeklyReportScreen({
               onClick={() =>
                 changePeriod(() => {
                   setPeriodMode('week')
-                  setWeekStart(format(lastWeekStart, 'yyyy-MM-dd'))
+                  setWeekStart(lastWeekKey)
                 })
               }
             />
@@ -349,7 +407,7 @@ export function WeeklyReportScreen({
               label="Custom range"
               subLabel={
                 periodMode === 'custom' && period
-                  ? formatReportPeriodLabel(period.start, period.end)
+                  ? formatReportPeriodLabel(period.start, period.end, timeZone)
                   : 'Choose a start and end date'
               }
               selected={periodMode === 'custom'}
@@ -373,7 +431,7 @@ export function WeeklyReportScreen({
                 {invoicingOptions.map((option) => (
                   <option key={option.id} value={option.id}>
                     {option.isCurrent ? 'Current · ' : ''}
-                    {formatReportPeriodLabel(option.start, option.end)}
+                    {formatReportPeriodLabel(option.start, option.end, timeZone)}
                   </option>
                 ))}
               </select>
@@ -451,7 +509,7 @@ export function WeeklyReportScreen({
             <h2 className="h2">Ready to generate</h2>
             {period ? (
               <p className="muted small" style={{ marginTop: 6 }}>
-                {format(period.start, 'd MMM yyyy')} → {format(period.end, 'd MMM yyyy')}
+                {formatOrgDay(period.start, timeZone, true)} → {formatOrgDay(period.end, timeZone, true)}
               </p>
             ) : null}
             <p className="muted small" style={{ marginTop: 8 }}>
@@ -485,7 +543,7 @@ export function WeeklyReportScreen({
               Download report
             </h2>
             <p className="mt-1 text-sm text-[var(--ink3)]">
-              {format(period.start, 'd MMM yyyy')} → {format(period.end, 'd MMM yyyy')}. The preview stays on this page.
+              {formatOrgDay(period.start, timeZone, true)} → {formatOrgDay(period.end, timeZone, true)}. The preview stays on this page.
             </p>
             <div className="mt-4 grid gap-2">
               <button
@@ -535,6 +593,52 @@ export function WeeklyReportScreen({
             }
             empty="No warnings in period"
           />
+
+          <section className="card overflow-hidden">
+            <div className="card-h">
+              <h2 className="h2">✅ Approved clashes</h2>
+            </div>
+            {unapproveError ? <p className="card-b small" style={{ color: 'var(--red, #b91c1c)' }}>{unapproveError}</p> : null}
+            {report.approvedClashes.length === 0 ? (
+              <p className="card-b muted small">No clashes approved in this period</p>
+            ) : (
+              <div className="tablewrap card-b">
+                <table className="t">
+                  <thead>
+                    <tr>
+                      {APPROVED_CLASH_HEADERS.map((header) => (
+                        <th key={header}>{header}</th>
+                      ))}
+                      {canUnapprove ? <th aria-label="Actions" /> : null}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {report.approvedClashes.map((row) => (
+                      <tr key={`${row.resolutionKey}|${row.bookingAId}|${row.bookingBId}`}>
+                        <td>{row.date}</td>
+                        <td>{row.priority}</td>
+                        <td>{row.type}</td>
+                        <td>{row.person}</td>
+                        <td>{row.detail}</td>
+                        {canUnapprove ? (
+                          <td>
+                            <button
+                              type="button"
+                              className="btn ghost"
+                              disabled={unapprovingKey === row.resolutionKey}
+                              onClick={() => void handleUnapprove(row)}
+                            >
+                              {unapprovingKey === row.resolutionKey ? 'Removing…' : 'Remove approval'}
+                            </button>
+                          </td>
+                        ) : null}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
 
           {report.projectGroups.map((group) => (
             <ReportTable
@@ -622,9 +726,9 @@ export function WeeklyReportScreen({
                       row.jobNumber,
                       row.date,
                       row.details,
-                      formatCurrency(row.amount),
+                      money(row.amount),
                     ]),
-                    ['', '', '', '', 'Price Work Total', formatCurrency(report.priceWorkTotal)],
+                    ['', '', '', '', 'Price Work Total', money(report.priceWorkTotal)],
                   ]
             }
             empty="No price work in this period"
@@ -643,9 +747,9 @@ export function WeeklyReportScreen({
                       row.jobNumber,
                       row.date,
                       row.details,
-                      formatCurrency(row.amount),
+                      money(row.amount),
                     ]),
-                    ['', '', '', '', 'Expenses Total', formatCurrency(report.expenseTotal)],
+                    ['', '', '', '', 'Expenses Total', money(report.expenseTotal)],
                   ]
             }
             empty="No expenses in this period"
@@ -661,12 +765,12 @@ export function WeeklyReportScreen({
                   person.role,
                   line.rateType,
                   line.quantityText ?? formatDays(line.days),
-                  line.rateText ?? formatCurrency(line.rate),
-                  line.payLabel ?? formatCurrency(line.pay),
+                  line.rateText ?? money(line.rate),
+                  line.payLabel ?? money(line.pay),
                 ]),
-                ['', '', `${person.person} total`, '', '', person.personTotalLabel ?? formatCurrency(person.personTotal)],
+                ['', '', `${person.person} total`, '', '', person.personTotalLabel ?? money(person.personTotal)],
               ]),
-              ['', '', '', '', 'Grand Total', formatCurrency(report.grandTotal)],
+              ['', '', '', '', 'Grand Total', money(report.grandTotal)],
             ]}
             empty="No pay data for this period"
           />

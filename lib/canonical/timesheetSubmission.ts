@@ -376,6 +376,26 @@ export function paymentDateAfterPeriodEnd(
   return clampMonthDayInZone(next.y, next.m, days[0], zone)
 }
 
+/**
+ * Recurring runs are paid in arrears: the first `paymentWeekday` strictly after the period ends
+ * (Monday–Sunday paid Friday → the Friday after that Sunday).
+ */
+export function paymentWeekdayAfterPeriodEnd(
+  periodEndDayKey: string,
+  paymentWeekday: string,
+  timeZone?: string | null
+): string | null {
+  const zone = zoneOrLondon(timeZone)
+  if (!periodEndDayKey) return null
+  const payIso = TIMESHEET_SUBMISSION_WEEKDAYS.indexOf(normalizeTimesheetWeekday(paymentWeekday || 'friday')) + 1
+  let pay = addDaysInZone(dateFromDayKeyInZone(periodEndDayKey, zone), 1, zone)
+  for (let step = 0; step < 7; step += 1) {
+    if (isoWeekdayInZone(pay, zone) === payIso) break
+    pay = addDaysInZone(pay, 1, zone)
+  }
+  return dayKeyInZone(pay, zone)
+}
+
 function relatedMonthDayToPayment(paymentDayKey: string, relatedDay: number, timeZone: string): string {
   const payment = dateFromDayKeyInZone(paymentDayKey, timeZone)
   const { y, m, d } = partsInZone(payment, timeZone)
@@ -524,14 +544,8 @@ export function dueTimesheetSubmissionNotices(input: TimesheetSubmissionScanInpu
         recurringRunStartDay: input.recurringRunStartDay || 'monday',
         recurringRunEndDay: input.recurringRunEndDay || 'sunday',
       })
-      const dayAfter = addDaysInZone(dateFromDayKeyInZone(period.endDayKey, timeZone), 1, timeZone)
-      const payIso = TIMESHEET_SUBMISSION_WEEKDAYS.indexOf(normalizeTimesheetWeekday(input.recurringPaymentDay || 'friday')) + 1
-      let pay = dayAfter
-      for (let step = 0; step < 7; step += 1) {
-        if (isoWeekdayInZone(pay, timeZone) === payIso) break
-        pay = addDaysInZone(pay, 1, timeZone)
-      }
-      const paymentDayKey = dayKeyInZone(pay, timeZone)
+      const paymentDayKey = paymentWeekdayAfterPeriodEnd(period.endDayKey, input.recurringPaymentDay || 'friday', timeZone)
+      if (!paymentDayKey) continue
       const instants = resolveRecurringInstants(paymentDayKey, settings, timeZone)
       consider(
         noticeFromInstants({

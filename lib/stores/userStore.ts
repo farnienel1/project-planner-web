@@ -1,12 +1,14 @@
 'use client'
 
 import { create } from 'zustand'
-import { collection, deleteDoc, doc, getDoc, getDocs, limit, query, setDoc, updateDoc, Timestamp, where } from 'firebase/firestore'
+import { collection, deleteDoc, doc, getDoc, getDocs, limit, query, serverTimestamp, setDoc, updateDoc, Timestamp, where } from 'firebase/firestore'
 import { sendPasswordResetEmail } from 'firebase/auth'
 import { passwordResetActionSettings } from '@/lib/auth/passwordResetSettings'
 import type { Operative, User } from '@/types'
 import { auth, db } from '@/lib/firebase/config'
-import { applyExclusiveRateFields, buildSaveUserPayload } from '@/lib/firebase/userPayload'
+import { applyExclusiveRateFields, buildSaveUserPayload, changedUserPayload } from '@/lib/firebase/userPayload'
+import { writeMetadataFields } from '@/lib/canonical'
+import { useAuthStore } from '@/lib/stores/authStore'
 import { parseOrgUser } from '@/lib/firebase/parseUser'
 import { operativeRecordForUser } from '@/lib/operatives/operativeRosterUtils'
 import { applyAccountTypeChange } from '@/lib/staff/accountTypeChange'
@@ -18,7 +20,16 @@ interface UserStoreState {
   saving: boolean
   error: string | null
   getUser: (userId: string) => Promise<User | null>
-  saveUser: (user: User, organizationId?: string, previousEmail?: string) => Promise<void>
+  /**
+   * `options.baseline`: the copy the editor loaded. With it only changed fields are written
+   * (never a stale photo, mobile or rate from a copy loaded before another device saved).
+   */
+  saveUser: (
+    user: User,
+    organizationId?: string,
+    previousEmail?: string,
+    options?: { baseline?: User | null }
+  ) => Promise<void>
   transferSuperAdmin: (organizationId: string, fromUserId: string, toUserId: string, roster: User[]) => Promise<void>
   setUserActive: (userId: string, isActive: boolean, organizationId?: string) => Promise<void>
   deleteUser: (userId: string, opts?: { organizationId?: string; email?: string }) => Promise<void>
@@ -113,11 +124,27 @@ export const useUserStore = create<UserStoreState>(() => ({
     return parseOrgUser(snap.id, { ...data, organizationId: fallback })
   },
 
-  saveUser: async (user, organizationId, previousEmail) => {
+  saveUser: async (user, organizationId, previousEmail, options) => {
     const names = identityFields(user)
-    const payload = buildSaveUserPayload(user)
-    delete payload.organizationId
-    Object.assign(payload, names)
+    const full = buildSaveUserPayload(user)
+    delete full.organizationId
+    Object.assign(full, names)
+    let payload = full
+    if (options?.baseline && options.baseline.id === user.id) {
+      const before = buildSaveUserPayload(options.baseline)
+      delete before.organizationId
+      Object.assign(before, identityFields(options.baseline))
+      payload = changedUserPayload(full, before)
+    }
+    payload.updatedAt = serverTimestamp()
+    // updatedBy / updatedFrom only where firestore.rules lets them change: the person themselves
+    // or an admin. A manager editing an operative is limited to a fixed changedKeys() list
+    // (canManagerUpdateOperativeProfile) that does not include them yet.
+    const saverId = auth?.currentUser?.uid || ''
+    const saver = useAuthStore.getState().user
+    const saverIsAdmin = Boolean(saver && (saver.isSuperAdmin || saver.permissions.adminAccess))
+    const metadata = writeMetadataFields(saverId, 'web')
+    if (metadata && (saverId === user.id || saverIsAdmin)) Object.assign(payload, metadata)
     await updateDoc(doc(db, 'users', user.id), payload)
     const orgId = organizationId?.trim() || user.organizationId
     const email = user.email.toLowerCase().trim()

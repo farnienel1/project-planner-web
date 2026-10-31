@@ -1,10 +1,10 @@
-import { format, startOfWeek, endOfWeek } from 'date-fns'
+import { startOfWeek, endOfWeek } from 'date-fns'
 import type { Booking, Operative, User } from '@/types'
 import { findOperativeForUser } from '@/lib/operatives/operativeRosterUtils'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import type { OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 import { bookingPayrollHours } from '@/lib/scheduling/paidHours'
-import { dayKey } from '@/lib/ios-parity/londonTime'
+import { dayKey, startOfLondonWeek } from '@/lib/ios-parity/londonTime'
 import { userTimesheetSubjectIds } from '@/lib/permissions'
 import { orgDayHours, payForHours, readStoredRates } from '@/lib/timesheets/payBasis'
 
@@ -29,8 +29,9 @@ export type TimesheetDayEntry = {
   source: 'operative' | 'manager'
 }
 
-export function weekStartKey(date: Date): string {
-  return format(startOfWeek(date, { weekStartsOn: 1 }), 'yyyy-MM-dd')
+/** Monday of the week containing `date`, as an organisation-zone day key (never the browser zone). */
+export function weekStartKey(date: Date, timeZone?: string): string {
+  return dayKey(startOfLondonWeek(date, timeZone), timeZone)
 }
 
 export function weekRangeFromStart(weekStart: Date) {

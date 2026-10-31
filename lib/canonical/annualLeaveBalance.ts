@@ -8,7 +8,8 @@
  */
 
 import { addDaysInZone, dateFromDayKeyInZone, dayKeyInZone } from '../orgTime/zoneTime'
-import { eachDayKey, zoneOrLondon } from './dayKeys'
+import { zoneOrLondon } from './dayKeys'
+import { leaveRecordDayKeys } from './leaveRequests'
 
 export const DEFAULT_ANNUAL_LEAVE_DAYS = 25
 
@@ -97,11 +98,6 @@ function leaveUnits(slot?: string | null): number {
   return 1
 }
 
-function bookingDays(startDayKey: string, endDayKey: string, timeZone: string): number {
-  const keys = eachDayKey(startDayKey, endDayKey || startDayKey, timeZone)
-  return keys.length
-}
-
 export type LeaveDayRecord = {
   startDayKey: string
   endDayKey?: string
@@ -109,27 +105,30 @@ export type LeaveDayRecord = {
   status?: string | null
 }
 
-function bookingCount(booking: LeaveDayRecord, timeZone: string): number {
-  const start = String(booking.startDayKey || '').trim()
-  if (!parseDayKey(start)) return 0
-  const end = String(booking.endDayKey || start).trim() || start
-  return snapLeaveDays(bookingDays(start, end, timeZone) * leaveUnits(booking.timeSlot))
-}
-
+/**
+ * Days a record takes inside one leave year. A multi-day record (one document per request)
+ * counts its working days only (`leaveRecordDayKeys`) and each day falls in its own leave year.
+ */
 function bookingsInYear(
   bookings: LeaveDayRecord[],
   startDayKey: string,
   endDayKey: string,
   status: 'approved' | 'pending',
-  timeZone: string
+  timeZone: string,
+  nonWorkingDayKeys: ReadonlyArray<string>
 ): number {
   let total = 0
   for (const booking of bookings) {
     const raw = String(booking.status || 'approved').toLowerCase()
     if (raw !== status) continue
     const start = String(booking.startDayKey || '').trim()
-    if (start < startDayKey || start > endDayKey) continue
-    total += bookingCount(booking, timeZone)
+    if (!parseDayKey(start)) continue
+    const days = leaveRecordDayKeys(
+      { startDayKey: start, endDayKey: String(booking.endDayKey || start).trim() || start },
+      timeZone,
+      nonWorkingDayKeys
+    ).filter((key) => key >= startDayKey && key <= endDayKey).length
+    total += days * leaveUnits(booking.timeSlot)
   }
   return snapLeaveDays(total)
 }
@@ -148,6 +147,8 @@ export type AnnualLeaveBalanceInput = {
   bookings?: LeaveDayRecord[] | null
   onDayKey: string
   timeZone?: string | null
+  /** Bank holidays inside a multi-day record do not come out of the allowance. */
+  nonWorkingDayKeys?: ReadonlyArray<string> | null
 }
 
 export type AnnualLeaveBalance = {
@@ -191,8 +192,9 @@ export function annualLeaveBalance(input: AnnualLeaveBalanceInput): AnnualLeaveB
   const endMonth = hasAllowance ? clampMonth(input.endMonth, orgEnd) : orgEnd
   const year = leaveYearBounds({ startMonth, endMonth, onDayKey: input.onDayKey })
   const bookings = input.bookings ?? []
-  const taken = bookingsInYear(bookings, year.startDayKey, year.endDayKey, 'approved', timeZone)
-  const pending = bookingsInYear(bookings, year.startDayKey, year.endDayKey, 'pending', timeZone)
+  const nonWorking = input.nonWorkingDayKeys ?? []
+  const taken = bookingsInYear(bookings, year.startDayKey, year.endDayKey, 'approved', timeZone, nonWorking)
+  const pending = bookingsInYear(bookings, year.startDayKey, year.endDayKey, 'pending', timeZone, nonWorking)
   const daysPerYear = hasAllowance
     ? resolveDaysPerYear(input.daysPerYear, input.orgDaysPerYear)
     : 0
@@ -213,7 +215,8 @@ export function annualLeaveBalance(input: AnnualLeaveBalanceInput): AnnualLeaveB
       previous.startDayKey,
       previous.endDayKey,
       'approved',
-      timeZone
+      timeZone,
+      nonWorking
     )
     carriedForward = Math.max(0, snapLeaveDays(daysPerYear - prevTaken))
   }

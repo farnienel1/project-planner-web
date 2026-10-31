@@ -1,4 +1,5 @@
 import { isPlatformOwnerEmail } from '@/lib/platform/owner'
+import { passwordMinLength } from '@/lib/canonical/passwordPolicy'
 
 export const EMAIL_ACTION_MODES = ['resetPassword', 'verifyEmail', 'recoverEmail', 'signIn'] as const
 export type EmailActionMode = (typeof EMAIL_ACTION_MODES)[number]
@@ -27,8 +28,9 @@ export function loginPathForResetEmail(email: string): '/developer-login' | '/lo
   return isPlatformOwnerEmail(email) ? '/developer-login' : '/login'
 }
 
+/** Canonical `passwordMinLength`: the developer (platform owner) account needs 10, everyone else 8. */
 export function minPasswordLengthForEmail(email: string): number {
-  return loginPathForResetEmail(email) === '/developer-login' ? 10 : 8
+  return passwordMinLength({ developerAccount: loginPathForResetEmail(email) === '/developer-login' })
 }
 
 export function formatPasswordResetError(error: unknown): string {

@@ -221,8 +221,11 @@ export function buildDailyOverview(params: {
   includeWeekendsForUnbookedLabour?: boolean
   /** `organizations/{orgId}.warningDetection.excludedUserIdsFromUnbookedWarnings` */
   excludedUserIdsFromUnbookedWarnings?: readonly string[] | null
+  /** Organisation business zone (`organizationTimeZone`). Default Europe/London. */
+  timeZone?: string
 }): DailyOverviewModel {
   const day = params.day
+  const zone = params.timeZone || 'Europe/London'
   const today = params.today || new Date()
   const dayBookings = uniqueById(params.bookings).filter(
     (b) => coversCalendarDay(b.date, day) && bookingOccupiesDay(b.status)
@@ -449,7 +452,7 @@ export function buildDailyOverview(params: {
   const saturdayHours = effectiveWeekendSettings('saturday', payroll).countsAsStandardHours
   const sundayHours = effectiveWeekendSettings('sunday', payroll).countsAsStandardHours
   const unbookedRows = unbookedLabourRowsOnDay({
-    timeZone: 'Europe/London',
+    timeZone: zone,
     dayKey: overviewDayKey,
     includeWeekends: Boolean(params.includeWeekendsForUnbookedLabour),
     excludedUserIds: params.excludedUserIdsFromUnbookedWarnings,
@@ -508,14 +511,14 @@ export function buildDailyOverview(params: {
   }
   const overtimeMultiplier =
     labourResults.filter((r) => r.outsideHours > 0).reduce((max, r) => Math.max(max, r.outsideMultiplier), 0) ||
-    payrollOutsideMultiplier({}, isoWeekdayInZone(params.day, 'Europe/London'), policy)
+    payrollOutsideMultiplier({}, isoWeekdayInZone(params.day, zone), policy)
 
   const hasOther = officeBookings.length > 0 || wfhBookings.length > 0 || customGroups.length > 0
   const empty =
     projectCards.length === 0 && holidays.length === 0 && !hasOther && siteSurveyBookings.length === 0
 
   const dayLabel = new Intl.DateTimeFormat('en-GB', {
-    timeZone: 'Europe/London',
+    timeZone: zone,
     weekday: 'long',
     day: 'numeric',
     month: 'long',

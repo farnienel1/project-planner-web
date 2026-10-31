@@ -5,8 +5,9 @@
  * Doc id: timesheet_{userId}_{unixStartOfDay} using the organisation origin-country zone.
  * Legacy yyyy-MM-dd / ISO-week keys are still read so older web drafts are not lost.
  */
-import { collection, doc, getDoc, getDocs, query, setDoc, Timestamp, where } from 'firebase/firestore'
-import { db } from '@/lib/firebase/config'
+import { collection, doc, getDoc, getDocs, query, serverTimestamp, setDoc, Timestamp, where } from 'firebase/firestore'
+import { auth, db } from '@/lib/firebase/config'
+import { writeMetadataFields } from '@/lib/canonical/writeMetadata'
 import { newUuid, parseFirestoreDate as parseSharedFirestoreDate, sanitizeForFirestore } from '@/lib/firebase/firestoreUtils'
 import { LONDON_TIME_ZONE, unixStartOfDay, dayKey } from '@/lib/ios-parity/londonTime'
 import { weekStartKey } from '@/lib/timesheets/timesheetWeekUtils'
@@ -695,8 +696,9 @@ export async function saveTimesheetDraft({
     userId,
     weekStart: Timestamp.fromDate(weekStart),
     weekEnd: Timestamp.fromDate(end),
-    updatedAt: Timestamp.now(),
   }) as Record<string, unknown>
+  // Who and where (`writeMetadataFields`) plus the server time, on every timesheet save.
+  Object.assign(payload, writeMetadataFields(auth?.currentUser?.uid, 'web') ?? {}, { updatedAt: serverTimestamp() })
   await Promise.all(
     ids.map((id) => setDoc(doc(db, 'organizations', organizationId, 'settings', id), payload, { merge: true }))
   )

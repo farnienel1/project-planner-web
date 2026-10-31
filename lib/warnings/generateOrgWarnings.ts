@@ -1,7 +1,8 @@
 /**
  * Warning rows for one organisation.
- * The scan window, qualification rows, unverified rows, and unbooked-labour rows come from lib/canonical.
- * Clash timelines and material cut-off copy stay in this app.
+ * The scan window (`coverageWindow`), clash days (`clashScanDays`), qualification rows, unverified rows,
+ * unbooked-labour rows and material cut-off rows (`materialCutOffWarningRows`) come from lib/canonical.
+ * Clash timelines stay in this app. Days use the organisation zone (`organizationTimeZone`).
  */
 
 import type { Booking, HolidayBooking, Operative, Project, ProjectMaterialLine, MaterialSendRecord, User } from '@/types'
@@ -17,24 +18,25 @@ import {
   DEFAULT_WARNING_DETECTION,
   parseInvoicing,
 } from '@/lib/settings/organizationSettings'
+import { isActiveBookingStatus } from '@/lib/ios-parity/enums'
 import {
+  clashPairKey,
+  dayKeyInOrganizationZone,
   isAnonymisedDeletedProfile,
   isWarningActive,
+  organizationTimeZone,
   qualificationExpiryRows,
   resolveMaterialCutOffClock,
   unverifiedOperativeRows,
   withoutDismissedQualificationRows,
   type AcceptedClashRecord,
+  type CoverageFallbackReason,
 } from '@/lib/canonical'
-import { ianaTimeZoneForCountry } from '@/lib/orgTime/orgTimeZone'
 import type { NotificationPreferences } from '@/lib/settings/notificationPreferences'
 import { computeOperativeBookingClashWarnings, type OperativeBookingClashWarning } from '@/lib/scheduling/bookingClashUtils'
 import { computeManagerBookingClashWarnings, type ManagerBookingClashWarning } from '@/lib/warnings/managerClashWarnings'
-import {
-  computeUnbookedLabourWarnings,
-  filterWarningsByLookahead,
-  type UnbookedLabourWarning,
-} from '@/lib/warnings/unbookedLabourWarnings'
+import { computeUnbookedLabourWarnings, type UnbookedLabourWarning } from '@/lib/warnings/unbookedLabourWarnings'
+import { computeClashScanDayKeys, computeWarningCoverageWindow } from '@/lib/warnings/warningLookahead'
 import { computeMissedMaterialOrderWarnings, type MissedMaterialOrderWarning } from '@/lib/warnings/materialOrderWarnings'
 import { computeLeaveCoverageWarnings, type LeaveCoverageWarning } from '@/lib/warnings/leaveCoverageWarnings'
 import { dateFromDayKey } from '@/lib/ios-parity/londonTime'
@@ -77,15 +79,18 @@ export type OrgWarningsResult = {
   highCount: number
   mediumCount: number
   lowCount: number
+  /** Set when the saved "Set number of days" could not be used and 7 days were scanned. */
+  coverageFallbackReason?: CoverageFallbackReason
 }
 
 export function computeQualificationExpiryWarnings(
   operatives: Operative[],
-  referenceDate = new Date()
+  referenceDate = new Date(),
+  timeZone: string = organizationTimeZone(null)
 ): QualificationExpiryWarning[] {
   const rows = qualificationExpiryRows({
     referenceIso: referenceDate.toISOString(),
-    timeZone: 'Europe/London',
+    timeZone,
     operatives: operatives.map((operative) => {
       const names = new Map((operative.qualifications || []).map((qualification) => [qualification.id, qualification.name]))
       const expiries = Object.entries(operative.qualificationExpiryDates || []).flatMap(([qualificationId, expiry]) => {
@@ -108,7 +113,7 @@ export function computeQualificationExpiryWarnings(
     operativeName: row.operativeName,
     qualificationId: row.qualificationId,
     qualificationName: row.qualificationName,
-    date: dateFromDayKey(row.dayKey),
+    date: dateFromDayKey(row.dayKey, timeZone),
     dayKey: row.dayKey,
     daysUntilExpiry: row.daysUntilExpiry,
     severity: row.severity,
@@ -125,11 +130,12 @@ function isAnonymisedWarningSubject(name: string, email?: string): boolean {
 export function computeUnverifiedOperativeWarnings(
   operatives: Operative[],
   users: User[],
-  referenceDate = new Date()
+  referenceDate = new Date(),
+  timeZone: string = organizationTimeZone(null)
 ): UnverifiedOperativeWarning[] {
   const rows = unverifiedOperativeRows({
     referenceIso: referenceDate.toISOString(),
-    timeZone: 'Europe/London',
+    timeZone,
     operatives: operatives.map((operative) => ({
       id: operative.id,
       email: operative.email,
@@ -180,35 +186,30 @@ export function generateOrgWarnings(input: {
     organizationMaterialCutOff: input.orgDetails?.materialCutOff ?? null,
     userNotificationPreferences: input.notificationPreferences ?? null,
   })
-  const timeZone = ianaTimeZoneForCountry(input.orgDetails?.countryCode)
+  const timeZone = organizationTimeZone(input.orgDetails?.countryCode)
+  const coverage = computeWarningCoverageWindow(now, warningDetection, invoicing, timeZone)
+
+  // Clashes follow the scan window; in Full week a Saturday or Sunday of this week is checked when it has a booking.
+  const clashDayKeys = warningDetection.detectClashes
+    ? computeClashScanDayKeys(now, warningDetection, invoicing, timeZone, bookedDayKeys(input, timeZone))
+    : new Set<string>()
+  const onClashDay = (warning: { date: Date }) => clashDayKeys.has(dayKeyInOrganizationZone(warning.date.toISOString(), timeZone))
 
   const clashWarnings = warningDetection.detectClashes
-    ? filterWarningsByLookahead(
-        computeOperativeBookingClashWarnings(input.bookings, input.operatives, input.projects, {
-          users: input.users,
-          payrollPolicy,
-          userIdAliases: input.userIdAliases,
-        }),
-        warningDetection,
-        invoicing,
-        now,
-        timeZone
-      ).filter((warning) => !isAnonymisedWarningSubject(warning.operativeName))
+    ? computeOperativeBookingClashWarnings(input.bookings, input.operatives, input.projects, {
+        users: input.users,
+        payrollPolicy,
+        userIdAliases: input.userIdAliases,
+      }).filter((warning) => onClashDay(warning) && !isAnonymisedWarningSubject(warning.operativeName))
     : []
 
   const managerClashWarnings = warningDetection.detectClashes
-    ? filterWarningsByLookahead(
-        computeManagerBookingClashWarnings(input.managerSiteBookings, input.users, input.projects, {
-          operativeBookings: input.bookings,
-          operatives: input.operatives,
-          payrollPolicy,
-          userIdAliases: input.userIdAliases,
-        }),
-        warningDetection,
-        invoicing,
-        now,
-        timeZone
-      ).filter((warning) => !isAnonymisedWarningSubject(warning.personName))
+    ? computeManagerBookingClashWarnings(input.managerSiteBookings, input.users, input.projects, {
+        operativeBookings: input.bookings,
+        operatives: input.operatives,
+        payrollPolicy,
+        userIdAliases: input.userIdAliases,
+      }).filter((warning) => onClashDay(warning) && !isAnonymisedWarningSubject(warning.personName))
     : []
 
   const unbookedWarnings = computeUnbookedLabourWarnings({
@@ -250,13 +251,14 @@ export function generateOrgWarnings(input: {
       cutOffHour: cutOff.materialCutOffHour,
       cutOffMinute: cutOff.materialCutOffMinute,
       referenceDate: now,
+      timeZone,
     }
   )
 
-  const qualificationWarnings = computeQualificationExpiryWarnings(input.operatives, now)
-  const unverifiedWarnings = computeUnverifiedOperativeWarnings(input.operatives, input.users, now)
+  const qualificationWarnings = computeQualificationExpiryWarnings(input.operatives, now, timeZone)
+  const unverifiedWarnings = computeUnverifiedOperativeWarnings(input.operatives, input.users, now, timeZone)
 
-  return withWarningCounts({
+  const result = withWarningCounts({
     clashWarnings,
     managerClashWarnings,
     unbookedWarnings,
@@ -265,11 +267,30 @@ export function generateOrgWarnings(input: {
     qualificationWarnings,
     unverifiedWarnings,
   })
+  const fallback = coverage.fallbackReason ?? warningDetection.clashLookaheadDaysFallback
+  if (fallback && warningDetection.clashLookaheadMode === 'numberOfDays') result.coverageFallbackReason = fallback
+  return result
+}
+
+/** Organisation day keys that hold a booking that occupies the day (operative or manager). */
+function bookedDayKeys(
+  input: { bookings: Booking[]; managerSiteBookings: ManagerSiteBooking[] },
+  timeZone: string
+): string[] {
+  const keys = new Set<string>()
+  const add = (date: Date) => {
+    if (date instanceof Date && !Number.isNaN(date.getTime())) {
+      keys.add(dayKeyInOrganizationZone(date.toISOString(), timeZone))
+    }
+  }
+  for (const booking of input.bookings) if (isActiveBookingStatus(booking.status)) add(booking.date)
+  for (const booking of input.managerSiteBookings) add(booking.date)
+  return [...keys]
 }
 
 type WarningRows = Omit<OrgWarningsResult, 'coreCount' | 'highCount' | 'mediumCount' | 'lowCount'>
 
-function withWarningCounts(rows: WarningRows): OrgWarningsResult {
+function withWarningCounts(rows: WarningRows & { coverageFallbackReason?: CoverageFallbackReason }): OrgWarningsResult {
   const leaveClashCount = rows.leaveWarnings.filter((warning) => warning.kind === 'leave_clash').length
   const leaveCoverCount = rows.leaveWarnings.length - leaveClashCount
   const highCount = rows.clashWarnings.length + rows.unbookedWarnings.length + leaveClashCount
@@ -296,7 +317,10 @@ export function activeOrgWarnings(result: OrgWarningsResult, decisions: WarningD
   const active = (row: { resolutionKey?: string; bookingAId?: string; bookingBId?: string }) =>
     isWarningActive(row, decisions)
   return withWarningCounts({
-    clashWarnings: result.clashWarnings.filter((w) => active({ bookingAId: w.bookingAId, bookingBId: w.bookingBId })),
+    // Operative clashes are keyed by their booking pair (`clashPairKey`) in `warningResolutions` too.
+    clashWarnings: result.clashWarnings.filter((w) =>
+      active({ resolutionKey: clashPairKey(w.bookingAId, w.bookingBId), bookingAId: w.bookingAId, bookingBId: w.bookingBId })
+    ),
     managerClashWarnings: result.managerClashWarnings.filter((w) =>
       active({ resolutionKey: w.resolutionKey, bookingAId: w.bookingAId, bookingBId: w.bookingBId })
     ),
@@ -308,5 +332,6 @@ export function activeOrgWarnings(result: OrgWarningsResult, decisions: WarningD
       decisions.dismissedQualificationKeys
     ).filter((w) => active({ resolutionKey: w.id })),
     unverifiedWarnings: result.unverifiedWarnings.filter((w) => active({ resolutionKey: w.id })),
+    coverageFallbackReason: result.coverageFallbackReason,
   })
 }

@@ -211,7 +211,7 @@ test('end-of-invoicing-period waits for live payment runs before scanning', () =
   assert.equal(warningScanInvoicingReady(unsavedDraft, undefined), true)
 })
 
-test('a later factory detection read must not keep a leftover 1–16 payment run', () => {
+test('the live organisation read wins: detection and payment runs both come from Firebase', () => {
   const stale = {
     id: 'org',
     name: 'Firm',
@@ -239,9 +239,8 @@ test('a later factory detection read must not keep a leftover 1–16 payment run
   const merged = organizationDetailsForWarningScan({
     current: stale as never,
     loaded: live as never,
-    cachedDetection: invoicingPeriod,
   })
-  assert.equal(merged.warningDetection.clashLookaheadMode, 'endOfInvoicingPeriod')
+  assert.equal(merged.warningDetection.clashLookaheadMode, DEFAULT_WARNING_DETECTION.clashLookaheadMode)
   assert.equal(merged.invoicing.paymentRunDateRanges[0].endDay, 15)
   assert.equal(merged.invoicing.paymentRunDateRanges[1].startDay, 16)
 })

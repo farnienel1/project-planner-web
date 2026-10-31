@@ -18,6 +18,7 @@ import type { AccountKind } from './userProfile'
 import {
   canEditWorkCatalogue,
   canReviewUserTimesheets,
+  canSeeVariations,
   canViewStaffWarnings,
   isStaffAccount,
   type StaffAccountRole,
@@ -44,6 +45,7 @@ export const NOTIFICATION_PREFERENCE_KEYS = [
   'qualificationExpiry',
   'lineManagerPeerUpdates',
   'timesheetSubmissionReminder',
+  'variations',
 ] as const
 
 export type NotificationPreferenceKey = (typeof NOTIFICATION_PREFERENCE_KEYS)[number]
@@ -70,6 +72,7 @@ export const DEFAULT_USER_NOTIFICATION_PREFERENCES: UserNotificationPreferences 
   qualificationExpiry: true,
   lineManagerPeerUpdates: true,
   timesheetSubmissionReminder: true,
+  variations: true,
 }
 
 /**
@@ -110,6 +113,12 @@ const TYPE_TO_PREFERENCE: Record<string, NotificationPreferenceKey> = {
   qualification_expiry: 'qualificationExpiry',
   line_manager_peer_update: 'lineManagerPeerUpdates',
   [TIMESHEET_SUBMISSION_NOTICE_TYPE]: 'timesheetSubmissionReminder',
+  // Web writes `variation` / `variation_renumbered`; iOS writes the three `variation_*` kinds below.
+  variation: 'variations',
+  variation_renumbered: 'variations',
+  variation_added: 'variations',
+  variation_from_tracker: 'variations',
+  variation_numbers_updated: 'variations',
 }
 
 export type NotificationWorkCatalogue = 'projects' | 'smallWorks'
@@ -263,6 +272,7 @@ const PREFERENCE_LABELS: Record<NotificationPreferenceKey, string> = {
   qualificationExpiry: 'Qualification expiry',
   lineManagerPeerUpdates: 'Line manager peer updates',
   timesheetSubmissionReminder: 'Timesheet submission reminder',
+  variations: 'Variations',
 }
 
 /**
@@ -293,6 +303,7 @@ export function notificationPreferenceCopy(
     qualificationExpiry: 'Reminders before qualifications expire.',
     lineManagerPeerUpdates: 'When another line manager actions a shared request.',
     timesheetSubmissionReminder: 'Reminder to submit before the payment-run deadline.',
+    variations: 'When a variation is added to a job you manage, or variation numbers are updated.',
   }
   return { label: PREFERENCE_LABELS[key], description: descriptions[key] }
 }
@@ -323,6 +334,8 @@ export function notificationPreferenceIsVisible(
       return canViewStaffWarnings(role)
     case 'timesheetSignOff':
       return canReviewUserTimesheets(role)
+    case 'variations':
+      return canSeeVariations(role)
     default:
       return true
   }
@@ -336,7 +349,7 @@ export function visibleNotificationPreferenceKeys(
 
 /**
  * Whether this account should receive a notice of `type`.
- * Types with no toggle (variations, ideas) stay allowed.
+ * Types with no toggle (ideas, anything unmapped) stay allowed. Variation types follow `variations`.
  * A toggle that is on does not add the user to a fan-out they are not already on.
  */
 export function notificationPreferenceAllowsDelivery(

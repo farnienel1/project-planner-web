@@ -6,6 +6,8 @@ import { Modal } from '@/components/ui/overlays'
 import { addLondonDays, londonMidnight } from '@/lib/ios-parity/londonTime'
 import { readStoredRates } from '@/lib/timesheets/payBasis'
 import type { OperativeDayRateHistoryEntry } from '@/lib/timesheets/dayRateHistoryStorage'
+import { formatMoney } from '@/lib/canonical'
+import { useOrganizationCurrency } from '@/lib/stores/organizationDocumentStore'
 
 type RateInput = {
   payBasis?: unknown
@@ -134,6 +136,7 @@ export function usePaySaveGate() {
 }
 
 export function PreviousRatesList({ entries }: { entries: OperativeDayRateHistoryEntry[] }) {
+  const currencyCode = useOrganizationCurrency()
   if (entries.length === 0) return null
   const newestFirst = [...entries].sort((a, b) => {
     const byEffective = b.effectiveAt.getTime() - a.effectiveAt.getTime()
@@ -154,7 +157,7 @@ export function PreviousRatesList({ entries }: { entries: OperativeDayRateHistor
           const suffix = entry.payBasis === 'hourly' ? '/hr' : '/day'
           return (
             <li key={entry.id} className="text-sm text-[var(--ink)]">
-              {date} · £{entry.dayRate.toFixed(2)}
+              {date} · {formatMoney(entry.dayRate, currencyCode)}
               {suffix}
             </li>
           )

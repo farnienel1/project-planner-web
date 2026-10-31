@@ -9,30 +9,23 @@ import type { User } from '@/types'
 import type { TimesheetDraft } from '@/lib/timesheets/timesheetDraft'
 import {
   isTimesheetAwaitingSignOff,
+  lineManagerIds,
   isTimesheetFullySigned,
   isTimesheetOperativeSigned,
   timesheetRequiresManagerCounterSign,
   timesheetTimestampMs,
 } from '@/lib/canonical'
 
+/**
+ * `lineManagerIds` (rulebook): `assignedManagerUserIds`, else the legacy single id; none when
+ * `hasNoLineManager`. The same rule as User Timesheets scope and leave approvers.
+ */
 export function lineManagerUserIds(user: User): string[] {
-  const ids = [
-    ...(user.assignedManagerUserIds || []),
-    user.assignedManagerUserId || '',
-  ]
-    .map((id) => id.trim())
-    .filter(Boolean)
-  const seen = new Set<string>()
-  return ids.filter((id) => {
-    if (seen.has(id)) return false
-    seen.add(id)
-    return true
-  })
+  return lineManagerIds(user)
 }
 
 export function userHasLineManager(user: User): boolean {
-  if (user.hasNoLineManager) return false
-  return lineManagerUserIds(user).length > 0
+  return lineManagerIds(user).length > 0
 }
 
 export function requiresLineManagerCounterSign(user: User): boolean {

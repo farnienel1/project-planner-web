@@ -469,8 +469,11 @@ service cloud.firestore {
              'employmentType',
              'employmentTypeTransitionFrom',
              'employmentTypeEffectiveAt',
-             'updatedAt'
-           ]);
+             'updatedAt',
+             'updatedBy',
+             'updatedFrom'
+           ]) &&
+           writeMetadataValidWhenPresent();
   }
 
   function flagOn(data, key) {
@@ -501,8 +504,136 @@ service cloud.firestore {
              !(request.resource.data.permissions is map) ||
              !flagOn(request.resource.data.permissions, 'adminAccess') ||
              alreadyPrivilegedAdmin(resource.data)
-           );
+           ) &&
+           selfUpdateKeepsManagedFields();
   }
+
+  // Effective flag for a key that defaults to true when missing (dailyOverview, wholesalersOrderHistory):
+  // off only when the top level or `permissions` says false.
+  function defaultOnFlag(data, key) {
+    return !(data.get(key, true) == false || data.get(key, true) == 0 ||
+             permissionValue(data, key) == false || permissionValue(data, key) == 0);
+  }
+
+  // Permission toggles a person may not switch on for themselves (Manage Users sets them). Kept as
+  // all-false maps so one diff() finds every toggle that is on: a key present with a value other
+  // than false. materials and siteAudit are locked only for an operative, because iOS saveUser
+  // forces them on for every non-operative.
+  function lockedPermissionFalseMap(includeOperativeOnlyKeys) {
+    return includeOperativeOnlyKeys
+      ? {'manager': false, 'operatives': false, 'qualifications': false, 'projects': false, 'smallWorks': false,
+         'annualLeaveSelfBook': false, 'weeklyReports': false, 'subContractors': false,
+         'materials': false, 'siteAudit': false}
+      : {'manager': false, 'operatives': false, 'qualifications': false, 'projects': false, 'smallWorks': false,
+         'annualLeaveSelfBook': false, 'weeklyReports': false, 'subContractors': false};
+  }
+
+  // Locked toggles that are on at the top level or in `permissions`.
+  function lockedPermissionsOn(data, falseMap) {
+    return data.diff(falseMap).changedKeys().union(
+      data.get('permissions', {}) is map ? data.get('permissions', {}).diff(falseMap).changedKeys() : [].toSet()
+    );
+  }
+
+  // Toggles that default to on (dailyOverview, wholesalersOrderHistory): explicitly false somewhere.
+  function defaultOnPermissionsOff(data) {
+    return data.diff({'dailyOverview': false, 'wholesalersOrderHistory': false}).unchangedKeys().union(
+      data.get('permissions', {}) is map
+        ? data.get('permissions', {}).diff({'dailyOverview': false, 'wholesalersOrderHistory': false}).unchangedKeys()
+        : [].toSet()
+    );
+  }
+
+  // `next` turns on no permission toggle that `prev` had off, and an operative stays one.
+  function selfPermissionsNotRaised(next, prev, topChanged) {
+    return lockedPermissionsOn(prev, lockedPermissionFalseMap(isOperativeProfile(prev))).hasAll(
+             lockedPermissionsOn(next, lockedPermissionFalseMap(isOperativeProfile(prev)))) &&
+           // A default-on toggle that was off stays off.
+           defaultOnPermissionsOff(next).hasAll(defaultOnPermissionsOff(prev)) &&
+           (!(topChanged.hasAny(['operativeMode', 'role', 'permissions'])) ||
+            !isOperativeProfile(prev) || isOperativeProfile(next));
+  }
+
+  // `assignedManagerUserIds`, or the legacy single id when that list is empty (lib/canonical/userTimesheetAccess.ts).
+  function lineManagerIdList(data) {
+    return (data.get('assignedManagerUserIds', null) is list && data.get('assignedManagerUserIds', null).size() > 0)
+      ? data.get('assignedManagerUserIds', null)
+      : ((data.get('assignedManagerUserId', null) is string && data.get('assignedManagerUserId', null).size() > 0)
+          ? [data.get('assignedManagerUserId', null)]
+          : []);
+  }
+
+  function hasLineManager(data) {
+    return data.get('hasNoLineManager', false) != true && lineManagerIdList(data).size() > 0;
+  }
+
+  // Timestamps written by a client round-trip through ms (web Date) or a Swift Double (iOS Date),
+  // so a resent unchanged instant can differ by under a millisecond. Within one second is the same.
+  function sameInstantValue(a, b) {
+    return a == b ||
+      (a is timestamp && b is timestamp && a > b - duration.value(1, 's') && a < b + duration.value(1, 's')) ||
+      (a is number && b is number && a > b - 1000 && a < b + 1000);
+  }
+
+  // Write metadata (lib/canonical/writeMetadata.ts writeMetadataFields). Optional while iOS does not
+  // send it yet; when present, updatedBy is the signed-in account, updatedFrom a known platform, and
+  // updatedAt a timestamp.
+  // Only keys this write sets are checked, so a merge that keeps an earlier editor's stamp still passes.
+  function writeMetadataValidWhenPresent() {
+    return writeMetadataKeysValid(
+      resource == null
+        ? request.resource.data.keys().toSet()
+        : request.resource.data.diff(resource.data).affectedKeys()
+    );
+  }
+
+  function writeMetadataKeysValid(written) {
+    return (!('updatedBy' in written) || request.resource.data.get('updatedBy', null) == request.auth.uid) &&
+      (!('updatedFrom' in written) || request.resource.data.get('updatedFrom', null) in ['web', 'ios', 'android']) &&
+      (!('updatedAt' in written) || request.resource.data.get('updatedAt', null) is timestamp);
+  }
+
+  // A plain value, with missing, null and '' the same.
+  function sameLooseValue(a, b) {
+    return a == b || ((a == null || a == '') && (b == null || b == ''));
+  }
+
+  // Pay, line manager, active state, employment type and permission toggles are set by an admin or
+  // a manager with operatives access (Manage Users), never by the person on their own document.
+  // Both apps resend the whole profile (iOS saveUser setData merge, web updateDoc), so only a real
+  // change is refused: missing and the app default are the same value. An admin repairing their
+  // own document keeps the existing exemption.
+  function selfUpdateKeepsManagedFields() {
+    let next = request.resource.data;
+    let prev = resource.data;
+    let changed = next.diff(prev).affectedKeys();
+    return alreadyPrivilegedAdmin(prev) || (
+      (!changed.hasAny(['dayRate', 'hourlyRate', 'payBasis']) || (
+        next.get('dayRate', null) == prev.get('dayRate', null) &&
+        next.get('hourlyRate', null) == prev.get('hourlyRate', null) &&
+        sameLooseValue(next.get('payBasis', null), prev.get('payBasis', null))
+      )) &&
+      (!changed.hasAny(['isActive', 'hasNoLineManager']) || (
+        truthyBool(next.get('isActive', true)) == truthyBool(prev.get('isActive', true)) &&
+        truthyBool(next.get('hasNoLineManager', false)) == truthyBool(prev.get('hasNoLineManager', false))
+      )) &&
+      (!changed.hasAny(['assignedManagerUserId', 'assignedManagerUserIds']) || (
+        lineManagerIdList(next) == lineManagerIdList(prev) &&
+        (sameLooseValue(next.get('assignedManagerUserId', null), prev.get('assignedManagerUserId', null)) ||
+         next.get('assignedManagerUserId', null) in lineManagerIdList(next))
+      )) &&
+      (!changed.hasAny(['employmentType', 'employmentTypeTransitionFrom', 'employmentTypeEffectiveAt']) || (
+        next.get('employmentType', 'paye') == prev.get('employmentType', 'paye') &&
+        sameLooseValue(next.get('employmentTypeTransitionFrom', null), prev.get('employmentTypeTransitionFrom', null)) &&
+        sameInstantValue(next.get('employmentTypeEffectiveAt', null), prev.get('employmentTypeEffectiveAt', null))
+      )) &&
+      (!changed.hasAny(['permissions', 'manager', 'operatives', 'qualifications', 'projects', 'smallWorks',
+                        'annualLeaveSelfBook', 'weeklyReports', 'subContractors', 'dailyOverview',
+                        'wholesalersOrderHistory', 'materials', 'siteAudit', 'operativeMode', 'role']) ||
+       selfPermissionsNotRaised(next, prev, changed))
+    );
+  }
+
 
   function canReadUserDocument(userId) {
     return request.auth != null && (
@@ -778,11 +909,48 @@ service cloud.firestore {
       allow create: if request.auth != null && 
                      request.resource.data.members[request.auth.uid] == 'admin';
       
-      allow update: if (isPlatformOwner() ||
-                     isOrganizationAdmin(organizationId) ||
-                     isOrgAdminViaMembersMap(organizationId) ||
-                     isOrgCreatorViaParentGet(organizationId))
-                     && billingUnchanged();
+      // Admins of this company edit settings. Being the creator alone is not enough: a creator who
+      // was demoted is no longer an admin (members map or users document) and cannot edit.
+      // creatorUserId moves only in an ownership transfer: the platform owner, or the current
+      // Super Admin (creator, or users/{uid}.isSuperAdmin in this company) who is still an admin,
+      // handing it to someone who is an admin here (iOS transferOrganizationOwnership, web
+      // userStore transfer). Billing stays server-only.
+      function orgRootCallerIsAdmin() {
+        return isOrganizationAdmin(organizationId) ||
+          ('members' in resource.data && resource.data.members is map &&
+           resource.data.members.get(request.auth.uid, null) == 'admin');
+      }
+      function orgRootCreatorUnchanged() {
+        return request.resource.data.get('creatorUserId', null) == resource.data.get('creatorUserId', null);
+      }
+      function orgRootNewCreatorIsAdmin() {
+        let newId = request.resource.data.get('creatorUserId', null);
+        return newId is string && newId.size() > 0 && (
+          (request.resource.data.get('members', {}) is map &&
+           request.resource.data.get('members', {}).get(newId, null) == 'admin') || (
+            exists(/databases/(default)/documents/users/$(newId)) &&
+            userDocOrganizationMatches(get(/databases/(default)/documents/users/$(newId)).data, organizationId) &&
+            adminLikeUser(get(/databases/(default)/documents/users/$(newId)).data) &&
+            !isOperativeLikeUser(get(/databases/(default)/documents/users/$(newId)).data)
+          )
+        );
+      }
+      function orgRootCallerIsSuperAdmin() {
+        return resource.data.get('creatorUserId', null) == request.auth.uid || (
+          exists(/databases/(default)/documents/users/$(request.auth.uid)) &&
+          staffFlag(get(/databases/(default)/documents/users/$(request.auth.uid)).data, 'isSuperAdmin') &&
+          userOrgIdMatchesPath(organizationId)
+        );
+      }
+      allow update: if billingUnchanged() && (
+                     isPlatformOwner() || (
+                       request.auth != null &&
+                       orgRootCallerIsAdmin() && (
+                         orgRootCreatorUnchanged() ||
+                         (orgRootCallerIsSuperAdmin() && orgRootNewCreatorIsAdmin())
+                       )
+                     )
+                   );
       
       allow delete: if false;
       
@@ -824,9 +992,48 @@ service cloud.firestore {
         allow delete: if isOrganizationAdmin(organizationId);
       }
       
+      // Deleted-booking tombstones (lib/canonical/bookingTombstones.ts). A delete of bookings/{id} or
+      // managerSiteBookings/{id} writes deletedBookings/{id} in the same batch; while it exists the
+      // booking cannot be created or updated again, so a queued offline save cannot bring it back.
+      function bookingTombstoned(bookingId) {
+        return exists(/databases/(default)/documents/organizations/$(organizationId)/deletedBookings/$(bookingId));
+      }
+      function bookingStatusCancelled(data) {
+        return data.get('status', '') is string &&
+          data.get('status', '').lower() in ['cancelled', 'canceled'];
+      }
+      // A cancelled labour booking stays cancelled unless an admin or manager reinstates it.
+      // Edits that keep it cancelled are fine (iOS BookingStore re-saves every row).
+      function bookingUpdateKeepsCancellation() {
+        return !bookingStatusCancelled(resource.data) ||
+          bookingStatusCancelled(request.resource.data) ||
+          canAccessVariationsStaff(organizationId);
+      }
+
+      match /deletedBookings/{bookingId} {
+        allow read: if canAccessOrganization(organizationId);
+        allow create: if canAccessOrganization(organizationId) &&
+          request.resource.data.keys().hasOnly(['bookingId', 'collection', 'deletedAt', 'deletedBy', 'deletedFrom']) &&
+          request.resource.data.keys().hasAll(['bookingId', 'collection', 'deletedAt', 'deletedBy', 'deletedFrom']) &&
+          request.resource.data.bookingId == bookingId &&
+          request.resource.data.deletedBy == request.auth.uid &&
+          request.resource.data.deletedAt == request.time &&
+          request.resource.data.deletedFrom in ['web', 'ios', 'android'] &&
+          (
+            // Same people who may delete each kind of booking.
+            (request.resource.data.collection == 'bookings' && isOrganizationAdmin(organizationId)) ||
+            request.resource.data.collection == 'managerSiteBookings'
+          );
+        allow update: if false;
+        allow delete: if isOrganizationAdmin(organizationId) || isOrgAdminViaMembersMap(organizationId) || isPlatformOwner();
+      }
+
       match /bookings/{bookingId} {
         allow read: if canAccessOrganization(organizationId);
-        allow create, update: if canAccessOrganization(organizationId);
+        allow create: if canAccessOrganization(organizationId) && !bookingTombstoned(bookingId);
+        allow update: if canAccessOrganization(organizationId) &&
+          !bookingTombstoned(bookingId) &&
+          bookingUpdateKeepsCancellation();
         allow delete: if isOrganizationAdmin(organizationId);
       }
       
@@ -861,19 +1068,84 @@ service cloud.firestore {
             settingId.matches('^timesheet_' + request.auth.uid + '_.*')
           );
         }
-        function canWriteTimesheetSettings() {
-          return isOwnTimesheetSettings() ||
+        // Whose timesheet: stored userId, else the incoming one on create.
+        function timesheetSubjectUid() {
+          return resource != null && resource.data.get('userId', null) is string
+            ? resource.data.userId
+            : request.resource.data.get('userId', null);
+        }
+        // Admins, or the subject's line manager (their own id, or a former invite id on
+        // users/{auth.uid}.formerUserIds — lib/canonical/userTimesheetAccess.ts).
+        function isTimesheetReviewer() {
+          return isPlatformOwner() ||
             isOrganizationAdmin(organizationId) ||
-            isOrgAdminViaMembersMap(organizationId) ||
-            isOrganizationMaterialManager(organizationId) ||
-            isPlatformOwner();
+            isOrgAdminViaMembersMap(organizationId) || (
+              timesheetSubjectUid() is string &&
+              timesheetSubjectUid() != request.auth.uid &&
+              exists(/databases/(default)/documents/users/$(timesheetSubjectUid())) &&
+              lineManagerIdList(get(/databases/(default)/documents/users/$(timesheetSubjectUid())).data).hasAny(
+                [request.auth.uid].concat(
+                  get(/databases/(default)/documents/users/$(request.auth.uid)).data.get('formerUserIds', []) is list
+                    ? get(/databases/(default)/documents/users/$(request.auth.uid)).data.get('formerUserIds', [])
+                    : []
+                )
+              )
+            );
+        }
+        function timesheetSame(key) {
+          return sameLooseValue(
+            request.resource.data.get(key, null),
+            resource == null ? null : resource.data.get(key, null)
+          );
+        }
+        function timesheetSameInstant(key) {
+          return sameInstantValue(
+            request.resource.data.get(key, null),
+            resource == null ? null : resource.data.get(key, null)
+          );
+        }
+        // Manager counter-sign and export (timesheetSignOffWriteFields role 'manager',
+        // timesheetExportWriteFields). The owner resends them unchanged on every save.
+        function timesheetManagerFieldsUnchanged() {
+          return timesheetSameInstant('managerSignedAt') &&
+            timesheetSame('managerSignedByName') &&
+            timesheetSame('managerSignedByUserId') &&
+            timesheetSame('managerSignatureImageBase64') &&
+            timesheetSameInstant('approvedAt') &&
+            timesheetSame('approvedByName') &&
+            timesheetSameInstant('exportedAt');
+        }
+        function canWriteTimesheetSettings() {
+          return isTimesheetReviewer() ||
+            (isOwnTimesheetSettings() && timesheetManagerFieldsUnchanged());
+        }
+        function canDeleteTimesheetSettings() {
+          return isTimesheetReviewer() || (
+            isOwnTimesheetSettings() &&
+            resource.data.get('managerSignedAt', null) == null &&
+            resource.data.get('exportedAt', null) == null
+          );
+        }
+        // Per-job deadlines and the legacy health & safety copy: operatives update their own
+        // deadlines and sign toolbox talks, so any member writes these.
+        function isMemberWritableSettingsDoc() {
+          return settingId.matches('^deadlines_.*') ||
+            settingId == 'deadlineAssignments' ||
+            settingId.matches('^healthSafety_.*');
         }
         allow read: if canAccessOrganization(organizationId) &&
           (!isVariationSettingsDoc() || canAccessVariationsStaff(organizationId));
-        allow write: if canAccessOrganization(organizationId) && (
+        // Everything else (jobTypes, tradeTypeInventory, variationTrades, variation logs, and any new
+        // company-wide setting) is admins and managers only. Operatives never write it.
+        allow create, update: if canAccessOrganization(organizationId) && (
           isTimesheetSettingsDoc()
             ? canWriteTimesheetSettings()
-            : (!isVariationSettingsDoc() || canAccessVariationsStaff(organizationId))
+            : (isMemberWritableSettingsDoc() || canAccessVariationsStaff(organizationId))
+        );
+        allow delete: if canAccessOrganization(organizationId) && (
+          isTimesheetSettingsDoc()
+            ? canDeleteTimesheetSettings()
+            : (isMemberWritableSettingsDoc() || canAccessVariationsStaff(organizationId))
         );
       }
       
@@ -939,7 +1211,7 @@ service cloud.firestore {
       
       match /managerSiteBookings/{bookingId} {
         allow read: if canAccessOrganization(organizationId);
-        allow create, update: if canAccessOrganization(organizationId);
+        allow create, update: if canAccessOrganization(organizationId) && !bookingTombstoned(bookingId);
         allow delete: if canAccessOrganization(organizationId);
       }
       
@@ -955,15 +1227,130 @@ service cloud.firestore {
         allow delete: if canAccessOrganization(organizationId);
       }
       
+      // Annual leave. A requester asks (status 'pending') or asks to cancel (cancellationRequestedAt /
+      // cancellationRequestedByUserId); only an admin or the requester's line manager decides
+      // (status 'approved' / 'rejected', approvedByUserId, approvedAt, decisionNote). When the
+      // requester has no line manager, or the row has no users document (legacy operativeId-only
+      // row), any admin or manager decides. People who book their own leave (no line manager, or
+      // annualLeaveSelfBook and not operative mode — iOS AnnualLeaveSelfBookPolicy, web
+      // leaveSubmitStatus) save it approved. Both apps resend every field with setData merge, so
+      // decision fields count only when the value really changes (null, missing and a sub-second
+      // timestamp round-trip are the same).
       match /holidayBookings/{bookingId} {
-        allow read, create, update: if canAccessOrganization(organizationId);
+        function hbCaller() {
+          return get(/databases/(default)/documents/users/$(request.auth.uid)).data;
+        }
+        // Members-map admin first (one get), then the users-document admin of this company.
+        function hbIsAdmin() {
+          return isOrgAdminViaMembersMap(organizationId) ||
+            isOrganizationAdmin(organizationId) ||
+            isPlatformOwner();
+        }
+        // Staff (lib/canonical/staffAccess.ts isStaffAccount): admin of this company, or a manager not
+        // in operative mode. Membership is already checked by canAccessOrganization on every rule below.
+        function hbIsStaffManager() {
+          return ((staffFlag(hbCaller(), 'manager') || hbCaller().get('role', '') == 'manager') &&
+             !isOperativeProfile(hbCaller())) ||
+            hbIsAdmin();
+        }
+        function hbRequesterUid(data) {
+          return data.get('userId', null);
+        }
+        function hbRequesterExists(data) {
+          return hbRequesterUid(data) is string &&
+            hbRequesterUid(data).size() > 0 &&
+            exists(/databases/(default)/documents/users/$(hbRequesterUid(data)));
+        }
+        function hbRequester(data) {
+          return get(/databases/(default)/documents/users/$(hbRequesterUid(data))).data;
+        }
+        function hbIsOwner(data) {
+          return hbRequesterUid(data) == request.auth.uid ||
+            data.get('operativeId', null) == request.auth.uid;
+        }
+        // Admin, the requester's line manager, or any manager when there is no line manager to ask.
+        function hbCanDecide(data) {
+          return hbIsAdmin() || (
+            !hbIsOwner(data) && (
+              (hbRequesterExists(data) && request.auth.uid in lineManagerIdList(hbRequester(data))) ||
+              (hbIsStaffManager() && (!hbRequesterExists(data) || !hasLineManager(hbRequester(data))))
+            )
+          );
+        }
+        function hbCallerSelfBooks() {
+          return !hasLineManager(hbCaller()) ||
+            (staffFlag(hbCaller(), 'annualLeaveSelfBook') && !isOperativeProfile(hbCaller()));
+        }
+        function hbIsRequestShape(next) {
+          return next.get('status', null) == 'pending' &&
+            next.get('approvedByUserId', null) == null &&
+            next.get('approvedAt', null) == null &&
+            next.get('decisionNote', null) == null;
+        }
+        // A request (pending, no decision) or, for a self-booker, their own approved booking.
+        function hbOwnerShapeAllowed(next) {
+          return hbIsRequestShape(next) || (
+            next.get('status', null) == 'approved' &&
+            next.get('approvedByUserId', null) in [null, request.auth.uid] &&
+            next.get('decisionNote', null) == null &&
+            hbCallerSelfBooks()
+          );
+        }
+        // Only a key that really changed is compared (null, missing and a sub-second round-trip are the same).
+        function hbKeySame(changed, key) {
+          return !(key in changed) ||
+            sameLooseValue(request.resource.data.get(key, null), resource.data.get(key, null));
+        }
+        function hbKeySameInstant(changed, key) {
+          return !(key in changed) ||
+            sameInstantValue(request.resource.data.get(key, null), resource.data.get(key, null));
+        }
+        function hbDecisionUnchanged(changed) {
+          return !changed.hasAny(['status', 'approvedByUserId', 'approvedAt', 'decisionNote']) || (
+            hbKeySame(changed, 'status') && hbKeySame(changed, 'approvedByUserId') &&
+            hbKeySameInstant(changed, 'approvedAt') && hbKeySame(changed, 'decisionNote')
+          );
+        }
+        function hbDatesUnchanged(changed) {
+          return !changed.hasAny(['startDate', 'endDate', 'timeSlot']) || (
+            hbKeySameInstant(changed, 'startDate') && hbKeySameInstant(changed, 'endDate') &&
+            !('timeSlot' in changed)
+          );
+        }
+        function hbOwnerEditAllowed(changed) {
+          return hbKeySame(changed, 'userId') && hbKeySame(changed, 'operativeId') && (
+            // Ask to cancel (or withdraw that ask), or any edit that leaves decision and dates alone.
+            (hbDecisionUnchanged(changed) && hbDatesUnchanged(changed)) ||
+            // Edit a pending request, or a self-booker edits their own booking.
+            ((resource.data.get('status', null) == 'pending' || hbCallerSelfBooks()) &&
+              (hbDecisionUnchanged(changed) || hbOwnerShapeAllowed(request.resource.data)))
+          );
+        }
+        function hbOwnerUpdateAllowed() {
+          return hbIsOwner(resource.data) &&
+            hbOwnerEditAllowed(request.resource.data.diff(resource.data).affectedKeys());
+        }
+
+        allow read: if canAccessOrganization(organizationId);
+        allow create: if canAccessOrganization(organizationId) && (
+          (hbIsOwner(request.resource.data) && hbOwnerShapeAllowed(request.resource.data)) ||
+          hbCanDecide(request.resource.data) ||
+          // A manager on the Team screen books a request for someone with a line manager: it waits there.
+          (hbIsRequestShape(request.resource.data) && hbIsStaffManager())
+        );
+        allow update: if canAccessOrganization(organizationId) && (
+          hbOwnerUpdateAllowed() ||
+          (hbCanDecide(resource.data) && hbCanDecide(request.resource.data))
+        );
+        // Approving a cancellation deletes the row (decider). The requester may withdraw a pending or
+        // declined request; a self-booker may remove their own booking.
         allow delete: if canAccessOrganization(organizationId) && (
-          isPlatformOwner() ||
-          isOrganizationAdmin(organizationId) ||
-          isOrgAdminViaMembersMap(organizationId) ||
-          isOrganizationMaterialManager(organizationId) ||
-          ('userId' in resource.data && resource.data.userId == request.auth.uid) ||
-          ('operativeId' in resource.data && resource.data.operativeId == request.auth.uid)
+          (hbIsOwner(resource.data) && (
+            resource.data.get('status', null) in ['pending', 'rejected'] ||
+            hbCallerSelfBooks()
+          )) ||
+          hbIsAdmin() ||
+          isOrganizationMaterialManager(organizationId)
         );
       }
 
@@ -983,8 +1370,11 @@ service cloud.firestore {
         allow delete: if isOrganizationAdmin(organizationId);
       }
 
+      // Accepting a clash is a staff warning decision (lib/canonical/staffAccess.ts canViewStaffWarnings,
+      // scheduleSources.ts acceptedClashWriteFields): admins and managers only, never operative mode.
       match /acceptedBookingClashes/{clashId} {
-        allow read, create, update: if canAccessOrganization(organizationId);
+        allow read: if canAccessOrganization(organizationId);
+        allow create, update: if canAccessVariationsStaff(organizationId) && writeMetadataValidWhenPresent();
         allow delete: if isOrganizationAdmin(organizationId);
       }
 
@@ -992,20 +1382,23 @@ service cloud.firestore {
       // Document id is the warning's resolution key. Undoing an approval deletes it.
       match /warningResolutions/{resolutionKey} {
         allow read: if canAccessOrganization(organizationId);
-        allow create, update: if canAccessOrganization(organizationId) &&
-          request.resource.data.keys().hasOnly(['resolutionKey', 'status', 'resolvedByUserId', 'resolvedAt']) &&
+        // Approving or dismissing a warning is staff only (canViewStaffWarnings): admins and managers.
+        allow create, update: if canAccessVariationsStaff(organizationId) &&
+          request.resource.data.keys().hasOnly(['resolutionKey', 'status', 'resolvedByUserId', 'resolvedAt', 'updatedBy', 'updatedFrom', 'updatedAt']) &&
+          writeMetadataValidWhenPresent() &&
           request.resource.data.keys().hasAll(['resolutionKey', 'status', 'resolvedByUserId', 'resolvedAt']) &&
           request.resource.data.resolutionKey == resolutionKey &&
           request.resource.data.status in ['approved', 'dismissed'] &&
           request.resource.data.resolvedByUserId == request.auth.uid &&
           request.resource.data.resolvedAt is timestamp;
         allow delete: if isOrganizationAdmin(organizationId) ||
-          (canAccessOrganization(organizationId) && resource.data.resolvedByUserId == request.auth.uid);
+          (canAccessVariationsStaff(organizationId) && resource.data.resolvedByUserId == request.auth.uid);
       }
 
       // Dismissed warnings (expired qualifications). Document id is the canonical dismiss key.
       match /dismissedWarnings/{dismissKey} {
-        allow read, create, update: if canAccessOrganization(organizationId);
+        allow read: if canAccessOrganization(organizationId);
+        allow create, update: if canAccessOrganization(organizationId) && writeMetadataValidWhenPresent();
         allow delete: if isOrganizationAdmin(organizationId);
       }
 

@@ -1,0 +1,68 @@
+name: Rulebook
+
+# One rulebook for web and iOS. This workflow refuses a rule change without a version bump and a
+# fresh pack, and checks every day that the iOS repo mirrors the published rulebook.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+
+jobs:
+  rulebook-check:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Packed script, manifest and rulebook copy are current
+        run: node scripts/build-canonical-bundle.mjs --check
+      - name: Rule changes carry a version bump, changelog and iOS hand-off
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            base="${{ github.event.pull_request.base.sha }}"
+          else
+            base="${{ github.event.before }}"
+          fi
+          if [ -z "$base" ] || [ "$base" = "0000000000000000000000000000000000000000" ]; then base="HEAD~1"; fi
+          node scripts/rulebook-sync.mjs check --base "$base"
+      - name: Rulebook tests
+        run: npx tsx --test lib/canonical/canonical.test.ts
+
+  ios-mirror:
+    # Drift alarm: red on main and daily until the iOS repo mirrors this rulebook version.
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch the iOS repo
+        run: git clone --depth 1 https://github.com/farnienel1/project-planner-ios ../project-planner-ios
+      - name: iOS mirrors the published rulebook
+        run: |
+          web=$(node -p "require('./lib/canonical/dist/canonical-manifest.json').bundleSha256")
+          version=$(node -p "require('./lib/canonical/dist/canonical-manifest.json').rulebookVersion")
+          manifest="../project-planner-ios/Project Planner/Canonical/canonical-manifest.json"
+          if [ ! -f "$manifest" ]; then
+            echo "::error::iOS has no canonical-manifest.json. Hand docs/ios-handoff/LATEST.md to the iOS agent."
+            exit 1
+          fi
+          ios=$(node -p "require(process.argv[1]).bundleSha256" "$manifest")
+          iosVersion=$(node -p "require(process.argv[1]).rulebookVersion" "$manifest")
+          if [ "$ios" != "$web" ]; then
+            echo "::error::iOS runs rulebook $iosVersion ($ios); web publishes $version ($web). Hand docs/ios-handoff/LATEST.md to the iOS agent."
+            exit 1
+          fi
+          if ! cmp -s docs/RULEBOOK.md ../project-planner-ios/docs/RULEBOOK.md; then
+            echo "::error::iOS docs/RULEBOOK.md differs from web. It must be an exact mirror."
+            exit 1
+          fi
+          echo "iOS mirrors rulebook $version."

@@ -208,13 +208,26 @@ function rememberJobTypes(organizationId: string, names: string[]): void {
 
 const recoveredJobTypesOrgs = new Set<string>()
 
-export async function recoverJobTypesFromWork(organizationId: string): Promise<string[]> {
+/**
+ * `loadedWork`: projects and small works the stores already hold for this organisation. When
+ * given (and not empty) they are used instead of re-downloading both collections.
+ */
+export async function recoverJobTypesFromWork(
+  organizationId: string,
+  loadedWork?: ReadonlyArray<{ id: string; jobType?: string; customJobType?: string }>
+): Promise<string[]> {
   if (recoveredJobTypesOrgs.has(organizationId)) {
     return peekCachedJobTypes(organizationId) || loadJobTypes(organizationId)
   }
   recoveredJobTypesOrgs.add(organizationId)
   const stored = await loadJobTypes(organizationId)
-  const recovered = jobTypesFromWorkRecords(await loadWorkJobTypeRecords(organizationId))
+  const records =
+    loadedWork && loadedWork.length > 0
+      ? loadedWork
+          .filter((work) => !isLegacyPlaceholderDocumentId(work.id))
+          .map((work) => ({ jobType: work.jobType, customJobType: work.customJobType }))
+      : await loadWorkJobTypeRecords(organizationId)
+  const recovered = jobTypesFromWorkRecords(records)
   const merged = mergeJobTypeCatalogues(stored, recovered)
   if (!jobTypeListsEqual(stored, merged)) {
     try {

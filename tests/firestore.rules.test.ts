@@ -26,6 +26,7 @@ import {
   Timestamp,
   updateDoc,
   where,
+  writeBatch,
 } from 'firebase/firestore'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
@@ -1154,24 +1155,412 @@ test('job quote and order history: every admin and manager reads it without the 
   await assertFails(getDoc(doc(authDb(ADMIN_B, 'admin-b@test.com'), 'organizations', ORG_A, 'materialSendRecords', 'SEND-HISTORY-1')))
 })
 
-test('warningResolutions: a member writes their own approval in their company only; admins or the resolver delete it', async () => {
+test('warningResolutions: a manager writes their own approval in their company only; operatives cannot; admins or the resolver delete it', async () => {
+  const MANAGER_WR = 'manager-a-wr'
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'users', MANAGER_WR), {
+      email: 'manager-a-wr@test.com',
+      organizationId: ORG_A,
+      role: 'manager',
+      manager: true,
+      permissions: { manager: true, operativeMode: false },
+    })
+  })
   const key = 'mgr-clash-INVITED-ID-2026-10-22-0'
+  const mgrRef = doc(authDb(MANAGER_WR, 'manager-a-wr@test.com'), 'organizations', ORG_A, 'warningResolutions', key)
+  const fields = { resolutionKey: key, status: 'approved', resolvedByUserId: MANAGER_WR, resolvedAt: serverTimestamp() }
+  // Operatives never approve or dismiss a warning.
   const opRef = doc(authDb(OP_A, 'op-a@test.com'), 'organizations', ORG_A, 'warningResolutions', key)
-  const fields = { resolutionKey: key, status: 'approved', resolvedByUserId: OP_A, resolvedAt: serverTimestamp() }
-  await assertSucceeds(setDoc(opRef, fields))
+  await assertFails(setDoc(opRef, { ...fields, resolvedByUserId: OP_A }))
+  await assertSucceeds(setDoc(mgrRef, fields))
+  await assertSucceeds(getDoc(mgrRef))
   await assertSucceeds(getDoc(opRef))
   // Wrong shape, wrong status, wrong key, someone else's name, or an extra field is refused.
-  await assertFails(setDoc(opRef, { ...fields, status: 'snoozed' }))
-  await assertFails(setDoc(opRef, { ...fields, resolutionKey: 'other' }))
-  await assertFails(setDoc(opRef, { ...fields, resolvedByUserId: ADMIN_A }))
-  await assertFails(setDoc(opRef, { ...fields, note: 'x' }))
-  await assertFails(setDoc(opRef, { resolutionKey: key, status: 'approved', resolvedByUserId: OP_A }))
+  await assertFails(setDoc(mgrRef, { ...fields, status: 'snoozed' }))
+  await assertFails(setDoc(mgrRef, { ...fields, resolutionKey: 'other' }))
+  await assertFails(setDoc(mgrRef, { ...fields, resolvedByUserId: ADMIN_A }))
+  await assertFails(setDoc(mgrRef, { ...fields, note: 'x' }))
+  await assertFails(setDoc(mgrRef, { resolutionKey: key, status: 'approved', resolvedByUserId: MANAGER_WR }))
   // Another company cannot read or write it.
   const foreign = doc(authDb(ADMIN_B, 'admin-b@test.com'), 'organizations', ORG_A, 'warningResolutions', key)
   await assertFails(getDoc(foreign))
   await assertFails(setDoc(foreign, { ...fields, resolvedByUserId: ADMIN_B }))
-  // The resolver can undo it; an admin can delete anyone's.
-  await assertSucceeds(deleteDoc(opRef))
-  await assertSucceeds(setDoc(opRef, fields))
+  // An operative cannot delete it; the resolver can undo it; an admin can delete anyone's.
+  await assertFails(deleteDoc(opRef))
+  await assertSucceeds(deleteDoc(mgrRef))
+  await assertSucceeds(setDoc(mgrRef, fields))
   await assertSucceeds(deleteDoc(doc(authDb(ADMIN_A, 'admin-a@test.com'), 'organizations', ORG_A, 'warningResolutions', key)))
+})
+
+// ---------------------------------------------------------------------------
+// Security tightening: leave approval, timesheet sign-off, staff-only warning
+// decisions and settings, self-update locks, organisation ownership, and
+// deleted-booking tombstones.
+// ---------------------------------------------------------------------------
+
+const LM_A = 'line-manager-a'
+const MGR_OTHER_A = 'manager-other-a'
+const SELF_BOOKER_A = 'self-booker-a'
+const REPORT_A = 'report-op-a'
+
+async function seedLeaveAndTimesheetPeople() {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore()
+    await setDoc(doc(db, 'users', LM_A), {
+      email: 'lm-a@test.com', organizationId: ORG_A, role: 'manager', manager: true,
+      permissions: { manager: true, operativeMode: false },
+    })
+    await setDoc(doc(db, 'users', MGR_OTHER_A), {
+      email: 'mgr-other-a@test.com', organizationId: ORG_A, role: 'manager', manager: true,
+      permissions: { manager: true, operativeMode: false },
+    })
+    await setDoc(doc(db, 'users', SELF_BOOKER_A), {
+      email: 'self-a@test.com', organizationId: ORG_A, role: 'manager', manager: true,
+      assignedManagerUserIds: [LM_A], assignedManagerUserId: LM_A,
+      permissions: { manager: true, annualLeaveSelfBook: true, operativeMode: false },
+    })
+    // iOS-shaped report: legacy single line manager only, no list, no isActive/hasNoLineManager.
+    await setDoc(doc(db, 'users', REPORT_A), {
+      email: 'report-a@test.com', organizationId: ORG_A, role: 'operative', operativeMode: true,
+      assignedManagerUserId: LM_A, dayRate: 200,
+      permissions: { operativeMode: true, manager: false, materials: false, siteAudit: false },
+      firstName: 'Rae',
+    })
+  })
+}
+
+function leave(uid: string, status: string, extra: Record<string, unknown> = {}) {
+  return {
+    id: 'x', organizationId: ORG_A, userId: uid,
+    startDate: Timestamp.fromMillis(Date.parse('2026-12-01T00:00:00Z')),
+    endDate: Timestamp.fromMillis(Date.parse('2026-12-01T00:00:00Z')),
+    status, timeSlot: 'FULL DAY',
+    createdAt: Timestamp.now(), updatedAt: Timestamp.now(),
+    ...extra,
+  }
+}
+
+test('annual leave: a requester asks but never approves their own leave; the line manager or an admin decides', async () => {
+  await seedLeaveAndTimesheetPeople()
+  const rep = authDb(REPORT_A, 'report-a@test.com')
+  const ref = (db: ReturnType<typeof authDb>, id: string) => doc(db, 'organizations', ORG_A, 'holidayBookings', id)
+
+  // Create: pending is fine; approved, or an approval stamp, is not.
+  await assertSucceeds(setDoc(ref(rep, 'hol-req-1'), leave(REPORT_A, 'pending'), { merge: true }))
+  await assertFails(setDoc(ref(rep, 'hol-req-2'), leave(REPORT_A, 'approved')))
+  await assertFails(setDoc(ref(rep, 'hol-req-3'), leave(REPORT_A, 'pending', { approvedByUserId: REPORT_A })))
+  await assertFails(setDoc(ref(rep, 'hol-req-4'), leave(REPORT_A, 'pending', { decisionNote: 'ok' })))
+
+  // Update: approving own pending request is refused, as a web-style full merge resend.
+  await assertFails(setDoc(ref(rep, 'hol-req-1'), { status: 'approved', approvedByUserId: REPORT_A, approvedAt: Timestamp.now() }, { merge: true }))
+  // Editing the pending request itself (slot) is fine, with web nulls for fields iOS omitted.
+  await assertSucceeds(setDoc(ref(rep, 'hol-req-1'), { timeSlot: 'AM', operativeId: null, approvedByUserId: null, approvedAt: null, cancellationRequestedAt: null }, { merge: true }))
+
+  // A manager who is not the line manager cannot decide; the line manager and an admin can.
+  await assertFails(updateDoc(ref(authDb(MGR_OTHER_A, 'mgr-other-a@test.com'), 'hol-req-1'), { status: 'approved', approvedByUserId: MGR_OTHER_A, approvedAt: Timestamp.now() }))
+  const approvedAt = Timestamp.fromMillis(Date.parse('2026-11-01T09:00:00.123Z') + 0.456)
+  await assertSucceeds(updateDoc(ref(authDb(LM_A, 'lm-a@test.com'), 'hol-req-1'), { status: 'approved', approvedByUserId: LM_A, approvedAt }))
+  await assertSucceeds(updateDoc(ref(authDb(ADMIN_A, 'admin-a@test.com'), 'hol-req-1'), { decisionNote: null }))
+
+  // The requester asks to cancel an approved booking (full merge resend; approvedAt rounded to ms like web).
+  await assertSucceeds(setDoc(ref(rep, 'hol-req-1'), {
+    ...leave(REPORT_A, 'approved', { timeSlot: 'AM' }),
+    createdAt: Timestamp.now(),
+    approvedByUserId: LM_A,
+    approvedAt: Timestamp.fromMillis(approvedAt.toMillis()),
+    operativeId: null,
+    decisionNote: null,
+    cancellationRequestedAt: Timestamp.now(),
+    cancellationRequestedByUserId: REPORT_A,
+  }, { merge: true }))
+  // ...but cannot move the dates of approved leave, re-approve it as themselves, or delete it.
+  await assertFails(updateDoc(ref(rep, 'hol-req-1'), { timeSlot: 'PM' }))
+  await assertFails(updateDoc(ref(rep, 'hol-req-1'), { approvedByUserId: REPORT_A }))
+  await assertFails(updateDoc(ref(rep, 'hol-req-1'), { userId: OP_A }))
+  await assertFails(deleteDoc(ref(rep, 'hol-req-1')))
+  // The line manager approves the cancellation by deleting it.
+  await assertSucceeds(deleteDoc(ref(authDb(LM_A, 'lm-a@test.com'), 'hol-req-1')))
+
+  // A requester may withdraw their own pending request.
+  await assertSucceeds(setDoc(ref(rep, 'hol-req-5'), leave(REPORT_A, 'pending')))
+  await assertSucceeds(deleteDoc(ref(rep, 'hol-req-5')))
+
+  // A manager on the Team screen may book a pending request for someone with a line manager.
+  await assertSucceeds(setDoc(ref(authDb(MGR_OTHER_A, 'mgr-other-a@test.com'), 'hol-req-6'), leave(REPORT_A, 'pending')))
+  await assertFails(setDoc(ref(authDb(MGR_OTHER_A, 'mgr-other-a@test.com'), 'hol-req-7'), leave(REPORT_A, 'approved', { approvedByUserId: MGR_OTHER_A })))
+})
+
+test('annual leave: self-bookers save their own leave approved; no-line-manager people too; operatives with a line manager cannot', async () => {
+  await seedLeaveAndTimesheetPeople()
+  const ref = (db: ReturnType<typeof authDb>, id: string) => doc(db, 'organizations', ORG_A, 'holidayBookings', id)
+  const selfDb = authDb(SELF_BOOKER_A, 'self-a@test.com')
+  // iOS self-book: approved, no approvedByUserId. Web self-book: approvedByUserId == self.
+  await assertSucceeds(setDoc(ref(selfDb, 'hol-self-1'), leave(SELF_BOOKER_A, 'approved', { decisionNote: null, cancellationRequestedAt: null }), { merge: true }))
+  await assertSucceeds(setDoc(ref(selfDb, 'hol-self-2'), leave(SELF_BOOKER_A, 'approved', { approvedByUserId: SELF_BOOKER_A, approvedAt: Timestamp.now() })))
+  await assertSucceeds(updateDoc(ref(selfDb, 'hol-self-2'), { timeSlot: 'PM' }))
+  await assertSucceeds(deleteDoc(ref(selfDb, 'hol-self-2')))
+  // Cannot approve as someone else.
+  await assertFails(setDoc(ref(selfDb, 'hol-self-3'), leave(SELF_BOOKER_A, 'approved', { approvedByUserId: LM_A })))
+  // OP_A has no line manager in the seed: web leaveSubmitStatus saves it approved.
+  await assertSucceeds(setDoc(ref(authDb(OP_A, 'op-a@test.com'), 'hol-noline-1'), leave(OP_A, 'approved')))
+  // Another company never writes here.
+  await assertFails(setDoc(ref(authDb(ADMIN_B, 'admin-b@test.com'), 'hol-foreign'), leave(ADMIN_B, 'pending')))
+})
+
+test('timesheets: the owner cannot counter-sign or export their own sheet; the line manager and admins can', async () => {
+  await seedLeaveAndTimesheetPeople()
+  const id = `timesheet_${REPORT_A}_1760000000`
+  const ref = (db: ReturnType<typeof authDb>) => doc(db, 'organizations', ORG_A, 'settings', id)
+  const rep = authDb(REPORT_A, 'report-a@test.com')
+  // Owner creates and signs their own part. Manager fields go as web writes them ('' / null).
+  await assertSucceeds(setDoc(ref(rep), {
+    userId: REPORT_A, weekStartKey: '2026-10-01', weekEndKey: '2026-10-15',
+    operativeSignedAt: Timestamp.now(), operativeSignedByName: 'Rae',
+    managerSignedAt: null, managerSignedByName: '', managerSignedByUserId: '', managerSignatureImageBase64: '',
+    approvedAt: null, approvedByName: '', exportedAt: null,
+  }, { merge: true }))
+  // Owner may not counter-sign or export.
+  await assertFails(setDoc(ref(rep), { managerSignedAt: Timestamp.now(), managerSignedByName: 'Rae' }, { merge: true }))
+  await assertFails(setDoc(ref(rep), { approvedAt: Timestamp.now() }, { merge: true }))
+  await assertFails(setDoc(ref(rep), { exportedAt: Timestamp.now() }, { merge: true }))
+  await assertFails(setDoc(ref(rep), { managerSignedByUserId: REPORT_A }, { merge: true }))
+  // A manager who is not their line manager cannot sign; the line manager can.
+  await assertFails(setDoc(ref(authDb(MGR_OTHER_A, 'mgr-other-a@test.com')), { managerSignedAt: Timestamp.now() }, { merge: true }))
+  const signed = Timestamp.fromMillis(Date.parse('2026-10-16T10:00:00.123Z') + 0.789)
+  await assertSucceeds(setDoc(ref(authDb(LM_A, 'lm-a@test.com')), {
+    managerSignedAt: signed, managerSignedByName: 'Lou', managerSignedByUserId: LM_A,
+    approvedAt: signed, approvedByName: 'Lou',
+  }, { merge: true }))
+  // The owner's next full save resends the sign-off rounded to ms: allowed. Clearing it is not.
+  await assertSucceeds(setDoc(ref(rep), {
+    userId: REPORT_A, operativeSignedByName: 'Rae',
+    managerSignedAt: Timestamp.fromMillis(signed.toMillis()), managerSignedByName: 'Lou', managerSignedByUserId: LM_A,
+    managerSignatureImageBase64: '', approvedAt: Timestamp.fromMillis(signed.toMillis()), approvedByName: 'Lou', exportedAt: null,
+    expenseEntries: [],
+  }, { merge: true }))
+  await assertFails(setDoc(ref(rep), { managerSignedAt: null }, { merge: true }))
+  await assertFails(deleteDoc(ref(rep)))
+  // An admin exports.
+  await assertSucceeds(setDoc(ref(authDb(ADMIN_A, 'admin-a@test.com')), { exportedAt: Timestamp.now() }, { merge: true }))
+})
+
+test('staff warning decisions: operatives cannot accept a booking clash; managers and admins can', async () => {
+  await seedLeaveAndTimesheetPeople()
+  const ref = (db: ReturnType<typeof authDb>) => doc(db, 'organizations', ORG_A, 'acceptedBookingClashes', 'A|B')
+  const fields = (uid: string) => ({ bookingAId: 'A', bookingBId: 'B', acceptedByUserId: uid })
+  await assertFails(setDoc(ref(authDb(OP_A, 'op-a@test.com')), fields(OP_A)))
+  await assertSucceeds(setDoc(ref(authDb(MGR_OTHER_A, 'mgr-other-a@test.com')), fields(MGR_OTHER_A)))
+  await assertSucceeds(setDoc(ref(authDb(ADMIN_A, 'admin-a@test.com')), fields(ADMIN_A)))
+  await assertFails(setDoc(ref(authDb(MGR_OTHER_A, 'mgr-other-a@test.com')), { ...fields(MGR_OTHER_A), updatedBy: ADMIN_A }))
+  await assertSucceeds(getDoc(ref(authDb(OP_A, 'op-a@test.com'))))
+  await assertFails(setDoc(ref(authDb(ADMIN_B, 'admin-b@test.com')), fields(ADMIN_B)))
+})
+
+test('settings: operatives cannot write company settings; managers can; operatives keep deadlines and health & safety', async () => {
+  await seedLeaveAndTimesheetPeople()
+  const ref = (db: ReturnType<typeof authDb>, id: string) => doc(db, 'organizations', ORG_A, 'settings', id)
+  const op = authDb(OP_A, 'op-a@test.com')
+  await assertFails(setDoc(ref(op, 'jobTypes'), { jobTypes: ['Hacked'] }))
+  await assertFails(setDoc(ref(op, 'tradeTypeInventory'), { trades: ['x'] }, { merge: true }))
+  await assertFails(setDoc(ref(op, 'variationTrades'), { trades: ['x'] }))
+  await assertFails(setDoc(ref(op, 'somethingNew'), { a: 1 }))
+  await assertSucceeds(setDoc(ref(authDb(MGR_OTHER_A, 'mgr-other-a@test.com'), 'jobTypes'), { jobTypes: ['Fit out'] }))
+  await assertSucceeds(setDoc(ref(authDb(ADMIN_A, 'admin-a@test.com'), 'tradeTypeInventory'), { trades: ['Joiner'] }, { merge: true }))
+  await assertSucceeds(getDoc(ref(op, 'jobTypes')))
+  await assertSucceeds(setDoc(ref(op, 'deadlines_projects_AAAA-1'), { deadlines: [] }, { merge: true }))
+  await assertSucceeds(setDoc(ref(op, 'deadlineAssignments'), { a: 1 }, { merge: true }))
+  await assertSucceeds(setDoc(ref(op, 'healthSafety_projects_AAAA-1'), { talks: [] }, { merge: true }))
+})
+
+test('self-update: a person cannot change their own pay, line manager, active state, employment type or permissions', async () => {
+  await seedLeaveAndTimesheetPeople()
+  const rep = authDb(REPORT_A, 'report-a@test.com')
+  const me = doc(rep, 'users', REPORT_A)
+  await assertFails(updateDoc(me, { dayRate: 999 }))
+  await assertFails(updateDoc(me, { hourlyRate: 50 }))
+  await assertFails(updateDoc(me, { payBasis: 'hourly' }))
+  await assertFails(updateDoc(me, { isActive: false }))
+  await assertFails(updateDoc(me, { assignedManagerUserIds: [REPORT_A], assignedManagerUserId: REPORT_A }))
+  await assertFails(updateDoc(me, { assignedManagerUserId: OP_A }))
+  await assertFails(updateDoc(me, { hasNoLineManager: true }))
+  await assertFails(updateDoc(me, { employmentType: 'self_employed' }))
+  await assertFails(updateDoc(me, { 'permissions.weeklyReports': true }))
+  await assertFails(updateDoc(me, { manager: true }))
+  await assertFails(updateDoc(me, { 'permissions.materials': true }))
+  // Leaving operative mode is an escalation (role 'operative' alone still marks an operative).
+  await assertFails(updateDoc(me, { operativeMode: false, 'permissions.operativeMode': false, role: 'manager' }))
+  // iOS saveUser full merge with the same values (defaults written out, legacy line manager as a list): allowed.
+  await assertSucceeds(setDoc(me, {
+    email: 'report-a@test.com', organizationId: ORG_A, role: 'operative', firstName: 'Rae', surname: 'Ray',
+    isActive: true, passwordSet: true, adminAccess: false, manager: false, operatives: false, skills: false,
+    qualifications: false, materials: false, projects: false, smallWorks: false, operativeMode: true,
+    annualLeaveSelfBook: false, weeklyReports: false, dailyOverview: true, subContractors: false, siteAudit: false,
+    wholesalersOrderHistory: true, isSuperAdmin: false, employmentType: 'paye', hasNoLineManager: false,
+    assignedManagerUserId: LM_A, assignedManagerUserIds: [LM_A], dayRate: 200.0,
+    permissions: {
+      adminAccess: false, manager: false, operatives: false, skills: false, qualifications: false, materials: false,
+      projects: false, smallWorks: false, operativeMode: true, siteAudit: false, subContractors: false,
+      wholesalersOrderHistory: true, annualLeaveSelfBook: false, weeklyReports: false, dailyOverview: true,
+    },
+    updatedAt: Timestamp.now(),
+  }, { merge: true }))
+  // Turning a toggle off is not an escalation.
+  await assertSucceeds(updateDoc(me, { dailyOverview: false, 'permissions.dailyOverview': false }))
+  // A manager's iOS self-save forces materials and siteAudit on: allowed for a non-operative.
+  await assertSucceeds(updateDoc(doc(authDb(MGR_OTHER_A, 'mgr-other-a@test.com'), 'users', MGR_OTHER_A), {
+    materials: true, siteAudit: true, 'permissions.materials': true, 'permissions.siteAudit': true, firstName: 'Max',
+  }))
+  // An admin still edits the person's pay and line manager.
+  await assertSucceeds(updateDoc(doc(authDb(ADMIN_A, 'admin-a@test.com'), 'users', REPORT_A), { dayRate: 220, assignedManagerUserIds: [LM_A, MGR_OTHER_A] }))
+})
+
+test('organisation: admins edit; a demoted creator cannot; creatorUserId moves only by the Super Admin to another admin', async () => {
+  const ORG_C = 'org-c-owner'
+  const FOUNDER = 'founder-c'
+  const ADMIN_C = 'admin-c'
+  const MEMBER_C = 'member-c'
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore()
+    await setDoc(doc(db, 'organizations', ORG_C), {
+      name: 'Company C', creatorUserId: FOUNDER,
+      members: { [FOUNDER]: 'admin', [ADMIN_C]: 'admin', [MEMBER_C]: 'member' },
+      billing: { status: 'active' },
+    })
+    await setDoc(doc(db, 'users', FOUNDER), { email: 'founder-c@test.com', organizationId: ORG_C, role: 'admin', adminAccess: true, isSuperAdmin: true })
+    await setDoc(doc(db, 'users', ADMIN_C), { email: 'admin-c@test.com', organizationId: ORG_C, role: 'admin', adminAccess: true })
+    await setDoc(doc(db, 'users', MEMBER_C), { email: 'member-c@test.com', organizationId: ORG_C, role: 'operative', operativeMode: true })
+  })
+  const org = (uid: string, email: string) => doc(authDb(uid, email), 'organizations', ORG_C)
+  await assertSucceeds(updateDoc(org(ADMIN_C, 'admin-c@test.com'), { name: 'Company C Ltd' }))
+  await assertFails(updateDoc(org(MEMBER_C, 'member-c@test.com'), { name: 'Hijack' }))
+  // A plain admin cannot take ownership or give it to an operative; billing stays server-only.
+  await assertFails(updateDoc(org(ADMIN_C, 'admin-c@test.com'), { creatorUserId: ADMIN_C }))
+  await assertFails(updateDoc(org(FOUNDER, 'founder-c@test.com'), { creatorUserId: MEMBER_C }))
+  await assertFails(updateDoc(org(FOUNDER, 'founder-c@test.com'), { billing: { status: 'active', plan: 'free' } }))
+  // The Super Admin transfers to another admin.
+  await assertSucceeds(updateDoc(org(FOUNDER, 'founder-c@test.com'), { creatorUserId: ADMIN_C }))
+  // The old creator is demoted (users doc and members map): they cannot edit any more.
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore()
+    await setDoc(doc(db, 'users', FOUNDER), { email: 'founder-c@test.com', organizationId: ORG_C, role: 'manager', adminAccess: false, isSuperAdmin: false, manager: true })
+    await updateDoc(doc(db, 'organizations', ORG_C), { creatorUserId: FOUNDER, [`members.${FOUNDER}`]: 'member' })
+  })
+  await assertFails(updateDoc(org(FOUNDER, 'founder-c@test.com'), { name: 'Mine again' }))
+  await assertFails(updateDoc(org(FOUNDER, 'founder-c@test.com'), { creatorUserId: FOUNDER, [`members.${FOUNDER}`]: 'admin' }))
+})
+
+test('deleted bookings: the delete writes a tombstone and nobody can bring the booking back', async () => {
+  await seedLeaveAndTimesheetPeople()
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore()
+    await setDoc(doc(db, 'organizations', ORG_A, 'bookings', 'BOOK-T1'), { operativeId: OP_A, status: 'Confirmed', notes: '' })
+    await setDoc(doc(db, 'organizations', ORG_A, 'managerSiteBookings', 'MSB-T1'), { managerUserId: LM_A })
+  })
+  const admin = authDb(ADMIN_A, 'admin-a@test.com')
+  const op = authDb(OP_A, 'op-a@test.com')
+  const tomb = (db: ReturnType<typeof authDb>, id: string) => doc(db, 'organizations', ORG_A, 'deletedBookings', id)
+  const fields = (id: string, collectionName: string, uid: string, from = 'web') => ({
+    bookingId: id, collection: collectionName, deletedAt: serverTimestamp(), deletedBy: uid, deletedFrom: from,
+  })
+
+  // An operative cannot tombstone a labour booking (only admins delete those).
+  await assertFails(setDoc(tomb(op, 'BOOK-T1'), fields('BOOK-T1', 'bookings', OP_A)))
+  // Wrong shape is refused.
+  await assertFails(setDoc(tomb(admin, 'BOOK-T1'), fields('OTHER', 'bookings', ADMIN_A)))
+  await assertFails(setDoc(tomb(admin, 'BOOK-T1'), fields('BOOK-T1', 'bookings', OP_A)))
+  await assertFails(setDoc(tomb(admin, 'BOOK-T1'), { ...fields('BOOK-T1', 'bookings', ADMIN_A), deletedAt: Timestamp.fromMillis(0) }))
+  await assertFails(setDoc(tomb(admin, 'BOOK-T1'), fields('BOOK-T1', 'bookings', ADMIN_A, 'desktop')))
+
+  // Admin deletes with the tombstone in one batch.
+  const batch = writeBatch(admin)
+  batch.delete(doc(admin, 'organizations', ORG_A, 'bookings', 'BOOK-T1'))
+  batch.set(tomb(admin, 'BOOK-T1'), fields('BOOK-T1', 'bookings', ADMIN_A))
+  await assertSucceeds(batch.commit())
+
+  // A queued offline save (create or merge) from any device is refused, admin included.
+  await assertFails(setDoc(doc(op, 'organizations', ORG_A, 'bookings', 'BOOK-T1'), { operativeId: OP_A, status: 'Confirmed' }, { merge: true }))
+  await assertFails(setDoc(doc(admin, 'organizations', ORG_A, 'bookings', 'BOOK-T1'), { operativeId: OP_A, status: 'Confirmed' }))
+  // The tombstone is read by members, never edited, and removed only by an admin.
+  await assertSucceeds(getDoc(tomb(op, 'BOOK-T1')))
+  await assertFails(getDoc(tomb(authDb(ADMIN_B, 'admin-b@test.com'), 'BOOK-T1')))
+  await assertFails(setDoc(tomb(admin, 'BOOK-T1'), { deletedFrom: 'ios' }, { merge: true }))
+  await assertFails(deleteDoc(tomb(op, 'BOOK-T1')))
+
+  // Manager schedule bookings: any member deletes, with the tombstone; it cannot come back.
+  const mgr = authDb(LM_A, 'lm-a@test.com')
+  const msb = writeBatch(mgr)
+  msb.delete(doc(mgr, 'organizations', ORG_A, 'managerSiteBookings', 'MSB-T1'))
+  msb.set(tomb(mgr, 'MSB-T1'), fields('MSB-T1', 'managerSiteBookings', LM_A, 'ios'))
+  await assertSucceeds(msb.commit())
+  await assertFails(setDoc(doc(mgr, 'organizations', ORG_A, 'managerSiteBookings', 'MSB-T1'), { managerUserId: LM_A }, { merge: true }))
+
+  // Untombstoned bookings still save as before.
+  await assertSucceeds(setDoc(doc(op, 'organizations', ORG_A, 'bookings', 'BOOK-NEW-1'), { operativeId: OP_A, status: 'Confirmed' }))
+
+  // Admin clears the tombstone; the id can be used again.
+  await assertSucceeds(deleteDoc(tomb(admin, 'BOOK-T1')))
+  await assertSucceeds(setDoc(doc(admin, 'organizations', ORG_A, 'bookings', 'BOOK-T1'), { operativeId: OP_A, status: 'Confirmed' }))
+})
+
+test('cancelled bookings: an operative replay cannot reinstate one; edits that keep it cancelled pass; a manager reinstates', async () => {
+  await seedLeaveAndTimesheetPeople()
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'organizations', ORG_A, 'bookings', 'BOOK-C1'), { operativeId: OP_A, status: 'Cancelled', notes: '' })
+  })
+  const op = authDb(OP_A, 'op-a@test.com')
+  const ref = (db: ReturnType<typeof authDb>) => doc(db, 'organizations', ORG_A, 'bookings', 'BOOK-C1')
+  await assertFails(setDoc(ref(op), { operativeId: OP_A, status: 'Confirmed', notes: '' }, { merge: true }))
+  await assertSucceeds(setDoc(ref(op), { operativeId: OP_A, status: 'Cancelled', notes: 'still off' }, { merge: true }))
+  await assertSucceeds(setDoc(ref(authDb(MGR_OTHER_A, 'mgr-other-a@test.com')), { status: 'Confirmed' }, { merge: true }))
+})
+
+test('warning decisions accept optional write metadata (web) and still accept writes without it (iOS)', async () => {
+  await seedLeaveAndTimesheetPeople()
+  const mgr = authDb(MGR_OTHER_A, 'mgr-other-a@test.com')
+  const key = 'meta-key-1'
+  const wr = doc(mgr, 'organizations', ORG_A, 'warningResolutions', key)
+  const base = { resolutionKey: key, status: 'dismissed', resolvedByUserId: MGR_OTHER_A, resolvedAt: serverTimestamp() }
+  const meta = { updatedBy: MGR_OTHER_A, updatedFrom: 'web', updatedAt: serverTimestamp() }
+  await assertSucceeds(setDoc(wr, base))
+  await assertSucceeds(setDoc(wr, { ...base, ...meta }))
+  await assertFails(setDoc(wr, { ...base, ...meta, updatedBy: ADMIN_A }))
+  await assertFails(setDoc(wr, { ...base, ...meta, updatedFrom: 'desktop' }))
+  await assertFails(setDoc(wr, { ...base, ...meta, updatedAt: 'yesterday' }))
+
+  const clash = doc(mgr, 'organizations', ORG_A, 'acceptedBookingClashes', 'META|PAIR')
+  const clashFields = { bookingAId: 'META', bookingBId: 'PAIR', acceptedByUserId: MGR_OTHER_A, acceptedAt: serverTimestamp() }
+  await assertSucceeds(setDoc(clash, clashFields))
+  await assertSucceeds(setDoc(clash, { ...clashFields, ...meta }))
+  await assertFails(setDoc(clash, { ...clashFields, ...meta, updatedFrom: 'desktop' }))
+
+  const dismissed = doc(mgr, 'organizations', ORG_A, 'dismissedWarnings', 'meta-dismiss-1')
+  await assertSucceeds(setDoc(dismissed, { dismissedAt: serverTimestamp() }))
+  await assertSucceeds(setDoc(dismissed, { dismissedAt: serverTimestamp(), ...meta }))
+  await assertFails(setDoc(dismissed, { dismissedAt: serverTimestamp(), ...meta, updatedBy: OP_A }))
+})
+
+test('a manager with operatives access edits an operative profile with write metadata; a forged updatedBy is refused', async () => {
+  const MGR_OPS = 'manager-ops-a'
+  const OP_META = 'op-meta-a'
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore()
+    await setDoc(doc(db, 'users', MGR_OPS), {
+      email: 'mgr-ops@test.com', organizationId: ORG_A, role: 'manager', manager: true, operatives: true,
+    })
+    await setDoc(doc(db, 'users', OP_META), {
+      email: 'op-meta@test.com', organizationId: ORG_A, role: 'operative', operativeMode: true, dayRate: 150,
+      updatedBy: ADMIN_A, updatedFrom: 'ios',
+    })
+  })
+  const ref = doc(authDb(MGR_OPS, 'mgr-ops@test.com'), 'users', OP_META)
+  await assertSucceeds(updateDoc(ref, { dayRate: 160, updatedBy: MGR_OPS, updatedFrom: 'web', updatedAt: serverTimestamp() }))
+  // Without metadata (iOS today), even though the stored stamp names someone else.
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await updateDoc(doc(ctx.firestore(), 'users', OP_META), { updatedBy: ADMIN_A })
+  })
+  await assertSucceeds(updateDoc(ref, { dayRate: 170, updatedAt: serverTimestamp() }))
+  await assertFails(updateDoc(ref, { dayRate: 180, updatedBy: ADMIN_A + '-x' }))
+  await assertFails(updateDoc(ref, { dayRate: 180, updatedFrom: 'desktop' }))
+  // Still only the listed profile fields.
+  await assertFails(updateDoc(ref, { role: 'manager', updatedBy: MGR_OPS }))
 })

@@ -1,9 +1,26 @@
-import { doc, getDoc, getDocFromServer, setDoc, Timestamp, updateDoc } from 'firebase/firestore'
+import { doc, getDoc, getDocFromServer, setDoc, updateDoc } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
+import { serverTimestamp } from 'firebase/firestore'
+import { writeMetadataFields } from '@/lib/canonical'
 import { type NotificationPreferences } from '@/lib/settings/notificationPreferences'
 import { dayKey } from '@/lib/ios-parity/londonTime'
-import { paymentRunHistoryAfterChange } from '@/lib/canonical'
-import { ianaTimeZoneForCountry } from '@/lib/orgTime/orgTimeZone'
+import {
+  companyDetailsWriteFields,
+  enabledScheduleLocations,
+  organizationCurrencyWriteFields,
+  organizationTimeZone,
+  parseCompanyDetails,
+  payrollTimePolicyApplyNowWriteFields,
+  payrollTimePolicyCancelScheduleWriteFields,
+  payrollTimePolicyForDayFromState,
+  payrollTimePolicyScheduleWriteFields,
+  payrollTimePolicyTimeline,
+  parsePayrollTimePolicyState,
+  paymentRunHistoryAfterChange,
+  type CompanyDetailsInput,
+  type PayrollTimePolicyScheduledChange,
+} from '@/lib/canonical'
+import { deleteField, type DocumentData } from 'firebase/firestore'
 import {
   DEFAULT_ANNUAL_LEAVE,
   DEFAULT_INVOICING,
@@ -98,7 +115,9 @@ export type OrganizationDetails = {
   bankHolidayRegionId?: string
   documentAbbreviation?: string
   officeAddressLine1?: string
+  officeAddressLine2?: string
   officeCity?: string
+  officeCounty?: string
   officePostcode?: string
   creatorUserId?: string
   companyLogoURL?: string
@@ -109,9 +128,15 @@ export type OrganizationDetails = {
     county?: string
     postcode?: string
   }
+  /**
+   * Working hours in effect today (organisation zone). A scheduled change whose day has arrived is
+   * already promoted here (`payrollTimePolicyTimeline`), so "today" screens read this directly.
+   */
   payrollTimePolicy: OrgPayrollTimePolicy
   payrollTimePolicyPrior?: OrgPayrollTimePolicy | null
   payrollTimePolicyEffectiveFrom?: string | null
+  /** A future working-hours change still pending (`{ policy, effectiveFrom }`). */
+  payrollTimePolicyScheduled?: PayrollTimePolicyScheduledChange | null
   annualLeaveDefaults: OrgAnnualLeaveDefaults
   warningDetection: OrgWarningDetectionSettings
   invoicing: OrgInvoicingSettings
@@ -120,31 +145,22 @@ export type OrganizationDetails = {
   materialCutOff: MaterialCutOffSettings
 }
 
-/** iOS PayrollTimePolicyCatalog.policy(for:organization:) — prior rules before effectiveFrom. */
+/**
+ * Working hours in effect on `day` (canonical `effectivePayrollTimePolicy`): a scheduled change from
+ * its day on, the prior rules before `effectiveFrom`, otherwise the current rules.
+ */
 export function orgPayrollPolicyForDay(
   day: Date,
   current: OrgPayrollTimePolicy,
   prior?: OrgPayrollTimePolicy | null,
   effectiveFrom?: string | null,
-  timeZone?: string
+  timeZone?: string,
+  scheduled?: PayrollTimePolicyScheduledChange | null
 ): OrgPayrollTimePolicy {
-  if (!effectiveFrom || !prior) return current
-  const key = dayKey(day, timeZone)
-  if (key >= effectiveFrom) return current
-  return prior
-}
-
-function parsePayrollEffectiveFrom(value: unknown): string | null {
-  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value.trim())) return value.trim()
-  if (value && typeof value === 'object' && 'toDate' in value && typeof (value as { toDate: () => Date }).toDate === 'function') {
-    const parsed = (value as { toDate: () => Date }).toDate()
-    if (!Number.isNaN(parsed.getTime())) return dayKey(parsed)
-  }
-  if (value && typeof value === 'object' && 'seconds' in value) {
-    const seconds = Number((value as { seconds: unknown }).seconds)
-    if (Number.isFinite(seconds)) return dayKey(new Date(seconds * 1000))
-  }
-  return null
+  return payrollTimePolicyForDayFromState(
+    { current, prior: prior ?? null, effectiveFrom: effectiveFrom ?? null, scheduled: scheduled ?? null },
+    dayKey(day, timeZone)
+  )
 }
 
 export function asSettingsRecord(value: unknown): Record<string, unknown> | undefined {
@@ -177,6 +193,61 @@ export function includesManagerScheduleLocation(
   }
 }
 
+/** Today's organisation-zone day key for an organisation document. */
+export function organizationTodayKey(data: Record<string, unknown> | null | undefined, now: Date = new Date()): string {
+  const country = typeof data?.countryCode === 'string' ? data.countryCode : null
+  return dayKey(now, organizationTimeZone(country))
+}
+
+/**
+ * Parse an `organizations/{orgId}` document (from `getDoc` or the live `useOrganizationDocument`
+ * listener). Pure — every settings screen reads through this so the live and one-off paths match.
+ */
+export function organizationDetailsFromData(
+  id: string,
+  data: Record<string, unknown>,
+  now: Date = new Date()
+): OrganizationDetails {
+  const settings = asSettingsRecord(data.settings) ?? {}
+  const materialRaw =
+    asSettingsRecord(settings.materialCutOff) ??
+    asSettingsRecord(settings.notificationPreferences)
+  const warningRaw = resolveWarningDetectionRaw(data.warningDetection, settings.warningDetection)
+  const company = parseCompanyDetails(data)
+  const timeZone = organizationTimeZone(company.countryCode)
+  const payroll = payrollTimePolicyTimeline(
+    parsePayrollTimePolicyState(data, timeZone),
+    dayKey(now, timeZone),
+    timeZone
+  )
+  return {
+    id,
+    name: parseOrganizationName(data),
+    countryCode: data.countryCode as string | undefined,
+    currency: (data.currencyCode as string | undefined) || (data.currency as string | undefined),
+    currencyCode: (data.currencyCode as string | undefined) || (settings.currencyCode as string | undefined),
+    bankHolidayRegionId: company.bankHolidayRegionId,
+    documentAbbreviation: company.documentAbbreviation || undefined,
+    officeAddressLine1: company.officeAddressLine1 || undefined,
+    officeAddressLine2: company.officeAddressLine2 || undefined,
+    officeCity: company.officeCity || undefined,
+    officeCounty: company.officeCounty || undefined,
+    officePostcode: company.officePostcode || undefined,
+    creatorUserId: data.creatorUserId as string | undefined,
+    companyLogoURL: company.companyLogoURL || undefined,
+    officeAddress: data.officeAddress as OrganizationDetails['officeAddress'],
+    payrollTimePolicy: payroll.current,
+    payrollTimePolicyPrior: payroll.prior,
+    payrollTimePolicyEffectiveFrom: payroll.effectiveFrom,
+    payrollTimePolicyScheduled: payroll.scheduled,
+    annualLeaveDefaults: parseAnnualLeaveDefaults(data.annualLeaveDefaults as Record<string, unknown> | undefined),
+    warningDetection: parseWarningDetection(warningRaw),
+    invoicing: parseInvoicing(data.invoicing as Record<string, unknown> | undefined),
+    myScheduleOptions: parseMyScheduleOptions(settings),
+    materialCutOff: parseMaterialCutOff(materialRaw),
+  }
+}
+
 export async function loadOrganizationDetails(
   organizationId: string,
   options?: { fromServer?: boolean; allowCacheFallback?: boolean }
@@ -188,96 +259,147 @@ export async function loadOrganizationDetails(
       : await getDocFromServer(ref).catch(() => getDoc(ref))
     : await getDoc(ref)
   if (!snap.exists()) return null
-  const data = snap.data()
-  const settings = asSettingsRecord(data.settings) ?? {}
-  const materialRaw =
-    asSettingsRecord(settings.materialCutOff) ??
-    asSettingsRecord(settings.notificationPreferences)
-  const warningRaw = resolveWarningDetectionRaw(data.warningDetection, settings.warningDetection)
-  return {
-    id: snap.id,
-    name: parseOrganizationName(data as Record<string, unknown>),
-    countryCode: data.countryCode as string | undefined,
-    currency: (data.currencyCode as string | undefined) || (data.currency as string | undefined),
-    currencyCode: (data.currencyCode as string | undefined) || (settings.currencyCode as string | undefined),
-    bankHolidayRegionId:
-      (data.bankHolidayRegionId as string | undefined) ||
-      (settings.bankHolidayRegionId as string | undefined) ||
-      'GB-ENG-WLS',
-    documentAbbreviation: data.documentAbbreviation as string | undefined,
-    officeAddressLine1: data.officeAddressLine1 as string | undefined,
-    officeCity: data.officeCity as string | undefined,
-    officePostcode: data.officePostcode as string | undefined,
-    creatorUserId: data.creatorUserId as string | undefined,
-    companyLogoURL: data.companyLogoURL as string | undefined,
-    officeAddress: data.officeAddress as OrganizationDetails['officeAddress'],
-    payrollTimePolicy: parsePayrollPolicy(data.payrollTimePolicy as Record<string, unknown> | undefined),
-    payrollTimePolicyPrior: data.payrollTimePolicyPrior
-      ? parsePayrollPolicy(data.payrollTimePolicyPrior as Record<string, unknown>)
-      : null,
-    payrollTimePolicyEffectiveFrom: parsePayrollEffectiveFrom(data.payrollTimePolicyEffectiveFrom),
-    annualLeaveDefaults: parseAnnualLeaveDefaults(data.annualLeaveDefaults as Record<string, unknown> | undefined),
-    warningDetection: parseWarningDetection(warningRaw),
-    invoicing: parseInvoicing(data.invoicing as Record<string, unknown> | undefined),
-    myScheduleOptions: parseMyScheduleOptions(settings),
-    materialCutOff: parseMaterialCutOff(materialRaw),
-  }
+  return organizationDetailsFromData(snap.id, snap.data())
 }
 
+function settingsWriteMetadata(userId?: string): Record<string, unknown> {
+  return { ...(writeMetadataFields(userId, 'web') ?? {}), updatedAt: serverTimestamp() }
+}
+
+async function readOrganizationData(organizationId: string): Promise<DocumentData> {
+  const ref = doc(db, 'organizations', organizationId)
+  const snap = await getDocFromServer(ref).catch(() => getDoc(ref))
+  if (!snap.exists()) throw new Error('Organisation not found.')
+  return snap.data()
+}
+
+/** Organisation `settings.materialCutOff` only — never copied into `users/{uid}.notificationPreferences`. */
 export async function saveMaterialCutOffSettings(
   organizationId: string,
-  prefs: NotificationPreferences
+  prefs: NotificationPreferences,
+  userId?: string
 ): Promise<void> {
   await updateDoc(doc(db, 'organizations', organizationId), {
     'settings.materialCutOff': materialCutOffToFirestore(prefs),
-    updatedAt: Timestamp.now(),
-  })
-}
-
-export async function savePayrollPolicy(organizationId: string, policy: OrgPayrollTimePolicy): Promise<void> {
-  const existing = await loadOrganizationDetails(organizationId)
-  const timeZone = ianaTimeZoneForCountry(existing?.countryCode)
-  const payload: Record<string, unknown> = {
-    payrollTimePolicy: payrollPolicyToFirestore(policy),
-    payrollTimePolicyEffectiveFrom: dayKey(new Date(), timeZone),
-    payrollTimePolicyScheduled: null,
-    updatedAt: Timestamp.now(),
-  }
-  if (existing?.payrollTimePolicy) {
-    payload.payrollTimePolicyPrior = payrollPolicyToFirestore(existing.payrollTimePolicy)
-  }
-  await updateDoc(doc(db, 'organizations', organizationId), payload)
-}
-
-export async function saveAnnualLeaveDefaults(organizationId: string, defaults: OrgAnnualLeaveDefaults): Promise<void> {
-  await updateDoc(doc(db, 'organizations', organizationId), {
-    annualLeaveDefaults: defaults,
-    updatedAt: Timestamp.now(),
+    ...settingsWriteMetadata(userId),
   })
 }
 
 /**
- * Bank holidays read `bankHolidayRegionId`. Country stays the company country
- * so a Scotland or England & Wales choice does not change the time zone.
+ * "Apply from today" (`payrollTimePolicyApplyNowWriteFields`). Reads the stored document first so
+ * prior rules and a pending iOS-scheduled change are kept; a future scheduled change is not cancelled.
  */
-export async function saveOrganizationBankHolidayRegion(
+export async function savePayrollPolicy(
   organizationId: string,
-  bankHolidayRegionId: string
+  policy: OrgPayrollTimePolicy,
+  userId?: string
 ): Promise<void> {
-  const regionId = bankHolidayRegionId.trim()
+  const data = await readOrganizationData(organizationId)
+  const timeZone = organizationTimeZone(typeof data.countryCode === 'string' ? data.countryCode : null)
   await updateDoc(doc(db, 'organizations', organizationId), {
-    bankHolidayRegionId: regionId,
-    'settings.bankHolidayRegionId': regionId,
-    updatedAt: Timestamp.now(),
+    ...payrollTimePolicyApplyNowWriteFields({
+      orgDoc: data,
+      policy,
+      todayKey: dayKey(new Date(), timeZone),
+      timeZone,
+    }),
+    ...settingsWriteMetadata(userId),
   })
 }
 
-export async function saveWarningDetection(organizationId: string, settings: OrgWarningDetectionSettings): Promise<void> {
+/** "Schedule from a date" (`payrollTimePolicyScheduleWriteFields`). `effectiveFrom` is an org-zone day key. */
+export async function schedulePayrollPolicyChange(
+  organizationId: string,
+  policy: OrgPayrollTimePolicy,
+  effectiveFrom: string,
+  userId?: string
+): Promise<void> {
+  const data = await readOrganizationData(organizationId)
+  const timeZone = organizationTimeZone(typeof data.countryCode === 'string' ? data.countryCode : null)
+  const fields = payrollTimePolicyScheduleWriteFields({
+    orgDoc: data,
+    policy,
+    effectiveFrom,
+    todayKey: dayKey(new Date(), timeZone),
+    timeZone,
+  })
+  if (!fields) throw new Error('Choose a date after today for the scheduled change.')
+  await updateDoc(doc(db, 'organizations', organizationId), { ...fields, ...settingsWriteMetadata(userId) })
+}
+
+export async function cancelScheduledPayrollPolicyChange(organizationId: string, userId?: string): Promise<void> {
+  const data = await readOrganizationData(organizationId)
+  const timeZone = organizationTimeZone(typeof data.countryCode === 'string' ? data.countryCode : null)
+  await updateDoc(doc(db, 'organizations', organizationId), {
+    ...payrollTimePolicyCancelScheduleWriteFields({ orgDoc: data, todayKey: dayKey(new Date(), timeZone), timeZone }),
+    ...settingsWriteMetadata(userId),
+  })
+}
+
+/**
+ * Annual leave defaults and the bank-holiday region in one update, so a failure cannot leave one
+ * saved without the other. Country stays the company country, so a Scotland or England & Wales
+ * choice does not change the time zone.
+ */
+export async function saveAnnualLeaveSettings(
+  organizationId: string,
+  defaults: OrgAnnualLeaveDefaults,
+  bankHolidayRegionId: string,
+  userId?: string
+): Promise<void> {
+  const regionId = bankHolidayRegionId.trim()
+  await updateDoc(doc(db, 'organizations', organizationId), {
+    annualLeaveDefaults: defaults,
+    ...(regionId ? { bankHolidayRegionId: regionId, 'settings.bankHolidayRegionId': regionId } : {}),
+    ...settingsWriteMetadata(userId),
+  })
+}
+
+/**
+ * Company details (`companyDetailsWriteFields`) plus the currency (`organizationCurrencyWriteFields`)
+ * as one partial update. Blank optional fields and the legacy nested `officeAddress` map are deleted.
+ */
+export async function saveCompanyDetails(
+  organizationId: string,
+  input: CompanyDetailsInput,
+  currencyCode: string | null,
+  userId?: string
+): Promise<void> {
+  const { set, remove } = companyDetailsWriteFields(input)
+  const payload: Record<string, unknown> = { ...set }
+  for (const path of remove) payload[path] = deleteField()
+  const currency = currencyCode ? organizationCurrencyWriteFields(currencyCode) : null
+  if (currency) Object.assign(payload, currency)
+  await updateDoc(doc(db, 'organizations', organizationId), { ...payload, ...settingsWriteMetadata(userId) })
+}
+
+/**
+ * Warning detection from a live `organizations/{orgId}` document (top-level `warningDetection`, with
+ * `settings.warningDetection` filling a missing excluded list). The same parse `loadOrganizationDetails` uses.
+ */
+export function warningDetectionFromOrganizationData(
+  data: Record<string, unknown> | null | undefined
+): OrgWarningDetectionSettings {
+  const settings = asSettingsRecord(data?.settings) ?? {}
+  return parseWarningDetection(resolveWarningDetectionRaw(data?.warningDetection, settings.warningDetection))
+}
+
+/**
+ * Saves only the warning detection keys, as dotted fields, with `updatedBy` / `updatedFrom` / `updatedAt`.
+ * Firebase is the only source: no browser copy is written back over a server value.
+ */
+export async function saveWarningDetection(
+  organizationId: string,
+  settings: OrgWarningDetectionSettings,
+  updatedByUserId?: string
+): Promise<void> {
   const payload = warningDetectionToFirestore(settings)
   const ref = doc(db, 'organizations', organizationId)
+  const metadata = writeMetadataFields(updatedByUserId, 'web') ?? {}
   const fields: Record<string, unknown> = {
     ...warningDetectionFirestoreFields(settings),
-    updatedAt: Timestamp.now(),
+    ...metadata,
+    updatedAt: serverTimestamp(),
   }
   try {
     await updateDoc(ref, fields)
@@ -287,19 +409,24 @@ export async function saveWarningDetection(organizationId: string, settings: Org
       ref,
       {
         warningDetection: payload,
-        updatedAt: Timestamp.now(),
+        ...metadata,
+        updatedAt: serverTimestamp(),
       },
       { merge: true }
     )
   }
 }
 
-export async function saveInvoicingSettings(organizationId: string, settings: OrgInvoicingSettings): Promise<void> {
+export async function saveInvoicingSettings(
+  organizationId: string,
+  settings: OrgInvoicingSettings,
+  userId?: string
+): Promise<void> {
   const ref = doc(db, 'organizations', organizationId)
-  const snap = await getDoc(ref)
-  const existing = asSettingsRecord(snap.data()?.invoicing) ?? {}
+  const data = await readOrganizationData(organizationId)
+  const existing = asSettingsRecord(data.invoicing) ?? {}
   const previous = parseInvoicing(existing)
-  const recordedAtDayKey = dayKey(new Date())
+  const recordedAtDayKey = organizationTodayKey(data)
   const paymentRunHistory = paymentRunHistoryAfterChange({
     previous: {
       paymentRunMode: previous.paymentRunMode,
@@ -316,16 +443,23 @@ export async function saveInvoicingSettings(organizationId: string, settings: Or
     existingHistory: settings.paymentRunHistory ?? previous.paymentRunHistory ?? [],
     recordedAtDayKey,
   })
-  await updateDoc(ref, {
-    invoicing: { ...existing, ...invoicingToFirestore({ ...settings, paymentRunHistory }) },
-    updatedAt: Timestamp.now(),
-  })
+  // Dotted keys: invoicing fields this screen does not own are left as stored.
+  const fields: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(invoicingToFirestore({ ...settings, paymentRunHistory }))) {
+    fields[`invoicing.${key}`] = value
+  }
+  await updateDoc(ref, { ...fields, ...settingsWriteMetadata(userId) })
 }
 
-export async function saveMyScheduleOptions(organizationId: string, options: MyScheduleOptions): Promise<void> {
+/** Writes exactly this list (`scheduleOptionsWriteFields`) — never merged with the stored list. */
+export async function saveMyScheduleOptions(
+  organizationId: string,
+  options: MyScheduleOptions,
+  userId?: string
+): Promise<void> {
   await updateDoc(doc(db, 'organizations', organizationId), {
     'settings.myScheduleOptions': myScheduleOptionsToFirestore(options),
-    updatedAt: Timestamp.now(),
+    ...settingsWriteMetadata(userId),
   })
 }
 
@@ -367,27 +501,9 @@ export type ScheduleLocationPick = {
   customLocationName?: string
 }
 
-/** iOS MyScheduleOptions.enabledScheduleLocationPicks — Other locations in Book labour. */
+/** Other locations in Book labour / My Schedule (canonical `enabledScheduleLocations`, honours `customItemEnabled`). */
 export function enabledScheduleLocationPicks(options: MyScheduleOptions): ScheduleLocationPick[] {
-  const rows: ScheduleLocationPick[] = []
-  if (options.showOffice) rows.push({ id: 'office', title: 'Office', locationType: 'office' })
-  if (options.showWorkingFromHome) {
-    rows.push({ id: 'wfh', title: 'Working from home', locationType: 'working_from_home' })
-  }
-  if (options.showSiteSurvey) {
-    rows.push({ id: 'survey', title: 'Site survey', locationType: 'site_survey' })
-  }
-  for (const raw of options.customItems ?? []) {
-    const trimmed = raw.trim()
-    if (!trimmed) continue
-    rows.push({
-      id: `custom:${trimmed}`,
-      title: trimmed,
-      locationType: 'custom',
-      customLocationName: trimmed,
-    })
-  }
-  return rows
+  return enabledScheduleLocations(options).map((row) => ({ ...row }))
 }
 
 /** One-off Other location for this booking only. Not written into organisation defaults. */

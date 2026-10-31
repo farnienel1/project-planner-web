@@ -1,5 +1,6 @@
 'use client'
 
+import { enabledScheduleLocations } from '@/lib/canonical'
 import {
   useEffect,
   useMemo,
@@ -40,6 +41,7 @@ import { BookingEditSheet } from '@/components/schedule/BookingEditSheet'
 import { countWorksByTab, filterWorksByTab, searchWorks } from '@/lib/projects/workStatus'
 import { coversCalendarDay } from '@/lib/ios-parity/londonTime'
 import type { Booking, Project } from '@/types'
+import { useBookingHistoryFrom } from '@/lib/stores/useBookingHistory'
 
 /** Labour booked onto this person from Book labour. Shown on the week, not removed from here. */
 export type AssignedScheduleBooking = {
@@ -218,6 +220,8 @@ export function MyScheduleSelfBookingScreen({
   const { users, userIdAliases, loadUsers } = useOrgUserStore()
 
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date(), { weekStartsOn: 1 }))
+  // An earlier week reaches before the launch booking download.
+  useBookingHistoryFrom(organizationId, weekStart)
   const [selectedDate, setSelectedDate] = useState<Date>(() => startOfDay(new Date()))
   const [multiDay, setMultiDay] = useState(false)
   const [selectedDates, setSelectedDates] = useState<Date[]>([])
@@ -430,23 +434,14 @@ export function MyScheduleSelfBookingScreen({
 
   const weekRangeText = `${format(weekDates[0], 'd MMM')} – ${format(weekDates[6], 'd MMM')}`
 
-  const selfLocations: { key: string; type: ManagerLocationType; name: string; custom?: string }[] = [
-    ...(scheduleOpts.showOffice ? [{ key: 'office', type: 'office' as ManagerLocationType, name: 'Office' }] : []),
-    ...(scheduleOpts.showWorkingFromHome
-      ? [{ key: 'wfh', type: 'working_from_home' as ManagerLocationType, name: 'Working From Home' }]
-      : []),
-    ...(scheduleOpts.showSiteSurvey
-      ? [{ key: 'survey', type: 'site_survey' as ManagerLocationType, name: 'Site Survey' }]
-      : []),
-    ...(scheduleOpts.customItems ?? [])
-      .filter((item) => scheduleOpts.customItemEnabled[item] !== false)
-      .map((item) => ({
-        key: `custom:${item}`,
-        type: 'custom' as ManagerLocationType,
-        name: item,
-        custom: item,
-      })),
-  ]
+  // Canonical `enabledScheduleLocations`: built-ins behind their toggles, custom items honouring customItemEnabled.
+  const selfLocations: { key: string; type: ManagerLocationType; name: string; custom?: string }[] =
+    enabledScheduleLocations(scheduleOpts).map((loc) => ({
+      key: loc.id,
+      type: loc.locationType,
+      name: loc.title,
+      custom: loc.customLocationName,
+    }))
 
   const otherQueryText = otherQuery.trim().toLowerCase()
   const filteredOther = selfLocations.filter((loc) => loc.name.toLowerCase().includes(otherQueryText))

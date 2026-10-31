@@ -1,4 +1,5 @@
-import { isSameDay, startOfDay } from 'date-fns'
+import { startOfDay } from 'date-fns'
+// One document can cover several days (one per request). Its slot applies to every day in it.
 import type { HolidayBooking } from '@/types'
 import { bookingMatchesPerson, type AnnualLeavePerson } from './annualLeavePerson'
 
@@ -21,17 +22,13 @@ export function getDayKindForBookings(day: Date, bookings: HolidayBooking[]): An
     if (dayStart < start || dayStart > end) continue
 
     if (booking.status === 'pending') {
-      if (booking.timeSlot === 'FULL DAY' || !isSameDay(booking.startDate, booking.endDate)) {
-        return 'pendingFull'
-      }
+      if (booking.timeSlot !== 'AM' && booking.timeSlot !== 'PM') return 'pendingFull'
       pendingHalf = booking
       continue
     }
 
     if (booking.status === 'approved') {
-      if (booking.timeSlot === 'FULL DAY' || !isSameDay(booking.startDate, booking.endDate)) {
-        return 'approvedFull'
-      }
+      if (booking.timeSlot !== 'AM' && booking.timeSlot !== 'PM') return 'approvedFull'
       approvedHalf = booking
     }
   }
@@ -61,7 +58,6 @@ export function getBookingForDay(
     const start = startOfDay(booking.startDate)
     const end = startOfDay(booking.endDate)
     if (dayStart < start || dayStart > end) continue
-    if (isSameDay(booking.startDate, booking.endDate)) return booking
     return booking
   }
   return null

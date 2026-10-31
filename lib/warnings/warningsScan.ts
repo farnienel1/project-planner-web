@@ -3,7 +3,6 @@ import type {
   OrgInvoicingSettings,
   OrgWarningDetectionSettings,
 } from '@/lib/settings/organizationSettings'
-import { warningDetectionLooksLikeFactoryDefault } from '@/lib/settings/organizationSettings'
 import { organizationIdsMatch } from '@/lib/orgMembership/webActiveOrg'
 
 export type WarningsScreenPhase = 'scanning' | 'empty' | 'list'
@@ -172,33 +171,15 @@ export function warningScanInvoicingReady(
 }
 
 /**
- * Keep a saved look-ahead mode when a later read looks like the factory default.
- * Payment runs always come from the live organisation document — never from the
- * previous React state, which can still hold a leftover 1–16 window.
+ * The organisation document Firebase returned is the scan's only source: its warning detection and its
+ * payment runs. A browser copy, the previous React state, or a value that looks like the factory default
+ * never replaces it (a company may really have saved the defaults).
  */
 export function organizationDetailsForWarningScan(input: {
   current: OrganizationDetails | null
   loaded: OrganizationDetails
-  cachedDetection?: OrgWarningDetectionSettings | null
 }): OrganizationDetails {
-  const { current, loaded, cachedDetection } = input
-  const keepCachedDetection =
-    Boolean(cachedDetection) &&
-    warningDetectionLooksLikeFactoryDefault(loaded.warningDetection) &&
-    !warningDetectionLooksLikeFactoryDefault(cachedDetection as OrgWarningDetectionSettings)
-  if (keepCachedDetection) {
-    return { ...loaded, warningDetection: cachedDetection as OrgWarningDetectionSettings }
-  }
-  const keepCurrentDetection =
-    Boolean(current) &&
-    current?.id === loaded.id &&
-    current?.warningDetection.clashLookaheadMode === 'endOfInvoicingPeriod' &&
-    loaded.warningDetection.clashLookaheadMode !== 'endOfInvoicingPeriod' &&
-    warningDetectionLooksLikeFactoryDefault(loaded.warningDetection)
-  if (keepCurrentDetection && current) {
-    return { ...loaded, warningDetection: current.warningDetection }
-  }
-  return loaded
+  return input.loaded
 }
 
 export function countGeneratedWarnings(result: {

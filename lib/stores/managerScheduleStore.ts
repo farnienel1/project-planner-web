@@ -1,7 +1,8 @@
 'use client'
 
 import { create } from 'zustand'
-import { deleteDoc, doc, setDoc } from 'firebase/firestore'
+import { doc, setDoc } from 'firebase/firestore'
+import { deleteBookingWithTombstone } from '@/lib/bookings/bookingTombstoneWrite'
 import { db } from '@/lib/firebase/config'
 import { forgetOrgCollectionDoc, isOrgCollectionSubscribed, subscribeOrgCollection } from '@/lib/firebase/subscribeOrgCollection'
 import { organizationIdsMatch } from '@/lib/orgMembership/webActiveOrg'
@@ -14,6 +15,23 @@ import {
   serializeManagerSiteBooking,
 } from '@/lib/ios-parity/converters'
 import type { ManagerLocationType, ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
+import {
+  bookingDownloadConstraints,
+  bookingDownloadQueryId,
+  launchBookingNeededDayKeys,
+  nextBookingDownload,
+  type BookingDownload,
+  type BookingDownloadRequest,
+} from '@/lib/firebase/bookingDownloadBound'
+import { useOrganizationDocumentStore } from '@/lib/stores/organizationDocumentStore'
+
+let managerDownloadOrgId = ''
+let managerDownload: BookingDownload = { loadedFromDayKey: null, fullHistory: false }
+
+function organizationDataFor(organizationId: string): Record<string, unknown> | null {
+  const state = useOrganizationDocumentStore.getState()
+  return state.organizationId === organizationId ? ((state.data as Record<string, unknown> | null) ?? null) : null
+}
 
 function requireDb() {
   if (!db) throw new Error('Firebase is not configured')
@@ -36,7 +54,11 @@ interface ManagerScheduleState {
   managerSiteBookings: ManagerSiteBooking[]
   loading: boolean
   error: string | null
-  loadManagerSiteBookings: (organizationId: string, options?: { force?: boolean }) => Promise<void>
+  /** Same listener bound as bookings (canonical `bookingLoadStart`); see `useBookingStore.loadBookings`. */
+  loadManagerSiteBookings: (
+    organizationId: string,
+    options?: BookingDownloadRequest & { force?: boolean }
+  ) => Promise<void>
   saveManagerSiteBooking: (organizationId: string, booking: SaveManagerSiteBookingInput) => Promise<void>
   updateManagerSiteBooking: (
     organizationId: string,
@@ -51,13 +73,24 @@ export const useManagerScheduleStore = create<ManagerScheduleState>((set, get) =
   loading: false,
   error: null,
 
-  loadManagerSiteBookings: async (organizationId: string) => {
+  loadManagerSiteBookings: async (organizationId, options) => {
     if (!organizationId || !db) return
+    if (managerDownloadOrgId !== organizationId) {
+      managerDownloadOrgId = organizationId
+      managerDownload = { loadedFromDayKey: null, fullHistory: false }
+    }
+    const next = nextBookingDownload(
+      managerDownload,
+      launchBookingNeededDayKeys(new Date(), organizationDataFor(organizationId)),
+      options
+    )
+    managerDownload = { loadedFromDayKey: next.loadedFromDayKey, fullHistory: next.fullHistory }
+    const queryId = bookingDownloadQueryId(managerDownload)
     const current = get().managerSiteBookings
     const foreign =
       current.length > 0 &&
       current.every((row) => row.organizationId && !organizationIdsMatch(row.organizationId, organizationId))
-    const already = isOrgCollectionSubscribed('managerSiteBookings', organizationId)
+    const already = isOrgCollectionSubscribed('managerSiteBookings', organizationId, queryId)
     if (foreign) set({ managerSiteBookings: [], loading: true, error: null })
     else if (already || current.length > 0) set({ loading: false })
     else set({ loading: true, error: null })
@@ -80,7 +113,8 @@ export const useManagerScheduleStore = create<ManagerScheduleState>((set, get) =
           loading: false,
         })
       },
-      (error) => set({ error: error.message, loading: false })
+      (error) => set({ error: error.message, loading: false }),
+      { queryId, constraints: bookingDownloadConstraints(managerDownload) }
     )
   },
 
@@ -133,7 +167,7 @@ export const useManagerScheduleStore = create<ManagerScheduleState>((set, get) =
 
   deleteManagerSiteBooking: async (organizationId: string, bookingId: string) => {
     const firestore = requireDb()
-    await deleteDoc(doc(firestore, 'organizations', organizationId, 'managerSiteBookings', bookingId))
+    await deleteBookingWithTombstone(firestore, { organizationId, collection: 'managerSiteBookings', bookingId })
     forgetOrgCollectionDoc('managerSiteBookings', organizationId, bookingId)
     set({
       managerSiteBookings: get().managerSiteBookings.filter((booking) => booking.id !== bookingId),

@@ -286,9 +286,20 @@ function AppShellInner({ children }: { children: ReactNode }) {
     for (const href of hrefs) router.prefetch(href)
   }, [user, organization, users, router])
 
+  // Once per organisation per session, after the roster has loaded. The roster listener
+  // republishes `users` several times during boot; each pass used to re-read every recipient.
+  const remindersRunForOrg = useRef('')
   useEffect(() => {
     if (!organization?.id || users.length === 0) return
-    void deliverDueTimesheetSubmissionReminders(organization.id, users).catch(() => {})
+    if (remindersRunForOrg.current === organization.id) return
+    const orgId = organization.id
+    // Wait for the roster to settle so a partial first snapshot does not miss recipients.
+    const timer = window.setTimeout(() => {
+      if (remindersRunForOrg.current === orgId) return
+      remindersRunForOrg.current = orgId
+      void deliverDueTimesheetSubmissionReminders(orgId, users).catch(() => {})
+    }, 1500)
+    return () => window.clearTimeout(timer)
   }, [organization?.id, users])
 
   useEffect(() => {
@@ -296,11 +307,24 @@ function AppShellInner({ children }: { children: ReactNode }) {
     loadUsers(organization.id)
     loadProjects(organization.id, true)
     loadSmallWorks(organization.id)
+  }, [organization?.id, loadUsers, loadProjects, loadSmallWorks])
+
+  // Job type recovery reads the projects and small works the stores already hold.
+  const workLoadedForOrg = useProjectStore(
+    (state) =>
+      Boolean(organization?.id) &&
+      state.projectsLoadedOrgId === organization?.id &&
+      state.smallWorksLoadedOrgId === organization?.id
+  )
+  useEffect(() => {
+    if (!organization?.id || !workLoadedForOrg) return
+    const orgId = organization.id
     const timer = window.setTimeout(() => {
-      void recoverJobTypesFromWork(organization.id).catch(() => {})
+      const { projects: loadedProjects, smallWorks: loadedSmallWorks } = useProjectStore.getState()
+      void recoverJobTypesFromWork(orgId, [...loadedProjects, ...loadedSmallWorks]).catch(() => {})
     }, 400)
     return () => window.clearTimeout(timer)
-  }, [organization?.id, loadUsers, loadProjects, loadSmallWorks])
+  }, [organization?.id, workLoadedForOrg])
 
   // The auth store already holds users/{uid}; no second read of the same document.
   // Select a string so an unchanged sidebar config does not re-run the effect.

@@ -1,14 +1,23 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useState } from 'react'
 import { useAuthStore } from '@/lib/stores/authStore'
 import {
-  loadOrganizationDetails,
+  cancelScheduledPayrollPolicyChange,
   savePayrollPolicy,
+  schedulePayrollPolicyChange,
+  organizationTodayKey,
   DEFAULT_PAYROLL_POLICY,
   type OrgPayrollTimePolicy,
   type WeekendPayrollSettings,
 } from '@/lib/settings/organizationSettings'
+import {
+  PAYROLL_POLICY_LIMITS,
+  formatPaymentRunDay,
+  payrollTimePolicyScheduleDateError,
+  validatePayrollTimePolicy,
+} from '@/lib/canonical'
+import { useApplyLiveWhenClean, useLiveOrganizationDetails } from '@/components/settings/useLiveOrganizationSettings'
 import { settingsHeader } from '@/lib/settings/settingsHeader'
 import { settingsSaveBarHint } from '@/lib/settings/settingsDirty'
 import {
@@ -105,7 +114,7 @@ function DayTimeline({ policy }: { policy: OrgPayrollTimePolicy }) {
           <i className="h-2.5 w-2.5 rounded-sm bg-[var(--blue)]" /> Standard day {policy.standardDayStart}–{policy.standardDayEnd}
         </span>
         <span className="inline-flex items-center gap-1.5">
-          <i className="h-2.5 w-2.5 rounded-sm bg-[var(--line2)]" /> Unpaid break {policy.unpaidBreakMinutes} min ({policy.breakWindowStart}–{policy.breakWindowEnd})
+          <i className="h-2.5 w-2.5 rounded-sm bg-[var(--line2)]" /> {policy.breakPaid ? 'Paid' : 'Unpaid'} break {policy.unpaidBreakMinutes} min ({policy.breakWindowStart}–{policy.breakWindowEnd})
         </span>
         <span className="inline-flex items-center gap-1.5">
           <i className="h-2.5 w-2.5 rounded-sm bg-[var(--warn)]" /> Overtime ×{policy.weekdayOutsideStandardMultiplier}
@@ -115,36 +124,52 @@ function DayTimeline({ policy }: { policy: OrgPayrollTimePolicy }) {
   )
 }
 
+/** `YYYY-MM-DD` + 1 calendar day (date input minimum). */
+function nextDayKey(dayKey: string): string {
+  const [y, m, d] = dayKey.split('-').map(Number)
+  const next = new Date(Date.UTC(y, m - 1, d + 1))
+  return next.toISOString().slice(0, 10)
+}
+
 function weekendSummary(settings: WeekendPayrollSettings): string {
   if (settings.allHoursAtMultiplierMode) return `All hours at ×${settings.allHoursMultiplier}`
   return `${settings.definedWindowStart ?? '—'}–${settings.definedWindowEnd ?? '—'} standard, outside ×${settings.outsideWindowMultiplier ?? 1.5}`
 }
 
+type SaveChoice = 'closed' | 'choose' | 'schedule'
+
 export function WorkingHoursPanel({ onBack }: { onBack: () => void }) {
-  const { organization } = useAuthStore()
+  const { organization, user } = useAuthStore()
   const requestLeave = useSettingsLeave()
   const [draft, setDraft] = useState<OrgPayrollTimePolicy>(DEFAULT_PAYROLL_POLICY)
   const { state: loadState, markLoaded, markFailed, isDirty } = useSettingsBaseline<OrgPayrollTimePolicy>()
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [savedMessage, setSavedMessage] = useState('Working hours saved')
   const [error, setError] = useState('')
+  const [saveChoice, setSaveChoice] = useState<SaveChoice>('closed')
+  const [scheduleDate, setScheduleDate] = useState('')
   const header = settingsHeader('working-hours')
   const dirty = isDirty(draft)
   useSettingsDirty(dirty)
 
-  useEffect(() => {
-    if (!organization?.id) return
-    loadOrganizationDetails(organization.id)
-      .then((details) => {
-        if (!details?.payrollTimePolicy) {
-          markFailed()
-          return
-        }
-        setDraft(details.payrollTimePolicy)
-        markLoaded(details.payrollTimePolicy)
-      })
-      .catch(() => markFailed())
-  }, [organization?.id, markLoaded, markFailed])
+  const live = useLiveOrganizationDetails()
+  const scheduled = live.details?.payrollTimePolicyScheduled ?? null
+  const todayKey = organizationTodayKey(live.data)
+  const apply = useCallback(
+    (policy: OrgPayrollTimePolicy) => {
+      setDraft(policy)
+      markLoaded(policy)
+    },
+    [markLoaded]
+  )
+  useApplyLiveWhenClean({
+    source: live.details?.payrollTimePolicy ?? null,
+    status: live.status,
+    dirty,
+    apply,
+    onFailed: markFailed,
+  })
 
   function patch(partial: Partial<OrgPayrollTimePolicy>) {
     setDraft((current) => ({ ...current, ...partial }))
@@ -172,66 +197,73 @@ export function WorkingHoursPanel({ onBack }: { onBack: () => void }) {
     }
   }
 
-  function validate(): string | null {
-    for (const [field, label] of [
-      ['standardDayStart', 'Standard day start'],
-      ['standardDayEnd', 'Standard day end'],
-      ['breakWindowStart', 'Break window start'],
-      ['breakWindowEnd', 'Break window end'],
-    ] as const) {
-      if (!isValidHM(draft[field])) return `${label} must be a valid 24h time (e.g. 07:30).`
-    }
-    if (minutesOf(draft.standardDayEnd) <= minutesOf(draft.standardDayStart)) {
-      return 'Standard day end must be after the start time.'
-    }
-    if (minutesOf(draft.breakWindowEnd) <= minutesOf(draft.breakWindowStart)) {
-      return 'Break window end must be after the break start.'
-    }
-    const breakFrom = minutesOf(draft.breakWindowStart)
-    const breakTo = minutesOf(draft.breakWindowEnd)
-    const dayStart = minutesOf(draft.standardDayStart)
-    const dayEnd = minutesOf(draft.standardDayEnd)
-    if (breakFrom < dayStart || breakTo > dayEnd) {
-      return 'Break window must fall within the working day.'
-    }
-    if (!(draft.standardPaidHours > 0)) return 'Standard paid hours must be greater than 0.'
-    if (!(draft.weekdayOutsideStandardMultiplier > 0)) return 'Weekday OT multiplier must be greater than 0.'
-
-    for (const key of ['saturday', 'sunday'] as WeekendKey[]) {
-      const settings = weekend(key)
-      const name = key === 'saturday' ? 'Saturday' : 'Sunday'
-      if (!(settings.allHoursMultiplier > 0)) return `${name} multiplier must be greater than 0.`
-      if (!settings.allHoursAtMultiplierMode) {
-        if (!isValidHM(settings.definedWindowStart ?? '') || !isValidHM(settings.definedWindowEnd ?? '')) {
-          return `${name} custom window must use valid 24h times.`
-        }
-        if (minutesOf(settings.definedWindowEnd ?? '') <= minutesOf(settings.definedWindowStart ?? '')) {
-          return `${name} custom window end must be after the start.`
-        }
-        if (!(settings.outsideWindowMultiplier && settings.outsideWindowMultiplier > 0)) {
-          return `${name} outside-window multiplier must be greater than 0.`
-        }
-      }
-    }
-    return null
+  function flashSaved(message: string) {
+    setSavedMessage(message)
+    setSaved(true)
+    window.setTimeout(() => setSaved(false), 3000)
   }
 
-  async function save() {
+  function openSave() {
     if (!organization?.id) return
-    const validationError = validate()
+    const validationError = validatePayrollTimePolicy(draft)
     if (validationError) {
       setError(validationError)
+      return
+    }
+    setError('')
+    setScheduleDate('')
+    setSaveChoice('choose')
+  }
+
+  async function applyNow() {
+    if (!organization?.id) return
+    setSaving(true)
+    setError('')
+    try {
+      await savePayrollPolicy(organization.id, draft, user?.id)
+      setSaveChoice('closed')
+      markLoaded(draft)
+      flashSaved('Working hours saved — in effect from today')
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Could not save working hours.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function scheduleChange() {
+    if (!organization?.id) return
+    const dateError = payrollTimePolicyScheduleDateError(scheduleDate, todayKey)
+    if (dateError) {
+      setError(dateError)
       return
     }
     setSaving(true)
     setError('')
     try {
-      await savePayrollPolicy(organization.id, draft)
-      markLoaded(draft)
-      setSaved(true)
-      window.setTimeout(() => setSaved(false), 3000)
+      await schedulePayrollPolicyChange(organization.id, draft, scheduleDate, user?.id)
+      setSaveChoice('closed')
+      // Today's rules are unchanged; the draft goes back to them and the live listener confirms.
+      const today = live.details?.payrollTimePolicy ?? draft
+      setDraft(today)
+      markLoaded(today)
+      flashSaved(`Change scheduled for ${formatPaymentRunDay(scheduleDate)}`)
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : 'Could not save working hours.')
+      setError(saveError instanceof Error ? saveError.message : 'Could not schedule the change.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function cancelScheduled() {
+    if (!organization?.id) return
+    setSaving(true)
+    setError('')
+    try {
+      await cancelScheduledPayrollPolicyChange(organization.id, user?.id)
+      flashSaved('Scheduled change cancelled')
+    } catch (cancelError) {
+      setError(cancelError instanceof Error ? cancelError.message : 'Could not cancel the scheduled change.')
     } finally {
       setSaving(false)
     }
@@ -310,9 +342,28 @@ export function WorkingHoursPanel({ onBack }: { onBack: () => void }) {
       )}
       {saved && (
         <div className="mb-4">
-          <SuccessBanner message="Working hours saved" />
+          <SuccessBanner message={savedMessage} />
         </div>
       )}
+      {scheduled ? (
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-[var(--soft)] p-4">
+          <div>
+            <p className="text-[14px] font-semibold text-[var(--ink)]">Scheduled change</p>
+            <p className="text-[13px] text-[var(--ink2)]">
+              New working hours take effect on {formatPaymentRunDay(scheduled.effectiveFrom)}:{' '}
+              {scheduled.policy.standardDayStart}–{scheduled.policy.standardDayEnd}, {scheduled.policy.standardPaidHours}h paid.
+            </p>
+          </div>
+          <button
+            type="button"
+            disabled={saving}
+            onClick={cancelScheduled}
+            className="rounded-xl px-3 py-2 text-[13px] font-semibold text-[var(--red)] hover:bg-[var(--card)] disabled:opacity-50"
+          >
+            Cancel scheduled change
+          </button>
+        </div>
+      ) : null}
 
       <SettingsFormBody state={loadState}>
       <SettingsCard>
@@ -337,23 +388,37 @@ export function WorkingHoursPanel({ onBack }: { onBack: () => void }) {
             hint="Hours paid for a full day"
             value={draft.standardPaidHours}
             onChange={(value) => patch({ standardPaidHours: value })}
-            min={1}
-            max={12}
+            min={PAYROLL_POLICY_LIMITS.paidHours.min}
+            max={PAYROLL_POLICY_LIMITS.paidHours.max}
             step={0.5}
             format={(value) => `${value.toFixed(1)} h`}
           />
         </div>
       </SettingsCard>
 
-      <SectionLabel label="Unpaid break" description="Taken off paid time on every booking unless removed." />
+      <SectionLabel
+        label="Lunch break"
+        description={draft.breakPaid ? 'Paid — counts toward hours worked.' : 'Unpaid — taken off paid time on every booking unless removed.'}
+      />
       <SettingsCard>
+        <div className="p-5">
+          <Segmented<'unpaid' | 'paid'>
+            ariaLabel="Lunch break pay"
+            value={draft.breakPaid ? 'paid' : 'unpaid'}
+            onChange={(value) => patch({ breakPaid: value === 'paid' })}
+            options={[
+              { value: 'unpaid', label: 'Unpaid' },
+              { value: 'paid', label: 'Paid' },
+            ]}
+          />
+        </div>
         <div className="p-5">
           <Stepper
             label="Break length"
             value={draft.unpaidBreakMinutes}
             onChange={(value) => patch({ unpaidBreakMinutes: value })}
-            min={0}
-            max={120}
+            min={PAYROLL_POLICY_LIMITS.breakMinutes.min}
+            max={PAYROLL_POLICY_LIMITS.breakMinutes.max}
             step={5}
             format={(value) => `${value} min`}
           />
@@ -406,8 +471,80 @@ export function WorkingHoursPanel({ onBack }: { onBack: () => void }) {
       </SettingsFormBody>
 
       <SaveBar dirty={dirty} hint={settingsSaveBarHint(loadState)}>
-        <SaveButton saving={saving} saved={saved} dirty={dirty} onClick={save} />
+        <SaveButton saving={saving} saved={saved} dirty={dirty} onClick={openSave} />
       </SaveBar>
+
+      {saveChoice !== 'closed' ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="presentation">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="working-hours-save-title"
+            className="w-full max-w-md rounded-2xl bg-[var(--card)] p-5 shadow-xl"
+          >
+            <h2 id="working-hours-save-title" className="text-[17px] font-bold text-[var(--ink)]">
+              {saveChoice === 'schedule' ? 'Schedule change' : 'When should this start?'}
+            </h2>
+            {saveChoice === 'choose' ? (
+              <p className="mt-2 text-[14px] leading-relaxed text-[var(--ink2)]">
+                Apply from today and today&apos;s bookings use the new working hours — the weekly report, timesheets and
+                invoices follow. Or schedule the change to start on a later date.
+                {scheduled ? ` A change is already scheduled for ${formatPaymentRunDay(scheduled.effectiveFrom)}; applying today keeps it, scheduling replaces it.` : ''}
+              </p>
+            ) : (
+              <div className="mt-3">
+                <FormField label="New working hours start on">
+                  <Input
+                    type="date"
+                    value={scheduleDate}
+                    min={nextDayKey(todayKey)}
+                    onChange={(e) => setScheduleDate(e.target.value)}
+                  />
+                </FormField>
+              </div>
+            )}
+            <div className="mt-5 flex flex-wrap justify-end gap-2">
+              <button
+                type="button"
+                className="rounded-xl px-4 py-2 text-[14px] font-semibold text-[var(--ink2)] hover:bg-[var(--soft)]"
+                onClick={() => setSaveChoice(saveChoice === 'schedule' ? 'choose' : 'closed')}
+                disabled={saving}
+              >
+                {saveChoice === 'schedule' ? 'Back' : 'Cancel'}
+              </button>
+              {saveChoice === 'choose' ? (
+                <>
+                  <button
+                    type="button"
+                    className="rounded-xl border border-[var(--line2)] px-4 py-2 text-[14px] font-semibold text-[var(--ink)] hover:bg-[var(--soft)]"
+                    onClick={() => setSaveChoice('schedule')}
+                    disabled={saving}
+                  >
+                    Schedule from a date
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded-xl bg-[var(--blue)] px-4 py-2 text-[14px] font-semibold text-white hover:opacity-90 disabled:opacity-50"
+                    onClick={applyNow}
+                    disabled={saving}
+                  >
+                    {saving ? 'Saving…' : 'Apply from today'}
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  className="rounded-xl bg-[var(--blue)] px-4 py-2 text-[14px] font-semibold text-white hover:opacity-90 disabled:opacity-50"
+                  onClick={scheduleChange}
+                  disabled={saving || !scheduleDate}
+                >
+                  {saving ? 'Saving…' : 'Schedule'}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }

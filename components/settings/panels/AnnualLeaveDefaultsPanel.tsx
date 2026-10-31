@@ -1,14 +1,13 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { useAuthStore } from '@/lib/stores/authStore'
 import {
   DEFAULT_ANNUAL_LEAVE,
-  loadOrganizationDetails,
-  saveAnnualLeaveDefaults,
-  saveOrganizationBankHolidayRegion,
+  saveAnnualLeaveSettings,
   type OrgAnnualLeaveDefaults,
 } from '@/lib/settings/organizationSettings'
+import { useApplyLiveWhenClean, useLiveOrganizationDetails } from '@/components/settings/useLiveOrganizationSettings'
 import { bankHolidayRegionIdFromSelection, bankHolidaySelectionFromStored } from '@/lib/orgSetup/orgSetupSettings'
 import {
   BANK_HOLIDAY_REGIONS,
@@ -60,7 +59,7 @@ function leaveYearSummary(startMonth: number, endMonth: number): string {
 }
 
 export function AnnualLeaveDefaultsPanel({ onBack }: { onBack: () => void }) {
-  const { organization } = useAuthStore()
+  const { organization, user } = useAuthStore()
   const requestLeave = useSettingsLeave()
   const header = settingsHeader('annual-leave-defaults')
 
@@ -78,35 +77,32 @@ export function AnnualLeaveDefaultsPanel({ onBack }: { onBack: () => void }) {
   const dirty = isDirty(snapshot)
   useSettingsDirty(dirty)
 
-  useEffect(() => {
-    if (!organization?.id) return
-    loadOrganizationDetails(organization.id)
-      .then((details) => {
-        const defaults = details?.annualLeaveDefaults
-        if (!defaults) {
-          markFailed()
-          return
-        }
-        const days = defaults.daysPerYear
-        const nextDays = Number.isInteger(days) ? String(days) : days.toFixed(1)
-        const nextRegion = bankHolidaySelectionFromStored(details.bankHolidayRegionId || details.countryCode)
-        setDaysText(nextDays)
-        setStartMonth(defaults.startMonth)
-        setEndMonth(defaults.endMonth)
-        setCarriesOver(defaults.carriesOver)
-        setBankHolidayRegion(nextRegion)
-        markLoaded(
-          JSON.stringify({
-            daysText: nextDays,
-            startMonth: defaults.startMonth,
-            endMonth: defaults.endMonth,
-            carriesOver: defaults.carriesOver,
-            bankHolidayRegion: nextRegion,
-          })
-        )
-      })
-      .catch(() => markFailed())
-  }, [organization?.id, markLoaded, markFailed])
+  const live = useLiveOrganizationDetails()
+  const source = useMemo(() => {
+    const details = live.details
+    if (!details) return null
+    const defaults = details.annualLeaveDefaults
+    const days = defaults.daysPerYear
+    return {
+      daysText: Number.isInteger(days) ? String(days) : days.toFixed(1),
+      startMonth: defaults.startMonth,
+      endMonth: defaults.endMonth,
+      carriesOver: defaults.carriesOver,
+      bankHolidayRegion: bankHolidaySelectionFromStored(details.bankHolidayRegionId || details.countryCode),
+    }
+  }, [live.details])
+  const apply = useCallback(
+    (next: NonNullable<typeof source>) => {
+      setDaysText(next.daysText)
+      setStartMonth(next.startMonth)
+      setEndMonth(next.endMonth)
+      setCarriesOver(next.carriesOver)
+      setBankHolidayRegion(next.bankHolidayRegion)
+      markLoaded(JSON.stringify(next))
+    },
+    [markLoaded]
+  )
+  useApplyLiveWhenClean({ source, status: live.status, dirty, apply, onFailed: markFailed })
 
   async function save() {
     if (!organization?.id) return
@@ -125,10 +121,11 @@ export function AnnualLeaveDefaultsPanel({ onBack }: { onBack: () => void }) {
         endMonth,
         carriesOver,
       }
-      await saveAnnualLeaveDefaults(organization.id, defaults)
-      await saveOrganizationBankHolidayRegion(
+      await saveAnnualLeaveSettings(
         organization.id,
-        bankHolidayRegionIdFromSelection(bankHolidayRegion)
+        defaults,
+        bankHolidayRegionIdFromSelection(bankHolidayRegion),
+        user?.id
       )
       markLoaded(snapshot)
       setSaved(true)

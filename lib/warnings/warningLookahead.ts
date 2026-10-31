@@ -1,4 +1,10 @@
-import { coverageWindow, invoicingPeriod, parsePaymentRunDateRanges } from '@/lib/canonical'
+import {
+  clashScanDays,
+  coverageWindow,
+  invoicingPeriod,
+  parsePaymentRunDateRanges,
+  type CoverageFallbackReason,
+} from '@/lib/canonical'
 import {
   DEFAULT_INVOICING,
   type OrgInvoicingSettings,
@@ -48,6 +54,8 @@ export type WarningCoverageWindow = {
   /** Inclusive. Do not add a day to make this exclusive — the scan already includes this day. */
   startDayKey: string
   endDayKey: string
+  /** Set when "Set number of days" had no usable N and 7 days were used (`coverageWindow`). */
+  fallbackReason?: CoverageFallbackReason
 }
 
 /** Current invoicing / payment run period containing the reference date (org-country zone). */
@@ -82,12 +90,51 @@ export function computeWarningCoverageWindow(
     recurringRunStartDay: settings.recurringRunStartDay,
     recurringRunEndDay: settings.recurringRunEndDay,
   })
-  return {
+  const result: WarningCoverageWindow = {
     start: dateFromDayKey(window.startDayKey, timeZone),
     end: dateFromDayKey(window.endDayKey, timeZone),
     startDayKey: window.startDayKey,
     endDayKey: window.endDayKey,
   }
+  if (window.fallbackReason) result.fallbackReason = window.fallbackReason
+  return result
+}
+
+/**
+ * Day keys clashes are checked on: the rulebook's `clashScanDays`. Full week is Monday–Friday plus a
+ * Saturday or Sunday of this week that holds a booking (`bookedDayKeys`).
+ */
+export function computeClashScanDayKeys(
+  referenceDate: Date,
+  warningDetection: OrgWarningDetectionSettings,
+  invoicing?: OrgInvoicingSettings,
+  timeZone: string = LONDON_TIME_ZONE,
+  bookedDayKeys?: readonly string[]
+): Set<string> {
+  const settings = invoicing ?? DEFAULT_INVOICING
+  const days = clashScanDays({
+    referenceIso: referenceDate.toISOString(),
+    timeZone,
+    clashLookaheadMode: warningDetection.clashLookaheadMode,
+    clashLookaheadDays: warningDetection.clashLookaheadDays,
+    paymentRunMode: settings.paymentRunMode,
+    ranges: parsePaymentRunDateRanges({ paymentRunDateRanges: settings.paymentRunDateRanges }),
+    recurringRunStartDay: settings.recurringRunStartDay,
+    recurringRunEndDay: settings.recurringRunEndDay,
+    bookedDayKeys: bookedDayKeys ?? null,
+  })
+  return new Set(days.dayKeys)
+}
+
+/** Notice copy when the saved number of days could not be used (`clashLookaheadDaysFallback` / `fallbackReason`). */
+export function warningLookaheadFallbackNotice(reason: CoverageFallbackReason | null | undefined): string | null {
+  if (reason === 'lookaheadDaysMissing') {
+    return 'No number of days is saved for this company, so warnings scan 7 days (today and the next 6). Choose a number and save to change it.'
+  }
+  if (reason === 'lookaheadDaysInvalid') {
+    return 'The saved number of days is not valid, so warnings scan 7 days (today and the next 6). Choose a number and save to fix it.'
+  }
+  return null
 }
 
 export function computeWarningLookaheadEnd(
@@ -99,16 +146,20 @@ export function computeWarningLookaheadEnd(
   return computeWarningCoverageWindow(referenceDate, warningDetection, invoicing, timeZone).end
 }
 
-function formatScanDay(date: Date): string {
+function formatScanDay(date: Date, timeZone: string): string {
   return new Intl.DateTimeFormat('en-GB', {
-    timeZone: 'Europe/London',
+    timeZone,
     day: 'numeric',
     month: 'short',
   }).format(date)
 }
 
 /** Copy for the days-ahead stepper — N includes today (iOS numberOfDays). */
-export function formatNumberOfDaysScanSummary(days: number, referenceDate = new Date()): string {
+export function formatNumberOfDaysScanSummary(
+  days: number,
+  referenceDate = new Date(),
+  timeZone: string = LONDON_TIME_ZONE
+): string {
   const n = Math.max(1, Math.min(Math.round(days) || 1, 365))
   const window = computeWarningCoverageWindow(referenceDate, {
     detectClashes: true,
@@ -116,9 +167,9 @@ export function formatNumberOfDaysScanSummary(days: number, referenceDate = new 
     clashLookaheadDays: n,
     includeWeekendsForUnbookedLabour: false,
     excludedUserIdsFromUnbookedWarnings: [],
-  })
-  const start = formatScanDay(window.start)
-  const end = formatScanDay(window.end)
+  }, undefined, timeZone)
+  const start = formatScanDay(window.start, timeZone)
+  const end = formatScanDay(window.end, timeZone)
   if (n === 1) return `Scans today only (${start}). Today counts as 1 day.`
   if (n === 2) {
     return `Scans today and tomorrow (${start}–${end}). The day you are on is included.`

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import type { User, UserPermissions } from '../../types/index.ts'
 import { UserRole } from '../../types/index.ts'
 import { sessionUserFromCurrentDocument } from './sessionUserFromCurrentDocument.ts'
+import { parseAppUserDocument } from '../ios-parity/converters.ts'
 
 function perms(partial: Partial<UserPermissions>): UserPermissions {
   return {
@@ -70,8 +71,15 @@ test('a newer user document turns site audit off for the signed-in operative', (
   assert.equal(next?.organizationId, 'ORG')
 })
 
+/** The session user as sign-in builds it: parsed from the same users/{uid} document. */
+function signedIn(): User {
+  const parsed = parseAppUserDocument('OP1', doc())
+  assert.ok(parsed.ok)
+  return parsed.value
+}
+
 test('an unchanged document does not replace the session', () => {
-  assert.equal(sessionUserFromCurrentDocument(person(), doc()), null)
+  assert.equal(sessionUserFromCurrentDocument(signedIn(), doc()), null)
 })
 
 test('an older snapshot does not undo a newer profile already in memory', () => {
@@ -86,10 +94,6 @@ test('an older snapshot does not undo a newer profile already in memory', () => 
   assert.equal(next, null)
 })
 
-test('a document for another company does not replace this session', () => {
-  const next = sessionUserFromCurrentDocument(person(), doc({ organizationId: 'OTHER', siteAudit: false }))
-  assert.equal(next, null)
-})
 
 test('a stray operative flag on an administrator document does not remove admin access', () => {
   const admin = person({
@@ -114,4 +118,53 @@ test('a stray operative flag on an administrator document does not remove admin 
   assert.equal(next?.permissions.operativeMode, false)
   assert.equal(next?.role, UserRole.ADMIN)
   assert.equal(next?.isSuperAdmin, false)
+})
+
+test('a photo, mobile, line manager and rate saved on iOS show live in this session', () => {
+  const next = sessionUserFromCurrentDocument(
+    person(),
+    doc({
+      profilePhotoURL: 'https://example.com/new.jpg',
+      mobileNumber: '07700 900123',
+      assignedManagerUserIds: ['MGR1'],
+      assignedManagerUserId: 'MGR1',
+      payBasis: 'day',
+      dayRate: 210,
+      employmentType: 'paye',
+    })
+  )
+  assert.ok(next)
+  assert.equal(next?.profilePhotoURL, 'https://example.com/new.jpg')
+  assert.equal(next?.mobileNumber, '07700 900123')
+  assert.equal(next?.assignedManagerUserId, 'MGR1')
+  assert.equal(next?.dayRate, 210)
+  assert.equal(next?.employmentType, 'paye')
+  assert.equal(next?.organizationId, 'ORG')
+})
+
+test('another company open in this browser still takes the personal fields, not access', () => {
+  const next = sessionUserFromCurrentDocument(
+    person(),
+    doc({ organizationId: 'OTHER', siteAudit: false, profilePhotoURL: 'https://example.com/p.jpg', firstName: 'New' })
+  )
+  assert.ok(next)
+  assert.equal(next?.firstName, 'New')
+  assert.equal(next?.profilePhotoURL, 'https://example.com/p.jpg')
+  assert.equal(next?.permissions.siteAudit, true)
+  assert.equal(next?.organizationId, 'ORG')
+})
+
+test('only a lastSeenAt change does not republish the session', () => {
+  assert.equal(sessionUserFromCurrentDocument(signedIn(), doc({ lastSeenAt: new Date('2026-10-07T06:30:00Z') })), null)
+})
+
+test('the private VAT and UTR values in memory are not cleared by the users document', () => {
+  const next = sessionUserFromCurrentDocument(person({ vatNumber: 'GB123', utrNumber: '999' }), doc({ firstName: 'Renamed' }))
+  assert.equal(next?.vatNumber, 'GB123')
+  assert.equal(next?.utrNumber, '999')
+})
+
+test('a document for another company does not change access in this session', () => {
+  const next = sessionUserFromCurrentDocument(person(), doc({ organizationId: 'OTHER', siteAudit: false }))
+  assert.equal(next, null)
 })

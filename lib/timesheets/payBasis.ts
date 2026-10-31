@@ -4,13 +4,10 @@
  * payrollTimePolicy.standardPaidHours and is never replaced with 8.
  */
 
-export type PayBasis = 'day' | 'hourly'
+import { historyPayRowOnDay, readStoredRates, type PayBasis } from '@/lib/canonical/payRate'
+import { formatMoney } from '@/lib/canonical/money'
 
-export type StoredPay = {
-  payBasis: PayBasis | null
-  dayRate: number | null
-  hourlyRate: number | null
-}
+export type { PayBasis, StoredPay } from '@/lib/canonical/payRate'
 
 export type HistoryPayRow = {
   dayRate: number
@@ -51,8 +48,9 @@ export function payForHours({
   return roundPennies((dayRate ?? 0) * (paidHours / standard) * otMultiplier)
 }
 
-export function money(amount: number) {
-  return `£${(Number(amount) || 0).toFixed(2)}`
+/** Organisation money (`formatMoney`). Pass the organisation currency; GBP when omitted. */
+export function money(amount: number, currencyCode?: string | null) {
+  return formatMoney(Number(amount) || 0, currencyCode)
 }
 
 export function quantityText(quantity: number, unit: 'hours' | 'days') {
@@ -69,6 +67,7 @@ export function payLineDisplay({
   pay,
   isOvertime = false,
   otMultiplier = null,
+  currencyCode = null,
 }: {
   payBasis?: string | null
   paidHours: number
@@ -77,6 +76,7 @@ export function payLineDisplay({
   pay: number
   isOvertime?: boolean
   otMultiplier?: number | null
+  currencyCode?: string | null
 }) {
   const standard = orgDayHours(standardDayHours)
   const hourly = payBasis === 'hourly'
@@ -93,54 +93,14 @@ export function payLineDisplay({
           : `OT x${Number(otMultiplier).toFixed(1)}`
     rateType = `${kind} ${ot}`
   }
-  const rateText = rate == null ? '' : `${money(rate)}${hourly ? '/hr' : '/day'}`
+  const rateText = rate == null ? '' : `${money(rate, currencyCode)}${hourly ? '/hr' : '/day'}`
   const qty = quantityText(quantity, unit)
-  const equation = rateText ? `${qty} × ${rateText} = ${money(pay)}` : `${qty} = ${money(pay)}`
+  const equation = rateText ? `${qty} × ${rateText} = ${money(pay, currencyCode)}` : `${qty} = ${money(pay, currencyCode)}`
   return { rateType, quantityText: qty, rateText, equation, pay: roundPennies(pay) }
 }
 
-export function exclusiveRates({
-  dayRate,
-  hourlyRate,
-  payBasis,
-}: {
-  dayRate?: number | null
-  hourlyRate?: number | null
-  payBasis?: string | null
-}): { payBasis: PayBasis; dayRate: number | null; hourlyRate: number | null } {
-  const basis = payBasis === 'hourly' || payBasis === 'day' ? payBasis : null
-  const day = typeof dayRate === 'number' ? dayRate : null
-  const hourly = typeof hourlyRate === 'number' ? hourlyRate : null
-  if (basis === 'hourly') return { payBasis: 'hourly', dayRate: null, hourlyRate: hourly }
-  if (basis === 'day') return { payBasis: 'day', dayRate: day, hourlyRate: null }
-  if (day != null && day > 0) return { payBasis: 'day', dayRate: day, hourlyRate: null }
-  if (hourly != null && hourly > 0) return { payBasis: 'hourly', dayRate: null, hourlyRate: hourly }
-  if (day != null) return { payBasis: 'day', dayRate: day, hourlyRate: null }
-  return { payBasis: 'day', dayRate: null, hourlyRate: null }
-}
-
-function finiteNumber(value: unknown): number | null {
-  if (typeof value === 'number' && Number.isFinite(value)) return value
-  return null
-}
-
-/**
- * No basis and no amount above 0 is unset, including a lone 0 or both amounts at 0.
- * Both amounts above 0 and no payBasis is a day rate. 0 is real when payBasis is set.
- */
-export function readStoredRates(input: {
-  payBasis?: unknown
-  dayRate?: unknown
-  hourlyRate?: unknown
-}): StoredPay {
-  const basis = input.payBasis === 'hourly' || input.payBasis === 'day' ? input.payBasis : null
-  const day = finiteNumber(input.dayRate)
-  const hourly = finiteNumber(input.hourlyRate)
-  if (basis == null && !(day != null && day > 0) && !(hourly != null && hourly > 0)) {
-    return { payBasis: null, dayRate: null, hourlyRate: null }
-  }
-  return exclusiveRates({ dayRate: day, hourlyRate: hourly, payBasis: basis })
-}
+/** The rate contract lives in the rulebook (`lib/canonical/payRate.ts`). */
+export { exclusiveRates, readStoredRates } from '@/lib/canonical/payRate'
 
 /**
  * iOS saveOperative writes both amounts. loadOperatives does
@@ -177,15 +137,11 @@ export function exclusiveRateDocumentFields(input: {
   return { payBasis: 'day', dayRate: stored.dayRate ?? 0 }
 }
 
-export function historyRowBasis(row: { payBasis?: string | null }): PayBasis {
-  return row.payBasis === 'hourly' ? 'hourly' : 'day'
-}
+export { historyRowBasis } from '@/lib/canonical/payRate'
 
 /**
- * Rows on or before the booking day.
- * When the live profile is hourly, an hourly row covers that day until a day-rate
- * row falls on a later calendar day. A day-rate row later the same day does not cancel it.
- * Otherwise the latest row by effectiveAt, then createdAt.
+ * Rows on or before the booking day (`historyPayRowOnDay` in the rulebook).
+ * `dayStartOf` maps an instant to the start of its organisation-zone day.
  */
 export function resolveHistoryPayRow<T extends HistoryPayRow>(
   rows: T[],
@@ -193,28 +149,8 @@ export function resolveHistoryPayRow<T extends HistoryPayRow>(
   livePayBasis: PayBasis | null,
   dayStartOf: (date: Date) => Date
 ): T | null {
-  const bookingDay = dayStartOf(dayStart).getTime()
-  const candidates = rows
-    .filter((row) => dayStartOf(row.effectiveAt).getTime() <= bookingDay)
-    .sort((a, b) => {
-      const byEffective = a.effectiveAt.getTime() - b.effectiveAt.getTime()
-      if (byEffective !== 0) return byEffective
-      return a.createdAt.getTime() - b.createdAt.getTime()
-    })
-  if (candidates.length === 0) return null
-  if (livePayBasis === 'hourly') {
-    const hourlyRows = candidates.filter((row) => historyRowBasis(row) === 'hourly')
-    if (hourlyRows.length > 0) {
-      const hourly = hourlyRows[hourlyRows.length - 1]
-      const hourlyDay = dayStartOf(hourly.effectiveAt).getTime()
-      const laterDayRows = candidates.filter(
-        (row) => historyRowBasis(row) === 'day' && dayStartOf(row.effectiveAt).getTime() > hourlyDay
-      )
-      if (laterDayRows.length > 0) return laterDayRows[laterDayRows.length - 1]
-      return hourly
-    }
-  }
-  return candidates[candidates.length - 1]
+  const dayOf = (date: Date) => String(dayStartOf(date).getTime()).padStart(16, '0')
+  return historyPayRowOnDay(rows, dayOf(dayStart), livePayBasis, dayOf)
 }
 
 export function isClockSpanLabel(details: string): boolean {

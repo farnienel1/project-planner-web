@@ -1,9 +1,9 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { isSameDay, startOfDay } from 'date-fns'
+import { format, isSameDay, startOfDay } from 'date-fns'
 import { useAuthStore } from '@/lib/stores/authStore'
-import { newHolidayId, useHolidayStore } from '@/lib/stores/holidayStore'
+import { useHolidayStore } from '@/lib/stores/holidayStore'
 import { bookingMatchesPerson, type AnnualLeavePerson } from '@/lib/annualLeave/annualLeavePerson'
 import {
   getBookingForDay,
@@ -104,7 +104,7 @@ export function OperativeAnnualLeaveCalendar({
   const { organization, user } = useAuthStore()
   const users = useOrgUserStore((state) => state.users)
   const operatives = useOperativeStore((state) => state.operatives)
-  const { saveBooking, deleteBooking } = useHolidayStore()
+  const { saveBooking, deleteBooking, decideBooking, createRequests } = useHolidayStore()
 
   const [month, setMonth] = useState(() => monthOfNextBooking(person, bookings))
   const bankYear = month.getFullYear()
@@ -174,20 +174,18 @@ export function OperativeAnnualLeaveCalendar({
     const status = subject ? leaveSubmitStatus(subject) : 'pending'
     setSaving(true)
     try {
-      await saveBooking(organization.id, {
-        id: newHolidayId(),
-        organizationId: organization.id,
-        userId: person.userId,
-        operativeId: person.operativeId,
-        startDate: selectedDay,
-        endDate: selectedDay,
-        status,
-        timeSlot: bookSlot,
-        approvedByUserId: status === 'approved' ? user.id : undefined,
-        approvedAt: status === 'approved' ? new Date() : undefined,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      })
+      const day = format(selectedDay, 'yyyy-MM-dd')
+      await createRequests(organization.id, [
+        {
+          userId: person.userId,
+          operativeId: person.operativeId,
+          startDayKey: day,
+          endDayKey: day,
+          status,
+          timeSlot: bookSlot,
+          approvedByUserId: status === 'approved' ? user.id : null,
+        },
+      ])
       setMessage(`Annual leave booked for ${person.displayName}.`)
       setSelectedDay(null)
       setTimeout(() => setMessage(null), 3000)
@@ -224,13 +222,7 @@ export function OperativeAnnualLeaveCalendar({
     if (!organization?.id || !user || !pendingBooking) return
     setSaving(true)
     try {
-      await saveBooking(organization.id, {
-        ...pendingBooking,
-        status: 'approved',
-        approvedByUserId: user.id,
-        approvedAt: new Date(),
-        updatedAt: new Date(),
-      })
+      await decideBooking(organization.id, pendingBooking, { status: 'approved', approverUid: user.id })
       await notifyHolidayRequestDecisionToUser({
         organizationId: organization.id,
         booking: pendingBooking,
@@ -263,21 +255,20 @@ export function OperativeAnnualLeaveCalendar({
 
   const declineRequest = async () => {
     if (!organization?.id || !user || !pendingBooking) return
-    if (!window.confirm(`Decline this annual leave request for ${person.displayName}?`)) return
+    const note = window.prompt(
+      `Decline this annual leave request for ${person.displayName}? Add a note for them (optional).`,
+      ''
+    )
+    if (note === null) return
     setSaving(true)
     try {
-      await saveBooking(organization.id, {
-        ...pendingBooking,
-        status: 'rejected',
-        approvedByUserId: user.id,
-        approvedAt: new Date(),
-        updatedAt: new Date(),
-      })
+      await decideBooking(organization.id, pendingBooking, { status: 'rejected', approverUid: user.id, decisionNote: note })
       await notifyHolidayRequestDecisionToUser({
         organizationId: organization.id,
         booking: pendingBooking,
         approved: false,
         decidedByName: holidayDecisionActorName(user),
+        reason: note,
         users,
         operatives,
       })

@@ -1,9 +1,15 @@
-import { addDays, format, isAfter, isBefore, startOfDay } from 'date-fns'
-import { endOfWeek, startOfWeek } from 'date-fns'
+import { isAfter } from 'date-fns'
 import type { OrgInvoicingSettings } from '@/lib/settings/organizationSettings'
 import { capitalizeDay } from '@/lib/settings/organizationSettings'
 import { computeInvoicingPeriod } from '@/lib/warnings/warningLookahead'
-import { LONDON_TIME_ZONE, addLondonDays, dayKey, londonMidnight } from '@/lib/ios-parity/londonTime'
+import {
+  LONDON_TIME_ZONE,
+  addLondonDays,
+  dateFromDayKey,
+  dayKey,
+  londonMidnight,
+  startOfLondonWeek,
+} from '@/lib/ios-parity/londonTime'
 import { formatPaymentPeriodLine } from '@/lib/timesheets/paymentRunCopy'
 
 export type WeeklyReportPeriodMode = 'invoicing' | 'week' | 'custom'
@@ -94,25 +100,37 @@ export function listInvoicingPeriodOptions(
   return options
 }
 
-export function resolveWeekPeriod(weekStartValue: string): ReportPeriod {
-  const start = startOfWeek(new Date(weekStartValue), { weekStartsOn: 1 })
-  const end = endOfWeek(start, { weekStartsOn: 1 })
-  return {
-    start: startOfDay(start),
-    end: startOfDay(end),
-    label: `Week of ${format(start, 'd MMM yyyy')}`,
-  }
+const DAY_KEY = /^\d{4}-\d{2}-\d{2}$/
+
+/** A `YYYY-MM-DD` value as organisation-zone midnight (never `new Date(key)`, which is UTC). */
+function zoneDayFromValue(value: string, timeZone: string): Date | null {
+  const raw = String(value || '').trim().slice(0, 10)
+  if (DAY_KEY.test(raw)) return dateFromDayKey(raw, timeZone)
+  const parsed = new Date(value)
+  return Number.isNaN(parsed.getTime()) ? null : londonMidnight(parsed, timeZone)
 }
 
-export function resolveCustomPeriod(customStart: string, customEnd: string): ReportPeriod | null {
-  const start = startOfDay(new Date(customStart))
-  const end = startOfDay(new Date(customEnd))
-  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null
-  if (isAfter(start, end)) return null
+export function resolveWeekPeriod(weekStartValue: string, timeZone: string = LONDON_TIME_ZONE): ReportPeriod {
+  const day = zoneDayFromValue(weekStartValue, timeZone) ?? londonMidnight(new Date(), timeZone)
+  const start = startOfLondonWeek(day, timeZone)
+  const end = addLondonDays(start, 6, timeZone)
+  const label = new Intl.DateTimeFormat('en-GB', { timeZone, day: 'numeric', month: 'short', year: 'numeric' }).format(start)
+  return { start, end, label: `Week of ${label}` }
+}
+
+export function resolveCustomPeriod(
+  customStart: string,
+  customEnd: string,
+  timeZone: string = LONDON_TIME_ZONE
+): ReportPeriod | null {
+  const start = zoneDayFromValue(customStart, timeZone)
+  const end = zoneDayFromValue(customEnd, timeZone)
+  if (!start || !end) return null
+  if (dayKey(start, timeZone) > dayKey(end, timeZone)) return null
   return {
     start,
     end,
-    label: formatReportPeriodLabel(start, end),
+    label: formatReportPeriodLabel(start, end, timeZone),
   }
 }
 
@@ -136,11 +154,11 @@ export function resolveReportPeriod({
   timeZone?: string
 }): ReportPeriod | null {
   if (mode === 'week') {
-    return resolveWeekPeriod(weekStart)
+    return resolveWeekPeriod(weekStart, timeZone)
   }
 
   if (mode === 'custom') {
-    return resolveCustomPeriod(customStart, customEnd)
+    return resolveCustomPeriod(customStart, customEnd, timeZone)
   }
 
   if (!invoicing) return null
@@ -155,17 +173,18 @@ export function resolveReportPeriod({
   }
 }
 
-export function isDateWithinReportPeriod(date: Date, period: ReportPeriod): boolean {
-  const day = startOfDay(date)
-  return !isBefore(day, period.start) && !isAfter(day, period.end)
+export function isDateWithinReportPeriod(date: Date, period: ReportPeriod, timeZone: string = LONDON_TIME_ZONE): boolean {
+  const key = dayKey(date, timeZone)
+  return key >= dayKey(period.start, timeZone) && key <= dayKey(period.end, timeZone)
 }
 
-export function eachDayInReportPeriod(period: ReportPeriod): Date[] {
+export function eachDayInReportPeriod(period: ReportPeriod, timeZone: string = LONDON_TIME_ZONE): Date[] {
   const days: Date[] = []
-  let cursor = startOfDay(period.start)
-  while (!isAfter(cursor, period.end)) {
+  const endKey = dayKey(period.end, timeZone)
+  let cursor = londonMidnight(period.start, timeZone)
+  while (dayKey(cursor, timeZone) <= endKey && days.length <= 400) {
     days.push(cursor)
-    cursor = addDays(cursor, 1)
+    cursor = addLondonDays(cursor, 1, timeZone)
   }
   return days
 }

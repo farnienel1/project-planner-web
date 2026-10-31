@@ -1,12 +1,13 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useState } from 'react'
 import { useAuthStore } from '@/lib/stores/authStore'
 import {
-  loadOrganizationDetails,
   saveMyScheduleOptions,
   type MyScheduleOptions,
 } from '@/lib/settings/organizationSettings'
+import { scheduleOptionsWriteFields } from '@/lib/canonical'
+import { useApplyLiveWhenClean, useLiveOrganizationDetails } from '@/components/settings/useLiveOrganizationSettings'
 import {
   PanelHeader,
   SectionLabel,
@@ -31,7 +32,7 @@ const ICON_CALENDAR =
   'M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25m-18 0A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75m-18 0v-7.5A2.25 2.25 0 0 1 5.25 9h13.5A2.25 2.25 0 0 1 21 11.25v7.5'
 
 export function ScheduleOptionsPanel({ onBack }: { onBack: () => void }) {
-  const { organization } = useAuthStore()
+  const { organization, user } = useAuthStore()
   const requestLeave = useSettingsLeave()
   const [opts, setOpts] = useState<MyScheduleOptions>({
     showOffice: true,
@@ -48,27 +49,32 @@ export function ScheduleOptionsPanel({ onBack }: { onBack: () => void }) {
   const dirty = isDirty(opts)
   useSettingsDirty(dirty)
 
-  useEffect(() => {
-    if (!organization?.id) return
-    loadOrganizationDetails(organization.id)
-      .then((details) => {
-        if (!details?.myScheduleOptions) {
-          markFailed()
-          return
-        }
-        setOpts(details.myScheduleOptions)
-        markLoaded(details.myScheduleOptions)
-      })
-      .catch(() => markFailed())
-  }, [organization?.id, markLoaded, markFailed])
+  const live = useLiveOrganizationDetails()
+  const apply = useCallback(
+    (next: MyScheduleOptions) => {
+      setOpts(next)
+      markLoaded(next)
+    },
+    [markLoaded]
+  )
+  useApplyLiveWhenClean({
+    source: live.details?.myScheduleOptions ?? null,
+    status: live.status,
+    dirty,
+    apply,
+    onFailed: markFailed,
+  })
 
   async function save() {
     if (!organization?.id) return
     setSaving(true)
     setFeedback(null)
     try {
-      await saveMyScheduleOptions(organization.id, opts)
-      markLoaded(opts)
+      // Exactly this list, names de-duplicated (canonical `scheduleOptionsWriteFields`).
+      const written = scheduleOptionsWriteFields(opts)
+      await saveMyScheduleOptions(organization.id, written, user?.id)
+      setOpts(written)
+      markLoaded(written)
       setSaved(true)
       setFeedback({ kind: 'success', msg: 'Schedule options saved' })
       window.setTimeout(() => {
@@ -181,18 +187,8 @@ export function ScheduleOptionsPanel({ onBack }: { onBack: () => void }) {
                     <Toggle
                       checked={opts.customItemEnabled?.[item] ?? true}
                       onChange={(value) => {
-                        const enabled = { ...(opts.customItemEnabled ?? {}), [item]: value }
-                        if (!value) {
-                          setOpts({
-                            ...opts,
-                            customItems: opts.customItems.filter((entry) => entry !== item),
-                            customItemEnabled: Object.fromEntries(
-                              Object.entries(enabled).filter(([key]) => key !== item)
-                            ),
-                          })
-                          return
-                        }
-                        setOpts({ ...opts, customItemEnabled: enabled })
+                        // Off hides the item from booking pickers; it stays in the list until removed.
+                        setOpts({ ...opts, customItemEnabled: { ...(opts.customItemEnabled ?? {}), [item]: value } })
                       }}
                     />
                     <button

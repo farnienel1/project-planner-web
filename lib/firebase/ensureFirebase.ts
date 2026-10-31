@@ -1,6 +1,7 @@
 import { FirebaseApp, getApps, initializeApp } from 'firebase/app'
 import { Auth, getAuth } from 'firebase/auth'
-import { Firestore, getFirestore } from 'firebase/firestore'
+import type { Firestore } from 'firebase/firestore'
+import { firestoreFor } from '@/lib/firebase/firestoreInstance'
 import { FirebaseStorage, getStorage } from 'firebase/storage'
 import { getFirebaseConfigError, isFirebaseConfigured } from '@/lib/firebase/env'
 import { ensureAppCheck } from '@/lib/firebase/appCheck'
@@ -39,7 +40,7 @@ export function getFirebaseAuth(): Auth {
 }
 
 export function getFirebaseDb(): Firestore {
-  return getFirestore(ensureFirebaseApp())
+  return firestoreFor(ensureFirebaseApp())
 }
 
 export function getFirebaseStorage(): FirebaseStorage {

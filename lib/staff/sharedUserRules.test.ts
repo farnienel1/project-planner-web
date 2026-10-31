@@ -64,11 +64,12 @@ test('a name save keeps the stored role and writes the name fields', () => {
   assert.equal(nested.materials, true)
   assert.equal(nested.siteAudit, true)
   assert.equal(nested.adminAccess, true)
-  assert.equal(typeof payload.profilePhotoURL, 'object')
+  // The photo is written only by the photo upload; a profile save never deletes it.
+  assert.equal('profilePhotoURL' in payload, false)
   assert.equal(typeof payload.policyAcceptedAt, 'object')
 })
 
-test('an operative save stores the operative role and keeps a photo', () => {
+test('an operative save stores the operative role and leaves the photo alone', () => {
   const operative = user({
     id: 'op',
     email: 'ollie@site.com',
@@ -83,7 +84,7 @@ test('an operative save stores the operative role and keeps a photo', () => {
   assert.equal(payload.operativeMode, true)
   assert.equal(payload.materials, false)
   assert.equal(payload.siteAudit, false)
-  assert.equal(payload.profilePhotoURL, 'https://example.com/photo.jpg')
+  assert.equal('profilePhotoURL' in payload, false)
   assert.ok(payload.policyAcceptedAt)
   assert.equal(payload.tradeTypePreset, 'Electrician')
   const nested = payload.permissions as Record<string, boolean>

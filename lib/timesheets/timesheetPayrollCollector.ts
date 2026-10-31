@@ -1,6 +1,7 @@
 /**
  * iOS parity: Core/TimesheetPayrollCollector.swift
  */
+import type { PayrollTimePolicyScheduledChange } from '@/lib/canonical'
 import type { Booking, Operative, Project, User } from '@/types'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import { managerSiteBookingDisplayTitle } from '@/lib/scheduling/managerSiteBookingUtils'
@@ -13,7 +14,7 @@ import {
   type OrgPayrollTimePolicy,
 } from '@/lib/settings/organizationSettings'
 import { findOperativeForUser } from '@/lib/operatives/operativeRosterUtils'
-import { bookingIdsForAccount, bookingOccupiesDay } from '@/lib/canonical'
+import { bookingIdsForAccount, bookingOccupiesDay, formatMoney, overlappingBookingIds } from '@/lib/canonical'
 import { employmentTypeOnDay } from '@/lib/ios-parity/employmentType'
 import { emptyDayRateHistory, type OperativeDayRateHistoryCollection } from '@/lib/timesheets/dayRateHistoryStorage'
 import {
@@ -45,6 +46,14 @@ export type TimesheetPayrollLineItem = {
   isPayeDay: boolean
   isOvertimeLine: boolean
   hasRate: boolean
+  /** The booking (operative or manager) this line comes from. */
+  bookingId?: string
+  dayKey?: string
+  /**
+   * `overlappingBookingIds`: this booking overlaps another on the same day. Every booking is
+   * still paid; the line is shown amber so the person and their manager can check it.
+   */
+  isOverlapping?: boolean
 }
 
 export type TimesheetPayrollSummary = {
@@ -86,16 +95,16 @@ function managerLabels(
   return { jobNumber: '—', siteName: managerSiteBookingDisplayTitle(booking, map) }
 }
 
-export function timesheetRateAnnotation(line: TimesheetPayrollLineItem): string {
+export function timesheetRateAnnotation(line: TimesheetPayrollLineItem, currencyCode?: string): string {
   if (line.isPayeDay) return 'PAYE'
   if (!line.hasRate) return 'rate not set'
-  if (line.payrollBasis === 'hourly') return `£${(line.hourlyRate ?? 0).toFixed(2)}/hr`
-  return `£${line.dayRate.toFixed(2)}/day`
+  if (line.payrollBasis === 'hourly') return `${formatMoney(line.hourlyRate ?? 0, currencyCode)}/hr`
+  return `${formatMoney(line.dayRate, currencyCode)}/day`
 }
 
-export function timesheetHoursRateLine(line: TimesheetPayrollLineItem): string {
+export function timesheetHoursRateLine(line: TimesheetPayrollLineItem, currencyCode?: string): string {
   const standard = line.standardDayHours && line.standardDayHours > 0 ? line.standardDayHours : orgDayHours(8)
-  if (line.isPayeDay) return `${quantityText(line.paidHours, 'hours')} = £0.00`
+  if (line.isPayeDay) return `${quantityText(line.paidHours, 'hours')} = ${formatMoney(0, currencyCode)}`
   const hourly = line.payrollBasis === 'hourly'
   const rate = !line.hasRate ? null : hourly ? (line.hourlyRate ?? 0) : line.dayRate
   return payLineDisplay({
@@ -106,12 +115,13 @@ export function timesheetHoursRateLine(line: TimesheetPayrollLineItem): string {
     pay: line.amount,
     isOvertime: line.isOvertimeLine,
     otMultiplier: line.otMultiplier ?? null,
+    currencyCode,
   }).equation
 }
 
 /** Clock span may sit beside the equation. A slot name such as FULL DAY is not the quantity. */
-export function timesheetLabourDetails(line: TimesheetPayrollLineItem): string {
-  const equation = timesheetHoursRateLine(line)
+export function timesheetLabourDetails(line: TimesheetPayrollLineItem, currencyCode?: string): string {
+  const equation = timesheetHoursRateLine(line, currencyCode)
   if (isClockSpanLabel(line.details)) return `${line.details} · ${equation}`
   return equation
 }
@@ -128,6 +138,7 @@ export function collectTimesheetPayroll({
   payrollPolicy,
   payrollPolicyPrior = null,
   payrollPolicyEffectiveFrom = null,
+  payrollPolicyScheduled = null,
   timeZone,
   history = emptyDayRateHistory(),
   scheduleOptions = DEFAULT_MY_SCHEDULE,
@@ -144,6 +155,8 @@ export function collectTimesheetPayroll({
   payrollPolicy: OrgPayrollTimePolicy
   payrollPolicyPrior?: OrgPayrollTimePolicy | null
   payrollPolicyEffectiveFrom?: string | null
+  /** A pending working-hours change; counts from its effectiveFrom day (`effectivePayrollTimePolicy`). */
+  payrollPolicyScheduled?: PayrollTimePolicyScheduledChange | null
   timeZone?: string
   history?: OperativeDayRateHistoryCollection
   scheduleOptions?: MyScheduleOptions
@@ -168,6 +181,13 @@ export function collectTimesheetPayroll({
   let overtimeHours = 0
   let baseAmount = 0
   let overtimeAmount = 0
+  const paidBookings: Array<{
+    id: string
+    dayKey: string
+    timeSlot: string
+    workStartTime?: string
+    workEndTime?: string
+  }> = []
 
   const pushBooking = (
     idPrefix: string,
@@ -187,7 +207,8 @@ export function collectTimesheetPayroll({
       currentPolicy,
       payrollPolicyPrior,
       payrollPolicyEffectiveFrom,
-      timeZone
+      timeZone,
+      payrollPolicyScheduled
     )
     const standardDayHours = orgDayHours(policy.standardPaidHours)
     // One rulebook result (`payrollHoursResult`), the same figures the iOS collector uses.
@@ -210,6 +231,9 @@ export function collectTimesheetPayroll({
     totalHours += paidHours
     overtimeHours += otHours
     const isPaye = employmentTypeOnDay(user, date, timeZone) === 'paye'
+    const lineBookingId = `${idPrefix}-${bookingId}`
+    const lineDayKey = dayKey(date, timeZone)
+    paidBookings.push({ id: lineBookingId, dayKey: lineDayKey, timeSlot, workStartTime, workEndTime })
     const normalAmount = payForHours(resolved, normalHours, standardDayHours)
     baseAmount += normalAmount
     lineItems.push({
@@ -227,6 +251,8 @@ export function collectTimesheetPayroll({
       isPayeDay: isPaye,
       isOvertimeLine: false,
       hasRate,
+      bookingId: lineBookingId,
+      dayKey: lineDayKey,
     })
     if (otHours > 0.05) {
       const otAmount = payForHours(resolved, otHours, standardDayHours, otMultiplier)
@@ -248,6 +274,8 @@ export function collectTimesheetPayroll({
         isPayeDay: isPaye,
         isOvertimeLine: true,
         hasRate,
+        bookingId: lineBookingId,
+        dayKey: lineDayKey,
       })
     }
   }
@@ -286,6 +314,10 @@ export function collectTimesheetPayroll({
       linked || matched[0]
     )
   }
+
+  // Every booking is paid; overlapping ones are only flagged (`overlappingBookingIds`).
+  const overlapping = new Set(overlappingBookingIds(paidBookings, currentPolicy))
+  for (const line of lineItems) line.isOverlapping = Boolean(line.bookingId && overlapping.has(line.bookingId))
 
   lineItems.sort((a, b) => {
     if (a.date.getTime() !== b.date.getTime()) return a.date.getTime() - b.date.getTime()

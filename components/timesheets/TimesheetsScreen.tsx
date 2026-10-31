@@ -1,5 +1,7 @@
 'use client'
 
+import { formatMoney } from '@/lib/canonical/money'
+import { useOrganizationCurrency } from '@/lib/stores/organizationDocumentStore'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/lib/stores/authStore'
@@ -107,6 +109,7 @@ export function TimesheetsScreen({
   history?: OperativeDayRateHistoryCollection
   scheduleOptions?: MyScheduleOptions
 }) {
+  const currency = useOrganizationCurrency()
   const router = useRouter()
   const { user, organization } = useAuthStore()
   const [drafts, setDrafts] = useState<Map<string, TimesheetDraft>>(new Map())
@@ -326,6 +329,7 @@ export function TimesheetsScreen({
           timeZone,
           extrasMode: 'export',
           standardDayHours: payrollPolicy.standardPaidHours,
+          currencyCode: currency,
         })
         const includeTaxIds = exportIncludesSensitiveFields({
           requested: exportTaxIds,
@@ -351,6 +355,7 @@ export function TimesheetsScreen({
           periodMetaLabel: 'PAYMENT RUN',
           totalLabel: 'Total timesheet amount',
           emptyStateMessage: 'No work entries were found for this timesheet period.',
+          currencyCode: currency,
         })
         const fileName = timesheetExportFileName(name, stamp)
         pdfAttachments.push({ fileName, content: pdfBytesToBase64(pdf) })
@@ -556,6 +561,7 @@ function MemberRow({
   timeZone?: string
   onClick: () => void
 }) {
+  const currency = useOrganizationCurrency()
   const role = member.permissions.operativeMode ? 'Operative' : hasAdminAccess(member) ? 'Admin' : 'Manager'
   const lineManager = (() => {
     if (!hasAdminAccess(viewer)) return null
@@ -574,8 +580,8 @@ function MemberRow({
           <span className="s">Exported {formatStampInZone(exportedAt, timeZone)}</span>
         ) : null}
         <span className="s">
-          Hrs {formatQueueHours(summary.hours)} · OT {formatQueueHours(summary.overtimeHours)} · PW £{summary.priceWork.toFixed(2)} · Exp £
-          {summary.expenses.toFixed(2)} · {role}
+          Hrs {formatQueueHours(summary.hours)} · OT {formatQueueHours(summary.overtimeHours)} · PW{' '}
+          {formatMoney(summary.priceWork, currency)} · Exp {formatMoney(summary.expenses, currency)} · {role}
         </span>
         {lineManager ? <span className="s">Line manager: {lineManager}</span> : null}
       </span>

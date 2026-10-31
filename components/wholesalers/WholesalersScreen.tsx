@@ -4,6 +4,8 @@
  */
 'use client'
 
+import { useOrganizationTimeZone } from '@/lib/stores/organizationDocumentStore'
+import { dayKeyInOrganizationZone } from '@/lib/canonical'
 import { FormEvent, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { BuildingOffice2Icon, PlusIcon } from '@heroicons/react/24/solid'
@@ -467,10 +469,12 @@ function HistorySheet({
   const [type, setType] = useState<'quote' | 'order'>('quote')
   const [query, setQuery] = useState('')
   const [date, setDate] = useState('')
+  const timeZone = useOrganizationTimeZone()
   const filtered = records.filter((record) => {
     if (record.requestType !== type) return false
     if (date) {
-      const key = (record.materialsDate || record.sentAt).toISOString().slice(0, 10)
+      // Organisation day, not the UTC date: a send late in the evening belongs to that day.
+      const key = dayKeyInOrganizationZone((record.materialsDate || record.sentAt).toISOString(), timeZone)
       if (key !== date) return false
     }
     if (!query.trim()) return true

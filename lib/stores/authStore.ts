@@ -1083,12 +1083,15 @@ export const useAuthStore = create<AuthState>((set) => {
       if (now - lastSeenWriteAt < LAST_SEEN_THROTTLE_MS) return
       lastSeenWriteAt = now
       try {
+        // Only lastSeenAt is written, and only lastSeenAt changes in memory: the copy read before
+        // the await may be older than a profile the users/{uid} listener applied meanwhile.
         await updateDoc(doc(getFirebaseDb(), 'users', firebaseUser.uid), {
           lastSeenAt: Timestamp.now(),
         })
-        useAuthStore.setState({
-          user: { ...user, lastSeenAt: new Date() },
-        })
+        const latest = useAuthStore.getState().user
+        if (latest && latest.id === user.id) {
+          useAuthStore.setState({ user: { ...latest, lastSeenAt: new Date() } })
+        }
       } catch (error) {
         console.warn('lastSeenAt heartbeat failed:', error)
       }

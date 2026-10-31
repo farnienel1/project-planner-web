@@ -12,6 +12,7 @@ import { londonDateParts, dayKey } from '@/lib/ios-parity/londonTime'
 import type { Operative, User } from '@/types'
 import { findOperativeForUser } from '@/lib/operatives/operativeRosterUtils'
 import type { OperativeDayRateHistoryCollection } from '@/lib/timesheets/dayRateHistoryStorage'
+import { formatMoney } from '@/lib/canonical/money'
 
 export function paymentRunDateStamp(start: Date, end: Date, timeZone: string): string {
   const format = (date: Date) => {
@@ -48,6 +49,7 @@ export function invoiceRateChangeNotes({
   periodStart,
   periodEnd,
   timeZone,
+  currencyCode,
 }: {
   history: OperativeDayRateHistoryCollection
   user: User
@@ -55,6 +57,8 @@ export function invoiceRateChangeNotes({
   periodStart: Date
   periodEnd: Date
   timeZone: string
+  /** Organisation currency (`formatMoney`). */
+  currencyCode?: string
 }): string[] {
   const startKey = dayKey(periodStart, timeZone)
   const endKey = dayKey(periodEnd, timeZone)
@@ -65,7 +69,7 @@ export function invoiceRateChangeNotes({
   const notes = new Set<string>()
   for (const entry of (history.byUserId[user.id] || []).filter((row) => inPeriod(row.effectiveAt))) {
     notes.add(
-      `Rate updated to £${entry.dayRate.toFixed(2)}${entry.payBasis === 'hourly' ? '/hr' : '/day'} from ${formatAbbreviatedDayInZone(entry.effectiveAt, timeZone)}.`
+      `Rate updated to ${formatMoney(entry.dayRate, currencyCode)}${entry.payBasis === 'hourly' ? '/hr' : '/day'} from ${formatAbbreviatedDayInZone(entry.effectiveAt, timeZone)}.`
     )
   }
   const matched = operatives.filter(
@@ -77,7 +81,7 @@ export function invoiceRateChangeNotes({
   for (const operativeId of ids) {
     for (const entry of (history.byOperativeId[operativeId] || []).filter((row) => inPeriod(row.effectiveAt))) {
       notes.add(
-        `Operative rate updated to £${entry.dayRate.toFixed(2)}${entry.payBasis === 'hourly' ? '/hr' : '/day'} from ${formatAbbreviatedDayInZone(entry.effectiveAt, timeZone)}.`
+        `Operative rate updated to ${formatMoney(entry.dayRate, currencyCode)}${entry.payBasis === 'hourly' ? '/hr' : '/day'} from ${formatAbbreviatedDayInZone(entry.effectiveAt, timeZone)}.`
       )
     }
   }
@@ -102,7 +106,8 @@ function signedOverrideDetails(
     payBasis?: string | null
     details?: string
   },
-  standardDayHours: number
+  standardDayHours: number,
+  currencyCode?: string
 ): string {
   const standard = orgDayHours(standardDayHours)
   const slice = signedLabourSlice(line, standard, 1)
@@ -112,6 +117,7 @@ function signedOverrideDetails(
     standardDayHours: standard,
     rate: slice.rate,
     pay: slice.pay,
+    currencyCode,
   }).equation
   const clock = line.details && isClockSpanLabel(line.details) ? `${line.details} · ` : ''
   return `${clock}${equation}`
@@ -123,12 +129,15 @@ export function invoiceLinesForTimesheet({
   timeZone,
   extrasMode,
   standardDayHours = 8,
+  currencyCode,
 }: {
   payroll: TimesheetPayrollSummary
   draft: TimesheetDraft
   timeZone: string
   extrasMode: 'raw' | 'export'
   standardDayHours?: number
+  /** Organisation currency (`formatMoney`). Leave rows are never on the invoice. */
+  currencyCode?: string
 }): TimesheetInvoiceLine[] {
   const override = draft.weeklyReportOverride
   if (override) {
@@ -137,7 +146,7 @@ export function invoiceLinesForTimesheet({
     for (const line of override.lines) {
       if (line.decision === 'declined' || line.amount <= 0.0001) continue
       const live = liveById.get(line.id)
-      const details = live ? timesheetLabourDetails(live) : signedOverrideDetails(line, standardDayHours)
+      const details = live ? timesheetLabourDetails(live, currencyCode) : signedOverrideDetails(line, standardDayHours, currencyCode)
       const jobNumber = (live?.jobNumber || line.jobNumber || '—').trim() || '—'
       const projectName = live?.projectName || line.projectName
       rows.push({
@@ -179,7 +188,7 @@ export function invoiceLinesForTimesheet({
   }
   const rows: TimesheetInvoiceLine[] = []
   for (const line of payroll.lineItems) {
-    const details = timesheetLabourDetails(line)
+    const details = timesheetLabourDetails(line, currencyCode)
     rows.push({
       date: formatAbbreviatedDayInZone(line.date, timeZone),
       jobNumber: line.jobNumber || '—',
