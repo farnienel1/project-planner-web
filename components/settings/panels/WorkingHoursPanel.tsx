@@ -10,8 +10,13 @@ import {
   type WeekendPayrollSettings,
 } from '@/lib/settings/organizationSettings'
 import { settingsHeader } from '@/lib/settings/settingsHeader'
-import { settingsDraftIsDirty } from '@/lib/settings/settingsDirty'
-import { useSettingsDirty, useSettingsLeave } from '@/components/settings/SettingsDirty'
+import { settingsSaveBarHint } from '@/lib/settings/settingsDirty'
+import {
+  SettingsFormBody,
+  useSettingsBaseline,
+  useSettingsDirty,
+  useSettingsLeave,
+} from '@/components/settings/SettingsDirty'
 import {
   PanelHeader,
   SectionLabel,
@@ -119,25 +124,27 @@ export function WorkingHoursPanel({ onBack }: { onBack: () => void }) {
   const { organization } = useAuthStore()
   const requestLeave = useSettingsLeave()
   const [draft, setDraft] = useState<OrgPayrollTimePolicy>(DEFAULT_PAYROLL_POLICY)
-  const [baseline, setBaseline] = useState<OrgPayrollTimePolicy | null>(null)
+  const { state: loadState, markLoaded, markFailed, isDirty } = useSettingsBaseline<OrgPayrollTimePolicy>()
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState('')
   const header = settingsHeader('working-hours')
-  const dirty = Boolean(baseline) && settingsDraftIsDirty(baseline, draft)
+  const dirty = isDirty(draft)
   useSettingsDirty(dirty)
 
   useEffect(() => {
     if (!organization?.id) return
     loadOrganizationDetails(organization.id)
       .then((details) => {
-        if (details?.payrollTimePolicy) {
-          setDraft(details.payrollTimePolicy)
-          setBaseline(details.payrollTimePolicy)
+        if (!details?.payrollTimePolicy) {
+          markFailed()
+          return
         }
+        setDraft(details.payrollTimePolicy)
+        markLoaded(details.payrollTimePolicy)
       })
-      .catch(() => {})
-  }, [organization?.id])
+      .catch(() => markFailed())
+  }, [organization?.id, markLoaded, markFailed])
 
   function patch(partial: Partial<OrgPayrollTimePolicy>) {
     setDraft((current) => ({ ...current, ...partial }))
@@ -220,7 +227,7 @@ export function WorkingHoursPanel({ onBack }: { onBack: () => void }) {
     setError('')
     try {
       await savePayrollPolicy(organization.id, draft)
-      setBaseline(draft)
+      markLoaded(draft)
       setSaved(true)
       window.setTimeout(() => setSaved(false), 3000)
     } catch (saveError) {
@@ -307,6 +314,7 @@ export function WorkingHoursPanel({ onBack }: { onBack: () => void }) {
         </div>
       )}
 
+      <SettingsFormBody state={loadState}>
       <SettingsCard>
         <div className="p-5">
           <DayTimeline policy={draft} />
@@ -395,8 +403,9 @@ export function WorkingHoursPanel({ onBack }: { onBack: () => void }) {
         </div>
         {!sunday.sameAsSaturday ? <div className="p-5">{weekendFields('sunday')}</div> : null}
       </SettingsCard>
+      </SettingsFormBody>
 
-      <SaveBar dirty={dirty}>
+      <SaveBar dirty={dirty} hint={settingsSaveBarHint(loadState)}>
         <SaveButton saving={saving} saved={saved} dirty={dirty} onClick={save} />
       </SaveBar>
     </div>

@@ -21,8 +21,13 @@ import {
   SaveBar,
   SaveButton,
 } from '@/components/settings/primitives'
-import { settingsDraftIsDirty } from '@/lib/settings/settingsDirty'
-import { useSettingsDirty, useSettingsLeave } from '@/components/settings/SettingsDirty'
+import { settingsSaveBarHint } from '@/lib/settings/settingsDirty'
+import {
+  SettingsFormBody,
+  useSettingsBaseline,
+  useSettingsDirty,
+  useSettingsLeave,
+} from '@/components/settings/SettingsDirty'
 
 const ICON = {
   bell: 'M14.857 17.082a23.848 23.848 0 0 0 5.454-1.31A8.967 8.967 0 0 1 18 9.75V9A6 6 0 0 0 6 9v.75a8.967 8.967 0 0 1-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 0 1-5.714 0m5.714 0a3 3 0 1 1-5.714 0',
@@ -35,21 +40,22 @@ export function MaterialCutOffPanel({ onBack }: { onBack: () => void }) {
   const { user, organization } = useAuthStore()
   const requestLeave = useSettingsLeave()
   const [prefs, setPrefs] = useState<NotificationPreferences>(DEFAULT_NOTIFICATION_PREFERENCES)
-  const [baseline, setBaseline] = useState<NotificationPreferences | null>(null)
+  const { state: loadState, markLoaded, markFailed, isDirty } = useSettingsBaseline<NotificationPreferences>()
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [feedback, setFeedback] = useState<{ kind: 'success' | 'error'; msg: string } | null>(null)
-  const dirty = Boolean(baseline) && settingsDraftIsDirty(baseline, prefs)
+  const dirty = isDirty(prefs)
   useSettingsDirty(dirty)
 
   useEffect(() => {
     if (!organization?.id) return
-    void (async () => {
-      const loaded = await loadMaterialCutOffSettings(organization.id, user?.id)
-      setPrefs(loaded)
-      setBaseline(loaded)
-    })()
-  }, [organization?.id, user?.id])
+    loadMaterialCutOffSettings(organization.id, user?.id)
+      .then((loaded) => {
+        setPrefs(loaded)
+        markLoaded(loaded)
+      })
+      .catch(() => markFailed())
+  }, [organization?.id, user?.id, markLoaded, markFailed])
 
   const cutOffOn = prefs.materialOrderCutOff
   const cutOffMinutes = materialCutOffClockMinutes(prefs)
@@ -64,7 +70,7 @@ export function MaterialCutOffPanel({ onBack }: { onBack: () => void }) {
     setFeedback(null)
     try {
       await saveMaterialCutOffSettingsForOrgAndUser(organization.id, user?.id, prefs)
-      setBaseline(prefs)
+      markLoaded(prefs)
       setSaved(true)
       setFeedback({ kind: 'success', msg: 'Settings saved' })
       window.setTimeout(() => {
@@ -96,6 +102,7 @@ export function MaterialCutOffPanel({ onBack }: { onBack: () => void }) {
       {feedback?.kind === 'success' && <SuccessBanner message={feedback.msg} />}
       {feedback?.kind === 'error' && <ErrorBanner message={feedback.msg} />}
 
+      <SettingsFormBody state={loadState} className="space-y-6">
       <p className="text-[15px] leading-6 text-slate-500">
         Remind all managers when materials still need ordering before the daily cut-off. The time is stored on the
         organisation — that clock is what both apps use.
@@ -177,7 +184,9 @@ export function MaterialCutOffPanel({ onBack }: { onBack: () => void }) {
         </SettingsCard>
       </div>
 
-      <SaveBar dirty={dirty}>
+      </SettingsFormBody>
+
+      <SaveBar dirty={dirty} hint={settingsSaveBarHint(loadState)}>
         <SaveButton saving={saving} saved={saved} dirty={dirty} onClick={save} />
       </SaveBar>
     </div>

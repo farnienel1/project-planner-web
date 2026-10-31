@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { updateDoc, doc, Timestamp } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
 import { useAuthStore } from '@/lib/stores/authStore'
@@ -11,8 +11,13 @@ import {
   loadOrganizationDetails,
   organizationNameWriteFields,
 } from '@/lib/settings/organizationSettings'
-import { settingsDraftIsDirty } from '@/lib/settings/settingsDirty'
-import { useSettingsDirty, useSettingsLeave } from '@/components/settings/SettingsDirty'
+import { settingsSaveBarHint } from '@/lib/settings/settingsDirty'
+import {
+  SettingsFormBody,
+  useSettingsBaseline,
+  useSettingsDirty,
+  useSettingsLeave,
+} from '@/components/settings/SettingsDirty'
 import {
   COUNTRY_OPTIONS,
   CURRENCY_OPTIONS,
@@ -73,7 +78,7 @@ export function CompanyDetailsPanel({ onBack }: { onBack: () => void }) {
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState('')
-  const [baseline, setBaseline] = useState<CompanyDraft | null>(null)
+  const { state: loadState, markLoaded, markFailed, isDirty } = useSettingsBaseline<CompanyDraft>()
 
   const draft: CompanyDraft = {
     name,
@@ -89,10 +94,10 @@ export function CompanyDetailsPanel({ onBack }: { onBack: () => void }) {
     currency,
     logoPreview,
   }
-  const dirty = Boolean(baseline) && (settingsDraftIsDirty(baseline, draft) || Boolean(logoFile))
+  const dirty = loadState.status === 'ready' && (isDirty(draft) || Boolean(logoFile))
   useSettingsDirty(dirty)
 
-  function applyLoaded(next: CompanyDraft) {
+  const applyLoaded = useCallback((next: CompanyDraft) => {
     setName(next.name)
     setHasOffice(next.hasOffice)
     setLine1(next.line1)
@@ -105,14 +110,17 @@ export function CompanyDetailsPanel({ onBack }: { onBack: () => void }) {
     setAbbreviation(next.abbreviation)
     setCurrency(next.currency)
     setLogoPreview(next.logoPreview)
-    setBaseline(next)
-  }
+    markLoaded(next)
+  }, [markLoaded])
 
   useEffect(() => {
     if (!organization?.id) return
     loadOrganizationDetails(organization.id)
       .then((details) => {
-        if (!details) return
+        if (!details) {
+          markFailed()
+          return
+        }
         const address = details.officeAddress
         const line = details.officeAddressLine1 || address?.addressLine1 || ''
         const city = details.officeCity || address?.town || ''
@@ -132,8 +140,8 @@ export function CompanyDetailsPanel({ onBack }: { onBack: () => void }) {
           logoPreview: details.companyLogoURL ?? organization.companyLogoURL ?? null,
         })
       })
-      .catch(() => {})
-  }, [organization?.id, organization?.name, organization?.companyLogoURL])
+      .catch(() => markFailed())
+  }, [organization?.id, organization?.name, organization?.companyLogoURL, applyLoaded, markFailed])
 
   function onPickLogo(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0]
@@ -218,7 +226,8 @@ export function CompanyDetailsPanel({ onBack }: { onBack: () => void }) {
       }))
 
       setLogoFile(null)
-      setBaseline({
+      // The form now shows what was written (trimmed name, uploaded logo URL), so Save goes grey.
+      applyLoaded({
         ...draft,
         name: name.trim(),
         logoPreview: companyLogoURL ?? draft.logoPreview,
@@ -247,6 +256,7 @@ export function CompanyDetailsPanel({ onBack }: { onBack: () => void }) {
         </div>
       )}
 
+      <SettingsFormBody state={loadState}>
       <SectionLabel label="Company name" />
       <SettingsCard>
         <div className="p-4">
@@ -371,7 +381,9 @@ export function CompanyDetailsPanel({ onBack }: { onBack: () => void }) {
         </p>
       </SettingsCard>
 
-      <SaveBar dirty={dirty}>
+      </SettingsFormBody>
+
+      <SaveBar dirty={dirty} hint={settingsSaveBarHint(loadState)}>
         <SaveButton saving={saving} saved={saved} dirty={dirty} onClick={save} />
       </SaveBar>
     </div>

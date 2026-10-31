@@ -19,8 +19,13 @@ import {
   SaveBar,
   SaveButton,
 } from '@/components/settings/primitives'
-import { settingsDraftIsDirty } from '@/lib/settings/settingsDirty'
-import { useSettingsDirty, useSettingsLeave } from '@/components/settings/SettingsDirty'
+import { settingsSaveBarHint } from '@/lib/settings/settingsDirty'
+import {
+  SettingsFormBody,
+  useSettingsBaseline,
+  useSettingsDirty,
+  useSettingsLeave,
+} from '@/components/settings/SettingsDirty'
 
 const ICON_CALENDAR =
   'M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25m-18 0A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75m-18 0v-7.5A2.25 2.25 0 0 1 5.25 9h13.5A2.25 2.25 0 0 1 21 11.25v7.5'
@@ -35,25 +40,27 @@ export function ScheduleOptionsPanel({ onBack }: { onBack: () => void }) {
     customItems: [],
     customItemEnabled: {},
   })
-  const [baseline, setBaseline] = useState<MyScheduleOptions | null>(null)
+  const { state: loadState, markLoaded, markFailed, isDirty } = useSettingsBaseline<MyScheduleOptions>()
   const [newItem, setNewItem] = useState('')
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [feedback, setFeedback] = useState<{ kind: 'success' | 'error'; msg: string } | null>(null)
-  const dirty = Boolean(baseline) && settingsDraftIsDirty(baseline, opts)
+  const dirty = isDirty(opts)
   useSettingsDirty(dirty)
 
   useEffect(() => {
     if (!organization?.id) return
     loadOrganizationDetails(organization.id)
       .then((details) => {
-        if (details?.myScheduleOptions) {
-          setOpts(details.myScheduleOptions)
-          setBaseline(details.myScheduleOptions)
+        if (!details?.myScheduleOptions) {
+          markFailed()
+          return
         }
+        setOpts(details.myScheduleOptions)
+        markLoaded(details.myScheduleOptions)
       })
-      .catch(() => {})
-  }, [organization?.id])
+      .catch(() => markFailed())
+  }, [organization?.id, markLoaded, markFailed])
 
   async function save() {
     if (!organization?.id) return
@@ -61,7 +68,7 @@ export function ScheduleOptionsPanel({ onBack }: { onBack: () => void }) {
     setFeedback(null)
     try {
       await saveMyScheduleOptions(organization.id, opts)
-      setBaseline(opts)
+      markLoaded(opts)
       setSaved(true)
       setFeedback({ kind: 'success', msg: 'Schedule options saved' })
       window.setTimeout(() => {
@@ -114,6 +121,7 @@ export function ScheduleOptionsPanel({ onBack }: { onBack: () => void }) {
         </div>
       )}
 
+      <SettingsFormBody state={loadState}>
       <p className="mt-4 px-1 text-xs text-slate-500">
         Add or remove admin/manager additional options within My Schedule. Office, Working From Home and Site Survey are
         included as standard.
@@ -205,7 +213,9 @@ export function ScheduleOptionsPanel({ onBack }: { onBack: () => void }) {
         </div>
       </SettingsCard>
 
-      <SaveBar dirty={dirty}>
+      </SettingsFormBody>
+
+      <SaveBar dirty={dirty} hint={settingsSaveBarHint(loadState)}>
         <SaveButton saving={saving} saved={saved} dirty={dirty} onClick={save} />
       </SaveBar>
     </div>

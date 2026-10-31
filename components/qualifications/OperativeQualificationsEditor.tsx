@@ -19,6 +19,7 @@ import {
 } from '@/lib/qualifications/certificateUpload'
 import { QualificationLibraryBrowser } from './QualificationLibraryBrowser'
 import { ReportFileLink } from '@/components/fileReports/ReportFileLink'
+import { settingsDraftIsDirty } from '@/lib/settings/settingsDirty'
 
 type LinkedOperative = Operative
 
@@ -41,7 +42,8 @@ export function OperativeQualificationsEditor({
   showReportLink?: boolean
 }) {
   const [draft, setDraft] = useState(linked)
-  const [dirty, setDirty] = useState(false)
+  // `editing` stops a live update replacing the draft; `dirty` (below) is whether it differs from what is saved.
+  const [editing, setDirty] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [pendingFiles, setPendingFiles] = useState<Record<string, File>>({})
   const [previewUrls, setPreviewUrls] = useState<Record<string, string>>({})
@@ -50,11 +52,13 @@ export function OperativeQualificationsEditor({
   const [pickerSelected, setPickerSelected] = useState<string[]>([])
 
   useEffect(() => {
-    if (dirty) return
+    if (editing) return
     setDraft(linked)
     setPendingFiles({})
     setLocalError(null)
-  }, [linked, dirty])
+  }, [linked, editing])
+
+  const dirty = editing && (Object.keys(pendingFiles).length > 0 || settingsDraftIsDirty(linked, draft))
 
   useEffect(() => {
     const next: Record<string, string> = {}

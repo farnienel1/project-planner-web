@@ -16,8 +16,13 @@ import {
 } from '@/lib/settings/bankHolidayRegions'
 import { LEAVE_DAYS_SAVE_MAX, parseBoundedNumber } from '@/lib/security/boundedValue'
 import { settingsHeader } from '@/lib/settings/settingsHeader'
-import { settingsDraftIsDirty } from '@/lib/settings/settingsDirty'
-import { useSettingsDirty, useSettingsLeave } from '@/components/settings/SettingsDirty'
+import { settingsSaveBarHint } from '@/lib/settings/settingsDirty'
+import {
+  SettingsFormBody,
+  useSettingsBaseline,
+  useSettingsDirty,
+  useSettingsLeave,
+} from '@/components/settings/SettingsDirty'
 import {
   PanelHeader,
   SectionLabel,
@@ -64,13 +69,13 @@ export function AnnualLeaveDefaultsPanel({ onBack }: { onBack: () => void }) {
   const [endMonth, setEndMonth] = useState(DEFAULT_ANNUAL_LEAVE.endMonth)
   const [carriesOver, setCarriesOver] = useState(DEFAULT_ANNUAL_LEAVE.carriesOver)
   const [bankHolidayRegion, setBankHolidayRegion] = useState('GB')
-  const [baseline, setBaseline] = useState<string | null>(null)
+  const { state: loadState, markLoaded, markFailed, isDirty } = useSettingsBaseline<string>()
 
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState('')
   const snapshot = JSON.stringify({ daysText, startMonth, endMonth, carriesOver, bankHolidayRegion })
-  const dirty = Boolean(baseline) && settingsDraftIsDirty(baseline, snapshot)
+  const dirty = isDirty(snapshot)
   useSettingsDirty(dirty)
 
   useEffect(() => {
@@ -78,7 +83,10 @@ export function AnnualLeaveDefaultsPanel({ onBack }: { onBack: () => void }) {
     loadOrganizationDetails(organization.id)
       .then((details) => {
         const defaults = details?.annualLeaveDefaults
-        if (!defaults) return
+        if (!defaults) {
+          markFailed()
+          return
+        }
         const days = defaults.daysPerYear
         const nextDays = Number.isInteger(days) ? String(days) : days.toFixed(1)
         const nextRegion = bankHolidaySelectionFromStored(details.bankHolidayRegionId || details.countryCode)
@@ -87,7 +95,7 @@ export function AnnualLeaveDefaultsPanel({ onBack }: { onBack: () => void }) {
         setEndMonth(defaults.endMonth)
         setCarriesOver(defaults.carriesOver)
         setBankHolidayRegion(nextRegion)
-        setBaseline(
+        markLoaded(
           JSON.stringify({
             daysText: nextDays,
             startMonth: defaults.startMonth,
@@ -97,8 +105,8 @@ export function AnnualLeaveDefaultsPanel({ onBack }: { onBack: () => void }) {
           })
         )
       })
-      .catch(() => {})
-  }, [organization?.id])
+      .catch(() => markFailed())
+  }, [organization?.id, markLoaded, markFailed])
 
   async function save() {
     if (!organization?.id) return
@@ -122,7 +130,7 @@ export function AnnualLeaveDefaultsPanel({ onBack }: { onBack: () => void }) {
         organization.id,
         bankHolidayRegionIdFromSelection(bankHolidayRegion)
       )
-      setBaseline(snapshot)
+      markLoaded(snapshot)
       setSaved(true)
       window.setTimeout(() => setSaved(false), 3000)
     } catch (saveError) {
@@ -153,6 +161,7 @@ export function AnnualLeaveDefaultsPanel({ onBack }: { onBack: () => void }) {
         </div>
       )}
 
+      <SettingsFormBody state={loadState}>
       <Callout title="Applies to new users only">
         These settings apply only when adding new manager/operative users. Existing users keep their current annual leave
         values unless an admin/manager edits their profile.
@@ -243,7 +252,9 @@ export function AnnualLeaveDefaultsPanel({ onBack }: { onBack: () => void }) {
         </div>
       </SettingsCard>
 
-      <SaveBar dirty={dirty}>
+      </SettingsFormBody>
+
+      <SaveBar dirty={dirty} hint={settingsSaveBarHint(loadState)}>
         <SaveButton saving={saving} saved={saved} dirty={dirty} onClick={save} />
       </SaveBar>
     </div>
