@@ -16,6 +16,7 @@ import { consumeCreateQuery } from '@/lib/navigation/createMenu'
 import { newUuid } from '@/lib/firebase/firestoreUtils'
 import { EmptyState, IosFormModal, PageHeader } from '@/components/ios/primitives'
 import { lineMatchesMaterialQuery } from '@/lib/materials/materialCatalogSearch'
+import { settingsDraftIsDirty } from '@/lib/settings/settingsDirty'
 
 function cityFromAddress(address?: string) {
   if (!address) return ''
@@ -335,10 +336,12 @@ function WholesalerEditor({
   const canSave =
     draft.name.trim().length > 0 &&
     draft.contacts.some((contact) => contact.name.trim() && contact.email.trim())
+  // A new wholesaler can always be saved; an existing one only once something differs from what is stored.
+  const changed = !value.name || settingsDraftIsDirty(value, draft)
 
   const submit = async (event: FormEvent) => {
     event.preventDefault()
-    if (!canSave) return
+    if (!canSave || !changed) return
     setSaving(true)
     try {
       const contacts = draft.contacts.filter((contact) => contact.name.trim() && contact.email.trim())
@@ -354,7 +357,7 @@ function WholesalerEditor({
       onCancel={onCancel}
       width="md"
       footer={
-        <button type="submit" form="wholesaler-editor" disabled={!canSave || saving} className="w-full rounded-xl bg-[var(--blue)] py-3 font-semibold text-white disabled:opacity-50">
+        <button type="submit" form="wholesaler-editor" disabled={!canSave || !changed || saving} className="w-full rounded-xl bg-[var(--blue)] py-3 font-semibold text-white disabled:opacity-50">
           Save
         </button>
       }

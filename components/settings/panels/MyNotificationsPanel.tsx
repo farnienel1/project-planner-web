@@ -25,8 +25,13 @@ import {
   SaveBar,
   SaveButton,
 } from '@/components/settings/primitives'
-import { settingsDraftIsDirty } from '@/lib/settings/settingsDirty'
-import { useSettingsDirty, useSettingsLeave } from '@/components/settings/SettingsDirty'
+import { settingsSaveBarHint } from '@/lib/settings/settingsDirty'
+import {
+  SettingsFormBody,
+  useSettingsBaseline,
+  useSettingsDirty,
+  useSettingsLeave,
+} from '@/components/settings/SettingsDirty'
 
 const BELL_ICON =
   'M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9'
@@ -38,20 +43,22 @@ export function MyNotificationsPanel({ onBack }: { onBack: () => void }) {
   const audience = notificationPreferenceAudience(user)
   const visibleKeys = audience ? visibleNotificationPreferenceKeys(audience) : []
   const [prefs, setPrefs] = useState<UserNotificationPreferences>(DEFAULT_USER_NOTIFICATION_PREFERENCES)
-  const [baseline, setBaseline] = useState<UserNotificationPreferences | null>(null)
+  const { state: loadState, markLoaded, markFailed, isDirty } = useSettingsBaseline<UserNotificationPreferences>()
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [feedback, setFeedback] = useState<{ kind: 'success' | 'error'; msg: string } | null>(null)
-  const dirty = Boolean(baseline) && settingsDraftIsDirty(baseline, prefs)
+  const dirty = isDirty(prefs)
   useSettingsDirty(dirty)
 
   useEffect(() => {
     if (!user?.id) return
-    void loadUserNotificationPreferences(user.id).then((loaded) => {
-      setPrefs(loaded)
-      setBaseline(loaded)
-    })
-  }, [user?.id])
+    loadUserNotificationPreferences(user.id)
+      .then((loaded) => {
+        setPrefs(loaded)
+        markLoaded(loaded)
+      })
+      .catch(() => markFailed())
+  }, [user?.id, markLoaded, markFailed])
 
   async function save() {
     if (!user?.id) return
@@ -59,7 +66,7 @@ export function MyNotificationsPanel({ onBack }: { onBack: () => void }) {
     setFeedback(null)
     try {
       await saveUserNotificationPreferences(user.id, prefs)
-      setBaseline(prefs)
+      markLoaded(prefs)
       setSaved(true)
       setFeedback({ kind: 'success', msg: 'Saved' })
       window.setTimeout(() => {
@@ -82,6 +89,7 @@ export function MyNotificationsPanel({ onBack }: { onBack: () => void }) {
       {feedback?.kind === 'success' ? <SuccessBanner message={feedback.msg} /> : null}
       {feedback?.kind === 'error' ? <ErrorBanner message={feedback.msg} /> : null}
 
+      <SettingsFormBody state={loadState}>
       <SettingsCard>
         {visibleKeys.map((key) => {
           const copy = notificationPreferenceCopy(key, audience)
@@ -102,6 +110,7 @@ export function MyNotificationsPanel({ onBack }: { onBack: () => void }) {
           )
         })}
       </SettingsCard>
+      </SettingsFormBody>
 
       <p className="px-1 text-[13px] leading-5 text-[var(--ink3)]">
         Turn off any reminder you do not want. Organisation cut-off time is set in organisation settings.
@@ -133,7 +142,7 @@ export function MyNotificationsPanel({ onBack }: { onBack: () => void }) {
         </SettingsCard>
       ) : null}
 
-      <SaveBar dirty={dirty}>
+      <SaveBar dirty={dirty} hint={settingsSaveBarHint(loadState)}>
         <SaveButton saving={saving} saved={saved} dirty={dirty} onClick={save} />
       </SaveBar>
     </div>

@@ -12,8 +12,13 @@ import {
   saveInvoicingSettings,
   type OrgInvoicingSettings,
 } from '@/lib/settings/organizationSettings'
-import { settingsDraftIsDirty } from '@/lib/settings/settingsDirty'
-import { useSettingsDirty, useSettingsLeave } from '@/components/settings/SettingsDirty'
+import { settingsSaveBarHint } from '@/lib/settings/settingsDirty'
+import {
+  SettingsFormBody,
+  useSettingsBaseline,
+  useSettingsDirty,
+  useSettingsLeave,
+} from '@/components/settings/SettingsDirty'
 import {
   DAY_OF_MONTH_OPTIONS,
   paymentRunModeChange,
@@ -123,28 +128,30 @@ export function PaymentRunsPanel({ onBack }: { onBack: () => void }) {
   const requestLeave = useSettingsLeave()
   const header = settingsHeader('payment-runs')
   const [draft, setDraft] = useState<OrgInvoicingSettings>(DEFAULT_INVOICING)
-  const [baseline, setBaseline] = useState<OrgInvoicingSettings | null>(null)
+  const { state: loadState, markLoaded, markFailed, isDirty } = useSettingsBaseline<OrgInvoicingSettings>()
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState('')
-  const dirty = Boolean(baseline) && settingsDraftIsDirty(baseline, draft)
+  const dirty = isDirty(draft)
   useSettingsDirty(dirty)
 
   useEffect(() => {
     if (!organization?.id) return
     loadOrganizationDetails(organization.id)
       .then((details) => {
-        if (details?.invoicing) {
-          const next = {
-            ...details.invoicing,
-            timesheetSubmission: syncedTimesheetSubmission(details.invoicing),
-          }
-          setDraft(next)
-          setBaseline(next)
+        if (!details?.invoicing) {
+          markFailed()
+          return
         }
+        const next = {
+          ...details.invoicing,
+          timesheetSubmission: syncedTimesheetSubmission(details.invoicing),
+        }
+        setDraft(next)
+        markLoaded(next)
       })
-      .catch(() => {})
-  }, [organization?.id])
+      .catch(() => markFailed())
+  }, [organization?.id, markLoaded, markFailed])
 
   function patch(partial: Partial<OrgInvoicingSettings>) {
     setDraft((current) => ({ ...current, ...partial }))
@@ -190,7 +197,7 @@ export function PaymentRunsPanel({ onBack }: { onBack: () => void }) {
         timesheetSubmission: syncedTimesheetSubmission(draft),
       }
       setDraft(savedDraft)
-      setBaseline(savedDraft)
+      markLoaded(savedDraft)
       setSaved(true)
       window.setTimeout(() => setSaved(false), 3000)
     } catch (saveError) {
@@ -242,6 +249,7 @@ export function PaymentRunsPanel({ onBack }: { onBack: () => void }) {
         </div>
       )}
 
+      <SettingsFormBody state={loadState}>
       <div className="card p-4">
         <div className="text-[12px] font-semibold text-[var(--ink3)]">At a glance</div>
         <ul className="mt-1.5 space-y-1">
@@ -397,7 +405,9 @@ export function PaymentRunsPanel({ onBack }: { onBack: () => void }) {
         </div>
       </SettingsCard>
 
-      <SaveBar dirty={dirty}>
+      </SettingsFormBody>
+
+      <SaveBar dirty={dirty} hint={settingsSaveBarHint(loadState)}>
         <SaveButton saving={saving} saved={saved} dirty={dirty} onClick={save} />
       </SaveBar>
     </div>

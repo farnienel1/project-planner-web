@@ -117,6 +117,10 @@ function ProfilePanel({ onBack }: { onBack: () => void }) {
           },
         })
       }
+      // Show the trimmed values that were written, so the form matches its saved snapshot.
+      setFirstName(firstName.trim())
+      setSurname(surname.trim())
+      setMobile(mobile.trim())
       setBaseline(JSON.stringify({ firstName: firstName.trim(), surname: surname.trim(), mobile: mobile.trim() }))
       setSaved(true); setTimeout(() => setSaved(false), 3000)
     } catch (e: unknown) { setError(e instanceof Error ? e.message : 'Save failed') }

@@ -36,6 +36,7 @@ import {
   SaveBar,
 } from '@/components/settings/primitives'
 import { useSettingsDirty, useSettingsLeave } from '@/components/settings/SettingsDirty'
+import { settingsDraftIsDirty } from '@/lib/settings/settingsDirty'
 
 function ModeOption({
   selected,
@@ -97,6 +98,10 @@ export function WarningsPanel({ onBack }: { onBack: () => void }) {
     copyWarningDetection(DEFAULT_WARNING_DETECTION)
   )
   const [flow, setFlow] = useState<WarningSettingsSaveState>(initialWarningSettingsSaveState)
+  // Last loaded or saved values; Save is only blue while the draft differs from these.
+  const [baseline, setBaseline] = useState<OrgWarningDetectionSettings>(() =>
+    copyWarningDetection(DEFAULT_WARNING_DETECTION)
+  )
   const [error, setError] = useState('')
   const [pickerOpen, setPickerOpen] = useState(false)
   const [search, setSearch] = useState('')
@@ -111,7 +116,7 @@ export function WarningsPanel({ onBack }: { onBack: () => void }) {
   dirtyRef.current = flow.phase === 'dirty' || flow.phase === 'saving' || flow.phase === 'error'
   const saving = flow.phase === 'saving'
   const saved = flow.phase === 'saved'
-  const canSave = flow.phase === 'dirty' || flow.phase === 'error'
+  const canSave = (flow.phase === 'dirty' || flow.phase === 'error') && settingsDraftIsDirty(baseline, draft)
   useSettingsDirty(canSave)
 
   useEffect(() => {
@@ -123,6 +128,7 @@ export function WarningsPanel({ onBack }: { onBack: () => void }) {
     const cached = readCachedWarningDetection(organization.id)
     if (cached) {
       setDraft(cached)
+      setBaseline(cached)
       draftRef.current = cached
     }
     const generation = ++loadGenerationRef.current
@@ -141,11 +147,13 @@ export function WarningsPanel({ onBack }: { onBack: () => void }) {
           !warningDetectionLooksLikeFactoryDefault(latestCache)
         ) {
           setDraft(latestCache)
+          setBaseline(latestCache)
           void saveWarningDetection(organization.id, latestCache).catch(() => {})
           return
         }
         writeCachedWarningDetection(organization.id, loaded)
         setDraft(loaded)
+        setBaseline(loaded)
       })
       .catch(() => {})
     return () => {
@@ -201,6 +209,7 @@ export function WarningsPanel({ onBack }: { onBack: () => void }) {
       writeCachedWarningDetection(organization.id, toSave)
       loadGenerationRef.current += 1
       setDraft(toSave)
+      setBaseline(toSave)
       draftRef.current = toSave
       applySaveFlow({ type: 'saveSucceeded' })
     } catch (saveError) {

@@ -8,6 +8,12 @@ import {
   useState,
   type ReactNode,
 } from 'react'
+import { ErrorBanner } from '@/components/settings/primitives/ErrorBanner'
+import {
+  SETTINGS_LOAD_FAILED_MESSAGE,
+  settingsFormIsDirty,
+  type SettingsBaselineState,
+} from '@/lib/settings/settingsDirty'
 
 type LeaveFn = () => void
 
@@ -100,4 +106,42 @@ export function useSettingsDirty(dirty: boolean) {
 export function useSettingsLeave() {
   const ctx = useContext(SettingsDirtyContext)
   return ctx?.requestLeave ?? ((proceed: LeaveFn) => proceed())
+}
+
+/**
+ * The saved snapshot a settings form compares against. `markLoaded` after the saved values are
+ * read (and again after a save), `markFailed` when that read fails. `isDirty(draft)` is the one
+ * "has changed" check every Save button uses.
+ */
+export function useSettingsBaseline<T>() {
+  const [state, setState] = useState<SettingsBaselineState<T>>({ status: 'loading' })
+  const markLoaded = useCallback((baseline: T) => setState({ status: 'ready', baseline }), [])
+  const markFailed = useCallback(() => setState({ status: 'failed' }), [])
+  const isDirty = (draft: T) => settingsFormIsDirty(state, draft)
+  return { state, ready: state.status === 'ready', markLoaded, markFailed, isDirty }
+}
+
+/** Locks the form until the saved values are in, and says so when they could not be read. */
+export function SettingsFormBody<T>({
+  state,
+  className = '',
+  children,
+}: {
+  state: SettingsBaselineState<T>
+  /** Spacing the panel used between these children, e.g. `space-y-6`. */
+  className?: string
+  children: ReactNode
+}) {
+  return (
+    <>
+      {state.status === 'failed' ? (
+        <div className="mb-4">
+          <ErrorBanner message={SETTINGS_LOAD_FAILED_MESSAGE} />
+        </div>
+      ) : null}
+      <fieldset disabled={state.status !== 'ready'} className={`m-0 min-w-0 border-0 p-0 ${className}`}>
+        {children}
+      </fieldset>
+    </>
+  )
 }

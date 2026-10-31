@@ -709,10 +709,13 @@ export function EditUserProfile({
   }
 
   const taxDirty = taxDraft.utrNumber !== null || taxDraft.vatNumber !== null
+  // Typing the remaining days back to the worked-out figure is not a change.
+  const remainingChanged =
+    remainingTouched && remainingDraft !== (leaveBalance.remaining == null ? '' : String(leaveBalance.remaining))
   const dirty =
     Boolean(target) &&
     baseline != null &&
-    (remainingTouched ||
+    (remainingChanged ||
       taxDirty ||
       profileSnapshot(target, draftAccountType, draftTypePermissions) !== baseline)
   const pageTitle = currentAccountType(target) === 'operative' ? 'Edit operative' : 'Edit user'
