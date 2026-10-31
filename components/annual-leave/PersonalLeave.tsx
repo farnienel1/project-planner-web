@@ -8,6 +8,7 @@ import { useOrganizationTimeZone } from '@/lib/stores/organizationDocumentStore'
 import { holidayRequestRanges } from '@/lib/canonical'
 import { staffAccountRole } from '@/lib/permissions'
 import { notifyHolidayRequestSubmitted } from '@/lib/annualLeave/notifyHolidayRequestSubmitted'
+import { userCanSelfBookAnnualLeave } from '@/lib/annualLeave/holidayApprovalUtils'
 import { getBookingForDay, getDayKindForBookings } from '@/lib/annualLeave/dayStatus'
 import { bookingsForPerson, userLeaveBalance } from '@/lib/annualLeave/leaveBalance'
 import { DEFAULT_ANNUAL_LEAVE, type OrgAnnualLeaveDefaults } from '@/lib/settings/organizationSettings'
@@ -242,7 +243,8 @@ export function PersonalLeave({
         picks.map((pick) => ({ dayKey: format(pick.day, 'yyyy-MM-dd'), timeSlot: pick.slot })),
         timeZone
       )
-      const status = mode === 'manager' ? 'approved' : 'pending'
+      // Approved only for a self-booker (`canSelfBookAnnualLeave`); everyone else sends a pending request.
+      const status = mode === 'manager' && userCanSelfBookAnnualLeave(user) ? 'approved' : 'pending'
       const saved = await createRequests(
         organization.id,
         ranges.map((range) => ({

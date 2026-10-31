@@ -1,5 +1,7 @@
-/** The only person who may use the owner / developer console. */
-export const PLATFORM_OWNER_EMAIL = 'info@projectplanner.us'
+import { isPlatformOwnerEmail as canonicalIsPlatformOwnerEmail } from '@/lib/canonical/passwordPolicy'
+
+/** The only person who may use the owner / developer console (rulebook `PLATFORM_OWNER_EMAIL`). */
+export { PLATFORM_OWNER_EMAIL } from '@/lib/canonical/passwordPolicy'
 
 /** Sentinel org id written on a standalone owner profile that is not a customer tenant. */
 export const PLATFORM_OWNER_SENTINEL_ORG = 'platform-owner'
@@ -8,8 +10,9 @@ export function normalizeEmail(email?: string | null): string {
   return (email || '').trim().toLowerCase()
 }
 
+/** The rulebook's `isPlatformOwnerEmail` (ignores case and surrounding spaces). */
 export function isPlatformOwnerEmail(email?: string | null): boolean {
-  return normalizeEmail(email) === PLATFORM_OWNER_EMAIL
+  return canonicalIsPlatformOwnerEmail(email)
 }
 
 export function isPlatformOwnerSentinelOrg(organizationId?: string | null): boolean {

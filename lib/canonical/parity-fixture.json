@@ -878,6 +878,1752 @@
         }
       ],
       "expected": true
+    },
+    {
+      "name": "normalizeDocumentId: trimmed lower case for comparing only",
+      "function": "normalizeDocumentId",
+      "args": [
+        "  9F1C2A7E-ABCD-4E5F-8A9B-0C1D2E3F4A5B "
+      ],
+      "expected": "9f1c2a7e-abcd-4e5f-8a9b-0c1d2e3f4a5b"
+    },
+    {
+      "name": "approvedWarningKeys: approvals only; a dismissed key is left out; keys differing only by case are one",
+      "function": "approvedWarningKeys",
+      "args": [
+        [
+          {
+            "id": "A|B",
+            "status": "approved"
+          },
+          {
+            "id": "a|b",
+            "status": "Approved"
+          },
+          {
+            "id": "mgr-clash-u1-2026-10-22-0",
+            "resolutionKey": "mgr-clash-u1-2026-10-22-0",
+            "status": "dismissed"
+          },
+          {
+            "id": "x",
+            "resolutionKey": "materials-P1-2026-10-23",
+            "status": "APPROVED"
+          }
+        ]
+      ],
+      "expected": [
+        "A|B",
+        "materials-P1-2026-10-23"
+      ]
+    },
+    {
+      "name": "resolvedWarningKeys: approved and dismissed, case-folded to one key each",
+      "function": "resolvedWarningKeys",
+      "args": [
+        [
+          {
+            "id": "ABC-1|DEF-2",
+            "status": "approved"
+          },
+          {
+            "id": "abc-1|def-2",
+            "status": "dismissed"
+          },
+          {
+            "id": "q-1",
+            "status": "dismissed"
+          }
+        ]
+      ],
+      "expected": [
+        "ABC-1|DEF-2",
+        "q-1"
+      ]
+    },
+    {
+      "name": "isWarningActive: an upper-case iOS key hides a lower-case web resolution",
+      "function": "isWarningActive",
+      "args": [
+        {
+          "resolutionKey": "ABC-1|DEF-2"
+        },
+        {
+          "resolvedKeys": [
+            "abc-1|def-2"
+          ]
+        }
+      ],
+      "expected": false
+    },
+    {
+      "name": "isClashApproved: a dismissed clash is not approved when approvals are passed separately",
+      "function": "isClashApproved",
+      "args": [
+        {
+          "bookingAId": "B1",
+          "bookingBId": "B2"
+        },
+        {
+          "resolvedKeys": [
+            "B1|B2"
+          ],
+          "approvedKeys": [],
+          "acceptedClashes": []
+        }
+      ],
+      "expected": false
+    },
+    {
+      "name": "isClashApproved: an approval written under the other letter case counts",
+      "function": "isClashApproved",
+      "args": [
+        {
+          "bookingAId": "B1",
+          "bookingBId": "B2",
+          "resolutionKey": "MGR-CLASH-U1-2026-10-22-0"
+        },
+        {
+          "approvedKeys": [
+            "mgr-clash-u1-2026-10-22-0"
+          ]
+        }
+      ],
+      "expected": true
+    },
+    {
+      "name": "operativeClashGroups: a chain A–B, B–C is one group with one pair row per overlapping pair; a manager is left out",
+      "function": "operativeClashGroups",
+      "args": [
+        {
+          "operativeBookings": [
+            {
+              "id": "C",
+              "operativeId": "op-1",
+              "dayKey": "2026-10-22",
+              "timeSlot": "CUSTOM_HOURS",
+              "workStartTime": "12:00",
+              "workEndTime": "16:00"
+            },
+            {
+              "id": "A",
+              "operativeId": "op-1",
+              "dayKey": "2026-10-22",
+              "timeSlot": "CUSTOM_HOURS",
+              "workStartTime": "07:30",
+              "workEndTime": "10:00"
+            },
+            {
+              "id": "B",
+              "operativeId": "USER-1",
+              "dayKey": "2026-10-22",
+              "timeSlot": "CUSTOM_HOURS",
+              "workStartTime": "09:00",
+              "workEndTime": "13:00"
+            },
+            {
+              "id": "X",
+              "operativeId": "op-1",
+              "dayKey": "2026-10-22",
+              "timeSlot": "FULL DAY",
+              "status": "Cancelled"
+            },
+            {
+              "id": "M1",
+              "operativeId": "MGR",
+              "dayKey": "2026-10-22",
+              "timeSlot": "FULL DAY"
+            },
+            {
+              "id": "M2",
+              "operativeId": "MGR",
+              "dayKey": "2026-10-22",
+              "timeSlot": "AM"
+            },
+            {
+              "id": "T1",
+              "operativeId": "op-2",
+              "dayKey": "2026-10-23",
+              "timeSlot": "AM"
+            },
+            {
+              "id": "T2",
+              "operativeId": "op-2",
+              "dayKey": "2026-10-23",
+              "timeSlot": "PM"
+            }
+          ],
+          "people": {
+            "accounts": [
+              {
+                "id": "USER-1",
+                "email": "rae@example.com"
+              },
+              {
+                "id": "MGR",
+                "email": "m@example.com"
+              }
+            ],
+            "operatives": [
+              {
+                "id": "op-1",
+                "email": "Rae@example.com"
+              },
+              {
+                "id": "op-2",
+                "email": "sam@example.com"
+              }
+            ]
+          },
+          "managerIds": [
+            "MGR"
+          ]
+        }
+      ],
+      "expected": [
+        {
+          "personKey": "account:user-1",
+          "operativeId": "op-1",
+          "dayKey": "2026-10-22",
+          "items": [
+            {
+              "bookingId": "A",
+              "index": 1,
+              "interval": {
+                "start": 450,
+                "end": 600
+              }
+            },
+            {
+              "bookingId": "B",
+              "index": 2,
+              "interval": {
+                "start": 540,
+                "end": 780
+              }
+            },
+            {
+              "bookingId": "C",
+              "index": 0,
+              "interval": {
+                "start": 720,
+                "end": 960
+              }
+            }
+          ],
+          "bookingIds": [
+            "A",
+            "B",
+            "C"
+          ],
+          "pairKey": "A|B|C",
+          "bookingAId": "A",
+          "bookingBId": "B",
+          "resolutionKey": "A|B",
+          "pairs": [
+            {
+              "bookingAId": "A",
+              "bookingBId": "B",
+              "clashPairKey": "A|B",
+              "clashResolutionKey": "A|B"
+            },
+            {
+              "bookingAId": "B",
+              "bookingBId": "C",
+              "clashPairKey": "B|C",
+              "clashResolutionKey": "B|C"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "isClashGroupApproved: every overlapping pair must be approved",
+      "function": "isClashGroupApproved",
+      "args": [
+        {
+          "pairs": [
+            {
+              "bookingAId": "A",
+              "bookingBId": "B"
+            },
+            {
+              "bookingAId": "B",
+              "bookingBId": "C"
+            }
+          ]
+        },
+        {
+          "approvedKeys": [
+            "A|B"
+          ],
+          "acceptedClashes": [
+            {
+              "bookingAId": "A",
+              "bookingBId": "B"
+            }
+          ]
+        }
+      ],
+      "expected": false
+    },
+    {
+      "name": "canSelfBookAnnualLeave: the permission, not in operative mode",
+      "function": "canSelfBookAnnualLeave",
+      "args": [
+        {
+          "id": "M",
+          "permissions": {
+            "annualLeaveSelfBook": true,
+            "operativeMode": false
+          }
+        }
+      ],
+      "expected": true
+    },
+    {
+      "name": "canSelfBookAnnualLeave: no line manager is not self-booking",
+      "function": "canSelfBookAnnualLeave",
+      "args": [
+        {
+          "id": "M",
+          "hasNoLineManager": true
+        }
+      ],
+      "expected": false
+    },
+    {
+      "name": "canSelfBookAnnualLeave: never in operative mode",
+      "function": "canSelfBookAnnualLeave",
+      "args": [
+        {
+          "id": "O",
+          "annualLeaveSelfBook": true,
+          "role": "operative"
+        }
+      ],
+      "expected": false
+    },
+    {
+      "name": "lineManagerRequiredError: self-book off and no line manager",
+      "function": "lineManagerRequiredError",
+      "args": [
+        {
+          "id": "OP2",
+          "permissions": {
+            "operativeMode": true
+          }
+        }
+      ],
+      "expected": "Set a line manager — this person's annual leave needs approval."
+    },
+    {
+      "name": "lineManagerRequiredError: hasNoLineManager counts as none",
+      "function": "lineManagerRequiredError",
+      "args": [
+        {
+          "id": "U",
+          "assignedManagerUserIds": [
+            "LM"
+          ],
+          "hasNoLineManager": true
+        }
+      ],
+      "expected": "Set a line manager — this person's annual leave needs approval."
+    },
+    {
+      "name": "lineManagerRequiredError: the only line manager is inactive on the roster",
+      "function": "lineManagerRequiredError",
+      "args": [
+        {
+          "id": "OP3",
+          "assignedManagerUserIds": [
+            "GONE"
+          ]
+        },
+        [
+          {
+            "id": "ADMIN",
+            "role": {
+              "isSuperAdmin": false,
+              "isAdmin": true,
+              "isManager": false,
+              "isOperativeMode": false
+            },
+            "permissions": {
+              "annualLeaveSelfBook": true
+            }
+          },
+          {
+            "id": "LM",
+            "role": {
+              "isSuperAdmin": false,
+              "isAdmin": false,
+              "isManager": true,
+              "isOperativeMode": false
+            },
+            "annualLeaveSelfBook": true
+          },
+          {
+            "id": "MGR2",
+            "role": {
+              "isSuperAdmin": false,
+              "isAdmin": false,
+              "isManager": true,
+              "isOperativeMode": false
+            }
+          },
+          {
+            "id": "OP",
+            "role": {
+              "isSuperAdmin": false,
+              "isAdmin": false,
+              "isManager": false,
+              "isOperativeMode": true
+            },
+            "assignedManagerUserIds": [
+              "LM"
+            ]
+          },
+          {
+            "id": "OP2",
+            "role": {
+              "isSuperAdmin": false,
+              "isAdmin": false,
+              "isManager": false,
+              "isOperativeMode": true
+            }
+          },
+          {
+            "id": "GONE",
+            "role": {
+              "isSuperAdmin": false,
+              "isAdmin": false,
+              "isManager": true,
+              "isOperativeMode": false
+            },
+            "isActive": false
+          },
+          {
+            "id": "OP3",
+            "role": {
+              "isSuperAdmin": false,
+              "isAdmin": false,
+              "isManager": false,
+              "isOperativeMode": true
+            },
+            "assignedManagerUserIds": [
+              "GONE"
+            ]
+          }
+        ]
+      ],
+      "expected": "Set a line manager — this person's annual leave needs approval."
+    },
+    {
+      "name": "lineManagerRequiredError: an active line manager passes",
+      "function": "lineManagerRequiredError",
+      "args": [
+        {
+          "id": "OP",
+          "assignedManagerUserIds": [
+            "lm"
+          ]
+        },
+        [
+          {
+            "id": "ADMIN",
+            "role": {
+              "isSuperAdmin": false,
+              "isAdmin": true,
+              "isManager": false,
+              "isOperativeMode": false
+            },
+            "permissions": {
+              "annualLeaveSelfBook": true
+            }
+          },
+          {
+            "id": "LM",
+            "role": {
+              "isSuperAdmin": false,
+              "isAdmin": false,
+              "isManager": true,
+              "isOperativeMode": false
+            },
+            "annualLeaveSelfBook": true
+          },
+          {
+            "id": "MGR2",
+            "role": {
+              "isSuperAdmin": false,
+              "isAdmin": false,
+              "isManager": true,
+              "isOperativeMode": false
+            }
+          },
+          {
+            "id": "OP",
+            "role": {
+              "isSuperAdmin": false,
+              "isAdmin": false,
+              "isManager": false,
+              "isOperativeMode": true
+            },
+            "assignedManagerUserIds": [
+              "LM"
+            ]
+          },
+          {
+            "id": "OP2",
+            "role": {
+              "isSuperAdmin": false,
+              "isAdmin": false,
+              "isManager": false,
+              "isOperativeMode": true
+            }
+          },
+          {
+            "id": "GONE",
+            "role": {
+              "isSuperAdmin": false,
+              "isAdmin": false,
+              "isManager": true,
+              "isOperativeMode": false
+            },
+            "isActive": false
+          },
+          {
+            "id": "OP3",
+            "role": {
+              "isSuperAdmin": false,
+              "isAdmin": false,
+              "isManager": false,
+              "isOperativeMode": true
+            },
+            "assignedManagerUserIds": [
+              "GONE"
+            ]
+          }
+        ]
+      ],
+      "expected": null
+    },
+    {
+      "name": "lineManagerRequiredError: a self-booker needs none",
+      "function": "lineManagerRequiredError",
+      "args": [
+        {
+          "id": "M",
+          "annualLeaveSelfBook": true
+        }
+      ],
+      "expected": null
+    },
+    {
+      "name": "usersMissingLineManager: the admins clean-up list",
+      "function": "usersMissingLineManager",
+      "args": [
+        [
+          {
+            "id": "ADMIN",
+            "role": {
+              "isSuperAdmin": false,
+              "isAdmin": true,
+              "isManager": false,
+              "isOperativeMode": false
+            },
+            "permissions": {
+              "annualLeaveSelfBook": true
+            }
+          },
+          {
+            "id": "LM",
+            "role": {
+              "isSuperAdmin": false,
+              "isAdmin": false,
+              "isManager": true,
+              "isOperativeMode": false
+            },
+            "annualLeaveSelfBook": true
+          },
+          {
+            "id": "MGR2",
+            "role": {
+              "isSuperAdmin": false,
+              "isAdmin": false,
+              "isManager": true,
+              "isOperativeMode": false
+            }
+          },
+          {
+            "id": "OP",
+            "role": {
+              "isSuperAdmin": false,
+              "isAdmin": false,
+              "isManager": false,
+              "isOperativeMode": true
+            },
+            "assignedManagerUserIds": [
+              "LM"
+            ]
+          },
+          {
+            "id": "OP2",
+            "role": {
+              "isSuperAdmin": false,
+              "isAdmin": false,
+              "isManager": false,
+              "isOperativeMode": true
+            }
+          },
+          {
+            "id": "GONE",
+            "role": {
+              "isSuperAdmin": false,
+              "isAdmin": false,
+              "isManager": true,
+              "isOperativeMode": false
+            },
+            "isActive": false
+          },
+          {
+            "id": "OP3",
+            "role": {
+              "isSuperAdmin": false,
+              "isAdmin": false,
+              "isManager": false,
+              "isOperativeMode": true
+            },
+            "assignedManagerUserIds": [
+              "GONE"
+            ]
+          }
+        ]
+      ],
+      "expected": [
+        "MGR2",
+        "OP2",
+        "OP3"
+      ]
+    },
+    {
+      "name": "canDecideLeave: never your own request, even as an admin",
+      "function": "canDecideLeave",
+      "args": [
+        {
+          "id": "ADMIN",
+          "role": {
+            "isSuperAdmin": false,
+            "isAdmin": true,
+            "isManager": false,
+            "isOperativeMode": false
+          },
+          "permissions": {
+            "annualLeaveSelfBook": true
+          }
+        },
+        {
+          "id": "ADMIN"
+        },
+        [
+          {
+            "id": "ADMIN",
+            "role": {
+              "isSuperAdmin": false,
+              "isAdmin": true,
+              "isManager": false,
+              "isOperativeMode": false
+            },
+            "permissions": {
+              "annualLeaveSelfBook": true
+            }
+          },
+          {
+            "id": "LM",
+            "role": {
+              "isSuperAdmin": false,
+              "isAdmin": false,
+              "isManager": true,
+              "isOperativeMode": false
+            },
+            "annualLeaveSelfBook": true
+          },
+          {
+            "id": "MGR2",
+            "role": {
+              "isSuperAdmin": false,
+              "isAdmin": false,
+              "isManager": true,
+              "isOperativeMode": false
+            }
+          },
+          {
+            "id": "OP",
+            "role": {
+              "isSuperAdmin": false,
+              "isAdmin": false,
+              "isManager": false,
+              "isOperativeMode": true
+            },
+            "assignedManagerUserIds": [
+              "LM"
+            ]
+          },
+          {
+            "id": "OP2",
+            "role": {
+              "isSuperAdmin": false,
+              "isAdmin": false,
+              "isManager": false,
+              "isOperativeMode": true
+            }
+          },
+          {
+            "id": "GONE",
+            "role": {
+              "isSuperAdmin": false,
+              "isAdmin": false,
+              "isManager": true,
+              "isOperativeMode": false
+            },
+            "isActive": false
+          },
+          {
+            "id": "OP3",
+            "role": {
+              "isSuperAdmin": false,
+              "isAdmin": false,
+              "isManager": false,
+              "isOperativeMode": true
+            },
+            "assignedManagerUserIds": [
+              "GONE"
+            ]
+          }
+        ]
+      ],
+      "expected": false
+    },
+    {
+      "name": "canDecideLeave: an admin decides anyone else",
+      "function": "canDecideLeave",
+      "args": [
+        {
+          "id": "ADMIN",
+          "role": {
+            "isSuperAdmin": false,
+            "isAdmin": true,
+            "isManager": false,
+            "isOperativeMode": false
+          },
+          "permissions": {
+            "annualLeaveSelfBook": true
+          }
+        },
+        {
+          "id": "OP",
+          "role": {
+            "isSuperAdmin": false,
+            "isAdmin": false,
+            "isManager": false,
+            "isOperativeMode": true
+          },
+          "assignedManagerUserIds": [
+            "LM"
+          ]
+        },
+        [
+          {
+            "id": "ADMIN",
+            "role": {
+              "isSuperAdmin": false,
+              "isAdmin": true,
+              "isManager": false,
+              "isOperativeMode": false
+            },
+            "permissions": {
+              "annualLeaveSelfBook": true
+            }
+          },
+          {
+            "id": "LM",
+            "role": {
+              "isSuperAdmin": false,
+              "isAdmin": false,
+              "isManager": true,
+              "isOperativeMode": false
+            },
+            "annualLeaveSelfBook": true
+          },
+          {
+            "id": "MGR2",
+            "role": {
+              "isSuperAdmin": false,
+              "isAdmin": false,
+              "isManager": true,
+              "isOperativeMode": false
+            }
+          },
+          {
+            "id": "OP",
+            "role": {
+              "isSuperAdmin": false,
+              "isAdmin": false,
+              "isManager": false,
+              "isOperativeMode": true
+            },
+            "assignedManagerUserIds": [
+              "LM"
+            ]
+          },
+          {
+            "id": "OP2",
+            "role": {
+              "isSuperAdmin": false,
+              "isAdmin": false,
+              "isManager": false,
+              "isOperativeMode": true
+            }
+          },
+          {
+            "id": "GONE",
+            "role": {
+              "isSuperAdmin": false,
+              "isAdmin": false,
+              "isManager": true,
+              "isOperativeMode": false
+            },
+            "isActive": false
+          },
+          {
+            "id": "OP3",
+            "role": {
+              "isSuperAdmin": false,
+              "isAdmin": false,
+              "isManager": false,
+              "isOperativeMode": true
+            },
+            "assignedManagerUserIds": [
+              "GONE"
+            ]
+          }
+        ]
+      ],
+      "expected": true
+    },
+    {
+      "name": "canDecideLeave: a manager who is not the line manager does not",
+      "function": "canDecideLeave",
+      "args": [
+        {
+          "id": "MGR2",
+          "role": {
+            "isSuperAdmin": false,
+            "isAdmin": false,
+            "isManager": true,
+            "isOperativeMode": false
+          }
+        },
+        {
+          "id": "OP",
+          "role": {
+            "isSuperAdmin": false,
+            "isAdmin": false,
+            "isManager": false,
+            "isOperativeMode": true
+          },
+          "assignedManagerUserIds": [
+            "LM"
+          ]
+        },
+        [
+          {
+            "id": "ADMIN",
+            "role": {
+              "isSuperAdmin": false,
+              "isAdmin": true,
+              "isManager": false,
+              "isOperativeMode": false
+            },
+            "permissions": {
+              "annualLeaveSelfBook": true
+            }
+          },
+          {
+            "id": "LM",
+            "role": {
+              "isSuperAdmin": false,
+              "isAdmin": false,
+              "isManager": true,
+              "isOperativeMode": false
+            },
+            "annualLeaveSelfBook": true
+          },
+          {
+            "id": "MGR2",
+            "role": {
+              "isSuperAdmin": false,
+              "isAdmin": false,
+              "isManager": true,
+              "isOperativeMode": false
+            }
+          },
+          {
+            "id": "OP",
+            "role": {
+              "isSuperAdmin": false,
+              "isAdmin": false,
+              "isManager": false,
+              "isOperativeMode": true
+            },
+            "assignedManagerUserIds": [
+              "LM"
+            ]
+          },
+          {
+            "id": "OP2",
+            "role": {
+              "isSuperAdmin": false,
+              "isAdmin": false,
+              "isManager": false,
+              "isOperativeMode": true
+            }
+          },
+          {
+            "id": "GONE",
+            "role": {
+              "isSuperAdmin": false,
+              "isAdmin": false,
+              "isManager": true,
+              "isOperativeMode": false
+            },
+            "isActive": false
+          },
+          {
+            "id": "OP3",
+            "role": {
+              "isSuperAdmin": false,
+              "isAdmin": false,
+              "isManager": false,
+              "isOperativeMode": true
+            },
+            "assignedManagerUserIds": [
+              "GONE"
+            ]
+          }
+        ]
+      ],
+      "expected": false
+    },
+    {
+      "name": "canDecideLeave: the line manager does",
+      "function": "canDecideLeave",
+      "args": [
+        {
+          "id": "LM",
+          "role": {
+            "isSuperAdmin": false,
+            "isAdmin": false,
+            "isManager": true,
+            "isOperativeMode": false
+          },
+          "annualLeaveSelfBook": true
+        },
+        {
+          "id": "OP",
+          "role": {
+            "isSuperAdmin": false,
+            "isAdmin": false,
+            "isManager": false,
+            "isOperativeMode": true
+          },
+          "assignedManagerUserIds": [
+            "LM"
+          ]
+        },
+        [
+          {
+            "id": "ADMIN",
+            "role": {
+              "isSuperAdmin": false,
+              "isAdmin": true,
+              "isManager": false,
+              "isOperativeMode": false
+            },
+            "permissions": {
+              "annualLeaveSelfBook": true
+            }
+          },
+          {
+            "id": "LM",
+            "role": {
+              "isSuperAdmin": false,
+              "isAdmin": false,
+              "isManager": true,
+              "isOperativeMode": false
+            },
+            "annualLeaveSelfBook": true
+          },
+          {
+            "id": "MGR2",
+            "role": {
+              "isSuperAdmin": false,
+              "isAdmin": false,
+              "isManager": true,
+              "isOperativeMode": false
+            }
+          },
+          {
+            "id": "OP",
+            "role": {
+              "isSuperAdmin": false,
+              "isAdmin": false,
+              "isManager": false,
+              "isOperativeMode": true
+            },
+            "assignedManagerUserIds": [
+              "LM"
+            ]
+          },
+          {
+            "id": "OP2",
+            "role": {
+              "isSuperAdmin": false,
+              "isAdmin": false,
+              "isManager": false,
+              "isOperativeMode": true
+            }
+          },
+          {
+            "id": "GONE",
+            "role": {
+              "isSuperAdmin": false,
+              "isAdmin": false,
+              "isManager": true,
+              "isOperativeMode": false
+            },
+            "isActive": false
+          },
+          {
+            "id": "OP3",
+            "role": {
+              "isSuperAdmin": false,
+              "isAdmin": false,
+              "isManager": false,
+              "isOperativeMode": true
+            },
+            "assignedManagerUserIds": [
+              "GONE"
+            ]
+          }
+        ]
+      ],
+      "expected": true
+    },
+    {
+      "name": "canDecideLeave: an admin in operative mode only as a line manager",
+      "function": "canDecideLeave",
+      "args": [
+        {
+          "id": "ADMIN",
+          "role": {
+            "isSuperAdmin": false,
+            "isAdmin": true,
+            "isManager": false,
+            "isOperativeMode": true
+          }
+        },
+        {
+          "id": "OP",
+          "role": {
+            "isSuperAdmin": false,
+            "isAdmin": false,
+            "isManager": false,
+            "isOperativeMode": true
+          },
+          "assignedManagerUserIds": [
+            "LM"
+          ]
+        },
+        [
+          {
+            "id": "ADMIN",
+            "role": {
+              "isSuperAdmin": false,
+              "isAdmin": true,
+              "isManager": false,
+              "isOperativeMode": false
+            },
+            "permissions": {
+              "annualLeaveSelfBook": true
+            }
+          },
+          {
+            "id": "LM",
+            "role": {
+              "isSuperAdmin": false,
+              "isAdmin": false,
+              "isManager": true,
+              "isOperativeMode": false
+            },
+            "annualLeaveSelfBook": true
+          },
+          {
+            "id": "MGR2",
+            "role": {
+              "isSuperAdmin": false,
+              "isAdmin": false,
+              "isManager": true,
+              "isOperativeMode": false
+            }
+          },
+          {
+            "id": "OP",
+            "role": {
+              "isSuperAdmin": false,
+              "isAdmin": false,
+              "isManager": false,
+              "isOperativeMode": true
+            },
+            "assignedManagerUserIds": [
+              "LM"
+            ]
+          },
+          {
+            "id": "OP2",
+            "role": {
+              "isSuperAdmin": false,
+              "isAdmin": false,
+              "isManager": false,
+              "isOperativeMode": true
+            }
+          },
+          {
+            "id": "GONE",
+            "role": {
+              "isSuperAdmin": false,
+              "isAdmin": false,
+              "isManager": true,
+              "isOperativeMode": false
+            },
+            "isActive": false
+          },
+          {
+            "id": "OP3",
+            "role": {
+              "isSuperAdmin": false,
+              "isAdmin": false,
+              "isManager": false,
+              "isOperativeMode": true
+            },
+            "assignedManagerUserIds": [
+              "GONE"
+            ]
+          }
+        ]
+      ],
+      "expected": false
+    },
+    {
+      "name": "leaveDecisionQueue: pending and cancellation requests the viewer may decide",
+      "function": "leaveDecisionQueue",
+      "args": [
+        {
+          "id": "LM",
+          "role": {
+            "isSuperAdmin": false,
+            "isAdmin": false,
+            "isManager": true,
+            "isOperativeMode": false
+          },
+          "annualLeaveSelfBook": true
+        },
+        [
+          {
+            "id": "h1",
+            "userId": "OP",
+            "status": "pending"
+          },
+          {
+            "id": "h2",
+            "userId": "OP",
+            "status": "approved"
+          },
+          {
+            "id": "h3",
+            "userId": "op",
+            "status": "approved",
+            "cancellationRequestedByUserId": "OP"
+          },
+          {
+            "id": "h4",
+            "userId": "OP2",
+            "status": "pending"
+          },
+          {
+            "id": "h5",
+            "userId": "LM",
+            "status": "pending"
+          },
+          {
+            "id": "h6",
+            "userId": "OP",
+            "status": "rejected"
+          }
+        ],
+        [
+          {
+            "id": "ADMIN",
+            "role": {
+              "isSuperAdmin": false,
+              "isAdmin": true,
+              "isManager": false,
+              "isOperativeMode": false
+            },
+            "permissions": {
+              "annualLeaveSelfBook": true
+            }
+          },
+          {
+            "id": "LM",
+            "role": {
+              "isSuperAdmin": false,
+              "isAdmin": false,
+              "isManager": true,
+              "isOperativeMode": false
+            },
+            "annualLeaveSelfBook": true
+          },
+          {
+            "id": "MGR2",
+            "role": {
+              "isSuperAdmin": false,
+              "isAdmin": false,
+              "isManager": true,
+              "isOperativeMode": false
+            }
+          },
+          {
+            "id": "OP",
+            "role": {
+              "isSuperAdmin": false,
+              "isAdmin": false,
+              "isManager": false,
+              "isOperativeMode": true
+            },
+            "assignedManagerUserIds": [
+              "LM"
+            ]
+          },
+          {
+            "id": "OP2",
+            "role": {
+              "isSuperAdmin": false,
+              "isAdmin": false,
+              "isManager": false,
+              "isOperativeMode": true
+            }
+          },
+          {
+            "id": "GONE",
+            "role": {
+              "isSuperAdmin": false,
+              "isAdmin": false,
+              "isManager": true,
+              "isOperativeMode": false
+            },
+            "isActive": false
+          },
+          {
+            "id": "OP3",
+            "role": {
+              "isSuperAdmin": false,
+              "isAdmin": false,
+              "isManager": false,
+              "isOperativeMode": true
+            },
+            "assignedManagerUserIds": [
+              "GONE"
+            ]
+          }
+        ]
+      ],
+      "expected": [
+        {
+          "id": "h1",
+          "userId": "OP",
+          "status": "pending"
+        },
+        {
+          "id": "h3",
+          "userId": "op",
+          "status": "approved",
+          "cancellationRequestedByUserId": "OP"
+        }
+      ]
+    },
+    {
+      "name": "offlineAvailability: create is queued offline",
+      "function": "offlineAvailability",
+      "args": [
+        "booking.create"
+      ],
+      "expected": "allowedOffline"
+    },
+    {
+      "name": "offlineAvailability: delete is online only",
+      "function": "offlineAvailability",
+      "args": [
+        "booking.delete"
+      ],
+      "expected": "onlineOnly"
+    },
+    {
+      "name": "offlineAvailability: views are read-only offline",
+      "function": "offlineAvailability",
+      "args": [
+        "view.daily_overview"
+      ],
+      "expected": "readOnlyOffline"
+    },
+    {
+      "name": "offlineAvailability: an unknown id is online only",
+      "function": "offlineAvailability",
+      "args": [
+        "booking.teleport"
+      ],
+      "expected": "onlineOnly"
+    },
+    {
+      "name": "offlineLastUpdatedLabel: organisation zone, BST",
+      "function": "offlineLastUpdatedLabel",
+      "args": [
+        "2026-10-24T13:05:00.000Z",
+        "Europe/London"
+      ],
+      "expected": "Last updated 24 Oct 2026, 14:05"
+    },
+    {
+      "name": "offlineLastUpdatedLabel: organisation zone, GMT",
+      "function": "offlineLastUpdatedLabel",
+      "args": [
+        "2026-11-02T09:07:00.000Z",
+        "Europe/London"
+      ],
+      "expected": "Last updated 2 Nov 2026, 09:07"
+    },
+    {
+      "name": "offlineLastUpdatedLabel: nothing synced yet",
+      "function": "offlineLastUpdatedLabel",
+      "args": [
+        null,
+        "Europe/London"
+      ],
+      "expected": null
+    },
+    {
+      "name": "unbookedScanDays: Full week, weekends off: Monday–Friday",
+      "function": "unbookedScanDays",
+      "args": [
+        {
+          "referenceIso": "2026-10-28T10:00:00.000Z",
+          "timeZone": "Europe/London",
+          "clashLookaheadMode": "endOfWorkingWeek",
+          "includeWeekends": false
+        }
+      ],
+      "expected": {
+        "startDayKey": "2026-10-26",
+        "endDayKey": "2026-10-30",
+        "dayKeys": [
+          "2026-10-26",
+          "2026-10-27",
+          "2026-10-28",
+          "2026-10-29",
+          "2026-10-30"
+        ]
+      }
+    },
+    {
+      "name": "unbookedScanDays: Full week, weekends on: Monday–Sunday",
+      "function": "unbookedScanDays",
+      "args": [
+        {
+          "referenceIso": "2026-10-28T10:00:00.000Z",
+          "timeZone": "Europe/London",
+          "clashLookaheadMode": "endOfWorkingWeek",
+          "includeWeekendsForUnbookedLabour": true
+        }
+      ],
+      "expected": {
+        "startDayKey": "2026-10-26",
+        "endDayKey": "2026-11-01",
+        "dayKeys": [
+          "2026-10-26",
+          "2026-10-27",
+          "2026-10-28",
+          "2026-10-29",
+          "2026-10-30",
+          "2026-10-31",
+          "2026-11-01"
+        ]
+      }
+    },
+    {
+      "name": "unbookedScanDays: Set number of days skips the weekend unless included",
+      "function": "unbookedScanDays",
+      "args": [
+        {
+          "referenceIso": "2026-10-30T10:00:00.000Z",
+          "timeZone": "Europe/London",
+          "clashLookaheadMode": "numberOfDays",
+          "clashLookaheadDays": 4,
+          "includeWeekends": false
+        }
+      ],
+      "expected": {
+        "startDayKey": "2026-10-30",
+        "endDayKey": "2026-11-02",
+        "dayKeys": [
+          "2026-10-30",
+          "2026-11-02"
+        ]
+      }
+    },
+    {
+      "name": "unbookedScanDays: Set number of days with weekends on lists every day",
+      "function": "unbookedScanDays",
+      "args": [
+        {
+          "referenceIso": "2026-10-30T10:00:00.000Z",
+          "timeZone": "Europe/London",
+          "clashLookaheadMode": "numberOfDays",
+          "clashLookaheadDays": 4,
+          "includeWeekends": true
+        }
+      ],
+      "expected": {
+        "startDayKey": "2026-10-30",
+        "endDayKey": "2026-11-02",
+        "dayKeys": [
+          "2026-10-30",
+          "2026-10-31",
+          "2026-11-01",
+          "2026-11-02"
+        ]
+      }
+    },
+    {
+      "name": "warningLookaheadFallbackNotice: no number saved",
+      "function": "warningLookaheadFallbackNotice",
+      "args": [
+        "lookaheadDaysMissing"
+      ],
+      "expected": "No number of days is saved for this company, so warnings scan 7 days (today and the next 6). Choose a number and save to change it."
+    },
+    {
+      "name": "warningLookaheadFallbackNotice: an invalid number",
+      "function": "warningLookaheadFallbackNotice",
+      "args": [
+        "lookaheadDaysInvalid"
+      ],
+      "expected": "The saved number of days is not valid, so warnings scan 7 days (today and the next 6). Choose a number and save to fix it."
+    },
+    {
+      "name": "warningLookaheadFallbackNotice: no fallback",
+      "function": "warningLookaheadFallbackNotice",
+      "args": [
+        null
+      ],
+      "expected": null
+    },
+    {
+      "name": "isPlatformOwnerEmail: ignores case and spaces",
+      "function": "isPlatformOwnerEmail",
+      "args": [
+        " Info@ProjectPlanner.us "
+      ],
+      "expected": true
+    },
+    {
+      "name": "isPlatformOwnerEmail: anyone else",
+      "function": "isPlatformOwnerEmail",
+      "args": [
+        "info@example.com"
+      ],
+      "expected": false
+    },
+    {
+      "name": "passwordMinLength: the owner email needs 10",
+      "function": "passwordMinLength",
+      "args": [
+        {
+          "email": "info@projectplanner.us"
+        }
+      ],
+      "expected": 10
+    },
+    {
+      "name": "bookingReplayRefusedIsFinal: not-found on an edit replay is final",
+      "function": "bookingReplayRefusedIsFinal",
+      "args": [
+        {
+          "code": "not-found",
+          "isCreate": false
+        }
+      ],
+      "expected": true
+    },
+    {
+      "name": "bookingReplayRefusedIsFinal: iOS not-found (5) on an edit replay is final",
+      "function": "bookingReplayRefusedIsFinal",
+      "args": [
+        {
+          "code": 5,
+          "isCreate": false
+        }
+      ],
+      "expected": true
+    },
+    {
+      "name": "bookingReplayRefusedIsFinal: not-found on a create is not",
+      "function": "bookingReplayRefusedIsFinal",
+      "args": [
+        {
+          "code": "not-found",
+          "isCreate": true
+        }
+      ],
+      "expected": false
+    },
+    {
+      "name": "bookingReplayRefusedIsFinal: the 1.1.0 call shape still works",
+      "function": "bookingReplayRefusedIsFinal",
+      "args": [
+        7
+      ],
+      "expected": true
+    },
+    {
+      "name": "payRateOnDay: a cleared rate is rate not set from its day",
+      "function": "payRateOnDay",
+      "args": [
+        {
+          "user": {
+            "id": "U",
+            "employmentType": "self_employed"
+          },
+          "history": [
+            {
+              "id": "r1",
+              "userId": "U",
+              "dayRate": 200,
+              "payBasis": "day",
+              "effectiveAt": "2026-10-01T00:00:00.000+01:00"
+            },
+            {
+              "id": "r2",
+              "userId": "U",
+              "dayRate": null,
+              "payBasis": null,
+              "effectiveAt": "2026-10-20T00:00:00.000+01:00"
+            }
+          ],
+          "dayKey": "2026-10-21",
+          "timeZone": "Europe/London"
+        }
+      ],
+      "expected": {
+        "payBasis": "day",
+        "rate": null,
+        "employmentType": "self_employed",
+        "isPaye": false,
+        "hasRate": false,
+        "source": "none"
+      }
+    },
+    {
+      "name": "payRateOnDay: the day before the clear keeps the old rate",
+      "function": "payRateOnDay",
+      "args": [
+        {
+          "user": {
+            "id": "U",
+            "employmentType": "self_employed"
+          },
+          "history": [
+            {
+              "id": "r1",
+              "userId": "U",
+              "dayRate": 200,
+              "payBasis": "day",
+              "effectiveAt": "2026-10-01T00:00:00.000+01:00"
+            },
+            {
+              "id": "r2",
+              "userId": "U",
+              "dayRate": null,
+              "payBasis": null,
+              "effectiveAt": "2026-10-20T00:00:00.000+01:00"
+            }
+          ],
+          "dayKey": "2026-10-19",
+          "timeZone": "Europe/London"
+        }
+      ],
+      "expected": {
+        "payBasis": "day",
+        "rate": 200,
+        "employmentType": "self_employed",
+        "isPaye": false,
+        "hasRate": true,
+        "source": "history"
+      }
+    },
+    {
+      "name": "payRateHistoryWriteFields: organisation-zone midnight (BST) of the effective day",
+      "function": "payRateHistoryWriteFields",
+      "args": [
+        {
+          "userId": "U",
+          "operativeId": "",
+          "rate": 25,
+          "payBasis": "hourly",
+          "effective": "2026-10-21",
+          "timeZone": "Europe/London"
+        }
+      ],
+      "expected": {
+        "userId": "U",
+        "operativeId": "",
+        "dayRate": 25,
+        "payBasis": "hourly",
+        "effectiveAtMs": 1792537200000,
+        "effectiveDayKey": "2026-10-21"
+      }
+    },
+    {
+      "name": "payRateHistoryWriteFields: an instant becomes its organisation-zone day; a clear writes nulls",
+      "function": "payRateHistoryWriteFields",
+      "args": [
+        {
+          "userId": "U",
+          "rate": null,
+          "payBasis": "day",
+          "effective": "2026-11-02T23:30:00.000Z",
+          "timeZone": "Australia/Sydney"
+        }
+      ],
+      "expected": {
+        "userId": "U",
+        "operativeId": "",
+        "dayRate": null,
+        "payBasis": null,
+        "effectiveAtMs": 1793624400000,
+        "effectiveDayKey": "2026-11-03"
+      }
+    },
+    {
+      "name": "invoiceLines: PAYE and leave lines never go on an invoice",
+      "function": "invoiceLines",
+      "args": [
+        [
+          {
+            "id": "l1",
+            "pay": 200
+          },
+          {
+            "id": "l2",
+            "isPaye": true,
+            "pay": 0
+          },
+          {
+            "id": "l3",
+            "isPayeDay": true
+          },
+          {
+            "id": "l4",
+            "employmentType": "paye"
+          },
+          {
+            "id": "l5",
+            "kind": "leave"
+          },
+          {
+            "id": "l6",
+            "pay": 0,
+            "isPaye": false
+          }
+        ]
+      ],
+      "expected": [
+        {
+          "id": "l1",
+          "pay": 200
+        },
+        {
+          "id": "l6",
+          "pay": 0,
+          "isPaye": false
+        }
+      ]
+    },
+    {
+      "name": "timesheetEntryDecision: a review stored under lower case is found for an upper-case entry id",
+      "function": "timesheetEntryDecision",
+      "args": [
+        {
+          "extraEntryReviews": {
+            "e1-abc": {
+              "decision": "declined",
+              "reviewedAmount": 40,
+              "reviewedByUserId": "lm"
+            }
+          }
+        },
+        {
+          "id": "E1-ABC",
+          "amount": 40
+        }
+      ],
+      "expected": {
+        "decision": "declined",
+        "revisedAmount": null,
+        "source": "review"
+      }
+    },
+    {
+      "name": "timesheetOwnerWriteFields: the owner never sends sign-off or export fields",
+      "function": "timesheetOwnerWriteFields",
+      "args": [
+        {
+          "managerNote": "Tue",
+          "operativeSignedByName": "Rae",
+          "managerSignedAt": null,
+          "managerSignedByName": "",
+          "managerSignedByUserId": "",
+          "managerSignatureImageBase64": "",
+          "approvedAt": null,
+          "approvedAtMs": 1,
+          "approvedByName": "",
+          "exportedAt": null,
+          "exportedAtMs": 2,
+          "extraEntryReviews.e1": {
+            "decision": "approved"
+          },
+          "expenseEntries": []
+        },
+        {
+          "subjectHasLineManager": true,
+          "managerSigned": false
+        }
+      ],
+      "expected": {
+        "managerNote": "Tue",
+        "operativeSignedByName": "Rae",
+        "expenseEntries": []
+      }
     }
   ]
 }

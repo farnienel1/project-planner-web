@@ -157,8 +157,7 @@ export function PreviousRatesList({ entries }: { entries: OperativeDayRateHistor
           const suffix = entry.payBasis === 'hourly' ? '/hr' : '/day'
           return (
             <li key={entry.id} className="text-sm text-[var(--ink)]">
-              {date} · {formatMoney(entry.dayRate, currencyCode)}
-              {suffix}
+              {date} · {entry.dayRate == null ? 'Rate not set' : `${formatMoney(entry.dayRate, currencyCode)}${suffix}`}
             </li>
           )
         })}

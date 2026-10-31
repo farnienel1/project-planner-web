@@ -926,6 +926,60 @@ export function clashScanDays(input: ClashScanDaysInput): ClashScanDays {
   return result
 }
 
+export type UnbookedScanDaysInput = CoverageWindowInput & {
+  /** `warningDetection.includeWeekendsForUnbookedLabour`. Either name is read. */
+  includeWeekends?: boolean | null
+  includeWeekendsForUnbookedLabour?: boolean | null
+}
+
+/**
+ * Days the unbooked-labour scan covers, ascending — the same days `unbookedLabourRows` loops over when given
+ * `startDayKey`/`endDayKey` from here and the same include-weekends flag.
+ * The window is `coverageWindow`. Full week ends on Friday; with include-weekends on, it runs to Sunday of the
+ * same Monday–Sunday week. Set number of days and Invoicing period keep their calendar days. Saturday and
+ * Sunday are listed only when include-weekends is on (in every mode); otherwise weekdays only.
+ * `unbookedLabourRows` also skips a weekend day whose "counts as" hours are 0; that is an hours rule, not a
+ * scan day, so it is not applied here. Clash days are `clashScanDays`.
+ */
+export function unbookedScanDays(input: UnbookedScanDaysInput): ClashScanDays {
+  const timeZone = zoneOf(input.timeZone)
+  const window = coverageWindow(input)
+  const includeWeekends = input.includeWeekends === true || input.includeWeekendsForUnbookedLabour === true
+  const mode = String(input.clashLookaheadMode || 'endOfWorkingWeek')
+  let endDayKey = window.endDayKey
+  if (mode === 'endOfWorkingWeek' && includeWeekends) {
+    const end = dateFromDayKeyInZone(window.endDayKey, timeZone)
+    const iso = isoWeekdayInZone(end, timeZone)
+    if (iso >= 1 && iso <= 5) endDayKey = dayKeyInZone(addDaysInZone(end, 7 - iso, timeZone), timeZone)
+  }
+  const keys: string[] = []
+  let cursor = dateFromDayKeyInZone(window.startDayKey, timeZone)
+  while (keys.length <= 400) {
+    const key = dayKeyInZone(cursor, timeZone)
+    if (key > endDayKey) break
+    const iso = isoWeekdayInZone(cursor, timeZone)
+    if (includeWeekends || (iso >= 1 && iso <= 5)) keys.push(key)
+    cursor = addDaysInZone(cursor, 1, timeZone)
+  }
+  const result: ClashScanDays = { ...window, endDayKey, dayKeys: keys }
+  return result
+}
+
+/**
+ * The notice the settings screen and the Warnings screen show when "Set number of days" could not be used and
+ * 7 days were scanned (`coverageWindow` → `fallbackReason`, `parseWarningDetection` →
+ * `clashLookaheadDaysFallback`). Null when there is no fallback.
+ */
+export function warningLookaheadFallbackNotice(reason: CoverageFallbackReason | string | null | undefined): string | null {
+  if (reason === 'lookaheadDaysMissing') {
+    return 'No number of days is saved for this company, so warnings scan 7 days (today and the next 6). Choose a number and save to change it.'
+  }
+  if (reason === 'lookaheadDaysInvalid') {
+    return 'The saved number of days is not valid, so warnings scan 7 days (today and the next 6). Choose a number and save to fix it.'
+  }
+  return null
+}
+
 export function dayKeyInOrganizationZone(referenceIso: string, timeZone?: string | null): string {
   return dayKeyInZone(new Date(referenceIso), zoneOf(timeZone))
 }

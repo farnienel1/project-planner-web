@@ -4,6 +4,7 @@ import {
   clashResolutionKey,
   dayKeyInOrganizationZone,
   isClashApproved,
+  isClashGroupApproved,
   resolveOrganizationCurrency,
   rosterAliasIdsFor,
   type AcceptedClashRecord,
@@ -82,11 +83,18 @@ export type WeeklyReportApprovedClashRow = {
   bookingBId: string
   /** `warningResolutions` key (`clashResolutionKey`): `mgr-clash-…` for managers, the booking pair for operatives. */
   resolutionKey: string
+  /** Operative clashes: every overlapping pair (`operativeClashGroups`); un-approving removes each. */
+  pairs?: Array<{ bookingAId: string; bookingBId: string }>
 }
 
-/** Approvals from `warningResolutions` (`resolvedWarningKeys`) and `acceptedBookingClashes`. */
+/**
+ * Approvals from `warningResolutions` and `acceptedBookingClashes`. `approvedKeys` is `approvedWarningKeys`
+ * (approvals only): a dismissed clash is not an approved clash. `resolvedKeys` (`resolvedWarningKeys`) is kept
+ * for callers that still pass only that.
+ */
 export type WeeklyReportWarningDecisions = {
   resolvedKeys: readonly string[]
+  approvedKeys?: readonly string[]
   acceptedClashes: readonly AcceptedClashRecord[]
 }
 
@@ -612,15 +620,28 @@ export function buildWeeklyReportData({
   const warnings: WeeklyReportWarningRow[] = []
   const approvedClashes: WeeklyReportApprovedClashRow[] = []
   const decisions = warningDecisions
-    ? { resolvedKeys: warningDecisions.resolvedKeys, acceptedClashes: warningDecisions.acceptedClashes }
+    ? {
+        resolvedKeys: warningDecisions.resolvedKeys,
+        // Only approvals count as approved (`approvedWarningKeys`); never fall back to dismissed keys.
+        approvedKeys: warningDecisions.approvedKeys ?? [],
+        acceptedClashes: warningDecisions.acceptedClashes,
+      }
     : null
   const approvedRow = (
-    clash: { date: Date; bookingAId: string; bookingBId: string; message: string; resolutionKey?: string },
+    clash: {
+      date: Date
+      bookingAId: string
+      bookingBId: string
+      message: string
+      resolutionKey?: string
+      pairs?: Array<{ bookingAId: string; bookingBId: string }>
+    },
     person: string,
     kind: 'operative' | 'manager'
   ): WeeklyReportApprovedClashRow => {
     const dayKey = dayKeyInOrganizationZone(clash.date.toISOString(), timeZone)
     return {
+      ...(clash.pairs ? { pairs: clash.pairs } : {}),
       dayKey,
       date: new Intl.DateTimeFormat('en-GB', { timeZone, day: 'numeric', month: 'short', year: 'numeric' }).format(
         clash.date
@@ -645,7 +666,8 @@ export function buildWeeklyReportData({
       period
     )) {
       if (isAnonymisedDeletedProfile({ name: clash.operativeName })) continue
-      if (decisions && isClashApproved(clash, decisions)) {
+      // A cluster is approved only when every overlapping pair is (`isClashGroupApproved`).
+      if (decisions && isClashGroupApproved(clash, decisions)) {
         approvedClashes.push(approvedRow(clash, clash.operativeName, 'operative'))
         continue
       }

@@ -4294,6 +4294,7 @@ test('worked hours split into inside and outside the standard window, adding up 
 })
 
 import * as scheduleSources from './scheduleSources.ts'
+import * as bundleSurface from './bundleEntry.ts'
 
 type ParityCase = { name: string; function: string; args: unknown[]; expected: unknown }
 
@@ -4327,7 +4328,8 @@ test('the shared parity fixture passes on this module and covers every schedule-
   for (const name of SCHEDULE_SOURCE_FUNCTIONS) {
     assert.ok(cases.some((entry) => entry.function === name), `${name} has a parity case`)
   }
-  const functions = scheduleSources as unknown as Record<string, (...args: unknown[]) => unknown>
+  // Every case names a function the packed script exports (bundleEntry.ts), not only schedule sources.
+  const functions = bundleSurface as unknown as Record<string, (...args: unknown[]) => unknown>
   for (const entry of cases) {
     assert.equal(typeof functions[entry.function], 'function', `${entry.function} exists`)
     assert.deepEqual(plain(functions[entry.function](...(plain(entry.args) as unknown[]))), entry.expected, entry.name)
@@ -5255,4 +5257,305 @@ test('pay access: a person never changes their own pay; admins and operatives ma
   assert.equal(canChangePersonPay({ userId: 'mgr', isManager: true, hasOperativesAccess: true }, { userId: 'mgr', isOperative: true }), false)
   assert.equal(canChangePersonPay({ userId: 'admin', isAdmin: true }, { userId: 'admin' }), true)
   assert.equal(canChangePersonPay({ userId: '' , isAdmin: true }, operative), false)
+})
+
+// ─── Rulebook 1.2.0 (iOS alignment hand-off) ────────────────────────────────
+
+import * as rulebook from './index.ts'
+
+test('1.2.0 D2: self-book is the permission only; self-book off needs a current active line manager', () => {
+  assert.equal(rulebook.canSelfBookAnnualLeave({ id: 'm', permissions: { annualLeaveSelfBook: true } }), true)
+  assert.equal(rulebook.canSelfBookAnnualLeave({ id: 'm', annualLeaveSelfBook: true, permissions: { operativeMode: true } }), false)
+  assert.equal(rulebook.canSelfBookAnnualLeave({ id: 'm', hasNoLineManager: true }), false)
+  assert.equal(rulebook.canSelfBookAnnualLeave(null), false)
+
+  const roster = [{ id: 'LM' }, { id: 'OLD', isActive: false }]
+  assert.equal(rulebook.lineManagerRequiredError({ id: 'op' }), rulebook.LINE_MANAGER_REQUIRED_MESSAGE)
+  assert.equal(rulebook.lineManagerRequiredError({ id: 'op', assignedManagerUserId: 'LM' }), null)
+  assert.equal(rulebook.lineManagerRequiredError({ id: 'op', assignedManagerUserIds: ['OLD'] }, roster), rulebook.LINE_MANAGER_REQUIRED_MESSAGE)
+  assert.equal(rulebook.lineManagerRequiredError({ id: 'op', assignedManagerUserIds: ['op'] }), rulebook.LINE_MANAGER_REQUIRED_MESSAGE)
+  // Switching self-book off on someone with no line manager is refused; an inactive person or leave switched off passes.
+  assert.notEqual(rulebook.lineManagerRequiredError({ id: 'm', annualLeaveSelfBook: false }), null)
+  assert.equal(rulebook.lineManagerRequiredError({ id: 'm', isActive: false }), null)
+  assert.equal(rulebook.lineManagerRequiredError({ id: 'm', annualLeaveEnabled: false }), null)
+
+  // Existing people in that state are listed for admins, and their leave still reaches the admins.
+  const role = (r: Partial<{ isAdmin: boolean; isManager: boolean; isOperativeMode: boolean }>) => ({
+    isSuperAdmin: false, isAdmin: false, isManager: false, isOperativeMode: false, ...r,
+  })
+  const people = [
+    { id: 'A', role: role({ isAdmin: true }), annualLeaveSelfBook: true },
+    { id: 'OP', role: role({ isOperativeMode: true }) },
+    { id: 'OP2', role: role({ isOperativeMode: true }), assignedManagerUserIds: ['A'] },
+  ]
+  assert.deepEqual(rulebook.usersMissingLineManager(people), ['OP'])
+  assert.deepEqual(rulebook.leaveApproverIds(people[1], people), ['A'])
+})
+
+test('1.2.0 D3: leave decisions — never your own; admins any; otherwise the approvers', () => {
+  const role = (r: Partial<{ isAdmin: boolean; isSuperAdmin: boolean; isManager: boolean; isOperativeMode: boolean }>) => ({
+    isSuperAdmin: false, isAdmin: false, isManager: false, isOperativeMode: false, ...r,
+  })
+  const roster = [
+    { id: 'SA', role: role({ isSuperAdmin: true }) },
+    { id: 'LM', role: role({ isManager: true }) },
+    { id: 'M2', role: role({ isManager: true }) },
+    { id: 'OP', role: role({ isOperativeMode: true }), assignedManagerUserIds: ['LM'] },
+    { id: 'NOLM', role: role({ isOperativeMode: true }) },
+  ]
+  const viewer = (id: string) => ({ id, role: roster.find((m) => m.id === id)!.role })
+  assert.equal(rulebook.canDecideLeave(viewer('SA'), { id: 'SA' }, roster), false)
+  assert.equal(rulebook.canDecideLeave(viewer('SA'), roster[3], roster), true)
+  assert.equal(rulebook.canDecideLeave(viewer('LM'), roster[3], roster), true)
+  assert.equal(rulebook.canDecideLeave(viewer('M2'), roster[3], roster), false)
+  // No line manager: the admins, not any manager.
+  assert.equal(rulebook.canDecideLeave(viewer('M2'), roster[4], roster), false)
+  assert.equal(rulebook.canDecideLeave(viewer('SA'), roster[4], roster), true)
+  assert.equal(rulebook.canDecideLeave({ id: '', role: role({ isAdmin: true }) }, roster[3], roster), false)
+
+  const requests = [
+    { id: 'r1', userId: 'OP', status: 'pending' },
+    { id: 'r2', userId: 'NOLM', status: 'pending' },
+    { id: 'r3', userId: 'SA', status: 'pending' },
+    { id: 'r4', userId: 'OP', status: 'approved', cancellationRequestedAt: { seconds: 1 } },
+    { id: 'r5', userId: 'OP', status: 'approved', cancellationRequestedAt: null },
+    { id: 'r6', operativeId: 'NOT-ON-ROSTER', status: 'pending' },
+  ]
+  assert.deepEqual(rulebook.leaveDecisionQueue(viewer('LM'), requests, roster).map((r) => r.id), ['r1', 'r4'])
+  assert.deepEqual(rulebook.leaveDecisionQueue(viewer('SA'), requests, roster).map((r) => r.id), ['r1', 'r2', 'r4', 'r6'])
+  assert.deepEqual(rulebook.leaveDecisionQueue(viewer('M2'), requests, roster), [])
+})
+
+test('1.2.0 D4: operative clash groups match managerClashGroups semantics and key every overlapping pair', () => {
+  const people = { accounts: [{ id: 'U1', email: 'u1@example.com', formerIds: ['OLD'] }], operatives: [{ id: 'O1', email: 'U1@example.com' }] }
+  const groups = rulebook.operativeClashGroups({
+    people,
+    operativeBookings: [
+      // Under the catalogue id, the account id and a former invite id: one person.
+      { id: 'b3', operativeId: 'O1', dayKey: '2026-10-22', timeSlot: 'FULL DAY' },
+      { id: 'b1', operativeId: 'U1', dayKey: '2026-10-22', timeSlot: 'AM' },
+      { id: 'b2', operativeId: 'old', dayKey: '2026-10-22', timeSlot: 'PM' },
+      // Touching times do not clash.
+      { id: 't1', operativeId: 'O1', dayKey: '2026-10-23', timeSlot: 'CUSTOM_HOURS', workStartTime: '07:30', workEndTime: '12:00' },
+      { id: 't2', operativeId: 'O1', dayKey: '2026-10-23', timeSlot: 'CUSTOM_HOURS', workStartTime: '12:00', workEndTime: '16:00' },
+    ],
+  })
+  assert.equal(groups.length, 1)
+  const [group] = groups
+  assert.deepEqual(group.bookingIds, ['b1', 'b2', 'b3'])
+  assert.equal(group.personKey, 'account:u1')
+  // AM and PM do not overlap each other; each overlaps the full day.
+  assert.deepEqual(group.pairs.map((pair) => pair.clashPairKey), ['b1|b3', 'b2|b3'])
+  assert.deepEqual(group.pairs.map((pair) => pair.clashResolutionKey), ['b1|b3', 'b2|b3'])
+  assert.equal(group.resolutionKey, rulebook.clashResolutionKey({ bookingAId: 'b1', bookingBId: 'b2' }))
+
+  // Approving the group writes every pair; one pair approved is not enough.
+  const writes = group.pairs.map((pair) => rulebook.clashApprovalWrites({ ...pair, approvedByUserId: 'mgr' }))
+  assert.deepEqual(writes.map((write) => write.acceptedClash?.documentId), ['b1|b3', 'b2|b3'])
+  assert.equal(rulebook.isClashGroupApproved(group, { acceptedClashes: ['b1|b3'] }), false)
+  assert.equal(rulebook.isClashGroupApproved(group, { acceptedClashes: ['B1|B3'], approvedKeys: ['b2|b3'] }), true)
+  assert.equal(rulebook.isClashGroupApproved({ pairs: [] }, { approvedKeys: ['x'] }), false)
+
+  // A manager or admin's own days are left to managerClashGroups.
+  assert.deepEqual(
+    rulebook.operativeClashGroups({
+      people,
+      managerIds: ['U1'],
+      operativeBookings: [
+        { id: 'b1', operativeId: 'O1', dayKey: '2026-10-22', timeSlot: 'AM' },
+        { id: 'b2', operativeId: 'O1', dayKey: '2026-10-22', timeSlot: 'FULL DAY' },
+      ],
+    }),
+    []
+  )
+})
+
+test('1.2.0 D6 + D19: approvals only count as approved; keys compare without case; stored keys keep their case', () => {
+  const records = [
+    { id: 'B1|B2', status: 'dismissed' },
+    { id: 'mgr-clash-u-2026-10-22-0', status: 'approved' },
+  ]
+  assert.deepEqual(rulebook.resolvedWarningKeys(records), ['B1|B2', 'mgr-clash-u-2026-10-22-0'])
+  assert.deepEqual(rulebook.approvedWarningKeys(records), ['mgr-clash-u-2026-10-22-0'])
+  const decisions = { resolvedKeys: rulebook.resolvedWarningKeys(records), approvedKeys: rulebook.approvedWarningKeys(records) }
+  // Dismissed: hidden, not approved.
+  assert.equal(rulebook.isWarningActive({ resolutionKey: 'b1|b2', bookingAId: 'b1', bookingBId: 'b2' }, decisions), false)
+  assert.equal(rulebook.isClashApproved({ bookingAId: 'B1', bookingBId: 'B2' }, decisions), false)
+  // Approved (any case).
+  assert.equal(rulebook.isClashApproved({ bookingAId: 'x', bookingBId: 'y', resolutionKey: 'MGR-CLASH-U-2026-10-22-0' }, decisions), true)
+  // The 1.1.0 call shape (approvals passed as resolvedKeys) still answers the same.
+  assert.equal(rulebook.isClashApproved({ bookingAId: 'B1', bookingBId: 'B2' }, { resolvedKeys: ['b1|b2'] }), true)
+  // Writers keep the stored case.
+  assert.equal(rulebook.clashPairKey('B2', 'B1'), 'B1|B2')
+  assert.equal(rulebook.normalizeDocumentId(' AbC '), 'abc')
+  assert.equal(rulebook.normalizeDocumentId(null), '')
+})
+
+test('1.2.0 D19: a timesheet entry review is found under either letter case; the exact key wins', () => {
+  const sheet = {
+    extraEntryReviews: {
+      'e1': { decision: 'declined', reviewedAmount: 10 },
+      'E2': { decision: 'edited', revisedAmount: 5, reviewedAmount: 10 },
+      'e2': { decision: 'declined', reviewedAmount: 10 },
+    },
+  }
+  assert.equal(rulebook.timesheetEntryDecision(sheet, { id: 'E1', amount: 10 }).decision, 'declined')
+  assert.equal(rulebook.timesheetEntryDecision(sheet, { id: 'E2', amount: 10 }).decision, 'edited')
+  assert.equal(rulebook.timesheetEntryDecision(sheet, { id: 'E3', amount: 10 }).source, 'unreviewed')
+})
+
+test('1.2.0 D20: timesheetOwnerWriteFields drops sign-off and export fields itself', () => {
+  const owner = rulebook.timesheetOwnerWriteFields(
+    {
+      managerNote: 'n',
+      operativeSignedAt: 1,
+      operativeSignedAtMs: 1,
+      managerSignedAt: 5,
+      managerSignedAtMs: 5,
+      'managerSignedAt.seconds': 5,
+      managerSignedByName: 'Lee',
+      managerSignedByUserId: 'lm',
+      managerSignatureImageBase64: 'x',
+      approvedAt: 5,
+      approvedAtMs: 5,
+      approvedByName: 'Lee',
+      exportedAt: 6,
+      exportedAtMs: 6,
+    },
+    { subjectHasLineManager: true, managerSigned: true }
+  )
+  assert.deepEqual(owner, { managerNote: 'n', operativeSignedAt: 1, operativeSignedAtMs: 1 })
+  for (const key of rulebook.TIMESHEET_MANAGER_SIGN_OFF_FIELDS) assert.equal(key in owner, false)
+})
+
+test('1.2.0 D9: a not-found edit replay is final; the old call shape is unchanged', () => {
+  assert.equal(rulebook.bookingReplayRefusedIsFinal('permission-denied'), true)
+  assert.equal(rulebook.bookingReplayRefusedIsFinal('firestore/permission-denied'), true)
+  assert.equal(rulebook.bookingReplayRefusedIsFinal(7), true)
+  assert.equal(rulebook.bookingReplayRefusedIsFinal('not-found'), false)
+  assert.equal(rulebook.bookingReplayRefusedIsFinal({ code: 'firestore/not-found', isCreate: false }), true)
+  assert.equal(rulebook.bookingReplayRefusedIsFinal({ code: 5, isCreate: false }), true)
+  assert.equal(rulebook.bookingReplayRefusedIsFinal({ code: 5 }), false)
+  assert.equal(rulebook.bookingReplayRefusedIsFinal({ code: 'unavailable', isCreate: false }), false)
+  assert.equal(rulebook.bookingReplayRefusedIsFinal({ code: 'permission-denied', isCreate: true }), true)
+})
+
+test('1.2.0 D1 + D7 + D8 + D10: the offline table matches iOS OfflinePolicy ids; delete is online only', () => {
+  const ids = Object.keys(rulebook.OFFLINE_ACTIONS)
+  assert.equal(ids.length, 31)
+  const allowed = ids.filter((id) => rulebook.offlineAvailability(id) === 'allowedOffline')
+  assert.deepEqual(allowed, ['booking.create', 'booking.edit', 'booking.cancel', 'annual_leave.request', 'profile.own_fields', 'notifications.own_toggles'])
+  assert.equal(rulebook.offlineAvailability('booking.delete'), 'onlineOnly')
+  assert.deepEqual(
+    ids.filter((id) => rulebook.offlineAvailability(id) === 'readOnlyOffline'),
+    ['view.daily_overview', 'view.warnings', 'view.weekly_report', 'view.my_schedule']
+  )
+  assert.equal(rulebook.offlineAvailability(' booking.edit '), 'allowedOffline')
+  assert.equal(rulebook.offlineAvailability(undefined), 'onlineOnly')
+  assert.equal(rulebook.OFFLINE_ONLINE_ONLY_MESSAGE, 'Connect to the internet to change this')
+  assert.equal(rulebook.OFFLINE_PENDING_SYNC_LABEL, 'Pending sync')
+  assert.equal(rulebook.offlineLastUpdatedLabel(Date.parse('2026-10-24T13:05:00Z'), 'Europe/London'), 'Last updated 24 Oct 2026, 14:05')
+  assert.equal(rulebook.offlineLastUpdatedLabel(new Date('2026-09-01T00:00:00Z'), null), 'Last updated 1 Sep 2026, 01:00')
+  assert.equal(rulebook.offlineLastUpdatedLabel('not a date', 'Europe/London'), null)
+
+  // The iOS table: every id in OfflinePolicy.swift is here, with the same availability except delete (now online only).
+  const swift = readFileSync(new URL('../../../project-planner-ios/Project Planner/Core/Offline/OfflinePolicy.swift', import.meta.url), 'utf8')
+  const swiftIds = [...swift.matchAll(/case \w+ = "([a-z_]+\.[a-z_]+)"/g)].map((match) => match[1])
+  if (swiftIds.length > 0) assert.deepEqual([...swiftIds].sort(), [...ids].sort())
+
+  // Tombstones carry only their own fields (no write metadata).
+  const tombstone = rulebook.bookingTombstoneWriteFields({ bookingId: 'B', collection: 'bookings', deletedBy: 'u', deletedFrom: 'ios' })
+  assert.deepEqual(Object.keys(tombstone || {}).sort(), ['bookingId', 'collection', 'deletedBy', 'deletedFrom'])
+})
+
+test('1.2.0 D11: unbookedScanDays matches the unbooked loop in every mode', () => {
+  const base = { referenceIso: '2026-10-28T10:00:00.000Z', timeZone: 'Europe/London' }
+  const fullOff = rulebook.unbookedScanDays({ ...base, clashLookaheadMode: 'endOfWorkingWeek' })
+  assert.deepEqual(fullOff.dayKeys, ['2026-10-26', '2026-10-27', '2026-10-28', '2026-10-29', '2026-10-30'])
+  const fullOn = rulebook.unbookedScanDays({ ...base, clashLookaheadMode: 'endOfWorkingWeek', includeWeekends: true })
+  assert.equal(fullOn.endDayKey, '2026-11-01')
+  assert.equal(fullOn.dayKeys.length, 7)
+  const invoicing = rulebook.unbookedScanDays({ ...base, clashLookaheadMode: 'endOfInvoicingPeriod', includeWeekends: false })
+  const window = rulebook.coverageWindow({ ...base, clashLookaheadMode: 'endOfInvoicingPeriod' })
+  assert.equal(invoicing.startDayKey, window.startDayKey)
+  assert.equal(invoicing.endDayKey, window.endDayKey)
+  assert.ok(invoicing.dayKeys.every((key) => ![6, 7].includes(new Date(`${key}T12:00:00Z`).getUTCDay() || 7)))
+
+  // The days unbookedLabourRows reports on are exactly these days for a person never booked.
+  const rowsFor = (scan: { startDayKey: string; endDayKey: string }, includeWeekends: boolean) =>
+    rulebook.unbookedLabourRows({
+      timeZone: 'Europe/London',
+      startDayKey: scan.startDayKey,
+      endDayKey: scan.endDayKey,
+      includeWeekends,
+      standardPaidHours: 8,
+      saturdayCountsAsHours: 8,
+      sundayCountsAsHours: 8,
+      people: [{ id: 'u1', email: 'u1@example.com', firstName: 'U', surname: 'One', isActive: true, passwordSet: true, isOperativeMode: true } as never],
+      operatives: [],
+      bookings: [],
+      holidays: [],
+    }).map((row) => row.dayKey)
+  assert.deepEqual(rowsFor(fullOn, true), fullOn.dayKeys)
+  assert.deepEqual(rowsFor(fullOff, false), fullOff.dayKeys)
+})
+
+test('1.2.0 D12 + D13: lookahead notice copy and the platform owner email', () => {
+  assert.match(rulebook.warningLookaheadFallbackNotice('lookaheadDaysMissing') || '', /^No number of days is saved/)
+  assert.match(rulebook.warningLookaheadFallbackNotice('lookaheadDaysInvalid') || '', /not valid/)
+  assert.equal(rulebook.warningLookaheadFallbackNotice(undefined), null)
+  assert.equal(rulebook.isPlatformOwnerEmail('INFO@projectplanner.us'), true)
+  assert.equal(rulebook.isPlatformOwnerEmail(''), false)
+  assert.equal(rulebook.isPlatformOwnerEmail(null), false)
+  assert.equal(rulebook.passwordMinLength(), 8)
+  assert.equal(rulebook.passwordMinLength({ developerAccount: true }), 10)
+  assert.equal(rulebook.passwordMinLength({ email: 'someone@example.com' }), 8)
+  assert.equal(rulebook.passwordPolicyError('123456789', { email: 'info@projectplanner.us' }), 'Password must be at least 10 characters.')
+})
+
+test('1.2.0 D15 + D23: a cleared rate is "rate not set" from its day; history days are organisation-zone midnight', () => {
+  const user = { id: 'U', employmentType: 'self_employed' }
+  const history = [
+    { id: 'h', userId: 'U', dayRate: 20, payBasis: 'hourly', effectiveAt: Date.parse('2026-10-01T00:00:00+01:00') },
+    { id: 'c', userId: 'U', dayRate: null, payBasis: null, effectiveAt: Date.parse('2026-10-10T00:00:00+01:00') },
+    { id: 'd', userId: 'U', dayRate: 180, payBasis: 'day', effectiveAt: Date.parse('2026-10-20T00:00:00+01:00') },
+  ]
+  const on = (dayKey: string) => rulebook.payRateOnDay({ user: { ...user, payBasis: 'hourly', hourlyRate: 20 }, history, dayKey, timeZone: 'Europe/London' })
+  assert.equal(on('2026-10-09').rate, 20)
+  // The clear ends the hourly row too.
+  assert.deepEqual([on('2026-10-10').rate, on('2026-10-10').hasRate], [null, false])
+  assert.equal(on('2026-10-19').hasRate, false)
+  assert.equal(on('2026-10-20').rate, 180)
+
+  const bst = rulebook.payRateHistoryWriteFields({ userId: 'U', rate: 0, payBasis: 'day', effective: '2026-10-21', timeZone: 'Europe/London' })
+  assert.equal(bst?.dayRate, 0)
+  assert.equal(bst?.effectiveAtMs, Date.parse('2026-10-20T23:00:00Z'))
+  const gmt = rulebook.payRateHistoryWriteFields({ operativeId: 'O', rate: 200, effective: new Date('2026-11-02T15:00:00Z'), timeZone: 'Europe/London' })
+  assert.equal(gmt?.effectiveAtMs, Date.parse('2026-11-02T00:00:00Z'))
+  assert.equal(gmt?.payBasis, 'day')
+  const cleared = rulebook.payRateHistoryWriteFields({ userId: 'U', rate: null, payBasis: 'hourly', effective: '2026-10-21' })
+  assert.deepEqual([cleared?.dayRate, cleared?.payBasis], [null, null])
+  assert.equal(rulebook.payRateHistoryWriteFields({ rate: 1, effective: '2026-10-21' }), null)
+  assert.equal(rulebook.payRateHistoryWriteFields({ userId: 'U', rate: 1, effective: 'soon' }), null)
+})
+
+test('1.2.0 D16 + D17: document shapes are in the packed surface; profilePhotoUpdatedAt is a user field', () => {
+  const surface = bundleSurface as unknown as Record<string, unknown>
+  assert.ok(Array.isArray(surface.ORGANIZATION_DOCUMENT_FIELDS))
+  assert.ok(Array.isArray(surface.USER_DOCUMENT_FIELDS))
+  assert.equal(typeof surface.OPERATIONAL_COLLECTION_PATHS, 'object')
+  assert.ok((rulebook.USER_DOCUMENT_FIELDS as readonly string[]).includes('profilePhotoUpdatedAt'))
+})
+
+test('1.2.0 D22: PAYE days and leave lines never go on an invoice, live or signed-sheet', () => {
+  const lines = [
+    { id: 'a', pay: 100 },
+    { id: 'b', isPaye: true, pay: 0 },
+    { id: 'c', employmentType: 'paye' },
+    { id: 'd', isLeave: true },
+    { id: 'e', isPayeDay: true },
+  ]
+  assert.deepEqual(rulebook.invoiceLines(lines).map((line) => line.id), ['a'])
+  assert.equal(rulebook.isInvoiceLine(null), false)
+  assert.deepEqual(rulebook.invoiceLines(null), [])
 })

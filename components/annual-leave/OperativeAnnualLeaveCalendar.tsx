@@ -12,7 +12,8 @@ import {
   type AnnualLeaveDayKind,
 } from '@/lib/annualLeave/dayStatus'
 import { formatLeaveDate, formatLeaveRange } from '@/lib/annualLeave/formatLeaveDays'
-import { leaveDayBlockedReason, leaveSubmitStatus } from '@/lib/annualLeave/leaveRequestDecision'
+import { leaveDayBlockedReason } from '@/lib/annualLeave/leaveRequestDecision'
+import { canDecideHoliday, leaveSaveStatus } from '@/lib/annualLeave/holidayApprovalUtils'
 import {
   holidayDecisionActorName,
   notifyHolidayRequestDecisionToUser,
@@ -122,6 +123,19 @@ export function OperativeAnnualLeaveCalendar({
     [bookings, person]
   )
 
+  // `canDecideLeave`: approve, decline, change and remove only for someone who may decide this person's leave
+  // (never your own; admins decide any; otherwise `leaveApproverIds`).
+  const canDecide = useMemo(
+    () =>
+      canDecideHoliday(
+        user,
+        { userId: person.userId ?? undefined, operativeId: person.operativeId ?? undefined } as HolidayBooking,
+        users,
+        operatives
+      ),
+    [user, person.userId, person.operativeId, users, operatives]
+  )
+
   const futureBookings = useMemo(
     () =>
       personBookings
@@ -170,8 +184,8 @@ export function OperativeAnnualLeaveCalendar({
       setMessage(blocked)
       return
     }
-    const subject = users.find((row) => row.id === person.userId)
-    const status = subject ? leaveSubmitStatus(subject) : 'pending'
+    // Approved only when the viewer may decide this person's leave, or self-books their own (`leaveSaveStatus`).
+    const status = leaveSaveStatus(user, { userId: person.userId, operativeId: person.operativeId }, users, operatives)
     setSaving(true)
     try {
       const day = format(selectedDay, 'yyyy-MM-dd')
@@ -353,17 +367,23 @@ export function OperativeAnnualLeaveCalendar({
           <div className="mt-3">
             <DurationButtons value={changeSlot} onChange={setChangeSlot} />
           </div>
-          <button
-            type="button"
-            disabled={saving || changeSlot === approvedBooking.timeSlot}
-            onClick={confirmChange}
-            className="mt-4 flex w-full items-center justify-center rounded-2xl bg-blue-600 py-3.5 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-60"
-          >
-            {saving ? 'Saving…' : 'Confirm annual leave booking change'}
-          </button>
-          <div className="mt-3">
-            <DeleteAnnualLeaveButton disabled={saving} onClick={() => setPendingDelete(approvedBooking)} />
-          </div>
+          {canDecide ? (
+            <>
+              <button
+                type="button"
+                disabled={saving || changeSlot === approvedBooking.timeSlot}
+                onClick={confirmChange}
+                className="mt-4 flex w-full items-center justify-center rounded-2xl bg-blue-600 py-3.5 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-60"
+              >
+                {saving ? 'Saving…' : 'Confirm annual leave booking change'}
+              </button>
+              <div className="mt-3">
+                <DeleteAnnualLeaveButton disabled={saving} onClick={() => setPendingDelete(approvedBooking)} />
+              </div>
+            </>
+          ) : (
+            <p className="mt-3 text-xs text-slate-500">Only this person&apos;s line manager or an admin can change this leave.</p>
+          )}
         </div>
       )}
 
@@ -373,6 +393,7 @@ export function OperativeAnnualLeaveCalendar({
           <p className="mt-0.5 text-xs text-slate-600">
             {fmtDate(selectedDay)} · {pendingBooking.timeSlot}
           </p>
+          {canDecide ? (
           <div className="mt-4 grid grid-cols-2 gap-3">
             <button
               type="button"
@@ -397,6 +418,9 @@ export function OperativeAnnualLeaveCalendar({
               Decline
             </button>
           </div>
+          ) : (
+            <p className="mt-3 text-xs text-slate-600">Waiting for this person&apos;s line manager or an admin to decide.</p>
+          )}
         </div>
       )}
 
@@ -429,6 +453,7 @@ export function OperativeAnnualLeaveCalendar({
                         : 'Approved'}
                   </p>
                 </div>
+                {canDecide ? (
                 <button
                   type="button"
                   disabled={saving}
@@ -441,10 +466,13 @@ export function OperativeAnnualLeaveCalendar({
                     <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
                   </svg>
                 </button>
+                ) : null}
               </div>
-              <div className="mt-3">
-                <DeleteAnnualLeaveButton disabled={saving} onClick={() => setPendingDelete(booking)} />
-              </div>
+              {canDecide ? (
+                <div className="mt-3">
+                  <DeleteAnnualLeaveButton disabled={saving} onClick={() => setPendingDelete(booking)} />
+                </div>
+              ) : null}
             </div>
           ))
         )}

@@ -7,8 +7,8 @@ import { formatMoney, organizationTimeZone, type AcceptedClashRecord } from '@/l
 import { addLondonDays, dateFromDayKey, dayKey, startOfLondonWeek } from '@/lib/ios-parity/londonTime'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { hasAdminAccess } from '@/lib/permissions'
-import { loadAcceptedBookingClashes, unapproveBookingClash } from '@/lib/warnings/acceptedClashStorage'
-import { loadResolvedWarningKeys } from '@/lib/warnings/warningResolutionStorage'
+import { loadAcceptedBookingClashes, unapproveBookingClash, unapproveBookingClashPairs } from '@/lib/warnings/acceptedClashStorage'
+import { loadWarningResolutionKeys } from '@/lib/warnings/warningResolutionStorage'
 import {
   formatInvoicingPeriodDescription,
   formatReportPeriodLabel,
@@ -235,11 +235,11 @@ export function WeeklyReportScreen({
 
   const loadWarningDecisions = async (): Promise<WeeklyReportWarningDecisions | null> => {
     if (!organizationId) return null
-    const [resolvedKeys, acceptedClashes] = await Promise.all([
-      loadResolvedWarningKeys(organizationId).catch(() => [] as string[]),
+    const [keys, acceptedClashes] = await Promise.all([
+      loadWarningResolutionKeys(organizationId).catch(() => ({ resolvedKeys: [] as string[], approvedKeys: [] as string[] })),
       loadAcceptedBookingClashes(organizationId).catch(() => [] as AcceptedClashRecord[]),
     ])
-    return { resolvedKeys, acceptedClashes }
+    return { resolvedKeys: keys.resolvedKeys, approvedKeys: keys.approvedKeys, acceptedClashes }
   }
 
   const handleUnapprove = async (row: WeeklyReportApprovedClashRow) => {
@@ -247,11 +247,16 @@ export function WeeklyReportScreen({
     setUnapproveError('')
     setUnapprovingKey(row.resolutionKey)
     try {
-      await unapproveBookingClash(organizationId, {
-        bookingAId: row.bookingAId,
-        bookingBId: row.bookingBId,
-        resolutionKey: row.resolutionKey,
-      })
+      if (row.pairs && row.pairs.length > 0) {
+        // Operative cluster: remove every pair's approval (`operativeClashGroups`).
+        await unapproveBookingClashPairs(organizationId, row.pairs)
+      } else {
+        await unapproveBookingClash(organizationId, {
+          bookingAId: row.bookingAId,
+          bookingBId: row.bookingBId,
+          resolutionKey: row.resolutionKey,
+        })
+      }
       setWarningDecisions(await loadWarningDecisions())
     } catch (error) {
       setUnapproveError(error instanceof Error ? error.message : 'Could not remove this approval.')

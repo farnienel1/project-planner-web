@@ -491,3 +491,32 @@ export {
   timesheetWriterIsReviewer,
 } from './timesheetEntryReviews'
 export { canChangePersonPay } from './payAccess'
+export {
+  LINE_MANAGER_REQUIRED_MESSAGE,
+  canDecideLeave,
+  canSelfBookAnnualLeave,
+  leaveDecisionQueue,
+  lineManagerRequiredError,
+  usersMissingLineManager,
+} from './leaveRequests'
+export {
+  approvedWarningKeys,
+  isClashGroupApproved,
+  normalizeDocumentId,
+  operativeClashGroups,
+} from './scheduleSources'
+export {
+  OFFLINE_ACTIONS,
+  OFFLINE_AVAILABILITIES,
+  OFFLINE_LAST_UPDATED_PREFIX,
+  OFFLINE_ONLINE_ONLY_MESSAGE,
+  OFFLINE_PENDING_SYNC_LABEL,
+  offlineAvailability,
+  offlineLastUpdatedLabel,
+} from './offlinePolicy'
+export { unbookedScanDays, warningLookaheadFallbackNotice } from './engine'
+export { PLATFORM_OWNER_EMAIL, isPlatformOwnerEmail } from './passwordPolicy'
+export { TIMESHEET_MANAGER_SIGN_OFF_FIELDS } from './timesheetEntryReviews'
+export { payRateHistoryWriteFields } from './payRate'
+export { invoiceLines, isInvoiceLine } from './reportPay'
+export { OPERATIONAL_COLLECTION_PATHS, ORGANIZATION_DOCUMENT_FIELDS } from './organizationSettings'

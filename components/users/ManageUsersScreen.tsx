@@ -18,6 +18,8 @@ import { matchesRosterSegment, type RosterSegment } from '@/lib/staff/userRoster
 import { displayTradeType } from '@/lib/staff/staffTradeTypes'
 import type { User } from '@/types'
 import { UserAvatar } from '@/components/users/UserAvatar'
+import { staffAccountRole } from '@/lib/permissions'
+import { usersWithoutRequiredLineManager } from '@/lib/annualLeave/holidayApprovalUtils'
 
 const ROLE_TABS: { tab: ManageUsersTab; label: string; section: string }[] = [
   { tab: 'admins', label: 'Admins', section: 'Administrators' },
@@ -142,6 +144,17 @@ export function ManageUsersScreen() {
     return list.sort((a, b) => displayName(a).localeCompare(displayName(b)))
   }, [users, effectiveTab, segment, search, claimedEmails])
 
+  // `usersMissingLineManager`: active people saved before the line-manager rule who still need one. Admins only.
+  const viewerRole = staffAccountRole(currentUser)
+  const isAdminViewer = (viewerRole.isAdmin || viewerRole.isSuperAdmin) && !viewerRole.isOperativeMode
+  const missingLineManager = useMemo(
+    () =>
+      isAdminViewer
+        ? usersWithoutRequiredLineManager(users.filter((user) => matchesRosterSegment(user, 'active')))
+        : [],
+    [isAdminViewer, users]
+  )
+
   const listPhase = manageUsersListPhase({
     organizationId: organization?.id,
     rosterLoadedOrgId,
@@ -227,6 +240,32 @@ export function ManageUsersScreen() {
           }`}
         >
           {toast.msg}
+        </div>
+      )}
+
+      {missingLineManager.length > 0 && (
+        <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <p className="font-semibold">
+            {missingLineManager.length === 1
+              ? '1 person needs a line manager'
+              : `${missingLineManager.length} people need a line manager`}
+          </p>
+          <p className="mt-0.5 text-xs">
+            They cannot book their own annual leave, so their requests go to admins until a line manager is set.
+          </p>
+          <ul className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
+            {missingLineManager.map((user) => (
+              <li key={user.id}>
+                <button
+                  type="button"
+                  onClick={() => selectUser(user)}
+                  className="font-semibold underline underline-offset-2 hover:text-amber-700"
+                >
+                  {displayName(user)}
+                </button>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
 

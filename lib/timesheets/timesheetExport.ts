@@ -13,6 +13,7 @@ import type { Operative, User } from '@/types'
 import { findOperativeForUser } from '@/lib/operatives/operativeRosterUtils'
 import type { OperativeDayRateHistoryCollection } from '@/lib/timesheets/dayRateHistoryStorage'
 import { formatMoney } from '@/lib/canonical/money'
+import { invoiceLines, isInvoiceLine } from '@/lib/canonical/reportPay'
 
 export function paymentRunDateStamp(start: Date, end: Date, timeZone: string): string {
   const format = (date: Date) => {
@@ -69,7 +70,9 @@ export function invoiceRateChangeNotes({
   const notes = new Set<string>()
   for (const entry of (history.byUserId[user.id] || []).filter((row) => inPeriod(row.effectiveAt))) {
     notes.add(
-      `Rate updated to ${formatMoney(entry.dayRate, currencyCode)}${entry.payBasis === 'hourly' ? '/hr' : '/day'} from ${formatAbbreviatedDayInZone(entry.effectiveAt, timeZone)}.`
+      entry.dayRate == null
+        ? `Rate cleared from ${formatAbbreviatedDayInZone(entry.effectiveAt, timeZone)}.`
+        : `Rate updated to ${formatMoney(entry.dayRate, currencyCode)}${entry.payBasis === 'hourly' ? '/hr' : '/day'} from ${formatAbbreviatedDayInZone(entry.effectiveAt, timeZone)}.`
     )
   }
   const matched = operatives.filter(
@@ -81,7 +84,9 @@ export function invoiceRateChangeNotes({
   for (const operativeId of ids) {
     for (const entry of (history.byOperativeId[operativeId] || []).filter((row) => inPeriod(row.effectiveAt))) {
       notes.add(
-        `Operative rate updated to ${formatMoney(entry.dayRate, currencyCode)}${entry.payBasis === 'hourly' ? '/hr' : '/day'} from ${formatAbbreviatedDayInZone(entry.effectiveAt, timeZone)}.`
+        entry.dayRate == null
+          ? `Operative rate cleared from ${formatAbbreviatedDayInZone(entry.effectiveAt, timeZone)}.`
+          : `Operative rate updated to ${formatMoney(entry.dayRate, currencyCode)}${entry.payBasis === 'hourly' ? '/hr' : '/day'} from ${formatAbbreviatedDayInZone(entry.effectiveAt, timeZone)}.`
       )
     }
   }
@@ -146,6 +151,8 @@ export function invoiceLinesForTimesheet({
     for (const line of override.lines) {
       if (line.decision === 'declined' || line.amount <= 0.0001) continue
       const live = liveById.get(line.id)
+      // PAYE and leave lines never go on an invoice (`isInvoiceLine`), signed sheet included.
+      if (live && !isInvoiceLine(live)) continue
       const details = live ? timesheetLabourDetails(live, currencyCode) : signedOverrideDetails(line, standardDayHours, currencyCode)
       const jobNumber = (live?.jobNumber || line.jobNumber || '—').trim() || '—'
       const projectName = live?.projectName || line.projectName
@@ -187,7 +194,8 @@ export function invoiceLinesForTimesheet({
     return rows
   }
   const rows: TimesheetInvoiceLine[] = []
-  for (const line of payroll.lineItems) {
+  // PAYE days and leave information lines stay on the timesheet but never on the invoice (`invoiceLines`).
+  for (const line of invoiceLines(payroll.lineItems)) {
     const details = timesheetLabourDetails(line, currencyCode)
     rows.push({
       date: formatAbbreviatedDayInZone(line.date, timeZone),

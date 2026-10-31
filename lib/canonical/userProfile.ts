@@ -61,6 +61,8 @@ export const USER_DOCUMENT_FIELDS = [
   // vatNumber and utrNumber live at users/{uid}/private/taxIds (sensitiveProfile.ts).
   'lastSeenAt',
   'profilePhotoURL',
+  // Set with the new download URL on every photo upload; devices refresh the cached avatar when it changes.
+  'profilePhotoUpdatedAt',
   'pushTokens',
   'pushTokenUpdatedAt',
   'notificationPreferences',

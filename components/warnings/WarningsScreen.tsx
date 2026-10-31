@@ -368,7 +368,13 @@ export function WarningsScreen({
   operatives: Operative[]
   users?: User[]
   smallWorkIds: ReadonlySet<string>
-  onAcceptClash: (clash: { id: string; bookingAId: string; bookingBId: string }) => Promise<void>
+  onAcceptClash: (clash: {
+    id: string
+    bookingAId: string
+    bookingBId: string
+    resolutionKey?: string
+    pairs?: Array<{ bookingAId: string; bookingBId: string }>
+  }) => Promise<void>
   onDismissQualification?: (warning: QualificationExpiryWarning) => Promise<void>
   onDeleteBooking: (bookingId: string) => Promise<void>
   onDeleteManagerBooking: (bookingId: string) => Promise<void>
@@ -433,7 +439,13 @@ export function WarningsScreen({
     ]
   )
 
-  const handleAccept = async (clash: { id: string; bookingAId: string; bookingBId: string }) => {
+  const handleAccept = async (clash: {
+    id: string
+    bookingAId: string
+    bookingBId: string
+    resolutionKey?: string
+    pairs?: Array<{ bookingAId: string; bookingBId: string }>
+  }) => {
     setBusyId(clash.id)
     try {
       await onAcceptClash(clash)
@@ -444,7 +456,9 @@ export function WarningsScreen({
 
   const handleRemoveEntry = async (entry: ClashTimelineEntry) => {
     const label = displayTitle(entry)
-    if (!window.confirm(`Delete the booking for ${label}?`)) return
+    // Labour bookings: admins delete, managers cancel (rulebook §2, §16). Manager bookings are deleted.
+    const deletes = Boolean(entry.managerBookingId) || hasAdminAccess(user)
+    if (!window.confirm(`${deletes ? 'Delete' : 'Cancel'} the booking for ${label}?`)) return
     const id = entry.managerBookingId || entry.bookingId
     setBusyId(id)
     try {

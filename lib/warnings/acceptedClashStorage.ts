@@ -70,7 +70,7 @@ export async function approveBookingClash(
 }
 
 /**
- * Undo a clash approval: delete both documents. Firestore lets an organisation admin delete the
+ * Undo a clash approval: delete both documents. Admins and managers (`canAccessVariationsStaff`) may delete the
  * `acceptedBookingClashes` row; the `warningResolutions` row may be deleted by an admin or its approver.
  */
 export async function unapproveBookingClash(organizationId: string, clash: ClashApproval): Promise<void> {
@@ -81,6 +81,32 @@ export async function unapproveBookingClash(organizationId: string, clash: Clash
     deleteDoc(doc(db, 'organizations', organizationId, 'acceptedBookingClashes', pairId)),
     deleteDoc(doc(db, 'organizations', organizationId, 'warningResolutions', resolutionId)),
   ])
+}
+
+/**
+ * Approve an operative clash group (`operativeClashGroups`): every overlapping pair gets its own approval, so
+ * `isClashGroupApproved` is true on both apps.
+ */
+export async function approveBookingClashPairs(
+  organizationId: string,
+  pairs: ReadonlyArray<{ bookingAId: string; bookingBId: string }>,
+  approvedByUserId: string
+): Promise<void> {
+  if (pairs.length === 0) throw new Error('This clash cannot be approved.')
+  for (const pair of pairs) {
+    await approveBookingClash(organizationId, { bookingAId: pair.bookingAId, bookingBId: pair.bookingBId }, approvedByUserId)
+  }
+}
+
+/** Undo an operative clash group approval: every pair's two documents. */
+export async function unapproveBookingClashPairs(
+  organizationId: string,
+  pairs: ReadonlyArray<{ bookingAId: string; bookingBId: string }>
+): Promise<void> {
+  if (pairs.length === 0) throw new Error('This clash approval cannot be removed.')
+  await Promise.all(
+    pairs.map((pair) => unapproveBookingClash(organizationId, { bookingAId: pair.bookingAId, bookingBId: pair.bookingBId }))
+  )
 }
 
 /** @deprecated Use `approveBookingClash`, which also writes `warningResolutions`. */

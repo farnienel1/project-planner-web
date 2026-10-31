@@ -20,9 +20,9 @@ import {
 } from '@/lib/settings/organizationSettings'
 import { isActiveBookingStatus } from '@/lib/ios-parity/enums'
 import {
-  clashPairKey,
   dayKeyInOrganizationZone,
   isAnonymisedDeletedProfile,
+  isClashGroupApproved,
   isWarningActive,
   organizationTimeZone,
   qualificationExpiryRows,
@@ -317,9 +317,11 @@ export function activeOrgWarnings(result: OrgWarningsResult, decisions: WarningD
   const active = (row: { resolutionKey?: string; bookingAId?: string; bookingBId?: string }) =>
     isWarningActive(row, decisions)
   return withWarningCounts({
-    // Operative clashes are keyed by their booking pair (`clashPairKey`) in `warningResolutions` too.
-    clashWarnings: result.clashWarnings.filter((w) =>
-      active({ resolutionKey: clashPairKey(w.bookingAId, w.bookingBId), bookingAId: w.bookingAId, bookingBId: w.bookingBId })
+    // Operative clusters (`operativeClashGroups`): hidden once every overlapping pair is approved, dismissed or
+    // accepted (`isClashGroupApproved` over `resolvedKeys`); a third booking reopens an approved pair.
+    clashWarnings: result.clashWarnings.filter(
+      (w) =>
+        !isClashGroupApproved(w, { resolvedKeys: decisions.resolvedKeys, acceptedClashes: decisions.acceptedClashes })
     ),
     managerClashWarnings: result.managerClashWarnings.filter((w) =>
       active({ resolutionKey: w.resolutionKey, bookingAId: w.bookingAId, bookingBId: w.bookingBId })

@@ -67,3 +67,28 @@ export function reportPersonPayCell(lines: ReadonlyArray<ReportPayLineInput>): R
   }
   return { pay: reportPayTotal(lines), label: null, countsTowardPayTotal: true }
 }
+
+export type InvoiceLineInput = ReportPayLineInput & {
+  /** iOS payroll line name for a PAYE day. */
+  isPayeDay?: boolean | null
+  /** An annual-leave information line (`timesheetLeaveLines`). */
+  isLeave?: boolean | null
+  kind?: string | null
+}
+
+/**
+ * Whether a timesheet line goes on a generated invoice. A PAYE day (rate 0, `isPaye` / `isPayeDay`, or a PAYE
+ * `employmentType`) and an annual-leave information line (`isLeave`, or `kind` `leave`) never do — on the live
+ * invoice and on the signed-sheet (`weeklyReportOverride`) invoice alike. They stay on the timesheet itself.
+ */
+export function isInvoiceLine(line: InvoiceLineInput | null | undefined): boolean {
+  if (!line) return false
+  if (line.isPayeDay === true || lineIsPaye(line)) return false
+  if (line.isLeave === true || String(line.kind || '').trim().toLowerCase() === 'leave') return false
+  return true
+}
+
+/** The lines of a generated invoice, in input order (`isInvoiceLine`). */
+export function invoiceLines<T extends InvoiceLineInput>(lines: ReadonlyArray<T> | null | undefined): T[] {
+  return (lines || []).filter((line) => isInvoiceLine(line))
+}

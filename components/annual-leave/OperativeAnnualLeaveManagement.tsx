@@ -17,7 +17,7 @@ import {
   type AnnualLeavePerson,
   type AnnualLeavePersonSort,
 } from '@/lib/annualLeave/annualLeavePerson'
-import { isCancellationRequest } from '@/lib/annualLeave/holidayApprovalUtils'
+import { getPendingHolidayApprovalsForUser, isCancellationRequest } from '@/lib/annualLeave/holidayApprovalUtils'
 import {
   holidayDecisionActorName,
   notifyHolidayRequestDecisionToUser,
@@ -142,12 +142,13 @@ export function OperativeAnnualLeaveManagement({
     [teamBookings]
   )
 
+  // `leaveDecisionQueue`: only requests this viewer may decide (`canDecideLeave` — never their own).
   const pendingRequests = useMemo(
     () =>
-      teamBookings
+      getPendingHolidayApprovalsForUser(teamBookings, user, users, operatives)
         .filter((b) => isPendingHolidayRequest(b))
         .sort((a, b) => b.startDate.getTime() - a.startDate.getTime()),
-    [teamBookings]
+    [teamBookings, user, users, operatives]
   )
 
   useEffect(() => {

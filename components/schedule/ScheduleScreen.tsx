@@ -19,7 +19,7 @@ import {
   getWeek,
 } from 'date-fns'
 import { isRoleOnlyPersonName } from '@/lib/staff/userRosterUtils'
-import type { Booking } from '@/types'
+import { BookingStatus, type Booking } from '@/types'
 import { BookingEditSheet } from '@/components/schedule/BookingEditSheet'
 import { AddWeekToCalendarButton } from '@/components/schedule/AddWeekToCalendarButton'
 import {
@@ -235,21 +235,22 @@ function BookingCard({
           {booking.notes && (
             <p className="mt-3 border-t border-slate-200 pt-3 text-xs leading-relaxed text-slate-600">{booking.notes}</p>
           )}
-          {canEdit && onSave && onDelete && (
+          {canEdit && onSave && (
             <div className="mt-3 border-t border-slate-200 pt-3">
               <button
                 type="button"
                 onClick={() => setEditing(true)}
                 className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700"
               >
-                Edit or delete booking
+                {onDelete ? 'Edit or delete booking' : 'Edit or cancel booking'}
               </button>
             </div>
           )}
         </div>
       )}
     </div>
-    {editing && onSave && onDelete && (
+    {/* Deleting a labour booking is admin only (rulebook §2, §16): without onDelete the sheet cancels it. */}
+    {editing && onSave && (
       <BookingEditSheet
         booking={booking}
         operativeName={operativeName}
@@ -264,14 +265,30 @@ function BookingCard({
             setSaving(false)
           }
         }}
-        onDelete={async () => {
-          setSaving(true)
-          try {
-            await onDelete()
-          } finally {
-            setSaving(false)
-          }
-        }}
+        onDelete={
+          onDelete
+            ? async () => {
+                setSaving(true)
+                try {
+                  await onDelete()
+                } finally {
+                  setSaving(false)
+                }
+              }
+            : undefined
+        }
+        onCancelBooking={
+          onDelete
+            ? undefined
+            : async () => {
+                setSaving(true)
+                try {
+                  await onSave({ status: BookingStatus.CANCELLED })
+                } finally {
+                  setSaving(false)
+                }
+              }
+        }
       />
     )}
     </>
