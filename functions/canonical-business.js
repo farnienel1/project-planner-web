@@ -67,6 +67,7 @@ var ProjectPlannerCanonical = (() => {
     MIN_HALF_DAY_MINUTES: () => MIN_HALF_DAY_MINUTES,
     NOTIFICATION_ICON_BADGE_CLEARS_ON_FOREGROUND: () => NOTIFICATION_ICON_BADGE_CLEARS_ON_FOREGROUND,
     NOTIFICATION_PREFERENCE_KEYS: () => NOTIFICATION_PREFERENCE_KEYS,
+    NOTIFICATION_TOGGLE_HIDES_INBOX_ROW: () => NOTIFICATION_TOGGLE_HIDES_INBOX_ROW,
     ORPHAN_BOOKING_LABEL: () => ORPHAN_BOOKING_LABEL,
     OVERLAPPING_BOOKING_NOTE: () => OVERLAPPING_BOOKING_NOTE,
     PASSWORD_MIN_LENGTH: () => PASSWORD_MIN_LENGTH,
@@ -87,11 +88,16 @@ var ProjectPlannerCanonical = (() => {
     TIMESHEET_CLOSE_OF_PLAY_MINUTE: () => TIMESHEET_CLOSE_OF_PLAY_MINUTE,
     TIMESHEET_DEADLINE_DAYS_BEFORE_PAYMENT: () => TIMESHEET_DEADLINE_DAYS_BEFORE_PAYMENT,
     TIMESHEET_DOCUMENT_PREFIX: () => TIMESHEET_DOCUMENT_PREFIX,
+    TIMESHEET_ENTRY_ARRAY_FIELDS: () => TIMESHEET_ENTRY_ARRAY_FIELDS,
+    TIMESHEET_ENTRY_DECISIONS: () => TIMESHEET_ENTRY_DECISIONS,
+    TIMESHEET_ENTRY_REVIEWS_FIELD: () => TIMESHEET_ENTRY_REVIEWS_FIELD,
     TIMESHEET_EXPORT_STORAGE_FOLDER: () => TIMESHEET_EXPORT_STORAGE_FOLDER,
     TIMESHEET_INVOICE_EXPORT_LEFTOVER_MS: () => TIMESHEET_INVOICE_EXPORT_LEFTOVER_MS,
     TIMESHEET_NOTIFY_DAYS_BEFORE_PAYMENT: () => TIMESHEET_NOTIFY_DAYS_BEFORE_PAYMENT,
     TIMESHEET_NOTIFY_HOUR: () => TIMESHEET_NOTIFY_HOUR,
     TIMESHEET_NOTIFY_MINUTE: () => TIMESHEET_NOTIFY_MINUTE,
+    TIMESHEET_REVIEWER_ONLY_FIELDS: () => TIMESHEET_REVIEWER_ONLY_FIELDS,
+    TIMESHEET_SELF_SIGNED_OWNER_FIELDS: () => TIMESHEET_SELF_SIGNED_OWNER_FIELDS,
     TIMESHEET_SIGNED_AFTER_MS: () => TIMESHEET_SIGNED_AFTER_MS,
     TIMESHEET_SUBMISSION_NOTICE_TITLE: () => TIMESHEET_SUBMISSION_NOTICE_TITLE,
     TIMESHEET_SUBMISSION_NOTICE_TYPE: () => TIMESHEET_SUBMISSION_NOTICE_TYPE,
@@ -128,6 +134,7 @@ var ProjectPlannerCanonical = (() => {
     bookingWriteFields: () => bookingWriteFields,
     bookingsToRemoveOnOperativeDelete: () => bookingsToRemoveOnOperativeDelete,
     bookingsToRemoveOnProjectDelete: () => bookingsToRemoveOnProjectDelete,
+    canChangePersonPay: () => canChangePersonPay,
     canEditWorkCatalogue: () => canEditWorkCatalogue,
     canManageVariationTracker: () => canManageVariationTracker,
     canOpenUserTimesheets: () => canOpenUserTimesheets,
@@ -160,6 +167,7 @@ var ProjectPlannerCanonical = (() => {
     defaultMaterialDeliveryRequiredAt: () => defaultMaterialDeliveryRequiredAt,
     defaultTimesheetSubmissionFromPaymentDay: () => defaultTimesheetSubmissionFromPaymentDay,
     defaultTimesheetSubmissionFromPaymentWeekday: () => defaultTimesheetSubmissionFromPaymentWeekday,
+    devicePushAllowed: () => devicePushAllowed,
     devicePushNotificationTypes: () => devicePushNotificationTypes,
     displayOrganizationName: () => displayOrganizationName,
     dueTimesheetSubmissionNotices: () => dueTimesheetSubmissionNotices,
@@ -272,6 +280,7 @@ var ProjectPlannerCanonical = (() => {
     notificationPreferenceCopy: () => notificationPreferenceCopy,
     notificationPreferenceIsVisible: () => notificationPreferenceIsVisible,
     notificationPreferenceKeyForType: () => notificationPreferenceKeyForType,
+    notificationShowsInInbox: () => notificationShowsInInbox,
     orgAccessProbeFromReads: () => orgAccessProbeFromReads,
     organizationCurrencyWriteFields: () => organizationCurrencyWriteFields,
     organizationIdFromValue: () => organizationIdFromValue,
@@ -297,6 +306,8 @@ var ProjectPlannerCanonical = (() => {
     parsePayrollPolicy: () => parsePayrollPolicy,
     parsePayrollTimePolicyScheduled: () => parsePayrollTimePolicyScheduled,
     parsePayrollTimePolicyState: () => parsePayrollTimePolicyState,
+    parseTimesheetEntryDecision: () => parseTimesheetEntryDecision,
+    parseTimesheetEntryReviews: () => parseTimesheetEntryReviews,
     parseTimesheetStatusFields: () => parseTimesheetStatusFields,
     parseTimesheetSubmissionEntry: () => parseTimesheetSubmissionEntry,
     parseTimesheetSubmissionList: () => parseTimesheetSubmissionList,
@@ -381,11 +392,16 @@ var ProjectPlannerCanonical = (() => {
     subtractMinuteIntervals: () => subtractMinuteIntervals,
     timesheetBelongsToOrganization: () => timesheetBelongsToOrganization,
     timesheetDocumentId: () => timesheetDocumentId,
+    timesheetEntryDecision: () => timesheetEntryDecision,
+    timesheetEntryEffectiveAmount: () => timesheetEntryEffectiveAmount,
+    timesheetEntryReviewWriteFields: () => timesheetEntryReviewWriteFields,
+    timesheetEntryReviewsAfterWrite: () => timesheetEntryReviewsAfterWrite,
     timesheetExportStoragePath: () => timesheetExportStoragePath,
     timesheetExportWriteFields: () => timesheetExportWriteFields,
     timesheetLeaveLabel: () => timesheetLeaveLabel,
     timesheetLeaveLines: () => timesheetLeaveLines,
     timesheetListBucket: () => timesheetListBucket,
+    timesheetOwnerWriteFields: () => timesheetOwnerWriteFields,
     timesheetPaymentRunPeriodsFromWindow: () => timesheetPaymentRunPeriodsFromWindow,
     timesheetPeriodContainsDay: () => timesheetPeriodContainsDay,
     timesheetPeriodFromInvoicing: () => timesheetPeriodFromInvoicing,
@@ -402,6 +418,7 @@ var ProjectPlannerCanonical = (() => {
     timesheetSubmissionNoticeDedupKey: () => timesheetSubmissionNoticeDedupKey,
     timesheetSubmissionToFirestore: () => timesheetSubmissionToFirestore,
     timesheetTimestampMs: () => timesheetTimestampMs,
+    timesheetWriterIsReviewer: () => timesheetWriterIsReviewer,
     tokenizeMaterialSearch: () => tokenizeMaterialSearch,
     tokenizeQualificationSearch: () => tokenizeQualificationSearch,
     unbookedLabourRows: () => unbookedLabourRows,
@@ -536,8 +553,8 @@ var ProjectPlannerCanonical = (() => {
   var WEB_SESSION_ORGANIZATION_STORAGE_PREFIX = "pp.webActiveOrg:";
   var IOS_SESSION_ORGANIZATION_STORAGE_KEY = "cached_organizationId";
   function webSessionOrganizationStorageKey(userId) {
-    const id = String(userId || "").trim();
-    return id ? `${WEB_SESSION_ORGANIZATION_STORAGE_PREFIX}${id}` : "";
+    const id2 = String(userId || "").trim();
+    return id2 ? `${WEB_SESSION_ORGANIZATION_STORAGE_PREFIX}${id2}` : "";
   }
   function shouldClearRememberedOrganization(input) {
     const previous = String(input.signedOutUserId || "").trim();
@@ -676,8 +693,8 @@ var ProjectPlannerCanonical = (() => {
     if (typeof value === "number") {
       return Number.isFinite(value) && value >= 0 && value <= 24 * 60 ? Math.round(value) : null;
     }
-    const text8 = String(value ?? "").trim();
-    const match = /^(\d{1,2}):(\d{2})$/.exec(text8);
+    const text9 = String(value ?? "").trim();
+    const match = /^(\d{1,2}):(\d{2})$/.exec(text9);
     if (!match) return null;
     const hours = Number(match[1]);
     const minutes = Number(match[2]);
@@ -1255,8 +1272,8 @@ var ProjectPlannerCanonical = (() => {
   function labourPersonIds(person) {
     const ids = /* @__PURE__ */ new Set();
     if (person.id) ids.add(String(person.id));
-    for (const id of person.formerIds || []) {
-      const trimmed6 = String(id || "").trim();
+    for (const id2 of person.formerIds || []) {
+      const trimmed6 = String(id2 || "").trim();
       if (trimmed6) ids.add(trimmed6);
     }
     return [...ids];
@@ -1264,8 +1281,8 @@ var ProjectPlannerCanonical = (() => {
   function formerIdAliases(people) {
     const aliases = {};
     for (const person of people) {
-      for (const id of labourPersonIds(person)) {
-        if (id !== person.id && !(id in aliases)) aliases[id] = person.id;
+      for (const id2 of labourPersonIds(person)) {
+        if (id2 !== person.id && !(id2 in aliases)) aliases[id2] = person.id;
       }
     }
     return aliases;
@@ -1314,8 +1331,8 @@ var ProjectPlannerCanonical = (() => {
     const timeZone = zoneOf2(input.timeZone);
     const people = listedCurrentLabourPeople(input.people);
     const operatives = listedCurrentLabourPeople(input.operatives);
-    const excludedIds = new Set((input.excludedUserIds || []).map((id) => String(id)));
-    const isExcluded = (person) => labourPersonIds(person).some((id) => excludedIds.has(id));
+    const excludedIds = new Set((input.excludedUserIds || []).map((id2) => String(id2)));
+    const isExcluded = (person) => labourPersonIds(person).some((id2) => excludedIds.has(id2));
     const dayPolicy = {
       standardDayStart: input.standardDayStart,
       standardDayEnd: input.standardDayEnd,
@@ -1354,25 +1371,25 @@ var ProjectPlannerCanonical = (() => {
       const email = emailKey(person.email);
       if (!email || !person.id) continue;
       const ids = userIdsByEmail.get(email) || /* @__PURE__ */ new Set();
-      for (const id of labourPersonIds(person)) ids.add(id);
+      for (const id2 of labourPersonIds(person)) ids.add(id2);
       userIdsByEmail.set(email, ids);
     }
     const withFormerIds = (target, userId) => {
       if (!userId) return;
-      for (const id of idsByUserId.get(userId) || [userId]) target.add(id);
+      for (const id2 of idsByUserId.get(userId) || [userId]) target.add(id2);
     };
     const slotsFor = (email, operativeId, userId, dayKey) => {
       const ids = /* @__PURE__ */ new Set();
       if (operativeId) ids.add(operativeId);
       withFormerIds(ids, userId);
       const linked = operativeIdsByEmail.get(email);
-      if (linked) for (const id of linked) ids.add(id);
+      if (linked) for (const id2 of linked) ids.add(id2);
       const linkedUsers = userIdsByEmail.get(email);
-      if (linkedUsers) for (const id of linkedUsers) ids.add(id);
+      if (linkedUsers) for (const id2 of linkedUsers) ids.add(id2);
       const slots = [];
-      for (const id of ids) {
-        slots.push(...operativeBookings.get(`${id}|${dayKey}`) || []);
-        slots.push(...managerBookings.get(`${id}|${dayKey}`) || []);
+      for (const id2 of ids) {
+        slots.push(...operativeBookings.get(`${id2}|${dayKey}`) || []);
+        slots.push(...managerBookings.get(`${id2}|${dayKey}`) || []);
       }
       return slots;
     };
@@ -1381,11 +1398,11 @@ var ProjectPlannerCanonical = (() => {
       const userIds = /* @__PURE__ */ new Set();
       withFormerIds(userIds, userId);
       const linkedUsers = userIdsByEmail.get(email);
-      if (linkedUsers) for (const id of linkedUsers) userIds.add(id);
+      if (linkedUsers) for (const id2 of linkedUsers) userIds.add(id2);
       const operativeIds = /* @__PURE__ */ new Set();
       if (operativeId) operativeIds.add(operativeId);
       const linkedOps = operativeIdsByEmail.get(email);
-      if (linkedOps) for (const id of linkedOps) operativeIds.add(id);
+      if (linkedOps) for (const id2 of linkedOps) operativeIds.add(id2);
       return approvedHolidays.some((holiday) => {
         if (dayKey < holiday.startDayKey || dayKey > holiday.endDayKey) return false;
         const holidayUser = String(holiday.userId || "").trim();
@@ -1536,8 +1553,8 @@ var ProjectPlannerCanonical = (() => {
   }
   function formatHours(hours) {
     const rounded = Math.round(hours * 4) / 4;
-    const text8 = Number.isInteger(rounded) ? String(rounded) : String(rounded).replace(/0+$/, "");
-    return `${text8} hour${rounded === 1 ? "" : "s"}`;
+    const text9 = Number.isInteger(rounded) ? String(rounded) : String(rounded).replace(/0+$/, "");
+    return `${text9} hour${rounded === 1 ? "" : "s"}`;
   }
   function joinRanges(intervals) {
     const labels = intervals.map(rangeLabel);
@@ -1547,7 +1564,7 @@ var ProjectPlannerCanonical = (() => {
   function leaveCoverageRows(input) {
     const timeZone = zoneOrLondon(input.timeZone);
     const windows = halfDayWindows(input.day);
-    const excluded = new Set((input.excludedUserIds || []).map((id) => String(id)));
+    const excluded = new Set((input.excludedUserIds || []).map((id2) => String(id2)));
     const approvedLeave = input.leave.filter((record3) => record3.approved && record3.startDayKey && record3.endDayKey);
     if (approvedLeave.length === 0) return [];
     const peopleByUserId = /* @__PURE__ */ new Map();
@@ -2526,10 +2543,10 @@ var ProjectPlannerCanonical = (() => {
     return existingDocumentCount === 0;
   }
   function missingStarterQualificationCodes(existingDocumentIds, libraryCodes) {
-    const have = new Set(existingDocumentIds.map((id) => String(id || "").trim()).filter(Boolean));
+    const have = new Set(existingDocumentIds.map((id2) => String(id2 || "").trim()).filter(Boolean));
     return libraryCodes.filter((code) => {
-      const id = String(code || "").trim();
-      return Boolean(id) && !have.has(id);
+      const id2 = String(code || "").trim();
+      return Boolean(id2) && !have.has(id2);
     });
   }
   var WEEKEND_FIELD_FALLBACK = {
@@ -2666,7 +2683,7 @@ var ProjectPlannerCanonical = (() => {
   }
   function stringIdList(value) {
     if (!Array.isArray(value)) return [];
-    return value.map((id) => String(id).trim()).filter(Boolean);
+    return value.map((id2) => String(id2).trim()).filter(Boolean);
   }
   function parseWeekend(data, dayDefault) {
     if (!data || typeof data !== "object") return { ...dayDefault };
@@ -3067,8 +3084,8 @@ var ProjectPlannerCanonical = (() => {
     if (!Array.isArray(raw)) return [];
     const ids = /* @__PURE__ */ new Set();
     for (const value of raw) {
-      const id = typeof value === "string" ? value.trim() : "";
-      if (id) ids.add(id);
+      const id2 = typeof value === "string" ? value.trim() : "";
+      if (id2) ids.add(id2);
     }
     return [...ids];
   }
@@ -3367,6 +3384,13 @@ var ProjectPlannerCanonical = (() => {
     if (!key2) return true;
     return prefs[key2] !== false;
   }
+  var NOTIFICATION_TOGGLE_HIDES_INBOX_ROW = false;
+  function notificationShowsInInbox(_prefs, _type) {
+    return true;
+  }
+  function devicePushAllowed(prefs, type) {
+    return notificationDeliversDevicePush(type) && notificationPreferenceAllowsDelivery(prefs, type);
+  }
   var DEVICE_PUSH_NOTIFICATION_TYPES = [
     "booking_created",
     "booked_onto_job",
@@ -3384,6 +3408,10 @@ var ProjectPlannerCanonical = (() => {
     "material_order_placed",
     "material_order_created",
     "variation",
+    "variation_renumbered",
+    "variation_added",
+    "variation_from_tracker",
+    "variation_numbers_updated",
     "warning_removed",
     "operative_created",
     "manager_created",
@@ -3565,17 +3593,17 @@ var ProjectPlannerCanonical = (() => {
   }
   function holidayRequestWriteFields(input) {
     const zone3 = zoneOrLondon(input.timeZone);
-    const id = text(input.id);
+    const id2 = text(input.id);
     const organizationId = text(input.organizationId);
     const userId = text(input.userId) || null;
     const operativeId = text(input.operativeId) || null;
     const startDayKey = text(input.startDayKey);
-    if (!id || !organizationId || !userId && !operativeId || !DAY_KEY.test(startDayKey)) return null;
+    if (!id2 || !organizationId || !userId && !operativeId || !DAY_KEY.test(startDayKey)) return null;
     const endRaw = text(input.endDayKey);
     const endDayKey = DAY_KEY.test(endRaw) && endRaw >= startDayKey ? endRaw : startDayKey;
     const status = normalizeHolidayStatus(input.status || "pending");
     return {
-      id,
+      id: id2,
       organizationId,
       userId,
       operativeId,
@@ -3608,10 +3636,10 @@ var ProjectPlannerCanonical = (() => {
     const self = text(user?.id);
     const active = (member) => member.isActive !== false;
     const byId = new Map(members.map((member) => [text(member.id), member]));
-    const managers = lineManagerIds(user).filter((id) => {
-      if (id === self) return false;
+    const managers = lineManagerIds(user).filter((id2) => {
+      if (id2 === self) return false;
       if (members.length === 0) return true;
-      const member = byId.get(id);
+      const member = byId.get(id2);
       return Boolean(member && active(member));
     });
     if (managers.length > 0) return managers;
@@ -4087,15 +4115,15 @@ var ProjectPlannerCanonical = (() => {
   }
   function assignedQualificationWriteFields(row) {
     if (!row) return null;
-    const id = trimId(row.id);
+    const id2 = trimId(row.id);
     const name = String(row.name || "").trim();
-    if (!id || !name) return null;
+    if (!id2 || !name) return null;
     const now = (/* @__PURE__ */ new Date()).toISOString();
     const createdAtIso = isoFromUnknown(row.createdAtIso) || isoFromUnknown(row.createdAt) || now;
     const updatedAtIso = isoFromUnknown(row.updatedAtIso) || isoFromUnknown(row.updatedAt) || createdAtIso;
     const endDateIso = isoFromUnknown(row.endDateIso) || isoFromUnknown(row.endDate);
     const write = {
-      id,
+      id: id2,
       name,
       hasEndDate: row.hasEndDate === true,
       createdAtIso,
@@ -4106,11 +4134,11 @@ var ProjectPlannerCanonical = (() => {
   }
   function qualificationCertificateUrl(urls, qualificationId) {
     if (!urls) return void 0;
-    const id = trimId(qualificationId);
-    if (!id) return void 0;
-    const direct = urls[id];
+    const id2 = trimId(qualificationId);
+    if (!id2) return void 0;
+    const direct = urls[id2];
     if (typeof direct === "string" && direct.trim()) return direct;
-    const target = id.toLowerCase();
+    const target = id2.toLowerCase();
     for (const [key2, value] of Object.entries(urls)) {
       if (key2.toLowerCase() === target && typeof value === "string" && value.trim()) return value;
     }
@@ -4124,8 +4152,8 @@ var ProjectPlannerCanonical = (() => {
     for (const [key2, value] of Object.entries(uploaded || {})) {
       if (typeof value === "string" && value.trim()) next[key2] = value;
     }
-    for (const id of removedIds || []) {
-      const target = trimId(id).toLowerCase();
+    for (const id2 of removedIds || []) {
+      const target = trimId(id2).toLowerCase();
       if (!target) continue;
       for (const key2 of Object.keys(next)) {
         if (key2.toLowerCase() === target) delete next[key2];
@@ -4135,8 +4163,8 @@ var ProjectPlannerCanonical = (() => {
   }
   function removedQualificationCertificateIds(previousUrls, nextUrls, assignedIds) {
     const removed = [];
-    for (const id of assignedIds) {
-      const key2 = trimId(id);
+    for (const id2 of assignedIds) {
+      const key2 = trimId(id2);
       if (!key2) continue;
       if (qualificationCertificateUrl(previousUrls, key2) && !qualificationCertificateUrl(nextUrls, key2)) {
         removed.push(key2);
@@ -4150,8 +4178,8 @@ var ProjectPlannerCanonical = (() => {
       const iso = isoFromUnknown(value);
       if (iso) expiry[key2] = iso;
     }
-    for (const id of nextAssignmentIds) {
-      const target = id.toLowerCase();
+    for (const id2 of nextAssignmentIds) {
+      const target = id2.toLowerCase();
       for (const key2 of Object.keys(expiry)) {
         if (key2.toLowerCase() === target) delete expiry[key2];
       }
@@ -4508,14 +4536,14 @@ var ProjectPlannerCanonical = (() => {
     const seen = /* @__PURE__ */ new Set();
     const rows = [];
     for (const account of input.accounts ?? []) {
-      const id = key(account.id);
-      if (!id || seen.has(id)) continue;
+      const id2 = key(account.id);
+      if (!id2 || seen.has(id2)) continue;
       if (account.isActive === false || !isStaffAccount(account.role)) continue;
       const ids = accountKeys(account);
       if (ids.some((value) => adder.has(value))) continue;
       const named = ids.some((value) => jobIds.has(value)) || key(account.email) !== "" && jobEmails.has(key(account.email));
       if (!named) continue;
-      seen.add(id);
+      seen.add(id2);
       rows.push({ userId: account.id });
     }
     return rows;
@@ -4640,8 +4668,8 @@ var ProjectPlannerCanonical = (() => {
       if (normalizeEmail2(user.email) !== inviteEmail) continue;
       if (user.passwordSet === true) return { action: "block" };
       if (!isIdentifiablePendingLeftover(user, claimedEmails)) return { action: "block" };
-      const id = trimmedId(user.userId);
-      if (id && !reuseUserId) reuseUserId = id;
+      const id2 = trimmedId(user.userId);
+      if (id2 && !reuseUserId) reuseUserId = id2;
     }
     if (!reuseUserId && pointer?.exists === true && !pointedUser) {
       const pointedId = trimmedId(pointer.pointedUserId);
@@ -4814,8 +4842,8 @@ var ProjectPlannerCanonical = (() => {
   };
   var UUID_PATTERN = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
   var LEGACY_PLACEHOLDER_DOCUMENT_ID = "INITIAL-PLACEHOLDER";
-  function isLegacyPlaceholderDocumentId(id) {
-    return (id || "").trim().toUpperCase() === LEGACY_PLACEHOLDER_DOCUMENT_ID;
+  function isLegacyPlaceholderDocumentId(id2) {
+    return (id2 || "").trim().toUpperCase() === LEGACY_PLACEHOLDER_DOCUMENT_ID;
   }
   function text2(value) {
     return typeof value === "string" ? value.trim() : "";
@@ -4959,14 +4987,14 @@ var ProjectPlannerCanonical = (() => {
   }
   function bookingWriteFields(input) {
     const errors = [];
-    const id = text2(input.id);
+    const id2 = text2(input.id);
     const operativeId = text2(input.operativeId);
     const projectId = text2(input.projectId);
     const bookedBy = text2(input.bookedBy);
     const status = normalizeBookingStatus(input.status);
     const timeSlot = normalizeBookingTimeSlot(input.timeSlot);
     const dateMs = finiteNumber(input.dateMs);
-    if (!id) errors.push("missing_id");
+    if (!id2) errors.push("missing_id");
     if (!operativeId) errors.push("missing_operative_id");
     if (!projectId) errors.push("missing_project_id");
     if (dateMs == null) errors.push("missing_date");
@@ -4975,7 +5003,7 @@ var ProjectPlannerCanonical = (() => {
     if (!status) errors.push("bad_status");
     if (errors.length > 0 || dateMs == null || !status || !timeSlot) return { ok: false, errors };
     const fields = {
-      id,
+      id: id2,
       operativeId,
       projectId,
       date: dateMs,
@@ -5007,7 +5035,7 @@ var ProjectPlannerCanonical = (() => {
     return dayKeyInZone(new Date(dateMs), zoneOrLondon(timeZone)) >= today;
   }
   function bookingsToRemoveOnOperativeDelete(input) {
-    const ids = new Set(input.operativeIds.map((id) => text2(id).toUpperCase()).filter(Boolean));
+    const ids = new Set(input.operativeIds.map((id2) => text2(id2).toUpperCase()).filter(Boolean));
     if (ids.size === 0) return [];
     const today = todayKey(input.nowIso, input.timeZone);
     return input.bookings.filter((row) => ids.has(text2(row.operativeId).toUpperCase()) && onOrAfterToday(row.dateMs, today, input.timeZone)).map((row) => row.id);
@@ -5019,17 +5047,17 @@ var ProjectPlannerCanonical = (() => {
     return input.bookings.filter((row) => text2(row.projectId).toUpperCase() === projectId && onOrAfterToday(row.dateMs, today, input.timeZone)).map((row) => row.id);
   }
   function bookingJobState(projectId, liveProjectIds) {
-    const id = text2(projectId).toUpperCase();
-    if (!id) return "deleted_job";
+    const id2 = text2(projectId).toUpperCase();
+    if (!id2) return "deleted_job";
     const ids = Array.isArray(liveProjectIds) ? liveProjectIds : Array.from(liveProjectIds);
-    return ids.some((row) => text2(row).toUpperCase() === id) ? "live" : "deleted_job";
+    return ids.some((row) => text2(row).toUpperCase() === id2) ? "live" : "deleted_job";
   }
   function bookingJobLabel(projectName) {
     return text2(projectName) || ORPHAN_BOOKING_LABEL;
   }
   function bookingHealthRows(input) {
-    const people = new Set([...input.operativeIds, ...input.userIds].map((id) => text2(id).toUpperCase()).filter(Boolean));
-    const jobs = new Set(input.projectIds.map((id) => text2(id).toUpperCase()).filter(Boolean));
+    const people = new Set([...input.operativeIds, ...input.userIds].map((id2) => text2(id2).toUpperCase()).filter(Boolean));
+    const jobs = new Set(input.projectIds.map((id2) => text2(id2).toUpperCase()).filter(Boolean));
     const rows = [];
     for (const doc of input.docs) {
       const parsed = parseBookingDocument(doc.id, doc.data);
@@ -5151,14 +5179,14 @@ var ProjectPlannerCanonical = (() => {
     const ids = [];
     const seen = /* @__PURE__ */ new Set();
     const add = (raw) => {
-      const id = typeof raw === "string" ? raw.trim() : "";
-      const key2 = id.toLowerCase();
-      if (!id || seen.has(key2)) return;
+      const id2 = typeof raw === "string" ? raw.trim() : "";
+      const key2 = id2.toLowerCase();
+      if (!id2 || seen.has(key2)) return;
       seen.add(key2);
-      ids.push(id);
+      ids.push(id2);
     };
-    for (const id of labourPersonIds({ id: account.id, formerIds: account.formerIds ? [...account.formerIds] : [] })) add(id);
-    for (const id of account.aliasIds || []) add(id);
+    for (const id2 of labourPersonIds({ id: account.id, formerIds: account.formerIds ? [...account.formerIds] : [] })) add(id2);
+    for (const id2 of account.aliasIds || []) add(id2);
     const email = emailKey2(account.email);
     if (email) {
       for (const operative of operatives) {
@@ -5171,7 +5199,7 @@ var ProjectPlannerCanonical = (() => {
     const needle = idKey2(operativeId);
     if (!needle) return { accountId: null, operativeId: null, email: null };
     const operative = input.operatives.find((row) => idKey2(row.id) === needle) || null;
-    let account = input.accounts.find((row) => idKey2(row.id) === needle) || input.accounts.find((row) => (row.formerIds || []).some((id) => idKey2(id) === needle)) || input.accounts.find((row) => (row.aliasIds || []).some((id) => idKey2(id) === needle)) || null;
+    let account = input.accounts.find((row) => idKey2(row.id) === needle) || input.accounts.find((row) => (row.formerIds || []).some((id2) => idKey2(id2) === needle)) || input.accounts.find((row) => (row.aliasIds || []).some((id2) => idKey2(id2) === needle)) || null;
     const operativeEmail = emailKey2(operative?.email);
     if (!account && operativeEmail) {
       account = input.accounts.find((row) => emailKey2(row.email) === operativeEmail) || null;
@@ -5197,16 +5225,16 @@ var ProjectPlannerCanonical = (() => {
     const ids = [];
     const seen = /* @__PURE__ */ new Set();
     const add = (raw) => {
-      const id = (raw || "").trim();
-      if (!id || seen.has(id.toLowerCase())) return;
-      seen.add(id.toLowerCase());
-      ids.push(id);
+      const id2 = (raw || "").trim();
+      if (!id2 || seen.has(id2.toLowerCase())) return;
+      seen.add(id2.toLowerCase());
+      ids.push(id2);
     };
     add(first);
     const person = resolveBookingPerson(first, input);
     add(person.operativeId);
     const account = person.accountId ? input.accounts.find((row) => row.id === person.accountId) : void 0;
-    if (account) for (const id of bookingIdsForAccount(account, input.operatives)) add(id);
+    if (account) for (const id2 of bookingIdsForAccount(account, input.operatives)) add(id2);
     return ids;
   }
 
@@ -5509,8 +5537,8 @@ var ProjectPlannerCanonical = (() => {
     return typeof value === "string" ? value.trim().toLowerCase() : "";
   }
   function dayKeyText(value) {
-    const text8 = typeof value === "string" ? value.trim() : "";
-    return DAY_KEY2.test(text8) ? text8 : null;
+    const text9 = typeof value === "string" ? value.trim() : "";
+    return DAY_KEY2.test(text9) ? text9 : null;
   }
   function compareText(a, b) {
     if (a === b) return 0;
@@ -5521,11 +5549,11 @@ var ProjectPlannerCanonical = (() => {
     const seen = /* @__PURE__ */ new Set();
     const out = [];
     for (const raw of values) {
-      const id = idText(raw);
-      const key2 = id.toLowerCase();
-      if (!id || skip.has(key2) || seen.has(key2)) continue;
+      const id2 = idText(raw);
+      const key2 = id2.toLowerCase();
+      if (!id2 || skip.has(key2) || seen.has(key2)) continue;
       seen.add(key2);
-      out.push(id);
+      out.push(id2);
     }
     return out.sort(compareText);
   }
@@ -5561,11 +5589,11 @@ var ProjectPlannerCanonical = (() => {
     const order = [];
     const groups = /* @__PURE__ */ new Map();
     for (const doc of docs || []) {
-      const id = idText(doc?.id);
-      if (!id || seenIds.has(id.toLowerCase())) continue;
-      seenIds.add(id.toLowerCase());
+      const id2 = idText(doc?.id);
+      if (!id2 || seenIds.has(id2.toLowerCase())) continue;
+      seenIds.add(id2.toLowerCase());
       const email = emailKey3(doc.email);
-      const key2 = email || `id:${id.toLowerCase()}`;
+      const key2 = email || `id:${id2.toLowerCase()}`;
       const list = groups.get(key2);
       if (list) list.push(doc);
       else {
@@ -5637,9 +5665,9 @@ var ProjectPlannerCanonical = (() => {
   }
   function personDayItems(input) {
     const managerIdByKey = /* @__PURE__ */ new Map();
-    for (const id of input?.managerIds || []) {
-      const text8 = idText(id);
-      if (text8) managerIdByKey.set(text8.toLowerCase(), text8);
+    for (const id2 of input?.managerIds || []) {
+      const text9 = idText(id2);
+      if (text9) managerIdByKey.set(text9.toLowerCase(), text9);
     }
     const people = input?.people || { accounts: [], operatives: [] };
     const managerIdByEmail = /* @__PURE__ */ new Map();
@@ -5667,18 +5695,18 @@ var ProjectPlannerCanonical = (() => {
       days.set(key2, day);
     };
     (input?.managerBookings || []).forEach((booking, index) => {
-      const id = idText(booking?.id);
+      const id2 = idText(booking?.id);
       const day = dayKeyText(booking?.dayKey);
-      if (!id || !day || !occupiesDay(booking.status)) return;
+      if (!id2 || !day || !occupiesDay(booking.status)) return;
       const owner = ownerOf(idText(booking.userId));
-      if (owner) push(owner, day, { kind: "manager", bookingId: id, pairId: `m-${id}`, index });
+      if (owner) push(owner, day, { kind: "manager", bookingId: id2, pairId: `m-${id2}`, index });
     });
     (input?.operativeBookings || []).forEach((booking, index) => {
-      const id = idText(booking?.id);
+      const id2 = idText(booking?.id);
       const day = dayKeyText(booking?.dayKey);
-      if (!id || !day || !occupiesDay(booking.status)) return;
+      if (!id2 || !day || !occupiesDay(booking.status)) return;
       const owner = ownerOf(idText(booking.operativeId));
-      if (owner) push(owner, day, { kind: "operative", bookingId: id, pairId: `o-${id}`, index });
+      if (owner) push(owner, day, { kind: "operative", bookingId: id2, pairId: `o-${id2}`, index });
     });
     return Array.from(days.values()).map((day) => ({ ...day, items: [...day.items].sort((a, b) => compareText(a.pairId, b.pairId)) })).sort((a, b) => compareText(a.dayKey, b.dayKey) || compareText(a.userId, b.userId));
   }
@@ -5733,8 +5761,8 @@ var ProjectPlannerCanonical = (() => {
       return Boolean(rowA && rowB) && clashPairKey(rowA, rowB) === key2;
     });
   }
-  function validDocumentId(id) {
-    return Boolean(id) && !id.includes("/") && id !== "." && id !== ".." && !/^__.*__$/.test(id) && id.length <= 1500;
+  function validDocumentId(id2) {
+    return Boolean(id2) && !id2.includes("/") && id2 !== "." && id2 !== ".." && !/^__.*__$/.test(id2) && id2.length <= 1500;
   }
   function acceptedClashWriteFields(input) {
     const a = idText(input?.bookingAId);
@@ -6048,8 +6076,8 @@ var ProjectPlannerCanonical = (() => {
   // lib/canonical/rulebookStamp.ts
   function rulebookStamp() {
     return {
-      version: true ? "1.0.0" : "",
-      sha256: true ? "f616b45a005d0d8de263ba48ed7636aeb5a29e29eaff4ee6f3df28704e6ccb26" : ""
+      version: true ? "1.1.0" : "",
+      sha256: true ? "36f61c979df49622f619e6c101e83b9d24e4d7694e494db53762af3c2b9e826c" : ""
     };
   }
 
@@ -6181,8 +6209,8 @@ var ProjectPlannerCanonical = (() => {
   function overlappingBookingIds(bookings, day) {
     const byDay = /* @__PURE__ */ new Map();
     for (const booking of bookings || []) {
-      const id = String(booking?.id || "").trim();
-      if (!id) continue;
+      const id2 = String(booking?.id || "").trim();
+      if (!id2) continue;
       const key2 = String(booking.dayKey || "").trim();
       const list = byDay.get(key2) || [];
       list.push(booking);
@@ -6203,8 +6231,8 @@ var ProjectPlannerCanonical = (() => {
     }
     const out = [];
     for (const booking of bookings || []) {
-      const id = String(booking?.id || "").trim();
-      if (id && flagged.has(id) && !out.includes(id)) out.push(id);
+      const id2 = String(booking?.id || "").trim();
+      if (id2 && flagged.has(id2) && !out.includes(id2)) out.push(id2);
     }
     return out;
   }
@@ -6628,18 +6656,18 @@ var ProjectPlannerCanonical = (() => {
     return typeof value === "string" ? value.trim() : "";
   }
   function documentId(value) {
-    const id = trimmed5(value);
-    if (!id || id.includes("/")) return "";
-    return id;
+    const id2 = trimmed5(value);
+    if (!id2 || id2.includes("/")) return "";
+    return id2;
   }
   function isTombstonedBookingCollection(value) {
     return TOMBSTONED_BOOKING_COLLECTIONS.includes(trimmed5(value));
   }
   function bookingTombstonePath(organizationId, bookingId) {
     const org = documentId(organizationId);
-    const id = documentId(bookingId);
-    if (!org || !id) return null;
-    return `organizations/${org}/${BOOKING_TOMBSTONE_COLLECTION}/${id}`;
+    const id2 = documentId(bookingId);
+    if (!org || !id2) return null;
+    return `organizations/${org}/${BOOKING_TOMBSTONE_COLLECTION}/${id2}`;
   }
   function bookingTombstoneWriteFields(input) {
     const bookingId = documentId(input.bookingId);
@@ -6683,8 +6711,8 @@ var ProjectPlannerCanonical = (() => {
     const ids = /* @__PURE__ */ new Set();
     for (const record3 of records || []) {
       if (!record3 || text7(record3.requestType).toLowerCase() !== "order") continue;
-      for (const id of record3.materialIds || []) {
-        const value = text7(id);
+      for (const id2 of record3.materialIds || []) {
+        const value = text7(id2);
         if (value) ids.add(value);
       }
       for (const line of record3.lines || []) {
@@ -6735,10 +6763,10 @@ var ProjectPlannerCanonical = (() => {
       if (lines.length > 0 && unordered.length === 0) continue;
       const jobNumber = text7(project.jobNumber) || text7(project.siteName) || projectId.slice(0, 8);
       const message = lines.length === 0 ? `No materials have been ordered for ${jobNumber} tomorrow's work (cut-off ${cutOffLabel}).` : `Materials for ${jobNumber} were not fully ordered by the cut-off ${cutOffLabel} for tomorrow's work (${unordered.length} line${unordered.length === 1 ? "" : "s"} still not ordered).`;
-      const id = `materials-${projectId}-${tomorrowKey}`;
+      const id2 = `materials-${projectId}-${tomorrowKey}`;
       rows.push({
-        id,
-        resolutionKey: id,
+        id: id2,
+        resolutionKey: id2,
         type: "missed_material_order",
         severity: "low",
         title: "Material order not placed",
@@ -6765,6 +6793,157 @@ var ProjectPlannerCanonical = (() => {
     const min = passwordMinLength(options);
     if (value.length < min) return `Password must be at least ${min} characters.`;
     return null;
+  }
+
+  // lib/canonical/timesheetEntryReviews.ts
+  var TIMESHEET_ENTRY_DECISIONS = ["pending", "approved", "declined", "edited"];
+  var TIMESHEET_ENTRY_REVIEWS_FIELD = "extraEntryReviews";
+  var TIMESHEET_REVIEWER_ONLY_FIELDS = ["payrollLineReviews", "extraEntryReviews"];
+  var TIMESHEET_SELF_SIGNED_OWNER_FIELDS = ["weeklyReportOverride"];
+  var TIMESHEET_ENTRY_ARRAY_FIELDS = ["expenseEntries", "priceWorkEntries"];
+  var AMOUNT_EPSILON = 5e-3;
+  function finite(value) {
+    const number = typeof value === "number" ? value : typeof value === "string" && value.trim() ? Number(value) : NaN;
+    return Number.isFinite(number) ? number : null;
+  }
+  function text8(value) {
+    return typeof value === "string" ? value.trim() : "";
+  }
+  function parseTimesheetEntryDecision(raw) {
+    return TIMESHEET_ENTRY_DECISIONS.includes(raw) ? raw : "approved";
+  }
+  function parseReview(raw) {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+    const row = raw;
+    const decision = parseTimesheetEntryDecision(row.decision);
+    return {
+      decision,
+      revisedAmount: decision === "edited" ? finite(row.revisedAmount) : null,
+      reviewedAmount: finite(row.reviewedAmount),
+      reviewedByUserId: text8(row.reviewedByUserId),
+      reviewedAtMs: finite(row.reviewedAtMs)
+    };
+  }
+  function parseTimesheetEntryReviews(sheet) {
+    const raw = sheet ? sheet[TIMESHEET_ENTRY_REVIEWS_FIELD] : void 0;
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+    const output = {};
+    for (const [entryId, value] of Object.entries(raw)) {
+      const review = parseReview(value);
+      if (review && entryId.trim()) output[entryId] = review;
+    }
+    return output;
+  }
+  function timesheetEntryEffectiveAmount(decision, revisedAmount, amount) {
+    if (decision === "declined") return 0;
+    if (decision === "edited") return finite(revisedAmount) ?? amount;
+    return amount;
+  }
+  function timesheetEntryDecision(sheet, entry) {
+    const row = entry || {};
+    const id2 = text8(row.id);
+    const amount = finite(row.amount) ?? 0;
+    const inlineDecision = parseTimesheetEntryDecision(row.managerDecision);
+    const inline = {
+      decision: inlineDecision,
+      revisedAmount: inlineDecision === "edited" ? finite(row.managerRevisedAmount) : null,
+      source: "legacy-inline"
+    };
+    const reviews = parseTimesheetEntryReviews(sheet);
+    let base;
+    if (reviews == null) {
+      const managerSigned = parseTimesheetStatusFields(sheet || {}).managerSignedAtMs != null;
+      if (managerSigned) return inline;
+      base = { decision: "approved", revisedAmount: null, source: "unreviewed" };
+    } else {
+      const review = id2 ? reviews[id2] : void 0;
+      if (!review) {
+        base = { decision: "approved", revisedAmount: null, source: "unreviewed" };
+      } else if (review.reviewedAmount != null && Math.abs(review.reviewedAmount - amount) >= AMOUNT_EPSILON) {
+        base = { decision: "pending", revisedAmount: null, source: "stale-review" };
+      } else {
+        base = { decision: review.decision, revisedAmount: review.revisedAmount, source: "review" };
+      }
+    }
+    const inlinePaid = timesheetEntryEffectiveAmount(inline.decision, inline.revisedAmount, amount);
+    const basePaid = timesheetEntryEffectiveAmount(base.decision, base.revisedAmount, amount);
+    if (inlinePaid < basePaid - AMOUNT_EPSILON) return { ...inline, source: "inline-lower" };
+    return base;
+  }
+  function sameNumber(a, b) {
+    const left = finite(a);
+    const right = finite(b);
+    if (left == null || right == null) return left == null && right == null;
+    return Math.abs(left - right) < AMOUNT_EPSILON;
+  }
+  function timesheetEntryReviewWriteFields(input) {
+    const stored = input.stored || {};
+    const reviewer = text8(input.reviewedByUserId);
+    const output = {};
+    for (const entry of input.entries) {
+      const id2 = text8(entry.id);
+      if (!id2 || /[.`~*/[\]]/.test(id2)) continue;
+      const decision = parseTimesheetEntryDecision(entry.managerDecision);
+      const revisedAmount = decision === "edited" ? finite(entry.managerRevisedAmount) : null;
+      const amount = finite(entry.amount) ?? 0;
+      const prior = stored[id2];
+      if (input.stored && prior && prior.decision === decision && sameNumber(prior.revisedAmount, revisedAmount) && sameNumber(prior.reviewedAmount, amount)) {
+        continue;
+      }
+      output[`${TIMESHEET_ENTRY_REVIEWS_FIELD}.${id2}`] = {
+        decision,
+        revisedAmount,
+        reviewedAmount: amount,
+        reviewedByUserId: reviewer,
+        reviewedAtMs: Math.round(Number(input.reviewedAtMs) || 0)
+      };
+    }
+    return output;
+  }
+  function timesheetEntryReviewsAfterWrite(stored, written) {
+    const keys = Object.keys(written);
+    if (keys.length === 0) return stored ?? null;
+    const output = { ...stored || {} };
+    const prefix = `${TIMESHEET_ENTRY_REVIEWS_FIELD}.`;
+    for (const key2 of keys) {
+      const review = parseReview(written[key2]);
+      if (review && key2.startsWith(prefix)) output[key2.slice(prefix.length)] = review;
+    }
+    return output;
+  }
+  function timesheetWriterIsReviewer(input) {
+    const writer = text8(input.writerUserId).toLowerCase();
+    if (!writer) return false;
+    if (input.writerIsAdmin === true) return true;
+    if (writer === text8(input.subjectUserId).toLowerCase()) return false;
+    const keys = new Set([writer, ...(input.writerFormerIds ?? []).map((id2) => text8(id2).toLowerCase())].filter(Boolean));
+    return (input.subjectLineManagerIds ?? []).some((id2) => keys.has(text8(id2).toLowerCase()));
+  }
+  function timesheetOwnerWriteFields(fields, input) {
+    const output = { ...fields };
+    for (const key2 of TIMESHEET_REVIEWER_ONLY_FIELDS) delete output[key2];
+    for (const key2 of Object.keys(output)) {
+      if (key2.startsWith(`${TIMESHEET_ENTRY_REVIEWS_FIELD}.`)) delete output[key2];
+    }
+    if (input.subjectHasLineManager) {
+      for (const key2 of TIMESHEET_SELF_SIGNED_OWNER_FIELDS) delete output[key2];
+    }
+    if (input.managerSigned) {
+      for (const key2 of TIMESHEET_ENTRY_ARRAY_FIELDS) delete output[key2];
+    }
+    return output;
+  }
+
+  // lib/canonical/payAccess.ts
+  function id(value) {
+    return typeof value === "string" ? value.trim().toLowerCase() : "";
+  }
+  function canChangePersonPay(writer, subject) {
+    const writerId = id(writer.userId);
+    if (!writerId) return false;
+    if (writer.isPlatformOwner === true || writer.isAdmin === true) return true;
+    if (writerId === id(subject.userId)) return false;
+    return writer.isManager === true && writer.hasOperativesAccess === true && writer.isOperativeMode !== true && subject.isOperative === true;
   }
   return __toCommonJS(bundleEntry_exports);
 })();

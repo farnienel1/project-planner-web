@@ -1,6 +1,6 @@
 # Project Planner Rulebook
 
-Version: 1.0.0
+Version: 1.1.0
 Updated: 2026-10-31
 
 This is the one rulebook for every Project Planner platform: web, iOS and (later) Android. It is written platform-neutral. Each rule names the shared function in `lib/canonical` that implements it; platforms call that function (web `@/lib/canonical`, iOS `CanonicalBusinessEngine`, Android the same packed script) and never keep a second copy.
@@ -140,6 +140,10 @@ Generated live for any chosen date range from current bookings, Daily Overview, 
 - Example: PAYE → self-employed changed on Tuesday, effective Wednesday: Monday and Tuesday show 0, Wednesday onwards show figures for days worked.
 - **Overlapping bookings are each paid** and never merged. An overlap is a warning managers should have caught; on the timesheet each overlapping line is shown in amber for the person and their line manager with "Overlaps another booking — check with your manager" (`overlappingBookingIds`, `OVERLAPPING_BOOKING_NOTE`). Times that only touch do not overlap.
 
+**Who may change pay** (`canChangePersonPay`). A person never changes their own pay, line manager or employment type on any path — `users/{uid}`, `operativeProfiles/{uid}`, `operativeDayRateHistory`, or the pay fields of `operatives/{id}` and `managers/{id}`. An admin may (including their own rate). A manager with Operatives access may change an operative's pay in the same company, never their own or another manager's; a manager's pay is changed by admins only. Resending an unchanged value is not a change.
+
+**Timesheet review** (`timesheetEntryReviews`). Only the person's line manager or an admin writes `payrollLineReviews` and `extraEntryReviews`. The decision for a price-work or expense entry is `extraEntryReviews[entryId] { decision, revisedAmount, reviewedAmount, reviewedByUserId, reviewedAtMs }` (`timesheetEntryDecision`, written with `timesheetEntryReviewWriteFields` as dotted partial updates). A review made against a different amount is stale and the entry is pending again; an entry nobody reviewed counts at its own amount. The inline `managerDecision` / `managerRevisedAmount` on an entry is still written for older builds and counts only when it lowers what is paid, or on a legacy sheet (no map) the line manager already signed. Owner saves go through `timesheetOwnerWriteFields`: the person writes `weeklyReportOverride` only when they have no line manager (self-signed), cannot change price work or expenses once the line manager has signed, and writes `managerNote` (their own note to the manager). Whether a writer is a reviewer is `timesheetWriterIsReviewer`.
+
 **Calculation.** Hours, overtime and pay come from bookings, the working-hours policy in effect that day and payment runs (`payrollHoursResult`, `workedHoursSplit`). Timesheets are grouped by payment run (`timesheetPeriodFromInvoicing`, `selectableTimesheetPaymentRunPeriods`); status Awaiting / Signed off / Exported is `timesheetListBucket`.
 
 **Annual leave on timesheets.** Each approved leave day in the period appears as an information line "Annual leave (full day / AM / PM)" for the person and their line manager, with no edit control and no hours or pay (`timesheetLeaveLines`, `timesheetLeaveLabel`). Leave never appears on a generated invoice.
@@ -165,8 +169,9 @@ Matches on every platform and updates live: profile photo (`profilePhotoURL`), c
 ## 13. Notifications
 
 - **My notifications** toggles are personal (`users/{uid}.notificationPreferences`), written as dotted partial updates, and sync across platforms (`parseUserNotificationPreferences`, `userNotificationPreferenceFieldPatch`).
-- Which toggles a person sees depends on role and features (`visibleNotificationPreferenceKeys`). People who can see variations (`canSeeVariations`: admins and managers) have a **Variations** toggle (`variations`, on by default) covering `variation`, `variation_renumbered`, `variation_added`, `variation_from_tracker` and `variation_numbers_updated`.
-- A toggle turned off stops that notification type's device push everywhere (enforced by the push Cloud Function) and hides its rows in the inbox and badge (`notificationPreferenceAllowsDelivery`). The notification record itself is still written.
+- Which toggles a person sees depends on role and features (`visibleNotificationPreferenceKeys`). People who can see variations (`canSeeVariations`: admins and managers) have a **Variations** toggle (`variations`, on by default) covering all five variation types.
+- A toggle turned off stops that notification type's **device push** everywhere (`notificationPreferenceAllowsDelivery`, `devicePushAllowed`; enforced by the push Cloud Function). It **never hides the inbox row**: every notice addressed to the person stays in the notification centre and the unread count, on every platform (`notificationShowsInInbox`, `NOTIFICATION_TOGGLE_HIDES_INBOX_ROW = false`). The app-icon badge counts the same unread rows.
+- Types that send a device push are `DEVICE_PUSH_NOTIFICATION_TYPES`, including every variation type (`variation`, `variation_renumbered`, `variation_added`, `variation_from_tracker`, `variation_numbers_updated`).
 - Organisation settings (material cut-off, schedule options) never appear in My notifications.
 - Web never sends browser or OS notifications.
 
@@ -186,9 +191,9 @@ Matches on every platform and updates live: profile photo (`profilePhotoURL`), c
 Deployed only from `project-planner-web/firestore.rules`. Apps hide controls too, but these rules are the guard:
 - **Organisation:** only a current admin edits `organizations/{orgId}`; billing is never written by an app; ownership (`creatorUserId`) passes only from the current Super Admin to another admin (or by the platform owner). A demoted creator cannot edit.
 - **Company settings documents** (`settings/{id}` such as job types and trades): admins and managers. Deadlines and health & safety documents stay open to the team.
-- **Profile:** a person cannot change their own pay (`dayRate`, `hourlyRate`, `payBasis`), line manager, active flag, employment type or permissions. Resending an unchanged value always passes.
+- **Profile and pay:** a person cannot change their own pay (`dayRate`, `hourlyRate`, `payBasis`), line manager, active flag, employment type or permissions — on `users/{uid}`, `operativeProfiles/{uid}`, `operativeDayRateHistory`, `operatives/{id}` or `managers/{id}`. Pay changes are admins, or operatives managers for operatives (§8). Resending an unchanged value always passes.
 - **Annual leave:** a person creates and edits their own pending request and asks to cancel; only an admin or the person's line manager approves or rejects (any manager when the person has no line manager). People allowed to book their own leave save it approved.
-- **Timesheets:** a person never counter-signs or exports their own timesheet; only their line manager or an admin writes the sign-off and export fields.
+- **Timesheets:** a person never counter-signs or exports their own timesheet; only their line manager or an admin writes the sign-off and export fields and the review maps (`payrollLineReviews`, `extraEntryReviews`); after sign-off the person cannot change price work or expenses.
 - **Warnings:** only admins and managers accept a clash or approve/dismiss a warning resolution.
 - **Bookings:** tombstones as in §2.
 - **Write metadata** (`updatedBy` = the signed-in user, `updatedFrom`, `updatedAt`) is validated when present and never required.
@@ -206,6 +211,11 @@ Deployed only from `project-planner-web/firestore.rules`. Apps hide controls too
 7. A gap found on iOS is reported to the web agent and fixed here first — never by diverging on iOS.
 
 ## Changelog
+
+### 1.1.0 — 2026-10-31
+- My notifications toggles stop the device push only; the inbox row and unread count always show the notice (`notificationShowsInInbox`, `devicePushAllowed`). The app-icon badge matches the inbox.
+- Every variation notification type sends a device push (`variation_renumbered`, `variation_added`, `variation_from_tracker`, `variation_numbers_updated` join `variation`).
+- Pay and manager decisions are protected on every path (security rules and shared rules; see §8 and §16).
 
 ### 1.0.0 — 2026-10-31
 - First versioned rulebook. Consolidates the rules previously spread across `docs/CANONICAL_ARCHITECTURE.md`, `AGENTS.md` and the iOS copies into this one file, mirrored to iOS.

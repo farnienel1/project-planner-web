@@ -5112,3 +5112,147 @@ test('booking download start: launch bound, earlier week reload, never later (bo
     reload: false,
   })
 })
+
+test('notification toggles stop the device push only, never the inbox row', async () => {
+  const prefsModule = await import('./notificationPreferences.ts')
+  const off = prefsModule.parseUserNotificationPreferences({ bookedOntoJob: false, variations: false })
+  assert.equal(prefsModule.NOTIFICATION_TOGGLE_HIDES_INBOX_ROW, false)
+  assert.equal(prefsModule.notificationShowsInInbox(off, 'booking_created'), true)
+  assert.equal(prefsModule.devicePushAllowed(off, 'booking_created'), false)
+  assert.equal(prefsModule.devicePushAllowed(prefsModule.DEFAULT_USER_NOTIFICATION_PREFERENCES, 'booking_created'), true)
+  for (const type of ['variation', 'variation_renumbered', 'variation_added', 'variation_from_tracker', 'variation_numbers_updated']) {
+    assert.equal(prefsModule.notificationDeliversDevicePush(type), true, type)
+    assert.equal(prefsModule.devicePushAllowed(off, type), false, type)
+  }
+  assert.equal(prefsModule.devicePushAllowed(off, 'material_order_cut_off'), false)
+})
+
+import {
+  parseTimesheetEntryReviews,
+  timesheetEntryDecision,
+  timesheetEntryReviewWriteFields,
+  timesheetEntryReviewsAfterWrite,
+  timesheetOwnerWriteFields,
+  timesheetWriterIsReviewer,
+} from './timesheetEntryReviews.ts'
+import { canChangePersonPay } from './payAccess.ts'
+
+test('timesheet entry decisions: the reviewer map wins; the owner-written inline value only lowers pay', () => {
+  const signedAt = new Date('2026-10-16T10:00:00Z')
+  const entry = { id: 'e1', amount: 50, managerDecision: 'approved', managerRevisedAmount: null }
+  const reviewed = (review: Record<string, unknown>, extra: Record<string, unknown> = {}) => ({
+    extraEntryReviews: { e1: review },
+    ...extra,
+  })
+
+  // Map era: the reviewer's decline stands even when the owner rewrites the inline value.
+  assert.deepEqual(
+    timesheetEntryDecision(reviewed({ decision: 'declined', reviewedAmount: 50 }), { ...entry, managerDecision: 'approved' }),
+    { decision: 'declined', revisedAmount: null, source: 'review' }
+  )
+  // An inline "edited" up is ignored; the reviewer's edit down stands.
+  assert.deepEqual(
+    timesheetEntryDecision(reviewed({ decision: 'edited', revisedAmount: 30, reviewedAmount: 50 }), {
+      ...entry,
+      managerDecision: 'edited',
+      managerRevisedAmount: 999,
+    }),
+    { decision: 'edited', revisedAmount: 30, source: 'review' }
+  )
+  // A review made against another amount is stale: pending until the manager looks again.
+  assert.equal(
+    timesheetEntryDecision(reviewed({ decision: 'approved', reviewedAmount: 50 }), { ...entry, amount: 500 }).decision,
+    'pending'
+  )
+  // Not reviewed yet: approved at its own amount, as both apps create entries.
+  assert.equal(timesheetEntryDecision({ extraEntryReviews: {} }, entry).decision, 'approved')
+  // The inline value may lower pay (an old iOS manager build that only writes inline).
+  assert.deepEqual(
+    timesheetEntryDecision({ extraEntryReviews: {} }, { ...entry, managerDecision: 'declined' }),
+    { decision: 'declined', revisedAmount: null, source: 'inline-lower' }
+  )
+  // Legacy sheet (no map), not manager-signed: an inline "edited" up does not count.
+  assert.deepEqual(
+    timesheetEntryDecision({}, { ...entry, managerDecision: 'edited', managerRevisedAmount: 999 }),
+    { decision: 'approved', revisedAmount: null, source: 'unreviewed' }
+  )
+  // Legacy sheet the line manager signed: inline is what they signed (rules freeze the owner's entries).
+  assert.deepEqual(
+    timesheetEntryDecision({ managerSignedAt: signedAt }, { ...entry, managerDecision: 'edited', managerRevisedAmount: 70 }),
+    { decision: 'edited', revisedAmount: 70, source: 'legacy-inline' }
+  )
+  assert.equal(parseTimesheetEntryReviews({}), null)
+  assert.deepEqual(parseTimesheetEntryReviews({ extraEntryReviews: {} }), {})
+})
+
+test('timesheet entry reviews are written as dotted fields, only for entries that changed', () => {
+  const entries = [
+    { id: 'e1', amount: 50, managerDecision: 'declined' as const, managerRevisedAmount: null },
+    { id: 'e2', amount: 20, managerDecision: 'approved' as const, managerRevisedAmount: null },
+  ]
+  // Legacy sheet: every entry moves into the map.
+  const first = timesheetEntryReviewWriteFields({ stored: null, entries, reviewedByUserId: 'lm', reviewedAtMs: 1000 })
+  assert.deepEqual(Object.keys(first).sort(), ['extraEntryReviews.e1', 'extraEntryReviews.e2'])
+  assert.deepEqual(first['extraEntryReviews.e1'], {
+    decision: 'declined',
+    revisedAmount: null,
+    reviewedAmount: 50,
+    reviewedByUserId: 'lm',
+    reviewedAtMs: 1000,
+  })
+  const stored = timesheetEntryReviewsAfterWrite(null, first)
+  // Nothing changed: nothing written.
+  assert.deepEqual(timesheetEntryReviewWriteFields({ stored, entries, reviewedByUserId: 'lm', reviewedAtMs: 2000 }), {})
+  // One edit: one field.
+  const edited = timesheetEntryReviewWriteFields({
+    stored,
+    entries: [entries[0], { ...entries[1], managerDecision: 'edited', managerRevisedAmount: 15 }],
+    reviewedByUserId: 'lm',
+    reviewedAtMs: 3000,
+  })
+  assert.deepEqual(Object.keys(edited), ['extraEntryReviews.e2'])
+  assert.equal(edited['extraEntryReviews.e2'].revisedAmount, 15)
+})
+
+test('timesheet owner save drops the reviewer-only parts', () => {
+  const full = {
+    managerNote: 'Please check Tuesday',
+    payrollLineReviews: { a: { decision: 'declined' } },
+    extraEntryReviews: {},
+    'extraEntryReviews.e1': { decision: 'approved' },
+    weeklyReportOverride: { lines: [] },
+    expenseEntries: [],
+    priceWorkEntries: [],
+    operativeSignedByName: 'Rae',
+  }
+  assert.deepEqual(timesheetOwnerWriteFields(full, { subjectHasLineManager: true, managerSigned: false }), {
+    managerNote: 'Please check Tuesday',
+    expenseEntries: [],
+    priceWorkEntries: [],
+    operativeSignedByName: 'Rae',
+  })
+  // Self-signed (no line manager): the owner writes the approved snapshot.
+  assert.ok('weeklyReportOverride' in timesheetOwnerWriteFields(full, { subjectHasLineManager: false, managerSigned: false }))
+  // Manager-signed: the entries are frozen for the owner.
+  const signed = timesheetOwnerWriteFields(full, { subjectHasLineManager: true, managerSigned: true })
+  assert.equal('expenseEntries' in signed, false)
+  assert.equal('priceWorkEntries' in signed, false)
+  assert.equal(signed.managerNote, 'Please check Tuesday')
+
+  assert.equal(timesheetWriterIsReviewer({ writerUserId: 'op', subjectUserId: 'op', subjectLineManagerIds: ['op'] }), false)
+  assert.equal(timesheetWriterIsReviewer({ writerUserId: 'lm', subjectUserId: 'op', subjectLineManagerIds: ['LM'] }), true)
+  assert.equal(timesheetWriterIsReviewer({ writerUserId: 'new', writerFormerIds: ['old'], subjectUserId: 'op', subjectLineManagerIds: ['old'] }), true)
+  assert.equal(timesheetWriterIsReviewer({ writerUserId: 'other', subjectUserId: 'op', subjectLineManagerIds: ['lm'] }), false)
+  assert.equal(timesheetWriterIsReviewer({ writerUserId: 'admin', subjectUserId: 'admin', writerIsAdmin: true }), true)
+})
+
+test('pay access: a person never changes their own pay; admins and operatives managers do', () => {
+  const operative = { userId: 'op', isOperative: true }
+  assert.equal(canChangePersonPay({ userId: 'op', isOperativeMode: true }, operative), false)
+  assert.equal(canChangePersonPay({ userId: 'mgr', isManager: true, hasOperativesAccess: true }, operative), true)
+  assert.equal(canChangePersonPay({ userId: 'mgr', isManager: true }, operative), false)
+  assert.equal(canChangePersonPay({ userId: 'mgr', isManager: true, hasOperativesAccess: true }, { userId: 'mgr2', isOperative: false }), false)
+  assert.equal(canChangePersonPay({ userId: 'mgr', isManager: true, hasOperativesAccess: true }, { userId: 'mgr', isOperative: true }), false)
+  assert.equal(canChangePersonPay({ userId: 'admin', isAdmin: true }, { userId: 'admin' }), true)
+  assert.equal(canChangePersonPay({ userId: '' , isAdmin: true }, operative), false)
+})

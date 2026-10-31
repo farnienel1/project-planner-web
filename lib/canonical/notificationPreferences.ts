@@ -348,9 +348,11 @@ export function visibleNotificationPreferenceKeys(
 }
 
 /**
- * Whether this account should receive a notice of `type`.
- * Types with no toggle (ideas, anything unmapped) stay allowed. Variation types follow `variations`.
- * A toggle that is on does not add the user to a fan-out they are not already on.
+ * Whether this account should get the device push for a notice of `type`.
+ * A toggle switched off stops the push only — the inbox row and the unread count still show it
+ * (`notificationShowsInInbox`). Types with no toggle (ideas, anything unmapped) stay allowed.
+ * Variation types follow `variations`. A toggle that is on does not add the user to a fan-out
+ * they are not already on.
  */
 export function notificationPreferenceAllowsDelivery(
   prefs: UserNotificationPreferences,
@@ -359,6 +361,22 @@ export function notificationPreferenceAllowsDelivery(
   const key = notificationPreferenceKeyForType(type)
   if (!key) return true
   return prefs[key] !== false
+}
+
+/** My notifications toggles never hide an inbox row; they only stop the device push. */
+export const NOTIFICATION_TOGGLE_HIDES_INBOX_ROW = false
+
+/** Every notice addressed to the signed-in user is listed in the inbox, whatever their toggles say. */
+export function notificationShowsInInbox(
+  _prefs: UserNotificationPreferences | null | undefined,
+  _type: string
+): boolean {
+  return true
+}
+
+/** Device push for this notice: the type sends a push and the user's toggle for it is on. */
+export function devicePushAllowed(prefs: UserNotificationPreferences, type: string): boolean {
+  return notificationDeliversDevicePush(type) && notificationPreferenceAllowsDelivery(prefs, type)
 }
 
 /**
@@ -384,6 +402,10 @@ export const DEVICE_PUSH_NOTIFICATION_TYPES = [
   'material_order_placed',
   'material_order_created',
   'variation',
+  'variation_renumbered',
+  'variation_added',
+  'variation_from_tracker',
+  'variation_numbers_updated',
   'warning_removed',
   'operative_created',
   'manager_created',

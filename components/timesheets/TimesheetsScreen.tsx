@@ -18,7 +18,7 @@ import {
   type ExportedTimesheetHistoryRow,
 } from '@/lib/timesheets/timesheetStorage'
 import type { TimesheetDraft } from '@/lib/timesheets/timesheetDraft'
-import { SIGNED_OFF_EDIT_NOTE } from '@/lib/timesheets/timesheetApprovalPolicy'
+import { SIGNED_OFF_EDIT_NOTE, userHasLineManager } from '@/lib/timesheets/timesheetApprovalPolicy'
 import {
   SENSITIVE_EXPORT_OPTION_LABEL,
   canViewSensitiveProfile,
@@ -266,6 +266,7 @@ export function TimesheetsScreen({
         draft: agreed,
         timeZone,
         documentId,
+        access: { subjectHasLineManager: userHasLineManager(member) },
       })
     }
   }

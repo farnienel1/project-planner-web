@@ -433,16 +433,19 @@ service cloud.firestore {
     );
   }
 
-  // Managers with operative-management access may edit limited operative profile fields on users docs.
-  function canManagerUpdateOperativeProfile(targetUserId) {
+  // A manager with operative-management access (manager + operatives, not operative mode) in the
+  // same company as `targetData`, which is another person's operative users document. The one
+  // test for who besides an admin may change an operative's pay, on users/{uid}
+  // (canManagerUpdateOperativeProfile), operativeProfiles and operativeDayRateHistory.
+  function managerMayManageOperative(targetUserId, targetData) {
     return request.auth != null &&
            request.auth.uid != targetUserId &&
            exists(/databases/(default)/documents/users/$(request.auth.uid)) &&
-           ('organizationId' in resource.data) &&
+           ('organizationId' in targetData) &&
            ('organizationId' in get(/databases/(default)/documents/users/$(request.auth.uid)).data) &&
            orgIdsMatch(
              get(/databases/(default)/documents/users/$(request.auth.uid)).data.organizationId,
-             resource.data.organizationId
+             targetData.organizationId
            ) &&
            !('operativeMode' in get(/databases/(default)/documents/users/$(request.auth.uid)).data &&
              truthyBool(get(/databases/(default)/documents/users/$(request.auth.uid)).data.operativeMode)) &&
@@ -451,10 +454,15 @@ service cloud.firestore {
            ('operatives' in get(/databases/(default)/documents/users/$(request.auth.uid)).data &&
              truthyBool(get(/databases/(default)/documents/users/$(request.auth.uid)).data.operatives)) &&
            (
-             ('operativeMode' in resource.data && truthyBool(resource.data.operativeMode)) ||
-             ('permissions' in resource.data && 'operativeMode' in resource.data.permissions && truthyBool(resource.data.permissions.operativeMode)) ||
-             ('role' in resource.data && resource.data.role == 'operative')
-           ) &&
+             ('operativeMode' in targetData && truthyBool(targetData.operativeMode)) ||
+             ('permissions' in targetData && targetData.permissions is map && 'operativeMode' in targetData.permissions && truthyBool(targetData.permissions.operativeMode)) ||
+             ('role' in targetData && targetData.role == 'operative')
+           );
+  }
+
+  // Managers with operative-management access may edit limited operative profile fields on users docs.
+  function canManagerUpdateOperativeProfile(targetUserId) {
+    return managerMayManageOperative(targetUserId, resource.data) &&
            request.resource.data.diff(resource.data).changedKeys().hasOnly([
              'assignedManagerUserId',
              'assignedManagerUserIds',
@@ -986,9 +994,31 @@ service cloud.firestore {
         allow delete: if isOrganizationAdmin(organizationId);
       }
       
+      // Pay on roster rows (operatives/{id}, managers/{id}): payRate.ts falls back to these when
+      // users/{uid} has no rate, so they are pay too. Only keys whose value changes count.
+      function rosterRowPayKeysChanged() {
+        return (resource == null
+          ? request.resource.data.keys().toSet()
+          : request.resource.data.diff(resource.data).affectedKeys()
+        ).hasAny(['dayRate', 'hourlyRate', 'payBasis', 'employmentType',
+                  'employmentTypeTransitionFrom', 'employmentTypeEffectiveAt']);
+      }
+      // The operatives row is the caller's own when its email is the signed-in email.
+      function operativeRowIsCaller() {
+        return !(request.auth.token.email is string) ||
+          string(request.resource.data.get('email', '')).lower() == request.auth.token.email.lower() ||
+          (resource != null && string(resource.data.get('email', '')).lower() == request.auth.token.email.lower());
+      }
+
       match /operatives/{operativeId} {
         allow read: if canAccessOrganization(organizationId);
-        allow create, update: if canAccessOrganization(organizationId);
+        allow create, update: if canAccessOrganization(organizationId) &&
+          (!rosterRowPayKeysChanged() ||
+            isOrgAdminViaMembersMap(organizationId) ||
+            isPlatformOwner() ||
+            isOrganizationAdmin(organizationId) ||
+            (isManagerWithOperativesAccess() && !operativeRowIsCaller())) &&
+          writeMetadataValidWhenPresent();
         allow delete: if isOrganizationAdmin(organizationId);
       }
       
@@ -1115,15 +1145,70 @@ service cloud.firestore {
             timesheetSame('approvedByName') &&
             timesheetSameInstant('exportedAt');
         }
+        // Reviewer-only parts (lib/canonical/timesheetEntryReviews.ts). Rules cannot walk arrays, so
+        // manager decisions on price work and expenses live in the `extraEntryReviews` map, not in
+        // the owner-editable entry rows. `managerNote` is the owner's "Note to manager" and stays theirs.
+        function timesheetEmptyish(value) {
+          return value == null || value == {};
+        }
+        function timesheetWrittenKeys() {
+          return resource == null
+            ? request.resource.data.keys().toSet()
+            : request.resource.data.diff(resource.data).affectedKeys();
+        }
+        // Unchanged (missing and an empty map are the same), so a full resend passes.
+        function timesheetOwnerLeaves(key, written) {
+          return !(key in written) || (
+            timesheetEmptyish(request.resource.data.get(key, null)) &&
+            timesheetEmptyish(resource == null ? null : resource.data.get(key, null))
+          );
+        }
+        function timesheetOwnerLeavesList(key, written) {
+          return !(key in written) || (
+            (request.resource.data.get(key, null) == null || request.resource.data.get(key, null) == []) &&
+            (resource == null || resource.data.get(key, null) == null || resource.data.get(key, null) == [])
+          );
+        }
+        function timesheetSubjectHasLineManager() {
+          return timesheetSubjectUid() is string &&
+            exists(/databases/(default)/documents/users/$(timesheetSubjectUid())) &&
+            hasLineManager(get(/databases/(default)/documents/users/$(timesheetSubjectUid())).data);
+        }
+        function timesheetStoredManagerSigned() {
+          return resource != null && (
+            resource.data.get('managerSignedAt', null) is timestamp ||
+            resource.data.get('managerSignedAt', null) is number ||
+            resource.data.get('approvedAt', null) is timestamp ||
+            resource.data.get('approvedAt', null) is number
+          );
+        }
+        // The owner never writes line reviews or entry decisions; writes the approved snapshot only
+        // when they have no line manager (self-signed); and cannot change their price work or
+        // expenses once the line manager has signed.
+        function timesheetOwnerReviewFieldsUnchanged() {
+          let written = timesheetWrittenKeys();
+          return timesheetOwnerLeaves('payrollLineReviews', written) &&
+            timesheetOwnerLeaves('extraEntryReviews', written) &&
+            (timesheetOwnerLeaves('weeklyReportOverride', written) || !timesheetSubjectHasLineManager()) &&
+            (!timesheetStoredManagerSigned() || (
+              timesheetOwnerLeavesList('expenseEntries', written) &&
+              timesheetOwnerLeavesList('priceWorkEntries', written)
+            ));
+        }
         function canWriteTimesheetSettings() {
-          return isTimesheetReviewer() ||
-            (isOwnTimesheetSettings() && timesheetManagerFieldsUnchanged());
+          return isTimesheetReviewer() || (
+            isOwnTimesheetSettings() &&
+            timesheetManagerFieldsUnchanged() &&
+            timesheetOwnerReviewFieldsUnchanged()
+          );
         }
         function canDeleteTimesheetSettings() {
           return isTimesheetReviewer() || (
             isOwnTimesheetSettings() &&
             resource.data.get('managerSignedAt', null) == null &&
-            resource.data.get('exportedAt', null) == null
+            resource.data.get('exportedAt', null) == null &&
+            timesheetEmptyish(resource.data.get('payrollLineReviews', null)) &&
+            timesheetEmptyish(resource.data.get('extraEntryReviews', null))
           );
         }
         // Per-job deadlines and the legacy health & safety copy: operatives update their own
@@ -1157,7 +1242,13 @@ service cloud.firestore {
       
       match /managers/{managerId} {
         allow read: if canAccessOrganization(organizationId);
-        allow create, update: if canAccessOrganization(organizationId);
+        // A manager's pay is changed by admins only (never by the manager or another manager).
+        allow create, update: if canAccessOrganization(organizationId) &&
+          (!rosterRowPayKeysChanged() ||
+            isOrgAdminViaMembersMap(organizationId) ||
+            isPlatformOwner() ||
+            isOrganizationAdmin(organizationId)) &&
+          writeMetadataValidWhenPresent();
         allow delete: if isOrganizationAdmin(organizationId);
       }
       
@@ -1354,13 +1445,94 @@ service cloud.firestore {
         );
       }
 
-      match /operativeProfiles/{userId} {
-        allow read, create, update, delete: if canAccessOrganization(organizationId);
+      // Pay change on another path than users/{uid}: the person never changes their own pay
+      // (lib/canonical/payAccess.ts canChangePersonPay; payRate.ts reads rate history first, then
+      // the live profile). Admins, the platform owner, or a manager with operatives access for an
+      // operative in this company (managerMayManageOperative, the same test as
+      // canManagerUpdateOperativeProfile). Cheapest tests first: the 1,000-expression limit.
+      function managerMayChangePayOf(subjectUserId) {
+        return subjectUserId is string && subjectUserId.size() > 0 &&
+          subjectUserId != request.auth.uid &&
+          exists(/databases/(default)/documents/users/$(subjectUserId)) &&
+          get(/databases/(default)/documents/users/$(subjectUserId)).data.get('organizationId', null) is string &&
+          orgIdsMatch(get(/databases/(default)/documents/users/$(subjectUserId)).data.organizationId, organizationId) &&
+          managerMayManageOperative(subjectUserId, get(/databases/(default)/documents/users/$(subjectUserId)).data);
+      }
+      // A manager-with-operatives write implies membership: the caller's users/{uid}.organizationId
+      // is the subject's, which is this company. Admin of this company is checked members map first.
+      function canChangePayOf(subjectUserId) {
+        return isOrgAdminViaMembersMap(organizationId) ||
+          managerMayChangePayOf(subjectUserId) ||
+          isPlatformOwner() ||
+          isOrganizationAdmin(organizationId);
       }
 
-      match /operativeDayRateHistory/{entryId} {
+      // Mirror of users/{userId} pay and line manager (iOS saveOperativeProfileMetadataFallback,
+      // web saveUser). iOS reads it over users/{uid} on roster load. Anyone in the company may
+      // touch only the id and write stamps; pay, line manager and employment fields are
+      // canChangePayOf. Only keys whose value changes count, so a resend of the same values passes.
+      match /operativeProfiles/{userId} {
+        function operativeProfileStampOnly() {
+          return (resource == null
+            ? request.resource.data.keys().toSet()
+            : request.resource.data.diff(resource.data).affectedKeys()
+          ).hasOnly(['userId', 'updatedAt', 'updatedBy', 'updatedFrom']);
+        }
         allow read: if canAccessOrganization(organizationId);
-        allow create, update: if canAccessOrganization(organizationId);
+        allow create, update: if request.auth != null &&
+          request.resource.data.get('userId', userId) == userId &&
+          (operativeProfileStampOnly() ? canAccessOrganization(organizationId) : canChangePayOf(userId)) &&
+          writeMetadataValidWhenPresent();
+        allow delete: if request.auth != null &&
+          (request.auth.uid == userId ? canAccessOrganization(organizationId) : canChangePayOf(userId));
+      }
+
+      // Effective-dated pay rows { userId?, operativeId?, dayRate, payBasis?, effectiveAt, createdAt }.
+      // userId names a users document; an operativeId-only row is an operatives/{id} record.
+      // Never a row about the writer themselves (unless an admin, who may already set their own
+      // pay on users/{uid}). Rows are not re-pointed at another person.
+      match /operativeDayRateHistory/{entryId} {
+        function rateRowUserId(data) {
+          return data.get('userId', '') is string ? data.get('userId', '') : '';
+        }
+        function rateRowOperativeId(data) {
+          return data.get('operativeId', '') is string ? data.get('operativeId', '') : '';
+        }
+        // The operatives row is the caller's own when its email is the signed-in email.
+        function rateRowOperativeIsCaller(operativeId) {
+          return operativeId.size() > 0 && (
+            !(request.auth.token.email is string) ||
+            !exists(/databases/(default)/documents/organizations/$(organizationId)/operatives/$(operativeId)) ||
+            get(/databases/(default)/documents/organizations/$(organizationId)/operatives/$(operativeId)).data.get('email', '') == null ||
+            string(get(/databases/(default)/documents/organizations/$(organizationId)/operatives/$(operativeId)).data.get('email', '')).lower() ==
+              request.auth.token.email.lower()
+          );
+        }
+        // Manager with operatives access in this company, for an operatives row that is not theirs.
+        function managerMayRecordOperativeRow(operativeId) {
+          return operativeId.size() > 0 &&
+            isManagerWithOperativesAccess() &&
+            get(/databases/(default)/documents/users/$(request.auth.uid)).data.get('organizationId', null) is string &&
+            orgIdsMatch(get(/databases/(default)/documents/users/$(request.auth.uid)).data.organizationId, organizationId) &&
+            !rateRowOperativeIsCaller(operativeId);
+        }
+        function managerMayRecordRateRow(data) {
+          return rateRowUserId(data).size() > 0
+            ? (managerMayChangePayOf(rateRowUserId(data)) && !rateRowOperativeIsCaller(rateRowOperativeId(data)))
+            : managerMayRecordOperativeRow(rateRowOperativeId(data));
+        }
+        function canWriteRateRow(data) {
+          return isOrgAdminViaMembersMap(organizationId) ||
+            managerMayRecordRateRow(data) ||
+            isPlatformOwner() ||
+            isOrganizationAdmin(organizationId);
+        }
+        allow read: if canAccessOrganization(organizationId);
+        allow create: if request.auth != null && canWriteRateRow(request.resource.data);
+        allow update: if request.auth != null &&
+          rateRowUserId(request.resource.data) == rateRowUserId(resource.data) &&
+          rateRowOperativeId(request.resource.data) == rateRowOperativeId(resource.data) &&
+          canWriteRateRow(request.resource.data);
         allow delete: if isOrganizationAdmin(organizationId);
       }
 

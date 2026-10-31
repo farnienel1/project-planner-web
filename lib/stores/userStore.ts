@@ -7,7 +7,7 @@ import { passwordResetActionSettings } from '@/lib/auth/passwordResetSettings'
 import type { Operative, User } from '@/types'
 import { auth, db } from '@/lib/firebase/config'
 import { applyExclusiveRateFields, buildSaveUserPayload, changedUserPayload } from '@/lib/firebase/userPayload'
-import { writeMetadataFields } from '@/lib/canonical'
+import { canChangePersonPay, writeMetadataFields } from '@/lib/canonical'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { parseOrgUser } from '@/lib/firebase/parseUser'
 import { operativeRecordForUser } from '@/lib/operatives/operativeRosterUtils'
@@ -153,8 +153,22 @@ export const useUserStore = create<UserStoreState>(() => ({
     }
     await updateSameEmailUsers(user, previousEmail)
     if (orgId) await updateLinkedStaffNames(orgId, user, previousEmail)
+    // The operativeProfiles mirror holds pay, so only someone who may change this person's pay
+    // writes it (`canChangePersonPay`; firestore.rules `canChangePayOf`). A person's own save
+    // never touches it.
+    const mayWritePay = canChangePersonPay(
+      {
+        userId: saverId,
+        isAdmin: saverIsAdmin || Boolean(saver?.role === 'admin' && !saver?.permissions.operativeMode),
+        isManager: Boolean(saver && (saver.permissions.manager || saver.role === 'manager')),
+        hasOperativesAccess: Boolean(saver?.permissions.operatives),
+        isOperativeMode: Boolean(saver?.permissions.operativeMode),
+      },
+      { userId: user.id, isOperative: Boolean(user.permissions.operativeMode || user.role === 'operative') }
+    )
     if (
       orgId &&
+      mayWritePay &&
       (user.permissions.operativeMode ||
         user.permissions.manager ||
         user.permissions.adminAccess ||

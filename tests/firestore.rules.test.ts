@@ -1564,3 +1564,234 @@ test('a manager with operatives access edits an operative profile with write met
   // Still only the listed profile fields.
   await assertFails(updateDoc(ref, { role: 'manager', updatedBy: MGR_OPS }))
 })
+
+// ---------------------------------------------------------------------------
+// A person cannot change their own pay on any path: operativeProfiles,
+// operativeDayRateHistory, and the reviewer-only parts of a timesheet.
+// ---------------------------------------------------------------------------
+
+const PAY_MGR_OPS = 'pay-manager-ops-a'
+const PAY_OP = 'pay-op-a'
+const PAY_OP_ROW = 'pay-op-row-a'
+const PAY_MGR_OP_ROW = 'pay-mgr-op-row-a'
+
+async function seedPayPeople() {
+  await seedLeaveAndTimesheetPeople()
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore()
+    await setDoc(doc(db, 'users', PAY_MGR_OPS), {
+      email: 'pay-mgr-ops@test.com', organizationId: ORG_A, role: 'manager', manager: true, operatives: true,
+      permissions: { manager: true, operatives: true, operativeMode: false },
+    })
+    await setDoc(doc(db, 'users', PAY_OP), {
+      email: 'pay-op@test.com', organizationId: ORG_A, role: 'operative', operativeMode: true,
+      assignedManagerUserId: LM_A, dayRate: 200,
+    })
+    await setDoc(doc(db, 'organizations', ORG_A, 'operativeProfiles', PAY_OP), {
+      userId: PAY_OP, dayRate: 200, assignedManagerUserId: LM_A, updatedAt: Timestamp.now(),
+    })
+    await setDoc(doc(db, 'organizations', ORG_A, 'operativeProfiles', PAY_MGR_OPS), {
+      userId: PAY_MGR_OPS, dayRate: 300, updatedAt: Timestamp.now(),
+    })
+    await setDoc(doc(db, 'organizations', ORG_A, 'operatives', PAY_OP_ROW), {
+      email: 'pay-op@test.com', name: 'Pat', dayRate: 200,
+    })
+    await setDoc(doc(db, 'organizations', ORG_A, 'operatives', PAY_MGR_OP_ROW), {
+      email: 'pay-mgr-ops@test.com', name: 'Morgan', dayRate: 300,
+    })
+  })
+}
+
+test('operativeProfiles: the person cannot change their own pay; unchanged resends pass; admins and operatives managers can', async () => {
+  await seedPayPeople()
+  const ref = (db: ReturnType<typeof authDb>, id: string) => doc(db, 'organizations', ORG_A, 'operativeProfiles', id)
+  const op = authDb(PAY_OP, 'pay-op@test.com')
+  const mgr = authDb(PAY_MGR_OPS, 'pay-mgr-ops@test.com')
+  const admin = authDb(ADMIN_A, 'admin-a@test.com')
+
+  // The operative's own pay, line manager or employment on the mirror: refused (update and create).
+  await assertFails(setDoc(ref(op, PAY_OP), { userId: PAY_OP, dayRate: 999, updatedAt: Timestamp.now() }, { merge: true }))
+  await assertFails(updateDoc(ref(op, PAY_OP), { payBasis: 'hourly', hourlyRate: 80 }))
+  await assertFails(updateDoc(ref(op, PAY_OP), { assignedManagerUserId: PAY_OP }))
+  await assertFails(updateDoc(ref(op, PAY_OP), { employmentType: 'self_employed' }))
+  await assertFails(setDoc(ref(authDb(REPORT_A, 'report-a@test.com'), REPORT_A), { userId: REPORT_A, dayRate: 999 }))
+  // Nor anyone else's.
+  await assertFails(updateDoc(ref(op, PAY_MGR_OPS), { dayRate: 1 }))
+  // iOS saveOperativeProfileMetadataFallback / web saveUser resend of the same values: allowed.
+  await assertSucceeds(setDoc(ref(op, PAY_OP), {
+    userId: PAY_OP, dayRate: 200.0, assignedManagerUserId: LM_A, updatedAt: Timestamp.now(),
+  }, { merge: true }))
+  await assertSucceeds(updateDoc(ref(op, PAY_OP), { updatedAt: serverTimestamp(), updatedBy: PAY_OP, updatedFrom: 'web' }))
+
+  // A manager with operatives access changes an operative's pay, never their own or a manager's.
+  await assertSucceeds(updateDoc(ref(mgr, PAY_OP), { dayRate: 210, assignedManagerUserId: PAY_MGR_OPS, updatedAt: Timestamp.now() }))
+  await assertFails(updateDoc(ref(mgr, PAY_MGR_OPS), { dayRate: 999 }))
+  await assertFails(setDoc(ref(mgr, LM_A), { userId: LM_A, dayRate: 999 }))
+  // A doc id for someone else whose userId names the manager does not slip through.
+  await assertFails(setDoc(ref(mgr, PAY_OP), { userId: PAY_MGR_OPS, dayRate: 999 }, { merge: true }))
+  // A manager without operatives access cannot.
+  await assertFails(updateDoc(ref(authDb(LM_A, 'lm-a@test.com'), PAY_OP), { dayRate: 220 }))
+  // Admins can, including a profile that does not exist yet.
+  await assertSucceeds(updateDoc(ref(admin, PAY_OP), { dayRate: 230, payBasis: 'day' }))
+  await assertSucceeds(setDoc(ref(admin, REPORT_A), { userId: REPORT_A, dayRate: 240 }, { merge: true }))
+  // Another company's admin cannot.
+  await assertFails(updateDoc(ref(authDb(ADMIN_B, 'admin-b@test.com'), PAY_OP), { dayRate: 1 }))
+  // Delete: the person's own mirror or a pay manager, not a colleague.
+  await assertFails(deleteDoc(ref(op, PAY_MGR_OPS)))
+  await assertSucceeds(deleteDoc(ref(mgr, PAY_OP)))
+})
+
+test('operativeDayRateHistory: nobody records their own rate; admins and operatives managers record an operative\'s', async () => {
+  await seedPayPeople()
+  const ref = (db: ReturnType<typeof authDb>, id: string) => doc(db, 'organizations', ORG_A, 'operativeDayRateHistory', id)
+  const row = (extra: Record<string, unknown>) => ({
+    dayRate: 999, effectiveAt: Timestamp.fromMillis(Date.parse('2026-10-01T00:00:00Z')), createdAt: Timestamp.now(), ...extra,
+  })
+  const op = authDb(PAY_OP, 'pay-op@test.com')
+  const mgr = authDb(PAY_MGR_OPS, 'pay-mgr-ops@test.com')
+
+  // The operative: not their own row (by user id or by their operatives record), not anyone else's.
+  await assertFails(setDoc(ref(op, 'r1'), row({ userId: PAY_OP }), { merge: true }))
+  await assertFails(setDoc(ref(op, 'r2'), row({ operativeId: PAY_OP_ROW })))
+  await assertFails(setDoc(ref(op, 'r3'), row({ userId: REPORT_A })))
+  // The manager: an operative's row (iOS shape, then web shape with payBasis and stamps).
+  await assertSucceeds(setDoc(ref(mgr, 'r4'), row({ userId: PAY_OP, operativeId: PAY_OP_ROW, dayRate: 210 }), { merge: true }))
+  await assertSucceeds(setDoc(ref(mgr, 'r5'), {
+    ...row({ userId: PAY_OP, operativeId: '', dayRate: 25, payBasis: 'hourly' }),
+    createdAt: serverTimestamp(), updatedAt: serverTimestamp(), updatedBy: PAY_MGR_OPS, updatedFrom: 'web',
+  }, { merge: true }))
+  await assertSucceeds(setDoc(ref(mgr, 'r6'), row({ operativeId: PAY_OP_ROW })))
+  // ...never their own, by user id or by their own operatives row, and never a manager's.
+  await assertFails(setDoc(ref(mgr, 'r7'), row({ userId: PAY_MGR_OPS })))
+  await assertFails(setDoc(ref(mgr, 'r8'), row({ operativeId: PAY_MGR_OP_ROW })))
+  await assertFails(setDoc(ref(mgr, 'r9'), row({ userId: LM_A })))
+  // Rewriting a row about someone else into a row about yourself is refused too.
+  await assertFails(updateDoc(ref(mgr, 'r4'), { userId: PAY_MGR_OPS }))
+  // A manager without operatives access cannot record pay.
+  await assertFails(setDoc(ref(authDb(LM_A, 'lm-a@test.com'), 'r10'), row({ userId: PAY_OP })))
+  // Admins can.
+  await assertSucceeds(setDoc(ref(authDb(ADMIN_A, 'admin-a@test.com'), 'r11'), row({ userId: PAY_OP, dayRate: 220 })))
+  // Everyone in the company still reads history (payRateOnDay on both apps).
+  await assertSucceeds(getDoc(ref(op, 'r4')))
+  await assertFails(setDoc(ref(authDb(ADMIN_B, 'admin-b@test.com'), 'r12'), row({ userId: PAY_OP })))
+})
+
+test('timesheets: the owner cannot change line reviews, entry decisions or the approved snapshot; the line manager and admins can', async () => {
+  await seedPayPeople()
+  const id = `timesheet_${REPORT_A}_1770000000`
+  const ref = (db: ReturnType<typeof authDb>) => doc(db, 'organizations', ORG_A, 'settings', id)
+  const rep = authDb(REPORT_A, 'report-a@test.com')
+  const lm = authDb(LM_A, 'lm-a@test.com')
+  // iOS asFirestoreMap shape: the whole draft, manager parts empty, inline decision 'approved'.
+  const expense = (amount: number, managerDecision = 'approved', managerRevisedAmount: number | null = null) => ({
+    id: 'E1', title: 'Parking', details: '', jobNumber: 'J1',
+    date: Timestamp.fromMillis(Date.parse('2026-10-03T00:00:00Z') + 0.123), amount, receiptName: '',
+    managerDecision, managerRevisedAmount,
+  })
+  const iosSave = (extra: Record<string, unknown> = {}) => ({
+    userId: REPORT_A, weekStartKey: '2026-10-01', weekEndKey: '2026-10-15',
+    managerNote: '', operativeSignedAt: null, operativeSignedByName: '', operativeSignatureImageBase64: '',
+    managerSignedAt: null, managerSignedByName: '', managerSignedByUserId: '', managerSignatureImageBase64: '',
+    approvedAt: null, approvedByName: '', exportedAt: null, weeklyReportOverride: null,
+    expenseEntries: [expense(40)], priceWorkEntries: [], payrollLineReviews: {},
+    updatedAt: Timestamp.now(),
+    ...extra,
+  })
+  await assertSucceeds(setDoc(ref(rep), iosSave(), { merge: true }))
+  // The owner writes their note to the manager and edits their own expense before sign-off.
+  await assertSucceeds(setDoc(ref(rep), iosSave({ managerNote: 'Tuesday ran late', expenseEntries: [expense(50)] }), { merge: true }))
+
+  // Manager-only parts: refused for the owner.
+  await assertFails(setDoc(ref(rep), { payrollLineReviews: { 'op-1': { decision: 'edited', revisedAmount: 999 } } }, { merge: true }))
+  await assertFails(setDoc(ref(rep), { extraEntryReviews: { E1: { decision: 'approved', reviewedAmount: 50 } } }, { merge: true }))
+  await assertFails(updateDoc(ref(rep), { 'extraEntryReviews.E1': { decision: 'edited', revisedAmount: 999, reviewedAmount: 50 } }))
+  await assertFails(setDoc(ref(rep), { weeklyReportOverride: { approvedByUserId: REPORT_A, selfSigned: true, lines: [] } }, { merge: true }))
+
+  // The line manager reviews: a line decision, and an entry decision as a dotted update.
+  await assertSucceeds(setDoc(ref(lm), { payrollLineReviews: { 'op-1': { decision: 'declined', revisedAmount: null } } }, { merge: true }))
+  await assertSucceeds(updateDoc(ref(lm), {
+    'extraEntryReviews.E1': { decision: 'edited', revisedAmount: 30, reviewedAmount: 50, reviewedByUserId: LM_A, reviewedAtMs: 1 },
+  }))
+  // An admin can too.
+  await assertSucceeds(updateDoc(ref(authDb(ADMIN_A, 'admin-a@test.com')), { 'payrollLineReviews.op-2': { decision: 'approved', revisedAmount: null } }))
+
+  // The owner's iOS full resend with the same reviews: allowed. Undoing a review: refused.
+  const reviews = {
+    payrollLineReviews: {
+      'op-1': { decision: 'declined', revisedAmount: null },
+      'op-2': { decision: 'approved', revisedAmount: null },
+    },
+  }
+  await assertSucceeds(setDoc(ref(rep), iosSave({ managerNote: 'Tuesday ran late', expenseEntries: [expense(50, 'edited', 30)], ...reviews }), { merge: true }))
+  await assertFails(setDoc(ref(rep), iosSave({ payrollLineReviews: {} }), { merge: true }))
+  await assertFails(updateDoc(ref(rep), { 'payrollLineReviews.op-1': { decision: 'approved', revisedAmount: null } }))
+  await assertFails(updateDoc(ref(rep), { extraEntryReviews: null }))
+  await assertFails(deleteDoc(ref(rep)))
+  // The owner may still rewrite the inline value; readers ignore it (timesheetEntryDecision).
+  await assertSucceeds(setDoc(ref(rep), iosSave({ managerNote: 'Tuesday ran late', expenseEntries: [expense(50, 'approved', null)], ...reviews }), { merge: true }))
+
+  // The line manager signs. After that the owner cannot change price work or expenses...
+  const signed = Timestamp.fromMillis(Date.parse('2026-10-16T10:00:00.123Z') + 0.789)
+  await assertSucceeds(setDoc(ref(lm), {
+    managerSignedAt: signed, managerSignedByName: 'Lou', managerSignedByUserId: LM_A, approvedAt: signed, approvedByName: 'Lou',
+    weeklyReportOverride: { approvedByUserId: LM_A, selfSigned: false, lines: [], priceWork: [], expenses: [] },
+  }, { merge: true }))
+  const signedResend = {
+    managerSignedAt: Timestamp.fromMillis(signed.toMillis()), managerSignedByName: 'Lou', managerSignedByUserId: LM_A,
+    approvedAt: Timestamp.fromMillis(signed.toMillis()), approvedByName: 'Lou',
+  }
+  await assertFails(setDoc(ref(rep), { ...signedResend, expenseEntries: [expense(500)] }, { merge: true }))
+  await assertFails(setDoc(ref(rep), { ...signedResend, priceWorkEntries: [{ id: 'P1', title: 'Extra', amount: 900, managerDecision: 'approved' }] }, { merge: true }))
+  // ...or the approved snapshot, but a save that leaves them out (web timesheetOwnerWriteFields) passes.
+  await assertFails(setDoc(ref(rep), { ...signedResend, weeklyReportOverride: null }, { merge: true }))
+  await assertSucceeds(setDoc(ref(rep), {
+    ...signedResend, userId: REPORT_A, managerNote: 'Thanks', updatedAt: Timestamp.now(), updatedBy: REPORT_A, updatedFrom: 'web',
+  }, { merge: true }))
+  // The line manager still can.
+  await assertSucceeds(setDoc(ref(lm), { expenseEntries: [expense(50, 'edited', 30)] }, { merge: true }))
+})
+
+test('timesheets: a person with no line manager writes their own self-signed snapshot but never reviews', async () => {
+  await seedPayPeople()
+  // OP_A has no line manager in the seed.
+  const ref = doc(authDb(OP_A, 'op-a@test.com'), 'organizations', ORG_A, 'settings', `timesheet_${OP_A}_1770000000`)
+  await assertSucceeds(setDoc(ref, {
+    userId: OP_A, operativeSignedAt: Timestamp.now(), operativeSignedByName: 'Ollie',
+    managerSignedAt: null, managerSignedByName: '', managerSignedByUserId: '', managerSignatureImageBase64: '',
+    approvedAt: null, approvedByName: '', exportedAt: null, payrollLineReviews: {},
+    weeklyReportOverride: { approvedByUserId: OP_A, selfSigned: true, lines: [], priceWork: [], expenses: [] },
+  }, { merge: true }))
+  await assertFails(setDoc(ref, { payrollLineReviews: { 'op-1': { decision: 'edited', revisedAmount: 999 } } }, { merge: true }))
+  await assertFails(setDoc(ref, { extraEntryReviews: { E1: { decision: 'approved' } } }, { merge: true }))
+})
+
+test('roster rows: operatives and managers pay is changed only by admins or an operatives manager (never their own)', async () => {
+  await seedPayPeople()
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'organizations', ORG_A, 'managers', 'pay-mgr-row-a'), {
+      email: 'pay-mgr-ops@test.com', name: 'Morgan', dayRate: 300,
+    })
+  })
+  const opRow = (db: ReturnType<typeof authDb>, id: string) => doc(db, 'organizations', ORG_A, 'operatives', id)
+  const mgrRow = (db: ReturnType<typeof authDb>, id: string) => doc(db, 'organizations', ORG_A, 'managers', id)
+  const op = authDb(PAY_OP, 'pay-op@test.com')
+  const mgr = authDb(PAY_MGR_OPS, 'pay-mgr-ops@test.com')
+  const admin = authDb(ADMIN_A, 'admin-a@test.com')
+
+  // An operative cannot change pay on any operatives row, own or not; other fields and unchanged resends pass.
+  await assertFails(updateDoc(opRow(op, PAY_OP_ROW), { dayRate: 999 }))
+  await assertFails(updateDoc(opRow(op, PAY_MGR_OP_ROW), { payBasis: 'hourly', hourlyRate: 90 }))
+  await assertFails(setDoc(opRow(op, 'new-row-a'), { email: 'x@test.com', name: 'X', dayRate: 10 }))
+  await assertSucceeds(setDoc(opRow(op, PAY_OP_ROW), { email: 'pay-op@test.com', name: 'Pat B', dayRate: 200 }, { merge: true }))
+  await assertSucceeds(setDoc(opRow(op, 'new-row-b'), { email: 'y@test.com', name: 'Y' }))
+  // A manager with operatives access changes an operative's row, never their own row.
+  await assertSucceeds(updateDoc(opRow(mgr, PAY_OP_ROW), { dayRate: 210 }))
+  await assertFails(updateDoc(opRow(mgr, PAY_MGR_OP_ROW), { dayRate: 999 }))
+  // Manager rows: admins only.
+  await assertFails(updateDoc(mgrRow(mgr, 'pay-mgr-row-a'), { dayRate: 999 }))
+  await assertSucceeds(updateDoc(mgrRow(mgr, 'pay-mgr-row-a'), { name: 'Morgan B' }))
+  await assertSucceeds(updateDoc(mgrRow(admin, 'pay-mgr-row-a'), { dayRate: 320 }))
+  await assertSucceeds(updateDoc(opRow(admin, PAY_MGR_OP_ROW), { dayRate: 310 }))
+  // Another company's admin cannot.
+  await assertFails(updateDoc(opRow(authDb(ADMIN_B, 'admin-b@test.com'), PAY_OP_ROW), { dayRate: 1 }))
+})

@@ -11,7 +11,7 @@ import { loadOrganizationDetails } from '@/lib/settings/organizationSettings'
 import { ianaTimeZoneForCountry } from '@/lib/orgTime/orgTimeZone'
 import {
   DEFAULT_USER_NOTIFICATION_PREFERENCES,
-  notificationPreferenceAllowsDelivery,
+  notificationShowsInInbox,
 } from '@/lib/canonical'
 import { loadUserNotificationPreferences } from '@/lib/settings/notificationPreferences'
 import type { UserNotificationPreferences } from '@/lib/canonical'
@@ -43,7 +43,8 @@ export default function NotificationsPage() {
   }, [organization?.id])
 
   const visible = useMemo(
-    () => notifications.filter((row) => notificationPreferenceAllowsDelivery(prefs, row.type)),
+    // Toggles stop the device push only; every notice stays in the inbox.
+    () => notifications.filter((row) => notificationShowsInInbox(prefs, row.type)),
     [notifications, prefs]
   )
 

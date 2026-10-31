@@ -46,7 +46,7 @@ import { Button, IconChip } from '@/components/ui'
 import { useNotificationStore } from '@/lib/stores/notificationStore'
 import {
   DEFAULT_USER_NOTIFICATION_PREFERENCES,
-  notificationPreferenceAllowsDelivery,
+  notificationShowsInInbox,
   unreadNotificationBadgeCount,
 } from '@/lib/canonical'
 import { loadUserNotificationPreferences } from '@/lib/settings/notificationPreferences'
@@ -273,8 +273,9 @@ function AppShellInner({ children }: { children: ReactNode }) {
     void loadUserNotificationPreferences(user.id).then(setNotificationPrefs)
   }, [user?.id])
 
+  // Toggles stop the device push only; every notice stays in the inbox and the unread count.
   const visibleNotifications = useMemo(
-    () => notifications.filter((row) => notificationPreferenceAllowsDelivery(notificationPrefs, row.type)),
+    () => notifications.filter((row) => notificationShowsInInbox(notificationPrefs, row.type)),
     [notifications, notificationPrefs]
   )
   const unreadCount = unreadNotificationBadgeCount(visibleNotifications, user?.id ?? '')

@@ -7,11 +7,11 @@
 You are working on the **Project Planner iOS app** (SwiftUI + Firebase iOS SDK). It shares one Firebase project with the **web app** (`project-planner-web`, projectplanner.us). An Android app will follow and must reuse the same rules.
 
 Both platforms run **one rulebook** and **one Firebase data model**:
-- Rule text: `docs/RULEBOOK.md` — **version 1.0.0**. The copy in `project-planner-web` is canonical. iOS keeps a **byte-identical mirror** at `docs/RULEBOOK.md`. Never edit the mirror by hand.
+- Rule text: `docs/RULEBOOK.md` — **version 1.1.0**. The copy in `project-planner-web` is canonical. iOS keeps a **byte-identical mirror** at `docs/RULEBOOK.md`. Never edit the mirror by hand.
 - Rule code: `project-planner-web/lib/canonical`, packed into `canonical-business.js`. iOS evaluates it through `Project Planner/Canonical/CanonicalBusinessEngine.swift`. iOS never re-implements a rule in Swift.
-- Published pack for 1.0.0:
-  - packed script sha256 `cf875901410b87eedc0cb5bc328e9044a8ecb8bdc4956cf9b23325255fb9f99b`
-  - rulebook sha256 `f616b45a005d0d8de263ba48ed7636aeb5a29e29eaff4ee6f3df28704e6ccb26`
+- Published pack for 1.1.0:
+  - packed script sha256 `13c1194b676fb6ba3e42585ea7bc9cf2e165af5fbb74fc4d1a9ed55dfb7dc0c7`
+  - rulebook sha256 `36f61c979df49622f619e6c101e83b9d24e4d7694e494db53762af3c2b9e826c`
   - source: web branch `main-kr70k9` (until it merges to `main`).
 
 **Precedence.** Where web and iOS differ, the web data model and rules win and iOS conforms. Exceptions — web has adopted these iOS features, and iOS now reads/writes them the shared way: organisation currency, the invoicing schedule summary, rates on the profile, VAT/UTR billing details, scheduled working-hours changes. Where web has a feature iOS lacks (custom schedule items on/off, address line 2 / county, approved-clashes section on the weekly report), iOS gains it.
@@ -82,7 +82,7 @@ The web repo already enforces its side: every rule change bumps `docs/RULEBOOK.m
 ## C. Known iOS gaps (verify each; file refs from the web agent's read of the iOS repo)
 
 ### C.1 Sync and data
-1. **Packed script is stale** — iOS hash `02e6d9ae…` lacks `resolvedWarningKeys`, `isWarningActive` and every 1.0.0 function. Sync (§B).
+1. **Packed script is stale** — iOS hash `02e6d9ae…` lacks `resolvedWarningKeys`, `isWarningActive` and every 1.0.0 / 1.1.0 function. Sync (§B).
 2. **Org settings not live** — the org listener (`FirebaseBackend.swift:331-355`) applies only schedule options, material cut-off and billing; every other setting comes from sign-in or the local cache (`:1103-1106`). Apply every field from the live `organizations/{orgId}` snapshot. Manage Users lists use one-off `getDocuments` (`Core/UserStore.swift:376-470`) — make them live.
 3. **Write metadata** — only `updatedAt` from the device clock (~64 `Timestamp(date:)`). Use server timestamps + `updatedBy`/`updatedFrom`.
 4. **Time zone** — use `organizationTimeZone(countryCode)` everywhere. Device-calendar day keys: `Core/PayrollTimePolicyCatalog.swift:66-81`, `Core/BookingStore.swift:378-435`, `WeeklyReportView.swift:97-105,781-794`, `MyScheduleView.swift:626`, `DailyOverviewView.swift:47,292`, `PayrollRateResolver.swift:83-85,110`, holiday day checks. `CanonicalBusinessEngine.coverageWindow` passes a fixed "Europe/London" (`:375`) — pass the org zone.
@@ -123,14 +123,21 @@ The web repo already enforces its side: every rule change bumps `docs/RULEBOOK.m
 27. **Leave documents** — `HolidayView.swift:1572,1617`, `OperativeAnnualLeaveViews.swift:1297` write one document per day; write one per range (`holidayRequestRanges`, `holidayRequestWriteFields`). Decisions via `holidayDecisionWriteFields` (`FirebaseBackend.saveHolidayBooking:7622`); statuses `pending` / `approved` / `rejected`. Day counting via `leaveRecordDayKeys` / `annualLeaveBalance`.
 28. **Leave approvers** — `NotificationService.swift:877-911,1770-1800` `holidayRequestRecipients` picks super admins only when there is no line manager. Use `leaveApproverIds` (all active admins + super admins). Approver queue (`HolidayView.swift:1740-1755`): admins see unrouted requests and their own reports — keep consistent with `leaveApproverIds`.
 29. **My Schedule** — label pending leave as pending (`MyScheduleView.swift:1080-1093`); match people by account only — remove the first-name/surname fallback (`Core/WorkAccess.swift:192-195`).
-30. **Notifications inbox** — `NotificationService.swift:~1582` uses `.limit(to: 150)` without ordering; add `.order(by: "createdAt", descending: true)` (index ships in web `firestore.indexes.json`). Variations toggle appears via `visibleNotificationPreferenceKeys`; the `variation_*` types iOS writes (`variation_added`, `variation_from_tracker`, `variation_numbers_updated`) map to it. **Decision needed (ask the user):** should those `variation_*` types also send a device push (today only `variation` does)?
+30. **Notifications inbox** — `NotificationService.swift:~1582` uses `.limit(to: 150)` without ordering; add `.order(by: "createdAt", descending: true)` (index ships in web `firestore.indexes.json`). Variations toggle appears via `visibleNotificationPreferenceKeys`; the `variation_*` types iOS writes (`variation_added`, `variation_from_tracker`, `variation_numbers_updated`) map to it, and **every variation type now sends a device push** (`DEVICE_PUSH_NOTIFICATION_TYPES`, user decision).
+31. **Toggles hide the push, never the inbox row** (user decision, rulebook §13). Today iOS hides inbox rows and local alerts for switched-off types (`NotificationService.swift:1443` `shouldShowNotification` → `deliveryAllowed` at `:1476-1480`, used for the inbox list at `:1606` and local alerts at `:1541`, `:2030`). Change it: the inbox list and unread count use `notificationShowsInInbox` (always shows the row); only pushes and local alerts use `devicePushAllowed` / `notificationPreferenceAllowsDelivery`. The app-icon badge counts every unread inbox row.
 
 ### C.8 Security rules — iOS writes the new rules will refuse
-31. Booking deletes must batch a tombstone: `deleteBooking` (`FirebaseBackend.swift:7485`) and `deleteManagerSiteBooking` (`:7617`) → `deletedBookings/{id}` with `bookingTombstoneWriteFields` + `deletedAt: serverTimestamp()`.
+31a. Booking deletes must batch a tombstone: `deleteBooking` (`FirebaseBackend.swift:7485`) and `deleteManagerSiteBooking` (`:7617`) → `deletedBookings/{id}` with `bookingTombstoneWriteFields` + `deletedAt: serverTimestamp()`.
 32. `ProjectStore.saveData` writes `settings/jobTypes` on every save — refused for operatives; write only when an admin/manager edits job types.
 33. Timesheet saves from a stale local draft that predates a manager's signature are now refused (owner cannot change sign-off fields) — reload before saving and never resend sign-off/export fields from the owner.
 34. Leave approval by a manager who is not the person's line manager is now refused; timesheet edits by a non-line-manager manager too. Gate the UI with `leaveApproverIds` / `userTimesheetSubjects`.
 35. `acceptedBookingClashes` / `warningResolutions` writes are admins and managers only — gate the UI.
+
+### C.9 Pay can only be changed by the people allowed to (rulebook §8, §16 — user decision: "fix for all platforms")
+36. **Profile mirror bypass** — `Core/UserStore.swift:2208-2215`: when the `users/{uid}` write is denied, iOS falls back to writing pay into `operativeProfiles/{uid}` (`FirebaseBackend.swift:5948-5996` `saveOperativeProfileMetadataFallback`). That was the bypass and is now refused — remove the fallback. Gate `saveOperativeProfileMetadataFallback` and `recordOperativeDayRateChange` (`FirebaseBackend.swift:7841-7868`; callers `UserStore.swift:2171-2187`, `2359-2373`, `OperativesView.swift:1095-1110`) on `canChangePersonPay`. Stop applying `operativeProfiles` overrides on roster load (`UserStore.swift:434-451`, also item 18).
+37. **Roster-row pay** — `operatives/{id}` and `managers/{id}` pay fields (`dayRate`, `hourlyRate`, `payBasis`, `employmentType*`) are now writable only by admins, or by an operatives manager for an operative row that is not their own (manager rows: admins only). `syncActiveOperativesWithUserAccounts` (`UserStore.swift:2555-2595`, run from `ContentView.swift:462,509` on every device) mirrors rates into those rows — run it only when the signed-in user can change pay (`canChangePersonPay`), or send only changed non-pay fields; otherwise operatives' devices get refused writes.
+38. **Timesheet entry decisions** — the authoritative decision for a price-work or expense entry is now `extraEntryReviews[entryId] { decision, revisedAmount, reviewedAmount, reviewedByUserId, reviewedAtMs }` (manager/admin-only). Read decisions with `timesheetEntryDecision(sheet, entry)` in `Views/InvoicingView.swift:887-951` (`fromFirestoreMap`), not the inline `managerDecision`. After each reviewer save (`InvoicingView.swift:3921-3929`, `4297-4344`, `OperativeTimesheetReviewView`) `updateData` the output of `timesheetEntryReviewWriteFields` (stored = `parseTimesheetEntryReviews(raw)`); keep writing the inline values for older builds.
+39. **Owner timesheet saves** — `MyTimesheetView.saveDraft` (`InvoicingView.swift:2269-2300`) via `saveToCloud` (`:819-835`) must pass the payload through `timesheetOwnerWriteFields` (`subjectHasLineManager`, `managerSigned`). The owner never writes `payrollLineReviews` / `extraEntryReviews`, writes `weeklyReportOverride` only with no line manager, and cannot change price work / expenses after sign-off. Without this, saves after sign-off are silently refused (`try?`). `managerNote` stays the owner's note to the manager. Use `timesheetWriterIsReviewer` to decide reviewer vs owner.
 
 ---
 
@@ -159,11 +166,11 @@ Report every **web-side gap** you discover (format as in the Gap Report) for the
 
 ---
 
-# Appendix A — The canonical rulebook (docs/RULEBOOK.md, version 1.0.0, verbatim)
+# Appendix A — The canonical rulebook (docs/RULEBOOK.md, version 1.1.0, verbatim)
 
 # Project Planner Rulebook
 
-Version: 1.0.0
+Version: 1.1.0
 Updated: 2026-10-31
 
 This is the one rulebook for every Project Planner platform: web, iOS and (later) Android. It is written platform-neutral. Each rule names the shared function in `lib/canonical` that implements it; platforms call that function (web `@/lib/canonical`, iOS `CanonicalBusinessEngine`, Android the same packed script) and never keep a second copy.
@@ -303,6 +310,10 @@ Generated live for any chosen date range from current bookings, Daily Overview, 
 - Example: PAYE → self-employed changed on Tuesday, effective Wednesday: Monday and Tuesday show 0, Wednesday onwards show figures for days worked.
 - **Overlapping bookings are each paid** and never merged. An overlap is a warning managers should have caught; on the timesheet each overlapping line is shown in amber for the person and their line manager with "Overlaps another booking — check with your manager" (`overlappingBookingIds`, `OVERLAPPING_BOOKING_NOTE`). Times that only touch do not overlap.
 
+**Who may change pay** (`canChangePersonPay`). A person never changes their own pay, line manager or employment type on any path — `users/{uid}`, `operativeProfiles/{uid}`, `operativeDayRateHistory`, or the pay fields of `operatives/{id}` and `managers/{id}`. An admin may (including their own rate). A manager with Operatives access may change an operative's pay in the same company, never their own or another manager's; a manager's pay is changed by admins only. Resending an unchanged value is not a change.
+
+**Timesheet review** (`timesheetEntryReviews`). Only the person's line manager or an admin writes `payrollLineReviews` and `extraEntryReviews`. The decision for a price-work or expense entry is `extraEntryReviews[entryId] { decision, revisedAmount, reviewedAmount, reviewedByUserId, reviewedAtMs }` (`timesheetEntryDecision`, written with `timesheetEntryReviewWriteFields` as dotted partial updates). A review made against a different amount is stale and the entry is pending again; an entry nobody reviewed counts at its own amount. The inline `managerDecision` / `managerRevisedAmount` on an entry is still written for older builds and counts only when it lowers what is paid, or on a legacy sheet (no map) the line manager already signed. Owner saves go through `timesheetOwnerWriteFields`: the person writes `weeklyReportOverride` only when they have no line manager (self-signed), cannot change price work or expenses once the line manager has signed, and writes `managerNote` (their own note to the manager). Whether a writer is a reviewer is `timesheetWriterIsReviewer`.
+
 **Calculation.** Hours, overtime and pay come from bookings, the working-hours policy in effect that day and payment runs (`payrollHoursResult`, `workedHoursSplit`). Timesheets are grouped by payment run (`timesheetPeriodFromInvoicing`, `selectableTimesheetPaymentRunPeriods`); status Awaiting / Signed off / Exported is `timesheetListBucket`.
 
 **Annual leave on timesheets.** Each approved leave day in the period appears as an information line "Annual leave (full day / AM / PM)" for the person and their line manager, with no edit control and no hours or pay (`timesheetLeaveLines`, `timesheetLeaveLabel`). Leave never appears on a generated invoice.
@@ -328,8 +339,9 @@ Matches on every platform and updates live: profile photo (`profilePhotoURL`), c
 ## 13. Notifications
 
 - **My notifications** toggles are personal (`users/{uid}.notificationPreferences`), written as dotted partial updates, and sync across platforms (`parseUserNotificationPreferences`, `userNotificationPreferenceFieldPatch`).
-- Which toggles a person sees depends on role and features (`visibleNotificationPreferenceKeys`). People who can see variations (`canSeeVariations`: admins and managers) have a **Variations** toggle (`variations`, on by default) covering `variation`, `variation_renumbered`, `variation_added`, `variation_from_tracker` and `variation_numbers_updated`.
-- A toggle turned off stops that notification type's device push everywhere (enforced by the push Cloud Function) and hides its rows in the inbox and badge (`notificationPreferenceAllowsDelivery`). The notification record itself is still written.
+- Which toggles a person sees depends on role and features (`visibleNotificationPreferenceKeys`). People who can see variations (`canSeeVariations`: admins and managers) have a **Variations** toggle (`variations`, on by default) covering all five variation types.
+- A toggle turned off stops that notification type's **device push** everywhere (`notificationPreferenceAllowsDelivery`, `devicePushAllowed`; enforced by the push Cloud Function). It **never hides the inbox row**: every notice addressed to the person stays in the notification centre and the unread count, on every platform (`notificationShowsInInbox`, `NOTIFICATION_TOGGLE_HIDES_INBOX_ROW = false`). The app-icon badge counts the same unread rows.
+- Types that send a device push are `DEVICE_PUSH_NOTIFICATION_TYPES`, including every variation type (`variation`, `variation_renumbered`, `variation_added`, `variation_from_tracker`, `variation_numbers_updated`).
 - Organisation settings (material cut-off, schedule options) never appear in My notifications.
 - Web never sends browser or OS notifications.
 
@@ -349,9 +361,9 @@ Matches on every platform and updates live: profile photo (`profilePhotoURL`), c
 Deployed only from `project-planner-web/firestore.rules`. Apps hide controls too, but these rules are the guard:
 - **Organisation:** only a current admin edits `organizations/{orgId}`; billing is never written by an app; ownership (`creatorUserId`) passes only from the current Super Admin to another admin (or by the platform owner). A demoted creator cannot edit.
 - **Company settings documents** (`settings/{id}` such as job types and trades): admins and managers. Deadlines and health & safety documents stay open to the team.
-- **Profile:** a person cannot change their own pay (`dayRate`, `hourlyRate`, `payBasis`), line manager, active flag, employment type or permissions. Resending an unchanged value always passes.
+- **Profile and pay:** a person cannot change their own pay (`dayRate`, `hourlyRate`, `payBasis`), line manager, active flag, employment type or permissions — on `users/{uid}`, `operativeProfiles/{uid}`, `operativeDayRateHistory`, `operatives/{id}` or `managers/{id}`. Pay changes are admins, or operatives managers for operatives (§8). Resending an unchanged value always passes.
 - **Annual leave:** a person creates and edits their own pending request and asks to cancel; only an admin or the person's line manager approves or rejects (any manager when the person has no line manager). People allowed to book their own leave save it approved.
-- **Timesheets:** a person never counter-signs or exports their own timesheet; only their line manager or an admin writes the sign-off and export fields.
+- **Timesheets:** a person never counter-signs or exports their own timesheet; only their line manager or an admin writes the sign-off and export fields and the review maps (`payrollLineReviews`, `extraEntryReviews`); after sign-off the person cannot change price work or expenses.
 - **Warnings:** only admins and managers accept a clash or approve/dismiss a warning resolution.
 - **Bookings:** tombstones as in §2.
 - **Write metadata** (`updatedBy` = the signed-in user, `updatedFrom`, `updatedAt`) is validated when present and never required.
@@ -369,6 +381,11 @@ Deployed only from `project-planner-web/firestore.rules`. Apps hide controls too
 7. A gap found on iOS is reported to the web agent and fixed here first — never by diverging on iOS.
 
 ## Changelog
+
+### 1.1.0 — 2026-10-31
+- My notifications toggles stop the device push only; the inbox row and unread count always show the notice (`notificationShowsInInbox`, `devicePushAllowed`). The app-icon badge matches the inbox.
+- Every variation notification type sends a device push (`variation_renumbered`, `variation_added`, `variation_from_tracker`, `variation_numbers_updated` join `variation`).
+- Pay and manager decisions are protected on every path (security rules and shared rules; see §8 and §16).
 
 ### 1.0.0 — 2026-10-31
 - First versioned rulebook. Consolidates the rules previously spread across `docs/CANONICAL_ARCHITECTURE.md`, `AGENTS.md` and the iOS copies into this one file, mirrored to iOS.

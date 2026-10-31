@@ -34,6 +34,9 @@ import {
   SENSITIVE_EXPORT_OPTION_LABEL,
   canViewSensitiveProfile,
   exportIncludesSensitiveFields,
+  lineManagerIds,
+  seesEveryUserTimesheet,
+  timesheetWriterIsReviewer,
 } from '@/lib/canonical'
 import { loadTaxIds } from '@/lib/sensitiveProfile/taxIdsService'
 import {
@@ -305,7 +308,16 @@ export function TimesheetPeriodPage({
         timeZone,
       })
       setDraft(withOverride)
-      await saveTimesheetDraft({
+      // Line manager or admin (`timesheetWriterIsReviewer`, the rules' isTimesheetReviewer). The
+      // owner's save leaves the reviewer-only parts alone.
+      const reviewer = timesheetWriterIsReviewer({
+        writerUserId: viewer?.id,
+        subjectUserId: subjectUser.id,
+        writerIsAdmin: Boolean(viewer && seesEveryUserTimesheet(staffAccountRole(viewer))),
+        writerFormerIds: viewer?.formerUserIds ?? [],
+        subjectLineManagerIds: lineManagerIds(subjectUser),
+      })
+      const reviews = await saveTimesheetDraft({
         organizationId: organization.id,
         userId: subjectUser.id,
         weekStart: periodStart,
@@ -313,7 +325,11 @@ export function TimesheetPeriodPage({
         draft: withOverride,
         timeZone,
         documentId: sourceDocumentId.current,
+        access: { reviewer, subjectHasLineManager: userHasLineManager(subjectUser) },
       })
+      if (reviews !== (withOverride.extraEntryReviews ?? null)) {
+        setDraft((current) => (current === withOverride ? { ...withOverride, extraEntryReviews: reviews } : current))
+      }
     },
     [
       organization?.id,
