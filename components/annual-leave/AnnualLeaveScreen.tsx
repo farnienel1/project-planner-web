@@ -12,14 +12,13 @@ import {
 import { ErrorBanner } from '@/components/dashboard/PageShell'
 import { OperativeAnnualLeaveManagement } from './OperativeAnnualLeaveManagement'
 import { PersonalLeave } from './PersonalLeave'
+import { lineManagerIds } from '@/lib/canonical'
 
 export function AnnualLeaveScreen() {
   const { organization, user } = useAuthStore()
-  const { bookings, error, saveBooking, deleteBooking, requestCancellation } = useHolidayStore()
+  const { bookings, error, saveBooking, createRequests, deleteBooking, requestCancellation } = useHolidayStore()
   const isOperative = isOperativeMode(user)
-  const hasLineManager = Boolean(
-    user?.assignedManagerUserId?.trim() || user?.assignedManagerUserIds?.some((id) => id.trim())
-  )
+  const hasLineManager = lineManagerIds(user).length > 0
   const booksOwnLeave = !isOperative && (!hasLineManager || user?.permissions.annualLeaveSelfBook === true)
   const canTeam = !isOperative && canAccessOperativeAnnualLeaveDirectory(user)
   const searchParams = useSearchParams()
@@ -90,6 +89,7 @@ export function AnnualLeaveScreen() {
           user={user}
           orgLeaveDefaults={orgLeaveDefaults}
           saveBooking={saveBooking}
+          createRequests={createRequests}
           deleteBooking={deleteBooking}
           requestCancellation={requestCancellation}
         />

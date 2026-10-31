@@ -4,6 +4,7 @@
  * matches the iOS invoice page layout so Print → Save as PDF is the same content.
  */
 import { formatCurrency } from '@/lib/weekly-report/weeklyReportPayroll'
+import { currentOrganizationCurrency } from '@/lib/stores/organizationDocumentStore'
 import { orgDayHours, payLineDisplay, readStoredRates } from '@/lib/timesheets/payBasis'
 import { formatPaymentPeriodLine } from '@/lib/timesheets/paymentRunCopy'
 import { formatStampInZone } from '@/lib/orgTime/zoneTime'
@@ -41,6 +42,7 @@ export function buildTimesheetInvoiceHtml({
   periodMetaLabel = 'INVOICE PERIOD',
   totalLabel = 'Total invoice amount',
   notes = [],
+  currencyCode = currentOrganizationCurrency(),
 }: {
   organizationName: string
   subject: TimesheetSubject
@@ -59,10 +61,12 @@ export function buildTimesheetInvoiceHtml({
   periodMetaLabel?: string
   totalLabel?: string
   notes?: string[]
+  /** Organisation currency (`formatMoney`). */
+  currencyCode?: string
 }): string {
   const period = formatPaymentPeriodLine(weekStart, weekEnd, timeZone)
   const generated = formatStampInZone(generatedAt, timeZone)
-  const totalText = amount != null ? formatCurrency(amount) : 'Rate not set'
+  const totalText = amount != null ? formatCurrency(amount, currencyCode) : 'Rate not set'
   const stored = readStoredRates(subject)
   const standard = orgDayHours(standardDayHours)
   const fallbackPay = payLineDisplay({
@@ -74,6 +78,7 @@ export function buildTimesheetInvoiceHtml({
         ? stored.hourlyRate
         : stored.dayRate,
     pay: amount ?? 0,
+    currencyCode,
   }).equation
   const rows =
     lines && lines.length > 0
@@ -88,7 +93,7 @@ export function buildTimesheetInvoiceHtml({
         <div class="project">${escapeHtml(line.projectName || line.description)}</div>
         <div class="muted">${escapeHtml(line.details || line.description)}</div>
       </td>
-      <td class="amount">${escapeHtml(formatCurrency(line.amount))}</td>
+      <td class="amount">${escapeHtml(formatCurrency(line.amount, currencyCode))}</td>
     </tr>`
           )
           .join('')
@@ -100,7 +105,7 @@ export function buildTimesheetInvoiceHtml({
       <td>
         <div class="project">${escapeHtml(fallbackPay)}</div>
       </td>
-      <td class="amount">${amount != null ? escapeHtml(formatCurrency(amount)) : '—'}</td>
+      <td class="amount">${amount != null ? escapeHtml(formatCurrency(amount, currencyCode)) : '—'}</td>
     </tr>`
 
   return `<!DOCTYPE html>

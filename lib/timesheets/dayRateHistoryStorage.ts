@@ -3,7 +3,8 @@
  * Collection: organizations/{orgId}/operativeDayRateHistory/{uuid}
  */
 import { collection, doc, getDocs, serverTimestamp, setDoc, Timestamp } from 'firebase/firestore'
-import { db } from '@/lib/firebase/config'
+import { auth, db } from '@/lib/firebase/config'
+import { writeMetadataFields } from '@/lib/canonical/writeMetadata'
 import { newUuid, parseFirestoreDate, sanitizeForFirestore } from '@/lib/firebase/firestoreUtils'
 import { londonMidnight } from '@/lib/ios-parity/londonTime'
 import type { PayBasis } from '@/lib/timesheets/payBasis'
@@ -137,6 +138,7 @@ export async function recordOperativeDayRateChange({
     operativeId: oid || '',
   }) as Record<string, unknown>
   payload.createdAt = serverTimestamp()
+  Object.assign(payload, writeMetadataFields(auth?.currentUser?.uid, 'web') ?? {}, { updatedAt: serverTimestamp() })
   await setDoc(ref, payload, { merge: true })
 }
 

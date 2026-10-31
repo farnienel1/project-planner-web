@@ -1,5 +1,6 @@
 import { getISODay } from 'date-fns'
-import { reportDayValue, resolveBookingPerson, rosterAliasIdsFor } from '@/lib/canonical'
+import { formatMoney, reportDayValue, resolveBookingPerson, rosterAliasIdsFor } from '@/lib/canonical'
+import { currentOrganizationCurrency } from '@/lib/stores/organizationDocumentStore'
 import type { OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 import { DEFAULT_PAYROLL_POLICY } from '@/lib/settings/organizationSettings'
 import type { Operative, User } from '@/types'
@@ -164,8 +165,9 @@ export function isWeekendDay(date: Date): boolean {
   return iso === 6 || iso === 7
 }
 
-export function formatCurrency(amount: number): string {
-  return `£${amount.toFixed(2)}`
+/** Organisation money (`formatMoney`). The open company's currency unless a code is passed. */
+export function formatCurrency(amount: number, currencyCode: string = currentOrganizationCurrency()): string {
+  return formatMoney(amount, currencyCode)
 }
 
 export function formatDays(days: number): string {
@@ -278,7 +280,7 @@ export function signedLabourSlice(line: {
   }
 }
 
-export function paySliceDisplay(slice: LabourPaySlice, standardHours: number) {
+export function paySliceDisplay(slice: LabourPaySlice, standardHours: number, currencyCode: string = currentOrganizationCurrency()) {
   if (slice.isPaye) {
     return {
       rateType: 'PAYE',
@@ -297,6 +299,7 @@ export function paySliceDisplay(slice: LabourPaySlice, standardHours: number) {
     pay: slice.pay,
     isOvertime: slice.isOvertime,
     otMultiplier: slice.otMultiplier,
+    currencyCode,
   })
   return {
     rateType: display.rateType,

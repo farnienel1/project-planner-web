@@ -88,7 +88,7 @@ export function OperativeAnnualLeaveManagement({
   onQueueCount?: (count: number) => void
 } = {}) {
   const { user, organization } = useAuthStore()
-  const { bookings, saveBooking, deleteBooking } = useHolidayStore()
+  const { bookings, saveBooking, deleteBooking, decideBooking } = useHolidayStore()
   const { operatives, loadOperatives } = useOperativeStore()
   const { users, loadUsers } = useOrgUserStore()
 
@@ -156,6 +156,7 @@ export function OperativeAnnualLeaveManagement({
 
   const [awayMonth, setAwayMonth] = useState(new Date())
   const [declineTarget, setDeclineTarget] = useState<HolidayBooking | null>(null)
+  const [declineNote, setDeclineNote] = useState('')
   const [holidayNote, setHolidayNote] = useState<string | null>(null)
   const bankYear = new Date().getFullYear()
   const bank = useOrgBankHolidays(new Date(bankYear, 0, 1), new Date(bankYear, 11, 31))
@@ -174,7 +175,7 @@ export function OperativeAnnualLeaveManagement({
     return `${names[0]} +${names.length - 1}`
   }
 
-  const updateStatus = async (booking: HolidayBooking, status: 'approved' | 'rejected') => {
+  const updateStatus = async (booking: HolidayBooking, status: 'approved' | 'rejected', decisionNote?: string) => {
     if (!organization?.id || !user) return
     if (status === 'approved' && isCancellationRequest(booking)) {
       await deleteBooking(organization.id, booking.id)
@@ -189,17 +190,14 @@ export function OperativeAnnualLeaveManagement({
       })
       return
     }
-    await saveBooking(organization.id, {
-      ...booking,
-      status,
-      approvedByUserId: user.id,
-      approvedAt: new Date(),
-    })
+    // `holidayDecisionWriteFields`: status, approver and the optional note in one partial update.
+    await decideBooking(organization.id, booking, { status, approverUid: user.id, decisionNote })
     await notifyHolidayRequestDecisionToUser({
       organizationId: organization.id,
       booking,
       approved: status === 'approved',
       decidedByName: holidayDecisionActorName(user),
+      reason: decisionNote,
       users,
       operatives,
     })
@@ -433,6 +431,15 @@ export function OperativeAnnualLeaveManagement({
             <p className="mt-1 text-sm text-slate-600">
               {resolvePersonName(declineTarget, users, operatives)} · {formatLeaveRange(declineTarget)}
             </p>
+            {isCancellationRequest(declineTarget) ? null : (
+              <textarea
+                value={declineNote}
+                onChange={(event) => setDeclineNote(event.target.value)}
+                placeholder="Note for them (optional)"
+                rows={2}
+                className="mt-3 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
+              />
+            )}
             <div className="mt-4 grid grid-cols-2 gap-2">
               <button
                 type="button"
@@ -446,8 +453,10 @@ export function OperativeAnnualLeaveManagement({
                 className="rounded-xl bg-[var(--red)] py-2.5 text-sm font-bold text-white"
                 onClick={() => {
                   const target = declineTarget
+                  const note = declineNote
                   setDeclineTarget(null)
-                  void updateStatus(target, 'rejected')
+                  setDeclineNote('')
+                  void updateStatus(target, 'rejected', note)
                 }}
               >
                 Decline

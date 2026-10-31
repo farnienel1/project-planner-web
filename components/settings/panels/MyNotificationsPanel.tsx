@@ -1,9 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import Link from 'next/link'
 import { useAuthStore } from '@/lib/stores/authStore'
-import { canAccessOrganisationSettingsHub } from '@/lib/navigation/menuPermissions'
 import {
   DEFAULT_USER_NOTIFICATION_PREFERENCES,
   notificationPreferenceCopy,
@@ -39,7 +37,6 @@ const BELL_ICON =
 export function MyNotificationsPanel({ onBack }: { onBack: () => void }) {
   const { user } = useAuthStore()
   const requestLeave = useSettingsLeave()
-  const canEditCompany = canAccessOrganisationSettingsHub(user)
   const audience = notificationPreferenceAudience(user)
   const visibleKeys = audience ? visibleNotificationPreferenceKeys(audience) : []
   const [prefs, setPrefs] = useState<UserNotificationPreferences>(DEFAULT_USER_NOTIFICATION_PREFERENCES)
@@ -111,36 +108,6 @@ export function MyNotificationsPanel({ onBack }: { onBack: () => void }) {
         })}
       </SettingsCard>
       </SettingsFormBody>
-
-      <p className="px-1 text-[13px] leading-5 text-[var(--ink3)]">
-        Turn off any reminder you do not want. Organisation cut-off time is set in organisation settings.
-        My Schedule extra locations are managed in Organisation Settings Hub → Schedule options.
-      </p>
-
-      {canEditCompany ? (
-        <SettingsCard>
-          <Link href="/dashboard/settings/material-cutoff" className="block">
-            <SettingsRow
-              icon="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
-              iconBg="bg-blue-50"
-              iconColor="text-blue-600"
-              label="Organisation cut-off time"
-              description="Company-wide reminder time and Saturday / Sunday"
-              chevron
-            />
-          </Link>
-          <Link href="/dashboard/settings/schedule-options" className="block">
-            <SettingsRow
-              icon="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
-              iconBg="bg-blue-50"
-              iconColor="text-blue-600"
-              label="Schedule options"
-              description="Office, working from home, site survey and custom locations"
-              chevron
-            />
-          </Link>
-        </SettingsCard>
-      ) : null}
 
       <SaveBar dirty={dirty} hint={settingsSaveBarHint(loadState)}>
         <SaveButton saving={saving} saved={saved} dirty={dirty} onClick={save} />

@@ -5,14 +5,13 @@
 
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { getDownloadURL, ref } from 'firebase/storage'
 import { withTimeout } from '@/lib/client/withTimeout'
 import { auth, storage } from '@/lib/firebase/config'
 import type { User } from '@/types'
 
 const PHOTO_URL_TIMEOUT_MS = 8_000
-const PHOTO_LOAD_MS = 15_000
 
 function initialsOf(user: Pick<User, 'firstName' | 'surname' | 'email'>): string {
   const initials = `${user.firstName?.[0] ?? ''}${user.surname?.[0] ?? ''}`.toUpperCase()
@@ -25,6 +24,22 @@ export function storagePathFromPhotoUrl(url: string): string | null {
     return null
   }
   return url.replace(/^\/+/, '')
+}
+
+/**
+ * The object path inside a Firebase Storage download URL
+ * (`https://firebasestorage.googleapis.com/v0/b/{bucket}/o/{encoded path}?alt=media&token=…`).
+ * A re-upload to the same path issues a new token, so an older copy of the URL answers 403;
+ * the path lets the avatar ask for the current URL once.
+ */
+export function storagePathFromDownloadUrl(url: string): string | null {
+  const match = /^https:\/\/firebasestorage\.googleapis\.com\/v0\/b\/[^/]+\/o\/([^?#]+)/.exec(url)
+  if (!match) return null
+  try {
+    return decodeURIComponent(match[1])
+  } catch {
+    return null
+  }
 }
 
 async function downloadPhotoUrl(path: string): Promise<string | null> {
@@ -69,6 +84,8 @@ function useResolvedPhotoUrl(url?: string) {
   return resolved
 }
 
+type PhotoState = { src: string; state: 'loading' | 'loaded' | 'failed'; retried: boolean }
+
 export function UserAvatar({
   user,
   size = 40,
@@ -80,21 +97,46 @@ export function UserAvatar({
   className?: string
   gradient?: string
 }) {
-  const [failed, setFailed] = useState(false)
-  const [loaded, setLoaded] = useState(false)
   const resolved = useResolvedPhotoUrl(user.profilePhotoURL)
-  const showPhoto = Boolean(resolved) && !failed
+  // State belongs to one URL. A new URL starts fresh without an effect that could clear a
+  // load that already fired (a cached image calls onLoad before effects run).
+  const [photo, setPhoto] = useState<PhotoState | null>(null)
+  const [refreshed, setRefreshed] = useState<{ from: string; to: string } | null>(null)
+  const src = resolved && refreshed?.from === resolved ? refreshed.to : resolved
+  const current = photo && photo.src === src ? photo : null
+  const showPhoto = Boolean(src) && current?.state !== 'failed'
+  const imgRef = useRef<HTMLImageElement | null>(null)
 
   useEffect(() => {
-    setFailed(false)
-    setLoaded(false)
-  }, [user.profilePhotoURL, resolved])
+    // A cached image may have finished before React attached onLoad.
+    const img = imgRef.current
+    if (!src || !img || !img.complete) return
+    if (img.naturalWidth > 0) setPhoto((prev) => (prev?.src === src && prev.state === 'loaded' ? prev : { src, state: 'loaded', retried: prev?.src === src ? prev.retried : false }))
+  }, [src])
 
-  useEffect(() => {
-    if (!resolved || loaded) return
-    const timer = window.setTimeout(() => setFailed(true), PHOTO_LOAD_MS)
-    return () => window.clearTimeout(timer)
-  }, [resolved, loaded])
+  const onError = () => {
+    if (!src || !resolved) return
+    if (current?.retried) {
+      setPhoto({ src, state: 'failed', retried: true })
+      return
+    }
+    // Retry once: ask Storage for the current download URL (a re-upload changes the token).
+    setPhoto({ src, state: 'loading', retried: true })
+    const path = storagePathFromDownloadUrl(src) ?? storagePathFromPhotoUrl(user.profilePhotoURL?.trim() || '')
+    if (!path) {
+      setPhoto({ src, state: 'failed', retried: true })
+      return
+    }
+    const from = resolved
+    void downloadPhotoUrl(path).then((fresh) => {
+      if (fresh && fresh !== src) {
+        setRefreshed({ from, to: fresh })
+        setPhoto({ src: fresh, state: 'loading', retried: true })
+      } else {
+        setPhoto({ src, state: 'failed', retried: true })
+      }
+    })
+  }
 
   return (
     <span
@@ -104,15 +146,16 @@ export function UserAvatar({
       {showPhoto ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
-          src={resolved || ''}
+          key={src || ''}
+          ref={imgRef}
+          src={src || ''}
           alt=""
           className="h-full w-full object-cover"
           decoding="async"
           onLoad={() => {
-            setLoaded(true)
-            setFailed(false)
+            if (src) setPhoto({ src, state: 'loaded', retried: current?.retried ?? false })
           }}
-          onError={() => setFailed(true)}
+          onError={onError}
         />
       ) : (
         <span

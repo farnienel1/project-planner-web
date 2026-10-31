@@ -12,17 +12,25 @@ export interface OrgPayrollSettings {
   payrollTimePolicy?: PayrollTimePolicy
   payrollTimePolicyPrior?: PayrollTimePolicy
   payrollTimePolicyEffectiveFrom?: string
+  payrollTimePolicyScheduled?: { policy: PayrollTimePolicy; effectiveFrom: string } | null
 }
 
+/**
+ * Working hours in effect on `day` — same rule as canonical `effectivePayrollTimePolicy`:
+ * a scheduled change from its day on, the prior rules before effectiveFrom, otherwise current.
+ */
 export function policyForDay(
   day: Date,
-  organization: OrgPayrollSettings | null | undefined
+  organization: OrgPayrollSettings | null | undefined,
+  timeZone?: string
 ): PayrollTimePolicy {
   if (!organization) return DEFAULT_PAYROLL_TIME_POLICY
   const current = organization.payrollTimePolicy ?? DEFAULT_PAYROLL_TIME_POLICY
+  const key = dayKey(day, timeZone)
+  const scheduled = organization.payrollTimePolicyScheduled
+  if (scheduled && key >= scheduled.effectiveFrom) return scheduled.policy
   const effectiveFrom = organization.payrollTimePolicyEffectiveFrom
   if (!effectiveFrom) return current
-  const key = dayKey(day)
   if (key >= effectiveFrom) return current
   return organization.payrollTimePolicyPrior ?? current
 }

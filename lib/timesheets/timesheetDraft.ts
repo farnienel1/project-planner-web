@@ -1,6 +1,7 @@
 /**
  * iOS parity: Models/TimesheetDraftModels.swift
  */
+import type { TimesheetEntryReview } from '@/lib/canonical'
 
 export type TimesheetManagerDecision = 'pending' | 'approved' | 'declined' | 'edited'
 
@@ -93,6 +94,12 @@ export type TimesheetDraft = {
   managerSignatureImageBase64?: string | null
   exportedAt?: Date | null
   weeklyReportOverride?: WeeklyReportOverride | null
+  /**
+   * Stored `extraEntryReviews` (line manager / admin decisions on price work and expenses), or
+   * null on a legacy sheet that has none yet. Entry `managerDecision` values are already resolved
+   * from it by `timesheetEntryDecision`; this copy only lets a reviewer save write what changed.
+   */
+  extraEntryReviews?: Record<string, TimesheetEntryReview> | null
 }
 
 export function emptyTimesheetDraft(): TimesheetDraft {

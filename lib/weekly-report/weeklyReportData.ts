@@ -1,5 +1,13 @@
 import { format } from 'date-fns'
-import { bookingOccupiesDay, rosterAliasIdsFor } from '@/lib/canonical'
+import {
+  bookingOccupiesDay,
+  clashResolutionKey,
+  dayKeyInOrganizationZone,
+  isClashApproved,
+  resolveOrganizationCurrency,
+  rosterAliasIdsFor,
+  type AcceptedClashRecord,
+} from '@/lib/canonical'
 import { getDayKindForBookings } from '@/lib/annualLeave/dayStatus'
 import { findOperativeForUser } from '@/lib/operatives/operativeRosterUtils'
 import { mergeProjectsAndSmallWorks } from '@/lib/projects/workStatus'
@@ -59,6 +67,27 @@ export type WeeklyReportWarningRow = {
   description: string
   detail: string
   forPerson: string
+}
+
+/** A clash approved on Warnings (either platform) whose day is in the report period. */
+export type WeeklyReportApprovedClashRow = {
+  /** Organisation day key. */
+  dayKey: string
+  date: string
+  priority: 'High' | 'Medium'
+  type: 'Booking clash' | 'Manager overlap'
+  person: string
+  detail: string
+  bookingAId: string
+  bookingBId: string
+  /** `warningResolutions` key (`clashResolutionKey`): `mgr-clash-…` for managers, the booking pair for operatives. */
+  resolutionKey: string
+}
+
+/** Approvals from `warningResolutions` (`resolvedWarningKeys`) and `acceptedBookingClashes`. */
+export type WeeklyReportWarningDecisions = {
+  resolvedKeys: readonly string[]
+  acceptedClashes: readonly AcceptedClashRecord[]
 }
 
 export type WeeklyReportProjectRow = {
@@ -135,7 +164,11 @@ export type WeeklyReportData = {
   reportPeriod: ReportPeriod
   invoicingPeriodLabel: string
   generatedAt: Date
+  /** Organisation currency code for every money figure (`formatMoney`). */
+  currencyCode: string
   warnings: WeeklyReportWarningRow[]
+  /** Clashes approved on Warnings in this period (not repeated in `warnings`). */
+  approvedClashes: WeeklyReportApprovedClashRow[]
   projectGroups: WeeklyReportProjectGroup[]
   allProjectWorkTotal: number
   subContractorRows: WeeklyReportSubRow[]
@@ -200,6 +233,7 @@ export function buildWeeklyReportData({
   timesheetWeeks = [],
   history = emptyDayRateHistory(),
   userIdAliases = {},
+  warningDecisions = null,
 }: {
   organizationName: string
   companyLogoURL?: string
@@ -218,6 +252,8 @@ export function buildWeeklyReportData({
   history?: OperativeDayRateHistoryCollection
   /** The roster's same-email profile map (`useOrgUserStore().userIdAliases`), the one Daily Overview uses. */
   userIdAliases?: Readonly<Record<string, string>>
+  /** Clash approvals. Without them every clash in the period is listed as open. */
+  warningDecisions?: WeeklyReportWarningDecisions | null
 }): WeeklyReportData {
   const payroll = orgDetails?.payrollTimePolicy
   const standardHours = orgDayHours(payroll?.standardPaidHours ?? 8)
@@ -574,6 +610,30 @@ export function buildWeeklyReportData({
   const warningDetection = orgDetails?.warningDetection
   const rosterOperatives = getActiveOperativesForScheduling(operatives)
   const warnings: WeeklyReportWarningRow[] = []
+  const approvedClashes: WeeklyReportApprovedClashRow[] = []
+  const decisions = warningDecisions
+    ? { resolvedKeys: warningDecisions.resolvedKeys, acceptedClashes: warningDecisions.acceptedClashes }
+    : null
+  const approvedRow = (
+    clash: { date: Date; bookingAId: string; bookingBId: string; message: string; resolutionKey?: string },
+    person: string,
+    kind: 'operative' | 'manager'
+  ): WeeklyReportApprovedClashRow => {
+    const dayKey = dayKeyInOrganizationZone(clash.date.toISOString(), timeZone)
+    return {
+      dayKey,
+      date: new Intl.DateTimeFormat('en-GB', { timeZone, day: 'numeric', month: 'short', year: 'numeric' }).format(
+        clash.date
+      ),
+      priority: kind === 'operative' ? 'High' : 'Medium',
+      type: kind === 'operative' ? 'Booking clash' : 'Manager overlap',
+      person,
+      detail: clash.message,
+      bookingAId: clash.bookingAId,
+      bookingBId: clash.bookingBId,
+      resolutionKey: clashResolutionKey(clash),
+    }
+  }
 
   if (warningDetection?.detectClashes) {
     for (const clash of filterWarningsToPeriod(
@@ -585,6 +645,10 @@ export function buildWeeklyReportData({
       period
     )) {
       if (isAnonymisedDeletedProfile({ name: clash.operativeName })) continue
+      if (decisions && isClashApproved(clash, decisions)) {
+        approvedClashes.push(approvedRow(clash, clash.operativeName, 'operative'))
+        continue
+      }
       warnings.push({
         status: 'Open',
         priority: 'High',
@@ -605,6 +669,10 @@ export function buildWeeklyReportData({
       period
     )) {
       if (isAnonymisedDeletedProfile({ name: clash.personName })) continue
+      if (decisions && isClashApproved(clash, decisions)) {
+        approvedClashes.push(approvedRow(clash, clash.personName, 'manager'))
+        continue
+      }
       warnings.push({
         status: 'Open',
         priority: 'Medium',
@@ -729,7 +797,11 @@ export function buildWeeklyReportData({
       ? formatReportPeriodLabel(invoicingPeriod.start, invoicingPeriod.end)
       : '—',
     generatedAt: new Date(),
+    currencyCode: resolveOrganizationCurrency(orgDetails),
     warnings,
+    approvedClashes: approvedClashes.sort(
+      (a, b) => a.dayKey.localeCompare(b.dayKey) || a.person.localeCompare(b.person)
+    ),
     projectGroups,
     allProjectWorkTotal,
     subContractorRows,

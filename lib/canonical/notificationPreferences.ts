@@ -18,6 +18,7 @@ import type { AccountKind } from './userProfile'
 import {
   canEditWorkCatalogue,
   canReviewUserTimesheets,
+  canSeeVariations,
   canViewStaffWarnings,
   isStaffAccount,
   type StaffAccountRole,
@@ -44,6 +45,7 @@ export const NOTIFICATION_PREFERENCE_KEYS = [
   'qualificationExpiry',
   'lineManagerPeerUpdates',
   'timesheetSubmissionReminder',
+  'variations',
 ] as const
 
 export type NotificationPreferenceKey = (typeof NOTIFICATION_PREFERENCE_KEYS)[number]
@@ -70,6 +72,7 @@ export const DEFAULT_USER_NOTIFICATION_PREFERENCES: UserNotificationPreferences 
   qualificationExpiry: true,
   lineManagerPeerUpdates: true,
   timesheetSubmissionReminder: true,
+  variations: true,
 }
 
 /**
@@ -110,6 +113,12 @@ const TYPE_TO_PREFERENCE: Record<string, NotificationPreferenceKey> = {
   qualification_expiry: 'qualificationExpiry',
   line_manager_peer_update: 'lineManagerPeerUpdates',
   [TIMESHEET_SUBMISSION_NOTICE_TYPE]: 'timesheetSubmissionReminder',
+  // Web writes `variation` / `variation_renumbered`; iOS writes the three `variation_*` kinds below.
+  variation: 'variations',
+  variation_renumbered: 'variations',
+  variation_added: 'variations',
+  variation_from_tracker: 'variations',
+  variation_numbers_updated: 'variations',
 }
 
 export type NotificationWorkCatalogue = 'projects' | 'smallWorks'
@@ -263,6 +272,7 @@ const PREFERENCE_LABELS: Record<NotificationPreferenceKey, string> = {
   qualificationExpiry: 'Qualification expiry',
   lineManagerPeerUpdates: 'Line manager peer updates',
   timesheetSubmissionReminder: 'Timesheet submission reminder',
+  variations: 'Variations',
 }
 
 /**
@@ -293,6 +303,7 @@ export function notificationPreferenceCopy(
     qualificationExpiry: 'Reminders before qualifications expire.',
     lineManagerPeerUpdates: 'When another line manager actions a shared request.',
     timesheetSubmissionReminder: 'Reminder to submit before the payment-run deadline.',
+    variations: 'When a variation is added to a job you manage, or variation numbers are updated.',
   }
   return { label: PREFERENCE_LABELS[key], description: descriptions[key] }
 }
@@ -323,6 +334,8 @@ export function notificationPreferenceIsVisible(
       return canViewStaffWarnings(role)
     case 'timesheetSignOff':
       return canReviewUserTimesheets(role)
+    case 'variations':
+      return canSeeVariations(role)
     default:
       return true
   }
@@ -335,9 +348,11 @@ export function visibleNotificationPreferenceKeys(
 }
 
 /**
- * Whether this account should receive a notice of `type`.
- * Types with no toggle (variations, ideas) stay allowed.
- * A toggle that is on does not add the user to a fan-out they are not already on.
+ * Whether this account should get the device push for a notice of `type`.
+ * A toggle switched off stops the push only — the inbox row and the unread count still show it
+ * (`notificationShowsInInbox`). Types with no toggle (ideas, anything unmapped) stay allowed.
+ * Variation types follow `variations`. A toggle that is on does not add the user to a fan-out
+ * they are not already on.
  */
 export function notificationPreferenceAllowsDelivery(
   prefs: UserNotificationPreferences,
@@ -346,6 +361,22 @@ export function notificationPreferenceAllowsDelivery(
   const key = notificationPreferenceKeyForType(type)
   if (!key) return true
   return prefs[key] !== false
+}
+
+/** My notifications toggles never hide an inbox row; they only stop the device push. */
+export const NOTIFICATION_TOGGLE_HIDES_INBOX_ROW = false
+
+/** Every notice addressed to the signed-in user is listed in the inbox, whatever their toggles say. */
+export function notificationShowsInInbox(
+  _prefs: UserNotificationPreferences | null | undefined,
+  _type: string
+): boolean {
+  return true
+}
+
+/** Device push for this notice: the type sends a push and the user's toggle for it is on. */
+export function devicePushAllowed(prefs: UserNotificationPreferences, type: string): boolean {
+  return notificationDeliversDevicePush(type) && notificationPreferenceAllowsDelivery(prefs, type)
 }
 
 /**
@@ -371,6 +402,10 @@ export const DEVICE_PUSH_NOTIFICATION_TYPES = [
   'material_order_placed',
   'material_order_created',
   'variation',
+  'variation_renumbered',
+  'variation_added',
+  'variation_from_tracker',
+  'variation_numbers_updated',
   'warning_removed',
   'operative_created',
   'manager_created',

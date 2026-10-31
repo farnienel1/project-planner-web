@@ -3,15 +3,25 @@
  * notifications (inbox), materials (per project), and the organisation document.
  *
  * Navigating between dashboard pages must not re-download the whole collection. Keep the
- * last snapshot in memory and skip getDocs when a listener is already live.
+ * last snapshot in memory and skip re-subscribing when a listener is already live.
+ *
+ * The listener's first snapshot is the initial load. There is no separate getDocs: running
+ * both on a cold load downloaded the whole collection twice.
+ *
+ * A caller may bound the listener with query constraints (bookings from a start day, like
+ * iOS `whereField("date", isGreaterThanOrEqualTo:)`). `queryId` names that bound; a new
+ * `queryId` for the same key replaces the listener and keeps the rows already on screen
+ * until the new first snapshot arrives.
  */
 
 import {
   collection,
-  getDocs,
   getDocsFromServer,
   onSnapshot,
+  query,
   type FirestoreError,
+  type Query,
+  type QueryConstraint,
   type Unsubscribe,
 } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
@@ -24,6 +34,8 @@ export type OrgCollectionDoc = { id: string; data: Record<string, unknown> }
 const unsubs = new Map<string, Unsubscribe>()
 const orgs = new Map<string, string>()
 const collectionNames = new Map<string, string>()
+const queryIds = new Map<string, string>()
+const queryConstraints = new Map<string, QueryConstraint[]>()
 const lastDocs = new Map<string, OrgCollectionDoc[]>()
 const removedDocIds = new Map<string, Set<string>>()
 const listeners = new Map<
@@ -49,9 +61,21 @@ function activeCallback(key: string) {
   return listeners.get(key)
 }
 
-/** True when this org already has a live listener — callers must not flip loading true. */
-export function isOrgCollectionSubscribed(key: string, organizationId: string): boolean {
-  return orgs.get(key) === organizationId && unsubs.has(key)
+/**
+ * True when this org already has a live listener — callers must not flip loading true.
+ * With `queryId`, the live listener must also be the same bound.
+ */
+export function isOrgCollectionSubscribed(key: string, organizationId: string, queryId?: string): boolean {
+  if (orgs.get(key) !== organizationId || !unsubs.has(key)) return false
+  if (queryId === undefined) return true
+  return (queryIds.get(key) ?? '') === queryId
+}
+
+export type SubscribeOrgCollectionOptions = {
+  /** Constraints for a bounded listener (for example `where('date', '>=', start)`). */
+  constraints?: QueryConstraint[]
+  /** Stable name for the bound. Empty or missing means the whole collection. */
+  queryId?: string
 }
 
 export function peekOrgCollectionCache(key: string, organizationId: string): OrgCollectionDoc[] | null {
@@ -74,9 +98,12 @@ export function subscribeOrgCollection(
   organizationId: string,
   collectionName: string,
   onDocs: (docs: OrgCollectionDoc[]) => void,
-  onError?: (error: FirestoreError) => void
+  onError?: (error: FirestoreError) => void,
+  options?: SubscribeOrgCollectionOptions
 ): void {
   listeners.set(key, { onDocs, onError })
+  const queryId = options?.queryId ?? ''
+  const constraints = options?.constraints ?? []
   if (!organizationId) return
 
   const storedKey = cacheKey(key, organizationId)
@@ -87,6 +114,7 @@ export function subscribeOrgCollection(
 
   if (!db) return
   const col = collection(db, 'organizations', organizationId, collectionName)
+  const source: Query = constraints.length > 0 ? query(col, ...constraints) : col
   const emit = (snap: {
     docs: { id: string; data: () => Record<string, unknown> }[]
     metadata?: { fromCache: boolean }
@@ -111,7 +139,7 @@ export function subscribeOrgCollection(
     current.onDocs(kept)
   }
 
-  if (isOrgCollectionSubscribed(key, organizationId)) {
+  if (isOrgCollectionSubscribed(key, organizationId, queryId)) {
     return
   }
 
@@ -119,13 +147,16 @@ export function subscribeOrgCollection(
   unsubs.delete(key)
   orgs.set(key, organizationId)
   collectionNames.set(key, collectionName)
+  queryIds.set(key, queryId)
+  queryConstraints.set(key, constraints)
+  const stillThisQuery = () => orgs.get(key) === organizationId && (queryIds.get(key) ?? '') === queryId
 
   const listen = (attempt: number) => {
     const fail = (error: FirestoreError) => {
-      if (orgs.get(key) !== organizationId) return
+      if (!stillThisQuery()) return
       if (attempt < 3 && isRetryableAuthLoadError(error)) {
         globalThis.setTimeout(() => {
-          if (orgs.get(key) !== organizationId) return
+          if (!stillThisQuery()) return
           void waitForAuthToken().finally(() => listen(attempt + 1))
         }, authLoadRetryDelayMs(attempt))
         return
@@ -133,20 +164,20 @@ export function subscribeOrgCollection(
       activeCallback(key)?.onError?.(error)
     }
 
-    if (!cached && attempt === 0) {
-      void waitForAuthToken()
-        .then(() => getDocs(col))
-        .then(emit)
-        .catch((error) => fail(error as FirestoreError))
-    }
-
     unsubs.get(key)?.()
-    const unsub = onSnapshot(col, emit, fail)
+    const unsub = onSnapshot(
+      source,
+      (snap) => {
+        if (!stillThisQuery()) return
+        emit(snap)
+      },
+      fail
+    )
     unsubs.set(key, unsub)
   }
 
   void waitForAuthToken().finally(() => {
-    if (orgs.get(key) !== organizationId) return
+    if (!stillThisQuery()) return
     listen(0)
   })
 }
@@ -167,11 +198,15 @@ export async function refreshOrgCollections(organizationId: string): Promise<voi
     const current = activeCallback(key)
     if (!collectionName || !current) continue
     const storedKey = cacheKey(key, organizationId)
+    const constraints = queryConstraints.get(key) ?? []
+    const queryId = queryIds.get(key) ?? ''
+    const col = collection(firestore, 'organizations', organizationId, collectionName)
+    const source: Query = constraints.length > 0 ? query(col, ...constraints) : col
     work.push(
       waitForAuthToken()
-        .then(() => getDocsFromServer(collection(firestore, 'organizations', organizationId, collectionName)))
+        .then(() => getDocsFromServer(source))
         .then((snap) => {
-          if (orgs.get(key) !== organizationId) return
+          if (orgs.get(key) !== organizationId || (queryIds.get(key) ?? '') !== queryId) return
           const removed = removedDocIds.get(storedKey)
           const docs = snap.docs
             .filter((entry) => !removed?.has(entry.id))
@@ -191,5 +226,7 @@ export function unsubscribeOrgCollection(key: string): void {
   unsubs.get(key)?.()
   unsubs.delete(key)
   orgs.delete(key)
+  queryIds.delete(key)
+  queryConstraints.delete(key)
   listeners.delete(key)
 }

@@ -9,6 +9,7 @@ import { build } from 'esbuild'
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
+import { createContext, runInContext } from 'node:vm'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -23,11 +24,29 @@ const iosHashFile = `${iosOut}.sha256`
 // Shared parity cases both apps must pass (lib/canonical/canonical.test.ts on web, ProjectPlannerTests on iOS).
 const fixtureFile = path.join(webRoot, 'lib/canonical/parity-fixture.json')
 const iosFixture = path.join(iosRepo, 'ProjectPlannerTests/CanonicalParityFixture.json')
+// The one rulebook. Its version and sha256 are stamped into the packed script, and it is mirrored to iOS.
+const rulebookFile = path.join(webRoot, 'docs/RULEBOOK.md')
+const manifestFile = path.join(outDir, 'canonical-manifest.json')
+const distRulebook = path.join(outDir, 'RULEBOOK.md')
+const iosManifest = path.join(iosRepo, 'Project Planner/Canonical/canonical-manifest.json')
+const iosRulebook = path.join(iosRepo, 'docs/RULEBOOK.md')
 const checkOnly = process.argv.includes('--check')
 const iosCheckout = existsSync(path.join(iosRepo, '.git'))
 const scratch = path.join(tmpdir(), `canonical-business-${process.pid}.js`)
 
 mkdirSync(outDir, { recursive: true })
+
+if (!existsSync(rulebookFile)) {
+  console.error('docs/RULEBOOK.md is missing. The packed script carries its version.')
+  process.exit(1)
+}
+const rulebookText = readFileSync(rulebookFile)
+const rulebookVersion = /^Version:\s*(\S+)\s*$/m.exec(rulebookText.toString('utf8'))?.[1]
+if (!rulebookVersion) {
+  console.error('docs/RULEBOOK.md has no "Version: x.y.z" line.')
+  process.exit(1)
+}
+const rulebookSha256 = createHash('sha256').update(rulebookText).digest('hex')
 
 await build({
   absWorkingDir: webRoot,
@@ -39,11 +58,28 @@ await build({
   target: 'es2020',
   outfile: scratch,
   legalComments: 'none',
+  define: {
+    __RULEBOOK_VERSION__: JSON.stringify(rulebookVersion),
+    __RULEBOOK_SHA256__: JSON.stringify(rulebookSha256),
+  },
 })
 
 const source = readFileSync(scratch)
 const hash = createHash('sha256').update(source).digest('hex')
 const hashText = `${hash}\n`
+
+function exportNames(code) {
+  const sandbox = {}
+  createContext(sandbox)
+  runInContext(`${code}\nthis.__names = Object.keys(ProjectPlannerCanonical).sort()`, sandbox)
+  return sandbox.__names
+}
+const manifestText = `${JSON.stringify(
+  { rulebookVersion, rulebookSha256, bundleSha256: hash, exports: exportNames(source.toString('utf8')) },
+  null,
+  2
+)}\n`
+const manifestBuffer = Buffer.from(manifestText)
 
 function sameFile(file, expected) {
   if (!existsSync(file)) return false
@@ -58,6 +94,11 @@ if (checkOnly) {
   }
   if (!sameFile(functionsOut, source)) {
     stale.push(functionsOut)
+  }
+  if (!sameFile(manifestFile, manifestBuffer)) stale.push(manifestFile)
+  if (!sameFile(distRulebook, rulebookText)) stale.push(distRulebook)
+  if (iosCheckout && (!sameFile(iosManifest, manifestBuffer) || !sameFile(iosRulebook, rulebookText))) {
+    stale.push(iosRulebook)
   }
   if (iosCheckout && (!sameFile(iosOut, source) || !sameFile(iosHashFile, Buffer.from(hashText)))) {
     stale.push(iosOut)
@@ -77,6 +118,8 @@ if (checkOnly) {
 
 writeFileSync(outFile, source)
 writeFileSync(hashFile, hashText)
+writeFileSync(manifestFile, manifestBuffer)
+writeFileSync(distRulebook, rulebookText)
 mkdirSync(path.dirname(functionsOut), { recursive: true })
 writeFileSync(functionsOut, source)
 rmSync(scratch, { force: true })
@@ -87,7 +130,10 @@ if (iosCheckout) {
   writeFileSync(iosHashFile, hashText)
   mkdirSync(path.dirname(iosFixture), { recursive: true })
   writeFileSync(iosFixture, readFileSync(fixtureFile))
-  console.log(`canonical bundle ${hash}`)
+  writeFileSync(iosManifest, manifestBuffer)
+  mkdirSync(path.dirname(iosRulebook), { recursive: true })
+  writeFileSync(iosRulebook, rulebookText)
+  console.log(`canonical bundle ${hash} · rulebook ${rulebookVersion}`)
 } else {
   console.log(`canonical bundle ${hash}`)
   console.log('No iOS checkout at ../project-planner-ios, so the iPhone copy was not updated.')

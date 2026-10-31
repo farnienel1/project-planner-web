@@ -174,7 +174,7 @@ function TaskRow({
 export function TasksScreen() {
   const { user, organization } = useAuthStore()
   const { tasks, loading: tasksLoading } = useTaskStore()
-  const { bookings, saveBooking, deleteBooking } = useHolidayStore()
+  const { bookings, saveBooking, deleteBooking, decideBooking } = useHolidayStore()
   const { projects, smallWorks } = useProjectStore()
   const { operatives, managers } = useOperativeStore()
   const { users } = useOrgUserStore()
@@ -247,13 +247,7 @@ export function TasksScreen() {
       if (isCancellationRequest(request)) {
         await deleteBooking(organization.id, request.id)
       } else {
-        await saveBooking(organization.id, {
-          ...request,
-          status: 'approved',
-          approvedByUserId: user.id,
-          approvedAt: new Date(),
-          updatedAt: new Date(),
-        })
+        await decideBooking(organization.id, request, { status: 'approved', approverUid: user.id })
         await notifyHolidayRequestDecisionToUser({
           organizationId: organization.id,
           booking: request,
@@ -280,13 +274,7 @@ export function TasksScreen() {
           updatedAt: new Date(),
         })
       } else {
-        await saveBooking(organization.id, {
-          ...request,
-          status: 'rejected',
-          approvedByUserId: user.id,
-          approvedAt: new Date(),
-          updatedAt: new Date(),
-        })
+        await decideBooking(organization.id, request, { status: 'rejected', approverUid: user.id })
         await notifyHolidayRequestDecisionToUser({
           organizationId: organization.id,
           booking: request,

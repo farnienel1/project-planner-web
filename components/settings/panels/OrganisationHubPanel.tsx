@@ -13,9 +13,8 @@ import {
   formatScheduleOptionsSubtitle,
   coalesceOrganizationName,
   displayOrganizationName,
-  loadOrganizationDetails,
-  type OrganizationDetails,
 } from '@/lib/settings/organizationSettings'
+import { useLiveOrganizationDetails } from '@/components/settings/useLiveOrganizationSettings'
 import { canReviewFileReports, materialCutOffClockMinutes, resolveMaterialCutOffClock } from '@/lib/canonical'
 import { staffAccountRole } from '@/lib/permissions'
 import {
@@ -80,17 +79,13 @@ export function OrganisationHubPanel({
   const { user, organization } = useAuthStore()
   const { users, claimedEmails, loadUsers } = useOrgUserStore()
 
-  const [details, setDetails] = useState<OrganizationDetails | null>(null)
+  // Live organisation document: a save on iOS or in another tab updates these subtitles.
+  const { details } = useLiveOrganizationDetails()
   const [feedback, setFeedback] = useState<{ kind: 'success' | 'error'; msg: string } | null>(null)
 
   useEffect(() => {
     if (organization?.id) loadUsers(organization.id)
   }, [organization?.id, loadUsers])
-
-  useEffect(() => {
-    if (!organization?.id) return
-    loadOrganizationDetails(organization.id).then(setDetails).catch(() => {})
-  }, [organization?.id])
 
   const country = orgCountryLabel(details?.countryCode)
   const orgName = displayOrganizationName(coalesceOrganizationName(details?.name, organization?.name))
@@ -122,7 +117,7 @@ export function OrganisationHubPanel({
   const leaveSubtitle = useMemo(() => {
     const defaults = details?.annualLeaveDefaults ?? DEFAULT_ANNUAL_LEAVE
     const base = formatAnnualLeaveSubtitle(defaults, ORG_HUB_MONTHS)
-    const region = bankHolidayRegionLabel(details?.countryCode ?? 'GB')
+    const region = bankHolidayRegionLabel(details?.bankHolidayRegionId || details?.countryCode || 'GB')
     return `${base} · ${region}`
   }, [details])
   const scheduleSubtitle = details

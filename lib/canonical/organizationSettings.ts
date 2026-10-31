@@ -10,6 +10,7 @@ import {
   timesheetSubmissionToFirestore,
   type TimesheetSubmissionSettings,
 } from './timesheetSubmission'
+import { scheduleOptionsWriteFields } from './scheduleOptions'
 import {
   parsePaymentRunHistory,
   paymentRunHistoryToFirestore,
@@ -62,6 +63,11 @@ export type OrgWarningDetectionSettings = {
   includeWeekendsForUnbookedLabour: boolean
   /** `users/{uid}` ids never listed as unbooked on Warnings or Daily Overview. */
   excludedUserIdsFromUnbookedWarnings: string[]
+  /**
+   * Read-only notice from `parseWarningDetection`: "Set number of days" was saved without a usable N
+   * (missing, not a number, or below 1), so 7 days is used. Never written to Firestore.
+   */
+  clashLookaheadDaysFallback?: 'lookaheadDaysMissing' | 'lookaheadDaysInvalid'
 }
 
 export type OrgInvoicingSettings = {
@@ -121,15 +127,21 @@ export const ORGANIZATION_DOCUMENT_FIELDS = [
   'bankHolidayRegionId',
   'documentAbbreviation',
   'officeAddressLine1',
+  'officeAddressLine2',
   'officeCity',
+  'officeCounty',
   'officePostcode',
+  /** Legacy nested address. Read as a fallback; every company-details save removes it. */
   'officeAddress',
   'companyLogoURL',
+  'defaultLatitude',
+  'defaultLongitude',
   'creatorUserId',
   'members',
   'payrollTimePolicy',
   'payrollTimePolicyPrior',
   'payrollTimePolicyEffectiveFrom',
+  'payrollTimePolicyScheduled',
   'annualLeaveDefaults',
   'warningDetection',
   'invoicing',
@@ -598,15 +610,32 @@ export function parseWarningDetection(data: Record<string, unknown> | undefined)
     record.daysAhead
   const days =
     daysRaw === undefined || daysRaw === null ? DEFAULT_WARNING_DETECTION.clashLookaheadDays : daysRaw
-  return {
+  const clashLookaheadMode = parseClashLookaheadMode(
+    record.clashLookaheadMode ?? record.lookAheadMode ?? record.lookaheadMode
+  )
+  const fallback = lookaheadDaysFallback(daysRaw)
+  const parsed: OrgWarningDetectionSettings = {
     detectClashes: record.detectClashes !== false,
-    clashLookaheadMode: parseClashLookaheadMode(
-      record.clashLookaheadMode ?? record.lookAheadMode ?? record.lookaheadMode
-    ),
-    clashLookaheadDays: clampClashLookaheadDays(days),
+    clashLookaheadMode,
+    clashLookaheadDays: fallback ? DEFAULT_WARNING_DETECTION.clashLookaheadDays : clampClashLookaheadDays(days),
     includeWeekendsForUnbookedLabour: Boolean(record.includeWeekendsForUnbookedLabour),
     excludedUserIdsFromUnbookedWarnings: excludedUnbookedUserIds(record),
   }
+  if (fallback && clashLookaheadMode === 'numberOfDays') parsed.clashLookaheadDaysFallback = fallback
+  return parsed
+}
+
+/** A saved days value that cannot be used: missing, blank, not a number, or below 1. */
+function lookaheadDaysFallback(raw: unknown): OrgWarningDetectionSettings['clashLookaheadDaysFallback'] {
+  if (raw === undefined || raw === null || (typeof raw === 'string' && raw.trim() === '')) return 'lookaheadDaysMissing'
+  let value: unknown = raw
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    const rec = value as Record<string, unknown>
+    value = rec.integerValue ?? rec.doubleValue
+  }
+  const n = typeof value === 'number' ? value : Number(value)
+  if (!Number.isFinite(n) || Math.round(n) < 1) return 'lookaheadDaysInvalid'
+  return undefined
 }
 
 export function warningDetectionToFirestore(settings: OrgWarningDetectionSettings): Record<string, unknown> {
@@ -721,14 +750,9 @@ export function parseMyScheduleOptions(settings: Record<string, unknown> | undef
   }
 }
 
+/** Exactly the list given, de-duplicated case-insensitively (`scheduleOptionsWriteFields`). */
 export function myScheduleOptionsToFirestore(options: MyScheduleOptions): Record<string, unknown> {
-  return {
-    showOffice: options.showOffice,
-    showWorkingFromHome: options.showWorkingFromHome,
-    showSiteSurvey: options.showSiteSurvey,
-    customItems: options.customItems,
-    customItemEnabled: options.customItemEnabled,
-  }
+  return scheduleOptionsWriteFields(options)
 }
 
 function cutOffClockNumber(value: unknown, fallback: number, min: number, max: number): number {
@@ -797,6 +821,12 @@ export function materialCutOffToFirestore(prefs: MaterialCutOffSettings): Record
   }
 }
 
+/**
+ * Run 1 of a date-range split must end by the 27th. Ending on the 28th or later would leave
+ * run 2 empty in a short month. Run 2 ending on the 31st means the last day of every month.
+ */
+export const PAYMENT_RUN_1_LAST_END_DAY = 27
+
 function isValidDay(day: number): boolean {
   return Number.isInteger(day) && day >= 1 && day <= MONTH_DAYS
 }
@@ -834,6 +864,9 @@ export function validatePaymentRunDateRanges(ranges: PaymentRunDateRange[]): str
   if (run1.startDay > run1.endDay) return 'Payment run 1: start day must be on or before end day.'
   if (run2.startDay > run2.endDay) return 'Payment run 2: start day must be on or before end day.'
   if (run1.startDay !== 1) return 'Payment run 1 must start on day 1 of the month.'
+  if (run1.endDay >= PAYMENT_RUN_1_LAST_END_DAY + 1) {
+    return `Payment run 1 must end on or before the ${PAYMENT_RUN_1_LAST_END_DAY}th, so run 2 exists in every month (February can have 28 days).`
+  }
   if (run2.endDay !== MONTH_DAYS) {
     return `Payment run 2 must end on day ${MONTH_DAYS} so all days of the month are covered.`
   }

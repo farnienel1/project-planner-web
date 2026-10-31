@@ -7,7 +7,7 @@ import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtil
 import type { MyScheduleOptions, OrgInvoicingSettings, OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 import { DEFAULT_MY_SCHEDULE, DEFAULT_PAYROLL_POLICY } from '@/lib/settings/organizationSettings'
 import { LONDON_TIME_ZONE, dayKey } from '@/lib/ios-parity/londonTime'
-import { isTimesheetFullyApproved } from '@/lib/timesheets/timesheetApprovalPolicy'
+import { isTimesheetFullyApproved, userHasLineManager } from '@/lib/timesheets/timesheetApprovalPolicy'
 import { payPeriodsOverlapping } from '@/lib/timesheets/timesheetPayrollPolicy'
 import { applyWeeklyReportOverride } from '@/lib/timesheets/weeklyReportOverride'
 import { listTimesheetStates, saveTimesheetDraft } from '@/lib/timesheets/timesheetStorage'
@@ -102,6 +102,7 @@ export async function loadWeeklyReportTimesheetFeed({
             weekStart: period.start,
             draft: working,
             timeZone,
+            access: { subjectHasLineManager: userHasLineManager(user) },
           })
         }
       }

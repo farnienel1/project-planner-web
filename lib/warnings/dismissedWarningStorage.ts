@@ -13,6 +13,7 @@
 
 import { collection, doc, getDocs, serverTimestamp, setDoc } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
+import { writeMetadataFields } from '@/lib/canonical'
 
 export type DismissedWarning = {
   dismissKey: string
@@ -52,6 +53,8 @@ export async function dismissQualificationWarning(input: {
       expiryDayKey: input.expiryDayKey,
       dismissedAt: serverTimestamp(),
       dismissedByUserId: input.dismissedByUserId,
+      ...(writeMetadataFields(input.dismissedByUserId, 'web') ?? {}),
+      updatedAt: serverTimestamp(),
     },
     { merge: true }
   )

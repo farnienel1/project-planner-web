@@ -1,7 +1,8 @@
 import { format } from 'date-fns'
 import * as XLSX from 'xlsx'
 import { formatReportPeriodLabel } from '@/lib/weekly-report/invoicingPeriodUtils'
-import { formatCurrency, formatDays } from '@/lib/weekly-report/weeklyReportPayroll'
+import { formatDays } from '@/lib/weekly-report/weeklyReportPayroll'
+import { formatMoney } from '@/lib/canonical'
 import type { WeeklyReportData } from '@/lib/weekly-report/weeklyReportData'
 import { escapeHtml } from '@/lib/security/htmlEscape'
 import { neutralizeSpreadsheetFormula } from '@/lib/security/spreadsheetCell'
@@ -27,7 +28,15 @@ function renderTable(headers: string[], rows: string[][], emptyMessage: string):
     </table>`
 }
 
+/** Header and rows of the Approved clashes section (screen, PDF, HTML and Excel use the same columns). */
+export const APPROVED_CLASH_HEADERS = ['Date', 'Priority', 'Type', 'Person', 'Detail']
+
+export function approvedClashCells(data: WeeklyReportData): string[][] {
+  return (data.approvedClashes ?? []).map((row) => [row.date, row.priority, row.type, row.person, row.detail])
+}
+
 export function buildWeeklyReportHtml(data: WeeklyReportData): string {
+  const money = (amount: number) => formatMoney(amount, data.currencyCode)
   const periodLabel = formatReportPeriodLabel(data.reportPeriod.start, data.reportPeriod.end)
   const generatedLabel = format(data.generatedAt, "d MMM yyyy 'at' HH:mm")
 
@@ -110,8 +119,8 @@ export function buildWeeklyReportHtml(data: WeeklyReportData): string {
         escapeHtml(person.role),
         escapeHtml(line.rateType),
         escapeHtml(line.quantityText ?? formatDays(line.days)),
-        escapeHtml(line.rateText ?? formatCurrency(line.rate)),
-        line.payLabel ?? formatCurrency(line.pay),
+        escapeHtml(line.rateText ?? money(line.rate)),
+        line.payLabel ?? money(line.pay),
       ])
     }
     payRows.push([
@@ -120,11 +129,11 @@ export function buildWeeklyReportHtml(data: WeeklyReportData): string {
       '',
       '',
       '',
-      `<strong>${person.personTotalLabel ?? formatCurrency(person.personTotal)}</strong>`,
+      `<strong>${person.personTotalLabel ?? money(person.personTotal)}</strong>`,
     ])
     payRows.push(['', '', '', '', '', ''])
   }
-  payRows.push(['', '', '', '', '<strong>Grand Total</strong>', `<strong>${formatCurrency(data.grandTotal)}</strong>`])
+  payRows.push(['', '', '', '', '<strong>Grand Total</strong>', `<strong>${money(data.grandTotal)}</strong>`])
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -193,6 +202,13 @@ export function buildWeeklyReportHtml(data: WeeklyReportData): string {
     'No warnings in period'
   )}
 
+  <h2>✅ Approved clashes</h2>
+  ${renderTable(
+    APPROVED_CLASH_HEADERS,
+    approvedClashCells(data).map((row) => row.map((cell) => escapeHtml(cell))),
+    'No clashes approved in this period'
+  )}
+
   <h2>🏗 Project Breakdown</h2>
   ${projectSections || '<p class="empty">No project bookings in this period.</p>'}
   <table>
@@ -227,11 +243,11 @@ export function buildWeeklyReportHtml(data: WeeklyReportData): string {
       escapeHtml(row.jobNumber),
       escapeHtml(row.date),
       escapeHtml(row.details),
-      escapeHtml(formatCurrency(row.amount)),
+      escapeHtml(money(row.amount)),
     ]),
     'No price work in this period'
   )}
-  <table><tbody><tr><td colspan="5"><strong>Price Work Total</strong></td><td><strong>${formatCurrency(data.priceWorkTotal)}</strong></td></tr></tbody></table>
+  <table><tbody><tr><td colspan="5"><strong>Price Work Total</strong></td><td><strong>${money(data.priceWorkTotal)}</strong></td></tr></tbody></table>
 
   <h2>🧾 Expenses</h2>
   ${renderTable(
@@ -242,11 +258,11 @@ export function buildWeeklyReportHtml(data: WeeklyReportData): string {
       escapeHtml(row.jobNumber),
       escapeHtml(row.date),
       escapeHtml(row.details),
-      escapeHtml(formatCurrency(row.amount)),
+      escapeHtml(money(row.amount)),
     ]),
     'No expenses in this period'
   )}
-  <table><tbody><tr><td colspan="5"><strong>Expenses Total</strong></td><td><strong>${formatCurrency(data.expenseTotal)}</strong></td></tr></tbody></table>
+  <table><tbody><tr><td colspan="5"><strong>Expenses Total</strong></td><td><strong>${money(data.expenseTotal)}</strong></td></tr></tbody></table>
 
   <h2>💷 Pay Summary</h2>
   ${renderTable(['Person', 'Role', 'Rate Type', 'Hours / Days', 'Rate', 'Pay'], payRows, 'No pay data for this period')}
@@ -310,6 +326,7 @@ function spreadsheetTable(headers: string[], rows: string[][]): string {
 
 /** Excel SpreadsheetML matching the iOS weekly report sections and columns. */
 export function buildWeeklyReportSpreadsheetXml(data: WeeklyReportData): string {
+  const money = (amount: number) => formatMoney(amount, data.currencyCode)
   const periodLabel = formatReportPeriodLabel(data.reportPeriod.start, data.reportPeriod.end)
   const generatedLabel = format(data.generatedAt, "d MMM yyyy 'at' HH:mm")
 
@@ -387,14 +404,14 @@ export function buildWeeklyReportSpreadsheetXml(data: WeeklyReportData): string 
         person.role,
         line.rateType,
         line.quantityText ?? formatDays(line.days),
-        line.rateText ?? formatCurrency(line.rate),
-        line.payLabel ?? formatCurrency(line.pay),
+        line.rateText ?? money(line.rate),
+        line.payLabel ?? money(line.pay),
       ])
     }
-    payRows.push([`${person.person} total`, '', '', '', '', person.personTotalLabel ?? formatCurrency(person.personTotal)])
+    payRows.push([`${person.person} total`, '', '', '', '', person.personTotalLabel ?? money(person.personTotal)])
     payRows.push(['', '', '', '', '', ''])
   }
-  payRows.push(['', '', '', '', 'Grand Total', formatCurrency(data.grandTotal)])
+  payRows.push(['', '', '', '', 'Grand Total', money(data.grandTotal)])
 
   return `<?xml version="1.0"?>
 <?mso-application progid="Excel.Sheet"?>
@@ -413,6 +430,12 @@ export function buildWeeklyReportSpreadsheetXml(data: WeeklyReportData): string 
    ${spreadsheetRow([''])}
    ${spreadsheetRow(['Warnings Summary'])}
    ${spreadsheetTable(['Status', 'Priority', 'Type', 'Date', 'Description', 'Detail', 'For'], warningRows)}
+   ${spreadsheetRow([''])}
+   ${spreadsheetRow(['Approved clashes'])}
+   ${spreadsheetTable(
+     APPROVED_CLASH_HEADERS,
+     approvedClashCells(data).length > 0 ? approvedClashCells(data) : [['No clashes approved in this period', '', '', '', '']]
+   )}
    ${spreadsheetRow([''])}
    ${spreadsheetRow(['Project Breakdown'])}
    ${projectChunks.join('')}
@@ -441,9 +464,9 @@ export function buildWeeklyReportSpreadsheetXml(data: WeeklyReportData): string 
              row.jobNumber,
              row.date,
              row.details,
-             formatCurrency(row.amount),
+             money(row.amount),
            ]),
-           ['', '', '', '', 'Price Work Total', formatCurrency(data.priceWorkTotal)],
+           ['', '', '', '', 'Price Work Total', money(data.priceWorkTotal)],
          ]
    )}
    ${spreadsheetRow([''])}
@@ -459,9 +482,9 @@ export function buildWeeklyReportSpreadsheetXml(data: WeeklyReportData): string 
              row.jobNumber,
              row.date,
              row.details,
-             formatCurrency(row.amount),
+             money(row.amount),
            ]),
-           ['', '', '', '', 'Expenses Total', formatCurrency(data.expenseTotal)],
+           ['', '', '', '', 'Expenses Total', money(data.expenseTotal)],
          ]
    )}
    ${spreadsheetRow([''])}

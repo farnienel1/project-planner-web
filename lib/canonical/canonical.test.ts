@@ -4408,3 +4408,851 @@ test('isWarningActive: the warning total counts only rows no device approved, re
   assert.equal(scheduleSources.isWarningActive(null, decisions), false)
   assert.equal(scheduleSources.isWarningActive({ resolutionKey: 'k' }, null), true)
 })
+
+import * as money from './money.ts'
+import { writeMetadataFields } from './writeMetadata.ts'
+import { organizationTimeZone } from './organizationTimeZone.ts'
+
+test('organisation currency: saved code wins, then nested, legacy, literal dotted key, country default', () => {
+  assert.equal(money.resolveOrganizationCurrency({ currencyCode: 'eur', settings: { currencyCode: 'USD' } }), 'EUR')
+  assert.equal(money.resolveOrganizationCurrency({ settings: { currencyCode: 'USD' } }), 'USD')
+  assert.equal(money.resolveOrganizationCurrency({ currency: 'AUD' }), 'AUD')
+  assert.equal(money.resolveOrganizationCurrency({ 'settings.currencyCode': 'CAD' }), 'CAD')
+  assert.equal(money.resolveOrganizationCurrency({ countryCode: 'IE' }), 'EUR')
+  assert.equal(money.resolveOrganizationCurrency({ countryCode: 'GB-ENG' }), 'GBP')
+  assert.equal(money.resolveOrganizationCurrency({ currencyCode: 'XYZ', countryCode: 'US' }), 'USD')
+  assert.equal(money.resolveOrganizationCurrency(null), 'GBP')
+  assert.equal(money.CURRENCY_OPTIONS.length, 11)
+})
+
+test('organisation currency write is a dotted partial update of every read field', () => {
+  assert.deepEqual(money.organizationCurrencyWriteFields(' nzd '), {
+    currencyCode: 'NZD',
+    currency: 'NZD',
+    'settings.currencyCode': 'NZD',
+  })
+  assert.equal(money.organizationCurrencyWriteFields('XYZ'), null)
+})
+
+test('formatMoney uses the organisation symbol with grouping and two decimals', () => {
+  assert.equal(money.formatMoney(1234.5, 'GBP'), '£1,234.50')
+  assert.equal(money.formatMoney(-5, 'EUR'), '-€5.00')
+  assert.equal(money.formatMoney(0, 'CAD'), 'CA$0.00')
+  assert.equal(money.formatMoney(99.999, 'SEK'), 'kr 100.00')
+  assert.equal(money.formatMoney(-0.001, 'GBP'), '£0.00')
+  assert.equal(money.formatMoney(Number.NaN, 'USD'), '$0.00')
+  assert.equal(money.formatMoney(1500, 'PLN', { decimals: 0 }), 'zł 1,500')
+  assert.equal(money.formatMoney(10, 'nope'), '£10.00')
+})
+
+test('write metadata names the editor and the platform', () => {
+  assert.deepEqual(writeMetadataFields(' u1 ', 'IOS'), { updatedBy: 'u1', updatedFrom: 'ios' })
+  assert.equal(writeMetadataFields('', 'web'), null)
+  assert.equal(writeMetadataFields('u1', 'desktop'), null)
+})
+
+test('organisation time zone comes from the country, London when unknown', () => {
+  assert.equal(organizationTimeZone('GB'), 'Europe/London')
+  assert.equal(organizationTimeZone('IE'), 'Europe/Dublin')
+  assert.equal(organizationTimeZone(null), 'Europe/London')
+  assert.equal(organizationTimeZone('ZZ'), 'Europe/London')
+})
+
+test('packed script carries the docs/RULEBOOK.md version and sha256', async () => {
+  const { createHash } = await import('node:crypto')
+  const rulebook = readFileSync(new URL('../../docs/RULEBOOK.md', import.meta.url))
+  const version = /^Version:\s*(\S+)\s*$/m.exec(rulebook.toString('utf8'))?.[1]
+  assert.ok(version, 'docs/RULEBOOK.md has a Version line')
+  const manifest = JSON.parse(readFileSync(new URL('./dist/canonical-manifest.json', import.meta.url), 'utf8'))
+  assert.equal(manifest.rulebookVersion, version)
+  assert.equal(manifest.rulebookSha256, createHash('sha256').update(rulebook).digest('hex'))
+  const source = readFileSync(new URL('./dist/canonical-business.js', import.meta.url), 'utf8')
+  const sandbox: { ProjectPlannerCanonical?: { rulebookStamp: () => { version: string; sha256: string } } } = {}
+  createContext(sandbox)
+  runInContext(source, sandbox)
+  assert.deepEqual(JSON.parse(JSON.stringify(sandbox.ProjectPlannerCanonical?.rulebookStamp())), {
+    version,
+    sha256: manifest.rulebookSha256,
+  })
+})
+
+// MARK: - Pay rate on a day, overlapping bookings, leave lines, leave requests
+
+import { payRateOnDay as payRateOnDayRule } from './payRate.ts'
+import {
+  holidayDecisionWriteFields as holidayDecisionWriteFieldsRule,
+  holidayRequestRanges as holidayRequestRangesRule,
+  holidayRequestWriteFields as holidayRequestWriteFieldsRule,
+  leaveApproverIds as leaveApproverIdsRule,
+  leaveRecordDayKeys as leaveRecordDayKeysRule,
+  parseHolidayDecisionNote as parseHolidayDecisionNoteRule,
+} from './leaveRequests.ts'
+import {
+  overlappingBookingIds as overlappingBookingIdsRule,
+  timesheetLeaveLines as timesheetLeaveLinesRule,
+} from './timesheetLines.ts'
+import { annualLeaveBalance as annualLeaveBalanceRule } from './annualLeaveBalance.ts'
+
+test('payRateOnDay: history on or before the org day wins, explicit 0 is real, PAYE is 0', () => {
+  const history = [
+    { id: 'h1', userId: 'u1', dayRate: 180, effectiveAt: '2026-01-01T00:00:00Z' },
+    { id: 'h2', userId: 'u1', dayRate: 0, effectiveAt: '2026-09-01T00:00:00Z' },
+    // 23:30 UTC on 30 Sep is 1 Oct in London: effective from 1 Oct, not 30 Sep.
+    { id: 'h3', userId: 'u1', dayRate: 220, effectiveAt: '2026-09-30T23:30:00Z' },
+    { id: 'other', userId: 'u2', dayRate: 999, effectiveAt: '2026-01-01T00:00:00Z' },
+  ]
+  const user = { id: 'u1', dayRate: 250, employmentType: 'self_employed' }
+  const on = (dayKey: string) => payRateOnDayRule({ user, history, dayKey, timeZone: 'Europe/London' })
+  assert.equal(on('2026-08-15').rate, 180)
+  assert.equal(on('2026-09-15').rate, 0)
+  assert.equal(on('2026-09-15').hasRate, true)
+  assert.equal(on('2026-09-30').rate, 0)
+  assert.equal(on('2026-10-01').rate, 220)
+  assert.equal(on('2026-10-01').source, 'history')
+  const noHistory = payRateOnDayRule({ user, history: [], dayKey: '2026-10-01' })
+  assert.deepEqual([noHistory.payBasis, noHistory.rate, noHistory.source], ['day', 250, 'profile'])
+  const hourly = payRateOnDayRule({ user: { id: 'u3', payBasis: 'hourly', hourlyRate: 18.5 }, dayKey: '2026-10-01' })
+  assert.deepEqual([hourly.payBasis, hourly.rate], ['hourly', 18.5])
+  const unset = payRateOnDayRule({ user: { id: 'u4' }, dayKey: '2026-10-01' })
+  assert.deepEqual([unset.rate, unset.hasRate, unset.source], [null, false, 'none'])
+  const paye = payRateOnDayRule({
+    user: {
+      id: 'u1',
+      dayRate: 250,
+      employmentType: 'paye',
+      employmentTypeTransitionFrom: 'self_employed',
+      employmentTypeEffectiveAt: '2026-10-05T00:00:00Z',
+    },
+    history,
+    dayKey: '2026-10-05',
+    timeZone: 'Europe/London',
+  })
+  assert.deepEqual([paye.isPaye, paye.rate, paye.employmentType], [true, 0, 'paye'])
+  const before = payRateOnDayRule({ user: { ...paye, id: 'u1', employmentType: 'paye', employmentTypeTransitionFrom: 'self_employed', employmentTypeEffectiveAt: '2026-10-05T00:00:00Z' }, history, dayKey: '2026-10-02' })
+  assert.deepEqual([before.isPaye, before.rate], [false, 220])
+})
+
+test('payRateOnDay: an hourly row keeps covering until a later-day day-rate row', () => {
+  const history = [
+    { id: 'a', userId: 'u1', dayRate: 20, payBasis: 'hourly', effectiveAt: '2026-10-05T00:00:00Z', createdAt: '2026-10-05T09:00:00Z' },
+    { id: 'b', userId: 'u1', dayRate: 200, payBasis: 'day', effectiveAt: '2026-10-05T00:00:00Z', createdAt: '2026-10-05T10:00:00Z' },
+    { id: 'c', userId: 'u1', dayRate: 210, payBasis: 'day', effectiveAt: '2026-10-07T00:00:00Z' },
+  ]
+  const user = { id: 'u1', payBasis: 'hourly', hourlyRate: 22 }
+  assert.deepEqual(
+    [payRateOnDayRule({ user, history, dayKey: '2026-10-06' }).payBasis, payRateOnDayRule({ user, history, dayKey: '2026-10-06' }).rate],
+    ['hourly', 20]
+  )
+  assert.equal(payRateOnDayRule({ user, history, dayKey: '2026-10-07' }).rate, 210)
+})
+
+test('overlappingBookingIds flags every booking that overlaps another on the same day; touching does not', () => {
+  const ids = overlappingBookingIdsRule([
+    { id: 'am', dayKey: '2026-10-12', timeSlot: 'AM' },
+    { id: 'pm', dayKey: '2026-10-12', timeSlot: 'PM' },
+    { id: 'x', dayKey: '2026-10-12', timeSlot: 'CUSTOM', workStartTime: '11:00', workEndTime: '14:00' },
+    { id: 'other-day', dayKey: '2026-10-13', timeSlot: 'FULL DAY' },
+    { id: 't1', dayKey: '2026-10-14', workStartTime: '08:00', workEndTime: '12:00' },
+    { id: 't2', dayKey: '2026-10-14', workStartTime: '12:00', workEndTime: '16:00' },
+  ])
+  assert.deepEqual(ids, ['am', 'pm', 'x'])
+})
+
+test('timesheetLeaveLines lists approved leave days in the period only, skipping weekends in a range', () => {
+  const lines = timesheetLeaveLinesRule(
+    [
+      { id: 'L1', startDayKey: '2026-10-09', endDayKey: '2026-10-13', timeSlot: 'FULL DAY', status: 'approved' },
+      { id: 'L2', startDayKey: '2026-10-15', endDayKey: '2026-10-15', timeSlot: 'AM', status: 'approved' },
+      { id: 'L3', startDayKey: '2026-10-14', endDayKey: '2026-10-14', timeSlot: 'PM', status: 'pending' },
+      { id: 'L4', startDayKey: '2026-10-30', endDayKey: '2026-10-30', timeSlot: 'PM' },
+    ],
+    { startDayKey: '2026-10-10', endDayKey: '2026-10-16' },
+    'Europe/London'
+  )
+  assert.deepEqual(
+    lines.map((line) => [line.dayKey, line.label]),
+    [
+      ['2026-10-12', 'Annual leave (full day)'],
+      ['2026-10-13', 'Annual leave (full day)'],
+      ['2026-10-15', 'Annual leave (AM)'],
+    ]
+  )
+})
+
+test('leave requests: one document per consecutive same-slot run; decision fields; note parsing', () => {
+  const ranges = holidayRequestRangesRule(
+    [
+      { dayKey: '2026-10-14', timeSlot: 'FULL DAY' },
+      { dayKey: '2026-10-12', timeSlot: 'FULL DAY' },
+      { dayKey: '2026-10-13', timeSlot: 'FULL DAY' },
+      { dayKey: '2026-10-15', timeSlot: 'AM' },
+      { dayKey: '2026-10-19', timeSlot: 'FULL DAY' },
+    ],
+    'Europe/London'
+  )
+  assert.deepEqual(ranges, [
+    { startDayKey: '2026-10-12', endDayKey: '2026-10-14', timeSlot: 'FULL DAY' },
+    { startDayKey: '2026-10-15', endDayKey: '2026-10-15', timeSlot: 'AM' },
+    { startDayKey: '2026-10-19', endDayKey: '2026-10-19', timeSlot: 'FULL DAY' },
+  ])
+  const write = holidayRequestWriteFieldsRule({
+    id: 'H1',
+    organizationId: 'org',
+    userId: 'u1',
+    startDayKey: '2026-10-12',
+    endDayKey: '2026-10-14',
+    timeSlot: 'FULL DAY',
+    status: 'pending',
+    approvedByUserId: 'ignored',
+    timeZone: 'Europe/London',
+  })
+  assert.ok(write)
+  assert.equal(write.status, 'pending')
+  assert.equal(write.approvedByUserId, null)
+  assert.equal(new Date(write.startDateMs).toISOString(), '2026-10-11T23:00:00.000Z')
+  assert.equal(new Date(write.endDateMs).toISOString(), '2026-10-13T23:00:00.000Z')
+  assert.equal(holidayRequestWriteFieldsRule({ id: 'H2', organizationId: 'org', startDayKey: '2026-10-12' }), null)
+  assert.deepEqual(holidayDecisionWriteFieldsRule({ status: 'rejected', approverUid: 'm1', decisionNote: '  Short staffed  ' }), {
+    status: 'rejected',
+    approvedByUserId: 'm1',
+    decisionNote: 'Short staffed',
+  })
+  assert.equal(holidayDecisionWriteFieldsRule({ status: 'approved', approverUid: 'm1', decisionNote: '   ' })?.decisionNote, null)
+  assert.equal(holidayDecisionWriteFieldsRule({ status: 'pending', approverUid: 'm1' }), null)
+  assert.equal(parseHolidayDecisionNoteRule(null), null)
+  assert.equal(parseHolidayDecisionNoteRule(' ok '), 'ok')
+})
+
+test('leave days: a multi-day record counts working days only and splits across leave years', () => {
+  assert.deepEqual(leaveRecordDayKeysRule({ startDayKey: '2026-10-09', endDayKey: '2026-10-13' }, 'Europe/London'), [
+    '2026-10-09',
+    '2026-10-12',
+    '2026-10-13',
+  ])
+  assert.deepEqual(
+    leaveRecordDayKeysRule({ startDayKey: '2026-12-24', endDayKey: '2026-12-29' }, 'Europe/London', ['2026-12-25', '2026-12-28']),
+    ['2026-12-24', '2026-12-29']
+  )
+  // A single-day record keeps counting as before.
+  assert.deepEqual(leaveRecordDayKeysRule({ startDayKey: '2026-10-10' }, 'Europe/London'), ['2026-10-10'])
+  const bookings = [
+    { startDayKey: '2026-12-30', endDayKey: '2027-01-05', timeSlot: 'FULL DAY', status: 'approved' },
+    { startDayKey: '2026-10-12', endDayKey: '2026-10-16', timeSlot: 'AM', status: 'pending' },
+  ]
+  const thisYear = annualLeaveBalanceRule({ annualLeaveEnabled: true, daysPerYear: 25, bookings, onDayKey: '2026-11-01' })
+  assert.equal(thisYear.taken, 2)
+  assert.equal(thisYear.pending, 2.5)
+  const nextYear = annualLeaveBalanceRule({
+    annualLeaveEnabled: true,
+    daysPerYear: 25,
+    bookings,
+    onDayKey: '2027-02-01',
+    nonWorkingDayKeys: ['2027-01-01'],
+  })
+  // Fri 1 Jan is a bank holiday; 4 and 5 Jan count.
+  assert.equal(nextYear.taken, 2)
+})
+
+test('leaveApproverIds: every current line manager, else admins; never the requester', () => {
+  const role = (r: Partial<{ isSuperAdmin: boolean; isAdmin: boolean; isManager: boolean; isOperativeMode: boolean }>) => ({
+    isSuperAdmin: false,
+    isAdmin: false,
+    isManager: false,
+    isOperativeMode: false,
+    ...r,
+  })
+  const roster = [
+    { id: 'm1', role: role({ isManager: true }) },
+    { id: 'm2', role: role({ isManager: true }) },
+    { id: 'gone', isActive: false, role: role({ isManager: true }) },
+    { id: 'a1', role: role({ isAdmin: true }) },
+    { id: 's1', role: role({ isSuperAdmin: true }) },
+    { id: 'op', role: role({ isOperativeMode: true }) },
+  ]
+  assert.deepEqual(leaveApproverIdsRule({ id: 'u', assignedManagerUserIds: ['m1', 'm2'], assignedManagerUserId: 'm9' }, roster), ['m1', 'm2'])
+  assert.deepEqual(leaveApproverIdsRule({ id: 'u', assignedManagerUserIds: [], assignedManagerUserId: 'm2' }, roster), ['m2'])
+  assert.deepEqual(leaveApproverIdsRule({ id: 'u', assignedManagerUserIds: ['gone'] }, roster), ['a1', 's1'])
+  assert.deepEqual(leaveApproverIdsRule({ id: 'u', assignedManagerUserIds: ['m1'], hasNoLineManager: true }, roster), ['a1', 's1'])
+  assert.deepEqual(leaveApproverIdsRule({ id: 'a1' }, roster), ['s1'])
+})
+
+import {
+  BOOKING_TOMBSTONE_BATCH_DELETE_LIMIT as tombstoneBatchLimit,
+  bookingReplayRefusedIsFinal as bookingReplayRefusedIsFinalRule,
+  bookingTombstonePath as bookingTombstonePathRule,
+  bookingTombstoneWriteFields as bookingTombstoneWriteFieldsRule,
+} from './bookingTombstones.ts'
+
+test('booking tombstone: path and write shape for a deleted labour or schedule booking', () => {
+  assert.equal(bookingTombstonePathRule('org-1', 'ABC-1'), 'organizations/org-1/deletedBookings/ABC-1')
+  assert.equal(bookingTombstonePathRule(' org-1 ', ' abc-1 '), 'organizations/org-1/deletedBookings/abc-1')
+  assert.equal(bookingTombstonePathRule('', 'ABC-1'), null)
+  assert.equal(bookingTombstonePathRule('org-1', 'a/b'), null)
+  assert.deepEqual(
+    bookingTombstoneWriteFieldsRule({ bookingId: 'ABC-1', collection: 'bookings', deletedBy: 'u1', deletedFrom: 'web' }),
+    { bookingId: 'ABC-1', collection: 'bookings', deletedBy: 'u1', deletedFrom: 'web' }
+  )
+  assert.deepEqual(
+    bookingTombstoneWriteFieldsRule({ bookingId: 'x', collection: 'managerSiteBookings', deletedBy: 'u1', deletedFrom: 'iOS' }),
+    { bookingId: 'x', collection: 'managerSiteBookings', deletedBy: 'u1', deletedFrom: 'ios' }
+  )
+  // Only the two booking collections, a signed-in uid, and a known platform.
+  assert.equal(bookingTombstoneWriteFieldsRule({ bookingId: 'x', collection: 'holidayBookings', deletedBy: 'u1', deletedFrom: 'web' }), null)
+  assert.equal(bookingTombstoneWriteFieldsRule({ bookingId: 'x', collection: 'bookings', deletedBy: ' ', deletedFrom: 'web' }), null)
+  assert.equal(bookingTombstoneWriteFieldsRule({ bookingId: 'x', collection: 'bookings', deletedBy: 'u1', deletedFrom: 'desktop' }), null)
+  assert.equal(bookingTombstoneWriteFieldsRule({ bookingId: '', collection: 'bookings', deletedBy: 'u1', deletedFrom: 'web' }), null)
+  // Two writes per delete stay under the 500-write batch cap.
+  assert.ok(tombstoneBatchLimit * 2 <= 500)
+  // A replay refused by the rules is dropped, not retried.
+  assert.equal(bookingReplayRefusedIsFinalRule('permission-denied'), true)
+  assert.equal(bookingReplayRefusedIsFinalRule(7), true)
+  assert.equal(bookingReplayRefusedIsFinalRule('7'), true)
+  assert.equal(bookingReplayRefusedIsFinalRule('unavailable'), false)
+})
+
+import * as companyDetails from './companyDetails.ts'
+import * as payrollSchedule from './payrollPolicySchedule.ts'
+import * as paymentRuns from './paymentRuns.ts'
+import * as scheduleOptions from './scheduleOptions.ts'
+import { validatePaymentRunDateRanges as validateRunSplit, parsePayrollPolicy as parsePolicy } from './organizationSettings.ts'
+
+test('company details read flat fields, fall back to the nested map, and saves remove blanks', () => {
+  const legacy = companyDetails.parseCompanyDetails({
+    name: 'Acme',
+    countryCode: 'ie',
+    officeAddress: { addressLine1: '1 Old St', town: 'Cork', county: 'Cork', postcode: 'T12' },
+  })
+  assert.equal(legacy.hasOfficeAddress, true)
+  assert.equal(legacy.officeAddressLine1, '1 Old St')
+  assert.equal(legacy.officeCity, 'Cork')
+  assert.equal(legacy.officeCounty, 'Cork')
+  assert.equal(legacy.countryCode, 'IE')
+  assert.equal(legacy.bankHolidayRegionId, 'GB-ENG-WLS')
+  const flatWins = companyDetails.parseCompanyDetails({
+    officeAddressLine1: '2 New St',
+    officeCity: 'London',
+    officeAddress: { addressLine1: '1 Old St', town: 'Cork' },
+    documentAbbreviation: 'r-m',
+  })
+  assert.equal(flatWins.officeAddressLine1, '2 New St')
+  assert.equal(flatWins.officeCity, 'London')
+  assert.equal(flatWins.documentAbbreviation, 'RM')
+  assert.equal(flatWins.countryCode, 'GB')
+
+  const write = companyDetails.companyDetailsWriteFields({
+    name: '  ',
+    hasOfficeAddress: true,
+    officeAddressLine1: ' 2 New St ',
+    officeCity: 'London',
+    officeAddressLine2: '',
+    officeCounty: 'Greater London',
+    officePostcode: '',
+    countryCode: 'gb',
+    documentAbbreviation: '',
+    companyLogoURL: null,
+    bankHolidayRegionId: 'GB-SCT',
+  })
+  assert.equal('name' in write.set, false, 'a blank name is never written')
+  assert.equal(write.set.officeAddressLine1, '2 New St')
+  assert.equal(write.set.officeCounty, 'Greater London')
+  assert.equal(write.set.countryCode, 'GB')
+  assert.equal(write.set['settings.bankHolidayRegionId'], 'GB-SCT')
+  assert.deepEqual(
+    [...write.remove].sort(),
+    ['companyLogoURL', 'documentAbbreviation', 'officeAddress', 'officeAddressLine2', 'officePostcode'].sort()
+  )
+  assert.equal('defaultLatitude' in write.set, false, 'no coordinate leaves the saved pin alone')
+
+  const noOffice = companyDetails.companyDetailsWriteFields({
+    name: 'Acme',
+    hasOfficeAddress: false,
+    countryCode: 'US',
+    documentAbbreviation: 'ac',
+    defaultLatitude: 40.7,
+    defaultLongitude: -74,
+  })
+  assert.equal(noOffice.set.name, 'Acme')
+  assert.equal(noOffice.set.documentAbbreviation, 'AC')
+  assert.equal(noOffice.set.defaultLatitude, 40.7)
+  assert.equal('companyLogoURL' in noOffice.set || noOffice.remove.includes('companyLogoURL'), false)
+  for (const field of ['officeAddress', 'officeAddressLine1', 'officeAddressLine2', 'officeCity', 'officeCounty', 'officePostcode']) {
+    assert.ok(noOffice.remove.includes(field), field)
+  }
+  assert.equal(
+    companyDetails.companyDetailsValidationError({ name: 'A', hasOfficeAddress: true, officeAddressLine1: 'x', countryCode: 'GB' }),
+    'Name, country, address line 1 and town are required.'
+  )
+  assert.equal(companyDetails.companyDetailsValidationError({ name: 'A', hasOfficeAddress: false, countryCode: 'GB' }), null)
+})
+
+test('effective working hours: prior before effectiveFrom, scheduled from its day, writes keep a future schedule', () => {
+  const policy = (start: string) => ({ ...parsePolicy(undefined), standardDayStart: start })
+  const doc = {
+    countryCode: 'GB',
+    payrollTimePolicy: { standardDayStart: '08:00' },
+    payrollTimePolicyPrior: { standardDayStart: '07:00' },
+    payrollTimePolicyEffectiveFrom: '2026-10-01',
+    payrollTimePolicyScheduled: { policy: { standardDayStart: '09:00' }, effectiveFrom: '2026-11-02' },
+  }
+  assert.equal(payrollSchedule.effectivePayrollTimePolicy(doc, '2026-09-30').standardDayStart, '07:00')
+  assert.equal(payrollSchedule.effectivePayrollTimePolicy(doc, '2026-10-31').standardDayStart, '08:00')
+  assert.equal(payrollSchedule.effectivePayrollTimePolicy(doc, '2026-11-02').standardDayStart, '09:00')
+  assert.equal(payrollSchedule.effectivePayrollTimePolicy({}, '2026-11-02').standardDayStart, '07:30')
+
+  // Not yet due: the timeline keeps the schedule pending.
+  const pending = payrollSchedule.payrollTimePolicyTimeline(doc, '2026-10-31', 'Europe/London')
+  assert.equal(pending.current.standardDayStart, '08:00')
+  assert.equal(pending.scheduled?.effectiveFrom, '2026-11-02')
+  // Due but never promoted by any app: counted anyway.
+  const due = payrollSchedule.payrollTimePolicyTimeline(doc, '2026-11-03', 'Europe/London')
+  assert.equal(due.current.standardDayStart, '09:00')
+  assert.equal(due.prior?.standardDayStart, '08:00')
+  assert.equal(due.effectiveFrom, '2026-11-02')
+  assert.equal(due.scheduled, null)
+
+  // Apply from today keeps a future iOS-scheduled change (never writes payrollTimePolicyScheduled).
+  const applyNow = payrollSchedule.payrollTimePolicyApplyNowWriteFields({
+    orgDoc: doc,
+    policy: policy('06:00'),
+    todayKey: '2026-10-31',
+    timeZone: 'Europe/London',
+  })
+  assert.equal('payrollTimePolicyScheduled' in applyNow, false)
+  assert.equal(applyNow.payrollTimePolicyEffectiveFrom, '2026-10-31')
+  assert.equal((applyNow.payrollTimePolicyPrior as Record<string, unknown>).standardDayStart, '08:00')
+  // Second save the same day keeps yesterday's rules as prior.
+  const sameDay = payrollSchedule.payrollTimePolicyApplyNowWriteFields({
+    orgDoc: { ...doc, payrollTimePolicy: { standardDayStart: '06:00' }, payrollTimePolicyEffectiveFrom: '2026-10-31', payrollTimePolicyScheduled: null },
+    policy: policy('05:00'),
+    todayKey: '2026-10-31',
+  })
+  assert.equal((sameDay.payrollTimePolicyPrior as Record<string, unknown>).standardDayStart, '07:00')
+  // Applying after a due schedule consumes it.
+  const afterDue = payrollSchedule.payrollTimePolicyApplyNowWriteFields({ orgDoc: doc, policy: policy('06:00'), todayKey: '2026-11-05' })
+  assert.equal(afterDue.payrollTimePolicyScheduled, null)
+  assert.equal((afterDue.payrollTimePolicyPrior as Record<string, unknown>).standardDayStart, '09:00')
+
+  assert.equal(payrollSchedule.payrollTimePolicyScheduleWriteFields({ orgDoc: doc, policy: policy('06:00'), effectiveFrom: '2026-10-31', todayKey: '2026-10-31' }), null)
+  const scheduled = payrollSchedule.payrollTimePolicyScheduleWriteFields({
+    orgDoc: doc,
+    policy: policy('06:00'),
+    effectiveFrom: '2026-12-01',
+    todayKey: '2026-11-05',
+  })!
+  // The due 09:00 change is promoted first, then the new one queued.
+  assert.equal((scheduled.payrollTimePolicy as Record<string, unknown>).standardDayStart, '09:00')
+  assert.equal(scheduled.payrollTimePolicyEffectiveFrom, '2026-11-02')
+  assert.deepEqual(
+    Object.keys(scheduled.payrollTimePolicyScheduled as Record<string, unknown>).sort(),
+    ['effectiveFrom', 'policy']
+  )
+  assert.equal(payrollSchedule.payrollDayKeyFromValue({ seconds: Date.UTC(2026, 5, 30, 23, 30) / 1000 }, 'Europe/London'), '2026-07-01')
+})
+
+test('working-hours limits are one set: paid hours 1–12, break 0–120 minutes, multipliers 1–3', () => {
+  const base = parsePolicy(undefined)
+  assert.equal(payrollSchedule.validatePayrollTimePolicy(base), null)
+  assert.match(payrollSchedule.validatePayrollTimePolicy({ ...base, standardPaidHours: 12.5 }) ?? '', /between 1 and 12/)
+  assert.match(payrollSchedule.validatePayrollTimePolicy({ ...base, unpaidBreakMinutes: 121 }) ?? '', /0 and 120/)
+  assert.match(payrollSchedule.validatePayrollTimePolicy({ ...base, weekdayOutsideStandardMultiplier: 0.5 }) ?? '', /×1 and ×3/)
+  assert.match(
+    payrollSchedule.validatePayrollTimePolicy({ ...base, saturday: { ...base.saturday, outsideWindowMultiplier: 3.5 } }) ?? '',
+    /Saturday/
+  )
+  assert.equal(
+    payrollSchedule.validatePayrollTimePolicy({ ...base, sunday: { ...base.sunday, allHoursMultiplier: 9, sameAsSaturday: true } }),
+    null,
+    'Sunday that follows Saturday is not checked on its own'
+  )
+  assert.equal(payrollSchedule.isStandardWorkingWeekday(5), true)
+  assert.equal(payrollSchedule.isStandardWorkingWeekday(6), false)
+})
+
+test('payment runs: active run contains today, paid in arrears on the pay day after it ends', () => {
+  const recurring = {
+    paymentRunMode: 'recurring_timeframe',
+    paymentDateMode: 'recurring_date',
+    recurringRunStartDay: 'monday',
+    recurringRunEndDay: 'sunday',
+    recurringPaymentDay: 'friday',
+  }
+  // Saturday 31 Oct 2026: run Mon 26 Oct – Sun 1 Nov, paid Fri 6 Nov.
+  const active = paymentRuns.activePaymentRunSummary(recurring, '2026-10-31T12:00:00Z', 'Europe/London')
+  assert.deepEqual(active, {
+    notConfigured: false,
+    start: '2026-10-26',
+    end: '2026-11-01',
+    payDate: '2026-11-06',
+    label: 'Mon 26 Oct – Sun 1 Nov · paid Fri 6 Nov',
+  })
+  // A Friday pay day after a Monday–Friday run is the following Friday, never the run's own last day.
+  const monFri = paymentRuns.activePaymentRunSummary({ ...recurring, recurringRunEndDay: 'friday' }, '2026-10-28T12:00:00Z', 'Europe/London')
+  assert.equal(monFri.notConfigured === false && monFri.payDate, '2026-11-06')
+
+  const ranges = {
+    paymentRunMode: 'date_ranges',
+    paymentRunDateRanges: [
+      { startDay: 1, endDay: 15 },
+      { startDay: 16, endDay: 31 },
+    ],
+    paymentDates: [20, 5],
+  }
+  const second = paymentRuns.activePaymentRunSummary(ranges, '2026-02-20T12:00:00Z', 'Europe/London')
+  assert.equal(second.notConfigured === false && second.end, '2026-02-28', '16th–31st ends on the last day of a short month')
+  assert.equal(second.notConfigured === false && second.payDate, '2026-03-05')
+  const first = paymentRuns.activePaymentRunSummary(ranges, '2026-02-03T12:00:00Z', 'Europe/London')
+  assert.equal(first.notConfigured === false && first.payDate, '2026-02-20')
+  const noPayDay = paymentRuns.activePaymentRunSummary({ ...ranges, paymentDates: [] }, '2026-02-03T12:00:00Z', 'Europe/London')
+  assert.equal(noPayDay.notConfigured === false && noPayDay.payDate, null)
+  assert.deepEqual(paymentRuns.activePaymentRunSummary(null, '2026-02-03T12:00:00Z'), { notConfigured: true })
+
+  assert.match(
+    validateRunSplit([
+      { startDay: 1, endDay: 28 },
+      { startDay: 29, endDay: 31 },
+    ]) ?? '',
+    /on or before the 27th/
+  )
+  assert.equal(
+    validateRunSplit([
+      { startDay: 1, endDay: 27 },
+      { startDay: 28, endDay: 31 },
+    ]),
+    null
+  )
+})
+
+test('schedule locations honour customItemEnabled; a save de-duplicates and never resurrects', () => {
+  const locations = scheduleOptions.enabledScheduleLocations({
+    showOffice: true,
+    showWorkingFromHome: false,
+    showSiteSurvey: true,
+    customItems: ['Yard', 'Depot', ' yard '],
+    customItemEnabled: { Yard: true, Depot: false },
+  })
+  assert.deepEqual(
+    locations.map((row) => row.id),
+    ['office', 'survey', 'custom:Yard']
+  )
+  const written = scheduleOptions.scheduleOptionsWriteFields({
+    showOffice: true,
+    showWorkingFromHome: true,
+    showSiteSurvey: false,
+    customItems: ['Yard', 'YARD', '', 'Depot'],
+    customItemEnabled: { Yard: false, Gone: true },
+  })
+  assert.deepEqual(written.customItems, ['Yard', 'Depot'])
+  assert.deepEqual(written.customItemEnabled, { Yard: false, Depot: true })
+  assert.equal(written.showSiteSurvey, false)
+})
+
+// --- Warnings detection period, material cut-off rows, clash approvals, variations toggle ---
+import { clashScanDays as clashScanDaysRule, coverageWindow as coverageWindowRule } from './engine.ts'
+import { parseWarningDetection as parseDetectionRule } from './organizationSettings.ts'
+import { materialCutOffWarningRows as materialRowsRule, materialLineCountsAsOrdered as lineOrderedRule } from './materialCutOffWarnings.ts'
+import {
+  clashApprovalWrites as clashApprovalWritesRule,
+  clashResolutionKey as clashResolutionKeyRule,
+  isClashApproved as isClashApprovedRule,
+  isWarningActive as isWarningActiveRule,
+} from './scheduleSources.ts'
+import {
+  notificationPreferenceAllowsDelivery as allowsDeliveryRule,
+  notificationPreferenceKeyForType as keyForTypeRule,
+  parseUserNotificationPreferences as parsePrefsRule,
+  visibleNotificationPreferenceKeys as visiblePrefsRule,
+} from './notificationPreferences.ts'
+
+test('set number of days: N includes today; a missing or invalid N scans 7 days and says why', () => {
+  const base = { referenceIso: '2026-10-28T09:00:00Z', timeZone: 'Europe/London', clashLookaheadMode: 'numberOfDays' }
+  assert.deepEqual(coverageWindowRule({ ...base, clashLookaheadDays: 2 }), { startDayKey: '2026-10-28', endDayKey: '2026-10-29' })
+  const missing = coverageWindowRule({ ...base, clashLookaheadDays: null })
+  assert.equal(missing.endDayKey, '2026-11-03')
+  assert.equal(missing.fallbackReason, 'lookaheadDaysMissing')
+  const invalid = coverageWindowRule({ ...base, clashLookaheadDays: 0 })
+  assert.equal(invalid.endDayKey, '2026-11-03')
+  assert.equal(invalid.fallbackReason, 'lookaheadDaysInvalid')
+  assert.equal(parseDetectionRule({ clashLookaheadMode: 'numberOfDays', clashLookaheadDays: 'abc' }).clashLookaheadDaysFallback, 'lookaheadDaysInvalid')
+  const blank = parseDetectionRule({ clashLookaheadMode: 'numberOfDays' })
+  assert.equal(blank.clashLookaheadDays, 7)
+  assert.equal(blank.clashLookaheadDaysFallback, 'lookaheadDaysMissing')
+  assert.equal(parseDetectionRule({ clashLookaheadMode: 'numberOfDays', clashLookaheadDays: 3 }).clashLookaheadDaysFallback, undefined)
+  // Full week needs no N, so a missing N is not a notice there.
+  assert.equal(parseDetectionRule({ clashLookaheadMode: 'endOfWorkingWeek' }).clashLookaheadDaysFallback, undefined)
+})
+
+test('clash days: Full week is Mon–Fri plus a weekend day of this week that has a booking', () => {
+  // Wednesday 28 Oct 2026.
+  const input = { referenceIso: '2026-10-28T09:00:00Z', timeZone: 'Europe/London', clashLookaheadMode: 'endOfWorkingWeek' }
+  assert.deepEqual(coverageWindowRule(input), { startDayKey: '2026-10-26', endDayKey: '2026-10-30' })
+  const sundayBooked = clashScanDaysRule({ ...input, bookedDayKeys: ['2026-10-27', '2026-11-01'] })
+  assert.deepEqual(sundayBooked.dayKeys, ['2026-10-26', '2026-10-27', '2026-10-28', '2026-10-29', '2026-10-30', '2026-11-01'])
+  assert.equal(sundayBooked.endDayKey, '2026-11-01')
+  const noWeekend = clashScanDaysRule({ ...input, bookedDayKeys: ['2026-10-27'] })
+  assert.equal(noWeekend.dayKeys.length, 5)
+  // Without booking days, both weekend days of this week are checked (a clash row only exists on a booked day).
+  assert.equal(clashScanDaysRule(input).dayKeys.length, 7)
+  // Set number of days is calendar days: a weekend inside it is already checked.
+  const days = clashScanDaysRule({ ...input, clashLookaheadMode: 'numberOfDays', clashLookaheadDays: 5, bookedDayKeys: [] })
+  assert.deepEqual(days.dayKeys, ['2026-10-28', '2026-10-29', '2026-10-30', '2026-10-31', '2026-11-01'])
+})
+
+test('material cut-off rows: after the clock, tomorrow-booked jobs warn; order send records count as ordered', () => {
+  const projects = [{ id: 'P1', jobNumber: 'J-100', siteName: 'High St' }, { id: 'P2', jobNumber: '', siteName: 'Mill' }]
+  const bookings = [
+    { projectId: 'P1', status: 'confirmed', dayKey: '2026-10-29' },
+    { projectId: 'P2', status: 'cancelled', dayKey: '2026-10-29' },
+  ]
+  const materials = [
+    { id: 'm1', projectId: 'P1', status: 'draft', dayKey: '2026-10-29' },
+    { id: 'm2', projectId: 'P1', status: 'ordered', dayKey: '2026-10-29' },
+  ]
+  const base = { timeZone: 'Europe/London', cutOff: { materialCutOffHour: 15, materialCutOffMinute: 30 }, projects, bookings, materials }
+  // 15:29 London (GMT on 28 Oct 2026) is before the clock.
+  assert.equal(materialRowsRule({ ...base, now: '2026-10-28T15:29:00Z' }).length, 0)
+  const rows = materialRowsRule({ ...base, now: '2026-10-28T15:30:00Z' })
+  assert.equal(rows.length, 1)
+  assert.equal(rows[0].id, 'materials-P1-2026-10-29')
+  assert.equal(rows[0].resolutionKey, rows[0].id)
+  assert.equal(rows[0].unorderedCount, 1)
+  assert.match(rows[0].message, /not fully ordered by the cut-off 15:30/)
+  // An order send record listing m1 makes every line ordered.
+  const sent = materialRowsRule({ ...base, now: '2026-10-28T16:00:00Z', sendRecords: [{ requestType: 'order', materialIds: ['m1'] }] })
+  assert.equal(sent.length, 0)
+  assert.equal(lineOrderedRule({ id: 'm1', status: 'draft' }, [{ requestType: 'quote', materialIds: ['m1'] }]), false)
+  // No lines for tomorrow still warns.
+  const empty = materialRowsRule({ ...base, materials: [], now: '2026-10-28T16:00:00Z' })
+  assert.equal(empty[0].unorderedCount, 0)
+  assert.match(empty[0].message, /^No materials have been ordered for J-100/)
+  // Friday evening: Saturday tomorrow is skipped unless its flag is on.
+  const sat = { ...base, bookings: [{ projectId: 'P1', status: 'confirmed', dayKey: '2026-10-31' }], materials: [] }
+  assert.equal(materialRowsRule({ ...sat, now: '2026-10-30T17:00:00Z' }).length, 0)
+  assert.equal(
+    materialRowsRule({ ...sat, cutOff: { ...base.cutOff, materialCutOffOnSaturday: true }, now: '2026-10-30T17:00:00Z' }).length,
+    1
+  )
+  // Turned off.
+  assert.equal(materialRowsRule({ ...base, cutOff: { materialOrderCutOff: false }, now: '2026-10-28T20:00:00Z' }).length, 0)
+})
+
+test('clash approval writes both collections; operative clashes key by the booking pair', () => {
+  const writes = clashApprovalWritesRule({ bookingAId: 'b2', bookingBId: 'b1', approvedByUserId: 'u1' })
+  assert.equal(writes.acceptedClash?.documentId, 'b1|b2')
+  assert.equal(writes.resolution?.documentId, 'b1|b2')
+  assert.deepEqual(writes.resolution?.fields, { resolutionKey: 'b1|b2', status: 'approved', resolvedByUserId: 'u1' })
+  const manager = clashApprovalWritesRule({
+    bookingAId: 'm1',
+    bookingBId: 'm2',
+    resolutionKey: 'mgr-clash-u9-2026-10-28-0',
+    approvedByUserId: 'u1',
+  })
+  assert.equal(manager.acceptedClash?.documentId, 'm1|m2')
+  assert.equal(manager.resolution?.documentId, 'mgr-clash-u9-2026-10-28-0')
+  assert.equal(clashResolutionKeyRule({ bookingAId: 'B', bookingBId: 'A' }), 'A|B')
+  // Approved on either collection.
+  assert.equal(isClashApprovedRule({ bookingAId: 'b1', bookingBId: 'b2' }, { resolvedKeys: ['b1|b2'] }), true)
+  assert.equal(isClashApprovedRule({ bookingAId: 'b1', bookingBId: 'b2' }, { acceptedClashes: ['b2|b1'] }), true)
+  assert.equal(isClashApprovedRule({ bookingAId: 'b1', bookingBId: 'b2' }, { resolvedKeys: [] }), false)
+  assert.equal(isWarningActiveRule({ resolutionKey: 'b1|b2', bookingAId: 'b1', bookingBId: 'b2' }, { resolvedKeys: ['b1|b2'] }), false)
+})
+
+test('variations notifications have a toggle (default on) that only variation viewers see', () => {
+  for (const type of ['variation', 'variation_renumbered', 'variation_added', 'variation_from_tracker', 'variation_numbers_updated']) {
+    assert.equal(keyForTypeRule(type), 'variations')
+  }
+  const prefs = parsePrefsRule({})
+  assert.equal(prefs.variations, true)
+  assert.equal(allowsDeliveryRule(parsePrefsRule({ variations: false }), 'variation'), false)
+  const catalogue = { projects: true, smallWorks: true }
+  const manager = { role: { isSuperAdmin: false, isAdmin: false, isManager: true, isOperativeMode: false }, catalogue }
+  const operative = { role: { isSuperAdmin: false, isAdmin: false, isManager: false, isOperativeMode: true }, catalogue }
+  assert.ok(visiblePrefsRule(manager).includes('variations'))
+  assert.ok(!visiblePrefsRule(operative).includes('variations'))
+})
+
+import {
+  DEVELOPER_PASSWORD_MIN_LENGTH as DEVELOPER_PASSWORD_MIN_LENGTH_RULE,
+  PASSWORD_MIN_LENGTH as PASSWORD_MIN_LENGTH_RULE,
+  passwordMinLength as passwordMinLengthRule,
+  passwordPolicyError as passwordPolicyErrorRule,
+} from './passwordPolicy.ts'
+
+test('password policy: 8 characters for every account, 10 for the developer account', () => {
+  assert.equal(PASSWORD_MIN_LENGTH_RULE, 8)
+  assert.equal(DEVELOPER_PASSWORD_MIN_LENGTH_RULE, 10)
+  assert.equal(passwordMinLengthRule(), 8)
+  assert.equal(passwordMinLengthRule({ developerAccount: true }), 10)
+  assert.equal(passwordPolicyErrorRule('1234567'), 'Password must be at least 8 characters.')
+  assert.equal(passwordPolicyErrorRule('12345678'), null)
+  assert.equal(passwordPolicyErrorRule('123456789', { developerAccount: true }), 'Password must be at least 10 characters.')
+  assert.equal(passwordPolicyErrorRule('1234567890', { developerAccount: true }), null)
+  // iOS ChangePasswordView used 6: a six-character password is refused.
+  assert.equal(passwordPolicyErrorRule('abcdef'), 'Password must be at least 8 characters.')
+  assert.equal(passwordPolicyErrorRule(undefined), 'Password must be at least 8 characters.')
+})
+
+test('booking download start: launch bound, earlier week reload, never later (bookingLoadStart contract)', () => {
+  // Launch: earlier of this Monday and the warning window start.
+  assert.deepEqual(
+    scheduleSources.bookingLoadStart({ loadedFromDayKey: null, neededDayKeys: ['2026-10-26', '2026-10-16'] }),
+    { startDayKey: '2026-10-16', reload: false }
+  )
+  // A screen showing an earlier week moves the start back and reloads.
+  assert.deepEqual(
+    scheduleSources.bookingLoadStart({ loadedFromDayKey: '2026-10-16', neededDayKeys: ['2026-10-26', '2026-09-07'] }),
+    { startDayKey: '2026-09-07', reload: true }
+  )
+  // A later day never narrows the download.
+  assert.deepEqual(
+    scheduleSources.bookingLoadStart({ loadedFromDayKey: '2026-09-07', neededDayKeys: ['2026-10-26'] }),
+    { startDayKey: '2026-09-07', reload: false }
+  )
+  assert.deepEqual(scheduleSources.bookingLoadStart({ fullHistory: true, neededDayKeys: ['2026-10-26'] }), {
+    startDayKey: null,
+    reload: false,
+  })
+})
+
+test('notification toggles stop the device push only, never the inbox row', async () => {
+  const prefsModule = await import('./notificationPreferences.ts')
+  const off = prefsModule.parseUserNotificationPreferences({ bookedOntoJob: false, variations: false })
+  assert.equal(prefsModule.NOTIFICATION_TOGGLE_HIDES_INBOX_ROW, false)
+  assert.equal(prefsModule.notificationShowsInInbox(off, 'booking_created'), true)
+  assert.equal(prefsModule.devicePushAllowed(off, 'booking_created'), false)
+  assert.equal(prefsModule.devicePushAllowed(prefsModule.DEFAULT_USER_NOTIFICATION_PREFERENCES, 'booking_created'), true)
+  for (const type of ['variation', 'variation_renumbered', 'variation_added', 'variation_from_tracker', 'variation_numbers_updated']) {
+    assert.equal(prefsModule.notificationDeliversDevicePush(type), true, type)
+    assert.equal(prefsModule.devicePushAllowed(off, type), false, type)
+  }
+  assert.equal(prefsModule.devicePushAllowed(off, 'material_order_cut_off'), false)
+})
+
+import {
+  parseTimesheetEntryReviews,
+  timesheetEntryDecision,
+  timesheetEntryReviewWriteFields,
+  timesheetEntryReviewsAfterWrite,
+  timesheetOwnerWriteFields,
+  timesheetWriterIsReviewer,
+} from './timesheetEntryReviews.ts'
+import { canChangePersonPay } from './payAccess.ts'
+
+test('timesheet entry decisions: the reviewer map wins; the owner-written inline value only lowers pay', () => {
+  const signedAt = new Date('2026-10-16T10:00:00Z')
+  const entry = { id: 'e1', amount: 50, managerDecision: 'approved', managerRevisedAmount: null }
+  const reviewed = (review: Record<string, unknown>, extra: Record<string, unknown> = {}) => ({
+    extraEntryReviews: { e1: review },
+    ...extra,
+  })
+
+  // Map era: the reviewer's decline stands even when the owner rewrites the inline value.
+  assert.deepEqual(
+    timesheetEntryDecision(reviewed({ decision: 'declined', reviewedAmount: 50 }), { ...entry, managerDecision: 'approved' }),
+    { decision: 'declined', revisedAmount: null, source: 'review' }
+  )
+  // An inline "edited" up is ignored; the reviewer's edit down stands.
+  assert.deepEqual(
+    timesheetEntryDecision(reviewed({ decision: 'edited', revisedAmount: 30, reviewedAmount: 50 }), {
+      ...entry,
+      managerDecision: 'edited',
+      managerRevisedAmount: 999,
+    }),
+    { decision: 'edited', revisedAmount: 30, source: 'review' }
+  )
+  // A review made against another amount is stale: pending until the manager looks again.
+  assert.equal(
+    timesheetEntryDecision(reviewed({ decision: 'approved', reviewedAmount: 50 }), { ...entry, amount: 500 }).decision,
+    'pending'
+  )
+  // Not reviewed yet: approved at its own amount, as both apps create entries.
+  assert.equal(timesheetEntryDecision({ extraEntryReviews: {} }, entry).decision, 'approved')
+  // The inline value may lower pay (an old iOS manager build that only writes inline).
+  assert.deepEqual(
+    timesheetEntryDecision({ extraEntryReviews: {} }, { ...entry, managerDecision: 'declined' }),
+    { decision: 'declined', revisedAmount: null, source: 'inline-lower' }
+  )
+  // Legacy sheet (no map), not manager-signed: an inline "edited" up does not count.
+  assert.deepEqual(
+    timesheetEntryDecision({}, { ...entry, managerDecision: 'edited', managerRevisedAmount: 999 }),
+    { decision: 'approved', revisedAmount: null, source: 'unreviewed' }
+  )
+  // Legacy sheet the line manager signed: inline is what they signed (rules freeze the owner's entries).
+  assert.deepEqual(
+    timesheetEntryDecision({ managerSignedAt: signedAt }, { ...entry, managerDecision: 'edited', managerRevisedAmount: 70 }),
+    { decision: 'edited', revisedAmount: 70, source: 'legacy-inline' }
+  )
+  assert.equal(parseTimesheetEntryReviews({}), null)
+  assert.deepEqual(parseTimesheetEntryReviews({ extraEntryReviews: {} }), {})
+})
+
+test('timesheet entry reviews are written as dotted fields, only for entries that changed', () => {
+  const entries = [
+    { id: 'e1', amount: 50, managerDecision: 'declined' as const, managerRevisedAmount: null },
+    { id: 'e2', amount: 20, managerDecision: 'approved' as const, managerRevisedAmount: null },
+  ]
+  // Legacy sheet: every entry moves into the map.
+  const first = timesheetEntryReviewWriteFields({ stored: null, entries, reviewedByUserId: 'lm', reviewedAtMs: 1000 })
+  assert.deepEqual(Object.keys(first).sort(), ['extraEntryReviews.e1', 'extraEntryReviews.e2'])
+  assert.deepEqual(first['extraEntryReviews.e1'], {
+    decision: 'declined',
+    revisedAmount: null,
+    reviewedAmount: 50,
+    reviewedByUserId: 'lm',
+    reviewedAtMs: 1000,
+  })
+  const stored = timesheetEntryReviewsAfterWrite(null, first)
+  // Nothing changed: nothing written.
+  assert.deepEqual(timesheetEntryReviewWriteFields({ stored, entries, reviewedByUserId: 'lm', reviewedAtMs: 2000 }), {})
+  // One edit: one field.
+  const edited = timesheetEntryReviewWriteFields({
+    stored,
+    entries: [entries[0], { ...entries[1], managerDecision: 'edited', managerRevisedAmount: 15 }],
+    reviewedByUserId: 'lm',
+    reviewedAtMs: 3000,
+  })
+  assert.deepEqual(Object.keys(edited), ['extraEntryReviews.e2'])
+  assert.equal(edited['extraEntryReviews.e2'].revisedAmount, 15)
+})
+
+test('timesheet owner save drops the reviewer-only parts', () => {
+  const full = {
+    managerNote: 'Please check Tuesday',
+    payrollLineReviews: { a: { decision: 'declined' } },
+    extraEntryReviews: {},
+    'extraEntryReviews.e1': { decision: 'approved' },
+    weeklyReportOverride: { lines: [] },
+    expenseEntries: [],
+    priceWorkEntries: [],
+    operativeSignedByName: 'Rae',
+  }
+  assert.deepEqual(timesheetOwnerWriteFields(full, { subjectHasLineManager: true, managerSigned: false }), {
+    managerNote: 'Please check Tuesday',
+    expenseEntries: [],
+    priceWorkEntries: [],
+    operativeSignedByName: 'Rae',
+  })
+  // Self-signed (no line manager): the owner writes the approved snapshot.
+  assert.ok('weeklyReportOverride' in timesheetOwnerWriteFields(full, { subjectHasLineManager: false, managerSigned: false }))
+  // Manager-signed: the entries are frozen for the owner.
+  const signed = timesheetOwnerWriteFields(full, { subjectHasLineManager: true, managerSigned: true })
+  assert.equal('expenseEntries' in signed, false)
+  assert.equal('priceWorkEntries' in signed, false)
+  assert.equal(signed.managerNote, 'Please check Tuesday')
+
+  assert.equal(timesheetWriterIsReviewer({ writerUserId: 'op', subjectUserId: 'op', subjectLineManagerIds: ['op'] }), false)
+  assert.equal(timesheetWriterIsReviewer({ writerUserId: 'lm', subjectUserId: 'op', subjectLineManagerIds: ['LM'] }), true)
+  assert.equal(timesheetWriterIsReviewer({ writerUserId: 'new', writerFormerIds: ['old'], subjectUserId: 'op', subjectLineManagerIds: ['old'] }), true)
+  assert.equal(timesheetWriterIsReviewer({ writerUserId: 'other', subjectUserId: 'op', subjectLineManagerIds: ['lm'] }), false)
+  assert.equal(timesheetWriterIsReviewer({ writerUserId: 'admin', subjectUserId: 'admin', writerIsAdmin: true }), true)
+})
+
+test('pay access: a person never changes their own pay; admins and operatives managers do', () => {
+  const operative = { userId: 'op', isOperative: true }
+  assert.equal(canChangePersonPay({ userId: 'op', isOperativeMode: true }, operative), false)
+  assert.equal(canChangePersonPay({ userId: 'mgr', isManager: true, hasOperativesAccess: true }, operative), true)
+  assert.equal(canChangePersonPay({ userId: 'mgr', isManager: true }, operative), false)
+  assert.equal(canChangePersonPay({ userId: 'mgr', isManager: true, hasOperativesAccess: true }, { userId: 'mgr2', isOperative: false }), false)
+  assert.equal(canChangePersonPay({ userId: 'mgr', isManager: true, hasOperativesAccess: true }, { userId: 'mgr', isOperative: true }), false)
+  assert.equal(canChangePersonPay({ userId: 'admin', isAdmin: true }, { userId: 'admin' }), true)
+  assert.equal(canChangePersonPay({ userId: '' , isAdmin: true }, operative), false)
+})

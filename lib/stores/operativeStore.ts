@@ -21,6 +21,7 @@ import {
   removedQualificationCertificateIds,
 } from '@/lib/canonical/operativeQualifications'
 import { parseManager, parseOperative, serializeManager, serializeOperative } from '@/lib/ios-parity/converters'
+import { currentOrganizationCurrency } from '@/lib/stores/organizationDocumentStore'
 import { readStoredRates } from '@/lib/timesheets/payBasis'
 import { markRowsRemoved, retainScopedRows } from '@/lib/staff/rosterRetain'
 import { removeFutureBookingsForPerson } from '@/lib/bookings/removeBookingsOnDelete'
@@ -236,7 +237,7 @@ export const useOperativeStore = create<OperativeState>((set, get) => ({
 
   saveOperative: async (organizationId, operative) => {
     const id = operative.id || newUuid()
-    const payload = serializeOperative({ ...operative, id, organizationId })
+    const payload = serializeOperative({ ...operative, id, organizationId }, { currencyCode: currentOrganizationCurrency() })
     operativeMutationEpoch += 1
     await setDoc(doc(db, 'organizations', organizationId, 'operatives', id), payload, { merge: true })
     operativeMutationEpoch += 1
@@ -293,7 +294,7 @@ export const useOperativeStore = create<OperativeState>((set, get) => ({
       qualificationCertificateURLs: merged.qualificationCertificateURLs,
       updatedAt: new Date(),
     }
-    const payload = serializeOperative({ ...mergedOperative, organizationId })
+    const payload = serializeOperative({ ...mergedOperative, organizationId }, { currencyCode: currentOrganizationCurrency() })
     operativeMutationEpoch += 1
     await setDoc(
       doc(db, 'organizations', organizationId, 'operatives', id),

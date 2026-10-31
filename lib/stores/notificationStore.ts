@@ -1,7 +1,19 @@
 'use client'
 
 import { create } from 'zustand'
-import { collection, onSnapshot, query, updateDoc, where, doc, type Unsubscribe } from 'firebase/firestore'
+import {
+  collection,
+  doc,
+  limit,
+  onSnapshot,
+  orderBy,
+  query,
+  updateDoc,
+  where,
+  type FirestoreError,
+  type Query,
+  type Unsubscribe,
+} from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
 import { retainParsedRows } from '@/lib/staff/rosterRetain'
 import {
@@ -28,6 +40,9 @@ let inboxUnsub: Unsubscribe | null = null
 let inboxOrgId = ''
 let inboxUserId = ''
 
+/** Newest inbox rows kept live (iOS NotificationService limits its listener to 150). */
+export const INBOX_LISTENER_LIMIT = 150
+
 export const useNotificationStore = create<NotificationState>((set, get) => ({
   notifications: [],
   unreadCount: 0,
@@ -44,41 +59,57 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
     inboxUnsub?.()
     inboxOrgId = organizationId
     inboxUserId = userId
-    const inbox = query(
-      collection(db, 'organizations', organizationId, 'notifications'),
-      where('userId', '==', userId)
+    const scope = collection(db, 'organizations', organizationId, 'notifications')
+    // Newest first, bounded like iOS. Needs the (userId asc, createdAt desc) index in
+    // firestore.indexes.json; until that index is deployed the ordered query fails with
+    // failed-precondition, so fall back to the unordered listener rather than an empty inbox.
+    const ordered = query(
+      scope,
+      where('userId', '==', userId),
+      orderBy('createdAt', 'desc'),
+      limit(INBOX_LISTENER_LIMIT)
     )
-    inboxUnsub = onSnapshot(
-      inbox,
-      (snap) => {
-        if (inboxOrgId !== organizationId || inboxUserId !== userId) return
-        const notifications: AppInboxNotification[] = []
-        let failed = 0
-        for (const entry of snap.docs) {
-          const parsed = parseNotification(entry.id, entry.data() as Record<string, unknown>, organizationId)
-          if (!parsed.ok) {
-            failed += 1
-            logSkippedDocument('notifications', entry.id, parsed.errors)
-            continue
+    const unordered = query(scope, where('userId', '==', userId))
+    const listen = (inbox: Query, fallback: Query | null) => {
+      inboxUnsub = onSnapshot(
+        inbox,
+        (snap) => {
+          if (inboxOrgId !== organizationId || inboxUserId !== userId) return
+          const notifications: AppInboxNotification[] = []
+          let failed = 0
+          for (const entry of snap.docs) {
+            const parsed = parseNotification(entry.id, entry.data() as Record<string, unknown>, organizationId)
+            if (!parsed.ok) {
+              failed += 1
+              logSkippedDocument('notifications', entry.id, parsed.errors)
+              continue
+            }
+            if (inboxNotificationVisibleToUser(parsed.value, userId)) notifications.push(parsed.value)
           }
-          if (inboxNotificationVisibleToUser(parsed.value, userId)) notifications.push(parsed.value)
+          notifications.sort(compareInboxNotificationsByCreatedAt)
+          const kept =
+            snap.docs.length > 0 && failed === snap.docs.length
+              ? retainParsedRows(snap.docs.length, get().notifications, notifications)
+              : notifications
+          set({
+            notifications: kept,
+            // Canonical badge over the rows loaded (the newest 150), same as iOS.
+            unreadCount: unreadNotificationBadgeCount(kept, userId),
+            loading: false,
+          })
+        },
+        (error: FirestoreError) => {
+          if (inboxOrgId !== organizationId || inboxUserId !== userId) return
+          if (fallback && error.code === 'failed-precondition') {
+            inboxUnsub?.()
+            listen(fallback, null)
+            return
+          }
+          set({ error: error.message, loading: false })
         }
-        notifications.sort(compareInboxNotificationsByCreatedAt)
-        const kept =
-          snap.docs.length > 0 && failed === snap.docs.length
-            ? retainParsedRows(snap.docs.length, get().notifications, notifications)
-            : notifications
-        set({
-          notifications: kept,
-          unreadCount: unreadNotificationBadgeCount(kept, userId),
-          loading: false,
-        })
-      },
-      (error) => {
-        if (inboxOrgId !== organizationId || inboxUserId !== userId) return
-        set({ error: error.message, loading: false })
-      }
-    )
+      )
+    }
+    listen(ordered, unordered)
   },
 
   markAllAsRead: async (organizationId) => {
