@@ -20,6 +20,7 @@ import {
   isoWeekdayInZone,
 } from '../orgTime/zoneTime'
 import { eachDayKey, formatLongDayKey, zoneOrLondon } from './dayKeys'
+import { idKey } from './personIds'
 
 export type QualificationExpiryInput = {
   referenceIso: string
@@ -431,8 +432,11 @@ export function unbookedLabourRows(input: UnbookedLabourInput): UnbookedLabourRo
   const timeZone = zoneOf(input.timeZone)
   const people = listedCurrentLabourPeople(input.people)
   const operatives = listedCurrentLabourPeople(input.operatives)
-  const excludedIds = new Set((input.excludedUserIds || []).map((id) => String(id)))
-  const isExcluded = (person: LabourPerson): boolean => labourPersonIds(person).some((id) => excludedIds.has(id))
+  // Ids compare without case (`normalizeDocumentId`, rulebook §1): iOS writes upper-case UUIDs, web may
+  // store lower case. Every set and map below is keyed by `nid`; returned rows keep the stored ids.
+  const nid = idKey
+  const excludedIds = new Set((input.excludedUserIds || []).map(nid).filter(Boolean))
+  const isExcluded = (person: LabourPerson): boolean => labourPersonIds(person).some((id) => excludedIds.has(nid(id)))
   const dayPolicy = {
     standardDayStart: input.standardDayStart,
     standardDayEnd: input.standardDayEnd,
@@ -442,7 +446,7 @@ export function unbookedLabourRows(input: UnbookedLabourInput): UnbookedLabourRo
   const operativeBookings = new Map<string, StandardDayBooking[]>()
   const managerBookings = new Map<string, StandardDayBooking[]>()
   for (const booking of input.bookings) {
-    const personId = String(booking.personId || '')
+    const personId = nid(booking.personId)
     const dayKey = String(booking.dayKey || '')
     if (!personId || !dayKey) continue
     const key = `${personId}|${dayKey}`
@@ -458,7 +462,7 @@ export function unbookedLabourRows(input: UnbookedLabourInput): UnbookedLabourRo
     const email = emailKey(operative.email)
     if (!email) continue
     const ids = operativeIdsByEmail.get(email) || new Set<string>()
-    if (operative.id) ids.add(operative.id)
+    if (nid(operative.id)) ids.add(nid(operative.id))
     operativeIdsByEmail.set(email, ids)
     const existing = operativesByEmail.get(email)
     if (!existing || operative.profileWeight > existing.profileWeight) {
@@ -469,21 +473,22 @@ export function unbookedLabourRows(input: UnbookedLabourInput): UnbookedLabourRo
   const userIdsByEmail = new Map<string, Set<string>>()
   const idsByUserId = new Map<string, string[]>()
   for (const person of people) {
-    if (person.id) idsByUserId.set(person.id, labourPersonIds(person))
+    if (nid(person.id)) idsByUserId.set(nid(person.id), labourPersonIds(person).map(nid).filter(Boolean))
     const email = emailKey(person.email)
     if (!email || !person.id) continue
     const ids = userIdsByEmail.get(email) || new Set<string>()
-    for (const id of labourPersonIds(person)) ids.add(id)
+    for (const id of labourPersonIds(person)) if (nid(id)) ids.add(nid(id))
     userIdsByEmail.set(email, ids)
   }
   const withFormerIds = (target: Set<string>, userId: string | undefined) => {
-    if (!userId) return
-    for (const id of idsByUserId.get(userId) || [userId]) target.add(id)
+    const key = nid(userId)
+    if (!key) return
+    for (const id of idsByUserId.get(key) || [key]) target.add(id)
   }
 
   const slotsFor = (email: string, operativeId: string | undefined, userId: string | undefined, dayKey: string): StandardDayBooking[] => {
     const ids = new Set<string>()
-    if (operativeId) ids.add(operativeId)
+    if (nid(operativeId)) ids.add(nid(operativeId))
     withFormerIds(ids, userId)
     const linked = operativeIdsByEmail.get(email)
     if (linked) for (const id of linked) ids.add(id)
@@ -506,14 +511,15 @@ export function unbookedLabourRows(input: UnbookedLabourInput): UnbookedLabourRo
     const linkedUsers = userIdsByEmail.get(email)
     if (linkedUsers) for (const id of linkedUsers) userIds.add(id)
     const operativeIds = new Set<string>()
-    if (operativeId) operativeIds.add(operativeId)
+    if (nid(operativeId)) operativeIds.add(nid(operativeId))
     const linkedOps = operativeIdsByEmail.get(email)
     if (linkedOps) for (const id of linkedOps) operativeIds.add(id)
     return approvedHolidays.some((holiday) => {
       if (dayKey < holiday.startDayKey || dayKey > holiday.endDayKey) return false
-      const holidayUser = String(holiday.userId || '').trim()
+      const holidayUser = nid(holiday.userId)
       if (holidayUser && userIds.has(holidayUser)) return true
-      if (holiday.operativeId && operativeIds.has(holiday.operativeId)) return true
+      const holidayOperative = nid(holiday.operativeId)
+      if (holidayOperative && operativeIds.has(holidayOperative)) return true
       return false
     })
   }
@@ -521,7 +527,7 @@ export function unbookedLabourRows(input: UnbookedLabourInput): UnbookedLabourRo
   const operativeUsers = dedupeFinishedPeople(people.filter(isOperativeModeOnly))
   const managerUsers = dedupeFinishedPeople(people.filter(isManagerOrAdmin))
   const managerAdminUserIds = new Set(
-    people.filter(isManagerOrAdmin).filter(hasFinishedSignup).map((person) => person.id)
+    people.filter(isManagerOrAdmin).filter(hasFinishedSignup).map((person) => nid(person.id))
   )
   const operativeUserEmails = new Set(operativeUsers.map((person) => emailKey(person.email)).filter(Boolean))
 
@@ -602,7 +608,7 @@ export function unbookedLabourRows(input: UnbookedLabourInput): UnbookedLabourRo
       if (email && operativeUserEmails.has(email)) continue
       const matched = email ? verifiedUserForEmail(email) : undefined
       if (!matched && email && people.some((person) => emailKey(person.email) === email)) continue
-      if (matched && managerAdminUserIds.has(matched.id)) continue
+      if (matched && managerAdminUserIds.has(nid(matched.id))) continue
       if (matched && isExcluded(matched)) continue
       if (holidayCovers(dayKey, email, matched?.id, operative.id)) continue
       append({

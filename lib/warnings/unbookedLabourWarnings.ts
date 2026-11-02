@@ -10,6 +10,7 @@ import { formatWarningHours } from '@/lib/warnings/clashIntervals'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import { isPlaceholderOperative } from '@/lib/operatives/operativeRosterUtils'
 import { computeWarningCoverageWindow, isDateWithinWarningWindow } from '@/lib/warnings/warningLookahead'
+import { holidayBookingLabourInput } from '@/lib/annualLeave/holidayDayKeys'
 
 export interface UnbookedLabourWarning {
   id: string
@@ -197,13 +198,8 @@ export function computeUnbookedLabourWarningsForDateRange({
           workEnd: booking.workEndTime,
         })),
     ],
-    holidays: holidays.map((holiday) => ({
-      userId: holiday.userId,
-      operativeId: holiday.operativeId,
-      startDayKey: dayKey(holiday.startDate, timeZone),
-      endDayKey: dayKey(holiday.endDate, timeZone),
-      approved: String(holiday.status).toLowerCase() === 'approved',
-    })),
+    // Parsed day keys from `parseHolidayDocument` (rulebook §9), never recomputed here.
+    holidays: holidays.map((holiday) => holidayBookingLabourInput(holiday, timeZone)),
   })
   return rows.map((row) => ({
     id: row.id,

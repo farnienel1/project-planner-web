@@ -12,6 +12,9 @@ import { assignedQualificationWriteFields } from '@/lib/canonical/operativeQuali
 import { parseFormerUserIds } from '@/lib/canonical/userProfile'
 import { currencySymbol, DEFAULT_CURRENCY_CODE } from '@/lib/canonical/money'
 import { bookingWriteFields, parseBookingDocument, parseManagerSiteBookingDocument } from '@/lib/canonical/bookings'
+import { parseHolidayDocument } from '@/lib/canonical/holidayDocument'
+import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
+import { dateFromDayKeyInZone } from '@/lib/orgTime/zoneTime'
 import { exclusiveRateDocumentFields, operativeRosterRateFields, readStoredRates } from '@/lib/timesheets/payBasis'
 import { applyExclusiveRateFields } from '@/lib/firebase/userPayload'
 import type {
@@ -30,8 +33,6 @@ import type {
 import { UserRole } from '@/types'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import {
-  HOLIDAY_STATUSES,
-  HOLIDAY_TIME_SLOTS,
   normalizeBookingStatus,
   normalizeEmploymentType,
   normalizeManagerTimeSlot,
@@ -707,33 +708,37 @@ export function serializeTask(task: ProjectTask): Record<string, unknown> {
   return payload
 }
 
+/**
+ * Data-health read of one `holidayBookings` document. It reads through the rulebook reader
+ * `parseHolidayDocument` (rulebook §9) — the same keys, status words, ids and organisation-zone day keys
+ * as the holiday store and iOS — and fails only when that reader cannot read the document.
+ */
 export function parseHoliday(
   docId: string,
   data: Record<string, unknown>,
-  organizationId: string
+  organizationId: string,
+  timeZone?: string | null
 ): ParseResult<HolidayBooking> {
-  const startDate = asDate(data.startDate)
-  const endDate = asDate(data.endDate)
-  const statusRaw = asString(data.status)
-  const slotRaw = asString(data.timeSlot, 'FULL DAY')
-  if (!startDate || !endDate) return fail(['startDate and endDate Timestamps required'])
-  if (!(HOLIDAY_STATUSES as readonly string[]).includes(statusRaw)) {
-    return fail([`holiday status invalid (${statusRaw})`])
-  }
-  const timeSlot = (HOLIDAY_TIME_SLOTS as readonly string[]).includes(slotRaw) ? slotRaw : 'FULL DAY'
+  const zone = organizationZoneOr(timeZone)
+  const parsed = parseHolidayDocument(docId, data, zone)
+  if (!parsed) return fail(['holiday has no readable start date'])
   return ok({
-    id: docId,
-    organizationId,
-    userId: asOptionalString(data.userId),
-    operativeId: asOptionalString(data.operativeId),
-    startDate,
-    endDate,
-    status: statusRaw as HolidayBooking['status'],
-    timeSlot: timeSlot as HolidayBooking['timeSlot'],
-    approvedByUserId: asOptionalString(data.approvedByUserId),
+    id: parsed.id,
+    organizationId: parsed.organizationId ?? organizationId,
+    userId: parsed.userId ?? undefined,
+    operativeId: parsed.operativeId ?? undefined,
+    startDate: dateFromDayKeyInZone(parsed.startDayKey, zone),
+    endDate: dateFromDayKeyInZone(parsed.endDayKey, zone),
+    startDayKey: parsed.startDayKey,
+    endDayKey: parsed.endDayKey,
+    dayKeyTimeZone: zone,
+    status: parsed.status,
+    timeSlot: parsed.timeSlot,
+    approvedByUserId: parsed.approvedByUserId ?? undefined,
     approvedAt: asDate(data.approvedAt),
     cancellationRequestedAt: asDate(data.cancellationRequestedAt),
-    cancellationRequestedByUserId: asOptionalString(data.cancellationRequestedByUserId),
+    cancellationRequestedByUserId: parsed.cancellationRequestedByUserId ?? undefined,
+    decisionNote: parsed.decisionNote ?? undefined,
     createdAt: asDate(data.createdAt) || new Date(),
     updatedAt: asDate(data.updatedAt) || new Date(),
   })

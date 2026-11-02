@@ -405,6 +405,7 @@ export {
 export {
   HOLIDAY_REQUEST_SUBMITTED_TYPE,
   HOLIDAY_STATUSES,
+  HOLIDAY_STATUS_SYNONYMS,
   HOLIDAY_TIME_SLOTS,
   holidayDecisionWriteFields,
   holidayRequestRanges,
@@ -416,6 +417,13 @@ export {
   normalizeHolidayTimeSlot,
   parseHolidayDecisionNote,
 } from './leaveRequests'
+export {
+  HOLIDAY_DOCUMENT_KEYS,
+  holidayDocumentDayKey,
+  labourHolidayInput,
+  parseHolidayDocument,
+  parseHolidayDocuments,
+} from './holidayDocument'
 export {
   OVERLAPPING_BOOKING_NOTE,
   overlappingBookingIds,

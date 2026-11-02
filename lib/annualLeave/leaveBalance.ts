@@ -13,11 +13,11 @@ function leaveDayKey(date: Date): string {
 import type { HolidayBooking, User } from '@/types'
 import type { OrgAnnualLeaveDefaults } from '@/lib/settings/organizationSettings'
 import { DEFAULT_ANNUAL_LEAVE } from '@/lib/settings/organizationSettings'
+import { holidayBookingDayKeys } from '@/lib/annualLeave/holidayDayKeys'
 
 export function holidayToLeaveDay(booking: HolidayBooking): LeaveDayRecord {
   return {
-    startDayKey: leaveDayKey(booking.startDate),
-    endDayKey: leaveDayKey(booking.endDate),
+    ...holidayBookingDayKeys(booking, CANONICAL_TIME_ZONE),
     timeSlot: booking.timeSlot,
     status: booking.status,
   }

@@ -28,6 +28,7 @@ import {
   findSubcontractorFirm,
   resolveSubcontractorBookingPeople,
 } from '@/lib/subcontractors/bookingPeople'
+import { holidayBookingDayKeys, holidayBookingLabourInput } from '@/lib/annualLeave/holidayDayKeys'
 
 export type OverviewSubcontractorBooking = {
   id: string
@@ -76,7 +77,8 @@ export { overviewFormatHours, parseMinutes, estimatedPaidHours, estimatedWorkedH
 function holidayCovers(booking: HolidayBooking, day: Date): boolean {
   if (booking.status !== 'approved') return false
   const key = dayKey(day)
-  return dayKey(booking.startDate) <= key && key <= dayKey(booking.endDate)
+  const { startDayKey, endDayKey } = holidayBookingDayKeys(booking)
+  return startDayKey <= key && key <= endDayKey
 }
 
 export function initialsFrom(name: string): string {
@@ -483,13 +485,8 @@ export function buildDailyOverview(params: {
         workEnd: booking.workEndTime,
       })),
     ],
-    holidays: holidays.map((holiday) => ({
-      userId: holiday.userId,
-      operativeId: holiday.operativeId,
-      startDayKey: dayKey(holiday.startDate),
-      endDayKey: dayKey(holiday.endDate),
-      approved: true,
-    })),
+    // Parsed day keys from `parseHolidayDocument` (rulebook §9); `holidays` is already the approved leave.
+    holidays: holidays.map((holiday) => ({ ...holidayBookingLabourInput(holiday, zone), approved: true })),
   })
   const unbookedNames = unbookedRows.map(
     (row) => `${row.operativeName} (missing ${overviewFormatHours(row.missingHours)}h)`

@@ -652,6 +652,7 @@ export type { PayBasis, PayRateHistoryRow, PayRateOnDay, PayRateOnDayInput, PayR
 export {
   HOLIDAY_REQUEST_SUBMITTED_TYPE,
   HOLIDAY_STATUSES,
+  HOLIDAY_STATUS_SYNONYMS,
   HOLIDAY_TIME_SLOTS,
   holidayDecisionWriteFields,
   holidayRequestRanges,
@@ -663,6 +664,14 @@ export {
   normalizeHolidayTimeSlot,
   parseHolidayDecisionNote,
 } from './leaveRequests'
+export {
+  HOLIDAY_DOCUMENT_KEYS,
+  holidayDocumentDayKey,
+  labourHolidayInput,
+  parseHolidayDocument,
+  parseHolidayDocuments,
+} from './holidayDocument'
+export type { HolidayDocument } from './holidayDocument'
 export type {
   HolidayDecisionWriteFields,
   HolidayRequestPick,

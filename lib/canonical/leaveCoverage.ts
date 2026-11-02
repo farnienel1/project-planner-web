@@ -33,6 +33,7 @@ import {
   type StandardDayInput,
 } from './engine'
 import { eachDayKey, formatLongDayKey, isoWeekdayOfDayKey, zoneOrLondon } from './dayKeys'
+import { idKey } from './personIds'
 
 export type LeaveSlot = 'FULL_DAY' | 'AM' | 'PM'
 
@@ -151,7 +152,8 @@ function joinRanges(intervals: readonly MinuteInterval[]): string {
 export function leaveCoverageRows(input: LeaveCoverageInput): LeaveCoverageRow[] {
   const timeZone = zoneOrLondon(input.timeZone)
   const windows = halfDayWindows(input.day)
-  const excluded = new Set((input.excludedUserIds || []).map((id) => String(id)))
+  // Ids compare without case (`normalizeDocumentId`, rulebook §1); returned rows keep the stored ids.
+  const excluded = new Set((input.excludedUserIds || []).map(idKey).filter(Boolean))
   const approvedLeave = input.leave.filter((record) => record.approved && record.startDayKey && record.endDayKey)
   if (approvedLeave.length === 0) return []
 
@@ -159,25 +161,25 @@ export function leaveCoverageRows(input: LeaveCoverageInput): LeaveCoverageRow[]
   const peopleByOperativeId = new Map<string, LeavePerson>()
   for (const person of input.people) {
     if (isAnonymisedDeletedProfile({ name: person.name })) continue
-    const userId = String(person.userId || '').trim()
+    const userId = idKey(person.userId)
     if (userId && !peopleByUserId.has(userId)) peopleByUserId.set(userId, person)
     for (const operativeId of person.operativeIds || []) {
-      const key = String(operativeId || '').trim()
+      const key = idKey(operativeId)
       if (key && !peopleByOperativeId.has(key)) peopleByOperativeId.set(key, person)
     }
   }
 
   const personForLeave = (record: LeaveRecord): LeavePerson | undefined => {
-    const userId = String(record.userId || '').trim()
+    const userId = idKey(record.userId)
     if (userId && peopleByUserId.has(userId)) return peopleByUserId.get(userId)
-    const operativeId = String(record.operativeId || '').trim()
+    const operativeId = idKey(record.operativeId)
     if (operativeId && peopleByOperativeId.has(operativeId)) return peopleByOperativeId.get(operativeId)
     return undefined
   }
 
   const bookingsByPersonDay = new Map<string, LeaveBooking[]>()
   for (const booking of input.bookings) {
-    const personId = String(booking.personId || '').trim()
+    const personId = idKey(booking.personId)
     if (!personId || !booking.dayKey) continue
     const person =
       booking.kind === 'manager' ? peopleByUserId.get(personId) : peopleByOperativeId.get(personId)
@@ -260,7 +262,7 @@ export function leaveCoverageRows(input: LeaveCoverageInput): LeaveCoverageRow[]
 
       if (leaveSlot === 'FULL_DAY') continue
       if (weekend && !input.includeWeekends) continue
-      if (userId && excluded.has(userId)) continue
+      if (userId && excluded.has(idKey(userId))) continue
 
       const workingWindow = leaveSlot === 'PM' ? windows.am : windows.pm
       const workingLabel = leaveSlot === 'PM' ? 'AM' : 'PM'

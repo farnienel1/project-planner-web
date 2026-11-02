@@ -12,6 +12,7 @@ import type { HolidayBooking } from '@/types'
 import type { ManagerLocationType, ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import type { OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 import type { Booking } from '@/types'
+import { holidayBookingDayKeys } from '@/lib/annualLeave/holidayDayKeys'
 
 const TRACK_START = 6 * 60
 const TRACK_END = 18 * 60
@@ -145,10 +146,7 @@ export function myScheduleAnnualLeaveLabel(
   const match = holidays
     .filter((holiday) => holiday.status !== 'rejected')
     .filter((holiday) =>
-      leaveRecordDayKeys(
-        { startDayKey: dayKey(holiday.startDate, timeZone), endDayKey: dayKey(holiday.endDate, timeZone) },
-        timeZone
-      ).includes(key)
+      leaveRecordDayKeys(holidayBookingDayKeys(holiday, timeZone), timeZone).includes(key)
     )
     .sort((a, b) => (a.status === b.status ? a.startDate.getTime() - b.startDate.getTime() : a.status === 'approved' ? -1 : 1))[0]
   if (!match) return null
