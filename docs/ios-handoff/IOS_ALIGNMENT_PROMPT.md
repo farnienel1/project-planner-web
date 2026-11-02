@@ -1,6 +1,8 @@
 # Project Planner — iOS Alignment Master Prompt (iOS App Agent)
 
 > Paste this whole file into the agent working in **project-planner-ios**. It is self-contained. The canonical rulebook is reproduced in full at the end (Appendix A).
+>
+> **Until web PR #204 is merged, sync every rulebook file from the web branch `main-kr70k9`, not `main`** (`scripts/sync-rulebook-from-web.sh main-kr70k9`).
 
 ## Your role and scope
 
