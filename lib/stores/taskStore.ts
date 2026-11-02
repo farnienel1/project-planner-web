@@ -1,102 +1,87 @@
 'use client'
 
 import { create } from 'zustand'
-import { collection, deleteDoc, doc, getDocs, setDoc, Timestamp } from 'firebase/firestore'
+import { collection, deleteDoc, doc, getDocs, Timestamp } from 'firebase/firestore'
+import { parseTaskDocument, taskFields, taskWriteFields } from '@/lib/canonical'
+import { savePartialDocument } from '@/lib/firebase/partialWrite'
+import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 import { db } from '@/lib/firebase/config'
 import type { ProjectTask, ProjectTaskPriority, ProjectTaskStatus } from '@/types'
-import { newUuid, parseFirestoreDate, parseOptionalString, parseString, sanitizeForFirestore } from '@/lib/firebase/firestoreUtils'
+import { newUuid } from '@/lib/firebase/firestoreUtils'
 import { trackEvent } from '@/lib/analytics/trackEvent'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { invalidateOrgLoad, runOrgLoad } from '@/lib/stores/orgLoadCache'
 import { markRowsRemoved, retainScopedRows } from '@/lib/staff/rosterRetain'
 import { completionFileUrls } from '@/lib/tasks/completionFiles'
 
-function mapTask(docId: string, data: Record<string, unknown>, organizationId: string): ProjectTask {
+/** `tasks/{id}` through the rulebook reader `parseTaskDocument` (rulebook 1.8.0): status synonyms, ids in stored case,
+ * a derived id for an item stored without one. */
+function mapTask(docId: string, data: Record<string, unknown>, organizationId: string): ProjectTask | null {
+  const parsed = parseTaskDocument(docId, data, { timeZone: organizationZoneOr() })
+  if (!parsed) return null
+  const when = (ms: number | null) => (ms != null ? new Date(ms) : undefined)
   return {
-    id: docId,
+    id: parsed.id,
     organizationId,
-    projectId: parseString(data.projectId),
-    title: parseString(data.title),
-    details: parseOptionalString(data.details),
-    createdBy: parseString(data.createdBy),
-    status: (parseString(data.status, 'To Do') as ProjectTaskStatus) || 'To Do',
-    priority: (parseString(data.priority, 'Normal') as ProjectTaskPriority) || 'Normal',
-    assignedOperativeId: parseOptionalString(data.assignedOperativeId),
-    assignedManagerId: parseOptionalString(data.assignedManagerId),
-    assignedOperativeIds: Array.isArray(data.assignedOperativeIds)
-      ? (data.assignedOperativeIds as unknown[]).map((id) => String(id))
-      : [],
-    assignedManagerIds: Array.isArray(data.assignedManagerIds)
-      ? (data.assignedManagerIds as unknown[]).map((id) => String(id))
-      : [],
-    dueDate: parseFirestoreDate(data.dueDate),
-    completedBy: parseOptionalString(data.completedBy),
-    completedAt: parseFirestoreDate(data.completedAt),
-    completionNotes: parseOptionalString(data.completionNotes),
-    completionImages: Array.isArray(data.completionImages)
-      ? (data.completionImages as unknown[]).filter((url): url is string => typeof url === 'string' && Boolean(url))
-      : [],
+    projectId: parsed.projectId,
+    title: parsed.title,
+    details: parsed.details ?? undefined,
+    createdBy: parsed.createdBy,
+    status: parsed.status as ProjectTaskStatus,
+    priority: parsed.priority as ProjectTaskPriority,
+    assignedOperativeId: parsed.assignedOperativeId ?? undefined,
+    assignedManagerId: parsed.assignedManagerId ?? undefined,
+    assignedOperativeIds: parsed.assignedOperativeIds,
+    assignedManagerIds: parsed.assignedManagerIds,
+    dueDate: when(parsed.dueDateMs),
+    completedBy: parsed.completedBy ?? undefined,
+    completedAt: when(parsed.completedAtMs),
+    completionNotes: parsed.completionNotes ?? undefined,
+    completionImages: parsed.completionImages,
     completionFiles: completionFileUrls(data.completionFiles),
-    attachedImageURLs: Array.isArray(data.attachedImageURLs) ? (data.attachedImageURLs as string[]) : [],
-    attachedFileURL: parseOptionalString(data.attachedFileURL),
-    attachedFileName: parseOptionalString(data.attachedFileName),
-    attachedSiteAuditId: parseOptionalString(data.attachedSiteAuditId),
-    attachedSiteAuditTitle: parseOptionalString(data.attachedSiteAuditTitle),
-    items: Array.isArray(data.items)
-      ? (data.items as Record<string, unknown>[])
-          .map((item) => ({
-            id: parseString(item.id) || newUuid(),
-            title: parseString(item.title),
-            description: parseOptionalString(item.description),
-          }))
-          .filter((item) => item.title)
-      : [],
-    completedItemIds: Array.isArray(data.completedItemIds)
-      ? (data.completedItemIds as unknown[]).map((id) => String(id))
-      : [],
-    createdAt: parseFirestoreDate(data.createdAt) || new Date(),
-    updatedAt: parseFirestoreDate(data.updatedAt) || new Date(),
+    attachedImageURLs: parsed.attachedImageURLs,
+    attachedFileURL: parsed.attachedFileURL ?? undefined,
+    attachedFileName: parsed.attachedFileName ?? undefined,
+    attachedSiteAuditId: parsed.attachedSiteAuditId ?? undefined,
+    attachedSiteAuditTitle: parsed.attachedSiteAuditTitle ?? undefined,
+    items: parsed.items.map((item) => ({ id: item.id, title: item.title, description: item.description ?? undefined })),
+    completedItemIds: parsed.completedItemIds,
+    createdAt: when(parsed.createdAtMs) ?? new Date(),
+    updatedAt: when(parsed.updatedAtMs) ?? new Date(),
   }
 }
 
+/** The stored shape (`taskFields`): blank optionals are null so a partial save removes them. */
 function taskPayload(task: ProjectTask): Record<string, unknown> {
-  const data: Record<string, unknown> = {
-    organizationId: task.organizationId,
+  const stamp = (date: Date | undefined) => (date ? Timestamp.fromDate(date) : null)
+  return taskFields({
+    id: task.id,
     projectId: task.projectId,
-    title: task.title.trim(),
-    details: task.details?.trim() || '',
+    title: task.title,
+    details: task.details ?? null,
     createdBy: task.createdBy,
     status: task.status,
     priority: task.priority,
+    assignedOperativeId: task.assignedOperativeId ?? null,
+    assignedManagerId: task.assignedManagerId ?? null,
+    assignedOperativeIds: task.assignedOperativeIds ?? null,
+    assignedManagerIds: task.assignedManagerIds ?? null,
+    dueDate: stamp(task.dueDate),
+    completedBy: task.completedBy ?? null,
+    completedAt: stamp(task.completedAt),
+    completionNotes: task.completionNotes ?? null,
+    completionImages: task.completionImages ?? null,
+    completionFiles: task.completionFiles?.length ? completionFileUrls(task.completionFiles) : null,
+    attachedImageURLs: task.attachedImageURLs ?? null,
+    attachedFileURL: task.attachedFileURL ?? null,
+    attachedFileName: task.attachedFileName ?? null,
+    attachedSiteAuditId: task.attachedSiteAuditId ?? null,
+    attachedSiteAuditTitle: task.attachedSiteAuditTitle ?? null,
+    items: task.items ?? null,
+    completedItemIds: task.completedItemIds ?? null,
     createdAt: Timestamp.fromDate(task.createdAt),
-    updatedAt: Timestamp.fromDate(task.updatedAt),
-  }
-  if (task.assignedOperativeId) data.assignedOperativeId = task.assignedOperativeId
-  if (task.assignedManagerId) data.assignedManagerId = task.assignedManagerId
-  if (task.assignedOperativeIds?.length) data.assignedOperativeIds = task.assignedOperativeIds
-  if (task.assignedManagerIds?.length) data.assignedManagerIds = task.assignedManagerIds
-  if (task.dueDate) data.dueDate = Timestamp.fromDate(task.dueDate)
-  if (task.completedBy) data.completedBy = task.completedBy
-  if (task.completedAt) data.completedAt = Timestamp.fromDate(task.completedAt)
-  if (task.completionNotes) data.completionNotes = task.completionNotes
-  if (task.completionImages?.length) data.completionImages = task.completionImages
-  if (task.completionFiles?.length) {
-    data.completionFiles = completionFileUrls(task.completionFiles)
-  }
-  if (task.attachedImageURLs?.length) data.attachedImageURLs = task.attachedImageURLs
-  if (task.attachedFileURL) data.attachedFileURL = task.attachedFileURL
-  if (task.attachedFileName) data.attachedFileName = task.attachedFileName
-  if (task.attachedSiteAuditId) data.attachedSiteAuditId = task.attachedSiteAuditId
-  if (task.attachedSiteAuditTitle) data.attachedSiteAuditTitle = task.attachedSiteAuditTitle
-  if (task.items?.length) {
-    data.items = task.items.map((item) => ({
-      id: item.id,
-      title: item.title,
-      description: item.description || '',
-    }))
-  }
-  if (task.completedItemIds?.length) data.completedItemIds = task.completedItemIds
-  return data
+    organizationId: task.organizationId,
+  })
 }
 
 interface TaskState {
@@ -122,9 +107,9 @@ export const useTaskStore = create<TaskState>((set, get) => ({
       set({ loading: get().tasks.length === 0, error: null })
       try {
         const snapshot = await getDocs(collection(db, 'organizations', organizationId, 'tasks'))
-        const mapped = snapshot.docs.map((entry) =>
-          mapTask(entry.id, entry.data() as Record<string, unknown>, organizationId)
-        )
+        const mapped = snapshot.docs
+          .map((entry) => mapTask(entry.id, entry.data() as Record<string, unknown>, organizationId))
+          .filter((task): task is ProjectTask => task !== null)
         const previous = tasksOrgId === organizationId ? get().tasks : []
         const tasks = retainScopedRows(`tasks:${organizationId}`, previous, mapped)
         tasksOrgId = organizationId
@@ -139,10 +124,14 @@ export const useTaskStore = create<TaskState>((set, get) => ({
   saveTask: async (task) => {
     const id = task.id || newUuid()
     const isNew = !get().tasks.some((row) => row.id === id)
-    const payload = sanitizeForFirestore(taskPayload({ ...task, id, updatedAt: new Date() })) as Record<string, unknown>
-    await setDoc(doc(db, 'organizations', task.organizationId, 'tasks', id), payload)
+    const payload = taskPayload({ ...task, id })
+    // Rulebook 1.8.0 §1: a partial update of the changed fields (`taskWriteFields`), never a whole-task setDoc.
+    await savePartialDocument(doc(db, 'organizations', task.organizationId, 'tasks', id), payload, taskWriteFields, {
+      userId: useAuthStore.getState().user?.id,
+    })
     invalidateOrgLoad('taskStore:tasks')
-    const saved = mapTask(id, payload as Record<string, unknown>, task.organizationId)
+    const saved = mapTask(id, { ...payload, updatedAt: Timestamp.now() }, task.organizationId)
+    if (!saved) return
     const { tasks } = get()
     set({ tasks: [...tasks.filter((t) => t.id !== id), saved] })
     const eventName =

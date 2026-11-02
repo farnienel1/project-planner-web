@@ -9,8 +9,17 @@
  * plus Decarbonisation (a custom type this organisation already used) are always re-seeded
  * if missing.
  */
-import { collection, doc, getDoc, getDocs, setDoc, Timestamp } from 'firebase/firestore'
-import { db } from '@/lib/firebase/config'
+import { collection, doc, getDoc, getDocs, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore'
+import { auth, db } from '@/lib/firebase/config'
+import {
+  canonicalJobTypeName as rulebookCanonicalJobTypeName,
+  coerceJobTypeList as rulebookCoerceJobTypeList,
+  jobTypesWriteFields,
+  mergeJobTypeCatalogues as rulebookMergeJobTypeCatalogues,
+  parseJobTypesDocument,
+  stringFromJobTypeField as rulebookStringFromJobTypeField,
+} from '@/lib/canonical'
+import { writeMetadataFields } from '@/lib/canonical/writeMetadata'
 import { readOrganizationDocument } from '@/lib/firebase/orgDocumentCache'
 import { ORG_SETTINGS_JOB_TYPES_DOC } from '@/lib/firebase/orgCollections'
 import { unionUniqueStrings } from '@/lib/catalogues/catalogueWriteGuard'
@@ -46,9 +55,9 @@ const JOB_TYPE_ALIASES: Record<string, string> = {
   decarbonization: 'Decarbonisation',
 }
 
+/** Rulebook 1.8.0 `canonicalJobTypeName` (`lib/canonical/operationsDocuments.ts`). */
 export function canonicalJobTypeName(name: string): string {
-  const compact = name.replace(/[\s_\-]+/g, '').toLowerCase()
-  return JOB_TYPE_ALIASES[compact] || name.trim()
+  return rulebookCanonicalJobTypeName(name)
 }
 
 /**
@@ -81,35 +90,14 @@ export function scheduleWorkKindLabel(project: { jobType?: string | null; custom
   return 'Project'
 }
 
+/** Rulebook 1.8.0 `coerceJobTypeList`. */
 export function coerceJobTypeList(raw: unknown): string[] {
-  let values: unknown[] = []
-  if (Array.isArray(raw)) {
-    values = raw
-  } else if (typeof raw === 'string') {
-    values = raw.split(',')
-  } else if (raw && typeof raw === 'object') {
-    values = Object.values(raw as Record<string, unknown>)
-  }
-  const names: string[] = []
-  for (const item of values) {
-    if (typeof item === 'string' && item.trim()) {
-      names.push(canonicalJobTypeName(item.trim()))
-      continue
-    }
-    const nested = stringFromJobTypeField(item)
-    if (nested) names.push(canonicalJobTypeName(nested))
-  }
-  return unionUniqueStrings([], names)
+  return rulebookCoerceJobTypeList(raw)
 }
 
+/** Rulebook 1.8.0 `mergeJobTypeCatalogues` (stored + recovered + the restored defaults). */
 export function mergeJobTypeCatalogues(stored: string[], recovered: string[]): string[] {
-  return unionUniqueStrings(
-    unionUniqueStrings(
-      stored.map((item) => canonicalJobTypeName(item)),
-      recovered.map((item) => canonicalJobTypeName(item))
-    ),
-    [...RESTORED_JOB_TYPES]
-  )
+  return rulebookMergeJobTypeCatalogues(stored, recovered)
 }
 
 export function jobTypeListsEqual(left: string[], right: string[]): boolean {
@@ -130,14 +118,9 @@ export function collectionJobTypeForName(
   return 'CAT A'
 }
 
+/** Rulebook 1.8.0 `stringFromJobTypeField`. */
 export function stringFromJobTypeField(value: unknown): string {
-  if (typeof value === 'string') return value.trim()
-  if (value && typeof value === 'object') {
-    const record = value as Record<string, unknown>
-    if (typeof record.name === 'string' && record.name.trim()) return record.name.trim()
-    if (typeof record.rawValue === 'string' && record.rawValue.trim()) return record.rawValue.trim()
-  }
-  return ''
+  return rulebookStringFromJobTypeField(value)
 }
 
 /** iOS catalogue names can live on jobType, customJobType, or older worksType fields. */
@@ -163,14 +146,8 @@ export async function loadJobTypes(organizationId: string): Promise<string[]> {
       readOrganizationDocument(db, organizationId),
     ])
     const orgData = orgSnap.data() as Record<string, unknown> | undefined
-    const nestedSettings =
-      orgData?.settings && typeof orgData.settings === 'object'
-        ? (orgData.settings as Record<string, unknown>).jobTypes
-        : undefined
-    const names = unionUniqueStrings(
-      coerceJobTypeList(snap.data()?.jobTypes),
-      coerceJobTypeList(orgData?.jobTypes ?? nestedSettings)
-    )
+    // Rulebook 1.8.0 `parseJobTypesDocument`: settings/jobTypes, then the organisation document's list.
+    const names = parseJobTypesDocument(snap.data() as Record<string, unknown> | undefined, orgData ?? null).jobTypes
     if (names.length) rememberJobTypes(organizationId, names)
     return names
   } catch {
@@ -250,13 +227,26 @@ export async function saveJobTypes(organizationId: string, jobTypes: string[]): 
   await persistJobTypes(organizationId, names)
 }
 
+/**
+ * Rulebook 1.8.0 `jobTypesWriteFields`: an update of `jobTypes` only (canonical, de-duplicated, sorted), never a
+ * whole-document overwrite and never an empty list. The document is created (with `organizationId`) only when missing.
+ */
 async function persistJobTypes(organizationId: string, jobTypes: string[]): Promise<void> {
-  rememberJobTypes(organizationId, jobTypes)
-  await setDoc(doc(db, 'organizations', organizationId, 'settings', ORG_SETTINGS_JOB_TYPES_DOC), {
-    jobTypes,
-    organizationId,
-    updatedAt: Timestamp.now(),
-  })
+  const ref = doc(db, 'organizations', organizationId, 'settings', ORG_SETTINGS_JOB_TYPES_DOC)
+  const snap = await getDoc(ref)
+  const stored = snap.exists() ? coerceJobTypeList(snap.data()?.jobTypes) : []
+  const write = jobTypesWriteFields(snap.exists() ? stored : [], jobTypes)
+  if (!write) {
+    rememberJobTypes(organizationId, stored.length ? stored : jobTypes)
+    return
+  }
+  rememberJobTypes(organizationId, write.set.jobTypes)
+  const metadata = writeMetadataFields(auth?.currentUser?.uid, 'web') ?? {}
+  if (snap.exists()) {
+    await updateDoc(ref, { ...write.set, updatedAt: serverTimestamp(), ...metadata })
+  } else {
+    await setDoc(ref, { ...write.set, organizationId, updatedAt: serverTimestamp(), ...metadata })
+  }
 }
 
 export function validateJobTypeName(name: string, existing: string[]): string | null {

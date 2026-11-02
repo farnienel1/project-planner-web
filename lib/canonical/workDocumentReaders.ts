@@ -38,6 +38,7 @@ import {
   documentWriteFields,
   type DocumentWriteFields,
 } from './peopleDocuments'
+import { derivedDocumentId, derivedRowId } from './derivedIds'
 import { normalizeDocumentId } from './scheduleSources'
 import { timesheetEntryDecision, type TimesheetEntryDecision, type TimesheetEntryDecisionSource } from './timesheetEntryReviews'
 
@@ -113,7 +114,36 @@ const WRITE_CREATE_ONLY = ['id', 'createdAt', 'organizationId'] as const
 export type JobKind = 'project' | 'smallWork'
 export const JOB_COLLECTIONS = { project: 'projects', smallWork: 'smallWorks' } as const
 
-export type JobClientDocument = { id: string; name: string; email: string | null; phone: string | null }
+export type JobClientDocument = {
+  /** Stored `client.id` (else top-level `clientId`), else `jobClientId` when the job names a client, else ''. */
+  id: string
+  /** False when the id was derived (1.8.0); the next job save may write it. */
+  idStored: boolean
+  name: string
+  email: string | null
+  phone: string | null
+}
+
+/**
+ * The client id of a job stored with a client name but no client id (1.8.0): `derivedRowId(job doc id, 'client', 0,
+ * [lower-case name])` — the same on every platform and read (iOS minted a random one, web read '').
+ */
+export function jobClientId(jobDocId: unknown, clientName: unknown): string {
+  const name = text(clientName).toLowerCase()
+  return name ? derivedRowId(jobDocId, 'client', 0, [name]) : ''
+}
+
+/**
+ * The stored id of the job a key names (1.8.0): `key` compared without case against the job document ids. Deadline
+ * assignment keys are the job id upper-cased (`deadlineProjectKey`), and caches or older rows may hold another case;
+ * every lookup by job key maps back to the job's stored document id with this. Null when no job matches.
+ */
+export function storedJobIdForKey(key: unknown, jobIds: ReadonlyArray<string> | null | undefined): string | null {
+  const wanted = normalizeDocumentId(key)
+  if (!wanted) return null
+  for (const id of jobIds || []) if (normalizeDocumentId(id) === wanted) return text(id)
+  return null
+}
 
 export type JobDocument = {
   /** The document id, in stored case. */
@@ -203,7 +233,8 @@ export function parseJobDocument(
     postcode,
     siteAddress,
     client: {
-      id: text(clientRow.id),
+      id: text(clientRow.id) || text(row.clientId) || jobClientId(id, clientRow.name),
+      idStored: Boolean(text(clientRow.id) || text(row.clientId)),
       name: text(clientRow.name),
       email: optionalText(clientRow.email),
       phone: optionalText(clientRow.phone),
@@ -400,8 +431,9 @@ export type SubcontractorBookingCreateResult =
 
 /**
  * The stored shape of a new subcontractor booking, written at `subcontractorBookings/{id}` with the same `id` in
- * the document (both apps). Status defaults to Confirmed; `isBreakRemoved` is always written; clock times only
- * for a custom slot; `bookedContactIds` and `bookedOperativeNames` are always written (empty = general
+ * the document (both apps). Status defaults to Confirmed; `isBreakRemoved` is always written; `workStartTime` /
+ * `workEndTime` are written whenever given as a readable clock, for any slot (as iOS writes them; the reader uses
+ * them only for a custom slot); `bookedContactIds` and `bookedOperativeNames` are always written (empty = general
  * attendance). `date`, `createdAt` and `updatedAt` are milliseconds; each app writes its Timestamp type.
  */
 export function subcontractorBookingCreateFields(input: SubcontractorBookingCreateInput): SubcontractorBookingCreateResult {
@@ -469,15 +501,6 @@ const ENTRY_ARRAY_FIELD: Record<TimesheetEntryKind, 'expenseEntries' | 'priceWor
   priceWork: 'priceWorkEntries',
 }
 
-function fnv1a(input: string, seed: number): number {
-  let hash = seed >>> 0
-  for (let i = 0; i < input.length; i += 1) {
-    hash ^= input.charCodeAt(i)
-    hash = Math.imul(hash, 0x01000193) >>> 0
-  }
-  return hash >>> 0
-}
-
 /**
  * The id of an entry stored without one: a UUID-shaped, upper-case id derived from the sheet id, the array, the
  * entry's position and its content — the same on every platform and every read, never random. A stored id always
@@ -501,12 +524,7 @@ export function timesheetEntryId(
     String(documentNumber(row.amount) ?? 0),
     when == null ? '' : String(when),
   ].join('|')
-  const hex = [0x811c9dc5, 0x01234567, 0x89abcdef, 0x5bd1e995]
-    .map((seed) => fnv1a(source, seed).toString(16).padStart(8, '0'))
-    .join('')
-  const version = `8${hex.slice(13, 16)}`
-  const variant = `${((parseInt(hex[16], 16) & 0x3) | 0x8).toString(16)}${hex.slice(17, 20)}`
-  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${version}-${variant}-${hex.slice(20, 32)}`.toUpperCase()
+  return derivedDocumentId(source)
 }
 
 type TimesheetEntryBase = {
@@ -837,16 +855,23 @@ export function parseDeadlineAssignments(data: Record<string, unknown> | null | 
   return out
 }
 
-/** Job keys (as stored) whose assignees include any of the person's ids, compared without case. */
+/**
+ * Job keys (as stored) whose assignees include any of the person's ids, compared without case. With `jobIds` (the job
+ * list's document ids) each key is mapped back to the job's stored id (`storedJobIdForKey`) and keys naming no job
+ * are left out (1.8.0).
+ */
 export function deadlineAssignedProjectIds(
   data: Record<string, unknown> | null | undefined,
-  personIds: readonly string[] | string
+  personIds: readonly string[] | string,
+  jobIds?: ReadonlyArray<string> | null
 ): string[] {
   const ids = new Set((Array.isArray(personIds) ? personIds : [personIds]).map(normalizeDocumentId).filter(Boolean))
   if (ids.size === 0) return []
   return Object.entries(parseDeadlineAssignments(data))
     .filter(([, assignees]) => assignees.some((id) => ids.has(normalizeDocumentId(id))))
-    .map(([key]) => key)
+    .map(([key]) => (jobIds ? storedJobIdForKey(key, jobIds) : key))
+    .filter((key): key is string => Boolean(key))
+    .filter((key, index, all) => all.indexOf(key) === index)
     .sort()
 }
 

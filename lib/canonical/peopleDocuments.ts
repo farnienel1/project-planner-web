@@ -32,6 +32,7 @@
  */
 
 import { dayKeyInZone } from '../orgTime/zoneTime'
+import { derivedRowId } from './derivedIds'
 import { zoneOrLondon } from './dayKeys'
 import { isAdminOutsideOperativeMode } from './leaveRequests'
 import { DEFAULT_ANNUAL_LEAVE, parseAnnualLeaveDefaults, type OrgAnnualLeaveDefaults } from './organizationSettings'
@@ -130,6 +131,33 @@ export function documentInstantMs(raw: unknown): number | null {
         return null
       }
     }
+  }
+  return null
+}
+
+/**
+ * A stored organisation reference as the organisation id (1.8.0). Accepts the id itself, a path
+ * (`organizations/{id}` or `/organizations/{id}`, what some iOS builds stored), or a Firestore DocumentReference
+ * (`{ id, path }`, or the SDK's `_key.path.segments`). Null when nothing readable is stored.
+ */
+export function documentOrganizationId(raw: unknown): string | null {
+  if (raw == null) return null
+  if (typeof raw === 'string') {
+    const value = raw.trim()
+    if (!value) return null
+    const segments = value.split('/').filter(Boolean)
+    const at = segments.lastIndexOf('organizations')
+    if (at >= 0) return segments[at + 1] || null
+    return segments.length === 1 ? segments[0] : segments[segments.length - 1] || null
+  }
+  if (typeof raw === 'object') {
+    const row = raw as Record<string, unknown> & { _key?: { path?: { segments?: unknown } } }
+    if (typeof row.path === 'string' && row.path.trim()) return documentOrganizationId(row.path)
+    const segments = row._key?.path?.segments
+    if (Array.isArray(segments) && segments.length > 0) {
+      return documentOrganizationId(segments.map((part) => String(part)).join('/'))
+    }
+    if (typeof row.id === 'string' && row.id.trim()) return row.id.trim()
   }
   return null
 }
@@ -270,6 +298,12 @@ export type UserDocument = {
   annualLeaveCarriesOver: boolean
   /** What is stored on the user document (null = not stored, the organisation default applies). */
   annualLeaveStored: UserDocumentAnnualLeave
+  /**
+   * True when a leave field is not stored on the user and no organisation `annualLeaveDefaults` was passed (the
+   * organisation document had not loaded): the figures are the factory 25 / 1 / 12 / false, and the app re-parses
+   * the user when the organisation settings arrive (1.8.0). Never save these figures onto the user.
+   */
+  annualLeaveDefaultsPending: boolean
   annualLeaveYearAllowance: number | null
   annualLeaveYearAllowanceKey: string | null
   /** Stored value, else `defaultTimesheetsEnabled`. */
@@ -392,7 +426,7 @@ export function parseUserDocument(
     surname,
     displayName,
     mobileNumber: firstText(row, USER_DOCUMENT_KEYS.mobileNumber) || null,
-    organizationId: optionalText(row.organizationId),
+    organizationId: documentOrganizationId(row.organizationId),
     role: operativeMode ? 'operative' : role,
     isSuperAdmin: operativeMode ? false : isSuperAdmin,
     operativeModeStored,
@@ -425,6 +459,12 @@ export function parseUserDocument(
     annualLeaveYearEndMonth: leaveStored.endMonth ?? leaveDefaults.endMonth,
     annualLeaveCarriesOver: leaveStored.carriesOver ?? leaveDefaults.carriesOver,
     annualLeaveStored: leaveStored,
+    annualLeaveDefaultsPending:
+      !options?.annualLeaveDefaults &&
+      (leaveStored.daysPerYear == null ||
+        leaveStored.startMonth == null ||
+        leaveStored.endMonth == null ||
+        leaveStored.carriesOver == null),
     annualLeaveYearAllowance: documentNumber(row.annualLeaveYearAllowance),
     annualLeaveYearAllowanceKey: optionalText(row.annualLeaveYearAllowanceKey),
     timesheetsEnabled: timesheetsStored ?? defaultTimesheetsEnabled({ operativeMode, employmentType }),
@@ -654,7 +694,7 @@ export function parseOperativeDocument(
     notes: optionalText(row.notes),
     tradeTypePreset: optionalText(row.tradeTypePreset),
     tradeTypeCustom: optionalText(row.tradeTypeCustom),
-    organizationId: optionalText(row.organizationId),
+    organizationId: documentOrganizationId(row.organizationId),
     createdAtMs: documentInstantMs(row.createdAt),
     updatedAtMs: documentInstantMs(row.updatedAt),
     isPlaceholder: isPlaceholderRow(id, names.name, email),
@@ -686,7 +726,7 @@ export function parseManagerDocument(
     notes: optionalText(row.notes),
     tradeTypePreset: optionalText(row.tradeTypePreset),
     tradeTypeCustom: optionalText(row.tradeTypeCustom),
-    organizationId: optionalText(row.organizationId),
+    organizationId: documentOrganizationId(row.organizationId),
     createdAtMs: documentInstantMs(row.createdAt),
     updatedAtMs: documentInstantMs(row.updatedAt),
     isPlaceholder: isPlaceholderRow(id, names.name, email),
@@ -788,14 +828,17 @@ export function parseClientDocument(docId: string, data: Record<string, unknown>
     email: optionalText(row.email),
     phone: optionalText(row.phone),
     address: optionalText(row.address),
-    organizationId: optionalText(row.organizationId),
+    organizationId: documentOrganizationId(row.organizationId),
     createdAtMs: documentInstantMs(row.createdAt),
     updatedAtMs: documentInstantMs(row.updatedAt),
   }
 }
 
 export type SubcontractorContactDocument = {
+  /** Stored id (stored case), else `subcontractorContactId` (1.8.0). */
   id: string
+  /** False when the id was derived (not stored yet); the next save writes it onto the contact. */
+  idStored: boolean
   name: string
   email: string
   contactNumber: string
@@ -816,6 +859,16 @@ export type SubcontractorDocument = {
   updatedAtMs: number | null
 }
 
+/**
+ * The id of a subcontractor contact stored without one (1.8.0): `derivedRowId` of the firm's document id, `contacts`,
+ * the contact's position and its name and email — the same on every platform and read (iOS used
+ * `{firmId}#contact-{index}`, web an empty id, so `bookedContactIds` never matched it).
+ */
+export function subcontractorContactId(firmDocId: unknown, index: number, contact: Record<string, unknown> | null | undefined): string {
+  const row = contact && typeof contact === 'object' ? contact : {}
+  return derivedRowId(firmDocId, 'contacts', index, [text(row.name), text(row.email).toLowerCase()])
+}
+
 /** Read one `organizations/{orgId}/subcontractors/{id}`. Null without a document id, a name or a type. */
 export function parseSubcontractorDocument(
   docId: string,
@@ -829,13 +882,15 @@ export function parseSubcontractorDocument(
   if (!name || !subcontractorType) return null
   const contacts: SubcontractorContactDocument[] = []
   if (Array.isArray(row.contacts)) {
-    for (const entry of row.contacts) {
+    for (const [index, entry] of row.contacts.entries()) {
       if (!entry || typeof entry !== 'object') continue
       const contact = entry as Record<string, unknown>
       const contactName = text(contact.name)
       if (!contactName) continue
+      const storedContactId = text(contact.id) || text(contact.uuid) || text(contact.contactId)
       contacts.push({
-        id: text(contact.id) || text(contact.uuid) || text(contact.contactId),
+        id: storedContactId || subcontractorContactId(id, index, contact),
+        idStored: Boolean(storedContactId),
         name: contactName,
         email: text(contact.email),
         contactNumber: text(contact.contactNumber),

@@ -1,12 +1,7 @@
+import { normalizeHSIssueStatus, normalizeHSSignatureStatus, parseHealthSafetyDocument } from '@/lib/canonical'
 import { parseFirestoreDate, parseOptionalString, parseString } from '@/lib/firebase/firestoreUtils'
-import type {
-  HSOtherDocument,
-  HSRamsDocument,
-  HSProjectSafetyData,
-  HSToolboxIssue,
-  HSToolboxSignature,
-  HSToolboxTalk,
-} from '@/types'
+import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
+import type { HSProjectSafetyData, HSToolboxSignature, HSToolboxTalk } from '@/types'
 
 export function parseTalk(row: Record<string, unknown>): HSToolboxTalk | null {
   const id = parseString(row.id) || parseOptionalString(row.referenceCode) || parseOptionalString(row.ref)
@@ -34,109 +29,82 @@ export function parseTalk(row: Record<string, unknown>): HSToolboxTalk | null {
   }
 }
 
+/** Rulebook 1.8.0 `normalizeHSIssueStatus`: complete / completed / signed → complete; scheduled; else awaiting. */
 export function normalizeIssueStatus(raw: string): string {
-  const value = raw.trim().toLowerCase()
-  if (value === 'complete' || value === 'completed' || value === 'signed') return 'complete'
-  if (value === 'scheduled' || value === 'schedule') return 'scheduled'
-  return 'awaiting'
+  return normalizeHSIssueStatus(raw)
 }
 
+/** Rulebook 1.8.0 `normalizeHSSignatureStatus`. */
 export function normalizeSignatureStatus(raw: string): string {
-  const value = raw.trim().toLowerCase()
-  if (value === 'signed' || value === 'complete' || value === 'completed') return 'signed'
-  return 'pending'
+  return normalizeHSSignatureStatus(raw)
 }
 
-function parseIssue(row: Record<string, unknown>, projectId: string): HSToolboxIssue | null {
-  const id = parseString(row.id)
-  const talkId = parseString(row.talkId)
-  if (!id || !talkId) return null
-  const rawProjectId = parseString(row.projectId) || projectId
-  return {
-    id,
-    projectId: rawProjectId,
-    talkId,
-    weekCommencing: parseFirestoreDate(row.weekCommencing) || new Date(),
-    issuedByUserId: parseString(row.issuedByUserId),
-    issuedAt: parseFirestoreDate(row.issuedAt) || new Date(),
-    publishAt: parseFirestoreDate(row.publishAt),
-    recipientUserIds: Array.isArray(row.recipientUserIds)
-      ? (row.recipientUserIds as unknown[]).map((id) => parseString(id)).filter(Boolean)
-      : [],
-    status: normalizeIssueStatus(parseString(row.status, 'awaiting')),
-  }
-}
+const when = (ms: number | null | undefined): Date | undefined => (ms != null ? new Date(ms) : undefined)
 
-function parseSignature(row: Record<string, unknown>): HSToolboxSignature | null {
-  const id = parseString(row.id)
-  const issueId = parseString(row.issueId)
-  const userId = parseString(row.userId)
-  if (!id || !issueId || !userId) return null
-  return {
-    id,
-    issueId,
-    userId,
-    status: normalizeSignatureStatus(parseString(row.status, 'pending')),
-    readConfirmed: row.readConfirmed === true,
-    signatureImageBase64: parseOptionalString(row.signatureImageBase64),
-    signedAt: parseFirestoreDate(row.signedAt),
-    reminderSentAt: parseFirestoreDate(row.reminderSentAt),
-  }
-}
-
-function parseRams(row: Record<string, unknown>): HSRamsDocument | null {
-  const id = parseString(row.id)
-  const title = parseString(row.title)
-  if (!id || !title) return null
-  return {
-    id,
-    title,
-    trade: parseString(row.trade, 'General'),
-    version: typeof row.version === 'number' ? row.version : 1,
-    status: parseString(row.status, 'live'),
-    uploadedAt: parseFirestoreDate(row.uploadedAt) || new Date(),
-    fileURL: parseOptionalString(row.fileURL),
-    fileName: parseOptionalString(row.fileName),
-  }
-}
-
-function parseOther(row: Record<string, unknown>): HSOtherDocument | null {
-  const id = parseString(row.id)
-  const title = parseString(row.title)
-  if (!id || !title) return null
-  return {
-    id,
-    title,
-    trade: parseOptionalString(row.trade),
-    category: parseString(row.category, 'trade'),
-    uploadedAt: parseFirestoreDate(row.uploadedAt) || new Date(),
-    fileURL: parseOptionalString(row.fileURL),
-    fileName: parseOptionalString(row.fileName),
-  }
-}
-
+/**
+ * One health & safety document through the rulebook reader `parseHealthSafetyDocument` (rulebook 1.8.0): one issue
+ * status vocabulary, signatures from the `signatures` array and the per-signer `signatureRecords` map folded to one
+ * per issue and person.
+ */
 export function parseHealthSafetyPayload(data: Record<string, unknown>, projectId: string): HSProjectSafetyData {
-  const talksRaw = Array.isArray(data.talks) ? (data.talks as Record<string, unknown>[]) : []
-  const issuesRaw = Array.isArray(data.issues) ? (data.issues as Record<string, unknown>[]) : []
-  const signaturesRaw = Array.isArray(data.signatures) ? (data.signatures as Record<string, unknown>[]) : []
-  const ramsRaw = Array.isArray(data.ramsDocuments) ? (data.ramsDocuments as Record<string, unknown>[]) : []
-  const otherRaw = Array.isArray(data.otherDocuments) ? (data.otherDocuments as Record<string, unknown>[]) : []
-
-  const talks = talksRaw.map(parseTalk).filter((t): t is HSToolboxTalk => t !== null)
-  const issues = issuesRaw.map((row) => parseIssue(row, projectId)).filter((i): i is HSToolboxIssue => i !== null)
-  const signatures = signaturesRaw.map(parseSignature).filter((s): s is HSToolboxSignature => s !== null)
-  const ramsDocuments = ramsRaw.map(parseRams).filter((d): d is HSRamsDocument => d !== null)
-  const otherDocuments = otherRaw.map(parseOther).filter((d): d is HSOtherDocument => d !== null)
-
+  const parsed = parseHealthSafetyDocument(data, { projectId, timeZone: organizationZoneOr() })
   return {
-    talks,
-    issues: issues.sort((a, b) => b.issuedAt.getTime() - a.issuedAt.getTime()),
-    signatures: signatures.sort(
-      (a, b) => (b.signedAt?.getTime() ?? 0) - (a.signedAt?.getTime() ?? 0)
-    ),
-    ramsDocuments: ramsDocuments.sort((a, b) => b.uploadedAt.getTime() - a.uploadedAt.getTime()),
-    otherDocuments: otherDocuments.sort((a, b) => b.uploadedAt.getTime() - a.uploadedAt.getTime()),
-    updatedAt: parseFirestoreDate(data.updatedAt),
+    talks: parsed.talks.map((talk) => ({
+      id: talk.id,
+      referenceCode: talk.referenceCode ?? undefined,
+      title: talk.title,
+      category: talk.category,
+      isGeneral: talk.isGeneral,
+      trades: talk.trades,
+      purpose: talk.purpose,
+      keyPoints: talk.keyPoints,
+      source: talk.source,
+      status: talk.status,
+      version: talk.version,
+      updatedAt: when(talk.updatedAtMs) ?? new Date(),
+      fileURL: talk.fileURL ?? undefined,
+    })),
+    issues: parsed.issues.map((issue) => ({
+      id: issue.id,
+      projectId: issue.projectId,
+      talkId: issue.talkId,
+      weekCommencing: when(issue.weekCommencingMs) ?? new Date(),
+      issuedByUserId: issue.issuedByUserId,
+      issuedAt: when(issue.issuedAtMs) ?? new Date(),
+      publishAt: when(issue.publishAtMs),
+      recipientUserIds: issue.recipientUserIds,
+      status: issue.status,
+    })),
+    signatures: parsed.signatures.map((signature) => ({
+      id: signature.id,
+      issueId: signature.issueId,
+      userId: signature.userId,
+      status: signature.status,
+      readConfirmed: signature.readConfirmed,
+      signatureImageBase64: signature.signatureImageBase64 ?? undefined,
+      signedAt: when(signature.signedAtMs),
+      reminderSentAt: when(signature.reminderSentAtMs),
+    })),
+    ramsDocuments: parsed.ramsDocuments.map((row) => ({
+      id: row.id,
+      title: row.title,
+      trade: row.trade,
+      version: row.version,
+      status: row.status,
+      uploadedAt: when(row.uploadedAtMs) ?? new Date(),
+      fileURL: row.fileURL ?? undefined,
+      fileName: row.fileName ?? undefined,
+    })),
+    otherDocuments: parsed.otherDocuments.map((row) => ({
+      id: row.id,
+      title: row.title,
+      trade: row.trade ?? undefined,
+      category: row.category,
+      uploadedAt: when(row.uploadedAtMs) ?? new Date(),
+      fileURL: row.fileURL ?? undefined,
+      fileName: row.fileName ?? undefined,
+    })),
+    updatedAt: when(parsed.updatedAtMs),
   }
 }
 

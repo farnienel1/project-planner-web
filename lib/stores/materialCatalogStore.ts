@@ -6,70 +6,55 @@ import {
   deleteDoc,
   doc,
   getDocs,
-  setDoc,
+  serverTimestamp,
   Timestamp,
+  writeBatch,
 } from 'firebase/firestore'
+import {
+  MATERIAL_UNITS as CANONICAL_MATERIAL_UNITS,
+  materialCatalogueItemFields,
+  materialCatalogueItemWriteFields,
+  materialCatalogueWrites,
+  parseMaterialCatalogueDocument,
+} from '@/lib/canonical'
+import { firestoreUpdateFields, savePartialDocument } from '@/lib/firebase/partialWrite'
+import { writeMetadataFields } from '@/lib/canonical/writeMetadata'
+import { useAuthStore } from '@/lib/stores/authStore'
 import { db } from '@/lib/firebase/config'
 import type { MaterialCatalogItem, MaterialLengthUnit, MaterialUnit } from '@/types'
-import { newUuid, parseFirestoreDate, parseOptionalString, parseString, parseUuid } from '@/lib/firebase/firestoreUtils'
+import { newUuid } from '@/lib/firebase/firestoreUtils'
 import { markRowsRemoved, retainScopedRows } from '@/lib/staff/rosterRetain'
 
-const MATERIAL_UNITS: MaterialUnit[] = ['Number', 'Box', 'Length', 'Drum', 'Pallet']
+const MATERIAL_UNITS: MaterialUnit[] = [...CANONICAL_MATERIAL_UNITS] as MaterialUnit[]
 
-function parseMaterialUnit(value: unknown): MaterialUnit {
-  const raw = parseString(value, 'Number')
-  return MATERIAL_UNITS.includes(raw as MaterialUnit) ? (raw as MaterialUnit) : 'Number'
-}
-
-function parseLengthUnit(value: unknown): MaterialLengthUnit | undefined {
-  const raw = parseString(value)
-  return raw === 'M' || raw === 'MM' ? raw : undefined
-}
-
+/** `materialCatalogue/{id}` through the rulebook reader `parseMaterialCatalogueDocument` (rulebook 1.8.0). */
 function mapMaterialCatalogItem(docId: string, data: Record<string, unknown>): MaterialCatalogItem | null {
-  const name = parseString(data.name)
-  const brand = parseString(data.brand) || 'Custom'
-  const createdAt = parseFirestoreDate(data.createdAt) || new Date()
-  const createdByUserId = parseString(data.createdByUserId) || 'unknown'
-  const createdByName = parseString(data.createdByName) || 'Unknown'
-  if (!name) return null
-
-  const category = parseOptionalString(data.category) || 'Other'
+  const parsed = parseMaterialCatalogueDocument(docId, data)
+  if (!parsed) return null
   return {
-    id: parseUuid(data.id, docId),
-    name,
-    brand,
-    productCode: parseOptionalString(data.productCode),
-    defaultUnit: parseMaterialUnit(data.defaultUnit),
-    size: parseOptionalString(data.size),
-    length: parseOptionalString(data.length) || parseOptionalString(data.sizeOrLength),
-    lengthUnit: parseLengthUnit(data.lengthUnit),
-    category,
-    createdAt,
-    createdByUserId,
-    createdByName,
+    id: parsed.id,
+    name: parsed.name,
+    brand: parsed.brand,
+    productCode: parsed.productCode ?? undefined,
+    defaultUnit: parsed.defaultUnit as MaterialUnit,
+    size: parsed.size ?? undefined,
+    length: parsed.length ?? undefined,
+    lengthUnit: (parsed.lengthUnit ?? undefined) as MaterialLengthUnit | undefined,
+    category: parsed.category,
+    createdAt: parsed.createdAtMs != null ? new Date(parsed.createdAtMs) : new Date(),
+    createdByUserId: parsed.createdByUserId || 'unknown',
+    createdByName: parsed.createdByName || 'Unknown',
   }
 }
 
-function materialPayload(item: Omit<MaterialCatalogItem, 'createdAt'> & { createdAt?: Date }) {
-  const payload: Record<string, unknown> = {
-    id: item.id,
-    name: item.name.trim(),
-    brand: item.brand.trim() || 'Custom',
-    defaultUnit: item.defaultUnit,
-    category: item.category.trim() || 'Other',
+type CatalogueItemInput = Omit<MaterialCatalogItem, 'createdAt'> & { createdAt?: Date }
+
+/** The stored shape (`materialCatalogueItemFields`); creator fields and `createdAt` are only written on create. */
+function materialPayload(item: CatalogueItemInput): Record<string, unknown> {
+  return materialCatalogueItemFields({
+    ...item,
     createdAt: Timestamp.fromDate(item.createdAt || new Date()),
-    createdByUserId: item.createdByUserId,
-    createdByName: item.createdByName,
-  }
-  if (item.productCode?.trim()) payload.productCode = item.productCode.trim()
-  if (item.size?.trim()) payload.size = item.size.trim()
-  if (item.length?.trim()) {
-    payload.length = item.length.trim()
-    payload.sizeOrLength = item.length.trim()
-  }
-  if (item.lengthUnit) payload.lengthUnit = item.lengthUnit
-  return payload
+  })
 }
 
 interface MaterialCatalogState {
@@ -113,7 +98,10 @@ export const useMaterialCatalogStore = create<MaterialCatalogState>((set, get) =
   saveItem: async (organizationId, item) => {
     const id = item.id || newUuid()
     const docRef = doc(db, 'organizations', organizationId, 'materialCatalogue', id)
-    await setDoc(docRef, materialPayload({ ...item, id }))
+    // Rulebook 1.8.0 §1: a partial update of the fields that changed (`materialCatalogueItemWriteFields`).
+    await savePartialDocument(docRef, materialPayload({ ...item, id }), materialCatalogueItemWriteFields, {
+      userId: useAuthStore.getState().user?.id,
+    })
     const { items } = get()
     const mapped = mapMaterialCatalogItem(id, materialPayload({ ...item, id, createdAt: item.createdAt || new Date() }))
     if (!mapped) return
@@ -128,22 +116,44 @@ export const useMaterialCatalogStore = create<MaterialCatalogState>((set, get) =
   },
 
   replaceAllItems: async (organizationId, items) => {
-    if (items.length === 0 && get().items.length > 0) {
-      throw new Error('Refusing to overwrite the material catalogue with an empty list')
+    // Rulebook 1.8.0 §1 (`materialCatalogueWrites`): never delete-all and rewrite. Only changed items are written,
+    // and an item missing from the list is deleted only after a successful fresh read of the catalogue and when the
+    // list is not empty.
+    const collectionRef = collection(db, 'organizations', organizationId, 'materialCatalogue')
+    let stored: Array<{ id: string; data: Record<string, unknown> }> = []
+    let loaded = false
+    try {
+      const snapshot = await getDocs(collectionRef)
+      stored = snapshot.docs.map((entry) => ({ id: entry.id, data: entry.data() as Record<string, unknown> }))
+      loaded = true
+    } catch {
+      loaded = false
     }
-    const existing = get().items
-    for (const item of existing) {
-      await deleteDoc(doc(db, 'organizations', organizationId, 'materialCatalogue', item.id))
-    }
-    const saved: MaterialCatalogItem[] = []
-    for (const item of items) {
+    const next = items.map((item) => {
       const id = item.id || newUuid()
-      const payload = materialPayload({ ...item, id, createdAt: item.createdAt || new Date() })
-      await setDoc(doc(db, 'organizations', organizationId, 'materialCatalogue', id), payload)
-      const mapped = mapMaterialCatalogItem(id, payload)
-      if (mapped) saved.push(mapped)
+      return { ...materialPayload({ ...item, id }), id, name: item.name } as Parameters<typeof materialCatalogueWrites>[0]['next'][number]
+    })
+    const plan = materialCatalogueWrites({ stored, next, loaded })
+    const metadata = writeMetadataFields(useAuthStore.getState().user?.id, 'web') ?? {}
+    const operations: Array<(batch: ReturnType<typeof writeBatch>) => void> = []
+    for (const entry of plan.write) {
+      const ref = doc(collectionRef, entry.id)
+      if (entry.create) {
+        operations.push((batch) => batch.set(ref, { ...entry.set, updatedAt: serverTimestamp(), ...metadata }))
+      } else {
+        operations.push((batch) =>
+          batch.update(ref, { ...firestoreUpdateFields(entry), updatedAt: serverTimestamp(), ...metadata })
+        )
+      }
     }
-    set({ items: saved.sort((a, b) => a.name.localeCompare(b.name)) })
+    for (const id of plan.remove) operations.push((batch) => batch.delete(doc(collectionRef, id)))
+    for (let index = 0; index < operations.length; index += 400) {
+      const batch = writeBatch(db)
+      for (const apply of operations.slice(index, index + 400)) apply(batch)
+      await batch.commit()
+    }
+    if (plan.remove.length > 0) markRowsRemoved(`materialCatalogue:${organizationId}`, plan.remove)
+    await get().loadItems(organizationId)
   },
 }))
 

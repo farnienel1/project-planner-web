@@ -370,10 +370,16 @@ export function MaterialCatalogueScreen() {
               return
             }
             if (mode === 'replace') {
+              // Rulebook 1.8.0 `materialCatalogueWrites`: a row matching a stored item keeps its id, so only
+              // changed items are written and only items missing from the file are deleted.
+              const storedById = new Map(items.map((item) => [item.id.toLowerCase(), item]))
               await replaceAllItems(
                 organization.id,
                 parsed.rows.map((row) => ({
-                  id: newUuid(),
+                  id:
+                    (row.id && storedById.get(row.id.toLowerCase())?.id) ||
+                    items.find((item) => duplicateKey(item.name, item.productCode) === duplicateKey(row.name, row.productCode))?.id ||
+                    newUuid(),
                   name: row.name,
                   brand: row.brand,
                   productCode: row.productCode,

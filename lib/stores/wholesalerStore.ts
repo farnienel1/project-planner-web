@@ -1,69 +1,44 @@
 'use client'
 
 import { create } from 'zustand'
-import {
-  collection,
-  deleteDoc,
-  doc,
-  getDocs,
-  setDoc,
-  Timestamp,
-} from 'firebase/firestore'
+import { collection, deleteDoc, doc, getDocs, Timestamp } from 'firebase/firestore'
+import { parseWholesalerDocument, wholesalerWriteFields } from '@/lib/canonical'
+import { savePartialDocument } from '@/lib/firebase/partialWrite'
+import { useAuthStore } from '@/lib/stores/authStore'
 import { db } from '@/lib/firebase/config'
 import type { Wholesaler, WholesalerContact } from '@/types'
-import { newUuid, parseFirestoreDate, parseOptionalString, parseString, parseUuid } from '@/lib/firebase/firestoreUtils'
+import { newUuid } from '@/lib/firebase/firestoreUtils'
 import { markRowsRemoved, retainScopedRows } from '@/lib/staff/rosterRetain'
 
-function parseContacts(rows: unknown): WholesalerContact[] {
-  if (!Array.isArray(rows)) return []
-  return rows
-    .map((row) => {
-      const data = row as Record<string, unknown>
-      const name = parseString(data.name)
-      const email = parseString(data.email)
-      const createdAt = parseFirestoreDate(data.createdAt) || new Date()
-      if (!name || !email) return null
-      const phone = parseOptionalString(data.phone)
-      return {
-        id: parseUuid(data.id),
-        name,
-        email,
-        isPrimary: data.isPrimary === true,
-        createdAt,
-        ...(phone ? { phone } : {}),
-      } satisfies WholesalerContact
-    })
-    .filter((contact): contact is WholesalerContact => contact !== null)
-}
-
+/** `wholesalers/{id}` through the rulebook reader `parseWholesalerDocument` (rulebook 1.8.0). */
 function mapWholesaler(docId: string, data: Record<string, unknown>): Wholesaler | null {
-  const name = parseString(data.name)
-  const createdAt = parseFirestoreDate(data.createdAt) || new Date()
-  const updatedAt = parseFirestoreDate(data.updatedAt) || createdAt
-  if (!name) return null
-
-  let contacts = parseContacts(data.contacts)
-  const primaryId = parseOptionalString(data.primaryContactId)
-  if (primaryId && contacts.some((c) => c.id === primaryId)) {
-    contacts = contacts.map((c) => ({ ...c, isPrimary: c.id === primaryId }))
-  } else if (contacts.length > 0 && !contacts.some((c) => c.isPrimary)) {
-    contacts = contacts.map((c, index) => ({ ...c, isPrimary: index === 0 }))
-  }
-
+  const parsed = parseWholesalerDocument(docId, data)
+  if (!parsed) return null
+  const createdAt = parsed.createdAtMs != null ? new Date(parsed.createdAtMs) : new Date()
   return {
-    id: parseUuid(data.id, docId),
-    name,
-    address: parseOptionalString(data.address),
-    trade: parseOptionalString(data.trade),
-    accountNumber: parseOptionalString(data.accountNumber),
-    primaryContactId: primaryId || contacts.find((c) => c.isPrimary)?.id,
-    contacts,
+    id: parsed.id,
+    name: parsed.name,
+    address: parsed.address ?? undefined,
+    trade: parsed.trade ?? undefined,
+    accountNumber: parsed.accountNumber ?? undefined,
+    primaryContactId: parsed.primaryContactId ?? undefined,
+    contacts: parsed.contacts.map((contact) => {
+      const row: WholesalerContact = {
+        id: contact.id,
+        name: contact.name,
+        email: contact.email,
+        isPrimary: contact.isPrimary,
+        createdAt: contact.createdAtMs != null ? new Date(contact.createdAtMs) : createdAt,
+      }
+      if (contact.phone) row.phone = contact.phone
+      return row
+    }),
     createdAt,
-    updatedAt,
+    updatedAt: parsed.updatedAtMs != null ? new Date(parsed.updatedAtMs) : createdAt,
   }
 }
 
-function wholesalerPayload(wholesaler: Wholesaler) {
+function wholesalerPayload(wholesaler: Wholesaler): Record<string, unknown> {
   return {
     id: wholesaler.id,
     name: wholesaler.name.trim(),
@@ -80,7 +55,6 @@ function wholesalerPayload(wholesaler: Wholesaler) {
       createdAt: Timestamp.fromDate(contact.createdAt),
     })),
     createdAt: Timestamp.fromDate(wholesaler.createdAt),
-    updatedAt: Timestamp.fromDate(wholesaler.updatedAt),
   }
 }
 
@@ -120,9 +94,12 @@ export const useWholesalerStore = create<WholesalerState>((set, get) => ({
 
   saveWholesaler: async (organizationId, wholesaler) => {
     const id = wholesaler.id || newUuid()
-    const payload = wholesalerPayload({ ...wholesaler, id, updatedAt: new Date() })
-    await setDoc(doc(db, 'organizations', organizationId, 'wholesalers', id), payload, { merge: true })
-    const mapped = mapWholesaler(id, payload as unknown as Record<string, unknown>)
+    const payload = wholesalerPayload({ ...wholesaler, id })
+    // Rulebook 1.8.0 §1: partial update (`wholesalerWriteFields`; contacts with the primary contact together).
+    await savePartialDocument(doc(db, 'organizations', organizationId, 'wholesalers', id), payload, wholesalerWriteFields, {
+      userId: useAuthStore.getState().user?.id,
+    })
+    const mapped = mapWholesaler(id, { ...payload, updatedAt: Timestamp.now() })
     if (!mapped) return
     const { wholesalers } = get()
     set({

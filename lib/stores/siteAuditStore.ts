@@ -9,7 +9,6 @@ import {
   limit,
   onSnapshot,
   query,
-  setDoc,
   Timestamp,
   where,
   type Unsubscribe,
@@ -36,56 +35,38 @@ import {
   invalidateOrgLoad,
   shouldSkipOrgLoad,
 } from '@/lib/stores/orgLoadCache'
-import { newUuid, parseFirestoreDate, parseOptionalString, parseString, parseUuid } from '@/lib/firebase/firestoreUtils'
+import { newUuid } from '@/lib/firebase/firestoreUtils'
+import { mergeStoredRows, parseSiteAuditDocument, siteAuditWriteFields } from '@/lib/canonical'
+import { savePartialDocument } from '@/lib/firebase/partialWrite'
+import { inboxActorUserId } from '@/lib/firebase/notifyInbox'
+import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 
-function parseAuditItems(rows: unknown): SiteAuditItem[] {
-  if (!Array.isArray(rows)) return []
-  const items: SiteAuditItem[] = []
-  for (const row of rows) {
-    const data = row as Record<string, unknown>
-    const title = parseString(data.title)
-    const location = parseString(data.location)
-    const assignee = parseString(data.assignee)
-    const comments = parseString(data.comments)
-    const createdAt = parseFirestoreDate(data.createdAt)
-    if (!title || !createdAt) continue
-    items.push({
-      id: parseUuid(data.id),
-      title,
-      location,
-      assignee,
-      comments,
-      annotations: parseOptionalString(data.annotations),
-      imageURL: parseOptionalString(data.imageURL),
-      createdAt,
-    })
-  }
-  return items
-}
-
+/** `siteAudits/{id}` through the rulebook reader `parseSiteAuditDocument` (rulebook 1.8.0). */
 function mapSiteAudit(docId: string, data: Record<string, unknown>): SiteAudit | null {
-  const projectId = parseString(data.projectId)
-  const projectJobNumber = parseString(data.projectJobNumber)
-  const projectName = parseString(data.projectName)
-  const type = parseString(data.type)
-  const authorName = parseString(data.authorName)
-  const date = parseFirestoreDate(data.date)
-  const createdAt = parseFirestoreDate(data.createdAt)
-  const createdByUserId = parseString(data.createdByUserId)
-  if (!projectId || !projectName || !type || !authorName || !date || !createdAt || !createdByUserId) return null
-
+  const parsed = parseSiteAuditDocument(docId, data, { timeZone: organizationZoneOr() })
+  if (!parsed) return null
+  const createdAt = parsed.createdAtMs != null ? new Date(parsed.createdAtMs) : new Date()
   return {
-    id: parseUuid(data.id, docId),
-    projectId,
-    projectJobNumber,
-    projectName,
-    type,
-    customTitle: parseOptionalString(data.customTitle),
-    authorName,
-    date,
-    createdByUserId,
-    visibleToOperatives: data.visibleToOperatives !== false,
-    items: parseAuditItems(data.items),
+    id: parsed.id,
+    projectId: parsed.projectId,
+    projectJobNumber: parsed.projectJobNumber,
+    projectName: parsed.projectName,
+    type: parsed.type,
+    customTitle: parsed.customTitle || undefined,
+    authorName: parsed.authorName,
+    date: parsed.dateMs != null ? new Date(parsed.dateMs) : createdAt,
+    createdByUserId: parsed.createdByUserId,
+    visibleToOperatives: parsed.visibleToOperatives,
+    items: parsed.items.map((item) => ({
+      id: item.id,
+      title: item.title,
+      location: item.location,
+      assignee: item.assignee,
+      comments: item.comments,
+      annotations: item.annotations || undefined,
+      imageURL: item.imageURL ?? undefined,
+      createdAt: item.createdAtMs != null ? new Date(item.createdAtMs) : createdAt,
+    })),
     createdAt,
   }
 }
@@ -122,16 +103,24 @@ export const useSiteAuditStore = create<SiteAuditState>((set, get) => ({
   saveAudit: async (organizationId, input) => {
     const auditId = input.id || newUuid()
     const now = new Date()
-    const items = input.items.map((item) => ({
-      id: item.id || newUuid(),
-      title: item.title,
-      location: item.location,
-      assignee: item.assignee,
-      comments: item.comments,
-      annotations: item.annotations || '',
-      imageURL: item.imageURL || null,
-      createdAt: Timestamp.fromDate(item.createdAt || now),
-    }))
+    const ref = doc(db, 'organizations', organizationId, 'siteAudits', auditId)
+    // Rulebook 1.8.0 §1: a partial update (`siteAuditWriteFields`): `createdAt` and the author are never rewritten,
+    // and each item is laid over its stored row (`mergeStoredRows`) so iOS-only item fields (`imageCapturedAt`) stay.
+    const stored = await getDoc(ref)
+    const storedItems = stored.exists() ? (stored.data() as Record<string, unknown>).items : []
+    const items = mergeStoredRows(
+      storedItems,
+      input.items.map((item) => ({
+        id: item.id || newUuid(),
+        title: item.title,
+        location: item.location,
+        assignee: item.assignee,
+        comments: item.comments,
+        annotations: item.annotations || '',
+        imageURL: item.imageURL || null,
+        createdAt: Timestamp.fromDate(item.createdAt || now),
+      }))
+    )
     const payload = {
       id: auditId,
       organizationId,
@@ -147,9 +136,10 @@ export const useSiteAuditStore = create<SiteAuditState>((set, get) => ({
       visibleToOperatives: input.visibleToOperatives,
       items,
     }
-    await setDoc(doc(db, 'organizations', organizationId, 'siteAudits', auditId), payload)
+    await savePartialDocument(ref, payload, siteAuditWriteFields, { userId: inboxActorUserId() || input.createdByUserId })
     invalidateOrgLoad('siteAuditStore:audits')
-    const mapped = mapSiteAudit(auditId, payload as Record<string, unknown>)
+    const storedCreatedAt = stored.exists() ? (stored.data() as Record<string, unknown>).createdAt : undefined
+    const mapped = mapSiteAudit(auditId, { ...payload, createdAt: storedCreatedAt ?? payload.createdAt })
     if (mapped) {
       set({ audits: [mapped, ...get().audits.filter((a) => a.id !== auditId)] })
     }

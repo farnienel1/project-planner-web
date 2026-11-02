@@ -422,6 +422,8 @@ export interface ProjectMaterialLine {
   addedBy: string
   projectId: string
   date: Date
+  /** The materials day in the organisation zone (`parseMaterialLineDocument`, rulebook 1.8.0). */
+  dayKey?: string
   status: string
   brand?: string
   productCode?: string
