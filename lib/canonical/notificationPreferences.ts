@@ -436,20 +436,28 @@ export type UnreadNotificationBadgeRow = {
   createdAt?: Date | { getTime?: () => number } | number | null
 }
 
+/** One id, or every id of the person (`personIdSet`). */
+export type InboxOwnerIds = string | ReadonlyArray<string> | null | undefined
+
+function ownerKeys(userId: InboxOwnerIds): Set<string> {
+  const list = Array.isArray(userId) ? userId : [userId as string | null | undefined]
+  return new Set(list.map((id) => trimmed(id).toLowerCase()).filter(Boolean))
+}
+
 /**
- * The notification centre lists a row for this signed-in user when the
- * stored `userId` matches, or when the row has no owner (legacy broadcast).
- * A row addressed to someone else is never listed. Who was written onto
- * the row stays `receivesJobNotification` at create time.
+ * The notification centre lists a row for this signed-in user only when the stored `userId` is one of their ids
+ * (`userId` may be one id or every id of the person, compared without case). A row with no owner (a legacy
+ * broadcast) is not an inbox row and is never listed or counted; a row addressed to someone else is never listed.
+ * Who was written onto the row is the recipient rule at create time (`notificationRecipients.ts`).
  */
 export function inboxNotificationVisibleToUser(
   row: Pick<UnreadNotificationBadgeRow, 'userId'> | null | undefined,
-  userId: string
+  userId: InboxOwnerIds
 ): boolean {
-  const uid = trimmed(userId)
-  if (!uid || !row || typeof row !== 'object') return false
-  const owner = trimmed(row.userId)
-  return !owner || owner === uid
+  const ids = ownerKeys(userId)
+  if (ids.size === 0 || !row || typeof row !== 'object') return false
+  const owner = trimmed(row.userId).toLowerCase()
+  return owner !== '' && ids.has(owner)
 }
 
 /** Newest createdAt first. Both apps sort the centre this way. */
@@ -472,20 +480,19 @@ function inboxCreatedAtMs(row: Pick<UnreadNotificationBadgeRow, 'createdAt'> | n
 }
 
 /**
- * Unread rows the notification centre lists for `userId`.
- * Same visibility as `inboxNotificationVisibleToUser`.
- * Explicit `isRead: true` is read; missing or false is unread.
+ * Unread rows the notification centre lists for `userId` (one id, or every id of the person): rows addressed to
+ * them only (`inboxNotificationVisibleToUser`); ownerless rows never count. Explicit `isRead: true` is read;
+ * missing or false is unread. The push Cloud Function's app-icon badge uses the same rule.
  */
 export function unreadNotificationBadgeCount(
   notifications: ReadonlyArray<UnreadNotificationBadgeRow> | null | undefined,
-  userId: string
+  userId: InboxOwnerIds
 ): number {
-  const uid = trimmed(userId)
-  if (!uid) return 0
+  if (ownerKeys(userId).size === 0) return 0
   const rows = Array.isArray(notifications) ? notifications : []
   let count = 0
   for (const row of rows) {
-    if (!inboxNotificationVisibleToUser(row, uid)) continue
+    if (!inboxNotificationVisibleToUser(row, userId)) continue
     if (row.isRead === true) continue
     count += 1
   }

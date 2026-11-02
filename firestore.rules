@@ -576,6 +576,20 @@ service cloud.firestore {
     return data.get('hasNoLineManager', false) != true && lineManagerIdList(data).size() > 0;
   }
 
+  // lib/canonical/leaveRequests.ts hasActiveLineManager, as far as rules can see: a listed line manager who
+  // is not the person and, when exactly one is listed, whose users document exists and is not inactive
+  // (rules cannot loop, so two or more listed ids count as having one). `uid` is the person's id.
+  function hasCurrentLineManager(uid, data) {
+    let ids = lineManagerIdList(data);
+    return data.get('hasNoLineManager', false) != true && ids.size() > 0 && (
+      ids.size() > 1 || (
+        ids[0] != uid &&
+        exists(/databases/(default)/documents/users/$(ids[0])) &&
+        get(/databases/(default)/documents/users/$(ids[0])).data.get('isActive', true) != false
+      )
+    );
+  }
+
   // Timestamps written by a client round-trip through ms (web Date) or a Swift Double (iOS Date),
   // so a resent unchanged instant can differ by under a millisecond. Within one second is the same.
   function sameInstantValue(a, b) {
@@ -1170,10 +1184,12 @@ service cloud.firestore {
             (resource == null || resource.data.get(key, null) == null || resource.data.get(key, null) == [])
           );
         }
+        // lib/canonical timesheetSelfSigned: the owner writes the approved snapshot only without a current
+        // line manager (hasCurrentLineManager: an inactive or self-only line manager is none).
         function timesheetSubjectHasLineManager() {
           return timesheetSubjectUid() is string &&
             exists(/databases/(default)/documents/users/$(timesheetSubjectUid())) &&
-            hasLineManager(get(/databases/(default)/documents/users/$(timesheetSubjectUid())).data);
+            hasCurrentLineManager(timesheetSubjectUid(), get(/databases/(default)/documents/users/$(timesheetSubjectUid())).data);
         }
         function timesheetStoredManagerSigned() {
           return resource != null && (
@@ -1264,12 +1280,22 @@ service cloud.firestore {
             isOrgAdminViaMembersMap(organizationId) ||
             isPlatformOwner();
         }
+        // Rulebook §13: `actorUserId` (who caused the row) is optional; when present it is the signed-in user,
+        // so nobody can silence another person's push by naming them the actor.
+        function actorUserIdValid() {
+          return !('actorUserId' in request.resource.data) ||
+            request.resource.data.actorUserId == request.auth.uid;
+        }
+        function actorUserIdUnchanged() {
+          return !('actorUserId' in request.resource.data.diff(resource.data).affectedKeys());
+        }
         // Inbox queries userId == signed-in user. Fan-out create stays org-member.
         allow read: if canAccessOrganization(organizationId) &&
           (isOwnNotification() || canAdminNotifications());
-        allow create: if canAccessOrganization(organizationId);
+        allow create: if canAccessOrganization(organizationId) && actorUserIdValid();
         allow update: if canAccessOrganization(organizationId) &&
-          (isOwnNotification() || canAdminNotifications());
+          (isOwnNotification() || canAdminNotifications()) &&
+          (actorUserIdUnchanged() || actorUserIdValid());
         allow delete: if canAdminNotifications();
       }
 
@@ -1323,9 +1349,9 @@ service cloud.firestore {
       // cancellationRequestedByUserId); only an admin or the requester's line manager decides
       // (status 'approved' / 'rejected', approvedByUserId, approvedAt, decisionNote). When the
       // requester has no line manager, or the row has no users document (legacy operativeId-only
-      // row), any admin or manager decides. People who book their own leave (no line manager, or
-      // annualLeaveSelfBook and not operative mode — iOS AnnualLeaveSelfBookPolicy, web
-      // leaveSubmitStatus) save it approved. Both apps resend every field with setData merge, so
+      // row), an admin decides (never any manager). People who book their own leave
+      // (lib/canonical canSelfBookAnnualLeave: annualLeaveSelfBook outside operative mode, or an admin
+      // with no current line manager) save it approved. Both apps resend every field with setData merge, so
       // decision fields count only when the value really changes (null, missing and a sub-second
       // timestamp round-trip are the same).
       match /holidayBookings/{bookingId} {
@@ -1366,21 +1392,22 @@ service cloud.firestore {
             isOperativeProfile(hbCaller());
         }
         // lib/canonical/leaveRequests.ts canDecideLeave: never the requester's own request (admins
-        // included). The requester's line manager; otherwise an admin not in operative mode, or any
-        // staff manager when there is no line manager to ask (rules cannot see the roster's active state).
+        // included). The requester's line manager; otherwise an admin not in operative mode. With no
+        // line manager (legacy data) the request waits for an admin — never any manager (rulebook 1.3.0).
         function hbCanDecide(data) {
           return !hbIsOwner(data) && (
             (hbRequesterExists(data) && request.auth.uid in lineManagerIdList(hbRequester(data))) ||
-            (!hbCallerIsOperative() && (
-              hbIsAdmin() ||
-              (hbIsStaffManager() && (!hbRequesterExists(data) || !hasLineManager(hbRequester(data))))
-            ))
+            (!hbCallerIsOperative() && hbIsAdmin())
           );
         }
-        // lib/canonical canSelfBookAnnualLeave: the self-book flag, never in operative mode.
-        // Having no line manager no longer self-books (that person's request waits for an admin).
+        // lib/canonical canSelfBookAnnualLeave: the self-book flag outside operative mode, or an admin /
+        // super admin outside operative mode with no current line manager (self-approved). Having no line
+        // manager does not self-book an operative or manager (their request waits for an admin).
         function hbCallerSelfBooks() {
-          return staffFlag(hbCaller(), 'annualLeaveSelfBook') && !isOperativeProfile(hbCaller());
+          return !isOperativeProfile(hbCaller()) && (
+            staffFlag(hbCaller(), 'annualLeaveSelfBook') ||
+            (hbIsAdmin() && !hasCurrentLineManager(request.auth.uid, hbCaller()))
+          );
         }
         function hbIsRequestShape(next) {
           return next.get('status', null) == 'pending' &&
