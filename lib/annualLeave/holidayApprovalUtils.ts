@@ -12,7 +12,8 @@ import {
   lineManagerRequiredError,
   usersMissingLineManager,
 } from '@/lib/canonical'
-import { dayKey } from '@/lib/ios-parity/londonTime'
+import { dayKeyInZone } from '@/lib/orgTime/zoneTime'
+import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 import { isPendingHolidayRequest } from '@/lib/stores/holidayStore'
 
 /** The account that asked for this leave: the booking userId, else the operative-mode user on the operative's email. */
@@ -180,7 +181,8 @@ export function isCancellationRequest(booking: HolidayBooking): boolean {
 }
 
 /** Accepted leave that still has a day after today. Past and today-only bookings stay on the calendar. */
-export function isFutureAcceptedAnnualLeave(booking: HolidayBooking, today = new Date()): boolean {
+export function isFutureAcceptedAnnualLeave(booking: HolidayBooking, today = new Date(), timeZone?: string): boolean {
   if (String(booking.status).toLowerCase() !== 'approved') return false
-  return dayKey(booking.endDate) > dayKey(today)
+  const zone = organizationZoneOr(timeZone)
+  return dayKeyInZone(booking.endDate, zone) > dayKeyInZone(today, zone)
 }

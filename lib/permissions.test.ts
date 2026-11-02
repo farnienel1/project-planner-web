@@ -363,9 +363,14 @@ test('My notifications audience hides staff rows from operatives and catalogue-o
   assert.equal(operativeKeys.includes('materialOrderPlaced'), false)
   assert.equal(operativeKeys.includes('annualLeaveRequested'), false)
   assert.equal(operativeKeys.includes('annualLeaveDecision'), true)
-  assert.equal(visibleNotificationPreferenceKeys(managerAudience).includes('projectCreated'), true)
+  // 1.4.0: "created / dismissed" rows are one admin-only Company activity toggle.
+  assert.equal(visibleNotificationPreferenceKeys(managerAudience).includes('projectCreated'), false)
   assert.equal(visibleNotificationPreferenceKeys(managerAudience).includes('smallWorksCreated'), false)
   assert.equal(visibleNotificationPreferenceKeys(managerAudience).includes('operativeCreated'), false)
+  assert.equal(visibleNotificationPreferenceKeys(managerAudience).includes('companyActivity'), false)
+  const adminAudience = notificationPreferenceAudience(user({ role: UserRole.ADMIN, permissions: { adminAccess: true } }))
+  assert.ok(adminAudience)
+  assert.equal(visibleNotificationPreferenceKeys(adminAudience).includes('companyActivity'), true)
 })
 
 test('PAYE users with remaining My Timesheets do not see the disabled card copy', () => {

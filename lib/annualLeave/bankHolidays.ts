@@ -1,5 +1,5 @@
 import { format, startOfDay } from 'date-fns'
-import { bankHolidayRegionLabel } from '@/lib/settings/bankHolidayRegions'
+import { bankHolidayRegionLabel } from '@/lib/canonical'
 
 export type BankHoliday = {
   date: string

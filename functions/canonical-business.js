@@ -23,6 +23,7 @@ var ProjectPlannerCanonical = (() => {
   __export(bundleEntry_exports, {
     ANNUAL_LEAVE_ALLOWANCE_COPY: () => ANNUAL_LEAVE_ALLOWANCE_COPY,
     ANONYMISED_DELETED_USER_NAME: () => ANONYMISED_DELETED_USER_NAME,
+    BANK_HOLIDAY_REGIONS: () => BANK_HOLIDAY_REGIONS,
     BOOKING_REPLAY_REFUSED_MESSAGE: () => BOOKING_REPLAY_REFUSED_MESSAGE,
     BOOKING_STATUSES: () => BOOKING_STATUSES,
     BOOKING_TIME_SLOTS: () => BOOKING_TIME_SLOTS,
@@ -31,6 +32,7 @@ var ProjectPlannerCanonical = (() => {
     BOOKING_TOMBSTONE_FIELDS: () => BOOKING_TOMBSTONE_FIELDS,
     CANONICAL_STANDARD_BREAK: () => CANONICAL_STANDARD_BREAK,
     CANONICAL_STANDARD_DAY: () => CANONICAL_STANDARD_DAY,
+    COMPANY_ACTIVITY_NOTICE_TYPES: () => COMPANY_ACTIVITY_NOTICE_TYPES,
     CURRENCY_OPTIONS: () => CURRENCY_OPTIONS,
     DEFAULT_ANNUAL_LEAVE_DAYS: () => DEFAULT_ANNUAL_LEAVE_DAYS,
     DEFAULT_BANK_HOLIDAY_REGION_ID: () => DEFAULT_BANK_HOLIDAY_REGION_ID,
@@ -87,6 +89,7 @@ var ProjectPlannerCanonical = (() => {
     PAYMENT_RUN_1_LAST_END_DAY: () => PAYMENT_RUN_1_LAST_END_DAY,
     PAYROLL_POLICY_LIMITS: () => PAYROLL_POLICY_LIMITS,
     PLATFORM_OWNER_EMAIL: () => PLATFORM_OWNER_EMAIL,
+    PUSH_TEST_NOTICE_TYPE: () => PUSH_TEST_NOTICE_TYPE,
     QUALIFICATION_CERTIFICATE_STORAGE_PATH: () => QUALIFICATION_CERTIFICATE_STORAGE_PATH,
     QUALIFICATION_FILTER_ALL: () => QUALIFICATION_FILTER_ALL,
     QUALIFICATION_FILTER_OTHER: () => QUALIFICATION_FILTER_OTHER,
@@ -133,6 +136,11 @@ var ProjectPlannerCanonical = (() => {
     applyRemainingOverride: () => applyRemainingOverride,
     approvedWarningKeys: () => approvedWarningKeys,
     assignedQualificationWriteFields: () => assignedQualificationWriteFields,
+    bankHolidayCountries: () => bankHolidayCountries,
+    bankHolidayCountryTitle: () => bankHolidayCountryTitle,
+    bankHolidayRegion: () => bankHolidayRegion,
+    bankHolidayRegionLabel: () => bankHolidayRegionLabel,
+    bankHolidayRegionsForCountry: () => bankHolidayRegionsForCountry,
     bookingBelongsToOrganization: () => bookingBelongsToOrganization,
     bookingClock: () => bookingClock,
     bookingCreatedRecipients: () => bookingCreatedRecipients,
@@ -173,6 +181,8 @@ var ProjectPlannerCanonical = (() => {
     clashScanDays: () => clashScanDays,
     clockMinutesFromDeliveryInstant: () => clockMinutesFromDeliveryInstant,
     coalesceOrganizationName: () => coalesceOrganizationName,
+    companyActivityRecipients: () => companyActivityRecipients,
+    companyDetailsRegionPrompt: () => companyDetailsRegionPrompt,
     companyDetailsValidationError: () => companyDetailsValidationError,
     companyDetailsWriteFields: () => companyDetailsWriteFields,
     compareInboxNotificationsByCreatedAt: () => compareInboxNotificationsByCreatedAt,
@@ -182,6 +192,7 @@ var ProjectPlannerCanonical = (() => {
     currencySymbol: () => currencySymbol,
     dayKeyInOrganizationZone: () => dayKeyInOrganizationZone,
     deadlineAssignedRecipients: () => deadlineAssignedRecipients,
+    defaultBankHolidayRegionForCountry: () => defaultBankHolidayRegionForCountry,
     defaultCurrencyForCountry: () => defaultCurrencyForCountry,
     defaultMaterialDeliveryDayKey: () => defaultMaterialDeliveryDayKey,
     defaultMaterialDeliveryRequiredAt: () => defaultMaterialDeliveryRequiredAt,
@@ -296,6 +307,7 @@ var ProjectPlannerCanonical = (() => {
     monthDayOffsetBefore: () => monthDayOffsetBefore,
     monthDayOrdinal: () => monthDayOrdinal,
     namedSlotKind: () => namedSlotKind,
+    normalizeBankHolidayRegionId: () => normalizeBankHolidayRegionId,
     normalizeBookingStatus: () => normalizeBookingStatus,
     normalizeBookingTimeSlot: () => normalizeBookingTimeSlot,
     normalizeClaimedEmails: () => normalizeClaimedEmails,
@@ -317,6 +329,7 @@ var ProjectPlannerCanonical = (() => {
     notificationPreferenceCopy: () => notificationPreferenceCopy,
     notificationPreferenceIsVisible: () => notificationPreferenceIsVisible,
     notificationPreferenceKeyForType: () => notificationPreferenceKeyForType,
+    notificationPushesToActor: () => notificationPushesToActor,
     notificationShowsInInbox: () => notificationShowsInInbox,
     offlineAvailability: () => offlineAvailability,
     offlineLastUpdatedLabel: () => offlineLastUpdatedLabel,
@@ -380,6 +393,7 @@ var ProjectPlannerCanonical = (() => {
     personIdSet: () => personIdSet,
     pickTimesheetRowForPeriod: () => pickTimesheetRowForPeriod,
     provisionalOrganizationId: () => provisionalOrganizationId,
+    pushTestRecipients: () => pushTestRecipients,
     qualificationCertificateStoragePath: () => qualificationCertificateStoragePath,
     qualificationCertificateUrl: () => qualificationCertificateUrl,
     qualificationDismissKey: () => qualificationDismissKey,
@@ -743,8 +757,8 @@ var ProjectPlannerCanonical = (() => {
     if (typeof value === "number") {
       return Number.isFinite(value) && value >= 0 && value <= 24 * 60 ? Math.round(value) : null;
     }
-    const text9 = String(value ?? "").trim();
-    const match = /^(\d{1,2}):(\d{2})$/.exec(text9);
+    const text10 = String(value ?? "").trim();
+    const match = /^(\d{1,2}):(\d{2})$/.exec(text10);
     if (!match) return null;
     const hours = Number(match[1]);
     const minutes = Number(match[2]);
@@ -1635,8 +1649,8 @@ var ProjectPlannerCanonical = (() => {
   }
   function formatHours(hours) {
     const rounded = Math.round(hours * 4) / 4;
-    const text9 = Number.isInteger(rounded) ? String(rounded) : String(rounded).replace(/0+$/, "");
-    return `${text9} hour${rounded === 1 ? "" : "s"}`;
+    const text10 = Number.isInteger(rounded) ? String(rounded) : String(rounded).replace(/0+$/, "");
+    return `${text10} hour${rounded === 1 ? "" : "s"}`;
   }
   function joinRanges(intervals) {
     const labels = intervals.map(rangeLabel);
@@ -3328,7 +3342,8 @@ var ProjectPlannerCanonical = (() => {
     "qualificationExpiry",
     "lineManagerPeerUpdates",
     "timesheetSubmissionReminder",
-    "variations"
+    "variations",
+    "companyActivity"
   ];
   var DEFAULT_USER_NOTIFICATION_PREFERENCES = {
     materialOrderCutOff: true,
@@ -3349,7 +3364,8 @@ var ProjectPlannerCanonical = (() => {
     qualificationExpiry: true,
     lineManagerPeerUpdates: true,
     timesheetSubmissionReminder: true,
-    variations: true
+    variations: true,
+    companyActivity: true
   };
   var LEGACY_NOTIFICATION_PREFERENCE_ALIASES = {
     bookingConflicts: "bookingClashes"
@@ -3359,17 +3375,17 @@ var ProjectPlannerCanonical = (() => {
     holiday_request_submitted: "annualLeaveRequested",
     holiday_request_approved: "annualLeaveDecision",
     holiday_request_declined: "annualLeaveDecision",
-    project_created: "projectCreated",
-    small_works_created: "smallWorksCreated",
+    project_created: "companyActivity",
+    small_works_created: "companyActivity",
     booking_clash: "bookingClashes",
     material_order_placed: "materialOrderPlaced",
     material_order_created: "materialOrderPlaced",
     booking_created: "bookedOntoJob",
     booked_onto_job: "bookedOntoJob",
-    operative_created: "operativeCreated",
-    manager_created: "managerCreated",
-    client_created: "clientCreated",
-    warning_removed: "warningDismissed",
+    operative_created: "companyActivity",
+    manager_created: "companyActivity",
+    client_created: "companyActivity",
+    warning_removed: "companyActivity",
     task_created: "tasksAssignedOrCompleted",
     task_completed: "tasksAssignedOrCompleted",
     deadline_assigned: "tasksAssignedOrCompleted",
@@ -3454,7 +3470,8 @@ var ProjectPlannerCanonical = (() => {
     qualificationExpiry: "Qualification expiry",
     lineManagerPeerUpdates: "Line manager peer updates",
     timesheetSubmissionReminder: "Timesheet submission reminder",
-    variations: "Variations"
+    variations: "Variations",
+    companyActivity: "Company activity"
   };
   function notificationPreferenceCopy(key2, audience) {
     const descriptions = {
@@ -3476,7 +3493,8 @@ var ProjectPlannerCanonical = (() => {
       qualificationExpiry: "Reminders before qualifications expire.",
       lineManagerPeerUpdates: "When another line manager actions a shared request.",
       timesheetSubmissionReminder: "Reminder to submit before the payment-run deadline.",
-      variations: "When a variation is added to a job you manage, or variation numbers are updated."
+      variations: "When a variation is added to a job you manage, or variation numbers are updated.",
+      companyActivity: "People, clients, jobs added and warnings removed."
     };
     return { label: PREFERENCE_LABELS[key2], description: descriptions[key2] };
   }
@@ -3484,27 +3502,26 @@ var ProjectPlannerCanonical = (() => {
     const role = audience.role;
     const staff = isStaffAccount(role);
     switch (key2) {
-      case "projectCreated":
-        return canEditWorkCatalogue(role, "projects", audience.catalogue);
-      case "smallWorksCreated":
-        return canEditWorkCatalogue(role, "smallWorks", audience.catalogue);
       case "annualLeaveRequested":
       case "bookingClashes":
       case "lineManagerPeerUpdates":
-      case "managerCreated":
         return staff;
       case "materialOrderPlaced":
         return staff && audience.canManageMaterials !== false;
-      case "operativeCreated":
-        return staff && audience.canManagePeople !== false;
-      case "clientCreated":
-        return staff && audience.canManageClients !== false;
-      case "warningDismissed":
-        return canViewStaffWarnings(role);
       case "timesheetSignOff":
         return canReviewUserTimesheets(role);
       case "variations":
         return canSeeVariations(role);
+      case "companyActivity":
+        return Boolean(role.isAdmin || role.isSuperAdmin);
+      // Retired in 1.4.0: their six types are `companyActivity` now. Kept in the map so a saved value still parses.
+      case "projectCreated":
+      case "smallWorksCreated":
+      case "operativeCreated":
+      case "managerCreated":
+      case "clientCreated":
+      case "warningDismissed":
+        return false;
       default:
         return true;
     }
@@ -3513,9 +3530,14 @@ var ProjectPlannerCanonical = (() => {
     return NOTIFICATION_PREFERENCE_KEYS.filter((key2) => notificationPreferenceIsVisible(key2, audience));
   }
   function notificationPreferenceAllowsDelivery(prefs, type) {
+    if (String(type || "").trim() === PUSH_TEST_NOTICE_TYPE) return true;
     const key2 = notificationPreferenceKeyForType(type);
     if (!key2) return true;
     return prefs[key2] !== false;
+  }
+  var PUSH_TEST_NOTICE_TYPE = "push_test";
+  function notificationPushesToActor(type) {
+    return String(type || "").trim() === PUSH_TEST_NOTICE_TYPE;
   }
   var NOTIFICATION_TOGGLE_HIDES_INBOX_ROW = false;
   function notificationShowsInInbox(_prefs, _type) {
@@ -3551,7 +3573,8 @@ var ProjectPlannerCanonical = (() => {
     "client_created",
     "project_created",
     "small_works_created",
-    TIMESHEET_SUBMISSION_NOTICE_TYPE
+    TIMESHEET_SUBMISSION_NOTICE_TYPE,
+    "push_test"
   ];
   var DEVICE_PUSH_TYPE_SET = new Set(DEVICE_PUSH_NOTIFICATION_TYPES);
   var NOTIFICATION_ICON_BADGE_CLEARS_ON_FOREGROUND = true;
@@ -5841,8 +5864,8 @@ var ProjectPlannerCanonical = (() => {
     return typeof value === "string" ? value.trim().toLowerCase() : "";
   }
   function dayKeyText(value) {
-    const text9 = typeof value === "string" ? value.trim() : "";
-    return DAY_KEY2.test(text9) ? text9 : null;
+    const text10 = typeof value === "string" ? value.trim() : "";
+    return DAY_KEY2.test(text10) ? text10 : null;
   }
   function compareText(a, b) {
     if (a === b) return 0;
@@ -5970,8 +5993,8 @@ var ProjectPlannerCanonical = (() => {
   function personDayItems(input) {
     const managerIdByKey = /* @__PURE__ */ new Map();
     for (const id2 of input?.managerIds || []) {
-      const text9 = idText2(id2);
-      if (text9) managerIdByKey.set(text9.toLowerCase(), text9);
+      const text10 = idText2(id2);
+      if (text10) managerIdByKey.set(text10.toLowerCase(), text10);
     }
     const people = input?.people || { accounts: [], operatives: [] };
     const managerIdByEmail = /* @__PURE__ */ new Map();
@@ -6482,8 +6505,8 @@ var ProjectPlannerCanonical = (() => {
   // lib/canonical/rulebookStamp.ts
   function rulebookStamp() {
     return {
-      version: true ? "1.3.0" : "",
-      sha256: true ? "2c46595ef881c410c70f84e8a412a816e385ba85627132c3b5c3791bf4ba1938" : ""
+      version: true ? "1.4.0" : "",
+      sha256: true ? "511a982254bce9a72a6b71994a41569447c571c0ff1519cf4e7f2373cd71a5c0" : ""
     };
   }
 
@@ -6705,8 +6728,210 @@ var ProjectPlannerCanonical = (() => {
     return lines.sort((a, b) => a.dayKey !== b.dayKey ? a.dayKey < b.dayKey ? -1 : 1 : order[a.timeSlot] - order[b.timeSlot]);
   }
 
-  // lib/canonical/companyDetails.ts
+  // lib/canonical/bankHolidayRegions.ts
   var DEFAULT_BANK_HOLIDAY_REGION_ID = "GB-ENG-WLS";
+  var BANK_HOLIDAY_REGIONS = [
+    { id: "GB-ENG-WLS", title: "England & Wales", countryCode: "GB", subdivisionCodes: ["GB-ENG", "GB-WLS"] },
+    { id: "GB-SCT", title: "Scotland", countryCode: "GB", subdivisionCodes: ["GB-SCT"] },
+    { id: "GB-NIR", title: "Northern Ireland", countryCode: "GB", subdivisionCodes: ["GB-NIR"] },
+    { id: "GB", title: "United Kingdom (all nations)", countryCode: "GB" },
+    { id: "IE", title: "Ireland", countryCode: "IE" },
+    { id: "IM", title: "Isle of Man", countryCode: "IM" },
+    { id: "JE", title: "Jersey", countryCode: "JE" },
+    { id: "GG", title: "Guernsey", countryCode: "GG" },
+    { id: "AD", title: "Andorra", countryCode: "AD" },
+    { id: "AL", title: "Albania", countryCode: "AL" },
+    { id: "AM", title: "Armenia", countryCode: "AM" },
+    { id: "AO", title: "Angola", countryCode: "AO" },
+    { id: "AR", title: "Argentina", countryCode: "AR" },
+    { id: "AT", title: "Austria", countryCode: "AT" },
+    { id: "AU", title: "Australia", countryCode: "AU" },
+    { id: "AW", title: "Aruba", countryCode: "AW" },
+    { id: "AX", title: "\xC5land Islands", countryCode: "AX" },
+    { id: "BA", title: "Bosnia and Herzegovina", countryCode: "BA" },
+    { id: "BB", title: "Barbados", countryCode: "BB" },
+    { id: "BD", title: "Bangladesh", countryCode: "BD" },
+    { id: "BE", title: "Belgium", countryCode: "BE" },
+    { id: "BG", title: "Bulgaria", countryCode: "BG" },
+    { id: "BJ", title: "Benin", countryCode: "BJ" },
+    { id: "BO", title: "Bolivia", countryCode: "BO" },
+    { id: "BR", title: "Brazil", countryCode: "BR" },
+    { id: "BS", title: "Bahamas", countryCode: "BS" },
+    { id: "BW", title: "Botswana", countryCode: "BW" },
+    { id: "BY", title: "Belarus", countryCode: "BY" },
+    { id: "BZ", title: "Belize", countryCode: "BZ" },
+    { id: "CA", title: "Canada", countryCode: "CA" },
+    { id: "CD", title: "DR Congo", countryCode: "CD" },
+    { id: "CG", title: "Congo", countryCode: "CG" },
+    { id: "CH", title: "Switzerland", countryCode: "CH" },
+    { id: "CL", title: "Chile", countryCode: "CL" },
+    { id: "CN", title: "China", countryCode: "CN" },
+    { id: "CO", title: "Colombia", countryCode: "CO" },
+    { id: "CR", title: "Costa Rica", countryCode: "CR" },
+    { id: "CU", title: "Cuba", countryCode: "CU" },
+    { id: "CY", title: "Cyprus", countryCode: "CY" },
+    { id: "CZ", title: "Czechia", countryCode: "CZ" },
+    { id: "DE", title: "Germany", countryCode: "DE" },
+    { id: "DK", title: "Denmark", countryCode: "DK" },
+    { id: "DM", title: "Dominica", countryCode: "DM" },
+    { id: "DO", title: "Dominican Republic", countryCode: "DO" },
+    { id: "EC", title: "Ecuador", countryCode: "EC" },
+    { id: "EE", title: "Estonia", countryCode: "EE" },
+    { id: "EG", title: "Egypt", countryCode: "EG" },
+    { id: "ES", title: "Spain", countryCode: "ES" },
+    { id: "FI", title: "Finland", countryCode: "FI" },
+    { id: "FO", title: "Faroe Islands", countryCode: "FO" },
+    { id: "FR", title: "France", countryCode: "FR" },
+    { id: "GA", title: "Gabon", countryCode: "GA" },
+    { id: "GD", title: "Grenada", countryCode: "GD" },
+    { id: "GE", title: "Georgia", countryCode: "GE" },
+    { id: "GH", title: "Ghana", countryCode: "GH" },
+    { id: "GI", title: "Gibraltar", countryCode: "GI" },
+    { id: "GL", title: "Greenland", countryCode: "GL" },
+    { id: "GM", title: "Gambia", countryCode: "GM" },
+    { id: "GP", title: "Guadeloupe", countryCode: "GP" },
+    { id: "GR", title: "Greece", countryCode: "GR" },
+    { id: "GT", title: "Guatemala", countryCode: "GT" },
+    { id: "GY", title: "Guyana", countryCode: "GY" },
+    { id: "HK", title: "Hong Kong", countryCode: "HK" },
+    { id: "HN", title: "Honduras", countryCode: "HN" },
+    { id: "HR", title: "Croatia", countryCode: "HR" },
+    { id: "HT", title: "Haiti", countryCode: "HT" },
+    { id: "HU", title: "Hungary", countryCode: "HU" },
+    { id: "ID", title: "Indonesia", countryCode: "ID" },
+    { id: "IS", title: "Iceland", countryCode: "IS" },
+    { id: "IT", title: "Italy", countryCode: "IT" },
+    { id: "JM", title: "Jamaica", countryCode: "JM" },
+    { id: "JP", title: "Japan", countryCode: "JP" },
+    { id: "KE", title: "Kenya", countryCode: "KE" },
+    { id: "KR", title: "South Korea", countryCode: "KR" },
+    { id: "KY", title: "Cayman Islands", countryCode: "KY" },
+    { id: "KZ", title: "Kazakhstan", countryCode: "KZ" },
+    { id: "LC", title: "Saint Lucia", countryCode: "LC" },
+    { id: "LI", title: "Liechtenstein", countryCode: "LI" },
+    { id: "LS", title: "Lesotho", countryCode: "LS" },
+    { id: "LT", title: "Lithuania", countryCode: "LT" },
+    { id: "LU", title: "Luxembourg", countryCode: "LU" },
+    { id: "LV", title: "Latvia", countryCode: "LV" },
+    { id: "MA", title: "Morocco", countryCode: "MA" },
+    { id: "MC", title: "Monaco", countryCode: "MC" },
+    { id: "MD", title: "Moldova", countryCode: "MD" },
+    { id: "ME", title: "Montenegro", countryCode: "ME" },
+    { id: "MG", title: "Madagascar", countryCode: "MG" },
+    { id: "MK", title: "North Macedonia", countryCode: "MK" },
+    { id: "MN", title: "Mongolia", countryCode: "MN" },
+    { id: "MQ", title: "Martinique", countryCode: "MQ" },
+    { id: "MS", title: "Montserrat", countryCode: "MS" },
+    { id: "MT", title: "Malta", countryCode: "MT" },
+    { id: "MX", title: "Mexico", countryCode: "MX" },
+    { id: "MZ", title: "Mozambique", countryCode: "MZ" },
+    { id: "NA", title: "Namibia", countryCode: "NA" },
+    { id: "NE", title: "Niger", countryCode: "NE" },
+    { id: "NG", title: "Nigeria", countryCode: "NG" },
+    { id: "NI", title: "Nicaragua", countryCode: "NI" },
+    { id: "NL", title: "Netherlands", countryCode: "NL" },
+    { id: "NO", title: "Norway", countryCode: "NO" },
+    { id: "NZ", title: "New Zealand", countryCode: "NZ" },
+    { id: "PA", title: "Panama", countryCode: "PA" },
+    { id: "PE", title: "Peru", countryCode: "PE" },
+    { id: "PG", title: "Papua New Guinea", countryCode: "PG" },
+    { id: "PH", title: "Philippines", countryCode: "PH" },
+    { id: "PL", title: "Poland", countryCode: "PL" },
+    { id: "PR", title: "Puerto Rico", countryCode: "PR" },
+    { id: "PT", title: "Portugal", countryCode: "PT" },
+    { id: "PY", title: "Paraguay", countryCode: "PY" },
+    { id: "RO", title: "Romania", countryCode: "RO" },
+    { id: "RS", title: "Serbia", countryCode: "RS" },
+    { id: "RU", title: "Russia", countryCode: "RU" },
+    { id: "SC", title: "Seychelles", countryCode: "SC" },
+    { id: "SE", title: "Sweden", countryCode: "SE" },
+    { id: "SG", title: "Singapore", countryCode: "SG" },
+    { id: "SI", title: "Slovenia", countryCode: "SI" },
+    { id: "SJ", title: "Svalbard and Jan Mayen", countryCode: "SJ" },
+    { id: "SK", title: "Slovakia", countryCode: "SK" },
+    { id: "SM", title: "San Marino", countryCode: "SM" },
+    { id: "SR", title: "Suriname", countryCode: "SR" },
+    { id: "SV", title: "El Salvador", countryCode: "SV" },
+    { id: "TN", title: "Tunisia", countryCode: "TN" },
+    { id: "TR", title: "T\xFCrkiye", countryCode: "TR" },
+    { id: "UA", title: "Ukraine", countryCode: "UA" },
+    { id: "UG", title: "Uganda", countryCode: "UG" },
+    { id: "US", title: "United States", countryCode: "US" },
+    { id: "UY", title: "Uruguay", countryCode: "UY" },
+    { id: "VA", title: "Vatican City", countryCode: "VA" },
+    { id: "VE", title: "Venezuela", countryCode: "VE" },
+    { id: "VN", title: "Vietnam", countryCode: "VN" },
+    { id: "ZA", title: "South Africa", countryCode: "ZA" },
+    { id: "ZW", title: "Zimbabwe", countryCode: "ZW" }
+  ];
+  var REGION_ID_ALIASES = {
+    "GB-ENG": "GB-ENG-WLS",
+    "GB-WLS": "GB-ENG-WLS",
+    UK: "GB"
+  };
+  var COUNTRY_TITLES = { GB: "United Kingdom" };
+  function text6(value) {
+    return typeof value === "string" ? value.trim() : "";
+  }
+  function normalizeBankHolidayRegionId(value) {
+    const raw = text6(value).toUpperCase();
+    if (!raw) return null;
+    const id2 = REGION_ID_ALIASES[raw] ?? raw;
+    return BANK_HOLIDAY_REGIONS.some((region) => region.id === id2) ? id2 : null;
+  }
+  function bankHolidayRegion(id2) {
+    const normalized = normalizeBankHolidayRegionId(id2);
+    return normalized ? BANK_HOLIDAY_REGIONS.find((region) => region.id === normalized) ?? null : null;
+  }
+  function bankHolidayRegionLabel(id2) {
+    return bankHolidayRegion(id2)?.title ?? text6(id2);
+  }
+  function countryKey(countryCode) {
+    const raw = text6(countryCode).toUpperCase();
+    if (raw === "UK" || raw.startsWith("GB")) return "GB";
+    return raw;
+  }
+  function bankHolidayRegionsForCountry(countryCode) {
+    const country = countryKey(countryCode);
+    return BANK_HOLIDAY_REGIONS.filter((region) => region.countryCode === country);
+  }
+  function defaultBankHolidayRegionForCountry(countryCode) {
+    const country = countryKey(countryCode);
+    if (country === "GB") return DEFAULT_BANK_HOLIDAY_REGION_ID;
+    const regions = bankHolidayRegionsForCountry(country);
+    return regions.length === 1 ? regions[0].id : null;
+  }
+  function bankHolidayCountries() {
+    const seen = /* @__PURE__ */ new Set();
+    const out = [];
+    for (const region of BANK_HOLIDAY_REGIONS) {
+      if (seen.has(region.countryCode)) continue;
+      seen.add(region.countryCode);
+      out.push({ code: region.countryCode, title: COUNTRY_TITLES[region.countryCode] ?? region.title });
+    }
+    return out;
+  }
+  function bankHolidayCountryTitle(countryCode) {
+    const country = countryKey(countryCode);
+    return bankHolidayCountries().find((entry) => entry.code === country)?.title ?? country;
+  }
+  function companyDetailsRegionPrompt(previous, next) {
+    const before = countryKey(previous?.countryCode) || "GB";
+    const after = countryKey(next?.countryCode);
+    if (!after || after === before) return { required: false };
+    const saved = bankHolidayRegion(previous?.bankHolidayRegionId);
+    if (saved && saved.countryCode === after) return { required: false };
+    const choices = bankHolidayRegionsForCountry(after);
+    if (choices.length === 0) return { required: false };
+    return {
+      required: true,
+      choices,
+      defaultRegionId: defaultBankHolidayRegionForCountry(after),
+      message: `Choose the bank holidays for ${bankHolidayCountryTitle(after)}.`
+    };
+  }
+
+  // lib/canonical/companyDetails.ts
   var OPTIONAL_ADDRESS_FIELDS = ["officeAddressLine2", "officeCounty", "officePostcode"];
   var ALL_ADDRESS_FIELDS = [
     "officeAddressLine1",
@@ -6715,7 +6940,7 @@ var ProjectPlannerCanonical = (() => {
     "officeCounty",
     "officePostcode"
   ];
-  function text6(value) {
+  function text7(value) {
     return typeof value === "string" ? value.trim() : "";
   }
   function record(value) {
@@ -6726,10 +6951,10 @@ var ProjectPlannerCanonical = (() => {
     return Number.isFinite(n) ? n : null;
   }
   function normalizeDocumentAbbreviation(value) {
-    return text6(value).replace(/[^A-Za-z0-9]/g, "").slice(0, 3).toUpperCase();
+    return text7(value).replace(/[^A-Za-z0-9]/g, "").slice(0, 3).toUpperCase();
   }
   function normalizeCompanyCountryCode(value) {
-    const raw = text6(value).toUpperCase();
+    const raw = text7(value).toUpperCase();
     if (raw === "UK") return "GB";
     const country = raw.split("-")[0];
     return /^[A-Z]{2}$/.test(country) ? country : "";
@@ -6738,7 +6963,7 @@ var ProjectPlannerCanonical = (() => {
     const data = record(orgDoc);
     const nested = record(data.officeAddress);
     const settings = record(data.settings);
-    const pick = (flat, legacy) => text6(data[flat]) || text6(nested[legacy]);
+    const pick = (flat, legacy) => text7(data[flat]) || text7(nested[legacy]);
     const line1 = pick("officeAddressLine1", "addressLine1");
     const city = pick("officeCity", "town");
     const hasOfficeAddress = Boolean(line1 && city);
@@ -6752,23 +6977,30 @@ var ProjectPlannerCanonical = (() => {
       officePostcode: pick("officePostcode", "postcode"),
       countryCode: normalizeCompanyCountryCode(data.countryCode) || "GB",
       documentAbbreviation: normalizeDocumentAbbreviation(data.documentAbbreviation),
-      companyLogoURL: text6(data.companyLogoURL),
+      companyLogoURL: text7(data.companyLogoURL),
       defaultLatitude: finiteNumber3(data.defaultLatitude),
       defaultLongitude: finiteNumber3(data.defaultLongitude),
-      bankHolidayRegionId: text6(data.bankHolidayRegionId) || text6(settings.bankHolidayRegionId) || DEFAULT_BANK_HOLIDAY_REGION_ID
+      bankHolidayRegionId: normalizeBankHolidayRegionId(text7(data.bankHolidayRegionId) || text7(settings.bankHolidayRegionId)) || text7(data.bankHolidayRegionId) || text7(settings.bankHolidayRegionId) || defaultBankHolidayRegionForCountry(normalizeCompanyCountryCode(data.countryCode) || "GB") || DEFAULT_BANK_HOLIDAY_REGION_ID
     };
   }
   function companyDetailsValidationError(input) {
-    const nameOk = Boolean(text6(input.name));
+    const nameOk = Boolean(text7(input.name));
     const countryOk = Boolean(normalizeCompanyCountryCode(input.countryCode));
     if (input.hasOfficeAddress) {
-      if (!nameOk || !countryOk || !text6(input.officeAddressLine1) || !text6(input.officeCity)) {
+      if (!nameOk || !countryOk || !text7(input.officeAddressLine1) || !text7(input.officeCity)) {
         return "Name, country, address line 1 and town are required.";
       }
-      return null;
+      return companyDetailsRegionError(input);
     }
     if (!nameOk || !countryOk) return "Organisation name and country are required.";
-    return null;
+    return companyDetailsRegionError(input);
+  }
+  function companyDetailsRegionError(input) {
+    if (!input.previous) return null;
+    const prompt = companyDetailsRegionPrompt(input.previous, { countryCode: input.countryCode });
+    if (!prompt.required) return null;
+    const chosen = normalizeBankHolidayRegionId(input.bankHolidayRegionId);
+    return chosen && prompt.choices.some((region) => region.id === chosen) ? null : prompt.message;
   }
   function companyDetailsWriteFields(input) {
     const set = { ...organizationNameWriteFields(input.name) };
@@ -6776,12 +7008,12 @@ var ProjectPlannerCanonical = (() => {
     const country = normalizeCompanyCountryCode(input.countryCode);
     if (country) set.countryCode = country;
     if (input.hasOfficeAddress) {
-      set.officeAddressLine1 = text6(input.officeAddressLine1);
-      set.officeCity = text6(input.officeCity);
+      set.officeAddressLine1 = text7(input.officeAddressLine1);
+      set.officeCity = text7(input.officeCity);
       const optional = {
-        officeAddressLine2: text6(input.officeAddressLine2),
-        officeCounty: text6(input.officeCounty),
-        officePostcode: text6(input.officePostcode)
+        officeAddressLine2: text7(input.officeAddressLine2),
+        officeCounty: text7(input.officeCounty),
+        officePostcode: text7(input.officePostcode)
       };
       for (const field of OPTIONAL_ADDRESS_FIELDS) {
         if (optional[field]) set[field] = optional[field];
@@ -6794,7 +7026,7 @@ var ProjectPlannerCanonical = (() => {
     if (abbreviation) set.documentAbbreviation = abbreviation;
     else remove.push("documentAbbreviation");
     if (input.companyLogoURL !== void 0) {
-      const logo = text6(input.companyLogoURL);
+      const logo = text7(input.companyLogoURL);
       if (logo) set.companyLogoURL = logo;
       else remove.push("companyLogoURL");
     }
@@ -6805,9 +7037,14 @@ var ProjectPlannerCanonical = (() => {
       set.defaultLongitude = lon;
     }
     if (input.bankHolidayRegionId !== void 0 && input.bankHolidayRegionId !== null) {
-      const region = text6(input.bankHolidayRegionId).toUpperCase() || DEFAULT_BANK_HOLIDAY_REGION_ID;
+      const region = normalizeBankHolidayRegionId(input.bankHolidayRegionId) || text7(input.bankHolidayRegionId).toUpperCase() || DEFAULT_BANK_HOLIDAY_REGION_ID;
       set.bankHolidayRegionId = region;
       set["settings.bankHolidayRegionId"] = region;
+    } else if (input.previous && country) {
+      const previousCountry = normalizeCompanyCountryCode(input.previous.countryCode) || "GB";
+      if (previousCountry !== country && !defaultBankHolidayRegionForCountry(country)) {
+        remove.push("bankHolidayRegionId", "settings.bankHolidayRegionId");
+      }
     }
     return { set, remove };
   }
@@ -7132,7 +7369,7 @@ var ProjectPlannerCanonical = (() => {
 
   // lib/canonical/materialCutOffWarnings.ts
   var DAY_KEY3 = /^\d{4}-\d{2}-\d{2}$/;
-  function text7(value) {
+  function text8(value) {
     return typeof value === "string" ? value.trim() : "";
   }
   function instant(value) {
@@ -7140,9 +7377,9 @@ var ProjectPlannerCanonical = (() => {
     return new Date(value);
   }
   function dayKeyOf(row2, timeZone) {
-    const key2 = text7(row2.dayKey);
+    const key2 = text8(row2.dayKey);
     if (DAY_KEY3.test(key2)) return key2;
-    const iso = text7(row2.dateIso);
+    const iso = text8(row2.dateIso);
     if (!iso) return "";
     const date = new Date(iso);
     return Number.isNaN(date.getTime()) ? "" : dayKeyInZone(date, timeZone);
@@ -7150,21 +7387,21 @@ var ProjectPlannerCanonical = (() => {
   function orderedMaterialIds(records) {
     const ids = /* @__PURE__ */ new Set();
     for (const record3 of records || []) {
-      if (!record3 || text7(record3.requestType).toLowerCase() !== "order") continue;
+      if (!record3 || text8(record3.requestType).toLowerCase() !== "order") continue;
       for (const id2 of record3.materialIds || []) {
-        const value = text7(id2);
+        const value = text8(id2);
         if (value) ids.add(value);
       }
       for (const line of record3.lines || []) {
-        const value = text7(line?.materialId);
+        const value = text8(line?.materialId);
         if (value) ids.add(value);
       }
     }
     return ids;
   }
   function materialLineCountsAsOrdered(line, sendRecords) {
-    if (text7(line.status).toLowerCase() === "ordered") return true;
-    return orderedMaterialIds(sendRecords).has(text7(line.id));
+    if (text8(line.status).toLowerCase() === "ordered") return true;
+    return orderedMaterialIds(sendRecords).has(text8(line.id));
   }
   function materialCutOffWarningRows(input) {
     const timeZone = zoneOrLondon(input.timeZone);
@@ -7182,14 +7419,14 @@ var ProjectPlannerCanonical = (() => {
     const bookedProjectIds = [];
     const seen = /* @__PURE__ */ new Set();
     for (const booking of input.bookings || []) {
-      const projectId = text7(booking?.projectId);
+      const projectId = text8(booking?.projectId);
       if (!projectId || seen.has(projectId)) continue;
       if (!bookingOccupiesDay(normalizeBookingStatus(booking.status) ?? booking.status)) continue;
       if (dayKeyOf(booking, timeZone) !== tomorrowKey) continue;
       seen.add(projectId);
       bookedProjectIds.push(projectId);
     }
-    const projectsById = new Map((input.projects || []).map((project) => [text7(project.id), project]));
+    const projectsById = new Map((input.projects || []).map((project) => [text8(project.id), project]));
     const ordered = orderedMaterialIds(input.sendRecords);
     const cutOffLabel = formatMaterialCutOffClock(clock);
     const rows = [];
@@ -7197,11 +7434,11 @@ var ProjectPlannerCanonical = (() => {
       const project = projectsById.get(projectId);
       if (!project) continue;
       const lines = (input.materials || []).filter(
-        (line) => text7(line.projectId) === projectId && dayKeyOf(line, timeZone) === tomorrowKey
+        (line) => text8(line.projectId) === projectId && dayKeyOf(line, timeZone) === tomorrowKey
       );
-      const unordered = lines.filter((line) => text7(line.status).toLowerCase() !== "ordered" && !ordered.has(text7(line.id)));
+      const unordered = lines.filter((line) => text8(line.status).toLowerCase() !== "ordered" && !ordered.has(text8(line.id)));
       if (lines.length > 0 && unordered.length === 0) continue;
-      const jobNumber = text7(project.jobNumber) || text7(project.siteName) || projectId.slice(0, 8);
+      const jobNumber = text8(project.jobNumber) || text8(project.siteName) || projectId.slice(0, 8);
       const message = lines.length === 0 ? `No materials have been ordered for ${jobNumber} tomorrow's work (cut-off ${cutOffLabel}).` : `Materials for ${jobNumber} were not fully ordered by the cut-off ${cutOffLabel} for tomorrow's work (${unordered.length} line${unordered.length === 1 ? "" : "s"} still not ordered).`;
       const id2 = `materials-${projectId}-${tomorrowKey}`;
       rows.push({
@@ -7212,7 +7449,7 @@ var ProjectPlannerCanonical = (() => {
         title: "Material order not placed",
         projectId,
         jobNumber,
-        projectLabel: `${text7(project.jobNumber)} ${text7(project.siteName)}`.trim() || jobNumber,
+        projectLabel: `${text8(project.jobNumber)} ${text8(project.siteName)}`.trim() || jobNumber,
         dayKey: tomorrowKey,
         unorderedCount: lines.length === 0 ? 0 : unordered.length,
         cutOffLabel,
@@ -7263,7 +7500,7 @@ var ProjectPlannerCanonical = (() => {
     const number = typeof value === "number" ? value : typeof value === "string" && value.trim() ? Number(value) : NaN;
     return Number.isFinite(number) ? number : null;
   }
-  function text8(value) {
+  function text9(value) {
     return typeof value === "string" ? value.trim() : "";
   }
   function parseTimesheetEntryDecision(raw) {
@@ -7277,7 +7514,7 @@ var ProjectPlannerCanonical = (() => {
       decision,
       revisedAmount: decision === "edited" ? finite(row2.revisedAmount) : null,
       reviewedAmount: finite(row2.reviewedAmount),
-      reviewedByUserId: text8(row2.reviewedByUserId),
+      reviewedByUserId: text9(row2.reviewedByUserId),
       reviewedAtMs: finite(row2.reviewedAtMs)
     };
   }
@@ -7304,7 +7541,7 @@ var ProjectPlannerCanonical = (() => {
   }
   function timesheetEntryDecision(sheet, entry) {
     const row2 = entry || {};
-    const id2 = text8(row2.id);
+    const id2 = text9(row2.id);
     const amount = finite(row2.amount) ?? 0;
     const inlineDecision = parseTimesheetEntryDecision(row2.managerDecision);
     const inline = {
@@ -7341,10 +7578,10 @@ var ProjectPlannerCanonical = (() => {
   }
   function timesheetEntryReviewWriteFields(input) {
     const stored = input.stored || {};
-    const reviewer = text8(input.reviewedByUserId);
+    const reviewer = text9(input.reviewedByUserId);
     const output = {};
     for (const entry of input.entries) {
-      const id2 = text8(entry.id);
+      const id2 = text9(entry.id);
       if (!id2 || /[.`~*/[\]]/.test(id2)) continue;
       const decision = parseTimesheetEntryDecision(entry.managerDecision);
       const revisedAmount = decision === "edited" ? finite(entry.managerRevisedAmount) : null;
@@ -7375,12 +7612,12 @@ var ProjectPlannerCanonical = (() => {
     return output;
   }
   function timesheetWriterIsReviewer(input) {
-    const writer = text8(input.writerUserId).toLowerCase();
+    const writer = text9(input.writerUserId).toLowerCase();
     if (!writer) return false;
     if (input.writerIsAdmin === true) return true;
-    if (writer === text8(input.subjectUserId).toLowerCase()) return false;
-    const keys = new Set([writer, ...(input.writerFormerIds ?? []).map((id2) => text8(id2).toLowerCase())].filter(Boolean));
-    return (input.subjectLineManagerIds ?? []).some((id2) => keys.has(text8(id2).toLowerCase()));
+    if (writer === text9(input.subjectUserId).toLowerCase()) return false;
+    const keys = new Set([writer, ...(input.writerFormerIds ?? []).map((id2) => text9(id2).toLowerCase())].filter(Boolean));
+    return (input.subjectLineManagerIds ?? []).some((id2) => keys.has(text9(id2).toLowerCase()));
   }
   function timesheetOwnerWriteFields(fields, input) {
     const output = { ...fields };
@@ -7487,6 +7724,23 @@ var ProjectPlannerCanonical = (() => {
   }
   function ideaRecipients(ids, actor, roster) {
     return excludeActor(ids, actor, roster);
+  }
+  var COMPANY_ACTIVITY_NOTICE_TYPES = [
+    "operative_created",
+    "manager_created",
+    "client_created",
+    "project_created",
+    "small_works_created",
+    "warning_removed"
+  ];
+  function companyActivityRecipients(actor, roster) {
+    const members = rosterOf(roster);
+    const admins = members.filter((member) => rosterMemberActive(member) && isAdminOutsideOperativeMode(member)).map((member) => idText(member.id));
+    return excludeActor(admins, actor, members);
+  }
+  function pushTestRecipients(actor) {
+    const id2 = personId(actor);
+    return id2 ? [id2] : [];
   }
   var TIMESHEET_PENDING_NOTICE_TYPE = "timesheet_pending_manager_signoff";
   var TIMESHEET_SIGNED_NOTICE_TYPE = "timesheet_signed_by_manager";
@@ -7599,7 +7853,14 @@ var ProjectPlannerCanonical = (() => {
       "Task assigned",
       "excludeActor (the assignees)",
       ["ios"],
-      "iOS only; the Settings diagnostic writes this type to the signed-in user \u2014 remove it."
+      "iOS only. The Settings diagnostic writes push_test, not this type."
+    ),
+    row(
+      PUSH_TEST_NOTICE_TYPE,
+      'Settings "send a test notification"',
+      "pushTestRecipients (the signed-in user)",
+      ["web", "ios"],
+      "pushes to its actor (notificationPushesToActor); no toggle turns it off."
     ),
     row("task_completed", "Task completed", "excludeActor (the task creator)", ["ios"], "iOS only."),
     row(
@@ -7614,44 +7875,44 @@ var ProjectPlannerCanonical = (() => {
     row(
       "operative_created",
       "Operative added",
-      "none \u2014 written without userId",
+      "companyActivityRecipients",
       ["ios"],
-      "ownerless: never listed, never pushed. Stop writing it or address it with a recipient rule."
+      "one row per admin (userId + actorUserId); never written without userId. Toggle: companyActivity."
     ),
     row(
       "manager_created",
       "Manager added",
-      "none \u2014 written without userId",
+      "companyActivityRecipients",
       ["ios"],
-      "ownerless: never listed, never pushed. Stop writing it or address it with a recipient rule."
+      "one row per admin (userId + actorUserId); never written without userId. Toggle: companyActivity."
     ),
     row(
       "client_created",
       "Client added",
-      "none \u2014 written without userId",
+      "companyActivityRecipients",
       ["web", "ios"],
-      "ownerless: never listed, never pushed. Stop writing it or address it with a recipient rule."
+      "one row per admin (userId + actorUserId); never written without userId. Toggle: companyActivity."
     ),
     row(
       "project_created",
       "Project created",
-      "none \u2014 written without userId",
+      "companyActivityRecipients",
       ["ios"],
-      "ownerless: never listed, never pushed. Stop writing it or address it with a recipient rule."
+      "one row per admin (userId + actorUserId); never written without userId. Toggle: companyActivity."
     ),
     row(
       "small_works_created",
       "Small works created",
-      "none \u2014 written without userId",
+      "companyActivityRecipients",
       ["ios"],
-      "ownerless: never listed, never pushed. Stop writing it or address it with a recipient rule."
+      "one row per admin (userId + actorUserId); never written without userId. Toggle: companyActivity."
     ),
     row(
       "warning_removed",
       "Warning dismissed",
-      "none \u2014 written without userId",
+      "companyActivityRecipients",
       ["web", "ios"],
-      "ownerless: never listed, never pushed. Stop writing it or address it with a recipient rule."
+      "one row per admin (userId + actorUserId); never written without userId. Toggle: companyActivity."
     ),
     row("idea_status", "Feedback idea status changed", "ideaRecipients", ["web"], "web: the actor is not removed; use ideaRecipients."),
     row("idea_shipped", "Feedback idea shipped", "ideaRecipients", ["web"], "web: the actor is not removed; use ideaRecipients."),

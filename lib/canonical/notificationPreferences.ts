@@ -16,10 +16,8 @@
 
 import type { AccountKind } from './userProfile'
 import {
-  canEditWorkCatalogue,
   canReviewUserTimesheets,
   canSeeVariations,
-  canViewStaffWarnings,
   isStaffAccount,
   type StaffAccountRole,
   type WorkCatalogueToggles,
@@ -46,6 +44,7 @@ export const NOTIFICATION_PREFERENCE_KEYS = [
   'lineManagerPeerUpdates',
   'timesheetSubmissionReminder',
   'variations',
+  'companyActivity',
 ] as const
 
 export type NotificationPreferenceKey = (typeof NOTIFICATION_PREFERENCE_KEYS)[number]
@@ -73,6 +72,7 @@ export const DEFAULT_USER_NOTIFICATION_PREFERENCES: UserNotificationPreferences 
   lineManagerPeerUpdates: true,
   timesheetSubmissionReminder: true,
   variations: true,
+  companyActivity: true,
 }
 
 /**
@@ -90,17 +90,17 @@ const TYPE_TO_PREFERENCE: Record<string, NotificationPreferenceKey> = {
   holiday_request_submitted: 'annualLeaveRequested',
   holiday_request_approved: 'annualLeaveDecision',
   holiday_request_declined: 'annualLeaveDecision',
-  project_created: 'projectCreated',
-  small_works_created: 'smallWorksCreated',
+  project_created: 'companyActivity',
+  small_works_created: 'companyActivity',
   booking_clash: 'bookingClashes',
   material_order_placed: 'materialOrderPlaced',
   material_order_created: 'materialOrderPlaced',
   booking_created: 'bookedOntoJob',
   booked_onto_job: 'bookedOntoJob',
-  operative_created: 'operativeCreated',
-  manager_created: 'managerCreated',
-  client_created: 'clientCreated',
-  warning_removed: 'warningDismissed',
+  operative_created: 'companyActivity',
+  manager_created: 'companyActivity',
+  client_created: 'companyActivity',
+  warning_removed: 'companyActivity',
   task_created: 'tasksAssignedOrCompleted',
   task_completed: 'tasksAssignedOrCompleted',
   deadline_assigned: 'tasksAssignedOrCompleted',
@@ -273,6 +273,7 @@ const PREFERENCE_LABELS: Record<NotificationPreferenceKey, string> = {
   lineManagerPeerUpdates: 'Line manager peer updates',
   timesheetSubmissionReminder: 'Timesheet submission reminder',
   variations: 'Variations',
+  companyActivity: 'Company activity',
 }
 
 /**
@@ -304,6 +305,7 @@ export function notificationPreferenceCopy(
     lineManagerPeerUpdates: 'When another line manager actions a shared request.',
     timesheetSubmissionReminder: 'Reminder to submit before the payment-run deadline.',
     variations: 'When a variation is added to a job you manage, or variation numbers are updated.',
+    companyActivity: 'People, clients, jobs added and warnings removed.',
   }
   return { label: PREFERENCE_LABELS[key], description: descriptions[key] }
 }
@@ -315,27 +317,26 @@ export function notificationPreferenceIsVisible(
   const role = audience.role
   const staff = isStaffAccount(role)
   switch (key) {
-    case 'projectCreated':
-      return canEditWorkCatalogue(role, 'projects', audience.catalogue)
-    case 'smallWorksCreated':
-      return canEditWorkCatalogue(role, 'smallWorks', audience.catalogue)
     case 'annualLeaveRequested':
     case 'bookingClashes':
     case 'lineManagerPeerUpdates':
-    case 'managerCreated':
       return staff
     case 'materialOrderPlaced':
       return staff && audience.canManageMaterials !== false
-    case 'operativeCreated':
-      return staff && audience.canManagePeople !== false
-    case 'clientCreated':
-      return staff && audience.canManageClients !== false
-    case 'warningDismissed':
-      return canViewStaffWarnings(role)
     case 'timesheetSignOff':
       return canReviewUserTimesheets(role)
     case 'variations':
       return canSeeVariations(role)
+    case 'companyActivity':
+      return Boolean(role.isAdmin || role.isSuperAdmin)
+    // Retired in 1.4.0: their six types are `companyActivity` now. Kept in the map so a saved value still parses.
+    case 'projectCreated':
+    case 'smallWorksCreated':
+    case 'operativeCreated':
+    case 'managerCreated':
+    case 'clientCreated':
+    case 'warningDismissed':
+      return false
     default:
       return true
   }
@@ -358,9 +359,21 @@ export function notificationPreferenceAllowsDelivery(
   prefs: UserNotificationPreferences,
   type: string
 ): boolean {
+  if (String(type || '').trim() === PUSH_TEST_NOTICE_TYPE) return true
   const key = notificationPreferenceKeyForType(type)
   if (!key) return true
   return prefs[key] !== false
+}
+
+/** Settings "send a test notification": one row to the signed-in user, pushed to their own devices. */
+export const PUSH_TEST_NOTICE_TYPE = 'push_test'
+
+/**
+ * Types whose push reaches the actor (the person who wrote the row). Only `push_test`: every other type is
+ * never pushed to its actor (the push function's actor guard).
+ */
+export function notificationPushesToActor(type: string): boolean {
+  return String(type || '').trim() === PUSH_TEST_NOTICE_TYPE
 }
 
 /** My notifications toggles never hide an inbox row; they only stop the device push. */
@@ -413,6 +426,7 @@ export const DEVICE_PUSH_NOTIFICATION_TYPES = [
   'project_created',
   'small_works_created',
   TIMESHEET_SUBMISSION_NOTICE_TYPE,
+  'push_test',
 ] as const
 
 export type DevicePushNotificationType = (typeof DEVICE_PUSH_NOTIFICATION_TYPES)[number]

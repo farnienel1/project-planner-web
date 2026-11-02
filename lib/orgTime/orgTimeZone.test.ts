@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { COUNTRY_TIME_ZONES, ianaTimeZoneForCountry } from './orgTimeZone.ts'
-import { BANK_HOLIDAY_REGIONS } from '../settings/bankHolidayRegions.ts'
+import { BANK_HOLIDAY_REGIONS } from '../canonical/bankHolidayRegions.ts'
 import { daysInZoneMonth, unixStartOfDayInZone, dayKeyInZone, midnightInZone } from './zoneTime.ts'
 
 test('org origin country maps to an IANA zone; unknown falls back to London', () => {
@@ -15,11 +15,11 @@ test('org origin country maps to an IANA zone; unknown falls back to London', ()
 })
 
 test('every organisation signup region has a mapped zone, not a silent London fallback', () => {
-  const missing = BANK_HOLIDAY_REGIONS.filter((region) => !COUNTRY_TIME_ZONES[region.code])
+  const missing = BANK_HOLIDAY_REGIONS.filter((region) => !COUNTRY_TIME_ZONES[region.countryCode])
   assert.deepEqual(missing, [])
   for (const region of BANK_HOLIDAY_REGIONS) {
-    const zone = ianaTimeZoneForCountry(region.code)
-    assert.match(zone, /\//, region.code)
+    const zone = ianaTimeZoneForCountry(region.countryCode)
+    assert.match(zone, /\//, region.id)
     assert.doesNotThrow(() => new Intl.DateTimeFormat('en-GB', { timeZone: zone }).format(new Date()))
   }
 })

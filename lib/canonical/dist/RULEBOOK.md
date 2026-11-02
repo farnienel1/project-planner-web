@@ -1,6 +1,6 @@
 # Project Planner Rulebook
 
-Version: 1.3.0
+Version: 1.4.0
 Updated: 2026-10-31
 
 This is the one rulebook for every Project Planner platform: web, iOS and (later) Android. It is written platform-neutral. Each rule names the shared function in `lib/canonical` that implements it; platforms call that function (web `@/lib/canonical`, iOS `CanonicalBusinessEngine`, Android the same packed script) and never keep a second copy.
@@ -69,6 +69,8 @@ All organisation settings live on `organizations/{orgId}` and are identical on e
 ### 4.1 Company details
 Flat fields on the organisation document: `name`, `officeAddressLine1`, `officeAddressLine2`, `officeCity`, `officeCounty`, `officePostcode`, `countryCode` (two letters, GB when missing), `documentAbbreviation` (1–3 characters), `companyLogoURL`, `defaultLatitude`, `defaultLongitude`, `bankHolidayRegionId` (`parseCompanyDetails`, `companyDetailsWriteFields` → `{ set, remove }`, `companyDetailsValidationError`). A legacy nested `officeAddress` map is read only as a fallback and every save deletes it. Blank optional fields are deleted, never saved as empty text; with no office, all address fields are deleted. A missing map pin leaves the saved pin alone. A blank name is never saved (`organizationNameWriteFields`). The country sets the business time zone and the default currency.
 
+**Country change asks for the bank-holiday region.** Regions are one shared list, `BANK_HOLIDAY_REGIONS` (`{ id, title, countryCode, subdivisionCodes? }`; ids are stored and never renamed: `GB-ENG-WLS`, `GB-SCT`, `GB-NIR`, `GB`, `IE`, `US`, …; the older web id `GB-ENG` reads as `GB-ENG-WLS`, `normalizeBankHolidayRegionId`). A company's pickers offer only `bankHolidayRegionsForCountry(countryCode)`; the default is `defaultBankHolidayRegionForCountry` (GB → `GB-ENG-WLS`, `DEFAULT_BANK_HOLIDAY_REGION_ID`; a country with one region → that region; none listed → null). When Company Details changes the country and the saved `bankHolidayRegionId` does not belong to the new country, `companyDetailsRegionPrompt(previous, next)` is `{ required: true, choices, defaultRegionId, message }` and the save is refused (`companyDetailsValidationError`, "Choose the bank holidays for {country}.") until a region from `choices` is picked; the region picker is pre-selected with the default. The same country never asks again. `companyDetailsWriteFields` writes the new `countryCode` and `bankHolidayRegionId` (and `settings.bankHolidayRegionId`) in one partial update; a new country with no listed regions removes the old region. With no saved region, the company's country default applies (`parseCompanyDetails`).
+
 ### 4.2 Currency
 One organisation currency (`resolveOrganizationCurrency`), chosen from `CURRENCY_OPTIONS` (GBP, EUR, USD, CAD, AUD, NZD, SEK, NOK, DKK, PLN, AED). Until one is saved it defaults from the country (`defaultCurrencyForCountry`; GBP when unknown). A save writes `currencyCode`, `currency` and `settings.currencyCode` as one partial update (`organizationCurrencyWriteFields`). Older iOS builds also wrote a top-level field literally named `settings.currencyCode`; `resolveOrganizationCurrency` reads it last, so it is harmless and is left in place (an optional one-off clean-up may delete it with `FieldPath(['settings.currencyCode'])`). Every money figure — timesheets, rates, invoices, weekly report, exports, PDFs — is shown with `formatMoney(amount, currency)`. Subscription prices are billing, not organisation money.
 
@@ -85,7 +87,7 @@ No save ever cancels a scheduled change it was not asked to cancel.
 The working week is `WORKING_WEEK` (`isStandardWorkingWeekday`): Monday–Sunday, Monday–Friday working.
 
 ### 4.4 Annual leave settings
-`annualLeaveDefaults { daysPerYear, startMonth, endMonth, carriesOver }` (defaults 25, 1, 12, false) and the bank-holiday region, saved together in one write. Allowance, the leave year and a one-year override are `annualLeaveBalance`.
+`annualLeaveDefaults { daysPerYear, startMonth, endMonth, carriesOver }` (defaults 25, 1, 12, false) and the bank-holiday region, saved together in one write. The region picker offers only the company country's regions (`bankHolidayRegionsForCountry`); the country is changed in Company details (§4.1). Allowance, the leave year and a one-year override are `annualLeaveBalance`. Changing the region never recounts or rewrites existing leave records: day counting (`leaveRecordDayKeys`, `annualLeaveBalance`) uses the region in effect when it runs.
 
 ### 4.5 Payment runs (the invoicing period)
 Two modes (`invoicing.paymentRunMode`):
@@ -181,7 +183,7 @@ Matches on every platform and updates live: profile photo (`profilePhotoURL`, wi
 ## 13. Notifications
 
 - **My notifications** toggles are personal (`users/{uid}.notificationPreferences`), written as dotted partial updates, and sync across platforms (`parseUserNotificationPreferences`, `userNotificationPreferenceFieldPatch`).
-- Which toggles a person sees depends on role and features (`visibleNotificationPreferenceKeys`). People who can see variations (`canSeeVariations`: admins and managers) have a **Variations** toggle (`variations`, on by default) covering all five variation types.
+- Which toggles a person sees depends on role and features (`visibleNotificationPreferenceKeys`). People who can see variations (`canSeeVariations`: admins and managers) have a **Variations** toggle (`variations`, on by default) covering all five variation types. Admins and super admins have a **Company activity** toggle (`companyActivity`, on by default: "People, clients, jobs added and warnings removed.") covering the six company activity types; the older per-type toggles for them (`projectCreated`, `smallWorksCreated`, `operativeCreated`, `managerCreated`, `clientCreated`, `warningDismissed`) are retired — still parsed, never shown.
 - A toggle turned off stops that notification type's **device push** everywhere (`notificationPreferenceAllowsDelivery`, `devicePushAllowed`; enforced by the push Cloud Function). It **never hides the inbox row**: every notice addressed to the person stays in the notification centre and the unread count, on every platform (`notificationShowsInInbox`, `NOTIFICATION_TOGGLE_HIDES_INBOX_ROW = false`). The app-icon badge counts the same unread rows.
 - Types that send a device push are `DEVICE_PUSH_NOTIFICATION_TYPES`, including every variation type (`variation`, `variation_renumbered`, `variation_added`, `variation_from_tracker`, `variation_numbers_updated`).
 - Organisation settings (material cut-off, schedule options) never appear in My notifications.
@@ -191,11 +193,13 @@ Matches on every platform and updates live: profile photo (`profilePhotoURL`, wi
 - Timesheets: `timesheetSubmittedRecipients(subject, roster)` — the subject's active line managers, else the active admins (never the subject); nobody when the sheet is self-signed. `timesheetSignedRecipients(subject, signer, roster)` — the subject, unless they signed. `lineManagerPeerRecipients(subject, actor, roster)` — the subject's other active line managers (no admin fallback).
 - Annual leave: `holidayRequestRecipients(requester, roster)` — `leaveApproverIds` without the requester; nobody when the leave is self-booked. `holidayDecisionRecipients(requester, decider, roster)` — the requester, unless they decided.
 - `bookingCreatedRecipients`, `deadlineAssignedRecipients`, `toolboxTalkRecipients`, `ideaRecipients` — the given ids without the actor.
+- **Company activity** (`operative_created`, `manager_created`, `client_created`, `project_created`, `small_works_created`, `warning_removed`, `COMPANY_ACTIVITY_NOTICE_TYPES`): `companyActivityRecipients(actor, roster)` — the active admins and super admins outside operative mode, without the actor. One row per admin with `userId` and `actorUserId`; a row without `userId` is never written.
+- **Push test** (`push_test`, Settings "send a test notification"): `pushTestRecipients(actor)` — the signed-in user only. It is the one type pushed to its actor (`notificationPushesToActor`); no toggle turns it off. On web its only effect is the inbox row.
 - Job notices keep `materialOrderRecipients` and `receivesJobNotification`, then `excludeActor`. Neither has an "all admins" fallback: a job with no managers notifies no manager.
-- Every inbox row an app writes carries `actorUserId` (the signed-in user who caused it; security rules require it to be that user when present). Scheduled notices nobody caused (`timesheet_submission_reminder`, `deadline_reminder`, `deadline_due`) leave it out. Notice dates shown in leave notices (`annualLeaveDecisionDateText` on web, `AnnualLeaveNoticeText.decisionDateText` on iOS) use the organisation business time zone. The push Cloud Function never pushes a row whose `userId` is its `actorUserId`.
+- Every inbox row an app writes carries `actorUserId` (the signed-in user who caused it; security rules require it to be that user when present). Scheduled notices nobody caused (`timesheet_submission_reminder`, `deadline_reminder`, `deadline_due`) leave it out. Notice dates shown in leave notices (`annualLeaveDecisionDateText` on web, `AnnualLeaveNoticeText.decisionDateText` on iOS) use the organisation business time zone. The push Cloud Function never pushes a row whose `userId` is its `actorUserId`, except a type whose push is for the actor (`notificationPushesToActor`: `push_test`).
 - **The inbox is the rows addressed to the person.** `inboxNotificationVisibleToUser` and `unreadNotificationBadgeCount` count only rows whose `userId` is one of the person's ids; a row with no `userId` is not an inbox row and is never listed, counted or pushed. The push Cloud Function's app-icon badge counts the recipient's own unread rows the same way (bounded read).
 - Timesheet notice document ids are each app's synthetic UUID of `timesheetNotificationDedupeKey` — the period start as unix seconds of midnight in the organisation zone (never the device calendar).
-- **Device push tokens belong to the signed-in account only.** A token is written to `users/{uid}.pushTokens` of the account signed in on that device, never copied to other users documents on the same email; signing out removes this device's token from every users document it was written to.
+- **Device push tokens belong to the signed-in account only.** A token is written to `users/{uid}.pushTokens` of the account signed in on that device, never copied to other users documents on the same email; signing out removes this device's token from every users document it was written to. Known iOS gap: a forced sign-out (expired session, trial blocked) does not yet remove the token.
 - `NOTIFICATION_CATALOG` is the table below (`notificationCatalogRow(type)`). Push follows `DEVICE_PUSH_NOTIFICATION_TYPES`. `variation_from_tracker`, `variation_numbers_updated`, `booking_clash`, `booked_onto_job` and `material_order_created` are on the push allow-list but nothing writes them. Status is the divergence each platform must fix to meet this section.
 
 | Type | Trigger | Recipients | Push | Written by | Status |
@@ -214,17 +218,18 @@ Matches on every platform and updates live: profile photo (`profilePhotoURL`, wi
 | `toolbox_talk_issued` | Toolbox talk issued | `toolboxTalkRecipients` | yes | ios | iOS only. |
 | `hs_toolbox_reminder` | Reminder to the people who have not signed a toolbox talk | `toolboxTalkRecipients` | yes | web | web: the actor is not removed; use `toolboxTalkRecipients`. |
 | `booking_created` | People booked onto a job | `bookingCreatedRecipients` | yes | ios | iOS: the booker is not removed; use `bookingCreatedRecipients`. Web writes none. |
-| `task_created` | Task assigned | `excludeActor` (the assignees) | yes | ios | iOS only; the Settings diagnostic writes this type to the signed-in user — remove it. |
+| `task_created` | Task assigned | `excludeActor` (the assignees) | yes | ios | iOS only. The Settings diagnostic writes `push_test`, not this type. |
+| `push_test` | Settings "send a test notification" | `pushTestRecipients` (the signed-in user) | yes | web, ios | pushes to its actor (`notificationPushesToActor`); no toggle turns it off. |
 | `task_completed` | Task completed | `excludeActor` (the task creator) | yes | ios | iOS only. |
 | `deadline_assigned` | Assignees added to a deadline | `deadlineAssignedRecipients` | yes | web, ios | both: the actor is not removed; use `deadlineAssignedRecipients`. |
 | `deadline_reminder` | Scheduled deadline reminder | the assignees (on-device schedule, no shared rule) | no | ios | iOS only. Scheduled: no actorUserId. |
 | `deadline_due` | Deadline due | the assignees (on-device schedule, no shared rule) | no | ios | iOS only. Scheduled: no actorUserId. |
-| `operative_created` | Operative added | none — written without `userId` | yes | ios | ownerless: never listed, never pushed. Stop writing it or address it with a recipient rule. |
-| `manager_created` | Manager added | none — written without `userId` | yes | ios | ownerless: never listed, never pushed. Stop writing it or address it with a recipient rule. |
-| `client_created` | Client added | none — written without `userId` | yes | web, ios | ownerless: never listed, never pushed. Stop writing it or address it with a recipient rule. |
-| `project_created` | Project created | none — written without `userId` | yes | ios | ownerless: never listed, never pushed. Stop writing it or address it with a recipient rule. |
-| `small_works_created` | Small works created | none — written without `userId` | yes | ios | ownerless: never listed, never pushed. Stop writing it or address it with a recipient rule. |
-| `warning_removed` | Warning dismissed | none — written without `userId` | yes | web, ios | ownerless: never listed, never pushed. Stop writing it or address it with a recipient rule. |
+| `operative_created` | Operative added | `companyActivityRecipients` | yes | ios | one row per admin (`userId` + `actorUserId`); never written without `userId`. Toggle: `companyActivity`. |
+| `manager_created` | Manager added | `companyActivityRecipients` | yes | ios | one row per admin (`userId` + `actorUserId`); never written without `userId`. Toggle: `companyActivity`. |
+| `client_created` | Client added | `companyActivityRecipients` | yes | web, ios | one row per admin (`userId` + `actorUserId`); never written without `userId`. Toggle: `companyActivity`. |
+| `project_created` | Project created | `companyActivityRecipients` | yes | ios | one row per admin (`userId` + `actorUserId`); never written without `userId`. Toggle: `companyActivity`. |
+| `small_works_created` | Small works created | `companyActivityRecipients` | yes | ios | one row per admin (`userId` + `actorUserId`); never written without `userId`. Toggle: `companyActivity`. |
+| `warning_removed` | Warning dismissed | `companyActivityRecipients` | yes | web, ios | one row per admin (`userId` + `actorUserId`); never written without `userId`. Toggle: `companyActivity`. |
 | `idea_status` | Feedback idea status changed | `ideaRecipients` | no | web | web: the actor is not removed; use `ideaRecipients`. |
 | `idea_shipped` | Feedback idea shipped | `ideaRecipients` | no | web | web: the actor is not removed; use `ideaRecipients`. |
 | `idea_comment` | Comment on a feedback idea | `ideaRecipients` | no | web | web: the actor is not removed; use `ideaRecipients`. iOS: type missing from its enum. |
@@ -269,6 +274,12 @@ Deployed only from `project-planner-web/firestore.rules`. Apps hide controls too
 7. A gap found on iOS is reported to the web agent and fixed here first — never by diverging on iOS.
 
 ## Changelog
+
+### 1.4.0 — 2026-11-02
+- Bank-holiday regions are one shared list (`BANK_HOLIDAY_REGIONS`, `bankHolidayRegionsForCountry`, `defaultBankHolidayRegionForCountry`, `normalizeBankHolidayRegionId`). Changing the company country asks for that country's region and the save waits for it (`companyDetailsRegionPrompt`, `companyDetailsValidationError`); Annual leave defaults offer only the company country's regions. Existing leave is never recounted (§4.1, §4.4).
+- Company activity notices (`operative_created`, `manager_created`, `client_created`, `project_created`, `small_works_created`, `warning_removed`) go to the active admins outside operative mode, never the actor, one row each (`companyActivityRecipients`); admins get a Company activity toggle (`companyActivity`) and the six per-type toggles are retired (§13).
+- `push_test` (Settings "send a test notification") reaches its sender: `pushTestRecipients`, `notificationPushesToActor`, and the push function's actor guard skips it (§13).
+- Noted: iOS forced sign-outs do not yet remove the push token (§13).
 
 ### 1.3.0 — 2026-11-02
 - Every operative and manager needs an active line manager, whatever the self-book permission or annual leave setting; only admins and super admins outside operative mode may have none (`lineManagerRequired`, `lineManagerRequiredError`, "Set a line manager — this person's timesheets and annual leave need approval.") (§8, §11).

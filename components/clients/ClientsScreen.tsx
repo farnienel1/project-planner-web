@@ -15,6 +15,7 @@ import {
 } from '@heroicons/react/24/solid'
 import type { Client } from '@/types'
 import { useAuthStore } from '@/lib/stores/authStore'
+import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { useProjectStore } from '@/lib/stores/projectStore'
 import { useBookingStore } from '@/lib/stores/bookingStore'
 import { useManagerScheduleStore } from '@/lib/stores/managerScheduleStore'
@@ -225,6 +226,8 @@ export function ClientsScreen({ selectedId }: { selectedId?: string }) {
         clientId: created.id,
         clientName: created.name,
         createdBy: creatorName(),
+        actor: user,
+        users: useOrgUserStore.getState().users,
       })
       setCreateOpen(false)
       setCreatedAlert(`Client '${created.name}' has been created successfully!`)

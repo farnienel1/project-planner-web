@@ -2331,12 +2331,13 @@ test('My notifications rows follow role and catalogue toggles', () => {
     'When your annual leave is approved or declined.'
   )
   const managerKeys = visibleNotificationPreferenceKeys(managerProjectsOnly)
-  assert.equal(managerKeys.includes('projectCreated'), true)
-  assert.equal(managerKeys.includes('smallWorksCreated'), false)
-  assert.equal(managerKeys.includes('operativeCreated'), false)
+  // 1.4.0: the six per-type "created / dismissed" rows are retired; their types are `companyActivity` (admins only).
+  for (const retired of ['projectCreated', 'smallWorksCreated', 'operativeCreated', 'managerCreated', 'clientCreated', 'warningDismissed']) {
+    assert.equal(managerKeys.includes(retired as (typeof managerKeys)[number]), false, retired)
+    assert.equal(visibleNotificationPreferenceKeys(managerBothCatalogues).includes(retired as (typeof managerKeys)[number]), false, retired)
+  }
+  assert.equal(managerKeys.includes('companyActivity'), false)
   assert.equal(managerKeys.includes('annualLeaveRequested'), true)
-  assert.equal(visibleNotificationPreferenceKeys(managerBothCatalogues).includes('smallWorksCreated'), true)
-  assert.equal(visibleNotificationPreferenceKeys(managerBothCatalogues).includes('operativeCreated'), true)
 })
 
 test('a preference only gates its own inbox types and never widens fan-out', () => {
@@ -4733,7 +4734,8 @@ test('company details read flat fields, fall back to the nested map, and saves r
   assert.equal(legacy.officeCity, 'Cork')
   assert.equal(legacy.officeCounty, 'Cork')
   assert.equal(legacy.countryCode, 'IE')
-  assert.equal(legacy.bankHolidayRegionId, 'GB-ENG-WLS')
+  // No saved region: the country's default (1.4.0), not England & Wales.
+  assert.equal(legacy.bankHolidayRegionId, 'IE')
   const flatWins = companyDetails.parseCompanyDetails({
     officeAddressLine1: '2 New St',
     officeCity: 'London',
@@ -5686,4 +5688,87 @@ test('1.3.0 B: timesheet notice de-dupe keys use the organisation-zone day', () 
   )
   assert.equal(rulebook.timesheetNotificationDedupeKey({ type: 'timesheet_pending_manager_signoff', subjectId: 'OP', periodStartDayKey: '2026-10-01' }), null)
   assert.equal(rulebook.timesheetNotificationDedupeKey({ type: 'timesheet_signed_by_manager', subjectId: 'OP', periodStartDayKey: 'bad' }), null)
+})
+
+test('1.4.0: bank-holiday regions are one list per country, and a country change asks for the region', () => {
+  const ids = (country: string) => rulebook.bankHolidayRegionsForCountry(country).map((region) => region.id)
+  assert.deepEqual(ids('GB'), ['GB-ENG-WLS', 'GB-SCT', 'GB-NIR', 'GB'])
+  assert.deepEqual(ids('ie'), ['IE'])
+  assert.deepEqual(ids('US'), ['US'])
+  assert.deepEqual(ids('ZZ'), [])
+  assert.equal(rulebook.defaultBankHolidayRegionForCountry('GB'), 'GB-ENG-WLS')
+  assert.equal(rulebook.defaultBankHolidayRegionForCountry('IE'), 'IE')
+  assert.equal(rulebook.defaultBankHolidayRegionForCountry('US'), 'US')
+  assert.equal(rulebook.defaultBankHolidayRegionForCountry('ZZ'), null)
+  assert.equal(rulebook.DEFAULT_BANK_HOLIDAY_REGION_ID, 'GB-ENG-WLS')
+  assert.equal(rulebook.normalizeBankHolidayRegionId('gb-eng'), 'GB-ENG-WLS')
+  assert.equal(rulebook.bankHolidayRegionLabel('GB-SCT'), 'Scotland')
+  const ids2 = rulebook.BANK_HOLIDAY_REGIONS.map((region) => region.id)
+  assert.equal(new Set(ids2).size, ids2.length)
+
+  // Same country: never required. A region already in the new country: not required.
+  assert.deepEqual(rulebook.companyDetailsRegionPrompt({ countryCode: 'GB', bankHolidayRegionId: 'GB-SCT' }, { countryCode: 'GB' }), { required: false })
+  assert.deepEqual(rulebook.companyDetailsRegionPrompt({ countryCode: 'GB', bankHolidayRegionId: 'IE' }, { countryCode: 'IE' }), { required: false })
+  const toIreland = rulebook.companyDetailsRegionPrompt({ countryCode: 'GB', bankHolidayRegionId: 'GB-ENG-WLS' }, { countryCode: 'IE' })
+  assert.equal(toIreland.required, true)
+  if (toIreland.required) {
+    assert.deepEqual(toIreland.choices.map((region) => region.id), ['IE'])
+    assert.equal(toIreland.defaultRegionId, 'IE')
+    assert.equal(toIreland.message, 'Choose the bank holidays for Ireland.')
+  }
+  const toUk = rulebook.companyDetailsRegionPrompt({ countryCode: 'IE', bankHolidayRegionId: 'IE' }, { countryCode: 'GB' })
+  assert.equal(toUk.required && toUk.defaultRegionId, 'GB-ENG-WLS')
+
+  // Validation refuses the save until a region from the new country is chosen; the write carries both fields.
+  const base = { name: 'Acme', hasOfficeAddress: false, countryCode: 'IE', previous: { countryCode: 'GB', bankHolidayRegionId: 'GB-ENG-WLS' } }
+  assert.equal(rulebook.companyDetailsValidationError({ ...base }), 'Choose the bank holidays for Ireland.')
+  assert.equal(rulebook.companyDetailsValidationError({ ...base, bankHolidayRegionId: 'GB-SCT' }), 'Choose the bank holidays for Ireland.')
+  assert.equal(rulebook.companyDetailsValidationError({ ...base, bankHolidayRegionId: 'IE' }), null)
+  assert.equal(rulebook.companyDetailsValidationError({ name: 'Acme', hasOfficeAddress: false, countryCode: 'GB', previous: { countryCode: 'GB' } }), null)
+  const write = rulebook.companyDetailsWriteFields({ ...base, bankHolidayRegionId: 'IE' })
+  assert.equal(write.set.countryCode, 'IE')
+  assert.equal(write.set.bankHolidayRegionId, 'IE')
+  assert.equal(write.set['settings.bankHolidayRegionId'], 'IE')
+})
+
+test('1.4.0: company activity goes to active admins outside operative mode, never the actor; admin-only toggle', () => {
+  const roster = [
+    { id: 'A1', email: 'a1@x', isActive: true, role: 'admin', adminAccess: true },
+    { id: 'A2', email: 'a2@x', isActive: true, role: 'super_admin', isSuperAdmin: true },
+    { id: 'A3', email: 'a3@x', isActive: false, role: 'admin', adminAccess: true },
+    { id: 'A4', email: 'a4@x', isActive: true, role: 'admin', adminAccess: true, permissions: { operativeMode: true }, operativeMode: true },
+    { id: 'M1', email: 'm1@x', isActive: true, role: 'manager', manager: true },
+    { id: 'O1', email: 'o1@x', isActive: true, role: 'operative', operativeMode: true },
+  ]
+  const recipients = rulebook.companyActivityRecipients('A1', roster as never)
+  assert.deepEqual(recipients, ['A2'])
+  assert.deepEqual(rulebook.companyActivityRecipients('M1', roster as never), ['A1', 'A2'])
+  assert.deepEqual([...rulebook.COMPANY_ACTIVITY_NOTICE_TYPES].sort(), ['client_created', 'manager_created', 'operative_created', 'project_created', 'small_works_created', 'warning_removed'])
+  for (const type of rulebook.COMPANY_ACTIVITY_NOTICE_TYPES) {
+    assert.equal(rulebook.notificationPreferenceKeyForType(type), 'companyActivity', type)
+    assert.equal(rulebook.notificationDeliversDevicePush(type), true, type)
+    assert.equal(rulebook.notificationCatalogRow(type)?.recipients, 'companyActivityRecipients', type)
+  }
+  const adminRole = { isSuperAdmin: false, isAdmin: true, isManager: false, isOperativeMode: false }
+  const managerRole = { isSuperAdmin: false, isAdmin: false, isManager: true, isOperativeMode: false }
+  const audience = (role: typeof adminRole) => ({ role, catalogue: { projects: true, smallWorks: true } })
+  assert.equal(rulebook.visibleNotificationPreferenceKeys(audience(adminRole)).includes('companyActivity'), true)
+  assert.equal(rulebook.visibleNotificationPreferenceKeys(audience({ ...adminRole, isAdmin: false, isSuperAdmin: true })).includes('companyActivity'), true)
+  assert.equal(rulebook.visibleNotificationPreferenceKeys(audience(managerRole)).includes('companyActivity'), false)
+  assert.equal(rulebook.parseUserNotificationPreferences({}).companyActivity, true)
+  assert.equal(rulebook.notificationPreferenceCopy('companyActivity', audience(adminRole)).label, 'Company activity')
+})
+
+test('1.4.0: push_test reaches its sender and is the only type pushed to its actor', () => {
+  assert.equal(rulebook.PUSH_TEST_NOTICE_TYPE, 'push_test')
+  assert.deepEqual(rulebook.pushTestRecipients('U1'), ['U1'])
+  assert.deepEqual(rulebook.pushTestRecipients(null), [])
+  assert.equal(rulebook.notificationDeliversDevicePush('push_test'), true)
+  assert.equal(rulebook.notificationPushesToActor('push_test'), true)
+  const everyOff = Object.fromEntries(rulebook.NOTIFICATION_PREFERENCE_KEYS.map((key) => [key, false]))
+  assert.equal(rulebook.notificationPreferenceAllowsDelivery(rulebook.parseUserNotificationPreferences(everyOff), 'push_test'), true)
+  for (const type of rulebook.DEVICE_PUSH_NOTIFICATION_TYPES) {
+    if (type !== 'push_test') assert.equal(rulebook.notificationPushesToActor(type), false, type)
+  }
+  assert.equal(rulebook.notificationPushesToActor('timesheet_pending_manager_signoff'), false)
 })

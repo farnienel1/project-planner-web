@@ -17,12 +17,13 @@ import { dateFromDayKeyInZone } from '../orgTime/zoneTime'
 import { zoneOrLondon } from './dayKeys'
 import {
   canSelfBookAnnualLeave,
+  isAdminOutsideOperativeMode,
   leaveApproverIds,
   lineManagerIds,
   timesheetSelfSigned,
   type LeaveApproverMember,
 } from './leaveRequests'
-import { notificationDeliversDevicePush } from './notificationPreferences'
+import { PUSH_TEST_NOTICE_TYPE, notificationDeliversDevicePush } from './notificationPreferences'
 import { idKey, idText, personIdSet, rosterMemberActive, type PersonIdsInput, type PersonRosterRow } from './personIds'
 import type { StaffAccountRole } from './staffAccess'
 
@@ -171,6 +172,35 @@ export function ideaRecipients(ids: ReadonlyArray<string> | null | undefined, ac
   return excludeActor(ids, actor, roster)
 }
 
+/** The six company activity types (rulebook 1.4.0 §13): written once per admin, never without a `userId`. */
+export const COMPANY_ACTIVITY_NOTICE_TYPES = [
+  'operative_created',
+  'manager_created',
+  'client_created',
+  'project_created',
+  'small_works_created',
+  'warning_removed',
+] as const
+
+/**
+ * `operative_created`, `manager_created`, `client_created`, `project_created`, `small_works_created`,
+ * `warning_removed`: every active admin and super admin outside operative mode, without the actor. One row per
+ * admin, `userId` and `actorUserId` set.
+ */
+export function companyActivityRecipients(actor: NotificationPerson, roster: Roster): string[] {
+  const members = rosterOf(roster)
+  const admins = members
+    .filter((member) => rosterMemberActive(member) && isAdminOutsideOperativeMode(member as LeaveApproverMember))
+    .map((member) => idText(member.id))
+  return excludeActor(admins, actor, members)
+}
+
+/** `push_test` (Settings "send a test notification"): the signed-in user only. Its push reaches the actor. */
+export function pushTestRecipients(actor: NotificationPerson): string[] {
+  const id = personId(actor)
+  return id ? [id] : []
+}
+
 /** Timesheet notice types that carry a de-dupe key. */
 export const TIMESHEET_PENDING_NOTICE_TYPE = 'timesheet_pending_manager_signoff'
 export const TIMESHEET_SIGNED_NOTICE_TYPE = 'timesheet_signed_by_manager'
@@ -258,24 +288,26 @@ export const NOTIFICATION_CATALOG: ReadonlyArray<NotificationCatalogRow> = [
   row('booking_created', 'People booked onto a job', 'bookingCreatedRecipients', ['ios'],
     'iOS: the booker is not removed; use bookingCreatedRecipients. Web writes none.'),
   row('task_created', 'Task assigned', 'excludeActor (the assignees)', ['ios'],
-    'iOS only; the Settings diagnostic writes this type to the signed-in user — remove it.'),
+    'iOS only. The Settings diagnostic writes push_test, not this type.'),
+  row(PUSH_TEST_NOTICE_TYPE, 'Settings "send a test notification"', 'pushTestRecipients (the signed-in user)', ['web', 'ios'],
+    'pushes to its actor (notificationPushesToActor); no toggle turns it off.'),
   row('task_completed', 'Task completed', 'excludeActor (the task creator)', ['ios'], 'iOS only.'),
   row('deadline_assigned', 'Assignees added to a deadline', 'deadlineAssignedRecipients', ['web', 'ios'],
     'both: the actor is not removed; use deadlineAssignedRecipients.'),
   row('deadline_reminder', 'Scheduled deadline reminder', 'the assignees (on-device schedule, no shared rule)', ['ios'], 'iOS only. Scheduled: no actorUserId.'),
   row('deadline_due', 'Deadline due', 'the assignees (on-device schedule, no shared rule)', ['ios'], 'iOS only. Scheduled: no actorUserId.'),
-  row('operative_created', 'Operative added', 'none — written without userId', ['ios'],
-    'ownerless: never listed, never pushed. Stop writing it or address it with a recipient rule.'),
-  row('manager_created', 'Manager added', 'none — written without userId', ['ios'],
-    'ownerless: never listed, never pushed. Stop writing it or address it with a recipient rule.'),
-  row('client_created', 'Client added', 'none — written without userId', ['web', 'ios'],
-    'ownerless: never listed, never pushed. Stop writing it or address it with a recipient rule.'),
-  row('project_created', 'Project created', 'none — written without userId', ['ios'],
-    'ownerless: never listed, never pushed. Stop writing it or address it with a recipient rule.'),
-  row('small_works_created', 'Small works created', 'none — written without userId', ['ios'],
-    'ownerless: never listed, never pushed. Stop writing it or address it with a recipient rule.'),
-  row('warning_removed', 'Warning dismissed', 'none — written without userId', ['web', 'ios'],
-    'ownerless: never listed, never pushed. Stop writing it or address it with a recipient rule.'),
+  row('operative_created', 'Operative added', 'companyActivityRecipients', ['ios'],
+    'one row per admin (userId + actorUserId); never written without userId. Toggle: companyActivity.'),
+  row('manager_created', 'Manager added', 'companyActivityRecipients', ['ios'],
+    'one row per admin (userId + actorUserId); never written without userId. Toggle: companyActivity.'),
+  row('client_created', 'Client added', 'companyActivityRecipients', ['web', 'ios'],
+    'one row per admin (userId + actorUserId); never written without userId. Toggle: companyActivity.'),
+  row('project_created', 'Project created', 'companyActivityRecipients', ['ios'],
+    'one row per admin (userId + actorUserId); never written without userId. Toggle: companyActivity.'),
+  row('small_works_created', 'Small works created', 'companyActivityRecipients', ['ios'],
+    'one row per admin (userId + actorUserId); never written without userId. Toggle: companyActivity.'),
+  row('warning_removed', 'Warning dismissed', 'companyActivityRecipients', ['web', 'ios'],
+    'one row per admin (userId + actorUserId); never written without userId. Toggle: companyActivity.'),
   row('idea_status', 'Feedback idea status changed', 'ideaRecipients', ['web'], 'web: the actor is not removed; use ideaRecipients.'),
   row('idea_shipped', 'Feedback idea shipped', 'ideaRecipients', ['web'], 'web: the actor is not removed; use ideaRecipients.'),
   row('idea_comment', 'Comment on a feedback idea', 'ideaRecipients', ['web'],

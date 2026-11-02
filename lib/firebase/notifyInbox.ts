@@ -7,6 +7,7 @@ import { doc, setDoc } from 'firebase/firestore'
 import { auth, db } from '@/lib/firebase/config'
 import { serializeNotification } from '@/lib/ios-parity/converters'
 import { newUppercaseUuid } from '@/lib/ios-parity/uuid'
+import type { User } from '@/types'
 
 export async function saveInboxNotification(input: {
   organizationId: string
@@ -58,19 +59,27 @@ export function inboxActorUserId(explicit?: string | null): string {
   return String(auth?.currentUser?.uid ?? '').trim()
 }
 
-/** NotificationService.notifyClientCreated ~L368 */
+/**
+ * NotificationService.notifyClientCreated ~L368. Rulebook 1.4.0: one row per admin
+ * (`companyActivityRecipients`), never a row without `userId`.
+ */
 export async function notifyClientCreated(params: {
   organizationId: string
   clientId: string
   clientName: string
   createdBy: string
+  actor: User | null | undefined
+  users: ReadonlyArray<User>
 }): Promise<void> {
-  await saveInboxNotification({
+  const { notifyCompanyActivity } = await import('@/lib/notifications/companyActivity')
+  await notifyCompanyActivity({
     organizationId: params.organizationId,
     type: 'client_created',
     title: 'New Client Created',
     message: `${params.createdBy} added a new client: ${params.clientName}`,
     relatedId: params.clientId,
     requiresPermission: 'superAdminOrAdmin',
+    actor: params.actor,
+    users: params.users,
   })
 }

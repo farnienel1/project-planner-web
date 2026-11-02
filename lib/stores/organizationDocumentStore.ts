@@ -13,6 +13,7 @@ import { doc, onSnapshot, type DocumentData, type Unsubscribe } from 'firebase/f
 import { getFirebaseDb } from '@/lib/firebase/ensureFirebase'
 import { organizationTimeZone, resolveOrganizationCurrency } from '@/lib/canonical'
 import { useAuthStore } from '@/lib/stores/authStore'
+import { setActiveOrganizationTimeZone } from '@/lib/orgTime/activeOrganizationZone'
 
 type OrganizationDocumentState = {
   organizationId: string
@@ -43,9 +44,11 @@ function startListening(organizationId: string) {
     doc(getFirebaseDb(), 'organizations', organizationId),
     (snap) => {
       if (listeningTo !== organizationId) return
+      const data = snap.exists() ? snap.data() : null
+      setActiveOrganizationTimeZone(organizationTimeZone(data && typeof data.countryCode === 'string' ? data.countryCode : null))
       useOrganizationDocumentStore.setState({
         organizationId,
-        data: snap.exists() ? snap.data() : null,
+        data,
         loaded: true,
         error: null,
       })

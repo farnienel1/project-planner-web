@@ -10327,6 +10327,232 @@
         ],
         "status": "both: recipients included the submitter and inactive managers; iOS remapped stale ids to same-email accounts. Use timesheetSubmittedRecipients and timesheetNotificationDedupeKey."
       }
+    },
+    {
+      "name": "1.4.0 GB has four bank-holiday regions, England & Wales first",
+      "function": "defaultBankHolidayRegionForCountry",
+      "args": [
+        "GB"
+      ],
+      "expected": "GB-ENG-WLS"
+    },
+    {
+      "name": "1.4.0 Ireland's only region is its default",
+      "function": "defaultBankHolidayRegionForCountry",
+      "args": [
+        "IE"
+      ],
+      "expected": "IE"
+    },
+    {
+      "name": "1.4.0 United States default region",
+      "function": "defaultBankHolidayRegionForCountry",
+      "args": [
+        "US"
+      ],
+      "expected": "US"
+    },
+    {
+      "name": "1.4.0 a country with no listed regions has no default",
+      "function": "defaultBankHolidayRegionForCountry",
+      "args": [
+        "ZZ"
+      ],
+      "expected": null
+    },
+    {
+      "name": "1.4.0 older web id GB-ENG reads as GB-ENG-WLS",
+      "function": "normalizeBankHolidayRegionId",
+      "args": [
+        "gb-eng"
+      ],
+      "expected": "GB-ENG-WLS"
+    },
+    {
+      "name": "1.4.0 same country never asks for the region",
+      "function": "companyDetailsRegionPrompt",
+      "args": [
+        {
+          "countryCode": "GB",
+          "bankHolidayRegionId": "GB-SCT"
+        },
+        {
+          "countryCode": "GB"
+        }
+      ],
+      "expected": {
+        "required": false
+      }
+    },
+    {
+      "name": "1.4.0 GB to IE asks for Ireland's region",
+      "function": "companyDetailsRegionPrompt",
+      "args": [
+        {
+          "countryCode": "GB",
+          "bankHolidayRegionId": "GB-ENG-WLS"
+        },
+        {
+          "countryCode": "IE"
+        }
+      ],
+      "expected": {
+        "required": true,
+        "choices": [
+          {
+            "id": "IE",
+            "title": "Ireland",
+            "countryCode": "IE"
+          }
+        ],
+        "defaultRegionId": "IE",
+        "message": "Choose the bank holidays for Ireland."
+      }
+    },
+    {
+      "name": "1.4.0 a country change without a region is refused",
+      "function": "companyDetailsValidationError",
+      "args": [
+        {
+          "name": "Acme",
+          "hasOfficeAddress": false,
+          "countryCode": "IE",
+          "previous": {
+            "countryCode": "GB",
+            "bankHolidayRegionId": "GB-ENG-WLS"
+          }
+        }
+      ],
+      "expected": "Choose the bank holidays for Ireland."
+    },
+    {
+      "name": "1.4.0 company activity goes to active admins outside operative mode, not the actor",
+      "function": "companyActivityRecipients",
+      "args": [
+        "A1",
+        [
+          {
+            "id": "A1",
+            "email": "a1@x",
+            "isActive": true,
+            "role": "admin",
+            "adminAccess": true
+          },
+          {
+            "id": "A2",
+            "email": "a2@x",
+            "isActive": true,
+            "role": "super_admin",
+            "isSuperAdmin": true
+          },
+          {
+            "id": "A3",
+            "email": "a3@x",
+            "isActive": false,
+            "role": "admin",
+            "adminAccess": true
+          },
+          {
+            "id": "A4",
+            "email": "a4@x",
+            "isActive": true,
+            "role": "admin",
+            "adminAccess": true,
+            "operativeMode": true,
+            "permissions": {
+              "operativeMode": true
+            }
+          },
+          {
+            "id": "M1",
+            "email": "m1@x",
+            "isActive": true,
+            "role": "manager",
+            "manager": true
+          }
+        ]
+      ],
+      "expected": [
+        "A2"
+      ]
+    },
+    {
+      "name": "1.4.0 company activity from a manager reaches both admins",
+      "function": "companyActivityRecipients",
+      "args": [
+        "M1",
+        [
+          {
+            "id": "A1",
+            "email": "a1@x",
+            "isActive": true,
+            "role": "admin",
+            "adminAccess": true
+          },
+          {
+            "id": "A2",
+            "email": "a2@x",
+            "isActive": true,
+            "role": "super_admin",
+            "isSuperAdmin": true
+          },
+          {
+            "id": "A3",
+            "email": "a3@x",
+            "isActive": false,
+            "role": "admin",
+            "adminAccess": true
+          },
+          {
+            "id": "A4",
+            "email": "a4@x",
+            "isActive": true,
+            "role": "admin",
+            "adminAccess": true,
+            "operativeMode": true,
+            "permissions": {
+              "operativeMode": true
+            }
+          },
+          {
+            "id": "M1",
+            "email": "m1@x",
+            "isActive": true,
+            "role": "manager",
+            "manager": true
+          }
+        ]
+      ],
+      "expected": [
+        "A1",
+        "A2"
+      ]
+    },
+    {
+      "name": "1.4.0 push_test goes to the signed-in user",
+      "function": "pushTestRecipients",
+      "args": [
+        "U1"
+      ],
+      "expected": [
+        "U1"
+      ]
+    },
+    {
+      "name": "1.4.0 push_test is pushed to its actor",
+      "function": "notificationPushesToActor",
+      "args": [
+        "push_test"
+      ],
+      "expected": true
+    },
+    {
+      "name": "1.4.0 no other type is pushed to its actor",
+      "function": "notificationPushesToActor",
+      "args": [
+        "timesheet_pending_manager_signoff"
+      ],
+      "expected": false
     }
   ]
 }

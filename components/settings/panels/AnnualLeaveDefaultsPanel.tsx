@@ -9,10 +9,7 @@ import {
 } from '@/lib/settings/organizationSettings'
 import { useApplyLiveWhenClean, useLiveOrganizationDetails } from '@/components/settings/useLiveOrganizationSettings'
 import { bankHolidayRegionIdFromSelection, bankHolidaySelectionFromStored } from '@/lib/orgSetup/orgSetupSettings'
-import {
-  BANK_HOLIDAY_REGIONS,
-  bankHolidayRegionLabel,
-} from '@/lib/settings/bankHolidayRegions'
+import { bankHolidayRegionLabel, bankHolidayRegionsForCountry } from '@/lib/canonical'
 import { LEAVE_DAYS_SAVE_MAX, parseBoundedNumber } from '@/lib/security/boundedValue'
 import { settingsHeader } from '@/lib/settings/settingsHeader'
 import { settingsSaveBarHint } from '@/lib/settings/settingsDirty'
@@ -67,7 +64,7 @@ export function AnnualLeaveDefaultsPanel({ onBack }: { onBack: () => void }) {
   const [startMonth, setStartMonth] = useState(DEFAULT_ANNUAL_LEAVE.startMonth)
   const [endMonth, setEndMonth] = useState(DEFAULT_ANNUAL_LEAVE.endMonth)
   const [carriesOver, setCarriesOver] = useState(DEFAULT_ANNUAL_LEAVE.carriesOver)
-  const [bankHolidayRegion, setBankHolidayRegion] = useState('GB')
+  const [bankHolidayRegion, setBankHolidayRegion] = useState('GB-ENG-WLS')
   const { state: loadState, markLoaded, markFailed, isDirty } = useSettingsBaseline<string>()
 
   const [saving, setSaving] = useState(false)
@@ -103,6 +100,7 @@ export function AnnualLeaveDefaultsPanel({ onBack }: { onBack: () => void }) {
     [markLoaded]
   )
   useApplyLiveWhenClean({ source, status: live.status, dirty, apply, onFailed: markFailed })
+  const regionChoices = bankHolidayRegionsForCountry(live.details?.countryCode || 'GB')
 
   async function save() {
     if (!organization?.id) return
@@ -236,9 +234,13 @@ export function AnnualLeaveDefaultsPanel({ onBack }: { onBack: () => void }) {
         <div className="space-y-3 p-5">
           <FormField label="Region" hint="Syncs with the iOS app and applies organisation-wide.">
             <Select value={bankHolidayRegion} onChange={(e) => setBankHolidayRegion(e.target.value)}>
-              {BANK_HOLIDAY_REGIONS.map((region) => (
-                <option key={region.code} value={region.code}>
-                  {region.label}
+              {/* Only the company country's regions (rulebook §4.4); the country is set in Company details. */}
+              {!regionChoices.some((region) => region.id === bankHolidayRegion) && (
+                <option value={bankHolidayRegion}>{bankHolidayRegionLabel(bankHolidayRegion)}</option>
+              )}
+              {regionChoices.map((region) => (
+                <option key={region.id} value={region.id}>
+                  {region.title}
                 </option>
               ))}
             </Select>

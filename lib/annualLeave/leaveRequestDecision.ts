@@ -1,8 +1,8 @@
 import type { User } from '@/types'
 import { canSelfBookAnnualLeave } from '@/lib/canonical'
 import { rulebookPerson, rulebookRoster } from '@/lib/staff/rulebookPeople'
-import { londonIsoWeekday } from '@/lib/ios-parity/londonTime'
-import { dayKey } from '@/lib/ios-parity/londonTime'
+import { dayKeyInZone, isoWeekdayInZone } from '@/lib/orgTime/zoneTime'
+import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 
 export const DEFAULT_ANNUAL_LEAVE_DAYS = 25
 
@@ -22,7 +22,7 @@ export function leaveSubmitStatus(user: User, users: ReadonlyArray<User> = []): 
 }
 
 export function leaveDayBlockedReason(day: Date, isBankHoliday: boolean, timeZone?: string): string | null {
-  const iso = londonIsoWeekday(day, timeZone)
+  const iso = isoWeekdayInZone(day, organizationZoneOr(timeZone))
   if (iso === 6 || iso === 7 || isBankHoliday) {
     return 'Saturday, Sunday, and bank holidays are not taken from the allowance.'
   }
@@ -31,7 +31,7 @@ export function leaveDayBlockedReason(day: Date, isBankHoliday: boolean, timeZon
 
 /** Each calendar day counts once, capped at 1. */
 export function leaveDayCount(days: Date[], timeZone?: string): number {
-  const keys = new Set(days.map((day) => dayKey(day, timeZone)))
+  const keys = new Set(days.map((day) => dayKeyInZone(day, organizationZoneOr(timeZone))))
   return keys.size
 }
 
