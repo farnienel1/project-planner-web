@@ -1889,12 +1889,14 @@ test('1.2.0 decision 3: nobody decides their own leave, admins included; an admi
 test('1.2.0 decision 5: managers un-approve a booking clash (delete); operatives and other companies cannot', async () => {
   await seedRulebook120People()
   const ref = (db: ReturnType<typeof authDb>, id: string) => doc(db, 'organizations', ORG_A, 'acceptedBookingClashes', id)
-  const mgr = authDb(MGR_OTHER_A, 'mgr-other-a@test.com')
   const fields = { bookingAId: 'C', bookingBId: 'D', acceptedByUserId: ADMIN_A }
   await env.withSecurityRulesDisabled(async (ctx) => {
-    await setDoc(doc(ctx.firestore(), 'organizations', ORG_A, 'acceptedBookingClashes', 'C|D'), fields)
-    await setDoc(doc(ctx.firestore(), 'organizations', ORG_A, 'acceptedBookingClashes', 'E|F'), fields)
+    // One firestore() per context: a second call fails with "Firestore has already been started".
+    const db = ctx.firestore()
+    await setDoc(doc(db, 'organizations', ORG_A, 'acceptedBookingClashes', 'C|D'), fields)
+    await setDoc(doc(db, 'organizations', ORG_A, 'acceptedBookingClashes', 'E|F'), fields)
   })
+  const mgr = authDb(MGR_OTHER_A, 'mgr-other-a@test.com')
   await assertFails(deleteDoc(ref(authDb(OP_A, 'op-a@test.com'), 'C|D')))
   await assertFails(deleteDoc(ref(authDb(ADMIN_B, 'admin-b@test.com'), 'C|D')))
   await assertSucceeds(deleteDoc(ref(mgr, 'C|D')))
