@@ -25,7 +25,7 @@ Both platforms run **one rulebook** and **one Firebase data model**:
 - No second calculator: if a rule exists in the packed script, Swift calls `CanonicalBusinessEngine`. Delete Swift copies of rules once callers move (e.g. `WarningsComputation.unbookedPeople/unbookedNames`, `InvoicingPeriodResolver`, `PayrollRateResolver`, `OrgWarningDetectionSettings.coverageEnd`).
 - Field names, types, enums and document shapes must match web exactly (`ORGANIZATION_DOCUMENT_FIELDS`, `USER_DOCUMENT_FIELDS`, `OPERATIONAL_COLLECTION_PATHS` in the packed script). Writes are **partial updates of changed fields only** (`updateData` with dotted keys). Never use a dotted key with `setData(merge:)` — it becomes a literal field name.
 - Every shared write adds `updatedBy`/`updatedFrom: "ios"` (`writeMetadataFields(uid, "ios")`) and `updatedAt: FieldValue.serverTimestamp()`.
-- Firestore security rules are deployed **only from the web repo**. The updated web rules (not yet deployed) will refuse several writes iOS makes today — see §C.11. Fix those before the rules go live.
+- Firestore security rules are deployed **only from the web repo**. The updated web rules (not yet deployed) will refuse several writes iOS makes today — see §C.8 and §C.9. Fix those before the rules go live.
 
 ---
 
