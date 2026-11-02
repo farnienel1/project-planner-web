@@ -15,6 +15,8 @@ import { applyAccountTypeChange } from '@/lib/staff/accountTypeChange'
 import { removeFutureBookingsForPerson } from '@/lib/bookings/removeBookingsOnDelete'
 import { parseFormerUserIds } from '@/lib/canonical'
 import { deleteTaxIds } from '@/lib/sensitiveProfile/taxIdsService'
+import { savePartialDocument } from '@/lib/firebase/partialWrite'
+import { operativeRowWriteFields } from '@/lib/canonical/peopleDocuments'
 
 interface UserStoreState {
   saving: boolean
@@ -129,11 +131,25 @@ export const useUserStore = create<UserStoreState>(() => ({
     const full = buildSaveUserPayload(user)
     delete full.organizationId
     Object.assign(full, names)
+    // Always a partial update (rulebook §1, §11, `userProfileWriteFields`): against the copy the editor
+    // loaded, else the stored document read now. Never a whole-document rewrite from a possibly stale copy.
+    let baseline = options?.baseline && options.baseline.id === user.id ? options.baseline : null
+    if (!baseline) {
+      const stored = await getDoc(doc(db, 'users', user.id))
+      if (stored.exists()) {
+        const data = stored.data() as Record<string, unknown>
+        baseline = parseOrgUser(stored.id, {
+          ...data,
+          organizationId: (typeof data.organizationId === 'string' && data.organizationId.trim()) || user.organizationId,
+          email: (typeof data.email === 'string' && data.email.trim()) || user.email,
+        })
+      }
+    }
     let payload = full
-    if (options?.baseline && options.baseline.id === user.id) {
-      const before = buildSaveUserPayload(options.baseline)
+    if (baseline) {
+      const before = buildSaveUserPayload(baseline)
       delete before.organizationId
-      Object.assign(before, identityFields(options.baseline))
+      Object.assign(before, identityFields(baseline))
       payload = changedUserPayload(full, before)
     }
     payload.updatedAt = serverTimestamp()
@@ -295,6 +311,12 @@ export const useUserStore = create<UserStoreState>(() => ({
       updatedAt: Timestamp.now(),
     }
     applyExclusiveRateFields(payload, user)
-    await setDoc(doc(db, 'organizations', organizationId, 'operatives', linked.id), payload, { merge: true })
+    // Partial update of the changed fields only (rulebook §1, `operativeRowWriteFields`).
+    await savePartialDocument(
+      doc(db, 'organizations', organizationId, 'operatives', linked.id),
+      payload,
+      operativeRowWriteFields,
+      { userId: auth?.currentUser?.uid }
+    )
   },
 }))

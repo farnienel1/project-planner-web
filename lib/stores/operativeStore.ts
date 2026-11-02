@@ -11,7 +11,9 @@ import {
   doc,
 } from 'firebase/firestore'
 import { newUuid } from '@/lib/firebase/firestoreUtils'
-import { db } from '@/lib/firebase/config'
+import { auth, db } from '@/lib/firebase/config'
+import { savePartialDocument } from '@/lib/firebase/partialWrite'
+import { managerRowWriteFields, operativeRowWriteFields, parseSkillDocument } from '@/lib/canonical/peopleDocuments'
 import type { Operative, Manager, Skill, Qualification } from '@/types'
 import { filterRealManagers, isPlaceholderManager } from '@/lib/staff/managerRosterUtils'
 import { invalidateOrgLoad, optionsForUnappliedOrg, runOrgLoad } from '@/lib/stores/orgLoadCache'
@@ -142,16 +144,20 @@ export const useOperativeStore = create<OperativeState>((set, get) => ({
     try {
       const skillsRef = collection(db, 'organizations', organizationId, 'skills')
       const snapshot = await getDocs(skillsRef)
-      const skills = snapshot.docs.map(doc => {
-        const data = doc.data()
-        return {
-          id: doc.id,
-          name: data.name,
-          trade: typeof data.trade === 'string' ? data.trade.trim() : '',
-          createdAt: data.createdAt?.toDate() || new Date(),
-          updatedAt: data.updatedAt?.toDate() || new Date(),
-        }
-      }) as Skill[]
+      // `parseSkillDocument` (rulebook 1.6.0): id as stored, a row without a name is skipped.
+      const skills: Skill[] = snapshot.docs.flatMap((entry) => {
+        const parsed = parseSkillDocument(entry.id, entry.data() as Record<string, unknown>)
+        if (!parsed) return []
+        return [
+          {
+            id: parsed.id,
+            name: parsed.name,
+            trade: parsed.trade,
+            createdAt: parsed.createdAtMs != null ? new Date(parsed.createdAtMs) : new Date(),
+            updatedAt: parsed.updatedAtMs != null ? new Date(parsed.updatedAtMs) : new Date(),
+          } as Skill,
+        ]
+      })
       const previous = skillsOrgId === organizationId ? get().skills : []
       const kept = retainScopedRows(`skills:${organizationId}`, previous, skills)
       skillsOrgId = organizationId
@@ -239,7 +245,13 @@ export const useOperativeStore = create<OperativeState>((set, get) => ({
     const id = operative.id || newUuid()
     const payload = serializeOperative({ ...operative, id, organizationId }, { currencyCode: currentOrganizationCurrency() })
     operativeMutationEpoch += 1
-    await setDoc(doc(db, 'organizations', organizationId, 'operatives', id), payload, { merge: true })
+    // Partial update of the changed fields only (rulebook §1, `operativeRowWriteFields`).
+    await savePartialDocument(
+      doc(db, 'organizations', organizationId, 'operatives', id),
+      payload,
+      operativeRowWriteFields,
+      { userId: auth?.currentUser?.uid }
+    )
     operativeMutationEpoch += 1
     invalidateOrgLoad(OPERATIVES_KEY)
     const saved = { ...operative, id, organizationId, updatedAt: new Date() }
@@ -318,7 +330,13 @@ export const useOperativeStore = create<OperativeState>((set, get) => ({
     const id = manager.id || newUuid()
     const payload = serializeManager({ ...manager, id, organizationId })
     applyExclusiveRateFields(payload, manager)
-    await setDoc(doc(db, 'organizations', organizationId, 'managers', id), payload, { merge: true })
+    // Partial update of the changed fields only (rulebook §1, `managerRowWriteFields`).
+    await savePartialDocument(
+      doc(db, 'organizations', organizationId, 'managers', id),
+      payload,
+      managerRowWriteFields,
+      { userId: auth?.currentUser?.uid }
+    )
     invalidateOrgLoad('operativeStore:managers')
     const saved = { ...manager, id, organizationId, updatedAt: new Date() }
     set({ managers: [...get().managers.filter((m) => m.id !== id), saved] })

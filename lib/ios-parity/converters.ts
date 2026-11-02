@@ -9,13 +9,18 @@
 import { Timestamp, deleteField } from 'firebase/firestore'
 import { isAnonymisedDeletedProfile } from '@/lib/canonical/userRosterSegment'
 import { assignedQualificationWriteFields } from '@/lib/canonical/operativeQualifications'
-import { parseFormerUserIds } from '@/lib/canonical/userProfile'
 import { currencySymbol, DEFAULT_CURRENCY_CODE } from '@/lib/canonical/money'
 import { bookingWriteFields, parseBookingDocument, parseManagerSiteBookingDocument } from '@/lib/canonical/bookings'
 import { parseHolidayDocument } from '@/lib/canonical/holidayDocument'
+import {
+  parseClientDocument,
+  parseManagerDocument,
+  parseOperativeDocument,
+  parseUserDocument,
+} from '@/lib/canonical/peopleDocuments'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 import { dateFromDayKeyInZone } from '@/lib/orgTime/zoneTime'
-import { exclusiveRateDocumentFields, operativeRosterRateFields, readStoredRates } from '@/lib/timesheets/payBasis'
+import { exclusiveRateDocumentFields, operativeRosterRateFields } from '@/lib/timesheets/payBasis'
 import { applyExclusiveRateFields } from '@/lib/firebase/userPayload'
 import type {
   Booking,
@@ -37,14 +42,12 @@ import {
   normalizeEmploymentType,
   normalizeManagerTimeSlot,
   normalizeTimeSlot,
-  normalizeUserRole,
   type BookingStatusRaw,
   type TimeSlotRaw,
 } from './enums'
 import {
   IosWriteValidationError,
   asBool,
-  passwordSetFromDocument,
   asDate,
   asNumber,
   asClockHhMm,
@@ -78,25 +81,6 @@ function fail<T>(errors: string[]): ParseResult<T> {
 
 function ok<T>(value: T): ParseResult<T> {
   return { ok: true, value }
-}
-
-function parseDateMap(raw: unknown): Record<string, Date> {
-  if (!raw || typeof raw !== 'object') return {}
-  const output: Record<string, Date> = {}
-  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
-    const date = asDate(value)
-    if (date) output[key] = date
-  }
-  return output
-}
-
-function parseStringMap(raw: unknown): Record<string, string> {
-  if (!raw || typeof raw !== 'object') return {}
-  const output: Record<string, string> = {}
-  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
-    if (typeof value === 'string' && value.trim()) output[key] = value
-  }
-  return output
 }
 
 export function defaultUserPermissions(operativeMode = false): UserPermissions {
@@ -152,7 +136,16 @@ function readFlag(data: Record<string, unknown>, key: string): boolean | undefin
   return undefined
 }
 
-/** Mirrors FirebaseBackend.parseAppUserDocument ~L3349. */
+function msDate(ms: number | null | undefined): Date | undefined {
+  return typeof ms === 'number' && Number.isFinite(ms) ? new Date(ms) : undefined
+}
+
+/**
+ * `users/{uid}` through the rulebook reader `parseUserDocument` (rulebook 1.6.0, §1 "Document readers").
+ * Web still requires an organisation and an email (or an anonymised deleted profile) to list a document.
+ * The leave fields keep what is stored; a missing value takes the organisation `annualLeaveDefaults`
+ * downstream (`annualLeaveBalance`), the same value the reader gives iOS.
+ */
 export function parseAppUserDocument(userId: string, data: Record<string, unknown>): ParseResult<User> {
   const email = asString(data.email)
   const organizationId = asString(data.organizationId)
@@ -162,101 +155,59 @@ export function parseAppUserDocument(userId: string, data: Record<string, unknow
   if (!email && !isAnonymisedDeletedProfile(data)) {
     return fail(['email and organizationId are required'])
   }
+  const doc = parseUserDocument(userId, data)
+  if (!doc) return fail(['document id required'])
 
-  const rawIsSuperAdmin = data.isSuperAdmin === true
-  const roleRaw = normalizeUserRole(data.role)
-  const keepsAdmin =
-    rawIsSuperAdmin || readFlag(data, 'adminAccess') === true || roleRaw === 'admin'
-  // A stray operativeMode flag must not take an admin or super admin off the Admins list.
-  const operativeMode = readFlag(data, 'operativeMode') === true && !keepsAdmin
   const permissions: UserPermissions = {
-    adminAccess: operativeMode ? false : readFlag(data, 'adminAccess') === true,
-    manager: operativeMode ? false : readFlag(data, 'manager') === true,
-    operatives: operativeMode ? false : readFlag(data, 'operatives') === true,
-    skills: false,
-    qualifications: operativeMode ? false : readFlag(data, 'qualifications') === true,
-    materials: operativeMode
-      ? readFlag(data, 'materials') === true
-      : readFlag(data, 'materials') !== false,
-    projects: operativeMode ? true : readFlag(data, 'projects') === true,
-    smallWorks: operativeMode ? true : readFlag(data, 'smallWorks') === true,
-    operativeMode,
-    annualLeaveSelfBook: readFlag(data, 'annualLeaveSelfBook') === true,
-    weeklyReports: readFlag(data, 'weeklyReports') === true,
-    dailyOverview: readFlag(data, 'dailyOverview') !== false,
-    subContractors: readFlag(data, 'subContractors') === true,
-    siteAudit: readFlag(data, 'siteAudit') !== false,
-    wholesalersOrderHistory: readFlag(data, 'wholesalersOrderHistory') !== false,
-    developerAccess: operativeMode ? false : readFlag(data, 'developerAccess') === true,
+    ...doc.permissions,
+    developerAccess: doc.operativeMode ? false : readFlag(data, 'developerAccess') === true,
   }
-
-  const isSuperAdmin = operativeMode ? false : rawIsSuperAdmin
-  const role = operativeMode ? UserRole.OPERATIVE : (roleRaw as UserRole)
-
-  const hasNoLineManager = data.hasNoLineManager === true
-  const assignedManagerUserIds = hasNoLineManager ? [] : asStringArray(data.assignedManagerUserIds)
-  const legacyManager = hasNoLineManager ? undefined : asOptionalString(data.assignedManagerUserId)
-  const managerIds =
-    assignedManagerUserIds.length > 0 ? assignedManagerUserIds : legacyManager ? [legacyManager] : []
-
-  const formerUserIds = parseFormerUserIds(data)
-  const storedPay = readStoredRates({
-    payBasis: data.payBasis,
-    dayRate: asNumber(data.dayRate),
-    hourlyRate: asNumber(data.hourlyRate),
-  })
+  const managerIds = doc.assignedManagerUserIds
 
   return ok({
-    id: userId,
+    id: doc.id,
     email,
-    firstName: asString(data.firstName),
-    surname: asString(data.surname),
+    firstName: doc.firstName,
+    surname: doc.surname,
     organizationId,
-    role,
-    isActive: asBool(data.isActive, true),
-    passwordSet: passwordSetFromDocument(data.passwordSet),
-    status: typeof data.status === 'string' ? data.status : undefined,
-    isSuperAdmin,
-    mobileNumber: asOptionalString(data.mobileNumber),
+    role: doc.role as UserRole,
+    isActive: doc.isActive,
+    passwordSet: doc.passwordSet,
+    status: doc.status ?? undefined,
+    isSuperAdmin: doc.isSuperAdmin,
+    mobileNumber: doc.mobileNumber ?? undefined,
     permissions,
     assignedManagerUserIds: managerIds.length ? managerIds : undefined,
     assignedManagerUserId: managerIds[0],
-    hasNoLineManager,
-    formerUserIds: formerUserIds.length > 0 ? formerUserIds : undefined,
-    payBasis: storedPay.payBasis ?? undefined,
-    dayRate: storedPay.payBasis === 'day' && storedPay.dayRate != null ? storedPay.dayRate : undefined,
-    hourlyRate: storedPay.payBasis === 'hourly' && storedPay.hourlyRate != null ? storedPay.hourlyRate : undefined,
-    tradeTypePreset: asOptionalString(data.tradeTypePreset),
-    tradeTypeCustom: asOptionalString(data.tradeTypeCustom),
-    employmentType: normalizeEmploymentType(data.employmentType),
-    employmentTypeTransitionFrom: asOptionalString(data.employmentTypeTransitionFrom),
-    employmentTypeEffectiveAt: asDate(data.employmentTypeEffectiveAt),
-    lastSeenAt: asDate(data.lastSeenAt),
-    profilePhotoURL: asOptionalString(data.profilePhotoURL),
-    annualLeaveEnabled: asBool(data.annualLeaveEnabled, true),
-    annualLeaveDaysPerYear:
-      asNumber(data.annualLeaveDaysPerYear) ?? undefined,
-    annualLeaveYearStartMonth:
-      typeof data.annualLeaveYearStartMonth === 'number'
-        ? Math.trunc(data.annualLeaveYearStartMonth)
-        : undefined,
-    annualLeaveYearEndMonth:
-      typeof data.annualLeaveYearEndMonth === 'number'
-        ? Math.trunc(data.annualLeaveYearEndMonth)
-        : undefined,
-    annualLeaveCarriesOver: data.annualLeaveCarriesOver === true,
-    annualLeaveYearAllowance: asNumber(data.annualLeaveYearAllowance) ?? undefined,
-    annualLeaveYearAllowanceKey: asOptionalString(data.annualLeaveYearAllowanceKey),
-    timesheetsEnabled: data.timesheetsEnabled === true,
+    hasNoLineManager: doc.hasNoLineManager,
+    formerUserIds: doc.formerUserIds.length > 0 ? doc.formerUserIds : undefined,
+    payBasis: doc.payBasis ?? undefined,
+    dayRate: doc.dayRate ?? undefined,
+    hourlyRate: doc.hourlyRate ?? undefined,
+    tradeTypePreset: doc.tradeTypePreset ?? undefined,
+    tradeTypeCustom: doc.tradeTypeCustom ?? undefined,
+    employmentType: doc.employmentType,
+    employmentTypeTransitionFrom: doc.employmentTypeTransitionFrom ?? undefined,
+    employmentTypeEffectiveAt: msDate(doc.employmentTypeEffectiveAtMs),
+    lastSeenAt: msDate(doc.lastSeenAtMs),
+    profilePhotoURL: doc.profilePhotoURL ?? undefined,
+    annualLeaveEnabled: doc.annualLeaveEnabled,
+    annualLeaveDaysPerYear: doc.annualLeaveStored.daysPerYear ?? undefined,
+    annualLeaveYearStartMonth: doc.annualLeaveStored.startMonth ?? undefined,
+    annualLeaveYearEndMonth: doc.annualLeaveStored.endMonth ?? undefined,
+    annualLeaveCarriesOver: doc.annualLeaveStored.carriesOver === true,
+    annualLeaveYearAllowance: doc.annualLeaveYearAllowance ?? undefined,
+    annualLeaveYearAllowanceKey: doc.annualLeaveYearAllowanceKey ?? undefined,
+    timesheetsEnabled: doc.timesheetsEnabled,
     vatNumber: asOptionalString(data.vatNumber),
     utrNumber: asOptionalString(data.utrNumber),
-    policyAccepted: data.policyAccepted === true,
-    policyAcceptedAt: asDate(data.policyAcceptedAt),
-    legalPackVersion: asOptionalString(data.legalPackVersion),
+    policyAccepted: doc.policyAccepted,
+    policyAcceptedAt: msDate(doc.policyAcceptedAtMs),
+    legalPackVersion: doc.legalPackVersion ?? undefined,
     accountConfirmed: data.accountConfirmed !== false,
     accountConfirmToken: asOptionalString(data.accountConfirmToken),
-    createdAt: asDate(data.createdAt) || new Date(),
-    updatedAt: asDate(data.updatedAt) || new Date(),
+    createdAt: msDate(doc.createdAtMs) || new Date(),
+    updatedAt: msDate(doc.updatedAtMs) || new Date(),
   })
 }
 
@@ -776,24 +727,24 @@ export function serializeHoliday(booking: HolidayBooking): Record<string, unknow
   return payload
 }
 
+/** `clients/{id}` through the rulebook reader `parseClientDocument` (id = document id, stored case). */
 export function parseClient(
   docId: string,
   data: Record<string, unknown>,
   organizationId?: string
 ): ParseResult<Client> {
-  const name = asString(data.name)
-  if (!name) return fail(['name required'])
-  const idString = asString(data.id, docId)
+  const doc = parseClientDocument(docId, data)
+  if (!doc) return fail(['name required'])
   return ok({
-    id: idString || docId,
-    name,
-    contactPerson: asOptionalString(data.contactPerson),
-    email: asOptionalString(data.email),
-    phone: asOptionalString(data.phone),
-    address: asOptionalString(data.address),
+    id: doc.id,
+    name: doc.name,
+    contactPerson: doc.contactPerson ?? undefined,
+    email: doc.email ?? undefined,
+    phone: doc.phone ?? undefined,
+    address: doc.address ?? undefined,
     organizationId,
-    createdAt: asDate(data.createdAt) || new Date(),
-    updatedAt: asDate(data.updatedAt) || new Date(),
+    createdAt: msDate(doc.createdAtMs) || new Date(),
+    updatedAt: msDate(doc.updatedAtMs) || new Date(),
   })
 }
 
@@ -873,48 +824,48 @@ export function serializeNotification(row: {
   }
 }
 
-function operativePayFields(data: Record<string, unknown>): Pick<Operative, 'hourlyRate' | 'dayRate' | 'payBasis'> {
-  const stored = readStoredRates({
-    payBasis: data.payBasis,
-    dayRate: asNumber(data.dayRate),
-    hourlyRate: asNumber(data.hourlyRate),
-  })
-  return {
-    payBasis: stored.payBasis ?? undefined,
-    dayRate: stored.payBasis === 'day' && stored.dayRate != null ? stored.dayRate : undefined,
-    hourlyRate: stored.payBasis === 'hourly' && stored.hourlyRate != null ? stored.hourlyRate : 0,
-  }
-}
-
+/**
+ * `operatives/{id}` through the rulebook reader `parseOperativeDocument` (id = document id, stored case;
+ * `payBasis` honoured). Legacy placeholder rows are skipped, as on iOS.
+ */
 export function parseOperative(
   docId: string,
   data: Record<string, unknown>,
   organizationId?: string
 ): ParseResult<Operative> {
-  const firstName = asString(data.firstName)
-  const lastName = asString(data.lastName)
-  if (!firstName && !lastName) return fail(['firstName or lastName required'])
+  const doc = parseOperativeDocument(docId, data, organizationZoneOr(null))
+  if (!doc) return fail(['firstName or lastName required'])
+  if (doc.isPlaceholder) return fail(['legacy placeholder row'])
   return ok({
-    id: docId,
-    firstName,
-    lastName,
-    email: asString(data.email),
-    phone: asOptionalString(data.phone),
-    startDate: asDate(data.startDate) || new Date(),
-    ...operativePayFields(data),
-    skills: Array.isArray(data.skills) ? (data.skills as Operative['skills']) : [],
-    qualifications: Array.isArray(data.qualifications)
-      ? (data.qualifications as Operative['qualifications'])
-      : [],
-    isActive: asBool(data.isActive, true),
-    tradeTypePreset: asOptionalString(data.tradeTypePreset),
-    tradeTypeCustom: asOptionalString(data.tradeTypeCustom),
-    notes: asOptionalString(data.notes),
+    id: doc.id,
+    firstName: doc.firstName,
+    lastName: doc.lastName,
+    email: doc.email,
+    phone: doc.phone ?? undefined,
+    startDate: msDate(doc.startDateMs) || new Date(),
+    payBasis: doc.payBasis ?? undefined,
+    dayRate: doc.dayRate ?? undefined,
+    hourlyRate: doc.hourlyRate ?? 0,
+    skills: doc.skills,
+    qualifications: doc.qualifications.map((row) => ({
+      id: row.id,
+      name: row.name,
+      hasEndDate: row.hasEndDate,
+      endDate: msDate(row.endDateMs),
+      createdAt: msDate(row.createdAtMs) || new Date(),
+      updatedAt: msDate(row.updatedAtMs) || msDate(row.createdAtMs) || new Date(),
+    })),
+    isActive: doc.isActive,
+    tradeTypePreset: doc.tradeTypePreset ?? undefined,
+    tradeTypeCustom: doc.tradeTypeCustom ?? undefined,
+    notes: doc.notes ?? undefined,
     organizationId,
-    createdAt: asDate(data.createdAt) || new Date(),
-    updatedAt: asDate(data.updatedAt) || new Date(),
-    qualificationExpiryDates: parseDateMap(data.qualificationExpiryDates),
-    qualificationCertificateURLs: parseStringMap(data.qualificationCertificateURLs),
+    createdAt: msDate(doc.createdAtMs) || new Date(),
+    updatedAt: msDate(doc.updatedAtMs) || new Date(),
+    qualificationExpiryDates: Object.fromEntries(
+      Object.entries(doc.qualificationExpiryDates).map(([key, ms]) => [key, new Date(ms)])
+    ),
+    qualificationCertificateURLs: doc.qualificationCertificateURLs,
   })
 }
 
@@ -1027,45 +978,32 @@ export function serializeOperative(
   })
 }
 
-function managerPayFields(data: Record<string, unknown>): Pick<Manager, 'payBasis' | 'dayRate' | 'hourlyRate'> {
-  const stored = readStoredRates({
-    payBasis: data.payBasis,
-    dayRate: asNumber(data.dayRate),
-    hourlyRate: asNumber(data.hourlyRate),
-  })
-  return {
-    payBasis: stored.payBasis ?? undefined,
-    dayRate: stored.payBasis === 'day' && stored.dayRate != null ? stored.dayRate : undefined,
-    hourlyRate: stored.payBasis === 'hourly' && stored.hourlyRate != null ? stored.hourlyRate : undefined,
-  }
-}
-
+/** `managers/{id}` through the rulebook reader `parseManagerDocument` (id = document id; pay basis honoured). */
 export function parseManager(
   docId: string,
   data: Record<string, unknown>,
   organizationId?: string
 ): ParseResult<Manager> {
-  const firstName = asString(data.firstName)
-  const lastName = asString(data.lastName)
-  const email = asString(data.email)
-  if (!firstName || !email) return fail(['firstName and email required'])
-  const mobile = asOptionalString(data.mobileNumber) || asOptionalString(data.mobile) || asOptionalString(data.phone)
+  const doc = parseManagerDocument(docId, data)
+  if (!doc || !doc.firstName || !doc.email) return fail(['firstName and email required'])
   return ok({
-    id: docId,
-    firstName,
-    lastName,
-    email,
-    phone: asOptionalString(data.phone) || mobile,
-    mobile,
-    department: asOptionalString(data.department),
-    isActive: asBool(data.isActive, true),
-    notes: asOptionalString(data.notes),
-    tradeTypePreset: asOptionalString(data.tradeTypePreset),
-    tradeTypeCustom: asOptionalString(data.tradeTypeCustom),
-    ...managerPayFields(data),
+    id: doc.id,
+    firstName: doc.firstName,
+    lastName: doc.lastName,
+    email: doc.email,
+    phone: doc.phone ?? doc.mobile ?? undefined,
+    mobile: doc.mobile ?? undefined,
+    department: doc.department ?? undefined,
+    isActive: doc.isActive,
+    notes: doc.notes ?? undefined,
+    tradeTypePreset: doc.tradeTypePreset ?? undefined,
+    tradeTypeCustom: doc.tradeTypeCustom ?? undefined,
+    payBasis: doc.payBasis ?? undefined,
+    dayRate: doc.dayRate ?? undefined,
+    hourlyRate: doc.hourlyRate ?? undefined,
     organizationId,
-    createdAt: asDate(data.createdAt) || new Date(),
-    updatedAt: asDate(data.updatedAt) || new Date(),
+    createdAt: msDate(doc.createdAtMs) || new Date(),
+    updatedAt: msDate(doc.updatedAtMs) || new Date(),
   })
 }
 

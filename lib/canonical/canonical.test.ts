@@ -6065,3 +6065,356 @@ test('leaveCoverageRows: leave and bookings match people without case; rows keep
   })
   assert.equal(byOperative.length, 1)
 })
+
+import {
+  clientWriteFields,
+  defaultTimesheetsEnabled,
+  documentBool,
+  documentInstantMs,
+  documentWriteFields,
+  managerRowWriteFields,
+  normalizeUserRoleToken,
+  operativeRowWriteFields,
+  parseClientDocument,
+  parseManagerDocument,
+  parseOperativeDocument,
+  parsePayRateHistoryDocument,
+  parsePayRateHistoryDocuments,
+  parseSkillDocument,
+  parseSubcontractorDocument,
+  parseUserDocument,
+  skillsCatalogueWrites,
+  userProfileWriteFields,
+} from './peopleDocuments.ts'
+import { payRateOnDay as peoplePayRateOnDay } from './payRate.ts'
+
+// 1.6.0 — one reader and partial writes for the people collections.
+const PD_LONDON = 'Europe/London'
+const PD_TS = (iso: string) => ({ seconds: Date.parse(iso) / 1000, nanoseconds: 0 })
+
+test('documentInstantMs and documentBool accept every shape either app hands over', () => {
+  const ms = Date.parse('2026-11-09T00:00:00Z')
+  assert.equal(documentInstantMs({ seconds: ms / 1000, nanoseconds: 0 }), ms)
+  assert.equal(documentInstantMs({ _seconds: ms / 1000, _nanoseconds: 0 }), ms)
+  assert.equal(documentInstantMs(new Date(ms)), ms)
+  assert.equal(documentInstantMs(ms), ms)
+  assert.equal(documentInstantMs(ms / 1000), ms)
+  assert.equal(documentInstantMs('2026-11-09T00:00:00.000Z'), ms)
+  assert.equal(documentInstantMs({ toDate: () => new Date(ms) }), ms)
+  assert.equal(documentInstantMs(''), null)
+  assert.equal(documentInstantMs(0), null)
+  assert.equal(documentBool(1), true)
+  assert.equal(documentBool('yes'), true)
+  assert.equal(documentBool('0'), false)
+  assert.equal(documentBool('maybe'), null)
+})
+
+test('parseUserDocument reads a web-written user and fills missing leave fields from the organisation default', () => {
+  const parsed = parseUserDocument(
+    'webUid1',
+    {
+      email: ' Ann@Example.com ',
+      firstName: 'Ann',
+      surname: 'Lee',
+      organizationId: 'ORG',
+      role: 'manager',
+      manager: true,
+      permissions: { manager: true, operatives: true },
+      assignedManagerUserIds: ['mgrA', 'mgrA', ' mgrB '],
+      payBasis: 'day',
+      dayRate: 200,
+      employmentType: 'paye',
+    },
+    { timeZone: PD_LONDON, annualLeaveDefaults: { daysPerYear: 28, startMonth: 4, endMonth: 3, carriesOver: true } }
+  )
+  assert.ok(parsed)
+  assert.equal(parsed.id, 'webUid1')
+  assert.equal(parsed.email, 'Ann@Example.com')
+  assert.equal(parsed.emailKey, 'ann@example.com')
+  assert.equal(parsed.role, 'manager')
+  assert.equal(parsed.accountKind, 'manager')
+  assert.equal(parsed.permissions.operatives, true)
+  assert.deepEqual(parsed.assignedManagerUserIds, ['mgrA', 'mgrB'])
+  assert.equal(parsed.assignedManagerUserId, 'mgrA')
+  assert.equal(parsed.annualLeaveDaysPerYear, 28)
+  assert.equal(parsed.annualLeaveYearStartMonth, 4)
+  assert.equal(parsed.annualLeaveYearEndMonth, 3)
+  assert.equal(parsed.annualLeaveCarriesOver, true)
+  assert.deepEqual(parsed.annualLeaveStored, { daysPerYear: null, startMonth: null, endMonth: null, carriesOver: null })
+  // Missing timesheetsEnabled: a PAYE manager does not take part.
+  assert.equal(parsed.timesheetsEnabled, false)
+  assert.equal(parsed.timesheetsEnabledStored, null)
+  assert.equal(parsed.isActive, true)
+  assert.equal(parsed.passwordSet, true)
+})
+
+test('parseUserDocument reads an iOS-written user: upper-case ids, legacy keys, string flags, stored leave wins', () => {
+  const parsed = parseUserDocument(
+    'D7A3C1E2-0000-4000-8000-0000000000AA',
+    {
+      email: 'op@example.com',
+      displayName: 'Bob Smith Jones',
+      organizationId: 'ORG',
+      role: 'Operatives',
+      operativeMode: 1,
+      isActive: 'false',
+      assignedManagerUserId: 'B1C2D3E4-0000-4000-8000-0000000000BB',
+      hourlyRate: 18.5,
+      payBasis: 'hourly',
+      annualLeaveDaysPerYear: 20,
+      employmentType: 'selfEmployed',
+      employmentTypeTransitionFrom: 'paye',
+      employmentTypeEffectiveAt: PD_TS('2026-11-11T00:00:00Z'),
+      mobile: '0700',
+    },
+    { timeZone: PD_LONDON, annualLeaveDefaults: { daysPerYear: 28 } }
+  )
+  assert.ok(parsed)
+  assert.equal(parsed.id, 'D7A3C1E2-0000-4000-8000-0000000000AA')
+  assert.equal(parsed.firstName, 'Bob')
+  assert.equal(parsed.surname, 'Smith Jones')
+  assert.equal(parsed.role, 'operative')
+  assert.equal(parsed.operativeMode, true)
+  assert.equal(parsed.accountKind, 'operative')
+  assert.equal(parsed.permissions.projects, true)
+  assert.equal(parsed.permissions.operatives, false)
+  assert.equal(parsed.isActive, false)
+  assert.deepEqual(parsed.assignedManagerUserIds, ['B1C2D3E4-0000-4000-8000-0000000000BB'])
+  assert.equal(parsed.payBasis, 'hourly')
+  assert.equal(parsed.hourlyRate, 18.5)
+  assert.equal(parsed.dayRate, null)
+  assert.equal(parsed.employmentType, 'self_employed')
+  assert.equal(parsed.employmentTypeTransitionFrom, 'paye')
+  assert.equal(parsed.employmentTypeEffectiveDayKey, '2026-11-11')
+  assert.equal(parsed.annualLeaveDaysPerYear, 20)
+  assert.equal(parsed.mobileNumber, '0700')
+  // Missing timesheetsEnabled: operatives take part.
+  assert.equal(parsed.timesheetsEnabled, true)
+})
+
+test('parseUserDocument: an admin with a stray operativeMode flag stays an admin on lists; the approval rules see the flag', () => {
+  const parsed = parseUserDocument('admin1', {
+    email: 'a@example.com',
+    organizationId: 'ORG',
+    role: 'admin',
+    adminAccess: true,
+    operativeMode: true,
+  })
+  assert.ok(parsed)
+  assert.equal(parsed.operativeModeStored, true)
+  assert.equal(parsed.operativeMode, false)
+  assert.equal(parsed.accountKind, 'admin')
+  assert.equal(parsed.permissions.adminAccess, true)
+  assert.equal(parsed.adminOutsideOperativeMode, false)
+  const plain = parseUserDocument('admin2', { email: 'b@example.com', role: 'admin', isSuperAdmin: true })
+  assert.equal(plain?.adminOutsideOperativeMode, true)
+})
+
+test('parseUserDocument: hasNoLineManager clears the ids; no org defaults gives 25 / 1 / 12 / false', () => {
+  const parsed = parseUserDocument('u', {
+    email: 'x@example.com',
+    hasNoLineManager: true,
+    assignedManagerUserIds: ['m1'],
+    timesheetsEnabled: true,
+  })
+  assert.ok(parsed)
+  assert.deepEqual(parsed.assignedManagerUserIds, [])
+  assert.equal(parsed.assignedManagerUserId, null)
+  assert.equal(parsed.annualLeaveDaysPerYear, 25)
+  assert.equal(parsed.annualLeaveYearStartMonth, 1)
+  assert.equal(parsed.annualLeaveYearEndMonth, 12)
+  assert.equal(parsed.annualLeaveCarriesOver, false)
+  assert.equal(parsed.timesheetsEnabled, true)
+  assert.equal(parseUserDocument('', { email: 'x' }), null)
+})
+
+test('normalizeUserRoleToken and defaultTimesheetsEnabled', () => {
+  assert.equal(normalizeUserRoleToken('Manager'), 'manager')
+  assert.equal(normalizeUserRoleToken('super_admin'), 'admin')
+  assert.equal(normalizeUserRoleToken('basic'), 'basic')
+  assert.equal(normalizeUserRoleToken(undefined), 'viewer')
+  assert.equal(defaultTimesheetsEnabled({ operativeMode: true, employmentType: 'paye' }), true)
+  assert.equal(defaultTimesheetsEnabled({ operativeMode: false, employmentType: 'paye' }), false)
+  assert.equal(defaultTimesheetsEnabled({ operativeMode: false, employmentType: undefined }), true)
+})
+
+test('parseOperativeDocument keeps a non-UUID id, honours an hourly payBasis and reads legacy names', () => {
+  const parsed = parseOperativeDocument(
+    'op-legacy-7',
+    {
+      name: 'Carl Dean',
+      email: 'Carl@Example.com',
+      payBasis: 'hourly',
+      hourlyRate: 21,
+      dayRate: 160,
+      skills: ['S1', { id: 'S2', name: 'Tiling' }, { name: 'Plaster' }, 'S1'],
+      qualifications: [{ id: 'Q1', name: 'CSCS', hasEndDate: true, endDate: PD_TS('2027-01-01T00:00:00Z') }, { name: 'no id' }],
+      qualificationExpiryDates: { Q1: PD_TS('2027-01-01T00:00:00Z') },
+      qualificationCertificateURLs: { Q1: 'https://x/q1.pdf', Q2: '' },
+      createdAt: PD_TS('2026-06-01T09:00:00Z'),
+      linkedUserId: 'AuthUid',
+    },
+    PD_LONDON
+  )
+  assert.ok(parsed)
+  assert.equal(parsed.id, 'op-legacy-7')
+  assert.equal(parsed.firstName, 'Carl')
+  assert.equal(parsed.lastName, 'Dean')
+  assert.equal(parsed.emailKey, 'carl@example.com')
+  assert.equal(parsed.payBasis, 'hourly')
+  assert.equal(parsed.hourlyRate, 21)
+  assert.equal(parsed.dayRate, null)
+  assert.deepEqual(parsed.skills, ['S1', 'S2', 'Plaster'])
+  assert.equal(parsed.qualifications.length, 1)
+  assert.deepEqual(Object.keys(parsed.qualificationCertificateURLs), ['Q1'])
+  assert.equal(parsed.startDayKey, '2026-06-01')
+  assert.equal(parsed.linkedUserId, 'AuthUid')
+  assert.equal(parsed.isActive, true)
+  assert.equal(parsed.isPlaceholder, false)
+  assert.equal(parseOperativeDocument('INITIAL-PLACEHOLDER', { name: 'x' })?.isPlaceholder, true)
+  assert.equal(parseOperativeDocument('empty', {}), null)
+})
+
+test('parseOperativeDocument keeps an upper-case UUID id as stored', () => {
+  const id = 'A1B2C3D4-0000-4000-8000-0000000000CC'
+  const parsed = parseOperativeDocument(id, { id: 'other', firstName: 'Dee', lastName: 'Ray', dayRate: 150 })
+  assert.equal(parsed?.id, id)
+  assert.equal(parsed?.payBasis, 'day')
+  assert.equal(parsed?.dayRate, 150)
+})
+
+test('parseManagerDocument reads pay and legacy mobile keys', () => {
+  const parsed = parseManagerDocument('mgr-1', {
+    firstName: 'Eve',
+    email: 'eve@example.com',
+    mobile: '0711',
+    payBasis: 'hourly',
+    hourlyRate: '30',
+  })
+  assert.ok(parsed)
+  assert.equal(parsed.mobile, '0711')
+  assert.equal(parsed.payBasis, 'hourly')
+  assert.equal(parsed.hourlyRate, 30)
+})
+
+test('parsePayRateHistoryDocument keeps non-UUID ids and cleared rows and works with payRateOnDay', () => {
+  const rows = parsePayRateHistoryDocuments(
+    [
+      { id: 'h2', data: { operativeId: 'op-legacy-7', dayRate: 180, effectiveAt: PD_TS('2026-11-10T00:00:00Z') } },
+      { id: 'h1', data: { operativeId: 'op-legacy-7', dayRate: 150, payBasis: 'day', effectiveAt: PD_TS('2026-11-01T00:00:00Z') } },
+      { id: 'h3', data: { userId: 'U', dayRate: null, payBasis: null, effectiveAt: PD_TS('2026-11-05T00:00:00Z') } },
+      { id: 'bad', data: { userId: 'U', effectiveAt: PD_TS('2026-11-05T00:00:00Z') } },
+      { id: 'none', data: { dayRate: 1, effectiveAt: PD_TS('2026-11-05T00:00:00Z') } },
+    ],
+    PD_LONDON
+  )
+  assert.deepEqual(rows.map((row) => row.id), ['h1', 'h3', 'h2'])
+  assert.equal(rows[1].cleared, true)
+  assert.equal(rows[1].payBasis, null)
+  assert.equal(rows[0].operativeId, 'op-legacy-7')
+  assert.equal(rows[2].effectiveDayKey, '2026-11-10')
+  const onDay = peoplePayRateOnDay({ operative: { id: 'op-legacy-7' }, history: rows, dayKey: '2026-11-12', timeZone: PD_LONDON })
+  assert.equal(onDay.rate, 180)
+  assert.equal(onDay.source, 'history')
+  assert.equal(parsePayRateHistoryDocument('x', { userId: 'U', dayRate: '12.5', effectiveAt: '2026-11-01' })?.dayRate, 12.5)
+})
+
+test('parseClientDocument keeps a non-UUID document id and blanks are null', () => {
+  const parsed = parseClientDocument('client-legacy', { id: 'SOMETHING-ELSE', name: ' Acme ', email: '', phone: '0800' })
+  assert.deepEqual(
+    { id: parsed?.id, name: parsed?.name, email: parsed?.email, phone: parsed?.phone },
+    { id: 'client-legacy', name: 'Acme', email: null, phone: '0800' }
+  )
+  assert.equal(parseClientDocument('c', { email: 'x' }), null)
+})
+
+test('subcontractor and skill readers', () => {
+  const sub = parseSubcontractorDocument('sub-1', {
+    name: 'Sparks Ltd',
+    subcontractorType: 'Electrical',
+    contacts: [{ id: 'c1', name: 'Sam' }, { email: 'no name' }],
+  })
+  assert.equal(sub?.contacts.length, 1)
+  assert.equal(sub?.contacts[0].position, 'Installer')
+  assert.equal(parseSubcontractorDocument('sub-2', { name: 'x' }), null)
+  assert.equal(parseSkillDocument('sk', { name: 'Tiling' })?.trade, '')
+})
+
+test('documentWriteFields writes only changed fields and never deletes a field the local copy lacks', () => {
+  const before = { name: 'A', email: 'a@x', phone: '1', createdAt: PD_TS('2026-01-01T00:00:00Z') }
+  const out = documentWriteFields(before, {
+    name: 'A',
+    email: 'b@x',
+    phone: null,
+    address: null,
+    createdAt: new Date('2026-01-01T00:00:00Z'),
+    notes: undefined,
+  })
+  assert.deepEqual(out, { set: { email: 'b@x' }, remove: ['phone'] })
+  assert.deepEqual(documentWriteFields(null, { name: 'A', phone: null }), { set: { name: 'A' }, remove: [] })
+})
+
+test('userProfileWriteFields writes the line manager and pay groups together, never createdAt / organizationId', () => {
+  const before = {
+    assignedManagerUserIds: ['m1'],
+    assignedManagerUserId: 'm1',
+    hasNoLineManager: false,
+    payBasis: 'day',
+    dayRate: 100,
+    organizationId: 'ORG',
+    mobileNumber: '0700',
+  }
+  const out = userProfileWriteFields(before, {
+    assignedManagerUserIds: ['m1'],
+    assignedManagerUserId: 'm1',
+    hasNoLineManager: true,
+    payBasis: 'hourly',
+    dayRate: null,
+    hourlyRate: 20,
+    organizationId: 'OTHER',
+    mobileNumber: '0700',
+  })
+  assert.deepEqual(out.set, {
+    assignedManagerUserIds: ['m1'],
+    assignedManagerUserId: 'm1',
+    hasNoLineManager: true,
+    payBasis: 'hourly',
+    hourlyRate: 20,
+  })
+  assert.deepEqual(out.remove, ['dayRate'])
+})
+
+test('operative, manager and client write helpers are partial and keep create-only fields', () => {
+  const op = operativeRowWriteFields(
+    { firstName: 'A', lastName: 'B', name: 'A B', isActive: true, id: 'x', createdAt: 1 },
+    { firstName: 'A', lastName: 'C', name: 'A C', isActive: true, id: 'y', createdAt: 2 }
+  )
+  assert.deepEqual(op, { set: { firstName: 'A', lastName: 'C', name: 'A C' }, remove: [] })
+  const mgr = managerRowWriteFields({ payBasis: 'day', dayRate: 100 }, { payBasis: 'day', dayRate: 100, hourlyRate: null })
+  assert.deepEqual(mgr, { set: {}, remove: [] })
+  const client = clientWriteFields({ name: 'Acme', email: 'a@x' }, { name: 'Acme', email: 'a@x' })
+  assert.deepEqual(client, { set: {}, remove: [] })
+})
+
+test('skillsCatalogueWrites never deletes the catalogue from an empty or failed load', () => {
+  const stored = [
+    { id: 'S1', name: 'Tiling', trade: 'Finishes' },
+    { id: 'S2', name: 'Plaster', trade: 'Finishes' },
+  ]
+  assert.deepEqual(skillsCatalogueWrites({ stored, next: [], loaded: true }), { write: [], remove: [] })
+  assert.deepEqual(
+    skillsCatalogueWrites({ stored, next: [{ id: 'S1', name: 'Tiling', trade: 'Finishes' }], loaded: false }),
+    { write: [], remove: [] }
+  )
+  assert.deepEqual(
+    skillsCatalogueWrites({
+      stored,
+      next: [
+        { id: 'S1', name: 'Tiling', trade: 'Wet trades' },
+        { id: 'S3', name: 'Screed' },
+      ],
+      loaded: true,
+    }),
+    { write: [{ id: 'S1', set: { trade: 'Wet trades' } }, { id: 'S3', set: { name: 'Screed' } }], remove: ['S2'] }
+  )
+})

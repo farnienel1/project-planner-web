@@ -6,59 +6,43 @@ import {
   deleteDoc,
   doc,
   getDocs,
-  setDoc,
   Timestamp,
 } from 'firebase/firestore'
-import { db } from '@/lib/firebase/config'
+import { auth, db } from '@/lib/firebase/config'
+import { savePartialDocument } from '@/lib/firebase/partialWrite'
+import { parseSubcontractorDocument, subcontractorWriteFields } from '@/lib/canonical/peopleDocuments'
 import type { Subcontractor, SubcontractorContact } from '@/types'
-import { newUuid, parseFirestoreDate, parseOptionalString, parseString, parseUuid } from '@/lib/firebase/firestoreUtils'
+import { newUuid } from '@/lib/firebase/firestoreUtils'
 import { markRowsRemoved, retainScopedRows } from '@/lib/staff/rosterRetain'
 import { invalidateOrgLoad, optionsForUnappliedOrg, runOrgLoad } from '@/lib/stores/orgLoadCache'
 
 const SUBCONTRACTOR_LOAD_KEY = 'subcontractorStore:subcontractors'
 
-function parseContacts(rows: unknown): SubcontractorContact[] {
-  if (!Array.isArray(rows)) return []
-  return rows
-    .map((row) => {
-      const data = row as Record<string, unknown>
-      const name = parseString(data.name)
-      const email = parseString(data.email)
-      const contactNumber = parseString(data.contactNumber)
-      const position = parseString(data.position, 'Installer')
-      const createdAt = parseFirestoreDate(data.createdAt) || new Date()
-      if (!name) return null
-      const contact: SubcontractorContact = {
-        id: parseString(data.id) || parseString(data.uuid) || parseString(data.contactId),
-        name,
-        email,
-        contactNumber,
-        position,
-        createdAt,
-      }
-      const tradeType = parseOptionalString(data.tradeType)
-      if (tradeType) contact.tradeType = tradeType
-      return contact
-    })
-    .filter((contact): contact is SubcontractorContact => contact !== null)
-}
-
+/** `subcontractors/{id}` through the rulebook reader `parseSubcontractorDocument` (rulebook 1.6.0). */
 function mapSubcontractor(docId: string, data: Record<string, unknown>): Subcontractor | null {
-  const name = parseString(data.name)
-  const subcontractorType = parseString(data.subcontractorType)
-  const createdAt = parseFirestoreDate(data.createdAt) || new Date()
-  const updatedAt = parseFirestoreDate(data.updatedAt) || createdAt
-  if (!name || !subcontractorType) return null
-
+  const parsed = parseSubcontractorDocument(docId, data)
+  if (!parsed) return null
+  const createdAt = parsed.createdAtMs != null ? new Date(parsed.createdAtMs) : new Date()
   return {
-    id: parseUuid(data.id, docId),
-    name,
-    subcontractorType,
-    website: parseOptionalString(data.website),
-    address: parseOptionalString(data.address),
-    contacts: parseContacts(data.contacts),
+    id: parsed.id,
+    name: parsed.name,
+    subcontractorType: parsed.subcontractorType,
+    website: parsed.website ?? undefined,
+    address: parsed.address ?? undefined,
+    contacts: parsed.contacts.map((contact) => {
+      const row: SubcontractorContact = {
+        id: contact.id,
+        name: contact.name,
+        email: contact.email,
+        contactNumber: contact.contactNumber,
+        position: contact.position,
+        createdAt: contact.createdAtMs != null ? new Date(contact.createdAtMs) : new Date(),
+      }
+      if (contact.tradeType) row.tradeType = contact.tradeType
+      return row
+    }),
     createdAt,
-    updatedAt,
+    updatedAt: parsed.updatedAtMs != null ? new Date(parsed.updatedAtMs) : createdAt,
   }
 }
 
@@ -135,7 +119,13 @@ export const useSubcontractorStore = create<SubcontractorState>((set, get) => ({
   saveSubcontractor: async (organizationId, subcontractor) => {
     const id = subcontractor.id || newUuid()
     const payload = subcontractorPayload({ ...subcontractor, id, updatedAt: new Date() })
-    await setDoc(doc(db, 'organizations', organizationId, 'subcontractors', id), payload)
+    // Partial update of the changed fields only (rulebook §1, `subcontractorWriteFields`).
+    await savePartialDocument(
+      doc(db, 'organizations', organizationId, 'subcontractors', id),
+      payload,
+      subcontractorWriteFields,
+      { userId: auth?.currentUser?.uid }
+    )
     invalidateOrgLoad(SUBCONTRACTOR_LOAD_KEY)
     const mapped = mapSubcontractor(id, payload as unknown as Record<string, unknown>)
     if (!mapped) return

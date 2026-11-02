@@ -3,6 +3,7 @@ import type { User, UserPermissions } from '@/types'
 import { UserRole } from '@/types'
 import { readStoredRates } from '@/lib/timesheets/payBasis'
 import { invitePlaceholderUserWriteFields } from '@/lib/canonical/inviteEmailClaim'
+import { userProfileWriteFields } from '@/lib/canonical/peopleDocuments'
 
 export function permissionsToFirestoreMap(permissions: UserPermissions): Record<string, boolean> {
   return {
@@ -314,40 +315,47 @@ export function buildInvitedUserPayload(params: {
   return payload
 }
 
-function writeValueKey(value: unknown): string {
-  if (value && typeof value === 'object') {
-    const candidate = value as { toMillis?: () => number; _methodName?: string; constructor?: { name?: string } }
-    if (typeof candidate.toMillis === 'function') return `ts:${candidate.toMillis()}`
-    // deleteField() / serverTimestamp() sentinels: compare by kind.
-    if (typeof candidate._methodName === 'string') return `fv:${candidate._methodName}`
-    if (Array.isArray(value)) return `[${value.map(writeValueKey).join(',')}]`
-    const record = value as Record<string, unknown>
-    return `{${Object.keys(record)
-      .sort()
-      .map((key) => `${key}:${writeValueKey(record[key])}`)
-      .join(',')}}`
-  }
-  return JSON.stringify(value) ?? 'undefined'
+function sentinelKind(value: unknown): string | null {
+  if (!value || typeof value !== 'object') return null
+  const name = (value as { _methodName?: unknown })._methodName
+  return typeof name === 'string' ? name : null
 }
 
 /** Fields always sent with a user save even when unchanged. */
 const ALWAYS_WRITTEN_USER_FIELDS = new Set(['updatedAt'])
 
 /**
- * Only the fields this edit changed. `next` and `baseline` are both `buildSaveUserPayload`
- * results: `baseline` from the copy the editor loaded, `next` from the edited copy. A field the
- * editor did not touch is left as it is in Firestore, so a change made meanwhile on iOS or in
- * another tab (photo, mobile, line manager, rate) is not overwritten from the stale copy.
+ * Only the fields this edit changed, as one partial update — the rulebook `userProfileWriteFields`
+ * (rulebook 1.6.0 §1, §8, §11). `next` and `baseline` are both `buildSaveUserPayload` results: `baseline`
+ * from the copy the editor loaded, `next` from the edited copy. A field the editor did not touch is left as
+ * it is in Firestore, so a change made meanwhile on iOS or in another tab (photo, mobile, line manager,
+ * rate) is not overwritten from the stale copy. A delete is sent only for a field the loaded copy had.
+ * Line manager ids with `hasNoLineManager`, pay basis with both rates and employment type with its
+ * transition are written together.
  */
 export function changedUserPayload(
   next: Record<string, unknown>,
   baseline: Record<string, unknown>
 ): Record<string, unknown> {
+  const plainNext: Record<string, unknown> = {}
+  const plainBefore: Record<string, unknown> = {}
   const out: Record<string, unknown> = {}
   for (const [key, value] of Object.entries(next)) {
-    if (ALWAYS_WRITTEN_USER_FIELDS.has(key) || writeValueKey(value) !== writeValueKey(baseline[key])) {
+    if (ALWAYS_WRITTEN_USER_FIELDS.has(key)) {
       out[key] = value
+      continue
     }
+    const kind = sentinelKind(value)
+    if (kind === 'deleteField') plainNext[key] = null
+    else if (kind) out[key] = value
+    else plainNext[key] = value
   }
+  for (const [key, value] of Object.entries(baseline)) {
+    if (sentinelKind(value)) continue
+    plainBefore[key] = value
+  }
+  const write = userProfileWriteFields(plainBefore, plainNext)
+  Object.assign(out, write.set)
+  for (const key of write.remove) out[key] = deleteField()
   return out
 }
