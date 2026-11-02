@@ -2,6 +2,8 @@
   command = "npm run build"
 
 [build.environment]
+  # Builds and functions run on Node 22 (Next 16 supports it; @netlify/blobs 11 needs >= 22.12).
+  NODE_VERSION = "22"
   NETLIFY_NEXT_SKEW_PROTECTION = "true"
   # These are public catalogue ids and the word "test", not credentials.
   # Netlify still scans them if "Contains secret values" is ticked, and "test"
