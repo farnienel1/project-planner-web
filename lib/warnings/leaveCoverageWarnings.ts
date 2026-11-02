@@ -14,6 +14,7 @@ import { dateFromDayKey, dayKey, londonMidnight } from '@/lib/ios-parity/londonT
 import { isPlaceholderOperative } from '@/lib/operatives/operativeRosterUtils'
 import { computeWarningCoverageWindow, isDateWithinWarningWindow } from '@/lib/warnings/warningLookahead'
 import { bookingJobLabel } from '@/lib/canonical'
+import { holidayBookingLabourInput } from '@/lib/annualLeave/holidayDayKeys'
 
 export type LeaveCoverageWarning = LeaveCoverageRow & {
   date: Date
@@ -101,15 +102,8 @@ export function computeLeaveCoverageWarnings({
     includeWeekends: warningDetection.includeWeekendsForUnbookedLabour,
     excludedUserIds: warningDetection.excludedUserIdsFromUnbookedWarnings,
     people: leavePeopleFrom(users, operatives),
-    leave: holidays.map((holiday) => ({
-      id: holiday.id,
-      userId: holiday.userId,
-      operativeId: holiday.operativeId,
-      startDayKey: dayKey(holiday.startDate, timeZone),
-      endDayKey: dayKey(holiday.endDate, timeZone),
-      timeSlot: holiday.timeSlot,
-      approved: String(holiday.status).toLowerCase() === 'approved',
-    })),
+    // Parsed day keys from `parseHolidayDocument` (rulebook §9), never recomputed here.
+    leave: holidays.map((holiday) => holidayBookingLabourInput(holiday, timeZone)),
     bookings: [
       ...bookings
         .filter(

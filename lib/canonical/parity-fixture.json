@@ -10553,6 +10553,644 @@
         "timesheet_pending_manager_signoff"
       ],
       "expected": false
+    },
+    {
+      "name": "1.5.0 holiday document: web-written record",
+      "function": "parseHolidayDocument",
+      "args": [
+        "abc-web",
+        {
+          "id": "abc-web",
+          "organizationId": "ORG",
+          "userId": "u1",
+          "operativeId": null,
+          "startDate": {
+            "seconds": 1794182400,
+            "nanoseconds": 0
+          },
+          "endDate": {
+            "seconds": 1794528000,
+            "nanoseconds": 0
+          },
+          "status": "pending",
+          "timeSlot": "FULL DAY",
+          "approvedByUserId": null,
+          "cancellationRequestedAt": null
+        },
+        "Europe/London"
+      ],
+      "expected": {
+        "id": "abc-web",
+        "userId": "u1",
+        "operativeId": null,
+        "startDayKey": "2026-11-09",
+        "endDayKey": "2026-11-13",
+        "timeSlot": "FULL DAY",
+        "status": "pending",
+        "approved": false,
+        "approvedByUserId": null,
+        "cancellationRequested": false,
+        "cancellationRequestedByUserId": null,
+        "decisionNote": null,
+        "organizationId": "ORG"
+      }
+    },
+    {
+      "name": "1.5.0 holiday document: iOS-written record keeps upper-case ids",
+      "function": "parseHolidayDocument",
+      "args": [
+        "D7A3C1E2-0000-4000-8000-0000000000AA",
+        {
+          "userId": "AuthUid9",
+          "operativeId": "B1C2D3E4-0000-4000-8000-0000000000BB",
+          "startDate": {
+            "seconds": 1794182400,
+            "nanoseconds": 0
+          },
+          "endDate": {
+            "seconds": 1794182400,
+            "nanoseconds": 0
+          },
+          "status": "approved",
+          "timeSlot": "PM",
+          "approvedBy": "MgrUid",
+          "note": "enjoy"
+        },
+        "Europe/London"
+      ],
+      "expected": {
+        "id": "D7A3C1E2-0000-4000-8000-0000000000AA",
+        "userId": "AuthUid9",
+        "operativeId": "B1C2D3E4-0000-4000-8000-0000000000BB",
+        "startDayKey": "2026-11-09",
+        "endDayKey": "2026-11-09",
+        "timeSlot": "PM",
+        "status": "approved",
+        "approved": true,
+        "approvedByUserId": "MgrUid",
+        "cancellationRequested": false,
+        "cancellationRequestedByUserId": null,
+        "decisionNote": "enjoy"
+      }
+    },
+    {
+      "name": "1.5.0 holiday document: self-booked admin with only userId and no status is approved",
+      "function": "parseHolidayDocument",
+      "args": [
+        "LEAVE-1",
+        {
+          "userId": "ADMIN-1",
+          "startDate": {
+            "seconds": 1794182400,
+            "nanoseconds": 0
+          },
+          "endDate": {
+            "seconds": 1794528000,
+            "nanoseconds": 0
+          }
+        },
+        "Europe/London"
+      ],
+      "expected": {
+        "id": "LEAVE-1",
+        "userId": "ADMIN-1",
+        "operativeId": null,
+        "startDayKey": "2026-11-09",
+        "endDayKey": "2026-11-13",
+        "timeSlot": "FULL DAY",
+        "status": "approved",
+        "approved": true,
+        "approvedByUserId": null,
+        "cancellationRequested": false,
+        "cancellationRequestedByUserId": null,
+        "decisionNote": null
+      }
+    },
+    {
+      "name": "1.5.0 holiday document: a non-UUID operativeId is kept",
+      "function": "parseHolidayDocument",
+      "args": [
+        "h1",
+        {
+          "operativeId": "op-legacy-7",
+          "startDate": "2026-11-09"
+        },
+        "Europe/London"
+      ],
+      "expected": {
+        "id": "h1",
+        "userId": null,
+        "operativeId": "op-legacy-7",
+        "startDayKey": "2026-11-09",
+        "endDayKey": "2026-11-09",
+        "timeSlot": "FULL DAY",
+        "status": "approved",
+        "approved": true,
+        "approvedByUserId": null,
+        "cancellationRequested": false,
+        "cancellationRequestedByUserId": null,
+        "decisionNote": null
+      }
+    },
+    {
+      "name": "1.5.0 holiday document: legacy start_date / end_date / uid",
+      "function": "parseHolidayDocument",
+      "args": [
+        "h2",
+        {
+          "start_date": "2026-11-09",
+          "end_date": "2026-11-10",
+          "uid": "U"
+        },
+        "Europe/London"
+      ],
+      "expected": {
+        "id": "h2",
+        "userId": "U",
+        "operativeId": null,
+        "startDayKey": "2026-11-09",
+        "endDayKey": "2026-11-10",
+        "timeSlot": "FULL DAY",
+        "status": "approved",
+        "approved": true,
+        "approvedByUserId": null,
+        "cancellationRequested": false,
+        "cancellationRequestedByUserId": null,
+        "decisionNote": null
+      }
+    },
+    {
+      "name": "1.5.0 holiday document: legacy from / to / nested user.id",
+      "function": "parseHolidayDocument",
+      "args": [
+        "h3",
+        {
+          "from": "09/11/2026",
+          "to": "2026/11/11",
+          "user": {
+            "id": "Nested"
+          }
+        },
+        "Europe/London"
+      ],
+      "expected": {
+        "id": "h3",
+        "userId": "Nested",
+        "operativeId": null,
+        "startDayKey": "2026-11-09",
+        "endDayKey": "2026-11-11",
+        "timeSlot": "FULL DAY",
+        "status": "approved",
+        "approved": true,
+        "approvedByUserId": null,
+        "cancellationRequested": false,
+        "cancellationRequestedByUserId": null,
+        "decisionNote": null
+      }
+    },
+    {
+      "name": "1.5.0 holiday document: declined is rejected",
+      "function": "parseHolidayDocument",
+      "args": [
+        "h4",
+        {
+          "userId": "u",
+          "startDate": "2026-11-09",
+          "status": "declined"
+        },
+        "Europe/London"
+      ],
+      "expected": {
+        "id": "h4",
+        "userId": "u",
+        "operativeId": null,
+        "startDayKey": "2026-11-09",
+        "endDayKey": "2026-11-09",
+        "timeSlot": "FULL DAY",
+        "status": "rejected",
+        "approved": false,
+        "approvedByUserId": null,
+        "cancellationRequested": false,
+        "cancellationRequestedByUserId": null,
+        "decisionNote": null
+      }
+    },
+    {
+      "name": "1.5.0 holiday document: requested is pending",
+      "function": "parseHolidayDocument",
+      "args": [
+        "h5",
+        {
+          "userId": "u",
+          "startDate": "2026-11-09",
+          "holidayStatus": "requested"
+        },
+        "Europe/London"
+      ],
+      "expected": {
+        "id": "h5",
+        "userId": "u",
+        "operativeId": null,
+        "startDayKey": "2026-11-09",
+        "endDayKey": "2026-11-09",
+        "timeSlot": "FULL DAY",
+        "status": "pending",
+        "approved": false,
+        "approvedByUserId": null,
+        "cancellationRequested": false,
+        "cancellationRequestedByUserId": null,
+        "decisionNote": null
+      }
+    },
+    {
+      "name": "1.5.0 holiday document: cancelled is rejected",
+      "function": "parseHolidayDocument",
+      "args": [
+        "h6",
+        {
+          "userId": "u",
+          "startDate": "2026-11-09",
+          "status": "Cancelled"
+        },
+        "Europe/London"
+      ],
+      "expected": {
+        "id": "h6",
+        "userId": "u",
+        "operativeId": null,
+        "startDayKey": "2026-11-09",
+        "endDayKey": "2026-11-09",
+        "timeSlot": "FULL DAY",
+        "status": "rejected",
+        "approved": false,
+        "approvedByUserId": null,
+        "cancellationRequested": false,
+        "cancellationRequestedByUserId": null,
+        "decisionNote": null
+      }
+    },
+    {
+      "name": "1.5.0 holiday document: a BST-evening timestamp is the next organisation day",
+      "function": "parseHolidayDocument",
+      "args": [
+        "h7",
+        {
+          "userId": "u",
+          "startDate": {
+            "seconds": 1784071800,
+            "nanoseconds": 0
+          },
+          "endDate": {
+            "_seconds": 1784071800,
+            "_nanoseconds": 0
+          }
+        },
+        "Europe/London"
+      ],
+      "expected": {
+        "id": "h7",
+        "userId": "u",
+        "operativeId": null,
+        "startDayKey": "2026-07-15",
+        "endDayKey": "2026-07-15",
+        "timeSlot": "FULL DAY",
+        "status": "approved",
+        "approved": true,
+        "approvedByUserId": null,
+        "cancellationRequested": false,
+        "cancellationRequestedByUserId": null,
+        "decisionNote": null
+      }
+    },
+    {
+      "name": "1.5.0 holiday document: a reversed range is swapped",
+      "function": "parseHolidayDocument",
+      "args": [
+        "h8",
+        {
+          "userId": "u",
+          "startDate": {
+            "seconds": 1794528000,
+            "nanoseconds": 0
+          },
+          "endDate": {
+            "seconds": 1794182400,
+            "nanoseconds": 0
+          },
+          "timeSlot": "morning"
+        },
+        "Europe/London"
+      ],
+      "expected": {
+        "id": "h8",
+        "userId": "u",
+        "operativeId": null,
+        "startDayKey": "2026-11-09",
+        "endDayKey": "2026-11-13",
+        "timeSlot": "AM",
+        "status": "approved",
+        "approved": true,
+        "approvedByUserId": null,
+        "cancellationRequested": false,
+        "cancellationRequestedByUserId": null,
+        "decisionNote": null
+      }
+    },
+    {
+      "name": "1.5.0 holiday document: no start date is unreadable",
+      "function": "parseHolidayDocument",
+      "args": [
+        "h9",
+        {
+          "userId": "u",
+          "endDate": {
+            "seconds": 1794182400,
+            "nanoseconds": 0
+          }
+        },
+        "Europe/London"
+      ],
+      "expected": null
+    },
+    {
+      "name": "1.5.0 holiday documents: a list drops unreadable documents",
+      "function": "parseHolidayDocuments",
+      "args": [
+        [
+          {
+            "id": "a",
+            "data": {
+              "userId": "u",
+              "startDate": "2026-11-09"
+            }
+          },
+          {
+            "id": "b",
+            "data": {}
+          }
+        ],
+        "Europe/London"
+      ],
+      "expected": [
+        {
+          "id": "a",
+          "userId": "u",
+          "operativeId": null,
+          "startDayKey": "2026-11-09",
+          "endDayKey": "2026-11-09",
+          "timeSlot": "FULL DAY",
+          "status": "approved",
+          "approved": true,
+          "approvedByUserId": null,
+          "cancellationRequested": false,
+          "cancellationRequestedByUserId": null,
+          "decisionNote": null
+        }
+      ]
+    },
+    {
+      "name": "1.5.0 ids without case: upper-case leave userId covers a lower-case admin id",
+      "function": "unbookedLabourRows",
+      "args": [
+        {
+          "timeZone": "Europe/London",
+          "startDayKey": "2026-11-09",
+          "endDayKey": "2026-11-10",
+          "includeWeekends": false,
+          "standardPaidHours": 8,
+          "saturdayCountsAsHours": 8,
+          "sundayCountsAsHours": 8,
+          "operatives": [],
+          "people": [
+            {
+              "id": "abcd-admin",
+              "email": "boss@site.test",
+              "name": "Boss Admin",
+              "isActive": true,
+              "passwordSet": true,
+              "isOperativeMode": false,
+              "isManager": false,
+              "isAdmin": true,
+              "isSuperAdmin": false
+            }
+          ],
+          "bookings": [],
+          "holidays": [
+            {
+              "userId": "ABCD-ADMIN",
+              "startDayKey": "2026-11-09",
+              "endDayKey": "2026-11-10",
+              "approved": true
+            }
+          ]
+        }
+      ],
+      "expected": []
+    },
+    {
+      "name": "1.5.0 ids without case: lower-case leave userId covers an upper-case admin id",
+      "function": "unbookedLabourRows",
+      "args": [
+        {
+          "timeZone": "Europe/London",
+          "startDayKey": "2026-11-09",
+          "endDayKey": "2026-11-10",
+          "includeWeekends": false,
+          "standardPaidHours": 8,
+          "saturdayCountsAsHours": 8,
+          "sundayCountsAsHours": 8,
+          "operatives": [],
+          "people": [
+            {
+              "id": "ABCD-ADMIN",
+              "email": "boss@site.test",
+              "name": "Boss Admin",
+              "isActive": true,
+              "passwordSet": true,
+              "isOperativeMode": false,
+              "isManager": false,
+              "isAdmin": true,
+              "isSuperAdmin": false
+            }
+          ],
+          "bookings": [],
+          "holidays": [
+            {
+              "userId": "abcd-admin",
+              "startDayKey": "2026-11-09",
+              "endDayKey": "2026-11-10",
+              "approved": true
+            }
+          ]
+        }
+      ],
+      "expected": []
+    },
+    {
+      "name": "1.5.0 ids without case: upper-case booking personId covers a mixed-case admin; the row keeps the stored id",
+      "function": "unbookedLabourRows",
+      "args": [
+        {
+          "timeZone": "Europe/London",
+          "startDayKey": "2026-11-09",
+          "endDayKey": "2026-11-10",
+          "includeWeekends": false,
+          "standardPaidHours": 8,
+          "saturdayCountsAsHours": 8,
+          "sundayCountsAsHours": 8,
+          "operatives": [],
+          "people": [
+            {
+              "id": "Abcd-Admin",
+              "email": "boss@site.test",
+              "name": "Boss Admin",
+              "isActive": true,
+              "passwordSet": true,
+              "isOperativeMode": false,
+              "isManager": false,
+              "isAdmin": true,
+              "isSuperAdmin": false
+            }
+          ],
+          "bookings": [
+            {
+              "personId": "ABCD-ADMIN",
+              "dayKey": "2026-11-09",
+              "kind": "manager",
+              "timeSlot": "FULL DAY"
+            }
+          ],
+          "holidays": []
+        }
+      ],
+      "expected": [
+        {
+          "id": "unbooked-2026-11-10-Abcd-Admin",
+          "operativeId": "Abcd-Admin",
+          "operativeName": "Boss Admin",
+          "userId": "Abcd-Admin",
+          "personKey": "Abcd-Admin",
+          "dayKey": "2026-11-10",
+          "missingHours": 8,
+          "message": "Boss Admin is missing 8h on Tuesday 10 November."
+        }
+      ]
+    },
+    {
+      "name": "1.5.0 ids without case: Daily Overview day with upper-case leave userId",
+      "function": "unbookedLabourRowsOnDay",
+      "args": [
+        {
+          "timeZone": "Europe/London",
+          "dayKey": "2026-11-09",
+          "includeWeekends": false,
+          "standardPaidHours": 8,
+          "saturdayCountsAsHours": 8,
+          "sundayCountsAsHours": 8,
+          "operatives": [],
+          "people": [
+            {
+              "id": "abcd-admin",
+              "email": "boss@site.test",
+              "name": "Boss Admin",
+              "isActive": true,
+              "passwordSet": true,
+              "isOperativeMode": false,
+              "isManager": false,
+              "isAdmin": true,
+              "isSuperAdmin": false
+            }
+          ],
+          "bookings": [],
+          "holidays": [
+            {
+              "userId": "ABCD-ADMIN",
+              "startDayKey": "2026-11-09",
+              "endDayKey": "2026-11-09",
+              "approved": true
+            }
+          ]
+        }
+      ],
+      "expected": []
+    },
+    {
+      "name": "1.5.0 ids without case: leave coverage matches upper-case leave and booking ids",
+      "function": "leaveCoverageRows",
+      "args": [
+        {
+          "timeZone": "Europe/London",
+          "startDayKey": "2026-11-09",
+          "endDayKey": "2026-11-09",
+          "day": null,
+          "includeWeekends": false,
+          "people": [
+            {
+              "personKey": "abcd-op",
+              "name": "Op One",
+              "userId": "abcd-user",
+              "operativeIds": [
+                "abcd-op"
+              ]
+            }
+          ],
+          "leave": [
+            {
+              "id": "L1",
+              "userId": "ABCD-USER",
+              "startDayKey": "2026-11-09",
+              "endDayKey": "2026-11-09",
+              "timeSlot": "FULL DAY",
+              "approved": true
+            }
+          ],
+          "bookings": [
+            {
+              "id": "B1",
+              "personId": "ABCD-OP",
+              "kind": "operative",
+              "dayKey": "2026-11-09",
+              "timeSlot": "FULL DAY"
+            }
+          ]
+        }
+      ],
+      "expected": [
+        {
+          "id": "leave-clash-2026-11-09-abcd-op-L1",
+          "kind": "leave_clash",
+          "personKey": "abcd-op",
+          "personName": "Op One",
+          "userId": "abcd-user",
+          "operativeId": "abcd-op",
+          "dayKey": "2026-11-09",
+          "leaveId": "L1",
+          "leaveSlot": "FULL_DAY",
+          "leaveLabel": "Full day",
+          "leaveWindow": {
+            "start": 450,
+            "end": 960
+          },
+          "clashes": [
+            {
+              "bookingId": "B1",
+              "kind": "operative",
+              "label": "Booking",
+              "start": 450,
+              "end": 960,
+              "overlapStart": 450,
+              "overlapEnd": 960
+            }
+          ],
+          "workingWindow": null,
+          "missing": [],
+          "missingHours": 0,
+          "bookedHours": 8.5,
+          "severity": "high",
+          "title": "Booked during annual leave",
+          "message": "Op One is booked Booking 07:30–16:00 on Monday 9 November while on full-day annual leave."
+        }
+      ]
     }
   ]
 }

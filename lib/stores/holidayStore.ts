@@ -15,49 +15,55 @@ import { auth, db } from '@/lib/firebase/config'
 import {
   holidayDecisionWriteFields,
   holidayRequestWriteFields,
-  normalizeHolidayStatus,
-  normalizeHolidayTimeSlot,
   parseHolidayDecisionNote,
+  parseHolidayDocument,
   writeMetadataFields,
 } from '@/lib/canonical'
 import { withAuthReadRetry } from '@/lib/firebase/waitForAuthToken'
 import type { HolidayBooking, HolidayStatus, HolidayTimeSlot } from '@/types'
-import { newUuid, parseFirestoreDate, parseOptionalString, parseString, parseUuid } from '@/lib/firebase/firestoreUtils'
+import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
+import { dateFromDayKeyInZone } from '@/lib/orgTime/zoneTime'
+import { newUuid, parseFirestoreDate } from '@/lib/firebase/firestoreUtils'
 import { markRowsRemoved, retainScopedRows } from '@/lib/staff/rosterRetain'
 import { changedFirestoreFields } from '@/lib/firebase/changedFields'
-
-function parseHolidayStatus(value: unknown): HolidayStatus {
-  return normalizeHolidayStatus(value)
-}
-
-function parseHolidayTimeSlot(value: unknown): HolidayTimeSlot {
-  return normalizeHolidayTimeSlot(value)
-}
 
 /** `updatedBy` / `updatedFrom` + server `updatedAt` on every holiday write. */
 function holidayWriteMetadata() {
   return { ...(writeMetadataFields(auth?.currentUser?.uid, 'web') ?? {}), updatedAt: serverTimestamp() }
 }
 
-export function mapHolidayBooking(docId: string, data: Record<string, unknown>, orgId: string): HolidayBooking | null {
-  const startDate = parseFirestoreDate(data.startDate)
-  const endDate = parseFirestoreDate(data.endDate)
-  if (!startDate || !endDate) return null
+/**
+ * One `holidayBookings` document as a `HolidayBooking`. The document is read only through the rulebook
+ * reader `parseHolidayDocument` (rulebook §9): keys, status words, ids and organisation-zone day keys are
+ * the same as on iOS. `startDate` / `endDate` are midnight of those day keys in the organisation zone.
+ */
+export function mapHolidayBooking(
+  docId: string,
+  data: Record<string, unknown>,
+  orgId: string,
+  timeZone?: string | null
+): HolidayBooking | null {
+  const zone = organizationZoneOr(timeZone)
+  const parsed = parseHolidayDocument(docId, data, zone)
+  if (!parsed) return null
 
   return {
-    id: parseUuid(data.id, docId),
-    organizationId: parseString(data.organizationId, orgId),
-    userId: parseOptionalString(data.userId),
-    operativeId: parseOptionalString(data.operativeId),
-    startDate,
-    endDate,
-    status: parseHolidayStatus(data.status),
-    timeSlot: parseHolidayTimeSlot(data.timeSlot),
-    approvedByUserId: parseOptionalString(data.approvedByUserId),
+    id: parsed.id,
+    organizationId: parsed.organizationId ?? orgId,
+    userId: parsed.userId ?? undefined,
+    operativeId: parsed.operativeId ?? undefined,
+    startDate: dateFromDayKeyInZone(parsed.startDayKey, zone),
+    endDate: dateFromDayKeyInZone(parsed.endDayKey, zone),
+    startDayKey: parsed.startDayKey,
+    endDayKey: parsed.endDayKey,
+    dayKeyTimeZone: zone,
+    status: parsed.status,
+    timeSlot: parsed.timeSlot,
+    approvedByUserId: parsed.approvedByUserId ?? undefined,
     approvedAt: parseFirestoreDate(data.approvedAt),
     cancellationRequestedAt: parseFirestoreDate(data.cancellationRequestedAt),
-    cancellationRequestedByUserId: parseOptionalString(data.cancellationRequestedByUserId),
-    decisionNote: parseHolidayDecisionNote(data.decisionNote) ?? undefined,
+    cancellationRequestedByUserId: parsed.cancellationRequestedByUserId ?? undefined,
+    decisionNote: parsed.decisionNote ?? undefined,
     createdAt: parseFirestoreDate(data.createdAt) || new Date(),
     updatedAt: parseFirestoreDate(data.updatedAt) || new Date(),
   }
@@ -210,7 +216,8 @@ export const useHolidayStore = create<HolidayState>((set, get) => ({
       const mapped = mapHolidayBooking(
         id,
         { ...payload, updatedAt: Timestamp.fromDate(now) } as unknown as Record<string, unknown>,
-        organizationId
+        organizationId,
+        timeZone
       )
       if (mapped) saved.push(mapped)
     }

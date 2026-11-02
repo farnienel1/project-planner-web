@@ -290,6 +290,13 @@ export interface HolidayBooking {
   operativeId?: string;
   startDate: Date;
   endDate: Date;
+  /**
+   * Organisation-zone day keys from `parseHolidayDocument` (rulebook §9). Set by the holiday store;
+   * `dayKeyTimeZone` is the zone they were read in. Read them with `holidayBookingDayKeys`.
+   */
+  startDayKey?: string;
+  endDayKey?: string;
+  dayKeyTimeZone?: string;
   status: HolidayStatus;
   timeSlot: HolidayTimeSlot;
   approvedByUserId?: string;

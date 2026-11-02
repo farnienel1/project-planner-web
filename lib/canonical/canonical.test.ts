@@ -5772,3 +5772,296 @@ test('1.4.0: push_test reaches its sender and is the only type pushed to its act
   }
   assert.equal(rulebook.notificationPushesToActor('timesheet_pending_manager_signoff'), false)
 })
+
+import {
+  holidayDocumentDayKey,
+  labourHolidayInput,
+  parseHolidayDocument,
+  parseHolidayDocuments,
+} from './holidayDocument.ts'
+import { normalizeHolidayStatus as normalizeLeaveStatus, normalizeHolidayTimeSlot as normalizeLeaveSlot } from './leaveRequests.ts'
+
+// 1.5.0 — one reader for holidayBookings documents on every platform.
+const HD_LONDON = 'Europe/London'
+// 2026-11-09 00:00 GMT and 2026-11-13 00:00 GMT as Firestore timestamps.
+const HD_NOV9 = { seconds: Date.UTC(2026, 10, 9) / 1000, nanoseconds: 0 }
+const HD_NOV13 = { seconds: Date.UTC(2026, 10, 13) / 1000, nanoseconds: 0 }
+
+test('parseHolidayDocument reads a web-written record', () => {
+  const parsed = parseHolidayDocument(
+    'abc-web',
+    {
+      id: 'abc-web',
+      organizationId: 'ORG',
+      userId: 'u1',
+      operativeId: null,
+      startDate: HD_NOV9,
+      endDate: HD_NOV13,
+      status: 'pending',
+      timeSlot: 'FULL DAY',
+      approvedByUserId: null,
+      cancellationRequestedAt: null,
+    },
+    HD_LONDON
+  )
+  assert.deepEqual(parsed, {
+    id: 'abc-web',
+    userId: 'u1',
+    operativeId: null,
+    startDayKey: '2026-11-09',
+    endDayKey: '2026-11-13',
+    timeSlot: 'FULL DAY',
+    status: 'pending',
+    approved: false,
+    approvedByUserId: null,
+    cancellationRequested: false,
+    cancellationRequestedByUserId: null,
+    decisionNote: null,
+    organizationId: 'ORG',
+  })
+})
+
+test('parseHolidayDocument reads an iOS-written record (upper-case UUID ids, approvedBy, note, cancellation)', () => {
+  const parsed = parseHolidayDocument(
+    'D7A3C1E2-0000-4000-8000-0000000000AA',
+    {
+      userId: 'AuthUid9',
+      operativeId: 'B1C2D3E4-0000-4000-8000-0000000000BB',
+      startDate: HD_NOV9,
+      endDate: HD_NOV9,
+      status: 'approved',
+      timeSlot: 'PM',
+      approvedBy: 'MgrUid',
+      note: '  enjoy  ',
+      cancellationRequestedAt: { seconds: 1, nanoseconds: 0 },
+      cancellationRequestedByUserId: 'AuthUid9',
+    },
+    HD_LONDON
+  )
+  assert.equal(parsed?.id, 'D7A3C1E2-0000-4000-8000-0000000000AA')
+  assert.equal(parsed?.operativeId, 'B1C2D3E4-0000-4000-8000-0000000000BB')
+  assert.equal(parsed?.timeSlot, 'PM')
+  assert.equal(parsed?.approved, true)
+  assert.equal(parsed?.approvedByUserId, 'MgrUid')
+  assert.equal(parsed?.decisionNote, 'enjoy')
+  assert.equal(parsed?.cancellationRequested, true)
+  assert.equal(parsed?.cancellationRequestedByUserId, 'AuthUid9')
+  assert.equal(parsed?.organizationId, undefined)
+})
+
+test('parseHolidayDocument: the id is the document id, not a stored id field', () => {
+  assert.equal(parseHolidayDocument('DocId', { id: 'other', startDate: '2026-11-09' })?.id, 'DocId')
+  assert.equal(parseHolidayDocument('', { startDate: '2026-11-09' }), null)
+})
+
+test('parseHolidayDocument keeps a non-UUID operativeId (iOS used to drop it)', () => {
+  const parsed = parseHolidayDocument('h1', { operativeId: 'op-legacy-7', startDate: '2026-11-09' }, HD_LONDON)
+  assert.equal(parsed?.operativeId, 'op-legacy-7')
+  assert.equal(parsed?.userId, null)
+})
+
+test('parseHolidayDocument reads legacy keys', () => {
+  assert.deepEqual(
+    pickHoliday(parseHolidayDocument('h', { start_date: '2026-11-09', end_date: '2026-11-10', uid: 'U' }, HD_LONDON)),
+    ['U', null, '2026-11-09', '2026-11-10']
+  )
+  assert.deepEqual(
+    pickHoliday(parseHolidayDocument('h', { from: '09/11/2026', to: '2026/11/11', user: { id: 'Nested' } }, HD_LONDON)),
+    ['Nested', null, '2026-11-09', '2026-11-11']
+  )
+  assert.deepEqual(
+    pickHoliday(parseHolidayDocument('h', { date: HD_NOV9, user_id: 'X', operative_id: 'op' }, HD_LONDON)),
+    ['X', 'op', '2026-11-09', '2026-11-09']
+  )
+  assert.deepEqual(
+    pickHoliday(parseHolidayDocument('h', { holidayStart: HD_NOV9.seconds * 1000, holidayEnd: HD_NOV13.seconds, employeeUserId: 'E' }, HD_LONDON)),
+    ['E', null, '2026-11-09', '2026-11-13']
+  )
+  assert.equal(parseHolidayDocument('h', { endDate: HD_NOV9, userId: 'u' }, HD_LONDON), null)
+  assert.equal(parseHolidayDocument('h', { startDate: 'not a date' }, HD_LONDON), null)
+})
+
+function pickHoliday(record: ReturnType<typeof parseHolidayDocument>) {
+  return record ? [record.userId, record.operativeId, record.startDayKey, record.endDayKey] : null
+}
+
+test('parseHolidayDocument status synonyms: missing and unknown are approved', () => {
+  const status = (data: Record<string, unknown>) => parseHolidayDocument('h', { startDate: '2026-11-09', ...data })?.status
+  assert.equal(status({ status: 'declined' }), 'rejected')
+  assert.equal(status({ status: 'Cancelled' }), 'rejected')
+  assert.equal(status({ status: 'canceled' }), 'rejected')
+  assert.equal(status({ status: 'denied' }), 'rejected')
+  assert.equal(status({ status: 'requested' }), 'pending')
+  assert.equal(status({ holidayStatus: 'Awaiting_Approval' }), 'pending')
+  assert.equal(status({ approvalStatus: 'submitted' }), 'pending')
+  assert.equal(status({ status: 'confirmed' }), 'approved')
+  assert.equal(status({}), 'approved')
+  assert.equal(status({ status: 'something else' }), 'approved')
+  assert.equal(normalizeLeaveStatus('DECLINED'), 'rejected')
+  assert.equal(normalizeLeaveSlot('morning'), 'AM')
+  assert.equal(normalizeLeaveSlot('Afternoon'), 'PM')
+  assert.equal(parseHolidayDocument('h', { startDate: '2026-11-09', halfDay: 'a.m.' })?.timeSlot, 'AM')
+})
+
+test('parseHolidayDocument: a BST-evening timestamp is the next organisation day', () => {
+  // 2026-07-14 23:30 UTC is 2026-07-15 00:30 in London (BST).
+  const evening = { seconds: Date.UTC(2026, 6, 14, 23, 30) / 1000, nanoseconds: 0 }
+  const parsed = parseHolidayDocument('h', { startDate: evening, endDate: { _seconds: evening.seconds, _nanoseconds: 0 } }, HD_LONDON)
+  assert.equal(parsed?.startDayKey, '2026-07-15')
+  assert.equal(parsed?.endDayKey, '2026-07-15')
+  assert.equal(holidayDocumentDayKey('2026-07-14T23:30:00Z', HD_LONDON), '2026-07-15')
+  assert.equal(holidayDocumentDayKey(new Date(evening.seconds * 1000), HD_LONDON), '2026-07-15')
+  assert.equal(holidayDocumentDayKey({ toDate: () => new Date(evening.seconds * 1000) }, HD_LONDON), '2026-07-15')
+  assert.equal(holidayDocumentDayKey(0, HD_LONDON), '')
+})
+
+test('parseHolidayDocument swaps a reversed range', () => {
+  const parsed = parseHolidayDocument('h', { startDate: HD_NOV13, endDate: HD_NOV9 }, HD_LONDON)
+  assert.deepEqual([parsed?.startDayKey, parsed?.endDayKey], ['2026-11-09', '2026-11-13'])
+})
+
+test('parseHolidayDocuments drops unreadable documents', () => {
+  const parsed = parseHolidayDocuments(
+    [
+      { id: 'a', data: { startDate: '2026-11-09' } },
+      { id: 'b', data: {} },
+      { id: 'c', data: null },
+    ],
+    HD_LONDON
+  )
+  assert.deepEqual(parsed.map((row) => row.id), ['a'])
+})
+
+test('unbookedLabourRows given parseHolidayDocument output: an admin on approved leave is not unbooked', () => {
+  // The divergence: a self-booked admin record with only userId (no operativeId, no status).
+  const record = parseHolidayDocument('LEAVE-1', { userId: 'ADMIN-1', startDate: HD_NOV9, endDate: HD_NOV13 }, HD_LONDON)
+  assert.ok(record)
+  const input = {
+    timeZone: HD_LONDON,
+    startDayKey: '2026-11-09',
+    endDayKey: '2026-11-16',
+    includeWeekends: false,
+    standardPaidHours: 8,
+    saturdayCountsAsHours: 8,
+    sundayCountsAsHours: 8,
+    people: [
+      {
+        id: 'ADMIN-1',
+        email: 'boss@site.test',
+        name: 'Boss Admin',
+        isActive: true,
+        passwordSet: true,
+        isOperativeMode: false,
+        isManager: false,
+        isAdmin: true,
+        isSuperAdmin: false,
+      },
+    ],
+    operatives: [],
+    bookings: [],
+  }
+  const withLeave = unbookedLabourRows({ ...input, holidays: [labourHolidayInput(record)] })
+  const days = withLeave.filter((row) => row.userId === 'ADMIN-1' || row.operativeId === 'ADMIN-1').map((row) => row.dayKey)
+  for (const day of ['2026-11-09', '2026-11-10', '2026-11-11', '2026-11-12', '2026-11-13']) {
+    assert.equal(days.includes(day), false, `${day} is covered by leave`)
+  }
+  assert.equal(days.includes('2026-11-16'), true)
+  const withoutLeave = unbookedLabourRows({ ...input, holidays: [] })
+  assert.equal(withoutLeave.some((row) => row.dayKey === '2026-11-10'), true)
+})
+
+// 1.5.0 — ids compare without case in unbooked labour and leave coverage (normalizeDocumentId, §1).
+const CASE_ADMIN = {
+  id: 'abcd-admin',
+  email: 'boss@site.test',
+  name: 'Boss Admin',
+  isActive: true,
+  passwordSet: true,
+  isOperativeMode: false,
+  isManager: false,
+  isAdmin: true,
+  isSuperAdmin: false,
+}
+const CASE_INPUT = {
+  timeZone: HD_LONDON,
+  startDayKey: '2026-11-09',
+  endDayKey: '2026-11-10',
+  includeWeekends: false,
+  standardPaidHours: 8,
+  saturdayCountsAsHours: 8,
+  sundayCountsAsHours: 8,
+  operatives: [],
+}
+
+test('unbookedLabourRows: an upper-case leave userId covers a lower-case person id, and the reverse', () => {
+  const upperLeave = unbookedLabourRows({
+    ...CASE_INPUT,
+    people: [CASE_ADMIN],
+    bookings: [],
+    holidays: [{ userId: 'ABCD-ADMIN', startDayKey: '2026-11-09', endDayKey: '2026-11-10', approved: true }],
+  })
+  assert.deepEqual(upperLeave, [])
+  const lowerLeave = unbookedLabourRows({
+    ...CASE_INPUT,
+    people: [{ ...CASE_ADMIN, id: 'ABCD-ADMIN' }],
+    bookings: [],
+    holidays: [{ userId: 'abcd-admin', startDayKey: '2026-11-09', endDayKey: '2026-11-10', approved: true }],
+  })
+  assert.deepEqual(lowerLeave, [])
+})
+
+test('unbookedLabourRows: an upper-case booking personId covers a lower-case person id; rows keep the stored id', () => {
+  const rows = unbookedLabourRows({
+    ...CASE_INPUT,
+    people: [{ ...CASE_ADMIN, id: 'Abcd-Admin' }],
+    bookings: [{ personId: 'ABCD-ADMIN', dayKey: '2026-11-09', kind: 'manager', timeSlot: 'FULL DAY' }],
+    holidays: [],
+  })
+  assert.deepEqual(rows.map((row) => [row.dayKey, row.personKey, row.userId]), [['2026-11-10', 'Abcd-Admin', 'Abcd-Admin']])
+  const excluded = unbookedLabourRows({
+    ...CASE_INPUT,
+    excludedUserIds: ['ABCD-ADMIN'],
+    people: [CASE_ADMIN],
+    bookings: [],
+    holidays: [],
+  })
+  assert.deepEqual(excluded, [])
+})
+
+test('unbookedLabourRowsOnDay: the same case-insensitive match', () => {
+  const { startDayKey: _s, endDayKey: _e, ...rest } = CASE_INPUT
+  void _s
+  void _e
+  const rows = unbookedLabourRowsOnDay({
+    ...rest,
+    dayKey: '2026-11-09',
+    people: [CASE_ADMIN],
+    bookings: [],
+    holidays: [{ userId: 'ABCD-ADMIN', startDayKey: '2026-11-09', endDayKey: '2026-11-09', approved: true }],
+  })
+  assert.deepEqual(rows, [])
+})
+
+test('leaveCoverageRows: leave and bookings match people without case; rows keep the stored ids', () => {
+  const base = {
+    timeZone: HD_LONDON,
+    startDayKey: '2026-11-09',
+    endDayKey: '2026-11-09',
+    day: null,
+    includeWeekends: false,
+    people: [{ personKey: 'abcd-op', name: 'Op One', userId: 'abcd-user', operativeIds: ['abcd-op'] }],
+  }
+  const clash = leaveCoverageRows({
+    ...base,
+    leave: [{ id: 'L1', userId: 'ABCD-USER', startDayKey: '2026-11-09', endDayKey: '2026-11-09', timeSlot: 'FULL DAY', approved: true }],
+    bookings: [{ id: 'B1', personId: 'ABCD-OP', kind: 'operative', dayKey: '2026-11-09', timeSlot: 'FULL DAY' }],
+  })
+  assert.equal(clash.length, 1)
+  assert.equal(clash[0].personKey, 'abcd-op')
+  const byOperative = leaveCoverageRows({
+    ...base,
+    leave: [{ id: 'L2', operativeId: 'ABCD-OP', startDayKey: '2026-11-09', endDayKey: '2026-11-09', timeSlot: 'FULL DAY', approved: true }],
+    bookings: [{ id: 'B2', personId: 'abcd-op', kind: 'operative', dayKey: '2026-11-09', timeSlot: 'FULL DAY' }],
+  })
+  assert.equal(byOperative.length, 1)
+})

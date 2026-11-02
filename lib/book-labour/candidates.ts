@@ -15,6 +15,7 @@ import type { OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 import { DEFAULT_PAYROLL_POLICY } from '@/lib/settings/organizationSettings'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import { estimatedPaidHours } from '@/lib/scheduling/paidHours'
+import { holidayBookingDayKeys } from '@/lib/annualLeave/holidayDayKeys'
 
 export type BookLabourCandidate = {
   id: string
@@ -113,8 +114,7 @@ function holidayCoversDay(
   const key = dayKey(day)
   return holidays.some((holiday) => {
     if (String(holiday.status).toLowerCase() !== 'approved') return false
-    const start = dayKey(holiday.startDate)
-    const end = dayKey(holiday.endDate)
+    const { startDayKey: start, endDayKey: end } = holidayBookingDayKeys(holiday)
     if (key < start || key > end) return false
     if (holiday.userId && userIds.has(holiday.userId)) return true
     if (holiday.operativeId && operativeIds.has(holiday.operativeId)) return true

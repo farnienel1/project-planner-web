@@ -37,18 +37,35 @@ function text(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
 }
 
-/** The stored slot value. Anything other than AM / PM is a full day. */
+/**
+ * The stored slot value. AM (`AM`, `A.M.`, `MORNING`) and PM (`PM`, `P.M.`, `AFTERNOON`), any case;
+ * anything else is a full day.
+ */
 export function normalizeHolidayTimeSlot(value: unknown): HolidayTimeSlotValue {
   const raw = text(value).toUpperCase().replace(/_/g, ' ')
-  if (raw === 'AM') return 'AM'
-  if (raw === 'PM') return 'PM'
+  if (raw === 'AM' || raw === 'A.M.' || raw === 'MORNING') return 'AM'
+  if (raw === 'PM' || raw === 'P.M.' || raw === 'AFTERNOON') return 'PM'
   return 'FULL DAY'
 }
 
-/** Missing status is approved (older records). Unknown values are approved. */
+/** Stored status words each app has written, by the status they mean (lower case, `_`/`-` read as a space). */
+export const HOLIDAY_STATUS_SYNONYMS: Readonly<Record<HolidayStatusValue, readonly string[]>> = {
+  pending: ['pending', 'requested', 'awaiting', 'awaiting approval', 'submitted'],
+  approved: ['approved', 'approve', 'accepted', 'confirmed'],
+  rejected: ['rejected', 'declined', 'denied', 'cancelled', 'canceled'],
+}
+
+/**
+ * The leave status. Synonyms (`HOLIDAY_STATUS_SYNONYMS`) map to pending / approved / rejected, so
+ * "declined" and "cancelled" are rejected and "requested" is pending. Missing status is approved
+ * (older records); an unknown word is approved too (the default both apps already had).
+ */
 export function normalizeHolidayStatus(value: unknown): HolidayStatusValue {
-  const raw = text(value).toLowerCase()
-  if (raw === 'pending' || raw === 'rejected' || raw === 'approved') return raw
+  const raw = text(value).toLowerCase().replace(/[_-]+/g, ' ').replace(/\s+/g, ' ')
+  if (!raw) return 'approved'
+  for (const status of HOLIDAY_STATUSES) {
+    if (HOLIDAY_STATUS_SYNONYMS[status].includes(raw)) return status
+  }
   return 'approved'
 }
 

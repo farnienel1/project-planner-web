@@ -5,6 +5,7 @@
 import type { HolidayBooking, Operative, User } from '@/types'
 import { bookingIdsForAccount, timesheetLeaveLines, type TimesheetLeaveLine } from '@/lib/canonical'
 import { dayKey } from '@/lib/ios-parity/londonTime'
+import { holidayBookingDayKeys } from '@/lib/annualLeave/holidayDayKeys'
 
 /** Holiday records that belong to this account (its ids, former / same-email ids, and email-linked operatives). */
 export function holidayBookingsForAccount(
@@ -47,8 +48,7 @@ export function timesheetLeaveLinesForAccount({
 }): TimesheetLeaveLine[] {
   const records = holidayBookingsForAccount(user, holidays, operatives, aliasUserIds).map((holiday) => ({
     id: holiday.id,
-    startDayKey: dayKey(holiday.startDate, timeZone),
-    endDayKey: dayKey(holiday.endDate, timeZone),
+    ...holidayBookingDayKeys(holiday, timeZone),
     timeSlot: holiday.timeSlot,
     status: holiday.status,
   }))
