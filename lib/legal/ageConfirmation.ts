@@ -1,4 +1,5 @@
 /** Shared age-confirmation copy and account-create checks. Do not collect a date of birth. */
+import { passwordPolicyError } from '@/lib/canonical/passwordPolicy'
 
 export const AGE_CONFIRMATION_LABEL = 'I confirm that I am 16 or over.'
 
@@ -39,7 +40,8 @@ export function validateAccountStep(input: {
   if (input.email.trim() && !/^\S+@\S+\.\S+$/.test(input.email.trim())) return 'Enter a valid email address.'
   if (input.creatingAdditionalOrg) return null
   if (!input.signedInWithoutProfile) {
-    if (input.password.length < 8) return 'Password must be at least 8 characters.'
+    const weak = passwordPolicyError(input.password)
+    if (weak) return weak
     if (input.password !== input.confirmPassword) return 'Passwords do not match.'
   }
   if (!input.ageConfirmed) return AGE_CONFIRMATION_REQUIRED_MESSAGE
@@ -51,7 +53,8 @@ export function validateInvitePasswordSetup(input: {
   confirmPassword: string
   ageConfirmed: boolean
 }): string | null {
-  if (input.password.length < 8) return 'Password must be at least 8 characters.'
+  const weak = passwordPolicyError(input.password)
+  if (weak) return weak
   if (input.password !== input.confirmPassword) return 'Passwords do not match.'
   if (!input.ageConfirmed) return AGE_CONFIRMATION_REQUIRED_MESSAGE
   return null
@@ -67,7 +70,7 @@ export function invitePasswordSetupCanContinue(input: {
   return (
     input.hasInvitation &&
     !input.submitting &&
-    input.password.length >= 8 &&
+    passwordPolicyError(input.password) === null &&
     input.password === input.confirmPassword &&
     input.ageConfirmed
   )

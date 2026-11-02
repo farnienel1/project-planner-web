@@ -5,7 +5,10 @@
 'use client'
 
 import { estimatedWorkedHours, overviewFormatHours, parseMinutes } from '@/lib/daily-overview/buildDailyOverview'
-import { formatOvertimeEquation } from '@/lib/scheduling/paidHours'
+import { bookingPayrollHours, formatOvertimeEquation } from '@/lib/scheduling/paidHours'
+import { leaveRecordDayKeys, workedHoursSplit } from '@/lib/canonical'
+import { dayKey } from '@/lib/ios-parity/londonTime'
+import type { HolidayBooking } from '@/types'
 import type { ManagerLocationType, ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import type { OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 import type { Booking } from '@/types'
@@ -129,18 +132,51 @@ function clampTrack(mins: number): number {
   return Math.max(TRACK_START, Math.min(TRACK_END, mins))
 }
 
+/**
+ * iOS `annualLeaveDisplayLabel(on:)`: the person's leave on that day (not declined).
+ * Pending leave says so. A multi-day record follows `leaveRecordDayKeys`.
+ */
+export function myScheduleAnnualLeaveLabel(
+  holidays: ReadonlyArray<HolidayBooking>,
+  day: Date,
+  timeZone?: string
+): string | null {
+  const key = dayKey(day, timeZone)
+  const match = holidays
+    .filter((holiday) => holiday.status !== 'rejected')
+    .filter((holiday) =>
+      leaveRecordDayKeys(
+        { startDayKey: dayKey(holiday.startDate, timeZone), endDayKey: dayKey(holiday.endDate, timeZone) },
+        timeZone
+      ).includes(key)
+    )
+    .sort((a, b) => (a.status === b.status ? a.startDate.getTime() - b.startDate.getTime() : a.status === 'approved' ? -1 : 1))[0]
+  if (!match) return null
+  const slot = match.timeSlot === 'AM' ? 'AM' : match.timeSlot === 'PM' ? 'PM' : 'Full Day'
+  return match.status === 'pending' ? `Pending annual leave - ${slot}` : `Annual Leave - ${slot}`
+}
+
 export function MyScheduleTotalHoursCard({
   bookings,
   policy,
   annualLeaveLabel,
+  date,
 }: {
-  bookings: Array<{ timeSlot?: string; workStartTime?: string; workEndTime?: string }>
+  bookings: Array<{ timeSlot?: string; workStartTime?: string; workEndTime?: string; isBreakRemoved?: boolean; otMultiplierOverride?: number | null }>
   policy: OrgPayrollTimePolicy
   annualLeaveLabel?: string | null
+  /** The day shown, so weekend all-hours rules apply (`payrollHoursResult`). */
+  date?: Date
 }) {
-  const worked = bookings.reduce((sum, b) => sum + estimatedWorkedHours({ ...b, policy }), 0)
+  // Same figures as Daily Overview: `payrollHoursResult` → `workedHoursSplit` (never multiplied).
+  const results = bookings.map((b) => bookingPayrollHours({ ...b, policy, date }))
+  const worked = results.reduce((sum, r) => sum + r.workedHours, 0)
+  const ot = results.reduce((sum, r) => sum + workedHoursSplit(r).outsideWorkedHours, 0)
+  const otMultiplier =
+    results.filter((r) => r.outsideHours > 0).reduce((max, r) => Math.max(max, r.outsideMultiplier), 0) ||
+    policy.weekdayOutsideStandardMultiplier ||
+    1.5
   const std = policy.standardPaidHours || 8
-  const ot = Math.max(0, worked - std)
   const ticks = ['6:00', '9:00', '12:00', '15:00', '18:00']
 
   return (
@@ -153,14 +189,16 @@ export function MyScheduleTotalHoursCard({
           </p>
         </div>
         {annualLeaveLabel ? (
-          <span className="rounded-full bg-[#FAEED9] px-2 py-1 text-[10px] font-semibold text-[#9E3B12]">Annual Leave</span>
+          <span className="rounded-full bg-[#FAEED9] px-2 py-1 text-[10px] font-semibold text-[#9E3B12]">
+            {annualLeaveLabel.startsWith('Pending') ? 'Pending leave' : 'Annual Leave'}
+          </span>
         ) : (
           <div className="text-right">
             <p className="text-[18px] font-medium text-[var(--ink)]">{overviewFormatHours(worked)}</p>
             <p className="text-[10px] font-medium text-[var(--ink3)]">hrs worked</p>
             {ot > 0.05 ? (
               <p className="text-[10px] font-semibold text-[#854F0B]">
-                OT {formatOvertimeEquation(ot, policy.weekdayOutsideStandardMultiplier || 1.5)}
+                OT {formatOvertimeEquation(ot, otMultiplier)}
               </p>
             ) : null}
           </div>

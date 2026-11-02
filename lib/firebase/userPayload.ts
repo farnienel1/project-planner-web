@@ -191,8 +191,8 @@ export function buildSaveUserPayload(user: User): Record<string, unknown> {
   }
   if (user.policyAcceptedAt) payload.policyAcceptedAt = Timestamp.fromDate(user.policyAcceptedAt)
   else payload.policyAcceptedAt = deleteField()
-  const photo = user.profilePhotoURL?.trim()
-  payload.profilePhotoURL = photo ? photo : deleteField()
+  // profilePhotoURL is written only by the photo upload (SettingsScreen). A profile save from a
+  // copy loaded before the upload must never delete or roll back the photo.
 
   payload.permissions = {
     adminAccess: payload.adminAccess === true,
@@ -312,4 +312,42 @@ export function buildInvitedUserPayload(params: {
   }
 
   return payload
+}
+
+function writeValueKey(value: unknown): string {
+  if (value && typeof value === 'object') {
+    const candidate = value as { toMillis?: () => number; _methodName?: string; constructor?: { name?: string } }
+    if (typeof candidate.toMillis === 'function') return `ts:${candidate.toMillis()}`
+    // deleteField() / serverTimestamp() sentinels: compare by kind.
+    if (typeof candidate._methodName === 'string') return `fv:${candidate._methodName}`
+    if (Array.isArray(value)) return `[${value.map(writeValueKey).join(',')}]`
+    const record = value as Record<string, unknown>
+    return `{${Object.keys(record)
+      .sort()
+      .map((key) => `${key}:${writeValueKey(record[key])}`)
+      .join(',')}}`
+  }
+  return JSON.stringify(value) ?? 'undefined'
+}
+
+/** Fields always sent with a user save even when unchanged. */
+const ALWAYS_WRITTEN_USER_FIELDS = new Set(['updatedAt'])
+
+/**
+ * Only the fields this edit changed. `next` and `baseline` are both `buildSaveUserPayload`
+ * results: `baseline` from the copy the editor loaded, `next` from the edited copy. A field the
+ * editor did not touch is left as it is in Firestore, so a change made meanwhile on iOS or in
+ * another tab (photo, mobile, line manager, rate) is not overwritten from the stale copy.
+ */
+export function changedUserPayload(
+  next: Record<string, unknown>,
+  baseline: Record<string, unknown>
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(next)) {
+    if (ALWAYS_WRITTEN_USER_FIELDS.has(key) || writeValueKey(value) !== writeValueKey(baseline[key])) {
+      out[key] = value
+    }
+  }
+  return out
 }

@@ -5,7 +5,8 @@
  * organisation zone. Past bookings stay. People are matched by id, never name.
  */
 
-import { collection, doc, getDoc, getDocs, query, where, writeBatch, type Firestore } from 'firebase/firestore'
+import { collection, doc, getDoc, getDocs, query, where, type Firestore } from 'firebase/firestore'
+import { deleteBookingsWithTombstones } from '@/lib/bookings/bookingTombstoneWrite'
 import {
   bookingsToRemoveOnOperativeDelete,
   bookingsToRemoveOnProjectDelete,
@@ -14,7 +15,6 @@ import {
 import { ianaTimeZoneForCountry } from '@/lib/orgTime/orgTimeZone'
 
 const IN_QUERY_LIMIT = 30
-const BATCH_LIMIT = 400
 
 async function organizationTimeZone(db: Firestore, organizationId: string): Promise<string> {
   try {
@@ -51,14 +51,9 @@ async function bookingRowsWhere(
   return rows
 }
 
+/** Each delete carries its `deletedBookings` tombstone (lib/canonical/bookingTombstones.ts). */
 async function deleteBookings(db: Firestore, organizationId: string, ids: string[]): Promise<void> {
-  for (let i = 0; i < ids.length; i += BATCH_LIMIT) {
-    const batch = writeBatch(db)
-    for (const id of ids.slice(i, i + BATCH_LIMIT)) {
-      batch.delete(doc(db, 'organizations', organizationId, 'bookings', id))
-    }
-    await batch.commit()
-  }
+  await deleteBookingsWithTombstones(db, { organizationId, collection: 'bookings', bookingIds: ids })
 }
 
 /** Remove a deleted person's bookings from today on. Returns the ids removed. */

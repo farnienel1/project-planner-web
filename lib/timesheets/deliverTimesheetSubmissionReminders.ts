@@ -49,7 +49,8 @@ export async function deliverDueTimesheetSubmissionReminders(
   if (recipients.length === 0) return 0
   if (!organizationContextStillCurrent(orgId, captured)) return 0
 
-  let written = 0
+  // One existence read per due notice and recipient, all in parallel (they used to run one by one).
+  const pending: { key: string; id: string; notice: (typeof notices)[number]; user: User }[] = []
   for (const notice of notices) {
     for (const user of recipients) {
       const key = timesheetSubmissionNoticeDedupKey({
@@ -59,23 +60,47 @@ export async function deliverDueTimesheetSubmissionReminders(
         userId: user.id,
       })
       if (deliveredThisSession.has(key)) continue
-      const id = await syntheticUuidFromKey(key)
-      const existing = await getDoc(doc(db, 'organizations', orgId, 'notifications', id))
-      if (!organizationContextStillCurrent(orgId, captured)) return written
       deliveredThisSession.add(key)
-      if (existing.exists()) continue
-      await saveInboxNotification({
-        id,
-        organizationId: orgId,
-        type: TIMESHEET_SUBMISSION_NOTICE_TYPE,
-        title: notice.title,
-        message: notice.message,
-        userId: user.id,
-        relatedId: notice.paymentDayKey,
-        deepLinkWeekStart: new Date(`${notice.paymentDayKey}T12:00:00Z`),
-      })
-      written += 1
+      pending.push({ key, id: '', notice, user })
     }
   }
+  if (pending.length === 0) return 0
+  const checked = await Promise.all(
+    pending.map(async (entry) => {
+      try {
+        const id = await syntheticUuidFromKey(entry.key)
+        const existing = await getDoc(doc(db, 'organizations', orgId, 'notifications', id))
+        return { ...entry, id, exists: existing.exists() }
+      } catch {
+        // Not read: let a later session try again.
+        deliveredThisSession.delete(entry.key)
+        return { ...entry, exists: true }
+      }
+    })
+  )
+  if (!organizationContextStillCurrent(orgId, captured)) return 0
+
+  let written = 0
+  await Promise.all(
+    checked
+      .filter((entry) => !entry.exists && entry.id)
+      .map(async ({ id, notice, user, key }) => {
+        try {
+          await saveInboxNotification({
+            id,
+            organizationId: orgId,
+            type: TIMESHEET_SUBMISSION_NOTICE_TYPE,
+            title: notice.title,
+            message: notice.message,
+            userId: user.id,
+            relatedId: notice.paymentDayKey,
+            deepLinkWeekStart: new Date(`${notice.paymentDayKey}T12:00:00Z`),
+          })
+          written += 1
+        } catch {
+          deliveredThisSession.delete(key)
+        }
+      })
+  )
   return written
 }

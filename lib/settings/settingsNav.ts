@@ -120,7 +120,8 @@ export const SETTINGS_NAV: SettingsNavItem[] = [
     id: 'roles',
     label: 'Roles & permissions',
     description: 'Admin, manager and operative access',
-    href: '/dashboard/settings/roles',
+    // Roles are set on each person's profile: the row opens Manage users directly.
+    href: '/dashboard/settings/users',
     icon: 'M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z',
     hue: 'user',
     group: 'company',
@@ -150,6 +151,8 @@ const PANEL_BY_PATH: Record<string, SettingsPanel> = Object.fromEntries(
 ) as Record<string, SettingsPanel>
 PANEL_BY_PATH['/dashboard/settings'] = 'main'
 PANEL_BY_PATH['/dashboard/settings/organisation'] = 'organisation'
+// Old Roles & permissions placeholder route. SettingsScreen sends it on to Manage users.
+PANEL_BY_PATH['/dashboard/settings/roles'] = 'roles'
 
 export function settingsPanelFromPath(pathname: string | null): SettingsPanel | null {
   if (!pathname) return null

@@ -4,6 +4,8 @@ Business rules that the iOS app must also follow live in `lib/canonical/`. Read 
 
 ## Rule 0: the rulebook comes first
 
+The rule text is `docs/RULEBOOK.md` (versioned; mirrored byte-for-byte into the iOS repo; its version and sha256 are stamped into the packed script by `rulebookStamp()`). A rule change updates `docs/RULEBOOK.md`, bumps its version with a changelog entry, and produces the iOS hand-off with `npm run rulebook:handoff` (`docs/ios-handoff/LATEST.md`). `scripts/rulebook-sync.mjs check` enforces this in the pre-commit hook, CI and the Claude Code Stop hook.
+
 The canonical rulebook (`lib/canonical`, packed for iOS as `canonical-business.js` and called there through `CanonicalBusinessEngine`) is the single source of business behaviour for both apps. Before any change that decides who sees what, what is counted, what is written to Firestore, or how a date, booking, warning, timesheet, invite, notification, or permission behaves:
 
 - Name the rulebook function the change calls, or state that none exists.

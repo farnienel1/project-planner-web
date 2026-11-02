@@ -1,7 +1,7 @@
 import type { Operative, User } from '@/types'
 import { hasAdminAccess } from '@/lib/permissions'
 import { isPendingPerson } from '@/lib/staff/pendingPeople'
-import { lineManagerUserIds } from '@/lib/timesheets/timesheetApprovalPolicy'
+import { lineManagerIds } from '@/lib/canonical'
 
 export interface AnnualLeavePerson {
   id: string
@@ -157,7 +157,7 @@ export function canManagePersonAnnualLeave(
   if (!actor.permissions?.manager) return false
   const member = person.userId ? users.find((user) => user.id === person.userId) : undefined
   if (!member) return false
-  return lineManagerUserIds(member).includes(actor.id)
+  return lineManagerIds(member).includes(actor.id)
 }
 
 export function resolvePersonName(

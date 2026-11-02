@@ -4,8 +4,8 @@
  * PAYE days always return nil amounts while still showing hours in the UI.
  */
 import type { Operative, User } from '@/types'
-import { employmentTypeOnDay } from '@/lib/ios-parity/employmentType'
-import { londonMidnight } from '@/lib/ios-parity/londonTime'
+import { dayKey, londonMidnight } from '@/lib/ios-parity/londonTime'
+import { livePayRate, payRateOnDay, type PayRateOnDay } from '@/lib/canonical/payRate'
 import {
   emptyDayRateHistory,
   mergedDayRateEntries,
@@ -13,9 +13,7 @@ import {
   type OperativeDayRateHistoryEntry,
 } from '@/lib/timesheets/dayRateHistoryStorage'
 import {
-  historyRowBasis,
   payForHours as payForHoursContract,
-  readStoredRates,
   resolveHistoryPayRow,
   type PayBasis,
   type StoredPay,
@@ -34,11 +32,7 @@ export function payrollRateHasValue(resolved: ResolvedPayrollRate): boolean {
 }
 
 function liveStored(user?: User | null, operative?: Operative | null): StoredPay {
-  const fromUser = user ? readStoredRates(user) : null
-  if (fromUser && (fromUser.dayRate != null || fromUser.hourlyRate != null)) return fromUser
-  const fromOperative = operative ? readStoredRates(operative) : null
-  if (fromOperative && (fromOperative.dayRate != null || fromOperative.hourlyRate != null)) return fromOperative
-  return { payBasis: null, dayRate: null, hourlyRate: null }
+  return livePayRate(user, operative)
 }
 
 export function payrollBasis(user?: User | null, operative?: Operative | null): PayrollRateBasis {
@@ -96,20 +90,41 @@ export function rateFromHistory(
   return row ? row.dayRate : null
 }
 
-function resolvedFromStored(stored: StoredPay): ResolvedPayrollRate {
-  if (stored.payBasis === 'hourly') {
-    return { basis: 'hourly', dayRate: null, hourlyRate: stored.hourlyRate }
+function rateInput({
+  user,
+  operative,
+  day,
+  history,
+  timeZone,
+  aliasUserIds,
+}: {
+  user?: User | null
+  operative?: Operative | null
+  day: Date
+  history: OperativeDayRateHistoryCollection
+  timeZone?: string
+  aliasUserIds: string[]
+}) {
+  const userIds = [user?.id, ...aliasUserIds].filter((id): id is string => Boolean(id))
+  const operativeIds = operative?.id ? [operative.id] : []
+  return {
+    user: user ?? null,
+    operative: operative ?? null,
+    history: mergedDayRateEntries(history, userIds, operativeIds),
+    userIds,
+    operativeIds,
+    dayKey: dayKey(day, timeZone),
+    timeZone,
   }
-  return { basis: 'dayRate', dayRate: stored.dayRate, hourlyRate: null }
 }
 
-function resolvedFromHistory(row: OperativeDayRateHistoryEntry): ResolvedPayrollRate {
-  if (historyRowBasis(row) === 'hourly') {
-    return { basis: 'hourly', dayRate: null, hourlyRate: row.dayRate }
-  }
-  return { basis: 'dayRate', dayRate: row.dayRate, hourlyRate: null }
+function resolvedFromCanonical(rate: PayRateOnDay): ResolvedPayrollRate {
+  if (rate.isPaye) return { basis: rate.payBasis === 'hourly' ? 'hourly' : 'dayRate', dayRate: null, hourlyRate: null }
+  if (rate.payBasis === 'hourly') return { basis: 'hourly', dayRate: null, hourlyRate: rate.rate }
+  return { basis: 'dayRate', dayRate: rate.rate, hourlyRate: null }
 }
 
+/** Rate in effect on the day, ignoring PAYE (`payRateOnDay` without the employment rule). */
 export function resolvePayrollRate({
   user,
   operative,
@@ -128,18 +143,15 @@ export function resolvePayrollRate({
   aliasUserIds?: string[]
 }): ResolvedPayrollRate {
   void standardDayHours
-  const live = liveStored(user, operative)
-  const userIds = [user?.id, ...aliasUserIds].filter((id): id is string => Boolean(id))
-  const operativeIds = operative?.id ? [operative.id] : []
-  const row = historyMatch(history, userIds, operativeIds, day, timeZone, live.payBasis)
-  if (row) return resolvedFromHistory(row)
-  if (live.payBasis === 'hourly') {
-    return { basis: 'hourly', dayRate: null, hourlyRate: live.hourlyRate }
-  }
-  return resolvedFromStored(live.payBasis ? live : { payBasis: 'day', dayRate: live.dayRate, hourlyRate: null })
+  const input = rateInput({ user, operative, day, history, timeZone, aliasUserIds })
+  // Rate lookup only: the employment rule is applied by `resolveForTimesheetDay` / the caller.
+  const withoutEmployment = input.user
+    ? { ...input.user, employmentType: 'self_employed', employmentTypeTransitionFrom: null, employmentTypeEffectiveAt: null }
+    : null
+  return resolvedFromCanonical(payRateOnDay({ ...input, user: withoutEmployment }))
 }
 
-/** PAYE days always return zero amounts while still showing hours in the UI. */
+/** `payRateOnDay`: PAYE days return no amount while still showing hours in the UI. */
 export function resolveForTimesheetDay({
   user,
   operative,
@@ -157,9 +169,6 @@ export function resolveForTimesheetDay({
   timeZone?: string
   aliasUserIds?: string[]
 }): ResolvedPayrollRate {
-  if (user && employmentTypeOnDay(user, day, timeZone) === 'paye') {
-    const basis = payrollBasis(user, operative)
-    return { basis, dayRate: null, hourlyRate: null }
-  }
-  return resolvePayrollRate({ user, operative, day, history, standardDayHours, timeZone, aliasUserIds })
+  void standardDayHours
+  return resolvedFromCanonical(payRateOnDay(rateInput({ user, operative, day, history, timeZone, aliasUserIds })))
 }

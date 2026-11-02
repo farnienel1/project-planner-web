@@ -1,7 +1,8 @@
 'use client'
 
 import { create } from 'zustand'
-import { deleteDoc, doc, setDoc } from 'firebase/firestore'
+import { doc, setDoc } from 'firebase/firestore'
+import { deleteBookingWithTombstone } from '@/lib/bookings/bookingTombstoneWrite'
 import { db } from '@/lib/firebase/config'
 import { forgetOrgCollectionDoc, isOrgCollectionSubscribed, subscribeOrgCollection } from '@/lib/firebase/subscribeOrgCollection'
 import { captureOrganizationContext, organizationContextStillCurrent } from '@/lib/canonical'
@@ -11,13 +12,39 @@ import { newUppercaseUuid } from '@/lib/ios-parity/uuid'
 import { londonMidnight } from '@/lib/ios-parity/londonTime'
 import { logSkippedDocument, parseBooking, serializeBooking } from '@/lib/ios-parity/converters'
 import type { Booking } from '@/types'
+import {
+  bookingDownloadConstraints,
+  bookingDownloadQueryId,
+  launchBookingNeededDayKeys,
+  nextBookingDownload,
+  type BookingDownload,
+  type BookingDownloadRequest,
+} from '@/lib/firebase/bookingDownloadBound'
+import { useOrganizationDocumentStore } from '@/lib/stores/organizationDocumentStore'
+
+/** Current listener bound per organisation. A new organisation starts again from the launch bound. */
+let bookingDownloadOrgId = ''
+let bookingDownload: BookingDownload = { loadedFromDayKey: null, fullHistory: false }
+
+function organizationDataFor(organizationId: string): Record<string, unknown> | null {
+  const state = useOrganizationDocumentStore.getState()
+  return state.organizationId === organizationId ? ((state.data as Record<string, unknown> | null) ?? null) : null
+}
+
+export type LoadBookingsOptions = BookingDownloadRequest & { force?: boolean }
 
 interface BookingState {
   bookings: Booking[]
   loading: boolean
   ready: boolean
   error: string | null
-  loadBookings: (organizationId: string, options?: { force?: boolean }) => Promise<void>
+  /**
+   * Live bookings for the organisation. Without options the listener starts at canonical
+   * `bookingLoadStart` (this week's Monday or the warning window start, whichever is earlier).
+   * `fromDayKey` moves the start earlier for a screen showing older days; `fullHistory` loads
+   * the whole archive (weekly report, timesheets history, job totals). The bound never moves later.
+   */
+  loadBookings: (organizationId: string, options?: LoadBookingsOptions) => Promise<void>
   createBooking: (booking: Omit<Booking, 'id' | 'createdAt' | 'updatedAt'> & { id?: string }) => Promise<void>
   updateBooking: (id: string, updates: Partial<Booking>) => Promise<void>
   deleteBooking: (id: string, organizationId: string) => Promise<void>
@@ -37,13 +64,24 @@ export const useBookingStore = create<BookingState>((set, get) => ({
   ready: false,
   error: null,
 
-  loadBookings: async (organizationId: string) => {
+  loadBookings: async (organizationId: string, options?: LoadBookingsOptions) => {
     if (!organizationId || !db) return
+    if (bookingDownloadOrgId !== organizationId) {
+      bookingDownloadOrgId = organizationId
+      bookingDownload = { loadedFromDayKey: null, fullHistory: false }
+    }
+    const next = nextBookingDownload(
+      bookingDownload,
+      launchBookingNeededDayKeys(new Date(), organizationDataFor(organizationId)),
+      options
+    )
+    bookingDownload = { loadedFromDayKey: next.loadedFromDayKey, fullHistory: next.fullHistory }
+    const queryId = bookingDownloadQueryId(bookingDownload)
     const current = get().bookings
     const foreign =
       current.length > 0 &&
       current.every((row) => row.organizationId && !organizationIdsMatch(row.organizationId, organizationId))
-    const already = isOrgCollectionSubscribed('bookings', organizationId)
+    const already = isOrgCollectionSubscribed('bookings', organizationId, queryId)
     if (foreign) set({ bookings: [], loading: true, ready: false, error: null })
     else if (already || current.length > 0) set({ loading: false })
     else set({ loading: true, error: null })
@@ -60,7 +98,7 @@ export const useBookingStore = create<BookingState>((set, get) => ({
       set({ bookings: retainParsedRows(docs.length, previous, bookings), loading: false, ready: true })
     }, (error) => {
       set({ error: error.message, loading: false })
-    })
+    }, { queryId, constraints: bookingDownloadConstraints(bookingDownload) })
   },
 
   createBooking: async (bookingData) => {
@@ -114,7 +152,7 @@ export const useBookingStore = create<BookingState>((set, get) => ({
     const firestore = requireDb()
     const { bookings } = get()
     try {
-      await deleteDoc(doc(firestore, 'organizations', organizationId, 'bookings', id))
+      await deleteBookingWithTombstone(firestore, { organizationId, collection: 'bookings', bookingId: id })
       forgetOrgCollectionDoc('bookings', organizationId, id)
       set({ bookings: bookings.filter((row) => row.id !== id) })
     } catch (error: unknown) {

@@ -1,16 +1,20 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { updateDoc, doc, Timestamp } from 'firebase/firestore'
-import { db } from '@/lib/firebase/config'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { companyLogoPath, uploadFile } from '@/lib/firebase/storageUtils'
 import { prepareClientUpload } from '@/lib/security/stripPhotoLocation'
+import { coalesceOrganizationName, saveCompanyDetails } from '@/lib/settings/organizationSettings'
 import {
-  coalesceOrganizationName,
-  loadOrganizationDetails,
-  organizationNameWriteFields,
-} from '@/lib/settings/organizationSettings'
+  CURRENCY_OPTIONS,
+  companyDetailsValidationError,
+  defaultCurrencyForCountry,
+  normalizeCurrencyCode,
+  normalizeDocumentAbbreviation,
+  parseCompanyDetails,
+  resolveOrganizationCurrency,
+} from '@/lib/canonical'
+import { geocodeAddress } from '@/lib/maps/geocoding'
 import { settingsSaveBarHint } from '@/lib/settings/settingsDirty'
 import {
   SettingsFormBody,
@@ -18,12 +22,10 @@ import {
   useSettingsDirty,
   useSettingsLeave,
 } from '@/components/settings/SettingsDirty'
+import { useApplyLiveWhenClean, useLiveOrganizationDetails } from '@/components/settings/useLiveOrganizationSettings'
 import {
   COUNTRY_OPTIONS,
-  CURRENCY_OPTIONS,
   bankHolidayRegionIdFromSelection,
-  companyIdentityFirestoreFields,
-  countryCodeForCompany,
   validateLogoFile,
 } from '@/lib/orgSetup/orgSetupSettings'
 import { bankHolidayRegionLabel } from '@/lib/settings/bankHolidayRegions'
@@ -56,8 +58,23 @@ type CompanyDraft = {
   logoPreview: string | null
 }
 
+/** Company countries (two-letter codes); UK subdivisions stay in the bank-holiday region picker. */
+const COMPANY_COUNTRY_OPTIONS = COUNTRY_OPTIONS.filter((option) => /^[A-Z]{2}$/.test(option.code))
+
+/** Saved currency on the document (any of the fields iOS or web write), without the country default. */
+function hasSavedCurrency(data: Record<string, unknown> | null): boolean {
+  if (!data) return false
+  const settings = data.settings && typeof data.settings === 'object' ? (data.settings as Record<string, unknown>) : {}
+  return Boolean(
+    normalizeCurrencyCode(data.currencyCode) ||
+      normalizeCurrencyCode(settings.currencyCode) ||
+      normalizeCurrencyCode(data.currency) ||
+      normalizeCurrencyCode(data['settings.currencyCode'])
+  )
+}
+
 export function CompanyDetailsPanel({ onBack }: { onBack: () => void }) {
-  const { organization } = useAuthStore()
+  const { organization, user } = useAuthStore()
   const requestLeave = useSettingsLeave()
 
   const [name, setName] = useState('')
@@ -113,35 +130,37 @@ export function CompanyDetailsPanel({ onBack }: { onBack: () => void }) {
     markLoaded(next)
   }, [markLoaded])
 
-  useEffect(() => {
-    if (!organization?.id) return
-    loadOrganizationDetails(organization.id)
-      .then((details) => {
-        if (!details) {
-          markFailed()
-          return
-        }
-        const address = details.officeAddress
-        const line = details.officeAddressLine1 || address?.addressLine1 || ''
-        const city = details.officeCity || address?.town || ''
-        const hasOfficeAddress = Boolean(line && city)
-        applyLoaded({
-          name: coalesceOrganizationName(details.name, organization.name),
-          hasOffice: hasOfficeAddress,
-          line1: hasOfficeAddress ? line : '',
-          line2: hasOfficeAddress ? address?.addressLine2 ?? '' : '',
-          town: hasOfficeAddress ? city : '',
-          county: hasOfficeAddress ? address?.county ?? '' : '',
-          postcode: hasOfficeAddress ? details.officePostcode || address?.postcode || '' : '',
-          country: countryCodeForCompany(undefined, details.countryCode),
-          regionId: details.bankHolidayRegionId || 'GB-ENG-WLS',
-          abbreviation: details.documentAbbreviation ?? '',
-          currency: details.currencyCode || details.currency || 'GBP',
-          logoPreview: details.companyLogoURL ?? organization.companyLogoURL ?? null,
-        })
-      })
-      .catch(() => markFailed())
-  }, [organization?.id, organization?.name, organization?.companyLogoURL, applyLoaded, markFailed])
+  const live = useLiveOrganizationDetails()
+  const savedCompany = useMemo(() => (live.data ? parseCompanyDetails(live.data) : null), [live.data])
+  const currencySaved = hasSavedCurrency(live.data)
+  const fallbackName = organization?.name
+  const source = useMemo<CompanyDraft | null>(() => {
+    if (!live.data || !savedCompany) return null
+    const office = savedCompany.hasOfficeAddress
+    return {
+      name: coalesceOrganizationName(savedCompany.name, fallbackName),
+      hasOffice: office,
+      line1: office ? savedCompany.officeAddressLine1 : '',
+      line2: office ? savedCompany.officeAddressLine2 : '',
+      town: office ? savedCompany.officeCity : '',
+      county: office ? savedCompany.officeCounty : '',
+      postcode: office ? savedCompany.officePostcode : '',
+      country: savedCompany.countryCode,
+      regionId: savedCompany.bankHolidayRegionId,
+      abbreviation: savedCompany.documentAbbreviation,
+      currency: resolveOrganizationCurrency(live.data),
+      logoPreview: savedCompany.companyLogoURL || null,
+    }
+  }, [live.data, savedCompany, fallbackName])
+  useApplyLiveWhenClean({ source, status: live.status, dirty, apply: applyLoaded, onFailed: markFailed })
+
+  /** Country drives the time zone and, until a currency is saved, the default currency. */
+  function changeCountry(next: string) {
+    if (!currencySaved && currency === defaultCurrencyForCountry(country)) {
+      setCurrency(defaultCurrencyForCountry(next))
+    }
+    setCountry(next)
+  }
 
   function onPickLogo(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0]
@@ -157,30 +176,52 @@ export function CompanyDetailsPanel({ onBack }: { onBack: () => void }) {
     setLogoPreview(URL.createObjectURL(file))
   }
 
-  function canSave(): boolean {
-    if (!name.trim() || !country) return false
-    if (hasOffice) return !!line1.trim() && !!town.trim()
-    return true
+  /** Map pin for the office (iOS writes defaultLatitude / defaultLongitude). Best effort; untouched on failure. */
+  async function officeCoordinate(): Promise<{ latitude: number; longitude: number } | null> {
+    if (!hasOffice) return null
+    const unchanged =
+      savedCompany &&
+      savedCompany.defaultLatitude != null &&
+      savedCompany.officeAddressLine1 === line1.trim() &&
+      savedCompany.officeCity === town.trim() &&
+      savedCompany.officePostcode === postcode.trim()
+    if (unchanged) return null
+    const query = [line1, town, postcode].map((part) => part.trim()).filter(Boolean).join(', ')
+    try {
+      return await geocodeAddress(query)
+    } catch {
+      return null
+    }
   }
 
   async function save() {
     if (!organization?.id) return
-    if (!canSave()) {
-      setError(
-        hasOffice
-          ? 'Name, country, address line 1 and town are required.'
-          : 'Organisation name and country are required.'
-      )
+    const input = {
+      name,
+      hasOfficeAddress: hasOffice,
+      officeAddressLine1: line1,
+      officeAddressLine2: line2,
+      officeCity: town,
+      officeCounty: county,
+      officePostcode: postcode,
+      countryCode: country,
+      documentAbbreviation: abbreviation,
+      bankHolidayRegionId: bankHolidayRegionIdFromSelection(regionId),
+    }
+    const validationError = companyDetailsValidationError(input)
+    if (validationError) {
+      setError(validationError)
       return
     }
     setSaving(true)
     setError('')
     try {
-      let companyLogoURL: string | undefined
+      // A new file uploads first; a cleared logo is deleted; otherwise the saved logo is left alone.
+      let companyLogoURL: string | null | undefined = logoPreview ? undefined : null
       if (logoFile) {
-        const validationError = validateLogoFile(logoFile)
-        if (validationError) {
-          setError(validationError)
+        const fileError = validateLogoFile(logoFile)
+        if (fileError) {
+          setError(fileError)
           return
         }
         const prepared = await prepareClientUpload(logoFile, 'logo')
@@ -191,46 +232,39 @@ export function CompanyDetailsPanel({ onBack }: { onBack: () => void }) {
         const path = companyLogoPath(organization.id, prepared.file.name)
         companyLogoURL = await uploadFile(path, prepared.file, prepared.file.type || 'image/png')
       }
+      const point = await officeCoordinate()
 
-      const identity = companyIdentityFirestoreFields({
-        addressLine1: hasOffice ? line1 : '',
-        addressLine2: hasOffice ? line2 : '',
-        town: hasOffice ? town : '',
-        county: hasOffice ? county : '',
-        postcode: hasOffice ? postcode : '',
+      await saveCompanyDetails(
+        organization.id,
+        {
+          ...input,
+          companyLogoURL,
+          defaultLatitude: point?.latitude ?? null,
+          defaultLongitude: point?.longitude ?? null,
+        },
         currency,
-        companyLogoURL,
-        documentAbbreviation: abbreviation,
-        bankHolidayRegionId: bankHolidayRegionIdFromSelection(regionId),
-        countryCode: country,
-        regionSelection: regionId,
-      })
-      const payload: Record<string, unknown> = {
-        ...organizationNameWriteFields(name, coalesceOrganizationName(organization.name)),
-        ...identity,
-        'settings.currencyCode': identity.currencyCode,
-        'settings.bankHolidayRegionId': identity.bankHolidayRegionId,
-        updatedAt: Timestamp.now(),
-      }
+        user?.id
+      )
 
-      await updateDoc(doc(db, 'organizations', organization.id), payload)
-
+      const trimmedName = name.trim()
       useAuthStore.setState((state) => ({
         organization: state.organization
           ? {
               ...state.organization,
-              name: name.trim(),
-              companyLogoURL: companyLogoURL ?? state.organization.companyLogoURL,
+              name: trimmedName || state.organization.name,
+              companyLogoURL:
+                companyLogoURL === undefined ? state.organization.companyLogoURL : companyLogoURL ?? undefined,
             }
           : state.organization,
       }))
 
       setLogoFile(null)
-      // The form now shows what was written (trimmed name, uploaded logo URL), so Save goes grey.
+      // The form shows what was written, so Save goes grey; the live listener then confirms it.
       applyLoaded({
         ...draft,
-        name: name.trim(),
-        logoPreview: companyLogoURL ?? draft.logoPreview,
+        name: trimmedName || draft.name,
+        abbreviation: normalizeDocumentAbbreviation(abbreviation),
+        logoPreview: typeof companyLogoURL === 'string' ? companyLogoURL : companyLogoURL === null ? null : draft.logoPreview,
       })
       setSaved(true)
       window.setTimeout(() => setSaved(false), 3000)
@@ -274,6 +308,16 @@ export function CompanyDetailsPanel({ onBack }: { onBack: () => void }) {
             <Toggle checked={hasOffice} onChange={setHasOffice} />
           </div>
 
+          <FormField label="Country" hint="Sets the business time zone and the default currency">
+            <Select value={country} onChange={(e) => changeCountry(e.target.value)}>
+              {COMPANY_COUNTRY_OPTIONS.map((option) => (
+                <option key={option.code} value={option.code}>
+                  {option.label}
+                </option>
+              ))}
+            </Select>
+          </FormField>
+
           <FormField label="Bank holiday region">
             <Select value={regionId} onChange={(e) => setRegionId(e.target.value)}>
               <option value="GB-ENG-WLS">England & Wales</option>
@@ -298,7 +342,7 @@ export function CompanyDetailsPanel({ onBack }: { onBack: () => void }) {
             <Select value={currency} onChange={(e) => setCurrency(e.target.value)}>
               {CURRENCY_OPTIONS.map((option) => (
                 <option key={option.code} value={option.code}>
-                  {option.label}
+                  {option.code} — {option.title} ({option.symbol})
                 </option>
               ))}
             </Select>
@@ -366,12 +410,18 @@ export function CompanyDetailsPanel({ onBack }: { onBack: () => void }) {
               <button
                 type="button"
                 onClick={() => {
+                  if (logoFile) {
+                    // Drop the picked file and show the saved logo again.
+                    setLogoFile(null)
+                    setLogoPreview(savedCompany?.companyLogoURL || null)
+                    return
+                  }
+                  // Save then deletes companyLogoURL (both apps show no logo).
                   setLogoPreview(null)
-                  setLogoFile(null)
                 }}
                 className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50"
               >
-                Clear selection
+                {logoFile ? 'Clear selection' : 'Remove logo'}
               </button>
             )}
           </div>

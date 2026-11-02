@@ -97,35 +97,6 @@ export async function saveNotificationPreferences(userId: string, prefs: Notific
   }
 }
 
-/**
- * Organisation `settings.materialCutOff` is the only cut-off clock.
- * `userId` is unused for the time — a leftover user-pref hour must not win.
- */
-export async function loadMaterialCutOffSettings(
-  organizationId: string,
-  _userId?: string
-): Promise<NotificationPreferences> {
-  const { loadOrganizationDetails } = await import('@/lib/settings/organizationSettings')
-  try {
-    const details = await loadOrganizationDetails(organizationId)
-    return resolveMaterialCutOffClock({
-      organizationMaterialCutOff: details?.materialCutOff ?? null,
-    })
-  } catch {
-    return resolveMaterialCutOffClock({})
-  }
-}
-
-export async function saveMaterialCutOffSettingsForOrgAndUser(
-  organizationId: string,
-  userId: string | undefined,
-  prefs: NotificationPreferences
-): Promise<void> {
-  const { saveMaterialCutOffSettings } = await import('@/lib/settings/organizationSettings')
-  await saveMaterialCutOffSettings(organizationId, prefs)
-  if (userId) await saveNotificationPreferences(userId, prefs)
-}
-
 const USER_TOGGLE_STORAGE_KEY = (userId: string) => `pp.userNotificationPreferences.${userId}`
 
 function cacheUserNotificationPreferences(userId: string, prefs: UserNotificationPreferences): void {

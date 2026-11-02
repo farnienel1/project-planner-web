@@ -51,6 +51,8 @@ export function userLeaveBalance(input: {
   bookings: HolidayBooking[]
   orgDefaults?: OrgAnnualLeaveDefaults | null
   now?: Date
+  /** Bank holidays inside a multi-day record are not taken from the allowance. */
+  bankHolidayDayKeys?: ReadonlyArray<string>
 }): AnnualLeaveBalance {
   const defaults = input.orgDefaults ?? DEFAULT_ANNUAL_LEAVE
   const user = input.user
@@ -67,6 +69,7 @@ export function userLeaveBalance(input: {
     orgEndMonth: defaults.endMonth,
     bookings: input.bookings.map(holidayToLeaveDay),
     onDayKey: leaveDayKey(input.now ?? new Date()),
+    nonWorkingDayKeys: input.bankHolidayDayKeys ?? [],
   })
 }
 

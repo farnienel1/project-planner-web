@@ -22,7 +22,9 @@ Do not invent a second calculator. Do not hand-edit either packed JS file.
 
 Same change: edit TypeScript under `lib/canonical/` (export from `index.ts` and `bundleEntry.ts`); add a test in `lib/canonical/canonical.test.ts`; update `docs/CANONICAL_ARCHITECTURE.md` when the boundary moves. Record the hash in `lib/canonical/dist/canonical-business.sha256`. UI and navigation stay in the app. Do not restyle the hub and call the job done.
 
-## After the change — always emit this box
+## After the change — always emit the hand-off
+
+In the web repo the box is generated, not hand-written: bump `Version:` in `docs/RULEBOOK.md`, add the changelog entry, run `npm run build:canonical` and `npm run rulebook:handoff`, and paste `docs/ios-handoff/LATEST.md` to the user. The pre-commit hook and the Claude Code Stop hook refuse to finish otherwise. The generated file follows this box; fill any line by hand only when working in the iOS repo:
 
 Fill every line. Target **iOS** when this work ran in the web repo. Target **web** when this work ran in the iOS repo (or these instructions were pasted there). If web had to change `lib/canonical` after an iOS start, send a new iOS box with the new hash.
 
@@ -33,11 +35,13 @@ Fill every line. Target **iOS** when this work ran in the web repo. Target **web
 Started on: [web | iOS]
 What changed: [one sentence]
 Shared rule (lib/canonical): [function names]  OR  Firebase-only: [fields / collections / rules]
+Rulebook version: [old → new from docs/RULEBOOK.md]
 Packed hash: [sha256 from lib/canonical/dist/canonical-business.sha256, or unchanged]
 Copy packed file (if hash changed):
   web lib/canonical/dist/canonical-business.js
   → iOS Project Planner/Canonical/canonical-business.js
-  (and the .sha256 sibling). Do not edit the JS by hand.
+  (and the .sha256 sibling, canonical-manifest.json → Project Planner/Canonical/, docs/RULEBOOK.md → iOS docs/RULEBOOK.md).
+  iOS: run scripts/sync-rulebook-from-web.sh. Do not edit the JS or the rulebook mirror by hand.
 Call: iOS CanonicalBusinessEngine / web @/lib/canonical — no second calculator.
 Firebase keep: [exact field names / document shapes / enums]
 Files / screens on your side: [paths]

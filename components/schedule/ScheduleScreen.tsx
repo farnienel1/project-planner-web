@@ -22,11 +22,21 @@ import { isRoleOnlyPersonName } from '@/lib/staff/userRosterUtils'
 import type { Booking } from '@/types'
 import { BookingEditSheet } from '@/components/schedule/BookingEditSheet'
 import { AddWeekToCalendarButton } from '@/components/schedule/AddWeekToCalendarButton'
-import { MyScheduleTotalHoursCard, myScheduleClockSubtitle, myScheduleStripeClass } from '@/components/schedule/MyScheduleLooks'
+import {
+  MyScheduleTotalHoursCard,
+  myScheduleAnnualLeaveLabel,
+  myScheduleClockSubtitle,
+  myScheduleStripeClass,
+} from '@/components/schedule/MyScheduleLooks'
+import { useHolidayStore } from '@/lib/stores/holidayStore'
+import { useOperativeStore } from '@/lib/stores/operativeStore'
+import { holidayBookingsForAccount } from '@/lib/timesheets/timesheetLeave'
 import type { OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 import { DEFAULT_PAYROLL_POLICY } from '@/lib/settings/organizationSettings'
 import { dayKey } from '@/lib/ios-parity/londonTime'
 import { bookingJobLabel } from '@/lib/canonical'
+import { useAuthStore } from '@/lib/stores/authStore'
+import { useBookingHistoryFrom } from '@/lib/stores/useBookingHistory'
 
 /** A role word is not a person. Prefer the looked-up name, then the signed-in name. */
 function personLabel(primary?: string, fallback?: string): string {
@@ -448,6 +458,26 @@ export function ScheduleScreen({
     }
   }, [focusDate])
 
+  // An earlier week, or "Show past", reaches before the launch booking download.
+  const openOrganizationId = useAuthStore((state) => state.organization?.id || '')
+  useBookingHistoryFrom(organizationId || openOrganizationId, weekStart, { fullHistory: showPast })
+
+  // My Schedule shows the signed-in person's annual leave (iOS `annualLeaveDisplayLabel`).
+  const authUser = useAuthStore((state) => state.user)
+  const holidayOrgId = organizationId || openOrganizationId
+  const { bookings: holidayBookings, loadBookings: loadHolidayBookings, loadedOrgId: holidaysLoadedOrgId } = useHolidayStore()
+  const rosterOperatives = useOperativeStore((state) => state.operatives)
+  useEffect(() => {
+    if (isPersonal && holidayOrgId && holidaysLoadedOrgId !== holidayOrgId) void loadHolidayBookings(holidayOrgId)
+  }, [isPersonal, holidayOrgId, holidaysLoadedOrgId, loadHolidayBookings])
+  const myHolidays = useMemo(
+    () =>
+      isPersonal && authUser && holidaysLoadedOrgId === holidayOrgId
+        ? holidayBookingsForAccount(authUser, holidayBookings, rosterOperatives)
+        : [],
+    [isPersonal, authUser, holidaysLoadedOrgId, holidayOrgId, holidayBookings, rosterOperatives]
+  )
+
   const scopedBookings = useMemo(() => {
     if (variant === 'personal') return bookings
     if (!focusOperativeId) return bookings
@@ -663,6 +693,8 @@ export function ScheduleScreen({
             <MyScheduleTotalHoursCard
               bookings={bookingsByDate.get(scheduleDayKey(selectedDate)) || []}
               policy={payrollPolicy || DEFAULT_PAYROLL_POLICY}
+              date={selectedDate}
+              annualLeaveLabel={myScheduleAnnualLeaveLabel(myHolidays, selectedDate)}
             />
           ) : null}
         </>

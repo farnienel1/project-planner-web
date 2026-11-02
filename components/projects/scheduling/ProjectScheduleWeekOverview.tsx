@@ -21,6 +21,7 @@ import {
 import { BookingEditSheet } from '@/components/schedule/BookingEditSheet'
 import { QuickAddBookingSheet, type QuickAddBookingValues } from '@/components/schedule/QuickAddBookingSheet'
 import { useAuthStore } from '@/lib/stores/authStore'
+import { useBookingHistoryFrom } from '@/lib/stores/useBookingHistory'
 import { ORG_DATA_REFRESHED_EVENT } from '@/lib/stores/refreshOrgData'
 import { canBookWork } from '@/lib/permissions'
 import { UserRole, type User } from '@/types'
@@ -180,6 +181,8 @@ export function ProjectScheduleWeekOverview({
   const { users, userIdAliases, loadUsers } = useOrgUserStore()
   const { subcontractors, loadSubcontractors } = useSubcontractorStore()
   const [weekStart, setWeekStart] = useState(startOfWeek(new Date(), { weekStartsOn: 1 }))
+  // An earlier week reaches before the launch booking download.
+  useBookingHistoryFrom(organizationId, weekStart)
   const [subBookings, setSubBookings] = useState<SubBooking[]>([])
   const [expanded, setExpanded] = useState(variant !== 'hub')
   const [editingRow, setEditingRow] = useState<DayRow | null>(null)

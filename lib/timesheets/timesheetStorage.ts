@@ -5,18 +5,25 @@
  * Doc id: timesheet_{userId}_{unixStartOfDay} using the organisation origin-country zone.
  * Legacy yyyy-MM-dd / ISO-week keys are still read so older web drafts are not lost.
  */
-import { collection, doc, getDoc, getDocs, query, setDoc, Timestamp, where } from 'firebase/firestore'
-import { db } from '@/lib/firebase/config'
+import { collection, doc, getDoc, getDocs, query, serverTimestamp, setDoc, Timestamp, updateDoc, where } from 'firebase/firestore'
+import { auth, db } from '@/lib/firebase/config'
+import { writeMetadataFields } from '@/lib/canonical/writeMetadata'
 import { newUuid, parseFirestoreDate as parseSharedFirestoreDate, sanitizeForFirestore } from '@/lib/firebase/firestoreUtils'
 import { LONDON_TIME_ZONE, unixStartOfDay, dayKey } from '@/lib/ios-parity/londonTime'
 import { weekStartKey } from '@/lib/timesheets/timesheetWeekUtils'
 import { periodStartKey } from '@/lib/timesheets/paymentRunCopy'
 import {
+  parseTimesheetEntryReviews,
   parseTimesheetStatusFields,
   pickTimesheetRowForPeriod,
   resolveTimesheetExportedAtMs,
+  timesheetEntryDecision,
+  timesheetEntryReviewWriteFields,
+  timesheetEntryReviewsAfterWrite,
+  timesheetOwnerWriteFields,
   timesheetPeriodWriteFields,
   timesheetStoredStartDayKey,
+  type TimesheetEntryReview,
 } from '@/lib/canonical'
 import {
   emptyTimesheetDraft,
@@ -89,7 +96,19 @@ function asDecision(value: unknown): TimesheetManagerDecision {
   return 'approved'
 }
 
-function mapExpense(row: Record<string, unknown>): TimesheetExpenseEntry | null {
+/**
+ * Decision in effect (`timesheetEntryDecision`): the reviewer's `extraEntryReviews` entry; the
+ * owner-writable inline value only when it lowers the amount, or on a manager-signed legacy sheet.
+ */
+function resolvedDecision(
+  sheet: Record<string, unknown>,
+  row: Record<string, unknown>
+): { managerDecision: TimesheetManagerDecision; managerRevisedAmount: number | null } {
+  const resolved = timesheetEntryDecision(sheet, row)
+  return { managerDecision: resolved.decision, managerRevisedAmount: resolved.revisedAmount }
+}
+
+function mapExpense(row: Record<string, unknown>, sheet: Record<string, unknown>): TimesheetExpenseEntry | null {
   const id = typeof row.id === 'string' && row.id.trim() ? row.id : newUuid()
   const title = typeof row.title === 'string' ? row.title : ''
   if (!title) return null
@@ -101,12 +120,11 @@ function mapExpense(row: Record<string, unknown>): TimesheetExpenseEntry | null 
     date: parseFirestoreDate(row.date) || new Date(),
     amount: typeof row.amount === 'number' ? row.amount : 0,
     receiptName: typeof row.receiptName === 'string' ? row.receiptName : null,
-    managerDecision: asDecision(row.managerDecision),
-    managerRevisedAmount: typeof row.managerRevisedAmount === 'number' ? row.managerRevisedAmount : null,
+    ...resolvedDecision(sheet, row),
   }
 }
 
-function mapPriceWork(row: Record<string, unknown>): TimesheetPriceWorkEntry | null {
+function mapPriceWork(row: Record<string, unknown>, sheet: Record<string, unknown>): TimesheetPriceWorkEntry | null {
   const id = typeof row.id === 'string' && row.id.trim() ? row.id : newUuid()
   const title = typeof row.title === 'string' ? row.title : ''
   if (!title) return null
@@ -119,8 +137,7 @@ function mapPriceWork(row: Record<string, unknown>): TimesheetPriceWorkEntry | n
     startDate: parseFirestoreDate(row.startDate) || new Date(),
     endDate: parseFirestoreDate(row.endDate) || null,
     amount: typeof row.amount === 'number' ? row.amount : 0,
-    managerDecision: asDecision(row.managerDecision),
-    managerRevisedAmount: typeof row.managerRevisedAmount === 'number' ? row.managerRevisedAmount : null,
+    ...resolvedDecision(sheet, row),
   }
 }
 
@@ -258,16 +275,17 @@ export function draftFromFirestoreMap(
     exportedAt: status.exportedAtMs ? new Date(status.exportedAtMs) : null,
     expenseEntries: Array.isArray(data.expenseEntries)
       ? data.expenseEntries
-          .map((row) => mapExpense((row || {}) as Record<string, unknown>))
+          .map((row) => mapExpense((row || {}) as Record<string, unknown>, data))
           .filter((row): row is TimesheetExpenseEntry => Boolean(row))
       : [],
     priceWorkEntries: Array.isArray(data.priceWorkEntries)
       ? data.priceWorkEntries
-          .map((row) => mapPriceWork((row || {}) as Record<string, unknown>))
+          .map((row) => mapPriceWork((row || {}) as Record<string, unknown>, data))
           .filter((row): row is TimesheetPriceWorkEntry => Boolean(row))
       : [],
     payrollLineReviews: mapReviews(data.payrollLineReviews),
     weeklyReportOverride: weeklyReportOverrideFromFirestore(data.weeklyReportOverride),
+    extraEntryReviews: parseTimesheetEntryReviews(data),
   }
 }
 
@@ -660,6 +678,14 @@ export async function loadTimesheetDraftsForStarts(
   return results
 }
 
+/**
+ * Save a timesheet. `access.reviewer` is `timesheetWriterIsReviewer` (line manager or admin);
+ * without it, a write by anyone other than the subject is the reviewer's, since only a reviewer
+ * may write someone else's sheet. The owner's save drops the reviewer-only parts
+ * (`timesheetOwnerWriteFields`); a reviewer's save also writes changed entry decisions to
+ * `extraEntryReviews` as a dotted update (`timesheetEntryReviewWriteFields`).
+ * Returns the stored entry reviews after the save.
+ */
 export async function saveTimesheetDraft({
   organizationId,
   userId,
@@ -668,6 +694,7 @@ export async function saveTimesheetDraft({
   timeZone = LONDON_TIME_ZONE,
   documentId = null,
   weekEnd = null,
+  access,
 }: {
   organizationId: string
   userId: string
@@ -676,7 +703,10 @@ export async function saveTimesheetDraft({
   timeZone?: string
   documentId?: string | null
   weekEnd?: Date | null
-}): Promise<void> {
+  access?: { reviewer?: boolean; subjectHasLineManager?: boolean }
+}): Promise<Record<string, TimesheetEntryReview> | null> {
+  const writerId = auth?.currentUser?.uid || ''
+  const reviewer = access?.reviewer ?? Boolean(writerId && writerId !== userId)
   const canonicalId = timesheetDocId(userId, weekStart, timeZone)
   const ids = Array.from(
     new Set(
@@ -689,17 +719,37 @@ export async function saveTimesheetDraft({
     startDayKey: dayKey(weekStart, timeZone),
     endDayKey: dayKey(end, timeZone),
   })
+  const sheetFields = reviewer
+    ? draftToFirestoreMap(draft)
+    : timesheetOwnerWriteFields(draftToFirestoreMap(draft), {
+        // Unknown counts as having one: the snapshot is then left to the line manager.
+        subjectHasLineManager: access?.subjectHasLineManager !== false,
+        managerSigned: Boolean(draft.managerSignedAt),
+      })
   const payload = sanitizeForFirestore({
-    ...draftToFirestoreMap(draft),
+    ...sheetFields,
     ...periodFields,
     userId,
     weekStart: Timestamp.fromDate(weekStart),
     weekEnd: Timestamp.fromDate(end),
-    updatedAt: Timestamp.now(),
   }) as Record<string, unknown>
+  // Who and where (`writeMetadataFields`) plus the server time, on every timesheet save.
+  Object.assign(payload, writeMetadataFields(writerId, 'web') ?? {}, { updatedAt: serverTimestamp() })
   await Promise.all(
     ids.map((id) => setDoc(doc(db, 'organizations', organizationId, 'settings', id), payload, { merge: true }))
   )
+  if (!reviewer) return draft.extraEntryReviews ?? null
+  const reviewFields = timesheetEntryReviewWriteFields({
+    stored: draft.extraEntryReviews ?? null,
+    entries: [...draft.expenseEntries, ...draft.priceWorkEntries],
+    reviewedByUserId: writerId,
+    reviewedAtMs: Date.now(),
+  })
+  if (Object.keys(reviewFields).length === 0) return draft.extraEntryReviews ?? null
+  await Promise.all(
+    ids.map((id) => updateDoc(doc(db, 'organizations', organizationId, 'settings', id), reviewFields))
+  )
+  return timesheetEntryReviewsAfterWrite(draft.extraEntryReviews ?? null, reviewFields)
 }
 
 export type TimesheetStateRow = {

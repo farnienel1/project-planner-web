@@ -98,8 +98,8 @@ export function ProjectDeadlinesSection({ project, isSmallWorks }: { project: Pr
     if (!organization?.id) return
     load(organization.id, project.id, isSmallWorks)
     loadUsers(organization.id)
-    loadBookings(organization.id)
-    loadManagerSiteBookings(organization.id)
+    loadBookings(organization.id, { fullHistory: true })
+    loadManagerSiteBookings(organization.id, { fullHistory: true })
     loadOperatives(organization.id)
     loadTasks(organization.id)
     loadAudits(organization.id)

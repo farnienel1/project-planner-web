@@ -16,7 +16,13 @@ import {
   type OrgWarningDetectionSettings,
 } from '@/lib/settings/organizationSettings'
 import { BANK_HOLIDAY_REGIONS, bankHolidayRegionLabel } from '@/lib/settings/bankHolidayRegions'
-import { DEFAULT_MATERIAL_CUT_OFF } from '@/lib/canonical'
+import {
+  CURRENCY_OPTIONS as CANONICAL_CURRENCY_OPTIONS,
+  DEFAULT_MATERIAL_CUT_OFF,
+  companyDetailsWriteFields,
+  normalizeDocumentAbbreviation as canonicalDocumentAbbreviation,
+  organizationCurrencyWriteFields,
+} from '@/lib/canonical'
 import type { NotificationPreferences } from '@/lib/settings/notificationPreferences'
 import { COMPANY_LOGO_MAX_BYTES, uploadLimitError } from '@/lib/security/uploadLimits'
 
@@ -53,12 +59,10 @@ export type OrgSetupSettings = {
   features: OrganisationFeaturesSetup
 }
 
-export const CURRENCY_OPTIONS = [
-  { code: 'GBP', label: 'GBP — British Pound (£)' },
-  { code: 'EUR', label: 'EUR — Euro (€)' },
-  { code: 'USD', label: 'USD — US Dollar ($)' },
-  { code: 'AUD', label: 'AUD — Australian Dollar (A$)' },
-] as const
+/** The canonical organisation currencies (`lib/canonical/money.ts`, same list as iOS), with a picker label. */
+export const CURRENCY_OPTIONS: ReadonlyArray<{ code: string; label: string }> = CANONICAL_CURRENCY_OPTIONS.map(
+  (option) => ({ code: option.code, label: `${option.code} — ${option.title} (${option.symbol})` })
+)
 
 export const COUNTRY_OPTIONS = BANK_HOLIDAY_REGIONS
 
@@ -115,10 +119,9 @@ export function createDefaultOrgSetupSettings(): OrgSetupSettings {
 
 export const DEFAULT_BANK_HOLIDAY_REGION_ID = 'GB-ENG-WLS'
 
-/** iOS stores a 1–3 character document prefix. */
+/** iOS stores a 1–3 character document prefix (canonical `normalizeDocumentAbbreviation`). */
 export function normalizeDocumentAbbreviation(value: string | null | undefined): string | undefined {
-  const cleaned = (value || '').replace(/[^A-Za-z0-9]/g, '').slice(0, 3).toUpperCase()
-  return cleaned || undefined
+  return canonicalDocumentAbbreviation(value) || undefined
 }
 
 /**
@@ -149,7 +152,10 @@ export function countryCodeForCompany(selection: string | null | undefined, stor
   return 'GB'
 }
 
-/** Flat iOS company fields plus the nested address the web form still edits. */
+/**
+ * Company fields for a new organisation document (guided setup, a full `setDoc`): the canonical flat
+ * shape from `companyDetailsWriteFields` plus currency. No nested `officeAddress` map is written.
+ */
 export function companyIdentityFirestoreFields(input: {
   addressLine1?: string
   addressLine2?: string
@@ -165,31 +171,27 @@ export function companyIdentityFirestoreFields(input: {
 }): Record<string, unknown> {
   const line1 = (input.addressLine1 || '').trim()
   const town = (input.town || '').trim()
-  const postcode = (input.postcode || '').trim()
   const regionId = bankHolidayRegionIdFromSelection(input.bankHolidayRegionId || input.regionSelection)
-  const currency = (input.currency || 'GBP').trim() || 'GBP'
-  const abbreviation = normalizeDocumentAbbreviation(input.documentAbbreviation)
-  const fields: Record<string, unknown> = {
+  const { set } = companyDetailsWriteFields({
+    name: '',
+    hasOfficeAddress: Boolean(line1 || town),
+    officeAddressLine1: line1,
+    officeAddressLine2: input.addressLine2,
+    officeCity: town,
+    officeCounty: input.county,
+    officePostcode: input.postcode,
     countryCode: countryCodeForCompany(input.regionSelection, input.countryCode),
-    currency,
-    currencyCode: currency,
+    documentAbbreviation: input.documentAbbreviation,
+    companyLogoURL: input.companyLogoURL || undefined,
+  })
+  const currency = organizationCurrencyWriteFields(input.currency) ?? organizationCurrencyWriteFields('GBP')!
+  // A full-document create: the dotted `settings.currencyCode` key belongs in the nested settings map.
+  return {
+    ...set,
+    currency: currency.currency,
+    currencyCode: currency.currencyCode,
     bankHolidayRegionId: regionId,
-    officeAddressLine1: line1 || null,
-    officeCity: town || null,
-    officePostcode: postcode || null,
-    officeAddress: line1
-      ? {
-          addressLine1: line1,
-          addressLine2: (input.addressLine2 || '').trim() || null,
-          town: town || null,
-          county: (input.county || '').trim() || null,
-          postcode: postcode || null,
-        }
-      : null,
   }
-  if (input.companyLogoURL) fields.companyLogoURL = input.companyLogoURL
-  if (abbreviation) fields.documentAbbreviation = abbreviation
-  return fields
 }
 
 /** Fields written to organizations/{id} from guided setup. */

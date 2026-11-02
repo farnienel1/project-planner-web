@@ -5,11 +5,14 @@
 
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { ChevronLeftIcon, ChevronRightIcon, CalendarDaysIcon, FolderIcon, WrenchScrewdriverIcon } from '@heroicons/react/24/solid'
 import { useAuthStore } from '@/lib/stores/authStore'
+import { useOrganizationTimeZone } from '@/lib/stores/organizationDocumentStore'
+import { useOrganizationDayKey } from '@/lib/warnings/useOrganizationDayKey'
+import { useBookingHistoryFrom } from '@/lib/stores/useBookingHistory'
 import { useBookingStore } from '@/lib/stores/bookingStore'
 import { useManagerScheduleStore } from '@/lib/stores/managerScheduleStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
@@ -79,6 +82,20 @@ export function DailyOverviewScreen() {
     Awaited<ReturnType<typeof loadSubcontractorBookings>>
   >([])
   const [day, setDay] = useState(() => londonMidnight(new Date()))
+  // Today moves on at the organisation's midnight and when the tab is focused again. A viewer who was on
+  // the old today follows to the new one; a viewer on another day stays there.
+  const orgTimeZone = useOrganizationTimeZone()
+  const todayKey = useOrganizationDayKey(orgTimeZone)
+  const today = useMemo(() => new Date(), [todayKey]) // eslint-disable-line react-hooks/exhaustive-deps -- new instant per organisation day
+  const lastTodayKey = useRef(todayKey)
+  useEffect(() => {
+    const previous = lastTodayKey.current
+    lastTodayKey.current = todayKey
+    if (previous === todayKey) return
+    setDay((current) => (dayKey(current) === previous ? londonMidnight(new Date()) : current))
+  }, [todayKey])
+  // A past day reaches before the launch booking download.
+  useBookingHistoryFrom(organization?.id, day)
   const [bookLabourOpen, setBookLabourOpen] = useState(false)
   const [editingRow, setEditingRow] = useState<OverviewBookingTarget | null>(null)
   const [payrollPolicy, setPayrollPolicy] = useState<OrgPayrollTimePolicy>(DEFAULT_PAYROLL_POLICY)
@@ -127,6 +144,7 @@ export function DailyOverviewScreen() {
     () =>
       buildDailyOverview({
         day,
+        today,
         projects: [...projects, ...smallWorks],
         bookings,
         managerBookings: managerSiteBookings,
@@ -139,9 +157,11 @@ export function DailyOverviewScreen() {
         payrollPolicy,
         includeWeekendsForUnbookedLabour,
         excludedUserIdsFromUnbookedWarnings,
+        timeZone: orgTimeZone,
       }),
     [
       day,
+      today,
       projects,
       smallWorks,
       bookings,
@@ -155,6 +175,7 @@ export function DailyOverviewScreen() {
       payrollPolicy,
       includeWeekendsForUnbookedLabour,
       excludedUserIdsFromUnbookedWarnings,
+      orgTimeZone,
     ]
   )
 

@@ -1,6 +1,8 @@
-import { isActiveBookingStatus } from '@/lib/ios-parity/enums'
-import { addLondonDays, dayKey, londonIsoWeekday, londonMidnight, londonMinutesOfDay } from '@/lib/ios-parity/londonTime'
-import { formatMaterialCutOffClock, materialCutOffClockMinutes, resolveMaterialCutOffClock } from '@/lib/canonical'
+import {
+  LONDON_TIME_ZONE,
+  dateFromDayKeyInZone,
+} from '@/lib/orgTime/zoneTime'
+import { materialCutOffWarningRows, materialLineCountsAsOrdered } from '@/lib/canonical'
 import type { Booking, MaterialSendRecord, Project, ProjectMaterialLine } from '@/types'
 
 export type MissedMaterialOrderWarning = {
@@ -14,18 +16,16 @@ export type MissedMaterialOrderWarning = {
   message: string
 }
 
-/** Material line has been sent/ordered — not a missed order. */
-export function isMaterialLineOrdered(
-  line: ProjectMaterialLine,
-  sendRecords: MaterialSendRecord[]
-): boolean {
-  const status = `${line.status || ''}`.trim().toLowerCase()
-  if (status === 'ordered') return true
-  return sendRecords.some(
-    (record) =>
-      record.requestType === 'order' &&
-      record.lines.some((entry) => entry.materialId === line.id)
-  )
+function sendRecordInputs(sendRecords: MaterialSendRecord[]) {
+  return sendRecords.map((record) => ({
+    requestType: record.requestType,
+    materialIds: (record.lines || []).map((entry) => entry.materialId),
+  }))
+}
+
+/** The rulebook's `materialLineCountsAsOrdered`: status `ordered`, or listed on an order send record. */
+export function isMaterialLineOrdered(line: ProjectMaterialLine, sendRecords: MaterialSendRecord[]): boolean {
+  return materialLineCountsAsOrdered({ id: line.id, status: line.status }, sendRecordInputs(sendRecords))
 }
 
 export type MaterialCutoffOptions = {
@@ -35,22 +35,18 @@ export type MaterialCutoffOptions = {
   cutOffHour?: number
   cutOffMinute?: number
   referenceDate?: Date
+  /** Organisation business zone (`organizationTimeZone(countryCode)`). */
+  timeZone?: string
 }
 
-function cutoffClock(options: MaterialCutoffOptions) {
-  return resolveMaterialCutOffClock({
-    organizationMaterialCutOff: {
-      materialCutOffHour: options.cutOffHour,
-      materialCutOffMinute: options.cutOffMinute,
-      materialCutOffOnSaturday: options.cutOffOnSaturday,
-      materialCutOffOnSunday: options.cutOffOnSunday,
-    },
-  })
+function isoOf(value: unknown): string | null {
+  const date = value instanceof Date ? value : value == null ? null : new Date(value as string | number)
+  return date && !Number.isNaN(date.getTime()) ? date.toISOString() : null
 }
 
 /**
- * iOS Organisation material cut-off: after the configured London time, for projects
- * that have active bookings tomorrow. Empty material list still warns.
+ * Material cut-off rows from the rulebook's `materialCutOffWarningRows`: after the organisation cut-off,
+ * for jobs with an active booking tomorrow. An empty material list still warns.
  */
 export function computeMissedMaterialOrderWarnings(
   materials: ProjectMaterialLine[],
@@ -59,58 +55,43 @@ export function computeMissedMaterialOrderWarnings(
   bookings: Booking[] = [],
   options: MaterialCutoffOptions = {}
 ): MissedMaterialOrderWarning[] {
-  const now = options.referenceDate ?? new Date()
-  if (options.enabled === false) return []
-  const clock = cutoffClock(options)
-  const cutoff = materialCutOffClockMinutes(clock)
-  if (londonMinutesOfDay(now) < cutoff) return []
-
-  const today = londonMidnight(now)
-  const tomorrow = addLondonDays(today, 1)
-  const tomorrowIso = londonIsoWeekday(tomorrow)
-  if (tomorrowIso === 6 && options.cutOffOnSaturday !== true) return []
-  if (tomorrowIso === 7 && options.cutOffOnSunday !== true) return []
-
-  const tomorrowKey = dayKey(tomorrow)
-  const projectIdsWithTomorrowBookings = new Set(
-    bookings
-      .filter((booking) => isActiveBookingStatus(booking.status) && dayKey(booking.date) === tomorrowKey)
-      .map((booking) => booking.projectId)
-  )
-
-  const projectsById = new Map(projects.map((project) => [project.id, project]))
-  const warnings: MissedMaterialOrderWarning[] = []
-  const cutoffLabel = formatMaterialCutOffClock(clock)
-
-  for (const projectId of projectIdsWithTomorrowBookings) {
-    const project = projectsById.get(projectId)
-    if (!project) continue
-    const tomorrowMaterials = materials.filter(
-      (line) => line.projectId === projectId && dayKey(new Date(line.date)) === tomorrowKey
-    )
-    const unordered = tomorrowMaterials.filter((line) => !isMaterialLineOrdered(line, sendRecords))
-    const needsWarning = tomorrowMaterials.length === 0 || unordered.length > 0
-    if (!needsWarning) continue
-
-    const jobNumber = project.jobNumber || project.siteName || projectId.slice(0, 8)
-    const message =
-      tomorrowMaterials.length === 0
-        ? `No materials have been ordered for ${jobNumber} tomorrow's work (cut-off ${cutoffLabel}).`
-        : `Materials for ${jobNumber} were not fully ordered by the cut-off ${cutoffLabel} for tomorrow's work (${unordered.length} line${
-            unordered.length === 1 ? '' : 's'
-          } still not ordered).`
-
-    warnings.push({
-      id: `materials-${projectId}-${tomorrowKey}`,
-      type: 'missed_material_order',
-      title: 'Material order not placed',
-      projectId,
-      projectLabel: `${project.jobNumber} ${project.siteName}`.trim() || jobNumber,
-      date: tomorrow,
-      unorderedCount: tomorrowMaterials.length === 0 ? 0 : unordered.length,
-      message,
-    })
-  }
-
-  return warnings.sort((a, b) => a.projectLabel.localeCompare(b.projectLabel))
+  const timeZone = options.timeZone || LONDON_TIME_ZONE
+  const rows = materialCutOffWarningRows({
+    now: (options.referenceDate ?? new Date()).toISOString(),
+    timeZone,
+    cutOff: {
+      materialOrderCutOff: options.enabled !== false,
+      materialCutOffHour: options.cutOffHour,
+      materialCutOffMinute: options.cutOffMinute,
+      materialCutOffOnSaturday: options.cutOffOnSaturday,
+      materialCutOffOnSunday: options.cutOffOnSunday,
+    },
+    projects: projects.map((project) => ({
+      id: project.id,
+      jobNumber: project.jobNumber,
+      siteName: project.siteName,
+    })),
+    bookings: bookings.map((booking) => ({
+      projectId: booking.projectId,
+      status: booking.status,
+      dateIso: isoOf(booking.date),
+    })),
+    materials: materials.map((line) => ({
+      id: line.id,
+      projectId: line.projectId,
+      status: line.status,
+      dateIso: isoOf(line.date),
+    })),
+    sendRecords: sendRecordInputs(sendRecords),
+  })
+  return rows.map((row) => ({
+    id: row.id,
+    type: row.type,
+    title: row.title,
+    projectId: row.projectId,
+    projectLabel: row.projectLabel,
+    date: dateFromDayKeyInZone(row.dayKey, timeZone),
+    unorderedCount: row.unorderedCount,
+    message: row.message,
+  }))
 }

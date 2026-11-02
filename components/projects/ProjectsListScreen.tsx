@@ -46,8 +46,8 @@ export function ProjectsListScreen() {
     if (!organization?.id) return
     loadProjects(organization.id)
     loadTasks(organization.id)
-    loadBookings(organization.id)
-    loadManagerSiteBookings(organization.id)
+    loadBookings(organization.id, { fullHistory: true })
+    loadManagerSiteBookings(organization.id, { fullHistory: true })
     loadOperatives(organization.id)
     loadManagers(organization.id)
     loadUsers(organization.id)

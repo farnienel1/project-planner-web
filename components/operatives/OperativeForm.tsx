@@ -1,5 +1,8 @@
 'use client'
 
+import { useOrganizationTimeZone } from '@/lib/stores/organizationDocumentStore'
+import { dayKeyInOrganizationZone } from '@/lib/canonical'
+import { dateFromDayKey } from '@/lib/ios-parity/londonTime'
 import { FormEvent, useEffect, useState } from 'react'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
@@ -29,6 +32,7 @@ export function OperativeForm({
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const { request: requestPaySave, ui: payDialogs } = usePaySaveGate()
+  const timeZone = useOrganizationTimeZone()
   const [form, setForm] = useState({
     firstName: initial?.firstName || '',
     lastName: initial?.lastName || '',
@@ -36,9 +40,11 @@ export function OperativeForm({
     phone: initial?.phone || '',
     payBasis: payChoiceFromProfile(initial).payBasis,
     rateAmount: payChoiceFromProfile(initial).amount,
-    startDate: initial?.startDate
-      ? new Date(initial.startDate).toISOString().slice(0, 10)
-      : new Date().toISOString().slice(0, 10),
+    // Organisation day keys, not UTC dates (a UTC slice shows the previous day for an evening instant).
+    startDate: dayKeyInOrganizationZone(
+      (initial?.startDate ? new Date(initial.startDate) : new Date()).toISOString(),
+      timeZone
+    ),
     tradeTypePreset: initial?.tradeTypePreset || '',
     tradeTypeCustom: initial?.tradeTypeCustom || '',
     isActive: initial?.isActive !== false,
@@ -94,7 +100,8 @@ export function OperativeForm({
         lastName: last,
         email: form.email.trim(),
         phone: form.phone.trim() || undefined,
-        startDate: new Date(`${form.startDate}T12:00:00`),
+        // Midday on that organisation day, so every zone reads the same calendar day back.
+        startDate: new Date(dateFromDayKey(form.startDate, timeZone).getTime() + 12 * 60 * 60 * 1000),
         payBasis: rates.payBasis,
         hourlyRate: rates.payBasis === 'hourly' ? rates.hourlyRate ?? 0 : 0,
         dayRate: rates.payBasis === 'day' ? rates.dayRate : undefined,

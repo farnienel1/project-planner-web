@@ -252,6 +252,8 @@ export function EditUserProfile({
   const { bookings: holidayBookings, loadBookings: loadHolidays } = useHolidayStore()
 
   const [target, setTarget] = useState<User | null>(null)
+  // The copy last loaded or saved. Saves write only what changed against it.
+  const savedUser = useRef<User | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [typeSaving, setTypeSaving] = useState(false)
@@ -315,6 +317,7 @@ export function EditUserProfile({
       .then((row) => {
         if (generation !== profileLoadGen.current) return
         setTarget(row)
+        savedUser.current = row
         setOriginalDayRate(row?.payBasis === 'hourly' ? row?.hourlyRate : row?.dayRate)
         setOriginalPayBasis(row?.payBasis)
         setOriginalEmploymentType(row?.employmentType)
@@ -487,7 +490,8 @@ export function EditUserProfile({
     }
     setSaving(true)
     try {
-      await saveUser(toSave, organization.id, previous.email)
+      await saveUser(toSave, organization.id, previous.email, { baseline: savedUser.current })
+      savedUser.current = toSave
       if (canViewTaxIds && taxDirty && currentUser?.id) {
         const next = {
           utrNumber: taxDraft.utrNumber ?? taxIds?.utrNumber ?? '',
@@ -606,6 +610,7 @@ export function EditUserProfile({
     setSuccess(next ? 'User reactivated.' : 'User deactivated.')
     try {
       await setUserActive(target.id, next, organization?.id)
+      if (savedUser.current) savedUser.current = { ...savedUser.current, isActive: next }
       if (organization?.id) void syncLinkedOperative(organization.id, nextUser, operatives).catch(() => undefined)
     } catch (err: unknown) {
       setTarget(previous)
@@ -641,7 +646,10 @@ export function EditUserProfile({
       await reloadSignedInProfile()
       await loadUsers(organization.id, { force: true })
       const refreshed = await getUser(target.id)
-      if (refreshed) setTarget(refreshed)
+      if (refreshed) {
+        setTarget(refreshed)
+        savedUser.current = refreshed
+      }
       setShowTransfer(false)
       setSuccess('Super admin updated.')
     } catch (err: unknown) {
@@ -674,7 +682,8 @@ export function EditUserProfile({
     setError(null)
     setSuccess(null)
     try {
-      await saveUser(next, organization.id, target.email)
+      await saveUser(next, organization.id, target.email, { baseline: savedUser.current })
+      savedUser.current = next
       patchListedUser(next)
       setTarget(next)
       setDraftAccountType(null)

@@ -1,13 +1,13 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useState } from 'react'
 import { useAuthStore } from '@/lib/stores/authStore'
 import {
   DEFAULT_NOTIFICATION_PREFERENCES,
-  loadMaterialCutOffSettings,
-  saveMaterialCutOffSettingsForOrgAndUser,
   type NotificationPreferences,
 } from '@/lib/settings/notificationPreferences'
+import { saveMaterialCutOffSettings } from '@/lib/settings/organizationSettings'
+import { useApplyLiveWhenClean, useLiveOrganizationDetails } from '@/components/settings/useLiveOrganizationSettings'
 import { materialCutOffClockMinutes } from '@/lib/canonical'
 import { MATERIAL_CUTOFF_TIME_OPTIONS, materialCutoffTimeLabel } from '@/lib/settings/orgHubUtils'
 import {
@@ -47,15 +47,22 @@ export function MaterialCutOffPanel({ onBack }: { onBack: () => void }) {
   const dirty = isDirty(prefs)
   useSettingsDirty(dirty)
 
-  useEffect(() => {
-    if (!organization?.id) return
-    loadMaterialCutOffSettings(organization.id, user?.id)
-      .then((loaded) => {
-        setPrefs(loaded)
-        markLoaded(loaded)
-      })
-      .catch(() => markFailed())
-  }, [organization?.id, user?.id, markLoaded, markFailed])
+  // The organisation `settings.materialCutOff` map is the only clock (parseMaterialCutOff, live).
+  const live = useLiveOrganizationDetails()
+  const apply = useCallback(
+    (next: NotificationPreferences) => {
+      setPrefs(next)
+      markLoaded(next)
+    },
+    [markLoaded]
+  )
+  useApplyLiveWhenClean({
+    source: live.details?.materialCutOff ?? null,
+    status: live.status,
+    dirty,
+    apply,
+    onFailed: markFailed,
+  })
 
   const cutOffOn = prefs.materialOrderCutOff
   const cutOffMinutes = materialCutOffClockMinutes(prefs)
@@ -69,7 +76,8 @@ export function MaterialCutOffPanel({ onBack }: { onBack: () => void }) {
     setSaving(true)
     setFeedback(null)
     try {
-      await saveMaterialCutOffSettingsForOrgAndUser(organization.id, user?.id, prefs)
+      // Organisation only — the clock is not copied into users/{uid}.notificationPreferences.
+      await saveMaterialCutOffSettings(organization.id, prefs, user?.id)
       markLoaded(prefs)
       setSaved(true)
       setFeedback({ kind: 'success', msg: 'Settings saved' })

@@ -14,7 +14,7 @@ import { useHolidayStore } from '@/lib/stores/holidayStore'
 import { mergeProjectsAndSmallWorks } from '@/lib/projects/workStatus'
 import { getActiveOperativesForScheduling } from '@/lib/operatives/operativeRosterUtils'
 import {
-  acceptBookingClash,
+  approveBookingClash,
   loadAcceptedBookingClashes,
   type AcceptedBookingClash,
 } from '@/lib/warnings/acceptedClashStorage'
@@ -26,19 +26,16 @@ import {
 import {
   DEFAULT_WARNING_DETECTION,
   loadOrganizationDetails,
-  saveWarningDetection,
   type OrganizationDetails,
-  type OrgWarningDetectionSettings,
-  warningDetectionLooksLikeFactoryDefault,
 } from '@/lib/settings/organizationSettings'
-import {
-  readCachedWarningDetection,
-  writeCachedWarningDetection,
-} from '@/lib/settings/warningDetectionCache'
+import { organizationTimeZone } from '@/lib/canonical'
+import { activePaymentRunSummary } from '@/lib/canonical'
+import { useOrganizationDocument } from '@/lib/stores/organizationDocumentStore'
+import { useOrganizationDayKey } from '@/lib/warnings/useOrganizationDayKey'
+import { warningLookaheadFallbackNotice } from '@/lib/warnings/warningLookahead'
 import { activeOrgWarnings, generateOrgWarnings } from '@/lib/warnings/generateOrgWarnings'
 import { loadResolvedWarningKeys } from '@/lib/warnings/warningResolutionStorage'
 import {
-  organizationDetailsForWarningScan,
   partitionRowsByOrganization,
   publishReadyWarningLanes,
   warningDetectionForScan,
@@ -87,9 +84,8 @@ export default function WarningsPage() {
   const managerSawLoad = useRef(false)
   const bookingsSawLoad = useRef(false)
   const lastPublished = useRef<{ orgId: string; result: OrgWarningsResult } | null>(null)
-  // The cache returns a fresh copy per call, so hold one identity in state
-  // rather than re-reading it (and re-running the scan) on every render.
-  const [cachedDetection, setCachedDetection] = useState<OrgWarningDetectionSettings | null>(null)
+  // Live `organizations/{orgId}`: a save on iOS or in Settings re-reads the details. Firebase always wins.
+  const { data: liveOrgData, loaded: liveOrgLoaded } = useOrganizationDocument()
 
   useEffect(() => {
     if (!loading && !user) router.push('/login')
@@ -146,8 +142,6 @@ export default function WarningsPage() {
       ]).finally(() => {
         if (!cancelled) setDecisionsOrgId(orgId)
       })
-      const cached = readCachedWarningDetection(orgId)
-      setCachedDetection(cached)
       let settled = false
       const settle = () => {
         if (cancelled || settled) return
@@ -156,34 +150,7 @@ export default function WarningsPage() {
       }
       const applyDetails = (details: OrganizationDetails | null) => {
         if (cancelled || !details || details.id !== orgId) return
-        const latestCache = readCachedWarningDetection(orgId) ?? cached
-        const next = organizationDetailsForWarningScan({
-          current: null,
-          loaded: details,
-          cachedDetection: latestCache,
-        })
-        if (
-          latestCache &&
-          warningDetectionLooksLikeFactoryDefault(details.warningDetection) &&
-          !warningDetectionLooksLikeFactoryDefault(latestCache)
-        ) {
-          writeCachedWarningDetection(orgId, latestCache)
-          setCachedDetection(latestCache)
-          setOrgDetails(next)
-          void saveWarningDetection(orgId, latestCache).catch(() => {})
-          return
-        }
-        if (details.warningDetection) {
-          writeCachedWarningDetection(orgId, next.warningDetection)
-          setCachedDetection(next.warningDetection)
-        }
-        setOrgDetails((current) =>
-          organizationDetailsForWarningScan({
-            current,
-            loaded: details,
-            cachedDetection: latestCache,
-          })
-        )
+        setOrgDetails(details)
       }
       const timer = window.setTimeout(settle, 2500)
       void loadOrganizationDetails(orgId)
@@ -234,19 +201,28 @@ export default function WarningsPage() {
       void loadOrganizationDetails(orgId, { fromServer: true, allowCacheFallback: true })
         .then((details) => {
           if (!details || details.id !== orgId) return
-          setOrgDetails((current) =>
-            organizationDetailsForWarningScan({
-              current,
-              loaded: details,
-              cachedDetection: readCachedWarningDetection(orgId),
-            })
-          )
+          setOrgDetails(details)
         })
         .catch(() => {})
     }
     window.addEventListener(ORG_DATA_REFRESHED_EVENT, onRefreshed)
     return () => window.removeEventListener(ORG_DATA_REFRESHED_EVENT, onRefreshed)
   }, [organization?.id])
+
+  // Each snapshot of the organisation document (any device) re-reads the parsed details from it.
+  useEffect(() => {
+    const orgId = organization?.id
+    if (!orgId || !liveOrgLoaded || !liveOrgData) return
+    let cancelled = false
+    void loadOrganizationDetails(orgId)
+      .then((details) => {
+        if (!cancelled && details && details.id === orgId) setOrgDetails(details)
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [organization?.id, liveOrgLoaded, liveOrgData])
 
   useEffect(() => {
     const inFlight = useManagerScheduleStore.getState().loading
@@ -276,11 +252,12 @@ export default function WarningsPage() {
 
   const orgId = organization?.id || ''
   const detailsForScan = orgDetails?.id === orgId ? orgDetails : null
-  const warningDetection = warningDetectionForScan(
-    detailsForScan?.warningDetection,
-    orgId ? cachedDetection : null,
-    detectionSettled
-  )
+  const warningDetection = warningDetectionForScan(detailsForScan?.warningDetection, null, detectionSettled)
+  // "Now" moves on at the organisation's midnight and when the tab is focused again, so a tab left open
+  // overnight scans today's window, not yesterday's.
+  const timeZone = organizationTimeZone(detailsForScan?.countryCode)
+  const todayKey = useOrganizationDayKey(timeZone)
+  const referenceDate = useMemo(() => new Date(), [todayKey]) // eslint-disable-line react-hooks/exhaustive-deps -- new instant per organisation day
   const invoicingReady =
     warningScanInvoicingReady(warningDetection, detailsForScan?.invoicing) &&
     (warningDetection?.clashLookaheadMode !== 'endOfInvoicingPeriod' || liveOrgReadSettled)
@@ -347,9 +324,11 @@ export default function WarningsPage() {
         sendRecords,
         orgDetails: detailsForScan,
         warningDetection: warningDetection ?? DEFAULT_WARNING_DETECTION,
+        referenceDate,
       }),
     [
       scheduleReady,
+      referenceDate,
       warningDetection,
       bookingScope,
       managerScope,
@@ -425,11 +404,20 @@ export default function WarningsPage() {
   )
 
   const handleAcceptClash = useCallback(
-    async (clash: { bookingAId: string; bookingBId: string }) => {
+    async (clash: { bookingAId: string; bookingBId: string; resolutionKey?: string }) => {
       if (!organization?.id || !user?.id) return
-      await acceptBookingClash(organization.id, clash.bookingAId, clash.bookingBId, user.id)
-      const updated = await loadAcceptedBookingClashes(organization.id)
-      setAcceptedClashes(updated)
+      // Both `acceptedBookingClashes` and `warningResolutions` (`clashApprovalWrites`), so iOS sees it too.
+      await approveBookingClash(
+        organization.id,
+        { bookingAId: clash.bookingAId, bookingBId: clash.bookingBId, resolutionKey: clash.resolutionKey },
+        user.id
+      )
+      const [accepted, resolved] = await Promise.all([
+        loadAcceptedBookingClashes(organization.id),
+        loadResolvedWarningKeys(organization.id),
+      ])
+      setAcceptedClashes(accepted)
+      setResolvedKeys(resolved)
     },
     [organization?.id, user?.id]
   )
@@ -452,7 +440,27 @@ export default function WarningsPage() {
 
   if (loading || !user || !canViewWarnings(user)) return null
 
+  const invoicingNotConfigured =
+    warningDetection?.clashLookaheadMode === 'endOfInvoicingPeriod' &&
+    liveOrgLoaded &&
+    activePaymentRunSummary(
+      liveOrgData?.invoicing && typeof liveOrgData.invoicing === 'object' ? (liveOrgData.invoicing as Record<string, unknown>) : null,
+      referenceDate,
+      timeZone
+    ).notConfigured
+  const scanNotice =
+    warningLookaheadFallbackNotice(generated?.coverageFallbackReason) ??
+    (invoicingNotConfigured
+      ? 'Warnings are set to the invoicing period, but no payment runs are set up, so the scan uses the 1st–15th and 16th–end of the month. Set up payment runs in Settings.'
+      : null)
+
   return (
+    <>
+    {scanNotice ? (
+      <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800" role="status">
+        {scanNotice}
+      </div>
+    ) : null}
     <WarningsScreen
       organizationName={organization?.name || 'your organisation'}
       clashWarnings={shown.clashWarnings}
@@ -474,5 +482,6 @@ export default function WarningsPage() {
       sortDirection={sortDirection}
       onSortDirectionChange={setSortDirection}
     />
+    </>
   )
 }

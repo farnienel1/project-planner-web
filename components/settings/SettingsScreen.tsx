@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useEffect, useState, type ChangeEvent, type ReactNode } from 'react'
 import { updatePassword, EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth'
-import { doc, Timestamp, updateDoc } from 'firebase/firestore'
+import { doc, serverTimestamp, updateDoc } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { uploadFile, profilePhotoPath } from '@/lib/firebase/storageUtils'
@@ -15,8 +15,19 @@ import { prepareClientUpload } from '@/lib/security/stripPhotoLocation'
 import { UserAvatar } from '@/components/users/UserAvatar'
 import { canAccessOrganisationSettingsHub, hasAdminAccess } from '@/lib/navigation/menuPermissions'
 import { staffAccountRole } from '@/lib/permissions'
-import { canReviewFileReports } from '@/lib/canonical'
-import { minPasswordLengthForEmail } from '@/lib/auth/emailAction'
+import {
+  canReviewFileReports,
+  employmentTypeLabel,
+  employmentTypeOnDay,
+  formatMoney,
+  passwordPolicyError,
+  SENSITIVE_VALUE_MAX,
+  writeMetadataFields,
+} from '@/lib/canonical'
+import { readStoredRates } from '@/lib/canonical/payRate'
+import { loadTaxIds, saveTaxIds } from '@/lib/sensitiveProfile/taxIdsService'
+import { useOrganizationCurrency, useOrganizationTimeZone } from '@/lib/stores/organizationDocumentStore'
+import { loginPathForResetEmail } from '@/lib/auth/emailAction'
 import {
   SectionLabel,
   SettingsCard,
@@ -84,20 +95,65 @@ function ProfilePanel({ onBack }: { onBack: () => void }) {
   const [firstName, setFirstName] = useState(user?.firstName || '')
   const [surname, setSurname] = useState(user?.surname || '')
   const [mobile, setMobile] = useState(user?.mobileNumber || '')
+  const [vatNumber, setVatNumber] = useState('')
+  const [utrNumber, setUtrNumber] = useState('')
+  const [taxIdsState, setTaxIdsState] = useState<'loading' | 'ready' | 'failed'>('loading')
   const [baseline, setBaseline] = useState(() =>
     JSON.stringify({
       firstName: user?.firstName || '',
       surname: user?.surname || '',
       mobile: user?.mobileNumber || '',
+      vatNumber: '',
+      utrNumber: '',
     })
   )
+  const currencyCode = useOrganizationCurrency()
+  const timeZone = useOrganizationTimeZone()
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState('')
   const [uploadingPhoto, setUploadingPhoto] = useState(false)
   const [photoToCrop, setPhotoToCrop] = useState<File | null>(null)
-  const snapshot = JSON.stringify({ firstName, surname, mobile })
+  const snapshot = JSON.stringify({ firstName, surname, mobile, vatNumber, utrNumber })
   const dirty = settingsDraftIsDirty(baseline, snapshot)
+  const userId = user?.id || ''
+
+  // Billing details live in users/{uid}/private/taxIds (canonical sensitiveProfile), same as iOS.
+  useEffect(() => {
+    if (!userId) return
+    let cancelled = false
+    setTaxIdsState('loading')
+    const legacy = useAuthStore.getState().user
+    loadTaxIds(userId, legacy ? { utrNumber: legacy.utrNumber, vatNumber: legacy.vatNumber } : null)
+      .then((ids) => {
+        if (cancelled) return
+        setVatNumber(ids.vatNumber)
+        setUtrNumber(ids.utrNumber)
+        setBaseline((previous) => {
+          const parsed = JSON.parse(previous) as Record<string, string>
+          return JSON.stringify({ ...parsed, vatNumber: ids.vatNumber, utrNumber: ids.utrNumber })
+        })
+        setTaxIdsState('ready')
+      })
+      .catch(() => {
+        if (!cancelled) setTaxIdsState('failed')
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [userId])
+
+  // Read-only pay and employment, from the rulebook: one basis only, and the employment type today.
+  const rates = readStoredRates(user ?? {})
+  const rateRow =
+    rates.payBasis === 'hourly' && rates.hourlyRate != null
+      ? { label: 'Hourly rate', value: formatMoney(rates.hourlyRate, currencyCode) }
+      : rates.dayRate != null
+        ? { label: 'Day rate', value: formatMoney(rates.dayRate, currencyCode) }
+        : rates.hourlyRate != null
+          ? { label: 'Hourly rate', value: formatMoney(rates.hourlyRate, currencyCode) }
+          : null
+  const employmentToday = user ? employmentTypeLabel(employmentTypeOnDay(user, new Date(), timeZone)) : ''
   useSettingsDirty(dirty)
   const orgName = displayOrganizationName(organization?.name)
 
@@ -105,7 +161,28 @@ function ProfilePanel({ onBack }: { onBack: () => void }) {
     if (!user?.id) return
     setSaving(true); setError('')
     try {
-      await updateDoc(doc(db, 'users', user.id), { firstName: firstName.trim(), surname: surname.trim(), mobileNumber: mobile.trim(), updatedAt: Timestamp.now() })
+      const before = JSON.parse(baseline) as Record<string, string>
+      const profileChanged =
+        before.firstName !== firstName || before.surname !== surname || before.mobile !== mobile
+      const taxIdsChanged =
+        taxIdsState === 'ready' && (before.vatNumber !== vatNumber || before.utrNumber !== utrNumber)
+      if (vatNumber.trim().length > SENSITIVE_VALUE_MAX || utrNumber.trim().length > SENSITIVE_VALUE_MAX) {
+        throw new Error(`UTR and VAT numbers are ${SENSITIVE_VALUE_MAX} characters at most.`)
+      }
+      if (profileChanged) {
+        await updateDoc(doc(db, 'users', user.id), {
+          firstName: firstName.trim(),
+          surname: surname.trim(),
+          mobileNumber: mobile.trim(),
+          updatedAt: serverTimestamp(),
+          ...(writeMetadataFields(user.id, 'web') ?? {}),
+        })
+      }
+      if (taxIdsChanged) {
+        await saveTaxIds(user.id, { vatNumber: vatNumber.trim(), utrNumber: utrNumber.trim() }, user.id)
+        setVatNumber(vatNumber.trim())
+        setUtrNumber(utrNumber.trim())
+      }
       const current = useAuthStore.getState().user
       if (current) {
         useAuthStore.setState({
@@ -121,7 +198,15 @@ function ProfilePanel({ onBack }: { onBack: () => void }) {
       setFirstName(firstName.trim())
       setSurname(surname.trim())
       setMobile(mobile.trim())
-      setBaseline(JSON.stringify({ firstName: firstName.trim(), surname: surname.trim(), mobile: mobile.trim() }))
+      setBaseline(
+        JSON.stringify({
+          firstName: firstName.trim(),
+          surname: surname.trim(),
+          mobile: mobile.trim(),
+          vatNumber: taxIdsChanged ? vatNumber.trim() : before.vatNumber,
+          utrNumber: taxIdsChanged ? utrNumber.trim() : before.utrNumber,
+        })
+      )
       setSaved(true); setTimeout(() => setSaved(false), 3000)
     } catch (e: unknown) { setError(e instanceof Error ? e.message : 'Save failed') }
     finally { setSaving(false) }
@@ -160,7 +245,14 @@ function ProfilePanel({ onBack }: { onBack: () => void }) {
         45_000,
         'The photo did not finish uploading. Check the connection and try a smaller image.'
       )
-      await updateDoc(doc(db, 'users', user.id), { profilePhotoURL: url, updatedAt: Timestamp.now() })
+      // The download URL carries the new object's token, so it differs from every older copy.
+      // profilePhotoUpdatedAt tells other screens and iOS the photo changed.
+      await updateDoc(doc(db, 'users', user.id), {
+        profilePhotoURL: url,
+        profilePhotoUpdatedAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        ...(writeMetadataFields(user.id, 'web') ?? {}),
+      })
       const current = useAuthStore.getState().user
       if (current) useAuthStore.setState({ user: { ...current, profilePhotoURL: url } })
       setSaved(true)
@@ -214,6 +306,12 @@ function ProfilePanel({ onBack }: { onBack: () => void }) {
           <div className="flex items-center justify-between py-1"><span className="text-sm text-[var(--ink3)]">Name</span><span className="text-sm font-semibold text-[var(--ink)]">{user?.firstName} {user?.surname}</span></div>
           <div className="flex items-center justify-between py-1"><span className="text-sm text-[var(--ink3)]">Email</span><span className="text-sm font-semibold text-[var(--ink)]">{user?.email}</span></div>
           <div className="flex items-center justify-between py-1"><span className="text-sm text-[var(--ink3)]">Organisation</span><span className="text-sm font-semibold text-[var(--ink)]">{orgName}</span></div>
+          {rateRow ? (
+            <div className="flex items-center justify-between py-1"><span className="text-sm text-[var(--ink3)]">{rateRow.label}</span><span className="text-sm font-semibold text-[var(--ink)]">{rateRow.value}</span></div>
+          ) : null}
+          {employmentToday ? (
+            <div className="flex items-center justify-between py-1"><span className="text-sm text-[var(--ink3)]">Employment type</span><span className="text-sm font-semibold text-[var(--ink)]">{employmentToday}</span></div>
+          ) : null}
         </div>
       </SettingsCard>
 
@@ -221,6 +319,36 @@ function ProfilePanel({ onBack }: { onBack: () => void }) {
         <FormField label="First name"><Input value={firstName} onChange={e => setFirstName(e.target.value)} /></FormField>
         <FormField label="Surname"><Input value={surname} onChange={e => setSurname(e.target.value)} /></FormField>
         <FormField label="Mobile number"><Input value={mobile} onChange={e => setMobile(e.target.value)} type="tel" /></FormField>
+      </div>
+
+      <div className="space-y-3 card pad">
+        <p className="eyebrow">Billing details</p>
+        {taxIdsState === 'loading' ? (
+          <p className="text-xs text-[var(--ink3)]">Loading…</p>
+        ) : taxIdsState === 'failed' ? (
+          <p className="text-xs text-[var(--ink3)]">Billing details could not be loaded. Try again later.</p>
+        ) : (
+          <>
+            <FormField label="VAT number">
+              <Input
+                value={vatNumber}
+                onChange={e => setVatNumber(e.target.value)}
+                placeholder="VAT number (if registered)"
+                maxLength={SENSITIVE_VALUE_MAX}
+                autoComplete="off"
+              />
+            </FormField>
+            <FormField label="UTR number">
+              <Input
+                value={utrNumber}
+                onChange={e => setUtrNumber(e.target.value)}
+                placeholder="UTR number"
+                maxLength={SENSITIVE_VALUE_MAX}
+                autoComplete="off"
+              />
+            </FormField>
+          </>
+        )}
       </div>
 
       {error && <ErrorBanner message={error} />}
@@ -252,9 +380,11 @@ function PasswordPanel({ onBack }: { onBack: () => void }) {
       setError(next !== confirm ? 'Passwords do not match' : 'Please fill all fields')
       return
     }
-    const minLength = minPasswordLengthForEmail(firebaseUser.email)
-    if (next.length < minLength) {
-      setError(`Use at least ${minLength} characters.`)
+    const weak = passwordPolicyError(next, {
+      developerAccount: loginPathForResetEmail(firebaseUser.email) === '/developer-login',
+    })
+    if (weak) {
+      setError(weak)
       return
     }
     setSaving(true); setError('')
@@ -322,33 +452,6 @@ function PasswordPanel({ onBack }: { onBack: () => void }) {
 }
 
 
-// ─── Roles Panel ──────────────────────────────────────────────────────────────
-function RolesPanel({ onBack }: { onBack: () => void }) {
-  const requestLeave = useSettingsLeave()
-  return (
-    <div className="space-y-5">
-      <PanelHeader title="Roles & permissions" onBack={() => requestLeave(onBack)} />
-      <SettingsCard>
-        <Link href="/dashboard/settings/users" className="block">
-          <SettingsRow
-            icon="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"
-            iconBg="bg-emerald-50"
-            iconColor="text-emerald-600"
-            label="Manage users"
-            description="Add, edit, and set permissions for your team"
-            chevron
-          />
-        </Link>
-      </SettingsCard>
-      <div className="card pad text-center py-8">
-        <svg className="mx-auto h-10 w-10 text-slate-300 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-        <p className="text-sm font-semibold text-slate-700">Change roles on user profiles</p>
-        <p className="text-xs text-slate-400 mt-1">Use Manage users to assign admin, manager, or operative access.</p>
-      </div>
-    </div>
-  )
-}
-
 // ─── Main Settings Page ───────────────────────────────────────────────────────
 export default function SettingsScreen({ initialPanel = 'main' }: { initialPanel?: Panel }) {
   const router = useRouter()
@@ -379,6 +482,11 @@ export default function SettingsScreen({ initialPanel = 'main' }: { initialPanel
   useEffect(() => {
     if (blockedOrgPanel) router.replace('/dashboard')
   }, [blockedOrgPanel, router])
+
+  const rolesRedirect = panel === 'roles' && canAccessOrgHub
+  useEffect(() => {
+    if (rolesRedirect) router.replace('/dashboard/settings/users')
+  }, [rolesRedirect, router])
 
   if (blockedOrgPanel) return null
 
@@ -433,7 +541,8 @@ export default function SettingsScreen({ initialPanel = 'main' }: { initialPanel
   if (panel === 'payment-runs' && canAccessOrgHub) {
     return wrap('payment-runs', <PaymentRunsPanel onBack={goHub} />)
   }
-  if (panel === 'roles' && canAccessOrgHub) return wrap('roles', <RolesPanel onBack={goHub} />)
+  // Roles & permissions is Manage users (roles are set on each profile); see the redirect above.
+  if (panel === 'roles') return null
   if (panel === 'billing' && canAccessOrgHub) return wrap('billing', <BillingPanel onBack={goHub} />)
   if (panel === 'reported-files' && canAccessOrgHub && canReviewReports) {
     return wrap('reported-files', <ReportedFilesPanel onBack={goHub} />)

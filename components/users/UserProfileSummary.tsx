@@ -13,6 +13,8 @@ import { displayTradeType } from '@/lib/staff/staffTradeTypes'
 import { canShowAdminEditProfile, roleLabel } from '@/lib/staff/userEditPermissions'
 import { rosterStatusLabel } from '@/lib/staff/userRosterUtils'
 import { UserAvatar } from '@/components/users/UserAvatar'
+import { formatMoney } from '@/lib/canonical'
+import { useOrganizationCurrency } from '@/lib/stores/organizationDocumentStore'
 import { normalizeEmploymentType } from '@/lib/ios-parity/enums'
 
 function employmentLabel(value?: string) {
@@ -30,6 +32,7 @@ export function UserProfileSummary({
 }) {
   const router = useRouter()
   const { user: currentUser, organization } = useAuthStore()
+  const currencyCode = useOrganizationCurrency()
   const { users, loadUsers } = useOrgUserStore()
   const { operatives, loadOperatives } = useOperativeStore()
   const { getUser } = useUserStore()
@@ -139,9 +142,9 @@ export function UserProfileSummary({
             value={lineManager ? `${lineManager.firstName} ${lineManager.surname}`.trim() : 'No line manager'}
           />
           {target.payBasis === 'hourly' && target.hourlyRate != null ? (
-            <SummaryRow label="Hourly rate" value={`£${Number(target.hourlyRate).toFixed(2)}/hr`} />
+            <SummaryRow label="Hourly rate" value={`${formatMoney(Number(target.hourlyRate), currencyCode)}/hr`} />
           ) : target.payBasis === 'day' && target.dayRate != null ? (
-            <SummaryRow label="Day rate" value={`£${Number(target.dayRate).toFixed(2)}/day`} />
+            <SummaryRow label="Day rate" value={`${formatMoney(Number(target.dayRate), currencyCode)}/day`} />
           ) : null}
         </dl>
       </section>

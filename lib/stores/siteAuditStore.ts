@@ -1,7 +1,19 @@
 'use client'
 
 import { create } from 'zustand'
-import { collection, doc, getDoc, getDocs, limit, query, setDoc, Timestamp, where } from 'firebase/firestore'
+import {
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  limit,
+  onSnapshot,
+  query,
+  setDoc,
+  Timestamp,
+  where,
+  type Unsubscribe,
+} from 'firebase/firestore'
 import { isRetryableAuthLoadError } from '@/lib/auth/authBoot'
 import { isTimeoutError, withTimeout } from '@/lib/client/withTimeout'
 import { db } from '@/lib/firebase/config'
@@ -197,8 +209,14 @@ async function fetchOrganisationRoster(
   presentEmails: Set<string>
   /** `userEmails` document ids after a successful read. Null when that read failed. */
   claimedEmails: string[] | null
+  /** People the `users where organizationId ==` query did not return (members of another current company). */
+  fallbackIds: string[]
+  /** Ids shown as managers only because a managers catalogue row lists them. */
+  managerHintIds: string[]
 }> {
   const collected: User[] = []
+  const managerHintIds = new Set<string>()
+  const queriedIds = new Set<string>()
   const presentIds = new Set<string>()
   const presentEmails = new Set<string>()
   let complete = true
@@ -259,7 +277,11 @@ async function fetchOrganisationRoster(
     const index = collected.findIndex(
       (row) => row.id === user.id || (email !== '' && row.email.trim().toLowerCase() === email)
     )
-    if (index >= 0) collected[index] = withManagerListHint(collected[index])
+    if (index >= 0) {
+      const hinted = withManagerListHint(collected[index])
+      if (hinted !== collected[index]) managerHintIds.add(hinted.id)
+      collected[index] = hinted
+    }
   }
 
   const userIdForEmail = async (email: string): Promise<string> => {
@@ -366,6 +388,7 @@ async function fetchOrganisationRoster(
 
   if (usersResult.status === 'fulfilled') {
     for (const entry of usersResult.value.docs) {
+      queriedIds.add(entry.id)
       remember(userForThisOrganisation(entry.id, entry.data() as Record<string, unknown>, organizationId, true))
     }
   } else {
@@ -490,7 +513,15 @@ async function fetchOrganisationRoster(
   // store maps the duplicates with aliasIdsForRoster.
   const failure = rosterLoadFailure({ collectedCount: collected.length, complete, firstFailure, listedMemberCount })
   if (failure) throw failure
-  return { users: collected, complete, presentIds, presentEmails, claimedEmails }
+  return {
+    users: collected,
+    complete,
+    presentIds,
+    presentEmails,
+    claimedEmails,
+    fallbackIds: collected.map((user) => user.id).filter((id) => !queriedIds.has(id)),
+    managerHintIds: [...managerHintIds],
+  }
 }
 
 async function confirmMissingUserDocuments(
@@ -516,6 +547,154 @@ async function confirmMissingUserDocuments(
     })
   )
   return confirmed
+}
+
+// ─── Live roster ────────────────────────────────────────────────────────────
+// The full roster load above stays the source of who is on the list (members map, userEmails,
+// catalogue links, the canonical fold downstream). After it lands, listeners keep the rows live:
+// the `users where organizationId ==` query, one document listener per person that query does
+// not return (the per-member fallback reads), and `userEmails`. A change to a listed person is
+// applied in place; anything that can change who is listed (a removed document, a new email
+// claim) schedules one forced reload of the full roster.
+let liveRosterOrgId = ''
+let liveRosterUnsubs: Unsubscribe[] = []
+let liveFallbackKey = ''
+let liveManagerHintIds = new Set<string>()
+let liveReloadTimer: ReturnType<typeof setTimeout> | null = null
+const LIVE_FALLBACK_LIMIT = 60
+
+function stopLiveRoster(): void {
+  for (const unsub of liveRosterUnsubs) unsub()
+  liveRosterUnsubs = []
+  liveRosterOrgId = ''
+  liveFallbackKey = ''
+  if (liveReloadTimer) clearTimeout(liveReloadTimer)
+  liveReloadTimer = null
+}
+
+function scheduleLiveRosterReload(organizationId: string): void {
+  if (liveReloadTimer) clearTimeout(liveReloadTimer)
+  liveReloadTimer = setTimeout(() => {
+    liveReloadTimer = null
+    if (liveRosterOrgId !== organizationId) return
+    void useOrgUserStore.getState().loadUsers(organizationId, { force: true }).catch(() => undefined)
+  }, 1500)
+}
+
+function sortRoster(users: User[]): User[] {
+  return [...users].sort((a, b) => {
+    if (a.isSuperAdmin !== b.isSuperAdmin) return a.isSuperAdmin ? -1 : 1
+    return a.email.localeCompare(b.email)
+  })
+}
+
+function applyLiveRosterRows(organizationId: string, rows: User[]): void {
+  if (rows.length === 0 || listedRosterOrgId !== organizationId || liveRosterOrgId !== organizationId) return
+  const state = useOrgUserStore.getState()
+  const users = [...state.users]
+  let changed = false
+  for (const incoming of rows) {
+    const row = liveManagerHintIds.has(incoming.id) ? withManagerListHint(incoming) : incoming
+    const index = users.findIndex((existing) => existing.id === row.id)
+    if (index < 0) {
+      users.push(row)
+      changed = true
+      continue
+    }
+    if (JSON.stringify(users[index]) !== JSON.stringify(row)) {
+      users[index] = row
+      changed = true
+    }
+  }
+  if (!changed) return
+  const sorted = sortRoster(users)
+  writeStoredRoster(organizationId, sorted)
+  useOrgUserStore.setState({
+    users: sorted,
+    userIdAliases: { ...state.userIdAliases, ...aliasIdsForRoster(sorted) },
+  })
+}
+
+function startLiveRoster(organizationId: string, fallbackIds: string[], managerHintIds: string[]): void {
+  if (!db || typeof window === 'undefined') return
+  liveManagerHintIds = new Set(managerHintIds)
+  const fallback = [...new Set(fallbackIds.filter(Boolean))].slice(0, LIVE_FALLBACK_LIMIT).sort()
+  const fallbackKey = fallback.join('|')
+  if (liveRosterOrgId === organizationId && liveFallbackKey === fallbackKey && liveRosterUnsubs.length > 0) return
+  stopLiveRoster()
+  liveRosterOrgId = organizationId
+  liveFallbackKey = fallbackKey
+  const stillLive = () => liveRosterOrgId === organizationId
+
+  liveRosterUnsubs.push(
+    onSnapshot(
+      query(collection(db, 'users'), where('organizationId', '==', organizationId)),
+      (snap) => {
+        if (!stillLive()) return
+        const rows: User[] = []
+        let removed = false
+        for (const change of snap.docChanges()) {
+          if (change.type === 'removed') {
+            removed = true
+            continue
+          }
+          const user = userForThisOrganisation(
+            change.doc.id,
+            change.doc.data() as Record<string, unknown>,
+            organizationId,
+            true
+          )
+          if (user) rows.push(user.organizationId ? user : { ...user, organizationId })
+        }
+        applyLiveRosterRows(organizationId, rows)
+        // A document leaving the query moved company or was deleted: the full load decides.
+        if (removed && !snap.metadata.fromCache) scheduleLiveRosterReload(organizationId)
+      },
+      () => {
+        /* The roster already on screen stands; the next visit reloads it. */
+      }
+    )
+  )
+
+  for (const id of fallback) {
+    liveRosterUnsubs.push(
+      onSnapshot(
+        doc(db, 'users', id),
+        (snap) => {
+          if (!stillLive()) return
+          if (!snap.exists()) {
+            if (!snap.metadata.fromCache) scheduleLiveRosterReload(organizationId)
+            return
+          }
+          const user = userForThisOrganisation(snap.id, snap.data() as Record<string, unknown>, organizationId, true)
+          if (user) applyLiveRosterRows(organizationId, [user.organizationId ? user : { ...user, organizationId }])
+        },
+        () => undefined
+      )
+    )
+  }
+
+  let firstClaims = true
+  liveRosterUnsubs.push(
+    onSnapshot(
+      collection(db, 'organizations', organizationId, 'userEmails'),
+      (snap) => {
+        if (!stillLive()) return
+        const claims = snap.docs.map((entry) => entry.id.trim().toLowerCase()).filter(Boolean)
+        const known = new Set(useOrgUserStore.getState().users.map((user) => user.id))
+        const unknownClaim = snap.docs.some((entry) => {
+          const userId = text(entry.data().userId)
+          return userId !== '' && !known.has(userId)
+        })
+        if (!snap.metadata.fromCache) useOrgUserStore.setState({ claimedEmails: claims })
+        if (!firstClaims && !snap.metadata.fromCache && (unknownClaim || snap.docChanges().some((c) => c.type === 'removed'))) {
+          scheduleLiveRosterReload(organizationId)
+        }
+        if (!snap.metadata.fromCache) firstClaims = false
+      },
+      () => undefined
+    )
+  )
 }
 
 interface OrgUserState {
@@ -682,6 +861,7 @@ export const useOrgUserStore = create<OrgUserState>((set, get) => ({
             error: null,
             rosterLoadedOrgId: organizationId,
           })
+          startLiveRoster(organizationId, loaded.fallbackIds, loaded.managerHintIds)
         }
         try {
           const rosterPromise = fetchOrganisationRoster(organizationId, { finalAttempt: attempt.final })

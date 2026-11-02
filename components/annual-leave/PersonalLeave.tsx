@@ -2,7 +2,12 @@
 
 import { useMemo, useState } from 'react'
 import { format, isSameDay, startOfDay } from 'date-fns'
-import { newHolidayId } from '@/lib/stores/holidayStore'
+import type { HolidayRequestCreate } from '@/lib/stores/holidayStore'
+import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
+import { useOrganizationTimeZone } from '@/lib/stores/organizationDocumentStore'
+import { holidayRequestRanges } from '@/lib/canonical'
+import { staffAccountRole } from '@/lib/permissions'
+import { notifyHolidayRequestSubmitted } from '@/lib/annualLeave/notifyHolidayRequestSubmitted'
 import { getBookingForDay, getDayKindForBookings } from '@/lib/annualLeave/dayStatus'
 import { bookingsForPerson, userLeaveBalance } from '@/lib/annualLeave/leaveBalance'
 import { DEFAULT_ANNUAL_LEAVE, type OrgAnnualLeaveDefaults } from '@/lib/settings/organizationSettings'
@@ -121,6 +126,7 @@ export function PersonalLeave({
   user,
   orgLeaveDefaults,
   saveBooking,
+  createRequests,
   deleteBooking,
   requestCancellation,
 }: {
@@ -130,9 +136,12 @@ export function PersonalLeave({
   user: User | null
   orgLeaveDefaults?: OrgAnnualLeaveDefaults | null
   saveBooking: (orgId: string, booking: HolidayBooking) => Promise<void>
+  /** One document per request range (`holidayRequestRanges` → `holidayRequestWriteFields`). */
+  createRequests: (orgId: string, requests: HolidayRequestCreate[], timeZone?: string) => Promise<HolidayBooking[]>
   deleteBooking?: (orgId: string, id: string) => Promise<void>
   requestCancellation?: (orgId: string, booking: HolidayBooking, userId: string) => Promise<void>
 }) {
+  const timeZone = useOrganizationTimeZone()
   const [month, setMonth] = useState(() => new Date())
   const [picks, setPicks] = useState<DayPick[]>([])
   const [editDay, setEditDay] = useState<Date | null>(null)
@@ -167,6 +176,12 @@ export function PersonalLeave({
   const selectedUnits = picks.reduce((sum, pick) => sum + leaveDayUnits(pick.slot), 0)
   const remainingAfter = remaining - selectedUnits
   const editBooking = editDay ? getBookingForDay(editDay, myBookings, 'approved') : null
+  const declined = useMemo(() => {
+    const today = startOfDay(new Date())
+    return myBookings
+      .filter((booking) => booking.status === 'rejected' && startOfDay(booking.endDate) >= today)
+      .sort((a, b) => a.startDate.getTime() - b.startDate.getTime())
+  }, [myBookings])
 
   const upcoming = useMemo(() => {
     const today = startOfDay(new Date())
@@ -222,20 +237,43 @@ export function PersonalLeave({
     if (!organization?.id || !user || picks.length === 0) return
     setSaving(true)
     try {
-      for (const pick of picks) {
-        await saveBooking(organization.id, {
-          id: newHolidayId(),
-          organizationId: organization.id,
+      // One document per run of consecutive days with the same slot (`holidayRequestRanges`).
+      const ranges = holidayRequestRanges(
+        picks.map((pick) => ({ dayKey: format(pick.day, 'yyyy-MM-dd'), timeSlot: pick.slot })),
+        timeZone
+      )
+      const status = mode === 'manager' ? 'approved' : 'pending'
+      const saved = await createRequests(
+        organization.id,
+        ranges.map((range) => ({
           userId: user.id,
-          startDate: pick.day,
-          endDate: pick.day,
-          status: mode === 'manager' ? 'approved' : 'pending',
-          timeSlot: pick.slot,
-          approvedByUserId: mode === 'manager' ? user.id : undefined,
-          approvedAt: mode === 'manager' ? new Date() : undefined,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        })
+          startDayKey: range.startDayKey,
+          endDayKey: range.endDayKey,
+          timeSlot: range.timeSlot,
+          status,
+          approvedByUserId: status === 'approved' ? user.id : null,
+        })),
+        timeZone
+      )
+      if (status === 'pending' && saved.length > 0) {
+        const store = useOrgUserStore.getState()
+        if (store.users.length === 0) await store.loadUsers(organization.id).catch(() => undefined)
+        const roster = useOrgUserStore.getState().users.map((member) => ({
+          id: member.id,
+          isActive: member.isActive,
+          role: staffAccountRole(member),
+        }))
+        const requesterName = `${user.firstName ?? ''} ${user.surname ?? ''}`.trim() || user.email
+        for (const booking of saved) {
+          await notifyHolidayRequestSubmitted({
+            organizationId: organization.id,
+            booking,
+            requester: user,
+            requesterName,
+            roster,
+            timeZone,
+          })
+        }
       }
       flash(
         mode === 'manager'
@@ -353,7 +391,7 @@ export function PersonalLeave({
           <div className="card pad">
             <p className="text-sm font-bold text-slate-900">Change approved booking</p>
             <p className="mt-0.5 text-xs text-slate-500">
-              {formatLeaveDate(editBooking.startDate)} · currently {editBooking.timeSlot}
+              {formatLeaveRange(editBooking)} · currently {editBooking.timeSlot}
             </p>
             <div className="mt-3 grid grid-cols-3 gap-2">
               {(['FULL DAY', 'AM', 'PM'] as HolidayTimeSlot[]).map((slot) => (
@@ -375,7 +413,7 @@ export function PersonalLeave({
               onClick={() =>
                 setConfirm({
                   title: 'Change this booking?',
-                  body: `${formatLeaveDate(editBooking.startDate)} becomes ${changeSlot}.`,
+                  body: `${formatLeaveRange(editBooking)} becomes ${changeSlot}.`,
                   confirmLabel: 'Save change',
                   run: async () => {
                     if (!organization?.id) return
@@ -457,6 +495,14 @@ export function PersonalLeave({
           ) : (
             awaiting.map((booking) => <BookingCard key={booking.id} booking={booking} />)
           )}
+          {declined.length > 0 ? (
+            <>
+              <h3 className="pt-2 text-sm font-bold text-slate-900">Declined</h3>
+              {declined.map((booking) => (
+                <BookingCard key={booking.id} booking={booking} />
+              ))}
+            </>
+          ) : null}
         </section>
       ) : null}
 
@@ -505,16 +551,27 @@ function BookingCard({
   onDelete?: () => void
 }) {
   const cancelling = booking.cancellationRequestedAt != null
-  const label = cancelling ? 'Cancellation pending' : booking.status === 'approved' ? 'Approved' : booking.status === 'pending' ? 'Awaiting approval' : 'Rejected'
+  const label = cancelling ? 'Cancellation pending' : booking.status === 'approved' ? 'Approved' : booking.status === 'pending' ? 'Awaiting approval' : 'Declined'
   return (
     <div className="card pad">
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-sm font-bold text-slate-900">{formatLeaveRange(booking)}</p>
           <p className="mt-0.5 text-xs text-slate-500">{booking.timeSlot}</p>
-          <p className={`mt-0.5 text-xs font-semibold ${cancelling || booking.status === 'pending' ? 'text-amber-700' : 'text-emerald-700'}`}>
+          <p
+            className={`mt-0.5 text-xs font-semibold ${
+              cancelling || booking.status === 'pending'
+                ? 'text-amber-700'
+                : booking.status === 'rejected'
+                  ? 'text-[var(--red)]'
+                  : 'text-emerald-700'
+            }`}
+          >
             {label}
           </p>
+          {booking.decisionNote ? (
+            <p className="mt-1 text-xs text-slate-600">Manager note: {booking.decisionNote}</p>
+          ) : null}
         </div>
         {onCancel ? (
           <button type="button" onClick={onCancel} className="text-xs font-semibold text-slate-600">

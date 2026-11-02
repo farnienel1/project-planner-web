@@ -1,7 +1,8 @@
 import { format } from 'date-fns'
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from 'pdf-lib'
 import { formatReportPeriodLabel } from '@/lib/weekly-report/invoicingPeriodUtils'
-import { formatCurrency, formatDays } from '@/lib/weekly-report/weeklyReportPayroll'
+import { formatDays } from '@/lib/weekly-report/weeklyReportPayroll'
+import { currencySymbol, formatMoney } from '@/lib/canonical'
 import type { WeeklyReportData } from '@/lib/weekly-report/weeklyReportData'
 
 const PAGE_W = 842
@@ -21,7 +22,15 @@ function pdfText(value: string): string {
     .replace(/\u201C|\u201D/g, '"')
     .replace(/\u2013|\u2014/g, '-')
     .replace(/\u2026/g, '...')
-    .replace(/[^\x09\x0A\x0D\x20-\x7E\xA0-\xFF]/g, '')
+    .replace(/[^\x09\x0A\x0D\x20-\x7E\xA0-\xFF\u20AC]/g, '')
+}
+
+/** Organisation money for the PDF. Helvetica (WinAnsi) has £ € $; other symbols (kr is fine, zł / د.إ are not) use the code. */
+function pdfMoney(amount: number, currencyCode: string): string {
+  const shown = formatMoney(amount, currencyCode)
+  const symbol = currencySymbol(currencyCode)
+  if (/^[\x20-\x7E\xA0-\xFF\u20AC]+$/.test(symbol)) return shown
+  return shown.replace(symbol, `${String(currencyCode).toUpperCase()} `).replace(/\s{2,}/g, ' ')
 }
 
 type Draw = {
@@ -139,6 +148,7 @@ function table(draw: Draw, headers: string[], rows: string[][]): void {
 }
 
 export async function buildWeeklyReportPdf(data: WeeklyReportData): Promise<Uint8Array> {
+  const money = (amount: number) => pdfMoney(amount, data.currencyCode)
   const doc = await PDFDocument.create()
   const font = await doc.embedFont(StandardFonts.Helvetica)
   const bold = await doc.embedFont(StandardFonts.HelveticaBold)
@@ -194,6 +204,15 @@ export async function buildWeeklyReportPdf(data: WeeklyReportData): Promise<Uint
           warning.detail,
           warning.forPerson,
         ])
+  )
+
+  section(draw, 'Approved clashes')
+  table(
+    draw,
+    ['Date', 'Priority', 'Type', 'Person', 'Detail'],
+    (data.approvedClashes ?? []).length === 0
+      ? [['No clashes approved in this period', '', '', '', '']]
+      : data.approvedClashes.map((row) => [row.date, row.priority, row.type, row.person, row.detail])
   )
 
   section(draw, 'Project Breakdown')
@@ -274,9 +293,9 @@ export async function buildWeeklyReportPdf(data: WeeklyReportData): Promise<Uint
             row.jobNumber,
             row.date,
             row.details,
-            formatCurrency(row.amount),
+            money(row.amount),
           ]),
-          ['', '', '', '', 'Price Work Total', formatCurrency(data.priceWorkTotal)],
+          ['', '', '', '', 'Price Work Total', money(data.priceWorkTotal)],
         ]
   )
 
@@ -293,9 +312,9 @@ export async function buildWeeklyReportPdf(data: WeeklyReportData): Promise<Uint
             row.jobNumber,
             row.date,
             row.details,
-            formatCurrency(row.amount),
+            money(row.amount),
           ]),
-          ['', '', '', '', 'Expenses Total', formatCurrency(data.expenseTotal)],
+          ['', '', '', '', 'Expenses Total', money(data.expenseTotal)],
         ]
   )
 
@@ -308,17 +327,17 @@ export async function buildWeeklyReportPdf(data: WeeklyReportData): Promise<Uint
         person.role,
         line.rateType,
         line.quantityText ?? formatDays(line.days),
-        line.rateText ?? formatCurrency(line.rate),
-        line.payLabel ?? formatCurrency(line.pay),
+        line.rateText ?? money(line.rate),
+        line.payLabel ?? money(line.pay),
       ])
     }
-    payRows.push([`${person.person} total`, '', '', '', '', person.personTotalLabel ?? formatCurrency(person.personTotal)])
+    payRows.push([`${person.person} total`, '', '', '', '', person.personTotalLabel ?? money(person.personTotal)])
     payRows.push(['', '', '', '', '', ''])
   }
   if (data.paySummary.length === 0) {
     payRows.push(['No pay data for this period', '', '', '', '', ''])
   }
-  payRows.push(['', '', '', '', 'Grand Total', formatCurrency(data.grandTotal)])
+  payRows.push(['', '', '', '', 'Grand Total', money(data.grandTotal)])
   table(draw, ['Person', 'Role', 'Rate Type', 'Hours / Days', 'Rate', 'Pay'], payRows)
 
   return doc.save()

@@ -4,6 +4,8 @@ import { FormInput } from '@/components/forms/FormShell'
 import { SegmentedControl } from '@/components/ui/controls'
 import { MONEY_SAVE_MAX, parseBoundedNumber } from '@/lib/security/boundedValue'
 import { readStoredRates } from '@/lib/timesheets/payBasis'
+import { currencySymbol } from '@/lib/canonical'
+import { useOrganizationCurrency } from '@/lib/stores/organizationDocumentStore'
 
 const DAY_HELP =
   'Day rate pays a share of the standard day. This person cannot also have an hourly rate. Other people can still be paid hourly.'
@@ -25,6 +27,7 @@ export function PayBasisFields({
   placeholder?: 'example' | 'manage'
 }) {
   const hourly = payBasis === 'hourly'
+  const symbol = currencySymbol(useOrganizationCurrency())
   const amountPlaceholder =
     placeholder === 'manage'
       ? 'Leave blank if not set'
@@ -43,7 +46,7 @@ export function PayBasisFields({
         onChange={(value) => onChange({ payBasis: value === 'hourly' ? 'hourly' : 'day', amount })}
       />
       <div className="flex items-center gap-2">
-        <span className="text-sm font-semibold text-[var(--ink2)]">£</span>
+        <span className="text-sm font-semibold text-[var(--ink2)]">{symbol}</span>
         <FormInput
           type="number"
           step="0.01"

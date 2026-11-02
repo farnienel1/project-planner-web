@@ -524,3 +524,68 @@ export function isWarningActive(
   }
   return true
 }
+
+// MARK: - Clash approvals on both collections
+
+export type ClashApprovalInput = {
+  bookingAId: unknown
+  bookingBId: unknown
+  /**
+   * The clash row's own key. Manager/admin clashes carry `mgr-clash-{userId}-{dayKey}-{i}` from
+   * `managerClashGroups`. Operative clashes leave it blank and use the booking pair (`clashPairKey`).
+   */
+  resolutionKey?: unknown
+  approvedByUserId: unknown
+}
+
+export type ClashApprovalWrites = {
+  /** `organizations/{orgId}/acceptedBookingClashes/{clashPairKey}`; add `acceptedAt`. */
+  acceptedClash: AcceptedClashWrite | null
+  /** `organizations/{orgId}/warningResolutions/{resolutionKey}` with status `approved`; add `resolvedAt`. */
+  resolution: WarningResolutionWrite | null
+}
+
+/** The `warningResolutions` key of a clash row: its own key when it has one, else `clashPairKey` of its two bookings. */
+export function clashResolutionKey(input: { bookingAId: unknown; bookingBId: unknown; resolutionKey?: unknown }): string {
+  const own = idText(input?.resolutionKey)
+  if (own) return own
+  const a = idText(input?.bookingAId)
+  const b = idText(input?.bookingBId)
+  return a && b ? clashPairKey(a, b) : ''
+}
+
+/**
+ * Approving a clash writes both collections, so either platform reading either one hides it and the weekly
+ * report lists it as approved: the `acceptedBookingClashes` pair row and the `warningResolutions` row keyed by
+ * `clashResolutionKey`. Undoing the approval deletes both documents (same ids).
+ */
+export function clashApprovalWrites(input: ClashApprovalInput): ClashApprovalWrites {
+  return {
+    acceptedClash: acceptedClashWriteFields({
+      bookingAId: input?.bookingAId,
+      bookingBId: input?.bookingBId,
+      acceptedByUserId: input?.approvedByUserId,
+    }),
+    resolution: warningResolutionWriteFields({
+      resolutionKey: clashResolutionKey({
+        bookingAId: input?.bookingAId,
+        bookingBId: input?.bookingBId,
+        resolutionKey: input?.resolutionKey,
+      }),
+      status: 'approved',
+      resolvedByUserId: input?.approvedByUserId,
+    }),
+  }
+}
+
+/** True when a clash row was approved on any device: its resolution key or its booking pair (`isWarningActive` is false). */
+export function isClashApproved(
+  row: { bookingAId: unknown; bookingBId: unknown; resolutionKey?: unknown } | null | undefined,
+  decisions: WarningDecisions | null | undefined
+): boolean {
+  if (!row) return false
+  return !isWarningActive(
+    { resolutionKey: clashResolutionKey(row), bookingAId: row.bookingAId, bookingBId: row.bookingBId },
+    decisions
+  )
+}

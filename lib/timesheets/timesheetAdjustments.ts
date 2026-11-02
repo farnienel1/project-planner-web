@@ -8,6 +8,7 @@ import type {
   TimesheetPriceWorkEntry,
 } from '@/lib/timesheets/timesheetDraft'
 import type { TimesheetPayrollLineItem } from '@/lib/timesheets/timesheetPayrollCollector'
+import { formatMoney } from '@/lib/canonical/money'
 
 export type ManagerAdjustmentRow = {
   title: string
@@ -144,7 +145,8 @@ export function showsTimesheetAdjustment(input: {
   )
 }
 
-export function managerAdjustmentRows(draft: TimesheetDraft): ManagerAdjustmentRow[] {
+export function managerAdjustmentRows(draft: TimesheetDraft, currencyCode?: string): ManagerAdjustmentRow[] {
+  const money = (amount: number) => formatMoney(amount, currencyCode)
   const rows: ManagerAdjustmentRow[] = []
   for (const entry of draft.expenseEntries) {
     if (entry.managerDecision === 'approved' || entry.managerDecision === 'pending') continue
@@ -153,7 +155,7 @@ export function managerAdjustmentRows(draft: TimesheetDraft): ManagerAdjustmentR
       decision: entry.managerDecision,
       detail:
         entry.managerDecision === 'edited'
-          ? `£${entry.amount.toFixed(2)} → £${(entry.managerRevisedAmount ?? entry.amount).toFixed(2)}`
+          ? `${money(entry.amount)} → ${money(entry.managerRevisedAmount ?? entry.amount)}`
           : null,
     })
   }
@@ -164,7 +166,7 @@ export function managerAdjustmentRows(draft: TimesheetDraft): ManagerAdjustmentR
       decision: entry.managerDecision,
       detail:
         entry.managerDecision === 'edited'
-          ? `£${entry.amount.toFixed(2)} → £${(entry.managerRevisedAmount ?? entry.amount).toFixed(2)}`
+          ? `${money(entry.amount)} → ${money(entry.managerRevisedAmount ?? entry.amount)}`
           : null,
     })
   }
@@ -174,7 +176,7 @@ export function managerAdjustmentRows(draft: TimesheetDraft): ManagerAdjustmentR
       title: `${review.decision === 'declined' ? 'Day removed' : 'Day adjusted'} (${lineId.slice(0, 8)}…)`,
       decision: review.decision,
       detail:
-        review.decision === 'edited' ? `New amount £${(review.revisedAmount ?? 0).toFixed(2)}` : null,
+        review.decision === 'edited' ? `New amount ${money(review.revisedAmount ?? 0)}` : null,
     })
   }
   return rows

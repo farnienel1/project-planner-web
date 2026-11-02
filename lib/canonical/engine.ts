@@ -821,26 +821,51 @@ export function standardDayCoverage(
   }
 }
 
+/** Days used when a saved "Set number of days" value is missing or not a whole number of at least 1. */
+export const FALLBACK_LOOKAHEAD_DAYS = 7
+
+/** Why a scan window is not exactly what the organisation saved. Shown as a notice, never silently. */
+export type CoverageFallbackReason = 'lookaheadDaysMissing' | 'lookaheadDaysInvalid'
+
+export type CoverageWindowResult = DayWindow & {
+  /** Set when "Set number of days" had no usable N and the window used `FALLBACK_LOOKAHEAD_DAYS`. */
+  fallbackReason?: CoverageFallbackReason
+}
+
+function lookaheadDaysOrFallback(raw: unknown): { days: number; fallbackReason?: CoverageFallbackReason } {
+  if (raw === undefined || raw === null || (typeof raw === 'string' && raw.trim() === '')) {
+    return { days: FALLBACK_LOOKAHEAD_DAYS, fallbackReason: 'lookaheadDaysMissing' }
+  }
+  const n = typeof raw === 'number' ? raw : Number(raw)
+  if (!Number.isFinite(n) || Math.round(n) < 1) {
+    return { days: FALLBACK_LOOKAHEAD_DAYS, fallbackReason: 'lookaheadDaysInvalid' }
+  }
+  return { days: Math.min(Math.round(n), 366) }
+}
+
 /**
  * Inclusive warning scan window.
- * numberOfDays: today through today+(N-1).
+ * numberOfDays: today through today+(N-1). A missing or invalid N (not a number, or below 1) uses 7 days
+ * and sets `fallbackReason` so the screen can say so.
  * endOfWorkingWeek: Monday through Friday of the organisation week.
  * Weekend days are not part of this window. The include-weekends toggle adds them
  * only for unbooked labour.
  * endOfInvoicingPeriod: the payment-run segment that contains today.
  * Missing ranges use the half-month default, not the device calendar and not a 1–2 placeholder.
  */
-export function coverageWindow(input: CoverageWindowInput): DayWindow {
+export function coverageWindow(input: CoverageWindowInput): CoverageWindowResult {
   const timeZone = zoneOf(input.timeZone)
   const today = midnightInZone(new Date(input.referenceIso), timeZone)
   const todayKey = dayKeyInZone(today, timeZone)
   const mode = String(input.clashLookaheadMode || 'endOfWorkingWeek')
   if (mode === 'numberOfDays') {
-    const days = Math.max(1, Math.min(Number(input.clashLookaheadDays) || 1, 366))
-    return {
+    const lookahead = lookaheadDaysOrFallback(input.clashLookaheadDays)
+    const window: CoverageWindowResult = {
       startDayKey: todayKey,
-      endDayKey: dayKeyInZone(addDaysInZone(today, days - 1, timeZone), timeZone),
+      endDayKey: dayKeyInZone(addDaysInZone(today, lookahead.days - 1, timeZone), timeZone),
     }
+    if (lookahead.fallbackReason) window.fallbackReason = lookahead.fallbackReason
+    return window
   }
   if (mode === 'endOfInvoicingPeriod') {
     return invoicingPeriod({ ...input, referenceIso: today.toISOString(), timeZone })
@@ -850,6 +875,55 @@ export function coverageWindow(input: CoverageWindowInput): DayWindow {
     startDayKey: dayKeyInZone(addDaysInZone(today, -(iso - 1), timeZone), timeZone),
     endDayKey: dayKeyInZone(addDaysInZone(today, 5 - iso, timeZone), timeZone),
   }
+}
+
+export type ClashScanDaysInput = CoverageWindowInput & {
+  /**
+   * Organisation day keys that hold at least one booking (operative or manager). Optional: when left out,
+   * every weekend day of the current week counts as booked (a clash row only exists on a booked day).
+   */
+  bookedDayKeys?: readonly string[] | null
+}
+
+export type ClashScanDays = CoverageWindowResult & {
+  /** Every day key clashes are checked on, ascending. `startDayKey`/`endDayKey` are its first and last. */
+  dayKeys: string[]
+}
+
+/**
+ * Days booking clashes are checked on.
+ * Clashes follow the scan window (`coverageWindow`). Full week is Monday–Friday, and a Saturday or Sunday of
+ * the current Monday–Sunday week is added when that day has a booking. Set number of days and Invoicing
+ * period are calendar days, so their weekend days are already checked whenever they hold a booking.
+ * The include-weekends toggle is only for unbooked labour and does not change this.
+ */
+export function clashScanDays(input: ClashScanDaysInput): ClashScanDays {
+  const timeZone = zoneOf(input.timeZone)
+  const window = coverageWindow(input)
+  const keys: string[] = []
+  let cursor = dateFromDayKeyInZone(window.startDayKey, timeZone)
+  while (keys.length <= 400) {
+    const key = dayKeyInZone(cursor, timeZone)
+    if (key > window.endDayKey) break
+    keys.push(key)
+    cursor = addDaysInZone(cursor, 1, timeZone)
+  }
+  const mode = String(input.clashLookaheadMode || 'endOfWorkingWeek')
+  if (mode === 'endOfWorkingWeek') {
+    const booked = input.bookedDayKeys == null ? null : new Set(input.bookedDayKeys.map((key) => String(key)))
+    const friday = dateFromDayKeyInZone(window.endDayKey, timeZone)
+    for (const offset of [1, 2]) {
+      const key = dayKeyInZone(addDaysInZone(friday, offset, timeZone), timeZone)
+      if (!booked || booked.has(key)) keys.push(key)
+    }
+  }
+  const result: ClashScanDays = {
+    ...window,
+    startDayKey: keys[0] ?? window.startDayKey,
+    endDayKey: keys[keys.length - 1] ?? window.endDayKey,
+    dayKeys: keys,
+  }
+  return result
 }
 
 export function dayKeyInOrganizationZone(referenceIso: string, timeZone?: string | null): string {

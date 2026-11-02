@@ -85,8 +85,8 @@ function useProjectActiveUserData(project: Project, enabled: boolean) {
     setLoading(true)
     const orgId = organization.id
     Promise.all([
-      loadBookings(orgId),
-      loadManagerSiteBookings(orgId),
+      loadBookings(orgId, { fullHistory: true }),
+      loadManagerSiteBookings(orgId, { fullHistory: true }),
       loadOperatives(orgId),
       loadManagers(orgId),
       loadUsers(orgId),

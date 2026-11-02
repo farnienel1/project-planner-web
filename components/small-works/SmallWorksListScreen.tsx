@@ -42,8 +42,8 @@ export function SmallWorksListScreen() {
     if (!organization?.id) return
     loadSmallWorks(organization.id)
     loadTasks(organization.id)
-    loadBookings(organization.id)
-    loadManagerSiteBookings(organization.id)
+    loadBookings(organization.id, { fullHistory: true })
+    loadManagerSiteBookings(organization.id, { fullHistory: true })
     loadOperatives(organization.id)
     loadManagers(organization.id)
     loadUsers(organization.id)

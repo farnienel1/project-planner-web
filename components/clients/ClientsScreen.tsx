@@ -139,8 +139,8 @@ export function ClientsScreen({ selectedId }: { selectedId?: string }) {
     if (!organization?.id) return
     loadClients(organization.id)
     loadProjects(organization.id)
-    loadBookings(organization.id)
-    loadManagerSiteBookings(organization.id)
+    loadBookings(organization.id, { fullHistory: true })
+    loadManagerSiteBookings(organization.id, { fullHistory: true })
     loadOperatives(organization.id)
     loadTasks(organization.id)
   }, [

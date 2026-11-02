@@ -1,13 +1,15 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { useAuthStore } from '@/lib/stores/authStore'
+import { activePaymentRunSummary, formatPaymentRunDay } from '@/lib/canonical'
+import { useApplyLiveWhenClean, useLiveOrganizationDetails } from '@/components/settings/useLiveOrganizationSettings'
+import { useOrganizationTimeZone } from '@/lib/stores/organizationDocumentStore'
 import {
   DEFAULT_INVOICING,
   DEFAULT_PAYMENT_RUN_DATE_RANGES,
   WEEKDAY_OPTIONS,
   capitalizeDay,
-  loadOrganizationDetails,
   paymentRunShowsMonthCoverage,
   saveInvoicingSettings,
   type OrgInvoicingSettings,
@@ -124,7 +126,7 @@ function WeekdaySelect({ value, onChange, label, prefix = '' }: { value: string;
 }
 
 export function PaymentRunsPanel({ onBack }: { onBack: () => void }) {
-  const { organization } = useAuthStore()
+  const { organization, user } = useAuthStore()
   const requestLeave = useSettingsLeave()
   const header = settingsHeader('payment-runs')
   const [draft, setDraft] = useState<OrgInvoicingSettings>(DEFAULT_INVOICING)
@@ -135,23 +137,21 @@ export function PaymentRunsPanel({ onBack }: { onBack: () => void }) {
   const dirty = isDirty(draft)
   useSettingsDirty(dirty)
 
-  useEffect(() => {
-    if (!organization?.id) return
-    loadOrganizationDetails(organization.id)
-      .then((details) => {
-        if (!details?.invoicing) {
-          markFailed()
-          return
-        }
-        const next = {
-          ...details.invoicing,
-          timesheetSubmission: syncedTimesheetSubmission(details.invoicing),
-        }
-        setDraft(next)
-        markLoaded(next)
-      })
-      .catch(() => markFailed())
-  }, [organization?.id, markLoaded, markFailed])
+  const live = useLiveOrganizationDetails()
+  const timeZone = useOrganizationTimeZone()
+  const source = useMemo(() => {
+    const invoicing = live.details?.invoicing
+    if (!invoicing) return null
+    return { ...invoicing, timesheetSubmission: syncedTimesheetSubmission(invoicing) }
+  }, [live.details])
+  const apply = useCallback(
+    (next: OrgInvoicingSettings) => {
+      setDraft(next)
+      markLoaded(next)
+    },
+    [markLoaded]
+  )
+  useApplyLiveWhenClean({ source, status: live.status, dirty, apply, onFailed: markFailed })
 
   function patch(partial: Partial<OrgInvoicingSettings>) {
     setDraft((current) => ({ ...current, ...partial }))
@@ -188,10 +188,14 @@ export function PaymentRunsPanel({ onBack }: { onBack: () => void }) {
     }
     setSaving(true)
     try {
-      await saveInvoicingSettings(organization.id, {
-        ...draft,
-        timesheetSubmission: syncedTimesheetSubmission(draft),
-      })
+      await saveInvoicingSettings(
+        organization.id,
+        {
+          ...draft,
+          timesheetSubmission: syncedTimesheetSubmission(draft),
+        },
+        user?.id
+      )
       const savedDraft = {
         ...draft,
         timesheetSubmission: syncedTimesheetSubmission(draft),
@@ -222,11 +226,13 @@ export function PaymentRunsPanel({ onBack }: { onBack: () => void }) {
           return `Run ${index + 1}: work from the ${span}, ${dateMode === 'specific_dates' ? paidOn(index) : 'pay date not set'}`
         })
       : [
-          `Weekly in arrears: ${capitalizeDay(draft.recurringRunStartDay)} to ${capitalizeDay(draft.recurringRunEndDay)} of the previous week`,
+          `Weekly in arrears: work ${capitalizeDay(draft.recurringRunStartDay)} to ${capitalizeDay(draft.recurringRunEndDay)}`,
           dateMode === 'recurring_date'
-            ? `Paid every ${capitalizeDay(draft.recurringPaymentDay)}`
+            ? `Paid on the ${capitalizeDay(draft.recurringPaymentDay)} after the week ends`
             : `Paid on ${draft.paymentDates.filter((d) => Number(d) > 0).map((d) => `the ${ordinalDay(Number(d))}`).join(' and ') || 'dates not set'}`,
         ]
+  // The run containing today (organisation zone) and its pay date, from the draft being edited.
+  const activeRun = activePaymentRunSummary(draft, new Date(), timeZone)
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -260,6 +266,12 @@ export function PaymentRunsPanel({ onBack }: { onBack: () => void }) {
             </li>
           ))}
         </ul>
+        {!activeRun.notConfigured ? (
+          <p className="mt-2 text-[13px] font-semibold text-[var(--ink)]">
+            Current run: {formatPaymentRunDay(activeRun.start)} – {formatPaymentRunDay(activeRun.end)} ·{' '}
+            {activeRun.payDate ? `Paid on ${formatPaymentRunDay(activeRun.payDate)}` : 'pay date not set'}
+          </p>
+        ) : null}
         <p className="mt-2 text-[12.5px] text-[var(--ink3)]">
           Set your pay periods first, then the pay day. Warnings can use the end of the pay period for detection.
         </p>
@@ -288,7 +300,7 @@ export function PaymentRunsPanel({ onBack }: { onBack: () => void }) {
         label="Pay periods"
         description={
           runMode === 'date_ranges'
-            ? 'Both runs together must cover days 1–31 with no gaps or overlaps, e.g. run 1: 1–15, run 2: 16–31.'
+            ? 'Both runs together must cover days 1–31 with no gaps or overlaps, e.g. run 1: 1–15, run 2: 16–31. Run 1 ends by the 27th; run 2 ending on the 31st means the last day of each month.'
             : 'The working week each payment covers.'
         }
       />
@@ -342,7 +354,7 @@ export function PaymentRunsPanel({ onBack }: { onBack: () => void }) {
               </FormField>
             </div>
             <p className="inline-flex rounded-lg bg-[var(--soft2)] px-2.5 py-1 text-[12.5px] font-semibold text-[var(--ink2)]">
-              In arrears: {capitalizeDay(draft.recurringRunStartDay)} to {capitalizeDay(draft.recurringRunEndDay)} (of the previous week)
+              In arrears: work {capitalizeDay(draft.recurringRunStartDay)} to {capitalizeDay(draft.recurringRunEndDay)}, paid after the week ends
             </p>
           </div>
         )}

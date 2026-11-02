@@ -4,6 +4,8 @@
  * download .pdf files the same way iOS does.
  */
 import { formatCurrency } from '@/lib/weekly-report/weeklyReportPayroll'
+import { currencySymbol, normalizeCurrencyCode } from '@/lib/canonical/money'
+import { currentOrganizationCurrency } from '@/lib/stores/organizationDocumentStore'
 import { formatPaymentPeriodLine } from '@/lib/timesheets/paymentRunCopy'
 import { formatStampInZone } from '@/lib/orgTime/zoneTime'
 import type { TimesheetSubject } from '@/lib/timesheets/timesheetWeekUtils'
@@ -29,6 +31,67 @@ export type InvoicePdfContext = {
   periodMetaLabel?: string
   totalLabel?: string
   emptyStateMessage?: string
+  /** Organisation currency (`formatMoney`). Defaults to the open company's. */
+  currencyCode?: string
+}
+
+/**
+ * Unicode → WinAnsiEncoding (CP1252) byte, the encoding the standard Helvetica fonts are declared with.
+ * Latin-1 (160–255) maps to itself; these are the CP1252 extras in 0x80–0x9F.
+ */
+const WIN_ANSI_EXTRAS: Record<string, number> = {
+  '€': 0x80,
+  '‚': 0x82,
+  'ƒ': 0x83,
+  '„': 0x84,
+  '…': 0x85,
+  '†': 0x86,
+  '‡': 0x87,
+  'ˆ': 0x88,
+  '‰': 0x89,
+  'Š': 0x8a,
+  '‹': 0x8b,
+  'Œ': 0x8c,
+  'Ž': 0x8e,
+  '‘': 0x91,
+  '’': 0x92,
+  '“': 0x93,
+  '”': 0x94,
+  '•': 0x95,
+  '–': 0x96,
+  '—': 0x97,
+  '˜': 0x98,
+  '™': 0x99,
+  'š': 0x9a,
+  '›': 0x9b,
+  'œ': 0x9c,
+  'ž': 0x9e,
+  'Ÿ': 0x9f,
+}
+
+function winAnsiByte(char: string): number | null {
+  const code = char.codePointAt(0) ?? 32
+  if (code >= 32 && code <= 126) return code
+  if (code >= 160 && code <= 255) return code
+  return WIN_ANSI_EXTRAS[char] ?? null
+}
+
+/** True when every character can be drawn by the standard PDF fonts. */
+export function winAnsiCanDraw(value: string): boolean {
+  for (const char of value) if (winAnsiByte(char) == null) return false
+  return true
+}
+
+/**
+ * £, €, $, CA$, A$, NZ$ and kr draw as-is. A symbol the font cannot draw (zł, د.إ) is replaced by the
+ * ISO code: "zł 10.00" → "PLN 10.00".
+ */
+export function pdfMoneyText(value: string, currencyCode: string): string {
+  const code = normalizeCurrencyCode(currencyCode) ?? 'GBP'
+  const symbol = currencySymbol(code)
+  if (winAnsiCanDraw(symbol)) return value
+  const spaced = /\p{L}$/u.test(symbol) ? `${symbol} ` : symbol
+  return value.split(spaced).join(`${code} `).split(symbol).join(`${code} `)
 }
 
 export function timesheetInvoicePdfFileName(userName: string, generatedAt: Date = new Date()): string {
@@ -46,9 +109,15 @@ export function buildTimesheetInvoicePdf(input: InvoicePdfContext): Uint8Array {
   const title = input.documentTitle || 'Invoice'
   const period = formatPaymentPeriodLine(input.weekStart, input.weekEnd, timeZone)
   const generated = formatStampInZone(generatedAt, timeZone)
-  const totalText = input.amount != null ? formatCurrency(input.amount) : 'Rate not set'
-  const lines = input.lines || []
-  const notes = input.notes || []
+  const currencyCode = input.currencyCode || currentOrganizationCurrency()
+  const money = (value: string) => pdfMoneyText(value, currencyCode)
+  const totalText = input.amount != null ? money(formatCurrency(input.amount, currencyCode)) : 'Rate not set'
+  const lines = (input.lines || []).map((line) => ({
+    ...line,
+    details: money(line.details),
+    description: money(line.description),
+  }))
+  const notes = (input.notes || []).map(money)
 
   const pages: string[] = []
   let stream = ''
@@ -128,7 +197,7 @@ export function buildTimesheetInvoicePdf(input: InvoicePdfContext): Uint8Array {
       stream += fill(0.36, 0.42, 0.5)
       stream += text(line.details || line.description, MARGIN + 84, y + 34, 9.5, false, 190)
       stream += fill(0.055, 0.122, 0.2)
-      stream += text(formatCurrency(line.amount), MARGIN + tableWidth - 64, y + 26, 11.5, true, 56)
+      stream += text(money(formatCurrency(line.amount, currencyCode)), MARGIN + tableWidth - 64, y + 26, 11.5, true, 56)
       y += 50
     }
   }
@@ -191,29 +260,9 @@ function pdfString(value: string): string {
 function winAnsi(value: string): string {
   let out = ''
   for (const char of value) {
-    const code = char.codePointAt(0) || 32
-    if (char === '£') {
-      out += String.fromCharCode(0xa3)
-      continue
-    }
-    if (char === '–' || char === '—') {
-      out += '-'
-      continue
-    }
-    if (char === '•') {
-      out += String.fromCharCode(0xb7)
-      continue
-    }
-    if (code === 0x2026) {
-      out += '...'
-      continue
-    }
-    if (code >= 32 && code <= 126) {
-      out += char
-      continue
-    }
-    if (code >= 160 && code <= 255) {
-      out += String.fromCharCode(code)
+    const byte = winAnsiByte(char)
+    if (byte != null) {
+      out += String.fromCharCode(byte)
       continue
     }
     out += '?'
@@ -227,8 +276,8 @@ function assemblePdf(pageStreams: string[]): Uint8Array {
     objects.push(body)
     return objects.length
   }
-  const font1 = add('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>')
-  const font2 = add('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>')
+  const font1 = add('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>')
+  const font2 = add('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>')
   const contentIds = pageStreams.map((content) =>
     add(`<< /Length ${latin1(content).length} >>\nstream\n${content}endstream`)
   )

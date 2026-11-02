@@ -7,6 +7,8 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
+import { useOrganizationTimeZone } from '@/lib/stores/organizationDocumentStore'
+import { useOrganizationDayKey } from '@/lib/warnings/useOrganizationDayKey'
 import { useRouter } from 'next/navigation'
 import {
   CalendarDaysIcon,
@@ -116,7 +118,9 @@ export function HomeScreen() {
   const [hint, setHint] = useState(false)
   const [metricIds, setMetricIds] = useState<HomeOverviewMetricID[]>(DEFAULT_ADMIN_OVERVIEW_METRICS)
   const [actionIds, setActionIds] = useState<string[]>([])
-  const [now] = useState(() => new Date())
+  // Moves on at the organisation's midnight and on tab focus, so a tab left open overnight counts today.
+  const homeDayKey = useOrganizationDayKey(useOrganizationTimeZone())
+  const now = useMemo(() => new Date(), [homeDayKey]) // eslint-disable-line react-hooks/exhaustive-deps -- new instant per organisation day
   const [orgDetails, setOrgDetails] = useState<OrganizationDetails | null>(null)
   const [managerBookingsSettled, setManagerBookingsSettled] = useState(false)
   const [materialsSettled, setMaterialsSettled] = useState(false)
@@ -132,6 +136,9 @@ export function HomeScreen() {
     organization?.id
   )
 
+  const seeWarningsTile = canViewWarnings(displayUser)
+
+  // First paint: the collections the tiles and quick actions read.
   useEffect(() => {
     const orgId = organization?.id
     if (!orgId || pauseHomeLoads) return
@@ -149,33 +156,9 @@ export function HomeScreen() {
     managerSawLoad.current = managerInFlight
     if (!managerInFlight) setManagerBookingsSettled(true)
     loadTasks(orgId)
-    setMaterialsSettled(false)
-    setSendRecordsSettled(false)
-    void loadAllMaterials(orgId).finally(() => {
-      if (!cancelled) setMaterialsSettled(true)
-    })
-    void loadSendRecords(orgId).finally(() => {
-      if (!cancelled) setSendRecordsSettled(true)
-    })
     loadOrganizationDetails(orgId).then(setOrgDetails).catch(() => setOrgDetails(null))
     const t = window.setTimeout(() => loadHolidays(orgId), 400)
-    const loadDecisions = () =>
-      void Promise.all([
-        loadResolvedWarningKeys(orgId).catch(() => []),
-        loadAcceptedBookingClashes(orgId).catch(() => []),
-        loadDismissedWarnings(orgId).catch(() => []),
-      ]).then(([resolvedKeys, acceptedClashes, dismissed]) => {
-        if (cancelled) return
-        setWarningDecisions({
-          orgId,
-          resolvedKeys,
-          acceptedClashes,
-          dismissedQualificationKeys: new Set(dismissed.map((warning) => warning.dismissKey)),
-        })
-      })
-    loadDecisions()
     const onRefreshed = () => {
-      loadDecisions()
       loadOrganizationDetails(orgId, { fromServer: true, allowCacheFallback: true })
         .then((details) => {
           if (!cancelled && details) setOrgDetails(details)
@@ -190,6 +173,47 @@ export function HomeScreen() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- zustand loaders are stable
   }, [organization?.id, pauseHomeLoads])
+
+  // The warnings tile only: materials, send records and warning decisions. Someone who cannot
+  // see warnings never downloads them; everyone else gets them after first paint.
+  useEffect(() => {
+    const orgId = organization?.id
+    if (!orgId || pauseHomeLoads || !seeWarningsTile) return
+    let cancelled = false
+    setMaterialsSettled(false)
+    setSendRecordsSettled(false)
+    const loadDecisions = () =>
+      void Promise.all([
+        loadResolvedWarningKeys(orgId).catch(() => []),
+        loadAcceptedBookingClashes(orgId).catch(() => []),
+        loadDismissedWarnings(orgId).catch(() => []),
+      ]).then(([resolvedKeys, acceptedClashes, dismissed]) => {
+        if (cancelled) return
+        setWarningDecisions({
+          orgId,
+          resolvedKeys,
+          acceptedClashes,
+          dismissedQualificationKeys: new Set(dismissed.map((warning) => warning.dismissKey)),
+        })
+      })
+    const deferred = window.setTimeout(() => {
+      if (cancelled) return
+      void loadAllMaterials(orgId).finally(() => {
+        if (!cancelled) setMaterialsSettled(true)
+      })
+      void loadSendRecords(orgId).finally(() => {
+        if (!cancelled) setSendRecordsSettled(true)
+      })
+      loadDecisions()
+    }, 600)
+    window.addEventListener(ORG_DATA_REFRESHED_EVENT, loadDecisions)
+    return () => {
+      cancelled = true
+      window.clearTimeout(deferred)
+      window.removeEventListener(ORG_DATA_REFRESHED_EVENT, loadDecisions)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- zustand loaders are stable
+  }, [organization?.id, pauseHomeLoads, seeWarningsTile])
 
   useEffect(() => {
     if (managerBookingsLoading) {

@@ -159,8 +159,8 @@ export function TimesheetsHub() {
   useEffect(() => {
     if (!organization?.id || !needsNestedCatalogue) return
     let cancelled = false
-    loadBookings(organization.id)
-    loadManagerSiteBookings(organization.id)
+    loadBookings(organization.id, { fullHistory: true })
+    loadManagerSiteBookings(organization.id, { fullHistory: true })
     loadOperatives(organization.id)
     loadProjects(organization.id, true)
     loadSmallWorks(organization.id)

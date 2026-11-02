@@ -1,35 +1,49 @@
 #!/bin/sh
-# Pack the shared rulebook when a commit touches it.
-# The website commit stops if the iPhone copy changed and is not committed yet.
+# Pack the shared rulebook when a commit touches it, write the iOS hand-off, and refuse a rule change
+# that has no rulebook version bump. The website commit also stops if the iPhone copy changed and is
+# not committed yet.
 root=$(git rev-parse --show-toplevel) || exit 1
 cd "$root" || exit 1
 
 staged=$(git diff --cached --name-only)
-if ! printf '%s\n' "$staged" | grep -Eq '^(lib/canonical/|scripts/build-canonical-bundle\.mjs$)'; then
+if ! printf '%s\n' "$staged" | grep -Eq '^(lib/canonical/|scripts/build-canonical-bundle\.mjs$|scripts/rulebook-sync\.mjs$|docs/RULEBOOK\.md$|firestore\.rules$|storage\.rules$|firestore\.indexes\.json$)'; then
   exit 0
 fi
 
 node scripts/build-canonical-bundle.mjs || exit 1
-git add lib/canonical/dist/canonical-business.js lib/canonical/dist/canonical-business.sha256
+git add lib/canonical/dist/canonical-business.js lib/canonical/dist/canonical-business.sha256 \
+  lib/canonical/dist/canonical-manifest.json lib/canonical/dist/RULEBOOK.md
 if [ -f functions/canonical-business.js ]; then
   git add functions/canonical-business.js
 fi
 
+# Write (or refresh) the iOS follow-on prompt for this rulebook version.
+node scripts/rulebook-sync.mjs handoff || exit 1
+git add docs/ios-handoff
+
+if ! node scripts/rulebook-sync.mjs check; then
+  echo ""
+  echo "Commit refused: bump 'Version:' in docs/RULEBOOK.md and add a '### <version> — <date>' changelog entry,"
+  echo "then commit again. The hook packs the script and writes docs/ios-handoff/LATEST.md for the iOS agent."
+  exit 1
+fi
+
 ios="$root/../project-planner-ios"
 if [ ! -d "$ios/.git" ]; then
-  echo "No iOS checkout beside this repo. The iPhone copy of the rulebook was not updated."
+  echo "No iOS checkout beside this repo. The iPhone copy was not updated; hand docs/ios-handoff/LATEST.md to the iOS agent."
   exit 0
 fi
 
-if ! git -C "$ios" diff --quiet -- "Project Planner/Canonical/canonical-business.js" "Project Planner/Canonical/canonical-business.js.sha256" "ProjectPlannerTests/CanonicalParityFixture.json"; then
+if ! git -C "$ios" diff --quiet -- "Project Planner/Canonical/canonical-business.js" "Project Planner/Canonical/canonical-business.js.sha256" "Project Planner/Canonical/canonical-manifest.json" "docs/RULEBOOK.md" "ProjectPlannerTests/CanonicalParityFixture.json"; then
   echo "The iPhone copy of the rulebook was updated and is not committed yet."
-  echo "Commit Project Planner/Canonical/canonical-business.js (and ProjectPlannerTests/CanonicalParityFixture.json) in project-planner-ios, then commit this website change again."
+  echo "Commit Project Planner/Canonical/*, docs/RULEBOOK.md and ProjectPlannerTests/CanonicalParityFixture.json in project-planner-ios, then commit this website change again."
   exit 1
 fi
 
-fixture="ProjectPlannerTests/CanonicalParityFixture.json"
-if [ -f "$ios/$fixture" ] && ! git -C "$ios" ls-files --error-unmatch "$fixture" >/dev/null 2>&1; then
-  echo "The iPhone copy of the parity fixture is new and not committed yet."
-  echo "Commit $fixture in project-planner-ios, then commit this website change again."
-  exit 1
-fi
+for file in "ProjectPlannerTests/CanonicalParityFixture.json" "Project Planner/Canonical/canonical-manifest.json" "docs/RULEBOOK.md"; do
+  if [ -f "$ios/$file" ] && ! git -C "$ios" ls-files --error-unmatch "$file" >/dev/null 2>&1; then
+    echo "The iPhone copy of $file is new and not committed yet."
+    echo "Commit it in project-planner-ios, then commit this website change again."
+    exit 1
+  fi
+done

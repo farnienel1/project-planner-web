@@ -55,8 +55,8 @@ export default function WeeklyReportPage() {
 
   useEffect(() => {
     if (!allowed || !organization?.id) return
-    loadBookings(organization.id)
-    loadManagerSiteBookings(organization.id)
+    loadBookings(organization.id, { fullHistory: true })
+    loadManagerSiteBookings(organization.id, { fullHistory: true })
     loadOperatives(organization.id)
     loadUsers(organization.id)
     loadProjects(organization.id, true)

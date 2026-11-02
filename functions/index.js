@@ -83,9 +83,8 @@ exports.sendDevicePushOnNotificationCreate = onDocumentCreated(
       byId.set(doc.id, asInboxRow(doc.id, doc.data()))
     }
     byId.set(notificationId, asInboxRow(notificationId, data))
-    const listed = [...byId.values()].filter((row) =>
-      canonical.notificationPreferenceAllowsDelivery(prefs, row.type)
-    )
+    // The icon badge matches the inbox: toggles stop pushes, never inbox rows.
+    const listed = [...byId.values()].filter((row) => canonical.notificationShowsInInbox(prefs, row.type))
     const badge = canonical.unreadNotificationBadgeCount(listed, userId)
 
     const title = trimmed(data.title)

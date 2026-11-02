@@ -10,6 +10,7 @@ import { Timestamp, deleteField } from 'firebase/firestore'
 import { isAnonymisedDeletedProfile } from '@/lib/canonical/userRosterSegment'
 import { assignedQualificationWriteFields } from '@/lib/canonical/operativeQualifications'
 import { parseFormerUserIds } from '@/lib/canonical/userProfile'
+import { currencySymbol, DEFAULT_CURRENCY_CODE } from '@/lib/canonical/money'
 import { bookingWriteFields, parseBookingDocument, parseManagerSiteBookingDocument } from '@/lib/canonical/bookings'
 import { exclusiveRateDocumentFields, operativeRosterRateFields, readStoredRates } from '@/lib/timesheets/payBasis'
 import { applyExclusiveRateFields } from '@/lib/firebase/userPayload'
@@ -952,9 +953,14 @@ function serializeStringMap(raw: Record<string, string> | undefined): Record<str
   return output
 }
 
-/** iOS OperativeStore.save — organizations/{orgId}/operatives/{uuidString} */
+/**
+ * iOS OperativeStore.save — organizations/{orgId}/operatives/{uuidString}
+ * `options.currencyCode`: the organisation currency (`currentOrganizationCurrency()`), so the
+ * stored `currencySymbol` follows the company rather than a hard-coded pound sign.
+ */
 export function serializeOperative(
-  operative: Operative & { organizationId: string }
+  operative: Operative & { organizationId: string },
+  options?: { currencyCode?: string | null }
 ): Record<string, unknown> {
   const id = operative.id?.trim() || newUppercaseUuid()
   const firstName = operative.firstName.trim()
@@ -972,7 +978,7 @@ export function serializeOperative(
     isActive: operative.isActive !== false,
     hourlyRate: operative.payBasis === 'hourly' ? operative.hourlyRate || 0 : operative.hourlyRate || 0,
     dayRate: operative.dayRate ?? 0,
-    currencySymbol: '£',
+    currencySymbol: currencySymbol(options?.currencyCode || DEFAULT_CURRENCY_CODE),
     notes: operative.notes?.trim() || '',
     tradeTypePreset: operative.tradeTypePreset?.trim() || '',
     tradeTypeCustom: operative.tradeTypeCustom?.trim() || '',

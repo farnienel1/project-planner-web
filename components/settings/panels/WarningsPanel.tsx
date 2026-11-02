@@ -1,23 +1,21 @@
 'use client'
 
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import Link from 'next/link'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
+import { useOrganizationDocument, useOrganizationTimeZone } from '@/lib/stores/organizationDocumentStore'
 import {
   DEFAULT_WARNING_DETECTION,
   clampClashLookaheadDays,
   copyWarningDetection,
-  loadOrganizationDetails,
   saveWarningDetection,
-  warningDetectionEquals,
-  warningDetectionLooksLikeFactoryDefault,
+  warningDetectionFromOrganizationData,
   type OrgWarningDetectionSettings,
 } from '@/lib/settings/organizationSettings'
-import {
-  readCachedWarningDetection,
-  writeCachedWarningDetection,
-} from '@/lib/settings/warningDetectionCache'
-import { formatNumberOfDaysScanSummary } from '@/lib/warnings/warningLookahead'
+import { activePaymentRunSummary, formatPaymentRunDay } from '@/lib/canonical'
+import { formatNumberOfDaysScanSummary, warningLookaheadFallbackNotice } from '@/lib/warnings/warningLookahead'
+import { useOrganizationDayKey } from '@/lib/warnings/useOrganizationDayKey'
 import {
   initialWarningSettingsSaveState,
   stepWarningSettingsSave,
@@ -89,10 +87,87 @@ function SeverityRow({ title, description, tone }: { title: string; description:
   )
 }
 
+function InvoicingSchedulePanel({
+  invoicing,
+  timeZone,
+  now,
+}: {
+  invoicing: unknown
+  timeZone: string
+  now: Date
+}) {
+  const summary = activePaymentRunSummary(
+    invoicing && typeof invoicing === 'object' && !Array.isArray(invoicing)
+      ? (invoicing as Record<string, unknown>)
+      : null,
+    now,
+    timeZone
+  )
+  if (summary.notConfigured) {
+    return (
+      <div className="rounded-xl border border-amber-200 bg-amber-50 p-3.5 text-xs text-amber-800">
+        <p className="font-semibold">Set up payment runs to use this option</p>
+        <p className="mt-1">
+          Invoicing period scans the active payment run, and this company has no payment runs saved yet.
+        </p>
+        <Link
+          href="/dashboard/settings/payment-runs"
+          className="mt-2 inline-block font-semibold text-amber-900 underline underline-offset-2"
+        >
+          Open payment runs settings
+        </Link>
+      </div>
+    )
+  }
+  const rows: Array<{ label: string; value: string }> = [
+    { label: 'Period starts', value: formatPaymentRunDay(summary.start) },
+    { label: 'Period ends', value: formatPaymentRunDay(summary.end) },
+    { label: 'Pay date', value: summary.payDate ? formatPaymentRunDay(summary.payDate) : 'No payment day set' },
+  ]
+  return (
+    <div className="space-y-2.5">
+      <div className="overflow-hidden rounded-xl border border-slate-200">
+        <div className="bg-slate-50 px-3.5 py-2 text-[11px] font-bold uppercase tracking-wide text-slate-500">
+          Your invoicing schedule
+        </div>
+        {rows.map((row) => (
+          <div key={row.label} className="flex items-center justify-between border-t border-slate-100 px-3.5 py-2.5 text-sm">
+            <span className="text-slate-500">{row.label}</span>
+            <span className="font-medium text-slate-900">{row.value}</span>
+          </div>
+        ))}
+      </div>
+      <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3.5">
+        <div className="text-[11px] font-bold uppercase tracking-wide text-emerald-700">Active payment-run period</div>
+        <div className="mt-1 text-sm font-semibold text-emerald-900">{summary.label}</div>
+        <p className="mt-1 text-xs text-emerald-800">
+          From the payment runs settings. While today is in this period, warnings include every day from period start
+          through period end — past, present and future.
+        </p>
+        <Link
+          href="/dashboard/settings/payment-runs"
+          className="mt-2 inline-block text-xs font-semibold text-emerald-900 underline underline-offset-2"
+        >
+          Change payment runs
+        </Link>
+      </div>
+    </div>
+  )
+}
+
 export function WarningsPanel({ onBack }: { onBack: () => void }) {
-  const { organization } = useAuthStore()
+  const { organization, user } = useAuthStore()
   const { users, loadUsers } = useOrgUserStore()
   const requestLeave = useSettingsLeave()
+  // The live organisation document is the only source. A draft is kept only while it has unsaved edits.
+  const { data: orgData, loaded: orgLoaded } = useOrganizationDocument()
+  const timeZone = useOrganizationTimeZone()
+  const todayKey = useOrganizationDayKey(timeZone)
+  const now = useMemo(() => new Date(), [todayKey]) // eslint-disable-line react-hooks/exhaustive-deps -- re-read "now" each organisation day
+  const serverDetection = useMemo(
+    () => (orgLoaded ? warningDetectionFromOrganizationData(orgData as Record<string, unknown> | null) : null),
+    [orgData, orgLoaded]
+  )
 
   const [draft, setDraft] = useState<OrgWarningDetectionSettings>(() =>
     copyWarningDetection(DEFAULT_WARNING_DETECTION)
@@ -106,7 +181,6 @@ export function WarningsPanel({ onBack }: { onBack: () => void }) {
   const [pickerOpen, setPickerOpen] = useState(false)
   const [search, setSearch] = useState('')
   const dirtyRef = useRef(false)
-  const loadGenerationRef = useRef(0)
   const draftRef = useRef(draft)
   const flowRef = useRef(flow)
   const onBackRef = useRef(onBack)
@@ -123,43 +197,15 @@ export function WarningsPanel({ onBack }: { onBack: () => void }) {
     if (organization?.id) loadUsers(organization.id)
   }, [organization?.id, loadUsers])
 
-  useLayoutEffect(() => {
-    if (!organization?.id) return
-    const cached = readCachedWarningDetection(organization.id)
-    if (cached) {
-      setDraft(cached)
-      setBaseline(cached)
-      draftRef.current = cached
-    }
-    const generation = ++loadGenerationRef.current
-    dirtyRef.current = false
-    let cancelled = false
-    loadOrganizationDetails(organization.id, { fromServer: true })
-      .then((details) => {
-        if (cancelled || dirtyRef.current || generation !== loadGenerationRef.current) return
-        const loaded = details?.warningDetection
-        if (!loaded) return
-        const latestCache = readCachedWarningDetection(organization.id)
-        if (
-          latestCache &&
-          !warningDetectionEquals(loaded, latestCache) &&
-          warningDetectionLooksLikeFactoryDefault(loaded) &&
-          !warningDetectionLooksLikeFactoryDefault(latestCache)
-        ) {
-          setDraft(latestCache)
-          setBaseline(latestCache)
-          void saveWarningDetection(organization.id, latestCache).catch(() => {})
-          return
-        }
-        writeCachedWarningDetection(organization.id, loaded)
-        setDraft(loaded)
-        setBaseline(loaded)
-      })
-      .catch(() => {})
-    return () => {
-      cancelled = true
-    }
-  }, [organization?.id])
+  // Firebase wins: every snapshot (this tab, another tab, or iOS) replaces a clean draft.
+  // Nothing from the browser is ever written back over a server value.
+  useEffect(() => {
+    if (!serverDetection || dirtyRef.current) return
+    const loaded = copyWarningDetection(serverDetection)
+    setDraft(loaded)
+    setBaseline(copyWarningDetection(serverDetection))
+    draftRef.current = loaded
+  }, [serverDetection])
 
   function applySaveFlow(event: WarningSettingsSaveEvent) {
     const step = stepWarningSettingsSave(flowRef.current, event)
@@ -171,7 +217,12 @@ export function WarningsPanel({ onBack }: { onBack: () => void }) {
 
   function patch(partial: Partial<OrgWarningDetectionSettings>) {
     applySaveFlow({ type: 'edit' })
-    setDraft((current) => ({ ...current, ...partial }))
+    setDraft((current) => {
+      const next = { ...current, ...partial }
+      // Choosing a number replaces the unusable saved value, so its notice goes.
+      if ('clashLookaheadDays' in partial) delete next.clashLookaheadDaysFallback
+      return next
+    })
   }
 
   const excluded = draft.excludedUserIdsFromUnbookedWarnings ?? []
@@ -200,14 +251,14 @@ export function WarningsPanel({ onBack }: { onBack: () => void }) {
       return
     }
     setError('')
+    const { clashLookaheadDaysFallback: _notice, ...draftFields } = draftRef.current
+    void _notice
     const toSave: OrgWarningDetectionSettings = {
-      ...draftRef.current,
-      clashLookaheadDays: clampClashLookaheadDays(draftRef.current.clashLookaheadDays),
+      ...draftFields,
+      clashLookaheadDays: clampClashLookaheadDays(draftFields.clashLookaheadDays),
     }
     try {
-      await saveWarningDetection(organization.id, toSave)
-      writeCachedWarningDetection(organization.id, toSave)
-      loadGenerationRef.current += 1
+      await saveWarningDetection(organization.id, toSave, user?.id)
       setDraft(toSave)
       setBaseline(toSave)
       draftRef.current = toSave
@@ -243,7 +294,12 @@ export function WarningsPanel({ onBack }: { onBack: () => void }) {
 
   const mode = draft.clashLookaheadMode
   const days = clampClashLookaheadDays(draft.clashLookaheadDays)
-  const daysSummary = formatNumberOfDaysScanSummary(days)
+  const daysSummary = formatNumberOfDaysScanSummary(days, now, timeZone)
+  // Shown while the saved value is still the unusable one; editing the stepper replaces it.
+  const fallbackNotice =
+    mode === 'numberOfDays' && serverDetection?.clashLookaheadMode === 'numberOfDays' && draft.clashLookaheadDaysFallback
+      ? warningLookaheadFallbackNotice(draft.clashLookaheadDaysFallback)
+      : null
 
   return (
     <div className="mx-auto max-w-2xl pb-12">
@@ -263,6 +319,10 @@ export function WarningsPanel({ onBack }: { onBack: () => void }) {
       <p className="mt-4 px-1 text-sm text-slate-500">
         Control how and when your team is alerted to scheduling issues.
       </p>
+
+      {!orgLoaded && (
+        <p className="mt-4 px-1 text-xs text-slate-400">Loading this company&apos;s warning settings…</p>
+      )}
 
       <SectionLabel label="Detection period" />
       <SettingsCard>
@@ -318,18 +378,23 @@ export function WarningsPanel({ onBack }: { onBack: () => void }) {
                 </div>
               </div>
               <p className="mt-3 text-xs leading-5 text-slate-600">{daysSummary}</p>
+              {fallbackNotice && (
+                <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-2.5 text-xs text-amber-800">
+                  {fallbackNotice}
+                </p>
+              )}
             </div>
           )}
 
           {mode === 'endOfInvoicingPeriod' && (
-            <div className="flex items-start gap-2.5 rounded-xl border border-blue-200 bg-blue-50 p-3 text-xs text-blue-700">
-              Invoicing period scans every past, present, and future day in the active payment run.
-            </div>
+            <InvoicingSchedulePanel invoicing={orgData?.invoicing} timeZone={timeZone} now={now} />
           )}
 
           {mode === 'endOfWorkingWeek' && (
             <div className="flex items-start gap-2.5 rounded-xl border border-blue-200 bg-blue-50 p-3 text-xs text-blue-700">
-              Full week scans Monday–Friday, including days already past. Turn on weekends only if this company works Saturday or Sunday.
+              Full week scans Monday–Friday, including days already past. A Saturday or Sunday this week is also checked
+              for clashes when it has a booking. Turn on weekends below only if unbooked labour should count Saturday or
+              Sunday.
             </div>
           )}
         </div>

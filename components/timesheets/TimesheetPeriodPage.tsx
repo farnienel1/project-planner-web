@@ -34,6 +34,9 @@ import {
   SENSITIVE_EXPORT_OPTION_LABEL,
   canViewSensitiveProfile,
   exportIncludesSensitiveFields,
+  lineManagerIds,
+  seesEveryUserTimesheet,
+  timesheetWriterIsReviewer,
 } from '@/lib/canonical'
 import { loadTaxIds } from '@/lib/sensitiveProfile/taxIdsService'
 import {
@@ -100,9 +103,15 @@ import {
   revisedPayrollAmount,
 } from '@/lib/timesheets/payrollLineBookingLookup'
 import { extraReviewAfterSave, payrollReviewAfterSave } from '@/lib/timesheets/managerReviewSave'
+import { OVERLAPPING_BOOKING_NOTE, currencySymbol, formatMoney, timesheetLeaveLines } from '@/lib/canonical'
+import { useOrganizationCurrency } from '@/lib/stores/organizationDocumentStore'
+import { useHolidayStore } from '@/lib/stores/holidayStore'
+import { timesheetLeaveLinesForAccount } from '@/lib/timesheets/timesheetLeave'
+import type { TimesheetLeaveLine } from '@/lib/canonical'
+import { useOrgBankHolidays } from '@/components/annual-leave/useOrgBankHolidays'
 
-function money(value: number): string {
-  return `£${value.toFixed(2)}`
+function money(value: number, currency: string): string {
+  return formatMoney(value, currency)
 }
 
 function abbreviatedDate(date: Date, timeZone: string): string {
@@ -149,6 +158,7 @@ export function TimesheetPeriodPage({
   history?: OperativeDayRateHistoryCollection
   scheduleOptions?: MyScheduleOptions
 }) {
+  const currency = useOrganizationCurrency()
   const { user: viewer, organization } = useAuthStore()
   const { users } = useOrgUserStore()
   const [draft, setDraft] = useState<TimesheetDraft>(emptyTimesheetDraft())
@@ -220,6 +230,34 @@ export function TimesheetPeriodPage({
     ]
   )
 
+  // Approved annual leave in this period: information rows, no hours or pay, never invoiced.
+  const { bookings: holidayBookings, loadBookings: loadHolidayBookings, loadedOrgId: holidaysLoadedOrgId } = useHolidayStore()
+  useEffect(() => {
+    if (organization?.id && holidaysLoadedOrgId !== organization.id) void loadHolidayBookings(organization.id)
+  }, [organization?.id, holidaysLoadedOrgId, loadHolidayBookings])
+  const bankHolidays = useOrgBankHolidays(periodStart, periodEnd).holidays
+  const leaveLines = useMemo(
+    () =>
+      timesheetLeaveLinesForAccount({
+        user: subjectUser,
+        holidays: holidaysLoadedOrgId === organization?.id ? holidayBookings : [],
+        operatives,
+        aliasUserIds: userIdsSharingEmail(subjectUser, users),
+        periodStart,
+        periodEnd,
+        timeZone,
+        bankHolidayDayKeys: bankHolidays.map((holiday) => holiday.date),
+      }),
+    [subjectUser, holidayBookings, holidaysLoadedOrgId, organization?.id, operatives, users, periodStart, periodEnd, timeZone, bankHolidays]
+  )
+  const sheetRows = useMemo(() => {
+    const rows: Array<{ kind: 'pay'; key: string; dayKey: string; line: TimesheetPayrollLineItem } | { kind: 'leave'; key: string; dayKey: string; leave: TimesheetLeaveLine }> = [
+      ...payroll.lineItems.map((line) => ({ kind: 'pay' as const, key: line.id, dayKey: line.dayKey || dayKey(line.date, timeZone), line })),
+      ...leaveLines.map((leave) => ({ kind: 'leave' as const, key: leave.id, dayKey: leave.dayKey, leave })),
+    ]
+    return rows.sort((a, b) => (a.dayKey < b.dayKey ? -1 : a.dayKey > b.dayKey ? 1 : 0))
+  }, [payroll.lineItems, leaveLines, timeZone])
+
   const needsCounterSign = requiresLineManagerCounterSign(subjectUser)
   const canManagerReview = (() => {
     if (mode !== 'review' || !viewer) return false
@@ -270,7 +308,16 @@ export function TimesheetPeriodPage({
         timeZone,
       })
       setDraft(withOverride)
-      await saveTimesheetDraft({
+      // Line manager or admin (`timesheetWriterIsReviewer`, the rules' isTimesheetReviewer). The
+      // owner's save leaves the reviewer-only parts alone.
+      const reviewer = timesheetWriterIsReviewer({
+        writerUserId: viewer?.id,
+        subjectUserId: subjectUser.id,
+        writerIsAdmin: Boolean(viewer && seesEveryUserTimesheet(staffAccountRole(viewer))),
+        writerFormerIds: viewer?.formerUserIds ?? [],
+        subjectLineManagerIds: lineManagerIds(subjectUser),
+      })
+      const reviews = await saveTimesheetDraft({
         organizationId: organization.id,
         userId: subjectUser.id,
         weekStart: periodStart,
@@ -278,7 +325,11 @@ export function TimesheetPeriodPage({
         draft: withOverride,
         timeZone,
         documentId: sourceDocumentId.current,
+        access: { reviewer, subjectHasLineManager: userHasLineManager(subjectUser) },
       })
+      if (reviews !== (withOverride.extraEntryReviews ?? null)) {
+        setDraft((current) => (current === withOverride ? { ...withOverride, extraEntryReviews: reviews } : current))
+      }
     },
     [
       organization?.id,
@@ -493,6 +544,7 @@ export function TimesheetPeriodPage({
       timeZone,
       extrasMode: 'raw',
       standardDayHours: payrollPolicy.standardPaidHours,
+      currencyCode: currency,
     })
     const notes = invoiceRateChangeNotes({
       history,
@@ -501,6 +553,7 @@ export function TimesheetPeriodPage({
       periodStart,
       periodEnd,
       timeZone,
+      currencyCode: currency,
     })
     const html = buildTimesheetInvoiceHtml({
       organizationName: organization.name || 'Organisation',
@@ -515,6 +568,7 @@ export function TimesheetPeriodPage({
       timeZone,
       lines,
       notes,
+      currencyCode: currency,
     })
     const pdf = buildTimesheetInvoicePdf({
       organizationName: organization.name || 'Organisation',
@@ -527,6 +581,7 @@ export function TimesheetPeriodPage({
       timeZone,
       lines,
       notes,
+      currencyCode: currency,
     })
     setInvoiceHtml(html)
     setInvoicePdf(pdf)
@@ -641,7 +696,7 @@ export function TimesheetPeriodPage({
             </p>
           ) : null}
         </div>
-        {payroll.lineItems.length === 0 ? (
+        {sheetRows.length === 0 ? (
           <p className="p-4 text-[14px] text-[var(--ink3)]">
             {mode === 'review'
               ? 'No bookings found for this period.'
@@ -649,19 +704,23 @@ export function TimesheetPeriodPage({
           </p>
         ) : (
           <ul className="divide-y divide-slate-100">
-            {payroll.lineItems.map((line) => (
+            {sheetRows.map((row) =>
+              row.kind === 'leave' ? (
+                <LeaveInfoLine key={row.key} leave={row.leave} timeZone={timeZone} />
+              ) : (
               <PayrollLine
-                key={line.id}
-                line={line}
+                key={row.key}
+                line={row.line}
                 draft={draft}
                 managerHasSigned={managerHasSigned}
                 canReview={canManagerReview}
                 timeZone={timeZone}
-                onApprove={() => setLineDecision(line.id, 'approved')}
-                onDecline={() => setLineDecision(line.id, 'declined')}
-                onEdit={() => openPayrollHoursEditor(line)}
+                onApprove={() => setLineDecision(row.line.id, 'approved')}
+                onDecline={() => setLineDecision(row.line.id, 'declined')}
+                onEdit={() => openPayrollHoursEditor(row.line)}
               />
-            ))}
+              )
+            )}
           </ul>
         )}
         <div className="space-y-2 border-t border-slate-100 px-4 py-4">
@@ -669,29 +728,29 @@ export function TimesheetPeriodPage({
             <>
               <Row
                 label={`Hours · ${payroll.shiftCount} shifts (${formatTimesheetHours(payroll.totalHours)}h)`}
-                value={money(hoursSubtotal)}
+                value={money(hoursSubtotal, currency)}
               />
-              <Row label="Overtime" value={money(overtimeAmount)} />
-              <Row label={`Price work · ${draft.priceWorkEntries.length}`} value={money(extrasTotal)} />
-              <Row label={`Expenses · ${draft.expenseEntries.length}`} value={money(expensesAmount)} />
+              <Row label="Overtime" value={money(overtimeAmount, currency)} />
+              <Row label={`Price work · ${draft.priceWorkEntries.length}`} value={money(extrasTotal, currency)} />
+              <Row label={`Expenses · ${draft.expenseEntries.length}`} value={money(expensesAmount, currency)} />
             </>
           ) : (
             <>
-              <Row label="Hours subtotal" value={money(hoursSubtotal)} strong />
-              {overtimeAmount > 0 ? <Row label="Overtime" value={money(overtimeAmount)} /> : null}
+              <Row label="Hours subtotal" value={money(hoursSubtotal, currency)} strong />
+              {overtimeAmount > 0 ? <Row label="Overtime" value={money(overtimeAmount, currency)} /> : null}
               {extrasTotal + expensesAmount > 0 ? (
                 <div className="flex justify-between text-[15px]">
                   <span>{managerHasSigned ? 'Approved extras' : 'Extras (price work & expenses)'}</span>
                   {managerHasSigned && extrasTotal + expensesAmount !== draftAdditionalTotal(draft) ? (
                     <span className="text-right">
                       <span className="block text-[12px] text-[var(--ink3)] line-through">
-                        {money(draftAdditionalTotal(draft))}
+                        {money(draftAdditionalTotal(draft), currency)}
                       </span>
-                      <span className="font-semibold text-[#34C759]">{money(extrasTotal + expensesAmount)}</span>
+                      <span className="font-semibold text-[#34C759]">{money(extrasTotal + expensesAmount, currency)}</span>
                     </span>
                   ) : (
                     <span className="font-semibold">
-                      {money(managerHasSigned ? extrasTotal + expensesAmount : draftAdditionalTotal(draft))}
+                      {money(managerHasSigned ? extrasTotal + expensesAmount : draftAdditionalTotal(draft), currency)}
                     </span>
                   )}
                 </div>
@@ -702,7 +761,7 @@ export function TimesheetPeriodPage({
             <p className="text-[17px] font-semibold">
               {mode === 'review' && managerHasSigned ? 'Approved total' : 'Total'}
             </p>
-            <p className="text-[22px] font-bold">{money(total)}</p>
+            <p className="text-[22px] font-bold">{money(total, currency)}</p>
           </div>
           {mode === 'review' && draft.managerNote.trim() ? (
             <div className="border-t border-slate-100 pt-3">
@@ -1122,6 +1181,7 @@ function AdjustedAmountText({
   managerHasSigned: boolean
   applyLiveReview?: boolean
 }) {
+  const currency = useOrganizationCurrency()
   if (
     showsTimesheetAdjustment({
       original,
@@ -1134,15 +1194,15 @@ function AdjustedAmountText({
     return (
       <div className="text-right">
         <p className={`text-[12px] text-[var(--ink3)] ${decision === 'declined' || decision === 'edited' ? 'line-through' : ''}`}>
-          {money(original)}
+          {money(original, currency)}
         </p>
         <p className="text-[15px] font-bold" style={{ color: decisionTint(decision) }}>
-          {money(effective)}
+          {money(effective, currency)}
         </p>
       </div>
     )
   }
-  return <p className="text-[15px] font-bold">{money(original)}</p>
+  return <p className="text-[15px] font-bold">{money(original, currency)}</p>
 }
 
 /** iOS managerExtraRow while canReview: declined is strikethrough original only, no £0. */
@@ -1155,18 +1215,19 @@ function LiveReviewExtraAmount({
   decision: TimesheetManagerDecision
   revisedAmount?: number | null
 }) {
+  const currency = useOrganizationCurrency()
   if (decision === 'edited' && revisedAmount != null && Math.abs(revisedAmount - amount) >= 0.01) {
     return (
       <div className="text-right">
-        <p className="text-[12px] text-[var(--ink3)] line-through">{money(amount)}</p>
-        <p className="text-[15px] font-bold text-[#007AFF]">{money(revisedAmount)}</p>
+        <p className="text-[12px] text-[var(--ink3)] line-through">{money(amount, currency)}</p>
+        <p className="text-[15px] font-bold text-[#007AFF]">{money(revisedAmount, currency)}</p>
       </div>
     )
   }
   if (decision === 'declined') {
-    return <p className="text-[15px] font-bold text-[var(--ink3)] line-through">{money(amount)}</p>
+    return <p className="text-[15px] font-bold text-[var(--ink3)] line-through">{money(amount, currency)}</p>
   }
-  return <p className="text-[15px] font-bold">{money(amount)}</p>
+  return <p className="text-[15px] font-bold">{money(amount, currency)}</p>
 }
 
 function Row({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
@@ -1197,12 +1258,17 @@ function PayrollLine({
   onDecline: () => void
   onEdit: () => void
 }) {
+  const currency = useOrganizationCurrency()
   const removed = isPayrollLineRemoved(line, draft, managerHasSigned, canReview)
   const effective = effectivePayrollAmount(line, draft, managerHasSigned, canReview)
   const decision = draft.payrollLineReviews[line.id]?.decision || 'approved'
   const orange = line.isPayeDay || (line.dayRate <= 0 && !line.hourlyRate)
+  // `overlappingBookingIds`: still paid, shown amber for the person and their line manager.
+  const overlapping = line.isOverlapping === true
   return (
-    <li className={`flex gap-3 px-4 py-3 ${removed ? 'opacity-55' : ''}`}>
+    <li
+      className={`flex gap-3 px-4 py-3 ${removed ? 'opacity-55' : ''} ${overlapping ? 'border-l-4 border-amber-400 bg-amber-50' : ''}`}
+    >
       <div className="min-w-0 flex-1">
         <p className={`text-[15px] font-bold ${removed ? 'line-through' : ''}`}>{abbreviatedDate(line.date, timeZone)}</p>
         <p className={`text-[13px] text-[var(--ink3)] ${removed ? 'line-through' : ''}`}>
@@ -1212,8 +1278,9 @@ function PayrollLine({
           <p className={`text-[12px] text-[var(--ink3)] ${removed ? 'line-through' : ''}`}>{line.details}</p>
         ) : null}
         <p className={`text-[12px] font-medium ${orange ? 'text-orange-500' : ''} ${removed ? 'line-through' : ''}`}>
-          {timesheetHoursRateLine(line)}
+          {timesheetHoursRateLine(line, currency)}
         </p>
+        {overlapping ? <p className="text-[12px] font-semibold text-amber-700">{OVERLAPPING_BOOKING_NOTE}</p> : null}
       </div>
       <div className="text-right">
         <AdjustedAmountText
@@ -1225,6 +1292,19 @@ function PayrollLine({
         />
         {canReview ? <TickCross decision={decision} onApprove={onApprove} onDecline={onDecline} onEdit={onEdit} /> : null}
       </div>
+    </li>
+  )
+}
+
+/** Approved annual leave on this period: no hours, no pay, no edit, never on the invoice. */
+function LeaveInfoLine({ leave, timeZone }: { leave: TimesheetLeaveLine; timeZone: string }) {
+  return (
+    <li className="flex gap-3 bg-sky-50 px-4 py-3">
+      <div className="min-w-0 flex-1">
+        <p className="text-[15px] font-bold">{abbreviatedDate(dateFromDayKey(leave.dayKey, timeZone), timeZone)}</p>
+        <p className="text-[13px] font-medium text-sky-800">{leave.label}</p>
+      </div>
+      <p className="self-center text-[12px] text-[var(--ink3)]">No hours or pay</p>
     </li>
   )
 }
@@ -1549,6 +1629,7 @@ function SignSheet({
   onCancel: () => void
   onConfirm: () => void
 }) {
+  const currency = useOrganizationCurrency()
   const total = hoursAmount + priceWorkAmount + expensesAmount
   return (
     <div className="space-y-4 pb-10">
@@ -1561,13 +1642,13 @@ function SignSheet({
           <p className="text-[17px] font-semibold">You&apos;re approving</p>
           <div className="mt-3 space-y-2 text-[15px]">
             <Row label="Period" value={periodTitle} />
-            <Row label="Hours" value={money(hoursAmount)} />
-            <Row label="Price work" value={money(priceWorkAmount)} />
-            <Row label="Expenses" value={money(expensesAmount)} />
+            <Row label="Hours" value={money(hoursAmount, currency)} />
+            <Row label="Price work" value={money(priceWorkAmount, currency)} />
+            <Row label="Expenses" value={money(expensesAmount, currency)} />
           </div>
           <div className="mt-3 flex justify-between rounded-xl bg-[#0E1F33] p-3 text-white">
             <span className="text-white/75">Timesheet total</span>
-            <span className="text-[20px] font-bold">{money(total)}</span>
+            <span className="text-[20px] font-bold">{money(total, currency)}</span>
           </div>
         </section>
       ) : (
@@ -1627,6 +1708,7 @@ function EditHoursSheet({
   onCancel: () => void
   onSave: () => void
 }) {
+  const currency = useOrganizationCurrency()
   if (!line) return null
   const paid = paidBookedHours('customHours', start, end, policy, breakRemoved, line.date)
   const ot = overtimeHoursBeyondPaidStandard(line.date, 'customHours', start, end, policy, breakRemoved)
@@ -1686,7 +1768,7 @@ function EditHoursSheet({
           </p>
           <p className="mt-2 flex justify-between text-[15px] font-semibold">
             <span>Revised amount</span>
-            <span>{money(amount)}</span>
+            <span>{money(amount, currency)}</span>
           </p>
         </div>
       </div>
@@ -1711,6 +1793,7 @@ function AmountEditSheet({
   onCancel: () => void
   onSave: () => void
 }) {
+  const currency = useOrganizationCurrency()
   return (
     <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4">
       <div className="w-full max-w-sm rounded-2xl bg-white p-5">
@@ -1725,7 +1808,7 @@ function AmountEditSheet({
         </div>
         <p className="mt-3 text-[14px] text-[var(--ink3)]">{subtitle}</p>
         <label className="mt-3 flex items-center gap-2 rounded-xl border px-3 py-2 text-[15px]">
-          £
+          {currencySymbol(currency)}
           <input
             value={amountText}
             onChange={(event) => onAmount(event.target.value)}
@@ -1733,7 +1816,7 @@ function AmountEditSheet({
             inputMode="decimal"
           />
         </label>
-        <p className="mt-2 text-[12px] text-[var(--ink3)]">Original: {money(originalAmount)}</p>
+        <p className="mt-2 text-[12px] text-[var(--ink3)]">Original: {money(originalAmount, currency)}</p>
       </div>
     </div>
   )
@@ -1757,6 +1840,7 @@ function ExtraForm({
     expense?: TimesheetDraft['expenseEntries'][number]
   }) => Promise<void>
 }) {
+  const currency = useOrganizationCurrency()
   const [title, setTitle] = useState('')
   const [details, setDetails] = useState('')
   const [jobNumber, setJobNumber] = useState('')
@@ -1847,7 +1931,7 @@ function ExtraForm({
           ) : null}
           <label className="block py-3 text-[11px] font-medium uppercase tracking-[0.4px] text-[var(--ink3)]">
             Amount
-            <input value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="£0.00" inputMode="decimal" className="mt-1 w-full border-0 p-0 text-[14px] font-medium text-[var(--ink)] outline-none" required />
+            <input value={amount} onChange={(e) => setAmount(e.target.value)} placeholder={formatMoney(0, currency)} inputMode="decimal" className="mt-1 w-full border-0 p-0 text-[14px] font-medium text-[var(--ink)] outline-none" required />
           </label>
         </div>
         <div className="overflow-hidden rounded-2xl bg-white px-4 py-3">
