@@ -6,11 +6,11 @@
 'use client'
 
 import { create } from 'zustand'
-import { doc, getDoc, setDoc, Timestamp, updateDoc } from 'firebase/firestore'
+import { doc, FieldPath, getDoc, setDoc, Timestamp, updateDoc } from 'firebase/firestore'
+import { deadlineAssignedProjectIds, deadlineAssignmentWriteFields, deadlineProjectKey } from '@/lib/canonical/workDocumentReaders'
 import { db } from '@/lib/firebase/config'
 import { parseFirestoreDate } from '@/lib/firebase/firestoreUtils'
 import { withTimeout } from '@/lib/client/withTimeout'
-import { asUppercaseUuid } from '@/lib/ios-parity/uuid'
 import { deadlinesSettingsDocId, parseDeadline, serializeDeadline } from '@/lib/deadlines/codec'
 import { mergeDeadlinesFirstWriterWins } from '@/lib/deadlines/logic'
 import type { Deadline } from '@/lib/deadlines/types'
@@ -30,21 +30,20 @@ function isMissingDoc(error: unknown): boolean {
   return typeof error === 'object' && error !== null && 'code' in error && (error as { code?: string }).code === 'not-found'
 }
 
+/**
+ * One job's assignees in `settings/deadlineAssignments` (rulebook `deadlineAssignmentWriteFields`, §1): a partial
+ * update of the one map entry through a field path; the document is created only when it is missing. Never a
+ * merge-set with a dotted key (that stores a literal `projects.{KEY}` field).
+ */
 async function writeAssignments(organizationId: string, projectId: string, assigneeIds: string[]): Promise<void> {
+  const write = deadlineAssignmentWriteFields({ projectId, assigneeUserIds: assigneeIds })
+  if (!write) return
   const ref = assignmentsRef(organizationId)
-  const projectKey = asUppercaseUuid(projectId)
-  const payload = {
-    [`projects.${projectKey}`]: assigneeIds,
-    updatedAt: Timestamp.now(),
-  }
   try {
-    await updateDoc(ref, payload)
+    await updateDoc(ref, new FieldPath(...write.fieldPath), write.value, 'updatedAt', Timestamp.now())
   } catch (error) {
     if (!isMissingDoc(error)) throw error
-    await setDoc(ref, {
-      projects: { [projectKey]: assigneeIds },
-      updatedAt: Timestamp.now(),
-    })
+    await setDoc(ref, { ...write.createFields, updatedAt: Timestamp.now() })
   }
 }
 
@@ -143,7 +142,7 @@ export const useDeadlineStore = create<DeadlineState>((set, get) => ({
           {
             items: itemsToWrite.map(serializeDeadline),
             updatedAt: Timestamp.now(),
-            projectId: asUppercaseUuid(projectId),
+            projectId: deadlineProjectKey(projectId),
           },
           { merge: true }
         ),
@@ -176,14 +175,8 @@ export const useDeadlineStore = create<DeadlineState>((set, get) => ({
     }
     try {
       const snap = await getDoc(assignmentsRef(organizationId))
-      const projects = snap.data()?.projects
-      if (!projects || typeof projects !== 'object') {
-        set({ assignedProjectIds: [] })
-        return
-      }
-      const ids = Object.entries(projects as Record<string, unknown>)
-        .filter(([, value]) => Array.isArray(value) && value.includes(trimmed))
-        .map(([key]) => key)
+      // Rulebook `deadlineAssignedProjectIds`: ids compare without case; a legacy literal `projects.{KEY}` field reads too.
+      const ids = deadlineAssignedProjectIds(snap.exists() ? (snap.data() as Record<string, unknown>) : null, trimmed)
       set({ assignedProjectIds: ids })
     } catch {
       set({ assignedProjectIds: [] })

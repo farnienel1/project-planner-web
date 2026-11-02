@@ -5,9 +5,18 @@
 
 import { Timestamp } from 'firebase/firestore'
 import { asUppercaseUuid, isUuidString } from '@/lib/ios-parity/uuid'
-import { parseFirestoreDate, parseNumber, parseString } from '@/lib/firebase/firestoreUtils'
+import {
+  deadlinesDocumentId,
+  parseDeadlineItem,
+  type DeadlineChangeDocument,
+} from '@/lib/canonical/workDocumentReaders'
 import type { Deadline, DeadlineChange, DeadlineChangeKind, DeadlineStatus } from '@/lib/deadlines/types'
 import { DEADLINE_STATUSES } from '@/lib/deadlines/types'
+
+/** UUIDs upper case as Swift writes them; any other id exactly as stored (rulebook §1). */
+function storedId(value: string): string {
+  return isUuidString(value) ? asUppercaseUuid(value) : value.trim()
+}
 
 function emptyToNull(value: string): string | null {
   const trimmed = value.trim()
@@ -18,13 +27,9 @@ function statusOf(value: string): DeadlineStatus {
   return (DEADLINE_STATUSES as readonly string[]).includes(value) ? (value as DeadlineStatus) : 'notStarted'
 }
 
-function dateOrNull(value: unknown): Date | null {
-  return parseFirestoreDate(value) ?? null
-}
-
 export function serializeDeadlineChange(change: DeadlineChange): Record<string, unknown> {
   const map: Record<string, unknown> = {
-    id: asUppercaseUuid(change.id),
+    id: storedId(change.id),
     at: Timestamp.fromDate(change.at),
     author: change.author,
   }
@@ -72,55 +77,51 @@ export function serializeDeadlineChange(change: DeadlineChange): Record<string, 
   return map
 }
 
-export function parseDeadlineChange(map: Record<string, unknown>): DeadlineChange | null {
-  const id = parseString(map.id)
-  if (!isUuidString(id)) return null
-  const at = dateOrNull(map.at) ?? new Date()
-  const author = parseString(map.author)
-  const type = parseString(map.type, 'note')
+function changeFromDocument(change: DeadlineChangeDocument): DeadlineChange {
+  const at = change.atMs != null ? new Date(change.atMs) : new Date()
+  const when = (ms: number | null) => (ms != null ? new Date(ms) : at)
   let kind: DeadlineChangeKind
-  switch (type) {
+  switch (change.type) {
     case 'created':
-      kind = { type: 'created', due: dateOrNull(map.due) ?? at }
+      kind = { type: 'created', due: when(change.dueMs) }
       break
     case 'rescheduled':
-      kind = {
-        type: 'rescheduled',
-        from: dateOrNull(map.from) ?? at,
-        to: dateOrNull(map.to) ?? at,
-        reason: parseString(map.reason),
-      }
+      kind = { type: 'rescheduled', from: when(change.fromMs), to: when(change.toMs), reason: change.reason ?? '' }
       break
     case 'progress':
-      kind = { type: 'progress', progress: Math.round(parseNumber(map.progress) ?? 0) }
+      kind = { type: 'progress', progress: change.progress ?? 0 }
       break
     case 'status':
-      kind = { type: 'status', status: statusOf(parseString(map.status)) }
+      kind = { type: 'status', status: statusOf(change.status ?? '') }
       break
     case 'completed':
-      kind = { type: 'completed', completedOn: dateOrNull(map.completedOn) ?? at }
+      kind = { type: 'completed', completedOn: when(change.completedOnMs) }
       break
     case 'assigned':
-      kind = { type: 'assigned', assignedTo: parseString(map.assignedTo) }
+      kind = { type: 'assigned', assignedTo: change.assignedTo ?? '' }
       break
     case 'fileAttached':
-      kind = { type: 'fileAttached', name: parseString(map.name, 'File') }
+      kind = { type: 'fileAttached', name: change.name ?? 'File' }
       break
     case 'siteAuditAttached':
-      kind = { type: 'siteAuditAttached', name: parseString(map.name, 'Site audit') }
-      break
-    case 'note':
-      kind = { type: 'note', note: parseString(map.note) }
+      kind = { type: 'siteAuditAttached', name: change.name ?? 'Site audit' }
       break
     default:
-      kind = { type: 'note', note: type }
+      kind = { type: 'note', note: change.note ?? '' }
   }
-  return { id: asUppercaseUuid(id), at, author, kind }
+  return { id: change.id, at, author: change.author, kind }
+}
+
+/** One stored history row. Reading is the rulebook's (`parseDeadlineItem`); the id keeps its stored case. */
+export function parseDeadlineChange(map: Record<string, unknown>): DeadlineChange | null {
+  const item = parseDeadlineItem({ id: 'change', history: [map] })
+  const change = item?.history[0]
+  return change ? changeFromDocument(change) : null
 }
 
 export function serializeDeadline(item: Deadline): Record<string, unknown> {
   return {
-    id: asUppercaseUuid(item.id),
+    id: storedId(item.id),
     title: item.title,
     location: item.location ?? '',
     trade: item.trade ?? '',
@@ -134,63 +135,60 @@ export function serializeDeadline(item: Deadline): Record<string, unknown> {
     status: item.status,
     progress: item.progress,
     isCritical: item.isCritical,
-    dependsOn: item.dependsOn.map((id) => asUppercaseUuid(id)),
+    dependsOn: item.dependsOn.map(storedId),
     blockedReason: item.blockedReason ?? '',
     reminderDaysBefore: item.reminderDaysBefore,
     originalDue: item.originalDue ? Timestamp.fromDate(item.originalDue) : null,
     history: item.history.map(serializeDeadlineChange),
     contextKind: item.contextKind,
-    projectId: item.projectId ? asUppercaseUuid(item.projectId) : '',
+    projectId: item.projectId ? storedId(item.projectId) : '',
     createdByUserId: item.createdByUserId,
     fileURL: item.fileURL ?? '',
     fileName: item.fileName ?? '',
-    siteAuditId: item.siteAuditId ? asUppercaseUuid(item.siteAuditId) : '',
+    siteAuditId: item.siteAuditId ? storedId(item.siteAuditId) : '',
     siteAuditTitle: item.siteAuditTitle ?? '',
   }
 }
 
+/**
+ * One stored deadline. Reading is the rulebook's `parseDeadlineItem` (§1): the id, dependencies and assignee ids
+ * keep their stored case and a non-UUID id is kept; an item with no id is skipped.
+ */
 export function parseDeadline(map: Record<string, unknown>, fallbackProjectId: string): Deadline | null {
-  const id = parseString(map.id)
-  if (!isUuidString(id)) return null
-  const historyRaw = Array.isArray(map.history) ? map.history : []
-  const dependsRaw = Array.isArray(map.dependsOn) ? map.dependsOn : []
-  const reminder = parseNumber(map.reminderDaysBefore)
-  const projectRaw = parseString(map.projectId)
+  const item = parseDeadlineItem(map, { projectId: fallbackProjectId })
+  if (!item) return null
+  const date = (ms: number | null) => (ms != null ? new Date(ms) : null)
   return {
-    id: asUppercaseUuid(id),
-    title: parseString(map.title, 'Untitled deadline'),
-    location: emptyToNull(parseString(map.location)),
-    trade: emptyToNull(parseString(map.trade)),
-    detail: emptyToNull(parseString(map.detail)),
-    start: dateOrNull(map.start),
-    due: dateOrNull(map.due) ?? new Date(),
-    completedAt: dateOrNull(map.completedAt),
-    assignees: Array.isArray(map.assignees) ? map.assignees.filter((row): row is string => typeof row === 'string') : [],
-    assigneeUserIds: Array.isArray(map.assigneeUserIds)
-      ? map.assigneeUserIds.filter((row): row is string => typeof row === 'string')
-      : [],
-    company: emptyToNull(parseString(map.company)),
-    status: statusOf(parseString(map.status)),
-    progress: parseNumber(map.progress) ?? 0,
-    isCritical: map.isCritical === true,
-    dependsOn: dependsRaw.filter((row): row is string => typeof row === 'string' && isUuidString(row)).map(asUppercaseUuid),
-    blockedReason: emptyToNull(parseString(map.blockedReason)),
-    reminderDaysBefore: reminder == null ? null : Math.round(reminder),
-    originalDue: dateOrNull(map.originalDue),
-    history: historyRaw
-      .map((row) => (row && typeof row === 'object' ? parseDeadlineChange(row as Record<string, unknown>) : null))
-      .filter((row): row is DeadlineChange => row !== null),
-    contextKind: parseString(map.contextKind, 'Project'),
-    projectId: isUuidString(projectRaw) ? asUppercaseUuid(projectRaw) : asUppercaseUuid(fallbackProjectId),
-    createdByUserId: parseString(map.createdByUserId),
-    fileURL: emptyToNull(parseString(map.fileURL)),
-    fileName: emptyToNull(parseString(map.fileName)),
-    siteAuditId: isUuidString(parseString(map.siteAuditId)) ? asUppercaseUuid(parseString(map.siteAuditId)) : null,
-    siteAuditTitle: emptyToNull(parseString(map.siteAuditTitle)),
+    id: item.id,
+    title: item.title,
+    location: item.location,
+    trade: item.trade,
+    detail: item.detail,
+    start: date(item.startMs),
+    due: date(item.dueMs) ?? new Date(),
+    completedAt: date(item.completedAtMs),
+    assignees: item.assignees,
+    assigneeUserIds: item.assigneeUserIds,
+    company: item.company,
+    status: item.status,
+    progress: item.progress,
+    isCritical: item.isCritical,
+    dependsOn: item.dependsOn,
+    blockedReason: item.blockedReason,
+    reminderDaysBefore: item.reminderDaysBefore,
+    originalDue: date(item.originalDueMs),
+    history: item.history.map(changeFromDocument),
+    contextKind: item.contextKind,
+    projectId: item.projectId,
+    createdByUserId: item.createdByUserId,
+    fileURL: item.fileURL,
+    fileName: item.fileName,
+    siteAuditId: item.siteAuditId,
+    siteAuditTitle: item.siteAuditTitle,
   }
 }
 
+/** `deadlinesDocumentId` (rulebook): `deadlines_{projects|smallWorks}_{KEY}`. */
 export function deadlinesSettingsDocId(projectId: string, isSmallWorks: boolean): string {
-  const collection = isSmallWorks ? 'smallWorks' : 'projects'
-  return `deadlines_${collection}_${asUppercaseUuid(projectId)}`
+  return deadlinesDocumentId(projectId, isSmallWorks)
 }

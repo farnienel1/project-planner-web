@@ -1,4 +1,4 @@
-# iOS follow-on — rulebook 1.6.0
+# iOS follow-on — rulebook 1.7.0
 
 Generated 2026-11-02 by `npm run rulebook:handoff` in project-planner-web. Paste this whole file into the iOS agent.
 The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; never edit the iOS mirror by hand.
@@ -8,9 +8,9 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ║ FOLLOW-ON — paste into the iOS agent                             ║
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
-Rulebook version: 1.5.0 → 1.6.0
-Packed hash: c634b3b968517740cc2d31d8b1ba1865b8936551c215b058054a688cf1e45e40
-Rulebook sha256: 09fae38de0665717df64b08e87263556bb1be42e9fc3eceb12dc7b947d6081af
+Rulebook version: 1.6.0 → 1.7.0
+Packed hash: 7811bcffc829f4790ebd1080578b83323ff74f6c34c4b0af3683859af742d1cb
+Rulebook sha256: 7ae887277e0accb7d0229933e9d8132092eacc295004d9cadcda73aea013d872
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -18,30 +18,29 @@ Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS 
   web docs/RULEBOOK.md                              → iOS docs/RULEBOOK.md
   web lib/canonical/parity-fixture.json             → iOS ProjectPlannerTests/CanonicalParityFixture.json
 Call: CanonicalBusinessEngine — no second calculator in Swift.
-Exports added: DEFAULT_ANNUAL_LEAVE, EMPLOYMENT_WRITE_GROUP, LINE_MANAGER_WRITE_GROUP, PAY_WRITE_GROUP, ROSTER_DOCUMENT_KEYS, ROSTER_NAME_WRITE_GROUP, USER_DOCUMENT_KEYS, USER_NAME_WRITE_GROUP, clientWriteFields, defaultTimesheetsEnabled, documentBool, documentInstantMs, documentNumber, documentValueKey, documentWriteFields, managerRowWriteFields, normalizeUserRoleToken, operativeRowWriteFields, parseAnnualLeaveDefaults, parseClientDocument, parseManagerDocument, parseOperativeDocument, parsePayRateHistoryDocument, parsePayRateHistoryDocuments, parseSkillDocument, parseSubcontractorDocument, parseUserDocument, skillsCatalogueWrites, subcontractorWriteFields, userProfileWriteFields
+Exports added: BOOKING_SLOT_WRITE_GROUP, DEADLINE_ASSIGNMENTS_DOCUMENT_ID, DEADLINE_STATUSES, JOB_ADDRESS_WRITE_GROUP, JOB_COLLECTIONS, JOB_MANAGER_WRITE_GROUP, JOB_PIN_WRITE_GROUP, SUBCONTRACTOR_BOOKING_DOCUMENT_KEYS, SUBCONTRACTOR_BOOKING_PEOPLE_WRITE_GROUP, bookingUpdateWriteFields, deadlineAssignedProjectIds, deadlineAssignmentWriteFields, deadlineProjectKey, deadlinesDocumentId, jobWriteFields, parseDeadlineAssignments, parseDeadlineDocument, parseDeadlineItem, parseJobDocument, parseProjectDocument, parseSmallWorkDocument, parseSubcontractorBookingDocument, parseTimesheetEntries, subcontractorBookingCreateFields, subcontractorBookingWriteFields, timesheetEntryId
 Exports removed: none
-Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/index.ts, lib/canonical/peopleDocuments.ts
+Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/index.ts, lib/canonical/workDocumentReaders.ts
 Done when:
-- [ ] Packed hash in iOS equals c634b3b968517740cc2d31d8b1ba1865b8936551c215b058054a688cf1e45e40
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 09fae38de0665717df64b08e87263556bb1be42e9fc3eceb12dc7b947d6081af)
-- [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.6.0)
+- [ ] Packed hash in iOS equals 7811bcffc829f4790ebd1080578b83323ff74f6c34c4b0af3683859af742d1cb
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 7ae887277e0accb7d0229933e9d8132092eacc295004d9cadcda73aea013d872)
+- [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.7.0)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web
 - [ ] Any disagreement traced to its first divergence — no copied screen number
 ```
 
-## What changed in 1.6.0
+## What changed in 1.7.0
 
-- One reader per people collection (§1): `parseUserDocument` (`users/{uid}`), `parseOperativeDocument`, `parseManagerDocument`, `parsePayRateHistoryDocument` / `parsePayRateHistoryDocuments`, `parseClientDocument`, `parseSubcontractorDocument`, `parseSkillDocument`, with `documentInstantMs`, `documentBool`, `documentNumber`, `normalizeUserRoleToken`, `USER_DOCUMENT_KEYS`, `ROSTER_DOCUMENT_KEYS`. Ids are the document id in stored case: iOS randomised or upper-cased non-UUID `operatives` ids and dropped non-UUID `clients` and `operativeDayRateHistory` rows. `users/{uid}` and `operatives` leave the known-gaps list.
-- An hourly `operatives` / `managers` row is hourly on every platform (iOS read `dayRate ?? hourlyRate` and ignored `payBasis`) (§8).
-- Missing user leave fields take the organisation `annualLeaveDefaults` (iOS used 25 / 1 / 12) (§4.4, §8). Missing `timesheetsEnabled` is `defaultTimesheetsEnabled`: operatives and self-employed on, PAYE managers and admins off (web read off) (§8).
-- An admin with a stray `operativeMode` flag stays an admin on lists; the approval rules keep reading the stored flag (`adminOutsideOperativeMode`) (§8).
-- Partial writes for people (§1, §11): `documentWriteFields`, `userProfileWriteFields`, `operativeRowWriteFields`, `managerRowWriteFields`, `clientWriteFields`, `subcontractorWriteFields` → `{ set, remove }`; a field the stored copy lacks is never deleted; line manager ids with `hasNoLineManager`, pay basis with both rates and employment type with its transition are written together. Web Operative / Manager forms no longer overwrite the whole `users/{uid}` document and web roster, client and subcontractor saves are partial updates. The skills catalogue is saved with `skillsCatalogueWrites` (no delete-all and rewrite).
-- Still each app's own reader (known gaps): `settings/jobTypes`, `settings/tradeTypeInventory`.
+- One reader per work collection (§1): `parseJobDocument` / `parseProjectDocument` / `parseSmallWorkDocument` (`projects`, `smallWorks`), `parseSubcontractorBookingDocument`, `parseTimesheetEntries`, `parseDeadlineDocument` / `parseDeadlineItem`, `parseDeadlineAssignments` / `deadlineAssignedProjectIds`. Ids are the document id or the stored id in stored case and a non-UUID id is kept (iOS randomised or dropped non-UUID job, client, manager, subcontractor-booking, entry and deadline ids; web dropped non-UUID deadline ids). A job with no start date starts on its creation day (web used "now"); no end date ends on its start day.
+- Subcontractor bookings created on web are now real records on iOS: the document id is an upper-case UUID also stored as `id`, with `status`, `isBreakRemoved` and the contact lists always written (`subcontractorBookingCreateFields`); the reader accepts older web documents with no `id` or `status` (Confirmed) or slot (FULL DAY) (§1).
+- Timesheet price work and expense entries keep their stored ids; an entry without one gets the deterministic `timesheetEntryId` (web minted a new random id on every read, so `extraEntryReviews[entryId]` never matched) (§8).
+- Partial writes for work documents (§1): `jobWriteFields`, `bookingUpdateWriteFields` (web no longer rewrites the whole booking on an edit; an edit of a deleted booking is refused), `subcontractorBookingWriteFields`, and `deadlineAssignmentWriteFields` (a field-path update; never a merge-set with a dotted key, which iOS stored as a literal `projects.{KEY}` field — `parseDeadlineAssignments` still reads those).
+- Deleting a person or a job removes only bookings from today on, each with its tombstone; past bookings stay; deactivating removes nothing (`bookingsToRemoveOnOperativeDelete`, `bookingsToRemoveOnProjectDelete`) (§2). iOS deleted every booking of a deleted operative without tombstones.
 
 ## New rulebook sections
 
-- 1.6.0 — 2026-11-02
+- 1.7.0 — 2026-11-02
 
 ## Workflow for the iOS agent
 

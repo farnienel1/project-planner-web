@@ -6418,3 +6418,317 @@ test('skillsCatalogueWrites never deletes the catalogue from an empty or failed 
     { write: [{ id: 'S1', set: { trade: 'Wet trades' } }, { id: 'S3', set: { name: 'Screed' } }], remove: ['S2'] }
   )
 })
+
+import {
+  bookingUpdateWriteFields,
+  deadlineAssignedProjectIds,
+  deadlineAssignmentWriteFields,
+  deadlinesDocumentId,
+  jobWriteFields,
+  parseDeadlineAssignments,
+  parseDeadlineDocument,
+  parseJobDocument,
+  parseProjectDocument,
+  parseSmallWorkDocument,
+  parseSubcontractorBookingDocument,
+  parseTimesheetEntries,
+  subcontractorBookingCreateFields,
+  subcontractorBookingWriteFields,
+  timesheetEntryId,
+} from './workDocumentReaders.ts'
+
+// 1.7.0 — one reader and partial writes for the work collections.
+const WD_TS = (iso: string) => ({ seconds: Date.parse(iso) / 1000, nanoseconds: 0 })
+const WD_UUID = '0F8B2C6A-1D2E-4F3A-9B8C-7D6E5F4A3B2C'
+
+test('parseJobDocument reads a web-written job: stored-case ids, non-UUID ids kept, BST day keys', () => {
+  const job = parseProjectDocument(
+    'proj-c646',
+    {
+      jobNumber: 'C646',
+      siteName: ' Tower ',
+      addressLine1: '1 High St',
+      townCity: 'Leeds',
+      postcode: 'LS1 1AA',
+      client: { id: 'client-acme', name: 'Acme', email: '', phone: '0113' },
+      startDate: WD_TS('2026-06-30T23:30:00Z'),
+      endDate: WD_TS('2026-07-10T23:00:00Z'),
+      jobType: 'CAT A',
+      managerIds: ['mgr-web-1', 'MGR-WEB-1', 'mgr-2'],
+      isLive: true,
+      createdAt: WD_TS('2026-06-01T09:00:00Z'),
+    },
+    { timeZone: 'Europe/London' }
+  )
+  assert.ok(job)
+  assert.equal(job.id, 'proj-c646')
+  assert.equal(job.collection, 'projects')
+  assert.equal(job.siteName, 'Tower')
+  assert.equal(job.startDayKey, '2026-07-01')
+  assert.equal(job.endDayKey, '2026-07-11')
+  assert.equal(job.client.id, 'client-acme')
+  assert.equal(job.client.email, null)
+  assert.deepEqual(job.managerIds, ['mgr-web-1', 'mgr-2'])
+  assert.equal(job.managerId, 'mgr-web-1')
+  assert.equal(job.siteAddress, '1 High St, Leeds, LS1 1AA')
+})
+
+test('parseJobDocument reads an iOS-written small work: upper-case UUIDs, managerId only, no end day', () => {
+  const job = parseSmallWorkDocument(WD_UUID, {
+    jobNumber: 'SW1',
+    siteName: 'Kitchen',
+    client: { id: WD_UUID, name: 'Client' },
+    startDate: WD_TS('2026-11-03T00:00:00Z'),
+    managerId: 'AB12CD34-0000-4000-8000-000000000001',
+    manager: 'custom',
+    isLive: 0,
+    usesMapPinForLocation: 'yes',
+    latitude: '53.8',
+  })
+  assert.ok(job)
+  assert.equal(job.id, WD_UUID)
+  assert.equal(job.kind, 'smallWork')
+  assert.equal(job.endDayKey, '2026-11-03')
+  assert.deepEqual(job.managerIds, ['AB12CD34-0000-4000-8000-000000000001'])
+  assert.equal(job.managerName, null)
+  assert.equal(job.isLive, false)
+  assert.equal(job.usesMapPinForLocation, true)
+  assert.equal(job.latitude, 53.8)
+  assert.equal(parseJobDocument('INITIAL-PLACEHOLDER', { siteName: 'x' }), null)
+  // No start date: the creation day, never "now".
+  assert.equal(parseProjectDocument('p', { createdAt: WD_TS('2026-03-29T00:30:00Z') })?.startDayKey, '2026-03-29')
+})
+
+test('jobWriteFields writes only changed fields, never deletes an absent one, never rewrites createdAt', () => {
+  const before = {
+    siteName: 'Tower',
+    managerId: 'm1',
+    managerIds: ['m1'],
+    createdAt: WD_TS('2026-01-01T00:00:00Z'),
+    organizationId: 'org',
+    notes: 'keep me',
+  }
+  const same = jobWriteFields(before, { siteName: 'Tower', createdAt: WD_TS('2026-05-05T00:00:00Z'), organizationId: 'org2' })
+  assert.deepEqual(same, { set: {}, remove: [] })
+  const changed = jobWriteFields(before, { siteName: 'Tower', managerIds: ['m1', 'm2'], managerId: 'm1', description: null })
+  assert.deepEqual(changed.set, { managerIds: ['m1', 'm2'], managerId: 'm1' })
+  assert.deepEqual(changed.remove, [])
+  const created = jobWriteFields(null, { siteName: 'New', createdAt: 5, description: null })
+  assert.deepEqual(created, { set: { siteName: 'New', createdAt: 5 }, remove: [] })
+})
+
+test('bookingUpdateWriteFields: changed fields only, slot with its times, bookedBy kept, no write without a stored booking', () => {
+  const before = {
+    id: 'B1',
+    operativeId: 'op-1',
+    projectId: 'proj-c646',
+    status: 'Confirmed',
+    timeSlot: 'FULL DAY',
+    bookedBy: 'first@example.com',
+    notes: '',
+    createdAt: WD_TS('2026-01-01T00:00:00Z'),
+  }
+  assert.deepEqual(bookingUpdateWriteFields(null, { status: 'Cancelled' }), { set: {}, remove: [] })
+  assert.deepEqual(
+    bookingUpdateWriteFields(before, { ...before, status: 'Cancelled', bookedBy: 'second@example.com', workStartTime: null }),
+    { set: { status: 'Cancelled' }, remove: [] }
+  )
+  const slot = bookingUpdateWriteFields(before, {
+    ...before,
+    timeSlot: 'CUSTOM_HOURS',
+    workStartTime: '07:30',
+    workEndTime: '12:00',
+    isBreakRemoved: false,
+  })
+  assert.deepEqual(slot.set, { timeSlot: 'CUSTOM_HOURS', workStartTime: '07:30', workEndTime: '12:00', isBreakRemoved: false })
+  const back = bookingUpdateWriteFields(
+    { ...before, timeSlot: 'CUSTOM_HOURS', workStartTime: '07:30', workEndTime: '12:00' },
+    { timeSlot: 'FULL DAY', workStartTime: null, workEndTime: null }
+  )
+  assert.deepEqual(back, { set: { timeSlot: 'FULL DAY' }, remove: ['workStartTime', 'workEndTime'] })
+})
+
+test('parseSubcontractorBookingDocument reads web-created and iOS-created bookings the same way', () => {
+  const web = parseSubcontractorBookingDocument(
+    'k3j2lowerrandomid',
+    {
+      subcontractorId: 'sub-electrics',
+      projectId: 'proj-c646',
+      date: WD_TS('2026-06-30T23:00:00Z'),
+      timeSlot: 'FULL DAY',
+      workStartTime: null,
+      bookedBy: 'pm@example.com',
+      bookedContactIds: [],
+      bookedOperativeNames: ['Ada', 'ada'],
+    },
+    { timeZone: 'Europe/London' }
+  )
+  assert.ok(web)
+  assert.equal(web.id, 'k3j2lowerrandomid')
+  assert.equal(web.status, 'Confirmed')
+  assert.equal(web.dayKey, '2026-07-01')
+  assert.equal(web.isBreakRemoved, false)
+  assert.deepEqual(web.bookedOperativeNames, ['Ada'])
+  assert.equal(web.idsAreUuid, false)
+  const ios = parseSubcontractorBookingDocument(WD_UUID, {
+    id: 'SOMETHING-ELSE',
+    subcontractorId: WD_UUID,
+    projectId: WD_UUID,
+    date: WD_TS('2026-11-03T00:00:00Z'),
+    timeSlot: 'CUSTOM_HOURS',
+    workStartTime: '7:30',
+    workEndTime: '16:00:00',
+    isBreakRemoved: true,
+    bookedBy: 'ios@example.com',
+    status: 'Tentative',
+    bookedContactIds: [WD_UUID],
+  })
+  assert.ok(ios)
+  assert.equal(ios.id, WD_UUID)
+  assert.equal(ios.workStartTime, '07:30')
+  assert.equal(ios.workEndTime, '16:00')
+  assert.equal(ios.status, 'Tentative')
+  assert.equal(ios.idsAreUuid, true)
+  assert.equal(parseSubcontractorBookingDocument('x', { subcontractorId: 's', projectId: 'p', date: 1, status: 'weird' }), null)
+  assert.equal(parseSubcontractorBookingDocument('x', { subcontractorId: 's', date: WD_TS('2026-11-03T00:00:00Z') }), null)
+  assert.equal(parseSubcontractorBookingDocument('x', { subContractorId: 's', projectID: 'p', date: '2026-11-03' })?.dayKey, '2026-11-03')
+})
+
+test('subcontractorBookingCreateFields and subcontractorBookingWriteFields', () => {
+  const created = subcontractorBookingCreateFields({
+    id: WD_UUID,
+    subcontractorId: 'sub-1',
+    projectId: 'proj-c646',
+    dateMs: 1_780_000_000_000,
+    timeSlot: 'FULL_DAY',
+    workStartTime: null,
+    bookedBy: 'pm@example.com',
+    bookedContactIds: ['c1', 'C1'],
+    createdAtMs: 1_780_000_000_500,
+  })
+  assert.deepEqual(created, {
+    ok: true,
+    fields: {
+      id: WD_UUID,
+      subcontractorId: 'sub-1',
+      projectId: 'proj-c646',
+      date: 1_780_000_000_000,
+      timeSlot: 'FULL DAY',
+      isBreakRemoved: false,
+      bookedBy: 'pm@example.com',
+      status: 'Confirmed',
+      bookedContactIds: ['c1'],
+      bookedOperativeNames: [],
+      createdAt: 1_780_000_000_500,
+      updatedAt: 1_780_000_000_500,
+    },
+  })
+  assert.deepEqual(subcontractorBookingCreateFields({ id: '', subcontractorId: '', projectId: 'p', dateMs: NaN, timeSlot: 'x', bookedBy: '', createdAtMs: 0 }), {
+    ok: false,
+    errors: ['missing_id', 'missing_subcontractor_id', 'missing_date', 'bad_time_slot'],
+  })
+  const before = { timeSlot: 'FULL DAY', bookedContactIds: ['c1'], bookedOperativeNames: ['Ada'], bookedBy: 'a' }
+  assert.deepEqual(subcontractorBookingWriteFields(null, { timeSlot: 'AM' }), { set: {}, remove: [] })
+  assert.deepEqual(subcontractorBookingWriteFields(before, { bookedContactIds: ['c1', 'c2'], bookedOperativeNames: ['Ada'], bookedBy: 'b' }), {
+    set: { bookedContactIds: ['c1', 'c2'], bookedOperativeNames: ['Ada'] },
+    remove: [],
+  })
+})
+
+test('timesheet entries keep stored ids, derive a stable id for an entry without one, and find its review', () => {
+  const sheetId = 'timesheet_user1_1780000000'
+  const noId = { title: 'Skip hire', amount: 120, date: WD_TS('2026-06-30T23:30:00Z') }
+  const derived = timesheetEntryId(sheetId, 'expense', 1, noId)
+  assert.match(derived, /^[0-9A-F]{8}-[0-9A-F]{4}-8[0-9A-F]{3}-[89AB][0-9A-F]{3}-[0-9A-F]{12}$/)
+  assert.equal(timesheetEntryId(sheetId, 'expense', 1, noId), derived)
+  assert.notEqual(timesheetEntryId(sheetId, 'expense', 2, noId), derived)
+  assert.notEqual(timesheetEntryId('timesheet_user2_1780000000', 'expense', 1, noId), derived)
+  assert.equal(timesheetEntryId(sheetId, 'expense', 1, { ...noId, id: 'web-entry-1' }), 'web-entry-1')
+
+  const sheet = {
+    expenseEntries: [
+      { id: 'web-entry-1', title: 'Fuel', amount: '40.5', date: '2026-06-30' },
+      noId,
+      { title: '', amount: 5 },
+    ],
+    priceWorkEntries: [{ id: WD_UUID.toLowerCase(), title: 'Second fix', amount: 300, startDate: WD_TS('2026-06-01T00:00:00Z') }],
+    extraEntryReviews: {
+      [derived.toLowerCase()]: { decision: 'declined', reviewedAmount: 120, reviewedByUserId: 'mgr' },
+      [WD_UUID]: { decision: 'edited', revisedAmount: 250, reviewedAmount: 300, reviewedByUserId: 'mgr' },
+    },
+  }
+  const first = parseTimesheetEntries(sheetId, sheet, { timeZone: 'Europe/London' })
+  const second = parseTimesheetEntries(sheetId, sheet, { timeZone: 'Europe/London' })
+  assert.deepEqual(first, second)
+  assert.equal(first.expenseEntries.length, 2)
+  assert.equal(first.expenseEntries[0].id, 'web-entry-1')
+  assert.equal(first.expenseEntries[0].amount, 40.5)
+  assert.equal(first.expenseEntries[0].dayKey, '2026-06-30')
+  assert.equal(first.expenseEntries[1].id, derived)
+  assert.equal(first.expenseEntries[1].idStored, false)
+  assert.equal(first.expenseEntries[1].dayKey, '2026-07-01')
+  assert.equal(first.expenseEntries[1].managerDecision, 'declined')
+  assert.equal(first.priceWorkEntries[0].id, WD_UUID.toLowerCase())
+  assert.equal(first.priceWorkEntries[0].managerDecision, 'edited')
+  assert.equal(first.priceWorkEntries[0].managerRevisedAmount, 250)
+  assert.equal(first.priceWorkEntries[0].agreedManagerName, 'Manager')
+})
+
+test('parseDeadlineDocument keeps non-UUID ids; assignments read without case and write through a field path', () => {
+  assert.equal(deadlinesDocumentId('proj-c646', false), 'deadlines_projects_PROJ-C646')
+  const parsed = parseDeadlineDocument(
+    'deadlines_smallWorks_PROJ-C646',
+    {
+      items: [
+        { id: 'web-dl-2', title: 'Later', due: WD_TS('2026-07-10T00:00:00Z'), assigneeUserIds: ['u1', 'U1'], dependsOn: ['web-dl-1'] },
+        { id: 'web-dl-1', title: 'First', due: WD_TS('2026-06-30T23:30:00Z'), status: 'odd', history: [{ id: 'h1', type: 'mystery' }] },
+        { title: 'No id' },
+      ],
+      updatedAt: WD_TS('2026-06-01T00:00:00Z'),
+    },
+    { timeZone: 'Europe/London' }
+  )
+  assert.equal(parsed.collection, 'smallWorks')
+  assert.equal(parsed.projectId, 'PROJ-C646')
+  assert.deepEqual(parsed.items.map((item) => item.id), ['web-dl-1', 'web-dl-2'])
+  assert.equal(parsed.items[0].dueDayKey, '2026-07-01')
+  assert.equal(parsed.items[0].status, 'notStarted')
+  assert.equal(parsed.items[0].history[0].type, 'note')
+  assert.equal(parsed.items[0].history[0].note, 'mystery')
+  assert.deepEqual(parsed.items[1].assigneeUserIds, ['u1'])
+  assert.deepEqual(parsed.items[1].dependsOn, ['web-dl-1'])
+
+  const stored = { 'projects.LEGACY-1': ['User-A'], projects: { 'PROJ-C646': ['user-a', 'user-b'], [WD_UUID]: ['other'] } }
+  assert.deepEqual(parseDeadlineAssignments(stored), { 'LEGACY-1': ['User-A'], 'PROJ-C646': ['user-a', 'user-b'], [WD_UUID]: ['other'] })
+  assert.deepEqual(deadlineAssignedProjectIds(stored, 'USER-A'), ['LEGACY-1', 'PROJ-C646'])
+  assert.deepEqual(deadlineAssignmentWriteFields({ projectId: ' proj-c646 ', assigneeUserIds: ['u2', 'u1', 'U1'] }), {
+    fieldPath: ['projects', 'PROJ-C646'],
+    value: ['u1', 'u2'],
+    createFields: { projects: { 'PROJ-C646': ['u1', 'u2'] } },
+  })
+  assert.equal(deadlineAssignmentWriteFields({ projectId: ' ', assigneeUserIds: [] }), null)
+})
+
+test('the iOS JavaScript bundle reads work documents the same way', () => {
+  const source = readFileSync(new URL('./dist/canonical-business.js', import.meta.url), 'utf8')
+  const sandbox: { ProjectPlannerCanonical?: Record<string, (...args: unknown[]) => unknown> } = {}
+  runInContext(source, createContext(sandbox))
+  const api = sandbox.ProjectPlannerCanonical!
+  const plain = (value: unknown) => JSON.parse(JSON.stringify(value))
+  const sub = { subcontractorId: 'sub-1', projectId: 'proj-c646', date: WD_TS('2026-06-30T23:00:00Z') }
+  assert.deepEqual(plain(api.parseSubcontractorBookingDocument('abc', sub, { timeZone: 'Europe/London' })), plain(parseSubcontractorBookingDocument('abc', sub, { timeZone: 'Europe/London' })))
+  const job = { siteName: 'Tower', startDate: WD_TS('2026-06-30T23:30:00Z'), managerId: 'm1' }
+  assert.deepEqual(plain(api.parseJobDocument('p1', job, { kind: 'smallWorks' })), plain(parseJobDocument('p1', job, { kind: 'smallWorks' })))
+  assert.equal(api.timesheetEntryId('timesheet_u_1', 'priceWork', 0, { title: 'A', amount: 1 }), timesheetEntryId('timesheet_u_1', 'priceWork', 0, { title: 'A', amount: 1 }))
+  const sheet = { expenseEntries: [{ title: 'Fuel', amount: 10 }] }
+  assert.deepEqual(plain(api.parseTimesheetEntries('timesheet_u_1', sheet)), plain(parseTimesheetEntries('timesheet_u_1', sheet)))
+  assert.deepEqual(plain(api.bookingUpdateWriteFields({ status: 'Confirmed' }, { status: 'Cancelled' })), { set: { status: 'Cancelled' }, remove: [] })
+  assert.deepEqual(plain(api.deadlineAssignmentWriteFields({ projectId: 'p', assigneeUserIds: ['b', 'a'] })), {
+    fieldPath: ['projects', 'P'],
+    value: ['a', 'b'],
+    createFields: { projects: { P: ['a', 'b'] } },
+  })
+  assert.equal(typeof api.parseDeadlineDocument, 'function')
+  assert.equal(typeof api.jobWriteFields, 'function')
+  assert.equal(typeof api.subcontractorBookingCreateFields, 'function')
+})
