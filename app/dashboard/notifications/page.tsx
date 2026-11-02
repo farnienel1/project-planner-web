@@ -5,6 +5,8 @@ import Link from 'next/link'
 import { BellSlashIcon } from '@heroicons/react/24/outline'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useNotificationStore } from '@/lib/stores/notificationStore'
+import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
+import { inboxOwnerIds } from '@/lib/staff/rulebookPeople'
 import { EmptyState } from '@/components/ios/primitives'
 import { inboxNotificationHref } from '@/lib/notifications/notificationHref'
 import { loadOrganizationDetails } from '@/lib/settings/organizationSettings'
@@ -20,15 +22,18 @@ type FilterOption = 'Newest' | 'Oldest' | 'Date'
 
 export default function NotificationsPage() {
   const { user, organization } = useAuthStore()
+  const users = useOrgUserStore((state) => state.users)
   const { notifications, loading, loadNotifications, markAllAsRead } = useNotificationStore()
+  // Every id of the signed-in person: the inbox lists rows addressed to any of them (`inboxNotificationVisibleToUser`).
+  const ownerIds = useMemo(() => inboxOwnerIds(user, users), [user, users])
   const [filter, setFilter] = useState<FilterOption>('Newest')
   const [timeZone, setTimeZone] = useState(ianaTimeZoneForCountry('GB'))
   const [prefs, setPrefs] = useState<UserNotificationPreferences>(DEFAULT_USER_NOTIFICATION_PREFERENCES)
 
   useEffect(() => {
     if (!organization?.id || !user?.id) return
-    loadNotifications(organization.id, user.id)
-  }, [organization?.id, user?.id, loadNotifications])
+    loadNotifications(organization.id, user.id, ownerIds)
+  }, [organization?.id, user?.id, loadNotifications, ownerIds])
 
   useEffect(() => {
     if (!user?.id) return

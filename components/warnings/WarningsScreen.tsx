@@ -22,6 +22,7 @@ import { initialsFrom } from '@/lib/daily-overview/buildDailyOverview'
 import { dayKey, formatLongDay } from '@/lib/ios-parity/londonTime'
 import { addDoc, collection, serverTimestamp } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
+import { inboxActorUserId } from '@/lib/firebase/notifyInbox'
 import { useAuthStore } from '@/lib/stores/authStore'
 
 type FilterChip = 'all' | 'clashes' | 'unbooked' | 'leave' | 'materials' | 'qualifications'
@@ -135,8 +136,10 @@ function MaterialsCard({
     const name = [user?.firstName, user?.surname].filter(Boolean).join(' ').trim() || user?.email || 'Someone'
     if (organization?.id) {
       try {
+        const actorUserId = inboxActorUserId()
         await addDoc(collection(db, 'organizations', organization.id, 'notifications'), {
           organizationId: organization.id,
+          ...(actorUserId ? { actorUserId } : {}),
           type: 'warning_removed',
           title: `Warning dismissed by ${name}`,
           message: `${name} dismissed a materials cut-off warning. Dismissed warnings do not reappear.\n\n${warning.message}`,

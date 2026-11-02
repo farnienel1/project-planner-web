@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
-import { hasAdminAccess } from '@/lib/permissions'
 import { parentDisplayName, TRACKER_ADDED_DESCRIPTION, type Variation, type VariationStatus, type VariationTracker } from '@/lib/variations/variationModel'
 import { previewRenumber } from '@/lib/variations/variationNumbering'
 import { assignedManagerIds, canManageVariationTracker } from '@/lib/variations/variationAccess'
@@ -21,6 +20,7 @@ import {
   subscribeParentVariations,
   subscribeVariationTracker,
   trackerLockActive,
+  variationRecipientIds,
 } from '@/lib/variations/variationStorage'
 import type { Project } from '@/types'
 
@@ -335,10 +335,8 @@ export function VariationTrackerScreen({
                       expectedVersion: fresh.version,
                       actor: { uid: user.id, name: `${user.firstName} ${user.surname}`.trim() },
                       rows: visual,
-                      notifyUserIds: users
-                        .filter((person) => hasAdminAccess(person) || assignedManagerIds(project).includes(person.id))
-                        .map((person) => person.id)
-                        .filter((id) => id !== user.id),
+                      // `receivesJobNotification` for this job's managers, then `excludeActor`.
+                      notifyUserIds: variationRecipientIds(users, user.id, assignedManagerIds(project)),
                       changes: preview.map((row, index) => ({ id: row.id, to: row.to, sequence: index + 1 })),
                     })
                     setOrder(null)

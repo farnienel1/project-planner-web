@@ -16,6 +16,9 @@ import { db, auth } from '@/lib/firebase/config'
 import { newUuid } from '@/lib/firebase/firestoreUtils'
 import { omitUndefinedDeep } from '@/lib/ios-parity/firestoreCodec'
 import { saveInboxNotification } from '@/lib/firebase/notifyInbox'
+import { ideaRecipients } from '@/lib/canonical'
+import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
+import { rulebookPerson, rulebookRoster } from '@/lib/staff/rulebookPeople'
 import { trackEvent } from '@/lib/analytics/trackEvent'
 import { feedbackWriteError } from '@/lib/feedback/errors'
 import { consolidateVotesOnMerge, followId, voteId } from '@/lib/feedback/similar'
@@ -54,6 +57,19 @@ import {
   type FeedbackSuggestion,
   type FeedbackVote,
 } from '@/lib/feedback/types'
+
+/**
+ * `ideaRecipients(ids, actor, roster)`: the idea's author and voters without the actor under any of their ids. The
+ * roster is the loaded organisation roster when it is the idea's organisation; otherwise only the actor's own id is
+ * removed (the platform board can act on another organisation's idea).
+ */
+function ideaNoticeRecipients(organizationId: string, ids: ReadonlyArray<string>, actorUserId: string | null | undefined): string[] {
+  const state = useOrgUserStore.getState()
+  const users = state.rosterLoadedOrgId === organizationId ? state.users : []
+  const actorId = String(actorUserId ?? '').trim()
+  const actorUser = actorId ? users.find((row) => row.id === actorId) : undefined
+  return ideaRecipients(ids, actorUser ? rulebookPerson(actorUser, users) : actorId || null, rulebookRoster(users))
+}
 
 type FeedbackState = {
   suggestions: FeedbackSuggestion[]
@@ -426,15 +442,17 @@ export const useFeedbackStore = create<FeedbackState>((set, get) => ({
       suggestions: get().suggestions.map((row) => (row.id === suggestion.id ? { ...row, commentCount } : row)),
     })
     void trackEvent('idea_comment', { userId, organizationId: suggestion.organizationId })
-    if (suggestion.organizationId && suggestion.authorUserId && suggestion.authorUserId !== userId) {
-      void saveInboxNotification({
-        organizationId: suggestion.organizationId,
-        type: 'idea_comment',
-        title: 'New comment on your feedback',
-        message: `${authorName} commented on “${suggestion.title}”.`,
-        userId: suggestion.authorUserId,
-        relatedId: suggestion.id,
-      })
+    if (suggestion.organizationId && suggestion.authorUserId) {
+      for (const recipientId of ideaNoticeRecipients(suggestion.organizationId, [suggestion.authorUserId], userId)) {
+        void saveInboxNotification({
+          organizationId: suggestion.organizationId,
+          type: 'idea_comment',
+          title: 'New comment on your feedback',
+          message: `${authorName} commented on “${suggestion.title}”.`,
+          userId: recipientId,
+          relatedId: suggestion.id,
+        })
+      }
     }
   },
 
@@ -537,7 +555,7 @@ export const useFeedbackStore = create<FeedbackState>((set, get) => ({
           .map((vote) => vote.userId)
       )
       voterIds.add(suggestion.authorUserId)
-      for (const userId of voterIds) {
+      for (const userId of ideaNoticeRecipients(suggestion.organizationId, Array.from(voterIds), actorUserId)) {
         void saveInboxNotification({
           organizationId: suggestion.organizationId,
           type: shipped ? 'idea_shipped' : 'idea_status',
@@ -643,15 +661,17 @@ export const useFeedbackStore = create<FeedbackState>((set, get) => ({
       toValue: destination.id,
       reason,
     })
-    if (source.organizationId) {
-      void saveInboxNotification({
-        organizationId: source.organizationId,
-        type: 'idea_merged',
-        title: 'Your feedback was merged',
-        message: `“${source.title}” was merged into “${destination.title}”.`,
-        userId: source.authorUserId,
-        relatedId: destination.id,
-      })
+    if (source.organizationId && source.authorUserId) {
+      for (const recipientId of ideaNoticeRecipients(source.organizationId, [source.authorUserId], actorUserId)) {
+        void saveInboxNotification({
+          organizationId: source.organizationId,
+          type: 'idea_merged',
+          title: 'Your feedback was merged',
+          message: `“${source.title}” was merged into “${destination.title}”.`,
+          userId: recipientId,
+          relatedId: destination.id,
+        })
+      }
     }
     set({
       suggestions: get()

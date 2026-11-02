@@ -8,7 +8,13 @@
  * function already sends (`notificationDeliversDevicePush`).
  */
 
-import { captureOrganizationContext, materialOrderRecipients, organizationContextStillCurrent } from '@/lib/canonical'
+import {
+  captureOrganizationContext,
+  excludeActor,
+  materialOrderRecipients,
+  organizationContextStillCurrent,
+} from '@/lib/canonical'
+import { rulebookPerson, rulebookRoster } from '@/lib/staff/rulebookPeople'
 import { saveInboxNotification } from '@/lib/firebase/notifyInbox'
 import {
   MATERIAL_ORDER_PLACED_TYPE,
@@ -42,13 +48,20 @@ export async function notifyMaterialOrderPlaced(params: {
   }
   if (!organizationContextStillCurrent(organizationId, captured)) return 0
 
-  const rows = materialOrderRecipients(
-    materialOrderRecipientsInput({
-      project: params.project,
-      managers: useOperativeStore.getState().managers,
-      users: useOrgUserStore.getState().users,
-      adder: params.adder,
-    })
+  const users = useOrgUserStore.getState().users
+  // `materialOrderRecipients`, then `excludeActor` (never the adder under any of their ids, no inactive
+  // account). No "all admins" fallback: a job with no managers notifies nobody.
+  const recipientIds = excludeActor(
+    materialOrderRecipients(
+      materialOrderRecipientsInput({
+        project: params.project,
+        managers: useOperativeStore.getState().managers,
+        users,
+        adder: params.adder,
+      })
+    ).map((row) => row.userId),
+    rulebookPerson(params.adder, users),
+    rulebookRoster(users)
   )
   const copy = materialOrderPlacedCopy({
     addedByName: params.addedByName,
@@ -56,14 +69,14 @@ export async function notifyMaterialOrderPlaced(params: {
     siteName: params.project.siteName,
   })
   let written = 0
-  for (const row of rows) {
+  for (const userId of recipientIds) {
     if (!organizationContextStillCurrent(organizationId, captured)) break
     await saveInboxNotification({
       organizationId,
       type: MATERIAL_ORDER_PLACED_TYPE,
       title: copy.title,
       message: copy.message,
-      userId: row.userId,
+      userId,
       relatedId: params.project.id,
     })
     written += 1

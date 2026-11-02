@@ -9,7 +9,7 @@ import type { Booking, Operative, Project, User } from '@/types'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import type { MyScheduleOptions, OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 import { DEFAULT_MY_SCHEDULE, DEFAULT_PAYROLL_POLICY } from '@/lib/settings/organizationSettings'
-import { isTimesheetFullyApproved, userHasLineManager } from '@/lib/timesheets/timesheetApprovalPolicy'
+import { isTimesheetFullyApproved, userTimesheetSelfSigned } from '@/lib/timesheets/timesheetApprovalPolicy'
 import {
   effectiveExpenseAmount,
   effectivePayrollAmount,
@@ -34,6 +34,8 @@ import type {
 export type WeeklyReportOverrideInput = {
   draft: TimesheetDraft
   user: User
+  /** The organisation roster: `timesheetSelfSigned(user, roster)` reads active line managers from it. */
+  users?: ReadonlyArray<User>
   viewer?: User | null
   weekStart: Date
   weekEnd: Date
@@ -182,7 +184,7 @@ function makeOverride(input: WeeklyReportOverrideInput): WeeklyReportOverride {
       input.draft.operativeSignedByName ||
       viewerName ||
       personName(input.user),
-    selfSigned: !userHasLineManager(input.user),
+    selfSigned: userTimesheetSelfSigned(input.user, input.users ?? []),
     lines,
     priceWork: money.priceWork,
     expenses: money.expenses,
@@ -214,7 +216,7 @@ function reapplyReviews(existing: WeeklyReportOverride, input: WeeklyReportOverr
       input.draft.operativeSignedByName ||
       viewerName ||
       existing.approvedByName,
-    selfSigned: !userHasLineManager(input.user),
+    selfSigned: userTimesheetSelfSigned(input.user, input.users ?? []),
     lines,
     priceWork: money.priceWork,
     expenses: money.expenses,
@@ -223,7 +225,7 @@ function reapplyReviews(existing: WeeklyReportOverride, input: WeeklyReportOverr
 
 /** Write or clear `weeklyReportOverride`. Existing labour lines are not rebuilt from bookings. */
 export function applyWeeklyReportOverride(input: WeeklyReportOverrideInput): TimesheetDraft {
-  if (!isTimesheetFullyApproved(input.draft, input.user)) {
+  if (!isTimesheetFullyApproved(input.draft, input.user, input.users ?? [])) {
     if (!input.draft.weeklyReportOverride) return input.draft
     return { ...input.draft, weeklyReportOverride: null }
   }

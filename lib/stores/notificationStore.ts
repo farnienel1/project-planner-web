@@ -32,13 +32,24 @@ interface NotificationState {
   unreadCount: number
   loading: boolean
   error: string | null
-  loadNotifications: (organizationId: string, userId: string) => void
+  /**
+   * `ownerIds`: every id of the signed-in person (`inboxOwnerIds`: id, `formerUserIds`, same-email accounts). The
+   * listener still reads `userId == signed-in uid` (what security rules allow); listing and the unread count use
+   * `inboxNotificationVisibleToUser` / `unreadNotificationBadgeCount` with the whole id list.
+   */
+  loadNotifications: (organizationId: string, userId: string, ownerIds?: ReadonlyArray<string>) => void
   markAllAsRead: (organizationId: string) => Promise<void>
 }
 
 let inboxUnsub: Unsubscribe | null = null
 let inboxOrgId = ''
 let inboxUserId = ''
+let inboxOwnerIdList: string[] = []
+
+function ownerIdList(userId: string, ownerIds?: ReadonlyArray<string>): string[] {
+  const list = [userId, ...(ownerIds ?? [])].map((id) => String(id ?? '').trim()).filter(Boolean)
+  return Array.from(new Set(list))
+}
 
 /** Newest inbox rows kept live (iOS NotificationService limits its listener to 150). */
 export const INBOX_LISTENER_LIMIT = 150
@@ -49,8 +60,9 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
   loading: false,
   error: null,
 
-  loadNotifications: (organizationId, userId) => {
+  loadNotifications: (organizationId, userId, ownerIds) => {
     if (!organizationId || !userId || !db) return
+    inboxOwnerIdList = ownerIdList(userId, ownerIds)
     const already = inboxOrgId === organizationId && inboxUserId === userId && inboxUnsub
     if (already || get().notifications.length > 0) set({ loading: false })
     else set({ loading: true, error: null })
@@ -84,7 +96,7 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
               logSkippedDocument('notifications', entry.id, parsed.errors)
               continue
             }
-            if (inboxNotificationVisibleToUser(parsed.value, userId)) notifications.push(parsed.value)
+            if (inboxNotificationVisibleToUser(parsed.value, inboxOwnerIdList)) notifications.push(parsed.value)
           }
           notifications.sort(compareInboxNotificationsByCreatedAt)
           const kept =
@@ -94,7 +106,7 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
           set({
             notifications: kept,
             // Canonical badge over the rows loaded (the newest 150), same as iOS.
-            unreadCount: unreadNotificationBadgeCount(kept, userId),
+            unreadCount: unreadNotificationBadgeCount(kept, inboxOwnerIdList),
             loading: false,
           })
         },

@@ -212,7 +212,27 @@ test('later schedule changes do not rebuild stored labour lines', () => {
   assert.equal(second.weeklyReportOverride?.priceWork[0].decision, 'edited')
 })
 
-test('no line manager: own signature is full approval and selfSigned', () => {
+test('admin with no line manager: own signature is full approval and selfSigned (timesheetSelfSigned)', () => {
+  const solo = user({ id: 'solo', hasNoLineManager: true, assignedManagerUserId: undefined })
+  const admin = {
+    ...solo,
+    role: 'admin',
+    permissions: { ...solo.permissions, adminAccess: true, operativeMode: false },
+  } as User
+  const draft = applyWeeklyReportOverride({
+    ...base,
+    user: admin,
+    draft: {
+      ...emptyTimesheetDraft(),
+      operativeSignedAt: day,
+      operativeSignedByName: 'Ada Booked',
+    },
+  })
+  assert.equal(draft.weeklyReportOverride?.selfSigned, true)
+  assert.equal(draft.weeklyReportOverride?.approvedByName, 'Ada Booked')
+})
+
+test('operative with no line manager is not self-signed: their signature waits for the admins (1.3.0)', () => {
   const solo = user({ id: 'solo', hasNoLineManager: true, assignedManagerUserId: undefined })
   const draft = applyWeeklyReportOverride({
     ...base,
@@ -223,8 +243,7 @@ test('no line manager: own signature is full approval and selfSigned', () => {
       operativeSignedByName: 'Ada Booked',
     },
   })
-  assert.equal(draft.weeklyReportOverride?.selfSigned, true)
-  assert.equal(draft.weeklyReportOverride?.approvedByName, 'Ada Booked')
+  assert.equal(draft.weeklyReportOverride ?? null, null)
 })
 
 test('clearing approval removes the override', () => {

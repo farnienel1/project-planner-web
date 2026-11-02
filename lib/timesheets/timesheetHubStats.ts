@@ -5,7 +5,7 @@
  * not "exported this pay run".
  */
 import { timesheetListBucket, type TimesheetStatusFields } from '@/lib/canonical'
-import { groupHasLineManager } from '@/lib/timesheets/timesheetWeekUtils'
+import { requiresLineManagerCounterSign } from '@/lib/timesheets/timesheetApprovalPolicy'
 import type { TimesheetDraft } from '@/lib/timesheets/timesheetDraft'
 import type { User } from '@/types'
 
@@ -35,16 +35,22 @@ export function pickTimesheetGroupDraft(
   return any?.draft ? { member: any.member, draft: any.draft } : null
 }
 
+/**
+ * `users` is the organisation roster: only a self-signed admin (`timesheetSelfSigned(user, roster)`) skips the
+ * counter-signature; everyone else waits for their line manager, or the admins.
+ */
 export function currentPeriodTimesheetMembers(
   groups: User[][],
   drafts: ReadonlyMap<string, TimesheetDraft>,
-  bucket: 'awaiting' | 'signed' | 'exported'
+  bucket: 'awaiting' | 'signed' | 'exported',
+  users: ReadonlyArray<User> = []
 ): User[] {
   const rows: User[] = []
   for (const group of groups) {
     const picked = pickTimesheetGroupDraft(group, drafts)
     if (!picked) continue
-    if (timesheetListBucket(timesheetStatusFieldsFromDraft(picked.draft), groupHasLineManager(group)) === bucket) {
+    const counterSign = requiresLineManagerCounterSign(picked.member, users)
+    if (timesheetListBucket(timesheetStatusFieldsFromDraft(picked.draft), counterSign) === bucket) {
       rows.push(picked.member)
     }
   }
@@ -53,12 +59,13 @@ export function currentPeriodTimesheetMembers(
 
 export function currentPeriodTimesheetBucketCounts(
   groups: User[][],
-  drafts: ReadonlyMap<string, TimesheetDraft>
+  drafts: ReadonlyMap<string, TimesheetDraft>,
+  users: ReadonlyArray<User> = []
 ): { awaiting: number; signed: number; exported: number } {
   return {
-    awaiting: currentPeriodTimesheetMembers(groups, drafts, 'awaiting').length,
-    signed: currentPeriodTimesheetMembers(groups, drafts, 'signed').length,
-    exported: currentPeriodTimesheetMembers(groups, drafts, 'exported').length,
+    awaiting: currentPeriodTimesheetMembers(groups, drafts, 'awaiting', users).length,
+    signed: currentPeriodTimesheetMembers(groups, drafts, 'signed', users).length,
+    exported: currentPeriodTimesheetMembers(groups, drafts, 'exported', users).length,
   }
 }
 
@@ -70,8 +77,10 @@ export function timesheetReviewerHubStats(input: {
   groups: User[][]
   currentPeriodDrafts: ReadonlyMap<string, TimesheetDraft>
   exportedHistoryCount: number
+  /** The organisation roster (`timesheetSelfSigned`). */
+  users?: ReadonlyArray<User>
 }): { awaiting: number; signed: number; exported: number } {
-  const current = currentPeriodTimesheetBucketCounts(input.groups, input.currentPeriodDrafts)
+  const current = currentPeriodTimesheetBucketCounts(input.groups, input.currentPeriodDrafts, input.users ?? [])
   return {
     awaiting: current.awaiting,
     signed: current.signed,

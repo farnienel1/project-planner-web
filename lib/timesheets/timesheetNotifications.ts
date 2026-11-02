@@ -3,38 +3,79 @@
  * notifyTimesheetSignedByManager / notifyLineManagerPeerAction
  */
 import { saveInboxNotification } from '@/lib/firebase/notifyInbox'
-import { notificationDestination } from '@/lib/canonical'
+import {
+  TIMESHEET_PENDING_NOTICE_TYPE,
+  TIMESHEET_SIGNED_NOTICE_TYPE,
+  lineManagerPeerRecipients,
+  notificationDestination,
+  timesheetNotificationDedupeKey,
+  timesheetSignedRecipients,
+  timesheetSubmittedRecipients,
+} from '@/lib/canonical'
 import { syntheticUuidFromKey } from '@/lib/ios-parity/uuid'
-import { dayKey, unixStartOfDay } from '@/lib/ios-parity/londonTime'
+import { dayKey } from '@/lib/ios-parity/londonTime'
 import { timesheetsMineHref, timesheetsTeamHref } from '@/lib/timesheets/timesheetRoutes'
-import { lineManagerUserIds, requiresLineManagerCounterSign } from '@/lib/timesheets/timesheetApprovalPolicy'
 import { formatPaymentPeriodLine } from '@/lib/timesheets/paymentRunCopy'
+import { rulebookPerson, rulebookRoster } from '@/lib/staff/rulebookPeople'
 import type { User } from '@/types'
 
 function displayName(user: User): string {
   return `${user.firstName} ${user.surname}`.trim() || user.email
 }
 
+/** The document id for a timesheet notice: the synthetic UUID of `timesheetNotificationDedupeKey`. */
+async function timesheetNoticeId(input: {
+  type: string
+  subjectId: string
+  weekStart: Date
+  timeZone: string
+  recipientId?: string
+}): Promise<string | null> {
+  const key = timesheetNotificationDedupeKey({
+    type: input.type,
+    subjectId: input.subjectId,
+    // Organisation-zone day of the period start (never the device calendar).
+    periodStartDayKey: dayKey(input.weekStart, input.timeZone),
+    timeZone: input.timeZone,
+    recipientId: input.recipientId ?? null,
+  })
+  return key ? syntheticUuidFromKey(key) : null
+}
+
+/**
+ * `timesheet_pending_manager_signoff` when the owner signs: one row per `timesheetSubmittedRecipients(subject,
+ * roster)` (active line managers, else the active admins; never the subject; none when self-signed).
+ */
 export async function notifyTimesheetPendingManagerSignoff({
   organizationId,
   signedByUser,
+  users,
   weekStart,
   timeZone,
 }: {
   organizationId: string
   signedByUser: User
+  /** The organisation roster (`users` on `organizationId`). */
+  users: ReadonlyArray<User>
   weekStart: Date
   timeZone: string
 }): Promise<void> {
-  if (!requiresLineManagerCounterSign(signedByUser)) return
-  const stamp = unixStartOfDay(weekStart, timeZone)
+  const roster = rulebookRoster(users)
+  const recipients = timesheetSubmittedRecipients(rulebookPerson(signedByUser, users), roster)
   const name = displayName(signedByUser)
-  for (const managerId of lineManagerUserIds(signedByUser)) {
-    const id = await syntheticUuidFromKey(`timesheetPending|${signedByUser.id}|${managerId}|${stamp}`)
+  for (const managerId of recipients) {
+    const id = await timesheetNoticeId({
+      type: TIMESHEET_PENDING_NOTICE_TYPE,
+      subjectId: signedByUser.id,
+      weekStart,
+      timeZone,
+      recipientId: managerId,
+    })
+    if (!id) continue
     await saveInboxNotification({
       id,
       organizationId,
-      type: 'timesheet_pending_manager_signoff',
+      type: TIMESHEET_PENDING_NOTICE_TYPE,
       title: 'Timesheet needs sign-off',
       message: `${name} submitted a timesheet that needs your signature.`,
       userId: managerId,
@@ -44,11 +85,16 @@ export async function notifyTimesheetPendingManagerSignoff({
   }
 }
 
+/**
+ * `timesheet_signed_by_manager` to `timesheetSignedRecipients(subject, signer, roster)` (the subject unless they
+ * signed), then `line_manager_peer_update` to `lineManagerPeerRecipients(subject, signer, roster)`.
+ */
 export async function notifyTimesheetSignedByManager({
   organizationId,
   subjectUser,
   signedByName,
   signedByUserId,
+  users,
   weekStart,
   weekEnd,
   timeZone,
@@ -57,23 +103,36 @@ export async function notifyTimesheetSignedByManager({
   subjectUser: User
   signedByName: string
   signedByUserId: string
+  /** The organisation roster (`users` on `organizationId`). */
+  users: ReadonlyArray<User>
   weekStart: Date
   weekEnd: Date
   timeZone: string
 }): Promise<void> {
-  const stamp = unixStartOfDay(weekStart, timeZone)
-  const signedId = await syntheticUuidFromKey(`timesheetSigned|${subjectUser.id}|${stamp}`)
-  await saveInboxNotification({
-    id: signedId,
-    organizationId,
-    type: 'timesheet_signed_by_manager',
-    title: 'Timesheet signed',
-    message: `${signedByName} signed your timesheet.`,
-    userId: subjectUser.id,
-    deepLinkUserId: subjectUser.id,
-    deepLinkWeekStart: weekStart,
-  })
-  const peers = lineManagerUserIds(subjectUser).filter((id) => id !== signedByUserId)
+  const roster = rulebookRoster(users)
+  const subject = rulebookPerson(subjectUser, users)
+  const signerUser = users.find((member) => member.id === signedByUserId)
+  const signer = signerUser ? rulebookPerson(signerUser, users) : signedByUserId
+  for (const recipientId of timesheetSignedRecipients(subject, signer, roster)) {
+    const signedId = await timesheetNoticeId({
+      type: TIMESHEET_SIGNED_NOTICE_TYPE,
+      subjectId: subjectUser.id,
+      weekStart,
+      timeZone,
+    })
+    if (!signedId) continue
+    await saveInboxNotification({
+      id: signedId,
+      organizationId,
+      type: TIMESHEET_SIGNED_NOTICE_TYPE,
+      title: 'Timesheet signed',
+      message: `${signedByName} signed your timesheet.`,
+      userId: recipientId,
+      deepLinkUserId: subjectUser.id,
+      deepLinkWeekStart: weekStart,
+    })
+  }
+  const peers = lineManagerPeerRecipients(subject, signer, roster)
   const periodLine = formatPaymentPeriodLine(weekStart, weekEnd, timeZone)
   const operativeName = displayName(subjectUser)
   for (const peerId of peers) {

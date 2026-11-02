@@ -242,6 +242,7 @@ export function OperativeAnnualLeaveCalendar({
         booking: pendingBooking,
         approved: true,
         decidedByName: holidayDecisionActorName(user),
+        decidedByUserId: user?.id ?? null,
         users,
         operatives,
       })
@@ -282,6 +283,7 @@ export function OperativeAnnualLeaveCalendar({
         booking: pendingBooking,
         approved: false,
         decidedByName: holidayDecisionActorName(user),
+        decidedByUserId: user?.id ?? null,
         reason: note,
         users,
         operatives,

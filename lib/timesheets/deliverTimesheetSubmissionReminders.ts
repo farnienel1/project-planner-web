@@ -95,6 +95,8 @@ export async function deliverDueTimesheetSubmissionReminders(
             userId: user.id,
             relatedId: notice.paymentDayKey,
             deepLinkWeekStart: new Date(`${notice.paymentDayKey}T12:00:00Z`),
+            // A scheduled notice nobody caused: no `actorUserId`, so the signed-in user's own reminder still pushes.
+            actorUserId: null,
           })
           written += 1
         } catch {

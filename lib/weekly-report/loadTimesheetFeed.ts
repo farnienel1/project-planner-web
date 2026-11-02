@@ -7,7 +7,7 @@ import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtil
 import type { MyScheduleOptions, OrgInvoicingSettings, OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 import { DEFAULT_MY_SCHEDULE, DEFAULT_PAYROLL_POLICY } from '@/lib/settings/organizationSettings'
 import { LONDON_TIME_ZONE, dayKey } from '@/lib/ios-parity/londonTime'
-import { isTimesheetFullyApproved, userHasLineManager } from '@/lib/timesheets/timesheetApprovalPolicy'
+import { isTimesheetFullyApproved, userTimesheetSelfSigned } from '@/lib/timesheets/timesheetApprovalPolicy'
 import { payPeriodsOverlapping } from '@/lib/timesheets/timesheetPayrollPolicy'
 import { applyWeeklyReportOverride } from '@/lib/timesheets/weeklyReportOverride'
 import { listTimesheetStates, saveTimesheetDraft } from '@/lib/timesheets/timesheetStorage'
@@ -72,12 +72,13 @@ export async function loadWeeklyReportTimesheetFeed({
     const { operative } = findUserAndOperative(users, operatives, { userId: user.id })
     for (const period of periods) {
       const draft = byStart.get(dayKey(period.start, timeZone))
-      if (!draft || !isTimesheetFullyApproved(draft, user)) continue
+      if (!draft || !isTimesheetFullyApproved(draft, user, users)) continue
       let working = draft
       if (!working.weeklyReportOverride) {
         working = applyWeeklyReportOverride({
           draft: working,
           user,
+          users,
           weekStart: period.start,
           weekEnd: period.end,
           bookings,
@@ -102,7 +103,7 @@ export async function loadWeeklyReportTimesheetFeed({
             weekStart: period.start,
             draft: working,
             timeZone,
-            access: { subjectHasLineManager: userHasLineManager(user) },
+            access: { subjectHasLineManager: !userTimesheetSelfSigned(user, users) },
           })
         }
       }

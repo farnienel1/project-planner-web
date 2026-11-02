@@ -257,6 +257,7 @@ export function TimesheetsHub() {
           <MineTimesheetsList
             organizationId={organization?.id}
             subject={subject}
+            users={users}
             currentPeriod={currentPeriod}
             pastPeriods={pastPeriods}
             invoicing={invoicing}
@@ -407,11 +408,12 @@ export function TimesheetsHub() {
   )
 }
 
-function pastSubtitle(draft: TimesheetDraft | undefined, user: User): string {
+function pastSubtitle(draft: TimesheetDraft | undefined, user: User, users: ReadonlyArray<User>): string {
   if (!draft) return 'Previous period'
   if (draft.exportedAt) return 'Exported'
-  if (isTimesheetFullyApproved(draft, user)) return 'Signed off'
-  if (awaitingManagerSignOff(draft, user)) return 'Timesheet pending manager signature'
+  if (isTimesheetFullyApproved(draft, user, users)) return 'Signed off'
+  // Never for a self-signed admin (`timesheetSelfSigned`): their signature completes the sheet.
+  if (awaitingManagerSignOff(draft, user, users)) return 'Timesheet pending manager signature'
   if (draft.operativeSignedAt) return 'Partially signed'
   return 'Saved draft'
 }
@@ -419,6 +421,7 @@ function pastSubtitle(draft: TimesheetDraft | undefined, user: User): string {
 function MineTimesheetsList({
   organizationId,
   subject,
+  users,
   currentPeriod,
   pastPeriods,
   invoicing,
@@ -427,6 +430,8 @@ function MineTimesheetsList({
 }: {
   organizationId?: string
   subject: User
+  /** The organisation roster (`timesheetSelfSigned(user, roster)`). */
+  users: ReadonlyArray<User>
   currentPeriod: { start: Date; end: Date }
   pastPeriods: Array<{ start: Date; end: Date }>
   invoicing: OrgInvoicingSettings
@@ -513,7 +518,7 @@ function MineTimesheetsList({
 
   const pending = [currentPeriod, ...discoveredPast].filter((period) => {
     const draft = drafts.get(periodKey(period))
-    return draft ? awaitingManagerSignOff(draft, subject) : false
+    return draft ? awaitingManagerSignOff(draft, subject, users) : false
   })
   const pendingKeys = new Set(pending.map((period) => periodKey(period)))
   const pastVisible = discoveredPast.filter((period) => !pendingKeys.has(periodKey(period)))
@@ -560,7 +565,7 @@ function MineTimesheetsList({
                 key={periodKey(period)}
                 icon={<ClockIcon className="h-6 w-6" />}
                 title={formatPaymentPeriodLine(period.start, period.end, timeZone)}
-                subtitle={pastSubtitle(draft, subject)}
+                subtitle={pastSubtitle(draft, subject, users)}
                 detail="View breakdown, signatures, and generate invoice again."
                 tint="text-slate-500 bg-slate-100"
                 onClick={() =>
@@ -696,6 +701,7 @@ function ManagerTimesheetsTile({
             groups: currentGroups,
             currentPeriodDrafts: drafts,
             exportedHistoryCount: exportedRows.length,
+            users,
           })
         )
       })

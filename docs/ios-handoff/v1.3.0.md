@@ -9,8 +9,8 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
 Rulebook version: 1.2.0 → 1.3.0
-Packed hash: cb5d3696c6ff6246240f451703d93412985a90ee8351ef23dee6ba46b5eb9d80
-Rulebook sha256: 0470fc858f79915e927d8b738bc2709e5f842880d3977a5176357e2c7b0bc91a
+Packed hash: 3b30d33dddd58c58eb1f9802041d227c1df9904c65621d289ce2b8d90d6b171c
+Rulebook sha256: dc022c1950d04c74e54b75a0776083d5804b00882e3153e32b2adc93daf93c0b
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -20,10 +20,10 @@ Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS 
 Call: CanonicalBusinessEngine — no second calculator in Swift.
 Exports added: LEAVE_SUBMIT_LABEL, LEAVE_SUBMIT_REQUEST_LABEL, NOTIFICATION_CATALOG, TIMESHEET_PENDING_NOTICE_TYPE, TIMESHEET_SIGNED_NOTICE_TYPE, bookingCreatedRecipients, deadlineAssignedRecipients, excludeActor, hasActiveLineManager, holidayDecisionRecipients, holidayRequestRecipients, ideaRecipients, isAdminOutsideOperativeMode, leaveSubmitLabel, lineManagerPeerRecipients, lineManagerRequired, notificationCatalogRow, personIdSet, timesheetNotificationDedupeKey, timesheetSelfSigned, timesheetSignedRecipients, timesheetSubmittedRecipients, toolboxTalkRecipients
 Exports removed: none
-Web files that changed the rules: docs/RULEBOOK.md, firestore.rules, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/index.ts, lib/canonical/leaveRequests.ts, lib/canonical/notificationPreferences.ts, lib/canonical/parity-fixture.json, lib/canonical/notificationRecipients.ts, lib/canonical/personIds.ts
+Web files that changed the rules: docs/RULEBOOK.md, firestore.rules, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/index.ts, lib/canonical/leaveRequests.ts, lib/canonical/notificationPreferences.ts, lib/canonical/notificationRecipients.ts, lib/canonical/parity-fixture.json, lib/canonical/personIds.ts
 Done when:
-- [ ] Packed hash in iOS equals cb5d3696c6ff6246240f451703d93412985a90ee8351ef23dee6ba46b5eb9d80
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 0470fc858f79915e927d8b738bc2709e5f842880d3977a5176357e2c7b0bc91a)
+- [ ] Packed hash in iOS equals 3b30d33dddd58c58eb1f9802041d227c1df9904c65621d289ce2b8d90d6b171c
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 dc022c1950d04c74e54b75a0776083d5804b00882e3153e32b2adc93daf93c0b)
 - [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.3.0)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web

@@ -70,6 +70,7 @@ import { canBookWork, hasAdminAccess } from '@/lib/permissions'
 import { createMenuItems } from '@/lib/navigation/createMenu'
 import { cn } from '@/lib/ui/cn'
 import { UserAvatar } from '@/components/users/UserAvatar'
+import { inboxOwnerIds } from '@/lib/staff/rulebookPeople'
 
 function NavGlyph({ path, className }: { path: string; className?: string }) {
   return (
@@ -204,6 +205,8 @@ function AppShellInner({ children }: { children: ReactNode }) {
   const notifications = useNotificationStore((s) => s.notifications)
   const loadNotifications = useNotificationStore((s) => s.loadNotifications)
   const markAllAsRead = useNotificationStore((s) => s.markAllAsRead)
+  // Every id of the signed-in person (`personIdSet`): the inbox owner ids.
+  const ownerIds = useMemo(() => inboxOwnerIds(user, users), [user, users])
   const [notificationPrefs, setNotificationPrefs] = useState(DEFAULT_USER_NOTIFICATION_PREFERENCES)
   const [online, setOnline] = useState(true)
   const [menuOpen, setMenuOpen] = useState(false)
@@ -265,8 +268,8 @@ function AppShellInner({ children }: { children: ReactNode }) {
     ) {
       return
     }
-    loadNotifications(organization.id, user.id)
-  }, [organization?.id, organization?.teamOnboarding, user?.id, user?.permissions.adminAccess, user?.isSuperAdmin, loadNotifications])
+    loadNotifications(organization.id, user.id, ownerIds)
+  }, [organization?.id, organization?.teamOnboarding, user?.id, user?.permissions.adminAccess, user?.isSuperAdmin, loadNotifications, ownerIds])
 
   useEffect(() => {
     if (!user?.id) return
@@ -278,7 +281,8 @@ function AppShellInner({ children }: { children: ReactNode }) {
     () => notifications.filter((row) => notificationShowsInInbox(notificationPrefs, row.type)),
     [notifications, notificationPrefs]
   )
-  const unreadCount = unreadNotificationBadgeCount(visibleNotifications, user?.id ?? '')
+  // Rows addressed to any of the person's ids (`unreadNotificationBadgeCount`); ownerless rows never count.
+  const unreadCount = unreadNotificationBadgeCount(visibleNotifications, ownerIds)
 
   useEffect(() => {
     if (!user || prefetchedNav.current) return
