@@ -254,6 +254,7 @@ export function HomeScreen() {
     user: displayUser,
     operatives,
     bookings,
+    managers,
     now,
   })
   const operative = isOperativeMode(displayUser)

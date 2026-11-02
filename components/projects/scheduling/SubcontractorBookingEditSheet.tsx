@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { deleteDoc, doc } from 'firebase/firestore'
+import { deleteBookingWithTombstone } from '@/lib/bookings/bookingTombstoneWrite'
 import { auth, db } from '@/lib/firebase/config'
 import { updateSubcontractorBooking } from '@/lib/subcontractors/subcontractorBookingWrite'
 import { HoursBreakdownCard } from '@/components/schedule/HoursBreakdownCard'
@@ -116,7 +116,8 @@ export function SubcontractorBookingEditSheet({
     setSaving(true)
     setError(null)
     try {
-      await deleteDoc(doc(db, 'organizations', organizationId, 'subcontractorBookings', booking.id))
+      // Rulebook 1.10.0: subcontractor bookings are tombstoned like labour and manager bookings (§2).
+      await deleteBookingWithTombstone(db, { organizationId, collection: 'subcontractorBookings', bookingId: booking.id })
       onSaved('deleted')
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Could not delete this booking')

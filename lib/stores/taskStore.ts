@@ -146,6 +146,24 @@ export const useTaskStore = create<TaskState>((set, get) => ({
         : isNew
           ? 'task_created'
           : 'task_updated'
+    // Rulebook 1.10.0 §13: web writes task_created / task_completed (recipients by the §13 rules).
+    if (eventName === 'task_created' || eventName === 'task_completed') {
+      void (async () => {
+        const [{ notifyTaskCompleted, notifyTaskCreated }, { useOrgUserStore }, { useOperativeStore }] = await Promise.all([
+          import('@/lib/notifications/taskNotices'),
+          import('@/lib/stores/siteAuditStore'),
+          import('@/lib/stores/operativeStore'),
+        ])
+        const users = useOrgUserStore.getState().users
+        const actor = useAuthStore.getState().user
+        if (eventName === 'task_created') {
+          const { operatives, managers } = useOperativeStore.getState()
+          await notifyTaskCreated({ task: saved, actor, users, operatives, managers })
+        } else {
+          await notifyTaskCompleted({ task: saved, actor, users })
+        }
+      })().catch(() => undefined)
+    }
     void trackEvent(eventName, {
       userId: useAuthStore.getState().user?.id || task.createdBy,
       organizationId: task.organizationId,

@@ -1,20 +1,32 @@
 'use client'
 
 import { create } from 'zustand'
-import { collection, deleteDoc, doc, getDoc, getDocs, limit, query, serverTimestamp, setDoc, updateDoc, Timestamp, where } from 'firebase/firestore'
+import { collection, deleteField, doc, getDoc, getDocs, limit, query, serverTimestamp, setDoc, updateDoc, Timestamp, where, writeBatch } from 'firebase/firestore'
 import { sendPasswordResetEmail } from 'firebase/auth'
 import { passwordResetActionSettings } from '@/lib/auth/passwordResetSettings'
 import type { Operative, User } from '@/types'
 import { auth, db } from '@/lib/firebase/config'
 import { applyExclusiveRateFields, buildSaveUserPayload, changedUserPayload } from '@/lib/firebase/userPayload'
-import { canChangePersonPay, operativeProfileWriteFields, writeMetadataFields } from '@/lib/canonical'
+import {
+  ORG_MEMBERSHIP_PERMISSION_KEYS,
+  USER_DELETE_REFUSAL_MESSAGES,
+  orgMembershipWriteFields,
+  canChangePersonPay,
+  operativeProfileWriteFields,
+  organizationTimeZone,
+  parseBookingDocument,
+  parseManagerSiteBookingDocument,
+  userDeleteRefusal,
+  userDeleteWrites,
+  writeMetadataFields,
+} from '@/lib/canonical'
+import { staffAccountRole } from '@/lib/permissions'
+import { useOrganizationDocumentStore } from '@/lib/stores/organizationDocumentStore'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { parseOrgUser } from '@/lib/firebase/parseUser'
 import { operativeRecordForUser } from '@/lib/operatives/operativeRosterUtils'
 import { applyAccountTypeChange } from '@/lib/staff/accountTypeChange'
-import { removeFutureBookingsForPerson } from '@/lib/bookings/removeBookingsOnDelete'
 import { parseFormerUserIds } from '@/lib/canonical'
-import { deleteTaxIds } from '@/lib/sensitiveProfile/taxIdsService'
 import { savePartialDocument } from '@/lib/firebase/partialWrite'
 import { operativeRowWriteFields } from '@/lib/canonical/peopleDocuments'
 
@@ -30,7 +42,11 @@ interface UserStoreState {
     user: User,
     organizationId?: string,
     previousEmail?: string,
-    options?: { baseline?: User | null }
+    options?: {
+      baseline?: User | null
+      /** Rulebook 1.10.0 §8: pay history rows (`payHistoryBatchRows`) written in the same batch as the profile. */
+      payHistoryRows?: ReadonlyArray<{ id: string; fields: Record<string, unknown> }>
+    }
   ) => Promise<void>
   transferSuperAdmin: (organizationId: string, fromUserId: string, toUserId: string, roster: User[]) => Promise<void>
   setUserActive: (userId: string, isActive: boolean, organizationId?: string) => Promise<void>
@@ -83,23 +99,45 @@ async function updateLinkedStaffNames(organizationId: string, user: User, previo
   }
 }
 
+/**
+ * An admin's change to someone's membership (rulebook 1.10.0, `orgMembershipWriteFields` shape): role, super admin
+ * and the nested `permissions.{key}` flags only — a flat flag key is written as its nested key, never flat. Admins
+ * cannot read another person's membership, so an update is sent blind and a missing document is created whole.
+ */
 async function writeMembershipFlags(
   userId: string,
   organizationId: string,
   fields: Record<string, unknown>
 ): Promise<void> {
   const ref = doc(db, 'users', userId, 'orgMemberships', organizationId)
+  const update: Record<string, unknown> = {}
+  const permissions: Record<string, boolean> = {}
+  for (const [key, value] of Object.entries(fields)) {
+    const flag = key.startsWith('permissions.') ? key.slice('permissions.'.length) : key
+    if ((ORG_MEMBERSHIP_PERMISSION_KEYS as readonly string[]).includes(flag) && typeof value === 'boolean') {
+      permissions[flag] = value
+      update[`permissions.${flag}`] = value
+    } else if (!key.startsWith('permissions.')) {
+      update[key] = value
+    }
+  }
   try {
-    await updateDoc(ref, fields)
+    await updateDoc(ref, update)
   } catch (error) {
     const code = (error as { code?: string }).code || ''
     if (code !== 'not-found') return
-    const nested: Record<string, unknown> = { ...fields }
-    if (nested['permissions.adminAccess'] === true) {
-      delete nested['permissions.adminAccess']
-      nested.permissions = { adminAccess: true }
-    }
-    await setDoc(ref, nested, { merge: true })
+    const create = orgMembershipWriteFields({
+      organizationId,
+      stored: null,
+      next: {
+        role: typeof fields.role === 'string' ? fields.role : null,
+        isSuperAdmin: typeof fields.isSuperAdmin === 'boolean' ? fields.isSuperAdmin : null,
+        permissions,
+      },
+      writer: 'admin',
+      now: serverTimestamp(),
+    })
+    if (create) await setDoc(ref, create.fields)
   }
 }
 
@@ -161,8 +199,17 @@ export const useUserStore = create<UserStoreState>(() => ({
     const saverIsAdmin = Boolean(saver && (saver.isSuperAdmin || saver.permissions.adminAccess))
     const metadata = writeMetadataFields(saverId, 'web')
     if (metadata && (saverId === user.id || saverIsAdmin)) Object.assign(payload, metadata)
-    await updateDoc(doc(db, 'users', user.id), payload)
     const orgId = organizationId?.trim() || user.organizationId
+    const historyRows = options?.payHistoryRows ?? []
+    if (historyRows.length > 0 && orgId) {
+      // One batch: the profile and its pay history are saved together or not at all (rulebook 1.10.0 §8).
+      const batch = writeBatch(db)
+      batch.update(doc(db, 'users', user.id), payload)
+      for (const row of historyRows) batch.set(doc(db, 'organizations', orgId, 'operativeDayRateHistory', row.id), row.fields)
+      await batch.commit()
+    } else {
+      await updateDoc(doc(db, 'users', user.id), payload)
+    }
     const email = user.email.toLowerCase().trim()
     if (orgId && email) {
       await setDoc(doc(db, 'organizations', orgId, 'userEmails', email), { userId: user.id })
@@ -251,47 +298,87 @@ export const useUserStore = create<UserStoreState>(() => ({
   },
 
   deleteUser: async (userId, opts) => {
+    // Rulebook 1.10.0 §11 (`canDeleteUser`, `userDeleteWrites`): gate first, then one plan in order. The first
+    // batch deletes users/{uid} with the documents only it guards, so a refusal changes nothing.
     const existing = await getDoc(doc(db, 'users', userId))
-    if (existing.exists() && existing.data().isSuperAdmin === true) {
-      throw new Error('The super admin cannot be deleted.')
+    const stored = existing.exists() ? (existing.data() as Record<string, unknown>) : {}
+    const orgId = (opts?.organizationId || String(stored.organizationId || '')).trim()
+    const email = (opts?.email || String(stored.email || '')).trim().toLowerCase()
+    const target = parseOrgUser(userId, { ...stored, organizationId: orgId, email })
+    const actor = useAuthStore.getState().user
+    let creatorUserId: string | null = null
+    if (orgId) {
+      const orgSnap = await getDoc(doc(db, 'organizations', orgId)).catch(() => null)
+      creatorUserId = orgSnap?.exists() ? String(orgSnap.data().creatorUserId || '') || null : null
     }
-    const orgId = (opts?.organizationId || (existing.exists() ? String(existing.data().organizationId || '') : '')).trim()
-    const email = (
-      opts?.email || (existing.exists() ? String(existing.data().email || '') : '')
+    const refusal = userDeleteRefusal(
+      actor ? { id: actor.id, email: actor.email, role: staffAccountRole(actor), formerUserIds: actor.formerUserIds } : null,
+      { id: userId, email, role: staffAccountRole(target), formerUserIds: parseFormerUserIds(stored) },
+      { creatorUserId }
     )
-      .trim()
-      .toLowerCase()
-    if (orgId) {
-      // Rulebook: remove this person's bookings from today on; past bookings stay.
-      // Every id the person's bookings may carry: user id, former invite ids, catalogue rows on the email.
-      const operativeIds = [userId, ...parseFormerUserIds(existing.exists() ? existing.data().formerUserIds : undefined)]
-      if (email) {
-        const linked = await getDocs(
-          query(collection(db, 'organizations', orgId, 'operatives'), where('email', '==', email))
-        ).catch(() => null)
-        linked?.docs.forEach((row) => operativeIds.push(row.id))
+    if (refusal) throw new Error(USER_DELETE_REFUSAL_MESSAGES[refusal])
+    if (!orgId) throw new Error('Organisation not loaded.')
+
+    const personIds = [userId, ...parseFormerUserIds(stored)]
+    const byEmail = async (collectionName: 'operatives' | 'managers') =>
+      email
+        ? (await getDocs(query(collection(db, 'organizations', orgId, collectionName), where('email', '==', email))).catch(() => null))
+            ?.docs.map((row) => ({ id: row.id, email: String(row.data().email || '') })) ?? []
+        : []
+    const [operativeRows, managerRows] = await Promise.all([byEmail('operatives'), byEmail('managers')])
+    const lookup = Array.from(
+      new Set([...personIds, ...operativeRows.map((row) => row.id)].flatMap((id) => [id, id.toUpperCase(), id.toLowerCase()]))
+    )
+    const bookings: Array<{ id: string; operativeId: string; dateMs: number }> = []
+    const managerSiteBookings: Array<{ id: string; userId: string; dateMs: number }> = []
+    for (let i = 0; i < lookup.length; i += 30) {
+      const chunk = lookup.slice(i, i + 30)
+      const [labour, site] = await Promise.all([
+        getDocs(query(collection(db, 'organizations', orgId, 'bookings'), where('operativeId', 'in', chunk))),
+        getDocs(query(collection(db, 'organizations', orgId, 'managerSiteBookings'), where('userId', 'in', chunk))),
+      ])
+      for (const row of labour.docs) {
+        const parsed = parseBookingDocument(row.id, row.data() as Record<string, unknown>)
+        if (parsed.ok) bookings.push({ id: row.id, operativeId: parsed.booking.operativeId, dateMs: parsed.booking.dateMs })
       }
-      await removeFutureBookingsForPerson(db, { organizationId: orgId, operativeIds })
+      for (const row of site.docs) {
+        const parsed = parseManagerSiteBookingDocument(row.id, row.data() as Record<string, unknown>)
+        if (parsed.ok) managerSiteBookings.push({ id: row.id, userId: parsed.booking.userId, dateMs: parsed.booking.dateMs })
+      }
     }
-    await deleteTaxIds(userId)
-    await deleteDoc(doc(db, 'users', userId))
-    if (orgId && email) {
-      await deleteDoc(doc(db, 'organizations', orgId, 'userEmails', email)).catch(() => undefined)
-    }
-    if (orgId) {
-      await deleteDoc(doc(db, 'users', userId, 'orgMemberships', orgId)).catch(() => undefined)
-      try {
-        const orgSnap = await getDoc(doc(db, 'organizations', orgId))
-        if (orgSnap.exists()) {
-          const members = { ...((orgSnap.data().members as Record<string, string> | undefined) ?? {}) }
-          if (members[userId] != null) {
-            delete members[userId]
-            await updateDoc(doc(db, 'organizations', orgId), { members, updatedAt: Timestamp.now() })
-          }
+    const invitations = email
+      ? ((await getDocs(query(collection(db, 'invitations'), where('organizationId', '==', orgId), where('email', '==', email))).catch(() => null))
+          ?.docs.map((row) => ({ id: row.id, email: String(row.data().email || '') })) ?? [])
+      : []
+    const orgData = useOrganizationDocumentStore.getState().data
+    const steps = userDeleteWrites({
+      orgId,
+      user: { id: userId, email, role: staffAccountRole(target), formerUserIds: parseFormerUserIds(stored) },
+      actorUserId: auth?.currentUser?.uid || actor?.id || '',
+      platform: 'web',
+      bookings,
+      managerSiteBookings,
+      operativeRows,
+      managerRows,
+      invitations,
+      nowIso: new Date().toISOString(),
+      tz: organizationTimeZone(orgData && typeof orgData.countryCode === 'string' ? orgData.countryCode : null),
+    })
+    for (const step of steps) {
+      const batch = writeBatch(db)
+      for (const write of step.writes) {
+        const ref = doc(db, write.path)
+        if (write.op === 'delete') batch.delete(ref)
+        else if (write.op === 'update') {
+          batch.update(ref, Object.fromEntries(write.deleteFields.map((key) => [key, deleteField()])))
+        } else {
+          batch.set(ref, {
+            ...write.fields,
+            ...Object.fromEntries(write.serverTimestampFields.map((key) => [key, serverTimestamp()])),
+          })
         }
-      } catch {
-        /* members map can be repaired on the next invite */
       }
+      await batch.commit()
     }
   },
 

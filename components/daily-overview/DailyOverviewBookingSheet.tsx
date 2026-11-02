@@ -33,6 +33,7 @@ import type { ManagerLocationType, ManagerSiteBooking } from '@/lib/scheduling/m
 import type { OverviewPersonRow } from '@/lib/daily-overview/buildDailyOverview'
 import { BookingStatus, type Project } from '@/types'
 import { hasAdminAccess } from '@/lib/permissions'
+import { userCanDeleteBooking } from '@/lib/access/bookingAccess'
 
 type DestTab = 'other' | 'projects' | 'smallWorks'
 type StatusFilter = 'active' | 'upcoming' | 'completed'
@@ -89,7 +90,7 @@ export function DailyOverviewBookingSheet({
     deleteManagerSiteBooking,
   } = useManagerScheduleStore()
   const { projects, smallWorks, loadProjects, loadSmallWorks } = useProjectStore()
-  const { operatives } = useOperativeStore()
+  const { operatives, managers } = useOperativeStore()
   const { users } = useOrgUserStore()
   const [tab, setTab] = useState<DestTab | undefined>(undefined)
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('active')
@@ -140,6 +141,7 @@ export function DailyOverviewBookingSheet({
   const accessInput = {
     user,
     operatives,
+    managers,
     bookings,
     managerBookings: managerSiteBookings,
     deadlineAssignedProjectIds,
@@ -147,11 +149,11 @@ export function DailyOverviewBookingSheet({
   }
   const visibleProjects = useMemo(
     () => visibleWorks({ ...accessInput, projects: catalogues.projects }),
-    [catalogues.projects, user, operatives, bookings, managerSiteBookings, deadlineAssignedProjectIds]
+    [catalogues.projects, user, operatives, managers, bookings, managerSiteBookings, deadlineAssignedProjectIds]
   )
   const visibleSmallWorks = useMemo(
     () => visibleWorks({ ...accessInput, projects: catalogues.smallWorks }),
-    [catalogues.smallWorks, user, operatives, bookings, managerSiteBookings, deadlineAssignedProjectIds]
+    [catalogues.smallWorks, user, operatives, managers, bookings, managerSiteBookings, deadlineAssignedProjectIds]
   )
   const otherPicks = enabledScheduleLocationPicks(scheduleOpts)
   const catalogue = tab === 'smallWorks' ? visibleSmallWorks : visibleProjects
@@ -279,10 +281,14 @@ export function DailyOverviewBookingSheet({
           workEndTime: hours.workEndTime,
           isBreakRemoved: hours.isBreakRemoved,
         })
-        // The labour booking moves to the manager schedule: admins delete it, managers cancel it
-        // (labour booking delete is admin only, rulebook §2, §16).
-        if (hasAdminAccess(user)) await deleteBooking(row.bookingId, organization.id)
-        else await updateBooking(row.bookingId, { status: BookingStatus.CANCELLED })
+        // The labour booking moves to the manager schedule: whoever may delete it does (`canDeleteBooking`, 1.10.0:
+        // admins, and managers on jobs they manage); anyone else cancels it.
+        const job = [...projects, ...smallWorks].find((entry) => entry.id === row.projectId)
+        if (userCanDeleteBooking(user, { collection: 'bookings', projectId: row.projectId }, job, managers)) {
+          await deleteBooking(row.bookingId, organization.id)
+        } else {
+          await updateBooking(row.bookingId, { status: BookingStatus.CANCELLED })
+        }
       } else if (row.bookingId) {
         await updateManagerSiteBooking(organization.id, row.bookingId, {
           locationType: pick.locationType,

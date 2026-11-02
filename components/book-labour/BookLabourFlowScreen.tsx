@@ -105,7 +105,7 @@ export function BookLabourFlowScreen({
   const deadlineAssignedProjectIds = useDeadlineAssignedProjectIds()
   const { bookings, loadBookings, createBooking } = useBookingStore()
   const { managerSiteBookings, loadManagerSiteBookings, saveManagerSiteBooking } = useManagerScheduleStore()
-  const { operatives, loadOperatives, loading: operativesLoading } = useOperativeStore()
+  const { operatives, loadOperatives, managers, loadManagers, loading: operativesLoading } = useOperativeStore()
   const { users, loadUsers, loading: usersLoading } = useOrgUserStore()
   const { projects, smallWorks, loadProjects, loadSmallWorks } = useProjectStore()
   const { bookings: holidays, loadBookings: loadHolidays } = useHolidayStore()
@@ -154,6 +154,8 @@ export function BookLabourFlowScreen({
     loadBookings(organization.id)
     loadManagerSiteBookings(organization.id)
     loadOperatives(organization.id)
+    // Rulebook 1.10.0: a manager's job list is `canSeeJob`, which reads the managers list.
+    void loadManagers(organization.id)
     loadUsers(organization.id)
     loadProjects(organization.id, true)
     loadSmallWorks(organization.id)
@@ -202,11 +204,12 @@ export function BookLabourFlowScreen({
         catalogue: 'projects',
         user,
         operatives,
+        managers,
         bookings,
         managerBookings: managerSiteBookings,
         deadlineAssignedProjectIds,
       }).filter((project) => project.isLive),
-    [allWorks, user, operatives, bookings, managerSiteBookings, deadlineAssignedProjectIds]
+    [allWorks, user, operatives, managers, bookings, managerSiteBookings, deadlineAssignedProjectIds]
   )
   const liveSmallWorks = useMemo(
     () =>
@@ -215,11 +218,12 @@ export function BookLabourFlowScreen({
         catalogue: 'smallWorks',
         user,
         operatives,
+        managers,
         bookings,
         managerBookings: managerSiteBookings,
         deadlineAssignedProjectIds,
       }).filter((project) => project.isLive),
-    [allWorks, user, operatives, bookings, managerSiteBookings, deadlineAssignedProjectIds]
+    [allWorks, user, operatives, managers, bookings, managerSiteBookings, deadlineAssignedProjectIds]
   )
 
   const otherPicks = enabledScheduleLocationPicks(scheduleOpts)

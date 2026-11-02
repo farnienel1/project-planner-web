@@ -16,6 +16,8 @@ export interface Project {
   manager: ManagerLegacy;
   managerId?: string;
   managerIds?: string[];
+  /** Rulebook 1.10.0: account ids of the job managers (`jobManagerUserIds`), read by the security rules. */
+  managerUserIds?: string[];
   usesMapPinForLocation?: boolean;
   hiddenManagerUserIds?: string[];
   hiddenOperativeUserIds?: string[];

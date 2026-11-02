@@ -1202,6 +1202,21 @@ export function jobTypesWriteFields(
   return { set: { jobTypes: names } }
 }
 
+/**
+ * 1.10.0: a job type save from the user's explicit change only — the stored list plus `add`, minus `remove` (without
+ * case). Names recovered from live jobs for display (`mergeJobTypeCatalogues`) are never saved unless the user adds
+ * one. Same result shape and empty-list guard as `jobTypesWriteFields`.
+ */
+export function jobTypesChangeWriteFields(
+  stored: ReadonlyArray<string> | null | undefined,
+  change: { add?: ReadonlyArray<string> | null; remove?: ReadonlyArray<string> | null }
+): { set: { jobTypes: string[] } } | null {
+  const removed = new Set((change?.remove || []).map((name) => canonicalJobTypeName(String(name ?? '')).toLowerCase()))
+  const kept = (stored || []).map(canonicalJobTypeName).filter((name) => name && !removed.has(name.toLowerCase()))
+  const added = (change?.add || []).map((name) => canonicalJobTypeName(String(name ?? ''))).filter(Boolean)
+  return jobTypesWriteFields(stored, [...kept, ...added], { removed: change?.remove ?? [] })
+}
+
 // MARK: - settings/tradeTypeInventory
 
 export const TRADE_TYPE_INVENTORY_DOCUMENT_ID = 'tradeTypeInventory'

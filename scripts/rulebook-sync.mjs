@@ -158,6 +158,8 @@ Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS 
   web lib/canonical/dist/canonical-manifest.json    → iOS Project Planner/Canonical/canonical-manifest.json
   web docs/RULEBOOK.md                              → iOS docs/RULEBOOK.md
   web lib/canonical/parity-fixture.json             → iOS ProjectPlannerTests/CanonicalParityFixture.json
+  web lib/canonical/cross-platform-contract.json    → iOS ProjectPlannerTests/CrossPlatformContract.json
+Contract sha256: ${manifest.crossPlatformContractSha256 ?? '(none)'}
 Call: CanonicalBusinessEngine — no second calculator in Swift.
 Exports added: ${added.length ? added.join(', ') : 'none'}
 Exports removed: ${removed.length ? removed.join(', ') : 'none'}

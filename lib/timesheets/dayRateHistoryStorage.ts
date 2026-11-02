@@ -6,7 +6,7 @@ import { collection, doc, getDocs, serverTimestamp, setDoc, Timestamp, type Unsu
 import { watchOrgCollection } from '@/lib/firebase/watchOrgQuery'
 import { auth, db } from '@/lib/firebase/config'
 import { writeMetadataFields } from '@/lib/canonical/writeMetadata'
-import { payRateHistoryWriteFields } from '@/lib/canonical/payRate'
+import { payRateChangeWrites, payRateHistoryWriteFields } from '@/lib/canonical/payRate'
 import { parsePayRateHistoryDocument } from '@/lib/canonical/peopleDocuments'
 import { organizationTimeZone } from '@/lib/canonical'
 import { newUuid } from '@/lib/firebase/firestoreUtils'
@@ -240,4 +240,61 @@ export async function recordDayRateChangeIfNeeded({
     effectiveAt,
     timeZone,
   })
+}
+
+/** Rulebook 1.10.0: the history, or null when it did not load (never treated as empty, `payRateChangeWrites`). */
+export async function loadOperativeDayRateHistoryOrNull(
+  organizationId: string
+): Promise<OperativeDayRateHistoryCollection | null> {
+  try {
+    const snap = await getDocs(collection(db, 'organizations', organizationId, 'operativeDayRateHistory'))
+    return historyFromDocs(snap.docs.map((row) => ({ id: row.id, data: row.data() as Record<string, unknown> })))
+  } catch {
+    return null
+  }
+}
+
+/** A history row to write in the same batch as the profile save (`payRateChangeWrites` row → Firestore fields). */
+export type PayHistoryBatchRow = { id: string; fields: Record<string, unknown> }
+
+/**
+ * Rulebook 1.10.0 §8 (`payRateChangeWrites`): the seed row (only when the person has no history yet) and the new
+ * row, ready for the profile save's batch. Throws `PAY_HISTORY_NOT_LOADED_MESSAGE` when the history did not load.
+ */
+export function payHistoryBatchRows(input: {
+  history: OperativeDayRateHistoryCollection | null
+  userId?: string | null
+  operativeId?: string | null
+  previous: { rate: number | null | undefined; payBasis?: PayBasis | null }
+  next: { rate: number | null | undefined; payBasis?: PayBasis | null }
+  effectiveAt: Date
+  seedEffective?: Date | null
+  timeZone?: string | null
+}): PayHistoryBatchRow[] {
+  const personRows = input.history ? mergedDayRateEntries(input.history, input.userId, input.operativeId) : null
+  const result = payRateChangeWrites({
+    userId: input.userId,
+    operativeId: input.operativeId,
+    previousProfile: input.previous,
+    nextProfile: input.next,
+    history: personRows,
+    effectiveDayKey: input.effectiveAt,
+    seedEffective: input.seedEffective ?? null,
+    timeZone: input.timeZone || openOrganizationTimeZone(),
+  })
+  if (!result.ok) throw new Error(result.message)
+  const metadata = writeMetadataFields(auth?.currentUser?.uid, 'web') ?? {}
+  return result.rows.map((row) => ({
+    id: newUuid(),
+    fields: {
+      dayRate: row.dayRate,
+      payBasis: row.payBasis,
+      effectiveAt: Timestamp.fromMillis(row.effectiveAtMs),
+      userId: row.userId,
+      operativeId: row.operativeId,
+      createdAt: serverTimestamp(),
+      ...metadata,
+      updatedAt: serverTimestamp(),
+    },
+  }))
 }

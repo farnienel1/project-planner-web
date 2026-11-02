@@ -69,6 +69,7 @@ import {
 import { loadOrganisationQualificationsEnsuringStarter } from '@/lib/qualifications/starterLibrary'
 import { canonicalCertificateUrls, formatCertificateSaveError } from '@/lib/qualifications/certificateUpload'
 import { canManageOrganisationQualifications, staffAccountRole } from '@/lib/permissions'
+import { canDeleteUser } from '@/lib/canonical'
 import { PermissionToggleList } from '@/components/users/ProfileExpandablePermissionToggle'
 import {
   ADMIN_ACCESS_LOCKED_MESSAGE,
@@ -373,6 +374,16 @@ export function EditUserProfile({
   const canEditIdentity = target ? canEditIdentityDetails(currentUser, target) : false
   const canEditMatrix = target ? canEditPermissionsMatrix(currentUser, target) : false
   const canAdminTools = canUseAdminAccountTools(currentUser)
+  // Rulebook 1.10.0 section 11: Delete shows only when `canDeleteUser` allows it (the store checks again).
+  const mayDeleteTarget = Boolean(
+    target &&
+      currentUser &&
+      canDeleteUser(
+        { id: currentUser.id, email: currentUser.email, role: staffAccountRole(currentUser), formerUserIds: currentUser.formerUserIds },
+        { id: target.id, email: target.email, role: staffAccountRole(target), formerUserIds: target.formerUserIds },
+        { creatorUserId: (organization as { creatorUserId?: string } | null)?.creatorUserId ?? null }
+      )
+  )
 
   const showSetupCard =
     target &&
@@ -529,7 +540,24 @@ export function EditUserProfile({
     }
     setSaving(true)
     try {
-      await saveUser(toSave, organization.id, previous.email, { baseline: savedUser.current })
+      // Rulebook 1.10.0 §8 (`payRateChangeWrites`): pay history rows go in the profile's batch; a history that did
+      // not load refuses the save instead of writing a duplicate seed row.
+      const nextRate = (toSave.payBasis === 'hourly' ? toSave.hourlyRate : toSave.dayRate) ?? null
+      const rateChanged = (originalDayRate ?? null) !== nextRate || (originalPayBasis ?? null) !== (toSave.payBasis ?? null)
+      let payHistoryRows: Array<{ id: string; fields: Record<string, unknown> }> = []
+      if (rateChanged) {
+        const { loadOperativeDayRateHistoryOrNull, payHistoryBatchRows } = await import('@/lib/timesheets/dayRateHistoryStorage')
+        payHistoryRows = payHistoryBatchRows({
+          history: await loadOperativeDayRateHistoryOrNull(organization.id),
+          userId: toSave.id,
+          operativeId: findOperativeForUser(toSave, operatives)?.id,
+          previous: { rate: originalDayRate ?? null, payBasis: originalPayBasis ?? null },
+          next: { rate: nextRate, payBasis: toSave.payBasis ?? null },
+          effectiveAt: decision instanceof Date ? decision : new Date(),
+          seedEffective: toSave.createdAt ?? null,
+        })
+      }
+      await saveUser(toSave, organization.id, previous.email, { baseline: savedUser.current, payHistoryRows })
       savedUser.current = toSave
       if (canViewTaxIds && taxDirty && currentUser?.id) {
         const next = {
@@ -565,35 +593,11 @@ export function EditUserProfile({
       return
     }
     setSaving(false)
-    void (async () => {
-      try {
-        try {
-          const { loadOperativeDayRateHistory, recordDayRateChangeIfNeeded } = await import(
-            '@/lib/timesheets/dayRateHistoryStorage'
-          )
-          const history = await loadOperativeDayRateHistory(organization.id)
-          await recordDayRateChangeIfNeeded({
-            organizationId: organization.id,
-            userId: toSave.id,
-            operativeId: findOperativeForUser(toSave, operatives)?.id,
-            previousDayRate: originalDayRate ?? null,
-            nextDayRate: (toSave.payBasis === 'hourly' ? toSave.hourlyRate : toSave.dayRate) ?? null,
-            previousPayBasis: originalPayBasis,
-            nextPayBasis: toSave.payBasis,
-            createdAt: toSave.createdAt,
-            effectiveAt: decision,
-            history,
-          })
-          setOriginalDayRate(toSave.payBasis === 'hourly' ? toSave.hourlyRate : toSave.dayRate)
-          setOriginalPayBasis(toSave.payBasis)
-          void loadOperativeDayRateHistory(organization.id).then(setRateHistory)
-        } catch {
-          // History write is best-effort so a profile save still succeeds.
-        }
-      } catch {
-        // The profile document is already saved. History is best-effort.
-      }
-    })()
+    setOriginalDayRate(toSave.payBasis === 'hourly' ? toSave.hourlyRate : toSave.dayRate)
+    setOriginalPayBasis(toSave.payBasis)
+    void import('@/lib/timesheets/dayRateHistoryStorage').then(({ loadOperativeDayRateHistory }) =>
+      loadOperativeDayRateHistory(organization.id).then(setRateHistory)
+    )
   }
 
   const handlePasswordReset = async () => {
@@ -673,7 +677,7 @@ export function EditUserProfile({
   }
 
   const handleDelete = async () => {
-    if (!target || !canAdminTools || target.isSuperAdmin) return
+    if (!target || !canAdminTools || !mayDeleteTarget) return
     setConfirmDelete(false)
     setBusyAction('delete')
     try {
@@ -1525,7 +1529,7 @@ export function EditUserProfile({
                 onClick={handleToggleActive}
               />
             )}
-            {target.isSuperAdmin ? null : (
+            {!mayDeleteTarget ? null : (
               <ActionButton
                 title="Delete user"
                 subtitle="Permanently remove account"

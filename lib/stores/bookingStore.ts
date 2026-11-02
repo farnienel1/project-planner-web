@@ -132,6 +132,27 @@ export const useBookingStore = create<BookingState>((set, get) => ({
     if (!bookings.some((row) => row.id === id)) {
       set({ bookings: [...bookings, booking] })
     }
+    // Rulebook 1.10.0 §13: the booked person gets `booking_created` (never the booker).
+    void (async () => {
+      const [{ notifyBookingCreated }, { useOrgUserStore }, { useOperativeStore }, { useProjectStore }, { useAuthStore }] =
+        await Promise.all([
+          import('@/lib/notifications/bookingNotices'),
+          import('@/lib/stores/siteAuditStore'),
+          import('@/lib/stores/operativeStore'),
+          import('@/lib/stores/projectStore'),
+          import('@/lib/stores/authStore'),
+        ])
+      const { projects, smallWorks } = useProjectStore.getState()
+      const job = [...projects, ...smallWorks].find((row) => row.id.toLowerCase() === String(booking.projectId || '').toLowerCase())
+      await notifyBookingCreated({
+        booking,
+        job,
+        actor: useAuthStore.getState().user,
+        users: useOrgUserStore.getState().users,
+        operatives: useOperativeStore.getState().operatives,
+        timeZone: organizationZoneOr(),
+      })
+    })().catch(() => undefined)
   },
 
   updateBooking: async (id, updates) => {

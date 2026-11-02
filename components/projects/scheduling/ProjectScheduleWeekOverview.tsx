@@ -24,6 +24,7 @@ import { useAuthStore } from '@/lib/stores/authStore'
 import { useBookingHistoryFrom } from '@/lib/stores/useBookingHistory'
 import { ORG_DATA_REFRESHED_EVENT } from '@/lib/stores/refreshOrgData'
 import { canBookWork, hasAdminAccess } from '@/lib/permissions'
+import { userCanDeleteBooking, userCanWriteBooking } from '@/lib/access/bookingAccess'
 import { BookingStatus, UserRole, type User } from '@/types'
 import { SubcontractorBookingEditSheet } from '@/components/projects/scheduling/SubcontractorBookingEditSheet'
 import { watchSubcontractorBookings } from '@/lib/weekly-report/loadSubcontractorBookings'
@@ -173,8 +174,11 @@ export function ProjectScheduleWeekOverview({
     deleteManagerSiteBooking,
   } = useManagerScheduleStore()
   const currentUser = useAuthStore((state) => state.user)
-  const canQuickAdd = canBookWork(currentUser)
-  const { operatives, loadOperatives } = useOperativeStore()
+  const { operatives, loadOperatives, managers } = useOperativeStore()
+  // Rulebook 1.10.0 (`canWriteBooking`): admins book on every job; managers only on jobs they manage; operatives never.
+  const canQuickAdd =
+    canBookWork(currentUser) &&
+    userCanWriteBooking(currentUser, { collection: 'bookings', projectId: project.id }, project, managers)
   const { users, userIdAliases, loadUsers } = useOrgUserStore()
   const { subcontractors, loadSubcontractors } = useSubcontractorStore()
   const [weekStart, setWeekStart] = useState(startOfWeek(new Date(), { weekStartsOn: 1 }))
@@ -445,7 +449,8 @@ export function ProjectScheduleWeekOverview({
   }
 
   // Deleting a labour booking (and its tombstone) is admin only; managers cancel it instead (rulebook §2, §16).
-  const canDeleteLabourBooking = hasAdminAccess(currentUser)
+  // Rulebook 1.10.0 (`canDeleteBooking`): admins, and managers on jobs they manage, delete (with the tombstone).
+  const canDeleteLabourBooking = userCanDeleteBooking(currentUser, { collection: 'bookings', projectId: project.id }, project, managers)
 
   const cancelEditing = async () => {
     if (!editingRow?.booking) return
@@ -675,7 +680,7 @@ export function ProjectScheduleWeekOverview({
                   person={person}
                   weekDays={weekDays}
                   expanded={expanded}
-                  onEdit={setEditingRow}
+                  onEdit={canQuickAdd ? setEditingRow : () => undefined}
                   onQuickAdd={canQuickAdd ? (target, date) => setQuickAdd({ person: target, date }) : undefined}
                 />
               ))}

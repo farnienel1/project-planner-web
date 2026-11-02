@@ -15,7 +15,7 @@ import {
   loadOrganizationDetails,
   type OrganizationDetails,
 } from '@/lib/settings/organizationSettings'
-import { loadSubcontractorBookings } from '@/lib/weekly-report/loadSubcontractorBookings'
+import { watchSubcontractorBookings } from '@/lib/weekly-report/loadSubcontractorBookings'
 import type { SubcontractorBookingRow } from '@/lib/weekly-report/weeklyReportData'
 import { WeeklyReportScreen } from '@/components/weekly-report/WeeklyReportScreen'
 import {
@@ -87,14 +87,23 @@ export default function WeeklyReportPage() {
       .catch(() => {
         if (!cancelled && readRememberedInvoicing(organization.id)) setInvoicingReadFinished(true)
       })
+    // Rulebook 1.10.0 (1.9.0 leftover): subcontractor bookings are live while the weekly report is open.
     setSubsLoading(true)
-    loadSubcontractorBookings(organization.id)
-      .then(setSubcontractorBookings)
-      .catch(() => setSubcontractorBookings([]))
-      .finally(() => setSubsLoading(false))
+    const stopSubs = watchSubcontractorBookings(
+      organization.id,
+      (rows) => {
+        setSubcontractorBookings(rows)
+        setSubsLoading(false)
+      },
+      () => {
+        setSubcontractorBookings([])
+        setSubsLoading(false)
+      }
+    )
     return () => {
       cancelled = true
       window.clearTimeout(cap)
+      stopSubs()
     }
   }, [
     organization?.id,

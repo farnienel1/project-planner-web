@@ -15,7 +15,7 @@ import { auth, db } from '@/lib/firebase/config'
 import {
   canonicalJobTypeName as rulebookCanonicalJobTypeName,
   coerceJobTypeList as rulebookCoerceJobTypeList,
-  jobTypesWriteFields,
+  jobTypesChangeWriteFields,
   mergeJobTypeCatalogues as rulebookMergeJobTypeCatalogues,
   parseJobTypesDocument,
   stringFromJobTypeField as rulebookStringFromJobTypeField,
@@ -215,19 +215,14 @@ export async function recoverJobTypesFromWork(
 }
 
 /**
- * Save the job type list the manager edited. `removed`: the names deleted in this action — rulebook 1.9.0
- * `jobTypesWriteFields` writes an empty list only when every stored name was removed on purpose.
+ * Save the manager's explicit change (rulebook 1.10.0 `jobTypesChangeWriteFields`): the stored list plus `add`
+ * minus `remove`. Names recovered from live jobs are shown, never saved unless added here.
  */
 export async function saveJobTypes(
   organizationId: string,
-  jobTypes: string[],
-  options?: { removed?: string[] }
+  change: { add?: string[]; remove?: string[] }
 ): Promise<void> {
-  const names = jobTypes.map((item) => canonicalJobTypeName(item)).filter(Boolean)
-  if (names.length === 0 && !(options?.removed && options.removed.length > 0)) {
-    throw new Error('Job types cannot be empty. Add at least one type or restore from live jobs.')
-  }
-  await persistJobTypes(organizationId, names, options?.removed)
+  await persistJobTypes(organizationId, change)
 }
 
 /** Rulebook 1.9.0 §1 (`LIVE_COLLECTIONS`): `settings/jobTypes` is live while a job-type screen is open. */
@@ -243,13 +238,16 @@ export function watchJobTypes(organizationId: string, onNames: (names: string[])
  * Rulebook 1.8.0 `jobTypesWriteFields`: an update of `jobTypes` only (canonical, de-duplicated, sorted), never a
  * whole-document overwrite and never an empty list. The document is created (with `organizationId`) only when missing.
  */
-async function persistJobTypes(organizationId: string, jobTypes: string[], removed?: string[]): Promise<void> {
+async function persistJobTypes(organizationId: string, change: { add?: string[]; remove?: string[] }): Promise<void> {
   const ref = doc(db, 'organizations', organizationId, 'settings', ORG_SETTINGS_JOB_TYPES_DOC)
   const snap = await getDoc(ref)
   const stored = snap.exists() ? coerceJobTypeList(snap.data()?.jobTypes) : []
-  const write = jobTypesWriteFields(snap.exists() ? stored : [], jobTypes, { removed })
+  const write = jobTypesChangeWriteFields(stored, change)
   if (!write) {
-    rememberJobTypes(organizationId, stored.length ? stored : jobTypes)
+    if (stored.length === 0 && (change.add ?? []).length === 0) {
+      throw new Error('Job types cannot be empty. Add at least one type.')
+    }
+    rememberJobTypes(organizationId, stored)
     return
   }
   rememberJobTypes(organizationId, write.set.jobTypes)

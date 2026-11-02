@@ -85,8 +85,25 @@ export function ManagerForm({
         createdAt,
         updatedAt: new Date(),
       }
-      const id = await saveManager(organization.id, manager)
+      // Rulebook 1.10.0 §8 (`payRateChangeWrites`): rows first (a history that did not load refuses the save), then
+      // written in the same batch as the linked users document.
       const linked = users.find((row) => row.email.trim().toLowerCase() === manager.email.trim().toLowerCase())
+      const previousAmount = initial?.payBasis === 'hourly' ? initial?.hourlyRate ?? null : initial?.dayRate ?? null
+      const nextAmount = rates.payBasis === 'hourly' ? rates.hourlyRate ?? null : rates.dayRate ?? null
+      const payChanged = previousAmount !== nextAmount || (initial?.payBasis ?? null) !== (rates.payBasis ?? null)
+      let historyRows: Array<{ id: string; fields: Record<string, unknown> }> = []
+      if (payChanged && linked) {
+        const { loadOperativeDayRateHistoryOrNull, payHistoryBatchRows } = await import('@/lib/timesheets/dayRateHistoryStorage')
+        historyRows = payHistoryBatchRows({
+          history: await loadOperativeDayRateHistoryOrNull(organization.id),
+          userId: linked.id,
+          previous: { rate: previousAmount, payBasis: initial?.payBasis ?? null },
+          next: { rate: nextAmount, payBasis: rates.payBasis },
+          effectiveAt: decision instanceof Date ? decision : new Date(),
+          seedEffective: manager.createdAt ?? null,
+        })
+      }
+      const id = await saveManager(organization.id, manager)
       if (linked) {
         await saveUser(
           {
@@ -98,27 +115,8 @@ export function ManagerForm({
           organization.id,
           undefined,
           // Partial update of the changed pay fields only (rulebook §1, `userProfileWriteFields`).
-          { baseline: linked }
+          { baseline: linked, payHistoryRows: historyRows }
         )
-      }
-      try {
-        const { loadOperativeDayRateHistory, recordDayRateChangeIfNeeded } = await import(
-          '@/lib/timesheets/dayRateHistoryStorage'
-        )
-        const history = await loadOperativeDayRateHistory(organization.id)
-        await recordDayRateChangeIfNeeded({
-          organizationId: organization.id,
-          userId: linked?.id,
-          previousDayRate: initial?.payBasis === 'hourly' ? initial?.hourlyRate ?? null : initial?.dayRate ?? null,
-          nextDayRate: rates.payBasis === 'hourly' ? rates.hourlyRate ?? null : rates.dayRate ?? null,
-          previousPayBasis: initial?.payBasis,
-          nextPayBasis: rates.payBasis,
-          createdAt: manager.createdAt,
-          effectiveAt: decision,
-          history,
-        })
-      } catch {
-        // History is best-effort so the profile save still succeeds.
       }
       onSaved(id)
     } catch (err: unknown) {

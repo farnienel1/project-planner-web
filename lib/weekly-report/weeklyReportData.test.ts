@@ -199,3 +199,30 @@ test('a booking under the other same-email profile is named through the roster a
     [['Test Manager', 1]]
   )
 })
+
+test('rulebook 1.10.0 §5: a dismissed clash is not open on the weekly report; an approved one is listed separately', async () => {
+  const { clashPairKey } = await import('../canonical/scheduleSources.ts')
+  const base = {
+    organizationName: 'Acme',
+    period: { start: new Date('2026-10-05T00:00:00Z'), end: new Date('2026-10-11T00:00:00Z'), label: 'week' },
+    bookings: [booking('b1', day), booking('b2', day)],
+    managerSiteBookings: [],
+    subcontractorBookings: [],
+    subcontractors: [],
+    operatives: [operative],
+    users: [person()],
+    projects: [project],
+    smallWorks: [],
+    holidays: [],
+    orgDetails: { countryCode: 'GB', warningDetection: { detectClashes: true } } as never,
+  }
+  const open = buildWeeklyReportData({ ...base, warningDecisions: { resolvedKeys: [], approvedKeys: [], acceptedClashes: [] } })
+  assert.equal(open.warnings.filter((row) => row.type === 'Booking clash').length, 1)
+  const key = clashPairKey('b1', 'b2')
+  const dismissed = buildWeeklyReportData({ ...base, warningDecisions: { resolvedKeys: [key], approvedKeys: [], acceptedClashes: [] } })
+  assert.equal(dismissed.warnings.filter((row) => row.type === 'Booking clash').length, 0)
+  assert.equal(dismissed.approvedClashes.length, 0)
+  const approved = buildWeeklyReportData({ ...base, warningDecisions: { resolvedKeys: [key], approvedKeys: [key], acceptedClashes: [] } })
+  assert.equal(approved.warnings.filter((row) => row.type === 'Booking clash').length, 0)
+  assert.equal(approved.approvedClashes.length, 1)
+})

@@ -291,3 +291,69 @@ export function payRateHistoryWriteFields(input: PayRateHistoryWriteInput): PayR
     effectiveDayKey: dayKey,
   }
 }
+
+export type PayRateChangeProfile = {
+  /** The amount on the profile (per day or per hour); null when no rate is set. */
+  rate: number | null | undefined
+  payBasis?: string | null
+}
+
+export type PayRateChangeWrites =
+  | { ok: true; rows: PayRateHistoryWriteFields[] }
+  | { ok: false; reason: 'history_not_loaded'; message: string }
+
+export const PAY_HISTORY_NOT_LOADED_MESSAGE = 'Pay history could not be loaded. Check your connection and save again.'
+
+/**
+ * The `operativeDayRateHistory` rows a pay change writes (1.10.0, §8), in the same batch as the profile save:
+ *   - nothing when the amount and basis are unchanged;
+ *   - a "rate cleared" row when a saved rate is cleared;
+ *   - otherwise the new row, preceded by a seed row of the previous rate from `seedEffective` (the account's creation
+ *     day) only when the person has no history row yet and the previous rate was above 0.
+ * `history` is the person's loaded rows (any shape with an id); `null` means the history did not load, and the save is
+ * refused (`history_not_loaded`) rather than treating it as empty and writing a duplicate seed.
+ */
+export function payRateChangeWrites(input: {
+  userId?: string | null
+  operativeId?: string | null
+  previousProfile: PayRateChangeProfile
+  nextProfile: PayRateChangeProfile
+  history: ReadonlyArray<unknown> | null | undefined
+  /** The day the change takes effect (`yyyy-MM-dd` in the organisation zone, or an instant). */
+  effectiveDayKey: string | number | Date
+  /** The seed row's effective instant (the account's creation). Without it no seed row is written. */
+  seedEffective?: string | number | Date | null
+  timeZone?: string | null
+}): PayRateChangeWrites {
+  const previous = finiteNumber(input.previousProfile?.rate)
+  const next = finiteNumber(input.nextProfile?.rate)
+  const prevBasis =
+    input.previousProfile?.payBasis === 'hourly' ? 'hourly' : input.previousProfile?.payBasis === 'day' ? 'day' : null
+  const nextBasis = input.nextProfile?.payBasis === 'hourly' ? 'hourly' : 'day'
+  const base = { userId: input.userId, operativeId: input.operativeId, timeZone: input.timeZone }
+  if (next == null) {
+    if (previous == null) return { ok: true, rows: [] }
+  } else if (previous === next && (prevBasis == null || prevBasis === nextBasis)) {
+    return { ok: true, rows: [] }
+  }
+  if (!Array.isArray(input.history)) {
+    return { ok: false, reason: 'history_not_loaded', message: PAY_HISTORY_NOT_LOADED_MESSAGE }
+  }
+  const rows: PayRateHistoryWriteFields[] = []
+  if (next == null) {
+    const cleared = payRateHistoryWriteFields({ ...base, rate: null, effective: input.effectiveDayKey })
+    return { ok: true, rows: cleared ? [cleared] : [] }
+  }
+  if (input.history.length === 0 && previous != null && previous > 0 && input.seedEffective != null) {
+    const seed = payRateHistoryWriteFields({
+      ...base,
+      rate: previous,
+      payBasis: prevBasis === 'hourly' ? 'hourly' : 'day',
+      effective: input.seedEffective,
+    })
+    if (seed) rows.push(seed)
+  }
+  const row = payRateHistoryWriteFields({ ...base, rate: next, payBasis: nextBasis, effective: input.effectiveDayKey })
+  if (row) rows.push(row)
+  return { ok: true, rows }
+}

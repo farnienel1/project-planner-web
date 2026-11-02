@@ -169,6 +169,8 @@ export type JobDocument = {
   managerName: string | null
   managerId: string | null
   managerIds: string[]
+  /** 1.10.0: account ids of the job managers (`jobManagerUserIds`), as stored. */
+  managerUserIds: string[]
   isLive: boolean
   description: string | null
   notes: string | null
@@ -248,6 +250,7 @@ export function parseJobDocument(
     managerName: managerName && managerName.toLowerCase() !== 'custom' ? managerName : null,
     managerId: managerIdStored || managerIds[0] || null,
     managerIds,
+    managerUserIds: idList(row.managerUserIds),
     isLive: documentBool(row.isLive) !== false,
     description: optionalText(row.description),
     notes: optionalText(row.notes),
@@ -282,7 +285,7 @@ export function parseSmallWorkDocument(
 }
 
 /** The primary manager with the list; the address lines with the one-line address; the map pin with its flag. */
-export const JOB_MANAGER_WRITE_GROUP = ['managerId', 'managerIds'] as const
+export const JOB_MANAGER_WRITE_GROUP = ['managerId', 'managerIds', 'managerUserIds'] as const
 export const JOB_ADDRESS_WRITE_GROUP = ['addressLine1', 'addressLine2', 'townCity', 'postcode', 'siteAddress'] as const
 export const JOB_PIN_WRITE_GROUP = ['latitude', 'longitude', 'usesMapPinForLocation'] as const
 

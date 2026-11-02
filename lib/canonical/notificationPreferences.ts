@@ -90,6 +90,8 @@ const TYPE_TO_PREFERENCE: Record<string, NotificationPreferenceKey> = {
   holiday_request_submitted: 'annualLeaveRequested',
   holiday_request_approved: 'annualLeaveDecision',
   holiday_request_declined: 'annualLeaveDecision',
+  holiday_cancelled_by_manager: 'annualLeaveDecision',
+  holiday_booked_for_you: 'annualLeaveDecision',
   project_created: 'companyActivity',
   small_works_created: 'companyActivity',
   booking_clash: 'bookingClashes',
@@ -141,6 +143,8 @@ export type NotificationDestinationKind =
   | 'userEdit'
   | 'tasks'
   | 'healthSafety'
+  | 'variationDetail'
+  | 'variations'
   | 'timesheetMine'
   | 'timesheetTeamAwaiting'
   | 'timesheetTeamSigned'
@@ -408,6 +412,8 @@ export const DEVICE_PUSH_NOTIFICATION_TYPES = [
   'holiday_request_submitted',
   'holiday_request_approved',
   'holiday_request_declined',
+  'holiday_cancelled_by_manager',
+  'holiday_booked_for_you',
   'timesheet_pending_manager_signoff',
   'timesheet_signed_by_manager',
   'toolbox_talk_issued',
@@ -447,7 +453,7 @@ export function notificationDeliversDevicePush(type: string): boolean {
 export type UnreadNotificationBadgeRow = {
   userId?: string | null
   isRead?: boolean | null
-  createdAt?: Date | { getTime?: () => number } | number | null
+  createdAt?: Date | { getTime?: () => number } | { seconds?: number; nanoseconds?: number } | number | string | null
 }
 
 /** One id, or every id of the person (`personIdSet`). */
@@ -458,20 +464,65 @@ function ownerKeys(userId: InboxOwnerIds): Set<string> {
   return new Set(list.map((id) => trimmed(id).toLowerCase()).filter(Boolean))
 }
 
+/** The instant a check runs at: ms, a Date, an ISO string; missing → the current time. */
+export type InboxNow = number | Date | string | null | undefined
+
+function nowMs(now: InboxNow): number {
+  if (typeof now === 'number' && Number.isFinite(now)) return now
+  if (now instanceof Date && !Number.isNaN(now.getTime())) return now.getTime()
+  if (typeof now === 'string') {
+    const ms = Date.parse(now)
+    if (!Number.isNaN(ms)) return ms
+  }
+  return Date.now()
+}
+
 /**
  * The notification centre lists a row for this signed-in user only when the stored `userId` is one of their ids
  * (`userId` may be one id or every id of the person, compared without case). A row with no owner (a legacy
  * broadcast) is not an inbox row and is never listed or counted; a row addressed to someone else is never listed.
+ * A row whose `createdAt` is after `now` (a scheduled `deadline_reminder` / `deadline_due` written ahead of time) is
+ * not listed until that instant (1.10.0); a row with no `createdAt` yet (a pending server timestamp) is listed.
  * Who was written onto the row is the recipient rule at create time (`notificationRecipients.ts`).
  */
 export function inboxNotificationVisibleToUser(
-  row: Pick<UnreadNotificationBadgeRow, 'userId'> | null | undefined,
-  userId: InboxOwnerIds
+  row: Pick<UnreadNotificationBadgeRow, 'userId' | 'createdAt'> | null | undefined,
+  userId: InboxOwnerIds,
+  now?: InboxNow
 ): boolean {
   const ids = ownerKeys(userId)
   if (ids.size === 0 || !row || typeof row !== 'object') return false
   const owner = trimmed(row.userId).toLowerCase()
-  return owner !== '' && ids.has(owner)
+  if (owner === '' || !ids.has(owner)) return false
+  const created = createdAtInstantMs(row.createdAt)
+  return created == null || created <= nowMs(now)
+}
+
+function createdAtInstantMs(value: unknown): number | null {
+  if (value == null) return null
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value.getTime()
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null
+  if (typeof value === 'string') {
+    const ms = Date.parse(value)
+    return Number.isNaN(ms) ? null : ms
+  }
+  if (typeof value === 'object') {
+    const row = value as Record<string, unknown>
+    if (typeof row.toMillis === 'function') {
+      const ms = (row.toMillis as () => number)()
+      return Number.isFinite(ms) ? ms : null
+    }
+    if (typeof row.getTime === 'function') {
+      const ms = (row.getTime as () => number)()
+      return Number.isFinite(ms) ? ms : null
+    }
+    const seconds = Number(row.seconds ?? row._seconds)
+    if (Number.isFinite(seconds)) {
+      const nanos = Number(row.nanoseconds ?? row._nanoseconds ?? 0)
+      return seconds * 1000 + Math.floor((Number.isFinite(nanos) ? nanos : 0) / 1e6)
+    }
+  }
+  return null
 }
 
 /** Newest createdAt first. Both apps sort the centre this way. */
@@ -483,30 +534,24 @@ export function compareInboxNotificationsByCreatedAt(
 }
 
 function inboxCreatedAtMs(row: Pick<UnreadNotificationBadgeRow, 'createdAt'> | null | undefined): number {
-  const value = row?.createdAt
-  if (value instanceof Date) return value.getTime()
-  if (typeof value === 'number' && Number.isFinite(value)) return value
-  if (value && typeof value === 'object' && typeof value.getTime === 'function') {
-    const ms = value.getTime()
-    return Number.isFinite(ms) ? ms : 0
-  }
-  return 0
+  return createdAtInstantMs(row?.createdAt) ?? 0
 }
 
 /**
  * Unread rows the notification centre lists for `userId` (one id, or every id of the person): rows addressed to
- * them only (`inboxNotificationVisibleToUser`); ownerless rows never count. Explicit `isRead: true` is read;
- * missing or false is unread. The push Cloud Function's app-icon badge uses the same rule.
+ * them only (`inboxNotificationVisibleToUser`, so not before their `createdAt`); ownerless rows never count. Explicit
+ * `isRead: true` is read; missing or false is unread. The push Cloud Function's app-icon badge uses the same rule.
  */
 export function unreadNotificationBadgeCount(
   notifications: ReadonlyArray<UnreadNotificationBadgeRow> | null | undefined,
-  userId: InboxOwnerIds
+  userId: InboxOwnerIds,
+  now?: InboxNow
 ): number {
   if (ownerKeys(userId).size === 0) return 0
   const rows = Array.isArray(notifications) ? notifications : []
   let count = 0
   for (const row of rows) {
-    if (!inboxNotificationVisibleToUser(row, userId)) continue
+    if (!inboxNotificationVisibleToUser(row, userId, now)) continue
     if (row.isRead === true) continue
     count += 1
   }
@@ -560,6 +605,8 @@ export function notificationDestination(input: NotificationDestinationInput): No
       return { kind: 'annualLeavePending', relatedId }
     case 'holiday_request_approved':
     case 'holiday_request_declined':
+    case 'holiday_cancelled_by_manager':
+    case 'holiday_booked_for_you':
       return { kind: 'annualLeave', relatedId }
     case 'project_created':
       return relatedId ? { kind: 'projectDetail', relatedId } : { kind: 'projectsList' }
@@ -586,7 +633,19 @@ export function notificationDestination(input: NotificationDestinationInput): No
       return { kind: 'tasks', relatedId }
     case 'toolbox_talk_issued':
     case 'hs_toolbox_reminder':
+      // relatedId is the toolbox talk issue id (`notificationRelatedId`: healthSafetyIssue).
       return { kind: 'healthSafety', relatedId }
+    // Variations (1.10.0). relatedId follows `notificationRelatedId`: the variation id for a new or added variation,
+    // the job id when a job's variations were renumbered. Operatives never see variations (`canSeeVariations`).
+    case 'variation':
+    case 'variation_added':
+    case 'variation_from_tracker':
+      if (role === 'operative') return { kind: 'notifications' }
+      return relatedId ? { kind: 'variationDetail', relatedId } : { kind: 'variations' }
+    case 'variation_renumbered':
+    case 'variation_numbers_updated':
+      if (role === 'operative') return { kind: 'notifications' }
+      return { kind: 'variations', relatedId }
     case 'timesheet_pending_manager_signoff':
       return { kind: 'timesheetTeamAwaiting', userId, dayKey }
     case 'timesheet_signed_by_manager':

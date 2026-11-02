@@ -56,6 +56,8 @@ function asInboxRow(id, data) {
     userId: trimmed(row.userId) || null,
     isRead: row.isRead === true,
     type: trimmed(row.type),
+    // Rulebook 1.10.0: a row counts only from its createdAt (`unreadNotificationBadgeCount` with now).
+    createdAt: row.createdAt && typeof row.createdAt.toMillis === 'function' ? row.createdAt.toMillis() : row.createdAt ?? null,
   }
 }
 
@@ -76,6 +78,8 @@ exports.sendDevicePushOnNotificationCreate = onDocumentCreated(
     if (!canonical.notificationDeliversDevicePush(type)) return
     // Never push a row to the person who caused it (cheap check before any read).
     if (skipPushForActor(canonical, type, data.actorUserId, userId, null)) return
+    // A row dated in the future is not in the inbox yet (1.10.0), so it is not pushed now.
+    if (!canonical.inboxNotificationVisibleToUser(asInboxRow(notificationId, data), userId, Date.now())) return
 
     const db = getFirestore()
     const userSnap = await db.doc(`users/${userId}`).get()
@@ -104,7 +108,7 @@ exports.sendDevicePushOnNotificationCreate = onDocumentCreated(
     byId.set(notificationId, asInboxRow(notificationId, data))
     // The icon badge matches the inbox: toggles stop pushes, never inbox rows.
     const listed = [...byId.values()].filter((row) => canonical.notificationShowsInInbox(prefs, row.type))
-    const badge = canonical.unreadNotificationBadgeCount(listed, userId)
+    const badge = canonical.unreadNotificationBadgeCount(listed, userId, Date.now())
 
     const title = trimmed(data.title)
     const message = trimmed(data.message)

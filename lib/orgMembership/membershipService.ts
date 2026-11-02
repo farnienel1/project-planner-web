@@ -4,6 +4,7 @@
  */
 import {
   collection,
+  deleteField,
   doc,
   getDoc,
   getDocs,
@@ -25,6 +26,7 @@ import {
   type MembershipDocumentRead,
   type OrgAccessProbe,
   type OrgDocumentRead,
+  orgMembershipWriteFields,
 } from '@/lib/canonical'
 import {
   chooseWebSessionOrganization,
@@ -295,13 +297,20 @@ export async function addExistingUserToOrganization(params: {
   const invitationId = crypto.randomUUID()
   const now = Timestamp.now()
 
-  await setDoc(doc(db, 'users', params.authUserId, 'orgMemberships', params.organizationId), {
-    role: params.role,
-    status: 'pending',
-    permissions: permissionsToFirestoreMap(params.permissions),
-    invitedAt: now,
-    invitedBy: params.invitedBy,
+  // Rulebook 1.10.0: the one membership shape (`orgMembershipWriteFields`, nested permissions), written by an admin.
+  const create = orgMembershipWriteFields({
+    organizationId: params.organizationId,
+    stored: null,
+    next: {
+      role: params.role,
+      status: 'pending',
+      permissions: permissionsToFirestoreMap(params.permissions),
+      invitedBy: params.invitedBy,
+    },
+    writer: 'admin',
+    now,
   })
+  if (create) await setDoc(doc(db, 'users', params.authUserId, 'orgMemberships', params.organizationId), create.fields)
 
   const orgRef = doc(db, 'organizations', params.organizationId)
   const orgSnap = await getDoc(orgRef)
@@ -358,19 +367,26 @@ export async function snapshotCurrentMembership(userId: string): Promise<string 
 
   const membershipRef = doc(db, 'users', userId, 'orgMemberships', organizationId)
   const existing = await getDoc(membershipRef)
-  const now = Timestamp.now()
   const snapshot = membershipSnapshotFromUserDoc(data)
-
-  await setDoc(
-    membershipRef,
-    {
-      ...snapshot,
-      invitedAt: existing.exists() ? existing.data().invitedAt ?? now : now,
-      acceptedAt: existing.exists() ? existing.data().acceptedAt ?? now : now,
-      updatedAt: now,
+  // Rulebook 1.10.0 (`orgMembershipWriteFields`): changed fields only, nested permissions. Only an admin of the
+  // organisation may write role or permissions (the security rules refuse anyone else); founders are.
+  const write = orgMembershipWriteFields({
+    organizationId,
+    stored: existing.exists() ? (existing.data() as Record<string, unknown>) : null,
+    next: {
+      role: snapshot.role,
+      status: 'active',
+      isSuperAdmin: snapshot.isSuperAdmin,
+      accountActive: snapshot.accountActive,
+      permissions: snapshot.permissions,
     },
-    { merge: true }
-  )
+    writer: 'admin',
+    now: Timestamp.now(),
+  })
+  if (write?.mode === 'create') await setDoc(membershipRef, write.fields)
+  else if (write) {
+    await updateDoc(membershipRef, { ...write.fields, ...Object.fromEntries(write.remove.map((key) => [key, deleteField()])) })
+  }
   return organizationId
 }
 

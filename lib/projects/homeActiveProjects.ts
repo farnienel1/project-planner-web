@@ -1,6 +1,7 @@
 import type { Booking, Operative, Project, User } from '@/types'
 import { bookingIdsForAccount, bookingOccupiesDay } from '@/lib/canonical'
 import { operativeMatching } from '@/lib/access/workAccess'
+import { userCanSeeJob } from '@/lib/access/bookingAccess'
 import { hasAdminAccess, isOperativeMode } from '@/lib/permissions'
 import { normalizeBookingStatus } from '@/lib/ios-parity/enums'
 import { deriveWorkStatus } from '@/lib/projects/workStatus'
@@ -8,7 +9,7 @@ import { deriveWorkStatus } from '@/lib/projects/workStatus'
 /**
  * Home “active projects”: live jobs whose dates include today.
  * Two jobs that share a job number both count. Admins see every such job.
- * Managers see those except jobs hidden from them. Operatives see jobs they
+ * Managers see the ones they manage (`canSeeJob`, 1.10.0) except jobs hidden from them. Operatives see jobs they
  * are booked on (Confirmed or Tentative), including the last day.
  */
 export function countHomeActiveProjects(params: {
@@ -16,6 +17,8 @@ export function countHomeActiveProjects(params: {
   user: User | null
   operatives?: Operative[]
   bookings?: Booking[]
+  /** The managers list, for `canSeeJob` (a job's managerIds may name its rows). */
+  managers?: ReadonlyArray<{ id: string; email?: string | null }>
   now?: Date
 }): number {
   const now = params.now ?? new Date()
@@ -46,8 +49,11 @@ export function countHomeActiveProjects(params: {
     )
     return todayJobs.filter((project) => booked.has(project.id)).length
   }
-  if (user.permissions.manager) {
-    return todayJobs.filter((project) => !(project.hiddenManagerUserIds ?? []).includes(user.id)).length
+  if (user.permissions.manager || user.role === 'manager') {
+    // Rulebook 1.10.0: a manager counts only the jobs they manage (`canSeeJob`).
+    return todayJobs.filter(
+      (project) => !(project.hiddenManagerUserIds ?? []).includes(user.id) && userCanSeeJob(user, project, params.managers)
+    ).length
   }
   return todayJobs.length
 }

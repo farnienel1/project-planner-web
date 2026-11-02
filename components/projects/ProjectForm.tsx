@@ -16,6 +16,7 @@ import {
 import { FormActions, FormInput, FormLabel, FormSelect, FormTextarea } from '@/components/forms/FormShell'
 import { EmptyState, ErrorBanner } from '@/components/dashboard/PageShell'
 import { canManageWorkCatalogue } from '@/lib/permissions'
+import { jobManagerUserIds } from '@/lib/canonical'
 import { SitePinPickerSheet } from '@/components/site-map/SitePinPickerSheet'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import {
@@ -276,6 +277,12 @@ export function ProjectForm({ initial, collection = 'projects', backHref, onSave
         customJobType: form.customJobType.trim() && form.customJobType.trim() !== 'CAT A' ? form.customJobType.trim() : undefined,
         managerId: primaryManagerId,
         managerIds: resolvedManagerIds,
+        // Rulebook 1.10.0: the account ids of these managers, so the security rules can let them book on the job.
+        managerUserIds: jobManagerUserIds(
+          { managerId: primaryManagerId, managerIds: resolvedManagerIds },
+          managers.map((row) => ({ id: row.id, email: row.email })),
+          users.map((row) => ({ id: row.id, email: row.email, isActive: row.isActive }))
+        ),
         managerLegacy: primaryManager
           ? `${primaryManager.firstName} ${primaryManager.lastName}`.trim()
           : primaryUser

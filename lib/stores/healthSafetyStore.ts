@@ -130,7 +130,12 @@ interface HealthSafetyState {
     talkId: string,
     recipientUserIds: string[],
     issuedByUserId: string,
-    options?: { weekCommencing?: Date; publishAt?: Date }
+    options?: {
+      weekCommencing?: Date
+      publishAt?: Date
+      /** Rulebook 1.10.0 §13: writes `toolbox_talk_issued` to `toolboxTalkRecipients` (never the issuer). */
+      audience?: { users: User[]; actor: User | null; talkTitle?: string; siteName?: string }
+    }
   ) => Promise<void>
   signToolboxTalk: (
     organizationId: string,
@@ -277,6 +282,28 @@ export const useHealthSafetyStore = create<HealthSafetyState>((set, get) => ({
       issues: [issue, ...current.issues],
       signatures: [...signatures, ...current.signatures],
     })
+    // Rulebook 1.10.0 §13 (`toolbox_talk_issued`, written by web too): the chosen people without the issuer
+    // (`toolboxTalkRecipients`); relatedId is the issue id (`notificationRelatedIdFor`).
+    const audience = options?.audience
+    if (audience) {
+      const actor = audience.actor ? rulebookPerson(audience.actor, audience.users) : inboxActorUserId() || null
+      const recipients = toolboxTalkRecipients(recipientUserIds, actor, rulebookRoster(audience.users))
+      const detail = audience.talkTitle?.trim() || 'a toolbox talk'
+      const place = audience.siteName?.trim() || 'a job'
+      const by = audience.actor ? `${audience.actor.firstName} ${audience.actor.surname}`.trim() : 'Your manager'
+      await Promise.all(
+        recipients.map((userId) =>
+          saveInboxNotification({
+            organizationId,
+            type: 'toolbox_talk_issued',
+            title: 'Toolbox talk issued',
+            message: `${by} issued ${detail} on ${place}.`,
+            userId,
+            relatedId: issueId,
+          }).catch(() => undefined)
+        )
+      )
+    }
   },
 
   signToolboxTalk: async (organizationId, projectId, isSmallWorks, issueId, userId, signatureImageBase64, aliasUserIds) => {

@@ -1,7 +1,7 @@
 import type { User, UserPermissions, UserRole } from '@/types'
 import { UserRole as Role } from '@/types'
 import { withTimeout } from '@/lib/client/withTimeout'
-import { permissionsFromRecord } from '@/lib/orgMembership/orgRoleFlags'
+import { membershipPermissions } from '@/lib/orgMembership/orgRoleFlags'
 import {
   chooseSessionOrganization,
   organizationIdsMatch,
@@ -259,7 +259,7 @@ export function applyDeviceOrgMembership(
     }
   }
 
-  const permissions = permissionsFromRecord(membership)
+  const permissions = membershipPermissions(membership)
   const isSuperAdmin =
     membership.isSuperAdmin === true ||
     (user.isSuperAdmin === true && (isAdminRole(membershipRole) || permissions.adminAccess))

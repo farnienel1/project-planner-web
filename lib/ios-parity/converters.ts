@@ -502,6 +502,7 @@ export function projectFromJobDocument(docId: string, data: Record<string, unkno
     },
     managerId: job.managerId ?? undefined,
     managerIds: job.managerIds,
+    managerUserIds: job.managerUserIds,
     isLive: job.isLive,
     description: job.description ?? undefined,
     notes: job.notes ?? undefined,

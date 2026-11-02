@@ -116,7 +116,7 @@ export function ClientsScreen({ selectedId }: { selectedId?: string }) {
     useProjectStore()
   const { bookings, loadBookings } = useBookingStore()
   const { managerSiteBookings, loadManagerSiteBookings } = useManagerScheduleStore()
-  const { operatives, loadOperatives } = useOperativeStore()
+  const { operatives, loadOperatives, managers, loadManagers } = useOperativeStore()
   const { tasks, loadTasks } = useTaskStore()
   const deadlineAssignedProjectIds = useDeadlineAssignedProjectIds()
 
@@ -143,6 +143,8 @@ export function ClientsScreen({ selectedId }: { selectedId?: string }) {
     loadBookings(organization.id, { fullHistory: true })
     loadManagerSiteBookings(organization.id, { fullHistory: true })
     loadOperatives(organization.id)
+    // Rulebook 1.10.0: a manager's job list is `canSeeJob`, which reads the managers list.
+    void loadManagers(organization.id)
     loadTasks(organization.id)
   }, [
     organization?.id,
@@ -171,12 +173,13 @@ export function ClientsScreen({ selectedId }: { selectedId?: string }) {
       catalogue: 'all',
       user,
       operatives,
+      managers,
       bookings,
       managerBookings: managerSiteBookings,
       tasks,
       deadlineAssignedProjectIds,
     })
-  }, [selected, user, projects, operatives, bookings, managerSiteBookings, tasks, deadlineAssignedProjectIds])
+  }, [selected, user, projects, operatives, managers, bookings, managerSiteBookings, tasks, deadlineAssignedProjectIds])
 
   const canDelete = hasAdminAccess(user)
   const formValid = name.trim().length > 0

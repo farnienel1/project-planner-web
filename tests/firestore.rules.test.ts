@@ -27,6 +27,7 @@ import {
   updateDoc,
   where,
   writeBatch,
+  deleteField,
 } from 'firebase/firestore'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
@@ -1455,7 +1456,7 @@ test('deleted bookings: the delete writes a tombstone and nobody can bring the b
   await env.withSecurityRulesDisabled(async (ctx) => {
     const db = ctx.firestore()
     await setDoc(doc(db, 'organizations', ORG_A, 'bookings', 'BOOK-T1'), { operativeId: OP_A, status: 'Confirmed', notes: '' })
-    await setDoc(doc(db, 'organizations', ORG_A, 'managerSiteBookings', 'MSB-T1'), { managerUserId: LM_A })
+    await setDoc(doc(db, 'organizations', ORG_A, 'managerSiteBookings', 'MSB-T1'), { userId: LM_A, locationType: 'office' })
   })
   const admin = authDb(ADMIN_A, 'admin-a@test.com')
   const op = authDb(OP_A, 'op-a@test.com')
@@ -1487,31 +1488,34 @@ test('deleted bookings: the delete writes a tombstone and nobody can bring the b
   await assertFails(setDoc(tomb(admin, 'BOOK-T1'), { deletedFrom: 'ios' }, { merge: true }))
   await assertFails(deleteDoc(tomb(op, 'BOOK-T1')))
 
-  // Manager schedule bookings: any member deletes, with the tombstone; it cannot come back.
+  // Manager schedule bookings (1.10.0): a manager deletes their own non-job booking, with the tombstone; it cannot come back.
   const mgr = authDb(LM_A, 'lm-a@test.com')
   const msb = writeBatch(mgr)
   msb.delete(doc(mgr, 'organizations', ORG_A, 'managerSiteBookings', 'MSB-T1'))
   msb.set(tomb(mgr, 'MSB-T1'), fields('MSB-T1', 'managerSiteBookings', LM_A, 'ios'))
   await assertSucceeds(msb.commit())
-  await assertFails(setDoc(doc(mgr, 'organizations', ORG_A, 'managerSiteBookings', 'MSB-T1'), { managerUserId: LM_A }, { merge: true }))
+  await assertFails(setDoc(doc(mgr, 'organizations', ORG_A, 'managerSiteBookings', 'MSB-T1'), { userId: LM_A, locationType: 'office' }, { merge: true }))
 
-  // Untombstoned bookings still save as before.
-  await assertSucceeds(setDoc(doc(op, 'organizations', ORG_A, 'bookings', 'BOOK-NEW-1'), { operativeId: OP_A, status: 'Confirmed' }))
+  // Untombstoned bookings still save as before (an admin; operatives never write bookings, 1.10.0).
+  await assertSucceeds(setDoc(doc(admin, 'organizations', ORG_A, 'bookings', 'BOOK-NEW-1'), { operativeId: OP_A, status: 'Confirmed' }))
+  await assertFails(setDoc(doc(op, 'organizations', ORG_A, 'bookings', 'BOOK-NEW-2'), { operativeId: OP_A, status: 'Confirmed' }))
 
   // Admin clears the tombstone; the id can be used again.
   await assertSucceeds(deleteDoc(tomb(admin, 'BOOK-T1')))
   await assertSucceeds(setDoc(doc(admin, 'organizations', ORG_A, 'bookings', 'BOOK-T1'), { operativeId: OP_A, status: 'Confirmed' }))
 })
 
-test('cancelled bookings: an operative replay cannot reinstate one; edits that keep it cancelled pass; a manager reinstates', async () => {
+test('cancelled bookings: an operative replay is refused (1.10.0: operatives never write bookings); the job manager reinstates', async () => {
   await seedLeaveAndTimesheetPeople()
   await env.withSecurityRulesDisabled(async (ctx) => {
-    await setDoc(doc(ctx.firestore(), 'organizations', ORG_A, 'bookings', 'BOOK-C1'), { operativeId: OP_A, status: 'Cancelled', notes: '' })
+    const db = ctx.firestore()
+    await setDoc(doc(db, 'organizations', ORG_A, 'projects', 'JOB-C1'), { managerIds: [MGR_OTHER_A] })
+    await setDoc(doc(db, 'organizations', ORG_A, 'bookings', 'BOOK-C1'), { operativeId: OP_A, projectId: 'JOB-C1', status: 'Cancelled', notes: '' })
   })
   const op = authDb(OP_A, 'op-a@test.com')
   const ref = (db: ReturnType<typeof authDb>) => doc(db, 'organizations', ORG_A, 'bookings', 'BOOK-C1')
   await assertFails(setDoc(ref(op), { operativeId: OP_A, status: 'Confirmed', notes: '' }, { merge: true }))
-  await assertSucceeds(setDoc(ref(op), { operativeId: OP_A, status: 'Cancelled', notes: 'still off' }, { merge: true }))
+  await assertFails(setDoc(ref(op), { operativeId: OP_A, status: 'Cancelled', notes: 'still off' }, { merge: true }))
   await assertSucceeds(setDoc(ref(authDb(MGR_OTHER_A, 'mgr-other-a@test.com')), { status: 'Confirmed' }, { merge: true }))
 })
 
@@ -1911,7 +1915,7 @@ test('1.2.0 decision 5: managers un-approve a booking clash (delete); operatives
   await assertSucceeds(deleteDoc(ref(authDb(ADMIN_A, 'admin-a@test.com'), 'E|F')))
 })
 
-test('1.2.0 decision 7: labour booking delete and its tombstone stay admin-only', async () => {
+test('1.2.0 decision 7 (1.10.0): a manager who does not manage the job cannot delete its labour booking or tombstone it', async () => {
   await seedRulebook120People()
   await env.withSecurityRulesDisabled(async (ctx) => {
     await setDoc(doc(ctx.firestore(), 'organizations', ORG_A, 'bookings', 'book-120'), { organizationId: ORG_A, userId: OP_A })
@@ -2189,4 +2193,181 @@ test('1.9.0: only admins and managers dismiss a warning (§16)', async () => {
   await assertFails(setDoc(doc(authDb(OP_A, 'op-a@test.com'), 'organizations', ORG_A, 'dismissedWarnings', 'd190-op'), { ...row, dismissedByUserId: OP_A }))
   await assertSucceeds(setDoc(doc(authDb(ADMIN_A, 'admin-a@test.com'), 'organizations', ORG_A, 'dismissedWarnings', 'd190-admin'), { ...row, dismissedByUserId: ADMIN_A }))
   await assertFails(setDoc(doc(authDb(ADMIN_B, 'admin-b@test.com'), 'organizations', ORG_A, 'dismissedWarnings', 'd190-b'), { ...row, dismissedByUserId: ADMIN_B }))
+})
+
+
+// --- Rulebook 1.10.0 -------------------------------------------------------------------------------------------
+
+const MGR_JOB_A = 'mgr-job-a'
+const MGR_ROW_A = 'mgr-row-a'
+const MGR_ROWMAIL_A = 'mgr-rowmail-a'
+const MULTI = 'multi-org-person'
+
+async function seed110() {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore()
+    await setDoc(doc(db, 'users', MGR_JOB_A), { email: 'mgr-job-a@test.com', organizationId: ORG_A, role: 'manager', manager: true, permissions: { manager: true } })
+    await setDoc(doc(db, 'users', MGR_ROWMAIL_A), { email: 'rowmail@test.com', organizationId: ORG_A, role: 'manager', manager: true, permissions: { manager: true } })
+    await setDoc(doc(db, 'users', MGR_OTHER_A), { email: 'mgr-other-a@test.com', organizationId: ORG_A, role: 'manager', manager: true, permissions: { manager: true } })
+    await setDoc(doc(db, 'organizations', ORG_A, 'managers', MGR_ROW_A), { email: 'RowMail@test.com', firstName: 'Row' })
+    await setDoc(doc(db, 'organizations', ORG_A, 'projects', 'JOB-110'), { managerIds: [`user:${MGR_JOB_A}`, 'SOME-ROW'], managerId: `user:${MGR_JOB_A}` })
+    await setDoc(doc(db, 'organizations', ORG_A, 'smallWorks', 'SW-110'), { managerIds: [MGR_ROW_A], managerId: MGR_ROW_A })
+    await setDoc(doc(db, 'organizations', ORG_A, 'projects', 'JOB-UID'), { managerUserIds: [MGR_JOB_A.toUpperCase()] })
+    // A manager in company B who is only an operative (members map) in company A.
+    await setDoc(doc(db, 'users', MULTI), { email: 'multi@test.com', organizationId: ORG_B, role: 'manager', manager: true, permissions: { manager: true } })
+    await updateDoc(doc(db, 'organizations', ORG_A), { [`members.${MULTI}`]: 'operative' })
+    await updateDoc(doc(db, 'organizations', ORG_B), { [`members.${MULTI}`]: 'manager' })
+  })
+}
+
+const labour = (projectId: string, extra: Record<string, unknown> = {}) => ({ operativeId: OP_A, projectId, status: 'Confirmed', timeSlot: 'FULL DAY', ...extra })
+
+test('1.10.0 bookings: admin any job; manager only jobs they manage (uid, user: prefix, managerUserIds, managers-row email); operative never', async () => {
+  await seed110()
+  const admin = authDb(ADMIN_A, 'admin-a@test.com')
+  const mgr = authDb(MGR_JOB_A, 'mgr-job-a@test.com')
+  const other = authDb(MGR_OTHER_A, 'mgr-other-a@test.com')
+  const rowMail = authDb(MGR_ROWMAIL_A, 'rowmail@test.com')
+  const op = authDb(OP_A, 'op-a@test.com')
+  const ref = (db: ReturnType<typeof authDb>, coll: string, id: string) => doc(db, 'organizations', ORG_A, coll, id)
+
+  await assertSucceeds(setDoc(ref(admin, 'bookings', 'b110-1'), labour('ANY-JOB')))
+  await assertSucceeds(setDoc(ref(mgr, 'bookings', 'b110-2'), labour('JOB-110')))
+  await assertSucceeds(setDoc(ref(mgr, 'bookings', 'b110-3'), labour('job-uid')))
+  await assertFails(setDoc(ref(other, 'bookings', 'b110-4'), labour('JOB-110')))
+  await assertFails(setDoc(ref(op, 'bookings', 'b110-5'), labour('JOB-110')))
+  // Small works whose managerId is a managers-list row: matched by that row's email.
+  await assertSucceeds(setDoc(ref(rowMail, 'bookings', 'b110-6'), labour('SW-110')))
+  await assertFails(setDoc(ref(mgr, 'bookings', 'b110-7'), labour('SW-110')))
+  // Edit and cancel on their job; moving a booking onto a job they do not manage is refused.
+  await assertSucceeds(updateDoc(ref(mgr, 'bookings', 'b110-2'), { status: 'Cancelled' }))
+  await assertFails(updateDoc(ref(mgr, 'bookings', 'b110-2'), { projectId: 'SW-110' }))
+  await assertFails(updateDoc(ref(other, 'bookings', 'b110-2'), { notes: 'x' }))
+  await assertFails(updateDoc(ref(op, 'bookings', 'b110-2'), { notes: 'x' }))
+  // Subcontractor bookings follow the same rule (projectId or iOS projectID).
+  await assertSucceeds(setDoc(ref(mgr, 'subcontractorBookings', 's110-1'), { subcontractorId: 'SUB', projectID: 'JOB-110' }))
+  await assertFails(setDoc(ref(other, 'subcontractorBookings', 's110-2'), { subcontractorId: 'SUB', projectId: 'JOB-110' }))
+  await assertFails(setDoc(ref(op, 'subcontractorBookings', 's110-3'), { subcontractorId: 'SUB', projectId: 'JOB-110' }))
+  // Manager site bookings: at a job only for its managers; office/WFH only their own.
+  await assertSucceeds(setDoc(ref(mgr, 'managerSiteBookings', 'm110-1'), { userId: MGR_JOB_A, locationType: 'project', locationId: 'JOB-110' }))
+  await assertFails(setDoc(ref(other, 'managerSiteBookings', 'm110-2'), { userId: MGR_OTHER_A, locationType: 'project', locationId: 'JOB-110' }))
+  await assertSucceeds(setDoc(ref(other, 'managerSiteBookings', 'm110-3'), { userId: MGR_OTHER_A, locationType: 'office' }))
+  await assertFails(setDoc(ref(other, 'managerSiteBookings', 'm110-4'), { userId: MGR_JOB_A, locationType: 'office' }))
+  await assertFails(setDoc(ref(op, 'managerSiteBookings', 'm110-5'), { userId: OP_A, locationType: 'office' }))
+})
+
+test('1.10.0 booking delete: a manager deletes (with tombstone) on their job; another manager and operatives cannot', async () => {
+  await seed110()
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore()
+    await setDoc(doc(db, 'organizations', ORG_A, 'bookings', 'del-110-1'), labour('JOB-110'))
+    await setDoc(doc(db, 'organizations', ORG_A, 'subcontractorBookings', 'del-110-2'), { subcontractorId: 'SUB', projectId: 'JOB-110' })
+  })
+  const tomb = (uid: string, id: string, coll: string) => ({ bookingId: id, collection: coll, deletedAt: serverTimestamp(), deletedBy: uid, deletedFrom: 'web' })
+  for (const [id, coll] of [['del-110-1', 'bookings'], ['del-110-2', 'subcontractorBookings']]) {
+    for (const [uid, email] of [[MGR_OTHER_A, 'mgr-other-a@test.com'], [OP_A, 'op-a@test.com']]) {
+      const db = authDb(uid, email)
+      const batch = writeBatch(db)
+      batch.delete(doc(db, 'organizations', ORG_A, coll, id))
+      batch.set(doc(db, 'organizations', ORG_A, 'deletedBookings', id), tomb(uid, id, coll))
+      await assertFails(batch.commit())
+    }
+    const mgr = authDb(MGR_JOB_A, 'mgr-job-a@test.com')
+    const batch = writeBatch(mgr)
+    batch.delete(doc(mgr, 'organizations', ORG_A, coll, id))
+    batch.set(doc(mgr, 'organizations', ORG_A, 'deletedBookings', id), tomb(MGR_JOB_A, id, coll))
+    await assertSucceeds(batch.commit())
+    // Tombstoned: cannot come back, even for the admin.
+    await assertFails(setDoc(doc(authDb(ADMIN_A, 'admin-a@test.com'), 'organizations', ORG_A, coll, id), labour('JOB-110')))
+  }
+  // With the booking already gone, only an admin writes a tombstone.
+  await assertFails(setDoc(doc(authDb(MGR_JOB_A, 'mgr-job-a@test.com'), 'organizations', ORG_A, 'deletedBookings', 'gone-110'), tomb(MGR_JOB_A, 'gone-110', 'bookings')))
+  await assertSucceeds(setDoc(doc(authDb(ADMIN_A, 'admin-a@test.com'), 'organizations', ORG_A, 'deletedBookings', 'gone-110'), tomb(ADMIN_A, 'gone-110', 'bookings')))
+})
+
+test('1.10.0 a manager removed from the job loses booking writes; re-added gets them back', async () => {
+  await seed110()
+  const mgr = authDb(MGR_JOB_A, 'mgr-job-a@test.com')
+  const ref = doc(mgr, 'organizations', ORG_A, 'bookings', 'rm-110')
+  await assertSucceeds(setDoc(ref, labour('JOB-110')))
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'organizations', ORG_A, 'projects', 'JOB-110'), { managerIds: ['SOME-ROW'] })
+  })
+  await assertFails(updateDoc(ref, { notes: 'after removal' }))
+  await assertFails(deleteDoc(ref))
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'organizations', ORG_A, 'projects', 'JOB-110'), { managerIds: ['SOME-ROW', MGR_JOB_A] })
+  })
+  await assertSucceeds(updateDoc(ref, { notes: 're-added' }))
+})
+
+test('1.10.0 H2: a manager in company B who is an operative in company A is not a manager in A', async () => {
+  await seed110()
+  const multi = authDb(MULTI, 'multi@test.com')
+  // Company A: no manager writes (settings, wholesalers, clash approvals, bookings).
+  await assertFails(setDoc(doc(multi, 'organizations', ORG_A, 'settings', 'jobTypes'), { jobTypes: ['X'] }))
+  await assertFails(setDoc(doc(multi, 'organizations', ORG_A, 'wholesalers', 'w-110'), { name: 'W' }))
+  await assertFails(setDoc(doc(multi, 'organizations', ORG_A, 'acceptedBookingClashes', 'c-110'), { bookingAId: 'a', bookingBId: 'b' }))
+  await assertFails(setDoc(doc(multi, 'organizations', ORG_A, 'bookings', 'multi-1'), labour('JOB-110')))
+  // Company B (home): still a manager.
+  await assertSucceeds(setDoc(doc(multi, 'organizations', ORG_B, 'settings', 'jobTypes'), { jobTypes: ['X'] }))
+  await assertSucceeds(setDoc(doc(multi, 'organizations', ORG_B, 'wholesalers', 'w-110'), { name: 'W' }))
+})
+
+test('1.10.0 H2: a members-map manager of company A whose home company is B is a manager in A', async () => {
+  await seed110()
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await updateDoc(doc(ctx.firestore(), 'organizations', ORG_A), { [`members.${MULTI}`]: 'manager' })
+  })
+  const multi = authDb(MULTI, 'multi@test.com')
+  await assertSucceeds(setDoc(doc(multi, 'organizations', ORG_A, 'wholesalers', 'w-111'), { name: 'W' }))
+})
+
+test('1.10.0 M10: a person cannot raise their own membership role or permissions; an admin of that org can', async () => {
+  await seed110()
+  const op = authDb(OP_A, 'op-a@test.com')
+  const ref = (db: ReturnType<typeof authDb>) => doc(db, 'users', OP_A, 'orgMemberships', ORG_A)
+  // OP_A is 'member' in ORG_A's members map.
+  await assertFails(setDoc(ref(op), { role: 'admin', status: 'active' }))
+  await assertFails(setDoc(ref(op), { role: 'member', status: 'active', permissions: { adminAccess: true } }))
+  await assertFails(setDoc(ref(op), { role: 'member', status: 'active', adminAccess: true }))
+  await assertSucceeds(setDoc(ref(op), { role: 'member', status: 'active', acceptedAt: Timestamp.now() }))
+  await assertFails(updateDoc(ref(op), { 'permissions.manager': true }))
+  await assertFails(updateDoc(ref(op), { accountActive: true }))
+  await assertSucceeds(updateDoc(ref(op), { status: 'active', updatedAt: Timestamp.now() }))
+  await assertSucceeds(updateDoc(ref(authDb(ADMIN_A, 'admin-a@test.com')), { role: 'manager', 'permissions.manager': true }))
+  // The admin of another company cannot.
+  await assertFails(updateDoc(ref(authDb(ADMIN_B, 'admin-b@test.com')), { role: 'admin' }))
+})
+
+test('1.10.0 H1: deleting users/{uid}, its tax ids, membership, email claim and members entry in one batch; an admin cannot delete an admin', async () => {
+  await seed110()
+  const VICTIM = 'victim-110'
+  const ADMIN2 = 'admin2-110'
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore()
+    await setDoc(doc(db, 'users', VICTIM), { email: 'victim@test.com', organizationId: ORG_A, role: 'operative', operativeMode: true })
+    await setDoc(doc(db, 'users', VICTIM, 'private', 'taxIds'), { utrNumber: '1', vatNumber: '', updatedByUserId: VICTIM, updatedAt: Timestamp.now() })
+    await setDoc(doc(db, 'users', VICTIM, 'orgMemberships', ORG_A), { role: 'operative' })
+    await setDoc(doc(db, 'organizations', ORG_A, 'userEmails', 'victim@test.com'), { userId: VICTIM })
+    await updateDoc(doc(db, 'organizations', ORG_A), { [`members.${VICTIM}`]: 'operative' })
+    await setDoc(doc(db, 'users', ADMIN2), { email: 'admin2@test.com', organizationId: ORG_A, role: 'admin', adminAccess: true })
+    await setDoc(doc(db, 'users', ADMIN2, 'private', 'taxIds'), { utrNumber: '2', vatNumber: '', updatedByUserId: ADMIN2, updatedAt: Timestamp.now() })
+  })
+  const admin = authDb(ADMIN_A, 'admin-a@test.com')
+  const accountBatch = (target: string, email: string) => {
+    const batch = writeBatch(admin)
+    batch.delete(doc(admin, 'users', target))
+    batch.delete(doc(admin, 'users', target, 'private', 'taxIds'))
+    batch.delete(doc(admin, 'users', target, 'orgMemberships', ORG_A))
+    batch.delete(doc(admin, 'organizations', ORG_A, 'userEmails', email))
+    batch.update(doc(admin, 'organizations', ORG_A), { [`members.${target}`]: deleteField() })
+    return batch
+  }
+  // ADMIN_A is not super admin: deleting another admin is refused, and nothing in the batch is applied.
+  await assertFails(accountBatch(ADMIN2, 'admin2@test.com').commit())
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    assert.equal((await getDoc(doc(ctx.firestore(), 'users', ADMIN2, 'private', 'taxIds'))).exists(), true)
+  })
+  await assertSucceeds(accountBatch(VICTIM, 'victim@test.com').commit())
 })

@@ -278,6 +278,9 @@ export function ProjectHealthSafetySection({
     }
   }
 
+  const talkTitleFor = (talkId: string) =>
+    (data?.talks ?? []).find((talk) => talk.id === talkId)?.title ?? ''
+
   const submitIssue = async () => {
     if (!organization?.id || !user || !issueTalkId) return
     const recipients = recipientsWithIssuer(issueRecipients, user.id, signAsIssuer)
@@ -285,6 +288,7 @@ export function ProjectHealthSafetySection({
     await ensureTalkOnProject(issueTalkId)
     await issueToolboxTalk(organization.id, project.id, isSmallWorks, issueTalkId, recipients, user.id, {
       weekCommencing: startOfWeek(new Date(), { weekStartsOn: 1 }),
+      audience: { users, actor: user, talkTitle: talkTitleFor(issueTalkId), siteName: project.siteName },
     })
     setShowIssue(false)
     setIssueTalkId('')
@@ -300,6 +304,7 @@ export function ProjectHealthSafetySection({
     await issueToolboxTalk(organization.id, project.id, isSmallWorks, scheduleTalkId, recipients, user.id, {
       weekCommencing: startOfWeek(schedulePublishAt, { weekStartsOn: 1 }),
       publishAt: schedulePublishAt,
+      audience: { users, actor: user, talkTitle: talkTitleFor(scheduleTalkId), siteName: project.siteName },
     })
     setScheduleTalkId('')
     setScheduleRecipients([])

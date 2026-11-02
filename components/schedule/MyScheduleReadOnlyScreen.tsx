@@ -19,6 +19,8 @@ export function MyScheduleReadOnlyScreen({
   onSaveBooking,
   onDeleteBooking,
   payrollPolicy,
+  canWriteBookingFor,
+  canDeleteBookingFor,
 }: {
   organizationName: string
   organizationId?: string
@@ -33,6 +35,8 @@ export function MyScheduleReadOnlyScreen({
   onSaveBooking?: (bookingId: string, updates: Partial<Booking>) => Promise<void>
   onDeleteBooking?: (bookingId: string) => Promise<void>
   payrollPolicy?: OrgPayrollTimePolicy
+  canWriteBookingFor?: (booking: Booking) => boolean
+  canDeleteBookingFor?: (booking: Booking) => boolean
 }) {
   return (
     <ScheduleScreen
@@ -50,6 +54,8 @@ export function MyScheduleReadOnlyScreen({
       onSaveBooking={onSaveBooking}
       onDeleteBooking={onDeleteBooking}
       payrollPolicy={payrollPolicy}
+      canWriteBookingFor={canWriteBookingFor}
+      canDeleteBookingFor={canDeleteBookingFor}
     />
   )
 }

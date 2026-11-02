@@ -54,6 +54,41 @@ function ownerIdList(userId: string, ownerIds?: ReadonlyArray<string>): string[]
 /** Newest inbox rows kept live (iOS NotificationService limits its listener to 150). */
 export const INBOX_LISTENER_LIMIT = 150
 
+let inboxOwnedRows: AppInboxNotification[] = []
+let inboxRevealTimer: ReturnType<typeof setTimeout> | null = null
+
+function rowCreatedAtMs(row: AppInboxNotification): number | null {
+  const value = (row as { createdAt?: unknown }).createdAt
+  if (value instanceof Date) return value.getTime()
+  if (typeof value === 'number') return value
+  return null
+}
+
+/**
+ * Rulebook 1.10.0 (M5): a row is listed and counted only from its `createdAt` (`inboxNotificationVisibleToUser` with
+ * now), so a scheduled `deadline_reminder` / `deadline_due` written ahead of time appears when it is due. A timer
+ * re-publishes at the next due row.
+ */
+function publishInbox(set: (partial: Partial<NotificationState>) => void): void {
+  const now = Date.now()
+  const kept = inboxOwnedRows.filter((row) => inboxNotificationVisibleToUser(row, inboxOwnerIdList, now))
+  set({
+    notifications: kept,
+    // Canonical badge over the rows loaded (the newest 150), same as iOS.
+    unreadCount: unreadNotificationBadgeCount(kept, inboxOwnerIdList, now),
+    loading: false,
+  })
+  if (inboxRevealTimer) clearTimeout(inboxRevealTimer)
+  inboxRevealTimer = null
+  const next = inboxOwnedRows
+    .map(rowCreatedAtMs)
+    .filter((ms): ms is number => ms != null && ms > now)
+    .sort((a, b) => a - b)[0]
+  if (next != null) {
+    inboxRevealTimer = setTimeout(() => publishInbox(set), Math.min(next - now + 50, 2 ** 31 - 1))
+  }
+}
+
 export const useNotificationStore = create<NotificationState>((set, get) => ({
   notifications: [],
   unreadCount: 0,
@@ -96,19 +131,17 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
               logSkippedDocument('notifications', entry.id, parsed.errors)
               continue
             }
-            if (inboxNotificationVisibleToUser(parsed.value, inboxOwnerIdList)) notifications.push(parsed.value)
+            // Owner check only here; the createdAt check runs in publishInbox (1.10.0).
+            if (inboxNotificationVisibleToUser(parsed.value, inboxOwnerIdList, Number.MAX_SAFE_INTEGER)) {
+              notifications.push(parsed.value)
+            }
           }
           notifications.sort(compareInboxNotificationsByCreatedAt)
-          const kept =
+          inboxOwnedRows =
             snap.docs.length > 0 && failed === snap.docs.length
-              ? retainParsedRows(snap.docs.length, get().notifications, notifications)
+              ? retainParsedRows(snap.docs.length, inboxOwnedRows, notifications)
               : notifications
-          set({
-            notifications: kept,
-            // Canonical badge over the rows loaded (the newest 150), same as iOS.
-            unreadCount: unreadNotificationBadgeCount(kept, inboxOwnerIdList),
-            loading: false,
-          })
+          publishInbox(set)
         },
         (error: FirestoreError) => {
           if (inboxOrgId !== organizationId || inboxUserId !== userId) return

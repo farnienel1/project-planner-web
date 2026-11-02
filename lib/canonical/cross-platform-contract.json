@@ -1,0 +1,3184 @@
+{
+  "contractVersion": 1,
+  "timeZone": "Europe/London",
+  "instantShape": "{ \"seconds\": number, \"nanoseconds\": number } — a Firestore Timestamp as both apps pass it to the rulebook",
+  "collections": [
+    {
+      "id": "organization",
+      "reader": "organizationDocument",
+      "webWriter": "organizationCreateFields + companyDetailsWriteFields + organizationCurrencyWriteFields (web settings)",
+      "iosWriter": "FirebaseBackend organisation settings saves (companyDetailsWriteFields, organizationCurrencyWriteFields)",
+      "samples": [
+        {
+          "platform": "web",
+          "docId": "ORG-1",
+          "data": {
+            "name": "Acme Build",
+            "countryCode": "GB",
+            "currencyCode": "GBP",
+            "currency": "GBP",
+            "settings": {
+              "currencyCode": "GBP"
+            },
+            "officeAddressLine1": "1 High St",
+            "officeCity": "Leeds",
+            "officePostcode": "LS1 1AA",
+            "documentAbbreviation": "ACM",
+            "warningDetection": {
+              "detectClashes": true,
+              "clashLookaheadMode": "days",
+              "clashLookaheadDays": 7,
+              "includeWeekendsForUnbookedLabour": false,
+              "excludedUserIdsFromUnbookedWarnings": []
+            },
+            "members": {
+              "user-web-1": "admin"
+            },
+            "creatorUserId": "user-web-1"
+          },
+          "expected": {
+            "name": "Acme Build",
+            "companyDetails": {
+              "name": "Acme Build",
+              "hasOfficeAddress": true,
+              "officeAddressLine1": "1 High St",
+              "officeAddressLine2": "",
+              "officeCity": "Leeds",
+              "officeCounty": "",
+              "officePostcode": "LS1 1AA",
+              "countryCode": "GB",
+              "documentAbbreviation": "ACM",
+              "companyLogoURL": "",
+              "defaultLatitude": null,
+              "defaultLongitude": null,
+              "bankHolidayRegionId": "GB-ENG-WLS"
+            },
+            "currency": "GBP",
+            "warningDetection": {
+              "detectClashes": true,
+              "clashLookaheadMode": "numberOfDays",
+              "clashLookaheadDays": 7,
+              "includeWeekendsForUnbookedLabour": false,
+              "excludedUserIdsFromUnbookedWarnings": []
+            }
+          }
+        },
+        {
+          "platform": "ios",
+          "docId": "ORG-1",
+          "data": {
+            "name": "Acme Build",
+            "countryCode": "GB",
+            "currencyCode": "GBP",
+            "currency": "GBP",
+            "settings.currencyCode": "GBP",
+            "settings": {
+              "currencyCode": "GBP",
+              "bankHolidayRegionId": "GB-ENG-WLS"
+            },
+            "bankHolidayRegionId": "GB-ENG-WLS",
+            "officeAddressLine1": "1 High St",
+            "officeCity": "Leeds",
+            "officePostcode": "LS1 1AA",
+            "warningDetection": {
+              "detectClashes": true,
+              "clashLookaheadMode": "days",
+              "clashLookaheadDays": "7",
+              "includeWeekendsForUnbookedLabour": true,
+              "excludedUserIdsFromUnbookedWarnings": [
+                "USER-IOS-9"
+              ]
+            },
+            "members": {
+              "USER-IOS-1": "admin"
+            }
+          },
+          "expected": {
+            "name": "Acme Build",
+            "companyDetails": {
+              "name": "Acme Build",
+              "hasOfficeAddress": true,
+              "officeAddressLine1": "1 High St",
+              "officeAddressLine2": "",
+              "officeCity": "Leeds",
+              "officeCounty": "",
+              "officePostcode": "LS1 1AA",
+              "countryCode": "GB",
+              "documentAbbreviation": "",
+              "companyLogoURL": "",
+              "defaultLatitude": null,
+              "defaultLongitude": null,
+              "bankHolidayRegionId": "GB-ENG-WLS"
+            },
+            "currency": "GBP",
+            "warningDetection": {
+              "detectClashes": true,
+              "clashLookaheadMode": "numberOfDays",
+              "clashLookaheadDays": 7,
+              "includeWeekendsForUnbookedLabour": true,
+              "excludedUserIdsFromUnbookedWarnings": [
+                "USER-IOS-9"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "users",
+      "reader": "parseUserDocument",
+      "webWriter": "buildSaveUserPayload → userProfileWriteFields (lib/stores/userStore.ts)",
+      "iosWriter": "FirebaseBackend.userDocumentPayload",
+      "samples": [
+        {
+          "platform": "web",
+          "docId": "user-web-1",
+          "data": {
+            "email": "ada@acme.test",
+            "firstName": "Ada",
+            "surname": "Admin",
+            "lastName": "Admin",
+            "organizationId": "ORG-1",
+            "role": "admin",
+            "isActive": true,
+            "passwordSet": true,
+            "isSuperAdmin": false,
+            "adminAccess": true,
+            "permissions": {
+              "adminAccess": true,
+              "manager": false,
+              "operatives": true,
+              "operativeMode": false,
+              "projects": true,
+              "smallWorks": true
+            },
+            "payBasis": "day",
+            "dayRate": 200,
+            "employmentType": "self_employed",
+            "assignedManagerUserIds": [],
+            "hasNoLineManager": true,
+            "notificationPreferences": {
+              "variations": true,
+              "companyActivity": false
+            },
+            "createdAt": {
+              "seconds": 1790845200,
+              "nanoseconds": 0
+            },
+            "updatedAt": {
+              "seconds": 1790937000,
+              "nanoseconds": 0
+            }
+          },
+          "expected": {
+            "id": "user-web-1",
+            "email": "ada@acme.test",
+            "emailKey": "ada@acme.test",
+            "firstName": "Ada",
+            "surname": "Admin",
+            "displayName": "Ada Admin",
+            "mobileNumber": null,
+            "organizationId": "ORG-1",
+            "role": "admin",
+            "isSuperAdmin": false,
+            "operativeModeStored": false,
+            "operativeMode": false,
+            "accountKind": "admin",
+            "adminOutsideOperativeMode": true,
+            "permissions": {
+              "adminAccess": true,
+              "manager": false,
+              "operatives": true,
+              "skills": false,
+              "qualifications": false,
+              "materials": true,
+              "projects": true,
+              "smallWorks": true,
+              "operativeMode": false,
+              "siteAudit": true,
+              "subContractors": false,
+              "wholesalersOrderHistory": true,
+              "annualLeaveSelfBook": false,
+              "weeklyReports": false,
+              "dailyOverview": true
+            },
+            "isActive": true,
+            "passwordSet": true,
+            "status": null,
+            "assignedManagerUserIds": [],
+            "assignedManagerUserId": null,
+            "hasNoLineManager": true,
+            "formerUserIds": [],
+            "payBasis": "day",
+            "dayRate": 200,
+            "hourlyRate": null,
+            "employmentType": "self_employed",
+            "employmentTypeTransitionFrom": null,
+            "employmentTypeEffectiveAtMs": null,
+            "employmentTypeEffectiveDayKey": null,
+            "annualLeaveEnabled": true,
+            "annualLeaveDaysPerYear": 25,
+            "annualLeaveYearStartMonth": 1,
+            "annualLeaveYearEndMonth": 12,
+            "annualLeaveCarriesOver": false,
+            "annualLeaveStored": {
+              "daysPerYear": null,
+              "startMonth": null,
+              "endMonth": null,
+              "carriesOver": null
+            },
+            "annualLeaveDefaultsPending": true,
+            "annualLeaveYearAllowance": null,
+            "annualLeaveYearAllowanceKey": null,
+            "timesheetsEnabled": true,
+            "timesheetsEnabledStored": null,
+            "tradeTypePreset": null,
+            "tradeTypeCustom": null,
+            "profilePhotoURL": null,
+            "profilePhotoUpdatedAtMs": null,
+            "lastSeenAtMs": null,
+            "policyAccepted": false,
+            "policyAcceptedAtMs": null,
+            "legalPackVersion": null,
+            "createdAtMs": 1790845200000,
+            "updatedAtMs": 1790937000000,
+            "isAnonymisedDeleted": false
+          }
+        },
+        {
+          "platform": "ios",
+          "docId": "USER-IOS-1",
+          "data": {
+            "email": "ian@acme.test",
+            "firstName": "Ian",
+            "surname": "Ios",
+            "organizationId": "ORG-1",
+            "role": "manager",
+            "isActive": true,
+            "passwordSet": true,
+            "isSuperAdmin": false,
+            "adminAccess": false,
+            "manager": true,
+            "operatives": false,
+            "operativeMode": false,
+            "permissions": {
+              "manager": true,
+              "projects": true
+            },
+            "payBasis": "hourly",
+            "hourlyRate": 25,
+            "employmentType": "paye",
+            "assignedManagerUserId": "USER-IOS-2",
+            "assignedManagerUserIds": [
+              "USER-IOS-2"
+            ],
+            "formerUserIds": [
+              "6F1C2D3E-0000-4000-8000-000000000001"
+            ],
+            "notificationPreferences": {
+              "variations": false
+            },
+            "createdAt": {
+              "seconds": 1790845200,
+              "nanoseconds": 0
+            },
+            "updatedAt": {
+              "seconds": 1790937000,
+              "nanoseconds": 0
+            }
+          },
+          "expected": {
+            "id": "USER-IOS-1",
+            "email": "ian@acme.test",
+            "emailKey": "ian@acme.test",
+            "firstName": "Ian",
+            "surname": "Ios",
+            "displayName": "Ian Ios",
+            "mobileNumber": null,
+            "organizationId": "ORG-1",
+            "role": "manager",
+            "isSuperAdmin": false,
+            "operativeModeStored": false,
+            "operativeMode": false,
+            "accountKind": "manager",
+            "adminOutsideOperativeMode": false,
+            "permissions": {
+              "adminAccess": false,
+              "manager": true,
+              "operatives": false,
+              "skills": false,
+              "qualifications": false,
+              "materials": true,
+              "projects": true,
+              "smallWorks": false,
+              "operativeMode": false,
+              "siteAudit": true,
+              "subContractors": false,
+              "wholesalersOrderHistory": true,
+              "annualLeaveSelfBook": false,
+              "weeklyReports": false,
+              "dailyOverview": true
+            },
+            "isActive": true,
+            "passwordSet": true,
+            "status": null,
+            "assignedManagerUserIds": [
+              "USER-IOS-2"
+            ],
+            "assignedManagerUserId": "USER-IOS-2",
+            "hasNoLineManager": false,
+            "formerUserIds": [
+              "6F1C2D3E-0000-4000-8000-000000000001"
+            ],
+            "payBasis": "hourly",
+            "dayRate": null,
+            "hourlyRate": 25,
+            "employmentType": "paye",
+            "employmentTypeTransitionFrom": null,
+            "employmentTypeEffectiveAtMs": null,
+            "employmentTypeEffectiveDayKey": null,
+            "annualLeaveEnabled": true,
+            "annualLeaveDaysPerYear": 25,
+            "annualLeaveYearStartMonth": 1,
+            "annualLeaveYearEndMonth": 12,
+            "annualLeaveCarriesOver": false,
+            "annualLeaveStored": {
+              "daysPerYear": null,
+              "startMonth": null,
+              "endMonth": null,
+              "carriesOver": null
+            },
+            "annualLeaveDefaultsPending": true,
+            "annualLeaveYearAllowance": null,
+            "annualLeaveYearAllowanceKey": null,
+            "timesheetsEnabled": false,
+            "timesheetsEnabledStored": null,
+            "tradeTypePreset": null,
+            "tradeTypeCustom": null,
+            "profilePhotoURL": null,
+            "profilePhotoUpdatedAtMs": null,
+            "lastSeenAtMs": null,
+            "policyAccepted": false,
+            "policyAcceptedAtMs": null,
+            "legalPackVersion": null,
+            "createdAtMs": 1790845200000,
+            "updatedAtMs": 1790937000000,
+            "isAnonymisedDeleted": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "bookings",
+      "reader": "parseBookingDocument",
+      "webWriter": "rulebook writer (see crossPlatformContract.samples.ts webWrittenSamples)",
+      "iosWriter": "BookingWritePatch.labourValues",
+      "samples": [
+        {
+          "platform": "web",
+          "docId": "B0000000-0000-4000-8000-000000000001",
+          "data": {
+            "id": "B0000000-0000-4000-8000-000000000001",
+            "operativeId": "op-web-1",
+            "projectId": "a1b2c3d4-0000-4000-8000-00000000000a",
+            "date": {
+              "seconds": 1793750400,
+              "nanoseconds": 0
+            },
+            "timeSlot": "FULL DAY",
+            "bookedBy": "Ada Admin",
+            "notes": "Bring keys",
+            "status": "Confirmed",
+            "isBreakRemoved": false,
+            "createdAt": {
+              "seconds": 1790845200,
+              "nanoseconds": 0
+            },
+            "updatedAt": {
+              "seconds": 1790937000,
+              "nanoseconds": 0
+            }
+          },
+          "expected": {
+            "ok": true,
+            "booking": {
+              "id": "B0000000-0000-4000-8000-000000000001",
+              "operativeId": "op-web-1",
+              "projectId": "a1b2c3d4-0000-4000-8000-00000000000a",
+              "dateMs": 1793750400000,
+              "timeSlot": "FULL DAY",
+              "status": "Confirmed",
+              "bookedBy": "Ada Admin",
+              "notes": "Bring keys",
+              "isBreakRemoved": false,
+              "operativeIdIsUuid": false,
+              "projectIdIsUuid": true,
+              "createdAtMs": 1790845200000,
+              "updatedAtMs": 1790937000000
+            },
+            "repairs": []
+          }
+        },
+        {
+          "platform": "ios",
+          "docId": "B1000000-0000-4000-8000-000000000002",
+          "data": {
+            "operativeId": "OP-IOS-1",
+            "projectId": "A1B2C3D4-0000-4000-8000-00000000000B",
+            "date": {
+              "seconds": 1793779200,
+              "nanoseconds": 0
+            },
+            "timeSlot": "AM",
+            "bookedBy": "Ian Ios",
+            "notes": "",
+            "status": "Confirmed",
+            "isBreakRemoved": false,
+            "workStartTime": "07:30",
+            "bookingGroupId": "G-1",
+            "createdAt": {
+              "seconds": 1790845200,
+              "nanoseconds": 0
+            },
+            "updatedAt": {
+              "seconds": 1790937000,
+              "nanoseconds": 0
+            }
+          },
+          "expected": {
+            "ok": true,
+            "booking": {
+              "id": "B1000000-0000-4000-8000-000000000002",
+              "operativeId": "OP-IOS-1",
+              "projectId": "A1B2C3D4-0000-4000-8000-00000000000B",
+              "dateMs": 1793779200000,
+              "timeSlot": "AM",
+              "status": "Confirmed",
+              "bookedBy": "Ian Ios",
+              "notes": "",
+              "isBreakRemoved": false,
+              "operativeIdIsUuid": false,
+              "projectIdIsUuid": true,
+              "workStartTime": "07:30",
+              "bookingGroupId": "G-1",
+              "createdAtMs": 1790845200000,
+              "updatedAtMs": 1790937000000
+            },
+            "repairs": []
+          }
+        }
+      ]
+    },
+    {
+      "id": "managerSiteBookings",
+      "reader": "parseManagerSiteBookingDocument",
+      "webWriter": "managerSiteBookingStore create payload (lib/stores/managerScheduleStore.ts)",
+      "iosWriter": "BookingWritePatch.managerValues",
+      "samples": [
+        {
+          "platform": "web",
+          "docId": "MS000000-0000-4000-8000-000000000001",
+          "data": {
+            "id": "MS000000-0000-4000-8000-000000000001",
+            "userId": "mgr-web-1",
+            "date": {
+              "seconds": 1793750400,
+              "nanoseconds": 0
+            },
+            "timeSlot": "FULL_DAY",
+            "locationType": "project",
+            "locationId": "a1b2c3d4-0000-4000-8000-00000000000a",
+            "isBreakRemoved": false,
+            "createdAt": {
+              "seconds": 1790845200,
+              "nanoseconds": 0
+            },
+            "updatedAt": {
+              "seconds": 1790937000,
+              "nanoseconds": 0
+            }
+          },
+          "expected": {
+            "ok": true,
+            "booking": {
+              "id": "MS000000-0000-4000-8000-000000000001",
+              "userId": "mgr-web-1",
+              "dateMs": 1793750400000,
+              "timeSlot": "FULL_DAY",
+              "locationType": "project",
+              "isBreakRemoved": false,
+              "locationId": "a1b2c3d4-0000-4000-8000-00000000000a",
+              "createdAtMs": 1790845200000,
+              "updatedAtMs": 1790937000000
+            },
+            "repairs": []
+          }
+        },
+        {
+          "platform": "ios",
+          "docId": "MS100000-0000-4000-8000-000000000002",
+          "data": {
+            "userId": "USER-IOS-1",
+            "date": {
+              "seconds": 1793779200,
+              "nanoseconds": 0
+            },
+            "timeSlot": "CUSTOM_HOURS",
+            "locationType": "office",
+            "isBreakRemoved": true,
+            "workStartTime": "09:00",
+            "workEndTime": "13:00",
+            "createdAt": {
+              "seconds": 1790845200,
+              "nanoseconds": 0
+            },
+            "updatedAt": {
+              "seconds": 1790937000,
+              "nanoseconds": 0
+            }
+          },
+          "expected": {
+            "ok": true,
+            "booking": {
+              "id": "MS100000-0000-4000-8000-000000000002",
+              "userId": "USER-IOS-1",
+              "dateMs": 1793779200000,
+              "timeSlot": "CUSTOM_HOURS",
+              "locationType": "office",
+              "isBreakRemoved": true,
+              "workStartTime": "09:00",
+              "workEndTime": "13:00",
+              "createdAtMs": 1790845200000,
+              "updatedAtMs": 1790937000000
+            },
+            "repairs": []
+          }
+        }
+      ]
+    },
+    {
+      "id": "subcontractorBookings",
+      "reader": "parseSubcontractorBookingDocument",
+      "webWriter": "rulebook writer (see crossPlatformContract.samples.ts webWrittenSamples)",
+      "iosWriter": "Rulebook+WorkDocuments subcontractorBookingCreateFields",
+      "samples": [
+        {
+          "platform": "web",
+          "docId": "S0000000-0000-4000-8000-000000000001",
+          "data": {
+            "id": "S0000000-0000-4000-8000-000000000001",
+            "subcontractorId": "SUB-1",
+            "projectId": "a1b2c3d4-0000-4000-8000-00000000000a",
+            "date": {
+              "seconds": 1793750400,
+              "nanoseconds": 0
+            },
+            "timeSlot": "AM",
+            "isBreakRemoved": false,
+            "bookedBy": "Ada Admin",
+            "status": "Confirmed",
+            "bookedContactIds": [
+              "c-1"
+            ],
+            "bookedOperativeNames": [
+              "Sam Sub"
+            ],
+            "createdAt": {
+              "seconds": 1790845200,
+              "nanoseconds": 0
+            },
+            "updatedAt": {
+              "seconds": 1790845200,
+              "nanoseconds": 0
+            }
+          },
+          "expected": {
+            "id": "S0000000-0000-4000-8000-000000000001",
+            "subcontractorId": "SUB-1",
+            "projectId": "a1b2c3d4-0000-4000-8000-00000000000a",
+            "dateMs": 1793750400000,
+            "dayKey": "2026-11-04",
+            "timeSlot": "AM",
+            "workStartTime": null,
+            "workEndTime": null,
+            "isBreakRemoved": false,
+            "bookedBy": "Ada Admin",
+            "status": "Confirmed",
+            "bookedContactIds": [
+              "c-1"
+            ],
+            "bookedOperativeNames": [
+              "Sam Sub"
+            ],
+            "createdAtMs": 1790845200000,
+            "updatedAtMs": 1790845200000,
+            "idsAreUuid": false
+          }
+        },
+        {
+          "platform": "ios",
+          "docId": "S1000000-0000-4000-8000-000000000002",
+          "data": {
+            "id": "S1000000-0000-4000-8000-000000000002",
+            "subcontractorId": "SUB-1",
+            "projectID": "A1B2C3D4-0000-4000-8000-00000000000B",
+            "date": {
+              "seconds": 1793779200,
+              "nanoseconds": 0
+            },
+            "timeSlot": "FULL DAY",
+            "isBreakRemoved": false,
+            "bookedBy": "Ian Ios",
+            "status": "Confirmed",
+            "bookedContactIds": [],
+            "bookedOperativeNames": [],
+            "createdAt": {
+              "seconds": 1790845200,
+              "nanoseconds": 0
+            },
+            "updatedAt": {
+              "seconds": 1790845200,
+              "nanoseconds": 0
+            }
+          },
+          "expected": {
+            "id": "S1000000-0000-4000-8000-000000000002",
+            "subcontractorId": "SUB-1",
+            "projectId": "A1B2C3D4-0000-4000-8000-00000000000B",
+            "dateMs": 1793779200000,
+            "dayKey": "2026-11-04",
+            "timeSlot": "FULL DAY",
+            "workStartTime": null,
+            "workEndTime": null,
+            "isBreakRemoved": false,
+            "bookedBy": "Ian Ios",
+            "status": "Confirmed",
+            "bookedContactIds": [],
+            "bookedOperativeNames": [],
+            "createdAtMs": 1790845200000,
+            "updatedAtMs": 1790845200000,
+            "idsAreUuid": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "projects",
+      "reader": "parseProjectDocument",
+      "webWriter": "projectStore save → jobWriteFields (lib/stores/projectStore.ts)",
+      "iosWriter": "FirebaseBackend.jobDocumentPayload",
+      "samples": [
+        {
+          "platform": "web",
+          "docId": "a1b2c3d4-0000-4000-8000-00000000000a",
+          "data": {
+            "id": "a1b2c3d4-0000-4000-8000-00000000000a",
+            "jobNumber": "J-100",
+            "siteName": "High St Fit Out",
+            "addressLine1": "1 High St",
+            "addressLine2": "",
+            "townCity": "Leeds",
+            "postcode": "LS1 1AA",
+            "siteAddress": "1 High St, Leeds, LS1 1AA",
+            "client": {
+              "id": "client-web-1",
+              "name": "Client Co",
+              "email": "",
+              "phone": ""
+            },
+            "startDate": {
+              "seconds": 1793577600,
+              "nanoseconds": 0
+            },
+            "endDate": {
+              "seconds": 1797552000,
+              "nanoseconds": 0
+            },
+            "jobType": "CAT A",
+            "managerId": "user:mgr-web-1",
+            "managerIds": [
+              "user:mgr-web-1"
+            ],
+            "managerUserIds": [
+              "mgr-web-1"
+            ],
+            "isLive": true,
+            "organizationId": "ORG-1",
+            "createdAt": {
+              "seconds": 1790845200,
+              "nanoseconds": 0
+            },
+            "updatedAt": {
+              "seconds": 1790937000,
+              "nanoseconds": 0
+            }
+          },
+          "expected": {
+            "id": "a1b2c3d4-0000-4000-8000-00000000000a",
+            "kind": "project",
+            "collection": "projects",
+            "jobNumber": "J-100",
+            "siteName": "High St Fit Out",
+            "addressLine1": "1 High St",
+            "addressLine2": null,
+            "townCity": "Leeds",
+            "postcode": "LS1 1AA",
+            "siteAddress": "1 High St, Leeds, LS1 1AA",
+            "client": {
+              "id": "client-web-1",
+              "idStored": true,
+              "name": "Client Co",
+              "email": null,
+              "phone": null
+            },
+            "startMs": 1793577600000,
+            "startDayKey": "2026-11-02",
+            "endMs": 1797552000000,
+            "endDayKey": "2026-12-18",
+            "jobType": "CAT A",
+            "customJobType": null,
+            "managerName": null,
+            "managerId": "user:mgr-web-1",
+            "managerIds": [
+              "user:mgr-web-1"
+            ],
+            "managerUserIds": [
+              "mgr-web-1"
+            ],
+            "isLive": true,
+            "description": null,
+            "notes": null,
+            "latitude": null,
+            "longitude": null,
+            "usesMapPinForLocation": false,
+            "hiddenManagerUserIds": [],
+            "hiddenOperativeUserIds": [],
+            "status": null,
+            "organizationId": "ORG-1",
+            "createdAtMs": 1790845200000,
+            "updatedAtMs": 1790937000000
+          }
+        },
+        {
+          "platform": "ios",
+          "docId": "A1B2C3D4-0000-4000-8000-00000000000B",
+          "data": {
+            "jobNumber": "J-200",
+            "siteName": "Office refit",
+            "addressLine1": "5 Park Row",
+            "addressLine2": "",
+            "townCity": "Leeds",
+            "postcode": "LS1 5AA",
+            "siteAddress": "5 Park Row, Leeds",
+            "client": {
+              "id": "CLIENT-IOS-1",
+              "name": "Client Co",
+              "email": "",
+              "phone": ""
+            },
+            "startDate": {
+              "seconds": 1793577600,
+              "nanoseconds": 0
+            },
+            "endDate": {
+              "seconds": 1797552000,
+              "nanoseconds": 0
+            },
+            "jobType": "CAT B",
+            "manager": "Custom",
+            "managerId": "MGR-ROW-IOS-1",
+            "managerIds": [
+              "MGR-ROW-IOS-1"
+            ],
+            "isLive": true,
+            "description": "",
+            "hiddenManagerUserIds": [],
+            "hiddenOperativeUserIds": [],
+            "usesMapPinForLocation": false,
+            "organizationId": "ORG-1",
+            "createdAt": {
+              "seconds": 1790845200,
+              "nanoseconds": 0
+            },
+            "updatedAt": {
+              "seconds": 1790937000,
+              "nanoseconds": 0
+            }
+          },
+          "expected": {
+            "id": "A1B2C3D4-0000-4000-8000-00000000000B",
+            "kind": "project",
+            "collection": "projects",
+            "jobNumber": "J-200",
+            "siteName": "Office refit",
+            "addressLine1": "5 Park Row",
+            "addressLine2": null,
+            "townCity": "Leeds",
+            "postcode": "LS1 5AA",
+            "siteAddress": "5 Park Row, Leeds",
+            "client": {
+              "id": "CLIENT-IOS-1",
+              "idStored": true,
+              "name": "Client Co",
+              "email": null,
+              "phone": null
+            },
+            "startMs": 1793577600000,
+            "startDayKey": "2026-11-02",
+            "endMs": 1797552000000,
+            "endDayKey": "2026-12-18",
+            "jobType": "CAT B",
+            "customJobType": null,
+            "managerName": null,
+            "managerId": "MGR-ROW-IOS-1",
+            "managerIds": [
+              "MGR-ROW-IOS-1"
+            ],
+            "managerUserIds": [],
+            "isLive": true,
+            "description": null,
+            "notes": null,
+            "latitude": null,
+            "longitude": null,
+            "usesMapPinForLocation": false,
+            "hiddenManagerUserIds": [],
+            "hiddenOperativeUserIds": [],
+            "status": null,
+            "organizationId": "ORG-1",
+            "createdAtMs": 1790845200000,
+            "updatedAtMs": 1790937000000
+          }
+        }
+      ]
+    },
+    {
+      "id": "smallWorks",
+      "reader": "parseSmallWorkDocument",
+      "webWriter": "projectStore save (smallWorks) → jobWriteFields",
+      "iosWriter": "FirebaseBackend.jobDocumentPayload (smallWorks)",
+      "samples": [
+        {
+          "platform": "web",
+          "docId": "sw-web-1",
+          "data": {
+            "id": "sw-web-1",
+            "jobNumber": "SW-7",
+            "siteName": "Boiler swap",
+            "addressLine1": "2 Low Rd",
+            "townCity": "York",
+            "postcode": "YO1 1AA",
+            "client": {
+              "id": "client-web-1",
+              "name": "Client Co"
+            },
+            "startDate": {
+              "seconds": 1793750400,
+              "nanoseconds": 0
+            },
+            "endDate": {
+              "seconds": 1793750400,
+              "nanoseconds": 0
+            },
+            "jobType": "Small Works",
+            "managerIds": [
+              "user:mgr-web-1"
+            ],
+            "managerUserIds": [
+              "mgr-web-1"
+            ],
+            "isLive": true,
+            "organizationId": "ORG-1",
+            "createdAt": {
+              "seconds": 1790845200,
+              "nanoseconds": 0
+            },
+            "updatedAt": {
+              "seconds": 1790937000,
+              "nanoseconds": 0
+            }
+          },
+          "expected": {
+            "id": "sw-web-1",
+            "kind": "smallWork",
+            "collection": "smallWorks",
+            "jobNumber": "SW-7",
+            "siteName": "Boiler swap",
+            "addressLine1": "2 Low Rd",
+            "addressLine2": null,
+            "townCity": "York",
+            "postcode": "YO1 1AA",
+            "siteAddress": "2 Low Rd, York, YO1 1AA",
+            "client": {
+              "id": "client-web-1",
+              "idStored": true,
+              "name": "Client Co",
+              "email": null,
+              "phone": null
+            },
+            "startMs": 1793750400000,
+            "startDayKey": "2026-11-04",
+            "endMs": 1793750400000,
+            "endDayKey": "2026-11-04",
+            "jobType": "Small Works",
+            "customJobType": null,
+            "managerName": null,
+            "managerId": "user:mgr-web-1",
+            "managerIds": [
+              "user:mgr-web-1"
+            ],
+            "managerUserIds": [
+              "mgr-web-1"
+            ],
+            "isLive": true,
+            "description": null,
+            "notes": null,
+            "latitude": null,
+            "longitude": null,
+            "usesMapPinForLocation": false,
+            "hiddenManagerUserIds": [],
+            "hiddenOperativeUserIds": [],
+            "status": null,
+            "organizationId": "ORG-1",
+            "createdAtMs": 1790845200000,
+            "updatedAtMs": 1790937000000
+          }
+        },
+        {
+          "platform": "ios",
+          "docId": "SW100000-0000-4000-8000-000000000002",
+          "data": {
+            "jobNumber": "SW-8",
+            "siteName": "Leak fix",
+            "addressLine1": "9 Side St",
+            "townCity": "York",
+            "postcode": "YO1 9AA",
+            "client": {
+              "id": "CLIENT-IOS-1",
+              "name": "Client Co"
+            },
+            "startDate": {
+              "seconds": 1793750400,
+              "nanoseconds": 0
+            },
+            "endDate": {
+              "seconds": 1793750400,
+              "nanoseconds": 0
+            },
+            "jobType": "Small Works",
+            "managerIds": [
+              "MGR-ROW-IOS-1"
+            ],
+            "managerId": "MGR-ROW-IOS-1",
+            "isLive": true,
+            "organizationId": "ORG-1",
+            "createdAt": {
+              "seconds": 1790845200,
+              "nanoseconds": 0
+            },
+            "updatedAt": {
+              "seconds": 1790937000,
+              "nanoseconds": 0
+            }
+          },
+          "expected": {
+            "id": "SW100000-0000-4000-8000-000000000002",
+            "kind": "smallWork",
+            "collection": "smallWorks",
+            "jobNumber": "SW-8",
+            "siteName": "Leak fix",
+            "addressLine1": "9 Side St",
+            "addressLine2": null,
+            "townCity": "York",
+            "postcode": "YO1 9AA",
+            "siteAddress": "9 Side St, York, YO1 9AA",
+            "client": {
+              "id": "CLIENT-IOS-1",
+              "idStored": true,
+              "name": "Client Co",
+              "email": null,
+              "phone": null
+            },
+            "startMs": 1793750400000,
+            "startDayKey": "2026-11-04",
+            "endMs": 1793750400000,
+            "endDayKey": "2026-11-04",
+            "jobType": "Small Works",
+            "customJobType": null,
+            "managerName": null,
+            "managerId": "MGR-ROW-IOS-1",
+            "managerIds": [
+              "MGR-ROW-IOS-1"
+            ],
+            "managerUserIds": [],
+            "isLive": true,
+            "description": null,
+            "notes": null,
+            "latitude": null,
+            "longitude": null,
+            "usesMapPinForLocation": false,
+            "hiddenManagerUserIds": [],
+            "hiddenOperativeUserIds": [],
+            "status": null,
+            "organizationId": "ORG-1",
+            "createdAtMs": 1790845200000,
+            "updatedAtMs": 1790937000000
+          }
+        }
+      ]
+    },
+    {
+      "id": "holidayBookings",
+      "reader": "parseHolidayDocument",
+      "webWriter": "rulebook writer (see crossPlatformContract.samples.ts webWrittenSamples)",
+      "iosWriter": "Rulebook holidayRequestWriteFields (iOS AnnualLeave save)",
+      "samples": [
+        {
+          "platform": "web",
+          "docId": "H0000000-0000-4000-8000-000000000001",
+          "data": {
+            "id": "H0000000-0000-4000-8000-000000000001",
+            "organizationId": "ORG-1",
+            "userId": "user-web-1",
+            "operativeId": null,
+            "status": "pending",
+            "timeSlot": "FULL DAY",
+            "approvedByUserId": null,
+            "cancellationRequestedByUserId": null,
+            "decisionNote": null,
+            "startDate": {
+              "seconds": 1793750400,
+              "nanoseconds": 0
+            },
+            "endDate": {
+              "seconds": 1793923200,
+              "nanoseconds": 0
+            },
+            "cancellationRequestedAt": null,
+            "createdAt": {
+              "seconds": 1790845200,
+              "nanoseconds": 0
+            },
+            "updatedAt": {
+              "seconds": 1790937000,
+              "nanoseconds": 0
+            }
+          },
+          "expected": {
+            "id": "H0000000-0000-4000-8000-000000000001",
+            "userId": "user-web-1",
+            "operativeId": null,
+            "startDayKey": "2026-11-04",
+            "endDayKey": "2026-11-06",
+            "timeSlot": "FULL DAY",
+            "status": "pending",
+            "approved": false,
+            "approvedByUserId": null,
+            "cancellationRequested": false,
+            "cancellationRequestedByUserId": null,
+            "decisionNote": null,
+            "organizationId": "ORG-1"
+          }
+        },
+        {
+          "platform": "ios",
+          "docId": "H1000000-0000-4000-8000-000000000002",
+          "data": {
+            "id": "H1000000-0000-4000-8000-000000000002",
+            "organizationId": "ORG-1",
+            "userId": "USER-IOS-1",
+            "operativeId": "OP-IOS-1",
+            "startDate": {
+              "seconds": 1794182400,
+              "nanoseconds": 0
+            },
+            "endDate": {
+              "seconds": 1794182400,
+              "nanoseconds": 0
+            },
+            "status": "approved",
+            "timeSlot": "AM",
+            "approvedByUserId": "USER-IOS-2",
+            "approvedAt": {
+              "seconds": 1790937000,
+              "nanoseconds": 0
+            },
+            "cancellationRequestedAt": null,
+            "cancellationRequestedByUserId": null,
+            "decisionNote": null,
+            "createdAt": {
+              "seconds": 1790845200,
+              "nanoseconds": 0
+            },
+            "updatedAt": {
+              "seconds": 1790937000,
+              "nanoseconds": 0
+            }
+          },
+          "expected": {
+            "id": "H1000000-0000-4000-8000-000000000002",
+            "userId": "USER-IOS-1",
+            "operativeId": "OP-IOS-1",
+            "startDayKey": "2026-11-09",
+            "endDayKey": "2026-11-09",
+            "timeSlot": "AM",
+            "status": "approved",
+            "approved": true,
+            "approvedByUserId": "USER-IOS-2",
+            "cancellationRequested": false,
+            "cancellationRequestedByUserId": null,
+            "decisionNote": null,
+            "organizationId": "ORG-1"
+          }
+        }
+      ]
+    },
+    {
+      "id": "timesheets",
+      "reader": "parseTimesheetStatusFields",
+      "webWriter": "timesheetOwnerWriteFields / timesheetSignOffWriteFields (timesheet period page)",
+      "iosWriter": "TimesheetStore.statusPayload",
+      "samples": [
+        {
+          "platform": "web",
+          "docId": "timesheet_user-web-1_1793750400",
+          "data": {
+            "userId": "user-web-1",
+            "startDayKey": "2026-11-01",
+            "endDayKey": "2026-11-15",
+            "ownerSignedAt": {
+              "seconds": 1790937000,
+              "nanoseconds": 0
+            },
+            "managerSignedAt": null,
+            "exportedAt": null
+          },
+          "expected": {
+            "operativeSignedAtMs": null,
+            "operativeSignedByName": "",
+            "operativeSignatureImageBase64": "",
+            "managerSignedAtMs": null,
+            "managerSignedByName": "",
+            "managerSignedByUserId": "",
+            "managerSignatureImageBase64": "",
+            "exportedAtMs": null
+          }
+        },
+        {
+          "platform": "ios",
+          "docId": "timesheet_USER-IOS-1_1793750400",
+          "data": {
+            "userId": "USER-IOS-1",
+            "ownerSignedAt": {
+              "seconds": 1790937000,
+              "nanoseconds": 0
+            },
+            "managerSignedAt": {
+              "seconds": 1790937000,
+              "nanoseconds": 0
+            },
+            "managerSignedByUserId": "USER-IOS-2",
+            "exportedAt": null
+          },
+          "expected": {
+            "operativeSignedAtMs": null,
+            "operativeSignedByName": "",
+            "operativeSignatureImageBase64": "",
+            "managerSignedAtMs": 1790937000000,
+            "managerSignedByName": "",
+            "managerSignedByUserId": "USER-IOS-2",
+            "managerSignatureImageBase64": "",
+            "exportedAtMs": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "operatives",
+      "reader": "parseOperativeDocument",
+      "webWriter": "operativeStore save → operativeRowWriteFields",
+      "iosWriter": "FirebaseBackend.operativeDocumentPayload",
+      "samples": [
+        {
+          "platform": "web",
+          "docId": "op-web-1",
+          "data": {
+            "id": "op-web-1",
+            "firstName": "Ollie",
+            "lastName": "Operative",
+            "name": "Ollie Operative",
+            "email": "ollie@acme.test",
+            "phone": "",
+            "isActive": true,
+            "skills": [],
+            "qualifications": [],
+            "payBasis": "day",
+            "dayRate": 180,
+            "organizationId": "ORG-1",
+            "startDate": {
+              "seconds": 1790845200,
+              "nanoseconds": 0
+            },
+            "createdAt": {
+              "seconds": 1790845200,
+              "nanoseconds": 0
+            },
+            "updatedAt": {
+              "seconds": 1790937000,
+              "nanoseconds": 0
+            }
+          },
+          "expected": {
+            "id": "op-web-1",
+            "firstName": "Ollie",
+            "lastName": "Operative",
+            "name": "Ollie Operative",
+            "email": "ollie@acme.test",
+            "emailKey": "ollie@acme.test",
+            "phone": null,
+            "linkedUserId": null,
+            "startDayKey": "2026-10-01",
+            "startDateMs": 1790845200000,
+            "skills": [],
+            "qualifications": [],
+            "qualificationExpiryDates": {},
+            "qualificationCertificateURLs": {},
+            "isActive": true,
+            "payBasis": "day",
+            "dayRate": 180,
+            "hourlyRate": null,
+            "currencySymbol": null,
+            "notes": null,
+            "tradeTypePreset": null,
+            "tradeTypeCustom": null,
+            "organizationId": "ORG-1",
+            "createdAtMs": 1790845200000,
+            "updatedAtMs": 1790937000000,
+            "isPlaceholder": false
+          }
+        },
+        {
+          "platform": "ios",
+          "docId": "OP-IOS-1",
+          "data": {
+            "firstName": "Olga",
+            "lastName": "Op",
+            "name": "Olga Op",
+            "email": "olga@acme.test",
+            "phone": "",
+            "startDate": {
+              "seconds": 1790845200,
+              "nanoseconds": 0
+            },
+            "skills": [
+              "IPAF"
+            ],
+            "qualifications": [],
+            "isActive": true,
+            "currencySymbol": "£",
+            "notes": "",
+            "tradeTypePreset": "Labourer",
+            "tradeTypeCustom": "",
+            "qualificationExpiryDates": {},
+            "qualificationCertificateURLs": {},
+            "payBasis": "hourly",
+            "hourlyRate": 18.5,
+            "organizationId": "ORG-1",
+            "createdAt": {
+              "seconds": 1790845200,
+              "nanoseconds": 0
+            }
+          },
+          "expected": {
+            "id": "OP-IOS-1",
+            "firstName": "Olga",
+            "lastName": "Op",
+            "name": "Olga Op",
+            "email": "olga@acme.test",
+            "emailKey": "olga@acme.test",
+            "phone": null,
+            "linkedUserId": null,
+            "startDayKey": "2026-10-01",
+            "startDateMs": 1790845200000,
+            "skills": [
+              "IPAF"
+            ],
+            "qualifications": [],
+            "qualificationExpiryDates": {},
+            "qualificationCertificateURLs": {},
+            "isActive": true,
+            "payBasis": "hourly",
+            "dayRate": null,
+            "hourlyRate": 18.5,
+            "currencySymbol": "£",
+            "notes": null,
+            "tradeTypePreset": "Labourer",
+            "tradeTypeCustom": null,
+            "organizationId": "ORG-1",
+            "createdAtMs": 1790845200000,
+            "updatedAtMs": null,
+            "isPlaceholder": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "managers",
+      "reader": "parseManagerDocument",
+      "webWriter": "operativeStore saveManager → managerRowWriteFields",
+      "iosWriter": "FirebaseBackend.managerDocumentPayload",
+      "samples": [
+        {
+          "platform": "web",
+          "docId": "mgr-row-web-1",
+          "data": {
+            "id": "mgr-row-web-1",
+            "firstName": "Mia",
+            "lastName": "Manager",
+            "email": "mia@acme.test",
+            "mobileNumber": "07000 000000",
+            "isActive": true,
+            "organizationId": "ORG-1",
+            "createdAt": {
+              "seconds": 1790845200,
+              "nanoseconds": 0
+            },
+            "updatedAt": {
+              "seconds": 1790937000,
+              "nanoseconds": 0
+            }
+          },
+          "expected": {
+            "id": "mgr-row-web-1",
+            "firstName": "Mia",
+            "lastName": "Manager",
+            "name": "Mia Manager",
+            "email": "mia@acme.test",
+            "emailKey": "mia@acme.test",
+            "mobile": "07000 000000",
+            "phone": "07000 000000",
+            "linkedUserId": null,
+            "department": null,
+            "isActive": true,
+            "payBasis": null,
+            "dayRate": null,
+            "hourlyRate": null,
+            "notes": null,
+            "tradeTypePreset": null,
+            "tradeTypeCustom": null,
+            "organizationId": "ORG-1",
+            "createdAtMs": 1790845200000,
+            "updatedAtMs": 1790937000000,
+            "isPlaceholder": false
+          }
+        },
+        {
+          "platform": "ios",
+          "docId": "MGR-ROW-IOS-1",
+          "data": {
+            "firstName": "Max",
+            "lastName": "Manager",
+            "email": "max@acme.test",
+            "mobileNumber": "07000 111111",
+            "department": "",
+            "isActive": true,
+            "notes": "",
+            "tradeTypePreset": "",
+            "tradeTypeCustom": "",
+            "organizationId": "ORG-1",
+            "createdAt": {
+              "seconds": 1790845200,
+              "nanoseconds": 0
+            }
+          },
+          "expected": {
+            "id": "MGR-ROW-IOS-1",
+            "firstName": "Max",
+            "lastName": "Manager",
+            "name": "Max Manager",
+            "email": "max@acme.test",
+            "emailKey": "max@acme.test",
+            "mobile": "07000 111111",
+            "phone": "07000 111111",
+            "linkedUserId": null,
+            "department": null,
+            "isActive": true,
+            "payBasis": null,
+            "dayRate": null,
+            "hourlyRate": null,
+            "notes": null,
+            "tradeTypePreset": null,
+            "tradeTypeCustom": null,
+            "organizationId": "ORG-1",
+            "createdAtMs": 1790845200000,
+            "updatedAtMs": null,
+            "isPlaceholder": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "clients",
+      "reader": "parseClientDocument",
+      "webWriter": "clientStore save → clientWriteFields",
+      "iosWriter": "FirebaseBackend.clientDocumentPayload",
+      "samples": [
+        {
+          "platform": "web",
+          "docId": "client-web-1",
+          "data": {
+            "id": "client-web-1",
+            "name": "Client Co",
+            "contactPerson": "Cara",
+            "email": "cara@client.test",
+            "phone": "",
+            "address": "",
+            "organizationId": "ORG-1",
+            "createdAt": {
+              "seconds": 1790845200,
+              "nanoseconds": 0
+            },
+            "updatedAt": {
+              "seconds": 1790937000,
+              "nanoseconds": 0
+            }
+          },
+          "expected": {
+            "id": "client-web-1",
+            "name": "Client Co",
+            "contactPerson": "Cara",
+            "email": "cara@client.test",
+            "phone": null,
+            "address": null,
+            "organizationId": "ORG-1",
+            "createdAtMs": 1790845200000,
+            "updatedAtMs": 1790937000000
+          }
+        },
+        {
+          "platform": "ios",
+          "docId": "CLIENT-IOS-1",
+          "data": {
+            "id": "CLIENT-IOS-1",
+            "name": "Client Co",
+            "contactPerson": "",
+            "email": "",
+            "phone": "",
+            "address": "",
+            "organizationId": "ORG-1",
+            "createdAt": {
+              "seconds": 1790845200,
+              "nanoseconds": 0
+            }
+          },
+          "expected": {
+            "id": "CLIENT-IOS-1",
+            "name": "Client Co",
+            "contactPerson": null,
+            "email": null,
+            "phone": null,
+            "address": null,
+            "organizationId": "ORG-1",
+            "createdAtMs": 1790845200000,
+            "updatedAtMs": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "subcontractors",
+      "reader": "parseSubcontractorDocument",
+      "webWriter": "subcontractorStore save → subcontractorWriteFields",
+      "iosWriter": "FirebaseBackend subcontractor save",
+      "samples": [
+        {
+          "platform": "web",
+          "docId": "SUB-1",
+          "data": {
+            "id": "SUB-1",
+            "name": "Sparks Ltd",
+            "subcontractorType": "Electrical",
+            "website": "",
+            "address": "",
+            "contacts": [
+              {
+                "id": "c-1",
+                "name": "Sam Sub",
+                "email": "sam@sparks.test",
+                "contactNumber": "",
+                "position": "Installer"
+              }
+            ],
+            "organizationId": "ORG-1",
+            "createdAt": {
+              "seconds": 1790845200,
+              "nanoseconds": 0
+            },
+            "updatedAt": {
+              "seconds": 1790937000,
+              "nanoseconds": 0
+            }
+          },
+          "expected": {
+            "id": "SUB-1",
+            "name": "Sparks Ltd",
+            "subcontractorType": "Electrical",
+            "website": null,
+            "address": null,
+            "contacts": [
+              {
+                "id": "c-1",
+                "idStored": true,
+                "name": "Sam Sub",
+                "email": "sam@sparks.test",
+                "contactNumber": "",
+                "position": "Installer",
+                "tradeType": null,
+                "createdAtMs": null
+              }
+            ],
+            "createdAtMs": 1790845200000,
+            "updatedAtMs": 1790937000000
+          }
+        },
+        {
+          "platform": "ios",
+          "docId": "SUB-IOS-1",
+          "data": {
+            "name": "Pipes Ltd",
+            "subcontractorType": "Plumbing",
+            "contacts": [
+              {
+                "name": "Pat Pipe",
+                "email": "",
+                "contactNumber": "07000 222222",
+                "position": "Supervisor",
+                "createdAt": {
+                  "seconds": 1790845200,
+                  "nanoseconds": 0
+                }
+              }
+            ],
+            "organizationId": "ORG-1",
+            "createdAt": {
+              "seconds": 1790845200,
+              "nanoseconds": 0
+            }
+          },
+          "expected": {
+            "id": "SUB-IOS-1",
+            "name": "Pipes Ltd",
+            "subcontractorType": "Plumbing",
+            "website": null,
+            "address": null,
+            "contacts": [
+              {
+                "id": "658DF5FD-E5D7-8C33-BDA7-9CABE811B10D",
+                "idStored": false,
+                "name": "Pat Pipe",
+                "email": "",
+                "contactNumber": "07000 222222",
+                "position": "Supervisor",
+                "tradeType": null,
+                "createdAtMs": 1790845200000
+              }
+            ],
+            "createdAtMs": 1790845200000,
+            "updatedAtMs": 1790845200000
+          }
+        }
+      ]
+    },
+    {
+      "id": "operativeDayRateHistory",
+      "reader": "parsePayRateHistoryDocument",
+      "webWriter": "rulebook writer (see crossPlatformContract.samples.ts webWrittenSamples)",
+      "iosWriter": "FirebaseBackend.recordOperativeDayRateChange (payRateHistoryWriteFields)",
+      "samples": [
+        {
+          "platform": "web",
+          "docId": "P0000000-0000-4000-8000-000000000001",
+          "data": {
+            "dayRate": 180,
+            "payBasis": "day",
+            "effectiveAt": {
+              "seconds": 1793750400,
+              "nanoseconds": 0
+            },
+            "userId": "user-web-1",
+            "operativeId": "op-web-1",
+            "createdAt": {
+              "seconds": 1790845200,
+              "nanoseconds": 0
+            }
+          },
+          "expected": {
+            "id": "P0000000-0000-4000-8000-000000000001",
+            "userId": "user-web-1",
+            "operativeId": "op-web-1",
+            "dayRate": 180,
+            "cleared": false,
+            "payBasis": "day",
+            "effectiveAt": 1793750400000,
+            "createdAt": 1790845200000,
+            "effectiveDayKey": "2026-11-04"
+          }
+        },
+        {
+          "platform": "ios",
+          "docId": "P1000000-0000-4000-8000-000000000002",
+          "data": {
+            "userId": "USER-IOS-1",
+            "operativeId": "OP-IOS-1",
+            "dayRate": null,
+            "payBasis": null,
+            "effectiveAt": {
+              "seconds": 1793750400,
+              "nanoseconds": 0
+            },
+            "createdAt": {
+              "seconds": 1790845200,
+              "nanoseconds": 0
+            }
+          },
+          "expected": {
+            "id": "P1000000-0000-4000-8000-000000000002",
+            "userId": "USER-IOS-1",
+            "operativeId": "OP-IOS-1",
+            "dayRate": null,
+            "cleared": true,
+            "payBasis": null,
+            "effectiveAt": 1793750400000,
+            "createdAt": 1790845200000,
+            "effectiveDayKey": "2026-11-04"
+          }
+        }
+      ]
+    },
+    {
+      "id": "warningResolutions",
+      "reader": "parseWarningResolutionDocument",
+      "webWriter": "rulebook writer (see crossPlatformContract.samples.ts webWrittenSamples)",
+      "iosWriter": "FirebaseBackend warning resolution (warningResolutionWriteFields; older builds: epoch-second keys)",
+      "samples": [
+        {
+          "platform": "web",
+          "docId": "op-clash-b1-b2",
+          "data": {
+            "resolutionKey": "op-clash-b1-b2",
+            "status": "approved",
+            "resolvedByUserId": "user-web-1",
+            "resolvedAt": {
+              "seconds": 1790937000,
+              "nanoseconds": 0
+            }
+          },
+          "expected": {
+            "id": "op-clash-b1-b2",
+            "resolutionKey": "op-clash-b1-b2",
+            "storedKey": "op-clash-b1-b2",
+            "isLegacyKey": false,
+            "status": "approved",
+            "resolvedByUserId": "user-web-1",
+            "resolvedAtMs": 1790937000000
+          }
+        },
+        {
+          "platform": "ios",
+          "docId": "mgr-clash-USER-IOS-1-1793750400-0",
+          "data": {
+            "resolutionKey": "mgr-clash-USER-IOS-1-1793750400-0",
+            "status": "dismissed",
+            "resolvedByUserId": "USER-IOS-2",
+            "resolvedAt": {
+              "seconds": 1790937000,
+              "nanoseconds": 0
+            }
+          },
+          "expected": {
+            "id": "mgr-clash-USER-IOS-1-1793750400-0",
+            "resolutionKey": "mgr-clash-USER-IOS-1-2026-11-04-0",
+            "storedKey": "mgr-clash-USER-IOS-1-1793750400-0",
+            "isLegacyKey": true,
+            "status": "dismissed",
+            "resolvedByUserId": "USER-IOS-2",
+            "resolvedAtMs": 1790937000000
+          }
+        }
+      ]
+    },
+    {
+      "id": "materials",
+      "reader": "parseMaterialLineDocument",
+      "webWriter": "materialProjectStore add → materialLineWriteFields",
+      "iosWriter": "FirebaseBackend.materialLinePayload",
+      "samples": [
+        {
+          "platform": "web",
+          "docId": "M-1",
+          "data": {
+            "id": "M-1",
+            "projectId": "a1b2c3d4-0000-4000-8000-00000000000a",
+            "material": "Plasterboard",
+            "quantity": 10,
+            "unit": "Number",
+            "status": "not_ordered",
+            "date": {
+              "seconds": 1793750400,
+              "nanoseconds": 0
+            },
+            "addedBy": "Ada Admin",
+            "addedByUserId": "user-web-1",
+            "addedAt": {
+              "seconds": 1790845200,
+              "nanoseconds": 0
+            },
+            "organizationId": "ORG-1",
+            "createdAt": {
+              "seconds": 1790845200,
+              "nanoseconds": 0
+            },
+            "updatedAt": {
+              "seconds": 1790937000,
+              "nanoseconds": 0
+            }
+          },
+          "expected": {
+            "id": "M-1",
+            "projectId": "a1b2c3d4-0000-4000-8000-00000000000a",
+            "quantity": 10,
+            "unit": "Number",
+            "material": "Plasterboard",
+            "addedBy": "Ada Admin",
+            "addedByUserId": "user-web-1",
+            "addedAtMs": 1790845200000,
+            "editedBy": null,
+            "editedByUserId": null,
+            "editedAtMs": null,
+            "dayKey": "2026-11-04",
+            "dateMs": 1793750400000,
+            "status": "draft",
+            "catalogueItemId": null,
+            "brand": null,
+            "productCode": null,
+            "category": null,
+            "size": null,
+            "length": null,
+            "lengthUnit": null,
+            "websiteURL": null,
+            "notes": null,
+            "lastSentAtMs": null,
+            "lastSentRequestType": null,
+            "createdAtMs": 1790845200000,
+            "updatedAtMs": 1790937000000
+          }
+        },
+        {
+          "platform": "ios",
+          "docId": "M1000000-0000-4000-8000-000000000002",
+          "data": {
+            "projectId": "A1B2C3D4-0000-4000-8000-00000000000B",
+            "material": "Screws",
+            "quantity": 2,
+            "unit": "Box",
+            "status": "ordered",
+            "date": {
+              "seconds": 1793750400,
+              "nanoseconds": 0
+            },
+            "addedBy": "Ian Ios",
+            "addedByUserId": "USER-IOS-1",
+            "addedAt": {
+              "seconds": 1790845200,
+              "nanoseconds": 0
+            },
+            "organizationId": "ORG-1",
+            "createdAt": {
+              "seconds": 1790845200,
+              "nanoseconds": 0
+            }
+          },
+          "expected": {
+            "id": "M1000000-0000-4000-8000-000000000002",
+            "projectId": "A1B2C3D4-0000-4000-8000-00000000000B",
+            "quantity": 2,
+            "unit": "Box",
+            "material": "Screws",
+            "addedBy": "Ian Ios",
+            "addedByUserId": "USER-IOS-1",
+            "addedAtMs": 1790845200000,
+            "editedBy": null,
+            "editedByUserId": null,
+            "editedAtMs": null,
+            "dayKey": "2026-11-04",
+            "dateMs": 1793750400000,
+            "status": "ordered",
+            "catalogueItemId": null,
+            "brand": null,
+            "productCode": null,
+            "category": null,
+            "size": null,
+            "length": null,
+            "lengthUnit": null,
+            "websiteURL": null,
+            "notes": null,
+            "lastSentAtMs": null,
+            "lastSentRequestType": null,
+            "createdAtMs": 1790845200000,
+            "updatedAtMs": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "materialSendRecords",
+      "reader": "parseMaterialSendRecordDocument",
+      "webWriter": "rulebook writer (see crossPlatformContract.samples.ts webWrittenSamples)",
+      "iosWriter": "FirebaseBackend.materialSendRecordPayload",
+      "samples": [
+        {
+          "platform": "web",
+          "docId": "R0000000-0000-4000-8000-000000000001",
+          "data": {
+            "id": "R0000000-0000-4000-8000-000000000001",
+            "projectId": "a1b2c3d4-0000-4000-8000-00000000000a",
+            "requestType": "Order",
+            "sentAt": {
+              "seconds": 1790937000,
+              "nanoseconds": 0
+            },
+            "sentBy": "Ada Admin",
+            "recipients": [
+              {
+                "name": "Builders Ltd",
+                "email": "orders@builders.test",
+                "wholesalerName": "Builders Ltd"
+              }
+            ],
+            "lines": [
+              {
+                "materialId": "M-1",
+                "name": "Plasterboard",
+                "quantity": 10,
+                "unit": "Number"
+              }
+            ]
+          },
+          "expected": {
+            "id": "R0000000-0000-4000-8000-000000000001",
+            "projectId": "a1b2c3d4-0000-4000-8000-00000000000a",
+            "requestType": "order",
+            "sentAtMs": 1790937000000,
+            "materialsDayKey": null,
+            "materialsDateMs": null,
+            "deliveryRequiredAtMs": null,
+            "sentBy": "Ada Admin",
+            "recipients": [
+              {
+                "name": "Builders Ltd",
+                "email": "orders@builders.test",
+                "wholesalerName": "Builders Ltd"
+              }
+            ],
+            "lines": [
+              {
+                "materialId": "M-1",
+                "name": "Plasterboard",
+                "quantity": 10,
+                "unit": "Number",
+                "brand": null,
+                "productCode": null,
+                "lengthDisplay": null
+              }
+            ]
+          }
+        },
+        {
+          "platform": "ios",
+          "docId": "R1000000-0000-4000-8000-000000000002",
+          "data": {
+            "id": "R1000000-0000-4000-8000-000000000002",
+            "projectId": "A1B2C3D4-0000-4000-8000-00000000000B",
+            "requestType": "Quote",
+            "sentAt": {
+              "seconds": 1790937000,
+              "nanoseconds": 0
+            },
+            "sentBy": "Ian Ios",
+            "recipients": [
+              {
+                "name": "Pipes",
+                "email": "quotes@pipes.test"
+              }
+            ],
+            "lines": [
+              {
+                "materialId": "M1000000-0000-4000-8000-000000000002",
+                "name": "Screws",
+                "quantity": 2,
+                "unit": "Box"
+              }
+            ]
+          },
+          "expected": {
+            "id": "R1000000-0000-4000-8000-000000000002",
+            "projectId": "A1B2C3D4-0000-4000-8000-00000000000B",
+            "requestType": "quote",
+            "sentAtMs": 1790937000000,
+            "materialsDayKey": null,
+            "materialsDateMs": null,
+            "deliveryRequiredAtMs": null,
+            "sentBy": "Ian Ios",
+            "recipients": [
+              {
+                "name": "Pipes",
+                "email": "quotes@pipes.test",
+                "wholesalerName": null
+              }
+            ],
+            "lines": [
+              {
+                "materialId": "M1000000-0000-4000-8000-000000000002",
+                "name": "Screws",
+                "quantity": 2,
+                "unit": "Box",
+                "brand": null,
+                "productCode": null,
+                "lengthDisplay": null
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "materialCatalogue",
+      "reader": "parseMaterialCatalogueDocument",
+      "webWriter": "materialCatalogStore save → materialCatalogueItemWriteFields",
+      "iosWriter": "FirebaseBackend.materialCatalogueItemPayload",
+      "samples": [
+        {
+          "platform": "web",
+          "docId": "CAT-1",
+          "data": {
+            "id": "CAT-1",
+            "name": "Plasterboard 12.5mm",
+            "defaultUnit": "Number",
+            "brand": "Gyproc",
+            "productCode": "PB125",
+            "organizationId": "ORG-1",
+            "createdByUserId": "user-web-1",
+            "createdAt": {
+              "seconds": 1790845200,
+              "nanoseconds": 0
+            },
+            "updatedAt": {
+              "seconds": 1790937000,
+              "nanoseconds": 0
+            }
+          },
+          "expected": {
+            "id": "CAT-1",
+            "name": "Plasterboard 12.5mm",
+            "brand": "Gyproc",
+            "productCode": "PB125",
+            "defaultUnit": "Number",
+            "size": null,
+            "length": null,
+            "lengthUnit": null,
+            "category": "Other",
+            "createdAtMs": 1790845200000,
+            "createdByUserId": "user-web-1",
+            "createdByName": "",
+            "updatedAtMs": 1790937000000
+          }
+        },
+        {
+          "platform": "ios",
+          "docId": "CAT1000-IOS",
+          "data": {
+            "name": "Screws 4x40",
+            "defaultUnit": "Box",
+            "brand": "",
+            "productCode": "",
+            "organizationId": "ORG-1",
+            "createdByUserId": "USER-IOS-1",
+            "createdAt": {
+              "seconds": 1790845200,
+              "nanoseconds": 0
+            }
+          },
+          "expected": {
+            "id": "CAT1000-IOS",
+            "name": "Screws 4x40",
+            "brand": "Custom",
+            "productCode": null,
+            "defaultUnit": "Box",
+            "size": null,
+            "length": null,
+            "lengthUnit": null,
+            "category": "Other",
+            "createdAtMs": 1790845200000,
+            "createdByUserId": "USER-IOS-1",
+            "createdByName": "",
+            "updatedAtMs": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "wholesalers",
+      "reader": "parseWholesalerDocument",
+      "webWriter": "wholesalerStore save → wholesalerWriteFields",
+      "iosWriter": "FirebaseBackend.wholesalerPayload",
+      "samples": [
+        {
+          "platform": "web",
+          "docId": "W-1",
+          "data": {
+            "id": "W-1",
+            "name": "Builders Ltd",
+            "contacts": [
+              {
+                "id": "wc-1",
+                "name": "Orders",
+                "email": "orders@builders.test",
+                "phone": ""
+              }
+            ],
+            "organizationId": "ORG-1",
+            "createdAt": {
+              "seconds": 1790845200,
+              "nanoseconds": 0
+            },
+            "updatedAt": {
+              "seconds": 1790937000,
+              "nanoseconds": 0
+            }
+          },
+          "expected": {
+            "id": "W-1",
+            "name": "Builders Ltd",
+            "address": null,
+            "trade": null,
+            "accountNumber": null,
+            "primaryContactId": "wc-1",
+            "contacts": [
+              {
+                "id": "wc-1",
+                "idStored": true,
+                "name": "Orders",
+                "email": "orders@builders.test",
+                "phone": null,
+                "isPrimary": true,
+                "createdAtMs": null
+              }
+            ],
+            "createdAtMs": 1790845200000,
+            "updatedAtMs": 1790937000000
+          }
+        },
+        {
+          "platform": "ios",
+          "docId": "W1000-IOS",
+          "data": {
+            "name": "Pipes",
+            "email": "quotes@pipes.test",
+            "phone": "0113 000000",
+            "contacts": [],
+            "organizationId": "ORG-1",
+            "createdAt": {
+              "seconds": 1790845200,
+              "nanoseconds": 0
+            }
+          },
+          "expected": {
+            "id": "W1000-IOS",
+            "name": "Pipes",
+            "address": null,
+            "trade": null,
+            "accountNumber": null,
+            "primaryContactId": null,
+            "contacts": [],
+            "createdAtMs": 1790845200000,
+            "updatedAtMs": 1790845200000
+          }
+        }
+      ]
+    },
+    {
+      "id": "siteAudits",
+      "reader": "parseSiteAuditDocument",
+      "webWriter": "siteAuditStore save → siteAuditWriteFields",
+      "iosWriter": "FirebaseBackend.siteAuditPayload",
+      "samples": [
+        {
+          "platform": "web",
+          "docId": "AUD-1",
+          "data": {
+            "id": "AUD-1",
+            "projectId": "a1b2c3d4-0000-4000-8000-00000000000a",
+            "type": "Site audit",
+            "customTitle": "",
+            "authorName": "Ada Admin",
+            "date": {
+              "seconds": 1793750400,
+              "nanoseconds": 0
+            },
+            "items": [],
+            "createdByUserId": "user-web-1",
+            "organizationId": "ORG-1",
+            "createdAt": {
+              "seconds": 1790845200,
+              "nanoseconds": 0
+            },
+            "updatedAt": {
+              "seconds": 1790937000,
+              "nanoseconds": 0
+            }
+          },
+          "expected": {
+            "id": "AUD-1",
+            "projectId": "a1b2c3d4-0000-4000-8000-00000000000a",
+            "projectJobNumber": "",
+            "projectName": "",
+            "type": "Site audit",
+            "customTitle": "",
+            "authorName": "Ada Admin",
+            "dateMs": 1793750400000,
+            "dayKey": "2026-11-04",
+            "createdAtMs": 1790845200000,
+            "createdByUserId": "user-web-1",
+            "visibleToOperatives": true,
+            "items": [],
+            "organizationId": "ORG-1",
+            "updatedAtMs": 1790937000000
+          }
+        },
+        {
+          "platform": "ios",
+          "docId": "AUD1000-IOS",
+          "data": {
+            "id": "AUD1000-IOS",
+            "organizationId": "ORG-1",
+            "projectId": "A1B2C3D4-0000-4000-8000-00000000000B",
+            "projectJobNumber": "J-200",
+            "projectName": "Office refit",
+            "type": "Snagging",
+            "customTitle": "",
+            "authorName": "Ian Ios",
+            "date": {
+              "seconds": 1793750400,
+              "nanoseconds": 0
+            },
+            "items": [
+              {
+                "id": "I-1",
+                "title": "Paint",
+                "location": "Hall",
+                "assignee": "",
+                "comments": "",
+                "annotations": [],
+                "createdAt": {
+                  "seconds": 1790845200,
+                  "nanoseconds": 0
+                },
+                "imageURL": null,
+                "imageCapturedAt": null
+              }
+            ],
+            "createdAt": {
+              "seconds": 1790845200,
+              "nanoseconds": 0
+            }
+          },
+          "expected": {
+            "id": "AUD1000-IOS",
+            "projectId": "A1B2C3D4-0000-4000-8000-00000000000B",
+            "projectJobNumber": "J-200",
+            "projectName": "Office refit",
+            "type": "Snagging",
+            "customTitle": "",
+            "authorName": "Ian Ios",
+            "dateMs": 1793750400000,
+            "dayKey": "2026-11-04",
+            "createdAtMs": 1790845200000,
+            "createdByUserId": "",
+            "visibleToOperatives": true,
+            "items": [
+              {
+                "id": "I-1",
+                "idStored": true,
+                "title": "Paint",
+                "location": "Hall",
+                "assignee": "",
+                "comments": "",
+                "annotations": "",
+                "imageURL": null,
+                "imageCapturedAtMs": null,
+                "createdAtMs": 1790845200000
+              }
+            ],
+            "organizationId": "ORG-1",
+            "updatedAtMs": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "tasks",
+      "reader": "parseTaskDocument",
+      "webWriter": "taskStore save → taskWriteFields",
+      "iosWriter": "FirebaseBackend.projectTaskFields",
+      "samples": [
+        {
+          "platform": "web",
+          "docId": "T-1",
+          "data": {
+            "id": "T-1",
+            "projectId": "a1b2c3d4-0000-4000-8000-00000000000a",
+            "title": "Order skip",
+            "details": null,
+            "createdBy": "Ada Admin",
+            "status": "To Do",
+            "priority": "Medium",
+            "assignedOperativeId": null,
+            "assignedOperativeIds": [],
+            "assignedManagerId": "mgr-row-web-1",
+            "assignedManagerIds": [
+              "mgr-row-web-1"
+            ],
+            "dueDate": {
+              "seconds": 1793750400,
+              "nanoseconds": 0
+            },
+            "items": [],
+            "completedItemIds": [],
+            "organizationId": "ORG-1",
+            "createdAt": {
+              "seconds": 1790845200,
+              "nanoseconds": 0
+            }
+          },
+          "expected": {
+            "id": "T-1",
+            "projectId": "a1b2c3d4-0000-4000-8000-00000000000a",
+            "title": "Order skip",
+            "details": null,
+            "createdBy": "Ada Admin",
+            "status": "To Do",
+            "priority": "Normal",
+            "assignedOperativeId": null,
+            "assignedManagerId": "mgr-row-web-1",
+            "assignedOperativeIds": [],
+            "assignedManagerIds": [
+              "mgr-row-web-1"
+            ],
+            "dueDateMs": 1793750400000,
+            "dueDayKey": "2026-11-04",
+            "completedBy": null,
+            "completedAtMs": null,
+            "completionNotes": null,
+            "completionImages": [],
+            "completionFiles": [],
+            "attachedImageURLs": [],
+            "attachedFileURL": null,
+            "attachedFileName": null,
+            "attachedSiteAuditId": null,
+            "attachedSiteAuditTitle": null,
+            "items": [],
+            "completedItemIds": [],
+            "organizationId": "ORG-1",
+            "createdAtMs": 1790845200000,
+            "updatedAtMs": 1790845200000
+          }
+        },
+        {
+          "platform": "ios",
+          "docId": "T1000000-0000-4000-8000-000000000002",
+          "data": {
+            "id": "T1000000-0000-4000-8000-000000000002",
+            "projectId": "A1B2C3D4-0000-4000-8000-00000000000B",
+            "title": "Check boards",
+            "details": null,
+            "createdBy": "Ian Ios",
+            "status": "Completed",
+            "priority": "High",
+            "assignedOperativeId": "OP-IOS-1",
+            "assignedOperativeIds": [
+              "OP-IOS-1"
+            ],
+            "assignedManagerId": null,
+            "assignedManagerIds": [],
+            "dueDate": null,
+            "completedBy": "Olga Op",
+            "completedAt": {
+              "seconds": 1790937000,
+              "nanoseconds": 0
+            },
+            "completionNotes": "Done",
+            "completionImages": [],
+            "completionFiles": [],
+            "attachedImageURLs": [],
+            "items": [],
+            "completedItemIds": [],
+            "organizationId": "ORG-1",
+            "createdAt": {
+              "seconds": 1790845200,
+              "nanoseconds": 0
+            }
+          },
+          "expected": {
+            "id": "T1000000-0000-4000-8000-000000000002",
+            "projectId": "A1B2C3D4-0000-4000-8000-00000000000B",
+            "title": "Check boards",
+            "details": null,
+            "createdBy": "Ian Ios",
+            "status": "Completed",
+            "priority": "High",
+            "assignedOperativeId": "OP-IOS-1",
+            "assignedManagerId": null,
+            "assignedOperativeIds": [
+              "OP-IOS-1"
+            ],
+            "assignedManagerIds": [],
+            "dueDateMs": null,
+            "dueDayKey": null,
+            "completedBy": "Olga Op",
+            "completedAtMs": 1790937000000,
+            "completionNotes": "Done",
+            "completionImages": [],
+            "completionFiles": [],
+            "attachedImageURLs": [],
+            "attachedFileURL": null,
+            "attachedFileName": null,
+            "attachedSiteAuditId": null,
+            "attachedSiteAuditTitle": null,
+            "items": [],
+            "completedItemIds": [],
+            "organizationId": "ORG-1",
+            "createdAtMs": 1790845200000,
+            "updatedAtMs": 1790845200000
+          }
+        }
+      ]
+    },
+    {
+      "id": "healthSafety",
+      "reader": "parseHealthSafetyDocument",
+      "webWriter": "healthSafetyStore save → healthSafetyDocumentWriteFields",
+      "iosWriter": "HealthSafety store (healthSafetyDocumentWriteFields)",
+      "samples": [
+        {
+          "platform": "web",
+          "docId": "healthSafety_projects_A1B2C3D4-0000-4000-8000-00000000000A",
+          "data": {
+            "talks": [],
+            "issues": [
+              {
+                "id": "ISS-1",
+                "projectId": "a1b2c3d4-0000-4000-8000-00000000000a",
+                "talkId": "TALK-1",
+                "issuedByUserId": "user-web-1",
+                "issuedAt": {
+                  "seconds": 1790937000,
+                  "nanoseconds": 0
+                },
+                "recipientUserIds": [
+                  "op-user-1"
+                ]
+              }
+            ],
+            "signatures": [],
+            "ramsDocuments": [],
+            "otherDocuments": []
+          },
+          "expected": {
+            "talks": [],
+            "issues": [
+              {
+                "id": "ISS-1",
+                "projectId": "a1b2c3d4-0000-4000-8000-00000000000a",
+                "talkId": "TALK-1",
+                "weekCommencingMs": null,
+                "weekCommencingDayKey": null,
+                "issuedByUserId": "user-web-1",
+                "issuedAtMs": 1790937000000,
+                "publishAtMs": null,
+                "recipientUserIds": [
+                  "op-user-1"
+                ],
+                "status": "awaiting",
+                "ramsDocumentId": null
+              }
+            ],
+            "signatures": [],
+            "ramsDocuments": [],
+            "otherDocuments": [],
+            "updatedAtMs": null
+          }
+        },
+        {
+          "platform": "ios",
+          "docId": "healthSafety_projects_A1B2C3D4-0000-4000-8000-00000000000B",
+          "data": {
+            "talks": [],
+            "issues": [],
+            "signatures": [],
+            "ramsDocuments": [
+              {
+                "id": "DOC-1",
+                "name": "RAMS.pdf",
+                "url": "https://example.test/rams.pdf",
+                "uploadedAt": {
+                  "seconds": 1790845200,
+                  "nanoseconds": 0
+                }
+              }
+            ],
+            "otherDocuments": []
+          },
+          "expected": {
+            "talks": [],
+            "issues": [],
+            "signatures": [],
+            "ramsDocuments": [
+              {
+                "id": "DOC-1",
+                "title": "Untitled RAMS",
+                "trade": "General",
+                "version": 1,
+                "status": "live",
+                "uploadedAtMs": 1790845200000,
+                "fileURL": null,
+                "fileName": null,
+                "reviewDateMs": null,
+                "attachedDocTitles": []
+              }
+            ],
+            "otherDocuments": [],
+            "updatedAtMs": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "variations",
+      "reader": "parseVariationDocument",
+      "webWriter": "variationStorage save → variationWriteFields",
+      "iosWriter": "VariationStore save (variationWriteFields)",
+      "samples": [
+        {
+          "platform": "web",
+          "docId": "V-1",
+          "data": {
+            "id": "V-1",
+            "parentId": "a1b2c3d4-0000-4000-8000-00000000000a",
+            "parentType": "projects",
+            "number": 1,
+            "title": "Extra socket",
+            "status": "draft",
+            "isDeleted": false,
+            "createdByUserId": "user-web-1",
+            "createdAt": {
+              "seconds": 1790845200,
+              "nanoseconds": 0
+            },
+            "updatedAt": {
+              "seconds": 1790937000,
+              "nanoseconds": 0
+            }
+          },
+          "expected": {
+            "id": "V-1",
+            "orgId": "",
+            "parentType": "project",
+            "parentId": "a1b2c3d4-0000-4000-8000-00000000000a",
+            "parentName": "",
+            "origin": "app",
+            "voNumber": "",
+            "sequence": 0,
+            "voNumberLocked": false,
+            "numberHistory": [],
+            "heading": "",
+            "description": "",
+            "status": "open",
+            "labour": [],
+            "materials": [],
+            "evidence": [],
+            "totalLabourHours": 0,
+            "materialLineCount": 0,
+            "evidenceCount": 0,
+            "createdByUid": "",
+            "createdByName": "",
+            "createdAtMs": 1790845200000,
+            "updatedByUid": "",
+            "updatedAtMs": 1790937000000,
+            "statusHistory": [],
+            "submittedAtMs": null,
+            "closedAtMs": null,
+            "isDeleted": false
+          }
+        },
+        {
+          "platform": "ios",
+          "docId": "V1000-IOS",
+          "data": {
+            "parentId": "A1B2C3D4-0000-4000-8000-00000000000B",
+            "parentType": "projects",
+            "number": 3,
+            "title": "Move door",
+            "status": "submitted",
+            "isDeleted": false,
+            "createdByUserId": "USER-IOS-1",
+            "createdAt": {
+              "seconds": 1790845200,
+              "nanoseconds": 0
+            }
+          },
+          "expected": {
+            "id": "V1000-IOS",
+            "orgId": "",
+            "parentType": "project",
+            "parentId": "A1B2C3D4-0000-4000-8000-00000000000B",
+            "parentName": "",
+            "origin": "app",
+            "voNumber": "",
+            "sequence": 0,
+            "voNumberLocked": false,
+            "numberHistory": [],
+            "heading": "",
+            "description": "",
+            "status": "submitted",
+            "labour": [],
+            "materials": [],
+            "evidence": [],
+            "totalLabourHours": 0,
+            "materialLineCount": 0,
+            "evidenceCount": 0,
+            "createdByUid": "",
+            "createdByName": "",
+            "createdAtMs": 1790845200000,
+            "updatedByUid": "",
+            "updatedAtMs": null,
+            "statusHistory": [],
+            "submittedAtMs": null,
+            "closedAtMs": null,
+            "isDeleted": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "variationTrackers",
+      "reader": "parseVariationTrackerDocument",
+      "webWriter": "variationStorage tracker → variationTrackerWriteFields",
+      "iosWriter": "VariationStore tracker (variationTrackerWriteFields)",
+      "samples": [
+        {
+          "platform": "web",
+          "docId": "a1b2c3d4-0000-4000-8000-00000000000a",
+          "data": {
+            "parentId": "a1b2c3d4-0000-4000-8000-00000000000a",
+            "order": [
+              "V-1"
+            ],
+            "updatedAt": {
+              "seconds": 1790937000,
+              "nanoseconds": 0
+            }
+          },
+          "expected": {
+            "parentId": "a1b2c3d4-0000-4000-8000-00000000000a",
+            "parentType": "project",
+            "enabled": false,
+            "enabledAtMs": null,
+            "enabledByUid": null,
+            "numberingMode": "lockSubmitted",
+            "prefix": "VO-",
+            "padding": 3,
+            "version": 0,
+            "lockedByUid": null,
+            "lockedByName": null,
+            "lockedAtMs": null
+          }
+        },
+        {
+          "platform": "ios",
+          "docId": "A1B2C3D4-0000-4000-8000-00000000000B",
+          "data": {
+            "parentId": "A1B2C3D4-0000-4000-8000-00000000000B",
+            "order": [
+              "V1000-IOS"
+            ]
+          },
+          "expected": {
+            "parentId": "A1B2C3D4-0000-4000-8000-00000000000B",
+            "parentType": "project",
+            "enabled": false,
+            "enabledAtMs": null,
+            "enabledByUid": null,
+            "numberingMode": "lockSubmitted",
+            "prefix": "VO-",
+            "padding": 3,
+            "version": 0,
+            "lockedByUid": null,
+            "lockedByName": null,
+            "lockedAtMs": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "deadlines",
+      "reader": "parseDeadlineDocument",
+      "webWriter": "deadlineStore save (lib/stores/deadlineStore.ts)",
+      "iosWriter": "DeadlineStore save",
+      "samples": [
+        {
+          "platform": "web",
+          "docId": "deadlines_projects_A1B2C3D4-0000-4000-8000-00000000000A",
+          "data": {
+            "projectId": "a1b2c3d4-0000-4000-8000-00000000000a",
+            "items": [
+              {
+                "id": "D-1",
+                "title": "Handover",
+                "dueDate": {
+                  "seconds": 1797552000,
+                  "nanoseconds": 0
+                },
+                "assigneeUserIds": [
+                  "mgr-web-1"
+                ],
+                "completed": false
+              }
+            ]
+          },
+          "expected": {
+            "id": "deadlines_projects_A1B2C3D4-0000-4000-8000-00000000000A",
+            "collection": "projects",
+            "projectId": "a1b2c3d4-0000-4000-8000-00000000000a",
+            "items": [
+              {
+                "id": "D-1",
+                "title": "Handover",
+                "location": null,
+                "trade": null,
+                "detail": null,
+                "startMs": null,
+                "startDayKey": null,
+                "dueMs": null,
+                "dueDayKey": null,
+                "completedAtMs": null,
+                "assignees": [],
+                "assigneeUserIds": [
+                  "mgr-web-1"
+                ],
+                "company": null,
+                "status": "notStarted",
+                "progress": 0,
+                "isCritical": false,
+                "dependsOn": [],
+                "blockedReason": null,
+                "reminderDaysBefore": null,
+                "originalDueMs": null,
+                "history": [],
+                "contextKind": "Project",
+                "projectId": "a1b2c3d4-0000-4000-8000-00000000000a",
+                "createdByUserId": "",
+                "fileURL": null,
+                "fileName": null,
+                "siteAuditId": null,
+                "siteAuditTitle": null
+              }
+            ],
+            "updatedAtMs": null
+          }
+        },
+        {
+          "platform": "ios",
+          "docId": "deadlines_smallWorks_SW100000-0000-4000-8000-000000000002",
+          "data": {
+            "items": [
+              {
+                "id": "D1000-IOS",
+                "title": "Inspection",
+                "dueDate": {
+                  "seconds": 1793836800,
+                  "nanoseconds": 0
+                },
+                "assigneeUserIds": [
+                  "USER-IOS-1"
+                ],
+                "completed": true
+              }
+            ]
+          },
+          "expected": {
+            "id": "deadlines_smallWorks_SW100000-0000-4000-8000-000000000002",
+            "collection": "smallWorks",
+            "projectId": "SW100000-0000-4000-8000-000000000002",
+            "items": [
+              {
+                "id": "D1000-IOS",
+                "title": "Inspection",
+                "location": null,
+                "trade": null,
+                "detail": null,
+                "startMs": null,
+                "startDayKey": null,
+                "dueMs": null,
+                "dueDayKey": null,
+                "completedAtMs": null,
+                "assignees": [],
+                "assigneeUserIds": [
+                  "USER-IOS-1"
+                ],
+                "company": null,
+                "status": "notStarted",
+                "progress": 0,
+                "isCritical": false,
+                "dependsOn": [],
+                "blockedReason": null,
+                "reminderDaysBefore": null,
+                "originalDueMs": null,
+                "history": [],
+                "contextKind": "Project",
+                "projectId": "SW100000-0000-4000-8000-000000000002",
+                "createdByUserId": "",
+                "fileURL": null,
+                "fileName": null,
+                "siteAuditId": null,
+                "siteAuditTitle": null
+              }
+            ],
+            "updatedAtMs": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "notifications",
+      "reader": "parseNotificationDocument",
+      "webWriter": "rulebook writer (see crossPlatformContract.samples.ts webWrittenSamples)",
+      "iosWriter": "NotificationService create (notificationCreateFields)",
+      "samples": [
+        {
+          "platform": "web",
+          "docId": "N0000000-0000-4000-8000-000000000001",
+          "data": {
+            "organizationId": "ORG-1",
+            "type": "holiday_request_submitted",
+            "title": "Annual leave request",
+            "message": "Ada asked for 4–6 Nov.",
+            "userId": "mgr-web-1",
+            "relatedId": "H0000000-0000-4000-8000-000000000001",
+            "requiresPermission": null,
+            "deepLinkUserId": null,
+            "isRead": false,
+            "createdAt": {
+              "seconds": 1790937000,
+              "nanoseconds": 0
+            },
+            "actorUserId": "user-web-1"
+          },
+          "expected": {
+            "id": "N0000000-0000-4000-8000-000000000001",
+            "organizationId": "ORG-1",
+            "type": "holiday_request_submitted",
+            "known": true,
+            "title": "Annual leave request",
+            "message": "Ada asked for 4–6 Nov.",
+            "userId": "mgr-web-1",
+            "actorUserId": "user-web-1",
+            "relatedId": "H0000000-0000-4000-8000-000000000001",
+            "isRead": false,
+            "readAtMs": null,
+            "createdAtMs": 1790937000000,
+            "requiresPermission": null,
+            "deepLinkUserId": null,
+            "deepLinkWeekStartMs": null,
+            "dayKey": null,
+            "catalogue": null,
+            "destination": null
+          }
+        },
+        {
+          "platform": "ios",
+          "docId": "N1000000-0000-4000-8000-000000000002",
+          "data": {
+            "organizationId": "ORG-1",
+            "type": "variation_added",
+            "title": "Variation added",
+            "message": "Move door",
+            "userId": "USER-IOS-2",
+            "actorUserId": "USER-IOS-1",
+            "relatedId": "V1000-IOS",
+            "requiresPermission": null,
+            "deepLinkUserId": null,
+            "isRead": false,
+            "createdAt": {
+              "seconds": 1790937000,
+              "nanoseconds": 0
+            }
+          },
+          "expected": {
+            "id": "N1000000-0000-4000-8000-000000000002",
+            "organizationId": "ORG-1",
+            "type": "variation_added",
+            "known": true,
+            "title": "Variation added",
+            "message": "Move door",
+            "userId": "USER-IOS-2",
+            "actorUserId": "USER-IOS-1",
+            "relatedId": "V1000-IOS",
+            "isRead": false,
+            "readAtMs": null,
+            "createdAtMs": 1790937000000,
+            "requiresPermission": null,
+            "deepLinkUserId": null,
+            "deepLinkWeekStartMs": null,
+            "dayKey": null,
+            "catalogue": null,
+            "destination": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "jobTypes",
+      "reader": "parseJobTypesDocument",
+      "webWriter": "rulebook writer (see crossPlatformContract.samples.ts webWrittenSamples)",
+      "iosWriter": "JobTypeStore save (jobTypesWriteFields)",
+      "samples": [
+        {
+          "platform": "web",
+          "docId": "jobTypes",
+          "data": {
+            "jobTypes": [
+              "CAT A",
+              "Fit out",
+              "Small Works"
+            ]
+          },
+          "expected": {
+            "jobTypes": [
+              "CAT A",
+              "Fit out",
+              "Small Works"
+            ]
+          }
+        },
+        {
+          "platform": "ios",
+          "docId": "jobTypes",
+          "data": {
+            "jobTypes": [
+              "CAT A",
+              "CAT B",
+              "Small Works"
+            ]
+          },
+          "expected": {
+            "jobTypes": [
+              "CAT A",
+              "CAT B",
+              "Small Works"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "skills",
+      "reader": "parseSkillDocument",
+      "webWriter": "skills screen save",
+      "iosWriter": "SkillStore save",
+      "samples": [
+        {
+          "platform": "web",
+          "docId": "SK-1",
+          "data": {
+            "id": "SK-1",
+            "name": "IPAF",
+            "organizationId": "ORG-1",
+            "createdAt": {
+              "seconds": 1790845200,
+              "nanoseconds": 0
+            }
+          },
+          "expected": {
+            "id": "SK-1",
+            "name": "IPAF",
+            "trade": "",
+            "createdAtMs": 1790845200000,
+            "updatedAtMs": 1790845200000
+          }
+        },
+        {
+          "platform": "ios",
+          "docId": "SK1000-IOS",
+          "data": {
+            "name": "CSCS",
+            "organizationId": "ORG-1"
+          },
+          "expected": {
+            "id": "SK1000-IOS",
+            "name": "CSCS",
+            "trade": "",
+            "createdAtMs": null,
+            "updatedAtMs": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "variationTrades",
+      "reader": "parseVariationTrades",
+      "webWriter": "rulebook writer (see crossPlatformContract.samples.ts webWrittenSamples)",
+      "iosWriter": "Variation trades save (variationTradesWriteFields)",
+      "samples": [
+        {
+          "platform": "web",
+          "docId": "variationTrades",
+          "data": {
+            "customTrades": [
+              "Electrical",
+              "Joinery"
+            ]
+          },
+          "expected": {
+            "customTrades": [
+              "Electrical",
+              "Joinery"
+            ]
+          }
+        },
+        {
+          "platform": "ios",
+          "docId": "variationTrades",
+          "data": {
+            "customTrades": [
+              "Electrical",
+              "Decorating"
+            ]
+          },
+          "expected": {
+            "customTrades": [
+              "Electrical",
+              "Decorating"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "tradeTypeInventory",
+      "reader": "parseTradeTypeInventory",
+      "webWriter": "rulebook writer (see crossPlatformContract.samples.ts webWrittenSamples)",
+      "iosWriter": "Trade type inventory save (tradeTypeInventoryWriteFields)",
+      "samples": [
+        {
+          "platform": "web",
+          "docId": "tradeTypeInventory",
+          "data": {
+            "trades": [
+              "Plumber",
+              "Bricklayer"
+            ]
+          },
+          "expected": {
+            "trades": [
+              "Plumber",
+              "Bricklayer"
+            ]
+          }
+        },
+        {
+          "platform": "ios",
+          "docId": "tradeTypeInventory",
+          "data": {
+            "trades": [
+              "Labourer"
+            ]
+          },
+          "expected": {
+            "trades": [
+              "Labourer"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "taxIds",
+      "reader": "resolveSensitiveProfile",
+      "webWriter": "rulebook writer (see crossPlatformContract.samples.ts webWrittenSamples)",
+      "iosWriter": "Profile tax ids save (sensitiveProfileWriteFields)",
+      "samples": [
+        {
+          "platform": "web",
+          "docId": "taxIds",
+          "data": {
+            "utrNumber": "1234567890",
+            "vatNumber": "GB123456789",
+            "updatedByUserId": "user-web-1",
+            "updatedAt": {
+              "seconds": 1790937000,
+              "nanoseconds": 0
+            }
+          },
+          "expected": {
+            "utrNumber": "1234567890",
+            "vatNumber": "GB123456789",
+            "source": "private"
+          }
+        },
+        {
+          "platform": "ios",
+          "docId": "taxIds",
+          "data": {
+            "utrNumber": "",
+            "vatNumber": "GB999999999",
+            "updatedByUserId": "USER-IOS-1",
+            "updatedAt": {
+              "seconds": 1790937000,
+              "nanoseconds": 0
+            }
+          },
+          "expected": {
+            "utrNumber": "",
+            "vatNumber": "GB999999999",
+            "source": "private"
+          }
+        }
+      ]
+    },
+    {
+      "id": "orgMemberships",
+      "reader": "parseOrgMembershipDocument",
+      "webWriter": "rulebook writer (see crossPlatformContract.samples.ts webWrittenSamples)",
+      "iosWriter": "FirebaseBackend+OrganizationMembership membershipPayload (legacy flat; 1.10.0 must write orgMembershipWriteFields)",
+      "samples": [
+        {
+          "platform": "web",
+          "docId": "ORG-1",
+          "data": {
+            "role": "manager",
+            "status": "active",
+            "isSuperAdmin": false,
+            "accountActive": true,
+            "permissions": {
+              "adminAccess": false,
+              "manager": true,
+              "operatives": false,
+              "skills": false,
+              "qualifications": false,
+              "materials": true,
+              "projects": true,
+              "smallWorks": false,
+              "operativeMode": false,
+              "siteAudit": true,
+              "subContractors": false,
+              "wholesalersOrderHistory": true,
+              "annualLeaveSelfBook": false,
+              "weeklyReports": false,
+              "dailyOverview": true
+            },
+            "invitedAt": {
+              "seconds": 1790937000,
+              "nanoseconds": 0
+            },
+            "updatedAt": {
+              "seconds": 1790937000,
+              "nanoseconds": 0
+            },
+            "acceptedAt": {
+              "seconds": 1790937000,
+              "nanoseconds": 0
+            }
+          },
+          "expected": {
+            "organizationId": "ORG-1",
+            "role": "manager",
+            "status": "active",
+            "isSuperAdmin": false,
+            "accountActive": true,
+            "permissions": {
+              "adminAccess": false,
+              "manager": true,
+              "operatives": false,
+              "skills": false,
+              "qualifications": false,
+              "materials": true,
+              "projects": true,
+              "smallWorks": false,
+              "operativeMode": false,
+              "siteAudit": true,
+              "subContractors": false,
+              "wholesalersOrderHistory": true,
+              "annualLeaveSelfBook": false,
+              "weeklyReports": false,
+              "dailyOverview": true
+            },
+            "invitedBy": null,
+            "invitedAtMs": 1790937000000,
+            "acceptedAtMs": 1790937000000,
+            "updatedAtMs": 1790937000000,
+            "hasLegacyFlatFlags": false
+          }
+        },
+        {
+          "platform": "ios",
+          "docId": "ORG-1",
+          "data": {
+            "email": "ian@acme.test",
+            "organizationId": "ORG-1",
+            "role": "manager",
+            "isActive": true,
+            "adminAccess": false,
+            "manager": true,
+            "operatives": false,
+            "skills": false,
+            "materials": true,
+            "projects": true,
+            "smallWorks": false,
+            "operativeMode": false,
+            "siteAudit": true,
+            "isSuperAdmin": false,
+            "accountActive": true
+          },
+          "expected": {
+            "organizationId": "ORG-1",
+            "role": "manager",
+            "status": "active",
+            "isSuperAdmin": false,
+            "accountActive": true,
+            "permissions": {
+              "adminAccess": false,
+              "manager": true,
+              "operatives": false,
+              "skills": false,
+              "qualifications": false,
+              "materials": true,
+              "projects": true,
+              "smallWorks": false,
+              "operativeMode": false,
+              "siteAudit": true,
+              "subContractors": false,
+              "wholesalersOrderHistory": true,
+              "annualLeaveSelfBook": false,
+              "weeklyReports": false,
+              "dailyOverview": true
+            },
+            "invitedBy": null,
+            "invitedAtMs": null,
+            "acceptedAtMs": null,
+            "updatedAtMs": null,
+            "hasLegacyFlatFlags": true
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -24,6 +24,10 @@ const iosHashFile = `${iosOut}.sha256`
 // Shared parity cases both apps must pass (lib/canonical/canonical.test.ts on web, ProjectPlannerTests on iOS).
 const fixtureFile = path.join(webRoot, 'lib/canonical/parity-fixture.json')
 const iosFixture = path.join(iosRepo, 'ProjectPlannerTests/CanonicalParityFixture.json')
+// Rulebook 1.10.0: what each app writes and what the readers return (lib/canonical/crossPlatformContract.test.ts on
+// web, CrossPlatformContractTests on iOS). Mirrored like the parity fixture; its sha256 is in the manifest.
+const contractFile = path.join(webRoot, 'lib/canonical/cross-platform-contract.json')
+const iosContract = path.join(iosRepo, 'ProjectPlannerTests/CrossPlatformContract.json')
 // The one rulebook. Its version and sha256 are stamped into the packed script, and it is mirrored to iOS.
 const rulebookFile = path.join(webRoot, 'docs/RULEBOOK.md')
 const manifestFile = path.join(outDir, 'canonical-manifest.json')
@@ -74,8 +78,13 @@ function exportNames(code) {
   runInContext(`${code}\nthis.__names = Object.keys(ProjectPlannerCanonical).sort()`, sandbox)
   return sandbox.__names
 }
+if (!existsSync(contractFile)) {
+  console.error('lib/canonical/cross-platform-contract.json is missing. Run npx tsx lib/canonical/crossPlatformContract.samples.ts --write.')
+  process.exit(1)
+}
+const contractSha256 = createHash('sha256').update(readFileSync(contractFile)).digest('hex')
 const manifestText = `${JSON.stringify(
-  { rulebookVersion, rulebookSha256, bundleSha256: hash, exports: exportNames(source.toString('utf8')) },
+  { rulebookVersion, rulebookSha256, bundleSha256: hash, crossPlatformContractSha256: contractSha256, exports: exportNames(source.toString('utf8')) },
   null,
   2
 )}\n`
@@ -106,6 +115,9 @@ if (checkOnly) {
   if (iosCheckout && !sameFile(iosFixture, readFileSync(fixtureFile))) {
     stale.push(iosFixture)
   }
+  if (iosCheckout && !sameFile(iosContract, readFileSync(contractFile))) {
+    stale.push(iosContract)
+  }
   if (stale.length > 0) {
     console.error('The packed rulebook does not match lib/canonical.')
     for (const file of stale) console.error(`  stale: ${file}`)
@@ -130,6 +142,7 @@ if (iosCheckout) {
   writeFileSync(iosHashFile, hashText)
   mkdirSync(path.dirname(iosFixture), { recursive: true })
   writeFileSync(iosFixture, readFileSync(fixtureFile))
+  writeFileSync(iosContract, readFileSync(contractFile))
   writeFileSync(iosManifest, manifestBuffer)
   mkdirSync(path.dirname(iosRulebook), { recursive: true })
   writeFileSync(iosRulebook, rulebookText)

@@ -9,8 +9,11 @@ import { collection, doc, getDoc, getDocs, query, where, type Firestore } from '
 import { deleteBookingsWithTombstones } from '@/lib/bookings/bookingTombstoneWrite'
 import {
   bookingsToRemoveOnOperativeDelete,
-  bookingsToRemoveOnProjectDelete,
+  jobDeleteBookingRemovals,
   parseBookingDocument,
+  parseManagerSiteBookingDocument,
+  parseSubcontractorBookingDocument,
+  type JobDeleteBookingRow,
 } from '@/lib/canonical'
 import { ianaTimeZoneForCountry } from '@/lib/orgTime/orgTimeZone'
 
@@ -78,7 +81,30 @@ export async function removeFutureBookingsForPerson(
   return ids
 }
 
-/** Remove a deleted job's bookings from today on. Returns the ids removed. */
+async function rowsWhere(
+  db: Firestore,
+  organizationId: string,
+  collectionName: 'subcontractorBookings' | 'managerSiteBookings',
+  field: string,
+  values: string[],
+  read: (id: string, data: Record<string, unknown>) => JobDeleteBookingRow | null
+): Promise<JobDeleteBookingRow[]> {
+  const rows: JobDeleteBookingRow[] = []
+  const ref = collection(db, 'organizations', organizationId, collectionName)
+  for (let i = 0; i < values.length; i += IN_QUERY_LIMIT) {
+    const snap = await getDocs(query(ref, where(field, 'in', values.slice(i, i + IN_QUERY_LIMIT))))
+    for (const entry of snap.docs) {
+      const row = read(entry.id, entry.data() as Record<string, unknown>)
+      if (row) rows.push(row)
+    }
+  }
+  return rows
+}
+
+/**
+ * Remove a deleted job's bookings from today on (rulebook 1.10.0 `jobDeleteBookingRemovals`): its labour bookings,
+ * subcontractor bookings and the manager site bookings at the job, each with its tombstone. Returns the ids removed.
+ */
 export async function removeFutureBookingsForProject(
   db: Firestore,
   input: { organizationId: string; projectId: string; now?: Date }
@@ -86,16 +112,43 @@ export async function removeFutureBookingsForProject(
   const projectId = input.projectId.trim()
   if (!input.organizationId || !projectId) return []
   const lookup = Array.from(new Set([projectId, projectId.toUpperCase(), projectId.toLowerCase()]))
-  const [timeZone, rows] = await Promise.all([
+  const [timeZone, rows, subRows, subRowsIos, siteRows] = await Promise.all([
     organizationTimeZone(db, input.organizationId),
     bookingRowsWhere(db, input.organizationId, 'projectId', lookup),
+    rowsWhere(db, input.organizationId, 'subcontractorBookings', 'projectId', lookup, (id, data) => {
+      const parsed = parseSubcontractorBookingDocument(id, data)
+      return parsed ? { id, projectId: parsed.projectId, dateMs: parsed.dateMs } : null
+    }),
+    rowsWhere(db, input.organizationId, 'subcontractorBookings', 'projectID', lookup, (id, data) => {
+      const parsed = parseSubcontractorBookingDocument(id, data)
+      return parsed ? { id, projectId: parsed.projectId, dateMs: parsed.dateMs } : null
+    }),
+    rowsWhere(db, input.organizationId, 'managerSiteBookings', 'locationId', lookup, (id, data) => {
+      const parsed = parseManagerSiteBookingDocument(id, data)
+      return parsed.ok
+        ? { id, locationType: parsed.booking.locationType, locationId: parsed.booking.locationId ?? null, dateMs: parsed.booking.dateMs }
+        : null
+    }),
   ])
-  const ids = bookingsToRemoveOnProjectDelete({
-    bookings: rows,
+  const subById = new Map([...subRows, ...subRowsIos].map((row) => [row.id, row]))
+  const removals = jobDeleteBookingRemovals({
     projectId,
+    bookings: rows,
+    subcontractorBookings: Array.from(subById.values()),
+    managerSiteBookings: siteRows,
     nowIso: (input.now ?? new Date()).toISOString(),
     timeZone,
   })
-  await deleteBookings(db, input.organizationId, ids)
-  return ids
+  await deleteBookings(db, input.organizationId, removals.bookings)
+  await deleteBookingsWithTombstones(db, {
+    organizationId: input.organizationId,
+    collection: 'subcontractorBookings',
+    bookingIds: removals.subcontractorBookings,
+  })
+  await deleteBookingsWithTombstones(db, {
+    organizationId: input.organizationId,
+    collection: 'managerSiteBookings',
+    bookingIds: removals.managerSiteBookings,
+  })
+  return [...removals.bookings, ...removals.subcontractorBookings, ...removals.managerSiteBookings]
 }

@@ -92,7 +92,7 @@ test('admins see every job whether the Projects toggle is on or off', () => {
   assert.equal(plainAdminToggleOff.length, 2)
 })
 
-test('a manager sees jobs they are not assigned to, with both toggles off, in projects and small works', () => {
+test('rulebook 1.10.0: a manager sees only the jobs they manage, with both toggles off, in projects and small works', () => {
   const mgr: User = {
     id: 'm1',
     email: 'm@x.com',
@@ -112,7 +112,8 @@ test('a manager sees jobs they are not assigned to, with both toggles off, in pr
     project('assigned', { managerIds: ['roster-m'] }),
     project('someone-elses', { managerIds: ['roster-other'] }),
     project('small-job', { jobType: 'Small Works', managerIds: ['roster-other'] }),
-    project('hidden-from-me', { hiddenManagerUserIds: ['m1'] }),
+    project('my-small-job', { jobType: 'Small Works', managerIds: ['user:m1'] }),
+    project('hidden-from-me', { managerIds: ['roster-m'], hiddenManagerUserIds: ['m1'] }),
   ]
   const input = {
     projects: jobs,
@@ -125,16 +126,18 @@ test('a manager sees jobs they are not assigned to, with both toggles off, in pr
     bookings: [],
     managerBookings: [],
   }
+  assert.deepEqual(visibleWorks({ ...input, catalogue: 'projects' }).map((p) => p.id).sort(), ['assigned'])
+  assert.deepEqual(visibleWorks({ ...input, catalogue: 'smallWorks' }).map((p) => p.id), ['my-small-job'])
+  // Removed as manager → gone on the next snapshot.
   assert.deepEqual(
-    visibleWorks({ ...input, catalogue: 'projects' }).map((p) => p.id).sort(),
-    ['assigned', 'someone-elses']
+    visibleWorks({ ...input, projects: [project('assigned', { managerIds: ['roster-other'] })], catalogue: 'projects' }).map((p) => p.id),
+    []
   )
-  assert.deepEqual(visibleWorks({ ...input, catalogue: 'smallWorks' }).map((p) => p.id), ['small-job'])
   // The manager role without the manager flag is still a manager.
   const roleOnly = { ...mgr, permissions: { ...emptyPerms } }
   assert.deepEqual(
     visibleWorks({ ...input, user: roleOnly, catalogue: 'all' }).map((p) => p.id).sort(),
-    ['assigned', 'small-job', 'someone-elses']
+    ['assigned', 'my-small-job']
   )
 })
 
@@ -223,7 +226,7 @@ test('operatives only see booked jobs and never hidden ones', () => {
   assert.deepEqual(visible.map((p) => p.id), ['P1'])
 })
 
-test('managers with the manager flag see non-hidden jobs when Projects is off', () => {
+test('managers with the manager flag see the non-hidden jobs they manage when Projects is off (1.10.0)', () => {
   const mgr: User = {
     id: 'm1',
     email: 'm@x.com',
@@ -258,7 +261,7 @@ test('managers with the manager flag see non-hidden jobs when Projects is off', 
     bookings: [],
     managerBookings: [],
   })
-  assert.deepEqual(visible.map((p) => p.id).sort(), ['A', 'B'])
+  assert.deepEqual(visible.map((p) => p.id).sort(), ['A'])
 })
 
 test('an operative with no catalogue row sees jobs booked under their users id or former invite id', () => {

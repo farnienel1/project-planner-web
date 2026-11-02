@@ -767,3 +767,34 @@ export { timesheetChangedFields } from './timesheetEntryReviews'
 export { leaveDaysInRange } from './leaveRequests'
 export { MANAGER_SITE_BOOKING_LOCATION_WRITE_GROUP, managerSiteBookingUpdateWriteFields } from './workDocumentReaders'
 export { leaveRecordsForAccount } from './bookingPerson'
+
+// Rulebook 1.10.0: job visibility and booking permissions (§2, §16).
+export {
+  BOOKING_PERMISSION_COLLECTIONS,
+  bookingJobId,
+  canDeleteBooking,
+  canSeeJob,
+  canWriteBooking,
+  isJobManager,
+  jobManagerIds,
+  jobManagerUserIds,
+  stableManagerId,
+  visibleJobsFor,
+} from './staffAccess'
+
+// Rulebook 1.10.0: user delete, organisation memberships, pay change rows, job delete removals.
+export { USER_DELETE_REFUSAL_MESSAGES, canDeleteUser, userDeleteRefusal, userDeleteWrites } from './userDelete'
+export {
+  ORG_MEMBERSHIP_ADMIN_FIELDS,
+  ORG_MEMBERSHIP_DEFAULT_ON,
+  ORG_MEMBERSHIP_PERMISSION_KEYS,
+  ORG_MEMBERSHIP_SELF_FIELDS,
+  orgMembershipWriteFields,
+  parseOrgMembershipDocument,
+} from './orgMembership'
+export { PAY_HISTORY_NOT_LOADED_MESSAGE, payRateChangeWrites } from './payRate'
+export { jobDeleteBookingRemovals } from './bookings'
+export { CROSS_PLATFORM_CONTRACT_READERS, crossPlatformContractReaderNames, readCrossPlatformSample } from './crossPlatformContract'
+export { notificationRelatedIdFor } from './recordsDocuments'
+export { jobTypesChangeWriteFields } from './operationsDocuments'
+export { IDEMPOTENT_MIGRATION_WRITES } from './liveSources'
