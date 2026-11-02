@@ -324,6 +324,27 @@ export function bookingUpdateWriteFields(
   })
 }
 
+/** A manager site booking's place: the kind with its id or custom name, written together (1.9.0). */
+export const MANAGER_SITE_BOOKING_LOCATION_WRITE_GROUP = ['locationType', 'locationId', 'customLocationName'] as const
+
+/**
+ * 1.9.0 (§1, §2): partial update of an existing `managerSiteBookings/{id}` — only changed fields; the slot with its
+ * clock times and break, and the location kind with its id / custom name, each go together; `id`, `createdAt` and
+ * `organizationId` are never rewritten. A missing stored document writes nothing (the edit is refused, never turned
+ * into a create — `editOfMissingDocumentIsRefused`). Before 1.9.0 web saved an edit as a whole-document merge-set
+ * that re-stamped `createdAt`.
+ */
+export function managerSiteBookingUpdateWriteFields(
+  before: Record<string, unknown> | null | undefined,
+  next: Record<string, unknown>
+): DocumentWriteFields {
+  if (!before) return { set: {}, remove: [] }
+  return documentWriteFields(before, next, {
+    together: [BOOKING_SLOT_WRITE_GROUP, MANAGER_SITE_BOOKING_LOCATION_WRITE_GROUP],
+    createOnly: [...WRITE_CREATE_ONLY],
+  })
+}
+
 // MARK: - Subcontractor bookings
 
 export const SUBCONTRACTOR_BOOKING_DOCUMENT_KEYS = {

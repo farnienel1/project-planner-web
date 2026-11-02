@@ -9,7 +9,10 @@ import {
   rosterAliasIdsFor,
   type AcceptedClashRecord,
 } from '@/lib/canonical'
-import { getDayKindForBookings } from '@/lib/annualLeave/dayStatus'
+import { holidayBookingDayKeys } from '@/lib/annualLeave/holidayDayKeys'
+import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
+import { dayKeyInZone } from '@/lib/orgTime/zoneTime'
+import { leaveDaysInRange } from '@/lib/canonical/leaveRequests'
 import { findOperativeForUser } from '@/lib/operatives/operativeRosterUtils'
 import { mergeProjectsAndSmallWorks } from '@/lib/projects/workStatus'
 import { computeOperativeBookingClashWarnings } from '@/lib/scheduling/bookingClashUtils'
@@ -207,17 +210,19 @@ export type SubcontractorBookingRow = {
   bookedOperativeNames?: string[]
 }
 
-function leaveDaysInPeriod(booking: HolidayBooking, period: ReportPeriod, standardHours: number): number {
-  let days = 0
-  let cursor = new Date(period.start)
-  while (cursor <= period.end) {
-    const kind = getDayKindForBookings(cursor, [booking])
-    if (kind === 'approvedFull' || kind === 'approvedHalf') {
-      days += kind === 'approvedHalf' ? 0.5 : 1
-    }
-    cursor.setDate(cursor.getDate() + 1)
-  }
-  return days
+/**
+ * Rulebook 1.9.0 `leaveDaysInRange` (on `leaveRecordDayKeys`): the record's leave days inside the report period, in
+ * the organisation zone — the same count on every platform.
+ */
+function leaveDaysInPeriod(booking: HolidayBooking, period: ReportPeriod, _standardHours: number): number {
+  void _standardHours
+  const zone = organizationZoneOr()
+  const keys = holidayBookingDayKeys(booking, zone)
+  return leaveDaysInRange(
+    { ...keys, timeSlot: booking.timeSlot },
+    { startDayKey: dayKeyInZone(period.start, zone), endDayKey: dayKeyInZone(period.end, zone) },
+    zone
+  )
 }
 
 function filterWarningsToPeriod<T extends { date: Date }>(warnings: T[], period: ReportPeriod): T[] {

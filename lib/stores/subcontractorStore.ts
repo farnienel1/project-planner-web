@@ -2,10 +2,8 @@
 
 import { create } from 'zustand'
 import {
-  collection,
   deleteDoc,
   doc,
-  getDocs,
   Timestamp,
 } from 'firebase/firestore'
 import { auth, db } from '@/lib/firebase/config'
@@ -14,7 +12,8 @@ import { parseSubcontractorDocument, subcontractorWriteFields } from '@/lib/cano
 import type { Subcontractor, SubcontractorContact } from '@/types'
 import { newUuid } from '@/lib/firebase/firestoreUtils'
 import { markRowsRemoved, retainScopedRows } from '@/lib/staff/rosterRetain'
-import { invalidateOrgLoad, optionsForUnappliedOrg, runOrgLoad } from '@/lib/stores/orgLoadCache'
+import { forgetOrgCollectionDoc, subscribeOrgCollectionLoaded } from '@/lib/firebase/subscribeOrgCollection'
+import { liveResultStillCurrent } from '@/lib/firebase/liveResult'
 
 const SUBCONTRACTOR_LOAD_KEY = 'subcontractorStore:subcontractors'
 
@@ -83,37 +82,28 @@ export const useSubcontractorStore = create<SubcontractorState>((set, get) => ({
   loading: false,
   error: null,
 
+  // Rulebook 1.9.0 §1 (`LIVE_COLLECTIONS`): subcontractors are a live listener; the load resolves on its first snapshot.
   loadSubcontractors: async (organizationId) => {
-    const loadOptions = optionsForUnappliedOrg(
-      SUBCONTRACTOR_LOAD_KEY,
-      organizationId,
-      subcontractorOrgId === organizationId,
-      undefined
-    )
-    await runOrgLoad(
-      SUBCONTRACTOR_LOAD_KEY,
-      organizationId,
-      async () => {
-        if (get().subcontractors.length === 0) set({ loading: true, error: null })
-        else set({ error: null })
-        try {
-          const ref = collection(db, 'organizations', organizationId, 'subcontractors')
-          const snapshot = await getDocs(ref)
-          const subcontractors = snapshot.docs
-            .map((entry) => mapSubcontractor(entry.id, entry.data() as Record<string, unknown>))
-            .filter((item): item is Subcontractor => item !== null)
-            .sort((a, b) => a.name.localeCompare(b.name))
-          const previous = subcontractorOrgId === organizationId ? get().subcontractors : []
-          const kept = retainScopedRows(`subcontractors:${organizationId}`, previous, subcontractors)
-          subcontractorOrgId = organizationId
-          set({ subcontractors: kept, loading: false })
-        } catch (error: unknown) {
-          set({ error: error instanceof Error ? error.message : 'Failed to load subcontractors', loading: false })
-          throw error
-        }
-      },
-      loadOptions
-    )
+    if (!organizationId) return
+    if (get().subcontractors.length === 0 || subcontractorOrgId !== organizationId) set({ loading: true, error: null })
+    else set({ error: null })
+    try {
+      await subscribeOrgCollectionLoaded(SUBCONTRACTOR_LOAD_KEY, organizationId, 'subcontractors', (docs) => {
+        if (!liveResultStillCurrent(organizationId)) return
+        const subcontractors = docs
+          .map((entry) => mapSubcontractor(entry.id, entry.data))
+          .filter((item): item is Subcontractor => item !== null)
+          .sort((a, b) => a.name.localeCompare(b.name))
+        const previous = subcontractorOrgId === organizationId ? get().subcontractors : []
+        const kept = retainScopedRows(`subcontractors:${organizationId}`, previous, subcontractors)
+        subcontractorOrgId = organizationId
+        set({ subcontractors: kept, loading: false })
+      })
+      set({ loading: false })
+    } catch (error: unknown) {
+      set({ error: error instanceof Error ? error.message : 'Failed to load subcontractors', loading: false })
+      throw error
+    }
   },
 
   saveSubcontractor: async (organizationId, subcontractor) => {
@@ -124,9 +114,9 @@ export const useSubcontractorStore = create<SubcontractorState>((set, get) => ({
       doc(db, 'organizations', organizationId, 'subcontractors', id),
       payload,
       subcontractorWriteFields,
-      { userId: auth?.currentUser?.uid }
+      // Rulebook 1.9.0: an edit of a subcontractor deleted elsewhere is refused, never re-created.
+      { userId: auth?.currentUser?.uid, missing: get().subcontractors.some((row) => row.id === id) ? 'refuse' : 'create' }
     )
-    invalidateOrgLoad(SUBCONTRACTOR_LOAD_KEY)
     const mapped = mapSubcontractor(id, payload as unknown as Record<string, unknown>)
     if (!mapped) return
     const { subcontractors } = get()
@@ -139,8 +129,8 @@ export const useSubcontractorStore = create<SubcontractorState>((set, get) => ({
 
   deleteSubcontractor: async (organizationId, id) => {
     await deleteDoc(doc(db, 'organizations', organizationId, 'subcontractors', id))
-    invalidateOrgLoad(SUBCONTRACTOR_LOAD_KEY)
     markRowsRemoved(`subcontractors:${organizationId}`, [id])
+    forgetOrgCollectionDoc(SUBCONTRACTOR_LOAD_KEY, organizationId, id)
     set({ subcontractors: get().subcontractors.filter((s) => s.id !== id) })
   },
 }))

@@ -2,8 +2,9 @@
  * iOS parity source: Core/MondayFirstCalendarSupport.swift
  * Spec: docs/ios-parity/04-business-logic.md §11
  *
- * Default zone is Europe/London. Pass the organisation origin-country IANA
- * zone (see lib/orgTime/orgTimeZone.ts) for pay periods and timesheet stamps.
+ * Default zone is the open organisation's business zone (rulebook §1 `organizationTimeZone`, set by the live
+ * organisation listener; Europe/London until it loads). Before 1.9.0 the default was always Europe/London, so
+ * bookings in a non-London organisation were normalised to the wrong midnight. Pass a zone to override.
  */
 
 import {
@@ -20,13 +21,12 @@ import {
   partsInZone,
   unixStartOfDayInZone,
 } from '@/lib/orgTime/zoneTime'
-
-const LONDON = LONDON_TIME_ZONE
+import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 
 export { LONDON_TIME_ZONE }
 
 function zone(timeZone?: string): string {
-  return timeZone || LONDON
+  return organizationZoneOr(timeZone)
 }
 
 /** yyyy-MM-dd in the given zone (default Europe/London). */

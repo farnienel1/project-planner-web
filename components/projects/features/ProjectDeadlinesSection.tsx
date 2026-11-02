@@ -103,6 +103,8 @@ export function ProjectDeadlinesSection({ project, isSmallWorks }: { project: Pr
     loadOperatives(organization.id)
     loadTasks(organization.id)
     loadAudits(organization.id)
+    // Rulebook 1.9.0 §1: the deadline programme is live while this section is open.
+    return () => useDeadlineStore.getState().stopListening()
   }, [
     organization?.id,
     project.id,

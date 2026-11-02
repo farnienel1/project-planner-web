@@ -998,6 +998,33 @@ export function documentValueKey(value: unknown): string {
   return JSON.stringify(value) ?? String(value)
 }
 
+/** The four per-user leave figures and the `UserDocumentAnnualLeave` key each is stored under. */
+export const USER_ANNUAL_LEAVE_FIGURE_FIELDS: ReadonlyArray<readonly [string, keyof UserDocumentAnnualLeave]> = [
+  ['annualLeaveDaysPerYear', 'daysPerYear'],
+  ['annualLeaveYearStartMonth', 'startMonth'],
+  ['annualLeaveYearEndMonth', 'endMonth'],
+  ['annualLeaveCarriesOver', 'carriesOver'],
+]
+
+/**
+ * 1.9.0: the `users/{uid}` fields a save must leave out while `annualLeaveDefaultsPending` (the organisation's
+ * `annualLeaveDefaults` had not loaded when the user was parsed): each leave figure the user document does not store
+ * itself, so the factory 25 / 1 / 12 / false is never written onto the user. A figure the user stores, or one the
+ * editor changed on purpose (`edited`), is not omitted. Empty when the defaults are not pending. Accepts a parsed
+ * `UserDocument` (or just its `annualLeaveDefaultsPending` / `annualLeaveStored`).
+ */
+export function annualLeavePendingOmitFields(
+  user: Pick<UserDocument, 'annualLeaveDefaultsPending' | 'annualLeaveStored'> | null | undefined,
+  edited?: ReadonlyArray<string> | null
+): string[] {
+  if (!user?.annualLeaveDefaultsPending) return []
+  const changed = new Set(edited || [])
+  const stored = user.annualLeaveStored || ({} as Partial<UserDocumentAnnualLeave>)
+  return USER_ANNUAL_LEAVE_FIGURE_FIELDS.filter(([field, key]) => stored[key] == null && !changed.has(field)).map(
+    ([field]) => field
+  )
+}
+
 export type DocumentWriteFields = {
   /** Fields to write, with the values passed in `next`. */
   set: Record<string, unknown>

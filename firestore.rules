@@ -328,10 +328,14 @@ service cloud.firestore {
            !isOperativeLikeUser(get(/databases/(default)/documents/users/$(request.auth.uid)).data);
   }
 
+  // Rulebook 1.9.0: a Send status update may carry write metadata (`updatedBy` = the signed-in user,
+  // `updatedFrom` a known platform). Checked inline: the materials update rule is close to the expression limit.
   function isStaffMaterialStatusWrite(organizationId) {
-    return canWriteMaterialSendRecord(organizationId) &&
-           request.resource.data.diff(resource.data).affectedKeys()
-             .hasOnly(['status', 'lastSentAt', 'lastSentRequestType', 'updatedAt']);
+    let affected = request.resource.data.diff(resource.data).affectedKeys();
+    return affected.hasOnly(['status', 'lastSentAt', 'lastSentRequestType', 'updatedAt', 'updatedBy', 'updatedFrom']) &&
+           (!('updatedBy' in affected) || request.resource.data.updatedBy == request.auth.uid) &&
+           (!('updatedFrom' in affected) || request.resource.data.updatedFrom in ['web', 'ios', 'android']) &&
+           canWriteMaterialSendRecord(organizationId);
   }
 
   // Admin of org by members map (works before users/{uid} profile exists — web org bootstrap).
@@ -1302,10 +1306,12 @@ service cloud.firestore {
       match /materials/{materialId} {
         allow read: if canAccessOrganization(organizationId);
         allow create: if isOrganizationMaterialManager(organizationId) || canCreateOwnMaterial(organizationId);
-        allow update: if isOrganizationMaterialManager(organizationId) ||
+        // The status branch goes first: it fails fast on any other field, and the rule stays under the
+        // 1000-expression limit when a Send status write carries write metadata (1.9.0).
+        allow update: if isStaffMaterialStatusWrite(organizationId) ||
+          isOrganizationMaterialManager(organizationId) ||
           canUpdateOwnMaterial(organizationId) ||
-          isOnlyClaimingLegacyOwnMaterial(organizationId) ||
-          isStaffMaterialStatusWrite(organizationId);
+          isOnlyClaimingLegacyOwnMaterial(organizationId);
         allow delete: if isOrganizationMaterialManager(organizationId) || canDeleteOwnMaterial(organizationId);
       }
 
@@ -1608,7 +1614,8 @@ service cloud.firestore {
       // Dismissed warnings (expired qualifications). Document id is the canonical dismiss key.
       match /dismissedWarnings/{dismissKey} {
         allow read: if canAccessOrganization(organizationId);
-        allow create, update: if canAccessOrganization(organizationId) && writeMetadataValidWhenPresent();
+        // Rulebook §16 / 1.9.0: only admins and managers dismiss a warning (the same staff who accept clashes).
+        allow create, update: if canAccessVariationsStaff(organizationId) && writeMetadataValidWhenPresent();
         allow delete: if isOrganizationAdmin(organizationId);
       }
 

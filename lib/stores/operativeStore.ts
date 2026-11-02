@@ -4,7 +4,6 @@ import { create } from 'zustand'
 import {
   collection,
   getDocs,
-  getDocsFromServer,
   getDoc,
   setDoc,
   deleteDoc,
@@ -16,7 +15,8 @@ import { savePartialDocument } from '@/lib/firebase/partialWrite'
 import { managerRowWriteFields, operativeRowWriteFields, parseSkillDocument } from '@/lib/canonical/peopleDocuments'
 import type { Operative, Manager, Skill, Qualification } from '@/types'
 import { filterRealManagers, isPlaceholderManager } from '@/lib/staff/managerRosterUtils'
-import { invalidateOrgLoad, optionsForUnappliedOrg, runOrgLoad } from '@/lib/stores/orgLoadCache'
+import { forgetOrgCollectionDoc, subscribeOrgCollectionLoaded } from '@/lib/firebase/subscribeOrgCollection'
+import { liveResultStillCurrent } from '@/lib/firebase/liveResult'
 import { applyExclusiveRateFields } from '@/lib/firebase/userPayload'
 import {
   mergeOperativeQualificationWrite,
@@ -29,6 +29,7 @@ import { markRowsRemoved, retainScopedRows } from '@/lib/staff/rosterRetain'
 import { removeFutureBookingsForPerson } from '@/lib/bookings/removeBookingsOnDelete'
 
 const OPERATIVES_KEY = 'operativeStore:operatives'
+const MANAGERS_KEY = 'operativeStore:managers'
 let operativesOrgId = ''
 let managersOrgId = ''
 let skillsOrgId = ''
@@ -72,124 +73,111 @@ export const useOperativeStore = create<OperativeState>((set, get) => ({
   operativesLoadedOrgId: null,
   managersLoadedOrgId: null,
   
-  loadOperatives: async (organizationId: string, options?: { force?: boolean }) => {
-    const loadOptions = optionsForUnappliedOrg(
-      OPERATIVES_KEY,
-      organizationId,
-      operativesOrgId === organizationId,
-      options
-    )
-    await runOrgLoad(
-      OPERATIVES_KEY,
-      organizationId,
-      async () => {
-        if (get().operatives.length === 0) set({ loading: true, error: null })
-        else set({ error: null })
-        const epoch = operativeMutationEpoch
-        try {
-          const operativesRef = collection(db, 'organizations', organizationId, 'operatives')
-          const snapshot = loadOptions?.force
-            ? await getDocsFromServer(operativesRef).catch(() => getDocs(operativesRef))
-            : await getDocs(operativesRef)
-          if (epoch !== operativeMutationEpoch) {
-            set({ loading: false })
-            return
-          }
-          const mapped = snapshot.docs.flatMap((entry) => {
-            const parsed = parseOperative(entry.id, entry.data() as Record<string, unknown>, organizationId)
-            return parsed.ok ? [parsed.value] : []
-          })
-          const previous = operativesOrgId === organizationId ? get().operatives : []
-          const operatives = retainScopedRows(`operatives:${organizationId}`, previous, mapped)
-          operativesOrgId = organizationId
-          set({ operatives, loading: false, operativesLoadedOrgId: organizationId })
-        } catch (error: unknown) {
-          set({
-            error: error instanceof Error ? error.message : 'Failed to load operatives',
-            loading: false,
-          })
-          throw error
-        }
-      },
-      loadOptions
-    )
-  },
-  
-  loadManagers: async (organizationId: string) => {
-    await runOrgLoad('operativeStore:managers', organizationId, async () => {
+  // Rulebook 1.9.0 §1 (`LIVE_COLLECTIONS`): operatives, managers, skills and qualifications are live listeners. The
+  // load resolves on the first snapshot; edits on any platform arrive through it, so there is no time-to-live cache.
+  loadOperatives: async (organizationId: string, _options?: { force?: boolean }) => {
+    void _options
+    if (!organizationId) return
+    if (get().operatives.length === 0 || operativesOrgId !== organizationId) set({ loading: true, error: null })
+    else set({ error: null })
     try {
-      const managersRef = collection(db, 'organizations', organizationId, 'managers')
-      const snapshot = await getDocs(managersRef)
-      const allManagers = snapshot.docs.flatMap((entry) => {
-        const parsed = parseManager(entry.id, entry.data() as Record<string, unknown>, organizationId)
-        return parsed.ok ? [parsed.value] : []
+      await subscribeOrgCollectionLoaded(OPERATIVES_KEY, organizationId, 'operatives', (docs) => {
+        if (!liveResultStillCurrent(organizationId)) return
+        const mapped = docs.flatMap((entry) => {
+          const parsed = parseOperative(entry.id, entry.data, organizationId)
+          return parsed.ok ? [parsed.value] : []
+        })
+        const previous = operativesOrgId === organizationId ? get().operatives : []
+        const operatives = retainScopedRows(`operatives:${organizationId}`, previous, mapped)
+        operativesOrgId = organizationId
+        set({ operatives, loading: false, operativesLoadedOrgId: organizationId })
       })
-      const realManagers = filterRealManagers(allManagers)
-      const previous = managersOrgId === organizationId ? get().managers : []
-      const managers = retainScopedRows(`managers:${organizationId}`, previous, realManagers)
-      managersOrgId = organizationId
-      set({
-        managers,
-        placeholderManagerCount: allManagers.filter(isPlaceholderManager).length,
-        managersLoadedOrgId: organizationId,
+      set({ loading: false })
+    } catch (error: unknown) {
+      set({ error: error instanceof Error ? error.message : 'Failed to load operatives', loading: false })
+      throw error
+    }
+  },
+
+  loadManagers: async (organizationId: string) => {
+    if (!organizationId) return
+    try {
+      await subscribeOrgCollectionLoaded(MANAGERS_KEY, organizationId, 'managers', (docs) => {
+        if (!liveResultStillCurrent(organizationId)) return
+        const allManagers = docs.flatMap((entry) => {
+          const parsed = parseManager(entry.id, entry.data, organizationId)
+          return parsed.ok ? [parsed.value] : []
+        })
+        const realManagers = filterRealManagers(allManagers)
+        const previous = managersOrgId === organizationId ? get().managers : []
+        const managers = retainScopedRows(`managers:${organizationId}`, previous, realManagers)
+        managersOrgId = organizationId
+        set({
+          managers,
+          placeholderManagerCount: allManagers.filter(isPlaceholderManager).length,
+          managersLoadedOrgId: organizationId,
+        })
       })
     } catch (error: unknown) {
       set({ error: error instanceof Error ? error.message : 'Failed to load managers' })
       throw error
     }
-    })
   },
-  
+
   loadSkills: async (organizationId: string) => {
+    if (!organizationId) return
     try {
-      const skillsRef = collection(db, 'organizations', organizationId, 'skills')
-      const snapshot = await getDocs(skillsRef)
-      // `parseSkillDocument` (rulebook 1.6.0): id as stored, a row without a name is skipped.
-      const skills: Skill[] = snapshot.docs.flatMap((entry) => {
-        const parsed = parseSkillDocument(entry.id, entry.data() as Record<string, unknown>)
-        if (!parsed) return []
-        return [
-          {
-            id: parsed.id,
-            name: parsed.name,
-            trade: parsed.trade,
-            createdAt: parsed.createdAtMs != null ? new Date(parsed.createdAtMs) : new Date(),
-            updatedAt: parsed.updatedAtMs != null ? new Date(parsed.updatedAtMs) : new Date(),
-          } as Skill,
-        ]
+      await subscribeOrgCollectionLoaded('operativeStore:skills', organizationId, 'skills', (docs) => {
+        if (!liveResultStillCurrent(organizationId)) return
+        // `parseSkillDocument` (rulebook 1.6.0): id as stored, a row without a name is skipped.
+        const skills: Skill[] = docs.flatMap((entry) => {
+          const parsed = parseSkillDocument(entry.id, entry.data)
+          if (!parsed) return []
+          return [
+            {
+              id: parsed.id,
+              name: parsed.name,
+              trade: parsed.trade,
+              createdAt: parsed.createdAtMs != null ? new Date(parsed.createdAtMs) : new Date(),
+              updatedAt: parsed.updatedAtMs != null ? new Date(parsed.updatedAtMs) : new Date(),
+            } as Skill,
+          ]
+        })
+        const previous = skillsOrgId === organizationId ? get().skills : []
+        const kept = retainScopedRows(`skills:${organizationId}`, previous, skills)
+        skillsOrgId = organizationId
+        set({ skills: kept })
       })
-      const previous = skillsOrgId === organizationId ? get().skills : []
-      const kept = retainScopedRows(`skills:${organizationId}`, previous, skills)
-      skillsOrgId = organizationId
-      set({ skills: kept })
     } catch (error: any) {
-      set({ error: error.message })
+      set({ error: error?.message ?? 'Failed to load skills' })
     }
   },
-  
+
   loadQualifications: async (organizationId: string) => {
+    if (!organizationId) return
     try {
-      const qualsRef = collection(db, 'organizations', organizationId, 'qualifications')
-      const snapshot = await getDocs(qualsRef)
-      const qualifications = snapshot.docs.map(doc => {
-        const data = doc.data()
-        return {
-          id: doc.id,
-          ...data,
-          endDate: data.endDate?.toDate(),
-          createdAt: data.createdAt?.toDate() || new Date(),
-          updatedAt: data.updatedAt?.toDate() || new Date(),
-        } as Qualification
+      await subscribeOrgCollectionLoaded('operativeStore:qualifications', organizationId, 'qualifications', (docs) => {
+        if (!liveResultStillCurrent(organizationId)) return
+        const qualifications = docs.map((entry) => {
+          const data = entry.data as Record<string, any>
+          return {
+            id: entry.id,
+            ...data,
+            endDate: data.endDate?.toDate?.(),
+            createdAt: data.createdAt?.toDate?.() || new Date(),
+            updatedAt: data.updatedAt?.toDate?.() || new Date(),
+          } as Qualification
+        })
+        const previous = qualificationsOrgId === organizationId ? get().qualifications : []
+        const kept = retainScopedRows(`qualifications:${organizationId}`, previous, qualifications)
+        qualificationsOrgId = organizationId
+        set({ qualifications: kept })
       })
-      const previous = qualificationsOrgId === organizationId ? get().qualifications : []
-      const kept = retainScopedRows(`qualifications:${organizationId}`, previous, qualifications)
-      qualificationsOrgId = organizationId
-      set({ qualifications: kept })
     } catch (error: any) {
-      set({ error: error.message })
+      set({ error: error?.message ?? 'Failed to load qualifications' })
     }
   },
-  
+
   getOperative: async (organizationId, id) => {
     const snap = await getDoc(doc(db, 'organizations', organizationId, 'operatives', id))
     if (!snap.exists()) return null
@@ -250,10 +238,10 @@ export const useOperativeStore = create<OperativeState>((set, get) => ({
       doc(db, 'organizations', organizationId, 'operatives', id),
       payload,
       operativeRowWriteFields,
-      { userId: auth?.currentUser?.uid }
+      // Rulebook 1.9.0: an edit of an operative deleted elsewhere is refused, never re-created.
+      { userId: auth?.currentUser?.uid, missing: get().operatives.some((row) => row.id === id) ? 'refuse' : 'create' }
     )
     operativeMutationEpoch += 1
-    invalidateOrgLoad(OPERATIVES_KEY)
     const saved = { ...operative, id, organizationId, updatedAt: new Date() }
     set({ operatives: [...get().operatives.filter((o) => o.id !== id), saved] })
     return id
@@ -321,7 +309,6 @@ export const useOperativeStore = create<OperativeState>((set, get) => ({
       { merge: true }
     )
     operativeMutationEpoch += 1
-    invalidateOrgLoad(OPERATIVES_KEY)
     set({ operatives: [...get().operatives.filter((row) => row.id !== id), mergedOperative] })
     return id
   },
@@ -335,9 +322,8 @@ export const useOperativeStore = create<OperativeState>((set, get) => ({
       doc(db, 'organizations', organizationId, 'managers', id),
       payload,
       managerRowWriteFields,
-      { userId: auth?.currentUser?.uid }
+      { userId: auth?.currentUser?.uid, missing: get().managers.some((row) => row.id === id) ? 'refuse' : 'create' }
     )
-    invalidateOrgLoad('operativeStore:managers')
     const saved = { ...manager, id, organizationId, updatedAt: new Date() }
     set({ managers: [...get().managers.filter((m) => m.id !== id), saved] })
     return id
@@ -350,6 +336,7 @@ export const useOperativeStore = create<OperativeState>((set, get) => ({
       const operativeRef = doc(db, 'organizations', organizationId, 'operatives', id)
       await deleteDoc(operativeRef)
       markRowsRemoved(`operatives:${organizationId}`, [id])
+      forgetOrgCollectionDoc(OPERATIVES_KEY, organizationId, id)
       set({ operatives: operatives.filter(o => o.id !== id) })
     } catch (error: any) {
       set({ error: error.message })
@@ -360,7 +347,7 @@ export const useOperativeStore = create<OperativeState>((set, get) => ({
   deleteManager: async (id, organizationId) => {
     await deleteDoc(doc(db, 'organizations', organizationId, 'managers', id))
     markRowsRemoved(`managers:${organizationId}`, [id])
-    invalidateOrgLoad('operativeStore:managers')
+    forgetOrgCollectionDoc(MANAGERS_KEY, organizationId, id)
     set({ managers: get().managers.filter((m) => m.id !== id) })
   },
 
@@ -383,6 +370,7 @@ export const useOperativeStore = create<OperativeState>((set, get) => ({
       await deleteDoc(doc(db, 'organizations', organizationId, 'managers', id))
     }
     markRowsRemoved(`managers:${organizationId}`, placeholderIds)
+    for (const placeholderId of placeholderIds) forgetOrgCollectionDoc(MANAGERS_KEY, organizationId, placeholderId)
 
     await get().loadManagers(organizationId)
     return placeholderIds.length

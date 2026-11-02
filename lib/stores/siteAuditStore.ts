@@ -16,6 +16,8 @@ import {
 import { isRetryableAuthLoadError } from '@/lib/auth/authBoot'
 import { isTimeoutError, withTimeout } from '@/lib/client/withTimeout'
 import { db } from '@/lib/firebase/config'
+import { subscribeOrgCollectionLoaded } from '@/lib/firebase/subscribeOrgCollection'
+import { liveResultStillCurrent } from '@/lib/firebase/liveResult'
 import { readOrganizationDocument } from '@/lib/firebase/orgDocumentCache'
 import { UserRole, type SiteAudit, type SiteAuditItem, type User } from '@/types'
 import { parseOrgUser } from '@/lib/firebase/parseUser'
@@ -137,7 +139,6 @@ export const useSiteAuditStore = create<SiteAuditState>((set, get) => ({
       items,
     }
     await savePartialDocument(ref, payload, siteAuditWriteFields, { userId: inboxActorUserId() || input.createdByUserId })
-    invalidateOrgLoad('siteAuditStore:audits')
     const storedCreatedAt = stored.exists() ? (stored.data() as Record<string, unknown>).createdAt : undefined
     const mapped = mapSiteAudit(auditId, { ...payload, createdAt: storedCreatedAt ?? payload.createdAt })
     if (mapped) {
@@ -147,25 +148,27 @@ export const useSiteAuditStore = create<SiteAuditState>((set, get) => ({
   },
 
   loadAudits: async (organizationId) => {
-    await runOrgLoad('siteAuditStore:audits', organizationId, async () => {
-      if (get().audits.length === 0) set({ loading: true, error: null })
-      else set({ error: null })
-      try {
-        const ref = collection(db, 'organizations', organizationId, 'siteAudits')
-        const snapshot = await getDocs(ref)
-        const mapped = snapshot.docs
-          .map((entry) => mapSiteAudit(entry.id, entry.data() as Record<string, unknown>))
+    if (!organizationId) return
+    if (siteAuditOrgId !== organizationId || get().audits.length === 0) set({ loading: true, error: null })
+    else set({ error: null })
+    try {
+      // Rulebook 1.9.0 §1 (`LIVE_COLLECTIONS`): a live listener; the load resolves on its first snapshot.
+      await subscribeOrgCollectionLoaded('siteAuditStore:audits', organizationId, 'siteAudits', (docs) => {
+        if (!liveResultStillCurrent(organizationId)) return
+        const mapped = docs
+          .map((entry) => mapSiteAudit(entry.id, entry.data))
           .filter((item): item is SiteAudit => item !== null)
           .sort((a, b) => b.date.getTime() - a.date.getTime())
         const previous = siteAuditOrgId === organizationId ? get().audits : []
         const audits = retainScopedRows(`siteAudits:${organizationId}`, previous, mapped)
         siteAuditOrgId = organizationId
         set({ audits, loading: false })
-      } catch (error: unknown) {
-        set({ error: error instanceof Error ? error.message : 'Failed to load site audits', loading: false })
-        throw error
-      }
-    })
+      })
+      set({ loading: false })
+    } catch (error: unknown) {
+      set({ error: error instanceof Error ? error.message : 'Failed to load site audits', loading: false })
+      throw error
+    }
   },
 }))
 

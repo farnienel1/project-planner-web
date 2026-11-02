@@ -9,7 +9,8 @@
  * plus Decarbonisation (a custom type this organisation already used) are always re-seeded
  * if missing.
  */
-import { collection, doc, getDoc, getDocs, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore'
+import { collection, doc, getDoc, getDocs, serverTimestamp, setDoc, updateDoc, type Unsubscribe } from 'firebase/firestore'
+import { watchOrgDocument } from '@/lib/firebase/watchOrgQuery'
 import { auth, db } from '@/lib/firebase/config'
 import {
   canonicalJobTypeName as rulebookCanonicalJobTypeName,
@@ -206,36 +207,47 @@ export async function recoverJobTypesFromWork(
       : await loadWorkJobTypeRecords(organizationId)
   const recovered = jobTypesFromWorkRecords(records)
   const merged = mergeJobTypeCatalogues(stored, recovered)
-  if (!jobTypeListsEqual(stored, merged)) {
-    try {
-      await persistJobTypes(organizationId, merged)
-    } catch {
-      // Read-only accounts still get the restored list in the UI.
-    }
-  }
+  // Rulebook 1.9.0 §1 "Never re-save what you didn't change": the recovered names are shown, never written on load.
+  // They are saved when a manager saves the job type list (a user action).
   const names = merged.length > 0 ? merged : [...RESTORED_JOB_TYPES]
   rememberJobTypes(organizationId, names)
   return names
 }
 
-/** iOS overwrites the whole settings/jobTypes document — no merge. Empty catalogues are restored from projects on load. */
-export async function saveJobTypes(organizationId: string, jobTypes: string[]): Promise<void> {
+/**
+ * Save the job type list the manager edited. `removed`: the names deleted in this action — rulebook 1.9.0
+ * `jobTypesWriteFields` writes an empty list only when every stored name was removed on purpose.
+ */
+export async function saveJobTypes(
+  organizationId: string,
+  jobTypes: string[],
+  options?: { removed?: string[] }
+): Promise<void> {
   const names = jobTypes.map((item) => canonicalJobTypeName(item)).filter(Boolean)
-  if (names.length === 0) {
+  if (names.length === 0 && !(options?.removed && options.removed.length > 0)) {
     throw new Error('Job types cannot be empty. Add at least one type or restore from live jobs.')
   }
-  await persistJobTypes(organizationId, names)
+  await persistJobTypes(organizationId, names, options?.removed)
+}
+
+/** Rulebook 1.9.0 §1 (`LIVE_COLLECTIONS`): `settings/jobTypes` is live while a job-type screen is open. */
+export function watchJobTypes(organizationId: string, onNames: (names: string[]) => void): Unsubscribe {
+  return watchOrgDocument(organizationId, ['settings', ORG_SETTINGS_JOB_TYPES_DOC], (data) => {
+    const names = parseJobTypesDocument(data ?? undefined, null).jobTypes
+    if (names.length) rememberJobTypes(organizationId, names)
+    onNames(names)
+  })
 }
 
 /**
  * Rulebook 1.8.0 `jobTypesWriteFields`: an update of `jobTypes` only (canonical, de-duplicated, sorted), never a
  * whole-document overwrite and never an empty list. The document is created (with `organizationId`) only when missing.
  */
-async function persistJobTypes(organizationId: string, jobTypes: string[]): Promise<void> {
+async function persistJobTypes(organizationId: string, jobTypes: string[], removed?: string[]): Promise<void> {
   const ref = doc(db, 'organizations', organizationId, 'settings', ORG_SETTINGS_JOB_TYPES_DOC)
   const snap = await getDoc(ref)
   const stored = snap.exists() ? coerceJobTypeList(snap.data()?.jobTypes) : []
-  const write = jobTypesWriteFields(snap.exists() ? stored : [], jobTypes)
+  const write = jobTypesWriteFields(snap.exists() ? stored : [], jobTypes, { removed })
   if (!write) {
     rememberJobTypes(organizationId, stored.length ? stored : jobTypes)
     return

@@ -457,9 +457,19 @@ export const HEALTH_SAFETY_ARRAY_FIELDS = ['talks', 'issues', 'signatures', 'ram
  * an unchanged array is not written; `signatureRecords` is never touched (signing uses
  * `healthSafetySignatureWriteFields`). The app adds `updatedAt`.
  */
+export type HealthSafetyArrayField = (typeof HEALTH_SAFETY_ARRAY_FIELDS)[number]
+
 export function healthSafetyDocumentWriteFields(
   stored: Record<string, unknown> | null | undefined,
-  next: Partial<Record<(typeof HEALTH_SAFETY_ARRAY_FIELDS)[number], ReadonlyArray<Record<string, unknown>>>>
+  next: Partial<Record<HealthSafetyArrayField, ReadonlyArray<Record<string, unknown>>>>,
+  options?: {
+    /**
+     * 1.9.0: the row ids the user deliberately removed in this save, per array. An empty list replaces a stored
+     * non-empty one only when every stored row's id is listed here (deleting the last issue or document); otherwise
+     * an empty list is still treated as an empty or failed load and is not written.
+     */
+    removedIds?: Partial<Record<HealthSafetyArrayField, ReadonlyArray<string>>> | null
+  } | null
 ): DocumentWriteFields {
   const before = record(stored)
   const out: Record<string, unknown> = {}
@@ -467,7 +477,14 @@ export function healthSafetyDocumentWriteFields(
     const list = next?.[field]
     if (!Array.isArray(list)) continue
     const storedRows = rows(before[field])
-    if (list.length === 0 && storedRows.length > 0) continue
+    if (list.length === 0 && storedRows.length > 0) {
+      const removed = new Set((options?.removedIds?.[field] || []).map(normalizeDocumentId))
+      removed.delete('')
+      const everyRowRemoved = storedRows.every((row) => removed.has(normalizeDocumentId(row.id)))
+      if (!everyRowRemoved) continue
+      out[field] = []
+      continue
+    }
     const byId = new Map<string, Record<string, unknown>>()
     for (const row of storedRows) {
       const key = normalizeDocumentId(row.id)
@@ -482,6 +499,57 @@ export function healthSafetyDocumentWriteFields(
     })
   }
   return documentWriteFields(stored ? before : null, out)
+}
+
+/** One removal for `healthSafetySignatureRemovalWrites`: a whole issue, or one recipient of it. */
+export type HealthSafetySignatureRemoval = { issueId: unknown; userId?: unknown }
+
+export type HealthSafetySignatureRemovalWrite = {
+  /** Field paths to delete (`deleteField()` / `FieldValue.delete()`), one per `signatureRecords` entry, key as stored. */
+  removeFieldPaths: Array<[string, string]>
+  /** The legacy `signatures` array without the removed rows; null when no array row matched (do not write it). */
+  signatures: Record<string, unknown>[] | null
+}
+
+/**
+ * 1.9.0: removing a recipient from an issue, or the issue itself, removes that person's (or every) signature for it:
+ * a field-path delete of each matching `signatureRecords.{key}` entry (matched by the entry's own `issueId` /
+ * `userId`, or by its key, without case) and the `signatures` array without the matching rows. Written in the same
+ * `update` as the issue change. Any other signature is never touched. Null when nothing matches.
+ */
+export function healthSafetySignatureRemovalWrites(
+  stored: Record<string, unknown> | null | undefined,
+  removals: ReadonlyArray<HealthSafetySignatureRemoval>
+): HealthSafetySignatureRemovalWrite | null {
+  const row = record(stored)
+  const wanted = (removals || [])
+    .map((entry) => ({ issue: normalizeDocumentId(entry?.issueId), user: normalizeDocumentId(entry?.userId) }))
+    .filter((entry) => entry.issue)
+  if (wanted.length === 0) return null
+  const matches = (issueId: unknown, userId: unknown) => {
+    const issue = normalizeDocumentId(issueId)
+    const user = normalizeDocumentId(userId)
+    return wanted.some((entry) => entry.issue === issue && (!entry.user || entry.user === user))
+  }
+  const removeFieldPaths: Array<[string, string]> = []
+  for (const [key, value] of Object.entries(record(row[HS_SIGNATURE_RECORDS_FIELD]))) {
+    const entry = record(value)
+    let issueId: unknown = entry.issueId
+    let userId: unknown = entry.userId
+    if (!text(issueId) || !text(userId)) {
+      const split = key.split('__')
+      if (split.length === 2) {
+        issueId = issueId || split[0]
+        userId = userId || split[1]
+      }
+    }
+    if (matches(issueId, userId)) removeFieldPaths.push([HS_SIGNATURE_RECORDS_FIELD, key])
+  }
+  const storedSignatures = rows(row.signatures)
+  const keptSignatures = storedSignatures.filter((entry) => !matches(entry.issueId, entry.userId))
+  const signatures = keptSignatures.length === storedSignatures.length ? null : keptSignatures
+  if (removeFieldPaths.length === 0 && !signatures) return null
+  return { removeFieldPaths, signatures }
 }
 
 // MARK: - Variations
@@ -749,6 +817,211 @@ export function parseVariationTrackerDocument(
   }
 }
 
+export const VARIATION_TRACKER_LOCK_FIELDS = ['lockedByUid', 'lockedByName', 'lockedAt'] as const
+
+/** One change to `variationTrackers/{parentId}` (1.9.0). */
+export type VariationTrackerAction =
+  | { kind: 'enable'; parentId: unknown; parentType: unknown; actorUid: unknown; at: unknown }
+  | { kind: 'disable' }
+  | { kind: 'lock'; parentId: unknown; parentType: unknown; actorUid: unknown; actorName: unknown; at: unknown }
+  | { kind: 'unlock' }
+  | { kind: 'mode'; numberingMode: unknown }
+  | { kind: 'renumbered' }
+
+/**
+ * Writes to `variationTrackers/{parentId}` (1.9.0): `{ set, remove }` of the fields that action changes, written as a
+ * partial update (a merge only when `stored` is null, i.e. the document is created). Never a whole-document rewrite
+ * from a local copy. `enable` creates the tracker (`lockSubmitted`, `VO-`, padding 3, version 1) or, on an existing
+ * one, sets only `enabled` / `enabledAt` / `enabledByUid` and keeps the stored mode, prefix, padding and version
+ * (version 0 becomes 1). `lock` sets the three lock fields (and `parentId` / `parentType` on create); `unlock`
+ * removes them; `disable` sets `enabled: false` and removes the lock; `mode` sets `numberingMode`; `renumbered`
+ * sets `version` to the stored version + 1 and removes the lock (the same transaction as the renumbering). Null when
+ * nothing changes. Instants pass through as given; checking who holds the lock stays with the caller.
+ */
+export function variationTrackerWriteFields(
+  stored: Record<string, unknown> | null | undefined,
+  action: VariationTrackerAction
+): DocumentWriteFields | null {
+  const row = stored ? record(stored) : null
+  const set: Record<string, unknown> = {}
+  const remove: string[] = []
+  const removeLock = () => {
+    for (const key of VARIATION_TRACKER_LOCK_FIELDS) if (row && row[key] != null) remove.push(key)
+  }
+  const parentFields = (parentId: unknown, parentType: unknown) => {
+    if (row) return
+    set.parentId = text(parentId)
+    set.parentType = text(parentType) === 'smallWork' ? 'smallWork' : 'project'
+  }
+  switch (action?.kind) {
+    case 'enable': {
+      parentFields(action.parentId, action.parentType)
+      set.enabled = true
+      set.enabledAt = action.at
+      set.enabledByUid = text(action.actorUid)
+      if (!row) {
+        set.numberingMode = 'lockSubmitted'
+        set.prefix = 'VO-'
+        set.padding = 3
+        set.version = 1
+      } else if (Math.trunc(documentNumber(row.version) ?? 0) < 1) {
+        set.version = 1
+      }
+      break
+    }
+    case 'disable':
+      if (!row) return null
+      if (documentBool(row.enabled) !== false) set.enabled = false
+      removeLock()
+      break
+    case 'lock':
+      parentFields(action.parentId, action.parentType)
+      set.lockedByUid = text(action.actorUid)
+      set.lockedByName = text(action.actorName)
+      set.lockedAt = action.at
+      break
+    case 'unlock':
+      removeLock()
+      break
+    case 'mode': {
+      const mode = text(action.numberingMode) === 'resequenceAll' ? 'resequenceAll' : 'lockSubmitted'
+      if (!row || text(row.numberingMode) !== mode) set.numberingMode = mode
+      break
+    }
+    case 'renumbered':
+      if (!row) return null
+      set.version = Math.trunc(documentNumber(row.version) ?? 0) + 1
+      removeLock()
+      break
+    default:
+      return null
+  }
+  return Object.keys(set).length > 0 || remove.length > 0 ? { set, remove } : null
+}
+
+export const VARIATION_TRADES_DOCUMENT_ID = 'variationTrades'
+
+/** Read `settings/variationTrades.customTrades`: trimmed, de-duplicated without case, in stored order. */
+export function parseVariationTrades(data: Record<string, unknown> | null | undefined): { customTrades: string[] } {
+  const seen = new Set<string>()
+  const customTrades: string[] = []
+  for (const trade of textList(record(data).customTrades)) {
+    if (seen.has(trade.toLowerCase())) continue
+    seen.add(trade.toLowerCase())
+    customTrades.push(trade)
+  }
+  return { customTrades }
+}
+
+/**
+ * Saving `settings/variationTrades` (1.9.0): the stored list plus each `add` trade not already there (ignoring
+ * case), minus each `remove` trade (ignoring case) — only what the user added or deleted in this action, so a stale
+ * list never drops another device's trade. `{ set: { customTrades } }` as a field update (a merge when the document
+ * is missing). Null when nothing changes.
+ */
+export function variationTradesWriteFields(
+  stored: Record<string, unknown> | null | undefined,
+  change: { add?: ReadonlyArray<string> | null; remove?: ReadonlyArray<string> | null }
+): { set: { customTrades: string[] } } | null {
+  const before = parseVariationTrades(stored).customTrades
+  const removed = new Set((change?.remove || []).map((trade) => text(trade).toLowerCase()).filter(Boolean))
+  const next = before.filter((trade) => !removed.has(trade.toLowerCase()))
+  const seen = new Set(next.map((trade) => trade.toLowerCase()))
+  for (const trade of change?.add || []) {
+    const name = text(trade)
+    if (!name || seen.has(name.toLowerCase()) || removed.has(name.toLowerCase())) continue
+    seen.add(name.toLowerCase())
+    next.push(name)
+  }
+  if (next.length === before.length && next.every((trade, index) => trade === before[index])) return null
+  return { set: { customTrades: next } }
+}
+
+/** The id of a settings-log variation stored without one: `derivedRowId(parentId, 'items', index, content)`. */
+export function variationLogItemId(parentId: unknown, index: number, row: Record<string, unknown> | null | undefined): string {
+  const item = record(row)
+  return derivedRowId(parentId, 'items', index, [
+    text(item.voNumber),
+    text(item.heading),
+    text(item.parentId),
+    String(documentInstantMs(item.createdAt) ?? ''),
+  ])
+}
+
+/**
+ * The entries of a settings log (`settings/variations_{parentId}.items`, an array or a map keyed by id), each with an
+ * id: the stored `id`, else the map key, else `variationLogItemId` (1.9.0 — never random).
+ */
+export function variationLogItems(
+  parentId: unknown,
+  data: Record<string, unknown> | null | undefined
+): Array<{ id: string; idStored: boolean; row: Record<string, unknown> }> {
+  const items = record(data).items
+  const out: Array<{ id: string; idStored: boolean; row: Record<string, unknown> }> = []
+  if (Array.isArray(items)) {
+    items.forEach((entry, index) => {
+      if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return
+      const row = entry as Record<string, unknown>
+      const stored = text(row.id)
+      out.push({ id: stored || variationLogItemId(parentId, index, row), idStored: Boolean(stored), row })
+    })
+  } else if (items && typeof items === 'object') {
+    for (const [key, entry] of Object.entries(items as Record<string, unknown>)) {
+      if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue
+      const row = entry as Record<string, unknown>
+      const stored = text(row.id) || text(key)
+      out.push({ id: stored, idStored: Boolean(text(row.id)), row })
+    }
+  }
+  return out
+}
+
+/** Read every variation in a settings log with `parseVariationDocument`, ids from `variationLogItems`. */
+export function parseVariationLogDocument(
+  parentId: unknown,
+  data: Record<string, unknown> | null | undefined
+): VariationDocument[] {
+  return variationLogItems(parentId, data)
+    .map((item) => parseVariationDocument(item.id, { ...item.row, id: item.id }))
+    .filter((row): row is VariationDocument => row !== null)
+}
+
+/**
+ * Saving one variation into its settings log (1.9.0): `{ set: { items } }` — the stored entries (each given its id
+ * from `variationLogItems`, so the derived id is written once), with `entry` laid over the entry of the same id
+ * (without case; fields another app wrote are kept) or appended. Never removes another entry and never rewrites the
+ * log from a local copy. With no stored document, `set` also carries `parentId`, `parentType`, `organizationId` and
+ * `recordType: 'variationLog'` (the app writes it as a merge then). The app adds `updatedAt`.
+ */
+export function variationLogWriteFields(
+  stored: Record<string, unknown> | null | undefined,
+  entry: Record<string, unknown>,
+  context: { parentId: unknown; parentType?: unknown; organizationId?: unknown }
+): { set: Record<string, unknown> } | null {
+  const entryId = text(entry?.id)
+  if (!entryId) return null
+  const items: Record<string, unknown>[] = variationLogItems(context?.parentId, stored).map((item) => ({ ...item.row, id: item.id }))
+  const index = items.findIndex((row) => normalizeDocumentId(row.id) === normalizeDocumentId(entryId))
+  if (index >= 0) {
+    const merged: Record<string, unknown> = { ...items[index] }
+    for (const [key, value] of Object.entries(entry)) if (value !== undefined) merged[key] = value
+    merged.id = items[index].id
+    items[index] = merged
+  } else {
+    const row: Record<string, unknown> = {}
+    for (const [key, value] of Object.entries(entry)) if (value !== undefined) row[key] = value
+    items.push(row)
+  }
+  const set: Record<string, unknown> = { items }
+  if (!stored) {
+    set.parentId = text(context?.parentId)
+    set.parentType = text(context?.parentType) === 'smallWork' ? 'smallWork' : 'project'
+    if (text(context?.organizationId)) set.organizationId = text(context?.organizationId)
+    set.recordType = 'variationLog'
+  }
+  return { set }
+}
+
 // MARK: - Notifications
 
 /** Legacy types still stored by older iOS builds (no push, no toggle). */
@@ -844,6 +1117,178 @@ export function parseNotificationDocument(
 /** Marking a row read: `{ isRead: true }` only (never rewrites the row). Null when it is already read. */
 export function notificationReadWriteFields(stored: Record<string, unknown> | null | undefined): { set: { isRead: true } } | null {
   return documentBool(record(stored).isRead) === true ? null : { set: { isRead: true } }
+}
+
+/** What a notification's `relatedId` holds (1.9.0, §13). `none`: the row carries no `relatedId` (null). */
+export type NotificationRelatedIdKind =
+  | 'holidayBooking'
+  | 'job'
+  | 'variation'
+  | 'client'
+  | 'user'
+  | 'task'
+  | 'deadline'
+  | 'healthSafetyIssue'
+  | 'warningKey'
+  | 'paymentDayKey'
+  | 'feedbackIdea'
+  | 'holidayBookingOrNone'
+  | 'none'
+
+/**
+ * `relatedId` per notification type (§13). The value is the stored id of that record in its stored case — never a
+ * random id. Timesheet notices identify the sheet with `deepLinkUserId` + `deepLinkWeekStart` (and the dedupe
+ * document id), not `relatedId`; a `line_manager_peer_update` about leave carries the holiday booking id.
+ */
+export const NOTIFICATION_RELATED_ID: Readonly<Record<string, NotificationRelatedIdKind>> = {
+  holiday_request_submitted: 'holidayBooking',
+  holiday_request_approved: 'holidayBooking',
+  holiday_request_declined: 'holidayBooking',
+  timesheet_pending_manager_signoff: 'none',
+  timesheet_signed_by_manager: 'none',
+  line_manager_peer_update: 'holidayBookingOrNone',
+  timesheet_submission_reminder: 'paymentDayKey',
+  material_order_placed: 'job',
+  material_order_created: 'job',
+  material_order_cut_off: 'none',
+  variation: 'variation',
+  variation_renumbered: 'job',
+  variation_added: 'variation',
+  variation_from_tracker: 'variation',
+  variation_numbers_updated: 'job',
+  toolbox_talk_issued: 'healthSafetyIssue',
+  hs_toolbox_reminder: 'healthSafetyIssue',
+  booking_created: 'job',
+  booked_onto_job: 'job',
+  booking_clash: 'job',
+  task_created: 'task',
+  task_completed: 'task',
+  push_test: 'none',
+  deadline_assigned: 'deadline',
+  deadline_reminder: 'deadline',
+  deadline_due: 'deadline',
+  operative_created: 'user',
+  manager_created: 'user',
+  client_created: 'client',
+  project_created: 'job',
+  small_works_created: 'job',
+  warning_removed: 'warningKey',
+  qualification_expiry: 'none',
+  idea_status: 'feedbackIdea',
+  idea_shipped: 'feedbackIdea',
+  idea_comment: 'feedbackIdea',
+  idea_merged: 'feedbackIdea',
+  material_added: 'job',
+}
+
+/** The ids a caller may have for `notificationRelatedId`. */
+export type NotificationRelatedIdInput = {
+  holidayBookingId?: unknown
+  jobId?: unknown
+  variationId?: unknown
+  clientId?: unknown
+  userId?: unknown
+  taskId?: unknown
+  deadlineId?: unknown
+  issueId?: unknown
+  warningKey?: unknown
+  paymentDayKey?: unknown
+  ideaId?: unknown
+}
+
+/**
+ * The `relatedId` to write for a notification (1.9.0): the id `NOTIFICATION_RELATED_ID[type]` names, from `input`,
+ * trimmed and in its stored case. Null when the type carries none, the id is missing, or the type is unknown — never
+ * a random id (an app must not mint `UUID()` here).
+ */
+export function notificationRelatedId(type: unknown, input?: NotificationRelatedIdInput | null): string | null {
+  const kind = NOTIFICATION_RELATED_ID[text(type)]
+  const pick = (value: unknown) => optionalText(value)
+  switch (kind) {
+    case 'holidayBooking':
+    case 'holidayBookingOrNone':
+      return pick(input?.holidayBookingId)
+    case 'job':
+      return pick(input?.jobId)
+    case 'variation':
+      return pick(input?.variationId)
+    case 'client':
+      return pick(input?.clientId)
+    case 'user':
+      return pick(input?.userId)
+    case 'task':
+      return pick(input?.taskId)
+    case 'deadline':
+      return pick(input?.deadlineId)
+    case 'healthSafetyIssue':
+      return pick(input?.issueId)
+    case 'warningKey':
+      return pick(input?.warningKey)
+    case 'paymentDayKey': {
+      const day = text(input?.paymentDayKey)
+      return DAY_KEY.test(day) ? day : null
+    }
+    case 'feedbackIdea':
+      return pick(input?.ideaId)
+    default:
+      return null
+  }
+}
+
+/** Input for `notificationCreateFields`. Instants (`createdAt`, `deepLinkWeekStart`) pass through as given. */
+export type NotificationCreateInput = {
+  organizationId: unknown
+  type: unknown
+  title: unknown
+  message: unknown
+  userId: unknown
+  /** The signed-in user who caused it; null for a scheduled notice nobody caused (§13). */
+  actorUserId?: unknown
+  relatedId?: unknown
+  requiresPermission?: unknown
+  deepLinkUserId?: unknown
+  deepLinkWeekStart?: unknown
+  dayKey?: unknown
+  catalogue?: unknown
+  createdAt: unknown
+}
+
+/**
+ * A new inbox row `organizations/{orgId}/notifications/{id}` (1.9.0, §13): `{ set }` with `organizationId`, `type`,
+ * `title`, `message`, `userId`, `relatedId` (null when absent), `requiresPermission`, `deepLinkUserId`,
+ * `isRead: false`, `createdAt`, and `actorUserId` / `deepLinkWeekStart` / `dayKey` / `catalogue` when given. A row is
+ * created once and never rewritten: null when `stored` exists (a notice whose deterministic id is already written —
+ * a dedupe hit — is left alone, so its read state is never reset), when there is no `userId` (not an inbox row) or
+ * no type. Marking read is `notificationReadWriteFields`.
+ */
+export function notificationCreateFields(
+  input: NotificationCreateInput,
+  stored?: Record<string, unknown> | null
+): { set: Record<string, unknown> } | null {
+  if (stored) return null
+  const type = text(input?.type)
+  const userId = text(input?.userId)
+  if (!type || !userId) return null
+  const set: Record<string, unknown> = {
+    organizationId: text(input?.organizationId),
+    type,
+    title: text(input?.title),
+    message: typeof input?.message === 'string' ? input.message : text(input?.message),
+    userId,
+    relatedId: optionalText(input?.relatedId),
+    requiresPermission: optionalText(input?.requiresPermission),
+    deepLinkUserId: optionalText(input?.deepLinkUserId),
+    isRead: false,
+    createdAt: input?.createdAt,
+  }
+  const actor = optionalText(input?.actorUserId)
+  if (actor) set.actorUserId = actor
+  if (input?.deepLinkWeekStart != null) set.deepLinkWeekStart = input.deepLinkWeekStart
+  const day = text(input?.dayKey)
+  if (DAY_KEY.test(day)) set.dayKey = day
+  const catalogue = text(input?.catalogue)
+  if (catalogue === 'projects' || catalogue === 'smallWorks') set.catalogue = catalogue
+  return { set }
 }
 
 // MARK: - warningResolutions

@@ -1,5 +1,6 @@
 import { collection, doc, getDoc, getDocs, query, setDoc, Timestamp, updateDoc, where } from 'firebase/firestore'
 import { withTimeout } from '@/lib/client/withTimeout'
+import { organizationCreateFields } from '@/lib/canonical/createDocuments'
 import { seedOrgDefaultDashboard } from '@/lib/dashboard/dashboardLayoutStorage'
 import { STARTER_CATALOGUE_VERSION, seedStarterMaterialCatalogue } from '@/lib/materials/starterCatalogue'
 import {
@@ -190,30 +191,18 @@ export async function createPendingOrganization(
   await withTimeout(
     setDoc(
       doc(db, 'organizations', organizationId),
-      sanitizeForFirestore({
-        name: input.organizationName,
-        members: { [userId]: 'admin' },
-        settings: nestedSettings,
-        subscription: {
-          status: 'pending',
+      // Rulebook 1.9.0 `organizationCreateFields`: the shared organisation create shape.
+      sanitizeForFirestore(
+        organizationCreateFields({
+          name: input.organizationName,
+          creatorUserId: userId,
           planKey: input.planKey,
           createdAt: reusedCreatedAt ?? now,
-        },
-        billing: {
-          status: 'pending',
-          billingInterval: input.planKey === 'year' ? 'year' : 'month',
-          trialUsed: false,
-          mrrPence: 0,
           updatedAt: now,
-        },
-        teamOnboarding: {
-          status: 'pending_add_users',
-          addUsersGuideShown: false,
-        },
-        createdAt: reusedCreatedAt ?? now,
-        updatedAt: now,
-        ...topLevelSetupFields,
-      }) as Record<string, unknown>,
+          settings: nestedSettings,
+          setupFields: topLevelSetupFields,
+        }) ?? {}
+      ) as Record<string, unknown>,
       { merge: reusedPendingOrganization }
     ),
     6000,

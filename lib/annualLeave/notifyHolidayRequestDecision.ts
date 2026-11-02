@@ -96,8 +96,19 @@ export function holidayRequestDecisionMessage(input: {
   return `${who} declined your annual leave request${when}. ${note}`
 }
 
-export function holidayDecisionDedupeKey(bookingId: string, userId: string, approved: boolean): string {
-  return `holidayDecision|${bookingId}|${userId}|${approved}`
+export function holidayDecisionDedupeKey(bookingId: string, userId: string, approved: boolean, cancellation = false): string {
+  const base = `holidayDecision|${bookingId}|${userId}|${approved}`
+  // A decision on a cancellation request is its own notice (the original approval row keeps its id and read state).
+  return cancellation ? `${base}|cancellation` : base
+}
+
+/** The requester hears that their request to cancel approved leave was accepted (removed) or refused (it stands). */
+export function holidayCancellationDecisionMessage(input: { accepted: boolean; decidedByName: string; dateText: string }): string {
+  const who = trimmed(input.decidedByName) || 'Manager'
+  const when = input.dateText ? ` for ${input.dateText}` : ''
+  return input.accepted
+    ? `${who} accepted your request to cancel annual leave${when}.`
+    : `${who} declined your request to cancel annual leave${when}. Your leave still stands.`
 }
 
 export type HolidayRequestDecisionWrite = {
@@ -121,6 +132,8 @@ export function buildHolidayRequestDecisionNotification(input: {
   reason?: string | null
   users?: ReadonlyArray<User>
   operatives?: ReadonlyArray<Operative>
+  /** 1.9.0 (§9, M6): this decides a request to cancel approved leave (accepted = `approved`). */
+  cancellation?: boolean
 }): HolidayRequestDecisionWrite | null {
   const organizationId = trimmed(input.organizationId)
   const requesterId = holidayDecisionRecipientUserId(input.booking, input.users, input.operatives)
@@ -144,13 +157,21 @@ export function buildHolidayRequestDecisionNotification(input: {
   return {
     organizationId,
     type,
-    title: approved ? 'Annual Leave Approved' : 'Annual Leave Declined',
-    message: holidayRequestDecisionMessage({
-      approved,
-      decidedByName: input.decidedByName,
-      dateText,
-      reason: note,
-    }),
+    title: input.cancellation
+      ? approved
+        ? 'Annual Leave Cancelled'
+        : 'Leave Cancellation Declined'
+      : approved
+        ? 'Annual Leave Approved'
+        : 'Annual Leave Declined',
+    message: input.cancellation
+      ? holidayCancellationDecisionMessage({ accepted: approved, decidedByName: input.decidedByName, dateText })
+      : holidayRequestDecisionMessage({
+          approved,
+          decidedByName: input.decidedByName,
+          dateText,
+          reason: note,
+        }),
     userId,
     relatedId: input.booking.id,
     requiresPermission: null,
@@ -228,6 +249,7 @@ export async function notifyHolidayRequestDecisionToUser(input: {
   reason?: string | null
   users?: ReadonlyArray<User>
   operatives?: ReadonlyArray<Operative>
+  cancellation?: boolean
 }): Promise<void> {
   // The requester's other line managers hear about the decision (inbox only), like a timesheet sign-off.
   for (const peer of buildLeaveDecisionPeerNotifications(input)) {
@@ -249,7 +271,7 @@ export async function notifyHolidayRequestDecisionToUser(input: {
   if (!payload) return
   try {
     const id = await syntheticUuidFromKey(
-      holidayDecisionDedupeKey(payload.relatedId, payload.userId, input.approved === true)
+      holidayDecisionDedupeKey(payload.relatedId, payload.userId, input.approved === true, input.cancellation === true)
     )
     await saveInboxNotification({
       id,

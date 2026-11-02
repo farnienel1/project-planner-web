@@ -29,6 +29,7 @@ import {
   emptyDayRateHistory,
   loadOperativeDayRateHistory,
   mergedDayRateEntries,
+  watchOperativeDayRateHistory,
   type OperativeDayRateHistoryCollection,
 } from '@/lib/timesheets/dayRateHistoryStorage'
 import {
@@ -299,6 +300,12 @@ export function EditUserProfile({
   const { request: requestEmploymentSave, ui: employmentDialogs } = useEmploymentTypeSaveGate()
   const profileLoadGen = useRef(0)
 
+  // Rulebook 1.9.0 §1: pay history is live while this profile is open (a rate change on iOS shows here).
+  useEffect(() => {
+    if (!organization?.id) return
+    return watchOperativeDayRateHistory(organization.id, setRateHistory)
+  }, [organization?.id])
+
   useEffect(() => {
     if (!organization?.id) return
     const generation = ++profileLoadGen.current
@@ -310,7 +317,6 @@ export function EditUserProfile({
         if (details?.annualLeaveDefaults) setOrgLeaveDefaults(details.annualLeaveDefaults)
       })
       .catch(() => undefined)
-    void loadOperativeDayRateHistory(organization.id).then(setRateHistory)
     void loadOrganisationQualificationsEnsuringStarter(organization.id, { fromServer: true })
       .then((existing) => {
         const assigned = assignedQualificationTemplates(useOperativeStore.getState().operatives)

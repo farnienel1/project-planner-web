@@ -14,12 +14,18 @@ import { OperativeAnnualLeaveManagement } from './OperativeAnnualLeaveManagement
 import { PersonalLeave } from './PersonalLeave'
 import { userCanSelfBookAnnualLeave } from '@/lib/annualLeave/holidayApprovalUtils'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
+import { useOperativeStore } from '@/lib/stores/operativeStore'
+import { leaveRecordsForAccount } from '@/lib/canonical/bookingPerson'
+import { samePersonIds } from '@/lib/staff/userRosterUtils'
 
 export function AnnualLeaveScreen() {
   const { organization, user } = useAuthStore()
   const { bookings, error, saveBooking, createRequests, deleteBooking, requestCancellation } = useHolidayStore()
   const isOperative = isOperativeMode(user)
   const rosterUsers = useOrgUserStore((state) => state.users)
+  const users = rosterUsers
+  const userIdAliases = useOrgUserStore((state) => state.userIdAliases)
+  const operatives = useOperativeStore((state) => state.operatives)
   const loadRosterUsers = useOrgUserStore((state) => state.loadUsers)
   useEffect(() => {
     if (organization?.id) void loadRosterUsers(organization.id).catch(() => undefined)
@@ -49,10 +55,21 @@ export function AnnualLeaveScreen() {
 
   const myBookings = useMemo(
     () =>
-      bookings
-        .filter((booking) => booking.userId === user?.id || booking.operativeId === user?.id)
-        .sort((a, b) => b.startDate.getTime() - a.startDate.getTime()),
-    [bookings, user]
+      // Rulebook 1.9.0 `leaveRecordsForAccount`: every id of this person (former, same-email, catalogue rows).
+      (user
+        ? leaveRecordsForAccount(
+            bookings,
+            {
+              id: user.id,
+              email: user.email,
+              formerIds: user.formerUserIds ?? [],
+              aliasIds: Array.from(samePersonIds(user.id, users, userIdAliases)),
+            },
+            operatives
+          )
+        : []
+      ).sort((a, b) => b.startDate.getTime() - a.startDate.getTime()),
+    [bookings, user, users, userIdAliases, operatives]
   )
 
   return (

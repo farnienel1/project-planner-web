@@ -1,8 +1,9 @@
-import { collection, getDocs } from 'firebase/firestore'
+import { collection, getDocs, type Unsubscribe } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
 import { parseSubcontractorBookingDocument } from '@/lib/canonical/workDocumentReaders'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 import type { SubcontractorBookingRow } from '@/lib/weekly-report/weeklyReportData'
+import { watchOrgCollection } from '@/lib/firebase/watchOrgQuery'
 
 /**
  * One stored `subcontractorBookings` document as a web row. Reading is the rulebook's
@@ -40,4 +41,28 @@ export async function loadSubcontractorBookings(organizationId: string): Promise
     if (row) rows.push(row)
   }
   return rows
+}
+
+/**
+ * Rulebook 1.9.0 §1 (`LIVE_COLLECTIONS`): scheduling grids, the weekly overview and Daily Overview listen to
+ * subcontractor bookings while open, so a booking made on another device appears without a refresh.
+ */
+export function watchSubcontractorBookings(
+  organizationId: string,
+  onRows: (rows: SubcontractorBookingRow[]) => void,
+  onError?: (error: unknown) => void
+): Unsubscribe {
+  return watchOrgCollection(
+    organizationId,
+    'subcontractorBookings',
+    (docs) => {
+      const rows: SubcontractorBookingRow[] = []
+      for (const entry of docs) {
+        const row = subcontractorBookingRowFromDocument(entry.id, entry.data)
+        if (row) rows.push(row)
+      }
+      onRows(rows)
+    },
+    { onError }
+  )
 }

@@ -9,6 +9,7 @@ import {
   resolveSensitiveProfile,
   sensitiveProfileDocPath,
   sensitiveProfileWriteFields,
+  taxIdsDocumentFields,
   type SensitiveProfile,
 } from '@/lib/canonical'
 
@@ -37,8 +38,10 @@ export async function saveTaxIds(
 ): Promise<void> {
   const result = sensitiveProfileWriteFields({ ...values, updatedByUserId })
   if (!result.ok) throw new Error(result.error === 'too_long' ? 'UTR and VAT numbers are 20 characters at most.' : 'Not signed in.')
+  // Rulebook 1.9.0 `taxIdsDocumentFields`: the document's only fields, written whole.
+  const fields = taxIdsDocumentFields({ ...values, updatedByUserId }) ?? result.fields
   const db = getFirebaseDb()
-  await setDoc(doc(db, sensitiveProfileDocPath(userId)), { ...result.fields, updatedAt: serverTimestamp() })
+  await setDoc(doc(db, sensitiveProfileDocPath(userId)), { ...fields, updatedAt: serverTimestamp() })
   if (options.stripLegacy !== false) {
     await updateDoc(doc(db, 'users', userId), { utrNumber: deleteField(), vatNumber: deleteField() }).catch(() => undefined)
   }

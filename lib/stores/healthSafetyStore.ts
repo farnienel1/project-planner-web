@@ -6,13 +6,16 @@ import {
   doc,
   FieldPath,
   getDoc,
+  onSnapshot,
   serverTimestamp,
   setDoc,
   Timestamp,
   updateDoc,
   type DocumentReference,
+  type Unsubscribe,
 } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
+import { liveResultStillCurrent } from '@/lib/firebase/liveResult'
 import { healthSafetyDocPath } from '@/lib/healthSafety/healthSafetyPaths'
 import { parseHealthSafetyPayload, mergeHealthSafetyPayload } from '@/lib/healthSafety/parseHealthSafety'
 import { serializeHealthSafetyPayload } from '@/lib/healthSafety/serializeHealthSafety'
@@ -55,12 +58,22 @@ function legacyHsDocRef(organizationId: string, projectId: string, isSmallWorks:
 }
 
 type HSArrays = Parameters<typeof healthSafetyDocumentWriteFields>[1]
+/** Rulebook 1.9.0: row ids the user deliberately removed in this save (lets the last row go). */
+type HSRemovedIds = NonNullable<NonNullable<Parameters<typeof healthSafetyDocumentWriteFields>[2]>['removedIds']>
+
+/** The live listeners for the job whose health & safety screen is open (rulebook 1.9.0 §1). */
+let hsUnsubs: Unsubscribe[] = []
+let hsListeningKey = ''
 
 /** One health & safety copy saved as `healthSafetyDocumentWriteFields` says (create when missing). */
-async function saveHealthSafetyArrays(ref: DocumentReference, payload: Record<string, unknown>): Promise<void> {
+async function saveHealthSafetyArrays(
+  ref: DocumentReference,
+  payload: Record<string, unknown>,
+  removedIds?: HSRemovedIds
+): Promise<void> {
   const snap = await getDoc(ref)
   const stored = snap.exists() ? (snap.data() as Record<string, unknown>) : null
-  const write = healthSafetyDocumentWriteFields(stored, payload as HSArrays)
+  const write = healthSafetyDocumentWriteFields(stored, payload as HSArrays, { removedIds })
   if (Object.keys(write.set).length === 0 && write.remove.length === 0) return
   if (!stored) {
     await setDoc(ref, { ...write.set, updatedAt: serverTimestamp() }, { merge: true })
@@ -101,7 +114,15 @@ interface HealthSafetyState {
   loading: boolean
   error: string | null
   load: (organizationId: string, projectId: string, isSmallWorks: boolean) => Promise<void>
-  save: (organizationId: string, projectId: string, isSmallWorks: boolean, data: HSProjectSafetyData) => Promise<void>
+  save: (
+    organizationId: string,
+    projectId: string,
+    isSmallWorks: boolean,
+    data: HSProjectSafetyData,
+    options?: { removedIds?: HSRemovedIds }
+  ) => Promise<void>
+  /** Stop listening (the screen closed). */
+  stopListening: () => void
   issueToolboxTalk: (
     organizationId: string,
     projectId: string,
@@ -150,37 +171,79 @@ export const useHealthSafetyStore = create<HealthSafetyState>((set, get) => ({
   loading: false,
   error: null,
 
+  // Rulebook 1.9.0 §1 (`LIVE_COLLECTIONS`): the open job's health & safety documents are live. Every copy (the nested
+  // web document and each settings id, `healthSafetyDocumentIds`) has a listener; the merged result is published on
+  // each change, so an issue or signature from iOS appears without reopening the screen.
   load: async (organizationId, projectId, isSmallWorks) => {
     const projectKey = `${organizationId}:${projectId}:${isSmallWorks ? 'sw' : 'p'}`
     const stale = get().projectKey !== projectKey
     if (stale || !get().data) set({ loading: true, error: null, data: stale ? null : get().data, projectKey })
     else set({ error: null })
-    try {
-      // Every copy: the nested web document and each settings id (`healthSafetyDocumentIds`: the shared upper-cased
-      // key, then the stored-case key older web builds wrote).
-      const snaps = await Promise.all([
-        getDoc(hsDocRef(organizationId, projectId, isSmallWorks)),
-        ...healthSafetyDocumentIds(projectId, isSmallWorks).map((id) =>
-          getDoc(doc(db, 'organizations', organizationId, 'settings', id))
-        ),
-      ])
-      const data = snaps
-        .map((snap) => (snap.exists() ? parseHealthSafetyPayload(snap.data() as Record<string, unknown>, projectId) : emptyData()))
-        .reduce((merged, next) => mergeHealthSafetyPayload(merged, next))
-      set({ data, projectKey, loading: false, error: null })
-    } catch (error: unknown) {
-      set({ error: error instanceof Error ? error.message : 'Failed to load H&S', loading: false })
+    if (hsListeningKey === projectKey && hsUnsubs.length > 0) {
+      set({ loading: false })
+      return
     }
+    for (const stop of hsUnsubs) stop()
+    hsUnsubs = []
+    hsListeningKey = projectKey
+    const refs = [
+      hsDocRef(organizationId, projectId, isSmallWorks),
+      ...healthSafetyDocumentIds(projectId, isSmallWorks).map((id) => doc(db, 'organizations', organizationId, 'settings', id)),
+    ]
+    const latest: Array<HSProjectSafetyData | undefined> = refs.map(() => undefined)
+    await new Promise<void>((resolve) => {
+      let resolved = false
+      const finish = () => {
+        if (!resolved) {
+          resolved = true
+          resolve()
+        }
+      }
+      const publish = () => {
+        if (hsListeningKey !== projectKey || !liveResultStillCurrent(organizationId)) return
+        if (latest.some((entry) => entry === undefined)) return
+        const data = (latest as HSProjectSafetyData[]).reduce((merged, next) => mergeHealthSafetyPayload(merged, next))
+        set({ data, projectKey, loading: false, error: null })
+        finish()
+      }
+      refs.forEach((ref, index) => {
+        hsUnsubs.push(
+          onSnapshot(
+            ref,
+            (snap) => {
+              latest[index] = snap.exists()
+                ? parseHealthSafetyPayload(snap.data() as Record<string, unknown>, projectId)
+                : emptyData()
+              publish()
+            },
+            (error) => {
+              // A copy this account cannot read counts as empty; the others still publish.
+              latest[index] = emptyData()
+              if (latest.every((entry) => entry !== undefined)) publish()
+              else if (index === 0) set({ error: error.message })
+              finish()
+            }
+          )
+        )
+      })
+    })
+    if (get().loading && hsListeningKey === projectKey) set({ loading: false })
   },
 
-  save: async (organizationId, projectId, isSmallWorks, data) => {
+  stopListening: () => {
+    for (const stop of hsUnsubs) stop()
+    hsUnsubs = []
+    hsListeningKey = ''
+  },
+
+  save: async (organizationId, projectId, isSmallWorks, data, options) => {
     const payload = sanitizeForFirestore(serializeHealthSafetyPayload(data)) as Record<string, unknown>
     // Rulebook 1.8.0 §1 (`healthSafetyDocumentWriteFields`): only arrays that changed are written, each row laid over
     // its stored row (iOS-only fields kept), an empty list never replaces a stored one, issue status stored
     // `completed`, and `signatureRecords` (per-signer signatures) is never touched.
     await Promise.all(
       [hsDocRef(organizationId, projectId, isSmallWorks), legacyHsDocRef(organizationId, projectId, isSmallWorks)].map(
-        (ref) => saveHealthSafetyArrays(ref, payload)
+        (ref) => saveHealthSafetyArrays(ref, payload, options?.removedIds)
       )
     )
     set({ data: { ...data, updatedAt: new Date() } })

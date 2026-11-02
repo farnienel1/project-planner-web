@@ -484,9 +484,11 @@ export function ScheduleScreen({
   const holidayOrgId = organizationId || openOrganizationId
   const { bookings: holidayBookings, loadBookings: loadHolidayBookings, loadedOrgId: holidaysLoadedOrgId } = useHolidayStore()
   const rosterOperatives = useOperativeStore((state) => state.operatives)
+  // Rulebook §10 / 1.9.0: leave is live here. `loadBookings` attaches (or re-attaches to) the holidayBookings
+  // listener, so a request or decision on any platform appears without reopening the screen.
   useEffect(() => {
-    if (isPersonal && holidayOrgId && holidaysLoadedOrgId !== holidayOrgId) void loadHolidayBookings(holidayOrgId)
-  }, [isPersonal, holidayOrgId, holidaysLoadedOrgId, loadHolidayBookings])
+    if (isPersonal && holidayOrgId) void loadHolidayBookings(holidayOrgId)
+  }, [isPersonal, holidayOrgId, loadHolidayBookings])
   const myHolidays = useMemo(
     () =>
       isPersonal && authUser && holidaysLoadedOrgId === holidayOrgId

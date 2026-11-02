@@ -158,3 +158,19 @@ export function bookingIdsForPerson(operativeId: unknown, input: BookingPersonIn
   return ids
 }
 
+
+/**
+ * 1.9.0 (§9, §10): the leave records that belong to an account — a record whose `userId` or `operativeId` is any of
+ * `bookingIdsForAccount(account, operatives)` (the users id, former and same-email ids, `aliasIds`, catalogue rows on
+ * the email), compared without case. Never matched by name. Returned in the given order.
+ */
+export function leaveRecordsForAccount<T extends { userId?: string | null; operativeId?: string | null }>(
+  records: readonly T[],
+  account: BookingPersonAccount,
+  operatives: readonly BookingPersonOperative[]
+): T[] {
+  const ids = new Set(bookingIdsForAccount(account, operatives).map((id) => id.toLowerCase()))
+  if (ids.size === 0) return []
+  const has = (value: unknown) => typeof value === 'string' && value.trim() !== '' && ids.has(value.trim().toLowerCase())
+  return (records || []).filter((record) => has(record?.userId) || has(record?.operativeId))
+}

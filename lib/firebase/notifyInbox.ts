@@ -3,7 +3,8 @@
  * Spec: docs/ios-parity/sections/09-clients.md
  */
 
-import { doc, setDoc } from 'firebase/firestore'
+import { doc, getDoc, setDoc } from 'firebase/firestore'
+import { notificationCreateFields, type NotificationCreateInput } from '@/lib/canonical'
 import { auth, db } from '@/lib/firebase/config'
 import { serializeNotification } from '@/lib/ios-parity/converters'
 import { newUppercaseUuid } from '@/lib/ios-parity/uuid'
@@ -31,7 +32,7 @@ export async function saveInboxNotification(input: {
 }): Promise<void> {
   if (!db) return
   const id = input.id || newUppercaseUuid()
-  const payload = serializeNotification({
+  const validated = serializeNotification({
     organizationId: input.organizationId,
     type: input.type,
     title: input.title,
@@ -44,12 +45,27 @@ export async function saveInboxNotification(input: {
     isRead: false,
     createdAt: new Date(),
   })
-  const dayKey = String(input.dayKey ?? '').trim()
-  if (dayKey) payload.dayKey = dayKey
-  if (input.catalogue === 'projects' || input.catalogue === 'smallWorks') payload.catalogue = input.catalogue
-  const actorUserId = inboxActorUserId(input.actorUserId)
-  if (actorUserId) payload.actorUserId = actorUserId
-  await setDoc(doc(db, 'organizations', input.organizationId, 'notifications', id), payload)
+  const ref = doc(db, 'organizations', input.organizationId, 'notifications', id)
+  // Rulebook 1.9.0 §13 `notificationCreateFields`: a row is created once. A deterministic (dedupe) id that already
+  // exists is left alone, so its read state is never reset. A row this account may not read is not checked here:
+  // the security rules refuse a non-admin update of someone else's row.
+  let stored: Record<string, unknown> | null = null
+  if (input.id) {
+    stored = await getDoc(ref)
+      .then((snap) => (snap.exists() ? (snap.data() as Record<string, unknown>) : null))
+      .catch(() => null)
+  }
+  const create = notificationCreateFields(
+    {
+      ...validated,
+      actorUserId: inboxActorUserId(input.actorUserId) || null,
+      dayKey: input.dayKey ?? null,
+      catalogue: input.catalogue ?? null,
+    } as NotificationCreateInput,
+    stored
+  )
+  if (!create) return
+  await setDoc(ref, create.set)
 }
 
 /** The signed-in uid (`actorUserId` on every inbox row), unless the caller passes null for a scheduled notice. */

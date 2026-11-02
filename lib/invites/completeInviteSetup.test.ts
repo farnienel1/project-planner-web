@@ -89,5 +89,6 @@ test('a denied own-email claim read is surfaced, not treated as no claim', () =>
 test('placeholder is read by id, never found by email, and the invitation write stays isUsed/usedAt', () => {
   assert.equal(source.includes('getDocs'), false)
   assert.equal(source.includes('query('), false)
-  assert.match(source, /isUsed: true,\s+usedAt: Timestamp\.now\(\),\s+\}\)/)
+  // Rulebook 1.9.0: the shared partial update `invitationUsedWriteFields` → `{ isUsed: true, usedAt }`.
+  assert.match(source, /updateDoc\(doc\(db, 'invitations', params\.invitationId\), invitationUsedWriteFields\(Timestamp\.now\(\)\)\.set\)/)
 })

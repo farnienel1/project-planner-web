@@ -246,6 +246,17 @@ export function TasksScreen() {
     try {
       if (isCancellationRequest(request)) {
         await deleteBooking(organization.id, request.id)
+        // Rulebook §9 / 1.9.0: the requester hears the cancellation was accepted (`holidayDecisionRecipients`).
+        await notifyHolidayRequestDecisionToUser({
+          organizationId: organization.id,
+          booking: request,
+          approved: true,
+          cancellation: true,
+          decidedByName: holidayDecisionActorName(user),
+          decidedByUserId: user?.id ?? null,
+          users,
+          operatives,
+        })
       } else {
         await decideBooking(organization.id, request, { status: 'approved', approverUid: user.id })
         await notifyHolidayRequestDecisionToUser({
@@ -273,6 +284,16 @@ export function TasksScreen() {
           cancellationRequestedAt: undefined,
           cancellationRequestedByUserId: undefined,
           updatedAt: new Date(),
+        })
+        await notifyHolidayRequestDecisionToUser({
+          organizationId: organization.id,
+          booking: request,
+          approved: false,
+          cancellation: true,
+          decidedByName: holidayDecisionActorName(user),
+          decidedByUserId: user?.id ?? null,
+          users,
+          operatives,
         })
       } else {
         await decideBooking(organization.id, request, { status: 'rejected', approverUid: user.id })

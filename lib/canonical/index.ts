@@ -1109,3 +1109,53 @@ export type {
   VariationTrackerDocument,
   WarningResolutionDocument,
 } from './recordsDocuments'
+
+// Rulebook 1.9.0: live screens, no stale re-saves, last write gaps.
+export {
+  EDIT_OF_MISSING_DOCUMENT_MESSAGE,
+  LIVE_COLLECTIONS,
+  SYNC_WRITE_TRIGGERS,
+  editOfMissingDocumentIsRefused,
+  liveCollection,
+  recordsToSave,
+  replayRefusedIsFinal,
+  screenMustListen,
+  syncWriteAllowed,
+} from './liveSources'
+export {
+  invitationCreateFields,
+  invitationUsedWriteFields,
+  organizationCreateFields,
+  taxIdsDocumentFields,
+} from './createDocuments'
+export {
+  NOTIFICATION_RELATED_ID,
+  VARIATION_TRACKER_LOCK_FIELDS,
+  VARIATION_TRADES_DOCUMENT_ID,
+  healthSafetySignatureRemovalWrites,
+  notificationCreateFields,
+  notificationRelatedId,
+  parseVariationLogDocument,
+  parseVariationTrades,
+  variationLogItemId,
+  variationLogItems,
+  variationLogWriteFields,
+  variationTrackerWriteFields,
+  variationTradesWriteFields,
+} from './recordsDocuments'
+export { USER_ANNUAL_LEAVE_FIGURE_FIELDS, annualLeavePendingOmitFields } from './peopleDocuments'
+export type { LiveCollection, LiveCollectionScope, SyncWriteTrigger } from './liveSources'
+export type { InvitationCreateInput, OrganizationCreateInput } from './createDocuments'
+export type {
+  HealthSafetyArrayField,
+  HealthSafetySignatureRemoval,
+  HealthSafetySignatureRemovalWrite,
+  NotificationCreateInput,
+  NotificationRelatedIdInput,
+  NotificationRelatedIdKind,
+  VariationTrackerAction,
+} from './recordsDocuments'
+export { timesheetChangedFields } from './timesheetEntryReviews'
+export { leaveDaysInRange } from './leaveRequests'
+export { MANAGER_SITE_BOOKING_LOCATION_WRITE_GROUP, managerSiteBookingUpdateWriteFields } from './workDocumentReaders'
+export { leaveRecordsForAccount } from './bookingPerson'

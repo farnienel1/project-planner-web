@@ -11,6 +11,7 @@ import { ageConfirmationWriteFields } from '@/lib/legal/ageConfirmation'
 import { isAnonymisedDeletedProfile } from '@/lib/canonical/userRosterSegment'
 import { inviteMigrationFormerIdWriteFields } from '@/lib/canonical/userProfile'
 import { moveTaxIds } from '@/lib/sensitiveProfile/taxIdsService'
+import { invitationUsedWriteFields } from '@/lib/canonical/createDocuments'
 
 export type InvitationSummary = {
   invitationId: string
@@ -264,10 +265,8 @@ export async function completeInvitationPasswordSetup(params: {
   await ensurePrimaryOrgMembership(authUid, record.organizationId, role)
 
   // 7. Mark the invitation used last.
-  await updateDoc(doc(db, 'invitations', params.invitationId), {
-    isUsed: true,
-    usedAt: Timestamp.now(),
-  })
+  // Rulebook 1.9.0 `invitationUsedWriteFields`: a partial update, never a rewrite of the invitation.
+  await updateDoc(doc(db, 'invitations', params.invitationId), invitationUsedWriteFields(Timestamp.now()).set)
   const { grantMfaSkip } = await import('@/lib/auth/mfa/mfaClient')
   await grantMfaSkip({ invitationId: params.invitationId })
 }

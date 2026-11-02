@@ -2,10 +2,8 @@
 
 import { create } from 'zustand'
 import {
-  collection,
   deleteDoc,
   doc,
-  getDocs,
   serverTimestamp,
   setDoc,
   Timestamp,
@@ -19,7 +17,8 @@ import {
   parseHolidayDocument,
   writeMetadataFields,
 } from '@/lib/canonical'
-import { withAuthReadRetry } from '@/lib/firebase/waitForAuthToken'
+import { forgetOrgCollectionDoc, subscribeOrgCollectionLoaded } from '@/lib/firebase/subscribeOrgCollection'
+import { liveResultStillCurrent } from '@/lib/firebase/liveResult'
 import type { HolidayBooking, HolidayStatus, HolidayTimeSlot } from '@/types'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 import { dateFromDayKeyInZone } from '@/lib/orgTime/zoneTime'
@@ -129,6 +128,7 @@ export function isPendingHolidayRequest(booking: HolidayBooking): boolean {
 }
 
 let holidayOrgId = ''
+const HOLIDAY_LISTENER_KEY = 'holidayStore:holidayBookings'
 
 export const useHolidayStore = create<HolidayState>((set, get) => ({
   bookings: [],
@@ -136,19 +136,25 @@ export const useHolidayStore = create<HolidayState>((set, get) => ({
   error: null,
   loadedOrgId: null,
 
+  // Rulebook 1.9.0 §1 / §10 (`LIVE_COLLECTIONS`): annual leave is a live listener wherever it is shown (annual leave,
+  // My Schedule, Daily Overview, warnings, Home). The load resolves on the first snapshot; a decision or request made
+  // on any platform arrives through the same listener.
   loadBookings: async (organizationId) => {
-    set({ loading: true, error: null })
+    if (!organizationId) return
+    if (get().loadedOrgId !== organizationId) set({ loading: true, error: null })
     try {
-      const ref = collection(db, 'organizations', organizationId, 'holidayBookings')
-      const snapshot = await withAuthReadRetry(() => getDocs(ref))
-      const bookings = snapshot.docs
-        .map((entry) => mapHolidayBooking(entry.id, entry.data() as Record<string, unknown>, organizationId))
-        .filter((item): item is HolidayBooking => item !== null)
-        .sort((a, b) => b.startDate.getTime() - a.startDate.getTime())
-      const previous = holidayOrgId === organizationId ? get().bookings : []
-      const kept = retainScopedRows(`holidayBookings:${organizationId}`, previous, bookings)
-      holidayOrgId = organizationId
-      set({ bookings: kept, loading: false, loadedOrgId: organizationId })
+      await subscribeOrgCollectionLoaded(HOLIDAY_LISTENER_KEY, organizationId, 'holidayBookings', (docs) => {
+        if (!liveResultStillCurrent(organizationId)) return
+        const bookings = docs
+          .map((entry) => mapHolidayBooking(entry.id, entry.data, organizationId))
+          .filter((item): item is HolidayBooking => item !== null)
+          .sort((a, b) => b.startDate.getTime() - a.startDate.getTime())
+        const previous = holidayOrgId === organizationId ? get().bookings : []
+        const kept = retainScopedRows(`holidayBookings:${organizationId}`, previous, bookings)
+        holidayOrgId = organizationId
+        set({ bookings: kept, loading: false, error: null, loadedOrgId: organizationId })
+      })
+      set({ loading: false })
     } catch (error: unknown) {
       set({
         error: error instanceof Error ? error.message : 'Failed to load holiday bookings',
@@ -179,6 +185,8 @@ export const useHolidayStore = create<HolidayState>((set, get) => ({
     } else {
       await setDoc(ref, { ...payload, ...holidayWriteMetadata() }, { merge: true })
     }
+    // Rulebook 1.9.0 (L14): a save that finishes after the user switched company never touches the new one's list.
+    if (!liveResultStillCurrent(organizationId)) return
     const mapped = mapHolidayBooking(id, payload as unknown as Record<string, unknown>, organizationId)
     if (!mapped) return
     const { bookings } = get()
@@ -190,6 +198,8 @@ export const useHolidayStore = create<HolidayState>((set, get) => ({
   deleteBooking: async (organizationId, id) => {
     await deleteDoc(doc(db, 'organizations', organizationId, 'holidayBookings', id))
     markRowsRemoved(`holidayBookings:${organizationId}`, [id])
+    forgetOrgCollectionDoc(HOLIDAY_LISTENER_KEY, organizationId, id)
+    if (!liveResultStillCurrent(organizationId)) return
     set({ bookings: get().bookings.filter((b) => b.id !== id) })
   },
 
@@ -221,7 +231,7 @@ export const useHolidayStore = create<HolidayState>((set, get) => ({
       )
       if (mapped) saved.push(mapped)
     }
-    if (saved.length > 0) {
+    if (saved.length > 0 && liveResultStillCurrent(organizationId)) {
       const ids = new Set(saved.map((row) => row.id))
       set({
         bookings: [...get().bookings.filter((b) => !ids.has(b.id)), ...saved].sort(
@@ -241,6 +251,7 @@ export const useHolidayStore = create<HolidayState>((set, get) => ({
       approvedAt: Timestamp.fromDate(now),
       ...holidayWriteMetadata(),
     })
+    if (!liveResultStillCurrent(organizationId)) return
     const updated: HolidayBooking = {
       ...booking,
       status: fields.status,

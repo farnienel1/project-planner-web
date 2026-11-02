@@ -105,11 +105,20 @@ function MySchedulePageContent() {
         ? Array.from(
             new Set([
               ...operativeIdsForEmail(operatives, user.email),
-              ...bookingIdsForAccount({ id: user.id, email: user.email, formerIds: user.formerUserIds ?? [] }, operatives),
+              // 1.9.0: `aliasIds` — the same-email accounts the roster folds into this person (sameEmailUserIds).
+              ...bookingIdsForAccount(
+                {
+                  id: user.id,
+                  email: user.email,
+                  formerIds: user.formerUserIds ?? [],
+                  aliasIds: Array.from(samePersonIds(user.id, users, userIdAliases)),
+                },
+                operatives
+              ),
             ])
           )
         : [],
-    [user, operatives]
+    [user, operatives, users, userIdAliases]
   )
 
   const personalBookings = useMemo(() => {

@@ -18,11 +18,13 @@ import {
   approveBookingClash,
   approveBookingClashPairs,
   loadAcceptedBookingClashes,
+  watchAcceptedBookingClashes,
   type AcceptedBookingClash,
 } from '@/lib/warnings/acceptedClashStorage'
 import {
   dismissQualificationWarning,
   loadDismissedWarnings,
+  watchDismissedWarnings,
   type DismissedWarning,
 } from '@/lib/warnings/dismissedWarningStorage'
 import {
@@ -197,6 +199,19 @@ export default function WarningsPage() {
     const orgId = organization?.id
     if (!orgId) return
     return watchResolvedWarningKeys(orgId, setResolvedKeys)
+  }, [organization?.id])
+
+  // Rulebook 1.9.0 §1 (`LIVE_COLLECTIONS`): accepted clashes and dismissed warnings are live too, so an approval or a
+  // dismissal on iOS clears the row here without reopening the page.
+  useEffect(() => {
+    const orgId = organization?.id
+    if (!orgId) return
+    const stopAccepted = watchAcceptedBookingClashes(orgId, setAcceptedClashes)
+    const stopDismissed = watchDismissedWarnings(orgId, setDismissedWarnings)
+    return () => {
+      stopAccepted()
+      stopDismissed()
+    }
   }, [organization?.id])
 
   // Global Refresh: stores reload themselves; this page also re-reads what it keeps locally.

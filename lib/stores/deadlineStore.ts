@@ -6,9 +6,10 @@
 'use client'
 
 import { create } from 'zustand'
-import { doc, FieldPath, getDoc, setDoc, Timestamp, updateDoc } from 'firebase/firestore'
+import { doc, FieldPath, getDoc, onSnapshot, setDoc, Timestamp, updateDoc, type Unsubscribe } from 'firebase/firestore'
 import { deadlineAssignedProjectIds, deadlineAssignmentWriteFields, deadlineProjectKey } from '@/lib/canonical/workDocumentReaders'
 import { db } from '@/lib/firebase/config'
+import { liveResultStillCurrent } from '@/lib/firebase/liveResult'
 import { parseFirestoreDate } from '@/lib/firebase/firestoreUtils'
 import { withTimeout } from '@/lib/client/withTimeout'
 import { deadlinesSettingsDocId, parseDeadline, serializeDeadline } from '@/lib/deadlines/codec'
@@ -17,6 +18,8 @@ import type { Deadline } from '@/lib/deadlines/types'
 
 const FWW_GRACE_MS = 400
 let deadlineLoadGeneration = 0
+let deadlineUnsub: Unsubscribe | null = null
+let deadlineListeningKey = ''
 
 function deadlinesRef(organizationId: string, projectId: string, isSmallWorks: boolean) {
   return doc(db, 'organizations', organizationId, 'settings', deadlinesSettingsDocId(projectId, isSmallWorks))
@@ -58,6 +61,8 @@ interface DeadlineState {
   assignedProjectIds: string[]
   load: (organizationId: string, projectId: string, isSmallWorks: boolean) => Promise<void>
   save: (organizationId: string, projectId: string, isSmallWorks: boolean, items: Deadline[]) => Promise<Deadline[]>
+  /** Stop listening (the screen closed). */
+  stopListening: () => void
   loadAssignedProjectIds: (organizationId: string, userId: string) => Promise<void>
 }
 
@@ -71,41 +76,63 @@ export const useDeadlineStore = create<DeadlineState>((set, get) => ({
   projectKey: null,
   assignedProjectIds: [],
 
+  // Rulebook 1.9.0 §1 (`LIVE_COLLECTIONS`): the open job's deadline programme is live while its screen is open. The
+  // load resolves on the first snapshot; later snapshots replace the list unless this screen is saving.
   load: async (organizationId, projectId, isSmallWorks) => {
     const projectKey = `${organizationId}:${deadlinesSettingsDocId(projectId, isSmallWorks)}`
-    const generation = ++deadlineLoadGeneration
     if (get().projectKey !== projectKey) {
       set({ items: [], updatedAt: null, loaded: false, error: null, projectKey })
     }
+    if (deadlineListeningKey === projectKey && deadlineUnsub) return
+    deadlineUnsub?.()
+    deadlineUnsub = null
+    deadlineListeningKey = projectKey
+    deadlineLoadGeneration += 1
     set({ loading: true, error: null, projectKey })
-    try {
-      const snap = await getDoc(deadlinesRef(organizationId, projectId, isSmallWorks))
-      if (generation !== deadlineLoadGeneration) return
-      if (!snap.exists()) {
-        set({ items: [], updatedAt: null, loaded: true, loading: false })
-        return
-      }
-      const data = snap.data() as Record<string, unknown>
-      const raw = Array.isArray(data.items) ? data.items : []
-      const items = raw
-        .map((row) => (row && typeof row === 'object' ? parseDeadline(row as Record<string, unknown>, projectId) : null))
-        .filter((row): row is Deadline => row !== null)
-        .sort((a, b) => a.due.getTime() - b.due.getTime())
-      if (generation !== deadlineLoadGeneration) return
-      set({
-        items,
-        updatedAt: parseFirestoreDate(data.updatedAt) ?? null,
-        loaded: true,
-        loading: false,
-      })
-    } catch (error: unknown) {
-      if (generation !== deadlineLoadGeneration) return
-      set({
-        loading: false,
-        loaded: false,
-        error: error instanceof Error ? error.message : 'Could not load deadlines.',
-      })
-    }
+    await new Promise<void>((resolve) => {
+      let first = true
+      deadlineUnsub = onSnapshot(
+        deadlinesRef(organizationId, projectId, isSmallWorks),
+        (snap) => {
+          const done = () => {
+            if (first) {
+              first = false
+              resolve()
+            }
+          }
+          if (deadlineListeningKey !== projectKey || !liveResultStillCurrent(organizationId)) return done()
+          // A save in progress owns the list; its own echo and a load started before it never replace it.
+          if (get().saving || snap.metadata.hasPendingWrites) return done()
+          if (!snap.exists()) {
+            set({ items: [], updatedAt: null, loaded: true, loading: false })
+            return done()
+          }
+          const data = snap.data() as Record<string, unknown>
+          const raw = Array.isArray(data.items) ? data.items : []
+          const items = raw
+            .map((row) => (row && typeof row === 'object' ? parseDeadline(row as Record<string, unknown>, projectId) : null))
+            .filter((row): row is Deadline => row !== null)
+            .sort((a, b) => a.due.getTime() - b.due.getTime())
+          set({ items, updatedAt: parseFirestoreDate(data.updatedAt) ?? null, loaded: true, loading: false })
+          done()
+        },
+        (error) => {
+          if (deadlineListeningKey === projectKey) {
+            set({ loading: false, loaded: false, error: error.message || 'Could not load deadlines.' })
+          }
+          if (first) {
+            first = false
+            resolve()
+          }
+        }
+      )
+    })
+  },
+
+  stopListening: () => {
+    deadlineUnsub?.()
+    deadlineUnsub = null
+    deadlineListeningKey = ''
   },
 
   save: async (organizationId, projectId, isSmallWorks, items) => {

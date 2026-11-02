@@ -38,6 +38,9 @@ const queryIds = new Map<string, string>()
 const queryConstraints = new Map<string, QueryConstraint[]>()
 const lastDocs = new Map<string, OrgCollectionDoc[]>()
 const removedDocIds = new Map<string, Set<string>>()
+/** `{orgId}|{queryId}` of the listener that has delivered at least one snapshot, per key. */
+const delivered = new Map<string, string>()
+const firstSnapshotWaiters = new Map<string, Array<{ resolve: () => void; reject: (error: unknown) => void }>>()
 const listeners = new Map<
   string,
   {
@@ -145,6 +148,7 @@ export function subscribeOrgCollection(
 
   unsubs.get(key)?.()
   unsubs.delete(key)
+  delivered.delete(key)
   orgs.set(key, organizationId)
   collectionNames.set(key, collectionName)
   queryIds.set(key, queryId)
@@ -162,6 +166,7 @@ export function subscribeOrgCollection(
         return
       }
       activeCallback(key)?.onError?.(error)
+      settleFirstSnapshot(key, error)
     }
 
     unsubs.get(key)?.()
@@ -170,6 +175,8 @@ export function subscribeOrgCollection(
       (snap) => {
         if (!stillThisQuery()) return
         emit(snap)
+        delivered.set(key, `${organizationId}|${queryId}`)
+        settleFirstSnapshot(key, null)
       },
       fail
     )
@@ -229,4 +236,59 @@ export function unsubscribeOrgCollection(key: string): void {
   queryIds.delete(key)
   queryConstraints.delete(key)
   listeners.delete(key)
+  delivered.delete(key)
+  settleFirstSnapshot(key, null)
+}
+
+function settleFirstSnapshot(key: string, error: unknown): void {
+  const waiters = firstSnapshotWaiters.get(key)
+  if (!waiters) return
+  firstSnapshotWaiters.delete(key)
+  for (const waiter of waiters) {
+    if (error) waiter.reject(error)
+    else waiter.resolve()
+  }
+}
+
+/** True once this key's listener for this organisation (and bound) has delivered a snapshot. */
+export function hasOrgCollectionSnapshot(key: string, organizationId: string, queryId = ''): boolean {
+  return delivered.get(key) === `${organizationId}|${queryId}` && isOrgCollectionSubscribed(key, organizationId, queryId)
+}
+
+/**
+ * Rulebook 1.9.0 §1 "Live screens" (`LIVE_COLLECTIONS`): the screen's load is the listener. Start (or re-attach to)
+ * the live listener and resolve when its first snapshot has been applied — at once when the listener is already
+ * live. The listener stays open, so later edits on any platform arrive without a reload. Rejects with the listener
+ * error (after its own auth retries).
+ */
+export function subscribeOrgCollectionLoaded(
+  key: string,
+  organizationId: string,
+  collectionName: string,
+  onDocs: (docs: OrgCollectionDoc[]) => void,
+  options?: SubscribeOrgCollectionOptions
+): Promise<void> {
+  if (!organizationId) return Promise.resolve()
+  const queryId = options?.queryId ?? ''
+  const promise = hasOrgCollectionSnapshot(key, organizationId, queryId) || !db
+    ? Promise.resolve()
+    : new Promise<void>((resolve, reject) => {
+        const waiters = firstSnapshotWaiters.get(key) ?? []
+        waiters.push({ resolve, reject })
+        firstSnapshotWaiters.set(key, waiters)
+      })
+  subscribeOrgCollection(key, organizationId, collectionName, onDocs, undefined, options)
+  return promise
+}
+
+/**
+ * The open organisation changed (or the user signed out): stop every listener that belongs to another
+ * organisation, so a store never receives that company's rows again (`adoptCurrentOrganization`).
+ */
+export function unsubscribeOrgCollectionsOutside(organizationId: string): void {
+  const keep = String(organizationId || '').trim().toLowerCase()
+  for (const [key, org] of [...orgs]) {
+    if (keep && String(org || '').trim().toLowerCase() === keep) continue
+    unsubscribeOrgCollection(key)
+  }
 }

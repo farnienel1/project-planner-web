@@ -27,7 +27,9 @@ import { parseTeamOnboarding } from '@/lib/orgSetup/teamOnboarding'
 import { topLevelAdminFlagPatch } from '@/lib/orgSetup/repairAdminFlags'
 import { ACCOUNT_UNCONFIRMED_MESSAGE } from '@/lib/orgSetup/accountConfirmation'
 import { ensurePrimaryOrgMembership, resolveWebSessionOrganization } from '@/lib/orgMembership/membershipService'
-import { adoptCurrentOrganization, coalesceOrganizationName, parseOrganizationName } from '@/lib/canonical'
+import { adoptCurrentOrganization, coalesceOrganizationName, currentOrganizationId, parseOrganizationName } from '@/lib/canonical'
+// Rulebook 1.9.0 §1: listeners belong to the open organisation and stop when it changes.
+import { unsubscribeOrgCollectionsOutside } from '@/lib/firebase/subscribeOrgCollection'
 import {
   applyRememberedWebOrganization,
   clearRememberedOrgDenied,
@@ -472,6 +474,7 @@ async function hydrateSignedInOrganization(
         sessionUserForOrganizationProbe(documentUser, documentOrganizationId, session)
       )
       adoptCurrentOrganization(sessionUser.organizationId || '', firebaseUser.uid)
+      unsubscribeOrgCollectionsOutside(currentOrganizationId())
       useAuthStore.setState((state) => {
         if (token !== organizationHydration || signingOut || state.user?.id !== firebaseUser.uid) return state
         const organization =
@@ -665,6 +668,7 @@ async function loadSignedInProfileInner(firebaseUser: FirebaseUser) {
   }
 
   adoptCurrentOrganization(sessionUser.organizationId || '', firebaseUser.uid)
+  unsubscribeOrgCollectionsOutside(currentOrganizationId())
   const currentOrganization = useAuthStore.getState().organization
   useAuthStore.setState({
     user: sessionUser,
@@ -763,6 +767,7 @@ export const useAuthStore = create<AuthState>((set) => {
           stopCurrentUserWatch()
           invalidateOrganizationHydration()
           adoptCurrentOrganization('', '')
+          unsubscribeOrgCollectionsOutside(currentOrganizationId())
           set({ user: null, firebaseUser: null, currentUserDocument: null, organization: null, loading: false, error: null })
           return
         }
@@ -983,6 +988,7 @@ export const useAuthStore = create<AuthState>((set) => {
       invalidateOrganizationHydration()
       stopCurrentUserWatch()
       adoptCurrentOrganization('', '')
+      unsubscribeOrgCollectionsOutside(currentOrganizationId())
       const signedOutId = useAuthStore.getState().user?.id
       if (signedOutId) clearRememberedOrgDenied(signedOutId)
       // Keep pp.webActiveOrg:{userId}. Same-user login must reopen this company.
