@@ -23,7 +23,15 @@ import { retainLoadedRows } from '@/lib/staff/rosterRetain'
 import { db, storage } from '@/lib/firebase/config'
 import { newUuid, parseFirestoreDate, sanitizeForFirestore } from '@/lib/firebase/firestoreUtils'
 import { saveInboxNotification } from '@/lib/firebase/notifyInbox'
-import { excludeActor, receivesJobNotification } from '@/lib/canonical'
+import {
+  excludeActor,
+  mergeStoredRows,
+  parseVariationDocument,
+  receivesJobNotification,
+  variationRenumberWriteFields,
+  variationWriteFields,
+} from '@/lib/canonical'
+import { savePartialDocument } from '@/lib/firebase/partialWrite'
 import { rulebookPerson, rulebookRoster } from '@/lib/staff/rulebookPeople'
 import { staffAccountRole } from '@/lib/permissions'
 import type { User } from '@/types'
@@ -48,120 +56,58 @@ import {
   variationsLogDocId,
 } from '@/lib/variations/variationFallback'
 
+/**
+ * A variation through the rulebook reader `parseVariationDocument` (rulebook 1.8.0): lines with any content are kept,
+ * a line stored without an id gets the same `variationLineId` on every read and platform, counters are recomputed.
+ */
+export function variationFromFirestore(id: string, data: Record<string, unknown>): Variation {
+  const parsed = parseVariationDocument(id, data) ?? parseVariationDocument(newUuid(), data)!
+  const when = (ms: number | null | undefined) => (ms != null ? new Date(ms) : null)
+  return {
+    id: parsed.id,
+    orgId: parsed.orgId,
+    parentType: parsed.parentType,
+    parentId: parsed.parentId,
+    parentName: parsed.parentName,
+    origin: parsed.origin,
+    voNumber: parsed.voNumber,
+    sequence: parsed.sequence,
+    voNumberLocked: parsed.voNumberLocked,
+    numberHistory: parsed.numberHistory.map((item) => ({ from: item.from, to: item.to, at: when(item.atMs) || new Date(), byUid: item.byUid })),
+    heading: parsed.heading,
+    description: parsed.description,
+    status: parsed.status,
+    labour: parsed.labour.map((line) => ({ id: line.id, trade: line.trade, hours: line.hours })),
+    materials: parsed.materials.map((line) => ({ id: line.id, name: line.name, quantity: line.quantity })),
+    evidence: parsed.evidence.map(
+      (item): VariationEvidence => ({
+        id: item.id,
+        fileName: item.fileName,
+        contentType: item.contentType,
+        sizeBytes: item.sizeBytes,
+        storagePath: item.storagePath,
+        downloadURL: item.downloadURL,
+        uploadedByUid: item.uploadedByUid,
+        uploadedAt: when(item.uploadedAtMs) || new Date(),
+      })
+    ),
+    totalLabourHours: parsed.totalLabourHours,
+    materialLineCount: parsed.materialLineCount,
+    evidenceCount: parsed.evidenceCount,
+    createdByUid: parsed.createdByUid,
+    createdByName: parsed.createdByName,
+    createdAt: when(parsed.createdAtMs) || new Date(),
+    updatedByUid: parsed.updatedByUid,
+    updatedAt: when(parsed.updatedAtMs) || new Date(),
+    statusHistory: parsed.statusHistory.map((item) => ({ status: item.status, byUid: item.byUid, byName: item.byName, at: when(item.atMs) || new Date() })),
+    submittedAt: when(parsed.submittedAtMs),
+    closedAt: when(parsed.closedAtMs),
+    isDeleted: parsed.isDeleted,
+  }
+}
+
 function stamp(value: unknown): Date | null {
   return parseFirestoreDate(value) || null
-}
-
-function mapLabour(rows: unknown): VariationLabourLine[] {
-  if (!Array.isArray(rows)) return []
-  return rows
-    .map((row) => {
-      const data = (row || {}) as Record<string, unknown>
-      const trade = typeof data.trade === 'string' ? data.trade.trim() : ''
-      if (!trade) return null
-      return {
-        id: typeof data.id === 'string' && data.id ? data.id : newUuid(),
-        trade,
-        hours: typeof data.hours === 'number' ? data.hours : Number(data.hours) || 0,
-      }
-    })
-    .filter((row): row is VariationLabourLine => Boolean(row))
-}
-
-function mapMaterials(rows: unknown): VariationMaterialLine[] {
-  if (!Array.isArray(rows)) return []
-  return rows
-    .map((row) => {
-      const data = (row || {}) as Record<string, unknown>
-      const name = typeof data.name === 'string' ? data.name.trim() : ''
-      if (!name) return null
-      return {
-        id: typeof data.id === 'string' && data.id ? data.id : newUuid(),
-        name,
-        quantity: typeof data.quantity === 'string' ? data.quantity : '',
-      }
-    })
-    .filter((row): row is VariationMaterialLine => Boolean(row))
-}
-
-function mapEvidence(rows: unknown): VariationEvidence[] {
-  if (!Array.isArray(rows)) return []
-  return rows
-    .map((row) => {
-      const data = (row || {}) as Record<string, unknown>
-      const id = typeof data.id === 'string' ? data.id : ''
-      const storagePath = typeof data.storagePath === 'string' ? data.storagePath : ''
-      if (!id || !storagePath) return null
-      return {
-        id,
-        fileName: typeof data.fileName === 'string' ? data.fileName : 'file',
-        contentType: typeof data.contentType === 'string' ? data.contentType : '',
-        sizeBytes: typeof data.sizeBytes === 'number' ? data.sizeBytes : 0,
-        storagePath,
-        downloadURL: typeof data.downloadURL === 'string' ? data.downloadURL : '',
-        uploadedByUid: typeof data.uploadedByUid === 'string' ? data.uploadedByUid : '',
-        uploadedAt: stamp(data.uploadedAt) || new Date(),
-      }
-    })
-    .filter((row): row is VariationEvidence => Boolean(row))
-}
-
-export function variationFromFirestore(id: string, data: Record<string, unknown>): Variation {
-  const labour = mapLabour(data.labour)
-  const materials = mapMaterials(data.materials)
-  const evidence = mapEvidence(data.evidence)
-  const counters = variationCounters({ labour, materials, evidence })
-  const status = data.status === 'submitted' || data.status === 'closed' || data.status === 'open' ? data.status : 'open'
-  return {
-    id,
-    orgId: typeof data.orgId === 'string' ? data.orgId : '',
-    parentType: data.parentType === 'smallWork' ? 'smallWork' : 'project',
-    parentId: typeof data.parentId === 'string' ? data.parentId : '',
-    parentName: typeof data.parentName === 'string' ? data.parentName : '',
-    origin: data.origin === 'tracker' ? 'tracker' : 'app',
-    voNumber: typeof data.voNumber === 'string' ? data.voNumber : '',
-    sequence: typeof data.sequence === 'number' ? data.sequence : 0,
-    voNumberLocked: data.voNumberLocked === true,
-    numberHistory: Array.isArray(data.numberHistory)
-      ? data.numberHistory.map((row) => {
-          const item = (row || {}) as Record<string, unknown>
-          return {
-            from: typeof item.from === 'string' ? item.from : '',
-            to: typeof item.to === 'string' ? item.to : '',
-            at: stamp(item.at) || new Date(),
-            byUid: typeof item.byUid === 'string' ? item.byUid : '',
-          }
-        })
-      : [],
-    heading: typeof data.heading === 'string' ? data.heading : '',
-    description: typeof data.description === 'string' ? data.description : '',
-    status,
-    labour,
-    materials,
-    evidence,
-    totalLabourHours: counters.totalLabourHours,
-    materialLineCount: counters.materialLineCount,
-    evidenceCount: counters.evidenceCount,
-    createdByUid: typeof data.createdByUid === 'string' ? data.createdByUid : '',
-    createdByName: typeof data.createdByName === 'string' ? data.createdByName : '',
-    createdAt: stamp(data.createdAt) || new Date(),
-    updatedByUid: typeof data.updatedByUid === 'string' ? data.updatedByUid : '',
-    updatedAt: stamp(data.updatedAt) || new Date(),
-    statusHistory: Array.isArray(data.statusHistory)
-      ? data.statusHistory.map((row) => {
-          const item = (row || {}) as Record<string, unknown>
-          return {
-            status: typeof item.status === 'string' ? item.status : '',
-            byUid: typeof item.byUid === 'string' ? item.byUid : '',
-            byName: typeof item.byName === 'string' ? item.byName : '',
-            at: stamp(item.at) || new Date(),
-          }
-        })
-      : [],
-    submittedAt: stamp(data.submittedAt),
-    closedAt: stamp(data.closedAt),
-    isDeleted: data.isDeleted === true,
-  }
 }
 
 function toTimestamp(date: Date | null | undefined): Timestamp | null {
@@ -288,7 +234,7 @@ async function saveVariationSettingsLog(
     items = []
   }
   const index = items.findIndex((row) => row.id === variation.id)
-  if (index >= 0) items[index] = map
+  if (index >= 0) items[index] = mergeStoredRows([items[index]], [map])[0]
   else items.push(map)
   await setDoc(
     ref,
@@ -304,23 +250,35 @@ async function saveVariationSettingsLog(
   )
 }
 
-/** iOS writes the settings log and item doc first. The collection write is best-effort. */
-async function persistVariationDocument(organizationId: string, variation: Variation): Promise<void> {
+/**
+ * iOS writes the settings log and item doc first. The collection write is best-effort. Rulebook 1.8.0 §1: an edit of
+ * an existing variation is a partial update of the changed fields (`variationWriteFields`) on the item document and
+ * the collection document; the settings log entry is laid over its stored entry so fields another app wrote stay.
+ */
+async function persistVariationDocument(
+  organizationId: string,
+  variation: Variation,
+  mode: 'create' | 'update' = 'update'
+): Promise<void> {
   const map = variationToFirestore(variation)
+  const itemPayload = {
+    ...map,
+    recordType: 'variationItem',
+    parentId: variation.parentId,
+    parentType: variation.parentType,
+    organizationId,
+  }
+  const itemRef = settingsDoc(organizationId, variationItemDocId(variation.id))
+  const collectionRef = variationRef(organizationId, variation.id)
+  const userId = variation.updatedByUid || undefined
   const results = await Promise.allSettled([
     saveVariationSettingsLog(organizationId, variation, map),
-    setDoc(
-      settingsDoc(organizationId, variationItemDocId(variation.id)),
-      {
-        ...map,
-        recordType: 'variationItem',
-        parentId: variation.parentId,
-        parentType: variation.parentType,
-        organizationId,
-      },
-      { merge: true }
-    ),
-    setDoc(variationRef(organizationId, variation.id), map, { merge: true }),
+    mode === 'create'
+      ? setDoc(itemRef, itemPayload, { merge: true })
+      : savePartialDocument(itemRef, itemPayload, variationWriteFields, { userId }),
+    mode === 'create'
+      ? setDoc(collectionRef, map, { merge: true })
+      : savePartialDocument(collectionRef, map, variationWriteFields, { userId }),
   ])
   if (results.every((result) => result.status === 'rejected')) {
     const first = results[0].status === 'rejected' ? results[0].reason : null
@@ -635,7 +593,7 @@ export async function createVariation(input: {
     statusHistory: [{ status: input.status || 'open', byUid: input.actor.uid, byName: input.actor.name, at: now }],
     isDeleted: false,
   })
-  await persistVariationDocument(input.organizationId, draft)
+  await persistVariationDocument(input.organizationId, draft, 'create')
   if (input.users) {
     void notifyCreated({
       organizationId: input.organizationId,
@@ -841,28 +799,22 @@ export async function applyNumbering(input: {
     for (const change of input.changes) {
       const row = input.rows.find((item) => item.id === change.id)
       if (!row) continue
-      const numberChanged = change.to !== row.voNumber
-      transaction.update(variationRef(input.organizationId, row.id), sanitizeForFirestore({
+      // Rulebook 1.8.0 `variationRenumberWriteFields`: only the sequence and, when the number changes, the number
+      // with one appended history entry. The tracker applies the new numbers whatever the lock (`resequenceAll`).
+      const write = variationRenumberWriteFields({
+        stored: variationToFirestore(row),
+        to: change.to,
         sequence: change.sequence,
-        voNumber: change.to,
-        numberHistory: numberChanged
-          ? [...row.numberHistory, { from: row.voNumber, to: change.to, at: Timestamp.fromDate(now), byUid: input.actor.uid }].map(
-              (item) => ({
-                from: item.from,
-                to: item.to,
-                at: item.at instanceof Date ? Timestamp.fromDate(item.at) : item.at,
-                byUid: item.byUid,
-              })
-            )
-          : row.numberHistory.map((item) => ({
-              from: item.from,
-              to: item.to,
-              at: Timestamp.fromDate(item.at),
-              byUid: item.byUid,
-            })),
+        at: Timestamp.fromDate(now),
+        byUid: input.actor.uid,
+        numberingMode: 'resequenceAll',
+      })
+      if (!write) continue
+      transaction.update(variationRef(input.organizationId, row.id), {
+        ...write.set,
         updatedAt: Timestamp.fromDate(now),
         updatedByUid: input.actor.uid,
-      }) as Record<string, unknown>)
+      })
     }
     transaction.update(ref, {
       version: tracker.version + 1,

@@ -13,6 +13,7 @@ import { currencySymbol, DEFAULT_CURRENCY_CODE } from '@/lib/canonical/money'
 import { bookingWriteFields, parseBookingDocument, parseManagerSiteBookingDocument } from '@/lib/canonical/bookings'
 import { parseHolidayDocument } from '@/lib/canonical/holidayDocument'
 import { parseJobDocument } from '@/lib/canonical/workDocumentReaders'
+import { parseNotificationDocument } from '@/lib/canonical/recordsDocuments'
 import {
   parseClientDocument,
   parseManagerDocument,
@@ -1074,51 +1075,34 @@ export interface AppInboxNotification {
   catalogue?: 'projects' | 'smallWorks'
 }
 
+/**
+ * An inbox row through the rulebook reader `parseNotificationDocument` (rulebook 1.8.0): the type is kept as stored
+ * (an unknown type is not dropped), `relatedId` keeps any shape, and a missing title, message or read flag defaults.
+ */
 export function parseNotification(
   docId: string,
   data: Record<string, unknown>,
   organizationId?: string
 ): ParseResult<AppInboxNotification> {
-  const type = asString(data.type)
-  const title = asString(data.title)
-  const message = asString(data.message)
-  if (!type) return fail(['type required'])
-  const orgId = asString(data.organizationId, organizationId || '')
+  const parsed = parseNotificationDocument(docId, data, { organizationId: organizationId ?? null })
+  if (!parsed) return fail(['type required'])
+  const orgId = parsed.organizationId || organizationId || ''
   if (!orgId) return fail(['organizationId required'])
-  const checked = notificationWriteSchema.safeParse({
-    organizationId: orgId,
-    type,
-    title,
-    message,
-    userId: asOptionalString(data.userId) ?? null,
-    relatedId: asOptionalString(data.relatedId) ?? null,
-    isRead: data.isRead === true,
-    createdAt: asDate(data.createdAt) || new Date(),
-    requiresPermission: asOptionalString(data.requiresPermission) ?? null,
-    deepLinkUserId: asOptionalString(data.deepLinkUserId) ?? null,
-    deepLinkWeekStart: asDate(data.deepLinkWeekStart) ?? null,
-  })
-  if (!checked.success) {
-    return fail(issuesFromZod(checked.error))
-  }
-  const v = checked.data
-  const catalogue = data.catalogue === 'projects' || data.catalogue === 'smallWorks' ? data.catalogue : undefined
-  const dayKey = asOptionalString(data.dayKey)
   return ok({
-    id: docId,
-    organizationId: v.organizationId,
-    type: v.type,
-    title: v.title,
-    message: v.message,
-    userId: v.userId || undefined,
-    relatedId: v.relatedId || undefined,
-    isRead: v.isRead,
-    createdAt: v.createdAt,
-    requiresPermission: v.requiresPermission || undefined,
-    deepLinkUserId: v.deepLinkUserId || undefined,
-    deepLinkWeekStart: v.deepLinkWeekStart instanceof Date ? v.deepLinkWeekStart : undefined,
-    dayKey: dayKey || undefined,
-    catalogue,
+    id: parsed.id,
+    organizationId: orgId,
+    type: parsed.type,
+    title: parsed.title,
+    message: parsed.message,
+    userId: parsed.userId ?? undefined,
+    relatedId: parsed.relatedId ?? undefined,
+    isRead: parsed.isRead,
+    createdAt: parsed.createdAtMs != null ? new Date(parsed.createdAtMs) : new Date(0),
+    requiresPermission: parsed.requiresPermission ?? undefined,
+    deepLinkUserId: parsed.deepLinkUserId ?? undefined,
+    deepLinkWeekStart: parsed.deepLinkWeekStartMs != null ? new Date(parsed.deepLinkWeekStartMs) : undefined,
+    dayKey: parsed.dayKey ?? undefined,
+    catalogue: parsed.catalogue ?? undefined,
   })
 }
 

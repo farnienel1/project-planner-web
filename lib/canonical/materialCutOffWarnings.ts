@@ -4,8 +4,9 @@
  * After the organisation cut-off clock (`organizations/{orgId}.settings.materialCutOff`, read through
  * `resolveMaterialCutOffClock`) on the organisation's business day, every job with an active booking
  * tomorrow warns when tomorrow has no material lines, or when any of tomorrow's lines is not ordered.
- * A line is ordered when its status is `ordered`, or when it appears in an order send record
- * (`requestType == 'order'`). Saturday or Sunday tomorrow is skipped unless that day's cut-off flag is on.
+ * A line is ordered when its status is `ordered` (`normalizeMaterialWorkflowStatus`: `order` too), or when it
+ * appears in an order send record (`requestType` Order, any case); ids compare without case (1.8.0).
+ * Saturday or Sunday tomorrow is skipped unless that day's cut-off flag is on.
  * The row key is `materials-{projectId}-{yyyy-MM-dd}` (tomorrow's organisation day key), so an approval
  * or removal made on either platform hides the same row.
  */
@@ -19,6 +20,8 @@ import {
   resolveMaterialCutOffClock,
   type MaterialCutOffSettings,
 } from './organizationSettings'
+import { normalizeMaterialRequestType, normalizeMaterialWorkflowStatus } from './operationsDocuments'
+import { normalizeDocumentId } from './scheduleSources'
 import { bookingOccupiesDay } from './warningRows'
 
 const DAY_KEY = /^\d{4}-\d{2}-\d{2}$/
@@ -108,13 +111,13 @@ function dayKeyOf(row: { dayKey?: string | null; dateIso?: string | null }, time
 function orderedMaterialIds(records: readonly MaterialCutOffSendRecordInput[] | null | undefined): Set<string> {
   const ids = new Set<string>()
   for (const record of records || []) {
-    if (!record || text(record.requestType).toLowerCase() !== 'order') continue
+    if (!record || normalizeMaterialRequestType(record.requestType) !== 'Order') continue
     for (const id of record.materialIds || []) {
-      const value = text(id)
+      const value = normalizeDocumentId(id)
       if (value) ids.add(value)
     }
     for (const line of record.lines || []) {
-      const value = text(line?.materialId)
+      const value = normalizeDocumentId(line?.materialId)
       if (value) ids.add(value)
     }
   }
@@ -126,8 +129,8 @@ export function materialLineCountsAsOrdered(
   line: Pick<MaterialCutOffMaterialInput, 'id' | 'status'>,
   sendRecords: readonly MaterialCutOffSendRecordInput[] | null | undefined
 ): boolean {
-  if (text(line.status).toLowerCase() === 'ordered') return true
-  return orderedMaterialIds(sendRecords).has(text(line.id))
+  if (normalizeMaterialWorkflowStatus(line.status) === 'ordered') return true
+  return orderedMaterialIds(sendRecords).has(normalizeDocumentId(line.id))
 }
 
 /** Material cut-off warning rows for tomorrow. Empty before the cut-off, when off, or on a skipped weekend. */
@@ -168,7 +171,9 @@ export function materialCutOffWarningRows(input: MaterialCutOffWarningInput): Ma
     const lines = (input.materials || []).filter(
       (line) => text(line.projectId) === projectId && dayKeyOf(line, timeZone) === tomorrowKey
     )
-    const unordered = lines.filter((line) => text(line.status).toLowerCase() !== 'ordered' && !ordered.has(text(line.id)))
+    const unordered = lines.filter(
+      (line) => normalizeMaterialWorkflowStatus(line.status) !== 'ordered' && !ordered.has(normalizeDocumentId(line.id))
+    )
     if (lines.length > 0 && unordered.length === 0) continue
 
     const jobNumber = text(project.jobNumber) || text(project.siteName) || projectId.slice(0, 8)

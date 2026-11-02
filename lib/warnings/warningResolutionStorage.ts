@@ -1,14 +1,42 @@
-import { collection, getDocs } from 'firebase/firestore'
+import { collection, getDocs, onSnapshot, type QuerySnapshot, type Unsubscribe } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
-import { approvedWarningKeys, resolvedWarningKeys } from '@/lib/canonical'
+import {
+  approvedWarningKeys,
+  parseWarningResolutionDocument,
+  resolvedWarningKeys,
+  warningResolutionRecords,
+} from '@/lib/canonical'
+import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 
 /**
- * Keys of warnings approved or removed on any device: `organizations/{orgId}/warningResolutions`,
- * read through the rulebook's `resolvedWarningKeys`.
+ * `organizations/{orgId}/warningResolutions`, read through the rulebook (1.8.0): every key is put in its shared form
+ * (`warningResolutionRecords` / `sharedWarningResolutionKey`: older iOS `mgr-clash-…-{seconds}-{i}` and
+ * `materials-…-{epoch}` keys hide the same rows as the day-key forms), then `resolvedWarningKeys` /
+ * `approvedWarningKeys` decide.
  */
+function recordsOf(snapshot: QuerySnapshot) {
+  return warningResolutionRecords(
+    snapshot.docs.map((entry) => ({ id: entry.id, data: entry.data() as Record<string, unknown> })),
+    organizationZoneOr()
+  )
+}
+
+/** Keys of warnings approved or removed on any device (`resolvedWarningKeys`). */
 export async function loadResolvedWarningKeys(organizationId: string): Promise<string[]> {
   const snapshot = await getDocs(collection(db, 'organizations', organizationId, 'warningResolutions'))
-  return resolvedWarningKeys(snapshot.docs.map((entry) => ({ id: entry.id, ...entry.data() })))
+  return resolvedWarningKeys(recordsOf(snapshot))
+}
+
+/**
+ * Live `resolvedWarningKeys` (rulebook §5: warnings refresh when a resolution changes on any device). A refused or
+ * failed listener leaves the last keys alone. Returns the unsubscribe.
+ */
+export function watchResolvedWarningKeys(organizationId: string, onKeys: (keys: string[]) => void): Unsubscribe {
+  return onSnapshot(
+    collection(db, 'organizations', organizationId, 'warningResolutions'),
+    (snapshot) => onKeys(resolvedWarningKeys(recordsOf(snapshot))),
+    () => {}
+  )
 }
 
 /**
@@ -20,22 +48,26 @@ export async function loadWarningResolutionKeys(
   organizationId: string
 ): Promise<{ resolvedKeys: string[]; approvedKeys: string[] }> {
   const snapshot = await getDocs(collection(db, 'organizations', organizationId, 'warningResolutions'))
-  const records = snapshot.docs.map((entry) => ({ id: entry.id, ...entry.data() }))
+  const records = recordsOf(snapshot)
   return { resolvedKeys: resolvedWarningKeys(records), approvedKeys: approvedWarningKeys(records) }
 }
 
 export type WarningResolutionDoc = { id: string; resolutionKey: string; status: string; resolvedAt: Date | null }
 
-/** Every `warningResolutions` row, for screens that list approvals (the weekly report's Approved clashes). */
+/** Every `warningResolutions` row (`parseWarningResolutionDocument`), for screens that list approvals. */
 export async function loadWarningResolutions(organizationId: string): Promise<WarningResolutionDoc[]> {
   const snapshot = await getDocs(collection(db, 'organizations', organizationId, 'warningResolutions'))
-  return snapshot.docs.map((entry) => {
-    const data = entry.data()
-    return {
-      id: entry.id,
-      resolutionKey: String(data.resolutionKey || entry.id),
-      status: String(data.status || ''),
-      resolvedAt: data.resolvedAt?.toDate?.() ?? null,
-    }
-  })
+  const zone = organizationZoneOr()
+  const out: WarningResolutionDoc[] = []
+  for (const entry of snapshot.docs) {
+    const parsed = parseWarningResolutionDocument(entry.id, entry.data() as Record<string, unknown>, { timeZone: zone })
+    if (!parsed) continue
+    out.push({
+      id: parsed.id,
+      resolutionKey: parsed.resolutionKey,
+      status: parsed.status ?? '',
+      resolvedAt: parsed.resolvedAtMs != null ? new Date(parsed.resolvedAtMs) : null,
+    })
+  }
+  return out
 }

@@ -6732,3 +6732,397 @@ test('the iOS JavaScript bundle reads work documents the same way', () => {
   assert.equal(typeof api.jobWriteFields, 'function')
   assert.equal(typeof api.subcontractorBookingCreateFields, 'function')
 })
+
+// MARK: - Rulebook 1.8.0: operations and record documents
+
+import {
+  canonicalJobTypeName as opsCanonicalJobTypeName,
+  coerceJobTypeList as opsCoerceJobTypeList,
+  jobTypesWriteFields,
+  materialCatalogueWrites,
+  materialLineFields,
+  materialLineWriteFields,
+  materialSendRecordCreateFields,
+  materialSendStatusWriteFields,
+  mergeStoredRows,
+  normalizeMaterialWorkflowStatus,
+  normalizeProjectTaskStatus,
+  operativeProfileWriteFields,
+  parseJobTypesDocument,
+  parseMaterialCatalogueDocument,
+  parseMaterialLineDocument,
+  parseMaterialListDocuments,
+  parseMaterialSendRecordDocument,
+  parseOperativeProfileDocument,
+  parseSiteAuditDocument,
+  parseTaskDocument,
+  parseTradeTypeInventory,
+  parseWholesalerDocument,
+  siteAuditWriteFields,
+  taskFields,
+  taskWriteFields,
+  tradeTypeInventoryWriteFields,
+  wholesalerWriteFields,
+} from './operationsDocuments.ts'
+import {
+  foldHealthSafetySignatures,
+  healthSafetyDocumentWriteFields,
+  healthSafetyIssueStatus,
+  healthSafetySignatureKey,
+  healthSafetySignatureWriteFields,
+  KNOWN_NOTIFICATION_TYPES,
+  notificationReadWriteFields,
+  parseHealthSafetyDocument,
+  parseNotificationDocument,
+  parseVariationDocument,
+  parseVariationTrackerDocument,
+  parseWarningResolutionDocument,
+  sharedWarningResolutionKey,
+  variationRenumberWriteFields,
+  variationWriteFields,
+  warningResolutionMigrationWrites,
+  warningResolutionRecords,
+} from './recordsDocuments.ts'
+import { documentOrganizationId, parseSubcontractorDocument as opsParseSubcontractor, parseUserDocument as opsParseUser } from './peopleDocuments.ts'
+import { materialCutOffWarningRows as opsMaterialCutOffWarningRows, materialLineCountsAsOrdered } from './materialCutOffWarnings.ts'
+import { NOTIFICATION_CATALOG as OPS_NOTIFICATION_CATALOG } from './notificationRecipients.ts'
+import { resolvedWarningKeys as opsResolvedWarningKeys } from './scheduleSources.ts'
+
+const OPS_TS = (iso: string) => ({ seconds: Math.floor(Date.parse(iso) / 1000), nanoseconds: 0 })
+
+test('1.8.0 material lines: iOS and web documents read the same, never dropped, organisation-zone day', () => {
+  const ios = {
+    id: 'A1B2C3D4-0000-4000-8000-000000000001',
+    quantity: 3,
+    unit: 'Box',
+    material: 'Cable 2.5mm',
+    addedBy: 'Sam',
+    addedByUserId: 'uid-sam',
+    addedAt: OPS_TS('2026-07-01T09:00:00Z'),
+    projectId: 'PROJ-1',
+    // iOS device midnight in BST: 23:00 UTC the day before is 1 July in London.
+    date: OPS_TS('2026-06-30T23:00:00Z'),
+    status: 'sentForQuote',
+    sizeOrLength: '100',
+    lengthUnit: 'm',
+  }
+  const line = parseMaterialLineDocument('a1b2c3d4-0000-4000-8000-000000000001', ios, { timeZone: 'Europe/London' })!
+  assert.equal(line.id, 'a1b2c3d4-0000-4000-8000-000000000001')
+  assert.equal(line.dayKey, '2026-07-01')
+  assert.equal(line.status, 'sentForQuote')
+  assert.equal(line.length, '100')
+  assert.equal(line.lengthUnit, 'M')
+  // Web wrote a numeric-string quantity, a lower-case unit, `name` only and a non-UUID id; iOS dropped it.
+  const web = { quantity: '2', unit: 'number', name: 'Clips', projectId: 'p-web', dayKey: '2026-07-02', status: 'Sent for quote' }
+  const webLine = parseMaterialLineDocument('web-line-1', web)!
+  assert.equal(webLine.quantity, 2)
+  assert.equal(webLine.unit, 'Number')
+  assert.equal(webLine.material, 'Clips')
+  assert.equal(webLine.dayKey, '2026-07-02')
+  assert.equal(webLine.status, 'sentForQuote')
+  assert.equal(parseMaterialLineDocument('x', { projectId: 'p' }), null)
+  assert.equal(normalizeMaterialWorkflowStatus('order'), 'ordered')
+  assert.equal(normalizeMaterialWorkflowStatus('nonsense'), 'draft')
+  assert.deepEqual(
+    parseMaterialListDocuments([{ id: 'b', data: web }, { id: 'a', data: ios }], { timeZone: 'Europe/London' }).map((row) => row.id),
+    ['a', 'b']
+  )
+})
+
+test('1.8.0 material line writes: organisation midnight, partial, owner fields never rewritten, no downgrade', () => {
+  const fields = materialLineFields(
+    { id: 'L1', projectId: 'P1', quantity: 2, unit: 'box', material: ' Cable ', dayKey: '2026-07-01', length: '', brand: '' },
+    'Europe/London'
+  )
+  assert.equal(fields.date, Date.parse('2026-06-30T23:00:00Z'))
+  assert.equal(fields.unit, 'Box')
+  assert.equal(fields.name, 'Cable')
+  assert.equal(fields.length, null)
+  const stored = { ...fields, addedBy: 'Sam', addedByUserId: 'uid-sam', brand: 'Old', iosOnly: 'kept' }
+  const write = materialLineWriteFields(stored, { ...fields, quantity: 5, addedByUserId: 'someone-else', brand: null })
+  assert.deepEqual(write.set, { quantity: 5 })
+  assert.deepEqual(write.remove, ['brand'])
+  assert.deepEqual(materialSendStatusWriteFields('ordered', 'Quote'), { status: 'ordered', lastSentRequestType: 'Quote' })
+  assert.deepEqual(materialSendStatusWriteFields('draft', 'order'), { status: 'ordered', lastSentRequestType: 'Order' })
+  assert.equal(materialLineCountsAsOrdered({ id: 'L1', status: 'Order' }, []), true)
+  assert.equal(materialLineCountsAsOrdered({ id: 'l1', status: 'draft' }, [{ requestType: 'Order', lines: [{ materialId: 'L1' }] }]), true)
+  assert.equal(typeof opsMaterialCutOffWarningRows, 'function')
+})
+
+test('1.8.0 material catalogue: never delete-all and rewrite; an empty or failed load deletes nothing', () => {
+  const stored = [
+    { id: 'C1', data: { id: 'C1', name: 'Cable', brand: 'Prysmian', defaultUnit: 'Length', category: 'Electrical', createdByUserId: 'u1' } },
+    { id: 'C2', data: { id: 'C2', name: 'Clips', brand: 'Custom', defaultUnit: 'Box', category: 'Other' } },
+  ]
+  const next = [
+    { id: 'c1', name: 'Cable', brand: 'Prysmian', defaultUnit: 'Length', category: 'Electrical', createdByUserId: 'u2' },
+    { id: 'C3', name: 'Tape', defaultUnit: 'Number', createdByUserId: 'u2', createdByName: 'Ann' },
+  ]
+  const result = materialCatalogueWrites({ stored, next, loaded: true })
+  assert.deepEqual(result.remove, ['C2'])
+  assert.equal(result.write.length, 1)
+  assert.equal(result.write[0].id, 'C3')
+  assert.equal(result.write[0].create, true)
+  assert.equal(result.write[0].set.brand, 'Custom')
+  // A failed load: nothing removed.
+  assert.deepEqual(materialCatalogueWrites({ stored, next, loaded: false }).remove, [])
+  // An empty list: nothing removed.
+  assert.deepEqual(materialCatalogueWrites({ stored, next: [], loaded: true }), { write: [], remove: [] })
+  const item = parseMaterialCatalogueDocument('not-a-uuid', { name: 'Box', sizeOrLength: '5', lengthUnit: 'mm' })!
+  assert.equal(item.id, 'not-a-uuid')
+  assert.equal(item.brand, 'Custom')
+  assert.equal(item.lengthUnit, 'MM')
+})
+
+test('1.8.0 send records, wholesalers and site audits keep non-UUID ids and the other app’s fields', () => {
+  const record = parseMaterialSendRecordDocument(
+    'rec-1',
+    {
+      projectId: 'proj-x',
+      requestType: 'Quote',
+      sentAt: OPS_TS('2026-07-01T10:00:00Z'),
+      deliveryRequiredAt: OPS_TS('2026-07-02T07:00:00Z'),
+      sentBy: 'Sam',
+      recipients: [{ name: 'Rep', email: 'rep@x.test' }, { name: 'No email' }],
+      lines: [{ materialId: 'web-line-1', name: 'Clips', quantity: '4', unit: 'box' }],
+    },
+    { timeZone: 'Europe/London' }
+  )!
+  assert.equal(record.requestType, 'quote')
+  assert.equal(record.deliveryRequiredAtMs, null)
+  assert.equal(record.recipients.length, 1)
+  assert.deepEqual(record.lines[0], { materialId: 'web-line-1', name: 'Clips', quantity: 4, unit: 'Box', brand: null, productCode: null, lengthDisplay: null })
+  const create = materialSendRecordCreateFields({ id: 'R', projectId: 'P', requestType: 'quote', sentAt: 1, sentBy: 'S', deliveryRequiredAt: 2, recipients: [], lines: [] })
+  assert.equal(create.requestType, 'Quote')
+  assert.equal('deliveryRequiredAt' in create, false)
+
+  const firm = parseWholesalerDocument('w-1', {
+    name: 'CEF',
+    createdAt: OPS_TS('2026-01-01T00:00:00Z'),
+    contacts: [{ name: 'A', email: 'a@x.test' }, { id: 'c-2', name: 'B', email: 'b@x.test', isPrimary: true }],
+  })!
+  assert.equal(firm.updatedAtMs, Date.parse('2026-01-01T00:00:00Z'))
+  assert.equal(firm.contacts[0].idStored, false)
+  assert.equal(firm.contacts[0].id, parseWholesalerDocument('w-1', { name: 'CEF', contacts: [{ name: 'A', email: 'a@x.test' }] })!.contacts[0].id)
+  assert.equal(firm.primaryContactId, 'c-2')
+  assert.deepEqual(wholesalerWriteFields({ name: 'CEF', primaryContactId: 'c-2', contacts: [] }, { name: 'CEF', contacts: [{ id: 'x' }], primaryContactId: 'c-2' }).set, {
+    contacts: [{ id: 'x' }],
+    primaryContactId: 'c-2',
+  })
+
+  const audit = parseSiteAuditDocument('audit-1', {
+    projectId: 'proj-x',
+    type: 'Snagging Custom',
+    date: OPS_TS('2026-06-30T23:00:00Z'),
+    createdAt: OPS_TS('2026-06-30T23:00:00Z'),
+    items: [{ title: 'Door', imageCapturedAt: OPS_TS('2026-07-01T08:00:00Z') }],
+  }, { timeZone: 'Europe/London' })!
+  assert.equal(audit.dayKey, '2026-07-01')
+  assert.equal(audit.items[0].idStored, false)
+  assert.equal(audit.items[0].imageCapturedAtMs, Date.parse('2026-07-01T08:00:00Z'))
+  assert.deepEqual(siteAuditWriteFields({ createdAt: 1, type: 'A' }, { createdAt: 2, type: 'B' }).set, { type: 'B' })
+  const merged = mergeStoredRows([{ id: 'I1', title: 'Door', imageCapturedAt: 5 }], [{ id: 'i1', title: 'Door 2', imageCapturedAt: null }])
+  assert.deepEqual(merged, [{ id: 'i1', title: 'Door 2', imageCapturedAt: 5 }])
+})
+
+test('1.8.0 tasks: status synonyms, kept rows, derived item ids, partial writes', () => {
+  const task = parseTaskDocument('task-web-1', {
+    title: 'Fix door',
+    projectId: 'not-a-uuid',
+    status: 'in_progress',
+    priority: 'urgent',
+    items: [{ title: 'Hinge' }],
+    completedItemIds: [],
+    createdAt: OPS_TS('2026-07-01T09:00:00Z'),
+  })!
+  assert.equal(task.status, 'In Progress')
+  assert.equal(task.priority, 'Urgent')
+  assert.equal(task.items[0].id, parseTaskDocument('task-web-1', { title: 'x', items: [{ title: 'Hinge' }] })!.items[0].id)
+  assert.equal(task.updatedAtMs, Date.parse('2026-07-01T09:00:00Z'))
+  assert.equal(normalizeProjectTaskStatus('Done'), 'Completed')
+  assert.equal(parseTaskDocument('t', { projectId: 'p' }), null)
+  const before = { ...taskFields({ id: 't', projectId: 'p', title: 'A', dueDate: 100, createdBy: 'u1' }), iosOnly: 1 }
+  const next = taskFields({ id: 't', projectId: 'p', title: 'A', status: 'Completed', completedBy: 'u2', completedAt: 200, createdBy: 'u9' })
+  const write = taskWriteFields(before, next)
+  assert.deepEqual(write.set, { status: 'Completed', completedBy: 'u2', completedAt: 200 })
+  assert.deepEqual(write.remove, ['dueDate'])
+})
+
+test('1.8.0 job types and trade inventory: canonical names, never an empty overwrite, union only', () => {
+  assert.equal(opsCanonicalJobTypeName('small_works'), 'Small Works')
+  assert.deepEqual(opsCoerceJobTypeList('catA, Maintenance, cat a'), ['CAT A', 'Maintenance'])
+  assert.deepEqual(parseJobTypesDocument({ jobTypes: [{ name: 'CAT B' }] }, { jobTypes: ['Decarbonization'] }).jobTypes, ['CAT B', 'Decarbonisation'])
+  assert.equal(jobTypesWriteFields(['CAT A'], []), null)
+  assert.equal(jobTypesWriteFields(['CAT A'], ['cata']), null)
+  assert.deepEqual(jobTypesWriteFields(['CAT A'], ['CAT A', 'Fit out']), { set: { jobTypes: ['CAT A', 'Fit out'] } })
+  assert.deepEqual(parseTradeTypeInventory({ trades: ['Electrical', ' electrical ', 'Plumbing'] }).trades, ['Electrical', 'Plumbing'])
+  assert.equal(tradeTypeInventoryWriteFields({ trades: ['Electrical'] }, ['ELECTRICAL']), null)
+  assert.deepEqual(tradeTypeInventoryWriteFields({ trades: ['Electrical'] }, ['Dryliner']), { set: { trades: ['Electrical', 'Dryliner'] } })
+})
+
+test('1.8.0 operativeProfiles, organisation references and subcontractor contacts', () => {
+  const profile = parseOperativeProfileDocument('uid-1', { payBasis: 'hourly', hourlyRate: '18.5', assignedManagerUserId: 'm1' })!
+  assert.equal(profile.userId, 'uid-1')
+  assert.equal(profile.payBasis, 'hourly')
+  assert.equal(profile.hourlyRate, 18.5)
+  assert.deepEqual(profile.assignedManagerUserIds, ['m1'])
+  assert.deepEqual(operativeProfileWriteFields({ payBasis: 'day', dayRate: 100 }, { payBasis: 'hourly', dayRate: null, hourlyRate: 20 }), {
+    set: { payBasis: 'hourly', hourlyRate: 20 },
+    remove: ['dayRate'],
+  })
+  assert.equal(documentOrganizationId('organizations/ORG-1'), 'ORG-1')
+  assert.equal(documentOrganizationId('/organizations/ORG-1'), 'ORG-1')
+  assert.equal(documentOrganizationId({ id: 'ORG-2', path: 'organizations/ORG-2' }), 'ORG-2')
+  assert.equal(documentOrganizationId({ _key: { path: { segments: ['organizations', 'ORG-3'] } } }), 'ORG-3')
+  assert.equal(documentOrganizationId('org-4'), 'org-4')
+  assert.equal(opsParseUser('u', { organizationId: 'organizations/ORG-1' })!.organizationId, 'ORG-1')
+  assert.equal(opsParseUser('u', {})!.annualLeaveDefaultsPending, true)
+  assert.equal(opsParseUser('u', {}, { annualLeaveDefaults: { daysPerYear: 28 } })!.annualLeaveDefaultsPending, false)
+  const firm = opsParseSubcontractor('firm-1', { name: 'Sparks', subcontractorType: 'Electrical', contacts: [{ name: 'Jo', email: 'jo@x.test' }] })!
+  assert.equal(firm.contacts[0].idStored, false)
+  assert.match(firm.contacts[0].id, /^[0-9A-F]{8}-[0-9A-F]{4}-8[0-9A-F]{3}-[89AB][0-9A-F]{3}-[0-9A-F]{12}$/)
+  assert.equal(firm.contacts[0].id, opsParseSubcontractor('firm-1', { name: 'Sparks', subcontractorType: 'Electrical', contacts: [{ name: 'Jo', email: 'JO@x.test' }] })!.contacts[0].id)
+})
+
+test('1.8.0 health & safety: issue statuses agree, concurrent signatures are never lost', () => {
+  const web = { issues: [{ id: 'I1', talkId: 'T1', status: 'complete', recipientUserIds: ['u1', 'u2'] }] }
+  const ios = { issues: [{ id: 'I1', talkId: 'T1', status: 'completed', recipientUserIds: ['u1', 'u2'] }] }
+  assert.equal(parseHealthSafetyDocument(web).issues[0].status, 'complete')
+  assert.equal(parseHealthSafetyDocument(ios).issues[0].status, 'complete')
+  // An issue is stored `completed`, the word every iOS build reads.
+  const save = healthSafetyDocumentWriteFields({ issues: [{ id: 'I1', ramsDocumentId: 'R9' }] }, { issues: [{ id: 'I1', status: 'complete' }] })
+  assert.deepEqual(save.set.issues, [{ id: 'I1', ramsDocumentId: 'R9', status: 'completed' }])
+  // An empty list never replaces a stored one.
+  assert.equal('talks' in healthSafetyDocumentWriteFields({ talks: [{ id: 'A' }] }, { talks: [] }).set, false)
+  assert.equal('signatureRecords' in save.set, false)
+
+  // Two people sign at once from the same pending copy: each writes only their own map key.
+  const pending = { signatures: [{ id: 'S1', issueId: 'I1', userId: 'u1', status: 'pending' }, { id: 'S2', issueId: 'I1', userId: 'u2', status: 'pending' }] }
+  const first = healthSafetySignatureWriteFields({ issueId: 'I1', userId: 'u1', signatureId: 'S1', signedAt: 1000 })!
+  const second = healthSafetySignatureWriteFields({ issueId: 'I1', userId: 'u2', signatureId: 'S2', signedAt: 2000 })!
+  assert.notDeepEqual(first.fieldPath, second.fieldPath)
+  const stored = {
+    ...pending,
+    signatureRecords: { [first.fieldPath[1]]: first.value, [second.fieldPath[1]]: second.value },
+  }
+  // An older build's whole-array merge-save of the pending copy cannot remove the map entries.
+  const parsed = parseHealthSafetyDocument(stored)
+  assert.equal(parsed.signatures.length, 2)
+  assert.ok(parsed.signatures.every((row) => row.status === 'signed'))
+  assert.deepEqual(parsed.signatures.map((row) => row.id).sort(), ['S1', 'S2'])
+  assert.equal(healthSafetyIssueStatus({ id: 'I1', status: 'awaiting', recipientUserIds: ['u1', 'u2'] }, parsed.signatures), 'complete')
+  assert.equal(healthSafetyIssueStatus({ id: 'I1', status: 'awaiting', recipientUserIds: ['u1', 'u2', 'u3'] }, parsed.signatures), 'awaiting')
+  assert.equal(healthSafetySignatureKey('I1', 'U1'), 'i1__u1')
+  assert.equal(foldHealthSafetySignatures([
+    { id: 'a', issueId: 'I1', userId: 'u1', status: 'signed', readConfirmed: true, signatureImageBase64: 'img', signedAtMs: 5, reminderSentAtMs: null },
+    { id: 'b', issueId: 'i1', userId: 'U1', status: 'pending', readConfirmed: false, signatureImageBase64: null, signedAtMs: null, reminderSentAtMs: 9 },
+  ])[0].status, 'signed')
+})
+
+test('1.8.0 variations: stable line ids, recomputed counters, partial and renumber writes', () => {
+  const doc = { status: 'Submitted', labour: [{ trade: 'Electrician', hours: '3.5' }, { trade: '', hours: 0 }], materials: [{ name: 'Cable', quantity: 2 }], evidence: [{ storagePath: 'a/b.jpg' }], totalLabourHours: 99 }
+  const first = parseVariationDocument('V1', doc)!
+  const again = parseVariationDocument('V1', doc)!
+  assert.equal(first.labour.length, 1)
+  assert.equal(first.labour[0].id, again.labour[0].id)
+  assert.equal(first.totalLabourHours, 3.5)
+  assert.equal(first.materials[0].quantity, '2')
+  assert.equal(first.status, 'submitted')
+  const write = variationWriteFields({ status: 'open', heading: 'A', createdAt: 1, statusHistory: [] }, { status: 'submitted', heading: 'A', createdAt: 2, statusHistory: [{ status: 'submitted' }] })
+  assert.deepEqual(write.set, { status: 'submitted', statusHistory: [{ status: 'submitted' }] })
+  assert.deepEqual(variationRenumberWriteFields({ stored: { voNumber: 'VO-001', sequence: 1, numberHistory: [] }, to: 'VO-002', sequence: 2, at: 7, byUid: 'u' }), {
+    set: { sequence: 2, voNumber: 'VO-002', numberHistory: [{ from: 'VO-001', to: 'VO-002', at: 7, byUid: 'u' }] },
+  })
+  assert.equal(variationRenumberWriteFields({ stored: { voNumber: 'VO-001', sequence: 1 }, to: 'VO-001', sequence: 1, at: 7, byUid: 'u' }), null)
+  assert.equal(variationRenumberWriteFields({ stored: { voNumber: 'VO-001', sequence: 1, voNumberLocked: true }, to: 'VO-005', sequence: 1, at: 7, byUid: 'u' }), null)
+  assert.equal(parseVariationTrackerDocument('P1', undefined).prefix, 'VO-')
+})
+
+test('1.8.0 notifications: unknown types kept, every catalogue type known, non-UUID relatedId kept', () => {
+  const row = parseNotificationDocument('not-a-uuid', { type: 'variation', title: 'New', relatedId: 'var-123', userId: 'u1', createdAt: OPS_TS('2026-07-01T09:00:00Z') }, { role: 'manager' })!
+  assert.equal(row.id, 'not-a-uuid')
+  assert.equal(row.known, true)
+  assert.equal(row.relatedId, 'var-123')
+  assert.equal(row.isRead, false)
+  assert.ok(row.destination)
+  const future = parseNotificationDocument('n2', { type: 'something_new_2027', title: 'x', isRead: 'true' })!
+  assert.equal(future.type, 'something_new_2027')
+  assert.equal(future.known, false)
+  assert.equal(future.isRead, true)
+  assert.equal(parseNotificationDocument('n3', { title: 'no type' }), null)
+  for (const entry of OPS_NOTIFICATION_CATALOG) assert.ok(KNOWN_NOTIFICATION_TYPES.includes(entry.type), entry.type)
+  for (const type of ['variation', 'variation_renumbered', 'idea_comment', 'idea_merged', 'material_added']) assert.ok(KNOWN_NOTIFICATION_TYPES.includes(type))
+  assert.equal(parseNotificationDocument('n4', { type: 'booking_created', relatedId: '2026-07-01' })!.dayKey, '2026-07-01')
+  assert.deepEqual(notificationReadWriteFields({ isRead: false }), { set: { isRead: true } })
+  assert.equal(notificationReadWriteFields({ isRead: true }), null)
+})
+
+test('1.8.0 warningResolutions: legacy keys read in shared form and migrate once', () => {
+  const seconds = Math.floor(Date.parse('2026-10-21T23:00:00Z') / 1000) // 22 Oct in London (BST)
+  assert.equal(sharedWarningResolutionKey(`mgr-clash-uid1-${seconds}.0-0`, 'Europe/London'), 'mgr-clash-uid1-2026-10-22-0')
+  assert.equal(sharedWarningResolutionKey(`materials-PROJ-1-${seconds}`, 'Europe/London'), 'materials-PROJ-1-2026-10-22')
+  assert.equal(sharedWarningResolutionKey('materials-PROJ-1-2026-10-22'), 'materials-PROJ-1-2026-10-22')
+  const docs = [
+    { id: `mgr-clash-uid1-${seconds}.0-0`, data: { resolutionKey: `mgr-clash-uid1-${seconds}.0-0`, status: 'approved' } },
+    { id: 'op-clash-OLD-1', data: { status: 'dismissed' } },
+    { id: 'op-clash-OLD-2', data: { status: 'approved' } },
+    { id: 'already-shared', data: { status: 'approved' } },
+    { id: 'op-clash-OLD-3', data: { status: 'approved' } },
+  ]
+  const parsed = parseWarningResolutionDocument(docs[0].id, docs[0].data, { timeZone: 'Europe/London' })!
+  assert.equal(parsed.isLegacyKey, true)
+  assert.ok(opsResolvedWarningKeys(warningResolutionRecords(docs, 'Europe/London')).includes('mgr-clash-uid1-2026-10-22-0'))
+  const writes = warningResolutionMigrationWrites({
+    docs,
+    legacyKeyForms: { 'pair-a-b': ['op-clash-OLD-1', 'op-clash-OLD-2'], 'already-shared': ['op-clash-OLD-3'] },
+    resolvedByUserId: 'staff-1',
+    timeZone: 'Europe/London',
+  })
+  assert.deepEqual(writes.map((write) => [write.documentId, write.fields.status]), [
+    ['mgr-clash-uid1-2026-10-22-0', 'approved'],
+    ['pair-a-b', 'approved'],
+  ])
+  // Once written, nothing more to migrate.
+  const after = [...docs, ...writes.map((write) => ({ id: write.documentId, data: { ...write.fields } }))]
+  assert.deepEqual(warningResolutionMigrationWrites({ docs: after, legacyKeyForms: { 'pair-a-b': ['op-clash-OLD-1'] }, resolvedByUserId: 'staff-1', timeZone: 'Europe/London' }), [])
+})
+
+test('the iOS JavaScript bundle reads operations and record documents the same way', () => {
+  const source = readFileSync(new URL('./dist/canonical-business.js', import.meta.url), 'utf8')
+  const sandbox: { ProjectPlannerCanonical?: Record<string, (...args: unknown[]) => unknown> } = {}
+  runInContext(source, createContext(sandbox))
+  const api = sandbox.ProjectPlannerCanonical!
+  const plain = (value: unknown) => JSON.parse(JSON.stringify(value))
+  const line = { projectId: 'P', material: 'Cable', date: OPS_TS('2026-06-30T23:00:00Z'), unit: 'box' }
+  assert.deepEqual(plain(api.parseMaterialLineDocument('L', line, { timeZone: 'Europe/London' })), plain(parseMaterialLineDocument('L', line, { timeZone: 'Europe/London' })))
+  const note = { type: 'variation_renumbered', relatedId: 'abc', title: 't' }
+  assert.deepEqual(plain(api.parseNotificationDocument('n', note)), plain(parseNotificationDocument('n', note)))
+  const task = { title: 'A', items: [{ title: 'x' }], status: 'done' }
+  assert.deepEqual(plain(api.parseTaskDocument('t', task)), plain(parseTaskDocument('t', task)))
+  const hs = { signatures: [{ id: 'S', issueId: 'I', userId: 'u', status: 'signed' }] }
+  assert.deepEqual(plain(api.parseHealthSafetyDocument(hs)), plain(parseHealthSafetyDocument(hs)))
+  for (const name of [
+    'materialCatalogueWrites', 'materialLineWriteFields', 'parseWholesalerDocument', 'parseSiteAuditDocument', 'parseMaterialSendRecordDocument',
+    'parseVariationDocument', 'variationRenumberWriteFields', 'healthSafetySignatureWriteFields', 'warningResolutionMigrationWrites',
+    'parseJobTypesDocument', 'tradeTypeInventoryWriteFields', 'parseOperativeProfileDocument', 'documentOrganizationId', 'taskWriteFields',
+  ]) {
+    assert.equal(typeof api[name], 'function', name)
+  }
+})
+
+test('1.8.0 job keys map back to the stored job id; a job with a client name and no id gets a stable client id', async () => {
+  const { storedJobIdForKey, jobClientId, deadlineAssignedProjectIds: assigned, parseJobDocument: parseJob } = await import('./workDocumentReaders.ts')
+  const { healthSafetyDocumentId, healthSafetyDocumentIds } = await import('./recordsDocuments.ts')
+  assert.equal(storedJobIdForKey('ABC-JOB', ['abc-job', 'other']), 'abc-job')
+  assert.equal(storedJobIdForKey('missing', ['abc-job']), null)
+  assert.deepEqual(assigned({ projects: { 'ABC-JOB': ['u1'], 'GONE': ['u1'] } }, 'u1', ['abc-job']), ['abc-job'])
+  assert.deepEqual(assigned({ projects: { 'ABC-JOB': ['u1'] } }, 'u1'), ['ABC-JOB'])
+  const job = parseJob('job-1', { siteName: 'Tower', client: { name: 'Acme' } })!
+  assert.equal(job.client.idStored, false)
+  assert.equal(job.client.id, jobClientId('job-1', 'ACME'))
+  assert.equal(parseJob('job-1', { siteName: 'Tower', clientId: 'c-9' })!.client.id, 'c-9')
+  assert.equal(parseJob('job-1', { siteName: 'Tower' })!.client.id, '')
+  assert.equal(healthSafetyDocumentId('abc-job', false), 'healthSafety_projects_ABC-JOB')
+  assert.deepEqual(healthSafetyDocumentIds('abc-job', true), ['healthSafety_smallWorks_ABC-JOB', 'healthSafety_smallWorks_abc-job'])
+  assert.deepEqual(healthSafetyDocumentIds('ABC', false), ['healthSafety_projects_ABC'])
+})

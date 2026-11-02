@@ -36,7 +36,7 @@ import { useOrganizationDocument } from '@/lib/stores/organizationDocumentStore'
 import { useOrganizationDayKey } from '@/lib/warnings/useOrganizationDayKey'
 import { warningLookaheadFallbackNotice } from '@/lib/warnings/warningLookahead'
 import { activeOrgWarnings, generateOrgWarnings } from '@/lib/warnings/generateOrgWarnings'
-import { loadResolvedWarningKeys } from '@/lib/warnings/warningResolutionStorage'
+import { loadResolvedWarningKeys, watchResolvedWarningKeys } from '@/lib/warnings/warningResolutionStorage'
 import {
   partitionRowsByOrganization,
   publishReadyWarningLanes,
@@ -191,6 +191,13 @@ export default function WarningsPage() {
     loadSendRecords,
     loadHolidayBookings,
   ])
+
+  // Rulebook 1.8.0 §5: an approval or removal on any device updates this page live.
+  useEffect(() => {
+    const orgId = organization?.id
+    if (!orgId) return
+    return watchResolvedWarningKeys(orgId, setResolvedKeys)
+  }, [organization?.id])
 
   // Global Refresh: stores reload themselves; this page also re-reads what it keeps locally.
   useEffect(() => {

@@ -101,6 +101,7 @@ export function MaterialsAddSheet({ project, selectedDate, existing, onClose, on
         addedByUserId: user.id,
         projectId: project.id,
         date: existing?.date || selectedDate,
+        dayKey: existing?.dayKey,
         status: existing?.status || 'draft',
         brand: brand.trim() || undefined,
         productCode: productCode.trim() || undefined,

@@ -7,7 +7,7 @@ import { passwordResetActionSettings } from '@/lib/auth/passwordResetSettings'
 import type { Operative, User } from '@/types'
 import { auth, db } from '@/lib/firebase/config'
 import { applyExclusiveRateFields, buildSaveUserPayload, changedUserPayload } from '@/lib/firebase/userPayload'
-import { canChangePersonPay, writeMetadataFields } from '@/lib/canonical'
+import { canChangePersonPay, operativeProfileWriteFields, writeMetadataFields } from '@/lib/canonical'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { parseOrgUser } from '@/lib/firebase/parseUser'
 import { operativeRecordForUser } from '@/lib/operatives/operativeRosterUtils'
@@ -190,9 +190,15 @@ export const useUserStore = create<UserStoreState>(() => ({
         user.permissions.adminAccess ||
         user.isSuperAdmin)
     ) {
-      const profile: Record<string, unknown> = { userId: user.id, updatedAt: Timestamp.now() }
+      const profile: Record<string, unknown> = { userId: user.id }
       applyExclusiveRateFields(profile, user)
-      await setDoc(doc(db, 'organizations', orgId, 'operativeProfiles', user.id), profile, { merge: true })
+      // Rulebook 1.8.0: a partial update of the mirror (`operativeProfileWriteFields`); unchanged pay writes nothing.
+      await savePartialDocument(
+        doc(db, 'organizations', orgId, 'operativeProfiles', user.id),
+        profile,
+        operativeProfileWriteFields,
+        { userId: saverId }
+      )
     }
   },
 

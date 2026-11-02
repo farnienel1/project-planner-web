@@ -1,74 +1,89 @@
 'use client'
 
 import { create } from 'zustand'
-import { collection, deleteDoc, doc, getDocs, onSnapshot, query, setDoc, Timestamp, where } from 'firebase/firestore'
-import { captureOrganizationContext, organizationContextStillCurrent } from '@/lib/canonical'
+import { collection, deleteDoc, doc, getDocs, onSnapshot, query, serverTimestamp, setDoc, Timestamp, updateDoc, where } from 'firebase/firestore'
+import {
+  captureOrganizationContext,
+  materialLineFields,
+  materialLineWriteFields,
+  materialSendRecordCreateFields,
+  materialSendStatusWriteFields,
+  organizationContextStillCurrent,
+  parseMaterialLineDocument,
+  parseMaterialSendRecordDocument,
+} from '@/lib/canonical'
+import { savePartialDocument } from '@/lib/firebase/partialWrite'
+import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
+import { dateFromDayKeyInZone, dayKeyInZone } from '@/lib/orgTime/zoneTime'
 import { db } from '@/lib/firebase/config'
 import { withAuthReadRetry } from '@/lib/firebase/waitForAuthToken'
 import type { MaterialSendRecord, ProjectMaterialLine } from '@/types'
-import { newUuid, parseFirestoreDate, parseNumber, parseOptionalString, parseString } from '@/lib/firebase/firestoreUtils'
+import { newUuid } from '@/lib/firebase/firestoreUtils'
 import { markRowsRemoved, retainScopedRows } from '@/lib/staff/rosterRetain'
 
-function startOfDay(date: Date): Date {
-  const d = new Date(date)
-  d.setHours(0, 0, 0, 0)
-  return d
-}
-
-function mapMaterialLine(docId: string, data: Record<string, unknown>): ProjectMaterialLine {
+/** `materials/{id}` through the rulebook reader `parseMaterialLineDocument` (rulebook 1.8.0): never dropped for an
+ * odd id, quantity or unit; the day is the stored `dayKey`, else the organisation-zone day of `date`. */
+function mapMaterialLine(docId: string, data: Record<string, unknown>): ProjectMaterialLine | null {
+  const zone = organizationZoneOr()
+  const parsed = parseMaterialLineDocument(docId, data, { timeZone: zone })
+  if (!parsed) return null
+  const day = parsed.dayKey ? dateFromDayKeyInZone(parsed.dayKey, zone) : null
   return {
-    id: docId,
-    quantity: typeof data.quantity === 'number' ? data.quantity : Number(data.quantity) || 1,
-    unit: parseString(data.unit, 'Number'),
-    material: parseString(data.material) || parseString(data.name),
-    addedBy: parseString(data.addedBy),
-    projectId: parseString(data.projectId),
-    date: parseFirestoreDate(data.date) || new Date(),
-    status: parseString(data.status, 'draft'),
-    brand: parseOptionalString(data.brand),
-    productCode: parseOptionalString(data.productCode),
-    category: parseOptionalString(data.category),
-    catalogueItemId: parseOptionalString(data.catalogueItemId),
-    notes: parseOptionalString(data.notes),
-    size: parseOptionalString(data.size),
-    length: parseOptionalString(data.length) || parseOptionalString(data.sizeOrLength),
-    lengthUnit: parseOptionalString(data.lengthUnit),
-    websiteURL: parseOptionalString(data.websiteURL),
-    lastSentAt: parseFirestoreDate(data.lastSentAt),
-    lastSentRequestType: parseOptionalString(data.lastSentRequestType),
+    id: parsed.id,
+    quantity: parsed.quantity,
+    unit: parsed.unit,
+    material: parsed.material,
+    addedBy: parsed.addedBy,
+    projectId: parsed.projectId,
+    date: day ?? (parsed.dateMs != null ? new Date(parsed.dateMs) : new Date(0)),
+    dayKey: parsed.dayKey ?? undefined,
+    status: parsed.status,
+    brand: parsed.brand ?? undefined,
+    productCode: parsed.productCode ?? undefined,
+    category: parsed.category ?? undefined,
+    catalogueItemId: parsed.catalogueItemId ?? undefined,
+    notes: parsed.notes ?? undefined,
+    size: parsed.size ?? undefined,
+    length: parsed.length ?? undefined,
+    lengthUnit: parsed.lengthUnit ?? undefined,
+    websiteURL: parsed.websiteURL ?? undefined,
+    lastSentAt: parsed.lastSentAtMs != null ? new Date(parsed.lastSentAtMs) : undefined,
+    lastSentRequestType: parsed.lastSentRequestType ?? undefined,
   }
 }
 
+function mapMaterialLines(docs: ReadonlyArray<{ id: string; data: () => unknown }>): ProjectMaterialLine[] {
+  return docs
+    .map((entry) => mapMaterialLine(entry.id, entry.data() as Record<string, unknown>))
+    .filter((row): row is ProjectMaterialLine => row !== null)
+}
+
+/** `materialSendRecords/{id}` through `parseMaterialSendRecordDocument` (rulebook 1.8.0). */
 function mapSendRecord(docId: string, data: Record<string, unknown>): MaterialSendRecord | null {
-  const projectId = parseString(data.projectId)
-  const sentAt = parseFirestoreDate(data.sentAt)
-  if (!projectId || !sentAt) return null
+  const parsed = parseMaterialSendRecordDocument(docId, data, { timeZone: organizationZoneOr() })
+  if (!parsed) return null
   return {
-    id: docId,
-    projectId,
-    requestType: parseString(data.requestType) === 'Order' || parseString(data.requestType) === 'order' ? 'order' : 'quote',
-    sentAt,
-    materialsDate: parseFirestoreDate(data.materialsDate),
-    sentBy: parseString(data.sentBy),
-    deliveryRequiredAt: parseFirestoreDate(data.deliveryRequiredAt),
-    recipients: Array.isArray(data.recipients)
-      ? (data.recipients as Record<string, unknown>[]).map((r) => ({
-          name: parseString(r.name),
-          email: parseString(r.email),
-          wholesalerName: parseOptionalString(r.wholesalerName),
-        }))
-      : [],
-    lines: Array.isArray(data.lines)
-      ? (data.lines as Record<string, unknown>[]).map((line) => ({
-          materialId: parseString(line.materialId),
-          name: parseString(line.name),
-          quantity: typeof line.quantity === 'number' ? line.quantity : 1,
-          unit: parseString(line.unit, 'Number'),
-          brand: parseOptionalString(line.brand),
-          productCode: parseOptionalString(line.productCode),
-          lengthDisplay: parseOptionalString(line.lengthDisplay),
-        }))
-      : [],
+    id: parsed.id,
+    projectId: parsed.projectId,
+    requestType: parsed.requestType,
+    sentAt: new Date(parsed.sentAtMs),
+    materialsDate: parsed.materialsDateMs != null ? new Date(parsed.materialsDateMs) : undefined,
+    sentBy: parsed.sentBy,
+    deliveryRequiredAt: parsed.deliveryRequiredAtMs != null ? new Date(parsed.deliveryRequiredAtMs) : undefined,
+    recipients: parsed.recipients.map((recipient) => ({
+      name: recipient.name,
+      email: recipient.email,
+      wholesalerName: recipient.wholesalerName ?? undefined,
+    })),
+    lines: parsed.lines.map((line) => ({
+      materialId: line.materialId,
+      name: line.name,
+      quantity: line.quantity,
+      unit: line.unit,
+      brand: line.brand ?? undefined,
+      productCode: line.productCode ?? undefined,
+      lengthDisplay: line.lengthDisplay ?? undefined,
+    })),
   }
 }
 
@@ -81,6 +96,8 @@ export type SaveMaterialLineInput = {
   addedByUserId: string
   projectId: string
   date: Date
+  /** The materials day (organisation zone). When left out, the organisation-zone day of `date`. */
+  dayKey?: string
   status: string
   brand?: string
   productCode?: string
@@ -134,9 +151,7 @@ async function fetchProjectMaterials(organizationId: string, projectId: string):
   } catch {
     snapshot = await getDocs(collection(db, 'organizations', organizationId, 'materials'))
   }
-  return snapshot.docs
-    .map((entry) => mapMaterialLine(entry.id, entry.data() as Record<string, unknown>))
-    .filter((m) => m.projectId.toLowerCase() === projectId.toLowerCase())
+  return mapMaterialLines(snapshot.docs).filter((m) => m.projectId.toLowerCase() === projectId.toLowerCase())
 }
 
 let materialsOrgId = ''
@@ -204,9 +219,7 @@ export const useMaterialProjectStore = create<MaterialProjectState>((set, get) =
       const snapshot = await withAuthReadRetry(() =>
         getDocs(collection(db, 'organizations', organizationId, 'materials'))
       )
-      const mapped = snapshot.docs.map((entry) =>
-        mapMaterialLine(entry.id, entry.data() as Record<string, unknown>)
-      )
+      const mapped = mapMaterialLines(snapshot.docs)
       const materials = keepMaterialRows(organizationId, get().materials, mapped)
       materialsOrgId = organizationId
       set({ materials, loading: false })
@@ -260,9 +273,7 @@ export const useMaterialProjectStore = create<MaterialProjectState>((set, get) =
       query(collection(db, 'organizations', organizationId, 'materials'), where('projectId', '==', projectId)),
       (snapshot) => {
         if (!current()) return
-        const loaded = snapshot.docs
-          .map((entry) => mapMaterialLine(entry.id, entry.data() as Record<string, unknown>))
-          .filter(inProject)
+        const loaded = mapMaterialLines(snapshot.docs).filter(inProject)
         const scoped = materialsOrgId === organizationId ? get().materials : []
         const previous = scoped.filter(inProject)
         // A server snapshot is the job's list, even when another device removed the last line.
@@ -312,46 +323,49 @@ export const useMaterialProjectStore = create<MaterialProjectState>((set, get) =
   saveMaterialLine: async (organizationId, line) => {
     const id = line.id || newUuid()
     const existing = get().materials.find((row) => row.id === id)
-    const isUpdate = Boolean(existing)
-    const normalizedDate = startOfDay(line.date)
-    const addedByName = line.addedBy.trim()
-    const payload: Record<string, unknown> = {
-      id,
-      quantity: line.quantity,
-      unit: line.unit,
-      material: line.material.trim(),
-      name: line.material.trim(),
-      addedBy: addedByName,
-      addedByUserId: line.addedByUserId,
-      projectId: line.projectId,
-      date: Timestamp.fromDate(normalizedDate),
-      status: line.status,
-      updatedAt: Timestamp.now(),
-      catalogueItemId: line.catalogueItemId || null,
-      brand: line.brand?.trim() || null,
-      productCode: line.productCode?.trim() || null,
-      category: line.category?.trim() || null,
-      notes: line.notes?.trim() || null,
-      size: line.size?.trim() || null,
-      length: line.length?.trim() || null,
-      lengthUnit: line.length?.trim() ? line.lengthUnit || null : null,
-      websiteURL: line.websiteURL?.trim() || null,
-    }
-    if (!isUpdate) {
-      payload.addedAt = Timestamp.now()
-      payload.createdAt = Timestamp.now()
-    }
+    const zone = organizationZoneOr()
+    const dayKey = line.dayKey || existing?.dayKey || dayKeyInZone(line.date, zone)
+    // Rulebook 1.8.0 §1: the stored shape is `materialLineFields` (organisation-zone midnight `date` plus `dayKey`),
+    // saved as a partial update of the changed fields (`materialLineWriteFields`); owner fields are create-only.
+    const fields = materialLineFields(
+      {
+        id,
+        projectId: line.projectId,
+        quantity: line.quantity,
+        unit: line.unit,
+        material: line.material,
+        dayKey,
+        status: line.status,
+        addedBy: line.addedBy.trim(),
+        addedByUserId: line.addedByUserId,
+        addedAt: existing ? undefined : Timestamp.now(),
+        catalogueItemId: line.catalogueItemId ?? null,
+        brand: line.brand ?? null,
+        productCode: line.productCode ?? null,
+        category: line.category ?? null,
+        notes: line.notes ?? null,
+        size: line.size ?? null,
+        length: line.length ?? null,
+        lengthUnit: line.lengthUnit ?? null,
+        websiteURL: line.websiteURL ?? null,
+      },
+      zone
+    )
+    const dateMs = typeof fields.date === 'number' ? fields.date : dateFromDayKeyInZone(dayKey, zone).getTime()
+    const payload: Record<string, unknown> = { ...fields, date: Timestamp.fromMillis(dateMs) }
+    if (!existing) payload.createdAt = Timestamp.now()
 
     try {
-      await setDoc(doc(db, 'organizations', organizationId, 'materials', id), payload, isUpdate ? { merge: true } : {})
+      await savePartialDocument(
+        doc(db, 'organizations', organizationId, 'materials', id),
+        payload,
+        materialLineWriteFields,
+        { userId: line.addedByUserId }
+      )
       const mapped = mapMaterialLine(id, payload)
+      if (!mapped) return
       const saved: ProjectMaterialLine = existing
-        ? {
-            ...mapped,
-            lastSentAt: existing.lastSentAt,
-            lastSentRequestType: existing.lastSentRequestType,
-            date: mapped.date,
-          }
+        ? { ...mapped, lastSentAt: existing.lastSentAt, lastSentRequestType: existing.lastSentRequestType }
         : mapped
       set({ materials: [...get().materials.filter((m) => m.id !== id), saved], error: null })
     } catch (error: unknown) {
@@ -363,28 +377,20 @@ export const useMaterialProjectStore = create<MaterialProjectState>((set, get) =
 
   saveSendRecord: async (organizationId, record) => {
     const id = record.id || newUuid()
-    const requestType = record.requestType === 'order' ? 'Order' : 'Quote'
-    const payload: Record<string, unknown> = {
+    // Rulebook 1.8.0: one stored shape for every platform (`materialSendRecordCreateFields`).
+    const payload = materialSendRecordCreateFields({
       id,
       projectId: record.projectId,
-      requestType,
+      requestType: record.requestType,
       sentAt: Timestamp.fromDate(record.sentAt),
       sentBy: record.sentBy,
+      materialsDate: record.materialsDate ? Timestamp.fromDate(record.materialsDate) : undefined,
+      deliveryRequiredAt: record.deliveryRequiredAt ? Timestamp.fromDate(record.deliveryRequiredAt) : undefined,
       recipients: record.recipients,
-      lines: record.lines.map((line) => ({
-        materialId: line.materialId,
-        name: line.name,
-        quantity: line.quantity,
-        unit: line.unit,
-        brand: line.brand || null,
-        productCode: line.productCode || null,
-        lengthDisplay: line.lengthDisplay || null,
-      })),
-    }
-    if (record.materialsDate) payload.materialsDate = Timestamp.fromDate(record.materialsDate)
-    if (record.deliveryRequiredAt) payload.deliveryRequiredAt = Timestamp.fromDate(record.deliveryRequiredAt)
+      lines: record.lines,
+    })
     await setDoc(doc(db, 'organizations', organizationId, 'materialSendRecords', id), payload)
-    const mapped = mapSendRecord(id, payload as Record<string, unknown>)
+    const mapped = mapSendRecord(id, payload)
     if (mapped) {
       set({ sendRecords: [mapped, ...get().sendRecords.filter((r) => r.id !== id)] })
     }
@@ -394,27 +400,26 @@ export const useMaterialProjectStore = create<MaterialProjectState>((set, get) =
     const now = new Date()
     const next = [...get().materials]
     const writes: Promise<void>[] = []
+    // No write metadata here: firestore.rules `isStaffMaterialStatusWrite` lets staff who are not the line's owner
+    // change only status, lastSentAt, lastSentRequestType and updatedAt.
     for (const materialId of materialIds) {
-      const current = next.find((row) => row.id === materialId)
-      if (!current) continue
-      const nextStatus = current.status === 'ordered' && status === 'sentForQuote' ? 'ordered' : status
-      const payload: Record<string, unknown> = {
-        status: nextStatus,
-        lastSentAt: Timestamp.fromDate(now),
-        lastSentRequestType: requestType === 'order' ? 'Order' : 'Quote',
-        updatedAt: Timestamp.now(),
-      }
-      writes.push(
-        setDoc(doc(db, 'organizations', organizationId, 'materials', materialId), payload, { merge: true })
-      )
       const index = next.findIndex((row) => row.id === materialId)
-      if (index >= 0) {
-        next[index] = {
-          ...next[index],
-          status: nextStatus,
-          lastSentAt: now,
+      if (index < 0) continue
+      // `materialSendStatusWriteFields`: an ordered line is never moved back to sent-for-quote.
+      const fields = materialSendStatusWriteFields(next[index].status, status === 'ordered' ? 'Order' : 'Quote')
+      writes.push(
+        updateDoc(doc(db, 'organizations', organizationId, 'materials', materialId), {
+          status: fields.status,
           lastSentRequestType: requestType === 'order' ? 'Order' : 'Quote',
-        }
+          lastSentAt: Timestamp.fromDate(now),
+          updatedAt: serverTimestamp(),
+        })
+      )
+      next[index] = {
+        ...next[index],
+        status: fields.status,
+        lastSentAt: now,
+        lastSentRequestType: requestType === 'order' ? 'Order' : 'Quote',
       }
     }
     await Promise.all(writes)

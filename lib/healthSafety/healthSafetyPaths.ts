@@ -13,7 +13,7 @@ export function healthSafetyDocPath(
   }
 }
 
-/** Legacy web path before iOS parity fix. */
+/** Stored-case settings id older web builds wrote. New code reads `healthSafetyDocumentIds` and writes `healthSafetyDocumentId` (rulebook 1.8.0). */
 export function legacyHealthSafetySettingsDocId(projectId: string, isSmallWorks: boolean): string {
   return `healthSafety_${isSmallWorks ? 'smallWorks' : 'projects'}_${projectId}`
 }
