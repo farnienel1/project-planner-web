@@ -2156,3 +2156,37 @@ test('1.3.0 B: a notification actorUserId, when written, is the signed-in user',
   await assertFails(updateDoc(ref(admin, 'n130-1'), { actorUserId: OP_A + '-x' }))
   await assertSucceeds(updateDoc(ref(admin, 'n130-1'), { actorUserId: ADMIN_A }))
 })
+
+test('1.9.0: a staff material status write may carry updatedBy / updatedFrom (validated)', async () => {
+  const STAFF_A = 'staff-a-190'
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore()
+    await setDoc(doc(db, 'users', STAFF_A), {
+      email: 'staff-a-190@test.com',
+      organizationId: ORG_A,
+      role: 'staff',
+      adminAccess: false,
+      operativeMode: false,
+    })
+    await setDoc(doc(db, 'organizations', ORG_A), { members: { [STAFF_A]: 'member' } }, { merge: true })
+    await setDoc(doc(db, 'organizations', ORG_A, 'materials', 'mat-190'), {
+      organizationId: ORG_A,
+      addedByUserId: ADMIN_A,
+      status: 'draft',
+    })
+  })
+  const staff = authDb(STAFF_A, 'staff-a-190@test.com')
+  const ref = doc(staff, 'organizations', ORG_A, 'materials', 'mat-190')
+  await assertSucceeds(updateDoc(ref, { status: 'ordered', updatedAt: serverTimestamp(), updatedBy: STAFF_A, updatedFrom: 'ios' }))
+  await assertSucceeds(updateDoc(ref, { status: 'ordered', lastSentRequestType: 'order', updatedAt: serverTimestamp() }))
+  await assertFails(updateDoc(ref, { status: 'ordered', updatedBy: ADMIN_A }))
+  await assertFails(updateDoc(ref, { status: 'ordered', updatedFrom: 'desktop' }))
+  await assertFails(updateDoc(ref, { status: 'ordered', name: 'Changed' }))
+})
+
+test('1.9.0: only admins and managers dismiss a warning (§16)', async () => {
+  const row = { kind: 'qualification_expired', dismissKey: 'd190', dismissedByUserId: 'x' }
+  await assertFails(setDoc(doc(authDb(OP_A, 'op-a@test.com'), 'organizations', ORG_A, 'dismissedWarnings', 'd190-op'), { ...row, dismissedByUserId: OP_A }))
+  await assertSucceeds(setDoc(doc(authDb(ADMIN_A, 'admin-a@test.com'), 'organizations', ORG_A, 'dismissedWarnings', 'd190-admin'), { ...row, dismissedByUserId: ADMIN_A }))
+  await assertFails(setDoc(doc(authDb(ADMIN_B, 'admin-b@test.com'), 'organizations', ORG_A, 'dismissedWarnings', 'd190-b'), { ...row, dismissedByUserId: ADMIN_B }))
+})

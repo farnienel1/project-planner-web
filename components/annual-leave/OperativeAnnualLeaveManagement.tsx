@@ -178,16 +178,27 @@ export function OperativeAnnualLeaveManagement({
 
   const updateStatus = async (booking: HolidayBooking, status: 'approved' | 'rejected', decisionNote?: string) => {
     if (!organization?.id || !user) return
-    if (status === 'approved' && isCancellationRequest(booking)) {
-      await deleteBooking(organization.id, booking.id)
-      return
-    }
-    if (status === 'rejected' && isCancellationRequest(booking)) {
-      await saveBooking(organization.id, {
-        ...booking,
-        cancellationRequestedAt: undefined,
-        cancellationRequestedByUserId: undefined,
-        updatedAt: new Date(),
+    if (isCancellationRequest(booking)) {
+      if (status === 'approved') {
+        await deleteBooking(organization.id, booking.id)
+      } else {
+        await saveBooking(organization.id, {
+          ...booking,
+          cancellationRequestedAt: undefined,
+          cancellationRequestedByUserId: undefined,
+          updatedAt: new Date(),
+        })
+      }
+      // Rulebook §9 / 1.9.0: the requester hears the cancellation decision (`holidayDecisionRecipients`).
+      await notifyHolidayRequestDecisionToUser({
+        organizationId: organization.id,
+        booking,
+        approved: status === 'approved',
+        cancellation: true,
+        decidedByName: holidayDecisionActorName(user),
+        decidedByUserId: user?.id ?? null,
+        users,
+        operatives,
       })
       return
     }

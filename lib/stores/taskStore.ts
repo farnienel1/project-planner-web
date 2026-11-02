@@ -1,7 +1,7 @@
 'use client'
 
 import { create } from 'zustand'
-import { collection, deleteDoc, doc, getDocs, Timestamp } from 'firebase/firestore'
+import { deleteDoc, doc, Timestamp } from 'firebase/firestore'
 import { parseTaskDocument, taskFields, taskWriteFields } from '@/lib/canonical'
 import { savePartialDocument } from '@/lib/firebase/partialWrite'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
@@ -10,7 +10,8 @@ import type { ProjectTask, ProjectTaskPriority, ProjectTaskStatus } from '@/type
 import { newUuid } from '@/lib/firebase/firestoreUtils'
 import { trackEvent } from '@/lib/analytics/trackEvent'
 import { useAuthStore } from '@/lib/stores/authStore'
-import { invalidateOrgLoad, runOrgLoad } from '@/lib/stores/orgLoadCache'
+import { forgetOrgCollectionDoc, subscribeOrgCollectionLoaded } from '@/lib/firebase/subscribeOrgCollection'
+import { liveResultStillCurrent } from '@/lib/firebase/liveResult'
 import { markRowsRemoved, retainScopedRows } from '@/lib/staff/rosterRetain'
 import { completionFileUrls } from '@/lib/tasks/completionFiles'
 
@@ -95,6 +96,7 @@ interface TaskState {
 }
 
 let tasksOrgId = ''
+const TASKS_KEY = 'taskStore:tasks'
 
 export const useTaskStore = create<TaskState>((set, get) => ({
   tasks: [],
@@ -102,23 +104,26 @@ export const useTaskStore = create<TaskState>((set, get) => ({
   error: null,
   tasksLoadedOrgId: null,
 
+  // Rulebook 1.9.0 §1 (`LIVE_COLLECTIONS`): tasks are a live listener; the load resolves on its first snapshot.
   loadTasks: async (organizationId) => {
-    await runOrgLoad(`taskStore:tasks`, organizationId, async () => {
-      set({ loading: get().tasks.length === 0, error: null })
-      try {
-        const snapshot = await getDocs(collection(db, 'organizations', organizationId, 'tasks'))
-        const mapped = snapshot.docs
-          .map((entry) => mapTask(entry.id, entry.data() as Record<string, unknown>, organizationId))
+    if (!organizationId) return
+    if (tasksOrgId !== organizationId || get().tasks.length === 0) set({ loading: true, error: null })
+    try {
+      await subscribeOrgCollectionLoaded(TASKS_KEY, organizationId, 'tasks', (docs) => {
+        if (!liveResultStillCurrent(organizationId)) return
+        const mapped = docs
+          .map((entry) => mapTask(entry.id, entry.data, organizationId))
           .filter((task): task is ProjectTask => task !== null)
         const previous = tasksOrgId === organizationId ? get().tasks : []
         const tasks = retainScopedRows(`tasks:${organizationId}`, previous, mapped)
         tasksOrgId = organizationId
         set({ tasks, loading: false, tasksLoadedOrgId: organizationId })
-      } catch (error: unknown) {
-        set({ error: error instanceof Error ? error.message : 'Failed to load tasks', loading: false })
-        throw error
-      }
-    })
+      })
+      set({ loading: false })
+    } catch (error: unknown) {
+      set({ error: error instanceof Error ? error.message : 'Failed to load tasks', loading: false })
+      throw error
+    }
   },
 
   saveTask: async (task) => {
@@ -128,8 +133,9 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     // Rulebook 1.8.0 §1: a partial update of the changed fields (`taskWriteFields`), never a whole-task setDoc.
     await savePartialDocument(doc(db, 'organizations', task.organizationId, 'tasks', id), payload, taskWriteFields, {
       userId: useAuthStore.getState().user?.id,
+      // Rulebook 1.9.0: an edit of a task deleted elsewhere is refused, never re-created.
+      missing: isNew ? 'create' : 'refuse',
     })
-    invalidateOrgLoad('taskStore:tasks')
     const saved = mapTask(id, { ...payload, updatedAt: Timestamp.now() }, task.organizationId)
     if (!saved) return
     const { tasks } = get()
@@ -151,7 +157,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     const existing = get().tasks.find((row) => row.id === taskId)
     await deleteDoc(doc(db, 'organizations', organizationId, 'tasks', taskId))
     markRowsRemoved(`tasks:${organizationId}`, [taskId])
-    invalidateOrgLoad('taskStore:tasks')
+    forgetOrgCollectionDoc(TASKS_KEY, organizationId, taskId)
     set({ tasks: get().tasks.filter((t) => t.id !== taskId) })
     void trackEvent('task_deleted', {
       userId: useAuthStore.getState().user?.id || existing?.createdBy,

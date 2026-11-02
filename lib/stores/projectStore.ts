@@ -3,7 +3,6 @@
 import { create } from 'zustand'
 import {
   collection,
-  getDocs,
   getDoc,
   setDoc,
   deleteDoc,
@@ -17,7 +16,8 @@ import {
   projectCollectionName,
   type ProjectSaveInput,
 } from '@/lib/firebase/projectPayload'
-import { optionsForUnappliedOrg, runOrgLoad } from '@/lib/stores/orgLoadCache'
+import { subscribeOrgCollectionLoaded, forgetOrgCollectionDoc } from '@/lib/firebase/subscribeOrgCollection'
+import { liveResultStillCurrent } from '@/lib/firebase/liveResult'
 import { markRowsRemoved, retainScopedRows } from '@/lib/staff/rosterRetain'
 import { trackEvent } from '@/lib/analytics/trackEvent'
 import { useAuthStore } from '@/lib/stores/authStore'
@@ -67,6 +67,7 @@ interface ProjectState {
 let projectsOrgId = ''
 let smallWorksOrgId = ''
 let clientsOrgId = ''
+let projectsIncludeInactive = false
 
 export const useProjectStore = create<ProjectState>((set, get) => ({
   projects: [],
@@ -77,106 +78,79 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   loading: false,
   error: null,
 
-  loadProjects: async (organizationId, includeInactive = false, options?: { force?: boolean }) => {
-    const cacheKey = `projectStore:projects:${includeInactive ? 'all' : 'live'}`
-    const loadOptions = optionsForUnappliedOrg(cacheKey, organizationId, projectsOrgId === organizationId, options)
-    await runOrgLoad(
-      cacheKey,
-      organizationId,
-      async () => {
-        if (get().projects.length === 0) set({ loading: true, error: null })
-        else set({ error: null })
-        try {
-          const snapshot = await getDocs(collection(db, 'organizations', organizationId, 'projects'))
-          let projects = snapshot.docs
-            .filter((entry) => !isLegacyPlaceholderDocumentId(entry.id))
-            .map((entry) => mapProjectDoc(entry.id, entry.data() as Record<string, unknown>, organizationId))
-          if (!includeInactive) projects = projects.filter((p) => p.isLive)
-          const previous = projectsOrgId === organizationId ? get().projects : []
-          projects = withoutLegacyPlaceholderDocuments(
-            retainScopedRows(`projects:${organizationId}`, previous, projects)
-          )
-          projectsOrgId = organizationId
-          set({ projects, loading: false, projectsLoadedOrgId: organizationId })
-        } catch (error: unknown) {
-          set({
-            error: error instanceof Error ? error.message : 'Failed to load projects',
-            loading: false,
-          })
-          throw error
-        }
-      },
-      loadOptions
-    )
+  // Rulebook 1.9.0 §1 (`LIVE_COLLECTIONS`): projects, small works and clients are live while the app is open. The
+  // load is the listener's first snapshot; later edits on any platform arrive through the same listener, so there is
+  // no time-to-live cache. `force` (the global Refresh) re-reads through `refreshOrgCollections`.
+  loadProjects: async (organizationId, includeInactive = false, _options?: { force?: boolean }) => {
+    void _options
+    if (!organizationId) return
+    projectsIncludeInactive = includeInactive
+    if (get().projects.length === 0 || projectsOrgId !== organizationId) set({ loading: true, error: null })
+    else set({ error: null })
+    try {
+      await subscribeOrgCollectionLoaded('projectStore:projects', organizationId, 'projects', (docs) => {
+        if (!liveResultStillCurrent(organizationId)) return
+        let projects = docs
+          .filter((entry) => !isLegacyPlaceholderDocumentId(entry.id))
+          .map((entry) => mapProjectDoc(entry.id, entry.data, organizationId))
+        if (!projectsIncludeInactive) projects = projects.filter((p) => p.isLive)
+        const previous = projectsOrgId === organizationId ? get().projects : []
+        projects = withoutLegacyPlaceholderDocuments(retainScopedRows(`projects:${organizationId}`, previous, projects))
+        projectsOrgId = organizationId
+        set({ projects, loading: false, projectsLoadedOrgId: organizationId })
+      })
+      set({ loading: false })
+    } catch (error: unknown) {
+      set({ error: error instanceof Error ? error.message : 'Failed to load projects', loading: false })
+      throw error
+    }
   },
 
-  loadSmallWorks: async (organizationId, options?: { force?: boolean }) => {
-    const loadOptions = optionsForUnappliedOrg(
-      'projectStore:smallWorks',
-      organizationId,
-      smallWorksOrgId === organizationId,
-      options
-    )
-    await runOrgLoad(
-      'projectStore:smallWorks',
-      organizationId,
-      async () => {
-        if (get().smallWorks.length === 0) set({ loading: true, error: null })
-        else set({ error: null })
-        try {
-          const snapshot = await getDocs(collection(db, 'organizations', organizationId, 'smallWorks'))
-          const mapped = snapshot.docs
-            .filter((entry) => !isLegacyPlaceholderDocumentId(entry.id))
-            .map((entry) => mapProjectDoc(entry.id, entry.data() as Record<string, unknown>, organizationId))
-          const previous = smallWorksOrgId === organizationId ? get().smallWorks : []
-          const smallWorks = withoutLegacyPlaceholderDocuments(
-            retainScopedRows(`smallWorks:${organizationId}`, previous, mapped)
-          )
-          smallWorksOrgId = organizationId
-          set({ smallWorks, loading: false, smallWorksLoadedOrgId: organizationId })
-        } catch (error: unknown) {
-          set({
-            error: error instanceof Error ? error.message : 'Failed to load small works',
-            loading: false,
-          })
-          throw error
-        }
-      },
-      loadOptions
-    )
+  loadSmallWorks: async (organizationId, _options?: { force?: boolean }) => {
+    void _options
+    if (!organizationId) return
+    if (get().smallWorks.length === 0 || smallWorksOrgId !== organizationId) set({ loading: true, error: null })
+    else set({ error: null })
+    try {
+      await subscribeOrgCollectionLoaded('projectStore:smallWorks', organizationId, 'smallWorks', (docs) => {
+        if (!liveResultStillCurrent(organizationId)) return
+        const mapped = docs
+          .filter((entry) => !isLegacyPlaceholderDocumentId(entry.id))
+          .map((entry) => mapProjectDoc(entry.id, entry.data, organizationId))
+        const previous = smallWorksOrgId === organizationId ? get().smallWorks : []
+        const smallWorks = withoutLegacyPlaceholderDocuments(retainScopedRows(`smallWorks:${organizationId}`, previous, mapped))
+        smallWorksOrgId = organizationId
+        set({ smallWorks, loading: false, smallWorksLoadedOrgId: organizationId })
+      })
+      set({ loading: false })
+    } catch (error: unknown) {
+      set({ error: error instanceof Error ? error.message : 'Failed to load small works', loading: false })
+      throw error
+    }
   },
 
-  loadClients: async (organizationId, options?: { force?: boolean }) => {
-    await runOrgLoad(
-      'projectStore:clients',
-      organizationId,
-      async () => {
-        try {
-          const snapshot = await getDocs(collection(db, 'organizations', organizationId, 'clients'))
-          const clients: Client[] = []
-          for (const entry of snapshot.docs) {
-            if (isLegacyPlaceholderDocumentId(entry.id)) continue
-            const parsed = parseClientDoc(entry.id, entry.data() as Record<string, unknown>, organizationId)
-            if (!parsed.ok || isLegacyPlaceholderDocumentId(parsed.value.id)) continue
-            clients.push(parsed.value)
-          }
-          const previous = clientsOrgId === organizationId ? get().clients : []
-          const kept = withoutLegacyPlaceholderDocuments(
-            retainScopedRows(
-              `clients:${organizationId}`,
-              previous,
-              clients.filter((client) => !isLegacyPlaceholderDocumentId(client.id))
-            )
-          )
-          clientsOrgId = organizationId
-          set({ clients: kept })
-        } catch (error: unknown) {
-          set({ error: error instanceof Error ? error.message : 'Failed to load clients' })
-          throw error
+  loadClients: async (organizationId, _options?: { force?: boolean }) => {
+    void _options
+    if (!organizationId) return
+    try {
+      await subscribeOrgCollectionLoaded('projectStore:clients', organizationId, 'clients', (docs) => {
+        if (!liveResultStillCurrent(organizationId)) return
+        const clients: Client[] = []
+        for (const entry of docs) {
+          if (isLegacyPlaceholderDocumentId(entry.id)) continue
+          const parsed = parseClientDoc(entry.id, entry.data, organizationId)
+          if (!parsed.ok || isLegacyPlaceholderDocumentId(parsed.value.id)) continue
+          clients.push(parsed.value)
         }
-      },
-      options
-    )
+        const previous = clientsOrgId === organizationId ? get().clients : []
+        const kept = withoutLegacyPlaceholderDocuments(retainScopedRows(`clients:${organizationId}`, previous, clients))
+        clientsOrgId = organizationId
+        set({ clients: kept })
+      })
+    } catch (error: unknown) {
+      set({ error: error instanceof Error ? error.message : 'Failed to load clients' })
+      throw error
+    }
   },
 
   getProject: async (organizationId, projectId, collectionName = 'projects') => {
@@ -204,6 +178,8 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     // Rulebook §1: a partial update of the changed fields (`jobWriteFields`), never a merge-set of the whole job.
     await savePartialDocument(doc(db, 'organizations', input.organizationId, collectionName, id), payload, jobWriteFields, {
       userId: auth.currentUser?.uid ?? null,
+      // Rulebook 1.9.0: an edit of a job deleted on another device is refused, never re-created.
+      missing: isNew ? 'create' : 'refuse',
     })
     const saved = mapProjectDoc(id, payload as Record<string, unknown>, input.organizationId)
     if (collectionName === 'smallWorks') {
@@ -226,6 +202,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     await removeFutureBookingsForProject(db, { organizationId, projectId: id })
     await deleteDoc(doc(db, 'organizations', organizationId, collectionName, id))
     markRowsRemoved(`${collectionName === 'smallWorks' ? 'smallWorks' : 'projects'}:${organizationId}`, [id])
+    forgetOrgCollectionDoc(collectionName === 'smallWorks' ? 'projectStore:smallWorks' : 'projectStore:projects', organizationId, id)
     if (collectionName === 'smallWorks') {
       set({ smallWorks: get().smallWorks.filter((p) => p.id !== id) })
     } else {
@@ -271,6 +248,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     // Partial update of the changed fields only (rulebook §1, `clientWriteFields`).
     await savePartialDocument(doc(db, 'organizations', organizationId, 'clients', clientId), payload, clientWriteFields, {
       userId: auth?.currentUser?.uid,
+      missing: 'refuse',
     })
 
     const updated: Client = {
@@ -288,6 +266,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   deleteClient: async (organizationId, clientId) => {
     await deleteDoc(doc(db, 'organizations', organizationId, 'clients', clientId))
     markRowsRemoved(`clients:${organizationId}`, [clientId])
+    forgetOrgCollectionDoc('projectStore:clients', organizationId, clientId)
     set({ clients: get().clients.filter((c) => c.id !== clientId) })
   },
 }))

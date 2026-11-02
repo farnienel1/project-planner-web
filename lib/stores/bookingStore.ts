@@ -8,11 +8,12 @@ import { MissingDocumentError, savePartialDocument } from '@/lib/firebase/partia
 import { bookingUpdateWriteFields } from '@/lib/canonical/workDocumentReaders'
 import { BOOKING_REPLAY_REFUSED_MESSAGE } from '@/lib/canonical/bookingTombstones'
 import { forgetOrgCollectionDoc, isOrgCollectionSubscribed, subscribeOrgCollection } from '@/lib/firebase/subscribeOrgCollection'
-import { captureOrganizationContext, organizationContextStillCurrent } from '@/lib/canonical'
+import { captureOrganizationContext, organizationContextStillCurrent, writeMetadataFields } from '@/lib/canonical'
 import { organizationIdsMatch } from '@/lib/orgMembership/webActiveOrg'
 import { retainParsedRows } from '@/lib/staff/rosterRetain'
 import { newUppercaseUuid } from '@/lib/ios-parity/uuid'
 import { londonMidnight } from '@/lib/ios-parity/londonTime'
+import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 import { logSkippedDocument, parseBooking, serializeBooking } from '@/lib/ios-parity/converters'
 import type { Booking } from '@/types'
 import {
@@ -113,14 +114,19 @@ export const useBookingStore = create<BookingState>((set, get) => ({
     const booking: Booking = {
       ...bookingData,
       id,
-      date: londonMidnight(bookingData.date instanceof Date ? bookingData.date : new Date(bookingData.date)),
+      date: londonMidnight(bookingData.date instanceof Date ? bookingData.date : new Date(bookingData.date), organizationZoneOr()),
       createdAt: now,
       updatedAt: now,
       organizationId,
     }
     const payload = serializeBooking(booking)
     const captured = captureOrganizationContext()
-    await setDoc(doc(firestore, 'organizations', organizationId, 'bookings', id), payload, { merge: true })
+    // Rulebook §1 / 1.9.0: a create carries write metadata (`writeMetadataFields`).
+    await setDoc(
+      doc(firestore, 'organizations', organizationId, 'bookings', id),
+      { ...payload, ...(writeMetadataFields(auth?.currentUser?.uid, 'web') ?? {}) },
+      { merge: true }
+    )
     if (!organizationContextStillCurrent(organizationId, captured)) return
     const { bookings } = get()
     if (!bookings.some((row) => row.id === id)) {
@@ -139,7 +145,7 @@ export const useBookingStore = create<BookingState>((set, get) => ({
       ...booking,
       ...updates,
       id,
-      date: londonMidnight((updates.date as Date | undefined) || booking.date),
+      date: londonMidnight((updates.date as Date | undefined) || booking.date, organizationZoneOr()),
       updatedAt: new Date(),
     }
     const payload = serializeBooking(next)
@@ -178,10 +184,10 @@ export const useBookingStore = create<BookingState>((set, get) => ({
   },
 
   getBookingsForDate: (date: Date) => {
-    const target = londonMidnight(date)
+    const target = londonMidnight(date, organizationZoneOr())
     return get().bookings.filter((booking) => {
       const bookingDate = booking.date instanceof Date ? booking.date : new Date(booking.date)
-      return londonMidnight(bookingDate).getTime() === target.getTime()
+      return londonMidnight(bookingDate, organizationZoneOr()).getTime() === target.getTime()
     })
   },
 

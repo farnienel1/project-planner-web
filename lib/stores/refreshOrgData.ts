@@ -7,7 +7,6 @@
  * ORG_DATA_REFRESHED_EVENT and reload those too.
  */
 
-import { invalidateOrgLoad } from '@/lib/stores/orgLoadCache'
 import { refreshOrgCollections } from '@/lib/firebase/subscribeOrgCollection'
 import { useProjectStore } from '@/lib/stores/projectStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
@@ -39,10 +38,8 @@ export async function refreshAllOrgData(organizationId: string): Promise<void> {
   const orgId = String(organizationId || '').trim()
   if (!orgId) return
 
-  // Loaders without a force option are keyed in the TTL cache; drop their entries first.
-  for (const key of ['operativeStore:managers', 'taskStore:tasks', 'siteAuditStore:audits']) {
-    invalidateOrgLoad(key)
-  }
+  // Rulebook 1.9.0: projects, people, tasks, leave, catalogues and audits are live listeners
+  // (`subscribeOrgCollectionLoaded`); `refreshOrgCollections` below re-reads every one of them from the server.
 
   const projects = useProjectStore.getState()
   const operatives = useOperativeStore.getState()

@@ -1,7 +1,7 @@
 import { collection, doc, getDoc, getDocs, query, setDoc, Timestamp, where } from 'firebase/firestore'
 import { getFirebaseDb } from '@/lib/firebase/ensureFirebase'
 import { buildInvitedUserPayload, normalizeLineManagerIds, permissionsToFirestoreMap } from '@/lib/firebase/userPayload'
-import { readStoredRates } from '@/lib/timesheets/payBasis'
+import { invitationCreateFields } from '@/lib/canonical/createDocuments'
 import { newUuid } from '@/lib/firebase/firestoreUtils'
 import { withTimeout } from '@/lib/client/withTimeout'
 import {
@@ -168,60 +168,35 @@ export async function inviteUserCore(input: InviteUserCoreInput): Promise<Invite
 
   const invitationId = newUuid()
 
-  const invitationData: Record<string, unknown> = {
+  // Rulebook 1.9.0 `invitationCreateFields`: the shared invitation create shape (never UTR or VAT — the invitation is
+  // readable by link; see saveTaxIds below).
+  const invitationData = invitationCreateFields({
     email: emailLower,
     organizationId: input.organizationId,
     invitedBy: input.invitedBy,
-    firstName: input.firstName.trim(),
-    surname: input.surname.trim(),
-    employmentType: input.employmentType === 'paye' ? 'paye' : 'self_employed',
+    firstName: input.firstName,
+    surname: input.surname,
+    employmentType: input.employmentType,
     permissions: permissionsToFirestoreMap(input.permissions),
-    inviteType: 'new_user',
     createdAt: Timestamp.now(),
-    isUsed: false,
-  }
-
-  if (input.mobileNumber?.trim()) invitationData.mobileNumber = input.mobileNumber.trim()
-  const lineManagerIds = normalizeLineManagerIds(
-    input.assignedManagerUserIds,
-    input.assignedManagerUserId
-  )
-  if (input.hasNoLineManager) {
-    invitationData.hasNoLineManager = true
-  } else if (lineManagerIds.length > 0) {
-    invitationData.assignedManagerUserIds = lineManagerIds
-    invitationData.assignedManagerUserId = lineManagerIds[0]
-    invitationData.hasNoLineManager = false
-  }
-  const invitedRates = readStoredRates(input)
-  if (invitedRates.payBasis === 'hourly' && invitedRates.hourlyRate != null) {
-    invitationData.payBasis = 'hourly'
-    invitationData.hourlyRate = invitedRates.hourlyRate
-  } else if (invitedRates.payBasis === 'day' && invitedRates.dayRate != null) {
-    invitationData.payBasis = 'day'
-    invitationData.dayRate = invitedRates.dayRate
-  }
-  if (input.tradeTypePreset?.trim()) invitationData.tradeTypePreset = input.tradeTypePreset.trim()
-  if (input.tradeTypeCustom?.trim()) invitationData.tradeTypeCustom = input.tradeTypeCustom.trim()
-  if (input.permissions.manager || input.permissions.operativeMode) {
-    invitationData.timesheetsEnabled = input.timesheetsEnabled === true
-  }
-  // UTR and VAT number never go on the invitation (it is readable by link): see saveTaxIds below.
-  if (input.annualLeaveEnabled != null) invitationData.annualLeaveEnabled = input.annualLeaveEnabled
-  if (input.annualLeaveDaysPerYear != null) invitationData.annualLeaveDaysPerYear = input.annualLeaveDaysPerYear
-  if (input.annualLeaveYearStartMonth != null) {
-    invitationData.annualLeaveYearStartMonth = input.annualLeaveYearStartMonth
-  }
-  if (input.annualLeaveYearEndMonth != null) {
-    invitationData.annualLeaveYearEndMonth = input.annualLeaveYearEndMonth
-  }
-  if (input.annualLeaveCarriesOver != null) invitationData.annualLeaveCarriesOver = input.annualLeaveCarriesOver
-  if (input.annualLeaveYearAllowance != null) {
-    invitationData.annualLeaveYearAllowance = input.annualLeaveYearAllowance
-  }
-  if (input.annualLeaveYearAllowanceKey) {
-    invitationData.annualLeaveYearAllowanceKey = input.annualLeaveYearAllowanceKey
-  }
+    mobileNumber: input.mobileNumber,
+    assignedManagerUserIds: normalizeLineManagerIds(input.assignedManagerUserIds, input.assignedManagerUserId),
+    hasNoLineManager: input.hasNoLineManager === true,
+    payBasis: input.payBasis,
+    dayRate: input.dayRate,
+    hourlyRate: input.hourlyRate,
+    tradeTypePreset: input.tradeTypePreset,
+    tradeTypeCustom: input.tradeTypeCustom,
+    timesheetsEnabled: input.timesheetsEnabled,
+    annualLeaveEnabled: input.annualLeaveEnabled,
+    annualLeaveDaysPerYear: input.annualLeaveDaysPerYear,
+    annualLeaveYearStartMonth: input.annualLeaveYearStartMonth,
+    annualLeaveYearEndMonth: input.annualLeaveYearEndMonth,
+    annualLeaveCarriesOver: input.annualLeaveCarriesOver,
+    annualLeaveYearAllowance: input.annualLeaveYearAllowance,
+    annualLeaveYearAllowanceKey: input.annualLeaveYearAllowanceKey,
+  })
+  if (!invitationData) throw new Error('An invitation needs an email and an organisation.')
 
   await setDoc(doc(db, 'invitations', invitationId), invitationData)
   await setDoc(

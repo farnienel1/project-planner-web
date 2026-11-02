@@ -1,6 +1,7 @@
 import { deleteField, getDoc, serverTimestamp, setDoc, updateDoc, type DocumentReference } from 'firebase/firestore'
 import type { DocumentWriteFields } from '@/lib/canonical/peopleDocuments'
 import { writeMetadataFields } from '@/lib/canonical/writeMetadata'
+import { EDIT_OF_MISSING_DOCUMENT_MESSAGE } from '@/lib/canonical/liveSources'
 
 /**
  * Web glue for the rulebook partial-write helpers (`documentWriteFields`, `jobWriteFields`, `bookingUpdateWriteFields`,
@@ -36,9 +37,12 @@ export function firestoreUpdateFields(write: DocumentWriteFields): Record<string
 /** The document an edit was aimed at is gone (deleted elsewhere); the edit is not turned into a create. */
 export class MissingDocumentError extends Error {
   readonly code = 'not-found'
+  readonly path: string
   constructor(path: string) {
-    super(`Document no longer exists: ${path}`)
+    // Rulebook 1.9.0 `editOfMissingDocumentIsRefused` / `EDIT_OF_MISSING_DOCUMENT_MESSAGE`.
+    super(EDIT_OF_MISSING_DOCUMENT_MESSAGE)
     this.name = 'MissingDocumentError'
+    this.path = path
   }
 }
 

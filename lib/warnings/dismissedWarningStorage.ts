@@ -1,3 +1,5 @@
+import type { Unsubscribe } from 'firebase/firestore'
+import { watchOrgCollection } from '@/lib/firebase/watchOrgQuery'
 /**
  * Dismissed warnings for one organisation.
  *
@@ -22,17 +24,24 @@ export type DismissedWarning = {
   dismissedByUserId: string
 }
 
+function dismissedWarningFromDoc(entry: { id: string; data: Record<string, any> }): DismissedWarning {
+  const data = entry.data
+  return {
+    dismissKey: String(data.dismissKey || entry.id),
+    kind: String(data.kind || ''),
+    dismissedAt: data.dismissedAt?.toDate?.() || new Date(),
+    dismissedByUserId: String(data.dismissedByUserId || ''),
+  }
+}
+
 export async function loadDismissedWarnings(organizationId: string): Promise<DismissedWarning[]> {
   const snapshot = await getDocs(collection(db, 'organizations', organizationId, 'dismissedWarnings'))
-  return snapshot.docs.map((entry) => {
-    const data = entry.data()
-    return {
-      dismissKey: String(data.dismissKey || entry.id),
-      kind: String(data.kind || ''),
-      dismissedAt: data.dismissedAt?.toDate?.() || new Date(),
-      dismissedByUserId: String(data.dismissedByUserId || ''),
-    }
-  })
+  return snapshot.docs.map((entry) => dismissedWarningFromDoc({ id: entry.id, data: entry.data() }))
+}
+
+/** Rulebook 1.9.0 §1 (`LIVE_COLLECTIONS`): Warnings and the Home count listen to `dismissedWarnings` while open. */
+export function watchDismissedWarnings(organizationId: string, onRows: (rows: DismissedWarning[]) => void): Unsubscribe {
+  return watchOrgCollection(organizationId, 'dismissedWarnings', (docs) => onRows(docs.map(dismissedWarningFromDoc)))
 }
 
 export async function dismissQualificationWarning(input: {

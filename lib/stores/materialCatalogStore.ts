@@ -23,6 +23,8 @@ import { useAuthStore } from '@/lib/stores/authStore'
 import { db } from '@/lib/firebase/config'
 import type { MaterialCatalogItem, MaterialLengthUnit, MaterialUnit } from '@/types'
 import { newUuid } from '@/lib/firebase/firestoreUtils'
+import { forgetOrgCollectionDoc, subscribeOrgCollectionLoaded } from '@/lib/firebase/subscribeOrgCollection'
+import { liveResultStillCurrent } from '@/lib/firebase/liveResult'
 import { markRowsRemoved, retainScopedRows } from '@/lib/staff/rosterRetain'
 
 const MATERIAL_UNITS: MaterialUnit[] = [...CANONICAL_MATERIAL_UNITS] as MaterialUnit[]
@@ -78,18 +80,22 @@ export const useMaterialCatalogStore = create<MaterialCatalogState>((set, get) =
   error: null,
 
   loadItems: async (organizationId) => {
-    set({ loading: true, error: null })
+    if (!organizationId) return
+    if (materialCatalogOrgId !== organizationId || get().items.length === 0) set({ loading: true, error: null })
     try {
-      const ref = collection(db, 'organizations', organizationId, 'materialCatalogue')
-      const snapshot = await getDocs(ref)
-      const items = snapshot.docs
-        .map((entry) => mapMaterialCatalogItem(entry.id, entry.data() as Record<string, unknown>))
-        .filter((item): item is MaterialCatalogItem => item !== null)
-        .sort((a, b) => a.name.localeCompare(b.name))
-      const previous = materialCatalogOrgId === organizationId ? get().items : []
-      const kept = retainScopedRows(`materialCatalogue:${organizationId}`, previous, items)
-      materialCatalogOrgId = organizationId
-      set({ items: kept, loading: false })
+      // Rulebook 1.9.0 §1 (`LIVE_COLLECTIONS`): a live listener; the load resolves on its first snapshot.
+      await subscribeOrgCollectionLoaded('materialCatalogStore:items', organizationId, 'materialCatalogue', (docs) => {
+        if (!liveResultStillCurrent(organizationId)) return
+        const mapped = docs
+          .map((entry) => mapMaterialCatalogItem(entry.id, entry.data))
+          .filter((item): item is MaterialCatalogItem => item !== null)
+          .sort((a, b) => a.name.localeCompare(b.name))
+        const previous = materialCatalogOrgId === organizationId ? get().items : []
+        const kept = retainScopedRows(`materialCatalogue:${organizationId}`, previous, mapped)
+        materialCatalogOrgId = organizationId
+        set({ items: kept, loading: false })
+      })
+      set({ loading: false })
     } catch (error: unknown) {
       set({ error: error instanceof Error ? error.message : 'Failed to load material catalogue', loading: false })
     }
@@ -101,6 +107,8 @@ export const useMaterialCatalogStore = create<MaterialCatalogState>((set, get) =
     // Rulebook 1.8.0 §1: a partial update of the fields that changed (`materialCatalogueItemWriteFields`).
     await savePartialDocument(docRef, materialPayload({ ...item, id }), materialCatalogueItemWriteFields, {
       userId: useAuthStore.getState().user?.id,
+      // Rulebook 1.9.0: an edit of an item deleted elsewhere is refused, never re-created.
+      missing: get().items.some((row) => row.id === id) ? 'refuse' : 'create',
     })
     const { items } = get()
     const mapped = mapMaterialCatalogItem(id, materialPayload({ ...item, id, createdAt: item.createdAt || new Date() }))
@@ -112,6 +120,7 @@ export const useMaterialCatalogStore = create<MaterialCatalogState>((set, get) =
   deleteItem: async (organizationId, id) => {
     await deleteDoc(doc(db, 'organizations', organizationId, 'materialCatalogue', id))
     markRowsRemoved(`materialCatalogue:${organizationId}`, [id])
+    forgetOrgCollectionDoc('materialCatalogStore:items', organizationId, id)
     set({ items: get().items.filter((item) => item.id !== id) })
   },
 
@@ -153,6 +162,7 @@ export const useMaterialCatalogStore = create<MaterialCatalogState>((set, get) =
       await batch.commit()
     }
     if (plan.remove.length > 0) markRowsRemoved(`materialCatalogue:${organizationId}`, plan.remove)
+    for (const removedId of plan.remove) forgetOrgCollectionDoc('materialCatalogStore:items', organizationId, removedId)
     await get().loadItems(organizationId)
   },
 }))

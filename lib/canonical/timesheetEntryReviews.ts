@@ -28,6 +28,7 @@
 
 import { normalizeDocumentId } from './scheduleSources'
 import { parseTimesheetStatusFields } from './timesheetPeriod'
+import { documentWriteFields, type DocumentWriteFields } from './peopleDocuments'
 
 export type TimesheetEntryDecision = 'pending' | 'approved' | 'declined' | 'edited'
 
@@ -322,4 +323,28 @@ export function timesheetOwnerWriteFields<T extends Record<string, unknown>>(
     for (const key of TIMESHEET_ENTRY_ARRAY_FIELDS) drop(key)
   }
   return output as Partial<T>
+}
+
+/** Fields never part of a timesheet diff: write metadata the app stamps itself, and create-only identity. */
+const TIMESHEET_DIFF_IGNORED_FIELDS = ['updatedAt', 'updatedBy', 'updatedFrom', 'createdAt'] as const
+
+/**
+ * 1.9.0 (§1, §8): what a timesheet save writes — the fields that differ between `base`, the sheet as this editor
+ * loaded it, and `next`, the sheet it would save (both in stored field shape). `{ set, remove }`; a `null` in `next`
+ * removes a field only when `base` had one. A field the editor did not change is never sent, so an owner's
+ * signature, expenses or price work saved on another device after this editor loaded the sheet stay as stored
+ * (before 1.9.0 the save diffed the whole local draft against the server copy and wrote every difference back).
+ * Without a `base` (a sheet that was never loaded) every non-null field of `next` is written.
+ */
+export function timesheetChangedFields(
+  base: Record<string, unknown> | null | undefined,
+  next: Record<string, unknown>
+): DocumentWriteFields {
+  const strip = (row: Record<string, unknown> | null | undefined) => {
+    if (!row) return row
+    const out: Record<string, unknown> = { ...row }
+    for (const key of TIMESHEET_DIFF_IGNORED_FIELDS) delete out[key]
+    return out
+  }
+  return documentWriteFields(strip(base) ?? null, strip(next) ?? {}, { createOnly: ['userId'] })
 }

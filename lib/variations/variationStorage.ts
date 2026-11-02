@@ -4,7 +4,6 @@
  */
 import {
   collection,
-  deleteField,
   doc,
   getDoc,
   getDocs,
@@ -14,7 +13,6 @@ import {
   setDoc,
   updateDoc,
   where,
-  writeBatch,
   Timestamp,
   type Unsubscribe,
 } from 'firebase/firestore'
@@ -25,13 +23,17 @@ import { newUuid, parseFirestoreDate, sanitizeForFirestore } from '@/lib/firebas
 import { saveInboxNotification } from '@/lib/firebase/notifyInbox'
 import {
   excludeActor,
-  mergeStoredRows,
   parseVariationDocument,
   receivesJobNotification,
+  parseVariationTrades,
+  VARIATION_TRADES_DOCUMENT_ID,
+  variationLogWriteFields,
   variationRenumberWriteFields,
+  variationTrackerWriteFields,
+  variationTradesWriteFields,
   variationWriteFields,
 } from '@/lib/canonical'
-import { savePartialDocument } from '@/lib/firebase/partialWrite'
+import { firestoreUpdateFields, savePartialDocument } from '@/lib/firebase/partialWrite'
 import { rulebookPerson, rulebookRoster } from '@/lib/staff/rulebookPeople'
 import { staffAccountRole } from '@/lib/permissions'
 import type { User } from '@/types'
@@ -226,28 +228,19 @@ async function saveVariationSettingsLog(
   map: Record<string, unknown>
 ): Promise<void> {
   const ref = settingsDoc(organizationId, variationsLogDocId(variation.parentId))
-  let items: Record<string, unknown>[] = []
-  try {
-    const existing = await getDoc(ref)
-    if (existing.exists()) items = fallbackItemMaps(existing.data() as Record<string, unknown>)
-  } catch {
-    items = []
-  }
-  const index = items.findIndex((row) => row.id === variation.id)
-  if (index >= 0) items[index] = mergeStoredRows([items[index]], [map])[0]
-  else items.push(map)
-  await setDoc(
-    ref,
-    {
-      parentId: variation.parentId,
-      parentType: variation.parentType,
-      organizationId,
-      recordType: 'variationLog',
-      items,
-      updatedAt: Timestamp.fromDate(new Date()),
-    },
-    { merge: true }
-  )
+  // Rulebook 1.9.0 `variationLogWriteFields`: this entry laid over its stored entry (others untouched), entries
+  // stored without an id get their `variationLogItemId`. A failed read never rewrites the log from a local copy.
+  const existing = await getDoc(ref)
+  const stored = existing.exists() ? (existing.data() as Record<string, unknown>) : null
+  const write = variationLogWriteFields(stored, map, {
+    parentId: variation.parentId,
+    parentType: variation.parentType,
+    organizationId,
+  })
+  if (!write) return
+  const fields = { ...write.set, updatedAt: Timestamp.fromDate(new Date()) }
+  if (stored) await updateDoc(ref, fields)
+  else await setDoc(ref, fields, { merge: true })
 }
 
 /**
@@ -649,23 +642,23 @@ export async function softDeleteVariation(organizationId: string, variation: Var
 
 export async function loadCustomTrades(organizationId: string): Promise<string[]> {
   if (!db) return []
-  const snap = await getDoc(doc(db, 'organizations', organizationId, 'settings', 'variationTrades'))
-  const raw = snap.exists() ? snap.data().customTrades : []
-  return Array.isArray(raw) ? raw.filter((item): item is string => typeof item === 'string' && Boolean(item.trim())) : []
+  const snap = await getDoc(doc(db, 'organizations', organizationId, 'settings', VARIATION_TRADES_DOCUMENT_ID))
+  // Rulebook 1.9.0 `parseVariationTrades`.
+  return parseVariationTrades(snap.exists() ? (snap.data() as Record<string, unknown>) : null).customTrades
 }
 
 export async function saveCustomTrade(organizationId: string, trade: string): Promise<string[]> {
   const name = trade.trim()
   if (!name || !db) return []
-  const ref = doc(db, 'organizations', organizationId, 'settings', 'variationTrades')
-  const current = await loadCustomTrades(organizationId)
-  if (current.some((item) => item.toLowerCase() === name.toLowerCase())) return current
-  const customTrades = [...current, name]
-  await updateDoc(ref, { customTrades }).catch(async () => {
-    const { setDoc } = await import('firebase/firestore')
-    await setDoc(ref, { customTrades }, { merge: true })
-  })
-  return customTrades
+  const ref = doc(db, 'organizations', organizationId, 'settings', VARIATION_TRADES_DOCUMENT_ID)
+  const snap = await getDoc(ref)
+  const stored = snap.exists() ? (snap.data() as Record<string, unknown>) : null
+  // Rulebook 1.9.0 `variationTradesWriteFields`: only the trade added in this action.
+  const write = variationTradesWriteFields(stored, { add: [name] })
+  if (!write) return parseVariationTrades(stored).customTrades
+  if (stored) await updateDoc(ref, write.set)
+  else await setDoc(ref, write.set, { merge: true })
+  return write.set.customTrades
 }
 
 export function trackerLockActive(tracker: VariationTracker, now = new Date()): boolean {
@@ -694,15 +687,20 @@ export async function claimTrackerLock(input: {
       lockedByName: input.actor.name,
       lockedAt: now,
     }
-    transaction.set(
-      ref,
-      sanitizeForFirestore({
-        ...next,
-        lockedAt: Timestamp.fromDate(now),
-        enabledAt: next.enabledAt ? Timestamp.fromDate(next.enabledAt) : null,
-      }) as Record<string, unknown>,
-      { merge: true }
-    )
+    // Rulebook 1.9.0 `variationTrackerWriteFields` (lock): the three lock fields only, never the whole tracker.
+    const stored = snap.exists() ? (snap.data() as Record<string, unknown>) : null
+    const write = variationTrackerWriteFields(stored, {
+      kind: 'lock',
+      parentId: input.parentId,
+      parentType: input.parentType,
+      actorUid: input.actor.uid,
+      actorName: input.actor.name,
+      at: Timestamp.fromDate(now),
+    })
+    if (write) {
+      if (stored) transaction.update(ref, firestoreUpdateFields(write))
+      else transaction.set(ref, write.set, { merge: true })
+    }
     return next
   })
 }
@@ -713,7 +711,8 @@ export async function releaseTrackerLock(organizationId: string, parentId: strin
   if (!snap.exists()) return
   const current = trackerFromFirestore(parentId, snap.data() as Record<string, unknown>)
   if (current.lockedByUid !== uid) return
-  await updateDoc(ref, { lockedByUid: deleteField(), lockedByName: deleteField(), lockedAt: deleteField() })
+  const write = variationTrackerWriteFields(snap.data() as Record<string, unknown>, { kind: 'unlock' })
+  if (write) await updateDoc(ref, firestoreUpdateFields(write))
 }
 
 /** One-time. Writes sequence only. Does not change any VO number. */
@@ -736,24 +735,21 @@ export async function enableTracker(input: {
       updatedByUid: input.actorUid,
     })
   }
-  const batch = writeBatch(db!)
-  const stamped = Timestamp.fromDate(now)
-  batch.set(
-    trackerRef(input.organizationId, input.parentId),
-    {
-      parentId: input.parentId,
-      parentType: input.parentType,
-      enabled: true,
-      enabledAt: stamped,
-      enabledByUid: input.actorUid,
-      numberingMode: 'lockSubmitted',
-      prefix: 'VO-',
-      padding: 3,
-      version: 1,
-    },
-    { merge: true }
-  )
-  await batch.commit()
+  // Rulebook 1.9.0 `variationTrackerWriteFields` (enable): an existing tracker keeps its mode, prefix, padding and
+  // version; a new one is created with the defaults.
+  const ref = trackerRef(input.organizationId, input.parentId)
+  const trackerSnap = await getDoc(ref)
+  const stored = trackerSnap.exists() ? (trackerSnap.data() as Record<string, unknown>) : null
+  const write = variationTrackerWriteFields(stored, {
+    kind: 'enable',
+    parentId: input.parentId,
+    parentType: input.parentType,
+    actorUid: input.actorUid,
+    at: Timestamp.fromDate(now),
+  })
+  if (!write) return
+  if (stored) await updateDoc(ref, firestoreUpdateFields(write))
+  else await setDoc(ref, write.set, { merge: true })
 }
 
 export async function setTrackerMode(
@@ -761,16 +757,23 @@ export async function setTrackerMode(
   parentId: string,
   numberingMode: 'lockSubmitted' | 'resequenceAll'
 ): Promise<void> {
-  await updateDoc(trackerRef(organizationId, parentId), { numberingMode })
+  const ref = trackerRef(organizationId, parentId)
+  const snap = await getDoc(ref)
+  const write = variationTrackerWriteFields(snap.exists() ? (snap.data() as Record<string, unknown>) : null, {
+    kind: 'mode',
+    numberingMode,
+  })
+  if (!write) return
+  if (snap.exists()) await updateDoc(ref, firestoreUpdateFields(write))
+  else await setDoc(ref, { ...write.set, parentId }, { merge: true })
 }
 
 export async function disableTracker(organizationId: string, parentId: string): Promise<void> {
-  await updateDoc(trackerRef(organizationId, parentId), {
-    enabled: false,
-    lockedByUid: deleteField(),
-    lockedByName: deleteField(),
-    lockedAt: deleteField(),
-  })
+  const ref = trackerRef(organizationId, parentId)
+  const snap = await getDoc(ref)
+  if (!snap.exists()) return
+  const write = variationTrackerWriteFields(snap.data() as Record<string, unknown>, { kind: 'disable' })
+  if (write) await updateDoc(ref, firestoreUpdateFields(write))
 }
 
 export class TrackerVersionError extends Error {
@@ -816,12 +819,12 @@ export async function applyNumbering(input: {
         updatedByUid: input.actor.uid,
       })
     }
-    transaction.update(ref, {
-      version: tracker.version + 1,
-      lockedByUid: deleteField(),
-      lockedByName: deleteField(),
-      lockedAt: deleteField(),
-    })
+    // Rulebook 1.9.0 `variationTrackerWriteFields` (renumbered): version + 1 and the lock removed.
+    const renumbered = snap.exists()
+      ? variationTrackerWriteFields(snap.data() as Record<string, unknown>, { kind: 'renumbered' })
+      : null
+    if (renumbered) transaction.update(ref, firestoreUpdateFields(renumbered))
+    else transaction.set(ref, { version: tracker.version + 1 }, { merge: true })
   })
   const parentName = input.rows[0]?.parentName || 'this job'
   await Promise.all(

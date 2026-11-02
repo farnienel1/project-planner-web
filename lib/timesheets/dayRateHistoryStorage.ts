@@ -2,7 +2,8 @@
  * iOS parity: FirebaseBackend.loadOperativeDayRateHistory / recordOperativeDayRateChange
  * Collection: organizations/{orgId}/operativeDayRateHistory/{uuid}
  */
-import { collection, doc, getDocs, serverTimestamp, setDoc, Timestamp } from 'firebase/firestore'
+import { collection, doc, getDocs, serverTimestamp, setDoc, Timestamp, type Unsubscribe } from 'firebase/firestore'
+import { watchOrgCollection } from '@/lib/firebase/watchOrgQuery'
 import { auth, db } from '@/lib/firebase/config'
 import { writeMetadataFields } from '@/lib/canonical/writeMetadata'
 import { payRateHistoryWriteFields } from '@/lib/canonical/payRate'
@@ -81,25 +82,18 @@ function parseEntry(id: string, data: Record<string, unknown>): OperativeDayRate
   }
 }
 
-export async function loadOperativeDayRateHistory(
-  organizationId: string
-): Promise<OperativeDayRateHistoryCollection> {
+function historyFromDocs(docs: ReadonlyArray<{ id: string; data: Record<string, unknown> }>): OperativeDayRateHistoryCollection {
   const byUserId: Record<string, OperativeDayRateHistoryEntry[]> = {}
   const byOperativeId: Record<string, OperativeDayRateHistoryEntry[]> = {}
-  try {
-    const snap = await getDocs(collection(db, 'organizations', organizationId, 'operativeDayRateHistory'))
-    for (const row of snap.docs) {
-      const entry = parseEntry(row.id, row.data() as Record<string, unknown>)
-      if (!entry) continue
-      if (entry.userId) {
-        byUserId[entry.userId] = [...(byUserId[entry.userId] || []), entry]
-      }
-      if (entry.operativeId) {
-        byOperativeId[entry.operativeId] = [...(byOperativeId[entry.operativeId] || []), entry]
-      }
+  for (const row of docs) {
+    const entry = parseEntry(row.id, row.data)
+    if (!entry) continue
+    if (entry.userId) {
+      byUserId[entry.userId] = [...(byUserId[entry.userId] || []), entry]
     }
-  } catch {
-    return emptyDayRateHistory()
+    if (entry.operativeId) {
+      byOperativeId[entry.operativeId] = [...(byOperativeId[entry.operativeId] || []), entry]
+    }
   }
   const sort = (rows: OperativeDayRateHistoryEntry[]) =>
     rows.sort((a, b) => {
@@ -110,6 +104,25 @@ export async function loadOperativeDayRateHistory(
   for (const key of Object.keys(byUserId)) sort(byUserId[key])
   for (const key of Object.keys(byOperativeId)) sort(byOperativeId[key])
   return { byUserId, byOperativeId }
+}
+
+export async function loadOperativeDayRateHistory(
+  organizationId: string
+): Promise<OperativeDayRateHistoryCollection> {
+  try {
+    const snap = await getDocs(collection(db, 'organizations', organizationId, 'operativeDayRateHistory'))
+    return historyFromDocs(snap.docs.map((row) => ({ id: row.id, data: row.data() as Record<string, unknown> })))
+  } catch {
+    return emptyDayRateHistory()
+  }
+}
+
+/** Rulebook 1.9.0 §1 (`LIVE_COLLECTIONS`): pay history is live while a screen showing it is open. */
+export function watchOperativeDayRateHistory(
+  organizationId: string,
+  onHistory: (history: OperativeDayRateHistoryCollection) => void
+): Unsubscribe {
+  return watchOrgCollection(organizationId, 'operativeDayRateHistory', (docs) => onHistory(historyFromDocs(docs)))
 }
 
 /** The open organisation's business zone (`organizationTimeZone`), for callers that do not pass one. */

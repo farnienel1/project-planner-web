@@ -66,9 +66,9 @@ import { Hero, StatCard } from '@/components/ui'
 import { IosModal } from '@/components/ios/primitives'
 import type { SectionHue } from '@/lib/ui/sectionHue'
 import { activeOrgWarnings, generateOrgWarnings, type WarningDecisionInputs } from '@/lib/warnings/generateOrgWarnings'
-import { loadAcceptedBookingClashes } from '@/lib/warnings/acceptedClashStorage'
-import { loadDismissedWarnings } from '@/lib/warnings/dismissedWarningStorage'
-import { loadResolvedWarningKeys } from '@/lib/warnings/warningResolutionStorage'
+import { watchAcceptedBookingClashes, type AcceptedBookingClash } from '@/lib/warnings/acceptedClashStorage'
+import { watchDismissedWarnings, type DismissedWarning } from '@/lib/warnings/dismissedWarningStorage'
+import { watchResolvedWarningKeys } from '@/lib/warnings/warningResolutionStorage'
 import { ORG_DATA_REFRESHED_EVENT } from '@/lib/stores/refreshOrgData'
 import { warningScanLanes } from '@/lib/warnings/warningsScan'
 import { loadOrganizationDetails, type OrganizationDetails } from '@/lib/settings/organizationSettings'
@@ -182,20 +182,21 @@ export function HomeScreen() {
     let cancelled = false
     setMaterialsSettled(false)
     setSendRecordsSettled(false)
-    const loadDecisions = () =>
-      void Promise.all([
-        loadResolvedWarningKeys(orgId).catch(() => []),
-        loadAcceptedBookingClashes(orgId).catch(() => []),
-        loadDismissedWarnings(orgId).catch(() => []),
-      ]).then(([resolvedKeys, acceptedClashes, dismissed]) => {
-        if (cancelled) return
-        setWarningDecisions({
-          orgId,
-          resolvedKeys,
-          acceptedClashes,
-          dismissedQualificationKeys: new Set(dismissed.map((warning) => warning.dismissKey)),
-        })
+    // Rulebook 1.9.0 §1 (`LIVE_COLLECTIONS`): the warning count listens to resolutions, accepted clashes and dismissed
+    // warnings, so an approval or dismissal on any platform updates the tile without reopening Home.
+    let resolvedKeys: string[] | null = null
+    let acceptedClashes: AcceptedBookingClash[] | null = null
+    let dismissed: DismissedWarning[] | null = null
+    const publish = () => {
+      if (cancelled || !resolvedKeys || !acceptedClashes || !dismissed) return
+      setWarningDecisions({
+        orgId,
+        resolvedKeys,
+        acceptedClashes,
+        dismissedQualificationKeys: new Set(dismissed.map((warning) => warning.dismissKey)),
       })
+    }
+    const stops: Array<() => void> = []
     const deferred = window.setTimeout(() => {
       if (cancelled) return
       void loadAllMaterials(orgId).finally(() => {
@@ -204,13 +205,25 @@ export function HomeScreen() {
       void loadSendRecords(orgId).finally(() => {
         if (!cancelled) setSendRecordsSettled(true)
       })
-      loadDecisions()
+      stops.push(
+        watchResolvedWarningKeys(orgId, (keys) => {
+          resolvedKeys = keys
+          publish()
+        }),
+        watchAcceptedBookingClashes(orgId, (rows) => {
+          acceptedClashes = rows
+          publish()
+        }),
+        watchDismissedWarnings(orgId, (rows) => {
+          dismissed = rows
+          publish()
+        })
+      )
     }, 600)
-    window.addEventListener(ORG_DATA_REFRESHED_EVENT, loadDecisions)
     return () => {
       cancelled = true
       window.clearTimeout(deferred)
-      window.removeEventListener(ORG_DATA_REFRESHED_EVENT, loadDecisions)
+      for (const stop of stops) stop()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- zustand loaders are stable
   }, [organization?.id, pauseHomeLoads, seeWarningsTile])

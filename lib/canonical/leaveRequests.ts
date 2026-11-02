@@ -97,6 +97,26 @@ export function leaveRecordDayKeys(
   })
 }
 
+/**
+ * 1.9.0 (§7, §9): how many leave days a record covers inside a range (both day keys, inclusive): its
+ * `leaveRecordDayKeys` (a single-day record counts its day; a multi-day record skips weekends and the given
+ * non-working days) that fall in the range, each 1 for a full day and 0.5 for AM / PM. The Weekly Report and every
+ * leave counter use this, never a per-platform day loop.
+ */
+export function leaveDaysInRange(
+  record: { startDayKey: string; endDayKey?: string | null; timeSlot?: string | null },
+  range: { startDayKey: string; endDayKey: string },
+  timeZone?: string | null,
+  nonWorkingDayKeys?: ReadonlyArray<string> | null
+): number {
+  const from = text(range?.startDayKey)
+  const to = text(range?.endDayKey)
+  if (!DAY_KEY.test(from) || !DAY_KEY.test(to) || to < from) return 0
+  const each = normalizeHolidayTimeSlot(record?.timeSlot) === 'FULL DAY' ? 1 : 0.5
+  const days = leaveRecordDayKeys(record, timeZone, nonWorkingDayKeys).filter((key) => key >= from && key <= to)
+  return Math.round(days.length * each * 100) / 100
+}
+
 export type HolidayRequestPick = { dayKey: string; timeSlot?: string | null }
 export type HolidayRequestRange = { startDayKey: string; endDayKey: string; timeSlot: HolidayTimeSlotValue }
 

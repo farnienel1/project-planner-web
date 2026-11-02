@@ -11,6 +11,7 @@ import { isoWeekdayInZone } from '@/lib/orgTime/zoneTime'
 import { labourPersonFromUser, labourRosterOperative } from '@/lib/warnings/unbookedLabourWarnings'
 import { findUserByAnyId, rosterDisplayName } from '@/lib/staff/userRosterUtils'
 import { addLondonDays, coversCalendarDay, dayKey, isSameLondonDay } from '@/lib/ios-parity/londonTime'
+import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 import { isSmallWorksJobType } from '@/lib/ios-parity/enums'
 import {
   bookingPayrollHours,
@@ -227,14 +228,15 @@ export function buildDailyOverview(params: {
   timeZone?: string
 }): DailyOverviewModel {
   const day = params.day
-  const zone = params.timeZone || 'Europe/London'
+  // Rulebook §1: the organisation zone (1.9.0: the open organisation's when none is passed, never always London).
+  const zone = organizationZoneOr(params.timeZone)
   const today = params.today || new Date()
   const dayBookings = uniqueById(params.bookings).filter(
-    (b) => coversCalendarDay(b.date, day) && bookingOccupiesDay(b.status)
+    (b) => coversCalendarDay(b.date, day, zone) && bookingOccupiesDay(b.status)
   )
-  const dayManager = uniqueById(params.managerBookings).filter((b) => coversCalendarDay(b.date, day))
+  const dayManager = uniqueById(params.managerBookings).filter((b) => coversCalendarDay(b.date, day, zone))
   const daySubs = (params.subcontractorBookings || []).filter((b) => {
-    if (!coversCalendarDay(b.date, day)) return false
+    if (!coversCalendarDay(b.date, day, zone)) return false
     const status = String(b.status || '').toLowerCase()
     return status !== 'cancelled' && status !== 'canceled'
   })
@@ -525,7 +527,7 @@ export function buildDailyOverview(params: {
   return {
     day,
     dayLabel,
-    isToday: isSameLondonDay(day, today),
+    isToday: isSameLondonDay(day, today, zone),
     isWeekday: isLondonWeekday(day),
     labourHours,
     standardWorkedHours,

@@ -3,12 +3,16 @@
 import { create } from 'zustand'
 import { doc, setDoc } from 'firebase/firestore'
 import { deleteBookingWithTombstone } from '@/lib/bookings/bookingTombstoneWrite'
-import { db } from '@/lib/firebase/config'
+import { auth, db } from '@/lib/firebase/config'
+import { MissingDocumentError, savePartialDocument } from '@/lib/firebase/partialWrite'
+import { BOOKING_REPLAY_REFUSED_MESSAGE, writeMetadataFields } from '@/lib/canonical'
+import { managerSiteBookingUpdateWriteFields } from '@/lib/canonical/workDocumentReaders'
 import { forgetOrgCollectionDoc, isOrgCollectionSubscribed, subscribeOrgCollection } from '@/lib/firebase/subscribeOrgCollection'
 import { organizationIdsMatch } from '@/lib/orgMembership/webActiveOrg'
 import { retainParsedRows } from '@/lib/staff/rosterRetain'
 import { newUppercaseUuid } from '@/lib/ios-parity/uuid'
 import { londonMidnight } from '@/lib/ios-parity/londonTime'
+import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 import {
   logSkippedDocument,
   parseManagerSiteBooking,
@@ -126,7 +130,7 @@ export const useManagerScheduleStore = create<ManagerScheduleState>((set, get) =
     const next: ManagerSiteBooking = {
       id,
       userId: booking.userId,
-      date: londonMidnight(booking.date),
+      date: londonMidnight(booking.date, organizationZoneOr()),
       timeSlot: booking.timeSlot,
       locationType: booking.locationType,
       locationId: booking.locationId,
@@ -139,7 +143,12 @@ export const useManagerScheduleStore = create<ManagerScheduleState>((set, get) =
       organizationId,
     }
     const payload = serializeManagerSiteBooking({ ...next, organizationId })
-    await setDoc(doc(firestore, 'organizations', organizationId, 'managerSiteBookings', id), payload, { merge: true })
+    // Rulebook §1 / 1.9.0: a create carries write metadata (`writeMetadataFields`).
+    await setDoc(
+      doc(firestore, 'organizations', organizationId, 'managerSiteBookings', id),
+      { ...payload, ...(writeMetadataFields(auth?.currentUser?.uid, 'web') ?? {}) },
+      { merge: true }
+    )
     const without = get().managerSiteBookings.filter((row) => row.id !== next.id)
     set({ managerSiteBookings: [...without, next] })
   },
@@ -152,14 +161,27 @@ export const useManagerScheduleStore = create<ManagerScheduleState>((set, get) =
       ...existing,
       ...updates,
       id: bookingId,
-      date: londonMidnight(updates.date || existing.date),
+      date: londonMidnight(updates.date || existing.date, organizationZoneOr()),
       updatedAt: new Date(),
       organizationId,
     }
     const payload = serializeManagerSiteBooking({ ...next, organizationId })
-    await setDoc(doc(firestore, 'organizations', organizationId, 'managerSiteBookings', bookingId), payload, {
-      merge: true,
-    })
+    // Rulebook 1.9.0 `managerSiteBookingUpdateWriteFields`: only the changed fields, with write metadata; an edit of
+    // a booking deleted on another device is refused, never re-created.
+    try {
+      await savePartialDocument(
+        doc(firestore, 'organizations', organizationId, 'managerSiteBookings', bookingId),
+        payload,
+        managerSiteBookingUpdateWriteFields,
+        { userId: auth?.currentUser?.uid ?? null, missing: 'refuse' }
+      )
+    } catch (error: unknown) {
+      if (error instanceof MissingDocumentError) {
+        set({ managerSiteBookings: get().managerSiteBookings.filter((row) => row.id !== bookingId) })
+        throw new Error(BOOKING_REPLAY_REFUSED_MESSAGE)
+      }
+      throw error
+    }
     set({
       managerSiteBookings: get().managerSiteBookings.map((row) => (row.id === bookingId ? next : row)),
     })

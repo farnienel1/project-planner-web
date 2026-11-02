@@ -23,7 +23,9 @@ import { useHolidayStore } from '@/lib/stores/holidayStore'
 import { useSubcontractorStore } from '@/lib/stores/subcontractorStore'
 import { canViewDailyOverview, hasAdminAccess } from '@/lib/permissions'
 import { dateFromDayKey, dayKey, londonMidnight } from '@/lib/ios-parity/londonTime'
-import { loadSubcontractorBookings } from '@/lib/weekly-report/loadSubcontractorBookings'
+import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
+import { watchSubcontractorBookings } from '@/lib/weekly-report/loadSubcontractorBookings'
+import type { SubcontractorBookingRow } from '@/lib/weekly-report/weeklyReportData'
 import {
   buildDailyOverview,
   dailyOverviewMayPublish,
@@ -78,10 +80,8 @@ export function DailyOverviewScreen() {
   const { projects, smallWorks, loadProjects, loadSmallWorks } = useProjectStore()
   const { bookings: holidays, loadBookings: loadHolidays } = useHolidayStore()
   const { subcontractors, loadSubcontractors } = useSubcontractorStore()
-  const [subcontractorBookings, setSubcontractorBookings] = useState<
-    Awaited<ReturnType<typeof loadSubcontractorBookings>>
-  >([])
-  const [day, setDay] = useState(() => londonMidnight(new Date()))
+  const [subcontractorBookings, setSubcontractorBookings] = useState<SubcontractorBookingRow[]>([])
+  const [day, setDay] = useState(() => londonMidnight(new Date(), organizationZoneOr()))
   // Today moves on at the organisation's midnight and when the tab is focused again. A viewer who was on
   // the old today follows to the new one; a viewer on another day stays there.
   const orgTimeZone = useOrganizationTimeZone()
@@ -92,7 +92,7 @@ export function DailyOverviewScreen() {
     const previous = lastTodayKey.current
     lastTodayKey.current = todayKey
     if (previous === todayKey) return
-    setDay((current) => (dayKey(current) === previous ? londonMidnight(new Date()) : current))
+    setDay((current) => (dayKey(current) === previous ? londonMidnight(new Date(), organizationZoneOr()) : current))
   }, [todayKey])
   // A past day reaches before the launch booking download.
   useBookingHistoryFrom(organization?.id, day)
@@ -125,9 +125,6 @@ export function DailyOverviewScreen() {
       setIncludeWeekendsForUnbookedLabour(details.warningDetection.includeWeekendsForUnbookedLabour)
       setExcludedUserIdsFromUnbookedWarnings(details.warningDetection.excludedUserIdsFromUnbookedWarnings ?? [])
     })
-    loadSubcontractorBookings(organization.id)
-      .then(setSubcontractorBookings)
-      .catch(() => setSubcontractorBookings([]))
   }, [
     organization?.id,
     loadBookings,
@@ -139,6 +136,13 @@ export function DailyOverviewScreen() {
     loadHolidays,
     loadSubcontractors,
   ])
+
+  // Rulebook 1.9.0 §1: subcontractor bookings are live while Daily Overview is open.
+  useEffect(() => {
+    if (!organization?.id) return
+    setSubcontractorBookings([])
+    return watchSubcontractorBookings(organization.id, setSubcontractorBookings, () => setSubcontractorBookings([]))
+  }, [organization?.id])
 
   const model = useMemo(
     () =>
@@ -211,7 +215,7 @@ export function DailyOverviewScreen() {
             <button type="button" aria-label="Previous day" onClick={() => setDay(shiftOverviewDay(day, -1))}>
               <ChevronLeftIcon className="h-5 w-5" />
             </button>
-            <button type="button" className={model.isToday ? 'on' : ''} onClick={() => setDay(londonMidnight(new Date()))}>
+            <button type="button" className={model.isToday ? 'on' : ''} onClick={() => setDay(londonMidnight(new Date(), organizationZoneOr()))}>
               {model.isToday ? 'Today' : 'Back to today'}
             </button>
             <button type="button" aria-label="Next day" onClick={() => setDay(shiftOverviewDay(day, 1))}>

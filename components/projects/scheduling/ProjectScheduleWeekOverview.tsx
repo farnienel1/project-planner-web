@@ -26,14 +26,13 @@ import { ORG_DATA_REFRESHED_EVENT } from '@/lib/stores/refreshOrgData'
 import { canBookWork, hasAdminAccess } from '@/lib/permissions'
 import { BookingStatus, UserRole, type User } from '@/types'
 import { SubcontractorBookingEditSheet } from '@/components/projects/scheduling/SubcontractorBookingEditSheet'
-import { subcontractorBookingRowFromDocument } from '@/lib/weekly-report/loadSubcontractorBookings'
+import { watchSubcontractorBookings } from '@/lib/weekly-report/loadSubcontractorBookings'
 import { managerSiteBookingToScheduleBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import type { Booking, Project } from '@/types'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
-import { collection, getDocs } from 'firebase/firestore'
-import { db } from '@/lib/firebase/config'
 import { scheduleWorkKindLabel } from '@/lib/jobTypes/jobTypesStorage'
 import { coversCalendarDay } from '@/lib/ios-parity/londonTime'
+import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 import { DEFAULT_PAYROLL_POLICY, loadOrganizationDetails, type OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 import {
   findSubcontractorFirm,
@@ -202,14 +201,13 @@ export function ProjectScheduleWeekOverview({
       .catch(() => {})
   }, [organizationId, loadBookings, loadManagerSiteBookings, loadOperatives, loadUsers, loadSubcontractors])
 
+  // Rulebook 1.9.0 §1: subcontractor bookings are live while this grid is open.
   useEffect(() => {
-    const load = async () => {
-      const snapshot = await getDocs(collection(db, 'organizations', organizationId, 'subcontractorBookings'))
+    const stop = watchSubcontractorBookings(organizationId, (rows) => {
       setSubBookings(
-        snapshot.docs
-          .map((docSnap): SubBooking | null => {
-            const parsed = subcontractorBookingRowFromDocument(docSnap.id, docSnap.data() as Record<string, unknown>)
-            if (!parsed || !idsMatch(parsed.projectId, project.id)) return null
+        rows
+          .filter((parsed) => idsMatch(parsed.projectId, project.id))
+          .map((parsed): SubBooking => {
             const row: SubBooking = {
               id: parsed.id,
               subcontractorId: parsed.subcontractorId,
@@ -223,12 +221,9 @@ export function ProjectScheduleWeekOverview({
             if (parsed.isBreakRemoved) row.isBreakRemoved = true
             return row
           })
-          .filter((row): row is SubBooking => row !== null)
       )
-    }
-    void load()
+    })
     const onRefreshed = () => {
-      void load()
       loadOrganizationDetails(organizationId, { fromServer: true, allowCacheFallback: true })
         .then((details) => {
           if (details?.payrollTimePolicy) setPayroll(details.payrollTimePolicy)
@@ -236,7 +231,10 @@ export function ProjectScheduleWeekOverview({
         .catch(() => {})
     }
     window.addEventListener(ORG_DATA_REFRESHED_EVENT, onRefreshed)
-    return () => window.removeEventListener(ORG_DATA_REFRESHED_EVENT, onRefreshed)
+    return () => {
+      stop()
+      window.removeEventListener(ORG_DATA_REFRESHED_EVENT, onRefreshed)
+    }
   }, [organizationId, project.id])
 
   const weekDays = useMemo(() => weekDaysFrom(weekStart), [weekStart])
@@ -268,7 +266,7 @@ export function ProjectScheduleWeekOverview({
   const rowsByDay = useMemo(() => {
     return weekDays.map((day) => {
       const opRows: DayRow[] = projectBookings
-        .filter((b) => coversCalendarDay(new Date(b.date), day))
+        .filter((b) => coversCalendarDay(new Date(b.date), day, organizationZoneOr()))
         .flatMap((b) => {
           const op = operatives.find((o) => idsMatch(o.id, b.operativeId))
           // The account decides the colour: an admin or manager with an operative profile stays blue.
@@ -299,7 +297,7 @@ export function ProjectScheduleWeekOverview({
         })
 
       const managerRows: DayRow[] = projectManagerBookings
-        .filter((b) => coversCalendarDay(new Date(b.date), day))
+        .filter((b) => coversCalendarDay(new Date(b.date), day, organizationZoneOr()))
         .flatMap((b) => {
           const manager = findUserByAnyId(users, b.userId, userIdAliases)
           const name = rosterDisplayName(manager)
@@ -329,7 +327,7 @@ export function ProjectScheduleWeekOverview({
         })
 
       const subRows: DayRow[] = subBookings
-        .filter((b) => coversCalendarDay(new Date(b.date), day))
+        .filter((b) => coversCalendarDay(new Date(b.date), day, organizationZoneOr()))
         .map((b) => {
           const sub = findSubcontractorFirm(subcontractors, b.subcontractorId)
           const people = resolveSubcontractorBookingPeople(b, sub)
@@ -485,13 +483,13 @@ export function ProjectScheduleWeekOverview({
     // Bookings under any id this person has had (`bookingIdsForPerson`).
     const personIds = target?.kind === 'operative' ? samePersonBookingIds(target.operativeId, users, operatives) : new Set<string>()
     for (const b of bookings) {
-      if (!coversCalendarDay(new Date(b.date), day)) continue
+      if (!coversCalendarDay(new Date(b.date), day, organizationZoneOr())) continue
       const sameOperative = personIds.has(String(b.operativeId || '').toLowerCase())
       if (!sameOperative) continue
       labels.push(`${idsMatch(b.projectId, project.id) ? 'This job' : 'Another job'} ${namedSlotLabel(String(b.timeSlot))}`)
     }
     for (const b of managerSiteBookings) {
-      if (!coversCalendarDay(new Date(b.date), day)) continue
+      if (!coversCalendarDay(new Date(b.date), day, organizationZoneOr())) continue
       const sameUser = (target?.kind === 'manager' && b.userId === target.userId) || (personUserId && b.userId === personUserId)
       if (!sameUser) continue
       labels.push(`${idsMatch(b.locationId || '', project.id) ? 'This job' : 'Elsewhere'} ${namedSlotLabel(String(b.timeSlot))}`)

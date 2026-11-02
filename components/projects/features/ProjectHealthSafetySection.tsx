@@ -174,11 +174,12 @@ export function ProjectHealthSafetySection({
     ? 'bg-gradient-to-br from-[#19c4b3] to-[#0fae9e]'
     : 'bg-gradient-to-br from-[#3f86ff] to-[#2563eb]'
 
+  // Rulebook 1.9.0 §1: the job's health & safety documents are live while this section is open.
   useEffect(() => {
-    if (organization?.id) {
-      load(organization.id, project.id, isSmallWorks)
-      loadUsers(organization.id)
-    }
+    if (!organization?.id) return
+    load(organization.id, project.id, isSmallWorks)
+    loadUsers(organization.id)
+    return () => useHealthSafetyStore.getState().stopListening()
   }, [organization, project.id, isSmallWorks, load, loadUsers])
 
   useEffect(() => {

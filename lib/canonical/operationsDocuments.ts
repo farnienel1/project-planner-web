@@ -1181,16 +1181,23 @@ export function mergeJobTypeCatalogues(stored: ReadonlyArray<string>, recovered:
 
 /**
  * Saving `settings/jobTypes`: `{ set: { jobTypes } }` with canonical, de-duplicated, sorted names — a field update of
- * `jobTypes` only (never a whole-document overwrite). Null when the list is empty (an empty list never replaces the
- * catalogue) or unchanged from `stored`. The app creates the document with `organizationId` when it is missing.
+ * `jobTypes` only (never a whole-document overwrite). Null when the list is unchanged from `stored`, and when it is
+ * empty without an explicit removal: an empty list (an empty or failed load) never replaces the catalogue. 1.9.0: a
+ * user who deletes the last job types passes them in `options.removed`; when every stored name is in `removed` the
+ * empty list is written. The app creates the document with `organizationId` when it is missing.
  */
 export function jobTypesWriteFields(
   stored: ReadonlyArray<string> | null | undefined,
-  next: ReadonlyArray<string>
+  next: ReadonlyArray<string>,
+  options?: { removed?: ReadonlyArray<string> | null } | null
 ): { set: { jobTypes: string[] } } | null {
   const names = uniqueSortedNames((next || []).map(canonicalJobTypeName))
-  if (names.length === 0) return null
   const before = uniqueSortedNames((stored || []).map(canonicalJobTypeName))
+  if (names.length === 0) {
+    if (before.length === 0) return null
+    const removed = new Set((options?.removed || []).map((name) => canonicalJobTypeName(String(name ?? '')).toLowerCase()))
+    return before.every((name) => removed.has(name.toLowerCase())) ? { set: { jobTypes: [] } } : null
+  }
   if (before.length === names.length && before.every((name, index) => name === names[index])) return null
   return { set: { jobTypes: names } }
 }

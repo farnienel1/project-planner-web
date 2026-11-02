@@ -240,3 +240,41 @@ test('leave decision: line_manager_peer_update to the other active line managers
   assert.equal(notificationDeliversDevicePush(rows[0].type), false)
   assert.equal(rows[0].message, "Alex Manager approved Pat Operative's annual leave request. 20 Oct 2026 (FULL DAY)")
 })
+
+test('1.9.0 M6: a decision on a cancellation request notifies the requester as its own notice', () => {
+  const accepted = buildHolidayRequestDecisionNotification({
+    organizationId: 'org-1',
+    booking: booking({ cancellationRequestedAt: new Date(), status: 'approved' }),
+    approved: true,
+    cancellation: true,
+    decidedByName: 'Alex Manager',
+  })
+  assert.ok(accepted)
+  assert.equal(accepted.type, HOLIDAY_REQUEST_APPROVED)
+  assert.equal(accepted.title, 'Annual Leave Cancelled')
+  assert.match(accepted.message, /accepted your request to cancel annual leave/)
+  assert.equal(accepted.userId, 'op-user-1')
+  const refused = buildHolidayRequestDecisionNotification({
+    organizationId: 'org-1',
+    booking: booking({ cancellationRequestedAt: new Date(), status: 'approved' }),
+    approved: false,
+    cancellation: true,
+    decidedByName: 'Alex Manager',
+  })
+  assert.equal(refused?.type, HOLIDAY_REQUEST_DECLINED)
+  assert.match(refused!.message, /Your leave still stands/)
+  // Its own dedupe id: the original approval row keeps its id and read state.
+  assert.notEqual(holidayDecisionDedupeKey('B', 'u', true, true), holidayDecisionDedupeKey('B', 'u', true))
+  // The decider is never notified about their own decision.
+  assert.equal(
+    buildHolidayRequestDecisionNotification({
+      organizationId: 'org-1',
+      booking: booking({ cancellationRequestedAt: new Date() }),
+      approved: true,
+      cancellation: true,
+      decidedByName: 'Self',
+      decidedByUserId: 'op-user-1',
+    }),
+    null
+  )
+})

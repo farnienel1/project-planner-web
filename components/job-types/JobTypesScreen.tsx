@@ -19,6 +19,7 @@ import {
   recoverJobTypesFromWork,
   RESTORED_JOB_TYPES,
   saveJobTypes,
+  watchJobTypes,
   validateJobTypeName,
 } from '@/lib/jobTypes/jobTypesStorage'
 
@@ -80,18 +81,30 @@ export function JobTypesScreen() {
         }
       })
 
+    // Rulebook 1.9.0 §1: live while this screen is open, so a change on iOS appears here.
+    let first = true
+    const stop = watchJobTypes(orgId, (stored) => {
+      if (cancelled) return
+      if (first) {
+        first = false
+        return
+      }
+      showList(mergeJobTypeCatalogues(stored, []))
+    })
+
     return () => {
       cancelled = true
+      stop()
     }
   }, [organization?.id])
 
-  const persist = async (next: string[]) => {
+  const persist = async (next: string[], removed?: string[]) => {
     if (!organization?.id || !canManage) return
     setSaving(true)
     setError(null)
     try {
       const sorted = [...next].sort((a, b) => a.localeCompare(b))
-      await saveJobTypes(organization.id, sorted)
+      await saveJobTypes(organization.id, sorted, { removed })
       setJobTypes(sorted)
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Could not save job types')
@@ -114,7 +127,10 @@ export function JobTypesScreen() {
 
   const handleRemove = async (jobType: string) => {
     if (!window.confirm(`Delete "${jobType}"?`)) return
-    await persist(jobTypes.filter((item) => item !== jobType))
+    await persist(
+      jobTypes.filter((item) => item !== jobType),
+      [jobType]
+    )
   }
 
   if (!user || !canManage) return null

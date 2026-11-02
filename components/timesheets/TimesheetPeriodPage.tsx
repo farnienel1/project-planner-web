@@ -62,7 +62,14 @@ import {
   timesheetHoursRateLine,
   type TimesheetPayrollLineItem,
 } from '@/lib/timesheets/timesheetPayrollCollector'
-import { loadTimesheetDraft, saveTimesheetDraft, timesheetSourceDocumentId } from '@/lib/timesheets/timesheetStorage'
+import {
+  draftFromFirestoreMap,
+  loadTimesheetDraft,
+  saveTimesheetDraft,
+  timesheetDocId,
+  timesheetSourceDocumentId,
+} from '@/lib/timesheets/timesheetStorage'
+import { watchOrgDocument } from '@/lib/firebase/watchOrgQuery'
 import { invoiceLinesForTimesheet, invoiceLinesTotal, invoiceRateChangeNotes } from '@/lib/timesheets/timesheetExport'
 import { emptyDayRateHistory, type OperativeDayRateHistoryCollection } from '@/lib/timesheets/dayRateHistoryStorage'
 import {
@@ -163,6 +170,14 @@ export function TimesheetPeriodPage({
   const { users } = useOrgUserStore()
   const [draft, setDraft] = useState<TimesheetDraft>(emptyTimesheetDraft())
   const sourceDocumentId = useRef<string | null>(null)
+  // Rulebook 1.9.0 §1: the open sheet is live. A sign-off or edit on another device replaces the draft — unless this
+  // screen holds an unsaved edit or an open editor, when it waits and says so (never overwriting what is typed).
+  const localEdits = useRef(false)
+  const lastPersistAt = useRef(0)
+  // Rulebook 1.9.0 `timesheetChangedFields`: the sheet as loaded (or last saved / refreshed), the base a save diffs.
+  const baseDraft = useRef<TimesheetDraft | null>(null)
+  const pendingRemote = useRef<TimesheetDraft | null>(null)
+  const [updatedElsewhere, setUpdatedElsewhere] = useState(false)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -290,6 +305,8 @@ export function TimesheetPeriodPage({
   const persist = useCallback(
     async (next: TimesheetDraft) => {
       if (!organization?.id) return
+      localEdits.current = false
+      lastPersistAt.current = Date.now()
       const withOverride = applyWeeklyReportOverride({
         draft: next,
         user: subjectUser,
@@ -327,8 +344,10 @@ export function TimesheetPeriodPage({
         draft: withOverride,
         timeZone,
         documentId: sourceDocumentId.current,
+        base: baseDraft.current,
         access: { reviewer, subjectHasLineManager: !userTimesheetSelfSigned(subjectUser, users) },
       })
+      baseDraft.current = withOverride
       if (reviews !== (withOverride.extraEntryReviews ?? null)) {
         setDraft((current) => (current === withOverride ? { ...withOverride, extraEntryReviews: reviews } : current))
       }
@@ -366,6 +385,7 @@ export function TimesheetPeriodPage({
       .then((loaded) => {
         if (cancelled) return
         sourceDocumentId.current = timesheetSourceDocumentId(loaded)
+        baseDraft.current = sourceDocumentId.current ? loaded : null
         setDraft(applySelfApprovalIfNoLineManager(loaded, subjectUser, usersRef.current))
       })
       .catch((err: unknown) => {
@@ -378,6 +398,44 @@ export function TimesheetPeriodPage({
       cancelled = true
     }
   }, [organization?.id, subjectUser.id, periodStart, periodEnd, timeZone, subjectUser])
+
+  // Listen to the open sheet document once it has loaded (its stored id, else the id a new sheet is created at).
+  useEffect(() => {
+    const orgId = organization?.id
+    if (!orgId || loading) return
+    const docId = sourceDocumentId.current || timesheetDocId(subjectUser.id, periodStart, timeZone)
+    let first = true
+    return watchOrgDocument(orgId, ['settings', docId], (data, meta) => {
+      // The first snapshot is the copy just loaded; this device's own unsent write is not news.
+      if (first) {
+        first = false
+        return
+      }
+      if (!data || meta.hasPendingWrites) return
+      // The server's echo of this screen's own save (same user, from web, just now) is not a remote change.
+      const ownEcho =
+        data.updatedBy === viewer?.id && data.updatedFrom === 'web' && Date.now() - lastPersistAt.current < 10_000
+      if (ownEcho) return
+      sourceDocumentId.current = docId
+      const remote = applySelfApprovalIfNoLineManager(
+        draftFromFirestoreMap(data, { sheetDocId: docId, timeZone }),
+        subjectUser,
+        usersRef.current
+      )
+      pendingRemote.current = remote
+      setUpdatedElsewhere(true)
+    })
+  }, [organization?.id, loading, subjectUser, periodStart, timeZone, viewer?.id])
+
+  // Apply a remote change when nothing local is in progress.
+  useEffect(() => {
+    if (!updatedElsewhere || !pendingRemote.current) return
+    if (busy || localEdits.current || editingLineId || extraMode || signOpen || managerSignOpen) return
+    setDraft(pendingRemote.current)
+    baseDraft.current = pendingRemote.current
+    pendingRemote.current = null
+    setUpdatedElsewhere(false)
+  }, [updatedElsewhere, busy, editingLineId, extraMode, signOpen, managerSignOpen, draft])
 
   const beginExtra = (kind: 'priceWork' | 'expense') => {
     if (fullyApproved) {
@@ -676,6 +734,11 @@ export function TimesheetPeriodPage({
     <div className="space-y-4 pb-10">
       <p className="text-[15px] font-semibold text-[var(--ink3)]">{periodTitle}</p>
       {error ? <p className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-800">{error}</p> : null}
+      {updatedElsewhere ? (
+        <p className="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          This timesheet was updated on another device. It will refresh when you finish this change.
+        </p>
+      ) : null}
 
       {mode === 'review' ? (
         <div className="rounded-2xl bg-white p-4 shadow-[0_1px_2px_rgba(0,0,0,0.10)]">
@@ -837,7 +900,10 @@ export function TimesheetPeriodPage({
               <span className="text-[15px] font-semibold">Note to manager</span>
               <textarea
                 value={draft.managerNote}
-                onChange={(event) => setDraft({ ...draft, managerNote: event.target.value })}
+                onChange={(event) => {
+                  localEdits.current = true
+                  setDraft({ ...draft, managerNote: event.target.value })
+                }}
                 onBlur={(event) => void persist({ ...draft, managerNote: event.currentTarget.value })}
                 className="mt-2 min-h-[74px] w-full rounded-xl bg-[#F7F8FC] p-3 text-[15px]"
               />

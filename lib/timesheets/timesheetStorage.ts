@@ -10,6 +10,8 @@ import { auth, db } from '@/lib/firebase/config'
 import { writeMetadataFields } from '@/lib/canonical/writeMetadata'
 import { parseFirestoreDate as parseSharedFirestoreDate, sanitizeForFirestore } from '@/lib/firebase/firestoreUtils'
 import { changedFirestoreFields } from '@/lib/firebase/changedFields'
+import { firestoreUpdateFields } from '@/lib/firebase/partialWrite'
+import { timesheetChangedFields } from '@/lib/canonical/timesheetEntryReviews'
 import { LONDON_TIME_ZONE, unixStartOfDay, dayKey } from '@/lib/ios-parity/londonTime'
 import { weekStartKey } from '@/lib/timesheets/timesheetWeekUtils'
 import { periodStartKey } from '@/lib/timesheets/paymentRunCopy'
@@ -690,6 +692,7 @@ export async function saveTimesheetDraft({
   documentId = null,
   weekEnd = null,
   access,
+  base = null,
 }: {
   organizationId: string
   userId: string
@@ -699,6 +702,11 @@ export async function saveTimesheetDraft({
   documentId?: string | null
   weekEnd?: Date | null
   access?: { reviewer?: boolean; subjectHasLineManager?: boolean }
+  /**
+   * Rulebook 1.9.0 `timesheetChangedFields`: the sheet as this editor loaded it. Only fields that differ from it are
+   * written, so changes saved on another device since the load (an owner's signature, expenses, price work) stay.
+   */
+  base?: TimesheetDraft | null
 }): Promise<Record<string, TimesheetEntryReview> | null> {
   const writerId = auth?.currentUser?.uid || ''
   const reviewer = access?.reviewer ?? Boolean(writerId && writerId !== userId)
@@ -714,20 +722,22 @@ export async function saveTimesheetDraft({
     startDayKey: dayKey(weekStart, timeZone),
     endDayKey: dayKey(end, timeZone),
   })
-  const sheetFields = reviewer
-    ? draftToFirestoreMap(draft)
-    : timesheetOwnerWriteFields(draftToFirestoreMap(draft), {
-        // Unknown counts as having one: the snapshot is then left to the line manager.
-        subjectHasLineManager: access?.subjectHasLineManager !== false,
-        managerSigned: Boolean(draft.managerSignedAt),
-      })
-  const payload = sanitizeForFirestore({
-    ...sheetFields,
-    ...periodFields,
-    userId,
-    weekStart: Timestamp.fromDate(weekStart),
-    weekEnd: Timestamp.fromDate(end),
-  }) as Record<string, unknown>
+  const sheetPayload = (managerSigned: boolean, source: TimesheetDraft) => {
+    const sheetFields = reviewer
+      ? draftToFirestoreMap(source)
+      : timesheetOwnerWriteFields(draftToFirestoreMap(source), {
+          // Unknown counts as having one: the snapshot is then left to the line manager.
+          subjectHasLineManager: access?.subjectHasLineManager !== false,
+          managerSigned,
+        })
+    return sanitizeForFirestore({
+      ...sheetFields,
+      ...periodFields,
+      userId,
+      weekStart: Timestamp.fromDate(weekStart),
+      weekEnd: Timestamp.fromDate(end),
+    }) as Record<string, unknown>
+  }
   // Who and where (`writeMetadataFields`) plus the server time, on every timesheet save.
   const metadata = { ...(writeMetadataFields(writerId, 'web') ?? {}), updatedAt: serverTimestamp() }
   // Partial writes (rulebook §1): an existing sheet gets only the fields that changed (`updateDoc`), so stored
@@ -743,7 +753,20 @@ export async function saveTimesheetDraft({
       }
       if (stored === null || stored === undefined) {
         // No stored sheet (or it could not be read): create / merge, which never deletes a stored field.
-        await setDoc(ref, { ...payload, ...metadata }, { merge: true })
+        await setDoc(ref, { ...sheetPayload(Boolean(draft.managerSignedAt), draft), ...metadata }, { merge: true })
+        return
+      }
+      // 1.9.0: whether the line manager has signed comes from the stored copy, never from a stale local draft.
+      const managerSigned = Boolean(draftFromFirestoreMap(stored, { includeSignatures: false }).managerSignedAt)
+      const payload = sheetPayload(managerSigned, draft)
+      if (base) {
+        const write = timesheetChangedFields(sanitizeForFirestore(sheetPayload(managerSigned, base)) as Record<string, unknown>, payload)
+        // The period identity is always kept current; everything else only when this editor changed it.
+        for (const key of Object.keys(periodFields)) {
+          if (payload[key] !== undefined && stored[key] === undefined) write.set[key] = payload[key]
+        }
+        if (Object.keys(write.set).length === 0 && write.remove.length === 0) return
+        await updateDoc(ref, { ...firestoreUpdateFields(write), ...metadata })
         return
       }
       const changed = changedFirestoreFields(payload, stored)
