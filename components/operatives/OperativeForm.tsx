@@ -124,7 +124,10 @@ export function OperativeForm({
             dayRate: rates.dayRate,
             hourlyRate: rates.hourlyRate,
           },
-          organization.id
+          organization.id,
+          undefined,
+          // Partial update of the changed pay fields only (rulebook §1, `userProfileWriteFields`).
+          { baseline: linked }
         )
       }
       try {

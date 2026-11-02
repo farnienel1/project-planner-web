@@ -10,7 +10,7 @@ import {
   doc,
   Timestamp,
 } from 'firebase/firestore'
-import { db } from '@/lib/firebase/config'
+import { auth, db } from '@/lib/firebase/config'
 import type { Project, Client } from '@/types'
 import {
   buildProjectFirestorePayload,
@@ -23,6 +23,8 @@ import { trackEvent } from '@/lib/analytics/trackEvent'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { parseFirestoreDate, parseNumber, parseOptionalString, parseString, newUuid } from '@/lib/firebase/firestoreUtils'
 import { parseClient as parseClientDoc, serializeClient } from '@/lib/ios-parity/converters'
+import { savePartialDocument } from '@/lib/firebase/partialWrite'
+import { clientWriteFields } from '@/lib/canonical/peopleDocuments'
 import {
   isLegacyPlaceholderDocumentId,
   withoutLegacyPlaceholderDocuments,
@@ -312,7 +314,10 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       updatedAt: Timestamp.now(),
     }
 
-    await setDoc(doc(db, 'organizations', organizationId, 'clients', clientId), payload, { merge: true })
+    // Partial update of the changed fields only (rulebook §1, `clientWriteFields`).
+    await savePartialDocument(doc(db, 'organizations', organizationId, 'clients', clientId), payload, clientWriteFields, {
+      userId: auth?.currentUser?.uid,
+    })
 
     const updated: Client = {
       ...existing,

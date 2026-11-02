@@ -59,3 +59,21 @@ test('clearing a field still sends its delete', () => {
   const patch = changedUserPayload(buildSaveUserPayload({ ...loaded, mobileNumber: '' }), buildSaveUserPayload(loaded))
   assert.ok('mobileNumber' in patch)
 })
+
+test('a field the loaded copy lacks is never deleted (another device may have set it)', () => {
+  const loaded = person()
+  const patch = changedUserPayload(buildSaveUserPayload({ ...loaded, firstName: 'New' }), buildSaveUserPayload(loaded))
+  assert.equal('mobileNumber' in patch, false)
+  assert.equal('tradeTypePreset' in patch, false)
+})
+
+test('changing the pay basis writes the basis, the new amount and removes the old amount together', () => {
+  const loaded = person({ payBasis: 'day', dayRate: 200 })
+  const patch = changedUserPayload(
+    buildSaveUserPayload({ ...loaded, payBasis: 'hourly', dayRate: undefined, hourlyRate: 25 }),
+    buildSaveUserPayload(loaded)
+  )
+  assert.equal(patch.payBasis, 'hourly')
+  assert.equal(patch.hourlyRate, 25)
+  assert.ok('dayRate' in patch)
+})

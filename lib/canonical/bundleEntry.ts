@@ -345,7 +345,7 @@ export { LEGACY_PLACEHOLDER_DOCUMENT_ID, isLegacyPlaceholderDocumentId } from '.
 export { legalPackNeedsAcceptance } from './legalPack'
 
 export { payrollHoursResult, payrollOutsideMultiplier, reportDayValue, subcontractorDayValue, workedHoursSplit } from './payrollHours'
-export { parsePayrollPolicy } from './organizationSettings'
+export { DEFAULT_ANNUAL_LEAVE, parseAnnualLeaveDefaults, parsePayrollPolicy } from './organizationSettings'
 
 export { PAYE_PAY_CELL_LABEL, reportPayCell, reportPayTotal, reportPersonPayCell } from './reportPay'
 
@@ -572,3 +572,33 @@ export {
   pushTestRecipients,
 } from './notificationRecipients'
 export { PUSH_TEST_NOTICE_TYPE, notificationPushesToActor } from './notificationPreferences'
+export {
+  USER_DOCUMENT_KEYS,
+  ROSTER_DOCUMENT_KEYS,
+  LINE_MANAGER_WRITE_GROUP,
+  PAY_WRITE_GROUP,
+  EMPLOYMENT_WRITE_GROUP,
+  USER_NAME_WRITE_GROUP,
+  ROSTER_NAME_WRITE_GROUP,
+  clientWriteFields,
+  defaultTimesheetsEnabled,
+  documentBool,
+  documentInstantMs,
+  documentNumber,
+  documentValueKey,
+  documentWriteFields,
+  managerRowWriteFields,
+  normalizeUserRoleToken,
+  operativeRowWriteFields,
+  parseClientDocument,
+  parseManagerDocument,
+  parseOperativeDocument,
+  parsePayRateHistoryDocument,
+  parsePayRateHistoryDocuments,
+  parseSkillDocument,
+  parseSubcontractorDocument,
+  parseUserDocument,
+  skillsCatalogueWrites,
+  subcontractorWriteFields,
+  userProfileWriteFields,
+} from './peopleDocuments'

@@ -6,8 +6,9 @@ import { collection, doc, getDocs, serverTimestamp, setDoc, Timestamp } from 'fi
 import { auth, db } from '@/lib/firebase/config'
 import { writeMetadataFields } from '@/lib/canonical/writeMetadata'
 import { payRateHistoryWriteFields } from '@/lib/canonical/payRate'
+import { parsePayRateHistoryDocument } from '@/lib/canonical/peopleDocuments'
 import { organizationTimeZone } from '@/lib/canonical'
-import { newUuid, parseFirestoreDate } from '@/lib/firebase/firestoreUtils'
+import { newUuid } from '@/lib/firebase/firestoreUtils'
 import { useOrganizationDocumentStore } from '@/lib/stores/organizationDocumentStore'
 import type { PayBasis } from '@/lib/timesheets/payBasis'
 
@@ -65,25 +66,18 @@ export function mergedDayRateEntries(
   })
 }
 
+/** One history row through the rulebook reader `parsePayRateHistoryDocument` (rulebook 1.6.0, §8). */
 function parseEntry(id: string, data: Record<string, unknown>): OperativeDayRateHistoryEntry | null {
-  // `dayRate: null` is a stored "rate cleared" row; a missing or unreadable amount is skipped.
-  const cleared = data.dayRate === null
-  const amount = typeof data.dayRate === 'number' ? data.dayRate : Number(data.dayRate)
-  const effectiveAt = parseFirestoreDate(data.effectiveAt)
-  if ((!cleared && (data.dayRate === undefined || !Number.isFinite(amount))) || !effectiveAt) return null
-  const dayRate = cleared ? null : amount
-  const userId = typeof data.userId === 'string' && data.userId.trim() ? data.userId.trim() : null
-  const operativeId = typeof data.operativeId === 'string' && data.operativeId.trim() ? data.operativeId.trim() : null
-  if (!userId && !operativeId) return null
-  const payBasis = cleared ? undefined : data.payBasis === 'hourly' ? 'hourly' : data.payBasis === 'day' ? 'day' : undefined
+  const parsed = parsePayRateHistoryDocument(id, data)
+  if (!parsed) return null
   return {
-    id,
-    userId,
-    operativeId,
-    dayRate,
-    payBasis,
-    effectiveAt,
-    createdAt: parseFirestoreDate(data.createdAt) || effectiveAt,
+    id: parsed.id,
+    userId: parsed.userId,
+    operativeId: parsed.operativeId,
+    dayRate: parsed.dayRate,
+    payBasis: parsed.payBasis ?? undefined,
+    effectiveAt: new Date(parsed.effectiveAt),
+    createdAt: new Date(parsed.createdAt),
   }
 }
 
