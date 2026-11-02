@@ -167,6 +167,8 @@ export function ProjectDeadlinesSection({ project, isSmallWorks }: { project: Pr
         current: saved,
         projectName: projectNotificationName(project.siteName, project.jobNumber),
         createdBy: authorName,
+        actorUserId: user?.id ?? null,
+        users,
       }).catch(() => {})
     }
   }
@@ -207,6 +209,8 @@ export function ProjectDeadlinesSection({ project, isSmallWorks }: { project: Pr
           current: saved,
           projectName: projectNotificationName(project.siteName, project.jobNumber),
           createdBy: authorName,
+          actorUserId: user?.id ?? null,
+          users,
         }).catch(() => {})
       }
       setBanner(null)

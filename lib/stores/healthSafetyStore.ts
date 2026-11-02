@@ -9,10 +9,12 @@ import {
 } from '@/lib/healthSafety/healthSafetyPaths'
 import { parseHealthSafetyPayload, mergeHealthSafetyPayload } from '@/lib/healthSafety/parseHealthSafety'
 import { serializeHealthSafetyPayload } from '@/lib/healthSafety/serializeHealthSafety'
-import type { HSProjectSafetyData, HSToolboxTalk } from '@/types'
+import type { HSProjectSafetyData, HSToolboxTalk, User } from '@/types'
 import { newUuid, sanitizeForFirestore } from '@/lib/firebase/firestoreUtils'
 import { startOfWeek } from 'date-fns'
-import { saveInboxNotification } from '@/lib/firebase/notifyInbox'
+import { inboxActorUserId, saveInboxNotification } from '@/lib/firebase/notifyInbox'
+import { toolboxTalkRecipients } from '@/lib/canonical'
+import { rulebookPerson, rulebookRoster } from '@/lib/staff/rulebookPeople'
 
 const emptyData = (): HSProjectSafetyData => ({
   talks: [],
@@ -74,7 +76,9 @@ interface HealthSafetyState {
     projectId: string,
     isSmallWorks: boolean,
     issueId: string,
-    talkTitle: string
+    talkTitle: string,
+    /** Who sends the reminder (the signed-in user) and the organisation roster, for `toolboxTalkRecipients`. */
+    audience?: { actor?: User | null; users?: ReadonlyArray<User> }
   ) => Promise<void>
   addRecipients: (
     organizationId: string,
@@ -200,7 +204,7 @@ export const useHealthSafetyStore = create<HealthSafetyState>((set, get) => ({
     })
   },
 
-  remindPending: async (organizationId, projectId, isSmallWorks, issueId, talkTitle) => {
+  remindPending: async (organizationId, projectId, isSmallWorks, issueId, talkTitle, audience) => {
     const current = get().data ?? emptyData()
     const now = new Date()
     const pending = current.signatures.filter((sig) => sig.issueId === issueId && sig.status !== 'signed')
@@ -208,14 +212,22 @@ export const useHealthSafetyStore = create<HealthSafetyState>((set, get) => ({
       sig.issueId === issueId && sig.status !== 'signed' ? { ...sig, reminderSentAt: now } : sig
     )
     await get().save(organizationId, projectId, isSmallWorks, { ...current, signatures })
+    // `toolboxTalkRecipients`: the people still to sign, never the person sending the reminder.
+    const users = audience?.users ?? []
+    const actor = audience?.actor ? rulebookPerson(audience.actor, users) : inboxActorUserId() || null
+    const recipients = toolboxTalkRecipients(
+      pending.map((sig) => sig.userId),
+      actor,
+      rulebookRoster(users)
+    )
     await Promise.all(
-      pending.map((sig) =>
+      recipients.map((userId) =>
         saveInboxNotification({
           organizationId,
           type: 'hs_toolbox_reminder',
           title: 'Toolbox talk reminder',
           message: `Please sign “${talkTitle}”.`,
-          userId: sig.userId,
+          userId,
           relatedId: issueId,
         })
       )

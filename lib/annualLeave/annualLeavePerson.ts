@@ -2,6 +2,7 @@ import type { Operative, User } from '@/types'
 import { hasAdminAccess } from '@/lib/permissions'
 import { isPendingPerson } from '@/lib/staff/pendingPeople'
 import { lineManagerIds } from '@/lib/canonical'
+import { rulebookPerson, rulebookRoster } from '@/lib/staff/rulebookPeople'
 
 export interface AnnualLeavePerson {
   id: string
@@ -157,7 +158,10 @@ export function canManagePersonAnnualLeave(
   if (!actor.permissions?.manager) return false
   const member = person.userId ? users.find((user) => user.id === person.userId) : undefined
   if (!member) return false
-  return lineManagerIds(member).includes(actor.id)
+  // `lineManagerIds(user, roster)`: active line managers only, never the person under any of their ids.
+  return lineManagerIds(rulebookPerson(member, users), rulebookRoster(users)).some(
+    (id) => id.toLowerCase() === actor.id.toLowerCase()
+  )
 }
 
 export function resolvePersonName(

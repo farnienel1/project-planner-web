@@ -20,7 +20,8 @@ import {
   setupSectionTitle,
 } from '@/lib/staff/userEditPermissions'
 import { lineManagerChoices, rosterStatusLabel } from '@/lib/staff/userRosterUtils'
-import { userLineManagerRequiredError } from '@/lib/annualLeave/holidayApprovalUtils'
+import { userLineManagerRequiredError, userMayHaveNoLineManager } from '@/lib/annualLeave/holidayApprovalUtils'
+import { userTimesheetSelfSigned } from '@/lib/timesheets/timesheetApprovalPolicy'
 import { UserAvatar } from '@/components/users/UserAvatar'
 import { PayBasisFields, payChoiceFromProfile, payChoiceToRates } from '@/components/users/PayBasisFields'
 import { PreviousRatesList, usePaySaveGate } from '@/components/users/PayRateChangeDialogs'
@@ -114,23 +115,24 @@ const ACCOUNT_TYPE_OPTIONS: {
   },
 ]
 
-function hasLineManager(user: User): boolean {
-  if (user.assignedManagerUserId?.trim()) return true
-  return (user.assignedManagerUserIds || []).some((id) => id.trim())
-}
-
+/**
+ * A self-approved admin (`timesheetSelfSigned(user, roster)`: admin or super admin outside operative mode with no
+ * active line manager) books their own leave approved anyway (`canSelfBookAnnualLeave`), so the self-book toggle
+ * shows on and locked. Everyone else's toggle is the stored permission.
+ */
 function permissionLocks(
   user: User,
-  accountType: 'operative' | 'manager' | 'admin'
+  accountType: 'operative' | 'manager' | 'admin',
+  users: ReadonlyArray<User>
 ): Partial<Record<keyof UserPermissions, string>> {
   const locks: Partial<Record<keyof UserPermissions, string>> = {}
   if (accountType === 'manager' && !user.isSuperAdmin) locks.adminAccess = ADMIN_ACCESS_LOCKED_MESSAGE
-  if (!hasLineManager(user)) locks.annualLeaveSelfBook = ''
+  if (userTimesheetSelfSigned(user, users)) locks.annualLeaveSelfBook = ''
   return locks
 }
 
-function annualLeaveChecked(user: User): Partial<Record<keyof UserPermissions, boolean>> | undefined {
-  if (hasLineManager(user)) return undefined
+function annualLeaveChecked(user: User, users: ReadonlyArray<User>): Partial<Record<keyof UserPermissions, boolean>> | undefined {
+  if (!userTimesheetSelfSigned(user, users)) return undefined
   return { annualLeaveSelfBook: true }
 }
 
@@ -426,6 +428,15 @@ export function EditUserProfile({
 
   const effectivePermissions = draftTypePermissions ?? target?.permissions
   const effectiveAccountType = draftAccountType ?? (target ? currentAccountType(target) : 'manager')
+  // The person as this screen would save them (a pending account-type change included).
+  const mayHaveNoLineManager = target
+    ? userMayHaveNoLineManager(
+        draftAccountType && draftTypePermissions
+          ? { ...applyAccountType(cloneUser(target), draftAccountType), permissions: draftTypePermissions }
+          : target,
+        users
+      )
+    : false
 
   const updatePermissions = (patch: Partial<UserPermissions>) => {
     if (!target || target.isSuperAdmin) return
@@ -444,7 +455,8 @@ export function EditUserProfile({
     e?.preventDefault()
     if (!target || !organization?.id || !canEdit) return
 
-    // `lineManagerRequiredError`: someone who cannot self-book annual leave needs a current line manager.
+    // `lineManagerRequiredError(user, roster)`: every operative and manager needs an active line manager, whatever
+    // the self-book permission; only admins outside operative mode may have none.
     // Checked on the person as it will be saved (draft account type and permissions included).
     const asSaved =
       draftAccountType && draftTypePermissions
@@ -622,6 +634,16 @@ export function EditUserProfile({
     const previous = target
     const next = !target.isActive
     const nextUser = { ...target, isActive: next, updatedAt: new Date() }
+    // Reactivating is a save too: `lineManagerRequiredError` refuses an active operative or manager with no active
+    // line manager (an inactive person is not checked).
+    if (next) {
+      const lineManagerMessage = userLineManagerRequiredError(nextUser, users)
+      if (lineManagerMessage) {
+        setLineManagerError(lineManagerMessage)
+        setError(lineManagerMessage)
+        return
+      }
+    }
     profileLoadGen.current += 1
     setActiveSaving(true)
     setError(null)
@@ -922,7 +944,14 @@ export function EditUserProfile({
           <SettingsCard>
             <div className="space-y-4 p-4">
               {(target.permissions.operativeMode || target.permissions.manager || target.permissions.adminAccess) && (
-                <FormField label="Line manager(s)" hint="Choose No line manager when this person has none.">
+                <FormField
+                  label="Line manager(s)"
+                  hint={
+                    mayHaveNoLineManager
+                      ? 'Choose No line manager when this admin has none.'
+                      : 'Required for operatives and managers.'
+                  }
+                >
                   <Select
                     value={displayedLineManagerId(target)}
                     disabled={!canEdit || saving || typeSaving}
@@ -931,7 +960,10 @@ export function EditUserProfile({
                       setTarget(userWithLineManagerChoice(target, e.target.value))
                     }}
                   >
-                    <option value="">No line manager</option>
+                    {/* "No line manager" only for an admin or super admin (`lineManagerRequired` false). */}
+                    <option value="" disabled={!mayHaveNoLineManager}>
+                      {mayHaveNoLineManager ? 'No line manager' : 'Choose a line manager'}
+                    </option>
                     {managers.map((manager) => (
                       <option key={manager.id} value={manager.id}>
                         {manager.firstName} {manager.surname} ({manager.email})
@@ -1291,8 +1323,8 @@ export function EditUserProfile({
                   onChange={updatePermissions}
                   disabled={!canEdit || target.isSuperAdmin}
                   excludeKeys={suppressAdminAccessToggle ? ['adminAccess'] : undefined}
-                  lockedMessages={permissionLocks(target, effectiveAccountType)}
-                  checkedOverrides={annualLeaveChecked(target)}
+                  lockedMessages={permissionLocks(target, effectiveAccountType, users)}
+                  checkedOverrides={annualLeaveChecked(target, users)}
                   onLocked={setLockedNotice}
                 />
               )}
@@ -1442,8 +1474,8 @@ export function EditUserProfile({
                         setDraftTypePermissions({ ...draftTypePermissions, ...patch })
                       }}
                       excludeKeys={suppressAdminAccessToggle ? ['adminAccess'] : undefined}
-                      lockedMessages={permissionLocks(target, effectiveAccountType)}
-                      checkedOverrides={annualLeaveChecked(target)}
+                      lockedMessages={permissionLocks(target, effectiveAccountType, users)}
+                      checkedOverrides={annualLeaveChecked(target, users)}
                       onLocked={setLockedNotice}
                     />
                   </div>

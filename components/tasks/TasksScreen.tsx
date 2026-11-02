@@ -253,6 +253,7 @@ export function TasksScreen() {
           booking: request,
           approved: true,
           decidedByName: holidayDecisionActorName(user),
+          decidedByUserId: user?.id ?? null,
           users,
           operatives,
         })
@@ -280,6 +281,7 @@ export function TasksScreen() {
           booking: request,
           approved: false,
           decidedByName: holidayDecisionActorName(user),
+          decidedByUserId: user?.id ?? null,
           users,
           operatives,
         })

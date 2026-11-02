@@ -15,14 +15,16 @@
  * `approvedAt` and `updatedAt` as server timestamps plus `writeMetadataFields`.
  *
  * Approvers (`leaveApproverIds`): every current line manager of the requester
- * (`assignedManagerUserIds`, else the legacy `assignedManagerUserId`). No line manager,
- * `hasNoLineManager`, or none of them still active in the roster → every active admin and
- * super admin. The requester never approves their own request.
+ * (`lineManagerIds(user, roster)`: `assignedManagerUserIds`, else the legacy `assignedManagerUserId`, only
+ * active roster members, never the requester under any of their ids). No line manager, `hasNoLineManager`,
+ * or none of them still active in the roster → every active admin and super admin outside operative mode
+ * (never "any manager"). The requester never approves their own request.
  */
 
 import { addDaysInZone, dateFromDayKeyInZone, dayKeyInZone } from '../orgTime/zoneTime'
 import { eachDayKey, isoWeekdayOfDayKey, zoneOrLondon } from './dayKeys'
 import type { StaffAccountRole } from './staffAccess'
+import { idKey, personIdSet, rosterMemberActive, rosterMemberFor, type PersonRosterRow } from './personIds'
 
 export const HOLIDAY_TIME_SLOTS = ['FULL DAY', 'AM', 'PM'] as const
 export type HolidayTimeSlotValue = (typeof HOLIDAY_TIME_SLOTS)[number]
@@ -201,6 +203,9 @@ export function holidayDecisionWriteFields(input: {
 
 export type LeaveRequester = {
   id?: string | null
+  email?: string | null
+  formerUserIds?: ReadonlyArray<string> | null
+  sameEmailUserIds?: ReadonlyArray<string> | null
   assignedManagerUserIds?: ReadonlyArray<string> | null
   assignedManagerUserId?: string | null
   hasNoLineManager?: boolean | null
@@ -211,109 +216,211 @@ export type LeaveApproverMember = {
   /** Missing counts as active. */
   isActive?: boolean | null
   role: StaffAccountRole
+  email?: string | null
+  formerUserIds?: ReadonlyArray<string> | null
+  sameEmailUserIds?: ReadonlyArray<string> | null
 }
 
-/** `assignedManagerUserIds`, else the legacy single id. Empty when `hasNoLineManager`. */
-export function lineManagerIds(user: LeaveRequester | null | undefined): string[] {
+type LineManagerRosterMember = Omit<PersonRosterRow, 'role'> & { role?: StaffAccountRole | string | null }
+
+/**
+ * The person's line managers: `assignedManagerUserIds`, else the legacy single id; empty when
+ * `hasNoLineManager`. Never the person under any of their ids (`personIdSet`: id, `formerUserIds`,
+ * `sameEmailUserIds`, same-email roster rows). With a non-empty `roster`, only managers who are on it and
+ * active count, and an id the roster knows only as an alias (an old invite id) is returned as that roster
+ * row's id. Order kept, de-duplicated without case.
+ */
+export function lineManagerIds(
+  user: LeaveRequester | null | undefined,
+  roster?: ReadonlyArray<LineManagerRosterMember> | null
+): string[] {
   if (!user || user.hasNoLineManager === true) return []
   const listed = (user.assignedManagerUserIds || []).map(text).filter(Boolean)
   const ids = listed.length > 0 ? listed : [text(user.assignedManagerUserId)].filter(Boolean)
-  return Array.from(new Set(ids))
+  const members = (roster || []).filter((member) => member && text(member.id)) as PersonRosterRow[]
+  const self = new Set(personIdSet(user, members).map(idKey))
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const id of ids) {
+    let resolved = id
+    if (members.length > 0) {
+      const member = rosterMemberFor(id, members)
+      if (!member || !rosterMemberActive(member)) continue
+      resolved = text(member.id)
+    }
+    if (self.has(idKey(id)) || self.has(idKey(resolved))) continue
+    if (seen.has(idKey(resolved))) continue
+    seen.add(idKey(resolved))
+    out.push(resolved)
+  }
+  return out
 }
 
-/** Who approves this person's leave (see file header). */
+/** Whether `lineManagerIds(user, roster)` names anyone: a current active line manager other than the person. */
+export function hasActiveLineManager(
+  user: LeaveRequester | null | undefined,
+  roster?: ReadonlyArray<LineManagerRosterMember> | null
+): boolean {
+  return lineManagerIds(user, roster).length > 0
+}
+
+/** Who approves this person's leave and timesheets (see file header). */
 export function leaveApproverIds(
   user: LeaveRequester | null | undefined,
   roster: ReadonlyArray<LeaveApproverMember> | null | undefined
 ): string[] {
   const members = (roster || []).filter((member) => member && text(member.id))
-  const self = text(user?.id)
-  const active = (member: LeaveApproverMember) => member.isActive !== false
-  const byId = new Map(members.map((member) => [text(member.id), member]))
-  const managers = lineManagerIds(user).filter((id) => {
-    if (id === self) return false
-    if (members.length === 0) return true
-    const member = byId.get(id)
-    return Boolean(member && active(member))
-  })
+  const managers = lineManagerIds(user, members)
   if (managers.length > 0) return managers
+  const self = new Set(personIdSet(user, members).map(idKey))
+  const seen = new Set<string>()
   return members
-    .filter(
-      (member) =>
-        active(member) &&
-        !member.role.isOperativeMode &&
-        (member.role.isSuperAdmin || member.role.isAdmin) &&
-        text(member.id) !== self
-    )
+    .filter((member) => {
+      const key = idKey(member.id)
+      if (!rosterMemberActive(member) || !isAdminOutsideOperativeMode(member) || self.has(key) || seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
     .map((member) => text(member.id))
 }
 
 /** Inbox type both apps write when someone asks for leave. */
 export const HOLIDAY_REQUEST_SUBMITTED_TYPE = 'holiday_request_submitted'
 
-// MARK: - Self-booking and the line-manager requirement (rulebook §8, §9, §11)
+// MARK: - Self-approval and the line-manager requirement (rulebook §8, §9, §11)
 
 /**
- * The fields `canSelfBookAnnualLeave` and `lineManagerRequiredError` read from `users/{uid}`. Each flag
- * counts at the top level or inside `permissions` (the same test as firestore.rules `staffFlag`).
+ * The fields the self-approval and line-manager rules read from `users/{uid}` (or a roster row). Each flag counts
+ * at the top level or inside `permissions` (the same test as firestore.rules `staffFlag`). `role` is the stored
+ * string (`admin`, `manager`, `operative`, `super_admin`) or the resolved `StaffAccountRole`.
  */
 export type LeaveSelfBookUser = LeaveRequester & {
   annualLeaveSelfBook?: boolean | null
   operativeMode?: boolean | null
-  role?: string | null
-  permissions?: { annualLeaveSelfBook?: boolean | null; operativeMode?: boolean | null } | null
+  adminAccess?: boolean | null
+  isSuperAdmin?: boolean | null
+  role?: string | StaffAccountRole | null
+  permissions?: {
+    annualLeaveSelfBook?: boolean | null
+    operativeMode?: boolean | null
+    adminAccess?: boolean | null
+    isSuperAdmin?: boolean | null
+  } | null
   /** Missing counts as active. An inactive person needs no line manager. */
   isActive?: boolean | null
-  /** `false` means annual leave is switched off for this person, so nothing needs approving. */
+  /** Kept for older callers; annual leave switched off no longer exempts anyone (timesheets still need approval). */
   annualLeaveEnabled?: boolean | null
 }
 
-function flagOn(user: LeaveSelfBookUser | null | undefined, key: 'annualLeaveSelfBook' | 'operativeMode'): boolean {
+type FlagKey = 'annualLeaveSelfBook' | 'operativeMode' | 'adminAccess' | 'isSuperAdmin'
+
+function flagOn(user: LeaveSelfBookUser | null | undefined, key: FlagKey): boolean {
   if (!user) return false
   return user[key] === true || user.permissions?.[key] === true
 }
 
-/**
- * Whether this person books their own annual leave straight to approved: the `annualLeaveSelfBook`
- * permission (given to admins and managers), and never in operative mode (`operativeMode` flag or the
- * `operative` role). Having no line manager does NOT make a person a self-booker. Everyone else sends a
- * pending request to `leaveApproverIds`. Same test as firestore.rules `hbCallerSelfBooks`.
- */
-export function canSelfBookAnnualLeave(user: LeaveSelfBookUser | null | undefined): boolean {
+function roleObject(role: unknown): StaffAccountRole | null {
+  if (!role || typeof role !== 'object') return null
+  return role as StaffAccountRole
+}
+
+function roleText(role: unknown): string {
+  return text(role).toLowerCase().replace(/[\s-]/g, '_')
+}
+
+/** Operative mode: the `operativeMode` flag, the `operative` role, or a resolved role in operative mode. */
+function inOperativeMode(user: LeaveSelfBookUser | null | undefined): boolean {
   if (!user) return false
-  if (flagOn(user, 'operativeMode') || text(user.role).toLowerCase() === 'operative') return false
-  return flagOn(user, 'annualLeaveSelfBook')
+  const role = roleObject(user.role)
+  if (role?.isOperativeMode === true) return true
+  return flagOn(user, 'operativeMode') || roleText(user.role) === 'operative'
+}
+
+/**
+ * Admin or super admin, not in operative mode: `isSuperAdmin` / `adminAccess` (top level or `permissions`), the
+ * `admin` / `super_admin` role, or a resolved role with `isAdmin` / `isSuperAdmin`. Same people as firestore.rules
+ * `adminLikeUser` without `isOperativeProfile`.
+ */
+export function isAdminOutsideOperativeMode(user: LeaveSelfBookUser | null | undefined): boolean {
+  if (!user || inOperativeMode(user)) return false
+  const role = roleObject(user.role)
+  if (role && (role.isAdmin === true || role.isSuperAdmin === true)) return true
+  const named = roleText(user.role)
+  return (
+    flagOn(user, 'isSuperAdmin') ||
+    flagOn(user, 'adminAccess') ||
+    named === 'admin' ||
+    named === 'super_admin' ||
+    named === 'superadmin'
+  )
+}
+
+/**
+ * Whether this person must have an active line manager (rulebook §8): every operative and every manager, whatever
+ * the self-book permission. Only an admin or super admin outside operative mode may have none. An inactive person
+ * (`isActive === false`) is not checked.
+ */
+export function lineManagerRequired(user: LeaveSelfBookUser | null | undefined): boolean {
+  if (!user || user.isActive === false) return false
+  return !isAdminOutsideOperativeMode(user)
+}
+
+/**
+ * Self-approved timesheets (rulebook §8): an admin or super admin outside operative mode with no active line manager
+ * (`hasActiveLineManager` false). Their signature completes the sheet — no note to the manager, no "pending manager
+ * signature", and the owner writes `weeklyReportOverride` (`timesheetOwnerWriteFields` with
+ * `subjectHasLineManager: !timesheetSelfSigned(...)`). Everyone else waits for their line manager, or the admins.
+ */
+export function timesheetSelfSigned(
+  user: LeaveSelfBookUser | null | undefined,
+  roster?: ReadonlyArray<LineManagerRosterMember> | null
+): boolean {
+  return isAdminOutsideOperativeMode(user) && !hasActiveLineManager(user, roster)
+}
+
+/**
+ * Whether this person's own annual leave saves approved (rulebook §9): the `annualLeaveSelfBook` permission outside
+ * operative mode, OR an admin / super admin outside operative mode with no active line manager (self-approved,
+ * `timesheetSelfSigned`). An admin with a line manager asks like everyone else unless they have the permission.
+ * Everyone else sends a pending request to `leaveApproverIds`. Same test as firestore.rules `hbCallerSelfBooks`.
+ */
+export function canSelfBookAnnualLeave(
+  user: LeaveSelfBookUser | null | undefined,
+  roster?: ReadonlyArray<LineManagerRosterMember> | null
+): boolean {
+  if (!user) return false
+  if (inOperativeMode(user)) return false
+  if (flagOn(user, 'annualLeaveSelfBook')) return true
+  return timesheetSelfSigned(user, roster)
+}
+
+/** The leave submit button when the leave saves approved (`canSelfBookAnnualLeave` true). */
+export const LEAVE_SUBMIT_LABEL = 'Submit'
+/** The leave submit button when the leave is a pending request. */
+export const LEAVE_SUBMIT_REQUEST_LABEL = 'Submit request'
+
+/** "Submit" for someone whose leave saves approved, else "Submit request". */
+export function leaveSubmitLabel(
+  user: LeaveSelfBookUser | null | undefined,
+  roster?: ReadonlyArray<LineManagerRosterMember> | null
+): string {
+  return canSelfBookAnnualLeave(user, roster) ? LEAVE_SUBMIT_LABEL : LEAVE_SUBMIT_REQUEST_LABEL
 }
 
 /** Shown by Manage Users (both apps) when it refuses a save by `lineManagerRequiredError`. */
-export const LINE_MANAGER_REQUIRED_MESSAGE = "Set a line manager — this person's annual leave needs approval."
+export const LINE_MANAGER_REQUIRED_MESSAGE = "Set a line manager — this person's timesheets and annual leave need approval."
 
 /**
- * Manage Users save check. A person who cannot self-book (`canSelfBookAnnualLeave` false) needs a current
- * line manager: `lineManagerIds(user)` not empty, `hasNoLineManager` not true, and — when `roster` is given —
- * at least one of those managers active in it and not the person themself. Returns
- * `LINE_MANAGER_REQUIRED_MESSAGE` when that is missing, otherwise null. An inactive person
- * (`isActive === false`) or one with annual leave switched off (`annualLeaveEnabled === false`) passes.
- * Pass the user as it will be saved (the edited line manager and self-book values).
+ * Manage Users save check (rulebook §8, §11). When `lineManagerRequired(user)` and the person has no active line
+ * manager other than themself (`hasActiveLineManager(user, roster)` false, `hasNoLineManager` counts as none),
+ * returns `LINE_MANAGER_REQUIRED_MESSAGE`; otherwise null. Pass the user as it will be saved.
  */
 export function lineManagerRequiredError(
   user: LeaveSelfBookUser | null | undefined,
-  roster?: ReadonlyArray<{ id: string; isActive?: boolean | null }> | null
+  roster?: ReadonlyArray<LineManagerRosterMember> | null
 ): string | null {
-  if (!user) return null
-  if (user.isActive === false || user.annualLeaveEnabled === false) return null
-  if (canSelfBookAnnualLeave(user)) return null
-  const self = text(user.id).toLowerCase()
-  let managers = lineManagerIds(user).filter((id) => id.toLowerCase() !== self)
-  if (roster && roster.length > 0) {
-    const active = new Set(
-      roster
-        .filter((member) => member && text(member.id) && member.isActive !== false)
-        .map((member) => text(member.id).toLowerCase())
-    )
-    managers = managers.filter((id) => active.has(id.toLowerCase()))
-  }
-  return managers.length > 0 ? null : LINE_MANAGER_REQUIRED_MESSAGE
+  if (!lineManagerRequired(user)) return null
+  return hasActiveLineManager(user, roster) ? null : LINE_MANAGER_REQUIRED_MESSAGE
 }
 
 /**
@@ -325,7 +432,9 @@ export function usersMissingLineManager(
   roster: ReadonlyArray<LeaveSelfBookUser & { id: string }> | null | undefined
 ): string[] {
   const members = (roster || []).filter((member) => member && text(member.id))
-  return members.filter((member) => lineManagerRequiredError(member, members) != null).map((member) => text(member.id))
+  return members
+    .filter((member) => lineManagerRequiredError(member, members as LineManagerRosterMember[]) != null)
+    .map((member) => text(member.id))
 }
 
 // MARK: - Who decides a request (rulebook §9)
@@ -337,7 +446,7 @@ export type LeaveRosterMember = LeaveApproverMember & LeaveRequester
 
 /**
  * Whether `viewer` may approve or decline `requester`'s leave (and accept or refuse a cancellation).
- * Never their own request, admins included. An admin or super admin not in operative mode may decide any
+ * Never their own request under any of their ids (`personIdSet`), admins included. An admin or super admin not in operative mode may decide any
  * request in the organisation. Anyone else only when they are in `leaveApproverIds(requester, roster)`.
  */
 export function canDecideLeave(
@@ -348,6 +457,7 @@ export function canDecideLeave(
   const me = text(viewer?.id).toLowerCase()
   if (!viewer || !me) return false
   if (me === text(requester?.id).toLowerCase()) return false
+  if (personIdSet(requester, roster).some((id) => idKey(id) === me)) return false
   const role = viewer.role
   if (role && !role.isOperativeMode && (role.isAdmin || role.isSuperAdmin)) return true
   return leaveApproverIds(requester, roster).some((id) => id.toLowerCase() === me)

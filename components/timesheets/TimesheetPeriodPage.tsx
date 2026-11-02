@@ -26,7 +26,8 @@ import {
   postSignExtraWarningCopy,
   requiresLineManagerCounterSign,
   SIGNED_OFF_EDIT_NOTE,
-  userHasLineManager,
+  lineManagerUserIds,
+  userTimesheetSelfSigned,
 } from '@/lib/timesheets/timesheetApprovalPolicy'
 import { applyWeeklyReportOverride } from '@/lib/timesheets/weeklyReportOverride'
 import { staffAccountRole, userTimesheetSubjectIds } from '@/lib/permissions'
@@ -34,7 +35,6 @@ import {
   SENSITIVE_EXPORT_OPTION_LABEL,
   canViewSensitiveProfile,
   exportIncludesSensitiveFields,
-  lineManagerIds,
   seesEveryUserTimesheet,
   timesheetWriterIsReviewer,
 } from '@/lib/canonical'
@@ -258,18 +258,19 @@ export function TimesheetPeriodPage({
     return rows.sort((a, b) => (a.dayKey < b.dayKey ? -1 : a.dayKey > b.dayKey ? 1 : 0))
   }, [payroll.lineItems, leaveLines, timeZone])
 
-  const needsCounterSign = requiresLineManagerCounterSign(subjectUser)
+  // `timesheetSelfSigned(user, roster)`: only a self-signed admin skips the counter-signature.
+  const needsCounterSign = requiresLineManagerCounterSign(subjectUser, users)
   const canManagerReview = (() => {
     if (mode !== 'review' || !viewer) return false
     if (draft.exportedAt) {
       // `userTimesheetSubjects`: admins see everyone, a manager the people they line-manage under any of their ids.
       const inScope = userTimesheetSubjectIds(viewer, users).includes(subjectUser.id)
-      return inScope && isTimesheetFullyApproved(draft, subjectUser)
+      return inScope && isTimesheetFullyApproved(draft, subjectUser, users)
     }
-    return userHasLineManager(subjectUser) && !draft.managerSignedAt && Boolean(draft.operativeSignedAt)
+    return needsCounterSign && !draft.managerSignedAt && Boolean(draft.operativeSignedAt)
   })()
   const managerHasSigned = Boolean(draft.managerSignedAt)
-  const fullyApproved = isTimesheetFullyApproved(draft, subjectUser)
+  const fullyApproved = isTimesheetFullyApproved(draft, subjectUser, users)
   const extrasTotal = priceWorkTotal(draft, managerHasSigned, canManagerReview)
   const expensesAmount = expensesTotal(draft, managerHasSigned, canManagerReview)
   const total = grandTotal(payroll.lineItems, draft, managerHasSigned, canManagerReview)
@@ -292,6 +293,7 @@ export function TimesheetPeriodPage({
       const withOverride = applyWeeklyReportOverride({
         draft: next,
         user: subjectUser,
+        users,
         viewer,
         weekStart: periodStart,
         weekEnd: periodEnd,
@@ -315,7 +317,7 @@ export function TimesheetPeriodPage({
         subjectUserId: subjectUser.id,
         writerIsAdmin: Boolean(viewer && seesEveryUserTimesheet(staffAccountRole(viewer))),
         writerFormerIds: viewer?.formerUserIds ?? [],
-        subjectLineManagerIds: lineManagerIds(subjectUser),
+        subjectLineManagerIds: lineManagerUserIds(subjectUser, users),
       })
       const reviews = await saveTimesheetDraft({
         organizationId: organization.id,
@@ -325,7 +327,7 @@ export function TimesheetPeriodPage({
         draft: withOverride,
         timeZone,
         documentId: sourceDocumentId.current,
-        access: { reviewer, subjectHasLineManager: userHasLineManager(subjectUser) },
+        access: { reviewer, subjectHasLineManager: !userTimesheetSelfSigned(subjectUser, users) },
       })
       if (reviews !== (withOverride.extraEntryReviews ?? null)) {
         setDraft((current) => (current === withOverride ? { ...withOverride, extraEntryReviews: reviews } : current))
@@ -348,8 +350,13 @@ export function TimesheetPeriodPage({
       payrollPolicyEffectiveFrom,
       scheduleOptions,
       timeZone,
+      users,
     ]
   )
+
+  // The roster at load time, without reloading the sheet each time the roster listener republishes.
+  const usersRef = useRef(users)
+  usersRef.current = users
 
   useEffect(() => {
     if (!organization?.id) return
@@ -359,7 +366,7 @@ export function TimesheetPeriodPage({
       .then((loaded) => {
         if (cancelled) return
         sourceDocumentId.current = timesheetSourceDocumentId(loaded)
-        setDraft(applySelfApprovalIfNoLineManager(loaded, subjectUser))
+        setDraft(applySelfApprovalIfNoLineManager(loaded, subjectUser, usersRef.current))
       })
       .catch((err: unknown) => {
         if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load timesheet')
@@ -468,14 +475,16 @@ export function TimesheetPeriodPage({
           operativeSignedByName: name,
           operativeSignatureImageBase64: signature,
         },
-        subjectUser
+        subjectUser,
+        users
       )
       await persist(next)
-      if (organization?.id && requiresLineManagerCounterSign(subjectUser)) {
+      if (organization?.id && requiresLineManagerCounterSign(subjectUser, users)) {
         try {
           await notifyTimesheetPendingManagerSignoff({
             organizationId: organization.id,
             signedByUser: subjectUser,
+            users,
             weekStart: periodStart,
             timeZone,
           })
@@ -517,6 +526,7 @@ export function TimesheetPeriodPage({
             subjectUser,
             signedByName: name,
             signedByUserId: viewer.id,
+            users,
             weekStart: periodStart,
             weekEnd: periodEnd,
             timeZone,
@@ -822,7 +832,7 @@ export function TimesheetPeriodPage({
             </button>
           </div>
 
-          {userHasLineManager(subjectUser) ? (
+          {needsCounterSign ? (
             <label className="block rounded-2xl bg-white p-4 shadow-[0_1px_2px_rgba(0,0,0,0.10)]">
               <span className="text-[15px] font-semibold">Note to manager</span>
               <textarea
@@ -836,7 +846,7 @@ export function TimesheetPeriodPage({
 
           <div className="flex gap-3 rounded-xl bg-[#FDEAEA] p-3 text-[13px] text-[#7F1D1D]">
             <span className="text-lg">⚠</span>
-            <p>{hoursWarningCopy(subjectUser)}</p>
+            <p>{hoursWarningCopy(subjectUser, users)}</p>
           </div>
 
           {!draft.operativeSignedAt ? (
@@ -923,7 +933,7 @@ export function TimesheetPeriodPage({
             ) : (
               <p className="mt-2 text-[14px] text-amber-700">Operative has not signed this week yet.</p>
             )}
-            {userHasLineManager(subjectUser) ? (
+            {needsCounterSign ? (
               draft.managerSignedAt ? (
                 <SignedBlock
                   base64={draft.managerSignatureImageBase64}
@@ -943,7 +953,7 @@ export function TimesheetPeriodPage({
               </div>
               <p className="text-[13px] text-[var(--ink3)]">{SIGNED_OFF_EDIT_NOTE}</p>
             </div>
-          ) : userHasLineManager(subjectUser) && !draft.managerSignedAt ? (
+          ) : needsCounterSign && !draft.managerSignedAt ? (
             <div className="space-y-2">
               {extrasPendingReview(draft) && (draft.expenseEntries.length > 0 || draft.priceWorkEntries.length > 0) ? (
                 <p className="text-[13px] text-amber-700">
@@ -1021,7 +1031,7 @@ export function TimesheetPeriodPage({
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-sm rounded-2xl bg-white p-5">
             <p className="text-[17px] font-semibold">Re-sign required</p>
-            <p className="mt-3 text-[15px] text-[var(--ink3)]">{postSignExtraWarningCopy(subjectUser, draft)}</p>
+            <p className="mt-3 text-[15px] text-[var(--ink3)]">{postSignExtraWarningCopy(subjectUser, draft, users)}</p>
             <button
               type="button"
               onClick={() => void acceptPostSignExtra()}

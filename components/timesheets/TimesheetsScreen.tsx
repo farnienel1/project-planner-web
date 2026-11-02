@@ -18,7 +18,7 @@ import {
   type ExportedTimesheetHistoryRow,
 } from '@/lib/timesheets/timesheetStorage'
 import type { TimesheetDraft } from '@/lib/timesheets/timesheetDraft'
-import { SIGNED_OFF_EDIT_NOTE, userHasLineManager } from '@/lib/timesheets/timesheetApprovalPolicy'
+import { SIGNED_OFF_EDIT_NOTE, userTimesheetSelfSigned } from '@/lib/timesheets/timesheetApprovalPolicy'
 import {
   SENSITIVE_EXPORT_OPTION_LABEL,
   canViewSensitiveProfile,
@@ -204,8 +204,8 @@ export function TimesheetsScreen({
   }, [reload])
 
   const visible = useMemo(
-    () => (teamTab === 'exported' ? [] : currentPeriodTimesheetMembers(groups, drafts, teamTab)),
-    [groups, drafts, teamTab]
+    () => (teamTab === 'exported' ? [] : currentPeriodTimesheetMembers(groups, drafts, teamTab, users)),
+    [groups, drafts, teamTab, users]
   )
 
   const summaryFor = (member: User, draft: TimesheetDraft | undefined, start: Date, end: Date) => {
@@ -243,6 +243,7 @@ export function TimesheetsScreen({
       const agreed = applyWeeklyReportOverride({
         draft: { ...source, exportedAt },
         user: member,
+        users,
         viewer: user,
         weekStart: periodStart,
         weekEnd: periodEnd,
@@ -266,7 +267,7 @@ export function TimesheetsScreen({
         draft: agreed,
         timeZone,
         documentId,
-        access: { subjectHasLineManager: userHasLineManager(member) },
+        access: { subjectHasLineManager: !userTimesheetSelfSigned(member, users) },
       })
     }
   }
@@ -309,6 +310,7 @@ export function TimesheetsScreen({
         const agreed = applyWeeklyReportOverride({
           draft: { ...draft, exportedAt },
           user: member,
+          users,
           viewer: user,
           weekStart: periodStart,
           weekEnd: periodEnd,

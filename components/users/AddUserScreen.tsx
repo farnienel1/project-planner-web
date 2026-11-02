@@ -14,6 +14,7 @@ import {
   CANONICAL_TIME_ZONE,
   canViewSensitiveProfile,
   leaveYearBounds,
+  lineManagerRequired,
   lineManagerRequiredError,
   snapLeaveDays,
 } from '@/lib/canonical'
@@ -21,6 +22,7 @@ import { dayKeyInZone } from '@/lib/orgTime/zoneTime'
 import { DEFAULT_ANNUAL_LEAVE } from '@/lib/settings/organizationSettings'
 import { STAFF_TRADE_TYPES } from '@/lib/staff/staffTradeTypes'
 import { lineManagerChoices } from '@/lib/staff/userRosterUtils'
+import { rulebookRoster } from '@/lib/staff/rulebookPeople'
 import {
   MANAGER_PERMISSION_TOGGLES,
   OPERATIVE_PERMISSION_TOGGLES,
@@ -257,6 +259,14 @@ export function AddUserScreen() {
     return { ...permissions, manager: true, operativeMode: false, adminAccess: false, skills: false, materials: true, siteAudit: true }
   }, [accountType, operativeInviteOnly, permissions])
 
+  // "No line manager" only when `lineManagerRequired` is false: an admin or super admin outside operative mode.
+  const mayHaveNoLineManager = !lineManagerRequired({
+    isActive: true,
+    role: accountType,
+    adminAccess: invitePermissions.adminAccess === true,
+    operativeMode: invitePermissions.operativeMode === true,
+  })
+
   const handleSubmit = async (e?: FormEvent) => {
     e?.preventDefault()
     if (!organization?.id || !user) return
@@ -277,26 +287,26 @@ export function AddUserScreen() {
       setError('Trade is required.')
       return
     }
-    if (accountType === 'operative' && form.assignedManagerUserIds.length === 0) {
-      setError('An operative needs a line manager.')
-      return
-    }
-    if ((accountType === 'manager' || accountType === 'admin') && !form.hasNoLineManager && form.assignedManagerUserIds.length === 0) {
+    if (mayHaveNoLineManager && !form.hasNoLineManager && form.assignedManagerUserIds.length === 0) {
       setError('Choose a line manager, or No line manager.')
       return
     }
-    // `lineManagerRequiredError`: without the annual-leave self-book permission, a line manager is required.
+    // `lineManagerRequiredError(user, roster)`: every operative and manager needs an active line manager, whatever
+    // the self-book permission. Only admins and super admins outside operative mode may have none.
     const lineManagerMessage = lineManagerRequiredError(
       {
         id: '',
-        assignedManagerUserIds: form.hasNoLineManager ? [] : form.assignedManagerUserIds,
-        hasNoLineManager: accountType !== 'operative' && form.hasNoLineManager,
-        annualLeaveSelfBook: invitePermissions.annualLeaveSelfBook === true,
-        operativeMode: invitePermissions.operativeMode === true,
+        email,
+        isActive: true,
         role: accountType,
+        adminAccess: invitePermissions.adminAccess === true,
+        operativeMode: invitePermissions.operativeMode === true,
+        annualLeaveSelfBook: invitePermissions.annualLeaveSelfBook === true,
+        assignedManagerUserIds: form.hasNoLineManager ? [] : form.assignedManagerUserIds,
+        hasNoLineManager: mayHaveNoLineManager && form.hasNoLineManager,
         annualLeaveEnabled: form.annualLeaveEnabled,
       },
-      users.map((member) => ({ id: member.id, isActive: member.isActive }))
+      rulebookRoster(users)
     )
     if (lineManagerMessage) {
       setError(lineManagerMessage)
@@ -349,7 +359,7 @@ export function AddUserScreen() {
               }).yearKey,
             })
           : {}),
-        hasNoLineManager: accountType !== 'operative' && form.hasNoLineManager,
+        hasNoLineManager: mayHaveNoLineManager && form.hasNoLineManager,
       })
 
       if (result.inviteType === 'existing_user_org_add') {
@@ -638,7 +648,7 @@ export function AddUserScreen() {
               <div className="space-y-4 p-4">
                 <FormField
                   label="Line managers"
-                  hint={accountType === 'operative' ? 'Required for an operative.' : 'Required unless No line manager is set.'}
+                  hint={mayHaveNoLineManager ? 'Required unless No line manager is set.' : 'Required for operatives and managers.'}
                 >
                   <LineManagerMultiSelect
                     managers={lineManagers}
@@ -648,7 +658,7 @@ export function AddUserScreen() {
                     }
                   />
                 </FormField>
-                {accountType !== 'operative' ? (
+                {mayHaveNoLineManager ? (
                   <label className="flex items-center gap-2 text-sm text-slate-800">
                     <input
                       type="checkbox"

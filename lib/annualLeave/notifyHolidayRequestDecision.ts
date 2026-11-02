@@ -1,15 +1,17 @@
 /**
  * iOS parity: NotificationService.notifyHolidayRequestDecisionToUser
  *
- * One inbox row for the operative. Not receivesJobNotification.
+ * One inbox row for the requester: `holidayDecisionRecipients(requester, decider, roster)` (nobody when the
+ * requester decided it themself). Not receivesJobNotification.
  * Device push is functions/inbox-push on create of
  * organizations/{orgId}/notifications/{id}. Web does not send a browser/OS alert.
  */
 
 import { saveInboxNotification } from '@/lib/firebase/notifyInbox'
 import { syntheticUuidFromKey } from '@/lib/ios-parity/uuid'
-import { dayKey } from '@/lib/ios-parity/londonTime'
-import { notificationDestination } from '@/lib/canonical'
+import { currentOrganizationTimeZone } from '@/lib/stores/organizationDocumentStore'
+import { holidayDecisionRecipients, lineManagerPeerRecipients, notificationDestination } from '@/lib/canonical'
+import { rulebookPerson, rulebookRoster } from '@/lib/staff/rulebookPeople'
 import type { HolidayBooking, Operative, User } from '@/types'
 
 export const HOLIDAY_REQUEST_APPROVED = 'holiday_request_approved'
@@ -50,23 +52,31 @@ export function holidayDecisionRecipientUserId(
   return account?.id ? trimmed(account.id) || null : null
 }
 
-function abbreviatedLeaveDay(date: Date): string {
+function abbreviatedLeaveDay(date: Date, timeZone: string): string {
   return new Intl.DateTimeFormat('en-GB', {
-    timeZone: 'Europe/London',
+    timeZone,
     day: 'numeric',
     month: 'short',
     year: 'numeric',
   }).format(date)
 }
 
-/** iOS `annualLeaveDateText(for:)` — abbreviated start/end plus timeSlot raw value. */
+function zoneDayKey(date: Date, timeZone: string): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(date)
+}
+
+/**
+ * iOS `AnnualLeaveNoticeText.decisionDateText` — abbreviated start/end plus timeSlot raw value, in the
+ * organisation business time zone (RULEBOOK §1; defaults to the open organisation's zone).
+ */
 export function annualLeaveDecisionDateText(
-  booking: Pick<HolidayBooking, 'startDate' | 'endDate' | 'timeSlot'>
+  booking: Pick<HolidayBooking, 'startDate' | 'endDate' | 'timeSlot'>,
+  timeZone: string = currentOrganizationTimeZone()
 ): string {
-  const start = abbreviatedLeaveDay(booking.startDate)
-  const end = abbreviatedLeaveDay(booking.endDate)
+  const start = abbreviatedLeaveDay(booking.startDate, timeZone)
+  const end = abbreviatedLeaveDay(booking.endDate, timeZone)
   const slot = booking.timeSlot
-  if (dayKey(booking.startDate) === dayKey(booking.endDate)) {
+  if (zoneDayKey(booking.startDate, timeZone) === zoneDayKey(booking.endDate, timeZone)) {
     return `${start} (${slot})`
   }
   return `${start} – ${end} (${slot})`
@@ -106,13 +116,25 @@ export function buildHolidayRequestDecisionNotification(input: {
   booking: HolidayBooking
   approved: boolean
   decidedByName: string
+  /** The signed-in decider (the actor): never notified about their own decision under any of their ids. */
+  decidedByUserId?: string | null
   reason?: string | null
   users?: ReadonlyArray<User>
   operatives?: ReadonlyArray<Operative>
 }): HolidayRequestDecisionWrite | null {
   const organizationId = trimmed(input.organizationId)
-  const userId = holidayDecisionRecipientUserId(input.booking, input.users, input.operatives)
-  if (!organizationId || !userId) return null
+  const requesterId = holidayDecisionRecipientUserId(input.booking, input.users, input.operatives)
+  if (!organizationId || !requesterId) return null
+  const users = input.users ?? []
+  const requesterUser = users.find((row) => row.id === requesterId)
+  const deciderId = trimmed(input.decidedByUserId)
+  const deciderUser = deciderId ? users.find((row) => row.id === deciderId) : undefined
+  const [userId] = holidayDecisionRecipients(
+    requesterUser ? rulebookPerson(requesterUser, users) : requesterId,
+    deciderUser ? rulebookPerson(deciderUser, users) : deciderId || null,
+    rulebookRoster(users)
+  )
+  if (!userId) return null
 
   const approved = input.approved === true
   const type = approved ? HOLIDAY_REQUEST_APPROVED : HOLIDAY_REQUEST_DECLINED
@@ -140,15 +162,89 @@ export function buildHolidayRequestDecisionNotification(input: {
   }
 }
 
+export const LINE_MANAGER_PEER_UPDATE_TYPE = 'line_manager_peer_update'
+
+export type LeaveDecisionPeerWrite = {
+  dedupeKey: string
+  organizationId: string
+  type: typeof LINE_MANAGER_PEER_UPDATE_TYPE
+  title: string
+  message: string
+  userId: string
+  relatedId: string
+}
+
+/**
+ * `line_manager_peer_update` (inbox only, no push) after a leave decision: one row per
+ * `lineManagerPeerRecipients(requester, decider, roster)` — the requester's other active line managers, never the
+ * decider or the requester. Same copy and key as iOS: "{decider} {approved|declined} {name}'s annual leave request.
+ * {dates}" ("annual leave cancellation" for a cancellation request), key `lmPeer|{decider}|{dates}|{peer}|{verb}`.
+ */
+export function buildLeaveDecisionPeerNotifications(input: {
+  organizationId: string
+  booking: HolidayBooking
+  approved: boolean
+  decidedByName: string
+  decidedByUserId?: string | null
+  users?: ReadonlyArray<User>
+  operatives?: ReadonlyArray<Operative>
+}): LeaveDecisionPeerWrite[] {
+  const organizationId = trimmed(input.organizationId)
+  const requesterId = holidayDecisionRecipientUserId(input.booking, input.users, input.operatives)
+  const users = input.users ?? []
+  const requesterUser = requesterId ? users.find((row) => row.id === requesterId) : undefined
+  if (!organizationId || !requesterUser) return []
+  const deciderId = trimmed(input.decidedByUserId)
+  const deciderUser = deciderId ? users.find((row) => row.id === deciderId) : undefined
+  const peers = lineManagerPeerRecipients(
+    rulebookPerson(requesterUser, users),
+    deciderUser ? rulebookPerson(deciderUser, users) : deciderId || null,
+    rulebookRoster(users)
+  )
+  if (peers.length === 0) return []
+  const actorName = trimmed(input.decidedByName) || 'Manager'
+  const verb = input.approved === true ? 'approved' : 'declined'
+  const name = `${requesterUser.firstName ?? ''} ${requesterUser.surname ?? ''}`.trim() || trimmed(requesterUser.email)
+  const subject = input.booking.cancellationRequestedAt ? 'annual leave cancellation' : 'annual leave request'
+  const dates = annualLeaveDecisionDateText(input.booking)
+  return peers.map((peerId) => ({
+    dedupeKey: `lmPeer|${actorName}|${dates}|${peerId}|${verb}`,
+    organizationId,
+    type: LINE_MANAGER_PEER_UPDATE_TYPE,
+    title: 'Line manager update',
+    message: `${actorName} ${verb} ${name}'s ${subject}. ${dates}`,
+    userId: peerId,
+    relatedId: input.booking.id,
+  }))
+}
+
 export async function notifyHolidayRequestDecisionToUser(input: {
   organizationId: string
   booking: HolidayBooking
   approved: boolean
   decidedByName: string
+  /** The signed-in decider (the actor). */
+  decidedByUserId?: string | null
   reason?: string | null
   users?: ReadonlyArray<User>
   operatives?: ReadonlyArray<Operative>
 }): Promise<void> {
+  // The requester's other line managers hear about the decision (inbox only), like a timesheet sign-off.
+  for (const peer of buildLeaveDecisionPeerNotifications(input)) {
+    try {
+      await saveInboxNotification({
+        id: await syntheticUuidFromKey(peer.dedupeKey),
+        organizationId: peer.organizationId,
+        type: peer.type,
+        title: peer.title,
+        message: peer.message,
+        userId: peer.userId,
+        relatedId: peer.relatedId,
+      })
+    } catch {
+      // Best effort; keep going.
+    }
+  }
   const payload = buildHolidayRequestDecisionNotification(input)
   if (!payload) return
   try {

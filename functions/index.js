@@ -5,6 +5,12 @@
  * Allow-list, preference check, and badge count come from the packed rulebook.
  * Do not copy those lists here. Same document id must not push again on update.
  *
+ * Rulebook §13: a row is never pushed to the person who caused it. `actorUserId` (written by the
+ * app, validated by security rules) equal to the row's `userId`, or to one of the recipient's
+ * `formerUserIds`, means no push — a last guard behind the recipient rules. The badge counts the
+ * recipient's own unread rows only (`userId == recipient`, `isRead == false`, bounded read), the
+ * same rule as `unreadNotificationBadgeCount`.
+ *
  * Email HTTP `sendProjectPlannerEmail` already lives on this Firebase project
  * (us-central1). This package is codebase `inbox-push` so a deploy here does
  * not replace that function.
@@ -36,6 +42,21 @@ function pushTokenList(raw) {
   return single ? [single] : []
 }
 
+/** Most unread rows read for the icon badge; the badge is a hint, not a ledger. */
+const BADGE_READ_LIMIT = 100
+
+function idList(raw) {
+  return Array.isArray(raw) ? raw.map((value) => trimmed(value)).filter(Boolean) : []
+}
+
+/** True when the actor is the recipient under the row's userId or one of the recipient's former ids. */
+function actorIsRecipient(actorUserId, userId, user) {
+  const actor = trimmed(actorUserId).toLowerCase()
+  if (!actor) return false
+  const ids = [userId, ...idList(user && user.formerUserIds)].map((id) => trimmed(id).toLowerCase())
+  return ids.includes(actor)
+}
+
 function asInboxRow(id, data) {
   const row = data && typeof data === 'object' ? data : {}
   return {
@@ -61,22 +82,28 @@ exports.sendDevicePushOnNotificationCreate = onDocumentCreated(
     const notificationId = trimmed(event.params.notificationId)
     if (!type || !userId || !orgId || !notificationId) return
     if (!canonical.notificationDeliversDevicePush(type)) return
+    // Never push a row to the person who caused it (cheap check before any read).
+    if (actorIsRecipient(data.actorUserId, userId, null)) return
 
     const db = getFirestore()
     const userSnap = await db.doc(`users/${userId}`).get()
     if (!userSnap.exists) return
     const user = userSnap.data() || {}
+    if (actorIsRecipient(data.actorUserId, userId, user)) return
     const prefs = canonical.parseUserNotificationPreferences(user.notificationPreferences)
     if (!canonical.notificationPreferenceAllowsDelivery(prefs, type)) return
 
     const tokens = pushTokenList(user.pushTokens)
     if (tokens.length === 0) return
 
+    // Only this recipient's unread rows, bounded (never the whole organisation's inbox).
     const unreadSnap = await db
       .collection('organizations')
       .doc(orgId)
       .collection('notifications')
+      .where('userId', '==', userId)
       .where('isRead', '==', false)
+      .limit(BADGE_READ_LIMIT)
       .get()
     const byId = new Map()
     for (const doc of unreadSnap.docs) {

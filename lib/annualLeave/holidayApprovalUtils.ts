@@ -1,15 +1,16 @@
 import type { HolidayBooking, Operative, User } from '@/types'
 import { staffAccountRole } from '@/lib/permissions'
+import { rulebookPerson, rulebookRoster, type RulebookPerson } from '@/lib/staff/rulebookPeople'
 import {
   canDecideLeave,
   canSelfBookAnnualLeave,
   leaveApproverIds,
   leaveDecisionQueue,
   lineManagerIds,
+  leaveSubmitLabel,
+  lineManagerRequired,
   lineManagerRequiredError,
   usersMissingLineManager,
-  type LeaveRosterMember,
-  type LeaveSelfBookUser,
 } from '@/lib/canonical'
 import { dayKey } from '@/lib/ios-parity/londonTime'
 import { isPendingHolidayRequest } from '@/lib/stores/holidayStore'
@@ -34,52 +35,58 @@ export function holidayRequester(request: HolidayBooking, users: User[], operati
   return null
 }
 
-/** The rulebook's view of a `users` row for the leave rules (`LeaveSelfBookUser`). */
-export function leaveUser(user: User): LeaveSelfBookUser & { id: string } {
-  return {
-    id: user.id,
-    assignedManagerUserIds: user.assignedManagerUserIds ?? null,
-    assignedManagerUserId: user.assignedManagerUserId ?? null,
-    hasNoLineManager: user.hasNoLineManager ?? null,
-    annualLeaveSelfBook: user.permissions?.annualLeaveSelfBook === true,
-    operativeMode: user.permissions?.operativeMode === true,
-    role: String(user.role ?? ''),
-    isActive: user.isActive,
-    annualLeaveEnabled: user.annualLeaveEnabled ?? null,
-  }
+/**
+ * The rulebook's view of a `users` row for the leave rules: the full person (`rulebookPerson`: id, email, active
+ * flag, role and role flags, `formerUserIds`, `sameEmailUserIds`, line-manager fields). Pass the roster so the
+ * same-email aliases are filled in.
+ */
+export function leaveUser(user: User, users: ReadonlyArray<User> = []): RulebookPerson {
+  return rulebookPerson(user, users)
 }
 
-/** The roster as the leave rules read it: approver role plus each person's own line-manager fields. */
-export function leaveRoster(users: User[]): LeaveRosterMember[] {
-  return users.map((member) => ({
-    ...leaveUser(member),
-    isActive: member.isActive,
-    role: staffAccountRole(member),
-  }))
+/** The roster as the leave rules read it (`rulebookRoster`). */
+export function leaveRoster(users: ReadonlyArray<User>): RulebookPerson[] {
+  return rulebookRoster(users)
 }
 
-/** `canSelfBookAnnualLeave`: the self-book permission, never in operative mode. */
-export function userCanSelfBookAnnualLeave(user: User | null | undefined): boolean {
-  return user ? canSelfBookAnnualLeave(leaveUser(user)) : false
+/**
+ * `canSelfBookAnnualLeave(user, roster)`: the self-book permission outside operative mode, or an admin / super admin
+ * outside operative mode with no active line manager (self-approved).
+ */
+export function userCanSelfBookAnnualLeave(user: User | null | undefined, users: ReadonlyArray<User> = []): boolean {
+  return user ? canSelfBookAnnualLeave(leaveUser(user, users), leaveRoster(users)) : false
 }
 
-/** `lineManagerRequiredError` for the person as it will be saved (Manage Users). */
-export function userLineManagerRequiredError(user: User, users: User[]): string | null {
-  return lineManagerRequiredError(
-    leaveUser(user),
-    users.map((member) => ({ id: member.id, isActive: member.isActive }))
-  )
+/** `leaveSubmitLabel(user, roster)`: "Submit" when the leave saves approved, else "Submit request". */
+export function userLeaveSubmitLabel(user: User | null | undefined, users: ReadonlyArray<User> = []): string {
+  return user ? leaveSubmitLabel(leaveUser(user, users), leaveRoster(users)) : leaveSubmitLabel(null)
+}
+
+/** `lineManagerRequiredError(user, roster)` for the person as it will be saved (Manage Users). */
+export function userLineManagerRequiredError(user: User, users: ReadonlyArray<User>): string | null {
+  const roster = users.some((member) => member.id === user.id)
+    ? users.map((member) => (member.id === user.id ? user : member))
+    : [...users, user]
+  return lineManagerRequiredError(leaveUser(user, roster), leaveRoster(roster))
+}
+
+/**
+ * Whether Manage Users offers "No line manager" for this person: only when `lineManagerRequired` is false for them
+ * as an active account — an admin or super admin outside operative mode (`isAdminOutsideOperativeMode`).
+ */
+export function userMayHaveNoLineManager(user: User, users: ReadonlyArray<User> = []): boolean {
+  return !lineManagerRequired({ ...leaveUser(user, users), isActive: true })
 }
 
 /** `usersMissingLineManager`: roster people an admin still has to give a line manager. */
 export function usersWithoutRequiredLineManager(users: User[]): User[] {
-  const ids = new Set(usersMissingLineManager(users.map(leaveUser)))
+  const ids = new Set(usersMissingLineManager(leaveRoster(users)))
   return users.filter((member) => ids.has(member.id))
 }
 
 function requesterFor(request: HolidayBooking, users: User[], operatives: Operative[]) {
   const requester = holidayRequester(request, users, operatives)
-  if (requester) return leaveUser(requester)
+  if (requester) return leaveUser(requester, users)
   return { id: request.userId || request.operativeId || null }
 }
 
@@ -119,7 +126,7 @@ export function leaveSaveStatus(
 ): 'approved' | 'pending' {
   if (!viewer) return 'pending'
   const ownLeave = Boolean(subject.userId && subject.userId === viewer.id)
-  if (ownLeave) return userCanSelfBookAnnualLeave(viewer) ? 'approved' : 'pending'
+  if (ownLeave) return userCanSelfBookAnnualLeave(viewer, users) ? 'approved' : 'pending'
   const probe = {
     userId: subject.userId ?? undefined,
     operativeId: subject.operativeId ?? undefined,
@@ -134,7 +141,7 @@ export function getAssignedApproverUserId(
   operatives: Operative[]
 ): string | null {
   const requester = holidayRequester(request, users, operatives)
-  return requester ? lineManagerIds(requester)[0] ?? null : null
+  return requester ? lineManagerIds(leaveUser(requester, users), leaveRoster(users))[0] ?? null : null
 }
 
 export function getPendingHolidayRequests(bookings: HolidayBooking[]): HolidayBooking[] {

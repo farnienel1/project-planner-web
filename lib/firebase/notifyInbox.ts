@@ -4,7 +4,7 @@
  */
 
 import { doc, setDoc } from 'firebase/firestore'
-import { db } from '@/lib/firebase/config'
+import { auth, db } from '@/lib/firebase/config'
 import { serializeNotification } from '@/lib/ios-parity/converters'
 import { newUppercaseUuid } from '@/lib/ios-parity/uuid'
 
@@ -21,6 +21,12 @@ export async function saveInboxNotification(input: {
   dayKey?: string | null
   catalogue?: 'projects' | 'smallWorks' | null
   id?: string
+  /**
+   * Rulebook §13: who caused the row. Defaults to the signed-in user (security rules require exactly that uid when
+   * present). Pass null only for a scheduled notice nobody caused (the submission reminder), so the push function's
+   * "never push to the actor" guard does not silence the signed-in user's own reminder.
+   */
+  actorUserId?: string | null
 }): Promise<void> {
   if (!db) return
   const id = input.id || newUppercaseUuid()
@@ -40,7 +46,16 @@ export async function saveInboxNotification(input: {
   const dayKey = String(input.dayKey ?? '').trim()
   if (dayKey) payload.dayKey = dayKey
   if (input.catalogue === 'projects' || input.catalogue === 'smallWorks') payload.catalogue = input.catalogue
+  const actorUserId = inboxActorUserId(input.actorUserId)
+  if (actorUserId) payload.actorUserId = actorUserId
   await setDoc(doc(db, 'organizations', input.organizationId, 'notifications', id), payload)
+}
+
+/** The signed-in uid (`actorUserId` on every inbox row), unless the caller passes null for a scheduled notice. */
+export function inboxActorUserId(explicit?: string | null): string {
+  if (explicit === null) return ''
+  // Security rules accept only the signed-in uid, so any other value is never written.
+  return String(auth?.currentUser?.uid ?? '').trim()
 }
 
 /** NotificationService.notifyClientCreated ~L368 */

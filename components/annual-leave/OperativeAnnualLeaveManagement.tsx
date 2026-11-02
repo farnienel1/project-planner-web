@@ -198,6 +198,7 @@ export function OperativeAnnualLeaveManagement({
       booking,
       approved: status === 'approved',
       decidedByName: holidayDecisionActorName(user),
+      decidedByUserId: user?.id ?? null,
       reason: decisionNote,
       users,
       operatives,

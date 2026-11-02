@@ -866,7 +866,8 @@ export function ProjectHealthSafetySection({
                   project.id,
                   isSmallWorks,
                   trackIssue.id,
-                  resolveTalk(trackIssue)?.title || 'Toolbox talk'
+                  resolveTalk(trackIssue)?.title || 'Toolbox talk',
+                  { actor: user, users }
                 ).finally(() => setReminding(false))
               }}
               onAddRecipients={() => {
