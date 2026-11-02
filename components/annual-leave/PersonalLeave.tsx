@@ -6,9 +6,8 @@ import type { HolidayRequestCreate } from '@/lib/stores/holidayStore'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { useOrganizationTimeZone } from '@/lib/stores/organizationDocumentStore'
 import { holidayRequestRanges } from '@/lib/canonical'
-import { staffAccountRole } from '@/lib/permissions'
 import { notifyHolidayRequestSubmitted } from '@/lib/annualLeave/notifyHolidayRequestSubmitted'
-import { userCanSelfBookAnnualLeave } from '@/lib/annualLeave/holidayApprovalUtils'
+import { userCanSelfBookAnnualLeave, userLeaveSubmitLabel } from '@/lib/annualLeave/holidayApprovalUtils'
 import { getBookingForDay, getDayKindForBookings } from '@/lib/annualLeave/dayStatus'
 import { bookingsForPerson, userLeaveBalance } from '@/lib/annualLeave/leaveBalance'
 import { DEFAULT_ANNUAL_LEAVE, type OrgAnnualLeaveDefaults } from '@/lib/settings/organizationSettings'
@@ -143,6 +142,9 @@ export function PersonalLeave({
   requestCancellation?: (orgId: string, booking: HolidayBooking, userId: string) => Promise<void>
 }) {
   const timeZone = useOrganizationTimeZone()
+  const rosterUsers = useOrgUserStore((state) => state.users)
+  // `leaveSubmitLabel(user, roster)`: "Submit" when the leave saves approved, else "Submit request".
+  const submitLabel = userLeaveSubmitLabel(user, rosterUsers)
   const [month, setMonth] = useState(() => new Date())
   const [picks, setPicks] = useState<DayPick[]>([])
   const [editDay, setEditDay] = useState<Date | null>(null)
@@ -243,8 +245,14 @@ export function PersonalLeave({
         picks.map((pick) => ({ dayKey: format(pick.day, 'yyyy-MM-dd'), timeSlot: pick.slot })),
         timeZone
       )
-      // Approved only for a self-booker (`canSelfBookAnnualLeave`); everyone else sends a pending request.
-      const status = mode === 'manager' && userCanSelfBookAnnualLeave(user) ? 'approved' : 'pending'
+      // The full roster first: `canSelfBookAnnualLeave(user, roster)` and `holidayRequestRecipients` read the
+      // person's aliases and line managers from it.
+      const store = useOrgUserStore.getState()
+      if (store.users.length === 0) await store.loadUsers(organization.id).catch(() => undefined)
+      const users = useOrgUserStore.getState().users
+      // Approved for a self-booker (the permission, or an admin with no active line manager); everyone else sends
+      // a pending request.
+      const status = userCanSelfBookAnnualLeave(user, users) ? 'approved' : 'pending'
       const saved = await createRequests(
         organization.id,
         ranges.map((range) => ({
@@ -258,13 +266,6 @@ export function PersonalLeave({
         timeZone
       )
       if (status === 'pending' && saved.length > 0) {
-        const store = useOrgUserStore.getState()
-        if (store.users.length === 0) await store.loadUsers(organization.id).catch(() => undefined)
-        const roster = useOrgUserStore.getState().users.map((member) => ({
-          id: member.id,
-          isActive: member.isActive,
-          role: staffAccountRole(member),
-        }))
         const requesterName = `${user.firstName ?? ''} ${user.surname ?? ''}`.trim() || user.email
         for (const booking of saved) {
           await notifyHolidayRequestSubmitted({
@@ -272,13 +273,13 @@ export function PersonalLeave({
             booking,
             requester: user,
             requesterName,
-            roster,
+            users,
             timeZone,
           })
         }
       }
       flash(
-        mode === 'manager'
+        status === 'approved'
           ? `${daysLabel(selectedUnits)} booked.`
           : `Holiday request submitted for ${daysLabel(selectedUnits)}.`
       )
@@ -383,7 +384,7 @@ export function PersonalLeave({
               onClick={() => void submit()}
               className="mt-3 w-full rounded-2xl bg-blue-600 py-3 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-60"
             >
-              {saving ? 'Saving…' : mode === 'manager' ? 'Confirm booking' : 'Submit request'}
+              {saving ? 'Saving…' : submitLabel}
             </button>
           </div>
         ) : null}
@@ -459,6 +460,18 @@ export function PersonalLeave({
                             run: async () => {
                               if (!organization?.id || !user) return
                               await requestCancellation(organization.id, booking, user.id)
+                              // `holiday_request_submitted` (cancellation) to `holidayRequestRecipients`.
+                              const store = useOrgUserStore.getState()
+                              if (store.users.length === 0) await store.loadUsers(organization.id).catch(() => undefined)
+                              await notifyHolidayRequestSubmitted({
+                                organizationId: organization.id,
+                                booking,
+                                requester: user,
+                                requesterName: `${user.firstName ?? ''} ${user.surname ?? ''}`.trim() || user.email,
+                                users: useOrgUserStore.getState().users,
+                                timeZone,
+                                kind: 'cancellation',
+                              })
                               flash('Cancellation request sent to your manager.')
                             },
                           })

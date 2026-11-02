@@ -26,7 +26,7 @@ import {
   personDisplayName,
 } from '@/lib/settings/orgHubUtils'
 import { getManagerUsers, getOperativeModeUsers } from '@/lib/staff/userRosterUtils'
-import { bankHolidayRegionLabel } from '@/lib/settings/bankHolidayRegions'
+import { bankHolidayRegionLabel } from '@/lib/canonical'
 import { pluralize } from '@/lib/utils/pluralize'
 import {
   PanelHeader,

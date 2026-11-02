@@ -7,7 +7,11 @@ import { prepareClientUpload } from '@/lib/security/stripPhotoLocation'
 import { coalesceOrganizationName, saveCompanyDetails } from '@/lib/settings/organizationSettings'
 import {
   CURRENCY_OPTIONS,
+  bankHolidayRegionsForCountry,
+  companyDetailsRegionPrompt,
   companyDetailsValidationError,
+  defaultBankHolidayRegionForCountry,
+  normalizeBankHolidayRegionId,
   defaultCurrencyForCountry,
   normalizeCurrencyCode,
   normalizeDocumentAbbreviation,
@@ -23,12 +27,7 @@ import {
   useSettingsLeave,
 } from '@/components/settings/SettingsDirty'
 import { useApplyLiveWhenClean, useLiveOrganizationDetails } from '@/components/settings/useLiveOrganizationSettings'
-import {
-  COUNTRY_OPTIONS,
-  bankHolidayRegionIdFromSelection,
-  validateLogoFile,
-} from '@/lib/orgSetup/orgSetupSettings'
-import { bankHolidayRegionLabel } from '@/lib/settings/bankHolidayRegions'
+import { COUNTRY_OPTIONS, validateLogoFile } from '@/lib/orgSetup/orgSetupSettings'
 import {
   PanelHeader,
   SectionLabel,
@@ -58,8 +57,8 @@ type CompanyDraft = {
   logoPreview: string | null
 }
 
-/** Company countries (two-letter codes); UK subdivisions stay in the bank-holiday region picker. */
-const COMPANY_COUNTRY_OPTIONS = COUNTRY_OPTIONS.filter((option) => /^[A-Z]{2}$/.test(option.code))
+/** Company countries (canonical `bankHolidayCountries`); UK nations are regions, chosen below. */
+const COMPANY_COUNTRY_OPTIONS = COUNTRY_OPTIONS
 
 /** Saved currency on the document (any of the fields iOS or web write), without the country default. */
 function hasSavedCurrency(data: Record<string, unknown> | null): boolean {
@@ -154,13 +153,32 @@ export function CompanyDetailsPanel({ onBack }: { onBack: () => void }) {
   }, [live.data, savedCompany, fallbackName])
   useApplyLiveWhenClean({ source, status: live.status, dirty, apply: applyLoaded, onFailed: markFailed })
 
-  /** Country drives the time zone and, until a currency is saved, the default currency. */
+  /**
+   * Country drives the time zone and, until a currency is saved, the default currency. A region that does not
+   * belong to the new country is replaced by that country's default (`defaultBankHolidayRegionForCountry`);
+   * the region picker then asks the user to confirm it (`companyDetailsRegionPrompt`).
+   */
   function changeCountry(next: string) {
     if (!currencySaved && currency === defaultCurrencyForCountry(country)) {
       setCurrency(defaultCurrencyForCountry(next))
     }
+    const choices = bankHolidayRegionsForCountry(next)
+    if (!choices.some((region) => region.id === normalizeBankHolidayRegionId(regionId))) {
+      setRegionId(defaultBankHolidayRegionForCountry(next) ?? '')
+    }
     setCountry(next)
   }
+
+  const regionChoices = bankHolidayRegionsForCountry(country)
+  const regionPrompt = savedCompany
+    ? companyDetailsRegionPrompt(
+        { countryCode: savedCompany.countryCode, bankHolidayRegionId: savedCompany.bankHolidayRegionId },
+        { countryCode: country }
+      )
+    : ({ required: false } as const)
+  // Save stays off until a region from the new country is chosen (rulebook §4.1).
+  const regionBlocked =
+    regionPrompt.required && !regionPrompt.choices.some((region) => region.id === normalizeBankHolidayRegionId(regionId))
 
   function onPickLogo(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0]
@@ -206,7 +224,10 @@ export function CompanyDetailsPanel({ onBack }: { onBack: () => void }) {
       officePostcode: postcode,
       countryCode: country,
       documentAbbreviation: abbreviation,
-      bankHolidayRegionId: bankHolidayRegionIdFromSelection(regionId),
+      bankHolidayRegionId: normalizeBankHolidayRegionId(regionId) ?? undefined,
+      previous: savedCompany
+        ? { countryCode: savedCompany.countryCode, bankHolidayRegionId: savedCompany.bankHolidayRegionId }
+        : null,
     }
     const validationError = companyDetailsValidationError(input)
     if (validationError) {
@@ -318,15 +339,28 @@ export function CompanyDetailsPanel({ onBack }: { onBack: () => void }) {
             </Select>
           </FormField>
 
-          <FormField label="Bank holiday region">
-            <Select value={regionId} onChange={(e) => setRegionId(e.target.value)}>
-              <option value="GB-ENG-WLS">England & Wales</option>
-              {COUNTRY_OPTIONS.filter((option) => option.code !== 'GB-ENG').map((option) => (
-                <option key={option.code} value={option.code}>
-                  {bankHolidayRegionLabel(option.code)}
-                </option>
-              ))}
-            </Select>
+          <FormField
+            label="Bank holiday region"
+            hint={regionPrompt.required ? regionPrompt.message : 'Bank holidays for annual leave and scheduling.'}
+          >
+            {regionChoices.length > 0 ? (
+              <Select
+                value={normalizeBankHolidayRegionId(regionId) ?? ''}
+                onChange={(e) => setRegionId(e.target.value)}
+                aria-invalid={regionPrompt.required && !regionChoices.some((r) => r.id === normalizeBankHolidayRegionId(regionId))}
+              >
+                {!regionChoices.some((r) => r.id === normalizeBankHolidayRegionId(regionId)) && (
+                  <option value="">Choose…</option>
+                )}
+                {regionChoices.map((region) => (
+                  <option key={region.id} value={region.id}>
+                    {region.title}
+                  </option>
+                ))}
+              </Select>
+            ) : (
+              <p className="text-sm text-slate-500">No bank-holiday calendar is listed for this country.</p>
+            )}
           </FormField>
 
           <FormField label="Document abbreviation" hint="1–3 characters, shown on iPhone documents">
@@ -434,7 +468,7 @@ export function CompanyDetailsPanel({ onBack }: { onBack: () => void }) {
       </SettingsFormBody>
 
       <SaveBar dirty={dirty} hint={settingsSaveBarHint(loadState)}>
-        <SaveButton saving={saving} saved={saved} dirty={dirty} onClick={save} />
+        <SaveButton saving={saving} saved={saved} dirty={dirty && !regionBlocked} onClick={save} />
       </SaveBar>
     </div>
   )

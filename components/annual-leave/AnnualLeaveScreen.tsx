@@ -13,13 +13,20 @@ import { ErrorBanner } from '@/components/dashboard/PageShell'
 import { OperativeAnnualLeaveManagement } from './OperativeAnnualLeaveManagement'
 import { PersonalLeave } from './PersonalLeave'
 import { userCanSelfBookAnnualLeave } from '@/lib/annualLeave/holidayApprovalUtils'
+import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 
 export function AnnualLeaveScreen() {
   const { organization, user } = useAuthStore()
   const { bookings, error, saveBooking, createRequests, deleteBooking, requestCancellation } = useHolidayStore()
   const isOperative = isOperativeMode(user)
-  // `canSelfBookAnnualLeave`: the self-book permission, never in operative mode. No line manager is not self-booking.
-  const booksOwnLeave = userCanSelfBookAnnualLeave(user)
+  const rosterUsers = useOrgUserStore((state) => state.users)
+  const loadRosterUsers = useOrgUserStore((state) => state.loadUsers)
+  useEffect(() => {
+    if (organization?.id) void loadRosterUsers(organization.id).catch(() => undefined)
+  }, [organization?.id, loadRosterUsers])
+  // `canSelfBookAnnualLeave(user, roster)`: the self-book permission outside operative mode, or an admin / super
+  // admin outside operative mode with no active line manager. No line manager is not self-booking for anyone else.
+  const booksOwnLeave = userCanSelfBookAnnualLeave(user, rosterUsers)
   const canTeam = !isOperative && canAccessOperativeAnnualLeaveDirectory(user)
   const searchParams = useSearchParams()
   const requestedTab = searchParams.get('tab') === 'team' ? 'team' : 'mine'

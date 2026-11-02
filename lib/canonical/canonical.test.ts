@@ -2331,12 +2331,13 @@ test('My notifications rows follow role and catalogue toggles', () => {
     'When your annual leave is approved or declined.'
   )
   const managerKeys = visibleNotificationPreferenceKeys(managerProjectsOnly)
-  assert.equal(managerKeys.includes('projectCreated'), true)
-  assert.equal(managerKeys.includes('smallWorksCreated'), false)
-  assert.equal(managerKeys.includes('operativeCreated'), false)
+  // 1.4.0: the six per-type "created / dismissed" rows are retired; their types are `companyActivity` (admins only).
+  for (const retired of ['projectCreated', 'smallWorksCreated', 'operativeCreated', 'managerCreated', 'clientCreated', 'warningDismissed']) {
+    assert.equal(managerKeys.includes(retired as (typeof managerKeys)[number]), false, retired)
+    assert.equal(visibleNotificationPreferenceKeys(managerBothCatalogues).includes(retired as (typeof managerKeys)[number]), false, retired)
+  }
+  assert.equal(managerKeys.includes('companyActivity'), false)
   assert.equal(managerKeys.includes('annualLeaveRequested'), true)
-  assert.equal(visibleNotificationPreferenceKeys(managerBothCatalogues).includes('smallWorksCreated'), true)
-  assert.equal(visibleNotificationPreferenceKeys(managerBothCatalogues).includes('operativeCreated'), true)
 })
 
 test('a preference only gates its own inbox types and never widens fan-out', () => {
@@ -2449,9 +2450,13 @@ test('unread notification badge counts only that user and leaves read rows out',
   ]
   assert.equal(inboxNotificationVisibleToUser({ userId: 'u1' }, 'u1'), true)
   assert.equal(inboxNotificationVisibleToUser({ userId: 'u2' }, 'u1'), false)
-  assert.equal(inboxNotificationVisibleToUser({ userId: '' }, 'u1'), true)
-  assert.equal(unreadNotificationBadgeCount(rows, 'u1'), 3)
-  assert.equal(unreadNotificationBadgeCount(rows, 'u2'), 2)
+  // 1.3.0: an ownerless row is not an inbox row (neither app lists it), so it never counts.
+  assert.equal(inboxNotificationVisibleToUser({ userId: '' }, 'u1'), false)
+  assert.equal(unreadNotificationBadgeCount(rows, 'u1'), 2)
+  assert.equal(unreadNotificationBadgeCount(rows, 'u2'), 1)
+  // Every id of the person counts (personIdSet), without case.
+  assert.equal(unreadNotificationBadgeCount(rows, ['old-invite', 'U1']), 2)
+  assert.equal(unreadNotificationBadgeCount(rows, []), 0)
   assert.equal(unreadNotificationBadgeCount(rows, ''), 0)
   assert.equal(unreadNotificationBadgeCount(undefined, 'u1'), 0)
   const newest = { createdAt: new Date('2026-10-13T10:00:00.000Z') }
@@ -4729,7 +4734,8 @@ test('company details read flat fields, fall back to the nested map, and saves r
   assert.equal(legacy.officeCity, 'Cork')
   assert.equal(legacy.officeCounty, 'Cork')
   assert.equal(legacy.countryCode, 'IE')
-  assert.equal(legacy.bankHolidayRegionId, 'GB-ENG-WLS')
+  // No saved region: the country's default (1.4.0), not England & Wales.
+  assert.equal(legacy.bankHolidayRegionId, 'IE')
   const flatWins = companyDetails.parseCompanyDetails({
     officeAddressLine1: '2 New St',
     officeCity: 'London',
@@ -5274,10 +5280,11 @@ test('1.2.0 D2: self-book is the permission only; self-book off needs a current 
   assert.equal(rulebook.lineManagerRequiredError({ id: 'op', assignedManagerUserId: 'LM' }), null)
   assert.equal(rulebook.lineManagerRequiredError({ id: 'op', assignedManagerUserIds: ['OLD'] }, roster), rulebook.LINE_MANAGER_REQUIRED_MESSAGE)
   assert.equal(rulebook.lineManagerRequiredError({ id: 'op', assignedManagerUserIds: ['op'] }), rulebook.LINE_MANAGER_REQUIRED_MESSAGE)
-  // Switching self-book off on someone with no line manager is refused; an inactive person or leave switched off passes.
+  // Switching self-book off on someone with no line manager is refused; an inactive person passes.
   assert.notEqual(rulebook.lineManagerRequiredError({ id: 'm', annualLeaveSelfBook: false }), null)
   assert.equal(rulebook.lineManagerRequiredError({ id: 'm', isActive: false }), null)
-  assert.equal(rulebook.lineManagerRequiredError({ id: 'm', annualLeaveEnabled: false }), null)
+  // 1.3.0: annual leave switched off no longer exempts anyone (timesheets still need approval).
+  assert.notEqual(rulebook.lineManagerRequiredError({ id: 'm', annualLeaveEnabled: false }), null)
 
   // Existing people in that state are listed for admins, and their leave still reaches the admins.
   const role = (r: Partial<{ isAdmin: boolean; isManager: boolean; isOperativeMode: boolean }>) => ({
@@ -5288,6 +5295,7 @@ test('1.2.0 D2: self-book is the permission only; self-book off needs a current 
     { id: 'OP', role: role({ isOperativeMode: true }) },
     { id: 'OP2', role: role({ isOperativeMode: true }), assignedManagerUserIds: ['A'] },
   ]
+  // 1.3.0: the admin needs no line manager; the operative without one is listed.
   assert.deepEqual(rulebook.usersMissingLineManager(people), ['OP'])
   assert.deepEqual(rulebook.leaveApproverIds(people[1], people), ['A'])
 })
@@ -5563,4 +5571,204 @@ test('1.2.0 D22: PAYE days and leave lines never go on an invoice, live or signe
   assert.deepEqual(rulebook.invoiceLines(lines).map((line) => line.id), ['a'])
   assert.equal(rulebook.isInvoiceLine(null), false)
   assert.deepEqual(rulebook.invoiceLines(null), [])
+})
+
+// ─── Rulebook 1.3.0 (line managers and notification recipients) ─────────────
+
+function role130(r: Partial<{ isSuperAdmin: boolean; isAdmin: boolean; isManager: boolean; isOperativeMode: boolean }>) {
+  return { isSuperAdmin: false, isAdmin: false, isManager: false, isOperativeMode: false, ...r }
+}
+
+const roster130 = [
+  { id: 'ADMIN', email: 'admin@example.com', role: role130({ isAdmin: true }) },
+  { id: 'ADMIN_LM', email: 'admin-lm@example.com', role: role130({ isAdmin: true }), assignedManagerUserIds: ['LM'] },
+  { id: 'SA', email: 'sa@example.com', role: role130({ isSuperAdmin: true }) },
+  { id: 'LM', email: 'lm@example.com', role: role130({ isManager: true }), assignedManagerUserIds: ['ADMIN'], formerUserIds: ['LM-OLD'] },
+  { id: 'LM2', email: 'lm2@example.com', role: role130({ isManager: true }), assignedManagerUserIds: ['ADMIN'] },
+  { id: 'GONE', role: role130({ isManager: true }), isActive: false },
+  { id: 'MGR', email: 'mgr@example.com', role: role130({ isManager: true }), annualLeaveSelfBook: true },
+  { id: 'OP', email: 'op@example.com', role: role130({ isOperativeMode: true }), assignedManagerUserIds: ['LM', 'LM2', 'GONE'] },
+  { id: 'OP-STUB', email: 'Op@Example.com', role: role130({ isOperativeMode: true }) },
+  { id: 'LEGACY', role: role130({ isOperativeMode: true }) },
+]
+
+test('1.3.0 A: every operative and manager needs a line manager; only admins outside operative mode may have none', () => {
+  const msg = rulebook.LINE_MANAGER_REQUIRED_MESSAGE
+  assert.equal(msg, "Set a line manager — this person's timesheets and annual leave need approval.")
+  // A manager without a line manager is refused, self-book permission or not.
+  assert.equal(rulebook.lineManagerRequiredError(roster130[6], roster130), msg)
+  assert.equal(rulebook.lineManagerRequiredError({ id: 'M', role: 'manager', annualLeaveSelfBook: true }), msg)
+  // An admin without one is fine; an admin with one too; an admin in operative mode is not exempt.
+  assert.equal(rulebook.lineManagerRequiredError(roster130[0], roster130), null)
+  assert.equal(rulebook.lineManagerRequiredError(roster130[1], roster130), null)
+  assert.equal(rulebook.lineManagerRequiredError({ id: 'A', role: 'admin', operativeMode: true }), msg)
+  assert.equal(rulebook.lineManagerRequired({ id: 'O', role: 'operative', isActive: false }), false)
+  assert.deepEqual(rulebook.usersMissingLineManager(roster130), ['MGR', 'OP-STUB', 'LEGACY'])
+})
+
+test('1.3.0 A4: an admin with no active line manager is self-approved; with one, normal approval', () => {
+  const admin = roster130[0]
+  const adminLm = roster130[1]
+  assert.equal(rulebook.timesheetSelfSigned(admin, roster130), true)
+  assert.equal(rulebook.canSelfBookAnnualLeave(admin, roster130), true)
+  assert.equal(rulebook.leaveSubmitLabel(admin, roster130), rulebook.LEAVE_SUBMIT_LABEL)
+  assert.equal(rulebook.LEAVE_SUBMIT_LABEL, 'Submit')
+  assert.equal(rulebook.timesheetSelfSigned(adminLm, roster130), false)
+  assert.equal(rulebook.canSelfBookAnnualLeave(adminLm, roster130), false)
+  assert.equal(rulebook.leaveSubmitLabel(adminLm, roster130), 'Submit request')
+  // An admin whose only line manager left is self-approved again.
+  assert.equal(rulebook.timesheetSelfSigned({ ...adminLm, assignedManagerUserIds: ['GONE'] }, roster130), true)
+  // Self-signed owner saves may carry weeklyReportOverride; others may not.
+  const fields = { weeklyReportOverride: { lines: [] }, managerNote: 'n' }
+  assert.ok('weeklyReportOverride' in rulebook.timesheetOwnerWriteFields(fields, { subjectHasLineManager: !rulebook.timesheetSelfSigned(admin, roster130), managerSigned: false }))
+  assert.equal('weeklyReportOverride' in rulebook.timesheetOwnerWriteFields(fields, { subjectHasLineManager: !rulebook.timesheetSelfSigned(adminLm, roster130), managerSigned: false }), false)
+  // A manager or operative is never self-approved, even with no line manager.
+  assert.equal(rulebook.timesheetSelfSigned(roster130[9], roster130), false)
+  assert.equal(rulebook.canSelfBookAnnualLeave(roster130[9], roster130), false)
+  // The permission still self-books a manager (it no longer waives the line manager).
+  assert.equal(rulebook.canSelfBookAnnualLeave(roster130[6], roster130), true)
+})
+
+test('1.3.0 A5/A6: approvers are active line managers, never the person under any id; else admins only', () => {
+  assert.deepEqual(rulebook.lineManagerIds(roster130[7], roster130), ['LM', 'LM2'])
+  assert.deepEqual(rulebook.lineManagerIds({ id: 'OP', assignedManagerUserIds: ['op-stub', 'LM'] }, roster130), ['LM'])
+  assert.deepEqual(rulebook.lineManagerIds({ id: 'X', assignedManagerUserIds: ['LM-OLD'] }, roster130), ['LM'])
+  assert.deepEqual(rulebook.leaveApproverIds(roster130[9], roster130), ['ADMIN', 'ADMIN_LM', 'SA'])
+  // Legacy no-line-manager request: a plain manager may not decide it.
+  assert.equal(rulebook.canDecideLeave({ id: 'LM2', role: roster130[4].role }, roster130[9], roster130), false)
+  assert.equal(rulebook.canDecideLeave({ id: 'OP-STUB', role: role130({ isAdmin: true }) }, roster130[7], roster130), false)
+})
+
+test('1.3.0 B: notification recipients never include the actor', () => {
+  assert.deepEqual(rulebook.personIdSet({ id: 'OP' }, roster130), ['OP', 'OP-STUB'])
+  assert.deepEqual(rulebook.timesheetSubmittedRecipients('OP', roster130), ['LM', 'LM2'])
+  assert.deepEqual(rulebook.timesheetSubmittedRecipients('LEGACY', roster130), ['ADMIN', 'ADMIN_LM', 'SA'])
+  assert.deepEqual(rulebook.timesheetSubmittedRecipients('ADMIN', roster130), [])
+  assert.deepEqual(rulebook.timesheetSubmittedRecipients('ADMIN_LM', roster130), ['LM'])
+  assert.deepEqual(rulebook.timesheetSignedRecipients('OP', 'LM', roster130), ['OP'])
+  assert.deepEqual(rulebook.timesheetSignedRecipients('OP', 'OP-STUB', roster130), [])
+  assert.deepEqual(rulebook.lineManagerPeerRecipients('OP', 'LM-OLD', roster130), ['LM2'])
+  assert.deepEqual(rulebook.holidayRequestRecipients('OP', roster130), ['LM', 'LM2'])
+  assert.deepEqual(rulebook.holidayRequestRecipients('ADMIN', roster130), [])
+  assert.deepEqual(rulebook.holidayRequestRecipients('MGR', roster130), [])
+  assert.deepEqual(rulebook.holidayDecisionRecipients('OP', 'op-stub', roster130), [])
+  assert.deepEqual(rulebook.bookingCreatedRecipients(['OP', 'LM', 'GONE'], 'LM', roster130), ['OP'])
+  assert.deepEqual(rulebook.deadlineAssignedRecipients(['OP', 'LM'], 'OP', roster130), ['LM'])
+  assert.deepEqual(rulebook.toolboxTalkRecipients(['ADMIN', 'OP'], { id: 'ADMIN' }, roster130), ['OP'])
+  assert.deepEqual(rulebook.ideaRecipients(['SA', 'sa', 'LM'], null, roster130), ['SA', 'LM'])
+  assert.deepEqual(rulebook.excludeActor(['A', 'a', ''], null), ['A'])
+})
+
+test('1.3.0 B: the notification catalog covers each written type once and matches the push allow-list', () => {
+  const types = rulebook.NOTIFICATION_CATALOG.map((row) => row.type)
+  assert.equal(new Set(types).size, types.length)
+  const surface = bundleSurface as unknown as Record<string, unknown>
+  for (const row of rulebook.NOTIFICATION_CATALOG) {
+    assert.equal(row.devicePush, rulebook.notificationDeliversDevicePush(row.type), row.type)
+    assert.ok(row.writtenBy.length > 0, row.type)
+    const named = row.recipients.match(/^[a-zA-Z]+/)?.[0] ?? ''
+    if (/Recipients$|^excludeActor$|^receivesJobNotification$|^dueTimesheetSubmissionNotices$/.test(named)) {
+      assert.equal(typeof surface[named], 'function', `${row.type}: ${named} is in the packed script`)
+    }
+  }
+  for (const type of ['holiday_request_submitted', 'timesheet_pending_manager_signoff', 'line_manager_peer_update', 'booking_created', 'idea_merged']) {
+    assert.ok(types.includes(type), type)
+  }
+  assert.equal(rulebook.notificationCatalogRow('line_manager_peer_update')?.devicePush, false)
+  assert.equal(rulebook.notificationCatalogRow('nope'), null)
+  // The rulebook §13 table lists every catalog type.
+  const book = readFileSync(new URL('../../docs/RULEBOOK.md', import.meta.url), 'utf8')
+  for (const type of types) assert.ok(book.includes(`| \`${type}\``), `RULEBOOK §13 lists ${type}`)
+})
+
+test('1.3.0 B: timesheet notice de-dupe keys use the organisation-zone day', () => {
+  assert.equal(
+    rulebook.timesheetNotificationDedupeKey({ type: 'timesheet_pending_manager_signoff', subjectId: 'OP', recipientId: 'LM', periodStartDayKey: '2026-10-01', timeZone: 'Europe/London' }),
+    `timesheetPending|OP|LM|${Date.parse('2026-09-30T23:00:00Z') / 1000}`
+  )
+  assert.equal(rulebook.timesheetNotificationDedupeKey({ type: 'timesheet_pending_manager_signoff', subjectId: 'OP', periodStartDayKey: '2026-10-01' }), null)
+  assert.equal(rulebook.timesheetNotificationDedupeKey({ type: 'timesheet_signed_by_manager', subjectId: 'OP', periodStartDayKey: 'bad' }), null)
+})
+
+test('1.4.0: bank-holiday regions are one list per country, and a country change asks for the region', () => {
+  const ids = (country: string) => rulebook.bankHolidayRegionsForCountry(country).map((region) => region.id)
+  assert.deepEqual(ids('GB'), ['GB-ENG-WLS', 'GB-SCT', 'GB-NIR', 'GB'])
+  assert.deepEqual(ids('ie'), ['IE'])
+  assert.deepEqual(ids('US'), ['US'])
+  assert.deepEqual(ids('ZZ'), [])
+  assert.equal(rulebook.defaultBankHolidayRegionForCountry('GB'), 'GB-ENG-WLS')
+  assert.equal(rulebook.defaultBankHolidayRegionForCountry('IE'), 'IE')
+  assert.equal(rulebook.defaultBankHolidayRegionForCountry('US'), 'US')
+  assert.equal(rulebook.defaultBankHolidayRegionForCountry('ZZ'), null)
+  assert.equal(rulebook.DEFAULT_BANK_HOLIDAY_REGION_ID, 'GB-ENG-WLS')
+  assert.equal(rulebook.normalizeBankHolidayRegionId('gb-eng'), 'GB-ENG-WLS')
+  assert.equal(rulebook.bankHolidayRegionLabel('GB-SCT'), 'Scotland')
+  const ids2 = rulebook.BANK_HOLIDAY_REGIONS.map((region) => region.id)
+  assert.equal(new Set(ids2).size, ids2.length)
+
+  // Same country: never required. A region already in the new country: not required.
+  assert.deepEqual(rulebook.companyDetailsRegionPrompt({ countryCode: 'GB', bankHolidayRegionId: 'GB-SCT' }, { countryCode: 'GB' }), { required: false })
+  assert.deepEqual(rulebook.companyDetailsRegionPrompt({ countryCode: 'GB', bankHolidayRegionId: 'IE' }, { countryCode: 'IE' }), { required: false })
+  const toIreland = rulebook.companyDetailsRegionPrompt({ countryCode: 'GB', bankHolidayRegionId: 'GB-ENG-WLS' }, { countryCode: 'IE' })
+  assert.equal(toIreland.required, true)
+  if (toIreland.required) {
+    assert.deepEqual(toIreland.choices.map((region) => region.id), ['IE'])
+    assert.equal(toIreland.defaultRegionId, 'IE')
+    assert.equal(toIreland.message, 'Choose the bank holidays for Ireland.')
+  }
+  const toUk = rulebook.companyDetailsRegionPrompt({ countryCode: 'IE', bankHolidayRegionId: 'IE' }, { countryCode: 'GB' })
+  assert.equal(toUk.required && toUk.defaultRegionId, 'GB-ENG-WLS')
+
+  // Validation refuses the save until a region from the new country is chosen; the write carries both fields.
+  const base = { name: 'Acme', hasOfficeAddress: false, countryCode: 'IE', previous: { countryCode: 'GB', bankHolidayRegionId: 'GB-ENG-WLS' } }
+  assert.equal(rulebook.companyDetailsValidationError({ ...base }), 'Choose the bank holidays for Ireland.')
+  assert.equal(rulebook.companyDetailsValidationError({ ...base, bankHolidayRegionId: 'GB-SCT' }), 'Choose the bank holidays for Ireland.')
+  assert.equal(rulebook.companyDetailsValidationError({ ...base, bankHolidayRegionId: 'IE' }), null)
+  assert.equal(rulebook.companyDetailsValidationError({ name: 'Acme', hasOfficeAddress: false, countryCode: 'GB', previous: { countryCode: 'GB' } }), null)
+  const write = rulebook.companyDetailsWriteFields({ ...base, bankHolidayRegionId: 'IE' })
+  assert.equal(write.set.countryCode, 'IE')
+  assert.equal(write.set.bankHolidayRegionId, 'IE')
+  assert.equal(write.set['settings.bankHolidayRegionId'], 'IE')
+})
+
+test('1.4.0: company activity goes to active admins outside operative mode, never the actor; admin-only toggle', () => {
+  const roster = [
+    { id: 'A1', email: 'a1@x', isActive: true, role: 'admin', adminAccess: true },
+    { id: 'A2', email: 'a2@x', isActive: true, role: 'super_admin', isSuperAdmin: true },
+    { id: 'A3', email: 'a3@x', isActive: false, role: 'admin', adminAccess: true },
+    { id: 'A4', email: 'a4@x', isActive: true, role: 'admin', adminAccess: true, permissions: { operativeMode: true }, operativeMode: true },
+    { id: 'M1', email: 'm1@x', isActive: true, role: 'manager', manager: true },
+    { id: 'O1', email: 'o1@x', isActive: true, role: 'operative', operativeMode: true },
+  ]
+  const recipients = rulebook.companyActivityRecipients('A1', roster as never)
+  assert.deepEqual(recipients, ['A2'])
+  assert.deepEqual(rulebook.companyActivityRecipients('M1', roster as never), ['A1', 'A2'])
+  assert.deepEqual([...rulebook.COMPANY_ACTIVITY_NOTICE_TYPES].sort(), ['client_created', 'manager_created', 'operative_created', 'project_created', 'small_works_created', 'warning_removed'])
+  for (const type of rulebook.COMPANY_ACTIVITY_NOTICE_TYPES) {
+    assert.equal(rulebook.notificationPreferenceKeyForType(type), 'companyActivity', type)
+    assert.equal(rulebook.notificationDeliversDevicePush(type), true, type)
+    assert.equal(rulebook.notificationCatalogRow(type)?.recipients, 'companyActivityRecipients', type)
+  }
+  const adminRole = { isSuperAdmin: false, isAdmin: true, isManager: false, isOperativeMode: false }
+  const managerRole = { isSuperAdmin: false, isAdmin: false, isManager: true, isOperativeMode: false }
+  const audience = (role: typeof adminRole) => ({ role, catalogue: { projects: true, smallWorks: true } })
+  assert.equal(rulebook.visibleNotificationPreferenceKeys(audience(adminRole)).includes('companyActivity'), true)
+  assert.equal(rulebook.visibleNotificationPreferenceKeys(audience({ ...adminRole, isAdmin: false, isSuperAdmin: true })).includes('companyActivity'), true)
+  assert.equal(rulebook.visibleNotificationPreferenceKeys(audience(managerRole)).includes('companyActivity'), false)
+  assert.equal(rulebook.parseUserNotificationPreferences({}).companyActivity, true)
+  assert.equal(rulebook.notificationPreferenceCopy('companyActivity', audience(adminRole)).label, 'Company activity')
+})
+
+test('1.4.0: push_test reaches its sender and is the only type pushed to its actor', () => {
+  assert.equal(rulebook.PUSH_TEST_NOTICE_TYPE, 'push_test')
+  assert.deepEqual(rulebook.pushTestRecipients('U1'), ['U1'])
+  assert.deepEqual(rulebook.pushTestRecipients(null), [])
+  assert.equal(rulebook.notificationDeliversDevicePush('push_test'), true)
+  assert.equal(rulebook.notificationPushesToActor('push_test'), true)
+  const everyOff = Object.fromEntries(rulebook.NOTIFICATION_PREFERENCE_KEYS.map((key) => [key, false]))
+  assert.equal(rulebook.notificationPreferenceAllowsDelivery(rulebook.parseUserNotificationPreferences(everyOff), 'push_test'), true)
+  for (const type of rulebook.DEVICE_PUSH_NOTIFICATION_TYPES) {
+    if (type !== 'push_test') assert.equal(rulebook.notificationPushesToActor(type), false, type)
+  }
+  assert.equal(rulebook.notificationPushesToActor('timesheet_pending_manager_signoff'), false)
 })

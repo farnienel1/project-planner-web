@@ -6,7 +6,7 @@
   },
   "main": "index.js",
   "scripts": {
-    "test": "node --test prunePushTokens.test.js"
+    "test": "node --test prunePushTokens.test.js pushActorGuard.test.js"
   },
   "dependencies": {
     "firebase-admin": "^12.7.0",

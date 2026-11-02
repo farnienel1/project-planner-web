@@ -12,7 +12,7 @@ import {
 import {
   COUNTRY_OPTIONS,
   CURRENCY_OPTIONS,
-  bankHolidayRegionLabel,
+  bankHolidayCountryTitle,
   validateLogoFile,
   type OrganisationIdentitySetup,
 } from '@/lib/orgSetup/orgSetupSettings'
@@ -150,7 +150,7 @@ export function OrganisationDetailsStep({
                 onChange={(e) => {
                   patch({
                     countryCode: e.target.value,
-                    countryLabel: bankHolidayRegionLabel(e.target.value),
+                    countryLabel: bankHolidayCountryTitle(e.target.value),
                   })
                 }}
               >

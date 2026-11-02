@@ -15,8 +15,14 @@
  * Currency is separate: `organizationCurrencyWriteFields` in `money.ts`.
  */
 import { organizationNameWriteFields, parseOrganizationName } from './organizationSettings'
+import {
+  DEFAULT_BANK_HOLIDAY_REGION_ID,
+  companyDetailsRegionPrompt,
+  defaultBankHolidayRegionForCountry,
+  normalizeBankHolidayRegionId,
+} from './bankHolidayRegions'
 
-export const DEFAULT_BANK_HOLIDAY_REGION_ID = 'GB-ENG-WLS'
+export { DEFAULT_BANK_HOLIDAY_REGION_ID }
 
 export type CompanyDetails = {
   name: string
@@ -51,8 +57,13 @@ export type CompanyDetailsInput = {
   /** Written only when both are finite numbers; otherwise the saved pin is left unchanged. */
   defaultLatitude?: number | null
   defaultLongitude?: number | null
-  /** Written only when given. */
+  /**
+   * Written only when given (a listed region id; `GB-ENG` reads as `GB-ENG-WLS`). When the country changes
+   * (`previous`), it must be one of `companyDetailsRegionPrompt(previous, input).choices`.
+   */
   bankHolidayRegionId?: string | null
+  /** The saved country and region before this edit, so a country change asks for the region again. */
+  previous?: { countryCode?: string | null; bankHolidayRegionId?: string | null } | null
 }
 
 export type CompanyDetailsWrite = {
@@ -117,7 +128,11 @@ export function parseCompanyDetails(orgDoc: unknown): CompanyDetails {
     defaultLatitude: finiteNumber(data.defaultLatitude),
     defaultLongitude: finiteNumber(data.defaultLongitude),
     bankHolidayRegionId:
-      text(data.bankHolidayRegionId) || text(settings.bankHolidayRegionId) || DEFAULT_BANK_HOLIDAY_REGION_ID,
+      normalizeBankHolidayRegionId(text(data.bankHolidayRegionId) || text(settings.bankHolidayRegionId)) ||
+      text(data.bankHolidayRegionId) ||
+      text(settings.bankHolidayRegionId) ||
+      defaultBankHolidayRegionForCountry(normalizeCompanyCountryCode(data.countryCode) || 'GB') ||
+      DEFAULT_BANK_HOLIDAY_REGION_ID,
   }
 }
 
@@ -129,10 +144,19 @@ export function companyDetailsValidationError(input: CompanyDetailsInput): strin
     if (!nameOk || !countryOk || !text(input.officeAddressLine1) || !text(input.officeCity)) {
       return 'Name, country, address line 1 and town are required.'
     }
-    return null
+    return companyDetailsRegionError(input)
   }
   if (!nameOk || !countryOk) return 'Organisation name and country are required.'
-  return null
+  return companyDetailsRegionError(input)
+}
+
+/** A country change needs a region from the new country's list (rulebook §4.1). */
+function companyDetailsRegionError(input: CompanyDetailsInput): string | null {
+  if (!input.previous) return null
+  const prompt = companyDetailsRegionPrompt(input.previous, { countryCode: input.countryCode })
+  if (!prompt.required) return null
+  const chosen = normalizeBankHolidayRegionId(input.bankHolidayRegionId)
+  return chosen && prompt.choices.some((region) => region.id === chosen) ? null : prompt.message
 }
 
 /**
@@ -180,9 +204,18 @@ export function companyDetailsWriteFields(input: CompanyDetailsInput): CompanyDe
   }
 
   if (input.bankHolidayRegionId !== undefined && input.bankHolidayRegionId !== null) {
-    const region = text(input.bankHolidayRegionId).toUpperCase() || DEFAULT_BANK_HOLIDAY_REGION_ID
+    const region =
+      normalizeBankHolidayRegionId(input.bankHolidayRegionId) ||
+      text(input.bankHolidayRegionId).toUpperCase() ||
+      DEFAULT_BANK_HOLIDAY_REGION_ID
     set.bankHolidayRegionId = region
     set['settings.bankHolidayRegionId'] = region
+  } else if (input.previous && country) {
+    // A country change to a country with no listed regions: the old country's region no longer applies.
+    const previousCountry = normalizeCompanyCountryCode(input.previous.countryCode) || 'GB'
+    if (previousCountry !== country && !defaultBankHolidayRegionForCountry(country)) {
+      remove.push('bankHolidayRegionId', 'settings.bankHolidayRegionId')
+    }
   }
 
   return { set, remove }

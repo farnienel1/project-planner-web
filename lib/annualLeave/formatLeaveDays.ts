@@ -1,7 +1,10 @@
 import { format, isSameDay } from 'date-fns'
 import type { HolidayBooking, HolidayTimeSlot } from '@/types'
 import { leaveRecordDayKeys } from '@/lib/canonical'
-import { dayKey } from '@/lib/ios-parity/londonTime'
+import { dayKeyInZone } from '@/lib/orgTime/zoneTime'
+import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
+
+const dayKey = (date: Date, timeZone?: string) => dayKeyInZone(date, organizationZoneOr(timeZone))
 
 export function leaveDayUnits(slot: HolidayTimeSlot): number {
   return slot === 'FULL DAY' ? 1 : 0.5
@@ -24,7 +27,7 @@ export function bookingDayCount(
 ): number {
   const days = leaveRecordDayKeys(
     { startDayKey: dayKey(booking.startDate, timeZone), endDayKey: dayKey(booking.endDate, timeZone) },
-    timeZone,
+    organizationZoneOr(timeZone),
     bankHolidayDayKeys
   ).length
   return days * leaveDayUnits(booking.timeSlot)

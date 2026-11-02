@@ -1,6 +1,6 @@
-# iOS follow-on — rulebook 1.2.0
+# iOS follow-on — rulebook 1.4.0
 
-Generated 2026-10-31 by `npm run rulebook:handoff` in project-planner-web. Paste this whole file into the iOS agent.
+Generated 2026-11-02 by `npm run rulebook:handoff` in project-planner-web. Paste this whole file into the iOS agent.
 The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; never edit the iOS mirror by hand.
 
 ```
@@ -8,9 +8,9 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ║ FOLLOW-ON — paste into the iOS agent                             ║
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
-Rulebook version: 1.1.0 → 1.2.0
-Packed hash: 2ed0e33e535a5cd2987ff79e057490084d1dcd7119a52f8c3e6dcbbf9d84f1ed
-Rulebook sha256: e6c9b7374dfa5c8b5e27b7f3f569b76baf882c5f6ef739606505f14ab15499c6
+Rulebook version: 1.3.0 → 1.4.0
+Packed hash: a798df632ac158d7e870140eadfb6441bf8b1b4d230f3d9ae2d2df050eb27ad9
+Rulebook sha256: 511a982254bce9a72a6b71994a41569447c571c0ff1519cf4e7f2373cd71a5c0
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -18,36 +18,40 @@ Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS 
   web docs/RULEBOOK.md                              → iOS docs/RULEBOOK.md
   web lib/canonical/parity-fixture.json             → iOS ProjectPlannerTests/CanonicalParityFixture.json
 Call: CanonicalBusinessEngine — no second calculator in Swift.
-Exports added: LINE_MANAGER_REQUIRED_MESSAGE, OFFLINE_ACTIONS, OFFLINE_AVAILABILITIES, OFFLINE_LAST_UPDATED_PREFIX, OFFLINE_ONLINE_ONLY_MESSAGE, OFFLINE_PENDING_SYNC_LABEL, OPERATIONAL_COLLECTION_PATHS, ORGANIZATION_DOCUMENT_FIELDS, PLATFORM_OWNER_EMAIL, TIMESHEET_MANAGER_SIGN_OFF_FIELDS, approvedWarningKeys, canDecideLeave, canSelfBookAnnualLeave, invoiceLines, isClashGroupApproved, isInvoiceLine, isPlatformOwnerEmail, leaveDecisionQueue, lineManagerRequiredError, normalizeDocumentId, offlineAvailability, offlineLastUpdatedLabel, operativeClashGroups, payRateHistoryWriteFields, unbookedScanDays, usersMissingLineManager, warningLookaheadFallbackNotice
+Exports added: BANK_HOLIDAY_REGIONS, COMPANY_ACTIVITY_NOTICE_TYPES, PUSH_TEST_NOTICE_TYPE, bankHolidayCountries, bankHolidayCountryTitle, bankHolidayRegion, bankHolidayRegionLabel, bankHolidayRegionsForCountry, companyActivityRecipients, companyDetailsRegionPrompt, defaultBankHolidayRegionForCountry, normalizeBankHolidayRegionId, notificationPushesToActor, pushTestRecipients
 Exports removed: none
-Web files that changed the rules: docs/RULEBOOK.md, firestore.rules, lib/canonical/bookingTombstones.ts, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/engine.ts, lib/canonical/index.ts, lib/canonical/leaveRequests.ts, lib/canonical/parity-fixture.json, lib/canonical/passwordPolicy.ts, lib/canonical/payRate.ts, lib/canonical/reportPay.ts, lib/canonical/scheduleSources.ts, lib/canonical/timesheetEntryReviews.ts, lib/canonical/userProfile.ts, lib/canonical/offlinePolicy.ts
+Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/bankHolidayRegions.ts, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/companyDetails.ts, lib/canonical/index.ts, lib/canonical/notificationPreferences.ts, lib/canonical/notificationRecipients.ts, lib/canonical/parity-fixture.json
 Done when:
-- [ ] Packed hash in iOS equals 2ed0e33e535a5cd2987ff79e057490084d1dcd7119a52f8c3e6dcbbf9d84f1ed
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 e6c9b7374dfa5c8b5e27b7f3f569b76baf882c5f6ef739606505f14ab15499c6)
-- [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.2.0)
+- [ ] Packed hash in iOS equals a798df632ac158d7e870140eadfb6441bf8b1b4d230f3d9ae2d2df050eb27ad9
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 511a982254bce9a72a6b71994a41569447c571c0ff1519cf4e7f2373cd71a5c0)
+- [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.4.0)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web
 - [ ] Any disagreement traced to its first divergence — no copied screen number
 ```
 
-## What changed in 1.2.0
+## What changed in 1.4.0
 
-- Booking tombstones carry only their own fields and are the one exception to write metadata (§1, §2).
-- Annual leave: self-booking is the `annualLeaveSelfBook` permission outside operative mode only (`canSelfBookAnnualLeave`). Anyone who does not self-book must have a current active line manager (`lineManagerRequiredError`, `usersMissingLineManager`). Nobody decides their own request; admins decide any request (`canDecideLeave`, `leaveDecisionQueue`). Holiday deletes follow the same deciders (§8, §9, §11, §16).
-- Operative clashes come from `operativeClashGroups`, one approval pair per overlapping pair; a cluster is approved only when every pair is (`isClashGroupApproved`). Managers may un-approve (§5, §16).
-- Only approvals count as approved clashes (`approvedWarningKeys`); a dismissed clash is hidden but not approved (§5).
-- Document ids keep their stored case and compare without case (`normalizeDocumentId`) for warning keys, clash pairs and timesheet entry reviews (§1).
-- Offline: the §2 table is exported (`OFFLINE_ACTIONS`, `offlineAvailability`, the three messages). Deleting a booking is online only; a not-found edit replay is final (`bookingReplayRefusedIsFinal({ code, isCreate })`). Labour booking deletes stay admin only (§2, §16).
-- `unbookedScanDays`, `warningLookaheadFallbackNotice` and `isPlatformOwnerEmail` are in the packed script (§5, §14).
-- Clearing a rate writes a "rate not set" history row, and history days are organisation-zone midnight (`payRateHistoryWriteFields`) (§8).
-- PAYE and leave lines never appear on any invoice (`invoiceLines`) (§8).
-- `timesheetOwnerWriteFields` drops sign-off and export fields itself; owner saves and leave edits are partial updates (§1, §8, §9).
-- `ORGANIZATION_DOCUMENT_FIELDS` and `OPERATIONAL_COLLECTION_PATHS` are in the packed script; `profilePhotoUpdatedAt` is a user field (§1, §12).
-- Documented: the live roster is the `organizationId` query; the legacy literal `settings.currencyCode` field is left in place (§1, §4.2, §11).
+- Bank-holiday regions are one shared list (`BANK_HOLIDAY_REGIONS`, `bankHolidayRegionsForCountry`, `defaultBankHolidayRegionForCountry`, `normalizeBankHolidayRegionId`). Changing the company country asks for that country's region and the save waits for it (`companyDetailsRegionPrompt`, `companyDetailsValidationError`); Annual leave defaults offer only the company country's regions. Existing leave is never recounted (§4.1, §4.4).
+- Company activity notices (`operative_created`, `manager_created`, `client_created`, `project_created`, `small_works_created`, `warning_removed`) go to the active admins outside operative mode, never the actor, one row each (`companyActivityRecipients`); admins get a Company activity toggle (`companyActivity`) and the six per-type toggles are retired (§13).
+- `push_test` (Settings "send a test notification") reaches its sender: `pushTestRecipients`, `notificationPushesToActor`, and the push function's actor guard skips it (§13).
+- Noted: iOS forced sign-outs do not yet remove the push token (§13).
+
+## iOS work for 1.4.0
+
+1. **Bank-holiday regions** (§4.1, §4.4). Delete `Core/BankHolidayRegionDirectory.swift` and read `BANK_HOLIDAY_REGIONS`, `bankHolidayRegionsForCountry`, `defaultBankHolidayRegionForCountry` and `normalizeBankHolidayRegionId` through `CanonicalBusinessEngine`. The shared list keeps every id iOS stores (`GB-ENG-WLS`, `GB-SCT`, `GB-NIR`, `GB`, `IE`, `US`, `CA`, …) and adds web's other countries.
+   - `Views/CompanyDetailsEditView.swift`: when the country changes, show the region picker with only `bankHolidayRegionsForCountry(newCountry)`, pre-selected with `defaultBankHolidayRegionForCountry`, and keep Save disabled while `companyDetailsRegionPrompt(saved, { countryCode })` is required and no listed region is picked. Validate with `companyDetailsValidationError({ ..., previous: { countryCode, bankHolidayRegionId } })` and save with `companyDetailsWriteFields` (country and region in one `updateData`).
+   - `Views/OrganisationAnnualLeaveDefaultsView.swift`: the region picker offers only the company country's regions.
+   - A saved company with no region now reads its country's default (`parseCompanyDetails`), not England & Wales.
+2. **Company activity notices** (§13). Every iOS writer of `operative_created`, `manager_created`, `client_created`, `project_created`, `small_works_created` and `warning_removed` (search `NotificationService.swift`) writes one row per id from `companyActivityRecipients(actor, roster)`, each with `userId` and `actorUserId`. Never write these without `userId`.
+   - My notifications: the `companyActivity` toggle comes through `visibleNotificationPreferenceKeys` (admins and super admins only). The six old per-type rows (`projectCreated`, `smallWorksCreated`, `operativeCreated`, `managerCreated`, `clientCreated`, `warningDismissed`) are no longer listed; keep parsing them and never delete them on save.
+3. **Push test** (§13). The Settings "send a test notification" writes type `push_test` (not `task_created`) to the signed-in user (`pushTestRecipients`), with `actorUserId` set. The push function now delivers it to its sender (`notificationPushesToActor`), once `firebase deploy --only functions` has run from web.
+4. **Known gap to fix:** forced sign-outs (expired session, trial blocked) must also remove this device's push token from every users document it was written to, as a normal sign-out does.
+5. Sync with `scripts/sync-rulebook-from-web.sh main` once web PR for 1.4.0 is merged (until then, branch `main-kr70k9`).
 
 ## New rulebook sections
 
-- 1.2.0 — 2026-10-31
+- 1.4.0 — 2026-11-02
 
 ## Workflow for the iOS agent
 

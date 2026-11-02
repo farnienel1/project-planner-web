@@ -15,7 +15,14 @@ import {
   type OrgPayrollTimePolicy,
   type OrgWarningDetectionSettings,
 } from '@/lib/settings/organizationSettings'
-import { BANK_HOLIDAY_REGIONS, bankHolidayRegionLabel } from '@/lib/settings/bankHolidayRegions'
+import {
+  DEFAULT_BANK_HOLIDAY_REGION_ID as CANONICAL_DEFAULT_BANK_HOLIDAY_REGION_ID,
+  bankHolidayCountries,
+  bankHolidayCountryTitle,
+  bankHolidayRegionLabel,
+  defaultBankHolidayRegionForCountry,
+  normalizeBankHolidayRegionId,
+} from '@/lib/canonical'
 import {
   CURRENCY_OPTIONS as CANONICAL_CURRENCY_OPTIONS,
   DEFAULT_MATERIAL_CUT_OFF,
@@ -64,9 +71,12 @@ export const CURRENCY_OPTIONS: ReadonlyArray<{ code: string; label: string }> = 
   (option) => ({ code: option.code, label: `${option.code} — ${option.title} (${option.symbol})` })
 )
 
-export const COUNTRY_OPTIONS = BANK_HOLIDAY_REGIONS
+/** Company countries (the canonical bank-holiday country list), with a picker label. */
+export const COUNTRY_OPTIONS: ReadonlyArray<{ code: string; label: string }> = bankHolidayCountries().map(
+  (country) => ({ code: country.code, label: country.title })
+)
 
-export { bankHolidayRegionLabel }
+export { bankHolidayRegionLabel, bankHolidayCountryTitle }
 
 /** Must match storage.rules company logo write: sized(5 * 1024 * 1024). */
 export const LOGO_MAX_BYTES = COMPANY_LOGO_MAX_BYTES
@@ -117,7 +127,7 @@ export function createDefaultOrgSetupSettings(): OrgSetupSettings {
   }
 }
 
-export const DEFAULT_BANK_HOLIDAY_REGION_ID = 'GB-ENG-WLS'
+export const DEFAULT_BANK_HOLIDAY_REGION_ID = CANONICAL_DEFAULT_BANK_HOLIDAY_REGION_ID
 
 /** iOS stores a 1–3 character document prefix (canonical `normalizeDocumentAbbreviation`). */
 export function normalizeDocumentAbbreviation(value: string | null | undefined): string | undefined {
@@ -125,22 +135,18 @@ export function normalizeDocumentAbbreviation(value: string | null | undefined):
 }
 
 /**
- * Bank-holiday region is not the company country. `GB-ENG` (older web picker) maps to iOS `GB-ENG-WLS`.
- * A missing choice stays England & Wales.
+ * A stored or picked region id (canonical `normalizeBankHolidayRegionId`; `GB-ENG` reads as `GB-ENG-WLS`).
+ * A bare country code (setup's country picker) or nothing gives that country's default region.
  */
 export function bankHolidayRegionIdFromSelection(selection: string | null | undefined): string {
   const raw = (selection || '').trim().toUpperCase()
-  if (!raw || raw === 'GB' || raw === 'GB-ENG' || raw === 'GB-WLS' || raw === 'GB-ENG-WLS') {
-    return DEFAULT_BANK_HOLIDAY_REGION_ID
-  }
-  return raw
+  if (!raw || raw === 'GB' || raw === 'UK') return DEFAULT_BANK_HOLIDAY_REGION_ID
+  return normalizeBankHolidayRegionId(raw) || defaultBankHolidayRegionForCountry(raw) || DEFAULT_BANK_HOLIDAY_REGION_ID
 }
 
-/** Value for the annual-leave region menu. England & Wales is stored as GB-ENG-WLS. */
+/** Value for a region menu: the canonical id of what is stored (England & Wales is `GB-ENG-WLS`). */
 export function bankHolidaySelectionFromStored(stored: string | null | undefined): string {
-  const raw = (stored || '').trim().toUpperCase()
-  if (!raw || raw === 'GB' || raw === 'GB-WLS' || raw === 'GB-ENG-WLS') return 'GB-ENG'
-  return raw
+  return bankHolidayRegionIdFromSelection(stored)
 }
 
 export function countryCodeForCompany(selection: string | null | undefined, storedCountry?: string | null): string {

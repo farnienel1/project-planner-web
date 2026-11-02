@@ -1,5 +1,5 @@
 import type { User } from '@/types'
-import { bankHolidayRegionLabel } from '@/lib/settings/bankHolidayRegions'
+import { bankHolidayCountryTitle } from '@/lib/canonical'
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
@@ -19,7 +19,7 @@ export function personDisplayName(user: Pick<User, 'firstName' | 'surname' | 'em
 
 export function orgCountryLabel(code?: string): string {
   if (!code) return 'United Kingdom'
-  return bankHolidayRegionLabel(code)
+  return bankHolidayCountryTitle(code)
 }
 
 export function orgCreatedLabel(createdAt: unknown): string {

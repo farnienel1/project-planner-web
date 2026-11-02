@@ -20,8 +20,7 @@ import { editUserHrefForOperative, findUserForOperative } from '@/lib/operatives
 import { canOpenOperativeFromWarning } from '@/lib/staff/userEditPermissions'
 import { initialsFrom } from '@/lib/daily-overview/buildDailyOverview'
 import { dayKey, formatLongDay } from '@/lib/ios-parity/londonTime'
-import { addDoc, collection, serverTimestamp } from 'firebase/firestore'
-import { db } from '@/lib/firebase/config'
+import { notifyCompanyActivity } from '@/lib/notifications/companyActivity'
 import { useAuthStore } from '@/lib/stores/authStore'
 
 type FilterChip = 'all' | 'clashes' | 'unbooked' | 'leave' | 'materials' | 'qualifications'
@@ -119,9 +118,11 @@ function UnbookedDayCard({
 function MaterialsCard({
   warning,
   smallWorkIds,
+  users,
 }: {
   warning: MissedMaterialOrderWarning
   smallWorkIds: ReadonlySet<string>
+  users: User[]
 }) {
   const organization = useAuthStore((state) => state.organization)
   const user = useAuthStore((state) => state.user)
@@ -135,14 +136,15 @@ function MaterialsCard({
     const name = [user?.firstName, user?.surname].filter(Boolean).join(' ').trim() || user?.email || 'Someone'
     if (organization?.id) {
       try {
-        await addDoc(collection(db, 'organizations', organization.id, 'notifications'), {
+        // One row per admin (companyActivityRecipients), never a row without userId (rulebook 1.4.0 §13).
+        await notifyCompanyActivity({
           organizationId: organization.id,
           type: 'warning_removed',
           title: `Warning dismissed by ${name}`,
           message: `${name} dismissed a materials cut-off warning. Dismissed warnings do not reappear.\n\n${warning.message}`,
-          isRead: false,
-          createdAt: serverTimestamp(),
           requiresPermission: 'hasAdminAccess',
+          actor: user,
+          users,
         })
       } catch {
         // The card still leaves this device, matching an iPhone dismiss.
@@ -606,7 +608,7 @@ export function WarningsScreen({
         }
         if (item.kind === 'material') {
           return (
-            <MaterialsCard key={item.warning.id} warning={item.warning} smallWorkIds={smallWorkIds} />
+            <MaterialsCard key={item.warning.id} warning={item.warning} smallWorkIds={smallWorkIds} users={users} />
           )
         }
         if (item.kind === 'qualification') {

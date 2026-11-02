@@ -150,7 +150,7 @@ export function ManageUsersScreen() {
   const missingLineManager = useMemo(
     () =>
       isAdminViewer
-        ? usersWithoutRequiredLineManager(users.filter((user) => matchesRosterSegment(user, 'active')))
+        ? usersWithoutRequiredLineManager(users).filter((user) => matchesRosterSegment(user, 'active'))
         : [],
     [isAdminViewer, users]
   )
@@ -251,7 +251,7 @@ export function ManageUsersScreen() {
               : `${missingLineManager.length} people need a line manager`}
           </p>
           <p className="mt-0.5 text-xs">
-            They cannot book their own annual leave, so their requests go to admins until a line manager is set.
+            Every operative and manager needs a line manager. Until one is set, their timesheets and annual leave requests go to admins.
           </p>
           <ul className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
             {missingLineManager.map((user) => (

@@ -23,7 +23,8 @@ import { retainLoadedRows } from '@/lib/staff/rosterRetain'
 import { db, storage } from '@/lib/firebase/config'
 import { newUuid, parseFirestoreDate, sanitizeForFirestore } from '@/lib/firebase/firestoreUtils'
 import { saveInboxNotification } from '@/lib/firebase/notifyInbox'
-import { receivesJobNotification } from '@/lib/canonical'
+import { excludeActor, receivesJobNotification } from '@/lib/canonical'
+import { rulebookPerson, rulebookRoster } from '@/lib/staff/rulebookPeople'
 import { staffAccountRole } from '@/lib/permissions'
 import type { User } from '@/types'
 import {
@@ -527,6 +528,25 @@ function withCounters(row: Variation): Variation {
   return { ...row, ...counters }
 }
 
+/**
+ * Variation notice recipients (rulebook §13): `receivesJobNotification` (admins always; a manager only as an
+ * assigned manager of this job — seeing the job in the list is not enough), then `excludeActor` (never the person
+ * who made the change under any of their ids, no inactive account). No "all admins" fallback beyond that rule.
+ */
+export function variationRecipientIds(
+  users: ReadonlyArray<User>,
+  actorId: string | null | undefined,
+  assignedManagerUserIds: ReadonlyArray<string>
+): string[] {
+  const managers = [...assignedManagerUserIds]
+  const ids = users
+    .filter((person) => receivesJobNotification({ userId: person.id, role: staffAccountRole(person), assignedManagerUserIds: managers }))
+    .map((person) => person.id)
+  const actorKey = String(actorId ?? '').trim()
+  const actorUser = actorKey ? users.find((person) => person.id === actorKey) : undefined
+  return excludeActor(ids, actorUser ? rulebookPerson(actorUser, users) : actorKey || null, rulebookRoster(users))
+}
+
 async function notifyCreated(input: {
   organizationId: string
   variation: Variation
@@ -534,27 +554,22 @@ async function notifyCreated(input: {
   creatorId: string
   managerIds: string[]
 }) {
-  // Canonical recipient rule: admins always; a manager only as an assigned
-  // manager of this job. A manager who merely sees the job in the list is not a recipient.
-  const assignedManagerUserIds = input.variation.origin === 'tracker' ? input.managerIds : []
-  const recipients = input.users.filter(
-    (person) =>
-      person.id !== input.creatorId &&
-      receivesJobNotification({ userId: person.id, role: staffAccountRole(person), assignedManagerUserIds })
-  )
+  // The job's assigned managers for every variation, whatever its origin.
+  const assignedManagerUserIds = input.managerIds
+  const recipients = variationRecipientIds(input.users, input.creatorId, assignedManagerUserIds)
   const title = input.variation.origin === 'tracker' ? 'New variation from the QS' : 'New variation added'
   const message =
     input.variation.origin === 'tracker'
       ? `${input.variation.voNumber} added to ${input.variation.parentName} — hours and materials needed`
       : `New variation added to ${input.variation.parentName}`
   await Promise.all(
-    recipients.map((person) =>
+    recipients.map((userId) =>
       saveInboxNotification({
         organizationId: input.organizationId,
         type: 'variation',
         title,
         message,
-        userId: person.id,
+        userId,
         relatedId: input.variation.id,
       })
     )
@@ -858,7 +873,7 @@ export async function applyNumbering(input: {
   })
   const parentName = input.rows[0]?.parentName || 'this job'
   await Promise.all(
-    (input.notifyUserIds || []).map((userId) =>
+    excludeActor(input.notifyUserIds || [], input.actor.uid).map((userId) =>
       saveInboxNotification({
         organizationId: input.organizationId,
         type: 'variation_renumbered',

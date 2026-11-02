@@ -1857,13 +1857,21 @@ test('1.2.0 decision 3: nobody decides their own leave, admins included; an admi
   const adminOp = authDb(ADMIN_OPMODE_A, 'admin-opmode-a@test.com')
   const approve = (uid: string) => ({ status: 'approved', approvedByUserId: uid, approvedAt: Timestamp.now() })
 
-  // ADMIN_A has no self-book flag: their own request waits; they cannot approve it or save it approved.
+  // 1.3.0: ADMIN_A has no line manager, so their own leave is self-approved.
+  await assertSucceeds(setDoc(ref(admin, 'hb130-own-0'), leave(ADMIN_A, 'approved', { approvedByUserId: ADMIN_A, approvedAt: Timestamp.now() })))
+  // With a line manager (and no self-book flag) the admin's own request waits; they cannot approve it or save it approved.
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'users', ADMIN_A), { assignedManagerUserIds: [LM_A] }, { merge: true })
+  })
   await assertFails(setDoc(ref(admin, 'hb120-own-1'), leave(ADMIN_A, 'approved', { approvedByUserId: ADMIN_A, approvedAt: Timestamp.now() })))
   await assertSucceeds(setDoc(ref(admin, 'hb120-own-1'), leave(ADMIN_A, 'pending')))
   await assertFails(updateDoc(ref(admin, 'hb120-own-1'), approve(ADMIN_A)))
   await assertFails(updateDoc(ref(admin, 'hb120-own-1'), { status: 'rejected', decisionNote: 'no' }))
   // Another admin (not in operative mode) can decide it; the admin in operative mode cannot.
   await assertFails(updateDoc(ref(adminOp, 'hb120-own-1'), approve(ADMIN_OPMODE_A)))
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'users', ADMIN_A), { assignedManagerUserIds: [] }, { merge: true })
+  })
 
   // Requests from people with and without a line manager.
   await assertSucceeds(setDoc(ref(authDb(REPORT_A, 'report-a@test.com'), 'hb120-rep'), leave(REPORT_A, 'pending')))
@@ -1980,9 +1988,16 @@ test('1.2.0 holiday delete: only a decider (never on their own leave), the owner
     await setDoc(doc(db, 'organizations', ORG_A, 'holidayBookings', 'hbdel-rep-2'), approved(REPORT_A))
   })
   const lm = authDb(LM_A, 'lm-a@test.com')
-  // A manager (not a self-booker) cannot delete their own approved leave; nor can an admin delete their own.
+  // A manager (not a self-booker) cannot delete their own approved leave; nor can an admin who has a line
+  // manager (1.3.0: an admin without one is self-approved and may).
   await assertFails(deleteDoc(ref(authDb(NOLM_MGR_A, 'nolm-mgr-a@test.com'), 'hbdel-mgr-own')))
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'users', ADMIN_A), { assignedManagerUserIds: [LM_A] }, { merge: true })
+  })
   await assertFails(deleteDoc(ref(authDb(ADMIN_A, 'admin-a@test.com'), 'hbdel-admin-own')))
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'users', ADMIN_A), { assignedManagerUserIds: [] }, { merge: true })
+  })
   // A manager who is not the line manager cannot delete a report's booking; an admin in operative mode cannot either.
   await assertFails(deleteDoc(ref(authDb(MGR_OTHER_A, 'mgr-other-a@test.com'), 'hbdel-rep-cancel')))
   await assertFails(deleteDoc(ref(authDb(ADMIN_OPMODE_A, 'admin-opmode-a@test.com'), 'hbdel-rep-cancel')))
@@ -2016,4 +2031,128 @@ test('1.2.0 decision 5: any manager un-approves a warning resolution someone els
   await assertSucceeds(deleteDoc(ref(authDb(MGR_OTHER_A, 'mgr-other-a@test.com'))))
   await seed()
   await assertSucceeds(deleteDoc(ref(authDb(ADMIN_A, 'admin-a@test.com'))))
+})
+
+// ---------------------------------------------------------------------------
+// Rulebook 1.3.0: line managers (A.5) and notification actorUserId (B).
+// ---------------------------------------------------------------------------
+
+const GONE_MGR_A = 'inactive-manager-a'
+
+async function seedRulebook130People() {
+  await seedRulebook120People()
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore()
+    await setDoc(doc(db, 'users', GONE_MGR_A), {
+      email: 'gone-a@test.com', organizationId: ORG_A, role: 'manager', manager: true, isActive: false,
+      permissions: { manager: true },
+    })
+  })
+}
+
+async function setAdminLineManagers(ids: string[]) {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'users', ADMIN_A), { assignedManagerUserIds: ids, assignedManagerUserId: ids[0] ?? '' }, { merge: true })
+  })
+}
+
+test('1.3.0 A5: with no line manager, only admins decide leave — never any manager', async () => {
+  await seedRulebook130People()
+  const ref = (db: ReturnType<typeof authDb>, id: string) => doc(db, 'organizations', ORG_A, 'holidayBookings', id)
+  const mgr = authDb(MGR_OTHER_A, 'mgr-other-a@test.com')
+  const approve = (uid: string) => ({ status: 'approved', approvedByUserId: uid, approvedAt: Timestamp.now() })
+  // OP_A has no line manager (legacy data).
+  await assertSucceeds(setDoc(ref(authDb(OP_A, 'op-a@test.com'), 'hb130-legacy'), leave(OP_A, 'pending')))
+  await assertFails(updateDoc(ref(mgr, 'hb130-legacy'), approve(MGR_OTHER_A)))
+  await assertFails(updateDoc(ref(mgr, 'hb130-legacy'), { status: 'rejected', approvedByUserId: MGR_OTHER_A }))
+  await assertFails(deleteDoc(ref(mgr, 'hb130-legacy')))
+  await assertSucceeds(updateDoc(ref(authDb(ADMIN_A, 'admin-a@test.com'), 'hb130-legacy'), approve(ADMIN_A)))
+  // A legacy operativeId-only row: admins only too.
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'organizations', ORG_A, 'holidayBookings', 'hb130-opid'), { ...leave(OP_A, 'pending'), userId: null, operativeId: 'legacy-operative-row' })
+  })
+  await assertFails(updateDoc(ref(mgr, 'hb130-opid'), approve(MGR_OTHER_A)))
+  await assertSucceeds(updateDoc(ref(authDb(ADMIN_A, 'admin-a@test.com'), 'hb130-opid'), approve(ADMIN_A)))
+  // The line manager still decides their report's request.
+  await assertSucceeds(setDoc(ref(authDb(REPORT_A, 'report-a@test.com'), 'hb130-rep'), leave(REPORT_A, 'pending')))
+  await assertSucceeds(updateDoc(ref(authDb(LM_A, 'lm-a@test.com'), 'hb130-rep'), approve(LM_A)))
+})
+
+test('1.3.0 A4/A5: an admin with no current line manager self-books leave; with one they ask; operative mode never', async () => {
+  await seedRulebook130People()
+  const ref = (db: ReturnType<typeof authDb>, id: string) => doc(db, 'organizations', ORG_A, 'holidayBookings', id)
+  const admin = authDb(ADMIN_A, 'admin-a@test.com')
+  const approved = () => leave(ADMIN_A, 'approved', { approvedByUserId: ADMIN_A, approvedAt: Timestamp.now() })
+  try {
+    await setAdminLineManagers([])
+    await assertSucceeds(setDoc(ref(admin, 'hb130-a1'), approved()))
+    await assertSucceeds(updateDoc(ref(admin, 'hb130-a1'), { timeSlot: 'PM' }))
+    await assertSucceeds(deleteDoc(ref(admin, 'hb130-a1')))
+    // Only line manager listed is themself, or an inactive manager, or a missing account: still none.
+    await setAdminLineManagers([ADMIN_A])
+    await assertSucceeds(setDoc(ref(admin, 'hb130-a2'), approved()))
+    await setAdminLineManagers([GONE_MGR_A])
+    await assertSucceeds(setDoc(ref(admin, 'hb130-a3'), approved()))
+    await setAdminLineManagers(['no-such-user'])
+    await assertSucceeds(setDoc(ref(admin, 'hb130-a4'), approved()))
+    // An active line manager: the admin asks.
+    await setAdminLineManagers([LM_A])
+    await assertFails(setDoc(ref(admin, 'hb130-a5'), approved()))
+    await assertSucceeds(setDoc(ref(admin, 'hb130-a5'), leave(ADMIN_A, 'pending')))
+    await assertFails(updateDoc(ref(admin, 'hb130-a5'), { status: 'approved', approvedByUserId: ADMIN_A, approvedAt: Timestamp.now() }))
+  } finally {
+    await setAdminLineManagers([])
+  }
+  // An admin in operative mode with no line manager does not self-book.
+  await assertFails(setDoc(ref(authDb(ADMIN_OPMODE_A, 'admin-opmode-a@test.com'), 'hb130-aop'), leave(ADMIN_OPMODE_A, 'approved')))
+  // A manager with no line manager (and no self-book flag) still asks.
+  await assertFails(setDoc(ref(authDb(NOLM_MGR_A, 'nolm-mgr-a@test.com'), 'hb130-m'), leave(NOLM_MGR_A, 'approved')))
+})
+
+test('1.3.0 A4: an admin with no current line manager writes their self-signed snapshot; with one they cannot', async () => {
+  await seedRulebook130People()
+  const ref = doc(authDb(ADMIN_A, 'admin-a@test.com'), 'organizations', ORG_A, 'settings', `timesheet_${ADMIN_A}_1790000000`)
+  const save = (n: number) => ({
+    userId: ADMIN_A, operativeSignedAt: Timestamp.now(), operativeSignedByName: 'Ada',
+    weeklyReportOverride: { approvedByUserId: ADMIN_A, selfSigned: true, lines: [], priceWork: [], expenses: [], n },
+  })
+  try {
+    await setAdminLineManagers([])
+    await assertSucceeds(setDoc(ref, save(1), { merge: true }))
+    await setAdminLineManagers([GONE_MGR_A])
+    await assertSucceeds(setDoc(ref, save(2), { merge: true }))
+    // Admins are timesheet reviewers, so the owner check is shown on a non-admin: REPORT_A with an active LM.
+  } finally {
+    await setAdminLineManagers([])
+  }
+  const rep = doc(authDb(REPORT_A, 'report-a@test.com'), 'organizations', ORG_A, 'settings', `timesheet_${REPORT_A}_1790000000`)
+  await assertFails(setDoc(rep, { userId: REPORT_A, weeklyReportOverride: { approvedByUserId: REPORT_A, selfSigned: true, lines: [] } }, { merge: true }))
+  // REPORT_A whose only line manager is inactive has no current line manager (legacy data): the snapshot passes the rules.
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'users', REPORT_A), { assignedManagerUserId: GONE_MGR_A }, { merge: true })
+  })
+  try {
+    await assertSucceeds(setDoc(rep, { userId: REPORT_A, weeklyReportOverride: { approvedByUserId: REPORT_A, selfSigned: true, lines: [] } }, { merge: true }))
+  } finally {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'users', REPORT_A), { assignedManagerUserId: LM_A }, { merge: true })
+    })
+  }
+})
+
+test('1.3.0 B: a notification actorUserId, when written, is the signed-in user', async () => {
+  const ref = (db: ReturnType<typeof authDb>, id: string) => doc(db, 'organizations', ORG_A, 'notifications', id)
+  const op = authDb(OP_A, 'op-a@test.com')
+  const row = (extra: Record<string, unknown> = {}) => ({ userId: ADMIN_A, type: 'holiday_request_submitted', isRead: false, title: 't', message: 'm', ...extra })
+  await assertSucceeds(setDoc(ref(op, 'n130-1'), row({ actorUserId: OP_A })))
+  await assertSucceeds(setDoc(ref(op, 'n130-2'), row()))
+  await assertFails(setDoc(ref(op, 'n130-3'), row({ actorUserId: ADMIN_A })))
+  await assertFails(setDoc(ref(op, 'n130-4'), row({ actorUserId: null })))
+  // Another company's member cannot write here at all.
+  await assertFails(setDoc(ref(authDb(OP_B, 'op-b@test.com'), 'n130-5'), row({ actorUserId: OP_B })))
+  // The addressee marks it read; nobody rewrites the actor to someone else.
+  const admin = authDb(ADMIN_A, 'admin-a@test.com')
+  await assertSucceeds(updateDoc(ref(admin, 'n130-1'), { isRead: true }))
+  await assertFails(updateDoc(ref(admin, 'n130-1'), { actorUserId: OP_A + '-x' }))
+  await assertSucceeds(updateDoc(ref(admin, 'n130-1'), { actorUserId: ADMIN_A }))
 })

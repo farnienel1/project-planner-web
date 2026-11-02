@@ -4,9 +4,10 @@
  */
 
 import { doc, setDoc } from 'firebase/firestore'
-import { db } from '@/lib/firebase/config'
+import { auth, db } from '@/lib/firebase/config'
 import { serializeNotification } from '@/lib/ios-parity/converters'
 import { newUppercaseUuid } from '@/lib/ios-parity/uuid'
+import type { User } from '@/types'
 
 export async function saveInboxNotification(input: {
   organizationId: string
@@ -21,6 +22,12 @@ export async function saveInboxNotification(input: {
   dayKey?: string | null
   catalogue?: 'projects' | 'smallWorks' | null
   id?: string
+  /**
+   * Rulebook §13: who caused the row. Defaults to the signed-in user (security rules require exactly that uid when
+   * present). Pass null only for a scheduled notice nobody caused (the submission reminder), so the push function's
+   * "never push to the actor" guard does not silence the signed-in user's own reminder.
+   */
+  actorUserId?: string | null
 }): Promise<void> {
   if (!db) return
   const id = input.id || newUppercaseUuid()
@@ -40,22 +47,39 @@ export async function saveInboxNotification(input: {
   const dayKey = String(input.dayKey ?? '').trim()
   if (dayKey) payload.dayKey = dayKey
   if (input.catalogue === 'projects' || input.catalogue === 'smallWorks') payload.catalogue = input.catalogue
+  const actorUserId = inboxActorUserId(input.actorUserId)
+  if (actorUserId) payload.actorUserId = actorUserId
   await setDoc(doc(db, 'organizations', input.organizationId, 'notifications', id), payload)
 }
 
-/** NotificationService.notifyClientCreated ~L368 */
+/** The signed-in uid (`actorUserId` on every inbox row), unless the caller passes null for a scheduled notice. */
+export function inboxActorUserId(explicit?: string | null): string {
+  if (explicit === null) return ''
+  // Security rules accept only the signed-in uid, so any other value is never written.
+  return String(auth?.currentUser?.uid ?? '').trim()
+}
+
+/**
+ * NotificationService.notifyClientCreated ~L368. Rulebook 1.4.0: one row per admin
+ * (`companyActivityRecipients`), never a row without `userId`.
+ */
 export async function notifyClientCreated(params: {
   organizationId: string
   clientId: string
   clientName: string
   createdBy: string
+  actor: User | null | undefined
+  users: ReadonlyArray<User>
 }): Promise<void> {
-  await saveInboxNotification({
+  const { notifyCompanyActivity } = await import('@/lib/notifications/companyActivity')
+  await notifyCompanyActivity({
     organizationId: params.organizationId,
     type: 'client_created',
     title: 'New Client Created',
     message: `${params.createdBy} added a new client: ${params.clientName}`,
     relatedId: params.clientId,
     requiresPermission: 'superAdminOrAdmin',
+    actor: params.actor,
+    users: params.users,
   })
 }

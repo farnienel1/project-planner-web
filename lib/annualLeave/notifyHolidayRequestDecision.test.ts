@@ -14,6 +14,7 @@ import {
   HOLIDAY_REQUEST_DECLINED,
   annualLeaveDecisionDateText,
   buildHolidayRequestDecisionNotification,
+  buildLeaveDecisionPeerNotifications,
   holidayDecisionDedupeKey,
   holidayDecisionRecipientUserId,
   holidayRequestDecisionMessage,
@@ -175,6 +176,14 @@ test('annualLeaveDecision toggle uses the canonical allow-list', () => {
   assert.equal(DEFAULT_USER_NOTIFICATION_PREFERENCES.annualLeaveDecision, true)
 })
 
+test('leave notice dates are in the organisation zone, not London', () => {
+  // 14:00 UTC on 19 Oct is 01:00 on 20 Oct in Sydney and 15:00 on 19 Oct in London.
+  const at = new Date('2026-10-19T14:00:00Z')
+  const late = booking({ startDate: at, endDate: at })
+  assert.equal(annualLeaveDecisionDateText(late, 'Australia/Sydney'), '20 Oct 2026 (FULL DAY)')
+  assert.equal(annualLeaveDecisionDateText(late, 'Europe/London'), '19 Oct 2026 (FULL DAY)')
+})
+
 test('decision copy and dedupe key match iOS', () => {
   assert.equal(annualLeaveDecisionDateText(booking()), '20 Oct 2026 (FULL DAY)')
   assert.equal(
@@ -191,4 +200,43 @@ test('decision copy and dedupe key match iOS', () => {
   )
   assert.equal(holidayDecisionDedupeKey('BOOK-1', 'op-user-1', true), 'holidayDecision|BOOK-1|op-user-1|true')
   assert.equal(holidayDecisionDedupeKey('BOOK-1', 'op-user-1', false), 'holidayDecision|BOOK-1|op-user-1|false')
+})
+
+test('holidayDecisionRecipients: a decider never notifies themself', () => {
+  const self = buildHolidayRequestDecisionNotification({
+    organizationId: 'org-1',
+    booking: booking(),
+    approved: true,
+    decidedByName: 'Op',
+    decidedByUserId: 'op-user-1',
+  })
+  assert.equal(self, null)
+  const other = buildHolidayRequestDecisionNotification({
+    organizationId: 'org-1',
+    booking: booking(),
+    approved: true,
+    decidedByName: 'Alex Manager',
+    decidedByUserId: 'mgr-1',
+  })
+  assert.equal(other?.userId, 'op-user-1')
+})
+
+test('leave decision: line_manager_peer_update to the other active line managers, never the decider', () => {
+  const managerPerms = { ...operativeUser().permissions, operativeMode: false, manager: true }
+  const requester = operativeUser({ assignedManagerUserIds: ['mgr-1', 'mgr-2', 'mgr-3'] })
+  const mgr1 = operativeUser({ id: 'mgr-1', email: 'm1@example.com', role: UserRole.MANAGER, permissions: managerPerms })
+  const mgr2 = operativeUser({ id: 'mgr-2', email: 'm2@example.com', role: UserRole.MANAGER, permissions: managerPerms })
+  const mgr3 = operativeUser({ id: 'mgr-3', email: 'm3@example.com', role: UserRole.MANAGER, permissions: managerPerms, isActive: false })
+  const rows = buildLeaveDecisionPeerNotifications({
+    organizationId: 'org-1',
+    booking: booking(),
+    approved: true,
+    decidedByName: 'Alex Manager',
+    decidedByUserId: 'mgr-1',
+    users: [requester, mgr1, mgr2, mgr3],
+  })
+  assert.deepEqual(rows.map((row) => row.userId), ['mgr-2'])
+  assert.equal(rows[0].type, 'line_manager_peer_update')
+  assert.equal(notificationDeliversDevicePush(rows[0].type), false)
+  assert.equal(rows[0].message, "Alex Manager approved Pat Operative's annual leave request. 20 Oct 2026 (FULL DAY)")
 })

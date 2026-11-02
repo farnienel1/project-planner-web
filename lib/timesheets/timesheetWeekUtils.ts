@@ -156,14 +156,6 @@ export function timesheetRosterGroups(viewer: User, users: User[]): User[][] {
   return groups
 }
 
-export function groupHasLineManager(group: User[]): boolean {
-  return group.some((member) => {
-    if (member.hasNoLineManager) return false
-    const ids = [...(member.assignedManagerUserIds || []), member.assignedManagerUserId || '']
-    return ids.some((id) => id.trim())
-  })
-}
-
 /** Paid hours for a booking on its day (`payrollHoursResult.totalPaidHours`). */
 export function hoursFromSlot(
   timeSlot: string,

@@ -137,6 +137,8 @@ function writeHandoff(ref) {
   const newHeadings = now.headings.filter((h) => !(previous.headings || []).includes(h))
   const watched = changedFiles(ref).filter((file) => WATCHED.test(file))
   const today = new Date().toISOString().slice(0, 10)
+  // Optional per-version notes for the iOS agent (file refs, screens), kept across regenerations.
+  const notesText = (read(`${HANDOFF_DIR}/notes/v${now.version}.md`) || '').trim()
   const body = `# iOS follow-on — rulebook ${now.version}
 
 Generated ${today} by \`npm run rulebook:handoff\` in project-planner-web. Paste this whole file into the iOS agent.
@@ -173,7 +175,7 @@ Done when:
 
 ${now.changelogEntry || '(no changelog text)'}
 
-${newHeadings.length ? `## New rulebook sections\n\n${newHeadings.map((h) => `- ${h.replace(/^#+ /, '')}`).join('\n')}\n` : ''}
+${notesText ? `## iOS work for ${now.version}\n\n${notesText}\n\n` : ''}${newHeadings.length ? `## New rulebook sections\n\n${newHeadings.map((h) => `- ${h.replace(/^#+ /, '')}`).join('\n')}\n` : ''}
 ## Workflow for the iOS agent
 
 1. Run \`scripts/sync-rulebook-from-web.sh\` (or copy the files above), then run the iOS tests.

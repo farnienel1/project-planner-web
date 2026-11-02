@@ -93,7 +93,7 @@ export async function loadSignedTimesheetValueTotals(input: {
             const user = byId.get(userId) || orgUsers.find((row) => row.id === userId)
             if (!user) continue
             const draft = draftFromFirestoreMap(data, { includeSignatures: false }) || emptyTimesheetDraft()
-            if (!isTimesheetFullyApproved(draft, user)) continue
+            if (!isTimesheetFullyApproved(draft, user, orgUsers)) continue
             const signedAt = draft.managerSignedAt || draft.operativeSignedAt
             const current = inRange(signedAt, input.start, input.end)
             const previous = inRange(signedAt, input.previousStart, input.previousEnd)

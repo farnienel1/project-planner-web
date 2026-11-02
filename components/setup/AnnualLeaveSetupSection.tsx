@@ -3,8 +3,10 @@
 import { FormInput, FormLabel, FormSelect } from '@/components/forms/FormShell'
 import {
   BANK_HOLIDAY_REGIONS,
+  DEFAULT_BANK_HOLIDAY_REGION_ID,
   bankHolidayRegionLabel,
-} from '@/lib/settings/bankHolidayRegions'
+  normalizeBankHolidayRegionId,
+} from '@/lib/canonical'
 import {
   MONTHS,
   SetupCard,
@@ -122,14 +124,14 @@ export function AnnualLeaveSetupSection({
           </p>
           <FormLabel required>Region</FormLabel>
           <FormSelect
-            value={countryCode}
+            value={normalizeBankHolidayRegionId(countryCode) || DEFAULT_BANK_HOLIDAY_REGION_ID}
             onChange={(e) => {
               onRegionChange(e.target.value, bankHolidayRegionLabel(e.target.value))
             }}
           >
             {BANK_HOLIDAY_REGIONS.map((region) => (
-              <option key={region.code} value={region.code}>
-                {region.label}
+              <option key={region.id} value={region.id}>
+                {region.title}
               </option>
             ))}
           </FormSelect>
