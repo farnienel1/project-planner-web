@@ -26,21 +26,19 @@ import { ORG_DATA_REFRESHED_EVENT } from '@/lib/stores/refreshOrgData'
 import { canBookWork, hasAdminAccess } from '@/lib/permissions'
 import { BookingStatus, UserRole, type User } from '@/types'
 import { SubcontractorBookingEditSheet } from '@/components/projects/scheduling/SubcontractorBookingEditSheet'
+import { subcontractorBookingRowFromDocument } from '@/lib/weekly-report/loadSubcontractorBookings'
 import { managerSiteBookingToScheduleBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import type { Booking, Project } from '@/types'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import { collection, getDocs } from 'firebase/firestore'
 import { db } from '@/lib/firebase/config'
 import { scheduleWorkKindLabel } from '@/lib/jobTypes/jobTypesStorage'
-import { asClockHhMm } from '@/lib/ios-parity/firestoreCodec'
 import { coversCalendarDay } from '@/lib/ios-parity/londonTime'
-import { parseFirestoreDate } from '@/lib/firebase/firestoreUtils'
 import { DEFAULT_PAYROLL_POLICY, loadOrganizationDetails, type OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 import {
   findSubcontractorFirm,
   formatSubcontractorBookingLabel,
   idsMatch,
-  parseBookedPeopleFields,
   resolveSubcontractorBookingPeople,
 } from '@/lib/subcontractors/bookingPeople'
 
@@ -210,24 +208,19 @@ export function ProjectScheduleWeekOverview({
       setSubBookings(
         snapshot.docs
           .map((docSnap): SubBooking | null => {
-            const data = docSnap.data() as Record<string, unknown>
-            if (!idsMatch(String(data.projectId || data.projectID || ''), project.id)) return null
-            const date = parseFirestoreDate(data.date)
-            if (!date) return null
-            const peopleFields = parseBookedPeopleFields(data)
+            const parsed = subcontractorBookingRowFromDocument(docSnap.id, docSnap.data() as Record<string, unknown>)
+            if (!parsed || !idsMatch(parsed.projectId, project.id)) return null
             const row: SubBooking = {
-              id: docSnap.id,
-              subcontractorId: String(data.subcontractorId || data.subContractorId || ''),
-              date,
-              timeSlot: String(data.timeSlot || 'FULL DAY'),
-              bookedContactIds: peopleFields.bookedContactIds,
-              bookedOperativeNames: peopleFields.bookedOperativeNames,
+              id: parsed.id,
+              subcontractorId: parsed.subcontractorId,
+              date: parsed.date,
+              timeSlot: parsed.timeSlot,
+              bookedContactIds: parsed.bookedContactIds,
+              bookedOperativeNames: parsed.bookedOperativeNames,
             }
-            const start = asClockHhMm(data.workStartTime)
-            const end = asClockHhMm(data.workEndTime)
-            if (start) row.workStartTime = start
-            if (end) row.workEndTime = end
-            if (data.isBreakRemoved === true) row.isBreakRemoved = true
+            if (parsed.workStartTime) row.workStartTime = parsed.workStartTime
+            if (parsed.workEndTime) row.workEndTime = parsed.workEndTime
+            if (parsed.isBreakRemoved) row.isBreakRemoved = true
             return row
           })
           .filter((row): row is SubBooking => row !== null)

@@ -21,72 +21,23 @@ import { optionsForUnappliedOrg, runOrgLoad } from '@/lib/stores/orgLoadCache'
 import { markRowsRemoved, retainScopedRows } from '@/lib/staff/rosterRetain'
 import { trackEvent } from '@/lib/analytics/trackEvent'
 import { useAuthStore } from '@/lib/stores/authStore'
-import { parseFirestoreDate, parseNumber, parseOptionalString, parseString, newUuid } from '@/lib/firebase/firestoreUtils'
-import { parseClient as parseClientDoc, serializeClient } from '@/lib/ios-parity/converters'
+import { newUuid } from '@/lib/firebase/firestoreUtils'
+import { parseClient as parseClientDoc, projectFromJobDocument, serializeClient } from '@/lib/ios-parity/converters'
 import { savePartialDocument } from '@/lib/firebase/partialWrite'
 import { clientWriteFields } from '@/lib/canonical/peopleDocuments'
+import { jobWriteFields } from '@/lib/canonical/workDocumentReaders'
 import {
   isLegacyPlaceholderDocumentId,
   withoutLegacyPlaceholderDocuments,
 } from '@/lib/projects/legacyPlaceholderWork'
 import { removeFutureBookingsForProject } from '@/lib/bookings/removeBookingsOnDelete'
 
-function parseClient(data: unknown): Client {
-  const c = (data || {}) as Record<string, unknown>
-  return {
-    id: parseString(c.id),
-    name: parseString(c.name),
-    email: parseOptionalString(c.email),
-    phone: parseOptionalString(c.phone),
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  }
-}
-
+/**
+ * A job document as the web `Project`. Reading is the rulebook's `parseJobDocument` (§1): ids in stored case,
+ * the client id as stored (never a fresh id), start day `startDate` else `createdAt`, end day `endDate` else the start.
+ */
 export function mapProjectDoc(docId: string, data: Record<string, unknown>, organizationId: string): Project {
-  const managerIds = Array.isArray(data.managerIds)
-    ? (data.managerIds as string[]).filter((id) => typeof id === 'string')
-    : data.managerId
-      ? [parseString(data.managerId)]
-      : []
-
-  return {
-    id: docId,
-    jobNumber: parseString(data.jobNumber),
-    siteName: parseString(data.siteName),
-    addressLine1: parseString(data.addressLine1),
-    addressLine2: parseOptionalString(data.addressLine2),
-    townCity: parseString(data.townCity),
-    postcode: parseString(data.postcode),
-    client: parseClient(data.client),
-    startDate: parseFirestoreDate(data.startDate) || new Date(),
-    endDate: parseFirestoreDate(data.endDate) || new Date(),
-    jobType: parseString(data.jobType, 'CAT A'),
-    customJobType: parseOptionalString(data.customJobType),
-    manager: {
-      name: parseString(data.manager, 'Project Manager'),
-      email: '',
-    },
-    managerId: parseOptionalString(data.managerId) || managerIds[0],
-    managerIds,
-    isLive: data.isLive !== false,
-    description: parseOptionalString(data.description),
-    notes: parseOptionalString(data.notes),
-    siteAddress: parseOptionalString(data.siteAddress),
-    latitude: parseNumber(data.latitude),
-    longitude: parseNumber(data.longitude),
-    usesMapPinForLocation: data.usesMapPinForLocation === true,
-    hiddenManagerUserIds: Array.isArray(data.hiddenManagerUserIds)
-      ? (data.hiddenManagerUserIds as string[]).filter((id) => typeof id === 'string')
-      : [],
-    hiddenOperativeUserIds: Array.isArray(data.hiddenOperativeUserIds)
-      ? (data.hiddenOperativeUserIds as string[]).filter((id) => typeof id === 'string')
-      : [],
-    status: parseOptionalString(data.status),
-    organizationId,
-    createdAt: parseFirestoreDate(data.createdAt) || new Date(),
-    updatedAt: parseFirestoreDate(data.updatedAt) || new Date(),
-  }
+  return projectFromJobDocument(docId, data, organizationId)
 }
 
 interface ProjectState {
@@ -250,7 +201,10 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     const id = input.id || newUuid()
     const isNew = ![...get().projects, ...get().smallWorks].some((row) => row.id === id)
     const payload = buildProjectFirestorePayload({ ...input, id })
-    await setDoc(doc(db, 'organizations', input.organizationId, collectionName, id), payload, { merge: true })
+    // Rulebook §1: a partial update of the changed fields (`jobWriteFields`), never a merge-set of the whole job.
+    await savePartialDocument(doc(db, 'organizations', input.organizationId, collectionName, id), payload, jobWriteFields, {
+      userId: auth.currentUser?.uid ?? null,
+    })
     const saved = mapProjectDoc(id, payload as Record<string, unknown>, input.organizationId)
     if (collectionName === 'smallWorks') {
       const { smallWorks } = get()

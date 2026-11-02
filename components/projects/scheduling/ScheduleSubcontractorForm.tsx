@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { addDoc, collection, Timestamp } from 'firebase/firestore'
+import { createSubcontractorBooking } from '@/lib/subcontractors/subcontractorBookingWrite'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useSubcontractorStore } from '@/lib/stores/subcontractorStore'
 import {
@@ -170,19 +170,22 @@ export function ScheduleSubcontractorForm({
       await Promise.all(
         slotsList.map((slot) => {
           const firestoreSlot = slotToFirestore(slot)
-          return addDoc(collection(db, 'organizations', organization.id, 'subcontractorBookings'), {
-            subcontractorId: selectedSubcontractorId,
-            projectId: project.id,
-            date: Timestamp.fromDate(slot.date),
-            timeSlot: firestoreSlot.timeSlot,
-            workStartTime: firestoreSlot.workStartTime ?? null,
-            workEndTime: firestoreSlot.workEndTime ?? null,
-            bookedBy: user.email,
-            bookedContactIds: payloadIds,
-            bookedOperativeNames: payloadNames,
-            createdAt: Timestamp.fromDate(new Date()),
-            updatedAt: Timestamp.fromDate(new Date()),
-          })
+          return createSubcontractorBooking(
+            db,
+            organization.id,
+            {
+              subcontractorId: selectedSubcontractorId,
+              projectId: project.id,
+              dateMs: slot.date.getTime(),
+              timeSlot: firestoreSlot.timeSlot,
+              workStartTime: firestoreSlot.workStartTime ?? null,
+              workEndTime: firestoreSlot.workEndTime ?? null,
+              bookedBy: user.email,
+              bookedContactIds: payloadIds as string[],
+              bookedOperativeNames: payloadNames as string[],
+            },
+            { userId: user.id }
+          )
         })
       )
       router.push(scheduleBasePath)

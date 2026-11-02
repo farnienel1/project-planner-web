@@ -3,7 +3,10 @@
 import { create } from 'zustand'
 import { doc, setDoc } from 'firebase/firestore'
 import { deleteBookingWithTombstone } from '@/lib/bookings/bookingTombstoneWrite'
-import { db } from '@/lib/firebase/config'
+import { auth, db } from '@/lib/firebase/config'
+import { MissingDocumentError, savePartialDocument } from '@/lib/firebase/partialWrite'
+import { bookingUpdateWriteFields } from '@/lib/canonical/workDocumentReaders'
+import { BOOKING_REPLAY_REFUSED_MESSAGE } from '@/lib/canonical/bookingTombstones'
 import { forgetOrgCollectionDoc, isOrgCollectionSubscribed, subscribeOrgCollection } from '@/lib/firebase/subscribeOrgCollection'
 import { captureOrganizationContext, organizationContextStillCurrent } from '@/lib/canonical'
 import { organizationIdsMatch } from '@/lib/orgMembership/webActiveOrg'
@@ -141,7 +144,20 @@ export const useBookingStore = create<BookingState>((set, get) => ({
     }
     const payload = serializeBooking(next)
     const captured = captureOrganizationContext()
-    await setDoc(doc(firestore, 'organizations', organizationId, 'bookings', id), payload, { merge: true })
+    // Rulebook §1/§2: only the changed fields (`bookingUpdateWriteFields`); an edit never re-creates a booking
+    // that was deleted elsewhere.
+    try {
+      await savePartialDocument(doc(firestore, 'organizations', organizationId, 'bookings', id), payload, bookingUpdateWriteFields, {
+        userId: auth?.currentUser?.uid ?? null,
+        missing: 'refuse',
+      })
+    } catch (error: unknown) {
+      if (error instanceof MissingDocumentError) {
+        set({ bookings: get().bookings.filter((row) => row.id !== id), error: BOOKING_REPLAY_REFUSED_MESSAGE })
+        throw new Error(BOOKING_REPLAY_REFUSED_MESSAGE)
+      }
+      throw error
+    }
     if (!organizationContextStillCurrent(organizationId, captured)) return
     set({
       bookings: get().bookings.map((row) => (row.id === id ? next : row)),

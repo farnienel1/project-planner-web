@@ -1,8 +1,9 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { deleteDoc, doc, Timestamp, updateDoc } from 'firebase/firestore'
-import { db } from '@/lib/firebase/config'
+import { deleteDoc, doc } from 'firebase/firestore'
+import { auth, db } from '@/lib/firebase/config'
+import { updateSubcontractorBooking } from '@/lib/subcontractors/subcontractorBookingWrite'
 import { HoursBreakdownCard } from '@/components/schedule/HoursBreakdownCard'
 import { HoursTimelinePicker } from '@/components/scheduling/HoursTimelinePicker'
 import { hoursBreakdown } from '@/lib/scheduling/paidHours'
@@ -84,15 +85,20 @@ export function SubcontractorBookingEditSheet({
         bookedContactIds: selectedIds,
         bookedOperativeNames: names,
       }
-      await updateDoc(doc(db, 'organizations', organizationId, 'subcontractorBookings', booking.id), {
-        timeSlot: 'CUSTOM_HOURS',
-        workStartTime,
-        workEndTime,
-        isBreakRemoved: true,
-        bookedContactIds: selectedIds,
-        bookedOperativeNames: names,
-        updatedAt: Timestamp.fromDate(new Date()),
-      })
+      await updateSubcontractorBooking(
+        db,
+        organizationId,
+        booking.id,
+        {
+          timeSlot: 'CUSTOM_HOURS',
+          workStartTime,
+          workEndTime,
+          isBreakRemoved: true,
+          bookedContactIds: selectedIds,
+          bookedOperativeNames: names,
+        },
+        { userId: auth?.currentUser?.uid ?? null }
+      )
       onSaved(next)
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Could not update this booking')

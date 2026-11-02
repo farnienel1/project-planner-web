@@ -12,6 +12,7 @@ import { assignedQualificationWriteFields } from '@/lib/canonical/operativeQuali
 import { currencySymbol, DEFAULT_CURRENCY_CODE } from '@/lib/canonical/money'
 import { bookingWriteFields, parseBookingDocument, parseManagerSiteBookingDocument } from '@/lib/canonical/bookings'
 import { parseHolidayDocument } from '@/lib/canonical/holidayDocument'
+import { parseJobDocument } from '@/lib/canonical/workDocumentReaders'
 import {
   parseClientDocument,
   parseManagerDocument,
@@ -471,51 +472,60 @@ export function serializeManagerSiteBooking(
   return payload
 }
 
+export function projectFromJobDocument(docId: string, data: Record<string, unknown>, organizationId: string): Project {
+  const job = parseJobDocument(docId, data) ?? parseJobDocument(docId || 'unknown', {})!
+  const fallback = new Date()
+  return {
+    id: docId,
+    jobNumber: job.jobNumber,
+    siteName: job.siteName,
+    addressLine1: job.addressLine1,
+    addressLine2: job.addressLine2 ?? undefined,
+    townCity: job.townCity,
+    postcode: job.postcode,
+    client: {
+      id: job.client.id,
+      name: job.client.name,
+      email: job.client.email ?? undefined,
+      phone: job.client.phone ?? undefined,
+      createdAt: fallback,
+      updatedAt: fallback,
+    },
+    startDate: job.startMs != null ? new Date(job.startMs) : fallback,
+    endDate: job.endMs != null ? new Date(job.endMs) : fallback,
+    jobType: job.jobType || 'CAT A',
+    customJobType: job.customJobType ?? undefined,
+    manager: {
+      name: job.managerName || 'Project Manager',
+      email: '',
+    },
+    managerId: job.managerId ?? undefined,
+    managerIds: job.managerIds,
+    isLive: job.isLive,
+    description: job.description ?? undefined,
+    notes: job.notes ?? undefined,
+    siteAddress: job.siteAddress || undefined,
+    latitude: job.latitude ?? undefined,
+    longitude: job.longitude ?? undefined,
+    usesMapPinForLocation: job.usesMapPinForLocation,
+    hiddenManagerUserIds: job.hiddenManagerUserIds,
+    hiddenOperativeUserIds: job.hiddenOperativeUserIds,
+    status: job.status ?? undefined,
+    organizationId,
+    createdAt: job.createdAtMs != null ? new Date(job.createdAtMs) : fallback,
+    updatedAt: job.updatedAtMs != null ? new Date(job.updatedAtMs) : fallback,
+  }
+}
+
 export function parseProject(
   docId: string,
   data: Record<string, unknown>,
   organizationId: string
 ): ParseResult<Project> {
-  const siteName = asString(data.siteName)
-  if (!siteName) return fail(['siteName missing'])
-  const clientRaw = (data.client && typeof data.client === 'object' ? data.client : {}) as Record<string, unknown>
-  const managerIds = asStringArray(data.managerIds)
-  const managerId = asOptionalString(data.managerId) || managerIds[0]
-  return ok({
-    id: docId,
-    jobNumber: asString(data.jobNumber),
-    siteName,
-    addressLine1: asString(data.addressLine1),
-    addressLine2: asOptionalString(data.addressLine2),
-    townCity: asString(data.townCity),
-    postcode: asString(data.postcode),
-    client: {
-      id: asString(clientRaw.id),
-      name: asString(clientRaw.name),
-      email: asOptionalString(clientRaw.email),
-      phone: asOptionalString(clientRaw.phone),
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    },
-    startDate: asDate(data.startDate) || new Date(),
-    endDate: asDate(data.endDate) || new Date(),
-    jobType: asString(data.jobType, 'CAT A'),
-    customJobType: asOptionalString(data.customJobType),
-    manager: { name: asString(data.manager), email: '' },
-    managerId,
-    managerIds: managerIds.length ? managerIds : managerId ? [managerId] : [],
-    isLive: asBool(data.isLive, true),
-    description: asOptionalString(data.description),
-    siteAddress: asOptionalString(data.siteAddress),
-    latitude: asNumber(data.latitude),
-    longitude: asNumber(data.longitude),
-    usesMapPinForLocation: data.usesMapPinForLocation === true,
-    hiddenManagerUserIds: asStringArray(data.hiddenManagerUserIds),
-    hiddenOperativeUserIds: asStringArray(data.hiddenOperativeUserIds),
-    organizationId,
-    createdAt: asDate(data.createdAt) || new Date(),
-    updatedAt: asDate(data.updatedAt) || new Date(),
-  })
+  const job = parseJobDocument(docId, data)
+  if (!job) return fail(['legacy placeholder or blank id'])
+  if (!job.siteName) return fail(['siteName missing'])
+  return ok(projectFromJobDocument(docId, data, organizationId))
 }
 
 export function serializeProject(input: {

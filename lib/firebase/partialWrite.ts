@@ -3,7 +3,8 @@ import type { DocumentWriteFields } from '@/lib/canonical/peopleDocuments'
 import { writeMetadataFields } from '@/lib/canonical/writeMetadata'
 
 /**
- * Web glue for the rulebook partial-write helpers (`documentWriteFields`, `operativeRowWriteFields`,
+ * Web glue for the rulebook partial-write helpers (`documentWriteFields`, `jobWriteFields`, `bookingUpdateWriteFields`,
+ * `subcontractorBookingWriteFields`, `operativeRowWriteFields`,
  * `managerRowWriteFields`, `clientWriteFields`, `subcontractorWriteFields`; rulebook §1 "Partial writes only").
  * The rulebook decides which fields change; this file only turns the result into one Firestore call.
  */
@@ -32,6 +33,15 @@ export function firestoreUpdateFields(write: DocumentWriteFields): Record<string
   return out
 }
 
+/** The document an edit was aimed at is gone (deleted elsewhere); the edit is not turned into a create. */
+export class MissingDocumentError extends Error {
+  readonly code = 'not-found'
+  constructor(path: string) {
+    super(`Document no longer exists: ${path}`)
+    this.name = 'MissingDocumentError'
+  }
+}
+
 /**
  * Save a document as a partial update: read the stored copy, ask the rulebook helper what changed, write only
  * that (plus `updatedAt` and write metadata). A missing document is created from the payload. Returns whether
@@ -41,13 +51,18 @@ export async function savePartialDocument(
   ref: DocumentReference,
   payload: Record<string, unknown>,
   writeFields: (before: Record<string, unknown> | null, next: Record<string, unknown>) => DocumentWriteFields,
-  options?: { userId?: string | null }
+  options?: {
+    userId?: string | null
+    /** `refuse`: an edit of a document that no longer exists throws `MissingDocumentError` instead of creating it. */
+    missing?: 'create' | 'refuse'
+  }
 ): Promise<boolean> {
   const metadata = writeMetadataFields(options?.userId, 'web')
   const snap = await getDoc(ref)
   const next = plainWritePayload(payload)
   delete next.updatedAt
   if (!snap.exists()) {
+    if (options?.missing === 'refuse') throw new MissingDocumentError(ref.path)
     const create = writeFields(null, next)
     await setDoc(ref, { ...create.set, updatedAt: serverTimestamp(), ...(metadata ?? {}) })
     return true

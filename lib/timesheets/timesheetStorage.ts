@@ -8,24 +8,26 @@
 import { collection, doc, getDoc, getDocs, query, serverTimestamp, setDoc, Timestamp, updateDoc, where } from 'firebase/firestore'
 import { auth, db } from '@/lib/firebase/config'
 import { writeMetadataFields } from '@/lib/canonical/writeMetadata'
-import { newUuid, parseFirestoreDate as parseSharedFirestoreDate, sanitizeForFirestore } from '@/lib/firebase/firestoreUtils'
+import { parseFirestoreDate as parseSharedFirestoreDate, sanitizeForFirestore } from '@/lib/firebase/firestoreUtils'
 import { changedFirestoreFields } from '@/lib/firebase/changedFields'
 import { LONDON_TIME_ZONE, unixStartOfDay, dayKey } from '@/lib/ios-parity/londonTime'
 import { weekStartKey } from '@/lib/timesheets/timesheetWeekUtils'
 import { periodStartKey } from '@/lib/timesheets/paymentRunCopy'
 import {
+  parseTimesheetEntries,
   parseTimesheetEntryReviews,
   parseTimesheetStatusFields,
   pickTimesheetRowForPeriod,
   resolveTimesheetExportedAtMs,
-  timesheetEntryDecision,
   timesheetEntryReviewWriteFields,
   timesheetEntryReviewsAfterWrite,
   timesheetOwnerWriteFields,
   timesheetPeriodWriteFields,
   timesheetStoredStartDayKey,
+  type TimesheetEntryDecision,
   type TimesheetEntryReview,
 } from '@/lib/canonical'
+import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 import {
   emptyTimesheetDraft,
   type TimesheetDraft,
@@ -97,48 +99,46 @@ function asDecision(value: unknown): TimesheetManagerDecision {
   return 'approved'
 }
 
+function decisionOf(value: TimesheetEntryDecision): TimesheetManagerDecision {
+  return value
+}
+
 /**
- * Decision in effect (`timesheetEntryDecision`): the reviewer's `extraEntryReviews` entry; the
- * owner-writable inline value only when it lowers the amount, or on a manager-signed legacy sheet.
+ * Price work and expense entries through the rulebook reader `parseTimesheetEntries` (§1, §8): every entry with a
+ * title is kept whatever its id, a stored id keeps its stored case, and an entry stored without one gets the
+ * shared deterministic `timesheetEntryId` (never a fresh random id), so `extraEntryReviews[entryId]` finds it on
+ * every read and every platform. The decision in effect is `timesheetEntryDecision` for that id.
  */
-function resolvedDecision(
-  sheet: Record<string, unknown>,
-  row: Record<string, unknown>
-): { managerDecision: TimesheetManagerDecision; managerRevisedAmount: number | null } {
-  const resolved = timesheetEntryDecision(sheet, row)
-  return { managerDecision: resolved.decision, managerRevisedAmount: resolved.revisedAmount }
-}
-
-function mapExpense(row: Record<string, unknown>, sheet: Record<string, unknown>): TimesheetExpenseEntry | null {
-  const id = typeof row.id === 'string' && row.id.trim() ? row.id : newUuid()
-  const title = typeof row.title === 'string' ? row.title : ''
-  if (!title) return null
+function mapEntries(
+  data: Record<string, unknown>,
+  sheetDocId: string,
+  timeZone: string
+): { expenseEntries: TimesheetExpenseEntry[]; priceWorkEntries: TimesheetPriceWorkEntry[] } {
+  const parsed = parseTimesheetEntries(sheetDocId, data, { timeZone })
   return {
-    id,
-    title,
-    details: typeof row.details === 'string' ? row.details : '',
-    jobNumber: typeof row.jobNumber === 'string' ? row.jobNumber : '',
-    date: parseFirestoreDate(row.date) || new Date(),
-    amount: typeof row.amount === 'number' ? row.amount : 0,
-    receiptName: typeof row.receiptName === 'string' ? row.receiptName : null,
-    ...resolvedDecision(sheet, row),
-  }
-}
-
-function mapPriceWork(row: Record<string, unknown>, sheet: Record<string, unknown>): TimesheetPriceWorkEntry | null {
-  const id = typeof row.id === 'string' && row.id.trim() ? row.id : newUuid()
-  const title = typeof row.title === 'string' ? row.title : ''
-  if (!title) return null
-  return {
-    id,
-    title,
-    details: typeof row.details === 'string' ? row.details : '',
-    jobNumber: typeof row.jobNumber === 'string' ? row.jobNumber : '',
-    agreedManagerName: typeof row.agreedManagerName === 'string' ? row.agreedManagerName : 'Manager',
-    startDate: parseFirestoreDate(row.startDate) || new Date(),
-    endDate: parseFirestoreDate(row.endDate) || null,
-    amount: typeof row.amount === 'number' ? row.amount : 0,
-    ...resolvedDecision(sheet, row),
+    expenseEntries: parsed.expenseEntries.map((entry) => ({
+      id: entry.id,
+      title: entry.title,
+      details: entry.details,
+      jobNumber: entry.jobNumber,
+      date: entry.dateMs != null ? new Date(entry.dateMs) : new Date(),
+      amount: entry.amount,
+      receiptName: entry.receiptName,
+      managerDecision: decisionOf(entry.managerDecision),
+      managerRevisedAmount: entry.managerRevisedAmount,
+    })),
+    priceWorkEntries: parsed.priceWorkEntries.map((entry) => ({
+      id: entry.id,
+      title: entry.title,
+      details: entry.details,
+      jobNumber: entry.jobNumber,
+      agreedManagerName: entry.agreedManagerName,
+      startDate: entry.startMs != null ? new Date(entry.startMs) : new Date(),
+      endDate: entry.endMs != null ? new Date(entry.endMs) : null,
+      amount: entry.amount,
+      managerDecision: decisionOf(entry.managerDecision),
+      managerRevisedAmount: entry.managerRevisedAmount,
+    })),
   }
 }
 
@@ -259,10 +259,11 @@ function mapReviews(raw: unknown): Record<string, TimesheetPayrollLineReview> {
 
 export function draftFromFirestoreMap(
   data: Record<string, unknown>,
-  options?: { includeSignatures?: boolean }
+  options?: { includeSignatures?: boolean; sheetDocId?: string | null; timeZone?: string | null }
 ): TimesheetDraft {
   const includeSignatures = options?.includeSignatures !== false
   const status = parseTimesheetStatusFields(data)
+  const entries = mapEntries(data, options?.sheetDocId?.trim() || '', organizationZoneOr(options?.timeZone))
 
   return {
     managerNote: typeof data.managerNote === 'string' ? data.managerNote : '',
@@ -274,16 +275,8 @@ export function draftFromFirestoreMap(
     managerSignedByUserId: status.managerSignedByUserId || null,
     managerSignatureImageBase64: includeSignatures ? status.managerSignatureImageBase64 || null : null,
     exportedAt: status.exportedAtMs ? new Date(status.exportedAtMs) : null,
-    expenseEntries: Array.isArray(data.expenseEntries)
-      ? data.expenseEntries
-          .map((row) => mapExpense((row || {}) as Record<string, unknown>, data))
-          .filter((row): row is TimesheetExpenseEntry => Boolean(row))
-      : [],
-    priceWorkEntries: Array.isArray(data.priceWorkEntries)
-      ? data.priceWorkEntries
-          .map((row) => mapPriceWork((row || {}) as Record<string, unknown>, data))
-          .filter((row): row is TimesheetPriceWorkEntry => Boolean(row))
-      : [],
+    expenseEntries: entries.expenseEntries,
+    priceWorkEntries: entries.priceWorkEntries,
     payrollLineReviews: mapReviews(data.payrollLineReviews),
     weeklyReportOverride: weeklyReportOverrideFromFirestore(data.weeklyReportOverride),
     extraEntryReviews: parseTimesheetEntryReviews(data),
@@ -449,7 +442,7 @@ async function loadTimesheetDraftByCandidates(
   const unique = [...new Set(candidateTimesheetDocIds(userId, weekStart, timeZone))]
   const hits = await Promise.all(unique.map(async (id) => ({ id, data: await readDoc(organizationId, id) })))
   const hit = hits.find((row) => row.data)
-  return hit?.data ? rememberSource(draftFromFirestoreMap(hit.data, { includeSignatures }), hit.id) : null
+  return hit?.data ? rememberSource(draftFromFirestoreMap(hit.data, { includeSignatures, sheetDocId: hit.id }), hit.id) : null
 }
 
 function storedEndDayKey(data: Record<string, unknown>, timeZone: string): string | null {
@@ -471,7 +464,7 @@ function timesheetStateFromDoc(
     documentId,
     weekStart,
     endDayKey: storedEndDayKey(data, timeZone),
-    draft: rememberSource(draftFromFirestoreMap(data, { includeSignatures }), documentId),
+    draft: rememberSource(draftFromFirestoreMap(data, { includeSignatures, sheetDocId: documentId }), documentId),
   }
 }
 
@@ -523,9 +516,9 @@ export async function loadTimesheetDraft(
     )
     for (const entry of snap.docs) {
       const data = entry.data() as Record<string, unknown>
-      if (data.userId === userId) return rememberSource(draftFromFirestoreMap(data), entry.id)
+      if (data.userId === userId) return rememberSource(draftFromFirestoreMap(data, { sheetDocId: entry.id }), entry.id)
       if (weekStartMatches(data, weekStart, timeZone) && entry.id.includes(userId)) {
-        return rememberSource(draftFromFirestoreMap(data), entry.id)
+        return rememberSource(draftFromFirestoreMap(data, { sheetDocId: entry.id }), entry.id)
       }
     }
   } catch {
@@ -553,7 +546,7 @@ function applyKeyedTimesheetDocs(
     const data = entry.data() as Record<string, unknown>
     const userId = typeof data.userId === 'string' ? data.userId : ''
     if (!wanted.has(userId) || results.has(userId)) continue
-    results.set(userId, rememberSource(draftFromFirestoreMap(data, LIST_DRAFT_OPTIONS), entry.id))
+    results.set(userId, rememberSource(draftFromFirestoreMap(data, { ...LIST_DRAFT_OPTIONS, sheetDocId: entry.id }), entry.id))
   }
 }
 
@@ -799,7 +792,7 @@ export async function loadCanonicalTimesheetDrafts(
     for (const id of candidateTimesheetDocIds(userId, weekStart, timeZone)) {
       const data = await readDoc(organizationId, id)
       if (!data) continue
-      return [userId, rememberSource(draftFromFirestoreMap(data, LIST_DRAFT_OPTIONS), id)] as const
+      return [userId, rememberSource(draftFromFirestoreMap(data, { ...LIST_DRAFT_OPTIONS, sheetDocId: id }), id)] as const
     }
     return null
   })
@@ -824,7 +817,7 @@ export async function loadPayPeriodTimesheetDrafts(
     const data = entry.data() as Record<string, unknown>
     const userId = typeof data.userId === 'string' ? data.userId : ''
     if (!userId || results.has(userId)) continue
-    results.set(userId, rememberSource(draftFromFirestoreMap(data, LIST_DRAFT_OPTIONS), entry.id))
+    results.set(userId, rememberSource(draftFromFirestoreMap(data, { ...LIST_DRAFT_OPTIONS, sheetDocId: entry.id }), entry.id))
   }
   return results
 }
@@ -863,7 +856,7 @@ export async function listTimesheetStates(
         userId,
         weekStart,
         endDayKey: storedEndDayKey(data, LONDON_TIME_ZONE),
-        draft: draftFromFirestoreMap(data, LIST_DRAFT_OPTIONS),
+        draft: draftFromFirestoreMap(data, { ...LIST_DRAFT_OPTIONS, sheetDocId: entry.id }),
       })
     }
     rows.sort((a, b) => b.weekStart.getTime() - a.weekStart.getTime())
