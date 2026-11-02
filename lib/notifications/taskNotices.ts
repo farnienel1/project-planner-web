@@ -2,12 +2,11 @@
  * Rulebook 1.10.0 §13: web writes `task_created` and `task_completed` (iOS already did).
  *   - `task_created`: the task's assignees (operatives and managers rows, matched to accounts by email), without the
  *     person who created it (`excludeActor`).
- *   - `task_completed`: the task's creator, without the person who completed it (`excludeActor`). Tasks store the
- *     creator's name (`createdBy`), not an id, so the creator is the one active account with that display name; with
- *     none or several, nobody is notified (rule question for the rulebook: store `createdByUserId`).
+ *   - `task_completed`: `taskCompletedRecipients` — the task's creator (`createdByUserId`, stored from 1.10.0; for an
+ *     older task the one active account with the stored `createdBy` name), without the person who completed it.
  * relatedId is the task id (`notificationRelatedIdFor`); each row has a deterministic id so a re-save never repeats it.
  */
-import { excludeActor } from '@/lib/canonical'
+import { excludeActor, taskCompletedRecipients } from '@/lib/canonical'
 import { saveInboxNotification } from '@/lib/firebase/notifyInbox'
 import { syntheticUuidFromKey } from '@/lib/ios-parity/uuid'
 import { rulebookPerson, rulebookRoster } from '@/lib/staff/rulebookPeople'
@@ -81,14 +80,16 @@ export async function notifyTaskCompleted(input: {
   actor: User | null
   users: ReadonlyArray<User>
 }): Promise<void> {
-  const creatorName = key(input.task.createdBy)
-  if (!creatorName) return
-  const named = input.users.filter(
-    (user) => user.isActive !== false && key(`${user.firstName} ${user.surname}`) === creatorName
-  )
-  if (named.length !== 1) return
   const actor = input.actor ? rulebookPerson(input.actor, input.users) : null
-  const recipients = excludeActor([named[0].id], actor, rulebookRoster(input.users))
+  const roster = rulebookRoster(input.users).map((member) => {
+    const user = input.users.find((row) => row.id === member.id)
+    return { ...member, firstName: user?.firstName ?? null, surname: user?.surname ?? null }
+  })
+  const recipients = taskCompletedRecipients(
+    { createdByUserId: input.task.createdByUserId ?? null, createdBy: input.task.createdBy },
+    actor,
+    roster
+  )
   const by = input.task.completedBy || (input.actor ? `${input.actor.firstName} ${input.actor.surname}`.trim() : 'Someone')
   await Promise.all(
     recipients.map((userId) =>

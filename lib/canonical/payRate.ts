@@ -23,6 +23,7 @@
 import { dateFromDayKeyInZone, dayKeyInZone } from '../orgTime/zoneTime'
 import { zoneOrLondon } from './dayKeys'
 import { employmentTypeOnDay, type EmploymentType, type EmploymentTypeUser } from './userProfile'
+import { personIdSet, type PersonIdsInput, type PersonRosterRow } from './personIds'
 
 export type PayBasis = 'day' | 'hourly'
 
@@ -61,6 +62,13 @@ export type PayRateOnDayInput = {
   userIds?: ReadonlyArray<string> | null
   /** History rows match on these operative ids (default: operative.id). */
   operativeIds?: ReadonlyArray<string> | null
+  /**
+   * 1.10.0: the person whose rate this is (`id`, `email`, `formerUserIds`, `sameEmailUserIds`) and the roster. When
+   * given, history rows match every id of the person (`personIdSet`: own id, former ids, same-email ids, roster rows
+   * with the same email) as well as `userIds` — so the apps pass the whole history and never pick ids themselves.
+   */
+  person?: PersonIdsInput | null
+  roster?: ReadonlyArray<PersonRosterRow> | null
   dayKey: string
   timeZone?: string | null
 }
@@ -186,7 +194,11 @@ export function payRateOnDay(input: PayRateOnDayInput): PayRateOnDay {
     return { payBasis: liveBasis, rate: 0, employmentType, isPaye: true, hasRate: true, source: 'paye' }
   }
 
-  const userIds = idSet(input.userIds && input.userIds.length > 0 ? input.userIds : [user?.id])
+  const personIds = input.person ? personIdSet(input.person, input.roster ?? []) : []
+  const userIds = idSet([
+    ...(input.userIds && input.userIds.length > 0 ? input.userIds : [user?.id]),
+    ...personIds,
+  ])
   const operativeIds = idSet(input.operativeIds && input.operativeIds.length > 0 ? input.operativeIds : [operative?.id])
   const seen = new Set<string>()
   const rows: Array<{ payBasis?: string | null; effectiveAt: Date; createdAt: Date; dayRate: number | null }> = []
@@ -356,4 +368,36 @@ export function payRateChangeWrites(input: {
   const row = payRateHistoryWriteFields({ ...base, rate: next, payBasis: nextBasis, effective: input.effectiveDayKey })
   if (row) rows.push(row)
   return { ok: true, rows }
+}
+
+// MARK: - Pay arithmetic (1.10.0, L16; was web lib/timesheets/payBasis.ts and iOS PayrollRateResolver)
+
+/** Money rounded to whole pence (half away from zero for positive amounts, as `Math.round`). */
+export function roundPennies(amount: number): number {
+  return Math.round(Number(amount) * 100) / 100
+}
+
+/** The organisation's paid hours in a day (`payrollTimePolicy.standardPaidHours`); never 0 (0.01 floor), never 8 by default. */
+export function orgDayHours(standardPaidHours: number): number {
+  const hours = Number(standardPaidHours)
+  return hours > 0 ? hours : 0.01
+}
+
+/**
+ * Pay for `paidHours` on one basis: hourly → rate × hours × multiplier; day → day rate × (hours ÷ the organisation's
+ * paid day) × multiplier; rounded to pence. 0 hours (or fewer) pay 0; a missing rate counts as 0.
+ */
+export function payForHours(input: {
+  payBasis?: string | null
+  dayRate?: number | null
+  hourlyRate?: number | null
+  paidHours: number
+  standardDayHours: number
+  otMultiplier?: number
+}): number {
+  const paidHours = Number(input.paidHours)
+  if (!(paidHours > 0)) return 0
+  const multiplier = input.otMultiplier ?? 1
+  if (input.payBasis === 'hourly') return roundPennies((input.hourlyRate ?? 0) * paidHours * multiplier)
+  return roundPennies((input.dayRate ?? 0) * (paidHours / orgDayHours(input.standardDayHours)) * multiplier)
 }

@@ -1,29 +1,33 @@
 /**
  * Load fully approved timesheet snapshots for a weekly report range.
- * Missing `weeklyReportOverride` maps are built once and written back so iOS reads them too.
+ * Rulebook 1.10.0 (M7): a missing `weeklyReportOverride` is built in memory for the report only — the Weekly Report
+ * never writes anyone's timesheet (`syncWriteAllowed('weeklyReport')` is false). Who is in the feed is
+ * `timesheetParticipant` (M6).
  */
 import type { Booking, Operative, Project, User } from '@/types'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import type { MyScheduleOptions, OrgInvoicingSettings, OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 import { DEFAULT_MY_SCHEDULE, DEFAULT_PAYROLL_POLICY } from '@/lib/settings/organizationSettings'
 import { LONDON_TIME_ZONE, dayKey } from '@/lib/ios-parity/londonTime'
-import { isTimesheetFullyApproved, userTimesheetSelfSigned } from '@/lib/timesheets/timesheetApprovalPolicy'
+import { isTimesheetFullyApproved } from '@/lib/timesheets/timesheetApprovalPolicy'
+import { timesheetParticipant } from '@/lib/canonical'
 import { payPeriodsOverlapping } from '@/lib/timesheets/timesheetPayrollPolicy'
 import { applyWeeklyReportOverride } from '@/lib/timesheets/weeklyReportOverride'
-import { listTimesheetStates, saveTimesheetDraft } from '@/lib/timesheets/timesheetStorage'
+import { listTimesheetStates } from '@/lib/timesheets/timesheetStorage'
 import { emptyDayRateHistory, type OperativeDayRateHistoryCollection } from '@/lib/timesheets/dayRateHistoryStorage'
 import { findUserAndOperative, resolveDisplayName, resolvePersonRole, resolvePersonTrade } from '@/lib/weekly-report/weeklyReportPayroll'
 import { mergeDuplicatePersonWeeks, type ApprovedTimesheetWeek } from '@/lib/weekly-report/timesheetFeed'
 
-function participatesInTimesheets(user: User): boolean {
-  if (user.isActive === false) return false
-  return Boolean(
-    user.permissions?.operativeMode ||
-      user.permissions?.manager ||
-      user.permissions?.adminAccess ||
-      user.isSuperAdmin ||
-      user.role === 'manager' ||
-      user.role === 'admin'
+/** Rulebook 1.10.0 (M6): `timesheetParticipant` on the period's first day — the same people as the reminders. */
+function participatesInPeriod(user: User, day: Date, timeZone: string): boolean {
+  return timesheetParticipant(
+    {
+      ...user,
+      name: `${user.firstName ?? ''} ${user.surname ?? ''}`.trim(),
+      operativeMode: user.permissions?.operativeMode === true,
+    },
+    day,
+    timeZone
   )
 }
 
@@ -66,7 +70,7 @@ export async function loadWeeklyReportTimesheetFeed({
   const weeks: ApprovedTimesheetWeek[] = []
 
   for (const user of users) {
-    if (!participatesInTimesheets(user)) continue
+    if (!periods.some((period) => participatesInPeriod(user, period.start, timeZone))) continue
     const rows = await listTimesheetStates(organizationId, user.id, 80)
     const byStart = new Map(rows.map((row) => [dayKey(row.weekStart, timeZone), row.draft]))
     const { operative } = findUserAndOperative(users, operatives, { userId: user.id })
@@ -96,16 +100,7 @@ export async function loadWeeklyReportTimesheetFeed({
           scheduleOptions,
           timeZone,
         })
-        if (working.weeklyReportOverride) {
-          await saveTimesheetDraft({
-            organizationId,
-            userId: user.id,
-            weekStart: period.start,
-            draft: working,
-            timeZone,
-            access: { subjectHasLineManager: !userTimesheetSelfSigned(user, users) },
-          })
-        }
+        // Never written back (M7): the report only reads timesheets.
       }
       if (!working.weeklyReportOverride) continue
       weeks.push({

@@ -523,6 +523,7 @@ export {
   bookingCreatedRecipients,
   deadlineAssignedRecipients,
   excludeActor,
+  taskCompletedRecipients,
   holidayDecisionRecipients,
   holidayRequestRecipients,
   ideaRecipients,
@@ -780,6 +781,24 @@ export {
   jobManagerUserIds,
   stableManagerId,
   visibleJobsFor,
+  // 1.10.0 round 2: job add/edit/manager list, rules-compatible reads, warning scope (§16, §17).
+  FIRESTORE_IN_QUERY_LIMIT,
+  JOBS_PER_BOOKING_QUERY,
+  JOB_QUERY_COLLECTIONS,
+  JOB_MANAGER_LIST_FIELDS,
+  OWN_BOOKING_IDS_PER_QUERY,
+  WARNING_SCOPE_ALL,
+  bookingQueryPlan,
+  canChangeJobManagers,
+  canCreateJob,
+  canEditJob,
+  isJobInWarningScope,
+  isPersonInWarningScope,
+  jobIdQueryValues,
+  jobQueryPlan,
+  jobWriteWithoutManagerList,
+  readsEveryBooking,
+  warningScopeFor,
 } from './staffAccess'
 
 // Rulebook 1.10.0: user delete, organisation memberships, pay change rows, job delete removals.
@@ -798,3 +817,10 @@ export { CROSS_PLATFORM_CONTRACT_READERS, crossPlatformContractReaderNames, read
 export { notificationRelatedIdFor } from './recordsDocuments'
 export { jobTypesChangeWriteFields } from './operationsDocuments'
 export { IDEMPOTENT_MIGRATION_WRITES } from './liveSources'
+
+// Rulebook 1.10.0 (hunt C): invoice rows, payroll line reviews, invite accept plan, timesheet participants, pay maths.
+export { timesheetInvoiceRows } from './reportPay'
+export { payrollLineReview } from './timesheetEntryReviews'
+export { inviteAcceptWrites } from './inviteAccept'
+export { timesheetParticipant } from './peopleDocuments'
+export { orgDayHours, payForHours, roundPennies } from './payRate'

@@ -2371,3 +2371,168 @@ test('1.10.0 H1: deleting users/{uid}, its tax ids, membership, email claim and 
   })
   await assertSucceeds(accountBatch(VICTIM, 'victim@test.com').commit())
 })
+
+// --- Rulebook 1.10.0 round 2: job add/edit/manager list and enforced reads (§16, §17) ---------------------------
+
+const MGR_TOGGLE_A = 'mgr-toggle-a'
+const MGR_PROJ_ONLY_A = 'mgr-proj-only-a'
+
+async function seedR2() {
+  await seed110()
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore()
+    await setDoc(doc(db, 'users', MGR_TOGGLE_A), { email: 'toggle@test.com', organizationId: ORG_A, role: 'manager', permissions: { manager: true, projects: true, smallWorks: true } })
+    await setDoc(doc(db, 'users', MGR_PROJ_ONLY_A), { email: 'projonly@test.com', organizationId: ORG_A, role: 'manager', permissions: { manager: true, projects: true } })
+    await setDoc(doc(db, 'organizations', ORG_A, 'projects', 'JOB-R2'), { siteName: 'Mine', managerIds: [MGR_JOB_A], managerUserIds: [MGR_JOB_A] })
+    await setDoc(doc(db, 'organizations', ORG_A, 'projects', 'OTHER-R2'), { siteName: 'Theirs', managerIds: [MGR_OTHER_A], managerUserIds: [MGR_OTHER_A] })
+    await setDoc(doc(db, 'organizations', ORG_A, 'projects', 'job-lc'), { siteName: 'Lower', managerUserIds: [MGR_JOB_A] })
+    await setDoc(doc(db, 'organizations', ORG_A, 'smallWorks', 'Sw-Mix'), { siteName: 'Mixed', managerUserIds: [MGR_JOB_A] })
+    await setDoc(doc(db, 'organizations', ORG_A, 'operatives', 'OPROW-A'), { email: 'OP-A@test.com', firstName: 'Ollie' })
+    const day = Timestamp.fromDate(new Date('2026-11-02T00:00:00Z'))
+    await setDoc(doc(db, 'organizations', ORG_A, 'bookings', 'r2-mine'), { operativeId: OP_B, projectId: 'JOB-R2', date: day })
+    await setDoc(doc(db, 'organizations', ORG_A, 'bookings', 'r2-theirs'), { operativeId: OP_B, projectId: 'OTHER-R2', date: day })
+    await setDoc(doc(db, 'organizations', ORG_A, 'bookings', 'r2-upper'), { operativeId: OP_B, projectId: 'JOB-LC', date: day })
+    await setDoc(doc(db, 'organizations', ORG_A, 'bookings', 'r2-sw'), { operativeId: OP_B, projectId: 'SW-MIX', date: day })
+    await setDoc(doc(db, 'organizations', ORG_A, 'bookings', 'r2-op-uid'), { operativeId: OP_A, projectId: 'OTHER-R2', date: day })
+    await setDoc(doc(db, 'organizations', ORG_A, 'bookings', 'r2-op-row'), { operativeId: 'OPROW-A', projectId: 'OTHER-R2', date: day })
+    await setDoc(doc(db, 'organizations', ORG_A, 'bookings', 'r2-mgr-own'), { operativeId: MGR_JOB_A, projectId: 'OTHER-R2', date: day })
+    await setDoc(doc(db, 'organizations', ORG_A, 'subcontractorBookings', 'r2-sub'), { subcontractorId: 'SUB', projectId: 'JOB-R2', date: day })
+    await setDoc(doc(db, 'organizations', ORG_A, 'subcontractorBookings', 'r2-sub-other'), { subcontractorId: 'SUB', projectId: 'OTHER-R2', date: day })
+    await setDoc(doc(db, 'organizations', ORG_A, 'managerSiteBookings', 'r2-msb'), { userId: MGR_OTHER_A, locationType: 'project', locationId: 'JOB-R2', date: day })
+    await setDoc(doc(db, 'organizations', ORG_A, 'managerSiteBookings', 'r2-msb-own'), { userId: MGR_JOB_A, locationType: 'office', date: day })
+    await setDoc(doc(db, 'organizations', ORG_A, 'managerSiteBookings', 'r2-msb-other'), { userId: MGR_OTHER_A, locationType: 'project', locationId: 'OTHER-R2', date: day })
+  })
+}
+
+const colA = (db: ReturnType<typeof authDb>, name: string) => collection(db, 'organizations', ORG_A, name)
+const since = Timestamp.fromDate(new Date('2026-10-26T00:00:00Z'))
+
+test('1.10.0 r2 reads: an admin and a manager with the toggle read every job and booking', async () => {
+  await seedR2()
+  for (const [uid, email] of [[ADMIN_A, 'admin-a@test.com'], [MGR_TOGGLE_A, 'toggle@test.com']]) {
+    const db = authDb(uid, email)
+    for (const name of ['projects', 'smallWorks', 'bookings', 'managerSiteBookings', 'subcontractorBookings']) {
+      await assertSucceeds(getDocs(colA(db, name)))
+    }
+    await assertSucceeds(getDoc(doc(db, 'organizations', ORG_A, 'projects', 'OTHER-R2')))
+    await assertSucceeds(getDocs(query(colA(db, 'bookings'), where('date', '>=', since))))
+  }
+  // Projects toggle only: every project, but small works only by managerUserIds; every booking.
+  const projOnly = authDb(MGR_PROJ_ONLY_A, 'projonly@test.com')
+  await assertSucceeds(getDocs(colA(projOnly, 'projects')))
+  await assertFails(getDocs(colA(projOnly, 'smallWorks')))
+  await assertSucceeds(getDocs(colA(projOnly, 'bookings')))
+})
+
+test('1.10.0 r2 reads: a manager without the toggle reads only their jobs, those jobs\' bookings and their own', async () => {
+  await seedR2()
+  const mgr = authDb(MGR_JOB_A, 'mgr-job-a@test.com')
+  // Jobs: the whole collection is refused; the managerUserIds query and their own documents are allowed.
+  await assertFails(getDocs(colA(mgr, 'projects')))
+  await assertFails(getDocs(colA(mgr, 'smallWorks')))
+  const mine = await assertSucceeds(getDocs(query(colA(mgr, 'projects'), where('managerUserIds', 'array-contains', MGR_JOB_A))))
+  assert.deepEqual(mine.docs.map((d) => d.id).sort(), ['JOB-R2', 'job-lc'])
+  await assertSucceeds(getDocs(query(colA(mgr, 'smallWorks'), where('managerUserIds', 'array-contains', MGR_JOB_A))))
+  await assertFails(getDocs(query(colA(mgr, 'projects'), where('managerUserIds', 'array-contains', MGR_OTHER_A))))
+  await assertSucceeds(getDoc(doc(mgr, 'organizations', ORG_A, 'projects', 'JOB-R2')))
+  await assertSucceeds(getDoc(doc(mgr, 'organizations', ORG_A, 'projects', 'JOB-110')))
+  await assertFails(getDoc(doc(mgr, 'organizations', ORG_A, 'projects', 'OTHER-R2')))
+  // Bookings: never the whole collection; one job's spellings at a time, with the download bound.
+  for (const name of ['bookings', 'managerSiteBookings', 'subcontractorBookings']) await assertFails(getDocs(colA(mgr, name)))
+  const onJob = await assertSucceeds(getDocs(query(colA(mgr, 'bookings'), where('projectId', 'in', ['JOB-R2', 'job-r2']), where('date', '>=', since))))
+  assert.deepEqual(onJob.docs.map((d) => d.id), ['r2-mine'])
+  await assertSucceeds(getDocs(query(colA(mgr, 'bookings'), where('projectId', 'in', ['job-lc', 'JOB-LC']))))
+  // A mixed-case job id is queried only as stored (`jobIdQueryValues`): the rules cannot trace SW-MIX back to Sw-Mix.
+  await assertSucceeds(getDocs(query(colA(mgr, 'bookings'), where('projectId', 'in', ['Sw-Mix']))))
+  await assertFails(getDocs(query(colA(mgr, 'bookings'), where('projectId', 'in', ['Sw-Mix', 'SW-MIX']))))
+  await assertFails(getDocs(query(colA(mgr, 'bookings'), where('projectId', 'in', ['OTHER-R2']))))
+  await assertFails(getDocs(query(colA(mgr, 'bookings'), where('projectId', 'in', ['JOB-R2', 'OTHER-R2']))))
+  await assertFails(getDoc(doc(mgr, 'organizations', ORG_A, 'bookings', 'r2-theirs')))
+  await assertSucceeds(getDoc(doc(mgr, 'organizations', ORG_A, 'bookings', 'r2-mine')))
+  await assertSucceeds(getDocs(query(colA(mgr, 'subcontractorBookings'), where('projectId', 'in', ['JOB-R2', 'job-r2']))))
+  await assertFails(getDocs(query(colA(mgr, 'subcontractorBookings'), where('projectId', 'in', ['OTHER-R2']))))
+  await assertSucceeds(getDocs(query(colA(mgr, 'managerSiteBookings'), where('locationId', 'in', ['JOB-R2', 'job-r2']))))
+  await assertFails(getDocs(query(colA(mgr, 'managerSiteBookings'), where('locationId', 'in', ['OTHER-R2']))))
+  // Their own bookings anywhere.
+  const ownSite = await assertSucceeds(getDocs(query(colA(mgr, 'managerSiteBookings'), where('userId', '==', MGR_JOB_A), where('date', '>=', since))))
+  assert.deepEqual(ownSite.docs.map((d) => d.id), ['r2-msb-own'])
+  await assertSucceeds(getDocs(query(colA(mgr, 'bookings'), where('operativeId', 'in', [MGR_JOB_A]))))
+  // Health & safety under a job follows the job.
+  await assertSucceeds(getDocs(collection(mgr, 'organizations', ORG_A, 'projects', 'JOB-R2', 'healthSafety')))
+  await assertFails(getDocs(collection(mgr, 'organizations', ORG_A, 'projects', 'OTHER-R2', 'healthSafety')))
+})
+
+test('1.10.0 r2 reads: an operative reads their own bookings (account id or operatives row) and their jobs by id, never a list', async () => {
+  await seedR2()
+  const op = authDb(OP_A, 'op-a@test.com')
+  const own = await assertSucceeds(getDocs(query(colA(op, 'bookings'), where('operativeId', 'in', [OP_A, 'OPROW-A']), where('date', '>=', since))))
+  assert.deepEqual(own.docs.map((d) => d.id).sort(), ['r2-op-row', 'r2-op-uid'])
+  await assertSucceeds(getDoc(doc(op, 'organizations', ORG_A, 'bookings', 'r2-op-uid')))
+  await assertFails(getDocs(query(colA(op, 'bookings'), where('operativeId', 'in', [OP_B]))))
+  await assertFails(getDocs(colA(op, 'bookings')))
+  await assertFails(getDoc(doc(op, 'organizations', ORG_A, 'bookings', 'r2-mine')))
+  await assertFails(getDocs(colA(op, 'managerSiteBookings')))
+  await assertFails(getDocs(colA(op, 'subcontractorBookings')))
+  // The job of their booking, by id (My Schedule); never a job list.
+  await assertSucceeds(getDoc(doc(op, 'organizations', ORG_A, 'projects', 'OTHER-R2')))
+  await assertFails(getDocs(colA(op, 'projects')))
+  await assertFails(getDocs(query(colA(op, 'projects'), where('managerUserIds', 'array-contains', OP_A))))
+  // Another company's admin reads nothing here.
+  await assertFails(getDocs(colA(authDb(ADMIN_B, 'admin-b@test.com'), 'projects')))
+  await assertFails(getDoc(doc(authDb(ADMIN_B, 'admin-b@test.com'), 'organizations', ORG_A, 'projects', 'JOB-R2')))
+})
+
+test('1.10.0 r2 jobs: admins and toggle managers add jobs and change manager lists; other managers edit details of their jobs only', async () => {
+  await seedR2()
+  const ref = (db: ReturnType<typeof authDb>, coll: string, id: string) => doc(db, 'organizations', ORG_A, coll, id)
+  const admin = authDb(ADMIN_A, 'admin-a@test.com')
+  const toggle = authDb(MGR_TOGGLE_A, 'toggle@test.com')
+  const projOnly = authDb(MGR_PROJ_ONLY_A, 'projonly@test.com')
+  const mgr = authDb(MGR_JOB_A, 'mgr-job-a@test.com')
+  const op = authDb(OP_A, 'op-a@test.com')
+  await assertSucceeds(setDoc(ref(admin, 'projects', 'NEW-ADMIN'), { siteName: 'A', managerIds: [MGR_JOB_A], managerUserIds: [MGR_JOB_A] }))
+  await assertSucceeds(setDoc(ref(toggle, 'smallWorks', 'NEW-TOGGLE'), { siteName: 'T' }))
+  await assertSucceeds(setDoc(ref(projOnly, 'projects', 'NEW-PROJONLY'), { siteName: 'P' }))
+  await assertFails(setDoc(ref(projOnly, 'smallWorks', 'NEW-PROJONLY-SW'), { siteName: 'P' }))
+  await assertFails(setDoc(ref(mgr, 'projects', 'NEW-MGR'), { siteName: 'M', managerUserIds: [MGR_JOB_A] }))
+  await assertFails(setDoc(ref(op, 'projects', 'NEW-OP'), { siteName: 'O' }))
+  // A manager without the toggle: details of their own job yes, its manager list never, other jobs never.
+  await assertSucceeds(updateDoc(ref(mgr, 'projects', 'JOB-R2'), { siteName: 'Renamed', notes: 'x' }))
+  await assertFails(updateDoc(ref(mgr, 'projects', 'JOB-R2'), { managerUserIds: [MGR_JOB_A, MGR_OTHER_A] }))
+  await assertFails(updateDoc(ref(mgr, 'projects', 'JOB-R2'), { managerIds: [] }))
+  await assertFails(updateDoc(ref(mgr, 'projects', 'JOB-R2'), { managerId: MGR_OTHER_A }))
+  await assertFails(updateDoc(ref(mgr, 'projects', 'OTHER-R2'), { siteName: 'Nope' }))
+  // Resending the same manager list is not a change.
+  await assertSucceeds(updateDoc(ref(mgr, 'projects', 'JOB-R2'), { siteName: 'Again', managerUserIds: [MGR_JOB_A] }))
+  await assertFails(updateDoc(ref(op, 'projects', 'JOB-R2'), { siteName: 'Op' }))
+  // Admins and toggle managers change manager lists (add and remove).
+  await assertSucceeds(updateDoc(ref(toggle, 'projects', 'OTHER-R2'), { managerIds: [MGR_OTHER_A, MGR_JOB_A], managerUserIds: [MGR_OTHER_A, MGR_JOB_A] }))
+  await assertSucceeds(updateDoc(ref(admin, 'projects', 'OTHER-R2'), { managerIds: [MGR_OTHER_A], managerUserIds: [MGR_OTHER_A] }))
+  await assertFails(updateDoc(ref(projOnly, 'smallWorks', 'Sw-Mix'), { managerUserIds: [] }))
+})
+
+test('1.10.0 r2 jobs: the toggle of a non-home organisation comes from that organisation\'s membership document', async () => {
+  await seedR2()
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore()
+    await updateDoc(doc(db, 'organizations', ORG_A), { [`members.${MULTI}`]: 'manager' })
+    await setDoc(doc(db, 'users', MULTI, 'orgMemberships', ORG_A), { role: 'manager', permissions: { manager: true, projects: true, smallWorks: false } })
+  })
+  const multi = authDb(MULTI, 'multi@test.com')
+  await assertSucceeds(setDoc(doc(multi, 'organizations', ORG_A, 'projects', 'NEW-MULTI'), { siteName: 'M' }))
+  await assertFails(setDoc(doc(multi, 'organizations', ORG_A, 'smallWorks', 'NEW-MULTI-SW'), { siteName: 'M' }))
+  await assertSucceeds(getDocs(colA(multi, 'projects')))
+  // Their home company's toggles (none) do not leak the other way: in company B MULTI is a manager without them.
+  await assertFails(setDoc(doc(multi, 'organizations', ORG_B, 'projects', 'NEW-MULTI-B'), { siteName: 'B' }))
+})
+
+test('1.10.0 r2: a manager can never book themselves onto a job they do not manage', async () => {
+  await seedR2()
+  const mgr = authDb(MGR_JOB_A, 'mgr-job-a@test.com')
+  await assertFails(setDoc(doc(mgr, 'organizations', ORG_A, 'managerSiteBookings', 'self-other'), { userId: MGR_JOB_A, locationType: 'project', locationId: 'OTHER-R2' }))
+  await assertFails(setDoc(doc(mgr, 'organizations', ORG_A, 'bookings', 'self-other-labour'), { operativeId: MGR_JOB_A, projectId: 'OTHER-R2', status: 'Confirmed', timeSlot: 'FULL DAY' }))
+  // Even a manager with the toggle (who sees the job) is not its manager.
+  const toggle = authDb(MGR_TOGGLE_A, 'toggle@test.com')
+  await assertFails(setDoc(doc(toggle, 'organizations', ORG_A, 'managerSiteBookings', 'self-toggle'), { userId: MGR_TOGGLE_A, locationType: 'project', locationId: 'OTHER-R2' }))
+  await assertSucceeds(setDoc(doc(mgr, 'organizations', ORG_A, 'managerSiteBookings', 'self-mine'), { userId: MGR_JOB_A, locationType: 'project', locationId: 'JOB-R2' }))
+})

@@ -11,6 +11,7 @@
  * or removal made on either platform hides the same row.
  */
 
+import { isJobInWarningScope, type WarningScope } from './staffAccess'
 import { normalizeBookingStatus } from './bookings'
 import { addDaysInZone, dayKeyInZone, isoWeekdayInZone, midnightInZone, partsInZone } from '../orgTime/zoneTime'
 import { zoneOrLondon } from './dayKeys'
@@ -67,6 +68,8 @@ export type MaterialCutOffWarningInput = {
   bookings: readonly MaterialCutOffBookingInput[]
   materials: readonly MaterialCutOffMaterialInput[]
   sendRecords?: readonly MaterialCutOffSendRecordInput[] | null
+  /** Rulebook §17: a restricted viewer's scope (`warningScopeFor`); rows only for jobs in it. Missing → all. */
+  scope?: WarningScope | null
 }
 
 export type MaterialCutOffWarningRow = {
@@ -135,6 +138,12 @@ export function materialLineCountsAsOrdered(
 
 /** Material cut-off warning rows for tomorrow. Empty before the cut-off, when off, or on a skipped weekend. */
 export function materialCutOffWarningRows(input: MaterialCutOffWarningInput): MaterialCutOffWarningRow[] {
+  const rows = materialCutOffWarningRowsUnscoped(input)
+  if (!input.scope || input.scope.kind === 'all') return rows
+  return rows.filter((row) => isJobInWarningScope(input.scope, row.projectId))
+}
+
+function materialCutOffWarningRowsUnscoped(input: MaterialCutOffWarningInput): MaterialCutOffWarningRow[] {
   const timeZone = zoneOrLondon(input.timeZone)
   const now = instant(input.now)
   if (Number.isNaN(now.getTime())) return []

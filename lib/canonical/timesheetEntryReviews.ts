@@ -348,3 +348,38 @@ export function timesheetChangedFields(
   }
   return documentWriteFields(strip(base) ?? null, strip(next) ?? {}, { createOnly: ['userId'] })
 }
+
+// MARK: - Payroll line reviews (1.10.0, L13)
+
+export type PayrollLineReview = {
+  decision: TimesheetEntryDecision
+  /** The amount an `edited` decision pays; null otherwise. */
+  revisedAmount: number | null
+}
+
+/**
+ * The line manager's review of one payroll (labour) line, `sheet.payrollLineReviews[lineId]`. The line id is matched
+ * as stored first, then without case (`normalizeDocumentId`): iOS keys reviews by `UUID.uuidString` (upper case) and
+ * web by the stored line id, so either app finds the other's review. Null when the line has no review.
+ */
+export function payrollLineReview(
+  sheet: Record<string, unknown> | null | undefined,
+  lineId: string | null | undefined
+): PayrollLineReview | null {
+  const raw = sheet && typeof sheet === 'object' ? (sheet as Record<string, unknown>).payrollLineReviews : null
+  if (!raw || typeof raw !== 'object') return null
+  const reviews = raw as Record<string, unknown>
+  const id = typeof lineId === 'string' ? lineId.trim() : ''
+  if (!id) return null
+  let value = Object.prototype.hasOwnProperty.call(reviews, id) ? reviews[id] : undefined
+  if (value === undefined) {
+    const needle = normalizeDocumentId(id)
+    const key = Object.keys(reviews).find((candidate) => normalizeDocumentId(candidate) === needle)
+    value = key == null ? undefined : reviews[key]
+  }
+  if (!value || typeof value !== 'object') return null
+  const row = value as Record<string, unknown>
+  const decision = parseTimesheetEntryDecision(row.decision)
+  const revised = typeof row.revisedAmount === 'number' && Number.isFinite(row.revisedAmount) ? row.revisedAmount : null
+  return { decision, revisedAmount: decision === 'edited' ? revised : null }
+}

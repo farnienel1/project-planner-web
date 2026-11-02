@@ -253,7 +253,10 @@ export function visibleWorks(params: {
   }
   if (staffAccountRole(user).isManager) {
     return scoped.filter(
-      (project) => !(project.hiddenManagerUserIds ?? []).includes(user.id) && userCanSeeJob(user, project, managers)
+      (project) =>
+        !(project.hiddenManagerUserIds ?? []).includes(user.id) &&
+        // 1.10.0 round 2: a manager with the toggle for the job's kind sees every job of that kind.
+        userCanSeeJob(user, project, managers, isSmallWorksJobType(project.jobType) ? 'smallWorks' : 'projects')
     )
   }
 

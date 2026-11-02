@@ -7,18 +7,22 @@ import {
   dueTimesheetSubmissionNotices,
   organizationContextStillCurrent,
   TIMESHEET_SUBMISSION_NOTICE_TYPE,
+  timesheetParticipant,
   timesheetSubmissionNoticeDedupKey,
 } from '@/lib/canonical'
 import { loadOrganizationDetails } from '@/lib/settings/organizationSettings'
 import { ianaTimeZoneForCountry } from '@/lib/orgTime/orgTimeZone'
-import { participatesInTimesheets } from '@/lib/timesheets/timesheetPayrollPolicy'
 import type { User } from '@/types'
 
 const deliveredThisSession = new Set<string>()
 
+/** Rulebook 1.10.0 (M12): `timesheetParticipant` — the same people as the Weekly Report feed. */
 export function receivesTimesheetSubmissionReminder(user: User, now: Date, timeZone: string): boolean {
-  if (user.isActive === false) return false
-  return participatesInTimesheets(user, now, timeZone)
+  return timesheetParticipant(
+    { ...user, name: `${user.firstName ?? ''} ${user.surname ?? ''}`.trim(), operativeMode: user.permissions?.operativeMode === true },
+    now,
+    timeZone
+  )
 }
 
 export async function deliverDueTimesheetSubmissionReminders(

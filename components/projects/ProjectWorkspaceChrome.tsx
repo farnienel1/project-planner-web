@@ -1,5 +1,7 @@
 'use client'
 
+import { userCanEditJob } from '@/lib/access/bookingAccess'
+
 import { useEffect, useState, type ReactNode } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
@@ -30,7 +32,7 @@ import {
 import { visibleJobTypeLabel } from '@/lib/jobTypes/jobTypesStorage'
 import { formatSiteAddress } from '@/lib/maps/siteAddress'
 import { useAuthStore } from '@/lib/stores/authStore'
-import { canBookWork, canManageWorkCatalogue, canViewMaterials, canViewSiteAudit } from '@/lib/permissions'
+import { canBookWork, canViewMaterials, canViewSiteAudit } from '@/lib/permissions'
 import { canViewProjectActiveUsers } from '@/lib/projects/activeUsers'
 import { useActiveUserBadge } from '@/components/projects/features/ProjectActiveUsersSection'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
@@ -116,7 +118,8 @@ export function ProjectWorkspaceChrome({
   const status = deriveWorkStatus(project)
   const progress = timelineProgressPercent(project.startDate, project.endDate, status)
   const remaining = daysLeftCaption(project.endDate, status)
-  const canEdit = canManageWorkCatalogue(user, isSmallWork ? 'smallWorks' : 'projects')
+  // 1.10.0 round 2 (`canEditJob`): a manager edits the details of a job they manage even without the toggle.
+  const canEdit = userCanEditJob(user, project, isSmallWork ? 'smallWorks' : 'projects', useOperativeStore.getState().managers)
   const showBook = canBookWork(user) && !isOperativeMode(user)
   const showViewTile = canConfigureProjectVisibility(user, isSmallWork)
   const isOperative = isOperativeMode(user)

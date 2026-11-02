@@ -47,8 +47,22 @@ test('timesheet submission reminders go to people who submit timesheets, not ina
     ),
     true
   )
+  // Rulebook 1.10.0 `timesheetParticipant` (§8 `defaultTimesheetsEnabled`): a PAYE operative with the toggle not
+  // stored takes part; switched off, or a PAYE manager, does not.
   assert.equal(
-    receivesTimesheetSubmissionReminder(user({ id: 'paye', employmentType: 'paye' }), now, 'Europe/London'),
+    receivesTimesheetSubmissionReminder(user({ id: 'paye-op', employmentType: 'paye' }), now, 'Europe/London'),
+    true
+  )
+  assert.equal(
+    receivesTimesheetSubmissionReminder(user({ id: 'paye-off', employmentType: 'paye', timesheetsEnabled: false }), now, 'Europe/London'),
+    false
+  )
+  assert.equal(
+    receivesTimesheetSubmissionReminder(
+      user({ id: 'paye-mgr', employmentType: 'paye', role: 'manager', permissions: { ...user({}).permissions, operativeMode: false, manager: true } } as Partial<User>),
+      now,
+      'Europe/London'
+    ),
     false
   )
   assert.equal(

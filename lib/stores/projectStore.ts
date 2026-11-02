@@ -16,7 +16,11 @@ import {
   projectCollectionName,
   type ProjectSaveInput,
 } from '@/lib/firebase/projectPayload'
-import { subscribeOrgCollectionLoaded, forgetOrgCollectionDoc } from '@/lib/firebase/subscribeOrgCollection'
+import { subscribeOrgCollectionLoaded, forgetOrgCollectionDoc, unsubscribeOrgCollection, type OrgCollectionDoc } from '@/lib/firebase/subscribeOrgCollection'
+import { forgetOrgPlanDoc, subscribeOrgPlan, unsubscribeOrgPlan } from '@/lib/firebase/subscribeOrgPlan'
+import { jobPlanParts, webJobAccessViewer } from '@/lib/access/readPlan'
+import { userCanChangeJobManagers } from '@/lib/access/bookingAccess'
+import { jobWriteWithoutManagerList } from '@/lib/canonical'
 import { liveResultStillCurrent } from '@/lib/firebase/liveResult'
 import { markRowsRemoved, retainScopedRows } from '@/lib/staff/rosterRetain'
 import { trackEvent } from '@/lib/analytics/trackEvent'
@@ -68,6 +72,53 @@ let projectsOrgId = ''
 let smallWorksOrgId = ''
 let clientsOrgId = ''
 let projectsIncludeInactive = false
+/** Operatives: the jobs of their own bookings, tasks and deadlines (`jobQueryPlan` documentIds), set by readPlanSync. */
+let jobPlanDocumentIds: string[] = []
+/** Document ids of every job the listeners returned (before the live filter), for `bookingQueryPlan`. */
+const loadedJobIdsByKind: Record<'projects' | 'smallWorks', string[]> = { projects: [], smallWorks: [] }
+
+export function setJobPlanDocumentIds(ids: ReadonlyArray<string>): boolean {
+  const next = [...new Set(ids.filter(Boolean))].sort()
+  if (next.join('|') === jobPlanDocumentIds.join('|')) return false
+  jobPlanDocumentIds = next
+  return true
+}
+
+export function loadedJobIds(): string[] {
+  return [...loadedJobIdsByKind.projects, ...loadedJobIdsByKind.smallWorks]
+}
+
+/**
+ * Rulebook 1.10.0 §17: a viewer who may not read the whole collection runs `jobQueryPlan` (their managed jobs, or
+ * an operative's own jobs by id); everyone else keeps the whole-collection listener. Firestore rules are not filters,
+ * so the whole collection is never asked for on their behalf.
+ */
+function subscribeJobs(
+  key: string,
+  organizationId: string,
+  kind: 'projects' | 'smallWorks',
+  onDocs: (docs: OrgCollectionDoc[]) => void
+): Promise<void> {
+  const parts = jobPlanParts(webJobAccessViewer(useAuthStore.getState().user), kind, jobPlanDocumentIds)
+  const handle = (docs: OrgCollectionDoc[]) => {
+    loadedJobIdsByKind[kind] = docs.map((entry) => entry.id)
+    onDocs(docs)
+    void import('@/lib/access/readPlanSync').then((sync) => sync.jobsChanged()).catch(() => undefined)
+  }
+  if (parts === null) {
+    unsubscribeOrgPlan(key)
+    return subscribeOrgCollectionLoaded(key, organizationId, kind, handle)
+  }
+  unsubscribeOrgCollection(key)
+  return subscribeOrgPlan(key, organizationId, kind, parts, handle)
+}
+
+/** Re-run the job plans with the current viewer and inputs (role, toggles or an operative's bookings changed). */
+export function replanJobs(): void {
+  const state = useProjectStore.getState()
+  if (projectsOrgId) void state.loadProjects(projectsOrgId, projectsIncludeInactive).catch(() => undefined)
+  if (smallWorksOrgId) void state.loadSmallWorks(smallWorksOrgId).catch(() => undefined)
+}
 
 export const useProjectStore = create<ProjectState>((set, get) => ({
   projects: [],
@@ -88,14 +139,18 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     if (get().projects.length === 0 || projectsOrgId !== organizationId) set({ loading: true, error: null })
     else set({ error: null })
     try {
-      await subscribeOrgCollectionLoaded('projectStore:projects', organizationId, 'projects', (docs) => {
+      const planMode = jobPlanParts(webJobAccessViewer(useAuthStore.getState().user), 'projects', jobPlanDocumentIds) !== null
+      await subscribeJobs('projectStore:projects', organizationId, 'projects', (docs) => {
         if (!liveResultStillCurrent(organizationId)) return
         let projects = docs
           .filter((entry) => !isLegacyPlaceholderDocumentId(entry.id))
           .map((entry) => mapProjectDoc(entry.id, entry.data, organizationId))
         if (!projectsIncludeInactive) projects = projects.filter((p) => p.isLive)
         const previous = projectsOrgId === organizationId ? get().projects : []
-        projects = withoutLegacyPlaceholderDocuments(retainScopedRows(`projects:${organizationId}`, previous, projects))
+        // A plan's parts are exact queries: a job that left them (manager removed) leaves the list now.
+        projects = withoutLegacyPlaceholderDocuments(
+          planMode ? projects : retainScopedRows(`projects:${organizationId}`, previous, projects)
+        )
         projectsOrgId = organizationId
         set({ projects, loading: false, projectsLoadedOrgId: organizationId })
       })
@@ -112,13 +167,16 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     if (get().smallWorks.length === 0 || smallWorksOrgId !== organizationId) set({ loading: true, error: null })
     else set({ error: null })
     try {
-      await subscribeOrgCollectionLoaded('projectStore:smallWorks', organizationId, 'smallWorks', (docs) => {
+      const planMode = jobPlanParts(webJobAccessViewer(useAuthStore.getState().user), 'smallWorks', jobPlanDocumentIds) !== null
+      await subscribeJobs('projectStore:smallWorks', organizationId, 'smallWorks', (docs) => {
         if (!liveResultStillCurrent(organizationId)) return
         const mapped = docs
           .filter((entry) => !isLegacyPlaceholderDocumentId(entry.id))
           .map((entry) => mapProjectDoc(entry.id, entry.data, organizationId))
         const previous = smallWorksOrgId === organizationId ? get().smallWorks : []
-        const smallWorks = withoutLegacyPlaceholderDocuments(retainScopedRows(`smallWorks:${organizationId}`, previous, mapped))
+        const smallWorks = withoutLegacyPlaceholderDocuments(
+          planMode ? mapped : retainScopedRows(`smallWorks:${organizationId}`, previous, mapped)
+        )
         smallWorksOrgId = organizationId
         set({ smallWorks, loading: false, smallWorksLoadedOrgId: organizationId })
       })
@@ -174,7 +232,13 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     const collectionName = collectionOverride || projectCollectionName(input.jobType)
     const id = input.id || newUuid()
     const isNew = ![...get().projects, ...get().smallWorks].some((row) => row.id === id)
-    const payload = buildProjectFirestorePayload({ ...input, id })
+    const built = buildProjectFirestorePayload({ ...input, id })
+    // Rulebook 1.10.0 §16 (`canChangeJobManagers`): a manager without the Projects / Small works toggle edits a job's
+    // details but never its manager list — those fields are left as stored (`jobWriteWithoutManagerList`).
+    const kind = collectionName === 'smallWorks' ? 'smallWorks' : 'projects'
+    const mayChangeManagers = userCanChangeJobManagers(useAuthStore.getState().user, kind)
+    const payload: Record<string, unknown> = mayChangeManagers ? built : jobWriteWithoutManagerList(built)
+    if (!mayChangeManagers) delete payload.manager
     // Rulebook §1: a partial update of the changed fields (`jobWriteFields`), never a merge-set of the whole job.
     await savePartialDocument(doc(db, 'organizations', input.organizationId, collectionName, id), payload, jobWriteFields, {
       userId: auth.currentUser?.uid ?? null,
@@ -203,6 +267,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     await deleteDoc(doc(db, 'organizations', organizationId, collectionName, id))
     markRowsRemoved(`${collectionName === 'smallWorks' ? 'smallWorks' : 'projects'}:${organizationId}`, [id])
     forgetOrgCollectionDoc(collectionName === 'smallWorks' ? 'projectStore:smallWorks' : 'projectStore:projects', organizationId, id)
+    forgetOrgPlanDoc(collectionName === 'smallWorks' ? 'projectStore:smallWorks' : 'projectStore:projects', organizationId, id)
     if (collectionName === 'smallWorks') {
       set({ smallWorks: get().smallWorks.filter((p) => p.id !== id) })
     } else {

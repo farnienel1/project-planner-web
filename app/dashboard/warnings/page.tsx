@@ -1,5 +1,6 @@
 'use client'
 
+import { webJobAccessViewer } from '@/lib/access/readPlan'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/lib/stores/authStore'
@@ -337,6 +338,8 @@ export default function WarningsPage() {
       !scheduleReady
         ? null
         : generateOrgWarnings({
+        // Rulebook 1.10.0 §17: restricted managers see only their jobs and people (`warningScopeFor`).
+        viewer: webJobAccessViewer(useAuthStore.getState().user),
         bookings: bookingScope.foreign ? [] : bookingScope.rows,
         managerSiteBookings: managerScope.foreign ? [] : managerScope.rows,
         operatives: operativeScope.foreign ? [] : operativeScope.rows,

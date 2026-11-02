@@ -17,37 +17,9 @@ export type HistoryPayRow = {
   createdAt: Date
 }
 
-export function roundPennies(amount: number) {
-  return Math.round(amount * 100) / 100
-}
-
-export function orgDayHours(standardPaidHours: number) {
-  const hours = Number(standardPaidHours)
-  return hours > 0 ? hours : 0.01
-}
-
-export function payForHours({
-  payBasis,
-  dayRate,
-  hourlyRate,
-  paidHours,
-  standardDayHours,
-  otMultiplier = 1,
-}: {
-  payBasis?: string | null
-  dayRate?: number | null
-  hourlyRate?: number | null
-  paidHours: number
-  standardDayHours: number
-  otMultiplier?: number
-}) {
-  if (!(paidHours > 0)) return 0
-  const standard = orgDayHours(standardDayHours)
-  if (payBasis === 'hourly') {
-    return roundPennies((hourlyRate ?? 0) * paidHours * otMultiplier)
-  }
-  return roundPennies((dayRate ?? 0) * (paidHours / standard) * otMultiplier)
-}
+// Rulebook 1.10.0 (L16): the pay arithmetic is the rulebook's (`payForHours`, `roundPennies`, `orgDayHours`).
+export { orgDayHours, payForHours, roundPennies } from '@/lib/canonical/payRate'
+import { orgDayHours, roundPennies } from '@/lib/canonical/payRate'
 
 /** Organisation money (`formatMoney`). Pass the organisation currency; GBP when omitted. */
 export function money(amount: number, currencyCode?: string | null) {

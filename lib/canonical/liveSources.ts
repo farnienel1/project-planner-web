@@ -105,6 +105,8 @@ export const SYNC_WRITE_TRIGGERS = [
   'backgroundSync',
   'pullToRefresh',
   'listenerSnapshot',
+  /** 1.10.0 (M7): producing a Weekly Report. It reads only; it never writes a timesheet or anything else. */
+  'weeklyReport',
 ] as const
 export type SyncWriteTrigger = (typeof SYNC_WRITE_TRIGGERS)[number]
 
@@ -119,10 +121,12 @@ export type IdempotentMigrationWrite = (typeof IDEMPOTENT_MIGRATION_WRITES)[numb
 
 /**
  * True for `userAction` and `offlineReplay` (§1 "Never re-save what you didn't change"). Any other trigger writes
- * only an `IDEMPOTENT_MIGRATION_WRITES` migration, named in `migration`.
+ * only an `IDEMPOTENT_MIGRATION_WRITES` migration, named in `migration` — except `weeklyReport`, which never writes.
  */
 export function syncWriteAllowed(trigger: unknown, migration?: unknown): boolean {
   if (trigger === 'userAction' || trigger === 'offlineReplay') return true
+  // A Weekly Report never writes, not even a migration (§7: reports are not stored).
+  if (trigger === 'weeklyReport') return false
   return typeof migration === 'string' && (IDEMPOTENT_MIGRATION_WRITES as readonly string[]).includes(migration)
 }
 

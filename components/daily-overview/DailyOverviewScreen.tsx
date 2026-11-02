@@ -5,6 +5,7 @@
 
 'use client'
 
+import { webJobAccessViewer } from '@/lib/access/readPlan'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -153,6 +154,8 @@ export function DailyOverviewScreen() {
   const model = useMemo(
     () =>
       buildDailyOverview({
+        // Rulebook 1.10.0 §17: restricted managers see only their jobs and people (`warningScopeFor`).
+        viewer: webJobAccessViewer(useAuthStore.getState().user),
         day,
         today,
         projects: [...projects, ...smallWorks],

@@ -372,6 +372,8 @@ export interface ProjectTask {
   title: string
   details?: string
   createdBy: string
+  /** The creator's account id (rulebook 1.10.0); missing on tasks created before. */
+  createdByUserId?: string
   status: ProjectTaskStatus
   priority: ProjectTaskPriority
   assignedOperativeId?: string

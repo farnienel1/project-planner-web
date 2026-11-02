@@ -175,6 +175,34 @@ export function ideaRecipients(ids: ReadonlyArray<string> | null | undefined, ac
   return excludeActor(ids, actor, roster)
 }
 
+/**
+ * `task_completed` (1.10.0): the task's creator, without the person who completed it. The creator is
+ * `createdByUserId` when the task stores it (tasks created from 1.10.0); for an older task, the one active roster
+ * member whose display name (`displayName`, else `firstName surname`) is the stored `createdBy` name, compared
+ * without case — none or several such people → nobody.
+ */
+export function taskCompletedRecipients(
+  task: { createdByUserId?: string | null; createdBy?: string | null } | null | undefined,
+  completer: NotificationPerson,
+  roster: ReadonlyArray<NotificationRosterMember & { displayName?: string | null; firstName?: string | null; surname?: string | null; name?: string | null }> | null | undefined
+): string[] {
+  const members = rosterOf(roster)
+  const creatorId = idText(task?.createdByUserId)
+  if (creatorId) return excludeActor([creatorId], completer, members)
+  const name = String(task?.createdBy ?? '').trim().replace(/\s+/g, ' ').toLowerCase()
+  if (!name) return []
+  const named = (roster || []).filter((member) => {
+    if (!member || !idText(member.id) || !rosterMemberActive(member)) return false
+    const display =
+      String(member.displayName ?? '').trim() ||
+      String(member.name ?? '').trim() ||
+      `${String(member.firstName ?? '').trim()} ${String(member.surname ?? '').trim()}`.trim()
+    return display.replace(/\s+/g, ' ').toLowerCase() === name
+  })
+  if (named.length !== 1) return []
+  return excludeActor([idText(named[0].id)], completer, members)
+}
+
 /** The six company activity types (rulebook 1.4.0 §13): written once per admin, never without a `userId`. */
 export const COMPANY_ACTIVITY_NOTICE_TYPES = [
   'operative_created',
@@ -296,8 +324,8 @@ export const NOTIFICATION_CATALOG: ReadonlyArray<NotificationCatalogRow> = [
     'web writes it from 1.10.0. The Settings diagnostic writes push_test, not this type.'),
   row(PUSH_TEST_NOTICE_TYPE, 'Settings "send a test notification"', 'pushTestRecipients (the signed-in user)', ['web', 'ios'],
     'pushes to its actor (notificationPushesToActor); no toggle turns it off.'),
-  row('task_completed', 'Task completed', 'excludeActor (the task creator)', ['web', 'ios'],
-    'web writes it from 1.10.0 (creator found by name: tasks store no creator id). iOS: addressed to the completer, so excludeActor drops it; address the creator.'),
+  row('task_completed', 'Task completed', 'taskCompletedRecipients (the task creator)', ['web', 'ios'],
+    'tasks store createdByUserId from 1.10.0; older tasks fall back to the creator name. iOS: write createdByUserId on create and address taskCompletedRecipients (it addressed the completer).'),
   row('deadline_assigned', 'Assignees added to a deadline', 'deadlineAssignedRecipients', ['web', 'ios'],
     'both: the actor is not removed; use deadlineAssignedRecipients.'),
   row('deadline_reminder', 'Scheduled deadline reminder', 'the assignees (on-device schedule, no shared rule)', ['ios'],

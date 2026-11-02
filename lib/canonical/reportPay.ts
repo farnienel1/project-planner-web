@@ -9,6 +9,10 @@
  */
 
 import { normalizeEmploymentType } from './userProfile'
+import { roundPennies } from './payRate'
+import { normalizeDocumentId } from './scheduleSources'
+import { parseTimesheetStatusFields } from './timesheetPeriod'
+import { payrollLineReview, timesheetEntryDecision, timesheetEntryEffectiveAmount } from './timesheetEntryReviews'
 
 /** Text in a PAYE person's pay cell, on screen and in every export. */
 export const PAYE_PAY_CELL_LABEL = 'PAYE'
@@ -29,9 +33,6 @@ export type ReportPayCell = {
   countsTowardPayTotal: boolean
 }
 
-function roundPennies(value: number): number {
-  return Math.round(value * 100) / 100
-}
 
 function lineIsPaye(line: ReportPayLineInput): boolean {
   if (line.isPaye === true) return true
@@ -91,4 +92,112 @@ export function isInvoiceLine(line: InvoiceLineInput | null | undefined): boolea
 /** The lines of a generated invoice, in input order (`isInvoiceLine`). */
 export function invoiceLines<T extends InvoiceLineInput>(lines: ReadonlyArray<T> | null | undefined): T[] {
   return (lines || []).filter((line) => isInvoiceLine(line))
+}
+
+// MARK: - The rows of a generated timesheet invoice (1.10.0, H1)
+
+const INVOICE_AMOUNT_EPSILON = 0.0001
+
+export type TimesheetInvoiceRowKind = 'labour' | 'priceWork' | 'expense'
+
+/** One invoice row: what is paid and where it came from. The app formats date, job and description. */
+export type TimesheetInvoiceRow<L> = {
+  kind: TimesheetInvoiceRowKind
+  /** The line or entry id as stored. */
+  id: string
+  amount: number
+  /** `override`: the signed snapshot (`weeklyReportOverride`); `live`: the live payroll lines and entries. */
+  source: 'override' | 'live'
+  /** The live payroll line (labour rows; on an override row when the live line still exists). */
+  line: L | null
+  /** The stored override row (override rows) or price work / expense entry (live rows). */
+  stored: Record<string, unknown> | null
+}
+
+export type TimesheetInvoiceRowsInput<L extends InvoiceLineInput & { id: string; amount: number }> = {
+  /** The stored timesheet document (`weeklyReportOverride`, `payrollLineReviews`, `extraEntryReviews`,
+   *  `priceWorkEntries`, `expenseEntries`, `managerSignedAt`). */
+  sheet: Record<string, unknown> | null | undefined
+  /** The live payroll lines the app built for the period (`id`, `amount`, PAYE / leave flags). */
+  payrollLines: ReadonlyArray<L> | null | undefined
+  /**
+   * `decided` (an export, or after the line manager signed): price work and expenses carry their decision
+   * (`timesheetEntryDecision`, declined left out) and labour lines their review (`payrollLineReview`) once the line
+   * manager has signed. `raw` (the owner's draft invoice before review): every entry at its own amount.
+   */
+  extrasMode: 'raw' | 'decided'
+}
+
+function rowsOf(value: unknown): Record<string, unknown>[] {
+  return Array.isArray(value) ? value.filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === 'object') : []
+}
+
+function amountOf(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0
+}
+
+/**
+ * The rows of a generated invoice for one timesheet, on every platform (rulebook §8):
+ *   1. A signed sheet's snapshot (`weeklyReportOverride` `{ lines, priceWork, expenses }`) wins: its rows at their
+ *      signed amounts, declined rows and rows of 0 left out, and a labour row whose live line is a PAYE day or a
+ *      leave line (`isInvoiceLine`) left out.
+ *   2. Otherwise the live lines: labour `invoiceLines(payrollLines)` (PAYE days and leave never), with the line
+ *      manager's review once they have signed (`payrollLineReview`: declined left out, edited at the revised amount)
+ *      in `decided` mode; then price work and expenses — in `decided` mode by `timesheetEntryDecision` (declined left
+ *      out, edited at the revised amount), in `raw` mode at their own amounts.
+ * PAYE price work and expenses are kept as today (owner decision pending, §8). Ids compare without case.
+ */
+export function timesheetInvoiceRows<L extends InvoiceLineInput & { id: string; amount: number }>(
+  input: TimesheetInvoiceRowsInput<L>
+): TimesheetInvoiceRow<L>[] {
+  const sheet = input.sheet && typeof input.sheet === 'object' ? input.sheet : {}
+  const lines = input.payrollLines || []
+  const liveById = new Map(lines.map((line) => [normalizeDocumentId(line.id), line]))
+  const override = (sheet as Record<string, unknown>).weeklyReportOverride
+  const rows: TimesheetInvoiceRow<L>[] = []
+
+  if (override && typeof override === 'object') {
+    const snapshot = override as Record<string, unknown>
+    for (const row of rowsOf(snapshot.lines)) {
+      const amount = amountOf(row.amount)
+      if (row.decision === 'declined' || amount <= INVOICE_AMOUNT_EPSILON) continue
+      const id = String(row.id ?? '').trim()
+      const live = liveById.get(normalizeDocumentId(id)) ?? null
+      if (live && !isInvoiceLine(live)) continue
+      rows.push({ kind: 'labour', id, amount, source: 'override', line: live, stored: row })
+    }
+    for (const [kind, key] of [['priceWork', 'priceWork'], ['expense', 'expenses']] as const) {
+      for (const row of rowsOf(snapshot[key])) {
+        const amount = amountOf(row.amount)
+        if (row.decision === 'declined' || amount <= INVOICE_AMOUNT_EPSILON) continue
+        rows.push({ kind, id: String(row.id ?? '').trim(), amount, source: 'override', line: null, stored: row })
+      }
+    }
+    return rows
+  }
+
+  const decided = input.extrasMode === 'decided'
+  const managerSigned = parseTimesheetStatusFields(sheet).managerSignedAtMs != null
+  for (const line of invoiceLines(lines)) {
+    let amount = line.amount
+    if (decided && managerSigned) {
+      const review = payrollLineReview(sheet, line.id)
+      if (review?.decision === 'declined') continue
+      if (review?.decision === 'edited' && review.revisedAmount != null) amount = review.revisedAmount
+    }
+    rows.push({ kind: 'labour', id: line.id, amount, source: 'live', line, stored: null })
+  }
+  for (const [kind, key] of [['priceWork', 'priceWorkEntries'], ['expense', 'expenseEntries']] as const) {
+    for (const entry of rowsOf((sheet as Record<string, unknown>)[key])) {
+      const own = amountOf(entry.amount)
+      let amount = own
+      if (decided) {
+        const decision = timesheetEntryDecision(sheet, entry)
+        if (decision.decision === 'declined') continue
+        amount = timesheetEntryEffectiveAmount(decision.decision, decision.revisedAmount, own)
+      }
+      rows.push({ kind, id: String(entry.id ?? '').trim(), amount, source: 'live', line: null, stored: entry })
+    }
+  }
+  return rows
 }

@@ -226,7 +226,7 @@ const WEB_STORE_SAMPLES: Record<string, { docId: string; data: Doc; webWriter: s
   tasks: {
     docId: 'T-1',
     webWriter: 'taskStore save → taskWriteFields',
-    data: { id: 'T-1', projectId: WEB_JOB, title: 'Order skip', details: null, createdBy: 'Ada Admin', status: 'To Do', priority: 'Medium', assignedOperativeId: null, assignedOperativeIds: [], assignedManagerId: 'mgr-row-web-1', assignedManagerIds: ['mgr-row-web-1'], dueDate: ts(DAY), items: [], completedItemIds: [], organizationId: ORG, createdAt: ts(CREATED) },
+    data: { id: 'T-1', projectId: WEB_JOB, title: 'Order skip', details: null, createdBy: 'Ada Admin', createdByUserId: 'user-web-1', status: 'To Do', priority: 'Medium', assignedOperativeId: null, assignedOperativeIds: [], assignedManagerId: 'mgr-row-web-1', assignedManagerIds: ['mgr-row-web-1'], dueDate: ts(DAY), items: [], completedItemIds: [], organizationId: ORG, createdAt: ts(CREATED) },
   },
   healthSafety: {
     docId: `healthSafety_projects_${WEB_JOB.toUpperCase()}`,

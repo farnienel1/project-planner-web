@@ -31,6 +31,10 @@ import {
   withoutDismissedQualificationRows,
   type AcceptedClashRecord,
   type CoverageFallbackReason,
+  type JobAccessViewer,
+  type WarningScope,
+  WARNING_SCOPE_ALL,
+  warningScopeFor,
 } from '@/lib/canonical'
 import type { NotificationPreferences } from '@/lib/settings/notificationPreferences'
 import { computeOperativeBookingClashWarnings, type OperativeBookingClashWarning } from '@/lib/scheduling/bookingClashUtils'
@@ -86,9 +90,11 @@ export type OrgWarningsResult = {
 export function computeQualificationExpiryWarnings(
   operatives: Operative[],
   referenceDate = new Date(),
-  timeZone: string = organizationTimeZone(null)
+  timeZone: string = organizationTimeZone(null),
+  scope?: WarningScope | null
 ): QualificationExpiryWarning[] {
   const rows = qualificationExpiryRows({
+    scope,
     referenceIso: referenceDate.toISOString(),
     timeZone,
     operatives: operatives.map((operative) => {
@@ -131,9 +137,11 @@ export function computeUnverifiedOperativeWarnings(
   operatives: Operative[],
   users: User[],
   referenceDate = new Date(),
-  timeZone: string = organizationTimeZone(null)
+  timeZone: string = organizationTimeZone(null),
+  scope?: WarningScope | null
 ): UnverifiedOperativeWarning[] {
   const rows = unverifiedOperativeRows({
+    scope,
     referenceIso: referenceDate.toISOString(),
     timeZone,
     operatives: operatives.map((operative) => ({
@@ -175,7 +183,26 @@ export function generateOrgWarnings(input: {
   notificationPreferences?: NotificationPreferences | null
   referenceDate?: Date
   orgDetails?: OrganizationDetails | null
+  /**
+   * Rulebook 1.10.0 §17: the signed-in user. A manager who does not see every job gets only the rows about the
+   * jobs they see and the people booked on them (`warningScopeFor`); missing → everything.
+   */
+  viewer?: JobAccessViewer | null
 }): OrgWarningsResult {
+  const scope: WarningScope = input.viewer
+    ? warningScopeFor({
+        viewer: input.viewer,
+        visibleJobIds: input.projects.map((project) => project.id),
+        bookings: input.bookings.map((booking) => ({ projectId: booking.projectId, operativeId: booking.operativeId })),
+        managerBookings: input.managerSiteBookings.map((booking) => ({
+          userId: booking.userId,
+          locationType: booking.locationType,
+          locationId: booking.locationId ?? null,
+        })),
+        people: input.users.map((user) => ({ id: user.id, email: user.email, formerIds: user.formerUserIds ?? [] })),
+        operatives: input.operatives.map((operative) => ({ id: operative.id, email: operative.email })),
+      })
+    : WARNING_SCOPE_ALL
   const warningDetection = input.warningDetection ?? input.orgDetails?.warningDetection ?? DEFAULT_WARNING_DETECTION
   const invoicing = parseInvoicing(
     (input.invoicing ?? input.orgDetails?.invoicing) as Record<string, unknown> | undefined
@@ -223,6 +250,7 @@ export function generateOrgWarnings(input: {
     payrollPolicy,
     referenceDate: now,
     timeZone,
+    scope,
   })
 
   const leaveWarnings = computeLeaveCoverageWarnings({
@@ -252,11 +280,12 @@ export function generateOrgWarnings(input: {
       cutOffMinute: cutOff.materialCutOffMinute,
       referenceDate: now,
       timeZone,
+      scope,
     }
   )
 
-  const qualificationWarnings = computeQualificationExpiryWarnings(input.operatives, now, timeZone)
-  const unverifiedWarnings = computeUnverifiedOperativeWarnings(input.operatives, input.users, now, timeZone)
+  const qualificationWarnings = computeQualificationExpiryWarnings(input.operatives, now, timeZone, scope)
+  const unverifiedWarnings = computeUnverifiedOperativeWarnings(input.operatives, input.users, now, timeZone, scope)
 
   const result = withWarningCounts({
     clashWarnings,

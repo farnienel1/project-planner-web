@@ -121,14 +121,15 @@ test('canViewOperatives: manager needs operatives flag', () => {
   assert.equal(canViewOperatives(withFlag), true)
 })
 
-test('operatives, projects, wholesalers and qualifications follow the toggle for an admin', () => {
+test('operatives, wholesalers and qualifications follow the toggle for an admin; jobs never do (1.10.0 round 2)', () => {
   const admin = user({
     role: UserRole.ADMIN,
     permissions: { adminAccess: true, manager: true, wholesalersOrderHistory: false, qualifications: false },
   })
   assert.equal(canViewOperatives(admin), false)
-  assert.equal(canManageWorkCatalogue(admin, 'projects'), false)
-  assert.equal(canManageWorkCatalogue(admin, 'smallWorks'), false)
+  // 1.10.0 round 2 (`canCreateJob`): admins always add and edit jobs, whatever the Projects / Small works toggles.
+  assert.equal(canManageWorkCatalogue(admin, 'projects'), true)
+  assert.equal(canManageWorkCatalogue(admin, 'smallWorks'), true)
   assert.equal(canAccessWholesalers(admin), false)
   assert.equal(canManageOrganisationQualifications(admin), false)
   const flagged = user({
@@ -208,9 +209,10 @@ test('canViewDailyOverview defaults true', () => {
 test('direct project and small-works forms follow the catalogue toggles', () => {
   const manager = user({ role: UserRole.MANAGER, permissions: { manager: true, projects: false, smallWorks: false } })
   assert.equal(canOpenWorkForm(manager, 'projects', 'create'), false)
-  assert.equal(canOpenWorkForm(manager, 'projects', 'edit'), false)
+  // 1.10.0 round 2 (`canEditJob`): the edit form opens for a manager; the form checks they manage the job.
+  assert.equal(canOpenWorkForm(manager, 'projects', 'edit'), true)
   assert.equal(canOpenWorkForm(manager, 'smallWorks', 'create'), false)
-  assert.equal(canOpenWorkForm(manager, 'smallWorks', 'edit'), false)
+  assert.equal(canOpenWorkForm(manager, 'smallWorks', 'edit'), true)
   const flagged = user({ role: UserRole.ADMIN, permissions: { adminAccess: true, projects: true, smallWorks: true } })
   assert.equal(canOpenWorkForm(flagged, 'projects', 'create'), true)
   assert.equal(canOpenWorkForm(flagged, 'smallWorks', 'edit'), true)

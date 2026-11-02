@@ -13,7 +13,7 @@ import type { Operative, User } from '@/types'
 import { findOperativeForUser } from '@/lib/operatives/operativeRosterUtils'
 import type { OperativeDayRateHistoryCollection } from '@/lib/timesheets/dayRateHistoryStorage'
 import { formatMoney } from '@/lib/canonical/money'
-import { invoiceLines, isInvoiceLine } from '@/lib/canonical/reportPay'
+import { timesheetInvoiceRows } from '@/lib/canonical/reportPay'
 
 export function paymentRunDateStamp(start: Date, end: Date, timeZone: string): string {
   const format = (date: Date) => {
@@ -144,99 +144,65 @@ export function invoiceLinesForTimesheet({
   /** Organisation currency (`formatMoney`). Leave rows are never on the invoice. */
   currencyCode?: string
 }): TimesheetInvoiceLine[] {
-  const override = draft.weeklyReportOverride
-  if (override) {
-    const liveById = new Map(payroll.lineItems.map((line) => [line.id, line]))
-    const rows: TimesheetInvoiceLine[] = []
-    for (const line of override.lines) {
-      if (line.decision === 'declined' || line.amount <= 0.0001) continue
-      const live = liveById.get(line.id)
-      // PAYE and leave lines never go on an invoice (`isInvoiceLine`), signed sheet included.
-      if (live && !isInvoiceLine(live)) continue
-      const details = live ? timesheetLabourDetails(live, currencyCode) : signedOverrideDetails(line, standardDayHours, currencyCode)
-      const jobNumber = (live?.jobNumber || line.jobNumber || '—').trim() || '—'
-      const projectName = live?.projectName || line.projectName
+  // Rulebook 1.10.0 (H1): which rows and amounts are the rulebook's `timesheetInvoiceRows` — the signed snapshot
+  // first, then live lines with their reviews and entry decisions; this function only formats them.
+  const sheet: Record<string, unknown> = {
+    weeklyReportOverride: draft.weeklyReportOverride ?? null,
+    payrollLineReviews: draft.payrollLineReviews,
+    extraEntryReviews: draft.extraEntryReviews ?? null,
+    priceWorkEntries: draft.priceWorkEntries,
+    expenseEntries: draft.expenseEntries,
+    managerSignedAt: draft.managerSignedAt ?? null,
+  }
+  const decided = timesheetInvoiceRows({
+    sheet,
+    payrollLines: payroll.lineItems,
+    extrasMode: extrasMode === 'export' ? 'decided' : 'raw',
+  })
+  const rows: TimesheetInvoiceLine[] = []
+  for (const row of decided) {
+    if (row.kind === 'labour') {
+      const live = row.line
+      const signed = row.source === 'override' ? (row.stored as unknown as SignedOverrideLine) : null
+      const details = live
+        ? timesheetLabourDetails(live, currencyCode)
+        : signedOverrideDetails(signed as SignedOverrideLine, standardDayHours, currencyCode)
+      const jobNumber = row.source === 'override'
+        ? (live?.jobNumber || signed?.jobNumber || '—').trim() || '—'
+        : live?.jobNumber || '—'
+      const projectName = live?.projectName || signed?.projectName || ''
       rows.push({
-        date: formatAbbreviatedDayInZone((live?.date || line.date), timeZone),
+        date: formatAbbreviatedDayInZone((live?.date || (signed?.date as Date)), timeZone),
         jobNumber,
         projectName,
         details,
-        description: `${jobNumber} ${projectName} · ${details}`,
-        amount: line.amount,
+        description: `${row.source === 'override' ? jobNumber : live?.jobNumber} ${projectName} · ${details}`,
+        amount: row.amount,
       })
+      continue
     }
-    for (const line of override.priceWork) {
-      if (line.decision === 'declined' || line.amount <= 0.0001) continue
-      const details = extraInvoiceDetails(line.title)
-      const jobNumber = line.jobNumber.trim() || '—'
-      rows.push({
-        date: formatAbbreviatedDayInZone(line.date, timeZone),
-        jobNumber,
-        projectName: 'Price work',
-        details,
-        description: `${jobNumber} Price work · ${details}`,
-        amount: line.amount,
-      })
-    }
-    for (const line of override.expenses) {
-      if (line.decision === 'declined' || line.amount <= 0.0001) continue
-      const details = extraInvoiceDetails(line.title)
-      const jobNumber = line.jobNumber.trim() || '—'
-      rows.push({
-        date: formatAbbreviatedDayInZone(line.date, timeZone),
-        jobNumber,
-        projectName: 'Expense',
-        details,
-        description: `${jobNumber} Expense · ${details}`,
-        amount: line.amount,
-      })
-    }
-    return rows
-  }
-  const rows: TimesheetInvoiceLine[] = []
-  // PAYE days and leave information lines stay on the timesheet but never on the invoice (`invoiceLines`).
-  for (const line of invoiceLines(payroll.lineItems)) {
-    const details = timesheetLabourDetails(line, currencyCode)
+    const entry = (row.stored ?? {}) as { title?: string; jobNumber?: string; date?: Date; startDate?: Date }
+    const label = row.kind === 'priceWork' ? 'Price work' : 'Expense'
+    const details = extraInvoiceDetails(String(entry.title ?? ''))
+    const jobNumber =
+      row.kind === 'expense' && row.source === 'live' && extrasMode === 'raw' ? '—' : String(entry.jobNumber ?? '').trim() || '—'
+    const date = row.source === 'override' ? entry.date : row.kind === 'priceWork' ? entry.startDate : entry.date
     rows.push({
-      date: formatAbbreviatedDayInZone(line.date, timeZone),
-      jobNumber: line.jobNumber || '—',
-      projectName: line.projectName,
-      details,
-      description: `${line.jobNumber} ${line.projectName} · ${details}`,
-      amount: line.amount,
-    })
-  }
-  for (const entry of draft.priceWorkEntries) {
-    if (extrasMode === 'export' && entry.managerDecision === 'declined') continue
-    const amount =
-      extrasMode === 'export' ? entry.managerRevisedAmount ?? entry.amount : entry.amount
-    const details = extraInvoiceDetails(entry.title)
-    const jobNumber = entry.jobNumber.trim() || '—'
-    rows.push({
-      date: formatAbbreviatedDayInZone(entry.startDate, timeZone),
+      date: formatAbbreviatedDayInZone(date as Date, timeZone),
       jobNumber,
-      projectName: 'Price work',
+      projectName: label,
       details,
-      description: `${jobNumber} Price work · ${details}`,
-      amount,
-    })
-  }
-  for (const entry of draft.expenseEntries) {
-    if (extrasMode === 'export' && entry.managerDecision === 'declined') continue
-    const amount =
-      extrasMode === 'export' ? entry.managerRevisedAmount ?? entry.amount : entry.amount
-    const details = extraInvoiceDetails(entry.title)
-    const jobNumber = extrasMode === 'raw' ? '—' : entry.jobNumber.trim() || '—'
-    rows.push({
-      date: formatAbbreviatedDayInZone(entry.date, timeZone),
-      jobNumber,
-      projectName: 'Expense',
-      details,
-      description: `${jobNumber} Expense · ${details}`,
-      amount,
+      description: `${jobNumber} ${label} · ${details}`,
+      amount: row.amount,
     })
   }
   return rows
+}
+
+type SignedOverrideLine = Parameters<typeof signedOverrideDetails>[0] & {
+  jobNumber?: string
+  projectName?: string
+  date?: Date
 }
 
 /** iOS TimesheetExportHelper grandTotal = sum of export line amounts. */

@@ -28,6 +28,7 @@ import { db } from '@/lib/firebase/config'
 import { isRetryableAuthLoadError, authLoadRetryDelayMs } from '@/lib/auth/authBoot'
 import { waitForAuthToken } from '@/lib/firebase/waitForAuthToken'
 import { retainLoadedRows } from '@/lib/staff/rosterRetain'
+import { unsubscribeOrgPlansOutside } from '@/lib/firebase/subscribeOrgPlan'
 
 export type OrgCollectionDoc = { id: string; data: Record<string, unknown> }
 
@@ -286,6 +287,8 @@ export function subscribeOrgCollectionLoaded(
  * organisation, so a store never receives that company's rows again (`adoptCurrentOrganization`).
  */
 export function unsubscribeOrgCollectionsOutside(organizationId: string): void {
+  // Rulebook 1.10.0 §17: read-plan listeners (several queries per store) close with the organisation too.
+  unsubscribeOrgPlansOutside(organizationId)
   const keep = String(organizationId || '').trim().toLowerCase()
   for (const [key, org] of [...orgs]) {
     if (keep && String(org || '').trim().toLowerCase() === keep) continue
