@@ -24,6 +24,7 @@ import { withAuthReadRetry } from '@/lib/firebase/waitForAuthToken'
 import type { HolidayBooking, HolidayStatus, HolidayTimeSlot } from '@/types'
 import { newUuid, parseFirestoreDate, parseOptionalString, parseString, parseUuid } from '@/lib/firebase/firestoreUtils'
 import { markRowsRemoved, retainScopedRows } from '@/lib/staff/rosterRetain'
+import { changedFirestoreFields } from '@/lib/firebase/changedFields'
 
 function parseHolidayStatus(value: unknown): HolidayStatus {
   return normalizeHolidayStatus(value)
@@ -154,11 +155,24 @@ export const useHolidayStore = create<HolidayState>((set, get) => ({
   saveBooking: async (organizationId, booking) => {
     const id = booking.id || newUuid()
     const payload = holidayPayload({ ...booking, id, updatedAt: new Date() })
-    await setDoc(
-      doc(db, 'organizations', organizationId, 'holidayBookings', id),
-      { ...payload, ...holidayWriteMetadata() },
-      { merge: true }
-    )
+    const ref = doc(db, 'organizations', organizationId, 'holidayBookings', id)
+    const previous = booking.id ? get().bookings.find((row) => row.id === booking.id) : undefined
+    if (previous) {
+      // An edit is a partial update of the fields this save changed (rulebook §1, §9): never a whole-document
+      // rewrite from the local copy, and never `createdAt` / a client `updatedAt`.
+      const { createdAt: _created, updatedAt: _updated, ...next } = payload
+      const { createdAt: _pc, updatedAt: _pu, ...before } = holidayPayload(previous)
+      void _created
+      void _updated
+      void _pc
+      void _pu
+      const changed = changedFirestoreFields(next, before)
+      if (Object.keys(changed).length > 0) {
+        await updateDoc(ref, { ...changed, ...holidayWriteMetadata() })
+      }
+    } else {
+      await setDoc(ref, { ...payload, ...holidayWriteMetadata() }, { merge: true })
+    }
     const mapped = mapHolidayBooking(id, payload as unknown as Record<string, unknown>, organizationId)
     if (!mapped) return
     const { bookings } = get()

@@ -5,17 +5,22 @@
 import { collection, doc, getDocs, serverTimestamp, setDoc, Timestamp } from 'firebase/firestore'
 import { auth, db } from '@/lib/firebase/config'
 import { writeMetadataFields } from '@/lib/canonical/writeMetadata'
-import { newUuid, parseFirestoreDate, sanitizeForFirestore } from '@/lib/firebase/firestoreUtils'
-import { londonMidnight } from '@/lib/ios-parity/londonTime'
+import { payRateHistoryWriteFields } from '@/lib/canonical/payRate'
+import { organizationTimeZone } from '@/lib/canonical'
+import { newUuid, parseFirestoreDate } from '@/lib/firebase/firestoreUtils'
+import { useOrganizationDocumentStore } from '@/lib/stores/organizationDocumentStore'
 import type { PayBasis } from '@/lib/timesheets/payBasis'
 
 export type OperativeDayRateHistoryEntry = {
   id: string
   userId?: string | null
   operativeId?: string | null
-  /** Amount per day or per hour. The field name stays dayRate so old rows still load. */
-  dayRate: number
-  /** Missing on old rows means day. */
+  /**
+   * Amount per day or per hour. The field name stays dayRate so old rows still load. null is a "rate cleared"
+   * row: no rate from its effective day (`payRateOnDay`).
+   */
+  dayRate: number | null
+  /** Missing on old rows means day; missing on a cleared row. */
   payBasis?: PayBasis
   effectiveAt: Date
   createdAt: Date
@@ -61,13 +66,16 @@ export function mergedDayRateEntries(
 }
 
 function parseEntry(id: string, data: Record<string, unknown>): OperativeDayRateHistoryEntry | null {
-  const dayRate = typeof data.dayRate === 'number' ? data.dayRate : Number(data.dayRate)
+  // `dayRate: null` is a stored "rate cleared" row; a missing or unreadable amount is skipped.
+  const cleared = data.dayRate === null
+  const amount = typeof data.dayRate === 'number' ? data.dayRate : Number(data.dayRate)
   const effectiveAt = parseFirestoreDate(data.effectiveAt)
-  if (!Number.isFinite(dayRate) || !effectiveAt) return null
+  if ((!cleared && (data.dayRate === undefined || !Number.isFinite(amount))) || !effectiveAt) return null
+  const dayRate = cleared ? null : amount
   const userId = typeof data.userId === 'string' && data.userId.trim() ? data.userId.trim() : null
   const operativeId = typeof data.operativeId === 'string' && data.operativeId.trim() ? data.operativeId.trim() : null
   if (!userId && !operativeId) return null
-  const payBasis = data.payBasis === 'hourly' ? 'hourly' : data.payBasis === 'day' ? 'day' : undefined
+  const payBasis = cleared ? undefined : data.payBasis === 'hourly' ? 'hourly' : data.payBasis === 'day' ? 'day' : undefined
   return {
     id,
     userId,
@@ -110,7 +118,18 @@ export async function loadOperativeDayRateHistory(
   return { byUserId, byOperativeId }
 }
 
-/** iOS recordOperativeDayRateChange — persist including an explicit £0. */
+/** The open organisation's business zone (`organizationTimeZone`), for callers that do not pass one. */
+function openOrganizationTimeZone(): string {
+  const data = useOrganizationDocumentStore.getState().data
+  const country = data && typeof data.countryCode === 'string' ? data.countryCode : null
+  return organizationTimeZone(country)
+}
+
+/**
+ * iOS recordOperativeDayRateChange — one new history row (`payRateHistoryWriteFields`): the effective day is
+ * the organisation-zone day and `effectiveAt` its midnight in that zone. An explicit 0 is a rate; `null`
+ * records "rate cleared" (`dayRate: null, payBasis: null`).
+ */
 export async function recordOperativeDayRateChange({
   organizationId,
   userId,
@@ -118,28 +137,37 @@ export async function recordOperativeDayRateChange({
   dayRate,
   payBasis = 'day',
   effectiveAt,
+  timeZone,
 }: {
   organizationId: string
   userId?: string | null
   operativeId?: string | null
-  dayRate: number
+  dayRate: number | null
   payBasis?: PayBasis
   effectiveAt: Date
+  /** Organisation business zone; defaults to the open organisation's. */
+  timeZone?: string | null
 }): Promise<void> {
-  const uid = userId?.trim() || null
-  const oid = operativeId?.trim() || null
-  if (!uid && !oid) return
+  const fields = payRateHistoryWriteFields({
+    userId,
+    operativeId,
+    rate: dayRate,
+    payBasis,
+    effective: effectiveAt,
+    timeZone: timeZone || openOrganizationTimeZone(),
+  })
+  if (!fields) return
   const ref = doc(db, 'organizations', organizationId, 'operativeDayRateHistory', newUuid())
-  const payload = sanitizeForFirestore({
-    dayRate,
-    payBasis: payBasis === 'hourly' ? 'hourly' : 'day',
-    effectiveAt: Timestamp.fromDate(londonMidnight(effectiveAt)),
-    userId: uid || '',
-    operativeId: oid || '',
-  }) as Record<string, unknown>
-  payload.createdAt = serverTimestamp()
+  const payload: Record<string, unknown> = {
+    dayRate: fields.dayRate,
+    payBasis: fields.payBasis,
+    effectiveAt: Timestamp.fromMillis(fields.effectiveAtMs),
+    userId: fields.userId,
+    operativeId: fields.operativeId,
+    createdAt: serverTimestamp(),
+  }
   Object.assign(payload, writeMetadataFields(auth?.currentUser?.uid, 'web') ?? {}, { updatedAt: serverTimestamp() })
-  await setDoc(ref, payload, { merge: true })
+  await setDoc(ref, payload)
 }
 
 /**
@@ -157,6 +185,7 @@ export async function recordDayRateChangeIfNeeded({
   createdAt,
   effectiveAt = new Date(),
   history,
+  timeZone,
 }: {
   organizationId: string
   userId?: string | null
@@ -168,13 +197,20 @@ export async function recordDayRateChangeIfNeeded({
   createdAt?: Date
   effectiveAt?: Date
   history: OperativeDayRateHistoryCollection
+  /** Organisation business zone; defaults to the open organisation's. */
+  timeZone?: string | null
 }): Promise<void> {
   const previous = previousDayRate ?? null
   const next = nextDayRate ?? null
   const prevBasis = previousPayBasis === 'hourly' || previousPayBasis === 'day' ? previousPayBasis : null
   const nextBasis: PayBasis = nextPayBasis === 'hourly' ? 'hourly' : 'day'
   const basisChanged = prevBasis != null && prevBasis !== nextBasis
-  if (next == null) return
+  // Clearing a saved rate writes a "rate cleared" row (`payRateHistoryWriteFields` with no rate).
+  if (next == null) {
+    if (previous == null) return
+    await recordOperativeDayRateChange({ organizationId, userId, operativeId, dayRate: null, effectiveAt, timeZone })
+    return
+  }
   if (!basisChanged && previous === next) return
   const merged = mergedDayRateEntries(history, userId, operativeId)
   if (merged.length === 0 && previous != null && previous > 0 && createdAt) {
@@ -185,6 +221,7 @@ export async function recordDayRateChangeIfNeeded({
       dayRate: previous,
       payBasis: prevBasis === 'hourly' ? 'hourly' : 'day',
       effectiveAt: createdAt,
+      timeZone,
     })
   }
   await recordOperativeDayRateChange({
@@ -194,5 +231,6 @@ export async function recordDayRateChangeIfNeeded({
     dayRate: next,
     payBasis: nextBasis,
     effectiveAt,
+    timeZone,
   })
 }

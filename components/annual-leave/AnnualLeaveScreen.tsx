@@ -12,14 +12,14 @@ import {
 import { ErrorBanner } from '@/components/dashboard/PageShell'
 import { OperativeAnnualLeaveManagement } from './OperativeAnnualLeaveManagement'
 import { PersonalLeave } from './PersonalLeave'
-import { lineManagerIds } from '@/lib/canonical'
+import { userCanSelfBookAnnualLeave } from '@/lib/annualLeave/holidayApprovalUtils'
 
 export function AnnualLeaveScreen() {
   const { organization, user } = useAuthStore()
   const { bookings, error, saveBooking, createRequests, deleteBooking, requestCancellation } = useHolidayStore()
   const isOperative = isOperativeMode(user)
-  const hasLineManager = lineManagerIds(user).length > 0
-  const booksOwnLeave = !isOperative && (!hasLineManager || user?.permissions.annualLeaveSelfBook === true)
+  // `canSelfBookAnnualLeave`: the self-book permission, never in operative mode. No line manager is not self-booking.
+  const booksOwnLeave = userCanSelfBookAnnualLeave(user)
   const canTeam = !isOperative && canAccessOperativeAnnualLeaveDirectory(user)
   const searchParams = useSearchParams()
   const requestedTab = searchParams.get('tab') === 'team' ? 'team' : 'mine'

@@ -1,7 +1,16 @@
 import type { HolidayBooking, Operative, User } from '@/types'
-import { isOperativeMode } from '@/lib/navigation/menuPermissions'
 import { staffAccountRole } from '@/lib/permissions'
-import { leaveApproverIds, lineManagerIds } from '@/lib/canonical'
+import {
+  canDecideLeave,
+  canSelfBookAnnualLeave,
+  leaveApproverIds,
+  leaveDecisionQueue,
+  lineManagerIds,
+  lineManagerRequiredError,
+  usersMissingLineManager,
+  type LeaveRosterMember,
+  type LeaveSelfBookUser,
+} from '@/lib/canonical'
 import { dayKey } from '@/lib/ios-parity/londonTime'
 import { isPendingHolidayRequest } from '@/lib/stores/holidayStore'
 
@@ -25,10 +34,97 @@ export function holidayRequester(request: HolidayBooking, users: User[], operati
   return null
 }
 
+/** The rulebook's view of a `users` row for the leave rules (`LeaveSelfBookUser`). */
+export function leaveUser(user: User): LeaveSelfBookUser & { id: string } {
+  return {
+    id: user.id,
+    assignedManagerUserIds: user.assignedManagerUserIds ?? null,
+    assignedManagerUserId: user.assignedManagerUserId ?? null,
+    hasNoLineManager: user.hasNoLineManager ?? null,
+    annualLeaveSelfBook: user.permissions?.annualLeaveSelfBook === true,
+    operativeMode: user.permissions?.operativeMode === true,
+    role: String(user.role ?? ''),
+    isActive: user.isActive,
+    annualLeaveEnabled: user.annualLeaveEnabled ?? null,
+  }
+}
+
+/** The roster as the leave rules read it: approver role plus each person's own line-manager fields. */
+export function leaveRoster(users: User[]): LeaveRosterMember[] {
+  return users.map((member) => ({
+    ...leaveUser(member),
+    isActive: member.isActive,
+    role: staffAccountRole(member),
+  }))
+}
+
+/** `canSelfBookAnnualLeave`: the self-book permission, never in operative mode. */
+export function userCanSelfBookAnnualLeave(user: User | null | undefined): boolean {
+  return user ? canSelfBookAnnualLeave(leaveUser(user)) : false
+}
+
+/** `lineManagerRequiredError` for the person as it will be saved (Manage Users). */
+export function userLineManagerRequiredError(user: User, users: User[]): string | null {
+  return lineManagerRequiredError(
+    leaveUser(user),
+    users.map((member) => ({ id: member.id, isActive: member.isActive }))
+  )
+}
+
+/** `usersMissingLineManager`: roster people an admin still has to give a line manager. */
+export function usersWithoutRequiredLineManager(users: User[]): User[] {
+  const ids = new Set(usersMissingLineManager(users.map(leaveUser)))
+  return users.filter((member) => ids.has(member.id))
+}
+
+function requesterFor(request: HolidayBooking, users: User[], operatives: Operative[]) {
+  const requester = holidayRequester(request, users, operatives)
+  if (requester) return leaveUser(requester)
+  return { id: request.userId || request.operativeId || null }
+}
+
 /** `leaveApproverIds`: every current line manager, else the admins. */
 export function holidayApproverIds(request: HolidayBooking, users: User[], operatives: Operative[]): string[] {
-  const roster = users.map((member) => ({ id: member.id, isActive: member.isActive, role: staffAccountRole(member) }))
-  return leaveApproverIds(holidayRequester(request, users, operatives), roster)
+  return leaveApproverIds(requesterFor(request, users, operatives), leaveRoster(users))
+}
+
+/**
+ * `canDecideLeave`: whether `viewer` may approve, decline or remove this person's leave (and accept a
+ * cancellation). Never their own request; admins decide any; otherwise `leaveApproverIds`.
+ */
+export function canDecideHoliday(
+  viewer: User | null | undefined,
+  request: HolidayBooking,
+  users: User[],
+  operatives: Operative[]
+): boolean {
+  if (!viewer) return false
+  return canDecideLeave(
+    { id: viewer.id, role: staffAccountRole(viewer) },
+    requesterFor(request, users, operatives),
+    leaveRoster(users)
+  )
+}
+
+/**
+ * The status a new leave booking is saved with. Approved when the viewer books their own leave and
+ * `canSelfBookAnnualLeave`, or books someone else's leave they may decide (`canDecideLeave`); otherwise a
+ * pending request. Having no line manager never makes a booking approved.
+ */
+export function leaveSaveStatus(
+  viewer: User | null | undefined,
+  subject: { userId?: string | null; operativeId?: string | null },
+  users: User[],
+  operatives: Operative[]
+): 'approved' | 'pending' {
+  if (!viewer) return 'pending'
+  const ownLeave = Boolean(subject.userId && subject.userId === viewer.id)
+  if (ownLeave) return userCanSelfBookAnnualLeave(viewer) ? 'approved' : 'pending'
+  const probe = {
+    userId: subject.userId ?? undefined,
+    operativeId: subject.operativeId ?? undefined,
+  } as HolidayBooking
+  return canDecideHoliday(viewer, probe, users, operatives) ? 'approved' : 'pending'
 }
 
 /** First approver (kept for callers that show one name). */
@@ -45,17 +141,31 @@ export function getPendingHolidayRequests(bookings: HolidayBooking[]): HolidayBo
   return bookings.filter(isPendingHolidayRequest)
 }
 
-/** Pending leave/cancellation requests the current user should action (`leaveApproverIds`). */
+/** Pending leave/cancellation requests the current user should action (`leaveDecisionQueue`). */
 export function getPendingHolidayApprovalsForUser(
   bookings: HolidayBooking[],
   user: User | null,
   users: User[],
   operatives: Operative[]
 ): HolidayBooking[] {
-  if (!user || isOperativeMode(user)) return []
-  return getPendingHolidayRequests(bookings).filter((request) =>
-    holidayApproverIds(request, users, operatives).includes(user.id)
+  if (!user) return []
+  // `leaveDecisionQueue`: pending requests and cancellation requests this viewer may decide (`canDecideLeave`).
+  const queued = leaveDecisionQueue(
+    { id: user.id, role: staffAccountRole(user) },
+    getPendingHolidayRequests(bookings).map((booking) => {
+      const requester = holidayRequester(booking, users, operatives)
+      return {
+        booking,
+        userId: requester?.id ?? booking.userId ?? null,
+        operativeId: booking.operativeId ?? null,
+        status: booking.status,
+        cancellationRequestedAt: booking.cancellationRequestedAt ? booking.cancellationRequestedAt.getTime() : null,
+        cancellationRequestedByUserId: booking.cancellationRequestedByUserId ?? null,
+      }
+    }),
+    leaveRoster(users)
   )
+  return queued.map((entry) => entry.booking)
 }
 
 export function isCancellationRequest(booking: HolidayBooking): boolean {

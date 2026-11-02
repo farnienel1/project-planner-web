@@ -774,3 +774,43 @@ export type {
 } from './timesheetEntryReviews'
 export { canChangePersonPay } from './payAccess'
 export type { PayAccessSubject, PayAccessWriter } from './payAccess'
+export {
+  LINE_MANAGER_REQUIRED_MESSAGE,
+  canDecideLeave,
+  canSelfBookAnnualLeave,
+  leaveDecisionQueue,
+  lineManagerRequiredError,
+  usersMissingLineManager,
+} from './leaveRequests'
+export {
+  approvedWarningKeys,
+  isClashGroupApproved,
+  normalizeDocumentId,
+  operativeClashGroups,
+} from './scheduleSources'
+export {
+  OFFLINE_ACTIONS,
+  OFFLINE_AVAILABILITIES,
+  OFFLINE_LAST_UPDATED_PREFIX,
+  OFFLINE_ONLINE_ONLY_MESSAGE,
+  OFFLINE_PENDING_SYNC_LABEL,
+  offlineAvailability,
+  offlineLastUpdatedLabel,
+} from './offlinePolicy'
+export { unbookedScanDays, warningLookaheadFallbackNotice } from './engine'
+export { PLATFORM_OWNER_EMAIL, isPlatformOwnerEmail } from './passwordPolicy'
+export { TIMESHEET_MANAGER_SIGN_OFF_FIELDS } from './timesheetEntryReviews'
+export { payRateHistoryWriteFields } from './payRate'
+export { invoiceLines, isInvoiceLine } from './reportPay'
+export type {
+  LeaveDecisionViewer,
+  LeaveQueueRequest,
+  LeaveRosterMember,
+  LeaveSelfBookUser,
+} from './leaveRequests'
+export type { OperativeClashGroup, OperativeClashGroupsInput, OperativeClashPair } from './scheduleSources'
+export type { OfflineActionId, OfflineAvailability } from './offlinePolicy'
+export type { UnbookedScanDaysInput } from './engine'
+export type { BookingReplayRefusal } from './bookingTombstones'
+export type { PayRateHistoryWriteFields, PayRateHistoryWriteInput } from './payRate'
+export type { InvoiceLineInput } from './reportPay'

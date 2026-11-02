@@ -145,6 +145,7 @@ export function OperativeForm({
           createdAt: operative.createdAt,
           effectiveAt: decision,
           history,
+          timeZone,
         })
       } catch {
         // Best-effort history so roster saves still succeed.

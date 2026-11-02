@@ -250,3 +250,145 @@ export function leaveApproverIds(
 
 /** Inbox type both apps write when someone asks for leave. */
 export const HOLIDAY_REQUEST_SUBMITTED_TYPE = 'holiday_request_submitted'
+
+// MARK: - Self-booking and the line-manager requirement (rulebook §8, §9, §11)
+
+/**
+ * The fields `canSelfBookAnnualLeave` and `lineManagerRequiredError` read from `users/{uid}`. Each flag
+ * counts at the top level or inside `permissions` (the same test as firestore.rules `staffFlag`).
+ */
+export type LeaveSelfBookUser = LeaveRequester & {
+  annualLeaveSelfBook?: boolean | null
+  operativeMode?: boolean | null
+  role?: string | null
+  permissions?: { annualLeaveSelfBook?: boolean | null; operativeMode?: boolean | null } | null
+  /** Missing counts as active. An inactive person needs no line manager. */
+  isActive?: boolean | null
+  /** `false` means annual leave is switched off for this person, so nothing needs approving. */
+  annualLeaveEnabled?: boolean | null
+}
+
+function flagOn(user: LeaveSelfBookUser | null | undefined, key: 'annualLeaveSelfBook' | 'operativeMode'): boolean {
+  if (!user) return false
+  return user[key] === true || user.permissions?.[key] === true
+}
+
+/**
+ * Whether this person books their own annual leave straight to approved: the `annualLeaveSelfBook`
+ * permission (given to admins and managers), and never in operative mode (`operativeMode` flag or the
+ * `operative` role). Having no line manager does NOT make a person a self-booker. Everyone else sends a
+ * pending request to `leaveApproverIds`. Same test as firestore.rules `hbCallerSelfBooks`.
+ */
+export function canSelfBookAnnualLeave(user: LeaveSelfBookUser | null | undefined): boolean {
+  if (!user) return false
+  if (flagOn(user, 'operativeMode') || text(user.role).toLowerCase() === 'operative') return false
+  return flagOn(user, 'annualLeaveSelfBook')
+}
+
+/** Shown by Manage Users (both apps) when it refuses a save by `lineManagerRequiredError`. */
+export const LINE_MANAGER_REQUIRED_MESSAGE = "Set a line manager — this person's annual leave needs approval."
+
+/**
+ * Manage Users save check. A person who cannot self-book (`canSelfBookAnnualLeave` false) needs a current
+ * line manager: `lineManagerIds(user)` not empty, `hasNoLineManager` not true, and — when `roster` is given —
+ * at least one of those managers active in it and not the person themself. Returns
+ * `LINE_MANAGER_REQUIRED_MESSAGE` when that is missing, otherwise null. An inactive person
+ * (`isActive === false`) or one with annual leave switched off (`annualLeaveEnabled === false`) passes.
+ * Pass the user as it will be saved (the edited line manager and self-book values).
+ */
+export function lineManagerRequiredError(
+  user: LeaveSelfBookUser | null | undefined,
+  roster?: ReadonlyArray<{ id: string; isActive?: boolean | null }> | null
+): string | null {
+  if (!user) return null
+  if (user.isActive === false || user.annualLeaveEnabled === false) return null
+  if (canSelfBookAnnualLeave(user)) return null
+  const self = text(user.id).toLowerCase()
+  let managers = lineManagerIds(user).filter((id) => id.toLowerCase() !== self)
+  if (roster && roster.length > 0) {
+    const active = new Set(
+      roster
+        .filter((member) => member && text(member.id) && member.isActive !== false)
+        .map((member) => text(member.id).toLowerCase())
+    )
+    managers = managers.filter((id) => active.has(id.toLowerCase()))
+  }
+  return managers.length > 0 ? null : LINE_MANAGER_REQUIRED_MESSAGE
+}
+
+/**
+ * Ids of roster people saved before the line-manager requirement who now fail `lineManagerRequiredError`:
+ * the admins' one-off clean-up list. Their requests are not stranded meanwhile — `leaveApproverIds` still
+ * sends them to every active admin. Roster order is kept.
+ */
+export function usersMissingLineManager(
+  roster: ReadonlyArray<LeaveSelfBookUser & { id: string }> | null | undefined
+): string[] {
+  const members = (roster || []).filter((member) => member && text(member.id))
+  return members.filter((member) => lineManagerRequiredError(member, members) != null).map((member) => text(member.id))
+}
+
+// MARK: - Who decides a request (rulebook §9)
+
+export type LeaveDecisionViewer = { id?: string | null; role: StaffAccountRole }
+
+/** A roster person: approver flags plus their own line-manager fields. */
+export type LeaveRosterMember = LeaveApproverMember & LeaveRequester
+
+/**
+ * Whether `viewer` may approve or decline `requester`'s leave (and accept or refuse a cancellation).
+ * Never their own request, admins included. An admin or super admin not in operative mode may decide any
+ * request in the organisation. Anyone else only when they are in `leaveApproverIds(requester, roster)`.
+ */
+export function canDecideLeave(
+  viewer: LeaveDecisionViewer | null | undefined,
+  requester: LeaveRequester | null | undefined,
+  roster: ReadonlyArray<LeaveApproverMember> | null | undefined
+): boolean {
+  const me = text(viewer?.id).toLowerCase()
+  if (!viewer || !me) return false
+  if (me === text(requester?.id).toLowerCase()) return false
+  const role = viewer.role
+  if (role && !role.isOperativeMode && (role.isAdmin || role.isSuperAdmin)) return true
+  return leaveApproverIds(requester, roster).some((id) => id.toLowerCase() === me)
+}
+
+export type LeaveQueueRequest = {
+  userId?: string | null
+  operativeId?: string | null
+  status?: unknown
+  cancellationRequestedAt?: unknown
+  cancellationRequestedByUserId?: unknown
+}
+
+function cancellationRequested(request: LeaveQueueRequest): boolean {
+  const at = request.cancellationRequestedAt
+  if (at != null && at !== '' && at !== false) return true
+  return text(request.cancellationRequestedByUserId) !== ''
+}
+
+/**
+ * The requests waiting for this viewer's decision, in input order: pending requests and approved leave with a
+ * cancellation request, filtered with `canDecideLeave`. The requester is the roster person whose id matches the
+ * request's `userId` (else `operativeId`), ids compared without case; a requester not on the roster has no line
+ * manager, so only admins see it.
+ */
+export function leaveDecisionQueue<T extends LeaveQueueRequest>(
+  viewer: LeaveDecisionViewer | null | undefined,
+  requests: ReadonlyArray<T> | null | undefined,
+  roster: ReadonlyArray<LeaveRosterMember> | null | undefined
+): T[] {
+  const members = (roster || []).filter((member) => member && text(member.id))
+  const byId = new Map(members.map((member) => [text(member.id).toLowerCase(), member]))
+  return (requests || []).filter((request) => {
+    if (!request) return false
+    const status = normalizeHolidayStatus(request.status)
+    const waiting = status === 'pending' || (status === 'approved' && cancellationRequested(request))
+    if (!waiting) return false
+    const ids = [text(request.userId), text(request.operativeId)].filter(Boolean)
+    if (ids.length === 0) return false
+    const member = ids.map((id) => byId.get(id.toLowerCase())).find(Boolean)
+    const requester: LeaveRequester = member ?? { id: ids[0] }
+    return canDecideLeave(viewer, requester, members)
+  })
+}

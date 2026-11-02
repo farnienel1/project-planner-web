@@ -31,7 +31,8 @@ import {
 } from '@/lib/settings/organizationSettings'
 import type { ManagerLocationType, ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import type { OverviewPersonRow } from '@/lib/daily-overview/buildDailyOverview'
-import type { Project } from '@/types'
+import { BookingStatus, type Project } from '@/types'
+import { hasAdminAccess } from '@/lib/permissions'
 
 type DestTab = 'other' | 'projects' | 'smallWorks'
 type StatusFilter = 'active' | 'upcoming' | 'completed'
@@ -278,7 +279,10 @@ export function DailyOverviewBookingSheet({
           workEndTime: hours.workEndTime,
           isBreakRemoved: hours.isBreakRemoved,
         })
-        await deleteBooking(row.bookingId, organization.id)
+        // The labour booking moves to the manager schedule: admins delete it, managers cancel it
+        // (labour booking delete is admin only, rulebook §2, §16).
+        if (hasAdminAccess(user)) await deleteBooking(row.bookingId, organization.id)
+        else await updateBooking(row.bookingId, { status: BookingStatus.CANCELLED })
       } else if (row.bookingId) {
         await updateManagerSiteBooking(organization.id, row.bookingId, {
           locationType: pick.locationType,

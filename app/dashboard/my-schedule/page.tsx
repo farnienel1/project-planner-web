@@ -16,7 +16,7 @@ import {
   operativeIdsForEmail,
 } from '@/lib/operatives/operativeRosterUtils'
 import { canSelfBookMySchedule, isOperativeMode } from '@/lib/navigation/menuPermissions'
-import { canBookWork } from '@/lib/permissions'
+import { canBookWork, hasAdminAccess } from '@/lib/permissions'
 import { managerSiteBookingToScheduleBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import { normalizeBookingStatus } from '@/lib/ios-parity/enums'
 import type { AssignedScheduleBooking } from '@/components/schedule/MyScheduleSelfBookingScreen'
@@ -164,6 +164,9 @@ function MySchedulePageContent() {
 
   if (loading || !user || !organization?.id) return null
 
+  // Labour booking delete is admin only; managers get Cancel in the edit sheet (rulebook §2, §16).
+  const canDeleteLabourBooking = hasAdminAccess(user)
+
   const displayName =
     (linkedOperative && operativesById.get(linkedOperative.id)) ||
     user.firstName ||
@@ -225,7 +228,7 @@ function MySchedulePageContent() {
       focusOperativeName={displayName}
       canEditBookings={canEditBookings}
       onSaveBooking={handleSaveBooking}
-      onDeleteBooking={handleDeleteBooking}
+      onDeleteBooking={canDeleteLabourBooking ? handleDeleteBooking : undefined}
       payrollPolicy={payrollPolicy}
     />
   )

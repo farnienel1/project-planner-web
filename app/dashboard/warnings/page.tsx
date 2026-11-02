@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/lib/stores/authStore'
-import { canViewWarnings } from '@/lib/permissions'
+import { canViewWarnings, hasAdminAccess } from '@/lib/permissions'
+import { BookingStatus } from '@/types'
 import { useProjectStore } from '@/lib/stores/projectStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
 import { useBookingStore } from '@/lib/stores/bookingStore'
@@ -15,6 +16,7 @@ import { mergeProjectsAndSmallWorks } from '@/lib/projects/workStatus'
 import { getActiveOperativesForScheduling } from '@/lib/operatives/operativeRosterUtils'
 import {
   approveBookingClash,
+  approveBookingClashPairs,
   loadAcceptedBookingClashes,
   type AcceptedBookingClash,
 } from '@/lib/warnings/acceptedClashStorage'
@@ -59,7 +61,7 @@ export default function WarningsPage() {
   const { projects, smallWorks, loadProjects, loadSmallWorks } = useProjectStore()
   const { operatives, loadOperatives } = useOperativeStore()
   const { users, userIdAliases, loadUsers, rosterLoadedOrgId } = useOrgUserStore()
-  const { bookings, loadBookings, deleteBooking, loading: bookingsLoading, ready: bookingsReady } = useBookingStore()
+  const { bookings, loadBookings, deleteBooking, updateBooking, loading: bookingsLoading, ready: bookingsReady } = useBookingStore()
   const { managerSiteBookings, loadManagerSiteBookings, deleteManagerSiteBooking, loading: managerLoading } =
     useManagerScheduleStore()
   const { materials, sendRecords, loadAllMaterials, loadSendRecords } =
@@ -404,14 +406,24 @@ export default function WarningsPage() {
   )
 
   const handleAcceptClash = useCallback(
-    async (clash: { bookingAId: string; bookingBId: string; resolutionKey?: string }) => {
+    async (clash: {
+      bookingAId: string
+      bookingBId: string
+      resolutionKey?: string
+      pairs?: Array<{ bookingAId: string; bookingBId: string }>
+    }) => {
       if (!organization?.id || !user?.id) return
       // Both `acceptedBookingClashes` and `warningResolutions` (`clashApprovalWrites`), so iOS sees it too.
-      await approveBookingClash(
-        organization.id,
-        { bookingAId: clash.bookingAId, bookingBId: clash.bookingBId, resolutionKey: clash.resolutionKey },
-        user.id
-      )
+      if (clash.pairs && clash.pairs.length > 0) {
+        // Operative cluster (`operativeClashGroups`): approve every overlapping pair.
+        await approveBookingClashPairs(organization.id, clash.pairs, user.id)
+      } else {
+        await approveBookingClash(
+          organization.id,
+          { bookingAId: clash.bookingAId, bookingBId: clash.bookingBId, resolutionKey: clash.resolutionKey },
+          user.id
+        )
+      }
       const [accepted, resolved] = await Promise.all([
         loadAcceptedBookingClashes(organization.id),
         loadResolvedWarningKeys(organization.id),
@@ -425,9 +437,11 @@ export default function WarningsPage() {
   const handleDeleteBooking = useCallback(
     async (bookingId: string) => {
       if (!organization?.id) return
-      await deleteBooking(bookingId, organization.id)
+      // Deleting a labour booking is admin only (rulebook §2, §16); a manager cancels it instead.
+      if (hasAdminAccess(user)) await deleteBooking(bookingId, organization.id)
+      else await updateBooking(bookingId, { status: BookingStatus.CANCELLED })
     },
-    [deleteBooking, organization?.id]
+    [deleteBooking, updateBooking, organization?.id, user]
   )
 
   const handleDeleteManagerBooking = useCallback(

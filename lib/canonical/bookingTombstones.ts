@@ -11,6 +11,11 @@
  * The rulebook builds the plain fields. Each app adds `deletedAt` as its SDK server timestamp
  * (web `serverTimestamp()`, iOS `FieldValue.serverTimestamp()`); the rules require it to equal
  * the request time. Tombstones are never updated; only an admin deletes one.
+ *
+ * A tombstone carries only `BOOKING_TOMBSTONE_FIELDS`. It is the one exception to "writes carry metadata"
+ * (`writeMetadataFields`): no `updatedAt` / `updatedBy` / `updatedFrom`, because the rules accept no other keys.
+ * Deleting a labour booking (`bookings`) and its tombstone is admin-only; managers cancel instead. Deleting is
+ * online-only (`offlineAvailability('booking.delete')`).
  */
 
 import { WRITE_PLATFORMS, type WritePlatform } from './writeMetadata'
@@ -81,14 +86,36 @@ export function bookingTombstoneWriteFields(input: {
   }
 }
 
+function errorCodeText(errorCode: unknown): string {
+  return (typeof errorCode === 'number' ? String(errorCode) : trimmed(errorCode)).toLowerCase().replace(/^firestore\//, '')
+}
+
+/** What `bookingReplayRefusedIsFinal` reads when it is given more than the error code. */
+export type BookingReplayRefusal = {
+  /** The Firestore error code: web string (`permission-denied`, `not-found`) or the iOS `FirestoreErrorCode` number. */
+  code: unknown
+  /** True when the queued item creates the booking; false for an edit or cancel of an existing booking. */
+  isCreate?: boolean | null
+}
+
 /**
- * A queued offline save that the server refused because the booking has a tombstone (or was
- * cancelled elsewhere) is dropped, not retried. Pass the Firestore error code (web string, or the
- * iOS `FirestoreErrorCode` number 7).
+ * A queued offline booking save that the server refused is dropped, not retried, when the refusal is final:
+ *   - permission-denied (`7` on iOS): the booking has a tombstone, was cancelled elsewhere, or the person may not
+ *     write it;
+ *   - not-found (`5` on iOS) on an edit or cancel replay (`isCreate` false): the booking was deleted on another
+ *     device, so the edit is never turned into a create.
+ * Pass the error code alone (the 1.1.0 shape; not-found is then not final because it is unknown whether the item
+ * was a create) or `{ code, isCreate }`.
  */
-export function bookingReplayRefusedIsFinal(errorCode: unknown): boolean {
-  const code = (typeof errorCode === 'number' ? String(errorCode) : trimmed(errorCode)).toLowerCase()
-  return code === 'permission-denied' || code === 'firestore/permission-denied' || code === '7'
+export function bookingReplayRefusedIsFinal(refusal: unknown): boolean {
+  const input =
+    refusal && typeof refusal === 'object' && 'code' in (refusal as Record<string, unknown>)
+      ? (refusal as BookingReplayRefusal)
+      : { code: refusal, isCreate: null }
+  const code = errorCodeText(input.code)
+  if (code === 'permission-denied' || code === '7') return true
+  if ((code === 'not-found' || code === '5') && input.isCreate === false) return true
+  return false
 }
 
 export const BOOKING_REPLAY_REFUSED_MESSAGE = 'This booking was cancelled or deleted on another device.'

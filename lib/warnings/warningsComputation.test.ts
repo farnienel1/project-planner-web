@@ -1241,3 +1241,49 @@ test('22 Oct: a manager booked on a site and in labour under their folded sign-i
   assert.equal(dayKey(warning.date), '2026-10-22')
   assert.deepEqual([warning.locationALabel, warning.locationBLabel], ['C646 First', 'C646 Second'])
 })
+
+test('operative clash cluster lists every overlapping pair and is hidden only when each pair is approved', async () => {
+  const { activeOrgWarnings } = await import('./generateOrgWarnings.ts')
+  const op = operative({ id: 'OP1', email: 'ada@site.test', firstName: 'Ada', lastName: 'Op' })
+  const clashes = computeOperativeBookingClashWarnings(
+    [
+      booking({ id: 'A', operativeId: 'OP1', projectId: 'P1', timeSlot: 'CUSTOM_HOURS', workStartTime: '08:00', workEndTime: '12:00' }),
+      booking({ id: 'B', operativeId: 'OP1', projectId: 'P2', timeSlot: 'CUSTOM_HOURS', workStartTime: '10:00', workEndTime: '14:00' }),
+      booking({ id: 'C', operativeId: 'OP1', projectId: 'P1', timeSlot: 'CUSTOM_HOURS', workStartTime: '13:00', workEndTime: '16:00' }),
+    ],
+    [op],
+    [project('P1'), project('P2')],
+    { users: [], payrollPolicy: DEFAULT_PAYROLL_POLICY }
+  )
+  assert.equal(clashes.length, 1, 'A–B and B–C chain into one cluster')
+  assert.deepEqual(
+    clashes[0].pairs.map((pair) => `${pair.bookingAId}|${pair.bookingBId}`),
+    ['A|B', 'B|C'],
+    'A and C do not overlap, so they are not a pair'
+  )
+  const base = {
+    clashWarnings: clashes,
+    managerClashWarnings: [],
+    unbookedWarnings: [],
+    leaveWarnings: [],
+    materialWarnings: [],
+    qualificationWarnings: [],
+    unverifiedWarnings: [],
+    coreCount: 1,
+    highCount: 1,
+    mediumCount: 0,
+    lowCount: 0,
+  }
+  const onlyFirst = activeOrgWarnings(base as never, {
+    resolvedKeys: [],
+    acceptedClashes: [{ id: 'A|B', bookingAId: 'A', bookingBId: 'B' }],
+    dismissedQualificationKeys: new Set(),
+  })
+  assert.equal(onlyFirst.clashWarnings.length, 1, 'a 1.1.0 approval of the first pair leaves the cluster open')
+  const both = activeOrgWarnings(base as never, {
+    resolvedKeys: ['b|c'],
+    acceptedClashes: [{ id: 'A|B', bookingAId: 'A', bookingBId: 'B' }],
+    dismissedQualificationKeys: new Set(),
+  })
+  assert.equal(both.clashWarnings.length, 0, 'every pair handled (keys compare without case)')
+})

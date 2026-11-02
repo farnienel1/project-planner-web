@@ -17,13 +17,19 @@ import { isActiveBookingStatus, isSmallWorksJobType } from '@/lib/ios-parity/enu
 import type { OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 import { DEFAULT_PAYROLL_POLICY } from '@/lib/settings/organizationSettings'
 import {
+  clockText,
   formatWarningHours,
   operativeClashInterval,
-  overlappingClusters,
   paidHoursForOperativeBooking,
 } from '@/lib/warnings/clashIntervals'
 import type { ClashTimelineEntry } from '@/lib/warnings/clashTimeline'
-import { ORPHAN_BOOKING_LABEL, bookingPersonKey, resolveBookingPerson, rosterAliasIdsFor, type BookingPersonInput } from '@/lib/canonical'
+import {
+  ORPHAN_BOOKING_LABEL,
+  operativeClashGroups,
+  resolveBookingPerson,
+  rosterAliasIdsFor,
+  type BookingPersonInput,
+} from '@/lib/canonical'
 
 export interface OperativeBookingClash {
   operativeId: string
@@ -43,6 +49,10 @@ export interface OperativeBookingClashWarning {
   date: Date
   bookingAId: string
   bookingBId: string
+  /** `clashResolutionKey` of the first pair (the 1.1.0 approval key). */
+  resolutionKey: string
+  /** Every overlapping pair in the cluster (`operativeClashGroups`): approve / un-approve writes each one. */
+  pairs: Array<{ bookingAId: string; bookingBId: string }>
   projectAId: string
   projectBId: string
   projectALabel: string
@@ -234,6 +244,12 @@ export function formatClashSummary(clashes: OperativeBookingClash[]): string {
     .join(' · ')
 }
 
+/**
+ * Operative double bookings: the rulebook's `operativeClashGroups` (person-day by `bookingPersonKey`,
+ * overlapping `slotInterval`s, manager and admin accounts left out). One row per cluster; `pairs` lists every
+ * overlapping pair, which is what approve / un-approve write and what `isClashGroupApproved` checks.
+ * Labels, names and timelines stay here.
+ */
 export function computeOperativeBookingClashWarnings(
   bookings: Booking[],
   operatives: Operative[],
@@ -248,17 +264,6 @@ export function computeOperativeBookingClashWarnings(
   const projectsById = new Map(projects.map((p) => [p.id, p]))
   const operativesById = new Map(operatives.map((o) => [o.id, o]))
   const payrollPolicy = options?.payrollPolicy ?? DEFAULT_PAYROLL_POLICY
-  const managerAdminEmails = new Set(
-    (options?.users || [])
-      .filter(isManagerOrAdminUser)
-      .map((user) => user.email.trim().toLowerCase())
-      .filter(Boolean)
-  )
-  const active = bookings.filter(isActiveBooking)
-  const warnings: OperativeBookingClashWarning[] = []
-  const seen = new Set<string>()
-
-  // One person per key (`bookingPersonKey`): a re-added person's bookings under an old and a new id clash too.
   const users = options?.users || []
   const people: BookingPersonInput = {
     accounts: users.map((user) => ({
@@ -269,66 +274,56 @@ export function computeOperativeBookingClashWarnings(
     })),
     operatives: operatives.map((operative) => ({ id: operative.id, email: operative.email })),
   }
-  const personKeys = new Map<string, string>()
-  const personKey = (operativeId: string) => {
-    let key = personKeys.get(operativeId)
-    if (key == null) {
-      key = bookingPersonKey(operativeId, people)
-      personKeys.set(operativeId, key)
-    }
-    return key
-  }
-  const byOperativeDay = new Map<string, Booking[]>()
-  for (const booking of active) {
-    const key = `${personKey(booking.operativeId)}|${dayKey(booking.date)}`
-    const list = byOperativeDay.get(key) || []
-    list.push(booking)
-    byOperativeDay.set(key, list)
-  }
 
-  for (const [, dayBookings] of byOperativeDay) {
-    if (dayBookings.length < 2) continue
-    const person = resolveBookingPerson(dayBookings[0].operativeId, people)
+  const groups = operativeClashGroups({
+    operativeBookings: bookings.map((booking) => ({
+      id: booking.id,
+      operativeId: booking.operativeId,
+      dayKey: dayKey(booking.date),
+      timeSlot: String(booking.timeSlot ?? ''),
+      workStartTime: clockText(booking.workStartTime),
+      workEndTime: clockText(booking.workEndTime),
+      status: String(booking.status ?? ''),
+    })),
+    people,
+    managerIds: users.filter(isManagerOrAdminUser).map((user) => user.id),
+    day: payrollPolicy,
+  })
+
+  const warnings: OperativeBookingClashWarning[] = groups.map((group) => {
+    const sorted = group.items.map((item) => bookings[item.index])
+    const person = resolveBookingPerson(group.operativeId, people)
     const operative =
-      operativesById.get(dayBookings[0].operativeId) ||
+      operativesById.get(group.operativeId) ||
       (person.operativeId ? operativesById.get(person.operativeId) : undefined)
     const account = person.accountId ? users.find((user) => user.id === person.accountId) : undefined
-    if (person.email && managerAdminEmails.has(person.email)) continue
-
-    const clusters = overlappingClusters(dayBookings, (booking) => operativeClashInterval(booking, payrollPolicy))
-    for (const cluster of clusters) {
-      const sorted = [...cluster].sort((a, b) => a.id.localeCompare(b.id))
-      const pairKey = sorted.map((booking) => booking.id).join('|')
-      if (seen.has(pairKey)) continue
-      seen.add(pairKey)
-      const operativeName = operative
-        ? `${operative.firstName} ${operative.lastName}`.trim() || operative.email
-        : account
-          ? `${account.firstName} ${account.surname}`.trim() || account.email
-          : 'Operative'
-      const a = sorted[0]
-      const b = sorted[1]
-      const projectALabel = projectLabel(a.projectId, projectsById)
-      const projectBLabel = projectLabel(b.projectId, projectsById)
-      const place = sorted.length === 2 ? 'two' : String(sorted.length)
-      warnings.push({
-        id: pairKey,
-        operativeId: a.operativeId,
-        operativeName,
-        date: londonMidnight(a.date),
-        bookingAId: a.id,
-        bookingBId: b.id,
-        projectAId: a.projectId,
-        projectBId: b.projectId,
-        projectALabel,
-        projectBLabel,
-        message: `${operativeName} is booked in ${place} places on ${formatLondonDay(londonMidnight(a.date))}. Approve if it's intentional and it'll be noted on the weekly report.`,
-        entries: sorted.map((booking) =>
-          clashEntryFromOperativeBooking(booking, projectsById.get(booking.projectId), payrollPolicy)
-        ),
-      })
+    const operativeName = operative
+      ? `${operative.firstName} ${operative.lastName}`.trim() || operative.email
+      : account
+        ? `${account.firstName} ${account.surname}`.trim() || account.email
+        : 'Operative'
+    const a = sorted[0]
+    const b = sorted[1]
+    const place = sorted.length === 2 ? 'two' : String(sorted.length)
+    return {
+      id: group.pairKey,
+      resolutionKey: group.resolutionKey,
+      operativeId: group.operativeId,
+      operativeName,
+      date: londonMidnight(a.date),
+      bookingAId: group.bookingAId,
+      bookingBId: group.bookingBId,
+      pairs: group.pairs.map((pair) => ({ bookingAId: pair.bookingAId, bookingBId: pair.bookingBId })),
+      projectAId: a.projectId,
+      projectBId: b.projectId,
+      projectALabel: projectLabel(a.projectId, projectsById),
+      projectBLabel: projectLabel(b.projectId, projectsById),
+      message: `${operativeName} is booked in ${place} places on ${formatLondonDay(londonMidnight(a.date))}. Approve if it's intentional and it'll be noted on the weekly report.`,
+      entries: sorted.map((booking) =>
+        clashEntryFromOperativeBooking(booking, projectsById.get(booking.projectId), payrollPolicy)
+      ),
     }
-  }
+  })
 
   return warnings.sort((a, b) => a.date.getTime() - b.date.getTime())
 }

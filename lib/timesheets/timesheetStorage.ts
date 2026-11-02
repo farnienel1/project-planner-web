@@ -9,6 +9,7 @@ import { collection, doc, getDoc, getDocs, query, serverTimestamp, setDoc, Times
 import { auth, db } from '@/lib/firebase/config'
 import { writeMetadataFields } from '@/lib/canonical/writeMetadata'
 import { newUuid, parseFirestoreDate as parseSharedFirestoreDate, sanitizeForFirestore } from '@/lib/firebase/firestoreUtils'
+import { changedFirestoreFields } from '@/lib/firebase/changedFields'
 import { LONDON_TIME_ZONE, unixStartOfDay, dayKey } from '@/lib/ios-parity/londonTime'
 import { weekStartKey } from '@/lib/timesheets/timesheetWeekUtils'
 import { periodStartKey } from '@/lib/timesheets/paymentRunCopy'
@@ -679,7 +680,8 @@ export async function loadTimesheetDraftsForStarts(
 }
 
 /**
- * Save a timesheet. `access.reviewer` is `timesheetWriterIsReviewer` (line manager or admin);
+ * Save a timesheet. Edits to a stored sheet are partial updates of the changed fields only.
+ * `access.reviewer` is `timesheetWriterIsReviewer` (line manager or admin);
  * without it, a write by anyone other than the subject is the reviewer's, since only a reviewer
  * may write someone else's sheet. The owner's save drops the reviewer-only parts
  * (`timesheetOwnerWriteFields`); a reviewer's save also writes changed entry decisions to
@@ -734,9 +736,27 @@ export async function saveTimesheetDraft({
     weekEnd: Timestamp.fromDate(end),
   }) as Record<string, unknown>
   // Who and where (`writeMetadataFields`) plus the server time, on every timesheet save.
-  Object.assign(payload, writeMetadataFields(writerId, 'web') ?? {}, { updatedAt: serverTimestamp() })
+  const metadata = { ...(writeMetadataFields(writerId, 'web') ?? {}), updatedAt: serverTimestamp() }
+  // Partial writes (rulebook §1): an existing sheet gets only the fields that changed (`updateDoc`), so stored
+  // manager values the owner may not send (`timesheetOwnerWriteFields`) are never resent. A new sheet is created.
   await Promise.all(
-    ids.map((id) => setDoc(doc(db, 'organizations', organizationId, 'settings', id), payload, { merge: true }))
+    ids.map(async (id) => {
+      const ref = doc(db, 'organizations', organizationId, 'settings', id)
+      let stored: Record<string, unknown> | null | undefined
+      try {
+        stored = await readDoc(organizationId, id)
+      } catch {
+        stored = undefined
+      }
+      if (stored === null || stored === undefined) {
+        // No stored sheet (or it could not be read): create / merge, which never deletes a stored field.
+        await setDoc(ref, { ...payload, ...metadata }, { merge: true })
+        return
+      }
+      const changed = changedFirestoreFields(payload, stored)
+      if (Object.keys(changed).length === 0) return
+      await updateDoc(ref, { ...changed, ...metadata })
+    })
   )
   if (!reviewer) return draft.extraEntryReviews ?? null
   const reviewFields = timesheetEntryReviewWriteFields({

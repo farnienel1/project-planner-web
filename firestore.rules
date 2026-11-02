@@ -466,6 +466,7 @@ service cloud.firestore {
            request.resource.data.diff(resource.data).changedKeys().hasOnly([
              'assignedManagerUserId',
              'assignedManagerUserIds',
+             'hasNoLineManager',
              'dayRate',
              'hourlyRate',
              'payBasis',
@@ -1359,18 +1360,27 @@ service cloud.firestore {
           return hbRequesterUid(data) == request.auth.uid ||
             data.get('operativeId', null) == request.auth.uid;
         }
-        // Admin, the requester's line manager, or any manager when there is no line manager to ask.
+        // The caller's own users document says operative mode (no document: not operative).
+        function hbCallerIsOperative() {
+          return exists(/databases/(default)/documents/users/$(request.auth.uid)) &&
+            isOperativeProfile(hbCaller());
+        }
+        // lib/canonical/leaveRequests.ts canDecideLeave: never the requester's own request (admins
+        // included). The requester's line manager; otherwise an admin not in operative mode, or any
+        // staff manager when there is no line manager to ask (rules cannot see the roster's active state).
         function hbCanDecide(data) {
-          return hbIsAdmin() || (
-            !hbIsOwner(data) && (
-              (hbRequesterExists(data) && request.auth.uid in lineManagerIdList(hbRequester(data))) ||
+          return !hbIsOwner(data) && (
+            (hbRequesterExists(data) && request.auth.uid in lineManagerIdList(hbRequester(data))) ||
+            (!hbCallerIsOperative() && (
+              hbIsAdmin() ||
               (hbIsStaffManager() && (!hbRequesterExists(data) || !hasLineManager(hbRequester(data))))
-            )
+            ))
           );
         }
+        // lib/canonical canSelfBookAnnualLeave: the self-book flag, never in operative mode.
+        // Having no line manager no longer self-books (that person's request waits for an admin).
         function hbCallerSelfBooks() {
-          return !hasLineManager(hbCaller()) ||
-            (staffFlag(hbCaller(), 'annualLeaveSelfBook') && !isOperativeProfile(hbCaller()));
+          return staffFlag(hbCaller(), 'annualLeaveSelfBook') && !isOperativeProfile(hbCaller());
         }
         function hbIsRequestShape(next) {
           return next.get('status', null) == 'pending' &&
@@ -1433,15 +1443,15 @@ service cloud.firestore {
           hbOwnerUpdateAllowed() ||
           (hbCanDecide(resource.data) && hbCanDecide(request.resource.data))
         );
-        // Approving a cancellation deletes the row (decider). The requester may withdraw a pending or
-        // declined request; a self-booker may remove their own booking.
+        // Approving a cancellation (or a Team-screen removal, or an admin cleanup) deletes the row: only
+        // someone who may decide this person's leave (hbCanDecide: never their own, admins included).
+        // The requester may withdraw a pending or declined request; a self-booker may remove their own.
         allow delete: if canAccessOrganization(organizationId) && (
           (hbIsOwner(resource.data) && (
             resource.data.get('status', null) in ['pending', 'rejected'] ||
             hbCallerSelfBooks()
           )) ||
-          hbIsAdmin() ||
-          isOrganizationMaterialManager(organizationId)
+          hbCanDecide(resource.data)
         );
       }
 
@@ -1547,7 +1557,8 @@ service cloud.firestore {
       match /acceptedBookingClashes/{clashId} {
         allow read: if canAccessOrganization(organizationId);
         allow create, update: if canAccessVariationsStaff(organizationId) && writeMetadataValidWhenPresent();
-        allow delete: if isOrganizationAdmin(organizationId);
+        // Un-approving a clash: the same staff who may accept it.
+        allow delete: if canAccessVariationsStaff(organizationId);
       }
 
       // Approved or dismissed warnings (lib/canonical/scheduleSources.ts warningResolutionWriteFields).
@@ -1563,8 +1574,8 @@ service cloud.firestore {
           request.resource.data.status in ['approved', 'dismissed'] &&
           request.resource.data.resolvedByUserId == request.auth.uid &&
           request.resource.data.resolvedAt is timestamp;
-        allow delete: if isOrganizationAdmin(organizationId) ||
-          (canAccessVariationsStaff(organizationId) && resource.data.resolvedByUserId == request.auth.uid);
+        // Un-approving: the same staff who may approve, whoever approved it (rulebook 1.2.0 decision 5).
+        allow delete: if canAccessVariationsStaff(organizationId);
       }
 
       // Dismissed warnings (expired qualifications). Document id is the canonical dismiss key.

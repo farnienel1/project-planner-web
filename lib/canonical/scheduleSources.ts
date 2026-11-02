@@ -12,9 +12,9 @@
  * these functions, so web and iOS load, count and approve the same rows.
  */
 
-import { resolveBookingPerson, type BookingPersonInput } from './bookingPerson'
+import { bookingPersonKey, resolveBookingPerson, type BookingPersonInput } from './bookingPerson'
 import { normalizeBookingStatus } from './bookings'
-import { overlappingIntervalGroups, slotInterval, type MinuteInterval, type StandardDayInput } from './engine'
+import { intervalsOverlap, overlappingIntervalGroups, slotInterval, type MinuteInterval, type StandardDayInput } from './engine'
 import { bookingOccupiesDay } from './warningRows'
 
 const DAY_KEY = /^\d{4}-\d{2}-\d{2}$/
@@ -485,32 +485,69 @@ export function warningResolutionWriteFields(input: {
 export type WarningResolutionRecord = { id?: unknown; resolutionKey?: unknown; status?: unknown } | null | undefined
 
 /**
- * Keys of `warningResolutions` documents that hide a warning: status `approved` or `dismissed` (any case).
- * The key is the document's `resolutionKey`, else its document id. Unknown statuses are ignored.
+ * A document id as both apps compare it: trimmed and lower case. Stored ids keep the case they were written
+ * with (iOS `UUID.uuidString` is upper case, web ids may be lower case); this is only for comparing — warning
+ * resolution keys, clash pair keys and timesheet entry-review lookups. Never write the result as a key.
  */
-export function resolvedWarningKeys(records: readonly WarningResolutionRecord[] | null | undefined): string[] {
-  const keys = new Set<string>()
+export function normalizeDocumentId(id: unknown): string {
+  return idKey(id)
+}
+
+function warningResolutionKeys(
+  records: readonly WarningResolutionRecord[] | null | undefined,
+  statuses: readonly string[]
+): string[] {
+  const keys = new Map<string, string>()
   for (const record of records || []) {
     if (!record) continue
     const status = typeof record.status === 'string' ? record.status.trim().toLowerCase() : ''
-    if (!(WARNING_RESOLUTION_STATUSES as readonly string[]).includes(status)) continue
+    if (!statuses.includes(status)) continue
     const key = idText(record.resolutionKey) || idText(record.id)
-    if (key) keys.add(key)
+    if (key && !keys.has(normalizeDocumentId(key))) keys.set(normalizeDocumentId(key), key)
   }
-  return [...keys].sort(compareText)
+  return [...keys.values()].sort(compareText)
+}
+
+/**
+ * Keys of `warningResolutions` documents that hide a warning: status `approved` or `dismissed` (any case).
+ * The key is the document's `resolutionKey`, else its document id, as stored. Keys that differ only by
+ * letter case are one key (the first seen is returned). Unknown statuses are ignored.
+ */
+export function resolvedWarningKeys(records: readonly WarningResolutionRecord[] | null | undefined): string[] {
+  return warningResolutionKeys(records, WARNING_RESOLUTION_STATUSES)
+}
+
+/**
+ * Keys of `warningResolutions` documents with status `approved` only (any case) — what `isClashApproved` and
+ * the weekly report's "approved clashes" read. A dismissed warning is hidden (`resolvedWarningKeys`) but never
+ * counts as approved.
+ */
+export function approvedWarningKeys(records: readonly WarningResolutionRecord[] | null | undefined): string[] {
+  return warningResolutionKeys(records, ['approved'])
 }
 
 export type WarningDecisions = {
-  /** From `resolvedWarningKeys`. */
+  /** From `resolvedWarningKeys` (approved and dismissed): what hides a row. */
   resolvedKeys?: readonly string[] | null
+  /**
+   * From `approvedWarningKeys` (approved only): what `isClashApproved` counts. When left out,
+   * `isClashApproved` reads `resolvedKeys` as before, so pass approvals only there.
+   */
+  approvedKeys?: readonly string[] | null
   /** `acceptedBookingClashes` rows. */
   acceptedClashes?: readonly AcceptedClashRecord[] | null
+}
+
+function hasKey(keys: readonly string[] | null | undefined, key: string): boolean {
+  const needle = normalizeDocumentId(key)
+  return Boolean(needle) && (keys || []).some((candidate) => normalizeDocumentId(candidate) === needle)
 }
 
 /**
  * Whether a computed warning row still counts and is listed. A row is hidden when its resolution key was
  * approved or dismissed in `warningResolutions`, or, for a clash row (both booking ids), when that pair is in
- * `acceptedBookingClashes`. The warning total on both apps is the number of rows this keeps.
+ * `acceptedBookingClashes`. Keys and ids compare without case (`normalizeDocumentId`). The warning total on
+ * both apps is the number of rows this keeps.
  */
 export function isWarningActive(
   row: { resolutionKey?: unknown; bookingAId?: unknown; bookingBId?: unknown } | null | undefined,
@@ -518,7 +555,7 @@ export function isWarningActive(
 ): boolean {
   if (!row) return false
   const key = idText(row.resolutionKey)
-  if (key && (decisions?.resolvedKeys || []).includes(key)) return false
+  if (key && hasKey(decisions?.resolvedKeys, key)) return false
   if (idText(row.bookingAId) && idText(row.bookingBId)) {
     return !isClashAccepted(row.bookingAId, row.bookingBId, decisions?.acceptedClashes)
   }
@@ -578,14 +615,172 @@ export function clashApprovalWrites(input: ClashApprovalInput): ClashApprovalWri
   }
 }
 
-/** True when a clash row was approved on any device: its resolution key or its booking pair (`isWarningActive` is false). */
+/**
+ * True when a clash row was approved on any device: its `clashResolutionKey` is in the approved keys
+ * (`decisions.approvedKeys`, from `approvedWarningKeys`; when that is left out, `decisions.resolvedKeys`), or its
+ * booking pair is in `acceptedBookingClashes`. A dismissed warning is not an approval. Keys compare without case.
+ */
 export function isClashApproved(
   row: { bookingAId: unknown; bookingBId: unknown; resolutionKey?: unknown } | null | undefined,
   decisions: WarningDecisions | null | undefined
 ): boolean {
   if (!row) return false
-  return !isWarningActive(
-    { resolutionKey: clashResolutionKey(row), bookingAId: row.bookingAId, bookingBId: row.bookingBId },
-    decisions
+  const approved = decisions?.approvedKeys != null ? decisions.approvedKeys : decisions?.resolvedKeys
+  const key = clashResolutionKey(row)
+  if (key && hasKey(approved, key)) return true
+  if (!idText(row.bookingAId) || !idText(row.bookingBId)) return false
+  return isClashAccepted(row.bookingAId, row.bookingBId, decisions?.acceptedClashes)
+}
+
+// MARK: - Operative clashes
+
+export type OperativeClashGroupsInput = {
+  /** Labour bookings (`bookings`). A booking whose `status` does not occupy the day (Cancelled) is left out. */
+  operativeBookings: readonly PersonDayOperativeBooking[]
+  /** Accounts as the roster lists them (`rosterPeople`), with `formerIds` and `aliasIds`, and the catalogue. */
+  people: BookingPersonInput
+  /**
+   * Roster ids of active managers and admins. Their days are manager clashes (`managerClashGroups`), so a
+   * person who resolves to one of these accounts, or shares its email, is left out here.
+   */
+  managerIds?: readonly string[] | null
+  day?: StandardDayInput | null
+}
+
+export type OperativeClashPair = {
+  bookingAId: string
+  bookingBId: string
+  /** `acceptedBookingClashes` id of this pair. */
+  clashPairKey: string
+  /** `warningResolutions` id of this pair (`clashResolutionKey`: the pair key, operative clashes have no own key). */
+  clashResolutionKey: string
+}
+
+export type OperativeClashGroup = {
+  /** `bookingPersonKey` of the person: bookings under a re-added person's old and new ids are one person. */
+  personKey: string
+  /** The stored `operativeId` of the first booking in the group. */
+  operativeId: string
+  dayKey: string
+  /** Two or more bookings whose clock intervals overlap (directly or through another), in booking-id order. */
+  items: Array<{ bookingId: string; index: number; interval: MinuteInterval }>
+  /** Every booking id in the cluster, in code-unit order. */
+  bookingIds: string[]
+  /** `bookingIds` joined with `|`. */
+  pairKey: string
+  /** The first two booking ids: the pair a 1.1.0 approval recorded. */
+  bookingAId: string
+  bookingBId: string
+  /** `clashResolutionKey` of the first pair. */
+  resolutionKey: string
+  /** One row per pair of bookings in the cluster whose intervals overlap, in booking-id order. */
+  pairs: OperativeClashPair[]
+}
+
+/**
+ * Operative double bookings, on the same terms as `managerClashGroups`: bookings per person-day (the person is
+ * `bookingPersonKey`, so former ids, same-email aliases and catalogue rows on the email are one person), grouped
+ * by overlapping `slotInterval`s (`overlappingIntervalGroups`; touching intervals do not clash, a chain A–B, B–C
+ * is one group). A group lists every booking id and, for each pair that overlaps, its `clashPairKey` and
+ * `clashResolutionKey`; a cluster of three or more has one pair row per overlapping pair. Ordered by day, then
+ * person key, then group. Manager and admin accounts are left out (see `managerIds`).
+ */
+export function operativeClashGroups(input: OperativeClashGroupsInput): OperativeClashGroup[] {
+  const people = input?.people || { accounts: [], operatives: [] }
+  const managerKeys = new Set((input?.managerIds || []).map(idKey).filter(Boolean))
+  const managerEmails = new Set<string>()
+  for (const account of people.accounts || []) {
+    const email = emailKey(account.email)
+    if (email && managerKeys.has(idKey(account.id))) managerEmails.add(email)
+  }
+  const isManager = (storedId: string): boolean => {
+    if (managerKeys.size === 0) return false
+    if (managerKeys.has(idKey(storedId))) return true
+    const person = resolveBookingPerson(storedId, people)
+    if (person.accountId && managerKeys.has(idKey(person.accountId))) return true
+    return Boolean(person.email && managerEmails.has(person.email))
+  }
+
+  const days = new Map<string, { personKey: string; dayKey: string; indexes: number[] }>()
+  const seenIds = new Set<string>()
+  ;(input?.operativeBookings || []).forEach((booking, index) => {
+    const id = idText(booking?.id)
+    const day = dayKeyText(booking?.dayKey)
+    const stored = idText(booking?.operativeId)
+    if (!id || !day || !stored || !occupiesDay(booking.status)) return
+    if (seenIds.has(id.toLowerCase())) return
+    seenIds.add(id.toLowerCase())
+    if (isManager(stored)) return
+    const personKey = bookingPersonKey(stored, people)
+    const key = `${personKey}|${day}`
+    const entry = days.get(key) || { personKey, dayKey: day, indexes: [] }
+    entry.indexes.push(index)
+    days.set(key, entry)
+  })
+
+  const groups: OperativeClashGroup[] = []
+  const seen = new Set<string>()
+  const ordered = Array.from(days.values()).sort(
+    (a, b) => compareText(a.dayKey, b.dayKey) || compareText(a.personKey, b.personKey)
   )
+  for (const personDay of ordered) {
+    if (personDay.indexes.length < 2) continue
+    const sorted = [...personDay.indexes].sort((a, b) =>
+      compareText(idText(input.operativeBookings[a].id), idText(input.operativeBookings[b].id))
+    )
+    const intervals = sorted.map((i) => {
+      const booking = input.operativeBookings[i]
+      return slotInterval(
+        { timeSlot: booking?.timeSlot, workStartTime: booking?.workStartTime, workEndTime: booking?.workEndTime },
+        input.day
+      )
+    })
+    for (const cluster of overlappingIntervalGroups(intervals)) {
+      const items = cluster.map((position) => ({
+        bookingId: idText(input.operativeBookings[sorted[position]].id),
+        index: sorted[position],
+        interval: intervals[position] as MinuteInterval,
+      }))
+      const bookingIds = items.map((item) => item.bookingId)
+      const pairKey = bookingIds.join('|')
+      if (items.length < 2 || seen.has(pairKey.toLowerCase())) continue
+      seen.add(pairKey.toLowerCase())
+      const pairs: OperativeClashPair[] = []
+      for (let i = 0; i < items.length; i++) {
+        for (let j = i + 1; j < items.length; j++) {
+          if (!intervalsOverlap(items[i].interval, items[j].interval)) continue
+          const a = items[i].bookingId
+          const b = items[j].bookingId
+          pairs.push({ bookingAId: a, bookingBId: b, clashPairKey: clashPairKey(a, b), clashResolutionKey: clashResolutionKey({ bookingAId: a, bookingBId: b }) })
+        }
+      }
+      groups.push({
+        personKey: personDay.personKey,
+        operativeId: idText(input.operativeBookings[items[0].index].operativeId),
+        dayKey: personDay.dayKey,
+        items,
+        bookingIds,
+        pairKey,
+        bookingAId: bookingIds[0],
+        bookingBId: bookingIds[1],
+        resolutionKey: clashResolutionKey({ bookingAId: bookingIds[0], bookingBId: bookingIds[1] }),
+        pairs,
+      })
+    }
+  }
+  return groups
+}
+
+/**
+ * An operative clash group is approved when every overlapping pair in it is approved (`isClashApproved` per
+ * pair). Approving the group writes `clashApprovalWrites` for every pair; un-approving deletes them. A third
+ * booking added to an approved two-booking clash makes the group open again.
+ */
+export function isClashGroupApproved(
+  group: { pairs?: ReadonlyArray<{ bookingAId: unknown; bookingBId: unknown }> | null } | null | undefined,
+  decisions: WarningDecisions | null | undefined
+): boolean {
+  const pairs = group?.pairs || []
+  if (pairs.length === 0) return false
+  return pairs.every((pair) => isClashApproved({ bookingAId: pair.bookingAId, bookingBId: pair.bookingBId }, decisions))
 }

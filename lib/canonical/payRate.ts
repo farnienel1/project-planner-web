@@ -12,7 +12,11 @@
  *      `payBasis` plus `dayRate` or `hourlyRate`.
  *   4. Nothing set → rate null (`hasRate` false, "rate not set").
  *
- * Day boundary is the organisation-zone day key, never the device zone.
+ *   5. A cleared rate is a history row `{ dayRate: null, payBasis: null, effectiveAt }`: from its effective day
+ *      the rate is "rate not set" (`hasRate` false) until a later row sets one. It ends an hourly row too.
+ *
+ * Day boundary is the organisation-zone day key, never the device zone. A history row's `effectiveAt` is the
+ * organisation-zone midnight of its effective day (`payRateHistoryWriteFields`).
  * History rows keep the amount in `dayRate` for both bases (old rows have no `payBasis` = day).
  */
 
@@ -41,8 +45,8 @@ export type PayRateHistoryRow = {
   id?: string | null
   userId?: string | null
   operativeId?: string | null
-  /** Amount per day or per hour. */
-  dayRate: number
+  /** Amount per day or per hour. null on a "rate cleared" row. */
+  dayRate: number | null
   payBasis?: string | null
   effectiveAt: Date | string | number
   createdAt?: Date | string | number | null
@@ -185,12 +189,13 @@ export function payRateOnDay(input: PayRateOnDayInput): PayRateOnDay {
   const userIds = idSet(input.userIds && input.userIds.length > 0 ? input.userIds : [user?.id])
   const operativeIds = idSet(input.operativeIds && input.operativeIds.length > 0 ? input.operativeIds : [operative?.id])
   const seen = new Set<string>()
-  const rows: Array<{ payBasis?: string | null; effectiveAt: Date; createdAt: Date; dayRate: number }> = []
+  const rows: Array<{ payBasis?: string | null; effectiveAt: Date; createdAt: Date; dayRate: number | null }> = []
   ;(input.history || []).forEach((row, index) => {
     if (!row) return
     const amount = finiteNumber(row.dayRate)
+    const cleared = row.dayRate === null
     const effectiveAt = toDate(row.effectiveAt)
-    if (amount == null || !effectiveAt) return
+    if ((amount == null && !cleared) || !effectiveAt) return
     const rowUser = String(row.userId || '').trim()
     const rowOperative = String(row.operativeId || '').trim()
     if (!(rowUser && userIds.has(rowUser)) && !(rowOperative && operativeIds.has(rowOperative))) return
@@ -198,14 +203,17 @@ export function payRateOnDay(input: PayRateOnDayInput): PayRateOnDay {
     if (seen.has(key)) return
     seen.add(key)
     rows.push({
-      payBasis: row.payBasis ?? null,
-      dayRate: amount,
+      payBasis: cleared ? null : row.payBasis ?? null,
+      dayRate: cleared ? null : amount,
       effectiveAt,
       createdAt: toDate(row.createdAt) || effectiveAt,
     })
   })
 
   const match = historyPayRowOnDay(rows, dayKey, live.payBasis, (date) => dayKeyInZone(date, timeZone))
+  if (match && match.dayRate == null) {
+    return { payBasis: liveBasis, rate: null, employmentType, isPaye: false, hasRate: false, source: 'none' }
+  }
   if (match) {
     return {
       payBasis: historyRowBasis(match),
@@ -225,5 +233,61 @@ export function payRateOnDay(input: PayRateOnDayInput): PayRateOnDay {
     isPaye: false,
     hasRate: rate != null,
     source: rate != null ? 'profile' : 'none',
+  }
+}
+
+export type PayRateHistoryWriteInput = {
+  userId?: string | null
+  operativeId?: string | null
+  /** The new amount (per day or per hour), 0 included. null, or not a finite number, records "rate cleared". */
+  rate: number | null | undefined
+  payBasis?: string | null
+  /** The effective day: a `yyyy-MM-dd` key in the organisation zone, or an instant (its organisation-zone day). */
+  effective: string | number | Date
+  timeZone?: string | null
+}
+
+export type PayRateHistoryWriteFields = {
+  userId: string
+  operativeId: string
+  /** null on a "rate cleared" row. */
+  dayRate: number | null
+  /** null on a "rate cleared" row. */
+  payBasis: PayBasis | null
+  /** Write `effectiveAt` as a Timestamp of this instant: organisation-zone midnight of the effective day. */
+  effectiveAtMs: number
+  effectiveDayKey: string
+}
+
+const HISTORY_DAY_KEY = /^\d{4}-\d{2}-\d{2}$/
+
+/**
+ * One new `organizations/{orgId}/operativeDayRateHistory` row (history is never rewritten). The effective day is
+ * the organisation-zone day, and `effectiveAtMs` its midnight in that zone — never London unless that is the
+ * organisation's zone, never the device zone. Clearing a rate writes `dayRate: null, payBasis: null`
+ * ("rate not set from that day", read by `payRateOnDay`). The app adds `createdAt` and `writeMetadataFields`.
+ * Null when there is no person id or no usable effective day.
+ */
+export function payRateHistoryWriteFields(input: PayRateHistoryWriteInput): PayRateHistoryWriteFields | null {
+  const timeZone = zoneOrLondon(input.timeZone)
+  const userId = String(input.userId || '').trim()
+  const operativeId = String(input.operativeId || '').trim()
+  if (!userId && !operativeId) return null
+  let dayKey = ''
+  if (typeof input.effective === 'string' && HISTORY_DAY_KEY.test(input.effective.trim())) {
+    dayKey = input.effective.trim()
+  } else {
+    const instant = toDate(input.effective)
+    if (!instant) return null
+    dayKey = dayKeyInZone(instant, timeZone)
+  }
+  const amount = finiteNumber(input.rate)
+  return {
+    userId,
+    operativeId,
+    dayRate: amount,
+    payBasis: amount == null ? null : input.payBasis === 'hourly' ? 'hourly' : 'day',
+    effectiveAtMs: dateFromDayKeyInZone(dayKey, timeZone).getTime(),
+    effectiveDayKey: dayKey,
   }
 }

@@ -1,5 +1,5 @@
 import type { User } from '@/types'
-import { userHasLineManager } from '@/lib/timesheets/timesheetApprovalPolicy'
+import { canSelfBookAnnualLeave } from '@/lib/canonical'
 import { londonIsoWeekday } from '@/lib/ios-parity/londonTime'
 import { dayKey } from '@/lib/ios-parity/londonTime'
 
@@ -11,14 +11,19 @@ export function annualLeaveAllowance(daysPerYear: number | null | undefined): nu
 }
 
 /**
- * Operatives, and managers or admins without annualLeaveSelfBook who have a
- * line manager, submit pending. No line manager saves the booking approved.
+ * The status of the person's own leave booking: approved only when they self-book
+ * (`canSelfBookAnnualLeave`: the annualLeaveSelfBook permission, never in operative mode).
+ * Everyone else sends a pending request — having no line manager no longer saves it approved
+ * (it waits for an admin, `leaveApproverIds`). Booking someone else's leave is `leaveSaveStatus`.
  */
-export function leaveSubmitStatus(user: Pick<User, 'permissions' | 'hasNoLineManager' | 'assignedManagerUserId' | 'assignedManagerUserIds'>): 'pending' | 'approved' {
-  if (!userHasLineManager(user as User)) return 'approved'
-  if (user.permissions.operativeMode) return 'pending'
-  if (user.permissions.annualLeaveSelfBook) return 'approved'
-  return 'pending'
+export function leaveSubmitStatus(user: Pick<User, 'permissions' | 'role'>): 'pending' | 'approved' {
+  return canSelfBookAnnualLeave({
+    annualLeaveSelfBook: user.permissions?.annualLeaveSelfBook === true,
+    operativeMode: user.permissions?.operativeMode === true,
+    role: String(user.role ?? ''),
+  })
+    ? 'approved'
+    : 'pending'
 }
 
 export function leaveDayBlockedReason(day: Date, isBankHoliday: boolean, timeZone?: string): string | null {

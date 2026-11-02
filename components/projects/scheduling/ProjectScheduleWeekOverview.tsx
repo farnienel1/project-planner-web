@@ -23,8 +23,8 @@ import { QuickAddBookingSheet, type QuickAddBookingValues } from '@/components/s
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useBookingHistoryFrom } from '@/lib/stores/useBookingHistory'
 import { ORG_DATA_REFRESHED_EVENT } from '@/lib/stores/refreshOrgData'
-import { canBookWork } from '@/lib/permissions'
-import { UserRole, type User } from '@/types'
+import { canBookWork, hasAdminAccess } from '@/lib/permissions'
+import { BookingStatus, UserRole, type User } from '@/types'
 import { SubcontractorBookingEditSheet } from '@/components/projects/scheduling/SubcontractorBookingEditSheet'
 import { managerSiteBookingToScheduleBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import type { Booking, Project } from '@/types'
@@ -453,6 +453,19 @@ export function ProjectScheduleWeekOverview({
     }
   }
 
+  // Deleting a labour booking (and its tombstone) is admin only; managers cancel it instead (rulebook §2, §16).
+  const canDeleteLabourBooking = hasAdminAccess(currentUser)
+
+  const cancelEditing = async () => {
+    if (!editingRow?.booking) return
+    setSavingEdit(true)
+    try {
+      await updateBooking(editingRow.booking.id, { status: BookingStatus.CANCELLED })
+    } finally {
+      setSavingEdit(false)
+    }
+  }
+
   const deleteEditing = async () => {
     if (!editingRow) return
     setSavingEdit(true)
@@ -726,7 +739,8 @@ export function ProjectScheduleWeekOverview({
           saving={savingEdit}
           payroll={payroll}
           onSave={saveEditing}
-          onDelete={deleteEditing}
+          onDelete={!editingRow.booking || canDeleteLabourBooking ? deleteEditing : undefined}
+          onCancelBooking={editingRow.booking && !canDeleteLabourBooking ? cancelEditing : undefined}
           onClose={() => setEditingRow(null)}
         />
       ) : null}

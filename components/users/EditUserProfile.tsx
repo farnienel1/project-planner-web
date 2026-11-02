@@ -20,6 +20,7 @@ import {
   setupSectionTitle,
 } from '@/lib/staff/userEditPermissions'
 import { lineManagerChoices, rosterStatusLabel } from '@/lib/staff/userRosterUtils'
+import { userLineManagerRequiredError } from '@/lib/annualLeave/holidayApprovalUtils'
 import { UserAvatar } from '@/components/users/UserAvatar'
 import { PayBasisFields, payChoiceFromProfile, payChoiceToRates } from '@/components/users/PayBasisFields'
 import { PreviousRatesList, usePaySaveGate } from '@/components/users/PayRateChangeDialogs'
@@ -259,6 +260,7 @@ export function EditUserProfile({
   const [typeSaving, setTypeSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [lineManagerError, setLineManagerError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
   const [showChangeType, setShowChangeType] = useState(false)
   const [draftAccountType, setDraftAccountType] = useState<'operative' | 'manager' | 'admin' | null>(null)
@@ -416,6 +418,12 @@ export function EditUserProfile({
     !target.permissions.adminAccess &&
     !target.isSuperAdmin
 
+  const lineManagerFieldShown = Boolean(
+    target &&
+      showSetupCard &&
+      (target.permissions.operativeMode || target.permissions.manager || target.permissions.adminAccess)
+  )
+
   const effectivePermissions = draftTypePermissions ?? target?.permissions
   const effectiveAccountType = draftAccountType ?? (target ? currentAccountType(target) : 'manager')
 
@@ -435,6 +443,19 @@ export function EditUserProfile({
   const handleSave = async (e?: FormEvent) => {
     e?.preventDefault()
     if (!target || !organization?.id || !canEdit) return
+
+    // `lineManagerRequiredError`: someone who cannot self-book annual leave needs a current line manager.
+    // Checked on the person as it will be saved (draft account type and permissions included).
+    const asSaved =
+      draftAccountType && draftTypePermissions
+        ? { ...applyAccountType(target, draftAccountType), permissions: draftTypePermissions }
+        : target
+    const lineManagerMessage = userLineManagerRequiredError(asSaved, users)
+    setLineManagerError(lineManagerMessage)
+    if (lineManagerMessage) {
+      if (!lineManagerFieldShown) setError(lineManagerMessage)
+      return
+    }
 
     const previous = target
     const previousBaseline = baseline
@@ -678,6 +699,13 @@ export function EditUserProfile({
   const persistAccountType = async (accountType: 'operative' | 'manager' | 'admin') => {
     if (!target || !organization?.id || typeSaving) return
     const next = applyAccountType(cloneUser(target), accountType)
+    // `lineManagerRequiredError` on the person as this change would save them.
+    const lineManagerMessage = userLineManagerRequiredError(next, users)
+    if (lineManagerMessage) {
+      setLineManagerError(lineManagerMessage)
+      setError(lineManagerMessage)
+      return
+    }
     setTypeSaving(true)
     setError(null)
     setSuccess(null)
@@ -898,7 +926,10 @@ export function EditUserProfile({
                   <Select
                     value={displayedLineManagerId(target)}
                     disabled={!canEdit || saving || typeSaving}
-                    onChange={(e) => setTarget(userWithLineManagerChoice(target, e.target.value))}
+                    onChange={(e) => {
+                      setLineManagerError(null)
+                      setTarget(userWithLineManagerChoice(target, e.target.value))
+                    }}
                   >
                     <option value="">No line manager</option>
                     {managers.map((manager) => (
@@ -907,6 +938,11 @@ export function EditUserProfile({
                       </option>
                     ))}
                   </Select>
+                  {lineManagerError ? (
+                    <p role="alert" className="mt-1.5 text-sm font-medium text-[var(--red,#dc2626)]">
+                      {lineManagerError}
+                    </p>
+                  ) : null}
                 </FormField>
               )}
 

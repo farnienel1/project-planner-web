@@ -126,16 +126,8 @@ export function computeClashScanDayKeys(
   return new Set(days.dayKeys)
 }
 
-/** Notice copy when the saved number of days could not be used (`clashLookaheadDaysFallback` / `fallbackReason`). */
-export function warningLookaheadFallbackNotice(reason: CoverageFallbackReason | null | undefined): string | null {
-  if (reason === 'lookaheadDaysMissing') {
-    return 'No number of days is saved for this company, so warnings scan 7 days (today and the next 6). Choose a number and save to change it.'
-  }
-  if (reason === 'lookaheadDaysInvalid') {
-    return 'The saved number of days is not valid, so warnings scan 7 days (today and the next 6). Choose a number and save to fix it.'
-  }
-  return null
-}
+/** Notice copy when the saved number of days could not be used: the rulebook's `warningLookaheadFallbackNotice`. */
+export { warningLookaheadFallbackNotice } from '@/lib/canonical'
 
 export function computeWarningLookaheadEnd(
   referenceDate: Date,

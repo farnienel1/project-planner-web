@@ -14,6 +14,7 @@ import {
   CANONICAL_TIME_ZONE,
   canViewSensitiveProfile,
   leaveYearBounds,
+  lineManagerRequiredError,
   snapLeaveDays,
 } from '@/lib/canonical'
 import { dayKeyInZone } from '@/lib/orgTime/zoneTime'
@@ -282,6 +283,23 @@ export function AddUserScreen() {
     }
     if ((accountType === 'manager' || accountType === 'admin') && !form.hasNoLineManager && form.assignedManagerUserIds.length === 0) {
       setError('Choose a line manager, or No line manager.')
+      return
+    }
+    // `lineManagerRequiredError`: without the annual-leave self-book permission, a line manager is required.
+    const lineManagerMessage = lineManagerRequiredError(
+      {
+        id: '',
+        assignedManagerUserIds: form.hasNoLineManager ? [] : form.assignedManagerUserIds,
+        hasNoLineManager: accountType !== 'operative' && form.hasNoLineManager,
+        annualLeaveSelfBook: invitePermissions.annualLeaveSelfBook === true,
+        operativeMode: invitePermissions.operativeMode === true,
+        role: accountType,
+        annualLeaveEnabled: form.annualLeaveEnabled,
+      },
+      users.map((member) => ({ id: member.id, isActive: member.isActive }))
+    )
+    if (lineManagerMessage) {
+      setError(lineManagerMessage)
       return
     }
 

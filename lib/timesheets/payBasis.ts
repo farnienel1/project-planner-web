@@ -10,7 +10,8 @@ import { formatMoney } from '@/lib/canonical/money'
 export type { PayBasis, StoredPay } from '@/lib/canonical/payRate'
 
 export type HistoryPayRow = {
-  dayRate: number
+  /** null on a "rate cleared" row (`payRateHistoryWriteFields`). */
+  dayRate: number | null
   payBasis?: string | null
   effectiveAt: Date
   createdAt: Date

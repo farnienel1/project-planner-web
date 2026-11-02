@@ -26,6 +26,7 @@
  * Plain data only; each app converts its own document shape.
  */
 
+import { normalizeDocumentId } from './scheduleSources'
 import { parseTimesheetStatusFields } from './timesheetPeriod'
 
 export type TimesheetEntryDecision = 'pending' | 'approved' | 'declined' | 'edited'
@@ -40,6 +41,24 @@ export const TIMESHEET_REVIEWER_ONLY_FIELDS = ['payrollLineReviews', 'extraEntry
 
 /** The owner writes it only when they have no line manager (self-signed). */
 export const TIMESHEET_SELF_SIGNED_OWNER_FIELDS = ['weeklyReportOverride'] as const
+
+/**
+ * The manager counter-sign and export fields (`timesheetSignOffWriteFields` role `manager`,
+ * `timesheetExportWriteFields`), under their stored names and the `…Ms` names those builders return. Only the
+ * line manager or an admin writes them; `timesheetOwnerWriteFields` always drops them.
+ */
+export const TIMESHEET_MANAGER_SIGN_OFF_FIELDS = [
+  'managerSignedAt',
+  'managerSignedAtMs',
+  'managerSignedByName',
+  'managerSignedByUserId',
+  'managerSignatureImageBase64',
+  'approvedAt',
+  'approvedAtMs',
+  'approvedByName',
+  'exportedAt',
+  'exportedAtMs',
+] as const
 
 /** Frozen for the owner once the line manager has signed. */
 export const TIMESHEET_ENTRY_ARRAY_FIELDS = ['expenseEntries', 'priceWorkEntries'] as const
@@ -109,6 +128,20 @@ export function parseTimesheetEntryReviews(
   return output
 }
 
+/**
+ * The review stored for an entry id. The exact key first; otherwise a key that differs only by letter case
+ * (`normalizeDocumentId`), so an upper-case iOS entry id finds a review a web device wrote under lower case.
+ */
+function reviewFor(
+  reviews: Record<string, TimesheetEntryReview>,
+  entryId: string
+): TimesheetEntryReview | undefined {
+  if (Object.prototype.hasOwnProperty.call(reviews, entryId)) return reviews[entryId]
+  const needle = normalizeDocumentId(entryId)
+  const key = Object.keys(reviews).find((candidate) => normalizeDocumentId(candidate) === needle)
+  return key == null ? undefined : reviews[key]
+}
+
 /** Amount paid for an entry under a decision. */
 export function timesheetEntryEffectiveAmount(
   decision: TimesheetEntryDecision,
@@ -149,7 +182,7 @@ export function timesheetEntryDecision(
     if (managerSigned) return inline
     base = { decision: 'approved', revisedAmount: null, source: 'unreviewed' }
   } else {
-    const review = id ? reviews[id] : undefined
+    const review = id ? reviewFor(reviews, id) : undefined
     if (!review) {
       base = { decision: 'approved', revisedAmount: null, source: 'unreviewed' }
     } else if (review.reviewedAmount != null && Math.abs(review.reviewedAmount - amount) >= AMOUNT_EPSILON) {
@@ -261,26 +294,32 @@ export function timesheetWriterIsReviewer(input: {
 }
 
 /**
- * The owner's save without the parts only a reviewer writes. Drops
- * `payrollLineReviews` and `extraEntryReviews`; drops `weeklyReportOverride`
- * when the owner has a line manager; drops the entry arrays once the sheet
- * carries a manager sign-off (`managerSignedAt` / `approvedAt`). Both apps merge (`setDoc` merge / `setData(merge: true)`),
- * so the stored values stay. Owner-only fields such as `managerNote` are kept.
+ * The owner's save without the parts only a reviewer writes. Always drops `payrollLineReviews`,
+ * `extraEntryReviews` (and its dotted keys) and the manager sign-off and export fields
+ * (`TIMESHEET_MANAGER_SIGN_OFF_FIELDS`, including dotted keys under them); drops `weeklyReportOverride` when the
+ * owner has a line manager; drops the entry arrays once the sheet carries a manager sign-off
+ * (`managerSignedAt` / `approvedAt`). The owner's own fields (`managerNote`, their operative signature) stay.
+ * The result is what the owner may send: each app writes only the fields that changed, as a partial update
+ * (`updateDoc` / `updateData`), so stored manager values are never resent. A reviewer saving someone else's
+ * sheet does not use this.
  */
 export function timesheetOwnerWriteFields<T extends Record<string, unknown>>(
   fields: T,
   input: { subjectHasLineManager: boolean; managerSigned: boolean }
 ): Partial<T> {
   const output: Record<string, unknown> = { ...fields }
-  for (const key of TIMESHEET_REVIEWER_ONLY_FIELDS) delete output[key]
-  for (const key of Object.keys(output)) {
-    if (key.startsWith(`${TIMESHEET_ENTRY_REVIEWS_FIELD}.`)) delete output[key]
+  const drop = (key: string) => {
+    for (const written of Object.keys(output)) {
+      if (written === key || written.startsWith(`${key}.`)) delete output[written]
+    }
   }
+  for (const key of TIMESHEET_REVIEWER_ONLY_FIELDS) drop(key)
+  for (const key of TIMESHEET_MANAGER_SIGN_OFF_FIELDS) drop(key)
   if (input.subjectHasLineManager) {
-    for (const key of TIMESHEET_SELF_SIGNED_OWNER_FIELDS) delete output[key]
+    for (const key of TIMESHEET_SELF_SIGNED_OWNER_FIELDS) drop(key)
   }
   if (input.managerSigned) {
-    for (const key of TIMESHEET_ENTRY_ARRAY_FIELDS) delete output[key]
+    for (const key of TIMESHEET_ENTRY_ARRAY_FIELDS) drop(key)
   }
   return output as Partial<T>
 }
