@@ -97,6 +97,13 @@ export function useOrganizationTimeZone(): string {
   return organizationTimeZone(country)
 }
 
+/** Non-hook read of the organisation business time zone (RULEBOOK §1) for code outside React. */
+export function currentOrganizationTimeZone(): string {
+  const data = useOrganizationDocumentStore.getState().data
+  const country = data && typeof data.countryCode === 'string' ? data.countryCode : null
+  return organizationTimeZone(country)
+}
+
 /** Non-hook read for code outside React (exports, PDFs). Falls back to the country default. */
 export function currentOrganizationCurrency(): string {
   return resolveOrganizationCurrency(useOrganizationDocumentStore.getState().data)

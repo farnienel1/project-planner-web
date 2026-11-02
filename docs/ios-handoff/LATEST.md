@@ -9,8 +9,8 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
 Rulebook version: 1.2.0 → 1.3.0
-Packed hash: 3b30d33dddd58c58eb1f9802041d227c1df9904c65621d289ce2b8d90d6b171c
-Rulebook sha256: dc022c1950d04c74e54b75a0776083d5804b00882e3153e32b2adc93daf93c0b
+Packed hash: 644bb679d3bcf5a9483a6a24f8272d9300806c4fa940a429315cbd3a14f277c1
+Rulebook sha256: 2c46595ef881c410c70f84e8a412a816e385ba85627132c3b5c3791bf4ba1938
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -22,8 +22,8 @@ Exports added: LEAVE_SUBMIT_LABEL, LEAVE_SUBMIT_REQUEST_LABEL, NOTIFICATION_CATA
 Exports removed: none
 Web files that changed the rules: docs/RULEBOOK.md, firestore.rules, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/index.ts, lib/canonical/leaveRequests.ts, lib/canonical/notificationPreferences.ts, lib/canonical/notificationRecipients.ts, lib/canonical/parity-fixture.json, lib/canonical/personIds.ts
 Done when:
-- [ ] Packed hash in iOS equals 3b30d33dddd58c58eb1f9802041d227c1df9904c65621d289ce2b8d90d6b171c
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 dc022c1950d04c74e54b75a0776083d5804b00882e3153e32b2adc93daf93c0b)
+- [ ] Packed hash in iOS equals 644bb679d3bcf5a9483a6a24f8272d9300806c4fa940a429315cbd3a14f277c1
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 2c46595ef881c410c70f84e8a412a816e385ba85627132c3b5c3791bf4ba1938)
 - [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.3.0)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web

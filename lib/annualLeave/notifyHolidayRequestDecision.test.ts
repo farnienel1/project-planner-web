@@ -176,6 +176,14 @@ test('annualLeaveDecision toggle uses the canonical allow-list', () => {
   assert.equal(DEFAULT_USER_NOTIFICATION_PREFERENCES.annualLeaveDecision, true)
 })
 
+test('leave notice dates are in the organisation zone, not London', () => {
+  // 14:00 UTC on 19 Oct is 01:00 on 20 Oct in Sydney and 15:00 on 19 Oct in London.
+  const at = new Date('2026-10-19T14:00:00Z')
+  const late = booking({ startDate: at, endDate: at })
+  assert.equal(annualLeaveDecisionDateText(late, 'Australia/Sydney'), '20 Oct 2026 (FULL DAY)')
+  assert.equal(annualLeaveDecisionDateText(late, 'Europe/London'), '19 Oct 2026 (FULL DAY)')
+})
+
 test('decision copy and dedupe key match iOS', () => {
   assert.equal(annualLeaveDecisionDateText(booking()), '20 Oct 2026 (FULL DAY)')
   assert.equal(

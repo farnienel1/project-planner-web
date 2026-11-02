@@ -192,7 +192,7 @@ Matches on every platform and updates live: profile photo (`profilePhotoURL`, wi
 - Annual leave: `holidayRequestRecipients(requester, roster)` — `leaveApproverIds` without the requester; nobody when the leave is self-booked. `holidayDecisionRecipients(requester, decider, roster)` — the requester, unless they decided.
 - `bookingCreatedRecipients`, `deadlineAssignedRecipients`, `toolboxTalkRecipients`, `ideaRecipients` — the given ids without the actor.
 - Job notices keep `materialOrderRecipients` and `receivesJobNotification`, then `excludeActor`. Neither has an "all admins" fallback: a job with no managers notifies no manager.
-- Every inbox row an app writes carries `actorUserId` (the signed-in user who caused it; security rules require it to be that user when present). Scheduled notices nobody caused (`timesheet_submission_reminder`) leave it out. The push Cloud Function never pushes a row whose `userId` is its `actorUserId`.
+- Every inbox row an app writes carries `actorUserId` (the signed-in user who caused it; security rules require it to be that user when present). Scheduled notices nobody caused (`timesheet_submission_reminder`, `deadline_reminder`, `deadline_due`) leave it out. Notice dates shown in leave notices (`annualLeaveDecisionDateText` on web, `AnnualLeaveNoticeText.decisionDateText` on iOS) use the organisation business time zone. The push Cloud Function never pushes a row whose `userId` is its `actorUserId`.
 - **The inbox is the rows addressed to the person.** `inboxNotificationVisibleToUser` and `unreadNotificationBadgeCount` count only rows whose `userId` is one of the person's ids; a row with no `userId` is not an inbox row and is never listed, counted or pushed. The push Cloud Function's app-icon badge counts the recipient's own unread rows the same way (bounded read).
 - Timesheet notice document ids are each app's synthetic UUID of `timesheetNotificationDedupeKey` — the period start as unix seconds of midnight in the organisation zone (never the device calendar).
 - **Device push tokens belong to the signed-in account only.** A token is written to `users/{uid}.pushTokens` of the account signed in on that device, never copied to other users documents on the same email; signing out removes this device's token from every users document it was written to.
@@ -217,8 +217,8 @@ Matches on every platform and updates live: profile photo (`profilePhotoURL`, wi
 | `task_created` | Task assigned | `excludeActor` (the assignees) | yes | ios | iOS only; the Settings diagnostic writes this type to the signed-in user — remove it. |
 | `task_completed` | Task completed | `excludeActor` (the task creator) | yes | ios | iOS only. |
 | `deadline_assigned` | Assignees added to a deadline | `deadlineAssignedRecipients` | yes | web, ios | both: the actor is not removed; use `deadlineAssignedRecipients`. |
-| `deadline_reminder` | Scheduled deadline reminder | the assignees (on-device schedule, no shared rule) | no | ios | iOS only. |
-| `deadline_due` | Deadline due | the assignees (on-device schedule, no shared rule) | no | ios | iOS only. |
+| `deadline_reminder` | Scheduled deadline reminder | the assignees (on-device schedule, no shared rule) | no | ios | iOS only. Scheduled: no actorUserId. |
+| `deadline_due` | Deadline due | the assignees (on-device schedule, no shared rule) | no | ios | iOS only. Scheduled: no actorUserId. |
 | `operative_created` | Operative added | none — written without `userId` | yes | ios | ownerless: never listed, never pushed. Stop writing it or address it with a recipient rule. |
 | `manager_created` | Manager added | none — written without `userId` | yes | ios | ownerless: never listed, never pushed. Stop writing it or address it with a recipient rule. |
 | `client_created` | Client added | none — written without `userId` | yes | web, ios | ownerless: never listed, never pushed. Stop writing it or address it with a recipient rule. |

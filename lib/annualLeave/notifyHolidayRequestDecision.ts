@@ -9,7 +9,7 @@
 
 import { saveInboxNotification } from '@/lib/firebase/notifyInbox'
 import { syntheticUuidFromKey } from '@/lib/ios-parity/uuid'
-import { dayKey } from '@/lib/ios-parity/londonTime'
+import { currentOrganizationTimeZone } from '@/lib/stores/organizationDocumentStore'
 import { holidayDecisionRecipients, lineManagerPeerRecipients, notificationDestination } from '@/lib/canonical'
 import { rulebookPerson, rulebookRoster } from '@/lib/staff/rulebookPeople'
 import type { HolidayBooking, Operative, User } from '@/types'
@@ -52,23 +52,31 @@ export function holidayDecisionRecipientUserId(
   return account?.id ? trimmed(account.id) || null : null
 }
 
-function abbreviatedLeaveDay(date: Date): string {
+function abbreviatedLeaveDay(date: Date, timeZone: string): string {
   return new Intl.DateTimeFormat('en-GB', {
-    timeZone: 'Europe/London',
+    timeZone,
     day: 'numeric',
     month: 'short',
     year: 'numeric',
   }).format(date)
 }
 
-/** iOS `annualLeaveDateText(for:)` — abbreviated start/end plus timeSlot raw value. */
+function zoneDayKey(date: Date, timeZone: string): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(date)
+}
+
+/**
+ * iOS `AnnualLeaveNoticeText.decisionDateText` — abbreviated start/end plus timeSlot raw value, in the
+ * organisation business time zone (RULEBOOK §1; defaults to the open organisation's zone).
+ */
 export function annualLeaveDecisionDateText(
-  booking: Pick<HolidayBooking, 'startDate' | 'endDate' | 'timeSlot'>
+  booking: Pick<HolidayBooking, 'startDate' | 'endDate' | 'timeSlot'>,
+  timeZone: string = currentOrganizationTimeZone()
 ): string {
-  const start = abbreviatedLeaveDay(booking.startDate)
-  const end = abbreviatedLeaveDay(booking.endDate)
+  const start = abbreviatedLeaveDay(booking.startDate, timeZone)
+  const end = abbreviatedLeaveDay(booking.endDate, timeZone)
   const slot = booking.timeSlot
-  if (dayKey(booking.startDate) === dayKey(booking.endDate)) {
+  if (zoneDayKey(booking.startDate, timeZone) === zoneDayKey(booking.endDate, timeZone)) {
     return `${start} (${slot})`
   }
   return `${start} – ${end} (${slot})`
