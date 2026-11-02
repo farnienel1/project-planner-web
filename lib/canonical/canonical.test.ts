@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import test from 'node:test'
 import { createContext, runInContext } from 'node:vm'
 import {
@@ -5459,9 +5459,14 @@ test('1.2.0 D1 + D7 + D8 + D10: the offline table matches iOS OfflinePolicy ids;
   assert.equal(rulebook.offlineLastUpdatedLabel('not a date', 'Europe/London'), null)
 
   // The iOS table: every id in OfflinePolicy.swift is here, with the same availability except delete (now online only).
-  const swift = readFileSync(new URL('../../../project-planner-ios/Project Planner/Core/Offline/OfflinePolicy.swift', import.meta.url), 'utf8')
-  const swiftIds = [...swift.matchAll(/case \w+ = "([a-z_]+\.[a-z_]+)"/g)].map((match) => match[1])
-  if (swiftIds.length > 0) assert.deepEqual([...swiftIds].sort(), [...ids].sort())
+  // Only when the iOS repo is checked out beside this one (local runs); CI has web alone, and iOS checks
+  // the same ids from its side (OfflineBookingTombstoneTests).
+  const swiftUrl = new URL('../../../project-planner-ios/Project Planner/Core/Offline/OfflinePolicy.swift', import.meta.url)
+  if (existsSync(swiftUrl)) {
+    const swift = readFileSync(swiftUrl, 'utf8')
+    const swiftIds = [...swift.matchAll(/case \w+ = "([a-z_]+\.[a-z_]+)"/g)].map((match) => match[1])
+    if (swiftIds.length > 0) assert.deepEqual([...swiftIds].sort(), [...ids].sort())
+  }
 
   // Tombstones carry only their own fields (no write metadata).
   const tombstone = rulebook.bookingTombstoneWriteFields({ bookingId: 'B', collection: 'bookings', deletedBy: 'u', deletedFrom: 'ios' })
