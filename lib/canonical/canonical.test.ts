@@ -8155,13 +8155,14 @@ test('1.11.0 permissionToggleRows: one catalogue for Add User, its summary and E
     'qualifications', 'wholesalersOrderHistory', 'materials', 'siteAudit',
   ])
   assert.deepEqual(manager.filter((row) => !row.editable).map((row) => row.field), ['materials', 'siteAudit'])
-  assert.deepEqual(manager.filter((row) => row.value).map((row) => row.field), ['dailyOverview', 'qualifications', 'wholesalersOrderHistory', 'materials', 'siteAudit'])
+  // 1.14.0: a new manager starts with only the locked toggles on (`addUserPermissionDefaults`).
+  assert.deepEqual(manager.filter((row) => row.value).map((row) => row.field), ['materials', 'siteAudit'])
   // The summary shows the same rows, none editable.
   const summary = visible('manager', 'summary')
   assert.deepEqual(summary.map((row) => row.field), manager.map((row) => row.field))
   assert.ok(summary.every((row) => !row.editable))
   const operative = visible('operative', 'add')
-  assert.deepEqual(operative.map((row) => [row.field, row.value, row.editable]), [['materials', false, true], ['siteAudit', true, true]])
+  assert.deepEqual(operative.map((row) => [row.field, row.value, row.editable]), [['materials', false, true], ['siteAudit', false, true]])
   assert.deepEqual(r3Levels.MANAGER_PERMISSION_TOGGLES.map((row) => row.key).slice(0, 4), ['adminAccess', 'projects', 'smallWorks', 'weeklyReports'])
 })
 
@@ -8767,4 +8768,167 @@ test('1.12.2 accountTypeSyncState: a half-applied user type is found and repaire
   )
   // A profile of another company is never judged here.
   assert.equal(r3Levels.accountTypeSyncState({ person: { ...manager, organizationId: 'OTHER' }, organizationId: 'ORG', members: { T1: 'admin' } }).inSync, true)
+})
+
+// MARK: - 1.14.0 line manager picker: one option per person; self-employed needs a pay rate
+
+import {
+  lineManagerCandidates as r1140Candidates,
+  lineManagerSelectedIds as r1140Selected,
+  lineManagerSummary as r1140Summary,
+} from './lineManagers.ts'
+import { PAY_RATE_REQUIRED_MESSAGE as R1140_PAY_MSG, payRateRequiredError as r1140PayErr, usersMissingPayRate as r1140Missing } from './payRate.ts'
+import { accountTypeChangeWrites as r1140TypeWrites } from './permissionLevels.ts'
+
+const r1140Mgr = (id: string, extra: Record<string, unknown> = {}) => ({
+  id,
+  email: 'sam@x.co',
+  firstName: 'Sam',
+  surname: 'Boss',
+  role: 'manager',
+  manager: true,
+  passwordSet: true,
+  isActive: true,
+  ...extra,
+})
+
+test('1.14.0 lineManagerCandidates: two users documents on one email are one option (same-email ids)', () => {
+  const roster = [r1140Mgr('live-uid'), r1140Mgr('old-uid', { email: 'SAM@x.co ' })]
+  const candidates = r1140Candidates(null, roster)
+  assert.equal(candidates.length, 1)
+  assert.equal(candidates[0].name, 'Sam Boss')
+})
+
+test('1.14.0 lineManagerCandidates: an id in another letter case is one option (members-only anchor)', () => {
+  const roster = [r1140Mgr('ABC123'), r1140Mgr('abc123', { email: '' })]
+  assert.equal(r1140Candidates(null, roster).length, 1)
+})
+
+test('1.14.0 lineManagerCandidates: former invite id and sameEmailUserIds fold onto the live users doc id', () => {
+  const live = r1140Mgr('live-uid', { formerUserIds: ['invite-uuid'], sameEmailUserIds: ['old-uid'] })
+  const invite = r1140Mgr('invite-uuid', { email: 'other@x.co' })
+  const old = r1140Mgr('old-uid', { email: 'sam.old@x.co' })
+  const candidates = r1140Candidates(null, [invite, old, live])
+  assert.deepEqual(candidates.map((c) => c.id), ['live-uid'])
+})
+
+test('1.14.0 lineManagerCandidates: a signed-up active row wins over a pending or inactive duplicate', () => {
+  const pending = r1140Mgr('placeholder', { passwordSet: false })
+  const inactive = r1140Mgr('stale', { isActive: false })
+  const live = r1140Mgr('live')
+  assert.deepEqual(r1140Candidates(null, [pending, inactive, live]).map((c) => c.id), ['live'])
+  // Only a pending or inactive row left: not listed.
+  assert.deepEqual(r1140Candidates(null, [pending, inactive]), [])
+})
+
+test('1.14.0 lineManagerCandidates: never the person themself under a duplicate id', () => {
+  const roster = [r1140Mgr('live'), r1140Mgr('old'), r1140Mgr('boss', { email: 'boss@x.co', firstName: 'Bo' })]
+  assert.deepEqual(r1140Candidates({ id: 'old', email: 'sam@x.co' }, roster).map((c) => c.id), ['boss'])
+  assert.deepEqual(r1140Candidates({ id: 'LIVE' }, roster).map((c) => c.id), ['boss'])
+})
+
+test('1.14.0 admin → manager → admin → manager: accountTypeChangeWrites updates both same-email docs; picker still lists one', () => {
+  const live = r1140Mgr('live', { organizationId: 'org' })
+  const old = { ...r1140Mgr('old', { organizationId: 'org' }), role: 'operative', manager: false, operativeMode: true }
+  let roster: Array<Record<string, unknown> & { id: string }> = [live, old]
+  for (const kind of ['admin', 'manager', 'admin', 'manager'] as const) {
+    const result = r1140TypeWrites({ person: roster[0], kind, organizationId: 'org', roster })
+    assert.equal(result.ok, true)
+    if (!result.ok) return
+    roster = roster.map((row) => {
+      const write = result.writes.find((w) => w.path === `users/${row.id}` && w.kind === 'userProfile')
+      if (!write || !('fields' in write)) return row
+      const flat = Object.fromEntries(Object.entries(write.fields as Record<string, unknown>).filter(([key]) => !key.includes('.')))
+      return { ...row, ...flat, permissions: { ...(row.permissions as object), ...flat } }
+    })
+  }
+  // Both documents are now manager-level — before 1.14.0 the picker listed Sam twice.
+  assert.equal(roster.every((row) => row.role === 'manager'), true)
+  assert.equal(r1140Candidates(null, roster as never).length, 1)
+})
+
+test('1.14.0 lineManagerSelectedIds / lineManagerSummary: a stored id naming the other duplicate shows as selected', () => {
+  const roster = [r1140Mgr('live'), r1140Mgr('old')]
+  const candidateId = r1140Candidates(null, roster)[0].id
+  assert.deepEqual(r1140Selected({ id: 'op', assignedManagerUserIds: ['old'] }, roster), [candidateId])
+  assert.deepEqual(r1140Selected({ id: 'op', assignedManagerUserId: 'OLD' }, roster), [candidateId])
+  assert.deepEqual(r1140Selected({ id: 'op', assignedManagerUserIds: ['old', 'live'] }, roster), [candidateId])
+  assert.deepEqual(r1140Selected({ id: 'op', assignedManagerUserIds: ['gone'] }, roster), ['gone'])
+  assert.deepEqual(r1140Selected({ id: 'op', hasNoLineManager: true, assignedManagerUserIds: ['old'] }, roster), [])
+  const summary = r1140Summary({ id: 'op', assignedManagerUserIds: ['old', 'live'] }, roster)
+  assert.equal(summary.label, 'Sam Boss')
+  assert.equal(summary.moreCount, 0)
+})
+
+test('1.14.0 payRateRequiredError: self-employed needs a rate above 0 for the chosen basis; PAYE never', () => {
+  assert.equal(r1140PayErr({ employmentType: 'paye' }), null)
+  assert.equal(r1140PayErr({ employmentType: 'self_employed', payBasis: 'day', dayRate: 250 }), null)
+  assert.equal(r1140PayErr({ employmentType: 'selfEmployed', payBasis: 'hourly', hourlyRate: '18.5' }), null)
+  assert.equal(r1140PayErr({ employmentType: 'self_employed', dayRate: 200 }), null)
+  for (const bad of [
+    { employmentType: 'self_employed', payBasis: 'day' },
+    { employmentType: 'self_employed', payBasis: 'day', dayRate: '' },
+    { employmentType: 'self_employed', payBasis: 'day', dayRate: 'abc' },
+    { employmentType: 'self_employed', payBasis: 'day', dayRate: 0 },
+    { employmentType: 'self_employed', payBasis: 'day', dayRate: -5 },
+    { employmentType: 'self_employed', payBasis: 'hourly', dayRate: 250 },
+    { employmentType: 'self_employed', payBasis: 'day', dayRate: Number.NaN },
+    {},
+  ]) {
+    assert.equal(r1140PayErr(bad), R1140_PAY_MSG, JSON.stringify(bad))
+  }
+  assert.equal(R1140_PAY_MSG, 'Set a day rate or hourly rate — self-employed people are paid from it.')
+})
+
+test('1.14.0 usersMissingPayRate: active self-employed people without a rate, once per person', () => {
+  const roster = [
+    { id: 'a', employmentType: 'self_employed', payBasis: 'day', dayRate: 200 },
+    { id: 'b', employmentType: 'self_employed', payBasis: 'day' },
+    { id: 'c', employmentType: 'paye' },
+    { id: 'd', employmentType: 'self_employed', isActive: false },
+    { id: 'e', email: 'e@x.co', employmentType: 'self_employed' },
+    { id: 'e2', email: 'E@x.co', employmentType: 'self_employed', payBasis: 'hourly', hourlyRate: 20 },
+    { id: 'f', email: 'f@x.co', employmentType: 'self_employed' },
+    { id: 'F2', email: 'F@x.co', employmentType: 'self_employed' },
+  ]
+  assert.deepEqual(r1140Missing(roster), ['b', 'f'])
+})
+
+import { addUserPermissionDefaults as r1140AddDefaults, lockedPermissionFields as r1140Locked, PERMISSION_TOGGLE_CATALOGUE as R1140_CATALOGUE, accountTypePermissions as r1140TypePerms } from './permissionLevels.ts'
+
+test('1.14.0 addUserPermissionDefaults: every toggle the adder can change starts off; locked toggles keep their value', () => {
+  for (const level of ['admin', 'manager', 'operative'] as const) {
+    const defaults = r1140AddDefaults(level)
+    const locked = new Set(r1140Locked({}, level))
+    for (const row of R1140_CATALOGUE.filter((entry) => entry.levels.includes(level))) {
+      if (locked.has(row.field)) assert.equal(defaults[row.field], true, `${level} ${row.field} locked on`)
+      else assert.equal(defaults[row.field], false, `${level} ${row.field} starts off`)
+    }
+  }
+  const admin = r1140AddDefaults('admin')
+  assert.equal(admin.annualLeaveSelfBook, false)
+  assert.equal(admin.adminAccess, true)
+  assert.equal(admin.projects, true)
+  const manager = r1140AddDefaults('manager')
+  assert.equal(manager.manager, true)
+  assert.equal(manager.materials, true)
+  assert.equal(manager.siteAudit, true)
+  for (const key of ['projects', 'smallWorks', 'weeklyReports', 'dailyOverview', 'subContractors', 'annualLeaveSelfBook', 'operatives', 'qualifications', 'wholesalersOrderHistory'] as const) {
+    assert.equal(manager[key], false, key)
+  }
+  const operative = r1140AddDefaults('operative')
+  assert.equal(operative.operativeMode, true)
+  assert.equal(operative.materials, false)
+  assert.equal(operative.siteAudit, false)
+})
+
+test('1.14.0 a user type change keeps saved toggles (not the new-user defaults)', () => {
+  const manager = { role: 'manager', manager: true, projects: true, weeklyReports: true, dailyOverview: true }
+  const back = r1140TypePerms('manager', { ...manager, role: 'admin', adminAccess: true, annualLeaveSelfBook: true })
+  assert.equal(back.annualLeaveSelfBook, false)
+  const asManager = r1140TypePerms('manager', manager)
+  assert.equal(asManager.projects, true)
+  assert.equal(asManager.weeklyReports, true)
+  assert.equal(asManager.dailyOverview, true)
+  assert.equal(r1140TypePerms('admin', { ...manager, annualLeaveSelfBook: true }).annualLeaveSelfBook, true)
 })

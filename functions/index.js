@@ -195,7 +195,8 @@ function emailHandler() {
     reader: createFirestoreReader(db),
     consumeRateLimit: (key, count, limits) => consumeRateLimit(db, key, count, limits),
     sendMessage: resendSender(() => RESEND_API_KEY.value()),
-    serverKey: () => EMAIL_SERVER_KEY.value() || '',
+    // Trimmed: a secret set from a file keeps its trailing newline (handler `sameSecret` trims too).
+    serverKey: () => String(EMAIL_SERVER_KEY.value() || '').trim(),
     logger,
   })
   return sendEmailHandler

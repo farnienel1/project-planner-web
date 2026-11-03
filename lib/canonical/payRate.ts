@@ -22,7 +22,8 @@
 
 import { dateFromDayKeyInZone, dayKeyInZone } from '../orgTime/zoneTime'
 import { zoneOrLondon } from './dayKeys'
-import { employmentTypeOnDay, type EmploymentType, type EmploymentTypeUser } from './userProfile'
+import { employmentTypeOnDay, normalizeEmploymentType, type EmploymentType, type EmploymentTypeUser } from './userProfile'
+import { isAnonymisedDeletedProfile } from './userRosterSegment'
 import { personIdSet, type PersonIdsInput, type PersonRosterRow } from './personIds'
 
 export type PayBasis = 'day' | 'hourly'
@@ -426,4 +427,72 @@ export function payForHours(input: {
   const standardDay = Number(input.standardDayHours)
   if (!(standardDay >= PAY_STANDARD_DAY_MIN_HOURS)) return 0
   return roundPennies(rate(input.dayRate) * (paidHours / standardDay) * multiplier)
+}
+
+// MARK: - A self-employed person must have a pay rate (rulebook §8, §11; 1.14.0)
+
+/** Shown by Add User and Edit User (both apps) when `payRateRequiredError` refuses a save. */
+export const PAY_RATE_REQUIRED_MESSAGE = 'Set a day rate or hourly rate — self-employed people are paid from it.'
+
+export type PayRateRequiredInput = {
+  employmentType?: unknown
+  payBasis?: unknown
+  dayRate?: unknown
+  hourlyRate?: unknown
+}
+
+/** A rate above 0: a finite number, or a numeric form string ("250", " 18.5 "). Blank, text, 0 and below are not. */
+function positiveRate(value: unknown): boolean {
+  const amount =
+    typeof value === 'number' ? value : typeof value === 'string' && value.trim() !== '' ? Number(value.trim()) : NaN
+  return Number.isFinite(amount) && amount > 0
+}
+
+/**
+ * Manage Users save check (rulebook §8, §11; 1.14.0). A self-employed person (`normalizeEmploymentType`: a missing
+ * type reads as self-employed, as everywhere else) is paid from their rate, so a save that leaves them without one is
+ * refused with `PAY_RATE_REQUIRED_MESSAGE`: with `payBasis` `hourly` the `hourlyRate`, with `day` the `dayRate`, with
+ * no basis either one, must be a number above 0 (missing, blank, non-numeric, 0 or below fail). PAYE never needs a
+ * rate (their days pay 0). Pass the person as they will be saved — including an effective-dated change to
+ * self-employed (`employmentType` is the new type). Apps check it only when the writer may set pay
+ * (`canChangePersonPay`); the security rules do not enforce it (older app builds still save without a rate).
+ */
+export function payRateRequiredError(input: PayRateRequiredInput | null | undefined): string | null {
+  const person = input || {}
+  if (normalizeEmploymentType(person.employmentType) !== 'self_employed') return null
+  const basis = person.payBasis === 'hourly' || person.payBasis === 'day' ? person.payBasis : null
+  const ok =
+    basis === 'hourly'
+      ? positiveRate(person.hourlyRate)
+      : basis === 'day'
+        ? positiveRate(person.dayRate)
+        : positiveRate(person.dayRate) || positiveRate(person.hourlyRate)
+  return ok ? null : PAY_RATE_REQUIRED_MESSAGE
+}
+
+/**
+ * Ids of roster people saved before the pay-rate rule who now fail `payRateRequiredError`: the admins' clean-up list
+ * on Manage Users (rulebook §11, 1.14.0). Inactive people and anonymised deleted profiles are not listed. When a
+ * person has several roster rows (`personIdSet`), they are listed once, under their first active row, and pass when
+ * any active row has a rate. Roster order is kept.
+ */
+export function usersMissingPayRate(
+  roster: ReadonlyArray<PayRateRequiredInput & PersonRosterRow & { firstName?: unknown; surname?: unknown; displayName?: unknown; name?: unknown }> | null | undefined
+): string[] {
+  const rows = (roster || []).filter((row) => row && typeof row.id === 'string' && row.id.trim())
+  const done = new Set<string>()
+  const out: string[] = []
+  for (const row of rows) {
+    const key = row.id.trim().toLowerCase()
+    if (done.has(key)) continue
+    const ids = new Set(personIdSet(row, rows).map((id) => id.toLowerCase()))
+    ids.add(key)
+    const group = rows.filter((other) => ids.has(other.id.trim().toLowerCase()))
+    for (const member of group) done.add(member.id.trim().toLowerCase())
+    const active = group.filter((member) => member.isActive !== false && !isAnonymisedDeletedProfile(member as never))
+    if (active.length === 0) continue
+    if (active.some((member) => payRateRequiredError(member) == null)) continue
+    out.push(active[0].id.trim())
+  }
+  return out
 }

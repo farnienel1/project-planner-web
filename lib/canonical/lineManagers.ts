@@ -77,10 +77,45 @@ function levelOf(row: LineManagerRosterPerson): 'admin' | 'manager' | 'operative
 }
 
 /**
- * Who can be picked as this person's line manager (rulebook §8, §11; 1.11.0): every active admin, super admin and
- * manager on the roster — never an operative, an inactive person, an invite not accepted yet (`passwordSet` false), an
- * anonymised deleted profile, or the person themself under any of their ids (`personIdSet`). One row per account,
- * sorted by name (then id). Both apps fill the Add User and Edit User picker with exactly this list.
+ * The roster grouped into people (rulebook §8, 1.14.0): rows that are one person by `personIdSet` (same id ignoring
+ * case, `formerUserIds`, `sameEmailUserIds`, same email ignoring case) form one group, in roster order. Each group's
+ * `primary` is the row that speaks for the person: active first, then a signed-up account (`passwordSet` not false),
+ * then a row no other row of the group lists as an alias (the users document `rosterPeople` kept), then roster order.
+ */
+function rosterPersonGroups(rows: ReadonlyArray<LineManagerRosterPerson>): Array<{ primary: LineManagerRosterPerson; rows: LineManagerRosterPerson[]; keys: Set<string> }> {
+  const groups: Array<{ primary: LineManagerRosterPerson; rows: LineManagerRosterPerson[]; keys: Set<string> }> = []
+  const grouped = new Set<string>()
+  for (const row of rows) {
+    const key = idKey(row.id)
+    if (grouped.has(key)) continue
+    const keys = new Set(personIdSet(row as never, rows).map(idKey))
+    keys.add(key)
+    const members = rows.filter((other) => keys.has(idKey(other.id)))
+    for (const member of members) grouped.add(idKey(member.id))
+    const aliasKeys = new Set<string>()
+    for (const member of members) {
+      for (const alias of [...(member.formerUserIds || []), ...(member.sameEmailUserIds || []), ...(member.formerIds || []), ...(member.aliasIds || [])]) {
+        if (idKey(alias) !== idKey(member.id)) aliasKeys.add(idKey(alias))
+      }
+    }
+    const rank = (member: LineManagerRosterPerson) =>
+      (rosterMemberActive(member) && !isAnonymisedDeletedProfile(member as never) ? 0 : 4) +
+      (member.passwordSet === false ? 2 : 0) +
+      (aliasKeys.has(idKey(member.id)) ? 1 : 0)
+    const primary = members.reduce((best, member) => (rank(member) < rank(best) ? member : best), members[0])
+    groups.push({ primary, rows: members, keys })
+  }
+  return groups
+}
+
+/**
+ * Who can be picked as this person's line manager (rulebook §8, §11; 1.11.0, 1.14.0): every active admin, super admin
+ * and manager on the roster — never an operative, an inactive person, an invite not accepted yet (`passwordSet` false),
+ * an anonymised deleted profile, or the person themself under any of their ids (`personIdSet`). **One row per person**:
+ * rows that are the same person by `personIdSet` (two users documents on one email, an id in another letter case, a
+ * former invite id) are one candidate, whose id is the person's live users document (`rosterPersonGroups` primary) and
+ * whose level is read from that row. Sorted by name (then id). Both apps fill the Add User and Edit User picker with
+ * exactly this list.
  */
 export function lineManagerCandidates(
   person: LineManagerSubject | null | undefined,
@@ -88,19 +123,49 @@ export function lineManagerCandidates(
 ): LineManagerCandidate[] {
   const rows = (roster || []).filter((row) => row && text(row.id))
   const self = new Set(person ? personIdSet(person as never, rows).map(idKey) : [])
-  const seen = new Set<string>()
   const out: LineManagerCandidate[] = []
-  for (const row of rows) {
-    const key = idKey(row.id)
-    if (seen.has(key) || self.has(key)) continue
+  for (const group of rosterPersonGroups(rows)) {
+    if ([...group.keys].some((key) => self.has(key))) continue
+    const row = group.primary
     if (!rosterMemberActive(row) || row.passwordSet === false) continue
     if (isAnonymisedDeletedProfile(row as never)) continue
     const level = levelOf(row)
     if (level === 'operative') continue
-    seen.add(key)
     out.push({ id: text(row.id), name: rosterPersonName(row), level })
   }
   return out.sort((a, b) => a.name.localeCompare(b.name, 'en', { sensitivity: 'base' }) || a.id.localeCompare(b.id))
+}
+
+/**
+ * The picker's selected values for this person (rulebook §8, 1.14.0): each stored line manager id
+ * (`assignedManagerUserIds`, else `assignedManagerUserId`; none when `hasNoLineManager`) mapped to the
+ * `lineManagerCandidates` id of the same person (`personIdSet`), so a stored id that names that person's other users
+ * document, an old invite id or another letter case still shows as selected. One entry per person, stored order; an
+ * id that matches no candidate is kept as stored (the screen shows it as not pickable, never drops it silently).
+ */
+export function lineManagerSelectedIds(
+  person: LineManagerSubject | null | undefined,
+  roster: ReadonlyArray<LineManagerRosterPerson> | null | undefined
+): string[] {
+  if (!person || person.hasNoLineManager === true) return []
+  const listed = (person.assignedManagerUserIds || []).map(text).filter(Boolean)
+  const stored = listed.length > 0 ? listed : [text(person.assignedManagerUserId)].filter(Boolean)
+  if (stored.length === 0) return []
+  const rows = (roster || []).filter((row) => row && text(row.id))
+  const candidates = lineManagerCandidates(person, rows)
+  const groups = rosterPersonGroups(rows)
+  const out: string[] = []
+  const seen = new Set<string>()
+  for (const id of stored) {
+    const group = groups.find((entry) => entry.keys.has(idKey(id)))
+    const candidate = group ? candidates.find((entry) => group.keys.has(idKey(entry.id))) : candidates.find((entry) => idKey(entry.id) === idKey(id))
+    const value = candidate ? candidate.id : id
+    const key = group ? `g:${idKey(group.primary.id)}` : idKey(value)
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push(value)
+  }
+  return out
 }
 
 /**
@@ -124,7 +189,7 @@ export const UNKNOWN_PERSON_LABEL = 'Unknown person'
 /**
  * The line manager row (rulebook §11, 1.11.0): the person's stored line managers (`assignedManagerUserIds`, else the
  * single id) in stored order, each resolved on the roster — an id the roster knows as an alias is that person (one
- * entry per person); an id it does not know reads `Unknown person`. `label`: "No line manager" when `hasNoLineManager`;
+ * entry per person, folded by `personIdSet` as in `lineManagerCandidates`, 1.14.0); an id it does not know reads `Unknown person`. `label`: "No line manager" when `hasNoLineManager`;
  * "Not set" when none is stored; the first name alone; or "First +N more" with N = the other entries, shown only for
  * N ≥ 1 (never "+0" or "+-1").
  */
@@ -139,9 +204,11 @@ export function lineManagerSummary(
   const rows = (roster || []).filter((row) => row && text(row.id))
   const ids: Array<{ id: string; name: string; resolved: boolean }> = []
   const seen = new Set<string>()
+  const groups = rosterPersonGroups(rows)
   for (const id of stored) {
-    const row = rosterMemberFor(id, rows)
-    const key = idKey(row ? row.id : id)
+    const group = groups.find((entry) => entry.keys.has(idKey(id)))
+    const row = group ? group.primary : rosterMemberFor(id, rows)
+    const key = group ? `g:${idKey(group.primary.id)}` : idKey(row ? row.id : id)
     if (seen.has(key)) continue
     seen.add(key)
     ids.push(row
