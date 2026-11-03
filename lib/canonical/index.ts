@@ -1554,3 +1554,16 @@ export { leaveDayKind } from './leaveCalendar'
 export type { LeaveCalendarRecord, LeaveDayKind } from './leaveCalendar'
 export { jobTileBadges, mergeVariationSources, openVariationCount, siteMapPins } from './jobBadges'
 export type { JobBadgeLabourBooking, JobBadgeManagerBooking, JobTileBadges, SiteMapPin } from './jobBadges'
+
+// Rulebook 1.25.0 (§24): uploaded files are never deleted outright or lost.
+export {
+  FILE_KEPT_ON_REMOVE_COPY,
+  FILE_UNDO_WINDOW_MINUTES,
+  FILE_UNDO_WINDOW_MS,
+  STORED_FILE_KINDS,
+  fileDeletePermission,
+  storedFileKind,
+  storedFileObjectName,
+  storedFileUploader,
+} from './storedFiles'
+export type { FileDeleteInput, FileDeletePermission, FileDeleteReason, StoredFileKind, StoredFilePath } from './storedFiles'

@@ -11190,3 +11190,93 @@ test('1.24.0 materialRequestEmailEnvelope: subject, From name, Reply-To and CC f
   })
   assert.deepEqual(r124Envelope({ requestType: 'quote', jobNumber: 'J', companyName: 'C' }).cc, [])
 })
+
+// ---------------------------------------------------------------------------------------------------------------
+// 1.25.0 — uploaded files are never deleted outright or lost (§24)
+// ---------------------------------------------------------------------------------------------------------------
+import {
+  FILE_UNDO_WINDOW_MINUTES as r125UndoMinutes,
+  fileDeletePermission as r125Delete,
+  storedFileKind as r125Kind,
+  storedFileObjectName as r125ObjectName,
+  storedFileUploader as r125Uploader,
+} from './storedFiles.ts'
+
+const r125Admin = { isSuperAdmin: false, isAdmin: true, isManager: false, isOperativeMode: false }
+const r125Manager = { isSuperAdmin: false, isAdmin: false, isManager: true, isOperativeMode: false }
+const r125Operative = { isSuperAdmin: false, isAdmin: false, isManager: false, isOperativeMode: true }
+const r125T0 = 1_762_000_000_000
+const r125Cert = `organizations/org-a/operatives/op1/qualifications/q1/certificates/op-a_${r125T0}.pdf`
+
+test('1.25.0 storedFileKind: every path both apps upload to, and nothing else', () => {
+  const kinds = [
+    ['organizations/org-a/userProfiles/u1/profile.jpg', 'profile_photo'],
+    ['organizations/org-a/branding/company_logo/u1_1.png', 'company_logo'],
+    ['organizations/org-a/timesheetExports/1700000000_Ann.pdf', 'timesheet_export'],
+    [r125Cert, 'qualification_certificate'],
+    ['organizations/org-a/healthSafety/job/variations/u1_1.jpg', 'variation_evidence'],
+    ['organizations/org-a/healthSafety/job/variationEvidence/u1_1.jpg', 'variation_evidence'],
+    ['organizations/org-a/variations/v1/u1_1.jpg', 'variation_evidence'],
+    ['organizations/org-a/siteAudits/a1/images/u1_1.jpg', 'site_audit_photo'],
+    ['organizations/org-a/tasks/t1/u1_1.pdf', 'task_attachment'],
+    ['organizations/org-a/tasks/t1/files/u1_1.pdf', 'task_attachment'],
+    ['organizations/org-a/healthSafety/job/rams/u1_1.pdf', 'health_safety'],
+  ] as const
+  for (const [path, kind] of kinds) assert.equal(r125Kind(path)?.kind, kind, path)
+  assert.equal(r125Kind('organizations/org-a/misc/x.bin'), null)
+  assert.equal(r125Kind('organizations/org-a/../org-b/tasks/t/x'), null)
+  assert.equal(r125Kind('users/u1/profile.jpg'), null)
+  assert.equal(r125Kind('organizations/org-a/userProfiles/u1/profile.jpg')?.ownerUserId, 'u1')
+})
+
+test('1.25.0 storedFileObjectName: a new object per upload, never the original name', () => {
+  assert.equal(r125ObjectName({ uid: 'op-a', unixMs: 1700000000000, extension: '.PDF' }), 'op-a_1700000000000.pdf')
+  assert.equal(r125ObjectName({ uid: 'op-a', unixMs: 2 }), 'op-a_2')
+  assert.equal(r125ObjectName({ uid: '', unixMs: 2, extension: 'pdf' }), null)
+  assert.equal(r125ObjectName({ uid: 'a/b', unixMs: 2, extension: 'pdf' }), null)
+  assert.deepEqual(r125Uploader(r125Cert), { uploaderUserId: 'op-a', uploadedAtMs: r125T0 })
+  assert.equal(r125Uploader('organizations/org-a/timesheetExports/1700000000_Ann.pdf'), null)
+  assert.equal(r125Uploader('organizations/org-a/tasks/t1/old drawing.pdf'), null)
+})
+
+test('1.25.0 fileDeletePermission: the uploader within the undo window, or an admin of this organisation', () => {
+  const base = { storagePath: r125Cert, organizationId: 'org-a', nowMs: r125T0 + 60_000 }
+  assert.equal(r125UndoMinutes, 15)
+  const own = r125Delete({ ...base, viewerUserId: 'op-a', viewerRole: r125Operative })
+  assert.deepEqual(own, { allowed: true, reason: 'uploader_undo', undoEndsAtMs: r125T0 + 15 * 60_000 })
+  const late = r125Delete({ ...base, nowMs: r125T0 + 15 * 60_000, viewerUserId: 'op-a', viewerRole: r125Operative })
+  assert.deepEqual(late, { allowed: false, reason: 'undo_expired', undoEndsAtMs: r125T0 + 15 * 60_000 })
+  // Server time when the app has it wins over the name.
+  assert.equal(r125Delete({ ...base, nowMs: r125T0 + 20 * 60_000, uploadedAtMs: r125T0 + 10 * 60_000, viewerUserId: 'op-a', viewerRole: r125Operative }).allowed, true)
+  // Another person, a manager included, never deletes someone else's file.
+  assert.deepEqual(r125Delete({ ...base, viewerUserId: 'mgr', viewerRole: r125Manager }), { allowed: false, reason: 'not_uploader', undoEndsAtMs: null })
+  // Uploader ids compare exactly (Auth uids are case-sensitive, as in storage.rules).
+  assert.equal(r125Delete({ ...base, viewerUserId: 'OP-A', viewerRole: r125Operative }).allowed, false)
+  assert.deepEqual(r125Delete({ ...base, nowMs: r125T0 + 86_400_000, viewerUserId: 'adm', viewerRole: r125Admin }), { allowed: true, reason: 'admin', undoEndsAtMs: null })
+  assert.equal(r125Delete({ ...base, viewerUserId: 'adm', viewerRole: { ...r125Admin, isAdmin: false, isOperativeMode: true } }).allowed, false)
+  assert.equal(r125Delete({ ...base, organizationId: 'org-b', viewerUserId: 'adm', viewerRole: r125Admin }).reason, 'other_organization')
+  assert.equal(r125Delete({ ...base, viewerUserId: '', viewerRole: r125Admin }).reason, 'signed_out')
+})
+
+test('1.25.0 fileDeletePermission: profile photos, logos and timesheet exports', () => {
+  const photo = { storagePath: 'organizations/org-a/userProfiles/op-a/profile.jpg', organizationId: 'org-a', nowMs: r125T0 }
+  assert.equal(r125Delete({ ...photo, viewerUserId: 'op-a', viewerRole: r125Operative }).reason, 'own_profile_photo')
+  assert.equal(r125Delete({ ...photo, viewerUserId: 'mgr', viewerRole: r125Manager }).allowed, false)
+  const logo = { storagePath: `organizations/org-a/branding/company_logo/mgr_${r125T0}.png`, organizationId: 'org-a', nowMs: r125T0 }
+  assert.equal(r125Delete({ ...logo, viewerUserId: 'mgr', viewerRole: r125Manager }).reason, 'admin_only')
+  assert.equal(r125Delete({ ...logo, viewerUserId: 'adm', viewerRole: r125Admin }).allowed, true)
+  const exp = { storagePath: 'organizations/org-a/timesheetExports/1762000000_Ann.pdf', organizationId: 'org-a', nowMs: r125T0 }
+  assert.equal(r125Delete({ ...exp, viewerUserId: 'mgr', viewerRole: r125Manager }).reason, 'admin_only')
+  // An older upload whose name says nothing about its uploader is deletable by admins only.
+  const old = { storagePath: 'organizations/org-a/tasks/t1/drawing.pdf', organizationId: 'org-a', nowMs: r125T0 }
+  assert.equal(r125Delete({ ...old, viewerUserId: 'op-a', viewerRole: r125Operative }).reason, 'not_uploader')
+  assert.equal(r125Delete({ ...old, viewerUserId: 'unknown', viewerRole: r125Admin }).allowed, true)
+})
+
+test('1.25.0 storage.rules: no member-wide delete or overwrite is left, and the undo window matches', () => {
+  const rules = readFileSync(new URL('../../storage.rules', import.meta.url), 'utf8')
+  assert.doesNotMatch(rules, /allow delete: if orgMember\(orgId\);/)
+  assert.doesNotMatch(rules, /allow create, update: if memberSizedWrite/)
+  assert.doesNotMatch(rules, /allow delete: if staffLike\(orgId\);/)
+  assert.match(rules, new RegExp(`duration\\.value\\(${r125UndoMinutes}, 'm'\\)`))
+})

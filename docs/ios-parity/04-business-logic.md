@@ -13,7 +13,7 @@
 | `Core/PayrollHoursEngine.swift` | **Single** payroll calculation: slots, custom hours, break, standard window, weekday OT outside window, Sat/Sun rules, AM/PM = half standard day | `lib/payroll/hoursEngine.ts` |
 | `Core/PayrollTimePolicyCatalog.swift` + scheduled change | Which policy applies on a day (prior / current / scheduled); `yyyy-MM-dd` day keys | `lib/payroll/policyCatalog.ts` |
 | `Core/PayrollRateResolver.swift` | Rate on a day: history, hourly XOR day rate, **£0 on PAYE days** | `lib/payroll/rateResolver.ts` |
-| `Core/PayrollPolicyBookingRecalibrator.swift` | Adjust bookings when working-hours policy changes | `lib/payroll/recalibrator.ts` |
+| ~~`Core/PayrollPolicyBookingRecalibrator.swift`~~ | **Retired (rulebook 1.19.0 §4.3/§8).** A working-hours change never rewrites stored bookings or signed sheets; each day is priced under the policy in effect on it. iOS no longer calls it from the Working hours save; the dead file is removed in the iOS cleanup PR. Web has no recalibrator and must not add one. | — |
 | `Core/TimesheetPayrollPolicy.swift` | Current / last completed pay run, pay date, previous periods; timesheet access; who appears on a manager’s list | `lib/timesheets/policy.ts` |
 | `Core/TimesheetPayrollCollector.swift` | Payroll lines for a person + period | `lib/timesheets/collector.ts` |
 | `Core/InvoicingPeriodResolver.swift` | Current invoicing period; warnings scan range | `lib/timesheets/invoicingPeriod.ts` |
