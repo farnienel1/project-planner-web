@@ -40,8 +40,14 @@ export async function loadDismissedWarnings(organizationId: string): Promise<Dis
 }
 
 /** Rulebook 1.9.0 §1 (`LIVE_COLLECTIONS`): Warnings and the Home count listen to `dismissedWarnings` while open. */
-export function watchDismissedWarnings(organizationId: string, onRows: (rows: DismissedWarning[]) => void): Unsubscribe {
-  return watchOrgCollection(organizationId, 'dismissedWarnings', (docs) => onRows(docs.map(dismissedWarningFromDoc)))
+export function watchDismissedWarnings(
+  organizationId: string,
+  onRows: (rows: DismissedWarning[]) => void,
+  onError?: (error: unknown) => void
+): Unsubscribe {
+  return watchOrgCollection(organizationId, 'dismissedWarnings', (docs) => onRows(docs.map(dismissedWarningFromDoc)), {
+    onError: (error) => onError?.(error),
+  })
 }
 
 export async function dismissQualificationWarning(input: {

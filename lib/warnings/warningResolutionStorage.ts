@@ -31,11 +31,15 @@ export async function loadResolvedWarningKeys(organizationId: string): Promise<s
  * Live `resolvedWarningKeys` (rulebook §5: warnings refresh when a resolution changes on any device). A refused or
  * failed listener leaves the last keys alone. Returns the unsubscribe.
  */
-export function watchResolvedWarningKeys(organizationId: string, onKeys: (keys: string[]) => void): Unsubscribe {
+export function watchResolvedWarningKeys(
+  organizationId: string,
+  onKeys: (keys: string[]) => void,
+  onError?: (error: unknown) => void
+): Unsubscribe {
   return onSnapshot(
     collection(db, 'organizations', organizationId, 'warningResolutions'),
     (snapshot) => onKeys(resolvedWarningKeys(recordsOf(snapshot))),
-    () => {}
+    (error) => onError?.(error)
   )
 }
 
