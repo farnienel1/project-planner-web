@@ -60,3 +60,6 @@ next-env.d.ts
 
 # UI touch-up screenshots show live organisation data; keep them local
 docs/ui-touch-up/screenshots/
+
+# Owner clean-up backups (scripts/data-cleanup.mjs): real company data, never committed
+cleanup-backups/
