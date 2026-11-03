@@ -58,6 +58,7 @@ var ProjectPlannerCanonical = (() => {
     DEVICE_PUSH_NOTIFICATION_TYPES: () => DEVICE_PUSH_NOTIFICATION_TYPES,
     EDIT_OF_MISSING_DOCUMENT_MESSAGE: () => EDIT_OF_MISSING_DOCUMENT_MESSAGE,
     EMPLOYMENT_WRITE_GROUP: () => EMPLOYMENT_WRITE_GROUP,
+    ENFORCED_READS_ACTIVE: () => ENFORCED_READS_ACTIVE,
     FALLBACK_LOOKAHEAD_DAYS: () => FALLBACK_LOOKAHEAD_DAYS,
     FILE_REPORT_DETAILS_MAX: () => FILE_REPORT_DETAILS_MAX,
     FILE_REPORT_FILE_NAME_MAX: () => FILE_REPORT_FILE_NAME_MAX,
@@ -1630,6 +1631,7 @@ var ProjectPlannerCanonical = (() => {
     return out;
   }
   function jobQueryPlan(viewer, options) {
+    const enforced = options?.enforced ?? ENFORCED_READS_ACTIVE;
     const none = { seesEvery: { projects: false, smallWorks: false }, queries: [] };
     if (!viewer || !viewer.role) return none;
     const uid = viewerUid(viewer);
@@ -1646,23 +1648,26 @@ var ProjectPlannerCanonical = (() => {
       smallWorks: seesEveryJob(role, "smallWorks", viewer.toggles ?? null)
     };
     const queries = JOB_QUERY_COLLECTIONS.map(
-      (collection) => seesEvery[collection] ? { collection, kind: "all" } : { collection, kind: "managed", field: "managerUserIds", op: "array-contains", value: uid }
+      (collection) => seesEvery[collection] || !enforced ? { collection, kind: "all" } : { collection, kind: "managed", field: "managerUserIds", op: "array-contains", value: uid }
     );
     return { seesEvery, queries };
   }
-  function readsEveryBooking(viewer) {
+  var ENFORCED_READS_ACTIVE = false;
+  function readsEveryBooking(viewer, options) {
+    const enforced = options?.enforced ?? ENFORCED_READS_ACTIVE;
     if (!viewer || !viewer.role) return false;
     const role = viewer.role;
     if (role.isOperativeMode) return false;
     if (role.isSuperAdmin || role.isAdmin) return true;
     if (!role.isManager) return false;
+    if (!enforced) return true;
     return viewer.toggles?.projects === true || viewer.toggles?.smallWorks === true;
   }
   function bookingQueryPlan(viewer, visibleJobIds, options) {
     if (!viewer || !viewer.role) return { readsEveryBooking: false, queries: [] };
     const uid = viewerUid(viewer);
     if (!uid) return { readsEveryBooking: false, queries: [] };
-    if (readsEveryBooking(viewer)) {
+    if (readsEveryBooking(viewer, { enforced: options?.enforced })) {
       return {
         readsEveryBooking: true,
         queries: BOOKING_PERMISSION_COLLECTIONS.map((collection) => ({ collection, kind: "all" }))
@@ -1734,7 +1739,7 @@ var ProjectPlannerCanonical = (() => {
       jobIds: [...jobKeys],
       personIds: [...ids],
       personEmails: [...emails],
-      unbookedLabour: readsEveryBooking(viewer)
+      unbookedLabour: readsEveryBooking(viewer, { enforced: input.enforced })
     };
   }
   function isJobInWarningScope(scope, jobId) {
@@ -8354,8 +8359,8 @@ var ProjectPlannerCanonical = (() => {
   // lib/canonical/rulebookStamp.ts
   function rulebookStamp() {
     return {
-      version: true ? "1.10.0" : "",
-      sha256: true ? "f2175fc10debf84694765c865ab93caa4e466eec29bc38c04b8997f45efceb83" : ""
+      version: true ? "1.10.1" : "",
+      sha256: true ? "8e99b1874ec657bb49a3da8cc3e2f8c74a29cb8386eb7fb157a4e0ce998a6eae" : ""
     };
   }
 

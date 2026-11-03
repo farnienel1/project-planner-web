@@ -1181,6 +1181,7 @@ export {
   OWN_BOOKING_IDS_PER_QUERY,
   WARNING_SCOPE_ALL,
   bookingQueryPlan,
+  ENFORCED_READS_ACTIVE,
   canChangeJobManagers,
   canCreateJob,
   canEditJob,
