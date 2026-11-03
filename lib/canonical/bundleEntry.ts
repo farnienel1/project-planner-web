@@ -359,6 +359,9 @@ export {
   unpaidBreakAppliesOnDay,
   workedHoursSplit,
   payrollOutsideClockHours,
+  multipliedHoursText,
+  payrollMultipliedHours,
+  parseMultipliedHoursText,
 } from './payrollHours'
 export { DEFAULT_ANNUAL_LEAVE, parseAnnualLeaveDefaults, parsePayrollPolicy } from './organizationSettings'
 

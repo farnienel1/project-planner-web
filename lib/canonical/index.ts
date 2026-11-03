@@ -598,6 +598,9 @@ export {
   unpaidBreakAppliesOnDay,
   workedHoursSplit,
   payrollOutsideClockHours,
+  multipliedHoursText,
+  payrollMultipliedHours,
+  parseMultipliedHoursText,
 } from './payrollHours'
 export type { PayrollHoursBooking, PayrollHoursInput, PayrollHoursResult, PayrollHoursSegment } from './payrollHours'
 

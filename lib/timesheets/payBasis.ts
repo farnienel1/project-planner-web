@@ -6,6 +6,7 @@
 
 import { historyPayRowOnDay, readStoredRates, type PayBasis } from '@/lib/canonical/payRate'
 import { formatMoney } from '@/lib/canonical/money'
+import { multipliedHoursText } from '@/lib/canonical/payrollHours'
 
 export type { PayBasis, StoredPay } from '@/lib/canonical/payRate'
 
@@ -41,6 +42,8 @@ export function payLineDisplay({
   isOvertime = false,
   otMultiplier = null,
   currencyCode = null,
+  clockHours = null,
+  breakHours = null,
 }: {
   payBasis?: string | null
   paidHours: number
@@ -50,6 +53,14 @@ export function payLineDisplay({
   isOvertime?: boolean
   otMultiplier?: number | null
   currencyCode?: string | null
+  /**
+   * Rulebook 1.20.3: the clock hours at the multiplier and the unpaid break taken off them as plain hours
+   * (`payrollMultipliedHours`). With a break, the line shows "6.5h × 2 − 0.5h break = 12.5h" (`multipliedHoursText`)
+   * at the base rate — never the back-calculated `paidHours` ("6.25h × 2"). `rate` is still the multiplied OT rate
+   * the line was priced with; `pay` is shown as given, so no total changes.
+   */
+  clockHours?: number | null
+  breakHours?: number | null
 }) {
   const standard = orgDayHours(standardDayHours)
   const hourly = payBasis === 'hourly'
@@ -65,6 +76,17 @@ export function payLineDisplay({
           ? `OT x${otMultiplier}`
           : `OT x${Number(otMultiplier).toFixed(1)}`
     rateType = `${kind} ${ot}`
+  }
+  const multiplier = Number(otMultiplier) > 0 ? Number(otMultiplier) : 1
+  if (isOvertime && Number(breakHours) > 0 && Number(clockHours) > 0) {
+    // 1.20.3: clock hours × N, then the break as plain hours; the quantity is the hours that pays, at the base rate.
+    const hoursText = multipliedHoursText({ clockHours: Number(clockHours), multiplier, breakHours: Number(breakHours) })
+    const equivalent = Math.max(0, Number(clockHours) * multiplier - Number(breakHours))
+    const baseRate = rate == null ? null : rate / multiplier
+    const baseRateText = baseRate == null ? '' : `${money(baseRate, currencyCode)}${hourly ? '/hr' : '/day'}`
+    const qty = hourly ? hoursText : `${hoursText} = ${quantityText(equivalent / standard, 'days')}`
+    const equation = baseRateText ? `${qty} × ${baseRateText} = ${money(pay, currencyCode)}` : `${qty} = ${money(pay, currencyCode)}`
+    return { rateType, quantityText: qty, rateText: baseRateText, equation, pay: roundPennies(pay) }
   }
   const rateText = rate == null ? '' : `${money(rate, currencyCode)}${hourly ? '/hr' : '/day'}`
   const qty = quantityText(quantity, unit)

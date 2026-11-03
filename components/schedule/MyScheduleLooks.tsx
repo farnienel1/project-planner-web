@@ -6,7 +6,7 @@
 
 import { overviewFormatHours, parseMinutes } from '@/lib/daily-overview/buildDailyOverview'
 import { bookingPayrollHours, formatOvertimeEquation } from '@/lib/scheduling/paidHours'
-import { weekdayPaidHours, workedHoursSplit } from '@/lib/canonical'
+import { multipliedHoursText, payrollMultipliedHours, weekdayPaidHours, workedHoursSplit } from '@/lib/canonical'
 import { bookingRowHours } from '@/lib/scheduling/bookingRowHours'
 import { namedSlotKind } from '@/lib/scheduling/paidHours'
 import { bookingDayKey, policyForBookingDate } from '@/lib/scheduling/bookingSlotRules'
@@ -157,7 +157,9 @@ export function MyScheduleTotalHoursCard({
   const results = bookings.map((b) => bookingPayrollHours({ ...b, policy: dayPolicy, dayKey: date ? bookingDayKey(date) : undefined }))
   // Rulebook 1.20.2: the headline is the pay rule's hours for the day (`totalPaidHours`), the same as each row.
   const paid = results.reduce((sum, r) => sum + r.totalPaidHours, 0)
-  const ot = results.reduce((sum, r) => sum + workedHoursSplit(r).outsideWorkedHours, 0)
+  // 1.20.3: clock hours at the multiplier and any unpaid break off them as plain hours (`payrollMultipliedHours`).
+  const ot = results.reduce((sum, r) => sum + (payrollMultipliedHours(r)?.clockHours ?? workedHoursSplit(r).outsideWorkedHours), 0)
+  const otBreak = results.reduce((sum, r) => sum + (payrollMultipliedHours(r)?.breakHours ?? 0), 0)
   const otMultiplier =
     results.filter((r) => r.outsideHours > 0).reduce((max, r) => Math.max(max, r.outsideMultiplier), 0) ||
     policy.weekdayOutsideStandardMultiplier ||
@@ -185,7 +187,7 @@ export function MyScheduleTotalHoursCard({
             <p className="text-[10px] font-medium text-[var(--ink3)]">hrs</p>
             {ot > 0.05 ? (
               <p className="text-[10px] font-semibold text-[#854F0B]">
-                OT {formatOvertimeEquation(ot, otMultiplier)}
+                OT {otBreak > 0 ? multipliedHoursText({ clockHours: ot, multiplier: otMultiplier, breakHours: otBreak }) : formatOvertimeEquation(ot, otMultiplier)}
               </p>
             ) : null}
           </div>

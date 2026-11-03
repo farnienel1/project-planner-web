@@ -14,7 +14,7 @@ import {
   type OrgPayrollTimePolicy,
 } from '@/lib/settings/organizationSettings'
 import { findOperativeForUser } from '@/lib/operatives/operativeRosterUtils'
-import { bookingIdsForAccount, bookingOccupiesDay, formatMoney, overlappingBookingIds, weekdayPaidHours } from '@/lib/canonical'
+import { bookingIdsForAccount, bookingOccupiesDay, formatMoney, overlappingBookingIds, payrollMultipliedHours, weekdayPaidHours } from '@/lib/canonical'
 import { employmentTypeOnDay } from '@/lib/ios-parity/employmentType'
 import { emptyDayRateHistory, type OperativeDayRateHistoryCollection } from '@/lib/timesheets/dayRateHistoryStorage'
 import {
@@ -43,6 +43,12 @@ export type TimesheetPayrollLineItem = {
   hourlyRate?: number | null
   standardDayHours?: number
   otMultiplier?: number | null
+  /**
+   * Rulebook 1.20.3 (display only, never stored): an overtime line's clock hours at the multiplier and the unpaid
+   * break taken off them as plain hours (`payrollMultipliedHours`). `paidHours` / `amount` are unchanged.
+   */
+  otClockHours?: number
+  otBreakHours?: number
   amount: number
   isPayeDay: boolean
   isOvertimeLine: boolean
@@ -117,6 +123,8 @@ export function timesheetHoursRateLine(line: TimesheetPayrollLineItem, currencyC
     isOvertime: line.isOvertimeLine,
     otMultiplier: line.otMultiplier ?? null,
     currencyCode,
+    clockHours: line.otClockHours ?? null,
+    breakHours: line.otBreakHours ?? null,
   }).equation
 }
 
@@ -252,9 +260,11 @@ export function collectTimesheetPayroll({
       aliasUserIds,
     })
     const hasRate = payrollRateHasValue(resolved)
+    // 1.20.3: hours at the multiplier as clock hours, with any unpaid break as plain hours (display only).
+    const multiplied = payrollMultipliedHours(hours)
     shiftCount += 1
     totalHours += paidHours
-    overtimeHours += otHours
+    overtimeHours += multiplied ? multiplied.clockHours : otHours
     const isPaye = employmentTypeOnDay(user, date, timeZone) === 'paye'
     const lineBookingId = `${idPrefix}-${bookingId}`
     const lineDayKey = dayKey(date, timeZone)
@@ -288,8 +298,12 @@ export function collectTimesheetPayroll({
         date,
         jobNumber: labels.jobNumber,
         projectName: `${labels.siteName} (Overtime)`,
-        details: `OT ${formatTimesheetHours(otHours)}h`,
+        details:
+          multiplied && multiplied.breakHours > 0
+            ? `OT ${multiplied.text}`
+            : `OT ${formatTimesheetHours(multiplied ? multiplied.clockHours : otHours)}h`,
         paidHours: otHours,
+        ...(multiplied && multiplied.breakHours > 0 ? { otClockHours: multiplied.clockHours, otBreakHours: multiplied.breakHours } : {}),
         payrollBasis: resolved.basis,
         dayRate: otRates.dayRate,
         hourlyRate: otRates.hourlyRate,

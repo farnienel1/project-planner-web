@@ -13820,6 +13820,63 @@
         "hours": 12.5,
         "label": "12.5h (6.5h × 2 − 0.5h break)"
       }
+    },
+    {
+      "name": "1.20.3 owner: hours at a multiplier text, break off as plain hours",
+      "function": "multipliedHoursText",
+      "args": [
+        {
+          "clockHours": 6.5,
+          "multiplier": 2,
+          "breakHours": 0.5
+        }
+      ],
+      "expected": "6.5h × 2 − 0.5h break = 12.5h"
+    },
+    {
+      "name": "1.20.3 owner: a signed line's multiplier text is read back",
+      "function": "parseMultipliedHoursText",
+      "args": [
+        "OT 3h × 2 − 0.5h break = 5.5h"
+      ],
+      "expected": {
+        "clockHours": 3,
+        "multiplier": 2,
+        "breakHours": 0.5
+      }
+    },
+    {
+      "name": "1.20.3 owner: Sunday ×2 unpaid — clock hours and break for every pay screen",
+      "function": "payrollMultipliedHours",
+      "args": [
+        {
+          "totalPaidHours": 12.5,
+          "standardHours": 0,
+          "outsideHours": 6.25,
+          "outsideMultiplier": 2,
+          "workedHours": 6,
+          "unpaidBreakHours": 0.5,
+          "segments": [
+            {
+              "kind": "allHoursMultiplier",
+              "clockStart": "07:30",
+              "clockEnd": "14:00",
+              "baseHours": 6.25,
+              "multiplier": 2,
+              "paidHours": 12.5,
+              "workedHours": 6,
+              "unpaidBreakHours": 0.5
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "clockHours": 6.5,
+        "multiplier": 2,
+        "breakHours": 0.5,
+        "paidHours": 12.5,
+        "text": "6.5h × 2 − 0.5h break = 12.5h"
+      }
     }
   ]
 }

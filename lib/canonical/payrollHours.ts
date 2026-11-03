@@ -203,6 +203,67 @@ export function payrollOutsideClockHours(result: Pick<PayrollHoursResult, 'segme
   return { outsideClockHours: clock, outsideBreakHours: brk }
 }
 
+function roundHundredths(value: number): number {
+  return Math.round(value * 100) / 100
+}
+
+function plainHoursText(hours: number): string {
+  return `${roundHundredths(hours)}h`
+}
+
+/**
+ * Rulebook 1.20.3 §8: the one text for hours at a multiplier, on every pay screen and export (timesheet lines,
+ * weekly report, invoices, Daily Overview): the clock hours × the multiplier, then any unpaid break as plain hours —
+ * "6.5h × 2 − 0.5h break = 12.5h", or "6.5h × 2 = 13h" with no break. Never the back-calculated base hours
+ * ("6.25h × 2"). Pass `payrollMultipliedHours(result)` (or the same three figures summed over lines).
+ */
+export function multipliedHoursText(input: { clockHours: number; multiplier: number; breakHours?: number | null }): string {
+  const clock = Math.max(0, Number(input.clockHours) || 0)
+  const n = Number(input.multiplier) > 0 ? Number(input.multiplier) : 1
+  const brk = Math.max(0, Number(input.breakHours) || 0)
+  const multiplied = `${plainHoursText(clock)} × ${roundHundredths(n)}`
+  const total = plainHoursText(Math.max(0, clock * n - brk))
+  return roundHundredths(brk) > 0 ? `${multiplied} − ${plainHoursText(brk)} break = ${total}` : `${multiplied} = ${total}`
+}
+
+/**
+ * Rulebook 1.20.3 §8: reads `multipliedHoursText` back ("6.5h × 2 − 0.5h break = 12.5h", optionally after a label such
+ * as "OT "), for a signed timesheet line that stored only that text, so it is shown the same way as a live line.
+ * Null for any other text (older sheets) — those keep their stored hours.
+ */
+export function parseMultipliedHoursText(
+  text: string | null | undefined
+): { clockHours: number; multiplier: number; breakHours: number } | null {
+  const match = /(\d+(?:\.\d+)?)h × (\d+(?:\.\d+)?)(?: − (\d+(?:\.\d+)?)h break)? = \d+(?:\.\d+)?h/.exec(String(text ?? ''))
+  if (!match) return null
+  const clockHours = Number(match[1])
+  const multiplier = Number(match[2])
+  const breakHours = match[3] == null ? 0 : Number(match[3])
+  if (!(clockHours > 0) || !(multiplier > 0)) return null
+  return { clockHours, multiplier, breakHours }
+}
+
+/**
+ * Rulebook 1.20.3 §8: a booking's hours at the multiplier for display — the clock hours, the multiplier, the unpaid
+ * break taken off them as plain hours, the hours they pay (clock × N − break) and `multipliedHoursText`. Null when the
+ * booking has no hours at a multiplier. Pay is unchanged: `outsideHours × outsideMultiplier` equals `paidHours`.
+ */
+export function payrollMultipliedHours(
+  result: Pick<PayrollHoursResult, 'segments' | 'outsideMultiplier'> | null | undefined
+): { clockHours: number; multiplier: number; breakHours: number; paidHours: number; text: string } | null {
+  if (!result) return null
+  const { outsideClockHours, outsideBreakHours } = payrollOutsideClockHours(result)
+  if (!(outsideClockHours > 0)) return null
+  const multiplier = Number(result.outsideMultiplier) > 0 ? Number(result.outsideMultiplier) : 1
+  return {
+    clockHours: outsideClockHours,
+    multiplier,
+    breakHours: outsideBreakHours,
+    paidHours: Math.max(0, outsideClockHours * multiplier - outsideBreakHours),
+    text: multipliedHoursText({ clockHours: outsideClockHours, multiplier, breakHours: outsideBreakHours }),
+  }
+}
+
 function result(segments: PayrollHoursSegment[], outsideMultiplier: number): PayrollHoursResult {
   let total = 0
   let standard = 0

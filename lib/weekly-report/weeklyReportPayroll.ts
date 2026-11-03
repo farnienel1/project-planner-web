@@ -1,5 +1,5 @@
 import { getISODay } from 'date-fns'
-import { formatMoney, reportDayValue, resolveBookingPerson, rosterAliasIdsFor, weekdayPaidHours } from '@/lib/canonical'
+import { formatMoney, parseMultipliedHoursText, payrollMultipliedHours, reportDayValue, resolveBookingPerson, rosterAliasIdsFor, weekdayPaidHours } from '@/lib/canonical'
 import { currentOrganizationCurrency } from '@/lib/stores/organizationDocumentStore'
 import type { OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 import { DEFAULT_PAYROLL_POLICY } from '@/lib/settings/organizationSettings'
@@ -188,6 +188,12 @@ export type LabourPaySlice = {
    * shown against that day's rules. Missing → the caller's standard day.
    */
   standardDayHours?: number
+  /**
+   * Rulebook 1.20.3 (display only): an overtime slice's clock hours at the multiplier and the unpaid break taken off
+   * them as plain hours (`payrollMultipliedHours`). Set only when a break was taken off; summed when slices merge.
+   */
+  clockHours?: number
+  breakHours?: number
 }
 
 export function labourPaySlices({
@@ -239,6 +245,8 @@ export function labourPaySlices({
   const basis: PayBasis = resolved.basis === 'hourly' ? 'hourly' : 'day'
   const rate = isPaye ? null : basis === 'hourly' ? resolved.hourlyRate : resolved.dayRate
   const slices: LabourPaySlice[] = []
+  // 1.20.3: the overtime slice's clock hours and the break off them as plain hours (display only; pay unchanged).
+  const multiplied = payrollMultipliedHours(hours)
   const push = (hours: number, overtime: boolean, multiplier: number) => {
     if (!(hours > 0)) return
     const pay = isPaye ? 0 : payForHours(
@@ -256,6 +264,9 @@ export function labourPaySlices({
       pay,
       isPaye,
       standardDayHours: standard,
+      ...(overtime && multiplied && multiplied.breakHours > 0
+        ? { clockHours: multiplied.clockHours, breakHours: multiplied.breakHours }
+        : {}),
     })
   }
   push(normalHours, false, 1)
@@ -271,6 +282,7 @@ export function signedLabourSlice(line: {
   isOvertime: boolean
   payBasis?: string | null
   otMultiplier?: number | null
+  details?: string | null
 }, standardHours: number, otMultiplier: number | null, isPaye = false): LabourPaySlice {
   const payBasis: PayBasis = line.payBasis === 'hourly' ? 'hourly' : 'day'
   const standard = orgDayHours(standardHours)
@@ -278,6 +290,8 @@ export function signedLabourSlice(line: {
   const quantity = payBasis === 'hourly' ? paidHours : paidHours / standard
   const rate = quantity > 0.0001 ? roundPennies(line.amount / quantity) : 0
   const storedMultiplier = line.otMultiplier != null ? line.otMultiplier : line.isOvertime ? otMultiplier : null
+  const parsed = line.isOvertime ? parseMultipliedHoursText(line.details) : null
+  const signedBreak = parsed && parsed.breakHours > 0 ? parsed : null
   return {
     payBasis,
     isOvertime: line.isOvertime,
@@ -287,6 +301,8 @@ export function signedLabourSlice(line: {
     pay: isPaye ? 0 : roundPennies(line.amount),
     isPaye,
     standardDayHours: standard,
+    // 1.20.3: a signed overtime line with a break keeps its clock hours and break for display (from its stored text).
+    ...(line.isOvertime && signedBreak ? { clockHours: signedBreak.clockHours, breakHours: signedBreak.breakHours } : {}),
   }
 }
 
@@ -310,13 +326,20 @@ export function paySliceDisplay(slice: LabourPaySlice, standardHours: number, cu
     isOvertime: slice.isOvertime,
     otMultiplier: slice.otMultiplier,
     currencyCode,
+    clockHours: slice.clockHours ?? null,
+    breakHours: slice.breakHours ?? null,
   })
+  // 1.20.3: with a break off hours at a multiplier the quantity is the hours that pay (clock × N − break) at the base
+  // rate, so quantity × rate still equals the pay; no back-calculated base hours are shown.
+  const multiplier = Number(slice.otMultiplier) > 0 ? Number(slice.otMultiplier) : 1
+  const withBreak = slice.isOvertime && Number(slice.breakHours) > 0 && Number(slice.clockHours) > 0
+  const hoursShown = withBreak ? Math.max(0, Number(slice.clockHours) * multiplier - Number(slice.breakHours)) : slice.paidHours
   return {
     rateType: display.rateType,
     quantityText: display.quantityText,
     rateText: display.rateText,
     pay: display.pay,
-    days: slice.payBasis === 'hourly' ? slice.paidHours : slice.paidHours / orgDayHours(standardHours),
-    rate: slice.rate ?? 0,
+    days: slice.payBasis === 'hourly' ? hoursShown : hoursShown / orgDayHours(standardHours),
+    rate: withBreak ? (slice.rate ?? 0) / multiplier : slice.rate ?? 0,
   }
 }

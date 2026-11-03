@@ -10487,3 +10487,32 @@ test('1.20.3 owner bug: the Saturday / Sunday preview on Working hours changes w
   assert.equal(R112.unpaidBreakAppliesOnDay(zeroWeekday, R119_WED, R119_ZONE), false)
   assert.equal(R112.weekendDayPreview(zeroWeekday, 'saturday', R119_ZONE)?.rows[0].paidHoursEquivalent, 7.5)
 })
+
+test('1.20.3 owner: one text for hours at a multiplier — clock hours × N, then the break as plain hours', () => {
+  assert.equal(R112.multipliedHoursText({ clockHours: 6.5, multiplier: 2, breakHours: 0.5 }), '6.5h × 2 − 0.5h break = 12.5h')
+  assert.equal(R112.multipliedHoursText({ clockHours: 6.5, multiplier: 2 }), '6.5h × 2 = 13h')
+  assert.equal(R112.multipliedHoursText({ clockHours: 3, multiplier: 2, breakHours: 0.5 }), '3h × 2 − 0.5h break = 5.5h')
+  assert.equal(R112.multipliedHoursText({ clockHours: 2.5, multiplier: 1.5, breakHours: 0.25 }), '2.5h × 1.5 − 0.25h break = 3.5h')
+  const unpaid = r119Policy(r119SatWindow(false), r119SunAllHours(false))
+  const sun = r119Hours(R119_SUN, unpaid, '07:30', '14:00')
+  assert.deepEqual(R112.payrollMultipliedHours(sun), {
+    clockHours: 6.5,
+    multiplier: 2,
+    breakHours: 0.5,
+    paidHours: 12.5,
+    text: '6.5h × 2 − 0.5h break = 12.5h',
+  })
+  // Pay is unchanged: the hours at the multiplier pay exactly what the text says.
+  assert.equal(sun.outsideHours * sun.outsideMultiplier, R112.payrollMultipliedHours(sun)?.paidHours)
+  const window = { ...r119SatWindow(false), definedWindowEnd: '11:00', countsAsStandardHours: 4, outsideWindowMultiplier: 2 }
+  const sat = r119Hours(R119_SAT, r119Policy(window, r119SunAllHours()), '07:30', '14:00')
+  assert.equal(R112.payrollMultipliedHours(sat)?.text, '3h × 2 − 0.5h break = 5.5h')
+  assert.equal(sat.totalPaidHours, 9.5)
+  // No hours at a multiplier: null. A weekday inside the standard day.
+  assert.equal(R112.payrollMultipliedHours(r119Hours(R119_WED, unpaid, '07:30', '16:00')), null)
+  // Read back from a stored line's text (signed sheets), with or without a label; anything else is null.
+  assert.deepEqual(R112.parseMultipliedHoursText('OT 6.5h × 2 − 0.5h break = 12.5h'), { clockHours: 6.5, multiplier: 2, breakHours: 0.5 })
+  assert.deepEqual(R112.parseMultipliedHoursText('6.5h × 2 = 13h'), { clockHours: 6.5, multiplier: 2, breakHours: 0 })
+  assert.equal(R112.parseMultipliedHoursText('OT 6.25h'), null)
+  assert.equal(R112.parseMultipliedHoursText('07:30–14:00'), null)
+})

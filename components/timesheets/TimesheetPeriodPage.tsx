@@ -103,7 +103,7 @@ import { SignaturePad } from '@/components/timesheets/SignaturePad'
 import { signaturePngSrc } from '@/lib/signature/signatureImage'
 import { LoadingSpinner } from '@/components/dashboard/PageShell'
 import { formatAbbreviatedDayInZone, formatStampInZone } from '@/lib/orgTime/zoneTime'
-import { formatTimesheetHours, overtimeHoursBeyondPaidStandard, paidBookedHours, weekdayOtMultiplier } from '@/lib/timesheets/timesheetHours'
+import { formatTimesheetHours, overtimeHoursBeyondPaidStandard, overtimeHoursText, paidBookedHours, weekdayOtMultiplier } from '@/lib/timesheets/timesheetHours'
 import { parseTimesheetManagerAmount, parseTimesheetMoneyAmount } from '@/lib/timesheets/timesheetMoney'
 import { dateFromDayKey, dayKey } from '@/lib/ios-parity/londonTime'
 import { HoursTimelinePicker } from '@/components/scheduling/HoursTimelinePicker'
@@ -1870,6 +1870,7 @@ function EditHoursSheet({
   if (!line) return null
   const paid = paidBookedHours('customHours', start, end, policy, breakRemoved, line.date)
   const ot = overtimeHoursBeyondPaidStandard(line.date, 'customHours', start, end, policy, breakRemoved)
+  const otHoursText = overtimeHoursText(line.date, 'customHours', start, end, policy, breakRemoved)
   const amount = revisedPayrollAmount({
     row: line,
     startTime: start,
@@ -1923,7 +1924,7 @@ function EditHoursSheet({
           </p>
           <p className="mt-1 flex justify-between">
             <span>Overtime</span>
-            <span className="font-semibold">{formatTimesheetHours(ot)}h</span>
+            <span className="font-semibold">{otHoursText ?? `${formatTimesheetHours(ot)}h`}</span>
           </p>
           <p className="mt-2 flex justify-between text-[15px] font-semibold">
             <span>Revised amount</span>
