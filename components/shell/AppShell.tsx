@@ -20,7 +20,6 @@ import {
 import { TeamOnboardingPrompt } from '@/components/onboarding/TeamOnboardingPrompt'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
-import { shouldShowTeamOnboardingPrompt } from '@/lib/orgSetup/teamOnboarding'
 import {
   dashboardPageTitle,
   getDashboardNavBySection,
@@ -262,19 +261,12 @@ function AppShellInner({ children }: { children: ReactNode }) {
     })
   }, [pathname, user?.id, organization?.id, analyticsAllowed])
 
+  // 1.16.0: the inbox listens whenever an organisation is open — never skipped behind the team-onboarding prompt
+  // (admins used to get no inbox while it showed).
   useEffect(() => {
     if (!organization?.id || !user?.id) return
-    if (
-      shouldShowTeamOnboardingPrompt(
-        organization.teamOnboarding,
-        Boolean(user.permissions.adminAccess || user.isSuperAdmin),
-        organization.id
-      )
-    ) {
-      return
-    }
     loadNotifications(organization.id, user.id, ownerIds)
-  }, [organization?.id, organization?.teamOnboarding, user?.id, user?.permissions.adminAccess, user?.isSuperAdmin, loadNotifications, ownerIds])
+  }, [organization?.id, user?.id, loadNotifications, ownerIds])
 
   useEffect(() => {
     if (!user?.id) return

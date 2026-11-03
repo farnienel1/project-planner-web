@@ -11,10 +11,6 @@ import { syntheticUuidFromKey } from '@/lib/ios-parity/uuid'
 import { rulebookPerson, rulebookRoster } from '@/lib/staff/rulebookPeople'
 import type { Booking, Project, User } from '@/types'
 
-function key(value: unknown): string {
-  return typeof value === 'string' ? value.trim().toLowerCase() : ''
-}
-
 export async function notifyBookingCreated(input: {
   booking: Booking
   job: Project | null | undefined
@@ -23,21 +19,16 @@ export async function notifyBookingCreated(input: {
   operatives: ReadonlyArray<{ id: string; email?: string | null }>
   timeZone: string
 }): Promise<void> {
-  const operativeId = key(input.booking.operativeId)
+  const operativeId = String(input.booking.operativeId ?? '').trim()
   if (!operativeId) return
-  const row = input.operatives.find((entry) => key(entry.id) === operativeId)
-  const booked = input.users.filter(
-    (user) =>
-      user.isActive !== false &&
-      (key(user.id) === operativeId ||
-        (user.formerUserIds ?? []).some((id) => key(id) === operativeId) ||
-        (row && key(row.email) !== '' && key(user.email) === key(row.email)))
-  )
   const actor = input.actor ? rulebookPerson(input.actor, input.users) : null
+  // Rulebook 1.16.0 §13: the booked id (operatives row, former / same-email id, any case) resolves to the person's
+  // signed-in account inside the recipient rule (`notificationRecipientAccountId`), one row per person.
   const recipients = bookingCreatedRecipients(
-    booked.map((user) => user.id),
+    [operativeId],
     actor,
-    rulebookRoster(input.users)
+    rulebookRoster(input.users),
+    input.operatives.map((row) => ({ id: row.id, email: row.email ?? null }))
   )
   if (recipients.length === 0) return
   const date = input.booking.date instanceof Date ? input.booking.date : new Date(input.booking.date)

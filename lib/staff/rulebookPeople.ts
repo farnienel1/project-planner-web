@@ -46,6 +46,8 @@ export function rulebookPerson(user: User, users: ReadonlyArray<User> = []): Rul
     id: user.id,
     email: user.email ?? null,
     isActive: user.isActive !== false,
+    // 1.16.0: the signed-up account is the notice recipient (`notificationRecipientAccountId`).
+    passwordSet: typeof user.passwordSet === 'boolean' ? user.passwordSet : null,
     role: staffAccountRole(user),
     isSuperAdmin: user.isSuperAdmin === true,
     adminAccess: permissions.adminAccess === true,
