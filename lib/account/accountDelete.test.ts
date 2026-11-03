@@ -367,3 +367,28 @@ test('confirm copy states login is deleted, records stay as Deleted user, subscr
   assert.match(text, /does not cancel/)
   assert.equal(ACCOUNT_DELETE_COPY.rowLabel, 'Delete my account')
 })
+
+import { accountOrgPaths, missingCompanyConfirmations } from './accountDelete.ts'
+
+test('1.15.0 accountOrgPaths: handover for a super admin with members, company deletion for the only member', () => {
+  const active = (email: string) => ({ email, isActive: true, passwordSet: true, firstName: email })
+  const shared = {
+    orgId: 'org-a', orgName: 'Acme', creatorUserId: 'u1', members: { u1: 'admin', u2: 'manager' },
+    memberFlags: [
+      { uid: 'u1', flags: { memberRole: 'admin' }, profile: active('u1@x.com') },
+      { uid: 'u2', flags: { memberRole: 'manager' }, profile: active('u2@x.com') },
+    ],
+  }
+  const alone = {
+    orgId: 'org-b', orgName: 'Solo Ltd', creatorUserId: 'u1', members: { u1: 'admin' },
+    memberFlags: [{ uid: 'u1', flags: { memberRole: 'admin' }, profile: active('u1@x.com') }],
+  }
+  const joined = { ...shared, orgId: 'org-c', creatorUserId: 'boss', members: { boss: 'admin', u1: 'manager' } }
+  assert.deepEqual(
+    accountOrgPaths('u1', active('u1@x.com'), [shared, alone, joined]).map((row) => row.path),
+    ['handover_required', 'delete_with_company', 'delete']
+  )
+  const paths = accountOrgPaths('u1', active('u1@x.com'), [alone])
+  assert.deepEqual(missingCompanyConfirmations(paths, {}).map((row) => row.orgId), ['org-b'])
+  assert.deepEqual(missingCompanyConfirmations(paths, { 'org-b': 'solo ltd' }), [])
+})

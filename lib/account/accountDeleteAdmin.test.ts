@@ -105,7 +105,7 @@ test('a scrubbed retry deletes the auth user without scanning events or other pe
 
   try {
     const evaluation = await evaluateAccountOrgs(uid)
-    assert.deepEqual(evaluation, { snapshots: [] })
+    assert.deepEqual(evaluation, { snapshots: [], paths: [] })
     assert.equal(calls.some((call) => call.url.includes(':runQuery')), false)
     const afterEvaluate = calls.length
 
