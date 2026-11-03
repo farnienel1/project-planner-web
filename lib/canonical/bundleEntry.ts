@@ -472,6 +472,9 @@ export {
   payrollTimePolicyScheduleWriteFields,
   payrollTimePolicyTimeline,
   validatePayrollTimePolicy,
+  PAYROLL_POLICY_TIME_STEP_MINUTES,
+  PAYROLL_POLICY_TIME_STEP_MESSAGE,
+  payrollPolicyTimeOnStep,
 } from './payrollPolicySchedule'
 export {
   activePaymentRunSummary,
@@ -934,6 +937,9 @@ export {
   customHoursPrefillForDays,
   weekendBookingBreakdown,
   weekendCustomHoursDefault,
+  bookingRequestIdentity,
+  isSameBookingRequest,
+  bookingHoursLabel,
 } from './bookingSlots'
 export { weekendFullDayWindow, weekendRuleForIsoWeekday } from './payrollHours'
 export { intervalCrossesMidnight, nextCalendarDayKey, overnightCarryInterval } from './engine'

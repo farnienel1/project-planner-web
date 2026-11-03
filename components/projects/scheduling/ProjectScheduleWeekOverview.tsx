@@ -11,10 +11,10 @@ import { findUserByAnyId, rosterDisplayName } from '@/lib/staff/userRosterUtils'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { weekDaysFrom } from '@/lib/scheduling/scheduleUtils'
 import {
+  bookingTimesText,
   customHoursRangeLabel,
   formatHoursLabel,
   hoursBreakdown,
-  namedSlotLabel,
   type BookingHoursInput,
 } from '@/lib/scheduling/paidHours'
 import { BookingEditSheet } from '@/components/schedule/BookingEditSheet'
@@ -133,7 +133,8 @@ function roleForUser(user: User | undefined): { label: string; tone: DayRow['rol
 function bookingRowFromHours(input: BookingHoursInput): Pick<DayRow, 'hours' | 'overtimeEquation' | 'range' | 'slot'> {
   const breakdown = hoursBreakdown(input)
   const range = customHoursRangeLabel(input)
-  const slotStr = range && range !== 'Custom hours' ? range : namedSlotLabel(input.timeSlot)
+  // Rulebook 1.20.2: "Custom 07:30–14:00" (`bookingTimesText`); hours are the pay rule's for the day (`totalPaidHours`).
+  const slotStr = bookingTimesText(input)
   return {
     hours: breakdown.totalPaidHours,
     overtimeEquation: breakdown.overtimeLine || breakdown.overtimeEquation,

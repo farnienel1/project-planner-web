@@ -52,7 +52,7 @@ export function ScheduleSelectedDates({
             </div>
 
             {/* Rulebook 1.13.0 (Q2, `allowedTimeSlotsOnDay`): no AM / PM on Saturday or Sunday. */}
-            <div className="grid grid-cols-4 gap-1 rounded-xl bg-slate-100 p-1">
+            <div className="grid grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1">
               {SLOT_OPTIONS.filter((slot) => slotOfferedOnDate(slot, entry.date, policy, entry.slot)).map((slot) => (
                 <button
                   key={slot}

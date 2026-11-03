@@ -468,3 +468,79 @@ export function customHoursBreakWarning(
   if (!span) return null
   return intervalsOverlap(span, { start, end }) ? CUSTOM_HOURS_BREAK_WARNING : null
 }
+
+/**
+ * Rulebook 1.20.2 §2 (owner bug, 3 Nov): what makes a new booking "already booked". A booking request is skipped as a
+ * duplicate only when it is the same person, day, slot, place AND — for custom hours — the same start, finish and
+ * break toggle. Weekend bookings are all custom hours, so a check that ignored the times treated a second Saturday
+ * booking at the same job (other times) as already booked and silently dropped it after the double-booking row had
+ * been ticked. Ids and place names compare without case (`normalizeDocumentId`); clock times compare as minutes.
+ * A screen never keeps its own identity string for this.
+ */
+export type BookingRequestIdentityInput = {
+  personId: string | null | undefined
+  dayKey: string
+  timeSlot: string | null | undefined
+  /** Manager bookings: `project` | `small_work` | `office` | …; operative bookings leave it out. */
+  locationType?: string | null
+  /** The job id (operative `projectId`, manager `locationId`). */
+  locationId?: string | null
+  customLocationName?: string | null
+  workStartTime?: string | null
+  workEndTime?: string | null
+  isBreakRemoved?: boolean | null
+}
+
+function identityPart(value: unknown): string {
+  return String(value ?? '').trim().toLowerCase()
+}
+
+export function bookingRequestIdentity(input: BookingRequestIdentityInput): string {
+  const kind = namedSlotKind(input.timeSlot)
+  const slot = kind === 'UNKNOWN' ? identityPart(input.timeSlot) : kind
+  const custom = kind === 'CUSTOM'
+  const clock = (value: string | null | undefined): string => {
+    const minutes = parseClockMinutes(value ?? null)
+    return minutes === null ? identityPart(value) : String(minutes)
+  }
+  return [
+    identityPart(input.personId),
+    String(input.dayKey || '').trim(),
+    slot,
+    identityPart(input.locationType),
+    identityPart(input.locationId),
+    identityPart(input.customLocationName),
+    custom ? clock(input.workStartTime) : '',
+    custom ? clock(input.workEndTime) : '',
+    input.isBreakRemoved === true ? 'break-off' : '',
+  ].join('|')
+}
+
+/** True when two booking requests are the same booking (`bookingRequestIdentity`). */
+export function isSameBookingRequest(a: BookingRequestIdentityInput, b: BookingRequestIdentityInput): boolean {
+  return bookingRequestIdentity(a) === bookingRequestIdentity(b)
+}
+
+/**
+ * Rulebook 1.20.2 §6 / §10 (owner decision, 3 Nov): the hours a booking row shows on every list — My Schedule,
+ * Schedule, the project / small works week, Daily Overview — are the pay rule's hours for that day
+ * (`payrollHoursResult` under the working hours in effect that day), never the clock duration. With hours at a
+ * multiplier the label carries the sum: a Saturday 07:30–14:00 on an 8h set window → "8h"; a Sunday 07:30–14:00 at
+ * every hour × 2 → "13h (6.5h × 2)"; a weekday 07:30–18:00 with 8h standard and 2h at 1.5 → "11h (8h + 2h × 1.5)".
+ */
+export type BookingHoursLabel = { hours: number; label: string }
+
+export function bookingHoursLabel(
+  result: { totalPaidHours: number; standardHours: number; outsideHours: number; outsideMultiplier: number } | null | undefined
+): BookingHoursLabel {
+  if (!result) return { hours: 0, label: '0h' }
+  const total = roundHours(Number(result.totalPaidHours) || 0)
+  const standard = roundHours(Number(result.standardHours) || 0)
+  const outside = roundHours(Number(result.outsideHours) || 0)
+  const multiplier = roundHours(Number(result.outsideMultiplier) || 1)
+  if (outside > 0 && Math.abs(multiplier - 1) > 0.001) {
+    const parts = standard > 0 ? `${hoursText(standard)} + ${hoursText(outside)} × ${multiplier}` : `${hoursText(outside)} × ${multiplier}`
+    return { hours: total, label: `${hoursText(total)} (${parts})` }
+  }
+  return { hours: total, label: hoursText(total) }
+}

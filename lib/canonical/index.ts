@@ -732,6 +732,9 @@ export {
   payrollTimePolicyScheduleWriteFields,
   payrollTimePolicyTimeline,
   validatePayrollTimePolicy,
+  PAYROLL_POLICY_TIME_STEP_MINUTES,
+  PAYROLL_POLICY_TIME_STEP_MESSAGE,
+  payrollPolicyTimeOnStep,
 } from './payrollPolicySchedule'
 export type {
   PayrollTimePolicyHistoryEntry,
@@ -1352,6 +1355,9 @@ export {
   customHoursPrefillForDays,
   weekendBookingBreakdown,
   weekendCustomHoursDefault,
+  bookingRequestIdentity,
+  isSameBookingRequest,
+  bookingHoursLabel,
 } from './bookingSlots'
 export { weekendFullDayWindow, weekendRuleForIsoWeekday } from './payrollHours'
 export { intervalCrossesMidnight, nextCalendarDayKey, overnightCarryInterval } from './engine'
@@ -1394,6 +1400,8 @@ export type {
   CustomHoursPrefillKind,
   BookingDayBreakdownLine,
   BookingDayBreakdownRow,
+  BookingRequestIdentityInput,
+  BookingHoursLabel,
 } from './bookingSlots'
 export type { SubscriptionAccess } from './billingAccess'
 export type { PayProfileDocument, PayProfileField, PaySubject, PayViewer } from './payProfile'

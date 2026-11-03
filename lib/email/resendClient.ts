@@ -20,6 +20,9 @@ export const PROJECT_PLANNER_EMAIL_FUNCTION_URL =
 
 export const EMAIL_SERVER_KEY_HEADER = 'X-Project-Planner-Server-Key'
 
+/** Longest wait for the email function before the send is reported as failed. */
+export const EMAIL_FUNCTION_TIMEOUT_MS = 20_000
+
 function emailFunctionUrl(): string {
   return process.env.EMAIL_FUNCTION_URL?.trim() || PROJECT_PLANNER_EMAIL_FUNCTION_URL
 }
@@ -51,7 +54,14 @@ export async function sendProjectPlannerEmail(params: {
   attachments?: ProjectPlannerEmailAttachment[]
   /** Only List-Unsubscribe / List-Unsubscribe-Post are passed on by the function. */
   headers?: Record<string, string>
-}): Promise<void> {
+  /**
+   * Send as `"<signed-in user's name> via Project Planner"` from the verified address (`data.fromCaller`). Needs the
+   * user's `idToken`; the function uses their own profile name, never one given here.
+   */
+  fromCaller?: boolean
+  /** CC the signed-in user on this one message (`data.ccCaller`). Needs `idToken`. */
+  ccCaller?: boolean
+}): Promise<ProjectPlannerEmailResult> {
   const key = serverKey()
   if (!key) {
     throw new Error('Email is not configured on this server (EMAIL_SERVER_KEY is not set).')
@@ -63,6 +73,8 @@ export async function sendProjectPlannerEmail(params: {
   if (params.text?.trim()) data.text = params.text
   if (params.replyTo?.trim()) data.replyTo = params.replyTo.trim()
   if (params.headers && Object.keys(params.headers).length) data.headers = params.headers
+  if (params.fromCaller) data.fromCaller = true
+  if (params.ccCaller) data.ccCaller = true
 
   const payload: Record<string, unknown> = {
     template: 'web_rendered',
@@ -83,11 +95,21 @@ export async function sendProjectPlannerEmail(params: {
   }
   if (params.idToken?.trim()) headers.Authorization = `Bearer ${params.idToken.trim()}`
 
-  const response = await fetch(emailFunctionUrl(), {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(payload),
-  })
+  // A slow function call fails visibly (with a reason) instead of hanging the request until the host cuts it off.
+  let response: Response
+  try {
+    response = await fetch(emailFunctionUrl(), {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(EMAIL_FUNCTION_TIMEOUT_MS),
+    })
+  } catch (error) {
+    if (error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError')) {
+      throw new Error('The email service did not answer in time. Check your sent items before sending again.')
+    }
+    throw error
+  }
 
   const body = await response.text()
   if (!response.ok) {
@@ -99,6 +121,30 @@ export async function sendProjectPlannerEmail(params: {
       // keep raw body
     }
     throw new Error(detail)
+  }
+  return parseEmailFunctionResult(body)
+}
+
+/** What the email function reports for a send: the Resend message ids and whether it honoured `ccCaller`. */
+export type ProjectPlannerEmailResult = {
+  ids: string[]
+  /** CC addresses the function put on the message (empty when it ignored `ccCaller`, e.g. an older deploy). */
+  cc: string[]
+  /** False when the deployed function predates `ccCaller` / `fromCaller`. */
+  ccSupported: boolean
+}
+
+export function parseEmailFunctionResult(body: string): ProjectPlannerEmailResult {
+  try {
+    const parsed = JSON.parse(body) as { results?: Array<{ id?: string | null; cc?: string[] }>; ccSupported?: boolean }
+    const results = Array.isArray(parsed.results) ? parsed.results : []
+    return {
+      ids: results.map((row) => (typeof row?.id === 'string' ? row.id : '')).filter(Boolean),
+      cc: results.flatMap((row) => (Array.isArray(row?.cc) ? row.cc.filter((value) => typeof value === 'string') : [])),
+      ccSupported: parsed.ccSupported === true,
+    }
+  } catch {
+    return { ids: [], cc: [], ccSupported: false }
   }
 }
 

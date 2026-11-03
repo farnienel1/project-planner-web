@@ -157,55 +157,86 @@ export async function POST(request: NextRequest) {
   const deliveryRequiredLabel = deliveryRequiredAt
     ? formatMaterialDeliveryRequired(deliveryRequiredAt)
     : undefined
+  // Owner (3 Nov): one email per recipient — the recipient in To and the sending user in CC — sent as
+  // "<user> via Project Planner" from the verified address with Reply-To the user (the email function decides the
+  // name and CC from the verified caller). All recipients are sent at once, not one after another. A function
+  // deployed before CC support ignores `ccCaller`; the route then sends the user's copy as before.
+  const idToken = bearerToken(request)
   const failed: string[] = []
+  const failures: Array<{ email: string; reason: string }> = []
+  const messageIds: string[] = []
   let sent = 0
   let copies = 0
 
-  for (const recipient of recipients) {
-    const { subject, html } = buildMaterialRequestEmail({
-      context: {
-        supplierName: recipient.name,
-        userName: senderName,
-        userEmail: senderEmail.toLowerCase(),
-        userPhone: clampString(body.value.senderPhone, 40),
-        userCompany: senderCompany,
-        jobNumber,
-        siteName: clampString(body.value.siteName, 200),
-        deliveryAddress: clampString(body.value.siteAddress, 400),
-        companyLogoURL: clampString(body.value.companyLogoURL, 500),
-        materials,
-        sentAt,
-        deliveryRequiredLabel,
-      },
-      isQuote,
-      sendAsPlainText,
-      contactName: recipient.name,
-    })
-
-    try {
-      await sendProjectPlannerEmail({
-        to: recipient.email,
-        subject,
-        html,
-        replyTo: senderEmail.toLowerCase(),
-        orgId: access.organizationId,
-        idToken: bearerToken(request),
+  const outcomes = await Promise.all(
+    recipients.map(async (recipient) => {
+      const { subject, html } = buildMaterialRequestEmail({
+        context: {
+          supplierName: recipient.name,
+          userName: senderName,
+          userEmail: senderEmail.toLowerCase(),
+          userPhone: clampString(body.value.senderPhone, 40),
+          userCompany: senderCompany,
+          jobNumber,
+          siteName: clampString(body.value.siteName, 200),
+          deliveryAddress: clampString(body.value.siteAddress, 400),
+          companyLogoURL: clampString(body.value.companyLogoURL, 500),
+          materials,
+          sentAt,
+          deliveryRequiredLabel,
+        },
+        isQuote,
+        sendAsPlainText,
+        contactName: recipient.name,
       })
-      sent += 1
-    } catch (error) {
-      console.error('[materials/send-request-email]', recipient.email, error)
-      failed.push(recipient.email)
+      try {
+        const result = await sendProjectPlannerEmail({
+          to: recipient.email,
+          subject,
+          html,
+          replyTo: senderEmail.toLowerCase(),
+          orgId: access.organizationId,
+          idToken,
+          fromCaller: true,
+          ccCaller: true,
+        })
+        return { recipient, subject, html, result, error: null as string | null }
+      } catch (error) {
+        return { recipient, subject, html, result: null, error: error instanceof Error ? error.message : String(error) }
+      }
+    })
+  )
+
+  for (const outcome of outcomes) {
+    if (!outcome.result) {
+      console.error('[materials/send-request-email] failed', outcome.recipient.email, outcome.error)
+      failed.push(outcome.recipient.email)
+      failures.push({
+        email: outcome.recipient.email,
+        reason: clientSafeMessage(new Error(outcome.error || ''), 'The email was not sent'),
+      })
       continue
     }
-
+    sent += 1
+    messageIds.push(...outcome.result.ids)
+    console.info('[materials/send-request-email] sent', {
+      to: outcome.recipient.email,
+      resendIds: outcome.result.ids,
+      cc: outcome.result.cc,
+    })
+    if (outcome.result.cc.length > 0) {
+      copies += 1
+      continue
+    }
+    // Older function deploy without CC: the user's separate copy, as before.
     try {
       await sendProjectPlannerEmail({
         to: senderEmail.toLowerCase(),
-        subject: `Copy: ${subject}`,
-        html,
+        subject: `Copy: ${outcome.subject}`,
+        html: outcome.html,
         replyTo: senderEmail.toLowerCase(),
         orgId: access.organizationId,
-        idToken: bearerToken(request),
+        idToken,
       })
       copies += 1
     } catch (error) {
@@ -214,7 +245,11 @@ export async function POST(request: NextRequest) {
   }
 
   if (sent === 0) {
-    return jsonError(clientSafeMessage(new Error('All recipient emails failed'), 'Failed to send material list'), 500)
+    const reason = failures[0]?.reason ? `: ${failures[0].reason}` : ''
+    return Response.json(
+      { ok: false, error: clientSafeMessage(new Error(`Email not sent${reason}`), 'Failed to send material list'), failed, failures },
+      { status: 502 }
+    )
   }
 
   return Response.json({
@@ -222,6 +257,8 @@ export async function POST(request: NextRequest) {
     sent,
     copies,
     failed,
+    failures,
+    messageIds,
     deliveryRequiredAt: deliveryRequiredAt?.toISOString() ?? null,
   })
 }

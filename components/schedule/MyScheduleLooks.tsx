@@ -4,9 +4,11 @@
 
 'use client'
 
-import { estimatedWorkedHours, overviewFormatHours, parseMinutes } from '@/lib/daily-overview/buildDailyOverview'
+import { overviewFormatHours, parseMinutes } from '@/lib/daily-overview/buildDailyOverview'
 import { bookingPayrollHours, formatOvertimeEquation } from '@/lib/scheduling/paidHours'
 import { weekdayPaidHours, workedHoursSplit } from '@/lib/canonical'
+import { bookingRowHours } from '@/lib/scheduling/bookingRowHours'
+import { namedSlotKind } from '@/lib/scheduling/paidHours'
 import { bookingDayKey, policyForBookingDate } from '@/lib/scheduling/bookingSlotRules'
 import type { ManagerLocationType, ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import type { OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
@@ -69,10 +71,11 @@ export function myScheduleClockSubtitle(
   policy?: OrgPayrollTimePolicy
 ): string {
   const range = slotClockRange(input.timeSlot, input.workStartTime, input.workEndTime, policy)
-  // Rulebook 1.19.0: the working hours in effect on the booking day.
-  const dayPolicy = input.date ? policyForBookingDate(input.date, policy) ?? policy : policy
-  const hours = estimatedWorkedHours({ ...input, policy: dayPolicy, dayKey: input.date ? bookingDayKey(input.date) : undefined })
-  return `${range.label} · ${overviewFormatHours(hours)} hrs`
+  const custom = namedSlotKind(input.timeSlot) === 'custom'
+  // Rulebook 1.20.2 (`bookingHoursLabel`): the pay rule's hours for that day under the working hours in effect on it
+  // (a Saturday window counting 8h shows 8h; a Sunday at every hour × 2 shows "13h (6.5h × 2)"), never clock hours.
+  const hours = bookingRowHours(input, input.date ?? new Date(), policy).label
+  return `${custom ? 'Custom ' : ''}${range.label} · ${hours}`
 }
 
 export function MyScheduleStripeRow({
@@ -148,11 +151,12 @@ export function MyScheduleTotalHoursCard({
   /** The day shown, so weekend all-hours rules apply (`payrollHoursResult`). */
   date?: Date
 }) {
-  // Same figures as Daily Overview: `payrollHoursResult` → `workedHoursSplit` (never multiplied).
+  // Same pay rule as Daily Overview: `payrollHoursResult` (OT line from `workedHoursSplit`).
   // Rulebook 1.19.0: the working hours in effect on the day shown.
   const dayPolicy = date ? policyForBookingDate(date, policy) ?? policy : policy
   const results = bookings.map((b) => bookingPayrollHours({ ...b, policy: dayPolicy, dayKey: date ? bookingDayKey(date) : undefined }))
-  const worked = results.reduce((sum, r) => sum + r.workedHours, 0)
+  // Rulebook 1.20.2: the headline is the pay rule's hours for the day (`totalPaidHours`), the same as each row.
+  const paid = results.reduce((sum, r) => sum + r.totalPaidHours, 0)
   const ot = results.reduce((sum, r) => sum + workedHoursSplit(r).outsideWorkedHours, 0)
   const otMultiplier =
     results.filter((r) => r.outsideHours > 0).reduce((max, r) => Math.max(max, r.outsideMultiplier), 0) ||
@@ -177,8 +181,8 @@ export function MyScheduleTotalHoursCard({
           </span>
         ) : (
           <div className="text-right">
-            <p className="text-[18px] font-medium text-[var(--ink)]">{overviewFormatHours(worked)}</p>
-            <p className="text-[10px] font-medium text-[var(--ink3)]">hrs worked</p>
+            <p className="text-[18px] font-medium text-[var(--ink)]">{overviewFormatHours(paid)}</p>
+            <p className="text-[10px] font-medium text-[var(--ink3)]">hrs</p>
             {ot > 0.05 ? (
               <p className="text-[10px] font-semibold text-[#854F0B]">
                 OT {formatOvertimeEquation(ot, otMultiplier)}

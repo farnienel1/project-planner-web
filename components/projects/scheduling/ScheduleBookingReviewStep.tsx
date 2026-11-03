@@ -44,6 +44,7 @@ export function ScheduleBookingReviewStep({
   onToggleExpand,
   onRemovePerson,
   onAddAnother,
+  onChangeDates,
 }: {
   people: DraftBookingPerson[]
   slots: ScheduleDateSlot[]
@@ -51,6 +52,8 @@ export function ScheduleBookingReviewStep({
   onToggleExpand: (personId: string) => void
   onRemovePerson: (personId: string) => void
   onAddAnother: () => void
+  /** Back to the dates step; the people chosen stay. */
+  onChangeDates?: () => void
 }) {
   const policy = useOrganizationPayrollPolicy()
   if (people.length === 0) {
@@ -75,6 +78,15 @@ export function ScheduleBookingReviewStep({
         <p className="mt-1 text-sm text-slate-600">
           Check each person and day before confirming. Tap someone with a warning to see clash details.
         </p>
+        {onChangeDates && slots.length > 0 && (
+          <button
+            type="button"
+            onClick={onChangeDates}
+            className="mt-2 text-sm font-semibold text-blue-600 hover:underline"
+          >
+            {slots.length === 1 ? '1 date' : `${slots.length} dates`} · Change dates
+          </button>
+        )}
       </div>
 
       <div className="space-y-3">

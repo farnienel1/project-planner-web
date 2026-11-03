@@ -118,3 +118,32 @@ test('sendProjectPlannerEmail surfaces a Cloud Function error', async () => {
   assert.ok(failure instanceof Error)
   assert.equal((failure as Error).message, 'Too many emails. Try again later.')
 })
+
+test('sendProjectPlannerEmail asks for the caller as From name and CC, and returns the Resend ids', async () => {
+  let result: Awaited<ReturnType<typeof sendProjectPlannerEmail>> | null = null
+  const calls = await capture(
+    async () => {
+      result = await sendProjectPlannerEmail({
+        to: 'supplier@example.com',
+        subject: 'Order',
+        html: '<p>x</p>',
+        replyTo: 'me@example.com',
+        idToken: 'id-token-1',
+        fromCaller: true,
+        ccCaller: true,
+      })
+    },
+    new Response(JSON.stringify({ sent: true, ccSupported: true, results: [{ to: 'supplier@example.com', id: 're-id-1', cc: ['me@example.com'] }] }), { status: 200 })
+  )
+  assert.deepEqual((calls[0].body.data as Record<string, unknown>).fromCaller, true)
+  assert.deepEqual((calls[0].body.data as Record<string, unknown>).ccCaller, true)
+  assert.deepEqual(result, { ids: ['re-id-1'], cc: ['me@example.com'], ccSupported: true })
+})
+
+test('sendProjectPlannerEmail against a function without CC support reports no CC (the route then sends the copy)', async () => {
+  let result: Awaited<ReturnType<typeof sendProjectPlannerEmail>> | null = null
+  await capture(async () => {
+    result = await sendProjectPlannerEmail({ to: 'a@example.com', subject: 's', html: 'h', ccCaller: true })
+  }, new Response(JSON.stringify({ sent: true, results: [{ to: 'a@example.com', id: 'x' }] }), { status: 200 }))
+  assert.deepEqual(result, { ids: ['x'], cc: [], ccSupported: false })
+})

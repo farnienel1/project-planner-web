@@ -431,3 +431,35 @@ test('server mode: a stored key or header with a trailing newline or spaces stil
   const blank = makeHandler({ serverKey: '\n' })
   assert.equal((await call(blank.handler, { headers: { 'X-Project-Planner-Server-Key': 'server-secret' }, body: webBody })).code, 401)
 })
+
+test('server mode: fromCaller sends as "<caller name> via Project Planner" from the fixed address; ccCaller copies the caller on the one message', async () => {
+  const { handler, sent } = makeHandler()
+  const res = await call(handler, {
+    headers: { 'X-Project-Planner-Server-Key': 'server-secret', ...auth('M') },
+    body: {
+      ...webBody,
+      orgId: ORG,
+      // A caller-chosen name or CC address is ignored: only the verified caller's own profile is used.
+      data: { ...webBody.data, replyTo: 'manager@example.com', fromCaller: true, ccCaller: true, fromName: 'PayPal', cc: ['all@example.com'] },
+    },
+  })
+  assert.equal(res.code, 200, JSON.stringify(res.payload))
+  assert.equal(sent.length, 1)
+  assert.equal(sent[0].from, '"Max Manager via Project Planner" <info@projectplanner.us>')
+  assert.deepEqual(sent[0].cc, ['manager@example.com'])
+  assert.equal(sent[0].reply_to, 'manager@example.com')
+  assert.equal(res.payload.ccSupported, true)
+  assert.equal(res.payload.results[0].id, 'msg-1')
+  assert.deepEqual(res.payload.results[0].cc, ['manager@example.com'])
+  // Without a signed-in caller nothing changes.
+  await call(handler, { headers: { 'X-Project-Planner-Server-Key': 'server-secret' }, body: { ...webBody, data: { ...webBody.data, fromCaller: true, ccCaller: true } } })
+  assert.equal(sent[1].from, '"Project Planner" <info@projectplanner.us>')
+  assert.equal(sent[1].cc, undefined)
+})
+
+test('server mode: a provider refusal names its reason in the 502', async () => {
+  const { handler } = makeHandler({ providerFails: true })
+  const res = await call(handler, { headers: { 'X-Project-Planner-Server-Key': 'server-secret' }, body: webBody })
+  assert.equal(res.code, 502)
+  assert.match(res.payload.error, /provider down/)
+})

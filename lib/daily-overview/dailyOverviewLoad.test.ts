@@ -120,10 +120,16 @@ test('the Standard and Overtime tiles split the hours worked; overtime is not al
   }
   // Wed 21 Oct 2026 on Raccord MEP: 06:00–17:45 custom hours showed 11.25h with Overtime 0.
   const wed = build('2026-10-21', '06:00', '17:45')
-  assert.deepEqual([wed.labourHours, wed.standardWorkedHours, wed.overtimeWorkedHours, wed.overtimeMultiplier], [11.25, 8, 3.25, 1.5])
+  // 1.20.2: the day's hours are the pay rule's — 8h standard + 3.25h × 1.5 = 12.875h; the row pill shows the sum.
+  assert.deepEqual([wed.labourHours, wed.standardWorkedHours, wed.overtimeWorkedHours, wed.overtimeMultiplier], [12.875, 8, 3.25, 1.5])
+  assert.equal(wed.projectCards[0].people[0].pillText, '12.88h (8h + 3.25h × 1.5)')
+  assert.equal(wed.projectCards[0].people[0].subtitle, 'Custom 06:00–17:45')
   // Sunday with no saved rule: every hour at 2×, none standard.
   const sun = build('2026-10-25', '08:00', '12:00')
   assert.deepEqual([sun.standardWorkedHours, sun.overtimeWorkedHours, sun.overtimeMultiplier], [0, 4, 2])
+  // Owner report (3 Nov): a Sunday showed its clock hours; it shows the pay rule's.
+  assert.equal(sun.labourHours, 8)
+  assert.equal(sun.projectCards[0].people[0].pillText, '8h (4h × 2)')
   const empty = build('2026-10-22', '07:30', '16:00')
   assert.deepEqual([empty.standardWorkedHours, empty.overtimeWorkedHours, empty.overtimeMultiplier], [8, 0, 1.5])
 })
