@@ -1,5 +1,5 @@
 /**
- * Who sends material quotes and orders, and to whom (rulebook §16, §21; 1.15.0, owner decisions round 6).
+ * Who sends material quotes and orders, and to whom (rulebook §16; 1.15.0, owner decisions round 6).
  *
  *   - `canSendMaterialOrders(viewer)`: admins and super admins outside operative mode, and managers. Operatives never
  *     send a quote or order and never see quote / order history (`canViewMaterialOrderHistory` is the same test). The

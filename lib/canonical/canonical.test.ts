@@ -8184,9 +8184,12 @@ test('1.11.0 accountTypeChangeWrites: every document that decides the type; refu
   assert.deepEqual((plan.writes[2] as { fields: Record<string, unknown> }).fields, { 'members.u1': 'admin' })
   const down = r3Levels.accountTypeChangeWrites({ person, kind: 'operative', organizationId: 'ORG' })
   assert.ok(down.ok && down.permissions.operativeMode === true && down.permissions.manager === false)
+  // 1.15.0: an operative becoming a manager keeps their stored toggles (none stored: the reading defaults).
   const manager = r3Levels.accountTypePermissions('manager', { role: 'operative', operativeMode: true })
   assert.equal(manager.projects, false)
-  assert.equal(manager.operatives, true)
+  assert.equal(manager.operatives, false)
+  assert.equal(manager.manager, true)
+  assert.equal(manager.operativeMode, false)
   // A profile of another company: only this organisation's members entry and membership are written.
   const other = r3Levels.accountTypeChangeWrites({ person: { ...person, organizationId: 'organizations/OTHER' }, kind: 'admin', organizationId: 'ORG' })
   assert.ok(other.ok)
@@ -8925,10 +8928,188 @@ test('1.14.0 addUserPermissionDefaults: every toggle the adder can change starts
 test('1.14.0 a user type change keeps saved toggles (not the new-user defaults)', () => {
   const manager = { role: 'manager', manager: true, projects: true, weeklyReports: true, dailyOverview: true }
   const back = r1140TypePerms('manager', { ...manager, role: 'admin', adminAccess: true, annualLeaveSelfBook: true })
-  assert.equal(back.annualLeaveSelfBook, false)
+  // 1.15.0: every saved toggle is kept, Annual Leave Management included.
+  assert.equal(back.annualLeaveSelfBook, true)
+  assert.equal(back.adminAccess, false)
   const asManager = r1140TypePerms('manager', manager)
   assert.equal(asManager.projects, true)
   assert.equal(asManager.weeklyReports, true)
   assert.equal(asManager.dailyOverview, true)
   assert.equal(r1140TypePerms('admin', { ...manager, annualLeaveSelfBook: true }).annualLeaveSelfBook, true)
+})
+
+// MARK: - 1.15.0 owner decisions round 6
+
+import {
+  accountTypeChangeWrites as r1150TypeWrites,
+  accountTypePermissions as r1150TypePerms,
+  accountTypeWritePermissions as r1150WritePerms,
+  effectivePermissions as r1150Effective,
+} from './permissionLevels.ts'
+import { USER_PERMISSION_FIELDS as R1150_FIELDS } from './userProfile.ts'
+
+function r1150Apply(doc: Record<string, unknown>, plan: ReturnType<typeof r1150TypeWrites>): Record<string, unknown> {
+  assert.ok(plan.ok)
+  if (!plan.ok) return doc
+  const profile = plan.writes.find((write) => write.kind === 'userProfile') as { fields: Record<string, unknown> }
+  const next: Record<string, unknown> = { ...doc, permissions: { ...(doc.permissions as Record<string, unknown>) } }
+  for (const [key, value] of Object.entries(profile.fields)) {
+    if (key.startsWith('permissions.')) (next.permissions as Record<string, unknown>)[key.slice(12)] = value
+    else next[key] = value
+  }
+  return next
+}
+
+test('1.15.0 manager → admin → manager returns the exact toggles; an admin still reads all on', () => {
+  const toggles = {
+    manager: true, operatives: false, qualifications: true, materials: true, projects: false, smallWorks: true,
+    siteAudit: true, subContractors: false, wholesalersOrderHistory: false, annualLeaveSelfBook: true,
+    weeklyReports: false, dailyOverview: false, skills: false,
+  }
+  const start = { id: 'm1', email: 'm@x.com', organizationId: 'ORG', role: 'manager', adminAccess: false, operativeMode: false, ...toggles, permissions: { ...toggles, adminAccess: false, operativeMode: false } }
+  const asAdmin = r1150Apply(start, r1150TypeWrites({ person: start, kind: 'admin', organizationId: 'ORG' }))
+  const adminView = r1150Effective(asAdmin)
+  for (const key of R1150_FIELDS) {
+    if (key === 'operativeMode') assert.equal(adminView[key], false)
+    else if (key === 'annualLeaveSelfBook') assert.equal(adminView[key], true)
+    else assert.equal(adminView[key], true, `admin reads ${key} on`)
+  }
+  // Stored values untouched underneath.
+  for (const [key, value] of Object.entries(toggles)) assert.equal(asAdmin[key], value, `stored ${key}`)
+  // A Change user type screen showing the admin all on writes only Annual Leave Management.
+  const screen = Object.fromEntries(R1150_FIELDS.map((key) => [key, true]))
+  const viaScreen = r1150Apply(start, r1150TypeWrites({ person: start, kind: 'admin', organizationId: 'ORG', permissions: { ...screen, annualLeaveSelfBook: false } }))
+  assert.equal(viaScreen.projects, false)
+  assert.equal(viaScreen.annualLeaveSelfBook, false)
+  const back = r1150Apply(asAdmin, r1150TypeWrites({ person: asAdmin, kind: 'manager', organizationId: 'ORG' }))
+  assert.equal(back.adminAccess, false)
+  assert.equal(back.role, 'manager')
+  for (const [key, value] of Object.entries(toggles)) {
+    assert.equal(back[key], value, `top-level ${key}`)
+    assert.equal((back.permissions as Record<string, unknown>)[key], value, `permissions.${key}`)
+  }
+  assert.deepEqual(
+    Object.fromEntries(Object.keys(toggles).map((key) => [key, r1150Effective(back)[key as keyof typeof toggles]])),
+    { ...toggles, materials: true, siteAudit: true, skills: false }
+  )
+})
+
+test('1.15.0 operative → manager keeps the toggles; the screen sets only what the new level can change', () => {
+  const op = { id: 'o1', role: 'operative', operativeMode: true, materials: false, siteAudit: true, projects: false, weeklyReports: true }
+  const manager = r1150TypePerms('manager', op)
+  assert.equal(manager.operativeMode, false)
+  assert.equal(manager.manager, true)
+  assert.equal(manager.materials, false) // stored; reads on (locked) for a manager
+  assert.equal(manager.weeklyReports, true)
+  assert.equal(manager.projects, false)
+  assert.equal(r1150Effective({ ...op, ...manager, role: 'manager' }).materials, true)
+  const edited = r1150WritePerms('manager', op, { projects: true, adminAccess: true, materials: false })
+  assert.equal(edited.projects, true)
+  assert.equal(edited.adminAccess, false)
+  const back = r1150TypePerms('operative', { ...op, ...manager, role: 'manager' })
+  assert.equal(back.operativeMode, true)
+  assert.equal(back.manager, false)
+  assert.equal(back.weeklyReports, true)
+  assert.equal(back.siteAudit, true)
+})
+
+import {
+  MATERIAL_ORDER_TYPED_RECIPIENTS_MAX as R1150_TYPED_MAX,
+  canSendMaterialOrders as r1150CanSend,
+  materialOrderRecipientCheck as r1150RecipientCheck,
+} from './materialOrderAccess.ts'
+import { canViewMaterialOrderHistory as r1150History } from './staffAccess.ts'
+
+test('1.15.0 canSendMaterialOrders: admins, super admins and managers; never an operative', () => {
+  const role = (flags: Partial<{ isSuperAdmin: boolean; isAdmin: boolean; isManager: boolean; isOperativeMode: boolean }>) => ({
+    isSuperAdmin: false, isAdmin: false, isManager: false, isOperativeMode: false, ...flags,
+  })
+  assert.equal(r1150CanSend(role({ isSuperAdmin: true, isAdmin: true })), true)
+  assert.equal(r1150CanSend(role({ isAdmin: true })), true)
+  assert.equal(r1150CanSend(role({ isManager: true })), true)
+  assert.equal(r1150CanSend(role({ isOperativeMode: true })), false)
+  assert.equal(r1150CanSend(role({ isAdmin: true, isOperativeMode: true })), false)
+  assert.equal(r1150CanSend(role({})), false)
+  assert.equal(r1150CanSend({ level: 'manager' }), true)
+  assert.equal(r1150CanSend({ level: 'operative' }), false)
+  assert.equal(r1150CanSend(null), false)
+  for (const flags of [{ isManager: true }, { isOperativeMode: true }, { isAdmin: true }]) {
+    assert.equal(r1150History(role(flags)), r1150CanSend(role(flags)))
+  }
+})
+
+test('1.15.0 materialOrderRecipientCheck: saved contacts, the sender copy and at most 3 typed addresses', () => {
+  assert.equal(R1150_TYPED_MAX, 3)
+  const saved = ['Wendy@Pipes.example']
+  const ok = r1150RecipientCheck({ recipients: ['wendy@pipes.example', 'a@x.example', 'B@x.example', 'c@x.example', 'me@x.example', 'a@x.example'], savedContactEmails: saved, senderEmail: 'ME@x.example' })
+  assert.deepEqual(ok, { ok: true, saved: ['wendy@pipes.example'], typed: ['a@x.example', 'b@x.example', 'c@x.example'], self: true })
+  const four = r1150RecipientCheck({ recipients: ['a@x.example', 'b@x.example', 'c@x.example', 'd@x.example'], savedContactEmails: saved })
+  assert.equal(four.ok ? null : four.reason, 'too_many_typed')
+  const selfOnly = r1150RecipientCheck({ recipients: ['me@x.example'], savedContactEmails: saved, senderEmail: 'me@x.example' })
+  assert.equal(selfOnly.ok ? null : selfOnly.reason, 'none')
+  const typedOnly = r1150RecipientCheck({ recipients: ['shop@x.example'], savedContactEmails: [] })
+  assert.ok(typedOnly.ok)
+  const bad = r1150RecipientCheck({ recipients: ['not an email'], savedContactEmails: [] })
+  assert.equal(bad.ok ? null : bad.reason, 'invalid')
+})
+
+import * as r1150Del from './organizationDeletion.ts'
+
+test('1.15.0 organizationDeletionState: active, scheduled (locked, due after 60 days) and erased', () => {
+  const at = Date.UTC(2026, 10, 3, 10, 0, 0)
+  assert.equal(r1150Del.DELETION_RESTORE_DAYS, 60)
+  assert.deepEqual(r1150Del.organizationDeletionState({}, at), { state: 'active' })
+  const fields = r1150Del.organizationDeletionWriteFields({ requestedBy: 'SA', requestedAtMs: at })
+  assert.equal(fields.deletion.status, 'scheduled')
+  assert.equal(fields.deletion.restoreBy, 'super_admin')
+  assert.equal(fields.deletion.eraseAfter.getTime() - at, 60 * 24 * 60 * 60 * 1000)
+  const org = { id: 'ORG', name: 'Acme', creatorUserId: 'SA', ...fields }
+  const state = r1150Del.organizationDeletionState(org, at + 1000)
+  assert.equal(state.state, 'scheduled')
+  assert.ok(state.state === 'scheduled' && state.locked && !state.due)
+  assert.equal(r1150Del.organizationEraseDue(org, at + 59 * 86400000), false)
+  assert.equal(r1150Del.organizationEraseDue(org, at + 60 * 86400000), true)
+  // Firestore Timestamp-like values read too.
+  const stored = { deletion: { status: 'scheduled', requestedAt: { seconds: at / 1000, nanoseconds: 0 }, requestedBy: 'SA' } }
+  assert.equal(r1150Del.parseOrganizationDeletion(stored)?.eraseAfterMs, at + 60 * 86400000)
+  assert.equal(r1150Del.organizationDeletionState({ deletion: { status: 'erased' } }).state, 'erased')
+  assert.equal(
+    r1150Del.organizationDeletedMessage(at + 60 * 86400000, 'Europe/London'),
+    'This organisation has been deleted and will be erased on 2 January 2027.'
+  )
+})
+
+test('1.15.0 restore: the super admin when restoreBy is super_admin; the platform owner always', () => {
+  const at = Date.UTC(2026, 10, 3)
+  const org = { id: 'ORG', creatorUserId: 'SA', ...r1150Del.organizationDeletionWriteFields({ requestedBy: 'SA', requestedAtMs: at }) }
+  assert.equal(r1150Del.canRestoreOrganization({ org, viewer: { id: 'SA' }, now: at }), true)
+  assert.equal(r1150Del.canRestoreOrganization({ org, viewer: { id: 'ADMIN' }, now: at }), false)
+  assert.equal(r1150Del.canRestoreOrganization({ org, viewer: { id: 'SA2', isSuperAdmin: true, organizationId: 'ORG' }, now: at }), true)
+  const owner = { id: 'ORG', creatorUserId: 'SA', ...r1150Del.organizationDeletionWriteFields({ requestedBy: 'SA', requestedAtMs: at, restoreBy: 'platform_owner' }) }
+  assert.equal(r1150Del.canRestoreOrganization({ org: owner, viewer: { id: 'SA' }, now: at }), false)
+  assert.equal(r1150Del.canRestoreOrganization({ org: owner, viewerIsPlatformOwner: true, now: at }), true)
+  assert.equal(r1150Del.canRestoreOrganization({ org: { id: 'ORG' }, viewerIsPlatformOwner: true }), false)
+})
+
+test('1.15.0 organizationDeleteConfirmationError: company name and DELETE', () => {
+  const base = { organizationName: 'Acme Builders' }
+  assert.equal(r1150Del.organizationDeleteConfirmationError({ ...base, typedName: ' acme builders ', typedConfirmation: 'DELETE' }), null)
+  assert.match(r1150Del.organizationDeleteConfirmationError({ ...base, typedName: 'Acme', typedConfirmation: 'DELETE' }) || '', /company name/)
+  assert.match(r1150Del.organizationDeleteConfirmationError({ ...base, typedName: 'Acme Builders', typedConfirmation: 'delete' }) || '', /DELETE/)
+})
+
+test('1.15.0 accountDeletionPath: handover, delete with company, delete', () => {
+  const org = { id: 'ORG', creatorUserId: 'SA' }
+  const sa = { id: 'SA', email: 'sa@x.com', isActive: true, passwordSet: true, firstName: 'Sa' }
+  const member = { id: 'M', email: 'm@x.com', isActive: true, passwordSet: true, firstName: 'Mo' }
+  const pending = { id: 'P', email: 'p@x.com', isActive: true, passwordSet: false, firstName: 'Pat' }
+  const inactive = { id: 'I', email: 'i@x.com', isActive: false, passwordSet: true, firstName: 'Ina' }
+  const sameEmail = { id: 'SA-OLD', email: 'SA@x.com', isActive: true, passwordSet: true, firstName: 'Sa' }
+  assert.equal(r1150Del.accountDeletionPath(sa, [sa, member], org), 'handover_required')
+  assert.equal(r1150Del.accountDeletionPath(sa, [sa, pending, inactive, sameEmail], org), 'delete_with_company')
+  assert.equal(r1150Del.accountDeletionPath(member, [sa, member], org), 'delete')
+  assert.equal(r1150Del.accountDeletionPath({ id: 'S2', isSuperAdmin: true, organizationId: 'ORG' }, [sa], org), 'handover_required')
+  const scheduled = { ...org, ...r1150Del.organizationDeletionWriteFields({ requestedBy: 'SA', requestedAtMs: Date.now() }) }
+  assert.equal(r1150Del.accountDeletionPath(sa, [sa, member], scheduled), 'delete')
+  assert.deepEqual(Object.keys(r1150Del.erasedOrganizationAuditFields({ name: 'Acme', members: { SA: 'admin' } }, 0)), ['erasedAt', 'name'])
 })

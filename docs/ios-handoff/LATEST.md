@@ -1,4 +1,4 @@
-# iOS follow-on — rulebook 1.14.0
+# iOS follow-on — rulebook 1.15.0
 
 Generated 2026-11-03 by `npm run rulebook:handoff` in project-planner-web. Paste this whole file into the iOS agent.
 The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; never edit the iOS mirror by hand.
@@ -8,9 +8,9 @@ The web repo copy of `docs/RULEBOOK.md` is canonical. iOS mirrors it exactly; ne
 ║ FOLLOW-ON — paste into the iOS agent                             ║
 ╚══════════════════════════════════════════════════════════════════╝
 Started on: web
-Rulebook version: 1.13.2 → 1.14.0
-Packed hash: da6f1afc5c6d39ce73f74bbd03dfa35cb5342e4c9aa617385ece30ce1a12dedd
-Rulebook sha256: 35129e242d51f66dae05857fe1d56d784f3ac7745093575f3eef4b9d77666c97
+Rulebook version: 1.14.0 → 1.15.0
+Packed hash: 8958960db13c57b7268e396fbebcac180b1aeb839f2fbbdea3672b34153b3e87
+Rulebook sha256: a972d243b87678a85857aa44af31ea1948138a032c39d06b0fd98d22bb2d9d0f
 Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS repo, which copies:
   web lib/canonical/dist/canonical-business.js      → iOS Project Planner/Canonical/canonical-business.js
   web lib/canonical/dist/canonical-business.sha256  → iOS Project Planner/Canonical/canonical-business.js.sha256
@@ -20,29 +20,29 @@ Copy (do not edit by hand) — run scripts/sync-rulebook-from-web.sh in the iOS 
   web lib/canonical/cross-platform-contract.json    → iOS ProjectPlannerTests/CrossPlatformContract.json
 Contract sha256: d655dd7d122e53a1167569216d43cba7598670671310ca84c59ea7e46373b7e6
 Call: CanonicalBusinessEngine — no second calculator in Swift.
-Exports added: PAY_RATE_REQUIRED_MESSAGE, lineManagerSelectedIds, payRateRequiredError, usersMissingPayRate
+Exports added: ACCOUNT_DELETE_WITH_COMPANY_MESSAGE, ACCOUNT_HANDOVER_REQUIRED_MESSAGE, DELETION_RESTORE_DAYS, ERASED_ORGANIZATIONS_COLLECTION, MATERIAL_ORDER_NO_RECIPIENT_MESSAGE, MATERIAL_ORDER_SEND_REFUSED_MESSAGE, MATERIAL_ORDER_TYPED_RECIPIENTS_MAX, MATERIAL_ORDER_TYPED_RECIPIENTS_MESSAGE, ORGANIZATION_DELETE_BODY, ORGANIZATION_DELETE_CONFIRMATION, ORGANIZATION_DELETE_SUPER_ADMIN_ONLY_MESSAGE, ORGANIZATION_DELETE_TITLE, ORGANIZATION_RESTORED_MESSAGE, accountDeletionPath, accountTypeWritePermissions, canRestoreOrganization, canSendMaterialOrders, deletionTimeMs, erasedOrganizationAuditFields, isOrganizationSuperAdmin, materialOrderRecipientCheck, organizationDeleteConfirmationError, organizationDeletedMessage, organizationDeletionState, organizationDeletionWriteFields, organizationEraseDateLabel, organizationEraseDue, parseOrganizationDeletion
 Exports removed: none
-Web files that changed the rules: docs/RULEBOOK.md, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/index.ts, lib/canonical/lineManagers.ts, lib/canonical/payRate.ts, lib/canonical/permissionLevels.ts
+Web files that changed the rules: docs/RULEBOOK.md, firestore.indexes.json, firestore.rules, lib/canonical/bundleEntry.ts, lib/canonical/canonical.test.ts, lib/canonical/index.ts, lib/canonical/materialOrderAccess.ts, lib/canonical/organizationDeletion.ts
 Done when:
-- [ ] Packed hash in iOS equals da6f1afc5c6d39ce73f74bbd03dfa35cb5342e4c9aa617385ece30ce1a12dedd
-- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 35129e242d51f66dae05857fe1d56d784f3ac7745093575f3eef4b9d77666c97)
-- [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.14.0)
+- [ ] Packed hash in iOS equals 8958960db13c57b7268e396fbebcac180b1aeb839f2fbbdea3672b34153b3e87
+- [ ] iOS docs/RULEBOOK.md is byte-identical (sha256 a972d243b87678a85857aa44af31ea1948138a032c39d06b0fd98d22bb2d9d0f)
+- [ ] RulebookParityTests pass (CanonicalBusinessEngine.rulebookVersion() == 1.15.0)
 - [ ] Every Swift caller of a changed rule calls CanonicalBusinessEngine
 - [ ] Same Firebase fields read and written as web
 - [ ] Any disagreement traced to its first divergence — no copied screen number
 ```
 
-## What changed in 1.14.0
+## What changed in 1.15.0
 
-- Line manager options are one per person (§11): `lineManagerCandidates` folds roster rows by `personIdSet` (same id ignoring case, `formerUserIds`, `sameEmailUserIds`, same email ignoring case) and offers the live users document's id; `lineManagerSelectedIds` maps a stored id on the other duplicate onto that option; `lineManagerSummary` counts a person once. Owner bug: after admin → manager → admin → manager, `accountTypeChangeWrites` set every same-email users document to manager and the picker listed the person twice (the web live roster listener also re-added the folded-away document).
-- A self-employed person must have a pay rate (§8, §11, §16 note): `payRateRequiredError`, `PAY_RATE_REQUIRED_MESSAGE`, `usersMissingPayRate`; Add User and Edit User refuse the save when the writer may set pay (`canChangePersonPay`). Not enforced by the security rules.
-- New-user permission defaults (§11): `addUserPermissionDefaults` starts every toggle the adder can change off; locked toggles keep their value. A user type change never applies them.
-- Lapsed subscription on iOS (§19, rule text only): everyone, admins included, sees only `SUBSCRIPTION_LAPSED_MESSAGE`; the admin billing notes are web only and never shown on iPhone (owner decision, App Store guideline 3.1.3).
-- Email function (deploy note): the `EMAIL_SERVER_KEY` secret and the `X-Project-Planner-Server-Key` header are trimmed before they are compared, so a secret set from a file with a trailing newline no longer fails every web email with "Server key is not valid".
+- Owner decisions round 6. A user type change keeps every saved toggle (§11): `accountTypePermissions` keeps the stored toggles and changes only the level flags; `accountTypeWritePermissions` takes the screen's values only for toggles the new level can change. Admins still read every toggle on and locked except Annual Leave Management; the stored values return on demotion.
+- Material quotes and orders (§16): `canSendMaterialOrders` (admins, super admins outside operative mode, managers); `materialOrderRecipientCheck` (saved wholesaler contacts, the sender's copy, at most 3 typed addresses — `MATERIAL_ORDER_TYPED_RECIPIENTS_MAX`). Enforced by the email function `material_request` and the web send route; `materialSendRecords` stays admins and managers in the rules.
+- Company deletion (new §20, §16): `organizationDeletionState`, `organizationDeletionWriteFields`, `DELETION_RESTORE_DAYS` (60), `organizationDeletedMessage`, `canRestoreOrganization`, `organizationDeleteConfirmationError`, `organizationEraseDue`, `erasedOrganizationAuditFields`. Rules lock a scheduled organisation (`orgBillingOpen`) and allow only the super admin's restore; a daily function erases organisations past `eraseAfter`.
+- Delete my account (§11): `accountDeletionPath` → `delete` | `handover_required` | `delete_with_company`; web `/api/account/delete` replaces 409 `sole_admin` with a super admin handover and company deletion (restorable only by the platform owner).
 
 ## New rulebook sections
 
-- 1.14.0 — 2026-11-03
+- 20. Company deletion (1.15.0)
+- 1.15.0 — 2026-11-03
 
 ## Workflow for the iOS agent
 
