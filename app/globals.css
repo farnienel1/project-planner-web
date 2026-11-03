@@ -48,6 +48,9 @@
   --hs: #1A9444;
   --red-t: #FDE6E6;
   --red: #D23636;
+  /* 1.16.0: annual leave on a day being booked (purple; double bookings stay --warn). */
+  --purple-t: #F1E8FD;
+  --purple: #7B3FD1;
   --green-t: #DDF5EB;
   --green: #0E9467;
   --r: 18px;
@@ -117,6 +120,8 @@
     --lib: #9aa7c0;
     --hs: #4ccb72;
     --red: #ff6b6b;
+    --purple-t: #2b1a45;
+    --purple: #b98cff;
     --green: #3bcb98;
     --sh: 0 1px 2px rgba(0, 0, 0, 0.3), 0 6px 20px rgba(0, 0, 0, 0.25);
   }
@@ -166,6 +171,8 @@
   --lib: #9aa7c0;
   --hs: #4ccb72;
   --red: #ff6b6b;
+  --purple-t: #2b1a45;
+  --purple: #b98cff;
   --green: #3bcb98;
   --sh: 0 1px 2px rgba(0, 0, 0, 0.3), 0 6px 20px rgba(0, 0, 0, 0.25);
   --pp-bg: var(--bg);
@@ -199,6 +206,7 @@
 [data-hue='lib'] { --h: var(--lib); --ht: var(--lib-t); }
 [data-hue='hs'] { --h: var(--hs); --ht: var(--hs-t); }
 [data-hue='red'] { --h: var(--red); --ht: var(--red-t); }
+[data-hue='purple'] { --h: var(--purple); --ht: var(--purple-t); }
 [data-hue='blue'] { --h: var(--blue); --ht: var(--blue-t); }
 [data-hue='green'] { --h: var(--green); --ht: var(--green-t); }
 

@@ -20,6 +20,7 @@ import {
 } from '@/lib/scheduling/paidHours'
 import { BookingEditSheet } from '@/components/schedule/BookingEditSheet'
 import { QuickAddBookingSheet, type QuickAddBookingValues } from '@/components/schedule/QuickAddBookingSheet'
+import { useLeaveConflictCheck, type LeaveCheckPerson } from '@/components/scheduling/useLeaveConflictCheck'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useBookingHistoryFrom } from '@/lib/stores/useBookingHistory'
 import { ORG_DATA_REFRESHED_EVENT } from '@/lib/stores/refreshOrgData'
@@ -191,6 +192,14 @@ export function ProjectScheduleWeekOverview({
   const [quickAdd, setQuickAdd] = useState<{ person: PersonWeek; date: Date } | null>(null)
   const [savingQuickAdd, setSavingQuickAdd] = useState(false)
   const [payroll, setPayroll] = useState<OrgPayrollTimePolicy>(DEFAULT_PAYROLL_POLICY)
+  // Rulebook 1.16.0 §5: annual leave on the day is asked before a quick add or edit saves.
+  const leaveCheck = useLeaveConflictCheck(payroll)
+  const leavePersonFor = (name: string, target: QuickAddTarget | null): LeaveCheckPerson | null => {
+    if (!target) return null
+    if (target.kind === 'manager') return { id: target.userId, userId: target.userId, name }
+    const op = operatives.find((o) => idsMatch(o.id, target.operativeId))
+    return { id: target.operativeId, operativeIds: [target.operativeId], email: op?.email ?? null, name }
+  }
 
   useEffect(() => {
     loadBookings(organizationId)
@@ -723,6 +732,10 @@ export function ProjectScheduleWeekOverview({
           showNotes={quickAdd.person.quickAdd.kind === 'operative'}
           saving={savingQuickAdd}
           payroll={payroll}
+          conflictsFor={(() => {
+            const person = leavePersonFor(quickAdd.person.name, quickAdd.person.quickAdd)
+            return person ? leaveCheck.checkFor(person, quickAdd.date) : undefined
+          })()}
           onSave={saveQuickAdd}
           onClose={() => setQuickAdd(null)}
         />
@@ -734,6 +747,10 @@ export function ProjectScheduleWeekOverview({
           projectName={`${project.jobNumber} ${project.siteName}`.trim()}
           saving={savingEdit}
           payroll={payroll}
+          conflictsFor={(() => {
+            const person = leavePersonFor(editingRow.name, editingRow.quickAdd)
+            return person ? leaveCheck.checkFor(person, new Date(editingBooking.date)) : undefined
+          })()}
           onSave={saveEditing}
           onDelete={!editingRow.booking || canDeleteLabourBooking ? deleteEditing : undefined}
           onCancelBooking={editingRow.booking && !canDeleteLabourBooking ? cancelEditing : undefined}

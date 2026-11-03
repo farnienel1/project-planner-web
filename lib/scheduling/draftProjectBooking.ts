@@ -9,7 +9,11 @@ import {
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import { slotKey, slotToFirestore, type ScheduleDateSlot } from '@/lib/scheduling/scheduleUtils'
 import type { SchedulablePerson, SchedulablePersonKind } from '@/lib/scheduling/scheduleRosterUtils'
-import { ORPHAN_BOOKING_LABEL } from '@/lib/canonical'
+import { ORPHAN_BOOKING_LABEL, type BookingLeaveConflict } from '@/lib/canonical'
+import { dayKey as orgDayKey } from '@/lib/ios-parity/londonTime'
+import { leaveConflictsForBooking } from '@/lib/scheduling/leaveConflicts'
+import type { OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
+import type { HolidayBooking } from '@/types'
 
 export type DayBookingState = 'free' | 'clash_pending' | 'clash_accepted' | 'removed'
 
@@ -21,6 +25,8 @@ export type DraftBookingPerson = {
   badge: string
   dayStates: Record<string, DayBookingState>
   clashByDay: Record<string, OperativeBookingClash[]>
+  /** Rulebook 1.16.0: annual leave on that day (`bookingLeaveConflicts`); the day waits for a tick or ✕ like a clash. */
+  leaveByDay?: Record<string, BookingLeaveConflict>
 }
 
 export type WizardStep = 'dates' | 'pick-person' | 'review'
@@ -108,6 +114,9 @@ export function buildDraftPersonDayStates({
   users = [],
   projects,
   currentProjectId,
+  holidays = [],
+  payrollPolicy = null,
+  timeZone = null,
 }: {
   person: SchedulablePerson
   slots: ScheduleDateSlot[]
@@ -117,9 +126,14 @@ export function buildDraftPersonDayStates({
   users?: User[]
   projects: Project[]
   currentProjectId: string
+  /** Rulebook 1.16.0: annual leave, listed beside double bookings (`bookingLeaveConflicts`). */
+  holidays?: HolidayBooking[]
+  payrollPolicy?: OrgPayrollTimePolicy | null
+  timeZone?: string | null
 }): DraftBookingPerson {
   const dayStates: Record<string, DayBookingState> = {}
   const clashByDay: Record<string, OperativeBookingClash[]> = {}
+  const leaveByDay: Record<string, BookingLeaveConflict> = {}
   const linkedUser = linkedUserForPerson(person, users)
   const linkedOperative = linkedOperativeForPerson(person, operatives)
   const managerUserId = person.kind === 'manager' ? person.id : linkedUser?.id
@@ -153,9 +167,23 @@ export function buildDraftPersonDayStates({
       )
     }
 
-    if (clashes.length > 0) {
+    const firestoreSlot = slotToFirestore(slot)
+    const [leave] = leaveConflictsForBooking({
+      people: [{ id: person.id, userId: managerUserId ?? null, operativeIds: operativeId ? [operativeId] : [], email: person.email }],
+      dayKeys: [orgDayKey(slot.date, timeZone ?? undefined)],
+      holidays,
+      users,
+      payrollPolicy,
+      timeZone,
+      timeSlot: firestoreSlot.timeSlot,
+      workStartTime: firestoreSlot.workStartTime ?? null,
+      workEndTime: firestoreSlot.workEndTime ?? null,
+    })
+    if (leave) leaveByDay[key] = leave
+
+    if (clashes.length > 0 || leave) {
       dayStates[key] = 'clash_pending'
-      clashByDay[key] = clashes
+      if (clashes.length > 0) clashByDay[key] = clashes
     } else {
       dayStates[key] = 'free'
     }
@@ -169,6 +197,7 @@ export function buildDraftPersonDayStates({
     badge: person.badge,
     dayStates,
     clashByDay,
+    leaveByDay,
   }
 }
 

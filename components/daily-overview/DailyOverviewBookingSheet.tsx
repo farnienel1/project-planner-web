@@ -13,6 +13,8 @@ import { useBookingStore } from '@/lib/stores/bookingStore'
 import { useManagerScheduleStore } from '@/lib/stores/managerScheduleStore'
 import { useProjectStore } from '@/lib/stores/projectStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
+import { useBookingConflictGate } from '@/components/scheduling/BookingConflictRows'
+import { useLeaveConflictCheck } from '@/components/scheduling/useLeaveConflictCheck'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
 import { visibleWorks } from '@/lib/access/workAccess'
 import { useDeadlineAssignedProjectIds } from '@/lib/deadlines/useDeadlineAssignedProjectIds'
@@ -107,6 +109,8 @@ export function DailyOverviewBookingSheet({
   const [workEndTime, setWorkEndTime] = useState(row.workEndTime || DEFAULT_PAYROLL_POLICY.standardDayEnd)
   const [breakRemoved, setBreakRemoved] = useState(false)
   const hoursTouched = useRef(false)
+  const leaveCheck = useLeaveConflictCheck(payroll)
+  const leaveGate = useBookingConflictGate('Save')
 
   useEffect(() => {
     if (!organization?.id) return
@@ -225,9 +229,36 @@ export function DailyOverviewBookingSheet({
   // 1.13.0 lunch warning (`customHoursBreakWarning`): the confirm step before custom hours are saved.
   const breakConfirmed = () => confirmCustomHoursBreak(payroll, day, hoursFields())
 
+  // Rulebook 1.16.0 §5 (`bookingLeaveConflicts`): annual leave on this day is asked before the change saves; ✕ drops
+  // the day, so nothing is saved.
+  const leaveConfirmed = async (): Promise<boolean> => {
+    const operativeId = row.kind === 'operative' ? row.operativeId : linkedOperative?.id
+    const userId = resolvedUserId || row.userId || null
+    const personId = operativeId || userId
+    if (!personId) return true
+    const rows = leaveCheck.checkFor(
+      {
+        id: personId,
+        userId,
+        operativeIds: operativeId ? [operativeId] : [],
+        email: operatives.find((entry) => entry.id === operativeId)?.email ?? null,
+        name: row.name,
+      },
+      day
+    )(hoursFields())
+    const dropped = await leaveGate.check(rows)
+    if (dropped === null) return false
+    if (dropped.size > 0) {
+      onClose()
+      return false
+    }
+    return true
+  }
+
   const saveToProject = async (project: Project, asSmallWork: boolean) => {
     if (!organization?.id || !row.bookingId || !user || !hoursValid) return
     if (!breakConfirmed()) return
+    if (!(await leaveConfirmed())) return
     setSaving(true)
     setError(null)
     try {
@@ -268,6 +299,7 @@ export function DailyOverviewBookingSheet({
   const saveToOther = async (pick: ScheduleLocationPick) => {
     if (!organization?.id || !hoursValid) return
     if (!breakConfirmed()) return
+    if (!(await leaveConfirmed())) return
     if (!resolvedUserId) {
       setError('This person needs a user account to be booked to Other.')
       return
@@ -313,6 +345,7 @@ export function DailyOverviewBookingSheet({
 
   const saveHoursOnly = async () => {
     if (!organization?.id || !row.bookingId || !hoursValid) return
+    if (!(await leaveConfirmed())) return
     setSaving(true)
     setError(null)
     try {
@@ -345,6 +378,7 @@ export function DailyOverviewBookingSheet({
       onClose={onClose}
       footer={false}
     >
+      {leaveGate.dialog}
       <div className="stack" style={{ gap: 14 }}>
         <p className="muted small">
           Currently booked to <b>{currentLabel}</b>. Choose Other, a project, or small works, and set the start and finish.

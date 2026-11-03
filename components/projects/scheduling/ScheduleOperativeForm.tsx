@@ -8,6 +8,9 @@ import { useManagerScheduleStore } from '@/lib/stores/managerScheduleStore'
 import { useOperativeStore } from '@/lib/stores/operativeStore'
 import { useProjectStore } from '@/lib/stores/projectStore'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
+import { useHolidayStore } from '@/lib/stores/holidayStore'
+import { DEFAULT_PAYROLL_POLICY, loadOrganizationDetails, type OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
+import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 import { mergeProjectsAndSmallWorks } from '@/lib/projects/workStatus'
 import { isExactDuplicateBooking } from '@/lib/scheduling/bookingClashUtils'
 import {
@@ -67,6 +70,20 @@ export function ScheduleOperativeForm({
   const [expandedReviewPersonId, setExpandedReviewPersonId] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Rulebook 1.16.0: annual leave on the chosen days is listed beside double bookings (`bookingLeaveConflicts`).
+  const { bookings: holidays, loadBookings: loadHolidays } = useHolidayStore()
+  const [payrollPolicy, setPayrollPolicy] = useState<OrgPayrollTimePolicy>(DEFAULT_PAYROLL_POLICY)
+  const timeZone = organizationZoneOr()
+
+  useEffect(() => {
+    if (!organization?.id) return
+    void loadHolidays(organization.id)
+    loadOrganizationDetails(organization.id)
+      .then((details) => {
+        if (details?.payrollTimePolicy) setPayrollPolicy(details.payrollTimePolicy)
+      })
+      .catch(() => {})
+  }, [organization?.id, loadHolidays])
 
   useEffect(() => {
     if (organization?.id) {
@@ -132,6 +149,9 @@ export function ScheduleOperativeForm({
       users,
       projects: allProjects,
       currentProjectId: project.id,
+      holidays,
+      payrollPolicy,
+      timeZone,
     })
   }
 
@@ -151,7 +171,12 @@ export function ScheduleOperativeForm({
     }
     rebuildDraftPeopleForNewSlots(slotsList)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [slotsList.map((s) => `${slotKey(s.date)}:${s.slot}:${s.workStartTime}:${s.workEndTime}`).join('|')])
+  }, [
+    slotsList.map((s) => `${slotKey(s.date)}:${s.slot}:${s.workStartTime}:${s.workEndTime}`).join('|'),
+    // Leave arriving after people were picked re-lists the days (1.16.0).
+    holidays.map((h) => `${h.id}:${h.status}`).join('|'),
+    payrollPolicy,
+  ])
 
   const handleTogglePerson = (person: SchedulablePerson) => {
     setError(null)
@@ -170,6 +195,9 @@ export function ScheduleOperativeForm({
           users,
           projects: allProjects,
           currentProjectId: project.id,
+          holidays,
+          payrollPolicy,
+          timeZone,
         }),
       ]
     })

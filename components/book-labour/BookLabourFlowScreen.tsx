@@ -28,6 +28,14 @@ import {
   type ScheduleLocationPick,
 } from '@/lib/settings/organizationSettings'
 import { normalizeBookingStatus } from '@/lib/ios-parity/enums'
+import {
+  conflictRowKey,
+  useBookingConflictGate,
+  type BookingConflictRow,
+} from '@/components/scheduling/BookingConflictRows'
+import { useLeaveConflictCheck } from '@/components/scheduling/useLeaveConflictCheck'
+import { dayKey as orgDayKey } from '@/lib/ios-parity/londonTime'
+import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
 import { bookingOccupiesDay } from '@/lib/canonical'
 import { samePersonBookingIds } from '@/lib/bookings/bookingPeople'
 import { dateFromDayKey, dayKey, parseHhMm } from '@/lib/ios-parity/londonTime'
@@ -139,9 +147,8 @@ export function BookLabourFlowScreen({
   const [projectSearch, setProjectSearch] = useState('')
   const [errorBanner, setErrorBanner] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
-  const [overlap, setOverlap] = useState<{ message: string; detailLines: string[]; onConfirm: () => void } | null>(
-    null
-  )
+  // Rulebook 1.16.0 §5: double bookings (orange) and annual leave (purple) in one list; tick or ✕ each.
+  const conflictGate = useBookingConflictGate()
   const [customStart, setCustomStart] = useState('07:30')
   const [customEnd, setCustomEnd] = useState('16:00')
   const [breakRemoved, setBreakRemoved] = useState(false)
@@ -150,6 +157,7 @@ export function BookLabourFlowScreen({
     customItemEnabled: {},
   })
   const [payroll, setPayroll] = useState<OrgPayrollTimePolicy>(DEFAULT_PAYROLL_POLICY)
+  const leaveCheck = useLeaveConflictCheck(payroll)
 
   useEffect(() => {
     if (!organization?.id) return
@@ -401,8 +409,10 @@ export function BookLabourFlowScreen({
     workEnd?: string
     breakRemoved?: boolean
     allowOperativeOverlap?: boolean
+    /** Users ids the booker dropped from this day in the conflict list. */
+    droppedUserIds?: ReadonlySet<string>
   }) {
-    const people = activeParty
+    const people = activeParty.filter((person) => !args.droppedUserIds?.has(person.user.id))
     if (people.length === 0 || !organization?.id || !user?.id) return
     const resolvedProject = projectForLocation(args.locationType, args.locationId)
     const operativeSlot = operativeSlotFromManager(args.slot)
@@ -427,7 +437,9 @@ export function BookLabourFlowScreen({
     }
 
     if (!args.allowOperativeOverlap) {
-      const clashLines: string[] = []
+      const zone = organizationZoneOr()
+      const key = orgDayKey(day, zone)
+      const rows: BookingConflictRow[] = []
       for (const person of people) {
         if (!usesOperativePath(person, args.locationType, resolvedProject) || !resolvedProject || !person.linkedOperative) {
           continue
@@ -440,20 +452,38 @@ export function BookLabourFlowScreen({
           args.workEnd,
           args.breakRemoved
         )
-        if (lines) clashLines.push(...lines.map((line) => `${person.displayName} · ${line}`))
+        if (lines) {
+          rows.push({
+            key: conflictRowKey(person.user.id, key, 'double_booking'),
+            personId: person.user.id,
+            dayKey: key,
+            kind: 'double_booking',
+            personName: person.displayName,
+            dayLabel: dayLine,
+            detail: `Already booked · ${lines.join(', ')}`,
+          })
+        }
       }
-      if (clashLines.length > 0) {
-        setOverlap({
-          message:
-            people.length > 1
-              ? `One or more bookings overlap another in time on ${dayLine}.`
-              : `This booking overlaps another in time on ${dayLine}.`,
-          detailLines: clashLines,
-          onConfirm: () => {
-            setOverlap(null)
-            void savePartyBookings({ ...args, allowOperativeOverlap: true })
-          },
-        })
+      // Annual leave on this day (`bookingLeaveConflicts`), for every person in the party.
+      rows.push(
+        ...leaveCheck.rowsFor(
+          people.map((person) => ({
+            id: person.user.id,
+            userId: person.user.id,
+            operativeIds: person.linkedOperative ? [person.linkedOperative.id] : [],
+            email: person.user.email ?? null,
+            name: person.displayName,
+          })),
+          [key],
+          { timeSlot: args.slot, workStartTime: args.workStart, workEndTime: args.workEnd }
+        ).map((row) => ({ ...row, dayLabel: dayLine }))
+      )
+      if (rows.length > 0) {
+        const dropped = await conflictGate.check(rows)
+        if (dropped === null) return
+        const droppedUserIds = new Set([...dropped].map((pair) => pair.split('|')[0]))
+        if (people.every((person) => droppedUserIds.has(person.user.id))) return
+        void savePartyBookings({ ...args, allowOperativeOverlap: true, droppedUserIds })
         return
       }
     }
@@ -729,35 +759,7 @@ export function BookLabourFlowScreen({
         )}
       </div>
 
-      {overlap ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
-          <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl">
-            <p className="text-[15px] font-semibold">Booking overlap</p>
-            <p className="mt-2 text-[13px] text-[var(--ink3)]">{overlap.message}</p>
-            <ul className="mt-3 space-y-1 text-[12px]">
-              {overlap.detailLines.map((line) => (
-                <li key={line}>{line}</li>
-              ))}
-            </ul>
-            <div className="mt-5 flex justify-end gap-2">
-              <button
-                type="button"
-                className="rounded-xl border border-[var(--line)] px-4 py-2 text-[13px] font-medium"
-                onClick={() => setOverlap(null)}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                className="rounded-xl bg-[var(--blue)] px-4 py-2 text-[13px] font-semibold text-white"
-                onClick={overlap.onConfirm}
-              >
-                Book anyway
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
+      {conflictGate.dialog}
     </div>
   )
 }
