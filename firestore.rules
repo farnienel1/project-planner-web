@@ -1195,7 +1195,14 @@ service cloud.firestore {
             next.get('status', 'active') == 'active' &&
             next.get('invitedBy', inv.get('invitedBy', '')) == inv.get('invitedBy', '');
         }
-        allow read: if request.auth != null && request.auth.uid == userId;
+        // 1.12.2: an admin of that organisation reads the membership too (iOS `writeOrgMembership` reads it before the
+        // change user type write; before 1.12.2 the read was refused and the change stopped after users/{uid}).
+        allow get: if request.auth != null && (
+          request.auth.uid == userId ||
+          isOrgAdminViaMembersMap(membershipOrgId) ||
+          isOrganizationAdmin(membershipOrgId)
+        );
+        allow list: if request.auth != null && request.auth.uid == userId;
         // 1.12.0 (B4): `isSuperAdmin` on a membership changes only by that organisation's Super Admin.
         function membershipSuperAdminUnchanged() {
           return staffFlag(request.resource.data, 'isSuperAdmin') ==

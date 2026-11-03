@@ -8748,3 +8748,23 @@ test('1.13.0: leaveYearStartMonth is the inverse of leaveYearEndMonth; billingAc
   assert.deepEqual(R112.billingAccessFields({ status: 'canceled' }, now), { accessOpen: false, accessClosesAtMs: null })
   assert.deepEqual(R112.billingAccessFields(null, now), { accessOpen: true, accessClosesAtMs: null })
 })
+
+test('1.12.2 accountTypeSyncState: a half-applied user type is found and repaired from the profile', () => {
+  const manager = { id: 'T1', organizationId: 'ORG', role: 'manager', manager: true, adminAccess: false }
+  // Older iOS builds wrote only users/{uid}: the members entry stayed admin, so the rules still saw an admin.
+  const half = r3Levels.accountTypeSyncState({ person: manager, organizationId: 'ORG', members: { t1: 'admin' } })
+  assert.deepEqual(half, { inSync: false, level: 'manager', membersRole: 'admin', repair: 'manager' })
+  assert.equal(r3Levels.accountTypeSyncState({ person: manager, organizationId: 'ORG', members: { T1: 'manager' } }).inSync, true)
+  // `member` is any non-admin level in older data; it only fails the admin test.
+  assert.equal(r3Levels.accountTypeSyncState({ person: manager, organizationId: 'ORG', members: { T1: 'member' } }).inSync, true)
+  const admin = { id: 'A1', organizationId: 'organizations/ORG', role: 'admin', adminAccess: true }
+  assert.equal(r3Levels.accountTypeSyncState({ person: admin, organizationId: 'ORG', members: { A1: 'member' } }).repair, 'admin')
+  assert.equal(r3Levels.accountTypeSyncState({ person: admin, organizationId: 'ORG', members: {} }).repair, 'admin')
+  // The membership is checked too when it is known.
+  assert.equal(
+    r3Levels.accountTypeSyncState({ person: manager, organizationId: 'ORG', members: { T1: 'manager' }, membership: { role: 'admin' } }).repair,
+    'manager'
+  )
+  // A profile of another company is never judged here.
+  assert.equal(r3Levels.accountTypeSyncState({ person: { ...manager, organizationId: 'OTHER' }, organizationId: 'ORG', members: { T1: 'admin' } }).inSync, true)
+})

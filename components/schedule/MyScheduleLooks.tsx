@@ -6,13 +6,10 @@
 
 import { estimatedWorkedHours, overviewFormatHours, parseMinutes } from '@/lib/daily-overview/buildDailyOverview'
 import { bookingPayrollHours, formatOvertimeEquation } from '@/lib/scheduling/paidHours'
-import { leaveRecordDayKeys, workedHoursSplit } from '@/lib/canonical'
-import { dayKey } from '@/lib/ios-parity/londonTime'
-import type { HolidayBooking } from '@/types'
+import { workedHoursSplit } from '@/lib/canonical'
 import type { ManagerLocationType, ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import type { OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 import type { Booking } from '@/types'
-import { holidayBookingDayKeys } from '@/lib/annualLeave/holidayDayKeys'
 
 const TRACK_START = 6 * 60
 const TRACK_END = 18 * 60
@@ -133,26 +130,8 @@ function clampTrack(mins: number): number {
   return Math.max(TRACK_START, Math.min(TRACK_END, mins))
 }
 
-/**
- * iOS `annualLeaveDisplayLabel(on:)`: the person's leave on that day (not declined).
- * Pending leave says so. A multi-day record follows `leaveRecordDayKeys`.
- */
-export function myScheduleAnnualLeaveLabel(
-  holidays: ReadonlyArray<HolidayBooking>,
-  day: Date,
-  timeZone?: string
-): string | null {
-  const key = dayKey(day, timeZone)
-  const match = holidays
-    .filter((holiday) => holiday.status !== 'rejected')
-    .filter((holiday) =>
-      leaveRecordDayKeys(holidayBookingDayKeys(holiday, timeZone), timeZone).includes(key)
-    )
-    .sort((a, b) => (a.status === b.status ? a.startDate.getTime() - b.startDate.getTime() : a.status === 'approved' ? -1 : 1))[0]
-  if (!match) return null
-  const slot = match.timeSlot === 'AM' ? 'AM' : match.timeSlot === 'PM' ? 'PM' : 'Full Day'
-  return match.status === 'pending' ? `Pending annual leave - ${slot}` : `Annual Leave - ${slot}`
-}
+/** iOS `annualLeaveDisplayLabel(on:)` — `lib/schedule/myScheduleLeave.ts`. */
+export { myScheduleAnnualLeaveLabel } from '@/lib/schedule/myScheduleLeave'
 
 export function MyScheduleTotalHoursCard({
   bookings,

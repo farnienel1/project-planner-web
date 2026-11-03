@@ -1,10 +1,11 @@
 {
-  "rulebookVersion": "1.13.1",
-  "rulebookSha256": "54cac357f0cd9416a20fcf0514cb1bd228f8c6d247c96369e5262100685315e1",
-  "bundleSha256": "5c6ba566389557dcaef7548c2d00a4b407bdbde8a83502f34ae094b63636ef99",
+  "rulebookVersion": "1.13.2",
+  "rulebookSha256": "e1286d455119753b296af87e61d271c49eaaa7b25872e589e293081298d6e571",
+  "bundleSha256": "76ddcbc1a25a7b077a13fb2b4feb58ec9f596eede663014b9575269c9b46ccfc",
   "crossPlatformContractSha256": "d655dd7d122e53a1167569216d43cba7598670671310ca84c59ea7e46373b7e6",
   "exports": [
     "ACCOUNT_TYPE_OTHER_COMPANY_NOTE",
+    "ACCOUNT_TYPE_OUT_OF_SYNC_MESSAGE",
     "ACCOUNT_TYPE_SUPER_ADMIN_MESSAGE",
     "ADMIN_EDITABLE_PERMISSION_FIELDS",
     "ADMIN_LOCKED_PERMISSION_MESSAGE",
@@ -224,6 +225,7 @@
     "accountKindFromFlags",
     "accountTypeChangeWrites",
     "accountTypePermissions",
+    "accountTypeSyncState",
     "activePaymentRunSummary",
     "addUserPermissionDefaults",
     "allowedTimeSlotsOnDay",

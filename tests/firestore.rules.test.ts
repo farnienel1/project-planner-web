@@ -28,7 +28,12 @@ import {
   where,
   writeBatch,
   deleteField,
+  limit,
 } from 'firebase/firestore'
+
+import { accountTypeChangeWrites } from '../lib/canonical/permissionLevels.ts'
+import { orgMembershipWriteFields } from '../lib/canonical/orgMembership.ts'
+import { writeMetadataFields } from '../lib/canonical/writeMetadata.ts'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const rules = readFileSync(path.join(root, 'firestore.rules'), 'utf8')
@@ -3280,4 +3285,173 @@ test('1.13.0 Q4: a person cannot change their own start date', async () => {
   const db = authDb(REPORT_A, 'report-a@test.com')
   await assertFails(updateDoc(doc(db, 'users', REPORT_A), { employmentStartDate: '2026-07-01' }))
   await assertSucceeds(updateDoc(doc(authDb(ADMIN_A, 'admin-a@test.com'), 'users', REPORT_A), { employmentStartDate: '2026-07-01' }))
+})
+
+// ---------------------------------------------------------------------------
+// Rulebook 1.12.2: change user type admin -> manager by the Super Admin failed with "Missing or insufficient
+// permissions". Web: the type batch landed, then the profile save's same-email users query (email only) was refused.
+// iOS: `writeOrgMembership` reads the person's membership first, and only the person could read it.
+// ---------------------------------------------------------------------------
+
+const ORG_T = 'org-t-1122'
+const T_SA = 't-founder'
+const T_AD = 't-admin'
+const T_AD2 = 't-admin-2'
+const T_MGR = 't-manager'
+const T_ALL_ON = {
+  adminAccess: true, manager: true, operatives: true, skills: false, qualifications: true, materials: true,
+  projects: true, smallWorks: true, operativeMode: false, siteAudit: true, subContractors: true,
+  wholesalersOrderHistory: true, annualLeaveSelfBook: false, weeklyReports: true, dailyOverview: true,
+}
+function tAdminDoc(email: string, extra: Record<string, unknown> = {}) {
+  return {
+    email, organizationId: ORG_T, role: 'admin', ...T_ALL_ON, permissions: { ...T_ALL_ON }, isActive: true,
+    passwordSet: true, firstName: email.split('@')[0], surname: 'Test', ...extra,
+  }
+}
+async function seed1122() {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore()
+    await setDoc(doc(db, 'organizations', ORG_T), {
+      name: 'T Co', creatorUserId: T_SA, billing: { status: 'active' },
+      members: { [T_SA]: 'admin', [T_AD]: 'admin', [T_AD2]: 'admin', [T_MGR]: 'manager' },
+    })
+    await setDoc(doc(db, 'users', T_SA), tAdminDoc('t-sa@test.com', { isSuperAdmin: true }))
+    await setDoc(doc(db, 'users', T_AD), tAdminDoc('t-ad@test.com', { assignedManagerUserIds: [T_SA] }))
+    await setDoc(doc(db, 'users', T_AD2), tAdminDoc('t-ad2@test.com'))
+    await setDoc(doc(db, 'users', T_MGR), {
+      email: 't-mgr@test.com', organizationId: ORG_T, role: 'manager', manager: true, operatives: true,
+      permissions: { manager: true, operatives: true }, isActive: true, assignedManagerUserIds: [T_SA],
+    })
+    for (const [uid, role, superAdmin] of [[T_SA, 'admin', true], [T_AD, 'admin', false], [T_AD2, 'admin', false], [T_MGR, 'manager', false]] as const) {
+      await setDoc(doc(db, 'users', uid, 'orgMemberships', ORG_T), {
+        organizationId: ORG_T, role, isSuperAdmin: superAdmin, status: 'active', accountActive: true,
+        permissions: role === 'admin' ? { ...T_ALL_ON } : { manager: true, operatives: true },
+      })
+    }
+  })
+}
+async function tStored(uid: string) {
+  let out: { user: Record<string, unknown>; member: unknown; membership: Record<string, unknown> } | null = null
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore()
+    const user = (await getDoc(doc(db, 'users', uid))).data() ?? {}
+    const org = (await getDoc(doc(db, 'organizations', ORG_T))).data() ?? {}
+    const membership = (await getDoc(doc(db, 'users', uid, 'orgMemberships', ORG_T))).data() ?? {}
+    out = { user, member: (org.members as Record<string, unknown>)[uid], membership }
+  })
+  return out!
+}
+/** Web `userStore.changeAccountType` (1.12.2): the whole plan as one batch, the membership as a merge-set. */
+function webChangeType(db: ReturnType<typeof authDb>, actor: string, person: Record<string, unknown> & { id: string }, kind: 'admin' | 'manager' | 'operative') {
+  const plan = accountTypeChangeWrites({ person, kind, organizationId: ORG_T, roster: [] })
+  if (!plan.ok) throw new Error(plan.message)
+  const batch = writeBatch(db)
+  for (const write of plan.writes) {
+    const ref = doc(db, write.path)
+    if (write.kind === 'membership') {
+      batch.set(ref, { organizationId: ORG_T, role: write.role, permissions: { ...write.permissions }, updatedAt: serverTimestamp() }, { merge: true })
+    } else {
+      batch.update(ref, write.kind === 'userProfile' ? { ...write.fields, ...writeMetadataFields(actor, 'web'), updatedAt: serverTimestamp() } : write.fields)
+    }
+  }
+  return batch.commit()
+}
+/** Web `saveUser` follow-ups after a profile save (1.12.2): the same-email query names the organisation. */
+async function webSaveFollowUps(db: ReturnType<typeof authDb>, email: string) {
+  await getDocs(query(collection(db, 'users'), where('organizationId', '==', ORG_T), where('email', '==', email)))
+  await setDoc(doc(db, 'organizations', ORG_T, 'userEmails', email), { userId: email === 't-ad@test.com' ? T_AD : T_AD2 })
+}
+/** iOS `changeAccountType` (main 30b4df4): users patch, members entry, then the membership read + write. */
+async function iosChangeType(db: ReturnType<typeof authDb>, actor: string, uid: string, role: 'manager' | 'admin') {
+  const patch: Record<string, unknown> = { role, updatedAt: Timestamp.now() }
+  for (const key of ['adminAccess', 'projects', 'smallWorks', 'weeklyReports', 'wholesalersOrderHistory']) {
+    patch[key] = role === 'admin'
+    patch[`permissions.${key}`] = role === 'admin'
+  }
+  await updateDoc(doc(db, 'users', uid), patch)
+  await updateDoc(doc(db, 'organizations', ORG_T), { [`members.${uid}`]: role, updatedAt: serverTimestamp(), updatedBy: actor, updatedFrom: 'ios' })
+  const ref = doc(db, 'users', uid, 'orgMemberships', ORG_T)
+  const snap = await getDoc(ref)
+  const write = orgMembershipWriteFields({
+    organizationId: ORG_T, stored: snap.exists() ? snap.data() : null, writer: 'admin', now: serverTimestamp(),
+    next: { role, permissions: { adminAccess: role === 'admin', manager: true, operatives: true } },
+  })
+  if (!write) return
+  if (write.mode === 'create') await setDoc(ref, write.fields)
+  else await updateDoc(ref, { ...write.fields, ...Object.fromEntries(write.remove.map((key) => [key, deleteField()])) })
+}
+
+test('1.12.2: the Super Admin changes an admin to manager (web payload): every document lands, the save follow-ups pass', async () => {
+  await seed1122()
+  const sa = authDb(T_SA, 't-sa@test.com')
+  const before = await tStored(T_AD)
+  await assertSucceeds(webChangeType(sa, T_SA, { ...before.user, id: T_AD }, 'manager'))
+  const after = await tStored(T_AD)
+  assert.equal(after.user.role, 'manager')
+  assert.equal(after.user.adminAccess, false)
+  assert.equal(after.member, 'manager')
+  assert.equal(after.membership.role, 'manager')
+  assert.equal((after.membership.permissions as Record<string, unknown>).adminAccess, false)
+  assert.equal(after.membership.status, 'active')
+  await assertSucceeds(webSaveFollowUps(sa, 't-ad@test.com'))
+  // The pre-1.12.2 query (email only) is what the rules refused: it cannot be proven readable for every match.
+  await assertFails(getDocs(query(collection(sa, 'users'), where('email', '==', 't-ad@test.com'), limit(10))))
+  // Double save: pressing Save again sends the same plan from the new state; it passes and changes nothing.
+  await assertSucceeds(webChangeType(sa, T_SA, { ...after.user, id: T_AD }, 'manager'))
+  await assertSucceeds(webSaveFollowUps(sa, 't-ad@test.com'))
+  assert.equal((await tStored(T_AD)).member, 'manager')
+})
+
+test('1.12.2: the Super Admin changes an admin to manager (iOS payload): the membership read is allowed', async () => {
+  await seed1122()
+  const sa = authDb(T_SA, 't-sa@test.com')
+  await assertSucceeds(iosChangeType(sa, T_SA, T_AD, 'manager'))
+  const after = await tStored(T_AD)
+  assert.equal(after.user.role, 'manager')
+  assert.equal(after.member, 'manager')
+  assert.equal(after.membership.role, 'manager')
+  // Older iOS builds (before #151 / #152) wrote only the users document: it passes and leaves members.{uid} admin
+  // (accountTypeSyncState finds it; the next web save repairs it).
+  await seed1122()
+  await assertSucceeds(updateDoc(doc(sa, 'users', T_AD2), { role: 'manager', adminAccess: false, 'permissions.adminAccess': false, updatedAt: Timestamp.now() }))
+  assert.equal((await tStored(T_AD2)).member, 'admin')
+  await assertSucceeds(webChangeType(sa, T_SA, { ...(await tStored(T_AD2)).user, id: T_AD2 }, 'manager'))
+  assert.equal((await tStored(T_AD2)).member, 'manager')
+})
+
+test('1.12.2: an admin (not the Super Admin) demotes another admin and promotes a manager; never the founder or themself', async () => {
+  await seed1122()
+  const ad = authDb(T_AD, 't-ad@test.com')
+  await assertSucceeds(webChangeType(ad, T_AD, { ...(await tStored(T_AD2)).user, id: T_AD2 }, 'manager'))
+  await assertSucceeds(iosChangeType(ad, T_AD, T_MGR, 'admin'))
+  assert.equal((await tStored(T_MGR)).member, 'admin')
+  await seed1122()
+  await assertSucceeds(webChangeType(ad, T_AD, { ...(await tStored(T_MGR)).user, id: T_MGR }, 'admin'))
+  assert.equal((await tStored(T_MGR)).user.role, 'admin')
+  // The founder (creator and Super Admin): refused by the plan (super_admin) and by the rules for a raw write.
+  const founderPlan = accountTypeChangeWrites({ person: { ...tAdminDoc('t-sa@test.com', { isSuperAdmin: true }), id: T_SA }, kind: 'manager', organizationId: ORG_T })
+  assert.equal(founderPlan.ok ? null : founderPlan.reason, 'super_admin')
+  await assertFails(updateDoc(doc(ad, 'users', T_SA), { role: 'manager', adminAccess: false, 'permissions.adminAccess': false }))
+  await assertFails(updateDoc(doc(ad, 'users', T_SA), { isSuperAdmin: false }))
+  await assertFails(setDoc(doc(ad, 'users', T_SA, 'orgMemberships', ORG_T), { isSuperAdmin: false }, { merge: true }))
+  // Self-promotion stays refused: a manager cannot make themself admin on any of the three documents.
+  await seed1122()
+  const mgr = authDb(T_MGR, 't-mgr@test.com')
+  await assertFails(updateDoc(doc(mgr, 'users', T_MGR), { role: 'admin', adminAccess: true, 'permissions.adminAccess': true }))
+  await assertFails(updateDoc(doc(mgr, 'organizations', ORG_T), { [`members.${T_MGR}`]: 'admin' }))
+  await assertFails(setDoc(doc(mgr, 'users', T_MGR, 'orgMemberships', ORG_T), { role: 'admin', permissions: { adminAccess: true } }, { merge: true }))
+  // An admin cannot make themself Super Admin.
+  await assertFails(updateDoc(doc(ad, 'users', T_AD), { isSuperAdmin: true }))
+})
+
+test('1.12.2: a membership is read by the person and the admins of that organisation only', async () => {
+  await seed1122()
+  await assertSucceeds(getDoc(doc(authDb(T_AD, 't-ad@test.com'), 'users', T_MGR, 'orgMemberships', ORG_T)))
+  await assertSucceeds(getDoc(doc(authDb(T_MGR, 't-mgr@test.com'), 'users', T_MGR, 'orgMemberships', ORG_T)))
+  // Another member who is not an admin, and an admin of another company, cannot.
+  await assertFails(getDoc(doc(authDb(T_MGR, 't-mgr@test.com'), 'users', T_AD, 'orgMemberships', ORG_T)))
+  await assertFails(getDoc(doc(authDb(ADMIN_B, 'admin-b@test.com'), 'users', T_MGR, 'orgMemberships', ORG_T)))
+  // Listing someone else's memberships stays closed.
+  await assertFails(getDocs(collection(authDb(T_AD, 't-ad@test.com'), 'users', T_MGR, 'orgMemberships')))
 })

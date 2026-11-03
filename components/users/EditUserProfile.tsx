@@ -74,8 +74,12 @@ import { canonicalCertificateUrls, formatCertificateSaveError } from '@/lib/qual
 import { canManageOrganisationQualifications, staffAccountRole } from '@/lib/permissions'
 import { canDeleteUser, SELF_EMAIL_INVALID_MESSAGE, selfEmailChangeAction, selfEmailChangeSentMessage } from '@/lib/canonical'
 import { PermissionRowsList } from '@/components/users/ProfileExpandablePermissionToggle'
+import { useOrganizationDocument } from '@/lib/stores/organizationDocumentStore'
+import { accountTypeSubject } from '@/lib/staff/accountTypeChange'
 import {
+  ACCOUNT_TYPE_OUT_OF_SYNC_MESSAGE,
   ADMIN_LOCKED_PERMISSION_MESSAGE,
+  accountTypeSyncState,
   permissionToggleRows,
   type PermissionLevel,
 } from '@/lib/canonical/permissionLevels'
@@ -305,6 +309,20 @@ export function EditUserProfile({
   const { request: requestPaySave, ui: payDialogs } = usePaySaveGate()
   const { request: requestEmploymentSave, ui: employmentDialogs } = useEmploymentTypeSaveGate()
   const profileLoadGen = useRef(0)
+  // Rulebook 1.12.2: one save at a time. A second press (or Enter) while a save is in flight is ignored, so a role
+  // change is never sent twice from a stale copy.
+  const saveInFlight = useRef(false)
+  // The live `organizations/{orgId}` document (members map), shared listener.
+  const liveOrganization = useOrganizationDocument()
+  const liveMembers =
+    liveOrganization.loaded && liveOrganization.data && typeof liveOrganization.data.members === 'object'
+      ? (liveOrganization.data.members as Record<string, unknown>)
+      : undefined
+  // Rulebook 1.12.2 `accountTypeSyncState`: the type differs between this profile and `members.{uid}`.
+  const accountTypeRepair =
+    target && liveMembers
+      ? accountTypeSyncState({ person: accountTypeSubject(target), organizationId: organization?.id || '', members: liveMembers }).repair
+      : null
 
   // Rulebook 1.9.0 §1: pay history is live while this profile is open (a rate change on iOS shows here).
   useEffect(() => {
@@ -476,6 +494,17 @@ export function EditUserProfile({
   const handleSave = async (e?: FormEvent) => {
     e?.preventDefault()
     if (!target || !organization?.id || !canEdit) return
+    if (saveInFlight.current || saving || typeSaving) return
+    saveInFlight.current = true
+    try {
+      await runSave()
+    } finally {
+      saveInFlight.current = false
+    }
+  }
+
+  const runSave = async () => {
+    if (!target || !organization?.id || !canEdit) return
 
     // `lineManagerRequiredError(user, roster)`: every operative and manager needs an active line manager, whatever
     // the self-book permission; only admins outside operative mode may have none.
@@ -599,12 +628,23 @@ export function EditUserProfile({
           seedEffective: toSave.createdAt ?? null,
         })
       }
+      let profileBaseline = savedUser.current
       if (draftAccountType && draftTypePermissions && draftAccountType !== currentAccountType(previous)) {
-        // Rulebook 1.11.0 `accountTypeChangeWrites`: the new type on every document that decides it here.
+        // Rulebook 1.11.0 `accountTypeChangeWrites`: the new type on every document that decides it here, in one batch
+        // (1.12.2).
         const typeNote = await changeAccountType(previous, draftAccountType, organization.id, users, draftTypePermissions)
         if (typeNote) setSuccess(typeNote)
+        // The type is saved: the profile save below sends only the other edits, never the type fields again.
+        if (profileBaseline) {
+          const typed = applyAccountType(cloneUser(profileBaseline), draftAccountType)
+          profileBaseline = { ...typed, permissions: draftTypePermissions }
+        }
+      } else if (accountTypeRepair) {
+        // Rulebook 1.12.2 `accountTypeSyncState`: a user type only partly saved (older iOS build, interrupted save) is
+        // finished on every document from the profile's type.
+        await changeAccountType(previous, accountTypeRepair, organization.id, users, previous.permissions)
       }
-      await saveUser(toSave, organization.id, previous.email, { baseline: savedUser.current, payHistoryRows })
+      await saveUser(toSave, organization.id, previous.email, { baseline: profileBaseline, payHistoryRows })
       savedUser.current = toSave
       if (canViewTaxIds && taxDirty && currentUser?.id) {
         const next = {
@@ -646,6 +686,8 @@ export function EditUserProfile({
     void import('@/lib/timesheets/dayRateHistoryStorage').then(({ loadOperativeDayRateHistory }) =>
       loadOperativeDayRateHistory(organization.id).then(setRateHistory)
     )
+    // Owner request (1.12.2): a saved profile closes and returns to the people list.
+    router.push(hubHref || backHref)
   }
 
   const handlePasswordReset = async () => {
@@ -847,6 +889,7 @@ export function EditUserProfile({
     baseline != null &&
     (remainingChanged ||
       taxDirty ||
+      accountTypeRepair != null ||
       profileSnapshot(target, draftAccountType, draftTypePermissions) !== baseline)
   const pageTitle = currentAccountType(target) === 'operative' ? 'Edit operative' : 'Edit user'
   const status = rosterStatusLabel(target)
@@ -886,6 +929,11 @@ export function EditUserProfile({
           <ErrorBanner message={error} />
         </div>
       )}
+      {canEdit && accountTypeRepair && !draftAccountType ? (
+        <div className="mt-4 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          {ACCOUNT_TYPE_OUT_OF_SYNC_MESSAGE}
+        </div>
+      ) : null}
       {success && !saved && (
         <div className="mt-4">
           <SuccessBanner message={success} />
