@@ -1,4 +1,5 @@
 // Transactional: no marketing content
+import { emailBrand, emailDocument, emailHeading, emailLink, emailStrong, emailText } from '@/lib/email/emailTheme'
 import { escapeHtml, sanitizeEmailHeader } from '@/lib/security/htmlEscape'
 import {
   SUBSCRIPTION_PRICE_DISCLOSURE,
@@ -14,27 +15,31 @@ export type BillingPurchaseEmailParams = {
 
 export function billingTermsParagraphHtml(interval?: 'month' | 'year' | null): string {
   const chosen = interval ? ` You chose ${escapeHtml(priceLabelForBillingInterval(interval))}.` : ''
-  return `<p>${escapeHtml(SUBSCRIPTION_PRICE_DISCLOSURE)}${chosen}</p>`
+  return emailText(`${escapeHtml(SUBSCRIPTION_PRICE_DISCLOSURE)}${chosen}`)
 }
 
 export function buildBillingPurchaseEmailHtml(params: BillingPurchaseEmailParams): string {
   const safeName = escapeHtml(params.firstName.trim() || 'there')
   const safeOrg = escapeHtml(params.organizationName)
 
-  return `
-    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; line-height: 1.5; color: #0f172a; max-width: 560px;">
-      <p style="font-size: 14px; color: #64748b; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 700;">Project Planner</p>
-      <h1 style="font-size: 24px; margin: 12px 0;">Your subscription is set up</h1>
-      <p>Hi ${safeName},</p>
-      <p>
-        <strong>${safeOrg}</strong> is now on a Project Planner subscription. This email confirms the price and how to cancel.
-      </p>
-      ${billingTermsParagraphHtml(params.interval)}
-      <p style="font-size: 14px; color: #475569;">
-        Open Settings → Billing → Manage billing in the web app to update your card or cancel. Access continues until the period end shown there.
-      </p>
-    </div>
-  `.trim()
+  return emailDocument({
+    title: 'Your subscription is set up',
+    maxWidth: 560,
+    body: [
+      emailBrand(),
+      emailHeading('Your subscription is set up'),
+      emailText(`Hi ${safeName},`),
+      emailText(
+        `${emailStrong(safeOrg)} is now on a Project Planner subscription. This email confirms the price and how to cancel.`
+      ),
+      billingTermsParagraphHtml(params.interval),
+      emailText(
+        'Open Settings → Billing → Manage billing in the web app to update your card or cancel. Access continues until the period end shown there.',
+        'muted',
+        'margin:0;'
+      ),
+    ].join('\n'),
+  })
 }
 
 export function billingPurchaseEmailSubject(organizationName: string): string {
@@ -43,9 +48,28 @@ export function billingPurchaseEmailSubject(organizationName: string): string {
 
 export function buildTrialWillEndEmailHtml(endLabel: string, interval?: 'month' | 'year' | null): string {
   const amount = priceLabelForBillingInterval(interval)
-  return (
-    `<p>Your 30-day Project Planner trial ends on ${escapeHtml(endLabel)}.</p>` +
-    `<p>We will then charge ${escapeHtml(amount)}. VAT is not charged. After that charge the subscription renews automatically at that price until you cancel.</p>` +
-    `<p>Cancel any time from Settings → Billing.</p>`
-  )
+  return emailDocument({
+    title: 'Your Project Planner trial ends in 3 days',
+    maxWidth: 560,
+    body: [
+      emailText(`Your 30-day Project Planner trial ends on ${escapeHtml(endLabel)}.`),
+      emailText(
+        `We will then charge ${escapeHtml(amount)}. VAT is not charged. After that charge the subscription renews automatically at that price until you cancel.`
+      ),
+      emailText('Cancel any time from Settings → Billing.', 'ink', 'margin:0;'),
+    ].join('\n'),
+  })
+}
+
+/** `invoice.payment_failed`: the Stripe customer portal (or billing settings) link is passed in unescaped. */
+export function buildPaymentFailedEmailHtml(link: string): string {
+  return emailDocument({
+    title: 'Project Planner payment failed',
+    maxWidth: 560,
+    body: [
+      emailText('We could not take the latest Project Planner payment.'),
+      emailText(emailLink(escapeHtml(link), 'Update your payment method')),
+      emailText('Access stays open for 7 days.', 'ink', 'margin:0;'),
+    ].join('\n'),
+  })
 }

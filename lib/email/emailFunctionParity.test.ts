@@ -75,3 +75,47 @@ test('function timesheet export email matches managerExportEmailHTML', () => {
     }
   }
 })
+
+const fnTheme = require('../../functions/email/emailTheme.js')
+
+test('function email theme is the same as lib/email/emailTheme.ts', async () => {
+  const web = await import('./emailTheme.ts')
+  assert.equal(fnTheme.EMAIL_THEME_STYLE, web.EMAIL_THEME_STYLE)
+  assert.equal(fnTheme.EMAIL_COLOR_SCHEME_META, web.EMAIL_COLOR_SCHEME_META)
+  assert.deepEqual(fnTheme.EMAIL_LIGHT, web.EMAIL_LIGHT)
+  assert.deepEqual(fnTheme.EMAIL_DARK, web.EMAIL_DARK)
+  const body = [
+    web.emailBrand(),
+    web.emailHeading('Heading'),
+    web.emailText('Body', 'ink'),
+    web.emailText('Muted', 'muted', 'margin:0;'),
+    web.emailText('Small', 'small'),
+    web.emailStrong('Strong', 'ink'),
+    web.emailLink('https://x.test/?a=1&amp;b=2', 'Link'),
+    web.emailButton('https://x.test/', 'Button'),
+    web.emailCode('123456'),
+    web.emailNote('Note'),
+    web.emailLinkPanel('https://x.test/', 'https://x.test/'),
+    web.emailFooter('Footer'),
+    web.emailList(['One', 'Two']),
+  ].join('\n')
+  const fnBody = [
+    fnTheme.emailBrand(),
+    fnTheme.emailHeading('Heading'),
+    fnTheme.emailText('Body', 'ink'),
+    fnTheme.emailText('Muted', 'muted', 'margin:0;'),
+    fnTheme.emailText('Small', 'small'),
+    fnTheme.emailStrong('Strong', 'ink'),
+    fnTheme.emailLink('https://x.test/?a=1&amp;b=2', 'Link'),
+    fnTheme.emailButton('https://x.test/', 'Button'),
+    fnTheme.emailCode('123456'),
+    fnTheme.emailNote('Note'),
+    fnTheme.emailLinkPanel('https://x.test/', 'https://x.test/'),
+    fnTheme.emailFooter('Footer'),
+    fnTheme.emailList(['One', 'Two']),
+  ].join('\n')
+  assert.equal(fnBody, body)
+  for (const input of [{ title: 'T & <x>', body }, { title: 'T', body, preheader: 'Pre <b>', maxWidth: 720 }]) {
+    assert.equal(fnTheme.emailDocument(input), web.emailDocument(input))
+  }
+})

@@ -14,7 +14,6 @@ import { PLATFORM_OWNER_EMAIL } from '@/lib/platform/owner'
 import { bearerToken, firestoreGet, readString } from '@/lib/owner/firestoreRest'
 import { requireOrgAccessForUser } from '@/lib/security/requireOrgAccess'
 import { LOGIN_EMAIL_FIX_INBOX, loginEmailFixMessage } from '@/lib/support/loginEmailFix'
-import { escapeHtml } from '@/lib/security/htmlEscape'
 
 export const runtime = 'nodejs'
 
@@ -85,6 +84,7 @@ export async function POST(request: NextRequest) {
     const storedName = userDoc
       ? `${readString(userDoc.fields, 'firstName')} ${readString(userDoc.fields, 'surname')}`.trim()
       : ''
+    const deepLink = `${getAppBaseUrl()}/developer/users?fix=${encodeURIComponent(targetUid)}`
     const message = loginEmailFixMessage({
       organizationName: (orgDoc ? readString(orgDoc.fields, 'name') : '') || orgNameHint,
       organizationId: orgId,
@@ -93,12 +93,11 @@ export async function POST(request: NextRequest) {
       oldEmail: oldEmail || currentEmailHint,
       newEmail: suggestedEmail,
       note,
-    })
-    const deepLink = `${getAppBaseUrl()}/developer/users?fix=${encodeURIComponent(targetUid)}`
+    }, { ownerConsoleUrl: deepLink })
     await sendProjectPlannerEmail({
       to: LOGIN_EMAIL_FIX_INBOX || PLATFORM_OWNER_EMAIL,
       subject: message.subject,
-      html: `${message.html}<p><a href="${escapeHtml(deepLink)}">Open in the owner console</a></p>`,
+      html: message.html,
       idToken: token,
     })
     return NextResponse.json({ ok: true })

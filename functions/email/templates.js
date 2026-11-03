@@ -17,6 +17,19 @@ const canonical = require('../loadCanonical')
 const { escapeHtml, sanitizeHeader, clamp } = require('./text')
 const { WELCOME_EMAIL_HTML_TEMPLATE, WELCOME_EMAIL_TEXT_TEMPLATE } = require('./welcomeEmailPack')
 const material = require('./materialRequestEmail')
+const {
+  EMAIL_LIGHT,
+  emailButton,
+  emailDocument,
+  emailHeading,
+  emailLink,
+  emailLinkPanel,
+  emailList,
+  emailNote,
+  emailStrong,
+  emailText,
+  emailFooter,
+} = require('./emailTheme')
 
 /** Links in emails point at the production web app; never at a caller-supplied host. */
 const APP_BASE_URL = 'https://www.projectplanner.us'
@@ -107,54 +120,27 @@ function renderPasswordResetLink(input) {
   const invitation = input.recipient.invitation || {}
   const firstName = escapeHtml(clamp(invitation.firstName, 100) || 'there')
   const url = escapeHtml(setupPasswordUrl(input.recipient.invitationId))
-  const html = `<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-</head>
-<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f4f4f5; -webkit-font-smoothing: antialiased;">
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #f4f4f5; padding: 40px 20px;">
-        <tr>
-            <td align="center">
-                <table role="presentation" width="600" cellspacing="0" cellpadding="0" style="max-width: 600px; width: 100%; background-color: #ffffff; border-radius: 12px; box-shadow: 0 4px 24px rgba(0,0,0,0.08); overflow: hidden;">
-                    <tr>
-                        <td style="background: linear-gradient(135deg, #007AFF 0%, #5856D6 100%); padding: 28px 32px; text-align: center;">
-                            <h1 style="margin: 0; color: #ffffff; font-size: 24px; font-weight: 700; letter-spacing: -0.5px;">Project Planner</h1>
-                            <p style="margin: 6px 0 0 0; color: rgba(255,255,255,0.9); font-size: 14px; font-weight: 400;">Project Management for Construction Teams</p>
-                        </td>
-                    </tr>
-                    <tr>
-                        <td style="padding: 40px 32px 32px 32px;">
-                            <h2 style="margin: 0 0 24px 0; color: #111827; font-size: 20px; font-weight: 600;">Reset your password</h2>
-                            <p style="margin: 0 0 16px 0; color: #4b5563; font-size: 16px; line-height: 1.6;">Hello ${firstName},</p>
-                            <p style="margin: 0 0 28px 0; color: #4b5563; font-size: 16px; line-height: 1.6;">We received a request to reset the password for your Project Planner account. Click the button below to choose a new password. No verification code is required.</p>
-                            <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
-                                <tr>
-                                    <td align="center" style="padding: 8px 0 28px 0;">
-                                        <a href="${url}" style="display: inline-block; background: linear-gradient(135deg, #007AFF 0%, #0051D5 100%); color: #ffffff; padding: 16px 36px; text-decoration: none; font-size: 16px; font-weight: 600; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,122,255,0.35);">Reset password</a>
-                                    </td>
-                                </tr>
-                            </table>
-                            <p style="margin: 0 0 8px 0; color: #6b7280; font-size: 13px; line-height: 1.5;">If the button doesn't work, copy and paste this link into your browser:</p>
-                            <p style="margin: 0 0 24px 0; word-break: break-all; color: #007AFF; font-size: 13px; background-color: #f8fafc; padding: 12px 14px; border-radius: 6px; border-left: 3px solid #007AFF;">${url}</p>
-                            <div style="background-color: #fef3c7; border: 1px solid #fcd34d; border-radius: 8px; padding: 14px 16px;">
-                                <p style="margin: 0; color: #92400e; font-size: 13px; line-height: 1.5;"><strong>Security note:</strong> This link expires in 7 days. If you didn't request a password reset, you can safely ignore this email and your password will remain unchanged.</p>
-                            </div>
-                        </td>
-                    </tr>
-                    <tr>
-                        <td style="padding: 24px 32px; background-color: #f9fafb; border-top: 1px solid #e5e7eb;">
-                            <p style="margin: 0; color: #9ca3af; font-size: 12px; line-height: 1.5; text-align: center;">This email was sent by Project Planner. If you have questions, contact your organisation administrator.</p>
-                            <p style="margin: 8px 0 0 0; color: #9ca3af; font-size: 11px; text-align: center;">© Project Planner · Your password was not changed unless you used the link above.</p>
-                        </td>
-                    </tr>
-                </table>
-            </td>
-        </tr>
-    </table>
-</body>
-</html>`
+  const html = emailDocument({
+    title: 'Reset your password',
+    body: [
+      emailText('Project Planner', 'brand', 'margin:0 0 2px 0;'),
+      emailText('Project Management for Construction Teams', 'small', 'margin:0 0 24px 0;'),
+      emailHeading('Reset your password'),
+      emailText(`Hello ${firstName},`),
+      emailText(
+        'We received a request to reset the password for your Project Planner account. Click the button below to choose a new password. No verification code is required.'
+      ),
+      emailButton(url, 'Reset password'),
+      emailText("If the button doesn't work, copy and paste this link into your browser:", 'muted', 'margin:0 0 8px 0;'),
+      emailLinkPanel(url, url),
+      emailNote(
+        `<strong class="pp-note-ink" style="color:${EMAIL_LIGHT.noteInk};font-weight:700;">Security note:</strong> This link expires in 7 days. If you didn't request a password reset, you can safely ignore this email and your password will remain unchanged.`
+      ),
+      emailFooter(
+        'This email was sent by Project Planner. If you have questions, contact your organisation administrator.<br>© Project Planner · Your password was not changed unless you used the link above.'
+      ),
+    ].join('\n'),
+  })
   return { subject: 'Reset Your Project Planner Password', html }
 }
 
@@ -164,22 +150,30 @@ function managerExportEmailHTML({ recipientName, weekTitle, paymentRunStamp, org
   const esc = (value) => escapeHtml(value).replace(/&#39;/g, "'")
   const list =
     downloadLinks.length === 0
-      ? attachmentNames.map((name) => `<li>${esc(name)}</li>`).join('')
-      : downloadLinks.map((link) => `<li><a href="${esc(link.url)}">${esc(link.fileName)}</a></li>`).join('')
+      ? attachmentNames.map((name) => esc(name))
+      : downloadLinks.map((link) => emailLink(esc(link.url), esc(link.fileName)))
   const noun = timesheetCount === 1 ? 'is' : 'are'
   const pdfWord = timesheetCount === 1 ? '' : 's'
   const attachNote =
     downloadLinks.length === 0
-      ? `${timesheetCount} signed-off timesheet PDF${pdfWord} for payment run <strong>${esc(paymentRunStamp)}</strong> (${esc(weekTitle)}) from <strong>${esc(organizationName)}</strong> ${noun} attached for your records.`
-      : `${timesheetCount} signed-off timesheet PDF${pdfWord} for payment run <strong>${esc(paymentRunStamp)}</strong> (${esc(weekTitle)}) from <strong>${esc(organizationName)}</strong> ${noun} attached, with backup download links below.`
-  return `<html><body style="font-family:Arial,sans-serif;max-width:720px;margin:0 auto;padding:20px;">
-<h2 style="color:#0D67ED;">Signed timesheets for filing</h2>
-<p>Hello ${esc(recipientName)},</p>
-<p>${attachNote}</p>
-<p>Each file is named: <em>User Name timesheet for payment run date ${esc(paymentRunStamp)}</em>.</p>
-<ul>${list}</ul>
-<p style="color:#666;font-size:13px;">These timesheets were counter-signed and exported from Operative Timesheets → Signed off.</p>
-</body></html>`
+      ? `${timesheetCount} signed-off timesheet PDF${pdfWord} for payment run ${emailStrong(esc(paymentRunStamp), 'ink')} (${esc(weekTitle)}) from ${emailStrong(esc(organizationName), 'ink')} ${noun} attached for your records.`
+      : `${timesheetCount} signed-off timesheet PDF${pdfWord} for payment run ${emailStrong(esc(paymentRunStamp), 'ink')} (${esc(weekTitle)}) from ${emailStrong(esc(organizationName), 'ink')} ${noun} attached, with backup download links below.`
+  return emailDocument({
+    title: 'Signed timesheets for filing',
+    maxWidth: 720,
+    body: [
+      emailHeading('Signed timesheets for filing'),
+      emailText(`Hello ${esc(recipientName)},`),
+      emailText(attachNote),
+      emailText(`Each file is named: <em>User Name timesheet for payment run date ${esc(paymentRunStamp)}</em>.`),
+      emailList(list),
+      emailText(
+        'These timesheets were counter-signed and exported from Operative Timesheets → Signed off.',
+        'muted',
+        'margin:0;'
+      ),
+    ].join('\n'),
+  })
 }
 
 function parseDownloadLinks(raw) {
