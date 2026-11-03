@@ -288,6 +288,7 @@ export function WeeklyReportScreen({
           payrollPolicy: orgDetails?.payrollTimePolicy,
           payrollPolicyPrior: orgDetails?.payrollTimePolicyPrior,
           payrollPolicyEffectiveFrom: orgDetails?.payrollTimePolicyEffectiveFrom,
+          payrollPolicyState: orgDetails?.payrollTimePolicyState ?? null,
           scheduleOptions: orgDetails?.myScheduleOptions,
           timeZone,
         })

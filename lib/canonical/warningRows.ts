@@ -13,7 +13,10 @@
 
 import { isPersonInWarningScope, type WarningScope } from './staffAccess'
 import { isAnonymisedDeletedProfile, listedCurrentLabourPeople } from './userRosterSegment'
-import { standardDayCoverage, type StandardDayBooking } from './engine'
+import { standardDayCoverage, windowCoverage, parseClockMinutes, type StandardDayBooking } from './engine'
+import { resolveWeekendCoverageDay, type OrgPayrollTimePolicy, type WeekendCoverage } from './organizationSettings'
+import { payrollBreakOnDay } from './payrollHours'
+import { payrollTimePolicyForDayFromState, type PayrollTimePolicyState } from './payrollPolicySchedule'
 import {
   addDaysInZone,
   dateFromDayKeyInZone,
@@ -169,9 +172,11 @@ export type UnbookedLabourInput = {
    * Those `users/{uid}` ids are never unbooked on Warnings or Daily Overview.
    */
   excludedUserIds?: readonly string[] | null
-  standardPaidHours: number
-  saturdayCountsAsHours: number
-  sundayCountsAsHours: number
+  standardPaidHours?: number
+  /** Ignored since 1.19.0 (the weekend requirement is `weekendCoverage`); kept so older callers still type-check. */
+  saturdayCountsAsHours?: number
+  /** Ignored since 1.19.0 (see `weekendCoverage`). */
+  sundayCountsAsHours?: number
   /** Organisation standard day. Defaults to 07:30–16:00 with a 12:00–12:30 break. */
   standardDayStart?: string | null
   standardDayEnd?: string | null
@@ -181,6 +186,21 @@ export type UnbookedLabourInput = {
   operatives: readonly RosterOperative[]
   bookings: readonly LabourBooking[]
   holidays: readonly LabourHoliday[]
+  /**
+   * Rulebook 1.19.0 §5: the organisation's working-hours policy state (`parsePayrollTimePolicyState` /
+   * `payrollTimePolicyTimeline`) or one policy. When given, every day of the window is read under the policy in effect
+   * on THAT day (`payrollTimePolicyForDayFromState`) — its standard day, break, paid hours and weekend "counts as"
+   * hours — and the flat fields above are ignored. A weekend day whose counts-as hours are 0 is still skipped.
+   */
+  payrollPolicy?: OrgPayrollTimePolicy | PayrollTimePolicyState | null
+  /**
+   * Rulebook 1.19.0 §5 (owner design): `warningDetection.weekendCoverage`. With include-weekends on, a Saturday or
+   * Sunday is scanned only when that day's toggle is on, and a person is unbooked there when their bookings do not
+   * cover every minute of the day's "Hours to cover" window (`resolveWeekendCoverageDay`, `windowCoverage`; time
+   * inside that day's lunch-break window never needs covering). Missing → both days on with the default window (that day's working-hours set window, else the standard
+   * day). Replaces the "counts as" hours requirement.
+   */
+  weekendCoverage?: Partial<WeekendCoverage> | null
 }
 
 export type UnbookedLabourRow = {
@@ -246,16 +266,14 @@ function formatCoverageHours(hours: number): string {
   return rounded.toFixed(1)
 }
 
-function finiteHours(value: number, fallback: number): number {
+function finiteHours(value: number | null | undefined, fallback: number): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback
 }
 
-function hoursForIsoWeekday(iso: number, input: Pick<UnbookedLabourInput, 'standardPaidHours' | 'saturdayCountsAsHours' | 'sundayCountsAsHours'>): number {
-  const standard = finiteHours(input.standardPaidHours, 0)
-  if (iso === 6) return Math.max(finiteHours(input.saturdayCountsAsHours, standard), 0)
-  if (iso === 7) return Math.max(finiteHours(input.sundayCountsAsHours, standard), 0)
-  return Math.max(standard, 0)
+function isPayrollState(value: unknown): value is PayrollTimePolicyState {
+  return Boolean(value && typeof value === 'object' && 'current' in (value as object) && 'scheduled' in (value as object))
 }
+
 
 /** Active operatives whose named qualification expires on or before today plus one calendar month. */
 function qualificationExpiryRowsUnscoped(input: QualificationExpiryInput): QualificationExpiryRow[] {
@@ -425,7 +443,8 @@ function asCoverageBooking(booking: LabourBooking): StandardDayBooking {
 
 /**
  * People who do not cover the organisation standard day inside the window.
- * Pending invitees are not unbooked. A weekend whose counts-as hours are 0 is not unbooked.
+ * Pending invitees are not unbooked. 1.19.0: a weekend day is scanned only when its `weekendCoverage` toggle is on,
+ * against its "Hours to cover" window.
  * Bookings on any operative profile or user account that shares the email count toward that day,
  * and so do bookings under that account's `formerIds` (an invite placeholder id from before sign-up).
  * An exclusion saved under a former id still excludes the person.
@@ -447,11 +466,62 @@ function unbookedLabourRowsUnscoped(input: UnbookedLabourInput): UnbookedLabourR
   const nid = idKey
   const excludedIds = new Set((input.excludedUserIds || []).map(nid).filter(Boolean))
   const isExcluded = (person: LabourPerson): boolean => labourPersonIds(person).some((id) => excludedIds.has(nid(id)))
-  const dayPolicy = {
+  const flatDayPolicy = {
     standardDayStart: input.standardDayStart,
     standardDayEnd: input.standardDayEnd,
     breakWindowStart: input.breakWindowStart,
     breakWindowEnd: input.breakWindowEnd,
+  }
+  /**
+   * 1.19.0: the standard day in effect on `dayKey`, and on a Saturday or Sunday the "Hours to cover" window
+   * (`resolveWeekendCoverageDay`: saved window, else that day's set window, else the standard day) or null when that
+   * day is not scanned.
+   */
+  const rulesOn = (
+    dayKey: string,
+    iso: number
+  ): {
+    dayPolicy: typeof flatDayPolicy
+    weekendWindow: { start: number; end: number } | null
+    weekendBreak: { start: number; end: number } | null
+  } => {
+    const source = input.payrollPolicy
+    const policy = source ? (isPayrollState(source) ? payrollTimePolicyForDayFromState(source, dayKey) : source) : null
+    const dayPolicy = policy
+      ? {
+          standardDayStart: policy.standardDayStart,
+          standardDayEnd: policy.standardDayEnd,
+          breakWindowStart: policy.breakWindowStart,
+          breakWindowEnd: policy.breakWindowEnd,
+        }
+      : flatDayPolicy
+    if (iso !== 6 && iso !== 7) return { dayPolicy, weekendWindow: null, weekendBreak: null }
+    const resolved = resolveWeekendCoverageDay(
+      input.weekendCoverage ?? null,
+      input.includeWeekends,
+      policy ?? {
+        standardDayStart: input.standardDayStart ?? '07:30',
+        standardDayEnd: input.standardDayEnd ?? '16:00',
+        saturday: { allHoursAtMultiplierMode: true, allHoursMultiplier: 1 },
+        sunday: { allHoursAtMultiplierMode: true, allHoursMultiplier: 1 },
+      },
+      iso === 6 ? 'saturday' : 'sunday'
+    )
+    const start = parseClockMinutes(resolved.start)
+    const end = parseClockMinutes(resolved.end)
+    // 1.19.0: time inside that day's lunch-break window (its own, else the weekday one; paid or not) never needs covering.
+    const dayBreak = policy
+      ? payrollBreakOnDay(policy, dayKey, timeZone)
+      : (() => {
+          const bs = parseClockMinutes(input.breakWindowStart ?? undefined)
+          const be = parseClockMinutes(input.breakWindowEnd ?? undefined)
+          return bs != null && be != null && be > bs ? { start: bs, end: be } : null
+        })()
+    return {
+      dayPolicy,
+      weekendWindow: resolved.enabled && start != null && end != null && end > start ? { start, end } : null,
+      weekendBreak: dayBreak ? { start: dayBreak.start, end: dayBreak.end } : null,
+    }
   }
   const operativeBookings = new Map<string, StandardDayBooking[]>()
   const managerBookings = new Map<string, StandardDayBooking[]>()
@@ -552,8 +622,8 @@ function unbookedLabourRowsUnscoped(input: UnbookedLabourInput): UnbookedLabourR
   for (const dayKey of eachDayKey(input.startDayKey, input.endDayKey, timeZone)) {
     const iso = isoWeekdayInZone(dateFromDayKeyInZone(dayKey, timeZone), timeZone)
     if (!input.includeWeekends && (iso < 1 || iso > 5)) continue
-    const weekendRequired = hoursForIsoWeekday(iso, input)
-    if (iso >= 6 && weekendRequired <= 0.001) continue
+    const { dayPolicy, weekendWindow, weekendBreak } = rulesOn(dayKey, iso)
+    if (iso >= 6 && !weekendWindow) continue
     const seen = new Set<string>()
 
     const append = (args: {
@@ -566,8 +636,12 @@ function unbookedLabourRowsUnscoped(input: UnbookedLabourInput): UnbookedLabourR
       const seenKey = args.email || args.personKey
       if (seen.has(seenKey)) return
       seen.add(seenKey)
-      const coverage = standardDayCoverage(dayPolicy, slotsFor(args.email, args.operativeId, args.userId, dayKey))
-      const requiredHours = iso >= 6 ? weekendRequired : coverage.requiredHours
+      const slots = slotsFor(args.email, args.operativeId, args.userId, dayKey)
+      // 1.19.0: a weekend day must cover every minute of its "Hours to cover" window; a weekday its standard day.
+      const coverage = weekendWindow
+        ? windowCoverage(weekendWindow, dayPolicy, slots, weekendBreak)
+        : standardDayCoverage(dayPolicy, slots)
+      const requiredHours = coverage.requiredHours
       if (requiredHours <= 0.001) return
       const coveredHours = Math.min(coverage.coveredHours, requiredHours)
       const missingHours = Math.round(Math.max(0, requiredHours - coveredHours) * 100) / 100

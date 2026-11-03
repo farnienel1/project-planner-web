@@ -33,6 +33,7 @@ import type { Booking, Project } from '@/types'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import { coversCalendarDay } from '@/lib/ios-parity/londonTime'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
+import { bookingDayKey, policyForBookingDate } from '@/lib/scheduling/bookingSlotRules'
 import { DEFAULT_PAYROLL_POLICY, loadOrganizationDetails, type OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 import {
   findSubcontractorFirm,
@@ -301,8 +302,9 @@ export function ProjectScheduleWeekOverview({
             booking: b,
             ...bookingRowFromHours({
               ...b,
-              policy: payroll,
-              date: day,
+              // Rulebook 1.19.0: the working hours in effect on that day (history first), never today's.
+              policy: policyForBookingDate(day, payroll) ?? payroll,
+              dayKey: bookingDayKey(day),
             }),
           }]
         })
@@ -331,8 +333,9 @@ export function ProjectScheduleWeekOverview({
             managerBooking: b,
             ...bookingRowFromHours({
               ...b,
-              policy: payroll,
-              date: day,
+              // Rulebook 1.19.0: the working hours in effect on that day (history first), never today's.
+              policy: policyForBookingDate(day, payroll) ?? payroll,
+              dayKey: bookingDayKey(day),
             }),
           }]
         })
@@ -357,8 +360,9 @@ export function ProjectScheduleWeekOverview({
             subBooking: b,
             ...bookingRowFromHours({
               ...b,
-              policy: payroll,
-              date: day,
+              // Rulebook 1.19.0: the working hours in effect on that day (history first), never today's.
+              policy: policyForBookingDate(day, payroll) ?? payroll,
+              dayKey: bookingDayKey(day),
             }),
           }
         })

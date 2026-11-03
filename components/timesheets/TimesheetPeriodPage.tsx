@@ -12,6 +12,7 @@ import {
   DEFAULT_MY_SCHEDULE,
   type MyScheduleOptions,
   type OrgInvoicingSettings,
+  orgPayrollPolicyForDay,
   type OrgPayrollTimePolicy,
 } from '@/lib/settings/organizationSettings'
 import { useAuthStore } from '@/lib/stores/authStore'
@@ -121,6 +122,7 @@ import type { TimesheetLeaveLine } from '@/lib/canonical'
 import { useOrgBankHolidays } from '@/components/annual-leave/useOrgBankHolidays'
 import { PayInputsBanner } from '@/components/timesheets/PayInputsBanner'
 import { TimesheetInputsNotReadyError, type TimesheetInputsState } from '@/lib/timesheets/timesheetInputs'
+import type { PayrollTimePolicyState } from '@/lib/canonical'
 
 function money(value: number, currency: string): string {
   return formatMoney(value, currency)
@@ -144,6 +146,7 @@ export function TimesheetPeriodPage({
   payrollPolicy,
   payrollPolicyPrior = null,
   payrollPolicyEffectiveFrom = null,
+  payrollPolicyState = null,
   bookings,
   managerSiteBookings,
   operatives,
@@ -163,6 +166,8 @@ export function TimesheetPeriodPage({
   payrollPolicy: OrgPayrollTimePolicy
   payrollPolicyPrior?: OrgPayrollTimePolicy | null
   payrollPolicyEffectiveFrom?: string | null
+  /** Rulebook 1.19.0: the whole working-hours state; each day is priced under the rules in effect on it. */
+  payrollPolicyState?: PayrollTimePolicyState | null
   bookings: Booking[]
   managerSiteBookings: ManagerSiteBooking[]
   operatives: Operative[]
@@ -228,6 +233,7 @@ export function TimesheetPeriodPage({
         payrollPolicy,
         payrollPolicyPrior,
         payrollPolicyEffectiveFrom,
+        payrollPolicyState,
         timeZone,
         history,
         scheduleOptions,
@@ -246,6 +252,7 @@ export function TimesheetPeriodPage({
       payrollPolicy,
       payrollPolicyPrior,
       payrollPolicyEffectiveFrom,
+      payrollPolicyState,
       timeZone,
       history,
       scheduleOptions,
@@ -332,6 +339,7 @@ export function TimesheetPeriodPage({
         payrollPolicy,
         payrollPolicyPrior,
         payrollPolicyEffectiveFrom,
+        payrollPolicyState,
         scheduleOptions,
         timeZone,
       })
@@ -378,6 +386,7 @@ export function TimesheetPeriodPage({
       payrollPolicy,
       payrollPolicyPrior,
       payrollPolicyEffectiveFrom,
+      payrollPolicyState,
       scheduleOptions,
       timeZone,
       users,
@@ -478,7 +487,12 @@ export function TimesheetPeriodPage({
     setExtraMode(kind)
   }
 
+  // Rulebook 1.19.0: a line is reviewed under the working hours in effect on its own day, never today's.
+  const policyOnDay = (date: Date): OrgPayrollTimePolicy =>
+    orgPayrollPolicyForDay(date, payrollPolicy, payrollPolicyPrior, payrollPolicyEffectiveFrom, timeZone, null, payrollPolicyState)
+
   const openPayrollHoursEditor = (line: TimesheetPayrollLineItem) => {
+    const linePolicy = policyOnDay(line.date)
     const bookingId = bookingIdFromLineId(line.id)
     const operativeBooking = bookingId ? bookings.find((row) => row.id === bookingId) : undefined
     const managerBooking = bookingId ? managerSiteBookings.find((row) => row.id === bookingId) : undefined
@@ -487,17 +501,17 @@ export function TimesheetPeriodPage({
         row: line,
         operativeBooking,
         managerBooking,
-        policy: payrollPolicy,
+        policy: linePolicy,
       }) || {
-        startTime: payrollPolicy.standardDayStart,
-        endTime: payrollPolicy.standardDayEnd,
+        startTime: linePolicy.standardDayStart,
+        endTime: linePolicy.standardDayEnd,
         breakRemoved: false,
       }
     setHoursStart(choice.startTime)
     setHoursEnd(choice.endTime)
     setHoursBreakRemoved(choice.breakRemoved)
     setHoursOt(
-      line.isOvertimeLine ? String(weekdayOtMultiplier(line.date, payrollPolicy)) : ''
+      line.isOvertimeLine ? String(weekdayOtMultiplier(line.date, linePolicy)) : ''
     )
     setEditingLineId(line.id)
   }
@@ -506,9 +520,10 @@ export function TimesheetPeriodPage({
     if (!editingLineId) return
     const row = payroll.lineItems.find((item) => item.id === editingLineId)
     if (!row) return
+    const rowPolicy = policyOnDay(row.date)
     // 1.13.0 lunch warning (`customHoursBreakWarning`): the reviewed hours cover the unpaid break with it on.
     if (
-      !confirmCustomHoursBreak(payrollPolicy, row.date, {
+      !confirmCustomHoursBreak(rowPolicy, row.date, {
         timeSlot: 'CUSTOM_HOURS',
         workStartTime: hoursStart,
         workEndTime: hoursEnd,
@@ -522,7 +537,7 @@ export function TimesheetPeriodPage({
       startTime: hoursStart,
       endTime: hoursEnd,
       breakRemoved: hoursBreakRemoved,
-      policy: payrollPolicy,
+      policy: rowPolicy,
     })
     const prior = draftPayrollLineReview(draft, editingLineId)?.decision
     const review = payrollReviewAfterSave(prior, row.amount, amount)
@@ -656,6 +671,7 @@ export function TimesheetPeriodPage({
       timeZone,
       extrasMode: 'raw',
       standardDayHours: payrollPolicy.standardPaidHours,
+      standardDayHoursOn: (date: Date) => policyOnDay(date).standardPaidHours,
       currencyCode: currency,
       // Rulebook 1.11.0: only the self-employed days of the period reach the invoice.
       timesheetDays: subjectUser ? timesheetDayKeysForPeriod(subjectUser, periodStart, periodEnd, timeZone) : [],
@@ -1127,7 +1143,10 @@ export function TimesheetPeriodPage({
           end={hoursEnd}
           breakRemoved={hoursBreakRemoved}
           otText={hoursOt}
-          policy={payrollPolicy}
+          policy={(() => {
+            const editing = payroll.lineItems.find((item) => item.id === editingLineId)
+            return editing ? policyOnDay(editing.date) : payrollPolicy
+          })()}
           timeZone={timeZone}
           onStart={setHoursStart}
           onEnd={setHoursEnd}
@@ -1873,6 +1892,7 @@ function EditHoursSheet({
             end={end}
             breakRemoved={breakRemoved}
             policy={policy}
+            date={line.date}
             onStart={onStart}
             onEnd={onEnd}
             onBreak={onBreak}

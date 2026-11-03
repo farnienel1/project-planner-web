@@ -17,6 +17,7 @@ import { listTimesheetStates } from '@/lib/timesheets/timesheetStorage'
 import { emptyDayRateHistory, type OperativeDayRateHistoryCollection } from '@/lib/timesheets/dayRateHistoryStorage'
 import { findUserAndOperative, resolveDisplayName, resolvePersonRole, resolvePersonTrade } from '@/lib/weekly-report/weeklyReportPayroll'
 import { mergeDuplicatePersonWeeks, type ApprovedTimesheetWeek } from '@/lib/weekly-report/timesheetFeed'
+import type { PayrollTimePolicyState } from '@/lib/canonical'
 
 /** Rulebook 1.11.0: `timesheetParticipant` over the whole period (`showsMyTimesheets`) — self-employed on a day of it. */
 function participatesInPeriod(user: User, period: { start: Date; end: Date }, timeZone: string): boolean {
@@ -46,6 +47,7 @@ export async function loadWeeklyReportTimesheetFeed({
   payrollPolicy = DEFAULT_PAYROLL_POLICY,
   payrollPolicyPrior = null,
   payrollPolicyEffectiveFrom = null,
+  payrollPolicyState = null,
   scheduleOptions = DEFAULT_MY_SCHEDULE,
   timeZone = LONDON_TIME_ZONE,
 }: {
@@ -63,6 +65,8 @@ export async function loadWeeklyReportTimesheetFeed({
   payrollPolicy?: OrgPayrollTimePolicy
   payrollPolicyPrior?: OrgPayrollTimePolicy | null
   payrollPolicyEffectiveFrom?: string | null
+  /** Rulebook 1.19.0: the whole working-hours state; each day is priced under the rules in effect on it. */
+  payrollPolicyState?: PayrollTimePolicyState | null
   scheduleOptions?: MyScheduleOptions
   timeZone?: string
 }): Promise<ApprovedTimesheetWeek[]> {
@@ -97,6 +101,7 @@ export async function loadWeeklyReportTimesheetFeed({
           payrollPolicy,
           payrollPolicyPrior,
           payrollPolicyEffectiveFrom,
+          payrollPolicyState,
           scheduleOptions,
           timeZone,
         })

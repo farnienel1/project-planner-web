@@ -98,8 +98,15 @@ export function upcomingRows(params: {
   allProjects: Project[]
   organizationUsers: User[]
   payrollTimePolicy?: PayrollTimePolicy
+  /**
+   * Rulebook 1.19.0: the working hours in effect on a booking's own day (canonical `effectivePayrollTimePolicy`,
+   * history first). When given it wins over `payrollTimePolicy` for every booking.
+   */
+  payrollPolicyForDay?: (day: Date) => PayrollTimePolicy
 }): HomeUpNextRow[] {
-  const policy = params.payrollTimePolicy ?? DEFAULT_PAYROLL_TIME_POLICY
+  const fallback = params.payrollTimePolicy ?? DEFAULT_PAYROLL_TIME_POLICY
+  const policyOn = (date: Date | string): PayrollTimePolicy =>
+    params.payrollPolicyForDay ? params.payrollPolicyForDay(new Date(date)) : fallback
   const rows: HomeUpNextRow[] = []
   const emailKey = params.currentUserEmail?.toLowerCase().trim()
   const projectsById = new Map(params.allProjects.map((p) => [p.id, p.siteName]))
@@ -117,7 +124,7 @@ export function upcomingRows(params: {
         return status !== 'Cancelled' && status !== 'Completed'
       })
       for (const b of mine) {
-        const start = sortDateOperativeBooking(b, policy)
+        const start = sortDateOperativeBooking(b, policyOn(b.date))
         if (start < params.now) continue
         const proj = params.allProjects.find((p) => p.id === b.projectId)
         const site = bookingJobLabel(proj ? proj.siteName || 'Scheduled work' : null)
@@ -142,7 +149,7 @@ export function upcomingRows(params: {
   if (params.authUserId) {
     const mine = params.managerBookings.filter((b) => b.userId === params.authUserId)
     for (const b of mine) {
-      const start = sortDateManagerBooking(b, policy)
+      const start = sortDateManagerBooking(b, policyOn(b.date))
       if (start < params.now) continue
       const loc = managerSiteBookingDisplayTitle(b, projectsById)
       const timeStr = formatShortTime(start)
@@ -175,6 +182,7 @@ export function upcomingDaySections(params: {
   allProjects: Project[]
   organizationUsers: User[]
   payrollTimePolicy?: PayrollTimePolicy
+  payrollPolicyForDay?: (day: Date) => PayrollTimePolicy
 }): HomeUpNextDaySection[] {
   const merged = upcomingRows({
     ...params,

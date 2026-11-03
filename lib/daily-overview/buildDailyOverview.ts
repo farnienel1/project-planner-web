@@ -21,7 +21,6 @@ import {
   parseMinutes,
 } from '@/lib/scheduling/paidHours'
 import { DEFAULT_PAYROLL_POLICY, type OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
-import { effectiveWeekendSettings } from '@/lib/setup/workingHoursUtils'
 import type { Booking, HolidayBooking, Operative, Project, User } from '@/types'
 import type { ManagerLocationType, ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import {
@@ -30,6 +29,7 @@ import {
   resolveSubcontractorBookingPeople,
 } from '@/lib/subcontractors/bookingPeople'
 import { holidayBookingDayKeys, holidayBookingLabourInput } from '@/lib/annualLeave/holidayDayKeys'
+import type { WeekendCoverage } from '@/lib/canonical'
 
 export type OverviewSubcontractorBooking = {
   id: string
@@ -224,6 +224,8 @@ export function buildDailyOverview(params: {
   includeWeekendsForUnbookedLabour?: boolean
   /** `organizations/{orgId}.warningDetection.excludedUserIdsFromUnbookedWarnings` */
   excludedUserIdsFromUnbookedWarnings?: readonly string[] | null
+  /** Rulebook 1.19.0 §5: `warningDetection.weekendCoverage` (missing → both days on, default windows). */
+  weekendCoverage?: WeekendCoverage | null
   /** Organisation business zone (`organizationTimeZone`). Default Europe/London. */
   timeZone?: string
   /**
@@ -458,8 +460,6 @@ export function buildDailyOverview(params: {
 
   const overviewDayKey = dayKey(day)
   const payroll = params.payrollPolicy ?? DEFAULT_PAYROLL_POLICY
-  const saturdayHours = effectiveWeekendSettings('saturday', payroll).countsAsStandardHours
-  const sundayHours = effectiveWeekendSettings('sunday', payroll).countsAsStandardHours
   const scope = params.viewer
     ? warningScopeFor({
         viewer: params.viewer,
@@ -480,9 +480,10 @@ export function buildDailyOverview(params: {
     dayKey: overviewDayKey,
     includeWeekends: Boolean(params.includeWeekendsForUnbookedLabour),
     excludedUserIds: params.excludedUserIdsFromUnbookedWarnings,
+    // 1.19.0: the weekend requirement is that day's "Hours to cover" window, read under the day's policy.
+    weekendCoverage: params.weekendCoverage ?? null,
+    payrollPolicy: payroll,
     standardPaidHours: payroll.standardPaidHours,
-    saturdayCountsAsHours: typeof saturdayHours === 'number' ? saturdayHours : payroll.standardPaidHours,
-    sundayCountsAsHours: typeof sundayHours === 'number' ? sundayHours : payroll.standardPaidHours,
     standardDayStart: payroll.standardDayStart,
     standardDayEnd: payroll.standardDayEnd,
     breakWindowStart: payroll.breakWindowStart,

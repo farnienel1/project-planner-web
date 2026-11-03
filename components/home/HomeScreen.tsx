@@ -53,7 +53,9 @@ import {
   saveOverviewMetrics,
   type HomeOverviewMetricID,
 } from '@/lib/home/overviewMetrics'
-import { upcomingDaySections } from '@/lib/home/upNext'
+import { DEFAULT_PAYROLL_TIME_POLICY, upcomingDaySections } from '@/lib/home/upNext'
+import { organizationTimeZone, payrollTimePolicyForDayFromState } from '@/lib/canonical'
+import { dayKeyInZone } from '@/lib/orgTime/zoneTime'
 import {
   allEligibleQuickActionIds,
   loadSavedQuickActionOrder,
@@ -61,7 +63,6 @@ import {
   quickActionMeta,
   saveQuickActionOrder,
 } from '@/lib/home/quickActions'
-import { policyForDay } from '@/lib/payroll/policyCatalog'
 import { type ChipTint } from '@/components/ios/IconChip'
 import { Hero, StatCard } from '@/components/ui'
 import { IosModal } from '@/components/ios/primitives'
@@ -389,16 +390,15 @@ export function HomeScreen() {
         managerBookings: managerSiteBookings,
         allProjects: merged,
         organizationUsers: users,
-        payrollTimePolicy: policyForDay(
-          now,
+        // Rulebook 1.19.0: each booking's start is read under the working hours in effect on its own day
+        // (canonical `payrollTimePolicyForDayFromState` over the whole state), never today's rules for every day.
+        payrollPolicyForDay: (day: Date) =>
           orgDetails?.id === orgId
-            ? {
-                payrollTimePolicy: orgDetails.payrollTimePolicy,
-                payrollTimePolicyPrior: orgDetails.payrollTimePolicyPrior ?? undefined,
-                payrollTimePolicyEffectiveFrom: orgDetails.payrollTimePolicyEffectiveFrom ?? undefined,
-              }
-            : null
-        ),
+            ? payrollTimePolicyForDayFromState(
+                orgDetails.payrollTimePolicyState,
+                dayKeyInZone(day, organizationTimeZone(orgDetails.countryCode))
+              )
+            : DEFAULT_PAYROLL_TIME_POLICY,
       }),
     [now, displayUser?.id, displayUser?.email, operatives, bookings, managerSiteBookings, merged, users, orgDetails, orgId]
   )

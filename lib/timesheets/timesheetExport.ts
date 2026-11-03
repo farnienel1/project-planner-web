@@ -135,6 +135,7 @@ export function invoiceLinesForTimesheet({
   timeZone,
   extrasMode,
   standardDayHours = 8,
+  standardDayHoursOn,
   currencyCode,
   timesheetDays,
 }: {
@@ -143,6 +144,11 @@ export function invoiceLinesForTimesheet({
   timeZone: string
   extrasMode: 'raw' | 'export'
   standardDayHours?: number
+  /**
+   * Rulebook 1.19.0: the standard paid day in effect on a line's own day (`effectivePayrollTimePolicy`), for the day
+   * units shown on a signed line. Display only — a signed line's amount is never re-priced. Missing → `standardDayHours`.
+   */
+  standardDayHoursOn?: (date: Date) => number
   /** Organisation currency (`formatMoney`). Leave rows are never on the invoice. */
   currencyCode?: string
   /** Rulebook 1.11.0 `timesheetDaysForPerson`: rows on another (PAYE) day are left out. */
@@ -172,7 +178,11 @@ export function invoiceLinesForTimesheet({
       const signed = row.source === 'override' ? (row.stored as unknown as SignedOverrideLine) : null
       const details = live
         ? timesheetLabourDetails(live, currencyCode)
-        : signedOverrideDetails(signed as SignedOverrideLine, standardDayHours, currencyCode)
+        : signedOverrideDetails(
+            signed as SignedOverrideLine,
+            signed?.date && standardDayHoursOn ? standardDayHoursOn(new Date(signed.date as Date)) : standardDayHours,
+            currencyCode
+          )
       const jobNumber = row.source === 'override'
         ? (live?.jobNumber || signed?.jobNumber || '—').trim() || '—'
         : live?.jobNumber || '—'

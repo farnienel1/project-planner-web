@@ -59,7 +59,19 @@
               "clashLookaheadMode": "numberOfDays",
               "clashLookaheadDays": 7,
               "includeWeekendsForUnbookedLabour": false,
-              "excludedUserIdsFromUnbookedWarnings": []
+              "excludedUserIdsFromUnbookedWarnings": [],
+              "weekendCoverage": {
+                "saturday": {
+                  "enabled": false,
+                  "start": null,
+                  "end": null
+                },
+                "sunday": {
+                  "enabled": false,
+                  "start": null,
+                  "end": null
+                }
+              }
             }
           }
         },
@@ -118,7 +130,19 @@
               "includeWeekendsForUnbookedLabour": true,
               "excludedUserIdsFromUnbookedWarnings": [
                 "USER-IOS-9"
-              ]
+              ],
+              "weekendCoverage": {
+                "saturday": {
+                  "enabled": true,
+                  "start": null,
+                  "end": null
+                },
+                "sunday": {
+                  "enabled": true,
+                  "start": null,
+                  "end": null
+                }
+              }
             }
           }
         }

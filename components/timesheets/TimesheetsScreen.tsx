@@ -47,6 +47,7 @@ import { timesheetExportPath, uploadFile } from '@/lib/firebase/storageUtils'
 import { emptyDayRateHistory, type OperativeDayRateHistoryCollection } from '@/lib/timesheets/dayRateHistoryStorage'
 import {
   DEFAULT_MY_SCHEDULE,
+  orgPayrollPolicyForDay,
   type MyScheduleOptions,
   type OrgInvoicingSettings,
   type OrgPayrollTimePolicy,
@@ -60,6 +61,7 @@ import { computeInvoicingPeriod } from '@/lib/warnings/warningLookahead'
 import { formatStampInZone } from '@/lib/orgTime/zoneTime'
 import { PayInputsBanner } from '@/components/timesheets/PayInputsBanner'
 import type { TimesheetInputsState } from '@/lib/timesheets/timesheetInputs'
+import type { PayrollTimePolicyState } from '@/lib/canonical'
 
 export type TeamTimesheetTab = 'awaiting' | 'signed' | 'exported'
 
@@ -86,6 +88,7 @@ export function TimesheetsScreen({
   payrollPolicy,
   payrollPolicyPrior = null,
   payrollPolicyEffectiveFrom = null,
+  payrollPolicyState = null,
   invoicing,
   loading,
   teamTab,
@@ -106,6 +109,8 @@ export function TimesheetsScreen({
   payrollPolicy: OrgPayrollTimePolicy
   payrollPolicyPrior?: OrgPayrollTimePolicy | null
   payrollPolicyEffectiveFrom?: string | null
+  /** Rulebook 1.19.0: the whole working-hours state; each day is priced under the rules in effect on it. */
+  payrollPolicyState?: PayrollTimePolicyState | null
   invoicing: OrgInvoicingSettings
   loading?: boolean
   teamTab: TeamTimesheetTab
@@ -225,6 +230,7 @@ export function TimesheetsScreen({
       payrollPolicy,
       payrollPolicyPrior,
       payrollPolicyEffectiveFrom,
+      payrollPolicyState,
       timeZone,
       history,
       scheduleOptions,
@@ -260,6 +266,7 @@ export function TimesheetsScreen({
         payrollPolicy,
         payrollPolicyPrior,
         payrollPolicyEffectiveFrom,
+        payrollPolicyState,
         scheduleOptions,
         timeZone,
       })
@@ -311,6 +318,7 @@ export function TimesheetsScreen({
           payrollPolicy,
           payrollPolicyPrior,
           payrollPolicyEffectiveFrom,
+          payrollPolicyState,
           timeZone,
           history,
           scheduleOptions,
@@ -332,6 +340,7 @@ export function TimesheetsScreen({
           payrollPolicy,
           payrollPolicyPrior,
           payrollPolicyEffectiveFrom,
+          payrollPolicyState,
           scheduleOptions,
           timeZone,
         })
@@ -341,6 +350,10 @@ export function TimesheetsScreen({
           timeZone,
           extrasMode: 'export',
           standardDayHours: payrollPolicy.standardPaidHours,
+          // Rulebook 1.19.0: a signed line's day units against the standard day in effect on its own day.
+          standardDayHoursOn: (date: Date) =>
+            orgPayrollPolicyForDay(date, payrollPolicy, payrollPolicyPrior, payrollPolicyEffectiveFrom, timeZone, null, payrollPolicyState)
+              .standardPaidHours,
           currencyCode: currency,
           // Rulebook 1.11.0: only the self-employed days of the period reach the invoice.
           timesheetDays: timesheetDayKeysForPeriod(member, periodStart, periodEnd, timeZone),

@@ -37,6 +37,7 @@ export {
   parseClockMinutes,
   slotInterval,
   standardDayCoverage,
+  windowCoverage,
   standardBreakWindow,
   standardDayWindow,
   subtractMinuteIntervals,
@@ -348,7 +349,16 @@ export { LEGACY_PLACEHOLDER_DOCUMENT_ID, isLegacyPlaceholderDocumentId } from '.
 
 export { legalPackNeedsAcceptance } from './legalPack'
 
-export { payrollHoursResult, payrollOutsideMultiplier, reportDayValue, subcontractorDayValue, workedHoursSplit } from './payrollHours'
+export {
+  payrollBreakOnDay,
+  payrollDayWindows,
+  payrollHoursResult,
+  payrollOutsideMultiplier,
+  reportDayValue,
+  subcontractorDayValue,
+  unpaidBreakAppliesOnDay,
+  workedHoursSplit,
+} from './payrollHours'
 export { DEFAULT_ANNUAL_LEAVE, parseAnnualLeaveDefaults, parsePayrollPolicy } from './organizationSettings'
 
 export { PAYE_PAY_CELL_LABEL, reportPayCell, reportPayTotal, reportPersonPayCell } from './reportPay'
@@ -443,12 +453,17 @@ export {
   parseCompanyDetails,
 } from './companyDetails'
 export {
+  PAYROLL_POLICY_HISTORY_START,
   PAYROLL_POLICY_LIMITS,
+  PAYROLL_POLICY_STALE_SAVE_MESSAGE,
   WORKING_WEEK,
   effectivePayrollTimePolicy,
   isStandardWorkingWeekday,
+  parsePayrollTimePolicyHistory,
   parsePayrollTimePolicyScheduled,
   parsePayrollTimePolicyState,
+  payrollTimePolicyHistoryEntries,
+  payrollTimePolicySaveConflict,
   payrollDayKeyFromValue,
   payrollTimePolicyApplyNowWriteFields,
   payrollTimePolicyCancelScheduleWriteFields,
@@ -909,6 +924,7 @@ export {
   WEEKEND_TIME_SLOTS,
   allowedTimeSlotsOnDay,
   customHoursBreakWarning,
+  weekendLunchBreakCopy,
   isWeekendDayKey,
   WEEKEND_WEEKDAY_MIX_MESSAGE,
   bookingDaysMixWeekdayAndWeekend,
@@ -929,7 +945,13 @@ export {
   subscriptionAccess,
 } from './billingAccess'
 export { LAUNCH_COUNTRY_CODES, launchCountryOptions } from './bankHolidayRegions'
-export { SUGGESTED_MAX_CARRY_OVER_DAYS, parseMaxCarryOverDays } from './organizationSettings'
+export {
+  SUGGESTED_MAX_CARRY_OVER_DAYS,
+  parseMaxCarryOverDays,
+  parseWeekendCoverage,
+  resolveWeekendCoverageDay,
+  weekendBreakFor,
+} from './organizationSettings'
 export { leaveYearStartMonth, proRataLeaveAllowance } from './annualLeaveBalance'
 export {
   PAY_PROFILES_COLLECTION,

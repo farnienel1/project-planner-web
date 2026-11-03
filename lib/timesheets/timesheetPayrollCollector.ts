@@ -1,7 +1,7 @@
 /**
  * iOS parity: Core/TimesheetPayrollCollector.swift
  */
-import type { PayrollTimePolicyScheduledChange } from '@/lib/canonical'
+import type { PayrollTimePolicyScheduledChange, PayrollTimePolicyState } from '@/lib/canonical'
 import type { Booking, Operative, Project, User } from '@/types'
 import type { ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
 import { managerSiteBookingDisplayTitle } from '@/lib/scheduling/managerSiteBookingUtils'
@@ -140,6 +140,7 @@ export function collectTimesheetPayroll({
   payrollPolicyPrior = null,
   payrollPolicyEffectiveFrom = null,
   payrollPolicyScheduled = null,
+  payrollPolicyState = null,
   timeZone,
   history = emptyDayRateHistory(),
   scheduleOptions = DEFAULT_MY_SCHEDULE,
@@ -158,6 +159,12 @@ export function collectTimesheetPayroll({
   payrollPolicyEffectiveFrom?: string | null
   /** A pending working-hours change; counts from its effectiveFrom day (`effectivePayrollTimePolicy`). */
   payrollPolicyScheduled?: PayrollTimePolicyScheduledChange | null
+  /**
+   * Rulebook 1.19.0: the organisation's whole working-hours state (`OrganizationDetails.payrollTimePolicyState`:
+   * history, prior, current and the pending change). When given, each day is priced under the policy in effect on it
+   * (`payrollTimePolicyForDayFromState`) and the loose prior / effectiveFrom / scheduled fields are not used.
+   */
+  payrollPolicyState?: PayrollTimePolicyState | null
   timeZone?: string
   history?: OperativeDayRateHistoryCollection
   scheduleOptions?: MyScheduleOptions
@@ -224,7 +231,8 @@ export function collectTimesheetPayroll({
       payrollPolicyPrior,
       payrollPolicyEffectiveFrom,
       timeZone,
-      payrollPolicyScheduled
+      payrollPolicyScheduled,
+      payrollPolicyState
     )
     const standardDayHours = orgDayHours(policy.standardPaidHours)
     // One rulebook result (`payrollHoursResult`), the same figures the iOS collector uses.

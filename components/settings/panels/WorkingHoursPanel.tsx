@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useAuthStore } from '@/lib/stores/authStore'
 import {
   cancelScheduledPayrollPolicyChange,
@@ -16,7 +16,16 @@ import {
   formatPaymentRunDay,
   payrollTimePolicyScheduleDateError,
   validatePayrollTimePolicy,
+  formatClockMinutes,
+  halfDayWindows,
+  payrollBreakOnDay,
+  payrollDayWindows,
+  weekendBookingBreakdown,
+  weekendBreakFor,
+  weekendCustomHoursDefault,
+  weekendLunchBreakCopy,
 } from '@/lib/canonical'
+import { BookingDayBreakdownRows } from '@/components/scheduling/BookingDayBreakdownRows'
 import { useApplyLiveWhenClean, useLiveOrganizationDetails } from '@/components/settings/useLiveOrganizationSettings'
 import { settingsHeader } from '@/lib/settings/settingsHeader'
 import { settingsSaveBarHint } from '@/lib/settings/settingsDirty'
@@ -124,6 +133,43 @@ function DayTimeline({ policy }: { policy: OrgPayrollTimePolicy }) {
   )
 }
 
+/** Any Saturday / Sunday: the preview prices one example day under the draft, so only the weekday matters. */
+const PREVIEW_DAY: Record<WeekendKey, string> = { saturday: '2026-01-03', sunday: '2026-01-04' }
+
+/**
+ * Rulebook 1.19.0: the live calculation under Saturday / Sunday, as Monday–Friday has — that day's window (or every
+ * hour at N× over the standard day), its lunch break and the paid hours, priced only by the canonical pay rule
+ * (`weekendBookingBreakdown` → `payrollHoursResult`, `payrollDayWindows`). No figure is computed here.
+ */
+function WeekendDayPreview({ policy, day }: { policy: OrgPayrollTimePolicy; day: WeekendKey }) {
+  const valid = isValidHM(policy.standardDayStart) && isValidHM(policy.standardDayEnd)
+  if (!valid) return null
+  const dayKey = PREVIEW_DAY[day]
+  const window = weekendCustomHoursDefault(policy, dayKey, 'Europe/London')
+  const span = window ?? (() => {
+    const standard = halfDayWindows(policy).day
+    return { start: formatClockMinutes(standard.start), end: formatClockMinutes(standard.end) }
+  })()
+  const rows = weekendBookingBreakdown(policy, [dayKey], span.start, span.end, false, 'Europe/London')
+  const bands = payrollDayWindows(policy, dayKey, 'Europe/London')
+  const dayBreak = payrollBreakOnDay(policy, dayKey, 'Europe/London')
+  if (rows.length === 0) return null
+  const name = day === 'saturday' ? 'Saturday' : 'Sunday'
+  return (
+    <div className="space-y-2">
+      <p className="text-[12.5px] text-[var(--ink2)]">
+        {bands.allHoursMultiplier != null
+          ? `Every hour at ×${bands.allHoursMultiplier}`
+          : `${span.start}–${span.end} counts as set hours`}
+        {dayBreak
+          ? ` · ${dayBreak.paid ? 'Paid' : 'Unpaid'} break ${formatClockMinutes(dayBreak.start)}–${formatClockMinutes(dayBreak.end)} (${dayBreak.minutes} min)`
+          : ''}
+      </p>
+      <BookingDayBreakdownRows rows={rows} title={`${name} example · ${span.start}–${span.end}`} />
+    </div>
+  )
+}
+
 /** `YYYY-MM-DD` + 1 calendar day (date input minimum). */
 function nextDayKey(dayKey: string): string {
   const [y, m, d] = dayKey.split('-').map(Number)
@@ -132,8 +178,9 @@ function nextDayKey(dayKey: string): string {
 }
 
 function weekendSummary(settings: WeekendPayrollSettings): string {
-  if (settings.allHoursAtMultiplierMode) return `All hours at ×${settings.allHoursMultiplier}`
-  return `${settings.definedWindowStart ?? '—'}–${settings.definedWindowEnd ?? '—'} standard, outside ×${settings.outsideWindowMultiplier ?? 1.5}`
+  const lunch = settings.breakPaid === false ? ' · unpaid lunch' : ''
+  if (settings.allHoursAtMultiplierMode) return `All hours at ×${settings.allHoursMultiplier}${lunch}`
+  return `${settings.definedWindowStart ?? '—'}–${settings.definedWindowEnd ?? '—'} standard, outside ×${settings.outsideWindowMultiplier ?? 1.5}${lunch}`
 }
 
 type SaveChoice = 'closed' | 'choose' | 'schedule'
@@ -154,6 +201,12 @@ export function WorkingHoursPanel({ onBack }: { onBack: () => void }) {
   useSettingsDirty(dirty)
 
   const live = useLiveOrganizationDetails()
+  // Rulebook 1.19.0: the organisation document the draft was taken from. Saves run in a transaction and are refused
+  // when another admin changed the working hours since (`payrollTimePolicySaveConflict`).
+  const baseDoc = useRef<Record<string, unknown> | null>(null)
+  useEffect(() => {
+    if (!dirty && live.data) baseDoc.current = live.data
+  }, [dirty, live.data])
   const scheduled = live.details?.payrollTimePolicyScheduled ?? null
   const todayKey = organizationTodayKey(live.data)
   const apply = useCallback(
@@ -220,7 +273,7 @@ export function WorkingHoursPanel({ onBack }: { onBack: () => void }) {
     setSaving(true)
     setError('')
     try {
-      await savePayrollPolicy(organization.id, draft, user?.id)
+      await savePayrollPolicy(organization.id, draft, user?.id, baseDoc.current)
       setSaveChoice('closed')
       markLoaded(draft)
       flashSaved('Working hours saved — in effect from today')
@@ -241,7 +294,7 @@ export function WorkingHoursPanel({ onBack }: { onBack: () => void }) {
     setSaving(true)
     setError('')
     try {
-      await schedulePayrollPolicyChange(organization.id, draft, scheduleDate, user?.id)
+      await schedulePayrollPolicyChange(organization.id, draft, scheduleDate, user?.id, baseDoc.current)
       setSaveChoice('closed')
       // Today's rules are unchanged; the draft goes back to them and the live listener confirms.
       const today = live.details?.payrollTimePolicy ?? draft
@@ -260,7 +313,7 @@ export function WorkingHoursPanel({ onBack }: { onBack: () => void }) {
     setSaving(true)
     setError('')
     try {
-      await cancelScheduledPayrollPolicyChange(organization.id, user?.id)
+      await cancelScheduledPayrollPolicyChange(organization.id, user?.id, live.data)
       flashSaved('Scheduled change cancelled')
     } catch (cancelError) {
       setError(cancelError instanceof Error ? cancelError.message : 'Could not cancel the scheduled change.')
@@ -273,6 +326,8 @@ export function WorkingHoursPanel({ onBack }: { onBack: () => void }) {
     const settings = weekend(key)
     const name = key === 'saturday' ? 'Saturday' : 'Sunday'
     const mode: WeekendMode = settings.allHoursAtMultiplierMode ? 'all' : 'window'
+    const lunch = weekendLunchBreakCopy(draft, key)
+    const dayBreak = weekendBreakFor(draft, settings)
     return (
       <div className="space-y-4">
         <Segmented<WeekendMode>
@@ -287,7 +342,11 @@ export function WorkingHoursPanel({ onBack }: { onBack: () => void }) {
         {mode === 'all' ? (
           <MultiplierInput
             label={`Rate for all ${name} hours`}
-            hint={`Paid time still assumes a ${draft.unpaidBreakMinutes}-minute unpaid break unless it's removed on a booking.`}
+            hint={
+              settings.breakPaid === false
+                ? `Hours worked less the unpaid lunch break, all at this rate.`
+                : `Every hour worked is paid at this rate.`
+            }
             value={settings.allHoursMultiplier}
             onChange={(value) => patchWeekend(key, { allHoursMultiplier: value })}
           />
@@ -319,6 +378,47 @@ export function WorkingHoursPanel({ onBack }: { onBack: () => void }) {
             />
           </>
         )}
+        {/* Rulebook 1.19.0 §4.3: each weekend day's own lunch break — Paid / Unpaid, length, window — in both modes,
+            prefilled from the weekday break (`weekendBreakFor`). */}
+        <FormField label={lunch.title}>
+          <Segmented<'paid' | 'unpaid'>
+            ariaLabel={lunch.title}
+            value={dayBreak.paid ? 'paid' : 'unpaid'}
+            onChange={(value) => patchWeekend(key, { breakPaid: value === 'paid' })}
+            options={[
+              { value: 'paid', label: 'Paid' },
+              { value: 'unpaid', label: 'Unpaid' },
+            ]}
+          />
+          <p className="mt-1.5 text-[12.5px] text-[var(--ink3)]">{lunch.detail}</p>
+        </FormField>
+        <Stepper
+          label={`${name} break length`}
+          value={dayBreak.minutes}
+          onChange={(value) => patchWeekend(key, { breakMinutes: value })}
+          min={PAYROLL_POLICY_LIMITS.breakMinutes.min}
+          max={PAYROLL_POLICY_LIMITS.breakMinutes.max}
+          step={5}
+          format={(value) => `${value} min`}
+        />
+        <div className="[display:grid] grid-cols-2 gap-3">
+          <FormField label="Break start">
+            <TimeInput
+              label={`${name} break start`}
+              value={dayBreak.start}
+              placeholder={draft.breakWindowStart}
+              onChange={(value) => patchWeekend(key, { breakWindowStart: value })}
+            />
+          </FormField>
+          <FormField label="Break end">
+            <TimeInput
+              label={`${name} break end`}
+              value={dayBreak.end}
+              placeholder={draft.breakWindowEnd}
+              onChange={(value) => patchWeekend(key, { breakWindowEnd: value })}
+            />
+          </FormField>
+        </div>
       </div>
     )
   }
@@ -447,6 +547,9 @@ export function WorkingHoursPanel({ onBack }: { onBack: () => void }) {
 
       <SectionLabel label="Saturday" description={weekendSummary(weekend('saturday'))} />
       <SettingsCard>
+        <div className="p-5">
+          <WeekendDayPreview policy={draft} day="saturday" />
+        </div>
         <div className="p-5">{weekendFields('saturday')}</div>
       </SettingsCard>
 
@@ -465,6 +568,9 @@ export function WorkingHoursPanel({ onBack }: { onBack: () => void }) {
               }
             }}
           />
+        </div>
+        <div className="p-5">
+          <WeekendDayPreview policy={draft} day="sunday" />
         </div>
         {!sunday.sameAsSaturday ? <div className="p-5">{weekendFields('sunday')}</div> : null}
       </SettingsCard>

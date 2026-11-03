@@ -4,8 +4,14 @@ import { useMemo, useRef } from 'react'
 import type { OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 import { DEFAULT_PAYROLL_POLICY } from '@/lib/settings/organizationSettings'
 import { parseHhMm } from '@/lib/ios-parity/londonTime'
-import { formatHoursLabel, hoursBreakdown } from '@/lib/scheduling/paidHours'
-import { weekendBreakdownForDates } from '@/lib/scheduling/bookingSlotRules'
+import { bookingPayrollHours, formatHoursLabel, hoursBreakdown } from '@/lib/scheduling/paidHours'
+import {
+  bookingDayKey,
+  payrollDayWindowsForDate,
+  policyForBookingDate,
+  unpaidBreakAppliesOnDate,
+  weekendBreakdownForDates,
+} from '@/lib/scheduling/bookingSlotRules'
 import { BookingDayBreakdownRows } from '@/components/scheduling/BookingDayBreakdownRows'
 
 const HOURS = Array.from({ length: 24 }, (_, i) => i)
@@ -71,33 +77,58 @@ export function HoursTimelinePicker({
   const valid = endMin > startMin
   const drag = useRef<'start' | 'end' | null>(null)
 
-  const standardStart = parseHhMm(policy.standardDayStart) ?? 7 * 60 + 30
-  const standardEnd = parseHhMm(policy.standardDayEnd) ?? 16 * 60
-  const breakStart = parseHhMm(policy.breakWindowStart)
-  const breakEnd = parseHhMm(policy.breakWindowEnd)
+  // Rulebook 1.19.0: the booking day's own rules — the working hours in effect on it (history first) and, on a
+  // Saturday or Sunday, that day's window or every-hour rate and lunch break. Nothing here is a second calculator: the
+  // bands are the pay rule's segments (`payrollHoursResult`) and windows (`payrollDayWindows`).
+  const day = date ?? dates?.[0]
+  const dayPolicy = (day ? policyForBookingDate(day, policy) : null) ?? policy
+  const dayKeyOfBooking = day ? bookingDayKey(day) : undefined
+  const windows = day
+    ? payrollDayWindowsForDate(day, policy)
+    : {
+        paidWindow: { start: parseHhMm(policy.standardDayStart) ?? 7 * 60 + 30, end: parseHhMm(policy.standardDayEnd) ?? 16 * 60 },
+        unpaidBreak:
+          policy.breakPaid !== true
+            ? { start: parseHhMm(policy.breakWindowStart) ?? 12 * 60, end: parseHhMm(policy.breakWindowEnd) ?? 12 * 60 + 30 }
+            : null,
+        allHoursMultiplier: null,
+      }
+  // The "Unpaid break" toggle is offered when any booked day takes an unpaid break off (`unpaidBreakAppliesOnDay`).
+  const bookedDays = dates && dates.length > 0 ? dates : day ? [day] : []
+  const breakApplies =
+    bookedDays.length > 0 ? bookedDays.some((entry) => unpaidBreakAppliesOnDate(entry, policy)) : policy.breakPaid !== true
+  const standardStart = windows.paidWindow?.start ?? 0
+  const standardEnd = windows.paidWindow?.end ?? 0
+  const breakStart = windows.unpaidBreak?.start ?? null
+  const breakEnd = windows.unpaidBreak?.end ?? null
 
   const segments = useMemo(() => {
     if (!valid) return []
+    const paid = bookingPayrollHours({
+      timeSlot: 'CUSTOM_HOURS',
+      workStartTime: start,
+      workEndTime: end,
+      isBreakRemoved: breakRemoved,
+      policy: dayPolicy,
+      dayKey: dayKeyOfBooking,
+    })
     const out: { kind: 'standard' | 'overtime'; start: number; end: number }[] = []
-    if (startMin < standardStart) {
-      out.push({ kind: 'overtime', start: startMin, end: Math.min(endMin, standardStart) })
-    }
-    const stdLo = Math.max(startMin, standardStart)
-    const stdHi = Math.min(endMin, standardEnd)
-    if (stdHi > stdLo) out.push({ kind: 'standard', start: stdLo, end: stdHi })
-    if (endMin > standardEnd) {
-      out.push({ kind: 'overtime', start: Math.max(startMin, standardEnd), end: endMin })
+    for (const row of paid.segments) {
+      const lo = parseHhMm(row.clockStart ?? '')
+      const hi = parseHhMm(row.clockEnd ?? '')
+      if (lo == null || hi == null || hi <= lo) continue
+      out.push({ kind: row.kind === 'standardWindow' ? 'standard' : 'overtime', start: lo, end: hi })
     }
     return out
-  }, [startMin, endMin, standardStart, standardEnd, valid])
+  }, [valid, start, end, breakRemoved, dayPolicy, dayKeyOfBooking])
 
   const breakdown = hoursBreakdown({
     timeSlot: 'CUSTOM_HOURS',
     workStartTime: start,
     workEndTime: end,
     isBreakRemoved: breakRemoved,
-    policy,
-    date,
+    policy: dayPolicy,
+    dayKey: dayKeyOfBooking,
   })
 
   // Rulebook 1.18.0 (`weekendBookingBreakdown`): a weekend selection shows each day as pay prices it, not one summary.
@@ -181,7 +212,9 @@ export function HoursTimelinePicker({
                     }}
                   >
                     {seg.kind === 'overtime' && labelW > 8 ? (
-                      <span className="pl-1.5 text-[9px] font-bold text-[#854F0B]">OT</span>
+                      <span className="pl-1.5 text-[9px] font-bold text-[#854F0B]">
+                        {windows.allHoursMultiplier != null ? `×${windows.allHoursMultiplier}` : 'OT'}
+                      </span>
                     ) : null}
                     {seg.kind === 'standard' && labelW > 16 ? (
                       <span className="pl-1.5 text-[10px] font-medium text-white">Standard</span>
@@ -258,7 +291,7 @@ export function HoursTimelinePicker({
           onMinute={(minute) => onEnd(format(endHm.hour, minute))}
         />
       </div>
-      {showBreak ? (
+      {showBreak && breakApplies ? (
       <label className="flex items-center justify-between rounded-xl border border-[var(--line)] bg-white px-3.5 py-3 text-[13px] font-medium">
         Unpaid break included
         <input

@@ -22,10 +22,15 @@
  * hours only; a stored Saturday or Sunday FULL DAY with no clock times is that day's set
  * window (`weekendFullDayWindow`), paid at its "counts as" hours with nothing outside it,
  * or on an all-hours day the standard day at that day's multiplier (as before 1.13.0). The day is the organisation-zone calendar day.
+ * 1.19.0: a Saturday or Sunday whose lunch break is unpaid (`saturday.breakPaid` / `sunday.breakPaid === false`; missing
+ * = paid) takes that day's break off by the weekday rule (the covered part of its `breakWindowStart`–`breakWindowEnd`,
+ * up to its `breakMinutes`, each missing field the weekday one; not when `isBreakRemoved`; not on a named AM / PM): every-hour days pay (clock − break) × N;
+ * set-window days take it off the credited window hours, and any part of the break outside the window off the outside
+ * hours before the multiplier. Callers pass the policy in effect on the booking day (`effectivePayrollTimePolicy`).
  */
 
 import { formatClockMinutes, halfDayWindows, namedSlotKind, parseClockMinutes, slotInterval, type MinuteInterval } from './engine'
-import type { OrgPayrollTimePolicy, WeekendPayrollSettings } from './organizationSettings'
+import { weekendBreakFor, type OrgPayrollTimePolicy, type WeekendPayrollSettings } from './organizationSettings'
 import { dateFromDayKeyInZone, isoWeekdayInZone } from '../orgTime/zoneTime'
 import { zoneOrLondon } from './dayKeys'
 
@@ -42,6 +47,8 @@ export type PayrollHoursSegment = {
   paidHours: number
   /** Hours actually worked in this segment, with no multiplier and no weekend credit. */
   workedHours: number
+  /** Rulebook 1.19.0: unpaid break hours already taken off `baseHours` (and `workedHours`) in this segment. */
+  unpaidBreakHours?: number
 }
 
 export type PayrollHoursBooking = {
@@ -75,6 +82,8 @@ export type PayrollHoursResult = {
    * Pay screens (Weekly Report, timesheets, invoices) use `totalPaidHours`.
    */
   workedHours: number
+  /** Rulebook 1.19.0: the unpaid break taken off this booking (hours, before any multiplier). 0 when none. */
+  unpaidBreakHours: number
   segments: PayrollHoursSegment[]
 }
 
@@ -137,7 +146,8 @@ function segment(
   multiplier: number,
   start?: number | string,
   end?: number | string,
-  workedHours: number = baseHours
+  workedHours: number = baseHours,
+  unpaidBreakHours = 0
 ): PayrollHoursSegment {
   const clock = (value: number | string | undefined) =>
     value == null
@@ -145,7 +155,9 @@ function segment(
       : typeof value === 'number'
         ? formatClockMinutes(value > 24 * 60 ? value - 24 * 60 : Math.min(value, 24 * 60 - 1))
         : value
-  return { kind, clockStart: clock(start), clockEnd: clock(end), baseHours, multiplier, paidHours: baseHours * multiplier, workedHours }
+  const row: PayrollHoursSegment = { kind, clockStart: clock(start), clockEnd: clock(end), baseHours, multiplier, paidHours: baseHours * multiplier, workedHours }
+  if (unpaidBreakHours > 0) row.unpaidBreakHours = unpaidBreakHours
+  return row
 }
 
 function result(segments: PayrollHoursSegment[], outsideMultiplier: number): PayrollHoursResult {
@@ -153,13 +165,23 @@ function result(segments: PayrollHoursSegment[], outsideMultiplier: number): Pay
   let standard = 0
   let outside = 0
   let worked = 0
+  let unpaidBreak = 0
   for (const row of segments) {
     total += row.paidHours
     worked += row.workedHours
+    unpaidBreak += row.unpaidBreakHours ?? 0
     if (row.kind === 'standardWindow') standard += row.baseHours
     else outside += row.baseHours
   }
-  return { totalPaidHours: total, standardHours: standard, outsideHours: outside, outsideMultiplier, workedHours: worked, segments }
+  return {
+    totalPaidHours: total,
+    standardHours: standard,
+    outsideHours: outside,
+    outsideMultiplier,
+    workedHours: worked,
+    unpaidBreakHours: unpaidBreak,
+    segments,
+  }
 }
 
 function interval(booking: PayrollHoursBooking, policy: OrgPayrollTimePolicy): MinuteInterval | null {
@@ -233,9 +255,123 @@ function breakDeductionMinutes(policy: OrgPayrollTimePolicy, span: MinuteInterva
   return Math.min(overlap, unpaid)
 }
 
+/** A day's break as minutes: the weekday break, or a weekend day's own (`weekendBreakFor`). */
+type DayBreak = { start: number; end: number; minutes: number } | null
+
+function dayBreakOf(start: string | undefined, end: string | undefined, minutes: number): DayBreak {
+  const s = parseClockMinutes(start)
+  const e = parseClockMinutes(end)
+  if (s == null || e == null || e <= s) return null
+  return { start: s, end: e, minutes: Math.max(Number(minutes) || 0, 0) }
+}
+
+function weekendDayBreak(policy: OrgPayrollTimePolicy, weekend: WeekendPayrollSettings): DayBreak {
+  const own = weekendBreakFor(policy, weekend)
+  return dayBreakOf(own.start, own.end, own.minutes)
+}
+
+/** Minutes of the day's break window inside `part` (no cap). */
+function breakOverlapMinutes(dayBreak: DayBreak, part: MinuteInterval): number {
+  if (!dayBreak) return 0
+  return Math.max(0, Math.min(part.end, dayBreak.end) - Math.max(part.start, dayBreak.start))
+}
+
+/** The weekday rule with any day's break: the covered part of the break window, up to the break length. */
+function dayBreakDeductionMinutes(dayBreak: DayBreak, span: MinuteInterval): number {
+  if (!dayBreak) return 0
+  return Math.min(breakOverlapMinutes(dayBreak, span), dayBreak.minutes)
+}
+
+/**
+ * Rulebook 1.19.0 §4.3: whether the weekend day's lunch break is unpaid, with a length above 0. Each weekend day has
+ * its own `breakPaid` (missing = paid), `breakMinutes`, `breakWindowStart`, `breakWindowEnd`; a missing length or
+ * window is the weekday one (`weekendBreakFor`).
+ */
+function weekendBreakUnpaid(policy: OrgPayrollTimePolicy, weekend: WeekendPayrollSettings): boolean {
+  const own = weekendBreakFor(policy, weekend)
+  return !own.paid && own.minutes > 0
+}
+
+/**
+ * Rulebook 1.19.0: whether an unpaid break is taken off bookings on `dayKey` under `policy` (the policy in effect that
+ * day). Monday–Friday: the organisation break is unpaid (`breakPaid !== true`) with a length above 0. Saturday / Sunday:
+ * that day's `breakPaid` is `false` (Sunday "same as Saturday" uses Saturday's) with a length above 0. Booking screens
+ * offer the "Unpaid break" toggle (`isBreakRemoved`) and `customHoursBreakWarning` only when this is true.
+ */
+export function unpaidBreakAppliesOnDay(
+  policy: OrgPayrollTimePolicy | null | undefined,
+  dayKey: string,
+  timeZone?: string | null
+): boolean {
+  if (!policy || !(Number(policy.unpaidBreakMinutes) > 0)) return false
+  const zone = zoneOrLondon(timeZone)
+  const iso = isoWeekdayInZone(dateFromDayKeyInZone(dayKey, zone), zone)
+  const weekend = weekendFor(iso, policy)
+  if (weekend) return weekendBreakUnpaid(policy, weekend)
+  return policy.breakPaid !== true
+}
+
+/**
+ * Rulebook 1.19.0: the break window and length that apply on `dayKey` (weekday break, or that weekend day's own with
+ * the weekday fallback), whether paid or not. Minutes from midnight; null when the window does not form an interval.
+ */
+export function payrollBreakOnDay(
+  policy: OrgPayrollTimePolicy | null | undefined,
+  dayKey: string,
+  timeZone?: string | null
+): { start: number; end: number; minutes: number; paid: boolean } | null {
+  if (!policy) return null
+  const zone = zoneOrLondon(timeZone)
+  const iso = isoWeekdayInZone(dateFromDayKeyInZone(dayKey, zone), zone)
+  const weekend = weekendFor(iso, policy)
+  if (weekend) {
+    const own = weekendBreakFor(policy, weekend)
+    const window = dayBreakOf(own.start, own.end, own.minutes)
+    return window ? { ...window, paid: own.paid } : null
+  }
+  const window = dayBreakOf(policy.breakWindowStart, policy.breakWindowEnd, policy.unpaidBreakMinutes)
+  return window ? { ...window, paid: policy.breakPaid === true } : null
+}
+
+/**
+ * Rulebook 1.19.0: the bands a booking day draws on an hours timeline — the day's paid window (the weekday standard
+ * day, or a set-window weekend day's window; null on an every-hour weekend day), and the break window when an unpaid
+ * break applies that day (`unpaidBreakAppliesOnDay`), else null. Minutes from midnight.
+ */
+export function payrollDayWindows(
+  policy: OrgPayrollTimePolicy | null | undefined,
+  dayKey: string,
+  timeZone?: string | null
+): { paidWindow: MinuteInterval | null; unpaidBreak: MinuteInterval | null; allHoursMultiplier: number | null } {
+  if (!policy) return { paidWindow: null, unpaidBreak: null, allHoursMultiplier: null }
+  const zone = zoneOrLondon(timeZone)
+  const iso = isoWeekdayInZone(dateFromDayKeyInZone(dayKey, zone), zone)
+  const weekend = weekendFor(iso, policy)
+  const dayBreak = payrollBreakOnDay(policy, dayKey, zone)
+  const unpaidBreak =
+    unpaidBreakAppliesOnDay(policy, dayKey, zone) && dayBreak ? { start: dayBreak.start, end: dayBreak.end } : null
+  if (weekend) {
+    if (weekend.allHoursAtMultiplierMode) return { paidWindow: null, unpaidBreak, allHoursMultiplier: weekend.allHoursMultiplier }
+    const ws = parseClockMinutes(weekend.definedWindowStart ?? policy.standardDayStart)
+    const we = parseClockMinutes(weekend.definedWindowEnd ?? '13:00')
+    return { paidWindow: ws != null && we != null && we > ws ? { start: ws, end: we } : null, unpaidBreak, allHoursMultiplier: null }
+  }
+  const ds = parseClockMinutes(policy.standardDayStart)
+  const de = parseClockMinutes(policy.standardDayEnd)
+  return { paidWindow: ds != null && de != null && de > ds ? { start: ds, end: de } : null, unpaidBreak, allHoursMultiplier: null }
+}
+
 /** A booking with clock times that pays nothing (all of it inside the unpaid break): 0 hours, never a full day. */
 function nothingPaid(span: MinuteInterval, multiplier: number): PayrollHoursResult {
   return result([segment('standardWindow', 0, 1, span.start, span.end, 0)], multiplier)
+}
+
+/** The parts of `span` before and after the window. */
+function outsideIntervals(span: MinuteInterval, windowStart: number, windowEnd: number): MinuteInterval[] {
+  const parts: MinuteInterval[] = []
+  if (span.start < windowStart) parts.push({ start: span.start, end: Math.min(span.end, windowStart) })
+  if (span.end > windowEnd) parts.push({ start: Math.max(span.start, windowEnd), end: span.end })
+  return parts.filter((part) => part.end > part.start)
 }
 
 function outsideSegments(span: MinuteInterval, windowStart: number, windowEnd: number, multiplier: number): PayrollHoursSegment[] {
@@ -268,10 +404,12 @@ function weekday(booking: PayrollHoursBooking, policy: OrgPayrollTimePolicy, mul
   const insideEnd = Math.min(span.end, de)
   if (insideEnd > insideStart) {
     let hours = (insideEnd - insideStart) / 60
+    let deducted = 0
     if (!isNamedHalf(booking) && policy.breakPaid !== true && booking.isBreakRemoved !== true) {
-      hours = Math.max(0, hours - breakDeductionMinutes(policy, span) / 60)
+      deducted = Math.min(hours, breakDeductionMinutes(policy, span) / 60)
+      hours = Math.max(0, hours - deducted)
     }
-    if (hours > 0.001) rows.push(segment('standardWindow', hours, 1, insideStart, insideEnd))
+    if (hours > 0.001) rows.push(segment('standardWindow', hours, 1, insideStart, insideEnd, hours, deducted))
   }
   rows.push(...outsideSegments(span, ds, de, multiplier))
   // 1.12.0: clock times are present (a span), so an empty result is 0 hours — never the full standard day.
@@ -310,9 +448,19 @@ function weekendDay(booking: PayrollHoursBooking, policy: OrgPayrollTimePolicy, 
   const fullDayWindow = weekendFullDayOnly(booking) ? weekendFullDayWindow(policy, weekend) : null
   const span = fullDayWindow ?? interval(booking, policy)
   if (!span) return legacySlot(booking, policy, multiplier)
+  // 1.19.0: the weekday deduction rule (`breakDeductionMinutes`: the part of the break window the booking covers, up to
+  // the break length) with THAT day's break (`weekendBreakFor`) when it is unpaid; cancelled by the booking's
+  // "No unpaid break" (`isBreakRemoved`); never on a named AM / PM (as Monday–Friday).
+  const dayBreak = weekendDayBreak(policy, weekend)
+  const deductBreak = weekendBreakUnpaid(policy, weekend) && booking.isBreakRemoved !== true && !isNamedHalf(booking)
+  const totalBreak = deductBreak ? dayBreakDeductionMinutes(dayBreak, span) : 0
   if (weekend.allHoursAtMultiplierMode) {
     if (isNamedHalf(booking)) return halfDayPaid(booking, policy, weekend, multiplier)
-    return result([segment('allHoursMultiplier', (span.end - span.start) / 60, multiplier, span.start, span.end)], multiplier)
+    // Every hour at N×: (clock hours − deduction) × N.
+    const clockHours = (span.end - span.start) / 60
+    const deducted = Math.min(clockHours, totalBreak / 60)
+    const base = Math.max(0, clockHours - deducted)
+    return result([segment('allHoursMultiplier', base, multiplier, span.start, span.end, base, deducted)], multiplier)
   }
   const ws = parseClockMinutes(weekend.definedWindowStart ?? policy.standardDayStart) ?? 0
   const we = parseClockMinutes(weekend.definedWindowEnd ?? '13:00') ?? 0
@@ -325,12 +473,35 @@ function weekendDay(booking: PayrollHoursBooking, policy: OrgPayrollTimePolicy, 
   const rows: PayrollHoursSegment[] = []
   const overlapStart = Math.max(span.start, ws)
   const overlapEnd = Math.min(span.end, we)
+  // The deduction is taken first from the part of the break inside the window (off the credited hours), and the rest
+  // from the outside hours the booking works there (hours always match the clock), before the multiplier.
+  let breakLeft = totalBreak
   if (overlapEnd > overlapStart) {
     const credited = overlapStart <= ws && overlapEnd >= we ? credit : credit * ((overlapEnd - overlapStart) / (we - ws))
+    const inside = Math.min(breakLeft, breakOverlapMinutes(dayBreak, { start: overlapStart, end: overlapEnd }))
+    breakLeft -= inside
+    const insideHours = inside / 60
     // A weekend window credits a set number of hours; the time worked is the clock time.
-    rows.push(segment('standardWindow', credited, 1, overlapStart, overlapEnd, (overlapEnd - overlapStart) / 60))
+    rows.push(
+      segment(
+        'standardWindow',
+        Math.max(0, credited - insideHours),
+        1,
+        overlapStart,
+        overlapEnd,
+        Math.max(0, (overlapEnd - overlapStart) / 60 - insideHours),
+        insideHours
+      )
+    )
   }
-  rows.push(...outsideSegments(span, ws, we, multiplier))
+  for (const part of outsideIntervals(span, ws, we)) {
+    const taken = Math.min(breakLeft, breakOverlapMinutes(dayBreak, part))
+    breakLeft -= taken
+    const hours = (part.end - part.start - taken) / 60
+    if ((part.end - part.start) / 60 > 0.001) {
+      rows.push(segment('outsideWindow', Math.max(0, hours), multiplier, part.start, part.end, Math.max(0, hours), taken / 60))
+    }
+  }
   if (rows.length === 0) return nothingPaid(span, multiplier)
   return result(rows, multiplier)
 }
