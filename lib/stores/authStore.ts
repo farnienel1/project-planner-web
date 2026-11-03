@@ -424,6 +424,10 @@ function organizationFromSnapshot(
     settings: seededLabels.settings,
     teamOnboarding: parseTeamOnboarding(orgData.teamOnboarding) || undefined,
     billing: parseOrgBilling(orgData as Record<string, unknown>) || undefined,
+    // Rulebook 1.15.0 §20: a deleted organisation is locked until it is restored or erased.
+    deletion: orgData.deletion && typeof orgData.deletion === 'object' ? (orgData.deletion as Record<string, unknown>) : null,
+    creatorUserId: typeof orgData.creatorUserId === 'string' ? orgData.creatorUserId : undefined,
+    countryCode: typeof orgData.countryCode === 'string' ? orgData.countryCode : undefined,
     createdAt: orgData.createdAt?.toDate() || new Date(),
     updatedAt: orgData.updatedAt?.toDate() || new Date(),
   }

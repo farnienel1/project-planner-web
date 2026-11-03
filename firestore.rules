@@ -250,13 +250,18 @@ service cloud.firestore {
   // (trials, organisations whose billing has not synced since 1.13.0), so the rules never block where the apps would
   // not. Not gated: the organisation document itself, the caller's own users document and memberships, and billing
   // (written by the server only). Kept to one document read and a few expressions: it runs inside the role helpers.
+  // 1.15.0 (§20, `organizationDeletionState`): also closed while the organisation is scheduled for erasure
+  // (`deletion.status == 'scheduled'`) — same exceptions as a lapsed subscription (the organisation document, the
+  // caller's own users document and memberships, the platform owner).
   function orgBillingOpen(organizationId) {
     let path = /databases/(default)/documents/organizations/$(organizationId);
-    let b = exists(path) ? get(path).data.get('billing', {}) : {};
-    return !(b is map) || (
+    let org = exists(path) ? get(path).data : {};
+    let b = org.get('billing', {});
+    let d = org.get('deletion', {});
+    return !(d is map && d.get('status', '') == 'scheduled') && (!(b is map) || (
       b.get('accessOpen', true) != false &&
       !(b.get('accessClosesAt', null) is timestamp && request.time >= b.get('accessClosesAt', null))
-    );
+    ));
   }
 
   function callerHomeInactiveIn(organizationId) {
@@ -288,6 +293,15 @@ service cloud.firestore {
   function billingUnchanged() {
     return (!('billing' in resource.data) && !('billing' in request.resource.data))
       || request.resource.data.billing == resource.data.billing;
+  }
+
+  // 1.15.0 (§20): `deletion` is written by the server (admin SDK) only, never by an app — except the restore below.
+  function deletionUnchanged() {
+    return (!('deletion' in resource.data) && !('deletion' in request.resource.data))
+      || request.resource.data.get('deletion', null) == resource.data.get('deletion', null);
+  }
+  function orgScheduledForErasure() {
+    return resource.data.get('deletion', {}) is map && resource.data.get('deletion', {}).get('status', '') == 'scheduled';
   }
   
   // Treat missing or blank addedByUserId like legacy rows (see canDeleteOwnMaterial / canClaimLegacyOwnMaterial).
@@ -1324,7 +1338,20 @@ service cloud.firestore {
           inviteBeingAccepted(invId, organizationId) &&
           request.resource.data.members[request.auth.uid] == invitationRole(inv);
       }
-      allow update: if billingUnchanged() && (
+      // 1.15.0 (§20, `canRestoreOrganization`): the super admin restores a scheduled organisation by removing
+      // `deletion` (and only that, with write metadata) when the deletion was theirs to undo (`restoreBy` is not
+      // `platform_owner`). Nothing else on the document changes while it is scheduled.
+      function orgRootSuperAdminRestore() {
+        let d = resource.data.get('deletion', {});
+        return orgScheduledForErasure() &&
+          d.get('restoreBy', 'super_admin') != 'platform_owner' &&
+          !('deletion' in request.resource.data) &&
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['deletion', 'updatedAt', 'updatedBy', 'updatedFrom']) &&
+          orgRootCallerIsSuperAdmin();
+      }
+      allow update: if billingUnchanged() && (isPlatformOwner() || (request.auth != null && orgRootSuperAdminRestore())) ||
+                   billingUnchanged() && deletionUnchanged() && !orgScheduledForErasure() && (
                      isPlatformOwner() || (
                        request.auth != null &&
                        orgRootCallerIsAdmin() && (

@@ -356,6 +356,14 @@ export interface Organization {
   settings: Record<string, any>;
   teamOnboarding?: import('@/lib/orgSetup/teamOnboarding').TeamOnboardingState;
   billing?: import('@/lib/stripe/billing').OrgBilling;
+  /**
+   * Rulebook 1.15.0 §20: `organizations/{orgId}.deletion` as stored; read it only through `organizationDeletionState` /
+   * `parseOrganizationDeletion` (with `{ deletion }`).
+   */
+  deletion?: Record<string, unknown> | null;
+  /** The founder / super admin id (`creatorUserId`). */
+  creatorUserId?: string;
+  countryCode?: string;
   createdAt: Date;
   updatedAt: Date;
 }
