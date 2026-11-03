@@ -1,0 +1,431 @@
+/*
+ * Brand shell: sidebar + Home restyle (docs/DESIGN_TOKENS.md).
+ * Visual only. Tokens are the single place these colours live; components use the
+ * classes below or `var(--…)`, never a hex value.
+ */
+
+:root {
+  --brand-900: #0E2A6B;
+  --brand-800: #17398A;
+  --brand-600: #1F56C9;
+  --brand-500: #2F6FE0;
+  --brand-50: #E6EEFC;
+  /* Solid fill behind white text (New button). Same as brand-600 in light. */
+  --brand-solid: #1F56C9;
+  /* Text on a brand-50 chip (Up next day chips). */
+  --brand-chip-ink: #17398A;
+  --sidebar-muted: #C3D1F2;
+  --sidebar-item-bg: rgba(255, 255, 255, 0.08);
+  --sidebar-item-border: rgba(255, 255, 255, 0.16);
+  --sidebar-item-hover: rgba(255, 255, 255, 0.14);
+  --sidebar-divider: rgba(255, 255, 255, 0.14);
+  --sidebar-logo-ring: rgba(255, 255, 255, 0.22);
+  --danger-600: #DC2626;
+  --danger-50: #FEE2E2;
+  /* Solid fill behind white text (notification badge). Same as danger-600 in light. */
+  --danger-solid: #DC2626;
+  --signout: #C62828;
+  /* Sign-out hover tint; the button stays white on brand-800 in both themes. */
+  --signout-hover: #FEE2E2;
+  --page-bg: #F1F4F9;
+  --card-bg: #FFFFFF;
+  --card-border: #E3E8F0;
+  --control-border: #DDE3EC;
+  --text: #0F1B33;
+  /* Spec #64748B is 4.32:1 on page-bg; this passes AA (4.70:1) on page-bg and 5.19:1 on white. */
+  --text-muted: #5F6E84;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --brand-600: #7DA5F5;
+    --brand-50: #172C4D;
+    --brand-solid: #2F6FE0;
+    --brand-chip-ink: #A9C4FF;
+    --danger-600: #F87171;
+    --danger-50: #3D1717;
+    --page-bg: #0B1220;
+    --card-bg: #131C2E;
+    --card-border: #24314B;
+    --control-border: #2E3D5C;
+    --text: #EAF0F8;
+    --text-muted: #B0BCCF;
+  }
+}
+
+:root[data-theme='dark'],
+.dark {
+  --brand-600: #7DA5F5;
+  --brand-50: #172C4D;
+  --brand-solid: #2F6FE0;
+  --brand-chip-ink: #A9C4FF;
+  --danger-600: #F87171;
+  --danger-50: #3D1717;
+  --page-bg: #0B1220;
+  --card-bg: #131C2E;
+  --card-border: #24314B;
+  --control-border: #2E3D5C;
+  --text: #EAF0F8;
+  --text-muted: #B0BCCF;
+}
+
+/* ---------- Sidebar ---------- */
+
+.sb {
+  background: var(--brand-800);
+  color: #fff;
+  padding: 22px 16px 18px;
+}
+.sb-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 4px 18px;
+  border-bottom: 1px solid var(--sidebar-divider);
+}
+.sb-logo {
+  flex: none;
+  border-radius: 11px;
+  overflow: hidden;
+  box-shadow: 0 0 0 1px var(--sidebar-logo-ring);
+}
+.sb-title {
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.25;
+  color: #fff;
+}
+.sb-org {
+  font-size: 12.5px;
+  color: var(--sidebar-muted);
+}
+.sb-nav {
+  margin: 0 -6px;
+  padding: 18px 6px 12px;
+}
+.sb-group + .sb-group {
+  margin-top: 18px;
+}
+.sb-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 4px 8px;
+}
+.sb-label {
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--sidebar-muted);
+}
+.sb-link {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #fff;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  border-radius: 4px;
+}
+.sb-items {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.sb-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 40px;
+  padding: 0 12px;
+  border-radius: 10px;
+  background: var(--sidebar-item-bg);
+  border: 1px solid var(--sidebar-item-border);
+  color: #fff;
+  font-size: 14.5px;
+  font-weight: 500;
+  transition: background 0.15s;
+}
+.sb-item:hover {
+  background: var(--sidebar-item-hover);
+}
+.sb-item .sb-ico {
+  width: 18px;
+  height: 18px;
+  flex: none;
+}
+.sb-item .sb-chev {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  opacity: 0.55;
+}
+.sb-item.on,
+.sb-item.on:hover {
+  background: #fff;
+  border-color: #fff;
+  color: var(--brand-800);
+  font-weight: 700;
+}
+.sb-item.home {
+  height: 44px;
+  font-size: 15px;
+}
+.sb-item.compact {
+  justify-content: center;
+}
+.sb a:focus-visible,
+.sb button:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+.sb-foot {
+  border-top: 1px solid var(--sidebar-divider);
+  padding-top: 14px;
+}
+.sb-user {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  border-radius: 12px;
+  background: var(--sidebar-item-bg);
+}
+.sb-user-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: #fff;
+}
+.sb-signout {
+  margin-top: 10px;
+  display: flex;
+  width: 100%;
+  height: 40px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: 10px;
+  background: #fff;
+  color: var(--signout);
+  font-size: 14.5px;
+  font-weight: 600;
+}
+.sb-signout:hover {
+  background: var(--signout-hover);
+}
+.sb-version {
+  margin-top: 10px;
+  text-align: center;
+  font-size: 11.5px;
+  color: var(--sidebar-muted);
+}
+.sb-version a {
+  color: var(--sidebar-muted);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.sb-version a:hover {
+  color: #fff;
+}
+
+/* ---------- Top bar ---------- */
+
+.tb-control {
+  background: var(--card-bg);
+  border: 1px solid var(--control-border);
+  border-radius: 12px;
+  color: var(--text-muted);
+}
+.tb-control:hover {
+  color: var(--text);
+}
+button.tb-new {
+  background: var(--brand-solid);
+  border-radius: 12px;
+  box-shadow: none;
+}
+button.tb-new:hover {
+  filter: brightness(1.08);
+}
+.tb-badge {
+  background: var(--danger-solid);
+}
+.tb-crumb {
+  color: var(--text-muted);
+}
+.tb-crumb b,
+.tb-crumb a {
+  color: var(--text);
+  font-weight: 700;
+}
+.tb-avatar {
+  border-radius: 9999px;
+}
+
+/* ---------- Home ---------- */
+
+.home.stack {
+  gap: 18px;
+}
+.home .link {
+  color: var(--brand-600);
+}
+/* One accent: blue icons everywhere on Home; red only for warnings. */
+.home [data-hue='blue'] {
+  --h: var(--brand-600);
+  --ht: var(--brand-50);
+}
+.home [data-hue='red'] {
+  --h: var(--danger-600);
+  --ht: var(--danger-50);
+}
+
+.home .hero.hero-brand {
+  border-radius: 22px;
+  padding: 28px 30px;
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.06) 1px, transparent 1px) 0 0 / 44px 44px,
+    linear-gradient(90deg, rgba(255, 255, 255, 0.06) 1px, transparent 1px) 0 0 / 44px 44px,
+    linear-gradient(120deg, var(--brand-900) 0%, var(--brand-800) 45%, var(--brand-500) 100%);
+  box-shadow: 0 18px 40px rgba(14, 42, 107, 0.22);
+}
+.home .hero.hero-brand::after {
+  display: none;
+}
+.home .hero.hero-brand .eb {
+  font-size: 13px;
+  font-weight: 600;
+  opacity: 1;
+  color: var(--sidebar-muted);
+}
+.home .hero.hero-brand .big {
+  font-size: 38px;
+  font-weight: 700;
+}
+.home .hero.hero-brand .hero-sub {
+  font-size: 15px;
+}
+.home .hero.hero-brand .st {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 14px;
+  box-shadow: none;
+}
+.home .hero.hero-brand .st:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+.home .hero.hero-brand .hbtn {
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  color: #fff;
+}
+.home .hero.hero-brand .hbtn:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+.home .hero.hero-brand .hbtn.solid {
+  background: #fff;
+  border-color: #fff;
+  color: var(--brand-800);
+}
+.home .hero.hero-brand :focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+
+.home-side {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+/* Under the hero (one column) the two cards sit side by side. */
+@media (max-width: 1560px) {
+  .home-side {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 560px) {
+  .home-side {
+    grid-template-columns: 1fr;
+  }
+}
+
+.home .home-card,
+.home .home-side > * {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 16px;
+  box-shadow: none;
+}
+.home .home-side > *:hover {
+  box-shadow: var(--sh);
+}
+.home .home-side .text-\[var\(--ink3\)\] {
+  color: var(--text-muted);
+}
+.home .home-side .ico-chip,
+.home .home-side [data-hue] > span:first-child {
+  border-radius: 12px;
+}
+
+.home .tiles {
+  gap: 14px;
+}
+.home .tile {
+  height: 110px;
+  padding: 14px 10px;
+  justify-content: center;
+  gap: 10px;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 16px;
+  box-shadow: none;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  text-align: center;
+  line-height: 1.2;
+}
+.home .tile:hover {
+  box-shadow: var(--sh);
+}
+.home .tile .ico-chip {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: var(--brand-50);
+  color: var(--brand-600);
+}
+.home .tile:focus-visible,
+.home .ritem:focus-visible,
+.home .home-side > *:focus-visible {
+  outline: 2px solid var(--brand-600);
+  outline-offset: 2px;
+}
+
+.home .upnext .ritem {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  box-shadow: none;
+}
+.home .upnext .ritem:hover {
+  box-shadow: var(--sh);
+}
+.home .upnext .day-chip {
+  background: var(--brand-50);
+  color: var(--brand-chip-ink);
+  border-radius: 12px;
+}
+.home .upnext .ritem .s,
+.home .home-card .muted {
+  color: var(--text-muted);
+}
+
+@media (max-width: 760px) {
+  .home .hero.hero-brand {
+    padding: 22px;
+  }
+  .home .hero.hero-brand .big {
+    font-size: 30px;
+  }
+}

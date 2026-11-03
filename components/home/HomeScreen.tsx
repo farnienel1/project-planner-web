@@ -63,10 +63,8 @@ import {
   quickActionMeta,
   saveQuickActionOrder,
 } from '@/lib/home/quickActions'
-import { type ChipTint } from '@/components/ios/IconChip'
 import { Hero, StatCard } from '@/components/ui'
 import { IosModal } from '@/components/ios/primitives'
-import type { SectionHue } from '@/lib/ui/sectionHue'
 import { activeOrgWarnings, generateOrgWarnings, type WarningDecisionInputs } from '@/lib/warnings/generateOrgWarnings'
 import { watchAcceptedBookingClashes, type AcceptedBookingClash } from '@/lib/warnings/acceptedClashStorage'
 import { watchDismissedWarnings, type DismissedWarning } from '@/lib/warnings/dismissedWarningStorage'
@@ -77,24 +75,8 @@ import { loadOrganizationDetails, type OrganizationDetails } from '@/lib/setting
 import { mergeProjectsAndSmallWorks } from '@/lib/projects/workStatus'
 import { shouldShowTeamOnboardingPrompt } from '@/lib/orgSetup/teamOnboarding'
 
-function hueFromQuickChip(chip: ChipTint | string): SectionHue {
-  switch (chip) {
-    case 'green':
-      return 'proj'
-    case 'amber':
-      return 'sw'
-    case 'coral':
-      return 'leave'
-    case 'purple':
-      return 'user'
-    case 'rose':
-      return 'sched'
-    case 'grey':
-      return 'lib'
-    default:
-      return 'blue'
-  }
-}
+/** One accent on Home (docs/DESIGN_TOKENS.md): every quick-action icon is brand blue. */
+const QUICK_ACTION_HUE = 'blue' as const
 
 function greetingName(firstName: string, email: string): string {
   const name = firstName.trim()
@@ -423,7 +405,7 @@ export function HomeScreen() {
   const showWeekly = canViewWeeklyReports(displayUser)
 
   return (
-    <div className="stack">
+    <div className="stack home">
       {admin && taskLimitProjects.length > 0 ? (
         <div className="banner" data-hue="red">
           <span className="ico-chip">
@@ -447,9 +429,10 @@ export function HomeScreen() {
 
       <div className="grid gmain">
         <Hero
+          className="hero-brand"
           eyebrow={formatHomeDateLine(now)}
           title={<h1>{`Hi, ${greetingName(displayUser.firstName, displayUser.email)}`}</h1>}
-          subtitle={activeProjectSubtitle(projectCount)}
+          subtitle={<span className="hero-sub">{activeProjectSubtitle(projectCount)}</span>}
           stats={
             operative
               ? [
@@ -503,10 +486,10 @@ export function HomeScreen() {
           }
         />
 
-        <div className="stack" style={{ gap: 16 }}>
+        <div className="home-side">
           {seeWarnings ? (
             <StatCard
-              hue="warn"
+              hue="red"
               label="Warnings"
               value={warningStatusLabel(warningCount)}
               icon={<ExclamationTriangleIcon className="h-6 w-6" />}
@@ -514,7 +497,7 @@ export function HomeScreen() {
             />
           ) : null}
           <StatCard
-            hue="task"
+            hue="blue"
             label="Tasks"
             value={tasksPending == null ? '…' : `${tasksPending} pending`}
             icon={<ClipboardDocumentCheckIcon className="h-6 w-6" />}
@@ -555,7 +538,7 @@ export function HomeScreen() {
             <div key={meta.id} className="relative">
               <Link
                 href={meta.href}
-                data-hue={hueFromQuickChip(meta.chip)}
+                data-hue={QUICK_ACTION_HUE}
                 className="tile"
               >
                 <span className="ico-chip">
@@ -566,9 +549,9 @@ export function HomeScreen() {
               {customise ? (
                 <button
                   type="button"
-                  aria-label="Remove"
+                  aria-label={`Remove ${meta.title.replace(/\n/g, ' ')}`}
                   onClick={() => persistActions(actionIds.filter((id) => id !== meta.id))}
-                  className="absolute -right-1 -top-1 grid h-6 w-6 place-items-center rounded-full bg-[var(--red)] text-white"
+                  className="absolute -right-1 -top-1 grid h-6 w-6 place-items-center rounded-full bg-[var(--brand-800)] text-white"
                 >
                   <XMarkIcon className="h-4 w-4" />
                 </button>
@@ -576,7 +559,7 @@ export function HomeScreen() {
             </div>
           ))}
         {customise ? (
-          <button type="button" onClick={() => setAddOpen(true)} className="tile" data-hue="lib" style={{ opacity: 0.7 }}>
+          <button type="button" onClick={() => setAddOpen(true)} className="tile" data-hue={QUICK_ACTION_HUE} style={{ opacity: 0.7 }}>
             <span className="ico-chip">
               <PlusIcon className="h-6 w-6" />
             </span>
@@ -586,7 +569,7 @@ export function HomeScreen() {
       </div>
 
       <div className="grid gmain">
-        <section className="card" data-hue="sched">
+        <section className="card home-card upnext" data-hue="blue">
           <div className="card-h">
             <div className="ico-chip sm">
               <CalendarDaysIcon className="h-[18px] w-[18px]" />
@@ -610,7 +593,7 @@ export function HomeScreen() {
                     className="ritem"
                     data-hue={row.accent === 'blue' ? 'blue' : 'daily'}
                   >
-                    <span className="ico-chip" style={{ flexDirection: 'column', lineHeight: 1 }}>
+                    <span className="ico-chip day-chip" style={{ flexDirection: 'column', lineHeight: 1 }}>
                       <span className="xs" style={{ fontWeight: 700 }}>
                         {day.heading.slice(0, 3).toUpperCase()}
                       </span>
@@ -627,14 +610,14 @@ export function HomeScreen() {
         </section>
 
         {!operative ? (
-          <section className="card pad" data-hue="lib">
+          <section className="card pad home-card" data-hue="blue">
             <div className="row">
               <div className="ico-chip">
                 <WrenchScrewdriverIcon className="h-5 w-5" />
               </div>
               <div className="grow">
                 <b style={{ fontFamily: 'var(--head)' }}>Maintenance</b>{' '}
-                <span className="pill" data-hue="warn">
+                <span className="pill" data-hue="blue">
                   Soon
                 </span>
                 <div className="muted small">Coming in a future update</div>
@@ -710,7 +693,7 @@ export function HomeScreen() {
                     key={id}
                     type="button"
                     className="ritem"
-                    data-hue={hueFromQuickChip(meta.chip)}
+                    data-hue={QUICK_ACTION_HUE}
                     onClick={() => {
                       persistActions([...actionIds, id])
                       setAddOpen(false)

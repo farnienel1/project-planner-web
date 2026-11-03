@@ -16,7 +16,9 @@ import {
   FolderIcon,
   Bars3Icon,
   MagnifyingGlassIcon,
+  ChevronRightIcon,
 } from '@heroicons/react/24/solid'
+import '@/app/brand-shell.css'
 import { TeamOnboardingPrompt } from '@/components/onboarding/TeamOnboardingPrompt'
 import { useAuthStore } from '@/lib/stores/authStore'
 import { useOrgUserStore } from '@/lib/stores/siteAuditStore'
@@ -49,7 +51,7 @@ import {
   unreadNotificationBadgeCount,
 } from '@/lib/canonical'
 import { loadUserNotificationPreferences } from '@/lib/settings/notificationPreferences'
-import { hueForCreateId, hueForNavId, type SectionHue } from '@/lib/ui/sectionHue'
+import { hueForCreateId, hueForNavId } from '@/lib/ui/sectionHue'
 import {
   TIMESHEETS_HUB_PATH,
   TIMESHEETS_MINE_PATH,
@@ -91,7 +93,6 @@ function NavRow({
   compact?: boolean
 }) {
   const active = isDashboardNavActive(pathname, item.href)
-  const hue = hueForNavId(item.id)
   return (
     <Link
       href={item.href}
@@ -105,23 +106,13 @@ function NavRow({
           window.location.assign(TIMESHEETS_HUB_PATH)
         }
       }}
-      data-hue={hue}
       title={item.label}
-      className={cn(
-        'flex items-center gap-3 rounded-xl py-1.5 text-[14.5px] transition',
-        compact ? 'justify-center px-1.5' : 'px-2.5',
-        active ? 'bg-[var(--ht)] font-semibold text-[var(--ink)]' : 'font-medium text-[var(--ink2)] hover:bg-[var(--soft)]'
-      )}
+      aria-current={active ? 'page' : undefined}
+      className={cn('sb-item', active && 'on', item.section === 'home' && 'home', compact && 'compact')}
     >
-      <span
-        className={cn(
-          'inline-grid h-[30px] w-[30px] shrink-0 place-items-center rounded-[9px]',
-          active ? 'bg-[var(--h)] text-white' : 'bg-[var(--ht)] text-[var(--h)]'
-        )}
-      >
-        <NavGlyph path={item.iconPath} className="h-4 w-4" />
-      </span>
+      <NavGlyph path={item.iconPath} className="sb-ico" />
       <span className={cn('min-w-0 flex-1 truncate', compact && 'hidden')}>{item.label}</span>
+      {compact ? null : <ChevronRightIcon className="sb-chev" aria-hidden />}
     </Link>
   )
 }
@@ -130,14 +121,12 @@ function ShortcutRow({
   href,
   label,
   pathname,
-  hue,
   onClick,
   compact,
 }: {
   href: string
   label: string
   pathname: string
-  hue: SectionHue
   onClick?: () => void
   compact?: boolean
 }) {
@@ -146,23 +135,13 @@ function ShortcutRow({
     <Link
       href={href}
       onClick={onClick}
-      data-hue={hue}
       title={label}
-      className={cn(
-        'flex items-center gap-3 rounded-xl py-1.5 text-[14.5px] transition',
-        compact ? 'justify-center px-1.5' : 'px-2.5',
-        active ? 'bg-[var(--ht)] font-semibold text-[var(--ink)]' : 'font-medium text-[var(--ink2)] hover:bg-[var(--soft)]'
-      )}
+      aria-current={active ? 'page' : undefined}
+      className={cn('sb-item', active && 'on', compact && 'compact')}
     >
-      <span
-        className={cn(
-          'inline-grid h-[30px] w-[30px] shrink-0 place-items-center rounded-[9px]',
-          active ? 'bg-[var(--h)] text-white' : 'bg-[var(--ht)] text-[var(--h)]'
-        )}
-      >
-        <FolderIcon className="h-4 w-4" />
-      </span>
+      <FolderIcon className="sb-ico" aria-hidden />
       <span className={cn('min-w-0 flex-1 truncate', compact && 'hidden')}>{label}</span>
+      {compact ? null : <ChevronRightIcon className="sb-chev" aria-hidden />}
     </Link>
   )
 }
@@ -182,11 +161,11 @@ function Section({
 }) {
   if (items.length === 0) return null
   return (
-    <div>
-      <p className={cn('px-2.5 pb-1.5 text-[11.5px] font-semibold tracking-[0.04em] text-[var(--ink3)]', compact && 'hidden')}>
-        {title}
-      </p>
-      <div className="space-y-px">
+    <div className="sb-group">
+      <div className={cn('sb-label-row', compact && 'hidden')}>
+        <p className="sb-label">{title}</p>
+      </div>
+      <div className="sb-items">
         {items.map((item) => (
           <NavRow key={item.id} item={item} pathname={pathname} onClick={onClick} compact={compact} />
         ))}
@@ -478,33 +457,29 @@ function AppShellInner({ children }: { children: ReactNode }) {
 
   const sidebar = (
     <>
-      <div className="flex items-center gap-3 px-[18px] py-[18px]">
-        <div className="overflow-hidden rounded-xl shadow-[0_4px_12px_rgba(30,90,168,.35)]">
-          <AppLogoMark size={40} radius={12} />
-        </div>
+      <div className="sb-brand">
+        <span className="sb-logo">
+          <AppLogoMark size={44} radius={11} />
+        </span>
         <div className="min-w-0">
-          <p className="truncate font-[family-name:var(--head)] text-base font-bold">Project Planner</p>
-          <p className="truncate text-[12.5px] text-[var(--ink3)]">{organization?.name || 'Organisation'}</p>
+          <p className="sb-title truncate">Project Planner</p>
+          <p className="sb-org truncate">{organization?.name || 'Organisation'}</p>
         </div>
       </div>
-      <nav className="flex-1 space-y-4 overflow-y-auto px-3 pb-3">
-        <div className="space-y-px">
+      <nav className="sb-nav flex-1 overflow-y-auto" aria-label="Main">
+        <div className="sb-group sb-items">
           {homeItems.map((item) => (
             <NavRow key={item.id} item={item} pathname={pathname} onClick={closeMenus} />
           ))}
         </div>
-        <div>
-          <div className="flex items-center justify-between px-2.5 pb-1.5">
-            <p className="text-[11.5px] font-semibold tracking-[0.04em] text-[var(--ink3)]">Navigate</p>
-            <button
-              type="button"
-              onClick={() => setCustomiseOpen(true)}
-              className="text-xs font-semibold text-[var(--blue)]"
-            >
+        <div className="sb-group">
+          <div className="sb-label-row">
+            <p className="sb-label">Navigate</p>
+            <button type="button" onClick={() => setCustomiseOpen(true)} className="sb-link">
               Customise
             </button>
           </div>
-          <div className="space-y-px">
+          <div className="sb-items">
             {resolvedNavigate.map((row) =>
               row.navItem ? (
                 <NavRow
@@ -519,7 +494,6 @@ function AppShellInner({ children }: { children: ReactNode }) {
                   href={row.href}
                   label={row.label}
                   pathname={pathname}
-                  hue={row.entry.type === 'smallWorks' ? 'sw' : 'proj'}
                   onClick={closeMenus}
                 />
               )
@@ -532,37 +506,33 @@ function AppShellInner({ children }: { children: ReactNode }) {
         )}
         <Section title="App & account" items={accountItems} pathname={pathname} onClick={closeMenus} />
       </nav>
-      <div className="border-t border-[var(--line)] p-3">
-        <div className="mb-1 flex items-center gap-2.5 rounded-[14px] px-2 py-2">
-          <UserAvatar user={user} size={36} />
+      <div className="sb-foot">
+        <div className="sb-user">
+          <UserAvatar user={user} size={36} gradient="from-[var(--brand-600)] to-[var(--brand-500)]" />
           <div className="min-w-0">
-            <p className="truncate text-sm font-semibold">{`${user.firstName} ${user.surname}`.trim() || user.email}</p>
-            <p className="truncate text-xs text-[var(--ink3)]">{organization?.name || 'Organisation'}</p>
+            <p className="sb-user-name truncate">{`${user.firstName} ${user.surname}`.trim() || user.email}</p>
+            <p className="sb-org truncate">{organization?.name || 'Organisation'}</p>
           </div>
         </div>
-        <button
-          type="button"
-          onClick={confirmSignOut}
-          data-hue="red"
-          className="flex w-full items-center gap-3 rounded-[14px] px-3 py-2.5 text-[15px] font-medium text-[var(--red)] hover:bg-[var(--red-t)]"
-        >
-          <IconChip hue="red" size="sm">
-            <ArrowRightOnRectangleIcon className="h-4 w-4" />
-          </IconChip>
+        <button type="button" onClick={confirmSignOut} className="sb-signout">
+          <ArrowRightOnRectangleIcon className="h-[18px] w-[18px]" aria-hidden />
           Sign out
         </button>
-        <p className="px-3 pt-2 text-[11px] text-[var(--ink3)]">v1.0.0 · Project Planner</p>
-        {process.env.NODE_ENV !== 'production' || hasAdminAccess(user) ? (
-          <Link href="/dashboard/data-health" className="block px-3 pt-1 text-[11px] text-[var(--blue)]">
-            Data health
-          </Link>
-        ) : null}
+        <p className="sb-version">
+          v1.0.0 · Project Planner
+          {process.env.NODE_ENV !== 'production' || hasAdminAccess(user) ? (
+            <>
+              {' · '}
+              <Link href="/dashboard/data-health">Data health</Link>
+            </>
+          ) : null}
+        </p>
       </div>
     </>
   )
 
   return (
-    <div className="min-h-screen bg-[var(--bg)] text-[var(--ink)]">
+    <div className="min-h-screen bg-[var(--page-bg)] text-[var(--ink)]">
       <TeamOnboardingPrompt />
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} items={paletteItems} />
       {customiseOpen ? (
@@ -587,10 +557,10 @@ function AppShellInner({ children }: { children: ReactNode }) {
       <div className="flex min-h-screen">
         <aside
           className={cn(
-            'flex min-h-0 flex-col border-r border-[var(--line)] bg-[var(--card)]',
+            'sb flex min-h-0 flex-col',
             'max-[1023px]:fixed max-[1023px]:inset-y-0 max-[1023px]:left-0 max-[1023px]:z-[70] max-[1023px]:w-[290px] max-[1023px]:transition-transform',
             menuOpen ? 'max-[1023px]:translate-x-0' : 'max-[1023px]:-translate-x-full',
-            'lg:sticky lg:top-0 lg:flex lg:h-screen lg:w-[268px] xl:w-[272px]'
+            'lg:sticky lg:top-0 lg:flex lg:h-screen lg:w-[268px]'
           )}
         >
           <div className="flex h-full flex-col">{sidebar}</div>
@@ -604,22 +574,22 @@ function AppShellInner({ children }: { children: ReactNode }) {
           ) : null}
 
           {showHeader ? (
-            <header className="sticky top-0 z-20 flex h-[66px] min-w-0 items-center gap-3 bg-[color-mix(in_srgb,var(--bg)_85%,transparent)] px-6 backdrop-blur-[10px] max-[760px]:h-[60px] max-[760px]:px-3.5">
+            <header className="sticky top-0 z-20 flex h-[66px] min-w-0 items-center gap-3 bg-[color-mix(in_srgb,var(--page-bg)_85%,transparent)] px-6 backdrop-blur-[10px] max-[760px]:h-[60px] max-[760px]:px-3.5">
               <button
                 type="button"
-                className="grid h-11 w-11 place-items-center rounded-[14px] bg-[var(--card)] text-[var(--ink2)] shadow-[var(--sh)] lg:hidden"
+                className="tb-control grid h-11 w-11 place-items-center lg:hidden"
                 aria-label="Open menu"
                 onClick={() => setMenuOpen(true)}
               >
                 <Bars3Icon className="h-5 w-5" />
               </button>
-              <nav className="crumb flex min-w-0 items-center gap-2 text-sm text-[var(--ink3)]">
+              <nav className="crumb tb-crumb flex min-w-0 items-center gap-2 text-sm" aria-label="Breadcrumb">
                 <span className="sep hidden truncate min-[761px]:inline">{organization?.name || 'Project Planner'}</span>
                 <span className="sep hidden min-[761px]:inline">/</span>
                 {timesheetChild ? (
                   <Link
                     href={TIMESHEETS_HUB_PATH}
-                    className="truncate font-semibold text-[var(--ink)] underline-offset-2 hover:underline"
+                    className="truncate underline-offset-2 hover:underline"
                     onClick={(event) => {
                       if (
                         timesheetLinkShouldHardReset(
@@ -636,13 +606,13 @@ function AppShellInner({ children }: { children: ReactNode }) {
                     {title}
                   </Link>
                 ) : (
-                  <b className="truncate font-semibold text-[var(--ink)]">{title}</b>
+                  <b className="truncate">{title}</b>
                 )}
               </nav>
               <button
                 type="button"
                 onClick={() => setPaletteOpen(true)}
-                className="ml-auto flex h-11 w-[min(320px,100%)] min-w-0 shrink items-center gap-2.5 rounded-[14px] bg-[var(--card)] px-3.5 text-[14.5px] text-[var(--ink3)] shadow-[var(--sh)] max-[1100px]:w-11 max-[1100px]:shrink-0 max-[1100px]:justify-center max-[1100px]:px-0"
+                className="tb-control ml-auto flex h-11 w-[min(320px,100%)] min-w-0 shrink items-center gap-2.5 px-3.5 text-[14.5px] max-[1100px]:w-11 max-[1100px]:shrink-0 max-[1100px]:justify-center max-[1100px]:px-0"
                 aria-label="Search"
               >
                 <MagnifyingGlassIcon className="h-5 w-5" />
@@ -654,7 +624,7 @@ function AppShellInner({ children }: { children: ReactNode }) {
               <div className="flex items-center gap-2">
                 {createItems.length > 0 ? (
                   <div className="relative">
-                    <Button variant="primary" onClick={() => setNewOpen((value) => !value)} className="relative z-20">
+                    <Button variant="primary" onClick={() => setNewOpen((value) => !value)} className="tb-new relative z-20" aria-label="New">
                       <PlusIcon className="h-4 w-4" />
                       <span className="hidden min-[761px]:inline">New</span>
                     </Button>
@@ -690,7 +660,7 @@ function AppShellInner({ children }: { children: ReactNode }) {
                 <button
                   type="button"
                   onClick={() => void refresh()}
-                  className="grid h-11 w-11 place-items-center rounded-[14px] bg-[var(--card)] text-[var(--ink2)] shadow-[var(--sh)]"
+                  className="tb-control grid h-11 w-11 place-items-center"
                   aria-label="Refresh data"
                 >
                   <ArrowPathIcon className={`h-5 w-5 ${refreshing ? 'animate-spin' : ''}`} />
@@ -699,12 +669,12 @@ function AppShellInner({ children }: { children: ReactNode }) {
                   <button
                     type="button"
                     onClick={() => setNotifOpen((value) => !value)}
-                    className="relative grid h-11 w-11 place-items-center rounded-[14px] bg-[var(--card)] text-[var(--ink2)] shadow-[var(--sh)]"
+                    className="tb-control relative grid h-11 w-11 place-items-center"
                     aria-label="Notifications"
                   >
                     <BellIcon className="h-5 w-5" />
                     {unreadCount > 0 ? (
-                      <span className="absolute -right-1 -top-1 min-w-[18px] rounded-full bg-[var(--red)] px-1 text-center text-[10px] font-bold leading-[18px] text-white">
+                      <span className="absolute -right-1 -top-1 min-w-[18px] rounded-full tb-badge px-1 text-center text-[10px] font-bold leading-[18px] text-white">
                         {unreadCount > 99 ? '99+' : unreadCount}
                       </span>
                     ) : null}
@@ -725,7 +695,7 @@ function AppShellInner({ children }: { children: ReactNode }) {
           ) : null}
 
           <main className="min-w-0 flex-1">
-            <div className={cn('page mx-auto w-full max-w-shell', isHome ? 'px-4 py-4 min-[760px]:px-7 min-[760px]:py-6' : 'px-4 py-6 min-[760px]:px-7 min-[760px]:pb-14')}>
+            <div className={cn('page mx-auto w-full max-w-shell', isHome ? 'px-4 py-4 min-[760px]:px-8 min-[760px]:py-[22px]' : 'px-4 py-6 min-[760px]:px-7 min-[760px]:pb-14')}>
               {children}
             </div>
           </main>

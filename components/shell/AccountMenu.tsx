@@ -65,11 +65,11 @@ export function AccountMenu({
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
-        className="relative z-40 overflow-hidden rounded-[14px] shadow-[var(--sh)]"
+        className="tb-avatar relative z-40 overflow-hidden"
         aria-label="Account menu"
         aria-expanded={open}
       >
-        <UserAvatar user={user} size={44} />
+        <UserAvatar user={user} size={44} gradient="from-[var(--brand-800)] to-[var(--brand-800)]" />
       </button>
       {open ? (
         <div className="absolute right-0 z-40 mt-2 w-[300px] overflow-hidden rounded-[18px] bg-[var(--card)] p-2 shadow-[var(--sh-pop)]">
