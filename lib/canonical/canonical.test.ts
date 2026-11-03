@@ -9428,3 +9428,98 @@ test('1.17.0: push tokens never stay on a placeholder users document; signed-in 
     [{ userId: PLACEHOLDER, remove: ['t'] }, { userId: B, remove: ['t'] }]
   )
 })
+
+test('1.18.0: customHoursPrefillForDays — the custom-hours pair follows the selection kind (weekday ↔ weekend)', () => {
+  const zone = 'Europe/London'
+  const SAT = '2026-11-07'
+  const SUN = '2026-11-08'
+  const MON = '2026-11-09'
+  const TUE = '2026-11-10'
+  const satRule = { allHoursAtMultiplierMode: false, allHoursMultiplier: 2, definedWindowStart: '07:30', definedWindowEnd: '13:00', countsAsStandardHours: 8, outsideWindowMultiplier: 2, sameAsSaturday: false }
+  const sunRule = { ...satRule, definedWindowStart: '09:00', definedWindowEnd: '12:00' }
+  const policy = { ...parsePolicy112(undefined), standardDayStart: '08:00', standardDayEnd: '17:00', saturday: satRule, sunday: sunRule }
+  // Weekend only: Saturday's window.
+  assert.deepEqual(R112.customHoursPrefillForDays(policy, [SAT], zone), { start: '07:30', end: '13:00', kind: 'weekend' })
+  // Weekend → weekday: the person unticks Saturday and picks Monday — the standard day, not the weekend times.
+  assert.deepEqual(R112.customHoursPrefillForDays(policy, [MON], zone), { start: '08:00', end: '17:00', kind: 'weekday' })
+  assert.deepEqual(R112.customHoursPrefillForDays(policy, [TUE, MON], zone), { start: '08:00', end: '17:00', kind: 'weekday' })
+  // Weekday → weekend: Sunday alone takes Sunday's own window.
+  assert.deepEqual(R112.customHoursPrefillForDays(policy, [SUN], zone), { start: '09:00', end: '12:00', kind: 'weekend' })
+  // Both weekend days with different defaults: Saturday's, whatever the order.
+  assert.deepEqual(R112.customHoursPrefillForDays(policy, [SUN, SAT], zone), { start: '07:30', end: '13:00', kind: 'weekend' })
+  // Saturday every hour at 2× and Sunday on a window: Sunday's window (the first weekend day with a set window).
+  const allHours = { allHoursAtMultiplierMode: true, allHoursMultiplier: 2, sameAsSaturday: false }
+  assert.deepEqual(R112.customHoursPrefillForDays({ ...policy, saturday: allHours }, [SAT, SUN], zone), { start: '09:00', end: '12:00', kind: 'weekend' })
+  // Neither day has a window: the editor's usual times (the standard day), still kind weekend.
+  assert.deepEqual(R112.customHoursPrefillForDays({ ...policy, saturday: allHours, sunday: allHours }, [SAT, SUN], zone), { start: '08:00', end: '17:00', kind: 'weekend' })
+  // A mixed selection is refused by every picker: kind none.
+  assert.equal(R112.customHoursPrefillForDays(policy, [SAT, MON], zone)?.kind, 'none')
+  // Empty, invalid or missing: null.
+  assert.equal(R112.customHoursPrefillForDays(policy, [], zone), null)
+  assert.equal(R112.customHoursPrefillForDays(policy, null, zone), null)
+  assert.equal(R112.customHoursPrefillForDays(policy, ['not-a-day'], zone), null)
+  // No policy: the canonical standard day.
+  assert.deepEqual(R112.customHoursPrefillForDays(null, [MON], zone), { start: '07:30', end: '16:00', kind: 'weekday' })
+  // Scheduled change on the day: given the state, each day reads the rules in effect on it.
+  const doc = {
+    countryCode: 'GB',
+    payrollTimePolicy: { standardDayStart: '07:30', standardDayEnd: '16:00', saturday: allHours, sunday: allHours },
+    payrollTimePolicyScheduled: { policy: { standardDayStart: '08:00', standardDayEnd: '16:30', saturday: satRule, sunday: { ...satRule, sameAsSaturday: true } }, effectiveFrom: SAT },
+  }
+  const state = R112.parsePayrollTimePolicyState(doc, zone)
+  assert.deepEqual(R112.customHoursPrefillForDays(state, ['2026-11-06'], zone), { start: '07:30', end: '16:00', kind: 'weekday' })
+  assert.deepEqual(R112.customHoursPrefillForDays(state, [MON], zone), { start: '08:00', end: '16:30', kind: 'weekday' })
+  assert.deepEqual(R112.customHoursPrefillForDays(state, [SAT], zone), { start: '07:30', end: '13:00', kind: 'weekend' })
+  assert.deepEqual(R112.customHoursPrefillForDays(state, ['2026-10-31'], zone), { start: '07:30', end: '16:00', kind: 'weekend' })
+})
+
+
+test('1.18.0: weekendBookingBreakdown — one row per selected day, priced by the pay rule for that day', () => {
+  const zone = 'Europe/London'
+  const SAT = '2026-11-07'
+  const SUN = '2026-11-08'
+  const satWindow = { allHoursAtMultiplierMode: false, allHoursMultiplier: 2, definedWindowStart: '07:30', definedWindowEnd: '14:00', countsAsStandardHours: 8, outsideWindowMultiplier: 1.5, sameAsSaturday: false }
+  const sunAllHours = { allHoursAtMultiplierMode: true, allHoursMultiplier: 2, sameAsSaturday: false }
+  const policy = { ...parsePolicy112(undefined), saturday: satWindow, sunday: sunAllHours }
+  // Owner's example: Saturday on its window counts as 8h; Sunday every hour at 2× (no break off at the weekend, as pay).
+  const rows = R112.weekendBookingBreakdown(policy, [SUN, SAT], '07:30', '14:00', false, zone)
+  assert.deepEqual(rows.map((row) => row.line), [
+    'Saturday 07:30–14:00 = 8h (counts as a full day)',
+    'Sunday 07:30–14:00 = 6.5h × 2 = 13h',
+  ])
+  assert.deepEqual(
+    { ...rows[0], line: undefined },
+    { dayKey: SAT, weekdayLabel: 'Saturday', start: '07:30', end: '14:00', workedHours: 6.5, countsAsHours: 8, standardHours: 8, overtimeHours: 0, multiplier: 1.5, paidHoursEquivalent: 8, line: undefined }
+  )
+  assert.deepEqual(
+    { ...rows[1], line: undefined },
+    { dayKey: SUN, weekdayLabel: 'Sunday', start: '07:30', end: '14:00', workedHours: 6.5, countsAsHours: null, standardHours: 0, overtimeHours: 6.5, multiplier: 2, paidHoursEquivalent: 13, line: undefined }
+  )
+  // Each figure is the timesheet pay rule's for that day.
+  for (const row of rows) {
+    const paid = R112.payrollHoursResult({ booking: { timeSlot: 'CUSTOM_HOURS', workStartTime: '07:30', workEndTime: '14:00' }, dayKey: row.dayKey, policy, timeZone: zone })
+    assert.equal(row.paidHoursEquivalent, paid.totalPaidHours)
+  }
+  // Outside the window: the Saturday rate for the extra hours.
+  assert.equal(R112.weekendBookingBreakdown(policy, [SAT], '07:30', '16:00', false, zone)[0].line, 'Saturday 07:30–16:00 = 8h + 2h × 1.5 = 11h')
+  // Same rules on both days: identical figures (screens may collapse them).
+  const same = { ...policy, sunday: { ...satWindow, sameAsSaturday: true } }
+  const sameRows = R112.weekendBookingBreakdown(same, [SAT, SUN], '07:30', '14:00', false, zone)
+  assert.equal(sameRows.length, 2)
+  assert.deepEqual({ ...sameRows[0], dayKey: '', weekdayLabel: '', line: sameRows[0].line.replace('Saturday', '') }, { ...sameRows[1], dayKey: '', weekdayLabel: '', line: sameRows[1].line.replace('Sunday', '') })
+  // A scheduled change between the two days: each day under the rules in effect on it.
+  const doc = {
+    countryCode: 'GB',
+    payrollTimePolicy: { saturday: satWindow, sunday: { ...satWindow, sameAsSaturday: true } },
+    payrollTimePolicyScheduled: { policy: { saturday: satWindow, sunday: sunAllHours }, effectiveFrom: SUN },
+  }
+  const state = R112.parsePayrollTimePolicyState(doc, zone)
+  assert.deepEqual(R112.weekendBookingBreakdown(state, [SAT, SUN], '07:30', '14:00', false, zone).map((row) => row.line), [
+    'Saturday 07:30–14:00 = 8h (counts as a full day)',
+    'Sunday 07:30–14:00 = 6.5h × 2 = 13h',
+  ])
+  // Invalid times, no days or no policy: no rows.
+  assert.deepEqual(R112.weekendBookingBreakdown(policy, [SAT], '07:30', '07:30', false, zone), [])
+  assert.deepEqual(R112.weekendBookingBreakdown(policy, [], '07:30', '14:00', false, zone), [])
+  assert.deepEqual(R112.weekendBookingBreakdown(null, [SAT], '07:30', '14:00', false, zone), [])
+})

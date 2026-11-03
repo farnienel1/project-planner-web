@@ -1,7 +1,7 @@
 {
-  "rulebookVersion": "1.17.0",
-  "rulebookSha256": "65926053c23afcee349a7cda70647d73be2a1d3580791923483ad9265b2dd749",
-  "bundleSha256": "5390bfde93d29da5f8d8171ac3483cdf1004c00dfbbd6ba08e35fd69ac85b0d5",
+  "rulebookVersion": "1.18.0",
+  "rulebookSha256": "80ba8d122471b2ef904448a8e6d5e05886e34f5d1848710988800e904e2c43ae",
+  "bundleSha256": "68b96e0f017cf6dcfa2efda88f1427285d7ea08def6d5718bb4e704be83a38a8",
   "crossPlatformContractSha256": "d655dd7d122e53a1167569216d43cba7598670671310ca84c59ea7e46373b7e6",
   "exports": [
     "ACCOUNT_DELETE_WITH_COMPANY_MESSAGE",
@@ -339,6 +339,7 @@
     "currencyOption",
     "currencySymbol",
     "customHoursBreakWarning",
+    "customHoursPrefillForDays",
     "dayKeyInOrganizationZone",
     "deadlineAssignedProjectIds",
     "deadlineAssignedRecipients",
@@ -879,6 +880,7 @@
     "warningScopeFor",
     "webSessionOrganizationStorageKey",
     "weekdayOffsetBefore",
+    "weekendBookingBreakdown",
     "weekendBookingNote",
     "weekendBookingNotes",
     "weekendCustomHoursDefault",

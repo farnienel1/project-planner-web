@@ -39,14 +39,17 @@ import { myScheduleStripeClass } from '@/components/schedule/MyScheduleLooks'
 import { HoursTimelinePicker } from '@/components/scheduling/HoursTimelinePicker'
 import {
   confirmCustomHoursBreak,
-  customHoursPrefillForDates,
-  isWeekendDate,
   slotOfferedOnDate,
   weekendNotesForDates,
   weekendWeekdayMixMessage,
 } from '@/lib/scheduling/bookingSlotRules'
 import { BookingEditSheet } from '@/components/schedule/BookingEditSheet'
-import { useBookingConflictGate } from '@/components/scheduling/BookingConflictRows'
+import { useCustomHoursPrefillOnKindChange } from '@/lib/scheduling/useOrganizationPayrollPolicy'
+import {
+  conflictRowKey,
+  useBookingConflictGate,
+  type BookingConflictRow,
+} from '@/components/scheduling/BookingConflictRows'
 import { useLeaveConflictCheck } from '@/components/scheduling/useLeaveConflictCheck'
 import { dayKey as orgDayKey } from '@/lib/ios-parity/londonTime'
 import { organizationZoneOr } from '@/lib/orgTime/activeOrganizationZone'
@@ -257,7 +260,6 @@ export function MyScheduleSelfBookingScreen({
     customItemEnabled: {},
   })
   const [toast, setToast] = useState<{ kind: 'success' | 'error'; msg: string } | null>(null)
-  const [confirm, setConfirm] = useState<{ msg: string; onYes: () => void } | null>(null)
   const [busy, setBusy] = useState(false)
   const [otherQuery, setOtherQuery] = useState('')
   const [projectQuery, setProjectQuery] = useState('')
@@ -325,20 +327,13 @@ export function MyScheduleSelfBookingScreen({
     return [selectedDate]
   }
 
-  // Rulebook 1.13.0 (Q2): booking only weekend days opens custom hours with that day's window
-  // (`weekendCustomHoursDefault`); the person can change it.
-  const weekendPrefillKey = targetDays()
-    .map((day) => day.toDateString())
-    .join('|')
-  useEffect(() => {
-    const days = targetDays()
-    if (days.length === 0 || !days.every((day) => isWeekendDate(day))) return
-    // One time pair for the whole request: the first selected Saturday's window (`customHoursPrefillForDates`).
-    const prefill = customHoursPrefillForDates(days, payrollPolicy)
-    setCustomStart(prefill.start)
-    setCustomEnd(prefill.end)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [weekendPrefillKey, payrollPolicy])
+  // Rulebook 1.18.0 (`customHoursPrefillForDays`): one time pair for the whole request. When the selection changes
+  // kind (weekend only ↔ weekday only) the custom hours reset to that kind's default — the first Saturday's window, or
+  // the standard day in effect on the first day; a manual edit survives adding another day of the same kind.
+  useCustomHoursPrefillOnKindChange(targetDays(), payrollPolicy, (hours) => {
+    setCustomStart(hours.start)
+    setCustomEnd(hours.end)
+  })
 
   function flash(kind: 'success' | 'error', msg: string) {
     setToast({ kind, msg })
@@ -430,8 +425,25 @@ export function MyScheduleSelfBookingScreen({
     ) {
       return
     }
-    // 1.16.0 (§5, `bookingLeaveConflicts`): tick to book anyway, or ✕ to drop that day.
+    // 1.16.0 (§5): your other bookings that day (orange) and annual leave (purple, `bookingLeaveConflicts`) in one
+    // list, the same rows as every booking flow — tick to book anyway, or ✕ to drop that day.
     const zone = organizationZoneOr()
+    const clashRows: BookingConflictRow[] = days.flatMap((day) => {
+      const existing = myBookingsOn(day)
+      if (existing.length === 0) return []
+      const key = orgDayKey(day, zone)
+      return [
+        {
+          key: conflictRowKey(userId, key, 'double_booking'),
+          personId: userId,
+          dayKey: key,
+          kind: 'double_booking' as const,
+          personName: 'You',
+          dayLabel: format(day, 'EEE d MMM yyyy'),
+          detail: `Already booked · ${existing.map((b) => `${slotLabel(b)} — ${locationName(b)}`).join(', ')}`,
+        },
+      ]
+    })
     const leaveRows = leaveCheck.rowsFor(
       [{ id: userId, userId, name: 'You' }],
       days.map((day) => orgDayKey(day, zone)),
@@ -441,25 +453,11 @@ export function MyScheduleSelfBookingScreen({
         workEndTime: args.timeSlot === 'CUSTOM_HOURS' ? customEnd : undefined,
       }
     )
-    const dropped = await leaveGate.check(leaveRows)
+    const dropped = await leaveGate.check([...clashRows, ...leaveRows])
     if (dropped === null) return
     if (dropped.size > 0) {
       days = days.filter((day) => !dropped.has(`${userId}|${orgDayKey(day, zone)}`))
       if (days.length === 0) return
-    }
-    if (days.length === 1) {
-      const existing = myBookingsOn(days[0])
-      if (existing.length > 0) {
-        const lines = existing.map((b) => `• ${slotLabel(b)} — ${locationName(b)}`).join('\n')
-        setConfirm({
-          msg: `You already have:\n${lines}\n\nAdd this booking too?`,
-          onYes: () => {
-            setConfirm(null)
-            void commitBooking({ days, ...args })
-          },
-        })
-        return
-      }
     }
     void commitBooking({ days, ...args })
   }
@@ -575,6 +573,7 @@ export function MyScheduleSelfBookingScreen({
             end={customEnd}
             breakRemoved={breakRemoved}
             policy={payrollPolicy}
+            dates={targetDays()}
             onStart={setCustomStart}
             onEnd={setCustomEnd}
             onBreak={setBreakRemoved}
@@ -894,33 +893,14 @@ export function MyScheduleSelfBookingScreen({
           // 1.16.0 §5 (`bookingLeaveConflicts`): moving your own booking onto a day you have leave asks first.
           conflictsFor={leaveCheck.checkFor(
             { id: userId, userId, name: 'You' },
-            managerSiteBookingToScheduleBooking(editingManagerBooking, projectsById, organizationId).date
+            managerSiteBookingToScheduleBooking(editingManagerBooking, projectsById, organizationId).date,
+            [editingManagerBooking.id]
           )}
           onSave={(updates) => saveEditedBooking(editingManagerBooking, updates)}
           onDelete={() => deleteEditedBooking(editingManagerBooking)}
           onClose={() => setEditingBookingId(null)}
         />
       ) : null}
-
-      {confirm && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-          onClick={() => setConfirm(null)}
-        >
-          <div className="card pad" style={{ width: '100%', maxWidth: 420 }} onClick={(e) => e.stopPropagation()}>
-            <h2 className="h2">Another booking this day</h2>
-            <p className="muted small" style={{ marginTop: 8, whiteSpace: 'pre-line' }}>{confirm.msg}</p>
-            <div className="row" style={{ marginTop: 18, justifyContent: 'flex-end' }}>
-              <button type="button" onClick={() => setConfirm(null)} className="btn">
-                Cancel
-              </button>
-              <button type="button" onClick={confirm.onYes} className="btn primary">
-                Add anyway
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

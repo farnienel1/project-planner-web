@@ -6,7 +6,10 @@ import {
   draftPersonNeedsWarning,
   type DraftBookingPerson,
 } from '@/lib/scheduling/draftProjectBooking'
-import { slotKey, type ScheduleDateSlot } from '@/lib/scheduling/scheduleUtils'
+import { slotKey, slotToFirestore, type ScheduleDateSlot } from '@/lib/scheduling/scheduleUtils'
+import { weekendBreakdownForDates } from '@/lib/scheduling/bookingSlotRules'
+import { useOrganizationPayrollPolicy } from '@/lib/scheduling/useOrganizationPayrollPolicy'
+import { BookingDayBreakdownRows } from '@/components/scheduling/BookingDayBreakdownRows'
 
 function DayChip({
   date,
@@ -49,6 +52,7 @@ export function ScheduleBookingReviewStep({
   onRemovePerson: (personId: string) => void
   onAddAnother: () => void
 }) {
+  const policy = useOrganizationPayrollPolicy()
   if (people.length === 0) {
     return (
       <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6 text-center">
@@ -80,6 +84,13 @@ export function ScheduleBookingReviewStep({
           const bookableDays = slots.filter((slot) => {
             const state = person.dayStates[slotKey(slot.date)]
             return state === 'free' || state === 'clash_accepted'
+          })
+          // Rulebook 1.18.0 (`weekendBookingBreakdown`): each weekend day this person is booked on, priced by its rule.
+          const weekendRows = bookableDays.flatMap((slot) => {
+            const stored = slotToFirestore(slot)
+            return stored.timeSlot === 'CUSTOM_HOURS'
+              ? weekendBreakdownForDates([slot.date], stored.workStartTime, stored.workEndTime, false, policy)
+              : []
           })
 
           return (
@@ -120,6 +131,11 @@ export function ScheduleBookingReviewStep({
                         />
                       ))}
                     </div>
+                    {weekendRows.length > 0 ? (
+                      <div className="mt-2">
+                        <BookingDayBreakdownRows rows={weekendRows} />
+                      </div>
+                    ) : null}
                   </div>
                 </button>
                 <button

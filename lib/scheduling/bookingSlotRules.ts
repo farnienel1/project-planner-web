@@ -13,7 +13,12 @@ import {
   payrollTimePolicyTimeline,
   effectivePayrollTimePolicy,
   weekendBookingNotes,
-  weekendCustomHoursDefault,
+  customHoursPrefillForDays,
+  weekendBookingBreakdown,
+  type BookingDayBreakdownRow,
+  formatClockMinutes,
+  halfDayWindows,
+  type CustomHoursPrefill,
   type PayrollTimePolicyState,
   WEEKEND_WEEKDAY_MIX_MESSAGE,
   type BookingSlotChoice,
@@ -93,33 +98,50 @@ export function isWeekendDate(date: Date | string | number): boolean {
 }
 
 /**
- * The custom-hours editor's starting times for the date (`weekendCustomHoursDefault`: a set-window weekend day's
- * window), else the organisation's standard day. A prefill only.
+ * Rulebook 1.18.0: the custom-hours pair for the dates a picker has selected and what kind of selection it is
+ * (`customHoursPrefillForDays`): weekend only → the first Saturday's window (else the first Sunday's), weekday only →
+ * the standard day in effect on the first day, `none` for a refused weekday + weekend mix, null for no dates. Each day
+ * is read under the working hours in effect on it. A picker re-applies it when `kind` changes, not on every click.
+ */
+export function customHoursPrefillForDates(
+  dates: ReadonlyArray<Date | string | number>,
+  policy?: OrgPayrollTimePolicy | null
+): CustomHoursPrefill | null {
+  const keys = dates.map((date) => bookingDayKey(date))
+  return customHoursPrefillForDays(livePayrollState() ?? policy ?? null, keys, openOrganizationZone())
+}
+
+/**
+ * The custom-hours editor's starting times for one date (`customHoursPrefillForDays` for that day): a set-window
+ * weekend day's window, else the organisation's standard day in effect on it. A prefill only.
  */
 export function customHoursPrefillForDate(
   date: Date | string | number,
   policy?: OrgPayrollTimePolicy | null
 ): { start: string; end: string } {
-  const key = bookingDayKey(date)
-  const dayPolicy = policyOnBookingDay(key, policy)
-  const weekend = weekendCustomHoursDefault(dayPolicy, key, openOrganizationZone())
-  return weekend ?? { start: dayPolicy?.standardDayStart || '07:30', end: dayPolicy?.standardDayEnd || '16:00' }
+  const prefill = customHoursPrefillForDates([date], policy)
+  if (prefill) return { start: prefill.start, end: prefill.end }
+  // Not a valid day: the canonical standard day (`halfDayWindows`), never a window computed here.
+  const day = halfDayWindows(policy ?? null).day
+  return { start: formatClockMinutes(day.start), end: formatClockMinutes(day.end) }
 }
 
 /**
- * The one pair of times a multi-day picker opens custom hours with: the first selected Saturday's
- * (`customHoursPrefillForDate`), else the first selected day's. Each day's own default is
- * `customHoursPrefillForDate`; a picker that keeps one time pair for the request saves that pair on every day.
+ * Rulebook 1.18.0: the per-day hours rows for a booking whose selection holds a Saturday or Sunday
+ * (`weekendBookingBreakdown`: each day priced by the timesheet pay rule under the working hours in effect on it), or
+ * `[]` for a weekday-only selection, where the screen keeps its usual hours breakdown.
  */
-export function customHoursPrefillForDates(
+export function weekendBreakdownForDates(
   dates: ReadonlyArray<Date | string | number>,
+  start: string | null | undefined,
+  end: string | null | undefined,
+  breakRemoved: boolean | null | undefined,
   policy?: OrgPayrollTimePolicy | null
-): { start: string; end: string } {
+): BookingDayBreakdownRow[] {
   const zone = openOrganizationZone()
-  const keyed = dates.map((date) => ({ date, key: bookingDayKey(date) })).sort((a, b) => a.key.localeCompare(b.key))
-  const saturday = keyed.find(({ key }) => isWeekendDayKey(key, zone) && new Date(`${key}T12:00:00Z`).getUTCDay() === 6)
-  const first = saturday ?? keyed[0]
-  return customHoursPrefillForDate(first ? first.date : new Date(), policy)
+  const keys = dates.map((date) => bookingDayKey(date))
+  if (!keys.some((key) => isWeekendDayKey(key, zone))) return []
+  return weekendBookingBreakdown(livePayrollState() ?? policy ?? null, keys, start, end, breakRemoved, zone)
 }
 
 /** `WEEKEND_WEEKDAY_MIX_MESSAGE` when the dates mix weekdays and weekend days (`bookingDaysMixWeekdayAndWeekend`). */

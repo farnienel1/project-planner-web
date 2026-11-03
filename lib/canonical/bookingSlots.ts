@@ -15,9 +15,9 @@
  *   is unchanged (§8: break minutes come off only while the toggle is on).
  */
 
-import { formatClockMinutes, intervalsOverlap, namedSlotKind, parseClockMinutes, slotInterval } from './engine'
+import { formatClockMinutes, halfDayWindows, intervalsOverlap, namedSlotKind, parseClockMinutes, slotInterval } from './engine'
 import type { OrgPayrollTimePolicy } from './organizationSettings'
-import { weekendFullDayWindow, weekendRuleForIsoWeekday } from './payrollHours'
+import { payrollHoursResult, weekendFullDayWindow, weekendRuleForIsoWeekday } from './payrollHours'
 import { isoWeekdayOfDayKey, zoneOrLondon } from './dayKeys'
 import { payrollTimePolicyForDayFromState, type PayrollTimePolicyState } from './payrollPolicySchedule'
 
@@ -186,6 +186,157 @@ export function weekendBookingNotes(
     return [`Saturday/Sunday${bodies[6][0]}`]
   }
   return [...bodies[6].map((body) => `Saturday${body}`), ...bodies[7].map((body) => `Sunday${body}`)]
+}
+
+/** What a selection of booking days is for the custom-hours prefill (`customHoursPrefillForDays`). */
+export type CustomHoursPrefillKind = 'weekday' | 'weekend' | 'none'
+
+export type CustomHoursPrefill = { start: string; end: string; kind: CustomHoursPrefillKind }
+
+/**
+ * Rulebook 1.18.0: the one time pair a booking picker's custom-hours editor opens with for the whole selection
+ * (`dayKeys`, organisation-zone day keys), and what kind of selection it is.
+ *
+ * - `kind: 'weekend'` (only Saturdays and Sundays): the first selected weekend day that has a set window
+ *   (`weekendCustomHoursDefault`), Saturdays first — so with Saturday "every hour at N×" and Sunday on a window,
+ *   Sunday's window. Neither has a window: the editor's usual times (the standard day in effect on the first Saturday,
+ *   else the first Sunday).
+ * - `kind: 'weekday'` (only Monday–Friday): the organisation's standard day (`halfDayWindows(...).day`) in effect on the
+ *   first selected day.
+ * - `kind: 'none'`: the selection mixes weekdays and weekend days, which every picker refuses
+ *   (`WEEKEND_WEEKDAY_MIX_MESSAGE`); the times are the first day's standard day and a picker does not apply them.
+ * - `null`: no valid day selected.
+ *
+ * `policy` is the working-hours policy for the request, or the organisation's policy state, in which case each day is
+ * read under the policy in effect on that day (`effectivePayrollTimePolicy`). A picker applies the result whenever
+ * `kind` changes (weekend-only ↔ weekday-only), not on every change within the same kind, so the person's own edit
+ * survives adding another day of the same kind. Never a computed midpoint.
+ */
+export function customHoursPrefillForDays(
+  policy: OrgPayrollTimePolicy | PayrollTimePolicyState | null | undefined,
+  dayKeys: ReadonlyArray<string> | null | undefined,
+  timeZone?: string | null
+): CustomHoursPrefill | null {
+  const keys = Array.from(
+    new Set((dayKeys || []).map((key) => String(key || '').trim()).filter((key) => /^\d{4}-\d{2}-\d{2}$/.test(key)))
+  ).sort()
+  if (keys.length === 0) return null
+  const policyOn = (key: string): OrgPayrollTimePolicy | null =>
+    !policy ? null : isPolicyState(policy) ? payrollTimePolicyForDayFromState(policy, key) : policy
+  const standardDay = (key: string): { start: string; end: string } => {
+    const day = halfDayWindows(policyOn(key)).day
+    return { start: formatClockMinutes(day.start), end: formatClockMinutes(day.end) }
+  }
+  const weekendKeys = keys.filter((key) => isWeekendDayKey(key, timeZone))
+  if (weekendKeys.length === 0) return { ...standardDay(keys[0]), kind: 'weekday' }
+  if (weekendKeys.length !== keys.length) return { ...standardDay(keys[0]), kind: 'none' }
+  const ordered = [
+    ...weekendKeys.filter((key) => isoWeekdayOf(key, timeZone) === 6),
+    ...weekendKeys.filter((key) => isoWeekdayOf(key, timeZone) === 7),
+  ]
+  for (const key of ordered) {
+    const window = weekendCustomHoursDefault(policyOn(key), key, timeZone)
+    if (window) return { ...window, kind: 'weekend' }
+  }
+  return { ...standardDay(ordered[0]), kind: 'weekend' }
+}
+
+/** One selected day of a booking request priced under that day's rule (`weekendBookingBreakdown`). */
+export type BookingDayBreakdownRow = {
+  dayKey: string
+  /** 'Saturday', 'Sunday', or the weekday's name. */
+  weekdayLabel: string
+  start: string
+  end: string
+  /** Clock hours worked (`payrollHoursResult.workedHours`), never multiplied. */
+  workedHours: number
+  /** A set-window weekend day: the hours the worked part of the window counts as; else null. */
+  countsAsHours: number | null
+  /** Hours paid at the normal rate (`standardHours`). */
+  standardHours: number
+  /** Hours paid at `multiplier` (`outsideHours`): outside the window, or every hour on an all-hours day. */
+  overtimeHours: number
+  multiplier: number
+  /** `totalPaidHours`: standard hours plus overtime hours × multiplier. */
+  paidHoursEquivalent: number
+  /** The row text, e.g. "Saturday 07:30–14:00 = 8h (counts as a full day)". */
+  line: string
+}
+
+const WEEKDAY_NAMES = ['', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+
+function roundHours(hours: number): number {
+  return Math.round(hours * 100) / 100
+}
+
+/**
+ * Rulebook 1.18.0 (owner decision): the per-day hours a booking request's one custom-hours pair pays, one row per
+ * selected day (`dayKeys`, organisation-zone, de-duplicated and in date order), each computed ONLY by the pay rule
+ * timesheets use — `payrollHoursResult` for that day under the policy in effect on it (`policy` may be the policy
+ * state) — so a Saturday on a set window and a Sunday at every hour × 2 show their own figures. Break handling is
+ * exactly pay's: Saturday and Sunday take no unpaid break off; a weekday takes the covered part of the unpaid break
+ * unless `isBreakRemoved` or the break is paid. Booking screens show these rows (collapsing identical weekend rows
+ * into one "Saturday/Sunday" row is allowed) instead of a generic standard-day summary. Invalid times or no days: [].
+ *
+ * Example: Saturday window 07:30–14:00 counts as 8h, Sunday every hour at 2×, booked 07:30–14:00 →
+ * "Saturday 07:30–14:00 = 8h (counts as a full day)" and "Sunday 07:30–14:00 = 6.5h × 2 = 13h".
+ */
+export function weekendBookingBreakdown(
+  policy: OrgPayrollTimePolicy | PayrollTimePolicyState | null | undefined,
+  dayKeys: ReadonlyArray<string> | null | undefined,
+  start: string | null | undefined,
+  end: string | null | undefined,
+  isBreakRemoved: boolean | null | undefined,
+  timeZone?: string | null
+): BookingDayBreakdownRow[] {
+  if (!policy) return []
+  const startMinutes = parseClockMinutes(start)
+  const endMinutes = parseClockMinutes(end)
+  if (startMinutes == null || endMinutes == null || startMinutes === endMinutes) return []
+  const startText = formatClockMinutes(startMinutes)
+  const endText = formatClockMinutes(endMinutes)
+  const keys = Array.from(
+    new Set((dayKeys || []).map((key) => String(key || '').trim()).filter((key) => /^\d{4}-\d{2}-\d{2}$/.test(key)))
+  ).sort()
+  return keys.map((dayKey) => {
+    const dayPolicy = isPolicyState(policy) ? payrollTimePolicyForDayFromState(policy, dayKey) : policy
+    const iso = isoWeekdayOf(dayKey, timeZone)
+    const paid = payrollHoursResult({
+      booking: { timeSlot: 'CUSTOM_HOURS', workStartTime: startText, workEndTime: endText, isBreakRemoved: isBreakRemoved === true },
+      dayKey,
+      policy: dayPolicy,
+      timeZone,
+    })
+    const weekend = iso === 6 || iso === 7 ? weekendRuleForIsoWeekday(iso, dayPolicy) : null
+    const windowDay = Boolean(weekend && !weekend.allHoursAtMultiplierMode)
+    const standardHours = roundHours(paid.standardHours)
+    const overtimeHours = roundHours(paid.outsideHours)
+    const multiplier = roundHours(paid.outsideMultiplier)
+    const total = roundHours(paid.totalPaidHours)
+    const credit = weekend ? Number(weekend.countsAsStandardHours ?? dayPolicy.standardPaidHours) : NaN
+    const fullDay = windowDay && standardHours > 0 && Math.abs(standardHours - roundHours(credit)) < 0.001
+    const parts: string[] = []
+    if (standardHours > 0) parts.push(hoursText(standardHours))
+    if (overtimeHours > 0) parts.push(`${hoursText(overtimeHours)} × ${roundHours(multiplier)}`)
+    const label = WEEKDAY_NAMES[iso] || dayKey
+    let line = `${label} ${startText}–${endText} = `
+    if (parts.length === 0) line += '0h'
+    else if (overtimeHours > 0) line += `${parts.join(' + ')} = ${hoursText(total)}`
+    else line += `${parts[0]}${fullDay ? ' (counts as a full day)' : ''}`
+    return {
+      dayKey,
+      weekdayLabel: label,
+      start: startText,
+      end: endText,
+      workedHours: roundHours(paid.workedHours),
+      countsAsHours: windowDay ? standardHours : null,
+      standardHours,
+      overtimeHours,
+      multiplier,
+      paidHoursEquivalent: total,
+      line,
+    }
+  })
 }
 
 export const CUSTOM_HOURS_BREAK_WARNING =

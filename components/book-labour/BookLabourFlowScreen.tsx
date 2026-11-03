@@ -46,7 +46,11 @@ import {
   managerClashInterval,
   intervalsOverlap,
 } from '@/lib/warnings/clashIntervals'
-import type { ManagerLocationType, ManagerSiteBooking } from '@/lib/scheduling/managerSiteBookingUtils'
+import {
+  managerSiteBookingDisplayTitle,
+  type ManagerLocationType,
+  type ManagerSiteBooking,
+} from '@/lib/scheduling/managerSiteBookingUtils'
 import type { Booking, Project } from '@/types'
 import {
   bookLabourDayLine,
@@ -54,7 +58,8 @@ import {
   type BookLabourCandidate,
 } from '@/lib/book-labour/candidates'
 import { HoursTimelinePicker } from '@/components/scheduling/HoursTimelinePicker'
-import { confirmCustomHoursBreak, customHoursPrefillForDate, slotOfferedOnDate, weekendNotesForDates } from '@/lib/scheduling/bookingSlotRules'
+import { confirmCustomHoursBreak, slotOfferedOnDate, weekendNotesForDates } from '@/lib/scheduling/bookingSlotRules'
+import { useCustomHoursPrefillOnKindChange } from '@/lib/scheduling/useOrganizationPayrollPolicy'
 import { CustomOtherLocationField } from '@/components/scheduling/CustomOtherLocationField'
 import { PanelHeader } from '@/components/settings/primitives'
 import { ORPHAN_BOOKING_LABEL } from '@/lib/canonical'
@@ -162,6 +167,13 @@ export function BookLabourFlowScreen({
   })
   const [payroll, setPayroll] = useState<OrgPayrollTimePolicy>(DEFAULT_PAYROLL_POLICY)
   const leaveCheck = useLeaveConflictCheck(payroll)
+  // Rulebook 1.18.0 (`customHoursPrefillForDays`): custom hours open with the day's default — a set-window weekend
+  // day's window, else the standard day in effect on it — and reset when the day changes kind or the hours load.
+  const bookingDays = useMemo(() => [day], [day])
+  useCustomHoursPrefillOnKindChange(bookingDays, payroll, (hours) => {
+    setCustomStart(hours.start)
+    setCustomEnd(hours.end)
+  })
 
   useEffect(() => {
     if (!organization?.id) return
@@ -177,13 +189,7 @@ export function BookLabourFlowScreen({
     loadOrganizationDetails(organization.id)
       .then((details) => {
         if (details?.myScheduleOptions) setScheduleOpts(details.myScheduleOptions)
-        if (details?.payrollTimePolicy) {
-          setPayroll(details.payrollTimePolicy)
-          // Rulebook 1.13.0 (Q2): a weekend day opens with that day's window (`weekendCustomHoursDefault`).
-          const prefill = customHoursPrefillForDate(day, details.payrollTimePolicy)
-          setCustomStart(prefill.start)
-          setCustomEnd(prefill.end)
-        }
+        if (details?.payrollTimePolicy) setPayroll(details.payrollTimePolicy)
       })
       .catch(() => {})
   }, [
@@ -357,20 +363,24 @@ export function BookLabourFlowScreen({
     )
   }
 
-  function managerWouldClash(userId: string, slot: ManagerSlot, workStart?: string, workEnd?: string) {
+  /** The manager's own bookings that day whose clock interval overlaps this slot (`managerClashInterval`), as labels. */
+  function managerClashLines(userId: string, slot: ManagerSlot, workStart?: string, workEnd?: string): string[] | null {
     const existing = managerSiteBookings.filter((booking) => booking.userId === userId && dayKey(booking.date) === dayKey(day))
-    if (existing.length === 0) return false
+    if (existing.length === 0) return null
     const probe: Pick<ManagerSiteBooking, 'timeSlot' | 'workStartTime' | 'workEndTime'> = {
       timeSlot: slot,
       workStartTime: workStart,
       workEndTime: workEnd,
     }
     const probeIv = managerClashInterval(probe, payroll)
-    return existing.some((row) => {
+    if (!probeIv) return null
+    const titles = new Map(allWorks.map((work) => [work.id, `${work.jobNumber ?? ''} ${work.siteName ?? ''}`.trim() || work.id]))
+    const overlapping = existing.filter((row) => {
       const iv = managerClashInterval(row, payroll)
-      if (!probeIv || !iv) return false
-      return intervalsOverlap(probeIv, iv)
+      return iv ? intervalsOverlap(probeIv, iv) : false
     })
+    if (overlapping.length === 0) return null
+    return overlapping.map((row) => `${row.timeSlot} · ${managerSiteBookingDisplayTitle(row, titles)}`)
   }
 
   function operativeClashLines(
@@ -421,31 +431,32 @@ export function BookLabourFlowScreen({
     const resolvedProject = projectForLocation(args.locationType, args.locationId)
     const operativeSlot = operativeSlotFromManager(args.slot)
 
-    const managerClashNames: string[] = []
-    for (const person of people) {
-      if (usesOperativePath(person, args.locationType, resolvedProject)) continue
-      if (duplicateManager(person.user.id, args.slot, args.locationType, args.locationId, args.customLocationName)) {
-        continue
-      }
-      if (managerWouldClash(person.user.id, args.slot, args.workStart, args.workEnd)) {
-        managerClashNames.push(person.displayName)
-      }
-    }
-    if (managerClashNames.length > 0) {
-      setErrorBanner(
-        managerClashNames.length === 1
-          ? 'This booking overlaps another in time on that day.'
-          : `Overlapping bookings for: ${managerClashNames.join(', ')}.`
-      )
-      return
-    }
-
     if (!args.allowOperativeOverlap) {
       const zone = organizationZoneOr()
       const key = orgDayKey(day, zone)
       const rows: BookingConflictRow[] = []
       for (const person of people) {
-        if (!usesOperativePath(person, args.locationType, resolvedProject) || !resolvedProject || !person.linkedOperative) {
+        // Rulebook 1.16.0 §5 (owner: clashes as orange rows everywhere): a manager's overlapping booking is an orange
+        // row to tick or drop, like an operative's — never a blocking banner.
+        if (!usesOperativePath(person, args.locationType, resolvedProject)) {
+          if (duplicateManager(person.user.id, args.slot, args.locationType, args.locationId, args.customLocationName)) {
+            continue
+          }
+          const managerLines = managerClashLines(person.user.id, args.slot, args.workStart, args.workEnd)
+          if (managerLines) {
+            rows.push({
+              key: conflictRowKey(person.user.id, key, 'double_booking'),
+              personId: person.user.id,
+              dayKey: key,
+              kind: 'double_booking',
+              personName: person.displayName,
+              dayLabel: dayLine,
+              detail: `Already booked · ${managerLines.join(', ')}`,
+            })
+          }
+          continue
+        }
+        if (!resolvedProject || !person.linkedOperative) {
           continue
         }
         const lines = operativeClashLines(
@@ -745,6 +756,7 @@ export function BookLabourFlowScreen({
             end={customEnd}
             breakRemoved={breakRemoved}
             policy={payroll}
+            date={day}
             saving={saving}
             onStart={setCustomStart}
             onEnd={setCustomEnd}
@@ -1188,6 +1200,7 @@ function CustomHoursForm({
   end,
   breakRemoved,
   policy,
+  date,
   saving,
   onStart,
   onEnd,
@@ -1198,6 +1211,8 @@ function CustomHoursForm({
   end: string
   breakRemoved: boolean
   policy: OrgPayrollTimePolicy
+  /** The booking day: its own rule prices the hours (1.18.0 per-day rows on a weekend). */
+  date: Date
   saving: boolean
   onStart: (value: string) => void
   onEnd: (value: string) => void
@@ -1211,6 +1226,7 @@ function CustomHoursForm({
         end={end}
         breakRemoved={breakRemoved}
         policy={policy}
+        date={date}
         onStart={onStart}
         onEnd={onEnd}
         onBreak={onBreak}

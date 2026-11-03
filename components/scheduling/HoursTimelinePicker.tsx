@@ -5,6 +5,8 @@ import type { OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
 import { DEFAULT_PAYROLL_POLICY } from '@/lib/settings/organizationSettings'
 import { parseHhMm } from '@/lib/ios-parity/londonTime'
 import { formatHoursLabel, hoursBreakdown } from '@/lib/scheduling/paidHours'
+import { weekendBreakdownForDates } from '@/lib/scheduling/bookingSlotRules'
+import { BookingDayBreakdownRows } from '@/components/scheduling/BookingDayBreakdownRows'
 
 const HOURS = Array.from({ length: 24 }, (_, i) => i)
 const MINUTES = [0, 15, 30, 45]
@@ -43,6 +45,7 @@ export function HoursTimelinePicker({
   breakRemoved,
   policy = DEFAULT_PAYROLL_POLICY,
   date,
+  dates,
   onStart,
   onEnd,
   onBreak,
@@ -54,6 +57,8 @@ export function HoursTimelinePicker({
   policy?: OrgPayrollTimePolicy
   /** Booking day, so Saturday and Sunday use that day's rule. */
   date?: Date
+  /** Rulebook 1.18.0: every day the one pair of times is booked on; a weekend selection shows per-day rows. */
+  dates?: ReadonlyArray<Date>
   onStart: (value: string) => void
   onEnd: (value: string) => void
   onBreak: (value: boolean) => void
@@ -94,6 +99,9 @@ export function HoursTimelinePicker({
     policy,
     date,
   })
+
+  // Rulebook 1.18.0 (`weekendBookingBreakdown`): a weekend selection shows each day as pay prices it, not one summary.
+  const dayRows = valid ? weekendBreakdownForDates(dates ?? (date ? [date] : []), start, end, breakRemoved, policy) : []
 
   function minutesFromClientX(clientX: number, rect: DOMRect): number {
     const raw = ((clientX - rect.left) / rect.width) * DAY_MINUTES
@@ -216,14 +224,22 @@ export function HoursTimelinePicker({
             })}
           </div>
         </div>
-        <p className="mt-2 text-[12px] tabular-nums text-[var(--ink3)]">
-          {valid
-            ? `${format(startHm.hour, startHm.minute)}–${format(endHm.hour, endHm.minute)} · ${formatHoursLabel(breakdown.totalPaidHours)}h paid`
-            : 'Finish must be after start'}
-        </p>
-        {breakdown.overtimeLine ? (
-          <p className="mt-1 text-[12px] font-semibold text-[#854F0B]">{breakdown.overtimeLine}</p>
-        ) : null}
+        {dayRows.length > 0 ? (
+          <div className="mt-2">
+            <BookingDayBreakdownRows rows={dayRows} />
+          </div>
+        ) : (
+          <>
+            <p className="mt-2 text-[12px] tabular-nums text-[var(--ink3)]">
+              {valid
+                ? `${format(startHm.hour, startHm.minute)}–${format(endHm.hour, endHm.minute)} · ${formatHoursLabel(breakdown.totalPaidHours)}h paid`
+                : 'Finish must be after start'}
+            </p>
+            {breakdown.overtimeLine ? (
+              <p className="mt-1 text-[12px] font-semibold text-[#854F0B]">{breakdown.overtimeLine}</p>
+            ) : null}
+          </>
+        )}
       </div>
 
       <div className="grid grid-cols-2 gap-3">

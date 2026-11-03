@@ -915,6 +915,8 @@ export {
   timeSlotAllowedOnDay,
   weekendBookingNote,
   weekendBookingNotes,
+  customHoursPrefillForDays,
+  weekendBookingBreakdown,
   weekendCustomHoursDefault,
 } from './bookingSlots'
 export { weekendFullDayWindow, weekendRuleForIsoWeekday } from './payrollHours'

@@ -8,7 +8,13 @@ import { HoursTimelinePicker } from '@/components/scheduling/HoursTimelinePicker
 import { hoursBreakdown } from '@/lib/scheduling/paidHours'
 import { HoursBreakdownCard } from '@/components/schedule/HoursBreakdownCard'
 import { DEFAULT_PAYROLL_POLICY, type OrgPayrollTimePolicy } from '@/lib/settings/organizationSettings'
-import { confirmCustomHoursBreak, customHoursPrefillForDate, slotOfferedOnDate, weekendNotesForDates } from '@/lib/scheduling/bookingSlotRules'
+import {
+  confirmCustomHoursBreak,
+  customHoursPrefillForDate,
+  slotOfferedOnDate,
+  weekendBreakdownForDates,
+  weekendNotesForDates,
+} from '@/lib/scheduling/bookingSlotRules'
 import { useOrganizationDocument } from '@/lib/stores/organizationDocumentStore'
 
 const SLOT_OPTIONS: { value: ScheduleSlotChoice; label: string }[] = [
@@ -203,7 +209,14 @@ export function BookingEditSheet({
             />
           )}
 
-          <HoursBreakdownCard breakdown={breakdown} />
+          <HoursBreakdownCard
+            breakdown={breakdown}
+            dayRows={
+              slot === 'CUSTOM'
+                ? weekendBreakdownForDates([new Date(booking.date)], workStartTime, workEndTime, breakRemoved, payroll)
+                : []
+            }
+          />
 
           {booking.source !== 'manager' ? (
           <div>
