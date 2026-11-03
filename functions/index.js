@@ -28,12 +28,13 @@
 const { initializeApp } = require('firebase-admin/app')
 const { getFirestore } = require('firebase-admin/firestore')
 const { getMessaging } = require('firebase-admin/messaging')
-const { onDocumentCreated } = require('firebase-functions/v2/firestore')
+const { onDocumentCreated, onDocumentWritten } = require('firebase-functions/v2/firestore')
 const { logger } = require('firebase-functions')
 const canonical = require('./loadCanonical')
 const { pruneDeadPushTokens } = require('./prunePushTokens')
 const { skipPushForActor } = require('./pushActorGuard')
 const { recipientMayReceivePush } = require('./pushRecipientGuard')
+const { removeTokenFromOtherAccounts } = require('./pushTokenOwner')
 const { onRequest } = require('firebase-functions/v2/https')
 const { defineSecret } = require('firebase-functions/params')
 const { getAuth } = require('firebase-admin/auth')
@@ -121,7 +122,15 @@ exports.sendDevicePushOnNotificationCreate = onDocumentCreated(
     const prefs = canonical.parseUserNotificationPreferences(user.notificationPreferences)
     if (!canonical.notificationPreferenceAllowsDelivery(prefs, type)) return
 
-    const tokens = pushTokenList(user.pushTokens)
+    // 1.16.0 (§13): never push to a token that is also on the actor's own users document — the phone in the actor's
+    // hand hears nothing about what its own user did, even while an old token still sits on this document.
+    let actorTokens = []
+    const actorUserId = trimmed(data.actorUserId)
+    if (actorUserId && actorUserId !== userId && !canonical.notificationPushesToActor(type)) {
+      const actorSnap = await db.doc(`users/${actorUserId}`).get().catch(() => null)
+      actorTokens = actorSnap && actorSnap.exists ? pushTokenList((actorSnap.data() || {}).pushTokens) : []
+    }
+    const tokens = canonical.pushTokensExcludingActor(pushTokenList(user.pushTokens), actorTokens)
     if (tokens.length === 0) return
 
     // Only this recipient's unread rows, bounded (never the whole organisation's inbox).
@@ -144,7 +153,6 @@ exports.sendDevicePushOnNotificationCreate = onDocumentCreated(
 
     const title = trimmed(data.title)
     const message = trimmed(data.message)
-    const relatedId = trimmed(data.relatedId)
     try {
       const batch = await getMessaging().sendEachForMulticast({
         tokens,
@@ -152,12 +160,8 @@ exports.sendDevicePushOnNotificationCreate = onDocumentCreated(
           title,
           body: message,
         },
-        data: {
-          notificationId,
-          type,
-          relatedId,
-          organizationId: orgId,
-        },
+        // 1.16.0: one payload shape for every platform (`pushPayloadFields`), so a tapped push routes like the row.
+        data: canonical.pushPayloadFields({ ...data, notificationId, type, userId, organizationId: orgId }),
         apns: {
           payload: {
             aps: {
@@ -180,6 +184,30 @@ exports.sendDevicePushOnNotificationCreate = onDocumentCreated(
       }
     } catch (error) {
       logger.error('device push failed', { notificationId, orgId, userId, error })
+    }
+  }
+)
+
+/**
+ * Rulebook 1.16.0 §13: a device token belongs to exactly one account, the last one to register it. When a users
+ * document gains a token (`addedPushTokens`), remove it from every other users document (`pushTokenOwnerWrites`).
+ * Only removals are written, so the writes this makes never re-trigger an add.
+ */
+exports.pushTokenSingleOwner = onDocumentWritten(
+  { document: 'users/{uid}', region: 'us-central1' },
+  async (event) => {
+    const after = event.data && event.data.after && event.data.after.exists ? event.data.after.data() : null
+    if (!after) return
+    const before = event.data.before && event.data.before.exists ? event.data.before.data() : null
+    const added = canonical.addedPushTokens(before ? before.pushTokens : [], after.pushTokens)
+    if (added.length === 0) return
+    const uid = trimmed(event.params.uid)
+    for (const token of added) {
+      try {
+        await removeTokenFromOtherAccounts({ db: getFirestore(), canonical, token, ownerUid: uid, logger })
+      } catch (error) {
+        logger.error('push token single-owner sweep failed', { uid, error })
+      }
     }
   }
 )
